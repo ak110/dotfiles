@@ -1,5 +1,3 @@
-"""serveのsessionsに関するcostsの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -89,7 +87,6 @@ async def test_local_watch_stop_retains_unreclaimed_cost_worker(tmp_path, monkey
 
 
 def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """家族の記録が変わらない間は再起動後も推定費用を算出し直さず、記録へ追記すると算出し直す。"""
     record = _claude_record(tmp_path)
     old_ns = time.time_ns() - 10_000_000_000
     os.utime(record, ns=(old_ns, old_ns))
@@ -118,7 +115,6 @@ def test_family_cost_is_reused_until_a_family_record_changes(tmp_path: pathlib.P
 
 
 def test_saved_unpriced_sol_is_recalculated_without_record_changes(tmp_path: pathlib.Path) -> None:
-    """旧料金表で単価不明だった記録を開き直すと、新単価の額を返す。"""
     record = _codex_record(tmp_path)
     with record.open("a", encoding="utf-8") as stream:
         for entry in [
@@ -141,10 +137,6 @@ def test_saved_unpriced_sol_is_recalculated_without_record_changes(tmp_path: pat
 def test_cost_warmer_precomputes_listed_family_in_worker_process(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一覧を走査すると、画面で開く前に別プロセスが家族の推定費用を求め、再起動後の最初の要求も算出し直さない。
-
-    一度も算出していない家族の最初の算出は全記録の解析に数秒かかり、要求の中では1秒以内に返せないためである。
-    """
     record = _claude_record(tmp_path)
     old_ns = time.time_ns() - 10_000_000_000
     os.utime(record, ns=(old_ns, old_ns))
@@ -176,7 +168,6 @@ def test_cost_warmer_precomputes_listed_family_in_worker_process(
 def test_cost_warmer_stops_after_worker_exit_and_restarts_on_next_request(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """別プロセスが異常終了したら警告して背景の算出を止め、次の走査で別プロセスを起動し直して算出する。"""
     record = _claude_record(tmp_path)
     old_ns = time.time_ns() - 10_000_000_000
     os.utime(record, ns=(old_ns, old_ns))

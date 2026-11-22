@@ -1,5 +1,3 @@
-"""ログ出力の公開操作がJSON文字列内のUnicode区切りを保持することを確かめる。"""
-
 import json
 import pathlib
 
@@ -12,7 +10,6 @@ from agent_toolkit._agents_server import logs_export
 def test_export_logs_preserves_json_string_separators(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], output_format: str
 ) -> None:
-    """ensure_ascii=Falseの記録を公開ログ出力まで渡し、全本文と解析不可0件を確認する。"""
     home = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))

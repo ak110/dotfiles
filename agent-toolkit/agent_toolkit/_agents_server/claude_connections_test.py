@@ -1,5 +1,3 @@
-"""SDK起動の接続隔離とMCP再接続を、managerの公開操作から検証する。"""
-
 import asyncio
 import contextlib
 import json
@@ -185,7 +183,7 @@ async def test_connection_turn_logs_record_reason_without_failure_body(
     assert f"connection={current} phase=turn reason={reason}" in caplog.text
     assert f"previous={current} selected={following} reason={reason}" in caplog.text
     assert secret not in caplog.text
-    # 残高不足だけを、同じプロセスで後から起動する委譲先へ共有する。
+
     assert api_credits.shortage_active("claude") is (reason == "api_credits")
 
 
@@ -217,7 +215,6 @@ def test_delegate_started_on_subscription_moves_to_api_on_usage_limit(
 
 
 def _three_kinds(*_args: object, **_kwargs: object) -> claude_connection.Candidates:
-    """設定上の使用順`credits,subscription,payg`の3種別の候補を返す。"""
     return claude_connection.Candidates(
         (
             claude_connection.Connection("credits", "credits.env", ("credits.env",)),
@@ -231,7 +228,6 @@ def _three_kinds(*_args: object, **_kwargs: object) -> claude_connection.Candida
 def test_subscription_limit_after_credit_shortage_follows_effective_order(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """残高不足の共有中にサブスクリプションで始めた委譲先は、利用上限で後ろへ回したクレジットより先に従量課金へ移る。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "never")
     monkeypatch.setattr(claude_connection, "candidates", _three_kinds)
     api_credits.record_shortage("claude")
@@ -322,7 +318,6 @@ def test_only_api_credit_shortage_is_shared_across_new_delegates(
 async def test_new_delegate_starts_from_subscription_while_credit_shortage_is_shared(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str | None, reordered: bool
 ) -> None:
-    """残高不足の共有中は新しい委譲先だけがAPIを後ろへ回し、オーケストレーターの接続順は変えない。"""
     monkeypatch.setattr(
         claude_connection,
         "candidates",
@@ -361,7 +356,6 @@ class _DelayedMcpClient(_McpClient):
 async def test_slow_mcp_recovery_keeps_start_budget_and_updates_show(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """回復待ちの予算経過後もstartを返し、同じ所有taskが回復して診断を更新する。"""
     client = _DelayedMcpClient()
     monkeypatch.setattr(
         state,
@@ -439,7 +433,6 @@ async def test_mcp_reconnect_is_once_per_new_and_resumed_process(
 async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, launch_kind: state.LaunchKind, injection: str
 ) -> None:
-    """全起動区分の新規・再開で、親settingsだけの注入も同じ接続キー集合で隔離する。"""
     path = tmp_path / "api.env"
     path.write_text(
         "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"

@@ -1,5 +1,3 @@
-"""依存導入前のlauncherと回収側で、環境の使用中保護を共有する。"""
-
 import contextlib
 import ctypes
 import ctypes.wintypes
@@ -27,7 +25,7 @@ def lock(environment: Path, *, exclusive: bool = False) -> Generator[BinaryIO]:
 
             fcntl.flock(handle.fileno(), (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
             os.set_inheritable(handle.fileno(), True)
-        # 明示unlockはせずcloseで解放し、execへ継承する記述子の寿命を保つ。
+
         yield handle
 
 

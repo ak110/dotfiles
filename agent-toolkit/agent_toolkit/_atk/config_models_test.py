@@ -155,6 +155,19 @@ def test_direct_candidates_preserve_order_and_bypass_saved_settings(tmp_path):
     assert path.read_bytes() == before
 
 
+def test_exec_lane_uses_medium_only_without_explicit_model(tmp_path, monkeypatch):
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "false")
+    parse = config_module.parse_unresolved_model_candidates
+    assert ("codex", "sol", "medium") in parse("execute", exec_lane=True)
+    assert ("codex", "sol", "low") in parse("execute")
+    assert parse("codex:sol/low", exec_lane=True) == [("codex", "sol", "low")]
+    _write_config(tmp_path, {"execute_model": "codex:sol/high"})
+    assert parse("execute", exec_lane=True) == [("codex", "sol", "high")]
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:sol/low")
+    assert parse("execute", exec_lane=True) == [("codex", "sol", "low")]
+
+
 def test_family_catalog_tracks_latest_without_rewriting_saved_value(tmp_path, monkeypatch, capsys):
     assert _main(tmp_path, "config", "set", "execute_model", "codex:sol/high") == 0
     capsys.readouterr()

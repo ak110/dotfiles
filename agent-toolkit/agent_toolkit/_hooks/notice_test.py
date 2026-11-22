@@ -20,7 +20,6 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
 def test_resolution_in_state_preserves_other_subjects_and_causes() -> None:
-    """呼出側の更新対象だけを変更し、別主体・別原因・別hookの配送記録を保つ。"""
     selected = "stop|main|advisor|evaluate"
     retained = {
         "stop|child|advisor|evaluate": ["child"],
@@ -35,7 +34,6 @@ def test_resolution_in_state_preserves_other_subjects_and_causes() -> None:
 
 @pytest.mark.parametrize("fix", ["", " ", "\t"])
 def test_block_formatter_rejects_empty_fix(fix: str) -> None:
-    """空文字列または空白文字だけの解消手段を拒否する。"""
     format_block = block_formatter("test/hook")
 
     with pytest.raises(ValueError):
@@ -55,7 +53,6 @@ def test_block_formatter_adds_fix_tag_and_suffix() -> None:
 
 @pytest.mark.parametrize("dedicated", [False, True])
 def test_actual_blocks_are_preserved_on_repeated_operations(monkeypatch: pytest.MonkeyPatch, tmp_path, dedicated: bool) -> None:
-    """同じ実害を防ぐ遮断は通知の重複抑止でも毎回保持する。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_block = block_formatter("test/protection") if dedicated else formatter("test/protection", default_tag="block")
     messages = []
@@ -67,7 +64,6 @@ def test_actual_blocks_are_preserved_on_repeated_operations(monkeypatch: pytest.
 
 
 def test_warning_formatter_never_escalates_repetition(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """同じ警告の反復は抑止し、回数による遮断へ変更しない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
@@ -89,7 +85,6 @@ def test_warning_formatter_never_escalates_repetition(monkeypatch: pytest.Monkey
 
 @pytest.mark.parametrize("fix", ["", " ", "\t"])
 def test_warning_formatters_reject_missing_or_empty_fix(fix: str) -> None:
-    """warn区分の整形関数は解消手段を省いた呼び出しと空の解消手段を拒否する。"""
     format_warning = warning_formatter("test/hook")
     format_notice = formatter("test/hook")
 
@@ -100,20 +95,18 @@ def test_warning_formatters_reject_missing_or_empty_fix(fix: str) -> None:
     with pytest.raises(ValueError):
         format_notice("警告本文", tag="warn", removable_cause=False)
     with pytest.raises(TypeError):
-        # 必須引数の欠落そのものを検証するため、静的解析が返す指摘を抑止する。
         format_warning(  # type: ignore[call-arg]  # pylint: disable=missing-kwoa
             "警告本文", cause="missing", session_id="session-1", removable_cause=False
         )
 
 
 def test_repeated_warning_keeps_action_in_the_first_notice_only(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """初回に対処を届け、同じ条件の反復本文と件数通知を増やさない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     set_warning_session_id("session-1")
     format_notice = formatter("test/hook")
 
     def _check_same() -> str:
-        # 原因識別子は呼び出し元の関数名から決まるため、同じ関数から繰り返し呼ぶ。
+
         return format_notice(
             "警告本文\n対処は本文中の別の表記で書かれている。",
             tag="warn",
@@ -135,7 +128,6 @@ def test_repeated_warning_keeps_action_in_the_first_notice_only(monkeypatch: pyt
 
 
 def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """原因識別子とセッションIDが異なる警告を別々に数える。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
@@ -156,7 +148,6 @@ def test_warning_formatter_separates_causes_and_sessions(monkeypatch: pytest.Mon
 
 
 def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """除去できない原因でも反復本文を短くし、遮断はしない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     format_warning = warning_formatter("test/hook")
 
@@ -181,7 +172,6 @@ def test_warning_formatter_omits_repeat_note_for_irremovable_cause(monkeypatch: 
 
 
 def test_removable_warning_does_not_escalate_without_explicit_choice(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    """是正可能な警告が反復しても、明示しなければ遮断しない。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     consume_warning_blocks()
     format_warning = warning_formatter("test/hook")
@@ -197,7 +187,6 @@ def test_removable_warning_does_not_escalate_without_explicit_choice(monkeypatch
 
 
 def test_formatter_rejects_warn_without_removability() -> None:
-    """warn通知の除去可能性を暗黙に決めない。"""
     format_notice = formatter("test/hook")
 
     with pytest.raises(ValueError):
@@ -205,7 +194,6 @@ def test_formatter_rejects_warn_without_removability() -> None:
 
 
 def test_notice_lifecycle_separates_subjects_and_releases_resolved_causes() -> None:
-    """条件が継続する間の抑止、対象変更、解消後の再発、別主体を区別する。"""
     format_warning = warning_formatter("test/hook")
 
     def warn(body: str = "対象A") -> str:
@@ -229,7 +217,6 @@ def test_notice_lifecycle_separates_subjects_and_releases_resolved_causes() -> N
 
 
 def test_identical_warning_text_keeps_distinct_operation_subjects() -> None:
-    """本文が共通の手順警告でも別の対象へ必要な通知を届ける。"""
     format_notice = formatter("test/operation")
 
     def warn(subject: str) -> str:
@@ -244,7 +231,6 @@ def test_identical_warning_text_keeps_distinct_operation_subjects() -> None:
 
 
 def test_formatting_and_discarded_fields_do_not_record_delivery(capsys) -> None:
-    """整形とホストが捨てる欄は未配送のまま保持する。"""
     warning = warning_formatter("pure")
     with notice_cycle("pure", "operation", "main"):
         text = warning("警告", fix="確認せよ", cause="cause", session_id="pure", removable_cause=True)
@@ -258,7 +244,6 @@ def test_formatting_and_discarded_fields_do_not_record_delivery(capsys) -> None:
 
 
 def test_explicit_resolution_keeps_other_actor_and_cause() -> None:
-    """資料解消の呼出しが、別主体と別原因の抑止記録を保持する。"""
     format_notice = formatter("pretooluse")
 
     def _deliver_documents(actor):

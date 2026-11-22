@@ -1,5 +1,3 @@
-"""更新親子と単独post-applyが共有する、容量制限付きログの書込。"""
-
 import logging
 import logging.handlers
 import re
@@ -19,12 +17,10 @@ STEP_DIAGNOSTIC = "post-apply診断: "
 
 
 def generations(path: Path, backup_count: int) -> list[Path]:
-    """現在のログから古い世代へ順に返す。"""
     return [path] + [path.with_name(f"{path.name}.{number}") for number in range(1, backup_count + 1)]
 
 
 def has_step_diagnostic(path: Path, backup_count: int, run_id: str) -> bool:
-    """この実行の子が保存した診断を探す。終了値や他のレコードの書込成否からは推定しない。"""
     for generation in generations(path, backup_count):
         try:
             with generation.open(encoding="utf-8", errors="replace") as stream:
@@ -52,7 +48,7 @@ class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
     ) -> None:
         self._file_lock = filelock.FileLock(str(filename) + ".lock", timeout=30, preserve_lock_file=True)
         self.write_failed = False
-        # 更新本体には画面用handlerが無い。post-applyの空文字は、子に表示すべき案内が無いことを表す。
+
         self._post_apply_hint = diagnostic_hint
         self._stderr_notified = False
         super().__init__(filename, maxBytes=max_bytes, backupCount=backup_count, encoding=encoding, delay=True)
@@ -61,7 +57,6 @@ class ProcessSafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
             pass
 
     def emit(self, record: logging.LogRecord) -> None:
-        """他writerが閉じている区間で世代移動と追記を行う。"""
         self.write_failed = False
         try:
             with self._file_lock:

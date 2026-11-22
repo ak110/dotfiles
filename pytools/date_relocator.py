@@ -1,9 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""ファイルを更新日時に基づいてサフィックス付きディレクトリへ再配置する。
-
-`<dir>` 配下のファイルを、それぞれの最終更新日時 `YYYYMM` に応じて
-`<dir>-YYYYMM/` へ移動する。元 C# 実装 (DateRelocator.cs) の Python 移植。
-"""
 
 import argparse
 import datetime
@@ -17,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """ファイルを更新日時に基づいてディレクトリへ再配置するエントリポイント。"""
     parser = argparse.ArgumentParser(description="更新日時に応じてファイルを再配置する")
     parser.add_argument("-d", "--dry-run", action="store_true")
     parser.add_argument("targets", nargs="+", type=pathlib.Path)
@@ -38,7 +32,6 @@ def main() -> None:
 
 
 def relocate(target: pathlib.Path, *, dry_run: bool = False) -> None:
-    """`target` 配下の全ファイルを日付サフィックスディレクトリへ再配置する。"""
     target = target.resolve()
     for file in target.rglob("*"):
         if not file.is_file():

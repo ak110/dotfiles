@@ -1,4 +1,3 @@
-// WI一覧の取得・ページ移動・通知とフィルター操作。
 import {
   ENTRY_PAGE_SIZE, PROCESSABLE_STATES, byId, entryKey, wiState
 } from "./wi_state.js";

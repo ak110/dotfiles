@@ -1,5 +1,3 @@
-"""外部CLIを隔離して任意導入の境界を検証する。"""
-
 import json
 import os
 import stat
@@ -14,7 +12,6 @@ from pytools._internal import external_web_guidance as guidance
 
 @pytest.fixture(autouse=True)
 def _isolate_homes(monkeypatch, tmp_path):
-    """CLIとcache保護の双方をテスト専用homeへ限定する。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex"))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude"))
@@ -75,7 +72,6 @@ def test_failed_codex_marketplace_upgrade_restores_verified_source(monkeypatch, 
 
 @pytest.mark.parametrize("readonly", [True, False])
 def test_backup_cleanup_does_not_treat_all_access_denials_as_readonly(monkeypatch, tmp_path, caplog, readonly):
-    """自身の複製のreadonlyだけを戻し、通常属性の拒否や元cacheへ作用しない。"""
     root = tmp_path / ".codex/.tmp/marketplaces/googlechrome"
     root.mkdir(parents=True)
     original = root / "verified"

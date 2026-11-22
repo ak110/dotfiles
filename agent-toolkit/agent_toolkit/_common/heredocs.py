@@ -1,5 +1,3 @@
-"""Bashコマンドのheredocの宣言と本文の位置の抽出、本文を空白へ置き換えたコマンド文字列の生成。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -10,12 +8,6 @@ from agent_toolkit._common.shell_quoting import QuotingScanner
 
 @dataclasses.dataclass(frozen=True)
 class HeredocDeclaration:
-    r"""コマンド行にある1つのheredocの宣言。
-
-    `delimiter`はbashと同じく区切り語から引用を除いた語であり、終端行との比較に使う。
-    `expands`は区切り語のどこにも引用（`'`・`"`・`\\`）が無く、bashが本文を展開することを表す。
-    """
-
     delimiter: str
     strip_tabs: bool
     expands: bool
@@ -23,12 +15,6 @@ class HeredocDeclaration:
 
 @dataclasses.dataclass(frozen=True)
 class HeredocBody:
-    """コマンド文字列上のheredoc本文と終端行の範囲。
-
-    本文は`[start, end)`、終端行の内容（改行を除く）は`[end, terminator_end)`とする。
-    終端行が無いまま末尾へ達した本文では`end`と`terminator_end`が文字列の長さに一致する。
-    """
-
     start: int
     end: int
     terminator_end: int
@@ -42,11 +28,6 @@ _DOUBLE_QUOTE_ESCAPABLE = frozenset('$`"\\\n')
 
 
 def _heredoc_delimiter(line: str, start: int) -> tuple[str, bool, int] | None:
-    """区切り語を読み、引用を除いた語、引用の有無および語の直後の位置を返す。
-
-    bashは区切り語へquote removalだけを適用し、語のどこかに引用があれば本文を展開しない。
-    引用が閉じない場合はNoneを返す。
-    """
     pieces: list[str] = []
     quoted = False
     index = start
@@ -83,7 +64,6 @@ def _heredoc_delimiter(line: str, start: int) -> tuple[str, bool, int] | None:
 
 
 def _heredoc_declarations(line: str) -> list[HeredocDeclaration]:
-    """コマンド行にあるheredocの宣言を出現順に返す。"""
     declarations: list[HeredocDeclaration] = []
     scanner = QuotingScanner(line)
     arithmetic_depth = 0
@@ -142,20 +122,11 @@ def _heredoc_declarations(line: str) -> list[HeredocDeclaration]:
 
 
 def heredoc_bodies(command: str) -> list[HeredocBody]:
-    """コマンド文字列にあるheredocの本文と終端行の範囲を出現順に返す。
-
-    本文の範囲と展開の有無は`_heredoc_declarations`の1つの定義から得る。
-    本文のマスクと、展開される本文の置換の判定はいずれも本関数の結果を使う。
-    """
     return list(_cached_heredoc_bodies(command))
 
 
 @functools.lru_cache(maxsize=256)
 def _cached_heredoc_bodies(command: str) -> tuple[HeredocBody, ...]:
-    """同じコマンド文字列の本文範囲を共有する。
-
-    hookは同じコマンドを何度も判定するため再走査を省く。範囲は文字列だけで決まり要素は不変である。
-    """
     bodies: list[HeredocBody] = []
     line_start = 0
     while line_start < len(command):
@@ -185,7 +156,6 @@ def _cached_heredoc_bodies(command: str) -> tuple[HeredocBody, ...]:
 
 
 def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = False) -> None:
-    """改行を保ち、指定範囲の行内容を空白または区切り標識へ置換する。"""
     for index in range(start, end):
         if masked[index] not in {"\r", "\n"}:
             masked[index] = " "
@@ -194,10 +164,6 @@ def _blank_line(masked: list[str], start: int, end: int, *, separator: bool = Fa
 
 
 def mask_heredoc_bodies(command: str) -> str:
-    """heredoc本文を同じ長さの空白へ置換し、本文外の位置と改行数を保つ。
-
-    終端行は区切り標識`;`へ置換し、heredoc以降のコマンドを別の区間として残す。
-    """
     masked = list(command)
     for body in heredoc_bodies(command):
         _blank_line(masked, body.start, body.end)

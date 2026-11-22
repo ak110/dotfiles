@@ -1,5 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""Gitの履歴改変スクリプト。"""
 
 import argparse
 import datetime
@@ -8,7 +7,6 @@ import random
 import subprocess
 import sys
 
-# 営業時間を使わない呼出しでは、休日と営業時間の依存を読み込まない。
 lazy import businesstimedelta
 lazy import holidays
 
@@ -16,7 +14,6 @@ from pytools._internal.cli import enable_completion
 
 
 def main() -> None:
-    """Gitのコミット日時を営業時間内に整列するエントリポイント。"""
     now = datetime.datetime.now()
     parser = argparse.ArgumentParser(
         description="Justify git commits",
@@ -54,13 +51,11 @@ def main() -> None:
 
 
 def _get_commits(start_commit: str, end_commit: str) -> list[str]:
-    """指定された範囲のコミットハッシュを取得する"""
     commits = subprocess.check_output(["git", "rev-list", "--ancestry-path", f"{start_commit}..{end_commit}"]).decode().split()
-    return commits  # 最新から順に過去へ
+    return commits
 
 
 def _business_hours() -> businesstimedelta.Rules:
-    """営業時間を使う計算の直前に、従来の昼休みと日本の休日の規則を作成する。"""
     return businesstimedelta.Rules(
         [
             businesstimedelta.WorkDayRule(
@@ -84,7 +79,6 @@ def _adjust_dates(
     num_commits: int,
     no_business: bool,
 ) -> list[datetime.datetime]:
-    """日付を均等に分配し、少しランダムにずらす"""
     if num_commits == 0:
         return []
     businesshrs = None if no_business else _business_hours()
@@ -93,7 +87,6 @@ def _adjust_dates(
     rand_range = int(interval_sec / 2)
     dates: list[datetime.datetime] = []
     for i in range(num_commits):
-        # 配分間隔が2秒未満で候補幅が0になる短い区間では、ずらさず均等配分だけを行う
         jitter_sec = random.randrange(rand_range) if rand_range > 0 else 0
         offset_sec = int(i * interval_sec + jitter_sec)
         if businesshrs is None:
@@ -106,7 +99,6 @@ def _adjust_dates(
 
 
 def _set_commit_date(commit_hash: str, new_date: datetime.datetime, branch: str) -> None:
-    """コミットの日付を変更する"""
     formatted_date = new_date.strftime("%Y-%m-%d %H:%M:%S")
     command = [
         "git",

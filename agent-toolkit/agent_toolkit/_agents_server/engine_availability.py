@@ -1,8 +1,3 @@
-"""engineの可用性を理由に起動候補を除外するときの判定に使う関数と、除外理由の値。
-
-engineごとの判定は各backendの`unavailable_reason`が本モジュールの関数を組み合わせて持つ。
-"""
-
 from __future__ import annotations
 
 import json

@@ -1,5 +1,3 @@
-"""参照するプラグインの実体を、開発配置かホストの導入情報から解決する。"""
-
 import contextlib
 import contextvars
 import dataclasses
@@ -19,7 +17,7 @@ from agent_toolkit._common import process_tree, runtime_environment
 
 
 class PluginRootError(ValueError):
-    """導入情報と正式配置からプラグインrootを一意に確定できない。"""
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -32,7 +30,6 @@ class SelectedInstallation:
     root: pathlib.Path
 
     def missing_error(self, missing: Iterable[pathlib.Path]) -> PluginRootError:
-        """不足資料と、選んだscopeのまま導入を確認・修復する公開CLIを示す。"""
         relative = ", ".join(str(path.relative_to(self.root)) for path in missing)
         return PluginRootError(
             f"Claude Codeの{self.plugin_id}で選択した導入先に必須資料が無い: scope={self.scope} "
@@ -65,7 +62,6 @@ def raise_for_incomplete_installation(missing: Iterable[pathlib.Path]) -> None:
 
 
 def _remember_claude_selection(data: list, plugin_id: str, project: pathlib.Path, root: pathlib.Path) -> None:
-    """選別結果のrootを指し、projectへ適用される導入一覧の項目のうち、選別が採るscopeを記録する。"""
     selected = _selected.get()
     if selected is None:
         return
@@ -90,7 +86,6 @@ def _remember_claude_selection(data: list, plugin_id: str, project: pathlib.Path
 
 @contextlib.contextmanager
 def plugin_resolution_scope() -> Generator[None]:
-    """1回の要求の中で、hostの導入一覧と選んだ導入先を共有する。"""
     if _inventories.get() is not None:
         yield
         return
@@ -177,13 +172,12 @@ def _host_json(host: str, command: list[str], project: pathlib.Path | None) -> o
 
 
 def _native_recovery(host: str) -> str:
-    """生成元の公開コマンドが存在する配置だけ、再生成コマンドを案内する。"""
     label = "OpenCode" if host == "opencode" else "Antigravity"
     if generator := shutil.which("update-dotfiles", path=runtime_environment.environment().get("PATH", os.defpath)):
         args = [str(pathlib.Path(generator).resolve()), "--mode", "full"]
         command = subprocess.list2cmdline(args) if os.name == "nt" else shlex.join(args)
         return f"{label}の資料登録を生成元の公開コマンド`{command}`で再生成し、startを再実行する"
-    # 単体plugin導入先にはdotfilesのコマンドが無い。稼働配布物の公開コマンドから導入元を確認する。
+
     entry = pathlib.Path(__file__).resolve().parents[2] / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")
     inspection = "稼働配布物の導入元を確認し、"
     if entry.is_file():
@@ -197,7 +191,6 @@ def _native_recovery(host: str) -> str:
 
 
 def _native_inventory(host: str) -> object:
-    """各ホストの正式導入先から、登録された資料rootを読む。"""
     if host == "opencode":
         config = pathlib.Path(
             runtime_environment.environment().get("OPENCODE_CONFIG_DIR")
@@ -209,7 +202,7 @@ def _native_inventory(host: str) -> object:
             body = path.read_text(encoding="utf-8")
             if not body.startswith('<atk-auto source="dotfiles" kind="opencode-host">\n'):
                 raise ValueError("管理対象のroot対応表ではない")
-            # OpenCode向け導入器はskillsを名前空間付きで複製し、付属資料はこの原本rootから参照する。
+
             return re.findall(r"(agent-[a-z-]+) plugin root: `([^`\n]+)`", body)
         except (OSError, UnicodeError, ValueError) as error:
             raise PluginRootError(f"OpenCodeの資料root対応表を読めない: {path}: {error}。" + _native_recovery(host)) from error
@@ -226,7 +219,6 @@ def _native_inventory(host: str) -> object:
 
 
 def _native_plugin_root(name: str, host: str, data: Any) -> pathlib.Path:
-    """native導入の明示rootを選び、他ホストの設定を代替に使わない。"""
     if host == "opencode":
         roots = {pathlib.Path(path) for plugin, path in data if plugin == name}
         action = _native_recovery(host)
@@ -239,7 +231,7 @@ def _native_plugin_root(name: str, host: str, data: Any) -> pathlib.Path:
         preference = settings.get(directory, {})
         if not isinstance(preference, dict) or preference.get("enabled") is False:
             raise PluginRootError(f"Antigravityの{directory}は無効または設定が不正。{action}")
-        # 正式生成器は親ディレクトリと生成物の名前を明示したentryを登録する。
+
         roots = {
             pathlib.Path(entry["path"]) / directory
             for entry in entries
@@ -285,7 +277,7 @@ def sibling_plugin_root(name: str, toolkit_root: pathlib.Path) -> pathlib.Path |
 
 @functools.cache
 def _claude_selector():
-    # 個人binへ単独複製するshimが同じ定義を使えるよう、stdlibだけの選別を同梱scriptで所有する。
+
     script = pathlib.Path(__file__).resolve().parents[2] / "scripts/atk-hook"
     return runpy.run_path(str(script))["select_claude_plugin"]
 
@@ -306,13 +298,12 @@ def _codex_component(item: dict, field: str) -> str:
 def resolve_plugin_root(
     name: str, toolkit_root: pathlib.Path, host: str = "claude", project: pathlib.Path | str | None = None
 ) -> pathlib.Path:
-    """導入版を一意に解決し、実在するskillsを持つrootだけを返す。"""
     if name == "agent-toolkit":
         return toolkit_root
     sibling = sibling_plugin_root(name, toolkit_root)
     if sibling is not None:
         return sibling
-    # cwdとホストの設定はリクエストごとに異なる。実体検証の結果をcacheせず、一覧だけを要求内で共有する。
+
     caller = runtime_environment.current()
     project = pathlib.Path(project or (caller.cwd if caller else pathlib.Path.cwd())).resolve()
     if host not in {"claude", "codex", "agy", "opencode"}:
@@ -355,7 +346,7 @@ def resolve_plugin_root(
     else:
         if not isinstance(data, list) or any(not isinstance(item, dict) for item in data):
             raise PluginRootError("Claude Codeの導入情報の形式が不正。claude plugin list --jsonを確認する")
-        # 稼働版が保持されたrootなら、その導入元のmarketplaceを優先する。
+
         held = {
             item["id"].split("@", 1)[1]
             for item in data

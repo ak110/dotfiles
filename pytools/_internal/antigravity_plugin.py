@@ -11,7 +11,7 @@ from pytools._internal import common, post_apply_outcome
 
 PLUGIN_DIRECTORY = "agent-toolkit-agy"
 PLUGIN_NAMES = ("agent-toolkit", "agent-basics")
-# agyが1ファイルから読み込む上限。超えるスキルは初期取得文書と全文資料へ分ける。
+
 RULE_FILE_BYTES = 24_000
 # 更新時に必ず表示する案内。旧版からの更新検証（scripts/check_update_dotfiles_upgrade.py）も同じ文言だけを許容する。
 UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
@@ -41,14 +41,12 @@ def _project_paths(value: object, target: Path) -> object:
 
 
 def plugin_directory(plugin_name: str) -> str:
-    """元の名前空間を保つプラグインのagy生成先を返す。"""
     if plugin_name not in PLUGIN_NAMES:
         raise ValueError(f"未対応のAntigravity配布物: {plugin_name}")
     return f"{plugin_name}-agy"
 
 
 def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path) -> None:
-    """名前空間ごとのrootで、長文スキルの初期取得文書と全文資料を共通生成する。"""
     # SKILL.md本体にも同じ読込上限がある。frontmatterを維持した初期取得文書から本文全文を
     # 明示的に読むことで、既存スキルの契約を途中で切り捨てずに届ける。
     for relative, (data, mode) in list(result.items()):
@@ -69,7 +67,6 @@ def _split_skills(result: dict[Path, tuple[bytes, int]], target: Path) -> None:
 
 
 def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[bytes, int]]:
-    """対象作業ツリー用の配布ファイル集合を、書き込み前に組み立てる。"""
     source = root / plugin_name
     target = (root / plugin_directory(plugin_name)).resolve()
     manifest = json.loads((source / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
@@ -116,14 +113,13 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
     result[Path("hooks.json")] = (_json({"agent-toolkit": handlers}), 0o644)
     mcp = json.loads((source / ".mcp.json").read_text(encoding="utf-8"))
     servers = {name: value for name, value in mcp["mcpServers"].items() if name in {"agents_server", "pyfltr"}}
-    # MCPの引数配列ではシェルを通さず、展開後の絶対パスをそのまま渡す。
+
     servers = _project_paths(servers, target)
     result[Path("mcp_config.json")] = (_json({"mcpServers": servers}), 0o644)
     return result
 
 
 def check_diagnostics(root: Path, plugin_name: str = "agent-toolkit") -> tuple[str, ...]:
-    """生成物を変更せず、欠落・余剰・内容やmodeの差を返す。"""
     expected = outputs(root, plugin_name)
     directory = plugin_directory(plugin_name)
     target = root / directory
@@ -153,10 +149,10 @@ def sync(root: Path, plugin_name: str = "agent-toolkit") -> bool:
     for path in target.rglob("*"):
         if (path.is_file() or path.is_symlink()) and path.relative_to(target) not in expected:
             path.unlink()
-            # 配布物に含めない実行時キャッシュの削除は、プラグイン自体の更新ではない。
+
             if not _EXCLUDED.intersection(path.relative_to(target).parts):
                 changed = True
-    # 廃止したスキルなど、配布物が無くなったディレクトリを残さない。
+
     for path in sorted(target.rglob("*"), reverse=True):
         if path.is_dir() and not path.is_symlink() and not any(path.iterdir()):
             path.rmdir()
@@ -180,7 +176,6 @@ def sync(root: Path, plugin_name: str = "agent-toolkit") -> bool:
 
 
 def run(plugins: tuple[str, ...] = PLUGIN_NAMES) -> post_apply_outcome.PostApplyOutcome:
-    """配布rootを更新し、他の登録を保ってplugins.jsonへ追加する。"""
     if common.resolve_executable("agy") is None:
         return post_apply_outcome.PostApplyOutcome()
     root = common.find_dotfiles_root()

@@ -27,7 +27,6 @@ TEMPLATES = [
 def test_herdr_config_sets_scroll_lines_and_keeps_existing_keys(
     template: pathlib.Path, existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """ファイルが無ければ`ui.mouse_scroll_lines`だけを作り、herdrが書いたキーは再適用後も保持する。"""
     content = existing
     for _ in range(2):
         content = _test_helpers.render_chezmoi_modify_template(template, content, host_environ())

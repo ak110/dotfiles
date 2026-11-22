@@ -23,7 +23,6 @@ _OLD = time.time() - run_skill.LOG_RETENTION_SECONDS - 3600
 def _write_record(
     env: _Env, run_id: str, connection: dict[str, typing.Any] | None, *, status: str = "interrupted"
 ) -> pathlib.Path:
-    """30日より前のログを参照する実行記録を、保存された形のJSONで置く。"""
     root = env.state / "agent-toolkit" / "run-skill"
     (root / "runs").mkdir(parents=True, exist_ok=True)
     log_path = root / f"20261109-000000-agent-toolkit_review-session-{run_id[:8]}.log"
@@ -58,7 +57,6 @@ def _write_record(
 
 
 def test_legacy_isolation_env_file_record_starts_new_run(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
-    """`isolation_env_file`を保存した旧形式の記録を読み替え、新しい実行の起動とその記録のログ保護を続ける。"""
     unset = "0" * 32
     path_valued = "1" * 32
     unset_log = _write_record(engine_env, unset, {"kind": "subscription", "api_env_file": None, "isolation_env_file": None})
@@ -132,7 +130,7 @@ def _prepare_batch_run(engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: py
 @pytest.mark.cpu_limit(1.0, reason="実prepare・偽ホストの子プロセス・実Gitの報告同期を通してbatchの完了を検収する。")
 def test_batch_finishes_codex_target_with_completed_legacy_run(engine_env, tmp_path, monkeypatch, capsys) -> None:
     """旧形式の完了記録が残っていても、Codexの待ち対象を準備し、同期済み報告と処理済み範囲を残す。"""
-    # 準備前の合成会話に実ホスト上のプロセスはない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     _write_record(
         engine_env,

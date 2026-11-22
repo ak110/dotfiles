@@ -1,5 +1,3 @@
-"""正式なツール結果から段階別の初回品質を集計する。欠落は合格へ補わない。"""
-
 import collections
 import datetime
 import json
@@ -31,7 +29,6 @@ def _result_text(value: Any, depth: int = 0) -> str:
 
 
 def _shown_run(value: str, depth: int = 0) -> dict[str, Any] | None:
-    """公開show-runのJSONを包絡から取り出す。別のJSONを成功runへ変換しない。"""
     if depth > 32:
         return None
     try:
@@ -63,7 +60,6 @@ def _shown_run(value: str, depth: int = 0) -> dict[str, Any] | None:
 
 
 def _review_bodies(body: str) -> list[tuple[str | None, str]]:
-    """公開waitの終了単位を保ち、各sessionの表へ対応付ける。"""
     parts = re.split(r"(?m)^本文開始: session_id=(\S+)\r?\n", body)
     return [
         (None, parts[0]),
@@ -94,7 +90,6 @@ def _condition_outcome(tail: str, findings: int) -> str:
 
 
 def _run_outcome(shown: dict[str, Any]) -> str:
-    """全コマンドと終了状態が揃う結果だけを正式な合否へ数える。"""
     results = shown["commands"]
     expected = shown["meta"].get("commands")
     exit_code = shown["meta"].get("exit_code")
@@ -129,7 +124,6 @@ def _run_outcome(shown: dict[str, Any]) -> str:
 
 
 def collect_quality_events(collected: list[_CollectedRecord], workflow: str) -> list[dict[str, Any]]:
-    """明示された管理表を単位とし、正式レビューの前回HEADで修正系列をつなぐ。"""
     events: list[dict[str, Any]] = []
     reviewed_heads: dict[tuple[str, str], str] = {}
     for item in collected:
@@ -149,7 +143,6 @@ def collect_quality_events(collected: list[_CollectedRecord], workflow: str) -> 
             None,
         )
         for call in calls:
-            # 読取コマンドに現れる別作業の表は関連付けに使わない。
             if any(marker in call.text for marker in ("extra_params", "review-table", "plan-progress")):
                 active_tables = (
                     sorted({token for token in re.findall(r"[^\s/\\\"'`<>]+", call.text) if token.endswith(".exec-review.tsv")})
@@ -318,7 +311,7 @@ def collect_quality_events(collected: list[_CollectedRecord], workflow: str) -> 
                             "outcome": outcome if len(active_tables) == 1 else "unknown",
                         }
                     )
-    # 結果が無い段階も表示する。記録の読取不能自体の件数は既存coverageが所有する。
+
     works = {event["source"].rsplit(":", 1)[0] for event in events}
     if not works and collected:
         works.add(collected[0].record_id)
@@ -428,7 +421,6 @@ def first_pass_metrics(
 
 
 def quality_metrics(collected: list[_CollectedRecord], workflow: str = "unknown") -> list[dict[str, Any]]:
-    """通常の証拠抽出とbundleが同じ集計を使う。"""
     events = collect_quality_events(collected, workflow)
     if not events:
         return []

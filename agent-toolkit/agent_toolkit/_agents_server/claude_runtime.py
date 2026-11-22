@@ -23,8 +23,6 @@ _DISCONNECT_TIMEOUT = 5.0
 
 
 class ClaudeRuntime:
-    """SDKクライアントと所有タスクの寿命・回収を管理する。"""
-
     def __init__(
         self,
         sessions: dict[str, SessionState] | None = None,
@@ -53,9 +51,9 @@ class ClaudeRuntime:
 
         self._disconnects: set[asyncio.Task[None]] = set()
         self._residual_processes: dict[str, list[psutil.Process]] = {}
-        # 生成の停止を確認できなかった理由。`_residual_processes`に同じキーを置き、再開を止める。
+
         self._unresolved_runtime: dict[str, list[str]] = {}
-        # 導入一覧の取得などから引き取った停止結果。`_residual_processes`に同じキーを置き、`retry`で回収し直す。
+
         self._reclaim_failures: dict[str, list[process_tree.ReclaimError]] = {}
 
     def _expire_local_session(self, session_id: str) -> None:
@@ -93,7 +91,7 @@ class ClaudeRuntime:
             return
         result = await run_file_operation(process_tree.stop_tree, None, known=targets, pins=pins)
         unresolved = [*unresolved, *(reason for reason in result.unresolved if reason not in unresolved)]
-        # 引き取った停止結果は、直接の子の回収待ちを含む所有状態ごと`retry`で回収し直す。
+
         remaining: list[process_tree.ReclaimError] = []
         failure_residual: list[str] = []
         for failure in failures:
@@ -130,20 +128,17 @@ class ClaudeRuntime:
         self._residual_processes.pop(session_id, None)
 
     def _adopt_unreclaimed(self, runtime_key: str, reloader: ClaudePluginReloader) -> None:
-        """入力準備が回収できなかった停止結果を、接続の所有資源として引き取る。"""
         if reloader.unreclaimed:
             held = self._reclaim_failures.setdefault(runtime_key, [])
             held.extend(failure for failure in reloader.unreclaimed if failure not in held)
-            # 回収待ちの判定は`_residual_processes`のキーで行うため、所有対象が無くてもキーを置く。
+
             self._residual_processes.setdefault(runtime_key, [])
 
     async def release_session(self, session: SessionState) -> None:
-        """sessionを所有するタスクを終了し、SDKクライアントの接続を閉じる。"""
         await self._stop_owned_task(session.session_id)
         await session.drain_registration()
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
-        """初期化を完了していない所有タスクを終了し、SDKクライアントの接続を解放する。"""
         if not task.done():
             task.cancel()
         await asyncio.gather(task, return_exceptions=True)

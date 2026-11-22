@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するloadingの試験。"""
-
 import asyncio
 import functools
 
@@ -47,7 +45,6 @@ async def test_initial_sync_shows_work_item_loading(browser_harness: _BrowserHar
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_external_work_item_refresh_keeps_existing_list(browser_harness: _BrowserHarness) -> None:
-    """SSEによる背景更新は取得中も既存一覧を保ち、新着を表示する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")

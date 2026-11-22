@@ -1,5 +1,3 @@
-"""固定値解決から公開prepareの処理済みWI候補までを検証する。"""
-
 import datetime
 import json
 from pathlib import Path
@@ -22,7 +20,6 @@ from agent_toolkit._testing import session_evidence_support as support
 def test_prepare_keeps_quoted_code_out_of_brace_expansion(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], program: str
 ) -> None:
-    """単引用されたコードの波括弧と変数を保持し、実会話の準備を完了できる。"""
     transcript = tmp_path / "quoted-code.jsonl"
     support.write_jsonl(
         transcript,

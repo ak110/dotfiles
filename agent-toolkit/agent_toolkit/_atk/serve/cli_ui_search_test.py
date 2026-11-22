@@ -1,12 +1,9 @@
-"""serveのcliに関するui_searchの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_search_keeps_empty_results_with_manual_conditions() -> None:
-    """手動条件で0件なら、その条件と警告を保ち、条件外への補助取得を発行しない。"""
     result = _run_node_ui(
         """
 elements['search-input'].value = 'terminal';

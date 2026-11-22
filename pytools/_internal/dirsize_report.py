@@ -1,5 +1,3 @@
-"""メタデータ走査とローカル容量レポート。整理コマンドは実行しない。"""
-
 import csv
 import dataclasses
 import datetime
@@ -33,7 +31,7 @@ class _Node:
 def write_report(target: pathlib.Path, output: pathlib.Path, excludes: list[pathlib.Path]) -> int:
     """入力を検証し、HTMLとBOM付きCSV履歴を保存する。部分取得は終了1。"""
     target = target.expanduser().absolute()
-    # resolveでリンクを消してしまう前に、指定経路自体の追跡境界を確認する。
+
     for part in (target, *target.parents):
         if _is_link(part.lstat()):
             raise ValueError(f"targetにリンク・reparse pointは指定できません: {part}")
@@ -221,7 +219,7 @@ def _uv_candidate(target: pathlib.Path, nodes: list[_Node]) -> tuple[dict[str, s
             "UV_CACHE_DIRを設定している場合は絶対パスに直してください。"
             "絶対パスが返る状態になった後、同じdirsizeコマンドでレポートを再生成してください。"
         )
-    # resolveでリンクされた個別ディレクトリを別の完全取得ルートへ変換しない。
+
     if not root.is_relative_to(target):
         return None, "uvキャッシュは走査対象外です"
     branch = [node for node in nodes if pathlib.Path(node.path).is_relative_to(root)]

@@ -5,11 +5,14 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import hashlib
+import itertools
+import json
 import os
 import pathlib
 import re
 
 from agent_toolkit._common import delegated_session
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
@@ -40,6 +43,136 @@ RETURN_CRITERION = (
 SHORT_NOTICE = "現行の作業契約を取得せよ: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
 
+_RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
+_QUOTED_TERM = re.compile(r"「([^」\n]+)」|`([^`\n]+)`")
+_EXCLUDED_ACTION = re.compile(r"(?:^|[。、： \s])([^。、\s]{2,12})は対象外")
+_DECISION_NAME = r"(?:決定|方針|指示|合意|取り決め)"
+_RELIANCE = r"(?:に従う|に従い|を根拠に(?:する|し)|を[^。\n]{0,24}適用(?:する|した))(?=[。\n、]|$)"
+_DECISION_CUE = re.compile(rf"{_DECISION_NAME}(?={_RELIANCE})")
+_DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(?=[^。]*(?:に限|のみ|だけ))")
+_SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
+
+
+def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
+    path = record_path(session_id)
+    if path is None or not message.strip() or not isinstance(raw_transcript, str) or not raw_transcript:
+        return None
+    transcript = pathlib.Path(raw_transcript)
+    names = {raw_transcript, transcript.name, transcript.stem, session_id, f"claude:{session_id}", f"codex:{session_id}"}
+    candidates: dict[int, dict[str, tuple[str, set[str]]]] = {}
+    try:
+        for decision in path.read_text(encoding="utf-8").splitlines():
+            for loc in _RECORD_REFERENCE.finditer(decision):
+                name, number = loc.groups()
+                # 現ホストが渡す当該会話の記録だけを読む。契約に書かれた任意のpathは開かない。  # pyfltr: allow-comment
+                if name not in names:
+                    continue
+                terms = {
+                    term
+                    for match in _QUOTED_TERM.finditer(_RECORD_REFERENCE.sub("", decision))
+                    if len(term := match[1] or match[2]) >= 4
+                }
+                line = _RECORD_REFERENCE.sub("", decision)
+                terms.update(_DECLARED_SUBJECT.findall(line))
+                terms.update(_SCOPE_FIELD.findall(line))
+                reference = re.escape(loc[0].strip("`"))
+                cited = re.search(rf"{reference}`?\s*(?:の{_DECISION_NAME})?{_RELIANCE}", message)
+                if cited or _applies_decision(message, decision, terms):
+                    key = hashlib.sha256(f"{loc[0]}\n{decision.strip()}".encode()).hexdigest()
+                    candidates.setdefault(int(number), {})[key] = (decision.strip(), terms)
+    except OSError, UnicodeError:
+        return None
+    if not candidates:
+        return None
+
+    prior = read_state(session_id).get("scope_reviewed_before_send", {})
+    checked = set(prior.get(actor, [])) if isinstance(prior, dict) else set()
+    candidates = {
+        line: remaining
+        for line, decisions in candidates.items()
+        if (remaining := {key: value for key, value in decisions.items() if key not in checked})
+    }
+    if not candidates:
+        return None
+    observed: dict[str, str] = {}
+    try:
+        with transcript.open(encoding="utf-8", errors="replace") as stream:
+            for line_number, raw in enumerate(itertools.islice(stream, max(candidates)), 1):
+                if line_number not in candidates:
+                    continue
+                if (utterance := _original_user_text(raw)) is not None:
+                    for key, (decision, terms) in candidates[line_number].items():
+                        observed[key] = _scope_review_entry(decision, utterance, terms)
+    except OSError:
+        return None
+    if not observed:
+        return None
+
+    reminders = []
+
+    def mark(state: dict) -> dict | None:
+        prior = state.get("scope_reviewed_before_send", {})
+        first = dict(prior) if isinstance(prior, dict) else {}
+        checked = set(first.get(actor, []))
+        reminders.extend(value for key, value in observed.items() if key not in checked)
+        if not reminders:
+            return None
+        first[actor] = sorted(checked | observed.keys())
+        return {**state, "scope_reviewed_before_send": first}
+
+    update_state(session_id, mark)
+    return "\n\n".join(reminders) if reminders else None
+
+
+def _applies_decision(message: str, decision: str, terms: set[str]) -> bool:
+    excluded = _EXCLUDED_ACTION.findall(decision)
+    return any(
+        any(term in part for term in terms)
+        and (
+            _DECISION_CUE.search(part)
+            or any(action + sense in part for action in excluded for sense in ("する", "予定", "に含め", "を許可"))
+        )
+        for part in re.split(r"[。\n]", message)
+    )
+
+
+def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
+    parts = [part for part in re.split(r"(?<=。)|\n", utterance) if any(term in part for term in terms)]
+    excerpt = "".join(parts) or utterance
+    original = (
+        f"原文の抜粋: {json.dumps(redact_secrets(excerpt), ensure_ascii=False)}"
+        if excerpt and len(excerpt) <= 800
+        else "契約の参照位置で、原文の該当部分を確認せよ。"
+    )
+    return f"契約: {redact_secrets(decision)}\n{original}"
+
+
+def _original_user_text(raw: str) -> str | None:
+    try:
+        entry = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("type") == "event_msg" and isinstance(payload := entry.get("payload"), dict):
+        text = payload.get("message")
+        return text if payload.get("type") == "user_message" and isinstance(text, str) else None
+    if entry.get("type") != "user" or entry.get("isMeta") or not isinstance(message := entry.get("message"), dict):
+        return None
+    if isinstance(result := entry.get("toolUseResult"), dict) and isinstance(result.get("answers"), dict):
+        # 質問への回答も原本だが、選択肢以外の私的な自由記述を再配送しない。  # pyfltr: allow-comment
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            item["text"]
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
+        )
+    return None
+
 
 def short_notice(path: pathlib.Path) -> str:
     """本文の代わりに、既知の契約原本を読む操作を示す。"""
@@ -53,13 +186,11 @@ def exists(session_id: str) -> bool:
 
 
 def record_path(session_id: str) -> pathlib.Path | None:
-    """既存のセッションのmanaged-tempから、メインが所有する記録先を解決する。"""
     directory = managed_temp.find_session_temp(session_id)
     return directory / RECORD_NAME if directory is not None else None
 
 
 def local_time(timestamp: float | None = None) -> str:
-    """通知に添える時刻を、タイムゾーン付きの壁時計の日時で返す。"""
     moment = (
         datetime.datetime.now().astimezone() if timestamp is None else datetime.datetime.fromtimestamp(timestamp).astimezone()
     )
@@ -85,7 +216,6 @@ def observe_input(session_id: str) -> str | None:
             return state
         previous = state.get("work_contract_observed_mtime")
         if previous is None:
-            # 初回観測より前の入力は復元できないため、件数を下限として扱う。
             inputs, partial = 1, True
         elif previous != updated:
             inputs, partial = 1, False
@@ -117,7 +247,6 @@ def observe_input(session_id: str) -> str | None:
 
 
 def reset_notice(session_id: str) -> None:
-    """圧縮で失われた未作成通知を、次の操作で再配送可能にする。"""
     update_state(
         session_id,
         lambda state: {

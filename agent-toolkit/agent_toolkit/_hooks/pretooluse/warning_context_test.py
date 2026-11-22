@@ -16,12 +16,10 @@ from agent_toolkit._hooks.pretooluse.warning_context import format_warning_conte
     ],
 )
 def test_format_warning_context(warnings: list[str], expected: str) -> None:
-    """単一警告を維持し、複数警告へ件数見出しを付ける。"""
     assert format_warning_context(warnings) == expected
 
 
 def test_preformatted_context_is_recounted_without_nested_header() -> None:
-    """個々の判定が結合済みの警告と、統合フックが集めた単独の警告を総数で数え直す。"""
     first = llm_notice("first", "hook", tag="warn")
     second = llm_notice("second", "hook", tag="warn")
     third = llm_notice("third", "hook", tag="warn")
@@ -32,7 +30,6 @@ def test_preformatted_context_is_recounted_without_nested_header() -> None:
 
 @pytest.mark.parametrize("failure", ["session", "write", "length"])
 def test_unavailable_saved_notice_names_read_operation_and_missing_input(tmp_path, monkeypatch, failure):
-    """通知原本を配送できない各分岐で、実在する手順の取得と問い合わせ先を示す。"""
     monkeypatch.setattr(warning_context.managed_temp, "resolve_session_temp", lambda _session: tmp_path)
 
     def fail_write(*_args, **_kwargs):

@@ -1,5 +1,3 @@
-"""`atk wi`の登録入口、引数検証とコマンド実行。"""
-
 import argparse
 import datetime
 import pathlib
@@ -37,7 +35,6 @@ lazy from agent_toolkit._common import private_notes as _private_notes
 
 
 def build_parser(mq: argparse.ArgumentParser) -> None:
-    """`atk wi`のサブパーサ配下にキュー操作のサブコマンドを登録する。"""
     sub = _atk_help.add_subcommands(
         mq,
         dest="wi_subcommand",
@@ -98,15 +95,6 @@ def _validate_bulk_transition_args(args: argparse.Namespace) -> None:
 
 
 def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """`--target-repo`を指定しない場合の対象と`all`の受理可否を確定する。
-
-    確定後の`args.target_repo`は、Noneが対象の非限定を、値が対象リポジトリを表す。
-    未指定のときはカレントディレクトリが属するリポジトリを対象とし、解決できない場合は非限定とする。
-    `all`は非限定の指定として受理し、単一の対象リポジトリを確定するサブコマンドでは拒否する。
-    未指定時の解決を自ら行うサブコマンドへはこの関数で対象を補完せず、`all`の拒否だけを適用する。
-    対象を補完した実行では`args.target_repo_defaulted`を真にする。
-    明示指定と対象の補完を区別できないと、対象を一意に指定した照会まで通常の除外処理が適用される。
-    """
     if args.command != "wi" or not hasattr(args, "target_repo"):
         return
     if getattr(args, "configured_repos", False):
@@ -133,7 +121,6 @@ def _resolve_wi_target_repo(args: argparse.Namespace, parser: argparse.ArgumentP
 
 
 def _normalize_repeatable_wi_filters(args: argparse.Namespace) -> None:
-    """一覧・表示・状態遷移の反復可能フィルターへ、指定がない場合に使う従来の値を設定する。"""
     if args.command != "wi" or args.wi_subcommand not in {"list", "show", *_BULK_TRANSITION_SUBCOMMANDS}:
         return
     args.type = args.type or ["all"]
@@ -212,10 +199,6 @@ def _pull_command(private_notes: pathlib.Path) -> None:
 
 
 def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """反復可能なフィルターの省略時の値、対象リポジトリおよびメモファイルを確定する。
-
-    managed-tempの掃引より前に呼ぶ。引数の誤りを掃引の警告より先に報告するためである。
-    """
     if args.command == "wi" and args.wi_subcommand == "list" and args.snapshot_output and args.new_since:
         args.subparser.error("--snapshot-outputと--new-sinceは併用できません。開始時集合は初回だけ保存する。")
     if args.command == "wi" and args.wi_subcommand == "grep":
@@ -229,7 +212,6 @@ def prepare_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> N
 
 
 def _validate_uwi_add_args(args: argparse.Namespace) -> None:
-    """`atk wi add`のUWI専用の引数と問いの形式を検証する。"""
     if args.type != _wi_constants.WI_TYPE_UWI:
         uwi_only = [
             name
@@ -244,7 +226,6 @@ def _validate_uwi_add_args(args: argparse.Namespace) -> None:
             args.subparser.error(f"{'・'.join(uwi_only)}は--type=uwiでのみ指定できます。")
         return
     if args.question_type not in _wi_constants.NEW_QUESTION_TYPES:
-        # 選択肢の検証をargparseへ任せると、不正値の案内に問いの分け方と投入の形が現れない。
         _outcome.report_failure(
             f"--type=uwiの--question-typeが不正か未指定のため保存しなかった（指定値: {args.question_type}）",
             next_action=(
@@ -278,7 +259,6 @@ def dispatch(
     home: pathlib.Path,
     now: datetime.datetime,
 ) -> int:
-    """`atk wi`のサブコマンドを実行し、終了コードを返す。"""
     sub = args.wi_subcommand
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
     if sub == "process-loop" and process_loop_subcommand is not None:
@@ -305,7 +285,6 @@ def dispatch(
             _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、原因を解消して再実行する")
             return 1
     if sub == "submission":
-        # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
         return _submission.cmd_submission(args)
     if sub == "submit":
         return _submit.dispatch(args)
@@ -349,6 +328,5 @@ def dispatch(
     return _wi_sync.sync_exit_code(
         exit_code,
         private_notes,
-        # サブコマンド名では決めない。同じサブコマンドでも、保存しない検証のように何も書き込まずに終わる実行がある。
         should_check=_atk_git_sync.sync_attempted() and not getattr(args, "skip_push", False),
     )

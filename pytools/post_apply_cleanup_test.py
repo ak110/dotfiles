@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのcleanupの試験。"""
 
 # pylint: disable=protected-access
 
@@ -15,7 +14,6 @@ from pytools._internal.post_apply_test_helpers import _isolate_update_log as _is
 
 # test-copy-contract: 全撤去表の削除基点を配布先rootへ限定し、作業ツリーを削除対象へ含めない。
 def test_removed_paths_bases_are_distribution_targets() -> None:
-    """撤去表の基点は配布先だけで、作業ツリー（`~/dotfiles`）を指さない。"""
     startup = Path("AppData") / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
     allowed = {
         _IMPORT_HOME / base
@@ -29,7 +27,7 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
             startup,
         )
     }
-    # ホーム直下へ配布した設定（`~/.screenrc`など）は内容一致の表だけがホームを基点にする。
+
     assert set(removed_paths._REMOVED_PATHS) <= allowed  # noqa: SLF001
     assert set(removed_paths._REMOVED_PATHS_IF_CONTENT) <= allowed | {_IMPORT_HOME}  # noqa: SLF001
     bases = set(removed_paths._REMOVED_PATHS) | set(removed_paths._REMOVED_PATHS_IF_CONTENT)  # noqa: SLF001
@@ -37,18 +35,16 @@ def test_removed_paths_bases_are_distribution_targets() -> None:
 
 
 def test_removes_legacy_plans_viewer_config_and_shim() -> None:
-    """旧計画ビューアーの設定・CLIを配布先から除去する。"""
     assert Path("pytools/claude-plans-viewer.toml") in _registered_paths(Path(".config"))
     local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("claude-plans-viewer") in local_bin
     assert Path("claude-plans-viewer.exe") in local_bin
-    # 旧systemd unitは停止と無効化を経てから削除するため、この一括削除の対象へ含めない。
+
     for entries in removed_paths._REMOVED_PATHS.values():  # noqa: SLF001
         assert not [entry for entry in entries if "claude-plans-viewer.service" in entry.path.name]
 
 
 def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
-    """作業ツリー版を覆い隠す旧atkランチャーを登録し、現行のサービス用・hook用ラッパーは登録しない。"""
     local_bin = _registered_paths(Path(".local") / "bin")
     assert Path("atk") in local_bin
     assert Path("atk.cmd") in local_bin
@@ -57,7 +53,6 @@ def test_removes_legacy_atk_launcher_but_keeps_current_wrappers() -> None:
 
 
 def test_removes_flag_files_of_retired_steps_but_keeps_current_config() -> None:
-    """廃止した工程のフラグファイルを登録し、現行のagent-toolkit設定は登録しない。"""
     config = _registered_paths(Path(".config"))
     assert Path("agent-toolkit/feedback-inbox.enabled") in config
     assert Path("agent-toolkit/review-balance-mode.claude-heavy") in config
@@ -87,7 +82,6 @@ def test_cleanup_applies_registered_legacy_paths_without_touching_current_files(
     removed: tuple[str, ...],
     kept: tuple[str, ...],
 ) -> None:
-    """実際の登録内容を一時ホームへ適用し、旧生成物だけが削除されることを確かめる。"""
     registered = removed_paths._REMOVED_PATHS[_IMPORT_HOME / base]  # noqa: SLF001
     home_dir = tmp_path / "home"
     target_dir = home_dir / base
@@ -115,7 +109,6 @@ def test_cleanup_removes_retired_always_on_rules_but_keeps_personal_rules(
     *,
     codex_user_file: bool,
 ) -> None:
-    """廃止した常時規範の配布先を実際の登録内容で削除し、個人用の規範と他の配布物を残す。"""
     home_dir = tmp_path / "home"
     claude_dir = home_dir / ".claude"
     codex_dir = home_dir / ".codex"
@@ -157,7 +150,6 @@ def test_cleanup_removes_retired_always_on_rules_but_keeps_personal_rules(
 
 
 def test_removed_ipython_profile_is_limited_to_profile_default() -> None:
-    """旧IPythonプロファイルのcleanup対象に利用中のprofile_ipyを含めない。"""
     paths = _registered_paths(Path(".ipython"))
     assert Path("profile_default/startup/README") in paths
     assert not any(path.is_relative_to("profile_ipy") for path in paths)
@@ -167,7 +159,6 @@ def test_cleanup_removes_empty_ipython_dirs_from_table(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """配布済みREADMEの削除後、撤去表の空ディレクトリの項目で空の親を深い順で除去する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
@@ -183,7 +174,6 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_startup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """startupにユーザーファイルが残る場合はprofile_defaultまで保持する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
@@ -204,7 +194,6 @@ def test_removed_ipython_profile_cleanup_preserves_user_file_in_profile_root(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """profile_default直下にユーザーファイルが残る場合はルートだけを保持する。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     default_readme = ipython_dir / "profile_default/startup/README"
     default_readme.parent.mkdir(parents=True)
@@ -229,7 +218,6 @@ def test_removed_ipython_profile_cleanup_skips_missing_profile(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """配布済みファイルも親ディレクトリも存在しない場合は変更なしとする。"""
     _redirect_removed_paths_to(monkeypatch, tmp_path)
 
     changed = removed_paths.cleanup().changed
@@ -241,7 +229,6 @@ def test_removed_ipython_profile_cleanup_preserves_symlink_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """profile_defaultが外部リンクの場合はリンク先の空ディレクトリを削除しない。"""
     ipython_dir = _redirect_removed_paths_to(monkeypatch, tmp_path)
     outside_profile = tmp_path / "outside-profile"
     outside_startup = outside_profile / "startup"
@@ -302,7 +289,6 @@ def test_cleanup_removes_unedited_retired_configs(
     relative: str,
     fixture_name: str,
 ) -> None:
-    """撤去した配布設定は撤去前の配布物と同じ内容なら削除し、1バイトでも違えば残す。"""
     distributed = (pytestconfig.rootpath / "testdata/post_apply" / fixture_name).read_bytes()
     target_dir = tmp_path / "home" / base
     monkeypatch.setattr(removed_paths, "_REMOVED_PATHS", {})

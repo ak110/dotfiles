@@ -33,9 +33,8 @@ def _guidance(repo_id: str, edit: str | None) -> str:
 
 
 def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit: bool = False) -> tuple[str, str] | None:
-    """Git外と記録用領域を除き、allow以外の理由と次の行動を返す。"""
     original = pathlib.Path(path).expanduser().absolute()
-    # symlink自体の削除とリンク経由の書込みの両方を保護するため、入力したパスと実体を判定する。
+
     candidates = [original, original.resolve()]
     candidates.extend(parent.parent for parent in original.parents if parent.is_symlink())
     exempt_roots = (private_notes.default_private_notes().resolve(), managed_temp.temp_root_path().resolve())
@@ -47,7 +46,7 @@ def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit
         while not parent.is_dir() and parent != parent.parent:
             parent = parent.parent
         location = config_repositories.locate(parent, git_options=git_options)
-        # --git-dirだけの指定ではGitのworktree表示がcwdになるため、更新するGit実体も例外領域内か確かめる。
+
         if (
             location is None
             or (git_options or git_commit)
@@ -70,7 +69,6 @@ def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit
 
 
 def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
-    """編集対象とcommit対象を解決し、拒否を共有formatterで返す。"""
     paths: list[tuple[str, tuple[str, ...]]] = []
     if tool_name == "NotebookEdit":
         path = tool_input_value.get("notebook_path")
@@ -84,7 +82,7 @@ def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
         modified_scopes: set[tuple[object, ...]] = set()
         for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd, effects=True):
             tokens = invocation.segment.tokens
-            # 継続代入とexportは後続・子シェルへ作用する。分岐の実行結果やunsetによる回復は推測しない。
+
             assignments = invocation.environment_assignments
             if tokens and tokens[0] in {"export", "declare", "typeset", "readonly"}:
                 assignments = (*assignments, *tokens[1:])

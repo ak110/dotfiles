@@ -37,7 +37,6 @@ NATIVE_SUBAGENTS = "antigravity_subagent_ids"
 
 
 def _decoded(value: Any) -> Any:
-    """protoのmap<string,string>でJSON符号化された値を復元する。"""
     if isinstance(value, str):
         try:
             return json.loads(value)
@@ -47,7 +46,6 @@ def _decoded(value: Any) -> Any:
 
 
 def _native_launch_result(value: object) -> object:
-    """実機のinvoke_subagent応答が返す会話IDを、既存の所有記録へ渡す。"""
     original = value
     if isinstance(value, str) and "Created the following subagent:" in value:
         tail = value.split("Created the following subagent:", 1)[1].lstrip()
@@ -61,7 +59,6 @@ def _native_launch_result(value: object) -> object:
 
 
 def _tool_input(name: str, raw_args: object) -> tuple[str, dict[str, Any]]:
-    """hookの判定処理が読む名前と引数へ射影し、未知の入力はそのまま保持する。"""
     canonical_name, normalized = agy_records.normalize_tool_call(name, raw_args)
     if name == "read_file" and isinstance(normalized.get("EndLine"), int):
         normalized["limit"] = normalized["EndLine"] - normalized.get("offset", 1) + 1
@@ -127,7 +124,6 @@ class _Response:
 
 
 def _invoke(module_name: str, payload: dict[str, Any]) -> _Response:
-    """共有handlerの単一JSONと診断を捕捉し、ホスト形式へ変換する。"""
     module = importlib.import_module(f"agent_toolkit._hooks.{module_name}")
     output, errors = io.StringIO(), io.StringIO()
     with notice.defer_delivery(), contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
@@ -181,7 +177,6 @@ def _consume(session_id: str) -> list[str]:
 
 
 def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
-    """切り詰めのない原本を行ごとに読み、直近の入力と応答だけを保持する。"""
     latest_user = None
     last_response = ""
     if not isinstance(path, str) or not path:
@@ -239,7 +234,6 @@ def _claim_user_step(session_id: str, step: dict[str, Any]) -> bool:
 
 
 def _native_subagent_context(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """SubagentStartの代替として、呼び出し先のPromptへ委譲先の入口の所在を配送する。"""
     call = payload.get("toolCall")
     if not isinstance(call, dict) or call.get("name") != "invoke_subagent":
         return None
@@ -254,7 +248,7 @@ def _native_subagent_context(payload: dict[str, Any]) -> dict[str, Any] | None:
     module = importlib.import_module("agent_toolkit._hooks.rules_context")
     content = module.compose_subagent_start()
     rewritten = f"{prompt}\n\n{content}"
-    # protojsonのmap<string,string>と展開済みのobjectの双方で入力の符号化を保つ。
+
     value = json.dumps(rewritten, ensure_ascii=False) if _decoded(raw[key]) != raw[key] else rewritten
     return {key: value}
 
@@ -265,7 +259,6 @@ def _injections(contexts: list[str]) -> dict[str, Any]:
 
 
 def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> None:
-    """親の起動応答と全件のactive一覧を使い、ネイティブ子の所有と終了を更新する。"""
     call = payload.get("toolCall")
     if not isinstance(call, dict) or payload.get("error"):
         return
@@ -301,13 +294,12 @@ def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> Non
 
 
 def _record_read(payload: dict[str, Any]) -> list[str]:
-    """スキルの入口の全文を返した`read_file`を、そのスキルの起動として共通の観測へ渡す。"""
     path = payload["tool_input"].get("file_path")
     text = full_reads.response_text(payload.get("tool_response"))
     entry = full_reads.skill_entry(pathlib.Path(path)) if isinstance(path, str) else None
     if entry is None or not text:
         return []
-    # 行番号や結果の説明を除いた本文が、読取ファイルの全文を含むか確かめる。
+
     try:
         expected = pathlib.Path(path).read_text(encoding="utf-8").strip()
     except OSError:
@@ -419,7 +411,6 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
 
 
 def main(payload_text: str, *, event: str) -> int:
-    """6イベントの入力を処理し、stdoutへJSON objectを1つ返す。"""
     if event not in EVENTS:
         raise ValueError(f"未対応のAntigravityイベント: {event}")
     payload = json.loads(payload_text)

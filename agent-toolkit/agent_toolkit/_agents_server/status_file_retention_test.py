@@ -75,7 +75,6 @@ async def test_writer_retains_result_without_live_session_after_deadline(
 
 @pytest.mark.asyncio
 async def test_writer_removes_waited_result_at_retention_deadline(tmp_path: pathlib.Path) -> None:
-    """waitで回収済みになった結果を次のflushで削除する。"""
     session = _completed_with_retention_deadline("waited", tmp_path, turn_seq=1)
     writer = _root_writer({session.session_id: session}, tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
@@ -107,7 +106,6 @@ async def test_writer_excludes_already_expired_session(tmp_path: pathlib.Path) -
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["completed", "failed", "interrupted"])
 async def test_writer_keeps_collected_parent_while_grandchild_runs(tmp_path: pathlib.Path, status: str) -> None:
-    """結果を回収した終了の親も、孫の稼働中は実際の終了状態のまま表示し、結果は再公開しない。"""
     parent = _terminal_parent(tmp_path, status)
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
@@ -190,7 +188,6 @@ async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs
 
 @pytest.mark.asyncio
 async def test_writer_keeps_parent_for_partial_and_deep_descendants(tmp_path: pathlib.Path) -> None:
-    """複数の孫の一部だけが終了した場合と、終了した孫の先で稼働が続く場合も親を残す。"""
     parent = _terminal_parent(tmp_path, "completed")
     parent.result_delivered = True
     writer = subject.StatusFileWriter(
@@ -218,7 +215,6 @@ async def test_writer_keeps_parent_for_partial_and_deep_descendants(tmp_path: pa
 
 @pytest.mark.asyncio
 async def test_writer_ignores_running_descendant_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
-    """生存の印が失効した子孫の古いrunning行では親を残さない。"""
     parent = _terminal_parent(tmp_path, "completed")
     parent.result_delivered = True
     writer = subject.StatusFileWriter(

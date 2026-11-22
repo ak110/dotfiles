@@ -57,10 +57,6 @@ def _fetch_snapshot(
     expected_ids: set[int] | None = None,
     excluded_ids: frozenset[int] = frozenset(),
 ) -> tuple[list[RunRecord], list[JobRecord], set[int]]:
-    """baselineを除いたrunと対応ジョブを不可分なpollスナップショットとして取得する。
-
-    戻り値の第3要素は、後続runへ置き換えられて打ち切られたため判定対象から除いたrunの識別子とする。
-    """
     candidates = run_list_fn(sha)
     _run_ids(candidates)
     superseded_ids = _superseded_cancelled_ids(candidates)
@@ -79,10 +75,6 @@ def _fetch_follow_snapshot(
     expected_ids: set[int] | None = None,
     excluded_ids: frozenset[int] = frozenset(),
 ) -> tuple[list[RunRecord], list[JobRecord], set[int]]:
-    """全後続SHAのrun・ジョブ一覧を不可分なpollスナップショットとして取得する。
-
-    戻り値の第3要素の意味は`_fetch_snapshot`と同じとする。
-    """
     candidates = [run for follow_sha in follow_shas for run in run_list_fn(follow_sha)]
     _run_ids(candidates)
     superseded_ids = _superseded_cancelled_ids(candidates)
@@ -99,20 +91,14 @@ def _fetch_follow_snapshot(
 
 
 def _is_excluded_run(run: RunRecord, superseded_ids: set[int]) -> bool:
-    """成否判定の対象から除くrunかを返す。"""
     return _is_dynamic_dependabot_run(run) or run["databaseId"] in superseded_ids
 
 
 def _is_dynamic_dependabot_run(run: RunRecord) -> bool:
-    """pushへ帰属しないDependabotの動的更新runかを返す。"""
     return run.get("event") == "dynamic" and run.get("workflowName") == "Dependabot Updates"
 
 
 def _supersede_key(run: RunRecord) -> tuple[str, str] | None:
-    """同じ論理単位のrunをまとめるキーを返す。キーを組めないrunは`None`を返す。
-
-    GitLabのパイプラインは`workflowName`を持たないため`None`となり、置き換え判定の対象から外れる。
-    """
     workflow_name = run.get("workflowName")
     head_sha = run.get("headSha")
     if not isinstance(workflow_name, str) or not workflow_name:
@@ -181,11 +167,6 @@ def _wait_for_completion(
     reported: set[str],
     save: Callable[[set[str]], None] | None,
 ) -> tuple[int, list[RunRecord], float]:
-    """確定したrun集合と後続SHAのrun集合のどちらにも使う完了待ちループ。
-
-    登録猶予中に実行中として観測したrunが後続runへ置き換えられて打ち切られた場合、そのrunは
-    取得結果から消える。期待run集合へ残すと欠落判定で待ち続けるため、除外した識別子を同集合からも取り除く。
-    """
     while True:
         try:
             candidates, jobs, superseded_ids = fetch_fn()
@@ -222,7 +203,7 @@ def _wait_for_completion(
                 _emit_failure_summary(*failure)
             if _all_success(runs):
                 return EXIT_SUCCESS, runs, elapsed
-            # 全run cancelledで後続runを追跡する場合は、呼び出し側が追跡の結果に応じた次の操作を書く。
+
             if follow_mode or not _all_cancelled(runs):
                 failed_run = next(run for run in runs if run.get("conclusion") != "success")
                 return _finish(EXIT_CI_FAILED, _failure_next_action(failed_run, "run", repository, forge)), runs, elapsed
@@ -312,7 +293,7 @@ def wait_for_ci(
     expected_ids: set[int] = set()
     reported = set(reported_failures)
 
-    while True:  # 登録猶予フェーズ: 猶予末まで継続収集する
+    while True:
         last_call_failed = False
         try:
             runs, jobs, superseded_ids = _fetch_snapshot(sha, run_list_fn, job_list_fn, excluded_ids=baseline_ids)
@@ -425,7 +406,7 @@ def _follow_cancelled(
     grace_start: float | None = None
     consecutive_failures = 0
     last_call_failed = False
-    while True:  # 後続SHA・後続run登録猶予フェーズ
+    while True:
         current_shas = set(follow_shas_fn(original_sha))
         follow_shas |= current_shas
         last_call_failed = False

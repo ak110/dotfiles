@@ -1,5 +1,3 @@
-"""同じ生成元の派生JSONが、別プロセスでも同じバイト列になることを確認する。"""
-
 import os
 import pathlib
 import shutil
@@ -12,10 +10,9 @@ from pytools._internal import codex_plugin_manifests
 
 
 def test_generated_manifests_are_identical_across_hash_seeds(host_environ, tmp_path: pathlib.Path):
-    """集合を含む設定情報から生成しても、全派生JSONの順序を確定させる。"""
     root = pathlib.Path(__file__).resolve().parents[2]
     input_root = tmp_path / "generation-input"
-    # 旧試験と同じ実生成元のmetadata・hooks・MCP・品質原本・スキル集合を隔離して使う。
+
     sources = [
         codex_plugin_manifests.PLUGIN_SOURCE,
         codex_plugin_manifests.BASICS_PLUGIN_SOURCE,

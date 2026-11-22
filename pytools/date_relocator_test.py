@@ -1,5 +1,3 @@
-"""date_relocatorモジュールのテスト。"""
-
 import datetime
 import os
 import pathlib
@@ -11,7 +9,6 @@ from pytools import date_relocator
 
 
 def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> int | str | None:
-    """`dateRelocator`の公開エントリポイントを引数付きで実行し、終了コードを返す。"""
     monkeypatch.setattr(sys, "argv", ["dateRelocator", *args])
     with pytest.raises(SystemExit) as exc_info:
         date_relocator.main()
@@ -29,7 +26,6 @@ def _make_target(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def test_exit_code_one_when_target_is_not_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ディレクトリでない対象を処理せず残りを再配置し、終了コード1で終える。"""
     target = _make_target(tmp_path)
 
     assert _run_main(monkeypatch, str(tmp_path / "missing"), str(target)) == 1
@@ -37,7 +33,6 @@ def test_exit_code_one_when_target_is_not_directory(tmp_path: pathlib.Path, monk
 
 
 def test_exit_code_zero_without_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """全ての対象がディレクトリなら再配置して終了コード0で終える。"""
     target = _make_target(tmp_path)
 
     assert _run_main(monkeypatch, str(target)) == 0

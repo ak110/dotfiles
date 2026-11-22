@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_test）。"""
 
 from __future__ import annotations
 
@@ -33,7 +32,6 @@ from agent_toolkit._testing.session_review_prepare_support import _isolate_failu
     ),
 )
 def test_agents_session_id_resolves_conversation(tmp_path, monkeypatch, capsys, engine):
-    """登録済み委譲先の識別子だけで、上限付きの会話抜粋へ到達できる。"""
     session_id = "019a0000-1111-7222-8333-444444444444"
     text = "調査した結果。" * 4000
     if engine == "claude":
@@ -164,7 +162,6 @@ def test_response_language_notices_are_excluded_from_candidates(
 
 
 def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """正常な直接本文・参照ファイル・明示読取と命令文字列の観測限界を、通常の準備から得る。"""
     entries = [{"type": "user", "message": {"role": "user", "content": "依頼"}}]
     body = "担当する作業の説明。" * 300
     calls = [
@@ -246,7 +243,6 @@ def test_prepare_comparison_materials(tmp_path: pathlib.Path, capsys: pytest.Cap
 def test_comparison_index_capacity_and_counts(
     count: int, known_zero: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全件の位置・量を保存し、有限の比較概要と表示内外の原文照会を検収する。"""
     transcript = tmp_path / "comparison.jsonl"
     parent = [support.timestamped_entry("2026-09-06T12:00:00Z", "依頼")]
     children: dict[int, list[dict]] = {}
@@ -349,7 +345,6 @@ def test_comparison_index_capacity_and_counts(
 
 @pytest.mark.parametrize("has_identifier", [False, True])
 def test_prepare_unresolved_scope(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, has_identifier: bool) -> None:
-    """両未解決種別の全量を保存し、有限な文書概要から同じ対象へ到達する。"""
     result = {"session_id": "22222222-3333-4444-8555-666666666666"} if has_identifier else {"status": "completed"}
     entries = [
         {"type": "user", "message": {"role": "user", "content": "依頼"}},
@@ -441,7 +436,6 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
     *,
     linked_worktree: bool,
 ) -> None:
-    """通常checkoutとlinked worktreeは同じ参照文書へ解決し、JSONの`reference_document`で返す。"""
     main_worktree = _git_repository(tmp_path / "dotfiles")
     target_repo = main_worktree
     if linked_worktree:
@@ -479,10 +473,6 @@ def test_prepare_resolves_reference_document_from_main_worktree_name(
 def test_prepare_reports_missing_items(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録、作業ディレクトリまたは`atk run-script session-review-evidence`の同一性が成立しない場合を扱う。
-
-    不足項目を返して標準出力を空に保つ。
-    """
     transcript = _write_claude_transcript(tmp_path)
     work_dir = _work_dir(tmp_path)
 
@@ -507,7 +497,6 @@ def test_prepare_reports_missing_items(
 
 
 def test_default_review_uses_completed_scope_and_full_ignores_it(tmp_path, capsys):
-    """同じ記録の追記だけを通常の単発振り返りへ渡す。"""
     transcript = tmp_path / "session.jsonl"
     initial = support.timestamped_entry("2026-09-06T12:00:00Z", "初回だけの発話")
     appended = support.timestamped_entry("2026-09-06T12:01:00Z", "追記した発話")

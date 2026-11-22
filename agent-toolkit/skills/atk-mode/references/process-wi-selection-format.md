@@ -125,6 +125,8 @@ frontmatterに`merge_branch`を持つマージ用AWIは例外として`レーン
 `担当モデル`には、WI本文が担当とモデルを明示した組み合わせだけを推論の深さを含む`engine:model/effort`の形で記録し、指定のない担当のキーは省略する。
 `鮮度`には、一覧JSONの`staleness`マップを値も型も変えずに転記する。
 
+レーンの先行順は、[選定の生成入力](process-wi-selection-fields.md#選定の生成入力)から導く。
+
 ## 欄の意味
 
 [選定結果の欄と検査](process-wi-selection-fields.md)に従う。

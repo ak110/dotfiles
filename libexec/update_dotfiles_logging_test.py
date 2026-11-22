@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのloggingの試験。"""
 
 # pylint: disable=protected-access
 
@@ -32,7 +31,6 @@ from pytools._internal import plugin_warmup  # noqa: E402  # pylint: disable=wro
 
 
 def test_persistent_log_redacts_only_saved_diagnostic() -> None:
-    """書式引数と例外を保存時に伏せ、診断元と別handlerの本文は保つ。"""
     output = "api_key=fake-update-key\nhttps://fake-user:fake-pass@example.invalid/path?token=fake-query\n"
     screen = io.StringIO()
     handler = logging.StreamHandler(screen)
@@ -61,7 +59,6 @@ def test_persistent_log_redacts_only_saved_diagnostic() -> None:
 def test_main_closes_persistent_log_when_start_record_is_interrupted(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
-    """開始記録が中断されても、獲得済みのログファイルを閉じて登録を外す。"""
     original_handlers = update_dotfiles_runtime.logger.handlers.copy()
     created: list[logging.FileHandler] = []
     real_handler = update_dotfiles_runtime.update_log.ProcessSafeRotatingFileHandler
@@ -87,7 +84,6 @@ def test_main_closes_persistent_log_when_start_record_is_interrupted(
 
 
 def test_logs_cli_shows_latest_update_only(logs_path: pathlib.Path) -> None:
-    """単独post-applyと以前の更新を表示へ混ぜない。"""
     latest = "2026-10-01 12:00:00,000 run=100-2 INFO update-dotfiles開始: root=test\n"
     logs_path.write_text(
         "2026-10-01 11:00:00,000 run=9-1 INFO 以前の更新\n"
@@ -208,7 +204,6 @@ def test_update_parent_and_post_apply_child_can_rotate_the_same_log(
     monkeypatch: pytest.MonkeyPatch,
     host_environ: collections.abc.Callable[[], dict[str, str]],
 ) -> None:
-    """親がログを所有したまま子が世代移動し、両者の診断と容量上限を維持する。"""
     monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", logs_path)
     monkeypatch.setattr(update_dotfiles_runtime, "_LOG_MAX_BYTES", 512)
     writer = tmp_path / "post_apply_writer.py"
@@ -269,7 +264,6 @@ def test_logs_cli_preserves_rotated_multiline_records(logs_path: pathlib.Path, e
 
 
 def test_logs_cli_reads_update_when_start_record_has_rotated_away(logs_path: pathlib.Path) -> None:
-    """開始記録が残らない更新も、保存された記録を表示する。"""
     saved = "2026-10-01 12:00:03,000 run=100-2 INFO update-dotfiles終了: exit=7\n"
     logs_path.write_text(saved, encoding="utf-8")
 
@@ -281,7 +275,6 @@ def test_logs_cli_reads_update_when_start_record_has_rotated_away(logs_path: pat
 
 @pytest.mark.parametrize("contents", [None, "", "2026-10-01 12:00:00,000 run=post-apply-999 INFO 単独起動\n"])
 def test_logs_cli_reports_no_saved_update(logs_path: pathlib.Path, contents: str | None) -> None:
-    """保存された更新実行が無いことをユーザーへ案内する。"""
     if contents is not None:
         logs_path.write_text(contents, encoding="utf-8")
 
@@ -322,7 +315,6 @@ def test_logs_cli_reports_read_failure(logs_path: pathlib.Path) -> None:
 
 
 def test_help_describes_logs(logs_path: pathlib.Path) -> None:
-    """ヘルプの表示は正常終了し、更新を開始しない。"""
     result = _run_logs_cli(["--help"])
 
     assert result.returncode == 0, result.stderr

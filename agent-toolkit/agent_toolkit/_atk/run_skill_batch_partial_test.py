@@ -1,5 +1,3 @@
-"""欠測のあるbatchの準備から報告・世代確定までの境界を検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -8,10 +6,12 @@ import hashlib
 import json
 import os
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
-from agent_toolkit._atk import run_script, run_skill_batch
+from agent_toolkit._atk import managed_temp, run_script, run_skill_batch
+from agent_toolkit._atk.managed_temp import paths, sweep, sweep_lock
 from agent_toolkit._atk.wi import add, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
@@ -32,14 +32,24 @@ def _register(path: pathlib.Path) -> dict:
     return target
 
 
+def _assert_sweeps_keep(monkeypatch, work_dirs: set[pathlib.Path], now: datetime.datetime) -> None:
+    with monkeypatch.context() as pressure:
+        pressure.setenv(sweep.MIN_FREE_RATIO_ENV, "0.1")
+        pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
+        swept = managed_temp.sweep_managed_temp(now=now, force=True)
+        assert not swept.failed and work_dirs.isdisjoint(swept.deleted)
+        pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=0, used=10_000))
+        swept = managed_temp.sweep_managed_temp(now=now)
+    assert swept.pressure is not None and work_dirs.isdisjoint(swept.deleted)
+
+
 @pytest.mark.usefixtures("leaf_git_commands")
 @pytest.mark.cpu_limit(
     1.0,
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.505秒。"),
 )
 def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path, monkeypatch):
-    """実ログで観測したNUL335/2157バイトと不成立な末尾を最小化し、健全対象も同じ回で処理する。"""
-    # 活動は合成した記録から判定し、実機のプロセスは入力に含めない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -63,7 +73,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         original = b"".join(json.dumps(row).encode() + b"\n" for row in valid) + b"\0" * padding + b"1suffix\n"
         if index == 1:
             original += json.dumps(valid[-1]).encode() + b"\n"
-            # NUL境界の後ろの完全JSONだけを採用し、途切れた前側は失われた断片として残す。
+
             original += b'{"type":"event_msg","payload":{"message":"cut\0\0' + json.dumps(valid[-1]).encode() + b"\n"
         path.write_bytes(original)
         originals[path] = original
@@ -74,12 +84,20 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         _register(path)
     manifests = []
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+    sweep_time = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
 
     def execute(args):
         # モデルだけを代用し、準備・報告保存・finish・同期検収・範囲確定は実装を通す。
         manifest = session_review.read(pathlib.Path(args.batch_manifest))
         manifests.append(manifest)
         assert len(manifest["prepared"]) == 2
+        work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
+        assert all(path.parent == managed_temp.temp_root_path() for path in work_dirs)
+        run_skill_batch.record_executor(args, os.getpid())
+        for work_dir in work_dirs:
+            (work_dir / managed_temp.OWNER_FILE).unlink()
+        _assert_sweeps_keep(monkeypatch, work_dirs, sweep_time)
+        assert all((work_dir / "conversation.md").is_file() for work_dir in work_dirs)
         partial = next(item for item in manifest["prepared"] if item["session_id"] == parent.stem)
         assert partial["partial_analysis"] is True
         gaps = partial["unconfirmed_scope"]
@@ -120,7 +138,8 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         assert not (bundle / "timeline.jsonl").exists()
         assert pathlib.Path(prepared["scope_path"]).exists()
         assert (bundle / "candidate-evidence.jsonl").exists()
-        assert (bundle / "unconfirmed.jsonl").exists() and (bundle / "recovered.jsonl").exists()
+        assert (bundle / "unconfirmed.jsonl").exists() == bool(prepared["unconfirmed_scope"])
+        assert (bundle / "recovered.jsonl").exists() == bool(prepared["recovered_record_lines"])
     reviewed_path = session_review.previous_scope({"host": "claude", "session_id": parent.stem})
     assert reviewed_path is not None
     reviewed = session_review.read(reviewed_path)
@@ -132,11 +151,74 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
     report = reports[0].read_text(encoding="utf-8")
     assert "部分分析" in report and all(item["record"] in report for item in reviewed["unconfirmed_scope"])
     assert all(path.read_bytes() == content for path, content in originals.items())
+    work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
+    for work_dir in work_dirs:
+        (work_dir / "bundle" / managed_temp.OWNER_FILE).unlink()
+    swept = managed_temp.sweep_managed_temp(now=sweep_time, force=True)
+    assert not swept.failed and work_dirs.issubset(swept.deleted)
+    assert all(pathlib.Path(item["scope_path"]).is_file() for item in manifest["prepared"])
+
+
+def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(monkeypatch):
+    session_id = "old-batch-target"
+    root = managed_temp.resolve_session_temp("original-transcript-stem")
+    work_dir = managed_temp.create_session_temp("session-review", root)
+    bundle = work_dir / "bundle"
+    bundle.mkdir()
+    (bundle / "scope.json").write_text("{}\n", encoding="utf-8")
+    path = session_review.directory() / "runs" / ("b" * 32 + ".json")
+    session_review.BatchWriter(path).create(
+        {
+            "run_id": path.stem,
+            "manifest_path": str(path),
+            "status": "running",
+            "targets": [],
+            "prepared": [{"session_id": session_id, "work_dir": str(work_dir)}],
+        }
+    )
+    run_skill_batch.record_executor(argparse.Namespace(batch_manifest=str(path)), os.getpid())
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    _assert_sweeps_keep(monkeypatch, {root}, now)
+    assert (bundle / "scope.json").is_file()
+
+
+def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
+    work_dir = managed_temp.create_managed_temp("review-batch")
+    bundle = work_dir / "bundle"
+    bundle.mkdir()
+    scope = bundle / "scope.json"
+    scope.write_text("{}\n", encoding="utf-8")
+    path = session_review.directory() / "runs" / ("b" * 32 + ".json")
+    writer = session_review.BatchWriter(path)
+    writer.create(
+        {
+            "run_id": path.stem,
+            "manifest_path": str(path),
+            "status": "running",
+            "targets": [],
+            "prepared": [{"session_id": "source", "work_dir": str(work_dir)}],
+        }
+    )
+    args = argparse.Namespace(
+        run_id=path.stem, batch_manifest=str(path), timeout=1, resume_record={}, skill="review-session", args=[]
+    )
+    monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+    monkeypatch.setattr(run_skill_batch, "_finish_batch", lambda _manifest, _path: 0)
+    calls = []
+
+    def execute(_args):
+        calls.append(scope.read_text(encoding="utf-8"))
+        return 0
+
+    with sweep_lock.sweep_access(paths.temp_root(), paths.state_root(create=False)) as locked:
+        assert locked and run_skill_batch.dispatch(args, execute) == 1
+        assert not calls
+    assert run_skill_batch.dispatch(args, execute) == 0
+    assert calls == ["{}\n"]
 
 
 @pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])
 def test_partial_completion_preserves_new_input(tmp_path, change):
-    """モデル/実Gitなしで、末尾欠測の消費と新入力・接頭辞変更の保護を区別する。"""
     path = tmp_path / "partial.jsonl"
     row = json.dumps({"type": "user", "message": {"role": "user", "content": "要求"}}, ensure_ascii=False)
     path.write_text(row + "\n\0\0broken\n", encoding="utf-8")

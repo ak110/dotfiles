@@ -1,5 +1,3 @@
-"""pytools._internal.host_roles のテスト。"""
-
 import socket
 from pathlib import Path
 
@@ -45,20 +43,17 @@ def test_euryale_container_has_no_development_or_linux_server_role() -> None:
 
 
 def test_defaults_to_current_hostname(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`hostname`を省略した場合は`socket.gethostname()`を使う。"""
     monkeypatch.setattr(socket, "gethostname", lambda: "EURYALE.example.test")
     assert host_roles.is_linux_server(platform="linux") is True
 
 
 def test_without_dotfiles_root_has_no_role(monkeypatch: pytest.MonkeyPatch) -> None:
-    """作業ツリーを解決できない場合は役割なしとして扱う。"""
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
     assert host_roles.has_role(host_roles.LINUX_SERVER, hostname="euryale") is False
 
 
 @pytest.mark.parametrize("content", ["[host_roles\n", "host_roles = 1\n", '[host_roles]\nlinux_server = "euryale"\n'])
 def test_unreadable_data_has_no_role(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str) -> None:
-    """役割データを読めない場合と形式が想定と異なる場合は役割なしとして扱う。"""
     data = tmp_path / ".chezmoi-source" / ".chezmoidata.toml"
     data.parent.mkdir()
     data.write_text(content, encoding="utf-8")

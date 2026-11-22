@@ -198,10 +198,6 @@ sys.exit(255)
 def test_fetch_from_unresponsive_remote_stops_at_default_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """応答しないリモートへのfetchはデフォルトの時間上限で打ち切られ、gitが起動した子孫のプロセスも残らない。
-
-    デフォルトの上限が無い場合、fetchはリモートの代役が終わる30秒後まで戻らず、時間切れも送出しない。
-    """
     repository = git_repository.init_repository(
         tmp_path / "repo", initial_branch="main", origin="ssh://unresponsive.invalid/repo.git"
     )
@@ -273,7 +269,6 @@ def _hold_with_live_owner(repo: pathlib.Path) -> pathlib.Path:
     ),
 )
 def test_run_reclaims_orphan_lock_and_retries_once(stale_lock_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """所有者のいない`index.lock`を回収し、同じコマンドを再実行して成功する。"""
     lock = stale_lock_repo / ".git" / "index.lock"
     lock.write_bytes(b"")
     # 回収と再実行を検査する。短い待機予算へ、対象外の実Git・OSの走査を含めない。
@@ -381,7 +376,6 @@ def test_run_wait_is_bounded_by_timeout_scope(tmp_path: pathlib.Path, monkeypatc
     ),
 )
 def test_run_can_disable_stale_lock_recovery(stale_lock_repo: pathlib.Path) -> None:
-    """`recover_stale_lock=False`では回収も再実行もしない。"""
     lock = stale_lock_repo / ".git" / "index.lock"
     lock.write_bytes(b"")
 

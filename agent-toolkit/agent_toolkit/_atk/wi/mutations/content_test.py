@@ -1,5 +1,3 @@
-"""WIのmutations content: baseのテスト。"""
-
 import contextlib
 import pathlib
 import subprocess
@@ -40,7 +38,6 @@ def test_public_append_survives_following_updates(
     capsys: pytest.CaptureFixture[str],
     operation: str,
 ) -> None:
-    """公開追記と後続の本文・メタデータ更新を結合し、更新対象外の作業記録を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "record.md", body="元の要求")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -150,7 +147,6 @@ def test_edit_keeps_section_error_without_style_warning(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """必須節の欠落を拒否し、表記診断は出さず保存済み本文を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "entry.md", body=AGENT_AWI_BODY, source="test")
     original = path.read_bytes()
@@ -171,7 +167,6 @@ def test_edit_accepts_colloquial_and_dash_without_warnings(
     capsys: pytest.CaptureFixture[str],
     dry_run: bool,
 ) -> None:
-    """frontmatter付き置換の口語・ダッシュを、保存とdry-runで警告せず保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "entry.md", body=AGENT_AWI_BODY, source="test")
     original = path.read_bytes()
@@ -190,7 +185,6 @@ def test_edit_accepts_colloquial_and_dash_without_warnings(
 
 
 def test_hold_and_unhold_reuse_standard_transition(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """holdとunholdは専用復旧状態を作成せず既存の状態遷移で往復する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
@@ -206,7 +200,6 @@ def test_return_rejected_entry_to_inbox_strips_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """不採用項目をinboxへ戻す際に終了時の結果節だけを除去する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
@@ -231,7 +224,6 @@ def test_remove_targets_explicit_and_stored_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """明示した状態と保存した状態に応じて対象を削除する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
@@ -270,7 +262,6 @@ def test_remove_targets_explicit_and_stored_state(
 
 
 def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存オプション省略時は既存の明示依存を解除する。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_awi(notes, "awi.md")
     text = path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [old.md]\n")
@@ -285,7 +276,6 @@ def test_set_dependencies_can_clear_dependencies(tmp_path: pathlib.Path, monkeyp
 
 
 def test_return_to_inbox_moves_processing_to_inbox(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """return-to-inboxがprocessingからinboxへ戻す。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -307,7 +297,6 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """UWI混在入力を一括検証し、移動もfrontmatter更新も行わない。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "awi.md")
     _write_uwi_entry(notes, "uwi.md")
@@ -332,14 +321,11 @@ def test_cooldown_return_rejects_uwi_mixture_without_changes(
 
 
 class TestRejectDeletes:
-    """rejectサブコマンド: ファイルをinboxからrejected/へ移動する。"""
-
     def test_single_file_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rejectでファイルがinboxから移動されrejected/に置かれコミット件名が正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -362,7 +348,6 @@ class TestRejectZeroArgs:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """ファイル名引数なしでargparseがexit 2を返すこと。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -373,8 +358,6 @@ class TestRejectZeroArgs:
 
 
 class TestRmMultiple:
-    """rmサブコマンド: 複数件指定で単一コミットへまとめる。"""
-
     @pytest.mark.usefixtures("leaf_git_commands")
     @pytest.mark.cpu_limit(
         1.0,
@@ -386,7 +369,6 @@ class TestRmMultiple:
         tmp_path: pathlib.Path,
         entry_type: str,
     ) -> None:
-        """指定2件だけの削除が単一commitに残り、対象外本文は保持される。"""
         notes = _setup_notes(tmp_path)
         filenames = ["fb-001.md", "fb-002.md"]
         write_entry = _write_awi_file if entry_type == "awi" else _write_uwi_entry
@@ -411,7 +393,6 @@ def test_agent_environment_allows_comment_neutral_edit_and_append(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """ユーザーコメントを持たない通常本文の編集と追記はエージェント環境でも成功する。"""
     notes = _setup_notes(tmp_path)
     edit_path = _write_awi_file(notes, "edit.md", body="編集前", source="test")
     append_path = _write_awi_file(notes, "append.md", body="追記前")
@@ -435,7 +416,6 @@ def test_agent_environment_edit_preserves_saved_user_comment(
     tmp_path: pathlib.Path,
     source: str | None,
 ) -> None:
-    """予約節を含まないMESSAGEで保存済みユーザーコメント節を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(
         notes,
@@ -457,7 +437,6 @@ def test_agent_environment_append_inserts_before_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """追記本文を保存済みユーザーコメント節の直前へ追加する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body="追記前\n\n## ユーザーコメント\n\n保持する")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -487,7 +466,6 @@ def test_agent_append_adds_one_result_boundary(
     message: str,
     result_count: int,
 ) -> None:
-    """エージェント追記は処理メモの直前に処理結果境界を一度だけ保存する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body=body)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -506,7 +484,6 @@ def test_agent_append_preserves_original_and_user_comment_bytes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """境界の追加は原本文と保存済みユーザーコメントのバイト列を変えない。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body="原本文\n\n```text\n添付ログ\n```\n\n## ユーザーコメント\n\n要求")
     original = path.read_bytes()
@@ -527,7 +504,6 @@ def test_human_append_inserts_before_first_result_boundary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """人間の追記は既存の最初の処理結果境界より前へ保存する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body="元の要求\n\n## 処理結果\n\n処理メモ")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -544,7 +520,6 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """予約節を一意に抽出できない編集結果も変更として拒否する。"""
     monkeypatch.setenv("AI_AGENT", "1")
 
     assert mutation_content._reject_agent_user_comment_change(  # pylint: disable=protected-access
@@ -553,7 +528,7 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
     )
     failure, next_action = capsys.readouterr().err.splitlines()
     assert failure == _USER_COMMENT_ERROR
-    # 受信側が再実行の前に行う操作（予約節を本文から除く）を次の操作の行で受け取れること。
+
     assert next_action.startswith("次の操作: ")
     assert "ユーザーコメント節" in next_action
     assert "除いて再実行する" in next_action

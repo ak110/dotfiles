@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の本文パスの抽出と略記を検証する。"""
 
 import pathlib
 import re
@@ -29,7 +28,6 @@ def test_public_selection_rejects_non_paths(
     section: str,
     entry: str,
 ) -> None:
-    """書込区分では識別子・存在しない新設先・末尾/なしディレクトリを拒否する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     item = {"WI": "a.md", "レーン": "lane-01", "書込対象": [], "書き込まない反映先": ["README.md"], section: [entry]}
@@ -65,7 +63,6 @@ def test_public_selection_contract_cases(
     case: str,
     expected: int,
 ) -> None:
-    """構造化した共有記録と実際のパス・段階・先行関係の整合を公開コマンドで確かめる。"""
     repo, notes = env
     shared = "src/model.py"
     other = "README.md" if case == "serial-unshared" else shared
@@ -111,7 +108,6 @@ def test_public_selection_preserves_path_context(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ファイル直後の識別子を除き、コマンド内ディレクトリと明示した新設先は受理する。"""
     repo, notes = env
     _write_files(repo, "docs/guide.md", "docs/ops/a.md", "src/a.py")
     _awi(
@@ -146,7 +142,6 @@ def test_public_check_distinguishes_file_references(
     code: bool,
     suffix: str,
 ) -> None:
-    """参照位置と定義名を分離し、AWIとUWIから元ファイルだけを抽出する。"""
     repo, notes = env
     reference = "src/model.py" + suffix
     if code:
@@ -161,7 +156,6 @@ def test_public_check_distinguishes_file_references(
 def test_public_check_resolves_abbreviated_paths_and_classification(
     env: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
-    """文章とインラインコードの省略表記を反映先の期待集合へ解決する。"""
     repo, notes = env
     fresh_path = "agent-toolkit/agent_toolkit/_agents_server/" + "fresh.py"
     _awi(
@@ -185,7 +179,6 @@ def test_public_check_resolves_abbreviated_paths_and_classification(
 def test_abbreviated_paths_require_directory_context_and_existing_parent(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """孤立した名前、コマンド、存在しない親を反映先として誤診断しない。"""
     repo, notes = env
     _awi(notes, "isolated.md", "model.pyと`atk wi add`、https://example.com/x.py、missing/dir/x.py・other.pyは対象外。")
 
@@ -209,7 +202,6 @@ def test_public_check_resolves_cross_directory_abbreviations(
     inline_code: bool,
     following: str,
 ) -> None:
-    """別親の追跡ファイルの一意実体へ略記を解決する。"""
     repo, notes = env
     actual = f"tests/{following}"
     _track(repo, actual)
@@ -230,7 +222,6 @@ def test_public_check_reports_ambiguous_abbreviation_and_accepts_explicit_path(
     capsys: pytest.CaptureFixture[str],
     wi_type: str,
 ) -> None:
-    """略記の複数候補を診断し、明示した相対パスを受理する。"""
     repo, notes = env
     _track(repo, "tests/report.md", "archive/report.md")
     section = "反映内容と反映先" if wi_type == "awi" else "回答"
@@ -268,7 +259,6 @@ def test_public_check_excludes_definitions_after_directory_file_names(
     wi_type: str,
     text: str,
 ) -> None:
-    """明示dirの後でもファイルの「の」を定義名の区切りとして扱う。"""
     repo, notes = env
     _track(repo, "docs/guide.md")
     section = "反映内容と反映先" if wi_type == "awi" else "回答"
@@ -284,7 +274,6 @@ def test_public_check_excludes_definitions_after_directory_file_names(
 def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """明示dirでの新設は別親の同名候補と区別し、孤立語・glob・定義名を含めない。"""
     repo, notes = env
     _track(repo, "tests/new_module.py", "archive/new_module.py")
     _awi(
@@ -304,7 +293,6 @@ def test_public_check_preserves_explicit_directory_and_excludes_identifiers(
 def test_public_check_skips_glob_fragments_and_missing_ranges_and_resolves_short_path(
     env: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
-    """グロブの断片と不在範囲を除き、略記の一意実体と個別パスを抽出する。"""
     repo, notes = env
     _track(repo, *_PLUGIN_SHARE_FILES)
     _awi(
@@ -356,11 +344,6 @@ _NON_ASCII_FILES = ("docs/dev/ログ監視.md", "docs/design/既存.md", "docs/c
 def test_public_command_extracts_non_ascii_paths_whole(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """インラインコードと文章中の非ASCIIを含むパスを末尾まで読み、個別のパスだけの`書込対象`を受理する。
-
-    非ASCIIの手前で抽出が終わると、`docs/dev/`のような範囲や`docs/design/LLM`のような途中の名前が
-    反映先になり、メインは実際には書かない範囲を`書込対象`へ置いて別レーンと重ねる。
-    """
     repo, notes = env
     _write_files(repo, *_NON_ASCII_FILES)
     _awi(
@@ -378,7 +361,7 @@ def test_public_command_extracts_non_ascii_paths_whole(
         "src/model.py",
         "src/new_module.py",
     }
-    # 範囲の説明も抽出結果には保持し、書込予定とは区別する。
+
     text = (notes / "processing" / "a.md").read_text(encoding="utf-8")
     assert check_selection.reflected_paths(text, repo) == expected | {"src/"}
     selection = _write_selection(
@@ -391,7 +374,6 @@ def test_public_command_extracts_non_ascii_paths_whole(
 def test_excluded_range_may_contain_write_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """非書込範囲配下の個別書込を受理し、区分が矛盾する重複は報告する。"""
     repo, notes = env
     _write_files(repo, "docs/design/性能.md", "docs/design/別.md", "docs/design/旧.md")
     excluded_range = "`docs/design/性能.md`を変える。他の`docs/`配下は変更しない。"
@@ -433,7 +415,6 @@ def test_excluded_range_may_contain_write_paths(
 def test_non_ascii_write_paths_do_not_require_lane_overlap_rationale(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """日本語名のファイルを個別に書く別レーンの項目どうしは、重複パスの根拠を求めない。"""
     repo, notes = env
     _write_files(repo, "docs/dev/ログ監視.md", "docs/design/性能.md")
     _awi(notes, "log.md", "`docs/dev/ログ監視.md`を変える。")

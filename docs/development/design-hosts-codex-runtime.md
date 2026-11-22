@@ -1,6 +1,6 @@
 # Codexの起動管理と更新jobの設計記録
 
-[設計記録の索引](design.md)から参照する、Codexの起動管理と更新jobの記録である。
+[設計記録の索引](design.md)
 
 ## Codexの起動管理とdaemon復旧
 

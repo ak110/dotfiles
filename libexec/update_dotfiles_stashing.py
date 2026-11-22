@@ -1,5 +1,3 @@
-"""update_dotfilesの未コミット内容の退避と復元。"""
-
 import contextlib
 import os
 import subprocess
@@ -13,7 +11,6 @@ from pytools._internal import sync_report
 
 
 def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | None:
-    """同じcheckoutの退避CLIを有限時間で実行し、子孫と出力の回収にも上限を設ける。"""
     launcher = update_dotfiles_runtime.SOURCE_ROOT / "libexec" / "update_dotfiles_stash.py"
     argv = [sys.executable, str(launcher), *arguments]
     title = "worktree-stash " + " ".join(arguments)
@@ -111,7 +108,6 @@ def _run_worktree_stash(*arguments: str) -> subprocess.CompletedProcess[str] | N
 
 
 def save_worktree(label: str) -> str | None:
-    """未コミット内容をworktree固有refへ退避し、ref名を返す。"""
     result = _run_worktree_stash("save", f"--label={label}")
     if result is None:
         return None
@@ -129,7 +125,6 @@ def save_worktree(label: str) -> str | None:
 
 
 def restore_worktree(ref: str) -> bool:
-    """worktree固有refからindexを含む未コミット内容を復元する。"""
     restored = update_dotfiles_process.run_git_change("stash", "apply", "--index", ref)
     if restored:
         print("一時保存していた未コミット変更を復元しました。")
@@ -165,16 +160,13 @@ def drop_restored_worktree(ref: str) -> bool:
 
 
 def protect_old_worktree_stashes() -> bool:
-    """旧版の未保護退避を1回の子起動で移行し、保護済みの退避は再処理しない。"""
     result = _run_worktree_stash("protect-old")
     if result is None:
         return False
     if result.stdout.strip():
-        # 個別refの成功行は永続ログに保持し、画面へは最後の移行結果だけを出力する。
         print(result.stdout.strip().splitlines()[-1], flush=True)
     return True
 
 
 def clean_saved_untracked(paths: tuple[str, ...]) -> bool:
-    """退避済みの未追跡パスだけを作業ツリーから除く。"""
     return not paths or update_dotfiles_process.run_git_change("clean", "-fd", "--", *paths)

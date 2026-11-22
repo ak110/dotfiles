@@ -16,17 +16,13 @@ from pytools._internal import claude_common, common, log_format
 
 logger = logging.getLogger(__name__)
 
-# --- marketplace 専用定数 ---
 
 # marketplace 登録情報は known_marketplaces.json と settings.json.extraKnownMarketplaces の
 # 2 箇所に保存されるため、両方を点検・修復する必要がある。
 _KNOWN_MARKETPLACES_PATH = Path.home() / ".claude" / "plugins" / "known_marketplaces.json"
 
-# patch 対象として露出させるためモジュールローカル変数として保持する。
+
 _SETTINGS_JSON_PATH = claude_common.SETTINGS_JSON_PATH
-
-
-# --- 公開 API ---
 
 
 def is_directory_type_registered() -> bool:
@@ -203,9 +199,6 @@ def refresh_marketplace() -> bool:
     return True
 
 
-# --- 内部ヘルパー (テスト・デバッグ用に公開) ---
-
-
 def _check_marketplace_from_file() -> bool | None:
     """`known_marketplaces.json` と `settings.json.extraKnownMarketplaces` の両方を検査する。
 
@@ -274,7 +267,6 @@ def _is_entry_healthy(entry: dict[str, object]) -> bool:
 
 
 def _marketplace_already_registered(data: object) -> bool:
-    """対象 marketplace が既に登録されているかを判定する (`marketplace list` の出力をパース)。"""
     if isinstance(data, dict):
         dict_data = cast("dict[str, object]", data)
         if "marketplaces" in dict_data:
@@ -289,7 +281,6 @@ def _marketplace_already_registered(data: object) -> bool:
 
 
 def _now_iso_millis() -> str:
-    """現在時刻を ISO 8601 (UTC, ミリ秒精度, 末尾 Z) で返す。"""
     return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 

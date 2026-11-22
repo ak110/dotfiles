@@ -1,5 +1,3 @@
-"""既存の起動入力を使い、pickerで確定した会話IDを起動側へ返す。"""
-
 import json
 import os
 import pathlib
@@ -35,7 +33,6 @@ def _request(environ: Mapping[str, str]) -> tuple[pathlib.Path, str] | None:
 
 
 def prepare(environ: MutableMapping[str, str]) -> pathlib.Path:
-    """新CLIだけが使うnonce付きの一時応答先を、既存の起動入力へ載せる。"""
     path = managed_temp.create_managed_temp("startup-identity") / "identity.json"
     nonce = str(uuid.uuid4())
     owner = session_registry.ProcessIdentity.of(os.getpid())
@@ -49,7 +46,6 @@ def prepare(environ: MutableMapping[str, str]) -> pathlib.Path:
 
 
 def read(environ: Mapping[str, str]) -> dict[str, Any] | None:
-    """同じnonceの応答だけを受理する。別会話の記録を推測で選ばない。"""
     request = _request(environ)
     if request is None:
         return None
@@ -68,7 +64,6 @@ def read(environ: Mapping[str, str]) -> dict[str, Any] | None:
 
 
 def acknowledge(environ: Mapping[str, str], *, resume_only: bool | None = None) -> None:
-    """所有とmanifestの確定後にだけ、元の目的の続行を許可する。"""
     request = _request(environ)
     response = read(environ)
     if request is None or response is None:

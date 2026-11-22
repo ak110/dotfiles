@@ -1,5 +1,3 @@
-"""shell_checks_testの共通試験準備。"""
-
 import json
 import pathlib
 import subprocess
@@ -25,12 +23,10 @@ def _existing_work_contract(tmp_path, monkeypatch):
 
 
 def _run_in_ready_context(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """対象外の資料取得を代用し、シェル・MCP固有の公開判定を試す。"""
     return run_without_skill_notices(payload, env_overrides=env_overrides)
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
-    """正常拒否の終了状態と配送先を確かめ、理由を返す。"""
     assert result.returncode == 0
     assert not result.stderr
     specific = json.loads(result.stdout)["hookSpecificOutput"]
@@ -43,12 +39,11 @@ def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
 def _run_git_commit_message_hook(
     repo: pathlib.Path, tmp_path: pathlib.Path, command: str, extra_payload: dict[str, str]
 ) -> subprocess.CompletedProcess[str]:
-    """実Gitを持つ場所から公開hookへ渡し、判定だけで履歴や作業状態を変えないことを確認する。"""
     head_before = git_repository.git_output(repo, "rev-parse", "HEAD")
     status_before = git_repository.git_output(repo, "status", "--porcelain=v1")
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(repo), **extra_payload}
     env = _plan_file_state_env(tmp_path)
-    # 本試験はcommit本文の検査を対象とする。repository保護を通す登録を明示する。
+
     env["AGENT_TOOLKIT_CONFIG_REPOSITORIES"] = json.dumps({str(repo): {"edit": "allow"}})
     result = _run(payload, env_overrides=env)
     observed = {

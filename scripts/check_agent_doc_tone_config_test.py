@@ -16,7 +16,6 @@ from _scripts_test_helpers import _DENSITY_BODY, _write
 
 
 def test_project_checks_keep_external_norm_links(tmp_path: pathlib.Path) -> None:
-    """外部規範の表記を保持する設定でも、リンクの確認へは到達する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
     external = pathlib.Path(".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md")
@@ -27,7 +26,6 @@ def test_project_checks_keep_external_norm_links(tmp_path: pathlib.Path) -> None
 
 
 def test_project_checks_include_extensionless_shell_targets(tmp_path: pathlib.Path) -> None:
-    """binのbashを現在と将来の名前によらず対象にし、他の言語は区別する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
     bash_paths = [path.relative_to(repository) for path in (repository / "bin").iterdir() if not path.suffix]
@@ -45,14 +43,12 @@ def test_project_checks_include_extensionless_shell_targets(tmp_path: pathlib.Pa
 
 
 def test_project_textlint_runs_current_rules(tmp_path: pathlib.Path) -> None:
-    """ルールの実装が更新された場合も、現在の実装で本文を確認する設定を保つ。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     config = pyfltr.config.config.load_config(repository, global_config_path=tmp_path / "absent.toml")
     assert "--cache" not in config["textlint-args"]
 
 
 def test_project_pytest_reports_skip_reasons(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
-    """通常のpytest設定を通した未実行のテストは、要約に理由を残す。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     sample = _write(
         tmp_path,
@@ -177,8 +173,6 @@ def test_project_pytest_reports_skip_reasons(tmp_path: pathlib.Path, host_enviro
     ],
     ids=["violations", "compliant", "caution", "caution-and-density", "parse-error", "read-error", "density-positions"],
 )
-# 子処理の時間上限（120秒）より大きいテスト単位の上限を置き、停止時は子処理の時間切れとして報告させる。
-# CIで全チェックを並行して実行するジョブでは子処理に約40秒を要したため、子処理の上限は観測値の約3倍とする。
 @pytest.mark.timeout(180)
 def test_registered_pyfltr_check_reaches_examples_and_code(
     tmp_path: pathlib.Path,
@@ -192,7 +186,6 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
     expected_output: list[str],
     expected_density_lines: list[int],
 ) -> None:
-    """通常の登録対象を検査するチェックが、例の良い文と新しいコードの説明へ到達し、警告の語を位置付きの診断として表示する。"""
     repository = pathlib.Path(__file__).resolve().parents[1]
     settings = tomllib.loads((repository / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["pyfltr"]
     command = settings["custom-commands"]["agent-doc-tone"]
@@ -267,7 +260,7 @@ def test_registered_pyfltr_check_reaches_examples_and_code(
         if "否定形で終わる文: " in message["msg"] or "数えた「当該」: " in message["msg"]
     ]
     assert element_lines == expected_density_lines, decoded
-    # 消費側が本文を解析せずに区別できるよう、注意語は`warning`、それ以外の全診断は`error`の重大度を持つ。
+
     messages = [message for record in records if record["kind"] == "diagnostic" for message in record["messages"]]
     for message in messages:
         expected_severity = "warning" if message["msg"].startswith("警告: ") else "error"

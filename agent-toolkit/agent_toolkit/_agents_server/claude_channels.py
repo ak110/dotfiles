@@ -35,7 +35,6 @@ class _CommandChannel:
     def send(
         self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], prompt: str
     ) -> asyncio.Future[_DeliveryResult]:
-        """要求を受理して応答futureを返す。閉鎖後は受理せず例外を送出する。"""
         if self._closed:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
         future: asyncio.Future[_DeliveryResult] = asyncio.get_running_loop().create_future()
@@ -46,11 +45,9 @@ class _CommandChannel:
         return future
 
     async def get(self) -> _Command:
-        """所有タスクが次の要求を取り出す。"""
         return await self._queue.get()
 
     def close(self, error: BaseException | None = None) -> None:
-        """以降の受理を止め、未処理の要求を所有タスクの終了として解決する。"""
         self._closed = True
         while True:
             try:
@@ -62,8 +59,6 @@ class _CommandChannel:
 
 
 class _ContextUsageObserver:
-    """表示用のコンテキスト使用量の照会を受信ループと別のtaskで行い、照会中に新しい要求が届いた場合は古い応答を捨てて照会し直す。"""
-
     def __init__(self, client: Any) -> None:
         self._client = client
         self._revision = 0

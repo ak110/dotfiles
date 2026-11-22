@@ -1,5 +1,3 @@
-"""hook_testの共通試験準備。"""
-
 import json
 import os
 import pathlib
@@ -51,7 +49,6 @@ def _registered_subcommands() -> tuple[str, ...]:
 
 
 def _definition_commands() -> list[tuple[str, str]]:
-    """両方のhook定義の（定義ファイル名、command）を返す。"""
     commands: list[tuple[str, str]] = []
     for path in _HOOK_DEFINITIONS:
         for entries in json.loads(path.read_text(encoding="utf-8"))["hooks"].values():
@@ -60,7 +57,6 @@ def _definition_commands() -> list[tuple[str, str]]:
 
 
 def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
-    """依存する通知モジュールと共通entrypointを検証用ディレクトリへ複製する。"""
     entrypoint = tmp_path / "hook.py"
     entrypoint.write_text(
         _SCRIPT.read_text(encoding="utf-8")
@@ -81,7 +77,6 @@ def _copy_entrypoint(tmp_path: pathlib.Path) -> pathlib.Path:
 def _run_with_module_record(
     tmp_path: pathlib.Path, mode: str, subcommand: str, payload: bytes
 ) -> tuple[subprocess.CompletedProcess[bytes], set[str]]:
-    """公開hookを子プロセスで実行し、応答と読み込んだモジュール名を返す。"""
     runner = tmp_path / "record_modules.py"
     runner.write_text(_MODULE_RECORDING_RUNNER, encoding="utf-8")
     record = tmp_path / f"modules-{mode}.txt"
@@ -102,7 +97,6 @@ def _run_with_module_record(
 def _call_hook_in_process(
     monkeypatch: pytest.MonkeyPatch, subcommand: str, payload: dict[str, object], expected_code: int = 0
 ) -> str:
-    """同じプロセス内で公開hookを呼び、対象の出力を返す。"""
     del monkeypatch
     result = _run_hook_in_process(subcommand, payload)
     assert result.returncode == expected_code
@@ -111,5 +105,4 @@ def _call_hook_in_process(
 
 @pytest.fixture(name="without_skill_notices")
 def _without_skill_notices(monkeypatch: pytest.MonkeyPatch) -> None:
-    """操作の直前のスキルの案内が対象外の公開hook試験で、その案内だけを空にする。"""
     monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])

@@ -62,8 +62,8 @@
 6. 観測できる最も早い時刻が現在より後の項目は、待たずに、追記の成功を確かめてから`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
    続けて`atk wi edit <ファイル名> --cooldown-until <その時刻> --target-repo=<対象リポジトリの絶対パス>`で再処理の抑制期限を設定する。
    それ以外の項目の状態遷移は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」に従う。
-7. 観測で完成条件を満たせなかった項目は、本書「反映後の観測の再開記録」の「再実装へ戻す」の記録を同じ`--append`の手順で追記する。
-   追記の成功を確かめてから、`--cooldown-until`を付けずに`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
+7. 観測で完成条件を満たせなかった項目は、観測結果を引き継ぎ、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「既存WIの再開」の`--reopen-wi`と`--new-plan`で同じ巡回の計画から再開する。
+   担当側で満たせない外部の前提で進められない場合は、「再実装へ戻す」の記録を`--append`の手順で追記し、成功を確かめてから`atk wi return-to-inbox <ファイル名> --target-repo=<対象リポジトリの絶対パス>`で戻す。
    追記に失敗した項目は`processing`のまま保つ。
 
 ## 反映後の観測の再開記録

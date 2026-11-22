@@ -1,5 +1,3 @@
-"""縮約記録から求めた家族の推定費用が、全行の解析と一致し、追記分だけを解析することを検証する。"""
-
 import json
 import os
 import pathlib
@@ -110,7 +108,6 @@ def _tree(tmp_path: pathlib.Path) -> session_tree.SessionTree:
 
 
 def test_slim_family_cost_matches_full_parse(tmp_path: pathlib.Path, tree: session_tree.SessionTree) -> None:
-    """縮約記録から求めた推定費用と家族が全行の解析と一致し、使わない行と項目を保持しない。"""
     homes = _homes(tmp_path)
     parent = tree.paths[session_tree.CLAUDE_PARENT_ID]
     store = session_cost_slim.SlimRecordStore(tmp_path / "slim")
@@ -128,7 +125,6 @@ def test_slim_family_cost_matches_full_parse(tmp_path: pathlib.Path, tree: sessi
 def test_appended_lines_are_parsed_incrementally(
     tmp_path: pathlib.Path, tree: session_tree.SessionTree, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """記録への追記は追記分だけを解析して縮約記録へ加え、追記で増えた委譲先も家族へ加わる。"""
     homes = _homes(tmp_path)
     parent = tree.paths[session_tree.CLAUDE_PARENT_ID]
     store = session_cost_slim.SlimRecordStore(tmp_path / "slim")
@@ -155,7 +151,7 @@ def test_appended_lines_are_parsed_incrementally(
     monkeypatch.setattr(session_cost_slim, "_slim_entry", counting)
     result = _slim(parent, homes, store)
     monkeypatch.setattr(session_cost_slim, "_slim_entry", original)
-    # 縮約するのは追記した2行と、追記で家族に加わった委譲先の記録（1行）だけで、既存の記録と追記前の行は保存した縮約記録を使う。
+
     child_lines = tree.paths[session_tree.CLAUDE_CHILD_ID].read_bytes().splitlines()
     assert sliced == parent.read_bytes().splitlines()[-2:] + child_lines
     expected = _full(parent, homes)
@@ -166,7 +162,6 @@ def test_appended_lines_are_parsed_incrementally(
 def test_saved_slim_records_are_reused_after_restart(
     tmp_path: pathlib.Path, tree: session_tree.SessionTree, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """保存した縮約記録は別のプロセス（新しい保持先）でも記録を読み直さずに使う。"""
     homes = _homes(tmp_path)
     parent = tree.paths[session_tree.CLAUDE_PARENT_ID]
     expected = _slim(parent, homes, session_cost_slim.SlimRecordStore(tmp_path / "slim"))
@@ -179,7 +174,6 @@ def test_saved_slim_records_are_reused_after_restart(
 
 
 def test_rewritten_record_is_rebuilt(tmp_path: pathlib.Path, tree: session_tree.SessionTree) -> None:
-    """追記で説明できない書き換え（縮小、解析済み部分の変更）は、縮約記録を最初から作り直す。"""
     homes = _homes(tmp_path)
     parent = tree.paths[session_tree.CLAUDE_PARENT_ID]
     store = session_cost_slim.SlimRecordStore(tmp_path / "slim")
@@ -197,7 +191,6 @@ def test_rewritten_record_is_rebuilt(tmp_path: pathlib.Path, tree: session_tree.
 def test_record_with_partial_or_broken_line_is_read_in_full(
     tmp_path: pathlib.Path, tree: session_tree.SessionTree, tail: str
 ) -> None:
-    """書き込み途中の末尾や解析できない行を含む記録は縮約せず、読込は従来の全行の読込と同じ結果を返す。"""
     child = tree.paths[session_tree.CODEX_CHILD_ID]
     with child.open("a", encoding="utf-8") as stream:
         stream.write(tail)
@@ -207,7 +200,6 @@ def test_record_with_partial_or_broken_line_is_read_in_full(
 
 
 def test_prune_removes_oldest_files_over_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存先の縮約記録が上限を超えると、更新の古いものから消す。"""
     directory = tmp_path / "slim"
     directory.mkdir()
     for index in range(5):

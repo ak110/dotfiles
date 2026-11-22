@@ -1,5 +1,3 @@
-"""serveのassetsに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import html
@@ -62,7 +60,6 @@ def test_operations_reads_local_entries_and_detail_without_pull(
 
 
 def test_detail_renders_frontmatter_as_table(tmp_path: pathlib.Path) -> None:
-    """frontmatterは入れ子の長い値も表として描画し、区切り行由来の見出しを生成しない。"""
     _write_detail_entry(
         tmp_path,
         "---\ntarget_repo: github.com/ak110/dotfiles\ntype: awi\n"
@@ -79,7 +76,6 @@ def test_detail_renders_frontmatter_as_table(tmp_path: pathlib.Path) -> None:
 
 
 def test_detail_escapes_frontmatter_values(tmp_path: pathlib.Path) -> None:
-    """frontmatterの値に含まれるHTML特殊文字をエスケープする。"""
     _write_detail_entry(tmp_path, '---\ntype: awi\nnote: "<script>alert(1)</script>"\n---\n\n本文\n')
     rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "<script>" not in rendered
@@ -114,7 +110,6 @@ def test_uwi_preview_hides_answer_separator_and_preserves_raw_content(
 
 @pytest.mark.parametrize("kind", ["uwi", "awi"])
 def test_preview_preserves_marker_examples_before_answer_separator(tmp_path: pathlib.Path, kind: str) -> None:
-    """UWIの最後の保存区切り以外の記法例と、AWIの本文は表示から失わない。"""
     marker = wi_uwi.ANSWER_MARKER
     content = f"---\ntype: {kind}\n---\n\n`{marker}`\n\n```markdown\n{marker}\n```\n\n## 回答\n\n{marker}\n"
     _write_detail_entry(tmp_path, content)
@@ -128,12 +123,11 @@ def test_preview_preserves_marker_examples_before_answer_separator(tmp_path: pat
 
 
 def test_detail_with_empty_frontmatter_renders_body_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """空のfrontmatterは空表を生成せず、分離後の本文だけを整形する。"""
     _write_detail_entry(tmp_path, "---\n---\n\n本文\n")
     monkeypatch.setattr(_wi_entries, "entry_type_from_metadata", lambda *_args: "awi")
     rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert '<table class="frontmatter">' not in rendered
-    # 分離自体は成立するため、開始区切りが水平線として残らない。
+
     assert "<hr" not in rendered
     assert "<p>本文</p>" in rendered
 
@@ -171,7 +165,6 @@ def test_operations_parses_each_scanned_entry_once_before_query_filter(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文検索で除外するエントリも含め、走査したMarkdownを1件1回だけ解析する。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     for filename, body in (("match.md", "検索対象"), ("other.md", "別の本文")):
@@ -198,7 +191,6 @@ def test_operations_parses_each_scanned_entry_once_before_query_filter(
 
 @pytest.mark.asyncio
 async def test_api_repos_returns_target_repos(tmp_path: pathlib.Path) -> None:
-    """`GET /api/repos`は一覧と同じ状態指定で対象リポジトリの一覧を返す。"""
     _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/alpha")
     _write_repo_entry(tmp_path, "adopted", "b.md", "github.com/x/adopted")
     current_state = state.ServeState(tmp_path)

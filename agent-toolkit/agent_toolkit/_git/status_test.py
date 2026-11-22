@@ -1,5 +1,3 @@
-"""`_git_status`モジュールのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -10,13 +8,11 @@ from agent_toolkit._testing import git_repository
 
 
 class TestRunGitLines:
-    """`run_git_lines`: git出力を行リストで返す。"""
-
     def test_successful_command_returns_lines(self, tmp_path: pathlib.Path):
         repo = tmp_path / "repo"
         git_repository.init_repository(repo, files={"a.txt": "content"}, commit_message="init")
         result = _git_status.run_git_lines(["remote"], str(repo))
-        assert result == []  # リモート未構成
+        assert result == []
 
     def test_failed_command_returns_none(self, tmp_path: pathlib.Path):
         result = _git_status.run_git_lines(["config", "nonexistent"], str(tmp_path / "nonexistent"))

@@ -33,12 +33,10 @@ class TestCodexApplyPatchEditChecks:
 
     @staticmethod
     def _ready_env(tmp_path: pathlib.Path) -> dict[str, str]:
-        """編集判定の状態を用意する。"""
         _write_session_state(tmp_path, "codex-edit", {})
         return _plan_file_state_env(tmp_path)
 
     def test_multiple_warnings_are_merged_into_single_json(self, tmp_path: pathlib.Path) -> None:
-        """異なる対象の警告を単一JSONへまとめ、件数だけの反復通知を生成しない。"""
         patch_text = _patch(
             "*** Add File: one/uv.lock\n+version = 1\n",
             "*** Add File: two/uv.lock\n+version = 1\n",
@@ -54,7 +52,6 @@ class TestCodexApplyPatchEditChecks:
         assert result.stderr == ""
 
     def test_mojibake_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
-        """patch本文の文字化けを警告する。編集対象は再編集で復元できる。"""
         patch_text = _patch("*** Add File: docs/a.md\n+hello � world\n")
         result = _run(_codex_payload(patch_text, tmp_path), env_overrides=self._ready_env(tmp_path))
 
@@ -62,14 +59,12 @@ class TestCodexApplyPatchEditChecks:
         assert "U+FFFD" in _additional_context(result)
 
     def test_unparsable_patch_passes_through(self, tmp_path: pathlib.Path) -> None:
-        """patch構造を認識できない入力は遮断も警告もせず通過させる。"""
         result = _run(_codex_payload("not a patch at all\n", tmp_path))
 
         assert result.returncode == 0
         assert result.stdout == ""
 
     def test_lockfile_path_in_patch_warns(self, tmp_path: pathlib.Path) -> None:
-        """patchの対象パス判定は既存のパターンとの一致判定を共有する。"""
         patch_text = _patch("*** Update File: uv.lock\n@@\n-old\n+new\n")
         result = _run(_codex_payload(patch_text, tmp_path), env_overrides=self._ready_env(tmp_path))
 
@@ -77,7 +72,6 @@ class TestCodexApplyPatchEditChecks:
         assert "uv.lock" in _additional_context(result)
 
     def test_delete_of_unprotected_file_passes(self, tmp_path: pathlib.Path) -> None:
-        """非保護対象の削除はこの条件では誤遮断しない。"""
         target = tmp_path / "docs" / "old.md"
         target.parent.mkdir(parents=True)
         target.write_text("本文\n", encoding="utf-8")

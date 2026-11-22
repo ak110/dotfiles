@@ -1,5 +1,3 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -23,22 +21,18 @@ _AUDIT_HEADING_PATTERN = re.compile(r"^## (?P<heading>.+)$", re.MULTILINE)
 _AUDIT_INDEX_EXCLUDED_PREFIX = "docs/"
 
 
-# 監査記録の本文が他の記録を「<対象>：<節>：<年月日>」の見出しで指す参照。
 _AUDIT_BODY_REFERENCE_PATTERN = re.compile(r"「(?P<heading>[^」\n]*：[^」\n]*\d{4}年\d{1,2}月[^」\n]*)」")
 
 
 def _comment_joined(content: str) -> str:
-    """行頭の空白とコメント記号`#`を除いて各行を連結し、コメントの改行で分かれた参照を1つの文字列にする。"""
     return "".join(line.strip().lstrip("#").strip() for line in content.splitlines())
 
 
 def _audit_headings(content: str) -> list[str]:
-    """監査記録のH2見出しを出現順に返す。"""
     return [match.group("heading") for match in _AUDIT_HEADING_PATTERN.finditer(content)]
 
 
 def _reference_text(root: pathlib.Path, source: pathlib.Path) -> str:
-    """見出しの参照を探す本文として、ファイルの本文とコメントの改行を連結した本文を返す。"""
     content = (root / source).read_text(encoding="utf-8")
     return f"{content}\n{_comment_joined(content)}"
 
@@ -58,12 +52,10 @@ def _is_rule_document(path: pathlib.Path) -> bool:
 
 
 def _is_standalone_document(path: pathlib.Path) -> bool:
-    """agent-basicsの配布物（`agent-basics/`配下のMarkdown）のパスかを返す。"""
     return path.suffix == ".md" and path.as_posix().startswith("agent-basics/")
 
 
 def _section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str) -> bool:
-    """監査見出しについて、ファイルが実在しそのファイルに節名と同じ見出しがあるかを返す。"""
     parts = heading.split("：")
     if len(parts) < 3:
         return False
@@ -76,18 +68,12 @@ def _section_exists(root: pathlib.Path, tracked: set[pathlib.Path], heading: str
 
 
 def _audit_record_content(root: pathlib.Path) -> str:
-    """主題別に分割された監査記録を、見出しと相互参照の共通検査へ渡す。"""
     paths = sorted((root / _AUDIT_RECORDS.parent).glob("audit-records*.md"))
     assert paths, "監査記録の検査対象が無い"
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
 def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """監査記録のH2見出しのうち参照元を持たないものを返す。
-
-    入口の規範を指す見出しはファイルと節の実在でも参照ありとする。他の見出しは索引元の追跡ファイルか
-    見出しのファイル部分が指すファイル自身に現れるかで判定し、agent-basicsの配布物を指す見出しはファイルと節の実在でも参照ありとする。
-    """
     headings = _audit_headings(_audit_record_content(root))
     texts = [
         _reference_text(root, source)
@@ -95,7 +81,7 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
         if not source.name.endswith("_test.py") and not source.as_posix().startswith(_AUDIT_INDEX_EXCLUDED_PREFIX)
     ]
     corpus = "\n".join(texts)
-    # 「：」を含む見出しは「：」を含むファイルにしか現れないため、その走査をこれらのファイル（全体の約1割）に限る。
+
     colon_corpus = "\n".join(text for text in texts if "：" in text)
     tracked = set(sources) - {_AUDIT_RECORDS}
     unreferenced: list[str] = []
@@ -114,7 +100,6 @@ def _unreferenced_audit_headings(root: pathlib.Path, sources: list[pathlib.Path]
 
 
 def _unresolved_audit_body_references(content: str) -> list[str]:
-    """監査記録の本文で、実在しない見出しを「」で指す参照を出現順に返す。"""
     headings = set(_audit_headings(content))
     body = _AUDIT_HEADING_PATTERN.sub("", content)
     return [
@@ -128,7 +113,6 @@ def _unresolved_audit_body_references(content: str) -> list[str]:
     2.0, reason="全追跡ソースと全監査見出しの参照を走査する横断契約。Linux CIのCPU最大0.55秒を基準に余裕を確保"
 )
 def test_audit_record_headings_are_referenced() -> None:
-    """監査記録の各H2見出しを、索引元の条文またはコードが同じ文字列で指す。"""
     root = pathlib.Path(__file__).resolve().parent
     unreferenced = _unreferenced_audit_headings(root, _tracked_source_paths(root, _SOURCE_SUFFIXES | {".ts", ".tsx"}))
     assert not unreferenced, (
@@ -138,7 +122,6 @@ def test_audit_record_headings_are_referenced() -> None:
 
 
 def test_audit_record_body_heading_references_resolve() -> None:
-    """監査記録の本文が「」で指す他の記録の見出しが、監査記録に実在する。"""
     root = pathlib.Path(__file__).resolve().parent
     unresolved = _unresolved_audit_body_references(_audit_record_content(root))
     assert not unresolved, (
@@ -149,7 +132,6 @@ def test_audit_record_body_heading_references_resolve() -> None:
 
 @pytest.mark.parametrize("split_records", [False, True])
 def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pathlib.Path, split_records: bool) -> None:
-    """コメントの改行で分かれた参照を参照ありとし、どこにも現れない見出しだけを報告する。"""
     audit = tmp_path / _AUDIT_RECORDS
     audit.parent.mkdir(parents=True)
     audit.write_text(
@@ -173,7 +155,6 @@ def test_unreferenced_audit_heading_detector_joins_wrapped_comments(tmp_path: pa
 
 
 def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pathlib.Path) -> None:
-    """テストと`docs/`配下の他のファイルだけに現れる見出しを報告し、コードか見出しのファイル自身に現れる見出しを参照ありとする。"""
     in_code = "tool.py：節：2026年1月1日"
     in_own_file = "docs/development/design-a.md：節：2026年1月2日"
     only_tests_and_docs = "c.md：節：2026年1月3日"
@@ -198,7 +179,6 @@ def test_unreferenced_audit_heading_detector_ignores_tests_and_docs(tmp_path: pa
 
 
 def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) -> None:
-    """入口の規範を指す見出しは、ファイルに同名の節があれば索引の文が無くても参照ありとする。"""
     skill = "agent-toolkit/skills/atk-mode"
     existing = f"{skill}/playbooks/a.md：節A：2026年1月1日"
     renamed = f"{skill}/playbooks/a.md：消えた節：2026年1月2日"
@@ -225,7 +205,6 @@ def test_rule_audit_heading_requires_existing_section(tmp_path: pathlib.Path) ->
 
 @pytest.mark.parametrize("split_records", [False, True])
 def test_audit_body_reference_to_missing_heading_is_reported(tmp_path: pathlib.Path, split_records: bool) -> None:
-    """監査記録の本文が実在しない見出しを指すと報告し、実在する見出しと見出し以外の「」は報告しない。"""
     content = (
         "# 監査記録\n\n"
         "## a.py：節：2026年1月1日\n\n"
@@ -247,7 +226,6 @@ def test_audit_body_reference_to_missing_heading_is_reported(tmp_path: pathlib.P
 
 
 def test_standalone_audit_heading_is_indexed_by_existing_section(tmp_path: pathlib.Path) -> None:
-    """agent-basicsの配布物を指す見出しは、索引の文が無くてもファイルに同名の節（H1を含む）があれば参照ありとする。"""
     existing = "agent-basics/skills/a/references/x.md：節A：2026年1月1日"
     whole = "agent-basics/skills/a/references/x.md：文書X：2026年1月2日"
     renamed = "agent-basics/skills/a/references/x.md：消えた節：2026年1月3日"

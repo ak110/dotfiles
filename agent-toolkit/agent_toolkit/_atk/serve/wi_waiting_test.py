@@ -1,5 +1,3 @@
-"""判断待ち一覧APIと連続回答画面の結合テスト。"""
-
 import pathlib
 
 import pytest
@@ -13,7 +11,6 @@ from agent_toolkit._testing.serve_support import _disable_wi_git, _run_node_ui
 
 @pytest.mark.asyncio
 async def test_waiting_api_selects_active_unanswered_across_pages_and_repos(tmp_path: pathlib.Path) -> None:
-    """判断待ちは期間や検索条件から独立し、重要度内で古い順に全ページを返す。"""
     names = [f"20200101-000000-{index:03d}.md" for index in range(101)]
     for index, name in enumerate(names):
         wi_entry_files.write_uwi(
@@ -54,7 +51,6 @@ async def test_waiting_api_selects_active_unanswered_across_pages_and_repos(tmp_
 
 @pytest.mark.asyncio
 async def test_waiting_answer_api_keeps_dependent_awi_held(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """holdの回答を保存して候補から除き、依存するAWIの状態を独自に再開しない。"""
     _disable_wi_git(monkeypatch)
     wi_entry_files.write_uwi(tmp_path, "held.md", state="hold")
     path = wi_entry_files.entry_path(tmp_path, "held.md")
@@ -161,7 +157,6 @@ process.stdout.write(JSON.stringify({filename: currentEntry.filename, input: ele
 
 
 def test_waiting_next_ignores_stale_list_and_changed_candidates() -> None:
-    """古い一覧応答と候補の回答済み化・削除・終了状態への移動が次対象を誤らせない。"""
     result = _run_node_ui("""
 setDisplayMode('waiting');
 const entry = name => ({kind: 'uwi', state: 'inbox', filename: name, important: false, answered: false,
@@ -191,7 +186,6 @@ process.stdout.write(JSON.stringify({filename: currentEntry.filename, keys: entr
 
 @pytest.mark.parametrize("change", ["answered", "moved"])
 def test_waiting_external_change_keeps_typed_answer_and_allows_skip(change: str) -> None:
-    """現在の回答が外部で対象外になっても入力を保持し、保存を止めて見送れる。"""
     result = _run_node_ui(
         """
 setDisplayMode('waiting');
@@ -214,7 +208,6 @@ process.stdout.write(JSON.stringify({filename: currentEntry.filename, input: ele
 @pytest.mark.parametrize("mode", ["waiting", "normal", "search"])
 @pytest.mark.parametrize("typed", ["", "編集中"])
 def test_external_deletion_keeps_waiting_detail_until_explicit_skip(mode: str, typed: str) -> None:
-    """判断待ちは未入力でも削除された現在項目を保持し、通常/検索は従来どおり閉じる。"""
     result = _run_node_ui(
         """
 setDisplayMode(MODE);

@@ -20,7 +20,7 @@ from typing import Any
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SCRIPT = _ROOT / "agent-toolkit/scripts/launch.py"
 _SCRIPT_LOCK = _SCRIPT.with_name(_SCRIPT.name + ".lock")
-# PEP 723のリファレンス実装と同じ抽出パターン。
+
 _METADATA_BLOCK = re.compile(r"(?m)^# /// (?P<type>[A-Za-z0-9-]+)$\s(?P<content>(?:^#(?:| .*)$\s)+)^# ///$")
 _RELOCK = "`env --unset=UV_FROZEN uv lock --script agent-toolkit/scripts/launch.py`"
 
@@ -46,7 +46,6 @@ def _locked_versions(path: pathlib.Path) -> dict[str, str]:
 
 
 def test_plugin_root_has_no_uv_project() -> None:
-    """配布rootにuvのプロジェクトを置かず、開発用のツールが仮想環境を作る起点を無くす。"""
     present = [name for name in ("pyproject.toml", "uv.lock") if (_ROOT / "agent-toolkit" / name).exists()]
     assert not present, (
         f"agent-toolkit/に{present}がある。実行依存は{_SCRIPT.relative_to(_ROOT)}のインラインメタデータへ、"
@@ -55,7 +54,6 @@ def test_plugin_root_has_no_uv_project() -> None:
 
 
 def test_root_declares_runtime_dependencies_verbatim() -> None:
-    """直下の`[project] dependencies`がagent-toolkitの実行依存を同じ表記で含む。"""
     declared = set(_root_project()["project"]["dependencies"])
     missing = [requirement for requirement in _script_metadata()["dependencies"] if requirement not in declared]
     assert not missing, (
@@ -65,7 +63,6 @@ def test_root_declares_runtime_dependencies_verbatim() -> None:
 
 
 def test_python_and_resolution_settings_match() -> None:
-    """対象Pythonと、公開直後の版を待つ解決設定を両側で同じ値にする。"""
     script = _script_metadata()
     root = _root_project()
     assert script["requires-python"] == root["project"]["requires-python"]

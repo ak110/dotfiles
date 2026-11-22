@@ -1,5 +1,3 @@
-"""WIのmutations transitions: baseのテスト。"""
-
 import contextlib
 import datetime
 import pathlib
@@ -27,7 +25,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _GitCall, _make_subprocess_fake, _
 
 
 def test_flat_awi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """平引数遷移が固定パスを保ち、戻り値と保存状態を一貫して反映する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -53,7 +50,6 @@ def test_agent_reopens_terminal_entry_without_old_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """誤終了した項目をCLIから再開し、旧結果を次の処理へ持ち込まない。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
     source.write_text(source.read_text(encoding="utf-8") + "\n## 処理結果\n\n- 誤った終了\n", encoding="utf-8")
@@ -88,10 +84,6 @@ def test_filename_terminal_transition_reaches_every_bulk_source_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ファイル名だけの`adopt`・`reject`が、`--all`の候補となる全状態から終了できる。
-
-    個別指定と`--all`で到達できる遷移元が一致することを固定し、状態を片方にだけ加える変更を検出する。
-    """
     notes = _setup_notes(tmp_path)
     source = _place_awi(notes, "entry.md", state)
     _disable_transition_git(monkeypatch)
@@ -113,7 +105,6 @@ def test_legacy_duplicate_names_stop_before_terminal_transition(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """旧配置の同名項目が固定パスへ衝突する場合は両方の本文と状態を保持する。"""
     notes = _setup_notes(tmp_path)
     processing = _place_awi(notes, "entry.md", "processing", body="処理中の本文", legacy_layout=True)
     held = _place_awi(notes, "entry.md", "hold", body="保留中の本文", legacy_layout=True)
@@ -135,7 +126,6 @@ def test_reject_if_inbox_keeps_all_targets_when_hold_is_included(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`reject --if-inbox`はholdの対象を含むと終了コード2で全対象を元の状態に残す。"""
     notes = _setup_notes(tmp_path)
     inbox_entry = _place_awi(notes, "inbox-entry.md", "inbox")
     held_entry = _place_awi(notes, "held-entry.md", "hold")
@@ -155,7 +145,6 @@ def test_hold_does_not_resolve_held_entry(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """holdにある項目への`atk wi hold`は、adopt・rejectの解決変更後も受理しない。"""
     notes = _setup_notes(tmp_path)
     held = _place_awi(notes, "entry.md", "hold")
     _disable_transition_git(monkeypatch)
@@ -175,7 +164,6 @@ def test_user_can_remove_individual_entry_from_every_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """人間環境の個別削除は暗黙・明示指定とも全状態を対象にする。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
     target = _set_state(source, state)
@@ -199,7 +187,6 @@ def test_agent_can_remove_individual_entry_from_allowed_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境の個別削除はinboxとholdを対象にする。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
     target = _set_state(source, state)
@@ -222,7 +209,6 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境では禁止状態を状態名付きで拒否し、対象を保持する。"""
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
     target = _set_state(source, state)
@@ -238,7 +224,7 @@ def test_agent_rejects_individual_entry_from_forbidden_state(
     assert exc_info.value.code == 1
     err = capsys.readouterr().err
     assert f"state={state}" in err
-    # 削除できない主体へ、ユーザーへの依頼と実行できる代替（不採用）を示すこと。
+
     next_actions = [line for line in err.splitlines() if line.startswith("次の操作: ")]
     assert len(next_actions) == 1
     assert "ユーザーへ依頼する" in next_actions[0]
@@ -250,7 +236,6 @@ def test_transition_commits_fixed_path(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態遷移は変更した固定パスだけをcommit対象にする。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -282,7 +267,6 @@ def test_convert_to_plan_cli_rejects_removed_command_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     dependency_args: tuple[str, ...],
 ) -> None:
-    """削除済み変換CLIを依存引数の有無にかかわらず拒否する。"""
     notes = _setup_notes(tmp_path)
     path = _write_convert_awi(
         notes,
@@ -375,10 +359,6 @@ def test_hold_does_not_record_processing_origin(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """processingからの保留でも保留前の状態をfrontmatterへ残さない。
-
-    holdの項目はinboxと同じ条件で扱うため、保留前の状態を読む処理を持たない。
-    """
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _disable_transition_git(monkeypatch)
@@ -397,7 +377,6 @@ def test_return_to_inbox_missing_file_reports_processing_state(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """return-to-inboxで未存在ファイルを指定するとprocessing側の状態名で案内する。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -417,7 +396,6 @@ class TestAdoptZeroArgs:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """ファイル名引数なしでargparseがexit 2を返すこと。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -428,14 +406,11 @@ class TestAdoptZeroArgs:
 
 
 class TestAdoptStampWithoutOptional:
-    """adopt: --note・--commit省略時も必須項目のみ追記される。"""
-
     def test_stamp_written_with_required_only(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """引数省略時、`## 処理結果`節に採否・処理日時のみ追記され、対応commit・メモ行は含まれない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -469,7 +444,6 @@ def test_terminal_transition_prints_destination_path(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """完了報告用に終了状態の件数と絶対パスを出力する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -483,14 +457,11 @@ def test_terminal_transition_prints_destination_path(
 
 
 class TestRejectIfInbox:
-    """rejectのinbox状態前提を公開CLIを呼び出して検証する。"""
-
     def test_rejects_inbox_entry_and_preserves_note(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """対象がinboxなら本文を保持して処理理由を記録する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "inbox.md", body="保持する本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -512,7 +483,6 @@ class TestRejectIfInbox:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """pull後にprocessingへ移った対象は終了しない。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
@@ -538,7 +508,6 @@ class TestRejectIfInbox:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """複数対象の一部がprocessingならinbox対象も変更しない。"""
         notes = _setup_notes(tmp_path)
         inbox = _write_awi_file(notes, "inbox.md", body="inbox本文")
         processing_dir = notes / "2026" / "10"

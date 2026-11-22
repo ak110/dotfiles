@@ -1,5 +1,3 @@
-"""続行不能の理由に引用された診断が、当turnの記録に存在するかを確認する。"""
-
 from __future__ import annotations
 
 import datetime
@@ -9,7 +7,6 @@ from agent_toolkit._agents_server import record_paths
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import session_record_format
 
-# 一般的な短い語だけで診断との一致にしない。意味上の実行不能は委譲元が別に検収する。
 MIN_EXCERPT_LENGTH = 24
 
 

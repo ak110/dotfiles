@@ -24,7 +24,7 @@ from agent_toolkit._testing import git_repository, wi_entry_files
 from agent_toolkit._testing.lane_integration_support import _integration_args
 
 _SESSION = "lane-parallel-session"
-# レーン数の上限（候補WI数から決まる）が2以上になるよう、lane-01へ10件、lane-02へ1件を割り当てる。
+
 _WIS = {
     "lane-01": [f"20261111-000000-{index:03d}.md" for index in range(1, 11)],
     "lane-02": ["20261111-000000-011.md"],
@@ -44,7 +44,6 @@ def _invoke(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[s
 def _prepare(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> tuple[pathlib.Path, dict[str, dict[str, Any]]]:
-    """2レーンを同じ所有sessionで作成し、各レーンに1commitの成果を置く。"""
     monkeypatch.setenv(lane.SESSION_ENV, _SESSION)
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     # WIの所属と統合先の識別子を揃え、模擬remoteへの外部fetchは行わない。
@@ -109,7 +108,6 @@ def _manifest(path: pathlib.Path, lane_id: str, *, verification: list[list[str]]
         json.dumps(
             {
                 "plans": [],
-                # 先頭のWIだけに終了argvを置き、残りは延期として扱う。
                 "wis": [{"name": wi, "commands": wi_commands if index == 0 else []} for index, wi in enumerate(_WIS[lane_id])],
                 "verification": verification,
                 "handoff": str(handoff),
@@ -121,7 +119,6 @@ def _manifest(path: pathlib.Path, lane_id: str, *, verification: list[list[str]]
 
 
 def _barrier(started: pathlib.Path, released: pathlib.Path) -> list[str]:
-    """開始の印を書き、解放の印が現れるまで待つargv。上限までに現れなければ終了1とする。"""
     program = (
         "import pathlib,sys,time\n"
         "pathlib.Path(sys.argv[1]).write_text('started'); deadline=time.monotonic()+float(sys.argv[3])\n"
@@ -135,7 +132,7 @@ def _barrier(started: pathlib.Path, released: pathlib.Path) -> list[str]:
 
 def _start_first(arguments: tuple[str, ...], started: pathlib.Path, tmp_path: pathlib.Path) -> subprocess.Popen[bytes]:
     """先行レーンの統合を別プロセスで起動し、待機の区間へ入ったことを確かめる。"""
-    # 子は複製したファイル記述子へ書くため、親の側は起動の直後に閉じてよい。
+
     with (tmp_path / "first.stdout").open("wb") as stdout, (tmp_path / "first.stderr").open("wb") as stderr:
         process = subprocess.Popen(  # pylint: disable=consider-using-with
             [sys.executable, str(pathlib.Path(atk.__file__).resolve()), "lane", *arguments],
@@ -169,7 +166,6 @@ def _finish_first(process: subprocess.Popen[bytes], tmp_path: pathlib.Path) -> t
 def test_second_lane_integrates_while_first_lane_verifies(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """一方の検証の実行中に他方が統合を終え、先行側は統合先の前進を検出して更新しない。"""
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
     started, released = tmp_path / "first-verification.started", tmp_path / "second.done"
     first_manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[_barrier(started, released)], wi_commands=[])
@@ -185,12 +181,12 @@ def test_second_lane_integrates_while_first_lane_verifies(
     finally:
         released.write_text("done", encoding="utf-8")
         code, first, stderr = _finish_first(process, tmp_path)
-    # 先行側の検証は後続の統合の完了を観測して成功し、短い更新で統合先の前進を検出して更新しない。
+
     assert code == 1 and first["phase"] == "verified", stderr
     assert first["target_advanced"]["actual"] == records["lane-02"]["reviewed_head"]
     assert "--restart-review" in first["next_action"]
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == records["lane-02"]["reviewed_head"]
-    # 既存の--restart-reviewで最新の統合先へ追随し、rebase結果の検収待ちへ戻る。
+
     code, restarted, stderr = _invoke(
         capsys,
         *_integration_args(
@@ -216,7 +212,6 @@ def test_second_lane_integrates_while_first_lane_verifies(
 def test_second_lane_updates_target_while_first_lane_finalizes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """一方の記録の確定（WI終了argv）の実行中に、他方が統合先を更新して最終化まで終える。"""
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
     started, released = tmp_path / "first-finalization.started", tmp_path / "second.done"
     first_manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[], wi_commands=[_barrier(started, released)])
@@ -224,7 +219,6 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         _integration_args(records["lane-01"], repo, first_manifest, records["lane-01"]["reviewed_head"]), started, tmp_path
     )
     try:
-        # 先行側は統合先を更新済みで、最終化の途中にいる。
         assert git_repository.git_output(repo, "rev-parse", "HEAD") == records["lane-01"]["reviewed_head"]
         second_manifest = _manifest(
             tmp_path / "second.json", "lane-02", verification=[[sys.executable, "-c", "pass"]], wi_commands=[]
@@ -246,7 +240,7 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
         stored = json.loads(pathlib.Path(records[lane_id]["record_path"]).read_text(encoding="utf-8"))["integration"]
         assert stored["integrated_head"] == result["integrated_head"]
         git_repository.run_git(repo, "merge-base", "--is-ancestor", result["integrated_head"], "main")
-        # 統合前HEAD（短い更新の直前の統合先HEAD）からの範囲は、そのレーンの1commitだけを含む。
+
         before = stored.get("new_base") or stored["verified_base"]
         included = git_repository.git_output(repo, "rev-list", f"{before}..{result['integrated_head']}").splitlines()
         assert records[lane_id]["reviewed_head"] in included
@@ -272,7 +266,6 @@ def test_second_lane_updates_target_while_first_lane_finalizes(
 def test_target_advance_before_short_update_keeps_target(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """準備の後に統合先が進んだら古い前提で更新せず、記録した工程から--restart-reviewで追随できる。"""
     repo, records = _prepare(tmp_path, monkeypatch, capsys)
     record = records["lane-01"]
     manifest = _manifest(tmp_path / "first.json", "lane-01", verification=[[sys.executable, "-c", "pass"]], wi_commands=[])
@@ -280,7 +273,7 @@ def test_target_advance_before_short_update_keeps_target(
     advanced: list[str] = []
 
     def advance_target(*arguments: Any) -> None:
-        # 準備（rebase不要の検収済み）の後、短い更新の直前に別の統合が統合先を進めた状態を作る。
+
         original(*arguments)
         if not advanced:
             (repo / "other.txt").write_text("別の統合", encoding="utf-8")
@@ -385,7 +378,6 @@ def test_residual_target_state_is_still_rejected(
 def test_delete_retains_lane_while_its_integration_runs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合中のレーンは待たずに保持し、資源と所有登録を残す。"""
     _repo, records = _prepare(tmp_path, monkeypatch, capsys)
     record = records["lane-01"]
     with lane_records.lane_locked(pathlib.Path(record["record_path"])):

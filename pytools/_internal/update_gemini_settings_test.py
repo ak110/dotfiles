@@ -1,5 +1,3 @@
-"""Gemini設定の配布原本からJSONC更新・再適用までを検証する。"""
-
 import pathlib
 import sys
 import typing
@@ -61,7 +59,6 @@ def test_run_distributes_managed_settings_and_preserves_user_values(
 
 
 def test_run_keeps_jsonc_comments_for_value_only_change(tmp_path: pathlib.Path) -> None:
-    """管理値だけの置換では既存hybrid書込がコメントも保持する。"""
     settings = tmp_path / ".gemini/settings.json"
     settings.parent.mkdir()
     settings.write_text('{\n  // ユーザーメモ\n  "general": {"topicUpdateNarration": true}\n}\n', encoding="utf-8")
@@ -103,7 +100,6 @@ def test_run_reports_unresolved_root(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("original", ["[]", "{invalid-json}"])
 def test_run_rejects_invalid_settings_without_overwriting(tmp_path: pathlib.Path, original: str) -> None:
-    """不正な既存入力は例外としてpost-applyへ渡し、入力ファイルを保つ。"""
     settings = tmp_path / ".gemini/settings.json"
     settings.parent.mkdir()
     settings.write_text(original, encoding="utf-8")

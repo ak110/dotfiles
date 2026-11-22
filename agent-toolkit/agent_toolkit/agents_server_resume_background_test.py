@@ -82,7 +82,6 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクが残る初回結果を返さず、自動再開turnの結果を返す。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.05)
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
@@ -117,7 +116,6 @@ async def test_claude_collects_background_wait_before_holding_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """背景waitの終了・読取・turn終了の順序で回収を反映し、残る対象だけを待って結果を公開する。"""
     client = ControlledClaudeClient("claude-collected-wait")
     async with _manager(client, monkeypatch) as (manager, _backend):
         output = tmp_path / "background-output.txt"
@@ -181,7 +179,6 @@ async def test_result_without_background_task_is_immediately_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクが無いturnは従来どおり最初の結果で終了する。"""
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
         await _start(manager, tmp_path, monkeypatch)
@@ -283,10 +280,6 @@ async def test_kill_interrupts_while_initial_result_is_pending(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中の中断要求はSDKへ配送し、CLI回収後に保留本文付きの停止結果を返して同じ会話の継続を受け付ける。
-
-    SDKはturnの外で受けた中断要求へ何も返さないため、保留結果を確定しないと`kill`はtimeoutまで待つ。
-    """
     client = ControlledClaudeClient("claude-kill")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -346,7 +339,6 @@ async def test_show_reports_held_result_and_live_background_tasks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """結果を保留している間だけ、`show`が保留と追跡中のバックグラウンドタスクを返す。"""
     client = ControlledClaudeClient("claude-show")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -383,7 +375,6 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """通常または自動再開済みsessionへのreplyは再度自動再開できる。"""
     client = ControlledClaudeClient("claude-repeat")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)

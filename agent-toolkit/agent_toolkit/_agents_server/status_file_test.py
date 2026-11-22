@@ -23,7 +23,6 @@ async def test_writer_logs_result_write_and_delete_without_body(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """result操作へsessionと書込主体を記録し、結果本文を含めない。"""
     session = state.SessionState("session-1", str(tmp_path))
     session.status = "completed"
     session.agent_message = "秘密の結果本文"
@@ -46,7 +45,6 @@ async def test_writer_logs_result_write_and_delete_without_body(
 
 @pytest.mark.asyncio
 async def test_status_file_includes_updated_at(tmp_path: pathlib.Path) -> None:
-    """状態ファイルのsession射影は最終活動時刻を含む。"""
     session = state.SessionState("session-1", str(tmp_path))
     session.announced = True
     writer = subject.StatusFileWriter(
@@ -64,7 +62,6 @@ async def test_status_file_includes_updated_at(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_inner_writer_projects_parent_thread_id_into_host_session_id(tmp_path: pathlib.Path) -> None:
-    """内側の3つのmode（delegate・explore・shell）のsessionを親thread識別子へ射影して1つの状態ファイルへ集約する。"""
     identity = shared_roots.resolve_status_file_identity(
         {"AGENT_TOOLKIT_OWNER_SESSION": "root", "AGENT_TOOLKIT_STATUS_HOST_SESSION": "writer"}
     )
@@ -138,7 +135,6 @@ async def test_hosts_entries_are_removed_after_retention(tmp_path: pathlib.Path)
 
 @pytest.mark.asyncio
 async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.Path) -> None:
-    """別書込主体の起動が古い索引を回収しても、複数turn後の結果の所有者を失わない。"""
     shared_roots.write_host_alias("root", "writer", "thread", tmp_path)
     host_path = shared_layout.hosts_directory("root", tmp_path) / "writer.json"
     stale_at = datetime.datetime.now(datetime.UTC).timestamp() - state.RESULT_RETENTION_SECONDS - 1
@@ -172,7 +168,6 @@ async def test_host_alias_outlives_uncollected_nested_result(tmp_path: pathlib.P
 async def test_writer_serializes_announced_sessions_and_removes_delivered(
     tmp_path: pathlib.Path,
 ) -> None:
-    """公開済みで未回収のsessionだけを状態ファイルへ書く。"""
     sessions: dict[str, state.SessionState] = {}
     writer = subject.StatusFileWriter(
         sessions,

@@ -1,5 +1,3 @@
-"""証拠抽出のツール呼び出し（session_evidence_tool_calls_records）。"""
-
 from __future__ import annotations
 
 import json
@@ -17,7 +15,6 @@ _APPLY_PATCH_FILE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.
 
 
 def _conversation_tool_calls(records: list[_Record], *, compact: bool = False) -> list[dict[str, Any]]:
-    """記録上の全呼び出しと結果を、入力全文・識別子・位置の対応を保って返す。"""
     entries = {record.line: record.entry for record in records}
     events: list[dict[str, Any]] = []
     for record in records:
@@ -69,7 +66,6 @@ def _conversation_tool_calls(records: list[_Record], *, compact: bool = False) -
             }
         )
         if call.result_line is not None:
-            # 概要のために退避された巨大本文を展開しない。全文照会はdetailが所有する。
             result = (
                 _recorded_result(entries[call.result_line], call.call_id)
                 if compact
@@ -103,7 +99,6 @@ def _conversation_body(text: str, compact: bool) -> dict[str, Any]:
 
 
 def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:
-    """明示されたツール入力だけを取得し、shellやJavaScriptの命令を読了の事実へ変換しない。"""
     message = entry.get("message", {})
     if isinstance(message, dict) and isinstance(message.get("content"), list):
         for block in message["content"]:
@@ -128,7 +123,6 @@ def _recorded_input(entry: dict[str, Any], call_id: str | None) -> dict[str, Any
 
 
 def _recorded_result(entry: dict[str, Any], call_id: str | None) -> str | None:
-    """エージェントが受け取った記録本文を返す。退避先は量の集計へ展開しない。"""
     message = entry.get("message", {})
     if isinstance(message, dict) and isinstance(message.get("content"), list):
         for block in message["content"]:
@@ -153,7 +147,6 @@ def _restored_result(entry: dict[str, Any], call_id: str | None) -> str | None:
 
 
 def _persisted_result_metrics(entry: dict[str, Any], call_id: str | None) -> dict[str, Any]:
-    """受領本文が退避案内の場合だけ、復元できた退避前の量を別の軸で返す。"""
     received = _recorded_result(entry, call_id)
     if received is None or not received.lstrip().startswith(PERSISTED_OUTPUT_PREFIX):
         return {}
@@ -167,8 +160,6 @@ def _persisted_result_metrics(entry: dict[str, Any], call_id: str | None) -> dic
 
 
 class _ToolCall(NamedTuple):
-    """記録にある1件のツール呼び出し。"""
-
     line: int
     timestamp: str | None
     tool: str
@@ -218,7 +209,6 @@ def _record_tool_calls(records: list[_Record]) -> list[_ToolCall]:
         payload = record.entry.get("payload")
         payload_type = payload.get("type") if isinstance(payload, dict) else None
         if payload_type == "task_started":
-            # 新しいタスクの開始時点で前タスクの識別子を必ず破棄する。
             active_turn_id = recorded_turn_id
         turn_id = recorded_turn_id or active_turn_id
         message = record.entry.get("message")

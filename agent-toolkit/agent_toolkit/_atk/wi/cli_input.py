@@ -1,5 +1,3 @@
-"""`atk wi`のCLIが受け取る本文と位置引数の解釈。"""
-
 import argparse
 import os
 import pathlib
@@ -10,11 +8,6 @@ from agent_toolkit._atk import outcome as _outcome
 
 
 def is_existing_dir(path: pathlib.Path) -> bool:
-    """パスが実在ディレクトリかどうかを判定する（OSレベルの`OSError`はFalse扱い）。
-
-    自由記述のMESSAGE文字列をパス候補として`is_dir()`へ渡す呼び出し元があり、
-    長大な文字列は`OSError: File name too long`を送出しうるため、本関数で捕捉してFalseを返す。
-    """
     try:
         return path.is_dir()
     except OSError:
@@ -61,12 +54,6 @@ def reject_bare_repo_path_override(
     messages: list[str],
     subparser: argparse.ArgumentParser,
 ) -> None:
-    """先頭引数がディレクトリと解釈されたのに本文が続かない呼び出しをusage表示付きで拒否する。
-
-    対象リポジトリは常にカレントディレクトリから自動判定する。ディレクトリらしき引数の後ろに
-    本文が続かない呼び出しは誤指定とみなし、`subparser.error()`でargparse標準のusage行に
-    続けて平易な文言を出力しexit 2する。
-    """
     if repo_path_override is None or messages:
         return
     subparser.error(
@@ -76,13 +63,6 @@ def reject_bare_repo_path_override(
 
 
 def collect_message_via_editor(*, strip: bool = True) -> str | None:
-    """$EDITORで一時ファイルを開き、保存内容を返す。
-
-    指定が無ければ保存内容をstripして返す。`strip=False`は保存内容を原文のまま返し、
-    空判定だけをstrip結果で行う（原文保持が必要な一括取り込みで用いる）。
-    $EDITOR未設定・エディター非ゼロ終了・保存内容が空のいずれもNoneを返し、
-    原因をstderrへ出力する。一時ファイルは終了時に必ず削除する。
-    """
     editor = os.environ.get("EDITOR")
     if not editor:
         _outcome.report_failure(

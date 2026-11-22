@@ -23,7 +23,6 @@ def _claude_version() -> str | None:
 
 
 def _bundled_types() -> tuple[list[pathlib.Path], str]:
-    """PATH上の検証対象と生成元が一致する同梱型を一度だけ選ぶ。"""
     version = _claude_version()
     if version is None:
         return [], "取得不能（PATH上のclaude --versionを確認）"
@@ -59,7 +58,6 @@ def _report_explicit_types(path: pathlib.Path) -> None:
 
 
 def main() -> int:
-    """一時設定で型検査し、tscの終了状態を返す。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

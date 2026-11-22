@@ -32,7 +32,6 @@ from agent_toolkit._testing.agents_server_support import install_backend
 
 @pytest.mark.asyncio
 async def test_run_resume_preserves_previous_result_until_delivery(tmp_path: pathlib.Path) -> None:
-    """再開しただけでは直前結果を受領していない。追送の応答が無ければCLIから回収できる。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -64,7 +63,7 @@ async def test_run_resume_preserves_previous_result_until_delivery(tmp_path: pat
                 return resumed
 
             async def close(self) -> None:
-                """外部資源を持たないため何もしない。"""
+                pass
 
         install_backend(manager, "codex", ResumeBackend())
         source = state.SessionState(
@@ -142,7 +141,6 @@ async def test_agents_wait_cli_keeps_target_until_child_termination_and_same_ses
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """公開CLIの実プロセスは子の終了まで待ち、同じsessionが続けた作業の結果を回収する。"""
     isolated_state = tmp_path / "state" / "agent-toolkit"
     monkeypatch.setattr(state_paths, "state_dir", lambda: isolated_state)
     async with _codex_parent_with_child(isolated_state) as (manager, backend, session, writer):

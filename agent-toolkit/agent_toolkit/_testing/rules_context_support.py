@@ -1,5 +1,3 @@
-"""rules_context_testの共通試験準備。"""
-
 from __future__ import annotations
 
 import json
@@ -11,7 +9,6 @@ from agent_toolkit._hooks import rules_context
 
 @pytest.fixture(autouse=True)
 def _disable_review_model_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    """規範配送の試験はモデルを起動せず、起動要求自体はbatchの結合試験で検証する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
 
 

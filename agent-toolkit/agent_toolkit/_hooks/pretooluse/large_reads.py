@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import pathlib
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import ast
 lazy import re
 lazy from collections.abc import Iterator, Sequence
@@ -12,6 +10,7 @@ lazy from collections.abc import Iterator, Sequence
 from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, BashInvocation, is_unknown_word
+lazy from agent_toolkit._common.codex_execution_inputs import command_inputs
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 
@@ -30,7 +29,6 @@ def _resolve_path(value: str, cwd: str) -> pathlib.Path:
 
 
 def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
-    """既知の本文表示オプションとその値を除き、終端後はファイル名として扱う。"""
     flags = {
         "cat": "AbeEnstTuv",
         "less": "aABcCdeEfFgGiIJKLmMnNqQrRsSuUwWX~",
@@ -101,10 +99,6 @@ def _display_operands(name: str, tokens: Sequence[str]) -> tuple[str, ...]:
 
 
 def _read_operands(tokens: Sequence[str], *, include_partial: bool, first_line_only: bool = False) -> tuple[str, ...]:
-    """全文取得のファイル引数を返す。`include_partial`が真なら、帰属行の配送だけが対象とする範囲取得のファイル引数も含める。
-
-    `first_line_only`が真なら、行範囲の取得は1行目から始まるものだけを含める。
-    """
     if not tokens:
         return ()
     name = pathlib.PurePath(tokens[0]).name
@@ -124,12 +118,6 @@ def _read_operands(tokens: Sequence[str], *, include_partial: bool, first_line_o
 
 
 def arguments_are_data(tokens: Sequence[str]) -> bool:
-    """読取・検索の解析が、全引数をプログラムとして実行しないデータとして扱う呼出しかを返す。
-
-    本文表示（`cat`・`less`・`more`）は表示の被演算子を確定できる場合、`head`・`tail`は常に、
-    `sed`・`awk`は読取の解析が全文取得と確定した形だけを対象にする。検索は、外部プログラムを起動する
-    `rg --pre`を除く。他のコマンドは引数の扱いを解析できないため偽を返す。
-    """
     if not tokens:
         return False
     name = pathlib.PurePath(tokens[0]).name
@@ -141,10 +129,6 @@ def arguments_are_data(tokens: Sequence[str]) -> bool:
 
 
 def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
-    """静的な`sed -n '<開始行>,<終了行>p' [--] <パス>`のパスと1始まりの行範囲を返す。
-
-    終了行の`None`は末尾までを表す。書込や置換を含み得る他のスクリプトと複数ファイルの指定は対象外とする。
-    """
     if len(tokens) not in {4, 5} or pathlib.PurePath(tokens[0]).name != "sed" or tokens[1] != "-n":
         return None
     if len(tokens) == 5 and tokens[3] != "--":
@@ -164,12 +148,11 @@ def sed_read_range(tokens: Sequence[str]) -> tuple[str, int, int | None] | None:
         return operand, start, start
     if matched[2] == "$":
         return operand, start, None
-    # sedは終了行が開始行より前なら開始行だけを出力する。
+
     return operand, start, max(start, int(matched[2]))
 
 
 def is_dynamic_read_operand(operand: str) -> bool:
-    """引用の外側で展開する語を、実在するリテラルの読取対象と区別する。"""
     unquoted = operand.unquoted if isinstance(operand, ShellWord) else operand
     return (
         is_unknown_word(operand)
@@ -181,11 +164,6 @@ def is_dynamic_read_operand(operand: str) -> bool:
 def bash_read_paths(
     command: str, cwd: str, *, include_partial: bool = False, first_line_only: bool = False, include_piped: bool = False
 ) -> Iterator[tuple[pathlib.Path, ...]]:
-    """読取の解析とcwd・パスの解決を共有し、コマンドごとにファイル群を返す。
-
-    `first_line_only`は`_read_operands`の同名の指定へ渡す。
-    `include_piped`は警告候補専用で、加工後の出力を取得成功や容量判定の根拠にしない。
-    """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd, effects=True):
         paths = invocation_read_paths(
             invocation, current, include_partial=include_partial, first_line_only=first_line_only, include_piped=include_piped
@@ -202,7 +180,6 @@ def invocation_read_paths(
     first_line_only: bool,
     include_piped: bool = False,
 ) -> tuple[pathlib.Path, ...]:
-    """出力の接続先と読取時点の変数・cwdを保った呼出しから、本文表示の対象を返す。"""
     if not invocation.execution_known or invocation.captured:
         return ()
     if invocation.output_redirected and not (include_piped and invocation.output_pipe):
@@ -228,7 +205,6 @@ def invocation_read_paths(
 
 
 def _is_session_record(path: pathlib.Path, *, directory: bool = False) -> bool:
-    """既存ホーム解決で得た原記録の根と、JSONL・検索ディレクトリを対応付ける。"""
     resolved = path.resolve()
     roots = (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions")
     return any(resolved.is_relative_to(root.resolve()) for root in roots) and (
@@ -237,7 +213,6 @@ def _is_session_record(path: pathlib.Path, *, directory: bool = False) -> bool:
 
 
 def _content_operands(tokens: Sequence[str], *, pattern: bool) -> tuple[str, ...]:
-    """検索語・プログラムとオプション値を、本文取得のファイル引数から除く。"""
     values = {
         "-e",
         "-f",
@@ -300,7 +275,6 @@ def _content_operands(tokens: Sequence[str], *, pattern: bool) -> tuple[str, ...
 
 
 def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
-    """直列に並ぶリテラルと単純代入を解析し、Pythonコードが読み書きする静的なファイルパスを返す。読取と書込の判定がこの解析を共用する。"""
     try:
         module = ast.parse(code)
     except SyntaxError:
@@ -388,11 +362,6 @@ def python_file_paths(code: str, *, writing: bool = False) -> list[str]:
 
 
 def _script_display_operands(tokens: Sequence[str]) -> tuple[str, ...]:
-    """既知の表示スクリプトだけから入力を得る。実行せず、範囲の被覆も証明しない。
-
-    sedはアドレス付きprint、awkは条件・代入・print・exitなどの表示式を対象にする。
-    オプション付きの未知構文、ファイル出力、外部実行は候補から除く。
-    """
     name = pathlib.PurePath(tokens[0]).name
     start = 2 if name == "sed" else 1
     if len(tokens) <= start + 1 or name == "sed" and tokens[1] != "-n":
@@ -405,7 +374,6 @@ def _script_display_operands(tokens: Sequence[str]) -> tuple[str, ...]:
         if re.fullmatch(rf"(?:{address}(?:,{address})?)?p", program) is None:
             return ()
     else:
-        # awk全体の実行解析は行わない。出力先変更・getline・関数呼出しを含む式は対象外とする。
         if re.search(r"[<>|@`]|\bgetline\b|\b[A-Za-z_]\w*\s*\(", program):
             return ()
         expression = re.sub(r'/(?:\\.|[^/\\\n])*/|"(?:\\.|[^"\\\n])*"', "0", program)
@@ -416,7 +384,7 @@ def _script_display_operands(tokens: Sequence[str]) -> tuple[str, ...]:
         operands = operands[1:]
     elif any(operand.startswith("-") for operand in operands):
         return ()
-    # awkのname=valueはファイル引数ではない。代入による入力先の変更も推測しない。
+
     if any(operand == "-" or name == "awk" and re.match(r"[A-Za-z_]\w*=", operand) for operand in operands):
         return ()
     return tuple(operands)
@@ -438,7 +406,6 @@ def _display_read_operands(tokens: Sequence[str]) -> tuple[str, ...]:
 
 
 def _terminal_display_operands(command: str, cwd: str) -> Iterator[tuple[str, shell_cwd.CwdResolution]]:
-    """内容を端末へ表示する呼出しの被演算子と、その実行位置を返す。捕捉・出力先変更は除く。"""
     invocations = list(shell_cwd.bash_invocation_cwds(command, cwd))
     for index, (invocation, current) in enumerate(invocations):
         if invocation.captured or invocation.output_redirected and not invocation.output_pipe:
@@ -454,11 +421,6 @@ def _terminal_display_operands(command: str, cwd: str) -> Iterator[tuple[str, sh
 
 
 def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
-    """内容を表示する静的なファイル引数を返す。パイプによる部分表示も案内の対象にする。
-
-    `bash_read_paths`が証明する全文受領とは用途が異なる。編集、ファイルへの出力と
-    ディレクトリ検索を除き、この結果を資料の取得証拠に使わない。
-    """
     paths = []
     for operand, current in _terminal_display_operands(command, cwd):
         if is_unknown_word(operand):
@@ -472,9 +434,8 @@ def display_read_paths(command: str, cwd: str) -> list[pathlib.Path]:
 
 
 def _search_metadata_only(tokens: Sequence[str]) -> bool:
-    """検索語とオプション値を除き、本文を出さない検索の指定を判定する。"""
     name = pathlib.PurePath(tokens[0]).name
-    # rgの-Lは--followであり本文を返す。grep系列の-Lだけがファイル名を返す。
+
     metadata_flags = "lc" if name == "rg" else "lLc"
     valued_flags = "efgtrTABCMmj" if name == "rg" else "efABCmdD"
     long_values = {
@@ -542,11 +503,10 @@ def _search_metadata_only(tokens: Sequence[str]) -> bool:
 
 
 def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
-    """実行位置と静的引数だけから、原記録の読取・本文検索・解析入力を得る。"""
     found: list[pathlib.Path] = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
-        # 検索語や追加引数が未知でも、静的な入力先は参照案内の対象に残す。コマンド名が未知なら判定しない。
+
         if not tokens or is_unknown_word(tokens[0]):
             continue
         name = pathlib.PurePath(tokens[0]).name
@@ -580,7 +540,6 @@ def _bash_session_record_paths(command: str, cwd: str) -> list[pathlib.Path]:
 
 
 def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str) -> str | None:
-    """両ホストで静的に確定した原記録参照へ、由来を保持する専用照会を案内する。"""
     paths: list[pathlib.Path] = []
     if tool_name in {"Read", "Grep"}:
         value = tool_input.get("file_path" if tool_name == "Read" else "path", cwd if tool_name == "Grep" else "")
@@ -590,10 +549,17 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
                 paths.append(path)
     elif tool_name == "Bash" and isinstance(tool_input.get("command"), str):
         paths = _bash_session_record_paths(tool_input["command"], cwd)
+    elif tool_name in {"exec_command", "functions.exec_command"} and isinstance(command := tool_input.get("cmd"), str):
+        workdir = tool_input.get("workdir")
+        paths = _bash_session_record_paths(command, workdir if isinstance(workdir, str) else cwd)
+    elif tool_name == "functions.exec" and isinstance(code := tool_input.get("input"), str):
+        for command in command_inputs(tool_name, code):
+            # 外側セルのcwdを、別のworkdirを指定できる内側コマンドのcwdとはみなさない。  # pyfltr: allow-comment
+            paths.extend(_bash_session_record_paths(command, ""))
     if not paths:
         return None
     return _notice(
-        "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in paths),
+        "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in dict.fromkeys(paths)),
         tag="warn",
         fix=(
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
@@ -607,7 +573,6 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
 
 
 def _is_normative_document(path: pathlib.Path) -> bool:
-    """規範原本とホスト向けの写しを、記録類のMarkdownから区別する。"""
     path = path.resolve()
     if path.name in {"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", "GEMINI.md"}:
         return True
@@ -633,7 +598,6 @@ def _is_normative_document(path: pathlib.Path) -> bool:
 
 
 def check_large_bash_read(command: str, cwd: str) -> str | None:
-    """規範の見出し抽出を警告する。受信予算が不明な通常読取は警告しない。"""
     extracted = []
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
@@ -681,12 +645,10 @@ def check_bundled_read(
     environment: dict[str, str],
     max_output_tokens: object = None,
 ) -> str | None:
-    """複数ファイルの全文表示の合計を出力の上限と比べ、収まらない取得の分割を案内する。"""
     paths = display_read_paths(command, cwd)
     if len(paths) < 2:
         return None
-    # 容量の比較は全文表示と確定した読取だけに限る。範囲表示や検索の入力をファイル全体の量で数えると、
-    # 正常な分割取得にも超過を断定するため。
+
     full = {path.resolve() for group in bash_read_paths(command, cwd) for path in group}
     remaining = [path for path in paths if path in full]
     if len(remaining) < 2:

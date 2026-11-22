@@ -13,7 +13,6 @@ from agent_toolkit._common import process_tree
 
 @pytest.fixture(autouse=True)
 def _isolate_branch_head(monkeypatch: pytest.MonkeyPatch) -> None:
-    """HEADの取得は本書の対象外のため外部通信を隔離し、診断の取得は実際の処理を通す。"""
     monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "current-head")
     monkeypatch.setattr(alerts, "_gitlab_head", lambda _repo, _branch: "current-head")
 
@@ -85,7 +84,6 @@ def test_alert_body_keeps_failure_diagnostics_and_trigger(monkeypatch: pytest.Mo
 
 
 def test_alert_is_saved_when_diagnostics_are_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """診断を取得できなくても通知は作り、取得できなかった理由を本文へ残す。"""
 
     def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"HTTP 404")
@@ -161,7 +159,6 @@ def test_ci_diagnostics_keep_error_after_empty_secret_assignment(monkeypatch: py
 
 
 def test_malformed_response_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
-    """応答形状の異常を伝える抜粋の境界が資格情報の途中にあっても、その断片を本文へ残さない。"""
     payload = ["x" * 170 + " https://" + "A" * 45 + "@example.org"]
     monkeypatch.setattr(alerts._json_command, "run", lambda *_args, **_kwargs: payload)  # pylint: disable=protected-access
 
@@ -173,7 +170,6 @@ def test_malformed_response_redacts_before_truncating(monkeypatch: pytest.Monkey
 
 
 def test_schedule_list_malformed_response_redacts_before_truncating() -> None:
-    """Pipeline Scheduleの一覧の応答形状の異常も、伏せてから上限の文字数に抜粋する。"""
     payload = {"detail": "x" * 160 + " https://" + "A" * 45 + "@example.org"}
 
     with pytest.raises(alerts.AlertCollectError) as caught:

@@ -14,8 +14,6 @@ from agent_toolkit._common.atomic_file import atomic_write
 
 
 class GenerationRegistry:
-    """実行ジョブを複製せず、世代・起動元・受付先だけを保存する。"""
-
     def __init__(self, directory: pathlib.Path) -> None:
         self.directory = directory
 
@@ -39,7 +37,6 @@ class GenerationRegistry:
                 file_lock.release_lock(handle)
 
     def reserve(self, generation: str, root: pathlib.Path, version: str) -> dict[str, Any]:
-        """同版の準備を合流し、既知の旧版接続で現行受付先を戻さない。"""
         with self._locked() as data:
             entries = data["generations"]
             current = entries.get(data["current"])
@@ -70,10 +67,12 @@ class GenerationRegistry:
         server_instance: str | None = None,
         root: pathlib.Path | None = None,
     ) -> dict[str, Any]:
-        """readyになった世代だけを受付候補にし、先に確定した新世代を上書きしない。"""
         with self._locked() as data:
             entries = data["generations"]
             entry = entries[generation]
+            if entry.get("process") != process:
+                entry.pop("handover_source", None)
+                entry.pop("handover_confirmed", None)
             entry.update(ready=True, endpoint=endpoint, process=process)
             if server_instance is not None:
                 entry["server_instance"] = server_instance
@@ -81,9 +80,29 @@ class GenerationRegistry:
                 entry["root"] = str(root)
             current = entries.get(data["current"])
             if current is None or entry["epoch"] >= current["epoch"]:
+                if current is not None and current is not entry:
+                    entry["handover_source"] = [current["generation"], current["process"]]
+                    entry.pop("handover_confirmed", None)
                 data["current"] = generation
                 current = entry
             return dict(current)
+
+    def confirm_handover(self, generation: str, process: str) -> None:
+        """旧世代が会話と資源を持たないと確認した結果を、今回の受付先に残す。"""
+        with self._locked() as data:
+            current = data["generations"].get(data["current"])
+            if current is not None and current.get("handover_source") == [generation, process]:
+                current["handover_confirmed"] = True
+
+    def handover_confirmed(self, target: dict, previous: dict) -> bool:
+        """今回の受付先と移転元の起動単位が両方一致する確定記録だけを使う。"""
+        with self._locked(write=False) as data:
+            entry = data["generations"].get(target["generation"], {})
+            return (
+                entry.get("process") == target["process"]
+                and entry.get("handover_source") == [previous["generation"], previous["process"]]
+                and entry.get("handover_confirmed") is True
+            )
 
     def current(self) -> dict[str, Any] | None:
         """現行受付先を読み、接続先の生存・認証は通信境界で確かめる。"""
@@ -132,12 +151,10 @@ class GenerationRegistry:
             return dict(survivor)
 
     def generations(self) -> dict[str, dict[str, Any]]:
-        """準備順と資源の所有元を、世代ごとの既存索引から読む。"""
         with self._locked(write=False) as data:
             return {name: dict(entry) for name, entry in data["generations"].items()}
 
     def retire(self, generation: str, process: str) -> None:
-        """自分の旧世代だけを退出させ、消えた配布物と同一checkoutの古い索引を回収する。"""
         with self._locked() as data:
             entries = data["generations"]
             entry = entries.get(generation)
@@ -161,11 +178,6 @@ class GenerationRegistry:
                         entries.pop(name, None)
 
     def retired(self, generation: str, process: str) -> bool:
-        """世代の起動単位が終了の前に退役を記録したかを返す。
-
-        退役を記録するのは`retire`だけであり、索引から世代を除くのも退役を記録した世代の回収に限る。
-        引き継ぐ会話・資源を持ったまま終了した起動単位と、強制終了された起動単位は、退役を記録しないまま索引に残る。
-        """
         with self._locked(write=False) as data:
             entry = data["generations"].get(generation)
             return entry is None or (bool(entry.get("retired")) and entry.get("process") == process)

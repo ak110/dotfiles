@@ -1,5 +1,3 @@
-"""長時間稼働する委譲サーバーが起動時の版の配布物を保持し、委譲先の起動に使う役割文書・開始指示・内側MCPへ同じ版を渡す。"""
-
 from __future__ import annotations
 
 import json
@@ -16,7 +14,7 @@ from agent_toolkit._common import inherited_venv, plugin_environment, plugin_roo
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.plugin-root")
 
-# 更新で消える版付き配布物だけを既存のmanaged-tempへ保持する。
+
 STABLE_PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 STABLE_PLUGIN_ROOT_EXCLUDED = (".venv", "__pycache__", ".git")
 _stable_plugin_roots: dict[Path, Path] = {}
@@ -24,7 +22,6 @@ _SHARED_MARKER = ".agent-toolkit-plugin-root.json"
 
 
 def plugin_source_root(root: Path) -> Path:
-    """保持複製の導入元を返し、通常のrootはそのまま返す。"""
     marker = root.parent / _SHARED_MARKER
     if not marker.is_file():
         return root
@@ -64,24 +61,25 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None, *, independent: 
     使用する全プロセスの生存期間を回収側へ伝える。
     複製に失敗した場合は解決したrootをそのまま返し、複製の失敗を委譲の不成立へ変えない。
     `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。
-    `independent=True`ではcheckoutも新規に保持し、複製失敗を伝播させる。
+    `independent=True`では変更可能なcheckoutは新規に保持し、複製失敗を伝播させる。
     同じ保持rootからの子は完成マーカーを使い、自身のleaseを登録して同じ実体を使う。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
     cached = None if independent else _stable_plugin_roots.get(root)
     if cached is not None:
         return cached
-    if not independent and not _plugin_root_is_versioned(root):
+    versioned = _plugin_root_is_versioned(root)
+    if not independent and not versioned:
         _stable_plugin_roots[root] = root
         return root
     try:
-        destination = _resolve_shared_root(root, fresh_input=independent)
+        destination = _resolve_shared_root(root, fresh_input=independent and not versioned)
     except (OSError, ValueError, _managed_temp.ManagedTempError) as exc:
         if independent:
             raise
         _LOG.warning("配布物rootを複製できないため解決したrootを使います: root=%s error=%s", root, exc)
         return root
-    _LOG.info("版別ディレクトリの配布物rootを複製しました: source=%s destination=%s", root, destination)
+    _LOG.info("保持する配布物rootを解決しました: source=%s destination=%s", root, destination)
     if not independent:
         _stable_plugin_roots[root] = destination
     return destination
@@ -89,7 +87,7 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None, *, independent: 
 
 def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
     """配布元別の排他の下で完成済み実体を見つけ、使用登録を済ませて返す。"""
-    # 保持先から起動した内側MCPも同じ実体を使い、自身の使用記録を加える。
+
     if (root.parent / _SHARED_MARKER).is_file():
         with plugin_root_leases.plugin_root_lock(root.parent):
             area = root.parent
@@ -97,7 +95,6 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
             if managed_root.is_symlink() or managed_root.is_junction():
                 raise _managed_temp.ManagedTempError(f"一時rootがリンクであるため使用しない: {managed_root}")
             try:
-                # __file__の長名とLOCALAPPDATAの8.3表記が違っても、同一rootの直下だけを検証する。
                 if area.parent.samefile(managed_root):
                     area = managed_root / area.name
             except FileNotFoundError:
@@ -110,7 +107,6 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
     version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     identity = {"source": str(root.resolve()), "version": version, "root_name": root.name}
     with plugin_root_leases.plugin_root_lock(root):
-        # 共有形式の接頭辞は旧形式の接頭辞で始まるため、旧形式の一覧が両方を含む。
         for area in () if fresh_input else _managed_temp.list_managed_temp(STABLE_PLUGIN_ROOT_PREFIX):
             with plugin_root_leases.plugin_root_lock(area):
                 try:
@@ -142,7 +138,6 @@ def _resolve_shared_root(root: Path, *, fresh_input: bool = False) -> Path:
 
 
 def main(arguments: list[str]) -> int:
-    """独立投入のbootstrapだけを、保持rootと共有Pythonへ置き換える。"""
     if len(arguments) != 2 or arguments[0] not in {"--wi-submit-worker", "--process-loop-worker"}:
         return 2
     root = resolve_stable_plugin_root(independent=True)
@@ -151,7 +146,7 @@ def main(arguments: list[str]) -> int:
         raise RuntimeError("独立投入の共有依存環境が未準備。公開launcherで依存環境を準備して再実行する")
     environment = plugin_environment.cli_environment(root, os.environ)
     environment["PYTHONPATH"] = str(root)
-    # 起動先が子へ渡す前の復元で、保持rootを指すPYTHONPATHを外せるよう記録する。
+
     inherited_venv.record_launch_value(environment, "PYTHONPATH", os.environ.get("PYTHONPATH"))
     command = (
         [str(executable), str(root / "agent_toolkit" / "atk.py"), "wi", "process-loop", "--internal-target", arguments[1]]
@@ -159,7 +154,6 @@ def main(arguments: list[str]) -> int:
         else [str(executable), "-m", "agent_toolkit._atk.wi.submit", "worker", arguments[1]]
     )
     if os.name == "nt":
-        # 時間上限なし: 常駐サーバーの実行そのものであり、終了は起動元が決める。
         return subprocess.run(command, env=environment, check=False).returncode
     os.execvpe(str(executable), command, environment)
     return 0
@@ -168,6 +162,5 @@ def main(arguments: list[str]) -> int:
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
 else:
-    # backendが初めて使われる前に、サーバーが起動した版を確定して保持する。
     SERVER_RUNTIME_CODE = role_runtime.RuntimeCode.capture(Path(__file__).resolve().parents[2])
     SERVER_PLUGIN_ROOT = resolve_stable_plugin_root()

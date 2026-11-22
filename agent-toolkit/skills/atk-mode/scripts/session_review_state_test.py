@@ -1,5 +1,3 @@
-"""finishの公開操作が、batch所有者の条件を満たす場合だけ分析を記録する。"""
-
 import pathlib
 
 import pytest
@@ -63,7 +61,6 @@ def test_finish_rejects_invalid_saved_state(tmp_path, monkeypatch, status):
 
 @pytest.mark.parametrize("analyzed,synced", [(False, True), (True, False)])
 def test_batch_commit_requires_analysis_and_report_sync(tmp_path, analyzed, synced):
-    """成功条件の片方だけでは、準備範囲と待ち世代を確定しない。"""
     session_review.record({"hook_event_name": "SessionStart", "session_id": "one"}, host="codex")
     target = session_review.pending()[0]
     writer = session_review.BatchWriter(tmp_path / "batch.json")

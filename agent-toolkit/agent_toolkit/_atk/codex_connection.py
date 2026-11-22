@@ -44,12 +44,10 @@ def managed() -> bool:
 
 
 def role_of(model_type: str | None) -> str:
-    """agents_serverのmodel_typeから役割を返す。`orchestrate`は統括担当、それ以外は委譲先とする。"""
     return "orchestrator" if model_type == "orchestrate" else "delegate"
 
 
 def _api_providers() -> dict[str, str]:
-    """設定済みのAPI種別とprovider IDの対応を返す。同じIDを2種別へ設定した場合は`ValueError`を送出する。"""
     providers = {kind: config.resolve_mutable_setting(key) for kind, key in _PROVIDER_KEYS.items()}
     if providers["credits"] and providers["credits"] == providers["payg"]:
         raise ValueError(
@@ -75,7 +73,6 @@ def provider_entries(role: str) -> tuple[tuple[str, str], ...]:
 
 
 def provider_kind(provider: str | None, *, subscription_provider: str | None) -> str | None:
-    """保持したproviderの種別を、サブスクリプションで開始した記録と現在の設定から返す。判定できなければ`None`。"""
     if provider is None:
         return None
     if subscription_provider is not None and provider == subscription_provider:
@@ -84,7 +81,6 @@ def provider_kind(provider: str | None, *, subscription_provider: str | None) ->
 
 
 def outside_order(provider: str | None, role: str, *, subscription_provider: str | None) -> bool:
-    """保持したproviderの種別が、管理中の使用順に含まれないかを返す。providerを保持しない会話は対象外とする。"""
     if provider is None or not managed():
         return False
     kind = provider_kind(provider, subscription_provider=subscription_provider)
@@ -92,7 +88,6 @@ def outside_order(provider: str | None, role: str, *, subscription_provider: str
 
 
 def subscription_provider_for(provider: str | None) -> str | None:
-    """選んだproviderがサブスクリプションならそのIDを返す。`openai`をAPI種別へ設定した場合はAPIとして扱う。"""
     if provider != SUBSCRIPTION_PROVIDER or SUBSCRIPTION_PROVIDER in _api_providers().values():
         return None
     return provider
@@ -152,18 +147,15 @@ def probe_definition_arguments(provider: str, env: Mapping[str, str]) -> list[st
 
 
 def _toml_key(key: str) -> str:
-    """TOMLのキーを、裸のキーで書けなければ基本文字列で返す。"""
     return key if _BARE_KEY.fullmatch(key) else json.dumps(key)
 
 
 def _toml_value(value: Any) -> str:
-    """`-c`の値として渡すTOMLのインライン表記を返す。"""
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, (int, float)):
         return repr(value)
     if isinstance(value, str):
-        # JSONの文字列表記はTOMLの基本文字列として解釈できる。
         return json.dumps(value, ensure_ascii=False)
     if isinstance(value, list):
         return "[" + ", ".join(_toml_value(item) for item in value) + "]"

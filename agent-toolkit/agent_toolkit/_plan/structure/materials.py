@@ -1,5 +1,3 @@
-"""計画の`## 提示素材`（素材表・要求表・旧形式の素材ID・人間向けのファイル名列挙）の解析と、形式の違反の判定。"""
-
 from __future__ import annotations
 
 import re
@@ -32,7 +30,6 @@ def _materials_section(
     headings: list[PlanHeading],
     index: int,
 ) -> list[tuple[int, str]]:
-    """提示素材H2の本文を、行番号付きで返す。"""
     raw_lines = content.splitlines()
     start, end = heading_subtree_range(headings, index)
     upper = len(raw_lines) if end is None else end - 1
@@ -40,17 +37,14 @@ def _materials_section(
 
 
 def _split_material_references(value: str) -> list[str]:
-    """素材参照cellを区切って返す。"""
     return [token for token in _REFERENCE_SEPARATOR_PATTERN.split(value.strip()) if token]
 
 
 def _requirement_references(value: str) -> list[str]:
-    """説明文から要求IDの参照を抽出する。"""
     return [match.group(0) for match in re.finditer(r"R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}", value)]
 
 
 def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[str]:
-    """新形式の素材表1行が所定の形式であるか確かめる。"""
     material_id, material_type, queue_id, source, citation = row
     errors: list[str] = []
     if not PLAN_MATERIAL_ID_PATTERN.fullmatch(material_id):
@@ -90,7 +84,6 @@ def _validate_material_row(row: tuple[str, ...], identifiers: set[str]) -> list[
 
 
 def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials, list[str]]:
-    """新形式の素材表と要求表が所定の形式であるか確かめる。"""
     tables = extract_tables(section)
     material_tables = [table for table in tables if table.header == PLAN_MATERIAL_TABLE_HEADER]
     requirement_tables = [table for table in tables if table.header == PLAN_REQUIREMENT_TABLE_HEADER]
@@ -237,7 +230,6 @@ def _check_new_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials,
 
 
 def _check_human_materials(section: list[tuple[int, str]]) -> tuple[PlanMaterials | None, list[str]]:
-    """新規書式の`## 提示素材`にファイル名だけが列挙されているか確かめる。"""
     nonempty = [(lineno, line.strip()) for lineno, line in section if line.strip()]
     if not nonempty:
         return PlanMaterials(frozenset(), frozenset(), False, is_human_readable=True), [
@@ -277,7 +269,6 @@ def _check_materials(
     headings: list[PlanHeading],
     index: int,
 ) -> tuple[set[str], list[str]]:
-    """`## 提示素材`の素材IDと逐語fenceが所定の形式であるか判定し、(素材ID集合, エラー)を返す。"""
     raw_lines = content.splitlines()
     start, end = heading_subtree_range(headings, index)
     upper = len(raw_lines) if end is None else end - 1
@@ -312,8 +303,6 @@ def _check_materials(
 
 @dataclass(frozen=True)
 class PlanMaterials:
-    """計画の提示素材と要求の解析結果を表す。"""
-
     material_ids: frozenset[str]
     requirement_ids: frozenset[str]
     is_legacy: bool
@@ -345,7 +334,6 @@ _STRICT_INTERNAL_PLAN_ID_PATTERN = re.compile(
 
 
 def parse_plan_materials(content: str) -> tuple[PlanMaterials | None, list[str]]:
-    """提示素材を新形式または旧形式として解析する。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)

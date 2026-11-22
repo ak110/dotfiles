@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_users）。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -9,7 +7,6 @@ from agent_toolkit._atk.wi.constants import PROCESS_WI_GOAL_BODY as _PROCESS_WI_
 from agent_toolkit._common import skill_modes
 from session_evidence_extract import _generated_user_event
 
-# 過去の単一対象と現在の登録全体の起動を、後続の人間の介入を探すための初期要求として扱う。
 _PROCESS_WI_GOAL_BODIES = (
     _PROCESS_LOOP_GOAL_BODY,
     _PROCESS_WI_GOAL_BODY,
@@ -19,12 +16,6 @@ _PROCESS_WI_GOAL_BODIES = (
 
 
 def _initial_request_locator(timeline: list[dict[str, Any]], *, main_record_id: str = "main") -> tuple[str, int] | None:
-    """メイン記録の初期要求の位置を返す。
-
-    人間の依頼で始まるセッションでは、最初の人間の発話を初期要求とする。
-    `atk wi process-loop`が自動起動したセッションでは、起動の目的文を持つ入力を初期要求とし、
-    その後の人間の発話は作業中の介入として候補に残す。起動の目的文は記録で前置きが付くため、包含で判定する。
-    """
     for event in timeline:
         line = event.get("line")
         text = event.get("text")

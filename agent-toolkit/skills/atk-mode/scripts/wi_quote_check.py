@@ -41,19 +41,17 @@ from agent_toolkit._common.json_lines import split_lines
 
 QUOTE_HEADING = "## ユーザー指摘の逐語引用"
 ANSWER_LABELS = ("質問: ", "選択肢: ", "回答: ", "自由記述: ")
-# 質問と選択肢はエージェントが書いた文であり、ユーザーの値は回答と自由記述だけである。
+
 USER_ANSWER_LABELS = ("回答: ", "自由記述: ")
 QUOTE_POSITION = re.compile(r"逐語引用\s*text\[(\d+)\]\s*文字(\d+)-(\d+)")
 
 
 class InputError(Exception):
-    """原文との比較を始められない入力の誤り。終了コード2で報告する。"""
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
 class Original:
-    """フェンスと比べる原文と、その所在。`--user-events`の出力では`record`と`line`を持つ。"""
-
     text: str
     path: pathlib.Path
     record: str | None = None
@@ -62,28 +60,22 @@ class Original:
     fence: int | None = None
 
     def location(self) -> str:
-        """出力へ書く所在を返す。"""
         if self.record is None:
             return f"出所={self.path}"
         return f"出所={self.path} " + self.record_location()
 
     def record_location(self) -> str:
-        """保存する引用へセッション記録上の位置を返す。"""
         return f"record={self.record} line={self.line}" + (f" sequence={self.sequence}" if self.sequence is not None else "")
 
 
 @dataclasses.dataclass(frozen=True)
 class Part:
-    """フェンスのうち原文と比べる部分。`offset`はフェンスの内容の先頭からの0始まりの位置である。"""
-
     label: str
     text: str
     offset: int
 
 
 class Selection(pydantic.BaseModel):
-    """保存済みuserイベントから引用する対象と範囲。文字位置は1始まりの両端を含む。"""
-
     model_config = pydantic.ConfigDict(extra="forbid", strict=True)
 
     source: str
@@ -168,7 +160,6 @@ def _selected_text(selection: Selection, event: _UserEvent) -> str:
 
 
 def _import_quotes(body: str, spec_path: pathlib.Path) -> tuple[str, list[Original]]:
-    """全選択を検証し、引用節だけを置換した原稿と比較用原文を返す。"""
     selections = pydantic.TypeAdapter(list[Selection]).validate_json(spec_path.read_bytes())
     return import_selections(body, selections)
 
@@ -207,7 +198,7 @@ def import_selections(
         content = _selected_text(selection, event)
         original = Original(event.text, path, event.record, event.line, event.sequence, len(originals) + 1)
         originals.append(original)
-        # 原文に含まれるフェンスが引用を途中で閉じない長さにする。
+
         fence = "`" * max(3, max((len(run) + 1 for run in re.findall(r"`+", content)), default=0))
         location = original.record_location()
         blocks.append(f"{location}\n\n{fence}text\n{content}\n{fence}")
@@ -216,7 +207,6 @@ def import_selections(
 
 
 def _quote_section(body: str) -> tuple[int, int]:
-    """引用節の見出し直後と次のH2の文字位置を返す。フェンス内の見出しは除く。"""
     lines = body.splitlines(keepends=True)
     inside = {index for first, last, _ in requirement_units.fenced_blocks(lines) for index in range(first, last + 1)}
     starts = [index for index, line in enumerate(lines) if index not in inside and line.rstrip() == QUOTE_HEADING]
@@ -230,7 +220,6 @@ def _quote_section(body: str) -> tuple[int, int]:
 
 
 def _quote_fences(body: str) -> list[str]:
-    """逐語引用の節にある`text`フェンスの内容を出現順に返す。"""
     start, end = _quote_section(body)
     section = body[start:end].splitlines(keepends=True)
     fences = [
@@ -244,7 +233,6 @@ def _quote_fences(body: str) -> list[str]:
 
 
 def _parts(content: str) -> list[Part]:
-    """フェンスの内容から原文と比べる部分を返す。確認回答の記録では地の文と回答・自由記述の値だけを返す。"""
     lines = content.split("\n")
     if not any(line.startswith(USER_ANSWER_LABELS) for line in lines):
         return [Part("本文", content, 0)]
@@ -270,7 +258,6 @@ def _parts(content: str) -> list[Part]:
 
 
 def _originals(path: pathlib.Path) -> list[Original]:
-    """出所のファイルを原文へ分ける。`--user-events`の出力は`kind`が`user`の各行の`text`、それ以外はファイル全体とする。"""
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
@@ -294,12 +281,6 @@ def _originals(path: pathlib.Path) -> list[Original]:
 
 
 def _unit_spans(content: str, part: Part) -> list[tuple[int, int, str]]:
-    """部分の要求単位ごとに、フェンスの内容での1始まりの文字範囲と単位の本文を返す。
-
-    要求単位は段落の行を空白で連結してから文へ分けるため、複数行にまたがる単位は内容の連続した部分文字列にならない。
-    空白を除いた文字列で単位を前から順に探し、元の位置へ戻して最初と最後の文字の位置を求める。
-    HTMLコメントは分割の前に除かれるため、同じ長さの空白へ置き換えてから探す。
-    """
     masked = requirement_units.HTML_COMMENT.sub(lambda match: " " * len(match.group()), content)
     positions = [index for index, char in enumerate(masked) if not char.isspace()]
     compact = "".join(masked[index] for index in positions)
@@ -317,7 +298,6 @@ def _unit_spans(content: str, part: Part) -> list[tuple[int, int, str]]:
 
 
 def _reference_errors(body: str, spans: list[list[tuple[int, int, str]]]) -> list[str]:
-    """引用節のtextフェンス外にある参照を、算出済みの要求単位の境界と比べる。"""
     start, end = _quote_section(body)
     first_line = len(body[:start].splitlines())
     section = body[start:end].splitlines(keepends=True)
@@ -341,7 +321,6 @@ def _reference_errors(body: str, spans: list[list[tuple[int, int, str]]]) -> lis
 
 
 def check(body: str, originals: list[Original], *, detail: bool = False) -> tuple[list[str], list[str], str]:
-    """一致と位置の出力行、不一致の診断、次の操作を返す。"""
     output: list[str] = []
     errors: list[str] = []
     spans: list[list[tuple[int, int, str]]] = []
@@ -382,7 +361,6 @@ def check(body: str, originals: list[Original], *, detail: bool = False) -> tupl
 
 
 def main(argv: list[str] | None = None) -> int:
-    """WI本文と出所を受け取り、逐語引用の一致と引用位置を出力する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--detail", action="store_true", help="要求単位の位置に原文も表示する")
     parser.add_argument(

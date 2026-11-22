@@ -26,8 +26,6 @@ import pathlib
 import sys
 import time
 import types
-
-# 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
 lazy import datetime
 
 from agent_toolkit._common import inherited_venv
@@ -97,7 +95,6 @@ def _record_activity(payload: object, *, output: str = "", returncode: int = 0) 
 
 
 def main(argv: list[str]) -> int:
-    """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
     started = time.monotonic()
     inherited_venv.strip_inherited_venv(os.environ)
     _configure_standard_output()
@@ -117,8 +114,7 @@ def main(argv: list[str]) -> int:
         payload = json.loads(payload_text)
     if isinstance(payload, dict):
         raw_session_id = payload.get("session_id")
-        # 会話IDは状態ファイルの名前になり、文字列でない値も文字列化して使われる。ファイル名にできない値は型によらず
-        # 会話IDの無い入力として扱い、状態の継承・記録の対象にしない。判定する各サブコマンドは、会話IDが無くても動作する。
+
         if raw_session_id not in (None, "") and _session_launchers.valid_launcher(raw_session_id) is None:
             input_warning = f"hook入力の会話IDが不正なため、会話IDの無い入力として扱う: {repr(raw_session_id)[:80]}"
             payload["session_id"] = ""
@@ -132,7 +128,7 @@ def main(argv: list[str]) -> int:
                 session_state = importlib.import_module("agent_toolkit._common.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
     warning_event = _warning_event(argv[0], payload)
-    # Stopの処理中も活動中として扱い、正常な応答が決まった後だけ終了候補へ進める。
+
     if argv[0] != "session_activity":
         _record_activity(payload, returncode=2 if argv[0] in {"stop", "subagent_stop_advisor"} else 0)
     try:
@@ -162,7 +158,6 @@ _CONTEXT_EVENTS = frozenset({"PreToolUse", "PostToolUse", "PostToolUseFailure", 
 
 
 def _warning_event(subcommand: str, payload: object) -> str | None:
-    """警告を連結できるイベント名を返す。入力のイベント名を優先し、受理しないイベントではNoneを返す。"""
     if subcommand not in _WARNING_EVENTS:
         return None
     event = payload.get("hook_event_name") if isinstance(payload, dict) else None
@@ -171,7 +166,6 @@ def _warning_event(subcommand: str, payload: object) -> str | None:
 
 
 def _append_warning(result: dict, event: str | None, warning: str) -> None:
-    """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
     if event is None:
         return
     specific = result.setdefault("hookSpecificOutput", {})
@@ -187,7 +181,6 @@ def _failure_response(
     payload: object,
     warning_event: str | None,
 ) -> dict:
-    """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
     result = response if response is not None else {}
     if warning_event is not None:
         warning = _notice_formatter("hook")(
@@ -238,7 +231,6 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
     return True
 
 
-# エージェント宛ての通知をユーザーの画面にも写すイベント。SessionStartなどの情報の配送と、ホストが画面へ出すStop系は含めない。
 _USER_COPY_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "user_prompt_submit"})
 
 
@@ -274,16 +266,12 @@ def _invoke_module(
     warning_event: str | None,
     input_warning: str = "",
 ) -> int:
-    """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。
-
-    `input_warning`は入力の境界で補正した内容の警告で、通知を受理するイベントの応答へ連結する。
-    """
     started = time.monotonic()
     output = io.StringIO()
     error = None
     result = 0
     _notice.reset_informational()
-    # 写しは応答へ現れた通知を生成時の記録から選ぶ（`notice.user_copy`）。
+
     with _common_message_format.record_generated() as generated, _notice.defer_delivery(), contextlib.redirect_stdout(output):
         try:
             if argv[0] == "antigravity":

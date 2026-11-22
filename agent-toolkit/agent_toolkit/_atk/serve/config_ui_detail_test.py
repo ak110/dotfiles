@@ -1,5 +1,3 @@
-"""serveのconfigに関するui_detailの試験。"""
-
 # pylint: disable=protected-access
 
 import re
@@ -47,7 +45,6 @@ process.stdout.write(JSON.stringify({focused, hidden: elements['operation-notice
 
 
 def test_assets_render_three_contextual_empty_states() -> None:
-    """条件適用中、対応中0件、期間内0件、全件0件を別の回復操作へ案内する。"""
     result = _run_node_ui(
         """
 entries = [];
@@ -92,7 +89,6 @@ process.stdout.write(JSON.stringify({active, filtered, recent, all}));
 
 
 def test_assets_offer_hold_and_rejected_actions_and_preserve_implicit_resolution() -> None:
-    """保留・不採用の操作の表示と、採否APIへ明示した状態を送る条件を検証する。"""
     result = _run_node_ui(
         """
 const base = {
@@ -162,7 +158,6 @@ process.stdout.write(JSON.stringify({visibility, sent}));
 
 
 def test_assets_decision_note_is_shown_only_in_adopt_and_reject_modes() -> None:
-    """採否のメモ欄は閲覧中に隠し、採用・却下の操作モードでだけ表示して確定ボタンで送信する。"""
     result = _run_node_ui(
         """
 const entry = {
@@ -214,7 +209,6 @@ process.stdout.write(JSON.stringify({view, modes, sent}));
 
 
 def test_assets_sse_detail_tracks_state_changes_by_filename_and_closes_deleted_entry() -> None:
-    """SSEの詳細再取得は同じファイル名で状態変更を追跡し、404で削除済みとして閉じる。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -292,7 +286,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_pending_helper_locks_inputs_rejects_reentry_and_keeps_close_enabled() -> None:
-    """要求中は対象操作だけを固定し、二重実行を拒み、finallyで状態を復元する。"""
     result = _run_node_ui(
         """
 let release;
@@ -366,7 +359,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_preserve_user_announcement_across_user_and_sse_request_orders() -> None:
-    """エンドユーザーの要求とSSE要求の開始・完了順にかかわらず、件数を一度通知する。"""
     result = _run_node_ui(
         """
 async function runCase(startOrder, completionOrder) {
@@ -425,7 +417,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_state_sets_match_python_states() -> None:
-    """フロントエンドが持つ状態集合をPython側の保存状態と一致させる。"""
     labels = re.search(r"const STATE_LABELS = \{(.*?)\n\};", assets.SCRIPTS["wi_state.js"], re.DOTALL)
     assert labels is not None
     assert set(re.findall(r"(\w+):", labels.group(1))) == set(_wi_constants.WI_STATES)

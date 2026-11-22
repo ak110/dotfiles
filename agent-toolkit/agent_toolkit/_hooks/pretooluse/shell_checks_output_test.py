@@ -27,7 +27,6 @@ class TestBashOptionAfterTerminator:
             ("git log -- path --oneline", "--oneline"),
             ("git -C /tmp/repo diff -- a.py --stat", "--stat"),
             ("cd /tmp && rg -- x y -g '*.md'", "-g"),
-            # `git grep`は`--`より前にパターンが無いと`--`の直後をパターン、続く`--`を区切りとして読む（git 2.47.3）。
             ("git grep -c -F -- 'X' -- --glob", "--glob"),
             ("git diff --stat a b -- $(printf path.py) --stat", "--stat"),
             ("git grep -c -F -e 'X' -- --glob", "--glob"),
@@ -36,7 +35,6 @@ class TestBashOptionAfterTerminator:
             ("git grep -ie foo -- --glob", "--glob"),
             ("git grep -if patterns.txt -- --glob", "--glob"),
             ("git grep -ie -- -- --glob", "--glob"),
-            # `-e`・`-f`を`--`より前に置くと`--`の後ろは全てパスになる（ripgrep 15.2.0、GNU grep）。
             ("rg -c -F -e 'X' -- --glob", "--glob"),
             ("rg -n -e foo -- --glob", "--glob"),
             ("rg -nefoo -- --glob", "--glob"),
@@ -48,7 +46,6 @@ class TestBashOptionAfterTerminator:
             ("rg -c -F --regexp=X -- --glob", "--glob"),
             ("grep -rc -F -f patterns.txt -- --include", "--include"),
             ("case value in one) rg -l -F -- 'x' --glob '*.py' .;; esac", "--glob"),
-            # 引用した`'>'`は検索語のデータであり、後ろのオプションをリダイレクト先として除かない。
             ("rg -c -F -- 'x' '>' --glob '*.py' .", "--glob"),
             ("git log -- path '>' --oneline", "--oneline"),
         ],
@@ -99,8 +96,6 @@ class TestBashOptionAfterTerminator:
 
 
 class TestBashAtkOutputLoss:
-    """結果を失う入力へ警告し、通知の案内で直した入力とリテラルを通す。"""
-
     @pytest.mark.parametrize(
         "command",
         [

@@ -41,7 +41,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_disconnect_tracks_new_descendant_until_parent_exits(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ, outcome: str, delay_collection: bool
 ) -> None:
-    """一覧取得後に子を生成して親を終了させ、観測済みの子と無関係なプロセスを区別する。"""
     script = tmp_path / "runtime.py"
     child_pid = tmp_path / "child.pid"
     finished = tmp_path / "normal-finish"
@@ -89,7 +88,6 @@ async def test_disconnect_tracks_new_descendant_until_parent_exits(
             await asyncio.wait_for(disconnect_prepared.wait(), 15)
         return await wait(tasks, timeout=timeout, **kwargs)
 
-    # 本物のasyncio.waitによる切断timeoutは維持し、fixtureの生成・観測・親終了だけを予算から分離する。
     monkeypatch.setattr(claude.asyncio, "wait", wait_after_preparation)
     targets: list[psutil.Process] = []
     with (

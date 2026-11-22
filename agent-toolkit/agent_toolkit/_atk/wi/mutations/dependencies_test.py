@@ -1,5 +1,3 @@
-"""`atk wi`の変更系サブコマンド（状態遷移・削除・編集・追記・依存の更新・commit）と、ファイル名引数の検証のテスト。"""
-
 import pathlib
 import subprocess
 
@@ -35,7 +33,6 @@ def test_hold_entries_accept_processing_terminal_removal_and_content_operations(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保留中項目を再開・採否・削除・本文変更の対象にする。"""
     notes = _setup_notes(tmp_path)
     filenames = ["process.md", "adopt.md", "reject.md", "remove.md", "edit.md", "append.md"]
     for filename in filenames:
@@ -86,7 +83,6 @@ def test_set_dependencies_rejects_mutual_and_existing_chain_cycles(
     filename: str,
     dependencies: tuple[str, ...],
 ) -> None:
-    """相互依存と既存長鎖へ閉路を形成する更新をlock内で拒否する。"""
     notes = _setup_notes(tmp_path)
     for name in existing:
         path = _write_convert_awi(notes, name)
@@ -110,7 +106,6 @@ def test_set_dependencies_updates_held_entry_and_keeps_hold_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """hold状態の項目の依存を更新し、保存状態をholdのまま維持する。"""
     notes = _setup_notes(tmp_path)
     held = _write_convert_awi(notes, "held.md", state="hold")
     _write_convert_awi(notes, "first.md")
@@ -147,7 +142,6 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """UWI単独指定も移動とfrontmatter更新の前に拒否する。"""
     notes = _setup_notes(tmp_path)
     _write_uwi_entry(notes, "uwi.md")
     _disable_transition_git(monkeypatch)
@@ -169,14 +163,11 @@ def test_cooldown_return_rejects_uwi_without_frontmatter_changes(
 
 
 class TestAdoptStampWithNote:
-    """adopt: --note指定時に`## 処理結果`節へメモが追記される。"""
-
     def test_stamp_written_with_all_fields(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--note指定時、adopted/配下のファイル末尾に採否・処理日時・メモが追記される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="元本文")
         git_calls: list[_GitCall] = []
@@ -197,14 +188,11 @@ class TestAdoptStampWithNote:
 
 
 class TestRejectMultiple:
-    """rejectサブコマンド: 複数件指定で単一コミットへまとめる。"""
-
     def test_multiple_files_rejected_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """2件のrejectで両方がrejected/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         _write_awi_file(notes, "fb-002.md")
@@ -231,7 +219,6 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各エージェント環境では、どの方法で編集してもユーザーコメントの変更を書き込み前に拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="本文\n\n## ユーザーコメント\n\n保持する")
@@ -269,7 +256,7 @@ def test_agent_environment_rejects_user_comment_change_in_each_cli_route(
     assert path.read_bytes() == original
     failure, next_action = capsys.readouterr().err.splitlines()
     assert failure == _USER_COMMENT_ERROR
-    # 旧文面の「残します」は自動処理と読めたため、受信側が行う操作を次の操作の行で受け取れること。
+
     assert next_action.startswith("次の操作: ")
     assert "ユーザーコメント節" in next_action
     assert "除いて再実行する" in next_action
@@ -279,7 +266,6 @@ def test_agent_environment_rejects_add_with_user_comment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """新規投入のaddもユーザーコメント節を含む本文を拒否する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -311,7 +297,6 @@ def test_cli_edit_omits_body_verification_details_for_each_write_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """編集方法によらず、一致判定と保存本文を再掲しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")
@@ -412,14 +397,11 @@ def test_set_dependencies_reports_body_mismatch_and_omits_body_on_success(
 
 
 class TestEditNoArg:
-    """editサブコマンド: 無引数時はinbox配下のファイル名順最大値（最終追加分）を対象とする。"""
-
     def test_edit_no_arg_selects_max_filename(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """複数ファイル存在時はファイル名順の最大値（最終追加分）が編集対象になる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "20240101-100000-001.md", body="旧")
         latest = _write_awi_file(notes, "20240201-100000-001.md", body="編集前")
@@ -429,9 +411,6 @@ class TestEditNoArg:
 
         def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:  # pylint: disable=unused-argument
             if cmd[0] == "fake-editor":
-                # 新設計ではエディターへ渡されるのは対象ファイルのスナップショットを
-                # 複製した一時ファイルのため、cmd[1]を書き換える。
-                # 対象選択（最終追加分）の検証はcommit対象の相対パスで行う。
                 editor_path = pathlib.Path(cmd[1])
                 content = editor_path.read_text(encoding="utf-8")
                 editor_path.write_text(content.replace("編集前", "編集後"), encoding="utf-8")
@@ -456,7 +435,6 @@ class TestEditNoArg:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inbox空の場合はexit 2でstderr案内を出力する。"""
         _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -470,14 +448,11 @@ class TestEditNoArg:
 
 
 class TestStartProcessingSingle:
-    """start-processingサブコマンド: 1件指定でinboxからprocessing/へ移動しコミットする。"""
-
     def test_single_file_moved_to_processing(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件のstart-processing実行でinboxから移動されprocessing/に置かれコミット件名が正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -493,15 +468,12 @@ class TestStartProcessingSingle:
 
 
 class TestStartProcessingMissing:
-    """start-processingサブコマンド: 存在しないファイル指定でexit 2となる。"""
-
     def test_missing_file_exits(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inboxに存在しないファイル名指定でexit 2と案内が出力される。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -514,14 +486,11 @@ class TestStartProcessingMissing:
 
 
 class TestRejectFromProcessing:
-    """reject: processing配下のファイルもrejected/へ移動できる。"""
-
     def test_reject_from_processing(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """processing/配下のファイルがreject対象に含まれrejected/へ移動する。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
@@ -540,7 +509,6 @@ class TestRejectFromProcessing:
 
 
 def _replace_edit_message_with_body_file(command: list[str], tmp_path: pathlib.Path) -> list[str]:
-    """editの位置引数本文を現行の本文ファイル入力へ置き換える。"""
     if command[1] != "edit":
         return command
     body_file = tmp_path / "body.md"
@@ -606,7 +574,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """return-to-inboxも旧パス形の保存値をパス形・URL形で検証できる。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "target-repo"
         local_repo.mkdir()
@@ -681,7 +648,6 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """return-to-inboxも旧パス形の保存値を別リポジトリとは判定しない。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "target-repo"
         local_repo.mkdir()
@@ -772,7 +738,6 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """editの事前の確認も解決済みprocessing実体へ適用する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "inbox-other.md", target_repo="github.com/example/foo")
         processing = notes / "2026" / "10"
@@ -807,7 +772,6 @@ class TestTargetRepoVerification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -826,7 +790,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -842,7 +805,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """reject: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -858,7 +820,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -874,7 +835,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """start-processing: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -893,7 +853,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="編集前")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -917,7 +876,6 @@ class TestTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`--target-repo`未指定時は検証されず既存挙動のまま処理が進む。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

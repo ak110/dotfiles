@@ -75,11 +75,10 @@ _GLOBAL_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 
 
 def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ...]] | None:
-    """`git`と専用commit起動のサブコマンド名・引数を返す。"""
     if not segment.resolved or not segment.tokens:
         return None
     tokens = segment.tokens
-    # 専用起動でも通常commitと同じ検査へ渡す。任意の登録scriptは展開しない。
+
     if is_atk_command(tokens) and tokens[1:4] == ("run-script", "commit-with-timeout", "--"):
         arguments = tokens[4:]
         if len(arguments) >= 3 and arguments[0] == "--timeout" and arguments[2] == "--":
@@ -104,7 +103,6 @@ def git_subcommand_tokens(segment: ExecutionSegment) -> tuple[str, tuple[str, ..
     return None
 
 
-# 終了証跡など既存の内部importを保持し、新しい消費側は公開名を使う。
 _git_subcommand_tokens = git_subcommand_tokens
 
 
@@ -132,10 +130,6 @@ _GIT_COMMIT_VALUE_OPTIONS = frozenset(
 
 
 def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | None]]:
-    """commitの値とオプションを分け、結合短形式を分離形と同じ順序で返す。
-
-    値として消費した`--`や`--help`を再解釈しない。実際の`--`以後のpathspecは返さない。
-    """
     tokens = iter(arguments)
     for token in tokens:
         if token == "--":
@@ -150,7 +144,6 @@ def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | No
                     yield option, token[position + 1 :] or next(tokens, None)
                     break
                 if char in "Su":
-                    # 省略可能な値は同じ語の残りだけを消費する。
                     yield option, token[position + 1 :] or None
                     break
                 yield option, None
@@ -159,22 +152,12 @@ def git_commit_options(arguments: Sequence[str]) -> Iterable[tuple[str, str | No
 
 
 def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
-    """指定内容を確定できる通常commitのメッセージを返す。
-
-    メッセージは`-m`・`--message`に加え、`-F -`・`--file=-`へ同じコマンドのheredocで渡した本文と、
-    `-F <path>`・`--file=<path>`で指定したhookの時点で存在する通常ファイルからも読む。
-    エージェントのcommitの多くは`-F -`のheredocで作成されるため、この形を読めないと帰属行を確かめないまま通す。
-    相対パスは呼出しごとの実行位置と`git -C`で解決し、実行位置が不明なら本文を読まない。
-    heredocを一意に対応付けられない場合、存在しないファイル、`-C`・`-c`・`--reuse-message`・`--reedit-message`、
-    `--amend --no-edit`、fixup、squashの場合は判定しない。
-    """
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         parsed = git_subcommand_tokens(invocation.segment)
         if parsed is None or parsed[0] != "commit":
             continue
         arguments = parsed[1]
-        # `--`より後ろはpathspecであり、未知でもメッセージの指定に作用しない。それより前の未知の語は
-        # メッセージやその入力ファイルを変える可能性があるため、検証済みと推定しない。
+
         options = list(git_commit_options(arguments))
         location_unknown = _unknown_global_words(invocation.segment.tokens[: len(invocation.segment.tokens) - len(arguments)])
         if location_unknown is None or any(
@@ -206,7 +189,6 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
             else:
                 body = _read_commit_message_file(
                     message_file,
-                    # 専用起動にGitのglobal optionはなく、現在のcwdからcommitする。
                     ("git", "commit") if is_atk_command(invocation.segment.tokens) else invocation.segment.tokens,
                     cwd=current.path if current.resolved and not location_unknown else "",
                 )
@@ -220,7 +202,6 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
 
 
 def duplicate_autosquash_subject(command: str, cwd: str) -> str | None:
-    """対象リポジトリと未公開件名を解決できる場合だけ、誤った統合先を拒否する。"""
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.segment.tokens
         parsed = git_subcommand_tokens(invocation.segment)
@@ -282,12 +263,6 @@ def _duplicate_subject(cwd: str, prefix: Sequence[str], revision: str) -> str | 
 
 
 def _unknown_global_words(prefix: Sequence[str]) -> bool | None:
-    """`commit`より前の語の未知語を分類する。
-
-    実行位置だけを変える大域オプションの値にだけ未知語があれば真、未知語が無ければ偽を返す。
-    メッセージに作用しうる語に未知語があれば、検査の対象から外すため`None`を返す。
-    展開を含む語は語の全体が未知語になるため、`--git-dir=$R`の形はオプション名を確定できず`None`になる。
-    """
     location_unknown = False
     words = iter(prefix)
     for word in words:
@@ -311,7 +286,6 @@ _COMMIT_BLOCK_RERUN = (
 
 
 def _git_commit_format_violations(messages: Iterable[str]) -> list[tuple[str, str]]:
-    """通常commitのWI名記載と件名・本文間の空行欠落を、違反と是正の組で返す。"""
     violations: list[tuple[str, str]] = []
     for message in messages:
         if match := _WORK_ITEM_FILENAME_PATTERN.search(message):
@@ -335,7 +309,6 @@ def _git_commit_attribution_violations(
     *,
     attribution_disabled: bool = False,
 ) -> list[tuple[str, str]]:
-    """通常commitが観測identityのtrailerをちょうど1件持つか確かめ、違反と是正の組を返す。"""
     if attribution_disabled or identity is None or identity.source != "observed":
         return []
     expected = co_author_trailer(identity)
@@ -358,10 +331,6 @@ def _git_commit_block(
     *,
     attribution_disabled: bool = False,
 ) -> str | None:
-    """通常commitのメッセージに対する全ての検査の違反を、1回の遮断の通知へ並べて返す。違反が無ければ`None`を返す。
-
-    最初の違反だけを返すと、受け取ったエージェントは残りの違反で再び遮断される。
-    """
     messages = tuple(messages)
     violations = list(dict.fromkeys(_git_commit_format_violations(messages)))
     violations += _git_commit_attribution_violations(messages, identity, attribution_disabled=attribution_disabled)
@@ -377,17 +346,13 @@ def _git_commit_block(
 
 
 def _commit_heredoc_body(command: str) -> str | None:
-    """`git commit`を宣言した行のheredoc本文を返す。対応するheredocが1件に定まらない場合は`None`を返す。
-
-    `mask_heredoc_bodies`が本文を空白へ、終端行の先頭を`;`へ置き換えた結果と元の行を比べて本文の範囲を求める。
-    """
     original_lines = command.split("\n")
     masked_lines = mask_heredoc_bodies(command).split("\n")
     bodies: list[str] = []
     for terminator, (original, masked) in enumerate(zip(original_lines, masked_lines, strict=True)):
         if original == masked or not masked.startswith(";") or masked[1:].strip():
             continue
-        # 本文は宣言行の直後から終了行の前までに連続し、置換後は空白だけの行になる。宣言行は空白だけにならない。
+
         start = terminator
         while start > 0 and not masked_lines[start - 1].strip():
             start -= 1
@@ -406,7 +371,6 @@ def _read_commit_message_file(
     *,
     cwd: str,
 ) -> str | None:
-    """`git commit -F <path>`が読むファイルの本文を返す。解決できないか通常ファイルでない場合は`None`を返す。"""
     path = pathlib.Path(path_text)
     if not path.is_absolute():
         if not cwd:
@@ -437,11 +401,6 @@ _GIT_REV_PARSE_VALUED_OPTIONS = frozenset({"--default", "--prefix", "--git-path"
 
 
 def _rev_parse_short_revisions(arguments: Sequence[str]) -> list[str] | None:
-    """通常modeの単一revision検証へ渡す通常revisionを返す。
-
-    `--`以降はパスとして扱い、revisionに数えない。リダイレクトの演算子と対象も数えない。
-    検証指定より前のrevisionとrangeは数えず、先頭の専用modeは対象外とする。
-    """
     has_short = False
     if arguments and arguments[0] in {"--sq-quote", "--parseopt"}:
         return None

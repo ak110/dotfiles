@@ -74,6 +74,7 @@ cleanなcommitどうしは`git diff <取得時のHEAD> <レビューHEAD> -- <�
   JSONの形は`atk review-table add --help`にある。
 - 再レビューでは前の指摘ラウンドの各行を`atk review-table recheck <表の絶対パス> --row-id <ROW_ID> --round <round> --verdict <完了|対応不十分|未対応>`で判定する。
   新しい指摘が無くても、summaryの`recheck_pending_count`が0になるまで判定する。
+  判定はその行の応答とラウンドに対応するため、手で書き換えたり別の応答へ転記したりしない。
 - 返却の`未解決の指摘数`には`atk review-table show <表の絶対パス> --format=summary --round <round>`の`unanswered_count`を使う。
 - 判定行への指摘は表に登録せず、実行レビュー担当が判定をやり直す。
 

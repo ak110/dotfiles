@@ -1,14 +1,3 @@
-"""session登録簿と結果待ちの記録の全件から、子・保留・所属の判定に使う小さい派生値を引く。
-
-登録簿のレコードは起動本文を含み、1件が数十KBになる。子の検索、保留の判定、作業ツリーの使用判定が
-そのたびに全件を解析すると、仕事量が登録簿の総量（7日分で数千件・数十MB）に比例する。
-本モジュールは各ファイルの派生値を`derived_index`で状態ディレクトリへ保存し、識別（inode・更新時刻・大きさ）と
-派生値を計算するコードの版が変わらないファイルは解析し直さない。
-
-派生値は内容だけで決まる値に限り、プロセスの生存のように時刻で変わる判定は持たない。
-生存で結果が変わるレコード（再開予約を持つもの）は、照会のたびに`session_registry.resolve`で解決し直す。
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -28,8 +17,6 @@ _PENDING_RUNS = frozenset({"running", "published"})
 
 @dataclasses.dataclass(frozen=True)
 class Entry:
-    """登録簿のレコード1件の派生値。"""
-
     launcher: str | None
     """sessionを作成した時点の委譲元session。"""
     cwd: str | None
@@ -47,10 +34,6 @@ class Entry:
 
 
 def entries(state_root: pathlib.Path | None = None) -> dict[str, Entry]:
-    """登録簿の全レコード（`*.json`）の派生値を、拡張子を除くファイル名ごとに返す。
-
-    識別子の形式に合わない名前のレコードも含め、`readable`を偽とする（`resolve`はその名前を受け付けない）。
-    """
     state_root = _state_paths.state_dir() if state_root is None else state_root
     listed = _listed(session_registry.registry_directory(state_root), depth=1, valid=bool)
     return derived_index.refreshed(
@@ -64,7 +47,6 @@ def entries(state_root: pathlib.Path | None = None) -> dict[str, Entry]:
 
 
 def child_session_ids(launcher_session_id: str, *, state_root: pathlib.Path | None = None) -> tuple[str, ...]:
-    """保存済みの直接の親子関係から、同じ親が起動した子の識別子を返す。"""
     if not session_layout.valid_session_id(launcher_session_id):
         raise ValueError(f"invalid session id: {launcher_session_id!r}")
     return tuple(
@@ -77,7 +59,6 @@ def child_session_ids(launcher_session_id: str, *, state_root: pathlib.Path | No
 
 
 def descendant_session_ids(roots: Iterable[str], *, state_root: pathlib.Path | None = None) -> set[str]:
-    """`roots`と、その委譲元の連鎖で`roots`へ至る全sessionの識別子を返す。"""
     children: dict[str, list[str]] = {}
     for sid, entry in entries(state_root).items():
         if entry.launcher is not None:
@@ -93,7 +74,6 @@ def descendant_session_ids(roots: Iterable[str], *, state_root: pathlib.Path | N
 
 
 def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
-    """復旧を要する会話と未回収結果、およびそれらの依頼を保持する親の識別子を返す。"""
     state_root = _state_paths.state_dir() if state_root is None else state_root
     records = {sid: entry for sid, entry in entries(state_root).items() if session_layout.valid_session_id(sid)}
     pending = {sid for sid, entry in records.items() if entry.pending}
@@ -122,12 +102,10 @@ def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
 
 
 def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:
-    """登録簿の全記録が参照する起動単位を返す。読めない記録は除く。"""
     return {instance for entry in entries(state_root).values() for instance in entry.server_instances}
 
 
 def _wait_targets(state_root: pathlib.Path) -> dict[str, tuple[str, ...]]:
-    """全rootの結果待ちの記録ごとに、未回収として保持する対象の識別子を返す。"""
 
     def listed() -> Iterable[tuple[str, pathlib.Path, list[int]]]:
         for root in session_layout.list_root_session_ids(state_root, strict=True):
@@ -158,10 +136,6 @@ def _decode_entry(fields: list[Any]) -> Entry:
 def _listed(
     directory: pathlib.Path, *, depth: int, valid: Callable[[str], bool]
 ) -> Iterable[tuple[str, pathlib.Path, list[int]]]:
-    """`directory`の`depth`階層目で、拡張子を除く名前が`valid`を満たす`.json`を、名前・パス・識別で返す。
-
-    識別はinode・更新時刻（ナノ秒）・大きさの組とする。名前は`depth`が2なら`<親>/<拡張子を除く名前>`とする。
-    """
     try:
         with os.scandir(directory) as listed:
             items = list(listed)
@@ -184,7 +158,6 @@ def _listed(
 
 
 def _derive_record(session_id: str, path: pathlib.Path) -> Entry | None:
-    """レコード1件を解析して派生値を返す。列挙の後に消えた場合は`None`を返す。"""
     try:
         payload: Any = json.loads(path.read_bytes())
     except FileNotFoundError:
@@ -196,7 +169,6 @@ def _derive_record(session_id: str, path: pathlib.Path) -> Entry | None:
     resolution = session_registry.resolve_payload(session_id, payload)
     readable = session_layout.valid_session_id(session_id) and resolution.state is not session_registry.Resolution.UNREADABLE
     return Entry(
-        # 委譲元と起動単位は、解決できないレコードからも読む（親子の連鎖と掃引の保護を途切れさせない）。
         launcher=session_launchers.valid_launcher(payload.get(session_registry.LAUNCHER_KEY)),
         cwd=resolution.resume_info.cwd if resolution.resume_info is not None else None,
         server_instances=tuple(sorted(session_registry.payload_server_instances(payload))),
@@ -210,7 +182,6 @@ def _derive_record(session_id: str, path: pathlib.Path) -> Entry | None:
 
 
 def _derive_wait(path: pathlib.Path) -> tuple[str, ...]:
-    """結果待ちの記録1件が、未回収として保持する対象の識別子を返す。"""
     try:
         run: Any = json.loads(path.read_bytes())
     except OSError, ValueError:

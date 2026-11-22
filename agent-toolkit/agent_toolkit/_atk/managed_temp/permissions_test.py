@@ -20,7 +20,6 @@ pytestmark = pytest.mark.windows
 @pytest.mark.skipif(os.name != "posix", reason="POSIXの権限ビットと記述子を検証する")
 @pytest.mark.parametrize("mode", [0, 0o100, 0o300, 0o500, 0o555])
 def test_directory_restores_retained_mode_after_success_and_failure(tmp_path: pathlib.Path, mode: int) -> None:
-    """走査中の成功・中断の双方で保持対象の元modeへ戻る。"""
     root = tmp_path / "locked"
     root.mkdir()
     root.chmod(mode)

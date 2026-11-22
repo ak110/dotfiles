@@ -1,5 +1,3 @@
-"""`task_documents`の作業ツリーへの書込宣言と、起動本文からの役割文書の特定を確かめる。"""
-
 import json
 import pathlib
 
@@ -15,7 +13,6 @@ def _document(tmp_path: pathlib.Path, block: str) -> pathlib.Path:
 
 
 def test_invalid_launch_target_reports_contract_and_repair(tmp_path: pathlib.Path) -> None:
-    """直接読む不変条件側でも、不正な対象名の修復先を得られる。"""
     roles = task_documents.role_document_directory(tmp_path)
     roles.mkdir(parents=True)
     contract = roles / "task.parent.md"
@@ -29,7 +26,6 @@ def test_invalid_launch_target_reports_contract_and_repair(tmp_path: pathlib.Pat
 
 @pytest.mark.parametrize(("value", "expected"), [("あり", True), ("なし", False)])
 def test_worktree_write_declaration_is_read(tmp_path: pathlib.Path, value: str, expected: bool) -> None:
-    """宣言値を真偽として返し、`mode:`など他の行の解析と両立する。"""
     declaration = task_documents.read_declaration_unchecked(
         _document(tmp_path, f"必須入力名: 対象\nmode: explore\n作業ツリーへの書込: {value}")
     )
@@ -48,7 +44,6 @@ def test_worktree_write_declaration_is_read(tmp_path: pathlib.Path, value: str, 
     ],
 )
 def test_missing_or_invalid_worktree_write_is_a_format_violation(tmp_path: pathlib.Path, block: str, reason: str) -> None:
-    """宣言の欠落と未知の値は書式違反として理由と文書を返す。"""
     path = _document(tmp_path, block)
 
     declaration = task_documents.read_declaration_unchecked(path)
@@ -59,7 +54,6 @@ def test_missing_or_invalid_worktree_write_is_a_format_violation(tmp_path: pathl
 
 @pytest.mark.parametrize("references_first", [False, True])
 def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Path, references_first: bool) -> None:
-    """`task`の見出しで始まる起動本文からだけ役割文書のパスを得る。"""
     document = tmp_path / "skills" / "atk-mode" / "roles" / "exec.subagent.md"
     prompt = task_documents.task_prompt_header(document) + (
         "\n本文\n入力:\n対象: 内容"
@@ -72,7 +66,6 @@ def test_launched_task_document_round_trips_the_task_header(tmp_path: pathlib.Pa
 
 @pytest.mark.parametrize("legacy", [False, True])
 def test_task_prompt_inputs_preserves_old_and_front_loaded_inputs(legacy: bool) -> None:
-    """新旧の起動記録で参照資料を入力から除き、値に含まれる見出しを保つ。"""
     inputs = "対象:\n  内容\n  入力:\n  ## 手順・参照資料\n  末尾\n任意: 値"
     references = "# 手順\n入力:\n対象: 手順内の別値"
     prompt = (
@@ -96,7 +89,6 @@ def test_task_prompt_inputs_preserves_old_and_front_loaded_inputs(legacy: bool) 
     ],
 )
 def test_launched_task_document_ignores_other_first_lines(first_line: str) -> None:
-    """文書へ言及するだけの自由本文、相対パス、役割文書以外は役割の起動と扱わない。"""
     assert task_documents.launched_task_document(first_line + "\n本文") is None
 
 
@@ -122,7 +114,6 @@ def test_path_lists_declaration_preserves_both_document_formats(tmp_path: pathli
 
 @pytest.mark.parametrize("path_lists", ["表", ["宣言外"]])
 def test_legacy_path_lists_reject_invalid_declaration(tmp_path: pathlib.Path, path_lists: str | list[str]) -> None:
-    """旧形式も配列の型と宣言済みの入力名を検査する。"""
     entry = {"instruction": "修正せよ", "required": ["表"], "path_lists": path_lists}
     path = _document(
         tmp_path,

@@ -1,5 +1,3 @@
-"""保存済み記録の応答単位の推定費用と、子孫を含む集計を共有する。"""
-
 from __future__ import annotations
 
 import collections
@@ -28,8 +26,6 @@ def _timestamp(value: Any) -> datetime.datetime | None:
 
 @dataclasses.dataclass(frozen=True)
 class CostRecord:
-    """物理記録1件の内容と、収集元が確定した親子関係。"""
-
     record_id: str
     engine: str
     entries: list[dict[str, Any]]
@@ -39,8 +35,6 @@ class CostRecord:
 
 @dataclasses.dataclass
 class CostEstimate:
-    """金額が求められた部分と、単価不明・記録不足の部分を分けて保持する。"""
-
     reported_usd: float = 0
     usage_estimate_usd: float = 0
     unknown_models: collections.Counter[str] = dataclasses.field(default_factory=collections.Counter)
@@ -48,7 +42,6 @@ class CostEstimate:
     incomplete: bool = False
 
     def add(self, other: CostEstimate) -> None:
-        """別の物理記録の集計を加える。"""
         self.reported_usd = math.fsum((self.reported_usd, other.reported_usd))
         self.usage_estimate_usd = math.fsum((self.usage_estimate_usd, other.usage_estimate_usd))
         self.unknown_models.update(other.unknown_models)
@@ -57,7 +50,6 @@ class CostEstimate:
             self.unknown_tokens[key] += value
 
     def to_json(self) -> dict[str, Any]:
-        """不明な応答を0 USDとして扱わず、既知分と合計の確定可否を返す。"""
         known = math.fsum((self.reported_usd, self.usage_estimate_usd))
         return {
             "estimated_usd": known if not self.unknown_models and not self.incomplete else None,
@@ -149,7 +141,6 @@ def _codex_usages(entries: list[dict[str, Any]]) -> list[tuple[int, dict[str, An
 
 
 def _other_usages(entries: list[dict[str, Any]], engine: str) -> list[tuple[int, dict[str, Any], str | None, dict[str, Any]]]:
-    """単価を持たないengineも、応答数と既知のトークンを不明分へ残す。"""
     samples: list[tuple[int, dict[str, Any], str | None, dict[str, Any]]] = []
     for line, entry in enumerate(entries):
         if engine == "agy":

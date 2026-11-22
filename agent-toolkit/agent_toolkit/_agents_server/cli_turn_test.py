@@ -1,5 +1,3 @@
-"""CLIの正しい長文JSONLを、イベント全量と順序を保って受け取る。"""
-
 import asyncio
 import json
 import os
@@ -34,7 +32,6 @@ async def test_large_jsonl_event_is_preserved_through_backend(
     manager_type: type[CliTurnManager],
     final_lf: bool,
 ) -> None:
-    """64 KiBを超える日本語のツール結果も、後続の終了とともに保存する。"""
     full_body = "資料の全文開始\n" + "日本語の規範本文。\n" * 10_000 + "資料の全文終了"
     final_message = "状態: completed\n結果: 全文を確認した"
     if manager_type is antigravity.AntigravityManager:
@@ -95,7 +92,6 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
     manager_type: type[CliTurnManager],
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """KILL後のwaitが返らなくても実CLIと保存済み子孫を回収する。"""
     script = tmp_path / "runtime.py"
     event = (
         {"event": "init", "conversation_id": "shutdown"}
@@ -143,7 +139,7 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
 
             monkeypatch.setattr(Process, "wait", stalled_wait)
             await asyncio.wait_for(manager.close(), 15)
-            # 停止処理が子孫ごと終了させた後は、終了状態の取得が返らなくてもcloseは上限内に戻る。
+
             assert all(
                 not target.is_running() or target.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD) for target in targets
             )
@@ -159,7 +155,6 @@ async def test_close_reclaims_descendants_when_kill_wait_stalls(
 async def test_close_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """終了処理の最初の列挙の後に委譲先CLIの子孫が起動しても、終了させてファイルを解放する。"""
     runtime = tmp_path / "runtime.py"
     runtime.write_text(
         f"print({json.dumps({'type': 'step_start', 'sessionID': 'late'})!r}, flush=True)\n"
@@ -254,7 +249,6 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
 
 @pytest.mark.parametrize("eof", [True, False])
 def test_failure_stderr_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch, eof: bool) -> None:
-    """標準エラーの読取と記録の上限が資格情報の途中にあっても、保存する診断へ断片を残さない。"""
     from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
 
     from agent_toolkit._common.diagnostic_redaction import redact_diagnostic_values  # pylint: disable=import-outside-toplevel
@@ -280,13 +274,12 @@ def test_failure_stderr_redacts_before_truncating(monkeypatch: pytest.MonkeyPatc
 
 
 def test_ignored_non_json_output_log_redacts_before_truncating(caplog: pytest.LogCaptureFixture) -> None:
-    """無視した非JSON出力のログも、伏せてから上限の文字数に抜粋する。"""
     from agent_toolkit._common.diagnostic_redaction import redact_secrets  # pylint: disable=import-outside-toplevel
 
     line = ("x" * 180 + " https://" + "A" * 45 + "@example.org").encode()
     with caplog.at_level("DEBUG", logger=cli_turn._LOG.name):  # pylint: disable=protected-access
         assert cli_turn.decode_event(line) is None
-    # 保存時の書式化と同じく、記録の本文を伏せた結果を確かめる。
+
     assert all("A" * 10 not in redact_secrets(record.getMessage()) for record in caplog.records)
     assert caplog.records
 
@@ -297,7 +290,6 @@ def test_ignored_non_json_output_log_redacts_before_truncating(caplog: pytest.Lo
     ids=["short-open", "short-eof", "multibyte-eof"],
 )
 def test_read_stderr_keeps_short_output_and_byte_limit(data: bytes, eof: bool) -> None:
-    """一時的な短い読取の通常の診断は残し、抜粋は従来の読取上限と同じバイト数に収める。"""
     from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
 
     async def read() -> str:
@@ -315,7 +307,6 @@ def test_read_stderr_keeps_short_output_and_byte_limit(data: bytes, eof: bool) -
 
 
 def test_read_stderr_keeps_complete_line_at_read_limit() -> None:
-    """EOFまで読めた通常の1行は、読取の上限と同じ長さでも捨てずに上限のバイト数で抜粋する。"""
     from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
 
     data = b"x" * (cli_turn._STDERR_LIMIT_CHARS * 2)  # pylint: disable=protected-access

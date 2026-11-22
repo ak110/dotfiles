@@ -1,5 +1,3 @@
-"""WIのmutations content: diagnosticsのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -17,14 +15,11 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
 
 
 class TestEditBodyFile:
-    """本文ファイルによる編集の検証。"""
-
     def test_target_repo_is_normalized_and_existing_frontmatter_lines_are_preserved(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示したtarget_repoを正規化し、他の意味的なキーを保持する。"""
         notes = _setup_notes(tmp_path)
         path = _fixed_path(notes, "fb-001.md")
         path.write_text(
@@ -66,7 +61,6 @@ class TestEditBodyFile:
         exit_code: int,
         error_fragment: str,
     ) -> None:
-        """種別変更・UWI専用キー・実質空本文を拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前")
         original = path.read_text(encoding="utf-8")
@@ -85,7 +79,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """位置引数で渡した本文を拒否し、保存済み項目を変更しない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前")
         message_file = tmp_path / "message.txt"
@@ -107,7 +100,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """空のUWI質問はaddでもeditでも拒否し、状態を変更しない。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         add_body = tmp_path / "add-body.md"
@@ -163,7 +155,6 @@ def test_edit_reserved_key_rejection_names_alternative_route(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """予約キーを拒否する際は、その値を変更するために使える別の操作を示す。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb-001.md")
     original = path.read_text(encoding="utf-8")
@@ -196,7 +187,6 @@ def test_uwi_invalid_question_metadata_names_accepted_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """不正な回答形式の拒否は、受理する値か補う項目を次の操作として示す。"""
     notes = _setup_notes(tmp_path)
     _write_uwi_entry(notes, "uwi-001.md")
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -216,11 +206,6 @@ def test_edit_keeps_existing_free_form_and_rejects_new_free_form(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済みのfree-formのUWIは本文編集を受理し、他の形式からfree-formへ変える編集は拒否する。
-
-    free-formの新規作成を廃止した後も、廃止前に保存した項目を編集できなくなるとユーザーの記録が扱えなくなる。
-    一方で選択肢形式のUWIをfree-formへ書き換えられると、作成時の拒否を編集で迂回できる。
-    """
     notes = _setup_notes(tmp_path)
     stored_free_form = _write_uwi_entry(notes, "uwi-free.md")
     stored_choice = _write_uwi_entry(
@@ -253,7 +238,6 @@ def test_uwi_edit_with_broken_stored_structure_points_to_show(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済みUWIの構造が壊れている場合は、確認するコマンドとユーザーへの報告を示す。"""
     notes = _setup_notes(tmp_path)
     path = _fixed_path(notes, "uwi-001.md")
     path.write_text(
@@ -307,7 +291,6 @@ def test_editor_failure_keeps_entry_and_names_retry_command(
 
 
 def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pathlib.Path) -> None:
-    """終了した項目の編集拒否は、`atk wi hold`が受理する`--state`の値付きの形を案内する。"""
     with pytest.raises(_wi_web_input.WebInputError) as raised:
         mutation_content.edit_entry_content(tmp_path, state="adopted", filename="20260930-000000-001.md", content="本文")
 
@@ -315,6 +298,6 @@ def test_terminal_state_edit_rejection_guides_to_accepted_hold_form(tmp_path: pa
     assert "`atk wi hold <ファイル名> --state <adopted|rejected>`" in next_action
     parser = atk._build_parser()  # pylint: disable=protected-access
     parser.parse_args(["wi", "hold", "20260930-000000-001.md", "--state", "adopted"])
-    # 値を省いた`--state`は受理されないため、案内は値付きの形でなければならない。
+
     with pytest.raises(SystemExit):
         parser.parse_args(["wi", "hold", "20260930-000000-001.md", "--state"])

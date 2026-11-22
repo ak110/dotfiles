@@ -17,7 +17,6 @@ from agent_toolkit._hooks.pretooluse.decision import Decision
 
 @pytest.fixture(autouse=True)
 def _isolate_activity(monkeypatch: pytest.MonkeyPatch) -> None:
-    """検証プロセス自身の祖先を会話の実行主体として記録しない。"""
     monkeypatch.setattr(antigravity.session_activity, "record_activity", lambda *args, **kwargs: None)
 
 
@@ -103,7 +102,6 @@ def test_normalize_protojson(tmp_path: pathlib.Path, tool: str, args: dict, name
 
 
 def test_real_pretooluse_blocks_pattern_kill(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """既存の危険コマンド判定がagyでもdenyを返す。"""
     raw = _payload(tmp_path, toolCall={"name": "run_command", "args": {"CommandLine": '"pkill -f worker"'}})
     result = _run(raw, "PreToolUse", capsys)
     assert result["decision"] == "deny"
@@ -137,7 +135,6 @@ def test_pretooluse_denial_preserves_inner_reason(
 
 
 def test_session_start_defers_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """SessionStartのstdoutを空objectに保ち、次のInvocationで共通文脈を配送する。"""
     raw = _payload(tmp_path)
     assert _run(raw, "SessionStart", capsys) == {}
     state = session_state.read_state(raw["conversationId"])
@@ -151,7 +148,6 @@ def test_session_start_defers_context(tmp_path: pathlib.Path, capsys: pytest.Cap
 def test_preinvocation_reads_user_once(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同じユーザー発話を複数モデル呼出しのたびに再処理しない。"""
     raw = _payload(tmp_path)
     pathlib.Path(raw["transcriptPath"]).write_text(
         json.dumps(
@@ -183,7 +179,6 @@ def test_preinvocation_reads_user_once(
 def test_tool_notices_arrive_at_postinvocation(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, event: str
 ) -> None:
-    """出力欄を持たないツールイベントの警告を、後続Invocationへ一度だけ届ける。"""
 
     def invoke(*_args: Any, **_kwargs: Any) -> _Response:
         return _Response(0, {"hookSpecificOutput": {"additionalContext": "警告本文"}}, "")
@@ -199,14 +194,12 @@ def test_tool_notices_arrive_at_postinvocation(
 def test_pretooluse_pass_has_required_native_decision(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, body: dict
 ) -> None:
-    """通常通過にもAGYの必須decisionを返し、理由のない拒否を生まない。"""
     monkeypatch.setattr(antigravity, "_invoke", lambda *_args: _Response(0, body, ""))
     raw = _payload(tmp_path, toolCall={"name": "run_command", "args": {"CommandLine": "echo ok"}})
     assert _run(raw, "PreToolUse", capsys) == {"decision": "allow"}
 
 
 def test_real_stop_continues_for_response_language(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """共通Stop判定のblockを、agyのcontinueへ変換する。"""
     raw = _payload(tmp_path, terminationReason="NO_TOOL_CALL")
     pathlib.Path(raw["transcriptPath"]).write_text(
         json.dumps(
@@ -229,7 +222,6 @@ def test_real_stop_continues_for_response_language(tmp_path: pathlib.Path, capsy
 def test_stop_permission_has_required_native_decision(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, reason: str
 ) -> None:
-    """正常停止と中断も必須decisionを明示して停止を許可する。"""
     monkeypatch.setattr(antigravity, "_invoke", lambda *_args: _Response(0, {}, ""))
     assert _run(_payload(tmp_path, terminationReason=reason), "Stop", capsys) == {"decision": "allow"}
 
@@ -238,7 +230,6 @@ def test_stop_permission_has_required_native_decision(
 def test_native_subagent_prompt_points_to_entry_without_rules(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], encoded: bool
 ) -> None:
-    """invoke_subagentのPromptへ委譲先の入口文書を読む案内を加え、規範の本文（`kind="rules-…"`）は載せず、引数の符号化を保つ。"""
     prompt = json.dumps("調査せよ") if encoded else "調査せよ"
     raw = _payload(tmp_path, toolCall={"name": "invoke_subagent", "args": {"Prompt": prompt}})
     result = _run(raw, "PreToolUse", capsys)
@@ -263,13 +254,11 @@ def test_hook_entry_accepts_host_and_event(
 
 
 def test_invalid_session_id_never_selects_state_path(tmp_path: pathlib.Path) -> None:
-    """ホスト入力の識別子から状態領域外へ書き込まない。"""
     with pytest.raises(ValueError, match="conversationId"):
         antigravity.main(json.dumps(_payload(tmp_path, conversationId="../escape")), event="SessionStart")
 
 
 def test_native_children_are_owned_and_reconciled(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """親の起動応答と欠落のないactive一覧で、背景の子の所有を更新する。"""
     raw = _payload(
         tmp_path,
         toolCall={
@@ -286,19 +275,17 @@ def test_native_children_are_owned_and_reconciled(tmp_path: pathlib.Path, capsys
     assert _run(raw, "PostToolUse", capsys) == {}
     state = session_state.read_state(raw["conversationId"])
     assert not state[antigravity.NATIVE_SUBAGENTS]
-    # 起動の所有履歴は既存のTTLまで保持し、稼働中の子の集合を別に更新する。
+
     assert "child-1" in state["background_task_ids"]
 
 
 def test_shared_decoder_preserves_string_content(tmp_path: pathlib.Path) -> None:
-    """二度デコードすると型が変わる本文も、共通ツール正規化で文字列として保つ。"""
     raw = _payload(tmp_path, toolCall={"name": "write_file", "args": {"Content": '"1"'}})
     normalized = antigravity.normalize_payload(raw, "PreToolUse")
     assert normalized["tool_input"]["content"] == "1"
 
 
 def test_structured_denial_defers_notice_receipts_until_injection(tmp_path, monkeypatch, capsys) -> None:
-    """内部JSONの拒否理由を保ち、保留通知は実inject時だけ配送済みにする。"""
 
     def decide(_payload, _tool, _inputs, session_id, **_kwargs):
         warning = notice.warning_formatter("receipt")(
@@ -327,7 +314,6 @@ def test_structured_denial_defers_notice_receipts_until_injection(tmp_path, monk
 
 
 def test_question_answer_keeps_multiline_feedback(tmp_path: pathlib.Path) -> None:
-    """質問への自由記述も、ユーザー発話と同じ通知判定へ全文で渡す。"""
     raw = _payload(
         tmp_path,
         toolCall={
@@ -341,7 +327,6 @@ def test_question_answer_keeps_multiline_feedback(tmp_path: pathlib.Path) -> Non
 
 
 def test_native_manual_process_wi_is_observed(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """ツール名`Skill`を提供しないagyでも、ユーザーが起動した作業を記録する。"""
     raw = _payload(tmp_path)
     pathlib.Path(raw["transcriptPath"]).write_text(
         json.dumps(
@@ -359,7 +344,6 @@ def test_native_manual_process_wi_is_observed(tmp_path: pathlib.Path, capsys: py
 
 
 def test_native_async_offsets_keep_original_bytes(tmp_path: pathlib.Path) -> None:
-    """hook解析写しの呼出IDを、元JSONLの開始バイト位置へ対応付ける。"""
     from agent_toolkit._hooks import background_tasks  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     path = tmp_path / "transcript_full.jsonl"

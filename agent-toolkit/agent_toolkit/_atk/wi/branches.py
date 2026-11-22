@@ -1,10 +1,3 @@
-"""WIの宛先の系統（frontmatterの`target_branch`）の解決と検証。
-
-系統はrepository登録の`branches`に載せたoriginのブランチ名である。
-系統を登録しないrepository宛てのWIは`target_branch`を持たず、全ての判定が現行どおりになる。
-保存済みで`target_branch`を持たないWIは、系統を登録したrepositoryではdefault_branchの系統のWIとして扱う。
-"""
-
 import argparse
 import pathlib
 from collections.abc import Mapping
@@ -23,7 +16,6 @@ type Registry = Mapping[str, _config_repositories.BranchSettings]
 
 
 def registry(*, strict: bool = False) -> Registry:
-    """系統を登録したrepositoryの対応を返す。読取専用の利用では設定の不備を警告して空の対応へ倒す。"""
     try:
         return _config.repository_branch_settings()
     except (OSError, UnicodeError, ValueError) as error:
@@ -37,16 +29,13 @@ def registry(*, strict: bool = False) -> Registry:
 
 
 def stored(text: str) -> str | None:
-    """frontmatterに保存された系統を返す。"""
     if KEY not in text:
-        # 系統を持たない大半の項目でfrontmatterの解析を省く。
         return None
     value = (parse_frontmatter(text) or ({}, ""))[0].get(KEY)
     return value if isinstance(value, str) and value else None
 
 
 def effective(text: str, repo_id: str | None, branches: Registry) -> str | None:
-    """保存値、無ければ宛先repositoryのdefault_branchの系統を返す。系統未登録のrepository宛てで保存値も無ければNone。"""
     value = stored(text)
     if value is not None:
         return value
@@ -55,7 +44,6 @@ def effective(text: str, repo_id: str | None, branches: Registry) -> str | None:
 
 
 def unregistered(text: str, repo_id: str | None, branches: Registry) -> bool:
-    """宛先の系統が登録に無い（登録から外した、または系統を登録していないrepository宛て）かを返す。"""
     value = stored(text)
     if value is None:
         return False
@@ -64,12 +52,10 @@ def unregistered(text: str, repo_id: str | None, branches: Registry) -> bool:
 
 
 def matches(text: str, repo_id: str | None, branch: str, branches: Registry) -> bool:
-    """WIの実効の系統が指定の系統と一致するかを返す。"""
     return effective(text, repo_id, branches) == branch
 
 
 def resolve_for_save(repo_id: str, requested: str | None, branches: Registry) -> str | None:
-    """保存する系統を返す。系統を登録したrepository宛ての省略はdefault_branchの系統とし、登録に無い名前は拒否する。"""
     settings = branches.get(repo_id)
     if settings is None:
         if requested is None:
@@ -95,7 +81,6 @@ AUTO = "auto"
 
 
 def upstream_branch(worktree: pathlib.Path) -> str | None:
-    """作業ツリーの追跡先（無ければorigin/HEAD）のブランチ名を返す。"""
 
     def capture(path: pathlib.Path, args: list[str]) -> str | None:
         result = _git_command.run(["-C", str(path), *args], capture_output=True, text=True, check=False)
@@ -106,11 +91,6 @@ def upstream_branch(worktree: pathlib.Path) -> str | None:
 
 
 def resolve_filter(value: str | None, repo_id: str | None, worktree: pathlib.Path | None, branches: Registry) -> str | None:
-    """`--target-branch`の値から一覧を限定する系統を返す。
-
-    `auto`は作業ツリーが追跡するブランチを系統とする。系統を登録しないrepositoryでは限定しない。
-    追跡するブランチが登録に無い場合は、処理を始めずに登録した系統と起動方法を示す。
-    """
     if value != AUTO:
         return value
     settings = branches.get(repo_id or "")
@@ -130,7 +110,6 @@ def resolve_filter(value: str | None, repo_id: str | None, worktree: pathlib.Pat
 
 
 def requested_filter(args: argparse.Namespace, repo_ids: tuple[str, ...], branches: Registry) -> str | None:
-    """読取コマンドの`--target-branch`を、`auto`なら対象の作業ツリーから解決して返す。"""
     value = getattr(args, "target_branch", None)
     if value != AUTO:
         return value

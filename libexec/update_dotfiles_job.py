@@ -1,5 +1,3 @@
-"""uvの外側で更新workerを分離し、同じjobの出力と終了状態を回収する。"""
-
 # /// script
 # requires-python = ">=3.15"
 # dependencies = []
@@ -38,7 +36,6 @@ _WARNING = (
 
 
 def state_root(platform: str = sys.platform) -> pathlib.Path:
-    """platformdirsと同じOS既定の状態領域を、外部依存なしで解決する。"""
     if platform == "win32":
         base = pathlib.Path(os.environ.get("WIN_PD_OVERRIDE_LOCAL_APPDATA") or os.environ["LOCALAPPDATA"])
         return base / "agent-toolkit" / "update-jobs"
@@ -146,9 +143,8 @@ def _procfs_parents() -> list[tuple[int, int]]:
         try:
             stat = (entry / "stat").read_text(encoding="utf-8", errors="replace")
         except FileNotFoundError, ProcessLookupError:
-            # 列挙中に終了したプロセスは停止対象から外れてよい。
             continue
-        # commは空白や括弧を含み得るため、最後の`)`より後ろの`state ppid ...`を読む。
+
         pairs.append((int(entry.name), int(stat.rpartition(")")[2].split()[1])))
     return pairs
 
@@ -158,8 +154,6 @@ def _stop_tree(process: subprocess.Popen[Any], windows_job: WindowsJob | None = 
         if sys.platform == "linux":
             deadline = time.monotonic() + 30
             while True:
-                # 直系の子はこのworkerがwaitするまでPIDを再利用されない。
-                # 親の終了でsubreaperへ移った孫も、次の列挙で同じ所有条件になる。
                 for pid, parent in _procfs_parents():
                     if parent == os.getpid():
                         with contextlib.suppress(ProcessLookupError):
@@ -177,8 +171,6 @@ def _stop_tree(process: subprocess.Popen[Any], windows_job: WindowsJob | None = 
             assert windows_job is not None
             windows_job.terminate(timeout=30)
         else:
-            # この分岐は生成時に分離したgroupだけを所有する。起点終了後の数値PGIDは
-            # 世代を再確認できないため、別の群を巻き込む停止や空集合での成功に使わない。
             if process.poll() is not None:
                 raise RuntimeError(
                     f"更新group {process.pid}の起点が終了し、子孫の所有を確認できません。"
@@ -239,7 +231,6 @@ def _forward_output(
 
 def _run_command(command: list[str], job: pathlib.Path, deadline: float, env: dict[str, str]) -> int:
     with contextlib.ExitStack() as stack:
-        # 正常完了はpipeのEOFで判定する。出力を閉じたサービスはJob解放後も存続できる。
         windows_job = stack.enter_context(WindowsJob(kill_on_close=False)) if sys.platform == "win32" else None
         options = separation_options()
         if windows_job is not None:
@@ -325,9 +316,8 @@ def _worker(job: pathlib.Path) -> int:
     code = 1
     try:
         if sys.platform == "linux":
-            # 直系の子を回収前に自動消滅させず、PIDの所有と終了コードを維持する。
             signal.signal(signal.SIGCHLD, signal.SIG_DFL)
-            # uvや更新本体が終了した後の子孫も、独立workerが終了状態を回収する。
+
             libc = ctypes.CDLL(None, use_errno=True)
             if libc.prctl(36, 1, 0, 0, 0) != 0:  # PR_SET_CHILD_SUBREAPER
                 raise OSError(ctypes.get_errno(), "更新workerの子孫所有を設定できません")
@@ -355,7 +345,6 @@ def _worker(job: pathlib.Path) -> int:
         code = 1
         return code
     finally:
-        # result公開前に、継承先を含む書込み済み出力をcontrollerから読める状態にする。
         sys.stdout.flush()
         sys.stderr.flush()
         _write_json(job / "result.json", {"exit_code": code, "finished_at": _now()})
@@ -395,7 +384,6 @@ def _retrieve(job: pathlib.Path, *, wait: bool, worker: subprocess.Popen[Any] | 
 
 
 def main(argv: list[str] | None = None) -> int:
-    """新規job、保存結果の再取得、内部workerを実行する。"""
     arguments = list(sys.argv[1:] if argv is None else argv)
     try:
         if arguments[:1] == ["--worker"]:
@@ -432,7 +420,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"更新job: {identifier}\n保存先: {job}\n再取得: update-dotfiles job {identifier}", flush=True)
         with (job / "stdout.log").open("wb") as stdout, (job / "stderr.log").open("wb") as stderr:
-            # workerは独立寿命を持つため、controllerでwait/terminateするcontext managerに入れない。
             try:
                 worker = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
                     [sys.executable, str(pathlib.Path(__file__).resolve()), "--worker", identifier],

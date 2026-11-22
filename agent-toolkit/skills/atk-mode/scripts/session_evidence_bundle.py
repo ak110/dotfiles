@@ -1,5 +1,3 @@
-"""証拠抽出の`--bundle`集約実行。1回の記録の読み込みで各走査を行い、全量をファイルへ書いて要約を返す。"""
-
 from __future__ import annotations
 
 import collections
@@ -204,7 +202,6 @@ def _bundle_events(
 
 
 def _in_scope(event: dict[str, Any], scope: dict[str, Any]) -> bool:
-    """過去の入力を文脈に残し、元行または結果行が新しい事象だけを分析する。"""
     record = event.get("record")
     entry = scope["records"].get(record) if isinstance(record, str) else None
     if entry is not None:
@@ -226,11 +223,6 @@ def _conversation_bundle(
     after: Path | None,
     saved_scope: Path | None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """会話専用では分析を走査せず、再取得の範囲だけを保存する。
-
-    本文は表示を選ぶ呼出側へメモリー上で渡す。継続は保存scopeの原本接頭辞から再構成するため、
-    全担当の本文キャッシュやページごとの全量コピーを持たない。
-    """
     try:
         if saved_scope is None:
             scope = session_review.scope_records(collected, after=after)
@@ -257,13 +249,6 @@ def _conversation_bundle(
 
 
 def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """通常表示を、イベント種別ごとの件数と問題候補の位置へ要約する。
-
-    `assistant`と`skill-invocation`は件数だけで候補を確定できるため、本文を標準出力へ含めない。
-    位置を伴う種別の本文も冒頭に限り、全体は`--detail`で取得する。
-    位置を伴うイベントへは、そのエントリの時刻を`timestamp`として載せる。
-    時刻を持たないエントリでは空文字列とし、所要時間の区間の境界を`--detail`の追加照会なしで確定できるようにする。
-    """
     counts = collections.Counter(str(event["kind"]) for event in timeline)
     events: list[dict[str, Any]] = [
         {"kind": "bundle-kind-count", "event_kind": event_kind, "count": count}
@@ -297,10 +282,6 @@ def _bundle_timeline_events(timeline: list[dict[str, Any]]) -> list[dict[str, An
 
 
 def _bundle_warning_events(warnings: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """警告を本文の冒頭で分類し、分類ごとの件数と先頭の代表位置へ要約する。
-
-    一致が無い場合に`_warning_collection_events`が返す位置を持たないイベントは分類の対象外とする。
-    """
     groups: dict[str, list[dict[str, Any]]] = {}
     for event in warnings:
         if event.get("kind") != "warning" or "line" not in event:

@@ -97,7 +97,6 @@ _LOCAL_SKILL_REFERENCE = re.compile(r"(?<![\w-])(agent-toolkit|agent-basics):([A
 
 
 def _warn_missing_local_skill_references(root: pathlib.Path) -> None:
-    """ローカルプラグインの文書が廃止されたスキルを指す箇所を表示する。"""
     providers = {plugin: root / plugin / "skills" for plugin in ("agent-toolkit", "agent-basics")}
     for source in sorted((root / "plugins").glob("*/.chezmoi-source")):
         if source.is_symlink() or source.parent.is_symlink():
@@ -250,7 +249,6 @@ def _filter_apply_pending(status_output: str) -> list[str]:
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
-    """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(description="dotfilesを取得し、chezmoiで反映する")
     parser.add_argument("command", nargs="?", choices=["logs"], help="logs: 直近1回の更新実行の保存ログを表示する")
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
@@ -260,7 +258,6 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def _show_logs() -> int:
-    """保存済みの直近の更新実行を、複数行レコードと世代境界を保って表示する。"""
     records: list[tuple[str, str]] = []
     run_id = ""
     paths = update_log.generations(update_dotfiles_runtime.LOG_PATH, update_dotfiles_runtime.LOG_BACKUP_COUNT)
@@ -282,7 +279,7 @@ def _show_logs() -> int:
                 file=sys.stderr,
             )
             return 1
-    # 単独post-applyを除き、開始記録が既に削除された更新も残っている実行IDから選ぶ。
+
     update_ids = {identifier for identifier, _ in records if re.fullmatch(r"\d+-\d+", identifier)}
     if not update_ids:
         print("保存済みの更新ログはありません。")
@@ -296,8 +293,6 @@ def _show_logs() -> int:
 
 @dataclasses.dataclass
 class _Context:
-    """段の間で共有する引数と先行段の結果。"""
-
     args: argparse.Namespace
     total: int
     git_timeout: int | None
@@ -305,7 +300,6 @@ class _Context:
 
 
 def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
-    """宣言表の`executor`の段ごとの処理を返す。段の名前と分類は`update_dotfiles_stages.STAGES`が持つ。"""
 
     def git_update(_stage: update_dotfiles_stages.Stage) -> int:
         return update_dotfiles_git.update_git_with_recovery(1, context.total, timeout=context.git_timeout)

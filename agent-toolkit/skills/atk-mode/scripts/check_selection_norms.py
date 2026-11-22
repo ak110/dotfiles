@@ -1,5 +1,3 @@
-"""対象リポジトリの規範指定と公開工程の根拠の検査。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -40,13 +38,6 @@ _NORM_CONDITION_KEYS = frozenset({"name", "paths", "suffixes", "agent-doc", "req
 
 @dataclasses.dataclass(frozen=True)
 class NormCondition:
-    """`プロジェクト規範の指定`に作用する対象リポジトリの条件1件。
-
-    `paths`（リポジトリ相対のファイルか`/`で終わる範囲）と`suffixes`、または`agent-doc`（エージェント向け文書の判定）で
-    項目の両書込区分から当たるパスを選ぶ。当たるパスがある項目には、`require-paths`なら当たった各パスを、
-    `require-text`ならその各文字列を指定へ書くことを求める。
-    """
-
     name: str
     paths: tuple[str, ...]
     suffixes: tuple[str, ...]
@@ -55,7 +46,6 @@ class NormCondition:
     require_text: tuple[str, ...]
 
     def matches(self, path: str) -> bool:
-        """パスがこの条件の対象かを返す。"""
         if self.agent_doc and _is_agent_doc_target_file(path):
             return True
         in_scope = any(path == entry or (entry.endswith("/") and path.startswith(entry)) for entry in self.paths)
@@ -98,7 +88,7 @@ def load_norm_conditions(work_dir: pathlib.Path) -> list[NormCondition]:
         "`agent-doc`・`require-paths`（真偽値）だけを持つ表の配列へ直してから、同じコマンドを再実行する"
     )
     table = _load_check_table(work_dir)
-    # 同じ表に目標所要秒数だけを置くプロジェクトもあるため、`norm-spec`の欠落は条件なしとして読む。
+
     if table is None or "norm-spec" not in table:
         return []
     entries = table["norm-spec"]
@@ -142,7 +132,6 @@ def load_target_seconds(work_dir: pathlib.Path) -> float | None:
 
 
 def _norm_condition_problems(entry: object) -> list[str]:
-    """条件1件の欄名と型の誤りを返す。"""
     if not isinstance(entry, dict):
         return ["表ではない"]
     problems = [f"未知の欄: {key}" for key in entry if key not in _NORM_CONDITION_KEYS]
@@ -205,7 +194,6 @@ def check_norm_spec(awi: str, decision: dict[str, object], conditions: list[Norm
 
 
 def _check_public_write_rationales(items: list[dict[str, object]], work_dir: pathlib.Path) -> list[Violation]:
-    """公開工程の各パスに対応する規範ファイルと見出しの実在を確かめる。意味はメインが検収する。"""
     errors: list[Violation] = []
     for item in items:
         expected = set(_string_list(item, _selection.PUBLIC_WRITE_FILES_KEY))

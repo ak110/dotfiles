@@ -1,5 +1,3 @@
-"""laneが使う内部実行`run_command.execute`の記録と終了状態を検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -21,7 +19,6 @@ from agent_toolkit._testing import git_repository, late_descendant
 
 
 def _holds_resources(process: psutil.Process) -> bool:
-    """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
     try:
         return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.NoSuchProcess:
@@ -30,7 +27,6 @@ def _holds_resources(process: psutil.Process) -> bool:
 
 @pytest.mark.skipif(os.name != "posix", reason="ホストからのプロセスグループSIGINTを再現する")
 def test_execute_host_interrupt_reclaims_detached_descendant(tmp_path: pathlib.Path) -> None:
-    """子が先に消える順序でも所有を失わないよう、呼出側と検証子の中断境界を分ける。"""
     parent_pid, child_pid = tmp_path / "parent.pid", tmp_path / "child.pid"
     verifier = tmp_path / "verifier.py"
     verifier.write_text(
@@ -88,13 +84,11 @@ def test_execute_host_interrupt_reclaims_detached_descendant(tmp_path: pathlib.P
 
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の結果検証はエージェント向けの出力を使う。"""
     monkeypatch.setattr(run_command, "is_human_terminal", lambda: False)
 
 
 @pytest.mark.parametrize("changed", [None, "worktree", "head"])
 def test_reuse_requires_unchanged_execution_state(monkeypatch, tmp_path, changed):
-    """実行後に元の版へ戻しても、実行中に版を変更した記録は再利用しない。"""
     repo = git_repository.init_repository(tmp_path / "repo", files={"value.txt": "original"}, commit_message="初期状態")
     original = git_repository.git_output(repo, "rev-parse", "HEAD")
     output = tmp_path / "output"
@@ -115,7 +109,6 @@ def test_reuse_requires_unchanged_execution_state(monkeypatch, tmp_path, changed
 
 @pytest.mark.usefixtures("leaf_git_commands")
 def test_reuse_rejects_dirty_submodule_and_legacy_clean_record(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実測時と再利用時の両方でサブモジュールを検査し、旧判定で保存された成功は再利用しない。"""
     source = git_repository.init_repository(tmp_path / "module", files={"tracked": "基準\n"}, commit_message="基準")
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="初期状態")
     git_repository.run_git(repo, "-c", "protocol.file.allow=always", "submodule", "add", str(source), "sub")
@@ -155,7 +148,6 @@ def test_reuse_rejects_dirty_submodule_and_legacy_clean_record(tmp_path: pathlib
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 @pytest.mark.parametrize("exit_code", [0, 7])
 def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, capsys, agent, exit_code):
-    """子を終了させる前に実行状態が届き、両出力と終了値は保存される。"""
     release = tmp_path / "release"
     observed = []
 
@@ -189,7 +181,6 @@ def test_execute_reports_running_state_to_human_terminal(monkeypatch, tmp_path, 
 
 
 def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_path):
-    """停止確認後に記録を確定し、遅れて孫が出力を書かない。"""
     ready = tmp_path / "ready"
     release = tmp_path / "release"
     started: list[psutil.Process] = []
@@ -234,7 +225,6 @@ def test_execute_timeout_stops_grandchildren_before_recording(monkeypatch, tmp_p
 
 
 def test_execute_reports_residual_descendants_in_failure(monkeypatch, tmp_path):
-    """回収できない子孫の診断を公開記録のfailureへ残す。"""
     release = tmp_path / "residual.release"
     argv = [sys.executable, "-c", late_descendant.held_source(release)]
     wait = subprocess.Popen.wait
@@ -266,7 +256,6 @@ def _saved(metadata: dict, name: str) -> bytes:
 
 
 def test_execute_strips_inherited_venv(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """子へ渡る環境から仮想環境だけを除き、無関係の値とPATHの順序を保つ。"""
     venv = tmp_path / "inherited"
     path = os.pathsep.join([str(tmp_path / "before"), str(venv / "bin"), "", str(venv / "Scripts"), os.defpath])
     monkeypatch.setenv("VIRTUAL_ENV", str(venv))
@@ -285,10 +274,6 @@ def test_execute_strips_inherited_venv(monkeypatch: pytest.MonkeyPatch, tmp_path
 
 @pytest.mark.parametrize("verification", [False, True])
 def test_verification_owns_shared_slot_and_child_inherits(tmp_path: pathlib.Path, verification: bool) -> None:
-    """検証指定だけが共有枠を所有し、子の入れ子APIは同じ所有者で終了する。
-
-    実行枠は呼出元のスレッドで入れ子を数えるため、pytest自身の保持と分けて別プロセスで観測する。
-    """
     probe = (
         "import json,os; from pyfltr.command import execution_slot; "
         "owner=execution_slot.read_owner(); "
@@ -323,7 +308,6 @@ def test_verification_owns_shared_slot_and_child_inherits(tmp_path: pathlib.Path
 
 @pytest.mark.parametrize("exit_code", [0, 7])
 def test_execute_records_exit_modes_and_streams(tmp_path: pathlib.Path, exit_code: int) -> None:
-    """終了値と両streamを保存し、記録JSONに同じ値を残す。"""
     argv = [sys.executable, "-c", f"import sys; print('out'); print('err', file=sys.stderr); sys.exit({exit_code})"]
     metadata, code, failure = run_command.execute(argv, tmp_path, 60)
     assert code == exit_code and failure is None
@@ -353,7 +337,6 @@ def test_start_failure_returns_125_with_empty_saved_streams(tmp_path: pathlib.Pa
 
 
 def test_execute_records_owner_process_in_saved_area(tmp_path: pathlib.Path) -> None:
-    """保存領域へ作成プロセスを記録し、空きによる回収が実行中の領域を使用中と判定できるようにする。"""
     metadata, _code, _failure = run_command.execute([sys.executable, "-c", "pass"], tmp_path, 60)
     area = pathlib.Path(metadata["stdout_path"]).parent
     assert sweep.owner_alive((area / managed_temp.OWNER_FILE).read_text(encoding="ascii"))

@@ -33,7 +33,7 @@ QUALITY_SOURCE = Path("agent-basics/skills/writing-standards/references/writing.
 QUALITY_START = "<!-- portable-quality:start -->"
 QUALITY_END = "<!-- portable-quality:end -->"
 QUALITY_FILENAME = "references/quality-standards.md"
-# 原本を持つ`writing-standards`は複製を持たない。
+
 QUALITY_SKIPPED_SKILLS = frozenset({"writing-standards"})
 QUALITY_NOTICE = "<!-- writing-standards/references/writing.mdから自動生成。原本を編集して再生成する。 -->\n\n"
 OPTIONAL_TARGETS = frozenset((MCP_CODEX_TARGET, AGENT_MCP_TARGET, HOOKS_TARGET))
@@ -46,7 +46,6 @@ CODEX_ROOT_NOTICE = (
 SHARED_MCP_SERVER_NAMES = frozenset({"pyfltr", "agents_server"})
 
 
-# 依存導入前の起動スクリプトscripts/launch.pyを、プロジェクト設定を読まずに起動するuvの引数。
 _UV_LAUNCH_ARGS = ("run", "--no-cache", "--no-config", "--no-project", "--python", "3.15", "python")
 
 
@@ -73,7 +72,6 @@ def _codex_hook_command(name: str) -> str:
 
 
 def _local_codex_hook_manifest(content: str) -> str:
-    """dotfilesが個人binへ置く固定の起動コマンドを使うlocal plugin用manifestを返す。"""
     value = json.loads(content)
     for groups in value["hooks"].values():
         for group in groups:
@@ -175,12 +173,20 @@ CODEX_HOOK_ALLOWLIST: dict[str, CodexHookProjection] = {
     "PreToolUse": CodexHookProjection(
         (CODEX_PRE_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("pretooluse"),
-        matcher="Bash|Edit|Write|spawn_agent|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__list|mcp__agents_server__show|mcp__pyfltr__run",
+        matcher=(
+            "Bash|Edit|Write|spawn_agent|mcp__agents_server__start|mcp__agents_server__send_message|"
+            "mcp__agents_server__send_to_user|mcp__agents_server__kill|mcp__agents_server__list|"
+            "mcp__agents_server__show|mcp__pyfltr__run"
+        ),
     ),
     "PostToolUse": CodexHookProjection(
         (CODEX_POST_TOOL_USE_COMMAND,),
         output_command=_codex_hook_command("posttooluse"),
-        matcher="Bash|Edit|Write|mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show",
+        matcher=(
+            r"Bash|Edit|Write|exec_command|functions\.exec_command|functions\.exec|"
+            "mcp__agents_server__start|mcp__agents_server__send_message|mcp__agents_server__kill|"
+            "mcp__agents_server__stop|mcp__agents_server__list|mcp__agents_server__show"
+        ),
     ),
     "Stop": CodexHookProjection((CODEX_STOP_COMMAND,), output_command=_codex_hook_command("stop")),
     "UserPromptSubmit": CodexHookProjection(
@@ -319,7 +325,6 @@ def _codex_mcp(source: dict[str, Any]) -> dict[str, Any]:
 
 
 def _quality_outputs(root: Path) -> dict[Path, str]:
-    """スキルフォルダーだけを配布するホストへ、同じ原本の品質基準を届ける。"""
     source = (root / QUALITY_SOURCE).read_text(encoding="utf-8")
     if source.count(QUALITY_START) != 1 or source.count(QUALITY_END) != 1:
         raise ValueError("品質基準の生成範囲は開始と終了の標識を各1件持つ必要がある")
@@ -446,7 +451,6 @@ def _outputs(root: Path) -> dict[Path, str]:
 
 
 def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
-    """既知の派生JSONのうち、現存する内容を返す。"""
     quality_paths = {
         path.relative_to(root)
         for distribution in ("agent-toolkit", "agent-basics")
@@ -457,7 +461,6 @@ def _existing_outputs(root: Path, expected: dict[Path, str]) -> dict[Path, str]:
 
 
 def _output_difference_details(expected: dict[Path, str], existing: dict[Path, str]) -> tuple[tuple[Path, str], ...]:
-    """通常の派生JSONについて、対象と不一致の種類を返す。"""
     differences = []
     for path in sorted(set(expected) | set(existing), key=str):
         if path not in existing:
@@ -577,10 +580,6 @@ def _sync_codex_root(root: Path, expected: dict[Path, tuple[bytes, int]]) -> boo
 
 
 def repo_root() -> Path:
-    """生成元と生成物を持つdotfilesの作業ツリーを返す。
-
-    作業ツリーを解決できない場合は生成元を読めず生成を続けられないため、`FileNotFoundError`を送出する。
-    """
     root = common.find_dotfiles_root()
     if root is None:
         raise FileNotFoundError(
@@ -607,12 +606,10 @@ def sync(root: Path) -> bool:
 
 
 def check(root: Path) -> bool:
-    """派生JSONを変更せず、期待内容と一致する場合は`True`を返す。"""
     return not check_diagnostics(root)
 
 
 def check_diagnostics(root: Path) -> tuple[str, ...]:
-    """検査対象の相対パスと差の種類を、派生物を書き換えずに組み立てる。"""
     expected = _outputs(root)
     normal = _output_difference_details(expected, _existing_outputs(root, expected))
     codex = _codex_root_difference_details(root, _codex_root_outputs(root, expected))

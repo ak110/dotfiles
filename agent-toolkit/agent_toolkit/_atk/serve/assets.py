@@ -1,5 +1,3 @@
-"""`atk serve`へ同梱するフロントエンド資産。"""
-
 import base64
 import pathlib
 
@@ -36,9 +34,8 @@ def _read_static_text(filename: str) -> str:
     return (_STATIC_DIR / filename).read_text(encoding="utf-8")
 
 
-# 以前の埋め込み定数と同じく、末尾に改行を含めない。三重引用符で埋め込んでいたHTML/CSSは末尾に改行を含まなかった。
 HTML = _read_static_text("index.html").removesuffix("\n")
-# 配信するCSSは1枚のまま、主題別の原本を既存のカスケード順で連結する。
+
 STYLES = {
     filename: _read_static_text(filename)
     for filename in (
@@ -54,7 +51,6 @@ CSS = "".join(STYLES.values()).removesuffix("\n")
 
 SCRIPTS = {
     filename: _read_static_text(filename)
-    # 3画面が共有するナビゲーションと処理、ワークアイテム・計画ファイル・セッションの各画面。
     for filename in (
         "shell.js",
         "common.js",

@@ -99,7 +99,6 @@ def _install_into(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> ty
 def test_removes_only_development_artifacts_inside_cache(
     tmp_path: pathlib.Path, install_into: typing.Callable[..., None]
 ) -> None:
-    """cacheの内側の導入先では開発用生成物だけを除き、配布物と必須ファイルを残す。"""
     cache_dir = _cache_dir(tmp_path)
     install_into(cache_dir)
 
@@ -114,7 +113,6 @@ def test_removes_only_development_artifacts_inside_cache(
 
 
 def test_keeps_artifacts_outside_cache(tmp_path: pathlib.Path, install_into: typing.Callable[..., None]) -> None:
-    """導入先がplugin cacheの外にある場合は削除しない。"""
     outside = tmp_path / "elsewhere" / "1.0.0"
     install_into(outside)
 
@@ -124,7 +122,6 @@ def test_keeps_artifacts_outside_cache(tmp_path: pathlib.Path, install_into: typ
 
 
 def test_keeps_symlinked_artifact(tmp_path: pathlib.Path, install_into: typing.Callable[..., None]) -> None:
-    """symlinkの生成物はリンク先ごと残す。"""
     cache_dir = _cache_dir(tmp_path)
     shared = tmp_path / "shared-venv"
     shared.mkdir()
@@ -148,7 +145,6 @@ def test_keeps_symlinked_artifact(tmp_path: pathlib.Path, install_into: typing.C
 def test_defers_artifact_referenced_by_process(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, install_into: typing.Callable[..., None]
 ) -> None:
-    """生成物のパスを参照するプロセスがある間は削除せず延期し、他の生成物は除く。"""
     cache_dir = _cache_dir(tmp_path)
     install_into(cache_dir)
     real_install = _install_claude_plugins._install_plugin
@@ -194,7 +190,6 @@ def test_removal_failure_is_reported_as_failure(
 
 
 def _stale_source_environment(dotfiles_root: pathlib.Path) -> pathlib.Path:
-    """旧版の`make sync`が配布元の作業ツリーに残した仮想環境を再現する。"""
     environment = dotfiles_root / "agent-toolkit" / ".venv"
     (environment / "bin").mkdir(parents=True)
     (environment / "pyvenv.cfg").write_text("home = /usr/bin\n", encoding="utf-8")
@@ -205,7 +200,6 @@ def _stale_source_environment(dotfiles_root: pathlib.Path) -> pathlib.Path:
 def test_removes_stale_source_environment_before_install(
     tmp_path: pathlib.Path, install_into: typing.Callable[..., None]
 ) -> None:
-    """配布元に旧版が残した仮想環境は導入の前に除き、導入時の複製へ含めない。"""
     source_environment = _stale_source_environment(tmp_path)
     present_at_install: list[bool] = []
 
@@ -225,7 +219,6 @@ def test_removes_stale_source_environment_before_install(
 def test_keeps_referenced_stale_source_environment(
     tmp_path: pathlib.Path, install_into: typing.Callable[..., None], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """配布元の仮想環境を参照するプロセスがある間は削除を延期し、導入は続ける。"""
     source_environment = _stale_source_environment(tmp_path)
     holder = _claude_plugin_references.ReferencingProcess(
         4242, "python (pid 4242)", False, (str(source_environment / "bin" / "python"),), True

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の初回レーン配分と根拠を検証する。"""
 
 import pathlib
 import typing
@@ -40,7 +39,6 @@ def test_structured_records_and_rationale_independence(
     case: str,
     expected: int,
 ) -> None:
-    """3種類の記録を公開された検査コマンドで検査し、自由記述の置換で終了コードと診断が変わらないことを確かめる。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}
@@ -61,7 +59,7 @@ def test_structured_records_and_rationale_independence(
                 item["公開工程の規範根拠"].append(dict(record))
             if case == "public-surplus":
                 record["パス"] = "src/model.py"
-        # 同じ定型文を全レーンへ置いても、パスごとの記録欠落を埋めない。
+
         other = {**item, "WI": "b.md", "レーン": "lane-02"}
         _awi(notes, "b.md", "`README.md`を変更する。")
         data["選定"].append(other)
@@ -137,7 +135,6 @@ def test_public_check_stage_continuity_preserves_completed_prefix(
     completed: list[int],
     expected: int,
 ) -> None:
-    """未統合の段階飛びを拒否し、元配分の完了した前段から後段へ進める。"""
     repo, notes = env
     decisions = []
     costs = []
@@ -168,7 +165,6 @@ def test_public_check_body_validation_follows_integration_state(
     state: str,
     violation: str,
 ) -> None:
-    """書込予定・範囲・区分・規範指定の本文検査は未統合の項目にだけ適用し、統合済みの項目は履歴として拒否しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変更する。", state="adopt" if state == "統合済み" else "processing")
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
@@ -204,7 +200,6 @@ def test_public_check_initial_lane_limit_boundaries(
     lanes: int,
     expected: int,
 ) -> None:
-    """候補数の十件境界を選定件数から分け、初回の上限を公開された検査コマンドで判定する。"""
     repo, notes = env
     decisions = []
     for index in range(lanes):
@@ -234,7 +229,6 @@ def test_public_check_absolute_limit_counts_all_lanes(
     integrated: bool,
     seconds: int,
 ) -> None:
-    """初回と追加後の全レーンを数え、完了・後段・見込み時間で上限を変えない。"""
     repo, notes = env
     decisions = []
     for index in range(total):
@@ -331,7 +325,6 @@ def test_public_check_rejects_invalid_allocation_evidence(
     capsys: pytest.CaptureFixture[str],
     problem: str,
 ) -> None:
-    """情報の欠落と矛盾を、候補件数による推定で黙認しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     path = _write_selection(tmp_path / "invalid.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])
@@ -360,9 +353,8 @@ def test_public_check_component_evidence_matches_source(
     kind: str,
     matches: bool,
 ) -> None:
-    """結合の構造だけを整えた偽の根拠は、元入力との対照で拒否する。書込重複は選定の現在値で判定する。"""
     repo, notes = env
-    # 書込重複の不一致は、現在の`書込対象`が重ならない入力で表す。
+
     targets = {"a.md": "README.md", "b.md": "src/model.py" if kind == "書込重複" and not matches else "README.md"}
     for name, target in targets.items():
         _awi(notes, name, f"`{target}`を変える。", dependencies=["a.md"] if name == "b.md" else [])
@@ -392,7 +384,7 @@ def test_public_check_component_evidence_matches_source(
         {"WI": ["a.md", "b.md"], "結合条件": [{"WI1": "a.md", "WI2": "b.md", "種別": kind, "根拠": evidence}]}
     ]
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    # 再開計画は初回の履歴なので、現在の再開位置が変わっても有効な結合根拠を保持する。
+
     assert _dispatch(str(path), "--work-dir", str(repo)) == (0 if matches or kind == "再開計画" else 1)
 
 

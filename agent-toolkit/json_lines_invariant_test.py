@@ -1,5 +1,3 @@
-"""追跡する本体PythonがJSON LinesをUnicodeの行区切りで分割しないことを確かめる。"""
-
 import ast
 import pathlib
 import textwrap
@@ -55,10 +53,6 @@ def _item_source(value: ast.AST, items: set[str]) -> bool:
 
 
 def _violations(source: str, filename: str = "<sample>") -> list[int]:
-    """同じ関数内の行配列・行変数の代入をたどり、JSON解析へ渡した位置を返す。
-
-    型を推測せずbytesも対象とする。ローカル関数と、行配列をJSON解析する既存の外部decoderを追跡する。
-    """
     tree = ast.parse(source, filename=filename)
     functions = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
     decoders = {"json.loads", "json.load", "_json_object"}
@@ -70,7 +64,7 @@ def _violations(source: str, filename: str = "<sample>") -> list[int]:
         if node.name in {"loads", "load"}
     )
     stream_decoders: set[str] = set()
-    # 外部decoderは実在するJSON行配列のAPIだけを選ぶ。同名の一般文章処理は対象にしない。
+
     for statement in ast.walk(tree):
         if isinstance(statement, ast.Import):
             for imported in statement.names:
@@ -95,7 +89,7 @@ def _violations(source: str, filename: str = "<sample>") -> list[int]:
             break
         decoders = expanded
     violations: set[int] = set()
-    # モジュール直下のforも検査し、別関数の同名の変数は混ぜない。
+
     module = ast.Module(
         body=[node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
     )
@@ -134,7 +128,6 @@ def _violations(source: str, filename: str = "<sample>") -> list[int]:
     reason=("追跡本体Python全量を読み、JSON Lines読取でLF以外を行区切りにする処理を検出する（Linux CI CPU合計最大2.834秒）。"),
 )
 def test_json_lines_readers_use_lf() -> None:
-    """Git追跡の全本体Pythonを検査する。テストと_testingは対象外とする。"""
     result = command.run(["ls-files", "-z", "--", "*.py"], _ROOT, capture_output=True, text=True, check=True)
     paths = [pathlib.Path(name) for name in result.stdout.split("\0") if name]
     assert paths
@@ -167,7 +160,6 @@ def test_json_lines_readers_use_lf() -> None:
     ],
 )
 def test_detects_old_json_lines_splitting(source: str) -> None:
-    """直接反復・代入・enumerate・各内包表記・解析用関数経由を検出する。"""
     assert _violations(textwrap.dedent(source))
 
 
@@ -182,7 +174,6 @@ def test_detects_old_json_lines_splitting(source: str) -> None:
 )
 @pytest.mark.parametrize("style", ["module", "module_alias", "function_alias"])
 def test_detects_imported_stream_decoders(module: str, decoder: str, style: str) -> None:
-    """実在する行配列decoderのmodule importと別名importを検出する。"""
     if style == "module":
         declaration, call = f"import agent_toolkit._common.{module}", f"agent_toolkit._common.{module}.{decoder}"
     elif style == "module_alias":
@@ -195,12 +186,10 @@ def test_detects_imported_stream_decoders(module: str, decoder: str, style: str)
 
 
 def test_detects_json_module_alias() -> None:
-    """jsonのimport aliasも元のJSON decoderとして扱う。"""
     assert _violations("import json as decoder\nfor line in text.splitlines():\n    decoder.loads(line)") == [3]
 
 
 def test_unrelated_imported_function_is_not_stream_decoder() -> None:
-    """別モジュールの同名関数をJSON解析と決めつけない。"""
     assert not _violations("from text_processing import from_stream_lines\nfrom_stream_lines(text.splitlines())")
 
 
@@ -215,5 +204,4 @@ def test_unrelated_imported_function_is_not_stream_decoder() -> None:
     ],
 )
 def test_accepts_lf_and_non_json_processing(source: str) -> None:
-    """通常の文章処理や独立した関数の同名変数をJSON Linesと取り違えない。"""
     assert not _violations(textwrap.dedent(source))

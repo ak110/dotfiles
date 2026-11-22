@@ -22,7 +22,6 @@ def _workflow_fixture() -> dict[str, object]:
 
 
 def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
-    """workflowのpytestコマンドが直接指定するリポジトリ内の対象は実在する。"""
     targets = direct_pytest_targets(workflow_data)
     assert targets
     for target in targets:
@@ -42,7 +41,6 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
 
 
 def _pytest_arguments(command: str) -> list[str] | None:
-    """stepのコマンドがpytestを起動する場合は、pytestへ渡る引数を返す。"""
     tokens = shlex.split(command)
     if "pytest" in tokens:
         return tokens[tokens.index("pytest") + 1 :]

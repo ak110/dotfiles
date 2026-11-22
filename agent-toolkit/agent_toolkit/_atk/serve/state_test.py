@@ -1,5 +1,3 @@
-"""serveのstateに関するruntimeの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -17,14 +15,12 @@ from agent_toolkit._testing.serve_support import _stub_state
 
 @pytest.mark.parametrize("port", [True, 0, 65536])
 def test_invalid_port(port: object) -> None:
-    """boolまたは範囲外portを拒否する。"""
     with pytest.raises(ValueError):
         config.resolve_config(port=port)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.asyncio
 async def test_favicon_svg_is_served(tmp_path: pathlib.Path) -> None:
-    """`/favicon.svg`がSVGとして配信される。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     response = await app.test_client().get("/favicon.svg")
     body = await response.get_data(as_text=True)
@@ -37,7 +33,6 @@ async def test_favicon_svg_is_served(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_index_and_js_reflect_forwarded_prefix(tmp_path: pathlib.Path) -> None:
-    """`X-Forwarded-Prefix`をHTML、JS、manifestの各URLへ1回だけ反映する。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     headers = {"X-Forwarded-Prefix": "/atk", "X-Forwarded-Proto": "https"}
@@ -68,7 +63,6 @@ async def test_serve_tolerates_absent_and_unsupported_signals(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """シグナル不在とadd_signal_handler未実装の双方を吸収して起動する。"""
     stopped: list[str] = []
     _stub_state(monkeypatch, tmp_path, stopped)
     monkeypatch.delattr(serve.signal, "SIGHUP", raising=False)

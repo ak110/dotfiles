@@ -1,9 +1,3 @@
-"""WIと計画を保存するprivate-notesの位置の解決。
-
-`atk config get private_notes`、`atk wi`、計画ファイルの配置、`atk serve`の計画ファイル画面とSSH先のヘルパーが
-同じ順で位置を得るため、解決の順を本モジュールだけに置く。標準ライブラリと`platformdirs`だけを使う。
-"""
-
 from __future__ import annotations
 
 import os

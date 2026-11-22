@@ -15,7 +15,6 @@ _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
 def test_list_response_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """空のlist応答でも明示された所有rootを現行会話へ対応付ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
@@ -147,7 +146,6 @@ def test_any_response_with_root_writes_alias_except_in_delegate(
     structured: dict[str, object],
     delegated: bool,
 ) -> None:
-    """`root_session_id`を持つ応答なら操作名によらず別名索引を書き、委譲先の環境では書かない。"""
     _isolate_conversation(monkeypatch, tmp_path, "conversation-session")
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-session")
@@ -205,7 +203,6 @@ def test_start_registers_wait_target_for_delegated_caller(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """委譲先が開始したsessionを、その委譲先の状態ファイルにだけ登録する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "delegate-session")

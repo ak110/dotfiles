@@ -1,10 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""アーカイブ・PDF を gv 向けに前処理して無圧縮 ZIP へ再パックする。
-
-アーカイブとディレクトリに加え、直接渡された PDF は各ページを画像へラスタライズしてから再パックする。
-設定は YAML ファイルで与え、ignore パターン・リネームルール・画像変換オプションを
-一元管理する。
-"""
 
 import argparse
 import fnmatch
@@ -20,8 +14,6 @@ import zipfile
 
 import pydantic
 from agent_toolkit._common import private_directory
-
-# 設定モデルの定義は即時に保ち、展開・画像処理などの依存は使うまで遅延する。
 lazy import natsort
 lazy import pytilpack.pathlib
 lazy import pytilpack.zipfile
@@ -39,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 _BACKUP_DIR_NAME = "bk"
 _WORKDIR_PREFIX = "repack-archive-"
-# 長さ順にソート済み (複合拡張子 .tar.gz 等を .gz より先に判定するため)
+
 _ARCHIVE_SUFFIXES: tuple[str, ...] = (
     ".tar.bz2",
     ".tar.zst",
@@ -64,8 +56,6 @@ EntryFailure = tuple[str, EntrySeverity, str]
 
 
 class _InlineRenameRule(pydantic.BaseModel):
-    """YAML 直書きのリネームルール 1 件。"""
-
     pattern: str
     replacement: str
     target: typing.Literal["both", "file", "dir"] = "both"
@@ -73,8 +63,6 @@ class _InlineRenameRule(pydantic.BaseModel):
 
 
 class _PatternFileRule(pydantic.BaseModel):
-    """rgrename 形式の外部パターンファイル参照。"""
-
     pattern_file: str
     model_config = pydantic.ConfigDict(extra="forbid")
 
@@ -89,16 +77,12 @@ class _ImageConfig(pydantic.BaseModel):
 
 
 class _ConditionalDirectoryRule(pydantic.BaseModel):
-    """同じ親の下に別の一致フォルダーがある場合の除外規則。"""
-
     pattern: str
     if_sibling: str
     model_config = pydantic.ConfigDict(extra="forbid")
 
 
 class RepackConfig(pydantic.BaseModel):
-    """repack-archive の YAML 設定。"""
-
     ignore_files: list[str] = pydantic.Field(default_factory=list)
     ignore_dirs: list[str | _ConditionalDirectoryRule] = pydantic.Field(default_factory=list)
     rename_rules: list[_InlineRenameRule | _PatternFileRule] = pydantic.Field(default_factory=list)
@@ -108,8 +92,6 @@ class RepackConfig(pydantic.BaseModel):
 
 @typing.final
 class _CompiledRules:
-    """前処理で使う事前コンパイル済みの正規表現・ルール群。"""
-
     def __init__(
         self,
         ignore_file_patterns: list[str],
@@ -123,7 +105,6 @@ class _CompiledRules:
         self.rename_rules = rename_rules
 
     def should_ignore_entry(self, entry_path: str) -> bool:
-        """アーカイブ内エントリパスが無視対象かを判定する (展開前フィルタ)。"""
         parts = pathlib.PurePosixPath(entry_path).parts
         basename = parts[-1] if parts else ""
         return bool(
@@ -131,13 +112,11 @@ class _CompiledRules:
         )
 
     def should_ignore_path(self, path: pathlib.Path, *, root: pathlib.Path) -> bool:
-        """ローカルファイルシステム上のパスが無視対象かを判定する (ディレクトリコピー時)。"""
         rel = path.relative_to(root)
         return path.is_file() and any(fnmatch.fnmatch(rel.name, pattern) for pattern in self.ignore_file_patterns)
 
 
 def main(args: argparse.Namespace | None = None) -> None:
-    """アーカイブをgv向けに前処理して無圧縮ZIPへ再パックするエントリポイント。"""
     if args is None:
         args = repack_archive_args.parse_args()
 
@@ -218,7 +197,6 @@ def main(args: argparse.Namespace | None = None) -> None:
 
 
 def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Path]) -> pathlib.Path | None:
-    """設定ファイルパスを解決する。明示指定 → TARGET 隣接 → カレントの順。"""
     if explicit is not None:
         return explicit.resolve()
     for target in targets:
@@ -232,7 +210,6 @@ def _resolve_config_path(explicit: pathlib.Path | None, targets: list[pathlib.Pa
 
 
 def _load_config(path: pathlib.Path | None) -> RepackConfig:
-    """YAML設定ファイルを読み込む。未指定なら`RepackConfig`の各項目の初期値を使う。"""
     if path is None:
         logger.info("設定ファイル未指定。各設定項目の初期値で実行する")
         return RepackConfig()
@@ -241,7 +218,6 @@ def _load_config(path: pathlib.Path | None) -> RepackConfig:
 
 
 def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRules:
-    """設定値を判定用の構造に変換する。"""
     ignore_dir_patterns = [re.compile(p, re.IGNORECASE) for p in config.ignore_dirs if isinstance(p, str)]
     conditional_ignore_dirs = [
         (re.compile(rule.pattern, re.IGNORECASE), re.compile(rule.if_sibling, re.IGNORECASE))
@@ -270,10 +246,6 @@ def _compile_rules(config: RepackConfig, base_dir: pathlib.Path) -> _CompiledRul
 
 
 def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, backup_dir: pathlib.Path | None) -> None:
-    """事前衝突チェック。1件でも問題があれば副作用なしで終了する。
-
-    rename適用後の出力stemベースで衝突を検出する。
-    """
     target_set = set(targets)
     seen_outputs: dict[pathlib.Path, pathlib.Path] = {}
     seen_stems: dict[pathlib.Path, pathlib.Path] = {}
@@ -284,10 +256,7 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
             )
         stem = _output_stem(target, rename_rules=compiled.rename_rules)
         output_path = target.parent / f"{stem}.zip"
-        # TARGET 群のいずれでもないパスの出力 ZIP が既存の場合、無関係なファイルを
-        # 上書きしないよう拒否する。PDF・ディレクトリ・リネーム適用時は入力と出力が
-        # 別ファイルになり得る。TARGET 自身 (アーカイブ入力など) はバックアップ退避後に
-        # 出力するため対象外。
+
         if output_path not in target_set and output_path.exists():
             raise FileExistsError(
                 f"出力 ZIP が既存ファイルと衝突します: {output_path}。"
@@ -311,7 +280,6 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
             )
         seen_stems[stem_path] = target
 
-        # バックアップ先の既存チェック (元の名前のままバックアップする)
         bk_root = backup_dir if backup_dir is not None else target.parent / _BACKUP_DIR_NAME
         bk_entry = bk_root / target.name
         if bk_entry.exists():
@@ -322,12 +290,6 @@ def _preflight_check(targets: list[pathlib.Path], *, compiled: _CompiledRules, b
 
 
 def _output_stem(target: pathlib.Path, *, rename_rules: list[rename.RenameRule] | None = None) -> str:
-    """TARGET の出力 ZIP 名 (拡張子なし) を返す。複合拡張子 (.tar.gz 等) も除去する。
-
-    `rename_rules` を渡した場合、stem に対して 1 度だけリネームルールを適用する。
-    アーカイブファイル TARGET は ``is_dir=False``、ディレクトリ TARGET は ``is_dir=True``
-    として渡し、ルール側の ``target`` 区分 (file/dir/both) と整合させる。
-    """
     name = target.name
     lowered = name.lower()
     base_stem: str | None = None
@@ -379,26 +341,23 @@ def _process_target(
     if not dry_run:
         bk_root.mkdir(parents=True, exist_ok=True)
 
-    # 1. バックアップ作成 (元の名前のままアーカイブ・フォルダとも shutil.move で退避)
     if dry_run:
         logger.info("[dry-run] backup: %s -> %s", target, bk_entry)
     else:
         shutil.move(str(target), str(bk_entry))
 
-    source_for_extract = bk_entry  # アーカイブ・ディレクトリとも退避先から取得する
+    source_for_extract = bk_entry
     entry_failures: list[EntryFailure] = []
     work_dir: pathlib.Path | None = None
     # 原本を退避した直後から出力ZIPの確定までを1つの保護区間にする。
     # 作業ディレクトリの作成など準備段の失敗でも、原本を元のパスへ戻す。
     try:
-        # 2. 作業ディレクトリ作成
         if dry_run:
             work_dir = parent / f"{stem}.__dry_run__"
             logger.info("[dry-run] mkworkdir: %s", work_dir)
         else:
             work_dir = private_directory.make_temporary(parent, _WORKDIR_PREFIX)
 
-        # 3. 選択的展開 / コピー / PDF ラスタライズ
         if is_pdf:
             if dry_run:
                 logger.info("[dry-run] render pdf %s -> %s", source_for_extract, work_dir)
@@ -435,9 +394,7 @@ def _process_target(
                 rel_path = path.relative_to(work_dir).as_posix()
                 entry_failures.append((rel_path, severity, msg))
 
-        # 5. 平坦化
         if not dry_run:
-            # 単独の無視対象ラッパーは先に昇格させ、混在時だけ除去後に残りを再平坦化する。
             _flatten_single_root(work_dir)
             removed_directories = _remove_ignored_directories(work_dir, compiled)
             _flatten_single_root(work_dir)
@@ -454,7 +411,6 @@ def _process_target(
             os.replace(tmp_zip, zip_path)
             logger.info("created: %s", zip_path)
     except Exception:
-        # ロールバック: 作業ディレクトリ削除 + 原本復元
         if not dry_run:
             if work_dir is not None:
                 shutil.rmtree(work_dir, ignore_errors=True)
@@ -462,7 +418,6 @@ def _process_target(
                 shutil.move(str(bk_entry), str(target))
         raise
 
-    # 7. 作業ディレクトリ削除
     if not dry_run and work_dir is not None:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -488,7 +443,6 @@ def _process_target(
                     e,
                 )
 
-    # 9. bk/ が空なら削除
     if not dry_run and not no_trash and bk_root.exists():
         try:
             if not any(bk_root.iterdir()):
@@ -531,15 +485,6 @@ def _check_truncated_zip(target: pathlib.Path) -> None:
 
 
 def _render_pdf(pdf: pathlib.Path, dest: pathlib.Path, image_config: _ImageConfig) -> None:
-    """PDF の各ページを画像へラスタライズして ``dest`` 直下へ保存する。
-
-    高さを ``image_config.max_height`` に合わせて描画し、幅は比率を保つ。横長ページで
-    ``max_width`` を超える幅の縮小と、出力形式変換・JPEG 品質・メタデータ除去は後続の
-    ``imageconverter`` が担当するため、ここではロスレスな PNG 中間ファイルとして保存する。
-    ページ名はゼロ埋め連番とし、最終 ZIP で自然順に並ぶようにする。
-
-    Poppler (pdftoppm) 未導入時は導入手順を含む ``RuntimeError`` を送出する。
-    """
     dest.mkdir(parents=True, exist_ok=True)
     try:
         images = convert_from_path(str(pdf), size=(None, image_config.max_height))
@@ -584,7 +529,7 @@ def _load_libarchive() -> typing.Any:
         "自動ダウンロードする。再実行後は新しい端末を開き直してから "
         "repack-archive をもう一度実行すること。"
     )
-    # 導入側の導入済み判定と同じ条件でロードできるかを先に確かめ、依存DLLの欠落を同じ基準で検出する。
+
     if not libarchive_resolver.is_loadable():
         raise RuntimeError(message)
     try:
@@ -625,7 +570,7 @@ def _prepare_archive_entry(
     failures: list[EntryFailure],
 ) -> str | None:
     """両展開器でパスの安全性と除外を判定し、展開する相対パスを返す。"""
-    # ディレクトリ末尾の区切りを除き、同じ判定をファイルとディレクトリへ適用する。
+
     normalized = entry_path.rstrip("/") if is_dir else entry_path
     if not pytilpack.zipfile.is_safe_relative_path(normalized):
         failures.append(
@@ -659,7 +604,6 @@ def _record_extraction_failure(archive: pathlib.Path, entry_path: str, error: OS
 
 
 def _create_extraction_path(dest: pathlib.Path, normalized: str, *, is_dir: bool) -> pathlib.Path | None:
-    """展開先のディレクトリを作成し、ファイルの場合だけ書込先を返す。"""
     out_path = dest / normalized
     if is_dir:
         out_path.mkdir(parents=True, exist_ok=True)
@@ -804,14 +748,13 @@ def _copy_filtered(src: pathlib.Path, dest: pathlib.Path, compiled: _CompiledRul
 
 
 def _remove_conditionally_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules) -> bool:
-    """除去前の兄弟関係で対象を確定し、画像変換前の作業コピーから除去する。"""
     if not compiled.conditional_ignore_dirs:
         return False
     siblings: dict[pathlib.Path, list[pathlib.Path]] = {}
     for path in work_dir.rglob("*"):
         if path.is_dir():
             siblings.setdefault(path.parent, []).append(path)
-    # 複数規則で互いを条件にしても、削除順によって判定が変わらないよう先に集合を確定する。
+
     selected = {
         path
         for directories in siblings.values()
@@ -827,7 +770,6 @@ def _remove_conditionally_ignored_directories(work_dir: pathlib.Path, compiled: 
 
 
 def _remove_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules) -> bool:
-    """平坦化後の作業ツリーから`ignore_dirs`一致ディレクトリを削除する。"""
     candidates = sorted(
         (path for path in work_dir.rglob("*") if path.is_dir()),
         key=lambda path: len(path.parts),
@@ -842,22 +784,13 @@ def _remove_ignored_directories(work_dir: pathlib.Path, compiled: _CompiledRules
 
 
 def _flatten_single_root(work_dir: pathlib.Path) -> None:
-    """作業ディレクトリ配下の冗長な階層を除去する。
-
-    無視パターン適用後に残った空ディレクトリを先に畳んだうえで、直下が単一
-    ディレクトリである状態が続く限り階層を除去しきる。これにより
-    ``Series/Vol01/001.txt`` と空の ``Series/Vol02/`` が共存するような
-    フィルタ後構造でも、最終ZIPに余計な階層を残さない。
-    """
     pytilpack.pathlib.delete_empty_dirs(work_dir, keep_root=True)
     while True:
         entries = list(work_dir.iterdir())
         if len(entries) != 1 or not entries[0].is_dir():
             return
         inner = entries[0]
-        # ``inner`` 直下に ``inner`` と同名の子 (``foo/foo``) があると
-        # ``shutil.move`` が移動先ディレクトリ内へ挿入する挙動になり
-        # ``rmdir`` 前に空にできない。退避名へリネームして衝突を避ける。
+
         staging = _reserve_flatten_staging(inner)
         inner.rename(staging)
         for child in list(staging.iterdir()):
@@ -866,7 +799,6 @@ def _flatten_single_root(work_dir: pathlib.Path) -> None:
 
 
 def _reserve_flatten_staging(inner: pathlib.Path) -> pathlib.Path:
-    """``inner`` の兄弟として衝突しない退避名を返す。"""
     parent = inner.parent
     base = f"{inner.name}.__flatten_tmp__"
     candidate = parent / base

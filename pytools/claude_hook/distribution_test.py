@@ -1,8 +1,3 @@
-"""配布設定が登録する隔離実行の経路でフックが動作することを検査する。
-
-配布設定からconsole scriptのサブコマンドを抽出し、同じサブコマンドを直接起動する。
-"""
-
 import json
 import os
 import pathlib
@@ -16,7 +11,6 @@ _SUBCOMMAND_PATTERN = re.compile(r"dotfiles-claude-hook\s+([a-z_]+)\b")
 
 
 def _registered_subcommands() -> list[str]:
-    """配布設定のコマンド文字列から登録済みのサブコマンドを抽出する。"""
     settings = json.loads(_MANAGED_SETTINGS.read_text(encoding="utf-8"))
     subcommands: list[str] = []
     for groups in settings["hooks"].values():
@@ -33,8 +27,7 @@ def _registered_subcommands() -> list[str]:
 
 
 def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[str]:
-    """配布設定と同じ隔離実行の形でフックを起動する。"""
-    # 隔離fixtureは親venvをPATHから除くため、今回導入したconsole scriptを直接指定する。
+
     executable = pathlib.Path(sysconfig.get_path("scripts")) / (
         "dotfiles-claude-hook.exe" if os.name == "nt" else "dotfiles-claude-hook"
     )
@@ -50,8 +43,6 @@ def _run_hook(subcommand: str, payload: object) -> subprocess.CompletedProcess[s
 
 
 class TestDistributionPath:
-    """配布設定が参照するconsole scriptの起動を検査する。"""
-
     def test_registered_subcommands_run_without_traceback(self):
         """登録済みの各サブコマンドがtracebackなしで終了する。"""
         subcommands = _registered_subcommands()
@@ -78,7 +69,6 @@ class TestDistributionPath:
         assert "Traceback" not in result.stderr
 
     def test_plain_write_passes(self):
-        """通常の書き込みが終了コード0で通過する。"""
         result = _run_hook(
             "pretooluse",
             {

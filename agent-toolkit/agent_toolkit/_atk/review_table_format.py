@@ -5,15 +5,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import unicodedata
+import uuid
 
 from agent_toolkit._common import next_action as _next_action
 
 _ActionableError = _next_action.ActionableError
 
-# 列の定義と旧形式の判別は本モジュールだけが持ち、`atk serve`の計画ファイル画面も`display_rows`で同じ解析を使う。
+
 COLUMNS = (
     "round",
     "track",
@@ -34,7 +36,7 @@ COLUMN_LABELS = (
 )
 """`COLUMNS`の各列を画面へ表示する日本語の列名。"""
 _COLUMN_COUNT = len(COLUMNS)
-# 保存済みの旧形式の列数。8列は`level`と`response-needed`の双方を持ち、7列は`response-needed`だけを持つ。
+
 _LEGACY_WIDE_COLUMN_COUNT = 8
 _KEY_COLUMN_COUNT = 4
 TRACK_VALUES = ("plan-review", "exec-review", "plan-conformance", "independent")
@@ -62,8 +64,8 @@ NO_RESPONSE_REASON_LABELS = ("根拠の所在:", "判断主体:")
 DECISION_MAKER_VALUES = ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当")
 _TRANSFER_TARGET_RE = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _LABEL_DEFINITION = "`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」"
-# レビュー担当の指摘本文の必須ラベル。類似見直しを終えた件数を書く欄が無いと、見直しをしない選択が残るため必須にする。
-# 2回目以降のラウンドでは、指摘が前回の修正不足・修正の副作用・前回の見落とし・新しい変更・要求追加のどれかを区分で書かせる。
+
+
 ISSUE_LABELS = (SIMILAR_REVIEW_LABEL,)
 _COUNT_RE = re.compile(r"[0-9]+")
 CLASSIFICATION_LABEL = "区分:"
@@ -81,7 +83,7 @@ RECHECK_VERDICTS = ("完了", "対応不十分", "未対応")
 RECHECK_DONE = RECHECK_VERDICTS[0]
 REREGISTERED_CLASSIFICATION = "前回から残存"
 ORIGIN_LABEL = "元の指摘:"
-# 判定の行は`recheck`が書く形式に限る。完了は登録した行を持たず、対応不十分・未対応は登録した行を必ず持つ。
+
 _RECHECK_LINE_RE = re.compile(
     rf"{RECHECK_LABEL} ラウンド([1-9][0-9]*) (?:({RECHECK_DONE})|({'|'.join(RECHECK_VERDICTS[1:])}) 行([1-9][0-9]*))"
 )
@@ -93,23 +95,19 @@ _ROUND_RE = re.compile(r"^[1-9][0-9]*$")
 
 
 def _cell(value: str) -> str:
-    """セル文字列をJSON文字列へ符号化する。"""
     return json.dumps(value, ensure_ascii=False)
 
 
 def _row_position(row_id: int) -> str:
-    """showとrespondが使う行識別子を診断へ表示する。"""
     return f"row-id {row_id}"
 
 
 def _physical_position(line: int, column: int | None = None) -> str:
-    """TSVの構文不正の物理位置を表示する。"""
     position = f"物理行番号 {line}"
     return position if column is None else f"{position}、列番号 {column}"
 
 
 def _decode_cell(value: str, *, line: int, column: int) -> str:
-    """JSON文字列セルをデコードし、形式不正をエラーにする。"""
     try:
         decoded = json.loads(value)
     except (json.JSONDecodeError, TypeError) as error:
@@ -163,7 +161,6 @@ def _decode_text(text: str) -> list[tuple[str, list[str]]]:
 
 
 def _parse_text(text: str) -> list[tuple[str, list[str]]]:
-    """Raw TSVを検証し、元の行とtrack正規化済みのデコード済み行を対応づけて返す。"""
     rows = _decode_text(text)
     for _raw_line, row in rows:
         row[1] = _normalize_track(row[1])
@@ -176,7 +173,8 @@ def display_rows(text: str) -> list[list[str]]:
     保存済みの旧形式は現行の7列へそろえ、trackは記録された値のまま返す。
     形式が不正な表は`ValueError`を送出し、表示側が表として描画しない扱いを選ぶ。
     """
-    return [row for _raw_line, row in _decode_text(text)]
+    rows = [row for _raw_line, row in _decode_text(text)]
+    return [display_row(rows, row_id) for row_id in range(1, len(rows) + 1)]
 
 
 def _label_values(body: str, label: str) -> list[str]:
@@ -184,7 +182,6 @@ def _label_values(body: str, label: str) -> list[str]:
 
 
 def response_state(row: list[str]) -> str:
-    """記録された応答を採用・移管・不採用・未応答へ分類する。旧記録の自由文は推定しない。"""
     if row[5].strip():
         return "adopted"
     if not row[6].strip():
@@ -196,7 +193,6 @@ def response_state(row: list[str]) -> str:
 
 
 def rejection_reason_class(body: str) -> str:
-    """対応不要理由の判断主体ラベルだけから理由区分を求める。"""
     makers = _label_values(body, "判断主体:")
     if len(makers) != 1 or makers[0] not in DECISION_MAKER_VALUES:
         return "判断主体不明"
@@ -204,7 +200,6 @@ def rejection_reason_class(body: str) -> str:
 
 
 def _normalized(value: str) -> str:
-    """複合キー用にUnicode、前後空白および連続空白を正規化する。"""
     return _WHITESPACE_RE.sub(" ", unicodedata.normalize("NFC", value).strip())
 
 
@@ -218,11 +213,6 @@ def _key(row: list[str]) -> tuple[str, str, str, str]:
 
 
 def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) -> None:
-    """7列、先頭4列の複合キー一意性、指摘レベルおよび応答分岐を検証する。
-
-    対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。
-    双方が空である行を未応答とし、双方が埋まっている行を矛盾として拒否する。
-    """
     keys: set[tuple[str, str, str, str]] = set()
     for index, row in enumerate(rows, start=1):
         if len(row) != _COLUMN_COUNT:
@@ -259,7 +249,6 @@ def _validate_rows(rows: list[list[str]], *, require_responses: bool = False) ->
 
 
 def _require_labels(body: str, labels: tuple[str, ...], option: str, definition: str = _LABEL_DEFINITION) -> None:
-    """本文が各必須ラベルを行頭に持ち、ラベルの後に空でない記述を持ち、類似見直し完了件数が整数だけであることを確かめる。"""
     lines = [line.strip() for line in body.splitlines()]
     missing = [label for label in labels if not any(line.startswith(label) and line[len(label) :].strip() for line in lines)]
     if missing:
@@ -279,7 +268,6 @@ def _require_labels(body: str, labels: tuple[str, ...], option: str, definition:
 
 
 def _require_issue_description(issue: str, option: str) -> None:
-    """指摘本文が、ラベルの行のほかに問題を書いた行を持つことを確かめる。件数や区分だけの行では、直す内容を読めないため。"""
     labels = (*ISSUE_LABELS, CLASSIFICATION_LABEL, ORIGIN_LABEL)
     if not any(line.strip() and not line.strip().startswith(labels) for line in issue.splitlines()):
         raise _ActionableError(
@@ -289,10 +277,6 @@ def _require_issue_description(issue: str, option: str) -> None:
 
 
 def _require_issue_labels(location: str, issue: str, round_value: str, option: str) -> None:
-    """レビュー担当の指摘本文が類似見直し完了件数と、2回目以降のラウンドでは区分を持つことを確かめる。
-
-    担当の記録（指摘箇所が`担当の記録:`で始まる行）はレビュー担当の指摘ではないため対象外とする。
-    """
     if location.strip().startswith(_OWN_RECORD_PREFIX):
         return
     _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
@@ -321,16 +305,54 @@ def _require_issue_labels(location: str, issue: str, round_value: str, option: s
 
 
 def classification(issue: str) -> str | None:
-    """指摘本文の区分を1件だけ持つ場合にその値を返す。"""
     values = _label_values(issue, CLASSIFICATION_LABEL)
     return values[0] if len(values) == 1 else None
 
 
-def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
-    """recheckが記録した判定行を、記録したround・判定・登録した行へ分解する。形式外の行は判定として扱わない。"""
+_RESPONSE_MARKER = re.compile(r"<!-- review-response-v2:([0-9a-f]{32}) -->")
+_RECHECK_SUFFIX = re.compile(r" <!-- review-verdict:([0-9a-f]{64}) -->$")
+
+
+def _response_version(lines: list[str]) -> tuple[int, str] | None:
+    for index in range(len(lines) - 1, -1, -1):
+        if marker := _RESPONSE_MARKER.fullmatch(lines[index].strip()):
+            return index, marker[1]
+    return None
+
+
+def response_content(body: str) -> str:
+    lines = body.split("\n")
+    version = _response_version(lines)
+    marked = version[0] if version else None
+    return "\n".join(line for index, line in enumerate(lines) if index != marked and not line.strip().startswith(RECHECK_LABEL))
+
+
+def response_with_history(body: str, *previous: str) -> str:
+    version = f"<!-- review-response-v2:{uuid.uuid4().hex} -->"
+    return "\n".join([body, version, *(line for cell in previous for line in recheck_lines(cell))])
+
+
+def bind_recheck(line: str, row_id: int, body: str) -> str:
+    version = _response_version(body.splitlines())
+    identity = json.dumps([row_id, version[1] if version else None, response_content(body), line], ensure_ascii=False)
+    return f"{line} <!-- review-verdict:{hashlib.sha256(identity.encode()).hexdigest()} -->"
+
+
+def recheck_entries(body: str, row_id: int) -> list[tuple[int, str, int | None]]:
     entries: list[tuple[int, str, int | None]] = []
-    for line in body.splitlines():
-        matched = _RECHECK_LINE_RE.fullmatch(line.strip())
+    lines = body.splitlines()
+    version = _response_version(lines)
+    for line in lines:
+        line = line.strip()
+        if receipt := _RECHECK_SUFFIX.search(line):
+            candidate = line[: receipt.start()]
+            if bind_recheck(candidate, row_id, body) != line:
+                continue
+        elif version is not None:
+            continue
+        else:
+            candidate = line
+        matched = _RECHECK_LINE_RE.fullmatch(candidate)
         if matched is not None:
             if matched.group(2):
                 entries.append((int(matched.group(1)), matched.group(2), None))
@@ -340,13 +362,57 @@ def recheck_entries(body: str) -> list[tuple[int, str, int | None]]:
 
 
 def carried_origin(issue: str) -> int | None:
-    """recheckが登録した指摘本文の`元の指摘: 行<row-id>`を1件だけ持つ場合に、その識別子を返す。"""
     origins = [matched.group(1) for line in issue.splitlines() if (matched := _ORIGIN_LINE_RE.fullmatch(line.strip()))]
     return int(origins[0]) if len(origins) == 1 else None
 
 
+def _is_carried_row(rows: list[list[str]], row_id: int, origin_row_id: int, round_value: int, track: str) -> bool:
+    if not 1 <= row_id <= len(rows):
+        return False
+    row = rows[row_id - 1]
+    return (
+        _normalized(row[0]) == str(round_value)
+        and _normalize_track(row[1]) == _normalize_track(track)
+        and not row[2].strip().startswith(_OWN_RECORD_PREFIX)
+        and classification(row[3]) == REREGISTERED_CLASSIFICATION
+        and carried_origin(row[3]) == origin_row_id
+    )
+
+
+def _valid_verdicts(rows: list[list[str]], row_id: int) -> list[tuple[int, str, int | None]]:
+    row = rows[row_id - 1]
+    row_round = int(_normalized(row[0]))
+    return [
+        entry
+        for cell in (row[5], row[6])
+        for entry in recheck_entries(cell, row_id)
+        if entry[0] > row_round
+        and (entry[1] == RECHECK_DONE or (entry[2] is not None and _is_carried_row(rows, entry[2], row_id, entry[0], row[1])))
+    ]
+
+
+def display_row(rows: list[list[str]], row_id: int) -> list[str]:
+    row = rows[row_id - 1].copy()
+    valid = set(_valid_verdicts(rows, row_id))
+    for column in (5, 6):
+        lines = [response_content(row[column])]
+        lines.extend(
+            f"{RECHECK_LABEL} ラウンド{round_value} {verdict}" + (f" 行{carried_id}" if carried_id is not None else "")
+            for round_value, verdict, carried_id in recheck_entries(row[column], row_id)
+            if (round_value, verdict, carried_id) in valid
+        )
+        row[column] = "\n".join(lines)
+    return row
+
+
+def uses_versioned_response(row: list[str]) -> bool:
+    return any(
+        _response_version(cell.splitlines()) is not None or any(_RECHECK_SUFFIX.search(line) for line in cell.splitlines())
+        for cell in row[5:7]
+    )
+
+
 def require_carried_issue(issue: str, option: str) -> None:
-    """recheckへ渡す残る問題の本文が類似見直し完了件数と問題の記述を持ち、CLIが書く区分と元の指摘の行を持たないことを確かめる。"""
     _require_labels(issue, ISSUE_LABELS, option, _ISSUE_LABEL_DEFINITION)
     if any(line.strip().startswith((CLASSIFICATION_LABEL, ORIGIN_LABEL)) for line in issue.splitlines()):
         raise _ActionableError(
@@ -357,25 +423,18 @@ def require_carried_issue(issue: str, option: str) -> None:
 
 
 def carried_issue(issue: str, origin_row_id: int) -> str:
-    """recheckが登録する指摘本文を、区分と元の指摘の行を先頭に置いて組み立てる。"""
     return f"{CLASSIFICATION_LABEL} {REREGISTERED_CLASSIFICATION}\n{ORIGIN_LABEL} 行{origin_row_id}\n{issue}"
 
 
 def withdrawn_reason(origin_row_id: int, round_value: int) -> str:
-    """同じroundの判定を完了へ記録し直したときに、recheckが登録済みの行へ書く対応不要理由（レビュー担当の撤回）を返す。"""
     return f"根拠の所在: 行{origin_row_id}のラウンド{round_value}の再確認を完了へ記録し直した\n判断主体: レビュー担当"
 
 
 def recheck_lines(body: str) -> list[str]:
-    """セルの`再確認:`で始まる行を保存順に返す。
-
-    応答を記録し直すときに、有効な判定でない行を消さず引き継ぎ、判定済みの行では応答の本文だけを比べるために使う。
-    """
     return [line.strip() for line in body.splitlines() if line.strip().startswith(RECHECK_LABEL)]
 
 
 def reject_recheck_label(body: str, option: str) -> None:
-    """再確認ラベルはレビュー担当の判定だけに使うため、応答本文での使用を拒否する。"""
     if any(line.strip().startswith(RECHECK_LABEL) for line in body.splitlines()):
         raise _ActionableError(
             f"{option}の本文に{RECHECK_LABEL}で始まる行がある",

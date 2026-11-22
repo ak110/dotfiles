@@ -1,5 +1,3 @@
-"""共有検証の受入試験が起動する、保持者・公開CLI・実serveの独立プロセス。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -105,7 +103,6 @@ async def _serve(root: pathlib.Path, failure: bool) -> None:
 
 
 def main() -> None:
-    """試験が指定した独立実行を、実行枠の所有を保って完了する。"""
     mode, root_value, label, *argv = sys.argv[1:]
     root = pathlib.Path(root_value)
     if mode == "entry":

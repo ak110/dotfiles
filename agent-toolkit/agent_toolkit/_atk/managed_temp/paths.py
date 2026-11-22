@@ -1,5 +1,3 @@
-"""managed-tempの一時rootと、旧版が作成した状態を置く状態rootの解決、prefixの規則、回収対象の包含判定。"""
-
 from __future__ import annotations
 
 import os
@@ -8,7 +6,6 @@ import re
 import stat
 import sys
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import platformdirs
 
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
@@ -31,14 +28,12 @@ _PREFIX_RULES = (
 
 
 def require_valid_prefix(prefix: str) -> None:
-    """prefixが命名規則に合わなければ、違反した最初の条件を示して拒否する。"""
     for description, satisfied in _PREFIX_RULES:
         if not satisfied(prefix):
             raise ManagedTempError(f"prefixが条件を満たしていません（{description}）: {prefix}")
 
 
 def _temp_root_path() -> pathlib.Path:
-    """rootを指定しない場合に使うOS別のユーザーキャッシュ領域を返す。"""
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA")
         if not base:
@@ -53,12 +48,10 @@ def _state_root_path() -> pathlib.Path:
 
 
 def temp_root_path() -> pathlib.Path:
-    """一時rootの絶対パスを、作成せずに返す。"""
     return pathlib.Path(os.path.abspath(_temp_root_path()))
 
 
 def state_root_path() -> pathlib.Path:
-    """状態rootの絶対パスを、作成せずに返す。"""
     return pathlib.Path(os.path.abspath(_state_root_path()))
 
 
@@ -91,17 +84,14 @@ def _ensure_private_directory(path: pathlib.Path, label: str, *, create: bool = 
 
 
 def temp_root() -> pathlib.Path:
-    """一時rootを準備して絶対パスを返す。"""
     return _ensure_private_directory(temp_root_path(), "一時ディレクトリのルート")
 
 
 def state_root(*, create: bool = True) -> pathlib.Path:
-    """状態rootの絶対パスを返す。既存の状態は検証し、掃引前の照会では不在のまま使う。"""
     return _ensure_private_directory(state_root_path(), "外部状態ディレクトリ", create=create)
 
 
 def prepare_sweep_directory(root: pathlib.Path) -> pathlib.Path:
-    """掃引の記録先を作る。状態rootがまだ無い場合も所定のmodeで作る。"""
     root.mkdir(mode=private_directory.MODE, parents=True, exist_ok=True)
     directory = root / ".sweep"
     directory.mkdir(mode=private_directory.MODE, exist_ok=True)
@@ -116,10 +106,6 @@ def is_link(metadata: os.stat_result) -> bool:
 
 
 def contained_target(path_arg: pathlib.Path | str) -> pathlib.Path:
-    """一時root配下の回収対象として、root自身・root外・リンクを経由する経路を拒否した絶対パスを返す。
-
-    対象自身がリンクの場合も拒否する。リンクを辿った先はroot外の実体であり得るためである。
-    """
     path = pathlib.Path(path_arg)
     if not path.is_absolute():
         raise ManagedTempError(f"pathは絶対パスで指定する: {path}")

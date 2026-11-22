@@ -1,4 +1,3 @@
-// WI詳細からの保存・回答・状態遷移と削除。
 import {
   MUTABLE_STATES, PROCESSABLE_STATES, TERMINAL_STATES, byId, deleteEntrySnapshot, entryKey, wiState
 } from "./wi_state.js";

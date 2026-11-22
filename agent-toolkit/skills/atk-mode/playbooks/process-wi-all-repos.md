@@ -49,9 +49,10 @@
    `pick-wi-check --candidate-file`にはその絶対パスを渡し、受け取ったreadinessの診断も含めて着手の可否を判定する。
    足りない本文と依存先だけを通常のキューのCLIで補う。
 2. 巡回の開始時刻とタイムゾーンを統括の作業記録から確認する（経過時間の記録に使う）。
-3. 新着の確認には受け取った`snapshot_file`（初回の取得と同じ全状態・全種別の識別子の集合）を使い、本文を持つ候補一覧とは別に持つ。
+3. 新規と既存の区別には受け取った`snapshot_file`（初回の取得と同じ全状態・全種別の識別子の集合）を使い、本文を持つ候補一覧とは別に持つ。
    再開時も初回の集合を引き継ぎ、欠落か破損があれば原本を回復する。
-   新着の取得と判定は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、処理を終えた対象の新着も資源に余力があれば同じ実行で処理する。
+   新着と新たに処理可能になった既存WI、内部依存待ちの追加候補の取得・判定は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従う。
+   処理を終えた対象の追加・再開候補も、資源に余力があれば同じ実行で処理する。
 4. 回答済みのUWI、候補の分類、開始時のCI点検は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`を使う。
    選定YAMLとNは対象ごとに分け、レーン上限も対象別のNから求める（形式は`agent-toolkit:atk-mode/references/process-wi-selection-format.md`）。
 5. 候補が1件であることと、その候補に着手できることは別に確かめる。

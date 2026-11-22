@@ -8,7 +8,6 @@ from agent_toolkit._common.shell_quoting import QuotingScanner
 
 
 def _scan_unquoted(text: str) -> tuple[list[int], str | None]:
-    """`QuotingScanner`で引用の外側の文字位置と、走査後に残る引用を返す。"""
     scanner = QuotingScanner(text)
     positions: list[int] = []
     while scanner.index < len(text):
@@ -24,8 +23,6 @@ def _scan_unquoted(text: str) -> tuple[list[int], str | None]:
 
 
 class TestQuotingScanner:
-    """引用とエスケープの状態を保つ共有走査。"""
-
     @pytest.mark.parametrize(
         ("text", "expected"),
         [

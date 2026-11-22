@@ -1,5 +1,3 @@
-"""同じセッションへの再開入力、再開に必要な保存表現、次のターンの準備。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -25,8 +23,6 @@ def utc_now() -> str:
 
 
 class ResumePrompt:
-    """進行中のsession再開へ、無効化可能な継続入力を1件ずつ渡す。"""
-
     def __init__(self, prompt: str) -> None:
         validate_prompt(prompt)
         self._next_ticket = 1
@@ -46,18 +42,15 @@ class ResumePrompt:
         return self._delivery or "reply_failed"
 
     def record_delivery(self, delivery: ResumeDelivery) -> None:
-        """backendが確定した配送結果を一度だけ保持する。"""
         if self._delivery is not None and self._delivery != delivery:
             raise RuntimeError("再開要求の配送結果は確定済みです")
         self._delivery = delivery
 
     @property
     def initial_ticket(self) -> int:
-        """生成時に登録した継続入力の識別子を返す。"""
         return 1
 
     def submit_or_observe(self, prompt: str) -> tuple[int | None, asyncio.Event | None]:
-        """空きがあれば継続入力を登録し、使用中なら状態変化イベントを返す。"""
         validate_prompt(prompt)
         if self._closed:
             return None, None
@@ -70,7 +63,6 @@ class ResumePrompt:
         return ticket, None
 
     def cancel(self, ticket: int) -> None:
-        """指定した未確定の継続入力だけを無効化する。"""
         current = self._current
         if current is None or current[0] != ticket:
             return
@@ -79,7 +71,6 @@ class ResumePrompt:
         self._signal_change()
 
     def close(self) -> None:
-        """継続入力の受付と進行中の配送待ちを終了する。"""
         self._closed = True
         current = self._current
         self._current = None
@@ -88,7 +79,6 @@ class ResumePrompt:
         self._signal_change()
 
     async def deliver(self, sender: Callable[[str], Coroutine[Any, Any, None]]) -> None:
-        """取り消されていない継続入力をsenderへ1件配送する。"""
         while True:
             current = self._current
             if current is None:
@@ -130,8 +120,6 @@ class ResumePrompt:
 
 
 class PreviousResult(dict[str, Any]):
-    """backendが配送前に選んだ終了結果。公開する辞書の項目と回収用の識別を分ける。"""
-
     def __init__(self, payload: dict[str, Any], origin: SessionResumeState) -> None:
         super().__init__(payload)
         self.origin = origin
@@ -143,8 +131,6 @@ class PreviousResult(dict[str, Any]):
 
 @dataclasses.dataclass(frozen=True)
 class SessionResumeState:
-    """同じ会話の再開と未回収の終了時の結果の返却に必要な状態を保持する。"""
-
     session_id: str
     cwd: str
     model: str | None
@@ -160,7 +146,7 @@ class SessionResumeState:
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
     startup_profile: startup_features.StartupProfile | None = None
-    # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
+
     label: str = ""
     prompt: str = ""
     followup_prompts: tuple[str, ...] = ()
@@ -168,7 +154,7 @@ class SessionResumeState:
     terminal_error: str | None = None
     effort_history: tuple[tuple[str, str, str, str], ...] = ()
     effort_levels: tuple[str, ...] = ()
-    # 登録簿から復元した旧形式のsessionでは開始時刻が不明なため`None`とする。
+
     created_at: str | None = None
     started_at: str | None = dataclasses.field(default_factory=utc_now)
     updated_at: str | None = dataclasses.field(default_factory=utc_now)
@@ -188,7 +174,6 @@ class SessionResumeState:
 
     @classmethod
     def from_session(cls, session: SessionState) -> SessionResumeState:
-        """終了sessionから再開に必要な入力だけを退避する。"""
         return cls(
             session_id=session.session_id,
             cwd=session.cwd,
@@ -242,24 +227,18 @@ def fast_mode_fields(engine: str | None, fast_mode: object) -> dict[str, bool]:
 
 
 def selected_candidate(session: SessionState | SessionResumeState) -> ModelCandidate | None:
-    """sessionの起動時に確定した候補を返す。"""
     if session.model is None or session.effort is None:
         return None
     return session.engine, session.model, session.effort
 
 
 def has_uncollected_result(session: SessionState | SessionResumeState, result_consumed: bool | None) -> bool:
-    """終了時の結果が未回収かを返す。
-
-    結果ファイルを扱える消費側は回収状態を渡し、結果ファイルを扱えない処理だけは`None`を渡す。
-    """
     if session.finalized_at is None or session.result_delivered:
         return False
     return result_consumed is None or not result_consumed
 
 
 def previous_result_payload(session: SessionState) -> dict[str, Any]:
-    """未回収の旧turnだけを継続要求の応答へ渡す。"""
     if session.result_delivered:
         return {}
     result: dict[str, Any] = {"status": session.status, "agent_message": session.agent_message}
@@ -269,10 +248,6 @@ def previous_result_payload(session: SessionState) -> dict[str, Any]:
 
 
 def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:
-    """終了時の結果ファイルへ保存する結果と復旧用の項目を返す。
-
-    保持中と退避済みのsessionが同じ結果本文を公開できるよう、必要な項目だけへ射影する。
-    """
     result: dict[str, Any] = {
         "status": session.status,
         "agent_message": session.agent_message,
@@ -289,7 +264,6 @@ def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[
 
 
 def initialize_turn(session: SessionState, *, reset_progress: bool = True, preserve_waits: bool = False) -> None:
-    """新しいturnの開始前に共有状態を初期化する。"""
     session.turn_id = ""
     session.status = "running"
     session.plan = []
@@ -323,7 +297,6 @@ def initialize_turn(session: SessionState, *, reset_progress: bool = True, prese
 
 
 def begin_reply(session: SessionState, *, preserve_waits: bool = False) -> None:
-    """終了済みsessionの新しいturnを開始する準備をする。"""
     session.turn_seq += 1
     initialize_turn(session, reset_progress=False, preserve_waits=preserve_waits)
     session.touch()

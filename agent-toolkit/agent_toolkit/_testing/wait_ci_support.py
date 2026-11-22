@@ -11,8 +11,6 @@ import pytest
 from agent_toolkit import wait_ci
 from agent_toolkit._testing import git_repository as _git_repository_support
 
-# 直接テスト対象のprivate helperはモジュール冒頭で別名束縛し、抑制コメントを1箇所へ集約する。
-# 理由はモジュールdocstringの「例外」記述に従う。
 _resolve_forge = wait_ci._resolve_forge  # pylint: disable=protected-access
 
 
@@ -108,7 +106,6 @@ def _main_args(baseline: pathlib.Path, *, sha: str | None = "abc123", source_ref
 
 @pytest.fixture(name="git_repository")
 def _git_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
-    """branchと2種類のtagが同じcommitを指すテスト用repositoryを返す。"""
     repository = _git_repository_support.init_repository(tmp_path / "repository", files={"tracked.txt": "first\n"})
     commit_sha = _git_repository_support.commit_all(repository, "first")
     _git_repository_support.run_git(repository, "remote", "add", "upstream", "https://github.com/owner/repository")
@@ -135,7 +132,6 @@ def _run_wait(
     source_ref="HEAD",
     repository="owner/repository",
 ):
-    """`wait_for_ci`をDI経由で駆動する。時刻・sleepはスタブ化。"""
     times = iter(t * 1.0 for t in range(0, 100_000))
     return wait_ci.wait_for_ci(
         "sha1",
@@ -219,7 +215,6 @@ def _wait_for_ci_without_runs(repository: str, *, forge: str = "github") -> int:
 
 
 def _next_action(stderr: str) -> str:
-    """標準エラーから次の操作の行の本文を1件だけ取り出す。"""
     lines = [line.removeprefix("次の操作: ") for line in stderr.splitlines() if line.startswith("次の操作: ")]
     assert len(lines) == 1, stderr
     return lines[0]
@@ -244,7 +239,6 @@ def _port_endpoint_options(repository: str) -> list[str]:
 
 
 def _assert_port_endpoint(command: list[str], environment: dict[str, str], repository: str, expected_host: str) -> None:
-    """glabのCLI境界で明示URLのscheme・host・portとrepositoryを確認する。"""
     assert command[0] == "glab"
     assert "--hostname" not in command
     assert environment["GITLAB_HOST"] == expected_host

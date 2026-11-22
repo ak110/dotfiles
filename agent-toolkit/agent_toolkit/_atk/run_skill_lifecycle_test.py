@@ -48,10 +48,6 @@ def test_child_session_does_not_inherit_process_loop_markers(
 def test_descendant_holding_output_does_not_delay_result(
     engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """子セッションの終了後に出力のパイプを保持する子孫が残っても、上限付きの待ちの後に結果を返す。
-
-    出力の終了を待ち続けると、子孫が終わるまで`--timeout`の外で終了コードを返さない。
-    """
     monkeypatch.setattr(run_skill, "OUTPUT_DRAIN_SECONDS", 0.5)
     pid_file = tmp_path / "detached.pid"
     monkeypatch.setenv("FAKE_SESSION_DETACH_PID_FILE", str(pid_file))
@@ -93,7 +89,6 @@ def test_abnormal_session_exit_propagates_code_with_failure_line(
 def test_same_skill_is_not_started_twice_but_other_skill_runs(
     engine_env: _Env, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じ対象リポジトリと同じスキルの実行中は起動せず1で終わり、別のスキルは並行して起動する。"""
     started = tmp_path / "started"
     release = tmp_path / "release"
     env = {**os.environ, "FAKE_SESSION_STARTED_FILE": str(started), "FAKE_SESSION_HOLD_FILE": str(release)}
@@ -170,10 +165,6 @@ def test_timeout_terminates_session_and_descendants(
 def test_unreclaimed_timeout_is_failure_and_resume_reclaims_same_descendant(
     engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """時間上限で子孫を回収できなければ通常の時間上限と分けて伝え、同じ実行の再開前に同じ子孫を回収し直す。
-
-    子が終了すると残った子孫は子から辿れないため、所有対象を引き継がないと再開時の停止は回収済みと判定する。
-    """
     pid_file = tmp_path / "grandchild.pid"
     monkeypatch.setenv("FAKE_SESSION_SPAWN_PID_FILE", str(pid_file))
     real_stop = process_tree.stop_tree_by_pid
@@ -200,7 +191,6 @@ def test_unreclaimed_timeout_is_failure_and_resume_reclaims_same_descendant(
 
         _resumed_code, _resumed_out, resumed_err = _run(["--resume", run_id], capsys)
 
-        # 孫の親は終了済みで、回収はinitなどが行う。停止処理と同じ解放判定で、zombieは資源を保持しないとみなす。
         deadline = time.monotonic() + 10
         # pylint: disable-next=protected-access
         while process_tree._holds_resources(grandchild):  # noqa: SLF001
@@ -213,7 +203,6 @@ def test_unreclaimed_timeout_is_failure_and_resume_reclaims_same_descendant(
 
 
 def test_logs_older_than_retention_are_removed(engine_env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
-    """各実行の開始時に保持期間（30日）を超えたログだけを削除する。"""
     log_dir = engine_env.state / "agent-toolkit" / "run-skill"
     log_dir.mkdir(parents=True)
     now = time.time()
@@ -237,7 +226,6 @@ def test_public_runner_stops_limited_cli_and_switches_same_conversation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """上限通知後も終了しない実CLIを停止し、別接続で同じ会話と報告実行を続行する。"""
     api = tmp_path / "payg.env"
     api.write_text("ANTHROPIC_API_KEY=payg-test-key\n", encoding="utf-8")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "subscription-test")
@@ -266,7 +254,6 @@ def test_public_resume_restores_execution_after_launcher_process_exit(
     engine: str,
     batch: bool,
 ) -> None:
-    """異なる起動元プロセスの公開resumeが、会話・入力・報告実行と残予算を保持する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
     environment = {
         **host_environ(),

@@ -28,7 +28,6 @@ def test_claude_config_dir_accepts_only_absolute_value(
 
 
 def test_claude_config_dir_reads_given_environment(tmp_path: pathlib.Path) -> None:
-    """子プロセスへ渡す環境を指定した場合は、その環境の値で解決する。"""
     assert host_homes.claude_config_dir({"CLAUDE_CONFIG_DIR": str(tmp_path)}) == tmp_path
     assert host_homes.claude_config_dir({}) == pathlib.Path.home() / ".claude"
 

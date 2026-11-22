@@ -14,7 +14,6 @@ from agent_toolkit._common.plugin_roots import PluginRootError
 
 
 def manifest_version(root: pathlib.Path) -> str | None:
-    """診断用の版を読み、取得できない場合は不明として元の検査を維持する。"""
     try:
         data = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, ValueError:
@@ -25,14 +24,11 @@ def manifest_version(root: pathlib.Path) -> str | None:
 
 @dataclasses.dataclass(frozen=True)
 class RuntimeCode:
-    """コードを読み込んだ起動時点のrootと版。資源の更新後に読み直して代用しない。"""
-
     root: pathlib.Path
     version: str | None
 
     @classmethod
     def capture(cls, root: pathlib.Path) -> RuntimeCode:
-        """サーバーの初期化で実装側の実体を一度確定する。"""
         root = root.resolve()
         return cls(root, manifest_version(root))
 
@@ -41,7 +37,6 @@ class RuntimeCode:
         try:
             return operation()
         except (ActionableError, OSError, UnicodeError, ValueError) as error:
-            # 導入資源の不足は候補別の生成・復旧処理が扱うため、元の例外型を保つ。
             if isinstance(error, PluginRootError):
                 raise
             resource_root = task_documents.document_plugin_root(document)
@@ -58,7 +53,7 @@ class RuntimeCode:
                     map(int, self.version.split("."))
                 ) < tuple(map(int, version.split("."))):
                     context += "古い稼働実装が更新後の役割資源を検査している。"
-                # 版差だけで文書の正しさまで断定せず、新しい同版の組で元診断を再確認する。
+
                 action = (
                     "ホストのMCP再接続でコードを更新し、同じstart入力を再発行する。"
                     "再接続手段がない場合は、既存の自由本文delegateを新しいプロセスから役割起動する中継として使う。"

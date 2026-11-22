@@ -1,5 +1,3 @@
-"""agents_serverの共有backendと応答を組み立てる補助。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -20,7 +18,6 @@ from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableErro
 
 
 def install_backend(manager: server_manager.AgentsServerManager, engine: str, backend: object) -> None:
-    """テスト用のbackendを、managerがengineに使うbackendとして保持させる。"""
     manager._backends[engine] = typing.cast(backends.Backend, backend)  # pylint: disable=protected-access
 
 
@@ -31,7 +28,6 @@ _REAL_PLUGIN_PREFLIGHT = launch_requests._check_plugin_commands_sync
 
 
 def _assert_no_forbidden_keys(value: Any) -> None:
-    """応答と入れ子のprevious_resultから内部状態キーを除外する。"""
     if isinstance(value, dict):
         assert _FORBIDDEN_PUBLIC_KEYS.isdisjoint(value)
         for nested in value.values():
@@ -42,14 +38,12 @@ def _assert_no_forbidden_keys(value: Any) -> None:
 
 
 def _actionable_message(error: BaseException) -> str:
-    """共通の例外型であることを確かめ、ツールのエラー本文として届く理由と次の操作の2行を返す。"""
     assert isinstance(error, ActionableError)
     assert f"\n{NEXT_ACTION_PREFIX}" in error.message
     return error.message
 
 
 def _complete(session: state.SessionState, *, message: str = "完了", error: Any = None) -> None:
-    """テスト用sessionを結果取得可能な終了状態へ進める。"""
     session.status = "failed" if error is not None else "completed"
     session.agent_message = message
     session.error = error
@@ -58,7 +52,6 @@ def _complete(session: state.SessionState, *, message: str = "完了", error: An
 
 
 def _default_identity_fields(engine: str = "codex") -> dict[str, object]:
-    """起動候補だけが確定したsessionの公開identity項目を返す。"""
     return {
         "engine": engine,
         "model": None,
@@ -124,7 +117,7 @@ class FakeBackend:
         self.release_calls: list[str] = []
         self.start_calls: list[tuple[str | None, str | None, str]] = []
         self.prompts: list[str] = []
-        # 実backendと同じく、再開で再生成したsessionを登録簿へ公開させる場合に真にする。
+
         self.publish_registry = False
         self.pending: list[asyncio.Task[None]] = []
 
@@ -137,7 +130,6 @@ class FakeBackend:
         await self.close()
 
     async def list_models(self) -> list[dict[str, Any]]:
-        """系列の候補を指定しない場合も、起動せずに解決できる一覧を返す。"""
         return [
             {
                 "model": model,
@@ -225,7 +217,6 @@ class FakeBackend:
         self.sessions[session_id] = session
         state.initialize_turn(session)
         if self.publish_registry:
-            # 実backendは起動情報を写される前に、再生成したsessionの状態を公開する。
             session.touch()
         await prompt.deliver(accept_prompt)
         return session
@@ -250,7 +241,6 @@ class FakeBackend:
         self.release_calls.append(session.session_id)
 
     async def close(self) -> None:
-        """テスト用backendが開始した背景処理を回収する。"""
         tasks = tuple(self.pending)
         for task in tasks:
             if not task.done():
@@ -265,14 +255,12 @@ class FakeBackend:
 
 
 def _without_body_path(result: dict[str, Any]) -> dict[str, Any]:
-    """`atk agents wait`の終了行から、本文ファイルの内容が`agent_message`と一致することを確かめて`agent_message_path`を除く。"""
     body = dict(result)
     assert pathlib.Path(body.pop("agent_message_path")).read_text(encoding="utf-8") == body["agent_message"]
     return body
 
 
 def _without_root(response: dict[str, Any]) -> dict[str, Any]:
-    """`send_message`の応答から、書込主体を持つmanagerが加える`root_session_id`を確かめて除いた本体を返す。"""
     body = dict(response)
     assert shared_layout.valid_session_id(body.pop("root_session_id"))
     return body
@@ -282,7 +270,6 @@ def _without_root(response: dict[str, Any]) -> dict[str, Any]:
 async def _manager_with_fake(
     engine: str, delivery: str = "reply_started"
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeBackend]]:
-    """指定engineだけをFakeBackendへ差し替えた共有managerを返す。"""
     async with server_manager.AgentsServerManager() as manager:
         backend = FakeBackend(manager.sessions, engine, delivery)
         _install_backend(manager, engine, backend)
@@ -292,7 +279,6 @@ async def _manager_with_fake(
 def _install_backend(
     manager: server_manager.AgentsServerManager, engine: str, backend: FakeBackend | claude_backend.ClaudeServerManager
 ) -> None:
-    """指定engineのバックエンドを差し替える。"""
     if engine == "codex":
         install_backend(manager, "codex", backend)
     elif engine == "agy":

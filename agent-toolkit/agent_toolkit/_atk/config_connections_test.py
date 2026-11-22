@@ -23,7 +23,6 @@ __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 
 def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
-    """新しい接続設定8キーの初期値表示、保存、正規化、検証を公開CLIで確かめる。"""
     assert _main(tmp_path, "config", "show") == 0
     shown = dict(line.split(" ", 1) for line in capsys.readouterr().out.splitlines())
     assert {key: shown[key] for key in _CONNECTION_KEYS} == {
@@ -84,7 +83,6 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
                 "claude_worker_connections": "credits,subscription",
             },
         ),
-        # 旧設定の初期値（pay-as-you-go）: 統括担当API固定、委譲先サブスク優先。
         (
             {"claude_api_env_file": "/api.env"},
             {
@@ -109,7 +107,6 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
                 "claude_worker_connections": "payg",
             },
         ),
-        # 新boolを明示した役割は旧api-onlyの固定より優先する。
         (
             {"claude_api_mode": "api-only", "claude_worker_api_first": "false", "claude_api_env_file": "/api.env"},
             {
@@ -118,13 +115,11 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
                 "claude_worker_connections": "subscription,payg",
             },
         ),
-        # envファイルが無い場合はAPIの種別を除き、空になる役割は書かない。
         ({"claude_api_mode": "api-only"}, {}),
         (
             {"claude_orchestrator_api_only": "false"},
             {"claude_orchestrator_connections": "subscription", "claude_worker_connections": "subscription"},
         ),
-        # 既に保存した移行先のキーは上書きしない。
         (
             {"claude_api_env_file": "/api.env", "claude_worker_connections": "payg"},
             {
@@ -157,7 +152,6 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
     ],
 )
 def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, capsys, old, expected):
-    """旧接続設定の保存値を最初の読込で移行先へ移し、旧キーを設定ファイルから消す。"""
     _write_config(tmp_path, {**old, "codex_fast_mode": "true"})
     assert _main(tmp_path, "config", "show") == 0
     assert not capsys.readouterr().err
@@ -167,7 +161,6 @@ def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, caps
 
 
 def test_codex_migration_with_multiple_api_providers_requires_new_keys(tmp_path, capsys):
-    """openai以外のproviderが2つ以上ある旧設定は自動移行せず、新キーの保存で置き換える。"""
     path = _write_config(tmp_path, {"codex_model_providers": "openai,paid-a,paid-b"})
     before = path.read_bytes()
     assert _main(tmp_path, "config", "show") == 2
@@ -181,7 +174,6 @@ def test_codex_migration_with_multiple_api_providers_requires_new_keys(tmp_path,
 
 @pytest.mark.parametrize("key", list(config_module._RETIRED_CONNECTION_KEYS))  # pylint: disable=protected-access  # noqa: SLF001
 def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, monkeypatch, key):
-    """旧接続設定キーのget・setと環境変数は、移行先のキー名を示すエラーで終わる。"""
     targets = config_module._RETIRED_CONNECTION_KEYS[key]  # pylint: disable=protected-access  # noqa: SLF001
     for arguments in (("get", key), ("set", key, "value")):
         assert _main(tmp_path, "config", *arguments) == 2
@@ -197,7 +189,6 @@ def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, mon
 
 
 def test_connection_order_resolution_per_engine_and_role(monkeypatch):
-    """使用順をエンジンと役割ごとに解決し、環境変数を保存値より優先する。"""
     assert config_module.connection_order("claude", "orchestrator") == ("subscription", "credits")
     assert config_module.connection_order("codex", "delegate") == ("credits", "subscription")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", "payg,subscription")

@@ -1,5 +1,3 @@
-"""`atk wi process-loop`のアラートの確認のテスト。"""
-
 import argparse
 import pathlib
 import time

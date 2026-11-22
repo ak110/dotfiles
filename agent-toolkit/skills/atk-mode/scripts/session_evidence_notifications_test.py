@@ -1,5 +1,3 @@
-"""実ホストの通知形式を公開の証拠収集から候補まで確認する。"""
-
 import json
 import pathlib
 
@@ -9,7 +7,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 
 def _codex_call(identity: str, name: str, inputs: dict[str, object] | str) -> dict[str, object]:
-    """公開ツールのJSON入力とexecのコード入力を記録形式にする。"""
     payload: dict[str, object] = {"name": name, "call_id": identity}
     if isinstance(inputs, str):
         payload.update(type="custom_tool_call", input=inputs)
@@ -49,7 +46,6 @@ def _codex_notice(message_id: str, *, provenance: bool = True) -> dict[str, obje
 def test_codex_hook_messages_keep_occurrences_and_exclude_quotes(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同文の別通知を保持し、同一メッセージの重複と由来のない引用を除く。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -80,7 +76,6 @@ def test_codex_hook_messages_keep_occurrences_and_exclude_quotes(
 def test_wait_notifications_are_delegate_candidates(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], summary: bool, prefix: str
 ) -> None:
-    """CLIのJSONとエージェント向け要約の受信通知を、箇条書きの項目記号を除いて原記録へ対応付ける。"""
     expected = "気付いた改善点: 解析が入力を欠落させる\n気付いた改善点: 別の入力も欠落する"
     body = "\n".join(prefix + line for line in expected.splitlines())
     output = (

@@ -1,5 +1,3 @@
-"""update_dotfilesのGit子プロセスの実行と回収。"""
-
 import contextlib
 import os
 import pathlib
@@ -49,10 +47,6 @@ def kill_process_tree(
     known: Iterable[psutil.Process] = (),
     pins: process_tree.ProcessIdentityPins | None = None,
 ) -> None:
-    """直接の子を終了する前に子孫を列挙し、起動したプロセスツリーを回収する。回収できなければ`_GitReclaimError`を送出する。
-
-    出力の終端を待つ途中（時間切れ・中断）だけで呼ぶため、出力を引き継いだ子孫も辿って回収する。
-    """
     failure = process_tree.stop_owned_process(process, context="Git更新", known=known, pins=pins, output_open=True)
     if failure is not None:
         raise GitReclaimError(
@@ -124,7 +118,7 @@ def _github_transport_recovery(remote_url: str | None, *, timeout: float | None)
         return None
     environment = update_dotfiles_runtime.git_env()
     environment["GIT_TERMINAL_PROMPT"] = "0"
-    # 接続停滞を有限に判別し、残りの予算を本来の取得へ残す。
+
     probe_timeout = min(15.0, timeout / 4)
     try:
         process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with  # 時間切れでは子孫回収を先に行う
@@ -307,7 +301,6 @@ def _run_git_pull_once(
 
 
 def _git_capture(*arguments: str) -> subprocess.CompletedProcess[str]:
-    """dotfilesリポジトリでGitを実行し、標準出力と標準エラーを取得する。"""
     argv = ["git", "-C", str(update_dotfiles_runtime.DOTFILES_ROOT), *arguments]
     known: list[psutil.Process] = []
     with (

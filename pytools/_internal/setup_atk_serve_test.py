@@ -51,14 +51,11 @@ class TestRunPlatformGuard:
 
 
 class TestRunUvResolution:
-    """uv 絶対パスの解決順序。"""
-
     def test_prefers_local_bin_uv_over_path_lookup(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`~/.local/bin/uv` が存在する場合は PATH 探索結果を採用しない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
 
@@ -74,7 +71,6 @@ class TestRunUvResolution:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`~/.local/bin/uv` が無い場合は PATH 探索結果を埋め込む。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
         monkeypatch.setattr(
@@ -95,7 +91,6 @@ class TestRunUvResolution:
         tmp_path: pathlib.Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """uv を解決できない場合は False を返しランチャーも unit も書き込まない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         (tmp_path / ".local" / "bin" / "uv").unlink()
         monkeypatch.setattr(common, "resolve_executable", lambda _name, **_kwargs: None)
@@ -114,7 +109,6 @@ class TestRunUvResolution:
         tmp_path: pathlib.Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """dotfilesルートを解決できない場合はランチャーとunitを書き込まない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: pytest.fail(str(kwargs)))
@@ -128,11 +122,8 @@ class TestRunUvResolution:
 
 
 class TestRunLauncherDeployment:
-    """ランチャー配置と共通 systemd 処理への委譲。"""
-
     @pytest.fixture(name="prepared")
     def _prepared(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-        """euryale + uv 配置済みの状態を共通セットアップする。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         return tmp_path
 
@@ -143,7 +134,6 @@ class TestRunLauncherDeployment:
         monkeypatch: pytest.MonkeyPatch,
         initial: str | None,
     ) -> None:
-        """ランチャーを新設または更新し、実行可能化した後に unit を設定する。"""
         launcher = prepared / ".local" / "bin" / "atk-serve"
         if initial is not None:
             launcher.write_text(initial, encoding="utf-8")
@@ -185,7 +175,6 @@ class TestRunLauncherDeployment:
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """内容が一致するランチャーは書き直さず unit 設定へ進む。"""
         launcher = prepared / ".local" / "bin" / "atk-serve"
         launcher.write_text(
             setup_atk_serve._LAUNCHER_TEMPLATE.format(
@@ -215,7 +204,6 @@ class TestRunLauncherDeployment:
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """plugin版の更新をunit差分として渡し、共通処理の再起動判定へつなぐ。"""
         observed: list[str] = []
 
         def setup(**kwargs: typing.Any) -> bool:
@@ -235,7 +223,6 @@ class TestRunLauncherDeployment:
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """常駐ランチャーは対象worktreeのscripts/launch.pyを経てserveを起動する。"""
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)
         assert setup_atk_serve.run().changed
 
@@ -254,7 +241,6 @@ class TestRunServeSettings:
 
     @pytest.fixture(name="prepared")
     def _prepared(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-        """euryale + uv 配置済みの状態を共通セットアップする。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         for key in setup_atk_serve._SERVE_SETTINGS:
             monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
@@ -265,7 +251,6 @@ class TestRunServeSettings:
         prepared: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """初回と宣言値の変更時に保存して再起動を求め、同じ値の再実行では再起動を求めない。他の設定は保持する。"""
         del prepared
         toolkit_config.save_mutable_settings({"serve_port": "28767", "codex_fast_mode": "true"})
         restarts: list[bool] = []
@@ -340,11 +325,8 @@ def test_run_returns_failure_with_recovery_when_user_manager_unavailable(
 
 
 class TestLegacyPlansViewerUnit:
-    """旧計画ビューアーのsystemd unitの停止・無効化と削除。"""
-
     @staticmethod
     def _place_legacy_unit(tmp_path: pathlib.Path) -> pathlib.Path:
-        """旧unitファイルを配置し、そのパスを返す。"""
         path = tmp_path / ".config" / "systemd" / "user" / "claude-plans-viewer.service"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("[Unit]\n", encoding="utf-8")
@@ -355,7 +337,6 @@ class TestLegacyPlansViewerUnit:
         monkeypatch: pytest.MonkeyPatch,
         returncode: int,
     ) -> list[list[str]]:
-        """`systemctl`呼び出しを記録し、指定した終了コードを返すよう差し替える。"""
         calls: list[list[str]] = []
 
         def run_subprocess(cmd: list[str], **kwargs: typing.Any) -> typing.Any:
@@ -373,7 +354,6 @@ class TestLegacyPlansViewerUnit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """停止と無効化に成功した場合だけunitファイルを削除し、設定を再読み込みする。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         legacy = self._place_legacy_unit(tmp_path)
         calls = self._record_subprocess(monkeypatch, returncode=0)
@@ -436,7 +416,6 @@ class TestLegacyPlansViewerUnit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """旧unitが存在しない環境では移行処理を行わず、後続の配置を止めない。"""
         _run_linux_euryale(monkeypatch, tmp_path)
         calls = self._record_subprocess(monkeypatch, returncode=1)
         monkeypatch.setattr(systemd_user_unit, "setup", lambda **kwargs: True)

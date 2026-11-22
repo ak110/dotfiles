@@ -1,12 +1,3 @@
-"""Gitのworktree登録を、Gitの版によらない方法で列挙する。
-
-`git worktree list --porcelain -z`はGit 2.36で追加された引数であり、agent-toolkitが対応するGit 2.34.1では
-終了129になる。`-z`を使わない出力は改行を含むパスの境界を区別できない。
-そこでGitが文書化する保存形式（共通Gitディレクトリの`worktrees/<id>/`配下の`gitdir`・`HEAD`・`locked`）を読み、
-`git worktree list`と同じ対応（パス、branch、detached、bare、locked、prunable）を復元する。
-Gitの起動は共通Gitディレクトリと`core.bare`の取得に限り、どちらもGit 2.34.1で受理される引数を使う。
-"""
-
 import dataclasses
 import pathlib
 import subprocess
@@ -20,18 +11,11 @@ _BRANCH_PREFIX = "refs/heads/"
 
 
 class WorktreeListError(ValueError):
-    """worktree登録を列挙できなかったことを表す。"""
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
 class Worktree:
-    """1件のworktree登録。
-
-    `path`はGitが登録した作業ツリーのパス（解決前）である。`branch`は`refs/heads/`を除いたbranch名で、
-    detached HEAD・bare・`refs/heads/`以外を指すHEADでは`None`となる。`head_ref`はHEADが指す参照の完全名で、
-    detached HEADとbareでは`None`となる。
-    """
-
     path: pathlib.Path
     branch: str | None
     head_ref: str | None
@@ -42,17 +26,14 @@ class Worktree:
 
 
 def owning_worktree(path: pathlib.Path, entries: Iterable[Worktree]) -> Worktree | None:
-    """解決済みのパスを含む登録のうち、最も内側のworktreeを返す。"""
     return owning_resolved_worktree(path, resolve_worktrees(entries))
 
 
 def resolve_worktrees(entries: Iterable[Worktree]) -> dict[pathlib.Path, Worktree]:
-    """登録rootを1回だけ解決する。結果は同じ登録集合で所属を判定する間だけ使い、走査をまたいで保持しない。"""
     return {entry.path.resolve(): entry for entry in entries}
 
 
 def owning_resolved_worktree(path: pathlib.Path, resolved: dict[pathlib.Path, Worktree]) -> Worktree | None:
-    """`resolve_worktrees`の結果を使い、パスを含む最も内側のworktreeを返す。"""
     root = path_ownership.owning_resolved_root(path, resolved)
     return resolved.get(root) if root is not None else None
 
@@ -75,7 +56,7 @@ def _read_text(path: pathlib.Path) -> str | None:
 
 
 def _strip_git_suffix(value: str) -> str:
-    # Gitは登録パスの末尾の`/.git`を除いて作業ツリーのパスとする（worktree.cのget_main_worktree・get_linked_worktree）。
+
     for suffix in ("/.git", "/."):
         if value.endswith(suffix):
             return value[: -len(suffix)]
@@ -92,7 +73,6 @@ def main_worktree_path(common_dir: str) -> pathlib.Path:
 
 
 def _head(gitdir: pathlib.Path) -> tuple[str | None, bool]:
-    """HEADが指す参照の完全名と、detached HEADかどうかを返す。"""
     content = _read_text(gitdir / "HEAD")
     if content is None:
         return None, False
@@ -109,11 +89,6 @@ def _entry(path: pathlib.Path, gitdir: pathlib.Path, *, bare: bool, locked: bool
 
 
 def list_worktrees(repo: pathlib.Path, *, timeout: float | None = None) -> list[Worktree]:
-    """`repo`が属するGitリポジトリのworktree登録を、主作業ツリー、登録識別子の順に返す。
-
-    `repo`は主作業ツリー、linked worktree、bareリポジトリのいずれでもよい。
-    Gitが登録を読めずに一覧から外す項目（`gitdir`を読めないか空の登録）は返さない。
-    """
     common_value = _git(repo, ["rev-parse", "--path-format=absolute", "--git-common-dir"], timeout).rstrip("\n")
     common = pathlib.Path(common_value)
     bare_value = _git(repo, ["config", "--bool", "--default", "false", "core.bare"], timeout).strip()
@@ -125,12 +100,11 @@ def list_worktrees(repo: pathlib.Path, *, timeout: float | None = None) -> list[
     except OSError as error:
         raise WorktreeListError(f"worktree登録を読めない: {registry}: {error}") from error
     for gitdir in identifiers:
-        # Gitは`gitdir`の末尾の空白だけを除く（strbuf_rtrim）。パスの途中の改行は保持する。
         location = (_read_text(gitdir / "gitdir") or "").rstrip()
         if not location:
             continue
         locked = (gitdir / "locked").exists()
-        # Git 2.34.1の`should_prune_worktree`と同じく、locked以外で登録先の`.git`が無い項目をprunableとする。
+
         prunable = not locked and not pathlib.Path(location).exists()
         entries.append(_entry(pathlib.Path(_strip_git_suffix(location)), gitdir, bare=False, locked=locked, prunable=prunable))
     return entries

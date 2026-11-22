@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: baseのテスト。"""
 
 import datetime
 import json
@@ -27,7 +26,6 @@ def test_candidates_include_answered_approval_regardless_of_source(
     source: str | None,
     state: str,
 ) -> None:
-    """公開CLIの回答取得から報告を分類でき、候補の消費側も同じ承認集合を返す。"""
     notes = _setup_notes(tmp_path)
     for name, answer in (("approval.md", "はい"), ("report.md", "確認済み"), ("unanswered.md", "")):
         write_uwi(notes, name, answer=answer, source=source, state=state)
@@ -78,15 +76,12 @@ def test_candidates_include_answered_approval_regardless_of_source(
 
 
 class TestListEmpty:
-    """listサブコマンド: inbox空の場合は何も出力しない。"""
-
     def test_empty_inbox(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """inbox空時は標準出力が空であること。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -99,15 +94,12 @@ class TestListEmpty:
 
 
 class TestListSingle:
-    """listサブコマンド: 1件のAWIを1行で出力する。"""
-
     def test_single_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """1件のAWIがファイル名・`target_repo`・本文冒頭要約のタブ区切り1行で出力されること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -205,8 +197,6 @@ class TestListSingle:
 
 
 class TestListMalformedFrontmatter:
-    """listサブコマンド: 異常frontmatterは`(unknown)`グループへ振り分けられる。"""
-
     @pytest.mark.parametrize(
         ("content", "label", "expected_exit"),
         [
@@ -224,8 +214,7 @@ class TestListMalformedFrontmatter:
         label: str,
         expected_exit: int,
     ) -> None:
-        """typeを確定できない異常frontmatter形式は拒否される。"""
-        del label  # parametrize idのみ
+        del label
         notes = _setup_notes(tmp_path)
         path = entry_path(notes, "malformed.md", fallback_date=datetime.date(2026, 10, 1))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -272,15 +261,12 @@ class TestListMalformedFrontmatter:
 
 
 class TestListMultipleRepos:
-    """listサブコマンド: 複数target_repo混在でも1件1行で全件出力される。"""
-
     def test_multiple_repos_grouped(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target_repoが異なる複数のAWIがそれぞれ1行で出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar")
@@ -303,7 +289,6 @@ class TestListMultipleRepos:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """種別見出しを維持し、各グループ内を状態によらずファイル名順に並べる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "z-awi.md", body="AWI")
         awi_processing = _write_awi_file(notes, "a-awi.md", body="処理中AWI")

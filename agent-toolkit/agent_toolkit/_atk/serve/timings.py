@@ -52,7 +52,6 @@ _UNRECORDED_PATHS = frozenset({"/api/events", "/api/plans/events", "/api/session
 
 
 def default_log_path() -> pathlib.Path:
-    """呼出し側が場所を指定しない場合の記録ファイル（状態ディレクトリ配下の`serve/timings.jsonl`）を返す。"""
     return _state_paths.state_dir() / "serve" / "timings.jsonl"
 
 
@@ -69,7 +68,6 @@ class TimingLog:
         self._warned = False
 
     def write(self, record: dict[str, typing.Any]) -> None:
-        """1件を追記する。`path`が`None`なら記録しない。"""
         if self.path is None:
             return
         line = json.dumps(record, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n"
@@ -93,8 +91,6 @@ class TimingLog:
 
 @dataclasses.dataclass
 class RequestTiming:
-    """1件の要求で計測した区間。同じ要求のスレッドからも同じインスタンスへ加算する。"""
-
     request_id: str
     started: float
     queue_ms: float = 0.0
@@ -115,7 +111,6 @@ CURRENT: contextvars.ContextVar[RequestTiming | None] = contextvars.ContextVar("
 
 
 def now_iso() -> str:
-    """記録の時刻（UTC、ミリ秒まで）を返す。"""
     return datetime.datetime.now(datetime.UTC).isoformat(timespec="milliseconds")
 
 
@@ -130,7 +125,6 @@ def _request_id(raw: str | None) -> str:
 
 
 def register(app: quart.Quart, log: TimingLog) -> None:
-    """要求ごとのサーバー記録と、画面記録の受信APIを登録する。"""
 
     @app.before_request
     async def start_timing() -> None:
@@ -194,7 +188,6 @@ def register(app: quart.Quart, log: TimingLog) -> None:
 
 
 def _browser_record(record: typing.Any) -> dict[str, typing.Any] | None:
-    """画面記録を許可した項目と型だけに限定する。本文や検索語を含み得る項目は受理しない。"""
     if not isinstance(record, dict):
         return None
     result: dict[str, typing.Any] = {}

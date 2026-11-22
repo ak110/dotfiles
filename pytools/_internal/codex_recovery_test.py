@@ -27,12 +27,11 @@ def _notify(recovery: codex_recovery.ConversationRecovery, method: str, turn: st
 
 
 def _assert_conversation(recovery: codex_recovery.ConversationRecovery, expected: codex_recovery.ConversationState) -> None:
-    # 観測ごとに読み直し、所有者の更新をまたいだ型の絞込みをテスト側へ持ち越さない。
+
     assert recovery.conversation == expected
 
 
 def test_observed_turn_states_preserve_selection_and_explicit_stop() -> None:
-    """別turnの完了と中断後の遅延通知は、選択した仕事を実行中へ戻さない。"""
     recovery = codex_recovery.ConversationRecovery()
     initial = recovery.conversation
     assert isinstance(initial, codex_recovery.UnselectedConversation)
@@ -61,7 +60,6 @@ def test_observed_turn_states_preserve_selection_and_explicit_stop() -> None:
 
 @pytest.mark.parametrize("stop", ["turn/interrupt", "thread/unsubscribe"])
 def test_stop_before_first_turn_requires_new_start(stop: str) -> None:
-    """turn通知前の中断も保持し、ユーザーの新しい開始で解除する。"""
     recovery = codex_recovery.ConversationRecovery()
     _select(recovery)
     recovery.observe_client({"method": stop, "params": {"threadId": "thread"}})
@@ -84,7 +82,6 @@ def test_stop_before_first_turn_requires_new_start(stop: str) -> None:
     ],
 )
 def test_continuation_checks_original_turn_and_writer(status: str, latest: str, writer: str, continues: bool) -> None:
-    """元turnの未完了とwriter不在だけが自動続行を許す。"""
     recovery = codex_recovery.ConversationRecovery()
     _select(recovery)
     _notify(recovery, "turn/started")
@@ -101,7 +98,6 @@ def test_continuation_checks_original_turn_and_writer(status: str, latest: str, 
 
 @pytest.mark.parametrize("thread", [{"id": "other", "cwd": "/work"}, {"id": "thread", "cwd": "/other"}])
 def test_continuation_rejects_different_conversation(thread: dict[str, Any]) -> None:
-    """復旧応答の会話とcwdの照合を維持する。"""
     recovery = codex_recovery.ConversationRecovery()
     _select(recovery)
     _notify(recovery, "turn/started")

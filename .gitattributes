@@ -25,6 +25,7 @@
 # 依存解決器と解析器が書く機械データ。人が編集する設定とは分ける。
 *.lock linguist-generated
 arid-baseline.json linguist-generated
+/.pyfltr-comment-baseline.json linguist-generated
 
 # 同梱した第三者の文面は自作の規範・ソースと区別する。
 /agent-basics/THIRD-PARTY-NOTICES.md linguist-vendored

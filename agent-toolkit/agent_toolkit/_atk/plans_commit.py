@@ -1,5 +1,3 @@
-"""計画バンドルとCI対応レビュー表の対象限定commit。"""
-
 from __future__ import annotations
 
 import os
@@ -203,7 +201,6 @@ def commit_ci_review(
     lock_timeout: float | None = None,
     skip_push: bool = False,
 ) -> dict[str, object]:
-    """CI対応レビュー指摘管理表を対象限定でcommitし、成功後に作業側を回収する。"""
     review_table = _plan_file.resolve_plan_input(review_table, private_notes=private_notes, home=home).as_posix()
     try:
         working_relative = _plans_checkout.validate_working_ci_review_relative_path(review_table)

@@ -60,7 +60,6 @@ def _claude_answer_event_with_options(
     answer: str,
     notes: str | None,
 ) -> dict[str, object]:
-    """選択肢を持つAskUserQuestionの回答記録から抽出した単一イベントを返す。"""
     annotations: dict[str, object] = {"方針": {"notes": notes}} if notes is not None else {}
     transcript = _write_transcript(
         tmp_path,
@@ -109,14 +108,12 @@ def test_claude_answer_intervention_marks_answers_outside_offered_choices(
     notes: str | None,
     expected: bool,
 ) -> None:
-    """提示した選択肢のlabelと一致しない回答と自由記述を伴う回答へ介入の標識を付ける。"""
     event = _claude_answer_event_with_options(tmp_path, options, answer, notes)
 
     assert (event.get("answer_intervention") is True) is expected
 
 
 def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> dict[str, object]:
-    """AskUserQuestionの回答記録から抽出した単一イベントを返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -143,7 +140,6 @@ def _claude_answer_event(tmp_path: pathlib.Path, result: dict[str, object]) -> d
 
 
 def test_claude_answer_includes_annotation_notes(tmp_path: pathlib.Path) -> None:
-    """annotationsの文字列notesを自由記述として証拠化する。"""
     event = _claude_answer_event(
         tmp_path,
         {"answers": {"質問": "回答"}, "annotations": {"質問": {"notes": "自由記述"}}},
@@ -154,7 +150,6 @@ def test_claude_answer_includes_annotation_notes(tmp_path: pathlib.Path) -> None
 
 
 def test_claude_answer_with_notes_only_keeps_recorded_answer(tmp_path: pathlib.Path) -> None:
-    """選択肢なしの自由記述でも記録済み回答を保持する。"""
     event = _claude_answer_event(
         tmp_path,
         {"answers": {"質問": "(notes only)"}, "annotations": {"質問": {"notes": "自由記述"}}},
@@ -165,7 +160,6 @@ def test_claude_answer_with_notes_only_keeps_recorded_answer(tmp_path: pathlib.P
 
 @pytest.mark.parametrize("annotations", [{"質問": {"preview": "選択肢"}}, None])
 def test_claude_answer_without_notes_is_unchanged(tmp_path: pathlib.Path, annotations: object) -> None:
-    """自由記述が無い回答の本文を変更しない。"""
     result: dict[str, object] = {"answers": {"質問": "回答"}}
     if annotations is not None:
         result["annotations"] = annotations
@@ -179,7 +173,6 @@ def test_claude_answer_without_notes_is_unchanged(tmp_path: pathlib.Path, annota
 
 @pytest.mark.parametrize("annotations", [[], {"質問": "不正"}, {"質問": {"notes": ["不正"]}}])
 def test_claude_answer_ignores_non_string_annotation_notes(tmp_path: pathlib.Path, annotations: object) -> None:
-    """辞書以外または文字列以外のnotesを自由記述として出力しない。"""
     event = _claude_answer_event(tmp_path, {"answers": {"質問": "回答"}, "annotations": annotations})
 
     assert event["text"] == "回答"
@@ -232,7 +225,6 @@ def test_claude_ignores_unmatched_normal_tool_results(
     tmp_path: pathlib.Path,
     tool_result: dict[str, object],
 ) -> None:
-    """payload形状にかかわらず未対応の通常tool resultをユーザー判断へ変換しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -251,7 +243,6 @@ def test_claude_ignores_unmatched_normal_tool_results(
 
 
 def test_claude_matches_multiple_question_ids_and_ignores_repeated_result(tmp_path: pathlib.Path) -> None:
-    """複数の保留IDを個別に対応し、対応済み・未知IDからイベントを捏造しない。"""
     answer_result = {"answers": {"質問": "回答"}, "questions": []}
     second_answer_result = {"answers": {"別の質問": "別の回答"}, "questions": []}
     transcript = _write_transcript(

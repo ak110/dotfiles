@@ -23,7 +23,6 @@ from agent_toolkit._testing.agents_server_commands_support import _write_root_se
 def test_agents_list_returns_diagnostic_fields_without_prompt(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """listは稼働と稼働時間に使う項目へ限定し、内部で追加した項目と詳細診断を返さない。"""
     monkeypatch.setenv("AI_AGENT", "1")
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "list"])
@@ -50,7 +49,6 @@ def test_agents_list_shows_tree_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間が読む環境ではrootとsessionの関係を表示し、委譲プロンプトを除く。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 
@@ -71,7 +69,6 @@ def test_agents_list_without_conversation_root_shows_all_roots(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話識別子のない直接端末では全rootのsessionを表示する。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -109,7 +106,6 @@ def test_agents_list_without_conversation_root_shows_all_roots(
 def test_agents_list_shows_living_childless_roots(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], watch: bool
 ) -> None:
-    """SessionStartだけのrootを表示し、PID終了・再利用では表示から外す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     identity = session_registry.ProcessIdentity.of(os.getpid())
@@ -148,7 +144,6 @@ def test_agents_list_human_tree_omits_empty_roots_without_liveness_evidence(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """生存記録のない空rootと管理用ディレクトリを省き、終了履歴の指定を保つ。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
@@ -182,7 +177,6 @@ def test_agents_list_human_tree_reports_no_sessions(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人の端末で表示するsessionが無ければ見出しを出力せず、sessionが無いことを示して正常終了する。"""
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
@@ -202,7 +196,6 @@ def test_agents_list_reports_unconfirmed_conversation_root(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """rootとの対応を確認できない空一覧は成功として扱わず、MCP一覧による復旧を案内する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -224,7 +217,6 @@ def test_agents_list_returns_empty_for_confirmed_root(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """現行識別子自身の状態ディレクトリを確認できれば空一覧を通常結果として返す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -243,7 +235,6 @@ def test_agents_list_uses_explicit_alias_and_isolates_other_roots(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示的な別名索引のrootだけを読み、別rootのsessionを混在させない。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)

@@ -1,5 +1,3 @@
-"""run-skillの同一実行再開に必要な入力・会話・時間予算を保持する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -21,8 +19,6 @@ _RUN_ID_PATTERN = r"^[0-9a-f]{32}$"
 
 
 class StartupInput(pydantic.BaseModel):
-    """SessionStartへ配送する元の実行入力。再開でもこの値を使う。"""
-
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True, strict=True)
 
     source: Literal["run-skill"] = "run-skill"
@@ -62,13 +58,10 @@ def _path(run_id: str) -> pathlib.Path:
 
 
 def load(run_id: str) -> RunRecord:
-    """公開resumeの識別子と保存された同一実行の入力を検証する。"""
     text = _path(run_id).read_text(encoding="utf-8")
     payload = json.loads(text)
     connection = payload.get("connection") if isinstance(payload, dict) else None
     if isinstance(connection, dict) and "isolation_env_file" in connection:
-        # 2026-11-15の改名前の記録は単一の`isolation_env_file`を保存した。
-        # strictなJSON検証の型規則を保つため、検証前のJSONで読み替える。
         legacy = connection.pop("isolation_env_file")
         connection.setdefault("isolation_env_files", [] if legacy is None else [legacy])
         text = json.dumps(payload)
@@ -81,15 +74,13 @@ def load(run_id: str) -> RunRecord:
 
 
 def save(record: RunRecord) -> None:
-    """再開先へ渡す状態を原子的に更新する。"""
     path = _path(record.input.run_id)
     path.parent.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
     atomic_write(path, record.model_dump_json() + "\n", fsync=True)
 
 
 def mark_completed(run_id: str) -> None:
-    """batchの範囲確定後に、その実行の再開記録も完了へ移す。"""
-    # 導入前のbatchは再開記録を持たず、既存manifestだけで確定する。
+
     if re.fullmatch(_RUN_ID_PATTERN, run_id) is not None and _path(run_id).is_file():
         record = load(run_id)
         RecordWriter(record).finish(record.remaining, completed=True)
@@ -123,8 +114,6 @@ def sweep_records(*, cutoff: float) -> set[pathlib.Path]:
 
 
 class RecordWriter:
-    """出力readerと起動側の更新を直列化し、旧CLIの遅い出力で新しい状態を上書きしない。"""
-
     def __init__(self, record: RunRecord) -> None:
         self.record = record
         self._lock = threading.Lock()
@@ -133,7 +122,6 @@ class RecordWriter:
     def running(
         self, remaining: float, connection: claude_connection.Connection | None, *, completed: Callable[[], bool]
     ) -> Generator[None]:
-        """起動から終了処理までの残時間を記録し、中断時も元の実行入力を保持する。"""
         with self._lock:
             self.record = self.record.model_copy(
                 update={
@@ -154,13 +142,11 @@ class RecordWriter:
             self.finish(max(0.0, remaining - (time.monotonic() - started_at)), completed=completed())
 
     def attach(self, executor: session_registry.ProcessIdentity | None) -> None:
-        """実際に起動したCLIのPID世代を公開する。"""
         with self._lock:
             self.record = self.record.model_copy(update={"executor": executor})
             save(self.record)
 
     def set_session_id(self, identifier: str, executor: session_registry.ProcessIdentity | None) -> None:
-        """同じ実行を所有するreaderが観測した会話IDだけを保存する。"""
         with self._lock:
             if self.record.executor != executor or self.record.status != "running":
                 return
@@ -168,7 +154,6 @@ class RecordWriter:
             save(self.record)
 
     def finish(self, remaining: float, *, completed: bool) -> None:
-        """CLIの生存を確かめ、終了状態と残時間を保存する。"""
         with self._lock:
             executor = self.record.executor
             if executor is not None and (executor.exists() or reclaim_records.pending(executor.pid, executor.create_time)):

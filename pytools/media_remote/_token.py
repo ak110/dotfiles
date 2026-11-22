@@ -1,5 +1,3 @@
-"""アクセストークンの読み書き。"""
-
 import os
 import pathlib
 import re
@@ -13,10 +11,6 @@ _TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 
 def default_token_path() -> pathlib.Path:
-    r"""`--token-file`を省略した場合のトークン保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\token.txt`）。
-
-    `LOCALAPPDATA`未設定時は`~/AppData/Local`へフォールバックする。
-    """
     local = os.environ.get("LOCALAPPDATA")
     base = pathlib.Path(local) if local else pathlib.Path.home() / "AppData" / "Local"
     return base / "dotfiles" / "media-remote" / "token.txt"

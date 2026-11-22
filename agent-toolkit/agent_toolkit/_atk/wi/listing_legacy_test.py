@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: legacyのテスト。"""
 
 import datetime
 import pathlib
@@ -18,8 +17,6 @@ from agent_toolkit.atk_test import _GitCall, _make_subprocess_fake, _setup_notes
 
 
 class TestLegacyReservationMigration:
-    """通常の読取の前に旧予約を移行し、軽量な読取では移行を後の通常の読取へ回すことを検証する。"""
-
     @staticmethod
     def _write_legacy_main(
         notes: pathlib.Path,
@@ -143,7 +140,6 @@ class TestLegacyReservationMigration:
         assert legacy_module.migrate_legacy_reservations(notes, assert_lock_fn=lambda _path: None, commit_fn=fail_commit) == 0
 
     def test_conflicting_inbox_entry_stops_migration_with_manual_steps(self, tmp_path: pathlib.Path) -> None:
-        """移行先inboxに同名項目がある場合は何も変えず、比較と削除の手順を次の操作として返す。"""
         notes = _setup_notes(tmp_path, legacy_layout=True)
         main = self._write_legacy_main(notes, reservation="broken", legacy_layout=True)
         self._write_companion(notes)
@@ -162,7 +158,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """破損予約の未検証ファイル名で通常依存を削除しない。"""
         notes = _setup_notes(tmp_path)
         self._write_legacy_main(
             notes,
@@ -185,7 +180,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """孤立した内部項目を削除し、通常依存を保持する。"""
         notes = _setup_notes(tmp_path)
         self._write_companion(notes, "orphan.md")
         dependent = _write_awi_file(notes, "dependent.md", body="本文")
@@ -212,7 +206,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """内部repo以外の同名metadataを旧生成物と誤認しない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "user.md", body="ユーザー本文")
         original = path.read_text(encoding="utf-8").replace(
@@ -235,7 +228,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """旧companionが無いユーザーmetadataは移行対象にしない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "user.md", body="ユーザー本文")
         path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
@@ -259,7 +251,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterを解析できない項目は移行せず、既存の修復処理で扱えるよう元の内容のまま残す。"""
         notes = _setup_notes(tmp_path)
         path = entry_path(notes, "broken.md", fallback_date=datetime.date(2026, 10, 1))
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,7 +271,6 @@ class TestLegacyReservationMigration:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """軽量読取は通信と変更を避け、後続の通常読取で移行する。"""
         notes = _setup_notes(tmp_path)
         legacy = self._write_legacy_main(notes, reservation="broken")
         companion = self._write_companion(notes)
@@ -305,15 +295,12 @@ class TestLegacyReservationMigration:
 
 
 class TestListPlanImplementationClassification:
-    """トップレベルの`plan_file`を持つ項目を`plan`区分と表示し、未分類（`unclassified`）として表示しない。"""
-
     def test_missing_schedule_metadata_is_labeled_plan_implementation(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """queue_schedule欠落時もトップレベルplan_fileを優先して`plan`区分と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
         path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")
@@ -337,7 +324,6 @@ class TestListPlanImplementationClassification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """修復対象のblocked項目へ具体的な理由を表示する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md", target_repo="github.com/example/repo", body="本文")
         path.write_text(
@@ -358,7 +344,6 @@ class TestListPlanImplementationClassification:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """本文ハッシュ不一致時もトップレベルplan_fileを優先して`plan`区分と表示する。"""
         notes = _setup_notes(tmp_path)
         plan = tmp_path / "plan.md"
         path = _write_awi_file(notes, "plan.md", target_repo="github.com/example/repo", body="本文")

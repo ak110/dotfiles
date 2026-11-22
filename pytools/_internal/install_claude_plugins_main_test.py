@@ -34,7 +34,6 @@ from ._test_helpers import (
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
@@ -170,7 +169,6 @@ class TestRunFlow:
                 write_settings(after)
             return result
 
-        # 既に無効で最新版のケースではinstallを必要としない。
         cli = make_installed_two_plugin_fake([]) if before is False and after is False else install_with_settings
         monkeypatch.setattr(_common, "run_subprocess", cli)
         log_path = tmp_path / "update.log"
@@ -217,7 +215,6 @@ class TestRunFlow:
 
     @pytest.mark.parametrize("content", [None, "{}", '{"enabledPlugins": {}}', "{broken"])
     def test_installed_without_activation_setting(self, monkeypatch: pytest.MonkeyPatch, content: str | None) -> None:
-        """最新版で設定が未指定ならそのままにし、読めない JSON は明示して保持する。"""
         settings = _claude_common.SETTINGS_JSON_PATH
         if content is None:
             settings.unlink()
@@ -275,11 +272,11 @@ class TestRunFlow:
         assert any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
         update_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "update"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
-        # --scope=user が渡されていること
+
         assert any("--scope=user" in c for c in update_calls)
-        # 最新である sample-plugin に対しては update を発行しない
+
         assert not any("sample-plugin@ak110-dotfiles" in c for c in update_calls)
-        # refresh が update よりも先に呼ばれていること (marketplace メタデータを反映させてから update)
+
         refresh_index = next(
             i for i, c in enumerate(calls) if command_matches(c, ["claude", "plugin", "marketplace", "update"])
         )
@@ -287,7 +284,6 @@ class TestRunFlow:
         assert refresh_index < update_index
 
     def test_fresh_install_happy_path(self, monkeypatch: pytest.MonkeyPatch):
-        """未インストール + marketplace 未登録の場合、add → 全プラグイン install の順に呼ぶ。"""
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
@@ -299,12 +295,11 @@ class TestRunFlow:
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
-        # --scope=user が渡されていること
+
         for ic in install_calls:
             assert "--scope=user" in ic
 
     def test_marketplace_already_registered_skips_add(self, monkeypatch: pytest.MonkeyPatch):
-        """marketplace が既に登録済みなら add は呼ばず install だけ実行される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -324,15 +319,14 @@ class TestRunFlow:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # add は呼ばれていないこと
+
         assert [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "add"])] == []
-        # 対象プラグインは全て install されていること
+
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
 
     def test_mixed_installed_and_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """片方だけインストール済みの混在状態では、未インストール側のみ install される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -358,12 +352,12 @@ class TestRunFlow:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # 既にインストール済みの agent-toolkit は install されない
+
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert not any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
-        # 未インストールの sample-plugin は install される
+
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
-        # 既にインストール済みの plugin が最新であれば update は呼ばれない
+
         assert [c for c in calls if command_matches(c, ["claude", "plugin", "update"])] == []
 
     def test_empty_target_versions_skips(self, monkeypatch: pytest.MonkeyPatch):
@@ -443,7 +437,6 @@ class TestRunFlow:
         def fake_run(cmd, **kwargs):  # noqa: ANN001
             calls.append((cmd, kwargs.get("cwd")))
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                # agent-toolkit が project scope にのみ存在
                 return _FakeResult(
                     returncode=0,
                     stdout=_plugin_list_json(
@@ -460,15 +453,14 @@ class TestRunFlow:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # project scope のエントリは無視され、user scope に新規 install される
+
         install_calls = [cmd for cmd, _cwd in calls if command_matches(cmd, ["claude", "plugin", "install"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
-        # project scope の uninstall は発行されないこと
+
         uninstall_calls = [cmd for cmd, _cwd in calls if command_matches(cmd, ["claude", "plugin", "uninstall"])]
         assert not uninstall_calls, f"project scope を除去している: {uninstall_calls}"
 
     def test_deprecated_plugin_uninstalled(self, monkeypatch: pytest.MonkeyPatch):
-        """deprecated プラグインがインストール済みならアンインストールされる。"""
         monkeypatch.setattr(
             _install_claude_plugins,
             "_read_target_info",
@@ -499,10 +491,10 @@ class TestRunFlow:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # deprecated プラグインのアンインストールが呼ばれること
+
         uninstall_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "uninstall"])]
         assert any("old-plugin@ak110-dotfiles" in c and "--keep-data" in c for c in uninstall_calls)
-        # 通常プラグインの install も呼ばれること
+
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
 
@@ -516,7 +508,7 @@ def _directory_type_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ``disable_file_reads`` より後に適用される必要があるため、``usefixtures`` の列挙順に注意する。
     """
     monkeypatch.setattr(_claude_marketplace, "is_directory_type_registered", lambda: True)
-    # ensure_marketplace はファイル検査経由で True を返すよう直結させる
+
     monkeypatch.setattr(_claude_marketplace, "ensure_marketplace", lambda: True)
 
 
@@ -556,14 +548,13 @@ class TestRunFlowDirectoryType:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # 対象プラグイン 2 件に対して install が --scope=user で再実行される
+
         assert_scope_user_install_calls(calls)
-        # plugin update / marketplace update は呼ばれない
+
         assert not any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
 
     def test_version_drift_still_uses_update(self, monkeypatch: pytest.MonkeyPatch):
-        """version 乖離時は update 経路を経由する現行挙動の回帰防止。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -583,12 +574,12 @@ class TestRunFlowDirectoryType:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # version が乖離している agent-toolkit は update、最新の sample-plugin は install 再実行
+
         update_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "update"])]
         assert any("agent-toolkit@ak110-dotfiles" in c for c in update_calls)
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
         assert any("sample-plugin@ak110-dotfiles" in c for c in install_calls)
-        # directory 型では refresh (marketplace update) は呼ばない
+
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
 
 

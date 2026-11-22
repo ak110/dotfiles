@@ -1,5 +1,3 @@
-"""review_eval.pyの公開コマンドを通した準備と採点の試験。"""
-
 from __future__ import annotations
 
 import json
@@ -53,7 +51,6 @@ def _table(path: pathlib.Path, issues: list[str]) -> pathlib.Path:
 
 
 def _prepared_table(path: pathlib.Path, issues: list[str], capsys: pytest.CaptureFixture[str]) -> pathlib.Path:
-    """管理表を作り、作成時の成功行を採点結果の出力から除く。"""
     _table(path, issues)
     capsys.readouterr()
     return path
@@ -64,7 +61,6 @@ def _results(capsys: pytest.CaptureFixture[str]) -> list[dict]:
 
 
 def test_score_counts_detected_false_and_unclassified(tmp_path, monkeypatch, capsys) -> None:
-    """全ての照合語句が同じ行に一致した期待だけを検出とし、出すべきでない指摘を誤指摘、残りを未分類として数える。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     table = _prepared_table(
         tmp_path / "case.exec-review.tsv",
@@ -83,7 +79,6 @@ def test_score_counts_detected_false_and_unclassified(tmp_path, monkeypatch, cap
 
 
 def test_score_retains_worktree_prepared_with_legacy_directory_name(tmp_path, monkeypatch, capsys) -> None:
-    """旧名だけでは同じ準備物だと決めず、採点を保って確認方法を示す。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     legacy = tmp_path / "missed"
     worktree = legacy / "worktree"
@@ -98,7 +93,6 @@ def test_score_retains_worktree_prepared_with_legacy_directory_name(tmp_path, mo
 
 
 def test_score_reports_missed_when_patterns_match_different_rows(tmp_path, monkeypatch, capsys) -> None:
-    """照合語句が別々の行にだけ一致する場合は検出とせず見逃しとして返す。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     table = _prepared_table(tmp_path / "case.exec-review.tsv", ["本文を配送する", "方針の確認"], capsys)
 
@@ -133,7 +127,7 @@ def test_score_reports_malformed_table_with_next_action(tmp_path, monkeypatch, c
     """形式が不正な管理表は失敗として終了し、検証コマンドと指定方法を標準エラーへ示す。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     table = tmp_path / "bad.exec-review.tsv"
-    # 1列目が数値で、JSON文字列のセルという管理表の形式を満たさない。
+
     table.write_text('1\t"exec-review"\t"a"\t"b"\t"詳細"\t""\t""\n', encoding="utf-8")
 
     assert review_eval.main(["score", "--result", f"missed={table}"]) == 1
@@ -161,7 +155,6 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 
 def _case_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str, str]:
-    """3つのcommitを持つリポジトリを作り、base・書換え前・書換え後のOIDを返す。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -175,7 +168,6 @@ def _case_repository(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str, str, st
 
 
 def _save_notes(notes: pathlib.Path, cases: pathlib.Path) -> str:
-    """準備用原本を保存し、評価事例をその版へ固定する。"""
     _git(notes, "init", "-q")
     _git(notes, "add", ".")
     _git(notes, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "saved")
@@ -187,7 +179,6 @@ def _save_notes(notes: pathlib.Path, cases: pathlib.Path) -> str:
 
 
 def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, capsys) -> None:
-    """対応記録の書換え後のOIDから範囲を求め、レビュー対象の作業ツリーと計画の複製、起動値を用意する。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     repo, base, old, new = _case_repository(tmp_path)
     notes = tmp_path / "notes"
@@ -234,7 +225,6 @@ def test_prepare_rebuilds_worktree_and_launch_values(tmp_path, monkeypatch, caps
 async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
     tmp_path, monkeypatch, capsys, form, supplement_form
 ) -> None:
-    """計画の新形式AWIへ条件表を生成し、agents_serverの起動前検査が受理する起動値を返す。旧形式AWIは表に含めない。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     repo, _base, old, new = _case_repository(tmp_path)
     notes = tmp_path / "notes"
@@ -356,7 +346,6 @@ async def test_prepare_builds_condition_table_accepted_by_launch_preflight(
 
 
 def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, capsys) -> None:
-    """事例が役割の起動入力を持つ場合は、置換した値をそのまま起動値にし、実行レビュー用の入力を足さない。"""
     cases = tmp_path / "cases.json"
     data = json.loads(_write_cases(cases).read_text(encoding="utf-8"))
     data["cases"][0]["role"] = "wi-draft-review"
@@ -387,7 +376,6 @@ def test_prepare_uses_case_extra_params_for_other_roles(tmp_path, monkeypatch, c
 
 
 def test_bundled_cases_load_and_compile() -> None:
-    """同梱の評価セットが読み込め、事例IDが重複せず、照合語句が正規表現として成立する。"""
     cases = review_eval.load_cases()
     assert {case.kind for case in cases} >= {"見逃し", "正しい指摘", "誤指摘"}
     assert all(case.detect or case.absent for case in cases)
@@ -395,7 +383,6 @@ def test_bundled_cases_load_and_compile() -> None:
 
 @pytest.mark.parametrize("defect", ["supplement", "major", "revision", "wi-revision", "missing-plan", "missing-wi"])
 def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypatch, capsys, defect) -> None:
-    """生成器だけの欠落と保存版の不成立を公開prepareで拒否し、起動値を返さない。"""
     cases = _write_cases(tmp_path / "cases.json")
     monkeypatch.setattr(review_eval, "CASES_PATH", cases)
     repo, _base, _old, new = _case_repository(tmp_path)
@@ -451,10 +438,6 @@ def test_prepare_rejects_incomplete_generation_or_saved_input(tmp_path, monkeypa
 
 
 def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, capsys) -> None:
-    """保存版を指定しない事例は自動生成の条件表と不在の証拠の件数を返し、保存版を指定した事例は保存した計画と条件表を渡す。
-
-    保存版の条件表が指す保存時のWI原本の複製は、準備で書き出した同名の原本へ付け替える。
-    """
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
     repo, _base, old, new = _case_repository(tmp_path)
     notes = tmp_path / "notes"
@@ -544,7 +527,6 @@ def test_store_then_prepare_uses_saved_plan_and_contract(tmp_path, monkeypatch, 
 @pytest.mark.parametrize("unit", ["", "件"])
 @pytest.mark.parametrize("reports", [False, True])
 def test_score_draft_review_cli(tmp_path, monkeypatch, capsys, issues, unit, reports) -> None:
-    """返却原文を公開scoreへ渡し、指摘間をまたぐ語句一致を防ぐ。"""
     cases = _write_cases(tmp_path / "cases.json")
     data = json.loads(cases.read_text(encoding="utf-8"))
     data["cases"][0]["role"] = "wi-draft-review"
@@ -607,7 +589,6 @@ _SMALL_CASES = (
 
 @pytest.mark.parametrize("case_id", ["intent-fixed-defect", "intent-fixed-control"])
 def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, case_id) -> None:
-    """本文の合成対照を公開dry-runへ渡し、レビューに必要な原稿・原要求・冒頭の対応を返す。"""
     assert review_eval.main(["prepare", "--out", str(tmp_path), "--case", case_id]) == 0
     (prepared,) = _results(capsys)
     params = prepared["start"]["extra_params"]
@@ -627,7 +608,6 @@ def test_prepare_body_review_links_dry_run_to_the_same_draft(tmp_path, capsys, c
 
 @pytest.mark.parametrize("failure", ["missing-input", "omitted-stage", "unreadable-file"])
 def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, capsys, monkeypatch, failure) -> None:
-    """本文の事例で必須の資料を指定し忘れた場合は、worktreeを作らず修正する項目を案内する。"""
     collection = pathlib.Path(review_eval.__file__).with_name("review_eval_draft_cases.json")
     cases = json.loads(collection.read_text(encoding="utf-8"))["cases"]
     case = next(case for case in cases if case["id"] == "intent-fixed-defect")
@@ -657,7 +637,6 @@ def test_prepare_body_review_requires_inputs_before_creating_worktree(tmp_path, 
     [None, "start", "dirty", "decode"],
 )
 def test_prepare_body_review_recovers_from_unreadable_opening(tmp_path, capsys, monkeypatch, cleanup_failure) -> None:
-    """取得できない冒頭を受け取ったら、評価用worktreeの回収を試みる。"""
 
     run = subprocess.run
 
@@ -702,7 +681,7 @@ def test_prepare_body_review_recovers_from_unreadable_opening(tmp_path, capsys, 
 
 
 def _unittest(worktree: pathlib.Path, *targets: str) -> int:
-    # 準備したworktreeを回収できるよう、未追跡のバイトコードを書かせない。
+
     command = [sys.executable, "-B", "-m", "unittest", *(targets or ("discover", "-s", "tests", "-p", "*_test.py"))]
     return subprocess.run(command, cwd=worktree, capture_output=True, check=False).returncode
 
@@ -745,7 +724,6 @@ def test_prepare_accepts_output_path_with_backslashes(tmp_path, capsys) -> None:
 
 
 def _reviewer_view(prepared: dict, out: pathlib.Path) -> dict:
-    """担当が受け取る起動入力、作業ツリーと計画の置き場所にある名前、commit件名を、出力先を伏せて返す。"""
     start = prepared["start"]
     worktree = pathlib.Path(start["cwd"])
 
@@ -763,8 +741,6 @@ def _reviewer_view(prepared: dict, out: pathlib.Path) -> dict:
 
 @pytest.mark.parametrize("material", ["guide-split", "handoff-record", "recheck-ledger"])
 def test_prepare_hides_case_identity_from_reviewer(tmp_path, capsys, material) -> None:
-    """同じ素材の欠陥の事例と正常対照で、担当へ渡る入力は事例ごとの置き場所と開始時のHEADを除いて同じになり、
-    事例ID、事例の種類、素材の差分と計画のファイル名を含まない。"""
     cases = [case for case in review_eval.load_cases() if case.material is not None and case.material.name == material]
     assert {case.kind for case in cases} > {"正常対照"}
     comparable = []
@@ -843,7 +819,6 @@ def _small_table(path: pathlib.Path, findings: list[tuple[str, str]], capsys: py
 
 @pytest.mark.parametrize("case_id", sorted(_SMALL_FINDINGS))
 def test_score_small_case_and_control_with_synthesized_tables(tmp_path, capsys, case_id) -> None:
-    """期待ごとの指摘行は、欠陥の事例でその期待だけを検出し、正常対照では同じ指摘を誤指摘として数え、無関係な行は未分類に残す。"""
     findings = _SMALL_FINDINGS[case_id]
     control = _SMALL_CONTROLS[case_id]
     for expectation, finding in findings.items():
@@ -865,7 +840,6 @@ def test_score_small_case_and_control_with_synthesized_tables(tmp_path, capsys, 
 
 
 def test_bundled_small_cases_keep_origin_and_control() -> None:
-    """合成素材ごとに欠陥の事例と正常対照がそろい、全履歴版を元にした事例はその元事例を評価セットに残す。"""
     cases = review_eval.load_cases()
     by_material: dict[str, set[str]] = {}
     for case in cases:
@@ -879,7 +853,6 @@ def test_bundled_small_cases_keep_origin_and_control() -> None:
 
 
 def _material(root: pathlib.Path) -> pathlib.Path:
-    """1ファイルを変える最小の合成素材を作る。"""
     source = root / "source"
     source.mkdir(parents=True)
     _git(source, "init", "-q")
@@ -914,7 +887,6 @@ def _material(root: pathlib.Path) -> pathlib.Path:
     ],
 )
 def test_material_case_definition_is_validated(tmp_path, monkeypatch, capsys, change, message) -> None:
-    """合成素材の事例は保存版の項目と元事例の欠落と素材の欠落を拒否し、正しい定義はstoreを使わずに準備できる。"""
     monkeypatch.setattr(review_eval, "MATERIALS_PATH", _material(tmp_path))
     case = {
         "id": "small",
@@ -942,7 +914,6 @@ def test_material_case_definition_is_validated(tmp_path, monkeypatch, capsys, ch
 
 
 def test_every_case_has_selection_rule() -> None:
-    """評価セットの全事例が、比べる事例を選ぶ表のいずれかの行に載る。載らない事例は改訂の評価で選ばれない。"""
     document = (
         pathlib.Path(review_eval.__file__).resolve().parent.parent
         / ".claude/skills/agent-toolkit-edit/references/review-eval-set.md"

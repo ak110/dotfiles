@@ -41,7 +41,6 @@ def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
     operation: str,
     target_kind: str,
 ) -> None:
-    """通常ファイルでない入力は、読み込みを試みずに期待する入力形と標準入力の非受理を示す。"""
     path = tmp_path / "sample.plan-review.tsv"
     if target_kind == "fifo":
         os.mkfifo(path)
@@ -58,7 +57,6 @@ def test_non_regular_file_input_is_rejected_with_the_expected_input_form(
 
 @pytest.mark.parametrize("operation", ("validate", "show"))
 def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib.Path, operation: str) -> None:
-    """存在しないパスを読む操作は、対象が存在しないことと期待する入力形を示して拒否する。"""
     path = tmp_path / "sample.plan-review.tsv"
 
     with pytest.raises(next_action.ActionableError) as exc_info:
@@ -70,7 +68,6 @@ def test_missing_path_is_rejected_with_the_expected_input_form(tmp_path: pathlib
 
 
 def test_missing_review_table_guides_series_head_name(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """存在しない表を`atk review-table show`へ渡すと、次の操作が修正系列の開始時のHEAD由来の名前を案内する。"""
     missing = tmp_path / "missing.exec-review.tsv"
 
     with pytest.raises(SystemExit) as exc_info:
@@ -82,7 +79,6 @@ def test_missing_review_table_guides_series_head_name(tmp_path: pathlib.Path, ca
 
 
 def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pathlib.Path) -> None:
-    """存在しないパスに対する作成と追記が成功する場合を、読み込みの拒否と区別して維持する。"""
     created = tmp_path / "created.plan-review.tsv"
     assert table.init(created) == 0
     assert created.is_file()
@@ -94,7 +90,6 @@ def test_missing_path_stays_creatable_by_init_and_appendable_by_add(tmp_path: pa
 
 @pytest.mark.parametrize("name", ("legacy.plan-review.tsv", f"dlg-{'a' * 40}.exec-review.tsv"))
 def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, name: str) -> None:
-    """保存済み旧表と廃止した対話是正表は公開された作成コマンドで更新しない。"""
     args = argparse.Namespace(review_table_subcommand="init", path=str(tmp_path / name))
 
     with pytest.raises(ValueError, match="旧形式のレビュー指摘管理表は読み取り専用"):
@@ -103,7 +98,6 @@ def test_dispatch_rejects_removed_review_write_paths(tmp_path: pathlib.Path, nam
 
 @pytest.mark.parametrize("track", ("plan-review", "implementation-review", "plan-conformance", "independent"))
 def test_dispatch_rejects_writing_table_with_legacy_track(tmp_path: pathlib.Path, track: str) -> None:
-    """現行拡張子の表でも旧trackを含む場合は書き換えない。"""
     path = tmp_path / "sample.exec-review.tsv"
     row = ["1", track, "場所", "指摘", "詳細", "", "", ""]
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in row) + "\n", encoding="utf-8")
@@ -181,7 +175,6 @@ def test_skill_documented_review_table_commands_are_accepted(
     argv: list[str],
     expected: dict[str, object],
 ) -> None:
-    """スキルが指示するadd・respondの全形式を公開parserが受理する。"""
     args = _parser().parse_args(argv)
 
     assert vars(args) == expected
@@ -205,7 +198,6 @@ def test_skill_documented_review_table_commands_are_accepted(
     ),
 )
 def test_skill_review_table_commands_reject_incomplete_or_unsupported_forms(argv: list[str]) -> None:
-    """必須値の欠落、不正値および旧`--file`形式を終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(argv)
     assert exc_info.value.code == 2
@@ -232,7 +224,7 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
         text = "\n" + named_document(skill_path, plugin_root, "../references/review-record-response.md")
         text = text.split("\n# レビュー指摘管理表への応答\n", 1)[1].split("\n## ", 1)[0]
     assert marker in text
-    # インラインコードの引数を読み取り、同じ節のshow例とフェンスの区切り記号を分ける。
+
     spans = [
         child.content
         for token in markdown_it.MarkdownIt().parse(text)
@@ -260,7 +252,6 @@ def test_skill_review_table_options_match_accepted_cli_vectors(
     ),
 )
 def test_add_parser_requires_canonical_level(arguments: list[str]) -> None:
-    """addはlevelの省略と正規値以外の指定を拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(["review-table", "add", *arguments])
     assert exc_info.value.code == 2

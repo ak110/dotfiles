@@ -1,5 +1,3 @@
-"""年月固定配置を公開された保存・状態遷移・一覧操作で検証する。"""
-
 import datetime
 import pathlib
 import subprocess
@@ -17,7 +15,6 @@ from agent_toolkit._testing import git_repository
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大1.468秒。"),
 )
 def test_fixed_path_survives_state_and_importance_changes(tmp_path: pathlib.Path) -> None:
-    """同じ実体を保持し、全状態と重要フィルターが同じ保存値を読む。"""
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
     now = datetime.datetime(2026, 10, 20, 12, tzinfo=datetime.UTC)
     names = add.add_entries(notes, messages=["# 実装する要求\n"], target_repo="github.com/example/repo", source=None, now=now)
@@ -53,7 +50,6 @@ def test_fixed_path_survives_state_and_importance_changes(tmp_path: pathlib.Path
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.427秒。"),
 )
 def test_legacy_layout_migrates_together_and_retains_late_arrivals(tmp_path: pathlib.Path) -> None:
-    """旧状態配置と旧種別配置を一度で移し、旧版からの追加も次回へ取り込む。"""
     first, second, third = (f"20261020-120000-00{number}.md" for number in (1, 2, 3))
     notes = git_repository.init_repository(
         tmp_path / "notes",
@@ -77,7 +73,6 @@ def test_legacy_layout_migrates_together_and_retains_late_arrivals(tmp_path: pat
 
 
 def test_migration_conflict_preserves_every_source(tmp_path: pathlib.Path) -> None:
-    """移行先の衝突を全件検証し、先行する正常項目も移動しない。"""
     names = [f"20261020-120000-00{number}.md" for number in (1, 2)]
     text = "---\ntype: awi\ntarget_repo: github.com/example/repo\n---\n# 要求\n"
     notes = git_repository.init_repository(
@@ -94,7 +89,6 @@ def test_migration_conflict_preserves_every_source(tmp_path: pathlib.Path) -> No
 
 
 def test_non_git_read_only_queue_migrates_without_git_operations(tmp_path: pathlib.Path) -> None:
-    """版管理しない既存キューも読み取り処理で同じ固定配置へ移行する。"""
     filename = "20261020-120000-001.md"
     source = tmp_path / "inbox" / filename
     source.parent.mkdir()
@@ -113,7 +107,6 @@ def test_non_git_read_only_queue_migrates_without_git_operations(tmp_path: pathl
 )
 @pytest.mark.parametrize("same_result", [True, False])
 def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_path: pathlib.Path, same_result: bool) -> None:
-    """日時だけ異なる同等終了を統合し、結果が異なる分岐は保持する。"""
     remote = git_repository.init_bare_repository(tmp_path / "remote.git")
     seed = git_repository.init_repository(tmp_path / "seed", initial_branch="main", commit_message="初期状態")
     names = add.add_entries(
@@ -161,7 +154,6 @@ def test_concurrent_terminal_commits_compare_fixed_path_state_and_result(tmp_pat
     ],
 )
 def test_unique_dated_entry_path(tmp_path: pathlib.Path, files: tuple[str, ...], expected: str | None) -> None:
-    """年月保存先が一意に決まる場合だけパスを返し、それ以外は呼出側の列挙へ委ねる。"""
     for relative in files:
         (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / relative).write_text("---\nstate: inbox\n---\n", encoding="utf-8")
@@ -170,7 +162,6 @@ def test_unique_dated_entry_path(tmp_path: pathlib.Path, files: tuple[str, ...],
 
 
 def test_unique_dated_entry_path_ignores_undated_name(tmp_path: pathlib.Path) -> None:
-    """日付形式でない名前は保存先を名前から決められないため列挙へ委ねる。"""
     (tmp_path / "2026" / "10").mkdir(parents=True)
     (tmp_path / "2026" / "10" / "note.md").write_text("", encoding="utf-8")
     assert layout.unique_dated_entry_path(tmp_path, "note.md") is None

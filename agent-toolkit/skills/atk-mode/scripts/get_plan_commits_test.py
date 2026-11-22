@@ -1,5 +1,3 @@
-"""公開コマンド`plan-commits`が`plan-progress`と同じ実装commit対応を取得することを検証する。"""
-
 import argparse
 import json
 import pathlib
@@ -12,7 +10,6 @@ from agent_toolkit._testing import git_repository
 
 
 def _prepare_two_commits(worktree: pathlib.Path) -> str:
-    """対応記録の親確認に使う連続した2 commitを作成し、変更前HEADを返す。"""
     git_repository.init_repository(worktree)
 
     def commit(message: str) -> None:
@@ -30,8 +27,7 @@ def _prepare_two_commits(worktree: pathlib.Path) -> str:
 def test_public_plan_commits_selects_repository_from_mixed_record(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """別repoの短縮OIDとrewriteを含む記録から対象だけ取得し、全件時は再実行を案内する。"""
-    # OIDの解決にはGitの標準テンプレートを複製する必要がない。
+
     template = tmp_path / "empty-template"
     template.mkdir()
     monkeypatch.setenv("GIT_TEMPLATE_DIR", str(template))
@@ -86,7 +82,6 @@ def test_public_commit_diagnostics_distinguish_input_record_and_git(
     handoff: bool,
     case: str,
 ) -> None:
-    """原因別の案内を確かめ、入力または保存記録を補った後は同じコマンドで取得に成功する。"""
     previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     record = tmp_path / "record.md"
@@ -130,7 +125,6 @@ def test_public_commit_diagnostics_distinguish_input_record_and_git(
 def test_public_plan_commits_defaults_to_all_allowed_wis(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool, missing_mapping: bool
 ) -> None:
-    """省略時の全件取得と部分未記録の診断を、同じ公開操作の明示指定と比較する。"""
     previous = _prepare_two_commits(tmp_path)
     wis = ["20261004-044311-001.md", "20261004-044311-002.md"]
     record = tmp_path / "record.md"
@@ -166,7 +160,6 @@ def test_public_plan_commits_defaults_to_all_allowed_wis(
 def test_public_commit_operations_report_all_missing_inputs(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], operation: str
 ) -> None:
-    """記録を読む前の診断に操作固有の全必須入力と再実行の形がそろう。"""
     arguments = [str(tmp_path / "missing.md")]
     expected = ["--worktree"]
     name = "plan-commits" if operation.startswith("get") else "plan-progress"
@@ -187,7 +180,6 @@ def test_public_commit_operations_report_all_missing_inputs(
 
 
 def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引き継ぎ記録と同じstemの対応記録ファイルを公開コマンド`plan-commits`で読み、取得時点で一意な長さの短縮OIDを返す。"""
     previous_head = _prepare_two_commits(tmp_path)
     wi = "20261004-044311-001.md"
     event = commit_mapping.commit_event(tmp_path, "HEAD", previous_head, [wi], {wi})
@@ -206,7 +198,6 @@ def test_public_plan_commits_reads_existing_handoff(tmp_path: pathlib.Path, caps
 def test_public_plan_commits_reads_saved_plan_by_old_working_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存後も`plan-commits`へ旧作業パスを渡すと、保存済み計画と同じstemの対応記録ファイルを読んで対応commitを取得できる。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     previous_head = _prepare_two_commits(tmp_path)

@@ -1,5 +1,3 @@
-"""取得済みWI本文と、その本文に対応するfrontmatter解析結果。"""
-
 import pathlib
 import typing
 
@@ -17,26 +15,20 @@ class EntryText(str):
     parsed: ParsedFrontmatter
 
     def __new__(cls, text: str) -> EntryText:
-        """本文を1回解析して保持する。"""
         instance = super().__new__(cls, text)
         instance.parsed = frontmatter.parse_frontmatter(text)
         return instance
 
 
 def parse_frontmatter(text: str) -> ParsedFrontmatter:
-    """取得済み本文の解析結果を返し、通常の文字列は共通パーサーへ渡す。"""
     return text.parsed if isinstance(text, EntryText) else frontmatter.parse_frontmatter(text)
 
 
 class EntryTexts:
-    """1操作で取得した本文を共有する。各読取時に内容の一致を確かめる。"""
-
     def __init__(self) -> None:
-        """操作に閉じた取得結果を初期化する。"""
         self._texts: dict[pathlib.Path, EntryText] = {}
 
     def read(self, path: pathlib.Path) -> EntryText:
-        """最新の本文を読み、同じ内容の取得済み本文を再利用する。"""
         text = path.read_text(encoding="utf-8")
         previous = self._texts.get(path)
         if previous is not None and previous == text:

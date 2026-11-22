@@ -128,7 +128,6 @@ def _stop(bridge: service_forward._Forwarder) -> None:
 
 
 def test_stalled_request_returns_one_actionable_error_and_drops_late_reply(monkeypatch: pytest.MonkeyPatch) -> None:
-    """接続先が生存確認に応答しない間の要求は1回だけエラーで返り、後から届いた応答は同じidへ重ねない。"""
     bridge, outputs = _bridge(monkeypatch, "TimeoutError: 応答なし")
     bridge.watchdog.start()
     deadline = time.monotonic() + 5
@@ -155,7 +154,6 @@ def test_stalled_request_returns_one_actionable_error_and_drops_late_reply(monke
 
 
 def test_request_to_live_generation_is_not_abandoned(monkeypatch: pytest.MonkeyPatch) -> None:
-    """生存確認に応答する世代への長い要求は打ち切らず、応答をそのまま返す。"""
     bridge, outputs = _bridge(monkeypatch, None)
     probed = threading.Event()
     monkeypatch.setattr(service_forward, "_probe", lambda _target: probed.set())
@@ -167,7 +165,6 @@ def test_request_to_live_generation_is_not_abandoned(monkeypatch: pytest.MonkeyP
 
 
 def test_service_launch_inherits_job_when_breakaway_is_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """離脱を許さないJobの中では、離脱を指定した起動の拒否後に所属を継承して起動し、生存を保証しない旨を診断へ残す。"""
     detached = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
     calls: list[int] = []
 
@@ -232,7 +229,6 @@ def _service_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
 def _launched_service(
     directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, slow_first_ping: bool
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """起動するとreadyを書く管理サービスを代用し、ready記録と送ったpingを返す。指定すれば最初のpingへ1秒以内に応答しない。"""
     record = {"generation": "G1", "endpoint": "G1", "process": service_transport.process_identity(os.getpid())}
     service = SimpleNamespace(pid=0, returncode=None, poll=lambda: None, wait=lambda timeout=None: 0)
 
@@ -262,7 +258,6 @@ def _launched_service(
 def test_ensure_service_publishes_only_without_deferral(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, running: bool, defer: bool
 ) -> None:
-    """公開の保留を指定した起動確認には、起動済みでも新しく起動しても候補のまま返し、受付先として公開しない。"""
     directory = _service_directory(tmp_path, monkeypatch)
     record, _pings = _launched_service(directory, monkeypatch, slow_first_ping=False)
     if running:
@@ -292,7 +287,6 @@ def test_ensure_service_waits_past_slow_first_ping_until_ready_deadline(
     assert len(pings) == 2
 
 
-# 受付を始めてから自分のready記録を置くまでの区間を、試験側の合図まで開けておく管理サービスの代役。
 _SERVICE_STAND_IN = """
 import json, os, pathlib, sys, time
 sys.path.insert(0, {code!r})
@@ -359,7 +353,7 @@ def test_restart_does_not_mistake_exited_generation_record_for_new_service(
     polls = 0
 
     def paced(seconds: float) -> None:
-        # 新しいサービスの受付中に転送側が3回確かめ直してから、サービスへready記録を置かせる。
+
         nonlocal polls
         if (signals / "listening").exists():
             polls += 1
@@ -384,7 +378,6 @@ def _settle(root: pathlib.Path, offset: int = 0) -> None:
 
 
 def _plugin_root(root: pathlib.Path, version: str, modules: dict[str, str]) -> pathlib.Path:
-    """`agent_toolkit`配下へ`modules`を置いた配布物のrootを作る。"""
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text(json.dumps({"version": version}), encoding="utf-8")
     for name, text in modules.items():
@@ -396,12 +389,10 @@ def _plugin_root(root: pathlib.Path, version: str, modules: dict[str, str]) -> p
 
 
 def _identity(root: pathlib.Path, tmp_path: pathlib.Path) -> str:
-    """同じ試験の全rootが共有する管理領域の索引を使って、`root`の世代を返す。"""
     return service_forward.code_identity(root, tmp_path / "services")[0]
 
 
 def _distributed_identity(root: pathlib.Path) -> str:
-    """配布済みの転送側が計算する世代。版と、試験を除く全モジュールの相対パス・内容を、パスの順に連結したSHA-256。"""
     version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     digest = hashlib.sha256(version.encode("utf-8"))
     for path in sorted(path for path in (root / "agent_toolkit").rglob("*.py") if not path.name.endswith("_test.py")):
@@ -420,10 +411,6 @@ _MODULES = {
 
 
 def test_code_identity_joins_same_code_and_separates_changed_code(tmp_path: pathlib.Path) -> None:
-    """同じ版・同じコードの配布物は置き場所によらず同じ世代へ合流し、開発checkoutの同版の編集と版の違いは別の世代になる。
-
-    試験とPython以外のファイルの変更は世代を変えない。
-    """
     claude = _plugin_root(tmp_path / "claude" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
     codex = _plugin_root(tmp_path / "codex" / "1.0.0" / "agent-toolkit", "1.0.0", _MODULES)
     joined = _identity(claude, tmp_path)
@@ -434,7 +421,7 @@ def test_code_identity_joins_same_code_and_separates_changed_code(tmp_path: path
     (claude / "agent_toolkit" / "README.md").write_text("説明\n", encoding="utf-8")
     _settle(claude, 1)
     assert _identity(claude, tmp_path) == joined
-    # 同じ大きさの書き換えも、書き換え後の内容を新しく置いたrootと同じ世代として識別する。
+
     (claude / "agent_toolkit" / "_agents_server" / "service.py").write_text("VALUE = 2\n", encoding="utf-8")
     _settle(claude, 2)
     edited = _identity(claude, tmp_path)
@@ -450,10 +437,6 @@ def test_code_identity_joins_same_code_and_separates_changed_code(tmp_path: path
 
 
 def test_code_identity_keeps_the_distributed_definition(tmp_path: pathlib.Path) -> None:
-    """旧版の転送側も受付先のrootへ同じ計算をするため、世代の値は配布済みの定義と一致する。
-
-    パスの区切りより前に並ぶ文字（`-`）を含む名前と、隠しディレクトリを含む木と、実際の配布物で確かめる。
-    """
     synthetic = _plugin_root(
         tmp_path / "agent-toolkit",
         "2.0.0",
@@ -465,7 +448,6 @@ def test_code_identity_keeps_the_distributed_definition(tmp_path: pathlib.Path) 
 
 
 def _count_digests(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
-    """全モジュールを読んでハッシュした回数を、対象のrootごとに記録する。"""
     digested: list[pathlib.Path] = []
     digest = service_forward._code_digest
 
@@ -478,7 +460,6 @@ def _count_digests(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
 
 
 def test_code_identity_reads_modules_only_when_one_changed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """変わらないrootの2回目以降の識別は全モジュールを読まず、モジュールの書き換え後は読み直して新しい世代を返す。"""
     root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
     digested = _count_digests(monkeypatch)
     first = _identity(root, tmp_path)
@@ -497,7 +478,6 @@ def test_code_identity_reads_modules_only_when_one_changed(tmp_path: pathlib.Pat
     ["{", "[]", json.dumps({"version": 0, "entries": {}}), json.dumps({"version": 1, "entries": []}), "replace-values"],
 )
 def test_code_identity_ignores_a_broken_index(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, index: str) -> None:
-    """壊れた索引と形の合わない索引は保存されていなかったものとして扱い、モジュールから計算した世代を返す。"""
     root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
     _identity(root, tmp_path)
     path = tmp_path / "services" / "code-identity" / "index.json"
@@ -513,7 +493,6 @@ def test_code_identity_ignores_a_broken_index(tmp_path: pathlib.Path, monkeypatc
 def test_code_identity_recomputes_while_a_module_was_just_written(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """更新時刻の刻みの中で内容だけが変わり得る書込直後のモジュールがある間は、世代を保存せずに毎回計算する。"""
     root = _plugin_root(tmp_path / "agent-toolkit", "1.0.0", _MODULES)
     (root / "agent_toolkit" / "fresh.py").write_text("", encoding="utf-8")
     digested = _count_digests(monkeypatch)
@@ -551,7 +530,6 @@ def test_service_diagnostic_redacts_before_taking_tail(tmp_path: pathlib.Path) -
 def test_service_diagnostic_distinguishes_empty_log_from_empty_excerpt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, content: str, expected: str
 ) -> None:
-    """元のログが空の場合と、保持の上限を超えて本文を転載しない場合を区別して案内する。"""
     from agent_toolkit._common import diagnostic_redaction  # pylint: disable=import-outside-toplevel
 
     monkeypatch.setattr(diagnostic_redaction, "RETAINED_BYTES", 1000)

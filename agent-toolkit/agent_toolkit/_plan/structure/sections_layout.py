@@ -1,5 +1,3 @@
-"""計画の見出し配置とメタ情報の検査。"""
-
 from __future__ import annotations
 
 import re
@@ -38,7 +36,6 @@ def _check_fixed_h2_layout(
     disallow_bug_for_normal: bool = False,
     work_type: str | None = None,
 ) -> list[str]:
-    """全H2が一意に存在し、固定された順に並ぶか確かめる。"""
     errors: list[str] = []
     actual_h2_texts = [heading.text for heading in headings if heading.level == 2]
     expected_canonical = [canonical_h2_name(name) for name in expected]
@@ -70,10 +67,6 @@ def _check_child_heading_sequence(
     parent_label: str,
     optional: tuple[str, ...] = (),
 ) -> list[str]:
-    """指定見出しの直下に固定見出しが一意に存在し、所定の順に並ぶか確かめる。
-
-    ``optional``は廃止済みの見出しなど、置かなくてよく、置いても違反としない見出しを指す。
-    """
     errors: list[str] = []
     children = [heading.text for _position, heading in child_headings(headings, index, level)]
     positions: list[int] = []
@@ -94,10 +87,6 @@ def _check_child_heading_sequence(
 def _check_metadata_block(
     content: str, *, expected_fields: tuple[str, ...] = PLAN_METADATA_FIELDS, parent: str = PLAN_H2_OVERVIEW
 ) -> tuple[str | None, list[str]]:
-    """計画メタ情報の配置、項目、順序、記法、値が基準を満たすか判定し、(作業種別, エラー)を返す。
-
-    `expected_fields`は対象書式が定める計画メタ情報の項目順、`parent`は対象書式が定める配置を渡す。
-    """
     metadata, errors = parse_plan_metadata(content)
     expected_place = metadata_parent_label(parent)
     if metadata is None:
@@ -124,13 +113,11 @@ def _check_metadata_block(
     if work_type is not None and work_type not in PLAN_WORK_TYPES:
         errors.append(f"計画メタ情報の`作業種別`は{list(PLAN_WORK_TYPES)}のいずれかで記載する")
         work_type = None
-    # `ベースコミット`は計画作成時点の参照値であり、存在・完全長・HEADとの一致は
-    # 計画構造の成立条件ではない。実際のGit操作へ渡す値だけを各操作側で検証する。
+
     return work_type, errors
 
 
 def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
-    """計画メタ情報の`関連WI`の値と子項目が所定の形式であるか確かめる。"""
     errors: list[str] = []
     related_value = metadata.values.get(PLAN_METADATA_RELATED_WI_FIELD, "")
     if related_value == "なし":
@@ -156,7 +143,6 @@ def check_plan_related_wi(metadata: PlanMetadata) -> list[str]:
 
 
 def _check_h1(headings: list[PlanHeading]) -> list[str]:
-    """先頭に空でないATX H1があるか確かめる。"""
     h1_headings = [heading for heading in headings if heading.level == 1]
     if len(h1_headings) != 1:
         return [f"先頭にATX H1が1件必要: 実際={len(h1_headings)}件"]
@@ -166,7 +152,6 @@ def _check_h1(headings: list[PlanHeading]) -> list[str]:
 
 
 def _check_overview_section(body: list[tuple[int, str]], headings: list[PlanHeading], overview_index: int) -> list[str]:
-    """`## 概要`直下のH3構成と地の文の記載が基準を満たすか確かめる。"""
     errors: list[str] = []
     children = child_headings(headings, overview_index, 3)
     if [heading.text for _position, heading in children] != [PLAN_METADATA_H3]:
@@ -181,7 +166,6 @@ def _check_overview_section(body: list[tuple[int, str]], headings: list[PlanHead
 def _check_h3_and_deeper(
     headings: list[PlanHeading], allowed_h3_parents: set[str], freeform_parents: frozenset[str]
 ) -> list[str]:
-    """固定H2直下に自由なH3がなく、H4以深の見出しもないことを確かめる。"""
     errors: list[str] = []
     for index, heading in enumerate(headings):
         if heading.level < 3:
@@ -199,7 +183,6 @@ def _check_h3_and_deeper(
 
 
 def _check_nonempty_section(body: list[tuple[int, str]], headings: list[PlanHeading], heading_name: str) -> list[str]:
-    """指定したH2の本文が空でないか確かめる。"""
     index = find_heading_index(headings, 2, heading_name)
     if index is None:
         return []

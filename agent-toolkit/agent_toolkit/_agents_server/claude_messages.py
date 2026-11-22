@@ -109,7 +109,6 @@ def consume_assistant_message(session: SessionState, message: Any) -> None:
 
 
 def is_model_less_task_notification(message: Any) -> bool:
-    """通知だけを処理した空の成功結果を、依頼turnの結果から区別する。"""
     origin = getattr(message, "origin", None)
     return (
         isinstance(origin, dict)
@@ -122,7 +121,6 @@ def is_model_less_task_notification(message: Any) -> bool:
 
 
 def _returns_to_subscription(session: SessionState) -> bool:
-    """利用上限でAPIへ移した委譲先が、解除予定時刻を過ぎ、使用順で現在の種別より前にサブスクリプションを持つかを返す。"""
     retry_at = session.claude_subscription_retry_at
     if retry_at is None or session.claude_connection not in claude_connection.API_KINDS or session.claude_role != "delegate":
         return False
@@ -135,5 +133,4 @@ def _returns_to_subscription(session: SessionState) -> bool:
 
 
 def _connection_kind(connection: claude_connection.Connection) -> str:
-    """残高不足の並べ替えへ渡す接続の種別を返す。"""
     return connection.kind

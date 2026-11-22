@@ -1,5 +1,3 @@
-"""隔離入力と副作用の代替で、対象分類・使用中保護の判定を確かめる。"""
-
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
 import os
@@ -33,7 +31,6 @@ def test_active_old_environment_survives_prune(tmp_path, monkeypatch):
 
 
 def test_active_rustup_defers_minimal_cleanup(tmp_path, monkeypatch):
-    """toolchain配置外のrustupも、外部CLIや削除を始める前に使用中と判定する。"""
     active_users = prune_installation._active_users
     _, calls = prepare(tmp_path, monkeypatch, "minimal")
     executable = Path(os.environ["CARGO_HOME"]) / "bin/rustup"
@@ -61,7 +58,6 @@ def test_active_rustup_defers_minimal_cleanup(tmp_path, monkeypatch):
 @pytest.mark.parametrize("legacy_uvx", [False, True])
 @pytest.mark.parametrize("late_reference", [False, True])
 def test_process_scan_detects_python_from_old_shared_environment(tmp_path, monkeypatch, legacy_uvx, late_reference):
-    """実行ファイルの実体が共通Pythonでも、argvの仮想環境パスで参照を判定する。"""
     environment = tmp_path / "environments/old"
     process = types.SimpleNamespace(
         pid=123,
@@ -139,7 +135,6 @@ def test_minimal_cleanup_uses_available_process_references(tmp_path, monkeypatch
 
 
 def test_invalid_runtime_home_preserves_entire_worktree(tmp_path, monkeypatch):
-    """ランタイム用の環境変数が作業ツリー全体を指した場合は削除前に止める。"""
     root, calls = prepare(tmp_path, monkeypatch, "minimal")
     monkeypatch.setattr(prune_installation, "removal_paths", lambda: (root,))
     result = prune_installation.run()
@@ -159,10 +154,6 @@ def test_shared_runtime_root_guard_applies_before_child_cleanup(tmp_path, monkey
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
-    """列挙が再利用するProcessだけを以前の世代の実行名・実行ファイルにし、走査を対象のPIDへ限る。
-
-    PIDの自然な再利用や実行ファイルの置き換えを待たずに、列挙キャッシュへ以前の値が残った状態を作る。
-    """
     stale = psutil.Process(pid)
     monkeypatch.setattr(stale, "_name", name)
     monkeypatch.setattr(stale, "_exe", exe)
@@ -179,12 +170,11 @@ def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, na
     os.name == "nt", reason="仮想環境のpython.exeは本体を子として起動するため、起動したPIDだけに走査を限定できない"
 )
 def test_active_users_reads_current_generation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """列挙キャッシュに対象実体を指す以前の世代の実行ファイルが残っていても、現在の属性で参照を判定する。"""
     environment = tmp_path / "environments/old"
     monkeypatch.setattr(prune_installation.codex_processes, "codex_processes", lambda: ())
     with _test_helpers.ResidentProcesses(tmp_path, monkeypatch) as resident:
         child = resident.start("python")
-        # 起動完了の観測後に古いキャッシュを注入し、起動途中の空cmdlineと区別する。
+
         _inject_previous_generation(monkeypatch, child.pid, name="python", exe=str(environment / "bin/python"))
         active = prune_installation._active_users((environment,))
     assert not active

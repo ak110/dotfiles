@@ -24,7 +24,6 @@ class ReplaceFailure(PermissionError):
 def test_windows_replace_retry_contract(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, winerror: int, fsync: bool
 ) -> None:
-    """置換だけが一時的に拒否されても、一度書いた新本文を同じ一時ファイルから公開する。"""
     destination = tmp_path / "state.json"
     destination.write_text("旧本文", encoding="utf-8")
     replace = os.replace

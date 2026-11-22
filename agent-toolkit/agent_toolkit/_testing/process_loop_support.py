@@ -1,5 +1,3 @@
-"""`atk wi process-loop`のテストが共有する、子プロセスの起動の差し替えとprivate-notesの準備。"""
-
 import json
 import pathlib
 import shutil
@@ -19,7 +17,6 @@ DOTFILES_REPO_ID = "github.com/ak110/dotfiles"
 
 
 def set_process_loop_repositories(monkeypatch: pytest.MonkeyPatch, paths: Sequence[pathlib.Path]) -> None:
-    """正常系で使うGit作業ツリーを現行のrepository属性mapで登録する。"""
     monkeypatch.setenv(
         "AGENT_TOOLKIT_CONFIG_REPOSITORIES",
         json.dumps({str(path): {"edit": "allow", "process_loop": True} for path in paths}),
@@ -35,7 +32,6 @@ def set_orchestrate_model(tmp_path: pathlib.Path, value: str) -> None:
 
 
 def set_orchestrate_environment(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
-    """候補列と、モデル一覧を必要としない軽量プローブ設定を環境変数で与える。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", value)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
 
@@ -55,7 +51,6 @@ def fake_run_with_remote_url(
     claude_calls: list[dict[str, Any]],
     claude_returncode: int,
 ) -> Any:
-    """対話セッション呼び出しを記録し、リモートURL取得にはダミー値を返すfake_runを構築する。"""
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         if any('kind="availability-probe"' in argument for argument in cmd):
@@ -83,7 +78,7 @@ def fake_run_with_remote_url(
     return fake_run
 
 
-def raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:  # os.execvの代替として無条件にSystemExit(0)を送出する。
+def raise_system_exit_0(*_a: object, **_kw: object) -> NoReturn:
     raise SystemExit(0)
 
 

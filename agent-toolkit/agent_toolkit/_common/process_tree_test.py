@@ -74,7 +74,6 @@ def test_retained_root_cohort_can_finish_normally(host_environ, monkeypatch, lis
     ),
 )
 def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(ownership, depth, host_environ):
-    """起点をwaitした後も既知の子を回収し、未観測の所有を成功へ変換しない。"""
     leaf = "import time; time.sleep(30)"
     middle = (
         f"import subprocess,sys; child=subprocess.Popen([sys.executable,'-c',{leaf!r}]); "
@@ -128,7 +127,6 @@ def test_owned_stop_after_parent_exit_preserves_known_or_unconfirmed_ownership(o
 
 @pytest.mark.parametrize("has_descendant", [False, True], ids=["exited-leaf", "unretained-parent"])
 def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_descendant):
-    """世代を保持できない親は、snapshotの子の有無にかかわらず未確定として残す。"""
     root, leaf, descendant = (
         mock.Mock(pid=900001),
         mock.Mock(pid=900002, info={"ppid": 900001}),
@@ -152,7 +150,6 @@ def test_stop_tree_keeps_unretained_generation_unresolved(monkeypatch, has_desce
 
 
 def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
-    """初回列挙の直後に子を生成して終了するleafも、保持した世代から子を回収する。"""
     root = mock.Mock(pid=900001)
     spawner = mock.Mock(pid=900002, info={"ppid": root.pid})
     holder = mock.Mock(pid=900003, info={"ppid": spawner.pid})
@@ -199,7 +196,6 @@ def test_stop_tree_retains_leaf_before_it_spawns_and_exits(monkeypatch):
 
 @pytest.mark.parametrize("platform", ["linux", "win32"])
 def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypatch, platform):
-    """再利用した親も終了して一覧に無い場合、その子を古い所有対象の子と誤認しない。"""
     kernel = mock.Mock()
     kernel.OpenProcess.return_value = 0
     monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
@@ -227,7 +223,6 @@ def test_stop_tree_does_not_adopt_children_of_an_exited_pid_generation(monkeypat
     ("same_generation", "handle", "running"), [(False, 0, False), (False, 123, False), (True, 123, True), (True, 123, False)]
 )
 def test_windows_parent_handle_is_checked_and_closed(monkeypatch, caplog, same_generation, handle, running):
-    """handle取得後に同じ親か確認し、列挙の例外時にもhandleを閉じる。"""
     kernel = mock.Mock()
     kernel.OpenProcess.return_value = handle
 
@@ -294,7 +289,7 @@ def test_windows_retention_diagnostic_keeps_snapshot_children(monkeypatch, caplo
 
 
 def _mock_process_snapshot(monkeypatch, entries):
-    # 模擬PIDの世代はcreate_timeで制御し、実OSの/procを読まない。
+
     monkeypatch.setattr(process_tree.process_identity, "start_id", lambda _process: None)
 
     def pids(**_kwargs):
@@ -319,7 +314,6 @@ def _mock_process_snapshot(monkeypatch, entries):
 
 
 def _fake_process(pid, ppid):
-    """OS操作だけを代用し、列挙・所有・停止結果の製品判定は実行する。"""
     process = mock.Mock(pid=pid, info={"ppid": ppid})
     process.create_time.return_value = float(pid)
     process.is_running.return_value = True
@@ -340,11 +334,9 @@ def _fake_process(pid, ppid):
     reason=("Windowsの実kernel handleを保持した終了済み親から子を回収する代表例。親1と子1が必要で、CPU合計最大実測2.141秒。"),
 )
 def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_path):
-    """終了済みでも同じ親世代のhandleを保持している場合、その子を辿って回収する。"""
     with _reporting_root(tmp_path) as parent:
         descendants = parent.children(recursive=True)
         try:
-            # 終了後も親のkernel objectが存在する、CIで観測した初期条件を保つ。
             with process_tree._retain_windows_process(parent) as retained:  # pylint: disable=protected-access
                 assert retained
                 parent.kill()
@@ -363,7 +355,6 @@ def test_stop_tree_reclaims_children_of_exited_parent_with_retained_handle(tmp_p
     reason=("実OSの列挙後に生成した子孫の資源解放と、木の外の1プロセスの生存を同時に確認する代表例。Windows CPU合計2.219秒。"),
 )
 def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp_path, monkeypatch):
-    """列挙後に生じた子孫を回収し、無関係な実プロセスを生存させる。"""
     with late_descendant.held_process(tmp_path) as unrelated:
         with process_tree.process_scope(late_descendant.cli_command(tmp_path)) as owned:
             late_descendant.wait_spawner(tmp_path)
@@ -381,7 +372,6 @@ def test_stop_tree_keeps_unrelated_process_while_reclaiming_late_descendants(tmp
     ),
 )
 def test_stop_tree_reclaims_child_despite_cached_pid_generation(tmp_path, monkeypatch):
-    """PID再利用前の列挙キャッシュがあっても、現在の子を回収する。"""
     with _reporting_root(tmp_path) as root:
         descendants = root.children(recursive=True)
         # psutil 7.2のprocess_iterはPIDごとにProcessを再利用し、Windowsではppidもキャッシュする。
@@ -455,7 +445,6 @@ def test_process_scope_exception_reclaims_known_cohort(tmp_path, monkeypatch, pa
 
 
 def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
-    """停止処理が例外を返しても、所有する子の終了状態とパイプを回収する。"""
     process = mock.Mock()
     process.poll.return_value = None
     monkeypatch.setattr(subprocess, "Popen", mock.Mock(return_value=process))
@@ -470,7 +459,6 @@ def test_process_scope_reaps_child_after_stop_failure(monkeypatch):
 
 
 def test_stop_process_tree_waits_for_owned_exit_status(monkeypatch):
-    """資源の解放が先に観測されても、Popenの終了状態を上限付きで回収する。"""
     process = mock.Mock(pid=123)
     process.poll.side_effect = [None, 0, 0]
     monkeypatch.setattr(process_tree, "stop_tree_by_pid", mock.Mock(return_value=process_tree.TreeStopResult([], [], [])))
@@ -478,8 +466,6 @@ def test_stop_process_tree_waits_for_owned_exit_status(monkeypatch):
     process.wait.assert_called_once_with(timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
 
 
-# 主スレッドだけを`pthread_exit`で終了し、作業スレッドを残す子。SIGTERMを無視するため、
-# スレッドグループのリーダーはzombieと表示されたまま、強制終了するまで回収できない。
 _LEADER_EXITED_CHILD = """
 import ctypes, pathlib, signal, sys, threading, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -503,7 +489,6 @@ ctypes.CDLL(None).pthread_exit(None)
     ),
 )
 def test_stop_process_tree_reaps_owned_child_whose_leader_is_zombie(tmp_path: pathlib.Path) -> None:
-    """リーダーがzombie表示でも作業スレッドが残る所有する子を、強制終了して回収し、残存を報告しない。"""
     ready = tmp_path / "ready"
     with subprocess.Popen([sys.executable, "-c", _LEADER_EXITED_CHILD, str(ready)]) as process:
         try:
@@ -543,7 +528,6 @@ def _parent_source(child_source: str, release: pathlib.Path) -> str:
 
 @contextlib.contextmanager
 def _spawn_parent(child_source: str, release: pathlib.Path) -> Generator[subprocess.Popen]:
-    """子プロセスの起動を確認できたところで起点プロセスを返す。"""
     with process_tree.process_scope([sys.executable, "-c", _parent_source(child_source, release)]) as process:
         deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
@@ -581,7 +565,6 @@ def _spawn_parent_fixture(tmp_path):
     ),
 )
 def test_descendants_are_reclaimed_after_the_starting_point_ends(spawn_parent):
-    """終了要求より前に列挙した子孫を、起点プロセスの終了後に回収できる。"""
     parent = spawn_parent()
     descendants = process_tree.collect_descendants(parent.pid)
     assert descendants, "起点プロセスの子孫を列挙できませんでした"
@@ -601,7 +584,6 @@ def test_descendants_are_reclaimed_after_the_starting_point_ends(spawn_parent):
     ),
 )
 def test_descendants_ignoring_termination_are_force_stopped(spawn_parent, tmp_path: pathlib.Path):
-    """終了要求へ応じない子孫は、上限の経過後に強制終了される。"""
     if os.name == "nt":
         pytest.skip("SIGTERMの無視はPOSIX固有の前提")
     ready_marker = tmp_path / "sigterm-ignored"
@@ -663,7 +645,6 @@ def test_stop_tree_keeps_suspended_targets_when_listing_fails(monkeypatch):
 
 
 def test_stop_tree_reports_round_limit_and_still_stops_found_targets(monkeypatch):
-    """列挙の反復上限でも、見つけた所有対象を終了させ未確定を報告する。"""
     root, child = _fake_process(900001, 0), _fake_process(900002, 900001)
     _mock_process_snapshot(monkeypatch, [child])
     monkeypatch.setattr(process_tree, "_FREEZE_MAX_ROUNDS", 1)
@@ -674,7 +655,6 @@ def test_stop_tree_reports_round_limit_and_still_stops_found_targets(monkeypatch
 
 
 def test_stop_tree_does_not_leave_suspended_targets_on_exception(monkeypatch):
-    """記述で例外が起きても、所有する対象を終了させてから例外を伝える。"""
     root, child = _fake_process(900001, 0), _fake_process(900002, 900001)
     _mock_process_snapshot(monkeypatch, [child])
     monkeypatch.setattr(process_tree, "describe", mock.Mock(side_effect=RuntimeError("記述の失敗")))
@@ -694,7 +674,6 @@ def _reporting_root(tmp_path: pathlib.Path) -> Generator[psutil.Process]:
     source = (
         "import os, pathlib, subprocess, sys, time; "
         f"child=subprocess.Popen([sys.executable, '-c', {late_descendant.held_source(tmp_path / 'reported.release')!r}]); "
-        # 書きかけを読まないよう、一時ファイルへ書いてから置き換える。
         f"pathlib.Path({str(marker)!r} + '.tmp').write_text(str(os.getpid())); "
         f"os.replace({str(marker)!r} + '.tmp', {str(marker)!r}); "
         + late_descendant.held_source(tmp_path / "reported-root.release")
@@ -714,7 +693,6 @@ def _reporting_root(tmp_path: pathlib.Path) -> Generator[psutil.Process]:
 
 
 def test_stop_tree_keeps_processes_outside_the_tree_and_the_excluded_root(monkeypatch):
-    """起点を除く指定では、子だけを終了させ、起点と無関係な対象へ作用しない。"""
     root, child, other = _fake_process(900001, 0), _fake_process(900002, 900001), _fake_process(900003, 0)
     _mock_process_snapshot(monkeypatch, [child, other])
     result = process_tree.stop_tree(root, include_root=False, pins=mock.Mock(retain=mock.Mock(return_value=True)), timeout=0)
@@ -774,14 +752,12 @@ def test_stop_tree_keeps_posix_graceful_exit_and_reclaims_children_started_in_gr
     command = [sys.executable, str(source), str(tmp_path)] + ([str(script)] if spawn_in_grace else [])
     with process_tree.process_scope(command) as process:
         _wait_for_ready_marker(tmp_path / "ready")
-        # 猶予中に起動した子の準備完了まで猶予を保つ。CIの高負荷時はPythonの起動に数秒かかり、
-        # 猶予が先に尽きると子が準備前に強制終了され、猶予中の生成を観測できない。
+
         result = process_tree.stop_tree(psutil.Process(process.pid), timeout=late_descendant.READY_TIMEOUT_SECONDS)
         process.wait(timeout=5)
     assert (tmp_path / "graceful").exists()
     assert not result.unresolved
     if spawn_in_grace:
-        # 猶予中に起動した子は、準備の前後どちらで終了を要求されても停止処理の完了時点で終了している。
         spawned = int((tmp_path / "spawned.pid").read_text())
         assert spawned in {item.pid for item in result.targets}
         assert not _still_holding_resources([item for item in result.targets if item.pid == spawned])
@@ -821,7 +797,6 @@ def _still_holding_resources(descendants: list[psutil.Process]) -> list[int]:
     ),
 )
 def test_run_with_timeout_stops_descendants(monkeypatch, tmp_path):
-    """孫の準備後に計時し、時間切れの報告より先に子と孫が解放される。"""
     marker = tmp_path / "child.ready"
     started: list[psutil.Process] = []
 
@@ -877,7 +852,6 @@ def test_run_with_timeout_raises_reclaim_error_and_retry_reclaims_same_target(mo
 
 
 def test_process_scope_raises_reclaim_error_when_child_remains(monkeypatch):
-    """停止結果の回収不能を、警告だけの正常終了へ変換しない。"""
     process = mock.Mock(pid=900001, stdin=None, stdout=None, stderr=None)
     process.poll.return_value = None
 
@@ -921,7 +895,6 @@ def test_unconfirmed_final_wait_keeps_reclaim_error(monkeypatch, failing_call, f
 
 
 def test_retry_keeps_unconfirmed_generation_stop(monkeypatch):
-    """生成の停止を確認できなかった回収不能は、所有対象の再停止が成功しても回収済みへ変えない。"""
     target = mock.Mock(pid=1234)
     error = process_tree.ReclaimError(["1234: child"], [target], context="fixture")
     calls: list[list[object]] = []
@@ -964,7 +937,7 @@ def test_retry_keeps_unreaped_direct_child(monkeypatch):
 
     child = StuckChild()
     monkeypatch.setattr(process_tree, "RECLAIM_TIMEOUT_SECONDS", 0)
-    # zombie表示の子は`stop_tree`の残存に含まれない。
+
     monkeypatch.setattr(process_tree, "stop_tree", lambda *_args, **_kwargs: process_tree.TreeStopResult([], [], []))
     error = process_tree.ReclaimError(
         ["4321: ['fixture-child']"], [], context="fixture", child=typing.cast(subprocess.Popen[typing.Any], child)
@@ -976,7 +949,6 @@ def test_retry_keeps_unreaped_direct_child(monkeypatch):
 
 
 def test_identity_limits_fields_and_keeps_unavailable(monkeypatch):
-    """引数や環境を照会せず、起動時刻・親PIDと採取不能の理由を返す。"""
     process = mock.Mock(pid=123)
     process.create_time.return_value = 12.5
     process.ppid.return_value = 99

@@ -23,7 +23,6 @@ def test_existing_contract_is_not_a_input_ledger(tmp_path: pathlib.Path, monkeyp
 
 
 def test_oversized_contract_falls_back_to_location(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """上限を超える本文は載せず、所在、是正の指示、復帰基準を示す。"""
     path = tmp_path / "work-contract.md"
     path.write_text("目的: " + "長" * 50 + "\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
@@ -40,7 +39,6 @@ def test_oversized_contract_falls_back_to_location(tmp_path: pathlib.Path, monke
 
 
 def test_unreadable_contract_reports_diagnostic(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """読めない記録は診断と所在を示し、例外で入力処理を止めない。"""
     path = tmp_path / "work-contract.md"
     path.write_bytes(b"\xff\xfe\x00broken")
     monkeypatch.setattr(work_contract, "record_path", lambda _session: path)
@@ -58,7 +56,6 @@ def test_missing_contract_has_no_notice(tmp_path: pathlib.Path, monkeypatch: pyt
 
 
 def test_read_instruction_preserves_external_path():
-    """空白と引用符を含む外部原本の所在を保持し、取得手段を重ねない。"""
     path = pathlib.Path("a b'c/work-contract.md")
     instruction = work_contract.short_notice(path)
     assert str(path) in instruction

@@ -1,5 +1,3 @@
-"""managed-tempを使うテストが共有する、関数の差し替えの補助。"""
-
 from __future__ import annotations
 
 import types
@@ -17,10 +15,6 @@ MANAGED_TEMP_MODULES = (managed_temp_paths, managed_temp_creation, managed_temp_
 
 
 def setattr_in_managed_temp_modules(monkeypatch: pytest.MonkeyPatch, name: str, value: object) -> None:
-    """パッケージと、名前を束縛する全サブモジュールで同じ値へ差し替える。
-
-    パッケージは定義元から名前を再exportして束縛するため、定義元の差し替えだけではパッケージ経由の呼び出しへ届かない。
-    """
     targets: list[types.ModuleType] = [module for module in MANAGED_TEMP_MODULES if name in vars(module)]
     if hasattr(subject, name):
         targets.append(subject)

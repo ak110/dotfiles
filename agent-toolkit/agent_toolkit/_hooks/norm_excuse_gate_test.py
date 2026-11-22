@@ -10,7 +10,6 @@ from agent_toolkit._hooks import norm_excuse_gate
 @pytest.mark.parametrize(
     "text",
     [
-        # 2026年11月22日にユーザーへ送り、是正を受けた本文。
         "残りのレビューでも採否を決める（agent-basics:review-standardsの既存の基準で足りるため、規範は足さない）。",
         "既存の規範で十分なので追加の対策はしない。",
         "既存の対策でカバーできる。",
@@ -57,7 +56,6 @@ def test_reissue_of_same_text_passes_once(monkeypatch: pytest.MonkeyPatch) -> No
 
 @pytest.mark.parametrize("summarized", [False, True])
 def test_stop_flags_intermediate_text_once(monkeypatch: pytest.MonkeyPatch, tmp_path, summarized: bool) -> None:
-    """send_to_userの遮断を途中の通常発話で迂回した場合も、ターンの終了で一度だけ止める。"""
     states: dict[str, dict] = {}
 
     def fake_update(session_id: str, updater) -> bool:

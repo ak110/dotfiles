@@ -37,11 +37,6 @@ def test_required_inputs_ignore_heading_inside_code_fence(tmp_path: pathlib.Path
 
 @pytest.mark.asyncio
 async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`引き継ぎ記録先`を省略した`start`は拒否されず、委譲元のセッションのmanaged-temp直下の`（新規）`記録先で起動する。
-
-    渡し忘れの拒否と再発行の往復を除くため、サーバーが用意した絶対パスを委譲プロンプトと応答の双方へ載せる。
-    応答の値が委譲プロンプトと一致しないと、委譲元は`（継続）`で渡す記録先を誤る。
-    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-state")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "caller-session")
@@ -77,7 +72,6 @@ async def test_start_prepares_handoff_path_when_omitted(monkeypatch: pytest.Monk
 async def test_start_keeps_given_handoff_path_and_rejects_other_missing_inputs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """委譲元が渡した`引き継ぎ記録先`はそのまま委譲プロンプトへ載せ、それ以外の必須入力の欠落は従来どおり拒否する。"""
     task_document = launch_requests.resolve_task_document_path("exec")
     extra_params = dict(line.split(": ", 1) for line in _observed_input_lines(task_document.name, tmp_path))
     prompts: list[str] = []
@@ -134,7 +128,6 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動、継続および自動再開の全ての処理が、backendへ渡す本文を出所標識で囲む。"""
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [(engine, "model", "high")]
     )
@@ -157,7 +150,7 @@ async def test_every_delivery_path_wraps_body_with_sender_label(
         await manager.wait()
 
         payloads = [delivery_payload(value) for value in backend.prompts]
-        # 通常の委譲の起動だけが、本文の後へ起動時に読む資料の全文を受け取る。
+
         assert payloads[0] == "起動本文"
         assert payloads[1:4] == [
             "探索本文",
@@ -173,7 +166,6 @@ async def test_delivery_body_keeps_label_shaped_content_verbatim(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """標識と同じ形の本文でも、生成した境界と囲まれた逐語内容を取り違えない。"""
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "model", "high")]
     )
@@ -192,7 +184,6 @@ async def test_start_validates_required_input_for_task_document_from_other_plugi
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """別配置の正規plugin root配下でも必須入力を確かめる。"""
     task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -220,7 +211,6 @@ async def test_start_accepts_task_document_path_with_spaces(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """startは表示用プロンプトへ直列化したパスを再解析しない。"""
     task_document = tmp_path / "plugin root" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -262,7 +252,7 @@ async def test_start_expands_plugin_root_variable_in_task_document(
 
     prompt = manager.start.await_args.args[1]
     assert f"`{plugin_root.resolve()}/skills/atk-mode/roles/other.parent.md`を読む。" in prompt
-    # 名前付き入力は委譲元の値のまま配送する
+
     assert task_documents.task_prompt_inputs(prompt)["補足"] == "${CLAUDE_PLUGIN_ROOT}"
 
 
@@ -271,7 +261,6 @@ async def test_start_rejects_task_document_that_cannot_be_read(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """実在確認後に読取不能となった文書ではbackendを起動しない。"""
     task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -304,7 +293,6 @@ async def test_start_rejects_task_document_that_cannot_be_read(
 
 
 def test_start_rejects_task_document_without_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """manifestを持たないplugin rootの役割文書の置き場所にある文書は、入力を確認する対象から除く。"""
     task_document = tmp_path / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     task_document.parent.mkdir(parents=True)
     task_document.write_text("## 入力\n", encoding="utf-8")
@@ -315,7 +303,6 @@ def test_start_rejects_task_document_without_plugin_manifest(tmp_path: pathlib.P
 
 
 def test_start_rejects_task_document_for_other_plugin_manifest(tmp_path: pathlib.Path) -> None:
-    """別名pluginの役割文書の置き場所にある文書は入力を確認する対象から除く。"""
     task_document = tmp_path / "plugin" / "skills" / "atk-mode" / "roles" / "task.subagent.md"
     manifest = task_documents.document_plugin_root(task_document) / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir(parents=True)

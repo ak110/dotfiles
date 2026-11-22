@@ -1,9 +1,3 @@
-"""managed-tempの対象の検証・列挙・回収。
-
-回収は一時root配下の包含判定を通した対象だけを`shutil.rmtree`で削除する。
-root自身・root外・リンクを経由する経路と、使用中の保持配布物は回収しない。不在は成功とする。
-"""
-
 from __future__ import annotations
 
 import os
@@ -21,7 +15,6 @@ PLUGIN_ROOT_PREFIX = "agents-server-plugin-root"
 
 
 def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
-    """一時root配下の実在するディレクトリであることを確かめ、削除せずに絶対パスを返す。"""
     path = paths.contained_target(path_arg)
     try:
         metadata = path.lstat()
@@ -35,7 +28,6 @@ def validate_managed_temp(path_arg: pathlib.Path | str) -> pathlib.Path:
 
 
 def list_managed_temp(prefix: str | None = None) -> list[pathlib.Path]:
-    """一時root直下の非リンクのディレクトリを名前順に返す。prefixを指定すると`<prefix>-`から始まるものに限る。"""
     if prefix is not None:
         paths.require_valid_prefix(prefix)
     root = paths.temp_root_path()
@@ -53,7 +45,6 @@ def list_managed_temp(prefix: str | None = None) -> list[pathlib.Path]:
 
 
 def top_level_area(path: pathlib.Path) -> pathlib.Path:
-    """一時root配下の対象が属する、一時root直下の領域を返す。"""
     root = paths.temp_root_path()
     return root / path.relative_to(root).parts[0]
 
@@ -90,7 +81,6 @@ def _retry_writable(function: typing.Callable[[str], object], path: str, error: 
 
 
 def remove_tree(path: pathlib.Path) -> None:
-    """包含判定済みの対象を削除する。ディレクトリは配下ごと削除し、不在は成功とする。"""
     area = top_level_area(path)
     if area.name.startswith(PLUGIN_ROOT_PREFIX):
         with plugin_root_leases.plugin_root_lock(area, blocking=False):
@@ -121,7 +111,6 @@ def _remove_tree(path: pathlib.Path) -> None:
 
 
 def cleanup_managed_temp(path_arg: pathlib.Path | str) -> None:
-    """一時root配下の対象を回収する。使用中の保持配布物は回収せずに拒否する。"""
     path = paths.contained_target(path_arg)
     if not os.path.lexists(path):
         return

@@ -1,5 +1,3 @@
-"""engineごとの利用上限で、同じ接続の解除を待つかを決める。"""
-
 from agent_toolkit._atk import config
 
 

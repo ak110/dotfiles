@@ -31,14 +31,7 @@ _HEREDOC_BODIES = [
 
 
 class TestBashHeredocLiteralExclusion:
-    """ヒアドキュメント本文のリテラルを実行コマンドとして誤検出しない。
-
-    区間分割と実行位置解析はヒアドキュメント本文も実行コマンド列として扱うため、
-    本文へ書き込む字面だけでは遮断の条件に当たらないことを検証する。
-    """
-
     def test_pattern_kill_in_heredoc_body_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
-        """ヒアドキュメント本文へ書き込むパターン終了コマンドの字面は遮断しない。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -52,7 +45,6 @@ class TestBashHeredocLiteralExclusion:
         assert specific.get("permissionDecision") != "deny"
 
     def test_pattern_kill_before_heredoc_is_still_blocked(self, tmp_path: pathlib.Path) -> None:
-        """ヒアドキュメントより前にある実際のパターン終了コマンドは遮断する。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -65,7 +57,6 @@ class TestBashHeredocLiteralExclusion:
 
     @pytest.mark.parametrize("delimiter", ["\\EOF", 'E"OF"', "'EOF'"])
     def test_quoted_delimiter_heredoc_keeps_following_commands_checked(self, tmp_path: pathlib.Path, delimiter: str) -> None:
-        """bashは区切り語の引用を除いた語で終端行を比べるため、heredoc以降のコマンドも遮断の対象になる。"""
         result = _run(
             {
                 "tool_name": "Bash",
@@ -78,8 +69,6 @@ class TestBashHeredocLiteralExclusion:
 
 
 class TestBashUnquotedHeredocSubstitution:
-    """区切り語を引用しないheredocの本文にある能動的なコマンド置換の遮断（block）。"""
-
     @pytest.mark.parametrize(("operator", "terminator", "expands"), _HEREDOC_DELIMITERS)
     @pytest.mark.parametrize(("body", "substitution"), _HEREDOC_BODIES)
     @pytest.mark.cpu_limit(
@@ -134,7 +123,6 @@ class TestBashUnquotedHeredocSubstitution:
         assert substitution in _denial_reason(result)
 
     def test_here_string_substitution_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
-        """here-stringの語は外側の置換として既存の解析が扱うため、本判定の対象外とする。"""
         result = _run(
             {"tool_name": "Bash", "tool_input": {"command": 'cat <<< "$(date)"'}, "session_id": "here-string"},
             _plan_file_state_env(tmp_path),

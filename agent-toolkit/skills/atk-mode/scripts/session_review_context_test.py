@@ -1,5 +1,3 @@
-"""公開された準備と圧縮再開抽出の境界・全担当費用を検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from agent_toolkit._testing import session_evidence_support as support
 def test_prepare_keeps_whole_flow_and_delegate_statistics(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, compacted: bool
 ) -> None:
-    """圧縮の有無によらず全体像を1文書へまとめ、子の費用を統計へ保持する。"""
     parent = tmp_path / "parent.jsonl"
     entries = [support.timestamped_entry("2026-10-10T00:00:00Z", "圧縮前の要求")]
     if compacted:
@@ -66,12 +63,11 @@ def test_prepare_keeps_whole_flow_and_delegate_statistics(
     handoff = json.loads(capsys.readouterr().out)
     assert pathlib.Path(handoff["conversation_path"]).read_text(encoding="utf-8") == document
     assert handoff["conversation_utf8_bytes"] == result["conversation_utf8_bytes"]
-    # 全担当を同じ概要へ含め、引き継ぎで使わない分析は生成しない。
+
     assert not (handoff_work / "bundle" / "stats.jsonl").exists()
 
 
 def test_resume_context_rejects_unreadable_transcript(tmp_path: pathlib.Path) -> None:
-    """読取不能は欠けた会話との区別が付くエラーになる。"""
     with pytest.raises(ValueError, match="セッション記録を読み込めない"):
         user_events.extract_session_context(tmp_path / "missing.jsonl")
 

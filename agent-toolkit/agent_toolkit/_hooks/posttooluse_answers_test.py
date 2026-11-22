@@ -142,7 +142,6 @@ def test_git_completion_notice_excludes_non_completion_operations(
     ],
 )
 def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, tool_response: dict) -> None:
-    """提示した`label`だけの回答と、ユーザーが応答せずに閉じた回答には注記を返さない。"""
     result = _run(_ask_user_question_payload("ask-user-question-labels", tool_response), state_dir=tmp_path)
 
     assert result.returncode == 0, result.stderr
@@ -162,10 +161,6 @@ def test_answer_without_user_text_receives_no_notice(tmp_path: pathlib.Path, too
     ],
 )
 def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: str, text: str) -> None:
-    """自由記述の配送欄によらず、通常発話と同じ内容注記が届く。
-
-    例示の語があれば調査の語が無い提案にも範囲判断の節を示し、調査の語も含む場合だけ手順1の調査の所在を加える。
-    """
     responses: dict[str, dict[str, object]] = {
         "response": {"response": text},
         "answers": {"answers": {_QUESTION: text}},
@@ -189,7 +184,6 @@ def test_free_text_content_notices_match_prompt(tmp_path: pathlib.Path, field: s
 # test-copy-contract: 同一回答の再送は抑止し、別の質問・回答・呼出IDでは通知を再び1回だけ配送する契約。
 @pytest.mark.parametrize("changed_field", ["tool_use_id", "question", "answer"])
 def test_free_text_notices_distinguish_replays_questions_and_answers(tmp_path: pathlib.Path, changed_field: str) -> None:
-    """同一回答の再配送を抑え、別の質問・自由回答へ必要な手順と内容注記を届ける。"""
     payload = _ask_user_question_payload("free-text-notice-target", {"response": "例えば設定を調査して！！"})
     payload["tool_use_id"] = "question-call-1"
     payload["tool_input"] = {"questions": payload["tool_response"]["questions"]}

@@ -40,7 +40,6 @@ class RunningRun(_Run):
     status: Literal["running"] = "running"
 
     def add_targets(self, targets: list[str]) -> RunningRun:
-        """保存済みの対象を保持して追加する。"""
         return RunningRun.model_validate(
             {**self.model_dump(exclude_unset=True), "targets": sorted(set(self.targets) | set(targets))}
         )
@@ -48,7 +47,6 @@ class RunningRun(_Run):
     def publish(
         self, output: str, exit_code: int, stream: Literal["stdout", "stderr"], *, result_turns: dict[str, int] | None = None
     ) -> PublishedRun:
-        """flush前に保存する公開結果を作る。配送を確定するまで継続可能とはしない。"""
         return PublishedRun.model_validate(
             {
                 **self.model_dump(exclude_unset=True),
@@ -71,18 +69,14 @@ class _ResultRun(_Run):
 
 
 class PublishedRun(_ResultRun):
-    """保存済みだが前景配送を確定していない結果。"""
-
     status: Literal["published"] = "published"
 
     def deliver(self, *, continuable: bool) -> ForegroundDeliveredRun:
-        """前景へのflush後に保存する状態を作る。"""
         return ForegroundDeliveredRun.model_validate(
             {**self.model_dump(exclude_unset=True), "status": "foreground-delivered", "continuable": continuable}
         )
 
     def consume(self) -> ConsumedRun:
-        """回復配送のflush後に保存する状態を作る。"""
         return ConsumedRun.model_validate({**self.model_dump(exclude_unset=True), "status": "consumed"})
 
 
@@ -93,8 +87,6 @@ class ForegroundDeliveredRun(_ResultRun):
 
 
 class ConsumedRun(_ResultRun):
-    """後続waitが回復配送した結果。"""
-
     status: Literal["consumed"] = "consumed"
 
 
@@ -103,7 +95,6 @@ _RUN = TypeAdapter(Annotated[WaitRun, Field(discriminator="status")])
 
 
 def read_run(path: pathlib.Path) -> WaitRun | None:
-    """不在だけをNoneとし、読取不能・不正な状態は呼出側の診断へ渡す。"""
     try:
         contents = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -112,7 +103,6 @@ def read_run(path: pathlib.Path) -> WaitRun | None:
 
 
 def read_current(path: pathlib.Path) -> CurrentRun | None:
-    """run参照を検証し、不在だけをNoneで返す。"""
     try:
         contents = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -121,7 +111,6 @@ def read_current(path: pathlib.Path) -> CurrentRun | None:
 
 
 def uncollected(run: WaitRun) -> bool:
-    """回収途中または未配送のrunかを返す。"""
     return isinstance(run, (RunningRun, PublishedRun))
 
 
@@ -131,7 +120,6 @@ def reusable(run: WaitRun, targets: list[str]) -> bool:
 
 
 def delivered_children(directory: pathlib.Path, turns: dict[str, int]) -> set[str]:
-    """同じ親の記録から、指定turnの前景配送または回復配送を確定した子だけを返す。"""
     delivered: set[str] = set()
     for path in directory.glob("*.json"):
         if path.name == "current.json":

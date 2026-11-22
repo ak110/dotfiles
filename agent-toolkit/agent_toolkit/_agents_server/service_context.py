@@ -1,5 +1,3 @@
-"""接続の寿命から独立して会話ごとのManagerと呼出元contextを保持する。"""
-
 from __future__ import annotations
 
 # Managerの起動・監視・終了を所有する協調役として、その内部操作を呼ぶ。
@@ -37,8 +35,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.service")
 
 @dataclasses.dataclass
 class Conversation:
-    """状態の所有者と、再接続後も保持する会話固有の非永続context。"""
-
     manager: AgentsServerManager
     caller: runtime_environment.CallerContext
     runtime: service_io.Runtime | None = None
@@ -49,8 +45,6 @@ class Conversation:
 
 
 class ServiceManagers:
-    """同じ管理領域の会話を合流させ、個別の接続切断ではcloseしない。"""
-
     def __init__(self, *, state_root: pathlib.Path | None = None, projections: ProjectionHub | None = None) -> None:
         self.conversations: dict[str, Conversation] = {}
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
@@ -58,25 +52,18 @@ class ServiceManagers:
         self._monitor_task: asyncio.Task[None] | None = None
         self._projections = projections
         self.before_controls: Callable[[], Awaitable[bool]] | None = None
-        # 同じ親会話のうち別世代がまだ所有するsessionを一覧へ加える照会。管理サービスの調停役が設定する。
+
         self.foreign_sessions: Callable[[str, bool], Awaitable[dict[str, list]]] | None = None
 
     async def other_generation_sessions(self, manager: object, *, include_terminated: bool) -> dict[str, list]:
-        """照会したmanagerの親会話について、別世代が所有するsessionと応答しなかった世代を返す。"""
         parent = next((key for key, item in self.conversations.items() if item.manager is manager), None)
         collect = self.foreign_sessions
         if parent is None or collect is None:
             return {"sessions": [], "unreachable": []}
-        # Pylintは初期値Noneだけで推論するが、調停役が型付きcallbackを登録している。
+
         return await collect(parent, include_terminated)  # pylint: disable=not-callable
 
     async def generations(self) -> list[dict[str, object]]:
-        """照会した世代と、同じ管理領域で退出していない全世代を区別して返す。
-
-        更新中の正常な世代の併存と、旧世代が退出できずに残る状態を、照会の応答から区別できるようにする。
-        強制終了・異常終了した世代は退出を記録できないため、記録したプロセスが生存していない世代も除く。
-        処置した世代が一覧から消えることを、終了の観測に使えるようにするためである。
-        """
         if self._projections is None:
             return []
         queried = self._projections.generation
@@ -129,7 +116,6 @@ class ServiceManagers:
             self.conversations.pop(key, None)
 
     async def _collect_disconnected_conversations(self) -> None:
-        """短命なMCP接続とは独立に、未完了のturnを所有する会話を保持する。"""
         for key, conversation in tuple(self.conversations.items()):
             if self._retirable(conversation):
                 await self.close_conversation(key, disconnected_only=True)
@@ -150,7 +136,11 @@ class ServiceManagers:
         return dead or not (manager.sessions or manager.expired_sessions)
 
     async def _monitor(self) -> None:
-        """PID宛ての要求を一度だけ読み、対象会話の環境で操作する。"""
+        async with asyncio.TaskGroup() as group:
+            await self._monitor_requests(group)
+
+    async def _monitor_requests(self, group: asyncio.TaskGroup) -> None:
+        active_controls: dict[str, asyncio.Task[None]] = {}
         next_heartbeat = 0.0
         # 毎巡（1秒）同じ例外の全文を記録するとログが埋まるため、失敗の種類が変わった時と回復した時だけ記録する。
         migration_failure: tuple[str, str] | None = None
@@ -162,38 +152,23 @@ class ServiceManagers:
                     for conversation in tuple(self.conversations.values())
                     for session_id in conversation.manager.sessions
                 }
-                sessions = {
-                    identifier: conversation.manager.sessions[identifier] for identifier, conversation in owners.items()
-                }
-                pending = await run_file_operation(effort_requests.pending, state_root=self._state_root)
-                for path, payload in pending:
-                    identifier = payload.get("session_id")
-                    conversation = owners.get(identifier) if isinstance(identifier, str) else None
-                    if conversation is None:
-                        continue
-                    with self._bound(conversation):
-                        manager = conversation.manager
-                        if identifier in manager._service_paused:
+                effort_requests_found = await run_file_operation(effort_requests.pending, state_root=self._state_root)
+                release_requests_found = await run_file_operation(session_release.pending, self._state_root)
+                active_controls = {identifier: task for identifier, task in active_controls.items() if not task.done()}
+                for effort_request, requests in ((True, effort_requests_found), (False, release_requests_found)):
+                    for path, payload in requests:
+                        identifier = payload.get("session_id")
+                        if not isinstance(identifier, str) or identifier in active_controls:
                             continue
-                        gate = conversation.runtime.gate if conversation.runtime else None
-                        try:
-                            async with gate.admit(new_turn=False, session_id=identifier) if gate else contextlib.nullcontext():
-                                await effort_control.process_requests(
-                                    manager.sessions,
-                                    manager._effort_catalog,
-                                    manager._apply_effort,
-                                    state_root=self._state_root,
-                                    requests=[(path, payload)],
-                                )
-                                await manager.save_control_state()
-                        except service_turns.MoveRequired:
-                            continue
-
-                await session_release.process_requests(sessions, self._stop_session, state_root=self._state_root)
+                        conversation = owners.get(identifier)
+                        if conversation is not None or not effort_request:
+                            active_controls[identifier] = group.create_task(
+                                self._process_control(conversation, path, payload, effort_request=effort_request)
+                            )
                 heartbeat = asyncio.get_running_loop().time() >= next_heartbeat
                 awaiting = False
                 before_controls = self.before_controls
-                # Pylintは初期値Noneだけで推論するが、型付きcallbackを同じloopで登録している。
+
                 try:
                     allow_resume = before_controls is None or await before_controls()  # pylint: disable=not-callable
                 except Exception as error:
@@ -225,7 +200,7 @@ class ServiceManagers:
                                     awaiting |= await conversation.manager._process_auto_resume(process_controls=False)
                             except service_turns.MoveRequired:
                                 pass
-                        if heartbeat:
+                        if heartbeat and not any(identifier in active_controls for identifier in conversation.manager.sessions):
                             await conversation.manager.save_control_state()
                 if heartbeat:
                     next_heartbeat = asyncio.get_running_loop().time() + status_file.HEARTBEAT_INTERVAL_SECONDS
@@ -234,6 +209,43 @@ class ServiceManagers:
                 _LOG.exception("共有監視の1巡が失敗しました。所有状態を保持して次の巡回で再確認します")
                 awaiting = False
             await asyncio.sleep(0.1 if awaiting else 1.0)
+
+    async def _process_control(
+        self, conversation: Conversation | None, path: pathlib.Path, payload: dict, *, effort_request: bool
+    ) -> None:
+        if conversation is None:
+            await session_release.process_requests(
+                {}, self._stop_session, state_root=self._state_root, requests=[(path, payload)]
+            )
+            return
+        conversation.active += 1
+        try:
+            with self._bound(conversation):
+                manager = conversation.manager
+                if not effort_request:
+                    await session_release.process_requests(
+                        manager.sessions, self._stop_session, state_root=self._state_root, requests=[(path, payload)]
+                    )
+                    return
+                identifier = payload["session_id"]
+                if identifier in manager._service_paused:
+                    return
+                gate = conversation.runtime.gate if conversation.runtime else None
+                async with gate.admit(new_turn=False, session_id=identifier) if gate else contextlib.nullcontext():
+                    await effort_control.process_requests(
+                        manager.sessions,
+                        manager._effort_catalog,
+                        manager._apply_effort,
+                        state_root=self._state_root,
+                        requests=[(path, payload)],
+                    )
+                    await manager.save_control_state()
+        except service_turns.MoveRequired:
+            return
+        except Exception:
+            _LOG.exception("操作要求を処理できませんでした: path=%s。要求の所在と所有状態を確認してください", path)
+        finally:
+            conversation.active -= 1
 
     async def _stop_session(self, identifier: str, *, retain_result: bool = False) -> dict:
         conversation = next(item for item in self.conversations.values() if identifier in item.manager.sessions)
@@ -270,7 +282,6 @@ class ServiceManagers:
         *,
         identifier_override: str | None = None,
     ) -> AsyncGenerator[AgentsServerManager]:
-        """要求が属する会話だけを選び、生成されるtaskへ同じ環境を渡す。"""
         caller = runtime_environment.current()
         if caller is None:
             raise RuntimeError("管理サービスの呼出元contextがありません")
@@ -282,7 +293,6 @@ class ServiceManagers:
         if identifier is not None:
             env["CODEX_THREAD_ID"] = identifier
         elif env.get("CLAUDE_CODE_SESSION_ID"):
-            # Claudeの会話IDが明示されていれば、起動元から継承したCodex IDを宛先の根拠にしない。
             env.pop("CODEX_THREAD_ID", None)
         native_codex = bool(env.get("CODEX_THREAD_ID"))
         if identifier_override is not None:
@@ -292,7 +302,6 @@ class ServiceManagers:
                 env.get("CODEX_THREAD_ID") or env.get("CLAUDE_CODE_SESSION_ID") or env.get("AGENT_TOOLKIT_STATUS_HOST_SESSION")
             )
         if not identifier:
-            # 会話IDの無い接続だけは接続側で生成した匿名IDを使う。他の匿名接続とは混ぜない。
             identifier = caller.connection_id or "mcp-" + uuid.uuid4().hex
         if not shared_roots.valid_session_id(identifier):
             raise ActionableError("MCP接続の会話IDが不正", next_action="接続元の会話識別子を確認して再接続する")
@@ -301,7 +310,7 @@ class ServiceManagers:
             if conversation is None:
                 runtime = service_io.current()
                 gate = runtime.gate if runtime else None
-                # 初期化による既存の復旧も新turnを始め得るため、Managerを作る前に予約する。
+
                 async with gate.admit(new_turn=True) if gate else contextlib.nullcontext():
                     conversation = await self._create_conversation(identifier, caller, env, native_codex)
                     self.conversations[identifier] = conversation

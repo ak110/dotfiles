@@ -33,7 +33,6 @@ def _source(tmp_path: Path) -> Path:
                 }
             }
         ),
-        # 廃止した常時規範と役割文書の古い置き場所が配布元に残っていても、配布物と担当の定義へ含めない。
         "share/rules/common/01-agent.md": "共通規範を守る。\n" * 1100,
         _CHECK_SKILL.as_posix(): "---\nname: check\ndescription: 検査する\n---\n${CLAUDE_PLUGIN_ROOT}/scripts/check.py\n",
         "agents/worker.md": "---\nname: worker\ndescription: 作業を行う\n---\n作業する。\n",
@@ -137,7 +136,6 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
 
 
 def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_path: Path, monkeypatch) -> None:
-    """登録を追加して原本の更新を反映し、再実行で登録を重複させない。"""
     home = tmp_path / "home"
     registry = home / ".gemini/config/plugins.json"
     registry.parent.mkdir(parents=True)
@@ -167,7 +165,6 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
 
 
 def test_basics_standalone_keeps_full_body_and_namespace(source: Path) -> None:
-    """toolkitが無いsourceでも、独立した品質プラグインの全文と名前空間を配送する。"""
     shutil.rmtree(source / "agent-toolkit")
     original = (source / "agent-basics/skills/bugfix/SKILL.md").read_text()
     assert subject.sync(source, "agent-basics")
@@ -204,7 +201,6 @@ def test_sync_includes_readme_and_license(source: Path, plugin_name: str) -> Non
 
 
 def test_registration_upgrades_managed_entry_and_preserves_preferences(source: Path, tmp_path: Path, monkeypatch) -> None:
-    """旧toolkit登録にbasicsを加え、他の登録・継承・ユーザーの値を保持する。"""
     home = tmp_path / "home"
     registry = home / ".gemini/config/plugins.json"
     registry.parent.mkdir(parents=True)
@@ -234,7 +230,6 @@ def test_registration_upgrades_managed_entry_and_preserves_preferences(source: P
 
 
 def test_standalone_registration_does_not_require_toolkit(source: Path, tmp_path: Path, monkeypatch) -> None:
-    """品質プラグインだけを登録する利用はtoolkitのsourceと実行環境に依存しない。"""
     shutil.rmtree(source / "agent-toolkit")
     home = tmp_path / "home"
     monkeypatch.setattr(Path, "home", lambda: home)

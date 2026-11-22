@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""作業中計画のファイル名を検証する。"""
 
 import pathlib
 
@@ -20,7 +19,6 @@ def test_accepts_direct_and_date_hierarchy_working_paths(
     tmp_path: pathlib.Path,
     relative: pathlib.Path,
 ) -> None:
-    """直下形式と既存の日付階層形式の作業計画を同じ構造の判定条件で受理する。"""
     work_dir, _base = repo
     home = tmp_path / "home"
     main_path = home / ".claude/plans" / relative

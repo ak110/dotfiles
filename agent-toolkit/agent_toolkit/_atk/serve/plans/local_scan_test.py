@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
-
 # pylint: disable=protected-access
 
 import json
@@ -26,7 +24,6 @@ from agent_toolkit._testing.serve_plans_support import (
 
 
 def test_first_observed_time_is_kept_across_updates(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """初回観測時刻を作成日時として保持し、以後の更新で変動させない。"""
     root = tmp_path / "plans"
     root.mkdir()
     path = _plan(root, "plan.md", mtime=1_000.0)
@@ -42,7 +39,6 @@ def test_first_observed_time_is_kept_across_updates(tmp_path: pathlib.Path, inde
 
 
 def test_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """旧形式の作成日時を取り込み、取り込んだ旧形式のファイルを削除する。"""
     root = tmp_path / "plans"
     root.mkdir()
     _plan(root, "plan.md")
@@ -56,7 +52,6 @@ def test_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: path
 
 
 def test_review_table_is_rendered_as_table() -> None:
-    """レビュー指摘管理表は7列のHTML表へ変換する。"""
     row = "\t".join(json.dumps(value, ensure_ascii=False) for value in ["1", "実装", "a.py:1", "指摘", "要", "対応", ""])
 
     html = plans_views.review_table_html(row + "\n")
@@ -68,7 +63,6 @@ def test_review_table_is_rendered_as_table() -> None:
 
 @pytest.mark.asyncio
 async def test_review_table_is_reachable_from_the_main_plan(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """レビュー指摘管理表もメイン計画からの移動先へ含める。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -83,7 +77,6 @@ async def test_review_table_is_reachable_from_the_main_plan(tmp_path: pathlib.Pa
 
 
 def test_review_table_match_is_connected_to_the_main_plan() -> None:
-    """付属ファイルの検索一致は、一覧で選択できるメイン計画のパスへ置き換える。"""
     assert plans_views.listed_plan_path("p.exec-review.tsv") == "p.md"
     assert plans_views.listed_plan_path("p.detail.md") == "p.md"
     assert plans_views.listed_plan_path("p.md") == "p.md"
@@ -91,7 +84,7 @@ def test_review_table_match_is_connected_to_the_main_plan() -> None:
 
 @pytest.mark.parametrize("name", ("p.detail.md", "p.plan-review.tsv"))
 def test_working_root_excludes_removed_attachments(tmp_path: pathlib.Path, name: str) -> None:
-    """`~/.claude/plans`では廃止した詳細計画と計画レビュー表を表示対象にしない。"""
+    """`~/.claude/plans`では廃止した詳細計画と旧レビュー表を表示対象にしない。"""
     root = tmp_path / "plans"
     root.mkdir()
     path = _plan(root, name)
@@ -105,7 +98,6 @@ async def test_start_local_watchers_schedules_existing_roots(
     tmp_path: pathlib.Path,
     index_path: pathlib.Path,
 ) -> None:
-    """実在するrootだけを監視へ登録する。"""
     del index_path
     present = tmp_path / "present"
     present.mkdir()
@@ -143,7 +135,6 @@ async def test_long_stderr_keeps_the_tail_in_the_error(monkeypatch: pytest.Monke
 
 
 def test_local_scans_stop_on_shutdown_request(tmp_path: pathlib.Path) -> None:
-    """停止要求が設定されると、一覧と本文検索のローカル走査はファイルを読み進めずに打ち切る。"""
     root = tmp_path / "plans"
     root.mkdir()
     (root / "30-1200_計画.md").write_text("# 計画\n\n検索語\n", encoding="utf-8")

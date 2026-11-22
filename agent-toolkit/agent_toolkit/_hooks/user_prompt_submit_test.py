@@ -30,14 +30,13 @@ _NOTICE_PATTERN = re.compile(
     r'(?=[^>]*\skind="notice")[^>]*>\n',
 )
 _NOTICE_BOUNDARY_PATTERN = re.compile(r"</?atk-auto\b[^>]*>")
-# 注記の文意は定義の読解で確かめ、ここでは通常発話へ同じ定義の本文がそのまま届くことを確かめる。
-# 本文を写した期待値は文面の変更に追随させるだけで、届いた判断の正しさを検出しないため使わない。
+
+
 _EXPECTED_VERIFICATION_NOTICE_BODY = posttooluse.VERIFICATION_NOTICE_BODY
 
 
 @pytest.fixture(autouse=True)
 def _local_plugin_root(monkeypatch):
-    """この作業ツリーのhookと、その資料を同じ版で検証する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
 
 
@@ -54,12 +53,10 @@ def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
 
 
 def _write_state(session_id: str, state: dict) -> None:
-    """hookが使う固定保存先へ、試験開始時と再設定時の状態を供給する。"""
     assert session_state.update_state(session_id, lambda _previous: state)
 
 
 def _notice_bodies(context: str) -> list[str]:
-    """結合された通知を分解し、標準XML境界を検証した本文の並びを返す。"""
     bodies: list[str] = []
     depth = 0
     body_start = 0
@@ -81,7 +78,6 @@ def _notice_bodies(context: str) -> list[str]:
 
 
 def test_notice_bodies_preserves_outer_body_with_reordered_attributes() -> None:
-    """別順の開始タグと入れ子の本文を外側の境界ごとに読む。"""
     first = (
         '<atk-auto kind="notice" source="user_prompt_submit">\n'
         '<atk-auto source="inner" kind="notice">内側</atk-auto>\n'
@@ -108,13 +104,11 @@ def test_notice_bodies_preserves_outer_body_with_reordered_attributes() -> None:
     ],
 )
 def test_notice_bodies_rejects_invalid_boundary(opening: str, closing: str) -> None:
-    """要素名、必要属性と終了タグが違う本文を拒否する。"""
     with pytest.raises(AssertionError):
         _notice_bodies(f"{opening}\n本文\n{closing}")
 
 
 def _session_title(result: subprocess.CompletedProcess[str]) -> str | None:
-    """出力したsessionTitleを返す。出力自体が無い場合とその欄が無い場合はNoneを返す。"""
     if not result.stdout:
         return None
     return json.loads(result.stdout)["hookSpecificOutput"].get("sessionTitle")
@@ -203,7 +197,6 @@ class TestUserConfirmationSkillPrompt:
         assert not self._has_notice(self._prompt("次の依頼", tmp_path))
 
     def test_compact_after_invocation_prompts_again(self, tmp_path: pathlib.Path) -> None:
-        """会話圧縮で内容が文脈から失われるため、圧縮前に起動していても圧縮後の発話へ注記を返す。"""
         self._session_start("startup", tmp_path)
         self._invoke_skill(tmp_path)
         self._session_start("compact", tmp_path)
@@ -211,7 +204,6 @@ class TestUserConfirmationSkillPrompt:
 
     @pytest.mark.parametrize("host", ["claude", "codex"])
     def test_consumed_notice_is_delivered_once_again_after_compact(self, tmp_path, host):
-        """圧縮した文脈には同じ固定本文を一度再配送し、後続の発話では繰り返さない。"""
         self._session_start("startup", tmp_path, host=host)
         first = self._prompt("依頼", tmp_path, host=host)
         assert not self._has_notice(first)
@@ -219,14 +211,13 @@ class TestUserConfirmationSkillPrompt:
         self._session_start("compact", tmp_path, host=host)
         restored = self._prompt("次の依頼", tmp_path, host=host)
         assert not self._has_notice(restored)
-        # 受付時刻は入力ごとに変わるため除いて比べる。
+
         clock = re.compile(r"ユーザー入力の受付時刻: `[^`]*`")
         assert clock.sub("", first) == clock.sub("", restored)
         assert not self._has_notice(self._prompt("続けて", tmp_path, host=host))
 
     @pytest.mark.parametrize("source", ["resume", "fork"])
     def test_resume_and_fork_keep_state(self, source: str, tmp_path: pathlib.Path) -> None:
-        """文脈を引き継ぐ再開と分岐では、起動済みの状態を変えない。"""
         self._session_start("startup", tmp_path)
         self._invoke_skill(tmp_path)
         self._session_start(source, tmp_path)
@@ -242,7 +233,6 @@ class TestUserConfirmationSkillPrompt:
         ],
     )
     def test_machine_injected_turn_neither_receives_nor_consumes(self, prompt: str, tmp_path: pathlib.Path, host: str) -> None:
-        """機械注入のターンには注記を返さず、その後の最初の実ユーザー発話には返す。"""
         self._session_start("startup", tmp_path, host=host)
         assert not self._has_notice(self._prompt(prompt, tmp_path, host=host))
         context = self._prompt("依頼", tmp_path, host=host)
@@ -252,7 +242,6 @@ class TestUserConfirmationSkillPrompt:
     def test_usage_limit_resume_prompt_is_machine_injected(
         self, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
     ) -> None:
-        """Function hooksの再開本文を実hookへ渡し、実ユーザー発話向けの注記と時刻を消費しない。"""
         module = _SCRIPTS_DIR.parent / "hooks" / "usage_limit_resume.ts"
         script = tmp_path / "usage-limit-prompt.mjs"
         script.write_text(
@@ -281,12 +270,10 @@ class TestUserConfirmationSkillPrompt:
         assert not self._has_notice(self._prompt("依頼", tmp_path))
 
     def test_delegated_session_start_does_not_mark(self, tmp_path: pathlib.Path) -> None:
-        """委譲先のSessionStartは起動待ちを記録しない。"""
         self._session_start("startup", tmp_path, extra_env={"AGENT_TOOLKIT_DELEGATED_SESSION": "1"})
         assert not self._has_notice(self._prompt("依頼", tmp_path))
 
     def test_user_typed_skill_command_clears(self, tmp_path: pathlib.Path) -> None:
-        """ユーザー自身が同スキルをスラッシュコマンドで起動した発話には注記を返さない。"""
         self._session_start("startup", tmp_path)
         assert not self._has_notice(self._prompt(f"/{self._SKILL}", tmp_path))
         assert not self._has_notice(self._prompt("依頼", tmp_path))
@@ -302,11 +289,6 @@ class TestUserConfirmationSkillPrompt:
 
 
 class TestMachineInjectedTurn:
-    """ユーザーが発話していないターンでの注記と時刻記録の抑止。
-
-    実ユーザー発話が受け取るべき発話の内容を現物で確かめる手順を示す注記を機械注入ターンが消費しないようにする。
-    """
-
     @staticmethod
     @pytest.mark.parametrize(
         ("payload_extra", "prompt", "env_extra"),
@@ -339,7 +321,6 @@ class TestMachineInjectedTurn:
         env_extra: dict,
         tmp_path: pathlib.Path,
     ) -> None:
-        """機械注入ターンでは注記を返さず、直前の通常発話の時刻も更新しない。"""
         del env_extra
         sid = "machine-injected"
         result = _run({"session_id": sid, "prompt": prompt, **payload_extra}, state_dir=tmp_path)
@@ -354,7 +335,6 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_source_user_keeps_current_behavior(tmp_path: pathlib.Path) -> None:
-        """`source`が`user`の入力を実入力として観測し、注記用の時刻は記録しない。"""
         sid = "source-user"
         result = _run({"session_id": sid, "prompt": "通常の入力", "source": "user"}, state_dir=tmp_path)
 
@@ -365,7 +345,6 @@ class TestMachineInjectedTurn:
 
     @staticmethod
     def test_normal_prompt_after_machine_turn_keeps_context_notice(tmp_path: pathlib.Path) -> None:
-        """機械注入に続く実入力にも、撤去した初回未取得通知を出さない。"""
         sid = "machine-then-user"
         _run(
             {"session_id": sid, "prompt": f"{user_prompt_submit.PERIODIC_RECHECK_MARKER}\n確認する。"},
@@ -380,8 +359,6 @@ class TestMachineInjectedTurn:
 
 
 class TestSlashCommandDetection:
-    """ホストごとの手動起動でセッション状態フラグが実際の起動と一致することを検証する。"""
-
     @pytest.mark.parametrize(
         ("prompt", "codex"),
         [
@@ -394,7 +371,6 @@ class TestSlashCommandDetection:
         ],
     )
     def test_plan_command_does_not_record_plan_start(self, tmp_path: pathlib.Path, prompt: str, *, codex: bool) -> None:
-        """計画の工程の開始は全ホストで`plan-create`の成功から記録し、発話のコマンドからは記録しない。"""
         sid = "manual-write-plan"
         payload = {"session_id": sid, "prompt": prompt, **({"model": "gpt-5"} if codex else {})}
         result = _run(payload, state_dir=tmp_path)
@@ -413,7 +389,6 @@ class TestSlashCommandDetection:
         ],
     )
     def test_entry_command_names_process_wi(self, tmp_path: pathlib.Path, prompt: str, autonomous: bool):
-        """自律モードは入口`atk-mode`へ作業`process-wi`を名指しした入力だけで立てる（スキル`process-wi`は廃止した）。"""
         sid = "entry-process-wi"
         result = _run(
             {"session_id": sid, "prompt": prompt},
@@ -424,11 +399,9 @@ class TestSlashCommandDetection:
 
 
 class TestNonMatchingPrompts:
-    """スキルを起動しないプロンプトでスキル状態とsessionTitleが変わらないことの検証。"""
-
     @staticmethod
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
-        # スキル起動の案内は出さず、実入力ごとの定型通知を届ける。
+
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert context.count("<atk-auto ") == 1 and "ユーザー入力の受付時刻" in context
 
@@ -464,7 +437,6 @@ class TestNonMatchingPrompts:
         assert set(_read_state(tmp_path, sid)) == expected_keys | {"work_contract_input_sequence", "notice_fingerprints"}
 
     def test_unrelated_slash_is_treated_as_user_utterance(self, tmp_path: pathlib.Path):
-        """対応スキル以外のスラッシュコマンドもユーザー自身の発話として注記の対象にする。"""
         sid = "unrelated-slash"
         result = _run(
             {"session_id": sid, "prompt": "/help"},
@@ -479,7 +451,6 @@ class TestNonMatchingPrompts:
         }
 
     def test_automated_prompt_receives_no_notice(self, tmp_path: pathlib.Path):
-        """process-loopが渡す起動時プロンプトは注記の対象から外し、経過時間も記録しない。"""
         sid = "automated-prompt"
         goal = automated_prompt.wrap(
             f"`{skill_modes.PROCESS_WI}`を完遂してください。",
@@ -523,7 +494,6 @@ class TestNonMatchingPrompts:
         assert set(state) == {"termination_evidence", "work_contract_input_sequence", "notice_fingerprints"}
 
     def test_handles_empty_payload(self, tmp_path: pathlib.Path):
-        """空入力・prompt欠落payloadでexit 0、状態不変。"""
         result = _run("", state_dir=tmp_path)
         assert result.returncode == 0
         sid = "no-prompt"
@@ -532,7 +502,6 @@ class TestNonMatchingPrompts:
         assert _read_state(tmp_path, sid) == {}
 
     def test_ignores_slash_in_middle_of_prompt(self, tmp_path: pathlib.Path):
-        """先頭行以外にスラッシュコマンドがあっても対象外。"""
         sid = "slash-middle"
         result = _run(
             {
@@ -574,7 +543,6 @@ class TestNonMatchingPrompts:
 # test-copy-contract: 同一セッションの各入力で、条件付きの案内を再配送する契約。
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
 def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.Path, host_fields: dict) -> None:
-    """同じセッションの途中でも規則を届け、通常依頼を誤って指摘と扱わせない。"""
     for prompt in ("作業を続けて", "手戻り多すぎない？品質が悪いのでは？", "なんでこれ自分で気付けなかったの？"):
         result = _run({"session_id": "feedback", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -586,8 +554,6 @@ def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.P
 
 
 class TestExclamationDoesNotTriggerNotice:
-    """全角の感嘆符は注記の契機にしない。認識のずれへの対処は受領側の発話への応答の手順が担う。"""
-
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     @pytest.mark.parametrize("prompt", ["！！直してほしい", "理解が違う！！", "確認\nここです！！", "直してほしい!!"])
     def test_exclamation_alone_adds_no_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
@@ -601,13 +567,6 @@ class TestExclamationDoesNotTriggerNotice:
 
 
 class TestExampleScopeNotice:
-    """例示の語を含む実ユーザー発話へ、原文の対象と例示の関係を判断する節の所在を示す。
-
-    注記が欠けると、上位の対象と例示を併記した指摘・提案で対応範囲を例示だけに狭める。
-    調査を求める語も含む発話では、例示を除いた独立した調査を委ねる手段の所在も加える。
-    注記が過剰だと、貼り付けた素材だけに例示語がある発話にも同じ本文が載る。
-    """
-
     _PROMPT = (
         "チャット画面の消費CRのバッジの数値とクレジット詳細の数値が一致しないという報告があった。"
         "何か計上されないものがあるバグとか無いか確認して。\n"
@@ -626,7 +585,6 @@ class TestExampleScopeNotice:
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_example_with_investigation_request_receives_notice(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """両ホストで、範囲判断の節と、調査を分担するかの比較を求める注記を返す。"""
         result = _run({"session_id": "example-notice", "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
@@ -657,7 +615,6 @@ class TestExampleScopeNotice:
     def test_example_without_investigation_receives_scope_notice(
         self, tmp_path: pathlib.Path, host_fields: dict, prompt: str
     ) -> None:
-        """調査の語が無い指摘・提案・実行指示にも範囲判断の節を示し、調査や委譲を求める本文は付けない。"""
         result = _run({"session_id": "example-scope", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
@@ -672,7 +629,6 @@ class TestExampleScopeNotice:
     def test_investigation_word_stems_cover_inflections(
         self, tmp_path: pathlib.Path, host_fields: dict, word_form: str
     ) -> None:
-        """調査を求める語の部分文字列は、活用形の発話にも調査の分担の比較を加える。"""
         result = _run(
             {"session_id": "example-inflections", "prompt": f"例えば通信経路を{word_form}", **host_fields},
             state_dir=tmp_path,
@@ -694,7 +650,6 @@ class TestExampleScopeNotice:
         ],
     )
     def test_other_prompts_do_not_receive_notice(self, tmp_path: pathlib.Path, host_fields: dict, prompt: str) -> None:
-        """例示の語が無い発話と、語が貼り付けた素材の中だけにある発話には返さない。"""
         result = _run({"session_id": "example-negative", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert not self._example_bodies(result)
 
@@ -711,14 +666,12 @@ class TestExampleScopeNotice:
     def test_machine_injected_turn_does_not_receive_notice(
         self, tmp_path: pathlib.Path, extra: dict, prompt_prefix: str, env: dict[str, str]
     ) -> None:
-        """機械注入の5系統と委譲先のセッションには返さない。"""
         payload = {"session_id": "example-machine", "prompt": prompt_prefix + self._PROMPT, **extra}
         result = _run_subcommand("user_prompt_submit", payload, state_dir=tmp_path, extra_env=env)
         assert not self._example_bodies(result)
 
     @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
     def test_other_notices_share_one_json(self, tmp_path: pathlib.Path, host_fields: dict) -> None:
-        """同じターンで成立した受付時刻の注記と1つの`additionalContext`へ結合する。"""
         sid = "example-combined"
         result = _run({"session_id": sid, "prompt": self._PROMPT, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
@@ -732,7 +685,6 @@ class TestExampleScopeNotice:
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
 @pytest.mark.parametrize("legacy_time", [None, 0.0, 20.0])
 def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(tmp_path, host_fields, legacy_time):
-    """旧時刻の有無によらず固定手順を再配送せず、実入力の観測を保つ。"""
     sid = "no-timed-procedure"
     if legacy_time is not None:
         _write_state(sid, {"last_user_prompt_at": legacy_time})
@@ -748,7 +700,6 @@ def test_ordinary_prompts_keep_input_observation_without_reinjecting_procedure(t
 
 
 def test_plan_state_names_session_without_procedure_injection(tmp_path):
-    """時刻による注記を撤去しても計画名をsessionTitleへ反映する。"""
     sid = "plan-title-no-procedure"
     home = tmp_path / "home"
     plan = home / ".claude" / "plans" / "current-plan.md"
@@ -781,7 +732,6 @@ def test_python_hook_names_only_claude_session(tmp_path: pathlib.Path, codex: bo
 # test-copy-contract: 包みの有無が異なる完了通知入力を機械通知と識別し、人間発話向け案内を混入させない契約。
 @pytest.mark.parametrize("prefix", ["", "[SYSTEM NOTIFICATION - NOT USER INPUT]\n"])
 def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathlib.Path, prefix: str) -> None:
-    """本体の包みを含む完了通知も、実ユーザー発話の注記を消費しない。"""
     result = _run(
         {"session_id": "completion-notice", "prompt": prefix + "<task-notification>Task complete</task-notification>"},
         state_dir=tmp_path,
@@ -796,8 +746,7 @@ def test_task_completion_notice_has_japanese_automated_boundary(tmp_path: pathli
 
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}], ids=["claude", "codex"])
 def test_progress_notice_keeps_thirty_minute_cycles_during_user_prompts(monkeypatch, capsys, record_property, host_fields):
-    """公開hookの実入力・出力で、10分ごとの発話と26時間後の再開が点検を延期しないことを確かめる。"""
-    # 点検の周期と独立な振り返りの記録を、24回のhook操作で繰り返さない。
+
     monkeypatch.setattr(run_skill_batch, "hook_request", lambda *_args, **_kwargs: None)
     sid = "progress-prompt-cycles"
     opening = '<atk-auto source="progress-self-check" kind="notice">'

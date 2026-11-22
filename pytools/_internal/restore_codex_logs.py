@@ -151,13 +151,11 @@ def _restore(*, home_dir: pathlib.Path | None, shm_root: pathlib.Path) -> tuple[
 
 
 def _database_pairs(codex_dir: pathlib.Path, shm_root: pathlib.Path) -> tuple[tuple[pathlib.Path, pathlib.Path], ...]:
-    """ホームディレクトリ側のパスと、旧機構が所有する共有メモリー側の`target`を対応付ける。"""
     uid = os.getuid()
     return tuple((codex_dir / name, shm_root / f"codex-{uid}-{name}") for name in _DATABASE_NAMES)
 
 
 def _home_state(home_path: pathlib.Path, target_path: pathlib.Path) -> str:
-    """ホームディレクトリ側のパスを、管理対象のsymlink（`managed`）、`regular`、`missing`、管理対象外へ分類する。"""
     if home_path.is_symlink():
         return "managed" if home_path.readlink() == target_path else "unrelated"
     if home_path.is_file():
@@ -175,7 +173,6 @@ def _unrelated_reason(home_path: pathlib.Path, target_path: pathlib.Path) -> str
 
 
 def _path_kind(path: pathlib.Path) -> str:
-    """通常ファイルでもsymlinkでもない実体の種別を表す。"""
     if path.is_dir():
         return "ディレクトリ"
     if path.is_fifo():
@@ -192,7 +189,6 @@ def _path_kind(path: pathlib.Path) -> str:
 def _copy_to_temporary_files(
     restore_pairs: list[tuple[pathlib.Path, pathlib.Path]],
 ) -> dict[pathlib.Path, pathlib.Path]:
-    """全`target`をホームディレクトリと同じディレクトリの所有者限定一時ファイルへコピーする。"""
     temporary_paths: dict[pathlib.Path, pathlib.Path] = {}
     try:
         for home_path, target_path in restore_pairs:
@@ -216,7 +212,6 @@ def _copy_to_temporary_files(
 
 
 def _files_equal(left: pathlib.Path, right: pathlib.Path) -> bool:
-    """2ファイルのサイズと内容が一致するかを逐次比較する。"""
     if left.stat().st_size != right.stat().st_size:
         return False
     with left.open("rb") as left_stream, right.open("rb") as right_stream:
@@ -233,7 +228,6 @@ def _snapshot_digest(
     snapshot: pathlib.Path,
     pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...],
 ) -> str:
-    """固定したsnapshotのファイル名、存在状態、内容からSHA-256を算出する。"""
     digest = hashlib.sha256()
     for _, target_path in pairs:
         snapshot_file = snapshot / target_path.name
@@ -287,14 +281,12 @@ def _save_conflict_snapshot(
 
 
 def _snapshot_matches(left: pathlib.Path, right: pathlib.Path) -> bool:
-    """既存snapshotが新しいsnapshotと同じファイル集合・内容を持つか確認する。"""
     left_names = {path.name for path in left.iterdir() if path.is_file()}
     right_names = {path.name for path in right.iterdir() if path.is_file()}
     return left_names == right_names and all(_files_equal(left / name, right / name) for name in left_names)
 
 
 def _fsync_directory(path: pathlib.Path) -> None:
-    """renameまたはreplace後のディレクトリエントリを永続化する。"""
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)

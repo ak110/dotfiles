@@ -21,8 +21,6 @@ import pathlib
 import time
 lazy import re
 lazy import shlex
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import urllib.parse
 lazy from typing import Any
 
@@ -73,10 +71,6 @@ DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作�
 
 
 def delegated_compact_notice(launch: work_contract.DelegatedLaunch | None) -> str:
-    """委譲先の圧縮後に読み直す資料を、`agents_server`の登録簿にある起動入力から1行で示す。
-
-    登録簿に無い委譲先（組み込みの委譲機能の子など）へは、入口と役割文書だけを示す。
-    """
     targets = [f"委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`", "起動の入力が示した役割文書"]
     if launch is not None and launch.whole_contract is not None:
         targets.append(f"全体作業契約`{launch.whole_contract}`")
@@ -90,13 +84,12 @@ CLAUDE_CODE_OUTPUT_LIMIT = 10_000
 _COMPACTION_RESERVE = 1_500
 # 作業契約の通知の囲みと固定文の文字数の見込み。本文を載せるかの判定に使う。
 _CONTRACT_NOTICE_OVERHEAD = 600
-# `atk wi process-loop instruct`が保持し、process-loopがセッション起動時に渡す本文。
+
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 PROCESS_LOOP_INSTRUCTION_ELEMENT = message_format.FORWARDED_USER_INPUT_ELEMENT
 
 
 def _resumed_for_original_goal_only() -> bool:
-    """再開予約のpickerで統括でない会話が選ばれ、元の目的の続行だけを許可された再開かを返す。"""
     from agent_toolkit._atk.wi import process_loop_identity as startup_identity  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     response = startup_identity.read(os.environ)
@@ -104,12 +97,6 @@ def _resumed_for_original_goal_only() -> bool:
 
 
 def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[bool, str | None]:
-    """起動入力がこのセッションへ作業`process-wi`を名指しするかと、その作業の引数を返す。
-
-    process-loopの統括は常に作業`process-wi all-repos`を担う。
-    起動入力は統括が起動した入れ子のCLIへも継承されるため、統括は会話IDで識別する。
-    再開予約で統括でない会話を選んだ再開は、元の目的を続けるだけで統括を担わない。
-    """
     if data.get("source") == "process-loop":
         return is_process_loop_session(session_id, os.environ) and not _resumed_for_original_goal_only(), "all-repos"
     skill, arguments = data.get("skill"), data.get("arguments")
@@ -122,14 +109,6 @@ def _launch_input_process_wi(data: dict[str, Any], session_id: str) -> tuple[boo
 def compose_session_start(
     source: str, *, delegated: bool, host: str, launch: work_contract.DelegatedLaunch | None = None
 ) -> str | None:
-    """SessionStartへ追加する本文を構成する。
-
-    メインには文脈を引き継がずに始まる時に入口の起動を、委譲先には圧縮後に入口と役割文書の読み直しを案内する。
-    規範の本文は載せない。
-
-    process-loopが渡した追加指示も、メインだけが受け取る入力として先頭へ置く。委譲先は元の作業の一部を
-    担うに過ぎず、この指示の宛先ではない。
-    """
     parts: list[str] = []
     if not delegated:
         startup_instruction = ""
@@ -218,7 +197,6 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 
 
 def _compact_recovery_context() -> str:
-    """要約を作らないホストへ、圧縮後に読む範囲を伝える。"""
     return _llm_notice(
         "会話が圧縮された。圧縮後に読むのは作業契約と会話の要約だけである。"
         "ほかの資料は、次に行う操作・判断の条件に該当した時に読め。"
@@ -287,11 +265,6 @@ def _conversation_identity_notice(session_id: object, transcript_path: object) -
 
 
 def _existing_session_temp(session_id: object) -> str | None:
-    """SessionStartが作成済みのセッションのmanaged-tempを、新たに作成せずに解決する。
-
-    サブエージェントは親と同じsession_idを受け取るため、親のセッションのmanaged-tempを解決できる。
-    SubagentStartでは領域を作成しない。親のSessionStartが作成していない場合は通知しない。
-    """
     if not isinstance(session_id, str) or not session_id:
         return None
     try:
@@ -302,7 +275,6 @@ def _existing_session_temp(session_id: object) -> str | None:
 
 
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
-    """圧縮復元の案内だけを返し、記録の走査は呼び出し側へ任せる。"""
     scope = "その他の資料は次の操作・判断に該当するときに読め。"
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
@@ -322,10 +294,9 @@ def _compaction_notice(session_id: str, transcript_path: object) -> str:
 
 
 def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) -> str:
-    """担当ごとの置き場所と、親の領域でのファイルの受渡しを通知する。"""
     if not isinstance(agent_id, str) or not agent_id:
         return session_temp_notice(session_temp)
-    # IDを単一のパス要素に保ち、同じIDの再開でも同じ場所へ到達する。
+
     child = pathlib.Path(session_temp) / f"agent-{urllib.parse.quote(agent_id, safe='')}"
     child.mkdir(exist_ok=True)
     return (
@@ -338,7 +309,6 @@ def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) ->
 
 
 def compose_subagent_start() -> str:
-    """SubagentStartへ追加する本文を返す。入口の所在とCLIの起動部分だけを示し、規範の本文を載せない。"""
     return f"{_llm_notice(SUBAGENT_ENTRY_NOTICE)}\n\n{_llm_notice(plugin_environment.cli_instructions(PLUGIN_ROOT))}"
 
 
@@ -353,12 +323,10 @@ def _parse_payload(payload_text: str) -> dict[str, Any]:
 
 
 def main(payload_text: str, *, host: str = "claude") -> int:
-    """SessionStartまたはSubagentStartのpayloadを処理する。"""
     payload = _parse_payload(payload_text)
     event_name = payload.get("hook_event_name")
     session_id = payload.get("session_id")
-    # 組み込みの委譲機能の子のSessionStartは、親と同じsession_idと自分のagent_idを持つ。
-    # 親の会話の記録と要約を変えないよう、メインの状態を扱う処理は主体がメインの時に限る。
+
     subject = resolve_hook_agent_id(payload)
     delegated = not is_main_agent_context(payload)
     if event_name == "SessionStart":
@@ -385,7 +353,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             with contextlib.suppress(managed_temp.ManagedTempError, OSError):
                 session_temp = managed_temp.resolve_session_temp(session_id)
         if source in _CONTEXT_LOSING_SOURCES and isinstance(session_id, str) and session_id:
-            # 同じセッションIDでも受信文脈は失われているため、既送の通知を本文の構成前に未送へ戻す。
             forget_subject_notices(session_id, subject)
         launch = (
             work_contract.delegated_launch(session_id)
@@ -406,8 +373,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             and (raw := os.environ.get(mcp_environment.SESSION_START_INPUT_ENV))
             and (launch := _launch_input_process_wi(json.loads(raw), session_id))[0]
         ):
-            # 自律モードの状態と表示名の種別は起動入力から立てる。エージェントによる入口の起動からは立てない。
-            # 圧縮後の再開では再び設定しない（終了工程で戻した状態を復活させないため）。
             update_state(session_id, session_state.set_process_wi_invoked)
             if host == "claude":
                 session_title.observe_skill(session_id, skill_modes.PROCESS_WI, launch[1])
@@ -423,7 +388,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             content = f"{content}\n\n{identity_context}" if content else identity_context
         if isinstance(session_id, str) and session_id:
             if source in {"clear", "compact"}:
-                # 起動したスキルと案内の本文は文脈から外れるため、次の操作で再び案内する。
                 operation_skills.forget_subject(session_id, subject)
                 if subject == MAIN_AGENT_ID:
                     forget_completion_context(session_id)
@@ -449,7 +413,6 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 if contract_context:
                     content += f"\n\n{contract_context}"
             if source == "compact":
-                # ツールを使わない返却・回答の判断にも、圧縮後に読む範囲を1通で伝える。
                 recovery = _compact_recovery_context()
                 if host == "claude" and subject == MAIN_AGENT_ID:
                     started = time.monotonic()
@@ -497,7 +460,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 "起動入力ファイル: " + html.escape(str(path)) + "。全文を読め。",
                 1,
             )
-        # 本文は区分ごとに境界を持つため、全体を重ねて囲まない。
+
         print(
             json.dumps(
                 {

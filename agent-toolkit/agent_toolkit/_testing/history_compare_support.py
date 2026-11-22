@@ -1,5 +1,3 @@
-"""計画・選定・履歴比較の試験で共有する入力と補助処理。"""
-
 import os
 import pathlib
 import subprocess

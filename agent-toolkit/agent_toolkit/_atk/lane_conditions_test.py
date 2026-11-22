@@ -1,5 +1,3 @@
-"""別プロセスの公開レーン統合・受理で、環境差による検証の再利用を確認する。"""
-
 import json
 import os
 import pathlib
@@ -17,7 +15,6 @@ from agent_toolkit._testing import git_repository
 def test_public_acceptance_in_another_process_preserves_reuse_boundaries(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], difference: str
 ) -> None:
-    """受理前に保存した同じ成功を使い、未知の入力差だけが検証を再起動する。"""
     marker = tmp_path / "executions"
     code = (
         "import pathlib,sys; path=pathlib.Path(sys.argv[1]); "

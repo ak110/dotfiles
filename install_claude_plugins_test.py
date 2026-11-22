@@ -35,7 +35,6 @@ def test_restart_notice_requires_codex_plugin_state_change(
     tmp_path: pathlib.Path,
     raw_base_url: str,
 ) -> None:
-    """導入前後のversionまたはenabledが変化した場合だけ再起動を案内する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
@@ -138,7 +137,6 @@ def test_running_codex_updates_and_preserves_previous_cache(kind: str, tmp_path:
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_plugin_state_failure_stops_before_plugin_add(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
-    """更新前状態を取得できない場合はpluginを変更しない。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
@@ -210,13 +208,11 @@ def test_invalid_target_plugin_entry_stops_before_plugin_add(
     tmp_path: pathlib.Path,
     raw_base_url: str,
 ) -> None:
-    """対象plugin要素の必須項目が不正なら更新を中止する。"""
     _assert_invalid_plugin_state_stops_before_plugin_add(kind, plugin_state, tmp_path, raw_base_url)
 
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_other_plugin_details_do_not_block_install(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
-    """対象外pluginのversionとenabledは対象pluginの状態判定へ影響させない。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)
@@ -330,7 +326,6 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
         assert (backup / relative).read_bytes() == body
     assert (backup / "1.2.2/scripts/hook.py").read_bytes() == b"old hook\n"
 
-    # 次回の実行が退避先から全versionを戻す。
     cache_root.unlink()
     stub.write_text(source, encoding="utf-8")
     run_installer(
@@ -350,11 +345,6 @@ def test_cache_restore_failure_reports_retained_backup(kind: str, tmp_path: path
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
-    """復元の途中で中断した実行が残した印と複製は、次回以降の実行が片付けて版として扱わない。
-
-    版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
-    複製の途中の中断後に元のパスが再作成されると`~restoring`の複製が残る。
-    """
     home = tmp_path / "home"
     home.mkdir()
     codex_home = home / ".codex"
@@ -391,7 +381,6 @@ def test_interrupted_restore_leftovers_are_cleaned_by_next_run(kind: str, tmp_pa
 def test_partially_removed_copy_is_completed_from_backup(
     kind: str, add_succeeds: bool, tmp_path: pathlib.Path, raw_base_url: str
 ) -> None:
-    """移動できない版をCLIが途中まで消しても、同じ実行で退避した内容から補い、次回の実行で退避先を片付ける。"""
     home = tmp_path / "home"
     home.mkdir()
     codex_home = home / ".codex"

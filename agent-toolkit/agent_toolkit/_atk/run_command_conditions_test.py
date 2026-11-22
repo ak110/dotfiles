@@ -1,5 +1,3 @@
-"""保存した実行条件の差を、値を露出させず再利用可否へ対応付ける。"""
-
 import json
 import os
 import pathlib
@@ -35,7 +33,6 @@ from agent_toolkit._testing import git_repository
 def test_saved_success_explains_conditions_and_preserves_normalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], change: str
 ) -> None:
-    """未知の入力差と復元済み起動情報を区別し、旧記録や欠落出力を成功としない。"""
     repo = git_repository.init_repository(tmp_path / "repo", files={"input": "same"}, commit_message="基準")
     output = tmp_path / "output"
     output.mkdir()
@@ -70,28 +67,21 @@ def test_saved_success_explains_conditions_and_preserves_normalization(
         executable = pathlib.Path(sys.executable)
         monkeypatch.setattr(sys, "executable", str(executable.parent) + os.sep + "." + os.sep + executable.name)
     elif change == "session":
-        # 会話・委譲の識別子の値だけが違う再開。検証結果に影響しないため成功を再利用する。
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "after-session")
         monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "after-owner")
         monkeypatch.setenv("CODEX_THREAD_ID", "after-thread")
     elif change == "session-removed":
-        # 委譲元の識別子の有無は通知先の解決を切り替えるため、再利用しない。
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
     elif change == "tool-call":
-        # 同じ会話の別のツール呼び出しからの再開。呼び出しごとに変わる識別子の値だけが違う。
         monkeypatch.setenv("CODEX_TOOL_CALL_ID", "after-tool-call")
     elif change == "tool-call-removed":
-        # 呼び出し識別子も、有無の変化は起動元の違いを示しうるため再利用しない。
         monkeypatch.delenv("CODEX_TOOL_CALL_ID")
     elif change == "mise":
-        # miseがシェルごとに付けるセッション差分とshimの起動経路（プロセス番号を含む）の値だけが違う再開。
         monkeypatch.setenv("__MISE_SESSION", "after-mise-session")
         monkeypatch.setenv("__MISE_SHIM_FALLBACK_CHAIN", '{"pid":2,"handoffs":[]}')
     elif change == "mise-removed":
-        # 値を比べない変数も、有無の変化は従来どおり再利用しない。
         monkeypatch.delenv("__MISE_SHIM_FALLBACK_CHAIN")
     elif change == "launch-kind":
-        # 委譲の種別は取得条件などの動作を切り替えるため、識別子と違って値の差でも再利用しない。
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND", "explore")
     elif change == "path":
         monkeypatch.setenv("PATH", str(tmp_path / "path-entry-value") + os.pathsep + os.environ["PATH"])

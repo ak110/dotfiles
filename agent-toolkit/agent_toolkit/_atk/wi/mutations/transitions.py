@@ -1,8 +1,3 @@
-"""WIエントリの状態遷移と、遷移に伴うメタデータの更新。
-
-`atk wi start-processing`・`hold`・`unhold`・`return-to-inbox`・`adopt`・`reject`・`rm`の処理本体を持つ。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -128,7 +123,6 @@ def _resolve_transition_paths(
     missing_is_conflict: bool,
     actor_is_agent: bool,
 ) -> list[pathlib.Path]:
-    """操作種別と明示状態から対象エントリを解決する。"""
     removable_states = WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     if action == "remove" and state is not None and state not in removable_states:
         raise WebInputError(f"エージェント環境ではstate={state}の項目を削除できません", next_action=_AGENT_REMOVE_NEXT_ACTION)
@@ -184,7 +178,6 @@ def _validate_transition_targets(
     cooldown_days: int | None,
     force: bool,
 ) -> str | None:
-    """解決済み対象の内容・対象repo・状態保護を検証する。"""
     current_content: str | None = None
     if action == "remove" and expected_content is not None:
         try:
@@ -198,10 +191,8 @@ def _validate_transition_targets(
     for path in paths:
         content = current_content if current_content is not None else path.read_text(encoding="utf-8")
         if action == "start-processing":
-            # 移動前にtype欠落・不正を拒否する。
             _wi_entries.entry_type_of(path, content)
-            # `--target-repo`未指定でもtarget_repo欠落とfrontmatter解析不能を拒否するため、
-            # 不一致判定を`verify_target_repo_content`へ委ねる一方でこの必須条件の確認は残す。
+
             entry_target_repo(path, content)
         if len(normalized_target_repos) <= 1:
             verify_target_repo_content(path, content, normalized_target_repos[0] if normalized_target_repos else None)
@@ -243,7 +234,6 @@ def _update_transition_metadata(
     now: datetime.datetime,
     cooldown_days: int | None,
 ) -> None:
-    """active状態間の移動前にcooldownメタデータを更新する。"""
     if action not in {"start-processing", "return-to-inbox"}:
         return
     for path in paths:
@@ -263,7 +253,6 @@ def _update_transition_metadata(
 
 
 def _strip_result_section(path: pathlib.Path) -> None:
-    """末尾にある最後の`## 処理結果`節を取り除く。"""
     text = path.read_text(encoding="utf-8")
     matches = tuple(re.finditer(r"(?m)^## 処理結果[ \t]*\r?\n", text))
     if not matches:
@@ -282,7 +271,6 @@ def _apply_transition(
     commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None],
     cooldown_days: int | None,
 ) -> None:
-    """検証済みエントリを削除するか、同じパスのstateを更新する。"""
     del private_notes
     destination_name = {
         "start-processing": WI_STATE_PROCESSING,
@@ -315,15 +303,10 @@ def _inbox_names_with_commit(
     states: dict[pathlib.Path, str],
     commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None],
 ) -> list[str]:
-    """遷移元が`inbox`で、対応commitを受け取った項目のファイル名を返す。"""
     return [path.name for path, state in states.items() if state == WI_STATE_INBOX and commit_values[path]]
 
 
 def _warn_skipped_processing(filenames: list[str]) -> None:
-    """作業を示すcommitを持つ項目が`processing`を経ずに終了したことを、項目ごとに警告する。
-
-    終了は成功させる。終了の直前に拒否しても作業中の表示は回復しないため、次回の着手時の操作を案内する。
-    """
     for filename in filenames:
         _outcome.report_warning(
             f"{filename}は作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した",
@@ -332,7 +315,6 @@ def _warn_skipped_processing(filenames: list[str]) -> None:
 
 
 def _transition_commit_message(action: str, count: int, note: str | None) -> str:
-    """状態遷移の管理repo用コミットメッセージを返す。"""
     item_word = "entry" if count == 1 else "entries"
     note_suffix = f" (理由: {note})" if action == "remove" and note else ""
     return {
@@ -365,17 +347,6 @@ def transition_entries(
     actor_is_agent: bool = False,
     inbox_with_commit: list[str] | None = None,
 ) -> list[str]:
-    """平引数でエントリの一括状態遷移または削除を実行する。
-
-    `inbox_with_commit`へリストを渡すと、`adopt`・`reject`で遷移元が`inbox`かつ対応commitを受け取った項目の
-    ファイル名を追記する。警告の要否は呼び出し元が決める。
-
-    `action="remove"`では`actor_is_agent`が真の場合にinboxとholdだけを対象とする。
-    `action="hold"`では`actor_is_agent`が真で`state`を省いた場合、processingの項目を保留せず`WebInputError`を送出する。
-    `actor_is_agent`が偽の場合は全状態を対象とし、`force=False`の場合（省略時もFalse）、processing状態のファイルが
-    対象に含まれるとexit 2で拒否する（`atk wi rm`で--forceを省略した場合の保護。処理中ファイルの
-    意図しない削除を防ぐ。解除するには`force=True`を渡す）。
-    """
     _validate_transition_options(
         action,
         filenames,
@@ -429,11 +400,6 @@ def transition_entries(
 
 
 def _single_target_repo(target_repo: str | typing.Iterable[str] | None) -> str | None:
-    """`--target-repo`が1個のときだけその値を返し、2個以上では`None`を返す。
-
-    `--commit`のローカル作業ツリーは単一のリポジトリでしか解決できないため、
-    2個以上を指定した実行では現在位置からの解決へ委ねる。
-    """
     if target_repo is None or isinstance(target_repo, str):
         return target_repo
     values = tuple(target_repo)
@@ -447,7 +413,6 @@ def _bulk_transition(
     *,
     action: str,
 ) -> list[str]:
-    """`--all`を指定した際に候補を確定し、確認済みの項目へその操作を1回のcommitで適用する。"""
     note = getattr(args, "note", None)
     commit = getattr(args, "commit", None)
     skip_push = getattr(args, "skip_push", False)
@@ -506,7 +471,6 @@ def _bulk_transition(
 
 
 def _report_user_fields(private_notes: pathlib.Path, filenames: list[str]) -> None:
-    """成功したCLI操作の対象にある記入欄を、保存後の位置で案内する。"""
     if not is_agent_environment():
         return
     for filename in filenames:
@@ -522,15 +486,6 @@ def _report_user_fields(private_notes: pathlib.Path, filenames: list[str]) -> No
 
 
 def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """adoptサブコマンド: 採用としてinbox・processing・holdのいずれかからadopted/へ移動しcommit・push。
-
-    移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
-    `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
-    inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
-    inboxの項目を`--commit`付きで終了した場合は、処理中を経ていないことを標準エラーへ警告する。
-    `atk serve`の画面からの採用は`transition_entries`を直接呼ぶため、この警告の対象外である。
-    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
-    """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="adopt")
         if filenames:
@@ -562,13 +517,6 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
 
 
 def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """rejectサブコマンド: 不採用としてinbox・processing・holdのいずれかからrejected/へ移動しcommit・push。
-
-    移動前に対象ファイル末尾へ`## 処理結果`節を追記する。
-    `--note`指定時はメモ、`--commit`指定時は対応commitの短縮OIDと件名を含む。
-    inbox・processing・holdのいずれの起点も許容し、同名ファイルが複数の状態にある場合はprocessing、inbox、holdの順に優先する。
-    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
-    """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="reject")
         if filenames:
@@ -598,14 +546,6 @@ def cmd_reject(args: argparse.Namespace, private_notes: pathlib.Path, now: datet
 
 
 def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """start-processingサブコマンド: inboxのAWIまたはUWIをprocessing/へ移動しcommit・push。
-
-    ファイル名指定の対象はinboxとし、`--all`ではholdの項目も候補にする。
-
-    後続の`adopt`・`reject`が処理を継続することを前提とし、`## 処理結果`節の追記はしない
-    （最終処理結果の記録は`adopt`・`reject`側で行う）。
-    位置引数の重複は`_wi_filenames.dedup_positional_filenames`で除去し、除去件数が0より大きい場合は警告する。
-    """
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="start-processing")
         if filenames:
@@ -625,7 +565,6 @@ def cmd_start_processing(args: argparse.Namespace, private_notes: pathlib.Path, 
 
 
 def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """holdサブコマンド: 処理可能または終了した項目をholdへ移動する。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="hold")
         if filenames:
@@ -647,7 +586,6 @@ def cmd_hold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetim
 
 
 def cmd_unhold(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> None:
-    """unholdサブコマンド: hold項目をinboxへ戻す。"""
     if args.all:
         filenames = _bulk_transition(args, private_notes, now, action="unhold")
         if filenames:
@@ -694,7 +632,6 @@ def cmd_return_to_inbox(args: argparse.Namespace, private_notes: pathlib.Path, n
 
 
 def cmd_rm(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """rmサブコマンド: 個別指定または対象リポジトリ単位でactive項目を削除する。"""
     if args.all:
         filenames = _bulk.remove_all_entries(
             private_notes,

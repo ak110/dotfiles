@@ -1,5 +1,3 @@
-"""`atk wi show`による本文の表示。"""
-
 import argparse
 import dataclasses
 import pathlib
@@ -25,7 +23,6 @@ from agent_toolkit._git import remote as _git_remote
 
 
 def user_field_location(text: str, kind: str | None) -> tuple[str, int] | None:
-    """正式なユーザー記入欄の名前と、保存本文上の1始まりの開始行を返す。"""
     section = _uwi.ANSWER_HEADING.removeprefix("## ") if kind == WI_TYPE_UWI else "ユーザーコメント"
     if kind != WI_TYPE_UWI and not _user_comment.has_reserved_heading(text):
         return None
@@ -42,18 +39,11 @@ def user_field_location(text: str, kind: str | None) -> tuple[str, int] | None:
 
 @dataclasses.dataclass
 class _ShowOutput:
-    """表示した行数と、同じ起動の保存後に示す記入欄の情報を保持する。
-
-    保存後の案内は、読み手が保存先で読む対象（記入欄がある項目）だけを個別の行で示し、
-    記入欄が無い項目は件数の1行にまとめる。項目の数に比例する行を標準出力へ戻さないためである。
-    """
-
     user_fields: list[str] | None
     line: int = 1
     without_field: int = 0
 
     def write(self, text: str = "") -> None:
-        """printと同じ改行を加え、次に書く行の位置を進める。"""
         print(text)
         self.line += text.count("\n") + 1
 
@@ -71,17 +61,11 @@ class _ShowOutput:
         self.user_fields.append(f"記入欄: {name} {heading} あり 開始行: {start + field[1] - 1}")
 
     def finish(self) -> None:
-        """記入欄が無い項目の件数を、個別の案内の後へ1行で加える。0件の場合は加えない。"""
         if self.user_fields is not None and self.without_field:
             self.user_fields.append(f"記入欄なし: {self.without_field}件")
 
 
 def _summary_line(text: str, kind: str | None) -> str:
-    """`--summary-only`で状態行の次に置く要約として、AWIはH1表題、UWIは質問本文の先頭行を省略せずに返す。
-
-    `atk wi list --summary-only`と同じ要約を使い、AWIでは見出し記号を除いて表題だけを返す。
-    状態行の後の行を`#`で始めないため、`--all`の種別見出しと区別できる。
-    """
     if kind == WI_TYPE_UWI:
         return uwi_body_summary(text, sys.maxsize)
     summary = body_summary(text, sys.maxsize)
@@ -89,7 +73,6 @@ def _summary_line(text: str, kind: str | None) -> str:
 
 
 def _display_body(text: str, kind: str | None, args: argparse.Namespace) -> str:
-    """全文・要約・指定節のいずれかを表示用に取り出す。"""
     if getattr(args, "summary_only", False):
         return _summary_line(text, kind)
     names = getattr(args, "section", None)
@@ -105,7 +88,6 @@ def _report_missing(
     repos: tuple[str, ...],
     args: argparse.Namespace,
 ) -> None:
-    """明示したリポジトリの不一致と、名前・種別・sourceの未一致を区別する。"""
     requested = [(name, normalized) for name, normalized in filenames if name in missing]
     entries, _ = _wi_entries.read_named_entries(
         private_notes, requested, target_repo=None, entry_type=args.type, source=args.source
@@ -127,27 +109,6 @@ def _report_missing(
 
 
 def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """showサブコマンド: `FILENAME...`指定時は指定された項目群、`--all`指定時は全件の本文を表示する。
-
-    `FILENAME`・`--all`のいずれも未指定の場合はエラー終了する（exit 2）。
-    `FILENAME`を2件以上指定した場合の区切りは`--all`と同じく各項目の後の空行1行とし、
-    1件だけ指定した場合は従来どおり空行を付けない。
-    `--type`指定時は出力対象種別（awi・uwi・all）を限定する（省略時はall）。
-    `FILENAME...`指定時は年月配置を探索し、指定順に表示する。
-    `--type`・`--source`と明示指定の`--target-repo`の
-    値で対象を限定する。`--state`・`--answered`と省略時の`--target-repo`は迂回する
-    （個別ファイル指定は明示的照会のため状態・回答有無フィルタを適用しない動作であり、
-    省略時に使う`--state=active`によってadopted・rejected状態のエントリが参照不能になる事態を避けるためである。
-    同じ理由で、カレントディレクトリから注入した対象リポジトリの省略時の値も、
-    ファイル名で一意に指定した項目を候補から外さないよう迂回する）。
-    `--all`指定時のAWI・`uwi`双方の走査対象は`--state`と連動する
-    （省略時の`active`はinbox・processing・hold、`processable`はinbox・processing、
-    `all`は全保存状態、個別状態指定はその状態のみ）。
-    `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
-    完全一致するエントリのみを出力する。
-    `--source`指定時はfrontmatterのsource一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
-    `--answered`は`--all`分岐でuwi側の回答状況（yes・no）を限定する（省略時はall）。
-    """
     output = _ShowOutput(getattr(args, "_saved_show_fields", None))
     if not args.filenames and not args.all:
         args.subparser.error("表示するファイル名または--allを指定してください。")
@@ -159,7 +120,6 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     branch_settings = _wi_branches.registry()
 
     if validated_filenames:
-        # 省略時に使う条件は対象集合を走査する照会のためのものであり、ファイル名で一意に指定した項目へは適用しない。
         explicit_repos = () if getattr(args, "target_repo_defaulted", False) else resolved_repos
         selected_by_name, missing = _wi_entries.read_named_entries(
             private_notes, validated_filenames, target_repo=explicit_repos, entry_type=args.type, source=args.source
@@ -213,6 +173,5 @@ def cmd_show(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def _branch_label(text: str, target_repo: str, branch_settings: _wi_branches.Registry) -> str:
-    """系統を持つ項目の見出しへ添える宛先の系統を返す。"""
     branch = _wi_branches.effective(text, target_repo, branch_settings)
     return "" if branch is None else f" target_branch={branch}"

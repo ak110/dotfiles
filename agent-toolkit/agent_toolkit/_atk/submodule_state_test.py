@@ -1,5 +1,3 @@
-"""親だけの履歴・作業ツリー操作が、初期化済み子の状態を保持することを実Gitで確かめる。"""
-
 import os
 import pathlib
 import subprocess
@@ -43,7 +41,6 @@ def _child_state(parent: pathlib.Path) -> tuple[str, str, str, str, str]:
 @pytest.mark.parametrize("operation", ["autosquash", "rebase", "keep-reset", "switch", "checkout", "restore"])
 @pytest.mark.parametrize("recurse", [True, False])
 def test_parent_only_operation_preserves_child(tmp_path: pathlib.Path, operation: str, recurse: bool) -> None:
-    """履歴内のgitlinkを変え、再帰設定だけが異なる対照で子のHEAD・branch・内容を比較する。"""
     parent, base, _target = _fixture(tmp_path)
     before = _child_state(parent)
     arguments = {
@@ -100,7 +97,6 @@ def test_sync_rebase_preserves_child(tmp_path: pathlib.Path, monkeypatch: pytest
 
 
 def test_lane_detached_branch_connection_preserves_child(tmp_path: pathlib.Path) -> None:
-    """準備済みdetached作業ツリーをレーンbranchへ接続しても子のレビュー状態を保持する。"""
     parent, base, _target = _fixture(tmp_path)
     git.run_git(parent, "-c", "submodule.recurse=false", "checkout", "--detach")
     before = _child_state(parent)

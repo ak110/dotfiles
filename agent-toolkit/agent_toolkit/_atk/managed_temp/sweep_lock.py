@@ -55,7 +55,7 @@ def _directory_lock(root: pathlib.Path) -> typing.Generator[bool]:
 @contextlib.contextmanager
 def sweep_access(temp_root: pathlib.Path, state_root: pathlib.Path) -> typing.Generator[bool]:
     """旧版のロックがあれば取得する。初回作成が満杯で失敗しても、一時rootの施錠は掃引終了まで保つ。"""
-    path = state_root / ".sweep/pressure.lock"
+    path = persistent_lock_path(state_root)
     with contextlib.ExitStack() as stack:
         try:
             handle = path.open("r+b")
@@ -87,3 +87,8 @@ def sweep_access(temp_root: pathlib.Path, state_root: pathlib.Path) -> typing.Ge
                 yield True
             finally:
                 file_lock.release_lock(handle)
+
+
+def persistent_lock_path(state_root: pathlib.Path) -> pathlib.Path:
+    """掃引と旧版が共用する永続ロックのパスを返す。"""
+    return state_root / ".sweep/pressure.lock"

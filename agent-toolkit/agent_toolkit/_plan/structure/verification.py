@@ -1,5 +1,3 @@
-"""計画の検証表からshell再評価を必要としないコマンドを順序付きで取得する。"""
-
 from __future__ import annotations
 
 import re
@@ -10,8 +8,8 @@ from agent_toolkit._plan.structure import constants, markdown
 
 _CODE = re.compile(r"`([^`]+)`")
 _BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
-# `cd <dir> && <command>`は検証表で最も多いshell構文のため、作業ディレクトリを引数で渡す書き換え先を示す。
-# 起草時の計画検査と統合時の検証行取得は同じ関数で判定し、統合で初めて拒否されることを避ける。
+
+
 _CD_REWRITE = (
     "cdで作業ディレクトリを変える行は、作業ディレクトリを引数で渡すargv"
     "（`uv run --directory <dir> <command>`、`git -C <dir> <command>`、`make -C <dir> <target>`など）へ書き換える。"
@@ -20,7 +18,6 @@ _CD_REWRITE = (
 
 
 def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
-    """各code spanを完全なargvへ変換する。説明と曖昧なshell構文は起動前に拒否する。"""
     failure = "検証コマンドは1 code spanに1つの完全なコマンドを書き、複数は<br>で分ける。shell構文はscriptへ移す"
     spans = list(_CODE.finditer(cell))
     if not spans or _BREAK.sub("", _CODE.sub("", cell)).strip():
@@ -32,7 +29,7 @@ def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
             words = split_words(command)
         except ValueError as error:
             raise ActionableError(f"検証コマンドの引用が不正です: {command}: {error}", next_action=failure) from error
-        # 区切り・リダイレクト・展開・前置代入は引用の外側にある場合だけshellの再評価を要する。
+
         if (
             "\n" in command
             or any(word.expansion or re.search(r"[;&|<>`]", word.unquoted) for word in words)
@@ -50,7 +47,6 @@ def commands_from_cell(cell: str) -> list[tuple[str, list[str]]]:
 
 
 def plan_commands(content: str, *, current_content: str | None = None) -> list[tuple[str, list[str]]]:
-    """現在の条件が別に確定していれば、凍結した本文に優先して検証行を取り出す。"""
     if current_content is not None:
         content = current_content
     headings = markdown.extract_headings(content)

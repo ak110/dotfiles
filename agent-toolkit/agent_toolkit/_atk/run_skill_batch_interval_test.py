@@ -1,5 +1,3 @@
-"""自動振り返りの間隔・自己記録・goal責務を公開操作で確認する。"""
-
 import argparse
 import datetime
 import io
@@ -38,7 +36,6 @@ def _capture_batch_launches(monkeypatch, *, mode="batch"):
         "agent-toolkit:review-session",
     ]
 
-    # 起動は診断出力の秘匿中継で包まれるため、包んだ引数と一致する起動だけを捕まえ、中継前の引数を記録する。
     wrapped = diagnostic_process.command(expected)
     alternate = diagnostic_process.command([*expected[:4], "meta" if mode == "batch" else "batch", expected[-1]])
 
@@ -58,8 +55,7 @@ def _capture_batch_launches(monkeypatch, *, mode="batch"):
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("reason", [None, "meta-child", "consultation", "disabled"])
 def test_public_hook_launches_initial_meta_only_when_allowed(monkeypatch, event, reason):
-    """待ちがなくても開始・終了で初回metaを起動し、meta自身は追加起動しない。"""
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(session_activity, "host_process", object)
     if reason == "meta-child":
         monkeypatch.setenv(
@@ -79,7 +75,6 @@ def test_public_hook_launches_initial_meta_only_when_allowed(monkeypatch, event,
 
 @pytest.mark.parametrize("with_legacy_reports", [False, True])
 def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_path, with_legacy_reports):
-    """対象期間の入力だけで報告先を決め、実行cwdは元の指定を保つ。"""
     notes = private_notes.default_private_notes()
     now = datetime.datetime.now(datetime.UTC)
     samples = [
@@ -159,7 +154,7 @@ def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path
 
 def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path):
     """失敗を別スコープで報告し、間隔経過後も未完了の是正があればmetaだけを見送る。"""
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     saved = []
 
     def save_failure(key, message):
@@ -177,7 +172,8 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 3
-    [(key, report)] = saved
+    assert len(saved) == 1
+    key, report = saved[0]
     assert "review-session meta" in report
     assert "meta-run.log" in report
     assert str(tmp_path) not in report
@@ -191,14 +187,13 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
         return (tmp_path / "failure.md", {}) if "inbox" in states else None
 
     monkeypatch.setattr(run_skill_batch, "_failure_entry", failure_entry)
-    assert not run_skill_batch._meta_auto_start_due(now=now)
+    assert not run_skill_batch.meta_auto_start_due(now=now)
     assert session_review.auto_start_due(now=now)
 
 
 def test_auto_meta_uses_registered_worktree_from_repository_url(monkeypatch, tmp_path):
-    """配布物のURLとconfigの正規化済みIDが同じ作業ツリーを指す。"""
     _automatic_launch(monkeypatch, "a" * 32)
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(run_skill_batch, "_plugin_repository", lambda: "https://github.com/test/package")
     monkeypatch.setattr(
         run_skill_batch.config_settings,
@@ -221,7 +216,7 @@ def test_auto_meta_uses_registered_worktree_from_repository_url(monkeypatch, tmp
 def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch):
     """モデル起動前の失敗は、手動の別作業ツリーを使わず登録元の診断を案内する。"""
     _automatic_launch(monkeypatch, "a" * 32)
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(run_skill_batch.config_settings, "repository_settings", lambda **_args: {})
     monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("起動してはならない"))
     reports = []
@@ -235,7 +230,8 @@ def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 1
-    [report] = reports
+    assert len(reports) == 1
+    report = reports[0]
     assert "`atk config repos list`" in report and "実行ログは未作成" in report
 
 
@@ -267,7 +263,7 @@ def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, man
             "report_synced": False,
         },
     )
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     if not manual:
         _automatic_launch(monkeypatch, "a" * 32)
     saved = []
@@ -287,7 +283,7 @@ def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, man
 
 def _pending(name, *, batch=False):
     path = session_review.directory() / "pending" / f"claude-{name}.json"
-    # 記録ファイルの無い対象は待ちから外れるため、準備を差し替える試験でも記録の実体を置く。
+
     transcript = session_review.directory() / "test-records" / f"{name}.jsonl"
     transcript.parent.mkdir(parents=True, exist_ok=True)
     transcript.write_text("{}\n", encoding="utf-8")
@@ -316,7 +312,6 @@ def _previous(*, legacy, now, elapsed):
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("codex", [False, True])
 def test_public_hook_defers_open_consultations(tmp_path, monkeypatch, event, codex):
-    """入力待ちの相談が全て閉じるまで、両ホストの公開hookが新規要求を発行しない。"""
     now = 1793400000.0
     _previous(legacy=False, now=now, elapsed=21601)
     _pending("ordinary")
@@ -342,7 +337,6 @@ def test_public_hook_defers_open_consultations(tmp_path, monkeypatch, event, cod
 
 @pytest.mark.parametrize("manual", [False, True])
 def test_public_cli_rechecks_open_consultation(monkeypatch, manual):
-    """要求発行後に相談が始まっても受付を抑止し、手動batchは通す。"""
     _pending("ordinary")
     session_state.update_state("consultation", lambda state: {**state, "add_awi_skill_invoked": True})
     monkeypatch.setattr(session_activity, "living_root_session_ids", lambda **kwargs: frozenset({"consultation"}))
@@ -429,7 +423,6 @@ def test_public_cli_rechecks_interval_after_lock(monkeypatch, manual):
 
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
     if manual:
-        # 準備より前に到達を確認し、外部ホストは起動しない。
         monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
         monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._prepare", execute)
         with pytest.raises(LookupError, match="準備まで到達"):
@@ -557,7 +550,6 @@ def test_public_cli_skips_batch_when_other_target_cannot_be_prepared(tmp_path, m
 
 
 def _automatic_launch(monkeypatch, launch_id):
-    """hookが渡す起動試行と同じ形で、自動起動のCLIを準備する。"""
     monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
     session_review.write(session_review.directory() / "launches" / f"{launch_id}.json", {"status": "starting"})
 
@@ -656,7 +648,7 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
     second_launch = requests[1][1][session_review.LAUNCH_ENV]
     assert session_review.read(session_review.directory() / "launches" / f"{second_launch}.json")["status"] == "settled"
     assert not failures
-    # 見送った対象は未処理として保持する。
+
     assert [target["session_id"] for target in session_review.pending()] == ["later"]
 
 

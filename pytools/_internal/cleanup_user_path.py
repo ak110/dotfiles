@@ -54,7 +54,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     env_map = _collect_userprofile_env(os.environ)
 
-    # (1) プレースホルダー化
     original_entries = _split(user_value)
     replacements: list[tuple[str, str]] = []
     placeholder_entries: list[str] = []
@@ -64,14 +63,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         if new_entry != entry:
             replacements.append((entry, new_entry))
 
-    # (2) 廃止済みのパスとシステム側との重複除外
     new_value, removed = _filter_user_path(
         _PATH_SEPARATOR.join(placeholder_entries), system_value or "", obsolete_key=_obsolete_toolkit_bin_key()
     )
     new_value, removed_winget = _filter_retired_winget_paths(new_value)
     removed.extend(removed_winget)
 
-    # (3) 存在チェック警告
     missing, unresolved = _find_missing_paths(_split(new_value))
     for original, expanded in missing:
         logger.warning(
@@ -96,7 +93,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     needs_type_promotion = reg_type == _REG_SZ and "%" in new_value
     new_reg_type = _REG_EXPAND_SZ if needs_type_promotion else reg_type
 
-    # (5) 書き戻し
     if not (replacements or removed or needs_type_promotion):
         return post_apply_outcome.PostApplyOutcome()
     try:
@@ -115,7 +111,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def remove_winget_package_paths(package_directories: Iterable[Path]) -> bool:
-    """削除に成功した固有ディレクトリを指す欠落項目だけをユーザーPATHから除く。"""
     directory_keys = frozenset(winutils.path_key(str(path)) for path in package_directories)
     if not directory_keys:
         return False
@@ -221,7 +216,6 @@ def _replace_placeholders(entry: str, env_map: Mapping[str, str]) -> str:
 
 
 def _obsolete_toolkit_bin_key() -> str | None:
-    """現在の配布元で廃止した旧binが実在しない場合だけ、既知の撤去対象を返す。"""
     root = common.find_dotfiles_root()
     if root is None:
         return None
@@ -262,11 +256,6 @@ def _filter_user_path(user_value: str, system_value: str, *, obsolete_key: str |
 def _find_missing_paths(
     entries: Iterable[str],
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str, OSError]]]:
-    """存在しないエントリーと検査できないエントリーを返す。
-
-    展開後にも `%` が残るエントリー（未定義変数残留）は判定不能として除外する。
-    判定は `pathlib.Path(p).exists()` で行う。
-    """
     missing: list[tuple[str, str]] = []
     unresolved: list[tuple[str, str, OSError]] = []
     for entry in entries:
@@ -284,5 +273,4 @@ def _find_missing_paths(
 
 
 def _split(path_value: str) -> list[str]:
-    """`;` 区切りの PATH 文字列をエントリー配列に分解する。空エントリーは除く。"""
     return [entry for entry in path_value.split(_PATH_SEPARATOR) if entry]

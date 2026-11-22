@@ -1,5 +1,3 @@
-"""WI状態遷移を独立した単純モデルと比較する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -64,7 +62,6 @@ def _state(notes: pathlib.Path) -> str | None:
     ),
 )
 def test_transition_sequences_match_reference_model(actions: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """受理と拒否の操作列で、配置・本文・一意性をモデルと一致させる。"""
     _disable_git(monkeypatch)
     with tempfile.TemporaryDirectory() as directory:
         notes = _setup_notes(pathlib.Path(directory))
@@ -109,7 +106,6 @@ def test_transition_sequences_match_reference_model(actions: list[str], monkeypa
 
 
 def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """既知事例: 終了後の再開は前回の処理結果を次の処理へ渡さない。"""
     _disable_git(monkeypatch)
     notes = _setup_notes(tmp_path)
     source = _write_awi_file(notes, "entry.md")
@@ -129,7 +125,6 @@ def test_reopening_terminal_entry_strips_previous_result(monkeypatch: pytest.Mon
 
 
 def test_bulk_actor_cooldown_and_repeat_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """複数対象、actor保護、cooldownと同一操作の再実行を一つの回帰列で固定する。"""
     _disable_git(monkeypatch)
     notes = _setup_notes(tmp_path)
     first = _write_awi_file(notes, "first.md")
@@ -196,7 +191,6 @@ def test_dependency_order_matches_reference_model(
     terminal_state: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """依存鎖では終了済みの接頭辞に続く1件だけが処理可能になる。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
         notes = _setup_notes(pathlib.Path(directory))
         names = [f"entry-{index}.md" for index in range(size)]

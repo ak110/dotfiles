@@ -56,7 +56,6 @@ def test_queue_error_does_not_interrupt_update(tmp_path: pathlib.Path, monkeypat
 def test_pending_queue_entry_prevents_duplicate(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, state_name: str
 ) -> None:
-    """既存キューの状態を読み、未完了の同じキーだけを重複抑止する。"""
     note = tmp_path / "existing.md"
     state = tmp_path / "failure.json"
     monkeypatch.setattr(report.shutil, "which", lambda _name: "/fake/atk")
@@ -101,15 +100,19 @@ def test_finish_aggregates_bootstrap_failures_and_preserves_body_failure(
     monkeypatch.setattr(runtime, "current_stage_title", "chezmoi apply")
     monkeypatch.setattr(runtime, "last_stderr_tail", "本体の診断")
     monkeypatch.setattr(runtime, "LOG_PATH", tmp_path / "update.log")
+    log = tmp_path / "uv-管理Pythonの更新-failed.log"
+    log.write_text("今回の明細\n", encoding="utf-8")
     if transport == "env":
-        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_FAILURES", "管理Pythonの更新: exit=17\n")
+        monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_FAILURES", "管理Pythonの更新: exit=17\tsaved\n" * 2)
     else:
         payload = tmp_path / "update-bootstrap-11-22.json"
         payload.write_text(json.dumps([{"title": "管理Pythonの更新", "detail": "exit=17"}]), encoding="utf-8-sig")
         monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(payload))
     assert runtime.finish(body_exit) == expected
     assert ("管理Pythonの更新", "exit=17") in recorded
-    assert "管理Pythonの更新" in capsys.readouterr().err
+    stderr = capsys.readouterr().err
+    assert stderr.count("- 管理Pythonの更新:") == 1
+    assert (str(log) in stderr) is (transport == "env")
 
 
 def test_bootstrap_failures_redacts_before_truncating(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -119,7 +122,7 @@ def test_bootstrap_failures_redacts_before_truncating(tmp_path: pathlib.Path, mo
     payload.write_text(json.dumps([{"title": "更新失敗", "detail": detail}]), encoding="utf-8")
     monkeypatch.setenv("UPDATE_DOTFILES_BOOTSTRAP_REPORT", str(payload))
 
-    assert report.bootstrap_failures(tmp_path) == [("更新失敗", f"{prefix}[REDACTED]@example.org")]
+    assert report.bootstrap_failures(tmp_path) == [report.BootstrapFailure("更新失敗", f"{prefix}[REDACTED]@example.org")]
 
 
 def test_sync_report_redacts_before_taking_tail() -> None:
@@ -131,7 +134,6 @@ def test_sync_report_redacts_before_taking_tail() -> None:
 
 
 def test_sync_report_finish_redacts_every_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """共通の抜粋を通さずに渡された終了時の標準エラーも、保存の直前で伏せて上限を守る。"""
     monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
     raw = "z" * 5000 + "\n更新ロックの例外 password=synthetic-secret-0123456789"
     runtime.sync_report.write_finish(
@@ -139,6 +141,6 @@ def test_sync_report_finish_redacts_every_entry(tmp_path: pathlib.Path, monkeypa
     )
 
     saved = runtime.sync_report.read()["stderr_tail"]
-    # 合成値は保存する末尾の範囲にあるため、伏せる処理を外すと値がそのまま残る。
+
     assert saved.endswith('更新ロックの例外 password="[REDACTED]"')
     assert len(saved) <= runtime.sync_report.STDERR_TAIL_MAX_CHARS

@@ -10,7 +10,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 
 def test_prepare_allocates_distinct_workdirs_and_keeps_documents(tmp_path: pathlib.Path, capsys) -> None:
-    """事前作成なしの再実行でも両方の文書を後から読める。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
     outputs = []
     for _ in range(2):
@@ -50,7 +49,6 @@ def test_prepare_keeps_allocated_directory_on_extraction_failure(tmp_path: pathl
 
 @pytest.mark.parametrize("conversation_only", [False, True])
 def test_prepare_allocates_workdir_from_codex_thread(tmp_path: pathlib.Path, capsys, monkeypatch, conversation_only) -> None:
-    """thread指定の通常起動と引き継ぎの会話だけの起動も事前作成を要さない。"""
     family = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("CODEX_HOME", str(family.codex_home))
     options = ["--conversation-only"] if conversation_only else []

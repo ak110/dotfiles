@@ -1,5 +1,3 @@
-"""agents_serverの共有試験補助を従来のimportパスで提供する。"""
-
 from agent_toolkit._testing.agents_server_support_backends import (
     _LAUNCHER_ENVIRONMENT_NAMES,
     _OVERLOAD_ERROR,
@@ -179,7 +177,6 @@ __all__ = [
 ]
 
 
-# listの各sessionが返し得る公開項目。
 LISTED_SESSION_KEYS = frozenset(
     {
         "session_id",

@@ -88,7 +88,6 @@ READY_TIMEOUT_SECONDS = 30.0
 
 
 def held_source(release: pathlib.Path) -> str:
-    """準備を通知し、親の解放ファイルまで生存する子のソースを返す。"""
     return (
         "import pathlib,time; "
         f"release=pathlib.Path({str(release)!r}); "
@@ -114,7 +113,6 @@ def held_process(directory: pathlib.Path, *extra: str, **kwargs: Any) -> Generat
 
 
 def prepare(directory: pathlib.Path) -> pathlib.Path:
-    """作業ディレクトリへ模擬CLIのスクリプトを置き、そのパスを返す。"""
     (directory / "held").mkdir(parents=True, exist_ok=True)
     script = directory / "late_descendant_cli.py"
     script.write_text(_SCRIPT, encoding="utf-8")
@@ -167,10 +165,6 @@ def arm(
 
 
 def trigger(directory: pathlib.Path) -> None:
-    """spawnerへholderを起動させ、準備を上限まで待つ。
-
-    生成が止められていてholderが起動しない場合は、上限まで待って処理を続ける。
-    """
     (directory / "trigger").touch()
     deadline = time.monotonic() + READY_TIMEOUT_SECONDS
     while helpers.read_published(directory / "holder.pid") is None and time.monotonic() < deadline:
@@ -205,7 +199,6 @@ def assert_released(directory: pathlib.Path) -> None:
 
 
 def _holds(pid: int, created: float, start_id: str) -> bool:
-    """起動時刻が一致する同じholderが資源を保持したまま生存しているかを返す（PIDの再利用と区別する）。"""
     try:
         process = psutil.Process(pid)
         return process_identity.matches(process, created, None if start_id == "-" else start_id) and process.status() not in (

@@ -36,7 +36,6 @@ _TARGET_FIELDS = (
 
 
 def plugin_version(root: pathlib.Path) -> str:
-    """実行中の配布物に記録された版を返す。"""
     return json.loads((root / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"]
 
 
@@ -65,11 +64,6 @@ def _record_state(raw: Any) -> dict[str, Any]:
 
 
 def _log_diagnostics(raw: Any) -> dict[str, Any]:
-    """実行ログ全体から、会話本文を除いた診断を有限の量で抜き出す。
-
-    末尾だけを切り出すと、会話出力が末尾を占めた回に診断イベントと実行条件が失われるため、全行を走査して種類ごとに上限を設ける。
-    末尾は、実行条件と診断イベントが使った残りの量に収める。
-    """
     if not raw:
         return {"status": "実行ログなし（モデル未起動、または所在未記録）"}
     header: list[str] = []
@@ -93,7 +87,7 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
                     header_open = False
                 if line.startswith("[stdout] "):
                     payload = line.removeprefix("[stdout] ")
-                    # 構造化イベントには会話本文やツール入力が含まれるため、診断のイベントだけを転載する。
+
                     if diagnostic_process.is_error_event(payload):
                         event_count += 1
                         events.append(ByteDiagnosticLine(payload, line_bytes=_LINE_BYTES))
@@ -101,7 +95,7 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
                         omitted += 1
                     continue
                 clipped = ByteDiagnosticLine(line, line_bytes=_LINE_BYTES)
-                # 子の出力より前の行は、run-skillが書く実行条件（対象、引数、候補）である。
+
                 header_open = header_open and len(header) < _HEADER_LINES and header_bytes + clipped.size <= _HEADER_BYTES
                 if header_open:
                     header.append(clipped.text)
@@ -132,7 +126,6 @@ def _log_diagnostics(raw: Any) -> dict[str, Any]:
 
 
 def _previous_scope(target: dict[str, Any]) -> dict[str, Any] | None:
-    """準備が`--after`で読む前回の処理範囲を返す。行数とdigestだけを持ち、会話本文を含まない。"""
     if not target.get("host") or not target.get("session_id"):
         return None
     path = session_review.previous_scope(target)
@@ -163,7 +156,7 @@ def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
         "exit_code": manifest.get("exit_code"),
         "log": _log_diagnostics(manifest.get("log_path")),
     }
-    # JSONの文字列内に改行やコード囲みがあっても、本文の構造として解釈されないようインデントする。
+
     return (
         "### 失敗時の入力と診断\n\n"
         + "\n".join("    " + line for line in json.dumps(details, ensure_ascii=False, indent=2).splitlines())

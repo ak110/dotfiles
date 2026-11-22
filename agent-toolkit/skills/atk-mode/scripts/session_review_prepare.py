@@ -71,7 +71,6 @@ _STATS_MAX_BYTES = 30_000
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """コマンドライン引数を定義する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--allow-partial-records", action="store_true", help="欠測付きの正常行を取得する。")
     session = parser.add_mutually_exclusive_group(required=True)
@@ -159,18 +158,16 @@ _MISSING_NEXT_ACTIONS = {
 
 
 def _missing(item: str, detail: str | None = None) -> int:
-    """取得できなかった準備項目を、項目に対応する引数と取得方法とともに報告する。"""
     print(f"不足: {item}", file=sys.stderr)
     if detail:
         print(detail, file=sys.stderr)
-    # 原因が固有の次の操作を持つ場合は、項目の一般的な取得方法を重ねない。
+
     if detail is None or _next_action.NEXT_ACTION_PREFIX not in detail:
         print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
     return 2
 
 
 def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
-    """Git共通ディレクトリ（`--git-common-dir`）から対象リポジトリ固有の振り返り参照文書を解決する。"""
     if target_repo is None:
         return None
     try:
@@ -191,7 +188,6 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     return path if path.is_file() else None
 
 
-# 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
 _SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line", "record-gap"})
 
 
@@ -204,7 +200,6 @@ def _extract_bundle(
     conversation_main_only: bool = False,
     conversation_scope: pathlib.Path | None = None,
 ) -> tuple[str | None, list[dict[str, Any]]]:
-    """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         exit_code = session_review_evidence.main(
@@ -224,7 +219,6 @@ def _extract_bundle(
 
 
 def _recovered_line(event: dict[str, Any]) -> str:
-    """回復した1行を、方式ごとに読み手が除いた範囲と根拠を取り違えない形で示す。"""
     method = event.get("method")
     if method in ("joined-fragment-superseded", "joined-fragment-lost"):
         complete = f"{event['superseded_by']}行目" if event.get("superseded_by") is not None else "完全な版なし"
@@ -237,7 +231,6 @@ def _recovered_line(event: dict[str, Any]) -> str:
 
 
 def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, Any]]) -> list[str]:
-    """候補件数と区別した確認範囲と回復した記録行を、全ての準備文書へ同じ集合で示す。"""
     lines = ["", "## 未確認範囲", ""]
     if not events:
         lines.append("未解決の対象は無い。")
@@ -265,7 +258,6 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
 
 @session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
-    """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
     if args.agents_session_id is not None:
         try:
@@ -416,18 +408,21 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         evidence_index = [] if lightweight else _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
-    (bundle_dir / "unconfirmed.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
-    )
-    (bundle_dir / "recovered.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
-    )
-    source_path.write_text(
-        json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False), encoding="utf-8"
-    )
+    first_window = args.conversation_window and args.conversation_after is None
+    if first_window or (not lightweight and unresolved):
+        (bundle_dir / "unconfirmed.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
+        )
+    if first_window or (not lightweight and recovered):
+        (bundle_dir / "recovered.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
+        )
+    if first_window:
+        source_path.write_text(
+            json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
-    # 準備と証拠照会で同じ入力指定を使い、
-    # 全文を照会するコマンドとして示す。
     detail_command = "atk run-script session-review-evidence -- " + shlex.join(session_arguments)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME

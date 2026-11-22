@@ -1,5 +1,3 @@
-"""生成されたreader-fit起動本文から、対象別の返却回復までを検収する。"""
-
 import asyncio
 import json
 import pathlib
@@ -51,11 +49,9 @@ def _reader_request(tmp_path):
 )
 @pytest.mark.asyncio
 async def test_reader_fit_requires_individual_completion(tmp_path, case):
-    """有効対象を保持し、入力集合・個別完了に反する返却を同じ回復へ渡す。"""
     paths, prompt, kind, blocks = _reader_request(tmp_path)
     session = state.SessionState("reader-fit", str(tmp_path), prompt=prompt, launch_kind=kind)
     if case == "blocked":
-        # 不足申告の一度の再確認を終えた後の、個別返却の形式を検収する。
         session.result_contract_recovery_consumed = True
     if case == "missing":
         blocks.pop()
@@ -79,7 +75,6 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
     overall = "" if case == "blocked" else "状態: completed\n"
     message = overall + "未解決の指摘数: 0\n対象別の判定と証拠:\n" + "\n".join(blocks) + "\n新しい要件: なし"
     if case == "hard-break":
-        # Markdownの改行用に行末へ空白2文字を付けた返却も、同じ対象集合として受理する。
         message = "\n".join(line + "  " for line in message.splitlines())
     result: dict[str, Any] = {"status": "completed", "agent_message": message, "error": None}
     valid = case in {"valid", "hard-break", "blocked"}
@@ -96,13 +91,12 @@ async def test_reader_fit_requires_individual_completion(tmp_path, case):
         assert result["agent_message"] == message
         error = result["error"]
         assert isinstance(error, dict)
-        # 検査関数による辞書更新後も、Pylintは初期値Noneから推論する。
+
         assert "resultContract" in error  # pylint: disable=unsupported-membership-test
 
 
 @pytest.mark.parametrize("returned", ["updated", "previous"])
 def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned):
-    """対象を更新する継続を受理し、返却検査は最新の継続入力の成果物を基準にする。"""
     paths, prompt, kind, blocks = _reader_request(tmp_path)
     added = tmp_path / "third.md"
     added.write_text("# 追加対象\n本文\n", encoding="utf-8")
@@ -125,7 +119,6 @@ def test_reader_fit_retarget_continuation_updates_target_set(tmp_path, returned)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_reader_fit_recovery_receives_complete_resubmission(tmp_path, monkeypatch, idle_after_result):
-    """不正な全体成功を回復し、同じ会話から全対象の再提出をwaitで受領する。"""
     _paths, prompt, kind, blocks = _reader_request(tmp_path)
     final = "状態: completed\n対象別の判定と証拠:\n" + "\n".join(blocks)
     incomplete = "状態: completed\n対象別の判定と証拠:\n" + blocks[0]
@@ -159,7 +152,7 @@ async def test_reader_fit_recovery_receives_complete_resubmission(tmp_path, monk
             result = await owner.wait()
         assert result["status"] == "completed" and result["agent_message"] == final
         assert len(client.queries) == 2 and session.result_contract_recovery_consumed
-        # 回復入力は、前の応答が委譲元へ届かず最後の応答へ全文を書く必要があることを伝える。
+
         assert client.queries[1].count(delegated_session.FINAL_RESPONSE_NOTICE) == 1
         assert not session.pending_result and not session.result_contract_recovery_reason
         assert publications and all(message == final for message in publications)

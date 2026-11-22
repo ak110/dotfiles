@@ -60,8 +60,6 @@ class TestRetiredSkillInvocation:
 
 
 class TestUwiCompletionNotice:
-    """投入時に記録したUWIへの回答の配送と、対象外イベントによる未消費を検証する。"""
-
     @pytest.mark.parametrize(
         "excluded",
         [

@@ -64,10 +64,9 @@ def _retry(status: int, attempt: int = 2):
 
 
 async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
-    """同じ状態をMCPのlist/showと公開CLIのlist/waitへ通し、文脈量をエージェント向けの応答へ出さない。"""
     monkeypatch.setattr(mcp_tools, "_MANAGER", owner)
     context_usage.record_context_usage(session, 53500, 1000000)
-    # 通知の受信時刻は変えず、各公開操作が経過秒を計算する時刻だけを決める。
+
     first_at = datetime.datetime.fromisoformat(session.api_error["first_at"])
     clock = Mock(wraps=datetime.datetime)
     clock.now.return_value = first_at
@@ -111,7 +110,6 @@ async def _assert_public_error(owner, session, tmp_path, monkeypatch, capsys):
 @pytest.mark.parametrize("scenario", ["limit", "bare", "auth-after-limit", "no-reset"])
 @pytest.mark.asyncio
 async def test_claude_retry_receive_and_public_projection(tmp_path, monkeypatch, capsys, scenario):
-    """利用枠報告の有無とエラー遷移をMCPとCLIの各操作へ同じ形で返し、通知数を試行数へ数えない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
@@ -119,7 +117,7 @@ async def test_claude_retry_receive_and_public_projection(tmp_path, monkeypatch,
     messages: list[SystemMessage | claude_agent_sdk.SystemMessage] = [SystemMessage("retry-session")]
     if scenario != "bare":
         messages.append(_rate_limit_event("rejected", "five_hour", None if scenario == "no-reset" else 2000000000))
-    # 通知件数3とattempt7を分け、同じ通知の反復を試行回数へ加算する退行を検出する。
+
     messages.extend(_retry(429, 7) for _ in range(3))
     if scenario == "auth-after-limit":
         messages.append(_retry(401, 11))

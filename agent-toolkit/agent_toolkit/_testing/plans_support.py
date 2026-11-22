@@ -1,5 +1,3 @@
-"""plansの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import os
@@ -29,7 +27,6 @@ _OWNER_SESSION = "plans-test-session"
 
 
 def _init_local_notes(root: pathlib.Path) -> None:
-    """remote不要のlocal-only private-notesを初期化する。"""
     root.mkdir()
     git_repository.init_repository(root, initial_branch="main")
     git_repository.run_git(root, "config", "user.name", "plans-test")
@@ -39,7 +36,6 @@ def _init_local_notes(root: pathlib.Path) -> None:
 
 
 def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
-    """upstream付きprivate-notesを初期化する。"""
     _init_local_notes(root)
     git_repository.init_bare_repository(remote)
     git_repository.run_git(root, "remote", "add", "origin", str(remote))
@@ -47,7 +43,6 @@ def _init_remote_notes(root: pathlib.Path, remote: pathlib.Path) -> None:
 
 
 def _clone_notes(remote: pathlib.Path, clone: pathlib.Path) -> None:
-    """並行更新用のprivate-notes cloneを作成する。"""
     git_repository.run_git(remote.parent, "clone", str(remote), str(clone))
     git_repository.run_git(clone, "config", "user.name", "plans-test-clone")
     git_repository.run_git(clone, "config", "user.email", "plans-test-clone@example.invalid")
@@ -55,13 +50,11 @@ def _clone_notes(remote: pathlib.Path, clone: pathlib.Path) -> None:
 
 
 def _preserved_times(path: pathlib.Path) -> tuple[float | None, int]:
-    """取得できる作成日時と更新日時を返す。"""
     birth = _plan_file._creation_epoch(path)  # pylint: disable=protected-access
     return birth, path.stat().st_mtime_ns
 
 
 def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, int]) -> None:
-    """作成日時を取得できる環境では作成日時も含めて一致を確認する。"""
     birth, mtime_ns = expected
     assert path.stat().st_mtime_ns == mtime_ns
     if birth is not None:
@@ -69,20 +62,17 @@ def _assert_preserved_times(path: pathlib.Path, expected: tuple[float | None, in
 
 
 def _set_stable_mtime(path: pathlib.Path) -> tuple[float | None, int]:
-    """日時が維持されることを確かめるため更新日時を固定して返す。"""
     timestamp_ns = 1_700_000_000_123_456_789
     os.utime(path, ns=(timestamp_ns, timestamp_ns))
     return _preserved_times(path)
 
 
 def _assert_preserved_birth(path: pathlib.Path, expected_birth: float | None) -> None:
-    """取得できる環境では作成日時だけの維持を確認する。"""
     if expected_birth is not None:
         assert _plan_file._creation_epoch(path) == expected_birth  # pylint: disable=protected-access
 
 
 def _create_saved_plan(notes: pathlib.Path, relative: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """commit済みのメイン・詳細計画を作成する。"""
     main = notes / "plans" / relative
     detail = main.with_name(main.stem + ".detail.md")
     main.parent.mkdir(parents=True)
@@ -121,7 +111,6 @@ _PROGRESS_PLAN_TEMPLATE = """# plan
 
 
 def _write_saved_progress_plan(notes: pathlib.Path, relative: pathlib.Path, rows: str) -> pathlib.Path:
-    """進捗ログを持つ保存済みメイン計画を作成する。"""
     main = notes / "plans" / relative
     main.parent.mkdir(parents=True, exist_ok=True)
     main.write_text(_PROGRESS_PLAN_TEMPLATE.format(rows=rows), encoding="utf-8")

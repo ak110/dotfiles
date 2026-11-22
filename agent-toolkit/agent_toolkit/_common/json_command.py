@@ -1,5 +1,3 @@
-"""外部CLIのJSON応答を取得する共有実装。"""
-
 import dataclasses
 import json
 import subprocess

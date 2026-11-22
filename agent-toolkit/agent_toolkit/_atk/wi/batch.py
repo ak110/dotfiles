@@ -74,12 +74,10 @@ class BatchEntry:
 
 
 def _is_structural_line(line: str) -> bool:
-    """`show`が付加する構造見出しまたは空行かを判定する。"""
     return not line or _TYPE_HEADING_RE.fullmatch(line) is not None or _REPO_HEADING_RE.fullmatch(line) is not None
 
 
 def _entry_boundaries(lines: list[str]) -> list[int]:
-    """エントリ見出し行（直後がfrontmatter開始区切り）の行番号を返す。"""
     return [
         index
         for index, line in enumerate(lines)
@@ -90,12 +88,6 @@ def _entry_boundaries(lines: list[str]) -> list[int]:
 
 
 def _validate_entry(name: str, raw_text: str) -> BatchEntry:
-    """1エントリの保存前検証を行い、`BatchEntry`へ確定する。
-
-    検証は解析結果の読み取りだけで完結させ、保存値は書き換えない。
-    frontmatterの`target_repo`は非空の文字列を必須とし、URLは投入元の非originリモートとの
-    一致も検査する。移行元にだけ存在する旧ローカルパス形式の保存値は原値で取り込む。
-    """
     parsed = _frontmatter.parse_frontmatter(raw_text)
     if parsed is None:
         raise WebInputError(f"frontmatterを解析できません: {name}", next_action=_SHOW_FORMAT_NEXT_ACTION)
@@ -115,7 +107,6 @@ def _validate_entry(name: str, raw_text: str) -> BatchEntry:
     try:
         _git_remote.normalize_remote_url(target_repo)
     except ValueError:
-        # 復元元にだけ存在する旧ローカルパスは、保存済みの字面を維持する。
         pass
     else:
         _wi_repo.resolve_repo_id_or_raise(target_repo, warn_non_origin=True)
@@ -138,7 +129,6 @@ def _normalized_lines(text: str) -> list[str]:
 
 
 def _structure_error(lines: list[str], boundaries: list[int]) -> tuple[str, str] | None:
-    """show形式の構造に該当しない理由と次の操作を返し、該当する場合は`None`を返す。"""
     if not boundaries:
         return (
             "show形式のエントリ見出し（`### <ファイル名>`とその直後のfrontmatter）が見つかりません",
@@ -194,7 +184,6 @@ def parse_show_batch(text: str) -> list[BatchEntry]:
 
 
 def _existing_entry_path(private_notes: pathlib.Path, name: str) -> pathlib.Path | None:
-    """年月配置から指定されたファイル名の実体を探し、最初に見つかったパスを返す。"""
     return next((path for path in iter_entry_paths(private_notes) if path.name == name), None)
 
 
@@ -218,20 +207,6 @@ def _duplicate_original_names(
     existing: set[str],
     case_sensitive: bool,
 ) -> set[str]:
-    """ファイル名と本文がともに既存項目と一致するエントリの元ファイル名を返す。
-
-    同じ`show`形式の出力を二重に取り込む操作で、内容の同じ項目が再採番されて増えることを防ぐ。
-    本文の一致は全文の完全一致で判定し、frontmatterの差異と空白の差異を同一視しない。
-    比較する前に改行を正規化する。frontmatterの値（`plan_file`を含む）は原文のまま比べる。
-
-    `_rewrite_depends_on`による読み替えは本判定の前に適用しない。読み替え先は取り込むエントリの
-    保存名の割り当てで決まり、その割り当てには本判定の結果が必要となるためである。
-    取り込みを省いたエントリの依存先は、既存項目として保存済みの本文が指す名前のまま解決できる。
-
-    本判定の対象を本モジュールでの取り込みだけとするのは、通常の`atk wi add`による投入が
-    保存ファイル名を投入時刻から新規採番し、既存項目とファイル名が一致する入力を生じさせないことによる。
-    この採番規則が変わると通常の投入でも同じ重複が生じるため、その時点で本判定の適用範囲を見直す。
-    """
     key = functools.partial(_wi_filenames.comparison_key, case_sensitive=case_sensitive)
     existing_by_key = {key(name): name for name in existing}
     duplicated: set[str] = set()
@@ -257,14 +232,6 @@ def _assign_filenames(
     now: datetime.datetime,
     case_sensitive: bool,
 ) -> dict[str, str]:
-    """元ファイル名から保存ファイル名への対応を書き込み前に一括確定する。
-
-    元名を維持できるエントリを先に確定し、年月配置の既存名と衝突するエントリだけを
-    通常の投入と同じ規則を使って再採番する。再採番候補は既存名・元名を維持するエントリの元名・
-    割り当て済みの保存名を予約集合として除外する。
-    既存名との衝突判定と予約集合の判定は`_wi_filenames.comparison_key`が返す比較キーで行い、
-    大文字小文字を区別しないファイルシステムでも既存ファイルを上書きしない。
-    """
     timestamp = now.strftime("%Y%m%d-%H%M%S")
     key = functools.partial(_wi_filenames.comparison_key, case_sensitive=case_sensitive)
     reserved = {key(name) for name in existing}
@@ -285,7 +252,6 @@ def _assign_filenames(
 
 
 def _has_inline_value(inline: str) -> bool:
-    """`depends_on:`見出し行の`:`以降に、YAMLコメントを除いた値が書かれているかを判定する。"""
     split = _DEPENDS_ON_VALUE_RE.fullmatch(inline)
     assert split is not None
     return bool(split.group("scalar").strip())
@@ -354,8 +320,7 @@ def _rewrite_depends_on(entry: BatchEntry, renames: dict[str, str]) -> str:
                 f"depends_onの要素行で値とコメントの境界を特定できないため読み替えできません: {entry.original_name}（{value}）",
                 next_action=f"depends_onの要素行から行末のコメントを除き、{_DEPENDS_ON_BLOCK_NEXT_ACTION}",
             )
-        # 差し替え先は本モジュールが採番した`{タイムスタンプ}-{連番}.md`形式であり、
-        # 引用符を必要としないYAMLのプレーンスカラーに該当する。値以降の空白とコメントは字面ごと残す。
+
         lines[index] = f"{indent}- {renames[dependency]}{split.group('trailing')}"
     return "\n".join(lines)
 
@@ -381,15 +346,6 @@ def _dependency_warnings(
     existing: set[str],
     case_sensitive: bool,
 ) -> list[str]:
-    """取り込み先に実在しない`depends_on`参照を警告文へ列挙する。
-
-    取り込み後に実在する名前は、年月配置の既存名、バッチ内エントリの元名
-    （再採番された元名への参照は`_rewrite_depends_on`が新名へ差し替える）、
-    および再採番で確定した保存名の3種とする。
-    判定対象の依存先は`_declared_dependencies`が返す列とし、スカラー形式の`depends_on`も含める。
-    実在判定は`_wi_filenames.comparison_key`が返す比較キーで行い、大文字小文字を区別しないファイルシステムで
-    大小の綴りだけが異なる参照を不在と誤判定しない。警告文には参照の原文を用いる。
-    """
     return _wi_filenames.missing_dependency_warnings(
         [(assignments[entry.original_name], dependency) for entry in entries for dependency in _declared_dependencies(entry)],
         resolvable=set(assignments) | set(assignments.values()) | existing,
@@ -404,18 +360,6 @@ def add_batch_entries(
     now: datetime.datetime,
     storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
 ) -> tuple[list[tuple[str, str]], list[str], list[str]]:
-    """`show`形式のテキスト群を解析し、全エントリをinboxへ原文保持で取り込む。
-
-    戻り値は`(元ファイル名, 保存ファイル名)`の対応リスト、取り込みを省いた元ファイル名のリスト、
-    および警告リストとする。
-    元ファイル名は連結後の全体集合で重複の有無を確認し、重複があれば`depends_on`の読み替え先が
-    一意に定まらないため全件拒否する。
-    重複と既存名との衝突を確認する判定は、取り込み先ディレクトリの大文字小文字の区別を
-    `_wi_filenames.is_case_sensitive`で実際に確認した結果に基づく比較キーで行い、大文字小文字を区別しない
-    ファイルシステムで書き込みが互いを上書きする組も拒否する。
-    ファイル名と本文がともに既存項目と一致するエントリは書き込まず、再採番もしない。
-    それ以外のファイル名は取り込み先と衝突しない限り元名を維持する。
-    """
     if not texts:
         raise WebInputError("取り込む本文が無い", next_action="取り込む本文を1件以上指定してください")
     entries = [entry for text in texts for entry in parse_show_batch(text)]
@@ -476,10 +420,6 @@ def add_batch_entries(
 
 
 def _collect_batch_texts(args: argparse.Namespace) -> list[str]:
-    """一括取り込みの入力テキスト群を確定する。
-
-    エディターで本文を受け取る場合は原文保持のため`strip`を適用しない収集形（`strip=False`）を用いる。
-    """
     body_files = getattr(args, "body_file", None)
     if body_files:
         try:

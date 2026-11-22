@@ -1,5 +1,3 @@
-"""入口のスキル`atk-mode`の本文が、圧縮後に付け直される範囲に収まり、作業の名前がhookの読み替えと一致することを確かめる。"""
-
 import re
 from pathlib import Path
 
@@ -19,7 +17,6 @@ _MAX_BODY_CHARACTERS = 4_400
 
 # test-copy-contract: 圧縮後に付け直される範囲へ入口の本文の全体が収まることを、本文の量で保証する。
 def test_entry_body_fits_reattached_range() -> None:
-    """上限を超える追記は、作業ごとの手順書か原則の本文へ移す。"""
     text = _ENTRY.read_text(encoding="utf-8")
     frontmatter = re.match(r"---\n.*?\n---\n", text, flags=re.DOTALL)
     assert frontmatter is not None
@@ -27,13 +24,11 @@ def test_entry_body_fits_reattached_range() -> None:
 
 
 def test_entry_table_names_every_work_the_hooks_resolve() -> None:
-    """表の作業の名前とhookが読み替える作業の名前がずれると、名指しした作業の状態が設定されない。"""
     rows = re.findall(r"^\| `([a-z-]+)[ `]", _ENTRY.read_text(encoding="utf-8"), flags=re.MULTILINE)
     assert set(rows) == {*skill_modes.ENTRY_WORKS, "subagent"}
 
 
 def test_argument_hint_lists_every_named_work() -> None:
-    """補完が示す作業と入口が受け付ける作業がずれると、ユーザーは名指しできる作業を補完から知れない。"""
     hint = re.search(r'^argument-hint: "\[([a-z|-]+)\]', _ENTRY.read_text(encoding="utf-8"), flags=re.MULTILINE)
     assert hint is not None
     assert set(hint[1].split("|")) == set(skill_modes.ENTRY_WORKS)

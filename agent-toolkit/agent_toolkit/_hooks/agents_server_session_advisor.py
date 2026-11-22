@@ -34,8 +34,6 @@ import re
 
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server.continuation_wait import continuation_wait_seconds
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
@@ -84,7 +82,6 @@ def _continuation_owned(payload: dict) -> bool:
 
 
 def _observation_status(state: dict, owner_agent_id: str) -> tuple[list[str], list[str], dict[str, int]]:
-    """Stopと圧縮で同じ主体の未回収・継続中・応答待ちを読む。"""
     pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
     continued = _observations.retained_running_session_ids(state, owner_agent_id)
     pending_session_ids = sorted(set(pending_session_ids) | set(continued))
@@ -130,7 +127,6 @@ def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """未観測作業の判定結果と、警告する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""

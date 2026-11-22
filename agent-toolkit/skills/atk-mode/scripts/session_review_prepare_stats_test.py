@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_stats_test）。"""
 
 from __future__ import annotations
 
@@ -357,7 +356,6 @@ def test_prepare_extracts_fixed_record_problems_without_naming_them(
 
 
 def test_first_pass_stats_keeps_missing_and_denominator() -> None:
-    """初回表示でも段階別の欠落と分母を保持する。"""
     row = {
         "kind": "cost-metrics-first-pass",
         "stage": "ci",
@@ -374,7 +372,6 @@ def test_first_pass_stats_keeps_missing_and_denominator() -> None:
 
 @pytest.mark.parametrize("parent_available", [False, True])
 def test_fork_inherited_calls_do_not_count_as_child_operations(tmp_path: pathlib.Path, parent_available: bool) -> None:
-    """親子で複製した操作は除き、親を取得できないときは帰属不明の範囲を示す。"""
 
     def call(identifier: str, kind: str = "function_call") -> dict:
         return {

@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_warn_markers_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ def test_warn_mode_ignores_identifier_only_management_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告形式でない管理用の値への一致を警告として報告しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -55,7 +52,6 @@ def test_warn_mode_accepts_real_line_start_markers_only(
     warning_line: str,
     expected: bool,
 ) -> None:
-    """実在する行頭マーカーを受理し、コマンド出力内のフック通知標識を除く。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -105,7 +101,6 @@ def test_warn_mode_restricts_generic_markers_to_actual_line_start(
     warning_line: str,
     matched: bool,
 ) -> None:
-    """一般警告語だけを引用・行番号付き表示から除外し、明示マーカーは維持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -140,7 +135,6 @@ def test_warn_mode_accepts_structured_warning_fields_and_grep_keeps_arbitrary_se
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """構造化警告は受理し、任意本文の検索は`--grep`へ分離する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -212,7 +206,6 @@ def test_warn_mode_accepts_case_variants_of_structured_warning_fields(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """構造化警告フィールドの大文字表記差を許容し、本文途中の語は抽出しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -238,7 +231,6 @@ def test_warn_mode_keeps_ordinary_siblings_out_of_structured_warning_text(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告キーの値または直接警告辞書の本文だけを抽出し、兄弟の通常本文を除外する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -281,7 +273,6 @@ def test_warn_mode_rejects_structured_markers_without_a_warning_body(
     capsys: pytest.CaptureFixture[str],
     marker: dict[str, str],
 ) -> None:
-    """区分だけを持つ構造化結果は、警告本文が無いため警告として数えない。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "toolUseResult": marker, "message": {"role": "user", "content": []}}],
@@ -408,7 +399,6 @@ def test_schema_definitions_are_not_runtime_warnings(
     wrapped: bool,
     runtime: bool,
 ) -> None:
-    """実記録形式で、定義と兄弟の実警告を公開照会・候補化で区別する。"""
     value: dict[str, object] = {
         "outputSchema": {"type": "object", "properties": {field: {"type": "string", "description": "定義の説明文"}}}
     }

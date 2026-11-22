@@ -1,5 +1,3 @@
-"""保存済みrolloutの委譲入力と計画を対応付ける。ファイル中の参照一般は担当の証拠にしない。"""
-
 from __future__ import annotations
 
 import re
@@ -14,7 +12,7 @@ from agent_toolkit._plan.structure.constants import PLAN_QUEUE_ID_PATTERN
 from session_evidence_user_events import _delegation_request
 
 _RESOURCES = re.compile(r'^<atk-auto source="agent-toolkit" kind="plugin-resources">\n.*?\n</atk-auto>\s*', re.S)
-# 保存元の絶対パスは、統計を実行するOSと異なる場合がある。
+
 _ROLE_HEADER = re.compile(
     r"次の文書の手順を実行せよ（出所: (?:/|[A-Za-z]:[/\\]|\\\\)[^\n]+\.subagent\.md）。\n役割: [^\n]+\n入力:\n"
 )
@@ -26,8 +24,6 @@ _RUN_BRANCH = r"process-wi-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-lane-[0-9
 
 @dataclass(frozen=True)
 class SavedPlan:
-    """保存した計画の名前、実装レーンと関連WI。"""
-
     path: Path
     worktree: str
     branch: str | None
@@ -35,16 +31,14 @@ class SavedPlan:
 
     @classmethod
     def from_progress(cls, path: Path, worktree: str, wis: frozenset[str], rows: list[tuple[str, str, str]]) -> SavedPlan:
-        """作業用の計画名は年月を持たないため、移動後は同じレーンの実装記録で区別する。"""
         pattern = rf"(?:^|[。;]\s*)(?:専用)?worktree={re.escape(worktree)}[、,\s]+branch=({_RUN_BRANCH})(?=[。、,\s]|$)"
         branches = {branch for _, _, note in rows for branch in re.findall(pattern, note.replace("\\", "/"))}
         return cls(path, worktree, branches.pop() if len(branches) == 1 else None, wis)
 
     def matches(self, reference: PurePosixPath, worktree: str, branch: str | None) -> bool:
-        """保存名か、同じ巡回のレーンで指定された作業名に対応するかを返す。"""
         if self.path.name != reference.name or (self.worktree and self.worktree != worktree):
             return False
-        # 年月付きの可搬参照は、保存先rootを移した複製でも同じ計画を指す。
+
         key = self.path.parts[-4:]
         if len(key) == 4 and key[0] == "plans" and re.fullmatch(r"\d{4}/\d{2}", "/".join(key[1:3])):
             if reference == PurePosixPath(self.path.as_posix()):
@@ -82,15 +76,12 @@ def _assignment_fields(text: str) -> Assignment | None:
 
 @dataclass
 class RolloutAssignment:
-    """最初の呼出し以前の依頼と、その後の担当変更を区別する。"""
-
     assignments: set[Assignment] = field(default_factory=set)
     branches: set[str] = field(default_factory=set)
     calls_started: bool = False
     assigned_before_calls: bool = False
 
     def observe(self, entry_type: str, payload: dict[str, Any]) -> None:
-        """Git情報、依頼の入力、初回呼出しを記録順に読む。"""
         if entry_type == "session_meta":
             git = payload.get("git")
             if isinstance(git, dict) and isinstance(branch := git.get("branch"), str):
@@ -105,7 +96,6 @@ class RolloutAssignment:
             self.calls_started = True
 
     def pair(self, worktree: str, plans: list[SavedPlan]) -> tuple[Path, frozenset[str]] | str:
-        """計画のパスと明示された担当WI、または欠測の理由を返す。"""
         if not self.calls_started:
             return "rollouts_without_calls"
         if not self.assigned_before_calls:

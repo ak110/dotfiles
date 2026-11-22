@@ -1,5 +1,3 @@
-"""利用枠の観測と活動時間に基づく消費速度。"""
-
 from __future__ import annotations
 
 import json
@@ -42,7 +40,6 @@ class QuotaWindow:
 
 
 def rate_key(window: QuotaWindow) -> str:
-    """期間や対象の異なる百分率を混ぜず、同じ利用枠の速度だけを使う。"""
     duration = float(window.duration_seconds) if window.duration_seconds is not None else None
     return json.dumps([window.engine, window.account, window.window_id, window.scope, window.contract, duration])
 
@@ -66,7 +63,6 @@ def _read() -> dict[str, Any]:
 
 
 def observe(windows: list[QuotaWindow], *, setting_signature: str, active_seconds: float, mixed: bool = False) -> None:
-    """同じ観測主体の累積活動秒から、窓ごとの前回観測以降の活動量を求める。"""
     if len(windows) > 10000:
         raise ValueError("1回の利用枠の観測は10000窓まで")
     if not _valid(active_seconds) or active_seconds < 0:
@@ -191,7 +187,7 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
         if row["rate"] is not None and now - window["observed_at"] <= 600:
             key = rate_key(QuotaWindow(**window))
             rates[key] = row["rate"]
-    # 設定を切り替えても同じ回復期間の学習値を比較できるよう、設定別の最終実績を履歴から読む。
+
     latest = {rate_key(QuotaWindow(**row["window"])): row["window"] for row in rows}
     previous_windows: dict[tuple[str, ...], dict[str, Any]] = {}
     for row in sorted(data["observations"], key=lambda item: item["window"]["observed_at"]):

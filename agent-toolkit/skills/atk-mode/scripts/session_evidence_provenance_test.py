@@ -84,7 +84,6 @@ def _provenance(events: list[dict]) -> dict[str, dict]:
 
 
 def _referenced_with_launchers(events: list[dict]) -> set[str]:
-    """結果のイベントが`record`欄か配列要素の`record`欄で参照する記録と、その起動元を根まで集める。"""
     records: set[str] = set()
     for event in events:
         if event["kind"] in {"record-provenance", "unresolved-record", "unresolved-delegation"}:
@@ -104,7 +103,6 @@ def _referenced_with_launchers(events: list[dict]) -> set[str]:
 def test_public_default_and_bundle_files_keep_all_record_provenance(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """通常表示と`--bundle`が書くファイルは4記録全ての由来を持ち、欠けた役割文書はnullとして区別する。"""
     parent = _family(tmp_path, monkeypatch)
     assert evidence.main([str(parent)]) == 0
     provenance = _provenance(support.read_jsonl(capsys, raw=True))
@@ -142,7 +140,6 @@ def test_public_default_and_bundle_files_keep_all_record_provenance(
 def test_public_query_modes_limit_record_provenance_to_referenced_records(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: list[str]
 ) -> None:
-    """照会の標準出力は、結果が参照する記録とその起動元の由来だけを返す。"""
     parent = _family(tmp_path, monkeypatch)
     arguments = list(mode)
     if arguments == ["--bundle"]:
@@ -159,7 +156,6 @@ def test_public_query_modes_limit_record_provenance_to_referenced_records(
     [
         # needleはメインのBashの入力とtaskの委譲先のコマンドにだけ現れる。
         ("needle", {_MAIN, _TASK}, {_MAIN, _TASK}),
-        # shellの委譲先の発話にだけ現れ、起動元のtaskとメインを根までたどる。
         ("記録を読む", {_SHELL}, {_SHELL, _TASK, _MAIN}),
     ],
 )
@@ -171,7 +167,6 @@ def test_public_fixed_string_omits_unmatched_delegate_provenance(
     matched: set[str],
     expected: set[str],
 ) -> None:
-    """一致しない委譲先の由来を出力せず、一致した記録とその起動元の連鎖だけを返す。"""
     parent = _family(tmp_path, monkeypatch)
     assert evidence.main([str(parent), "--fixed-string", phrase]) == 0
     events = support.read_jsonl(capsys, raw=True)
@@ -183,7 +178,6 @@ def test_public_fixed_string_omits_unmatched_delegate_provenance(
 def test_public_catalog_tool_calls_group_by_role_document(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """root外のexecの起動件数とmodeを一回のカタログ照会から取得し、由来は呼び出しを持つ記録とその起動元に限る。"""
     parent = _family(tmp_path, monkeypatch)
     window = ["--since", "2026-10-06T00:00:00Z", "--observation-boundary", "2026-10-06T00:00:30Z"]
     assert evidence.main(["--catalog-claude-project", str(parent.parent), *window, "--tool-calls"]) == 0
@@ -192,7 +186,7 @@ def test_public_catalog_tool_calls_group_by_role_document(
     role = summary["by_role"]["document:exec"]
     assert role["by_tool"]["mcp__agents_server__start"] == 1
     assert role["by_mode"] == {"shell": 1}
-    # shellの委譲先はツールを呼ばないため、その由来は出力しない。
+
     assert set(_provenance(events)) == _referenced_with_launchers(events) == {_MAIN, _SUBAGENT, _TASK}
     assert evidence.main(["--catalog-codex-history", str(tmp_path / "codex" / "sessions"), *window]) == 0
     events = support.read_jsonl(capsys, raw=True)
@@ -205,7 +199,6 @@ def test_public_catalog_tool_calls_group_by_role_document(
 def test_public_provenance_keeps_initial_delivery_role(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], initial_role: str | None, separator: str
 ) -> None:
-    """起動前の挿入を除き、役割無しの初回と役割有りの初回を後続配送で上書きしない。"""
     parent = tmp_path / "role.jsonl"
     initial = "指定した範囲を読む"
     if initial_role:
@@ -231,7 +224,6 @@ def test_public_provenance_keeps_initial_delivery_role(
 @pytest.mark.parametrize(
     ("result", "expected"),
     [
-        # agents_serverが起動前に拒否した応答。2026年10月29日の記録の形を使う。
         ({"content": [{"type": "text", "text": "Error executing tool start: 委譲先は起動していない"}], "isError": True}, 0),
         ({"content": [{"type": "text", "text": "応答"}]}, 1),
     ],
@@ -243,7 +235,6 @@ def test_public_rejected_start_is_not_unresolved_delegation(
     result: dict,
     expected: int,
 ) -> None:
-    """拒否された起動は委譲先が無いため未解決に数えず、識別子を欠く成功応答は未解決として残す。"""
     parent = support.tool_call_session(tmp_path, monkeypatch, "needle")
     codex = next((tmp_path / "codex").rglob("*.jsonl"))
     entries = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
@@ -274,7 +265,6 @@ def test_public_rejected_start_is_not_unresolved_delegation(
 def test_catalog_shared_child_keeps_first_owner_and_duplicate_events(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数親の共有子は各家族の呼出を返し、由来と役割は最初の所有者から決定する。"""
     parent = _family(tmp_path, monkeypatch)
     launch = support.codex_tool_use_entry("2026-10-06T00:00:05Z", "shared", support.TOOL_CALL_THREAD)
     launch["message"]["content"][0]["input"]["mode"] = "shell"

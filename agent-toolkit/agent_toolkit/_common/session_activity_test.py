@@ -1,5 +1,3 @@
-"""活動の生成と開始判定へ渡す読取結果を、隔離した会話と実PIDで検証する。"""
-
 import concurrent.futures
 import contextlib
 import dataclasses
@@ -46,7 +44,6 @@ def _transcript(tmp_path: pathlib.Path, engine: str, session_id: str) -> pathlib
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 def test_host_activity(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str) -> None:
-    """入力、Stop継続、実ターン終了、子の稼働、新入力と終了を両ホストで判定する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     host = _host(engine)
     transcript = _transcript(tmp_path, engine, "host-session")
@@ -81,7 +78,6 @@ def test_host_activity(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, 
 
 
 def test_stop_does_not_replace_host_turn_completion(tmp_path: pathlib.Path) -> None:
-    """Stop許可の後にホストがターンを続けた場合は、次の入力hookが欠けても活動へ戻る。"""
     path = _transcript(tmp_path, "codex", "continued")
     payload = {"session_id": "continued", "transcript_path": str(path), "hook_event_name": "Stop"}
     session_activity.record_activity(payload, process=_host("codex"), state_root=tmp_path)
@@ -94,7 +90,6 @@ def test_stop_does_not_replace_host_turn_completion(tmp_path: pathlib.Path) -> N
 def test_living_roots_include_waiting_but_preserve_activity(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
-    """応答待ちrootの生存表示を活動判定から分け、親のある会話を除く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     transcript = _transcript(tmp_path, engine, "root")
     for event in ("SessionStart", "Stop"):
@@ -119,7 +114,6 @@ def test_living_roots_include_waiting_but_preserve_activity(
 
 @pytest.mark.parametrize("invalid", ["broken", "mismatched", "missing-process", "reused", "dead"])
 def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, invalid: str) -> None:
-    """破損・不一致・生存しない記録を一覧へ加えず、記録を保持する。"""
     session_activity.record_activity(
         {"session_id": "root", "hook_event_name": "SessionStart"},
         process=_host("codex"),
@@ -143,7 +137,6 @@ def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, inv
 
 @pytest.mark.parametrize("variant", ["live", "dead", "reused", "missing-process", "broken"])
 def test_sweep_removes_only_records_of_exited_processes(tmp_path: pathlib.Path, variant: str) -> None:
-    """記録したプロセスの終了が確定した記録だけを回収し、生存中と判定できない記録は残す。"""
     session_activity.record_activity(
         {"session_id": "root", "hook_event_name": "SessionStart"},
         process=_host("codex"),
@@ -164,7 +157,6 @@ def test_sweep_removes_only_records_of_exited_processes(tmp_path: pathlib.Path, 
 
 
 def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
-    """保存記録のactiveだけでは活動とせず、PID再利用と実プロセスの終了を除く。"""
     host = _host("codex")
     reused = dataclasses.replace(host.identity, create_time=host.identity.create_time - 1, start_id="other-generation")
     dead = session_registry.ProcessIdentity(2147483647, 1)
@@ -178,7 +170,6 @@ def test_dead_and_reused_pid_records_expire(tmp_path: pathlib.Path) -> None:
 
 
 def test_unreadable_record_is_activity_candidate(tmp_path: pathlib.Path) -> None:
-    """破損記録を無活動へ変換せず、除外した会話だけを外す。"""
     directory = session_activity.activity_directory(tmp_path)
     directory.mkdir()
     (directory / "broken.json").write_text("{", encoding="utf-8")
@@ -192,7 +183,6 @@ def test_unreadable_record_is_activity_candidate(tmp_path: pathlib.Path) -> None
 
 
 def test_loop_descendants_and_other_loop(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """共通の環境印を持つ別loopを数え、自loopの会話・孫だけを除外する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     for session_id, parent in (("loop", None), ("child", "loop"), ("grandchild", "child"), ("other", None)):
         if parent:
@@ -214,7 +204,6 @@ def test_loop_descendants_and_other_loop(tmp_path: pathlib.Path, monkeypatch: py
 
 
 def test_registry_active_child_and_terminal(tmp_path: pathlib.Path) -> None:
-    """hookがない委譲先も登録簿の親子と終了を使って判定する。"""
     session_registry.publish(
         "child", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="loop", state_root=tmp_path
     )
@@ -229,7 +218,6 @@ def test_registry_active_child_and_terminal(tmp_path: pathlib.Path) -> None:
 
 
 def test_parallel_child_hooks_keep_each_actor(tmp_path: pathlib.Path) -> None:
-    """並行する子hookの上書きで他の稼働中の子を失わず、記録を履歴として増やさない。"""
     host = _host("codex")
 
     def emit(index: int) -> None:
@@ -286,7 +274,6 @@ def test_other_session_records_while_host_probe_blocks(
 
 
 def test_session_end_skips_host_probe(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """SessionEndは祖先探索を行わずに会話の記録を削除する。"""
     session_activity.record_activity(
         {"session_id": "ending", "hook_event_name": "PreToolUse"}, process=_host("claude"), state_root=tmp_path
     )
@@ -301,7 +288,6 @@ def test_session_end_skips_host_probe(tmp_path: pathlib.Path, monkeypatch: pytes
 
 @pytest.mark.parametrize("replacement", [{"actors": {"main": []}}, {"engine": []}, {"version": True}])
 def test_invalid_schema_is_not_waiting(tmp_path: pathlib.Path, replacement: dict[str, Any]) -> None:
-    """ターン終了記録があっても、活動JSONの形式を読めない場合は無活動にしない。"""
     transcript = _transcript(tmp_path, "codex", "invalid")
     session_activity.record_activity(
         {"session_id": "invalid", "hook_event_name": "Stop", "transcript_path": str(transcript)},
@@ -316,7 +302,6 @@ def test_invalid_schema_is_not_waiting(tmp_path: pathlib.Path, replacement: dict
 
 
 def test_codex_parent_precedes_inherited_owner(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実threadの親を古い環境値で上書きせず、活動記録のない自loopの子も除外する。"""
     transcript = tmp_path / "native-child.jsonl"
     transcript.write_text(
         json.dumps(
@@ -345,7 +330,6 @@ def test_codex_parent_precedes_inherited_owner(tmp_path: pathlib.Path, monkeypat
 
 
 def test_registered_host_of_excluded_session_is_not_unknown(tmp_path: pathlib.Path) -> None:
-    """登録済みの自会話を除外した後、同じPIDを未登録候補へ再追加しない。"""
     host = _host("codex")
     session_registry.publish(
         "own",
@@ -363,7 +347,6 @@ def test_registered_host_of_excluded_session_is_not_unknown(tmp_path: pathlib.Pa
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 def test_host_completion_without_stop_hook(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str) -> None:
-    """Stop記録の欠落を実終了で補い、次の入力では古い終了を使わない。"""
     monkeypatch.setattr(session_activity.time, "time", lambda: 100.0)
     transcript = _transcript(tmp_path, engine, "no-stop")
     payload = {"session_id": "no-stop", "hook_event_name": "UserPromptSubmit", "transcript_path": str(transcript)}
@@ -383,7 +366,6 @@ def test_host_completion_without_stop_hook(tmp_path: pathlib.Path, monkeypatch: 
 
 
 def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
-    """hookがない生存ホストでも、実際に開くrolloutの終了と次の開始を取得する。"""
     path = tmp_path / "rollout-native.jsonl"
     path.write_text(
         json.dumps({"type": "session_meta", "payload": {"id": "native"}})
@@ -402,7 +384,6 @@ def test_open_codex_record_without_hook(tmp_path: pathlib.Path) -> None:
 
 @pytest.fixture(name="daemons")
 def _daemons(tmp_path: pathlib.Path) -> Iterator[list[session_activity.HostProcess]]:
-    """会話を開かずに生存する2つの実プロセスを、ホストと同じ実行系名で渡す。"""
     with contextlib.ExitStack() as stack:
         processes = [stack.enter_context(late_descendant.held_process(tmp_path)) for _ in range(2)]
         hosts = []
@@ -481,7 +462,6 @@ def test_unrelated_work_does_not_create_start_activity(
     monkeypatch: pytest.MonkeyPatch,
     daemons: list[session_activity.HostProcess],
 ) -> None:
-    """管理daemon・更新ループ、別リポジトリへの投入、同じリポジトリの別作業、属性を読めない記録では理由を返さない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     for session_id in ("other-repo", "process-wi", "session-review", "collaboration", "broken-attribute"):
         _emit(session_id, "UserPromptSubmit")
@@ -500,7 +480,7 @@ def test_unrelated_work_does_not_create_start_activity(
     snapshot = session_activity.submission_activity({_TARGET}, processes=daemons)
     assert not snapshot.has_activity
     assert not snapshot.reasons
-    # 作業種別を問わない取得では同じ会話を活動中と判定し、上の結果が稼働の判定に依らないことを確かめる。
+
     overall = session_activity.scan_activity(processes=daemons)
     assert overall.active_session_ids >= {"other-repo", "process-wi", "session-review", "collaboration"}
     assert not any("PID" in reason for reason in overall.reasons)
@@ -510,7 +490,6 @@ def test_unrelated_work_does_not_create_start_activity(
 
 
 def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """手動の親会話とWI投入担当の双方で、起動cwdでなく実際の投入先とoriginで判定する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     target = init_repository(tmp_path / "target", origin="git@github.com:Example/Target.git", commit_message="init")
     worktree = tmp_path / "target-worktree"
@@ -518,14 +497,12 @@ def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, mo
     elsewhere = init_repository(tmp_path / "elsewhere", origin="https://github.com/example/elsewhere.git")
     monkeypatch.chdir(elsewhere)
 
-    # 手動の親会話だけ: cwdは別リポジトリで、投入先は同じoriginの別worktreeとして指定する。
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "manual")
     _emit("manual", "UserPromptSubmit")
     _begin("--target-repo", str(worktree))
     assert _submitting(_TARGET) == {"manual"}
     assert not _submitting("github.com/example/elsewhere")
 
-    # WI投入担当を伴う場合: 親が応答待ちでも、親の投入先に属する担当の稼働を理由にする。
     transcript = _transcript(tmp_path, "claude", "delegating")
     _emit("delegating", "UserPromptSubmit", transcript_path=str(transcript))
     _begin("--session-id", "delegating", "--target-repo", "https://github.com/example/target")
@@ -552,16 +529,16 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
     _emit("submitter", "UserPromptSubmit")
     _begin("--session-id", "submitter", "--target-repo", _TARGET)
     assert _submitting(_TARGET) == {"submitter"}
-    # 対象変更
+
     _begin("--session-id", "submitter", "--target-repo", "github.com/example/changed")
     assert not _submitting(_TARGET)
     assert _submitting("github.com/example/changed") == {"submitter"}
-    # 中止
+
     _emit("submitter", "Interrupt")
     _end("submitter")
     _emit("submitter", "UserPromptSubmit")
     assert not _submitting(_TARGET, "github.com/example/changed")
-    # 再開: 会話の終了後に別プロセスで再開した会話は、残る属性で再び理由になる。
+
     _begin("--session-id", "submitter", "--target-repo", _TARGET)
     _emit("submitter", "SessionEnd")
     assert not _submitting(_TARGET)
@@ -571,7 +548,7 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
             assert identity is not None
             _emit("submitter", "SessionStart", host=session_activity.HostProcess("claude", identity))
             assert _submitting(_TARGET) == {"submitter"}
-            # 終了後の後続の別作業
+
             _end("submitter")
             _emit("submitter", "UserPromptSubmit", host=session_activity.HostProcess("claude", identity))
             assert not _submitting(_TARGET)
@@ -581,8 +558,7 @@ def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatc
 
 
 def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch) -> None:
-    """無関係な会話の活動を除き、対象の実ターン終了と子の活動を既存判定で扱う。"""
-    # rootとchildは活動記録で与える。OS全体の会話探索はこの試験の入力に含めない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     parent = _transcript(tmp_path, "claude", "root")
     session_activity.record_activity(
@@ -600,11 +576,10 @@ def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch)
 
 
 def test_host_processes_reads_current_generation_despite_cached_previous_generation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """列挙キャッシュに以前の世代の実行ファイルと起動時刻が残っていても、現在の実行体で分類し現在の起動時刻を返す。"""
     pid = os.getpid()
     current = session_registry.ProcessIdentity.of(pid)
     assert current is not None
-    # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+
     stale = psutil.Process(pid)
     monkeypatch.setattr(stale, "_create_time", current.create_time - 10000)
     monkeypatch.setattr(stale, "_ident", (pid, current.create_time - 10000))
@@ -617,7 +592,6 @@ def test_host_processes_reads_current_generation_despite_cached_previous_generat
 
     monkeypatch.setattr(psutil, "process_iter", own_process)
 
-    # 試験を実行する現在の実行体はPythonであり、以前の世代の実行ファイル名ではホストに分類しない。
     assert not session_activity.host_processes()
 
     monkeypatch.setattr(psutil.Process, "name", lambda self: "claude")

@@ -1,5 +1,3 @@
-"""委譲先からセッション記録を、既存の親子判定と登録簿で解決する。"""
-
 from __future__ import annotations
 
 import os
@@ -19,8 +17,6 @@ RESOLVE_NEXT_ACTION = (
 
 
 class AmbiguousOwnerRecord(ValueError):
-    """環境の所有識別子を診断本文へ再掲せず、記録の選択候補を呼出元へ渡す。"""
-
     def __init__(self, paths: tuple[Path, ...]) -> None:
         super().__init__("所有会話を解決できない: 記録が複数ある")
         self.paths = paths
@@ -45,7 +41,6 @@ def _verified_registry_chain(
     codex_root: Path,
     launcher_of: Callable[[str], str | None],
 ) -> tuple[list[session_parents.ParentSource], dict[str, session_watch.RecordScan]] | None:
-    """起動結果で裏付けた登録簿の連鎖を返す。裏付けが欠けた場合は全記録の親子解決へ進む。"""
     sources: list[session_parents.ParentSource] = []
     scans: dict[str, session_watch.RecordScan] = {}
     visited: set[str] = set()
@@ -65,7 +60,7 @@ def _verified_registry_chain(
         scans[str(path)] = scan
         sources.append(session_parents.ParentSource(str(path), found.engine, current, None, scan.fields[3]))
         child_id, current = current, launcher_of(current)
-    # 登録簿の欠落だけで途中の会話を最上位としない。所有会話まで起動結果で連結できた場合だけ探索を省く。
+
     owner = os.environ.get("AGENT_TOOLKIT_OWNER_SESSION", "")
     if (
         len(sources) < 2
@@ -78,7 +73,6 @@ def _verified_registry_chain(
 
 
 def delegation_record(scope: str, codex_home: str | None = None) -> Path:
-    """呼出元の直接の委譲元、またはその最上位のセッション記録を返す。"""
     identity = (
         os.environ.get("CLAUDE_CODE_SESSION_ID")
         if os.environ.get("AGENT_TOOLKIT_DELEGATED_SESSION") == "1"
@@ -129,7 +123,7 @@ def delegation_record(scope: str, codex_home: str | None = None) -> Path:
             raise ValueError("委譲関係を解決できない: 親子関係が循環する")
         if sum(source.session_id == by_path[parent_path].session_id for source in sources) != 1:
             raise ValueError("委譲関係を解決できない: 親の識別子に一致する記録が複数ある")
-        # 登録簿は/clear以前の会話を指し得る。起動結果とmetadataで裏付けられない参照は受理しない。
+
         if not candidates and child.subagent_parent_path is None and child.codex_parent_thread_id is None:
             raise ValueError("委譲関係を解決できない: 親の記録に子の起動結果が無い")
         visited.add(parent_path)

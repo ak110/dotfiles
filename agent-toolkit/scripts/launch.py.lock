@@ -21,7 +21,7 @@ requirements = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyfltr", specifier = ">=3.30.1" },
+    { name = "pyfltr", specifier = ">=3.33.1" },
     { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
@@ -1044,7 +1044,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.32.1"
+version = "3.33.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1077,9 +1077,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/de/cb11683121d80ed6cfbd624db07435a6c18855238b7136f6d63e0851a20e/pyfltr-3.32.1.tar.gz", hash = "sha256:571e5ef066ba3c76c137dbae1d4a3d9007fe5e8569c33b82f240b9def1233946", size = 1212408, upload-time = "2026-11-15T12:52:35.073Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/5e/6f90e39eab7f31ad6eef40d14a6c630e174af3ee88ff15308e37441535a6/pyfltr-3.33.1.tar.gz", hash = "sha256:595ffce515fc6a0279d0976da72dc04a6931263891f0d8207ae91269bb059c58", size = 978662, upload-time = "2026-11-22T05:04:58.039Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/ff/04051210b09ff4aaa470863a53819d69df6e8c96517d70a652218e7193e7/pyfltr-3.32.1-py3-none-any.whl", hash = "sha256:0cc93200b9131b79515e13e3fb74a6572289d2951e4ca2edbd3b6afc1436f07f", size = 519488, upload-time = "2026-11-15T12:52:33.228Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/3e/79e2605c17a3c9832d367c6b5f437b128d590a7d01bdae057b876bb75f4a/pyfltr-3.33.1-py3-none-any.whl", hash = "sha256:f9bca4d38bd90dfaceb92e90288cf9bce013499a931a6fcc7689852a59fa1540", size = 345300, upload-time = "2026-11-22T05:04:56.483Z" },
 ]
 
 [[package]]

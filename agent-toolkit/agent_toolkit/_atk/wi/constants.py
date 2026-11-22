@@ -137,7 +137,6 @@ BULK_ACTION_LABELS = {
 
 
 def bulk_source_states(action: str, *, actor_is_agent: bool) -> tuple[str, ...]:
-    """呼出主体を加味した、その操作の遷移元状態集合を返す。"""
     if action == "remove":
         return WI_AGENT_REMOVABLE_STATES if actor_is_agent else WI_USER_REMOVABLE_STATES
     if action == "hold" and actor_is_agent:
@@ -163,10 +162,6 @@ private-notesには旧値を持つ項目が残り得る。
 
 
 def normalized_wi_type(value: object) -> str | None:
-    """保存された`type`値を現行の値へ正規化する。
-
-    現行の値と旧値のいずれでもない場合と、文字列でない場合は`None`を返す。
-    """
     if not isinstance(value, str) or not value:
         return None
     if value in WI_TYPES:
@@ -175,10 +170,6 @@ def normalized_wi_type(value: object) -> str | None:
 
 
 def unrepairable_entry_next_action(name: str) -> str:
-    """frontmatterの破損・必須キー欠落の項目に対する次の操作を返す。
-
-    `atk wi edit`で非対話の編集をする場合も同じ検証を先に行って拒否するため、エージェントが直せる操作として案内しない。
-    """
     return (
         f"`atk wi show {name}`で保存内容を確かめ、ユーザーへ報告する"
         "（この状態の項目は`atk wi edit`の`--body-file`で本文を渡しても同じ理由で拒否される）"

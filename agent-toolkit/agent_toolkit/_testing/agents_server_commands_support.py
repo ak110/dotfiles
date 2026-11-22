@@ -1,5 +1,3 @@
-"""commandsの分割試験が共有する準備処理。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -14,7 +12,6 @@ from agent_toolkit._atk import environment
 
 
 def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
-    """公開CLI用の保存済み記録を作成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n", encoding="utf-8")
 

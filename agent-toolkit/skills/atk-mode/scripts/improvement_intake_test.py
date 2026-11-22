@@ -1,5 +1,3 @@
-"""同じ受付資料と独立した観測を、正式WIを作らずに区別する。"""
-
 import json
 
 import improvement_intake

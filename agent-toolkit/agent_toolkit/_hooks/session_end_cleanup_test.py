@@ -79,7 +79,6 @@ def _session_end(session_id: str, reason: str | None = None) -> str:
 
 
 def test_state_is_preserved_when_session_can_resume(tmp_path: pathlib.Path) -> None:
-    """会話破棄以外の理由では、自セッションの状態を残す。"""
     target = _write_state(tmp_path, "target")
 
     result = _run(_session_end("target", reason="prompt_input_exit"), tmp_path)
@@ -91,7 +90,6 @@ def test_state_is_preserved_when_session_can_resume(tmp_path: pathlib.Path) -> N
 
 
 def test_state_is_preserved_when_reason_is_absent(tmp_path: pathlib.Path) -> None:
-    """理由が無い場合も削除しない。"""
     target = _write_state(tmp_path, "target")
 
     result = _run(_session_end("target"), tmp_path)
@@ -282,7 +280,6 @@ def test_delete_failure_is_silent_and_fails_open(tmp_path: pathlib.Path) -> None
 
 @pytest.mark.parametrize("stage", ["shared-sweep", "function-hook-sweep"])
 def test_maintenance_failure_has_no_model_output(monkeypatch, stage):
-    """モデルへ即時対処を求められない回収の故障は、終了0・無出力とする。"""
 
     def fail(*_args, **_kwargs):
         raise OSError("保守の故障注入")
@@ -301,11 +298,6 @@ def test_session_scoped_managed_temp_survives_session_end(
     tmp_path: pathlib.Path,
     reason: str | None,
 ) -> None:
-    """SessionEndは終了理由によらずセッション単位の領域を残し、再開したセッションが同じ領域を再利用できる。
-
-    `agents_server`経由のsessionはturnごとにSessionEndが発火するため、ここで削除すると後続のturnと
-    委譲先が成果物を読めなくなる。回収は最終更新から7日の掃引に委ねる。
-    """
     target = managed_temp.resolve_session_temp("target")
     (target / "handoff.md").write_text("記録", encoding="utf-8")
 

@@ -32,7 +32,6 @@ def test_show_can_filter_by_track(tmp_path: pathlib.Path, capsys: pytest.Capture
 
 
 def test_show_filters_rows_by_round(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """指定ラウンドだけを保存順で表示し、存在しないラウンドは空出力にする。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "1件目")
@@ -66,7 +65,6 @@ def test_show_combines_round_track_and_jsonl(tmp_path: pathlib.Path, capsys: pyt
 def test_public_summary_counts_current_unanswered_rows_without_waiting_for_responses(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """過去の応答、現在の再指摘と他trackを分け、同じ表から返却件数を得る。"""
     path = tmp_path / "plan.exec-review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "再指摘")
@@ -124,7 +122,6 @@ def test_show_filters_compat_track_without_rewriting_raw_tsv(
     capsys: pytest.CaptureFixture[str],
     track: str,
 ) -> None:
-    """保存済み旧trackは新旧どちらの指定でも限定し、raw TSVを変更しない。"""
     path = tmp_path / "review.tsv"
     cells = ("1", _COMPAT_TRACK, "module.py:10", "旧表の指摘", "詳細", "", "", "")
     raw = "\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n"
@@ -150,11 +147,11 @@ def test_respond_matches_compat_track_and_rewrites_all_rows_canonically(tmp_path
     assert table.respond(path, "1", _TRACK, "module.py:10", "更新対象", review_bodies.response_body("修正した"), "") == 0
     saved = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert [row[1] for row in saved] == [_TRACK, _TRACK]
-    assert saved[0][5:] == [review_bodies.response_body("修正した"), ""]
+    assert review_table_format.response_content(saved[0][5]) == review_bodies.response_body("修正した")
+    assert saved[0][6] == ""
 
 
 def test_add_normalizes_compat_track_before_saving(tmp_path: pathlib.Path) -> None:
-    """追加時の旧track入力は正規値へ変換して保存する。"""
     path = tmp_path / "review.tsv"
 
     assert table.add(path, "1", _COMPAT_TRACK, "module.py:10", "互換入力") == 0
@@ -167,7 +164,6 @@ def test_show_jsonl_decodes_control_characters_and_quotes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力は制御文字と引用符を含むセルを保存前の本文へデコードする。"""
     path = tmp_path / "review.tsv"
     issue = '改行\nタブ\t二重引用符"と`backtick`'
     table.init(path)
@@ -184,7 +180,6 @@ def test_show_jsonl_supplies_empty_level_for_legacy_row(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済み7列行のjsonl出力は空のlevelを補う。"""
     path = tmp_path / "review.tsv"
     legacy = ("1", _TRACK, "位置", "指摘", "", "", "")
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in legacy) + "\n", encoding="utf-8")
@@ -199,7 +194,6 @@ def test_show_jsonl_filters_decoded_rows_by_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """jsonl出力でも指定したtrackのデコード済み行だけを表示する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "統合後指摘")
@@ -212,7 +206,6 @@ def test_show_jsonl_filters_decoded_rows_by_track(
 
 
 def test_legacy_seven_columns_are_read_and_rewritten_as_eight_columns(tmp_path: pathlib.Path) -> None:
-    """保存済み7列行は空のlevelを補って読み、更新時に8列へ移行する。"""
     path = tmp_path / "review.tsv"
     legacy = ("1", _TRACK, "位置", "指摘", "", "", "")
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in legacy) + "\n", encoding="utf-8")
@@ -221,13 +214,14 @@ def test_legacy_seven_columns_are_read_and_rewritten_as_eight_columns(tmp_path: 
     table.respond(path, "1", _TRACK, "位置", "指摘", review_bodies.response_body("修正した"), "")
 
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "位置", "指摘", "", review_bodies.response_body("修正した"), ""]
+    assert row[:5] == ["1", _TRACK, "位置", "指摘", ""]
+    assert review_table_format.response_content(row[5]) == review_bodies.response_body("修正した")
+    assert row[6] == ""
 
 
 def test_show_preserves_legacy_seven_columns_with_and_without_track_filter(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """showは保存済み7列行を変換せず、track限定でもraw TSVを保持する。"""
     path = tmp_path / "review.tsv"
     rows = [
         ("1", _TRACK, "位置", "指摘", "", "", ""),
@@ -260,7 +254,6 @@ def test_show_rejects_malformed_rows_before_output(
     cells: tuple[str | None, ...],
     expected_error: str,
 ) -> None:
-    """showはtrack限定の有無にかかわらず、全行・全セルを出力前に検証する。"""
     path = tmp_path / "review.tsv"
     raw = "\t".join("broken" if value is None else json.dumps(value, ensure_ascii=False) for value in cells) + "\n"
     path.write_text(raw, encoding="utf-8")
@@ -274,7 +267,6 @@ def test_show_rejects_malformed_rows_before_output(
 
 @pytest.mark.parametrize("level", review_table_format.LEVEL_VALUES)
 def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: pathlib.Path, level: str) -> None:
-    """追加は全指摘レベルを受理し、応答更新はlevelを保持する。"""
     path = tmp_path / f"{level}.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "位置", "指摘", level)
@@ -284,7 +276,6 @@ def test_add_accepts_all_level_values_and_respond_preserves_level(tmp_path: path
 
 
 def test_validate_rejects_invalid_level(tmp_path: pathlib.Path) -> None:
-    """8列行のlevelは空または正規値だけを受理する。"""
     path = tmp_path / "review.tsv"
     cells = ("1", _TRACK, "位置", "指摘", "重大", "修正", "")
     path.write_text("\t".join(json.dumps(value, ensure_ascii=False) for value in cells) + "\n", encoding="utf-8")
@@ -297,7 +288,6 @@ def test_validate_rejects_invalid_level(tmp_path: pathlib.Path) -> None:
 def test_public_show_selected_body_preserves_full_decoded_text(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], field: str, layout: str
 ) -> None:
-    """現行・旧形式の指定行の本文を、空行を除く保存順IDで全文取得する。"""
     path = tmp_path / "review.exec-review.tsv"
     body = '  日本語の応答\n"引用符"\t逆斜線\\と`記号`\n\n'
     first = ["1", _TRACK, "先の行", "別指摘", "詳細", "別の本文", ""]
@@ -339,7 +329,6 @@ def test_public_show_selected_body_preserves_full_decoded_text(
 def test_public_show_rejects_invalid_body_selection(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], options: list[str]
 ) -> None:
-    """本文を特定できない指定は診断を返し、本文を出力しない。"""
     path = tmp_path / "review.exec-review.tsv"
     table.add(path, "1", _TRACK, "場所", "指摘")
     capsys.readouterr()
@@ -357,7 +346,6 @@ def test_public_show_rejects_invalid_body_selection(
 def test_public_summary_guides_history_without_deciding_issue_identity(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
 ) -> None:
-    """箇所・文言・発生条件が変わる指摘でも、同trackの過去指摘と判定先へ到達できる。"""
     path = tmp_path / "space dir" / name
     table.add(path, "1", _TRACK, "module.py:10", "完成条件4: 取得失敗時に記録へ進む")
     table.respond(path, "", "", "", "", review_bodies.response_body("初回修正"), "", row_id=1)
@@ -390,10 +378,6 @@ def test_public_summary_guides_history_without_deciding_issue_identity(
 def test_public_summary_omits_history_when_comparison_has_no_input(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """初回・現在の指摘なし・同trackの過去指摘なしでは過去指摘との比較の項目を返さない。
-
-    現在の指摘が無くても前回指摘の再確認は必要なため、同trackの過去指摘がある場合は再確認の項目だけを返す。
-    """
     path = tmp_path / "review.exec-review.tsv"
     table.add(path, "1", "independent" if case == "other-track" else _TRACK, "以前", "指摘")
     if case == "other-track":
@@ -411,7 +395,6 @@ def test_public_summary_omits_history_when_comparison_has_no_input(
 
 
 def test_public_single_add_without_level_stores_an_empty_level(tmp_path: pathlib.Path) -> None:
-    """公開CLIの単件登録では、指摘レベルを省略した時は空欄を保存する。"""
     path = tmp_path / "plan.exec-review.tsv"
     location = tmp_path / "location.txt"
     issue = tmp_path / "issue.txt"

@@ -13,7 +13,6 @@ _REPO = "github.com/ak110/dotfiles"
 
 
 def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "", state: str = "inbox") -> str:
-    """テスト用エントリ本文を返す。"""
     return (
         "---\n"
         f"state: {state}\n"
@@ -28,8 +27,6 @@ def _entry(*, entry_type: str = "uwi", target_repo: str = _REPO, answer: str = "
 
 
 class TestIsUwiAnswered:
-    """回答節の有効な本文だけを回答として扱う。"""
-
     @pytest.mark.parametrize(
         "text",
         [
@@ -46,8 +43,6 @@ class TestIsUwiAnswered:
 
 
 class TestScanActiveUwis:
-    """active状態かつ対象リポジトリのUWIだけを走査する。"""
-
     def test_filters_and_orders_entries(self, tmp_path: pathlib.Path) -> None:
         directory = tmp_path / "2026" / "10"
         directory.mkdir(parents=True)
@@ -73,7 +68,6 @@ class TestScanActiveUwis:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """旧パス形とURL形を同一視し、解決不能値は対象から除外する。"""
         inbox = tmp_path / "2026" / "10"
         inbox.mkdir(parents=True)
         local_repo = tmp_path / "target-repo"
@@ -161,8 +155,6 @@ class TestScanActiveUwis:
 
 
 class TestPrivateNotesRoot:
-    """環境変数で指定した保存先と、未指定の場合の保存先を解決する。"""
-
     def test_prefers_environment_override(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         override = tmp_path / "override"
         override.mkdir()
@@ -191,13 +183,9 @@ class TestPrivateNotesRoot:
         assert _uwi_scan.private_notes_root() == fallback
 
     def test_handles_nested_mapping_and_folded_values(self, tmp_path: pathlib.Path) -> None:
-        """入れ子マッピング配下と折り返し値を正しく処理する。
-
-        トップレベル`depends_on`配列と`choices:`の折り返し継続行を含むfrontmatterを検証する。
-        """
         directory = tmp_path / "2026" / "10"
         directory.mkdir(parents=True)
-        # 計画のテスト用frontmatterと同じ形式
+
         entry_text = (
             "---\n"
             "state: inbox\n"

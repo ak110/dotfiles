@@ -1,5 +1,3 @@
-"""WIキューの実行可否判定エンジン。"""
-
 import dataclasses
 import datetime
 import pathlib
@@ -26,8 +24,6 @@ type RepairKind = Literal["frontmatter"]
 
 @dataclasses.dataclass(frozen=True)
 class QueueEntry:
-    """着手可否判定に必要なキュー項目の現行状態。"""
-
     filename: str
     text: str
     kind: str | None
@@ -44,12 +40,6 @@ class QueueEntry:
 
 @dataclasses.dataclass(frozen=True)
 class ReadinessResult:
-    """対象リポジトリの`active`項目に対する着手可否と修復診断。
-
-    `internal_dependency_waits`は、未終了の依存先を1件以上持ち、その全てが引数`target_repo`の
-    `processable`集合の内側にある項目を保持する。
-    """
-
     ready: tuple[str, ...] = ()
     blocked: tuple[str, ...] = ()
     internal_dependency_waits: tuple[str, ...] = ()
@@ -66,7 +56,6 @@ class ReadinessResult:
 
     @property
     def actionable_count(self) -> int:
-        """処理セッションを起動すべき項目数を返す。"""
         repair_targets = {
             *self.frontmatter_broken_needs_uwi,
             *self.invalid_dependencies,
@@ -100,7 +89,6 @@ def count_pending_entries(
     private_notes: pathlib.Path,
     target_repo: str | None = None,
 ) -> int:
-    """指定された対象リポジトリでこのセッションが着手可能な項目数を返す。"""
     return calculate_readiness(private_notes, target_repo).actionable_count
 
 
@@ -111,7 +99,6 @@ def _queue_entry(
     entry_type: str | None,
     resolver_cache: dict[str, str | None] | None = None,
 ) -> QueueEntry:
-    """1件のキュー項目を着手可否判定用表現へ変換する。"""
     text = text if isinstance(text, EntryText) else EntryText(text)
     parsed = parse_frontmatter(text)
     frontmatter_broken = parsed is None
@@ -147,7 +134,6 @@ def _effective_dependencies(
     entry: QueueEntry,
     resolver_cache: dict[str, str | None],
 ) -> tuple[str, ...] | None:
-    """トップレベル依存を返し、無い場合はlegacy依存を読み取る。"""
     parsed = parse_frontmatter(entry.text)
     return _dependency_names(parsed[0] if parsed is not None else {}, entry.legacy_dependency, resolver_cache)
 
@@ -157,7 +143,6 @@ def _dependency_names(
     legacy: dict[str, object] | None,
     resolver_cache: dict[str, str | None],
 ) -> tuple[str, ...] | None:
-    """解析済みfrontmatterから依存先のファイル名を返す。トップレベル依存が無い場合はlegacy依存を読む。"""
     if "depends_on" in data:
         raw = data["depends_on"]
         if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
@@ -199,13 +184,11 @@ def _dependency_names(
 
 
 def _has_explicit_dependencies(entry: QueueEntry) -> bool:
-    """トップレベルに`depends_on`が保存されているかを返す。"""
     parsed = parse_frontmatter(entry.text)
     return parsed is not None and "depends_on" in parsed[0]
 
 
 def _parse_legacy_recheck_after(value: object) -> datetime.datetime | None:
-    """legacy外部条件の再評価時刻をaware datetimeとして返す。"""
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -232,7 +215,6 @@ def applicable_cooldown_until(kind: str | None, value: object) -> datetime.datet
 
 
 def _can_become_candidate(entry: QueueEntry) -> bool:
-    """依存先が同じ実行の候補へ入り得るかを返す。UWIは回答済みで報告用でない場合だけ候補になる。"""
     if entry.kind != WI_TYPE_UWI:
         return True
     return entry.uwi_answered is True and not entry.run_skill_report
@@ -243,13 +225,6 @@ def _internal_dependency_waits(
     ready_names: set[str],
     processing_names: set[str],
 ) -> list[str]:
-    """依存先が全て同じ実行の候補へ入る項目だけを内部依存待ちとして返す。
-
-    候補は着手可能な項目、処理中の項目、内部依存待ちの項目であり、未回答のUWIと報告用UWIは除く。
-    依存先の候補外は推移的に伝わる（AがB、Bが未回答UWIを待つ場合、Bが候補外なのでAも候補外）ため、
-    候補外の依存先を持つ項目が無くなるまで内部依存待ちの集合を縮める。
-    候補外の依存先を待つ項目を内部依存待ちに数えると、回答前の依存元が実装対象へ投入される。
-    """
     internal = set(wait_targets)
 
     def is_candidate(target: QueueEntry) -> bool:
@@ -274,14 +249,6 @@ def _internal_dependency_waits(
 def unanswered_uwi_dependents(
     entries: Iterable[tuple[pathlib.Path, str | None, str | None, dict[str, object], str]],
 ) -> frozenset[pathlib.Path]:
-    """依存先に未回答のUWIを持つAWIのパスを返す。
-
-    WI画面は回答待ちを保存状態ではなくこの導出値で`blocked`と表示する。
-    依存先の回答だけが変わった場合も正しく変わるよう、呼び出し側は項目ごとの表示キャッシュの外で求める。
-    `entries`には未終了の項目（`inbox`・`processing`・`hold`）を、パス・frontmatterの`target_repo`の値・種別・
-    解析済みのfrontmatter・本文の組で渡す。一覧の1操作で本文の解析と対象リポジトリの正規化を繰り返さないよう、
-    解析済みの値を受け取る。依存先は、同名の項目のうち`target_repo`の値が依存元と一致するものを優先して決める。
-    """
     records = tuple(entries)
     repos_by_name: dict[str, set[str | None]] = {}
     unanswered: dict[str, set[str | None]] = {}
@@ -299,7 +266,7 @@ def unanswered_uwi_dependents(
         names = _dependency_names(metadata, legacy if isinstance(legacy, dict) else None, resolver_cache) or ()
         for name in names:
             waiting = unanswered.get(name, set())
-            # 依存元と同じ対象リポジトリの同名項目があればそれを依存先とし、無ければ同名の全項目を依存先とする。
+
             same_repo = target_repo in repos_by_name.get(name, set())
             if (target_repo in waiting) if same_repo else bool(waiting):
                 dependents.add(path)
@@ -316,7 +283,6 @@ def _legacy_dependency_is_satisfied(
     now: datetime.datetime,
     resolver_cache: dict[str, str | None],
 ) -> bool | None:
-    """legacy固有依存の成立状態を返し、通常のファイル名依存では`None`を返す。"""
     parsed = parse_frontmatter(entry.text)
     if parsed is not None and "depends_on" in parsed[0]:
         return None
@@ -383,7 +349,6 @@ def _cycle_members(graph: dict[str, tuple[str, ...]]) -> set[str]:
 
 
 def _entries_by_filename(entries: Iterable[QueueEntry]) -> dict[str, tuple[QueueEntry, ...]]:
-    """ファイル名ごとのキュー項目を返す。対象リポジトリが異なる同名の項目は同じ値へ並べる。"""
     grouped: dict[str, list[QueueEntry]] = {}
     for entry in entries:
         grouped.setdefault(entry.filename, []).append(entry)
@@ -395,12 +360,6 @@ def _dependency_targets(
     dependency: str,
     entries_by_name: dict[str, tuple[QueueEntry, ...]],
 ) -> tuple[QueueEntry, ...]:
-    """依存先のファイル名を、ファイル名と対象リポジトリの組で解決する。
-
-    キュー項目のファイル名は投入時刻から生成するため、対象リポジトリをまたぐと同じ値になり得る。
-    依存元と同じ対象リポジトリの候補があればそれだけを依存先とし、無い場合だけ同名の全候補を
-    依存先として対象リポジトリを横断する依存を解決する。
-    """
     candidates = entries_by_name.get(dependency, ())
     same_repo = tuple(candidate for candidate in candidates if candidate.target_repo == entry.target_repo)
     return same_repo or candidates
@@ -416,12 +375,6 @@ def calculate_readiness(
     branch_settings: _wi_branches.Registry | None = None,
     target_branch: str | None = None,
 ) -> ReadinessResult:
-    """`active`全件と参照された終了項目から対象リポジトリの着手可否を算出する。
-
-    `branch_settings`を渡した場合は、登録に無い系統を宛先に持つ項目を着手不能にする。
-    `target_branch`を渡した場合は、対象をその系統のWIに限る。別の系統のWIは着手可否・修復診断に数えず、
-    依存先としては内部依存待ちの外側になる。
-    """
     if now is None:
         now = datetime.datetime.now(datetime.UTC)
     if now.tzinfo is None:
@@ -548,7 +501,6 @@ def calculate_readiness(
     internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
     for entry in active:
         if entry.kind == WI_TYPE_UWI and entry.run_skill_report:
-            # 報告の確認は次回の定期実行が扱う。承認回答はsourceによらず今回の候補へ含める。
             continue
         if entry.filename in deferred:
             blocked.append(entry.filename)

@@ -32,7 +32,6 @@ _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 
 
-# 軽量起動の組込ツール。探索の読み取り専用性はプロンプトで指示する。
 _LAUNCH_TOOLS: dict[str, list[str]] = {
     "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "shell": ["Bash", "Read"],
@@ -40,13 +39,11 @@ _LAUNCH_TOOLS: dict[str, list[str]] = {
 }
 
 
-# 無確認で使えるMCPは組込ツールの利用可能性と分ける。
 _LAUNCH_ALLOWED_TOOLS = {kind: list(tools) for kind, tools in _LAUNCH_TOOLS.items()}
 _LAUNCH_ALLOWED_TOOLS["explore"].append("mcp__pyfltr__*")
 
 
 def _settings_from_cmdline(cmdline: bytes) -> str | None:
-    """NUL区切りの起動引数から有効な`--settings`の値を返す。"""
     arguments = cmdline.split(b"\0")
     settings: str | None = None
     for index, argument in enumerate(arguments):
@@ -117,7 +114,6 @@ def _build_options(
     cli_env = plugin_environment.cli_environment(plugin_root, runtime_environment.environment())
     env = {
         _delegated_session.DELEGATED_SESSION_ENV: "1",
-        # 委譲先のhookが軽量起動を判別して、スキルの取得を求めない判定に使う。
         _delegated_session.LAUNCH_KIND_ENV: launch_kind,
         "PATH": cli_env["PATH"],
         plugin_environment.RUNTIME_DATA_ENV: cli_env[plugin_environment.RUNTIME_DATA_ENV],
@@ -187,8 +183,6 @@ def _build_options(
     if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
         options["allowed_tools"] = _LAUNCH_ALLOWED_TOOLS[launch_kind]
     if launch_kind == "explore":
-        # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
-        # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
         mcp_config = json.loads((plugin_root / ".mcp.json").read_text(encoding="utf-8"))
         pyfltr = mcp_config["mcpServers"]["pyfltr"]
         pyfltr["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(plugin_root)) for arg in pyfltr.get("args", [])]

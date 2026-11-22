@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するcooldownの試験。"""
-
 import datetime
 import re
 
@@ -22,10 +20,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _BrowserHarness) -> None:
-    """未回答UWIの回答を待つAWIだけにblockedバッジを付け、UWIへ回答すると保存状態を変えずに外す。
-
-    回答待ちを編集中のholdと区別するため、AWIの保存状態はinboxのまま表示する。
-    """
     harness = browser_harness
     page = harness.page
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
@@ -52,11 +46,6 @@ async def test_blocked_badge_tracks_unanswered_uwi_dependency(browser_harness: _
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarness) -> None:
-    """反映後の観測だけが残るinboxのawiは、一覧・詳細・削除確認でinboxの代わりにneeds-verifyを示す。
-
-    保存状態だけでバッジを決めると、観測待ちの項目が未着手の項目と同じinboxに見え、一覧で見分けられない。
-    色はprocessingと同じにし、状態フィルターと保存先は保存状態のinboxのまま扱う。
-    """
     harness = browser_harness
     page = harness.page
     (_entry_path(harness.root, "verify.md")).write_text(
@@ -68,7 +57,7 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
         "---\ntype: awi\nstate: processing\ntarget_repo: example/repo\nsource: browser\n---\n\n処理中の本文\n", encoding="utf-8"
     )
     await page.goto(harness.base_url + "/")
-    # 接続の確立時に一覧を再描画するため、確立を待ってから行の要素を読む。
+
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     row = page.locator('.entry-select[data-key="verify.md"]')
     badge = row.locator(".state-badge")
@@ -99,11 +88,6 @@ async def test_needs_verify_badge_replaces_inbox(browser_harness: _BrowserHarnes
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_answered_badge_replaces_inbox_for_answered_uwi(browser_harness: _BrowserHarness) -> None:
-    """inboxの回答済みuwiは一覧・詳細・削除確認でinboxの代わりにansweredを示し、色はinboxと同じにする。
-
-    保存状態だけでバッジを決めると、回答済みで次の処理を待つ項目と未回答の質問が同じinboxと表示され、一覧で区別できない。
-    未回答のuwiと、inbox以外の保存状態の回答済みuwiは保存状態を示す。状態フィルターは保存状態のinboxで扱う。
-    """
     harness = browser_harness
     page = harness.page
     answered_text = "---\ntype: uwi\nstate: inbox\ntarget_repo: example/repo\n---\n\n## 質問\n\n確認\n\n## 回答\n\n回答済み\n"
@@ -185,7 +169,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     assert "cooldown" not in question_label.split("、")
     assert "解除日時:" not in question_label
     await page.set_viewport_size({"width": 320, "height": 720})
-    # 各バッジの境界が狭幅の行内に収まり、内容も切り詰められない。
+
     assert await question.locator(".status-cell").evaluate("""status => {
         const row = status.closest('.entry-select').getBoundingClientRect();
         return [...status.children].every(child => {

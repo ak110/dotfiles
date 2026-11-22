@@ -15,7 +15,7 @@ from agent_toolkit._common import diagnostic_redaction
 
 DEFAULT_WAIT_TIMEOUT = 300.0
 
-# 拒否本文は名前の付かない鍵も反射するため、共通の規則に加えて連続32文字以上の鍵用文字を保守的に伏せる。
+
 _DIAGNOSTIC_KEY = re.compile(r"[A-Za-z0-9_+/=-]{32,}")
 
 
@@ -30,8 +30,6 @@ class AppServerError(session_errors.DelegateBackendError):
 
 
 class StartCandidateUnavailable(AppServerError):
-    """モデルの実行開始前に候補の不成立が確定し、資源も回収済みであることを表す。"""
-
     def __init__(
         self,
         reason: str,
@@ -41,15 +39,13 @@ class StartCandidateUnavailable(AppServerError):
     ) -> None:
         super().__init__(reason)
         self.reason = reason
-        # launch_engineは同じ起動要求内のengine共通能力の不成立で、永続記録へ渡さない。
+
         self.scope: typing.Literal["candidate", "launch_engine"] = scope
         # CLIの導入と認証の確認では解消しない原因（利用上限など）に限り、原因に応じた次の操作を持つ。
         self.next_action = next_action
 
 
 class ResourceReleaseError(session_errors.ActionableRuntimeError):
-    """委譲sessionが所有するApp Serverまたはその子孫の終了を確認できず、資源を解放済みにできない。"""
-
     def __init__(self, session_id: str, residual: list[str]) -> None:
         super().__init__(
             f"Codex App Server resources for session {session_id} are still running: {'; '.join(residual)}",
@@ -63,8 +59,6 @@ class ResourceReleaseError(session_errors.ActionableRuntimeError):
 
 
 class JsonRpcResponseError(AppServerError):
-    """App ServerがJSON-RPC error responseを返した。"""
-
     def __init__(self, method: str, code: Any, message: str, data: Any = None) -> None:
         super().__init__(f"{method}: {redact_diagnostic(message)}")
         self.method = method
@@ -85,13 +79,11 @@ class JsonRpcResponseError(AppServerError):
 
 
 class TurnStartResponseError(AppServerError):
-    """turn/startの応答形式が不正である。要求拒否を確認できないため、client生存中は受理状態が曖昧である。"""
+    pass
 
 
 @dataclasses.dataclass
 class _WaitCompactionTurn:
-    """担当の結果保留とは分けて観測する、圧縮操作の完了。"""
-
     original_turn_id: str
     done: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
     error: str | None = None
@@ -122,7 +114,6 @@ def _turn_id_from(params: Any) -> str | None:
 
 
 def _response_turn_id(response: Any) -> str | None:
-    """JSON-RPC responseからsteer対象turn IDを取り出す。"""
     if not isinstance(response, dict):
         return None
     turn_id = response.get("turnId")
@@ -130,7 +121,6 @@ def _response_turn_id(response: Any) -> str | None:
 
 
 def _client_pid(client: Any) -> int | None:
-    """App Serverのクライアントが起動した子プロセスのpidを返す。起動前と子プロセスを持たない代替では`None`を返す。"""
     pid = getattr(getattr(client, "process", None), "pid", None)
     return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
 

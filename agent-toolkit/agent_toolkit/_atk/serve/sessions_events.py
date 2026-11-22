@@ -1,5 +1,3 @@
-"""セッション画面の更新通知とローカル監視。"""
-
 import asyncio
 import contextlib
 import json
@@ -19,7 +17,6 @@ def schedule_delivery(
     loop: asyncio.AbstractEventLoop,
     factory: typing.Callable[[], typing.Coroutine[typing.Any, typing.Any, None]],
 ) -> None:
-    """予約が受理され実行されるまでcoroutineを生成せず、停止後の配送を抑える。"""
 
     def accepted() -> None:
         if not state.local_rescan_stopping:
@@ -30,7 +27,6 @@ def schedule_delivery(
 
 
 async def subscribe(state: SessionsState) -> asyncio.Queue[str]:
-    """SSE購読キューを生成して登録し返す。"""
     queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_SIZE)
     async with state.lock:
         state.subscribers.add(queue)
@@ -38,17 +34,11 @@ async def subscribe(state: SessionsState) -> asyncio.Queue[str]:
 
 
 async def unsubscribe(state: SessionsState, queue: asyncio.Queue[str]) -> None:
-    """購読キューを解除する。存在しない場合はエラーにしない。"""
     async with state.lock:
         state.subscribers.discard(queue)
 
 
 async def deliver_refresh(state: SessionsState) -> None:
-    """全購読者へ一覧の再取得を促す通知を配信する。
-
-    未配信の通知は破棄して一覧の再取得の1件だけを残す。
-    一覧の再取得は選択中の記録の再取得も伴うため、破棄した通知の内容を含み、同じ通知も重ねない。
-    """
     payload = json.dumps({"type": "refresh"}, ensure_ascii=False)
     async with state.lock:
         targets = list(state.subscribers)
@@ -59,12 +49,6 @@ async def deliver_refresh(state: SessionsState) -> None:
 
 
 async def deliver_record(state: SessionsState, host: str, engine: str, path: str) -> None:
-    """全購読者へ記録1件の更新を配信する。
-
-    一覧の再取得を促す通知と異なり、選択中の記録を開いている購読者だけが詳細を再取得する。
-    キューが満杯の場合は未配信の通知を破棄し、一覧の再取得を促す通知へ置き換える。
-    一覧の再取得は選択中の記録の再取得も伴うため、破棄した更新を補える。
-    """
     payload = json.dumps(
         {"type": session_watch.RECORD_TYPE, "host": host, "engine": engine, "path": path},
         ensure_ascii=False,
@@ -81,7 +65,6 @@ async def deliver_record(state: SessionsState, host: str, engine: str, path: str
 
 
 async def _relay_remote_notification(state: SessionsState, host: str, event: dict[str, typing.Any]) -> None:
-    """リモートヘルパーの変更通知をSSEへ中継する。未知の型は無視する。"""
     kind = event.get("type")
     if kind == session_watch.REFRESH_TYPE:
         await deliver_refresh(state)
@@ -94,10 +77,6 @@ async def _relay_remote_notification(state: SessionsState, host: str, event: dic
 
 
 def start_local_watch(context: SessionsContext) -> None:
-    """ローカルの記録rootの変更監視を開始する。
-
-    監視は一覧の再取得と記録1件の更新の2種類の通知を、イベントループ上の購読者へ中継する。
-    """
     loop = asyncio.get_running_loop()
     context.state.record_watch = _start_local_record_watch(context, loop)
 
@@ -135,7 +114,6 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
 
 
 async def start_local_watch_async(context: SessionsContext) -> None:
-    """監視準備をworkerで待ち、保持欄をloopで更新する。"""
     loop = asyncio.get_running_loop()
     await run_sync_operation(
         _start_local_record_watch,
@@ -146,7 +124,6 @@ async def start_local_watch_async(context: SessionsContext) -> None:
 
 
 async def stop_local_watch_async(context: SessionsContext) -> None:
-    """監視の全threadが終了してから保持欄を空へ戻す。"""
     with context.state.local_rescan_flag_lock:
         context.state.local_rescan_stopping = True
         thread = context.state.local_rescan_thread
@@ -162,7 +139,6 @@ async def stop_local_watch_async(context: SessionsContext) -> None:
 
 
 def stop_local_watch(context: SessionsContext) -> None:
-    """ローカルの記録rootの変更監視を終了させる。"""
     with context.state.local_rescan_flag_lock:
         context.state.local_rescan_stopping = True
         thread = context.state.local_rescan_thread

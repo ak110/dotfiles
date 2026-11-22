@@ -32,18 +32,15 @@ _CALLER: contextvars.ContextVar[CallerContext | None] = contextvars.ContextVar("
 
 
 def current() -> CallerContext | None:
-    """共有管理で明示的に結び付けた呼出元を返す。通常のCLIではNone。"""
     return _CALLER.get()
 
 
 def environment() -> Mapping[str, str]:
-    """呼出元の環境を返し、通常のCLIでは既存のプロセス環境を使う。"""
     caller = current()
     return os.environ if caller is None else caller.environment
 
 
 def home() -> pathlib.Path:
-    """明示環境のホームを返し、他会話のHOMEで補完しない。"""
     caller = current()
     if caller is None:
         return pathlib.Path.home()
@@ -55,7 +52,6 @@ def home() -> pathlib.Path:
 
 @contextlib.contextmanager
 def bind(caller: CallerContext) -> Generator[None]:
-    """task生成とto_threadが捕捉する範囲に呼出元を結び付ける。"""
     token = _CALLER.set(caller)
     try:
         yield

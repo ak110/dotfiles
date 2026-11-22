@@ -14,7 +14,6 @@ _DAY = 24 * 60 * 60
 
 
 def test_orphaned_release_files_follow_existing_session_sweep(tmp_path: pathlib.Path) -> None:
-    """異常終了で残った要求・応答を既存session掃引が回収し、現行登録を保持する。"""
     session_registry.publish(
         "active", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), state_root=tmp_path
     )
@@ -31,7 +30,6 @@ def test_orphaned_release_files_follow_existing_session_sweep(tmp_path: pathlib.
 
 
 def _diagnostics(state_root: pathlib.Path, instance: str, *, age_days: float, now: float, size: int = 0) -> pathlib.Path:
-    """最終更新を`age_days`日前にした起動単位の終了診断を作成する。"""
     path = logging_config.instance_path(instance, state_root)
     logging_config.append_instance_event(path, writer="server", event="started", padding="x" * size)
     stamp = now - age_days * _DAY
@@ -45,7 +43,6 @@ def _age(path: pathlib.Path, *, days: float, now: float) -> None:
 
 
 def test_instance_diagnostics_follow_references(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """参照元が残る診断は7日を超えても保持し、全参照元の回収後の掃引で回収する。結果ファイルの参照も保持の根拠になる。"""
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     now = time.time()
     by_registry = _diagnostics(tmp_path, "srv-registry", age_days=9, now=now)
@@ -78,7 +75,6 @@ def test_instance_diagnostics_follow_references(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_instance_diagnostics_capacity_keeps_referenced(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """合計が上限を超えると参照元の無い診断を古い順に削除し、参照元のある診断と実行中の起動単位は残す。"""
     now = time.time()
     referenced = _diagnostics(tmp_path, "srv-referenced", age_days=5, now=now, size=4000)
     oldest = _diagnostics(tmp_path, "srv-oldest", age_days=4, now=now, size=4000)

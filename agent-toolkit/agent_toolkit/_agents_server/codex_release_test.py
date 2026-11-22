@@ -71,7 +71,6 @@ async def test_stop_terminates_owned_app_server_and_mcp(
     reason=("実App Server/MCPの停止とregistryの整合を実プロセスで確認する。所有thread合計CPUのLinux観測最大0.832秒。"),
 )
 async def test_release_keeps_other_session_and_resumes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """一方の委譲のstopは他方のApp Serverを残し、他方への追送と破棄した会話の再開がどちらも成功する。"""
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
         stopped_id = (await manager.start("plan", "破棄する担当", str(tmp_path)))["session_id"]
         other_id = (await manager.start("plan", "継続する担当", str(tmp_path)))["session_id"]
@@ -182,7 +181,7 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
 
         def suspend(process: psutil.Process) -> None:
             suspends.append(process.pid)
-            # 1回目の停止ではApp Serverの一時停止と終了を拒否し、生成の停止を確認できないまま残る状態を作る。
+
             if first_stop and process.pid == server_pid:
                 raise psutil.AccessDenied(process.pid)
             original_suspend(process)
@@ -214,7 +213,7 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
         monkeypatch.setattr(psutil.Process, "suspend", suspend)
         monkeypatch.setattr(psutil.Process, "terminate", terminate)
         monkeypatch.setattr(psutil.Process, "kill", kill)
-        # RPCの後始末はpsutilを経由しない終了要求も使うため、同じ初回拒否へ含める。
+
         monkeypatch.setattr(Process, "terminate", terminate_native)
         monkeypatch.setattr(Process, "kill", kill_native)
         monkeypatch.setattr(lifetime, "wait_for_shutdown", wait_injected_shutdown)
@@ -234,10 +233,9 @@ async def test_unresolved_generation_stop_is_retried_instead_of_reported_release
             assert await manager.stop(session_id) == {}
         retry_warnings = [record.getMessage() for record in caplog.records if "再試行でも確認できない" in record.getMessage()]
         assert bool(retry_warnings) is (sys.platform != "win32")
-        # 解放済みの後の案内は、回収されない停止操作の再実行を勧めない。
+
         assert all("停止操作を再実行しても回収されない" in message for message in retry_warnings)
 
-        # 再発行では成功を前提にせず、所有対象から子孫を改めて回収した。
         assert len(job_stops if sys.platform == "win32" else [*suspends, *native_stops]) > stopped_once
         assert not fake.alive(server_pid)
         assert not any(fake.alive(pid) for pid in mcp_pids)
@@ -256,7 +254,7 @@ async def test_release_failure_is_retryable(tmp_path: pathlib.Path, monkeypatch:
         session_id = (await manager.start("plan", "担当", str(tmp_path)))["session_id"]
         session = await _wait_terminal(manager, session_id, fake)
         server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
-        # 1回目は子孫が終了要求にも強制終了にも応じない状態を作る。
+
         unkillable = set(mcp_pids)
         original_terminate, original_kill = psutil.Process.terminate, psutil.Process.kill
         original_job_terminate = subject.windows_job.WindowsJob.terminate

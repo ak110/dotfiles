@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するmutationの試験。"""
-
 import asyncio
 from typing import Any
 
@@ -50,7 +48,6 @@ async def test_saved_mutation_commit_failure_with_watcher(
     operation: str,
     timing: str,
 ) -> None:
-    """実ファイル監視による再取得の前後で、保存済み・未反映と復旧手順を保つ。"""
     await _saved_mutation_commit_failure(browser_harness, monkeypatch, request, operation, timing)
 
 
@@ -69,7 +66,6 @@ async def test_low_height_saved_notice_and_controls_are_reachable(
     request: pytest.FixtureRequest,
     operation: str,
 ) -> None:
-    """400%拡大相当の高さでも保存後の通知全文と操作を重ねず、スクロールとTabで到達できる。"""
     await browser_harness.page.set_viewport_size({"width": 320, "height": 225})
     await _saved_mutation_commit_failure(browser_harness, monkeypatch, request, operation, "natural", low_height=True)
     page = browser_harness.page
@@ -88,7 +84,6 @@ async def test_low_height_saved_notice_and_controls_are_reachable(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_pending_edit_and_closed_delete_route_results(browser_harness: _BrowserHarness) -> None:
-    """応答待ちの更新の二重送信の抑止、入力の無効化、処理中にダイアログを閉じた場合の完了結果の通知先を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -163,12 +158,6 @@ async def test_edit_success_does_not_depend_on_auxiliary_detail_get(
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("case_name", list(_DETAIL_MUTATION_CASES))
 async def test_detail_mutation_self_write_does_not_warn(browser_harness: _BrowserHarness, case_name: str) -> None:
-    """変更操作の応答より先に自分の書込みの更新通知が届いても、警告せずに詳細を閉じて成功を通知する。
-
-    送信中の更新通知を外部更新として扱うと、成功した操作に「外部で項目が更新されました」が出る。
-    状態が変わる操作（自動採用される回答、採用、保留、削除など）では詳細の表示も書き換わり、詳細が閉じずに
-    成功の通知が背面へ出るか、自分が削除した項目を削除済みとして通知する。
-    """
     case = _DETAIL_MUTATION_CASES[case_name]
     harness = browser_harness
     page = harness.page
@@ -198,7 +187,7 @@ async def test_detail_mutation_self_write_does_not_warn(browser_harness: _Browse
     await page.route(case.route, delay_response)
     await page.locator(case.submit).click()
     await asyncio.wait_for(fetched.wait(), timeout=5)
-    # 更新通知が届き、画面が一覧の再取得を終えて詳細の再読込へ進むまで応答を返さない。
+
     try:
         async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
             harness.current_state.publish()
@@ -254,7 +243,6 @@ async def test_detail_mutation_conflict_keeps_input(
 
 
 async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, field: str, submit: str, failure: str) -> None:
-    """編集中の外部更新を実SSEで届け、409後の入力と回復案内まで進める。"""
     page = harness.page
     path = _entry_path(harness.root, "target.md")
     path.write_text(_FREE_FORM_UWI, encoding="utf-8")
@@ -303,14 +291,13 @@ async def _detail_conflict(harness: _BrowserHarness, mode_button: str | None, fi
 async def test_edit_conflict_recovery_preserves_saved_input_and_external_change(
     browser_harness: _BrowserHarness, width: int, height: int
 ) -> None:
-    """案内どおり閉じる前に退避し、最新本文へ自分の変更だけを反映して保存できる。"""
     harness = browser_harness
     page = harness.page
     await page.set_viewport_size({"width": width, "height": height})
     await _detail_conflict(harness, "#edit-button", "#edit-content", "#save-entry-button", "を保存できませんでした。")
     detail = page.get_by_role("dialog", name="詳細")
     field = detail.locator("#edit-content")
-    # コピー操作をブラウザー内で捕捉し、エンドユーザーと共有するOSのクリップボードを書き換えない。
+
     await page.evaluate(
         """document.addEventListener('copy', event => {
           const field = document.activeElement;
@@ -342,7 +329,6 @@ async def test_edit_conflict_recovery_preserves_saved_input_and_external_change(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_answer_and_delete_target_the_visible_state(browser_harness: _BrowserHarness) -> None:
-    """回答と削除は選んだファイルへ作用し、別の処理中の項目を保持する。"""
     harness = browser_harness
     page = harness.page
     marker = "<!-- ユーザーはこの行以降に回答を追記する -->"
@@ -397,10 +383,6 @@ async def test_answer_rebase_in_progress_shows_recovery(
     browser_harness: _BrowserHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """rebaseの中間状態が残る間の回答は理由と解消操作を示して入力を残し、解消後の再実行で保存できる。
-
-    拒否を`edit_conflict`と同じ応答にすると、画面が詳細の開き直しを促し、解消操作へたどり着けない。
-    """
     harness = browser_harness
     page = harness.page
     rebasing = [True]

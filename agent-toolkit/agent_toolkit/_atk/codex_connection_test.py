@@ -34,7 +34,6 @@ def test_probe_definition_arguments_skip_missing_definitions(tmp_path: pathlib.P
 
 
 def test_same_provider_for_credits_and_payg_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """クレジットと従量課金へ同じprovider IDを設定すると、種別を判定できないため設定方法を示して止める。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", "shared")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_PAYG_PROVIDER", "shared")
     with pytest.raises(ValueError, match="同じprovider ID"):
@@ -47,7 +46,6 @@ def test_same_provider_for_credits_and_payg_is_rejected(monkeypatch: pytest.Monk
 def test_subscription_provider_follows_api_assignment(
     monkeypatch: pytest.MonkeyPatch, credits_provider: str, provider: str, expected: str | None
 ) -> None:
-    """`openai`はAPI種別へ設定していない場合だけサブスクリプションとして記録する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_CREDITS_PROVIDER", credits_provider)
     assert codex_connection.subscription_provider_for(provider) == expected
 

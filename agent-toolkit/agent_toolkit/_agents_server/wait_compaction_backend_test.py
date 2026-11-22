@@ -1,5 +1,3 @@
-"""実機で確認した独立圧縮turnと、担当結果の保留・追送の境界を再現する。"""
-
 # 通知と所有接続はbackendの境界から駆動し、公開show/waitで結果を検収する。
 # pylint: disable=protected-access
 from __future__ import annotations
@@ -126,7 +124,7 @@ async def test_claude_wait_changes_at_compaction_boundaries(tmp_path, monkeypatc
         elapsed.set()
         release.set()
         await asyncio.wait_for(asyncio.gather(reservation, return_exceptions=True), 2)
-        # キュー受付後に予約taskが先に終わる場合も、所有側の処理結果まで検収する。
+
         async with asyncio.timeout(2):
             while boundary == "delivery" and client.queries.count("/compact") == 0 and change == "partial":
                 await asyncio.sleep(0)
@@ -417,7 +415,6 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
 
 @pytest.mark.asyncio
 async def test_codex_late_completion_releases_a_cancelled_compaction(tmp_path, monkeypatch):
-    """受付後の取消しだけで圧縮終了とせず、後着完了の観測で所有状態を解く。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="work-turn")
     session.live_child_session_ids.add("child")
     session.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "待機中", "error": None}, None))

@@ -16,7 +16,6 @@ from agent_toolkit._agents_server.antigravity_test import _install_fake_agy
 async def test_user_rules_read_failure_keeps_result_and_recovers(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, failure: str
 ) -> None:
-    """スタブCLIへの公開start/追送を通し、読めない規範だけを復旧して次turnで再取得する。"""
     _install_fake_agy(tmp_path, monkeypatch)
     config = tmp_path / "config"
     config.mkdir()

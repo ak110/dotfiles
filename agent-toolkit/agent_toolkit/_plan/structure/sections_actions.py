@@ -1,5 +1,3 @@
-"""計画の実施内容表と由来・根拠の検査。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -76,7 +74,6 @@ def _check_action_table(tables: list[MarkdownTable]) -> tuple[MarkdownTable | No
 
 
 def has_legacy_action_table(content: str) -> bool:
-    """本文の`## 実施内容`が旧3列表である場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
@@ -87,7 +84,6 @@ def has_legacy_action_table(content: str) -> bool:
 
 
 def legacy_wi_origins(content: str) -> tuple[str, ...]:
-    """`## 実施内容`の`由来`欄が使っている改名前のWI区分を、正規名の並び順で返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
@@ -122,10 +118,6 @@ def _check_action_section(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> list[str]:
-    """`## 実施内容`の固定表と新旧の除外・保持表が基準を満たすか確かめる。
-
-    根拠の記入に関する移行案内とWI参照の取得省略は、呼び出し元へ別々に渡す。
-    """
     if action_index is None:
         return []
     errors: list[str] = []
@@ -193,11 +185,6 @@ def _wi_has_scope(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> bool:
-    """登録時に対象を確定したWI本文を持つかを返す。
-
-    登録済みの反映内容または旧形式の適用範囲を参照し、計画で再導出しない。
-    WIファイルを特定できない場合はWI本文との比較を省略した事実を`origin_skips`へ積んで真を返し、作成を遮断しない。
-    """
     root = _plan_file.private_notes_root(private_notes, home=home)
     try:
         if not root.is_dir():
@@ -341,7 +328,6 @@ def _check_agent_judgment_section(
     action_index: int | None,
     judgment_index: int | None,
 ) -> list[str]:
-    """新書式の`## エージェント提案詳細`が実施内容の提案行に対応するか確かめる。"""
     if judgment_index is None:
         return [f"`## {PLAN_H2_AGENT_JUDGMENT}`が無いためエージェント提案の詳細が基準を満たすか判定できない"]
 
@@ -384,7 +370,6 @@ def _check_agent_judgment_section(
 
 
 def _check_human_review_root(root: str, expected_round: str, decision: str) -> list[str]:
-    """計画レビュー由来の行が絶対パスと同じラウンドを指すか確かめる。"""
     match = PLAN_HUMAN_REVIEW_ROOT_PATTERN.fullmatch(root)
     if match is None or not plan_human_review_path_is_absolute(match.group("path")):
         return [f"`## {PLAN_H2_ACTION}`の計画レビュー由来の`根拠`は絶対パスのTSVと同じroundを指定する: {root}"]
@@ -412,7 +397,6 @@ def _check_human_review_root(root: str, expected_round: str, decision: str) -> l
 
 
 def has_human_action_table(content: str) -> bool:
-    """本文の`## 実施内容`が新規人間向け4列表である場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)
@@ -423,7 +407,6 @@ def has_human_action_table(content: str) -> bool:
 
 
 def has_adopted_human_user_instruction(content: str) -> bool:
-    """新規書式の採用済み`ユーザー指示`行がある場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     action_index = find_heading_index(headings, 2, PLAN_H2_ACTION)

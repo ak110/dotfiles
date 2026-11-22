@@ -1,5 +1,3 @@
-"""serveのappに関するui_detailの試験。"""
-
 # pylint: disable=protected-access
 
 import pytest
@@ -121,7 +119,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_unsaved_answer_protected_after_switching_mode() -> None:
-    """回答欄を隠す編集モードへ切り替えても、入力途中の回答は保持され、閉じる前に破棄を確認する。"""
     result = _run_node_ui(
         """
 const entry = {
@@ -148,7 +145,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_restore_detail_focus_after_origin_row_disappears() -> None:
-    """詳細の起点行が消えた場合も、残存行または空状態の操作へフォーカスを戻す。"""
     result = _run_node_ui(
         """
 const first = {
@@ -191,7 +187,6 @@ process.stdout.write(JSON.stringify({remainingRow, emptyState: focused}));
 
 
 def test_assets_sse_keeps_edit_target_when_state_changes() -> None:
-    """同じ項目のstate更新をSSEで受け取っても、編集中のファイル名を保存先として維持する。"""
     result = _run_node_ui(
         """
 const processing = {
@@ -344,7 +339,6 @@ process.stdout.write(JSON.stringify({saved, answered}));
 
 
 def test_node_dom_uses_new_html_element(monkeypatch: pytest.MonkeyPatch) -> None:
-    """新しい入れ子のフォーム要素と属性を加えても、helperへの追記なしで取得できる。"""
     added = (
         '<form id="probe-form"><span><input id="probe-input" class="probe" aria-label="追随" /></span>'
         '<select id="probe-select"><option value="first">先頭</option><option value="chosen" selected>選択</option></select>'

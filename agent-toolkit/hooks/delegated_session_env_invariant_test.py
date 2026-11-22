@@ -16,7 +16,6 @@ _ENV_NAMES = (delegated_session.DELEGATED_SESSION_ENV, delegated_session.OWNER_S
 
 
 def _env_readers(hooks_dir: pathlib.Path) -> dict[str, set[str]]:
-    """テスト以外の`*.ts`・`*.tsx`のうち2つの環境変数名を含むファイルと、含む名前を返す。"""
     readers: dict[str, set[str]] = {}
     for path in sorted(hooks_dir.rglob("*")):
         if path.suffix not in (".ts", ".tsx") or path.name.endswith((".test.ts", ".test.tsx")):
@@ -29,7 +28,6 @@ def _env_readers(hooks_dir: pathlib.Path) -> dict[str, set[str]]:
 
 
 def test_only_judgment_file_reads_delegated_session_env() -> None:
-    """2つの環境変数名を書くファイルが判定関数の1ファイルだけで、その名前がPython側の定義と一致する。"""
     assert _env_readers(_HOOKS_DIR) == {_JUDGMENT_FILE: set(_ENV_NAMES)}
     text = (_HOOKS_DIR / _JUDGMENT_FILE).read_text(encoding="utf-8")
     assert "async function isDelegated(" in text
@@ -38,7 +36,6 @@ def test_only_judgment_file_reads_delegated_session_env() -> None:
 
 
 def test_env_read_outside_judgment_file_is_detected(tmp_path: pathlib.Path) -> None:
-    """判定関数を持たないファイルが環境変数を直接読むと検出し、テストのファイルは対象から外す。"""
     shutil.copy(_HOOKS_DIR / _JUDGMENT_FILE, tmp_path / _JUDGMENT_FILE)
     (tmp_path / "feature.tsx").write_text(
         f'export const read = ($) => $.env.get("{delegated_session.OWNER_SESSION_ENV}");\n', encoding="utf-8"

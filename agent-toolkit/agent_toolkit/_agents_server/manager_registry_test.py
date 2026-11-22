@@ -40,7 +40,6 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
     cache: str,
     terminal_status: str,
 ) -> None:
-    """所有側が次turnへ進んだ後の照会・停止・回収は共有登録の現在状態に従う。"""
     session_id = "external-resume"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
     writer = status_file.StatusFileWriter(
@@ -63,7 +62,6 @@ async def test_show_does_not_report_stale_terminal_after_resume_elsewhere(
             if cache == "expired":
                 observer.expired_sessions[session_id] = observer.stopped_sessions.pop(session_id)
 
-            # 共有登録の生成側だけを進め、照会側の復元済みメモリーはそのまま残す。
             current = state.SessionState(session_id, str(tmp_path), engine="codex", turn_seq=3)
             owner.sessions[session_id] = current
             session_registry.publish(
@@ -180,7 +178,6 @@ async def test_list_sessions_projects_all_retention_states_in_start_order(tmp_pa
 async def test_list_sessions_omits_terminated_sessions_without_pending_result(
     tmp_path: pathlib.Path,
 ) -> None:
-    """表示範囲を指定しない場合は未回収結果を持たない終了sessionだけを除く。"""
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         active = state.SessionState("active", str(tmp_path))
         manager.sessions[active.session_id] = active
@@ -215,7 +212,6 @@ async def test_list_sessions_omits_terminated_sessions_without_pending_result(
 
 @pytest.mark.asyncio
 async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
-    """一覧は活動時刻を返し、長い識別名などの詳細を返さない。"""
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         long_label = state.SessionState("long", str(tmp_path), label="a" * 101)
         exact_label = state.SessionState("exact", str(tmp_path), label="b" * 100)
@@ -228,7 +224,7 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
             session_registry.set_owner_server_instance(None)
 
         assert [item["session_id"] for item in listed] == ["long", "exact"]
-        # 保持中のsessionは照会したサーバーが所有し、一覧から所有先を読める。
+
         assert [item["owner_server_instance"] for item in listed] == ["instance-current", "instance-current"]
         assert all({"session_id", "status"} <= item.keys() <= LISTED_SESSION_KEYS for item in listed)
 
@@ -238,7 +234,6 @@ async def test_list_sessions_omits_labels(tmp_path: pathlib.Path) -> None:
 async def test_fallback_start_and_verbose_show_publish_codex_speed(
     fast_mode: bool | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """候補切替の起動応答と詳細showが送信した速度を返し、通常の一覧は既存の項目を保つ。"""
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(
             _atk_config,
@@ -285,7 +280,6 @@ async def test_verbose_show_omits_speed_for_other_engines(engine: str, tmp_path:
 
 @pytest.mark.asyncio
 async def test_show_reports_activity_and_output_elapsed_with_activity_based_stall(tmp_path: pathlib.Path) -> None:
-    """showは活動時刻とテキスト出力時刻を別項目で返し、停滞の印を活動の経過だけで決める。"""
     async with _manager_with_fake("codex") as (manager, _):
         fresh = state.SessionState("thread-fresh", str(tmp_path), engine="codex")
         text_silent = state.SessionState("thread-text-silent", str(tmp_path), engine="codex")
@@ -306,7 +300,7 @@ async def test_show_reports_activity_and_output_elapsed_with_activity_based_stal
 
         assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(fresh_detail)
         assert isinstance(fresh_detail["seconds_since_activity"], int)
-        # テキスト出力だけが閾値を超えて止まっている状態と、活動そのものが止まった状態を経過秒数で区別できる。
+
         assert {"updated_at", "output_updated_at", "seconds_since_output"}.isdisjoint(text_silent_detail)
         diagnostic = await manager.show_session(text_silent.session_id, verbose=True)
         assert diagnostic["output_updated_at"] == text_silent.output_updated_at
@@ -468,7 +462,6 @@ async def test_four_observation_paths_share_the_same_activity_projection(
 
 @pytest.mark.asyncio
 async def test_show_reports_active_tool_uses_with_input_detail(tmp_path: pathlib.Path) -> None:
-    """showは未完了のツール呼び出しをツール名、開始時刻および入力の要約で返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         running = state.SessionState("thread-running", str(tmp_path), engine="claude")
         running.pending_tool_uses["toolu_1"] = ("Bash", "2026-09-15T00:00:01+00:00", "command=git status")
@@ -505,7 +498,6 @@ async def test_show_reports_sorted_live_child_sessions_only_for_running_parent(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """showは稼働中の親に実在する子識別子がある場合だけ安定順で返す。"""
     _publish_recovered_session(monkeypatch, tmp_path, "child-a", "completed")
     _publish_recovered_session(monkeypatch, tmp_path, "child-b", "completed")
     async with _manager_with_fake("codex") as (manager, _):

@@ -34,7 +34,6 @@ from agent_toolkit.atk_test import (  # noqa: E402  # pylint: disable=wrong-impo
 
 
 def _add_with_target_repo(home: pathlib.Path, body_file: pathlib.Path) -> None:
-    """共通の`--target-repo`指定で本文ファイルを投入する。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
             [
@@ -53,14 +52,11 @@ def _add_with_target_repo(home: pathlib.Path, body_file: pathlib.Path) -> None:
 
 
 class TestAddSourceOption:
-    """addサブコマンド: --source指定時にfrontmatterへsource行を記録する。"""
-
     def test_source_recorded_when_given(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--source=session-review指定時、frontmatterにsource: session-reviewが含まれる。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -92,7 +88,6 @@ class TestAddSourceOption:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--source未指定時、frontmatterにsource行が含まれない。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -114,14 +109,11 @@ class TestAddSourceOption:
 
 
 class TestCommitSubcommand:
-    """commitサブコマンド: 外部編集分をコミットし、滞留commitをpushする。"""
-
     def test_commit_confirms_plans_only_diff(
         self,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """保存済みの計画ファイルだけに差分がある場合も確定し、作業ツリーをcleanにする。"""
         notes = _setup_notes_with_pending_commit(tmp_path)
         table = notes / "plans" / "2026" / "09" / "01-example-1a2b.exec-review.tsv"
         table.parent.mkdir(parents=True)
@@ -165,7 +157,6 @@ def test_commit_reports_sent_count_then_zero(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実Gitで滞留1件の送信と送信対象なしを区別する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
     before = git_repository.git_output(notes, "rev-parse", "HEAD")
     with pytest.raises(SystemExit, match="0"):
@@ -189,7 +180,6 @@ def test_local_only_commit_reports_skipped_remote_operations(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """remoteなしの初回・外部編集で、行っていないpushを完了と書かない。"""
     notes = git_repository.init_repository(tmp_path / "private-notes")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     setup = notes / "setup.txt"
@@ -249,7 +239,6 @@ def _write_processing_file(
     target_repo: str = "github.com/example/foo",
     body: str = "処理中本文",
 ) -> pathlib.Path:
-    """processing配下に1ファイルを書き込み、絶対パスを返す。"""
     processing_dir = notes / "2026" / "10"
     processing_dir.mkdir(parents=True, exist_ok=True)
     path = processing_dir / filename
@@ -266,7 +255,6 @@ def _write_adopted_file(
     target_repo: str = "github.com/example/foo",
     body: str = "採用済み本文",
 ) -> pathlib.Path:
-    """adopted配下にファイルを書き込み、絶対パスを返す。"""
     adopted_dir = notes / "2026" / "10"
     adopted_dir.mkdir(parents=True, exist_ok=True)
     path = adopted_dir / filename
@@ -278,15 +266,12 @@ def _write_adopted_file(
 
 
 class TestListAwiStatusDefaultAll:
-    """`list`で状態を省略した場合、AWIは`inbox`・`processing`両方を表示する。"""
-
     def test_default_shows_inbox_and_processing(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、AWI側は`inbox`配下と`processing`配下の両方を出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -302,15 +287,12 @@ class TestListAwiStatusDefaultAll:
 
 
 class TestListAwiStatusProcessing:
-    """listサブコマンド `--status=processing`: AWIは`processing`配下のみを表示する。"""
-
     def test_processing_shows_processing_only(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=processing`指定時、AWI側は`processing`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -326,15 +308,12 @@ class TestListAwiStatusProcessing:
 
 
 class TestListAwiStatusAdopted:
-    """listサブコマンド `--status=adopted`: AWIは`adopted`配下のみを表示する。"""
-
     def test_adopted_shows_adopted_only(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=adopted`指定時、AWI側は`adopted`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -352,15 +331,12 @@ class TestListAwiStatusAdopted:
 
 
 class TestListAwiStatusAll:
-    """listサブコマンド `--status=all`: AWIは`inbox`・`processing`双方を表示する。"""
-
     def test_all_shows_both(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=all`指定時、AWI側は`inbox`・`processing`両方を出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -376,15 +352,12 @@ class TestListAwiStatusAll:
 
 
 class TestListAwiStatusActive:
-    """listサブコマンド `--status=active`: AWIのactive状態を表示し終了状態を除外する。"""
-
     def test_active_excludes_adopted_and_rejected(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=active`指定時、AWI側は`adopted`・`rejected`配下を除外し`inbox`・`processing`のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         _write_processing_file(notes, "fb-proc.md", body="proc-body")
@@ -420,7 +393,6 @@ class TestListAwiStatusActive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status`省略時、AWI側は`adopted`配下を除外し、`uwi`側は未回答を除外する（`--status=active`と同じ結果）。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
         hold_dir = notes / "2026" / "10"
@@ -453,15 +425,12 @@ class TestListAwiStatusActive:
 
 
 class TestListAwiStatusRejected:
-    """listサブコマンド `--status=rejected`: AWIは`rejected`配下のみを表示する。"""
-
     def test_rejected_shows_rejected_only(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--status=rejected`指定時、AWI側は`rejected`配下のみ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="in-body")
         rejected_dir = notes / "2026" / "10"
@@ -486,7 +455,6 @@ class TestListAwiStatusRejected:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """却下一覧へinboxのUWIを混ぜず、明示したinbox照会では取得できる。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -513,12 +481,6 @@ def _editor_fake_run(
     myrepo: pathlib.Path | None = None,
     remote_url: str = "https://github.com/example/myrepo.git",
 ) -> typing.Callable[..., subprocess.CompletedProcess[Any]]:
-    """エディター呼び出し時にactionを実行し戻り値をreturncodeとするsubprocess.run差し替えを返す。
-
-    fake-editor以外のコマンドは終了コード0で成功扱いとする。
-    myrepo指定時は`git rev-parse --show-toplevel`にmyrepoを、
-    `git -C <myrepo>`のremote URL取得とHEAD取得へ固定値を返す（対象リポジトリはcwdから解決される）。
-    """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         empty: Any = "" if kwargs.get("text") else b""
@@ -543,21 +505,12 @@ def _editor_fake_run(
 
 
 class TestAddViaEditor:
-    """addサブコマンド: messages省略時に$EDITOR経由で本文を収集する。
-
-    `_editor_fake_run`でエディター呼び出しを差し替え、subprocess.run全呼び出しを
-    捕捉する。エラー時の動作を確かめるテストでは`pull`等のgit呼び出しもfake_runが受けるが、
-    検証の対象は`collect_message_via_editor`が早期にNoneを返すことであり、gitが呼び出されたかどうかは
-    AWIディレクトリにファイルが生成されたかどうかで間接的に確認する。
-    """
-
     def test_editor_path_generates_file_with_content(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """messages省略時にエディターが呼ばれ書き込み内容がAWIへ保存される。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -588,7 +541,6 @@ class TestAddViaEditor:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """エディター保存内容がstrip後に空の場合はexit 1で投入中止する。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -614,7 +566,6 @@ class TestAddViaEditor:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """$EDITOR未設定時はexit 1で案内が出力される。"""
         _setup_notes(tmp_path)
         monkeypatch.delenv("EDITOR", raising=False)
         myrepo = tmp_path / "myrepo"
@@ -642,7 +593,6 @@ class TestAddViaEditor:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """エディターが非ゼロ終了したらexit 1で案内する。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "fake-editor")
         myrepo = tmp_path / "myrepo"
@@ -660,14 +610,11 @@ class TestAddViaEditor:
 
 
 class TestAddTargetRepoOption:
-    """`atk wi add --target-repo`のfallback指定・frontmatter優先順位を検証する。"""
-
     def test_target_repo_option_used_as_fallback(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`--target-repo`指定時、frontmatter未指定の本文はCLI値がtarget_repoとして記録される。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
@@ -685,7 +632,6 @@ class TestAddTargetRepoOption:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatterでtarget_repoが明示された本文は`--target-repo`より優先される。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
@@ -701,14 +647,11 @@ class TestAddTargetRepoOption:
 
 
 class TestUwiAddTargetRepoOption:
-    """`atk wi add --type=uwi --target-repo`のfallback指定・レガシー位置引数との優先順位を検証する。"""
-
     def test_target_repo_option_used_as_fallback(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`--target-repo`指定時、位置引数を省略した呼び出しではCLI値がtarget_repoとして記録される。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()

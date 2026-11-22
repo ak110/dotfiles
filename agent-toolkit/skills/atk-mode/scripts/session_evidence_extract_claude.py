@@ -60,7 +60,6 @@ def _completion_event(entry: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _is_subagent_record(entries: list[dict[str, Any]]) -> bool:
-    """記録全体が1件のサブエージェントの会話かを返す。"""
     conversation = [entry for entry in entries if entry.get("type") in {"user", "assistant"}]
     return bool(conversation) and all(entry.get("isSidechain") is True for entry in conversation)
 
@@ -111,11 +110,6 @@ def _extract_claude(entries: list[dict[str, Any]], lines: list[int]) -> list[dic
 
 
 def _set_entry_timestamp(event: dict[str, Any], entry: dict[str, Any]) -> None:
-    """イベントへ、由来するエントリの時刻を付ける。
-
-    所要時間の区間の境界を、消費側が`--detail`の追加照会なしで確定できるようにする。
-    時刻を持たないエントリではJSONのnullを付け、消費側が項目の有無を分岐せず扱えるようにする。
-    """
     timestamp = entry.get("timestamp")
     event.setdefault("timestamp", timestamp if isinstance(timestamp, str) and timestamp else None)
 

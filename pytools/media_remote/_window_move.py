@@ -1,11 +1,3 @@
-"""serveと生存期間を共有する、タスクバー選択と1回の移動。
-
-フックは短い入力記録だけを行い、UI Automationと位置変更はワーカーへ渡す。
-クリックとWinEventの時刻を対応付け、中クリック時の前面を推測しない。
-選択後に通常操作（左押下・右押下・サイドボタン押下・ホイール・キー押下）を受けたら選択を解除し、
-その後の中クリックはアプリへ渡す。
-"""
-
 import logging
 import queue
 import threading
@@ -19,8 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 class WindowMover:
-    """監視の開始・終了と、選択から1回の移動までを所有する。"""
-
     def __init__(self, *, api: Any = None, uia_factory: Any = None, events: Any = None) -> None:
         self.api = api if api is not None else _window_api.WindowsAPI()
         self.uia_factory = uia_factory if uia_factory is not None else _window_uia.UIAutomation
@@ -69,7 +59,6 @@ class WindowMover:
             self.worker.join()
 
     async def __aenter__(self) -> WindowMover:
-        """準備完了をloopの外で待ち、取消時も開始済みの監視を回収する。"""
         try:
             return await run_sync_operation(self.__enter__)
         except BaseException:
@@ -77,16 +66,13 @@ class WindowMover:
             raise
 
     async def __aexit__(self, *args: Any) -> None:
-        """監視とworkerの終了を完了させる。"""
         await run_sync_operation(self.__exit__, *args)
 
     def on_mouse(self, message: int, point: tuple[int, int], time: int, root: str) -> bool:
-        """マウスフックから受け取り、奪う中クリックだけTrueを返す。"""
         with self.lock:
             if not self.running.is_set():
                 return False
             if message == _window_api.WM_LBUTTONDOWN:
-                # タスクバーの別選択は、ワーカーが新しい対象を選択へ設定する。
                 self._cancel_selection()
                 self.events.put(("click", self.click_generation, time, point, root))
             elif message == _window_api.WM_LBUTTONUP:
@@ -112,18 +98,15 @@ class WindowMover:
         return False
 
     def on_key(self) -> None:
-        """キー操作を通常操作として扱い、選択と未解決のタスクバークリックを解除する。"""
         with self.lock:
             self._cancel_selection()
 
     def _cancel_selection(self) -> None:
-        """lockの下で、選択と未解決のクリックを以降の中クリックから外す。"""
         self.click_generation += 1
         self.pending_click = None
         self.selection = None
 
     def on_window(self, event: int, hwnd: int, time: int) -> None:
-        """登録されたWinEventから対象の情報だけをワーカーへ渡す。"""
         if self.running.is_set():
             self.events.put(("window", event, hwnd, time))
 
@@ -181,8 +164,7 @@ class WindowMover:
                 click = self.pending_click
             if click is None or (time - click[1]) & 0xFFFFFFFF >= 0x80000000:
                 return
-            # OSのクリック間隔を入力操作の時間幅として使う。キーボードで割り込まれた
-            # 操作はon_keyで無効にし、遅延したイベントは選択待ちへの遷移から除く。
+
             if (time - click[1]) & 0xFFFFFFFF > self.api.click_interval_ms:
                 with self.lock:
                     if self.pending_click == click:

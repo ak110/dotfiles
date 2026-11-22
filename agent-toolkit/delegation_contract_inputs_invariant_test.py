@@ -32,7 +32,6 @@ def test_distributed_delegation_contract_is_complete() -> None:
 
 @pytest.mark.parametrize("declared", ["任意", "", "任意,追加", "改名"])
 def test_optional_input_changes_are_detected(tmp_path: pathlib.Path, declared: str) -> None:
-    """任意入力の追加・削除・改名を必須側と区別して検出する。"""
     roles = _write_pair(tmp_path, parent_body=_parent_body().replace("## 起動", "- 任意入力名: `任意`\n\n## 起動"))
     recipient = roles / "task.subagent.md"
     recipient.write_text(
@@ -50,7 +49,6 @@ def test_optional_input_changes_are_detected(tmp_path: pathlib.Path, declared: s
 
 @pytest.mark.parametrize("boundary", [False, True])
 def test_generated_input_diagnostic_explains_official_regeneration(tmp_path: pathlib.Path, boundary: bool) -> None:
-    """境界不正と内容不一致は、修復する対象と正式生成の操作を返す。"""
     parent = _write_pair(tmp_path, parent_body=_parent_body()) / "task.parent.md"
     if boundary:
         parent.write_text(
@@ -66,7 +64,6 @@ def test_generated_input_diagnostic_explains_official_regeneration(tmp_path: pat
 
 
 def test_optional_input_cannot_be_listed_as_required(tmp_path: pathlib.Path) -> None:
-    """任意名を必須一覧へ移した場合は両区分の不一致になる。"""
     body = _parent_body().replace("必須入力名: `対象リポジトリ`", "必須入力名: `対象リポジトリ`、`任意`")
     roles = _write_pair(tmp_path, parent_body=body)
     recipient = roles / "task.subagent.md"
@@ -83,7 +80,6 @@ def test_optional_input_cannot_be_listed_as_required(tmp_path: pathlib.Path) -> 
 def test_contract_diagnostics_limit_input_guidance_to_input_errors(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:
-    """実際の集約診断で入力不一致の修復案内を、その修正が有効な種類へ限定する。"""
     body = _parent_body()
     if case == "section":
         body = body.replace("## 入力", "## 入力以外")
@@ -148,14 +144,12 @@ def test_contract_diagnostics_limit_input_guidance_to_input_errors(
     ],
 )
 def test_contract_error_formatter_keeps_unmodified_diagnostics(diagnostic: str) -> None:
-    """入力専用節と必須名以外の検出結果へ新しい案内を追加しない。"""
     error = f"{diagnostic}: task.parent.md -> task.subagent.md"
     message = _format_contract_error(error)
     assert message == error
 
 
 def test_embedded_launch_contract_keeps_input_coverage(tmp_path: pathlib.Path) -> None:
-    """単一呼び元へ移した後も、割当と必須入力の欠落を同じ検査で判別する。"""
     parent = _write_pair(tmp_path, parent_body=_parent_body()) / "task.parent.md"
     body = parent.read_text(encoding="utf-8")
     parent.unlink()
@@ -186,11 +180,6 @@ def test_nonexistent_recipient_reports_pair(tmp_path: pathlib.Path) -> None:
 
 
 def test_recipient_read_by_launched_recipient_is_assigned_and_needs_parent_inputs(tmp_path: pathlib.Path) -> None:
-    """起動した委譲先が読込表で読む文書を割当済みとし、その必須入力名を委譲元の本文に求める。
-
-    起動しない文書を起動対象へ挙げると、委譲元の本文は起動の確認を満たすためだけの文を持つ。
-    読込表の関係を割当に数えないと、その文書は未割当と誤報され、指示の入力名の欠落も検出されない。
-    """
     roles = _write_pair(tmp_path, parent_body=_parent_body(after_marker="\n| `subagent_md_path` | `task` |\n"))
     task = roles / "task.subagent.md"
     task.write_text(
@@ -254,7 +243,6 @@ def test_changed_required_input_fails_without_parent_update(tmp_path: pathlib.Pa
     ],
 )
 def test_shared_parent_input_section_matches_declaration(tmp_path: pathlib.Path, declared: str, expected: str) -> None:
-    """別役割の必須入力の追加・削除・改名を対象と名前付きで検出する。"""
     roles = _write_pair(tmp_path, parent_body=_parent_body())
     recipient = roles / "task.subagent.md"
     names = ", ".join(declared.split(","))
@@ -267,7 +255,6 @@ def test_shared_parent_input_section_matches_declaration(tmp_path: pathlib.Path,
 
 
 def test_required_input_outside_shared_input_section_is_rejected(tmp_path: pathlib.Path) -> None:
-    """別の節に名前が残っていても入力専用節の欠落を検出する。"""
     body = (
         _parent_body()
         .replace("必須入力名: `対象リポジトリ`", "必須入力名: `別名`")
@@ -279,7 +266,6 @@ def test_required_input_outside_shared_input_section_is_rejected(tmp_path: pathl
 
 
 def test_parent_and_recipient_versions_cannot_be_mixed(tmp_path: pathlib.Path) -> None:
-    """旧版と新版は各組だけが整合し、別のplugin rootにある親子の文書を混在させない。"""
     old_root = tmp_path / "old"
     new_root = tmp_path / "new"
     _write_pair(old_root, parent_body=_parent_body())
@@ -311,7 +297,6 @@ def test_incomplete_new_root_keeps_existing_pair_as_fallback(tmp_path: pathlib.P
 
 
 def test_partial_required_input_name_does_not_match(tmp_path: pathlib.Path) -> None:
-    """項目名を含む長い別名は逐語一致として受理しない。"""
     _write_pair(
         tmp_path,
         parent_body=("# 委譲元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n対象リポジトリ名: 値\n"),
@@ -321,7 +306,6 @@ def test_partial_required_input_name_does_not_match(tmp_path: pathlib.Path) -> N
 
 
 def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
-    """必須入力名へ語を足した表記で始まる箇条書きを別名として報告する。"""
     _write_pair(
         tmp_path,
         parent_body=("# 委譲元\n\n```text\n起動対象: task.subagent.md\n```\n\n## 起動\n\n- 対象リポジトリの絶対パス\n"),
@@ -332,7 +316,6 @@ def test_extended_bullet_label_is_reported(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("optional", [False, True])
 def test_exact_bullet_label_is_accepted(tmp_path: pathlib.Path, optional: bool) -> None:
-    """必須入力名を含む長いラベルでも、必須・任意の宣言と完全一致すれば別名として報告しない。"""
     roles = task_documents.role_document_directory(tmp_path)
     roles.mkdir(parents=True)
     required = "`対象`" if optional else "`対象`、`対象リポジトリ`"
@@ -411,7 +394,6 @@ def test_unclosed_marker_block_is_rejected(tmp_path: pathlib.Path) -> None:
 
 
 def test_delegated_launch_parent_must_be_in_read_table(tmp_path: pathlib.Path) -> None:
-    """委譲先自身が起動を委ねたparentを読まない欠陥を、文書どうしの接続から検出する。"""
     roles = _write_pair(tmp_path, parent_body=_parent_body())
     recipient = roles / "task.subagent.md"
     original = recipient.read_text(encoding="utf-8")
@@ -435,15 +417,10 @@ _SERVER_INPUTS = frozenset({"引き継ぎ記録先"})
 
 
 def _input_like(name: str) -> bool:
-    """バッククォートの中身が入力名か（パス、参照、コマンド、ASCIIだけの識別子を除く）を返す。"""
     return not re.search(r"[/:.<>=\s]", name) and any(ord(character) > 0x7F for character in name)
 
 
 def startup_input_errors(role: str, documents: dict[str, str], declarations: dict[str, frozenset[str]]) -> list[str]:
-    """役割と起動直後に読む資料が「起動時に受け取る」と述べる値が、入力宣言にあるかを確かめる。
-
-    行が別の役割文書を名指す場合は、その役割の宣言で確かめる。名前をバッククォートで書かない行も報告する。
-    """
     errors = []
     for name, text in documents.items():
         for number, line in enumerate(text.splitlines(), 1):
@@ -464,10 +441,6 @@ def startup_input_errors(role: str, documents: dict[str, str], declarations: dic
 
 
 def test_startup_inputs_named_by_documents_are_declared() -> None:
-    """役割文書と起動直後に読む資料（`startup_documents`の走査）が起動時に受け取ると述べる値は、入力宣言にある。
-
-    手順書が初回の起動で渡すと定めた値を入力宣言が持たないと、担当は起動直後に止まり、委譲元の追送を待つ。
-    """
     root = pathlib.Path(__file__).resolve().parent
     reading = list(startup_documents.role_startup_reading(root))
     declarations: dict[str, frozenset[str]] = {}
@@ -497,7 +470,6 @@ def test_startup_inputs_named_by_documents_are_declared() -> None:
     ],
 )
 def test_startup_input_check_reports_undeclared_and_unnamed_values(line: str, expected: str | None) -> None:
-    """起動時に受け取ると述べる行のうち、名前の無い行と宣言に無い名前だけを報告する（2026-11-15の停止の再現を含む）。"""
     declarations = {"exec": frozenset({"担当種別"}), "lane-integration": frozenset({"レーン開始時刻"})}
     errors = startup_input_errors("exec", {"probe.md": line}, declarations)
     if expected is None:

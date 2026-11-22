@@ -1,5 +1,3 @@
-"""隔離ハーネスのrun終了時の診断を、合成したプロセス照会で検証する。"""
-
 import os
 import pathlib
 import subprocess
@@ -17,7 +15,6 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="隔離ハーネ
 def test_run_reports_only_matching_home(
     tmp_path: pathlib.Path, matching_home: bool, exit_code: int, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """既存試験の残存PIDを模した入力に対し、診断だけを加えて前景結果を保つ。"""
     fixture = tmp_path / "fixture"
     fixture.mkdir()
     (fixture / "work").mkdir()

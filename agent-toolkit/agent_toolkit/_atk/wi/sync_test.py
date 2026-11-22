@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのsync: baseのテスト。"""
 
 import pathlib
 import threading
@@ -14,7 +13,6 @@ from agent_toolkit._testing.wi_sync_support import _remote_sync as _remote_sync
 
 
 def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """WI共通処理のGit実行は成功時に標準出力と標準エラーへ書かない。"""
     _wi_sync.run_git(["init", "--initial-branch=main"], tmp_path)
 
     captured = capsys.readouterr()
@@ -93,14 +91,10 @@ class TestRepoLock:
 
 
 class TestAssertRepoLockHeld:
-    """`assert_repo_lock_held`の不変条件表明を検証する。"""
-
     def test_pull_raises_runtime_error_when_lock_not_held(self, tmp_path: pathlib.Path) -> None:
-        """`repo_lock`未保持で`pull`を呼ぶと`RuntimeError`を送出する。"""
         with pytest.raises(RuntimeError, match="不変条件違反"):
             _wi_sync.pull(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
 
     def test_commit_and_push_raises_runtime_error_when_lock_not_held(self, tmp_path: pathlib.Path) -> None:
-        """`repo_lock`未保持で`commit_and_push`を呼ぶと`RuntimeError`を送出する。"""
         with pytest.raises(RuntimeError, match="不変条件違反"):
             _wi_sync.commit_and_push(tmp_path, "chore: test", ["inbox"])  # pylint: disable=protected-access  # noqa: SLF001

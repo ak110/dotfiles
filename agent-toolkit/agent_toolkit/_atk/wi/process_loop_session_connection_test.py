@@ -73,7 +73,6 @@ def test_unconfigured_process_session_preserves_parent_auth(
 def test_invalid_env_file_warning_reaches_process_loop_stderr(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None
 ) -> None:
-    """無効なAPI環境ファイルでは、process-loopの起動がサブスクリプションで続き、標準エラーへパスと修正操作を示す。"""
     path = tmp_path / "invalid.env"
     if content is not None:
         path.write_text(content, encoding="utf-8")
@@ -93,7 +92,6 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
 
 
 def test_payg_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """従量課金だけの使用順はAPIを使い、対話確認を避けるhelperへ鍵の所在だけを渡す。"""
     observed, settings = _connection_launch(tmp_path, monkeypatch, "payg")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert not observed["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
@@ -112,7 +110,6 @@ def test_subscription_orchestrator_uses_subscription_only(tmp_path: pathlib.Path
 
 
 def test_subscription_orchestrator_drops_inherited_api_auth(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """親のAPIキー・トークンを本起動の環境とsettingsへ流入させない。"""
     observed, settings = _connection_launch(tmp_path, monkeypatch, "subscription")
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert "ANTHROPIC_AUTH_TOKEN" not in observed["env"]
@@ -124,7 +121,6 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """使用順の変更後も、保存した種別が使用順に含まれる会話は同じAPI接続で可用性を確認する。"""
     path = tmp_path / "selected.env"
     path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
     session_registry.publish(
@@ -167,7 +163,7 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
     probes = _codex_probes(monkeypatch, chatgpt=False)
     candidate = ("codex", "gpt-5.6-sol", "medium")
     selected = _pl_session.select_available_orchestrator([candidate], env, tmp_path)
-    # APIキーのアカウントではsubscriptionを除いて診断を出し、使用順の次のクレジットを選ぶ。
+
     assert selected == (*candidate, "my-credits", None)
     assert "codex_payg_provider openai" in capsys.readouterr().err
     assert len(probes) == 1 and "--ignore-user-config" in probes[0]
@@ -190,7 +186,6 @@ def test_codex_orchestrator_probe_start_and_resume_use_selected_provider(
 
 
 def test_codex_orchestrator_session_record_keeps_provider(tmp_path: pathlib.Path) -> None:
-    """統括担当の起動中に公開するセッション記録へ、選んだproviderを保存する。"""
     env = {**os.environ, _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "orchestrator-thread", "CODEX_HOME": str(tmp_path)}
     release = tmp_path / "provider.release"
 
@@ -217,7 +212,6 @@ def test_codex_orchestrator_session_record_keeps_provider(tmp_path: pathlib.Path
 def test_codex_orchestrator_resume_keeps_saved_provider_until_removed_from_order(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, order: str, expected: str
 ) -> None:
-    """保存した接続で再開し、その種別を使用順から外した場合だけ使用順の先頭の利用可能な候補へ移る。"""
     env = _configure_codex_orchestrator(monkeypatch, tmp_path, order)
     probes = _codex_probes(monkeypatch, chatgpt=True)
     session_registry.publish(
@@ -241,7 +235,6 @@ def test_codex_orchestrator_resume_keeps_saved_provider_until_removed_from_order
 def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: bool
 ) -> None:
-    """上限中の接続をスキップし、probeで成功した接続を同一会話の本起動へ渡す。"""
     api = tmp_path / "payg.env"
     api.write_text("ANTHROPIC_API_KEY=selected-test-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))

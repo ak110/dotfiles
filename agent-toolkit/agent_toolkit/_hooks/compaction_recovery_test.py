@@ -19,7 +19,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as ru
 def test_session_start_resolves_exact_record(
     candidates: int, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再開時の不存在入力は同一IDの実記録だけで解決し、曖昧さを通知する。"""
     config = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -70,7 +69,6 @@ def _prepare_from_notice(context: str, destination: pathlib.Path, capsys: pytest
 def test_compact_extracts_original_user_events(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], delegated: bool
 ) -> None:
-    """複数の圧縮をまたぐ要求の原文を要約へ保持し、生成入力を除く。"""
     path = tmp_path / "directory with spaces" / "transcript.jsonl"
     path.parent.mkdir()
     entries = [
@@ -182,7 +180,6 @@ def test_compact_does_not_start_process_or_reuse_previous_digest(tmp_path, monke
 def test_noncompact_session_start_does_not_extract(
     source: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """圧縮以外の開始では、原文抽出の起動と保存を追加しない。"""
     path = tmp_path / "transcript.jsonl"
     path.write_text("{}\n", encoding="utf-8")
 
@@ -207,7 +204,6 @@ def test_noncompact_session_start_does_not_extract(
 def test_resolved_resume_notice_path_is_accepted_by_prepare(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再開通知が解決した実パスだけを、公開prepareへ渡して会話を取得する。"""
     config = tmp_path / "claude"
     path = config / "projects/old-directory/resume-test.jsonl"
     path.parent.mkdir(parents=True)
@@ -260,7 +256,6 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
 
 # test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。
 def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):
-    """パスを取得できない場合も、同じ圧縮後通知で実IDを渡す照会を案内する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)

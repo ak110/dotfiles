@@ -86,12 +86,10 @@ class CodexConnectionsMixin:
         return False
 
     async def _close_for_provider_switch(self: CodexManager, session: SessionState, client: Any) -> None:
-        """Loaded threadの接続先が再利用されないよう、unsubscribeの閉鎖完了を待つ。"""
         async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
             await self._close_thread(session.session_id, client, session=session)
 
     async def _close_thread(self: CodexManager, thread_id: str, client: Any, *, session: SessionState | None = None) -> None:
-        """解除応答と閉鎖通知を対応付け、対象threadの資源解放を確認する。"""
         closed = asyncio.Event()
         self._resume_close_events[thread_id] = closed
         try:
@@ -154,7 +152,6 @@ class CodexConnectionsMixin:
             resume_params = startup_features.codex_thread_config(resume_params)
         resume_params["developerInstructions"] = await run_file_operation(_developer_instructions, session.launch_kind)
         if owner_session_id is not None and writer_session_id is not None:
-            # thread/resume中に子MCPが初期化されるため、直接親を復旧候補の選定より先に公開する。
             await run_file_operation(shared_roots.write_host_alias, owner_session_id, writer_session_id, session.session_id)
         resume_response = await self._request_thread_resume(client, resume_params)
         resumed_thread = resume_response.get("thread")
@@ -169,7 +166,6 @@ class CodexConnectionsMixin:
 
     @staticmethod
     async def _compatible_resume_provider(session: SessionState, client: Any) -> str:
-        """通常設定も含めて今回の再開先を確定し、同threadの状態を再利用できることを確かめる。"""
         # 状態の生成先の観測根拠は`docs/development/audit-records.md`の
         # 「agent-toolkit/agent_toolkit/_agents_server/codex_resume_state.py：会話状態の生成先：2026年10月23日」にある。
         target = session.codex_model_provider
@@ -201,12 +197,11 @@ class CodexConnectionsMixin:
         *,
         new_reply: bool = False,
     ) -> None:
-        """元の会話・進捗を保持し、同threadの再送を終えて引き継げる終了を公開する。"""
         if session.pending_result is not None:
             resume_waits.finalize_pending_result(session, touch=False)
         if new_reply:
             progress = (session.agent_message, session.plan, session.commentary, session.diff_changed, session.last_action)
-            # 拒否したreplyにも独立した終了を割り当て、回収済みの前turnと同一視させない。
+
             begin_reply(session, preserve_waits=True)
             session.agent_message, session.plan, session.commentary, session.diff_changed, session.last_action = progress
         session.status = "failed"
@@ -261,7 +256,7 @@ class CodexConnectionsMixin:
                 {"status": session.status, "agent_message": session.agent_message, "error": session.error}
             )
         )
-        # App Serverは残高不足を区別した値を返さないため、クレジットの候補の不受理を残高不足として扱う。
+
         kind = codex_connection.provider_kind(
             session.codex_model_provider, subscription_provider=session.codex_subscription_provider
         )
@@ -297,10 +292,6 @@ class CodexConnectionsMixin:
 
     @staticmethod
     async def _apply_connection_order(session: SessionState, client: Any) -> None:
-        """保持したproviderの種別を使用順から外した会話を、使用順の先頭の利用可能な候補へ移す。
-
-        移した後の種別は使用順に含まれるため、使用順から外れた種別へは戻らない。
-        """
         role = codex_connection.role_of(session.model_type)
         if not codex_connection.outside_order(
             session.codex_model_provider, role, subscription_provider=session.codex_subscription_provider

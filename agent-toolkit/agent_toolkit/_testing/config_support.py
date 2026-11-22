@@ -1,5 +1,3 @@
-"""configの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import json
@@ -54,7 +52,6 @@ _CONNECTION_KEYS = (
 
 @pytest.fixture(autouse=True)
 def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`platformdirs`の解決先を実環境から隔離する。"""
     monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
@@ -75,7 +72,6 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
 
 
 def _main(tmp_path: pathlib.Path, *arguments: str) -> int:
-    """`atk`を実行し、終了コードを返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(list(arguments), home=tmp_path)
     return cast(int, exc_info.value.code)
@@ -86,7 +82,6 @@ def _config_file(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _write_config(tmp_path: pathlib.Path, values: dict[str, str]) -> pathlib.Path:
-    """隔離した設定保存先へ保存値を書き、そのパスを返す。"""
     path = _config_file(tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(values) + "\n", encoding="utf-8")

@@ -1,5 +1,3 @@
-"""setup_miseの環境設定とCLI呼出し。"""
-
 import logging
 import ntpath
 import os
@@ -16,11 +14,10 @@ logger = logging.getLogger(__name__)
 # 新規インストールが実行されると数十秒かかるため余裕を持たせる。
 MISE_TIMEOUT = 300
 
-# `mise install` のタイムアウト (秒)。aqua/npm バックエンドの初回ダウンロードや
-# 複数ツールの一括インストールで時間がかかるため、通常コマンドより長めに取る。
+
 MISE_INSTALL_TIMEOUT = 600
 
-# minimalは単独post-applyでも既存のfull用グローバル設定から大型ツールを導入しない。
+
 LIGHTWEIGHT_TOOLS = ("chezmoi", "fzf", "gh", "glab", "glow", "jq", "ripgrep")
 
 # 無人セットアップではネットワークの一時的な遅延で版一覧取得が失敗しないよう、
@@ -116,8 +113,4 @@ def _mise_error_lines(stderr: str) -> str:
 
 
 def with_mise_output(message: str, result: subprocess.CompletedProcess[str] | None) -> str:
-    """dotfilesが書く案内の後へ、miseの出力を独立した行として続けた診断を返す。
-
-    miseの出力は複数行で句点を持たないため、案内と同じ行へ連結すると文の境界が読めなくなる。
-    """
     return f"{message}\n{common.format_cli_error(result)}"

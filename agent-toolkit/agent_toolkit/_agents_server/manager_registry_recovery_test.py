@@ -81,7 +81,6 @@ async def test_recovered_session_marks_persisted_result_as_uncollected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿からの復元時は結果ファイルの存在を回収状態へ反映する。"""
     session_id = "recovered-result"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
     writer = status_file.StatusFileWriter(
@@ -105,7 +104,6 @@ async def test_recovered_session_kill_reports_terminal(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿から復元した終了sessionのkillはbackendへ触れない。"""
     _publish_recovered_session(monkeypatch, tmp_path, "recovered-kill", "failed")
     async with server_manager.AgentsServerManager(status_writer=None) as manager:
         backend = FakeBackend(manager.sessions, "codex")
@@ -128,7 +126,6 @@ async def test_recovered_session_stop_discards_previous_process_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """復元したsessionの明示破棄は前プロセスが公開した結果も削除する。"""
     session_id = "recovered-stop"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, "completed")
     previous_writer = status_file.StatusFileWriter(
@@ -218,7 +215,6 @@ async def test_recovered_session_restores_each_terminal_status(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿に記録した各終了種別を復元応答へ維持する。"""
     session_id = f"recovered-{terminal_status}"
     _publish_recovered_session(monkeypatch, tmp_path, session_id, terminal_status)
     async with server_manager.AgentsServerManager(status_writer=None) as manager:

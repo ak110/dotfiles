@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""amendとautosquashの履歴対応を検証する。"""
 
 import json
 import os
@@ -46,7 +45,6 @@ def _autosquash(repo: pathlib.Path, base: str) -> None:
 def test_autosquash_rejects_each_independent_violation(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
 ) -> None:
-    """最終treeが同じ場合も、件数・制御件名・非対象patchと不明な対象を拒否する。"""
     base = _git(repo, "rev-parse", "HEAD")
     subject = "同じ件名" if violation == "ambiguous" else "一つ目"
     first = _commit(repo, "first.txt", "一", subject)
@@ -90,7 +88,6 @@ def test_autosquash_rejects_each_independent_violation(
     ),
 )
 def test_autosquash_accepts_fixup_near_untouched_change(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """近傍へのfixupで文脈が変わっても、非対象commitの内容が同じなら受理する。"""
     base = _commit(repo, "content.txt", "a\nb\nc\nd\ne\n", "準備")
     target = _commit(repo, "content.txt", "A\nb\nc\nd\ne\n", "対象")
     unchanged = _commit(repo, "content.txt", "A\nB\nc\nd\ne\n", "近傍の変更")
@@ -140,7 +137,6 @@ def test_autosquash_accepts_conflict_resolved_later_change(repo: pathlib.Path, t
 def test_amend_mapping_is_saved_as_one_pair(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """amendの旧新HEADを1件の対応表へ保存する。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "first.txt", "一", "一つ目")
     (repo / "first.txt").write_text("一改訂", encoding="utf-8")
@@ -163,7 +159,6 @@ def test_amend_mapping_is_saved_as_one_pair(
 def test_amend_rejects_invalid_series(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], violation: str
 ) -> None:
-    """baseの相違・2件以上の系列・同じOIDのamendは対応表を保存せず、amendの端点の指定を次の操作で示す。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "first.txt", "一", "一つ目")
     if violation == "base":
@@ -197,7 +192,6 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
     capsys: pytest.CaptureFixture[str],
     operation: str,
 ) -> None:
-    """`history-compare`が保存した一対一・多対1の対応表を、加工せずに計画のWI対応と証拠参照へ渡せる。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     wi = "20261009-043608-001.md"
     plan = tmp_path / "09-history-1a2b.md"
@@ -283,7 +277,6 @@ def test_generated_mapping_is_consumed_by_public_record_commands(
 def test_autosquash_cli_validates_invariants_and_many_to_one_mapping(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数対象へのfixupを検収し、tree・件数・制御件名・非対象差分を拒否する。"""
     base = _git(repo, "rev-parse", "HEAD")
     first = _commit(repo, "first.txt", "一", "一つ目")
     second = _commit(repo, "second.txt", "二", "二つ目")

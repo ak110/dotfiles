@@ -20,7 +20,7 @@ Windowsは一時ディレクトリがディスク上にあるため対象外で�
 `setup_tmpfiles_clean.py`は役割によらず全Linuxホストでこのタイマーを有効化する。
 
 HOMEを差し替えて子プロセスを起動する隔離は、2か所に独立して実装している。
-テストの環境隔離（`agent-toolkit/agent_toolkit/_testing/isolation.py`）と、旧版更新検証（`scripts/check_update_dotfiles_upgrade.py`の`_isolated_env`）である。
+テストの環境隔離（`agent-toolkit/agent_toolkit/_testing/isolation.py`）と、旧版更新検証（`scripts/check_update_dotfiles_upgrade.py`の`isolated_environment`）である。
 後者はPEP 723スクリプトで前者を読み込めないため、隔離を変える場合は両方を確かめる。
 どちらも、一時領域が実ホーム配下にあっても実ホームの設定とツール配置を読み書きしないよう、実ホームを探索起点・参照先とする経路を遮断する。
 

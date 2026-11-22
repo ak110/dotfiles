@@ -1,5 +1,3 @@
-"""公開案内の実行例を抽出し、CLI自身が組み立てるparserへ渡す検証用補助。"""
-
 from __future__ import annotations
 
 import argparse
@@ -18,15 +16,12 @@ from agent_toolkit._common.shell_tokens import split_words, strip_redirections
 
 
 class _ParserCaptured(Exception):
-    """実スクリプトの解析開始を副作用の実行前で止める。"""
-
     def __init__(self, parser: argparse.ArgumentParser) -> None:
         super().__init__(parser.prog)
         self.parser = parser
 
 
 def registered_parser(script_name: str) -> argparse.ArgumentParser:
-    """run-script登録先の起動経路から実parserを得る。"""
 
     def capture(self: argparse.ArgumentParser, *args: object, **kwargs: object) -> argparse.Namespace:
         del args, kwargs
@@ -42,7 +37,6 @@ def registered_parser(script_name: str) -> argparse.ArgumentParser:
 
 
 def examples(text: str) -> Iterator[tuple[int, str]]:
-    """行頭の完全な実行例を抽出する。インラインの説明用断片は対象に含めない。"""
     pending = ""
     start = 0
     for number, line in enumerate(text.splitlines(), 1):
@@ -62,13 +56,11 @@ def examples(text: str) -> Iterator[tuple[int, str]]:
 
 
 def example_argv(command: str) -> list[str]:
-    """例のプレースホルダーとシェルの値展開だけを固定値へ置き換える。引数名と区切りは保つ。"""
     command = re.sub(r"\$\([^()]*\)", "/absolute/example", command)
     command = re.sub(r"<(?:round|ラウンド番号|正の有限秒数|秒数|N)>", "1", command)
     command = command.replace("<40桁のSHA>", "a" * 40)
     command = re.sub(r"<[^<>]+>", "example", command)
-    # シェルのリダイレクト、パイプ・連結の先とコメントはatkへの入力ではない。
-    # 区切りと語の構文は共通表現から得て、引用した`|`や`>`を引数として残す。
+
     commands = split_bash_commands(command)
     if not commands:
         return []
@@ -79,7 +71,6 @@ def example_argv(command: str) -> list[str]:
 
 
 def validate_example(command: str, *, source: str, parsers: dict[str, argparse.ArgumentParser] | None = None) -> None:
-    """案内に書かれたargvを実parserで検査し、所在付きで構文差を報告する。"""
     argv = example_argv(command)
     assert argv and argv[0] == "atk", (source, command)
     diagnostic = io.StringIO()
@@ -107,7 +98,6 @@ def validate_example(command: str, *, source: str, parsers: dict[str, argparse.A
 
 
 def validate_document(path: pathlib.Path, *, parsers: dict[str, argparse.ArgumentParser] | None = None) -> int:
-    """文書の実物から得た実行例を全件検査する。"""
     count = 0
     for line, command in examples(path.read_text(encoding="utf-8")):
         validate_example(command, source=f"{path}:{line}", parsers=parsers)

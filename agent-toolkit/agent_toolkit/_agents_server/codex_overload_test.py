@@ -40,7 +40,6 @@ async def test_overloaded_turn_after_availability_check_holds_result_and_reports
 
 @pytest.mark.asyncio
 async def test_overloaded_reply_turn_is_held_even_before_flag(tmp_path: pathlib.Path) -> None:
-    """委譲元の`send_message`で始めたturn（2番目以降）の過負荷も自動継続の対象とする。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-2", turn_seq=2)
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
         await manager.handle_notification(_overloaded_turn(session))
@@ -80,7 +79,6 @@ async def test_turn_outside_overload_resume_is_published_as_failed(
 
 @pytest.mark.asyncio
 async def test_non_overload_completion_ends_overload_chain(tmp_path: pathlib.Path) -> None:
-    """継続したturnが過負荷以外で終われば結果を公開し、連鎖の回数を戻す。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-2", turn_seq=2)
     session.advance_overload_retry()
     session.advance_overload_retry()

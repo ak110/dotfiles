@@ -16,7 +16,6 @@ pytestmark = pytest.mark.windows
 
 @pytest.fixture(autouse=True)
 def _leaf_git_launch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実Gitの参照・退避の保全を検査し、各起動で子孫回収を再検証しない。"""
     monkeypatch.setattr(command, "_launch", subprocess.run)
 
 
@@ -49,7 +48,6 @@ def _save_old(repository: pathlib.Path, label: str) -> tuple[str, str]:
 def test_generated_only_old_stash_is_collected(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], protected: bool, change_kind: str
 ) -> None:
-    """保護の有無によらずmise.lockだけの退避を回収し、現在の作業内容を保持する。"""
     repository = _repository(tmp_path / "repo")
     if change_kind == "untracked":
         git_repository.run_git(repository, "rm", "--cached", "mise.lock")
@@ -85,7 +83,6 @@ def test_generated_only_old_stash_is_collected(
 def test_user_content_is_protected_and_not_reported_again(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
-    """indexだけ・未追跡・別ディレクトリの変更も保全し、保護済みは繰り返し表示しない。"""
     repository = _repository(tmp_path / "repo")
     (repository / "mise.lock").write_text("generated\n", encoding="utf-8")
     if kind in {"tracked", "index-only"}:
@@ -126,7 +123,6 @@ def test_user_content_is_protected_and_not_reported_again(
     ),
 )
 def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: pathlib.Path) -> None:
-    """生成差分だけでも、退避元のローカルcommitが唯一の参照ならその履歴を保持する。"""
     repository = _repository(tmp_path / "repo")
     git_repository.run_git(repository, "switch", "-c", "local-only")
     (repository / "committed.txt").write_text("local committed data\n", encoding="utf-8")
@@ -150,7 +146,6 @@ def test_generated_stash_preserves_otherwise_unreachable_local_commit(tmp_path: 
     ),
 )
 def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.Path) -> None:
-    """退避が増えても外部Gitの起動数を増やさず、全件を正しく保護する。"""
     run = update_dotfiles_stash.git_command.run
     counts: list[int] = []
     for number in (1, 3):
@@ -179,7 +174,6 @@ def test_old_stash_processing_has_constant_git_process_count(tmp_path: pathlib.P
     ),
 )
 def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -> None:
-    """共有保護と固有退避が不一致なら、自動生成差分でも両方を保持して止まる。"""
     repository = _repository(tmp_path / "repo")
     (repository / "mise.lock").write_text("generated\n", encoding="utf-8")
     ref, oid = _save_old(repository, "inconsistent")
@@ -201,7 +195,6 @@ def test_inconsistent_protection_preserves_both_values(tmp_path: pathlib.Path) -
     ),
 )
 def test_queue_repository_is_not_changed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """private-notesでは生成差分を含む旧退避も変更しない。"""
     repository = _repository(tmp_path / "repo")
     (repository / "mise.lock").write_text("generated\n", encoding="utf-8")
     ref, oid = _save_old(repository, "queue")
@@ -254,7 +247,6 @@ def test_changed_ref_aborts_entire_cleanup_transaction(tmp_path: pathlib.Path, m
     ),
 )
 def test_linked_worktree_uses_its_own_protection_and_cleanup(tmp_path: pathlib.Path) -> None:
-    """同labelのmain・linked退避を区別し、現在worktreeの整理だけを行う。"""
     repository = _repository(tmp_path / "repo")
     linked = tmp_path / "linked"
     git_repository.run_git(repository, "worktree", "add", "-b", "linked", str(linked))
@@ -288,7 +280,6 @@ def test_linked_worktree_uses_its_own_protection_and_cleanup(tmp_path: pathlib.P
     ),
 )
 def test_retention_branch_change_aborts_cleanup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """履歴の保持先branchが判定後に移動しても、退避元commitの唯一の参照を削除しない。"""
     repository = _repository(tmp_path / "repo")
     initial = git_repository.git_output(repository, "rev-parse", "HEAD")
     (repository / "committed.txt").write_text("local committed data\n", encoding="utf-8")
@@ -340,7 +331,6 @@ def test_symbolic_remote_head_does_not_lock_same_ref_twice(tmp_path: pathlib.Pat
     ),
 )
 def test_user_diff_configuration_does_not_hide_saved_gitlink(tmp_path: pathlib.Path) -> None:
-    """ユーザーのdiff設定でsubmodule差分が省略されても、保存したGitlink変更を捨てない。"""
     repository = _repository(tmp_path / "repo")
     module = git_repository.init_repository(repository / "module", files={"data.txt": "base\n"}, commit_message="基準")
     git_repository.commit_all(repository, "Gitlinkの基準")

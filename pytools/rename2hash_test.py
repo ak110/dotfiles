@@ -1,5 +1,3 @@
-"""rename2hashモジュールのテスト。"""
-
 # pylint: disable=protected-access
 
 import hashlib
@@ -13,7 +11,6 @@ from pytools import rename2hash
 
 
 def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> int | str | None:
-    """`rename2hash`の公開エントリポイントを引数付きで実行し、終了コードを返す。"""
     monkeypatch.setattr(sys, "argv", ["rename2hash", *args])
     with pytest.raises(SystemExit) as exc_info:
         rename2hash.main()

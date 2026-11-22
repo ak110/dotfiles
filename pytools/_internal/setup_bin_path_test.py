@@ -1,5 +1,3 @@
-"""setup_bin_path.run() のテスト。"""
-
 from pathlib import Path
 from unittest import mock
 
@@ -18,7 +16,6 @@ _PREVIOUS_ENTRIES = [
 
 @pytest.fixture(autouse=True, name="dotfiles_under_home")
 def _dotfiles_under_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """作業ツリーが`~/dotfiles`にある環境を再現する。"""
     home = tmp_path / "home"
     monkeypatch.setattr(setup_bin_path.Path, "home", classmethod(lambda cls: home))
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: home / "dotfiles")
@@ -26,16 +23,11 @@ def _dotfiles_under_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Pat
 
 
 def test_entries_keep_previous_userprofile_form_when_root_is_home_dotfiles(dotfiles_under_home: Path) -> None:
-    """ルートが`~/dotfiles`なら、登録値は変更前と同じ`%USERPROFILE%`形式の3件になる。
-
-    絶対パスで登録すると、PATH整理が`%USERPROFILE%`形式へ戻して次の登録が再び追記する往復が起こる。
-    """
     entries = setup_bin_path._bin_entries(dotfiles_under_home / "dotfiles", dotfiles_under_home)  # pylint: disable=protected-access
     assert list(entries) == _PREVIOUS_ENTRIES
 
 
 def test_entries_outside_home_use_absolute_root() -> None:
-    """ホーム外の作業ツリーは絶対パスで登録し、`.local\\bin`は`%USERPROFILE%`形式のまま登録する。"""
     entries = setup_bin_path._bin_entries(Path("/srv/dotfiles"), Path("/home/user"))  # pylint: disable=protected-access
     assert entries[2] == r"%USERPROFILE%\.local\bin"
     assert entries[0].endswith("dotfiles\\bin")
@@ -44,13 +36,11 @@ def test_entries_outside_home_use_absolute_root() -> None:
 
 
 def test_entries_without_root_register_only_local_bin() -> None:
-    """作業ツリーを解決できない場合は`.local\\bin`だけを登録する。"""
     assert setup_bin_path._bin_entries(None, Path("/home/user")) == (r"%USERPROFILE%\.local\bin",)  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("existing", [0, 2, 3])
 def test_run_appends_local_bin_once(monkeypatch: pytest.MonkeyPatch, existing: int) -> None:
-    """既存項目と表記を保って不足分だけ保存し、再適用では書込も通知もしない。"""
     monkeypatch.setenv("USERPROFILE", r"C:\Users\test")
     registry = FakeEnvironmentRegistry(
         user_path=";".join([r"C:\Windows", *_PREVIOUS_ENTRIES[:existing]]),

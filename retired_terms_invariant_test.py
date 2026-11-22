@@ -1,6 +1,6 @@
 """撤去した名称と是正した定義の無い呼称が、許容箇所の外のGit追跡ファイルへ現れないことを検査する。
 
-撤去を規範本文の置換だけで伝えると、過去のセッション記録、終端済みのWI、旧形式の計画およびコミットメッセージに残る
+撤去を規範本文の置換だけで伝えると、過去のセッション記録、終了済みのWI、旧形式の計画およびコミットメッセージに残る
 旧名や定義の無い呼称を読んだ書き手が、同じ語を現行の文書へ書き戻す。書き戻しをこのテストの失敗として検出する。
 
 名称を撤去するときと、正式名を持つ対象を指していた定義の無い呼称を是正したときは、
@@ -24,8 +24,6 @@ _ROOT = pathlib.Path(__file__).resolve().parent
 
 @dataclasses.dataclass(frozen=True)
 class _AllowedLocation:
-    """撤去語が残ってよい箇所。"""
-
     path_pattern: str
     """リポジトリ相対パスへ`PurePosixPath.match`で一致を判定するパターン。"""
     line_substring: str | None = None
@@ -34,7 +32,6 @@ class _AllowedLocation:
     """指定した場合は、この行だけを許容する。"""
 
     def allows(self, path: str, line: str) -> bool:
-        """指定の行を許容するかを返す。"""
         if not pathlib.PurePosixPath(path).match(self.path_pattern):
             return False
         return (self.line_substring is None or self.line_substring in line) and (
@@ -44,8 +41,6 @@ class _AllowedLocation:
 
 @dataclasses.dataclass(frozen=True)
 class _RetiredTerm:
-    """撤去した名称と、その正式名および許容箇所。"""
-
     term: str
     replacement: str
     allowed: tuple[_AllowedLocation, ...]
@@ -53,12 +48,9 @@ class _RetiredTerm:
 
 # 命名の是正で撤去した語のうち、旧形式を読む互換の実装や外部の固定文言として残す箇所。
 _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
-    "証拠行": (
-        # 既存の達成根拠へ付加された標識を読み、観測本文と分けて比較する箇所。
-        _AllowedLocation("agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md", "`証拠行`"),
-    ),
+    "証拠行": (_AllowedLocation("agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md", "`証拠行`"),),
     "計画レビュー": (
-        # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
+        # 旧形式の計画と付属の旧レビュー表を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/*.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_atk/review_table_cli.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/bundle_kinds.py"),
@@ -82,42 +74,31 @@ _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
         _AllowedLocation("agent-toolkit/agent_toolkit/_agents_server/launch_requests_routing_test.py", "起動種別: explore"),
     ),
     "背景ジョブ": (
-        # 監査記録の見出しと対応させる節の見出しと、その節への参照
         _AllowedLocation("*.md", "背景ジョブの起動形（Claude Code）"),
         _AllowedLocation("*.md", "背景ジョブ完了通知と実プロセスの終了順"),
     ),
     "プロジェクト指示": (
-        # 監査記録の見出しの引用
         _AllowedLocation("*.md", "プロジェクト指示のAGENTS.md対応"),
         _AllowedLocation("*.md", "プロジェクト指示のCLAUDE.mdアダプター"),
     ),
     "Skillツール": (
-        # 計画本文の旧表記を検出する正規表現とその入力例
         _AllowedLocation("agent-toolkit/skills/atk-mode/scripts/check_plan_file.py"),
         _AllowedLocation("agent-toolkit/skills/atk-mode/scripts/check_plan_file_test.py"),
         _AllowedLocation("agent-toolkit/skills/atk-mode/scripts/check_plan_file_references.py"),
     ),
-    "鮮度情報": (
-        # `atk wi list --with-staleness`のオプション説明（ヘルプの説明として維持する）
-        _AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli_read_parsers.py"),
-    ),
+    "鮮度情報": (_AllowedLocation("agent-toolkit/agent_toolkit/_atk/wi/cli_read_parsers.py"),),
     "自律実行": (
         # ユーザーの設定から取り除く旧版の文面と一致させる文字列
         _AllowedLocation("pytools/_internal/update_claude_settings.py"),
     ),
-    "振り返り担当": (
-        # 撤去した担当を説明する設計の記録
-        _AllowedLocation("docs/development/design-session-review*.md", "振り返り担当"),
-    ),
+    "振り返り担当": (_AllowedLocation("docs/development/design-session-review*.md", "振り返り担当"),),
 }
 
 _REPORT_DIRECTION_TERM = "ユーザー報告"
 
 _ENDING_TERM_ALLOWED = (
     _AllowedLocation("retired_terms_invariant_test.py"),
-    # 保存済みの旧計画を読む際の見出し一覧。
     _AllowedLocation("agent-toolkit/skills/atk-mode/references/plan-legacy-formats.md"),
-    # 保存済み記録の旧名を現行の役割・工程へ対応付ける説明だけを許容する。
     _AllowedLocation("docs/development/concepts*.md", "旧記録の読み替え:"),
     _AllowedLocation(
         "docs/development/concepts*.md",
@@ -129,6 +110,14 @@ _ENDING_TERM_ALLOWED = (
 )
 
 _RETIRED_TERMS = (
+    *(
+        _RetiredTerm(
+            term=role,
+            replacement="exec-review.md「再発防止観点の確認」",
+            allowed=(_AllowedLocation("retired_terms_invariant_test.py", '"recurrence-self-check.'),),
+        )
+        for role in ("recurrence-self-check.parent.md", "recurrence-self-check.subagent.md")
+    ),
     *(
         _RetiredTerm(term=term, replacement=replacement, allowed=_ENDING_TERM_ALLOWED)
         for term, replacement in (
@@ -149,7 +138,6 @@ _RETIRED_TERMS = (
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
             # 既存計画の旧名を読み取り互換として受理することを説明する文
             _AllowedLocation("agent-toolkit/skills/atk-mode/references/plan-format.md", "読み取り互換"),
-            # 旧形式の計画の基準文書
             _AllowedLocation("agent-toolkit/skills/atk-mode/references/plan-legacy-formats.md"),
             # 旧形式の計画を読む互換のテスト
             _AllowedLocation("*_test.py"),
@@ -161,7 +149,6 @@ _RETIRED_TERMS = (
         term="利用者",
         replacement="ユーザー、エンドユーザー、dotfilesユーザーなど対象を添えた呼称、消費主体、実行中のOSアカウントまたは呼び出し元",
         allowed=(
-            # 改称前の計画の列名と素材種別を読む構造定数と読取処理
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/constants.py"),
             _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/materials.py", "利用者"),
             # 旧形式の計画を作成する試験入力と、その読み取り互換を確かめるテスト
@@ -170,11 +157,8 @@ _RETIRED_TERMS = (
             _AllowedLocation("*_test.py", "利用者合意"),
             _AllowedLocation("*_test.py", "利用者指示"),
             _AllowedLocation("*_test.py", "利用者と入口"),
-            # 旧形式の計画の基準文書
             _AllowedLocation("agent-toolkit/skills/atk-mode/references/plan-legacy-formats.md", "利用者と入口"),
-            # 旧列名を構造の名前として扱う文体検査
             _AllowedLocation("scripts/check_agent_doc_tone.py", "利用者と入口"),
-            # 呼称の使用停止を定める規定と、その方針記録
             _AllowedLocation(
                 "agent-basics/skills/writing-standards/references/notation-rules.md",
                 "成果物を使う人自身が読むガイドの見出しや案内では「利用者向け」も使える。",
@@ -194,7 +178,6 @@ _RETIRED_TERMS = (
                     "特定の成果物を使う人を指すときは「dotfilesユーザー」「プラグイン利用者」のように表記する。"
                 ),
             ),
-            # 過去のcommitの正式件名だけを引用する行。説明への書き戻しは許容しない。
             _AllowedLocation(
                 "docs/development/concepts*.md",
                 line_exact=(
@@ -222,55 +205,39 @@ _RETIRED_TERMS = (
                     "実害ありとして必ず是正し、低頻度リスクの費用比較から除外する"
                 ),
             ),
-            # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
     ),
-    # 定義名（レビュー形態の独立文脈レビュー、工程名の実行レビュー）でない呼称（2026年10月30日、ユーザー指示で是正）。
-    # 現行文書から写した書き手が同じ呼称を報告へ書き戻したため登録する。
     _RetiredTerm(
         term="独立した実行レビュー",
         replacement="実行レビュー（レビューの形態を指す場合は独立文脈レビュー）",
-        allowed=(
-            # 登録した語の不在を確かめる本テスト
-            _AllowedLocation("retired_terms_invariant_test.py"),
-        ),
+        allowed=(_AllowedLocation("retired_terms_invariant_test.py"),),
     ),
-    # 計画実装型AWIと計画化の手順は後継なし（2026年9月13日に廃止）。
     *(
         _RetiredTerm(
             term=term,
             replacement="なし（2026年9月13日に廃止）",
             allowed=(
-                # 廃止を決めたユーザーの方針記録
                 _AllowedLocation("docs/development/concepts*.md"),
-                # 廃止を記す方針記録の行
                 _AllowedLocation("docs/development/concepts*.md", "2026年9月13日のユーザー指示で廃止した"),
-                # 撤去の不在を確かめるテスト
                 _AllowedLocation("*_test.py"),
             ),
         )
         for term in ("計画実装型", "convert-to-plan")
     ),
-    # `atk plans migrate`による旧保存先からの計画移行は後継なし（2026年9月13日に撤去）。
     *(
         _RetiredTerm(
             term=term,
             replacement="なし（2026年9月13日に撤去）",
-            allowed=(
-                # 撤去の不在を確かめるテスト
-                _AllowedLocation("*_test.py"),
-            ),
+            allowed=(_AllowedLocation("*_test.py"),),
         )
         for term in ("plans migrate", "migrate_plans", "旧保存先")
     ),
-    # 正式名を持つ対象を指していた定義の無い呼称（2026年10月2日に是正）。コミットメッセージには残り続けるため登録する。
     *(
         _RetiredTerm(
             term=term,
             replacement=replacement,
             allowed=(
-                # 登録した語の不在を確かめる本テスト
                 _AllowedLocation("retired_terms_invariant_test.py"),
                 *extra_allowed,
             ),
@@ -284,7 +251,6 @@ _RETIRED_TERMS = (
             (
                 "規範スキル",
                 "受信者が適用する作成・レビューの規範を定めるスキルなど、指す範囲を説明する句",
-                # 文章作法の悪い例として示す例文
                 (
                     _AllowedLocation(
                         ".chezmoi-source/dot_gemini/antigravity-cli/skills/japanese-tech-writing/SKILL.md", "悪い例"
@@ -310,16 +276,13 @@ _RETIRED_TERMS = (
             term=term,
             replacement=replacement,
             allowed=(
-                # 日付付きの経緯記録
                 _AllowedLocation("docs/development/concepts*.md"),
                 _AllowedLocation("docs/development/audit-records*.md"),
-                # 登録した語の不在を確かめる本テスト
                 _AllowedLocation("retired_terms_invariant_test.py"),
                 *_NAMING_EXTRA_ALLOWED.get(term, ()),
             ),
         )
         for term, replacement in (
-            # 工程・レビュー・検証・判定・担当・主体の名前
             ("統合担当", "レーン担当（文脈により「統合を行うレーン担当」）"),
             ("レーン統合担当", "レーン担当"),
             ("実装工程", "実行工程"),
@@ -393,7 +356,6 @@ _RETIRED_TERMS = (
             ("分割規範", "「host-codex.md「Codex固有の入出力」の分割取得の規定」"),
             ("公開契約基準", "説明へ"),
             ("導入目的の記録", "導入目的の調査記録"),
-            # 表・記録・報告の名前
             ("永続表", "レビュー指摘管理表"),
             ("独立CI実行レビュー表", "CI対応レビュー指摘管理表"),
             ("CI実行レビュー表", "CI対応レビュー指摘管理表"),
@@ -420,7 +382,6 @@ _RETIRED_TERMS = (
             ("背景作業", "バックグラウンドタスク"),
             ("背景ジョブ", "バックグラウンドタスク"),
             ("背景タスク", "バックグラウンドタスク"),
-            # 領域・root・リポジトリ・状態の名前
             ("管理対象一時領域", "managed-temp"),
             ("管理対象領域", "managed-temp"),
             ("作業用一時領域", "managed-temp"),
@@ -447,7 +408,6 @@ _RETIRED_TERMS = (
             ("変更前状態", "更新前状態"),
             ("キュー管理リポジトリ", "private-notes"),
             ("作業対象リポジトリ", "対象リポジトリ"),
-            # 委譲の名前
             ("起動文", "委譲プロンプト"),
             ("起動プロンプト", "委譲プロンプト"),
             ("能動送付", "「`SendMessage`での送信」"),
@@ -472,7 +432,6 @@ _RETIRED_TERMS = (
             ("指示文書ルート", "「起点の文書（`SKILL.md`、agent定義または`<役割名>.subagent.md`）」"),
             ("固定タスク契約", "「`<役割名>.subagent.md`が定める権限と入力」"),
             ("タスク文書起動", "`<役割名>.subagent.md`を指定する起動"),
-            # WIと計画の処理の名前
             ("固定集合", "処理対象WI"),
             ("選定済み集合", "処理対象WI"),
             ("固定済み選定集合", "処理対象WI"),
@@ -493,7 +452,6 @@ _RETIRED_TERMS = (
             ("編集主体", "「変更を確定した主体」"),
             ("手動起動のセッション", "まとめ処理型"),
             ("バグ計画", "計画ファイル（バグ）"),
-            # 識別子がある対象の名前
             ("Skill機能", "`agent-toolkit:<スキル名>`を起動する形"),
             ("Skillツール", "`agent-toolkit:<スキル名>`を起動する形、またはツール名`Skill`"),
             ("常駐処理", "process-loop（`atk wi process-loop`）"),
@@ -544,7 +502,6 @@ _RETIRED_TERMS = (
             _AllowedLocation(
                 "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
             ),
-            # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
     ),
@@ -554,11 +511,8 @@ _RETIRED_TERMS = (
         term="拡張原因分析",
         replacement="`agent-basics:bugfix`の入口の「書き出す場面」と確認観点の条件",
         allowed=(
-            # 廃止前の条文・観測の保存記録と、日付の付いた過去の監査記録
             _AllowedLocation("docs/development/audit-*.json"),
-            # 廃止を記す方針記録
             _AllowedLocation("docs/development/concepts*.md"),
-            # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
     ),
@@ -568,20 +522,14 @@ _RETIRED_TERMS = (
     _RetiredTerm(
         term=_REPORT_DIRECTION_TERM,
         replacement="ユーザーへの報告、またはユーザーからの報告",
-        allowed=(
-            # 登録した語の不在を確かめる本テスト
-            _AllowedLocation("retired_terms_invariant_test.py"),
-        ),
+        allowed=(_AllowedLocation("retired_terms_invariant_test.py"),),
     ),
 )
 
 
 def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = _RETIRED_TERMS) -> list[str]:
-    """許容箇所の外に現れた撤去語を`<パス>:<行番号>`付きのメッセージで返す。"""
     violations: list[str] = []
-    # 全語を1回の`git grep`で走査し、行ごとに含む語を判定する。
-    # 語ごとに起動すると、1回の呼び出しで200件超のサブプロセスを起動し、
-    # 本関数を呼ぶ試験ケースの数だけ繰り返して、不変条件試験の所要の大半を占めていた。
+
     patterns = [argument for retired in terms for argument in ("-e", retired.term)]
     proc = subprocess.run(
         ["git", "-C", str(repo_root), "grep", "-n", "-I", "-F", "-z", "--no-color", "--full-name", *patterns] + ["--", "."],
@@ -590,7 +538,7 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
         encoding="utf-8",
         check=False,
     )
-    # git grepは一致が無い場合に終了コード1を返す。
+
     if proc.returncode == 1:
         return violations
     assert proc.returncode == 0, proc.stderr
@@ -601,14 +549,19 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
                 continue
             if any(location.allows(path, line) for location in retired.allowed):
                 continue
-            violations.append(
-                f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。正式名「{retired.replacement}」へ置き換える"
-            )
+            if retired.term.endswith(".md"):
+                violations.append(
+                    f"{path}:{line_number}: 撤去した参照「{retired.term}」が残っている。移設先 {retired.replacement} を参照する"
+                )
+            else:
+                violations.append(
+                    f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。"
+                    f"正式名「{retired.replacement}」へ置き換える"
+                )
     return violations
 
 
 def _init_repo(root: pathlib.Path, files: dict[str, str]) -> None:
-    """一時ディレクトリへファイルを置き、Gitの追跡対象へ加える。"""
     subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True, text=True, encoding="utf-8")
     for relative, content in files.items():
         path = root / relative
@@ -618,13 +571,11 @@ def _init_repo(root: pathlib.Path, files: dict[str, str]) -> None:
 
 
 def test_retired_terms_absent_outside_allowed_locations() -> None:
-    """リポジトリのGit追跡ファイルに、許容箇所の外の撤去語が無い。"""
     violations = _find_violations(_ROOT)
     assert not violations, "\n".join(violations)
 
 
 def test_reader_documents_do_not_use_end_user_term() -> None:
-    """成果物を使う人が読む案内に内部の役割名を置かない。"""
     files = [_ROOT / "README.md", _ROOT / "docs/index.md", *(_ROOT / "docs/guide").rglob("*.md")]
     violations = [str(path.relative_to(_ROOT)) for path in files if "エンドユーザー" in path.read_text(encoding="utf-8")]
     assert not violations, violations
@@ -632,14 +583,12 @@ def test_reader_documents_do_not_use_end_user_term() -> None:
 
 @pytest.mark.parametrize("term", [retired.term for retired in _RETIRED_TERMS if retired.allowed == _ENDING_TERM_ALLOWED])
 def test_ending_terms_written_back_to_current_document_are_rejected(tmp_path: pathlib.Path, term: str) -> None:
-    """終了の旧表記を現行文書へ戻すと、保存済み旧形式と区別して検出する。"""
     current = "/".join(("agent-toolkit", "skills", "atk-mode", "roles", "example.md"))
     _init_repo(tmp_path, {current: f"処理の{term}を確認する。\n"})
     assert any(f"名称「{term}」" in violation for violation in _find_violations(tmp_path))
 
 
 def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Path) -> None:
-    """許容箇所の外と、行条件を満たさない許容ファイルの行を、パス・行番号・正式名つきで報告する。"""
     _init_repo(
         tmp_path,
         {
@@ -658,7 +607,6 @@ def test_retired_term_outside_allowed_location_is_reported(tmp_path: pathlib.Pat
 
 
 def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathlib.Path) -> None:
-    """報告の向きを示さない語を報告し、向きを示す言い方は報告しない。"""
     _init_repo(
         tmp_path,
         {
@@ -671,6 +619,20 @@ def test_report_direction_term_outside_allowed_paths_is_reported(tmp_path: pathl
     violations = _find_violations(tmp_path, terms)
 
     assert [violation.split(": ", 1)[0] for violation in violations] == ["docs/note.md:2"]
+
+
+def test_moved_role_in_operational_docstring_is_reported(tmp_path: pathlib.Path) -> None:
+    old = next(term for term in _RETIRED_TERMS if term.term.startswith("recurrence-self-check."))
+    _init_repo(
+        tmp_path,
+        {
+            "module.py": f'"""手順は{old.term}を参照する。"""\n',
+            "current.py": f'"""手順は{old.replacement}を参照する。"""\n',
+        },
+    )
+    assert _find_violations(tmp_path, (old,)) == [
+        f"module.py:1: 撤去した参照「{old.term}」が残っている。移設先 {old.replacement} を参照する"
+    ]
 
 
 def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -> None:
@@ -719,7 +681,6 @@ def test_retired_term_in_allowed_locations_is_accepted(tmp_path: pathlib.Path) -
 def test_moved_design_records_preserve_allowed_line_scope(
     tmp_path: pathlib.Path, relative: str, body: str, rejected: bool
 ) -> None:
-    """歴史説明の移動先でも、行条件と語ごとの許容を保ち、索引への再使用を拒否する。"""
     _init_repo(tmp_path, {relative: body})
 
     violations = _find_violations(tmp_path)

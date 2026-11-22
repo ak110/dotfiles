@@ -18,7 +18,6 @@ def test_fixture_table_covers_every_registered_hook() -> None:
 
 
 def _output_offenders(source: str, path: pathlib.Path) -> list[int]:
-    """診断の直接出力と、配送欄へ連結した未標識の固定本文を抽出する。"""
     offenders = []
     tree = ast.parse(source)
     permitted: set[int] = set()

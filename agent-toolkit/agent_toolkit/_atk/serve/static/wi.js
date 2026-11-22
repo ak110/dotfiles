@@ -1,4 +1,3 @@
-// WI画面のイベント接続・同期と初期化。
 import {
   beginUserListOperation, cancelSearchTimer, clearFilters, enableNotifications, endUserListOperation,
   isCurrentUserListOperation, loadBranchRegistry, loadEntries, loadTargetRepos, movePage, refreshKnownEntries, syncNotificationButton

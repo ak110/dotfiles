@@ -1,5 +1,3 @@
-"""一般UWIの保存・取込scopeが、起動目的と文書の起動単位へ一致することを検査する。"""
-
 import json
 import pathlib
 import subprocess
@@ -17,11 +15,9 @@ __all__ = ["_engine_env"]
 
 @pytest.fixture(name="skill_invocation")
 def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
-    """公開起動から実ホストへ渡すargvとSessionStartの実行データを取得する。"""
 
     def launch(skill, arguments, expected_scope):
         if skill == "agent-toolkit:review-session" and arguments and arguments.split()[0] == "batch":
-            # この隔離transcriptは活動主体を持たない。scope検査に無関係なホスト全体の活動探索を省く。
             monkeypatch.setattr(
                 session_activity, "review_activity", lambda *args, **kwargs: session_activity.ActivitySnapshot(frozenset(), ())
             )
@@ -71,7 +67,6 @@ def _skill_invocation(engine_env, tmp_path, monkeypatch, capsys):
 def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
     tmp_path, monkeypatch, skill_invocation, skill, arguments, other_arguments, mode
 ):
-    """文書のscope例を一般UWIへ保存し、同じモードの次回だけが取り込む境界を検査する。"""
     expected_scope = skill + (" " + mode if mode else "")
     data = skill_invocation(skill, arguments, expected_scope)
     assert data["skill"] == skill and data["mode"] == mode
@@ -114,7 +109,6 @@ def test_general_run_skill_uwi_uses_documented_scope_for_the_same_mode(
 
 @pytest.mark.parametrize("arguments", [None, "batch auto"])
 def test_renamed_review_imports_saved_scopes_without_rewriting(tmp_path, monkeypatch, skill_invocation, arguments):
-    """公開起動が配送した取込対象を、保存済み3形式のUWIに非破壊で適用する。"""
     expected_scope = "agent-toolkit:review-session" + (" batch" if arguments else "")
     data = skill_invocation("agent-toolkit:review-session", arguments, expected_scope)
     notes = _setup_notes(tmp_path)

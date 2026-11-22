@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: schedulingのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -23,7 +22,6 @@ def test_add_operation_does_not_infer_plan_file_from_body(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文が実在する計画ファイルへ言及しても、`plan_file`と`queue_schedule`を自動で付けない。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     plan = tmp_path / "plan.md"
@@ -51,7 +49,6 @@ def test_add_operation_records_top_level_dependencies(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """depends_on指定をトップレベル配列として重複なく記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -77,7 +74,6 @@ def test_add_warns_for_missing_dependency_and_keeps_registering(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実在しない依存先を指定しても投入を拒否せず、警告を出力したうえで登録を完了する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(add_module, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -101,7 +97,6 @@ def test_add_does_not_warn_for_existing_dependency(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """依存先が取り込み先に実在する場合は警告を出力しない。"""
     notes = _setup_notes(tmp_path)
     (notes / "2024" / "01").mkdir(parents=True, exist_ok=True)
     (notes / "2024" / "01" / "present.md").write_text("---\nstate: inbox\ntype: awi\n---\n\n本文\n", encoding="utf-8")
@@ -116,7 +111,6 @@ def test_add_does_not_warn_for_existing_dependency(
 
 
 def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Path) -> None:
-    """`add` CLIの依存を単純ファイル名へ限定し、拡張子省略と重複を正規化する。"""
     inbox = tmp_path / "2024" / "01"
     inbox.mkdir(parents=True)
 
@@ -130,7 +124,6 @@ def test_add_cli_dependencies_are_validated_and_normalized(tmp_path: pathlib.Pat
 
 
 def test_add_rejects_dependencies_for_uwi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """UWIで保存されないdepends_on指定を成功扱いにしない。"""
     _setup_notes(tmp_path)
     body_path = tmp_path / "body.md"
     body_path.write_text("確認しますか？", encoding="utf-8")
@@ -193,7 +186,6 @@ def test_public_add_cooldown_first_save_and_readiness(
 def test_public_add_legacy_confirmation_is_saved_without_blocking_readiness(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧確認キーを未知キーとして保存し、着手可否に影響させない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "---\nconfirmation: required\n---\n\n本文\n")
@@ -225,7 +217,6 @@ def test_public_add_preserves_legacy_confirmation_values(
     extra_args: list[str],
     value: str,
 ) -> None:
-    """AWIとUWIに指定した旧確認キーの値を未知キーとして保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, f"---\nconfirmation: {value}\n---\n\n本文\n")
@@ -266,7 +257,6 @@ def test_registration_rejects_reserved_metadata_before_any_save(
     reserved_key: str,
     entrypoint: str,
 ) -> None:
-    """CLIとWebからの登録で、後続本文の予約キーを拒否して先行本文も保存しない。"""
     from agent_toolkit._atk.serve import wi_operations  # pylint: disable=import-outside-toplevel
 
     notes = _setup_notes(tmp_path)
@@ -319,7 +309,6 @@ def test_public_add_rejects_cooldown_for_unsupported_mode(
 def test_public_add_hold_saves_awi_outside_readiness(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """--holdのAWIは初回保存からholdにあり、unholdまで着手可能な集合に入らない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "本文")
@@ -349,7 +338,6 @@ def test_public_add_hold_saves_awi_outside_readiness(
 def test_public_add_hold_rejects_unsupported_combinations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
 ) -> None:
-    """UWI、時機を指定するAWI、--batchへの--holdを保存前に拒否し、保留を保つ投入の方法を示す。"""
     _setup_notes(tmp_path)
     args = _cmd_add_args(tmp_path, "確認しますか？")
     with pytest.raises(SystemExit) as finished:
@@ -365,7 +353,6 @@ def test_public_add_hold_rejects_unsupported_combinations(
 def test_public_add_hold_in_process_wi_guides_to_drop_hold(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """巡回中の--holdは、併用できない時機の追加ではなく--holdを外す操作を案内して保存しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")

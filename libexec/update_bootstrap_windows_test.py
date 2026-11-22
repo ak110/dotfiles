@@ -2,6 +2,7 @@
 
 import contextlib
 import importlib
+import json
 import os
 import pathlib
 import shutil
@@ -186,7 +187,6 @@ def test_stage_timeout_diagnostic_preserves_outputs_and_owned_targets(tmp_path, 
 
 
 def test_stage_classification(tmp_path: pathlib.Path) -> None:
-    """同じPS起動内で、製品判定のcontinue・abort・Probeの消費結果を確認する。"""
     result = _run_stage(
         tmp_path,
         "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
@@ -256,7 +256,6 @@ def test_install_stage_does_not_retry_if_stop_and_dispose_fail(tmp_path: pathlib
 def test_stage_native_job_reaps_tree(
     tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """停止状態生成した実Jobは短命中間親の末端も回収し、stdioを閉じる。"""
     pids = tmp_path / "pids"
     pids.mkdir()
     for key, value in {
@@ -271,7 +270,6 @@ def test_stage_native_job_reaps_tree(
     with _owned_native_pids(pids, native_program):
         result = _run_stage(
             tmp_path,
-            # 変数名は大文字小文字を区別しないため、`$clock`だと関数内の`$Clock`引数（scriptblock自身）を返す。
             "$fixedNow=[DateTime]::UtcNow; "
             f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$fixedNow}} "
             "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "
@@ -311,6 +309,30 @@ def test_bootstrap_entry_prepares_python(
     else:
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.strip() == "managed-python"
+
+
+@pytest.mark.skipif(_PS is None, reason="PowerShellがない")
+def test_report_only_recovers_diagnostic_when_runtime_did_not_start(tmp_path: pathlib.Path) -> None:
+    directory = tmp_path / "agent-toolkit"
+    directory.mkdir()
+    report = directory / "update-bootstrap-11-22.json"
+    log = directory / "uv-管理Pythonの更新-failed.log"
+    log.write_text("診断の本文", encoding="utf-8")
+    item = {"title": "管理Pythonの更新", "detail": "exit=17", "saved": True}
+    report.write_text(json.dumps([item, item]), encoding="utf-8")
+    assert _PS is not None
+    result = subprocess.run(
+        [_PS, "-NoProfile", "-File", str(_ROOT / "libexec/update_bootstrap.ps1"), "unused", "-ReportOnly"],
+        env={**os.environ, "LOCALAPPDATA": str(tmp_path), "UPDATE_DOTFILES_BOOTSTRAP_REPORT": str(report)},
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.count(str(log)) == 1
+    assert log.read_text(encoding="utf-8") == "診断の本文"
+    assert not report.exists()
 
 
 def test_stage_continued_failure_reaches_update_result(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

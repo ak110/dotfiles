@@ -1,5 +1,3 @@
-"""停止taskの完了待ちを上限で打ち切り、取り消しを無視するtaskが後続の回収を妨げないようにする。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +8,6 @@ SHUTDOWN_TIMEOUT = 15.0
 
 
 async def wait_for_shutdown(tasks: Iterable[asyncio.Task[Any]], *, timeout: float = SHUTDOWN_TIMEOUT) -> list[Any]:
-    """取り消しを無視するtaskの完了待ちを上限で打ち切り、他の回収を継続する。"""
     tasks = tuple(tasks)
     if not tasks:
         return []

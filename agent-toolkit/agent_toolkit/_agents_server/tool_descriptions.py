@@ -1,5 +1,3 @@
-"""agents_serverのMCPツールと引数の説明文、およびその境界の標識。"""
-
 from __future__ import annotations
 
 import logging
@@ -10,7 +8,6 @@ from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_mes
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
-# MCPのスキーマとして実行ホストのsystem promptへ入る本文の境界。
 _NORMATIVE_ELEMENT = AUTO_INSERTED_ELEMENT
 
 
@@ -27,21 +24,14 @@ _KIND_MCP_PARAMETER = "mcp-parameter"
 
 
 def schema_text(body: str, *, kind: str) -> str:
-    """MCPのスキーマへ載る本文へ、生成主体と種別を示す境界を付ける。
-
-    サーバーの説明文とツールの説明文は、呼び出し側のホストがsystem promptへ自動的に載せる。
-    受信したエージェントが本リポジトリの生成物と判別できるよう、他の自動注入と同じ形式で囲む。
-    """
     return auto_message(body, source=_NORMATIVE_SOURCE, kind=kind)
 
 
 def parameter_description(body: str) -> str:
-    """ツールの引数の説明文へ境界を付ける。"""
     return schema_text(body, kind=_KIND_MCP_PARAMETER)
 
 
 def shell_prompt(command: str, summary_policy: str) -> str:
-    """コマンドと要約方針を、シェル実行委譲先への指示本文へ組み立てる。"""
     return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
@@ -49,8 +39,6 @@ StartMode = Literal["task", "delegate", "explore", "write", "shell"]
 """`start`の`mode`が受理する値。`tool_names.START_MODES`と同じ集合を保つ。"""
 
 
-# 各引数の説明は、ツールの入力と出力の決まり（意味、書式、省略時の動作、modeごとの必須・禁止）だけを書く。
-# 委譲するか、どのmodeと工程を選ぶかの方針は、常に文脈へ入るこの説明へ置かない。
 CWD_DESCRIPTION = parameter_description(
     "通常起動の全modeで必須。handoff_from指定時は省略する。委譲先の作業ディレクトリで、shellではコマンドを実行するディレクトリとなる。既存ディレクトリの絶対パスを渡す。"
 )
@@ -80,10 +68,12 @@ MODE_DESCRIPTION = parameter_description(
     "委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
     "ClaudeとCodexの委譲先は作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まず、"
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。\n"
-    "explore: 委譲先は対象成果物・委譲入力・ユーザーデータを作成・変更・削除せず、成果ファイルも出力しない。"
+    "explore: 割当てた探索は長い出力を分割して補い、必要な確認まで行う。"
+    "対象成果物・委譲入力・ユーザーデータを作成・変更・削除せず、成果ファイルも出力しない。"
     "読取ツールが管理するキャッシュ・状態・保存出力はこの対象外。"
     "読取手段（Gitの読取照会、rg・find、ファイル読取、読取MCP）で調べ、環境作成・権限拡大・再委譲はしない。"
-    "自身で解消できない未確認は範囲と理由を付けて返す。委譲元の文脈へは結果の要約だけが入る。\n"
+    "許可された代替手段を試しても外部の前提が足りない単位だけ、その手段・結果・再開条件を返す。"
+    "委譲元の文脈へは結果の要約だけが入る。\n"
     "write: 委譲先はファイルの読取・検索・作成・編集だけを行う。\n"
     "shell: 読み取り専用の制約は課さないため、対象を変更するコマンドも実行する。委譲元の文脈へは終了状態と要約だけが入る。"
 )
@@ -176,7 +166,6 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
 )
 
 
-# modeごとの必須の入力と受理する入力。`model_type`と`label`は全modeで受理するため含めない。
 START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     "task": (("subagent_md_path",), frozenset({"subagent_md_path", "extra_params", "whole_contract_path"})),
     "delegate": (("prompt", "model_type"), frozenset({"prompt", "whole_contract_path"})),
@@ -186,7 +175,6 @@ START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
 }
 
 
-# 登録した自由本文のmodeには、対象外の理由を宣言しない限り返却形式を適用する。
 START_RESULT_CONTRACT_EXEMPTIONS = {"shell": "コマンドの終了コードと保存出力で検収する"}
 FREEFORM_RESULT_CONTRACT_KINDS = START_MODE_INPUTS.keys() - START_RESULT_CONTRACT_EXEMPTIONS.keys() - {"task"}
 

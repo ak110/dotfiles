@@ -53,7 +53,6 @@ RECORDED_START_OPERATIONS: frozenset[str] = START_OPERATIONS | frozenset(LEGACY_
 
 
 def start_mode(operation: str, arguments: Mapping[str, Any] | None) -> str | None:
-    """起動ツールの操作名と入力から`mode`を返す。起動ツールでない場合と未知の`mode`では`None`を返す。"""
     if operation in START_OPERATIONS:
         mode = arguments.get("mode") if isinstance(arguments, Mapping) else None
         if mode is None:

@@ -1,5 +1,3 @@
-"""`atk run-script review-adoption`の公開入口を通した採否集計の試験。"""
-
 from __future__ import annotations
 
 import argparse
@@ -14,7 +12,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import write_jsonl
 
 _ROLE_PROMPT = "出所: /plugin/agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md"
-# 役割文書を`share/`から配送していた移行前の記録の標識。
+
 _LEGACY_ROLE_PROMPT = "出所: /plugin/agent-toolkit/share/exec-review.subagent.md"
 
 
@@ -96,7 +94,7 @@ def _dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
     _claude_review(
         claude / "p/judgments.jsonl", "03-0002_judgments.exec-review.tsv", "claude-opus-5-5", role_prompt=_LEGACY_ROLE_PROMPT
     )
-    # 委譲元の記録にも同じ表の名前が現れるが、役割文書の配送が無いため帰属させない。
+
     write_jsonl(
         claude / "p/main.jsonl",
         [
@@ -130,7 +128,6 @@ def _run(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -
 
 
 def test_review_adoption_counts_periods_levels_reasons_and_models(dataset, capsys) -> None:
-    """今回と直前の期間ごとに採否・level・不採用理由・モデル別の件数を返し、特定できない表はモデル不明に数える。"""
     events = _run(dataset, capsys)
     periods = {event["period"]: event for event in events if event["kind"] == "review-adoption-period"}
     current = periods["current"]
@@ -223,7 +220,7 @@ def test_review_adoption_finds_request_after_large_preamble_and_ignores_quotes(d
     """依頼文より前の内容が256KiBを超えるCodexの記録へ帰属させ、標識を引用しただけの記録へは帰属させない。"""
     _notes, claude, codex = dataset
     _codex_review(codex / "2026/11/03/rollout-review.jsonl", "03-0001_unknown.exec-review.tsv", preamble_bytes=300 * 1024)
-    # 振り返りの会話など、最初のモデル出力より後ろで標識と表の名前を引用した記録。
+
     write_jsonl(
         claude / "p/quote.jsonl",
         [
@@ -259,7 +256,6 @@ def test_one_review_record_attributes_every_matching_table(dataset, capsys):
 
 
 def test_codex_spawn_attributes_only_the_primary_reviewer(dataset, capsys) -> None:
-    """親が走査範囲にある組み込み委譲のうち、最初に役割文書を参照した主担当だけに帰属する。"""
     _, _, codex = dataset
     table = "03-0001_unknown.exec-review.tsv"
     role_doc = "roles/exec-review.subagent.md"

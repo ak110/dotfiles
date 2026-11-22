@@ -8,6 +8,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 
 import filelock
 from agent_toolkit._atk.wi.constants import WI_STATES
@@ -15,13 +16,22 @@ from agent_toolkit._common import private_notes, process_tree, wi_layout
 from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, redact_secrets
 
 
-def bootstrap_failures(directory: pathlib.Path) -> list[tuple[str, str]]:
-    """外側の段が渡した診断を検証して取り込み、所有する一時記録だけを回収する。"""
+@dataclass(frozen=True)
+class BootstrapFailure:
+    """起動前の段が通知する失敗と、明細の保存結果。"""
+
+    title: str
+    detail: str
+    saved: bool = False
+
+
+def bootstrap_failures(directory: pathlib.Path) -> list[BootstrapFailure]:
     failures = []
     for line in os.environ.pop("UPDATE_DOTFILES_BOOTSTRAP_FAILURES", "").splitlines():
         title, separator, detail = line.partition(": ")
         if separator and len(line) <= 4096:
-            failures.append((title, detail))
+            detail, _, saved = detail.partition("\t")
+            failures.append(BootstrapFailure(title, detail, saved == "saved"))
     raw_path = os.environ.pop("UPDATE_DOTFILES_BOOTSTRAP_REPORT", "")
     if not raw_path:
         return failures
@@ -40,9 +50,10 @@ def bootstrap_failures(directory: pathlib.Path) -> list[tuple[str, str]]:
             for item in payload:
                 if isinstance(item, dict) and all(isinstance(item.get(key), str) for key in ("title", "detail")):
                     failures.append(
-                        (
+                        BootstrapFailure(
                             diagnostic_excerpt(item["title"], prefix_chars=128),
                             diagnostic_excerpt(item["detail"], prefix_chars=4096),
+                            item.get("saved") is True,
                         )
                     )
         path.unlink()
@@ -98,7 +109,6 @@ def report(failures: list[tuple[str, str]], state: pathlib.Path, root: pathlib.P
     except process_tree.ReclaimError:
         raise
     except OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout:
-        # 更新の結果表示は呼出元が行う。キューと状態領域の障害では更新を止めない。
         pass
 
 
@@ -110,7 +120,7 @@ def _pending(notes: pathlib.Path, key: str) -> bool:
         if not text.startswith("---\n"):
             continue
         header = text[4:].split("\n---", maxsplit=1)[0]
-        # 自動起票が書く単純なスカラーだけを読む。更新の起動前提へYAMLの依存を追加しないためである。
+
         if re.search(rf"""(?m)^update_dotfiles_failure_key: ['"]?{key}['"]?\s*$""", header) and re.search(
             r"""(?m)^state: ['"]?(?:inbox|processing|hold)['"]?\s*$""", header
         ):
@@ -119,7 +129,7 @@ def _pending(notes: pathlib.Path, key: str) -> bool:
 
 
 def _body(key: str, title: str, detail: str) -> str:
-    # 段名には外部のディレクトリ名も含まれるため、Markdownのテキストとしてエスケープする。
+
     title = re.sub(r"([\\`*_{}\[\]()#+.!|<>-])", r"\\\1", html.escape(title))
     return (
         f"---\nupdate_dotfiles_failure_key: {key}\n---\n\n"

@@ -14,7 +14,6 @@ from collections.abc import Sequence
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """引数に応じて依存の確認、またはMCP stdioから共有管理サービスへの転送を行う。"""
     parser = argparse.ArgumentParser(description="CodexとClaudeの委譲先を非同期MCPとして公開する。")
     parser.add_argument(
         "--check-dependencies",

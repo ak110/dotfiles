@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の統合済みレーンと再開操作を検証する。"""
 
 import json
 import pathlib
@@ -34,7 +33,6 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
 def test_require_integrated_checks_all_stages_without_current_wi(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開前確認は全段階の保存状態を読み、既に無いWI本文や配置を再検査しない。"""
     path = _write_selection(
         tmp_path / "selection.yaml",
         [
@@ -58,7 +56,7 @@ def test_require_integrated_checks_all_stages_without_current_wi(
     assert _dispatch(str(path), "--require-integrated", "--publication-lane", "unknown") == 2
     assert path.read_bytes() == before
     data = yaml.safe_load(before)
-    # 公開対象自身が統合済みでも、推移的な先行レーンが未統合なら公開できない。
+
     data["レーンの所要時間"][2]["統合状態"] = "統合済み"
     path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     assert _dispatch(str(path), "--require-integrated", "--publication-lane", "lane-03") == 1
@@ -72,7 +70,6 @@ def test_require_integrated_checks_all_stages_without_current_wi(
 def test_require_integrated_rejects_invalid_state(
     tmp_path: pathlib.Path, state: object, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未知の状態は未統合の正常診断と区別する。"""
     path = _write_selection(
         tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": [], "統合状態": state}]
     )
@@ -82,7 +79,6 @@ def test_require_integrated_rejects_invalid_state(
 
 @pytest.mark.parametrize("mode", ["--require-integrated", "--history"])
 def test_read_only_modes_reject_new_plan_without_reopen(tmp_path: pathlib.Path, mode: str) -> None:
-    """読取専用の早期終了経路でも、再開対象のない計画切替指定を入力不備として拒否する。"""
     path = _write_selection(tmp_path / "selection.yaml", [])
     before = path.read_bytes()
     assert _dispatch(str(path), mode, "--new-plan") == 2
@@ -92,7 +88,6 @@ def test_read_only_modes_reject_new_plan_without_reopen(tmp_path: pathlib.Path, 
 
 @pytest.mark.parametrize("case", ["empty", "missing", "malformed", "unassigned-lane"])
 def test_require_integrated_empty_and_unreadable_inputs(tmp_path: pathlib.Path, case: str) -> None:
-    """正常な0レーンだけを完了とし、読取不能・破損・所属不一致を入力不備として返す。"""
     path = tmp_path / "selection.yaml"
     if case == "empty":
         _write_selection(path, [])
@@ -109,7 +104,6 @@ def test_require_integrated_empty_and_unreadable_inputs(tmp_path: pathlib.Path, 
 def test_reopen_wi_retains_original_allocation_and_other_integrations(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, new_plan: bool
 ) -> None:
-    """上限使用済みでも同じWIだけを再開し、他の統合履歴を保持して不可分保存する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     _awi(notes, "b.md", "`README.md`を変更する。")
@@ -156,7 +150,6 @@ def test_reopen_wi_ignores_changed_dependency_of_finished_source(
     state: str,
     expected: int,
 ) -> None:
-    """初回の依存元の終了時だけ、依存解除後も関係する未終了WIを再開できる。"""
     repo, notes = env
     target = "20261120-000000-001.md"
     source = "20261120-000000-002.md"
@@ -207,7 +200,6 @@ def test_reopen_wi_ignores_changed_dependency_of_finished_source(
 def test_reopen_wi_keeps_explicit_pending_item_of_other_integrated_lane(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """統合済みレーンで明示的に未統合の項目は、別レーンのWIの再開後も未統合のまま公開前確認に残る。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     _awi(notes, "b.md", "`src/model.py`を変更する。")
@@ -261,7 +253,6 @@ def test_public_check_overlap_uses_integration_state(
 
 
 def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """統合・終了検収後の記録を公開された同じ保存コマンドへ渡し、反復と再入力も成功する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     path = _write_selection(tmp_path / "state.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}])
@@ -277,7 +268,6 @@ def test_public_command_records_integrated_lane(env: tuple[pathlib.Path, pathlib
 
 
 def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """未着手・継続中のWIは残し、全項目の処置後にだけレーンも統合済みにする。"""
     repo, notes = env
     names = ("done.md", "partial.md", "new.md")
     paths = ("README.md", "src/model.py", "README.md")
@@ -310,7 +300,6 @@ def test_marks_only_processed_wis_and_requires_every_wi(env: tuple[pathlib.Path,
 def test_partial_integration_keeps_existing_precedence_readable(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """処置済みWIだけが先行の根拠でも、部分統合後の検査や別レーンの統合を妨げない。"""
     repo, notes = env
     cases = [
         ("a.md", "lane-01", "src/model.py"),
@@ -394,7 +383,6 @@ def test_state_update_preserves_output_on_failure(
 
 
 def _integrated_lane_selection(tmp_path: pathlib.Path, notes: pathlib.Path) -> pathlib.Path:
-    """本文が書込対象を名指ししないlane-01と、未統合の2レーンを持つ選定を保存して返す。"""
     _awi(notes, "a.md", "モデルの実装を見直す。")
     _awi(notes, "b.md", "`README.md`を変える。")
     _awi(notes, "c.md", "`docs/development/design.md`を変える。")
@@ -411,10 +399,6 @@ def _integrated_lane_selection(tmp_path: pathlib.Path, notes: pathlib.Path) -> p
 def test_mark_integrated_accepts_renamed_write_target(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """レーンの作業が書込対象を改名した作業ツリーでも、そのレーンと所属項目の統合状態を記録できる。
-
-    2026-10-16に、改名前のパスを選定時の前提で判定し直して統合記録が終了コード1で止まった事象の再発防止である。
-    """
     repo, notes = env
     path = _integrated_lane_selection(tmp_path, notes)
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
@@ -431,7 +415,6 @@ def test_mark_integrated_accepts_renamed_write_target(
 def test_integrated_items_do_not_block_later_operations(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合済み項目の作業ツリーの変化は、単独検査・別レーンの統合記録・書込対象の追加を拒否させない。"""
     repo, notes = env
     path = _integrated_lane_selection(tmp_path, notes)
     (repo / "src/model.py").rename(repo / "src/model2.py")
@@ -458,10 +441,6 @@ def test_merged_lane_keeps_integrated_items_exempt(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """統合済みレーンへ追加が合流してレーン行が未統合へ戻っても、既存項目は統合済みのまま判定から外れる。
-
-    `lane-row-only`は項目の欄を持たない保存済みの選定YAMLであり、レーン行の状態から既存項目を区別する。
-    """
     repo, notes = env
     path = _integrated_lane_selection(tmp_path, notes)
     if source == "mark-integrated":
@@ -530,7 +509,7 @@ def test_merged_lane_keeps_integrated_items_exempt(
     assert items == {"a.md": "統合済み", "b.md": "未統合", "c.md": "未統合", "d.md": "未統合"}
     (repo / "src/model.py").rename(repo / "src/model2.py")
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
-    # 合流した追加項目は未統合として従来どおり判定する。
+
     (repo / "pytools/post_apply.py").unlink()
     (repo / "pytools").rmdir()
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
@@ -547,17 +526,12 @@ def test_integrated_items_tolerate_worktree_changes(
     state: str,
     change: str,
 ) -> None:
-    """作業ツリーの状態を前提とする項目ごとの判定は、統合済みの項目へ変化を起こしても違反と入力エラーにならない。
-
-    同じ変化を未統合の項目へ起こした場合は、従来どおり違反（終了コード1）か入力エラー（終了コード2）になる。
-    """
     repo, notes = env
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
     if change == "directory":
         _awi(notes, "a.md", "`src/`配下を整理する。")
         item["書込対象"] = ["src/"]
     elif change == "abbreviation":
-        # 列挙の後続名は推測した親（src/）に実体が無いため、追跡ファイルの末尾との一意な一致で解決される。
         _track(repo)
         _awi(notes, "a.md", "`src/model.py`と`post_apply.py`を変更する。")
         item["書込対象"] = ["src/model.py", "pytools/post_apply.py"]
@@ -596,7 +570,6 @@ def test_integrated_items_tolerate_worktree_changes(
 def test_unintegrated_missing_write_target_still_rejected(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未統合の項目が実在せず本文にも新設先にも無い書込対象を持つと、統合記録の呼び出しも従来の診断で拒否する。"""
     repo, notes = env
     path = _integrated_lane_selection(tmp_path, notes)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -626,7 +599,6 @@ __all__ = ["fixture_env"]
 def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """旧環境を使わず、新計画の検査・保存・WI終了を実Gitのレーン最終化へ接続する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     notes = tmp_path / "notes"
@@ -660,7 +632,7 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     plan.parent.mkdir(parents=True, exist_ok=True)
     plan.write_text(plan_fixture.eight_section_plan(repo=worktree), encoding="utf-8")
     _plan_operation(capsys, "plan-check", "--reject-migration-warnings", "--work-dir", str(worktree), str(plan))
-    # 対象worktree不一致の拒否も維持する。
+
     _plan_operation(capsys, "plan-check", "--work-dir", str(repo), str(plan), expected=1)
     (worktree / "changed.txt").write_text("要求変更の実装", encoding="utf-8")
     head = git_repository.commit_all(worktree, "要求変更を実装")
@@ -706,3 +678,61 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     assert not plan.exists()
     assert list((notes / "plans").rglob(plan.name))
     assert "state: adopted" in source.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("old_overlap", [False, True])
+def test_merge_derives_order_after_applying_new_write_target(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, old_overlap: bool
+) -> None:
+    repo, notes = env
+    shared, old = "src/model.py", "src/independent.py"
+    for path in (shared, old):
+        (repo / path).write_text("x", encoding="utf-8")
+    chosen = shared if old_overlap else old
+    for name, target in (("a.md", shared), ("b.md", chosen), ("c.md", shared)):
+        _awi(notes, name, f"`{target}`を変更する。")
+    source = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": [shared]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": [chosen]},
+        ],
+        [{"レーン": "lane-01", "段階": 2, "先行レーン": ["lane-02"]}, {"レーン": "lane-02", "段階": 1}]
+        if old_overlap
+        else None,
+    )
+    extra = _write_selection(tmp_path / "addition.yaml", [{"WI": "c.md", "レーン": "lane-99", "書込対象": [shared]}])
+    raw = yaml.safe_load(extra.read_text(encoding="utf-8"))
+    del raw["初回配分"]
+    facts = tmp_path / "candidates.jsonl"
+    staleness = raw["選定"][0].pop("鮮度")
+    facts.write_text(
+        json.dumps({"filename": "c.md", "state": "inbox", "ready": True, "staleness": staleness}) + "\n", encoding="utf-8"
+    )
+    del raw["レーンの所要時間"][0]["根拠"]
+    raw["単一段階案の完了見込み秒数"] = 1320
+    extra.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"lane-99": "lane-02"}), encoding="utf-8")
+    assert (
+        _dispatch(
+            str(source),
+            "--merge",
+            str(extra),
+            "--candidate-file",
+            str(facts),
+            "--lane-map",
+            str(mapping),
+            "--output",
+            str(source),
+            "--work-dir",
+            str(repo),
+        )
+        == 0
+    )
+    saved = yaml.safe_load(source.read_text(encoding="utf-8"))
+    predecessor, successor = ("lane-02", "lane-01") if old_overlap else ("lane-01", "lane-02")
+    assert {row["レーン"]: (row["段階"], row["先行レーン"]) for row in saved["レーンの所要時間"]} == {
+        predecessor: (1, []),
+        successor: (2, [predecessor]),
+    }

@@ -90,7 +90,6 @@ def test_final_run_failure_is_not_replaced_by_later_success() -> None:
 
 
 def test_ci_polling_and_rerun_do_not_erase_first_failure() -> None:
-    """同じCI URLの再表示を重複計上せず、後続成功は未解決だけを更新する。"""
     rows = _metrics(
         [
             ("atk review-table show /plans/one.exec-review.tsv", ""),
@@ -107,7 +106,6 @@ def test_ci_polling_and_rerun_do_not_erase_first_failure() -> None:
 
 
 def test_missing_verdict_and_focal_run_are_unknown() -> None:
-    """空の表や焦点runを正式な初回成功へ昇格しない。"""
     focal = {
         "run_id": "focal",
         "meta": {"argv": ["run", "--no-fix", "--no-always-targets"]},
@@ -119,7 +117,6 @@ def test_missing_verdict_and_focal_run_are_unknown() -> None:
 
 
 def test_formal_review_requires_initial_verdict_and_condition_evidence() -> None:
-    """0件の再レビューと根拠不足を初回合格へ変換しない。"""
     header = (
         "状態: completed\nレビューHEAD: "
         + "a" * 40
@@ -138,7 +135,6 @@ def test_formal_review_requires_initial_verdict_and_condition_evidence() -> None
 
 
 def test_formal_original_and_quoted_status_are_not_confused(tmp_path: Path) -> None:
-    """正式原本を読み、要求の引用に含まれる未達という語を判定値にしない。"""
     header = (
         "状態: completed\nレビューHEAD: "
         + "a" * 40
@@ -201,7 +197,6 @@ def test_codex_yielded_command_keeps_review_result_identity() -> None:
 
 
 def test_malformed_command_results_remain_unknown() -> None:
-    """既知のpytest成功へ不正な別コマンドが混ざる入力を正常なrunにしない。"""
     shown = {
         "run_id": "broken",
         "meta": {"argv": ["run", "--no-fix"], "cwd": "/repo"},
@@ -214,7 +209,6 @@ def test_malformed_command_results_remain_unknown() -> None:
 
 @pytest.mark.parametrize("status,exit_code", [("succeeded", 0), ("skipped", 0), ("succeeded", 1)])
 def test_public_jsonl_run_preserves_completion_status(status: str, exit_code: int) -> None:
-    """公開JSONLを包絡から読み、未実行や非0終了を初回成功としない。"""
     meta = {
         "kind": "meta",
         "run_id": "jsonl",
@@ -240,7 +234,6 @@ def test_public_jsonl_run_preserves_completion_status(status: str, exit_code: in
 
 
 def test_filtered_run_output_cannot_prove_all_commands_succeeded() -> None:
-    """pytestだけを表示した結果から、未表示のlintの成否を補わない。"""
     shown = {
         "run_id": "filtered",
         "meta": {"argv": ["run", "--no-fix"], "cwd": "/repo", "commands": ["pytest", "ruff-check"], "exit_code": 0},
@@ -261,7 +254,6 @@ def test_filtered_run_output_cannot_prove_all_commands_succeeded() -> None:
 
 
 def test_independent_initial_reviews_and_revision_chain_are_separate_units() -> None:
-    """同じ親が回収する独立初回を分け、前回HEADを持つ修正は元の初回へ関連付ける。"""
 
     def verdict(head: str, findings: int, previous: str | None = None) -> str:
         return (
@@ -286,7 +278,6 @@ def test_independent_initial_reviews_and_revision_chain_are_separate_units() -> 
 
 
 def test_explicit_tables_keep_independent_work_and_findings_separate() -> None:
-    """親が表を切り替えた後の独立初回を、前の表や版へ合算しない。"""
     header = (
         "状態: completed\nレビューHEAD: "
         + "a" * 40
@@ -308,7 +299,6 @@ def test_explicit_tables_keep_independent_work_and_findings_separate() -> None:
 
 
 def test_unlinked_runs_do_not_guess_logical_work_from_parent_session() -> None:
-    """対応する計画・表が不明なrunを、親1件という推定の分母へ加えない。"""
     shown = {
         "run_id": "unlinked",
         "meta": {"argv": ["run", "--no-fix"], "cwd": "/repo", "commands": ["pytest"], "exit_code": 0},

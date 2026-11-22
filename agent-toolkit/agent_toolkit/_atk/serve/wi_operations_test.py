@@ -13,11 +13,6 @@ from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
 
 def test_uwi_dependency_blocked_refreshes_without_changing_awi(tmp_path: pathlib.Path) -> None:
-    """未回答UWIを待つAWIだけにblockedを返し、依存先の回答だけを保存した再取得では保存状態を変えずに解除する。
-
-    blockedは依存先の状態から導く値であり、項目自身のキーで保持する表示キャッシュへ入れると、
-    依存先だけが変わった再取得で古い値を返す。
-    """
     write_uwi(tmp_path, "answer.md")
     path = write_awi(tmp_path, "awi.md", depends_on=("answer.md", "ordinary.md"))
     write_awi(tmp_path, "ordinary.md")
@@ -43,7 +38,6 @@ def test_uwi_dependency_blocked_refreshes_without_changing_awi(tmp_path: pathlib
 
 @pytest.mark.parametrize("legacy", [False, True])
 def test_uwi_dependency_blocked_supports_legacy(tmp_path: pathlib.Path, legacy: bool) -> None:
-    """旧`external-user`形式の依存も、明示依存と同じく未回答UWIを待つAWIとしてblockedを返す。"""
     write_uwi(tmp_path, "answer.md")
     if legacy:
         write_awi(
@@ -58,7 +52,6 @@ def test_uwi_dependency_blocked_supports_legacy(tmp_path: pathlib.Path, legacy: 
 
 
 def test_legacy_confirmation_is_preserved_without_a_special_operation(tmp_path: pathlib.Path) -> None:
-    """旧確認キーを保持し、専用の変更操作を公開しない。"""
     path = write_awi(tmp_path, "legacy.md")
     content = path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nconfirmation: required\n")
     path.write_text(content, encoding="utf-8")

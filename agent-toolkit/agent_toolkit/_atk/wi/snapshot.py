@@ -1,5 +1,3 @@
-"""新着判定に使う対象リポジトリとWI名の開始時集合。"""
-
 import json
 import pathlib
 from collections.abc import Iterable
@@ -13,13 +11,11 @@ type Identifier = tuple[str, str]
 
 
 def identifiers(entries: Iterable[EntryRecord]) -> frozenset[Identifier]:
-    """状態・種別・本文を持たない正規化済み識別子集合を返す。"""
     cache: dict[str, str | None] = {}
     return frozenset((canonical_repo(repo, cache) or "", path.name) for path, repo, *_ in entries)
 
 
 def save(path: pathlib.Path, entries: Iterable[EntryRecord]) -> None:
-    """同じ取得の全状態・全種別の識別子だけをJSONへ保存する。"""
     payload = [{"target_repo": repo, "filename": name} for repo, name in sorted(identifiers(entries))]
     try:
         atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
@@ -45,7 +41,7 @@ def read(path: pathlib.Path) -> frozenset[Identifier]:
                 raise ValueError("target_repoとfilenameには文字列が必要")
             if not name.endswith(".md") or "/" in name or "\\" in name or name == ".md":
                 raise ValueError("filenameにはWIのファイル名が必要")
-            # frontmatter破損項目の空repoも保持し、修復前の診断対象を失わない。
+
             if repo and normalize_remote_url(repo) != repo:
                 raise ValueError("target_repoには正規化済みの識別子が必要")
             result.add((repo, name))
@@ -58,6 +54,5 @@ def read(path: pathlib.Path) -> frozenset[Identifier]:
 
 
 def new_entries(entries: Iterable[EntryRecord], baseline: frozenset[Identifier]) -> list[EntryRecord]:
-    """開始時集合に無い項目を、取得順のまま返す。"""
     cache: dict[str, str | None] = {}
     return [entry for entry in entries if (canonical_repo(entry[1], cache) or "", entry[0].name) not in baseline]

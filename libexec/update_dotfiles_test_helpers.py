@@ -1,5 +1,3 @@
-"""update_dotfiles試験の共通fixture・入力と補助関数。"""
-
 import functools
 import io
 import json
@@ -31,7 +29,6 @@ _REAL_RUN_WITH_TIMEOUT = update_dotfiles.process_tree.run_with_timeout
 
 
 def _run_with_test_double(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-    """既存の段の試験のコマンド代用は保ち、実プロセス試験では共通の回収処理を通す。"""
     runner = _REAL_RUN_WITH_TIMEOUT if subprocess.run is _REAL_SUBPROCESS_RUN else subprocess.run
     return runner(*args, check=kwargs.pop("check", False), **kwargs)
 
@@ -43,7 +40,6 @@ _REPOSITORY_ATK_BIN = pathlib.Path(__file__).resolve().parents[1] / "agent-toolk
 
 @pytest.fixture(autouse=True)
 def _separate_git_recovery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """段階順の単体テストでは、Git回復の統合挙動を低水準pullから分離する。"""
     monkeypatch.setattr(update_dotfiles_runtime, "LOG_PATH", tmp_path / "state" / "update-dotfiles.log")
     monkeypatch.setattr(update_dotfiles.process_tree, "run_with_timeout", _run_with_test_double)
     # 呼出順と回復の回数を確認する単体試験では、本番の再試行待機を実時間で繰り返さない。
@@ -74,7 +70,6 @@ _REAL_PROCESS_ITER = psutil.process_iter
 
 
 def _own_process_iter(*args: Any, **kwargs: Any) -> Any:
-    """試験プロセスの子孫だけを走査結果に残す。"""
     try:
         own = {child.pid for child in psutil.Process().children(recursive=True)}
     except psutil.Error:
@@ -91,7 +86,7 @@ def _own_git_process_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     照合と走査例外の扱い自体は製品の判定を通し、専用試験が走査結果を個別に差し替えて確かめる。
     """
     monkeypatch.setattr(stale_lock.psutil, "process_iter", _own_process_iter)
-    # 取得後の生存gitの終了待ちは、試験では短くする。
+
     monkeypatch.setattr(update_dotfiles_git, "_PROCESS_EXIT_GRACE_SECONDS", 0.3)
 
 
@@ -123,7 +118,6 @@ def _fake_run(
     environments: list[dict[str, str]] | None = None,
     encodings: list[str | None] | None = None,
 ) -> Any:
-    """コマンド名（argv[0:2]相当）ごとの終了コードを返すfake `subprocess.run`。"""
     stdout_by_command = stdout_by_command or {}
     stderr_by_command = stderr_by_command or {}
 
@@ -151,8 +145,6 @@ def _fake_run(
 
 
 class _FakePopen:
-    """git pull用`Popen`の最小fake。"""
-
     pid = 43210
 
     def __init__(
@@ -189,11 +181,9 @@ class _FakePopen:
         return self._stdout, self._stderr
 
     def kill(self) -> None:
-        """直接子へのkill呼び出しを記録する。"""
         self.kill_calls += 1
 
     def poll(self) -> int:
-        """設定済みの終了状態を返す。"""
         return self.returncode
 
     def __enter__(self) -> Self:
@@ -205,8 +195,6 @@ class _FakePopen:
 
 
 class _TimeoutPopen(_FakePopen):
-    """初回または全回の`communicate`をタイムアウトさせるfake。"""
-
     def __init__(
         self,
         argv: list[str],
@@ -247,7 +235,6 @@ def _fake_popen(
     encodings: list[str | None] | None = None,
     communicate_timeouts: list[int | None] | None = None,
 ) -> Any:
-    """Git pullの終了コードと出力を返すfake `subprocess.Popen`。"""
     stdout_by_command = stdout_by_command or {}
     stderr_by_command = stderr_by_command or {}
 
@@ -281,7 +268,6 @@ sys.exit(int(sys.argv[1]))
 
 @pytest.fixture(name="logs_path")
 def _logs_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """CLIの状態保存先を両OSで隔離する。"""
     for variable in (
         "HOME",
         "USERPROFILE",
@@ -303,7 +289,6 @@ def _logs_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -
 
 
 def _run_logs_cli(arguments: list[str] | None = None) -> subprocess.CompletedProcess[str]:
-    """実スクリプトのCLIを新しいプロセスで実行する。"""
     return subprocess.run(
         [sys.executable, str(pathlib.Path(update_dotfiles.__file__).resolve()), *(arguments or ["logs"])],
         check=False,
@@ -369,7 +354,6 @@ def _run_git_pull_in_pty(
     timeout: float | None,
     input_text: str | None = None,
 ) -> tuple[int, str, pathlib.Path, float]:
-    """疑似端末内で実物の`_run_git_pull`を実行し、終了コードと出力を返す。"""
     executable = tmp_path / "bin" / "chezmoi"
     executable.parent.mkdir()
     executable.write_text(_FAKE_CHEZMOI_CODE, encoding="utf-8")
@@ -402,7 +386,6 @@ def _run_git_pull_in_pty(
 
 
 def _git(repo: pathlib.Path, *arguments: str) -> str:
-    """テスト用Gitリポジトリでコマンドを実行し、標準出力を返す。"""
     result = subprocess.run(  # noqa: S603
         ["git", "-C", str(repo), *arguments],
         check=True,
@@ -449,15 +432,12 @@ def _patch_real_pull(monkeypatch: pytest.MonkeyPatch, local: pathlib.Path) -> No
 
 @pytest.fixture(name="real_stash_runtime")
 def _real_stash_runtime(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, share_package_caches: None) -> None:
-    """実CLIのランタイム解決はホストへ戻し、CLI自身の保存先は一時領域へ限定する。"""
     del share_package_caches
     restore_host_environment(monkeypatch)
     monkeypatch.setenv("AGENT_TOOLKIT_RUNTIME_DATA", str(tmp_path / "runtime"))
 
 
 class _UnreadableGitProcess:
-    """環境変数とcwdの照会を拒否するgitプロセスの走査結果。"""
-
     info = {"name": "git", "cmdline": ["git", "status"]}
 
     def __init__(self, *, pid: int) -> None:
@@ -473,7 +453,6 @@ class _UnreadableGitProcess:
 def _assert_saved_changes_survive_gc(
     local: pathlib.Path, tmp_path: pathlib.Path, *, untracked_name: str = "untracked.txt"
 ) -> None:
-    """未復元の3状態を別worktreeのGC後も復旧できる。"""
     other = tmp_path / "gc-worktree"
     _git(local, "worktree", "add", "-b", "gc-worktree", str(other))
     _git(other, "reflog", "expire", "--expire=now", "--expire-unreachable=now", "--all")
@@ -514,7 +493,6 @@ _STDIO_DELEGATION = _codex(13, "codex app-server", "session")
 
 
 def _dirty_snapshot(local: pathlib.Path) -> tuple[str, str, str, dict[str, bytes]]:
-    """HEAD・stage・未stage・未追跡を読取りだけで比較する。"""
     return (
         _git(local, "rev-parse", "HEAD"),
         _git(local, "diff", "--cached", "--binary"),
@@ -524,7 +502,6 @@ def _dirty_snapshot(local: pathlib.Path) -> tuple[str, str, str, dict[str, bytes
 
 
 def _prepare_dirty(local: pathlib.Path) -> None:
-    """3種類の未コミット状態を用意する。"""
     (local / "staged.txt").write_text("staged\n", encoding="utf-8")
     _git(local, "add", "staged.txt")
     (local / "tracked.txt").write_text("unstaged\n", encoding="utf-8")

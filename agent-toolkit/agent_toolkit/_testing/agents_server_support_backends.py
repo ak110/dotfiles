@@ -13,8 +13,6 @@ from agent_toolkit._testing.agents_server_support_common import FakeBackend, _co
 
 
 class UnavailableStartBackend(FakeBackend):
-    """起動応答の前にengineの可用性で終了する偽バックエンド。"""
-
     def __init__(
         self,
         sessions: dict[str, state.SessionState],
@@ -31,8 +29,6 @@ class UnavailableStartBackend(FakeBackend):
 
 
 class DelayedUnavailableBackend(FakeBackend):
-    """起動応答を返した後にengineの可用性で終了する偽バックエンド。"""
-
     def __init__(
         self,
         sessions: dict[str, state.SessionState],
@@ -63,8 +59,6 @@ class DelayedUnavailableBackend(FakeBackend):
 
 
 class OutputObservedBackend(FakeBackend):
-    """起動応答を返した後にモデル出力を受信し、終了しないまま実行を続ける偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], engine: str, condition: asyncio.Condition) -> None:
         super().__init__(sessions, engine)
         self._condition = condition
@@ -83,8 +77,6 @@ class OutputObservedBackend(FakeBackend):
 
 
 class BlockingInterruptBackend(FakeBackend):
-    """中断要求の配送を解除イベントまで停止する偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)
         self.interrupt_started = asyncio.Event()
@@ -98,8 +90,6 @@ class BlockingInterruptBackend(FakeBackend):
 
 
 class BlockingResumeBackend(FakeBackend):
-    """保存済みsessionの再開を解除イベントまで停止する偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)
         self.resume_started = asyncio.Event()
@@ -141,8 +131,6 @@ class FailedResumeBackend(FakeBackend):
 
 
 class ConcurrentOwnerGoneBackend(FakeBackend):
-    """2件の継続要求の両方が配送を始めた時点で、両方へ所有主体の終了（`SessionOwnerGoneError`）を送出する偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)
         self.owner_gone_session: state.SessionState | None = None
@@ -160,8 +148,6 @@ class ConcurrentOwnerGoneBackend(FakeBackend):
 
 
 class _RegistryBackend(FakeBackend):
-    """作成したsessionを登録簿へ公開するバックエンド。委譲元の記録を登録簿で観測するテストが使う。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.publish_registry = True
@@ -204,7 +190,6 @@ _OVERLOAD_ERROR = {
 
 
 async def _wait_until_terminal(manager: server_manager.AgentsServerManager, attempts: int = 50) -> dict[str, Any]:
-    """委譲元と同じく、`running`が返る間は`wait`を再発行して終了時の結果を受け取る。"""
     _set_wait_timeout(manager, 0.2)
     for _ in range(attempts):
         response = await manager.wait()

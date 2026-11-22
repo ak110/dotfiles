@@ -1,5 +1,3 @@
-"""共通pytestの実行資源と分割を確認する。"""
-
 import contextlib
 import json
 import os
@@ -24,11 +22,6 @@ from agent_toolkit._testing.pytest_plugin_support import _run_child_pytest
 
 
 def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> None:
-    """spawnの資源を終了まで保持する試験の後も、未解放の資源を報告する警告を出力せず、試験が残した子だけを回収する。
-
-    共通回収がmultiprocessingのresource_trackerを停止すると、終了時の資源解放がtrackerを再起動し、
-    `process died unexpectedly, relaunching`を標準エラーへ出力する。
-    """
     evidence = tmp_path / "evidence.json"
     (tmp_path / "tracker_test.py").write_text(
         textwrap.dedent(f"""\
@@ -51,7 +44,7 @@ def test_release_keeps_interpreter_resource_tracker(tmp_path: pathlib.Path) -> N
     assert "relaunching" not in result.stderr, result.stderr
     observed = json.loads(evidence.read_text(encoding="utf-8"))
     assert observed["tracker"] is not None
-    # 終了済みの子はzombieからdeadを経て消えるため、照会時点によらず終了状態を確かめる。
+
     with contextlib.suppress(psutil.NoSuchProcess):
         assert psutil.Process(observed["child"]).status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
 
@@ -81,11 +74,6 @@ def test_collection_binds_import_time_home_to_basetemp(tmp_path: pathlib.Path, w
 
 
 def test_agents_server_logging_reclaimed_before_next_test(tmp_path: pathlib.Path) -> None:
-    """ログ設定を呼んだ試験の後でも、後続の試験の警告は閉じた出力先へ書かれず有効な取り込み先へ届く。
-
-    標準エラー向けhandlerは構築時の`sys.stderr`（試験中の取り込み用stream）を保持する。
-    回収しないと、後続の警告がそのhandlerで`I/O operation on closed file`となり`Logging error`を出力する。
-    """
     package = tmp_path / "sample"
     package.mkdir()
     (package / "__init__.py").touch()
@@ -193,7 +181,6 @@ def test_pytest_notifies_once_while_waiting_for_slot_held_by_other_process(tmp_p
 
 @pytest.mark.parametrize("mode", ["weighted", "unknown", "empty", "missing", "invalid"])
 def test_test_shards_partition_collected_tests_across_runs(tmp_path: pathlib.Path, mode: str) -> None:
-    """全分割の実行結果を合わせると、xdistのworkerを含めて各試験がちょうど1回実行される。"""
     (tmp_path / "shard_test.py").write_text(
         textwrap.dedent("""\
             def test_a(): pass
@@ -240,7 +227,6 @@ def test_test_shards_partition_collected_tests_across_runs(tmp_path: pathlib.Pat
 
 
 def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> None:
-    """範囲外の分割番号は、試験を実行せず指定方法を示す使用法エラーで終了する。"""
     (tmp_path / "probe_test.py").write_text("def test_probe():\n    pass\n", encoding="utf-8")
     result = _run_child_pytest(tmp_path, "--test-shard=4/3", "probe_test.py")
     assert result.returncode == pytest.ExitCode.USAGE_ERROR, result.stdout + result.stderr
@@ -260,7 +246,6 @@ def test_invalid_test_shard_stops_before_collection(tmp_path: pathlib.Path) -> N
     ids=["file", "directory", "node-id", "parametrized-path", "mixed"],
 )
 def test_parallel_collection_preserves_usage_error(tmp_path: pathlib.Path, targets: list[str]) -> None:
-    """workerのUsageErrorを引数形式によらず本来の文面と終了コードで報告する。"""
     (tmp_path / "valid_test.py").write_text("def test_valid():\n    pass\n", encoding="utf-8")
     serial = _run_child_pytest(tmp_path, *targets, plugin=xdist_stop.__name__)
     assert serial.returncode == pytest.ExitCode.USAGE_ERROR, serial.stdout + serial.stderr
@@ -470,7 +455,6 @@ def test_pytest_holds_slot_until_all_tests_finish(tmp_path: pathlib.Path, worker
 
 
 def test_reclaim_stale_pytest_fixtures_keeps_running_owner(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """作成プロセスが終了した`pytest-fixtures-*`だけを回収し、実行中・識別の記録が無い領域は残す。"""
     root = tmp_path / "temp-root"
     root.mkdir()
     monkeypatch.setattr(managed_temp, "temp_root_path", lambda: root)

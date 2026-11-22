@@ -55,7 +55,6 @@ _NOTICE_CONSTANT_NAME_RE = re.compile(r"(?:^|_)(?:BODY|FIX|NOTICE|MESSAGE)$")
 
 
 def _literal_text(node: ast.expr, constants: dict[str, str]) -> str | None:
-    """文字列リテラル・f-string・連結・モジュール定数参照を、置換欄を`{}`にした本文へ直す。"""
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
@@ -76,10 +75,6 @@ def _literal_text(node: ast.expr, constants: dict[str, str]) -> str | None:
 
 
 def _collect_notice_texts() -> list[tuple[str, str]]:
-    """hookのソースから通知の本文と解消手段を抽出する。
-
-    写しを持たずソースから直接読むため、文面を変えても新しい文面を対象にでき、旧文面の写しとの乖離が生じない。
-    """
     sources = [path for path in sorted(_HOOK_SOURCE_ROOT.rglob("*.py")) if not path.name.endswith("_test.py")]
     trees = {path: ast.parse(path.read_text(encoding="utf-8")) for path in sources}
     constants: dict[str, str] = {}
@@ -120,7 +115,6 @@ def _collect_notice_texts() -> list[tuple[str, str]]:
 
 
 def _is_japanese_notice(text: str) -> bool:
-    """通知の自然言語部分が日本語だけで構成される場合に真を返す。"""
     body = re.sub(r"</?(?:atk-auto|agent-toolkit-auto-inserted)(?:\s[^>]*)?>", "", text)
     body = re.sub(r"判定対象の冒頭: 「[^\n」]*」", "", body)
     body = re.sub(r"(?m)^\s*(?:warn|warning|block|blocked):\s*", "", body)
@@ -155,7 +149,6 @@ def test_japanese_notice_judgment(text: str, expected: bool) -> None:
 
 @pytest.fixture(scope="module", name="hook_notice_texts")
 def _hook_notice_texts() -> list[tuple[str, str]]:
-    """変更しないhookソースの全量解析を、同じモジュールの検証間で共有する。"""
     return _collect_notice_texts()
 
 
@@ -166,7 +159,7 @@ def _hook_notice_texts() -> list[tuple[str, str]]:
 def test_hook_source_notice_texts_are_japanese(hook_notice_texts: list[tuple[str, str]]) -> None:
     """hookのソースが持つ通知の本文と解消手段が、自然言語部分を日本語だけで書く契約を満たすことを検証する。"""
     texts = hook_notice_texts
-    # 抽出が機能しない変更（呼び出し名の改名など）で対象の文面が空になり、無条件に合格することを防ぐ。
+
     assert len(texts) >= 40
     failures = [source for source, text in texts if not _is_japanese_notice(text)]
     assert failures == []
@@ -180,7 +173,6 @@ def test_hook_source_notice_texts_are_japanese(hook_notice_texts: list[tuple[str
     ),
 )
 def test_hook_source_does_not_name_removed_agents_server_tools(hook_notice_texts: list[tuple[str, str]]) -> None:
-    """通知が廃止済みの旧ツール名を案内しないことを検証する。"""
     stale = [source for source, text in hook_notice_texts if "codex_start" in text]
     assert stale == []
 
@@ -203,7 +195,6 @@ def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
 
 
 def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
-    """終了0の正常拒否と非空の専用理由欄を検証する。"""
     assert result.returncode == 0
     assert not result.stderr
     specific = json.loads(result.stdout)["hookSpecificOutput"]
@@ -230,7 +221,6 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
     file_name: str,
     commands: tuple[str, str],
 ) -> None:
-    """manifest編集警告の確定訳を公開されたhookを起動して検証する。"""
     result = _run(
         {
             "tool_name": "Write",
@@ -247,7 +237,6 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
 
 @pytest.mark.parametrize("repetitions", [1, 2])
 def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repetitions: int) -> None:
-    """直接入力の英語を繰り返しても日本語の是正案内を返す。"""
     payload = {
         "tool_name": "AskUserQuestion",
         "tool_input": {"questions": [{"question": "Which option should we choose?", "header": "確認", "options": []}]},

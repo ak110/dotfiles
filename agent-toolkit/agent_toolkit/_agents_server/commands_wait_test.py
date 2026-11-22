@@ -162,10 +162,6 @@ def test_agents_wait_omits_long_body_and_keeps_collection_readable(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """長い本文は要約へ載せずパスだけを示し、回収判定は要約の終了行を読む。
-
-    終了行から回収を判定できないと、委譲元は回収済みの孫sessionを追跡し続け、受け取り済みの結果を理由に自動再開する。
-    """
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
@@ -241,7 +237,6 @@ def test_agents_wait_writes_notice_summary_and_running_line(
 def test_agents_wait_writes_notice_and_terminal_summary(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """通知を伴う終了時の結果では、通知数と終了数をともに示す。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     results.mkdir(parents=True)
     (results / "session-1.json").write_text(
@@ -345,13 +340,9 @@ def test_agents_wait_terminal_line_marks_result_finalized_with_remaining_waits(
 
 @pytest.mark.parametrize(("excess", "shown"), [pytest.param(0, True, id="at-limit"), pytest.param(1, False, id="over-limit")])
 def test_wait_summary_budget_covers_whole_output(tmp_path: pathlib.Path, excess: int, shown: bool) -> None:
-    """本文を加えた要約全体が上限に収まる場合だけ本文を続け、超える場合は終了行だけを示す。
-
-    上限を超えた要約は共通の自動保存へ回り、本文を出力の保存物へ重ねて保存するため、要約自体を上限内に保つ。
-    """
     body_path = tmp_path / "body.md"
     terminal_line = f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}"
-    # 本文以外の出力。本文の末尾に改行が無いため、表示時に補う改行も含める。
+
     fixed = f"終了: 1件\n{terminal_line}\n本文開始: session_id=session-1\n\n本文終了: session_id=session-1\n"
     body = "x" * (wait_summary.BODY_BUDGET_BYTES - len(fixed.encode("utf-8")) + excess)
     body_path.write_text(body, encoding="utf-8")
@@ -364,7 +355,6 @@ def test_wait_summary_budget_covers_whole_output(tmp_path: pathlib.Path, excess:
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:
-    """上限に収まらない本文と読めない本文ファイルだけを省き、前後の本文は区切りの行とともに表示する。"""
     long_body = tmp_path / "long.md"
     long_body.write_text("長" * wait_summary.BODY_BUDGET_BYTES, encoding="utf-8")
     short_body = tmp_path / "short.md"
@@ -428,11 +418,6 @@ def test_wait_summary_shows_error_and_next_action_for_failed_row(tmp_path: pathl
 
 
 def test_wait_summary_shows_all_fields_except_body_and_notices() -> None:
-    """終了行へ加わった項目は要約へそのまま現れ、本文と通知は要約行へ写さない。
-
-    項目を名前で選ぶ要約では、終了行へ後から加わった項目が委譲元へ届かない。
-    先頭4項目の名前と順序は、要約行を読む委譲元のために保つ。
-    """
     row: dict[str, Any] = {
         "new_field": "追加の値",
         "agent_message": "本文",

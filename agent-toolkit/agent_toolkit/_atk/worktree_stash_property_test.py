@@ -1,5 +1,3 @@
-"""worktree固有refと共有stashの操作列を独立モデルと比較する。"""
-
 # pylint: disable=protected-access
 
 from __future__ import annotations
@@ -53,7 +51,6 @@ def _ref_labels(repo: pathlib.Path) -> set[str]:
 )
 @pytest.mark.cpu_limit(4.0, reason="refと共有stashの実Gitモデル比較を20例から5例へ削減する。削減前の所有CPU最大4.242秒。")
 def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]], tmp_path: pathlib.Path) -> None:
-    """共有stashと固有refの保持・削除を固定lock内の参照モデルと一致させる。"""
     repo = _repository(tmp_path)
     dirty = False
     refs: set[str] = set()
@@ -103,7 +100,6 @@ def test_stash_sequences_match_reference_model(operations: list[tuple[str, str]]
     ),
 )
 def test_two_worktrees_keep_distinct_refs_and_existing_stash(tmp_path: pathlib.Path) -> None:
-    """既知事例: 複数worktreeの退避は固有refに分かれ、既存の共有stashを保つ。"""
     repo = _repository(tmp_path)
     second = repo.parent / f"{repo.name}-second"
     git_repository.git_output(repo, "worktree", "add", "-b", "second", str(second), "HEAD")

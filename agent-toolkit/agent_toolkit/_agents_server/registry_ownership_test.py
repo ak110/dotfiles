@@ -41,7 +41,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.fixture(autouse=True)
 def _restore_registry_owner() -> Generator[None]:
-    """所有移管の模擬を、同一worker内の後続テストへ残さない。"""
     owner = session_registry.owner_server_instance()
     try:
         yield
@@ -90,7 +89,6 @@ async def test_retention_callback_keeps_new_owner_running_turn(tmp_path: pathlib
 async def test_child_collected_during_registry_lookup_is_not_reintroduced(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registry_state: str
 ) -> None:
-    """照会のawait中に公開waitが回収した子を、照会前の写しから再追跡・再配送しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     if registry_state == "released":
         session_registry.release("child", reason="stopped")
@@ -111,7 +109,7 @@ async def test_child_collected_during_registry_lookup_is_not_reintroduced(
 
         def resolve_and_collect(identifier: str, **kwargs: Any) -> session_registry.SessionResolution:
             resolution = resolve(identifier, **kwargs)
-            # 回収済みの別操作を模し、照会前の写しで追跡を戻さないことを調べる。
+
             parent.live_child_session_ids.discard(identifier)
             parent.terminal_child_session_ids.discard(identifier)
             return resolution
@@ -127,7 +125,6 @@ async def test_child_collected_during_registry_lookup_is_not_reintroduced(
 async def test_stop_keeps_new_owner_and_discards_stale_local_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """資源解放中に所有移管された停止は、新turnと結果を保ち現在状態の照会を案内する。"""
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, writer):
         backend = FakeBackend(manager.sessions, "codex")
         install_backend(manager, "codex", backend)
@@ -194,7 +191,6 @@ async def test_stop_keeps_successor_result_published_after_registry_release(
 def test_old_owner_cannot_release_or_republish_new_turn(
     tmp_path: pathlib.Path, engine: str, reason: session_registry.ReleaseReason
 ) -> None:
-    """旧所有者の遅延解放と公開が、新所有者の実行中turnを書き換えない。"""
     session_registry.set_owner_server_instance("old-owner")
     session_registry.publish(
         "child", state=session_registry.PublicationState.RESULT_COMPLETED, engine=engine, turn_seq=1, state_root=tmp_path
@@ -224,7 +220,6 @@ def test_old_owner_cannot_release_or_republish_new_turn(
 async def test_unobserved_child_stays_pending_until_terminal(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, missing: str
 ) -> None:
-    """観測不能になった子は、実際の終了でだけ親を1回継続し最終結果を返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = session_registry.registry_directory(tmp_path)
     directory.mkdir(parents=True, exist_ok=True)
@@ -292,7 +287,6 @@ def _lock_is_available(path: pathlib.Path) -> bool:
 
 @pytest.mark.parametrize("phase", ["ready", "result"])
 def test_lock_probe_timeout_identifies_phase(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, phase: str) -> None:
-    """起動未完了と、起動後の無応答を時間経過なしで識別する。"""
     receiver, sender = MagicMock(), MagicMock()
     receiver.poll.side_effect = [False] if phase == "ready" else [True, False]
     receiver.recv.return_value = ("ready", None)
@@ -331,7 +325,6 @@ def test_lock_probe_io_error_is_not_contention(tmp_path: pathlib.Path) -> None:
 
 
 def test_lock_probe_spawn_exception_before_ready(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """子のtargetへ不適合な引数を渡し、実際の起動後例外と終了コードを観測する。"""
     monkeypatch.setattr(f"{__name__}.probe_lock", os.stat)
     with pytest.raises(AssertionError, match="readyの前に終了: exitcode=1"):
         _lock_is_available(tmp_path / "lock")
@@ -403,7 +396,6 @@ def test_registry_sweep_failure_preserves_record_and_guides_operator(
 async def test_public_wait_holds_unknown_child_then_collects_resumed_result_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開CLIは観測不能の子を待つ本文を回収せず、再開した親の最終結果を1回だけ回収する。"""
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
     async with (

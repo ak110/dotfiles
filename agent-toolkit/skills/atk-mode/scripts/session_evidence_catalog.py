@@ -70,15 +70,12 @@ CATALOG_PARENT_FIELDS = (
 
 
 class _CatalogSelection(NamedTuple):
-    """親セッションの行条件と表示項目。走査条件と要約には作用しない。"""
-
     workflow: str | None = None
     known_workflow: bool = False
     cwd_contains: str | None = None
     fields: tuple[str, ...] | None = None
 
     def matches(self, event: dict[str, Any]) -> bool:
-        """指定した行条件の全てに一致するか返す。"""
         return (
             (self.workflow is None or event["workflow"] == self.workflow)
             and (not self.known_workflow or event["workflow"] != "unknown")
@@ -87,7 +84,6 @@ class _CatalogSelection(NamedTuple):
 
 
 def _catalog_value(records: list[_Record], *keys: str) -> str:
-    """セッションmetadataの先頭の非空文字列を返す。"""
     for record in records:
         entry = record.entry
         payload = entry.get("payload")
@@ -107,18 +103,12 @@ def _catalog_value(records: list[_Record], *keys: str) -> str:
 
 
 def _joins_commands(word: str) -> bool:
-    """語がコマンドをつなぐ記号を含むかを返す。
-
-    文字列から分けた語は引用の外側の文字だけを見る。引用された記号と、記録された引数の列の要素は
-    コマンドへ渡すデータであり、値が記号と同じでも区切りとして扱わない。
-    """
     if not isinstance(word, _shell_tokens_module.ShellWord):
         return False
     return any(operator in word.unquoted for operator in (";", "|", "&&"))
 
 
 def _wi_command(tokens: list[str]) -> str | None:
-    """直接実行された`atk wi`の操作名を返す。"""
     index = 0
     while index < len(tokens) and _ENV_ASSIGNMENT.match(tokens[index]):
         index += 1
@@ -137,7 +127,6 @@ def _wi_command(tokens: list[str]) -> str | None:
 
 
 def _terminal_result(output: Any) -> tuple[bool, str | None]:
-    """明示された終了0と継続識別子を区別し、不明な応答は成功に数えない。"""
     result = output if isinstance(output, dict) else _json_object(output)
     if isinstance(result, dict):
         session = result.get("session_id", result.get("backgroundTaskId"))
@@ -161,7 +150,6 @@ def _terminal_result(output: Any) -> tuple[bool, str | None]:
 
 
 def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
-    """成功結果まで記録された直接の`atk wi`操作を返す。"""
     pending: dict[str, tuple[int, str]] = {}
     sessions: dict[str, tuple[int, str]] = {}
     operations: list[dict[str, Any]] = []
@@ -229,7 +217,6 @@ def _successful_wi_operations(item: _CollectedRecord) -> list[dict[str, Any]]:
 
 
 def _workflow_evidence(item: _CollectedRecord) -> tuple[str, dict[str, Any] | str]:
-    """明示されたprocess-wi系workflowと位置を返す。"""
     for event in _extract_records(item.records):
         text = event.get("text")
         if event.get("kind") == "skill-invocation" and isinstance(text, str) and "process-wi" in text:
@@ -250,7 +237,6 @@ def _workflow_evidence(item: _CollectedRecord) -> tuple[str, dict[str, Any] | st
 
 
 def _catalog_family_tokens(family: list[_CollectedRecord]) -> dict[str, int] | str:
-    """親とroot内で追跡できた子孫のトークンを同じ成分ごとに合算する。"""
     total: dict[str, int] = {}
     found = False
     for item in family:
@@ -281,8 +267,6 @@ def _catalog_agy_child(session_id: str) -> _CollectedRecord | None:
 
 
 class _CatalogParent(NamedTuple):
-    """窓内の親とroot内の子孫の本文なし所在。本文の所有は各照会の家族処理に限る。"""
-
     item: _CollectedRecord
     family: list[_CollectedRecord]
     start_text: str | None
@@ -290,8 +274,6 @@ class _CatalogParent(NamedTuple):
 
 
 class _CatalogScan(NamedTuple):
-    """カタログ走査の対象範囲と、窓の中の親セッション。"""
-
     root: Path
     parents: list[_CatalogParent]
     unresolved_count: int
@@ -304,7 +286,6 @@ def _catalog_scan(
     since: datetime.datetime,
     boundary: datetime.datetime,
 ) -> _CatalogScan | dict[str, Any]:
-    """指定root内だけから窓の中の親セッションを選ぶ。rootから記録を判別できない場合はエラーイベントを返す。"""
     if not root.is_dir():
         return _error_event(f"カタログrootが実在するディレクトリでない: {root}", next_action=_CATALOG_ROOT_NEXT_ACTION)
     resolved_root = root.resolve()
@@ -424,7 +405,6 @@ def _catalog_read_item(item: _CollectedRecord) -> _CollectedRecord:
 
 
 def _catalog_parent_event(parent: _CatalogParent, runtime: _Runtime) -> dict[str, Any]:
-    """一家族の本文から表示行だけを返し、次の家族の読込前に本文を解放する。"""
     family = [_catalog_read_item(item) for item in parent.family]
     item = family[0]
     workflow, workflow_locator = _workflow_evidence(item)
@@ -454,7 +434,6 @@ def _catalog_events(
     boundary: datetime.datetime,
     selection: _CatalogSelection | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """指定root内だけから比較用の親セッションカタログを生成する。"""
     scan = _catalog_scan(root, runtime, since, boundary)
     if isinstance(scan, dict):
         return [scan], 2
@@ -488,7 +467,6 @@ def _catalog_grep_events(
     pattern: re.Pattern[str],
     selection: _CatalogSelection | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """期間内の本文・ツール入力を既存のgrepで検索し、記録別の件数と由来位置を返す。"""
     scan = _catalog_scan(root, runtime, since, boundary)
     if isinstance(scan, dict):
         return [scan], 2
@@ -547,7 +525,6 @@ def _catalog_grep_family(
     selection: _CatalogSelection | None,
     seen: set[str],
 ) -> tuple[list[dict[str, Any]], dict[str, int], list[_UnresolvedRecord], set[str], int] | None:
-    """親本文で選択し、一家族の検索結果だけを返して本文を解放する。"""
     main = _catalog_read_item(parent.item)
     if selection is not None:
         workflow, _locator = _workflow_evidence(main)
@@ -580,7 +557,7 @@ def _catalog_grep_family(
                 undated += 1
             elif since < stamp <= boundary:
                 matches.append(event)
-        # 一致件数はentry単位、時刻不明は既存の一致行単位を保つ。
+
         counts[item.record_id] = len({event["line"] for event in matches})
         events.extend(_referenced_provenance_events([item], matches))
         events.extend(matches)
@@ -596,12 +573,6 @@ def _catalog_tool_call_events(
     tools: list[str] | None,
     pattern: re.Pattern[str] | None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """カタログの窓の中の親セッションごとに、委譲先を含む記録の窓の中のツール呼び出しを返す。
-
-    委譲先は親の記録を起点として`_collect_records`で集める。カタログが走査rootの中だけで組み立てる子孫を使うと、
-    rootの外（別のプロジェクトディレクトリなど）に置かれた委譲先の呼び出しが数えられないためである。
-    窓は`timestamp`が`since`より後で`boundary`以前の呼び出しとし、時刻を持たない呼び出しは含めない。
-    """
     scan = _catalog_scan(root, runtime, since, boundary)
     if isinstance(scan, dict):
         return [scan], 2
@@ -655,7 +626,6 @@ def _catalog_tool_family(
     pattern: re.Pattern[str] | None,
     since: datetime.datetime,
 ) -> tuple[list[dict[str, Any]], list[_UnresolvedRecord], list[tuple[_CollectedRecord, dict[str, Any]]]]:
-    """root外の子孫も一家族内で抽出し、本文を持たない由来だけを返す。"""
     main = _catalog_read_item(parent.item)
     collected, unresolved = _collect_records(str(main.path), main.records, None, boundary)
     events: list[dict[str, Any]] = []
@@ -679,7 +649,6 @@ def _catalog_user_parent(
     pattern: re.Pattern[str] | None,
     preceding_assistant: bool,
 ) -> list[dict[str, Any]] | None:
-    """親本文だけを照会し、選別結果と出力以外の参照を呼出側へ渡さない。"""
     item = _catalog_read_item(parent.item)
     workflow, _locator = _workflow_evidence(item)
     if selection is not None and not selection.matches(
@@ -703,7 +672,6 @@ def _catalog_user_event_events(
     *,
     preceding_assistant: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
-    """既存カタログの親選定から、共有の人間入力照会へ接続する。"""
     scan = _catalog_scan(root, runtime, since, boundary)
     if isinstance(scan, dict):
         return [scan], 2

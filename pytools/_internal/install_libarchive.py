@@ -18,14 +18,14 @@ from pytools._internal import libarchive_resolver, log_format, post_apply_outcom
 
 logger = logging.getLogger(__name__)
 
-# MSYS2 の mingw64 リポジトリ。カーリング追跡が容易なように定数化する。
+
 _MSYS2_REPO = "https://repo.msys2.org/mingw/mingw64/"
 
 _ROOT_PACKAGE = "mingw-w64-x86_64-libarchive"
 
 _INSTALL_DIR = libarchive_resolver.INSTALL_DIR
 _HTTP_TIMEOUT = 60.0
-# 展開後のtarを全量メモリへ置くため、壊れた入力や想定外の巨大パッケージで際限なく確保しないよう上限を設ける。
+
 _MAX_DECOMPRESSED_SIZE = 512 * 1024 * 1024
 
 
@@ -122,12 +122,10 @@ def _download_dlls() -> bool:
 
 
 def _is_loadable() -> bool:
-    """消費側と同じ探索条件でlibarchiveをロードできるかを判定する。"""
     return libarchive_resolver.is_loadable(_INSTALL_DIR)
 
 
 def _read_database(data: bytes) -> dict[str, _Package]:
-    """MSYS2のdescから、取得と実行時依存の解決に必要な値を読み取る。"""
     packages = {}
     with tarfile.open(fileobj=io.BytesIO(_decompress_zst(data)), mode="r:") as tar:
         for member in tar:
@@ -151,7 +149,6 @@ def _read_database(data: bytes) -> dict[str, _Package]:
 
 
 def _resolve_packages(database: dict[str, _Package], root: str) -> list[_Package]:
-    """DBの現在版だけを使い、版条件を除いた正確な名前で推移依存を各1回選ぶ。"""
     pending = [root]
     seen = set()
     packages = []
@@ -169,7 +166,6 @@ def _resolve_packages(database: dict[str, _Package], root: str) -> list[_Package
 
 
 def _decompress_zst(data: bytes) -> bytes:
-    """zstd圧縮された単一フレームを標準ライブラリで上限付きで展開する。"""
     decompressor = compression.zstd.ZstdDecompressor()
     raw = decompressor.decompress(data, max_length=_MAX_DECOMPRESSED_SIZE)
     if not decompressor.eof:

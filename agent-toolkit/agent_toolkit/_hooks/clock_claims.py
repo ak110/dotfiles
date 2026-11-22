@@ -27,7 +27,6 @@ _CLAIM = re.compile(r"^(?:現在時刻|dateで確認)[:：]\s*(.+)$")
 
 
 def observe(payload: dict, command: object, session_id: str) -> None:
-    """成功した明示的なISO日時取得の結果だけを短く保存する。"""
     if not isinstance(command, str) or _CLOCK.fullmatch(command.strip()) is None:
         return
     if payload.get("hook_event_name") == "PostToolUseFailure" or payload.get("is_error"):
@@ -59,7 +58,6 @@ def _visible_lines(text: str) -> Iterable[str]:
 
 
 def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
-    """抽出できた現在時刻だけを確認し、本文の送達・保存は止めない。"""
     for text in texts:
         for line in _visible_lines(text):
             if _MASKED.search(line):
@@ -116,7 +114,6 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
 
 
 def wi_bodies(command: str, cwd: str) -> Iterable[str]:
-    """本文ファイルが確定するadd/editだけを調べ、シェル展開は実行しない。"""
     if "wi" not in command or "--body-file" not in command:
         return
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):

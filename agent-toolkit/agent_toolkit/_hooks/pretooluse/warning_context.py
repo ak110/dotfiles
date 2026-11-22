@@ -20,7 +20,6 @@ CODEX_CONTEXT_BYTES = 2000
 
 
 def format_warning_context(warnings: Sequence[str]) -> str:
-    """警告本文を結合し、複数件では総数を先頭へ付ける。"""
     if not warnings:
         return ""
     bodies = [_COUNT_HEADER_RE.sub("", warning, count=1) for warning in warnings]
@@ -32,7 +31,6 @@ def format_warning_context(warnings: Sequence[str]) -> str:
 
 
 def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int = 0, agent_id: str = "main") -> str:
-    """最終通知を短い参照へ変換し、全文は同じsessionの一時領域へ保存する。"""
     encoded = context.encode("utf-8")
     limit = CODEX_CONTEXT_BYTES - reserved_bytes
     if len(encoded) <= limit:

@@ -30,7 +30,7 @@ class _Issue:
 
 
 def _mask(text: str) -> str:
-    # 同じ文字数で伏せ、原文への位置対応と行跨ぎの括弧状態を保持する。
+
     masked = list(text)
 
     def record_code(state: markdown_it.rules_inline.StateInline, silent: bool) -> bool:
@@ -41,7 +41,7 @@ def _mask(text: str) -> str:
         return accepted
 
     parser = markdown_it.MarkdownIt("commonmark")
-    # backtickのエスケープ・区切り長は解析器に任せ、元の位置だけを記録する。
+
     parser.inline.ruler.at("backticks", record_code)
     parser.inline.parse(text, parser, {}, [])
     text = "".join(masked)
@@ -75,7 +75,7 @@ def _sentence_breaks(text: str) -> list[int]:
             stack.pop()
         elif char == "。" and not stack:
             end = index + 1
-            # 文末の強調記法とリンクの閉じ記法は同じ行へ残す。
+
             while end < len(text):
                 closing = re.match(r"\*\*|__|~~|\*|_", text[end:])
                 if closing and text[:end].count(closing[0]) % 2:
@@ -147,7 +147,7 @@ def _inspect(text: str, *, sentences: bool, python_examples: bool = False) -> tu
             for number, line in enumerate(token.content.splitlines(), token.map[0] + 1):
                 if re.match(r"^\s*(?:\$\s+)?python(?:\s|$)", line):
                     issues.append(_Issue(offsets[number], "Python起動の候補: python3かuv run --frozen pythonを選ぶ", True))
-        # cellのinline.mapは同じ物理行を共有するため、括弧の深さは表全体で一度だけ更新する。
+
         if token.type == "inline" and in_table:
             continue
         if token.type not in {"inline", "table_open"} or token.map is None or quote_depth:
@@ -170,13 +170,12 @@ def _inspect(text: str, *, sentences: bool, python_examples: bool = False) -> tu
         for end in _sentence_breaks(raw):
             position = offsets[start] + end
             issues.append(_Issue(position - 1, "1文1行へ改行する（--fixで修正可能）"))
-            # 空白は原文のまま次行へ送り、リストの継続に必要な字下げだけを追加する。
+
             insertions[position] = indent
     return sorted(issues, key=lambda issue: issue.offset), insertions
 
 
 def main(argv: list[str] | None = None) -> int:
-    """指定ファイルを検査し、成功0・違反1・入力エラー2を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fix", action="store_true", help="文境界の改行とリスト継続字下げを追加する")
     parser.add_argument("files", nargs="*", type=pathlib.Path)
@@ -189,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             text = path.read_bytes().decode("utf-8")
             resolved = path.resolve()
-            # 作業領域の上位にあるfixturesという名前で通常入力まで除外しない。
+
             if resolved.is_relative_to(root) and "fixtures" in resolved.relative_to(root).parts:
                 continue
             sentences = not path.as_posix().endswith(_EXTERNAL)

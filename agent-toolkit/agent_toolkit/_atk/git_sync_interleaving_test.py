@@ -53,8 +53,6 @@ def _updated_content(number: int, actor: str) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class _Update:
-    """1つの実行主体が行う1回の更新。"""
-
     actor: str
     clone: str
     entry: int
@@ -107,8 +105,6 @@ _CONFLICT_WITH_SHARED_CLONE = _Scenario(
 
 @dataclasses.dataclass(frozen=True)
 class _Op:
-    """止めた主体が次に行う、共有する資源への1手順。"""
-
     resource: tuple[str, str]
     writes: bool
     label: str
@@ -116,7 +112,6 @@ class _Op:
 
 
 def _independent(first: _Op, second: _Op) -> bool:
-    """2つの手順の実行順を入れ替えても結果が変わらないかを返す。"""
     return first.resource != second.resource or not (first.writes or second.writes)
 
 
@@ -131,7 +126,6 @@ def _subcommand(args: list[str]) -> str:
 
 
 def _git_op(args: list[str], cwd: object) -> _Op | None:
-    """Gitの起動を手順へ写す。作業コピーの配置だけを問う照会は、どの主体も変えない値を読むため手順にしない。"""
     if args[:1] == ["rev-parse"] and any(word in ("--git-common-dir", "--git-path") for word in args):
         return None
     subcommand = _subcommand(args)
@@ -144,13 +138,11 @@ def _git_op(args: list[str], cwd: object) -> _Op | None:
 
 
 class _Aborted(BaseException):
-    """探索を打ち切るとき、止めている主体のスレッドを巻き戻す。製品コードの`except Exception`に捕まらない。"""
+    pass
 
 
 @dataclasses.dataclass
 class _Node:
-    """2つ以上の主体が進める状態にある選択点。"""
-
     parked: dict[str, _Op]
     enabled: list[str]
     sleep: frozenset[str]
@@ -159,8 +151,6 @@ class _Node:
 
 
 class _Run:
-    """1つの順序で全ての主体を最後まで進める。"""
-
     def __init__(
         self, shared: frozenset[tuple[str, str]], forced: list[str], initial_sleep: frozenset[str], remote: pathlib.Path
     ) -> None:
@@ -192,7 +182,6 @@ class _Run:
         return self._names.get(threading.get_ident())
 
     def before(self, op: _Op) -> None:
-        """主体のスレッドで、共有する資源への手順の直前に止まり、`drive`がこの主体を選ぶまで待つ。"""
         name = self.actor_name()
         if name is None or op.resource not in self._shared:
             return
@@ -270,7 +259,6 @@ class _Run:
         assert self._sleep is not None
         candidates = [name for name in enabled if name not in self._sleep]
         if not candidates or self._sleep_blocked:
-            # 残りの順序は他の枝で実行済み。実在する実行なので最後まで進めて性質も確かめる。
             self._sleep_blocked = True
             return enabled[0]
         self.new_nodes.append(_Node(dict(parked), list(enabled), self._sleep, candidates[0]))
@@ -295,12 +283,11 @@ class _Run:
                 assert enabled, f"全ての主体がロック待ちで止まった: {parked}"
                 chosen = self._choose(enabled, parked)
                 self._grant(chosen)
-                # 実行した手順がremoteを変えなかった（拒否されたpush、送るものの無いpush）なら、読取として扱う。
+
                 executed = parked[chosen]
                 if chosen in self.remote_changed:
                     executed = dataclasses.replace(executed, writes=self.remote_changed.pop(chosen))
                 if self._sleep is None:
-                    # 再実行した最後の選択の直後。呼び出し側がその選択で限定したsleep setから続ける。
                     if self._choice_index >= len(self._forced):
                         self._sleep = self._initial_sleep
                 else:
@@ -373,7 +360,6 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
             resource = ("clone", str(pathlib.Path(self._repo_path).resolve()))  # pylint: disable=protected-access
             run.note_lock(self.lock_file, resource, held=False)
 
-    # 同じ内容と親のcommitが同じOIDになり、反例を再実行で同じ識別子のまま再現できる。
     monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-11-19T00:00:00+00:00")
     monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-11-19T00:00:00+00:00")
     monkeypatch.setattr(git_command, "_launch", launch)
@@ -382,8 +368,6 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _Repositories:
-    """bare remoteと作業コピーを1度だけ作り、各順序の実行の前に同じ絶対パスへ複製し直す。"""
-
     def __init__(self, root: pathlib.Path, scenario: _Scenario) -> None:
         self.work = root / "work"
         self._pristine = root / "pristine"
@@ -411,7 +395,6 @@ class _Repositories:
 
 
 def _remote_commit(repositories: _Repositories, run: _Run, update: _Update) -> str:
-    """`atk`を使わない別ホストが、どの主体の項目にも触れないcommitをremoteへ足す。"""
     run.before(_Op(_REMOTE, True, "別ホストのcommitとpush"))
     clone = repositories.path(update.clone)
     git_repository.run_git(clone, "pull", "--quiet", "--ff-only")
@@ -441,7 +424,6 @@ def _shared_resources(repositories: _Repositories, scenario: _Scenario) -> froze
 
 
 def _ref(repository: pathlib.Path, name: str) -> str | None:
-    """Gitを起動せずに参照の値を読む。探索の各手順で読むため、子プロセスを増やさない。"""
     git_dir = repository / ".git" if (repository / ".git").is_dir() else repository
     loose = git_dir / name
     if loose.is_file():
@@ -470,8 +452,6 @@ def _outcome_name(outcome: object) -> str:
 
 @dataclasses.dataclass
 class _Verdict:
-    """1つの順序の実行の終了状態と、性質ごとの違反。"""
-
     trace: list[str]
     outcomes: dict[str, str]
     end_state: str = ""
@@ -656,7 +636,6 @@ class _Exploration:
 
 
 def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Run]:
-    """選択点の全ての選び方を、sleep setで同じ結果になる順序を除いて深さ優先で実行する。"""
     shared = _shared_resources(repositories, scenario)
     stack: list[_Node] = []
     forced: list[str] = []
@@ -783,6 +762,5 @@ def test_every_interleaving_keeps_sync_contract(tmp_path: pathlib.Path, scenario
 )
 @pytest.mark.usefixtures("scheduled_git")
 def test_separate_clones_publish_every_update_by_operation_end(tmp_path: pathlib.Path) -> None:
-    """性質1をWIの記述どおりに確かめる: 別々のcloneの2つの更新と別ホストのcommitが、操作の終了時に全てremoteにある。"""
     exploration = _explored(tmp_path, _SEPARATE_CLONES)
     assert "性質1（操作の終了時）" not in exploration.violated(), _summary(exploration)

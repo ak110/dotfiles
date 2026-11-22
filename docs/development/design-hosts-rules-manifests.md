@@ -1,6 +1,6 @@
 # 共有原本とplugin manifestの設計記録
 
-[設計記録の索引](design.md)から参照する、共有原本とplugin manifestの記録である。
+[設計記録の索引](design.md)
 
 ## 共有原本とCodex固有の上書き
 

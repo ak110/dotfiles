@@ -236,7 +236,6 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
 async def test_unused_bucket_format_does_not_block_reset_and_unverified_window_blocks_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, primary_usage: Any
 ) -> None:
-    """未利用bucketの形式差は消費を止めず、使用率を確認できないwindowだけからは会話を再開しない。"""
     async with _environment(tmp_path, monkeypatch) as (owner, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
@@ -510,8 +509,6 @@ _PERMISSION = {
 
 
 class _Hub:
-    """保存の写し先だけを代用し、登録公開と状態の写しは実装を通す。"""
-
     def __init__(self, state_root: Path) -> None:
         self.state_root = state_root
         self._codec = SimpleNamespace(encode=lambda value: value)
@@ -525,7 +522,7 @@ async def _no_save() -> None:
 
 
 def _flood(client: _MemoryAppServer) -> None:
-    # 元I/O側の未確認イベント上限（256件）を超える通知を、照会の応答より先に読ませる。
+
     for index in range(300):
         client.emit("thread/tokenUsage/updated", {"index": index})
 
@@ -534,7 +531,6 @@ def _flood(client: _MemoryAppServer) -> None:
 async def _service_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, save: Callable[[], Awaitable[None]]
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
-    """管理サービスと同じく、App Serverの生I/Oをbroker経由の受信処理と保存に通す。"""
     with service_io.bind(service_io.Runtime("G1", _LOCAL_ORIGIN, ResourceBroker("G1"), save)):
         async with _environment(tmp_path, monkeypatch) as environment:
             yield environment
@@ -550,10 +546,6 @@ def _timeout_record(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
 async def test_account_read_proceeds_while_save_waits_registration_under_event_flood(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
 ) -> None:
-    """保存が登録公開の完了を待つ間も通知が上限を超えて届く負荷で、照会と許可の判定が進む。
-
-    2.262.3では保存の例外で受信処理が止まり、未確認イベントが上限に達して、照会が送出通知の空き待ちのまま時間切れになった。
-    """
     first = state.SessionState("first", str(tmp_path), engine="codex")
     second = state.SessionState("second", str(tmp_path), engine="codex")
     writer = service_projection.ServiceStatusWriter(
@@ -565,7 +557,7 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
     raced = asyncio.Event()
 
     async def publish_second(**_kwargs: Any) -> None:
-        # 後続sessionの公開を待つ間に届いた通知が、公開済みの先行sessionで新しい登録公開を始める。
+
         if not raced.is_set():
             raced.set()
             first._registration_task = asyncio.create_task(asyncio.sleep(0))
@@ -605,7 +597,6 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
 async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, service: bool
 ) -> None:
-    """送出後に応答が無い照会も時間内に終わり、応答待ちで止まったことを記録する。"""
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
     environment = _service_environment(tmp_path, monkeypatch, _no_save) if service else _environment(tmp_path, monkeypatch)
     async with environment as (_owner, backend, clients):
@@ -626,7 +617,6 @@ async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
 async def test_account_read_reports_reply_wait_and_full_event_queue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """通知列が上限でも送出を確認し、応答の未確認と未処理通知数を記録する。"""
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
     hold = asyncio.Event()
     release = asyncio.Event()

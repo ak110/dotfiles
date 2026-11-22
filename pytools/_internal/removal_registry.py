@@ -29,24 +29,17 @@ NOTICE_DAYS = 14
 
 
 class HasRegistered(Protocol):
-    """登録日を持つ撤去表の項目。"""
-
     @property
-    def registered(self) -> datetime.date:
-        """撤去表へ登録した日。"""
-        ...
+    def registered(self) -> datetime.date: ...
 
 
 @dataclasses.dataclass(frozen=True)
 class Registered[T]:
-    """登録日付きの撤去表の値。"""
-
     value: T
     registered: datetime.date
 
 
 def values[T](entries: Iterable[Registered[T]]) -> tuple[T, ...]:
-    """登録日付きの値の列から値だけを取り出す。"""
     return tuple(entry.value for entry in entries)
 
 

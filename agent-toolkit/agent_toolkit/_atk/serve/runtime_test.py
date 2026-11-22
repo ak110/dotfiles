@@ -119,7 +119,6 @@ async def test_observer_lifecycle_waits_do_not_stall_event_loop(
 async def test_warm_index_preloads_entry_texts_outside_read_workers(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """索引の先行読込の後に本文を先読みし、先読みの間も読取用の実行枠を空けておく。"""
     operations = wi_operations.Operations(tmp_path)
     read_workers = runtime.BoundedWorkers(1)
     current_state = state.ServeState(tmp_path)

@@ -1,5 +1,3 @@
-"""post-applyの成功済み処理を、入力と配置状態の内容一致で再利用する。"""
-
 import hashlib
 import json
 import os
@@ -11,14 +9,12 @@ import platformdirs
 
 from pytools._internal import common
 
-# plugin実行時や開発時の生成物は配布内容の変更に含めない。
 _IGNORED = frozenset(
     {".git", ".venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".hypothesis", ".orphaned_at"}
 )
 
 
 def fingerprint(paths: Iterable[Path], *, values: Iterable[str] = ()) -> str:
-    """パスの順序、相対名、内容、modeを境界付きでハッシュ化する。"""
     digest = hashlib.sha256()
 
     def add(data: bytes) -> None:
@@ -53,16 +49,13 @@ def fingerprint(paths: Iterable[Path], *, values: Iterable[str] = ()) -> str:
 
 
 def record_path(name: str) -> Path:
-    """処理ごとの固定サイズの成功記録の保存先を返す。"""
     return Path(platformdirs.user_cache_dir("dotfiles", appauthor=False)) / "post-apply" / f"{name}.json"
 
 
 def matches(name: str, key: str) -> bool:
-    """読めない記録は未確認として扱う。"""
     record = common.load_json_dict(record_path(name))
     return record is not None and record.get("key") == key
 
 
 def save(name: str, key: str) -> None:
-    """成功後の入力・出力の内容を記録する。保存できなければ次回も処理する。"""
     common.atomic_write_text(record_path(name), json.dumps({"key": key}), tag="post-apply cache")

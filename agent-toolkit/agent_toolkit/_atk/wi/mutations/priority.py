@@ -1,5 +1,3 @@
-"""AWIの優先区分と根拠の設定・解除（`atk wi set-priority`）。"""
-
 from __future__ import annotations
 
 import argparse
@@ -27,10 +25,6 @@ def set_entry_priority(
     reason: dict[str, str] | None = None,
     target_repo: str | None = None,
 ) -> bool:
-    """未終了のAWIへurgentと根拠を付けるか、通常へ戻す。保存状態は変えない。変更があれば真を返す。
-
-    urgentには観測した影響・根拠の所在・解除条件の3つを必須とし、根拠の無い優先を記録しない。
-    """
     if urgent and (reason is None or any(not reason.get(key, "").strip() for key in _priority.REASON_KEYS)):
         raise WebInputError(
             "urgentには影響・根拠・解除条件がすべて必要です",
@@ -80,7 +74,6 @@ def set_entry_priority(
 
 
 def cmd_set_priority(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """set-priorityサブコマンドを実行する。"""
     target_repo = args.target_repo
     if target_repo is None:
         target_repo, _local_worktree = _add.resolve_add_target(None)

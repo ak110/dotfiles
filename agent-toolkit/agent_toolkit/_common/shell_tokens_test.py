@@ -1,5 +1,3 @@
-"""シェルのトークン列からリダイレクトを除く処理を検証する。"""
-
 import pathlib
 import shlex
 

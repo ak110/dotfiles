@@ -13,8 +13,6 @@ subagent call. Use this to distinguish subagent hook calls from main-thread call
 from __future__ import annotations
 
 import os
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Mapping
 
 lazy from agent_toolkit._common.delegated_session import is_delegated
@@ -24,7 +22,6 @@ MAIN_AGENT_ID = "main"
 
 
 def resolve_hook_agent_id(payload: object) -> str:
-    """呼出主体を返す。payloadの`agent_id`があればその値、無ければメイン会話として`main`を返す。"""
     if isinstance(payload, dict):
         agent_id = payload.get("agent_id")
         if isinstance(agent_id, str) and agent_id:

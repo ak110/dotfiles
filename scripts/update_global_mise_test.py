@@ -1,5 +1,3 @@
-"""テンプレート化後の配布mise lock更新経路を模擬する。"""
-
 import os
 import subprocess
 from pathlib import Path
@@ -9,7 +7,6 @@ import update_global_mise
 
 
 def test_lock_update_renders_full_and_preserves_host_mode(tmp_path, monkeypatch):
-    """一時展開のdotnet版をテンプレートへ戻し、既存モードを保持する。"""
     source = tmp_path / ".chezmoi-source/dot_config/mise"
     source.mkdir(parents=True)
     (source / "config.toml.tmpl").write_text('[tools]\ndotnet = "10.0.1"\n')
@@ -26,14 +23,13 @@ def test_lock_update_renders_full_and_preserves_host_mode(tmp_path, monkeypatch)
             return subprocess.CompletedProcess(arguments, 0, "", "")
         directory = Path(kwargs["cwd"])
         if arguments[1] == "lock" and Path(kwargs["env"]["MISE_CONFIG_DIR"]) == directory and "--global" not in arguments:
-            # mise 2026.10.25はconfig dir直下をglobal配置と扱い、local lockの対象から外す。
             return subprocess.CompletedProcess(arguments, 0, "", "")
         configuration = directory / ("mise.toml" if (directory / "mise.toml").exists() else "config.toml")
         if arguments[1] == "upgrade":
             configuration.write_text('[tools]\ndotnet = "10.0.2"\n')
         else:
             (directory / "mise.lock").write_text("new lock")
-            # miseのglobal/localの生成配置を模し、配布lockが参照するnpm成果物まで更新されることを確かめる。
+
             locks = directory / ("locks" if "--global" in arguments else ".mise/locks") / "npm-example" / "1.0.0"
             locks.mkdir(parents=True)
             (locks / "aube-lock.yaml").write_text("generated dependency graph\n")

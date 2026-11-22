@@ -1,5 +1,3 @@
-"""監視の獲得直後と配信準備中の例外でも所有した資源を回収する。"""
-
 import asyncio
 import errno
 import pathlib
@@ -38,7 +36,6 @@ class _Observer:
 
 @pytest.mark.asyncio
 async def test_serve_state_acquires_observer_only_when_started(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """監視を使わない状態の構築と停止は、ObserverのOS資源を確保しない。"""
     created: list[_Observer] = []
 
     def factory() -> _Observer:
@@ -63,7 +60,6 @@ async def test_serve_state_acquires_observer_only_when_started(tmp_path: pathlib
 def test_observer_constructor_exhaustion_uses_existing_polling_fallback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Observerの構築時に通知資源が不足しても、同じ監視登録をポーリングへ渡す。"""
     polling: Any = _Observer()
     scheduled: list[Any] = []
     errors: list[OSError] = []
@@ -103,7 +99,6 @@ async def test_serve_state_context_cleans_acquisition_and_body_failure(
 async def test_direct_start_failure_releases_partial_watch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, asynchronous: bool
 ) -> None:
-    """通常の監視とポーリング監視の両方を開始できない場合、公開startが開始途中の監視資源を回収して送出する。"""
     observer = _Observer(fail_start=True)
     polling = _Observer(fail_start=True)
     monkeypatch.setattr(state.watchdog.observers, "Observer", lambda: observer)
@@ -166,7 +161,6 @@ def _exhausted(monkeypatch: pytest.MonkeyPatch) -> list[_Exhausted]:
 async def test_serve_state_falls_back_to_polling_and_notifies(
     tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture, exhausted: list[_Exhausted]
 ) -> None:
-    """inotifyの上限到達でも`ServeState`は開始し、Markdownの変更を購読者へ届けて切替を警告する。"""
     async with state.ServeState(tmp_path, debounce_seconds=0) as watched:
         events = watched.events(heartbeat=30)
         assert await anext(events) == "event: subscribed\ndata: {}\n\n"
@@ -181,7 +175,6 @@ async def test_serve_state_falls_back_to_polling_and_notifies(
 async def test_plan_watch_falls_back_to_polling_and_notifies(
     tmp_path: pathlib.Path, index_path: pathlib.Path, caplog: pytest.LogCaptureFixture, exhausted: list[_Exhausted]
 ) -> None:
-    """inotifyの上限到達でも計画ファイルの監視は開始し、変更を購読者へ届けて切替を警告する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()

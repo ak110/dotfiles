@@ -1,16 +1,3 @@
-"""追跡中のMarkdownのリンクのフラグメントが、リンク先の見出しから生成されるIDへ解決することを検査する。
-
-GitHubは見出しのIDを、描画した見出しの文字列（強調・リンク・インラインコードの記法を除いた文字列）から作る。
-英字を小文字にし、文字・結合文字・数字・連結句読点（Unicodeの一般カテゴリL・M・N・Pc）とハイフン・空白以外の文字を除き、
-空白をハイフンへ置き換える。生成済みのIDと同じになる場合は、生成済みのIDと衝突しない最小の`-1`、`-2`などを付ける。
-見出しの記法の解釈はmarkdown-it-pyのインライン解析で行い、エスケープした記号と単語内の`_`は文字として残す。
-検査対象は、リンク先がリポジトリ内のMarkdown（同じファイル内の`#...`を含む）であるフラグメント付きのリンクとする。
-フェンス付きコードブロックとインラインコードの内側、およびスキームを持つリンク先（`https:`など）は描画されたリンクにならないか、
-リンク先の見出しをリポジトリ内で取得できないため対象から外す。
-対象が追跡中の全Markdown（リポジトリ直下の`README.md`を含む）であるため、リポジトリ直下へ置く。
-`atk`のヘルプが案内するリポジトリの公開URLのフラグメントも、同じ見出しIDの規則で検査する。
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -30,24 +17,25 @@ _INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?P<code>.+?)(?P=ticks)")
 _INLINE_LINK_PATTERN = re.compile(r"!?\[(?P<text>[^\]\n]*)\]\((?P<destination>[^)\n]*)\)")
 _LINK_TITLE_PATTERN = re.compile(r"^(?P<url>\S+)\s+(?:\"[^\"]*\"|'[^']*')$")
 _SCHEME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
+_NAMED_SECTION_PATTERN = re.compile(
+    r"`(?P<plugin>agent-toolkit|agent-basics):(?P<path>/?[A-Za-z0-9_./-]+\.md)`「(?P<section>[^」]+)」"
+)
 _MARKDOWN = MarkdownIt("commonmark").enable("strikethrough")
 
 
 @dataclasses.dataclass(frozen=True)
 class _UnresolvedAnchor:
-    """リンク先の見出しIDへ解決しないフラグメント付きのリンク。"""
-
     source: pathlib.Path
     line: int
     fragment: str
     target: pathlib.Path
+    reason: str
 
     def __str__(self) -> str:
-        return f"{self.source.as_posix()}:{self.line}: #{self.fragment} -> {self.target.as_posix()}"
+        return f"{self.source.as_posix()}:{self.line}: #{self.fragment} -> {self.target.as_posix()}: {self.reason}"
 
 
 def _tracked_markdown_paths(root: pathlib.Path) -> list[pathlib.Path]:
-    """Git追跡ファイルのうち実在するMarkdownの相対パスを返す。"""
     result = subprocess.run(["git", "ls-files", "-z", "--", "*.md"], cwd=root, check=True, capture_output=True)
     paths = (pathlib.Path(raw.decode("utf-8")) for raw in result.stdout.split(b"\0") if raw)
     return sorted(path for path in paths if (root / path).is_file())
@@ -70,13 +58,11 @@ def _lines_outside_fences(content: str) -> list[tuple[int, str]]:
             and len(match.group("fence")) >= len(open_fence)
             and not line.strip().strip(open_fence[0])
         ):
-            # 閉じるフェンスは開いたフェンスと同じ記号で同じ長さ以上を持ち、情報文字列を持たない
             open_fence = None
     return lines
 
 
 def _rendered_heading_text(text: str) -> str:
-    """見出しのインライン記法を解析し、描画される文字列だけを返す。"""
     children = [child for token in _MARKDOWN.parseInline(text) for child in token.children or []]
     parts: list[str] = []
     for token in children:
@@ -120,10 +106,17 @@ def _heading_ids(content: str) -> set[str]:
     return ids
 
 
-def _anchor_links(content: str) -> list[tuple[int, str, str]]:
-    """フラグメント付きのリンクを、行番号・リンク先のパス・デコードしたフラグメントの組で返す。"""
-    links: list[tuple[int, str, str]] = []
+def _anchor_links(content: str, source: pathlib.Path) -> list[tuple[int, pathlib.Path, str]]:
+    links: list[tuple[int, pathlib.Path, str]] = []
     for number, line in _lines_outside_fences(content):
+        code_starts = {span.start() for span in _INLINE_CODE_PATTERN.finditer(line)} if "`「" in line else set()
+        for match in _NAMED_SECTION_PATTERN.finditer(line):
+            if match.start() not in code_starts:
+                continue
+            plugin_path = pathlib.Path(match["plugin"])
+            resource = match["path"]
+            target = plugin_path / resource[1:] if resource.startswith("/") else plugin_path / "skills" / resource
+            links.append((number, target, _heading_slug(match["section"])))
         line = _INLINE_CODE_PATTERN.sub("", line)
         for match in _INLINE_LINK_PATTERN.finditer(line):
             destination = match.group("destination").strip()
@@ -136,22 +129,25 @@ def _anchor_links(content: str) -> list[tuple[int, str, str]]:
             path, fragment = destination.split("#", 1)
             if path and not path.endswith(".md"):
                 continue
-            links.append((number, path, urllib.parse.unquote(fragment)))
+            target = pathlib.Path(source.parent, urllib.parse.unquote(path)) if path else source
+            links.append((number, target, urllib.parse.unquote(fragment)))
     return links
 
 
 def _unresolved_anchors(root: pathlib.Path, sources: list[pathlib.Path]) -> list[_UnresolvedAnchor]:
-    """リンク先の見出しIDのいずれとも一致しないフラグメントを、リンクを持つファイルの行と対で返す。"""
     ids_cache: dict[pathlib.Path, set[str]] = {}
     unresolved: list[_UnresolvedAnchor] = []
     for source in sources:
-        for line, path, fragment in _anchor_links((root / source).read_text(encoding="utf-8")):
-            target = pathlib.Path(source.parent, urllib.parse.unquote(path)) if path else source
+        content = (root / source).read_text(encoding="utf-8")
+        for line, target, fragment in _anchor_links(content, source):
             resolved = (root / target).resolve()
+            if not resolved.is_file():
+                unresolved.append(_UnresolvedAnchor(source, line, fragment, target, "参照先が存在しない。現行のパスを指定する"))
+                continue
             if resolved not in ids_cache:
-                ids_cache[resolved] = _heading_ids(resolved.read_text(encoding="utf-8")) if resolved.is_file() else set()
+                ids_cache[resolved] = _heading_ids(resolved.read_text(encoding="utf-8"))
             if fragment not in ids_cache[resolved]:
-                unresolved.append(_UnresolvedAnchor(source, line, fragment, target))
+                unresolved.append(_UnresolvedAnchor(source, line, fragment, target, "節が存在しない。実在する見出しを指定する"))
     return unresolved
 
 
@@ -164,15 +160,11 @@ def _unresolved_anchors(root: pathlib.Path, sources: list[pathlib.Path]) -> list
     ),
 )
 def test_markdown_link_anchors_resolve() -> None:
-    """追跡中の全Markdownのフラグメント付きのリンクが、リンク先の見出しIDへ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_markdown_paths(root)
     assert pathlib.Path("README.md") in sources
     unresolved = _unresolved_anchors(root, sources)
-    assert not unresolved, (
-        "リンク先の見出しIDへ解決しないフラグメント（ファイル:行: #フラグメント -> リンク先）:\n"
-        + "\n".join(map(str, unresolved))
-    )
+    assert not unresolved, "見出しへ解決しない参照（ファイル:行: #見出しID -> 参照先）:\n" + "\n".join(map(str, unresolved))
 
 
 _REPOSITORY_URL_PATTERN = re.compile(r"https://github\.com/ak110/dotfiles/blob/master/(?P<path>[^\s#]+)#(?P<fragment>\S+)")
@@ -180,10 +172,6 @@ _REPOSITORY_URL_PATTERN = re.compile(r"https://github\.com/ak110/dotfiles/blob/m
 
 @pytest.mark.parametrize("arguments", [["config", "--help"], ["config", "set", "--help"]])
 def test_cli_help_repository_urls_resolve_to_guide_headings(arguments: list[str], capsys: pytest.CaptureFixture[str]) -> None:
-    """`atk config --help`と`atk config set --help`が案内するガイドのURLは、実在する見出しのIDを指す。
-
-    ガイドはプラグインの配布物に含まれないため、ヘルプは既定ブランチの公開URLで案内する。
-    """
     root = pathlib.Path(__file__).resolve().parent
     with pytest.raises(SystemExit) as exited:
         atk.main(arguments)
@@ -232,39 +220,30 @@ _TARGET_DOCUMENT = """# 索引の対象
 @pytest.mark.parametrize(
     ("link", "resolves"),
     [
-        # 中黒・全角括弧などの記号を除いたIDへ解決し、記号を残した見出し文字列のままでは解決しない
         ("[a](target.md#データ破壊喪失)", True),
         ("[a](target.md#データ破壊・喪失)", False),
         # 英字は小文字へそろえたIDへ解決し、英大文字のままでは解決しない
         ("[a](target.md#wiキューの運用)", True),
         ("[a](target.md#WIキューの運用)", False),
-        # 空白はハイフンへ置き換えたIDへ解決し、空白を含む記法はリンクとして解決しない
         ("[a](target.md#claude-codeとcodexの規範配置)", True),
         ("[a](target.md#Claude CodeとCodexの規範配置)", False),
-        # 同名の見出しは2件目以降が`-1`を持ち、存在しない3件目の`-2`は解決しない
         ("[a](target.md#重複する節)", True),
         ("[a](target.md#重複する節-1)", True),
         ("[a](target.md#重複する節-2)", False),
-        # 見出しのリンク記法はリンクの文字列へ、インラインコードは記号を除いた文字列へ置き換えてからIDを生成する
         ("[a](target.md#リンク付きの節とatk-wiの節)", True),
-        # 強調の記号はIDから除き、単語内の`_`とエスケープした`_`は文字として残す
         ("[a](target.md#強調した節)", True),
         ("[a](target.md#装飾)", True),
         ("[a](target.md#_装飾_)", False),
         ("[a](target.md#snake_caseと_記号_の節)", True),
-        # 生成済みのIDと同じになる3件目は、明示した`衝突-1`と重ならない`-2`を持つ
         ("[a](target.md#衝突)", True),
         ("[a](target.md#衝突-1)", True),
         ("[a](target.md#衝突-2)", True),
         ("[a](target.md#衝突-3)", False),
         # コードブロック内の見出しはIDを生成しない
         ("[a](target.md#コードブロック内の節)", False),
-        # パーセントエンコードしたフラグメントはデコードしてから比べる
         ("[a](target.md#%E9%87%8D%E8%A4%87%E3%81%99%E3%82%8B%E7%AF%80)", True),
-        # 同じファイル内のフラグメントもそのファイルの見出しIDと比べる
         ("[a](#ソースの節)", True),
         ("[a](#存在しない節)", False),
-        # リンク先のファイルが無い場合は解決しない
         ("[a](missing.md#データ破壊喪失)", False),
         # 外部へのリンク、Markdown以外へのリンク、コードブロックとインラインコードの内側の記法は検査しない
         ("[a](https://example.com/target.md#存在しない節)", True),
@@ -298,6 +277,26 @@ def test_unresolved_anchor_report_lists_every_link(tmp_path: pathlib.Path) -> No
     )
 
     assert list(map(str, _unresolved_anchors(tmp_path, [source]))) == [
-        "index.md:3: #確認・合意の運用 -> target.md",
-        "index.md:5: #消えた節 -> sub/../target.md",
+        "index.md:3: #確認・合意の運用 -> target.md: 節が存在しない。実在する見出しを指定する",
+        "index.md:5: #消えた節 -> sub/../target.md: 節が存在しない。実在する見出しを指定する",
+    ]
+
+
+def test_qualified_reading_table_sections_distinguish_path_and_heading(tmp_path: pathlib.Path) -> None:
+    plugin = "-".join(("agent", "toolkit"))
+    target = pathlib.Path(plugin, "skills/sample/references/target.md")
+    (tmp_path / target.parent).mkdir(parents=True)
+    (tmp_path / target).write_text("# 対象\n\n## 実行の条件\n", encoding="utf-8")
+    source = pathlib.Path("index.md")
+    (tmp_path / source).write_text(
+        f"| 現行 | `{plugin}:sample/references/target.md`「実行の条件」 |\n"
+        f"| 旧節 | `{plugin}:/skills/sample/references/target.md`「移設前の節」 |\n"
+        f"| 旧先 | `{plugin}:sample/references/missing.md`「実行の条件」 |\n"
+        f"| 記法の例 | `` `{plugin}:sample/references/missing.md`「節の名前」 `` |\n",
+        encoding="utf-8",
+    )
+    unresolved = _unresolved_anchors(tmp_path, [source])
+    assert [(entry.line, entry.reason) for entry in unresolved] == [
+        (2, "節が存在しない。実在する見出しを指定する"),
+        (3, "参照先が存在しない。現行のパスを指定する"),
     ]

@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の実ブラウザー統合テスト（選択の復元と複数rootの扱い）。"""
-
 import asyncio
 import dataclasses
 import os
@@ -53,7 +51,6 @@ async def _multi_root_harness_fixture(
     monkeypatch: pytest.MonkeyPatch,
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_MultiRootHarness]:
-    """同じ相対パスのファイルを持つ2つのrootを登録したアプリを用意する。"""
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     new_root = tmp_path / "new"
@@ -98,7 +95,6 @@ async def _multi_root_harness_fixture(
 async def test_multiple_roots_keep_selection_search_update_and_copy_portable_path(
     multi_root_harness: _MultiRootHarness,
 ) -> None:
-    """同一相対パスのroot別選択・検索・更新通知・可搬パスコピーを検証する。"""
     harness = multi_root_harness
     await harness.page.goto(harness.base_url + "/plans")
     items = harness.page.locator("#files .file")
@@ -151,7 +147,6 @@ async def test_multiple_roots_keep_selection_search_update_and_copy_portable_pat
 async def test_initial_plan_restore_preserves_earlier_selection(
     screen_harness: _ScreenHarness, select_during_initial_fetch: bool
 ) -> None:
-    """初期取得中に始めた閲覧を保持し、操作が無い場合はURLの計画を復元する。"""
     harness = screen_harness
     page = harness.page
     await _observe_screen_requests(page)
@@ -202,7 +197,6 @@ async def test_initial_plan_restore_preserves_earlier_selection(
 async def test_later_file_selection_wins_when_first_response_arrives_last(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """先に選択したファイルの応答が後から届いても、後の選択の表示を保つ。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/plans")
     await playwright.async_api.expect(harness.page.locator("#preview h1")).to_have_text("初回")
@@ -312,7 +306,6 @@ async def test_selection_state_survives_preview_resync(screen_harness: _ScreenHa
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_root_warnings_distinguish_hosts_and_sources(multi_root_harness: _MultiRootHarness) -> None:
-    """同じ理由でもホストと保存元で区別し、内部のsource IDを表示しない。"""
     harness = multi_root_harness
     page = harness.page
     roots = {

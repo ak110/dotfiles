@@ -29,19 +29,15 @@ REAL_CREATE_SUBPROCESS_EXEC = asyncio.create_subprocess_exec
 
 @dataclasses.dataclass
 class FakeAppServer:
-    """模擬App Serverのイベント記録と、そこから特定したプロセスの照会。"""
-
     log_path: pathlib.Path
 
     def events(self, event: str | None = None) -> list[dict[str, Any]]:
-        """記録したイベントを古い順に返す。`event`を指定するとその種別だけを返す。"""
         if not self.log_path.exists():
             return []
         records = [json.loads(line) for line in self.log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         return [record for record in records if event is None or record["event"] == event]
 
     async def complete_turn(self, thread_id: str) -> None:
-        """開始応答を受けた試験側から、まだ解放していないturnの終了通知を許可する。"""
         async with asyncio.timeout(10):
             while True:
                 ready = [
@@ -55,15 +51,12 @@ class FakeAppServer:
                 await asyncio.sleep(0.01)
 
     def server_pid(self, thread_id: str) -> int:
-        """`thread_id`を最後に読み込んだApp ServerのPIDを返す。"""
         return [record["server"] for record in self.events() if record.get("thread") == thread_id][-1]
 
     def mcp_pids(self, thread_id: str) -> list[int]:
-        """`thread_id`のために起動したMCPサーバー役の子プロセスのPIDを古い順に返す。"""
         return [record["pid"] for record in self.events("mcp") if record["thread"] == thread_id]
 
     def _process(self, pid: int) -> psutil.Process | None:
-        """記録したPIDと起動時刻の組に一致する生存中のプロセスを返す。終了済みか別のプロセスなら`None`を返す。"""
         created = next(
             (record for record in self.events() if record["event"] in {"server", "mcp"} and record["pid"] == pid),
             None,
@@ -82,14 +75,9 @@ class FakeAppServer:
         return process
 
     def alive(self, pid: int) -> bool:
-        """模擬App Serverが記録したプロセスが資源を保持したまま生存しているかを返す。"""
         return self._process(pid) is not None
 
     def terminate_recorded(self) -> None:
-        """試験の後始末として、記録したプロセスのうち生存中のものを終了させる。
-
-        PIDと起動時刻の組で自身の起動させたプロセスだけを特定し、再利用された別のプロセスを対象にしない。
-        """
         targets = [
             process
             for record in self.events()

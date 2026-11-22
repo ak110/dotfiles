@@ -1,5 +1,3 @@
-"""`atk config`が公開する設定キーとMCPサーバーへ渡す環境変数名の対応を、両方を参照できるMCP側の層で検証する。"""
-
 import pytest
 
 from agent_toolkit import atk
@@ -10,7 +8,6 @@ from agent_toolkit._common import mcp_environment, proxy_environment
 def test_mcp_setting_names_follow_public_config_keys(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`atk config show`が表示する可変設定は全て環境変数名へ含め、保存先から導出する値は上書き用の環境変数名へ含めない。"""
     with pytest.raises(SystemExit) as exited:
         atk.main(["config", "show"])
     assert exited.value.code == 0

@@ -56,7 +56,6 @@ _DETECTED_TYPES = frozenset({"event_msg", "response_item", "user", "assistant"})
 
 
 def _base(entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """実行系の判定と時刻の比較に使う要素だけを残す。"""
     kept = {"type": entry.get("type")}
     for key in ("timestamp", "isSidechain", "sessionID"):
         if key in entry:
@@ -71,10 +70,6 @@ def _notification_texts(raw: bytes, content: typing.Any) -> list[str]:
 
 
 def _slim_entry(raw: bytes, entry: dict[str, typing.Any], calls: set[str]) -> dict[str, typing.Any] | None:
-    """1行を縮約する。家族と費用の算出に使わない行は`None`を返す。
-
-    `calls`は同じ記録のagents_server起動の呼び出しIDで、結果の行を残すかの判定に使い、起動の行を見るたびに加える。
-    """
     if b"SubAgentActivity" in raw:
         return entry
     kind = entry.get("type")
@@ -143,8 +138,6 @@ def _slim_codex(entry: dict[str, typing.Any], payload: dict[str, typing.Any], ca
 
 @dataclasses.dataclass
 class _Slim:
-    """1記録の縮約結果と、続きから解析するための状態。"""
-
     size: int
     mtime_ns: int
     offset: int
@@ -169,7 +162,7 @@ class _Slim:
             "seen": sorted(self.seen),
             "entries": self.entries,
         }
-        # 縮約しても家族76件で数十MBになるため、圧縮して保存先の大きさを抑える。
+
         return zlib.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"), 1)
 
     @classmethod
@@ -209,7 +202,6 @@ class SlimRecordStore:
         self._memory_entries = 0
 
     def prune(self) -> None:
-        """保存先の縮約記録が上限を超えていれば、更新の古いものから消す。消えた記録の縮約記録もいずれここで消える。"""
         if self._directory is None:
             return
         try:
@@ -238,18 +230,15 @@ class SlimRecordStore:
 
     @property
     def directory(self) -> pathlib.Path | None:
-        """縮約記録の保存先。`None`ならプロセス内だけに保持する。"""
         return self._directory
 
     def loader(self, raw_path: str) -> _family._RecordLoad:  # pylint: disable=protected-access
-        """`session_family._collect_records`の読込として、縮約記録か、縮約できない記録の全行を返す。"""
         records = self.records(raw_path)
         if records is None:
             return _family._load_records_checked(raw_path)  # pylint: disable=protected-access
         return _family._RecordLoad(records)  # pylint: disable=protected-access
 
     def records(self, raw_path: str) -> list[_family._Record] | None:  # pylint: disable=protected-access
-        """縮約記録を行番号付きで返す。読めない記録、解析できない行や書き込み途中の末尾を含む記録は`None`を返す。"""
         path = pathlib.Path(raw_path)
         try:
             st = os.stat(path)
@@ -279,12 +268,10 @@ class SlimRecordStore:
         return updated
 
     def _extend(self, path: pathlib.Path, previous: _Slim | None, st: os.stat_result) -> _Slim | None:
-        """前回の縮約に続く部分を解析して加える。追記で説明できない変化なら`None`を返し、呼出側が作り直す。"""
         start = previous.offset if previous is not None else 0
         try:
             with path.open("rb") as stream:
                 if previous is not None:
-                    # 追記は必ず大きさを増やす。大きさが増えていない変化は書き換えとして作り直す。
                     if st.st_size <= start or stream.read(len(previous.head)) != previous.head:
                         return None
                     stream.seek(start - len(previous.tail))
@@ -294,7 +281,6 @@ class SlimRecordStore:
         except OSError:
             return None
         if data and not data.endswith(b"\n"):
-            # 書き込み途中の末尾を含む記録は、従来の読込が行の回復と不成立を判定する。
             return None
         slim = (
             dataclasses.replace(previous, calls=set(previous.calls), seen=set(previous.seen), entries=list(previous.entries))

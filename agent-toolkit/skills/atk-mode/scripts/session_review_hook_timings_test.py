@@ -1,5 +1,3 @@
-"""公開prepareの統計から、保持されたhook計測と未記録の範囲を確認する。"""
-
 import json
 import pathlib
 

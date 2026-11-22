@@ -1,5 +1,3 @@
-"""CLI導入のHTTPクライアントは内部生成時だけ所有し、中断でも閉じる。"""
-
 import contextlib
 import types
 from pathlib import Path
@@ -15,7 +13,6 @@ from pytools._internal import setup_cli_common, setup_codex_cli, setup_mise, set
 def test_http_client_ownership_survives_interruption(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, installer: str, borrowed: bool
 ) -> None:
-    """同じHTTP中断でも、内部生成した接続だけを閉じ、注入値の寿命を呼出元へ保つ。"""
 
     def interrupt(_request: httpx.Request) -> httpx.Response:
         raise KeyboardInterrupt

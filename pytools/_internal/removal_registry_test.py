@@ -1,5 +1,3 @@
-"""removal_registryのテスト。"""
-
 import datetime
 from pathlib import Path
 
@@ -72,7 +70,6 @@ def test_report_cli_fails_only_when_entries_are_due(
 
 
 def test_values_extracts_registered_values() -> None:
-    """登録日付きの列から値だけを順に取り出す。"""
     entries = (
         removal_registry.Registered("a", datetime.date(2026, 9, 1)),
         removal_registry.Registered("b", datetime.date(2026, 9, 2)),

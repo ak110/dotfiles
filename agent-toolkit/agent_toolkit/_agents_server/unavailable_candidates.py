@@ -21,17 +21,11 @@ UNAVAILABLE_CANDIDATES_RETENTION_SECONDS = 1800.0
 
 
 def unavailable_candidates_path(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """可用性を理由に除外した候補の記録ファイルを返す。
-
-    `list_root_session_ids`は`agents-server`直下のディレクトリをルートsession識別子として列挙するため、
-    この階層へは単一のファイルとして置く。
-    """
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "unavailable-candidates.json"
 
 
 def _read_unavailable_entries(path: pathlib.Path) -> list[dict[str, Any]]:
-    """記録ファイルのうち、書式に適合する項目だけを返す。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
@@ -45,7 +39,6 @@ def _read_unavailable_entries(path: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def _unavailable_entry_is_live(entry: dict[str, Any], now: datetime.datetime) -> bool:
-    """最終除外時刻から保持期間内の項目かを返す。"""
     try:
         excluded_at = datetime.datetime.fromisoformat(str(entry.get("excluded_at")))
     except TypeError, ValueError:
@@ -62,10 +55,6 @@ def load_unavailable_candidates(
     now: datetime.datetime,
     state_root: pathlib.Path | None = None,
 ) -> dict[tuple[str, str | None, str | None], str]:
-    """指定した起動条件で除外中の候補を、候補ごとの除外理由とともに返す。
-
-    保持期間を過ぎた項目は返さない。呼び出し元は残った候補だけを除外集合として扱う。
-    """
     result: dict[tuple[str, str | None, str | None], str] = {}
     for entry in _read_unavailable_entries(unavailable_candidates_path(state_root)):
         if entry.get("model_type") != model_type or entry.get("launch_kind") != launch_kind:
@@ -113,7 +102,6 @@ def record_unavailable_candidate(
     now: datetime.datetime,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """可用性を理由に除外した候補の最終除外時刻を記録する。"""
     engine, model, effort = candidate
 
     def replace(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -142,10 +130,6 @@ def clear_unavailable_candidate(
     now: datetime.datetime,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """起動が成立した候補の除外記録を取り除く。
-
-    その候補の記録が無い場合は書き込まない。起動のたびに記録ファイルを作成しないためである。
-    """
     engine, model, effort = candidate
     if candidate not in load_unavailable_candidates(model_type, launch_kind, now=now, state_root=state_root):
         return
@@ -164,7 +148,6 @@ def _matches_candidate(
     model: str | None,
     effort: str | None,
 ) -> bool:
-    """記録した項目が指定した起動条件と候補の組に一致するかを返す。"""
     return (
         entry.get("model_type") == model_type
         and entry.get("launch_kind") == launch_kind

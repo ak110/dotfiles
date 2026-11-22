@@ -1,9 +1,3 @@
-"""会話が投入したUWIのうち、回答を待っているもののファイル名をセッション状態へ記録する。
-
-`atk wi add`が投入時に記録し、PostToolUseのhookがその一覧のファイルだけを確かめる。
-回答の検出のために全WIを調べずに済むよう、確かめる対象を投入時に確定する。
-"""
-
 from collections.abc import Iterable
 
 from agent_toolkit._common import wi_layout
@@ -17,7 +11,6 @@ STATE_KEY = "uwi_awaiting_answer"
 
 
 def awaiting(state: dict) -> list[str]:
-    """記録済みのファイル名を返す。"""
     names = state.get(STATE_KEY)
     if not isinstance(names, list):
         return []
@@ -25,7 +18,6 @@ def awaiting(state: dict) -> list[str]:
 
 
 def add(session_id: str, filenames: Iterable[str]) -> bool:
-    """投入したUWIを会話の記録へ加える。書き込んだ場合だけ真を返す。"""
     added = {name for name in filenames if wi_layout.DATED_NAME.fullmatch(name) is not None}
     if not added:
         return False

@@ -46,12 +46,10 @@ def _rollout(tmp_path: pathlib.Path, rows: list[bytes]) -> pathlib.Path:
 
 
 def _truncated(full: bytes, cut: int) -> bytes:
-    """完全な行を、`payload`以降のcutバイト目で途中終了させた行を返す。"""
     return full[: full.index(b'"payload":') + cut]
 
 
 def _truncated_in_text(full: bytes, text: str) -> bytes:
-    """完全な行を、本文textの先頭2文字の後で途中終了させた行を返す。"""
     return full[: full.index(text.encode("utf-8")) + len(text[:2].encode("utf-8"))]
 
 
@@ -62,7 +60,6 @@ def _truncated_in_text(full: bytes, text: str) -> bytes:
 def test_superseded_partial_line_is_recovered_with_position(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], partial_text: str, cut_inside_multibyte: bool
 ) -> None:
-    """途中終了の行を直後の完全な行で置き換え、置換の対応を返して後続の会話を欠落させない。"""
     complete = _line(1, "response_item", _assistant(partial_text), 1)
     marker = complete.index(partial_text.encode("utf-8"))
     # 多バイト文字の途中で終わる行は、UTF-8として成立しない。
@@ -96,19 +93,15 @@ def test_superseded_partial_line_is_recovered_with_position(
 @pytest.mark.parametrize(
     "rows",
     [
-        # 直後の行が別のordinalで、途中終了の行の内容を含まない。
         lambda complete: [_truncated_in_text(complete, "完全な応答"), _line(9, "response_item", _user("別の行"), 3)],
-        # 同じordinalでも、途中終了の行の内容が直後の行の接頭辞でない。
         lambda complete: [
             _truncated_in_text(complete, "完全な応答"),
             _line(1, "response_item", _assistant("別の内容の行"), 3),
         ],
-        # 末尾の途中終了で、置き換える行が無い。
         lambda complete: [_truncated_in_text(complete, "完全な応答")],
     ],
 )
 def test_unrecoverable_line_fails_with_line_number(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], rows) -> None:
-    """置き換える完全な行が無い破損は除外せず、行番号と次の操作を示して終了2にする。"""
     complete = _line(1, "response_item", _assistant("完全な応答の本文"), 1)
     path = _rollout(tmp_path, [_line(0, "response_item", _user("依頼"), 0), *rows(complete)])
 
@@ -122,7 +115,6 @@ def test_unrecoverable_line_fails_with_line_number(tmp_path: pathlib.Path, capsy
 def test_prepare_reports_recovered_lines_apart_from_unconfirmed_scope(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """準備は回復した行を未確認範囲と分けて最終JSON・bundle・準備文書へ示す。"""
     complete = _line(1, "response_item", _assistant("途中で終わる応答の本文"), 1)
     path = _rollout(
         tmp_path,
@@ -151,7 +143,6 @@ def test_prepare_reports_recovered_lines_apart_from_unconfirmed_scope(
 def test_child_record_failure_keeps_reason_in_unconfirmed_scope(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """委譲先記録の回復できない破損は未確認範囲へ残し、理由を添える。"""
     claude_main = tmp_path / "main.jsonl"
     claude_main.write_text(
         json.dumps({"type": "user", "timestamp": "2026-10-24T00:00:00Z", "message": {"role": "user", "content": "依頼"}})
@@ -187,7 +178,6 @@ def _claude_record(tmp_path: pathlib.Path, rows: list[bytes]) -> pathlib.Path:
 
 
 def _cut_in_text(full: bytes, text: str, extra: int) -> bytes:
-    """完全な行を、本文textの先頭からextraバイト目で途切れさせた断片を返す。"""
     return full[: full.index(text.encode("utf-8")) + extra]
 
 
@@ -197,9 +187,7 @@ _JOINED_TEXT = "途切れる応答の本文"
 @pytest.mark.parametrize(
     ("complete_at", "extra", "expected_method"),
     [
-        # 完全な版が後方にある（観測した記録と同じ配置）。
         ("after", 3, "joined-fragment-superseded"),
-        # 完全な版が前方にある。
         ("before", 3, "joined-fragment-superseded"),
         # 完全な版が無く、断片がUTF-8の多バイト文字の途中で途切れている。
         (None, 4, "joined-fragment-lost"),
@@ -208,7 +196,6 @@ _JOINED_TEXT = "途切れる応答の本文"
 def test_joined_fragment_is_dropped_and_following_record_is_read(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], complete_at: str | None, extra: int, expected_method: str
 ) -> None:
-    """途切れた断片と完全な記録の連結行は、断片だけを除いて後半の記録を同じ行番号で読み、除外を診断に残す。"""
     complete = _claude("assistant", _JOINED_TEXT, 1)
     fragment = _cut_in_text(complete, _JOINED_TEXT, extra)
     joined = fragment + _claude("user", "連結された後半の依頼", 2)
@@ -241,18 +228,14 @@ def test_joined_fragment_is_dropped_and_following_record_is_read(
 @pytest.mark.parametrize(
     "joined",
     [
-        # 後半が単独で成立しない。
         lambda complete: _cut_in_text(complete, _JOINED_TEXT, 3) + b'{"type":"user","message":',
-        # 後半のobjectが`type`を持たない（途切れた文字列中のJSONらしい文字列）。
         lambda complete: _cut_in_text(complete, _JOINED_TEXT, 3) + b'{"text":"x"}',
-        # 完全な記録が2つ連結され、手前も単独で成立する。断片ではないため捨てない。
         lambda complete: complete + _claude("user", "後半", 2),
     ],
 )
 def test_line_that_is_not_a_joined_fragment_still_fails(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], joined
 ) -> None:
-    """途切れた断片と完全な記録の連結でない破損は受理せず、行番号を示して終了2にする。"""
     complete = _claude("assistant", _JOINED_TEXT, 1)
     path = _claude_record(tmp_path, [_claude("user", "依頼", 0), joined(complete)])
 
@@ -265,7 +248,6 @@ def test_line_that_is_not_a_joined_fragment_still_fails(
 def test_prepare_reports_dropped_fragment_with_complete_version(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """準備は除いた断片の行番号・長さと完全な版の有無を、最終JSON・準備文書へ示す。"""
     complete = _claude("assistant", _JOINED_TEXT, 1)
     fragment = _cut_in_text(complete, _JOINED_TEXT, 3)
     lost = _cut_in_text(_claude("assistant", "失われた応答", 4), "失われた応答", 3)

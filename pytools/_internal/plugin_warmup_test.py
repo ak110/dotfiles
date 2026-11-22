@@ -26,7 +26,6 @@ _STDOUT_BODY = "Resolved 0 packages"
 
 
 def _target(tmp_path: pathlib.Path) -> pathlib.Path:
-    """`--project` の解決に使う2階層下の起動スクリプトのパスを返す。"""
     entry = tmp_path / "plugin-root" / "agent_toolkit" / "entry.py"
     entry.parent.mkdir(parents=True)
     entry.write_text("", encoding="utf-8")
@@ -43,7 +42,6 @@ def _target(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_warmup_uses_current_launcher_for_each_installed_distribution(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, new_distribution: bool, nested_entry: bool
 ) -> None:
-    """配布版のlauncherの有無によらず現行launcherが指定rootの依存だけを準備する。"""
     path = _target(tmp_path)
     root = path.parents[1]
     launcher = root / "scripts/launch.py"
@@ -83,7 +81,6 @@ def test_nonzero_exit_reports_captured_output(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """非0終了では、取り込んだstderrとstdoutを警告へ含めて構築できなかったことを返す。"""
     monkeypatch.setattr(
         _common,
         "run_subprocess",
@@ -121,7 +118,6 @@ def test_success_does_not_report_captured_output(
     caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """成功した実行では警告を記録せず、診断本文も追加しない。"""
     monkeypatch.setattr(
         _common,
         "run_subprocess",
@@ -136,7 +132,6 @@ def test_success_does_not_report_captured_output(
 
 
 def test_run_prepares_shared_dependency_environment_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ依存keyの複数rootではprepareだけを共有し、各rootの確認は保つ。"""
     first = _target(tmp_path / "first")
     second = _target(tmp_path / "second")
     calls: list[list[str]] = []
@@ -172,7 +167,6 @@ def test_run_prepares_shared_dependency_environment_once(tmp_path: pathlib.Path,
 @pytest.mark.parametrize("count", [0, 1, 3])
 @pytest.mark.parametrize("different_keys", [False, True])
 def test_prepare_targets_groups_dependencies_and_preserves_roots(tmp_path, monkeypatch, count, different_keys):
-    """準備は依存keyごとに1回、起動コマンドは全rootを列挙順に保持する。"""
     paths = [_target(tmp_path / str(index)) for index in range(count)]
     monkeypatch.setattr(_plugin_warmup, "resolve_targets", lambda *_args, **_kwargs: (paths, pathlib.Path(sys.executable)))
     monkeypatch.setattr(
@@ -227,7 +221,6 @@ def test_async_command_preserves_output_and_failure_diagnostic(caplog):
 
 @pytest.mark.parametrize("cancel", [False, True])
 def test_async_command_timeout_or_cancellation_reclaims_child_tree(tmp_path, monkeypatch, cancel):
-    """時間切れと取消しの双方で、停止前に列挙した子孫を回収する。"""
     pid_file = tmp_path / "child.pid"
     script = tmp_path / "parent.py"
     script.write_text(
@@ -310,7 +303,6 @@ def test_codex_candidate_diagnostic_preserves_recovery_context(
 
 
 def test_prepare_targets_skips_legacy_root_without_lock_and_prepares_others(tmp_path, monkeypatch, caplog):
-    """依存の固定内容が無い旧形式の配布rootは警告して準備の対象から除き、他のrootは準備する。"""
     legacy = _target(tmp_path / "legacy")
     current = _target(tmp_path / "current")
     (legacy.parents[1] / "scripts" / "launch.py.lock").unlink()

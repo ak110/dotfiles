@@ -34,7 +34,7 @@ _REAL_REPORT_CPU = pytest.mark.cpu_limit(
 def _isolate_session_inputs(monkeypatch):
     monkeypatch.setenv(session_review.LAUNCH_ENV, "f" * 32)
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
-    # 活動中・再開の入力は各試験で与え、実ホストの会話は走査しない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
 
 
@@ -215,7 +215,6 @@ def test_hook_launch_does_not_open_console_window_on_windows(tmp_path, monkeypat
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_hook_cli_resolves_package_without_editable_install(tmp_path, monkeypatch, event, host) -> None:
-    """hookのargvと環境で実CLIを起動し、editable導入の無い配布環境でも引数解析へ届く。"""
     # -Sでeditableの.pthだけを読ませず、依存パッケージは同じ環境から利用する。
     monkeypatch.setenv("PYTHONPATH", sysconfig.get_path("purelib"))
     _target(tmp_path, "main")
@@ -440,7 +439,6 @@ def test_global_lock_prevents_different_repo_execution(tmp_path) -> None:
 
 @_REAL_REPORT_CPU
 def test_missing_finish_keeps_report_and_suppresses_auto_retry(tmp_path, monkeypatch) -> None:
-    """報告だけ保存した中断でも報告は残し、配布元への是正AWIが未完了の間は再起動を抑える。"""
     notes = _notes()
     _target(tmp_path, "one")
     calls = []
@@ -554,7 +552,6 @@ def test_config_boolean_contract() -> None:
 
 @_REAL_REPORT_CPU
 def test_failure_awi_close_releases_failed_target(tmp_path, monkeypatch) -> None:
-    """是正AWIが未完了の間は同じ対象を起動せず、AWIが終了すると次の自動起動で対象へ戻す。"""
     notes = _notes()
     _target(tmp_path, "one")
     calls = []
@@ -577,7 +574,6 @@ def test_failure_awi_close_releases_failed_target(tmp_path, monkeypatch) -> None
 
 @_REAL_REPORT_CPU
 def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None:
-    """実際に選んだ対象数で報告先を決め、全対象不明なら配布元URLと独立cwdを使う。"""
     notes = _notes()
     for name in ("one", "two"):
         _target(tmp_path, name, "https://example.com/team/most")
@@ -600,7 +596,6 @@ def test_batch_uses_most_common_repo_and_unknown_repo_fallback(tmp_path) -> None
 
 @_REAL_REPORT_CPU
 def test_orphan_executor_prevents_new_model_before_pid_publish(tmp_path: pathlib.Path) -> None:
-    """PID保存前の親中断でも固有manifestを持つ子が残れば再起動しない。"""
     path = session_review.directory() / "runs" / "orphan.json"
     manifest = {"run_id": "orphan", "manifest_path": str(path), "status": "running", "targets": [], "prepared": []}
     session_review.write(path, manifest)
@@ -673,7 +668,7 @@ def test_prepare_failure_isolates_target_and_runs_model_for_rest(tmp_path, monke
     failures = _failure_awis(notes)
     assert len(failures) == 1
     data, body = frontmatter.parse_frontmatter(failures[0].read_text(encoding="utf-8")) or ({}, "")
-    # ユーザーの回答を待たず、振り返りの仕組みの配布元で処理担当が是正できるAWIとして登録する。
+
     assert data["type"] == "awi" and data["source"] == "session-review"
     assert "confirmation" not in data
     assert data["target_repo"] == run_skill_batch.repo.resolve_repo_id(
@@ -722,7 +717,6 @@ def test_prepare_failure_diagnostic_reaches_run_record_and_awi(tmp_path) -> None
 
 
 def test_prepare_success_keeps_json_and_forwards_stderr(tmp_path, monkeypatch, capsys) -> None:
-    """成功時はstdoutのJSONだけを解析し、stderrの警告は呼び出し元へ残す。"""
     _target(tmp_path, "one")
 
     def dispatch(args, **kwargs):
@@ -843,7 +837,6 @@ def test_prepare_failure_awi_close_retries_and_files_new_diagnostic_awi(tmp_path
 
 
 def _report_and_finish(notes, monkeypatch, calls):
-    """準備済みの対象を1件の報告で確定する実行の代役を返す。"""
 
     def execute(args):
         calls.append(session_review.read(pathlib.Path(args.batch_manifest)))
@@ -884,6 +877,48 @@ def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, 
     assert "記録ファイルの無い対象を振り返りの待ちから外した: gone" in capsys.readouterr().err
 
 
+@_REAL_REPORT_CPU
+def test_codex_target_without_rollout_waits_until_record_exists(tmp_path, monkeypatch) -> None:
+    notes = _notes()
+    thread_id = "01a1f1dd-db72-7143-bae6-845204964526"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": thread_id, "cwd": str(tmp_path)},
+        host="codex",
+        target_repo="https://example.com/team/repo",
+    )
+    with monkeypatch.context() as hook:
+        hook.setattr(session_activity, "host_process", object)
+        hook.setattr(run_skill_batch, "meta_auto_start_due", lambda **_: False)
+        hook.setattr(run_skill_batch.subprocess, "Popen", lambda *_args, **_kw: pytest.fail("batchを起動した"))
+        run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": thread_id}, host="codex")
+    _target(tmp_path, "one")
+    calls: list[dict] = []
+    execute = _report_and_finish(notes, monkeypatch, calls)
+
+    assert run_skill_batch.dispatch(_args("manual"), execute) == 0
+    assert [[item["session_id"] for item in manifest["prepared"]] for manifest in calls] == [["one"]]
+    assert [item["session_id"] for item in session_review.pending()] == [thread_id]
+    assert not _failure_awis(notes)
+
+    record = codex_home / "sessions/2026/11/19" / f"rollout-2026-11-19T03-33-37-{thread_id}.jsonl"
+    record.parent.mkdir(parents=True)
+    rows = (
+        {"timestamp": "2026-11-19T03:33:37Z", "type": "session_meta", "payload": {"id": thread_id}},
+        {
+            "timestamp": "2026-11-19T03:33:38Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": "遅れて取得できた要求"},
+        },
+    )
+    record.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    assert run_skill_batch.dispatch(_args("manual"), execute) == 0
+    assert [item["session_id"] for item in calls[-1]["prepared"]] == [thread_id]
+    assert not session_review.pending()
+    assert not _failure_awis(notes)
+
+
 class _ProcessDied(BaseException):
     """実行プロセスの強制終了を模す。batchの失敗処理が捕捉しない例外で、実行記録を実行中のまま残す。"""
 
@@ -899,7 +934,7 @@ def test_interrupted_run_is_retried_once_before_failure_report(tmp_path, monkeyp
 
     with pytest.raises(_ProcessDied):
         run_skill_batch.dispatch(_args("manual"), die)
-    # 1回目の中断: 次の起動は報告と抑止をせず、同じ対象の実行まで進む。
+
     with pytest.raises(_ProcessDied):
         run_skill_batch.dispatch(_args("manual"), die)
     assert not _failure_awis(notes)

@@ -1,5 +1,3 @@
-"""改善点の区分を定義する文書と送達・Stopの検査の一致を確かめる。"""
-
 import ast
 import pathlib
 import re
@@ -41,7 +39,6 @@ def _assert_categories_match(sender: str, rules: str, prevention: str) -> None:
 
 
 def _section(path: pathlib.Path, heading: str) -> str:
-    """見出しの節の本文を、次の同じ深さの見出しの前まで返す。"""
     text = path.read_text(encoding="utf-8")
     assert f"\n## {heading}\n" in text, (path, heading)
     return text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
@@ -56,19 +53,17 @@ def _definitions() -> tuple[str, str, str]:
         _ROOT,
         ("references/prevention.md", "再発防止を検討する"),
     )
-    # 他節の箇条書きを区分の定義へ混ぜない。
+
     prevention = prevention.split("理由を次の区分名で始める。", 1)[1].split("\n## ", 1)[0]
     return sender, rules, prevention
 
 
 def test_improvement_category_definitions_agree(definitions: tuple[str, str, str]) -> None:
-    """3つの定義元と2つの検査から独立に抽出し、片側だけの区分改名を検出する。"""
     _assert_categories_match(*definitions)
 
 
 @pytest.mark.parametrize(("index", "old"), [(0, "非欠陥"), (0, "認可待ち"), (1, "非欠陥"), (1, "認可待ち"), (2, "非欠陥")])
 def test_category_rename_is_detected(definitions: tuple[str, str, str], index: int, old: str) -> None:
-    """検査自体が同じ名前の写しに固定されていないことを持ち込みで確かめる。"""
     modified = list(definitions)
     assert old in modified[index]
     modified[index] = modified[index].replace(old, "検査用の改名")

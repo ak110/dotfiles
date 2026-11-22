@@ -9,7 +9,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from agent_toolkit._atk import review_table as table
-from agent_toolkit._atk import review_table_cli
+from agent_toolkit._atk import review_table_cli, review_table_format
 from agent_toolkit._common import next_action
 from agent_toolkit._testing import review_bodies
 from agent_toolkit._testing.review_table_support import _TRACK, _isolated_home, _parser
@@ -82,8 +82,11 @@ def test_cell_files_preserve_issue_and_supply_responses(
     )
     assert review_table_cli.dispatch(no_response_args) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
-    assert rows[0] == ["1", _TRACK, location, issue, "詳細", response.strip(), ""]
-    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "", "", reason.strip()]
+    assert rows[0][:5] == ["1", _TRACK, location, issue, "詳細"]
+    assert rows[1][:5] == ["2", _TRACK, "README.md", "対象外", ""]
+    assert rows[0][6] == rows[1][5] == ""
+    assert review_table_format.response_content(rows[0][5]) == response.strip()
+    assert review_table_format.response_content(rows[1][6]) == reason.strip()
 
 
 @pytest.mark.parametrize(
@@ -97,7 +100,6 @@ def test_cell_files_preserve_issue_and_supply_responses(
     ],
 )
 def test_cell_text_arguments_are_rejected(arguments: list[str]) -> None:
-    """セル本文をコマンドライン文字列で渡す旧受理形式を拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(arguments)
     assert exc_info.value.code == 2
@@ -130,18 +132,18 @@ def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> N
 
 
 def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
-    """`round`・`track`だけの指定でも一意に定まれば応答を更新できる。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
     table.add(path, "2", _TRACK, "README.md", "指摘B")
     assert table.respond(path, "1", _TRACK, "", "", review_bodies.response_body("対応した"), "") == 0
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "指摘A", "", review_bodies.response_body("対応した"), ""]
+    assert row[:5] == ["1", _TRACK, "module.py:10", "指摘A", ""]
+    assert row[6] == ""
+    assert review_table_format.response_content(row[5]) == review_bodies.response_body("対応した")
 
 
 def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pathlib.Path) -> None:
-    """部分キーが複数行へ一致する場合は拒否し、表を変更しない。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
@@ -153,7 +155,6 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
 
 
 def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path: pathlib.Path) -> None:
-    """一致しない部分キーへ、デコード済み候補行を示して再指定を可能にする。"""
     path = tmp_path / "review.tsv"
     issue = '本文に"引用"を含む指摘'
     table.init(path)
@@ -178,7 +179,6 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """row-idは保存順を表し、表示条件の適用後も番号を変えず対象行だけを更新する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
@@ -192,14 +192,14 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
 
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows[0][5:] == ["", ""]
-    assert rows[1][5:] == [review_bodies.response_body("対応した"), ""]
+    assert rows[1][6] == ""
+    assert review_table_format.response_content(rows[1][5]) == review_bodies.response_body("対応した")
     assert rows[2][5:] == ["", ""]
     assert all(len(row) == 7 for row in rows)
 
 
 @pytest.mark.parametrize("row_id", (0, 2))
 def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib.Path, row_id: int) -> None:
-    """0以下または範囲外のrow-idは保存本文を変更せず拒否する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘")
@@ -224,7 +224,6 @@ def test_respond_rejects_row_id_with_legacy_key(tmp_path: pathlib.Path) -> None:
 
 
 def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.Path) -> None:
-    """並列追加と並べ替え後の複合キー更新で行の欠落・重複・破損を生じさせない。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     entries = [("1", _TRACK, f"module.py:{index}", f"指摘{index}") for index in range(8)]
@@ -248,4 +247,6 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:4] == list(target)]
-    assert matching == [[*target, "", review_bodies.response_body("再現経路を追加"), ""]]
+    (row,) = matching
+    assert row[4] == row[6] == ""
+    assert review_table_format.response_content(row[5]) == review_bodies.response_body("再現経路を追加")

@@ -1,5 +1,3 @@
-"""serveのsessionsに関するlistingの試験。"""
-
 # pylint: disable=protected-access
 
 import json
@@ -15,10 +13,9 @@ from agent_toolkit._testing.serve_sessions_support import _claude_record, _codex
 
 
 def test_listing_identifies_engine_host_cwd_first_message_and_time(tmp_path: pathlib.Path) -> None:
-    """一覧は実行系・ホスト・作業ディレクトリ・最初の発話・日時で記録を識別できる。"""
     claude_path = _claude_record(tmp_path)
     codex_path = _codex_record(tmp_path)
-    # サブエージェント記録（深さ4）はセッション本体ではないため一覧へ含めない。
+
     _write(claude_path.with_suffix("") / "subagents" / "agent-1.jsonl", [{"type": "user", "message": {"content": "x"}}])
 
     entries = sessions.list_local_sessions(_context(tmp_path))
@@ -42,7 +39,6 @@ def test_listing_identifies_engine_host_cwd_first_message_and_time(tmp_path: pat
 
 
 def test_listing_sorts_by_started_at_with_missing_values_last(tmp_path: pathlib.Path) -> None:
-    """一覧は更新日時にかかわらず開始日時の降順とし、開始日時が無い記録を末尾へ置く。"""
     project = tmp_path / "claude" / "projects" / "proj"
     older = _write(
         project / "older.jsonl",
@@ -63,7 +59,6 @@ def test_listing_sorts_by_started_at_with_missing_values_last(tmp_path: pathlib.
 
 
 def test_listing_links_recorded_delegation_and_metadata_levels(tmp_path: pathlib.Path) -> None:
-    """起動結果とmetadataで確定した親・子・孫を一覧へ返し、欠落した記録を除外する。"""
     project = tmp_path / "claude" / "projects" / "repo"
     parent = _write(
         project / "parent.jsonl",
@@ -209,7 +204,6 @@ def test_listing_links_claude_start_result_and_excluded_candidate(tmp_path: path
 
 
 def test_listing_uses_only_the_first_line_of_the_first_user_message(tmp_path: pathlib.Path) -> None:
-    """一覧は最初のユーザーレコードの先頭1行だけを識別情報にする。"""
     path = _write(
         tmp_path / "claude" / "projects" / "encoded-path" / "first.jsonl",
         [
@@ -228,7 +222,6 @@ def test_listing_uses_only_the_first_line_of_the_first_user_message(tmp_path: pa
 
 
 def test_listing_keeps_missing_first_user_message_as_none(tmp_path: pathlib.Path) -> None:
-    """最初のユーザーレコードに本文が無い場合は後続発話で補わない。"""
     _write(
         tmp_path / "claude" / "projects" / "encoded-path" / "missing.jsonl",
         [
@@ -244,7 +237,6 @@ def test_listing_keeps_missing_first_user_message_as_none(tmp_path: pathlib.Path
 
 
 def test_listing_restores_only_ancestors_dropped_by_the_limit(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """件数上限を超えるのは戻した祖先の件数に限り、親を持たない古い記録は戻さない。"""
     state_dir = tmp_path / "state" / "agent-toolkit"
     tree = session_tree.write_session_tree(tmp_path / ".claude", tmp_path / "codex", state_dir)
     unrelated = _write(
@@ -264,7 +256,6 @@ def test_listing_restores_only_ancestors_dropped_by_the_limit(monkeypatch: pytes
 
 
 def test_records_without_user_message_are_excluded_until_the_first_message(tmp_path: pathlib.Path) -> None:
-    """ユーザー発話の記録行を持たない記録は一覧から外し、発話が追記されると一覧へ載せる。"""
     corpus = _no_user_corpus(tmp_path)
     context = sessions.create_context(
         hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex-home"
@@ -280,7 +271,6 @@ def test_records_without_user_message_are_excluded_until_the_first_message(tmp_p
 
 
 def test_exclusion_happens_before_the_listing_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """除外した記録で件数上限の枠を消費しない。"""
     projects = tmp_path / "claude" / "projects" / "repo"
     for index in range(3):
         _write(projects / f"silent-{index}.jsonl", [{"type": "mode", "timestamp": f"2026-09-26T00:00:0{index}Z"}])
@@ -291,11 +281,6 @@ def test_exclusion_happens_before_the_listing_limit(tmp_path: pathlib.Path, monk
 
 
 def test_list_local_sessions_stops_on_shutdown_request(tmp_path: pathlib.Path) -> None:
-    """停止要求が設定されると、スレッドで動くローカル走査は記録を読み進めずに打ち切る。
-
-    要求をキャンセルしてもスレッドは止まらず、`asyncio.run`の終了処理がスレッドの終了を待つため、
-    記録の件数に比例して停止を待たせる。
-    """
     _claude_record(tmp_path)
     context = _context(tmp_path)
     assert sessions.list_local_sessions(context)

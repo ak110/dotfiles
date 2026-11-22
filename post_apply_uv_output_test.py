@@ -1,5 +1,3 @@
-"""展開したpost-applyのuv再導入で、表示、保存先、後続へ渡る結果を両OSとも確認する。"""
-
 import os
 import shlex
 import shutil
@@ -28,7 +26,6 @@ _ERROR = "error: cannot install the tool"
 @pytest.mark.parametrize("shell", ["bash", "powershell"])
 @pytest.mark.parametrize(("code", "save"), [(0, True), (19, True), (0, False), (19, False), (130, True), (130, False)])
 def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) -> None:
-    """uv・使用中検出・最終CLIは代用品。保存不能でも再実行せず、元の成否でハッシュと後続を決める。"""
     if code == 130 and os.name == "nt":
         pytest.skip("隔離したPOSIX前景プロセス群へのSIGINTを使う")
     powershell = shell == "powershell"
@@ -63,7 +60,6 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
         lines += ["diagnostic token=fixture-value", _ERROR, "hint: retry the installation"]
     interrupt = tmp_path / "interrupt.py"
     if code == 130:
-        # 最初の警告がstderrへ届くまでuvを終えない。最後の書込みとSIGINTの間には待ちを入れない。
         interrupt.write_text(
             "import os, pathlib, signal, time\n"
             "screen = pathlib.Path(os.environ['SCREEN'])\n"
@@ -121,7 +117,7 @@ def test_uv_reinstall_output(tmp_path: Path, shell: str, code: int, save: bool) 
     state = tmp_path / "state"
     log = state / "agent-toolkit" / ("uv-pytools-failed.log" if code else "uv-pytools.log")
     if not save:
-        log.mkdir(parents=True)  # 一時ファイルは書けるが、最終ファイルを発行できない。
+        log.mkdir(parents=True)
         if not powershell:
             # 後始末も失敗する場合でも、uvの診断と本来の終了状態は失わない。
             remove = binary / "rm"

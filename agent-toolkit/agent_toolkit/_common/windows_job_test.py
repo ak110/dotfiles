@@ -14,7 +14,6 @@ from agent_toolkit._testing import late_descendant
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの所属・離脱と実際のプロセス回収を検証する")
 def test_job_reclaims_orphan_and_preserves_explicit_breakaway(tmp_path, host_environ):
-    """短命な親の子を回収し、明示離脱した子がJobを閉じた後に完了する。"""
     script = tmp_path / "inner.py"
     outside = tmp_path / "outside.txt"
     release = tmp_path / "outside.release"

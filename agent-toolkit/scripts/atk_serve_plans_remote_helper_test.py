@@ -42,7 +42,6 @@ with open(helper_path, encoding="utf-8") as file:
 
 
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """ホーム、private-notesと作成日時インデックスを一時ディレクトリへ隔離し、新旧のrootを返す。"""
     home = tmp_path / "home"
     notes = tmp_path / "notes"
     monkeypatch.setenv("HOME", str(home))
@@ -59,7 +58,6 @@ def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> tuple[p
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *argv: str) -> typing.Any:
-    """ヘルパーの`main`を指定の操作で実行し、標準出力のJSONを返す。"""
     monkeypatch.setattr(sys, "argv", ["atk_serve_plans_remote_helper.py", *argv])
     assert helper.main() == 0
     return json.loads(capsys.readouterr().out)
@@ -72,7 +70,6 @@ def _b64(value: str) -> str:
 def test_list_returns_listed_files_of_each_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`list`は各rootの一覧対象だけを、保存元IDと時刻を持つ項目として返す。"""
     new_root, legacy_root = _isolate(monkeypatch, tmp_path)
     (new_root / "2026" / "10").mkdir(parents=True)
     (new_root / "ci").mkdir()
@@ -99,7 +96,6 @@ def test_list_returns_listed_files_of_each_root(
 def test_read_and_search_resolve_files_within_the_source(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`read`は保存元IDと相対パスで本文を返し、`search`は一致した相対パスと保存元を返す。"""
     new_root, legacy_root = _isolate(monkeypatch, tmp_path)
     (new_root / "p.md").write_text("保存済みの本文\n", encoding="utf-8")
     (legacy_root / "p.md").write_text("作業中の本文\n", encoding="utf-8")
@@ -128,7 +124,6 @@ def test_working_root_excludes_removed_attachments(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.parametrize("name", ("p.md", "p.bugs.md", "p.exec-review.tsv", "q.detail.md"))
 def test_read_rpc_classifies_missing_files(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, name: str) -> None:
-    """不在分類はファイル種別によらず共通し、存在する本文の取得は成功する。"""
     root, _ = _isolate(monkeypatch, tmp_path)
     request = {"id": 1, "op": "read", "source_id": viewer_files.NEW_SOURCE_ID, "path": _b64(name)}
     missing = helper._handle_request(request)  # pylint: disable=protected-access
@@ -140,7 +135,6 @@ def test_read_rpc_classifies_missing_files(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 def test_helper_imports_only_remote_runtime_dependencies(tmp_path: pathlib.Path) -> None:
-    """ヘルパーはリモートの実行環境が持つ依存（標準ライブラリ、platformdirs、watchdog）だけで起動できる。"""
     env = {
         **os.environ,
         "HOME": str(tmp_path / "home"),

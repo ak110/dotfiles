@@ -23,20 +23,17 @@ _ENV_REQUIRED = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION"
 _ENV_SESSION_ID = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 _ENV_DELEGATED_SESSION = "AGENT_TOOLKIT_DELEGATED_SESSION"
 _SESSION_ID = "session-busy-loop"
-# 試験用の`calls`フィクスチャが差し替える前の実装を、未回収結果の判定の確認に使う。
+
 _REAL_IS_PENDING_ASYNC_WORK = _background_tasks.is_pending_async_work
 
 
 class _Target:
-    """停止対象の識別結果を模す。"""
-
     host = "claude"
     pid = 4242
 
 
 @pytest.fixture(name="calls")
 def _calls(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> Iterator[dict[str, int]]:
-    """状態ファイルの位置を隔離し、停止工程の呼び出し回数を記録する。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv(_ENV_REQUIRED, "1")
     monkeypatch.setenv(_ENV_SESSION_ID, _SESSION_ID)
@@ -81,13 +78,11 @@ def _payload(transcript_path: str, *, agent_id: str | None = None) -> str:
 
 
 def _turn(tmp_path: pathlib.Path, index: int, entries: list[dict]) -> tuple[str, str]:
-    """1ターン分のセッション記録を書き、判定結果を返す。"""
     transcript_path = _write_transcript(tmp_path, f"transcript-{index}.jsonl", entries)
     return busy_loop_guard.evaluate(_payload(transcript_path))
 
 
 def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """無進捗ターンが閾値回続くと停止の意図を返し、`halt`が会話の終了を要求する。"""
     entries: list[dict] = []
     decisions = []
     for index in range(3):
@@ -108,7 +103,6 @@ def test_halts_after_threshold_no_tool_turns(tmp_path: pathlib.Path, calls: dict
 def test_halt_requests_function_hook_exit(
     tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Stop hookが会話IDを渡して終了要求を発行し、ターン後の終了をユーザーへ伝える。"""
 
     def _terminate(*, session_id: str) -> tuple[str, object]:
         assert session_id == _SESSION_ID
@@ -133,7 +127,6 @@ def test_halt_requests_function_hook_exit(
 def test_halt_reports_exact_termination_outcome_and_recovery(
     calls: dict[str, int], monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    """4状態の送出結果と未送出時のユーザーの具体的操作を、停止副作用とともに確認する。"""
     logged = []
 
     def terminate(*, session_id: str):
@@ -159,7 +152,6 @@ def test_halt_reports_exact_termination_outcome_and_recovery(
 
 
 def test_below_threshold_keeps_session(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """閾値未満では停止工程を実行せず、連続回数だけを増やす。"""
     entries: list[dict] = []
     for index in range(2):
         entries = [*entries, _text_entry()]
@@ -171,7 +163,6 @@ def test_below_threshold_keeps_session(tmp_path: pathlib.Path, calls: dict[str, 
 
 
 def test_tool_use_resets_count(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """ツール呼び出しを含むターンで連続回数が0へ戻る。"""
     entries: list[dict] = [_text_entry(), _text_entry()]
     _turn(tmp_path, 0, entries)
     entries = [*entries, _tool_use_entry()]
@@ -187,7 +178,6 @@ def test_pending_async_work_resets_count(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """委譲先またはバックグラウンドタスクの完了待ちのターンは無進捗として数えない。"""
     monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", lambda *args, **kwargs: True)
     entries: list[dict] = []
     for index in range(4):
@@ -204,7 +194,6 @@ def test_unretrieved_agents_server_result_is_not_a_no_progress_turn(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """agents_serverの未回収の終了結果だけを待つターンは、無進捗として数えず停止を要求しない。"""
     monkeypatch.setattr(_background_tasks, "is_pending_async_work", _REAL_IS_PENDING_ASYNC_WORK)
     monkeypatch.setattr(busy_loop_guard, "is_pending_async_work", _REAL_IS_PENDING_ASYNC_WORK)
     update_state(
@@ -226,7 +215,6 @@ def test_non_process_loop_session_is_skipped(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """常駐ループ外のセッションでは判定を行わない。"""
     monkeypatch.delenv(_ENV_REQUIRED, raising=False)
     entries: list[dict] = []
     for index in range(4):
@@ -239,7 +227,6 @@ def test_non_process_loop_session_is_skipped(
 
 
 def test_nested_session_id_is_skipped(tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
-    """別会話IDへ伝播した環境印では親の空転処理を動かさない。"""
     monkeypatch.setenv(_ENV_SESSION_ID, "parent")
     for index in range(4):
         _turn(tmp_path, index, [_text_entry()])
@@ -250,7 +237,6 @@ def test_nested_session_id_is_skipped(tmp_path: pathlib.Path, calls: dict[str, i
 def test_session_without_identified_id_is_skipped(
     tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """環境印だけで統括の会話IDを確定できない会話（入れ子の非対話CLIを含む）は、終了要求の対象にしない。"""
     monkeypatch.delenv(_ENV_SESSION_ID, raising=False)
     for index in range(4):
         _turn(tmp_path, index, [_text_entry()])
@@ -259,7 +245,6 @@ def test_session_without_identified_id_is_skipped(
 
 
 def test_matching_session_id_is_counted(tmp_path: pathlib.Path, calls: dict[str, int], monkeypatch: pytest.MonkeyPatch) -> None:
-    """会話IDが一致した場合は親の空転判定を続ける。"""
     monkeypatch.setenv(_ENV_SESSION_ID, _SESSION_ID)
     _turn(tmp_path, 0, [_text_entry()])
     assert read_state(_SESSION_ID)["stop_no_tool_turn_count"] == 1
@@ -271,7 +256,6 @@ def test_delegated_session_is_skipped(
     calls: dict[str, int],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """委譲先セッションでは判定を行わない。"""
     monkeypatch.setenv(_ENV_DELEGATED_SESSION, "1")
     entries: list[dict] = []
     for index in range(4):
@@ -283,7 +267,6 @@ def test_delegated_session_is_skipped(
 
 
 def test_native_subagent_stop_does_not_abort_parent_loop(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """親の常駐環境を継承するネイティブ委譲先は親の中断要求を作成しない。"""
     entries: list[dict] = []
     for index in range(3):
         entries = [*entries, _text_entry()]
@@ -297,7 +280,6 @@ def test_native_subagent_stop_does_not_abort_parent_loop(tmp_path: pathlib.Path,
 
 
 def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """最上位向けの確認フックは委譲先の差し戻し質問を遮断しない。"""
     transcript_path = _write_transcript(tmp_path, "native-question.jsonl", [_text_entry("どちらを選びますか？")])
 
     result = stop.evaluate(_payload(transcript_path, agent_id="agent-review"))
@@ -308,7 +290,6 @@ def test_native_subagent_question_does_not_block_parent_loop(tmp_path: pathlib.P
 
 
 def test_stop_entry_point_reports_system_message(tmp_path: pathlib.Path, calls: dict[str, int]) -> None:
-    """各Stop判定を集約する関数が停止の本文を`systemMessage`へ集約し、終了要求の成立後は継続を求めない。"""
     entries: list[dict] = []
     result: dict = {}
     for index in range(3):

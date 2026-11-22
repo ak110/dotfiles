@@ -1,6 +1,6 @@
 # statuslineの表示の設計記録
 
-[設計記録の索引](design.md)から参照する、statuslineの表示の記録である。
+[設計記録の索引](design.md)
 
 ## statuslineの表示
 

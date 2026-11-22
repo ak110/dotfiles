@@ -1,5 +1,3 @@
-"""rmdirsモジュールのテスト。"""
-
 import pathlib
 import shutil
 import sys
@@ -11,7 +9,6 @@ from pytools import rmdirs
 
 
 def _run_main(monkeypatch: pytest.MonkeyPatch, *args: str) -> int | str | None:
-    """`py-rmdirs`の公開エントリポイントを引数付きで実行し、終了コードを返す。"""
     monkeypatch.setattr(sys, "argv", ["py-rmdirs", *args])
     with pytest.raises(SystemExit) as exc_info:
         rmdirs.main()

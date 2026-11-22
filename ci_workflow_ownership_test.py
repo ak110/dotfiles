@@ -41,12 +41,10 @@ _RELEASE_PULL_REQUEST_CONDITIONS = (
 
 
 def _common_job_names(workflow: dict[str, object]) -> list[str]:
-    """release pull requestで非所有の表示名を持つ共通jobの名前を返す。"""
     return [name for name, job in workflow_jobs(workflow).items() if "(non-owner)" in str(workflow_mapping(job)["name"])]
 
 
 def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
-    """共通jobの全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
     assert set(common_jobs) == {
         "test-linux",
@@ -89,8 +87,17 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
             assert "if" not in job
             # JUnit XMLの保存だけは、pytestの失敗後も実行するため所有条件へ継続条件を加える。
             for step in real:
-                uploads = "upload-artifact@" in str(step.get("uses", ""))
-                assert step.get("if") == (_JUNIT_UPLOAD if uploads else _OWNS), step
+                action = str(step.get("uses", ""))
+                expected = _JUNIT_UPLOAD if "upload-artifact@" in action else _OWNS
+                if job_name == "pytest-root":
+                    if step.get("id") == "impact-history":
+                        expected += (
+                            " && github.event_name == 'push'"
+                            " && github.ref != 'refs/heads/develop' && github.ref != 'refs/heads/master'"
+                        )
+                    elif action.startswith("actions/cache/save@"):
+                        expected += " && steps.pytest.outputs.impact_baseline == 'true'"
+                assert step.get("if") == expected, step
 
     version = _statusline_job(workflow_data)
     assert "needs" not in version
@@ -99,7 +106,6 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
         "(github.event_name == 'push' && github.ref == 'refs/heads/develop')"
     )
     assert workflow_data["concurrency"] == {
-        # masterの別SHAは配布処理ごと完走させ、その他は従来どおりref単位で古い実行を取り消す。
         "group": (
             "ci-${{ github.event_name }}-"
             "${{ github.ref == 'refs/heads/master' && github.event_name == 'push' && github.sha || github.ref }}"
@@ -223,7 +229,6 @@ def test_common_ci_release_boundary(
     *,
     eligible: bool,
 ) -> None:
-    """Releaseの実gateは同一repositoryのmaster push成功だけを受理する。"""
     release = workflow_mapping(
         yaml.load(
             (REPO_ROOT / ".github/workflows/release-statusline.yaml").read_text(encoding="utf-8"),
@@ -296,7 +301,6 @@ def test_ci_scope_runs_real_workflow_selection(
     mode: str,
     expected: tuple[bool, bool],
 ) -> None:
-    """実Gitの共通祖先と実workflowの判定から、検査領域と省略理由を取得する。"""
     repository = tmp_path / "repository"
     repository.mkdir()
     _run_git(repository, "init", "--initial-branch=develop")

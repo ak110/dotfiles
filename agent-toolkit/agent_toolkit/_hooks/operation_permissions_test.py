@@ -64,7 +64,6 @@ def test_uwi_creation_answer_and_pretooluse(
     tool: str,
     legacy: bool,
 ) -> None:
-    """UWIの投入・回答保存とhook判定を通し、許可と拒否の境界を確かめる。"""
     work = git_repository.init_repository(tmp_path / "work", origin="https://github.com/example/repo.git")
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="fixture")
     storage = sync.Storage(local_only=True)
@@ -155,7 +154,6 @@ def test_uwi_creation_answer_and_pretooluse(
 )
 @pytest.mark.usefixtures("classifier_snapshot")
 def test_direct_answer_is_bound_to_displayed_request(tmp_path: pathlib.Path) -> None:
-    """本物の回答イベントを記録し、入力answersによるプログラム回答は採用しない。"""
     work = git_repository.init_repository(tmp_path / "work", origin="https://github.com/example/repo.git")
     payload = {
         "session_id": "dialog-flow",

@@ -22,7 +22,6 @@ __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 @pytest.mark.usefixtures("_isolate_serve_environment")
 def test_serve_settings_round_trip_through_public_cli_and_serve_resolution(tmp_path, capsys):
-    """全serve設定を公開CLIで変更・取得でき、`atk serve`の設定解決が同じ保存値を使う。"""
     from agent_toolkit._atk.serve import config as serve_config  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     assert _main(tmp_path, "config", "show") == 0
@@ -57,7 +56,6 @@ def test_serve_settings_round_trip_through_public_cli_and_serve_resolution(tmp_p
     ("key", "value"), [("serve_port", "0"), ("serve_port", "x"), ("serve_host", " "), ("serve_plans_remote_hosts", '["a", ""]')]
 )
 def test_serve_settings_reject_invalid_values_without_saving(tmp_path, capsys, key, value):
-    """受理形式外のserve設定はexit 2で拒否し、保存しない。"""
     assert _main(tmp_path, "config", "set", key, value) == 2
     assert "設定値の書式が不正" in capsys.readouterr().err
     assert not _config_file(tmp_path).exists()
@@ -65,7 +63,6 @@ def test_serve_settings_reject_invalid_values_without_saving(tmp_path, capsys, k
 
 @pytest.mark.usefixtures("_isolate_serve_environment")
 def test_legacy_serve_toml_is_migrated_once_and_renamed(tmp_path, capsys):
-    """旧serve.tomlだけの状態から全値を移行し、旧ファイルを改名して再実行では変えない。"""
     legacy = tmp_path / "config" / "serve.toml"
     legacy.parent.mkdir(parents=True)
     legacy.write_text(_SERVE_TOML, encoding="utf-8")
@@ -93,7 +90,6 @@ def test_legacy_serve_toml_is_migrated_once_and_renamed(tmp_path, capsys):
 
 @pytest.mark.usefixtures("_isolate_serve_environment")
 def test_legacy_serve_toml_keeps_explicit_and_unrelated_settings(tmp_path, monkeypatch, capsys):
-    """統一設定に保存済みのserve値と他用途の設定を保持し、未保存のキーだけを移行元の指定先から補う。"""
     _write_config(tmp_path, {"serve_host": "explicit-host", "codex_fast_mode": "true", "other_setting": "keep"})
     legacy = tmp_path / "elsewhere" / "custom.toml"
     legacy.parent.mkdir()
@@ -126,7 +122,6 @@ def test_legacy_serve_toml_keeps_explicit_and_unrelated_settings(tmp_path, monke
     ],
 )
 def test_legacy_serve_migration_failure_preserves_files_and_recovers(tmp_path, capsys, toml_text, json_text, message):
-    """形式不正では旧ファイルと統一設定を変えずに診断し、直して再実行すると移行できる。"""
     legacy = tmp_path / "config" / "serve.toml"
     legacy.parent.mkdir(parents=True)
     legacy.write_text(toml_text, encoding="utf-8")
@@ -168,7 +163,6 @@ def test_legacy_serve_migration_save_failure_keeps_original_bytes(tmp_path, monk
 
 @pytest.mark.usefixtures("_isolate_serve_environment")
 def test_save_mutable_settings_reports_change_and_keeps_other_settings(tmp_path):
-    """dotfilesの配布処理が使う保存関数は、差分がある場合だけ保存し、他の設定を保持する。"""
     _write_config(tmp_path, {"other_setting": "keep", "serve_port": "3000"})
     updates = {"serve_host": "localhost", "serve_sessions_remote_hosts": '["stheno"]'}
     assert config_module.save_mutable_settings(updates)

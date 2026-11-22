@@ -1,5 +1,3 @@
-"""公開prepareが1エージェント向けの会話の流れを生成することを検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from agent_toolkit._testing import session_evidence_support as support
 def test_prepare_conversation_summarizes_main_and_delegate_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """メインの各ユーザー発話と委譲先の目的・返却・操作量を1文書へ縮約する。"""
     parent = tmp_path / "parent.jsonl"
     support.write_jsonl(
         parent,
@@ -104,7 +101,6 @@ def test_prepare_lists_compactions_per_record(
 def test_prepare_conversation_stays_within_single_reader_limit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
-    """多数の長い発話と委譲記録も1つの100,000バイト以下の概要になる。"""
     entries = [support.timestamped_entry(f"2026-10-19T00:{index:02}:00Z", "本文" * 5000) for index in range(4)]
     entries.insert(2, support.assistant_text("長い返却" * 10_000))
     parent = tmp_path / "parent.jsonl"

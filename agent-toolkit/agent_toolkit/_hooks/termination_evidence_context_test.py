@@ -41,7 +41,6 @@ CONTINUATION = '<atk-auto source="stop" kind="continuation">判断を記録す�
 def test_context_without_human_input_returns_work_ids(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """自動起動の会話でも識別子を取得でき、生成入力を人間入力として返さない。"""
     automated_session(tmp_path, monkeypatch)
     termination_evidence.observe_user(
         json.dumps(
@@ -59,7 +58,6 @@ def test_context_without_human_input_returns_work_ids(
 def test_context_with_human_input_keeps_quote(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """人間入力を持つ会話では、従来どおり原入力の識別子と全文を返す。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     human_input(tmp_path, "human-1", "READMEを直してcommitする")
@@ -104,7 +102,6 @@ def test_notifications_sharing_the_prompt_id_keep_the_human_input(
 def test_queued_human_input_is_the_current_request_and_machine_queued_input_is_not(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], human_request: bool
 ) -> None:
-    """途中で届いた人間の指示を最新の入力として返し、機械の途中入力だけの作業は人間の承認として受理しない。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
@@ -117,7 +114,7 @@ def test_queued_human_input_is_the_current_request_and_machine_queued_input_is_n
             automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL),
         )
     supply_commit(repository)
-    # 公開hookの補助関数は最後に観測した呼び出しの作業ディレクトリのセッション記録を渡すため、同じ記録へ追記する。
+
     if human_request:
         _queued_command(repository, "queued-human", "READMEも直して", "human")
     _queued_command(
@@ -127,7 +124,7 @@ def test_queued_human_input_is_the_current_request_and_machine_queued_input_is_n
     assert status == 0 and context is not None
     if human_request:
         assert (context["input_id"], context["quote"]) == ("queued-queued-human", "READMEも直して")
-        # 途中の指示に応じた作業を観測した後は、その指示を省略判断の人間入力として受理する。
+
         supply_commit(repository, "commit-after-queued")
         status, reason = public_decision(tmp_path, _omission_document(repository, "queued-queued-human"))
         assert status == 0, reason
@@ -164,7 +161,6 @@ def test_context_without_human_input_keeps_rejections(
         return
     automated_session(tmp_path, monkeypatch)
     if case == "foreign-session":
-        # 別会話から継承した証拠は現在の会話の識別子として返さない。
         monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "another-session")
         session_state.update_state("another-session", lambda _state: session_state.read_state("evidence-test"))
         assert public_context(capsys)[0] == 2
@@ -193,7 +189,6 @@ def test_context_without_human_input_keeps_rejections(
     elif case == "blocked-without-failure":
         document.update(action="blocked", call_id="commit", quote=json.dumps({"exit_code": 0}))
     else:
-        # 人間の原入力を要する判断へ、取得できた唯一の入力である生成入力を渡す。
         document.update(action=case, input_id="continuation", quote=CONTINUATION)
         if case == "publish-scope":
             document.update(scope="commitしない", origin="instruction")

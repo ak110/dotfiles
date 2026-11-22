@@ -1,5 +1,3 @@
-"""計画・選定・履歴比較の試験で共有する入力と補助処理。"""
-
 import argparse
 import pathlib
 import sys
@@ -11,7 +9,6 @@ import yaml
 from agent_toolkit._atk import run_script
 from agent_toolkit._testing import git_repository
 
-# 検査本体はスキルのscriptsにあり、パッケージの外のため検索パスへ加えてから取り込む。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/scripts"))
 import check_selection  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
@@ -31,7 +28,6 @@ _REPO_FILES = (
 
 @pytest.fixture(name="env")
 def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, pathlib.Path]:
-    """対象リポジトリとprivate-notesを`tmp_path`配下へ作成し、そのパスを返す。"""
     repo = tmp_path / "repo"
     for relative in _REPO_FILES:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
@@ -46,7 +42,6 @@ def fixture_env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tupl
 def _awi(
     notes: pathlib.Path, name: str, reflected: str, *, state: str = "processing", dependencies: list[str] | None = None
 ) -> None:
-    """`## 反映内容と反映先`に`reflected`を持つAWI本文を保存する。"""
     (notes / state).mkdir(exist_ok=True)
     metadata = yaml.safe_dump({"target_repo": "github.com/test/repo", "depends_on": dependencies or []})
     body = (
@@ -59,11 +54,6 @@ def _awi(
 def _write_selection(
     path: pathlib.Path, decisions: list[dict[str, typing.Any]], costs: list[dict[str, typing.Any]] | None = None
 ) -> pathlib.Path:
-    """書込予定の判定に関係しない必須の欄を補って選定結果を保存し、そのパスを返す。
-
-    旧欄名（`awi`）で書いた項目は旧形式の最上位の欄名と`staleness`で補い、旧形式の読み取りも同じ判定へ通す。
-    `costs`を省くと、`なし`でない各レーンの行を補う。
-    """
     legacy = any("awi" in decision for decision in decisions)
     for decision in decisions:
         decision.setdefault("staleness" if "awi" in decision else "鮮度", {"status": "current", "later_commit_count": 0})
@@ -94,9 +84,8 @@ def _write_selection(
 
 
 def _initial_allocation(decisions: list[dict[str, typing.Any]]) -> dict[str, object]:
-    """書込予定のテスト入力には、独立したWIを通常上限内へ割り当てた初回情報を添える。"""
     assignments = {str(item.get("WI", item.get("awi"))): str(item.get("レーン", item.get("lane"))) for item in decisions}
-    # 書込予定などを検証する入力は、選定外候補も含む通常上限内の初回配分を使う。
+
     lanes = set(assignments.values()) - {"なし"}
     candidates = [
         *assignments,
@@ -110,18 +99,15 @@ def _initial_allocation(decisions: list[dict[str, typing.Any]]) -> dict[str, obj
 
 
 def _run(tmp_path: pathlib.Path, repo: pathlib.Path, decisions: list[dict[str, typing.Any]]) -> int:
-    """選定結果を保存して検証を実行し、終了コードを返す。"""
     selection = _write_selection(tmp_path / "selection.yaml", decisions)
     return check_selection.main(["--work-dir", str(repo), str(selection)])
 
 
 def _dispatch(*args: str) -> int:
-    """`atk run-script pick-wi-check`の公開名から検証を実行し、終了コードを返す。"""
     return run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=["--", *args]))
 
 
 def _derived(path: str, scope: str = "src/") -> dict[str, str]:
-    """名前を指定しない要求から限定調査で確定した新設先の記録を返す。"""
     return {
         "パス": path,
         "反映範囲": scope,
@@ -131,7 +117,6 @@ def _derived(path: str, scope: str = "src/") -> dict[str, str]:
 
 
 def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, typing.Any]:
-    """2レーンの共有パスに対する定義と判定を返す。"""
     return {
         "レーン1": "lane-01",
         "レーン2": "lane-02",
@@ -143,7 +128,6 @@ def _overlap_record(path: str, judgment: str = "交わらない") -> dict[str, t
 
 
 def _track(repo: pathlib.Path, *relatives: str) -> None:
-    """`relatives`を作成し、`repo`をGitリポジトリにして全ファイルを追跡対象へ加える。"""
     for relative in relatives:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
@@ -152,7 +136,6 @@ def _track(repo: pathlib.Path, *relatives: str) -> None:
 
 
 def _write_files(repo: pathlib.Path, *relatives: str) -> None:
-    """作業ツリーへファイルを作成する。"""
     for relative in relatives:
         (repo / relative).parent.mkdir(parents=True, exist_ok=True)
         (repo / relative).write_text("x\n", encoding="utf-8")
@@ -170,14 +153,13 @@ _READ_REQUEST = (
 def _norm_spec_selection(
     tmp_path: pathlib.Path, decisions: list[dict[str, typing.Any]], specs: dict[str, str | None]
 ) -> pathlib.Path:
-    """各項目へ`プロジェクト規範の指定`を書き（`None`は省略）、選定結果を保存する。"""
     for decision in decisions:
         spec = specs.get(decision["WI"])
         if spec is not None:
             decision["プロジェクト規範の指定"] = spec
     path = _write_selection(tmp_path / "selection.yaml", decisions)
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
-    # 実物のプロジェクト設定を使う規範試験にも、目標検査が要求する全工程の合成入力を添える。
+
     wis = [item["WI"] for item in decisions if item["レーン"] != "なし"]
     nodes = []
     previous: list[str] = []

@@ -1,5 +1,3 @@
-"""対応記録ファイルのAWI対応と履歴変更の継承を実Gitで検証する。"""
-
 import json
 import pathlib
 import re
@@ -17,7 +15,6 @@ WI_B = "20261004-044247-001.md"
 
 @pytest.fixture(name="repo")
 def git_repo(tmp_path: pathlib.Path) -> pathlib.Path:
-    """現在のworktreeに作用しない一時repoを作成する。"""
     git_repository.init_repository(tmp_path, initial_branch="main")
     git_repository.git_output(
         tmp_path, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "first"
@@ -41,13 +38,12 @@ def _short(repo: pathlib.Path, oid: str) -> str:
     reason="commit作成・amend・rev-parseを実Gitで繰り返し起動して短縮OIDと履歴変更後の対応を確かめる（単独実行の所有CPUは約0.06秒）。",
 )
 def test_many_to_many_roundtrip_and_rewrite(repo: pathlib.Path) -> None:
-    """複数AWIのcommitと複数commitのAWIを短縮OIDで保ち、amend後は新OIDだけを取得する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     first = _commit(repo, "first-recorded")
     events = [commit_mapping.commit_event(repo, first, base, [WI_A, WI_B], {WI_A, WI_B})]
     assert events[0] == {"commits": [_short(repo, first)], "awi": sorted([WI_A, WI_B])}
     old = _commit(repo, "second")
-    # 前HEADは短縮OIDでも完全OIDと同じ記録になる。
+
     events.append(commit_mapping.commit_event(repo, old, _short(repo, first), [WI_A], {WI_A, WI_B}))
     assert events[1] == commit_mapping.commit_event(repo, old, first, [WI_A], {WI_A, WI_B})
     assert commit_mapping.get_commits(repo, events, [WI_A, WI_B], {WI_A, WI_B}) == {
@@ -105,7 +101,7 @@ def test_rejects_unresolvable_or_ambiguous_short_oid(repo: pathlib.Path) -> None
     """存在しない短縮OIDと複数のcommitに一致する短縮OIDは、誤ったcommitを返さずに失敗する。"""
     with pytest.raises(commit_mapping.CommitMappingError, match="一意に解決できません"):
         commit_mapping.get_commits(repo, [{"commits": ["0000000"], "awi": [WI_A]}], [WI_A], {WI_A})
-    # 先頭4文字が同じcommitを2件以上含む履歴を1回のfast-importで作成し、4文字の短縮OIDを一意に解決できない状態にする。
+
     stream = "".join(
         f"commit refs/heads/many\nmark :{index + 1}\ncommitter Test <test@example.invalid> {1_700_000_000 + index} +0000\n"
         f"data {len(str(index))}\n{index}\n" + (f"from :{index}\n" if index else "") + "\n"
@@ -122,7 +118,6 @@ def test_rejects_unresolvable_or_ambiguous_short_oid(repo: pathlib.Path) -> None
 
 
 def test_rejects_unrecorded_rewrite_even_if_old_object_exists(repo: pathlib.Path) -> None:
-    """旧OIDがobjectとして残っていても現在のHEADのcommitへ代用しない。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     old = _commit(repo, "old")
     events = [commit_mapping.commit_event(repo, old, base, [WI_A], {WI_A})]
@@ -134,7 +129,6 @@ def test_rejects_unrecorded_rewrite_even_if_old_object_exists(repo: pathlib.Path
 
 
 def test_squash_inherits_union_of_wis(repo: pathlib.Path) -> None:
-    """複数の旧commitが同じ新commitになる場合もAWI集合を維持する。"""
     old_a, old_b, new = "a" * 40, "b" * 40, git_repository.git_output(repo, "rev-parse", "HEAD")
     events: list[dict[str, object]] = [
         {"commit": old_a, "awi": [WI_A]},
@@ -148,7 +142,6 @@ def test_squash_inherits_union_of_wis(repo: pathlib.Path) -> None:
 
 
 def test_selected_awi_resolves_only_final_split_destinations(repo: pathlib.Path) -> None:
-    """旧objectの無いrewriteと分割を継承し、他AWIの分割先の欠落を取得条件にしない。"""
     current = git_repository.git_output(repo, "rev-parse", "HEAD")
     events: list[dict[str, object]] = [
         {"commits": ["abcdef0"], "awi": [WI_A, WI_B]},
@@ -171,7 +164,6 @@ def test_selected_awi_resolves_only_final_split_destinations(repo: pathlib.Path)
     ],
 )
 def test_selected_awi_still_rejects_invalid_unselected_records(repo: pathlib.Path, bad_event: dict[str, object]) -> None:
-    """選択外でも記録の構造、rewrite元とAWI割当の不足を検査する。"""
     current = git_repository.git_output(repo, "rev-parse", "HEAD")
     events: list[dict[str, object]] = [{"commit": current, "awi": [WI_A]}, {"commit": "abcdef0", "awi": [WI_B]}, bad_event]
     with pytest.raises(commit_mapping.CommitMappingError):
@@ -179,7 +171,6 @@ def test_selected_awi_still_rejects_invalid_unselected_records(repo: pathlib.Pat
 
 
 def test_commit_event_requires_nonempty_range_and_previous_ancestor(repo: pathlib.Path) -> None:
-    """空の区間と前HEADの不正な指定を理由・修正操作付きで拒否する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     current = _commit(repo, "recorded")
     assert commit_mapping.commit_event(repo, current, base, [WI_A], {WI_A}) == {
@@ -193,7 +184,6 @@ def test_commit_event_requires_nonempty_range_and_previous_ancestor(repo: pathli
 
 
 def _branch_with_two_commits(repo: pathlib.Path) -> tuple[str, list[str]]:
-    """別branchへ2件のcommitを作成し、mainへ戻って取り込み前のHEADと群のcommitを返す。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     git_repository.git_output(repo, "switch", "-c", "group")
     group = [_commit(repo, "group-1"), _commit(repo, "group-2")]
@@ -202,7 +192,6 @@ def _branch_with_two_commits(repo: pathlib.Path) -> tuple[str, list[str]]:
 
 
 def test_records_range_added_by_cherry_pick_in_one_event(repo: pathlib.Path) -> None:
-    """範囲指定のcherry-pickで加えた全commitを1回の記録で同じAWI集合へ対応付け、1件の置き換えを継承する。"""
     _branch_with_two_commits(repo)
     _commit(repo, "lane")
     previous = git_repository.git_output(repo, "rev-parse", "HEAD")
@@ -231,7 +220,6 @@ def test_records_range_added_by_cherry_pick_in_one_event(repo: pathlib.Path) -> 
 
 
 def test_records_range_added_by_fast_forward(repo: pathlib.Path) -> None:
-    """fast-forwardマージで加えた範囲もcherry-pickと同じく全commitを記録する。"""
     base, group = _branch_with_two_commits(repo)
     git_repository.git_output(repo, "merge", "--ff-only", "group")
     event = commit_mapping.commit_event(repo, "HEAD", base, [WI_A], {WI_A})
@@ -241,7 +229,6 @@ def test_records_range_added_by_fast_forward(repo: pathlib.Path) -> None:
 
 
 def test_rejects_range_with_merge_or_non_ancestor(repo: pathlib.Path) -> None:
-    """接続mergeと他レーンのcommitを除き、first-parent外の起点は拒否する。"""
     base, group = _branch_with_two_commits(repo)
     _commit(repo, "lane")
     git_repository.git_output(
@@ -322,7 +309,6 @@ def test_rebase_map_accepts_only_recorded_old_oids(repo: pathlib.Path) -> None:
 
 
 def test_rewrite_to_same_oid_adds_awi_to_recorded_commit(repo: pathlib.Path) -> None:
-    """同じOIDへ写す分割指定で、記録済みcommitへ許可集合内のAWIを追加し、取得結果へ反映する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     recorded = _commit(repo, "recorded")
     events = [commit_mapping.commit_event(repo, recorded, base, [WI_A], {WI_A, WI_B})]
@@ -337,7 +323,6 @@ def test_rewrite_to_same_oid_adds_awi_to_recorded_commit(repo: pathlib.Path) -> 
 
 
 def test_rewrite_rejects_awi_outside_allowed_set(repo: pathlib.Path) -> None:
-    """計画の対象外のAWIを加えた分割指定は、記録を作らずに理由と次の操作を示して拒否する。"""
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     recorded = _commit(repo, "recorded")
     events = [commit_mapping.commit_event(repo, recorded, base, [WI_A], {WI_A})]
@@ -349,7 +334,6 @@ def test_rewrite_rejects_awi_outside_allowed_set(repo: pathlib.Path) -> None:
 
 
 def test_reads_legacy_body_comments_before_attachment(tmp_path: pathlib.Path, repo: pathlib.Path) -> None:
-    """本文の旧形式の記録を対応記録ファイルの記録より前に適用し、両方を合わせた対応を返す。"""
     legacy = _commit(repo, "legacy")
     record = tmp_path / "record.md"
     record.write_text("本文\n" + commit_mapping.encode_event({"commit": legacy, "awi": [WI_A]}) + "\n", encoding="utf-8")
@@ -367,7 +351,6 @@ def test_reads_legacy_body_comments_before_attachment(tmp_path: pathlib.Path, re
 def test_range_mapping_failure_points_to_public_comparison(
     repo: pathlib.Path, mapping: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """不正な対応表の復旧を担当の手作業へ戻さず、amendを含めhistory-compareが受理する操作名で案内する。"""
     source = repo / "invalid.json"
     source.write_text(json.dumps(mapping), encoding="utf-8")
     with pytest.raises(commit_mapping.CommitMappingError) as raised:
@@ -382,7 +365,6 @@ def test_range_mapping_failure_points_to_public_comparison(
 
 
 def test_plan_allowed_wis_returns_related_wi_including_previous_session(tmp_path: pathlib.Path) -> None:
-    """計画の許可集合は計画メタ情報の`関連WI`であり、再開した計画の前のセッションのAWIも含む。"""
     content = (
         "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n"
         "  - 20261023-172330-001.md: 前のセッションで実装した項目\n"
@@ -395,7 +377,6 @@ def test_plan_allowed_wis_returns_related_wi_including_previous_session(tmp_path
 
 
 def test_plan_allowed_wis_rejects_plan_without_metadata(tmp_path: pathlib.Path) -> None:
-    """計画メタ情報を確定できない計画は、計画の構造の確認を次の操作とする誤りにする。"""
     path = tmp_path / "plan.md"
     with pytest.raises(commit_mapping.CommitMappingError) as error:
         commit_mapping.plan_allowed_wis("# 計画\n\n## 概要\n", path)

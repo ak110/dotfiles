@@ -1,5 +1,3 @@
-"""保存本文の共通一致判定を検証する。"""
-
 from agent_toolkit._common import body_match
 
 

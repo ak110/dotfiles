@@ -24,7 +24,6 @@ pytestmark = pytest.mark.usefixtures("without_skill_notices")
 def test_restart_keeps_delegation_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str, legacy: bool
 ) -> None:
-    """実際のSkillとstart応答を供給し、変更後の一時領域から追送・停止を許可する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     before = tmp_path / "before"

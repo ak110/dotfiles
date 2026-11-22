@@ -1,5 +1,3 @@
-"""pytools._internal.winutils のテスト。"""
-
 import pytest
 
 from pytools._internal import winutils
@@ -26,7 +24,6 @@ def _profile(monkeypatch: pytest.MonkeyPatch) -> None:
     ],
 )
 def test_append_user_path_skips_registered_entries(monkeypatch: pytest.MonkeyPatch, user_path: str, system_path: str) -> None:
-    """表記違いの同じディレクトリがユーザー側かシステム側にあれば書き込まない。"""
     registry = FakeEnvironmentRegistry(user_path=user_path, system_path=system_path)
     registry.install(monkeypatch)
 

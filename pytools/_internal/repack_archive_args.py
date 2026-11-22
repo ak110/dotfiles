@@ -1,5 +1,3 @@
-"""repack-archiveの引数を、設定モデルと展開処理の読み込み前に解釈する。"""
-
 import argparse
 import pathlib
 
@@ -7,7 +5,6 @@ from pytools._internal.cli import enable_completion
 
 
 def parse_args() -> argparse.Namespace:
-    """既存の引数と対象パスを解釈する。"""
     parser = argparse.ArgumentParser(description="アーカイブ・PDF を gv 向けに前処理する")
     parser.add_argument("-c", "--config", type=pathlib.Path, help="YAML 設定ファイル")
     parser.add_argument(

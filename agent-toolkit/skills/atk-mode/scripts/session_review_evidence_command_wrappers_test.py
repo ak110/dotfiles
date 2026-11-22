@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_command_wrappers_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from agent_toolkit._testing.session_review_evidence_support import _bundle_faile
 def test_bundle_excludes_cd_prefixed_commands_like_standalone(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """先頭の`cd <パス>;`と`cd <パス> &&`を付けた4区分の正常な結果を、前置の無いコマンドと同じ区分へ除外する。"""
     no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
     cases = [
         (f"{prefix}{command}", code, output)
@@ -54,7 +51,6 @@ def test_bundle_keeps_cd_failures_and_unsupported_prefixes(
         ("cd /repo\natk wi grep needle", 1, no_match),
         ("cd /repo; atk wi grep needle; false", 1, no_match),
         ("cd /repo && atk agents wait; false", 3, '{"status": "running"}'),
-        # 対照: 同じ記録の中で、外す対象の前置だけを持つ正常な結果は除外される。
         ("cd /repo; atk wi grep needle", 1, no_match),
     ]
     records, lines = _bundle_failed_commands_of_runtime(tmp_path, capsys, runtime, cases)
@@ -71,7 +67,6 @@ def test_bundle_keeps_cd_failures_and_unsupported_prefixes(
 def test_bundle_powershell_classification_preserves_unsupported_failures(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """PSの引用・パス・cd前置を共通分類へ渡し、診断・式・連結・対応外モードは元位置へ残す。"""
     normal = [
         ["pwsh", "-NoProfile", "-Command", "rg 'a''b' 'C:\\work\\docs'"],
         [r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe", "-COMMAND", 'test -e "C:\\work\\file"'],
@@ -111,7 +106,6 @@ def test_bundle_powershell_classification_preserves_unsupported_failures(
 def test_bundle_run_command_uses_complete_child_result_only(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """公開run-commandの保存JSONで子へ帰属させ、包装の異常と子の診断を候補へ残す。"""
 
     def case(child: list[str], **changes: object) -> tuple[str, int, str]:
         result = {
@@ -159,7 +153,6 @@ def test_bundle_run_command_uses_complete_child_result_only(
 def _assert_bundle_original_commands(
     tmp_path: pathlib.Path, candidates: list[dict], runtime: str, cases: list[tuple[str, int, str]], lines: list[int]
 ) -> None:
-    """個別証拠が元の包装コマンドと位置を保持することを公開bundleで確かめる。"""
     for candidate in candidates:
         saved = json.loads(
             (tmp_path / "bundle" / "candidate-evidence" / f"{candidate['candidate_id']}.json").read_text(encoding="utf-8")

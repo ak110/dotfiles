@@ -56,7 +56,6 @@ def strip_inherited_venv(env: MutableMapping[str, str]) -> None:
 
 
 def record_launch_changes(env: MutableMapping[str, str], caller: MutableMapping[str, str]) -> None:
-    """起動層が変えた値を、子へ渡す直前に復元できる形で記録する。"""
     env.pop(LAUNCH_RESTORE_KEY, None)
     changes = {
         key: [caller.get(key), value]
@@ -69,11 +68,6 @@ def record_launch_changes(env: MutableMapping[str, str], caller: MutableMapping[
 
 
 def record_launch_value(env: MutableMapping[str, str], key: str, caller_value: str | None) -> None:
-    """起動層が復元記録の作成後に変えた1つの値を、既存の記録へ加える。
-
-    記録に無い変更は子へ渡す直前の復元から漏れ、起動層の値が委譲先や配下のプロセスへ残る。
-    既に記録された値は、最初の呼出元の値を保ったまま起動層の最終値だけを更新する。
-    """
     changes: dict = {}
     if encoded := env.get(LAUNCH_RESTORE_KEY):
         try:
@@ -89,7 +83,6 @@ def record_launch_value(env: MutableMapping[str, str], key: str, caller_value: s
 
 
 def _restore_launch_environment(env: MutableMapping[str, str]) -> None:
-    """記録された起動層の差分だけを呼出元の値へ戻す。"""
     encoded = env.pop(LAUNCH_RESTORE_KEY, None)
     if encoded is None:
         return

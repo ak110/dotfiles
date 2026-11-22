@@ -10,7 +10,6 @@ PostToolUseの`updatedToolOutput`で`stdout`を通知の本文へ置き換える
 CodexのPostToolUseは`persistedOutputPath`を持たない（出力は切り詰めて返る）ため発動しない。
 """
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import next_action as _next_action
 lazy from agent_toolkit._hooks import message_format as _message_format
 
@@ -19,7 +18,6 @@ _HOOK_ID = "posttooluse"
 
 
 def _notice(path: str, size: object) -> str:
-    """退避した出力の未読と保存先、次の操作を示す本文を返す。"""
     measured = f"（{size}バイト）" if isinstance(size, int) and not isinstance(size, bool) else ""
     body = f"出力{measured}はホスト上限を超えて退避された。この本文には出力を含めていない。"
     fix = (

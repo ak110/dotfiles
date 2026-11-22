@@ -149,7 +149,6 @@ def manifest_root_fixture(tmp_path: Path) -> Path:
 
 @pytest.fixture(name="quality_root")
 def _quality_root(manifest_root: Path) -> Path:
-    """品質原本と、単独配布する2スキルを持つ最小の配布元を用意する。"""
     for distribution, name in (
         (distribution, name)
         for distribution in ("agent-toolkit", "agent-basics")
@@ -212,8 +211,6 @@ async def _ignore_proxy_notification(_message: dict[str, Any]) -> None:
 
 
 class _ProxyCodexClient(codex_backend.JsonRpcProcess):
-    """試験用履歴の注入だけに実験APIを有効化する。"""
-
     async def request(
         self,
         method: str,

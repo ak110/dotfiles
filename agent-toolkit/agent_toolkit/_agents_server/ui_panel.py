@@ -13,7 +13,6 @@ from agent_toolkit._common.session_family import _load_records_checked
 
 
 def main(argv: list[str] | None = None) -> int:
-    """会話の子孫を重複除去した推定費用を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session-id", required=True)
     parser.add_argument("--self-only", action="store_true")

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのfailuresの試験。"""
 
 # pylint: disable=protected-access
 
@@ -88,7 +87,7 @@ class TestStepFailureStopsExecution:
         monkeypatch.setenv(update_dotfiles_runtime.PRUNE_READY_ENV, str(ready))
 
         assert update_dotfiles.main() == 1
-        # 本体は中断していないため、ランチャーが整理へ進む印を残す。
+
         assert ready.exists()
         assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
         err = capsys.readouterr().err
@@ -120,7 +119,6 @@ class TestStepFailureStopsExecution:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """標準エラーを継承した段の終了値だけでは、親は子の詳細を保存したと案内しない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 1}, calls))
@@ -290,8 +288,6 @@ class TestSyncReport:
 
 
 class TestCapturedStderr:
-    """各段が生成する標準エラー出力の転送先を検証する。"""
-
     def test_successful_git_output_is_forwarded_to_stdout(
         self,
         monkeypatch: pytest.MonkeyPatch,

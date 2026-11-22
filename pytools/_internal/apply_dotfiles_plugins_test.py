@@ -63,7 +63,6 @@ def _plugin(root: Path, name: str, *, script_code: int = 0) -> Path:
 
 
 def test_applies_plugins_in_order_with_separate_state(plugin_root: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """名前順・上書き・cwd・専用状態と両ストリームの記録が同じ実行関数で成立する。"""
     _plugin(plugin_root, "20-last")
     _plugin(plugin_root, "10-first")
     caplog.set_level(logging.INFO, logger=apply_dotfiles_plugins.__name__)
@@ -110,7 +109,6 @@ def test_failures_continue_other_plugins(plugin_root: Path, monkeypatch: pytest.
 
 @pytest.mark.parametrize("empty", [False, True])
 def test_missing_plugins_succeeds(plugin_root: Path, empty: bool) -> None:
-    """不在・空集合は変更なしの成功として扱う。"""
     if empty:
         (plugin_root / "plugins").mkdir()
         (plugin_root / "plugins" / "README").write_text("ignored", encoding="utf-8")

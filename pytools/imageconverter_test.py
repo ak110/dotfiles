@@ -1,5 +1,3 @@
-"""imageconverter モジュールの単体テスト。"""
-
 import io
 import pathlib
 import struct
@@ -29,7 +27,7 @@ def _make_corrupt_text_png(path: pathlib.Path) -> None:
     buf = io.BytesIO()
     PIL.Image.new("RGB", (50, 50), color=(0, 255, 0)).save(buf, format="PNG")
     data = buf.getvalue()
-    pos = 8  # PNG シグネチャの後
+    pos = 8
     while pos < len(data):
         chunk_len = int.from_bytes(data[pos : pos + 4], "big")
         chunk_type = data[pos + 4 : pos + 8]
@@ -44,12 +42,10 @@ def _make_corrupt_text_png(path: pathlib.Path) -> None:
 
 
 def _argv(*targets: str) -> list[str]:
-    """`main()` テスト用の `sys.argv` を組み立てる。"""
     return ["py-imageconverter", *targets]
 
 
 def test_open_image_with_exif_normal(tmp_path: pathlib.Path) -> None:
-    """EXIF情報のない画像を正常に開ける。フォールバックフラグは False。"""
     path = tmp_path / "test.png"
     _make_png(path, size=(80, 60))
     img, used_fallback = imageconverter.open_image_with_exif(path)
@@ -59,7 +55,6 @@ def test_open_image_with_exif_normal(tmp_path: pathlib.Path) -> None:
 
 
 def test_open_image_with_exif_fallback_on_exif_error(tmp_path: pathlib.Path) -> None:
-    """exif_transpose が例外を送出した場合、copy() にフォールバックする。"""
     path = tmp_path / "test.png"
     _make_png(path, size=(40, 30))
     with (
@@ -73,31 +68,29 @@ def test_open_image_with_exif_fallback_on_exif_error(tmp_path: pathlib.Path) -> 
         img, used_fallback = imageconverter.open_image_with_exif(path)
     assert img.width == 40
     assert img.height == 30
-    # 例外発生時は warnings.warn が呼ばれる
+
     assert any("exif error" in str(w.message) for w in caught)
-    # exif_transpose 例外は読み込みフォールバックとは独立
+
     assert used_fallback is False
 
 
 def test_open_image_with_exif_truncated_fallback(tmp_path: pathlib.Path) -> None:
-    """tEXt チャンクの CRC 不整合 PNG は寛容モードで読み込まれフラグが立つ。"""
     path = tmp_path / "corrupt.png"
     _make_corrupt_text_png(path)
     # 通常モード（LOAD_TRUNCATED_IMAGES = False）では Pillow が読み込みに失敗することを事前確認する
     PIL.ImageFile.LOAD_TRUNCATED_IMAGES = False
     with pytest.raises(PIL.UnidentifiedImageError), PIL.Image.open(path) as img:
         img.load()
-    # open_image_with_exif は内部で寛容モードへフォールバックする
+
     img, used_fallback = imageconverter.open_image_with_exif(path)
     assert used_fallback is True
     assert img.width == 50
     assert img.height == 50
-    # フラグはコンテキスト終了時に元に戻っている
+
     assert PIL.ImageFile.LOAD_TRUNCATED_IMAGES is False
 
 
 def test_open_image_with_exif_unidentified_propagates(tmp_path: pathlib.Path) -> None:
-    """シグネチャ判定で寛容モードでも回復しない非画像は UnidentifiedImageError を伝播する。"""
     path = tmp_path / "not_image.bin"
     path.write_bytes(b"random binary blob")
     with pytest.raises(PIL.UnidentifiedImageError):
@@ -193,7 +186,6 @@ def test_convert_directory_output_types(tmp_path: pathlib.Path, output_type: ima
 
 
 def test_convert_directory_corrupt_text_png_is_warning(tmp_path: pathlib.Path) -> None:
-    """tEXt CRC 不整合の PNG は寛容モードで変換され、警告として戻り値に含まれる。"""
     src = tmp_path / "corrupt.png"
     _make_corrupt_text_png(src)
     result = imageconverter.convert_directory(tmp_path, output_type="jpeg", max_width=2048, max_height=1536)
@@ -208,12 +200,6 @@ def test_convert_directory_corrupt_text_png_is_warning(tmp_path: pathlib.Path) -
 
 
 def test_convert_directory_non_image_skipped_without_delete(tmp_path: pathlib.Path) -> None:
-    """シグネチャ判定で非画像と判定されたファイルはイベント非記録かつ削除されない。
-
-    中身が `b"not a PNG file at all"` のファイルは `PIL.Image.open()` の
-    シグネチャ判定で `UnidentifiedImageError` となり「非画像」扱いになる。
-    `remove_failed=True` でも保持される。
-    """
     bad = tmp_path / "broken.png"
     bad.write_bytes(b"not a PNG file at all")
     result = imageconverter.convert_directory(tmp_path, output_type="jpeg", remove_failed=True)
@@ -252,7 +238,6 @@ def test_convert_directory_save_failure_is_error(tmp_path: pathlib.Path, monkeyp
 
 
 def test_convert_directory_single_file_path(tmp_path: pathlib.Path) -> None:
-    """ファイル個別パスを `convert_directory` へ渡しても変換できる。"""
     src = tmp_path / "single.png"
     _make_png(src, size=(60, 40))
     result = imageconverter.convert_directory(src, output_type="jpeg")
@@ -263,7 +248,6 @@ def test_convert_directory_single_file_path(tmp_path: pathlib.Path) -> None:
 
 
 def test_convert_directory_extensionless_png(tmp_path: pathlib.Path) -> None:
-    """拡張子無しでも中身が PNG ならシグネチャ判定で画像と認識され変換される。"""
     src = tmp_path / "noext"
     buf = io.BytesIO()
     PIL.Image.new("RGB", (40, 30), color=(0, 0, 255)).save(buf, format="PNG")
@@ -304,7 +288,6 @@ def test_main_exit_code(
     scenario: str,
     expected_code: int,
 ) -> None:
-    """変換成功 0 件は exit(1)、混在 error は exit(1)、それ以外の成功は exit(0)。"""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", _argv("*"))
 
@@ -331,7 +314,6 @@ def test_main_exit_code(
 
 
 def _rgb_pixel(img: PIL.Image.Image) -> tuple[int, ...]:
-    """左上の画素をRGBの整数タプルで返す。"""
     with img.convert("RGB") as rgb:
         pixel = rgb.getpixel((0, 0))
     assert isinstance(pixel, tuple)
@@ -369,7 +351,6 @@ WebPはPillowが保存時にRGBまたはRGBAへ変換するため、保存後の
 
 
 def _source_path(root: pathlib.Path, mode: str) -> pathlib.Path:
-    """指定されたモードを保存できる入力ファイルのパスを返す。"""
     if mode == "CMYK":
         return root / "source.jpg"
     if mode == "F":
@@ -378,7 +359,6 @@ def _source_path(root: pathlib.Path, mode: str) -> pathlib.Path:
 
 
 def _make_source_image(path: pathlib.Path, mode: str) -> None:
-    """指定モードの単色画像を保存する。"""
     size = (16, 12)
     if mode in _UNIFORM_LUMINANCE:
         img = PIL.Image.new(mode, size, color=_UNIFORM_LUMINANCE[mode])
@@ -394,7 +374,6 @@ def _make_source_image(path: pathlib.Path, mode: str) -> None:
 
 
 def _assert_color_preserved(actual: tuple[int, ...], expected: tuple[int, ...], tolerance: int) -> None:
-    """代表画素の色が許容差の内側であることを確かめる。"""
     assert all(abs(a - e) <= tolerance for a, e in zip(actual, expected, strict=True)), f"{actual} != {expected}"
 
 
@@ -405,12 +384,6 @@ def test_conversion_keeps_color_and_saves_within_target_modes(
     source_mode: str,
     output_type: imageconverter.OutputType,
 ) -> None:
-    """入力モードと出力形式の組ごとに、保存後のモードと代表画素の色を確かめる。
-
-    メタデータ除去の往復は配列の形状と要素型だけからモードを推定するため、限定しないと
-    `CMYK`はJPEGが保存できない`RGBA`になり、パレット画像は索引値を輝度とする`L`になって色を失う。
-    `1`・`I;16`・`F`は往復では保たれるが対象集合の外にあるため、`L`として保存する。
-    """
     path = _source_path(tmp_path, source_mode)
     _make_source_image(path, source_mode)
     with PIL.Image.open(path) as source:
@@ -436,7 +409,6 @@ def test_palette_transparency_is_saved_as_rgba(
     tmp_path: pathlib.Path,
     output_type: imageconverter.OutputType,
 ) -> None:
-    """透過情報を持つ入力を`RGBA`として保存し、不透明な画素の色と透明な画素を保つ。"""
     path = tmp_path / "source.png"
     base = PIL.Image.new("RGB", (16, 12), color=(255, 0, 0))
     base.paste((0, 255, 0), (8, 0, 16, 12))

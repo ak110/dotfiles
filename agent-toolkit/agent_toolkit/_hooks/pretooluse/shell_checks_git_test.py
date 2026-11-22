@@ -13,8 +13,6 @@ from agent_toolkit._testing.shell_checks_support import _existing_work_contract 
 
 
 class TestBashGitRevParseShortMultiple:
-    """通常modeの単一revision検証へ複数revisionを渡す操作の遮断。"""
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -82,7 +80,6 @@ class TestBashGitRevParseShortMultiple:
 
     @pytest.mark.parametrize("options", [["--short"], ["--short=12"], ["--verify"], ["--verify", "--quiet"]])
     def test_individual_revision_fix_succeeds(self, options: list[str], tmp_path: pathlib.Path):
-        """履歴を自ら準備し、案内した入力分割で元のoptionを保ったGit実行が成功する。"""
         repository = git_repository.init_repository(tmp_path / "repo", commit_message="最初のcommit")
         git_repository.commit_all(repository, "次のcommit")
         for revision in ["HEAD", "HEAD~1"]:

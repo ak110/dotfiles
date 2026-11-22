@@ -1,5 +1,3 @@
-"""agents_serverのプロセス間session登録簿を検証する。"""
-
 # テストでは状態ディレクトリ解決の内部境界を差し替える。
 # pylint: disable=protected-access
 
@@ -26,7 +24,6 @@ from agent_toolkit._testing.agents_server_support import (
 
 @pytest.mark.parametrize("terminal", [False, True])
 def test_version_one_record_is_unreadable(tmp_path: pathlib.Path, terminal: bool) -> None:
-    """版数1は終了状態にかかわらず読めない記録として扱う。"""
     subject.publish("old-session", state=subject.PublicationState.PENDING_RUNNING, state_root=tmp_path)
     path = subject.registry_directory(tmp_path) / "old-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -36,7 +33,6 @@ def test_version_one_record_is_unreadable(tmp_path: pathlib.Path, terminal: bool
 
 
 def test_publish_and_observe_terminal_state(tmp_path: pathlib.Path) -> None:
-    """同じsessionの実行中状態を終了状態で置き換えて観測する。"""
     subject.publish("child-session", state=subject.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), state_root=tmp_path)
     path = subject.registry_directory(tmp_path) / "child-session.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -72,7 +68,6 @@ def test_publication_state_preserves_saved_and_resolved_values(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """公開前の終了statusを含む8組を、sessionから登録簿と再開情報へ同じ値で渡す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState(
         "published",
@@ -96,7 +91,6 @@ def test_publication_state_preserves_saved_and_resolved_values(
 
 @pytest.mark.parametrize("status", ["starting", "running", "unknown"])
 def test_publication_rejects_unavailable_terminal_status(status: str, tmp_path: pathlib.Path) -> None:
-    """未終了や未知のstatusから公開済みの登録を作成しない。"""
     with pytest.raises(ValueError):
         subject.publish(
             "invalid", state=subject.PublicationState.from_status(status, result_available=True), state_root=tmp_path
@@ -106,14 +100,12 @@ def test_publication_rejects_unavailable_terminal_status(status: str, tmp_path: 
 
 @pytest.mark.parametrize("invalid", [True, "completed", (True, "running")])
 def test_publish_requires_publication_state(invalid: object, tmp_path: pathlib.Path) -> None:
-    """型を迂回した値を永続化の境界で拒否する。"""
     with pytest.raises(TypeError, match="state must be a PublicationState"):
         subject.publish("invalid", state=typing.cast("subject.PublicationState", invalid), state_root=tmp_path)
     assert not (subject.registry_directory(tmp_path) / "invalid.json").exists()
 
 
 def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_record(tmp_path: pathlib.Path) -> None:
-    """登録簿は起動情報と活動時刻を別欄で渡し、項目の無い旧形式では起動情報を空文字列か`None`、活動時刻を不明として返す。"""
     launch_info = subject.LaunchInfo(label="lane-05-exec", prompt="依頼本文", created_at="2026-09-25T21:58:13+00:00")
     subject.publish(
         "created",
@@ -143,7 +135,6 @@ def test_resume_info_carries_launch_info_and_activity_times_and_accepts_legacy_r
 
 
 def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
-    """起動処理中のsessionを未終了の再開情報として観測する。"""
     subject.publish("child-session", state=subject.PublicationState.PENDING_STARTING, cwd=str(tmp_path), state_root=tmp_path)
 
     resolution = subject.resolve("child-session", state_root=tmp_path)
@@ -155,7 +146,6 @@ def test_publish_and_observe_starting_state(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("reason", ["retention_expired", "stopped"])
 def test_release_replaces_record_with_released_state(tmp_path: pathlib.Path, reason: subject.ReleaseReason) -> None:
-    """解放したsessionは不在と区別できる解放済みとして解決され、理由と時刻を持ち、再開条件を持たない。"""
     subject.publish("child-session", state=subject.PublicationState.RESULT_COMPLETED, state_root=tmp_path)
     subject.release("child-session", reason=reason, state_root=tmp_path)
 
@@ -169,7 +159,6 @@ def test_release_replaces_record_with_released_state(tmp_path: pathlib.Path, rea
 
 
 def test_release_rejects_unknown_reason(tmp_path: pathlib.Path) -> None:
-    """解放の理由は応答文面の分岐に使うため、定義外の値を書き込まない。"""
     with pytest.raises(ValueError, match="invalid release reason"):
         subject.release("child-session", reason=typing.cast("subject.ReleaseReason", "restarted"), state_root=tmp_path)
 
@@ -179,7 +168,6 @@ async def test_session_state_publishes_state_transitions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """session状態は進捗更新を重複書込せず、実行中と終了の遷移を公開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("published-session", str(tmp_path), publish_registry=True)
 
@@ -213,7 +201,6 @@ async def test_session_state_publishes_state_transitions(
 async def test_speed_change_is_published_without_status_or_turn_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """送信時に変わった速度が登録簿へ届き、再開状態も同じ値を保持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("speed-session", str(tmp_path), publish_registry=True)
     session.touch()
@@ -290,16 +277,11 @@ async def test_retention_expiry_releases_record(
 
 @pytest.mark.parametrize("session_id", ["", "../child", "child/session"])
 def test_registry_rejects_invalid_session_id(session_id: str, tmp_path: pathlib.Path) -> None:
-    """登録簿ディレクトリ外を指し得る識別子を拒否する。"""
     with pytest.raises(ValueError, match="invalid session_id"):
         subject.publish(session_id, state=subject.PublicationState.PENDING_RUNNING, state_root=tmp_path)
 
 
 def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(tmp_path: pathlib.Path) -> None:
-    """記録した全プロセスが存在しない`running`の記録は、登録簿を書き換えずに`interrupted`の終了と解決する。
-
-    同じpidでも起動時刻が異なるプロセスは、記録したプロセスの再利用として不在に数える。
-    """
     owner = subject.owner_process()
     assert owner is not None
     reused_pid = subject.ProcessIdentity(owner.pid, owner.create_time - 1.0, "other-generation")
@@ -325,7 +307,6 @@ def test_running_record_whose_recorded_processes_exited_resolves_as_interrupted(
 
 @pytest.mark.parametrize("recorded", ["one-live", "none"], ids=["live-process", "identity-less"])
 def test_running_record_with_live_process_or_without_identity_stays_running(recorded: str, tmp_path: pathlib.Path) -> None:
-    """記録したプロセスが1つでも同じ起動時刻で存在する記録と、識別を持たない記録は従来どおり実行中とする。"""
     owner = subject.owner_process()
     assert owner is not None
     processes = (exited_process_identity(), owner) if recorded == "one-live" else ()
@@ -341,7 +322,6 @@ def test_running_record_with_live_process_or_without_identity_stays_running(reco
 
 
 def test_session_publishes_owner_and_executor_processes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """sessionは所有プロセスと実行プロセスの識別を公開し、実行プロセスを起動し直すと記録を更新する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     owner = subject.owner_process()
     assert owner is not None
@@ -367,7 +347,6 @@ async def test_resume_reservation_prevents_release_and_takeover(
     tmp_path: pathlib.Path,
     record_kind: str,
 ) -> None:
-    """接続前の再開予約を別の解放・照会が失わせず、予約中に別backendを開始しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     identifier = "reserved-session"
     subject.publish(

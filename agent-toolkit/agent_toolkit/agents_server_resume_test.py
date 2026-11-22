@@ -30,7 +30,6 @@ async def test_wait_defers_result_until_child_session_terminates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """孫sessionが終了するまで初回結果を返さず、確認後の結果を返す。"""
     client = ControlledClaudeClient("claude-child-wait")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-wait"
@@ -53,7 +52,6 @@ async def test_wait_keeps_child_until_registration_recovers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """観測不能な孫sessionの識別子を保ち、終了を確認した後の再開結果を返す。"""
     client = ControlledClaudeClient(f"claude-child-{registry_state}")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = f"child-{registry_state}"
@@ -87,7 +85,6 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了済みと観測不能の孫が混在しても、全ての終了を確認してから1回継続する。"""
     client = ControlledClaudeClient(f"claude-child-mixed-{unobserved_state}")
     async with _manager(client, monkeypatch) as (manager, _backend):
         terminal_session_id = f"child-terminal-{unobserved_state}"
@@ -124,7 +121,6 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開turnで起動した新しい孫も、観測不能な状態になっても実際の終了まで追跡する。"""
     client = ControlledClaudeClient("claude-child-repeated-mixed")
     async with _manager(client, monkeypatch) as (manager, _backend):
         first_terminal_session_id = "child-terminal-first"
@@ -174,7 +170,6 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """孫session追跡用の内部状態をwait応答へ追加しない。"""
     client = ControlledClaudeClient("claude-child-keys")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-keys"
@@ -247,7 +242,6 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
 
 @pytest.mark.asyncio
 async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_path: pathlib.Path) -> None:
-    """既存の未観測session識別子を保ったまま新しい識別子を併合する。"""
     session = state.SessionState("existing-unobserved", str(tmp_path))
     session.error = {
         "message": "既存エラー",

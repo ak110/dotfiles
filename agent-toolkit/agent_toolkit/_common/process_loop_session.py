@@ -1,9 +1,6 @@
-"""process-loopが起動した統括の会話をhook入力のセッションIDで識別する。"""
-
 import re
 from collections.abc import Mapping
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
 
@@ -21,7 +18,6 @@ def _claim_key(environ: Mapping[str, str]) -> str | None:
 
 
 def _expected_session_id(environ: Mapping[str, str]) -> str | None:
-    """起動側が渡した会話ID、無ければ最初のSessionStartが確保した会話IDを返す。どちらも無ければNoneを返す。"""
     if (expected_id := environ.get(_SESSION_ID_ENV)) is not None:
         return expected_id
     key = _claim_key(environ)

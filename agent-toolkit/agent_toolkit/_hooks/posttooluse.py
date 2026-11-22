@@ -39,8 +39,6 @@ Codexから届く正規化済みの入力も同じ操作記録を使う。
 
 import json
 import re
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import asyncio
 lazy import shlex
 
@@ -74,9 +72,9 @@ lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCC
 lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
-# このスクリプトの hook 識別子。
 _HOOK_ID = "posttooluse"
 
 _llm_notice = _notice_formatter(_HOOK_ID)
@@ -88,13 +86,8 @@ _PERIODIC_RECHECK_WAIT_SECONDS = 20
 
 
 def _executable_name(token: str) -> str:
-    """実行トークンからディレクトリ部分を除いた実行ファイル名を返す。"""
     return token.replace("\\", "/").rsplit("/", 1)[-1]
 
-
-# --- スキル呼び出し検出 ---
-
-# --- ユーザーが書いた文への注記 ---
 
 VERIFICATION_NOTICE_BODY = (
     "応答の前に、`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
@@ -115,13 +108,8 @@ _INVESTIGATION_WORDS = ("確認", "調査", "調べ", "見直", "点検", "洗�
 
 
 def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | None:
-    """例示の語を含む発話へ、原文の対象と例示の関係を判断する節の所在を示す注記を返す。
-
-    指摘・提案・実行指示のどれに当たるか、例示が上位の対象の一部かは受領側が判断し、本フックは字面の一致だけで返す。
-    調査を求める語も併せ持つ発話には、独立した調査を委ねる手段の所在も加える。
-    """
     text = QUOTED_MATERIAL_RE.sub("", prompt)
-    # 「AとかBとか」の開いた列挙も例示として扱う。単独の「とか」は意味が多いため、反復した場合に限る。
+
     if not (any(word in text for word in _EXAMPLE_WORDS) or text.count("とか") >= 2):
         return None
     body = (
@@ -139,7 +127,6 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
 
 
 def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]:
-    """通常発話と質問への自由記述に共通の、内容に応じた注記を返す。"""
     example = _example_scope_notice(prompt, source, subject=subject or prompt)
     return [] if example is None else [example]
 
@@ -149,14 +136,11 @@ _FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従え。"
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
 _NOTES_ONLY_ANSWER = "(notes only)"
-# 複数選択の質問の`answers`は、選んだ`label`と自由記述を`, `で連結した1つの文字列で届く（2.1.285の記録で観測）。
-_MULTI_SELECT_SEPARATOR = ", "
 
-# --- plan fileの書式を判定する定数 ---
+_MULTI_SELECT_SEPARATOR = ", "
 
 
 def _reset_process_wi_invoked(state: dict) -> dict | None:
-    """`process_wi_skill_invoked`を偽へ戻す。既に偽ならNoneを返す（冪等）。"""
     if not state.get("process_wi_skill_invoked", False):
         return None
     state["process_wi_skill_invoked"] = False
@@ -164,7 +148,6 @@ def _reset_process_wi_invoked(state: dict) -> dict | None:
 
 
 def _response_texts(value: object) -> list[str]:
-    """Bash応答から標準出力相当の文字列を再帰的に抽出する。"""
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
@@ -175,7 +158,6 @@ def _response_texts(value: object) -> list[str]:
 
 
 def _response_has_exit_invocation(value: object) -> bool:
-    """応答中の単独JSON行に終了CLIの実行証跡がある場合に真を返す。"""
     if isinstance(value, dict) and value.get("exit_session_invoked") is True:
         return True
     for text in _response_texts(value):
@@ -190,7 +172,6 @@ def _response_has_exit_invocation(value: object) -> bool:
 
 
 def _record_bash_response_state(session_id: str, command: str, tool_response: object) -> None:
-    """成功したBash応答を使い、終了CLI起動と計画ファイル作成を記録する。"""
     segments = [segment for segment in extract_execution_segments(command) if segment.resolved and segment.tokens]
     exit_invoked = any(is_agents_exit_session_command(segment.tokens) for segment in segments)
     if exit_invoked and _response_has_exit_invocation(tool_response):
@@ -203,20 +184,12 @@ _PLAN_CREATION_RUN_SCRIPT_PREFIX = ("run-script", "plan-create")
 
 
 def _is_plan_creation_invocation(tokens: tuple[str, ...]) -> bool:
-    """実行トークン列が旧または現行の計画ファイルを作成するコマンドであるかを返す。"""
     if any(_PLAN_CREATION_SCRIPT_NAME in token for token in tokens):
         return True
     return is_atk_command(tokens) and tokens[1:3] == _PLAN_CREATION_RUN_SCRIPT_PREFIX
 
 
 def _record_created_plan_file(session_id: str, segments: list[ExecutionSegment], tool_response: object) -> None:
-    """計画ファイルを作成するコマンドの標準出力から計画ファイル（メイン）の絶対パスを記録し、計画の工程の開始とする。
-
-    このスクリプトは確定したパスを標準出力へ1行ずつ書くため、計画ファイル（メイン）と判定した行だけを抽出する。
-    新しい計画のパスで置き換えるため、前の計画名をセッション名へ出し続けない。
-    計画の工程の開始（`plan_mode_skill_invoked`）は、以後の計画ファイルの全体書込で構造の確認を案内する条件になる。
-    該当が無い場合は記録せず、PostToolUseの応答を変えない。
-    """
     if not any(_is_plan_creation_invocation(segment.tokens) for segment in segments):
         return
     for text in _response_texts(tool_response):
@@ -236,7 +209,6 @@ def _set_plan_mode_invoked(state: dict) -> dict | None:
 
 
 def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, str] | None:
-    """処理対象のPostToolUse payloadを検証して共通項目を返す。"""
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -248,10 +220,12 @@ def _parse_hook_payload(payload_text: str) -> tuple[dict, str, str, dict, str, s
         return None
     tool_name = payload.get("tool_name", "")
     tool_input = payload.get("tool_input") or {}
+    if tool_name == "functions.exec" and is_codex_payload(payload) and isinstance(tool_input, str):
+        tool_input = {"input": tool_input}
     if not isinstance(tool_input, dict):
         return None
     event_name = payload.get("hook_event_name", "")
-    # 後続の対象限定で捨てるイベントも、ホストから到着した元の応答で記録する。
+
     if event_name == "PermissionDenied":
         operation_permissions.observe_denial(payload)
     elif event_name in {"PostToolUse", "PostToolUseFailure"}:
@@ -270,12 +244,6 @@ _BACKGROUND_TASK_ID_RE = re.compile(r"running in background with ID:\s*([\w-]+)"
 
 
 def _background_task_id_from_response(value: object) -> str | None:
-    """Bashの背景実行応答からタスクIDを返す。
-
-    応答は文字列と辞書のいずれの形でも届くため、入れ子を再帰的に走査する。
-    実行上限や手動の操作で背景へ移ったBashは構造化`backgroundTaskId`で記録し、
-    MCP呼び出しの移行通知は`background_tasks.background_task_id_from_notice`が扱う。
-    """
     if isinstance(value, str):
         match = _BACKGROUND_TASK_ID_RE.search(value)
         return match.group(1) if match is not None else None
@@ -296,10 +264,6 @@ def _background_task_id_from_response(value: object) -> str | None:
 
 
 def _structured_background_task_id(value: object) -> str | None:
-    """Bash応答の最上位にある構造化`backgroundTaskId`を返す。
-
-    前景実行の出力本文に同じ文言が現れても所有の根拠にしないため、本文の文字列が一致するかは判定しない。
-    """
     if not isinstance(value, dict):
         return None
     task_id = value.get("backgroundTaskId")
@@ -328,7 +292,6 @@ def _record_background_task_id(session_id: str, task_id: str) -> None:
 
 
 def _free_text_answers(tool_response: object) -> list[str]:
-    """提示した選択肢と一致しない回答・追加の自由記述を配送欄ごとに集める。"""
     if not isinstance(tool_response, dict) or tool_response.get("afkTimeoutMs") is not None:
         return []
     texts: list[str] = []
@@ -365,7 +328,6 @@ def _free_text_answers(tool_response: object) -> list[str]:
 
 
 def _record_plan_file(session_id: str, file_path: str) -> None:
-    """現在の計画ファイルを記録する。"""
 
     def _set_current_plan_file_path(current_state: dict) -> dict | None:
         if current_state.get("current_plan_file_path") == file_path:
@@ -400,12 +362,10 @@ def _observe_edit_tool(session_id: str, tool_name: str, tool_input: dict, cwd: s
 
 
 def _plan_main_path_for(display_path: str) -> str:
-    """現行計画の構成要素から計画ファイル（メイン）の絶対パスを返す。"""
     return display_path
 
 
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
-    """計画ファイル全文書き込み後に実行する計画の構造を確かめるコマンドの案内文を返す。"""
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
         f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめよ:"
@@ -417,7 +377,6 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
 
 
 def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None:
-    """成功したBashの応答から、バックグラウンドタスクの所有、`atk agents wait`の観測、終了CLIと計画ファイル作成を記録する。"""
     command = tool_input.get("command")
     if not isinstance(command, str) or not command:
         return
@@ -436,7 +395,6 @@ def _observe_bash_tool(payload: dict, session_id: str, tool_input: dict) -> None
 
 
 def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
-    """メインが前景で成功させたGit操作の直後に、完了報告の手順書を読む条件を通知する。"""
     response = payload.get("tool_response")
     if (
         not is_main_agent_context(payload)
@@ -458,11 +416,8 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
 
 
 def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str, event_name: str) -> list[str]:
-    """ツールの種類ごとに実行結果をセッション状態へ記録し、コーディングエージェントへ返す通知を返す。"""
     _background_tasks.observe_repl_bash(payload, completed=True)
-    # 所有の根拠は、自セッションのツール呼び出しの応答がバックグラウンドタスク識別子を返したことである。
-    # 起動の成否は所有の有無を変えないため、ホストのMCP移行通知で始まる応答は成否によらず記録する。
-    # 本文の途中に同じ文言を含む前景の出力は、ホストの通知ではないため記録しない。
+
     notice_task_id = _background_tasks.background_task_id_from_notice(payload.get("tool_response"))
     if notice_task_id is not None:
         _record_background_task_id(session_id, notice_task_id)
@@ -483,17 +438,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
         return notices
     if event_name == "PostToolUse" and is_send_to_user_tool(tool_name):
         _progress_self_check.observe_send(payload, tool_input.get("message"))
-    # この会話が投入したUWIに回答が付いた場合に通知する。
-    # ツール種別に依らず回答を確認し、ユーザーの回答から通知までの遅延を抑える。
-    # この通知が指示する反映と回答を待っていた作業の再開はメインが所有するため、
-    # in-processのサブエージェントと`agents_server`の委譲先セッションでは通知を組み立てない。
+
     if is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
             notices.append(_llm_notice(uwi_notice, tag="notice"))
 
-    # AskUserQuestion: ユーザーが書いた文はUserPromptSubmitを経ずにツール結果として届くため、同じ注記をここで返す。
-    # 同じ質問・回答の再配送を抑え、別の質問または回答には改めて注記を届ける。
     if tool_name == _ASK_USER_QUESTION_TOOL:
         if answers := _free_text_answers(payload.get("tool_response")):
             subject = json.dumps(
@@ -509,14 +459,12 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     if content_notice not in notices:
                         notices.append(content_notice)
     elif tool_name == "Skill":
-        # Skill: 表示名のための作業の起動検出
         skill = tool_input.get("skill")
         operation_skills.observe_skill(session_id, resolve_hook_agent_id(payload), skill)
         if not payload.get("agent_id") and isinstance(skill, str):
             arguments = tool_input.get("args")
             session_title.observe_skill(session_id, skill, arguments if isinstance(arguments, str) else None)
     elif tool_name in ("Agent", "Task"):
-        # AgentとTask: 背景起動の応答が返した`agentId`だけをバックグラウンドタスクの所有記録へ残す
         agent_id = _background_tasks.async_agent_launch_id(payload.get("tool_response"))
         if agent_id is not None:
             _record_background_task_id(session_id, agent_id)
@@ -552,12 +500,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
 
 
 def _mount_periodic_recheck(session_id: str) -> list[str]:
-    """modへ定期再確認のtaskの装着を依頼し、装着できなかった場合の警告を同じ`start`の結果へ添える。
-
-    `$.prompt.submit`による通知は実行中のターンの終了後にしか届かないため、modの応答を待って同じターンの中で届ける。
-    作成の成功と既にtaskを持つ場合は空の応答となり、何も添えない。
-    modを読み込んでいない会話（読込目印が`ready`でない）では待たない。
-    """
     paths = function_hook_paths(session_id)
     try:
         if paths is None or paths[0].read_text(encoding="utf-8") != "ready":
@@ -572,7 +514,6 @@ def _mount_periodic_recheck(session_id: str) -> list[str]:
 
 
 def _observe_skill_reads(payload: dict, session_id: str, tool_name: str, tool_input: dict, cwd: str) -> None:
-    """スキルの入口の現在の全文を返した読取を、そのスキルの起動として記録する。"""
     subject = resolve_hook_agent_id(payload)
     response = payload.get("tool_response")
     for path in full_reads.full_reads(tool_name, tool_input, response, cwd, full_reads.is_skill_entry_name):
@@ -585,11 +526,6 @@ def _observe_skill_reads(payload: dict, session_id: str, tool_name: str, tool_in
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。終了コードは常に0。
-
-    フック応答はstdout全体を1つのJSONとして解析されるため、各記録処理が返した通知本文を
-    改行で連結して1回だけ出力する。
-    """
     begin_delivery()
     notices: list[str] = []
     parsed = _parse_hook_payload(payload_text)
@@ -605,6 +541,12 @@ def main(payload_text: str) -> int:
         notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
         if tool_name in {"Bash", "exec_command", "functions.exec"}:
             clock_claims.observe(payload, tool_input.get("command"), session_id)
+        if (
+            is_codex_payload(payload)
+            and tool_name in {"exec_command", "functions.exec_command", "functions.exec"}
+            and (record_warning := session_record_reference_warning(tool_name, tool_input, cwd))
+        ):
+            notices.append(record_warning)
         if (
             is_codex_payload(payload)
             and tool_name == "Bash"

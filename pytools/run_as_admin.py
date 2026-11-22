@@ -27,7 +27,6 @@ def main() -> None:
 
 
 def run_elevated(command: str, args: list[str], *, wait: bool = False) -> None:
-    """ShellExecuteW("runas") で昇格起動する。"""
     import ctypes  # pylint: disable=import-outside-toplevel
 
     params = " ".join(f'"{a}"' if " " in a else a for a in args)

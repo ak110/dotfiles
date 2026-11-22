@@ -16,8 +16,6 @@ from agent_toolkit._testing.shell_checks_support import _existing_work_contract 
 
 
 class TestGitCommitAttribution:
-    """実行位置と最終メッセージを確定できる通常commitだけの帰属確認。"""
-
     _identity = shell_checks.RuntimeIdentity("codex", "gpt-6.1-sol", "medium", "observed")
     _trailer = "Co-Authored-By: GPT-6.1 Sol / Medium <noreply@openai.com>"
 
@@ -80,8 +78,6 @@ class TestGitCommitAttribution:
 
 
 class TestGitCommitMessageFormat:
-    """同じ本文取得から、件名と本文の区切りを帰属とは独立に確かめる。"""
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -160,7 +156,6 @@ def test_reserved_prefix_reaches_bash_hook_checks(
 def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
-    """引数・ファイル・heredocから最終メッセージを確定し、WI名を持つcommitを公開hookが遮断する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対応AWI: 20261020-151224-001.md"
     if command_kind in {"am", "am-attached"}:
@@ -191,7 +186,6 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
 def test_git_commit_without_work_item_filename_passes_public_hook(
     tmp_path: pathlib.Path, command_kind: str, extra_payload: dict[str, str], launcher: str
 ) -> None:
-    """WI名のない同形メッセージは公開hookを通過する。"""
     repo = git_repository.init_repository(tmp_path / "repo", commit_message="判定前の履歴")
     message = "変更理由\n\n対象の動作を更新した。"
     if command_kind in {"am", "am-attached"}:
@@ -213,7 +207,6 @@ def test_git_commit_without_work_item_filename_passes_public_hook(
 
 
 def test_commit_wrapper_message_file_is_relative_to_current_directory(tmp_path: pathlib.Path) -> None:
-    """`-C`というファイル名をGitのglobal optionと取り違えず、現在cwdの本文を読む。"""
     message = "件名\n\n本文\n"
     (tmp_path / "-C").write_text(message, encoding="utf-8")
     command = "atk run-script commit-with-timeout -- --timeout 3 -- -F -C -m 追記"

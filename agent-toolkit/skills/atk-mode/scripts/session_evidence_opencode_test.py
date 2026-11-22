@@ -1,5 +1,3 @@
-"""OpenCodeの保存記録を、ログ表示と親からの証拠抽出・統計で読む。"""
-
 import json
 from pathlib import Path
 

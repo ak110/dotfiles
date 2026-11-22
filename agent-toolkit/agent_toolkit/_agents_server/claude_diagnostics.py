@@ -22,7 +22,6 @@ from agent_toolkit._common.diagnostic_redaction import DiagnosticTail
 _INITIALIZATION_STDERR_LIMIT_CHARS = 4000
 
 
-# 初期化の停止位置を特定するため、受信したメッセージを識別できる要約を件数と長さの上限内で保持する。
 _INITIALIZATION_MESSAGE_LIMIT = 20
 
 
@@ -56,7 +55,6 @@ class _InitializationDiagnostic:
 
     @property
     def stderr(self) -> str:
-        """全体を伏せてから末尾を上限の文字数に抜粋した標準エラー。"""
         return self._stderr.excerpt().text
 
     def capture_client(self, client: Any) -> None:
@@ -81,7 +79,6 @@ class _InitializationDiagnostic:
         self.exception_body = str(error) or self.exception_type
 
     async def public_async(self) -> dict[str, Any]:
-        """子孫の照会を待ち、診断のsnapshotをloopで組み立てる。"""
         children = await run_file_operation(_describe_child_processes, self.child_pid)
         return self.public(child_processes=children)
 
@@ -100,7 +97,6 @@ class _InitializationDiagnostic:
 
 
 def _message_summary(message: Any) -> str:
-    """受信メッセージを識別できる要約を、長さの上限内で返す。"""
     for attribute in ("subtype", "hook_event_name", "event", "name"):
         value = getattr(message, attribute, None)
         if isinstance(value, str) and value:
@@ -140,7 +136,6 @@ def _owned_runtime_processes(
     *,
     pins: process_tree.ProcessIdentityPins | None = None,
 ) -> list[psutil.Process]:
-    """親終了後も観測済みhandleを保ち、それぞれの子孫を所有へ加える。"""
     owned = dict.fromkeys((*known, *((root,) if root is not None else ())))
     for parent in tuple(owned):
         try:
@@ -155,11 +150,6 @@ def _owned_runtime_processes(
 
 
 def _prepare_debug_file(launch_kind: LaunchKind) -> pathlib.Path | None:
-    """委譲先CLIの診断ログの保存先を用意し、保持世代を超えた記録を削除する。
-
-    session識別子は初期化の完了まで確定しないため、開始時点では時刻を名前に使う。
-    確定後の改名は`rename_debug_file_for_session`が行う。
-    """
     directory = _state_paths.state_dir() / _DEBUG_LOG_DIR_NAME
     logger = logging.getLogger("agent-toolkit.agents-server.claude")
     try:

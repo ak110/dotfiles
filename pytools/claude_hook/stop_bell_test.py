@@ -44,7 +44,6 @@ def _assistant_entry(*, async_tool: str | None = None) -> dict:
 
 
 def _user_async_launched_entry(tool_use_id: str) -> dict:
-    """background Agent起動を記録するuserエントリを生成する。"""
     return {
         "type": "user",
         "toolUseResult": {"isAsync": True, "status": "async_launched", "agentId": "agent-x"},
@@ -87,8 +86,6 @@ def _output(result: subprocess.CompletedProcess[str]) -> dict:
 
 
 class TestRingCondition:
-    """ベルを鳴らす条件: 対話セッションで背景の稼働が無い状態の応答終了。"""
-
     def test_interactive_turn_end_rings(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
@@ -98,17 +95,13 @@ class TestRingCondition:
         assert _output(result).get("terminalSequence") == _BELL
 
     def test_missing_transcript_rings(self, tmp_path: pathlib.Path):
-        """transcript未指定でも背景稼働を判定できないだけで、入力待ちとしてベルを鳴らす。"""
         result = _run({"session_id": "no-transcript"}, state_dir=tmp_path)
         assert _output(result).get("terminalSequence") == _BELL
 
 
 class TestSilentConditions:
-    """ベルを鳴らさない条件: 再帰呼び出し・自律セッション・背景稼働中・判定材料の欠落。"""
-
     @pytest.mark.parametrize("pending", [True, False])
     def test_session_observation_controls_bell(self, tmp_path: pathlib.Path, pending: bool) -> None:
-        """未回収の終了結果だけが残る間は無音とし、回収済みならベルを鳴らす。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         session_state.update_state(
             "observation-bell",
@@ -127,7 +120,6 @@ class TestSilentConditions:
         assert (_output(result).get("terminalSequence") == _BELL) is not pending
 
     def test_stop_hook_active_is_silent(self, tmp_path: pathlib.Path):
-        """他のStop hookのblock後の再呼び出し → 入力待ちではないため鳴らさない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "recursive", "transcript_path": str(transcript), "stop_hook_active": True},
@@ -145,7 +137,6 @@ class TestSilentConditions:
         assert "terminalSequence" not in _output(result)
 
     def test_matching_session_id_is_silent(self, tmp_path: pathlib.Path):
-        """常駐本体の会話IDが一致した場合はベルを鳴らさない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "parent", "transcript_path": str(transcript)},
@@ -156,7 +147,6 @@ class TestSilentConditions:
         assert "terminalSequence" not in _output(result)
 
     def test_nested_session_id_rings(self, tmp_path: pathlib.Path):
-        """入れ子会話は親の印を継承してもベルを鳴らす。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {"session_id": "nested", "transcript_path": str(transcript)},
@@ -176,7 +166,6 @@ class TestSilentConditions:
         assert "terminalSequence" not in _output(result)
 
     def test_background_tasks_payload_is_silent(self, tmp_path: pathlib.Path):
-        """transcriptに起動痕跡が無くてもStop payloadのtaskが未完了ならベルを鳴らさない。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {
@@ -189,7 +178,6 @@ class TestSilentConditions:
         assert "terminalSequence" not in _output(result)
 
     def test_empty_background_tasks_preserve_ring_path(self, tmp_path: pathlib.Path):
-        """空のStop payloadでは現行のベル判定へ戻る。"""
         transcript = _write_transcript(tmp_path, [_user_entry(), _assistant_entry()])
         result = _run(
             {
@@ -202,7 +190,6 @@ class TestSilentConditions:
         assert _output(result).get("terminalSequence") == _BELL
 
     def test_empty_background_tasks_override_transcript_remainder(self, tmp_path: pathlib.Path) -> None:
-        """権威ある空payloadではtranscript残差を退けてベルを鳴らす。"""
         transcript = _write_transcript(
             tmp_path,
             [_user_entry(), _user_async_launched_entry("toolu_bg1"), _user_entry("続き"), _assistant_entry()],

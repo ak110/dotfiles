@@ -14,8 +14,6 @@ import yaml
 if typing.TYPE_CHECKING:
     _SafeLoaderBase = yaml.SafeLoader
 else:
-    # libyamlを同梱したPyYAMLではC実装のローダーを基底に選ぶ。
-    # 同梱しない配布では純Python実装を基底とし、解析結果は変わらない。
     _SafeLoaderBase = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 
 
@@ -30,7 +28,6 @@ class _LiteralScalarLoader(_SafeLoaderBase):  # pylint: disable=too-many-ancesto
 
 
 def _construct_literal_scalar(loader: yaml.SafeLoader, node: yaml.Node) -> str:
-    """暗黙タグにかかわらずスカラーノードの字面を返す。"""
     assert isinstance(node, yaml.ScalarNode)
     return loader.construct_scalar(node)
 
@@ -54,13 +51,6 @@ _SIMPLE_LINE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*): ([^\s\-?:,\[\]{}#&*!|>'\"
 
 
 def _simple_mapping(source: str) -> dict[str, str] | None:
-    """各行が単純な`キー: 値`だけのfrontmatterを、YAMLを解析せずに`_LiteralScalarLoader`と同じ辞書へ変換する。
-
-    純Python実装のPyYAMLは1件の解析に約1ミリ秒かかり、`atk serve`の起動直後の一覧が数千件の解析を待つ。
-    キュー項目のfrontmatterはほぼ全てがこの形であり、値はプレーンスカラーとして字面のまま`str`になる。
-    値の途中のコメント（` #`）・入れ子・引用符・空の値・型付きの値を使うキーなど、
-    この変換で結果が変わり得る行が1つでもあれば`None`を返し、呼び出し元はYAMLで解析する。
-    """
     data: dict[str, str] = {}
     for line in source.split("\n"):
         match = _SIMPLE_LINE.fullmatch(line)
@@ -115,9 +105,6 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
     if not text.startswith("---\n"):
         return None
     try:
-        # 開始区切り末尾の`\n`（index 3）を検索開始位置とする。空frontmatter（`---\n---\n`）では
-        # 開始区切りと閉じ区切りが同じ`\n`を共有し、閉じ区切りの一致がindex 3から始まるため、
-        # 検索開始位置を4にすると空frontmatterの閉じ区切りを検出できない。
         end = text.index("\n---\n", 3)
     except ValueError:
         return None
@@ -150,11 +137,5 @@ def parse_frontmatter(text: str) -> tuple[dict[str, typing.Any], str] | None:
 
 
 def serialize_frontmatter(data: typing.Mapping[str, typing.Any], body: str) -> str:
-    r"""マッピングをYAML frontmatterへ直列化し本文と結合する。
-
-    `sort_keys=False`でdataの挿入順を保持し、`allow_unicode=True`で日本語をエスケープしない。
-    本文は受け取った文字列を一切加工せず`---\\n`直後へ連結する（`parse_frontmatter`が返した
-    本文をそのまま渡す前提であり、呼び出し側で改行の追加・削除をしない）。
-    """
     dumped = yaml.safe_dump(dict(data), sort_keys=False, allow_unicode=True, default_flow_style=False)
     return f"---\n{dumped}---\n{body}"

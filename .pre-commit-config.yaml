@@ -38,6 +38,7 @@ repos:
       - id: detect-private-key
       # ファイル検証。
       - id: check-added-large-files
+        exclude: '^\.pyfltr-comment-baseline\.json$'
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
         exclude: '\.tmpl$'

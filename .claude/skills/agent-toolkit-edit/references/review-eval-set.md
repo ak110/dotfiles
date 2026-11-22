@@ -2,7 +2,7 @@
 
 レビュー担当への指示とモデルの割り当てを変える変更を、`scripts/review_eval_cases.json`の評価セットから「比べる事例の選び方」で選んだ事例について、変更の前後に比べてから採る手順書である。
 指示の例は、実行レビューの役割文書と手順書（`agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md`、`agent-toolkit/skills/atk-mode/playbooks/exec-review.md`）である。
-ほかに`agent-toolkit/skills/atk-mode/roles/recurrence-self-check.parent.md`と`agent-basics:review-standards`も対象とする。
+ほかに`agent-basics:review-standards`も対象とする。
 見逃しと誤指摘の件数を実例で比べ、改訂が良くなったかを印象ではなく結果で決める。
 モデルの費用がかかるため、CIと定期の工程から外して手動で実行する。
 

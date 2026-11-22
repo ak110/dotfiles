@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: baseのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -14,8 +13,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 class TestAddEmptyBodyRejection:
-    """`atk wi add`が実質空の本文の投入を拒否することを検証する。"""
-
     @pytest.mark.parametrize("body", ["", "-", "-\n-\n"])
     def test_empty_body_rejected(
         self,
@@ -24,7 +21,6 @@ class TestAddEmptyBodyRejection:
         capsys: pytest.CaptureFixture[str],
         body: str,
     ) -> None:
-        """実質空の本文は保存せず、検出理由と再投入の案内を返す。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -47,7 +43,6 @@ class TestAddEmptyBodyRejection:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """内容ありの箇条書き（`- 理由: ...`）は従来通り投入が成立する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -67,7 +62,6 @@ class TestAddEmptyBodyRejection:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """エディター経由で空本文が確定した場合も非ゼロ終了する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -81,19 +75,16 @@ class TestAddEmptyBodyRejection:
 
 
 class TestAddBodyFile:
-    """`atk wi add --body-file`でシェル引用符を経由せずに本文を渡せることを検証する。"""
-
     def test_body_file_content_becomes_message(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """指定ファイルの内容が本文として投入される。"""
         notes = _setup_notes(tmp_path)
         repo = tmp_path / "myrepo"
         repo.mkdir()
         _patch_add_git(monkeypatch, repo)
-        # シェルの引用規則を経由すると破損しやすい文字を含む本文を用いる。
+
         body = '### 見出し\n\n- `バッククォート` と $変数 と "引用符" を含む本文\n'
         body_path = tmp_path / "body.md"
         body_path.write_text(body, encoding="utf-8")
@@ -110,7 +101,6 @@ class TestAddBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """複数回指定すると指定件数のエントリが投入される。"""
         notes = _setup_notes(tmp_path)
         repo = tmp_path / "myrepo"
         repo.mkdir()
@@ -138,7 +128,6 @@ class TestAddBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """本文ファイル内の既存ファイルパスを本文として投入する。"""
         notes = _setup_notes(tmp_path)
         repo = tmp_path / "myrepo"
         repo.mkdir()
@@ -160,7 +149,6 @@ class TestAddBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """本文ファイルの有無にかかわらずMESSAGE位置引数を拒否する。"""
         _setup_notes(tmp_path)
         body_path = tmp_path / "body.md"
         body_path.write_text("本文\n", encoding="utf-8")
@@ -212,7 +200,6 @@ def test_process_wi_timing_at_add_boundary(
     timing: list[str],
     accepted: bool,
 ) -> None:
-    """巡回の由来がどの入力にあっても、時機を選ぶ前にキューを変更しない。"""
     notes = _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -263,7 +250,6 @@ def test_process_wi_deferral_distinguishes_defects(
     category: str,
     accepted: bool,
 ) -> None:
-    """確定欠陥の調査は今回に行い、候補の調査と正当な待ちの先送りは受け付ける。"""
     notes = _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -304,7 +290,6 @@ def test_process_wi_deferral_distinguishes_defects(
 
 
 def test_batch_rejects_process_wi_kind(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
-    """一括投入は巡回で選んだ種別を無視して保存しない。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", "add", "--batch", "--process-wi-kind", "defect"], home=tmp_path, now=_FIXED_DT)
 
@@ -315,7 +300,6 @@ def test_batch_rejects_process_wi_kind(capsys: pytest.CaptureFixture[str], tmp_p
 def test_process_wi_dry_run_does_not_require_saving_timing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """保存しない原稿検証では時機判定が無くても冒頭を確認できる。"""
     notes = _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()

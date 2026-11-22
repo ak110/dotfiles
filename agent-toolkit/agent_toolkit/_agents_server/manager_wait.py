@@ -73,7 +73,6 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         return self._deliver_notices(response, notices)
 
     async def _collect_wait_result(self, session: SessionState) -> dict[str, Any] | None:
-        """同じturnの回収を勝ち取った場合だけ、退避した公開応答を返す。"""
         if not session.result_available or session.result_delivered:
             return None
         turn = session.turn_seq, session.finalized_at

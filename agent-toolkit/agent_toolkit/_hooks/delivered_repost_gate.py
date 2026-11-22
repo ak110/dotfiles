@@ -15,8 +15,6 @@ import re
 
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
 from agent_toolkit._hooks import notice
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
@@ -24,7 +22,6 @@ lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
-# 再開した会話の記録では改名前のツール名も送達の根拠になる。
 _SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
     "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user",
     "mcp__agent-toolkit__send_to_user",
@@ -37,15 +34,10 @@ _block_notice = notice.block_formatter("delivered_repost_gate")
 
 
 def is_send_to_user_tool(name: object) -> bool:
-    """別のMCPの同名ツールを、このプラグインの送達と取り違えない。"""
     return isinstance(name, str) and name in _SEND_TO_USER_TOOLS
 
 
 def _send_required(entries: list[dict]) -> bool:
-    """端末modの送達の指定の添付が、圧縮の前を含む記録全体に1回でもあるかを返す。
-
-    指定は端末のメインで送達ツールが登録済みの時だけ添えられ、圧縮の後や完了通知で始まるターンには添わない。
-    """
     for entry in entries:
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
         if (
@@ -61,7 +53,6 @@ def _send_required(entries: list[dict]) -> bool:
 
 
 def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
-    """最後の通常本文、表示した報告の文、送達結果の有無を返す。"""
     messages: dict[str, str] = {}
     delivered: set[str] = set()
     completed = False
@@ -97,15 +88,10 @@ def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
 
 
 def _sentences(text: str) -> set[str]:
-    """空白・Markdownの外側の記号・文末記号の違いだけを無視する。"""
     return {line for part in _SENTENCE_BREAK.split(text) if (line := " ".join(part.split()).strip(">*_`#… "))}
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
-    """直近の入力（人間の発話、完了通知、自動入力）より後の記録を返す。
-
-    同じ人間入力の後でも、完了通知などで始まる別ターンの送達を現ターンの結果と混同しない。
-    """
     for index in range(len(entries) - 1, -1, -1):
         entry = entries[index]
         if entry.get("isCompactSummary") is True or (
@@ -122,7 +108,6 @@ def _current_turn(entries: list[dict]) -> list[dict]:
 
 
 def _conversation_entries(lines: list[str]) -> list[dict]:
-    """sidechainを除いた会話全体の記録を返す。"""
     entries: list[dict] = []
     for line in lines:
         try:
@@ -135,7 +120,6 @@ def _conversation_entries(lines: list[str]) -> list[dict]:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """指定された送達の結果がない通常本文、または送達済み本文の再掲を拒む。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""

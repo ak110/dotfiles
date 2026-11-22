@@ -62,9 +62,9 @@ def test_restore_returns_acceptance_to_live_generation_after_published_one_exite
     restored = registry.restore()
     assert restored is not None and restored["generation"] == "old"
     assert registry.current() == restored
-    # 各世代は観測済みの受付先より古いepochの通知を捨てるため、戻した受付先のepochを下げない。
+
     assert restored["epoch"] >= exited["epoch"]
-    # 終了した世代の配布物を起動し直すと、戻した世代より新しい候補として公開できる。
+
     relaunched = registry.reserve("new", tmp_path / "new", "1.0.1")
     assert relaunched["generation"] == "new" and not relaunched["ready"]
     assert registry.publish("new", endpoint="new", process="relaunched")["generation"] == "new"
@@ -73,7 +73,6 @@ def test_restore_returns_acceptance_to_live_generation_after_published_one_exite
 def test_restore_returns_acceptance_to_newest_of_several_live_generations(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """生存する公開済みの世代が複数あれば、最も新しく準備された世代へ受付を戻す。"""
     registry = GenerationRegistry(tmp_path)
     for name, version in (("oldest", "1.0.0"), ("middle", "1.0.1"), ("exited", "1.0.2")):
         registry.reserve(name, tmp_path / name, version)
@@ -86,7 +85,6 @@ def test_restore_returns_acceptance_to_newest_of_several_live_generations(
 def test_restore_keeps_newer_candidate_ahead_of_exited_generation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """受付を戻す前に準備された新しい版の候補は、終了した世代の再起動より新しい順序を保つ。"""
     registry = _published(tmp_path)
     registry.reserve("next", tmp_path / "next", "1.0.2")
     monkeypatch.setattr(service_transport, "process_alive", lambda identity: identity != "new")
@@ -101,7 +99,6 @@ def test_restore_keeps_newer_candidate_ahead_of_exited_generation(
 def test_restore_keeps_acceptance_without_exited_current_or_survivor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, alive: set[str]
 ) -> None:
-    """生存する受付先は変更しない。生存する世代が無ければ、転送側が起動し直す世代を受付先に残す。"""
     registry = _published(tmp_path)
     before = registry.generations()
     monkeypatch.setattr(service_transport, "process_alive", lambda identity: identity in alive)

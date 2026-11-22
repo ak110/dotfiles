@@ -15,7 +15,6 @@ from agent_toolkit._common import session_registry
 
 
 def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp_path: pathlib.Path) -> None:
-    """不正通知を保持し、正常通知だけを送信時刻とファイル名の順で回収する。"""
     directory = shared_layout.notices_directory("root", tmp_path)
     directory.mkdir(parents=True)
     payloads = {
@@ -51,7 +50,6 @@ def test_take_notices_keeps_invalid_values_and_removes_ordered_valid_notices(tmp
 
 
 def test_wait_round_without_notices_reads_no_status_files(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """通知の無い巡では状態ファイルを読まず、通知が届いた巡では所有者を確かめて回収する。"""
     status = tmp_path / "agents-server" / "root"
     status.mkdir(parents=True)
     for writer in range(20):
@@ -85,7 +83,6 @@ def test_wait_round_without_notices_reads_no_status_files(tmp_path: pathlib.Path
 
 
 def test_reading_notices_is_repeatable_and_only_the_winner_delivers(tmp_path: pathlib.Path) -> None:
-    """通知の読取や破損の診断は原本を消さず、CLIとMCPのうち実際に回収できた側だけが返す。"""
     directory = shared_layout.notices_directory("root", tmp_path)
     directory.mkdir(parents=True)
     session_registry.publish(

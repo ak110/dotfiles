@@ -1,5 +1,3 @@
-"""sessionの稼働状態が変わった時点の共有状態とホスト資源を既存ログへ記録する。"""
-
 from __future__ import annotations
 
 import datetime
@@ -53,7 +51,6 @@ def record(
         payload["unavailable_fields"] = errors
         _LOG.info("resource_snapshot %s", json.dumps(payload, ensure_ascii=False, sort_keys=True))
     except Exception:
-        # 診断材料の採取が通常の結果配送を止めないよう、計測の境界で例外を隔離する。
         _LOG.warning(
             "resource_snapshot_failed event=%s root_session_id=%s session_id=%s turn_seq=%d; "
             "session処理は継続した。資源記録の取得失敗を確認する",
@@ -85,8 +82,7 @@ def _session_counts(
             previous = by_id.get(session_id)
             if previous is None or str(previous[1].get("updated_at", "")) <= str(entry.get("updated_at", "")):
                 by_id[session_id] = (root, entry)
-    # 共有ファイルへ集約して書き込む前に起きた遷移も数えるため、このmanagerが所有するsessionはメモリ上の状態を使う。
-    # メモリ上の状態は共有ファイルの内容より新しい。
+
     for session in sessions.values():
         by_id[session.session_id] = (own_root, {"status": session.status})
     counts: dict[str, int] = dict.fromkeys([*roots, own_root], 0)

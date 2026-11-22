@@ -1,5 +1,3 @@
-"""登録済みplugin scriptの起動を検証する。"""
-
 import argparse
 import json
 import os
@@ -20,7 +18,6 @@ from agent_toolkit._testing.plugin_environment_support import prepare_plugin_env
 def test_public_multi_turn_trials_prepares_and_grades_saved_artifacts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str, kind: str
 ) -> None:
-    """`atk run-script multi-turn-trials`で公開素材の準備と採点を実行し、採点の終了コードを透過する。"""
     restore_host_environment(monkeypatch)
     trial = json.loads(
         (
@@ -163,7 +160,6 @@ def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPa
 def test_dispatch_consumes_session_review_evidence_arguments(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """登録済みscriptが指定区間だけを原文・出所位置付きで返し、呼出元の状態を復元する。"""
     transcript = tmp_path / "transcript.jsonl"
     original_text = '原文の"引用"\tと\n改行、空白  を保持'
     transcript.write_text(
@@ -207,7 +203,6 @@ def test_dispatch_consumes_session_review_evidence_arguments(
 
 @pytest.mark.parametrize("script_name", ["session-review-decisions", "session-review-report", "report-completion-check"])
 def test_removed_session_review_entries_are_rejected(script_name: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """振り返りの判定入力と報告の生成器として撤去したコマンドを指定すると、未知の公開名として拒否する。"""
     parser = argparse.ArgumentParser()
     run_script.build_parser(parser)
 
@@ -223,7 +218,6 @@ def test_removed_session_review_entries_are_rejected(script_name: str, capsys: p
 def test_dispatch_consumes_termination_decision_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], matches: bool
 ) -> None:
-    """原入力に合う判断だけが実保存され、JSON入力と原文を変更しない。"""
     session_id = "evidence-test"
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -402,12 +396,6 @@ def test_registered_plan_create_runs_outside_repository_without_pythonpath(tmp_p
     ),
 )
 def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib.Path) -> None:
-    """公開された`atk run-script plan-progress`へ撤去した`--start-head`を渡すと引数エラーで終わる。
-
-    開始時のHEADは専用branchとベースbranchから`git merge-base`で得るため、進捗ログへ記録する手段を撤去した。
-    エンドユーザーが呼び出す`atk run-script`のスクリプト選択と引数の受け渡しを経ても、
-    撤去したオプションが受理されないことを確かめる。
-    """
     executable = run_script.PLUGIN_ROOT / "scripts/atk"
     environment = dict(os.environ)
     environment.pop("PYTHONPATH", None)
@@ -445,7 +433,6 @@ def test_public_plan_progress_entry_rejects_removed_start_head(tmp_path: pathlib
 
 
 def test_unregistered_script_lists_registered_names() -> None:
-    """未登録のscript名は登録済みscriptの一覧を次の操作として示す。"""
     with pytest.raises(next_action.ActionableError) as raised:
         run_script.registered_script_path("unknown-script")
 

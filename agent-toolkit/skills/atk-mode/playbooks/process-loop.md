@@ -19,7 +19,7 @@ CLIはセッションの起動・終了後の再起動と制御を担当し、WI
    次に `update-dotfiles` を実行し、出力と終了状態を自分で確認する。
    失敗や新しい不良はその場で `agent-basics:bugfix` を起動して対処し、処置の結果を確かめてから反映や次回の選定へ進む。
 5. 更新に成功したら、Claude Codeでは必要なpluginやMCPを `apply_runtime_changes` で反映する。
-   セッションを続ける時は `compact_conversation` の `resume` を指定して圧縮後に再開し、途中の作業を保存してから現ターンを終える。
+   同じセッションでの圧縮が必要なら、途中の作業を保存し、`compact_conversation` の `resume` を指定して現ターンを終える。
    本体側の更新を読むか区切りで新しい会話を使う時は、残工程を記録し `atk agents-exit-session` で正常終了する。
    CodexとAntigravityでは自動反映と自動再開を前提にせず、必要な場合は手動で再起動する。
 

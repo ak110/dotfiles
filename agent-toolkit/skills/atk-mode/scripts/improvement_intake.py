@@ -21,7 +21,7 @@ _MAX_BYTES = 16_384
 
 
 class _IntakeError(ValueError):
-    """診断に外部入力を含めない受付エラー。"""
+    pass
 
 
 def _read_report(path: Path) -> dict[str, str]:

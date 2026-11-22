@@ -1,5 +1,3 @@
-"""SDKの継承環境から接続変数を除き、明示的に継承するbackend用に保持する。"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, MutableMapping
@@ -12,7 +10,6 @@ _INHERITED: dict[str, str] = {}
 
 
 def prepare(environment: MutableMapping[str, str]) -> None:
-    """agents_serverの起動時に一度、値を外して保持する。"""
     environment.pop(delegated_session.HANDOFF_PATH_ENV, None)
     paths = (
         path for key in ("claude_credits_env_file", "claude_payg_env_file") if (path := config.resolve_mutable_setting(key))

@@ -21,13 +21,11 @@ from agent_toolkit._common.json_lines import split_lines
 
 
 def record_directory(state_root: Path | None = None) -> Path:
-    """コンパクション計測記録の保存先を指定しない場合に使うディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "compaction"
 
 
 async def observe_compaction_item(session: SessionState, method: str, params: dict[str, Any]) -> None:
-    """通常turnと独立した圧縮turnから、同じ時刻の検証・保存処理を使う。"""
     item = params.get("item")
     if not isinstance(item, dict) or item.get("type") != "contextCompaction":
         return
@@ -61,7 +59,6 @@ def append_compaction_record(
     started_at_ms: int,
     completed_at_ms: int,
 ) -> None:
-    """コンパクション1回分を、同じ``item_id``と重複しないよう追記する。"""
     path = record_directory() / f"{thread_id}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f"{path.name}.lock")

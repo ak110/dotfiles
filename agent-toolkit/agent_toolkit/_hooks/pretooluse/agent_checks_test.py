@@ -40,12 +40,10 @@ def _existing_work_contract(tmp_path, monkeypatch):
 def _run_after_skill_acquisition(
     payload: dict, env_overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """対象外の資料配送を代用し、agent_checksの公開応答を確認する。"""
     return _run(payload, env_overrides)
 
 
 def _run_after_generic_reissue(payload: dict, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """汎用定義の初回拒否を確認し、同じ主体と入力で再発行した結果を返す。"""
     first = _run_after_skill_acquisition(payload, env_overrides)
     assert "組み込みの汎用定義" in _denial_reason(first)
     return _run(payload, env_overrides=env_overrides)
@@ -71,11 +69,6 @@ def _denial_reason(result: subprocess.CompletedProcess[str]) -> str:
     ],
 )
 def test_agents_server_format_errors_pass_without_warning(operation: str, tool_input: dict, tmp_path: pathlib.Path) -> None:
-    """入力形式の不成立はhookが警告せずツールの入力検証へ渡す。
-
-    hookが独自の必須条件で警告すると、ツールが受理する入力形式（定型継続など）を追加したときに
-    正当な入力へ誤った修正案内を返す。原因と次の操作はツールのエラー応答が返す。
-    """
     _write_session_state(tmp_path, "format-error", {"agents_server_cwd_by_session": {"owned": str(tmp_path)}})
     result = _run_after_skill_acquisition(
         {
@@ -105,7 +98,6 @@ def test_agents_server_format_errors_pass_without_warning(operation: str, tool_i
 def test_agents_server_continuation_without_saved_cwd_is_blocked(
     operation: str, tool_input: dict, tmp_path: pathlib.Path
 ) -> None:
-    """呼出元に対象の絶対cwdが保存されていない継続と中断は、入力形式によらず遮断する。"""
     _write_session_state(tmp_path, "unsaved-target", {"agents_server_cwd_by_session": {"other": str(tmp_path)}})
     result = _run_after_skill_acquisition(
         {
@@ -128,7 +120,6 @@ def test_agents_server_continuation_without_saved_cwd_is_blocked(
 
 @pytest.mark.parametrize("cwd", ["", "relative"])
 def test_agents_server_invalid_saved_cwd_is_blocked(tmp_path: pathlib.Path, cwd: str) -> None:
-    """空または相対cwdの記録を所有証拠として継続せず、show照会を案内する。"""
     _write_session_state(tmp_path, "invalid-cwd", {"agents_server_cwd_by_session": {"child": cwd}})
     result = _run(
         {"session_id": "invalid-cwd", "tool_name": "mcp__agents_server__kill", "tool_input": {"session_id": "child"}},
@@ -164,8 +155,6 @@ class TestAgentNameParameterAccepted:
 
 
 class TestTaskStopBlock:
-    """`TaskStop`を自セッションのバックグラウンドタスクの所有記録または停滞検知完了記録へ限定する。"""
-
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
@@ -180,7 +169,6 @@ class TestTaskStopBlock:
         return _run(payload, env_overrides=env)
 
     def test_unowned_target_is_blocked_on_every_call(self, state_dir: dict[str, str]) -> None:
-        """バックグラウンドタスクの所有記録が無い対象は再実行しても通さない。"""
         first = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
         second = self._invoke("task-stop-unowned", state_dir, {"task_id": "other-task"})
 
@@ -191,7 +179,6 @@ class TestTaskStopBlock:
         assert "再実行すると続行できる" not in reason
 
     def test_block_message_states_the_stop_conditions(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が停止の根拠、その完了条件の所在、不十分な理由、確認手段、再実行方法を示す。"""
         reason = _denial_reason(self._invoke("task-stop-message", state_dir))
         assert "TaskStopの対象" in reason
         assert "バックグラウンドタスクの所有記録も停滞検知完了記録も無い" in reason
@@ -200,7 +187,6 @@ class TestTaskStopBlock:
         assert "atk run-script record-stall-detection" in reason
 
     def test_block_message_states_user_intervention_handling(self, state_dir: dict[str, str]) -> None:
-        """遮断文面が、ユーザー介入時に停止せず差分を追送する操作をその場で示す。"""
         reason = _denial_reason(self._invoke("task-stop-message-route", state_dir))
         assert "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送せよ" in reason
 
@@ -218,7 +204,6 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """自セッションの起動記録が無い停止は、識別子の有無と値によらず繰り返し遮断する。"""
         session_id = f"task-stop-input-{label}"
         _denial_reason(self._invoke(session_id, state_dir, tool_input))
         _denial_reason(self._invoke(session_id, state_dir, tool_input))
@@ -237,7 +222,6 @@ class TestTaskStopBlock:
         label: str,
         tool_input: dict,
     ) -> None:
-        """自セッションが起動したバックグラウンドタスクの停止は初回から通す。"""
         session_id = f"task-stop-self-{label}"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         assert self._invoke(session_id, state_dir, tool_input).returncode == 0
@@ -249,7 +233,6 @@ class TestTaskStopBlock:
         tmp_path: pathlib.Path,
         event_name: str,
     ) -> None:
-        """構造化応答から記録した所有IDだけを同じセッションの停止対象として通す。"""
         session_id = f"task-stop-structured-{event_name}"
         recorded = _run_posttooluse(
             {
@@ -294,7 +277,6 @@ class TestTaskStopBlock:
         label: str,
         phrase: str,
     ) -> None:
-        """前景の出力本文の途中に移行通知の文言を含む応答のIDは所有記録へ追加せず、そのIDへの停止を遮断する。"""
         session_id = f"task-stop-foreground-{source}-{label}"
         quoted = f"background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
         if source == "bash-stdout":
@@ -337,7 +319,6 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """ホストのMCP移行通知で始まる応答のIDは所有記録へ追加し、そのIDの停止だけを通す。"""
         session_id = "task-stop-host-mcp-notice"
         notice = (
             'MCP tool "mcp__plugin_agent-toolkit_agents_server__wait" is still running after 120s.'
@@ -363,7 +344,6 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """`run_in_background`なしのBashが時間切れで背景へ移った構造化応答もバックグラウンドタスクの所有記録へ渡す。"""
         session_id = "task-stop-structured-timeout"
         recorded = _run_posttooluse(
             {
@@ -393,7 +373,6 @@ class TestTaskStopBlock:
         self,
         state_dir: dict[str, str],
     ) -> None:
-        """Agentの背景起動が返した`agentId`の停止だけを通し、記録の無い`agentId`は遮断する。"""
         session_id = "task-stop-agent-async"
         recorded = _run_posttooluse(
             {
@@ -414,7 +393,6 @@ class TestTaskStopBlock:
         self,
         state_dir: dict[str, str],
     ) -> None:
-        """前景実行の出力本文に背景起動の文言が現れてもバックグラウンドタスクの所有記録にしない。"""
         session_id = "task-stop-foreground-text"
         recorded = _run_posttooluse(
             {
@@ -435,7 +413,6 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """記録に無いタスクの停止は、他のバックグラウンドタスクを記録済みでも遮断する。"""
         session_id = "task-stop-other-target"
         _write_session_state(tmp_path, session_id, {"background_task_ids": ["bg-task-1"]})
         _denial_reason(self._invoke(session_id, state_dir, {"task_id": "bg-task-2"}))
@@ -445,7 +422,6 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """5分以内の停滞検知完了記録は一致する対象だけを初回から通す。"""
         session_id = "task-stop-stall-match"
         _write_session_state(
             tmp_path,
@@ -460,7 +436,6 @@ class TestTaskStopBlock:
         state_dir: dict[str, str],
         tmp_path: pathlib.Path,
     ) -> None:
-        """5分を超えた停滞検知完了記録は停止根拠として使わない。"""
         session_id = "task-stop-stall-stale"
         _write_session_state(
             tmp_path,
@@ -472,8 +447,6 @@ class TestTaskStopBlock:
 
 
 class TestExecuteReviewAlternateRouteAllowed:
-    """`review_engine`が指すengineによらず実行レビューのAgent起動が通過する。"""
-
     @pytest.mark.parametrize("task_name", _EXECUTE_REVIEW_TASK_NAMES)
     def test_codex_setting_allows_sidechain_agent(self, tmp_path: pathlib.Path, task_name: str) -> None:
         """可用性起因の代替としてClaudeによる実行へ切り替えた実行レビュー起動を遮断しない。"""
@@ -531,8 +504,6 @@ class TestExecuteReviewAlternateRouteAllowed:
 
 
 class TestPlanFileDoesNotRequireSelfPath:
-    """計画自身のパスとの一致を判定しないことを検証する。"""
-
     _state_env = staticmethod(_plan_file_state_env)
     _make_plan = staticmethod(_make_plan_file)
 
@@ -548,7 +519,6 @@ class TestPlanFileDoesNotRequireSelfPath:
 
     @pytest.mark.parametrize("recorded", ["different", "matching", "placeholder"])
     def test_recorded_path_value_does_not_block(self, tmp_path: pathlib.Path, recorded: str):
-        """記録パスの一致・不一致・プレースホルダーで計画編集を妨げない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         sid = "path-value"
@@ -572,7 +542,6 @@ class TestPlanFileDoesNotRequireSelfPath:
         assert "trailing path section" not in _agent_messages(result)
 
     def test_non_plan_file_is_skipped(self, tmp_path: pathlib.Path):
-        """plan fileでないパスへ書き込む場合は判定しない。"""
         content = _path_section_build_content("/tmp/x.md")
         self._prior_flags(tmp_path, "path-nonplan", content)
         result = _run_after_skill_acquisition(
@@ -611,13 +580,11 @@ class TestPlanFileDoesNotRequireSelfPath:
             },
             env_overrides=env,
         )
-        # 該当節本文が空の場合は、この判定では通過する
+
         assert "trailing path section" not in result.stderr
 
 
 class TestAgentTaskLaunchIndependence:
-    """Agent／Task起動が基準の配送後に許可されることを確認する。"""
-
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     def test_main_launch_after_delivery_is_allowed(self, tmp_path: pathlib.Path, tool_name: str) -> None:
         sid = f"missing-{tool_name.lower()}"
@@ -679,8 +646,6 @@ class TestAgentTaskLaunchIndependence:
 
 
 class TestGenericAgentLaunchBlock:
-    """公開hookから汎用定義の遮断・再発行と対象外の無通知を確認する。"""
-
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("agent_type", ["general-purpose", "Explore", "Plan", "claude", None, ""])
     def test_generic_definition_is_blocked_then_reissue_passes(
@@ -737,7 +702,6 @@ class TestGenericAgentLaunchBlock:
     @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
     @pytest.mark.parametrize("agent_type", [None, 0, ["general-purpose"]])
     def test_non_string_type_is_not_blocked(self, tmp_path: pathlib.Path, tool_name: str, agent_type: object) -> None:
-        """明示した文字列以外の`subagent_type`は汎用定義と判定できないため、遮断も通知もしない。"""
         result = _run_after_skill_acquisition(
             {
                 "session_id": f"non-string-{tool_name}-{repr(agent_type).encode().hex()}",
@@ -752,7 +716,6 @@ class TestGenericAgentLaunchBlock:
 
     @pytest.mark.parametrize("failure", ["missing-session", "unwritable-state"])
     def test_unrecordable_reissue_passes_with_warning(self, monkeypatch, failure: str, tmp_path) -> None:
-        """再発行の記録を保存できない起動は、何度発行しても遮断せず警告だけを返す。"""
         monkeypatch.setattr(agent_checks, "update_state", lambda *_args, **_kwargs: False)
         payload = {"session_id": "" if failure == "missing-session" else "generic-unwritable", "tool_name": "Agent"}
         tool_input = {"subagent_type": "Explore", "prompt": "担当の作業を進める。"}
@@ -782,7 +745,6 @@ class TestWorkflowSkillInvocation:
         ],
     )
     def test_no_delegation_notice_for_workflow_skill(self, tmp_path: pathlib.Path, skill_name: str) -> None:
-        """工程のスキルを起動しても委譲に関する追加出力を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -795,7 +757,6 @@ class TestWorkflowSkillInvocation:
         assert "playbooks/delegation.md" not in _additional_context(result)
 
     def test_no_notice_for_other_skill(self, tmp_path: pathlib.Path) -> None:
-        """Skill取得時に条件候補・委譲に関する追加出力を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -809,7 +770,6 @@ class TestWorkflowSkillInvocation:
         assert not context
 
     def test_no_notice_in_sidechain(self, tmp_path: pathlib.Path) -> None:
-        """サイドチェーンでは委譲の案内を返さない。"""
         result = _run_after_skill_acquisition(
             {
                 "tool_name": "Skill",
@@ -823,7 +783,6 @@ class TestWorkflowSkillInvocation:
         assert "playbooks/delegation.md" not in _additional_context(result)
 
     def test_agent_launch_after_workflow_skill_is_allowed(self, tmp_path: pathlib.Path) -> None:
-        """工程のスキルの起動後のAgent起動も、委譲の手順書の取得状態を問わず遮断しない。"""
         env = _plan_file_state_env(tmp_path)
         skill_result = _run_after_skill_acquisition(
             {

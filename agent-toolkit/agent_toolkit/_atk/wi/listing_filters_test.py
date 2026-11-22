@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: filtersのテスト。"""
 
 import datetime
 import json
@@ -30,7 +29,6 @@ def test_list_filters_important_entries(
     important: str,
     expected: set[str],
 ) -> None:
-    """年月配置の重要項目と通常項目を公開JSONLフィルターで選択する。"""
     notes = _setup_notes(tmp_path)
     marked = _write_awi_file(notes, "important.md")
     marked.write_text(marked.read_text(encoding="utf-8").replace("type: awi", "important: true\ntype: awi"), encoding="utf-8")
@@ -43,7 +41,6 @@ def test_list_filters_important_entries(
 
 
 def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存待ち・未回答・報告用UWIの本文を除き、候補件数と同じ集合を引き渡す。"""
     notes = _setup_notes(tmp_path)
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")
     set_process_loop_repositories(monkeypatch, [repo])
@@ -68,7 +65,6 @@ def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, mon
 def test_list_shares_one_parse_across_readiness_selection_and_display(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], output: str
 ) -> None:
-    """各表示形式で着手可否とsource選択と要約が同じ解析結果を使う。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "first.md", source="session-review", body="要約")
     _write_uwi_file(notes, "second.md", source="session-review", question="質問", answer="回答")
@@ -97,7 +93,6 @@ def test_repeatable_filters_use_or_within_kind_and_and_across_kinds(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同種の複数値は和集合、異種の条件は積集合として一度だけ出力する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "foo.md", target_repo="github.com/example/foo", source="agent")
     held = _write_uwi_file(
@@ -141,8 +136,6 @@ def test_repeatable_filters_use_or_within_kind_and_and_across_kinds(
 
 
 class TestListSourceFilter:
-    """listサブコマンド: --source指定でfrontmatterのsourceが一致するエントリのみ出力する。"""
-
     @pytest.mark.parametrize(
         ("source_filter", "expected_filename", "excluded_filename"),
         [
@@ -159,7 +152,6 @@ class TestListSourceFilter:
         expected_filename: str,
         excluded_filename: str,
     ) -> None:
-        """--sourceの一致指定と否定指定が該当エントリだけを出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", source="session-review")
         _write_awi_file(notes, "fb-002.md", source=None)
@@ -180,7 +172,6 @@ class TestListSourceFilter:
         tmp_path: pathlib.Path,
         value: str,
     ) -> None:
-        """--source=・--source=!（空文字列）はargparseエラーでexit 2する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -195,7 +186,6 @@ class TestListSourceFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--source=NAME指定時、uwi側も同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, "uwi-001.md", source="session-review")
         _write_uwi_file(notes, "uwi-002.md", source=None)
@@ -211,15 +201,12 @@ class TestListSourceFilter:
 
 
 class TestListLegacyTypeValues:
-    """`list`サブコマンド: 旧形式で保存された`type`値を読み取る。"""
-
     def test_legacy_type_values_are_listed_as_current_types(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """旧値のfeedback・tbdを持つ項目が、現行の種別の項目として一覧へ現れる。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         path.write_text(
@@ -249,7 +236,6 @@ class TestListLegacyTypeValues:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=uwi`が旧値のtbdを持つ項目を選び、旧値は受理値に加わらない。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         path.write_text(
@@ -272,15 +258,12 @@ class TestListLegacyTypeValues:
 
 
 class TestListTypeFilter:
-    """`list`サブコマンド: `--type`でAWI/`uwi`出力を限定する。"""
-
     def test_type_awi_outputs_only_awi_section(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=awi`指定時はAWI部のみ出力され`uwi`ヘッダは出力されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
@@ -299,7 +282,6 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=uwi指定時はuwi部のみ出力され回答状況ラベルが付与される。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -317,7 +299,6 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """回答済みUWIが依存異常でblockedの場合は両状態を表示する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答済み")
         path.write_text(
@@ -340,7 +321,6 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """回答済みUWIの状態ラベルは種別を含まない従来形式である。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="回答")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -359,7 +339,6 @@ class TestListTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=all（省略時も同じ値）でuwi側が0件の場合はuwi種別ヘッダを省略する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -389,23 +368,22 @@ class TestMultipleFiltersCombinedAsAnd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target-repo・source・type・statusの4条件全てに一致するuwiだけを出力する（answeredは無効化）。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_notes(tmp_path)
-        # 4条件全てに一致する唯一のエントリ（uwi・inbox）。
+
         _write_uwi_file(notes, "uwi-matching.md", target_repo=matching_repo, source="session-review")
-        # target-repoのみ不一致。
+
         _write_uwi_file(
             notes,
             "uwi-other-repo.md",
             target_repo="github.com/example/other",
             source="session-review",
         )
-        # sourceのみ不一致。
+
         _write_uwi_file(notes, "uwi-other-source.md", target_repo=matching_repo, source="user-issue")
-        # typeのみ不一致（`--answered=all`のためAWIも回答状況フィルターでは除外されない）。
+
         _write_awi_file(notes, "fb-other-type.md", target_repo=matching_repo, source="session-review")
-        # statusのみ不一致（processing配下、--status=inboxで除外される）。
+
         processing_dir = entry_path(notes, "uwi-other-status.md", fallback_date=datetime.date(2026, 10, 1)).parent
         processing_dir.mkdir(parents=True, exist_ok=True)
         (processing_dir / "uwi-other-status.md").write_text(
@@ -443,7 +421,6 @@ class TestMultipleFiltersCombinedAsAnd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """target-repo・source・type・statusが一致する2エントリのうち、未回答のみが`--answered=no`で残る。"""
         matching_repo = "github.com/example/matching"
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, "uwi-unanswered.md", target_repo=matching_repo, source="session-review", answer="")

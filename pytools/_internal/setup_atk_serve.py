@@ -16,7 +16,7 @@ from pytools._internal import common, host_roles, log_format, post_apply_outcome
 logger = logging.getLogger(__name__)
 
 _SERVICE_UNIT = "atk-serve.service"
-# 計画ファイル閲覧を統合する前に配置していたサービス。移行時に停止・無効化して除去する。
+
 _LEGACY_SERVICE_UNIT = "claude-plans-viewer.service"
 _LAUNCHER_RELATIVE = pathlib.PurePath(".local") / "bin" / "atk-serve"
 _UNIT_PATH_RELATIVE = pathlib.PurePath(".config") / "systemd" / "user" / _SERVICE_UNIT
@@ -43,8 +43,7 @@ _SERVE_SETTINGS = {
     "serve_sessions_remote_hosts": '["stheno"]',
 }
 
-# unit ファイル本文。ExecStart は systemd specifier %h を使い、
-# post_apply 実行時の Path.home() を埋め込まない。
+
 _UNIT_CONTENT = f"""[Unit]
 Description=agent-toolkit work item server
 After=network.target
@@ -122,7 +121,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     plugin_manifest = dotfiles / "agent-toolkit" / ".claude-plugin" / "plugin.json"
     plugin_version = json.loads(plugin_manifest.read_text(encoding="utf-8"))["version"]
-    # 配布版の変更をunit本文へ反映し、稼働中プロセスも新しいplugin実装へ切り替える。
+
     unit_content = f"{_UNIT_CONTENT}# agent-toolkit version: {plugin_version}\n"
     try:
         changed = systemd_user_unit.setup(
@@ -131,7 +130,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             unit_content=unit_content,
             log_tag="atk-serve",
             service_name=_SERVICE_UNIT,
-            # 設定は起動時にだけ読むため、保存値を変えた場合も稼働中のサービスへ反映する。
             restart_needed=launcher_changed or settings_changed,
             journal_identifier="atk-serve-setup",
         )
@@ -176,7 +174,6 @@ def _remove_legacy_unit() -> str | None:
 
 
 def _read_text(path: pathlib.Path) -> str | None:
-    """ファイル内容を返す。存在しない場合は None を返す。"""
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -184,15 +181,12 @@ def _read_text(path: pathlib.Path) -> str | None:
 
 
 def _unit_path() -> pathlib.Path:
-    """Unit ファイルの絶対パスを返す。"""
     return pathlib.Path.home() / _UNIT_PATH_RELATIVE
 
 
 def _legacy_unit_path() -> pathlib.Path:
-    """旧計画ビューアーのUnitファイルの絶対パスを返す。"""
     return pathlib.Path.home() / _LEGACY_UNIT_PATH_RELATIVE
 
 
 def _launcher_path() -> pathlib.Path:
-    """サービス専用ランチャーの絶対パスを返す。"""
     return pathlib.Path.home() / _LAUNCHER_RELATIVE

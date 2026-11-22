@@ -5,11 +5,18 @@ from __future__ import annotations
 
 import json
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
 from agent_toolkit._common.session_state import update_state
-from agent_toolkit._hooks import rules_context, termination_evidence_state
+from agent_toolkit._hooks import (
+    agents_server_observations,
+    agents_server_session_advisor,
+    rules_context,
+    termination_evidence_state,
+)
+from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 from agent_toolkit._testing.rules_context_support import _disable_review_model_start as _disable_review_model_start
@@ -45,7 +52,6 @@ def test_compact_public_notice_uses_current_stage(tmp_path, monkeypatch, capsys,
 def test_context_boundary_restores_skill_notice(
     boundary: str, codex: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """操作の直前のスキルの案内は文脈ごとに1回届き、clear・会話圧縮の後の同じ操作で再び届く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -69,7 +75,6 @@ def test_context_boundary_restores_skill_notice(
 def test_context_boundary_forgets_completion_playbook_only_for_main(
     boundary: str, agent_id: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """メインのclear・会話圧縮の後は完了報告の手順書を文脈に無いものとし、組み込みの子の圧縮では保つ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -92,11 +97,6 @@ def test_context_boundary_forgets_completion_playbook_only_for_main(
 @pytest.mark.parametrize("own_wait", [False, True])
 def test_compact_delegation_wait_is_scoped_to_current_owner(tmp_path, monkeypatch, capsys, own_wait):
     """未回収と応答待ちを分け、別主体のロックを自分の待機に数えない。"""
-    from types import SimpleNamespace
-
-    from agent_toolkit._hooks import agents_server_observations, agents_server_session_advisor
-    from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID
-
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "state")
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)

@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するerrorsの試験。"""
-
 import asyncio
 import subprocess
 
@@ -54,7 +52,7 @@ async def test_global_error_closed_during_sync_restores_refresh_focus(
     await playwright.async_api.expect(refresh_button).to_be_disabled()
 
     await page.route("**/api/entries?*", fail_entries)
-    # 種別フィルター変更時の処理を、値を変えずに起動する。
+
     await page.locator("#kind-filter").dispatch_event("change")
     await playwright.async_api.expect(page.locator("#operation-notice")).to_be_visible()
     await page.unroute("**/api/entries?*", fail_entries)
@@ -98,7 +96,6 @@ async def test_manual_sync_git_failure_shows_check_and_retry_actions(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_invalid_state_warning_shows_saved_path_and_fix_action(browser_harness: _BrowserHarness) -> None:
-    """不正なstateで一覧から除外した項目の警告は、年月の保存先とstateの修正操作を表示する。"""
     harness = browser_harness
     path = _entry_path(harness.root, "bad-state.md")
     path.write_text("---\nstate: bogus\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8")
@@ -119,7 +116,6 @@ async def test_invalid_state_warning_shows_saved_path_and_fix_action(browser_har
     await playwright.async_api.expect(warning).to_contain_text("のいずれかへ修正する", use_inner_text=True)
     await playwright.async_api.expect(page.locator('.entry-select[data-key="bad-state.md"]')).to_have_count(0)
 
-    # 更新通知による一覧の再描画でも、開いた状態と全文の表示を保つ。
     async with page.expect_response(lambda response: "/api/entries?" in response.url):
         harness.current_state.publish()
     await playwright.async_api.expect(page.locator("#list-warning-details")).to_have_attribute("open", "")
@@ -149,7 +145,6 @@ async def test_background_sync_failure_offers_retry_in_browser(browser_harness: 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_warnings_identify_storage_state_and_file(screen_harness: _ScreenHarness) -> None:
-    """読取不能ファイルの警告をファイル名と保存元で識別する。"""
     harness = screen_harness
     page = harness.page
     notes_root = harness.root.parent

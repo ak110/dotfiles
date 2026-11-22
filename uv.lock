@@ -1231,7 +1231,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.32.1"
+version = "3.33.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1264,9 +1264,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8b/de/cb11683121d80ed6cfbd624db07435a6c18855238b7136f6d63e0851a20e/pyfltr-3.32.1.tar.gz", hash = "sha256:571e5ef066ba3c76c137dbae1d4a3d9007fe5e8569c33b82f240b9def1233946", size = 1212408, upload-time = "2026-11-15T12:52:35.073Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/5e/6f90e39eab7f31ad6eef40d14a6c630e174af3ee88ff15308e37441535a6/pyfltr-3.33.1.tar.gz", hash = "sha256:595ffce515fc6a0279d0976da72dc04a6931263891f0d8207ae91269bb059c58", size = 978662, upload-time = "2026-11-22T05:04:58.039Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cc/ff/04051210b09ff4aaa470863a53819d69df6e8c96517d70a652218e7193e7/pyfltr-3.32.1-py3-none-any.whl", hash = "sha256:0cc93200b9131b79515e13e3fb74a6572289d2951e4ca2edbd3b6afc1436f07f", size = 519488, upload-time = "2026-11-15T12:52:33.228Z" },
+    { url = "https://files.pythonhosted.org/packages/7a/3e/79e2605c17a3c9832d367c6b5f437b128d590a7d01bdae057b876bb75f4a/pyfltr-3.33.1-py3-none-any.whl", hash = "sha256:f9bca4d38bd90dfaceb92e90288cf9bce013499a931a6fcc7689852a59fa1540", size = 345300, upload-time = "2026-11-22T05:04:56.483Z" },
 ]
 
 [[package]]
@@ -1521,6 +1521,9 @@ dev = [
     { name = "pytest-xdist" },
     { name = "types-pyyaml" },
 ]
+pytest-impact = [
+    { name = "testscope" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1542,7 +1545,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyfltr", specifier = ">=3.30.1" },
+    { name = "pyfltr", specifier = ">=3.33.1" },
     { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
     { name = "pyyaml" },
@@ -1560,12 +1563,13 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.32.0" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.33.1" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "types-pyyaml" },
 ]
+pytest-impact = [{ name = "testscope", specifier = "==0.4.2" }]
 
 [[package]]
 name = "pytz"
@@ -1830,6 +1834,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7a/ec/b628c3b1613fe9340de1c5daba957f5b152159ac350b6ce4ad3d2469f822/stevedore-5.10.0.tar.gz", hash = "sha256:6005f32c09dc3159802a61c04862770e439e32db22f6da78ba56e8a735466882", size = 520466, upload-time = "2026-11-12T11:47:05.38Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/78/918aaff2864a8829d061db40acb9da04c89e5c3a01d65932b34432ebd78b/stevedore-5.10.0-py3-none-any.whl", hash = "sha256:47c48dc09e75933106c1bba0a7690eef3b5acecdb807df6d47cc40b2532fa927", size = 56789, upload-time = "2026-11-12T11:47:04.273Z" },
+]
+
+[[package]]
+name = "testscope"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/a8/d391cbcc69ba2d706190541f1e0fefe50d9e85829f7a341946beddaf5628/testscope-0.4.2.tar.gz", hash = "sha256:ca02567fbad2effdc680446a3749c71e4c0081d8a1d83ae37077ab5a090d572f", size = 215286, upload-time = "2026-11-18T14:15:58.303Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/56/fb2bf420b272282c31fc5fd25318fd3aa562b9702752a7524f3a29c65fae/testscope-0.4.2-py3-none-any.whl", hash = "sha256:8d44ee458b0e6e42f9823b01c860d78cbb526e575997f51f9d937d672c4c191f", size = 31034, upload-time = "2026-11-18T14:15:56.416Z" },
 ]
 
 [[package]]

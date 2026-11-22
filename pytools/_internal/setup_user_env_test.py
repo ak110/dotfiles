@@ -1,5 +1,3 @@
-"""pytools._internal.setup_user_env のテスト。"""
-
 import contextlib
 import types
 from pathlib import Path
@@ -19,7 +17,6 @@ def _dotfiles_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 
 
 def test_writes_only_changed_values(monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path) -> None:
-    """現在値と同じ変数は書き込まず、異なる変数だけを書き込んで変更ありを返す。2回目は書き込まない。"""
     (dotfiles_root / "share" / "user.env").write_text("# comment\n\nSAME=1\nNEW=value\n", encoding="utf-8")
     registry = FakeEnvironmentRegistry()
     registry.user["SAME"] = ("1", FakeEnvironmentRegistry.REG_SZ)
@@ -60,13 +57,11 @@ def test_invalid_file_is_reported_as_failure(monkeypatch: pytest.MonkeyPatch, do
     ],
 )
 def test_parse_rejects_lines_bash_and_python_read_differently(line: str) -> None:
-    """bashの`set -a; .`とPythonの読み取りで値が変わり得る行を拒否する。"""
     with pytest.raises(ValueError, match="1行目"):
         setup_user_env.parse_user_env(line + "\n")
 
 
 def test_parse_reads_key_values_and_skips_comments() -> None:
-    """空行とコメント行を値として扱わず、`KEY=VALUE`を順に返す。空の値も受け付ける。"""
     text = "# header\n\nA=1\n# B='x'\nC=\n"
     assert setup_user_env.parse_user_env(text) == [("A", "1"), ("C", "")]
 
@@ -76,7 +71,6 @@ def test_parse_reads_key_values_and_skips_comments() -> None:
 def test_removes_only_former_distributed_value(
     monkeypatch: pytest.MonkeyPatch, dotfiles_root: Path, previous: str | None, name: str
 ) -> None:
-    """配布をやめた変数は旧配布値1だけを除き、別値・他変数を保持して変更を通知する。"""
     (dotfiles_root / "share/user.env").write_text("KEEP=yes\n", encoding="utf-8")
     registry = FakeEnvironmentRegistry()
     registry.user["KEEP"] = ("yes", registry.REG_SZ)

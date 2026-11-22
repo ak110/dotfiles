@@ -20,7 +20,6 @@ def test_init_add_and_show_formats_share_row_ids(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存7列を維持し、TSVとJSON Linesへ同じrow-idを付ける。"""
     path = tmp_path / "review.tsv"
     assert table.init(path) == 0
     assert table.add(path, "1", _TRACK, "module.py:10", "修正が必要") == 0
@@ -47,7 +46,6 @@ def test_add_reports_each_saved_cell_match_without_saved_bodies(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """追加時は指摘箇所と指摘内容がそれぞれ一致するかを確かめ、本文は出力しない。"""
     path = tmp_path / "review.tsv"
     location = "module.py:10\nissue_body_match: 一致"
     issue = "1行目\n2行目"
@@ -65,7 +63,6 @@ def test_add_rereads_decoded_cells_after_storage_write(
     column: str,
     index: int,
 ) -> None:
-    """追加は保存層を経たデコード済みセルを一致判定へ渡す。"""
     path = tmp_path / "review.tsv"
     original_atomic_write = table.atomic_write
 
@@ -93,16 +90,12 @@ def test_add_saved_mismatch_guides_row_check_instead_of_respond(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`add`の保存後の不一致は、`respond`では直せないlocation列とissue列で生じるため、表の該当行の確認を案内する。
-
-    `respond`は応答列だけを更新するため、`add`の不一致へ`respond`を案内すると実行できない操作を案内することになる。
-    """
     path = tmp_path / "review.tsv"
     location_file = tmp_path / "location.txt"
     location_file.write_text("module.py:10", encoding="utf-8")
     issue_file = tmp_path / "issue.md"
     issue_file.write_text(review_bodies.issue_body("修正が必要"), encoding="utf-8")
-    # 保存行の解決に使う列を変えずに不一致の分岐を通すため、一致判定だけを不一致にする。
+
     monkeypatch.setattr(table._body_match, "verdict", lambda _expected, _saved: "不一致")  # pylint: disable=protected-access
 
     with pytest.raises(SystemExit) as exc_info:
@@ -132,7 +125,6 @@ def test_respond_reports_decoded_response_and_match(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応要ではデコード済み本文が一致するかを確かめ、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     response = '応答本文へ"二重引用符"と\\逆斜線を含める。\nタブ\tも含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -234,7 +226,6 @@ def test_respond_reports_only_decoded_no_response_reason(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対応不要では更新した理由の一致を確かめ、一致判定だけを出力する。"""
     path = tmp_path / "review.tsv"
     reason = '対象外の理由へ"引用符"、\\逆斜線、タブ\tおよび\n改行を含める。'
     table.add(path, "1", _TRACK, "位置", "指摘")
@@ -252,7 +243,6 @@ def test_respond_reports_only_decoded_no_response_reason(
 def test_saved_body_mismatch_names_show_and_operation_specific_fix(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """保存本文が送信元と一致しない場合は、保存済みであることと確認のコマンド、操作ごとに実行できる修正を示す。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     if operation == "respond":
@@ -267,5 +257,5 @@ def test_saved_body_mismatch_names_show_and_operation_specific_fix(
 
     assert "保存は済んでいる" in exc_info.value.next_action
     assert "atk review-table show" in exc_info.value.next_action
-    # `respond`は応答列だけを更新するため、`add`の不一致（location列・issue列）には案内しない。
+
     assert ("atk review-table respond" in exc_info.value.next_action) is (operation == "respond")

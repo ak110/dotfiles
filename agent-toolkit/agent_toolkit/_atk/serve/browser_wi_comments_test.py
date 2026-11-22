@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するcommentsの試験。"""
-
 import asyncio
 
 import playwright.async_api
@@ -25,7 +23,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_user_comment_ui_empty_save_removes_section(browser_harness: _BrowserHarness) -> None:
-    """コメント欄を空にして保存すると節が消え、節が無い状態の空保存も成功として伝える。"""
     harness = browser_harness
     page = harness.page
     path = _entry_path(harness.root, "awi.md")
@@ -162,7 +159,6 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 async def test_user_comment_ui_keeps_input_when_sse_moves_entry_to_processing(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """processingへのSSE移動後も入力へ到達でき、保存だけを無効にする。"""
     harness = browser_harness
     page = harness.page
     path = _entry_path(harness.root, "awi.md")

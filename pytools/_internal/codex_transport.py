@@ -28,12 +28,6 @@ class _Envelope(BaseModel):
 
 
 class RpcChannel:
-    """取得済みstreamのWebSocket framingと公開RPCのJSON境界を扱う。
-
-    streamとprocessの寿命は、接続を取得するcontext managerが所有する。
-    RPC本文は転送中のメモリーにだけ保持し、ログへ記録しない。
-    """
-
     def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, *, client: bool) -> None:
         self.reader, self.writer = reader, writer
         self.codec = WSConnection(ConnectionType.CLIENT if client else ConnectionType.SERVER)
@@ -41,12 +35,10 @@ class RpcChannel:
         self._fragments: list[str] = []
 
     async def send(self, value: dict[str, Any]) -> None:
-        """標準JSONとして送信する。コマンド文字列への評価は行わない。"""
         self.writer.write(self.codec.send(TextMessage(data=json.dumps(value, ensure_ascii=False))))
         await self.writer.drain()
 
     async def receive(self) -> dict[str, Any]:
-        """1個の完全な公開RPCを返す。通知とサーバー側の承認要求も同じ形で扱う。"""
         while not self._messages:
             data = await self.reader.read(65536)
             if not data:
@@ -100,7 +92,6 @@ class RpcChannel:
 async def accept_tui(
     reader: asyncio.StreamReader, writer: asyncio.StreamWriter, token: str, *, timeout: float
 ) -> AsyncGenerator[RpcChannel]:
-    """loopbackに接続した通常TUIのstreamを所有する。"""
     try:
         channel = RpcChannel(reader, writer, client=False)
         async with asyncio.timeout(timeout):
@@ -108,7 +99,7 @@ async def accept_tui(
         yield channel
     finally:
         writer.close()
-        # 終了したTUIの接続リセットは切断の完了であり、中継の結果ではない。
+
         with contextlib.suppress(ConnectionError):
             await writer.wait_closed()
 
@@ -145,7 +136,6 @@ async def native_proxy(binary: str, environment: Mapping[str, str], *, timeout: 
             raise ConnectionError(f"Codexのcontrol proxyへ接続できない: {diagnostic or process.returncode}") from error
         yield channel
     finally:
-        # 中継の所有者が取り消されても回収を終える。途中で止めると、proxyとpipeのtransportがイベントループの終了後に残る。
         await async_operations.finish_task(asyncio.create_task(_reclaim_proxy(process, identity, stderr)))
 
 

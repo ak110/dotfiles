@@ -131,14 +131,12 @@ def test_read_predicate_diagnostic_is_preserved(tmp_path, command):
 
 @pytest.mark.parametrize("launcher", ["atk", "C:/tools/atk.cmd", r"'C:\tools\atk.cmd'", "atk.py"])
 def test_atk_launcher_output_loss_is_warned(launcher):
-    """ランチャーの表記によらず、実行位置の出力喪失を遮断する。"""
     result = _run({"tool_name": "Bash", "tool_input": {"command": f"{launcher} wi list >/dev/null"}})
     assert result.returncode == 0
     assert "結果と終了状態を直接受領できない入力" in _additional_context(result)
 
 
 def test_commit_message_is_read_after_static_cd(tmp_path):
-    """移動先のメッセージ本文を読み、公開PreToolUseで空行の欠落を遮断する。"""
     directory = tmp_path / "target"
     directory.mkdir()
     (directory / "message").write_text("件名\n空行が無い本文\n", encoding="utf-8")

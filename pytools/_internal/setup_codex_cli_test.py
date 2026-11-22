@@ -64,7 +64,6 @@ def test_windows_inspection_failure_prevents_mcp_removal(
 
 @pytest.mark.parametrize("kind", ["owned", "outside", "cycle", "missing", "npm"])
 def test_windows_runtime_selects_only_owned_current(monkeypatch, tmp_path: Path, kind: str) -> None:
-    """可視binを使えなくても所有currentの実体だけを選ぶ。"""
     _isolate(monkeypatch, tmp_path, "win32")
     home = tmp_path / "configured-home"
     monkeypatch.setenv("CODEX_HOME", str(home))
@@ -155,7 +154,6 @@ def _make_fake_run(
         calls.append((command, kwargs))
         if Path(command[0]).stem in {"sh", "pwsh", "powershell"}:
             if launcher is not None:
-                # 版リンクを作るのはbin配置だけとし、旧current直下は通常ディレクトリを保つ。
                 if launcher.suffix == ".exe" and launcher.parent.name == "bin":
                     current = launcher.parent.parent
                     if not current.exists():
@@ -281,7 +279,6 @@ def _prepare_windows_run(
             windows_process(rf"{_DESKTOP_APP}\Codex.exe"),
             windows_process(rf"{_DESKTOP_APP}\resources\codex.exe", "app-server"),
         ],
-        # 移行はnpxのキャッシュを削除しない。
         "npx-session": [
             windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
             windows_process(rf"{_NPX_CODEX}\{_NATIVE_IN_PACKAGE}"),
@@ -289,7 +286,6 @@ def _prepare_windows_run(
         # Codexと無関係なnodeの常駐サービスで、権限が無く起動したスクリプトを読めない。
         "node-cmdline-denied": [windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"])],
         "standalone-session": [windows_process(str(standalone / "bin" / "codex.exe"))],
-        # 会話が起動した同梱の実行体で、実行ファイルだけを読めない。
         "standalone-helper-exe-denied": [windows_process(str(standalone / "codex-path" / "rg.exe"), denied=["exe"])],
         "npm-session": [
             windows_process(_NODE, str(npm_package / "bin" / "codex.js")),
@@ -311,7 +307,6 @@ def _prepare_windows_run(
 
 
 def _uninstalled(calls: list[_Call]) -> set[str]:
-    """呼んだ`uninstall`を、npm版とmise版の別で返す。"""
     return {"mise" if "--all" in command else "npm" for command, _ in calls if command[1:2] == ["uninstall"]}
 
 
@@ -376,7 +371,6 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
         setup_codex_cli.run(client)
 
     removal = {
-        # `_isolate`がPATH上に置くmiseは、実行中のOSの絶対パスの表記で示される。
         "mise版": (Path("/usr/bin/mise").absolute(), "uninstall --all --yes npm:@openai/codex"),
     }
     deferrals = {
@@ -385,7 +379,7 @@ def test_windows_migration_deferral_shows_evidence_and_how_to_finish(
     assert {target for target, messages in deferrals.items() if messages} == set(deferred)
     for target, shown in deferred.items():
         [message] = deferrals[target]
-        # 一時ディレクトリ配下のパスは、実行中のOSの区切りで表示される。
+
         assert f"PID 0（{Path(shown.format(tmp=tmp_path))}）" in message
         assert (f"{target}を実行中" in message) is confirmed
         assert ("起動引数を読めず" in message and f"{target}の実行を否定できない" in message) is not confirmed
@@ -683,7 +677,6 @@ def test_run_warns_without_deleting_orphaned_mise_launcher(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """再生成後も残る管理外の中継は直接削除せず警告する。"""
     _isolate(monkeypatch, tmp_path, "linux")
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / "bin" / "codex"
     shim = tmp_path / "mise-data" / "shims" / "codex"
@@ -759,7 +752,6 @@ def test_install_propagates_package_removal_failure(monkeypatch, tmp_path: Path)
 
 @pytest.mark.skipif(os.name == "nt", reason="旧ランチャーのリンクを復元する処理はPOSIX専用")
 def test_dangling_wrapper_is_replaced_and_tracks_current(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """古いリンク先が配布元から消えても、currentへ到達するリンクへ戻せる。"""
     _isolate(monkeypatch, tmp_path, "linux")
     visible = tmp_path / ".local/bin"
     visible.mkdir(parents=True)
@@ -789,7 +781,6 @@ def test_dangling_wrapper_is_replaced_and_tracks_current(monkeypatch: pytest.Mon
 
 @pytest.mark.parametrize("windows", [False, True])
 def test_runtime_uses_path_native_and_excludes_wrapper(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool) -> None:
-    """PATH上の自己参照を除外し、設定ホーム外の既存nativeを実行せず選ぶ。"""
     _isolate(monkeypatch, tmp_path, "win32" if windows else "linux")
     root = tmp_path / "dotfiles"
     alias = tmp_path / "alias"

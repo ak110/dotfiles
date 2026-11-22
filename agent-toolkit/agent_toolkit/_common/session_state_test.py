@@ -32,7 +32,6 @@ from agent_toolkit._testing.helpers import SESSION_STATE_FILENAME_TEMPLATE
 
 @pytest.fixture(autouse=True)
 def _redirect_tempdir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`tempfile.gettempdir()`が`tmp_path`を返すよう差し替える。"""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     state_path("sid").parent.mkdir(parents=True, exist_ok=True)
 
@@ -42,7 +41,6 @@ def _lock_path(session_id: str) -> pathlib.Path:
 
 
 def test_state_survives_changed_tempdir(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """委譲先とスキルの記録は一時領域の切替後も同じ状態として読める。"""
     expected = {"agents_server_cwd_by_session": {"child": "/work"}, "operation_skill_delivered_agents": {"search": ["main"]}}
     assert update_state("resumed", lambda _current: expected)
     original = state_path("resumed")
@@ -57,7 +55,6 @@ def test_state_survives_changed_tempdir(monkeypatch: pytest.MonkeyPatch, tmp_pat
 
 
 def test_legacy_state_migrates_once(tmp_path: pathlib.Path) -> None:
-    """旧状態を読取と更新の両方から移し、移行済みの内容を優先する。"""
     legacy = tmp_path / SESSION_STATE_FILENAME_TEMPLATE.format(session_id="legacy")
     legacy.write_text('{"old": true}', encoding="utf-8")
     assert read_state("legacy") == {"old": True}
@@ -71,7 +68,6 @@ def test_legacy_state_migrates_once(tmp_path: pathlib.Path) -> None:
 
 
 def test_same_session_updates_share_lock_across_tempdirs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """異なる一時領域を使う呼出元も、同じ状態への加算を失わない。"""
     directories = {name: tmp_path / name for name in ("state-first", "state-second")}
     for directory in directories.values():
         directory.mkdir()
@@ -104,7 +100,6 @@ def test_same_session_updates_share_lock_across_tempdirs(monkeypatch: pytest.Mon
 
 
 def test_state_cleanup_keeps_one_fixed_lock() -> None:
-    """会話数に比例した空lockを残さず、JSON回収後も共有lockの実体を保つ。"""
     for index in range(10):
         assert update_state(f"session-{index}", lambda _current: {"active": True})
     directory = state_path("session-0").parent
@@ -115,7 +110,6 @@ def test_state_cleanup_keeps_one_fixed_lock() -> None:
 
 
 def test_transcript_preparation_keeps_shared_lock_available(monkeypatch: pytest.MonkeyPatch) -> None:
-    """前身記録の走査中にも、別会話の短い状態更新を進められる。"""
     assert update_state("previous", lambda _current: {"inherited": True})
     reading = threading.Event()
     release = threading.Event()
@@ -151,8 +145,6 @@ def test_transcript_preparation_keeps_shared_lock_available(monkeypatch: pytest.
 
 
 class TestUpdateState:
-    """単一スレッドからの基本動作。"""
-
     def test_initial_write_creates_file(self) -> None:
         modified = update_state("sid", lambda current: {**current, "plan_mode_skill_invoked": True})
         assert modified is True
@@ -175,7 +167,6 @@ class TestUpdateState:
         assert modified is False
 
     def test_atomic_on_exception_preserves_old_content(self) -> None:
-        """mutator内例外時に旧内容が残ること（書き込み未到達でファイル不変）。"""
         update_state("sid", lambda current: {**current, "a": 1})
 
         def _bad_mutator(_current: dict) -> dict:
@@ -186,13 +177,11 @@ class TestUpdateState:
         assert read_state("sid") == {"a": 1}
 
     def test_temp_file_not_left_behind(self) -> None:
-        """書き込み完了後に一時ファイル（`*.tmp`）が残らないこと。"""
         update_state("sid", lambda current: {**current, "a": 1})
         residual = list(state_path("sid").parent.glob("*.tmp"))
         assert not residual
 
     def test_corrupt_state_treated_as_empty(self) -> None:
-        """破損ファイルは空辞書として扱われる。"""
         state_path("sid").write_text("{ not valid json", encoding="utf-8")
         captured: dict = {}
 
@@ -206,8 +195,6 @@ class TestUpdateState:
 
 
 class TestConcurrentWrites:
-    """並行書き込み時に全キーが保持されること。"""
-
     @pytest.mark.parametrize("iterations", [1, 10, 100])
     def test_two_threads_distinct_keys(self, iterations: int) -> None:
         def _writer(key: str, value: int) -> None:
@@ -228,7 +215,6 @@ class TestConcurrentWrites:
         assert state == {"a": 1, "b": 2}
 
     def test_increment_under_contention(self) -> None:
-        """同一キーに対する加算がロスト更新を起こさないこと。"""
 
         def _incr(current: dict) -> dict:
             current["count"] = current.get("count", 0) + 1
@@ -267,8 +253,6 @@ class TestWindowsLock:
 
 
 class TestReadState:
-    """`read_state`の入力検証と破損ファイル処理。"""
-
     def test_empty_when_unset(self) -> None:
         assert read_state("missing") == {}
 
@@ -281,8 +265,6 @@ class TestReadState:
 
 
 class TestStateInheritance:
-    """背景化でsession_idが変わった場合の前身状態継承。"""
-
     def test_unique_predecessor_is_inherited_once(self, tmp_path: pathlib.Path) -> None:
         update_state("previous", lambda current: {**current, "plan_mode_skill_invoked": True})
         transcript = tmp_path / "transcript.jsonl"
@@ -315,8 +297,6 @@ class TestStateInheritance:
 
 
 class TestDeleteState:
-    """状態JSONを削除する処理の入力と結果の境界。"""
-
     def test_existing_state_is_deleted_but_lock_is_kept(self) -> None:
         update_state("sid", lambda current: {**current, "a": 1})
         path = state_path("sid")
@@ -363,7 +343,6 @@ class TestSweepStaleStates:
     """期限を過ぎた状態ファイルとロックファイルの回収。"""
 
     def test_open_consultation_survives_expiry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """相談中の履歴だけは保持し、会話が閉じれば通常の回収へ戻す。"""
         update_state("open", lambda state: {**state, "add_awi_skill_invoked": True})
         update_state("ordinary", lambda state: {**state, "add_awi_skill_invoked": False})
         update_state("closed", lambda state: {**state, "add_awi_skill_invoked": True})
@@ -522,8 +501,6 @@ class TestSweepStaleStates:
 
 
 class TestClearSessionState:
-    """会話破棄時の通常状態の削除。"""
-
     def test_state_is_deleted_but_lock_is_kept(self) -> None:
         update_state("sid", lambda current: {**current, "active": True})
         normal = state_path("sid")
@@ -539,7 +516,6 @@ class TestClearSessionState:
 
 
 def test_mod_title_state_shares_locked_state(capsys: pytest.CaptureFixture[str]) -> None:
-    """modの読取・種別・命名の記録は他のhookの状態を保つ。"""
     update_state("sid", lambda state: {**state, "current_plan_file_path": "/plans/18-1921_計画.md", "other": True})
     assert session_state.main(["--session-id", "sid", "--kind=single-lane"]) == 0
     assert json.loads(capsys.readouterr().out)["session_title_kind"] == "single-lane"

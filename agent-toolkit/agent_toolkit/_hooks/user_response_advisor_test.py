@@ -21,7 +21,6 @@ _QUEUED = {
 def test_originless_command_response_is_checked_in_its_own_turn(
     text: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """originのないコマンド入力後は、その前の本文を新しい発話への回答に数えない。"""
     command = {
         "type": "user",
         "promptId": "command-turn",
@@ -89,7 +88,6 @@ def test_stop_notifies_unanswered_human_input(
 def test_stop_accepts_visible_response_after_human_input(
     human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """本文を書いた後のツール実行があっても、可視本文の存在を保持する。"""
     output = _stop([human, _assistant("作業は継続中です。"), _assistant("…")], tmp_path, capsys)
     assert output.get("decision") != "block"
 
@@ -100,10 +98,6 @@ def test_stop_accepts_visible_response_after_human_input(
 def test_stop_accepts_send_to_user_message_after_human_input(
     human: dict, final: str, model: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """send_to_userの`message`はユーザーの画面へ届く本文であり、応答として数える。
-
-    送達後の最終応答は、`…`でも、process-loopの統括と`atk run-skill`が起動したセッションで返す完了の1文でも通知しない。
-    """
     call = {
         "type": "tool_use",
         "id": "toolu_1",
@@ -125,7 +119,6 @@ def test_stop_accepts_send_to_user_message_after_human_input(
 def test_hook_notice_handling_does_not_answer_human_by_itself(
     via_send: bool, answer: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """通知の処置しか届かなければユーザーの発話への回答を求める。"""
     text = "hook通知への対応: 要求された資料を取得した。" + answer
     notice_entry = _assistant(text)
     if via_send:
@@ -168,7 +161,6 @@ def test_stop_accepts_task_notification_wait_turn(
 def test_stop_does_not_treat_machine_input_as_human(
     entry: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """人間の発話が無い入力で本文を強制しない。"""
     assert _stop([entry, _assistant("…")], tmp_path, capsys).get("decision") != "block"
 
 
@@ -206,7 +198,6 @@ def test_stop_accepts_scheduled_turn_after_machine_input(
 def test_stop_does_not_require_delegate_to_answer_user(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Agentとagents_serverの委譲先を既存の主体判定で除く。"""
     output = _stop([_HUMAN, _assistant("…")], tmp_path, capsys, agent_id="agent-1")
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -215,14 +206,12 @@ def test_stop_does_not_require_delegate_to_answer_user(
 
 
 def test_new_human_input_requires_a_new_visible_response(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """前の人間の発話への回答を、途中配送された次の発話の回答へ流用しない。"""
     output = _stop([_HUMAN, _assistant("前の発話への回答"), _QUEUED, _assistant("…")], tmp_path, capsys)
     assert output.get("decision") != "block"
     assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
 
 
 def test_missing_response_notifies_again_after_resolution_or_new_input(tmp_path, capsys):
-    """同じ不足を反復せず、解消後の再発と次の人間入力には通知する。"""
     entries = [_HUMAN, _assistant("…")]
     first = _stop(entries, tmp_path, capsys)
     assert "user_response_advisor" in first["hookSpecificOutput"]["additionalContext"]
@@ -240,7 +229,6 @@ def test_missing_response_notifies_again_after_resolution_or_new_input(tmp_path,
 def test_human_notification_quote_still_requires_response(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, queued: bool, prompt: str
 ) -> None:
-    """通知タグを引用した人間入力も、由来の印に従って応答を要求する。"""
     entry = (
         {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": prompt}}
         if queued
@@ -285,10 +273,6 @@ _QUEUED_OK = {
 def test_stop_accepts_ellipsis_after_acknowledgement(
     human: dict, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], after_tool: bool
 ) -> None:
-    """単純な了承の後は、内部作業の有無によらず`…`だけで終える規範どおりのStopへ通知しない。
-
-    了承は構成規則で判定するため、`わかりました`・`OKです`のように例示した語以外の言い回しも受理する。
-    """
     entries = [_assistant("前の回答"), human, *([_TOOL_CALL, _TOOL_RESULT] if after_tool else []), _assistant("…")]
     output = _stop(entries, tmp_path, capsys)
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
@@ -307,7 +291,6 @@ def test_stop_accepts_ellipsis_after_acknowledgement(
 def test_stop_notifies_acknowledgement_that_still_requires_response(
     entries: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """本文が空、問い・依頼を含む入力、了承でない入力の混在では本文を求める。"""
     output = _stop([_assistant("前の回答"), *entries], tmp_path, capsys)
     assert output.get("decision") != "block"
     assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
@@ -315,7 +298,6 @@ def test_stop_notifies_acknowledgement_that_still_requires_response(
 
 @pytest.mark.parametrize("prompt", ["OK", "OK?", "OK、あとXも直して"])
 def test_contract_guidance_update_and_ellipsis_reaches_public_stop(tmp_path, monkeypatch, prompt):
-    """先行hookの案内による内部更新を、返答義務の有無と分けて公開Stopまで比較する。"""
     contract = tmp_path / "work-contract.md"
     contract.write_text("目的: 継続\n", encoding="utf-8")
     monkeypatch.setattr(work_contract, "record_path", lambda *_args, **_kwargs: contract)
@@ -357,7 +339,6 @@ def test_contract_guidance_update_and_ellipsis_reaches_public_stop(tmp_path, mon
 
 
 def _bash_launch(tool_use_id: str, task_id: str, command: str = "sleep 1") -> list[dict]:
-    """背景Bashの起動呼び出しと、`backgroundTaskId`を持つ起動結果の記録を返す。"""
     call = {
         "type": "assistant",
         "message": {
@@ -405,7 +386,6 @@ def _agent_launch(tool_use_id: str, agent_id: str, *, background: bool) -> list[
 
 
 def _completion(tool_use_id: str, task_id: str) -> dict:
-    """完了通知の記録を返す。"""
     prompt = (
         f"<task-notification><task-id>{task_id}</task-id><tool-use-id>{tool_use_id}</tool-use-id>"
         "<status>completed</status></task-notification>"
@@ -417,7 +397,6 @@ def _completion(tool_use_id: str, task_id: str) -> dict:
 
 
 def _task_stop(task_id: str) -> dict:
-    """TaskStopの停止成功結果の記録を返す。"""
     return {
         "type": "user",
         "message": {"content": [{"type": "tool_result", "tool_use_id": "toolu_stop", "content": "停止した"}]},
@@ -438,7 +417,6 @@ def _has_advisor_notice(output: dict) -> bool:
 def test_stop_accepts_ellipsis_while_waiting_for_background_task(
     launch: list[dict], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """人間入力の後に起動した未完了のバックグラウンドタスクを待つ`…`だけの終了は、警告しない。"""
     output = _stop([_HUMAN, *launch, _assistant("…")], tmp_path, capsys)
     assert not _has_advisor_notice(output)
 
@@ -475,7 +453,6 @@ def test_stop_notifies_when_no_background_task_is_awaited(
 def test_stop_accepts_ellipsis_while_some_background_tasks_remain(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数のバックグラウンドタスクの一部が終了しても、残る対象を待つ`…`は警告しない。"""
     entries = [_HUMAN, *_bash_launch("toolu_b1", "bg1"), *_bash_launch("toolu_b2", "bg2"), _task_stop("bg1"), _assistant("…")]
     assert not _has_advisor_notice(_stop(entries, tmp_path, capsys))
 

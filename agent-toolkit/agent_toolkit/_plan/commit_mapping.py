@@ -27,7 +27,7 @@ PREFIX = "<!-- wi-commits: "
 SUFFIX = " -->"
 _WI = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md")
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
-# 対応表の旧新OIDとして受け付ける短縮OIDか完全OIDの形。
+
 _OID_VALUE = re.compile(r"[0-9a-fA-F]{7,64}")
 type RewriteValue = str | list[dict[str, object]]
 type RewriteMap = dict[str, RewriteValue]
@@ -35,11 +35,11 @@ _RETRY_PREVIOUS_HEAD = "記録する区間の直前のcommitを--previous-head�
 
 
 class CommitMappingError(next_action.ActionableError):
-    """対象の記録またはGit実体から対応を確定できない。"""
+    pass
 
 
 class CommitGitError(CommitMappingError):
-    """指定worktreeのGit実体を確認できない。"""
+    pass
 
 
 def _fail(reason: str) -> CommitMappingError:
@@ -70,24 +70,16 @@ def _range_fail(reason: str, action: str = _RETRY_PREVIOUS_HEAD) -> CommitMappin
 
 
 def mapping_path(record: pathlib.Path) -> pathlib.Path:
-    """計画または引き継ぎ記録と同じディレクトリで同じstemを持つ対応記録ファイルのパスを返す。"""
     return record.with_name(_bundle_kinds.WI_COMMITS.name_for(record.stem))
 
 
 def validate_wis(wis: list[str], *, recorded: bool = False) -> set[str]:
-    """AWI集合を検証し、外部入力と保存済み記録の修復先を区別する。"""
     if not wis or any(_WI.fullmatch(wi) is None for wi in wis):
         raise (_fail if recorded else _input_fail)(f"AWI集合が不正です: {wis}")
     return set(wis)
 
 
 def plan_allowed_wis(content: str, path: pathlib.Path) -> set[str]:
-    """計画の対応記録の許可集合として、計画メタ情報の`関連WI`を返す。
-
-    計画の対応記録には、再開した計画が前のセッションで記録したAWIも含まれる。
-    許可集合をレーンや選定のAWI集合で代えると、正しい記録を対象外として拒否するため、
-    計画の対応記録を読む処理はこの関数で許可集合を求める。
-    """
     metadata, errors = _plan_structure.parse_plan_metadata(content)
     if metadata is None or errors:
         raise CommitMappingError(
@@ -98,7 +90,6 @@ def plan_allowed_wis(content: str, path: pathlib.Path) -> set[str]:
 
 
 def validate_targets(wis: list[str], allowed_wis: set[str]) -> set[str]:
-    """対応記録を読む前に呼出側の対象指定を検証する。"""
     names = validate_wis(wis)
     if outside := names - allowed_wis:
         raise _input_fail(f"指定した対象外AWI: {sorted(outside)}")
@@ -133,7 +124,6 @@ def _full_oid(worktree: pathlib.Path, value: str, *, allow_missing: bool = False
 
 
 def short_oid(worktree: pathlib.Path, oid: str) -> str:
-    """完全OIDを対象worktreeで一意な長さの短縮OIDへ変換する。objectが無ければ完全OIDのまま返す。"""
     try:
         result = command.run(["rev-parse", "--short", "--verify", "--quiet", oid], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
@@ -144,7 +134,6 @@ def short_oid(worktree: pathlib.Path, oid: str) -> str:
 
 
 def resolve_commit(worktree: pathlib.Path, revision: str, *, head: str = "HEAD") -> str:
-    """指定したworktreeで実在し対象HEADに含まれるcommitの完全OIDを返す。"""
     oid = _full_oid(worktree, revision)
     try:
         verified = command.output(["rev-parse", "--verify", "--end-of-options", f"{oid}^{{commit}}"], worktree)
@@ -162,7 +151,6 @@ def encode_event(event: dict[str, object]) -> str:
 
 
 def body_events(content: str) -> list[dict[str, object]]:
-    """計画または引き継ぎ記録の本文に残る旧形式の`wi-commits`コメントを記録順に返す。"""
     events: list[dict[str, object]] = []
     for line in split_lines(content):
         if PREFIX not in line:
@@ -173,19 +161,16 @@ def body_events(content: str) -> list[dict[str, object]]:
 
 
 def file_events(path: pathlib.Path) -> list[dict[str, object]]:
-    """対応記録ファイルの記録を記録順に返す。ファイルが無ければ空とする。"""
     if not path.is_file():
         return []
     return [_decode(line) for line in split_lines(path.read_text(encoding="utf-8")) if line.strip()]
 
 
 def read_events(record: pathlib.Path, content: str) -> list[dict[str, object]]:
-    """本文の旧形式の記録を先に、対応記録ファイルの記録を後に並べて返す。"""
     return body_events(content) + file_events(mapping_path(record))
 
 
 def appended_content(record: pathlib.Path, event: dict[str, object]) -> str:
-    """既存の対応記録に従来形式のJSONを1行加えた内容を返す。"""
     path = mapping_path(record)
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     if existing and not existing.endswith("\n"):
@@ -194,7 +179,6 @@ def appended_content(record: pathlib.Path, event: dict[str, object]) -> str:
 
 
 def append_event(record: pathlib.Path, event: dict[str, object]) -> None:
-    """対応記録ファイルへ1回の記録を1行で追記する。"""
     atomic_write(mapping_path(record), appended_content(record, event))
 
 
@@ -211,11 +195,6 @@ def _decode(payload: str) -> dict[str, object]:
 def read_mapping(
     worktree: pathlib.Path, events: list[dict[str, object]], allowed_wis: set[str], *, allow_missing: bool = False
 ) -> dict[str, set[str]]:
-    """記録順に生成と履歴変更の対応を適用し、OIDからAWIへの対応を返す。
-
-    通常は完全OIDへ解決する。`allow_missing`では解決不能な保存済みOIDも保持し、
-    重複判定や、最終対応を選別してから実在を検査する取得に使う。
-    """
     mapping: dict[str, set[str]] = {}
     _apply_events(worktree, events, allowed_wis, mapping, allow_missing=allow_missing)
     return mapping
@@ -230,7 +209,6 @@ def _apply_events(
     allow_missing: bool = False,
     retained: set[str] | None = None,
 ) -> None:
-    """追記を順に適用し、途中で対応が消えたOIDを適用時からの保持集合から除く。"""
     for event in events:
         if set(event) in ({"commit", "awi"}, {"commits", "awi"}):
             oids = [event["commit"]] if "commit" in event else event["commits"]
@@ -259,8 +237,6 @@ def _apply_events(
                     raise _fail(f"履歴変更の対応を確定できません: {old} -> {new}")
                 olds.append(full_old)
                 for target, names in rewrite_destinations(new):
-                    # 明示した分割先のAWIは旧commitの集合外でも記録どおりに適用する（記録済みcommitへのAWIの追加）。
-                    # 範囲全体の対応表から作る記録は、書込時に記録ごとのAWIへ限定している。
                     if names is not None and (outside := names - allowed_wis):
                         raise _fail(f"記録に対象外AWIがあります: {sorted(outside)}")
                     inherited.setdefault(_full_oid(worktree, target, allow_missing=allow_missing), set()).update(
@@ -347,7 +323,7 @@ def _merge_has_resolution(worktree: pathlib.Path, parts: list[str]) -> bool:
         objects = command.output(["rev-parse", "--path-format=absolute", "--git-path", "objects"], worktree)
         (scratch / ".git/objects/info/alternates").write_text(objects + "\n", encoding="utf-8")
         command.run(["-c", "submodule.recurse=false", "reset", "--hard", parents[0]], scratch, check=True, capture_output=True)
-        # --no-commitで再現だけを行い、ユーザーのhookは隔離repoでも実行しない。
+
         hooks = scratch / "empty-hooks"
         hooks.mkdir()
         result = command.run(
@@ -378,10 +354,6 @@ def _merge_has_resolution(worktree: pathlib.Path, parts: list[str]) -> bool:
 
 
 def rewrite_destinations(value: object) -> list[tuple[str, set[str] | None]]:
-    """履歴変更の対応値を(新OID, AWI集合)の列へ変換する。
-
-    文字列の値は全AWIを引き継ぐ1件の新OID（AWI集合は`None`）とし、分割の列は各要素のcommitと明示したAWI集合の組とする。
-    """
     if isinstance(value, str) and _OID_VALUE.fullmatch(value):
         return [(value, None)]
     if not isinstance(value, list) or not value:
@@ -459,13 +431,6 @@ def load_rewrite_map(source: pathlib.Path) -> RewriteMap:
 def rewrite_event(
     worktree: pathlib.Path, source: pathlib.Path, mapping: dict[str, set[str]], allowed_wis: set[str]
 ) -> dict[str, object]:
-    """検収済みの旧OIDから新OIDへのJSON対応を保存したファイルを読み、現在のGit実体へ結び付ける。
-
-    `source`は`plan-progress`の`--rewrite-map`が受け取るファイルのパスであり、形式は`load_rewrite_map`が確かめる。
-    旧新OIDは短縮OIDと完全OIDのどちらも受理し、記録は短縮OIDで返す。
-    分割先へ明示したAWIは、旧commitの集合に無くても許可集合内なら記録する。旧OIDを同じOIDへ写す指定は、
-    記録済みcommitへAWIを追加する手段になる。許可集合外のAWIは記録を変えずに拒否する。
-    """
     replacements = load_rewrite_map(source)
     resolved: RewriteMap = {}
     for old, new in replacements.items():
@@ -496,7 +461,6 @@ _FIX_RANGE_MAP = (
 
 
 def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:
-    """`oid`のcommitが`head`から到達できるかを返す。objectが無いcommitは到達できないとする。"""
     try:
         result = command.run(["merge-base", "--is-ancestor", oid, head], worktree, capture_output=True, text=True)
     except (OSError, subprocess.SubprocessError) as error:
@@ -506,15 +470,12 @@ def _is_ancestor(worktree: pathlib.Path, oid: str, head: str) -> bool:
 
 @dataclasses.dataclass(frozen=True)
 class RewriteOperation:
-    """書換え前後のHEADと、全記録に共通する検収済み対応表。OIDは全て完全OIDとする。"""
-
     previous_head: str
     current_head: str
     replacements: RewriteMap
 
     @functools.cached_property
     def operation_id(self) -> str:
-        """対応表のキー、分割先とAWIの列挙順によらない識別値を返す。"""
         table = {
             old: value
             if isinstance(value, str)
@@ -528,12 +489,6 @@ class RewriteOperation:
 def load_range_rewrite(
     worktree: pathlib.Path, source: pathlib.Path | list[pathlib.Path], previous_head: str
 ) -> RewriteOperation:
-    """書換え前後のHEADを確定し、範囲全体の対応表を合成・検証する。
-
-    範囲全体の対応表はWI対応を持たないcommitも含む。各項目は、旧OIDが書換え前のHEADから到達でき、
-    新OIDが現在のHEADに含まれる場合に受理する。書換えで変わらなかったcommit（旧OIDが現在のHEADにも含まれる）は、
-    新OIDが旧OIDと同じ場合だけ受理する。
-    """
     try:
         previous = command.output(["rev-parse", "--verify", "--end-of-options", f"{previous_head}^{{commit}}"], worktree)
     except (OSError, subprocess.SubprocessError) as error:
@@ -577,7 +532,6 @@ def load_range_rewrite(
 
 
 def _compose_rewrites(worktree: pathlib.Path, sources: list[pathlib.Path], previous_head: str) -> RewriteMap:
-    """書換え順に対応を合成し、最終OIDがHEADに含まれるかを確かめる。"""
     composed: RewriteMap = {}
     for index, source in enumerate(sources):
         current = {_full_oid(worktree, old): value for old, value in load_rewrite_map(source).items()}
@@ -625,15 +579,12 @@ def _compose_rewrites(worktree: pathlib.Path, sources: list[pathlib.Path], previ
 def rewritten_commits(
     worktree: pathlib.Path, mapping: dict[str, set[str]], previous_head: str, current_head: str = "HEAD"
 ) -> list[str]:
-    """書換え前HEADから到達でき、現在のHEADに残っていない記録済みcommitを返す。"""
     previous = _full_oid(worktree, previous_head)
     return [oid for oid in mapping if _is_ancestor(worktree, oid, previous) and not _is_ancestor(worktree, oid, current_head)]
 
 
 @dataclasses.dataclass(frozen=True)
 class RangeRewrite:
-    """1件の記録に追記するイベント、拒否の理由となるOID、範囲外として残すOID。"""
-
     event: dict[str, object] | None = None
     missing: tuple[str, ...] = ()
     past_omissions: tuple[str, ...] = ()
@@ -648,7 +599,6 @@ def range_rewrite_event(
     *,
     applied_count: int = 0,
 ) -> RangeRewrite:
-    """旧HEADにだけ含まれるOIDを付け替える。今回の対象も適用済みの追記も無い記録は、範囲外のOIDを未追記とする。"""
     mapping = read_mapping(worktree, events[:applied_count], allowed_wis)
     retained = set(mapping)
     _apply_events(worktree, events[applied_count:], allowed_wis, mapping, retained=retained)
@@ -681,8 +631,7 @@ def get_commits(
 ) -> dict[str, list[str]]:
     """対象AWIの現在の実装commit集合を取得時点で一意な長さの短縮OIDで返し、不足があれば推測せず失敗する。"""
     targets = validate_targets(wis, allowed_wis)
-    # 1つの引き継ぎ記録に別repoのcommitや失われた書換え前objectが混在し得る。
-    # 構造と継承を全体で検査し、選択したAWIの最終commitだけに実在を要求する。
+
     mapping = read_mapping(worktree, events, allowed_wis, allow_missing=True)
     result: dict[str, list[str]] = {wi: [] for wi in sorted(targets)}
     for oid, names in mapping.items():

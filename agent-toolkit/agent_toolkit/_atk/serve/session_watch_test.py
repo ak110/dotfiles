@@ -1,5 +1,3 @@
-"""セッション記録の一覧判定と変更監視のテスト。"""
-
 import json
 import os
 import pathlib
@@ -13,7 +11,6 @@ from agent_toolkit._atk.serve import session_watch
 
 
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any], *, append: bool = False) -> pathlib.Path:
-    """JSON Linesの記録を出力する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a" if append else "w", encoding="utf-8") as stream:
         stream.writelines(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
@@ -21,8 +18,6 @@ def _write(path: pathlib.Path, records: typing.Iterable[typing.Any], *, append: 
 
 
 class _Collector:
-    """通知をまとめて受け取り、到着を待てるようにする。"""
-
     def __init__(self) -> None:
         self.flushes: list[tuple[bool, list[tuple[str, str]]]] = []
         self.event = threading.Event()
@@ -58,7 +53,6 @@ def _tracker(tmp_path: pathlib.Path, collector: _Collector) -> session_watch.Rec
 
 
 def test_summary_skips_plugin_origin_and_keeps_human(tmp_path: pathlib.Path) -> None:
-    """pluginの同形コマンドを先頭発話へ使わず、後続の人間のコマンドを選ぶ。"""
     records = [
         {"type": "user", "origin": {"kind": "plugin", "name": "別プラグイン"}, "message": {"content": "/status"}},
         {"type": "user", "origin": {"kind": "human"}, "message": {"content": "/status"}},
@@ -70,7 +64,6 @@ def test_summary_skips_plugin_origin_and_keeps_human(tmp_path: pathlib.Path) -> 
 
 
 def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(tmp_path: pathlib.Path) -> None:
-    """発話の有無は発話行の存在で判定し、最初の発話が本文を持たない記録は発話ありとする。"""
     operational = _write(tmp_path / "a.jsonl", [{"type": "mode", "cwd": "/w"}, {"type": "system", "subtype": "x"}])
     textless = _write(tmp_path / "b.jsonl", [{"type": "user", "message": {"content": [{"type": "tool_result"}]}}])
     codex_meta_only = _write(tmp_path / "c.jsonl", [{"type": "session_meta", "payload": {"cwd": "/w"}}])
@@ -85,7 +78,6 @@ def test_summary_fields_distinguishes_no_user_record_from_textless_user_message(
 
 
 def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
-    """一覧は自動挿入の記録行を最初の発話に選ばない。実発話が無い記録も残す。"""
     claude_records = [
         {"type": "user", "isMeta": True, "cwd": "/work", "timestamp": "2026-09-01", "message": {"content": "メタ通知"}},
         {"type": "user", "message": {"content": "Base directory for this skill: /work"}},
@@ -112,7 +104,6 @@ def test_summary_skips_runtime_inserted(tmp_path: pathlib.Path) -> None:
 
 
 def _count_parsed_lines(monkeypatch: typing.Any) -> list[str]:
-    """JSONとして解析した文字列を順に記録する。"""
     parsed: list[str] = []
     original = json.loads
 
@@ -153,12 +144,11 @@ def test_scan_parses_only_relevant_lines(tmp_path: pathlib.Path, monkeypatch: ty
     assert scan.fields == ("/work", "2026-09-01T00:00:00Z", True, None)
     assert scan.delegated_ids == frozenset({"child-1"})
     assert filler_line not in parsed
-    # session_meta・挿入本文の発話・起動の呼び出し・起動結果の4行と、起動結果の文字列だけを解析する。
+
     assert len(parsed) == 5
 
 
 def test_scan_record_returns_same_values_as_separate_reads(tmp_path: pathlib.Path) -> None:
-    """1回の走査で求める要約と子セッションIDは、要約だけの走査と起動結果の判定規則の値と一致する。"""
     claude = _write(
         tmp_path / "claude.jsonl",
         [
@@ -223,7 +213,6 @@ def test_scan_record_returns_same_values_as_separate_reads(tmp_path: pathlib.Pat
 
 
 def test_has_user_message_skips_lines_without_user(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
-    """`has_user_message`は`"user"`を含まない行を解析せず、判定は変わらない。"""
     without_user = _write(tmp_path / "a.jsonl", [{"type": "session_meta", "payload": {"cwd": "/w"}}, _FILLER, _FILLER])
     with_user = _write(tmp_path / "b.jsonl", [_FILLER, {"type": "response_item", "payload": {"role": "user", "content": []}}])
     parsed = _count_parsed_lines(monkeypatch)
@@ -234,7 +223,6 @@ def test_has_user_message_skips_lines_without_user(tmp_path: pathlib.Path, monke
 
 
 def test_append_to_listed_record_notifies_only_the_record(tmp_path: pathlib.Path) -> None:
-    """一覧に載っている記録への追記は記録1件の更新だけを通知し、一覧の再取得を促さない。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     path = _write(tmp_path / "claude" / "projects" / "p" / "s.jsonl", [{"type": "user", "message": {"content": "a"}}])
@@ -248,7 +236,6 @@ def test_append_to_listed_record_notifies_only_the_record(tmp_path: pathlib.Path
 
 
 def test_first_user_message_in_excluded_record_requests_list_refresh(tmp_path: pathlib.Path) -> None:
-    """除外中の記録へ最初のユーザー発話が現れると、一覧の再取得を促す。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     path = _write(tmp_path / "codex" / "sessions" / "2026" / "09" / "26" / "rollout-x.jsonl", [{"type": "session_meta"}])
@@ -265,7 +252,6 @@ def test_first_user_message_in_excluded_record_requests_list_refresh(tmp_path: p
 
 
 def test_created_record_without_user_message_does_not_request_list_refresh(tmp_path: pathlib.Path) -> None:
-    """発話を持たない記録の作成は一覧を変えないため、一覧の再取得を促さない。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     empty = _write(tmp_path / "claude" / "projects" / "p" / "e.jsonl", [{"type": "mode"}])
@@ -280,7 +266,6 @@ def test_created_record_without_user_message_does_not_request_list_refresh(tmp_p
 
 
 def test_removal_requests_refresh_only_for_records_that_may_be_listed(tmp_path: pathlib.Path) -> None:
-    """除外中と分かっている記録の削除では通知せず、それ以外の削除では一覧の再取得を促す。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     excluded = tmp_path / "claude" / "projects" / "p" / "e.jsonl"
@@ -289,7 +274,7 @@ def test_removal_requests_refresh_only_for_records_that_may_be_listed(tmp_path: 
     tracker.prime(str(listed), True)
 
     tracker.record_removed(excluded)
-    # 保留中の通知があれば、debounceを待たずにこの場で送らせる。
+
     tracker.flush()
     assert not collector.flushes
     tracker.record_removed(listed)
@@ -298,7 +283,6 @@ def test_removal_requests_refresh_only_for_records_that_may_be_listed(tmp_path: 
 
 
 def test_paths_outside_the_record_roots_are_ignored(tmp_path: pathlib.Path) -> None:
-    """記録のrootの外や記録でないファイルの変更は通知しない。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     outside = _write(tmp_path / "other" / "s.jsonl", [{"type": "user"}])
@@ -312,7 +296,6 @@ def test_paths_outside_the_record_roots_are_ignored(tmp_path: pathlib.Path) -> N
 
 
 def test_record_watch_detects_records_under_roots_created_after_start(tmp_path: pathlib.Path) -> None:
-    """起動時に存在しないrootも、作成後の記録の追加と追記を検知する。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     (tmp_path / "claude").mkdir()
@@ -339,7 +322,6 @@ def test_record_watch_detects_records_under_roots_created_after_start(tmp_path: 
 
 
 def test_record_watch_stops_refreshing_on_unrelated_directories_after_root_creation(tmp_path: pathlib.Path) -> None:
-    """rootの作成後は、祖先直下の無関係なディレクトリ作成で一覧の再取得を通知しない。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     (tmp_path / "claude").mkdir()
@@ -348,20 +330,18 @@ def test_record_watch_stops_refreshing_on_unrelated_directories_after_root_creat
     try:
         (tmp_path / "claude" / "projects").mkdir()
         assert collector.wait(lambda: collector.refreshed)
-        # debounce中に保留した通知があれば、この場で送らせてから消去する。
+
         tracker.flush()
         collector.flushes.clear()
 
         (tmp_path / "claude" / "unrelated").mkdir()
 
-        # debounce（0.01秒）の数十倍待っても再取得の通知は届かない。
         assert not collector.wait(lambda: collector.refreshed, timeout=0.5)
     finally:
         watch.stop()
 
 
 def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_path: pathlib.Path) -> None:
-    """同じ祖先を共有する片方のrootだけを作成しても、もう片方のrootの作成と記録の追加を検知する。"""
     collector = _Collector()
     tracker = _tracker(tmp_path, collector)
     watch = session_watch.RecordWatch(tracker)
@@ -398,10 +378,6 @@ def test_record_watch_keeps_shared_ancestor_while_another_root_is_missing(tmp_pa
 
 
 def test_summary_index_reuses_saved_results_after_restart(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存した解析結果を次の起動で読み込み、変更の無い記録を読み直さず、停止中に変わった記録だけ読み直す。
-
-    記録は数千件・数十GBに及び、起動のたびに全件を読み直すと最初の一覧表示に数分かかる。
-    """
     monkeypatch.setattr(session_watch.RecordSummaryIndex, "_SAVE_INTERVAL_SEC", 0.0)
     cache = tmp_path / "state" / "session-summaries.json"
     stable = _write(tmp_path / "stable.jsonl", [{"type": "user", "cwd": "/a", "message": {"content": "最初"}}])
@@ -443,7 +419,6 @@ def test_summary_index_reuses_saved_results_after_restart(tmp_path: pathlib.Path
 
 
 def test_summary_index_ignores_broken_cache(tmp_path: pathlib.Path) -> None:
-    """壊れた保存内容は無視して空の索引から始め、記録を読み直す。"""
     cache = tmp_path / "session-summaries.json"
     cache.write_text("{壊れた", encoding="utf-8")
     record = _write(tmp_path / "r.jsonl", [{"type": "user", "cwd": "/a", "message": {"content": "x"}}])
@@ -454,10 +429,6 @@ def test_summary_index_ignores_broken_cache(tmp_path: pathlib.Path) -> None:
 
 
 def test_list_changes_separate_appends_from_changes_to_the_listed_set(tmp_path: pathlib.Path) -> None:
-    """一覧に載る記録への追記はパスだけを渡し、一覧の集合を変え得る変更は一覧の取得し直しとして渡す。
-
-    変更は通知の遅延を待たずに記録し、取り出すと消える。
-    """
     tracker = _tracker(tmp_path, _Collector())
     listed = _write(tmp_path / "claude" / "projects" / "p" / "l.jsonl", [{"type": "user", "message": {"content": "a"}}])
     excluded = _write(tmp_path / "claude" / "projects" / "p" / "e.jsonl", [{"type": "mode"}])

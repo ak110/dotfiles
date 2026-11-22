@@ -29,11 +29,9 @@ class UsageLimitState:
     limit_type: str | None = None
 
     def delay_seconds(self, now: float) -> float:
-        """解除予定までの秒数か、予定が不明・経過済みの場合の再確認間隔を返す。"""
         return self.resets_at - now if self.resets_at is not None and self.resets_at > now else RECHECK_SECONDS
 
     def resets_at_iso(self) -> str | None:
-        """解除予定をUTCのISO 8601で返す。"""
         return datetime.datetime.fromtimestamp(self.resets_at, datetime.UTC).isoformat() if self.resets_at is not None else None
 
     def describe(self) -> str:
@@ -57,7 +55,7 @@ def thread_id_from_stream_lines(lines: Iterable[str]) -> str | None:
 
 
 def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
-    # マルチバイト文字の途中で終わる行も、JSONとして解析できない行と同じく解析の対象から除く。
+
     with path.open(encoding="utf-8", errors="replace") as stream:
         for line in stream:
             try:
@@ -69,7 +67,6 @@ def _records(path: pathlib.Path) -> Iterator[dict[str, Any]]:
 
 
 def used_percent(window: dict[str, Any]) -> float | None:
-    """rolloutとApp Serverの窓から使用率を返す。有限の数値でなければ確認できない値としてNoneを返す。"""
     used = window.get("used_percent", window.get("usedPercent"))
     if isinstance(used, bool) or not isinstance(used, int | float) or not math.isfinite(used):
         return None
@@ -77,7 +74,6 @@ def used_percent(window: dict[str, Any]) -> float | None:
 
 
 def from_rate_limits(rate_limits: Any) -> UsageLimitState:
-    """rolloutとApp Serverの利用枠から、枯渇した窓の種類と解除予定を返す。"""
     windows: list[tuple[float, str | None, int | None]] = []
     if isinstance(rate_limits, dict):
         for name in ("primary", "secondary"):
@@ -107,7 +103,6 @@ def from_rate_limits(rate_limits: Any) -> UsageLimitState:
 
 
 def from_rollout(path: pathlib.Path) -> UsageLimitState | None:
-    """上限のtask_completeを読み、後続turn開始・終了があれば停止状態を解く。"""
     latest: UsageLimitState | None = None
     rate_limits: Any = None
     try:
@@ -133,11 +128,10 @@ def from_rollout(path: pathlib.Path) -> UsageLimitState | None:
 
 
 def from_thread(thread_id: str | None, *, codex_home: pathlib.Path | None = None) -> UsageLimitState | None:
-    """execが報告したthread IDと一致する保存記録を判定する。"""
     if not thread_id:
         return None
     sessions = (host_homes.codex_home() if codex_home is None else codex_home) / "sessions"
-    # 作成日の日付ディレクトリを先に探し、そこに無い記録とUUIDv7でないthread IDは全期間から探す。
+
     candidates = itertools.chain(
         (
             path
@@ -153,12 +147,10 @@ def from_thread(thread_id: str | None, *, codex_home: pathlib.Path | None = None
 def find_session_rollout(
     cwd: pathlib.Path, started_at: float, *, codex_home: pathlib.Path | None = None
 ) -> pathlib.Path | None:
-    """子のcwdと起動時刻に一致する最上位のTUI記録を返す。曖昧な対応は保留する。"""
     root = host_homes.codex_home() if codex_home is None else codex_home
     candidates: list[pathlib.Path] = []
     for path in (root / "sessions").glob("*/*/*/rollout-*.jsonl"):
         try:
-            # 起動より前から書き込みの無い記録は、起動後に始まった会話でも再開した会話でもないため開かない。
             if path.stat().st_mtime < started_at - _MTIME_SLACK_SECONDS:
                 continue
             records = _records(path)
@@ -171,7 +163,7 @@ def find_session_rollout(
             if isinstance(payload.get("source"), dict):
                 continue
             stamp = datetime.datetime.fromisoformat(payload["timestamp"]).timestamp()
-            # resumeではsession_metaが元の開始時刻を保つ。再開したturnの開始でも対応付ける。
+
             resumed = stamp < started_at and any(
                 record.get("type") == "event_msg"
                 and isinstance(record.get("payload"), dict)

@@ -1,5 +1,3 @@
-"""公開run-scriptから会話の選択・有限表示・同一bundleの継続と詳細取得を検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -31,7 +29,6 @@ def _prepared(capsys: pytest.CaptureFixture[str]) -> tuple[dict[str, Any], str]:
 
 
 def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """長文・絵文字・合法なJSON内改行文字の省略分へ、公開の継続とdetailから到達する。"""
     transcript = tmp_path / "main.jsonl"
     text = "先頭😀\u2028中間\u2029" + "長文😀" * 4000 + "末尾の原文"
     command_text = "操作😀" * 1500
@@ -58,7 +55,7 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     assert window["excerpt_count"] > 0 and window["has_more"]
     assert "末尾の原文" not in document
     assert "表示から除く機械資料" not in document
-    # 原本から継続できるscopeだけを保存し、表示しない全文を複製しない。
+
     assert not (work / "bundle" / "conversation.jsonl").exists()
     assert _run([str(transcript), "--detail", "claude:main:1"], "session-review-evidence") == 0
     details = [json.loads(line) for line in capsys.readouterr().out.split("\n") if line.strip()]
@@ -66,7 +63,7 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
     assert _run([str(transcript), "--detail", "claude:main:3"], "session-review-evidence") == 0
     details = [json.loads(line) for line in capsys.readouterr().out.split("\n") if line.strip()]
     assert any(event.get("input", {}).get("command") == command_text for event in details)
-    # 原記録の増加は保存bundleのイベント番号へ混ぜず、同じ抽出結果で継続する。
+
     support.write_jsonl(transcript, [*entries, support.assistant_text("後から追記した発話")])
     command = re.search(r"同じbundle・条件の続き: `([^`]+)`", document)
     assert command is not None
@@ -83,7 +80,6 @@ def test_window_continuation_and_full_detail(tmp_path: pathlib.Path, capsys: pyt
 
 
 def test_window_selection_unknown_time_and_incomplete_call(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """記録の複数指定・timezone付き期間・recentを適用し、空・未知時刻・未完了呼出を区別する。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(
         transcript,
@@ -137,14 +133,12 @@ def test_window_selection_unknown_time_and_incomplete_call(tmp_path: pathlib.Pat
     ],
 )
 def test_window_rejects_invalid_options(option: str, value: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """不正な件数・位置・予算・日時は公開パーサーで終了2となる。"""
     assert _run(["--transcript", "unused", "--conversation-window", option, value]) == 2
     assert capsys.readouterr().err
 
 
 @pytest.mark.parametrize("limit", [1, 4000, 16000])
 def test_window_budget_and_long_locator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], limit: int) -> None:
-    """長い記録IDでも最小固定部/行を検証し、成功文書を指定予算以内に保つ。"""
     transcript = tmp_path / ("r" * 180 + ".jsonl")
     support.write_jsonl(transcript, [support.timestamped_entry(None, "絵文字😀" * 1000)])
     work = tmp_path / "work"
@@ -179,7 +173,6 @@ def test_window_budget_and_long_locator(tmp_path: pathlib.Path, capsys: pytest.C
 def test_long_session_overview_covers_whole_period(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, conversation_only: bool
 ) -> None:
-    """予算を超える長い会話でも、冒頭・中盤・末尾の判断と委譲を全期間の概要に残し、省略本文へ到達できる。"""
     transcript = tmp_path / "main.jsonl"
     base = datetime.datetime(2026, 11, 1, tzinfo=datetime.UTC)
     entries: list[dict[str, Any]] = [support.timestamped_entry(base.isoformat(), "判断A: 冒頭で方針を決める")]
@@ -220,7 +213,6 @@ def test_long_session_overview_covers_whole_period(
 def test_overview_orders_requests_returns_and_decisions_across_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """メインの依頼、委譲先の返却、メインの判断を、記録をまたいで時刻順に一続きで示す。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(
         transcript,
@@ -246,7 +238,6 @@ def test_overview_orders_requests_returns_and_decisions_across_records(
 def test_overview_shows_return_only_for_observed_assistant_utterances(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """委譲先の記録に無い返却を示さず、発話なし・途中発話・依頼だけの記録を事実どおりに区別する。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(transcript, [support.timestamped_entry("2026-11-01T00:00:00Z", "メインの要求")])
     subagents = transcript.with_suffix("") / "subagents"
@@ -317,7 +308,6 @@ def test_many_utterances_and_delegates_fit_whole_document_budget(
     ),
 )
 def test_many_delegates_are_spread_over_whole_period(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """委譲先の記録が多い場合も全期間へ配分した概要を返し、省略した記録へ詳細から到達できる。"""
     transcript = tmp_path / "main.jsonl"
     entries = []
     for index in range(20):
@@ -350,7 +340,6 @@ def test_many_delegates_are_spread_over_whole_period(tmp_path: pathlib.Path, cap
 def test_window_exact_fixed_budget_and_saved_jsonl_diagnostic(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """空集合の固定部がちょうど収まる境界と、不正な保存JSONLの物理行診断を確認する。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(transcript, [support.timestamped_entry("2026-11-01T00:00:00Z", "対象外の発話")])
     work = tmp_path / "work"
@@ -377,7 +366,6 @@ def test_window_exact_fixed_budget_and_saved_jsonl_diagnostic(
 def test_extraction_stdout_uses_physical_jsonl_lines(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """抽出の通知に合法なUnicode行区切りがあっても保持し、不正JSONは出所付きで診断する。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(transcript, [support.assistant_text("途中経過")])
     work = tmp_path / "work"
@@ -413,7 +401,6 @@ def test_extraction_stdout_uses_physical_jsonl_lines(
 def test_window_scope_after_remains_separate_from_display_cursor(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """scope JSONによる再抽出と、保存bundleの表示位置による継続を別々に適用する。"""
     transcript = tmp_path / "main.jsonl"
     first = support.timestamped_entry("2026-11-01T00:00:00Z", "処理済みの発話")
     support.write_jsonl(transcript, [first])
@@ -445,7 +432,6 @@ def test_window_scope_after_remains_separate_from_display_cursor(
 
 
 def test_recent_uses_latest_known_time_across_records(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """新しいメインと古い子から直近を選び、未知時刻の除外件数と通常表示を区別する。"""
     transcript = tmp_path / "main.jsonl"
     support.write_jsonl(
         transcript,

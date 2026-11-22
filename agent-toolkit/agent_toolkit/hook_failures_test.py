@@ -31,8 +31,6 @@ def test_pretooluse_record_failure_preserves_operation_result_boundary(monkeypat
 
 
 class TestEntrypointExceptionStages:
-    """共通エントリポイントが例外の発生段階に応じて出力を分けることを検証する。"""
-
     _copy_entrypoint = staticmethod(_copy_entrypoint)
 
     @pytest.mark.parametrize("subcommand", ["stop"])

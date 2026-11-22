@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_support）。"""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +10,6 @@ from agent_toolkit._atk.run_script import registered_script_path
 from agent_toolkit._testing.helpers import _write_transcript
 from agent_toolkit._testing.session_evidence_support import read_jsonl
 
-# 単体の解析・実行でも、登録済みスクリプトと同じディレクトリから補助モジュールを解決する。
 sys.path.insert(0, str(registered_script_path("session-review-evidence").parent))
 import session_review_evidence as evidence  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
@@ -50,13 +47,11 @@ def _bundle_failed_codex_commands(
 
 
 def _user_events(argv: list[str], capsys: pytest.CaptureFixture[str]) -> list[dict]:
-    """`--user-events`を実行し、終了コード0を確かめて全イベントを返す。"""
     assert evidence.main([*argv, "--user-events", "--since", "2026-09-01T00:00:00Z"]) == 0
     return read_jsonl(capsys, raw=True)
 
 
 def _bundle_delegate_return_texts(tmp_path: pathlib.Path, delegate_entries: list[dict[str, object]]) -> list[str]:
-    """委譲先記録を1件持つtranscriptから`--bundle`で候補を生成し、`delegate-return`候補と`escalation`候補の本文を返す。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}])
     subagents = transcript.with_suffix("") / "subagents"
     subagents.mkdir(parents=True)
@@ -80,7 +75,6 @@ def _bundle_delegate_return_texts(tmp_path: pathlib.Path, delegate_entries: list
 def _bundle_candidates_and_evidence(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], entries: list[dict]
 ) -> tuple[list[dict], dict[str, dict]]:
-    """transcriptから`--bundle`を実行し、候補の行と候補ID別の個別証拠を返す。"""
     transcript = _write_transcript(tmp_path, entries)
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()

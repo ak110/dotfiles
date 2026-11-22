@@ -1,5 +1,3 @@
-"""派生値を計算するコードの版が、計算に使う全モジュールの変更で変わり、無関係なモジュールの変更では変わらないことを確かめる。"""
-
 from __future__ import annotations
 
 import ast
@@ -30,7 +28,6 @@ def _write(package: pathlib.Path, modules: dict[str, str]) -> None:
 
 
 def test_code_version_follows_every_form_of_import(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """括弧で複数行に分けたimport、遅延import、関数内のimport、親パッケージを推移的にたどり、importしないモジュールは含めない。"""
     _write(
         tmp_path,
         {
@@ -66,7 +63,6 @@ def test_code_version_follows_every_form_of_import(tmp_path: pathlib.Path, monke
 
 
 def _statically_imported(module: str) -> set[str]:
-    """全文の構文解析でimportをたどった、実際のパッケージ内のモジュール名の集合。"""
     found: set[str] = set()
     pending = [module]
     while pending:
@@ -91,7 +87,6 @@ def _statically_imported(module: str) -> set[str]:
 def test_code_version_covers_every_module_the_derivation_imports(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, module: str
 ) -> None:
-    """索引を使う実際のモジュールについて、全文の構文解析でたどれるどのモジュールを編集しても版が変わる。"""
     package = tmp_path / "package"
     shutil.copytree(
         _REAL_PACKAGE / "agent_toolkit",

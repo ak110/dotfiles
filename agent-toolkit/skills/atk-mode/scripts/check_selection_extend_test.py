@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の書込対象の追加操作を検証する。"""
 
 import json
 import pathlib
@@ -22,7 +21,6 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
 
 
 def _generated_overlap_selection(tmp_path: pathlib.Path, repo: pathlib.Path, notes: pathlib.Path) -> pathlib.Path:
-    """生成付き保存の公開操作で、書込重複の辺を持つ選定YAMLを作成してそのパスを返す。"""
     _awi(notes, "a.md", "`src/model.py`と`README.md`を変える。")
     _awi(notes, "b.md", "`src/model.py`を変える。")
     candidates = tmp_path / "candidates.jsonl"
@@ -71,7 +69,6 @@ def _generated_overlap_selection(tmp_path: pathlib.Path, repo: pathlib.Path, not
 
 
 def _update_items(path: pathlib.Path, update: typing.Callable[[dict[str, dict[str, typing.Any]]], None]) -> dict[str, object]:
-    """保存済み選定YAMLの`選定`の項目をWI名で更新して保存し、変更前の`初回配分`を返す。"""
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     update({item["WI"]: item for item in data["選定"]})
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -82,7 +79,6 @@ def _update_items(path: pathlib.Path, update: typing.Callable[[dict[str, dict[st
 def test_write_targets_can_be_extended_after_save(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], change: str
 ) -> None:
-    """保存後の書込対象の追加と並べ替えは、初回配分を書き換えずに終了コード0となる。"""
     repo, notes = env
     path = _generated_overlap_selection(tmp_path, repo, notes)
     initial = yaml.safe_load(path.read_text(encoding="utf-8"))["初回配分"]
@@ -102,7 +98,6 @@ def test_write_targets_can_be_extended_after_save(
 def test_public_extend_write_targets(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], legacy: bool
 ) -> None:
-    """既存・新設・共有の追加を一度で保存し、初回配分と他項目を保持して公開操作へ再入力する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更し、結果保存用の入口を新設する。")
     _awi(notes, "b.md", "`src/model.py`を変更する。")
@@ -134,7 +129,7 @@ def test_public_extend_write_targets(
         ),
         encoding="utf-8",
     )
-    # 同じ入力を再送しても、パスと記録の重複を増やさず同じ選定を保存する。
+
     for _ in range(2):
         assert (
             _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 0
@@ -156,7 +151,6 @@ def test_public_extend_write_targets(
 def test_public_extend_requires_new_path_and_overlap_records(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
-    """必要記録の欠落を診断し、記録を補った同じ追加を成功させる。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更し、結果保存用の入口を新設する。")
     _awi(notes, "b.md", "`src/model.py`を変更する。")
@@ -196,7 +190,6 @@ def test_public_extend_requires_new_path_and_overlap_records(
 def test_public_extend_adds_records_without_write_targets(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, kind: str
 ) -> None:
-    """新設先の記録だけ・重なりの記録だけの追記でも、書込対象を保持して保存へ到達する。"""
     repo, notes = env
     target = "src/save.py" if kind == "new" else "src/model.py"
     _awi(notes, "a.md", "結果保存用の入口を新設する。")
@@ -241,7 +234,6 @@ def test_public_extend_failure_preserves_selection(
     problem: str,
     in_place: bool,
 ) -> None:
-    """追加入力の不正と追加先以外の本文違反でも、元選定と既存保存先をバイト単位で保持する。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変更する。")
     _awi(notes, "b.md", "`src/model.py`を変更する。")
@@ -287,7 +279,6 @@ def test_public_extend_failure_preserves_selection(
     "option", [None, "--merge", "--lane-map", "--candidate-file", "--mark-integrated", "--lane-cost-updates", "--body-wi"]
 )
 def test_public_extend_rejects_incompatible_options(tmp_path: pathlib.Path, option: str | None) -> None:
-    """更新モードの混在と保存先の欠落を、選定や入力を読む前に拒否する。"""
     args = [str(tmp_path / "selection.yaml"), "--extend-write-targets", str(tmp_path / "extend.yaml")]
     if option:
         args.extend(["--output", str(tmp_path / "output.yaml"), option, "value"])
@@ -297,7 +288,6 @@ def test_public_extend_rejects_incompatible_options(tmp_path: pathlib.Path, opti
 def test_write_overlap_edge_reports_missing_overlap(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """両端の書込対象が重ならなくなった書込重複の辺は、2つのWI名と重ならない値を示して拒否する。"""
     repo, notes = env
     path = _generated_overlap_selection(tmp_path, repo, notes)
 
@@ -317,12 +307,11 @@ def test_write_overlap_edge_reports_missing_overlap(
 def test_legacy_write_overlap_evidence_is_accepted(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """変更前の版が根拠へ複製したパスと段階は受理し、判定には使わない。"""
     repo, notes = env
     path = _generated_overlap_selection(tmp_path, repo, notes)
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     evidence = data["初回配分"]["不可分成分"][0]["結合条件"][0]["根拠"]
-    # 変更前の生成付き保存が書いた形。値は保存後に書込対象を並べ替えた状態と一致しない。
+
     evidence.update({"パス1": ["README.md", "src/model.py"], "パス2": ["src/model.py"], "段階1": 1, "段階2": 1})
     data["選定"][0]["書込対象"].append("docs/development/design.md")
     path.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
@@ -334,11 +323,6 @@ def test_legacy_write_overlap_evidence_is_accepted(
 def test_public_extend_updates_project_norm_spec_with_the_added_agent_document(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], with_spec: bool
 ) -> None:
-    """本リポジトリの設定で、エージェント向け文書の追加と同じ入力で規範指定を更新すれば保存される。
-
-    規範指定を受け取れない追加操作は全体検査で拒否され、メインが選定YAMLを手で書き換えて再実行するしかなかった。
-    規範指定を渡さない同じ追加は、規範指定の不足（終了コード1）で拒否し、選定YAMLを変えない。
-    """
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
     _write_files(repo, "agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md")
@@ -392,11 +376,6 @@ def test_public_extend_removes_the_added_path_from_non_write_targets(
     added: str,
     kept: list[str],
 ) -> None:
-    """非書込に分類済みのパスを書込対象へ加えると、同じ保存で非書込から除く。
-
-    追加入力はその項目がパスを書き込む宣言であり、非書込の分類を残すと区分間の重複になって手で直すしかない。
-    非書込の範囲が追加パスを真に含む組は、全体検査が受理する選定なので範囲を残す。
-    """
     repo, notes = env
     _awi(notes, "a.md", reflected)
     path = _write_selection(

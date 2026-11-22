@@ -28,7 +28,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
         ("openai", "chatgpt", False, "paid-a"),
         ("openai", "chatgpt", None, "openai"),
         ("paid-b", "chatgpt", False, "paid-b"),
-        # APIキーのアカウントではopenaiをサブスクリプションとして使わず、使用順の次のAPIへ進む。
         ("openai", "apiKey", False, "paid-a"),
     ],
 )
@@ -88,7 +87,6 @@ async def test_explicit_openai_api_auth_is_preserved(tmp_path, provider_environm
 async def test_empty_provider_configuration_keeps_current_resume_settings(
     monkeypatch, tmp_path, provider_response, resume_provider_response
 ):
-    """接続設定が無ければ応答の接続先を固定せず、再開時の通常設定を使う。"""
     clear_connections(monkeypatch)
     client = ProviderClient()
     original_request = client.request
@@ -151,9 +149,8 @@ async def test_api_primary_uses_ordered_api_candidates(monkeypatch, tmp_path, pr
 @pytest.mark.asyncio
 @pytest.mark.parametrize("order", ["credits", "credits,payg"])
 async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, provider_environment, order):
-    """無効な候補と開始を拒否した候補があっても使用順の候補だけを試し、通常接続へ戻らない。"""
     del provider_environment
-    # 未定義のproviderを持つ従量課金は候補から外れ、クレジットだけの使用順では後続が無い。
+
     set_connections(monkeypatch, order, payg="paid-b" if order == "credits,payg" else "missing")
     client = ProviderClient()
     client.reject.add("paid-a")
@@ -161,7 +158,7 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
         if order == "credits":
             with pytest.raises(codex.AppServerError, match="candidates were rejected") as raised:
                 await backend.start("拒否するAPI", str(tmp_path))
-            # APIの拒否は利用上限による候補の不成立と区別し、次のengineへ進める型にしない。
+
             assert raised.type is codex.AppServerError
             assert "paid-a: code=-32600: thread/start: model is not accepted" in str(raised.value)
         else:
@@ -174,7 +171,6 @@ async def test_api_primary_start_rejection_is_finite(monkeypatch, tmp_path, prov
 
 @pytest.mark.asyncio
 async def test_usage_limit_without_other_connection_is_candidate_unavailable(monkeypatch, tmp_path, provider_environment):
-    """利用上限で主候補を省き試す接続先が残らない起動は、理由と解除予定を持つ候補の不成立として返す。"""
     del provider_environment
     set_connections(monkeypatch, "subscription")
     monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "five-hour")
@@ -276,7 +272,6 @@ async def test_select_follows_order_and_skips_unconfigured_kinds(
 
 @pytest.mark.asyncio
 async def test_payg_is_selected_only_when_listed(monkeypatch, tmp_path, provider_environment):
-    """従量課金のproviderを設定しても、初期値の使用順（paygを含まない）では候補にしない。"""
     del provider_environment
     clear_connections(monkeypatch)
     monkeypatch.setenv(config._config_env_name("codex_payg_provider"), "paid-b")
@@ -290,7 +285,6 @@ async def test_payg_is_selected_only_when_listed(monkeypatch, tmp_path, provider
 
 @pytest.mark.asyncio
 async def test_api_key_account_excludes_subscription_with_diagnostic(monkeypatch, tmp_path, provider_environment, caplog):
-    """APIキーのアカウントではsubscriptionを除き、openaiをAPI種別へ設定する方法を診断へ出す。"""
     del provider_environment
     set_connections(monkeypatch, "subscription,payg")
     client = ProviderClient()
@@ -303,7 +297,6 @@ async def test_api_key_account_excludes_subscription_with_diagnostic(monkeypatch
 
 @pytest.mark.asyncio
 async def test_credit_rejection_moves_session_and_reorders_new_sessions(monkeypatch, tmp_path, provider_environment):
-    """クレジットの不受理で同じ会話を使用順の次へ移し、1時間は新しい会話でクレジットを後ろへ回す。"""
     del provider_environment
     set_connections(monkeypatch, "credits,subscription")
     client = ProviderClient()
@@ -327,7 +320,6 @@ async def test_credit_rejection_moves_session_and_reorders_new_sessions(monkeypa
 
 @pytest.mark.asyncio
 async def test_subscription_limit_after_credit_shortage_follows_effective_order(monkeypatch, tmp_path, provider_environment):
-    """残高不足の観測中に3種別で始めた会話は、サブスクの利用上限で後ろへ回したクレジットより先に従量課金へ移る。"""
     del provider_environment
     set_connections(monkeypatch, "credits,subscription,payg")
     api_credits.record_shortage("codex")
@@ -345,7 +337,6 @@ async def test_subscription_limit_after_credit_shortage_follows_effective_order(
 
 @pytest.mark.asyncio
 async def test_session_moves_when_its_kind_leaves_the_order_and_does_not_return(monkeypatch, tmp_path, provider_environment):
-    """保持した種別を使用順から外した会話は次の継続で先頭の候補へ移り、使用順を戻しても元の種別へ戻らない。"""
     del provider_environment
     set_connections(monkeypatch, "credits,subscription")
     client = ProviderClient()

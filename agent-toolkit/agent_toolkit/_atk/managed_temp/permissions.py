@@ -16,7 +16,6 @@ from agent_toolkit._atk.managed_temp.errors import ManagedTempError, ManagedTemp
 def descriptor(
     path: pathlib.Path | str | int, flags: int = 0, mode: int = 0o777, *, dir_fd: int | None = None
 ) -> typing.Generator[int]:
-    """獲得直後から記述子の寿命を閉じる。"""
     if isinstance(path, int):
         opened = os.dup(path)
     elif flags & os.O_CREAT:
@@ -39,7 +38,6 @@ def directory(
     recover: bool = True,
     display_path: pathlib.Path | str | None = None,
 ) -> typing.Generator[int]:
-    """非追跡で同一性と所有者を検証し、必要なowner modeを一時的に補う。"""
     before = os.stat(path, dir_fd=dir_fd, follow_symlinks=False) if expected is None else expected
     display = path if display_path is None else display_path
     if not stat.S_ISDIR(before.st_mode):

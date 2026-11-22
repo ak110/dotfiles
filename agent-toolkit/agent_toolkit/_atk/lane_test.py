@@ -34,10 +34,9 @@ __all__ = ["prepare_lane_verification"]
 def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合後の再開は同じ資源を使い、終了時だけ所有資源を削除する。"""
     repo, selected, first = _create(tmp_path, monkeypatch, capsys)
     assert first["worktree"] == str(_fixed(repo, "lane-01")) and first["managed_temp"] is None
-    # 固定作成先は主作業ツリーの状態へ未追跡として現れない。
+
     assert not git_repository.git_output(repo, "status", "--porcelain=v1", "--untracked-files=all")
     foreign = tmp_path / "foreign-worktree"
     git_repository.run_git(repo, "worktree", "add", "-b", "foreign-branch", str(foreign))
@@ -71,7 +70,6 @@ def test_create_reuses_integrated_resources_then_delete_removes_only_owned_lane(
 def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開選定更新から同じ資源の前進・新しい検収済みHEADでの再統合を完遂する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -97,7 +95,7 @@ def test_reopen_existing_wi_refreshes_same_lane_and_finalizes_again(
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == second
     document = yaml.safe_load(selected.read_text(encoding="utf-8"))
     assert document["初回配分"] == original and document["レーンの所要時間"][0]["統合状態"] == "統合済み"
-    # 追加のコード変更がない観測再開も、前回のfinalizedを返すだけで選定を取り残さない。
+
     assert run_script.dispatch(argparse.Namespace(script_name="pick-wi-check", script_args=args)) == 0
     capsys.readouterr()
     code, repeated, stderr = _invoke(capsys, *_integration_args(record, repo, manifest, second))
@@ -166,7 +164,6 @@ def test_reopen_after_no_merge_preserves_unmerged_work(
 def test_fixed_creation_reclaims_missing_previous_resource(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """固定作成先を保持する消失済み登録は別sessionのcreateが回収して再利用する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     shutil.rmtree(record["worktree"])
 
@@ -189,7 +186,6 @@ def test_fixed_creation_reclaims_missing_previous_resource(
 def test_reuse_rejects_record_whose_worktree_is_missing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """消えた作業ツリーの再利用は、登録の回収を案内して拒否する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     shutil.rmtree(record["worktree"])
     monkeypatch.setenv(lane.SESSION_ENV, "next-session")
@@ -238,7 +234,6 @@ def test_failed_preparation_recovers_using_the_same_registered_resource(
 def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終了済み担当の資源を新しい所有sessionへ再登録し、中断した成果を保持する。"""
     repo, selected, original = _create(tmp_path, monkeypatch, capsys)
     unfinished = pathlib.Path(original["worktree"]) / "unfinished.txt"
     unfinished.write_text("再開する成果", encoding="utf-8")
@@ -264,12 +259,11 @@ def test_interrupted_lane_can_transfer_to_new_session_without_losing_uncommitted
 def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じrepo・laneは別session・linked worktreeからの作成と回収後の再作成で同じパスになり、別lane・別repoは区別される。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     other = git_repository.init_repository(tmp_path / "other", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     _selection(selected)
-    # process-loopと同じく主作業ツリー配下のlinked worktreeを呼出し元にする。
+
     caller = repo / ".claude" / "worktrees" / "process-loop"
     git_repository.run_git(repo, "worktree", "add", "-b", "process-loop", str(caller))
     observed: list[str] = []
@@ -279,10 +273,9 @@ def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
         assert not created["reused"] and created["session_id"] == session_id
         observed.append(created["worktree"])
         if session_id == "session-a":
-            # 終了時回収の後に同じパスへ再作成する。
             code, deleted, stderr = _invoke(capsys, "delete")
             assert code == 0 and deleted["removed"] == ["lane-01"], stderr
-        # session-bの資源は回収しないまま残し、session-cの作成が回収条件を確かめて同じパスへ再作成する。
+
     assert observed == [str(_fixed(repo, "lane-01"))] * 3
     code, listed, stderr = _invoke(capsys, "delete", "--list")
     assert code == 0, stderr
@@ -295,7 +288,7 @@ def test_fixed_placement_is_shared_across_sessions_callers_and_recreation(
     assert second["worktree"] == str(_fixed(repo, "lane-02"))
     assert foreign["worktree"] == str(_fixed(other, "lane-01"))
     assert len({observed[0], second["worktree"], foreign["worktree"]}) == 3
-    # 呼出し元のlinked worktreeの内側へレーンを入れ子で作成しない。
+
     assert not (caller / ".claude" / "worktrees").exists()
 
 
@@ -345,7 +338,6 @@ def test_fixed_placement_keeps_previous_unfinished_resource_and_returns_recovery
 def test_project_create_procedure_receives_the_fixed_placement(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """固有create手順にも同じ固定作成先を渡し、回収後の再作成でも同じパスを使う。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     _selection(selected)
@@ -371,7 +363,6 @@ def test_project_create_procedure_receives_the_fixed_placement(
 def test_fixed_placement_does_not_overwrite_unregistered_entity(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有登録の無い実体が固定作成先にあれば変更せず、理由と回復操作を返す。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     _selection(selected)
@@ -391,7 +382,6 @@ def test_fixed_placement_does_not_overwrite_unregistered_entity(
 def test_legacy_managed_temp_lane_is_resumed_and_cleaned_with_its_area(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """旧配置の登録は同じ作成先のまま再開でき、回収時に個別managed-tempも回収する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     _selection(selected)
@@ -425,7 +415,6 @@ def test_hook_owned_resource(
     remove_exit_code: int,
     detached: bool,
 ) -> None:
-    """hookの返却先をlane所有へ接続し、再利用と終了時Removeを同じ資源へ適用する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     destination = tmp_path / "hook-created"
     script = tmp_path / "hook.py"
@@ -498,7 +487,6 @@ def test_hook_owned_resource(
 def test_hook_cannot_adopt_preexisting_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], returned: str
 ) -> None:
-    """新規作成でhookが既存の作業先を返した場合は拒否し、主作業ツリーと別所有の成果・branchを変えない。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     (repo / "user.txt").write_text("保存済み", encoding="utf-8")
     other = tmp_path / "other"

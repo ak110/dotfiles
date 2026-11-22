@@ -59,7 +59,6 @@ from agent_toolkit._testing.agents_server_support import (
 async def test_send_during_reconnect_waits_only_for_same_session(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧接続を閉じている間、同じsessionの追送だけを止め、取り消した指示は渡さない。"""
     entered, proceed, queued = asyncio.Event(), asyncio.Event(), asyncio.Event()
     received: list[tuple[str, str]] = []
 
@@ -231,7 +230,6 @@ async def test_old_generation_reply_is_returned_without_query(tmp_path: pathlib.
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_command_channel_resolves_pending_requests_when_closed() -> None:
-    """チャネル閉鎖時に滞留要求を解決し、閉鎖後の受理を拒否する。"""
     channel = claude._CommandChannel()
     future = channel.send("prompt", "続行")
 
@@ -246,7 +244,6 @@ async def test_claude_command_channel_resolves_pending_requests_when_closed() ->
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: pathlib.Path) -> None:
-    """投入後に終了した継続入力をreplyとして処理し、直前結果を退避する。"""
     client = FakeClaudeClient([[AssistantMessage("reply中"), ResultMessage("状態: completed\n結果: reply結果")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = state.SessionState("claude-race", str(tmp_path), engine="claude")
@@ -290,7 +287,6 @@ async def test_claude_message_stream_failure_resolves_retrieved_command(tmp_path
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathlib.Path) -> None:
-    """所有タスクを取り消したときに処理中の継続要求を、所有タスクの終了として解決する。"""
     client = BlockingContinuationClaudeClient()
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = await manager.start("調査", str(tmp_path))
@@ -307,7 +303,6 @@ async def test_claude_owner_cancellation_resolves_active_command(tmp_path: pathl
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib.Path) -> None:
-    """打ち切り済みで未処理の継続要求を所有タスクが後から配送しない。"""
     client = FakeClaudeClient([])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = state.SessionState("claude-queued", str(tmp_path), engine="claude")
@@ -327,7 +322,6 @@ async def test_claude_timed_out_queued_prompt_is_not_delivered(tmp_path: pathlib
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_finished_task_send_message_omits_previous_result_after_wait(tmp_path: pathlib.Path) -> None:
-    """所有タスク終了後もwaitで回収済みの結果本文を再送しない。"""
     async with _finished_failed_claude_session(tmp_path) as (manager, backend, session):
         result = await manager.wait()
         assert result["error"]["message"] == "stream failed"
@@ -347,7 +341,6 @@ async def test_claude_finished_task_send_message_omits_previous_result_after_wai
 async def test_claude_reply_drains_old_events_before_new_query(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, old_events: str, prompt: str
 ) -> None:
-    """共通のSDK受信列に残った旧イベントを、新しい指示の完了として扱わない。"""
     client = QueueClaudeClient(
         [
             [SystemMessage("claude-queue"), AssistantMessage("初回"), ResultMessage("状態: completed\n結果: 初回完了")],
@@ -397,7 +390,6 @@ async def test_claude_reply_drains_old_events_before_new_query(
 async def test_usage_limit_idle_keeps_shared_stream_result_pending(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """継続受信でCLIのidleが届いても、利用上限の解除待ちを終了時の結果にしない。"""
     idle = SystemMessage("claude-limited-queue")
     idle.subtype = "session_state_changed"
     idle.data = {"state": "idle"}
@@ -499,7 +491,6 @@ async def test_send_message_reactivated_child_holds_claude_result_until_terminal
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_claude_finished_task_send_message_keeps_previous_result_without_wait(tmp_path: pathlib.Path) -> None:
-    """所有タスク終了後も未回収の結果本文を退避して会話を再開する。"""
     async with _finished_failed_claude_session(tmp_path) as (manager, backend, session):
         response = await manager.send_message(session.session_id, "続行")
 
@@ -520,7 +511,6 @@ async def test_claude_finished_task_send_message_keeps_previous_result_without_w
 
 
 async def _cli_wait(manager: server_manager.AgentsServerManager) -> list[tuple[Any, Any]]:
-    """別プロセスの`atk agents wait`と同じ公開CLIを同じ状態ディレクトリへ1回実行し、受け取った結果を返す。"""
     writer = manager._status_writer
     assert writer is not None
 
@@ -574,8 +564,7 @@ async def test_claude_reply_without_working_directory_keeps_previous_turn(
 
     monkeypatch.setattr(claude, "_build_options", lambda cwd, *_args, **_kwargs: SimpleNamespace(cwd=cwd))
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda *_args: 0.5)
-    # 所有タスクの無い会話の再開の事前確認は、製品と同じく作業ディレクトリの不在を拒否する。
-    # プラグインの起動コマンドの実行だけを省く。
+
     monkeypatch.setattr(launch_requests, "check_plugin_commands", launch_requests_preflight.check_plugin_commands)
     monkeypatch.setattr(launch_requests_preflight, "PREFLIGHT_COMMANDS", ())
     async with (
@@ -621,7 +610,6 @@ async def test_claude_reply_without_working_directory_keeps_previous_turn(
         assert session_registry.resolve(session.session_id).recorded_turn_seq == 1
         if not received:
             assert await _cli_wait(manager) == [("completed", "状態: completed\n結果: 初回完了")]
-            # 次の保存を待たず、cwdを戻した直後に追送する。
 
         workdir.mkdir()
         reply = await asyncio.wait_for(manager.send_message(session.session_id, "次の指示"), 5)

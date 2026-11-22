@@ -92,7 +92,6 @@ _python_argcomplete() {
 
 
 def main(argv: list[str] | None = None) -> int:
-    """bash補完ファイルを生成する。"""
     argparse.ArgumentParser(description="bash補完ファイルを生成する。").parse_args(argv)
 
     pytools_commands = sorted(_collect_pytools_commands())
@@ -116,7 +115,6 @@ def _write_if_changed(output: pathlib.Path, content: str, count: int) -> None:
 
 
 def _collect_pytools_commands() -> list[str]:
-    """argcomplete対応の`project.scripts`コマンド名を抽出する。"""
     data = tomllib.loads(_PYPROJECT.read_text(encoding="utf-8"))
     scripts = data.get("project", {}).get("scripts", {})
     result: list[str] = []
@@ -131,7 +129,6 @@ def _collect_pytools_commands() -> list[str]:
 
 
 def _collect_agent_toolkit_commands() -> list[str]:
-    """`agent_toolkit/*.py`のうち、argcompleteマーカーを持ち対応するbashラッパーがあるコマンド名を返す。"""
     result: list[str] = []
     if not _AGENT_TOOLKIT_PACKAGE.is_dir():
         return result
@@ -167,7 +164,6 @@ def _has_marker(path: pathlib.Path) -> bool:
 
 
 def _render(header: str, commands: list[str]) -> str:
-    """補完ファイルの中身を組み立てる。"""
     lines = [header.rstrip("\n"), _DISPATCHER.rstrip("\n"), ""]
     for name in commands:
         lines.append(f"complete -o nospace -o default -o bashdefault -F _python_argcomplete {name}")

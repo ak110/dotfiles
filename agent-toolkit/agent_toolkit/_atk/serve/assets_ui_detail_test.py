@@ -1,12 +1,9 @@
-"""serveのassetsに関するui_detailの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_render_all_frontmatter_without_repeating_detail_badges() -> None:
-    """詳細メタデータは種別・状態を除き、任意の入れ子値を構造付きで表示する。"""
     result = _run_node_ui(
         """
 displayEntry({
@@ -54,7 +51,6 @@ process.stdout.write(JSON.stringify({items, heading: elements['detail-state'].te
 
 
 def test_assets_sse_detail_tracks_state_and_discards_stale_response() -> None:
-    """SSEを受けた詳細の再取得は状態の移動を追跡し、別の項目を選んだ後に届いた古い応答を破棄する。"""
     result = _run_node_ui(
         """
 const inbox = {

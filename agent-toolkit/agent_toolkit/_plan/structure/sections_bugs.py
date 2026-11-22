@@ -34,7 +34,7 @@ from agent_toolkit._plan.structure.sections_layout import _check_h1
 
 _CAUSE_RECORD_LABELS: dict[str, str] = {**CAUSE_RECORD_REQUIRED_LABELS, **CAUSE_RECORD_OPTIONAL_LABELS}
 
-# 長い語を先に置き、`再発防止:`を`再発`と読み違えないようにする。
+
 _CAUSE_RECORD_LINE = re.compile(
     r"^\s*(?:[-*+]\s+)?(?:\*\*)?(?P<label>"
     + "|".join(re.escape(label) for label in sorted(_CAUSE_RECORD_LABELS, key=len, reverse=True))
@@ -43,27 +43,17 @@ _CAUSE_RECORD_LINE = re.compile(
 
 _EMPTY_TEXT_CHARS = " \t\u3000*_`~"
 
-# 前の版の初動の短い記録（`現象:`・`期待:`・`直接原因と根拠:`・`影響:`・`処置:`・`再検証:`など）と重なる行頭語。
-# これ以外の行頭語（`原因`・`広がり`・`確認`など）を持つ単位だけを、現行の形で書いた記録として検査する。
+
 _PREVIOUS_SHORT_RECORD_LABELS = frozenset({"期待", "処置"})
 
 
 class CauseRecordLine(NamedTuple):
-    """原因分析の記録の1行。`text`は行頭語と区切りの後ろの本文で、前後の空白と強調記号を除いた値である。"""
-
     lineno: int
     label: str
     text: str
 
 
 def cause_record_lines(content: str) -> list[CauseRecordLine]:
-    """本文から原因分析の記録の行（行頭語で始まる行）を出現順に返す。
-
-    行の形は、任意のリスト記号（`-`・`*`・`+`）、任意の強調（`**`）、行頭語、`:`か`：`、本文の順とする。
-    `**期待**:`と`**期待:**`のどちらの強調も受け付ける。
-    コードフェンスとHTMLコメントの内側の行は、引用・例示として数えない。
-    行番号は`content`の先頭を1とする。
-    """
     return _match_record_lines(iter_markdown_body_lines(content))
 
 
@@ -76,18 +66,11 @@ def _match_record_lines(lines: Iterable[tuple[int, str]]) -> list[CauseRecordLin
 
 
 class _CauseRecordUnit(NamedTuple):
-    """バグ単位1件。`prefix`は診断の前に置く単位の所在で、記録全体が1単位の場合は空とする。"""
-
     prefix: str
     lines: list[tuple[int, str]]
 
 
 def _cause_record_units(content: str) -> list[_CauseRecordUnit]:
-    """記録をバグ単位へ分ける。
-
-    H3が無ければ全体を1単位とする。
-    H3があれば各H3の配下を1単位とし、最初のH3より前の本文は行頭語の行を含む場合だけ1単位とする。
-    """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     units = [
@@ -105,7 +88,6 @@ def _cause_record_units(content: str) -> list[_CauseRecordUnit]:
 
 
 def _is_legacy_unit(unit: _CauseRecordUnit, *, accept_short_record: bool) -> bool:
-    """廃止した表を持つ単位か、表も現行だけの行頭語の行も持たない旧来の短い記録である単位を旧形式と判定する。"""
     tables = extract_tables(unit.lines)
     if any(table.header in PLAN_LEGACY_BUG_TABLE_HEADERS for table in tables):
         return True
@@ -118,7 +100,6 @@ def _is_legacy_unit(unit: _CauseRecordUnit, *, accept_short_record: bool) -> boo
 
 
 def _label_line_errors(unit: _CauseRecordUnit) -> list[str]:
-    """1単位の行頭語の不足と、本文が空の行を診断する。"""
     lines = _match_record_lines(unit.lines)
     present = {line.label for line in lines}
     errors = [
@@ -158,12 +139,10 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False) -> list[st
 
 
 def has_legacy_cause_record(content: str) -> bool:
-    """原因分析の記録が、読み取りでだけ受理する旧形式のバグ単位を含む場合に真を返す。移行の案内にだけ用いる。"""
     return any(_is_legacy_unit(unit, accept_short_record=True) for unit in _cause_record_units(content))
 
 
 def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
-    """バグ調査節直下の計画ファイル（バグ）参照行からパス文字列を抽出する。"""
     prefixes = (PLAN_BUG_FILE_REFERENCE_PREFIX, PLAN_BUG_FILE_REFERENCE_LEGACY_PREFIX)
     return [
         stripped[len(prefix) :].strip()
@@ -175,7 +154,6 @@ def _bug_file_reference_values(section: list[tuple[int, str]]) -> list[str]:
 
 
 def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading], index: int) -> list[str]:
-    """`## バグ調査結果`の分離先参照、または旧配置の本文内のバグ単位が基準を満たすか確かめる。"""
     start, end = heading_subtree_range(headings, index)
     section = lines_within(body, start, end)
     references = _bug_file_reference_values(section)
@@ -193,7 +171,6 @@ def _check_bug_sections(body: list[tuple[int, str]], headings: list[PlanHeading]
 
 
 def extract_bug_file_reference(content: str) -> str | None:
-    """計画メタ情報または旧バグ調査節が単独で参照する分離先パスを返す。"""
     metadata, _errors = parse_plan_metadata(content)
     if metadata is not None and PLAN_METADATA_BUG_FIELD in metadata.values:
         return metadata.values[PLAN_METADATA_BUG_FIELD]
@@ -214,7 +191,6 @@ def extract_bug_file_reference(content: str) -> str | None:
 
 
 def has_legacy_bug_table(content: str) -> bool:
-    """計画本文の`## バグ調査結果`がバグ単位を本文内に置く旧配置で、基準を満たす場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     bug_index = find_heading_index(headings, 2, PLAN_H2_BUG)

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""二ファイル計画とバグ調査の参照を検証する。"""
 
 import pathlib
 import subprocess
@@ -15,7 +14,6 @@ from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixtu
 
 
 def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False) -> str:
-    """fixtureの現行列構成を前提とせず、実施内容表を指定した新旧形式へ置き換える。"""
     header = (
         f"| {' | '.join(_plan_format.PLAN_LEGACY_ACTION_TABLE_HEADER)} |\n| --- | --- | --- |"
         if legacy
@@ -31,7 +29,6 @@ def _replace_action_table(content: str, rows: list[str], *, legacy: bool = False
 def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
     repo: tuple[pathlib.Path, str],
 ) -> None:
-    """一件の重複見出しに対する診断を二ファイルの形式を判定するときに一回だけ返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -47,14 +44,12 @@ def test_new_format_reports_one_diagnostic_for_one_duplicate_heading(
 
 
 def test_new_format_detected_by_detail_file_presence(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（詳細）が存在しない同名の計画ファイル（メイン）は旧形式として判定される。"""
     work_dir, base = repo
     errors, _warnings = _check(work_dir, _plan(work_dir, base))
     assert not errors, errors
 
 
 def test_old_two_file_format_ignores_detail_reference_value(repo: tuple[pathlib.Path, str]) -> None:
-    """旧二ファイル形式の詳細参照値はstem導出へ移行したため対応判定に使わない。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`", "- 計画ファイル（詳細）: `other.detail.md`")
@@ -64,7 +59,6 @@ def test_old_two_file_format_ignores_detail_reference_value(repo: tuple[pathlib.
 
 
 def test_new_format_requires_related_wi_metadata_field(repo: tuple[pathlib.Path, str]) -> None:
-    """詳細参照を除いた新書式には`関連WI`が必要である。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace("- 計画ファイル（詳細）: `plan.detail.md`\n", "")
@@ -73,7 +67,6 @@ def test_new_format_requires_related_wi_metadata_field(repo: tuple[pathlib.Path,
 
 
 def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（メイン）に`## 検証区分`が無い新書式を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -85,7 +78,6 @@ def test_new_format_rejects_missing_verification_section(repo: tuple[pathlib.Pat
 
 
 def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path, str]) -> None:
-    """`## バグ調査結果`は計画ファイル（詳細）専用であり計画ファイル（メイン）に置くと拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = main_content.replace(
@@ -97,7 +89,6 @@ def test_new_format_rejects_bug_section_placed_in_main(repo: tuple[pathlib.Path,
 
 
 def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) -> None:
-    """バグ対応の計画ファイル（詳細）が参照する計画ファイル（バグ）が無い場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     errors, _warnings = _check_new(work_dir, main_content, detail_content, create_bug_file=False)
@@ -105,7 +96,6 @@ def test_new_format_rejects_missing_bug_sidecar(repo: tuple[pathlib.Path, str]) 
 
 
 def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（バグ）のstemが計画ファイル（メイン）と異なる場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     detail_content = detail_content.replace("plan.bugs.md", "other.bugs.md")
@@ -114,7 +104,6 @@ def test_new_format_rejects_bug_sidecar_stem_mismatch(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（バグ）の記録から必須の行が欠けた場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _plan_fixture.bug_file().replace(f"{_plan_fixture.cause_record_line('原因')}\n", "")
@@ -135,7 +124,6 @@ def test_new_format_rejects_bug_sidecar_structure_violation(repo: tuple[pathlib.
     reason=("実Gitの旧計画とsidecarを3構成で検査し、新規作成時の旧形式の拒否を確認する（Linux CI CPU合計最大0.840秒）。"),
 )
 def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], variant: str) -> None:
-    """新規作成では、廃止した表か表以前の形式で書いたバグ単位をエラーにする。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     legacy_bug_file = _plan_fixture.bug_file(variant=variant)
@@ -151,7 +139,6 @@ def test_creation_rejects_legacy_bug_table_rows(repo: tuple[pathlib.Path, str], 
 
 @pytest.mark.parametrize("label", ["期待", "広がり"])
 def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, str], label: str) -> None:
-    """計画ファイル（バグ）の記録で本文の無い行を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     invalid_bug_file = _plan_fixture.bug_file().replace(_plan_fixture.cause_record_line(label), f"- {label}:")
@@ -160,7 +147,6 @@ def test_new_format_rejects_empty_bug_sidecar_content(repo: tuple[pathlib.Path, 
 
 
 def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイル（詳細）の固定H2欠落も基準に違反すると判定される。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -172,7 +158,6 @@ def test_new_format_rejects_detail_structure_violation(repo: tuple[pathlib.Path,
 
 
 def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pathlib.Path, str]) -> None:
-    """列不足の新4列表は例外を送出せず、既存の構造診断として拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base)
     main_content = _replace_action_table(
@@ -186,7 +171,6 @@ def test_new_format_reports_short_action_row_without_index_error(repo: tuple[pat
 
 
 def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, str]) -> None:
-    """2ファイル書式でも本文内の旧バグ調査表を受理し、移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     reference = _plan_format.extract_bug_file_reference(detail_content)
@@ -211,7 +195,6 @@ def test_new_format_warns_for_legacy_inline_bug_table(repo: tuple[pathlib.Path, 
 
 
 def _adjunct_reference_plan(repo: pathlib.Path, base: str, *, stem: str = "plan") -> tuple[str, str]:
-    """計画ファイル（バグ）を新しい参照値で指す計画を組み立てて返す。"""
     main, detail = _new_format_plan(repo, base, bug=True, detail_name=f"{stem}.detail.md")
     absolute = str((repo / f"{stem}.bugs.md").resolve())
     reference = f"{_plan_file.PLAN_ADJUNCT_REFERENCE_PREFIX}{stem}.bugs.md"
@@ -219,7 +202,6 @@ def _adjunct_reference_plan(repo: pathlib.Path, base: str, *, stem: str = "plan"
 
 
 def test_new_format_accepts_adjunct_bug_file_reference(repo: tuple[pathlib.Path, str]) -> None:
-    """計画ファイルと同じディレクトリを基準に新しい参照値を解決する。"""
     work_dir, base = repo
     main_content, detail_content = _adjunct_reference_plan(work_dir, base)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
@@ -230,7 +212,6 @@ def test_new_format_accepts_adjunct_bug_file_reference(repo: tuple[pathlib.Path,
 def test_adjunct_bug_file_reference_resolves_from_any_plan_directory(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """同じ参照値が、計画を置いたどちらのディレクトリでも同じ計画の実体を指す。"""
     work_dir, base = repo
     main_content, detail_content = _adjunct_reference_plan(work_dir, base)
     saved_directory = tmp_path / "saved" / "2026" / "09"
@@ -244,7 +225,6 @@ def test_adjunct_bug_file_reference_resolves_from_any_plan_directory(
 
 
 def test_new_format_rejects_adjunct_reference_with_path_separator(repo: tuple[pathlib.Path, str]) -> None:
-    """新しい参照値にパス区切り文字を含む場合を拒否する。"""
     work_dir, base = repo
     main_content, detail_content = _adjunct_reference_plan(work_dir, base)
     detail_content = detail_content.replace(
@@ -256,7 +236,6 @@ def test_new_format_rejects_adjunct_reference_with_path_separator(repo: tuple[pa
 
 
 def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[pathlib.Path, str]) -> None:
-    """絶対パスの参照は読み取りで受理し、新しい参照値への移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     errors, warnings = _check_new(work_dir, main_content, detail_content)
@@ -267,7 +246,6 @@ def test_new_format_warns_for_legacy_adjunct_reference_notation(repo: tuple[path
 def test_new_format_accepts_portable_bug_file_reference(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """可搬表記の参照から、新しい保存先にある計画ファイル（バグ）の構造を確かめられる。"""
     work_dir, base = repo
     private_notes = work_dir / "private-notes"
     stem = "30-計画保存先移行-d4f9"
@@ -291,7 +269,6 @@ def test_new_format_accepts_portable_bug_file_reference(
 
 
 def test_cli_accepts_new_format_plan(repo: tuple[pathlib.Path, str]) -> None:
-    """CLI経由でも新書式の計画ファイル（メイン）・計画ファイル（詳細）の組を受理する。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, detail_name="new-format-plan.detail.md")
     path = work_dir / "new-format-plan.md"

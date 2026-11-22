@@ -1,5 +1,3 @@
-"""証拠抽出の`--tool-calls`照会。ツール呼び出しと入力・結果の対応を返す。"""
-
 from __future__ import annotations
 
 import collections
@@ -29,7 +27,6 @@ from session_evidence_tool_calls_resources import resource_usage_events
 
 
 def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """正常な委譲・規範読込も比較できる事実と全文位置を、欠陥の採点をせず返す。"""
     events: list[dict[str, Any]] = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}
@@ -86,10 +83,6 @@ def comparison_material_events(collected: list[_CollectedRecord]) -> list[dict[s
 
 
 def _tool_call_events(item: _CollectedRecord, tools: list[str] | None, pattern: re.Pattern[str] | None) -> list[dict[str, Any]]:
-    """1つの記録のツール呼び出しのうち、ツール名と代表入力の条件に一致するものを`tool-call`イベントで返す。
-
-    本スクリプト自身の呼び出しも含める。`--grep`のように自己呼び出しを除くと、本スクリプトの呼び出し回数を数えられない。
-    """
     return [
         {
             "kind": "tool-call",
@@ -127,7 +120,6 @@ def _sorted_tool_call_events(events: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def _tool_call_summary(events: list[dict[str, Any]], collected: list[_CollectedRecord] | None = None) -> dict[str, Any]:
-    """`tool-call`イベントの件数と、ツール名ごと・記録ごとの件数を返す。"""
     summary = {
         "kind": "tool-call-summary",
         "count": len(events),
@@ -163,7 +155,6 @@ def _tool_call_collection_events(
     pattern: re.Pattern[str] | None,
     since: datetime.datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """単一transcriptのメイン記録と全ての委譲先の記録のツール呼び出しを時刻順に返し、末尾へ要約を置く。"""
     events = _sorted_tool_call_events([event for item in collected for event in _tool_call_events(item, tools, pattern)])
     missing_timestamps = 0
     if since is not None:

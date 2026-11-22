@@ -1,5 +1,3 @@
-"""serveのsessionsに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import base64
@@ -35,7 +33,7 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     assert detail["events"][2]["name"] == "Bash"
     assert detail["events"][5]["detail"] == {"trigger": "auto"}
     assert detail["usage"] == {"input_tokens": 10, "output_tokens": 3}
-    # 記録本体が残っていないサブエージェントは、開く対象が無いことを`path`のnullで表す。
+
     assert detail["subagents"] == [
         {
             "agent_id": "agent-1",
@@ -60,10 +58,6 @@ def test_detail_renders_claude_records_in_order(tmp_path: pathlib.Path) -> None:
     ),
 )
 def test_detail_returns_every_event_of_a_long_record(tmp_path: pathlib.Path) -> None:
-    """5,000件を超えるイベントを持つ記録でも、詳細は全イベントを返し、切り詰めた件数の項目を持たない。
-
-    件数で切り詰めると、右ペインはその後ろのイベントと以後の追記へどの操作でも到達できない。
-    """
     count = 5001
     path = _write(
         tmp_path / "claude" / "projects" / "-home-aki-long" / "long.jsonl",
@@ -86,7 +80,6 @@ def test_detail_returns_every_event_of_a_long_record(tmp_path: pathlib.Path) -> 
 
 
 def test_subagent_records_are_reachable_from_the_parent_detail(tmp_path: pathlib.Path) -> None:
-    """記録本体があるサブエージェントは絶対パスを返し、その詳細から下位の階層も辿れる。"""
     path = _claude_record(tmp_path)
     subagents = path.with_suffix("") / "subagents"
     for agent_id, depth in (("agent-parent", 1), ("agent-child", 2)):
@@ -103,7 +96,7 @@ def test_subagent_records_are_reachable_from_the_parent_detail(tmp_path: pathlib
 
     by_id = {item["agent_id"]: item for item in detail["subagents"]}
     assert by_id["agent-parent"]["path"] == str(parent_record)
-    # 記録本体が無い項目は開けないため、深さだけを返す。
+
     assert by_id["agent-child"]["path"] is None
     assert by_id["agent-child"]["spawn_depth"] == 2
 
@@ -147,7 +140,6 @@ def test_detail_renders_codex_records_in_order(tmp_path: pathlib.Path) -> None:
 def test_claude_detail_session_name_prefers_custom_title(
     tmp_path: pathlib.Path, extra: list[dict[str, str]], expected: str | None
 ) -> None:
-    """詳細APIのセッション名は最後のcustom-title、無ければ最後のai-titleとし、名前の記録が無ければnullを返す。"""
     path = _claude_record(tmp_path)
     with path.open("a", encoding="utf-8") as stream:
         stream.writelines(json.dumps(record, ensure_ascii=False) + "\n" for record in extra)
@@ -216,7 +208,6 @@ def test_codex_roles_and_compaction_are_preserved(tmp_path: pathlib.Path) -> Non
 
 
 def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
-    """挿入本文だけを表示種別へ分け、ユーザーとツールのイベントを保つ。"""
     claude = _write(
         tmp_path / "claude" / "projects" / "p" / "claude.jsonl",
         [
@@ -252,12 +243,10 @@ def test_runtime_inserted_events(tmp_path: pathlib.Path) -> None:
 
 
 def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
-    """記録が持たない情報は0や空文字列で補わず、取得不能として返す。"""
     path = _write(
         tmp_path / "claude" / "projects" / "proj" / "abc.jsonl",
         [
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "やあ"}]}},
-            # 本文を持たない形式のユーザー発話。発話は持つため一覧へ載り、最初の発話は取得不能となる。
             {"type": "user", "message": {"content": [{"type": "tool_result", "content": "結果"}]}},
         ],
     )
@@ -271,9 +260,9 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
     assert summary.first_user_message is None
     assert detail["started_at"] is None
     assert detail["usage"] == {"input_tokens": None, "output_tokens": None}
-    # サブエージェント記録が無い場合はnullとし、「0件」と区別する。
+
     assert detail["subagents"] is None
-    # ローカルの記録は保存先を直接読むため、有無の判定自体は常に成立する。
+
     assert detail["subagents_unavailable"] is False
     assert detail["events"][0]["timestamp"] is None
     assert detail["events"][0]["name"] is None
@@ -281,7 +270,6 @@ def test_absent_fields_are_reported_as_unavailable(tmp_path: pathlib.Path) -> No
 
 
 def test_broken_record_is_reported_per_entry(tmp_path: pathlib.Path) -> None:
-    """書き込み途中の行があっても他の行を失わせず、該当件数を項目単位で返す。"""
     path = tmp_path / "claude" / "projects" / "proj" / "abc.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -303,7 +291,6 @@ def test_broken_record_is_reported_per_entry(tmp_path: pathlib.Path) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 async def test_detail_preserves_json_string_separators(tmp_path: pathlib.Path, engine: str) -> None:
-    """ローカル・リモートの会話詳細取得で正常な本文を失わず解析不可0件を返す。"""
     texts = [f"前{separator}後" for separator in ("\u2028", "\u2029", "\u0085")]
     records = [
         {"type": "user", "message": {"content": text}}
@@ -329,7 +316,6 @@ async def test_detail_preserves_json_string_separators(tmp_path: pathlib.Path, e
 
 
 def test_local_record_path_outside_the_roots_is_rejected(tmp_path: pathlib.Path) -> None:
-    """保存先の外を指す読み取り要求を拒否する。"""
     context = _context(tmp_path)
     outside = tmp_path / "outside.jsonl"
     outside.write_text("{}\n", encoding="utf-8")

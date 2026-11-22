@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関する系統（target_branch）の表示・限定・作成の試験。"""
-
 import json
 import pathlib
 
@@ -36,7 +34,6 @@ def _write_entry(harness: _BrowserHarness, filename: str, repo: str, *, branch: 
 async def test_registered_repository_shows_branch_filters_by_it_and_creates_with_it(
     browser_harness: _BrowserHarness, tmp_path: pathlib.Path
 ) -> None:
-    """系統を登録したrepositoryのWIへ系統が出て選んだ系統へ限定でき、新規作成で`default_branch`から選び直した系統が保存される。"""
     harness = browser_harness
     page = harness.page
     _write_config(
@@ -92,7 +89,6 @@ async def test_registered_repository_shows_branch_filters_by_it_and_creates_with
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_unregistered_repositories_show_no_branch_ui_and_send_no_branch(browser_harness: _BrowserHarness) -> None:
-    """系統を一つも登録しない環境では、系統の表示・限定・作成の入力欄を出さず、作成の要求に系統を含めない。"""
     harness = browser_harness
     page = harness.page
     _write_entry(harness, "plain.md", _PLAIN)

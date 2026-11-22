@@ -112,7 +112,6 @@ class _TerminalUnavailableBackend(_StartedBackend):
 
 
 def _block_named_replace(monkeypatch: pytest.MonkeyPatch, name: str) -> tuple[asyncio.Event, threading.Event]:
-    """指定ファイルの置換直前でworkerを止め、loopの到達イベントを設定する。"""
     entered = asyncio.Event()
     release = threading.Event()
     loop = asyncio.get_running_loop()
@@ -134,7 +133,6 @@ def _block_named_replace(monkeypatch: pytest.MonkeyPatch, name: str) -> tuple[as
 async def test_replace_retry_runs_outside_loop(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, winerror: int, route: str
 ) -> None:
-    """実際の保存で共有違反の解消を待つ間もloopを止めず、共有違反から復旧して保存と一時ファイル回収を終える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     sessions: dict[str, state.SessionState] = {}
     writer = status_file.StatusFileWriter(
@@ -259,7 +257,6 @@ async def test_registration_updates_during_retry_do_not_mark_new_turn_saved(
 async def test_close_after_cancelled_flush_waits_for_worker_and_removes_projection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, worker_fails: bool
 ) -> None:
-    """保存キャンセルはworkerの終了を待ち、close後に表示ファイルを再作成しない。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         await owner.activate_async()
@@ -310,7 +307,6 @@ async def test_close_after_cancelled_flush_waits_for_worker_and_removes_projecti
 
 @pytest.mark.asyncio
 async def test_collecting_one_end_preserves_a_later_end_with_the_same_turn_number(tmp_path, monkeypatch):
-    """CLIが結果を退避してから削除するまでの間も、別の終了結果を公開・回収できる。"""
     session = state.SessionState("child", str(tmp_path), announced=True, turn_seq=1)
     writer = status_file.StatusFileWriter(
         {"child": session}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path
@@ -361,7 +357,6 @@ async def test_collecting_one_end_preserves_a_later_end_with_the_same_turn_numbe
 async def test_result_changed_during_save_is_not_republished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, race: str
 ) -> None:
-    """loop上で回収済みになった結果を、保存完了の反映で再公開しない。"""
     session = state.SessionState(
         "session", str(tmp_path), announced=True, status="completed", turn_end=turn_state.TurnEnd.COMPLETED
     )
@@ -431,7 +426,6 @@ async def test_expiry_does_not_restore_result_collected_during_registration_rele
 async def test_cancelled_terminal_save_reflects_success_before_next_flush(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """キャンセル中に成功した保存をloopで記録し、CLI回収後のcloseで再公開しない。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         await writer.activate_async()
@@ -462,7 +456,6 @@ async def test_cancelled_terminal_save_reflects_success_before_next_flush(
 async def test_kill_waits_for_terminal_save_started_after_initial_drain(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """最初のdrain後に保存が始まっても、killはworkerを回収してから結果を削除して返す。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         install_backend(owner, "codex", FakeBackend(owner.sessions, "codex"))
@@ -615,7 +608,6 @@ async def test_auxiliary_save_retry_runs_outside_loop(
 async def test_public_responses_finish_registration_before_cli_observation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """start・新turnへのsend_message・stop・closeが返った登録をCLIのshowで直ちに読める。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with manager.AgentsServerManager(None) as owner:
         install_backend(owner, "claude", _StartedBackend(owner.sessions, "claude"))
@@ -719,7 +711,6 @@ async def test_close_propagates_candidate_failure_without_masking_terminal_failu
 async def test_cancelled_close_finishes_worker_and_deactivates_writer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """close自体のキャンセルも、workerと書込主体の後始末が終わってから返す。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with manager.AgentsServerManager(writer) as owner:
         await writer.activate_async()

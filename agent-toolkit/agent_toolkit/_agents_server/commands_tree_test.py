@@ -23,7 +23,6 @@ def test_agents_list_shows_status_line_right_of_session_id(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人の端末ではsession IDの右側へ、名前と実行モデル、直近の行動、経過時間、状態をstatusLineの順で並べる。"""
     _human_environment(monkeypatch)
 
     with pytest.raises(SystemExit, match="0"):
@@ -39,7 +38,6 @@ def test_agents_list_shows_status_line_right_of_session_id(
 
 
 def test_human_tree_keeps_session_id_and_shortens_description_on_narrow_terminal() -> None:
-    """狭い端末でもsession IDを省略せず、右側の説明を短くして端末幅に収める。"""
     now = datetime.datetime(2026, 9, 13, 0, 5, tzinfo=datetime.UTC)
     session = {
         "session_id": "01a10606-6bb6-78e1-88cb-daaa70c15281",
@@ -62,7 +60,6 @@ def test_human_tree_keeps_session_id_and_shortens_description_on_narrow_terminal
 
 
 def test_human_tree_leaves_description_width_on_narrow_terminal() -> None:
-    """100桁の端末で入れ子の委譲先が並んでも、名前を先に短くして行動・進捗の欄へ下限幅を残す。"""
     now = datetime.datetime(2026, 9, 13, 0, 30, tzinfo=datetime.UTC)
     parent_id = "272b7915-54c1-4060-8a76-230591c9e1bd"
     base: dict[str, Any] = {
@@ -136,7 +133,6 @@ def test_human_tree_prefers_usage_limit_and_api_retry_over_progress() -> None:
 
 
 def test_human_tree_reports_empty_list() -> None:
-    """表示対象のrootが無ければ、sessionが無いことを示す。"""
     now = datetime.datetime(2026, 9, 13, tzinfo=datetime.UTC)
 
     assert commands._human_tree([], columns=80, now=now) == "sessionはありません"  # pylint: disable=protected-access
@@ -149,7 +145,6 @@ def test_agents_list_watch_redraws_until_interrupted(
     capsys: pytest.CaptureFixture[str],
     include_terminated: bool,
 ) -> None:
-    """`--watch`は周期ごとに一覧を取得し直して画面を描き替え、Ctrl-Cで終了コード0を返す。"""
     _human_environment(monkeypatch)
     for key in ("CLAUDE_CODE_SESSION_ID", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
@@ -191,7 +186,6 @@ def test_agents_list_watch_rejects_agent_environment_and_non_terminal(
     capsys: pytest.CaptureFixture[str],
     agent_environment: bool,
 ) -> None:
-    """エージェント環境と端末以外への出力では、継続表示を始めず理由と次の操作を返す。"""
     _human_environment(monkeypatch)
     if agent_environment:
         monkeypatch.setenv("AI_AGENT", "1")

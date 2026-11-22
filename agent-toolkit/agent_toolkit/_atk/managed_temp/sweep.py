@@ -28,7 +28,7 @@ from agent_toolkit._atk.managed_temp import creation, paths, permissions, resour
 from agent_toolkit._atk.managed_temp.cleanup_times import CleanupTimes, update_time
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError, ManagedTempPermissionError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
-from agent_toolkit._atk.managed_temp.sweep_lock import sweep_access
+from agent_toolkit._atk.managed_temp.sweep_lock import persistent_lock_path, sweep_access
 from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
 
 _RECORD_NAME = ".sweep/last-sweep"
@@ -67,8 +67,6 @@ _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
 
 class SweepResult(typing.NamedTuple):
-    """`sweep_managed_temp`の結果。"""
-
     deleted: list[pathlib.Path]
     """自動削除したパス。"""
     failed: tuple[tuple[pathlib.Path, str], ...]
@@ -80,8 +78,6 @@ class SweepResult(typing.NamedTuple):
 
 
 class SpacePressure(typing.NamedTuple):
-    """空きが下限（容量の10%）を割った起動の、回収前後の空きと回収量上位。"""
-
     total: int
     """一時rootを含むFSの容量（バイト）。"""
     free_before: int
@@ -100,7 +96,6 @@ class SpacePressure(typing.NamedTuple):
 def _sweep_due(
     state_root: pathlib.Path, now_ns: int, *, record_name: str = _RECORD_NAME, interval_ns: int = _SWEEP_INTERVAL_NS
 ) -> bool:
-    """前回の掃引から間隔が過ぎたかを返す。記録の欠落・破損と、未来の時刻では真を返す。"""
     try:
         last_ns = int((state_root / record_name).read_text(encoding="ascii"))
     except OSError, ValueError:
@@ -122,7 +117,6 @@ def _save_sweep_time(state_root: pathlib.Path, now_ns: int, *, record_name: str 
 
 
 def _disk_usage(path: pathlib.Path) -> typing.Any:
-    """空きの観測点。テストが実ディスクの空きから掃引を隔離できるよう、標準関数を1箇所で包む。"""
     return shutil.disk_usage(path)
 
 
@@ -132,7 +126,6 @@ def _allocated_bytes(metadata: os.stat_result) -> int:
 
 
 def _tree_bytes(path: pathlib.Path) -> int:
-    """対象の実使用量（バイト）を、リンクを辿らずに数える。数えられない項目は0として扱う。"""
     total = 0
     pending = [path]
     while pending:
@@ -154,7 +147,6 @@ def _now_ns(now: datetime.datetime) -> int:
 
 
 def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
-    """領域外のgitdirと逆参照が一致するworktreeだけを保護する。"""
     try:
         content = git_file.read_text(encoding="utf-8").strip()
         if not content.startswith("gitdir: "):
@@ -204,7 +196,6 @@ def _inspect_tree(path: pathlib.Path, now_ns: int, times: CleanupTimes) -> tuple
 def _inspect_under(
     directory: int, metadata: os.stat_result, current: pathlib.Path, area: pathlib.Path, now_ns: int, times: CleanupTimes
 ) -> tuple[int, bool, int]:
-    """記述子が指すディレクトリの配下を相対名で辿り、`_inspect_tree`と同じ値を返す。"""
     size = _allocated_bytes(metadata)
     registered = False
     with os.scandir(directory) as children:
@@ -350,7 +341,6 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
 
 
 def _legacy_session_references(state_root: pathlib.Path, *, skip_unreadable: bool) -> typing.Iterator[tuple[pathlib.Path, str]]:
-    """旧版で会話に割り当てた領域は任意のprefixを持つため、名前ではなく旧参照を読む。"""
     sessions = state_root / ".sessions"
     try:
         with os.scandir(sessions) as entries:
@@ -378,7 +368,6 @@ def _sweep_entries(temp_root: pathlib.Path, state_root: pathlib.Path) -> list[pa
     try:
         separate = not temp_root.samefile(state_root)
     except FileNotFoundError:
-        # 一度も状態を書けないまま満杯になった場合、一時rootには回収対象だけがある。
         return children
     if separate:
         return children
@@ -414,7 +403,7 @@ def _examine(
     latest, has_git, _size = inspected if inspected is not None else _inspect_entry(child, metadata, now_ns, times)
     if latest >= cutoff_ns and not has_git:
         return False
-    if child in protected_sessions or plugin_root_in_use(child) or has_live_owner(child):
+    if _protected(child, metadata, protected_sessions):
         return False
     if has_git:
         # 登録worktree自身は木全体を保護し、包含する親では無関係な兄弟だけを期限判定する。
@@ -440,9 +429,12 @@ def _examine(
 
 
 def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result) -> bool:
-    """回収可と判定済みの1件を削除し、削除した場合は真を返す。"""
     if stat.S_ISDIR(metadata.st_mode):
         with permissions.directory(child, expected=metadata) if _DESCRIPTOR_WALK else contextlib.nullcontext():
+            if resources.is_tagged_cache(child):
+                observed = resources.process_references()
+                if observed is None or any(reference.is_relative_to(child) for reference in observed):
+                    return False
             marker = _legacy_marker(child)
         if marker is not None:
             return _remove_legacy_area(state_root, child, marker)
@@ -450,13 +442,13 @@ def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_res
     return True
 
 
-def owner_token() -> str:
-    """作成プロセスの識別（PIDと起動世代）を返す。PID再利用で別のプロセスを作成者と誤認しないため、起動世代を含める。"""
-    return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
+def owner_token(identity: process_identity.ProcessIdentity | None = None) -> str:
+    if identity is None:
+        return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
+    return f"{identity.pid} {identity.start_id or ''}"
 
 
 def owner_alive(token: str) -> bool:
-    """記録した作成プロセスが同じ世代のまま実行中かを返す。判定できない場合は実行中として残す。"""
     pid_text, _, saved_id = token.strip().partition(" ")
     try:
         process = psutil.Process(int(pid_text))
@@ -468,10 +460,6 @@ def owner_alive(token: str) -> bool:
 
 
 def has_live_owner(area: pathlib.Path) -> bool:
-    """領域か直下の子が記録した作成プロセスが実行中、または記録を読めない場合に真を返す。
-
-    セッションの領域は`atk-command-*`などの子に記録を持つため、直下の子まで調べる。
-    """
     if not area.is_dir():
         return False
     # 期限走査と同じ所有・同一性検証付きの権限回復を使い、保持時は元modeへ戻す。
@@ -492,6 +480,10 @@ def has_live_owner(area: pathlib.Path) -> bool:
     return False
 
 
+def _protected(child: pathlib.Path, metadata: os.stat_result, sessions: set[pathlib.Path]) -> bool:
+    return paths.is_link(metadata) or child in sessions or plugin_root_in_use(child) or has_live_owner(child)
+
+
 def _min_free_ratio() -> float:
     """空きの下限（容量比）を返す。環境変数が不正な値なら容量の10%を使う。"""
     try:
@@ -501,7 +493,6 @@ def _min_free_ratio() -> float:
 
 
 def _below_floor(temp_root: pathlib.Path) -> bool:
-    """一時rootを含むFSの空きが容量の10%を下回るかを返す。観測できない場合は偽を返す。"""
     try:
         usage = _disk_usage(temp_root)
     except OSError:
@@ -513,7 +504,6 @@ class _ReclaimScope(enum.Enum):
     EXPIRED = enum.auto()
     TAGGED_CACHE = enum.auto()
     CONTENTS = enum.auto()
-    UNCLASSIFIED = enum.auto()
 
 
 class _PressureCandidate(typing.NamedTuple):
@@ -554,13 +544,9 @@ def _reclaim_space(
     *,
     cutoff_ns: int,
     after_daily_sweep: bool,
+    caches_only: bool,
     times: CleanupTimes,
 ) -> SpacePressure | None:
-    """空きが下限を割る場合に限り、保持期間を待たず使用中でない対象を最終更新の古い順に回収する。
-
-    使用中・保護セッション・登録済みworktree・保持配布物・リンクは、期限の掃引と同じ判定で残す。
-    停止中の会話も通常期限までは再開できる。期限内の会話では日次掃引と同じ判定で再生成物だけを回収する。
-    """
     try:
         usage = _disk_usage(temp_root)
     except OSError:
@@ -579,7 +565,7 @@ def _reclaim_space(
 
     def candidate(child: pathlib.Path) -> _PressureCandidate | None:
         metadata = child.lstat()
-        if paths.is_link(metadata) or child in protected_sessions or plugin_root_in_use(child):
+        if _protected(child, metadata, protected_sessions):
             return None
         directory = stat.S_ISDIR(metadata.st_mode)
         with permissions.directory(child, expected=metadata) if directory and _DESCRIPTOR_WALK else contextlib.nullcontext():
@@ -594,21 +580,21 @@ def _reclaim_space(
                     )
                 )
             )
-            if (session and after_daily_sweep) or has_live_owner(child):
+            if session and after_daily_sweep:
                 return None
             latest, has_git, size = _inspect_entry(child, metadata, now_ns, times)
             if has_git or latest >= now_ns - _PRESSURE_GRACE_NS:
                 return None
-            if latest < cutoff_ns:
+            if not caches_only and latest < cutoff_ns:
                 scope = _ReclaimScope.EXPIRED
-            elif session:
-                scope = _ReclaimScope.CONTENTS
-            elif directory and resources.is_tagged_cache(child):
+            elif directory and not session and resources.is_tagged_cache(child):
                 if hasattr(os, "getuid") and metadata.st_uid != os.getuid():
                     return None
                 scope = _ReclaimScope.TAGGED_CACHE
+            elif directory:
+                scope = _ReclaimScope.CONTENTS
             else:
-                scope = _ReclaimScope.UNCLASSIFIED
+                return None
         return _PressureCandidate(latest, child, metadata, scope, size)
 
     candidates: list[_PressureCandidate] = []
@@ -620,22 +606,17 @@ def _reclaim_space(
             continue
         except (OSError, ManagedTempError) as error:
             failed.append((child, _failure_reason(error)))
-    # 期限切れと再生成指定のある対象を先に回収する。期限内の会話の記録は、不足分の見積もりにも含めない。
-    candidates.sort(key=lambda item: (item.scope == _ReclaimScope.UNCLASSIFIED, item.latest, item.path.name))
-    unclassified_bytes = sum(item.size for item in candidates if item.scope == _ReclaimScope.UNCLASSIFIED)
+    candidates.sort(key=lambda item: (item.latest, item.path.name))
     sizes: list[tuple[str, int]] = []
     free = usage.free
     for latest, child, metadata, scope, size in candidates:
         if free >= floor:
             break
         contents_only = scope == _ReclaimScope.CONTENTS
-        if scope == _ReclaimScope.UNCLASSIFIED:
-            contents_only = unclassified_bytes < floor - free
-            unclassified_bytes -= size
         try:
             if contents_only and (after_daily_sweep or not stat.S_ISDIR(metadata.st_mode)):
                 continue
-            # 順位と不足分は見積もりに過ぎない。消す対象だけ、先行する回収の間に利用や用途が変わっていないか調べる。
+
             current = candidate(child)
             if (
                 current is None
@@ -650,10 +631,6 @@ def _reclaim_space(
                 deleted.extend(removed)
                 size = max(0, size - _tree_bytes(child))
             else:
-                if scope == _ReclaimScope.TAGGED_CACHE:
-                    observed = resources.process_references()
-                    if observed is None or any(reference.is_relative_to(child) for reference in observed):
-                        continue
                 if not _remove(state_root, child, current.metadata):
                     continue
                 deleted.append(child)
@@ -711,13 +688,21 @@ def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_
         with sweep_access(temp_root, state_root) as locked:
             if not locked:
                 return SweepResult([], ())
-            return _sweep_locked(temp_root, state_root, now_ns, cutoff_ns, daily=force or _sweep_due(state_root, now_ns))
+            caches_only = not persistent_lock_path(state_root).is_file()
+            return _sweep_locked(
+                temp_root,
+                state_root,
+                now_ns,
+                cutoff_ns,
+                daily=not caches_only and (force or _sweep_due(state_root, now_ns)),
+                caches_only=caches_only,
+            )
     except OSError as error:
         return SweepResult([], ((pathlib.Path(error.filename or state_root), _failure_reason(error)),))
 
 
 def _sweep_locked(
-    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool
+    temp_root: pathlib.Path, state_root: pathlib.Path, now_ns: int, cutoff_ns: int, *, daily: bool, caches_only: bool
 ) -> SweepResult:
     pressure_due = _sweep_due(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS)
     if not daily and not pressure_due:
@@ -750,6 +735,7 @@ def _sweep_locked(
             failed,
             cutoff_ns=cutoff_ns,
             after_daily_sweep=daily,
+            caches_only=caches_only,
             times=times,
         )
     if failed and deleted:
@@ -807,12 +793,7 @@ def _daily_sweep(
                 failed.append((child, _failure_reason(error)))
         # 全体の走査・削除が失敗しても、別に確認できる未使用キャッシュは回収する。
         try:
-            if (
-                child.is_dir()
-                and child not in protected_sessions
-                and not plugin_root_in_use(child)
-                and not has_live_owner(child)
-            ):
+            if child.is_dir() and not _protected(child, child.lstat(), protected_sessions):
                 deleted.extend(_clean_regenerable(child, references, failed, latest, times, now_ns))
         except (OSError, ManagedTempError) as error:
             if os.path.lexists(child):

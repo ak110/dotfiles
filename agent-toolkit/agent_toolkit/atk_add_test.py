@@ -36,7 +36,6 @@ def test_add_output_reloads_saved_metadata(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """add完了表示が保存済みfrontmatterと比較する対象を列挙する。"""
     _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -63,7 +62,6 @@ def test_wi_commands_report_only_their_results_with_pending_questions(
     *,
     agent_environment: bool,
 ) -> None:
-    """読み取りと投入・編集・状態遷移は、未回答項目があっても実行した結果だけを表示する。"""
     notes = _setup_notes(tmp_path)
     _write_uwi_file(notes, "pending-question.md", question="回答待ち")
     _write_awi_file(notes, "entry.md", body=_wi_bodies.AGENT_AWI_BODY, source="test")
@@ -109,7 +107,6 @@ class TestInboxAlwaysEnabled:
     def test_add_succeeds_without_flag_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """フラグファイルを作成しなくても、private-notesが存在すれば`mq add`が成功する。"""
         notes = tmp_path / "private-notes"
         notes.mkdir()
         myrepo = tmp_path / "myrepo"
@@ -133,7 +130,6 @@ class TestPrivateNotesMissing:
     """
 
     def test_exits_with_directory_missing_guide(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """管理repo rootが存在しない場合はexit 1でディレクトリ不在案内を出力する。"""
         body_path = tmp_path / "body.md"
         body_path.write_text("dummy message", encoding="utf-8")
         with pytest.raises(SystemExit) as exc_info:
@@ -147,15 +143,12 @@ class TestPrivateNotesMissing:
 
 
 class TestAddSingleMessage:
-    """addサブコマンド: 単一メッセージで1ファイル生成とgit操作順序を検証する。"""
-
     def test_single_message_generates_one_file(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """単一メッセージで1ファイルが生成され、frontmatterとgit操作順序が正しいこと。"""
         notes = _setup_notes(tmp_path)
 
         myrepo = tmp_path / "myrepo"
@@ -205,15 +198,12 @@ class TestAddSingleMessage:
 
 
 class TestMqLifecycleScenario:
-    """add→list→start-processing→adoptの一連運用フローを検証する。"""
-
     def test_add_then_list_then_start_processing_then_adopt(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """登録したエントリが一覧表示を経て処理中・採用済みへ遷移する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -252,8 +242,6 @@ class TestMqLifecycleScenario:
 
 
 class TestAddCompletionNoQueueOverview:
-    """投入結果だけを示し、無関係なキュー件数と固定案内を出力しない。"""
-
     @pytest.mark.parametrize("existing_state", ["inbox", "processing"])
     @pytest.mark.parametrize("agent_environment", [False, True])
     def test_omits_queue_overview_in_both_environments(
@@ -264,7 +252,6 @@ class TestAddCompletionNoQueueOverview:
         existing_state: str,
         agent_environment: bool,
     ) -> None:
-        """人の端末とエージェントの双方で、別項目の件数を投入結果に付けない。"""
         notes = _setup_notes(tmp_path)
         existing = wi_entry_files.write_awi(notes, "existing-001.md", state=existing_state)
         myrepo = tmp_path / "myrepo"
@@ -291,15 +278,12 @@ class TestAddCompletionNoQueueOverview:
 
 
 class TestAddMultipleMessages:
-    """addサブコマンド: 2件以上のメッセージで連番と件数コミットメッセージを検証する。"""
-
     def test_multiple_messages_generate_files_with_sequence(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """2件のメッセージで連番001・002の付与とコミットメッセージを検証する。"""
         notes = _setup_notes(tmp_path)
 
         myrepo = tmp_path / "myrepo"
@@ -337,14 +321,11 @@ class TestAddMultipleMessages:
 
 
 class TestAddRepoPathExpansion:
-    """addサブコマンド: ~プレフィックスのrepo_pathがリモートURLへ正規化されること。"""
-
     def test_tilde_repo_path_is_expanded(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """~展開後にgit remote get-urlでリモートURLが取得され、target_repoへ書き込まれる。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -366,7 +347,6 @@ class TestAddRepoPathExpansion:
 
 
 def test_wi_add_rejects_retired_origin_locator() -> None:
-    """廃止した`--origin-locator`はargparseで拒否する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
 
     with pytest.raises(SystemExit) as exc_info:
@@ -393,7 +373,6 @@ class TestAddBatchOption:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`--type`省略の通常addは従来どおりawiとして保存する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -429,7 +408,6 @@ class TestAddBatchOption:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--batch`と併用できないオプション指定をusage表示付きでexit 2にする。"""
         _setup_notes(tmp_path)
         body_path = tmp_path / "batch.md"
         body_path.write_text(self._ENTRY, encoding="utf-8")
@@ -446,7 +424,6 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """MESSAGE位置引数を受理しない。"""
         _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         body_path = tmp_path / "batch.md"
@@ -463,7 +440,6 @@ class TestAddBatchOption:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """MESSAGE位置引数のshow形式テキストを拒否して書き込まない。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
 
@@ -478,7 +454,6 @@ class TestAddBatchOption:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`--body-file`経由でも同じ内容を取り込む。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         body_path = tmp_path / "batch.md"
@@ -492,7 +467,6 @@ class TestAddBatchOption:
 
     @staticmethod
     def _patch_editor(monkeypatch: pytest.MonkeyPatch, saved_text: str) -> None:
-        """$EDITOR相当の実行を、指定テキストを一時ファイルへ保存するだけの動作へ差し替える。"""
         monkeypatch.setenv("EDITOR", "fake-editor")
 
         def fake_run(cmd: list[str], *_args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
@@ -510,7 +484,6 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--body-file`省略時はエディターで入力した生テキストを原文のまま取り込む。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         entry = "### keep.md [inbox]\n---\ntarget_repo: github.com/example/foo\ntype: awi\n---\n\n取り込む本文  \n"
@@ -531,7 +504,6 @@ class TestAddBatchOption:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """show形式として解析できない入力はexit 1で全件拒否する。"""
         notes = _setup_notes(tmp_path)
         self._patch_batch_repo_operations(monkeypatch)
         body_path = tmp_path / "batch.md"

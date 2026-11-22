@@ -1,5 +1,3 @@
-"""repack_archive試験の共通fixture・入力と補助関数。"""
-
 import io
 import pathlib
 import struct
@@ -20,7 +18,6 @@ def _make_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
 
 
 def _make_pdf(path: pathlib.Path, pages: list[tuple[tuple[int, int], str]]) -> None:
-    """指定サイズ・色の各ページから複数ページ PDF を生成する。"""
     images = [PIL.Image.new("RGB", size, color=color) for size, color in pages]
     images[0].save(path, "PDF", save_all=True, append_images=images[1:])
 
@@ -38,23 +35,14 @@ class _Cp932ZipInfo(zipfile.ZipInfo):
 
 
 def _make_cp932_zip(path: pathlib.Path, entries: dict[str, bytes]) -> None:
-    """CP932 でエンコードされ、bit 11 未設定のエントリのみを含む ZIP を作成する。"""
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_STORED) as zf:
         for name, data in entries.items():
             zf.writestr(_Cp932ZipInfo(name), data)
 
 
 class _RawBytesZipInfo(zipfile.ZipInfo):
-    """ファイル名として任意の生バイト列を書き込む ZipInfo。
-
-    CP932 strict でデコードできないバイト列を含むエントリをテストで合成するために使う。
-    bit 11 はセットしない。
-    """
-
     def __init__(self, raw_name: bytes) -> None:
-        # ZipInfo は filename を str で保持する。CP437 経由で str 化しておけば
-        # ``_encodeFilenameFlags`` を上書きする側が責任を持って raw_name を返す限り、
-        # 実 ZIP ファイル上は raw_name 通りのバイト列が記録される。
+
         super().__init__(raw_name.decode("cp437"))
         self._raw_name = raw_name
 
@@ -71,7 +59,6 @@ def _run_main(
     monkeypatch: pytest.MonkeyPatch,
     args: list[str],
 ) -> int:
-    """``repack_archive.main()`` を指定引数で実行し、終了コードを返す。"""
     monkeypatch.setattr(sys, "argv", ["repack-archive", *args])
     with pytest.raises(SystemExit) as exc_info:
         repack_archive.main()
@@ -115,14 +102,12 @@ def _make_tar(path: pathlib.Path, entries: dict[str, bytes]) -> None:
 
 
 def _snapshot(target: pathlib.Path) -> object:
-    """ファイルはバイト列、ディレクトリは相対パスと内容の組で原本を比較できる形にする。"""
     if target.is_file():
         return target.read_bytes()
     return sorted((path.relative_to(target).as_posix(), path.read_bytes()) for path in target.rglob("*") if path.is_file())
 
 
 def _make_input(tmp_path: pathlib.Path, kind: str) -> pathlib.Path:
-    """入力形態ごとに、作業領域の準備前に退避される原本を作成する。"""
     if kind == "zip":
         target = tmp_path / "book.zip"
         _make_zip(target, {"page.txt": b"page"})

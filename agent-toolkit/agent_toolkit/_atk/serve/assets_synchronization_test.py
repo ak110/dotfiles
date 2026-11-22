@@ -1,5 +1,3 @@
-"""serveのassetsに関するsynchronizationの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -17,7 +15,6 @@ from agent_toolkit._testing.serve_support import _FakeTimer
 async def test_state_publishes_once_after_last_change(
     tmp_path: pathlib.Path,
 ) -> None:
-    """閾値内の連続変更をまとめ、最後の変更後に1回だけ通知する。"""
     clock = [1_000.0]
     timers: list[_FakeTimer] = []
 
@@ -63,7 +60,6 @@ async def test_state_publishes_once_after_last_change(
 async def test_state_discards_pending_notification_when_stopped(
     tmp_path: pathlib.Path,
 ) -> None:
-    """監視停止時は保留中の通知を破棄する。"""
     clock = [1_000.0]
     timers: list[_FakeTimer] = []
 

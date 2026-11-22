@@ -1,8 +1,7 @@
-"""レーンのモデル・段階・重なりと所要見込みの検査。"""
-
 from __future__ import annotations
 
 import collections.abc
+import graphlib
 import itertools
 import pathlib
 import re
@@ -102,7 +101,6 @@ _NEXT_OVERLAP_MISSING_TRANSFER = (
 
 
 def missing_overlap_reason(left: str, right: str, path: str) -> str:
-    """重複パスの記録不足の理由。合流・移管の案内が同じ違反を鍵で特定できるよう、表記をここに集める。"""
     return f"{left}と{right}: 重複パスの記録不足: {path}"
 
 
@@ -119,11 +117,6 @@ def _check_estimate_records(
     *,
     validate_execution: bool = True,
 ) -> list[Violation]:
-    """補正の履歴と、全工程の実行可能性の検収を分ける。
-
-    旧補正の記録は保持するが、比較文を全工程の根拠の代用品にはしない。
-    配分を変えない履歴更新では`validate_execution=False`で新たな成立判定を省く。
-    """
     errors: list[Violation] = []
     costs = [dict(row) for row in costs]
     for row in costs:
@@ -180,23 +173,17 @@ def _check_estimate_records(
     return errors
 
 
-# 観測を待つ未確認の前提は、入力を直しても解消できないため警告に分ける。`selection_estimate.forecast`の文言と対応する。
 _UNCONFIRMED_ISSUE = "秒数・算定または前提が未確認"
 
 
 def _process_estimate_findings(
     selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
 ) -> tuple[list[Violation], list[str]]:
-    """全工程の見込みの判定を、拒否する違反と警告へ分けて返す。
-
-    止める判定は、渡した担当がその場で入力を直せる欠落・不整合に限る。
-    見込みの欠落・未確認の前提・目標超過は経過時間や観測待ちに由来し、その場で変えられないため警告で返す。
-    """
     plan = selection.get(_selection.PROCESS_ESTIMATE_KEY)
     if plan is None:
         if target_seconds is None:
             return [], []
-        return [], [f"全工程の見込みが無く、目標内の実行可能性は未確認。{_NEXT_PROCESS_ESTIMATE}。{_NEXT_TARGET_OVERRUN}"]
+        return [], [f"全工程の見込みが無く、目標との差は未計測。{_NEXT_PROCESS_ESTIMATE}"]
     assignments = {
         str(item[_selection.WI_KEY]): str(item[_selection.LANE_KEY])
         for item in typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -223,19 +210,16 @@ def _process_estimate_findings(
 def _check_process_estimate(
     selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
 ) -> list[Violation]:
-    """全工程の見込みのうち、入力を直せば解消できる欠落・不整合だけを違反として返す。"""
     return _process_estimate_findings(selection, costs, target_seconds)[0]
 
 
 def process_estimate_warnings(
     selection: dict[str, object], costs: list[dict[str, object]], target_seconds: float | None
 ) -> list[str]:
-    """見込みの欠落・未確認・目標超過の警告を返す。進行は止めない。"""
     return _process_estimate_findings(selection, costs, target_seconds)[1]
 
 
 def _completion_estimate(costs: list[dict[str, object]], shared_wait: float) -> float:
-    """段階ごとの最長実装と直列統合の和へ、全体の共有待ちを一度加える。"""
     stages: dict[int, tuple[float, float]] = {}
     for row in costs:
         stage = typing.cast(int, row.get(_selection.STAGE_KEY, 1))
@@ -246,7 +230,6 @@ def _completion_estimate(costs: list[dict[str, object]], shared_wait: float) -> 
 
 
 def _check_lane_models(items: list[dict[str, object]]) -> list[Violation]:
-    """同一レーンで両立しない実装モデル指定を拒否する。"""
     assigned: dict[str, tuple[str, str]] = {}
     errors: list[Violation] = []
     for item in items:
@@ -267,7 +250,6 @@ def _check_lane_models(items: list[dict[str, object]]) -> list[Violation]:
 
 
 def _resume_plan_id(value: object) -> str | None:
-    """メインが出力した再開位置から同一計画を表す値だけを正規化して返す。"""
     if not isinstance(value, str) or not value.strip() or value.strip() in {_LANE_NONE, "計画なし"}:
         return None
     observation = _OBSERVATION_PLAN_RE.search(value)
@@ -285,7 +267,6 @@ def _resume_plan_id(value: object) -> str | None:
 
 
 def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[Violation]:
-    """同じ再開計画を指す項目が複数レーンへ分かれた選定を拒否する。"""
     assigned: dict[str, tuple[str, str]] = {}
     errors: list[Violation] = []
     for item in items:
@@ -306,7 +287,6 @@ def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[Violation]:
 
 
 def _check_lane_stages(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[Violation]:
-    """先行レーンが統合順序を守るか確かめる。"""
     lanes = {
         item[_selection.LANE_KEY]
         for item in items
@@ -351,7 +331,6 @@ def _check_lane_stages(items: collections.abc.Sequence[object], costs: collectio
 def overlapping_pairs(
     items: collections.abc.Sequence[object],
 ) -> collections.abc.Iterator[tuple[dict[str, object], dict[str, object], tuple[str, str], set[str]]]:
-    """別レーンに属し書込対象を共有する項目の組を、昇順のレーン名の組と共通パスとともに返す。統合済みの項目も含む。"""
     assigned = [
         item
         for item in items
@@ -371,8 +350,77 @@ def overlapping_pairs(
             yield left, right, (low, high), overlaps
 
 
+def derives_lane_order(selection: dict[str, object]) -> bool:
+    return all(
+        isinstance(row, dict) and _selection.STAGE_KEY not in row and _selection.PRIOR_LANES_KEY not in row
+        for row in _selection.lane_costs(selection) or []
+    )
+
+
+def _independent_overlaps(
+    records: list[dict[str, object]],
+) -> dict[tuple[str, str, str], set[tuple[str, ...]] | None]:
+    independent: dict[tuple[str, str, str], set[tuple[str, ...]] | None] = {}
+    for row in records:
+        if row["判定"] != "交わらない":
+            continue
+        first = {part.strip() for part in _string_list(row, "レーン1の定義")}
+        second = {part.strip() for part in _string_list(row, "レーン2の定義")}
+        if first and second and not first & second:
+            left, right = sorted((str(row["レーン1"]), str(row["レーン2"])))
+            pairs = row.get(selection_contract.JUDGED_PAIRS_KEY)
+            independent[left, right, str(row["共通パス"])] = (
+                None if pairs is None else {tuple(pair) for pair in typing.cast(list[list[str]], pairs)}
+            )
+    return independent
+
+
+def _pair_independent(
+    independent: dict[tuple[str, str, str], set[tuple[str, ...]] | None],
+    key: tuple[str, str, str],
+    pair: tuple[str, ...],
+) -> bool:
+    pairs = independent.get(key, set())
+    return pairs is None or pair in pairs
+
+
+def derive_lane_order(selection: dict[str, object]) -> None:
+    items = _selection.decisions(selection) or []
+    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection) or [])
+    rows = {str(row[_selection.LANE_KEY]): row for row in costs}
+    order = {lane: index for index, lane in enumerate(rows)}
+    integrated = _selection.integrated_lanes(selection)
+    dependencies = {
+        lane: set(_string_list(row, _selection.START_DEPENDENCIES_KEY)) for lane, row in rows.items() if lane not in integrated
+    }
+    for lane, prior in dependencies.items():
+        if unknown := prior - rows.keys():
+            raise ValueError(f"{lane}: 開始依存が選定にない: {sorted(unknown)}")
+    records = typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
+    independent = _independent_overlaps(records)
+    for left, right, lanes, paths in overlapping_pairs(items):
+        if _is_integrated(left, integrated) or _is_integrated(right, integrated):
+            continue
+        pair = overlap_wi_pair(left, right)
+        if all(_pair_independent(independent, (*lanes, path), pair) for path in paths):
+            continue
+        earlier, later = sorted(lanes, key=order.__getitem__)
+        dependencies[later].add(earlier)
+    active = {lane: prior - integrated for lane, prior in dependencies.items()}
+    try:
+        sorted_lanes = list(graphlib.TopologicalSorter(active).static_order())
+    except graphlib.CycleError as error:
+        raise ValueError(f"開始依存と書込の統合順が循環する: {error.args[1]}") from error
+    stages: dict[str, int] = {}
+    for lane in sorted_lanes:
+        stages[lane] = 1 + max((stages[prior] for prior in active[lane]), default=0)
+        rows[lane][_selection.STAGE_KEY] = stages[lane]
+        rows[lane][_selection.PRIOR_LANES_KEY] = sorted(dependencies[lane], key=order.__getitem__)
+    selection.pop("lane_costs", None)
+    selection[_selection.LANE_COSTS_KEY] = costs
+
+
 def overlap_wi_pair(left: dict[str, object], right: dict[str, object]) -> tuple[str, ...]:
-    """レーンの向きによらないWI名の組を返す。"""
     return tuple(sorted((str(left[_selection.WI_KEY]), str(right[_selection.WI_KEY]))))
 
 
@@ -382,7 +430,6 @@ def _check_lane_overlaps(
     records: list[dict[str, object]],
     integrated: set[str],
 ) -> list[Violation]:
-    """同段階の独立性と、別段階の重複から導く先行関係を確かめる。"""
     stages = {
         row[_selection.LANE_KEY]: (row.get(_selection.STAGE_KEY, 1), row.get(_selection.PRIOR_LANES_KEY, []))
         for row in costs
@@ -395,6 +442,7 @@ def _check_lane_overlaps(
     shared: dict[tuple[str, str, str], set[tuple[str, ...]]] = {}
     dependencies: dict[str, set[str]] = {}
     historical: dict[str, set[str]] = {}
+    independent = _independent_overlaps(records)
     for left, right, lanes, overlaps in overlapping_pairs(items):
         pair = overlap_wi_pair(left, right)
         for path in overlaps:
@@ -408,7 +456,7 @@ def _check_lane_overlaps(
         else:
             earlier, later = lanes if left_stage < right_stage else reversed(lanes)
             historical.setdefault(later, set()).add(earlier)
-            if pending:
+            if pending and any(not _pair_independent(independent, (*lanes, path), pair) for path in overlaps):
                 dependencies.setdefault(later, set()).add(earlier)
     errors: list[Violation] = []
     seen: set[tuple[str, str, str]] = set()
@@ -435,7 +483,6 @@ def _check_lane_overlaps(
                     )
                 )
         if key not in expected:
-            # 保存済みの詳細記録は履歴として読めるが、直列化の根拠は現在の書込予定から導く。
             continue
         if record["判定"] == "交わらない":
             first = typing.cast(list[str], record["レーン1の定義"])

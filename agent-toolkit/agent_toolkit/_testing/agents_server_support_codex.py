@@ -85,7 +85,6 @@ class FakeCodexClient:
         return {}
 
     async def close(self) -> list[str]:
-        """実クライアントと同じ終了インターフェースを提供する。終了を確認できない対象は持たない。"""
         self.closed = True
         self._rollout_resources.close()
         self._rollout_directory = None
@@ -94,8 +93,6 @@ class FakeCodexClient:
 
 
 class BlockingResumeCodexClient(FakeCodexClient):
-    """最初のthread/resume応答を明示イベントまで保留する偽クライアント。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.resume_started = asyncio.Event()
@@ -119,8 +116,6 @@ class BlockingResumeCodexClient(FakeCodexClient):
 
 
 class LostTurnStartClient(FakeCodexClient):
-    """thread/start成功後にturn/start応答を喪失する偽クライアント。"""
-
     async def request(
         self,
         method: str,
@@ -154,8 +149,6 @@ class SteerRaceClient(FakeCodexClient):
 
 
 class ServerRequestClient(FakeCodexClient):
-    """server-initiated requestへの応答を記録する偽クライアント。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.sent: list[dict[str, Any]] = []
@@ -165,8 +158,6 @@ class ServerRequestClient(FakeCodexClient):
 
 
 class InterruptErrorClient(FakeCodexClient):
-    """turn/interruptへJSON-RPC errorを返す偽クライアント。"""
-
     async def request(
         self,
         method: str,
@@ -180,8 +171,6 @@ class InterruptErrorClient(FakeCodexClient):
 
 
 class CompletingInterruptClient(FakeCodexClient):
-    """中断要求の配送中に対象turnを終了させる偽クライアント。"""
-
     def __init__(self, backend: codex_backend.AppServerManager, session: state.SessionState) -> None:
         super().__init__()
         self.backend = backend
@@ -208,8 +197,6 @@ class CompletingInterruptClient(FakeCodexClient):
 
 
 class HoldingTurnStartClient(FakeCodexClient):
-    """turn/start受理後の応答を保留し、中断で実作業を終える偽クライアント。"""
-
     def __init__(self, backend: codex_backend.AppServerManager) -> None:
         super().__init__()
         self.backend = backend
@@ -257,8 +244,6 @@ class HoldingTurnStartClient(FakeCodexClient):
 
 
 class NaturallyCompletingTurnStartClient(FakeCodexClient):
-    """turn/start応答待ちの取消中に対象turnを自然終了できる偽クライアント。"""
-
     def __init__(self, backend: codex_backend.AppServerManager) -> None:
         super().__init__()
         self.backend = backend
@@ -286,7 +271,6 @@ class NaturallyCompletingTurnStartClient(FakeCodexClient):
         raise AssertionError("保留中のturn/start応答が予期せず完了した")
 
     async def complete_turn(self, session_id: str) -> None:
-        """開始通知と自然完了通知を連続配送する。"""
         await self.backend._handle_notification(
             {
                 "method": "turn/started",

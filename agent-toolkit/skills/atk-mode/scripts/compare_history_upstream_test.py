@@ -15,7 +15,6 @@ from agent_toolkit._testing.history_compare_support import _repo as _repo
 def test_rebase_keeps_mapping_for_dependency_already_upstream(
     repo: pathlib.Path, tmp_path: pathlib.Path, upstream_text: str
 ) -> None:
-    """省略された依存変更は、統合先の同一変更だけへ対応付ける。"""
     base = _git(repo, "rev-parse", "HEAD")
     dependency = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
     old_head = _commit(repo, "implementation.txt", "実装\n", "実装")
@@ -36,7 +35,6 @@ def test_rebase_keeps_mapping_for_dependency_already_upstream(
 
 @pytest.mark.parametrize("upstream_text", ["依存変更\n", "依存変更 \n"])
 def test_rebase_all_commits_already_upstream(repo: pathlib.Path, tmp_path: pathlib.Path, upstream_text: str) -> None:
-    """全件省略でも保持された同一変更だけを既存commitへ対応付ける。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
     _git(repo, "checkout", "-b", "upstream", base)
@@ -55,7 +53,6 @@ def test_rebase_all_commits_already_upstream(repo: pathlib.Path, tmp_path: pathl
 
 @pytest.mark.parametrize("loss", ["revert", "merge-discard"])
 def test_rebase_rejects_upstream_dependency_not_retained_at_base(repo: pathlib.Path, tmp_path: pathlib.Path, loss: str) -> None:
-    """履歴内の同一変更が新baseで失われている場合は、省略を受理しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
     old_head = _commit(repo, "implementation.txt", "実装\n", "実装")
@@ -75,7 +72,6 @@ def test_rebase_rejects_upstream_dependency_not_retained_at_base(repo: pathlib.P
 
 
 def test_rebase_rejects_ambiguous_upstream_mapping(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """同一変更の追加・取消・再追加は新baseで保持されても対応を推測しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "dependency.txt", "依存変更\n", "依存更新")
     _git(repo, "checkout", "-b", "upstream", base)
@@ -93,7 +89,6 @@ _SHARED_LINES = [f"行{index}" for index in range(1, 13)]
 def _omitted_upstream_series(
     repo: pathlib.Path, later_edit: str, all_skipped: bool
 ) -> tuple[tuple[str, str, str, str], str, str]:
-    """統合先の同一変更の後に`later_edit`の後続編集がある系列を作り、端点・省略される旧commit・統合先の同一変更を返す。"""
     before = _SHARED_LINES
     changed = ["行1を変更", *before[1:]]
     base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in before), "準備")
@@ -105,7 +100,6 @@ def _omitted_upstream_series(
     if later_edit == "other-path":
         new_base = _commit(repo, "unrelated.txt", "独立編集\n", "独立した後続編集")
     elif later_edit == "revert-and-context":
-        # 取消しの後に文脈を書き換えると、順適用も逆適用もできず書換えと区別できない。
         _git(repo, "revert", "--no-edit", upstream)
         reverted = list(before)
         reverted[1] = "後続編集"
@@ -121,15 +115,10 @@ def _omitted_upstream_series(
 @pytest.mark.parametrize(
     ("later_edit", "accepted"),
     [
-        # 別pathの後続編集は省略された変更に触れない。
         ("other-path", True),
-        # 同じpathでも、変更箇所と前後3行の文脈から離れた行の編集は変更を残す。
         ("same-path-far", True),
-        # 変更箇所の文脈（直後の行）の書換えは、取消しと差分の適用で区別できない。
         ("same-path-context", False),
-        # 変更箇所そのものの書換えも、取消しと区別できない。
         ("same-path-overlap", False),
-        # 取消し後の文脈編集は、書換えと同じ適用結果になる。
         ("revert-and-context", False),
     ],
 )
@@ -137,7 +126,6 @@ def _omitted_upstream_series(
 def test_upstream_retention_judges_omitted_change_itself(
     repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool, accepted: bool
 ) -> None:
-    """省略された変更が新baseに残るかを変更そのもので判定し、同じpathの離れた後続編集では統合を止めない。"""
     bases, omitted, upstream = _omitted_upstream_series(repo, later_edit, all_skipped)
     output = tmp_path / "retention-map.json"
     code = _compare(repo, output, "rebase", bases)
@@ -157,7 +145,6 @@ def test_upstream_retention_judges_omitted_change_itself(
 def test_upstream_rewrite_is_accepted_only_when_resolved_conflict_names_it(
     repo: pathlib.Path, tmp_path: pathlib.Path, later_edit: str, all_skipped: bool
 ) -> None:
-    """統合先で書き換えられた同一変更は、`--resolved-conflict`で明示した旧commitだけを既存commitへ対応付ける。"""
     bases, omitted, upstream = _omitted_upstream_series(repo, later_edit, all_skipped)
     output = tmp_path / "rewrite-map.json"
     assert _compare(repo, output, "rebase", bases, "--resolved-conflict", omitted) == 0
@@ -170,7 +157,6 @@ def test_upstream_rewrite_is_accepted_only_when_resolved_conflict_names_it(
 def test_upstream_rewrite_acknowledgement_rejects_exclude_path(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """書換えの明示と除外指定を同じ旧commitへ併用すると、除外の検収を迂回するため拒否する。"""
     shared = "".join(f"{line}\n" for line in _SHARED_LINES)
     changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
     base = _commit_files(repo, {"shared.txt": shared, "extra.txt": "元\n"}, "準備")
@@ -198,7 +184,6 @@ def test_upstream_rewrite_acknowledgement_rejects_exclude_path(
 
 
 def test_upstream_rewrite_acknowledgement_does_not_accept_plain_revert(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """明示しても、新baseへ順適用できる（変更が丸ごと失われた）取消しは受理しない。"""
     base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in _SHARED_LINES), "準備")
     changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
     omitted = _commit(repo, "shared.txt", changed, "対象変更")
@@ -214,7 +199,6 @@ def test_upstream_rewrite_acknowledgement_does_not_accept_plain_revert(repo: pat
 
 
 def test_upstream_retention_ignores_diff_prefix_configuration(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """`diff.noprefix`を設定したリポジトリでも、接頭辞を明示した差分で保持を判定する。"""
     _git(repo, "config", "diff.noprefix", "true")
     base = _commit(repo, "shared.txt", "".join(f"{line}\n" for line in _SHARED_LINES), "準備")
     changed = "".join(f"{line}\n" for line in ["行1を変更", *_SHARED_LINES[1:]])
@@ -267,8 +251,7 @@ def test_skipped_changes_merge_wis_in_plan_and_handoff(
     pairs = json.loads(mapping.read_text(encoding="utf-8"))
     assert pairs[dependency] == upstream_dependency
     assert pairs[skipped] == new_base
-    # 部分省略では新baseがHEADの親である。消費側がHEADの親以前への対応を拒否する変異は、
-    # 比較成功を維持したまま次の公開plan-rewriteの成功検査で検出する。
+
     if not all_skipped:
         assert _git(repo, "rev-parse", "HEAD^") == new_base
     assert _rewrite_records(repo, old_head, mapping, plan, handoff) == 0

@@ -190,7 +190,6 @@ def _proxy() -> None:
             result = {"data": list(reversed(record["turns"]))[:1], "nextCursor": None}
         elif method == "mcpServerStatus/list":
             if _MODE == "tui-reset" and params.get("cursor") is None:
-                # 起動直後の子孫復元の最中に、通常TUIが通知を読み残して接続をリセットし終了する。
                 status = {"method": "mcpServer/startupStatus/updated", "params": {"name": "agents_server", "status": "ready"}}
                 wire.send(status)
                 deadline = time.monotonic() + 5
@@ -292,7 +291,7 @@ def _proxy() -> None:
             effect = _ROOT / "config-write.json"
             count = _read(effect)["count"] if effect.exists() else 0
             _write(effect, {"count": count + 1, "params": params})
-            # 公開RPCを適用した後だけ故障を起こし、応答喪失を未実行と取り違えないか確認する。
+
             deadline = time.monotonic() + 5
             while not (_ROOT / "restarted").exists():
                 if time.monotonic() >= deadline:
@@ -382,8 +381,6 @@ def _actor(arguments: list[str]) -> int:
             )
             thread = result["thread"]["id"]
             if _MODE == "tui-reset":
-                # 届いた通知を読まずに閉じ、OSが接続をリセットする。通常TUIは切断の後に端末を戻してから終了する。
-                # 通知を応答と同じ読取で受け取り済みなら、socketはもう読取可能にならないため待たない。
                 if not wire.pending:
                     select.select([connection], [], [], 5)
                 stream.close()
@@ -435,7 +432,6 @@ def _actor(arguments: list[str]) -> int:
                 time.sleep(0.01)
             with FileLock(str(_ROOT / "restart.lock"), timeout=5):
                 if not (_ROOT / "restarted").exists():
-                    # daemonは実在せず世代ファイルだけで代用する。更新のためだけのPython起動を省く。
                     _control("restart")
                     (_ROOT / "restarted").touch()
             if _MODE == "lost-response":

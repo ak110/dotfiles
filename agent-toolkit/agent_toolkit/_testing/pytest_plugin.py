@@ -70,18 +70,15 @@ def pytest_runtest_cpu_retry(item: pytest.Item, nextitem: pytest.Item | None) ->
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    """共有初期化費用の観測をroot session単位で開始する。"""
     cpu_accounting.start(session)
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    """自身が所有する観測を終了し、元のimportとcollectorへ戻す。"""
     cpu_accounting.stop(session)
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> Generator[None, object, object]:
-    """fixtureの準備を含む、試験が所有するCPUを計測する。"""
     return (yield from pytest_cpu_budget.measure(item, "setup"))
 
 
@@ -93,12 +90,10 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
-    """回収が完了してからCPU合算の判定へ進む。"""
     return (yield from pytest_cpu_budget.measure(item, "teardown"))
 
 
 def _tracker_state() -> tuple[int | None, float | None, bool]:
-    """検査のためには起動せず、worker自身が保持するtrackerの世代だけを読む。"""
     pid = getattr(resource_tracker._resource_tracker, "_pid", None)  # pylint: disable=protected-access
     if pid is None:
         return None, None, False
@@ -115,7 +110,6 @@ def _tracker_state() -> tuple[int | None, float | None, bool]:
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> Generator[None, object, object]:
-    """差し替えの復元後に検査し、trackerの誤停止を起こした試験へ帰属させる。"""
     del nextitem
     before = _tracker_state()
     result = yield
@@ -139,7 +133,6 @@ def pytest_runtest_protocol(item: pytest.Item, nextitem: pytest.Item | None) -> 
 
 @pytest.fixture(scope="session", name="browser_evidence_root")
 def _browser_evidence_root() -> pathlib.Path:
-    """試験単位のHOME隔離より前に、cleanup対象外の証拠保存先を固定する。"""
     root = (
         pathlib.Path(os.environ["RUNNER_TEMP"])
         if os.environ.get("CI") and os.environ.get("RUNNER_TEMP")
@@ -151,7 +144,6 @@ def _browser_evidence_root() -> pathlib.Path:
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session", name="shared_serve_browser")
 async def _shared_serve_browser() -> Any:
-    """Chromiumの起動を共有し、各試験はcontextだけを所有する。"""
     async with playwright.async_api.async_playwright() as instance:
         browser = await instance.chromium.launch()
         try:
@@ -189,12 +181,10 @@ def pytest_runtest_makereport(
 _PACKAGE_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _ORIGINAL_WAIT_FOR_END_TURN = _transcript_scan.wait_for_end_turn
 
-_FIXED_TERMINAL_WIDTH = 200  # list系出力の表示幅算出を決定論化するための固定端末幅（列数）
+_FIXED_TERMINAL_WIDTH = 200
 
 
 class _StubPluginReloader:
-    """backend単体試験から外部CLI照会とファイル監視を分離する。"""
-
     updated = False
 
     def __init__(self, options: dict[str, Any], _loop: asyncio.AbstractEventLoop) -> None:
@@ -203,20 +193,18 @@ class _StubPluginReloader:
         self.unreclaimed: list[Any] = []
 
     async def prepare(self) -> None:
-        """外部CLIと監視threadを起動しない。"""
+        pass
 
     async def wait_for_change(self) -> None:
-        """更新の試験は実クラスのIO境界だけを差し替える。"""
         await asyncio.Event().wait()
 
     async def reload_if_idle(self, _client: Any, _session: Any) -> None:
-        """通常試験では再読込を要求しない。"""
+        pass
 
     def request_reload(self) -> None:
-        """通常試験では変更を通知しない。"""
+        pass
 
     async def close(self, *, retain_input: bool = False) -> None:
-        """外部資源を保持しない。"""
         del retain_input
 
 
@@ -227,33 +215,24 @@ def _isolate_claude_plugin_watch(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class _TestPollingObserver(watchdog.observers.polling.PollingObserver):
-    """試験で`watchdog.observers.Observer`の代わりに使うObserver。実ファイルの変更を短い間隔の走査で検知し、OSの通知資源を確保しない。"""
-
     def __init__(self, timeout: float = 0.05, **kwargs: Any) -> None:
         super().__init__(timeout=timeout, **kwargs)
 
 
 @pytest.fixture(autouse=True)
 def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`subprocess.run`を差し替えた試験では、時間上限付きの起動も差し替え先へ渡す。
-
-    gitの共通起動関数などは時間切れで子孫まで止めるため`subprocess.Popen`から起動し、`subprocess.run`を経由しない。
-    `subprocess.run`の差し替えで外部コマンドを偽装する既存の試験が実物を起動しないよう、各モジュールの起動の
-    1か所（`_launch`）で橋渡しする。差し替えていない試験は実物の起動関数を使う。
-    """
     original_run = subprocess.run
 
     def follow(launch: Callable[..., Any]) -> Callable[..., Any]:
         def launch_or_patched_run(command: list[str], **kwargs: Any) -> Any:
             if subprocess.run is original_run:
                 return launch(command, **kwargs)
-            # checkは呼び出し元が渡す。
+
             return subprocess.run(command, **kwargs)  # noqa: PLW1510  # pylint: disable=subprocess-run-check
 
         return launch_or_patched_run
 
     for module in (_git_command, _orchestrator):
-        # 起動の1か所を差し替えるための参照であり、各モジュールのdocstringがこの利用を明記している。
         monkeypatch.setattr(module, "_launch", follow(module._launch))  # pylint: disable=protected-access
 
 
@@ -273,7 +252,6 @@ def _observer_without_inotify(request: pytest.FixtureRequest, monkeypatch: pytes
 
 
 def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
-    """公開pytest設定が対象にするagent-toolkit rootだけを返す。"""
     root = config.rootpath.resolve()
     if (root / "agent_toolkit" / "__init__.py").is_file():
         return root
@@ -282,7 +260,6 @@ def _target_plugin_root(config: pytest.Config) -> pathlib.Path | None:
 
 
 def _validate_import_root(config: pytest.Config) -> None:
-    """対象worktreeのpytestが別のagent-toolkitを読んだ状態を早期に拒否する。"""
     target = _target_plugin_root(config)
     if target is None:
         return
@@ -437,7 +414,6 @@ def pytest_configure(config: pytest.Config) -> None:
                     "pytestの子孫を回収できない: " + "; ".join(residual) + "; 対象の終了を確認してから一時領域を回収する"
                 )
             if directory is not None:
-                # テストの隔離がHOME・キャッシュの場所を変えても、作成時と同じ一時rootで包含を判定する。
                 with pytest.MonkeyPatch.context() as patch:
                     for name, value in resource_environment.items():
                         if value is None:
@@ -466,7 +442,6 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """CPU上限の設定と、CIで1つの試験集合を複数runnerへ分ける`--test-shard`、CPU上限を記録だけにする指定を登録する。"""
     pytest_cpu_budget.add_options(parser)
     parser.addoption(
         "--test-shard",
@@ -477,7 +452,6 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def _parse_test_shard(value: str) -> tuple[int, int]:
-    """`INDEX/COUNT`を検証し、0始まりの番号と分割数を返す。"""
     index_text, separator, count_text = value.partition("/")
     if separator and index_text.isdecimal() and count_text.isdecimal():
         index, count = int(index_text), int(count_text)
@@ -489,7 +463,6 @@ def _parse_test_shard(value: str) -> tuple[int, int]:
 
 
 def _assign_test_shards(nodeids: list[str], durations: dict[str, float], count: int) -> dict[str, int]:
-    """全workerで同じ入力から所要降順の貪欲割当を再現する。"""
     if not isinstance(durations, dict) or any(
         not isinstance(nodeid, str)
         or not nodeid
@@ -511,12 +484,6 @@ def _assign_test_shards(nodeids: list[str], durations: dict[str, float], count: 
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """`--test-shard`の指定時は、担当外の試験を選択解除する。
-
-    同じ所要記録とnode ID集合から担当を決め、収集順に依存しない。
-    全分割を合わせると各試験がちょうど1回実行される。
-    試験ファイル単位でなく試験単位で分けるのは、多数のparametrizeを持つ重いファイルを1つのrunnerへ偏らせないためである。
-    """
     pytest_cpu_budget.set_limits(config, items)
     value = config.getoption("test_shard")
     if value is None:
@@ -537,11 +504,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 @pytest.hookimpl(wrapper=True)
 def pytest_collection(session: pytest.Session) -> Generator[None, object, object]:
-    """収集区間だけホームと設定ディレクトリをbasetemp配下へ向け、収集時にimportされる定数を実ホームから外す。
-
-    試験関数ごとの隔離は収集の後に始まるため、収集時にimportされた製品モジュールが`Path.home()`などから
-    確定した定数は、この区間が無いと実ホームを指す。セッション全体で差し替えない理由は`isolation`の説明を参照する。
-    """
     basetemp = session.config.option.basetemp
     if basetemp is None:
         raise pytest.UsageError("収集時のホームを隔離するbasetempが未設定です。--basetempを指定して再実行してください")
@@ -565,7 +527,6 @@ def _reclaim_agents_server_logging(request: pytest.FixtureRequest) -> Iterator[N
 
 @pytest.fixture(autouse=True)
 def _clear_wait_schedule_environment(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """TTL判定用の環境変数を各テストの実行環境から除去する。"""
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return
     for name in _WAIT_SCHEDULE_ENVIRONMENT_NAMES:
@@ -585,13 +546,6 @@ def _single_execution_slot_in_tests(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _reset_warning_context(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """通知の反復計数に使う`notice`モジュールの大域状態を各テストの開始時に初期状態へ戻す。
-
-    本番の各hookは別プロセスで起動するため、この状態は起動ごとに初期値から始まる。
-    同じプロセスで複数のテストを実行すると、先行テストが`set_warning_session_id`で設定した
-    セッションIDが残り、後続テストの通知が反復として計数されて要約形へ置き換わる。
-    結果が実行順序とworkerへの割り振りで変わるため、テストごとに初期値の辞書へ差し替える。
-    """
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return
     monkeypatch.setattr(notice, "_warning_context", {"session_id": "", "blocks": []})
@@ -599,11 +553,6 @@ def _reset_warning_context(request: pytest.FixtureRequest, monkeypatch: pytest.M
 
 @pytest.fixture(autouse=True)
 def _reset_api_credit_observations(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
-    """APIクレジットの残高不足の観測を保持する`api_credits`の大域状態を各テストの開始時に空へ戻す。
-
-    本番ではagents_serverのプロセスごとに空から始まる。同じプロセスで複数のテストを実行すると、
-    先行テストが記録した観測が後続テストの委譲先の使用順を変えるため、テストごとに空の辞書へ差し替える。
-    """
     if not request.path.is_relative_to(_PACKAGE_ROOT):
         return
     monkeypatch.setattr(api_credits, "_observations", {})
@@ -701,13 +650,11 @@ def _real_end_turn_wait(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
 
 @pytest.fixture(autouse=True)
 def _roomy_disk_for_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
-    """掃引の空き判定を実ディスクから隔離する。実機の空きが下限を割っていても、他のテストの一時領域を回収させない。"""
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 1000))  # pylint: disable=protected-access
 
 
 @pytest.fixture(autouse=True)
 def isolated_state_root(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """一時rootと状態rootを各テストの専用領域へ分離する。"""
     if not request.path.is_relative_to(_PACKAGE_ROOT / "_atk" / "managed_temp"):
         return
     cache_root = tmp_path / "managed-temp"
@@ -718,7 +665,6 @@ def isolated_state_root(request: pytest.FixtureRequest, monkeypatch: pytest.Monk
 
 @pytest.fixture(autouse=True)
 def _isolate_environment(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """編集テストをホスト側のエージェント環境と一時rootから隔離する。"""
     if not request.path.is_relative_to(_PACKAGE_ROOT / "_atk" / "wi" / "mutations"):
         return
     for name in _AGENT_ENVIRONMENT_VARIABLES:
@@ -730,7 +676,7 @@ def _isolate_environment(request: pytest.FixtureRequest, monkeypatch: pytest.Mon
 
 
 async def _skipped_plugin_preflight(_cwd: str) -> None:
-    """事前確認を省く。イベントループへ制御を返さず、従来の起動と再開の順序を保つ。"""
+    pass
 
 
 async def _forbidden_backend_process(*args: Any, **_kwargs: Any) -> Any:
@@ -739,7 +685,6 @@ async def _forbidden_backend_process(*args: Any, **_kwargs: Any) -> Any:
 
 
 def _backend_process_forbidden(args: tuple[Any, ...]) -> AssertionError:
-    """実backendの起動時に共通して返す例外を生成する。"""
     return AssertionError(f"テストが実backendの子プロセスを起動しようとしました: {args}")
 
 
@@ -771,7 +716,6 @@ def _forbid_backend_process(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def _short_start_availability_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動直後の終了確認を短縮し、実行中のまま返るsessionでテストを待たせない。"""
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.05)
 
 
@@ -786,7 +730,6 @@ def _immediate_wait_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture
 def _owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """所有セッションの解決に使う環境変数を未設定の状態から始める。"""
     for name in isolation.DEVELOPMENT_SESSION_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
 
@@ -809,7 +752,6 @@ def agents_server_isolation(
 
 @pytest.fixture(name="index_path")
 def _index_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """作成日時インデックスを一時ディレクトリへ隔離する。"""
     path = tmp_path / "cache" / "index.json"
     monkeypatch.setattr(plan_creation_times, "_CREATION_TIME_INDEX_PATH", path)
     monkeypatch.setattr(plan_creation_times, "observed_creation_epoch", lambda st: float(st.st_mtime))
@@ -818,12 +760,6 @@ def _index_path(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
 
 @pytest.fixture(name="deny_substring")
 def _deny_substring_fixture() -> str:
-    """辞書ファイルから口語表現の検出サンプルを生成する。
-
-    テスト本体へ口語表現を直接書かないため、allowlistの最初のオーバーラップサンプルから
-    denylist部分文字列を抽出する。本番ロジック`_colloquial_check.load_patterns`と同じ解釈で
-    タブ区切りの置換候補列を除外する。
-    """
     deny_patterns = [pattern for pattern, _ in _colloquial_check.load_patterns(_colloquial_check.DENY_PATH)]
     for raw in _colloquial_check.ALLOW_PATH.read_text(encoding="utf-8").splitlines():
         stripped = raw.strip()
@@ -835,12 +771,11 @@ def _deny_substring_fixture() -> str:
             if match:
                 return match.group(0)
     pytest.skip("no overlap between denylist and allowlist; cannot generate test sample")
-    return ""  # unreachable
+    return ""
 
 
 @pytest.fixture(name="make_clean_repo")
 def _make_clean_repo() -> Callable[[pathlib.Path], pathlib.Path]:
-    """変更なしのgitリポジトリを作成するfactory fixture。"""
 
     def _make(tmp_path: pathlib.Path, name: str = "clean") -> pathlib.Path:
         return _git_repository.init_repository(tmp_path / name, files={"file.txt": "clean"}, commit_message="init")

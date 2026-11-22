@@ -52,9 +52,8 @@ startup_documents:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| 判定の観点と並行する探索・再発防止セルフチェックの起動と受領に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` |
+| 判定の観点と並行する探索・再発防止観点の確認に関する判断・作業の前 | `agent-toolkit:atk-mode/playbooks/exec-review.md` |
 | テストコードを含む差分を判定する前 | `agent-basics:writing-standards/references/testing.md`、`agent-toolkit:atk-mode/playbooks/verification.md` |
-| 再発防止セルフチェックの観点を収集する前と、担当を起動・受領する前 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` |
 | 文章成果物の直接確認または読者別探索担当の起動を選ぶ前 | `agent-toolkit:atk-mode/roles/reader-fit-review.parent.md` |
 
 ## 入力
@@ -88,7 +87,7 @@ startup_documents:
 - `rewrite_map`: 前回のレビューの後の履歴の書き換えやcommitの分割で変わったOIDの、旧から新への対応表の絶対パス（形式は`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」）。
 - `受理済みの完成条件証拠`: 委譲元が受理した実行レビューの返却ファイルの絶対パス。
   省略時と該当が無い時は`なし`とする。
-- `担当モデル`: 読者別探索担当と再発防止セルフチェック担当の`model_type`へ渡す値。
+- `担当モデル`: 読者別探索担当の`model_type`へ渡す値。
   終了時の結果で得た実際のモデルとの一致を引き継ぎ記録へ残す。
   省略時は工程別の標準の設定を使う。
 - `対象ファイル限定`: 指定がある時は、その範囲のファイルだけをレビューする。
@@ -104,7 +103,7 @@ startup_documents:
 - ファイルの読み取りと検索、Gitの状態の取得、判定に要る検証の実行
 - レビュー指摘管理表の更新（初回に表が無い時の初期化を含む）と引き継ぎ記録の更新
 - 走査記録、前回確認版、入力記録の保存と本文の複製（自分のセッションのmanaged-tempへ置く）
-- 読者別探索担当と再発防止セルフチェック担当の起動
+- 読者別探索担当の起動
 
 完成条件証拠の判定結果と根拠を記述するのは実行レビュー担当のみであり、レビュー対象者に根拠の補足を求めた場合も、反映は本担当が行う。
 

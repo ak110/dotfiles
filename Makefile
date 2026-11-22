@@ -18,7 +18,7 @@ help:
 
 # 依存パッケージをアップグレードし導入とRustを検証
 update:
-	env --unset=UV_FROZEN uv sync --upgrade --all-groups --all-extras
+	env --unset=UV_FROZEN uv sync --upgrade --all-groups --no-group pytest-impact --all-extras
 	env --unset=UV_FROZEN uv lock --upgrade --script agent-toolkit/scripts/launch.py
 	$(MAKE) ci-deps-check
 	mise exec -- prek autoupdate
@@ -73,7 +73,7 @@ setup-pwsh:
 # `uv run`の自動同期は余分なパッケージを残すため、この同期に代えない。
 # `UV_PYTHON`などで別の版を指定した環境でも、既存の仮想環境のPython版を保つ（uv 0.13.1で確認）。
 sync:
-	uv sync --all-groups --all-extras --python "$$(cat .python-version)"
+	uv sync --all-groups --no-group pytest-impact --all-extras --python "$$(cat .python-version)"
 
 # CIのcontainer jobと同じimageの中で、CIと同じ依存導入と各Python版の`uv sync`を実行する。
 # 作業ツリーは読み取り専用でマウントし、container内へ仮想環境とビルド生成物を除いて複製してから同期する。
@@ -87,7 +87,7 @@ ci-deps-check:
 			rm -rf /work; mkdir /work; \
 			tar -C /src --exclude=.venv --exclude=node_modules --exclude=target -cf - . | tar -C /work -xf -; \
 			echo "uv sync: Python $$version"; \
-			(cd /work && UV_PYTHON=$$version uv sync --all-groups --all-extras); \
+			(cd /work && UV_PYTHON=$$version uv sync --all-groups --no-group pytest-impact --all-extras); \
 		done'
 
 # `format`と`test`は`UV_PYTHON`を外してpyfltrを起動する。`sync`の`--python`は後続のuv起動へ引き継がれず、

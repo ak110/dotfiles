@@ -1,5 +1,3 @@
-"""mcp_toolsの分割試験が共有する準備処理。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -13,7 +11,6 @@ from agent_toolkit._testing.agents_server_support import _manager_with_fake, _ob
 
 
 def _write_review_plan(root: pathlib.Path) -> None:
-    """継続配送の検査が使う計画を、関連WIのない通常ファイルとして用意する。"""
     (root / "plan.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
 
 

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: statesのテスト。"""
 
 import datetime
 import pathlib
@@ -14,8 +13,6 @@ from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _set
 
 
 class TestListStatusFilter:
-    """listサブコマンド: --answeredでuwi側のみ回答状況を限定する。"""
-
     @pytest.mark.parametrize(
         ("answered", "expected_suffix", "excluded_suffix"),
         [
@@ -32,7 +29,6 @@ class TestListStatusFilter:
         expected_suffix: str,
         excluded_suffix: str,
     ) -> None:
-        """--answered=yes/noが回答状況と一致するUWIだけを出力する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
@@ -52,7 +48,6 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=activeがawiとUWIのどちらでもholdを含む3状態を返す。"""
         notes = _setup_notes(tmp_path)
         hold_dir = entry_path(notes, "fb-hold.md", fallback_date=datetime.date(2026, 10, 1)).parent
         hold_dir.mkdir(parents=True, exist_ok=True)
@@ -80,7 +75,6 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--status=all指定時に全UWIが出力される。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="回答あり\n")
@@ -100,7 +94,6 @@ class TestListStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=yes指定時に回答概念を持たないAWIは除外される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文1")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -115,7 +108,6 @@ class TestListStatusFilter:
         assert f"{_FIXED_TIMESTAMP}-001.md" not in captured.out
 
     def test_status_invalid_choice_exits_2(self, tmp_path: pathlib.Path) -> None:
-        """--statusに不正値を指定するとargparseがexit 2で終了する。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "list", "--status=invalid"], home=tmp_path)
 
@@ -123,7 +115,6 @@ class TestListStatusFilter:
 
     @pytest.mark.parametrize("status", ["planning", "editing"])
     def test_status_rejects_withdrawn_states(self, tmp_path: pathlib.Path, status: str) -> None:
-        """廃止した状態名を--statusへ渡すとargparseがexit 2で終了する。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "list", f"--status={status}"], home=tmp_path)
 
@@ -135,12 +126,6 @@ class TestListStatusFilter:
         ids=["list", "show", "grep"],
     )
     def test_state_and_status_resolve_to_the_same_filter(self, argv: list[str]) -> None:
-        """状態フィルターを`--state`と`--status`のどちらの綴りでも同じ値へ解決する。
-
-        キューの語彙は状態ディレクトリ、`WI_STATES`、`wi list --jsonl`の`state`のいずれも`state`であり、
-        `atk wi return-to-inbox`と`atk wi rm`も`--state`を受理する。
-        フィルター側が`--status`だけを受理すると、語彙どおりに組み立てた実行が終了コード2で終わる。
-        """
         parser = atk._build_parser()  # noqa: SLF001  # pylint: disable=protected-access
 
         by_state = parser.parse_args([*argv, "--state=processable"])

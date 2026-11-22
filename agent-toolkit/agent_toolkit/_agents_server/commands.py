@@ -1,5 +1,3 @@
-"""`atk agents`の、委譲sessionを観測する操作と委譲元へ通知を送る操作。"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,7 +45,6 @@ _CLEAR_SCREEN = "\x1b[H\x1b[2J"
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`agents`配下のサブコマンドを登録する。"""
     sub = _help.add_subcommands(parser, dest="agents_subcommand", required=False, show_help_when_missing=True)
     wait = _help.add_command(sub, "wait", **_help.HELP["atk agents wait"])
     wait.add_argument(
@@ -104,7 +101,6 @@ def _dump(payload: Any, environment: Mapping[str, str]) -> str:
 
 
 def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None = None) -> int:
-    """選択された`agents`サブコマンドを実行する。"""
     if args.agents_subcommand == "wait":
         return agents_wait.wait_for_result(environment=environment, root_session_id=args.root_session_id)
     if args.agents_subcommand == "notify":
@@ -239,14 +235,6 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
 
 
 def _public_session(session: Mapping[str, Any], *, detailed: bool = False, human: bool = False) -> dict[str, Any]:
-    """一覧向けの稼働状況の項目と`detailed`で加える復旧用の項目を分け、内部で追加した項目が公開の出力へ混入しないよう、列挙した項目だけを取り出す。
-
-    項目は受信主体ごとに選ぶ。エージェントへは次の判断に使う状態・診断・復旧の項目だけを返し、
-    文脈の長さ・上限（`context_tokens`・`context_window`）は人間の端末（`human`）だけへ返す。
-    自動圧縮を前提とするエージェントは文脈量で判断を変えず、値を渡すと使用量を理由にした
-    引き継ぎや停止の判断を誘うためである（ユーザー指示）。項目を加えるときも、受信主体と
-    その項目で行う判断を確かめてから、どちらの集合へ置くかを決める。
-    """
     fields = (
         "session_id",
         "status",
@@ -284,7 +272,6 @@ _OWNER_LOST_FIELDS = ("ownership", "recorded_processes", "owner_root_session_id"
 
 
 def _registry_interrupted_turns(session_id: str) -> list[dict[str, Any]]:
-    """登録簿が記録する中断turnの履歴を、診断参照付きの公開形で返す。"""
     if not shared_layout.valid_session_id(session_id):
         return []
     return result_projection.interrupted_turns_projection(session_registry.resolve(session_id).interrupted_turns)
@@ -310,7 +297,6 @@ def _list_groups(
 
 
 def _watch_list(*, include_terminated: bool) -> int:
-    """人の端末で一覧を定期的に取得し、画面を描き替える。Ctrl-Cで終了コード0を返す。"""
     command = "atk agents list --include-terminated" if include_terminated else "atk agents list"
     try:
         while True:
@@ -360,8 +346,7 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
     parts = {id(session): _status_parts(session, now) for _, session in session_rows}
     available = columns - left_width - _COLUMN_GAP
     right_width = max(_display_width(right_text) for _, right_text in parts.values())
-    # 名前・説明・右端の3欄の間の空白を除いた幅を、説明へ下限幅を残して名前へ配る。
-    # 下限幅を残せないほど狭い端末では名前へ3分の1を配り、ラベルの先頭を読めるようにする。
+
     shared = available - right_width - 2 * _COLUMN_GAP
     name_width = min(
         max(_display_width(name) for name in names.values()),
@@ -391,7 +376,6 @@ def _append_children(
     attached: set[str],
     rows: list[str | tuple[str, dict[str, Any]]],
 ) -> None:
-    """所有関係をたどり、訪問済みsessionを重複表示せずに追加する。"""
     entries = children.get(owner, [])
     for index, session in enumerate(entries):
         session_id = str(session["session_id"])
@@ -406,7 +390,6 @@ def _append_children(
 
 
 def _session_name(session: Mapping[str, Any]) -> str:
-    """statusLineと同じく、ラベルと`engine:model/effort`を1列にした名前を返す。"""
     label = session.get("label") or session.get("launch_kind") or "session"
     engine = session.get("engine") or ""
     model = session.get("model") or ""
@@ -460,7 +443,6 @@ def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[s
 
 
 def _status_line(name: str, description: str, right_text: str, width: int, name_width: int) -> str:
-    """statusLineの1行と同じ構成で、名前、直近の行動または進捗、経過時間と状態を`width`以内に並べる。"""
     if width <= 0:
         return ""
     fitted_name = _truncate(name, name_width)
@@ -479,7 +461,6 @@ def _status_line(name: str, description: str, right_text: str, width: int, name_
 
 
 def _elapsed(start: object, end: object) -> str | None:
-    """2つのISO 8601時刻の差をstatusLineと同じ`1h2m`・`3m4s`・`5s`の形で返す。解釈できない場合と負の差は`None`。"""
     moments: list[datetime.datetime] = []
     for value in (start, end):
         if isinstance(value, datetime.datetime):
@@ -503,12 +484,10 @@ def _elapsed(start: object, end: object) -> str | None:
 
 
 def _display_width(text: str) -> int:
-    """端末での表示幅を返す。statusLineと同じく全角文字を2セル、曖昧幅を含むほかの文字を1セルとして数える。"""
     return sum(2 if unicodedata.east_asian_width(char) in ("W", "F") else 1 for char in text)
 
 
 def _truncate(text: str, budget: int) -> str:
-    """`text`を表示幅`budget`以内へ、超える場合は末尾を省略記号に置き換えて切り詰める。"""
     if budget <= 0:
         return ""
     if _display_width(text) <= budget:
@@ -525,12 +504,11 @@ def _truncate(text: str, budget: int) -> str:
 
 
 def _show_logs(session_id: str, *, follow: bool, verbose: bool) -> int:
-    """保存済みのセッション記録を表示し、指定時は追尾する。"""
     selected = record_paths.find_session_record(session_id)
     if selected is None:
         report(f"sessionの記録が見つかりません: {session_id}", next_action=logs_export.MISSING_RECORD_NEXT_ACTION)
         return 2
-    # 同じ実行系で複数の記録が一致した場合は先頭を表示する。
+
     engine, path = selected.engine, selected.paths[0]
     try:
         with path.open(encoding="utf-8") as stream:
@@ -578,11 +556,6 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
 
 
 def _registry_session(session_id: str, root_session_id: str | None) -> dict[str, Any] | None:
-    """状態ファイルに無いsessionを、session登録簿の解決結果（実行中か終了）から表示する。
-
-    所有するagents_serverの状態ファイルが失われたsessionも、登録簿が実行中か、実行プロセスの不在による中断かを示せる。
-    所有サーバーを失った実行中のsessionには、記録プロセス、記録時のルート、旧ルートに残る通知の件数と案内を加える。
-    """
     if not shared_layout.valid_session_id(session_id):
         return None
     resolution = session_registry.resolve(session_id)
@@ -616,7 +589,6 @@ def _registry_session(session_id: str, root_session_id: str | None) -> dict[str,
 
 
 def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
-    """ルートsession配下の状態ファイルを統合し、開始順のsession一覧を返す。"""
     by_id = status_reader.load_root(root_session_id).sessions
     for session in by_id.values():
         session["result_available"] = (
@@ -638,7 +610,6 @@ def _status_payload_is_current(payload: Any) -> bool:
 
 
 def _add_output_activity(session: dict[str, Any]) -> None:
-    """活動とテキスト出力からの経過秒、および停滞の印を公開する項目へ加える。"""
     updated_at = session.get("updated_at")
     output_updated_at = session.get("output_updated_at")
     started_at = session.get("started_at")

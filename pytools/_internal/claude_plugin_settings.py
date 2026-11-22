@@ -7,8 +7,6 @@ from pytools._internal import claude_common, common
 
 
 class PluginSettingsError(RuntimeError):
-    """plugin の設定を保持・検証できなかった理由と復旧の操作。"""
-
     def __init__(self, reason: str, next_action: str) -> None:
         super().__init__(reason)
         self.next_action = next_action
@@ -47,7 +45,6 @@ def restore_disabled_plugins(plugin_ids: list[str]) -> None:
 
 
 def read_enabled_plugins() -> dict[str, bool]:
-    """設定が未作成・未指定なら空の辞書を返し、読めない設定とは区別する。"""
     path = claude_common.SETTINGS_JSON_PATH
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))

@@ -53,7 +53,6 @@ def test_myprojects_selects_section_by_role(hostname: str) -> None:
 
 @pytest.mark.parametrize("hostname", _HOSTNAMES)
 def test_ssh_peer_hosts_rule_only_for_peer_hosts(hostname: str) -> None:
-    """stheno・euryaleだけに本文を出し、それぞれ相手のホストへの接続先を示す。他では出力が空になりファイルが作られない。"""
     text = _execute(SOURCE / "dot_claude" / "rules" / "ssh-peer-hosts.local.md.tmpl", hostname)
     short = hostname.lower()
     assert ("ssh-unelevated stheno" in text) is (short == "euryale")

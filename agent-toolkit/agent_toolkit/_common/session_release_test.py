@@ -1,9 +1,8 @@
-"""解放要求の配送と所有・終了の再検収を確かめる。"""
-
 from __future__ import annotations
 
 import asyncio
 import dataclasses
+import hashlib
 import json
 import pathlib
 import threading
@@ -13,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._common import atomic_file, session_registry, session_release
+from agent_toolkit._common import atomic_file, registry_requests, session_registry, session_release
 from agent_toolkit._testing.session_release_support import held_registry_lock
 
 
@@ -105,20 +104,26 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
             assert reason
             assert session_registry.resolve("child", state_root=tmp_path).state is session_registry.Resolution.TERMINAL
             assert calls == ([True] if condition in {"failed", "residual"} else [])
-        assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+        request = paths[0]
+        result = request.with_suffix(".release-request-result")
+        unanswered = condition in {"wrong-owner", "not-owned"}
+        retained = request if unanswered else result
+        assert list(request.parent.glob("*.release-*")) == [retained]
+        packet = json.loads(retained.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        if unanswered:
+            assert "result" not in packet
+        else:
+            assert packet["result"]["session_id"] == "child"
+            assert packet["result"]["record_digest"] == packet["record_digest"]
     finally:
         await task
 
 
 @pytest.mark.asyncio
-async def test_response_racing_requester_cleanup_is_not_left_behind(
+async def test_response_racing_legacy_requester_cleanup_is_not_left_behind(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """所有側が応答の公開に入ってから書き終えるまでの間に要求側が後始末を終えても、両者の終了後に要求と応答が残らない。
-
-    2026-11-19のCI（run 44582845525）で、レーン再利用の解放後に応答だけが残った競合を固定する。
-    要求の削除は所有側が応答の公開に入るまで待ち、応答の公開は要求側が応答の削除を終えるまで待つ。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -128,23 +133,37 @@ async def test_response_racing_requester_cleanup_is_not_left_behind(
         processes=(owner,),
         state_root=tmp_path,
     )
-    requested, publishing, cleaned = threading.Event(), threading.Event(), threading.Event()
-    original_write, original_unlink = atomic_file.atomic_write, pathlib.Path.unlink
+    directory = session_registry.registry_directory(tmp_path)
+    request = directory / "legacy.release-request"
+    response = request.with_suffix(".release-response")
+    request.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "session_id": "child",
+                "worktree": str(tmp_path),
+                "record_digest": hashlib.sha256((directory / "child.json").read_bytes()).hexdigest(),
+                "owner": owner.payload(legacy=True),
+                "owner_identity": owner.payload(),
+                "deadline": time.monotonic() + 30,
+            }
+        ),
+        encoding="utf-8",
+    )
+    publishing, cleaned = threading.Event(), threading.Event()
+    original_write = atomic_file.atomic_write
 
     def write(path: pathlib.Path, content: str | bytes, **kwargs: Any) -> None:
-        if path.name.endswith(".release-response"):
+        if path == response:
             publishing.set()
             assert cleaned.wait(timeout=10), "要求側が後始末を終えない"
         original_write(path, content, **kwargs)
-        if path.name.endswith(".release-request"):
-            requested.set()
 
-    def unlink(self: pathlib.Path, *args: Any, **kwargs: Any) -> None:
-        if self.name.endswith(".release-request"):
-            assert publishing.wait(timeout=10), "所有側が応答の公開に入らない"
-        original_unlink(self, *args, **kwargs)
-        if self.name.endswith(".release-response"):
-            cleaned.set()
+    def cleanup() -> None:
+        assert publishing.wait(timeout=10), "所有側が応答の公開に入らない"
+        request.unlink()
+        response.unlink(missing_ok=True)
+        cleaned.set()
 
     async def stop(session_id: str, *, retain_result: bool, **_kwargs: Any) -> dict[str, Any]:
         assert retain_result
@@ -152,31 +171,20 @@ async def test_response_racing_requester_cleanup_is_not_left_behind(
         return {}
 
     monkeypatch.setattr(atomic_file, "atomic_write", write)
-    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
-    task = asyncio.create_task(
-        asyncio.to_thread(
-            session_release.request_release, "child", tmp_path, deadline=time.monotonic() + 30, state_root=tmp_path
-        )
-    )
+    task = asyncio.get_running_loop().run_in_executor(None, cleanup)
     try:
-        assert await asyncio.to_thread(requested.wait, 10), "要求側が要求を公開しない"
         await session_release.process_requests({"child": _Session(True, str(tmp_path))}, stop, state_root=tmp_path)
-        assert await task is None
-        assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+        await task
+        assert not list(directory.glob("*.release-*"))
     finally:
         await asyncio.gather(task, return_exceptions=True)
 
 
-@pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
 @pytest.mark.parametrize("failing", [False, True])
 @pytest.mark.asyncio
 async def test_transient_sharing_denial_does_not_override_release_result(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fault: str, failing: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failing: bool
 ) -> None:
-    """Windowsの一時的な共有拒否が応答の最初の読取や要求側の後始末で一度起きても、所有側の結果（成功と具体的な失敗理由）を返す。
-
-    要求側を応答の最初の読取の直前で止め、所有側が解放と応答の公開を終えてから読ませる。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -187,24 +195,19 @@ async def test_transient_sharing_denial_does_not_override_release_result(
         state_root=tmp_path,
     )
     denied: list[str] = []
+    attempts: list[pathlib.Path] = []
     polling, answered = threading.Event(), threading.Event()
-    original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
+    original_read = pathlib.Path.read_text
 
     def read_text(self: pathlib.Path, *args: Any, **kwargs: Any) -> str:
-        if self.name.endswith(".release-response"):
+        if self.name.endswith(".release-request-result"):
+            attempts.append(self)
             polling.set()
             assert answered.wait(timeout=10), "所有側が応答を公開しない"
-            if fault == "read" and not denied:
+            if not denied:
                 denied.append(self.name)
                 raise PermissionError(13, "modeled WinError 32: sharing violation")
         return original_read(self, *args, **kwargs)
-
-    def unlink(self: pathlib.Path, *args: Any, **kwargs: Any) -> None:
-        suffix = ".release-request" if fault == "cleanup-request" else ".release-response"
-        if fault.startswith("cleanup") and self.name.endswith(suffix) and not denied:
-            denied.append(self.name)
-            raise PermissionError(13, "modeled WinError 5: access denied")
-        original_unlink(self, *args, **kwargs)
 
     async def stop(session_id: str, **_kwargs: Any) -> dict[str, Any]:
         if failing:
@@ -213,7 +216,6 @@ async def test_transient_sharing_denial_does_not_override_release_result(
         return {}
 
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
-    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
     task = asyncio.create_task(
         asyncio.to_thread(
             session_release.request_release, "child", tmp_path, deadline=time.monotonic() + 30, state_root=tmp_path
@@ -226,10 +228,12 @@ async def test_transient_sharing_denial_does_not_override_release_result(
         reason = await task
         if failing:
             assert reason is not None and "解放に失敗" in reason
+            assert len(attempts) >= 2
         else:
             assert reason is None
-        assert denied
-        assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+        (result,) = session_registry.registry_directory(tmp_path).glob("*.release-*")
+        assert denied == [result.name]
+        assert result.suffix == ".release-request-result"
     finally:
         answered.set()
         await asyncio.gather(task, return_exceptions=True)
@@ -239,10 +243,6 @@ async def test_transient_sharing_denial_does_not_override_release_result(
 async def test_persistent_read_denial_is_reported_with_path_and_error(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """応答の読取拒否が期限まで続けば、期限切れだけでなく応答のパスと最後のOSエラーを報告し、要求と応答を残さない。
-
-    所有側は要求の公開の直後に応答を公開し終え、要求側の期限は模擬した時計で進めて実時間に依らせない。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -254,36 +254,38 @@ async def test_persistent_read_denial_is_reported_with_path_and_error(
     )
     published: list[pathlib.Path] = []
     loop = asyncio.get_running_loop()
-    original_read, original_write = pathlib.Path.read_text, atomic_file.atomic_write
+    original_read, original_write = pathlib.Path.read_text, registry_requests.write_request
 
     def read_text(self: pathlib.Path, *args: Any, **kwargs: Any) -> str:
-        if self.name.endswith(".release-response"):
+        if self.name.endswith(".release-request-result"):
             raise PermissionError(13, "modeled permanent EACCES", str(self))
         return original_read(self, *args, **kwargs)
 
     async def stop(_session_id: str, **_kwargs: Any) -> dict[str, Any]:
         raise OSError("解放に失敗")
 
-    def write(path: pathlib.Path, content: str | bytes, **kwargs: Any) -> None:
-        original_write(path, content, **kwargs)
-        if path.name.endswith(".release-response"):
-            published.append(path)
-        elif path.name.endswith(".release-request"):
-            sessions = {"child": _Session(True, str(tmp_path))}
-            asyncio.run_coroutine_threadsafe(
-                session_release.process_requests(sessions, stop, state_root=tmp_path), loop
-            ).result(timeout=10)
+    def write(path: pathlib.Path, packet: dict[str, Any]) -> None:
+        original_write(path, packet)
+        sessions = {"child": _Session(True, str(tmp_path))}
+        asyncio.run_coroutine_threadsafe(session_release.process_requests(sessions, stop, state_root=tmp_path), loop).result(
+            timeout=10
+        )
+        published.append(path.with_suffix(".release-request-result"))
 
+    started = time.monotonic()
     ticks = iter(range(10_000))
-    clock = types.SimpleNamespace(monotonic=lambda: float(next(ticks)), sleep=lambda _seconds: None)
+    clock = types.SimpleNamespace(monotonic=lambda: started + next(ticks), sleep=lambda _seconds: None)
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
-    monkeypatch.setattr(atomic_file, "atomic_write", write)
+    monkeypatch.setattr(registry_requests, "write_request", write)
     monkeypatch.setattr(session_release, "time", clock)
-    reason = await asyncio.to_thread(session_release.request_release, "child", tmp_path, deadline=30.0, state_root=tmp_path)
+    reason = await asyncio.to_thread(
+        session_release.request_release, "child", tmp_path, deadline=started + 30, state_root=tmp_path
+    )
     assert published, "所有側が応答を公開しない"
     assert reason is not None and "期限までに" in reason
     assert str(published[0]) in reason and "modeled permanent EACCES" in reason
-    assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    assert list(session_registry.registry_directory(tmp_path).glob("*.release-*")) == published
+    assert json.loads(original_read(published[0], encoding="utf-8"))["result"]["error"] == "解放に失敗"
 
 
 @pytest.mark.asyncio
@@ -338,7 +340,10 @@ async def test_response_during_registry_write_does_not_delay_release_of_other_se
         await monitoring
         if busy is not None:
             await asyncio.gather(busy, return_exceptions=True)
-    assert not list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    files = list(session_registry.registry_directory(tmp_path).glob("*.release-*"))
+    assert len(files) == 2 and all(path.suffix == ".release-request-result" for path in files)
+    results = [json.loads(path.read_text(encoding="utf-8"))["result"] for path in files]
+    assert {result["session_id"]: result.get("error") for result in results} == {"busy": "解放に失敗", "idle": None}
 
 
 @pytest.mark.parametrize("registered_paths", [False, True])
@@ -347,7 +352,6 @@ async def test_response_during_registry_write_does_not_delay_release_of_other_se
 async def test_process_requests_rejects_nested_worktree_cwd(
     tmp_path: pathlib.Path, registered_paths: bool, nested: bool
 ) -> None:
-    """新要求は最内側の所属で判定し、登録集合を持たない旧要求も受理できる。"""
     owner = session_registry.owner_process()
     assert owner is not None
     cwd = tmp_path / "nested" if nested else tmp_path
@@ -361,6 +365,7 @@ async def test_process_requests_rejects_nested_worktree_cwd(
             tmp_path,
             deadline=time.monotonic() + 2,
             state_root=tmp_path,
+            worktree_paths=(tmp_path, tmp_path / "nested") if registered_paths else None,
         )
     )
     calls: list[str] = []
@@ -372,12 +377,8 @@ async def test_process_requests_rejects_nested_worktree_cwd(
 
     try:
         async with asyncio.timeout(3):
-            while not (requests := list(session_registry.registry_directory(tmp_path).glob("*.release-request"))):
+            while next(session_registry.registry_directory(tmp_path).glob("*.release-request"), None) is None:
                 await asyncio.sleep(0.001)
-        if registered_paths:
-            payload = json.loads(requests[0].read_text(encoding="utf-8"))
-            payload["worktree_paths"] = [str(tmp_path), str(tmp_path / "nested")]
-            requests[0].write_text(json.dumps(payload), encoding="utf-8")
         await session_release.process_requests({"child": _Session(True, str(cwd))}, stop, state_root=tmp_path)
         reason = await task
         if registered_paths and nested:

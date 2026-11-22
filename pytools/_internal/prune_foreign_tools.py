@@ -44,8 +44,6 @@ _WINGET_SOURCE_MARKER = "_Microsoft.Winget.Source_"
 
 @dataclasses.dataclass(frozen=True)
 class Layout:
-    """導入元の判定に使う配置。試験では一時ディレクトリへ差し替える。"""
-
     mise_installs: Path
     mise_shims: frozenset[Path]
     winget_packages: Path | None
@@ -55,8 +53,6 @@ class Layout:
 
 @dataclasses.dataclass(frozen=True)
 class Removal:
-    """1つの導入物の削除操作。`kind`は`winget`・`npm`・`pnpm-standalone`のいずれか。"""
-
     kind: str
     target: str
     location: Path
@@ -66,7 +62,6 @@ class Removal:
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """mise管理版と重複するdotfiles外の導入物を削除する。"""
     mise = setup_mise_binary.find_mise_binary()
     if mise is None:
         logger.info(
@@ -101,7 +96,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     changed = False
     removed_winget_dirs: list[Path] = []
     for removal, name in removals.values():
-        # 削除後に同じ名前のコマンドが無くならないよう、miseが同じ名前を解決できる場合だけ削除する。
         if not _mise_resolves(mise, name):
             logger.warning(
                 log_format.format_status(
@@ -130,7 +124,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def classify(found: Path, name: str, layout: Layout) -> Removal | None:
-    """PATH上の実行ファイルの導入元を判定し、自動で削除できる場合は削除操作を返す。"""
     resolved = common.safe_resolve(found)
     if layout.winget_packages is not None:
         package_id = _winget_package_id(resolved, layout.winget_packages)
@@ -151,7 +144,6 @@ def classify(found: Path, name: str, layout: Layout) -> Removal | None:
 
 
 def _warn_unconfirmed(removal: Removal, name: str, found: Path) -> None:
-    """削除してよいと確認できず保持した導入物と、ユーザーが取れる操作を案内する。"""
     if removal.unreadable:
         message = (
             f"standalone版pnpmの{removal.location}の内容を読めないため、このディレクトリを削除せず保持（{removal.reason}）。"
@@ -175,7 +167,6 @@ def _warn_unconfirmed(removal: Removal, name: str, found: Path) -> None:
 
 
 def _managed_names(mise: Path) -> set[str]:
-    """miseが導入した実行ファイルの名前（拡張子なし、小文字）を返す。共有ランタイムへのリンクは除く。"""
     result = common.run_subprocess([str(mise), "bin-paths"], timeout=common.COMMAND_TIMEOUT, tag="mise", cwd=Path.home())
     if result is None or result.returncode != 0:
         logger.warning(
@@ -220,7 +211,6 @@ def _host_layout() -> Layout:
 
 
 def _installs_root() -> Path:
-    """miseの導入先（`<データディレクトリ>/installs`）を返す。"""
     data_dir = os.environ.get("MISE_DATA_DIR")
     if data_dir:
         return Path(data_dir) / "installs"
@@ -230,7 +220,6 @@ def _installs_root() -> Path:
 
 
 def _foreign_executables(managed: set[str], path_entries: list[Path], layout: Layout) -> list[tuple[str, Path, bool]]:
-    """PATH上でmise管理外にある同名の実行ファイルと、mise shimより先に現れるかを返す。"""
     shim_index = next(
         (index for index, entry in enumerate(path_entries) if common.safe_resolve(entry) in layout.mise_shims),
         len(path_entries),
@@ -259,7 +248,6 @@ def _foreign_executables(managed: set[str], path_entries: list[Path], layout: La
 
 
 def _executable_name(path: Path) -> str | None:
-    """実行ファイルなら拡張子を除いた小文字の名前を返す。"""
     if sys.platform == "win32":
         extensions = {ext.lower() for ext in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if ext}
         if path.suffix.lower() not in extensions:
@@ -272,7 +260,6 @@ def _executable_name(path: Path) -> str | None:
 
 
 def _winget_package_id(resolved: Path, packages: Path) -> str | None:
-    """WinGetのportable導入の配下ならパッケージIDを返す（Linksのリンクは解決済みの実体で判定する）。"""
     root = common.safe_resolve(packages)
     try:
         relative = resolved.relative_to(root)
@@ -301,7 +288,7 @@ _PNPM_HOME_ENTRIES = frozenset(
     }
 )
 
-# npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。
+
 _MAX_LAUNCHER_BYTES = 64 * 1024
 _SHIM_PACKAGE = re.compile(r"node_modules/((?:@[^/\"'\s]+/)?[^/\"'\s]+)/")
 
@@ -354,17 +341,6 @@ def _launcher_package(found: Path, modules: Path) -> str | None:
 
 
 def _npm_global_package(found: Path, name: str) -> Removal | None:
-    """npmのglobal prefixの起動ファイルなら、削除操作を返す。
-
-    削除してよいと確認できた場合だけ`manual_only`をFalseにする。条件は次の全てである。
-    - 起動ファイルが、npmの規則で`--prefix`から決まるglobal rootのパッケージを指す
-    - そのパッケージが同名のbinを宣言し、インストールキー・`name`・binのどれも旧npm版に当たらない
-    旧npm版に関係する場合は`reason`を空にして案内を専用工程へ任せ、確認できない場合は理由を返す。
-    削除の対象は、npmの別名導入でも保護の判定と同じ導入物を指すよう、インストールキーとする。
-
-    Node.js本体の導入先（Program Filesの`nodejs`や`/usr`など）は同梱のnpmを含むが、
-    npmのグローバルprefixではなく本体のインストーラーが管理するため対象外とする。
-    """
     located = _npm_global_root(found)
     if located is None:
         return None

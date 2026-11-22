@@ -1,5 +1,3 @@
-"""dispatch_testの共通試験準備。"""
-
 import json
 import pathlib
 
@@ -10,7 +8,6 @@ from agent_toolkit._testing.hook_output_contract import validate_hook_output
 
 
 def _denial_reason(captured) -> str:
-    """stderrを使わず、正常拒否の理由欄を検証する。"""
     assert not captured.err
     response = json.loads(captured.out) if captured.out else {}
     specific = response.get("hookSpecificOutput", {})
@@ -43,7 +40,6 @@ def _assert_plain_pass(result, host: str) -> None:
 
 
 def _original_record(tmp_path: pathlib.Path, root_kind: str, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """設定したホームの原記録を用意し、個人の記録へアクセスしない。"""
     claude = tmp_path / "claude-config"
     codex = tmp_path / "codex-home"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude))

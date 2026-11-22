@@ -1,5 +1,3 @@
-"""外部pyfltrへplugin専用のuv環境を渡さないことを検証する。"""
-
 import json
 import os
 import shutil
@@ -20,7 +18,6 @@ from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES,
 
 @pytest.mark.parametrize("caller", [None, "", "対象リポジトリの環境"])
 def test_pyfltr_restores_caller_project_environment(monkeypatch, caller):
-    """MCP内の対象プロジェクト操作が共有plugin環境を更新しないようにする。"""
     monkeypatch.setenv(inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT_KEY, "/plugin/environment")
     monkeypatch.setenv("UV_PROJECT_ENVIRONMENT", "/plugin/environment")
     monkeypatch.delenv(inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY, raising=False)
@@ -39,7 +36,6 @@ def test_pyfltr_restores_caller_project_environment(monkeypatch, caller):
 
 @pytest.mark.parametrize("virtual_env", [False, True])
 def test_pyfltr_keeps_own_scripts_once_after_launch_restore(monkeypatch, tmp_path, virtual_env):
-    """呼出元PATHを復元した後も自身の実行ファイル格納先を優先し、空要素と他の順序を保つ。"""
     scripts = Path(sys.executable).absolute().parent
     caller = {"PATH": os.pathsep.join([str(tmp_path), str(scripts), "", str(scripts), "last"])}
     launched = {**caller, "PATH": "launch-path"}
@@ -69,13 +65,13 @@ async def test_console_cli_and_mcp_use_bundled_tools_and_work_dir_uv(
     for tool in ("prek", "typos"):
         assert shutil.which(tool, path=str(scripts)) is not None
     host = host_environ()
-    # uvは検証用projectを作るためのnative実行体を使う。mise未登録のshimは準備の入力にしない。
+
     uv = shutil.which(
         "uv", path=os.pathsep.join(entry for entry in host["PATH"].split(os.pathsep) if Path(entry).name != "shims")
     )
     assert uv is not None
     environment = {**os.environ, "PATH": host["PATH"]}
-    # ホストから借りるのは実行ファイル探索だけとし、設定・履歴・uv保存先は試験自身で隔離する。
+
     for name in (*HOME_ENVIRONMENT_NAMES, *CONFIG_DIRECTORY_ENVIRONMENT_NAMES):
         environment[name] = str(tmp_path / "home" / name.lower())
         Path(environment[name]).mkdir(parents=True, exist_ok=True)

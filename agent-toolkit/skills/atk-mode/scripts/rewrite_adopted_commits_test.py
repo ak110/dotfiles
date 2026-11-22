@@ -1,5 +1,3 @@
-"""採用CLIから履歴書換え・保存・showまでの終了AWIの受入シナリオ。"""
-
 import argparse
 import json
 import pathlib
@@ -105,7 +103,6 @@ def test_adopt_multiple_then_rewrite_split_and_retry(
     if failure == "push":
         git_repository.git_output(remote, "config", "receive.denyCurrentBranch", "refuse")
     if failure == "body-mismatch":
-        # push後に別主体が本文を変えた場合を模し、保存した本文との比較を実際に通す。
 
         def alter_after_push(*args: typing.Any, **kwargs: typing.Any) -> int | None:
             result = original_push(*args, **kwargs)

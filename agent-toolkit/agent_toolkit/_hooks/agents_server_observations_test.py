@@ -1,5 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py のテスト。"""
 
+import asyncio
 import contextlib
 import copy
 import io
@@ -74,8 +75,6 @@ class _WindowsAccessDenied(PermissionError):
 
 
 class _RegisteredBackend(agents_server_support.FakeBackend):
-    """モデル出力を観測済みで、登録簿へ公開するsessionを返す。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> server_state.SessionState:
         session = await super().start(*args, **kwargs)
         session.model_output_observed = True
@@ -104,7 +103,6 @@ def _hook(hook: Callable[[str], int], payload: dict[str, Any]) -> int:
 
 
 def _acquire_delegation(payload: dict[str, Any]) -> None:
-    """委譲操作の前に求められる委譲の手順書の取得を、ReadのPostToolUseとして観測させる。"""
     playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/delegation.md")
     read = {
         "session_id": payload["session_id"],
@@ -211,7 +209,6 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
 
 
 def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    """中断の観測試行は入力のsessionだけを解消する。"""
     state = {
         "agents_server_sessions": {
             "remote-a": {"pending_observation": True, "owner_agent_id": "main"},
@@ -232,7 +229,6 @@ def test_kill_observation_attempt_clears_only_the_requested_session(monkeypatch:
 
 
 def test_start_state_record_writes_conversation_root_alias(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """start応答が明示したルート識別子の索引を書く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     shared_layout.status_directory("root-session", tmp_path).mkdir(parents=True)
@@ -374,7 +370,6 @@ def test_start_state_record_without_shared_status_does_not_write_alias(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """応答が所有rootを明示しない場合は索引を書かない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
@@ -390,7 +385,6 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """同じ子識別子を持つ別rootがあっても応答の所有rootだけへ対応付ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for root_session_id in ("root-a", "root-b"):
@@ -421,7 +415,6 @@ def test_root_alias_uses_explicit_response_without_scanning_other_roots(
         ("start", {"subagent_md_path": "/plugin/skills/atk-mode/roles/exec.subagent.md", "cwd": "/tmp/x"}, "execute"),
         ("start", {"model_type": "review"}, "review"),
         ("start", {"mode": "unknown", "prompt": "調べる"}, None),
-        # 統合前の起動ツール名で記録された呼び出しも、対応するmodeの種別を記録する。
         ("start_write", {"prompt": "起草する", "cwd": "/tmp/x"}, "write"),
         ("start_shell", {"command": "make test", "cwd": "/tmp/x"}, "chores_fast"),
         ("start_explore", {"prompt": "調べる", "cwd": "/tmp/x"}, "chores_fast"),
@@ -438,7 +431,6 @@ def test_agents_server_model_type_matches_server_defaults(operation: str, tool_i
 
 
 def test_new_role_model_type_comes_from_same_declaration_as_server(tmp_path: pathlib.Path) -> None:
-    """役割名対応表の無い定義でも、起動時と観測時の段位が一致する。"""
     from agent_toolkit._agents_server import launch_requests  # pylint: disable=import-outside-toplevel
 
     manifest = tmp_path / ".claude-plugin/plugin.json"
@@ -537,7 +529,6 @@ def test_response_cwd_is_accepted_only_for_handoff_start(
     tmp_path: pathlib.Path,
     handoff: bool,
 ) -> None:
-    """通常起動は入力cwdの欠落を診断し、引き継ぎ起動だけ応答cwdを検収する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "observed-root")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -567,7 +558,6 @@ def test_response_cwd_is_accepted_only_for_handoff_start(
 @pytest.mark.parametrize("operation", ["send_message", "kill"])
 @pytest.mark.parametrize("actor", ["main", "agent-a"])
 def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, operation, actor):
-    """公開PostToolUseのshowでcwdを回復し、同じ子への追送と中断を許可する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         "owned-child",
@@ -590,7 +580,7 @@ def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, opera
         )
         == 0
     )
-    # 追送により観測責任者が変わっても、起動時主体で回復する。
+
     assert (
         _hook(
             posttooluse.main,
@@ -636,7 +626,82 @@ def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, opera
     assert after.allow and after.block is None
 
 
-@pytest.mark.parametrize("failure", ["foreign", "unknown", "mismatched", "relative", "empty", "other-actor", "missing-actor"])
+@pytest.mark.asyncio
+async def test_start_timeout_recovers_only_the_registered_launch_actor(tmp_path, monkeypatch):
+    """公開startの起動後に応答を止め、同じ呼出主体だけがshowで回復することを確かめる。"""
+    for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "local")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    cwd = str(tmp_path)
+    payload = {"session_id": "local", "agent_id": "agent-a", "cwd": cwd}
+    start = {
+        **payload,
+        "tool_name": "mcp__agents_server__start",
+        "tool_input": {"cwd": cwd, "mode": "delegate", "prompt": "処理", "model_type": "claude:test/medium"},
+    }
+    _acquire_delegation(start)
+    with contextlib.redirect_stdout(io.StringIO()) as output:
+        assert pretooluse.main(json.dumps(start, ensure_ascii=False)) == 0
+    launch = json.loads(output.getvalue())["hookSpecificOutput"]["updatedInput"]
+    writer = status_file.StatusFileWriter(
+        {}, status_file.StatusFileIdentity("local", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+    )
+    async with manager.AgentsServerManager(writer) as current:
+        agents_server_support.install_backend(current, "claude", _RegisteredBackend(current.sessions, "claude"))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        writer.activate()
+        started = asyncio.Event()
+
+        async def drop_response():
+            result = await mcp_tools.start(**launch)
+            started.set()
+            await asyncio.Future()
+            return result
+
+        request = asyncio.create_task(drop_response())
+        try:
+            await asyncio.wait_for(started.wait(), timeout=10)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(request, timeout=0)
+        finally:
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+        child = next(iter(current.sessions))
+        shown = await current.show_session(child)
+    error = {"isError": True, "content": [{"type": "text", "text": "tools/callの応答が時間切れ"}]}
+    assert (
+        _hook(
+            posttooluse.main,
+            {**payload, "tool_name": "mcp__agents_server__start", "tool_input": launch, "tool_response": error},
+        )
+        == 0
+    )
+    show = {
+        **payload,
+        "tool_name": "mcp__agents_server__show",
+        "tool_input": {"session_id": child},
+        "tool_response": shown,
+    }
+    assert _hook(posttooluse.main, {**show, "agent_id": "agent-b"}) == 0
+    assert agents_server_observations.session_cwd(session_state.read_state("local"), child) is None
+    assert _hook(posttooluse.main, show) == 0
+    assert agents_server_observations.session_cwd(session_state.read_state("local"), child) == cwd
+    for operation in ("send_message", "kill"):
+        decision = agent_checks._check_agents_server_continuation_target(  # pylint: disable=protected-access
+            "local", {"session_id": child}, "mcp__agents_server__" + operation, actor="agent-a"
+        )
+        assert decision.allow and decision.block is None
+        other = agent_checks._check_agents_server_continuation_target(  # pylint: disable=protected-access
+            "local", {"session_id": child}, "mcp__agents_server__" + operation, actor="agent-b"
+        )
+        assert other.block is not None
+
+
+@pytest.mark.parametrize(
+    "failure", ["foreign", "unknown", "mismatched", "relative", "empty", "other-actor", "missing-actor", "start-timeout"]
+)
 def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
     """所有不明、応答不一致、不正cwdと別主体のshowでは操作権限を回復しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -651,7 +716,21 @@ def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
     record = {"session_id": "child", "status": "running", "owner_agent_id": "main", "pending_observation": True}
     if failure != "missing-actor":
         record["launcher_agent_id"] = "agent-a" if failure == "other-actor" else "main"
-    session_state.update_state("local", lambda _state: {"agents_server_sessions": {"child": record}})
+    if failure == "start-timeout":
+        assert (
+            _hook(
+                posttooluse.main,
+                {
+                    "session_id": "local",
+                    "tool_name": "mcp__agents_server__start",
+                    "tool_input": {"mode": "delegate", "cwd": str(tmp_path)},
+                    "tool_response": {"isError": True, "content": [{"type": "text", "text": "tools/callの応答が時間切れ"}]},
+                },
+            )
+            == 0
+        )
+    else:
+        session_state.update_state("local", lambda _state: {"agents_server_sessions": {"child": record}})
     response = {
         "session_id": "other" if failure == "mismatched" else "child",
         "status": "running",
@@ -677,6 +756,8 @@ def test_foreign_show_does_not_recover_cwd(tmp_path, monkeypatch, failure):
             "local", {"session_id": "child"}, "mcp__agents_server__" + operation
         )
         assert result.block is not None
+        if failure == "start-timeout":
+            assert "繰り返しても回復しない" in result.block
 
 
 @pytest.mark.parametrize(
@@ -714,7 +795,6 @@ def test_error_response_preserves_observation_state(tmp_path, monkeypatch, tool_
     elif shape == "ToolError":
         response = "ToolError: 実行中のsessionは破棄できない。次の操作: showで確認する"
     elif shape == "content":
-        # mcp_transport._call_registered_toolのToolError応答で、ホストが本文だけを渡す場合。
         response = [{"type": "text", "text": "実行中のsessionは破棄できない。次の操作: showで確認する"}]
     before_files = {
         str(path.relative_to(tmp_path)): path.read_bytes() for path in (tmp_path / "agents-server").rglob("*") if path.is_file()
@@ -742,7 +822,6 @@ def test_error_response_preserves_observation_state(tmp_path, monkeypatch, tool_
 
 
 def test_terminal_session_error_is_not_tool_failure(tmp_path, monkeypatch):
-    """正常killが返す終了session自身のerrorは状態へ反映する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_state.update_state(
         "local",

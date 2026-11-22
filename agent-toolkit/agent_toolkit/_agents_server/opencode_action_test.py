@@ -1,5 +1,3 @@
-"""受信済みOpenCode tool partの入力と、活動表示の対応を検証する。"""
-
 import json
 from typing import Any
 
@@ -12,7 +10,6 @@ from agent_toolkit._agents_server.state import SessionState
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["completed", "error"])
 async def test_received_input_changes_summary_without_unfinished_task(status: str) -> None:
-    """同名ツールの別入力と原本を区別し、受信していない実行中状態を作らない。"""
     session = SessionState(session_id="ses_received", cwd=".", engine="opencode")
     async with OpenCodeManager() as backend:
         for command in ("printf 日本語", "printf 次の処理"):
@@ -38,7 +35,6 @@ async def test_received_input_changes_summary_without_unfinished_task(status: st
 @pytest.mark.asyncio
 @pytest.mark.parametrize("state", [None, {}, {"input": {}}, {"input": "not-an-object"}])
 async def test_absent_input_keeps_name_only(state: Any) -> None:
-    """入力の無い通知から情報を補わず、既存の名前だけの表示を保つ。"""
     session = SessionState(session_id="ses_received", cwd=".", engine="opencode")
     async with OpenCodeManager() as backend:
         await backend.process_event(session, {"type": "tool_use", "part": {"tool": "read", "state": state}})
@@ -48,7 +44,6 @@ async def test_absent_input_keeps_name_only(state: Any) -> None:
 
 @pytest.mark.asyncio
 async def test_input_uses_existing_single_line_and_length_limit() -> None:
-    """入れ子・改行・長い入力を、共通の1行化と200文字上限で扱う。"""
     session = SessionState(session_id="ses_received", cwd=".", engine="opencode")
     async with OpenCodeManager() as backend:
         await backend.process_event(

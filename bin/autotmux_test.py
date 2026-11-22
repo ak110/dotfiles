@@ -1,5 +1,3 @@
-"""bin/autotmuxのサブコマンド挙動を検証する。"""
-
 import pathlib
 import subprocess
 

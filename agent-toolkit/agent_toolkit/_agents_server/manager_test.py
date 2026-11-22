@@ -92,7 +92,6 @@ async def test_concurrent_close_shares_failure_and_retries_once(monkeypatch: pyt
 
 
 def test_server_stop_joins_worker_threads(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """サーバー終了の返却時には永続ログのworkerと出力が完了する。"""
     from agent_toolkit._agents_server import logging_config  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -137,7 +136,7 @@ async def test_retention_expiry_releases_backend_once_without_tool_call(
         assert backend.release_calls == [session.session_id]
         assert session.session_id not in manager.sessions
         assert session.session_id in manager.expired_sessions
-        # release本体が送った通知の後に、taskの完了callbackを実行する。
+
         await asyncio.sleep(0)
         assert not manager._resource_release_tasks
         await manager.stop(session.session_id)
@@ -265,7 +264,6 @@ async def test_close_runs_required_cleanup_after_failure(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("blocked", ["claude", "codex", "agy", "opencode", "release"])
 async def test_close_starts_all_backends_before_waiting(blocked: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """1つのbackendか資源解放taskが停止しても、全backendへ停止開始を配送する。"""
     release = asyncio.Event()
     started = {engine: asyncio.Event() for engine in ("claude", "codex", "agy", "opencode")}
     async with server_manager.AgentsServerManager(None) as manager:

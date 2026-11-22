@@ -1,5 +1,3 @@
-"""計画ファイルの作成処理を検証する。"""
-
 import datetime
 import json
 import os
@@ -23,13 +21,10 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 
 def _fix_creation_clock(monkeypatch: pytest.MonkeyPatch, clock: str) -> None:
-    """命名処理を差し替えず、ローカルをJSTとする時計だけを固定する。"""
     instant = datetime.datetime.fromisoformat(clock)
     jst = datetime.timezone(datetime.timedelta(hours=9))
 
     class FixedDatetime(datetime.datetime):
-        """命名時刻とローカルtimezoneを固定する時計。"""
-
         @classmethod
         def now(cls, tz: datetime.tzinfo | None = None) -> typing.Self:
             return cls.fromtimestamp(instant.timestamp(), tz or jst)
@@ -95,7 +90,7 @@ def test_created_date_survives_edit_save_checkout_and_resave(
         return None
 
     monkeypatch.setattr(_locations, "_creation_epoch", unavailable_creation)
-    # 推定だけなら翌月となる日まで編集し、局所記録の優先を検証する。
+
     edited = datetime.datetime(2027, 2, 28, 12).timestamp()
     os.utime(main, (edited, edited))
     portable = f"$(atk config get private_notes)/plans/{saved_month}/{main.name}"
@@ -128,7 +123,6 @@ def test_document_template_rejects_invalid_initial_structure(
     tmp_path: pathlib.Path,
     invalid: str,
 ) -> None:
-    """雛形から記入しても、列数が違う表と起草時の進捗内容行は作成しない。"""
     source = _source(repo, tmp_path)
     content = source.read_text(encoding="utf-8")
     if invalid == "columns":
@@ -146,7 +140,6 @@ def test_document_template_rejects_invalid_initial_structure(
 
 
 def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """構造の判定に使うGitリポジトリを準備する。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -156,19 +149,16 @@ def _make_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathl
 
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """構造の判定に使うGitリポジトリを準備する。"""
     return _make_repo(tmp_path, monkeypatch)
 
 
 def _source(repo: pathlib.Path, directory: pathlib.Path) -> pathlib.Path:
-    """現行の構成で計画の基準を満たす入力本文を保存する。"""
     main_source = directory / "main.md"
     main_source.write_text(_plan_fixture.request_plan(repo=repo.resolve()), encoding="utf-8")
     return main_source
 
 
 def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pathlib.Path) -> None:
-    """呼び出し側が渡したstemを変更せず通常計画へ使う。"""
     source = _source(repo, tmp_path)
 
     (path,) = create_plan_files.create_plan_files(source, "13-0217_計画保存先移行", home=tmp_path / "home", work_dir=repo)
@@ -181,7 +171,6 @@ def test_creates_single_file_with_supplied_stem(repo: pathlib.Path, tmp_path: pa
 def test_wrong_execution_worktree_guides_recovery_without_changing_source(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """対象と別の場所からの作成・確認は実行場所を案内し、その指定だけで同じ本文を作成できる。"""
     source = _source(repo, tmp_path)
     before = source.read_bytes()
     other = tmp_path / "other"
@@ -202,7 +191,6 @@ def test_wrong_execution_worktree_guides_recovery_without_changing_source(
 def test_prior_plan_repository_mismatch_names_values_and_recovery(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """先行計画だけ対象が異なる場合も、両値と入力・宣言の修正先を示す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
     source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
@@ -265,7 +253,6 @@ def test_cli_accepts_bom_source_and_preserves_bytes(
 def test_prior_plan_repository_accepts_equivalent_path_notation(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """先行計画の対象リポジトリは、区切り文字や末尾の区切りが違っても同じ場所なら一致とする。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
     source = _source(repo, tmp_path)
     prior = tmp_path / "prior.md"
@@ -294,19 +281,16 @@ def test_prior_plan_repository_accepts_equivalent_path_notation(
 
 
 def test_named_plan_name_adds_utc_timestamp_to_bare_name() -> None:
-    """名称だけの入力へ作成処理がUTCの日付と時刻を付ける。"""
     now = datetime.datetime(2026, 9, 18, 12, 34, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
 
     assert create_plan_files.named_plan_name("計画", now=now) == "18-0334_計画"
 
 
 def test_named_plan_name_keeps_complete_stem() -> None:
-    """日時接頭辞を持つ完全stemは変更しない。"""
     assert create_plan_files.named_plan_name("18-0334_計画") == "18-0334_計画"
 
 
 def test_named_plan_name_rejects_naive_clock() -> None:
-    """日時を生成する時計にはタイムゾーンを要求する。"""
     with pytest.raises(ValueError, match="タイムゾーン"):
         create_plan_files.named_plan_name("計画", now=datetime.datetime(2026, 9, 18, 3, 34))
 
@@ -317,7 +301,6 @@ def test_cli_accepts_bare_name(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CLIの--nameへ名称だけを渡して日時付きファイルを作成できる。"""
     source = _source(repo, tmp_path)
     _fix_creation_clock(monkeypatch, "2026-09-18T23:34:00+09:00")
 
@@ -345,7 +328,6 @@ def test_cli_accepts_bare_name(
 def test_cli_replaces_stem_placeholder_in_adjunct_reference(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """CLIのsource別名で作成し、付属ファイル参照のstemプレースホルダーを確定したstemへ置換する。"""
     source = _source(repo, tmp_path)
     placeholder = f"{create_plan_files.PLAN_ADJUNCT_REFERENCE_PREFIX}{create_plan_files.PLAN_STEM_PLACEHOLDER}.exec-review.tsv"
     content = source.read_text(encoding="utf-8")
@@ -368,7 +350,6 @@ def test_cli_replaces_stem_placeholder_in_adjunct_reference(
 
 
 def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
-    """process-wiのstemを実行環境のローカル時刻と2桁レーン番号から生成する。"""
     now = datetime.datetime(2026, 9, 14, 23, 5, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
 
     expected = time.strftime("%d-%H%M", time.localtime(now.timestamp()))
@@ -377,7 +358,6 @@ def test_process_lane_plan_name_uses_local_time_and_two_digit_lane() -> None:
 
 @pytest.mark.parametrize("lane", ["lane-2", "lane-002", "02", "lane-aa"])
 def test_process_lane_plan_name_rejects_noncanonical_identifier(lane: str) -> None:
-    """2桁の正規レーン識別子以外を拒否する。"""
     with pytest.raises(ValueError, match="lane-NN"):
         create_plan_files.process_lane_plan_name(lane)
 
@@ -385,7 +365,6 @@ def test_process_lane_plan_name_rejects_noncanonical_identifier(lane: str) -> No
 def test_cli_creates_process_lane_plan_with_generated_name(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """CLIのlane入力では呼び出し側から自由名を受け取らない。"""
     source = _source(repo, tmp_path)
     _fix_creation_clock(monkeypatch, "2026-09-14T23:05:00+09:00")
 
@@ -413,7 +392,6 @@ def test_cli_creates_process_lane_plan_with_generated_name(
 def test_adds_hex_suffix_only_after_collision(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """第一候補が衝突した場合だけ4桁16進suffixを付ける。"""
     plans = tmp_path / "home/.claude/plans"
     plans.mkdir(parents=True)
     (plans / "13-0217_計画.md").write_text("既存\n", encoding="utf-8")
@@ -429,7 +407,6 @@ def test_adds_hex_suffix_only_after_collision(
 def test_cli_rejects_saved_plan_formats(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], saved_format: str
 ) -> None:
-    """保存済みの計画の形式（8節形式、旧単一ファイル形式）の原稿からは新しい計画を作成しない。"""
     source = tmp_path / "saved-format.md"
     content = (
         _plan_fixture.eight_section_plan(repo=repo.resolve())
@@ -460,7 +437,6 @@ def test_cli_creates_bug_plan_as_single_file(
     related_wi: tuple[tuple[str, str], ...],
     cause: bool,
 ) -> None:
-    """バグ対応の計画は、関連WIの原因分析に従う場合も計画の`## 原因分析`に書く場合も1ファイルで作成する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "absent-notes"))
     source = tmp_path / "bug.md"
     source.write_text(
@@ -481,7 +457,6 @@ def test_cli_creates_bug_plan_as_single_file(
 def test_cli_rejects_bug_plan_without_cause_analysis_and_related_wi(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """関連WIが無いバグ対応の計画は、`## 原因分析`が無ければ作成しない。"""
     source = tmp_path / "no-wi.md"
     source.write_text(_plan_fixture.request_plan(repo=repo.resolve(), work_type="バグ対応"), encoding="utf-8")
 
@@ -504,7 +479,6 @@ def test_cli_rejects_bug_plan_without_cause_analysis_and_related_wi(
 
 
 def test_cli_rejects_removed_bugs_source() -> None:
-    """廃止した計画ファイル（バグ）の入力をCLIが受理しない。"""
     with pytest.raises(SystemExit) as raised:
         create_plan_files.main(["--main-source", "main.md", "--bugs-source", "bug.md", "--name", "13-0217_計画"])
 
@@ -512,7 +486,6 @@ def test_cli_rejects_removed_bugs_source() -> None:
 
 
 def test_cli_rejects_removed_detail_source() -> None:
-    """廃止したdetail入力をCLIが受理しない。"""
     with pytest.raises(SystemExit) as raised:
         create_plan_files.main(["--detail-source", "detail.md", "--name", "13-0217_計画"])
 
@@ -561,11 +534,6 @@ def test_public_plan_create_owner_reaches_listing_and_save_advisor(
     environment: dict[str, str],
     owner: str | None,
 ) -> None:
-    """公開の`atk run-script plan-create`で作った計画の所有会話を、公開の一覧と保存確認フックまで対応付ける。
-
-    作成処理が所有記録を書かなくなると、作成した会話の保存案内から計画が漏れる。
-    プロセス専用のrootは会話へ対応しないため、どの会話の保存案内にも現れない。
-    """
     for name in _CONVERSATION_ENVS:
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():

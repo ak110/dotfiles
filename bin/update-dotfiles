@@ -15,6 +15,23 @@ done
 if [[ "${1:-}" != "logs" && "${1:-}" != job && "$help_requested" == 0 && "${AGENT_TOOLKIT_PROCESS_LOOP_SESSION:-}" != 1 ]]; then
     source "${SCRIPT_DIR}/libexec/update_bootstrap.sh" "$UV"
 fi
+prune_ready="${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/update-prune-ready-$$-$RANDOM"
+unset UPDATE_DOTFILES_BOOTSTRAP_ACK
+finish_bootstrap_handoff() {
+    if [[ -n "${UPDATE_DOTFILES_BOOTSTRAP_ACK:-}" ]]; then
+        if [[ -e "$UPDATE_DOTFILES_BOOTSTRAP_ACK" ]]; then
+            rm -f -- "$UPDATE_DOTFILES_BOOTSTRAP_ACK"
+        else
+            report_deferred_bootstrap
+        fi
+        unset UPDATE_DOTFILES_BOOTSTRAP_ACK
+    fi
+}
+begin_bootstrap_handoff() {
+    if [[ "${UPDATE_DOTFILES_BOOTSTRAP_FAILURES:-}" == *$'\t''saved'* ]]; then
+        export UPDATE_DOTFILES_BOOTSTRAP_ACK="$prune_ready.bootstrap"
+    fi
+}
 if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
     case " ${*} " in
     *" --help "* | *" -h "* | " logs ") ;;
@@ -24,7 +41,12 @@ if [[ "${1:-}" == "job" || -n "${CODEX_THREAD_ID:-}" ]]; then
         fi
         # このblockは更新中のランチャー置換前に解析される。
         {
-            "$python_path" "${SCRIPT_DIR}/libexec/update_dotfiles_job.py" "$@" && exit 0 || exit $?
+            begin_bootstrap_handoff
+            trap 'finish_bootstrap_handoff; exit 130' INT
+            job_exit=0
+            "$python_path" "${SCRIPT_DIR}/libexec/update_dotfiles_job.py" "$@" || job_exit=$?
+            finish_bootstrap_handoff
+            exit "$job_exit"
         }
         ;;
     esac
@@ -33,7 +55,6 @@ entry=("$UV" run --no-project --script "${SCRIPT_DIR}/libexec/update_dotfiles.py
 run_exit=0
 # 本体が中断せず終えた印。続行した失敗だけの終了（終了コード1）でも整理と事前構築へ進める。
 # 印は本体が作成し、整理を実行するpost-applyが回収する。外部コマンドに依存しない。
-prune_ready="${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/update-prune-ready-$$-$RANDOM"
 # 更新中にランチャーが置換されても、解析済みの終了処理を実行する。
 {
     if [[ "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
@@ -43,12 +64,14 @@ prune_ready="${XDG_STATE_HOME:-$HOME/.local/state}/agent-toolkit/update-prune-re
             # process-loopはbootstrapを省く。中継用のuvは本体と同じキャッシュをロックしない。
             entry=("$UV" run --no-cache --quiet --no-project --script "${SCRIPT_DIR}/libexec/update_script_run.py")
         fi
-        trap 'exit 130' INT
+        trap 'finish_bootstrap_handoff; exit 130' INT
         printf '%s\n' '更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。' >&2
     fi
     # 前回の更新が始めたuvの全消去は最長600秒キャッシュを排他するため、uvの既定の待機上限（300秒）より長く待つ。
+    begin_bootstrap_handoff
     DOTFILES_PRUNE_OUTSIDE_UV=1 DOTFILES_PRUNE_READY_FILE="$prune_ready" UV_LOCK_TIMEOUT="${UV_LOCK_TIMEOUT:-900}" \
         "${entry[@]}" "$@" || run_exit=$?
+    finish_bootstrap_handoff
     if [[ ("$run_exit" == 0 || -e "$prune_ready") && "$help_requested" == 0 && "${1:-}" != "logs" ]]; then
         prune_exit=0
         DOTFILES_PRUNE_READY_FILE="$prune_ready" "$HOME/.local/bin/dotfiles-post-apply" --prune-only-if-minimal "$@" ||

@@ -1,5 +1,3 @@
-"""PS側の停止が、消滅とPID再利用を区別して更新対象だけを扱うことを検証する。"""
-
 import json
 import pathlib
 import shutil
@@ -16,7 +14,6 @@ _POWERSHELL = shutil.which("powershell.exe") or shutil.which("pwsh")
 def test_media_stop_uses_current_generation_and_accepts_disappearance(
     tmp_path: pathlib.Path, mode: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """同じ個体だけを停止し、一覧から消えた対象は成功、別世代は更新見送りにする。"""
     script = tmp_path / "stop.ps1"
     helper = pathlib.Path(__file__).with_name("locking_process.ps1")
     script.write_text(

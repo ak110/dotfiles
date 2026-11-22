@@ -31,14 +31,11 @@ OWNER_LOST_NEXT_ACTION = (
 
 @dataclasses.dataclass(frozen=True)
 class OwnerLost:
-    """所有サーバーを失った実行中のsessionの記録プロセス、記録時のルートと、そのルートに残る通知の件数。"""
-
     session_id: str
     resolution: session_registry.SessionResolution
     stranded_notice_count: int
 
     def diagnostics(self) -> dict[str, Any]:
-        """照会の応答へ加える診断項目を返す。"""
         resolution = self.resolution
         processes: list[dict[str, Any]] = []
         if resolution.owner_process is not None:
@@ -65,7 +62,6 @@ class OwnerLost:
         }
 
     def message(self) -> str:
-        """エラー応答の本文を返す。診断項目は1行のJSONで添える。"""
         return (
             f"error.recovery=owner_lost: {self.session_id}; the owning agents_server no longer publishes this session, "
             "and the delegate CLI running the turn is still alive; "
@@ -80,7 +76,6 @@ def diagnose(
     own_root_session_id: str | None,
     state_root: pathlib.Path | None = None,
 ) -> OwnerLost | None:
-    """`resolution`が所有サーバーを失った実行中を示す場合に診断を返し、それ以外は`None`を返す。"""
     if resolution.state is not session_registry.Resolution.RUNNING or not resolution.live_executors:
         return None
     ownership = session_registry.running_ownership(
@@ -92,7 +87,6 @@ def diagnose(
 
 
 def count_stranded_notices(session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None = None) -> int:
-    """所有者のいない他のルートに残る、同じsessionの上り通知の件数を返す。"""
     count = 0
     for root_session_id in _result_roots(session_id, own_root_session_id, state_root):
         directory = shared_layout.notices_directory(root_session_id, state_root)
@@ -112,10 +106,6 @@ def take_stranded_notices(
     stash_directory: pathlib.Path | None = None,
     roots: list[str] | None = None,
 ) -> list[dict[str, str]]:
-    """所有者のいない他のルートから同じsessionの上り通知を回収し、既存の通知と同じ公開形で返す。回収した原本は削除する。
-
-    `roots`は呼び出し側が同じ巡回で列挙済みの所有者のいないルートで、省略時は自ら列挙する。
-    """
     notices: list[dict[str, str]] = []
     for root_session_id, owner_file in _notice_owners(session_id, own_root_session_id, state_root, recipient_session_id, roots):
         stash = None if stash_directory is None else stash_directory / root_session_id
@@ -149,7 +139,6 @@ def _notice_owners(
 def read_stranded_notices(
     session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None, *, recipient_session_id: str | None
 ) -> list[notice_inbox.PendingNotice]:
-    """旧ルートの通知も、応答確定までは原本を残す。"""
     notices = []
     for root, owner in _notice_owners(session_id, own_root_session_id, state_root, recipient_session_id):
         notices.extend(
@@ -161,7 +150,6 @@ def read_stranded_notices(
 
 
 def has_stranded_result(session_id: str, own_root_session_id: str | None, state_root: pathlib.Path | None = None) -> bool:
-    """所有者のいない他のルートに、同じsessionの未回収の終了時の結果が残るかを返す。"""
     return any(
         retained_results.read_retained_result(root_session_id, session_id, state_root) is not None
         for root_session_id in _result_roots(session_id, own_root_session_id, state_root)
@@ -177,7 +165,6 @@ def take_stranded_result(
     stash_path: pathlib.Path | None = None,
     roots: list[str] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者のいない他のルートに残る同じsessionの終了時の結果を、記録された所有者として一度だけ回収する。"""
     roots = _result_roots(session_id, own_root_session_id, state_root, roots=roots)
     for root_session_id in roots:
         payload = retained_results.read_retained_result(root_session_id, session_id, state_root)
@@ -204,7 +191,6 @@ def _result_roots(
     *,
     roots: list[str] | None = None,
 ) -> list[str]:
-    """同じsessionの登録先を優先し、旧形式では所有者のいないルートも調べる。"""
     recorded = session_registry.resolve(session_id, state_root=state_root).owner_root_session_id
     candidates = roots if roots is not None else status_reader.ownerless_root_session_ids(own_root_session_id, state_root)
     return list(dict.fromkeys(root for root in (recorded, *candidates) if root is not None and root != own_root_session_id))

@@ -20,7 +20,6 @@ from pytools._internal import sync_report
 
 
 def _scan_git_processes() -> stale_lock.ProcessScan:
-    """対象worktreeのindex準備後も存続するGitプロセスを探す。"""
     git_dir = update_dotfiles_process.git_value("rev-parse", "--absolute-git-dir")
     if git_dir is None:
         return stale_lock.ProcessScan((), True)
@@ -32,7 +31,6 @@ def _scan_git_processes() -> stale_lock.ProcessScan:
 
 
 def _git_state_operation() -> str | bool:
-    """進行中のmerge・rebaseなどの操作状態を調べる。操作名、判定不能は`True`、無ければ`False`を返す。"""
     for name in ("MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD", "sequencer"):
         path = update_dotfiles_process.git_value("rev-parse", "--git-path", name)
         if path is None:
@@ -46,7 +44,6 @@ def _git_state_operation() -> str | bool:
 
 
 def _git_operation_in_progress() -> str | bool:
-    """対象worktreeの操作状態と、index準備後も存続するGitプロセスを調べる。"""
     state = _git_state_operation()
     if state:
         return state
@@ -104,7 +101,6 @@ def _skip_git_update(reason: str, operation: str | bool = False, *, action: str 
 
 @contextlib.contextmanager
 def _git_update_signals() -> Generator[None]:
-    """サービス停止と端末切断を、Git子とindexの回収を実行する中断へ変換する。"""
 
     def interrupt(signum: int, _frame: FrameType | None) -> None:
         raise KeyboardInterrupt(f"Git更新をシグナル{signum}で中断しました")
@@ -170,7 +166,6 @@ def _locked_git_index(index: pathlib.Path, *, wait_seconds: float) -> Generator[
 
 
 def _git_path_exists(name: str) -> bool:
-    """Git管理パスを作業ツリー基準へ解決し、実在を返す。"""
     path = update_dotfiles_process.git_value("rev-parse", "--git-path", name)
     if path is None:
         return False
@@ -181,7 +176,6 @@ def _git_path_exists(name: str) -> bool:
 
 
 def _discard_mise_lock_changes() -> bool:
-    """ルート`mise.lock`のindexと作業ツリーの差分をHEADの内容へ戻す。差分が無ければ何もしない。"""
     status = update_dotfiles_process.git_value("status", "--porcelain=v1", "--", update_dotfiles_runtime.MISE_LOCK)
     if status is None:
         return False

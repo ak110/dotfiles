@@ -1,5 +1,3 @@
-"""レーン資源の作成・再利用と所有の移管。"""
-
 from __future__ import annotations
 
 import argparse
@@ -19,9 +17,7 @@ from agent_toolkit._git import command as git_command
 
 
 def _branch_scope(repo: pathlib.Path, base_branch: str) -> str | None:
-    """系統を登録したrepositoryでは、統合先ごとに固定作成先を分ける識別を返す。未登録はNoneで従来の配置を保つ。"""
     try:
-        # 系統を登録したrepositoryが無ければ、Gitでrepositoryを解決せずに従来の配置へ倒す。
         settings = config_settings.repository_branch_settings()
         location = config_repositories.locate(repo) if settings else None
         registered = location is not None and location.repo_id in settings
@@ -31,14 +27,12 @@ def _branch_scope(repo: pathlib.Path, base_branch: str) -> str | None:
 
 
 def release_fixed(worktree: pathlib.Path, session_id: str) -> None:
-    """固定作成先を保持する別sessionの登録を、既存の回収条件を満たす場合だけ回収する。"""
     root = state_paths.state_dir() / "lanes"
     for path in sorted(root.glob("*/lane-*.json")) if root.exists() else []:
         owner = path.parent.name
         try:
             record = json.loads(path.read_text(encoding="utf-8"))
         except OSError, UnicodeError, ValueError:
-            # 読めない登録は所有を判定できない。作成先の実体の有無で上書きを防ぐ。
             continue
         if (
             owner == session_id
@@ -92,7 +86,6 @@ def prepare(record: dict[str, typing.Any], path: pathlib.Path) -> None:
     if _lane_records.common(worktree) != record["common_dir"]:
         raise ValueError("作成先のGit共通ディレクトリが所有記録と異なる。途中資源を保持した")
     if record.get("project_hook") and registered and registered != branch:
-        # hookのbranchと成果を残し、そのHEADからレーンの専用branchへ接続する。
         _lane_records.git(worktree, "-c", "submodule.recurse=false", "switch", "-c", branch)
         registered = _lane_records.worktrees(repo).get(str(worktree))
     if registered == "":
@@ -245,7 +238,6 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             "base_branch": args.base_branch,
             "branch": branch,
             "worktree": str(worktree),
-            # 旧配置の登録だけが個別managed-tempを持ち、回収時に同じ値を使う。
             "managed_temp": None,
             "selection_file": str(args.selection_file.resolve()),
             "commands": commands,
@@ -264,7 +256,6 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
 
 
 def refresh_finalized_lane(record: dict[str, typing.Any]) -> None:
-    """再開対象の完了済み資源だけを、成果を失わないfast-forwardで最新基点へ進める。"""
     integration = record.get("integration", {})
     if integration.get("phase") != "finalized" or record["selection"]["integrated"]:
         return

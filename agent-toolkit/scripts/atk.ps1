@@ -1,6 +1,5 @@
 ﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-# uvの終了コードを呼び出し元へ返す。
 $PSNativeCommandUseErrorActionPreference = $false
 
 $root = Split-Path -Parent $PSScriptRoot

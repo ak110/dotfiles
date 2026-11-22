@@ -1,5 +1,3 @@
-"""全工程の依存と有限資源に基づく静的な所要見込みを計算する。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -14,8 +12,6 @@ _PHASES = {"選定", "準備", "実装", "レビュー", "検証", "統合", "�
 
 @dataclasses.dataclass(frozen=True)
 class Forecast:
-    """数値の見込みと、その成立を妨げる不足を分けて保持する。"""
-
     total_seconds: float | None
     normal_seconds: float | None
     issues: list[str]
@@ -63,7 +59,6 @@ def _keys(value: object, required: set[str], optional: set[str] | None = None) -
 
 
 def structure_errors(plan: object) -> list[str]:
-    """型・数値・識別子・依存の不正を返す。意味上の不足はforecastが扱う。"""
     if not _keys(plan, {"並列数", "工程"}, {"巨大WI"}):
         return ["全工程の見込み: 並列数・工程が必要で、未知の項目は指定できない"]
     data = typing.cast(dict[str, typing.Any], plan)
@@ -229,7 +224,7 @@ def forecast(
     if any(node.seconds is None for node in nodes):
         return Forecast(None, None, issues, excluded, work, {}, None)
     durations = {node.id: typing.cast(float, node.seconds) for node in nodes}
-    # 旧保存記録は当時の容量で読めるようにし、新規入力の容量とは区別する。
+
     model_capacity = data["並列数"]["モデル同時数"]
     if machine_limit is not None:
         model_capacity = min(model_capacity, machine_limit)

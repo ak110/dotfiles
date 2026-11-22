@@ -113,7 +113,7 @@ def test_file_holders_preserves_api_state_and_closes_handle(monkeypatch: pytest.
             return ctypes.c_int32(0xC0000022 if outcome == "query-denied" else 0x80000005).value
         pids = [os.getpid(), foreign_pid] if outcome == "holder" else []
         ctypes.c_uint32.from_buffer(buffer).value = len(pids)
-        # HANDLE配列はpointer境界に配置される（32bitでoffset=4、64bitでoffset=8）。
+
         offset = ctypes.sizeof(ctypes.c_void_p)
         for index, pid in enumerate(pids):
             ctypes.c_void_p.from_buffer(buffer, offset + index * ctypes.sizeof(ctypes.c_void_p)).value = pid
@@ -181,7 +181,6 @@ def test_pytest_cleanup_preserves_failure_and_reports_cause_path(
     failure_stage: str,
     diagnostic_failure: bool,
 ) -> None:
-    """pytestの登録済みcleanupを通し、原因鎖のパスだけの照会と元例外の伝播を確認する。"""
     target = tmp_path / "locked"
     original = RuntimeError("元の回収失敗")
     if failure_stage == "delete":

@@ -65,7 +65,7 @@ async def test_generation_move_keeps_background_wait(
         return await getattr(broker, operation)(**arguments)
 
     def boundary(_session, client):
-        # 同じ世代で準備中の更新が無い間のcoordinator.boundaryは記録だけでpauseしない。
+
         clients.append(client)
 
     monkeypatch.setattr(service_rpc, "request", rpc)
@@ -83,12 +83,12 @@ async def test_generation_move_keeps_background_wait(
                 while not (session.awaiting_auto_resume and session.cli_turn_state == "idle"):
                     await asyncio.sleep(0)
                 assert set(session.live_tasks) == {"bg-1"}
-                # service_coordinator._move の順序: export → pause → detach → 所有taskの終了待ち → snapshot
+
                 auxiliary = await source.export_service_state(session.session_id)
                 client = clients[0]
                 client.pause()
                 descriptor = await client.detach()
-                # バックグラウンドタスクの進捗イベントで旧世代のevents待ちが戻る（無ければ30秒で戻る）。
+
                 await messages.put(_state("idle"))
                 await asyncio.gather(*tuple(source._tasks))
                 held_after_pause = session.awaiting_auto_resume

@@ -1,5 +1,3 @@
-"""作業ツリーを使う担当・外部プロセスと未保存変更の判定。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -24,21 +22,15 @@ _RELEASE_WAIT_SECONDS = 30.0
 
 @dataclasses.dataclass(frozen=True)
 class RunningSession:
-    """作業ツリーを使う稼働中の担当。統合の稼働判定・診断と回収の使用判定が同じ収集結果を使う。"""
-
     session_id: str
     label: str
     cwd: str
     worktree: pathlib.Path
     launch_kind: str
-    # 起動本文が`task`の見出しで始まる場合だけ、その役割文書の絶対パスを持つ。
+
     task_document: pathlib.Path | None
 
     def writes_worktree(self) -> bool:
-        """統合の稼働判定で書込主体として数えるかを返す。
-
-        役割文書を特定できない起動と、宣言を読めない役割文書は、書き込む担当として数える。
-        """
         if self.launch_kind == "explore":
             return False
         if self.task_document is None:
@@ -47,7 +39,6 @@ class RunningSession:
         return isinstance(declaration, str) or declaration.writes_worktree
 
     def describe(self) -> str:
-        """不足担当の診断へ示す1件分の識別情報を返す。"""
         document = f", 役割文書={self.task_document}" if self.task_document is not None else ""
         return (
             f"session_id={self.session_id}, label={self.label or '-'}{document}, cwd={self.cwd}, 所属worktree={self.worktree}"
@@ -69,12 +60,6 @@ def unreadable_registration_message(path: pathlib.Path) -> str:
 
 
 def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
-    """session登録簿の解決結果から、その作業ツリーへ所属する稼働中の担当を全件返す。
-
-    終了の判定は`session_registry.resolve`に従い、所有側が終了を公開せずに終了して実行プロセスも
-    存在しない記録は終了した担当として扱う。解決できない登録は所属を判定できず、未確認の担当を見逃さないよう
-    `ValueError`で止める。対象外のworktreeに属すると判定できる登録は除かれる。新しいworktreeの作成は本関数を呼ばない。
-    """
     state_root = state_paths.state_dir()
     directory = session_launchers.registry_directory(state_root)
     if not directory.exists():
@@ -83,7 +68,7 @@ def running_sessions(worktree: pathlib.Path) -> list[RunningSession]:
     resolved = git_worktrees.resolve_worktrees(entries)
     target = git_worktrees.owning_resolved_worktree(worktree, resolved)
     running: list[RunningSession] = []
-    # 実行中と解決し得るのは、保留中の記録と再開予約を持つ記録だけである。
+
     for path in _registered_candidates(
         directory, state_root, resolved, target, include_unreadable=True, relevant=lambda entry: entry.pending or entry.claimed
     ):
@@ -121,12 +106,6 @@ def _registered_candidates(
     include_unreadable: bool,
     relevant: Callable[[registry_index.Entry], bool],
 ) -> list[pathlib.Path]:
-    """登録簿のうち、`relevant`を満たし、記録された`cwd`が`target`に属するレコードのパスを名前順に返す。
-
-    登録簿の索引の派生値で候補を限定し、呼出側は残ったレコードだけを`resolve`で解決し直す。
-    同じ`cwd`の所属は1回だけ判定する。`include_unreadable`が真なら、解決できないレコードも残す。
-    識別子の形式に合わない名前は、`resolve`の拒否を呼出側へ伝えるため常に残す。
-    """
     owners: dict[str, git_worktrees.Worktree | None] = {}
     candidates: list[pathlib.Path] = []
     for name, entry in sorted(registry_index.entries(state_root).items()):
@@ -143,7 +122,6 @@ def _registered_candidates(
 
 
 def session_activity(worktree: pathlib.Path) -> str | None:
-    """その作業ツリーを使う担当が全て終了したかを判定し、稼働中なら最初の担当を理由として返す。"""
     running = running_sessions(worktree)
     return f"担当の終了を確認できない: {running[0].session_id}" if running else None
 
@@ -166,7 +144,6 @@ def caller_chain() -> frozenset[str]:
 
 
 def unowned_writers(trees: tuple[pathlib.Path, ...], excluded: frozenset[str]) -> list[RunningSession]:
-    """両作業ツリーの稼働中の担当から、除外集合に無い書込主体を全件返す。"""
     return [
         session
         for tree in trees
@@ -177,7 +154,7 @@ def unowned_writers(trees: tuple[pathlib.Path, ...], excluded: frozenset[str]) -
 
 def process_activity(worktree: pathlib.Path) -> str | None:
     entries = git_worktrees.list_worktrees(worktree, timeout=_lane_records.TIMEOUT)
-    # 登録rootの解決はこの走査の中だけで共有する。次の走査は登録とプロセスを取り直す。
+
     resolved = git_worktrees.resolve_worktrees(entries)
     target = git_worktrees.owning_resolved_worktree(worktree, resolved)
     username = psutil.Process().username()
@@ -205,7 +182,6 @@ def process_activity(worktree: pathlib.Path) -> str | None:
 
 
 def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> str | None:
-    """所有側へ終了資源の解放を要求してから、担当と外部プロセスの使用を再判定する。"""
     state_root = state_paths.state_dir()
     directory = session_launchers.registry_directory(state_root)
     deadline: float | None = None
@@ -213,7 +189,7 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
     entries = git_worktrees.list_worktrees(worktree, timeout=_lane_records.TIMEOUT)
     resolved = git_worktrees.resolve_worktrees(entries)
     target = git_worktrees.owning_resolved_worktree(worktree, resolved)
-    # 解放済みの記録は、再開予約が生存しない限り実行中にも終了にも解決しない。
+
     for path in _registered_candidates(
         directory,
         state_root,
@@ -242,7 +218,7 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
             if reason:
                 return f"session_id={path.stem}: {reason}。{instruction}"
             released.append(path.stem)
-    # 所有側の応答は要求対象の終了まで検収する。応答後の独立した使用は、その時点の保持理由にする。
+
     activity = session_activity(worktree) or process_activity(worktree)
     if activity and released:
         identifiers = ",".join(released)
@@ -251,8 +227,7 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
 
 
 def has_unignored_changes(worktree: pathlib.Path) -> bool:
-    """Gitの保護対象だけを返し、無視された生成物は固有撤去へ渡す。"""
-    # indexの列挙は作業木を読まない。ignore配下でも追跡済みファイルとその親は必ず保護する。
+
     tracked: set[str] = set()
     for name in _lane_records.git(worktree, "ls-files", "--cached", "-z").split("\0"):
         if name:

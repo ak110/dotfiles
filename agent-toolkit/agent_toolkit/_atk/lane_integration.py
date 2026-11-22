@@ -1,5 +1,3 @@
-"""レーンのGit統合と最終化の再開可能な工程。"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,7 +46,6 @@ def _update_target(
 
 
 def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
-    """所有登録からGit統合と最終化を再開し、全操作の成功後に選定を統合済みにする。"""
     for path in (args.record, args.manifest, args.target_worktree):
         if not path.is_absolute():
             raise ValueError("record・manifest・target-worktreeは絶対パスで指定する")
@@ -103,7 +100,6 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             and not _lane_records.selection_state(record)["integrated"]
             and (state["input_digest"] != digest or state.get("selection_integrated", True))
         ):
-            # 観測だけの再開ではHEADとmanifestが同じでも、選定の未統合を処置する必要がある。
             record["previous_integration"] = state
             state = None
         if state is not None and (
@@ -113,7 +109,7 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             if state.get("new_head"):
                 _lane_records.git(worktree, "merge-base", "--is-ancestor", state["new_head"], reviewed)
             _lane_integration_input.check_legacy_mapping(state, manifest, worktree)
-            # 旧方式の証拠は退避し、既に保存したGit成果を新方式の起点にする。
+
             record["previous_integration"] = state
             state = None
         if state is not None and args.restart_review:
@@ -186,7 +182,6 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
         if state["phase"] == "git-integrated":
             _lane_records.git(target, "merge-base", "--is-ancestor", state["integrated_head"], "HEAD")
             if "lane_started_at" in manifest and "finalization_values" not in state:
-                # 再開と--amend-finalizationでは保存した確定値を使い、全消費先へ同じ値を渡す。
                 state["finalization_values"] = _lane_integration_input.finalization_values(
                     state, _lane_integration_input.lane_started_at(manifest["lane_started_at"])
                 )
@@ -207,7 +202,6 @@ def integrate(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any
             processed = _lane_integration_input.processed_wis(manifest)
             selected = pathlib.Path(record["selection_file"])
             if not selected.exists() and "selection-mark" not in state["completed"]:
-                # 選定原本は失効した。統合済みの事実を所有登録の選定情報へ記録して回収判定へ渡す。
                 state["completed"].append("selection-mark")
                 state.setdefault("results", {})["selection-mark"] = {"skipped": "選定原本が失効したため所有登録へ記録した"}
             # 選定YAMLは同じ所有sessionの全レーンが共有するため、更新だけを所有session単位の排他で直列にする。

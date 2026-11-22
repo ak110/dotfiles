@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_delegation_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -23,7 +21,6 @@ def test_collect_reports_unresolved_delegation(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """agents_server起動の出力から識別子を得られない場合は未確認範囲を返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -82,7 +79,6 @@ def test_collect_ignores_existing_session_operations_as_delegation_sources(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """wait等の既存session操作と外側実行セルの文字列は委譲発見元にしない。"""
     missing_session_id = "99999999-9999-4999-8999-999999999999"
     transcript = _write_transcript(
         tmp_path,
@@ -294,7 +290,6 @@ def test_stats_resolves_runtime_unspecified_thread_once(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実行系未指定の識別子を実体から解決し、実行系付きの再出現と重複させない。"""
     thread_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     codex_home = tmp_path / "codex"
     _write_rollout(

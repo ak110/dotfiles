@@ -35,7 +35,6 @@ except managed_temp.ManagedTempError as error:
 
 
 def _cleanup_entry(directory: pathlib.Path) -> pathlib.Path:
-    """公開CLIを持たない回収APIを、別プロセスから実物のまま呼ぶスクリプトを作成する。"""
     entry = directory / "cleanup_entry.py"
     entry.write_text(_CLEANUP_ENTRY_SOURCE, encoding="utf-8")
     return entry
@@ -95,7 +94,6 @@ def _real_mcp_environment(
     tmp_path_factory: pytest.TempPathFactory,
     host_environ: Callable[[], dict[str, str]],
 ) -> dict[str, str]:
-    """公開ランチャー用のホーム・状態を隔離し、ホストのPythonと取得済みパッケージを使う。"""
     environment = host_environ()
     for name in HOME_ENVIRONMENT_NAMES:
         environment[name] = str(tmp_path / "home")
@@ -111,7 +109,7 @@ def _real_mcp_environment(
     # 隔離HOMEでもテストを動かしているPythonを公開ランチャーから解決し、環境ごとの再取得を避ける。
     python_directory = pathlib.Path(sys.base_prefix) / "bin" if os.name == "posix" else pathlib.Path(sys.base_prefix)
     environment["PATH"] = str(python_directory) + os.pathsep + environment["PATH"]
-    # CIのuv管理Pythonも使用する。内側のuvには実行中のPythonを明示する。
+
     environment.pop("UV_NO_MANAGED_PYTHON", None)
     environment.update(UV_PYTHON=sys.executable, UV_PYTHON_DOWNLOADS="never", UV_LINK_MODE="copy")
     for name in ("PYTHONPATH", "VIRTUAL_ENV", "UV_PROJECT_ENVIRONMENT"):
@@ -155,7 +153,6 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
 
 
 def _stop_mcp_services(state_base: pathlib.Path) -> None:
-    """隔離領域の世代記録とleaseの両方に一致する管理プロセスだけを回収する。"""
     env = dict(os.environ)
     env["LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"] = str(state_base)
     caller = runtime_environment.CallerContext(env, state_base)
@@ -174,7 +171,7 @@ def _stop_mcp_services(state_base: pathlib.Path) -> None:
         identity = entry["process"]
         recorded_pid = int(identity.split(":", 1)[0])
         targets = []
-        # 子の終了後にも残るsupervisorを、PIDの親子関係ではなく既存leaseと世代引数で特定する。
+
         for lease in leases:
             if not pathlib.Path(entry["root"]).is_relative_to(pathlib.Path(lease["path"])):
                 continue

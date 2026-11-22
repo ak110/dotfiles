@@ -22,9 +22,6 @@ from agent_toolkit._common.runtime_identity import distinct_identities
 from cost_metrics import _history, saved_review_tables
 from session_evidence_stats import _parse_cli_timestamp
 
-# 実行レビュー担当の記録だけを選ぶ標識。agents_serverは役割文書の所在を`出所:`の行で最初の入力へ配送する。
-# 委譲元の記録にも同じ管理表の名前が現れるため、名前の一致だけでは帰属させない。
-# 集計期間には役割文書を`share/`から配送していた移行前の記録も含むため、旧所在も標識として残す。
 _ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-review\.subagent\.md")
 # Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
@@ -35,7 +32,6 @@ _LOCATION, _LEVEL, _NO_RESPONSE = 2, 4, 6
 
 
 def _input_texts(entry: dict[str, Any]) -> list[str] | None:
-    """記録の1行から、user役割の入力本文を返す。モデルの出力ならNoneを返す。"""
     message = entry.get("message")
     payload = entry.get("payload")
     content: Any = None
@@ -77,7 +73,6 @@ def _meta(payload: object) -> tuple[str | None, str | None]:
 
 
 def _calls_role_document(payload: dict[str, Any]) -> bool:
-    """最初のツール呼出しが実行レビューの役割文書を参照するかを返す。"""
     if payload["type"] == "local_shell_call":
         action = payload.get("action")
         command = action.get("command") if isinstance(action, dict) else None
@@ -87,7 +82,6 @@ def _calls_role_document(payload: dict[str, Any]) -> bool:
 
 
 def _record_role(path: Path) -> _RecordRole:
-    """配送標識または組み込み委譲の最初のツール呼出しまでを読み、帰属の根拠を得る。"""
     thread = parent = None
     before_output = True
     try:
@@ -123,7 +117,6 @@ def _record_role(path: Path) -> _RecordRole:
 
 
 def _review_records(roots: list[Path]) -> list[Path]:
-    """親の記録も同じ走査範囲から読み、主担当の記録だけを返す。"""
     roles: dict[Path, _RecordRole] = {}
     by_thread: dict[str, set[_RecordRole]] = collections.defaultdict(set)
     for root in roots:
@@ -133,7 +126,7 @@ def _review_records(roots: list[Path]) -> list[Path]:
             role = roles[path] = _record_role(path)
             if role.thread:
                 by_thread[role.thread].add(role)
-    # 親も実行レビューを示す場合、その配下の担当を同じ管理表の主担当にしない。
+
     return [
         path
         for path, role in roles.items()
@@ -147,7 +140,6 @@ def _review_records(roots: list[Path]) -> list[Path]:
 
 
 def _record_identity(path: Path, text: str) -> str:
-    """実行レビュー担当の記録の本文から、観測したモデルを`engine:model/effort`で返す。"""
     runtime = "codex" if "/.codex/" in path.as_posix() or path.name.startswith("rollout-") else "claude"
     entries = []
     for line in split_lines(text):
@@ -162,11 +154,6 @@ def _record_identity(path: Path, text: str) -> str:
 
 
 def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
-    """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。
-
-    配布先にripgrepがあるとは限らないため、外部コマンドを使わずに走査する。
-    全記録を末尾まで読まず、役割の情報から実行レビュー担当に絞って本文を読む。
-    """
     if not names:
         return {}
     models: dict[str, set[str]] = collections.defaultdict(set)
@@ -178,7 +165,7 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
             text = record.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        # 表はこの接尾辞で列挙される。位置から候補長ごとの文字列を表の名前と比べ、部分文字列の一致も保つ。
+
         matched = {
             text[end - length : end]
             for suffix in table_suffix.finditer(text)
@@ -250,7 +237,6 @@ def _period_events(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """公開CLIから期間を受け取り、今回と直前の同じ長さの期間の採否集計をJSON Linesで返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--since", required=True, metavar="DATE", help="今回の期間の開始日時（必須）。時差なしはローカル時刻。")
     parser.add_argument("--until", metavar="DATE", help="今回の期間の終了日時。省略時は実行時刻。")

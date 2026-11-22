@@ -1,5 +1,3 @@
-"""変更領域からRustとブラウザー検査を選ぶ。取得不能時は全体を実行する。"""
-
 import json
 import os
 import subprocess

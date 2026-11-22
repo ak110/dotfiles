@@ -1,5 +1,3 @@
-"""`atk wi`の変更系サブコマンド（状態遷移・削除・編集・追記・依存の更新・commit）と、ファイル名引数の検証のテスト。"""
-
 import contextlib
 import pathlib
 import subprocess
@@ -38,7 +36,6 @@ def test_add_empty_awi_keeps_detailed_rejection(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実質空AWIのCLI拒否案内に判定条件と対象先頭を含める。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     body_file = tmp_path / "body.md"
@@ -61,7 +58,6 @@ def test_remove_rejected_entry_content_conflict_preserves_terminal_result(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """確認後に本文が変わった場合は不採用項目と処理結果を保持する。"""
     notes = _setup_notes(tmp_path)
     rejected = _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)
@@ -177,14 +173,11 @@ def test_set_dependencies_cli_rejects_cycle(
 
 
 class TestAdoptMultiple:
-    """adoptサブコマンド: 複数件指定で単一コミットへまとめる。"""
-
     def test_multiple_files_adopted_single_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """3件のadoptで全件がadopted/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         _write_awi_file(notes, "fb-002.md")
@@ -205,8 +198,6 @@ class TestAdoptMultiple:
 
 
 class TestSkipPush:
-    """adopt・rejectの中間操作でpushを省略し、最後に滞留commitを送信する。"""
-
     @pytest.mark.parametrize("action", ["adopt", "reject"])
     def test_skip_push_commits_without_push_and_reports_result(
         self,
@@ -215,7 +206,6 @@ class TestSkipPush:
         capsys: pytest.CaptureFixture[str],
         action: str,
     ) -> None:
-        """adoptとrejectの--skip-pushはcommitを実行し、遷移結果を返す。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -240,7 +230,6 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--skip-pushを指定しないadoptは従来どおりpushし注記を出力しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -260,7 +249,6 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """skip-push後の通常遷移が先行分を含む滞留commitをまとめてpushする。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         _write_awi_file(notes, "fb-002.md")
@@ -286,7 +274,6 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """キューがcleanでもaheadの滞留commitを`atk wi commit`でpushする。"""
         notes = _setup_notes(tmp_path)
         (notes / "base.txt").write_text("base\n", encoding="utf-8")
         remote = tmp_path / "origin.git"
@@ -316,8 +303,7 @@ class TestSkipPush:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """通常遷移は即時pushし、remote進行後もskip-pushの滞留commitを回復する。"""
-        # 対象リポジトリの一致判定はテスト実行時のカレントディレクトリで決まるため、省略時の解決を無効化する。
+
         monkeypatch.setattr(repo, "detect_current_repo_id", lambda: None)
         first_home = tmp_path / "first"
         first_home.mkdir()
@@ -390,7 +376,6 @@ class TestSkipPush:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """remote未設定の管理リポジトリでは--skip-pushの注記を出力しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -408,7 +393,6 @@ def test_edit_cli_rejects_removed_plan_file_option_without_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """削除済み`--plan-file`を拒否し、保留中の項目を変更しない。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     source = _write_awi_file(notes, filename)
@@ -555,7 +539,6 @@ def test_git_head_rejects_non_oid_with_status_guidance(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """管理repoのHEADがOIDでない場合は、状態を確認するコマンドを持つ入力エラーにする。"""
     monkeypatch.setattr(
         subprocess,
         "run",
@@ -581,7 +564,6 @@ def test_entry_target_repo_failure_guides_to_show_and_report(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """frontmatterの欠陥は`atk wi edit`でも同じ検証で拒否されるため、確認と報告を次の操作として示す。"""
     path = tmp_path / "broken.md"
 
     with pytest.raises(SystemExit) as exc_info:
@@ -601,7 +583,6 @@ def test_transition_with_multiple_target_repos_mismatch_names_recovery(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数の--target-repoのいずれとも一致しない場合は、指定し直す引数と確認するコマンドを示す。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "entry.md")
     _disable_transition_git(monkeypatch)

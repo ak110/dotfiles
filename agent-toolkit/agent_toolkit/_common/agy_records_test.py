@@ -10,7 +10,6 @@ from agent_toolkit._common import agy_records, runtime_identity, session_cost, s
 
 @pytest.mark.parametrize("text_field", ["text", "text_delta"])
 def test_stream_agent_response_preserves_text_and_original(text_field: str) -> None:
-    """実機streamの応答本文も、元recordを保持した会話項目へ変換する。"""
     entry = {
         "event": "step_update",
         "step_update": {
@@ -27,7 +26,6 @@ def test_stream_agent_response_preserves_text_and_original(text_field: str) -> N
 
 
 def test_native_records_preserve_original_and_hook_view(tmp_path: Path) -> None:
-    """物理行を保って日本語本文とJSON文字列の引数をhook用に変換する。"""
     entries = [
         {
             "step_index": 0,
@@ -81,7 +79,6 @@ def test_native_records_preserve_original_and_hook_view(tmp_path: Path) -> None:
 
 
 def test_native_discovery_prefers_complete_record(tmp_path: Path) -> None:
-    """同じ会話の2種類のログを二重計上しない。"""
     logs = tmp_path / "antigravity-cli/brain/conversation/.system_generated/logs"
     logs.mkdir(parents=True)
     shortened = logs / "transcript.jsonl"
@@ -95,7 +92,6 @@ def test_native_discovery_prefers_complete_record(tmp_path: Path) -> None:
 
 
 def test_usage_and_identity_only_use_explicit_observations() -> None:
-    """単価不明の使用量を残し、effortの無いモデルを帰属へ推測しない。"""
     native = {
         "step_index": 1,
         "source": "MODEL",

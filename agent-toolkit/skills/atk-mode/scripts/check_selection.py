@@ -20,7 +20,8 @@ AWIの反映先は`## 反映内容と反映先`から、UWIは質問・判断材
 統合済み項目の選定時の前提は再検査しない。本文の特定、所属リポジトリ、レーン関係と初回配分は保持する。
 旧英字欄名の選定も読み、撤去済みの`書込範囲の理由`は読取時に除く。
 
-初回生成は意味判断YAMLと取得済み候補を`--candidate-file`で受け取り、鮮度と初回配分を生成する。
+初回生成は意味判断YAMLと取得済み候補を`--candidate-file`で受け取り、鮮度・初回配分・段階と先行を生成する。
+行順を組み替えた保存済み選定は`--output`だけを渡すと、段階と先行を求め直す。
 追加mergeは`--merge`・`--lane-map`・`--output`、書込予定の追加は`--extend-write-targets`・`--output`で受ける。
 書込予定の追加は新設先・重なりの記録と規範指定も更新でき、追加パスと同じか配下の非書込要素を除く。
 追加する列の省略は空列とし、記録だけの追記も受理する。既存の順序を保ち同じ値を重ねない。
@@ -101,6 +102,7 @@ from check_selection_lanes import (
     _check_lane_stages,
     _check_resume_plan_lanes,
     _completion_estimate,
+    derive_lane_order,
     missing_overlap_reason,
     process_estimate_warnings,
 )
@@ -137,10 +139,6 @@ _NEXT_RERUN = "直した後に同じコマンドで確かめる"
 
 
 def _guide_rerecord(errors: list[Violation], pairs: dict[tuple[str, str, str], list[str]], action: str) -> list[Violation]:
-    """記録不足の違反へ、記録し直す組と合流・移管に合う記録の書き先を添える。
-
-    汎用の案内どおり最終レーン名で追加YAMLへ記録すると、既存の組の判定と解釈されて同じ拒否が返るため置き換える。
-    """
     reasons = {missing_overlap_reason(*key): values for key, values in pairs.items()}
     guided: list[Violation] = []
     for error in errors:
@@ -162,10 +160,6 @@ def check(
     validate_execution: bool = True,
     merged_wis: frozenset[str] = frozenset(),
 ) -> list[Violation]:
-    """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
-
-    統合済みの項目には、作業ツリーの状態を前提とする項目ごとの判定を適用しない。
-    """
     if selection is None:
         selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -179,8 +173,7 @@ def check(
     if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     integrated_lanes = _selection.integrated_lanes(selection)
-    # 選定時の前提は作業前の作業ツリーで成り立つ条件であり、作業を統合した項目は履歴として扱う。
-    # 統合後の作業ツリーで判定し直すと、レーンの作業による改名・削除・追加で統合済みの項目を拒否する。
+
     pending = [item for item in items if not _is_integrated(item, integrated_lanes)]
     conditions = load_norm_conditions(work_dir) if any(_needs_body_check(item, body_wis) for item in pending) else []
     errors: list[Violation] = []
@@ -294,7 +287,6 @@ def check(
 
 
 def _needs_body_check(decision: dict[str, object], body_wis: set[str] | None) -> bool:
-    """レーンを持ち、本文検査の対象集合に含まれる項目かを返す。"""
     return decision[_selection.LANE_KEY] != _LANE_NONE and (body_wis is None or decision[_selection.WI_KEY] in body_wis)
 
 
@@ -380,7 +372,6 @@ def summary_lines(
 
 
 def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
-    """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
     if value is not None:
         if not value.is_dir():
             raise InputError(f"`--work-dir`がディレクトリではない: {value}", next_action=_FIX_PATHS)
@@ -392,7 +383,6 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 
 
 def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wis: set[str] | None) -> None:
-    """今回の処置済みの印をメモリ上で付け、書き込む内容そのものを検査に渡せるようにする。"""
     items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
     for item in items:
         if item.get(_selection.LANE_KEY, item.get("lane")) in lanes and (
@@ -411,7 +401,6 @@ def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wi
 
 
 def _output_contents(path: pathlib.Path) -> bytes | None:
-    """保存先の現在の本文を、不在と空ファイルを区別して読む。"""
     try:
         return path.read_bytes()
     except FileNotFoundError:
@@ -419,7 +408,6 @@ def _output_contents(path: pathlib.Path) -> bytes | None:
 
 
 def _save_selection(path: pathlib.Path, original: bytes | None, content: str) -> None:
-    """読取後に別の実行が保存先を更新していれば、上書きせず再実行を求める。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(path.name + ".lock")
     # 本体の原子的な置換後も、並行する書込主体は同じロックファイルを使う。
@@ -434,8 +422,7 @@ def _save_selection(path: pathlib.Path, original: bytes | None, content: str) ->
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析し、選定結果を確かめる。"""
-    # 分割したモジュールはスクリプト本体を読み直しても残るため、前回の起動で読んだ作業ツリーの状態を使わない。
+
     clear_caches()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
@@ -588,7 +575,6 @@ def main(argv: list[str] | None = None) -> int:
                 args.body_wi,
             )
         )
-        # 移管の--lane-cost-updatesは移管操作の入力であり、書込対象の追加と併用できる。
         or (args.lane_cost_updates is not None and args.transfer_wi is None)
     ):
         parser.error("--extend-write-targetsは--outputと組で指定し、--transfer-wi以外の更新操作・--body-wiと併用しない")
@@ -601,7 +587,7 @@ def main(argv: list[str] | None = None) -> int:
         and args.reopen_wi is None
         and args.extend_write_targets is None
         and args.transfer_wi is None
-        and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
+        and not (args.output is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
     ):
@@ -609,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.lane_cost_updates is not None and args.merge is None and args.transfer_wi is None:
         parser.error("--lane-cost-updatesは--merge・--lane-map・--outputまたは--transfer-wiとともに指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
-    # 合流・移管で記録不足になった鍵へ、記録し直す組と記録の書き先を添える案内。
+
     rerecord: tuple[dict[tuple[str, str, str], list[str]], str] | None = None
     merged_wis: frozenset[str] = frozenset()
     try:
@@ -619,7 +605,22 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         work_dir = _resolve_work_dir(args.work_dir)
-        selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
+        reorder = args.output is not None and all(
+            value is None
+            for value in (
+                args.candidate_file,
+                args.merge,
+                args.mark_integrated,
+                args.reopen_wi,
+                args.extend_write_targets,
+                args.transfer_wi,
+            )
+        )
+        selection = load_selection(
+            args.selection_file,
+            candidate_file=args.candidate_file if args.merge is None else None,
+            reorder=reorder,
+        )
         if args.reopen_wi is not None:
             try:
                 selection = reopen_wis(selection, args.reopen_wi, new_plan=args.new_plan)
@@ -684,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if estimate_errors:
                         raise ValueError("\n".join(error.reason for error in estimate_errors))
-                merged = merge_selection(selection, addition, mapping, updates)
+                merged = merge_selection(selection, addition, mapping, updates, derive_order=args.candidate_file is not None)
                 added_items = typing.cast(list[dict[str, object]], _selection.decisions(addition) or [])
                 existing_items = typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
                 merged_wis = frozenset(str(item[_selection.WI_KEY]) for item in added_items) - {
@@ -706,6 +707,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.mark_integrated is not None:
             freeze_overlap_pairs(selection)
             _mark_integrated(selection, set(args.mark_integrated), processed_wis)
+        if reorder:
+            try:
+                derive_lane_order(selection)
+            except (KeyError, ValueError) as error:
+                raise InputError(str(error), next_action=_FIX_CONTENT) from error
         errors = check(
             args.selection_file,
             work_dir,
@@ -723,7 +729,6 @@ def main(argv: list[str] | None = None) -> int:
     for error in errors:
         print(error.reason, file=sys.stderr)
     if errors:
-        # 同じ次の操作を持つ違反が複数あっても、その次の操作は最初に現れた位置で1回だけ出力する。
         actions = list(dict.fromkeys(error.next_action for error in errors))
         print(_next_action.next_action_line("。".join([*actions, _NEXT_RERUN])), file=sys.stderr)
         return 1

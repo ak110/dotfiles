@@ -18,10 +18,7 @@ from pytools._internal.update_claude_settings_test_helpers import (
 
 
 class TestPlatformOverride:
-    """OS 別オーバーライド JSON が重ねマージされることを検証する。"""
-
     def test_override_adds_hooks(self, tmp_path: Path):
-        """ベースに無い hooks セクションをオーバーライド経由で追加できる。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         override_path = tmp_path / "override.json"
@@ -41,7 +38,6 @@ class TestPlatformOverride:
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
 
     def test_override_adds_required_minimum_version(self, tmp_path: Path):
-        """オーバーライド経由でトップレベルの`requiredMinimumVersion`がユーザー設定へ合成される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         override_path = tmp_path / "override.json"
@@ -58,7 +54,6 @@ class TestPlatformOverride:
         assert result["language"] == "japanese"
 
     def test_override_replaces_scalar(self, tmp_path: Path):
-        """オーバーライドはベースのスカラー値を上書きする。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "english"}, ensure_ascii=False), encoding="utf-8")
         override_path = tmp_path / "override.json"
@@ -71,12 +66,10 @@ class TestPlatformOverride:
         assert result["language"] == "japanese"
 
     def test_missing_override_is_ignored(self, tmp_path: Path):
-        """存在しないオーバーライドはスキップされる (他 OS を壊さない)。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
 
-        # overrides に空リストを渡してオーバーライドなしの動作を検証する
         update_claude_settings(managed_path, target_path, overrides=[])
         result = json.loads(target_path.read_text(encoding="utf-8"))
         assert result == {"language": "japanese"}
@@ -86,7 +79,6 @@ class TestCodexMcpTimeout:
     """`run()`経由で旧Codex MCP timeoutの一回限りの除去を検証する。"""
 
     def test_production_config_does_not_manage_codex_mcp(self) -> None:
-        """配布設定は`mcpServers`自体を管理しない。"""
         managed = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
         assert "mcpServers" not in managed
 
@@ -95,7 +87,6 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """旧installerが生成する形の定義から管理値のtimeoutだけを除去する。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing_codex = {
@@ -117,7 +108,6 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ユーザーが加えたフィールドを持つ定義は変更しない。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing = {
@@ -143,7 +133,6 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """User scope設定ではないsettings.jsonの同名キーを変更しない。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
         existing_codex = {"command": "codex", "args": ["mcp-server"], "timeout": 7_200_000}
         settings_path.write_text(json.dumps({"mcpServers": {"codex": existing_codex}}), encoding="utf-8")
@@ -181,7 +170,6 @@ class TestCodexMcpTimeout:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """従来管理値と異なるtimeoutはユーザー設定として保持する。"""
         _setup_run_paths(tmp_path, monkeypatch, {})
         config_path = tmp_path / "claude.json"
         existing = {"mcpServers": {"codex": {"command": "codex", "args": ["mcp-server"], "timeout": 1_000}}}
@@ -222,12 +210,6 @@ class TestCodexMcpTimeout:
 
 
 class TestPlatformOverrideSelection:
-    """`run()` 経由でのプラットフォーム別オーバーライド適用を検証する統合テスト。
-
-    `sys.platform` をパッチして `_platform_overrides()` の選択ロジックを通す。
-    オーバーライドファイル選択・読み込み・マージ結果反映までを一連で検証する。
-    """
-
     def test_linux_applies_posix_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Linux (posix) 環境では `managed_settings.posix.json` が適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "english"})
@@ -275,7 +257,6 @@ class TestPlatformOverrideSelection:
         assert result["os"] == "win32"
 
     def test_missing_override_applies_base_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """対応オーバーライドファイルが存在しない場合はベース設定のみが適用される。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {"language": "japanese"})
         monkeypatch.setattr(mod.sys, "platform", "linux")
 
@@ -310,7 +291,6 @@ class TestDiffLogging:
         return caplog.messages
 
     def test_scalar_changes_are_logged(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """文字列・数値・真偽値のスカラー変更が old → new 形式で6スペース付き出力される。"""
         existing = {"s": "english", "n": 1, "b": False}
         managed = {"s": "japanese", "n": 42, "b": True}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -321,7 +301,6 @@ class TestDiffLogging:
         assert any(line.startswith("      s:") for line in messages)
 
     def test_new_key_value_summaries(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """新規キーの値が dict/list サマリーと長文切り詰めで出力される。"""
         existing: dict = {}
         managed = {"d": {"a": 1, "b": 2}, "l": [1, 2, 3], "long": "x" * 100}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -329,17 +308,15 @@ class TestDiffLogging:
         assert "d: (新規) {...} (2 keys)" in text
         assert "l: (新規) [...] (3 件)" in text
         long_line = next(line for line in messages if line.startswith("      ") and "long: (新規)" in line)
-        assert long_line.endswith("...")  # 60文字上限で切り詰められる
+        assert long_line.endswith("...")
 
     def test_nested_dict_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """ネストした dict の変更が親.子のパス付きで出力される。"""
         existing = {"permissions": {"allow": ["Bash"], "defaultMode": "plan"}}
         managed = {"permissions": {"defaultMode": "auto"}}
         text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog))
         assert 'permissions.defaultMode: "plan" → "auto"' in text
 
     def test_string_list_union_shows_inline_diff(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """文字列リストの union 追加が件数と追加要素付きで出力される。"""
         existing = {"items": ["a", "b"]}
         managed = {"items": ["a", "b", "c"]}
         text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog))
@@ -347,7 +324,6 @@ class TestDiffLogging:
         assert '+"c"' in text
 
     def test_many_list_additions_show_count_only(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """差分件数が上限を超えるリストは件数のみ出力される（追加要素のインライン表示なし）。"""
         existing = {"items": ["a"]}
         managed = {"items": ["a", "b", "c", "d", "e"]}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -356,11 +332,6 @@ class TestDiffLogging:
         assert "+" not in items_line
 
     def test_dict_element_list_shows_count_only(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """dict を要素に持つリスト（hooks 等）の差分は件数のみ出力される（インライン表示なし）。
-
-        inner hooks には除去対象外の command を持たせる（空だと _strip_removed_hooks が
-        matcher ごと除去してしまうため）。
-        """
         existing = {"hooks": {"PreToolUse": [{"matcher": "A", "hooks": [{"type": "command", "command": "a.py"}]}]}}
         managed = {"hooks": {"PreToolUse": [{"matcher": "B", "hooks": [{"type": "command", "command": "b.py"}]}]}}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -369,7 +340,6 @@ class TestDiffLogging:
         assert "+" not in hooks_line
 
     def test_removed_env_key_shows_deletion(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """env キー除去で env が削除され、削除差分が出力される。"""
         existing = {"env": {"OLD": "1"}}
         managed: dict = {}
         text = "\n".join(self._update_and_capture(tmp_path, managed, existing, caplog, removed_env_keys=("OLD",)))
@@ -377,7 +347,6 @@ class TestDiffLogging:
         assert "→ (削除)" in text
 
     def test_no_change_logs_no_diff_rows(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """差分が無い場合は変更なしのみで差分行（6スペース始まり）が出力されない。"""
         existing = {"language": "japanese"}
         managed = {"language": "japanese"}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -385,7 +354,6 @@ class TestDiffLogging:
         assert not [m for m in messages if m.startswith("      ")]
 
     def test_diff_rows_sorted_by_key(self, tmp_path: Path, caplog: pytest.LogCaptureFixture):
-        """差分行はキーのアルファベット順で出力される。"""
         existing: dict = {}
         managed = {"z": 1, "a": 2, "m": 3}
         messages = self._update_and_capture(tmp_path, managed, existing, caplog)
@@ -396,7 +364,6 @@ class TestDiffLogging:
 
 @pytest.mark.parametrize(("platform", "binary"), [("linux", "claude-statusline"), ("win32", "claude-statusline.exe")])
 def test_os_settings_remove_subagent_statusline(tmp_path: Path, platform: str, binary: str) -> None:
-    """OS別の配布設定で既存のサブエージェント行を除き、通常行を残す。"""
     target = tmp_path / "settings.json"
     target.write_text(
         json.dumps({"subagentStatusLine": {"type": "command", "command": f"{binary} subagent-statusline"}}),

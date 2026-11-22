@@ -1,5 +1,3 @@
-"""renameモジュールのテスト。"""
-
 import pathlib
 import subprocess
 import sys
@@ -11,8 +9,6 @@ from pytools import rename
 
 
 class TestRename:
-    """py-renameコマンドのテスト。"""
-
     def _run(self, *args: str, cwd: pathlib.Path) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, "-m", "pytools.rename", *args],
@@ -67,7 +63,7 @@ class TestPatternFile:
         (tmp_path / "img_01.txt").touch()
         (tmp_path / "img_02.txt").touch()
         pf = tmp_path / "rules.txt"
-        # `#`で始まる行は規則として読まない。
+
         pf.write_text("# 先頭のコメント行\n^img_\t\n", encoding="utf-8")
         rules = rename.load_pattern_file(pf)
         assert len(rules) == 1
@@ -85,10 +81,9 @@ class TestPatternFile:
         rules = rename.load_pattern_file(pf)
         rename.rename_tree(tmp_path, rules, files_only=True)
         assert (tmp_path / "file.txt").exists()
-        assert sub.exists()  # ディレクトリは改名されない
+        assert sub.exists()
 
     def test_dollar_capture_reference(self, tmp_path: pathlib.Path) -> None:
-        """パターンファイルの置換側で `$N` がキャプチャ参照として展開される。"""
 
         (tmp_path / "img_001.txt").touch()
         pf = tmp_path / "rules.txt"
@@ -98,11 +93,9 @@ class TestPatternFile:
         assert (tmp_path / "page_001.txt").exists()
 
     def test_dollar_dollar_literal_and_double_digit(self, tmp_path: pathlib.Path) -> None:
-        """`$$` がリテラル ``$``、`$10` などの 2 桁参照も解釈される。"""
 
-        # 10 個のキャプチャグループを使い `$10` を 10 番目の参照として検証する
         pattern = "^" + "".join(r"(\d)" for _ in range(10)) + r"\.txt$"
-        replacement = r"$$_$10$1.txt"  # $$ → $, $10 → 10 番目, $1 → 1 番目
+        replacement = r"$$_$10$1.txt"
         (tmp_path / "0123456789.txt").touch()
         pf = tmp_path / "rules.txt"
         pf.write_text(pattern + "\t" + replacement + "\n", encoding="utf-8")
@@ -115,7 +108,7 @@ class TestPatternFile:
 
         (tmp_path / "abc.txt").touch()
         pf = tmp_path / "rules.txt"
-        # Python 流 \1 を書いてもキャプチャ参照にならず、リテラル ``\1`` のまま
+
         pf.write_text(r"^(a)" + "\t" + r"\1z" + "\n", encoding="utf-8")
         rules = rename.load_pattern_file(pf)
         rename.rename_tree(tmp_path, rules)
@@ -131,7 +124,7 @@ class TestPatternFile:
         rules = rename.load_pattern_file(pf)
         rename.rename_tree(tmp_path, rules, dirs_only=True)
         assert (tmp_path / "dir").exists()
-        assert (tmp_path / "sub_file.txt").exists()  # ファイルは改名されない
+        assert (tmp_path / "sub_file.txt").exists()
 
 
 class TestExitCode:

@@ -56,7 +56,6 @@ def test_missing_completion_notifies_only_on_supported_host(tmp_path: pathlib.Pa
     ],
 )
 def test_report_body_differences_do_not_block_evidenced_work(tmp_path: pathlib.Path, visible: str, *, codex: bool) -> None:
-    """起動証拠を持つ作業は本文の形式によらず終了を許可する。"""
     supply_commit(tmp_path, codex=codex)
     supply_completion(tmp_path, codex=codex)
     assert termination_order_advisor.evaluate(stop_payload(tmp_path, visible, codex=codex)) == ("approve", "")
@@ -178,7 +177,6 @@ def test_claude_read_of_whole_playbook_is_evidence(
 
 
 def test_claude_read_truncated_or_other_document_is_not_evidence(tmp_path: pathlib.Path) -> None:
-    """ホストのトークン上限で本文を省略した手順書の読取と、`atk-mode`の他の手順書の読取を起動証拠にしない。"""
     supply_commit(tmp_path)
     playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
     truncated = claude_read_response(playbook, limit=1)

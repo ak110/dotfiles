@@ -47,7 +47,6 @@ async def test_provider_registry_lifecycle_and_public_projection(monkeypatch, tm
 
 @pytest.mark.asyncio
 async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, tmp_path, provider_environment):
-    """stop相当の解放と再起動の後も、公開の追送は確定済みの接続先を使う。"""
     del provider_environment
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
@@ -72,7 +71,6 @@ async def test_restored_api_provider_ignores_changed_configuration(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
-    """再開の起動前にkillしても、次の追送へAPI接続先を保持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     publish_api_session(tmp_path)
     async with manager.AgentsServerManager() as root:
@@ -91,7 +89,6 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reason", ["stopped", "retention_expired"])
 async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path, reason):
-    """サブスクリプションの利用履歴が無い主APIの接続先も、解放後の公開の追送で同じ接続先を維持する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         "provider-thread",
@@ -125,9 +122,8 @@ async def test_api_primary_registry_restores_after_release(monkeypatch, tmp_path
 @pytest.mark.parametrize("primary", ["openai", "paid-a"])
 @pytest.mark.asyncio
 async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tmp_path, provider_environment, item, primary):
-    """公開の追送・結果回収・引き継ぎ起動を経て、元会話と進捗を保持した後任を起動する。"""
     del provider_environment
-    # API主接続は従量課金に置き、残高不足の並べ替えが後任の接続を変えないようにする。
+
     if primary == "openai":
         set_connections(monkeypatch, "subscription,payg")
     else:
@@ -194,7 +190,6 @@ async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tm
 @pytest.mark.parametrize("lifecycle", ["retained", "released", "restarted", "settings", "legacy_migration"])
 @pytest.mark.asyncio
 async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, tmp_path, provider_environment, lifecycle):
-    """保持・解放・復元した会話の生成元と選択先が異なる場合、次turnより前に再開を拒否する。"""
     del provider_environment
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     client = ProviderClient()
@@ -242,7 +237,6 @@ async def test_opaque_state_resume_uses_origin_in_every_lifecycle(monkeypatch, t
 async def test_opaque_state_created_after_safe_switch_resumes_on_selected_connection(
     monkeypatch, tmp_path, provider_environment
 ):
-    """状態なしの移行後に生成した暗号化内容は、保存・解放後も同じ生成先で再利用できる。"""
     del provider_environment
     client = ProviderClient()
     record = tmp_path / "rollout.jsonl"
@@ -274,7 +268,6 @@ async def test_opaque_state_created_after_safe_switch_resumes_on_selected_connec
 @pytest.mark.parametrize("record_kind", ["missing", "broken", "no_metadata", "unknown_source", "same_source"])
 @pytest.mark.asyncio
 async def test_legacy_resume_requires_observed_state_compatibility(monkeypatch, tmp_path, record_kind):
-    """記録欠損・未知生成元と、同一接続で再開できる旧形式の暗号化会話を区別する。"""
     clear_connections(monkeypatch)
     client = ProviderClient()
     record = tmp_path / "rollout.jsonl"
@@ -300,7 +293,6 @@ async def test_legacy_resume_requires_observed_state_compatibility(monkeypatch, 
 
 @pytest.mark.asyncio
 async def test_verified_state_provider_survives_registry_release_and_restart(monkeypatch, tmp_path):
-    """再開を許可した生成先の記録が、通常設定の会話でも解放・再起動を越える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         "verified-thread",

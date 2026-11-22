@@ -14,7 +14,6 @@ import update_dotfiles_stages as stages  # noqa: E402  # pylint: disable=wrong-i
 
 @pytest.mark.parametrize("name", ["update_bootstrap.sh", "update_bootstrap.ps1"])
 def test_bootstrap_classification_matches_declarations(name: str) -> None:
-    """外側の更新段も宣言表と同じ中断集合を使う。"""
     text = pathlib.Path(__file__).with_name(name).read_text(encoding="utf-8-sig")
     declarations = re.findall(r"(?:run_stage|Invoke-UpdateStage) '([^']+)' (abort|continue)", text)
     if name == "update_bootstrap.ps1":
@@ -29,7 +28,6 @@ def test_bootstrap_classification_matches_declarations(name: str) -> None:
 
 @pytest.mark.parametrize("missing_runner", [False, True])
 def test_unknown_optional_stage_never_prevents_known_updates(monkeypatch: pytest.MonkeyPatch, missing_runner: bool) -> None:
-    """追加段の宣言か実装の片方しか届かない場合も、既知の更新段を完了する。"""
     monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
     declared = [item.name for item in stages.STAGES if item.where == "executor"]
     visited: list[str] = []

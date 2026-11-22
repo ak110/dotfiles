@@ -1,5 +1,3 @@
-"""serveのbrowser_sessions試験が共有する入力と補助処理。"""
-
 import asyncio
 import base64
 import contextlib
@@ -41,10 +39,6 @@ _REMOTE_RECORD_PATH = "/home/remote/.claude/projects/-home-remote-proj/33333333-
 
 
 async def _remote_sessions_runner(host: str, op: str, _args: list[str]) -> str:
-    """リモートヘルパーの応答を模す。旧版のホストは`read`応答へサブエージェント一覧を含めない。
-
-    `read`の対象は1件だけであり、渡されたパスを見分ける必要が無いため引数を使わない。
-    """
     if op == "list":
         return json.dumps(
             {
@@ -93,13 +87,12 @@ async def _remote_sessions_harness_fixture(
     monkeypatch: pytest.MonkeyPatch,
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_RemoteSessionsHarness]:
-    """サブエージェント一覧を返すリモートホストと、返さない旧版のリモートホストを登録した画面を用意する。"""
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     plans_root = tmp_path / "plans"
     plans_root.mkdir()
     (plans_root / "plan.md").write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
-    # 常駐接続は実際のsshを起動するため開始させず、単発SSHの差し替えだけでリモートの応答を与える。
+
     monkeypatch.setattr(serve_sessions, "start_remote_clients", lambda context: None)
     app = _browser_app(
         tmp_path,
@@ -141,7 +134,6 @@ def _write_local_session(tmp_path: Path, name: str, *records: dict[str, Any]) ->
 
 
 async def _markdown_remote_runner(host: str, op: str, _args: list[str]) -> str:
-    """整形の対象となるアシスタントの発言を含む記録を返す、リモートヘルパーの偽の応答。"""
     if op == "list":
         entry = {
             "engine": "claude",
@@ -164,7 +156,6 @@ async def _markdown_remote_runner(host: str, op: str, _args: list[str]) -> str:
 async def _markdown_sessions_page(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> AsyncGenerator[tuple[playwright.async_api.Page, str]]:
-    """ローカルの記録と、偽の応答を返すリモートホストを登録したセッション画面を開く。"""
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     plans_root = tmp_path / "plans"
@@ -182,7 +173,6 @@ async def _open_session(page: playwright.async_api.Page, base_url: str, host: st
 
 
 def _append_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    """JSON Linesの記録へ行を追記する。記録が無ければ作成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as stream:
         stream.writelines(json.dumps(record, ensure_ascii=False) + "\n" for record in records)

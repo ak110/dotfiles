@@ -62,7 +62,6 @@ _OWNER_FILE = f"{_LAUNCHER}.json"
 
 @contextlib.contextmanager
 def _live_process(tmp_path: pathlib.Path) -> Generator[tuple[subprocess.Popen[bytes], session_registry.ProcessIdentity]]:
-    """テストの間だけ生存する実プロセスと、その識別を返す。"""
     with late_descendant.held_process(tmp_path) as process:
         try:
             identity = session_registry.ProcessIdentity.of(process.pid)
@@ -80,7 +79,6 @@ def _publish_running(
     engine: str,
     processes: tuple[session_registry.ProcessIdentity, ...],
 ) -> pathlib.Path:
-    """旧サーバーが所有したまま終了を公開していない`running`の記録を保存し、そのパスを返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _SESSION_ID,
@@ -98,7 +96,6 @@ def _publish_running(
 
 
 def _write_old_root(tmp_path: pathlib.Path, *bodies: str) -> pathlib.Path:
-    """旧サーバーのルートへ、生存の印が失効した状態ファイルと委譲先の上り通知を置く。"""
     directory = shared_layout.status_directory(_OLD_ROOT, tmp_path)
     directory.mkdir(parents=True, exist_ok=True)
     expired = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)).isoformat()
@@ -135,7 +132,6 @@ def _old_notice_files(tmp_path: pathlib.Path) -> list[pathlib.Path]:
 
 
 def _new_writer(tmp_path: pathlib.Path) -> status_file.StatusFileWriter:
-    """新しいサーバーが使う、旧サーバーと別のルートの書込主体を返す。"""
     return status_file.StatusFileWriter(
         {}, shared_roots.StatusFileIdentity(_NEW_ROOT, _OWNER_FILE, _LAUNCHER), state_root=tmp_path
     )
@@ -147,7 +143,6 @@ def _backend(
     engine: str,
     turns: list[tuple[str, str]],
 ) -> FakeBackend:
-    """偽backendを差し替え、MCPツールの関数がこのmanagerを使うようにする。"""
     backend = ThreadReadBackend(manager.sessions, turns) if engine == "codex" else FakeBackend(manager.sessions, engine)
     _install_backend(manager, engine, backend)
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -163,7 +158,6 @@ def _cli_json(capsys: pytest.CaptureFixture[str], argv: list[str]) -> dict[str, 
 def _wait_lines(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> list[dict[str, Any]]:
-    """新しいサーバーのルートで`atk agents wait`を1回実行し、標準出力のJSON Linesを返す。"""
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
     capsys.readouterr()
@@ -187,11 +181,6 @@ async def test_owner_lost_session_stays_running_on_every_entry(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """委譲先CLIが生存する記録は、`kill`前のどの照会でも`interrupted`・`failed`の終了を公開しない（完成条件1・4）。
-
-    `thread/read`が元turnを終了と返しても引き継がず、追送は`thread/resume`を呼ばずに案内付きのエラーを返す。
-    旧ルートに残った上り通知は、新しいサーバーの`show`・`send_message`と`atk agents wait`が回収して返す。
-    """
     with _live_process(tmp_path) as (_executor_process, executor), contextlib.ExitStack() as stack:
         owner = stack.enter_context(_live_process(tmp_path))[1] if owner_alive else exited_process_identity()
         record = _publish_running(monkeypatch, tmp_path, engine, (owner, executor))
@@ -236,7 +225,6 @@ async def test_owner_lost_session_stays_running_on_every_entry(
             assert not _old_notice_files(tmp_path)
             assert _wait_lines(capsys, monkeypatch, tmp_path)[0]["status"] == "running"
 
-            # 予防対象の自動再開も、所有サーバーを失った実行中の子を終了した子として扱わない。
             parent = state.SessionState("parent-session", str(tmp_path), engine=engine)
             parent.live_child_session_ids.add(_SESSION_ID)
             resume_waits.begin_auto_resume_wait(
@@ -259,10 +247,6 @@ async def test_owner_lost_session_stays_running_on_every_entry(
 async def test_kill_stops_only_matching_executor_then_send_message_resumes(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """明示の`kill`は記録と一致する委譲先CLIだけを止め、停止を確かめてから`interrupted`を公開する（完成条件2・4）。
-
-    所有サーバーのプロセスは止めない。続く`send_message`は同じ`session_id`の会話を再開する。
-    """
     with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (executor_process, executor):
         record = _publish_running(monkeypatch, tmp_path, engine, (owner, executor))
         _write_old_root(tmp_path, "停止直前の通知")
@@ -323,7 +307,6 @@ async def test_kill_keeps_running_until_descendant_of_exited_executor_is_reclaim
 async def test_kill_does_not_stop_process_whose_start_time_differs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """起動時刻が記録と一致しないプロセスは、同じpidでも停止しない（完成条件2）。"""
     with _live_process(tmp_path) as (owner_process, owner), _live_process(tmp_path) as (reused_process, reused):
         stale = session_registry.ProcessIdentity(reused.pid, reused.create_time - 1000, "other-generation")
         _publish_running(monkeypatch, tmp_path, "codex", (owner, stale))
@@ -342,7 +325,6 @@ async def test_kill_does_not_stop_process_whose_start_time_differs(
 async def test_record_whose_executor_exited_under_hung_owner_is_taken_over(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """委譲先CLIが終了し所有サーバーだけが応答せずに残る記録は、`thread/read`の終了を公開して再開できる（完成条件3）。"""
     with _live_process(tmp_path) as (owner_process, owner):
         record = _publish_running(monkeypatch, tmp_path, "codex", (owner, exited_process_identity()))
         async with server_manager.AgentsServerManager(_new_writer(tmp_path)) as manager:
@@ -457,10 +439,6 @@ async def test_atk_agents_wait_collects_result_left_in_old_root(
 async def test_closing_server_keeps_record_running_while_executor_survives(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """backendの停止後も委譲先CLIが残るturnは、停止時に`interrupted`を公開せず実行中のまま残す（反映内容5・完成条件7）。
-
-    後続のサーバーは同じ記録を所有サーバーを失った実行中として扱う。
-    """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     with _live_process(tmp_path) as (_process, executor):
         async with server_manager.AgentsServerManager(None) as owner:
@@ -486,7 +464,6 @@ async def test_closing_server_keeps_record_running_while_executor_survives(
 async def test_stop_of_record_owned_by_live_process_keeps_record_and_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """自プロセスが所有しない記録で記録プロセスが実在する場合、`stop`は解放済みへ置き換えず結果も削除しない（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     with _live_process(tmp_path) as (_owner_process, owner), _live_process(tmp_path) as (_executor_process, executor):
         session_registry.publish(
@@ -515,7 +492,6 @@ async def test_stop_of_record_owned_by_live_process_keeps_record_and_result(
 async def test_activation_keeps_same_named_status_file_of_live_writer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """起動時に同名の状態ファイルを生存中の別プロセスが書いていれば削除せず、自身は別名へ書く（完成条件7）。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     with _live_process(tmp_path) as (_process, previous):
         directory = shared_layout.status_directory("conversation-root", tmp_path)
@@ -548,7 +524,6 @@ async def test_activation_keeps_same_named_status_file_of_live_writer(
         assert path.read_bytes() == original
         assert not relocated.exists()
 
-    # 書いたプロセスが終了した同名ファイルは、従来どおり起動時に自身のファイルとして置き換える。
     payload = json.loads(original)
     payload["writer_process"] = session_registry.process_payload(exited_process_identity())
     path.write_text(json.dumps(payload), encoding="utf-8")
@@ -609,7 +584,7 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
     identifier = "019a2c41-5b6e-7d10-8f21-0000000000aa"
     owner = session_registry.owner_process()
     assert owner is not None
-    # `_build_session_argv`と同じく、起動前のprocess-loop自身だけを記録プロセスとして公開する。
+
     session_registry.publish(
         identifier,
         state=session_registry.PublicationState.PENDING_RUNNING,
@@ -625,11 +600,10 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
         try:
             identity = session_registry.ProcessIdentity.of(child.pid)
             assert identity is not None
-            # runnerはPopenから受け取ったPIDをそのまま登録する。
+
             process_loop_session._attach_orchestrator_child(identifier, identity)  # pylint: disable=protected-access
             assert [process.pid for process in session_registry.resolve(identifier).executor_processes] == [child.pid]
 
-            # process-loopが強制終了した後を、記録の所有プロセスを終了済みの識別へ置き換えて表す。
             payload = json.loads(record.read_text(encoding="utf-8"))
             payload["processes"][0] = session_registry.process_payload(exited_process_identity())
             record.write_text(json.dumps(payload), encoding="utf-8")
@@ -648,7 +622,6 @@ def test_process_loop_record_stays_running_while_claude_child_survives(
 def test_stop_recorded_executor_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """本人確認した委譲先CLIの停止で、最初の列挙の後に起動した子孫も終了させてファイルを解放する。"""
     with process_tree.process_scope(late_descendant.cli_command(tmp_path)) as process:
         late_descendant.wait_spawner(tmp_path)
         executor = psutil.Process(process.pid)

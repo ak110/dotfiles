@@ -67,7 +67,6 @@ def test_commit_message_file_checks_format_and_attribution(
     case: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ファイル本文の書式と観測identityを独立に検査し、正しい本文は通す。"""
     message = tmp_path / "message.txt"
     author = (
         "GPT-6.1 Sol / Medium <noreply@openai.com>" if extra_payload else "Claude Opus 5.5 / Medium <noreply@anthropic.com>"
@@ -101,7 +100,6 @@ def test_commit_rules_read_delivers_observed_trailer_and_allows_same_turn_commit
     capsys: pytest.CaptureFixture[str],
     reader: str,
 ) -> None:
-    """実ファイルの読取で得た帰属行は同turnの通常commitへ使え、turn変化では現在値と比べる。"""
     rules = tmp_path / "different root" / "skills/atk-mode/references/commit-message.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("帰属規範\n", encoding="utf-8")
@@ -137,7 +135,6 @@ def test_commit_rules_read_notice_is_limited_to_observed_reads(
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    """引用・検索・別資料・未観測・廃止した資料の所在を帰属配送の読取にしない。"""
     rules = tmp_path / "skills/atk-mode/references/commit-message.md"
     rules.parent.mkdir(parents=True)
     rules.write_text("帰属規範\n", encoding="utf-8")

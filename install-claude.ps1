@@ -76,7 +76,6 @@ function Invoke-RequiredClaudeCommand {
     throw ($lines -join [Environment]::NewLine)
 }
 
-# agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 function Install-AgentToolkitPlugin {
     Write-Output ''

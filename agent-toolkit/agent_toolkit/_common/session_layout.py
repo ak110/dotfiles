@@ -1,5 +1,3 @@
-"""agents_serverの共有状態ディレクトリの配置と、配下のファイル名に使うsession識別子の検証。"""
-
 from __future__ import annotations
 
 import logging
@@ -16,7 +14,6 @@ RESERVED_DIRECTORY_NAMES = frozenset({"aliases", "sessions", "compaction", "admi
 
 
 def status_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """ルートsessionの状態ファイルディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / root_session_id
 
@@ -24,7 +21,6 @@ def status_directory(root_session_id: str, state_root: pathlib.Path | None = Non
 def session_log_path(
     root_session_id: str, session_id: str, state_root: pathlib.Path | None = None, *, engine: str = "agy"
 ) -> pathlib.Path:
-    """turn型CLIの公開JSONイベントを保持するsession別JSONLのパスを返す。"""
     if not valid_session_id(root_session_id) or not valid_session_id(session_id):
         raise ValueError("invalid session identifier")
     directory = status_directory(root_session_id, state_root) / "logs"
@@ -57,7 +53,6 @@ def list_status_files(
 
 
 def list_root_session_ids(state_root: pathlib.Path | None = None, *, strict: bool = False) -> list[str]:
-    """共有状態に存在する有効なルートsession識別子を安定順で返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     base = root / "agents-server"
     try:
@@ -76,18 +71,15 @@ def list_root_session_ids(state_root: pathlib.Path | None = None, *, strict: boo
 
 
 def aliases_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """現行session識別子からルートsession識別子を取得するための索引ディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "aliases"
 
 
 def valid_session_id(session_id: str) -> bool:
-    """session識別子が状態ファイル名へ使用できる形式かを返す。"""
     return bool(session_id and _SESSION_ID_PATTERN.fullmatch(session_id))
 
 
 def results_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """ルートsessionの終了時の結果ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "results"
 
 
@@ -101,12 +93,10 @@ def wait_targets_directory(
 
 
 def notices_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """ルートsession宛ての未回収通知ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "notices"
 
 
 def hosts_directory(root_session_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """書込主体から委譲元threadへの索引ディレクトリを返す。"""
     return status_directory(root_session_id, state_root) / "hosts"
 
 
@@ -114,7 +104,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.status-file")
 
 
 def result_session_id(path: pathlib.Path) -> str | None:
-    """従来の結果名と、未回収結果に続いて公開したturn別の名前を同じsessionへ結びつける。"""
     if path.suffix != ".json":
         return None
     identifier, separator, end = path.stem.partition(".")

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのrunの試験。"""
 
 # pylint: disable=protected-access
 
@@ -21,10 +20,7 @@ from pytools._internal.post_apply_test_helpers import _make_broken_step, _make_o
 
 
 class TestRun:
-    """post_apply.run() の振る舞い。"""
-
     def test_all_steps_succeed(self):
-        """全ステップ成功時、ok=True のリストが返る。"""
         calls: list[str] = []
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Claude 設定", _make_step("claude", calls, changed=True)),
@@ -71,7 +67,6 @@ class TestRun:
         assert not recommendations
 
     def test_failing_step_does_not_stop_others(self):
-        """途中ステップが例外を送出しても後続は実行される。"""
         calls: list[str] = []
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Claude 設定", _make_step("claude", calls)),
@@ -108,7 +103,6 @@ class TestRun:
     def test_foreground_completion_reports_step_duration(
         self, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """前景ステップの完了行へステップ本体の所要時間を表示する。"""
 
         clock = [0.0]
         monkeypatch.setattr(post_apply, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
@@ -201,7 +195,6 @@ class TestRun:
         assert "回収できない" in (results[1].reason or "")
 
     def test_after_all_preceding_waits_for_every_earlier_step(self) -> None:
-        """列挙順で前にある全ステップの完了後に開始する。"""
         finished: list[str] = []
         observed: list[list[str]] = []
         fast_done = threading.Event()
@@ -231,7 +224,6 @@ class TestRun:
         assert sorted(observed[0]) == ["fast", "slow"]
 
     def test_output_and_results_follow_enumeration_order(self, caplog: pytest.LogCaptureFixture) -> None:
-        """後に完了した先頭ステップの出力を、先に完了した後続ステップより前へまとめて出力する。"""
         second_done = threading.Event()
 
         def first() -> post_apply_outcome.PostApplyOutcome:
@@ -382,7 +374,6 @@ class TestRun:
         assert exc_info.value.code == 1
 
     def test_main_exits_0_on_success(self):
-        """全て成功なら main() は SystemExit(0) で正常終了する。"""
         calls: list[str] = []
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", calls)),
@@ -414,7 +405,6 @@ class TestRun:
         assert "完了:" not in captured.err
 
     def test_structured_outcome_preserves_changed_and_notices(self) -> None:
-        """構造化結果の変更有無と案内をステップ結果へ保持する。"""
         notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("Codex plugin", _make_outcome_step(changed=True, notices=(notice,))),
@@ -427,7 +417,6 @@ class TestRun:
         assert results[0].notices == (notice,)
 
     def test_main_prints_deduplicated_notice_without_command(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """commandを持たない重複案内をstderrへ1回表示する。"""
         notice = post_apply_outcome.PostApplyNotice("Codex pluginを更新しました。")
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("first", _make_outcome_step(changed=True, notices=(notice,))),
@@ -487,7 +476,6 @@ class TestRun:
 @pytest.mark.parametrize("failed", [step.name for step in post_apply.DEFAULT_STEPS])
 @pytest.mark.parametrize("timed_out", [False, True])
 def test_all_declared_step_boundaries_continue(capsys: pytest.CaptureFixture[str], failed: str, timed_out: bool) -> None:
-    """実工程境界の未知例外は後続を止めず、公開mainの一覧と終了1に届く。"""
     visited: list[str] = []
 
     def invoke(name: str) -> post_apply_outcome.PostApplyOutcome:
