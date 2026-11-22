@@ -145,10 +145,7 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
             and content.strip()
             and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
-            and (
-                _repository_path(content.strip(), work_dir, allow_root_ancestor=True) is not None
-                or (work_dir / content.strip()).is_file()
-            )
+            and _whole_path_in_code(content.strip(), work_dir)
         ):
             tokens.append((offset, offset + len(content), True))
             offset += len(content)
@@ -163,6 +160,19 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
             tokens.append((offset + match.start(), offset + end, False))
         offset += len(content)
     return tokens
+
+
+def _whole_path_in_code(content: str, work_dir: pathlib.Path) -> bool:
+    """既存のパス解釈を優先し、ルートだけを祖先とする新設先は個別パスの指定として扱う。"""
+    if _repository_path(content, work_dir) is not None or (work_dir / content).is_file():
+        return True
+    # コマンド中の引数として既存のパス検査で解決できる断片を、架空の新設先で覆わない。
+    if " -- " in content or any(
+        match.group() != content and "/" in match.group() and _repository_path(match.group(), work_dir) is not None
+        for match in _PATH_TOKEN_RE.finditer(content)
+    ):
+        return False
+    return _new_file_path(content, work_dir, allow_root_ancestor=True) is not None
 
 
 def _is_non_ascii_word_char(char: str) -> bool:
