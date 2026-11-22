@@ -6,7 +6,7 @@
 `agent-basics:bugfix`の`references/prevention.md`「再発防止を採用しない場合」も、既に規範があることを
 採用しない理由から除く。条文の想起だけに頼る対策は効かないため、表現を機械的に検出して遮断する。
 
-判定は語の一致だけで決まり、引用の素材（コードブロック、インラインコード、`>`で始まる引用行）は除く。
+判定は語の一致だけで決まり、引用の素材（コードブロック、インラインコード、`>`で始まる引用行、かぎ括弧の中）と否定の形は除く。
 誤検出でも作業を止めないよう、同じ主体が同じ本文を再発行した場合は一度だけ通す。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
@@ -29,11 +29,17 @@ lazy from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
 _SUBJECT = r"(?:既存|現行|既に?ある|今ある)の?(?:規範|基準|規定|条文|対策|手順|仕組み|ルール)"
+# 「足りない」「防げていない」「防げず」などの否定の形は見送りの言い回しから除く。
+_NOT_NEGATED = r"(?!(?:で(?:は)?|て(?:い)?)?な[いかく]|ず|ません|ていません)"
 # 既存の規範・基準を理由に、追加の対処を見送る言い回し。
 EXCUSE_RE = re.compile(
-    _SUBJECT + r"(?:で|が|により|によって|だけで)?(?:十分|足り|足る|被覆|カバー|対応済み|防げ)(?!(?:で(?:は)?)?な[いかく])"
-    r"|規範(?:は|を|の追加は)(?:足さない|追加しない|不要)"
+    _SUBJECT
+    + r"(?:で|が|により|によって|だけで)?(?:十分|足り|足る|被覆|カバー|対応済み|防げ)"
+    + _NOT_NEGATED
+    + r"|規範(?:は|を|の追加は)(?:足さない|追加しない|不要)"
 )
+# かぎ括弧の中は他者の発言や検出対象の言い回しの引用として扱う。
+_KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
 _RETRY_STATE_KEY = "norm_excuse_retry_by_actor"
 # 途中の発話は書き直せないため、検出を一度だけ知らせた本文の指紋を残し、以後のStopでは止めない。
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
@@ -44,7 +50,7 @@ _block_notice = notice.block_formatter("norm_excuse_gate")
 
 def find_excuse(text: str) -> str | None:
     """引用を除いた本文から、既存の規範を理由に対処を見送る言い回しを返す。"""
-    match = EXCUSE_RE.search(QUOTED_MATERIAL_RE.sub("", text))
+    match = EXCUSE_RE.search(_KAGI_QUOTE_RE.sub("", QUOTED_MATERIAL_RE.sub("", text)))
     return match.group(0) if match else None
 
 
