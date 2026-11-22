@@ -85,6 +85,8 @@ def _may_name_definition(target: str) -> bool:
     最後の動的展開より後ろの固定の末尾が`.subagent.md`で終わるか、`.subagent.md`の末尾部分（空、`.md`など）であれば
     読み得るとする。`$d/test-linux.log`のように固定の末尾から手順書になり得ない対象を未確定へ出さないためである。
     """
+    if target.endswith(_SUBAGENT_SUFFIX):
+        return True
     if "**" not in target:
         parts = target.split("/")
         patterned = [index for index, part in enumerate(parts) if any(char in part for char in "*?[")]
@@ -118,6 +120,30 @@ def _may_name_definition(target: str) -> bool:
             tail_start = index
     tail = target[tail_start:]
     return tail.endswith(_SUBAGENT_SUFFIX) or _SUBAGENT_SUFFIX.endswith(tail)
+
+
+def _xargs_only_other_suffixes(value: str) -> bool:
+    """Gitの固定拡張子の列挙をNULのままcatへ渡す場合だけ、役割文書候補から外す。"""
+    pipelines = shell_segments.extract_execution_pipelines(value, expand_shell=False)
+    if len(pipelines) != 1 or len(pipelines[0]) != 2:
+        return False
+    producer, consumer = (segment.raw_tokens for segment in pipelines[0])
+    if consumer not in {("xargs", "-0", "cat", "--"), ("xargs", "-0", "-r", "cat", "--")}:
+        return False
+    if producer[:2] != ("git", "diff") or "--" not in producer:
+        return False
+    end = producer.index("--")
+    if set(producer[2:end]) != {"--name-only", "-z"}:
+        return False
+    pathspecs = producer[end + 1 :]
+    return bool(pathspecs) and all(
+        isinstance(item, shell_tokens.ShellWord)
+        and not item.expansion
+        and not item.unquoted
+        and re.fullmatch(r"[*]\.[A-Za-z0-9]+", item)
+        and not _may_name_definition(item)
+        for item in pathspecs
+    )
 
 
 def _strip_env_prefix(words: list[str]) -> list[str] | None:
@@ -165,6 +191,8 @@ def _simple_command_reads(
         return [], []
     segment = shell_segments.resolve_execution_segment(list(words))
     if not segment.resolved:
+        if words[0] == "xargs" and _xargs_only_other_suffixes(value):
+            return [], []
         if not any(pathlib.PurePosixPath(word).name == "xargs" or _may_name_definition(word) for word in words):
             return [], []
         return [], [{**original, "reason": "シェル区間の実行位置を静的に確定できない"}]
@@ -197,7 +225,8 @@ def _simple_command_reads(
         if reason is not None:
             return [], [{**original, "reason": reason}]
     else:
-        if _SUBAGENT_SUFFIX in value and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", " ".join(tokens)):
+        rendered = " ".join(tokens)
+        if _SUBAGENT_SUFFIX in rendered and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", rendered):
             unresolved.append({**original, "reason": "コード内の読取と対象の対応は静的抽出の対象外"})
         return [], unresolved
     static = []

@@ -764,6 +764,10 @@ _NO_DEFINITION_READS = [
     '{ git status; } > "$W/o.txt"',
     "[ -f a ] && echo ok",
     'cat "$PWD/docs/guide.md"',
+    "cat /x/assets/*.svg",
+    "cat /x/metadata/*.json",
+    "git diff --name-only -z -- '*.py' '*.svg' '*.json' | xargs -0 cat --",
+    "python -c 'open(\"a.svg\").read()'; printf '%s' 'example.subagent.md'",
 ]
 # 手順書を読み得るが、対象やコマンドを静的に確定できない操作。
 _POSSIBLE_DEFINITION_READS = [
@@ -785,6 +789,10 @@ _POSSIBLE_DEFINITION_READS = [
     "cat $f; f=a.md",
     "f=a.md; f+=x; cat $f",
     "ls | xargs -r cat --",
+    "git diff --name-only -z -- '*.subagent.md' | xargs -0 cat --",
+    "git diff --name-only -z -- '*.md' | xargs -0 -r cat --",
+    "git diff --name-only -- '*.py' | xargs -r cat --",
+    "cat /x/other/*.subagent.md",
     "cat awi*",
     'cat "$ROLE_PATH"',
     "cat docs/$f.md",
