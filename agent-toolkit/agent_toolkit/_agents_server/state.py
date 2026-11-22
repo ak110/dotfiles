@@ -859,6 +859,7 @@ class SessionResumeState:
     excluded_candidates: frozenset[ModelCandidate] = dataclasses.field(default_factory=frozenset)
     status: str = ""
     agent_message: str = ""
+    last_action: str = ""
     error: Any = None
     finalized_at: str | None = None
     result_delivered: bool = False
@@ -893,6 +894,7 @@ class SessionResumeState:
             claude_role=session.claude_role,
             status=session.status,
             agent_message=session.agent_message,
+            last_action=session.last_action,
             error=session.error,
             finalized_at=session.finalized_at,
             result_delivered=session.result_delivered,

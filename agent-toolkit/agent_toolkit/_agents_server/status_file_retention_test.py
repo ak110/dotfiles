@@ -162,6 +162,7 @@ async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs
     parent.retention_deadline = asyncio.get_running_loop().time() - 1
     expired_parent = _terminal_parent(tmp_path, "failed")
     expired_parent.session_id = "expired-parent"
+    expired_parent.last_action = "Read: 計画"
     expired = {"expired-parent": state.SessionResumeState.from_session(expired_parent)}
     writer = subject.StatusFileWriter(
         {parent.session_id: parent},
@@ -176,7 +177,9 @@ async def test_writer_keeps_parent_past_retention_deadline_while_descendant_runs
 
     shown = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
     assert {item["session_id"]: item["status"] for item in shown} == {"parent": "completed", "expired-parent": "failed"}
-    assert next(item for item in shown if item["session_id"] == "expired-parent")["label"] == "lane-01-exec"
+    retained = next(item for item in shown if item["session_id"] == "expired-parent")
+    assert retained["label"] == "lane-01-exec"
+    assert retained["last_action"] == "Read: 計画"
 
     _write_descendant_file(tmp_path, expired_writer.name, "expired-parent", {"other-grandchild": "completed"})
     writer.flush()

@@ -209,11 +209,7 @@ fn terminal_parent_stays_while_grandchild_runs() {
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[0].starts_with("parent (claude)"), "{lines:?}");
         assert!(lines[0].ends_with(&format!("1m0s · {status}")), "{lines:?}");
-        assert!(lines[0].contains("対応不要"), "{lines:?}");
-        assert!(
-            lines[0].contains("結果回収・子孫session終了後に非表示"),
-            "{lines:?}"
-        );
+        assert!(!lines[0].contains("対応不要"), "{lines:?}");
         assert!(lines[1].starts_with("└ grandchild (claude)"), "{lines:?}");
         assert!(lines[1].ends_with("30s · running"), "{lines:?}");
 

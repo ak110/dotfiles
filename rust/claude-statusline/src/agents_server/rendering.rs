@@ -54,7 +54,7 @@ pub(crate) fn render_state_files(
                 item.session.status.as_str(),
                 "completed" | "failed" | "interrupted"
             ) {
-                "対応不要: 委譲元の結果回収・子孫session終了後に非表示".to_string()
+                item.session.last_action.clone()
             } else if item.session.last_action.is_empty() {
                 item.session.progress.clone()
             } else {
