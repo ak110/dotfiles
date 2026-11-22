@@ -1,4 +1,4 @@
-"""exploreの完了状態行と、役割taskの固定行・続行不能返却を公開前に検査する。"""
+"""自由本文の完了状態行と、役割taskの固定行・続行不能返却を公開前に検査する。"""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
 # 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
 _STATE_HEAD = "状態: completed"
+_FREEFORM_CHECKED_KINDS = frozenset({"delegate", "explore", "write"})
 
 
 def is_wait_statement(message: object) -> bool:
@@ -43,18 +44,39 @@ _VALID_CLASSIFICATIONS = frozenset(
 )
 
 
+def _visible_result_lines(message: str) -> list[str]:
+    """コードフェンス内の形式見本を、返却の標識として読まない。"""
+    lines: list[str] = []
+    fence = ""
+    for line in message.splitlines():
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if match and match[1].startswith(fence) and not match[2].strip():
+                fence = ""
+            lines.append("")
+        elif match:
+            fence = match[1]
+            lines.append("")
+        else:
+            lines.append(line)
+    return lines
+
+
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """自由本文exploreの成功行と、役割taskの固定行、explore・taskの続行不能2行を検査する。"""
+    """自由本文の成功行、役割taskの固定行、続行不能の2行を検査する。"""
     if result.get("status") != "completed":
         return None
     message = result.get("agent_message")
-    if isinstance(message, str) and session.launch_kind in {"delegate", "explore"}:
+    if isinstance(message, str) and session.launch_kind in _FREEFORM_CHECKED_KINDS:
         unavailable = re.finditer(
             r"(?m)^(?P<indent>[ \t]*)続行できない区分:[ \t]*runtime_unavailable[ \t]*\r?\n"
             r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]*)",
             message,
         )
+        visible_lines = _visible_result_lines(message)
         for claim in unavailable:
+            if not visible_lines[len(message[: claim.start()].splitlines())]:
+                continue
             reason_parts = [claim["reason"]]
             # reader-fitの欄値は次行の字下げや箇条書きも含む。同じ値から診断の引用を確認する。
             for line in message[claim.end() :].splitlines():
@@ -71,19 +93,14 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
                     "予算・時間枠・ツール回数枠の自己推定は実行不能の証拠になりません"
                 )
     document = task_documents.launched_task_document(session.prompt)
-    freeform_explore = session.launch_kind == "explore" and document is None
-    if not freeform_explore and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
+    freeform_checked = session.launch_kind in _FREEFORM_CHECKED_KINDS and document is None
+    if not freeform_checked and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
         return None
-    message = result.get("agent_message")
     if not isinstance(message, str):
-        return (
-            "探索の返却本文が必要です"
-            if freeform_explore or document is not None and document.name == "reader-fit-review.subagent.md"
-            else None
-        )
+        return "委譲の返却本文が必要です"
     if is_wait_statement(message):
         return None
-    lines = message.splitlines()
+    lines = _visible_result_lines(message)
     has_reason = False
     for index, line in enumerate(lines):
         match = re.fullmatch(r"(?P<indent>\s*)" + re.escape(_REASON_PREFIX) + r".*", line)
@@ -103,10 +120,10 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         classification = previous.removeprefix(expected).strip()
         if classification not in _VALID_CLASSIFICATIONS:
             return f"{index}行目の続行できない区分が閉集合外です: {classification}"
-    if freeform_explore and not has_reason:
-        lines = message.rstrip().splitlines()
+    if freeform_checked and not has_reason:
+        lines = "\n".join(lines).rstrip().splitlines()
         if not lines or _STATE_HEAD not in (lines[0].rstrip(" \t"), lines[-1]):
-            return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
+            return f"{session.launch_kind}の返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
         return _reader_fit_reason(session, document, message)
     if document is not None and not has_reason:
@@ -125,7 +142,7 @@ def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
         _STATE_HEAD,
         *(declaration.result_heads if isinstance(declaration, task_documents.TaskDocumentDeclaration) else ()),
     )
-    for line in message.splitlines():
+    for line in _visible_result_lines(message):
         stripped = line.strip().removeprefix("- ")
         if any(_head_matches(stripped, head) for head in heads):
             return None
@@ -250,16 +267,18 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
 
 
 def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
-    """形式違反とexploreの不足申告を同じ1回の保留・継続へ渡す。"""
+    """形式違反と探索・役割付き委譲の不足申告を同じ1回の保留・継続へ渡す。"""
     reason = invalid_result_reason(session, result)
     if reason is None:
-        # 有効な不足申告の真偽は機械判定せず、exploreだけ同じ回復枠で一度再確認する。
+        # 不足申告の真偽は機械判定せず、探索と役割付き委譲を同じ回復枠で一度再確認する。
         message = result.get("agent_message")
+        document = task_documents.launched_task_document(session.prompt)
+        role = document is not None and task_documents.is_agent_toolkit_task_document(document)
         if (
-            session.launch_kind != "explore"
+            (session.launch_kind != "explore" and not role)
             or result.get("status") != "completed"
             or not isinstance(message, str)
-            or not re.search(r"(?m)^\s*続行できない理由:", message)
+            or not any(line.lstrip().startswith(_REASON_PREFIX) for line in _visible_result_lines(message))
             or session.result_contract_recovery_consumed
         ):
             return False
@@ -270,8 +289,7 @@ def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
         details["resultContract"] = reason
         details["nextAction"] = RECOVERY_NEXT_ACTION
         result["error"] = details
-        if session.launch_kind == "explore":
-            result["status"] = "failed"
+        result["status"] = "failed"
         return False
     session.hold_result(ResultContractWait(result, reason))
     session.status = "running"
