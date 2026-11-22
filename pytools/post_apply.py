@@ -503,7 +503,10 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
     if any(notice.warning for notice in unique_notices):
         print(file=sys.stderr, flush=True)
     for notice in unique_notices:
-        logger.log(logging.WARNING if notice.warning else logging.INFO, "%s", notice.render(), extra=log_format.SHOW)
+        if notice.warning:
+            logger.warning("%s", notice.render())
+        else:
+            logger.info("%s", notice.render(), extra=log_format.SHOW)
 
 
 def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
