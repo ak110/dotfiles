@@ -381,6 +381,7 @@ async def test_process_requests_rejects_nested_worktree_cwd(
             tmp_path,
             deadline=time.monotonic() + 2,
             state_root=tmp_path,
+            worktree_paths=(tmp_path, tmp_path / "nested") if registered_paths else None,
         )
     )
     calls: list[str] = []
@@ -392,12 +393,8 @@ async def test_process_requests_rejects_nested_worktree_cwd(
 
     try:
         async with asyncio.timeout(3):
-            while not (requests := list(session_registry.registry_directory(tmp_path).glob("*.release-request"))):
+            while next(session_registry.registry_directory(tmp_path).glob("*.release-request"), None) is None:
                 await asyncio.sleep(0.001)
-        if registered_paths:
-            payload = json.loads(requests[0].read_text(encoding="utf-8"))
-            payload["worktree_paths"] = [str(tmp_path), str(tmp_path / "nested")]
-            requests[0].write_text(json.dumps(payload), encoding="utf-8")
         await session_release.process_requests({"child": _Session(True, str(cwd))}, stop, state_root=tmp_path)
         reason = await task
         if registered_paths and nested:
