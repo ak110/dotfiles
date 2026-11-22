@@ -204,6 +204,10 @@ async def test_start_input_rejection_points_to_owning_contract(
                 target.write_text(text, encoding="utf-8")
     document = root / role_relative
     params = _observed_input_params(document.name, tmp_path)
+    if role == "repository-process":
+        # ここでは現行の起動入力に、検査対象の不備を1つだけ作る。
+        for removed in ("ownership_record", "ownership_token"):
+            params.pop(removed, None)
     missing_name = {"exec": "担当種別", "repository-process": "引き継ぎ記録先", "add-wi": "投入する要求"}[role]
     if defect == "missing":
         params.pop(missing_name)

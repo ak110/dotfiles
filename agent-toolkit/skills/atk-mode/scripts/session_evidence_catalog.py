@@ -240,6 +240,7 @@ def _workflow_evidence(item: _CollectedRecord) -> tuple[str, dict[str, Any] | st
             and (
                 _skill_modes.PROCESS_WI in text
                 or _skill_modes.PROCESS_WI_LAUNCH_MARKER in text
+                or _skill_modes.entry_launch("process-loop", free_text=False) in text
                 or text.strip() == "/process-wi"
                 or _ENTRY_PROCESS_WI.match(text) is not None
             )

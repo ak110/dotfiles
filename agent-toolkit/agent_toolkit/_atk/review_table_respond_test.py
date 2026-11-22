@@ -83,7 +83,7 @@ def test_cell_files_preserve_issue_and_supply_responses(
     assert review_table_cli.dispatch(no_response_args) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     assert rows[0] == ["1", _TRACK, location, issue, "詳細", response.strip(), ""]
-    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "詳細", "", reason.strip()]
+    assert rows[1] == ["2", _TRACK, "README.md", "対象外", "", "", reason.strip()]
 
 
 @pytest.mark.parametrize(
@@ -137,7 +137,7 @@ def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
     table.add(path, "2", _TRACK, "README.md", "指摘B")
     assert table.respond(path, "1", _TRACK, "", "", review_bodies.response_body("対応した"), "") == 0
     row = [json.loads(cell) for cell in path.read_text(encoding="utf-8").splitlines()[0].split("\t")]
-    assert row == ["1", _TRACK, "module.py:10", "指摘A", "詳細", review_bodies.response_body("対応した"), ""]
+    assert row == ["1", _TRACK, "module.py:10", "指摘A", "", review_bodies.response_body("対応した"), ""]
 
 
 def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pathlib.Path) -> None:
@@ -248,4 +248,4 @@ def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.P
     assert table.validate(path) == 0
     rows = [[json.loads(cell) for cell in line.split("\t")] for line in path.read_text(encoding="utf-8").splitlines()]
     matching = [row for row in rows if row[:4] == list(target)]
-    assert matching == [[*target, "詳細", review_bodies.response_body("再現経路を追加"), ""]]
+    assert matching == [[*target, "", review_bodies.response_body("再現経路を追加"), ""]]

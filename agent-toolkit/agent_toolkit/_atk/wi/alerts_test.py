@@ -969,8 +969,8 @@ def test_real_glab_resolves_configuration_through_ci_and_failure_logs(
         thread.start()
         try:
             options = ["--repo", repository, "--forge=gitlab", "--ref=main", "--source-ref=HEAD", "--registration-grace=0"]
+            options.extend(("--sha", "a" * 40))
             baseline = tmp_path / "baseline.json"
-            monkeypatch.setattr(wait_ci, "_resolve_sha", lambda *_args: "a" * 40)
             monkeypatch.setattr(wait_ci, "_install_signal_handlers", lambda: None)
             if not prefer_environment:
                 assert wait_ci.main(["--write-baseline", str(baseline), *options]) == 0
