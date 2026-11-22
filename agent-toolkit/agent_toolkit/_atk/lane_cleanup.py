@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -15,6 +16,7 @@ from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
+from agent_toolkit._git import command as git_command
 
 
 def _unowned_data_reason(worktree: pathlib.Path, protected_paths: Iterable[str]) -> str | None:
@@ -232,6 +234,21 @@ def cleanup_session(
     return result
 
 
+def _remove_branch_config(repo: pathlib.Path, branch: str) -> None:
+    section = f"branch.{branch}"
+    result = git_command.run(
+        ["config", "--local", "--remove-section", section],
+        repo,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "LC_ALL": "C", "LANGUAGE": "C"},
+        timeout=_lane_records.TIMEOUT,
+    )
+    stderr = result.stderr.strip()
+    if result.returncode and not (result.returncode == 128 and stderr == f"fatal: no such section: {section}"):
+        raise ValueError(f"branchは回収したが設定を除けない（git config終了{result.returncode}）: {stderr}")
+
+
 def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) -> dict[str, typing.Any]:
     result: dict[str, typing.Any] = {"removed": [], "retained": [], "user_confirmation": []}
     registered = _lane_records.list_resources()
@@ -284,6 +301,7 @@ def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) 
                     raise ValueError("シンボリックrefを回収しない")
                 _lane_records.git(repo, "update-ref", "--no-deref", "-d", ref, head)
                 result["removed"].append({**candidate, **proof, "resource": "branch"})
+                _remove_branch_config(repo, branch)
         except _lane_records.record_errors() as error:
             result["retained"].append({**candidate, "reason": str(error)})
     return result

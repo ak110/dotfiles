@@ -177,6 +177,9 @@ def test_delete_sweeps_orphans(
     git_repository.run_git(repo, "merge", "--ff-only", covered)
     git_repository.run_git(repo, "branch", "orch/obsolete")
     git_repository.run_git(repo, "branch", "orch/race")
+    git_repository.run_git(repo, "config", "--local", "branch.orch/obsolete.pushRemote", "old-remote")
+    git_repository.run_git(repo, "config", "--local", "branch.orch/obsolete.description", "old description")
+    git_repository.run_git(repo, "config", "--local", "branch.orch/race.pushRemote", "keep-remote")
     git_repository.run_git(repo, "symbolic-ref", "refs/heads/orch/alias", "refs/heads/main")
     for branch in ("orch/rebase", "orch/bisect", "orch/sequencer"):
         git_repository.run_git(repo, "branch", branch)
@@ -240,6 +243,7 @@ def test_delete_sweeps_orphans(
     }
     assert {item["branch"] for item in orphans["user_confirmation"]} == {None, "user-owned"}
     retained = {item["branch"]: item["reason"] for item in orphans["retained"]}
+    assert "orch/clean" not in retained and "orch/obsolete" not in retained
     assert "未追跡" in retained["orch/dirty"]
     assert "使用中" in retained["orch/busy"]
     assert "含まれない" in retained["orch/unique"]
@@ -248,6 +252,9 @@ def test_delete_sweeps_orphans(
     assert "無視対象" in retained["orch/ignored"]
     assert "内包" in retained["orch/nested"]
     assert "update-ref" in retained["orch/race"]
+    local_keys = git_repository.git_output(repo, "config", "--local", "--name-only", "--list").splitlines()
+    assert not any(key.rpartition(".")[0] == "branch.orch/obsolete" for key in local_keys)
+    assert git_repository.git_output(repo, "config", "--local", "branch.orch/race.pushRemote").strip() == "keep-remote"
     assert "シンボリックref" in retained["orch/alias"]
     assert git_repository.git_output(repo, "symbolic-ref", "refs/heads/orch/alias").strip() == "refs/heads/main"
     assert git_repository.git_output(repo, "rev-parse", "refs/heads/main").strip() == covered
