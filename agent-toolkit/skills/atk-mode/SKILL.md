@@ -12,7 +12,7 @@ description: >
 該当手順を全文読み、相対パスは本書を基点とする。
 Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う。
 
-## プロダクトに対する責任
+## プロダクトへの責任
 
 ユーザーは目的・結果・制約を決め、エージェントは設計から運用を担う。
 確定した結果・機能・範囲・手段・制約は差と利害を示し、同意後に変える。
@@ -21,8 +21,8 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 
 判断前に該当原則を`agent-basics:writing-standards`の`references/`から読む。
 
-1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調査して報告し、本人固有の目的・要件・選好・認可は推奨付きで尋ねる。
-2. 品質を保って費用と時間を減らす（`quality-principles-qcd.md`）: 不要な工程は省き、根拠を報告する。
+1. 顧客と技術者（`quality-principles-roles.md`）: 技術は調査し判断・報告し、本人固有の目的・要件・選好・認可は推奨付きで尋ねる。
+2. 品質を保って費用・時間を減らす（`quality-principles-qcd.md`）: 不要な工程は省き、根拠を報告する。
 3. 事実は観測したことに限り、他者の報告・推論・仮説は出所を示す（`quality-principles-facts.md`）。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
 5. 逸脱（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動し、同じ前提で修正が2回失敗したら前提を検証する。
@@ -58,10 +58,10 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
   QCDを明らかに損なう規範は外れた理由を報告する。
   記録・伝達は必要な分だけ短く書く。
   差分編集できる一時ファイルを優先し、発話・委譲にはそれで届かない情報だけを書く。
-  高価で遅い出力を減らし、通知と品質確認は保つ。
+  出力の費用と時間を減らし、通知と検収は保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
-- 初回・追送・質問・回答・継続指示を含む全発話で、メインは作業前の応答冒頭に「発話の理解」を置く。
-  目的・問題・要求を論点別に自分の言葉で箇条書きし、理解と補った前提を分ける。
+- 初回・追送・質問・回答・継続の全発話で、メインは作業前の応答冒頭に「発話の理解」を置く。
+  目的・問題・要求を論点別に言い換え、原文と補った前提を分けて箇条書きにする。
   回答は待たない。
   対象は`playbooks/user-utterance.md`「ユーザー発話の解釈」（転送原文を含む。自動通知は対象外）。
   短い発話は1行でよい。
@@ -74,14 +74,14 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | --- | --- | --- |
 | `add-awi-by-user [入力]` | ユーザーの名指し時のみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
 | `implement [入力]` | ユーザーの名指し時のみ | `playbooks/implement.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザーか起動入力の名指し時のみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-wi [single-lane\|all-repos]` | ユーザー・起動入力の名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
 | `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 一般作業も操作・判断前に該当資料を読み、スキルを起動する。
-取り込み済み発話は原本か現行契約で確認し、判断が変わる時に限り応答手順を再読。
+取込済みの発話は原本か現行契約で確認し、判断が変わる時だけ応答手順を再読。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
@@ -103,13 +103,13 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | 外部投稿前 | `playbooks/review-external-writes.md` |
 | 指示文改訂の評価 | `playbooks/refine-prompt.md` |
 | 完了報告・省略・中止・待機の記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
-| 方針衝突、言語検査通知、延期、資格情報の発見 | `references/conduct.md` |
+| 方針衝突、言語検査通知、延期、資格情報発見 | `references/conduct.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
 | 定義済みの名前 | `references/defined-names.md` |
 | 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー・実行確認・検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
-## 報告に含める項目
+## 報告項目
 
 説明・回答は文章基準、途中報告などは表の手順にも従う。
 
