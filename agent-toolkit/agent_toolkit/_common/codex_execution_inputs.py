@@ -1,5 +1,3 @@
-"""Codexの実行セルから静的に確定したコマンドを取り出す。任意コードは評価しない。"""
-
 import ast
 import json
 import re
@@ -11,12 +9,10 @@ _JS_TOKEN = re.compile(
 
 
 def javascript_tokens(text: str) -> list[re.Match[str]]:
-    """コメントを除く字句列を返し、元の入力内の位置を保つ。"""
     return [match for match in _JS_TOKEN.finditer(text) if not match[0].startswith(("//", "/*"))]
 
 
 def javascript_string(token: str) -> str | None:
-    """静的なJavaScript文字列だけを復号し、式の評価を行わない。"""
     if token.startswith("`"):
         if "${" in token:
             return None
@@ -29,12 +25,10 @@ def javascript_string(token: str) -> str | None:
 
 
 def command_inputs(tool: str, text: str) -> list[str]:
-    """実行ツールの静的なcmd文字列を呼び出しごとに返す。説明用文字列は走査しない。"""
     return [row["command"] for row in command_input_observations(tool, text) if row["command"] is not None]
 
 
 def command_input_observations(tool: str, text: str) -> list[dict[str, str | None]]:
-    """実行入力と未確定理由を操作ごとに保つ。記録された式は評価しない。"""
     leaf = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold()
     if leaf != "exec":
         return [{"command": text, "input": text, "reason": None}]
@@ -69,8 +63,7 @@ def command_input_observations(tool: str, text: str) -> list[dict[str, str | Non
                 depth -= 1
             if depth == 1 and tokens[cursor : cursor + 3] == [".", ".", "."]:
                 ambiguous = True
-            # 計算キーとcmdの短縮記法・アクセサーは、文字列リテラルの値を上書きし得る。
-            # キーを求める式やgetterは評価せず、この操作の全体を未確定へ送る。
+            # 計算キー・短縮記法・アクセサーはcmdを上書きし得るため、式を評価せず操作を未確定とする。  # pyfltr: allow-comment
             if depth == 1 and token == "[":
                 ambiguous = True
             if (

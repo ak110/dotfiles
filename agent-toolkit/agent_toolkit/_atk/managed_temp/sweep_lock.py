@@ -90,5 +90,5 @@ def sweep_access(temp_root: pathlib.Path, state_root: pathlib.Path) -> typing.Ge
 
 
 def persistent_lock_path(state_root: pathlib.Path) -> pathlib.Path:
-    """掃引と旧版が共用する永続ロックのパスを返す。"""
+    # 旧版と同じロックで排他するため、保存場所を変えない。  # pyfltr: allow-comment
     return state_root / ".sweep/pressure.lock"

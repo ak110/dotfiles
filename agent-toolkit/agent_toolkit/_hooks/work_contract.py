@@ -108,7 +108,7 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
     if not observed:
         return None
 
-    reminders = []
+    reminders: list[str] = []
 
     def mark(state: dict) -> dict | None:
         prior = state.get("scope_reviewed_before_send", {})
