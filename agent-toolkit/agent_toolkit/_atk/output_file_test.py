@@ -131,6 +131,8 @@ def test_combined_streams_save_the_larger_one(tmp_path: pathlib.Path, capsys: py
     captured = capsys.readouterr()
     assert captured.out.startswith("保存先: ")
     assert pathlib.Path(captured.out.splitlines()[0].removeprefix("保存先: ")).read_text(encoding="utf-8") == large
+    # 保存したファイル単体は上限以下で1回の読取に収まるため、注意の行を付けない。
+    assert len(captured.out.splitlines()) == 2
     assert captured.err == small
 
 

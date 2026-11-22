@@ -22,7 +22,7 @@ from agent_toolkit._agents_server import (
     wait_run,
     wait_summary,
 )
-from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import managed_temp, output_file
 from agent_toolkit._common import session_activity, session_registry, state_paths
 from agent_toolkit._testing.agents_server_commands_support import _write_root_sessions
 
@@ -361,6 +361,8 @@ def test_wait_summary_budget_covers_whole_output(tmp_path: pathlib.Path, excess:
     assert output.splitlines()[:2] == ["終了: 1件", terminal_line]
     assert (body in output) is shown
     assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    # 本文表示の上限は独自の値を持たず、atkの共通の直接表示の上限と同じにする。
+    assert wait_summary.BODY_BUDGET_BYTES == output_file.AUTO_SAVE_THRESHOLD_BYTES
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:
