@@ -8,6 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import responses, resume_waits, state, turn_state, wait_output_tracking
+from agent_toolkit._common import session_registry
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
@@ -355,3 +356,27 @@ def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> No
     assert session.live_child_session_ids == {"child-1"}
     wait_output_tracking.consume_agents_wait_output(session, f"保存先: {output}\n行数: 1\n")
     assert not session.live_child_session_ids
+
+
+@pytest.mark.parametrize("registry_readable", [True, False])
+@pytest.mark.asyncio
+async def test_old_background_output_does_not_release_later_turn(tmp_path, monkeypatch, registry_readable):
+    parent = state.SessionState("parent", str(tmp_path))
+    parent.live_child_session_ids.add("child")
+    output = tmp_path / "wait.out"
+    output.write_text(json.dumps({"session_id": "child", "status": "completed"}), encoding="utf-8")
+    parent.agents_wait_background_outputs.add(str(output))
+
+    async def restart_after_read(function, *args):
+        collected = function(*args)
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=2
+        )
+        if not registry_readable:
+            (session_registry.registry_directory() / "child.json").write_text("{", encoding="utf-8")
+        return collected
+
+    monkeypatch.setattr(wait_output_tracking, "run_file_operation", restart_after_read)
+    await wait_output_tracking.consume_agents_wait_background_outputs_async(parent)
+
+    assert parent.live_child_session_ids == {"child"}

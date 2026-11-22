@@ -169,14 +169,16 @@ def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     assert calls[0][1]["stdin"] == run_skill_batch.subprocess.DEVNULL
 
 
-@pytest.mark.parametrize("platform", ["linux", "win32"])
-def test_hook_launch_does_not_open_console_window_on_windows(tmp_path, monkeypatch, platform) -> None:
-    """Windowsの切り離し起動は非表示コンソールを使い、子孫のコンソールアプリに可視ウィンドウを作らせない。"""
+@pytest.mark.parametrize(("platform", "denied"), [("linux", False), ("win32", False), ("win32", True)])
+def test_hook_launch_does_not_open_console_window_on_windows(tmp_path, monkeypatch, platform, denied) -> None:
+    """Windowsでは非表示で離脱し、離脱できなければJobを継承せずに失敗する。"""
     calls = []
 
     def spawn(argv, **kwargs):
         del argv
         calls.append(kwargs)
+        if denied:
+            raise PermissionError(5, "アクセスが拒否されました。")
         return types.SimpleNamespace(pid=None, wait=lambda: 0)
 
     monkeypatch.setattr(run_skill_batch, "sys", types.SimpleNamespace(**(vars(sys) | {"platform": platform})))
@@ -200,40 +202,14 @@ def test_hook_launch_does_not_open_console_window_on_windows(tmp_path, monkeypat
         assert calls[0]["creationflags"] & 0x00000200
         # hookを所有するJobの終了と一緒に回収されないよう、CREATE_BREAKAWAY_FROM_JOB=0x01000000で離脱する。
         assert calls[0]["creationflags"] & 0x01000000
-        assert "start_new_session" not in calls[0]
+        assert calls[0]["start_new_session"] is False
     else:
         assert calls[0]["start_new_session"] is True
 
-
-def test_hook_launch_inherits_job_when_breakaway_is_denied(tmp_path, monkeypatch) -> None:
-    """離脱を許さないJobの中では、離脱指定の起動失敗後に所属を継承して起動し、受付前の失敗として残さない。"""
-    calls = []
-
-    def spawn(argv, **kwargs):
-        del argv
-        calls.append(kwargs["creationflags"])
-        if kwargs["creationflags"] & 0x01000000:
-            raise PermissionError(5, "アクセスが拒否されました。")
-        return types.SimpleNamespace(pid=None, wait=lambda: 0)
-
-    monkeypatch.setattr(run_skill_batch, "sys", types.SimpleNamespace(**(vars(sys) | {"platform": "win32"})))
-    monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda *args, **kwargs: "example.com/team/repo")
-    monkeypatch.setattr(session_activity, "host_process", object)
-    monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
-    run_skill_batch.hook_request(
-        {
-            "hook_event_name": "SessionStart",
-            "session_id": "main",
-            "cwd": str(tmp_path),
-            "transcript_path": str(tmp_path / "x.jsonl"),
-        },
-        host="claude",
-    )
-    assert len(calls) == 2
-    assert calls[1] & 0x01000000 == 0
-    logs = list((session_review.directory() / "launches").glob("*.log"))
-    assert len(logs) == 1
-    assert not logs[0].read_bytes()
+    if denied:
+        logs = list((session_review.directory() / "launches").glob("*.log"))
+        assert len(logs) == 1
+        assert "独立起動に失敗" in logs[0].read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
