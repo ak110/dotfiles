@@ -166,7 +166,8 @@ jobs:
           CHECK_NAME: browser-e2e
         run: bash scripts/ci_check_scope.sh
         id: selection
-      - uses: ./.github/actions/ci-browser-e2e
+      - name: ブラウザーE2Eの実行
+        uses: ./.github/actions/ci-browser-e2e
         if: steps.selection.outputs.selected == 'true'
   rust-lint:
     needs: common-ci-owner
@@ -196,7 +197,8 @@ jobs:
           CHECK_NAME: rust-lint
         run: bash scripts/ci_check_scope.sh
         id: selection
-      - uses: ./.github/actions/ci-rust-lint
+      - name: Rust検証の実行
+        uses: ./.github/actions/ci-rust-lint
         if: steps.selection.outputs.selected == 'true'
   statusline-version:
     name: statusline-version
