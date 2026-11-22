@@ -392,7 +392,7 @@ def _write_maintenance_record(group: _CacheGroup, result: MaintenanceResult, det
         try:
             previous = _read_maintenance_record(group)
         except OSError, ValueError:
-            previous = None
+            return
         if previous is not None and previous.result is MaintenanceResult.FAILED:
             record = dataclasses.replace(previous, deferred_at=now, deferred_detail=detail)
     if not common.atomic_write_json(_record_path(group), dataclasses.asdict(record), tag="prune"):

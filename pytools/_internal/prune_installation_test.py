@@ -559,6 +559,21 @@ def test_failed_maintenance_fails_following_updates_until_resolved(tmp_path, mon
     assert prune_installation.run().failure is None
 
 
+def test_deferred_maintenance_preserves_corrupt_record(tmp_path, monkeypatch, capsys):
+    _, calls = _prepare(tmp_path, monkeypatch, "full")
+    _uv_clean_failure(monkeypatch, calls)["stderr"] = "when waiting for lock on cache"
+    state = _state("uv-cache-maintenance.json")
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text("{", encoding="utf-8")
+
+    _maintain(monkeypatch, tmp_path)
+    with pytest.raises(SystemExit) as exited:
+        post_apply.main(["--prune-only"], runner=lambda: ([], []))
+
+    assert exited.value.code == 1
+    assert "整理の独立プロセスの結果を読めません" in capsys.readouterr().err
+
+
 def test_npm_failure_is_reported_next_update_even_when_uv_defers(tmp_path, monkeypatch, caplog):
     _, calls = _prepare(tmp_path, monkeypatch, "full")
     _uv_clean_failure(monkeypatch, calls)["stderr"] = "when waiting for lock on cache"
