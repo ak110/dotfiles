@@ -46,7 +46,7 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     return events
 
 
-def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dict[str, Any]], int]:
+def _detail_events(records: list[_Record], numbers: list[int], *, codex: bool) -> tuple[list[dict[str, Any]], int]:
     """指定行のエントリを整形して返す。範囲外の行番号はエラーと終了コード2を返す。"""
     index = {record.line: record.raw_entry for record in records}
     events: list[dict[str, Any]] = []
@@ -54,12 +54,17 @@ def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dic
         entry = index.get(number)
         if entry is None:
             return [_error_event(f"行番号{number}は範囲外", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        events.extend(_entry_detail_events(number, entry, full_message_text=True))
+        events.extend(_entry_detail_events(number, entry, full_message_text=True, codex=codex))
     return events, 0
 
 
 def _entry_detail_events(
-    line: int, entry: dict[str, Any], *, limit: int = _MAX_DETAIL_LENGTH, full_message_text: bool = False
+    line: int,
+    entry: dict[str, Any],
+    *,
+    limit: int = _MAX_DETAIL_LENGTH,
+    full_message_text: bool = False,
+    codex: bool = False,
 ) -> list[dict[str, Any]]:
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
@@ -112,14 +117,26 @@ def _entry_detail_events(
     if not events:
         events = _codex_detail_events(line, entry, budget)
     if not events:
-        events = [
-            {
-                "kind": "detail",
-                "line": line,
-                "timestamp": timestamp,
-                "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
-            }
-        ]
+        payload = entry.get("payload")
+        outer_type = entry.get("type")
+        if (
+            codex
+            or isinstance(outer_type, str)
+            and outer_type in {"session_meta", "response_item", "event_msg", "turn_context"}
+        ):
+            event_type = payload.get("type") if isinstance(payload, dict) else None
+            if not isinstance(event_type, str):
+                event_type = outer_type if isinstance(outer_type, str) else "unknown"
+            events = [{"kind": "detail", "line": line, "timestamp": timestamp, "event_type": budget.clip(event_type)}]
+        else:
+            events = [
+                {
+                    "kind": "detail",
+                    "line": line,
+                    "timestamp": timestamp,
+                    "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
+                }
+            ]
     source = entry.get("opencode_source")
     if isinstance(source, dict):
         for event in events:
@@ -141,6 +158,12 @@ def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget
     common = {"kind": "detail", "line": line, "timestamp": _entry_timestamp(entry)}
     if entry.get("type") == "response_item":
         if kind == "message":
+            if payload.get("role") == "developer":
+                return [
+                    {**common, "role": "developer", "text": budget.clip(text)}
+                    for text in _codex_text_blocks(payload.get("content"))
+                    if text.strip()
+                ]
             return [{**common, "role": role, "text": budget.clip(text)} for role, text in _message_texts(entry)]
         if kind in {"function_call", "custom_tool_call"}:
             raw = payload.get("arguments") if kind == "function_call" else payload.get("input")
@@ -473,7 +496,7 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
         if error_events is not None:
             return error_events, 2
         assert selected is not None and line is not None
-        record_events, exit_code = _detail_events(selected.records, [line])
+        record_events, exit_code = _detail_events(selected.records, [line], codex=selected.runtime == "codex")
         if exit_code:
             return record_events, exit_code
         events.extend(_events_with_record(record_events, selected.record_id))

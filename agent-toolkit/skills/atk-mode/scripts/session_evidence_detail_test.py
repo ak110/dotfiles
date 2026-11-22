@@ -82,6 +82,37 @@ def test_observation_boundary_keeps_original_line_numbers(
     ]
 
 
+def test_detail_only_shows_codex_management_event_type_and_location(
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """管理イベントのpayloadは公開detailへ展開せず、可視developer本文は保持する。"""
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "developer",
+                    "content": [{"type": "input_text", "text": "可視の本文"}],
+                    "internal_chat_message_metadata_passthrough": "管理情報",
+                },
+            },
+            {"type": "response_item", "payload": {"type": "reasoning", "encrypted_content": "非表示の値"}},
+            {"type": "event_msg", "payload": {"type": "token_count", "info": {"total": 5}}},
+            {"type": "event_msg", "payload": {"type": "future_event", "raw": {"extra": "不可視"}}},
+        ],
+    )
+    assert evidence.main([str(transcript), "--detail", "1", "--detail", "2", "--detail", "3", "--detail", "4"]) == 0
+    events = read_jsonl(capsys)
+    assert events[0]["text"] == "可視の本文"
+    assert events[0]["role"] == "developer"
+    assert [event["event_type"] for event in events[1:]] == ["reasoning", "token_count", "future_event"]
+    assert [event["line"] for event in events] == [1, 2, 3, 4]
+    assert all("text" not in event for event in events[1:])
+
+
 def test_query_modes_ignore_structural_values_of_codex_envelopes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
