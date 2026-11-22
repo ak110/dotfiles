@@ -61,7 +61,7 @@ set "PRUNE_REQUESTED=1"
 if "%~1"=="logs" set "PRUNE_REQUESTED=0"
 if "%~1"=="logs" goto run
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto run
-powershell.exe -NoLogo -NoProfile -Command "$message='更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'; if ([Console]::IsErrorRedirected) { $writer=[IO.StreamWriter]::new([Console]::OpenStandardError(), [Text.UTF8Encoding]::new($false)); try { $writer.WriteLine($message) } finally { $writer.Dispose() } } else { [Console]::Error.WriteLine($message) }"
+set "DOTFILES_SHOW_CACHE_WAIT=1"
 set "UPDATE_RUN_ARGS=run --no-cache --quiet --no-project --script"
 set "UPDATE_SCRIPT_PY=update_script_run.py"
 goto run

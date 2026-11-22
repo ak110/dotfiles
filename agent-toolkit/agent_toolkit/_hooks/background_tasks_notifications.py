@@ -3,6 +3,7 @@
 import contextlib
 lazy from collections import deque
 
+lazy from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 lazy from agent_toolkit._hooks.background_tasks_constants import (
     _TASK_ID_RE,
     _TASK_NOTIFICATION_RE,
@@ -184,7 +185,7 @@ def _log_unresolved_completion(session_id: str | None, detail: str) -> None:
     append_stop_log(
         session_id,
         "task_notification_unresolved",
-        {"notification": detail[:500]},
+        {"notification": diagnostic_excerpt(detail, prefix_chars=500)},
     )
 
 

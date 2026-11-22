@@ -93,10 +93,31 @@ class _SocketListener:
         self._stream.close()
 
 
+def _state_directory(caller: runtime_environment.CallerContext) -> pathlib.Path:
+    with runtime_environment.bind(caller):
+        return state_paths.state_dir()
+
+
 def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
     """CLIと同じ状態領域を選び、明示的に分離した管理領域を混ぜない。"""
-    with runtime_environment.bind(caller):
-        return state_paths.state_dir() / "services" / "agents-server"
+    base = _state_directory(caller) / "services" / "agents-server"
+    if os.name == "nt":
+        from agent_toolkit._agents_server.windows_service_transport import current_process_elevated
+
+        # 従来の共通索引にはどちらの権限の世代も残り得るため、両方を分ける。
+        suffix = "elevated" if current_process_elevated() else "standard"
+        return base.with_name(f"{base.name}-{suffix}")
+    return base
+
+
+def isolated_state(caller: runtime_environment.CallerContext) -> bool:
+    """呼出元の状態保存先を、指定がない場合の保存先と比べる。"""
+    key = "LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"
+    default = runtime_environment.CallerContext(
+        {name: value for name, value in caller.environment.items() if name != key},
+        caller.cwd,
+    )
+    return _state_directory(caller) != _state_directory(default)
 
 
 def endpoint(directory: pathlib.Path, generation: str) -> str:

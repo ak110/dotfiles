@@ -268,3 +268,32 @@ async def test_closing_after_reader_stopped_releases_resource_with_unread_events
         assert await client.close() == []
     assert raw.closed >= 1
     assert broker.backlog(client.resource.identifier) is None
+
+
+@pytest.mark.asyncio
+async def test_full_notification_queue_does_not_wait_for_sent_callback() -> None:
+    """送出確認の有無にかかわらず、保留した通知はそのまま残る。"""
+    broker = ResourceBroker("G1")
+    broker._event_limit = 1  # pylint: disable=protected-access
+    runtime = service_io.Runtime("G1", {"generation": "G1"}, broker)
+    raws: list[_RawCodex] = []
+
+    def factory(*args):
+        raw = _RawCodex(*args)
+        raws.append(raw)
+        return raw
+
+    async def unused(_value):
+        raise AssertionError("受信を開始していない")
+
+    client = service_io.CodexResource.create(runtime, factory, unused, unused, unused)
+    try:
+        await raws[0].notification({"value": 1})
+        async with asyncio.timeout(2):
+            assert await client.request("thread/read") == {"method": "thread/read"}
+            sent = asyncio.Event()
+            assert await client.request("account/read", on_sent=sent.set) == {"method": "account/read"}
+        assert sent.is_set()
+        assert broker.backlog(client.resource.identifier) == (1, 1)
+    finally:
+        await client.close()

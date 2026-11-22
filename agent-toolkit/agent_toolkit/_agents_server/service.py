@@ -43,6 +43,7 @@ from agent_toolkit._common import (
     session_registry,
 )
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.service")
 _MESSAGE = TypeAdapter(JSONRPCMessage)
@@ -427,7 +428,7 @@ async def run(
                     outcome="normal" if error is None else "exception",
                     exception_type=type(error).__name__ if error is not None else None,
                     message=(
-                        logging_config.redact_secrets(str(error))[: logging_config.MESSAGE_LIMIT] if error is not None else None
+                        diagnostic_excerpt(str(error), prefix_chars=logging_config.MESSAGE_LIMIT) if error is not None else None
                     ),
                 )
                 session_registry.set_owner_server_instance(None)

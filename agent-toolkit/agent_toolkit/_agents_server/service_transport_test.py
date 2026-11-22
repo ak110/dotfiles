@@ -36,6 +36,21 @@ from agent_toolkit._agents_server.service_projection import ProjectionHub
 from agent_toolkit._common import runtime_environment
 
 
+def test_windows_owner_token_selects_distinct_registry_and_pipe(monkeypatch, tmp_path):
+    caller = runtime_environment.CallerContext(
+        {"USERPROFILE": str(tmp_path), "LOCALAPPDATA": str(tmp_path), "HOME": str(tmp_path)}, tmp_path
+    )
+    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(windows_service_transport, "current_process_elevated", lambda: False)
+    standard = service_transport.namespace(caller)
+    monkeypatch.setattr(windows_service_transport, "current_process_elevated", lambda: True)
+    elevated = service_transport.namespace(caller)
+    assert standard.name == "agents-server-standard" and elevated.name == "agents-server-elevated"
+    assert standard.parent == elevated.parent
+    assert standard.parent.parent == elevated.parent.parent == service_transport.namespace(caller).parent.parent
+    assert service_transport.endpoint(standard, "G1") != service_transport.endpoint(elevated, "G1")
+
+
 @pytest.mark.parametrize("pid,code,missing", [(123, 87, True), (123, 5, False), (0, 87, False)])
 def test_windows_process_identity_distinguishes_missing_process_from_api_failure(monkeypatch, pid, code, missing):
     """消滅PIDだけを再起動可能とし、拒否と不正PIDを消滅へ変換しない。"""
@@ -357,8 +372,8 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_coordinator.ServiceCoordinator._commit": _commit,
     "service_coordinator.ServiceCoordinator.tick": _tick,
     "service_coordinator.ServiceCoordinator._reclaim_unadopted": _reclaim_unadopted,
-    "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
-    "service_coordinator.ServiceCoordinator._owns": _owns,
+    "service_session_control.ServiceSessionControl._foreign_sessions": _foreign_sessions,
+    "service_session_control.ServiceSessionControl._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,
     "service_context.ServiceManagers.generations": _generations,
     "service_io.CodexResource.close": _close,

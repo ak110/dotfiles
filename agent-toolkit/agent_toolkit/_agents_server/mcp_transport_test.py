@@ -33,9 +33,10 @@ from agent_toolkit._agents_server import (
     logging_config,
     mcp_tools,
     mcp_transport,
+    service_transport,
     session_errors,
 )
-from agent_toolkit._common import process_identity, process_tree, state_paths
+from agent_toolkit._common import process_identity, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
@@ -67,6 +68,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
     service: psutil.Process | None = None
     supervisor: psutil.Process | None = None
     identity: process_identity.ProcessIdentity | None = None
+    registry_dir = service_transport.namespace(runtime_environment.CallerContext(env, tmp_path))
     try:
         with anyio.fail_after(20):
             async with stdio_client(params) as streams:
@@ -74,7 +76,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                 async with ClientSession(read, write) as client:
                     initialized = await client.initialize()
                     assert initialized.protocol_version == "2025-11-25"
-                    [path] = list(tmp_path.rglob("generations.json"))
+                    path = registry_dir / "generations.json"
                     registry = json.loads(path.read_text(encoding="utf-8"))
                     target = registry["generations"][registry["current"]]
                     service = psutil.Process(int(target["process"].split(":", 1)[0]))
@@ -85,7 +87,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                     yield client
     except BaseException:
         # CIの一時領域は終了後に消えるため、起動失敗の一次診断を試験の保存出力へ含める。
-        for diagnostic in (tmp_path / "agent-toolkit/services/agents-server").glob("*.stderr.log"):
+        for diagnostic in registry_dir.glob("*.stderr.log"):
             print(f"{diagnostic}:\n{diagnostic.read_text(encoding='utf-8', errors='replace')}", file=sys.stderr)
         raise
     finally:

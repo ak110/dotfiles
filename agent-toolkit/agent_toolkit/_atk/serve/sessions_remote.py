@@ -227,7 +227,8 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
         payload = await _remote_call(context, host, "list", {})
     except Exception as error:  # noqa: BLE001
         logger.warning("リモートのセッション一覧を取得できません host=%s: %s", host, error)
-        return [], {"host": host, "reason": f"記録を取得できません: {error}"}
+        next_action = f"`ssh {host}`で接続できるかと、接続先で`uv --version`を実行できるかを確かめてから一覧を再読み込みする"
+        return [], {"host": host, "reason": f"記録を取得できません: {error}。次の操作: {next_action}"}
     entries: list[SessionSummary] = []
     for item in payload.get("entries", []):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):

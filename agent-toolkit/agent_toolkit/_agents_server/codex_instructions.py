@@ -94,8 +94,16 @@ def _developer_instructions(launch_kind: LaunchKind) -> str:
     """委譲先の役割、このprocessが起動時に確定した配布物root、ユーザーが置いた規範ファイルの本文を1つの指示として返す。"""
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
+    web_tools = (
+        "\nWebFetch・WebSearchは、公開されているCodexのWeb機能へ読み替える。"
+        "同名ツールを必須とせず、明示された手段の限定と権限拒否は保つ。"
+        "Web機能自体が無い場合は、その不足を返す。"
+        "根拠: skills/atk-mode/playbooks/host-codex.md「ツール名の読み替え」。"
+        if launch_kind == "explore"
+        else ""
+    )
     return (
-        f"{launch_prompt(launch_kind)}\n{auto_resume_notice()}{runtime}\n{cli_runtime_instructions(plugin_root)}\n\n"
+        f"{launch_prompt(launch_kind)}\n{auto_resume_notice()}{runtime}{web_tools}\n{cli_runtime_instructions(plugin_root)}\n\n"
         f"agent-toolkit plugin root: {plugin_root}\n"
         "担当自身が使うagent-toolkitのskillと実行基盤のplugin内部資源は、この実在する絶対パスを起点に読む。"
         "`<役割名>.subagent.md`や別hostのcache版数から別のplugin rootを組み立てない。"

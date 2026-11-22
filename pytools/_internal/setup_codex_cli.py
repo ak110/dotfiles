@@ -24,9 +24,7 @@ from pytools._internal import (
     log_format,
     post_apply_outcome,
     prune_codex_packages,
-    setup_bin_path,
     setup_cli_common,
-    winutils,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +38,7 @@ _COMMAND_TIMEOUT = 300.0
 
 
 def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
-    """公式スタンドアローン版を導入または更新し、確認後に旧npm版とmise版を移行する。
+    """公式スタンドアローン版を導入または更新し、確認後に旧npm版を案内し、mise版を移行する。
 
     取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧版の撤去と中継の再生成の失敗は失敗と数える。
     """
@@ -84,28 +82,22 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(codex_runtime.visible_bin_dir())
     windows = sys.platform == "win32"
-    # ユーザーが`codex`で起動する起動管理。dotfilesが見つからない場合は確認済みの公式実行体を案内する。
-    canonical = _wrapper_launcher(windows=windows) or launcher
+    canonical = launcher
     failures, removed = _remove_mise_versions(canonical)
-    migrated = False
-    try:
-        migrated = setup_cli_common.migrate_npm_launchers(
-            "codex",
-            _PACKAGE,
-            canonical,
-            codex_runtime.standalone_root(),
-            extra_search_directories=_nvm_bin_directories(),
-            # dotfilesが配置した起動管理はnpmの導入物ではなく、帰属判定の対象から除く。
-            excluded_launchers=codex_runtime.wrapper_launchers(),
-        )
-    except RuntimeError as error:
-        failures.append(str(error))
+    setup_cli_common.warn_about_npm_launchers(
+        "codex",
+        _PACKAGE,
+        canonical,
+        codex_runtime.standalone_root(),
+        extra_search_directories=_nvm_bin_directories(),
+        excluded_launchers=codex_runtime.wrapper_launchers(),
+    )
     orphaned_shims: list[Path] = []
     if not removed and not failures:
         orphan_failures, orphaned_shims = _find_orphaned_mise_shims()
         failures.extend(orphan_failures)
     # 自身の除去履歴だけでなく、miseの申告と中継の実在が一致しない場合も再生成する。
-    if removed or migrated or orphaned_shims:
+    if removed or orphaned_shims:
         reshim_failures = _reshim_mise()
         failures.extend(reshim_failures)
         if not reshim_failures:
@@ -123,7 +115,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     if pruning.failure:
         failures.append(pruning.failure)
     try:
-        install_recovery_launcher(launcher, windows=windows)
+        restore_native_launcher(launcher, windows=windows)
     except (OSError, RuntimeError) as error:
         failures.append(str(error))
     if failures:
@@ -225,77 +217,35 @@ def _get_installer(client: httpx.Client, url: str) -> httpx.Response:
     raise AssertionError("到達不能")
 
 
-def install_recovery_launcher(native: Path, *, windows: bool) -> None:
-    """確認済みの公式実行体を保持し、通常の可視コマンドを起動管理へ接続する。"""
-    source = _wrapper_launcher(windows=windows)
-    if source is None:
-        raise RuntimeError("Codexの起動管理を配置するdotfilesが見つからない。update-dotfilesを再実行する")
-    if not source.is_file():
-        raise RuntimeError(f"Codexの起動管理が見つからない: {source}。dotfilesを更新して再実行する")
+def restore_native_launcher(native: Path, *, windows: bool) -> None:
+    """POSIXの旧置換を、実体の確認が済んだ公式コマンドへ戻す。"""
+    if windows:
+        # 公式インストーラー自身のjunctionは変更しない。旧cmdは配布元から撤去する。
+        return
     visible = codex_runtime.visible_bin_dir()
     visible.mkdir(parents=True, exist_ok=True)
-    target = visible / ("codex.cmd" if windows else "codex")
-    if windows:
-        # 公式Windowsインストーラーの可視binはpackageのbinへのjunctionである。
-        # 内容には書き込まず、Codex専用ディレクトリだけを既存dotfiles/binより後へ移す。
-        registered = setup_bin_path.run()
-        if registered.failure:
-            raise RuntimeError(registered.failure)
-        current, kind = winutils.read_user_env_var("Path")
-        wrapper = source.parent
-        if any(winutils.path_key(entry) == winutils.path_key(str(wrapper)) for entry in (current or "").split(";")):
-            updated = _prefer_wrapper_path(current or "", wrapper, visible)
-            if updated != current:
-                winutils.write_user_env_var("Path", updated, kind)
-                winutils.broadcast_environment_change()
-        with setup_cli_common.PROCESS_PATH_LOCK:
-            os.environ["PATH"] = _prefer_wrapper_path(os.environ.get("PATH", ""), wrapper, visible)
-        return
-    if target.exists() or target.is_symlink():
-        try:
-            owned = target.samefile(native) or target.samefile(source)
-        except FileNotFoundError:
-            owned = False
-        if not owned:
-            raise RuntimeError(f"管理外のCodex起動コマンドを保持: {target}。導入先を確認してupdate-dotfilesを再実行する")
-    reference = visible / ".dotfiles-codex-native"
-    if reference.exists() and not reference.is_symlink():
-        raise RuntimeError(f"管理外のCodex実体参照を保持: {reference}。導入先を確認してupdate-dotfilesを再実行する")
-    # currentへの参照を保ち、公式更新が選んだ版へ追随する。resolveで版別の実体へ固定しない。
-    temporary_reference = reference.with_name(f".{reference.name}-{secrets.token_hex(8)}")
-    try:
-        temporary_reference.symlink_to(native.absolute())
-        temporary_reference.replace(reference)
-    finally:
-        temporary_reference.unlink(missing_ok=True)
-    temporary = target.with_name(f".{target.name}-{secrets.token_hex(8)}")
-    try:
-        temporary.symlink_to(source)
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def _wrapper_launcher(*, windows: bool) -> Path | None:
-    """ユーザーが`codex`で起動する、dotfilesの起動管理を返す。"""
+    target = visible / "codex"
     root = common.find_dotfiles_root()
-    return root / "bin" / ("codex.cmd" if windows else "codex") if root is not None else None
+    legacy = root / "bin/codex" if root is not None else None
+    legacy_target = None
+    if target.is_symlink():
+        legacy_target = Path(os.path.abspath(target.parent / target.readlink()))
+    if target.exists() or target.is_symlink():
+        if target.exists() and target.samefile(native):
+            pass
+        elif legacy is None or legacy_target != legacy.absolute():
+            raise RuntimeError(f"管理外のCodex起動コマンドを保持: {target}。導入先を確認してください")
+    if not target.exists() or not target.samefile(native):
+        temporary = target.with_name(f".{target.name}-{secrets.token_hex(8)}")
+        try:
+            temporary.symlink_to(native.absolute())
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
-
-def _prefer_wrapper_path(value: str, wrapper: Path, native: Path) -> str:
-    """他ディレクトリの相対順序を保ち、専用のnative binだけをwrapperより後へ置く。"""
-    entries = value.split(";")
-    wrapper_key, native_key = winutils.path_key(str(wrapper)), winutils.path_key(str(native))
-    wrapper_index = next((index for index, entry in enumerate(entries) if winutils.path_key(entry) == wrapper_key), None)
-    native_indices = [index for index, entry in enumerate(entries) if winutils.path_key(entry) == native_key]
-    if wrapper_index is None:
-        entries.insert(native_indices[0] if native_indices else len(entries), str(wrapper))
-    elif native_indices and min(native_indices) < wrapper_index:
-        native_entries = [entries[index] for index in native_indices]
-        entries = [entry for entry in entries if winutils.path_key(entry) != native_key]
-        wrapper_index = next(index for index, entry in enumerate(entries) if winutils.path_key(entry) == wrapper_key)
-        entries[wrapper_index + 1 : wrapper_index + 1] = native_entries
-    return ";".join(entries)
+    reference = visible / ".dotfiles-codex-native"
+    if reference.is_symlink() and reference.exists() and reference.samefile(native):
+        reference.unlink()
 
 
 def _nvm_bin_directories() -> tuple[Path, ...]:

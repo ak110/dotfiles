@@ -15,7 +15,7 @@ import psutil
 import pytest
 
 from agent_toolkit._agents_server import service_transport
-from agent_toolkit._common import plugin_environment, process_identity, process_tree
+from agent_toolkit._common import plugin_environment, process_identity, process_tree, runtime_environment
 from agent_toolkit._testing.isolation import CONFIG_DIRECTORY_ENVIRONMENT_NAMES, HOME_ENVIRONMENT_NAMES
 
 # 試験が観測する内部境界を準備する。
@@ -156,7 +156,10 @@ def _wait_mcp_processes(owned: dict[int, psutil.Process], *, timeout: float = 3)
 
 def _stop_mcp_services(state_base: pathlib.Path) -> None:
     """隔離領域の世代記録とleaseの両方に一致する管理プロセスだけを回収する。"""
-    path = state_base / "agent-toolkit/services/agents-server/generations.json"
+    env = dict(os.environ)
+    env["LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"] = str(state_base)
+    caller = runtime_environment.CallerContext(env, state_base)
+    path = service_transport.namespace(caller) / "generations.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:

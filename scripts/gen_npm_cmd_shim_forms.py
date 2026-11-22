@@ -1,8 +1,8 @@
 """npmがWindowsで生成する起動スクリプトの既知の形を、cmd-shimの各公開版に生成させてデータへ書き出す。
 
 npmはWindowsのグローバル導入で、binごとに拡張子なし（sh）・`.cmd`・`.ps1`の起動スクリプトを同梱のcmd-shimで生成する。
-`pytools/_internal/setup_cli_common.py`は、旧npm版の移行で削除する起動スクリプトがユーザーの編集を含まないことを、
-ファイル全体がこのデータの形のどれかと一致することで確かめる。
+`pytools/_internal/setup_cli_common.py`は、手動で旧npm版を削除する前に退避を案内するため、
+起動スクリプト全体がこのデータの形のどれかと一致するかを調べる。
 
 対象はnpm 6.0.0が同梱した2.0.2以降の、npmレジストリに公開された全ての版である。
 各版の配布物をnpmで隔離した場所へ導入し、binの実体の先頭行（`#!/usr/bin/env node`と、shebangなし）ごとに

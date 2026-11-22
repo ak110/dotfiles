@@ -15,6 +15,8 @@ import subprocess
 import threading
 import typing
 
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
+
 _LOG = logging.getLogger(__name__)
 
 # 警告本文へ引き継ぐリモートヘルパーの標準エラー出力の最大文字数。
@@ -61,14 +63,15 @@ class RemoteHelperError(Exception):
 def stderr_excerpt(stderr: bytes) -> str:
     """失敗元の標準エラー出力を、警告本文へ埋め込む1行の文字列へ整える。
 
-    デコードできない列は置換し、末尾側を残して切り詰める（失敗の直接原因は出力の末尾に現れるため）。
+    デコードできない列は置換し、共通の抜粋で秘匿値を伏せてから末尾側を残す（失敗の直接原因は出力の末尾に現れるため）。
     """
-    text = " ".join(stderr.decode("utf-8", errors="replace").split())
-    if not text:
-        return "標準エラー出力はありません"
-    if len(text) > STDERR_EXCERPT_MAX_CHARS:
-        return f"...{text[-STDERR_EXCERPT_MAX_CHARS:]}"
-    return text
+    text = diagnostic_excerpt(
+        stderr.decode("utf-8", errors="replace").strip(),
+        collapse_whitespace=True,
+        tail_chars=STDERR_EXCERPT_MAX_CHARS,
+        omission="...",
+    )
+    return text or "標準エラー出力はありません"
 
 
 class ServeStopping(Exception):  # noqa: N818  # 停止要求による打ち切りを表すため`Error`を付けない

@@ -316,6 +316,7 @@ class ClaudeServerManager(ClaudeStream):
             api_env_file=api_env_file,
             connection_kind=connection_kind,
             isolation_env_files=isolation_env_files,
+            startup_profile=existing_session.startup_profile if existing_session is not None else None,
             handoff_prompt=existing_session.prompt
             if existing_session
             else prompt
@@ -372,6 +373,8 @@ class ClaudeServerManager(ClaudeStream):
         except TimeoutError as exc:
             # SDKがinitを届けないまま接続を保つ場合、所有タスクが失敗してもこの待機は解消しない。
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             diagnostic.record_exception(exc)
             details = await diagnostic.public_async()
             _LOG.error("Claude session初期化timeout: diagnostic=%s", details)
@@ -381,6 +384,8 @@ class ClaudeServerManager(ClaudeStream):
             ) from exc
         except BaseException as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             diagnostic.record_exception(exc)
             _LOG.error("Claude session初期化失敗: diagnostic=%s", await diagnostic.public_async())
             raise

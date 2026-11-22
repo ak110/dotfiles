@@ -36,8 +36,8 @@ export const register: Register = (on) => {
     if (!(await isTerminalMain($))) return result;
     return {
       ...result,
-      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話をこのツールのmessageで送る。" +
-        questionRoute + "呼出しに失敗した時だけ通常の応答本文で伝える。委譲先はこのツールを使わず委譲元へ返す。" + result.description,
+      description: "この会話のメインは、進捗、確認の前置き、完了報告など、回答を求めない発話を常にこのツールのmessageで送る。" +
+        questionRoute + "委譲先はこのツールを使わず委譲元へ返す。" + result.description,
       isDeferred: false,
     };
   });
@@ -45,10 +45,10 @@ export const register: Register = (on) => {
   on("prompt.submit", async ($, e, next) => {
     if (e.origin.kind !== "composer" || e.text.trimStart().startsWith("<atk-auto") || !(await isTerminalMain($))) return next(e);
     const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
-    const notice = automatedMessage("send-to-user-contract", "notice",
-      "着手・進捗・完了報告は `send_to_user` で送る。" +
+    const notice = automatedMessage(listed ? "send-to-user-contract" : "send-to-user-search", "notice",
+      "着手・進捗・完了報告は、使える時は常に `send_to_user` で送る。" +
       (listed ? `REPL: \`await tools['${SEND_TO_USER}']({message})\`。` : `検索対象: \`${SEND_TO_USER}\`。`) +
-      "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝える。");
+      "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
   on("session.start", async ($, e, next) => {

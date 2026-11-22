@@ -34,7 +34,8 @@ _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 
 
-_GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
+# Claude Codeの組み込みのagent定義。ローカルの定義ファイルを持たないため実在の検査から外す。
+_GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan", "general-purpose", "web-fetch"})
 
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:

@@ -111,6 +111,7 @@ def merge_settings(
     cwd: str | pathlib.Path | None = None,
     project_settings: bool = True,
     drop_parent_env: frozenset[str] = frozenset(),
+    startup_overrides: Mapping[str, bool] | None = None,
 ) -> str:
     """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
 
@@ -124,6 +125,8 @@ def merge_settings(
     except OSError, ValueError, UnicodeError:
         value = {}
     settings = value if isinstance(value, dict) else {}
+    if startup_overrides is not None:
+        settings.update(startup_overrides)
     inherited = settings.get("env")
     if isolate_auth and (
         "apiKeyHelper" in settings or "apiKeyHelper" in claude_settings_sources.setting_keys(cwd, project=project_settings)

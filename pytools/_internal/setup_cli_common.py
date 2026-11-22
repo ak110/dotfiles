@@ -10,6 +10,8 @@ import locale
 import logging
 import os
 import posixpath
+import re
+import shlex
 import shutil
 import ssl
 import stat
@@ -32,8 +34,6 @@ logger = logging.getLogger(__name__)
 # （本モジュールの`prepend_path`とWindowsの`setup_mise`のshims追加）は、同時に実行すると
 # 一方の追加が失われるため、このロックで直列化する。
 PROCESS_PATH_LOCK = threading.Lock()
-# 複数のCLI工程が同じnpmのグローバル領域を同時に変更しないよう、旧npm版の削除を直列化する。
-NPM_GLOBAL_LOCK = threading.Lock()
 
 _MAX_NPM_LAUNCHER_BYTES = 64 * 1024
 """npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
@@ -131,10 +131,58 @@ def format_user_command(executable: Path, arguments: str) -> str:
         # 二重引用符の中ではパスの`$`と`` ` ``を展開するため、単一引用符で囲み、引用符そのものは重ねる。
         quoted = "'" + str(executable).replace("'", "''") + "'"
         return f"PowerShellで`& {quoted} {arguments}`"
-    return f'`"{executable}" {arguments}`'
+    quoted = "".join("\\" + char if char in '\\"$`' else char for char in str(executable))
+    return f'`"{quoted}" {arguments}`'
 
 
-def migrate_npm_launchers(
+LEGACY_NPM_CLIS = {"@openai/codex": "codex", "@anthropic-ai/claude-code": "claude"}
+LEGACY_NPM_LAUNCHERS = frozenset(
+    f"{name}{suffix}" for name in LEGACY_NPM_CLIS.values() for suffix in ("", ".cmd", ".ps1", ".exe")
+)
+"""旧npm版の起動ファイルの名前（小文字）。npmが生成する形と、ユーザーが同名で置くラッパーの拡張子を含む。"""
+RERUN_AFTER_REPAIR = "直した後に`update-dotfiles`を再実行すると旧npm版かを再確認し、旧npm版なら削除コマンドを表示する"
+"""削除対象を確定できず削除コマンドを示せない警告の末尾に置く、再確認の条件。"""
+
+
+def format_command(command: list[str]) -> str:
+    """引数を含むコマンドを、ユーザーがそのまま実行できる表記で返す。"""
+    # 引数も引用し、npmの実行経路にmiseのNode版などの外部入力が入っても展開させない。
+    if sys.platform == "win32":
+        arguments = " ".join(
+            part if re.fullmatch(r"[A-Za-z0-9_@./:+-]+", part) else "'" + part.replace("'", "''") + "'" for part in command[1:]
+        )
+    else:
+        arguments = shlex.join(command[1:])
+    return format_user_command(Path(command[0]), arguments)
+
+
+def protected_npm_package(installed_name: str, metadata: dict[object, object]) -> bool:
+    """旧npm版か、同名の起動ファイルをnpmが削除するパッケージを判定する。"""
+    return (
+        installed_name in LEGACY_NPM_CLIS
+        or any(metadata.get("name") == name for name in LEGACY_NPM_CLIS)
+        or bool(LEGACY_NPM_LAUNCHERS & {name.lower() for name in normalize_npm_package_bins(metadata)})
+    )
+
+
+def warn_about_retained_npm_package(
+    package: Path, command: list[str], canonical: Path, *, minimal: bool = False, unconfirmed: str = ""
+) -> None:
+    """旧npm版の保持と、ユーザーが選べる対処を案内する。"""
+    removal = format_command(command)
+    availability = "正規版はfullモードで導入する。" if minimal else ""
+    logger.warning(
+        "旧npm版に関係するパッケージを保持: %s。%s%s。%s"
+        "不要なら、旧版を終了し、パッケージ内や同名の起動先から自分で配置・編集したファイルを退避してから、%sを実行する",
+        package,
+        unconfirmed,
+        _held_launcher_guidance(canonical),
+        availability,
+        removal,
+    )
+
+
+def warn_about_npm_launchers(
     cli_name: str,
     package_name: str,
     canonical_launcher: Path,
@@ -142,19 +190,11 @@ def migrate_npm_launchers(
     *,
     extra_search_directories: Iterable[Path] = (),
     excluded_launchers: Iterable[Path] = (),
-) -> bool:
-    """PATHと追加の配置先から見つかる非正規のnpm版を、npmの`uninstall`で削除する。
+) -> None:
+    """非正規の起動先を調べ、PATHの影響と手動での対処を案内する。
 
-    `canonical_launcher`はユーザーが使う正規の起動先で、移行の候補から除き、移行を見送った場合に起動先として案内する。
-    `excluded_launchers`には呼出側自身が配置した起動管理を渡し、移行の候補と保持警告から除く。
-    npmの`uninstall`はパッケージと一緒に同名の起動スクリプトを中身を確かめずに削除するため、そのうち1つでも
-    npmの生成物と確かめられないパッケージは、そのファイルと削除の手順を示し、自動では削除しない。
-    生成物とみなすのは、POSIXではpackage.jsonのbinの実体を直接指すシンボリックリンク、Windowsではリンクでなく、
-    ファイル全体が既知のnpmの生成形式と一致し、binの実体を参照する起動スクリプトだけである。
-    package.jsonを読めないパッケージは、削除するファイルを確定できないため削除しない。
-    npmの導入先を照会できないパッケージと、Windowsでパッケージから起動したプロセスがあるパッケージは、その回は削除しない。
-    パッケージ本体の無い配置に残った起動スクリプトは、ユーザーのラッパーと区別できないため削除せず、配置先ごとに1つの警告で示す。
-    同じディレクトリにnpmが無い起動先も削除せず、`.ps1`を含めて配置先ごとに1つの警告で示す。
+    正規の起動先と呼出側が配置した起動管理は検出対象から除く。
+    npmが手動削除時に巻き込む可能性のある起動ファイルは、退避の案内に使う。
     """
     left = _find_npm_launchers_left_without_package(cli_name, package_name, extra_search_directories)
     for directory, launchers in left.items():
@@ -164,14 +204,12 @@ def migrate_npm_launchers(
                 f"パッケージ本体（{directory.joinpath('node_modules', *package_name.split('/'))}）の無い"
                 f"npmの起動スクリプトを保持: {'、'.join(map(str, launchers))}。"
                 "意図したラッパーなら保持する。"
-                f"起動に失敗するなら別の場所へ退避するか削除し、正規の起動先`{canonical_launcher}`で起動する",
+                f"{_held_launcher_guidance(canonical_launcher)}",
             )
         )
     shown = {launcher for launchers in left.values() for launcher in launchers}
-    changed = False
     packages: dict[Path, _NpmPackage | _UnreadableNpmPackage] = {}
     without_npm: dict[Path, list[Path]] = {}
-    # 削除は、起動先がパッケージから導入したものと確かめられたパッケージに限る。
     launched: set[Path] = set()
     for launcher in _iter_noncanonical_launchers(
         cli_name,
@@ -192,8 +230,9 @@ def migrate_npm_launchers(
             logger.warning(
                 log_format.format_status(
                     cli_name,
-                    f"npmの導入先を照会できないため旧npm版の移行を見送り: {launcher}（{error}）。"
-                    "npmを修復してから`update-dotfiles`を再実行する",
+                    f"npmの導入先を照会できないため旧npm版を確認できない: {launcher}（{error}）。"
+                    f"{_held_launcher_guidance(canonical_launcher)}。"
+                    f"括弧内の失敗した照会が成功するようnpmを{RERUN_AFTER_REPAIR}",
                 )
             )
             continue
@@ -204,7 +243,6 @@ def migrate_npm_launchers(
             continue
         packages[package.directory] = package
         if isinstance(package, _UnreadableNpmPackage) or location in package.unconfirmed:
-            # 削除の見送りとして、パッケージごとに1つの警告で示す。
             continue
         if location in package.generated or _launcher_belongs_to_package(launcher, package, package_name):
             launched.add(package.directory)
@@ -222,56 +260,32 @@ def migrate_npm_launchers(
             )
         )
     for package in packages.values():
+        guidance = _held_launcher_guidance(canonical_launcher)
         if isinstance(package, _UnreadableNpmPackage):
             logger.warning(
                 log_format.format_status(
                     cli_name,
-                    f"旧npm版の自動削除を見送り: {package.directory}。"
-                    "package.jsonを読めず、npmの`uninstall`がパッケージと一緒に削除する起動ファイルを確定できない: "
-                    f"{package.manifest}（{package.reason}）。"
-                    "同じ版のpackage.jsonを復元するか、読取権限を直してから`update-dotfiles`を再実行する。"
-                    f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
+                    f"旧npm版を保持: {package.directory}。"
+                    f"`uninstall`が一緒に削除する起動ファイルを確認できない: {package.manifest}（{package.reason}）。"
+                    f"削除しない。同じ版のpackage.jsonを復元するか読取権限を直す。{RERUN_AFTER_REPAIR}。{guidance}",
                 )
             )
+            continue
+        if not package.unconfirmed and package.directory not in launched:
             continue
         removal = format_user_command(package.npm, f"uninstall --global {package_name}")
+        unconfirmed = ""
         if package.unconfirmed:
             files = "、".join(f"{path}（{reason}）" for path, reason in package.unconfirmed.items())
-            logger.warning(
-                log_format.format_status(
-                    cli_name,
-                    f"旧npm版の自動削除を見送り: {package.directory}。"
-                    f"npmの`uninstall`がパッケージと一緒に削除する次のファイルを、npmの生成物と確かめられない: {files}。"
-                    f"自分で置いた・編集したファイルがあれば別の場所へ移してから、{removal}を実行して旧npm版を削除する。"
-                    f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
-                )
+            unconfirmed = f"`uninstall`が一緒に削除するファイルのうち、npmの生成物と確認できない: {files}。"
+        logger.warning(
+            log_format.format_status(
+                cli_name,
+                f"旧npm版を保持: {package.directory}。{unconfirmed}{guidance}。"
+                "旧npm版が不要なら、使用中のプロセスを終了し、パッケージ内と同名の起動先にある"
+                f"自分で置いた・編集したファイルを別の場所へ移してから、{removal}を実行する",
             )
-            continue
-        if package.directory not in launched:
-            continue
-        if running := find_windows_cli_processes(cli_name, packages=(package.directory,)):
-            logger.warning(
-                log_format.format_status(
-                    cli_name,
-                    f"旧npm版の移行を次回へ延期: {package.directory}。{describe_processes(running, '旧npm版')}。"
-                    f"表示したプロセスが旧npm版なら終了してから、{removal}を実行して旧npm版を削除する。"
-                    f"削除するまでは`{canonical_launcher}`で更新済みの版を起動する",
-                )
-            )
-            continue
-        with NPM_GLOBAL_LOCK:
-            result = common.run_subprocess(
-                [str(package.npm), "uninstall", "--global", package_name],
-                timeout=common.COMMAND_TIMEOUT,
-                tag=cli_name,
-            )
-        if result is not None and result.returncode == 0:
-            changed = True
-        else:
-            message = f"旧npm版の削除に失敗: {common.format_cli_error(result)}。{removal}を実行する"
-            logger.warning(log_format.format_status(cli_name, message))
-            raise RuntimeError(message)
-    return changed
+        )
 
 
 class Evidence(enum.Enum):
@@ -635,7 +649,7 @@ def _npm_global_root(npm: Path) -> Path | str:
     ):
         raise _NpmQueryError(
             " / ".join(
-                f'`"{npm}" {subcommand} --global`: {_command_output(result)}'
+                f"{format_command([str(npm), subcommand, '--global'])}: {_command_output(result)}"
                 for subcommand, result in (("prefix", prefix_result), ("root", root_result))
                 if result is None or result.returncode != 0 or not (result.stdout or "").strip()
             )
@@ -783,6 +797,11 @@ def _package_bins(manifest: Path) -> dict[str, str] | str:
         return f"JSONとして読めない: {error}"
     if not isinstance(metadata, dict):
         return "JSONのobjectではない"
+    return normalize_npm_package_bins(metadata)
+
+
+def normalize_npm_package_bins(metadata: dict[object, object]) -> dict[str, str]:
+    """npmが起動ファイルの名前と参照先に使うbinの正規化を再現する。"""
     bins = metadata.get("bin")
     if isinstance(bins, str):
         bins = {metadata["name"]: bins} if isinstance(metadata.get("name"), str) and metadata["name"] else {}
@@ -792,7 +811,7 @@ def _package_bins(manifest: Path) -> dict[str, str] | str:
         bins = {}
     normalized: dict[str, str] = {}
     for key, value in bins.items():
-        name = _npm_normalized_path(posixpath.basename(key.replace("\\", "/").replace(":", "/").rstrip("/")))
+        name = _npm_normalized_path(posixpath.basename(str(key).replace("\\", "/").replace(":", "/").rstrip("/")))
         target = _npm_normalized_path(value.replace("\\", "/")) if isinstance(value, str) else ""
         if name and target:
             normalized[name] = target

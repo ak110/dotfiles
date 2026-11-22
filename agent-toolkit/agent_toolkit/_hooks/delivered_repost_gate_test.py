@@ -18,6 +18,16 @@ _SEND_NOTICE = {
         "content": ['<atk-auto source="send-to-user-contract" kind="notice">\n送達の案内\n</atk-auto>'],
     },
 }
+_TASK_NOTIFICATION = {"type": "user", "isMeta": True, "message": {"content": "<task-notification>完了</task-notification>"}}
+# 標準の圧縮が同じ記録へ追記する境界と要約。
+_COMPACT = [
+    {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
+    {
+        "type": "user",
+        "isCompactSummary": True,
+        "message": {"content": "This session is being continued from a previous conversation."},
+    },
+]
 _SEND = {
     "type": "assistant",
     "message": {"content": [{"type": "tool_use", "id": "s1", "name": _SEND_TO_USER, "input": {"message": "進捗は順調です。"}}]},
@@ -69,12 +79,8 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
         ([_HUMAN, _SEND_NOTICE, _SEND, _result(error=True)], "進捗を報告する。", False),
         ([_HUMAN, _SEND_NOTICE, _SEND, _result()], "…", False),
         ([_HUMAN], "進捗を報告する。", False),
-        ([_HUMAN, _SEND_NOTICE, _HUMAN], "進捗を報告する。", False),
-        (
-            [_HUMAN, _SEND_NOTICE, {"type": "user", "isMeta": True, "message": {"content": "<task-notification>"}}],
-            "進捗を報告する。",
-            False,
-        ),
+        ([_HUMAN, _SEND_NOTICE, _HUMAN], "進捗を報告する。", True),
+        ([_HUMAN, _SEND_NOTICE, _TASK_NOTIFICATION], "進捗を報告する。", True),
         ([_HUMAN, _SEND_NOTICE], "", False),
         ([_HUMAN, _SEND_NOTICE], "…", False),
         ([_HUMAN, _SEND_NOTICE, _call("AskUserQuestion", "q", {"questions": [{"question": "どうする？"}]})], "", False),
@@ -92,8 +98,8 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
         "failed",
         "delivered",
         "no-notice",
-        "new-human",
-        "machine",
+        "later-human",
+        "task-notification",
         "no-text",
         "ellipsis",
         "question",
@@ -101,7 +107,7 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> dict:
         "failed-no-text",
     ],
 )
-def test_send_route_checks_only_a_current_notice(entries: list[dict], body: str, blocked: bool, tmp_path: pathlib.Path) -> None:
+def test_send_route_is_required_by_conversation(entries: list[dict], body: str, blocked: bool, tmp_path: pathlib.Path) -> None:
     result = _stop([*entries, _text(body)], tmp_path, last_assistant_message=body)
     assert (result.get("decision") == "block") is blocked
     if blocked:
@@ -304,3 +310,36 @@ def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: p
     }
     result = _stop([_HUMAN, _SEND, _result(), command, _text("進捗は順調です。")], tmp_path)
     assert result["decision"] == "block"
+
+
+@pytest.mark.parametrize(
+    ("entries", "blocked"),
+    [
+        # 前のターンで送達の指定を受け取り、完了通知で始まるターンを本文で終える。
+        ([_HUMAN, _SEND_NOTICE, _text("…"), _TASK_NOTIFICATION], True),
+        # 圧縮の境界の後でも記録全体の判定は続く。
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result(), _text("…"), *_COMPACT], True),
+        # 指定の添付が一度も無い会話（端末modの無い会話）は本文で終えてよい。
+        ([_HUMAN, _text("回答です。"), *_COMPACT, _TASK_NOTIFICATION], False),
+        # 前のターンの送達の成功・失敗は、完了通知で始まる現ターンの送達に数えない。
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result(), _text("…"), _TASK_NOTIFICATION], True),
+        ([_HUMAN, _SEND_NOTICE, _SEND, _result(error=True), _text("失敗の報告。"), _TASK_NOTIFICATION], True),
+    ],
+    ids=["task-notification", "after-compaction", "no-notice", "earlier-turn-delivered", "earlier-turn-failed"],
+)
+def test_send_route_spans_turns_and_compaction(entries: list[dict], blocked: bool, tmp_path: pathlib.Path) -> None:
+    """`send_to_user`を使える会話では、指定を添えない入力で始まるターンでも本文での終了を止める。"""
+    body = "完了した処理を報告する。"
+    result = _stop([*entries, _text(body)], tmp_path, last_assistant_message=body)
+    assert (result.get("decision") == "block") is blocked
+    if blocked:
+        assert "を使える会話で" in str(result["reason"])
+
+
+def test_repost_after_delivery_in_a_later_turn_is_blocked(tmp_path: pathlib.Path) -> None:
+    """完了通知のターンで送達に成功した後の再掲は、従来どおり止める。"""
+    body = "進捗は順調です。"
+    entries = [_HUMAN, _SEND_NOTICE, _text("…"), _TASK_NOTIFICATION, _SEND, _result(), _text(body)]
+    result = _stop(entries, tmp_path, last_assistant_message=body)
+    assert result["decision"] == "block"
+    assert "送信済みの文が通常の応答本文にある" in str(result["reason"])

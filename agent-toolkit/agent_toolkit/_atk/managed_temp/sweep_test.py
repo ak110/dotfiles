@@ -361,10 +361,10 @@ def test_sweep_preserves_foreign_owned_tree_and_reports_limited_failure(monkeypa
         and str(area) in reason
         and f"uid={owner}" in reason
         and "現在のOSアカウント" in reason
-        and "sudo -n" in reason
+        and "通常の掃引では可能な対象だけを回収する" in reason
         and "削除の認可" in reason
         and "現在の利用" in reason
-        and "実際に確認した場合だけ" in reason
+        and "残った理由をユーザーへ伝える" in reason
         for path, reason in result.failed
     )
 

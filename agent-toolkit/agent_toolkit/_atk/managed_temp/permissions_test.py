@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import errno
 import os
 import pathlib
 import stat
@@ -10,7 +12,7 @@ import typing
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._atk.managed_temp import permissions
+from agent_toolkit._atk.managed_temp import paths, permissions, sweep
 
 pytestmark = pytest.mark.windows
 
@@ -54,7 +56,7 @@ def test_directory_preserves_foreign_owner_and_symlink_target(tmp_path: pathlib.
         assert "現在のOSアカウント" in str(failure.value)
         assert str(root) in failure.value.next_action
         assert f"uid={metadata[4]}" in failure.value.next_action
-        assert "sudo -n" in failure.value.next_action
+        assert "通常の掃引では可能な対象だけを回収する" in failure.value.next_action
         with pytest.raises(managed_temp.ManagedTempError), permissions.directory(link):
             pytest.fail("symlinkを追跡した")
         assert stat.S_IMODE(root.stat().st_mode) == 0
@@ -91,3 +93,25 @@ def test_permission_recovery_changes_only_the_pinned_directory(tmp_path: pathlib
     finally:
         original_chmod(moved if moved.exists() else root, 0o700)
         original_chmod(outside, 0o700)
+
+
+@pytest.mark.parametrize(
+    ("days", "failure_site", "has_candidate"),
+    [(8, "remove", True), (1, "remove", False), (8, "inspect", False), (8, "other", False)],
+)
+def test_only_permission_failure_after_selection_is_a_candidate(monkeypatch, days, failure_site, has_candidate):
+    """使用・期限を確かめてから、削除時の権限不足だけを候補にする。"""
+    now = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
+    target = paths.temp_root() / "permission-sample"
+    target.mkdir()
+    stamp = (now - datetime.timedelta(days=days)).timestamp()
+    os.utime(target, (stamp, stamp))
+
+    def fail(*_args, **_kwargs):
+        raise OSError(errno.EIO if failure_site == "other" else errno.EACCES, "injected failure")
+
+    monkeypatch.setattr(sweep, "_inspect_entry" if failure_site == "inspect" else "_remove", fail)
+    result = sweep.sweep_managed_temp(now=now, force=True)
+    assert target.exists()
+    expected = (target,) if has_candidate else ()
+    assert result.permission_candidates == expected

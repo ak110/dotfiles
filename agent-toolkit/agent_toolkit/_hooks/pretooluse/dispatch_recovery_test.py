@@ -112,7 +112,7 @@ def test_generic_reissues_survive_other_operations_and_are_consumed(capsys) -> N
     """複数依頼は別操作の後でも各1回だけ再発行できる。"""
     payload = {"session_id": "generic-many", "agent_id": "one"}
     first = {"subagent_type": "Explore", "prompt": "調査する。"}
-    second = {"subagent_type": "web-fetch", "prompt": "本文を取得する。"}
+    second = {"subagent_type": "Plan", "prompt": "計画する。"}
     assert _reason(payload, "Agent", first, capsys)
     assert _reason(payload, "Agent", second, capsys)
     assert _reason(payload, "Read", {}, capsys) is None

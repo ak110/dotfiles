@@ -135,7 +135,6 @@ class CodexResource:
         self.resource = resource
         self._notification, self._server_request, self._failure = notification, server_request, failure
         self._sent: dict[str, Callable[[], None]] = {}
-        self._sent_done: dict[str, asyncio.Event] = {}
         self._requests = 0
         self._sequence = 0
         self._dispatch = asyncio.Lock()
@@ -158,6 +157,7 @@ class CodexResource:
         """状態処理をraw callbackから外し、保存確認付きの1受信列へ渡す。"""
         identifier = ""
         broker = runtime.broker
+        controller: CodexResource | None = None
 
         async def emit(kind: str, value: Any) -> None:
             await broker.emit(identifier, {"kind": kind, "value": value})
@@ -177,9 +177,14 @@ class CodexResource:
             await raw.start()
             return {"pid": raw.process.pid, "environment": raw.parent_environment}
 
-        async def request(method: str, params: dict | None, ticket: str) -> dict:
+        async def request(method: str, params: dict | None, ticket: str | None) -> dict:
             async def publish_sent() -> None:
-                await emit("sent", ticket)
+                if ticket is None:
+                    return
+                if controller is not None and not controller.transferred:
+                    # 同じ所有者への送出確認は、保存待ちの通知列を経由しない。
+                    controller.record_sent(ticket)
+                # 別世代では応答の到達時に送出も確認できるため、通知列へは積まない。
 
             try:
                 value = await raw.request(method, params, on_sent_async=publish_sent)
@@ -215,7 +220,8 @@ class CodexResource:
                 "close": close,
             }
         )
-        return cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        controller = cls(Resource(runtime, identifier, runtime.target), notification, server_request, failure)
+        return controller
 
     @property
     def closed(self) -> bool:
@@ -235,7 +241,7 @@ class CodexResource:
     def diagnostic(self) -> dict[str, Any]:
         """要求が進まない時に、受信処理の生存と元I/O側の未確認イベント数を返す。
 
-        未確認イベントが上限に達すると、元I/Oは送出通知と後続の受信を止める。
+        未確認イベントが上限に達すると、元I/Oは後続の受信を止める。送出確認はこの列に積まない。
         元I/Oが別プロセスにある場合、未確認数はこのプロセスから読めない。
         """
         if not self.resource.local:
@@ -261,11 +267,10 @@ class CodexResource:
 
     async def request(self, method: str, params: dict | None = None, *, on_sent: Callable[[], None] | None = None) -> dict:
         """wire送信の観測と応答を分けて受信し、配送不確定の要求を保持する。"""
-        ticket = str(uuid.uuid4())
+        ticket = str(uuid.uuid4()) if on_sent is not None else None
         self._requests += 1
-        if on_sent is not None:
+        if ticket is not None and on_sent is not None:
             self._sent[ticket] = on_sent
-            self._sent_done[ticket] = asyncio.Event()
         try:
             response = await self.resource.operation(
                 "call",
@@ -277,16 +282,21 @@ class CodexResource:
                 },
             )
             # 応答はwire送信後にしか届かない。終了境界でconsumerが止まってもsent通知待ちにしない。
-            callback = self._sent.pop(ticket, None)
-            if callback is not None:
-                callback()
+            if ticket is not None:
+                self.record_sent(ticket)
             if error := response.get("response_error"):
                 raise JsonRpcResponseError(error["method"], error["code"], error["message"], error["data"])
             return response["result"]
         finally:
-            self._sent.pop(ticket, None)
-            self._sent_done.pop(ticket, None)
+            if ticket is not None:
+                self._sent.pop(ticket, None)
             self._requests -= 1
+
+    def record_sent(self, ticket: str) -> None:
+        """同じ送出を一度だけ確認する。"""
+        callback = self._sent.pop(ticket, None)
+        if callback is not None:
+            callback()
 
     async def notify(self, method: str, params: dict | None = None) -> None:
         """元I/OへJSON-RPC notificationを渡す。"""
@@ -297,7 +307,6 @@ class CodexResource:
         await self.resource.operation("call", operation="send", arguments={"message": message})
 
     async def _consume(self) -> None:
-        # 例外で止まると既読が進まず、元I/O側のイベント上限で要求の送信まで止まる。
         # 停止を記録し、接続障害として所有sessionへ反映して、終了しない「実行中」を残さない。
         try:
             await self._consume_events()
@@ -311,7 +320,6 @@ class CodexResource:
                 f"{cause}次の操作: 管理サービスのログで停止の原因を確認し、同じ作業を新しい委譲先で起動し直してください。"
             )
             # 失敗の報告を受けたsessionは終了として公開される。turnを続けさせないよう、App Serverを先に止める。
-            # brokerの登録解除は`close`が行う。送出通知の空き待ちで止まった要求が残ると解除が終わらないため、ここでは待たない。
             try:
                 residual = await self.resource.operation("call", operation="shutdown", arguments={})
             except Exception as stop_error:
@@ -346,10 +354,7 @@ class CodexResource:
                         self._reader_failure = AppServerError(value)
                         await self._failure(self._reader_failure)
                     elif kind == "sent":
-                        callback = self._sent.pop(value, None)
-                        if callback is not None:
-                            callback()
-                            self._sent_done[value].set()
+                        self.record_sent(value)
                     else:
                         raise ValueError("未対応のApp Server生イベント")
                     sequence = event["sequence"]

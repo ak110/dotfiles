@@ -1,28 +1,21 @@
-"""pytools._internal.setup_cli_commonのnpm版の移行（`migrate_npm_launchers`）で、旧npm版を削除するかの判定のテスト。"""
+"""pytools._internal.setup_cli_commonのnpm版の移行（`warn_about_npm_launchers`）の検出と警告のテスト。"""
 
 import logging
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
-from pytools._internal import setup_cli_common
-from pytools._internal._test_helpers import npm_cmd_shim_kinds, npm_windows_shims, windows_process
+from pytools._internal import common, setup_cli_common
+from pytools._internal._test_helpers import npm_cmd_shim_kinds, npm_windows_shims
 from pytools._internal.setup_cli_common_npm_test_helpers import (
     _install_global_npm,
     _migrate,
     _ps1_comment,
     _shown,
 )
-
-_DAEMON_EXE = r"C:\Users\Me\.codex\packages\app-server-daemon\releases\0.170.0-x86_64-pc-windows-msvc\bin\codex.exe"
-
-
-_NPX_CODEX = r"C:\Users\Me\AppData\Local\npm-cache\_npx\9f2c\node_modules\@openai\codex"
-
-
-_NODE = r"C:\Program Files\nodejs\node.exe"
 
 
 @pytest.mark.parametrize("stderr", ["npm ERR! permission denied", ""])
@@ -43,38 +36,41 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
         return subprocess.CompletedProcess(command, 1, "", stderr)
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fail)
-    assert not setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
     )
     assert launcher.is_file()
     output = "\n".join(caplog.messages)
-    assert "旧npm版の移行を見送り" in output
-    assert f'`"{old / "npm"}" root --global`: 終了コード1' in output
+    assert "旧npm版を確認できない" in output
+    npm = old / ("npm.cmd" if sys.platform == "win32" else "npm")
+    assert f"{setup_cli_common.format_command([str(npm), 'root', '--global'])}: 終了コード1" in output
     assert (stderr or "exit 1") in output
-    assert "npmを修復してから`update-dotfiles`を再実行する" in output
+    assert "`update-dotfiles`を再実行すると旧npm版かを再確認" in output
 
 
-@pytest.mark.parametrize("uninstall_returncode", [0, 1])
-def test_posix_migrate_removes_npm_version_linked_by_npm(monkeypatch, tmp_path: Path, uninstall_returncode: int) -> None:
-    """POSIXのnpmが`bin/codex`に作るシンボリックリンクから旧npm版を削除し、削除に失敗した場合は旧版を残して失敗を返す。"""
-    npm = _install_global_npm(monkeypatch, tmp_path, windows=False, uninstall_returncode=uninstall_returncode)
-    canonical = tmp_path / "standalone" / "bin" / "codex"
-    canonical.parent.mkdir(parents=True)
-    canonical.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", os.pathsep.join([str(canonical.parent), str(npm.bin_dir)]))
+@pytest.mark.parametrize("scenario", ["posix", "windows", "windows-user-cmd"])
+def test_npm_warning_does_not_remove_package_or_launchers(monkeypatch, tmp_path: Path, caplog, scenario: str) -> None:
+    """検出だけでは、標準のnpm版も同じ配置のユーザーラッパーも削除しない。"""
+    windows = scenario != "posix"
+    npm = _install_global_npm(monkeypatch, tmp_path, windows=windows)
+    if scenario == "windows-user-cmd":
+        (npm.bin_dir / "codex.cmd").write_bytes(b'@echo off\r\n"%USERPROFILE%\\.local\\bin\\codex.exe" --profile work %*\r\n')
+    files = {path: path.read_bytes() for path in npm.launchers}
+    manifest = npm.package / "package.json"
+    files[manifest] = manifest.read_bytes()
 
-    if uninstall_returncode:
-        with pytest.raises(RuntimeError):
-            _migrate(tmp_path, windows=False)
-    else:
-        assert _migrate(tmp_path, windows=False)
-    assert len(npm.uninstalls) == 1
-    assert npm.package.is_dir() is bool(uninstall_returncode)
-    assert (npm.bin_dir / "codex").is_symlink() is bool(uninstall_returncode)
+    _migrate(tmp_path, windows=windows)
+
+    assert not npm.uninstalls
+    assert {path: path.read_bytes() for path in files} == files
+    assert len(caplog.messages) == 1
+    assert "PATHで先に解決される間" in caplog.text
+    assert str(tmp_path / "dotfiles" / "bin" / ("codex.cmd" if windows else "codex")) in caplog.text
+    assert npm.removal() in caplog.text
 
 
-def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_path: Path) -> None:
-    """PATH外の明示した配置先を走査し、重複指定しても同じnpm版を一度だけ除去する。"""
+def test_warn_about_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_path: Path) -> None:
+    """PATH外の明示した配置先を走査し、重複指定しても同じnpm版を一度だけ照会する。"""
     canonical_prefix = tmp_path / "canonical"
     canonical = canonical_prefix / "bin" / "codex"
     canonical.parent.mkdir(parents=True)
@@ -104,14 +100,14 @@ def test_migrate_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex",
         "@openai/codex",
         canonical,
         canonical_prefix,
         extra_search_directories=(nvm_bin, nvm_bin),
     )
-    assert sum(command[1:3] == ["uninstall", "--global"] for command in calls) == 1
+    assert [command[1:] for command in calls] == [["prefix", "--global"], ["root", "--global"]]
 
 
 def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: Path) -> None:
@@ -128,17 +124,14 @@ def test_migrate_excludes_canonical_prefix_and_launcher(monkeypatch, tmp_path: P
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError((args, kwargs))),
     )
 
-    assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", launcher, prefix)
+    setup_cli_common.warn_about_npm_launchers("codex", "@openai/codex", launcher, prefix)
 
 
 @pytest.mark.parametrize("ps1", ["generated", "edited"])
 def test_windows_judges_npm_package_whose_only_launcher_left_is_ps1(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, ps1: str
 ) -> None:
-    """隣にnpmがあり`codex.ps1`だけが残った配置も、`.ps1`がnpmの生成物と確かめられた場合だけ旧npm版を1回削除する。
-
-    確かめられない`.ps1`は残し、そのファイルと削除コマンドを1つの警告で示す。
-    """
+    """PowerShell用の起動先しかなくても、対処を案内する。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True)
     for launcher in npm.launchers[:2]:
         launcher.unlink()
@@ -148,19 +141,12 @@ def test_windows_judges_npm_package_whose_only_launcher_left_is_ps1(
     data = ps1_file.read_bytes()
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert _migrate(tmp_path, windows=True) is (ps1 == "generated")
-
-    if ps1 == "generated":
-        assert len(npm.uninstalls) == 1
-        assert not ps1_file.exists()
-        assert not npm.package.exists()
-        assert not caplog.messages
-    else:
-        assert not npm.uninstalls
-        assert ps1_file.read_bytes() == data
-        assert len(caplog.messages) == 1, caplog.messages
-        assert f"{_shown(ps1_file)}（" in caplog.messages[0]
-        assert npm.removal() in caplog.messages[0]
+        _migrate(tmp_path, windows=True)
+    assert not npm.uninstalls
+    assert ps1_file.read_bytes() == data
+    assert len(caplog.messages) == 1
+    assert (f"{_shown(ps1_file)}（" in caplog.text) is (ps1 == "edited")
+    assert npm.removal() in caplog.text
 
 
 def test_migrate_windows_mise_shim_resolving_to_npm_package(monkeypatch, tmp_path: Path) -> None:
@@ -193,92 +179,16 @@ def test_migrate_windows_mise_shim_resolving_to_npm_package(monkeypatch, tmp_pat
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
     )
-
-
-@pytest.mark.parametrize(
-    ("running", "removed"),
-    [
-        pytest.param("npm-node", False, id="npm-node"),
-        # 起動したスクリプトを読めないnodeは、削除するnpm版を実行している可能性を除けない。
-        pytest.param("node-cmdline-denied", False, id="node-cmdline-denied"),
-        pytest.param("npx-node", True, id="npx-node"),
-        pytest.param("update-loop", True, id="update-loop"),
-    ],
-)
-def test_windows_migrate_keeps_npm_package_while_it_may_be_running(
-    monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, running: str, removed: bool
-) -> None:
-    """Windowsでは、削除するnpm版から起動したプロセスか、その可能性を否定できないプロセスがある間は削除しない。"""
-    entrypoint = tmp_path / "npm" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
-    process = {
-        "npm-node": windows_process(_NODE, str(entrypoint)),
-        "node-cmdline-denied": windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"]),
-        "npx-node": windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"),
-        "update-loop": windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"),
-    }[running]
-    npm = _install_global_npm(monkeypatch, tmp_path, windows=True, processes=[process])
-
-    assert _migrate(tmp_path, windows=True) is removed
-    assert len(npm.uninstalls) == int(removed)
-    assert npm.package.is_dir() is not removed
-    assert (f"旧npm版の移行を次回へ延期: {npm.package.resolve()}" in caplog.text) is not removed
-
-
-@pytest.mark.parametrize(
-    ("scenario", "uninstall_returncode", "warnings"),
-    [
-        # 無関係なnodeの起動引数を読めず、旧npm版の実行を否定できない。
-        ("deferred", 0, ["旧npm版の移行を次回へ延期"]),
-        ("removed", 0, []),
-        ("removal-failed", 1, ["旧npm版の削除に失敗"]),
-    ],
-)
-def test_windows_migrates_three_npm_shims_as_one_package(
-    monkeypatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-    scenario: str,
-    uninstall_returncode: int,
-    warnings: list[str],
-) -> None:
-    """Windowsのnpmが1つのbinに作る3本の起動スクリプトは、同じパッケージとして1回だけ判定して表示する。
-
-    延期中に「保持したため対応不要」と「削除する」の矛盾する警告を並べない。
-    削除コマンドは、推奨するPowerShell 7でそのまま実行できる形で示す。
-    """
-    unrelated_node = windows_process(_NODE, r"C:\Services\worker.js", denied=["cmdline"])
-    npm = _install_global_npm(
-        monkeypatch,
-        tmp_path,
-        windows=True,
-        processes=[unrelated_node] if scenario == "deferred" else [],
-        uninstall_returncode=uninstall_returncode,
-    )
-
-    with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        try:
-            _migrate(tmp_path, windows=True)
-        except RuntimeError as error:
-            assert scenario == "removal-failed", error
-
-    removed = scenario == "removed"
-    assert len(npm.uninstalls) == int(scenario != "deferred")
-    assert [launcher.exists() for launcher in npm.launchers] == [not removed] * 3
-    assert npm.package.is_dir() is not removed
-    assert [[warning for warning in warnings if warning in message] for message in caplog.messages] == [
-        [warning] for warning in warnings
-    ]
-    assert all(npm.removal() in message for message in caplog.messages)
 
 
 def test_known_npm_shim_forms_cover_npm_6_to_12() -> None:
     """既知の生成形式は、npm 6.0.0からnpm 12までが同梱したcmd-shimの形を含む。
 
     npm 6.0.0は2.0.2、npm 6.14は3.0.3、npm 11.20.0は8.0.0、npm 12.2.3は9.0.2を同梱する。
-    データの全ての形で、移行は`test_windows_migrates_unedited_shims_of_every_known_npm`、
+    データの全ての形で、移行は`test_windows_reports_unedited_shims_of_every_known_npm`、
     本体の無い起動スクリプトの警告は`setup_cli_common_npm_held_test.py`の
     `test_windows_warns_about_unedited_shims_left_without_package`が確かめる。
     """
@@ -287,20 +197,21 @@ def test_known_npm_shim_forms_cover_npm_6_to_12() -> None:
 
 
 @pytest.mark.parametrize("cmd_shim", npm_cmd_shim_kinds(), ids="-".join)
-def test_windows_migrates_unedited_shims_of_every_known_npm(
+def test_windows_reports_unedited_shims_of_every_known_npm(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, cmd_shim: tuple[str, str]
 ) -> None:
-    """npm 6以降が同梱したcmd-shimの各版が生成した未編集の起動スクリプトは、npmの生成物として旧npm版ごと削除する。"""
+    """npm 6以降が同梱したcmd-shimの各版が生成した未編集の起動スクリプトは、npmの生成物として認識し、旧npm版を案内する。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True, cmd_shim=cmd_shim)
     launchers = [launcher for launcher in npm.launchers if launcher.exists()]
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
 
-    assert len(npm.uninstalls) == 1
-    assert not npm.package.exists()
-    assert not any(launcher.exists() for launcher in launchers)
-    assert not caplog.messages
+    assert not npm.uninstalls
+    assert npm.package.is_dir()
+    assert all(launcher.exists() for launcher in launchers)
+    assert len(caplog.messages) == 1
+    assert npm.removal() in caplog.text
 
 
 @pytest.mark.parametrize("suffix", ["", ".cmd", ".ps1"])
@@ -314,7 +225,7 @@ def test_windows_keeps_link_placed_where_npm_writes_launcher(
     link.symlink_to(npm.package / "bin" / "codex.js")
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
 
     assert not npm.uninstalls
     assert link.readlink() == npm.package / "bin" / "codex.js"
@@ -340,7 +251,7 @@ def test_posix_keeps_npm_link_repointed_to_other_script(
     link.symlink_to(script)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=False)
+        _migrate(tmp_path, windows=False)
 
     assert not npm.uninstalls
     assert script.read_text(encoding="utf-8") == "#!/usr/bin/env node\n// work profile\n"
@@ -364,7 +275,7 @@ def test_posix_keeps_npm_link_routed_through_users_selection_link(
     link.symlink_to(selection)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=False)
+        _migrate(tmp_path, windows=False)
 
     assert not npm.uninstalls
     assert link.readlink() == selection
@@ -374,19 +285,19 @@ def test_posix_keeps_npm_link_routed_through_users_selection_link(
     assert npm.removal() in caplog.messages[0]
 
 
-def test_posix_migrates_npm_link_through_linked_prefix(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-    """npmのprefixがディレクトリのリンクの先にあっても、npmが作った`bin/codex`は生成物として旧npm版ごと削除する。"""
+def test_posix_reports_npm_link_through_linked_prefix(monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """npmのprefixがディレクトリのリンクの先にあっても、npmが作った`bin/codex`は生成物として認識し、旧npm版を案内する。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=False)
     (tmp_path / "npm-link").symlink_to(npm.prefix)
     npm.npm = tmp_path / "npm-link" / "bin" / "npm"
     monkeypatch.setenv("PATH", str(npm.npm.parent))
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert _migrate(tmp_path, windows=False)
+        _migrate(tmp_path, windows=False)
 
-    assert len(npm.uninstalls) == 1
-    assert not (npm.bin_dir / "codex").is_symlink()
-    assert not caplog.messages
+    assert not npm.uninstalls
+    assert (npm.bin_dir / "codex").is_symlink()
+    assert npm.removal() in caplog.text
 
 
 _NPM_SHIMS = npm_windows_shims("node_modules/@openai/codex/bin/codex.js")
@@ -452,11 +363,10 @@ def test_migrate_keeps_user_files_that_npm_uninstall_would_remove(
     user_file.write_bytes(data)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        changed = _migrate(tmp_path, windows=windows)
+        _migrate(tmp_path, windows=windows)
 
     assert (user_file.read_bytes() if user_file.exists() else None) == data
     assert not npm.uninstalls
-    assert not changed
     assert len(caplog.messages) == 1, caplog.messages
     assert f"{user_file.resolve()}（" in caplog.messages[0]
     assert npm.removal() in caplog.messages[0]
@@ -479,7 +389,7 @@ def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_pat
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert not setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
     )
 
@@ -495,7 +405,7 @@ def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_pat
     ],
 )
 def test_migrate_windows_cmd_uses_package_json_bin(
-    monkeypatch, tmp_path: Path, bin_json: str, referenced_name: str, expected: bool
+    monkeypatch, tmp_path: Path, caplog, bin_json: str, referenced_name: str, expected: bool
 ) -> None:
     """npmの起動スクリプトは、package.jsonのbinの名前と実体に合う参照だけを生成物とする。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
@@ -523,12 +433,10 @@ def test_migrate_windows_cmd_uses_package_json_bin(
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert (
-        setup_cli_common.migrate_npm_launchers(
-            "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
-        )
-        is expected
+    setup_cli_common.warn_about_npm_launchers(
+        "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
     )
+    assert ("npmの生成物と確認できない" not in caplog.text and "旧npm版を保持" in caplog.text) is expected
 
 
 @pytest.mark.parametrize("mise_target", ["other_package", "outside"])
@@ -563,6 +471,52 @@ def test_migrate_windows_mise_shim_rejects_wrong_target(monkeypatch, tmp_path: P
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert not setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/codex.cmd", tmp_path / "canonical"
     )
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="拡張子なしの起動ファイルでPOSIXの照会経路を確かめる")
+def test_query_failure_asks_to_repair_the_failed_command(tmp_path, monkeypatch, caplog):
+    """導入先の照会のうち失敗したコマンドの修復を案内し、成功したコマンドの修復は案内しない。"""
+    old = tmp_path / "old"
+    old.mkdir()
+    for name in ("codex", "npm"):
+        (old / name).write_text("", encoding="utf-8")
+        (old / name).chmod(0o755)
+    monkeypatch.setenv("PATH", str(old))
+
+    def npm(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1:] == ["prefix", "--global"]:
+            return subprocess.CompletedProcess(command, 3, "", "fixture prefix failed")
+        return subprocess.CompletedProcess(command, 0, str(old / "node_modules"), "")
+
+    monkeypatch.setattr(common, "run_subprocess", npm)
+    setup_cli_common.warn_about_npm_launchers(
+        "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
+    )
+
+    assert "prefix --global" in caplog.text
+    assert "root --global`が導入先" not in caplog.text
+    assert "失敗した照会が成功するよう" in caplog.text
+
+
+def test_query_failure_shows_runnable_powershell_command(monkeypatch):
+    """Windowsで照会の失敗を示すコマンドは、PowerShellでそのまま実行できる表記にする。"""
+    monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
+
+    def npm(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1:] == ["prefix", "--global"]:
+            return subprocess.CompletedProcess(command, 3, "", "fixture prefix failed")
+        return subprocess.CompletedProcess(command, 0, "C:/Old Dir/node_modules", "")
+
+    monkeypatch.setattr(common, "run_subprocess", npm)
+    npm_path = Path("C:/Old Dir/npm.cmd")
+    with pytest.raises(setup_cli_common._NpmQueryError) as raised:  # pylint: disable=protected-access
+        setup_cli_common._npm_global_root(npm_path)  # pylint: disable=protected-access
+
+    # Windowsでは入力のPathがバックスラッシュへ正規化されるため、期待値も同じPathから組み立てる。
+    expected = setup_cli_common.format_command([str(npm_path), "prefix", "--global"])
+    assert expected.startswith("PowerShellで`& '")
+    assert expected in str(raised.value)
+    assert f'"{npm_path}" prefix' not in str(raised.value)

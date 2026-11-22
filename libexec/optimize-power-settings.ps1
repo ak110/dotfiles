@@ -120,7 +120,7 @@ function Disable-PerDeviceUsbPowerManagement {
         $powerDevices = Get-CimInstance -Namespace 'root/wmi' -ClassName MSPower_DeviceEnable -ErrorAction SilentlyContinue
         foreach ($powerDevice in $powerDevices) {
             $matched = $usbPnpDevices |
-            Where-Object { $powerDevice.InstanceName.ToUpper().StartsWith($_.InstanceId.ToUpper()) } |
+            Where-Object { $powerDevice.InstanceName.StartsWith($_.InstanceId, [StringComparison]::OrdinalIgnoreCase) } |
             Select-Object -First 1
             if (-not $matched) {
                 continue

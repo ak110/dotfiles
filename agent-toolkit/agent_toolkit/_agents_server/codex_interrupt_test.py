@@ -248,7 +248,7 @@ async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
 
 @pytest.mark.parametrize(
     ("cause", "stage", "backlog"),
-    [("stalled_consumer", "送出確認待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
+    [("stalled_consumer", "応答待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
 )
 @pytest.mark.asyncio
 async def test_undetermined_kill_records_stage_and_connection(
