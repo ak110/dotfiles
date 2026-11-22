@@ -130,6 +130,8 @@
    - `agents_server`の各modeに同等の手段が無い専用のagent定義（プロジェクト固有の定義など）を使う場合。
      同等かは各modeが公開する機能で、工程の候補となる実行エンジンごとに判定し、対応する`mode`で起動して同等の結果を得られなかった場合も含める。
      組み込みの汎用定義の起動はPreToolUseのhookが遮断するので、通知に従う。
+     Claude Codeの組み込みの`web-fetch`はhookが遮断しない。
+     直接の`WebFetch`を持たない会話でWebページを読む標準の手段のため、取得にはそのまま使う。
    - ユーザーが明示した場合。
    - 本書「会話を引き継ぐ委譲」でforkを選ぶ場合。
    組み込みの委譲の依頼文には、`/atk-mode subagent <役割名>`の起動か、`agent-toolkit:atk-mode/playbooks/subagent.md`と役割文書の絶対パスを書く。

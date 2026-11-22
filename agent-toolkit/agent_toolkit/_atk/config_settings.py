@@ -138,7 +138,6 @@ CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.ends
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
-    "codex_auto_reset": "false",
     "usage_auto_allocation": "false",
     "usage_activity_mode": "continuous",
     "usage_reset_permissions": "[]",
@@ -320,7 +319,12 @@ def config_env_name(key: str) -> str:
 
 def config_environment_variable_names() -> tuple[str, ...]:
     """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
-    keys = (*MUTABLE_KEY_DEFAULTS, *RETIRED_CONNECTION_KEYS, *sorted(RETIRED_MODEL_KEYS), "process_loop_repositories")
+    keys = (
+        *MUTABLE_KEY_DEFAULTS,
+        *RETIRED_CONNECTION_KEYS,
+        *sorted(RETIRED_MODEL_KEYS),
+        "process_loop_repositories",
+    )
     return tuple(config_env_name(key) for key in keys)
 
 
@@ -397,7 +401,7 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: continuous, intermittent")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start", "usage_auto_allocation"}:
+    elif key in {"codex_fast_mode", "session_review_auto_start", "usage_auto_allocation"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in MODEL_DEFAULTS:

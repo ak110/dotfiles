@@ -329,7 +329,7 @@ def test_update_preserves_index_when_ownership_is_not_ready(
             destination.write_bytes(b"partial index")
             raise KeyboardInterrupt
 
-        monkeypatch.setattr(update_dotfiles.shutil, "copyfile", interrupt_copy)
+        monkeypatch.setattr(update_dotfiles_git.shutil, "copyfile", interrupt_copy)
     if race == "copy-interrupt":
         with pytest.raises(KeyboardInterrupt):
             _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)

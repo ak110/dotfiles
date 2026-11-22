@@ -19,7 +19,34 @@ import pytest
 from agent_toolkit._agents_server import service_context, service_io, service_transport, service_turns
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
+from agent_toolkit._common import effort_requests, process_identity, runtime_environment, session_registry, session_release
+
+
+@pytest.mark.asyncio
+async def test_short_lived_host_exit_does_not_close_running_conversation(tmp_path):
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    async with _manager_with_fake("codex") as (manager, _backend):
+        session = SessionState("child", str(tmp_path), status="running", engine="codex")
+        manager.sessions[session.session_id] = session
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        host = cast(process_identity.ProcessIdentity, SimpleNamespace(exists=lambda: False))
+        conversation = service_context.Conversation(manager, caller, hosts={12: host}, connections={"short-mcp"})
+        pool.conversations["parent"] = conversation
+
+        pool.disconnect("short-mcp")
+        await pool._collect_disconnected_conversations()
+        assert pool.conversations["parent"] is conversation
+        assert session.status == "running"
+
+        session.status = "completed"
+        conversation.connections.add("replacement-mcp")
+        await pool._collect_disconnected_conversations()
+        assert pool.conversations["parent"] is conversation
+        pool.disconnect("replacement-mcp")
+        await pool._collect_disconnected_conversations()
+        assert "parent" not in pool.conversations
 
 
 @pytest.mark.asyncio

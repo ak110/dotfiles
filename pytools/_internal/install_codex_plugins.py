@@ -32,7 +32,6 @@ CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
 # nativeのoperation lock最大375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕。
 # https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon
-_DAEMON_RESTART_TIMEOUT = 750.0
 # `atk-hook`の復旧が中断して残す`.<version>-restore-*`などの`.`で始まる名前は版として扱わない。
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
 # 削除を始めた旧versionの名前の接尾辞。
@@ -57,7 +56,7 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
         "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
-        "フックの永続的な信頼登録は手動です。稼働中のdaemonはplugin更新時に自動で再起動します。"
+        "フックの永続的な信頼登録は手動です。"
     ),
     command="/hooks",
 )
@@ -357,31 +356,6 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
 
 
-def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> str | None:
-    """稼働中daemonへplugin更新を反映し、失敗理由を呼び出し元へ返す。"""
-    if not _command(["app-server", "daemon", "version"]):
-        return None
-    result = common.run_subprocess(
-        [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
-        timeout=_DAEMON_RESTART_TIMEOUT,
-        tag="codex",
-    )
-    exit_code = None if result is None else result.returncode
-    if exit_code == 0:
-        logger.info(log_format.format_status("codex plugins", "app-server daemonを自動再起動 (exit 0)"))
-        return None
-    logger.warning(
-        log_format.format_status(
-            "codex plugins",
-            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'}: "
-            f"{common.format_cli_error(result)})。"
-            "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
-        )
-    )
-    notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
-    return f"Codex daemonのplugin反映に失敗: {common.format_cli_error(result)}"
-
-
 def _codex_home() -> Path:
     return Path(os.environ.get("CODEX_HOME", CODEX_HOME))
 
@@ -445,7 +419,7 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
 
     `plugin remove`はhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば除去を延期する。
     参照の有無はホストの役割と無関係に、プロセスの役割だけで判定する。
-    管理daemonとその補助実行体はセッション不在時に自動で再起動するため、
+    管理daemon自体の生存と、pluginを使うセッションの生存を分けて判定する。
     `session`の役割（判定素材を取得できないプロセスを含む）だけを数える。
     """
     return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
@@ -895,16 +869,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             plugin_updated = plugin_updated or (plugin_changed and (current is None or current.get("version") != version))
             local_changed = local_changed or plugin_changed
             deferred = deferred or plugin_deferred
-        # 全pluginの更新と旧cacheの復元を終えてから、新daemonが参照する集合を一度だけ反映する。
-        restart_error = _restart_daemon_after_plugin_update(notices) if plugin_updated else None
-        if restart_error is not None:
-            return post_apply_outcome.PostApplyOutcome(
-                changed=changed or local_changed,
-                notices=tuple(dict.fromkeys(notices)),
-                failure=restart_error,
-                next_action="codex app-server daemon restartを実行し、update-dotfilesを再実行してください。",
-                deferred=deferred or unused_deferred,
-            )
+        if plugin_updated:
+            _append_restart_notice_if_daemon_running(notices)
         return _outcome(changed or local_changed, notices, deferred=deferred or unused_deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。

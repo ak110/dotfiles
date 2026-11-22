@@ -276,6 +276,15 @@ def test_rejects_missing_agent_reference(repo: tuple[pathlib.Path, str]) -> None
     assert any("実在しないサブエージェント参照" in error for error in errors), errors
 
 
+@pytest.mark.parametrize("agent_type", ["claude", "Explore", "Plan", "general-purpose", "web-fetch"])
+def test_accepts_builtin_agent_reference(repo: tuple[pathlib.Path, str], agent_type: str) -> None:
+    """ローカルの定義ファイルを持たない組み込みのagent定義の参照は拒否しない。"""
+    work_dir, base = repo
+    content = _plan(work_dir, base).replace("対象の構造を更新する。", f"Agentツールで`{agent_type}`を使う。")
+    errors, _warnings = _check(work_dir, content)
+    assert not any("実在しないサブエージェント参照" in error for error in errors), errors
+
+
 def test_resolves_plugin_resources_outside_plugin_worktree(repo: tuple[pathlib.Path, str]) -> None:
     """利用先worktreeに複製されないplugin同梱resourceをplugin rootから解決する。"""
     work_dir, base = repo

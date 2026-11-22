@@ -7,6 +7,10 @@ shellcheckが導入されている環境では、その診断に従う。
 
 ## 基本
 
+- ASCIIの設定キー・拡張子など機械向けの大小文字変換・比較にだけ`LC_ALL=C`を使う。
+  `${var^^}`・`${var,,}`、`declare -u`・`declare -l`、`nocasematch`を使う`[[ ]]`・`case`のほか、`tr`の文字クラス、`awk`の`toupper`・`tolower`、`sed`の大小文字変換、`grep -i`もロケールの影響を受ける。
+  外部コマンドは`LC_ALL=C tr ...`、組み込みは関数の`local LC_ALL=C`かサブシェルで範囲を限る。
+  スクリプト全体には適用せず、自然言語の表示にはユーザーの設定を使う。
 - シバンは`#!/usr/bin/env bash`にし、先頭で`set -euo pipefail`を宣言し、自身の場所は`BASH_SOURCE`から解決する。
 - 変数の参照とコマンド置換は二重引用符で囲む（shellcheckの`SC2086`、`SC2046`）。
 - 作った一時ファイルは`trap`で終了時に回収する。

@@ -279,7 +279,7 @@ DEFAULT_STEPS: list[_StepSpec] = [
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
     _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS), full_only=True),
     _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,), full_only=True),
-    # 旧npm版の除去がmise管理のNode配下のnpmを使う。
+    # 旧npm版の導入先の照会がmise管理のNode配下のnpmを使う。
     _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,), full_only=True),
     _StepSpec(_AGY_CLI, setup_agy_cli.run, full_only=True),
     _StepSpec(_OPENCODE_CLI, setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
@@ -361,6 +361,7 @@ def main(
     )
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="互換入力。不要ツールとキャッシュは通常更新でも整理する")
+    parser.add_argument("--no-sudo", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
     parser.add_argument("--prune-only-if-minimal", action="store_true", help="互換入力。モードによらず更新後の整理を実行する")
     parser.add_argument("--internal-uv-cache-maintenance", action="store_true", help=argparse.SUPPRESS)

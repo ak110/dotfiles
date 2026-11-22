@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import pathlib
+import re
+import shutil
+import subprocess
 from typing import Any
 
 from agent_toolkit._agents_server import context_usage, resume_waits
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server.cli_turn import CliTurnManager, decode_event, finalize_turn
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import (
     LIGHTWEIGHT_LAUNCH_KINDS,
     PUBLIC_WAIT_NOTICE,
@@ -15,13 +22,48 @@ from agent_toolkit._agents_server.launch_prompts import (
     launch_prompt,
     python_runtime_instructions,
 )
-from agent_toolkit._agents_server.session_errors import SessionOwnerGoneError
+from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionOwnerGoneError
 from agent_toolkit._agents_server.state import LaunchKind, SessionState
-from agent_toolkit._common import antigravity_cli, host_homes
+from agent_toolkit._common import antigravity_cli, host_homes, process_tree
 from agent_toolkit._common.antigravity_cli import build_command
 from agent_toolkit._common.message_format import auto_message
 
 _MODEL_OUTPUT_STEP_TYPES = frozenset({"agent_response", "tool"})
+_MINIMUM_GEMINI_VERSION = (1, 5, 13)
+
+
+def _gemini_delegation_binary(environment: dict[str, str]) -> str:
+    home = pathlib.Path(environment.get("USERPROFILE" if os.name == "nt" else "HOME", ""))
+    if not home.is_absolute():
+        raise DelegateBackendError("agy委譲に使うホームディレクトリを確認できません")
+    try:
+        settings = json.loads((home / ".gemini" / "antigravity-cli" / "settings.json").read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        settings = None
+    if not isinstance(settings, dict) or settings.get("modelProvider") != "gemini":
+        raise DelegateBackendError("agy委譲にはGemini APIキー方式の明示選択が必要です")
+    if not environment.get("GEMINI_API_KEY", "").strip():
+        raise DelegateBackendError("agy委譲にGEMINI_API_KEYが設定されていません")
+    executable = shutil.which("agy", path=environment.get("PATH", ""))
+    if executable is None:
+        raise DelegateBackendError("agyが見つかりません")
+    # 認証やモデル呼び出しを行わない版数照会に、APIキーを渡さない。
+    probe_env = {key: value for key, value in environment.items() if key != "GEMINI_API_KEY"}
+    try:
+        version = process_tree.run_with_timeout(
+            [executable, "--version"],
+            env=probe_env,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as error:
+        raise DelegateBackendError("agyの版を確認できません") from error
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version) or tuple(map(int, version.split("."))) < _MINIMUM_GEMINI_VERSION:
+        raise DelegateBackendError("agyをGemini APIキー方式を固定できる版へ更新してください")
+    return executable
 
 
 def _system_prompt(launch_kind: LaunchKind) -> str:
@@ -88,6 +130,13 @@ class AntigravityManager(CliTurnManager):
     LOG = logging.getLogger("agent-toolkit.agents-server.antigravity")
     build_command = staticmethod(build_command)
     system_prompt = staticmethod(_system_prompt)
+
+    async def prepare_command(
+        self, prompt: str, model: str | None, effort: str | None, conversation_id: str | None, environment: dict[str, str]
+    ) -> list[str]:
+        executable = await run_file_operation(_gemini_delegation_binary, environment)
+        command = self.build_command(prompt, model, effort, conversation_id)
+        return [executable, "--settings", '{"modelProvider":"gemini"}', *command[1:]]
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
         """保留した待機結果を引き継ぎ、同じ会話へ継続を配送する。"""

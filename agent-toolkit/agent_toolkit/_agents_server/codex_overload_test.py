@@ -125,6 +125,7 @@ async def test_send_message_during_overload_wait_delivers_instruction_as_reply(
 
         async def start_reply(_session: state.SessionState, prompt: str) -> tuple[str, dict[str, Any], None]:
             delivered.append(prompt)
+            _session.turn_seq += 1
             return "reply_started", {}, None
 
         monkeypatch.setattr(manager, "_start_reply_locked", start_reply)

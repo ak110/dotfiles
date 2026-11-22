@@ -91,6 +91,7 @@ lazy from agent_toolkit._hooks import (
     bugfix_gate,
     clock_claims,
     command_timing,
+    norm_excuse_gate,
     progress_self_check,
     repository_protection,
     work_contract,
@@ -273,6 +274,10 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None
     ):
         return Decision(block=bugfix_block)
+    if tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX) and (
+        excuse_block := norm_excuse_gate.text_block(payload, tool_input.get("message"), "ユーザーへの送達")
+    ):
+        return Decision(block=excuse_block)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
         message = tool_input.get("message")
         timing = (
@@ -583,6 +588,10 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
     """
     fields = _user_facing_text_fields(tool_name, tool_input)
+    if excuse_block := norm_excuse_gate.text_block(
+        _payload, "\n".join(text for _, text in fields), "ユーザーへの質問・計画の提示"
+    ):
+        return Decision(block=excuse_block)
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:

@@ -552,3 +552,22 @@ def test_help_describes_material_claim_fields() -> None:
     epilog = help_text.HELP["atk wi submission end"]["epilog"]
     for name in ("material_claims", *submission_findings.MATERIAL_CLAIM_FIELDS):
         assert f"`{name}`" in epilog
+
+
+def test_extraction_failure_redacts_stderr_before_taking_tail(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """発話抽出の失敗で例外本文へ載せる標準エラーの末尾は、伏せてから上限の文字数に抜粋する。"""
+    stderr = "y" * 600 + " password=synthetic-secret-0123456789\n"
+    monkeypatch.setattr(submission_findings._run_script, "registered_script_path", lambda _name: tmp_path / "s.py")  # pylint: disable=protected-access
+    monkeypatch.setattr(submission_findings.plugin_environment, "direct_environment", lambda *_args: {})
+    monkeypatch.setattr(
+        submission_findings.process_tree,
+        "run_with_timeout",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess([], 1, stdout="", stderr=stderr),
+    )
+
+    with pytest.raises(ValueError, match="終了コード1") as caught:
+        submission_findings._extracted_events(tmp_path / "t.jsonl", None)  # pylint: disable=protected-access
+    message = str(caught.value)
+    assert "synthetic-secret" not in message
+    assert "[REDACTED]" in message
+    assert len(message.split("）: ", 1)[1]) <= 500

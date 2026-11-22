@@ -22,9 +22,8 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 ## ツールの入出力
 
 - Windows版のBashツールは引用符付きのheredocや単一引用符の中でも`\\`を`\`へ縮めるため、エスケープを含むコードはWriteでmanaged-tempへ保存して実行する。
-- 現在の入力に端末modが添えた指定か、この会話のツール説明の指定がある時は、進捗・完了報告などの本文を`mcp__plugin_agent-toolkit_agents_server__send_to_user`の`message`で送る（地の文はAPIで要約されうる）。
-  入力に指定が無く、ツール名だけが表示された時はToolSearchかCode Modeの`describeTool`で説明を確かめる。
-  指定があれば一覧に直接表示されなくても正規名を呼んでREPLでは `await` で成否を確かめ、指定が無い時か呼出しに失敗した時だけ通常本文で伝える。
+- `mcp__plugin_agent-toolkit_agents_server__send_to_user`を使える時は、進捗・確認の前置き・完了報告などの発話を常にその`message`で送る（地の文はAPIで要約されうる）。
+  REPLでは `await` で成否を確かめ、ツール名だけが表示された時はToolSearchかCode Modeの`describeTool`で説明を確かめる。
 - 送達済みとするのは、ユーザーの画面への描画を確かめた成功の応答だけであり、呼び出したことや受付の応答は送達の証明にならない。
 - 委譲の入力や記録に「回答済み」と書くのは、この手段で伝えた回答に限る。
 

@@ -21,7 +21,7 @@ import pytest
 
 from agent_toolkit._agents_server import claude, claude_options, launch_prompts, state
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, startup_features
 from agent_toolkit._testing.agents_server_claude_support import _capture_options, _lightweight_environment
 from agent_toolkit._testing.agents_server_support import FakeClaudeClient, ResultMessage, SystemMessage
 
@@ -84,7 +84,7 @@ def test_build_options_inherits_parent_settings(
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
     else:
-        assert set(value) == {"env"}
+        assert set(value) == {"env", *startup_features.CLAUDE_SETTINGS}
     claude_settings.cleanup_settings(options)
     if isinstance(merged, claude_settings.SettingsFile):
         assert not pathlib.Path(merged).exists()
@@ -144,7 +144,7 @@ def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch,
 
     claude._build_options("/tmp", "model", "medium", debug_file=debug_file)  # pylint: disable=protected-access
 
-    assert captured["extra_args"] == {"debug-file": str(debug_file)}
+    assert captured["extra_args"] == {"debug-file": str(debug_file), "no-chrome": None}
 
 
 @pytest.mark.parametrize("cli_path", ["/opt/claude/bin/claude", None])
@@ -165,7 +165,7 @@ def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPat
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
 
-    assert "extra_args" not in captured
+    assert captured["extra_args"] == {"no-chrome": None}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -309,6 +309,7 @@ def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.P
     assert options.extra_args == {
         "debug-file": str(tmp_path / "debug.log"),
         "permission-prompts": "none",
+        "no-chrome": None,
     }
     assert launch_prompts.python_runtime_instructions() in options.system_prompt
 
@@ -335,7 +336,17 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
     assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
     assert set(options.mcp_servers) == {"pyfltr"}
-    assert options.extra_args == {"permission-prompts": "none"}
+    assert options.extra_args == {"permission-prompts": "none", "no-chrome": None}
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.usefixtures("_owner_session_environment")
+def test_full_explore_keeps_role_and_skips_feature_suppression(tmp_path: pathlib.Path) -> None:
+    options = claude._build_options(str(tmp_path), "model", "high", launch_kind="explore", startup_profile="full")
+    assert options.setting_sources == ["user", "project"]
+    assert {"Read", "Glob", "Grep"}.issubset(options.allowed_tools)
+    assert "no-chrome" not in options.extra_args
+    assert not startup_features.CLAUDE_SETTINGS.keys() & json.loads(options.settings).keys()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

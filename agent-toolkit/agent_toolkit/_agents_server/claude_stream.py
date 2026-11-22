@@ -574,6 +574,10 @@ class ClaudeStream(ClaudeTurns):
                     await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
+            if initialized.cancelled() and shared_state.finish_unowned_start(
+                initialized, turn_seq, asyncio.CancelledError(), session=session
+            ):
+                await self._notify_waiters()
 
     async def _consume_session_message(
         self,

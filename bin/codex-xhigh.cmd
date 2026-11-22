@@ -1,3 +1,3 @@
 @echo off
 rem NOTE: ëŒâûÇ∑ÇÈ Linux î≈ Å® bin/codex-xhigh
-codex --config model_reasoning_effort="xhigh" %*
+dotfiles-codex --config model_reasoning_effort="xhigh" %*

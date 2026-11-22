@@ -22,6 +22,8 @@ import update_dotfiles_git  # noqa: E402  # pylint: disable=wrong-import-positio
 import update_dotfiles_process  # noqa: E402  # pylint: disable=wrong-import-position
 import update_dotfiles_runtime  # noqa: E402  # pylint: disable=wrong-import-position
 
+from pytools._internal import codex_processes  # noqa: E402  # pylint: disable=wrong-import-position
+
 _REAL_UPDATE_GIT_WITH_RECOVERY = update_dotfiles_git.update_git_with_recovery  # pylint: disable=protected-access
 
 _REAL_SUBPROCESS_RUN = subprocess.run
@@ -96,7 +98,7 @@ def _own_git_process_scan(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def _no_codex_processes(monkeypatch: pytest.MonkeyPatch) -> None:
     """実行環境のCodexを分類対象から外し、実在する管理daemonを停止・起動しないようにする。"""
-    monkeypatch.setattr(update_dotfiles.codex_processes, "codex_processes", lambda: ())
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
 
 
 @pytest.fixture(autouse=True, name="sync_report_path")
@@ -498,8 +500,8 @@ def _track_mise_lock(local: pathlib.Path, seed: pathlib.Path) -> None:
     _git(seed, "push")
 
 
-def _codex(pid: int, label: str, role: str) -> update_dotfiles.codex_processes.CodexProcess:
-    return update_dotfiles.codex_processes.CodexProcess(pid, label, cast(Any, role))
+def _codex(pid: int, label: str, role: str) -> codex_processes.CodexProcess:
+    return codex_processes.CodexProcess(pid, label, cast(Any, role))
 
 
 _DAEMON = _codex(10, "codex app-server --managed-daemon", "managed-daemon")

@@ -32,7 +32,7 @@ from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import process_tree as _process_tree
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, diagnostic_line_excerpt, redact_secrets
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
 from agent_toolkit._git import refs as _git_refs
@@ -203,7 +203,8 @@ def _run_alert_json_command(
 
     payload = _json_command.run(command, timeout, error_factory=error_factory, strict_stderr=False, env=env)
     if not isinstance(payload, expected_type):
-        raise AlertCollectError(f"{operation}の応答形状が不正です: {json.dumps(payload, ensure_ascii=False)[:200]!r}")
+        excerpt = diagnostic_excerpt(json.dumps(payload, ensure_ascii=False), prefix_chars=200)
+        raise AlertCollectError(f"{operation}の応答形状が不正です: {excerpt!r}")
     return payload
 
 
@@ -226,12 +227,14 @@ def _log_excerpt(text: str) -> str:
 
     末尾だけでは、後処理の出力が続いた回に失敗した検査の行が失われるため、失敗を示す行を別に残す。
     """
-    lines = [_ANSI_ESCAPE.sub("", line) for line in text.splitlines()]
-    tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
-    errors = [line for line in lines[:tail_start] if _ERROR_LINE.search(line)][-_DIAGNOSTIC_ERROR_LINES:]
-    excerpt = [*errors, *(["…"] if errors else []), *lines[tail_start:]]
-    # 切り詰めた後に伏せると、切り詰めた位置をまたぐ資格情報が規則に一致せず先頭が残るため、伏せてから切り詰める。
-    return "\n".join("        " + redact_secrets(line)[:_DIAGNOSTIC_LINE_CHARS] for line in excerpt)
+
+    def select(lines: list[str]) -> list[int | str]:
+        tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
+        errors = [index for index in range(tail_start) if _ERROR_LINE.search(lines[index])][-_DIAGNOSTIC_ERROR_LINES:]
+        return [*errors, *(["…"] if errors else []), *range(tail_start, len(lines))]
+
+    safe = diagnostic_line_excerpt(_ANSI_ESCAPE.sub("", text), line_chars=_DIAGNOSTIC_LINE_CHARS, select=select)
+    return "\n".join("        " + line for line in safe)
 
 
 def _diagnostics_section(jobs: list[tuple[str, str, Callable[[], str]]]) -> str:
@@ -480,7 +483,8 @@ def collect_gitlab_schedule_failures(
     schedules = api_fn(api_target, f"{project}?per_page=100")
     if not isinstance(schedules, list):
         raise AlertCollectError(
-            f"Pipeline Scheduleの一覧の応答形状が不正です: {json.dumps(schedules, ensure_ascii=False)[:200]!r}"
+            "Pipeline Scheduleの一覧の応答形状が不正です: "
+            f"{diagnostic_excerpt(json.dumps(schedules, ensure_ascii=False), prefix_chars=200)!r}"
         )
     alerts: list[Alert] = []
     heads: dict[str, tuple[str | None, str | None]] = {}

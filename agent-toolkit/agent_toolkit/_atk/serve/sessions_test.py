@@ -462,3 +462,16 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
     await asyncio.wait_for(sessions.stop_remote_clients(context), timeout=5)
 
     assert len(started) == 1
+
+
+@pytest.mark.asyncio
+async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """リモートの一覧を取得できない警告は、ユーザーが実行できる次の操作を添える。"""
+    monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, b"helper not found\n"))
+    context = _context(tmp_path, remote_hosts=["down-host"])
+
+    _, warnings = await sessions.list_sessions(context)
+
+    reason = warnings[0]["reason"]
+    assert "次の操作:" in reason
+    assert "ssh down-host" in reason

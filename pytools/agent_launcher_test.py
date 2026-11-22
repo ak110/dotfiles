@@ -213,6 +213,7 @@ def test_codex_entrypoint_uses_latest_visible_model_and_same_startup_context(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(os, "isatty", lambda _fd: False)
     commands: list[list[str]] = []
     runtime = str(tmp_path / "codex.exe")
     arguments = ["-C", str(tmp_path), "-c", 'model_reasoning_effort="medium"', "--", "--model"]
@@ -233,7 +234,7 @@ def test_codex_entrypoint_uses_latest_visible_model_and_same_startup_context(
     monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", list_models)
     with pytest.raises(SystemExit, match="23"):
         entrypoint(
-            arguments,
+            ["--full", *arguments],
             os_name="nt",
             home=tmp_path,
             resolve=lambda _name, _preferred: pathlib.Path(runtime),
@@ -246,9 +247,10 @@ def test_codex_entrypoint_uses_latest_visible_model_and_same_startup_context(
 @pytest.mark.parametrize(
     ("arguments", "defaults"),
     [
-        (["--profile", "work"], ["-m", "gpt-5.6-sol"]),
-        (["-pwork"], ["-m", "gpt-5.6-sol"]),
         (["--profile=work", "--model", "explicit"], []),
+        (["-pwork"], []),
+        (["--profile", "work"], []),
+        (["--profile=work"], []),
         (["--model=explicit"], []),
         (["exec", "-m", "explicit", "prompt"], []),
         (["-mexplicit", "--model=second"], []),
@@ -266,12 +268,13 @@ def test_codex_entrypoint_uses_latest_visible_model_and_same_startup_context(
 def test_codex_launch_without_catalog(
     arguments: list[str], defaults: list[str], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(os, "isatty", lambda _fd: False)
     commands: list[list[str]] = []
     runtime = tmp_path / "codex.exe"
     monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", lambda *_, **__: pytest.fail("一覧は不要"))
     with pytest.raises(SystemExit, match="0"):
         agent_launcher.main_sol(
-            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+            ["--full", *arguments], os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
         )
     assert commands == [[str(runtime), *defaults, *arguments]]
 
@@ -300,7 +303,7 @@ def test_claude_model_literal_does_not_remove_default(arguments: list[str], tmp_
     runtime = tmp_path / "claude.exe"
     with pytest.raises(SystemExit, match="0"):
         agent_launcher.main_opus(
-            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+            ["--full", *arguments], os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
         )
     assert commands == [[str(runtime), "--permission-mode=auto", "--model=opus[1m]", *arguments]]
 
@@ -310,11 +313,12 @@ def test_codex_explicit_help_prompt_and_openai_override_still_use_catalog(
 ) -> None:
     monkeypatch.setattr(agent_launcher.codex_models, "list_models_at", lambda *_a, **_kw: [{"model": "gpt-7-sol"}])
     arguments = ["-cmodel_provider=custom", "-c", "model_provider=openai", "exec", "--color", "always", "--", "help"]
+    monkeypatch.setattr(os, "isatty", lambda _fd: False)
     commands: list[list[str]] = []
     runtime = tmp_path / "codex.exe"
     with pytest.raises(SystemExit, match="0"):
         agent_launcher.main_sol(
-            arguments, os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
+            ["--full", *arguments], os_name="nt", home=tmp_path, resolve=lambda *_: runtime, run=_capture_command(commands)
         )
     assert commands == [[str(runtime), "-m", "gpt-7-sol", *arguments]]
 
@@ -366,6 +370,31 @@ def test_executable_search_keeps_symlink_path(
     monkeypatch.setenv("PATH", str(tmp_path))
 
     assert agent_launcher._resolve_executable("claude", ()) == link
+
+
+@pytest.mark.parametrize(
+    ("name", "command", "entrypoint"),
+    [
+        ("sonnet", "claude", agent_launcher.main_sonnet),
+        ("opus", "claude", agent_launcher.main_opus),
+        ("fable", "claude", agent_launcher.main_fable),
+        ("poteto-mode", "claude", agent_launcher.main_poteto_mode),
+        ("astra", "codex", agent_launcher.main_astra),
+        ("sol", "codex", agent_launcher.main_sol),
+        ("terra", "codex", agent_launcher.main_terra),
+    ],
+)
+@pytest.mark.parametrize("flag", ["-h", "--help"])
+def test_wrapper_help_without_resolving_cli(name, command, entrypoint, flag, capsys):
+    def unexpected(*_args):
+        pytest.fail("ヘルプ表示に本体CLIは不要")
+
+    with pytest.raises(SystemExit, match="0"):
+        entrypoint([flag], resolve=unexpected, run=unexpected)
+    output = capsys.readouterr().out
+    assert f"使い方: {name}" in output
+    assert "既定:" in output
+    assert f"`{command} --help`" in output
 
 
 def test_get_claude_options_extracts_long_options() -> None:

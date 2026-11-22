@@ -13,6 +13,14 @@ PSScriptAnalyzerが導入されている環境では、その診断に従う。
 
 ## 基本スタイル
 
+- PowerShell 7.7では、引数なしの`.ToUpper()`・`.ToLower()`、`-like`・`-match`・`-replace`・`-split`の大小文字の扱いがカルチャで変わる。
+  `switch -Wildcard`・`switch -Regex`、`Select-String`、`Group-Object`、`[regex]`の`IgnoreCase`単独指定でも同じ差を観測した。
+  カルチャに依存する変換や比較は人が読む文に限る。
+- 機械向けの文字列を大小文字を区別せず比較する時は、`-eq`・`-in`・`-contains`、通常の`switch`かハッシュテーブルのキー、`[StringComparison]::OrdinalIgnoreCase`を指定した.NETの比較を使う。
+  文字の有無も区別する序数の一致が必要なら、比較演算子ではなく`OrdinalIgnoreCase`を選ぶ。
+  ハッシュテーブルも、キーに求める同値の規則を確かめて比較器を選ぶ。
+  正規表現なら`IgnoreCase, CultureInvariant`、変換なら`.ToUpperInvariant()`・`.ToLowerInvariant()`を選ぶ。
+  同じ大小文字で比較する入力では、`-like`・`-match`をこの理由だけで変えない。
 - 先頭で`Set-StrictMode -Version Latest`と`$ErrorActionPreference = 'Stop'`を設定する。
 - 関数名は承認済みの動詞のVerb-Noun形式（PascalCase。`PSUseApprovedVerbs`）、変数名はcamelCaseにする。
 

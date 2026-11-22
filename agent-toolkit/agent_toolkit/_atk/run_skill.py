@@ -67,6 +67,7 @@ LOG_RETENTION_SECONDS = 30 * 24 * 60 * 60
 """
 
 TIMEOUT_EXIT_CODE = 124
+USAGE_LIMIT_PAUSE_EXIT_CODE = 86
 """時間上限を超えた場合の終了コード。`timeout`コマンドと同じ値とする。"""
 
 CONCURRENT_EXIT_CODE = 1
@@ -134,6 +135,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 def dispatch(args: argparse.Namespace) -> int:
     """スキルを1回実行し、終了コードを返す。"""
+    explicit_arguments = args.args is not None
     if args.skill is not None:
         # 無修飾の作業名（`review-session`など）と入口`atk-mode`への作業の名指しを、どちらも作業の修飾名へそろえる。
         args.skill = skill_modes.qualified(args.skill)
@@ -146,10 +148,14 @@ def dispatch(args: argparse.Namespace) -> int:
             # 保存記録は書き換えず、読んだ作業名を指定名と同じ規則でそろえ、以降の比較と起動単位はこの値で行う。
             saved_skill = skill_modes.qualified(record.input.skill)
             if any(getattr(args, name, None) is not None for name in ("target_repo", "work_dir", "timeout")) or (
-                args.args is not None and args.args != record.input.arguments
+                explicit_arguments and (args.args or None) != (record.input.arguments or None)
             ):
                 raise ValueError("--resumeでは元の対象・cwd・時間予算・スキル引数を変更できない")
-            if args.skill is not None and args.skill != saved_skill and not _is_entry_of(args.skill, saved_skill):
+            if (
+                args.skill is not None
+                and args.skill != saved_skill
+                and (explicit_arguments or not _is_entry_of(args.skill, saved_skill))
+            ):
                 raise ValueError("--resumeのスキルが元の実行と一致しない")
         except (OSError, ValueError) as error:
             _outcome.report_failure(
@@ -391,18 +397,22 @@ def _run_locked(
         notify=notify,
         claude_connection=record.connection if record is not None else None,
     )
-    try:
-        orchestrator, model, effort, provider, connection = _orchestrator.select_available_with_provider(
-            candidates, env, repo_root, context
-        )
-    except _orchestrator.NoAvailableCandidateError as error:
-        args.batch_failure = f"availability-{error.orchestrator}-{error.returncode}: {error.detail}"
-        _log_line(log, f"終了状態: 全てのモデル候補の可用性判定に失敗した（{error.orchestrator}: {error.detail}）")
-        _outcome.report_failure(
-            f"全てのモデル候補の可用性判定に失敗したため起動しなかった（ログ: {log_path}）",
-            next_action=_PATH_ACTION,
-        )
-        return error.returncode or 1
+    if record is not None and record.engine == "claude" and getattr(args, "resume_usage_limited", False):
+        # 保留した会話へ既存の接続で戻る。可用性プローブで別の会話を先に起動しない。
+        orchestrator, model, effort, provider, connection = record.engine, record.model, record.effort, None, record.connection
+    else:
+        try:
+            orchestrator, model, effort, provider, connection = _orchestrator.select_available_with_provider(
+                candidates, env, repo_root, context
+            )
+        except _orchestrator.NoAvailableCandidateError as error:
+            args.batch_failure = f"availability-{error.orchestrator}-{error.returncode}: {error.detail}"
+            _log_line(log, f"終了状態: 全てのモデル候補の可用性判定に失敗した（{error.orchestrator}: {error.detail}）")
+            _outcome.report_failure(
+                f"全てのモデル候補の可用性判定に失敗したため起動しなかった（ログ: {log_path}）",
+                next_action=_PATH_ACTION,
+            )
+            return error.returncode or 1
     candidate = f"{orchestrator}:{model}/{effort}"
     _log_line(log, f"採用した候補: {candidate}")
     goal = _automated_prompt.wrap(
@@ -577,6 +587,26 @@ def _run_locked(
         remaining = writer.record.remaining
         code = output.exit_code
         assert code is not None
+        limit = output.paused_for_usage_limit
+        if (
+            limit is None
+            and getattr(args, "resume_usage_limited", False)
+            and output.usage_limit is not None
+            and not usage_limit_policy.should_wait(orchestrator, output.usage_limit.limit_type)
+        ):
+            limit = output.usage_limit
+        if limit is not None:
+            notice = f"Claude Codeの利用上限（{limit.limit_type}）を検出したが、元の実行の時間予算が残っていない"
+            action = f"ログ{log_path}で未完了の作業を確認する"
+            if remaining > 0:
+                now = time.time()
+                args.batch_usage_resume_at = now + limit.delay_seconds(now)
+                action = f"`atk run-skill --resume {run_id}`で再開する"
+                notice = limit.describe()
+            _log_line(log, f"終了状態: {notice}")
+            _log_line(log, f"次の操作: {action}")
+            _outcome.report_failure(notice, next_action=action)
+            return USAGE_LIMIT_PAUSE_EXIT_CODE if remaining > 0 else TIMEOUT_EXIT_CODE
         if code == TIMEOUT_EXIT_CODE or output.usage_limit is None:
             return code
         if remaining <= 0:
@@ -657,6 +687,7 @@ class _SessionOutput:
     usage_limit: _orchestrator.UsageLimitState | None = None
     on_thread_id: typing.Callable[[str], None] | None = None
     exit_code: int | None = None
+    paused_for_usage_limit: _claude_usage_limit.UsageLimitState | None = None
 
     def receive(self, line: str) -> None:
         """stdoutのイベントを取り込む。"""
@@ -771,12 +802,10 @@ def _wait_session(
                 except subprocess.TimeoutExpired:
                     with lock:
                         limit = output.usage_limit
-                        limited = (
-                            isinstance(limit, _claude_usage_limit.UsageLimitState)
-                            and limit.status == "rejected"
-                            and (allow_connection_switch or usage_limit_policy.should_wait(orchestrator, limit.limit_type))
+                    if isinstance(limit, _claude_usage_limit.UsageLimitState) and limit.status == "rejected":
+                        wait_or_switch = allow_connection_switch or usage_limit_policy.should_wait(
+                            orchestrator, limit.limit_type
                         )
-                    if limited:
                         residual = _stop_executor(process, executor)
                         if residual:
                             raise ActionableError(
@@ -784,6 +813,8 @@ def _wait_session(
                                 next_action="記録したPID世代の旧CLIの終了を確認して同じ実行を再開する",
                             ) from None
                         returncode = process.returncode or 1
+                        if not wait_or_switch:
+                            output.paused_for_usage_limit = limit
                         break
         except subprocess.TimeoutExpired:
             residual = _stop_executor(process, executor)
@@ -813,6 +844,8 @@ def _wait_session(
             return TIMEOUT_EXIT_CODE
         _drain_output(readers, log, lock)
         with lock:
+            if output.paused_for_usage_limit is not None:
+                return USAGE_LIMIT_PAUSE_EXIT_CODE
             _log_line(log, f"終了状態: exit code {returncode}")
             if orchestrator == "codex" and returncode != 0:
                 output.usage_limit = _codex_usage_limit.from_thread(output.thread_id, codex_home=codex_home)

@@ -123,6 +123,21 @@ def test_cli_html_candidate_selection_download_and_search(
     assert calls == [["uv", "cache", "dir", "--no-config"]]
 
 
+def test_search_matches_ascii_path_with_turkish_locale(tmp_path, monkeypatch, browser):
+    target = tmp_path / "target"
+    target.mkdir()
+    (target / "FILE.txt").write_text("fixture")
+    dirsize_test.mock_uv(monkeypatch, tmp_path / "outside")
+    output = tmp_path / "out"
+    dirsize_test.run_report(monkeypatch, target, output)
+    with browser.new_context(locale="tr-TR") as context:
+        page = context.new_page()
+        page.goto((output / "report.html").as_uri())
+        assert page.evaluate("('FILE').toLocaleLowerCase()") == "fıle"
+        page.get_by_label("パスを検索").fill("file")
+        playwright.sync_api.expect(page.get_by_role("cell").first).to_contain_text("FILE.txt")
+
+
 def test_cli_empty_html_has_no_candidate(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
