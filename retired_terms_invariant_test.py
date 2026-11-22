@@ -1,6 +1,6 @@
 """撤去した名称と是正した定義の無い呼称が、許容箇所の外のGit追跡ファイルへ現れないことを検査する。
 
-撤去を規範本文の置換だけで伝えると、過去のセッション記録、終端済みのWI、旧形式の計画およびコミットメッセージに残る
+撤去を規範本文の置換だけで伝えると、過去のセッション記録、終了済みのWI、旧形式の計画およびコミットメッセージに残る
 旧名や定義の無い呼称を読んだ書き手が、同じ語を現行の文書へ書き戻す。書き戻しをこのテストの失敗として検出する。
 
 名称を撤去するときと、正式名を持つ対象を指していた定義の無い呼称を是正したときは、
@@ -50,7 +50,7 @@ class _RetiredTerm:
 _NAMING_EXTRA_ALLOWED: dict[str, tuple[_AllowedLocation, ...]] = {
     "証拠行": (_AllowedLocation("agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md", "`証拠行`"),),
     "計画レビュー": (
-        # 旧形式の計画と計画レビュー表を読む互換の実装とそのテスト
+        # 旧形式の計画と付属の旧レビュー表を読む互換の実装とそのテスト
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/structure/*.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_atk/review_table_cli.py"),
         _AllowedLocation("agent-toolkit/agent_toolkit/_plan/bundle_kinds.py"),

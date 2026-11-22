@@ -55,7 +55,7 @@ def _capture_batch_launches(monkeypatch, *, mode="batch"):
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
 @pytest.mark.parametrize("reason", [None, "meta-child", "consultation", "disabled"])
 def test_public_hook_launches_initial_meta_only_when_allowed(monkeypatch, event, reason):
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(session_activity, "host_process", object)
     if reason == "meta-child":
         monkeypatch.setenv(
@@ -154,7 +154,7 @@ def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path
 
 def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path):
     """失敗を別スコープで報告し、間隔経過後も未完了の是正があればmetaだけを見送る。"""
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     saved = []
 
     def save_failure(key, message):
@@ -172,7 +172,8 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 3
-    [(key, report)] = saved
+    assert len(saved) == 1
+    key, report = saved[0]
     assert "review-session meta" in report
     assert "meta-run.log" in report
     assert str(tmp_path) not in report
@@ -186,13 +187,13 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
         return (tmp_path / "failure.md", {}) if "inbox" in states else None
 
     monkeypatch.setattr(run_skill_batch, "_failure_entry", failure_entry)
-    assert not run_skill_batch._meta_auto_start_due(now=now)
+    assert not run_skill_batch.meta_auto_start_due(now=now)
     assert session_review.auto_start_due(now=now)
 
 
 def test_auto_meta_uses_registered_worktree_from_repository_url(monkeypatch, tmp_path):
     _automatic_launch(monkeypatch, "a" * 32)
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(run_skill_batch, "_plugin_repository", lambda: "https://github.com/test/package")
     monkeypatch.setattr(
         run_skill_batch.config_settings,
@@ -215,7 +216,7 @@ def test_auto_meta_uses_registered_worktree_from_repository_url(monkeypatch, tmp
 def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch):
     """モデル起動前の失敗は、手動の別作業ツリーを使わず登録元の診断を案内する。"""
     _automatic_launch(monkeypatch, "a" * 32)
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(run_skill_batch.config_settings, "repository_settings", lambda **_args: {})
     monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("起動してはならない"))
     reports = []
@@ -229,7 +230,8 @@ def test_auto_meta_unregistered_worktree_reports_registration_lookup(monkeypatch
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 1
-    [report] = reports
+    assert len(reports) == 1
+    report = reports[0]
     assert "`atk config repos list`" in report and "実行ログは未作成" in report
 
 
@@ -261,7 +263,7 @@ def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, man
             "report_synced": False,
         },
     )
-    monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     if not manual:
         _automatic_launch(monkeypatch, "a" * 32)
     saved = []

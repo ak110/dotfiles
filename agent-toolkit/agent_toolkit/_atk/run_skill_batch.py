@@ -84,7 +84,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     if session_activity.host_process() is None:
         return notice
     now = time.time()
-    if _meta_auto_start_due(now=now):
+    if meta_auto_start_due(now=now):
         mode = "meta"
     elif count and session_review.auto_start_due(now=now) and any(not target.get("review_batch") for target in pending):
         mode = "batch"
@@ -186,7 +186,7 @@ def _failure_blocks(key: str, *, same_version: bool) -> bool:
     return same_version
 
 
-def _meta_auto_start_due(*, now: float) -> bool:
+def meta_auto_start_due(*, now: float) -> bool:
     if not session_review.meta_start_due(now=now):
         return False
     try:
@@ -430,7 +430,7 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
 
 
 def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
-    if not manual and not _meta_auto_start_due(now=time.time()):
+    if not manual and not meta_auto_start_due(now=time.time()):
         session_review.launch_result()
         return 0
     start = session_review.directory() / "meta-start.json"

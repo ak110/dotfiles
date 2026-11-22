@@ -97,6 +97,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
+lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
@@ -345,8 +346,6 @@ def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, 
             session_id, tool_input, tool_name, actor=_agent_id.resolve_hook_agent_id(payload)
         )
     if tool_name.endswith("__start") and not is_codex_payload(payload):
-        from agent_toolkit._hooks.agents_server_observations import start_observation_input
-
         updated = start_observation_input(session_id, tool_input, _agent_id.resolve_hook_agent_id(payload))
         return dataclasses.replace(launch, allow=True, updated_input=updated)
     return dataclasses.replace(launch, allow=True)

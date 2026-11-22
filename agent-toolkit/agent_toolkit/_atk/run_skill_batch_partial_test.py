@@ -117,7 +117,8 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         assert not (bundle / "timeline.jsonl").exists()
         assert pathlib.Path(prepared["scope_path"]).exists()
         assert (bundle / "candidate-evidence.jsonl").exists()
-        assert (bundle / "unconfirmed.jsonl").exists() and (bundle / "recovered.jsonl").exists()
+        assert (bundle / "unconfirmed.jsonl").exists() == bool(prepared["unconfirmed_scope"])
+        assert (bundle / "recovered.jsonl").exists() == bool(prepared["recovered_record_lines"])
     reviewed_path = session_review.previous_scope({"host": "claude", "session_id": parent.stem})
     assert reviewed_path is not None
     reviewed = session_review.read(reviewed_path)

@@ -262,7 +262,7 @@ def test_generated_turn_operations_preserve_state_edges(operations: list[str]) -
         elif operation != "failure" or not session.turn_completed:
             actions[operation]()
         after = _observed_axes(session)
-        changed = {axis for axis in before if before[axis] != after[axis]}
+        changed = {axis for axis, value in before.items() if value != after[axis]}
         assert changed <= _ALLOWED_CHANGED_AXES[operation]
         if operation != "next":
             for axis in changed & _TURN_EDGES.keys():

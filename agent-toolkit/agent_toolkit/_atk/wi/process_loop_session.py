@@ -38,7 +38,7 @@ _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
 )
 
 
-class _ClaudeUsageLimit(Exception):
+class ClaudeUsageLimit(Exception):
     def __init__(self, session_id: str) -> None:
         super().__init__(session_id)
         self.session_id = session_id
@@ -316,7 +316,7 @@ def _run_process_session(
                 codex_provider=codex_provider,
                 claude_connection=claude_connection,
             )
-        except _ClaudeUsageLimit as limited:
+        except ClaudeUsageLimit as limited:
             _process_loop_log.append("session_usage_limit", session_id=limited.session_id)
             _, model, effort, _, claude_connection = select_available_orchestrator(
                 [("claude", model, effort)],
@@ -539,7 +539,7 @@ def _raise_claude_usage_limit(
         pins=pins,
     )
     request.unlink(missing_ok=True)
-    raise _ClaudeUsageLimit(identifier)
+    raise ClaudeUsageLimit(identifier)
 
 
 def _run_cli_session(
@@ -722,7 +722,7 @@ def _run_cli_session(
                         )
                         return subprocess.CompletedProcess(argv, 0)
         except BaseException as error:
-            if process is not None and not isinstance(error, (_ClaudeUsageLimit, process_tree.ReclaimError)):
+            if process is not None and not isinstance(error, (ClaudeUsageLimit, process_tree.ReclaimError)):
                 _stop_orchestrator(
                     process,
                     context="process-loop exception",

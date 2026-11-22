@@ -348,7 +348,7 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
     if overlaps:
         target = typing.cast(list[object], result.setdefault(_selection.LANE_OVERLAPS_KEY, []))
         additions = copy.deepcopy(overlaps)
-        structural = selection_contract._overlap_structure_errors(additions)
+        structural = selection_contract.overlap_structure_errors(additions)
         if structural:
             raise ValueError("\n".join(structural))
         updated = _rows(result)

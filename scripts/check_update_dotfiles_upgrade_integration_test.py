@@ -12,19 +12,15 @@ import check_update_dotfiles_upgrade as upgrade
 import pytest
 from check_update_dotfiles_upgrade_test import (
     _SCRIPT,
+    _chezmoi_bin,
     _FakeRegistry,
     _git_answers,
     _profile_env,
+    fake_preflight_probes,
+    mock_hosted_runner,
 )
-from check_update_dotfiles_upgrade_test import (
-    _chezmoi_bin as _chezmoi_bin,
-)
-from check_update_dotfiles_upgrade_test import (
-    fake_preflight_probes as fake_preflight_probes,
-)
-from check_update_dotfiles_upgrade_test import (
-    mock_hosted_runner as mock_hosted_runner,
-)
+
+__all__ = ["_chezmoi_bin", "fake_preflight_probes", "mock_hosted_runner"]
 
 
 @pytest.mark.parametrize("retry_status", [0, 23])
@@ -262,7 +258,7 @@ def test_profile_leak_fails_check(
 
     message = str(exc_info.value)
     assert str(leaked) in message
-    assert "_isolated_env" in message
+    assert "isolated_environment" in message
     assert "予約タスク" in message
     assert "update-dotfiles-upgrade-windows" in message
 

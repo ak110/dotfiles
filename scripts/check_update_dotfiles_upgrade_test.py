@@ -19,7 +19,7 @@ _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  #
 
 @pytest.fixture(autouse=True)
 def fake_preflight_probes(monkeypatch: pytest.MonkeyPatch) -> None:
-    run = upgrade._run
+    run = upgrade.run_command
 
     def fake_run(arguments, *, cwd=None, env=None, runner=subprocess.run):
         if runner is not subprocess.run and cwd is not None and env is not None:
@@ -34,7 +34,7 @@ def fake_preflight_probes(monkeypatch: pytest.MonkeyPatch) -> None:
                 return subprocess.CompletedProcess(arguments, 0, stdout=str(python), stderr="")
         return run(arguments, cwd=cwd, env=env, runner=runner)
 
-    monkeypatch.setattr(upgrade, "_run", fake_run)
+    monkeypatch.setattr(upgrade, "run_command", fake_run)
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +60,7 @@ def test_preflight_checks_resolved_paths(tmp_path: pathlib.Path, monkeypatch: py
         "UV_CACHE_DIR": str(home / "cache"),
         "UV_TOOL_BIN_DIR": str(home / "bin"),
     }
-    upgrade._register_upgrade_checkout(checkout if escaped != "checkout登録" else outside, env, "linux")
+    upgrade.register_upgrade_checkout(checkout if escaped != "checkout登録" else outside, env, "linux")
 
     def run(arguments, **_kwargs):
         if arguments[1] == "symbolic-ref":
@@ -73,21 +73,21 @@ def test_preflight_checks_resolved_paths(tmp_path: pathlib.Path, monkeypatch: py
             value = home / "python" / "python" if escaped != "Python" else outside
         return subprocess.CompletedProcess(arguments, 0, stdout=str(value), stderr="")
 
-    monkeypatch.setattr(upgrade, "_run", run)
+    monkeypatch.setattr(upgrade, "run_command", run)
     if escaped is None:
-        upgrade._verify_upgrade_inputs(root.resolve(), checkout, bare, env, "linux", runner=subprocess.run)
+        upgrade.verify_upgrade_inputs(root.resolve(), checkout, bare, env, "linux", runner=subprocess.run)
         assert env["UV_MANAGED_PYTHON"] == "1"
         assert env["UV_PYTHON"] == str(home / "python" / "python")
     else:
         with pytest.raises(upgrade.UpgradeCheckError, match=escaped):
-            upgrade._verify_upgrade_inputs(root.resolve(), checkout, bare, env, "linux", runner=subprocess.run)
+            upgrade.verify_upgrade_inputs(root.resolve(), checkout, bare, env, "linux", runner=subprocess.run)
 
 
 def test_public_upgrade_refuses_to_launch_with_foreign_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     uv = tmp_path / "uv"
     uv.write_bytes(b"fixture-uv")
     monkeypatch.setenv("UV", str(uv))
-    isolated_env = upgrade._isolated_env
+    isolated_env = upgrade.isolated_environment
 
     def escaped_home(*args):
         return {**isolated_env(*args), "HOME": str(tmp_path / "usual-home")}
@@ -96,7 +96,7 @@ def test_public_upgrade_refuses_to_launch_with_foreign_home(tmp_path: pathlib.Pa
         assert arguments[0] not in {"chezmoi", "bash"}, "隔離外のhomeに対して初期適用や更新を起動してはならない"
         return _git_answers(arguments)
 
-    monkeypatch.setattr(upgrade, "_isolated_env", escaped_home)
+    monkeypatch.setattr(upgrade, "isolated_environment", escaped_home)
     with pytest.raises(upgrade.UpgradeCheckError, match="検証領域外のHOME"):
         upgrade.run_upgrade_check(tmp_path, "linux", runner=runner, profile_env=_profile_env(tmp_path))
 

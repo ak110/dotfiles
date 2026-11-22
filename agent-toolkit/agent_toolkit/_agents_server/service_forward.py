@@ -96,8 +96,8 @@ def _modules(directory: str) -> Iterator[tuple[str, list[int]]]:
         if entry.is_dir(follow_symlinks=False):
             yield from _modules(entry.path)
         elif os.path.normcase(entry.name).endswith(".py") and not entry.name.endswith("_test.py"):
-            stat = entry.stat()
-            yield entry.path, [stat.st_ino, stat.st_mtime_ns, stat.st_size]
+            metadata = entry.stat()
+            yield entry.path, [metadata.st_ino, metadata.st_mtime_ns, metadata.st_size]
 
 
 def _code_digest(root: pathlib.Path, version: str, paths: list[pathlib.Path]) -> str:

@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import run_skill, session_record_format, session_records
+from agent_toolkit._atk import run_skill_execution, session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY
 from agent_toolkit._common import skill_modes
@@ -191,7 +191,7 @@ class TestInvokedProcessWi:
         """入口`atk-mode`へ移した後の目的文と、移す前の常駐の目的文を、Claude Codeの記録でも起動として判別する。"""
         text = {
             "process-loop": _pl_session.build_process_loop_prompt(),
-            "run-skill": run_skill.build_goal(skill_modes.PROCESS_WI, "single-lane"),
+            "run-skill": run_skill_execution.build_goal(skill_modes.PROCESS_WI, "single-lane"),
             "legacy-loop": "/goal " + PROCESS_LOOP_GOAL_BODY,
         }[prompt]
         record = (
@@ -227,7 +227,7 @@ class TestInvokedProcessWi:
 
     def test_codex_run_skill_goal_is_detected(self, tmp_path: pathlib.Path) -> None:
         """`atk run-skill`が渡す目的文の作業の起動の文を、Codexの記録でも起動として判別する。"""
-        text = "# AGENTS.md instructions\n" + run_skill.build_goal(skill_modes.PROCESS_WI, None)
+        text = "# AGENTS.md instructions\n" + run_skill_execution.build_goal(skill_modes.PROCESS_WI, None)
         path = tmp_path / "records.jsonl"
         _write_record(path, [_codex_message_record(role="user", item_type="input_text", text=text)])
         assert session_records.invoked_process_wi(path, "codex") is True

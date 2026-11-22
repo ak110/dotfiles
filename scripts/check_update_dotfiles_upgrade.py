@@ -102,7 +102,7 @@ def _configure_standard_streams() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
-def _run(
+def run_command(
     arguments: Sequence[str | os.PathLike[str]],
     *,
     cwd: pathlib.Path | None = None,
@@ -139,7 +139,7 @@ def _run(
 
 
 def _git_value(repo: pathlib.Path, *arguments: str, runner: Runner = subprocess.run) -> str:
-    value = _run(("git", "-C", repo, *arguments), runner=runner).stdout.strip()
+    value = run_command(("git", "-C", repo, *arguments), runner=runner).stdout.strip()
     if not value:
         raise UpgradeCheckError(
             f"Gitが値を返さなかった: {arguments!r}。git logで対象commitと履歴を確認し、"
@@ -155,7 +155,7 @@ def resolve_old_commit(repo: pathlib.Path, current_oid: str, *, runner: Runner =
 
 
 def old_python_pin(repo: pathlib.Path, old_oid: str, *, runner: Runner = subprocess.run) -> str | None:
-    listed = _run(("git", "-C", repo, "ls-tree", "--name-only", old_oid, "--", ".python-version"), runner=runner)
+    listed = run_command(("git", "-C", repo, "ls-tree", "--name-only", old_oid, "--", ".python-version"), runner=runner)
     if not listed.stdout.strip():
         return None
     return _git_value(repo, "show", f"{old_oid}:.python-version", runner=runner)
@@ -215,7 +215,7 @@ def _without_entries_under(path_value: str, base: pathlib.Path, kept: Sequence[p
     return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if not (entry and is_excluded(entry)))
 
 
-def _isolated_env(
+def isolated_environment(
     home: pathlib.Path, uv_executable: pathlib.Path, platform_name: str, verification_root: pathlib.Path
 ) -> dict[str, str]:
     """ユーザー環境から状態を分離し、ランチャーが参照するuvとchezmoiを配置する。
@@ -343,8 +343,8 @@ def create_local_remote(
     *,
     runner: Runner = subprocess.run,
 ) -> None:
-    _run(("git", "clone", "--bare", source_repo, bare_repo), runner=runner)
-    _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
+    run_command(("git", "clone", "--bare", source_repo, bare_repo), runner=runner)
+    run_command(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
 
 
 def profile_watch_dirs(profile_env: Mapping[str, str], platform_name: str) -> list[pathlib.Path]:
@@ -488,8 +488,8 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
         "通常profile側の次の項目が検証の前後で追加または削除された:\n"
         f"{paths}\n"
         "書込主体として次の2つを確認する。\n"
-        "  (1) 検証が起動した処理: どの環境変数から書込先を決めたかを調べ、`_isolated_env`で検証homeへ向ける。\n"
-        "  (2) 検証と無関係なランナー側の常駐プロセスや予約タスク: 同じ実行者で動くため`_isolated_env`では解消しない。"
+        "  (1) 検証が起動した処理: どの環境変数から書込先を決めたかを調べ、`isolated_environment`で検証homeへ向ける。\n"
+        "  (2) 検証と無関係なランナー側の常駐プロセスや予約タスク: 同じ実行者で動くため`isolated_environment`では解消しない。"
         "`.github/workflows/ci.yaml`の`update-dotfiles-upgrade-windows`などで、検証より前に発生源を止める。"
     )
 
@@ -499,7 +499,7 @@ def _upgrade_config_path(env: Mapping[str, str], platform_name: str) -> pathlib.
     return pathlib.Path(env[name]) / "agent-toolkit" / "config.json"
 
 
-def _register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
+def register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
     config = _upgrade_config_path(env, platform_name)
     config.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
@@ -525,7 +525,7 @@ def _verify_upgrade_environment(root: pathlib.Path, env: Mapping[str, str], plat
     return _require_inside(root, "設定ファイル", _upgrade_config_path(env, platform_name))
 
 
-def _verify_upgrade_inputs(
+def verify_upgrade_inputs(
     root: pathlib.Path,
     checkout: pathlib.Path,
     bare_repo: pathlib.Path,
@@ -544,10 +544,10 @@ def _verify_upgrade_inputs(
         raise UpgradeCheckError(f"検証用のcheckout登録を確認できない: {config}。更新を起動しない。") from error
     if _require_inside(root, "checkout登録", registered) != checkout:
         raise UpgradeCheckError(f"検証用のcheckoutと登録が一致しない: {config}。更新を起動しない。")
-    branch = _run(("git", "symbolic-ref", "HEAD"), cwd=checkout, env=env, runner=runner).stdout.strip()
+    branch = run_command(("git", "symbolic-ref", "HEAD"), cwd=checkout, env=env, runner=runner).stdout.strip()
     if branch != f"refs/heads/{_BRANCH}":
         raise UpgradeCheckError(f"検証用でないGitのブランチ: {branch}。更新を起動しない。")
-    upstream = _run(
+    upstream = run_command(
         ("git", "for-each-ref", "--format=%(upstream:remotename) %(upstream:remoteref)", branch),
         cwd=checkout,
         env=env,
@@ -556,14 +556,14 @@ def _verify_upgrade_inputs(
     if upstream != f"origin refs/heads/{_BRANCH}":
         raise UpgradeCheckError(f"検証用でないGitの上流ブランチ: {branch} -> {upstream}。更新を起動しない。")
     for command in (("remote", "get-url", "--all", "origin"), ("remote", "get-url", "--push", "--all", "origin")):
-        urls = _run(("git", *command), cwd=checkout, env=env, runner=runner).stdout.splitlines()
+        urls = run_command(("git", *command), cwd=checkout, env=env, runner=runner).stdout.splitlines()
         if len(urls) != 1 or _require_inside(root, "Gitの上流", urls[0]) != bare_repo:
             raise UpgradeCheckError("Gitの上流が検証用の上流と一致しない。更新を起動しない。")
     uv_name = "uv.exe" if platform_name == "windows" else "uv"
     uv = _require_inside(root, "uv", pathlib.Path(env["UV_TOOL_BIN_DIR"]) / uv_name)
     env["UV_MANAGED_PYTHON"] = "1"
     script = _require_inside(root, "更新スクリプト", checkout / "libexec" / "update_dotfiles.py")
-    python = _run(
+    python = run_command(
         (uv, "python", "find", "--no-project", "--script", script), cwd=checkout, env=env, runner=runner
     ).stdout.strip()
     env["UV_PYTHON"] = str(_require_inside(root, "Python", python))
@@ -588,8 +588,8 @@ def _run_isolated_upgrade(
         checkout = home / "dotfiles"
         home.mkdir(parents=True)
         create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
-        _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
-        env = _isolated_env(home, pathlib.Path(uv_path), platform_name, temp_root)
+        run_command(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
+        env = isolated_environment(home, pathlib.Path(uv_path), platform_name, temp_root)
         _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
         # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
         # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
@@ -599,7 +599,7 @@ def _run_isolated_upgrade(
             initial_env["UV_PYTHON"] = pin
         initial_apply = ("chezmoi", "init", f"--source={checkout}", "--apply")
         try:
-            _run(initial_apply, cwd=checkout, env=initial_env, runner=runner)
+            run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
         except UpgradeCheckError as first_error:
             # 旧版の後処理には、並行起動の競合で不定期に失敗し、同じ検証homeでの再実行で回復する版がある。
             # 旧版のcommitは固定で現行版の変更では直らないため、同じ旧版で1回だけ再試行する。
@@ -609,7 +609,7 @@ def _run_isolated_upgrade(
                 file=sys.stderr,
             )
             try:
-                _run(initial_apply, cwd=checkout, env=initial_env, runner=runner)
+                run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
             except UpgradeCheckError as error:
                 old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
                 current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
@@ -624,15 +624,15 @@ def _run_isolated_upgrade(
                     "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
                     f"元の診断: {error}"
                 ) from error
-        _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
+        run_command(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
         _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
-        _register_upgrade_checkout(checkout, env, platform_name)
-        _verify_upgrade_inputs(temp_root.resolve(), checkout, bare_repo, env, platform_name, runner=runner)
+        register_upgrade_checkout(checkout, env, platform_name)
+        verify_upgrade_inputs(temp_root.resolve(), checkout, bare_repo, env, platform_name, runner=runner)
         # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():
                 log.unlink()
-        updated = _run(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
+        updated = run_command(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
         verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
         verify_updated_oid(actual_oid, current_oid)

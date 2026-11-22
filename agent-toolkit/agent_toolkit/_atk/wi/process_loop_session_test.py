@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
+from agent_toolkit._atk.wi import process_loop_log
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
@@ -25,7 +26,7 @@ def test_single_run_instruction_survives_usage_limit(
     def run(args, _cwd, prompt, _env, **_kwargs):
         prompts.append(prompt)
         if len(prompts) == 1:
-            raise _pl_session._ClaudeUsageLimit("retained-session")
+            raise _pl_session.ClaudeUsageLimit("retained-session")
         assert args.resume == "retained-session"
         return True
 
@@ -33,7 +34,7 @@ def test_single_run_instruction_survives_usage_limit(
     monkeypatch.setattr(
         _pl_session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "test", "low", None, None)
     )
-    monkeypatch.setattr(_pl_session._process_loop_log, "append", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
 
     assert _pl_session.run_process_session(
         argparse.Namespace(once=once),

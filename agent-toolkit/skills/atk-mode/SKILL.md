@@ -78,7 +78,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`（「モードの選択」から進む） |
 | `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
-| `export-session` | 会話記録の出力依頼 | `playbooks/export-session.md` |
+| `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 一般作業も操作・判断の前に該当資料を通読し、スキルを起動する。
@@ -117,5 +117,5 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 
 ## 会話の圧縮の後
 
-再開前に本スキルを起動し直し、復元通知の作業契約と要約から目的・要求・状態を復元する（`references/work-contract.md`「圧縮と再開の後の復元」）。
+再開前に本スキルを起動し直し、復元通知の作業契約と要約から目的・要求・状態を得る（`references/work-contract.md`「圧縮と再開の後の復元」）。
 該当する手順書は読み直す。

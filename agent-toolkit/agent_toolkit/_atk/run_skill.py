@@ -39,9 +39,6 @@ from agent_toolkit._atk.run_skill_execution import (
     run_locked,
 )
 from agent_toolkit._atk.run_skill_execution import (
-    build_goal as build_goal,
-)
-from agent_toolkit._atk.run_skill_execution import (
     log_line as _log_line,
 )
 from agent_toolkit._atk.run_skill_progress import Progress

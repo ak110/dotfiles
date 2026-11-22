@@ -405,7 +405,7 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
     blockers = selection.get(_BLOCKERS_KEY, [])
     if not is_string_list(blockers):
         errors.append(f"`{_BLOCKERS_KEY}`が文字列の列ではない: {blockers!r}")
-    errors.extend(_overlap_structure_errors(selection.get(_selection.LANE_OVERLAPS_KEY, [])))
+    errors.extend(overlap_structure_errors(selection.get(_selection.LANE_OVERLAPS_KEY, [])))
     if _selection.INITIAL_ALLOCATION_KEY in selection:
         errors.extend(_allocation_structure_errors(selection[_selection.INITIAL_ALLOCATION_KEY]))
     added = selection.get(_selection.ADDED_WIS_KEY, [])
@@ -652,7 +652,7 @@ def cost_update_errors(value: object, destinations: set[str]) -> list[str]:
     return errors
 
 
-def _overlap_structure_errors(records: object) -> list[str]:
+def overlap_structure_errors(records: object) -> list[str]:
     """重なりの各記録が所定の欄と型を持つか確かめる。空列の記録欠落は共有パスの処理で判定する。"""
     if not isinstance(records, list):
         return [f"`{_selection.LANE_OVERLAPS_KEY}`が列ではない"]

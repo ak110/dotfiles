@@ -142,7 +142,7 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
+    """`mode:`へ改める前の宣言行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
