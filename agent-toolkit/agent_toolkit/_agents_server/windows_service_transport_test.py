@@ -11,6 +11,7 @@ import pytest
 
 from agent_toolkit._agents_server import service_transport
 from agent_toolkit._agents_server import windows_service_transport as transport
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="実Win32 APIが必要")
 
@@ -35,7 +36,7 @@ def test_pipe_authentication_and_bytes() -> None:
         try:
             with connection.Client(address, family="AF_PIPE", authkey=None) as peer:
                 transport.authenticate(peer, server=False, expected_process=transport.process_identity(os.getpid()))
-                with pytest.raises(PermissionError):
+                with pytest.raises(ProcessIdentityMismatch):
                     transport.authenticate(peer, server=False, expected_process="wrong-generation")
                 peer.send_bytes(b'{"test":true}')
                 assert peer.poll(5)

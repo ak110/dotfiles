@@ -84,7 +84,7 @@ async def test_public_start_distinguishes_loaded_code_from_updated_role(
     if stage == "input":
         assert "対象" in message and "版相違" not in message
     else:
-        assert str(root) in message and "2.1.0" in message
+        assert f"root={str(root)!r}" in message and "2.1.0" in message
         assert "更新された構文を受理できない" in message
         assert ("版相違" in message) == updated
         assert ("MCP再接続" in message) == updated
