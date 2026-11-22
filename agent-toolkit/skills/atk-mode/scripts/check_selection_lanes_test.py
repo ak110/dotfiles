@@ -526,3 +526,37 @@ def test_public_command_rejects_order_conflicting_with_required_output(
     assert _dispatch(str(source), "--work-dir", str(repo), "--output", str(output)) == 2
     assert "循環" in capsys.readouterr().err
     assert output.read_text(encoding="utf-8") == "以前の選定"
+
+
+def test_reorder_does_not_reuse_independence_for_a_different_wi_pair(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    repo, notes = env
+    target = "src/model.py"
+    items = []
+    for name, lane in (("a.md", "a"), ("b.md", "b"), ("c.md", "b")):
+        _awi(notes, name, f"`{target}`を変更する。")
+        items.append({"WI": name, "レーン": lane, "書込対象": [target]})
+    selection = yaml.safe_load(
+        _write_selection(tmp_path / "base.yaml", items, [{"レーン": "a"}, {"レーン": "b"}]).read_text(encoding="utf-8")
+    )
+    selection["レーン間の重なり"] = [
+        {
+            "レーン1": "a",
+            "レーン2": "b",
+            "共通パス": target,
+            "レーン1の定義": ["公開の定義"],
+            "レーン2の定義": ["内部の定義"],
+            "判定": "交わらない",
+            "判定済みWIの組": [["a.md", "b.md"]],
+        }
+    ]
+    selection["単一段階案の完了見込み秒数"] = 600
+    source = tmp_path / "input.yaml"
+    source.write_text(yaml.safe_dump(selection, allow_unicode=True), encoding="utf-8")
+    output = tmp_path / "reordered.yaml"
+    assert _dispatch(str(source), "--work-dir", str(repo), "--output", str(output)) == 0
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    costs = {row["レーン"]: row for row in saved["レーンの所要時間"]}
+    assert costs["a"]["段階"] == 1
+    assert costs["b"]["段階"] == 2 and costs["b"]["先行レーン"] == ["a"]

@@ -380,8 +380,10 @@ def derives_lane_order(selection: dict[str, object]) -> bool:
     )
 
 
-def _independent_overlaps(records: list[dict[str, object]]) -> set[tuple[str, str, str]]:
-    independent: set[tuple[str, str, str]] = set()
+def _independent_overlaps(
+    records: list[dict[str, object]],
+) -> dict[tuple[str, str, str], set[tuple[str, ...]] | None]:
+    independent: dict[tuple[str, str, str], set[tuple[str, ...]] | None] = {}
     for row in records:
         if row["判定"] != "交わらない":
             continue
@@ -389,8 +391,20 @@ def _independent_overlaps(records: list[dict[str, object]]) -> set[tuple[str, st
         second = {part.strip() for part in _string_list(row, "レーン2の定義")}
         if first and second and not first & second:
             left, right = sorted((str(row["レーン1"]), str(row["レーン2"])))
-            independent.add((left, right, str(row["共通パス"])))
+            pairs = row.get(selection_contract.JUDGED_PAIRS_KEY)
+            independent[left, right, str(row["共通パス"])] = (
+                None if pairs is None else {tuple(pair) for pair in typing.cast(list[list[str]], pairs)}
+            )
     return independent
+
+
+def _pair_independent(
+    independent: dict[tuple[str, str, str], set[tuple[str, ...]] | None],
+    key: tuple[str, str, str],
+    pair: tuple[str, ...],
+) -> bool:
+    pairs = independent.get(key, set())
+    return pairs is None or pair in pairs
 
 
 def derive_lane_order(selection: dict[str, object]) -> None:
@@ -411,7 +425,8 @@ def derive_lane_order(selection: dict[str, object]) -> None:
     for left, right, lanes, paths in overlapping_pairs(items):
         if _is_integrated(left, integrated) or _is_integrated(right, integrated):
             continue
-        if all((*lanes, path) in independent for path in paths):
+        pair = overlap_wi_pair(left, right)
+        if all(_pair_independent(independent, (*lanes, path), pair) for path in paths):
             continue
         earlier, later = sorted(lanes, key=order.__getitem__)
         dependencies[later].add(earlier)
@@ -429,6 +444,11 @@ def derive_lane_order(selection: dict[str, object]) -> None:
     selection[_selection.LANE_COSTS_KEY] = costs
 
 
+def overlap_wi_pair(left: dict[str, object], right: dict[str, object]) -> tuple[str, ...]:
+    """レーンの向きによらないWI名の組を返す。"""
+    return tuple(sorted((str(left[_selection.WI_KEY]), str(right[_selection.WI_KEY]))))
+
+
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object],
     costs: collections.abc.Sequence[object],
@@ -444,22 +464,25 @@ def _check_lane_overlaps(
         and isinstance(row.get(_selection.STAGE_KEY, 1), int)
         and isinstance(row.get(_selection.PRIOR_LANES_KEY, []), list)
     }
-    expected: set[tuple[str, str, str]] = set()
-    shared: set[tuple[str, str, str]] = set()
+    expected: dict[tuple[str, str, str], set[tuple[str, ...]]] = {}
+    shared: dict[tuple[str, str, str], set[tuple[str, ...]]] = {}
     dependencies: dict[str, set[str]] = {}
     historical: dict[str, set[str]] = {}
     independent = _independent_overlaps(records)
     for left, right, lanes, overlaps in overlapping_pairs(items):
-        shared.update((*lanes, path) for path in overlaps)
+        pair = overlap_wi_pair(left, right)
+        for path in overlaps:
+            shared.setdefault((*lanes, path), set()).add(pair)
         left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
         pending = not (_is_integrated(left, integrated) or _is_integrated(right, integrated))
         if left_stage == right_stage:
             if pending:
-                expected.update((lanes[0], lanes[1], path) for path in overlaps)
-        elif any((*lanes, path) not in independent for path in overlaps):
+                for path in overlaps:
+                    expected.setdefault((*lanes, path), set()).add(pair)
+        else:
             earlier, later = lanes if left_stage < right_stage else reversed(lanes)
             historical.setdefault(later, set()).add(earlier)
-            if pending:
+            if pending and any(not _pair_independent(independent, (*lanes, path), pair) for path in overlaps):
                 dependencies.setdefault(later, set()).add(earlier)
     errors: list[Violation] = []
     seen: set[tuple[str, str, str]] = set()
@@ -474,6 +497,17 @@ def _check_lane_overlaps(
         if key not in shared:
             errors.append(Violation(f"{label}: 余剰の重なりの記録", next_action=_NEXT_OVERLAP_SURPLUS))
             continue
+        if selection_contract.JUDGED_PAIRS_KEY in record:
+            pairs = {tuple(pair) for pair in typing.cast(list[list[str]], record[selection_contract.JUDGED_PAIRS_KEY])}
+            if pairs - shared[key]:
+                errors.append(Violation(f"{label}: 判定済みWIの組が現在の重なりに無い", next_action=_NEXT_OVERLAP_SURPLUS))
+            if missing := expected.get(key, set()) - pairs:
+                names = "、".join("と".join(pair) for pair in sorted(missing))
+                errors.append(
+                    Violation(
+                        f"{missing_overlap_reason(left, right, path)}（未判定の組: {names}）", next_action=_NEXT_OVERLAP_MISSING
+                    )
+                )
         if key not in expected:
             # 保存済みの詳細記録は履歴として読めるが、直列化の根拠は現在の書込予定から導く。
             continue
@@ -484,7 +518,7 @@ def _check_lane_overlaps(
                 errors.append(Violation(f"{label}: 交わらない判定の定義が同一", next_action=_NEXT_OVERLAP_SAME_DEFINITION))
             continue
         errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
-    for left, right, path in sorted(expected - seen):
+    for left, right, path in sorted(expected.keys() - seen):
         errors.append(Violation(missing_overlap_reason(left, right, path), next_action=_NEXT_OVERLAP_MISSING))
     starts = {
         str(row[_selection.LANE_KEY]): start

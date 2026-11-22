@@ -13,6 +13,8 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._plan import selection as _selection
 from agent_toolkit._plan import selection_estimate as _estimate
 
+JUDGED_PAIRS_KEY = "判定済みWIの組"
+
 _LANE_NONE = "なし"
 _STALENESS_KEY = "鮮度"
 _UPSTREAM_TARGETS_KEY = "上流投入先"
@@ -652,7 +654,7 @@ def _overlap_structure_errors(records: object) -> list[str]:
     keys = {"レーン1", "レーン2", "共通パス", "レーン1の定義", "レーン2の定義", "判定"}
     for index, record in enumerate(records, 1):
         label = f"{_selection.LANE_OVERLAPS_KEY}の{index}件目"
-        if not isinstance(record, dict) or set(record) != keys:
+        if not isinstance(record, dict) or set(record) - {JUDGED_PAIRS_KEY} != keys:
             errors.append(f"{label}: 欄を{', '.join(sorted(keys))}へそろえる")
             continue
         for key in ("レーン1", "レーン2", "共通パス"):
@@ -662,6 +664,13 @@ def _overlap_structure_errors(records: object) -> list[str]:
             value = record[key]
             if not is_string_list(value) or not value or any(not item.strip() for item in value):
                 errors.append(f"{label}: {key}が空でない定義の列ではない")
+        pairs = record.get(JUDGED_PAIRS_KEY, [])
+        if not isinstance(pairs, list) or any(
+            not is_string_list(pair) or len(pair) != 2 or not all(pair) or pair[0] >= pair[1] for pair in pairs
+        ):
+            errors.append(f"{label}: {JUDGED_PAIRS_KEY}は昇順の異なるWI名2つの列を並べる")
+        elif len({tuple(pair) for pair in pairs}) != len(pairs):
+            errors.append(f"{label}: {JUDGED_PAIRS_KEY}に重複がある")
         if record["判定"] not in ("交わる", "交わらない"):
             errors.append(f"{label}: 判定は交わるか交わらないを指定する")
     return errors
