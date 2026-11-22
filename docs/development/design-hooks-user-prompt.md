@@ -25,7 +25,7 @@ SessionStartの文脈だけで起動を促す案は、観測した起動の欠�
 
 認識合わせについて、UserPromptSubmitとAskUserQuestionの自由記述への注記は契機を持たない。
 2026年11月18日まで、実ユーザー発話の全角`！！`から認識合わせの起動を促す注記を返していた。
-指摘の理解をその場で示す手順（`agent-toolkit:atk-mode/playbooks/main-reporting.md`「ユーザー向け発話ルール」）が全ての指摘で働くようになり、記号だけの契機は役目を終えたため撤去した（AWI `20261116-000258-001`の是正G）。
+発話の理解をその場で示す手順（`agent-toolkit:atk-mode`「ユーザーの方針」。当時は指摘の時だけ示す「指摘の理解」）が全ての指摘で働くようになり、記号だけの契機は役目を終えたため撤去した（AWI `20261116-000258-001`の是正G）。
 叱責回数の計数や分類器は、記号がない場面でも必要となる認識合わせの判断を代替できず、
 状態と判定の保守を増やすため採らない。
 認識の不一致と繰り返しの咎めへの対応は`agent-toolkit:atk-mode/playbooks/user-utterance.md`「ユーザー指摘の受領」と`agent-toolkit:atk-mode/references/delivery.md`「認識合わせ」が定める。

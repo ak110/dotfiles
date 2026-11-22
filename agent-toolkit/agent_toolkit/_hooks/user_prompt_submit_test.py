@@ -348,7 +348,7 @@ class TestMachineInjectedTurn:
         if result.stdout:
             context = json.loads(result.stdout)["hookSpecificOutput"].get("additionalContext", "")
         assert _EXPECTED_VERIFICATION_NOTICE_BODY not in context
-        assert "指摘の理解" not in context
+        assert "発話の理解" not in context
         assert _read_state(tmp_path, sid).get("last_user_prompt_at") is None
 
     @staticmethod
@@ -570,17 +570,17 @@ class TestNonMatchingPrompts:
         assert state["plan_mode_skill_invoked"] is True
 
 
-# test-copy-contract: 同一セッションの各入力で、条件付きの案内を再配送する契約。
+# test-copy-contract: 同一セッションの各入力で、条件の付かない案内を再配送する契約。
 @pytest.mark.parametrize("host_fields", [{}, {"model": "gpt-test", "turn_id": "turn-test"}])
 def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.Path, host_fields: dict) -> None:
-    """同じセッションの途中でも規則を届け、通常依頼を誤って指摘と扱わせない。"""
+    """同じセッションの途中でも、通常の依頼と疑問形の指摘のどちらにも同じ無条件の案内を届ける。"""
     for prompt in ("作業を続けて", "手戻り多すぎない？品質が悪いのでは？", "なんでこれ自分で気付けなかったの？"):
         result = _run({"session_id": "feedback", "prompt": prompt, **host_fields}, state_dir=tmp_path)
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "異議（疑問形を含む）の場合だけ" in context
-        assert "調査より先に" in context
-        assert "`agent-toolkit:atk-mode`「ユーザーの方針」の「指摘の理解」" in context
+        assert "場合だけ" not in context
+        assert "調査より先に、応答の冒頭へ" in context
+        assert "`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」" in context
         assert prompt not in context
 
 
