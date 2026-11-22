@@ -146,21 +146,26 @@ jobs:
           set -euo pipefail
 
           tag="$TAG"
-          latest=false
-          query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { latestRelease { tagName } } }"
-          latest_response=$(gh api graphql \
-            -f query="$query" \
-            -f owner="$GITHUB_REPOSITORY_OWNER" -f name="${GITHUB_REPOSITORY#*/}")
-          latest_tag=$(jq -er '.data.repository | if . == null then error("repository missing") else .latestRelease.tagName // "" end' \
-            <<< "$latest_response")
-          stable_tag='^statusline-v[0-9]+\.[0-9]+\.[0-9]+$'
-          if [[ "$tag" =~ $stable_tag ]]; then
-            if [[ -z "$latest_tag" ]]; then
-              latest=true
-            elif [[ "$latest_tag" =~ $stable_tag && "$tag" != "$latest_tag" ]]; then
-              newest=$(printf '%s\n' "$latest_tag" "$tag" | LC_ALL=C sort -V | tail -n 1)
-              if [[ "$newest" == "$tag" ]]; then
+          release_exists=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_exists=true
+          else
+            latest=false
+            query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { latestRelease { tagName } } }"
+            latest_response=$(gh api graphql \
+              -f query="$query" \
+              -f owner="$GITHUB_REPOSITORY_OWNER" -f name="${GITHUB_REPOSITORY#*/}")
+            latest_tag=$(jq -er '.data.repository | if . == null then error("repository missing") else .latestRelease.tagName // "" end' \
+              <<< "$latest_response")
+            stable_tag='^statusline-v[0-9]+\.[0-9]+\.[0-9]+$'
+            if [[ "$tag" =~ $stable_tag ]]; then
+              if [[ -z "$latest_tag" ]]; then
                 latest=true
+              elif [[ "$latest_tag" =~ $stable_tag && "$tag" != "$latest_tag" ]]; then
+                newest=$(printf '%s\n' "$latest_tag" "$tag" | LC_ALL=C sort -V | tail -n 1)
+                if [[ "$newest" == "$tag" ]]; then
+                  latest=true
+                fi
               fi
             fi
           fi
@@ -172,7 +177,7 @@ jobs:
             git push origin "refs/tags/$tag"
           fi
 
-          if gh release view "$tag" >/dev/null 2>&1; then
+          if [ "$release_exists" = "true" ]; then
             gh release upload "$tag" \
               assets/claude-statusline-x86_64-unknown-linux-gnu \
               assets/claude-statusline-x86_64-pc-windows-msvc.exe \
