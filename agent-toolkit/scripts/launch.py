@@ -442,19 +442,16 @@ def _server_lifetime(
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
     # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
     with contextlib.ExitStack() as cleanup:
-        job = None
-        if os.name == "nt":
-            from agent_toolkit._common.windows_job import WindowsJob
+        from agent_toolkit._common import windows_job
 
-            job = cleanup.enter_context(WindowsJob())
-        process = subprocess.Popen(  # pylint: disable=consider-using-with
+        job = cleanup.enter_context(windows_job.WindowsJob()) if os.name == "nt" else None
+        process = windows_job.start_owned_process(
             arguments,
+            job=job,
             env=environment,
             stdin=stdin,
             cwd=cwd,
             stderr=None if inherit_stderr else subprocess.PIPE,
-            start_new_session=os.name != "nt",
-            creationflags=0x00000004 if job is not None else 0,
             pass_fds=pass_fds,
         )
         if process.stderr is not None:
@@ -463,11 +460,6 @@ def _server_lifetime(
             if job is not None:
                 owned_process: Any = process
                 owned_process._bootstrap_job = job  # pylint: disable=protected-access  # 所有Jobを停止処理へ引き継ぐ。
-                # Windows版Popenが生成時に保持する元handleを使う。POSIX側の型推論には存在しない。
-                job.assign_suspended(
-                    int(owned_process._handle),  # pylint: disable=no-member,protected-access
-                    process.pid,
-                )
             if os.name != "nt":
                 restore = cleanup if signal_scope is None else signal_scope
                 for name in _FORWARDED_SIGNALS:
@@ -510,7 +502,7 @@ def _stop_server_process(
             job.close()
             raise
         finally:
-            # Jobへの所属前に失敗した停止状態の起点も、元Popenから回収する。
+            # Jobの回収に失敗しても、起点は元のPopenから回収する。
             if process.poll() is None:
                 process.kill()
             process.wait(timeout=_STOP_TIMEOUT)

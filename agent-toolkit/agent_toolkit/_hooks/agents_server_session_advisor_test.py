@@ -107,6 +107,22 @@ def _run_stop(
     return result.stdout
 
 
+@pytest.mark.parametrize("host_fields", [{}, {"turn_id": "turn-1"}, {"runtime": "agy"}])
+def test_unobserved_stop_advice_matches_host(monkeypatch, host_fields):
+    monkeypatch.setattr(advisor, "read_state", lambda _: {})
+    monkeypatch.setattr(agents_server_observations, "pending_session_ids", lambda *_: ["child"])
+    monkeypatch.setattr(agents_server_observations, "actively_waited_session_ids", lambda _: set())
+    decision, warning = advisor.evaluate(json.dumps({"session_id": "local", **host_fields}))
+    assert decision == "notify"
+    assert "`kill(session_id)`" in warning
+    if host_fields:
+        assert "実行ホストの`atk agents wait`" in warning
+        assert "背景起動" not in warning
+    else:
+        assert "引数なしの `atk agents wait` を単独で背景起動し、起動を確認してからターンを終えよ" in warning
+        assert "背景実行が使えないなら同じターンで前景回収せよ" in warning
+
+
 def _record_start(state_directory: pathlib.Path, local_session_id: str, remote_session_id: str) -> None:
     _record_operation(
         state_directory,

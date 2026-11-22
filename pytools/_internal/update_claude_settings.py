@@ -121,6 +121,7 @@ _REMOVED_ENV_KEYS: tuple[removal_registry.Registered[str], ...] = (
 # dictは再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
 _REMOVED_KEYS: tuple[removal_registry.Registered[str], ...] = (
     removal_registry.Registered("autoMode.allowMode", datetime.date(2026, 8, 16)),
+    removal_registry.Registered("subagentStatusLine", datetime.date(2026, 11, 23)),
 )
 
 # `~/.claude.json`から除去する設定キーのドット区切りパス。
@@ -260,7 +261,7 @@ _MAX_INLINE_DIFF = 3
 _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 
 # 設定コマンド文字列内でホームディレクトリ絶対パスへ置換するプレースホルダー。
-# share/claude_settings_json_managed.*.json の statusLine/subagentStatusLine command で使う。
+# share/claude_settings_json_managed.*.json の statusLine command で使う。
 # JSONマージはテンプレートエンジンを介さない生のdictマージのため、シェルの`~`展開に
 # よらずバイナリを直接起動できるよう本関数で明示的に絶対パスへ解決する。
 # Windows環境ではGit Bash経由でシェルへ渡される場合バックスラッシュがエスケープシーケンスとして

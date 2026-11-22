@@ -109,7 +109,7 @@ public sealed class UpdateStageJob : IDisposable {
 }
 '@
 }
-function Start-UpdateStageProcess {
+function Start-OwnedUpdateStageProcess {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = '更新段の内部起動。実行の採否は呼び出し元が判定し、生成直後のJob所有を保証する。')]
     param([string]$Program, [string[]]$Arguments, [bool]$Probe, [IO.TextWriter]$Diagnostics)
     # CommandLineToArgvW互換の引用で、末尾のバックスラッシュも引数内へ保つ。
