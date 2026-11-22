@@ -41,6 +41,16 @@ def test_mcp_setting_names_follow_public_config_keys(
             with pytest.raises(ValueError, match=name):
                 config.parse_unresolved_model_candidates("execute")
             monkeypatch.delenv(name)
+        elif key == "codex_auto_reset":
+            assert name in names and key not in keys
+            monkeypatch.setenv(name, "true")
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["config", "get", "usage_reset_permissions"])
+            assert exited.value.code == 0
+            observed = capsys.readouterr()
+            assert observed.out.strip() == "[]"
+            assert name in observed.err and "利用枠の自動配分と明示許可" in observed.err
+            monkeypatch.delenv(name)
         elif key == "process_loop_repositories":
             assert name in names
             with pytest.raises(SystemExit) as exited:
