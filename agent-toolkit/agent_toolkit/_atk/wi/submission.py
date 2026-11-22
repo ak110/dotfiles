@@ -5,6 +5,7 @@ process-loopの開始前の活動猶予は、この記録を持つ会話とそ�
 """
 
 import argparse
+import json
 import os
 
 from agent_toolkit._atk import outcome as _outcome
@@ -31,13 +32,14 @@ def cmd_submission(args: argparse.Namespace) -> int:
     """`begin`で投入先を記録・置換し、`end`で記録を削除する。"""
     _outcome.force_utf8_stdio()
     session_id = _session_id(args)
-    if session_id is None:
+    if session_id is None and args.submission_subcommand != "activity":
         _outcome.report_failure(
             "会話IDを決められないため記録しなかった",
             next_action="AWI投入（`/atk-mode add-awi-by-user`）を実行する会話から実行するか、`--session-id`で会話IDを指定する",
         )
         return 1
     if args.submission_subcommand == "end":
+        assert session_id is not None
         return _end(args, session_id)
     targets: list[str] = []
     for value in args.target_repo:
@@ -49,6 +51,11 @@ def cmd_submission(args: argparse.Namespace) -> int:
             )
             return 1
         targets.append(canonical)
+    if args.submission_subcommand == "activity":
+        snapshot = _session_activity.submission_activity(set(targets), excluded_pids={os.getpid()})
+        print(json.dumps({"active": snapshot.has_activity, "uncertain": snapshot.uncertain}))
+        return 0
+    assert session_id is not None
     try:
         _session_activity.record_submission(session_id, targets)
     except ValueError as error:

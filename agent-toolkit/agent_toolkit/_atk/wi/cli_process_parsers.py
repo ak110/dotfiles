@@ -1,10 +1,8 @@
 """WIのprocess-loop・投入セッションの引数登録。"""
 
-import argparse
 import pathlib
 from typing import Any
 
-from agent_toolkit._atk.wi.cli_parser_support import _worktree_name
 lazy from agent_toolkit._atk import help_text as _atk_help
 
 
@@ -25,75 +23,15 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
         help="CI取得先。autoはgithub.comならGitHub、それ以外はGitLabを使う。",
     )
     loop = _atk_help.add_command(sub, "process-loop", **_atk_help.HELP["atk wi process-loop"])
-    loop.add_argument("--internal-target", type=pathlib.Path, help=argparse.SUPPRESS)
     loop.set_defaults(_target_repo_multiple=False, _target_repo_allow_all=False, _target_repo_resolved_by_consumer=True)
-    loop.add_argument(
-        "--once",
-        action="store_true",
-        help="登録全体の対象集合を1回処理して終了する。対象0件なら待機せず終了し、未完了対象が残れば非0で終了する。",
-    )
-    loop.add_argument(
-        "--worktree",
-        nargs="?",
-        const="process-loop",
-        default=None,
-        type=_worktree_name,
-        metavar="NAME",
-        help=(
-            "対象リポジトリ配下の.claude/worktrees/<NAME>にworktreeを準備してセッションを起動する。"
-            "NAME省略時はprocess-loopを使う。dotfilesリポジトリでは未指定でも自動有効となり、"
-            "指定時はworktree名だけを上書きする。"
-        ),
-    )
-    loop.add_argument(
-        "--no-update",
-        action="store_true",
-        help="セッション完了後と待機中のどちらの場合もupdate-dotfilesの実行とprocess-loop自身の再起動を行わない。",
-    )
-    loop.add_argument(
-        "--internal-mise-refreshed",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    loop.add_argument(
-        "--internal-dotfiles-updated",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
-    loop.add_argument(
-        "--no-alerts",
-        action="store_true",
-        help=(
-            "待機中と各セッションの開始前のCI失敗の検出と、待機中の未判定のDependabotアラートによる"
-            "process-wiの実行を無効化する（指定しない場合は有効）。"
-        ),
-    )
-    loop.add_argument(
-        "--alert-interval",
-        type=float,
-        default=1800.0,
-        metavar="SECONDS",
-        help="アラート確認の最短間隔秒数。省略時は1800秒間隔とする。",
-    )
-    loop.add_argument(
-        "--alert-forge",
-        choices=("auto", "github", "gitlab"),
-        default="auto",
-        help="アラート検出対象のホスティング種別。省略時はautoとしてrepo_idのhostから自動判定する。",
-    )
+    loop.add_argument("--once", action="store_true", help="1セッションを起動して、終了後に再起動せず終了する。")
     loop_sub = _atk_help.add_subcommands(loop, dest="process_loop_subcommand", required=False)
     resume = _atk_help.add_command(loop_sub, "resume", **_atk_help.HELP["atk wi process-loop resume"])
-    resume.add_argument("value", nargs="?", metavar="ID|auto", help="指定会話ID。autoは未完了所有記録、省略時はCLIのpicker。")
+    resume.add_argument("value", nargs="?", metavar="ID", help="指定会話ID。省略時はCLIのpicker。")
     _atk_help.add_command(loop_sub, "resume-cancel", **_atk_help.HELP["atk wi process-loop resume-cancel"])
     _atk_help.add_command(loop_sub, "abort", **_atk_help.HELP["atk wi process-loop abort"])
     _atk_help.add_command(loop_sub, "abort-cancel", **_atk_help.HELP["atk wi process-loop abort-cancel"])
-    status = _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
-    status.add_argument(
-        "--check-result", type=pathlib.Path, default=None, help="起動manifestを現キュー・レーンと読み取り専用で比較する。"
-    )
-    status.add_argument(
-        "--wi", action="append", default=None, metavar="FILENAME", help="直接処置・追加分のWI識別子を比較対象へ加える。"
-    )
+    _atk_help.add_command(loop_sub, "status", **_atk_help.HELP["atk wi process-loop status"])
     instruct = _atk_help.add_command(loop_sub, "instruct", **_atk_help.HELP["atk wi process-loop instruct"])
     instruct.add_argument("body", metavar="BODY", help="次に起動する1セッションへ渡す追加指示の本文。")
     _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
@@ -104,14 +42,15 @@ def _add_mq_submission_parser(sub: Any) -> None:
     submission = _atk_help.add_command(sub, "submission", **_atk_help.HELP["atk wi submission"])
     submission_sub = _atk_help.add_subcommands(submission, dest="submission_subcommand")
     begin = _atk_help.add_command(submission_sub, "begin", **_atk_help.HELP["atk wi submission begin"])
-    begin.add_argument(
-        "--target-repo",
-        metavar="REPO",
-        action="append",
-        default=None,
-        required=True,
-        help="投入先のリポジトリ（ローカル作業ツリーのパスまたは正規化リモートURL）。複数の投入先は繰り返し指定する。",
-    )
+    activity = _atk_help.add_command(submission_sub, "activity", **_atk_help.HELP["atk wi submission activity"])
+    for target_input in (begin, activity):
+        target_input.add_argument(
+            "--target-repo",
+            metavar="REPO",
+            action="append",
+            required=True,
+            help="投入先の作業ツリーのパスか正規化リモートURL。複数は繰り返し指定する。",
+        )
     end = _atk_help.add_command(submission_sub, "end", **_atk_help.HELP["atk wi submission end"])
     end.add_argument("--abort", action="store_true", help="ユーザーが投入作業を中止した場合に記録を削除する。")
     for parser in (begin, end):

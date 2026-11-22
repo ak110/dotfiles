@@ -31,12 +31,12 @@ class TestAppendStopLog:
         """複数回の呼び出しが1行ずつ追記される。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         append_stop_log("session-y", "approve_no_env", {})
-        append_stop_log("session-y", "block_autonomous_exit", {})
+        append_stop_log("session-y", "block_busy_loop", {})
         path = tmp_path / "claude-agent-toolkit-stop-session-y.log"
         lines = path.read_text(encoding="utf-8").splitlines()
         assert len(lines) == 2
         assert "decision=approve_no_env" in lines[0]
-        assert "decision=block_autonomous_exit" in lines[1]
+        assert "decision=block_busy_loop" in lines[1]
 
     def test_rotates_when_max_bytes_exceeded(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """`max_bytes`を小さくすると先行ログが`.log.1`へローテートされる。"""

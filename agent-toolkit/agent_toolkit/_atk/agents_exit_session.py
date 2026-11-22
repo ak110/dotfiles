@@ -419,14 +419,7 @@ def main() -> int:
             flush=True,
         )
 
-    from agent_toolkit._atk.wi import process_loop_control  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    reservation = process_loop_control.read_resume_request() if identifier else None
-    restarting = reservation is not None and reservation.mode == "id" and reservation.session_id == identifier
-    # 変更前にホストの目標評価付きで始まった会話は、未達の評価がStopで継続させるため、
-    # turn.completeにある旧modの/exitを待つと循環する。
-    # 本人IDの保存済み予約がある再起動だけ、既存のPID・起動時刻の一致確認と直接終了を使う。
-    status, target = request_termination(before_signal=_before_signal, defer_to_hook=not restarting)
+    status, target = request_termination(before_signal=_before_signal)
     if status == "terminating":
         return 0
     if status == "unsupported":

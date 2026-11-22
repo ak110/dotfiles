@@ -1,6 +1,6 @@
 ---
 name: atk-mode
-argument-hint: "[add-awi-by-user|implement|process-wi|review-session|export-session] [入力]"
+argument-hint: "[add-awi-by-user|implement|process-wi|process-loop|review-session|export-session] [入力]"
 description: >
   agent-toolkitを導入した環境で、作業（調査、実装、レビュー、WIの操作）を始める前に起動する入口。
   会話の圧縮の後に作業を再開する前にも起動する。判断の原則、硬い制約、作業ごとの手順書の所在を示す。
@@ -10,8 +10,7 @@ description: >
 # atk-mode
 
 「作業と手順書」で条件に当たる規範資料を全文読む。
-節名は適用する規定の所在を示す。
-資料は本書のディレクトリから解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で名指す。
+資料は本書からの相対パスで解決する。
 Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
@@ -48,9 +47,9 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 - 秘匿値は、出力、記録、WI、報告から除く。
 - 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
 - 公開契約（`atk`コマンド・出力、MCPツール名、WI形式・frontmatter、役割文書の入出力）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
-- 認可を伴う作業（`add-awi-by-user`、`implement`、`process-wi`）は、ユーザーか`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選ぶ。
+- 認可を伴う作業（`add-awi-by-user`、`implement`、`process-wi`、`process-loop`）は、ユーザーか`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選ぶ。
   自己起動の引数は手順書選びに限る。
-- `process-wi`の起動中か、`atk run-skill`起動（最初の入力の`atk-auto`の`source`が`run-skill`）なら自律モード、それ以外は協調モードとする。
+- `process-wi`・`process-loop`の実行中か、起動元が`atk run-skill`なら自律モードとし、それ以外は協調モードとする。
 
 ## ユーザーの方針
 
@@ -72,6 +71,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
 | `implement [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/implement.md` |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-loop` | ユーザーかCLIが名指しした時だけ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |

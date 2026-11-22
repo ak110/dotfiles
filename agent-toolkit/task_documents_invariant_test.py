@@ -103,8 +103,6 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         "candidate_file": str(tmp_path / "candidate.jsonl"),
         "readiness": "ready",
         "lane_limit": "1",
-        "ownership_record": str(tmp_path / "ownership.json"),
-        "ownership_token": "test-token",
         "lane_session_id": "test-lane-session",
     }
     params = {"引き継ぎ記録先": str(tmp_path / "handoff.md")}
@@ -125,4 +123,4 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         assert "target_repo: example.test/team/one" not in prompt
     else:
         assert "target_repo: example.test/team/one" in prompt
-        assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
+        assert "candidate_file:" in prompt and "lane_session_id: test-lane-session" in prompt

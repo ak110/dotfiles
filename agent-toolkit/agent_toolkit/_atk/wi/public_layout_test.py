@@ -9,9 +9,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._atk import config
-from agent_toolkit._atk.wi import constants, entries, listing
-from agent_toolkit._atk.wi import process_loop_launch_gate as launch_gate
+from agent_toolkit._atk.wi import constants, entries
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
@@ -84,8 +82,6 @@ def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_
     original_head = git_repository.git_output(notes, "rev-parse", "HEAD")
     # 旧種別は旧readerの対象外なので、現行state配置だけの移行前集合を先に控える。
     before = {state: _selected(notes, state) for state in constants.WI_STATES}
-    repository = config.ConfiguredRepository(_REPO, notes, notes / ".git")
-    loop_before = launch_gate.repository_input(listing.configured_repo_snapshot(notes, (repository,))[0], None)
     _run(notes, "list", "--state=all", "--jsonl", "--skip-pull", f"--target-repo={_REPO}")
     assert git_repository.git_output(notes, "rev-list", "--count", "HEAD") == "2"
     assert not any((notes / state).exists() for state in (*constants.WI_STATES, "tbd", "feedback"))
@@ -94,10 +90,6 @@ def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_
         assert entries.entry_state_of(path) == state
         history = git_repository.git_output(notes, "log", "--follow", "--format=%H", "--", str(path.relative_to(notes)))
         assert original_head in history.splitlines()
-    loop_after = launch_gate.repository_input(listing.configured_repo_snapshot(notes, (repository,))[0], None)
-    assert {(name, kind) for name, _digest, kind in loop_after.items} == {
-        (name, kind) for name, _digest, kind in loop_before.items
-    }
     for state in constants.WI_STATES:
         expected = before[state] | {"inbox": {old_question}, "hold": {old_feedback}}.get(state, set())
         common = [f"--state={state}", "--skip-pull", f"--target-repo={_REPO}"]

@@ -2,7 +2,6 @@
 
 import argparse
 import datetime
-import json
 import pathlib
 import subprocess
 import sys
@@ -22,7 +21,6 @@ lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
-lazy from agent_toolkit._atk.wi import process_loop_completion as _process_loop_completion
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
@@ -269,22 +267,6 @@ def dispatch(
     sub = args.wi_subcommand
     process_loop_subcommand = getattr(args, "process_loop_subcommand", None)
     if sub == "process-loop" and process_loop_subcommand is not None:
-        if process_loop_subcommand == "status" and args.wi and args.check_result is None:
-            _outcome.report_failure("--wiには--check-resultが必要", next_action="起動manifestを指定するか--wiを外して実行する")
-            return 2
-        if process_loop_subcommand == "status" and getattr(args, "check_result", None) is not None:
-            try:
-                observed = _process_loop_completion.completion_status(
-                    args.check_result, _private_notes.default_private_notes(home), args.wi
-                )
-            except (OSError, ValueError) as error:
-                _outcome.report_failure(
-                    str(error),
-                    next_action=("起動manifest・所有・候補原本と現在の登録を確認し、同じstatusコマンドで保存状態を再確認する"),
-                )
-                return 1
-            print(json.dumps(observed, ensure_ascii=False))
-            return int(any(record["status"] != "ready" for record in observed["repositories"].values()))
         # これらの操作はprivate-notesを必要としないため、環境の用意より前で処理する。
         process_loop_state_dispatch = {
             "abort": _process_loop_control.cmd_process_loop_abort,
@@ -301,9 +283,12 @@ def dispatch(
             _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、入力や保存先を直して再実行する")
             return 1
         return 0
-    if sub == "process-loop" and getattr(args, "internal_target", None) is not None:
-        _process_loop.cmd_process_loop(args, _private_notes.default_private_notes(home))
-        return 0
+    if sub == "process-loop":
+        try:
+            return _process_loop.cmd_process_loop(args)
+        except (OSError, ValueError) as error:
+            _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、原因を解消して再実行する")
+            return 1
     if sub == "submission":
         # 会話別の状態ディレクトリだけを扱い、private-notesを必要としない。
         return _submission.cmd_submission(args)
@@ -335,7 +320,6 @@ def dispatch(
         "answer": lambda: _uwi.cmd_answer(args, private_notes),
         "commit": lambda: _mutation_targets.cmd_commit(private_notes),
         "pull": lambda: _pull_command(private_notes),
-        "process-loop": lambda: _process_loop.cmd_process_loop(args, private_notes),
         "check-alerts": lambda: _alerts.cmd_check_alerts(args, private_notes, now),
     }
     _atk_git_sync.reset_sync_attempt()

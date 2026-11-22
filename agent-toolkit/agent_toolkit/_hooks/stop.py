@@ -13,10 +13,9 @@
 連続blockの上限は7回とする。Claude Codeは8回の連続blockでフックを上書きしてターンを終えるため、
 その手前の7回で打ち切りの事実を記録して終了を許可する。
 process-loopの統括の最上位では、打ち切った対話CLIが入力待ちで残らないよう、
-無進捗の停止と同じ終了要求（`busy_loop_guard.terminate`）でセッションを終え、常駐側の検収へ戻す。
+無進捗の停止と同じ終了要求（`busy_loop_guard.terminate`）でセッションを終える。
 終了要求は会話IDで統括と確定できる場合（`busy_loop_guard.is_target_session`）に限る。
-未終了のバックグラウンドタスクが残る場合は、`autonomous_exit`が残る作業を止めないよう終了要求を取り下げるのと同じ理由で終了要求を送らず、
-許可だけを返す。タスクの完了通知で再開した後のStopが改めて判定する。
+未終了のバックグラウンドタスクが残る場合は、終了要求を送らず許可だけを返す。タスクの完了通知で再開した後のStopが改めて判定する。
 
 委譲先での実行可否: 各判定モジュールが個別に適用可否を判断するため、エントリーポイント自体は除外せず実行できる。
 未配送通知を次ターンへ返す実機観測と再検証は、`docs/development/audit-records.md`の
@@ -50,7 +49,6 @@ CHECK_MODULE_NAMES = (
     "delivered_repost_gate",
     "response_language_advisor",
     "busy_loop_guard",
-    "autonomous_exit",
     "run_skill_report_gate",
     "plan_save_advisor",
     "agents_server_session_advisor",
@@ -61,11 +59,10 @@ CHECK_MODULE_NAMES = (
     "improvement_status_advisor",
 )
 
-# Codexでは説明言語、process-loopの統括の終了工程、run-skillの報告保存を判定する。
+# Codexでは説明言語、run-skillの報告保存を判定する。
 # 非遮断通知を配送できないため、それ以外の終了工程の支援は文書で扱う。
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
-    "autonomous_exit",
     "run_skill_report_gate",
 )
 
@@ -242,11 +239,9 @@ def evaluate(payload_text: str) -> dict[str, object]:
     if block_reasons:
         if session_id:
             if limit_reached:
-                autonomous_exit_invoked = read_state(session_id).get("autonomous_exit_invoked") is True
                 detail = {
                     "limit": _CONSECUTIVE_BLOCK_LIMIT,
                     "blocking_checks": blocking_checks,
-                    "autonomous_exit_invoked": autonomous_exit_invoked,
                     "background_tasks": len(remaining_tasks),
                 }
                 append_stop_log(

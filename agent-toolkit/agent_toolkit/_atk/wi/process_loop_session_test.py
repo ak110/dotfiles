@@ -14,7 +14,6 @@ from agent_toolkit._atk.wi import process_loop as _process_loop
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import inherited_venv as _inherited_venv
-from agent_toolkit._common import skill_modes
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
 
 
@@ -36,7 +35,7 @@ class TestProcessLoopPromptAndEnv:
 
     @pytest.mark.parametrize("orchestrator", ["claude", "codex", "agy"])
     @pytest.mark.parametrize("resume", [None, "saved-session"])
-    def test_manifest_goal_keeps_host_specific_delivery(
+    def test_process_loop_prompt_uses_host_specific_argv(
         self, tmp_path: pathlib.Path, orchestrator: str, resume: str | None
     ) -> None:
         """目的文は新規・再開とも全engineへホストの/goalを付けずに配送する。"""
@@ -51,13 +50,9 @@ class TestProcessLoopPromptAndEnv:
             resume_pending=resume is not None,
             cwd=tmp_path,
         )
-        expected = (
-            '<atk-auto source="process-loop" kind="goal">\n'
-            f"このセッションが統括として担当する{skill_modes.PROCESS_WI} all-reposの工程を完遂する"
-            "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）。"
-            "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
-        )
-        assert argv[-1] == expected
+        assert argv[-1].startswith('<atk-auto source="process-loop" kind="goal">')
+        assert "作業`process-loop`" in argv[-1]
+        assert "/goal" not in argv[-1]
         assert ("--no-daemon" in argv) == (orchestrator == "codex")
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:

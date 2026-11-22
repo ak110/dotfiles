@@ -4,15 +4,10 @@ import importlib
 import json
 import pathlib
 import types
-from typing import Any
 
 import pytest
 
-from agent_toolkit import atk
 from agent_toolkit._atk.wi import process_loop_log as loop_log
-from agent_toolkit._atk.wi import process_loop_session as session
-from agent_toolkit._atk.wi import process_loop_watch as _pl_watch
-from agent_toolkit._atk.wi.process_loop_test import _manifest, _targets
 from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
@@ -20,7 +15,6 @@ from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._testing.helpers import _write_transcript
-from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
 _HOOKS_PATH = pathlib.Path(__file__).resolve().parents[2] / "hooks" / "hooks.json"
 
@@ -56,7 +50,7 @@ def test_blocks_and_notifications_are_aggregated_in_check_order(monkeypatch: pyt
     _replace_checks(
         monkeypatch,
         {
-            "autonomous_exit": ("block", "自律終了"),
+            "run_skill_report_gate": ("block", "報告不足"),
             "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "未観測session"),
             "termination_order_advisor": ("block", "別の遮断"),
@@ -65,7 +59,7 @@ def test_blocks_and_notifications_are_aggregated_in_check_order(monkeypatch: pyt
 
     assert stop.evaluate("{}") == {
         "decision": "block",
-        "reason": "自律終了\n\n別の遮断\n\n未観測session",
+        "reason": "報告不足\n\n別の遮断\n\n未観測session",
     }
 
 
@@ -73,7 +67,7 @@ def test_notifications_are_aggregated_without_block(monkeypatch: pytest.MonkeyPa
     _replace_checks(
         monkeypatch,
         {
-            "autonomous_exit": ("approve", ""),
+            "run_skill_report_gate": ("approve", ""),
             "plan_save_advisor": ("approve", ""),
             "agents_server_session_advisor": ("notify", "通知1"),
             "termination_order_advisor": ("notify", "通知2"),
@@ -121,8 +115,8 @@ def test_internal_stop_failure_keeps_approval_and_existing_log(tmp_path, monkeyp
         monkeypatch.setattr(stop, "function_hook_paths", lambda *_args, **_kwargs: (marker, tmp_path / "request"))
         expected = "periodic_recheck_error"
     else:
-        _replace_checks(monkeypatch, {"autonomous_exit": ("halt", "3")})
-        module = importlib.import_module("agent_toolkit._hooks.autonomous_exit")
+        _replace_checks(monkeypatch, {"run_skill_report_gate": ("halt", "3")})
+        module = importlib.import_module("agent_toolkit._hooks.run_skill_report_gate")
         monkeypatch.setattr(module, "halt", fail, raising=False)
         expected = "halt_error"
     assert not stop.evaluate(json.dumps({"session_id": "stop-internal"}))
@@ -136,7 +130,7 @@ def _recheck_stop(monkeypatch, tmp_path, *, crons, background_tasks=(), decision
     """modの読込済みの会話で、全待機の終了か継続中かを判定するStopを1回実行し、modへの回収要求を返す。"""
     _set_state_directory(monkeypatch, tmp_path)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"autonomous_exit": decision})
+    _replace_checks(monkeypatch, {"run_skill_report_gate": decision})
     marker = tmp_path / "marker-recheck.txt"
     marker.write_text("ready", encoding="utf-8")
     monkeypatch.setattr(stop, "function_hook_paths", lambda _session: (marker, tmp_path / "request-recheck.txt"))
@@ -268,7 +262,7 @@ def test_block_below_limit_increments_count(
     """上限未満のblockは遮断を維持し、連続回数を増やす。"""
     _set_state_directory(monkeypatch, tmp_path)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
+    _replace_checks(monkeypatch, {"run_skill_report_gate": ("block", "報告不足")})
     session_id = "below-limit"
     _state_path(tmp_path, session_id).write_text(
         json.dumps({"stop_consecutive_block_count": 6}),
@@ -288,10 +282,10 @@ def test_block_limit_approves_resets_count_and_logs_context(
     """上限到達時はapproveし、回数と遮断判定を記録する。"""
     _set_state_directory(monkeypatch, tmp_path)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"autonomous_exit": ("block", "自律終了")})
+    _replace_checks(monkeypatch, {"run_skill_report_gate": ("block", "報告不足")})
     session_id = "at-limit"
     _state_path(tmp_path, session_id).write_text(
-        json.dumps({"stop_consecutive_block_count": 7, "autonomous_exit_invoked": False}),
+        json.dumps({"stop_consecutive_block_count": 7}),
         encoding="utf-8",
     )
 
@@ -299,8 +293,7 @@ def test_block_limit_approves_resets_count_and_logs_context(
     assert _read_state(tmp_path, session_id)["stop_consecutive_block_count"] == 0
     log_text = (tmp_path / f"claude-agent-toolkit-stop-{session_id}.log").read_text(encoding="utf-8")
     assert "decision=approve_block_limit_reached" in log_text
-    assert '"blocking_checks": ["autonomous_exit"]' in log_text
-    assert '"autonomous_exit_invoked": false' in log_text
+    assert '"blocking_checks": ["run_skill_report_gate"]' in log_text
 
 
 def test_first_block_starts_count_at_one(
@@ -342,12 +335,12 @@ def test_approve_resets_consecutive_block_count(
 
 def test_exception_isolated_per_check(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path) -> None:
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    autonomous_exit = importlib.import_module("agent_toolkit._hooks.autonomous_exit")
+    run_skill_report_gate = importlib.import_module("agent_toolkit._hooks.run_skill_report_gate")
 
     def raise_error(_payload: str) -> tuple[str, str]:
         raise RuntimeError("故障")
 
-    monkeypatch.setattr(autonomous_exit, "evaluate", raise_error)
+    monkeypatch.setattr(run_skill_report_gate, "evaluate", raise_error)
 
     _set_state_directory(monkeypatch, tmp_path)
     assert not stop.evaluate('{"session_id":"check-failure"}')
@@ -395,7 +388,7 @@ def test_stop_evaluations_scan_transcript_once(
     _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
     _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
 
-    assert stop.evaluate(payload)["decision"] == "block"
+    assert "decision" not in stop.evaluate(payload)
     assert waits == 1
     assert calls == 1
 
@@ -475,8 +468,8 @@ def _run_busy_loop_turns(
 ) -> tuple[dict[str, object], dict[str, int]]:
     """常駐ループのセッションで無進捗ターンを閾値まで重ね、最後のStop応答と停止工程の呼出し回数を返す。
 
-    無進捗停止と自律終了判定は実物を使い、終了要求の送出だけを指定した状態の結果へ置き換える。
-    自律終了判定は`atk agents-exit-session`の起動記録が無いため、停止が無ければ継続を求める。
+    無進捗停止と報告不足判定は実物を使い、終了要求の送出だけを指定した状態の結果へ置き換える。
+    報告不足判定は`atk agents-exit-session`の起動記録が無いため、停止が無ければ継続を求める。
     """
     from agent_toolkit._atk import agents_exit_session  # pylint: disable=import-outside-toplevel
 
@@ -526,7 +519,7 @@ def _run_busy_loop_turns(
 def test_busy_loop_halt_suppresses_continuation_blocks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, termination_status: str
 ) -> None:
-    """無進捗停止が終了要求を成立させたStopは、自律終了判定や他の判定の継続要求を返さない。"""
+    """無進捗停止が終了要求を成立させたStopは、報告不足判定や他の判定の継続要求を返さない。"""
     result, calls = _run_busy_loop_turns(monkeypatch, tmp_path, termination_status)
 
     assert calls == {"terminate": 1}
@@ -544,88 +537,12 @@ def test_busy_loop_halt_unissued_keeps_other_decisions(
 
     assert calls == {"terminate": 1}
     assert result["decision"] == "block"
-    assert "atk agents-exit-session" in str(result["reason"])
     assert "別の遮断" in str(result["reason"])
     assert "セッションの終了要求は送っていない" in str(result["systemMessage"])
 
 
-@pytest.mark.parametrize("stop_mode", ["abort", "interrupt"])
-def test_blocked_conversation_keeps_process_loop_running(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, stop_mode: str
-) -> None:
-    """公開常駐CLIが3無進捗ターン後のblocked結果を保持して待機し、明示停止で終了する。"""
-    isolate_process_loop_commands(monkeypatch, tmp_path)
-    _notes, snapshots = _targets(tmp_path, monkeypatch, (1,))
-    monkeypatch.setattr(_pl_watch, "wait_for_start_permission", lambda *_args, **_kwargs: True)
-    manifests: list[dict] = []
-    waited: list[bool] = []
-
-    def execute(_args: Any, _cwd: pathlib.Path, prompt: str, child_env: dict[str, str], **kwargs: Any) -> bool:
-        data = json.loads(_manifest(prompt, child_env).read_text(encoding="utf-8"))
-        manifests.append(data)
-        child_env["AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"] = "busy-loop"
-        kwargs["on_session_started"]("busy-loop")
-        hook_directory = tmp_path / "hook"
-        hook_directory.mkdir()
-        shared_abort = loop_log.abort_path()
-        with monkeypatch.context() as hook_patch:
-            result, calls = _run_busy_loop_turns(hook_patch, hook_directory, "exit_requested", abort_path=shared_abort)
-        assert calls["terminate"] == 1
-        assert "decision" not in result
-        assert not loop_log.abort_path().exists()
-        records = {snapshots[0].repository.repo_id: {"status": "blocked", "writer_sessions": []}}
-        pathlib.Path(data["result_file"]).write_text(json.dumps({"repositories": records}), encoding="utf-8")
-        return True
-
-    def wait(_notes: pathlib.Path, _repo: str | None, **_kwargs: Any) -> bool:
-        assert len(manifests) == 1
-        assert not loop_log.abort_path().exists()
-        stored = json.loads(pathlib.Path(manifests[0]["result_file"]).read_text(encoding="utf-8"))
-        assert stored["repositories"][snapshots[0].repository.repo_id]["status"] == "blocked"
-        waited.append(True)
-        if stop_mode == "interrupt":
-            raise KeyboardInterrupt
-        with pytest.raises(SystemExit) as result:
-            atk.main(["wi", "process-loop", "abort"], home=tmp_path)
-        assert result.value.code == 0
-        assert loop_log.abort_path().exists()
-        return True
-
-    monkeypatch.setattr(session, "run_process_session", execute)
-    monkeypatch.setattr(_pl_watch, "wait_for_changes", wait)
-    with pytest.raises(SystemExit) as result:
-        atk.main(["wi", "process-loop", "--no-update", "--no-alerts"], home=tmp_path)
-    assert result.value.code == 0
-    assert waited == [True]
-    assert not loop_log.abort_path().exists()
-
-
 def _codex_stop_payload(session_id: str, transcript: pathlib.Path) -> str:
     return json.dumps({"session_id": session_id, "turn_id": "turn-1", "transcript_path": str(transcript)})
-
-
-@pytest.mark.parametrize("pending", [False, True])
-def test_codex_process_loop_session_is_blocked_until_exit_even_while_waiting(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, pending: bool
-) -> None:
-    """Codexの統括は終了工程の実行記録が無ければ遮断し、通知で再開しない待機を理由に終了を許さない。"""
-    _set_state_directory(monkeypatch, tmp_path)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_RUN_SKILL_ID", raising=False)
-    monkeypatch.setattr(_background_tasks, "pending_async_status", lambda *args, **kwargs: "pending" if pending else "complete")
-    _replace_checks(monkeypatch, {"response_language_advisor": ("approve", "")})
-    transcript = _write_transcript(tmp_path, [])
-
-    result = stop.evaluate(_codex_stop_payload("codex-loop", transcript))
-
-    assert set(result) == {"decision", "reason"}
-    assert result["decision"] == "block"
-    assert "atk agents-exit-session" in str(result["reason"])
-
-    session_state.update_state("codex-loop", lambda state: {**state, "autonomous_exit_invoked": True})
-    assert not stop.evaluate(_codex_stop_payload("codex-loop", transcript))
 
 
 def test_codex_run_skill_session_is_blocked_until_report_is_saved(
@@ -684,7 +601,9 @@ def _stop_at_block_limit(
     for name, value in env.items():
         monkeypatch.setenv(name, value)
     _replace_checks(monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES})
-    _replace_checks(monkeypatch, {"response_language_advisor": ("block", "言語"), "autonomous_exit": ("block", "自律終了")})
+    _replace_checks(
+        monkeypatch, {"response_language_advisor": ("block", "言語"), "run_skill_report_gate": ("block", "報告不足")}
+    )
     requests: list[str | None] = []
 
     def terminate(*, session_id: str | None = None) -> tuple[str, object]:

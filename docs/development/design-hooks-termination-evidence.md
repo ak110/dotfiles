@@ -88,16 +88,16 @@ commitしない範囲も確定済みとし、未コミットだけを理由にco
 
 統括の`/goal`は`7d0179d1d`（2026年8月5日）で入り、ユーザーが利用を要件として指定した記録は見つからなかった。
 
-続行は次の2つの判定が担う。
+process-loopの統括は巡回の手順に従い、作業中のターンを終了できる。
+続行を判定するのは次の起動形である。
 
-- process-loopの統括の最上位: `agent-toolkit/agent_toolkit/_hooks/autonomous_exit.py`が、終了工程`atk agents-exit-session`の実行記録が無い終了を遮断する。
 - `atk run-skill`の最上位: `agent-toolkit/agent_toolkit/_hooks/run_skill_report_gate.py`が、その実行の報告用UWIの保存を確認するまで終了を遮断する。
   保存の基準は起動元の検収（`agent-toolkit/agent_toolkit/_atk/wi/add_reports.py`の`has_synced_run_report`）と同じにし、hookを通過した終了が起動元の検収で失敗しないようにする。
   前提不足で未完了のまま終える実行も報告を保存するので、同じ判定で終了できる。
 
-対象は環境印（process-loopの印と`AGENT_TOOLKIT_RUN_SKILL_ID`）で識別した最上位に限り、委譲先と人が使う対話セッションには働かない。
+対象は環境印（`AGENT_TOOLKIT_RUN_SKILL_ID`）で識別した最上位に限り、委譲先と人が使う対話セッションには働かない。
 機械判定が見るのは終了工程の実行と報告の保存であり、作業内容の未達は見ない。
-作業内容の未達は、常駐が統括の終了後に行う検収（`process_loop.py`の`run_coordinator`）とrun-skillの起動元の検収が検出する。
+巡回の作業内容の未達は統括が終了前に対象別に検収し、run-skillでの報告の保存は起動元が確認する。
 `/goal`の評価が早すぎる終了を防いだ件数の記録は無い。
 
   非対話の`claude -p`はバックグラウンドタスクの完了通知で同じ会話が再開する（`audit-records-hooks-lifecycle.md`の2026年10月10日の実機観測）。
@@ -111,7 +111,8 @@ commitしない範囲も確定済みとし、未コミットだけを理由にco
 Stopの共通ハンドラー（`stop.py`）は連続7回で遮断を打ち切る。
 Claude Codeが8回連続の遮断を無視してターンを終えるためである。
 `/goal`が無いと、打ち切り後の対話型の統括は入力待ちのまま残る。
-そこで、打ち切りに達したprocess-loopの統括の最上位は、`busy_loop_guard.py`の停止工程と同じ終了要求でセッションを終え、常駐側の検収へ戻す。
+そこで、打ち切りに達したprocess-loopの統括の最上位は、`busy_loop_guard.py`の停止工程と同じ終了要求でセッションを終える。
+通常の対象別検収を終えていない場合、次の統括は保存済みの結果と残工程から再開する。
 
 終了要求を送るのは、統括の会話IDを確定でき、hook入力の会話IDと一致する場合に限る（`agent_toolkit/_common/process_loop_session.py`の`is_identified_process_loop_session`）。
 終了工程は祖先をたどって最初の対話CLIを止め、非対話の`codex exec`や`agy -p`は停止対象から外して、さらに上の祖先を調べる。

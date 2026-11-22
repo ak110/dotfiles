@@ -65,7 +65,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
 2. 自分が作った作業用領域を、`agent-toolkit:atk-mode/playbooks/managed-temp.md`の寿命の区分に従って回収する。
    過去のエージェントが残した資源と誤変更は、`agent-toolkit/skills/atk-mode/references/operations.md`「プロセス終了の安全規定」で調べ、不要な範囲を回収・是正する。
    process-wiの登録済みレーンの資源は、追加作業や公開後の工程に備えてこの時点では保持する。
-   全工程と外部プロセスの終了後に、通常終了では`atk agents-exit-session`が、process-loopでは子プロセスの終了後処理が、`atk lane delete`と同じ条件で回収する。
+   通常終了では`atk agents-exit-session`が回収する。
+   巡回では統括が成果の保存とwriterの停止を確かめてから、`atk lane delete`で個別に回収する。
    未回収の対象は保持の理由を調べ、認可の範囲で解消できるものは同じ回収操作で再判定する。
    別セッションが現に使う資源は保護し、使用主体、保持理由、次回の再判定を報告する。
    それ以外で本人の判断・認可・操作が残る資源は、対象・保持理由・必要な判断か操作・再開条件を個別のUWIにする。
@@ -88,6 +89,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    `atk run-skill`による実行では、`--source run-skill --scope "<スキル名とモードの組>"`とfrontmatterの`run_skill_report: true`を保つ。
    scopeはスキル名とモードの組とし、自由記述は含めない。
    起動入力にscopeがある時は、モードを含むその値を保存する。
+   例えばbatchのscopeは`agent-toolkit:review-session batch`である。
    保存CLIが付ける`run_skill_run_id`は、再開と更新でも保つ。
    報告先は起動元が渡したリポジトリとし、実行のcwdと区別する。
    起動元は本文、commit、upstreamがある場合のpushを検収する。

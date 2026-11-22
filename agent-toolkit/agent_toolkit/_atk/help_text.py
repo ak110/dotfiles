@@ -240,10 +240,20 @@ HELP: dict[str, dict[str, str]] = {
         "description": "add-awi-by-userの投入作業を終えて記録を削除する。\n\n目的: 完了または中止した投入作業を、巡回開始の判断から除く。\n利用場面: AWIの投入を完了した時と、ユーザーが投入作業を中止した時。\n対象と出力: 会話別の投入属性だけを削除する。通常終了は引数なし、中止は--abortを指定する。どちらも記録が無くても成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再開する場合は`atk wi submission begin`を実行する。",
         "epilog": "実行例:\n\n  atk wi submission end\n  atk wi submission end --abort",
     },
+    "atk wi submission activity": {
+        "summary": "対象リポジトリへのWI投入作業の活動を照会する",
+        "description": "WIの投入先に対応する会話と子孫の活動を読み取る。\n\n"
+        "目的: 巡回の開始前に、同じ対象へのユーザーの投入を待つ必要があるか確かめる。\n"
+        "利用場面: 巡回が候補を選定する前。\n"
+        "対象と出力: --target-repoと一致する投入作業の活動があればactiveをtrueとする1行JSONを返す。"
+        "判定に不確かさがあればuncertainをtrueとする。保存状態は変更しない。\n"
+        "前提: 投入先をoriginの正規化URLに対応付けられること。\n"
+        "復元・後始末: 活動がある時は終了を待ってから候補と活動を確かめ直す。",
+    },
     "atk wi process-loop": {
-        "summary": "登録リポジトリ全体のAWI処理を常駐実行する",
-        "description": "登録リポジトリ全体のAWI処理を常駐実行する。\n\n目的: repositoriesでprocess_loop=trueとした対象を、1つの統括会話で継続処理する。\n利用場面: 登録した全対象を継続処理するとき、または--onceで開始時集合を各1回処理するとき。\n対象と出力: 常駐が同期・開始判定・所有・準備・結果検収・回収を行い、今回の全対象をprocess-wi all-reposの統括会話へ渡す。統括会話は対話CLIとしてこの端末の前景に起動する。未完了は準備済み成果を保持し、元会話はresumeで予約した場合に再開する。--onceは対象0件でも待機せず、未完了・所有待ち・準備失敗が残れば非0で終了する。\n前提: atk config repos add REPO --edit allow --path PATH --process-loopで対象を登録する。resume [ID|auto]で次回の再開を予約し、値省略はホストCLIの会話選択画面を使う。予約自体は起動せず、CLIの実起動で1回消費する。--worktreeは対象別に適用し、dotfilesは無指定でも隔離する。系統（--branches）を登録したrepositoryは系統ごとの対象になり、系統ごとのworktree（.claude/worktrees/process-loop-<系統>）をorigin/<系統>へ追随させて処理し、登録pathのブランチは切り替えない。更新とアラート監視は省略時も実行する。\n復元・後始末: abortは新しい対象の起動を止め、稼働中の全実行が終了してから常駐を止める。abort-cancelで解除する。resume-cancelで未消費の再開予約を取り消す。停止未確認・未統合・dirtyの資源は保持する。",
-        "epilog": "実行例:\n\n  atk config repos add /absolute/repository --edit allow --process-loop\n  atk wi process-loop\n  atk wi process-loop resume auto\n  atk wi process-loop --once\n  atk wi process-loop --worktree --no-update",
+        "summary": "巡回を担う対話セッションを起動・再起動する",
+        "description": "巡回を担う対話セッションを起動・再起動する。\n\n目的: 現在の作業ディレクトリで巡回スキルを起動し、終了後に次のセッションを開く。\n利用場面: 巡回を続けたいとき。1セッションで終える場合は--onceを使う。\n対象と出力: 対話CLIを前景で起動する。正常終了後は再開予約または新規会話で起動し、異常終了が3回続けば診断ログを案内して非0で終了する。\n前提: 利用可能な統括向けのCLIとモデル設定があること。WIの選定、公開、更新は起動したセッションが担う。\n復元・後始末: --once、シグナル、中断要求では再起動しない。新しいセッションへ渡す指示と再開予約は実起動時だけ消費する。",
+        "epilog": "実行例:\n\n  atk wi process-loop\n  atk wi process-loop --once",
     },
     "atk wi process-loop abort": {
         "summary": "process-loopへ1セッションの終了時点で止まるよう要求する",
@@ -256,14 +266,14 @@ HELP: dict[str, dict[str, str]] = {
         "epilog": "実行例:\n\n  atk wi process-loop abort-cancel",
     },
     "atk wi process-loop status": {
-        "summary": "process-loopへの中断要求の有無を表示する",
-        "description": "process-loopへの中断要求の有無を表示する。\n\n目的: 中断要求と再開予約を表示する。--check-result PATH指定時は起動manifestを現キュー・レーンと読み取り専用で比較しJSONを返す。status=readyはこの前処理の通過であり全体完了ではない。incompleteは残件または比較失敗を示す。--wi FILENAMEは直接処置・追加分を比較母集団へ加える。\n利用場面: process-loopを止める要求が有効かを確認するとき。\n対象と出力: 中断要求の状態ファイルを読み取り、要求の有無を標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じOSアカウントの状態ディレクトリを使う。\n復元・後始末: 読み取りだけを行うため不要。",
+        "summary": "中断要求・再開予約・保持中の追加指示を表示する",
+        "description": "中断要求・再開予約・保持中の追加指示を表示する。\n\n目的: 次のprocess-loopの起動に使う制御状態を確かめる。\n利用場面: 中断、再開、追加指示が設定済みかを確認するとき。\n対象と出力: 同じOSアカウントの状態を読み、標準出力へ書く。ファイルは変更しない。\n前提: process-loopと同じ状態ディレクトリを使う。\n復元・後始末: 変更が無いため不要。",
         "epilog": "実行例:\n\n  atk wi process-loop status",
     },
     "atk wi process-loop resume": {
         "summary": "次回の会話再開を予約する",
-        "description": "次回の会話再開を予約する。\n\n目的: ID指定、autoによる未完了所有記録、または引数省略によるCLI本来のpickerを次の起動へ予約する。\n利用場面: 現在の処理を終えてから会話を再開するとき。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定でき、通常のprocess-loop起動後に使う。起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
-        "epilog": "実行例:\n\n  atk wi process-loop resume SESSION_ID\n  atk wi process-loop resume auto\n  atk wi process-loop resume",
+        "description": "次回の会話再開を予約する。\n\n目的: ID指定、または引数省略によるCLI本来のpickerを次の起動へ予約する。\n利用場面: 現在の処理を終えてから会話を再開するとき。\n対象と出力: 同じOSアカウントの状態へ1件保存し、後から受理した予約で置き換える。予約時にCLIは起動しない。\n前提: 停止中も設定でき、通常のprocess-loop起動後に使う。起動準備の失敗やabortでは保持し、実起動で1回消費する。\n復元・後始末: 未消費分はresume-cancelで取り消せる。",
+        "epilog": "実行例:\n\n  atk wi process-loop resume SESSION_ID\n  atk wi process-loop resume",
     },
     "atk wi process-loop resume-cancel": {
         "summary": "未消費の再開予約を取り消す",

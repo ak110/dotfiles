@@ -38,7 +38,6 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config_settings, managed_temp
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.managed_temp import sweep
-from agent_toolkit._atk.wi import process_loop_update as _process_loop_update
 from agent_toolkit._common import codex_models, plugin_environment, process_tree
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._git import command as _git_command
@@ -347,7 +346,7 @@ def _launch_follows_patched_subprocess_run(monkeypatch: pytest.MonkeyPatch) -> N
 
         return launch_or_patched_run
 
-    for module in (_git_command, _orchestrator, _process_loop_update):
+    for module in (_git_command, _orchestrator):
         # 起動の1か所を差し替えるための参照であり、各モジュールのdocstringがこの利用を明記している。
         monkeypatch.setattr(module, "_launch", follow(module._launch))  # pylint: disable=protected-access
 

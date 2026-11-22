@@ -58,3 +58,8 @@ def test_implement_work_is_resolved_from_entry_skill():
     assert skill_modes.entry_work("implement") == "implement"
     assert skill_modes.resolve_work("atk-mode", "implement 機能を足す") == ("agent-toolkit:implement", "機能を足す")
     assert skill_modes.invocation_scope("implement", "機能を足す") == "agent-toolkit:implement"
+
+
+def test_process_loop_work_is_named_independently() -> None:
+    assert skill_modes.resolve_work("atk-mode", "process-loop 対象を巡回") == ("agent-toolkit:process-loop", "対象を巡回")
+    assert skill_modes.invocation_scope("process-loop", "対象を巡回") == "agent-toolkit:process-loop"

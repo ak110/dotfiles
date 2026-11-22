@@ -64,29 +64,15 @@ class TestExitSessionResetsProcessAwisFlag:
         self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
-        assert state.get("autonomous_exit_invoked") is True
-
-    def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でも終了CLIの記録だけを追加する。"""
-        sid = "exit-idem"
-        _state_path(sid).write_text(
-            json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        self._invoke(sid, tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("process_wi_skill_invoked") is False
-        assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """進捗起点と終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
+        """進捗起点とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = session_state.state_path(sid)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
-                    "autonomous_exit_invoked": True,
                     "process_wi_skill_invoked": False,
                     "marker": "keep",
                 },
@@ -116,8 +102,9 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_redirection_does_not_count_as_argument(self, tmp_path: pathlib.Path, command: str, recorded: bool) -> None:
         """リダイレクトだけを伴う起動は単独の起動として記録し、引数を伴う起動は記録しない。"""
         sid = "exit-redirect"
+        _state_path(sid).write_text(json.dumps({"process_wi_skill_invoked": True}), encoding="utf-8")
         self._invoke(sid, tmp_path, command)
-        assert (_read_state(tmp_path, sid).get("autonomous_exit_invoked") is True) is recorded
+        assert (_read_state(tmp_path, sid).get("process_wi_skill_invoked") is False) is recorded
 
 
 class TestProcessAwisInvokedNonIdempotent:

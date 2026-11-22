@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import time
 from collections.abc import Generator
@@ -104,19 +103,13 @@ def discard_instructions() -> int:
 
 
 @contextlib.contextmanager
-def launch_instructions(manifest: Path | None) -> Generator[None]:
-    """次の実起動へ指示を一度だけ配送し、起動失敗時は保持する。"""
-    if manifest is None:
-        yield
-        return
+def launch_instructions() -> Generator[str]:
+    """次の実起動だけへ指示を渡し、起動に失敗した場合は保持する。"""
     path = instruction_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(path.with_suffix(".lock"), timeout=10):
         instructions = read_instructions()
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        data["instruction"] = INSTRUCTION_SEPARATOR.join(instructions)
-        atomic_write(manifest, json.dumps(data, ensure_ascii=False) + "\n")
-        yield
+        yield INSTRUCTION_SEPARATOR.join(instructions)
         if instructions:
             path.unlink(missing_ok=True)
 

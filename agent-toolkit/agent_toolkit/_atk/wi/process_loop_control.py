@@ -84,7 +84,9 @@ def resume_launch(request_id: str | None) -> Generator[None]:
 
 def cmd_process_loop_resume(value: str | None) -> None:
     """次回の再開を予約し、後から受理した指定で置き換える。"""
-    mode: Literal["id", "auto", "picker"] = "picker" if value is None else "auto" if value == "auto" else "id"
+    if value == "auto":
+        raise ValueError("auto再開は廃止した。会話IDを指定するか、省略して会話を選ぶ")
+    mode: Literal["id", "picker"] = "picker" if value is None else "id"
     if mode == "id" and not _valid_session_id(value):
         raise ValueError("再開IDは英数字で始まる200文字以内の英数字・ハイフン・下線とする")
     request = ResumeRequest(str(uuid.uuid4()), mode, value if mode == "id" else None)
@@ -177,16 +179,7 @@ def cmd_process_loop_instruct_cancel() -> None:
 
 
 def consume_process_loop_abort() -> bool:
-    """中断要求があればベルを3回鳴らして要求を消費し、process-loopを終了すべきかを返す。
-
-    判定点は反復の境界と、呼び出し元へ戻らない再起動の直前の2箇所へ限定する。
-    `_pl_update.restart_process_loop`は`os.execv`または`sys.exit`で呼び出し元へ戻らないため、
-    その呼び出しの後段へ置いた判定は`--no-update`を省略して起動した場合には実行されない。
-    同じ理由で`_pl_update.update_before_session`と`_pl_update.check_and_restart_on_update`の後段にも判定を置かず、
-    反復ループの先頭でまとめて判定する。
-    `atk wi process-loop abort`の公開契約は、現在のセッションが終わった時点で次の反復へ進まず
-    終了することと、中断で終了した時点で要求も解除されることを定める。
-    """
+    """中断要求があればベルを3回鳴らして要求を消費する。"""
     with _resume_lock():
         abort_path = _process_loop_abort_path()
         if not abort_path.exists():
