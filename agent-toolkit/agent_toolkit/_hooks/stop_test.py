@@ -232,7 +232,7 @@ def test_continuation_tells_delegate_to_rewrite_full_report(
     if decision == "codex-block":
         # Codexは非遮断通知を配送できず、継続は遮断の`reason`だけで委譲先へ届く。
         payload["turn_id"] = "turn"
-        _replace_checks(monkeypatch, {"submission_report_advisor": ("block", "再報告せよ")})
+        _replace_checks(monkeypatch, {"response_language_advisor": ("block", "回答を書き直せ")})
     elif decision != "approve":
         _replace_checks(
             monkeypatch,
@@ -615,7 +615,7 @@ def test_codex_process_loop_session_is_blocked_until_exit_even_while_waiting(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_RUN_SKILL_ID", raising=False)
     monkeypatch.setattr(_background_tasks, "pending_async_status", lambda *args, **kwargs: "pending" if pending else "complete")
-    _replace_checks(monkeypatch, {"response_language_advisor": ("approve", ""), "submission_report_advisor": ("approve", "")})
+    _replace_checks(monkeypatch, {"response_language_advisor": ("approve", "")})
     transcript = _write_transcript(tmp_path, [])
 
     result = stop.evaluate(_codex_stop_payload("codex-loop", transcript))
@@ -640,7 +640,7 @@ def test_codex_run_skill_session_is_blocked_until_report_is_saved(
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "run-1")
     monkeypatch.setenv(mcp_environment.SESSION_START_INPUT_ENV, json.dumps({"source": "run-skill", "skill": "my-skill"}))
-    _replace_checks(monkeypatch, {"response_language_advisor": ("approve", ""), "submission_report_advisor": ("approve", "")})
+    _replace_checks(monkeypatch, {"response_language_advisor": ("approve", "")})
     saved = {"value": False}
     monkeypatch.setattr(wi_add, "has_synced_run_report", lambda *_args, **_kwargs: saved["value"])
     transcript = _write_transcript(tmp_path, [])

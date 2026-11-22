@@ -57,18 +57,16 @@ CHECK_MODULE_NAMES = (
     "user_response_advisor",
     "bugfix_gate",
     "termination_order_advisor",
-    "submission_report_advisor",
     "queued_notification_advisor",
     "improvement_status_advisor",
 )
 
-# Codexでは説明言語、process-loopの統括の終了工程、run-skillの報告保存、遮断で再報告を求める投入作業の報告用要約を判定する。
+# Codexでは説明言語、process-loopの統括の終了工程、run-skillの報告保存を判定する。
 # 非遮断通知を配送できないため、それ以外の終了工程の支援は文書で扱う。
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "autonomous_exit",
     "run_skill_report_gate",
-    "submission_report_advisor",
 )
 
 # 終了要求が成立し、同じStopで継続を求めてはならない`halt`の状態。
