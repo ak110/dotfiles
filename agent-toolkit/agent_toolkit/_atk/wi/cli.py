@@ -166,6 +166,11 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     """
     if args.batch and args.dry_run:
         args.subparser.error("--dry-runは--batchと併用できません。")
+    if args.batch and args.hold:
+        args.subparser.error(
+            "--holdは--batchと併用できません。--batchは保存状態をinboxへ揃えて取り込むため、--holdを外すとinboxに入ります。"
+            "保留のまま保存する新規AWIは、--batchを使わずに通常の投入へ--holdを付けてください。"
+        )
     if args.batch:
         conflicting = [
             name
@@ -179,7 +184,6 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--target-repo", args.target_repo),
                 ("--target-branch", args.target_branch),
                 ("--source", args.source),
-                ("--hold", args.hold or None),
                 ("--process-wi-timing", args.process_wi_timing),
                 ("--process-wi-kind", args.process_wi_kind),
                 ("--defer-category", args.defer_category),

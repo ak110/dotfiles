@@ -343,12 +343,13 @@ def test_public_add_hold_saves_awi_outside_readiness(
     [
         (["--type=uwi", "--question-type=yes-no"], "--holdは--type=awiでのみ"),
         (["--process-wi-timing", "this-run", "--process-wi-kind", "defect"], "--holdは--process-wi-timingと併用できません"),
+        (["--batch"], "通常の投入へ--holdを付けて"),
     ],
 )
-def test_public_add_hold_rejects_uwi_and_process_wi_timing(
+def test_public_add_hold_rejects_unsupported_combinations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
 ) -> None:
-    """保留で保存できないUWIと、今回の巡回へ渡すAWIへの--holdを保存前に拒否する。"""
+    """UWI、時機を指定するAWI、--batchへの--holdを保存前に拒否し、保留を保つ投入の方法を示す。"""
     _setup_notes(tmp_path)
     args = _cmd_add_args(tmp_path, "確認しますか？")
     with pytest.raises(SystemExit) as finished:
