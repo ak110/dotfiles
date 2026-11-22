@@ -75,7 +75,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-一般の作業でも操作・判断の前に該当する資料を全文読み、スキルを起動する。
+一般作業も操作・判断前に該当資料を通読し、スキルを起動する。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
