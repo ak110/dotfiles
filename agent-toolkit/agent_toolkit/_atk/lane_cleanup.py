@@ -8,12 +8,25 @@ import pathlib
 import shutil
 import subprocess
 import typing
+from collections.abc import Iterable
 
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
 from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
+
+
+def _unowned_data_reason(worktree: pathlib.Path, protected_paths: Iterable[str]) -> str | None:
+    path = worktree.resolve()
+    if any(pathlib.Path(other) != path and pathlib.Path(other).is_relative_to(path) for other in protected_paths):
+        return "別のworktreeを内包するため回収しない"
+    if _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored", "--untracked-files=all"):
+        return "Gitの無視対象または新たな変更がある"
+    gitdir = pathlib.Path(_lane_records.git(worktree, "rev-parse", "--absolute-git-dir"))
+    if any((gitdir / name).exists() for name in ("rebase-apply", "rebase-merge", "BISECT_START", "sequencer")):
+        return "worktreeでGit操作が中断中"
+    return None
 
 
 def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire_integrated: bool = False) -> str | None:
@@ -32,6 +45,16 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire
         if activity:
             return activity
     trees = _lane_records.worktrees(repo)
+    if state.worktree_registered and (
+        worktree.resolve() == _lane_records.main_worktree(repo)
+        or pathlib.Path.cwd().is_relative_to(worktree.resolve())
+        or str(worktree.resolve()) in lane_retirement.integration_worktrees(record["common_dir"])
+    ):
+        return "主・呼出元・統合先のworktreeを回収しない"
+    if state.branch and (
+        record["branch"] == "worktree-process-loop" or record["branch"] in lane_retirement.upstream_branches(repo)
+    ):
+        return "統合先またはupstreamを設定したbranchを回収しない"
     if state.worktree_registered:
         if trees.get(str(worktree)) != record["branch"]:
             return "worktreeの登録が所有記録と異なる"
@@ -41,6 +64,18 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire
             return "未commitまたは未追跡の変更がある"
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
+    if not selected and state.worktree_path:
+        listed = _lane_records.list_resources()
+        if listed["errors"]:
+            return "所有登録を確認できないため回収しない"
+        protected_paths = (
+            {str(pathlib.Path(item["record"]["worktree"]).resolve()) for item in listed["records"]}
+            | set(trees)
+            | lane_retirement.integration_worktrees(record["common_dir"])
+        )
+        reason = _unowned_data_reason(worktree, protected_paths)
+        if reason:
+            return reason
     if state.branch:
         if selected:
             _lane_records.branch_is_integrated(record, repo)
@@ -194,6 +229,74 @@ def cleanup_session(
                 "next_action", "理由を解消し、所有登録の入力で作成を再開するか同じlane deleteで残る回収を実行する"
             )
         _lane_records.save(result_path, result)
+    return result
+
+
+def _has_branch_config(repo: pathlib.Path, branch: str) -> bool:
+    section = f"branch.{branch}".casefold()
+    keys = _lane_records.git(repo, "config", "--includes", "--name-only", "--null", "--list")
+    return any(key.rpartition(".")[0].casefold() == section for key in keys.split("\0"))
+
+
+def cleanup_orphans(repo: pathlib.Path, base_branch: str, caller: pathlib.Path) -> dict[str, typing.Any]:
+    result: dict[str, typing.Any] = {"removed": [], "retained": [], "user_confirmation": []}
+    registered = _lane_records.list_resources()
+    if registered["errors"]:
+        result["retained"].extend(registered["errors"])
+        return result
+    base = f"refs/heads/{base_branch}"
+    candidates = lane_retirement.orphan_candidates(repo, registered["records"], caller=caller)
+    for candidate in candidates:
+        path, branch = candidate["worktree"], candidate["branch"]
+        reason = candidate["reason"]
+        if reason:
+            key = "user_confirmation" if candidate["origin"] == "unknown" else "retained"
+            result[key].append(candidate)
+            continue
+        try:
+            worktree = pathlib.Path(path) if path else None
+            if worktree is not None:
+                if _lane_records.worktrees(repo).get(str(worktree)) != (branch or ""):
+                    raise ValueError("worktreeの登録が回収候補と異なる")
+                if _lane_records.common(worktree) != _lane_records.common(repo):
+                    raise ValueError("worktreeのGit共通ディレクトリが異なる")
+                activity = _lane_activity.worktree_activity(worktree, wait_release=False)
+                if activity:
+                    raise ValueError(activity)
+                if _lane_activity.has_unignored_changes(worktree):
+                    raise ValueError("未commitまたは未追跡の変更がある")
+                reason = _unowned_data_reason(worktree, _lane_records.worktrees(repo))
+                if reason:
+                    raise ValueError(reason)
+            ref = f"refs/heads/{branch}" if branch else "HEAD"
+            if branch and (_has_branch_config(repo, branch) or (worktree is not None and _has_branch_config(worktree, branch))):
+                raise ValueError(
+                    "branch固有の設定があるため回収しない。"
+                    "`git config --show-origin --name-only --list`で設定元を確かめ、回収してよいか手動で判断する"
+                )
+            head = _lane_records.git(worktree or repo, "rev-parse", "--verify", ref)
+            if worktree is not None and head != _lane_records.git(worktree, "rev-parse", "--verify", "HEAD"):
+                raise ValueError("worktreeのHEADがbranchの先端と異なる")
+            if ref == base:
+                raise ValueError("統合先branchは回収しない")
+            base_head = _lane_records.git(repo, "rev-parse", "--verify", base)
+            proof = lane_retirement.prove_heads(repo, head, base_head)
+            if worktree is not None:
+                _lane_records.git(repo, "worktree", "remove", str(worktree))
+                result["removed"].append({**candidate, **proof, "resource": "worktree"})
+            if branch:
+                if branch in lane_retirement.upstream_branches(repo):
+                    raise ValueError("upstreamを設定したbranchを回収しない")
+                if branch in _lane_records.worktrees(repo).values():
+                    raise ValueError("branchがworktreeで使用中")
+                if ref in lane_retirement.operation_branches(repo):
+                    raise ValueError("branchが中断中のGit操作で使用中")
+                if ref in lane_retirement.symbolic_branches(repo):
+                    raise ValueError("シンボリックrefを回収しない")
+                _lane_records.git(repo, "update-ref", "--no-deref", "-d", ref, head)
+                result["removed"].append({**candidate, **proof, "resource": "branch"})
+        except _lane_records.record_errors() as error:
+            result["retained"].append({**candidate, "reason": str(error)})
     return result
 
 
