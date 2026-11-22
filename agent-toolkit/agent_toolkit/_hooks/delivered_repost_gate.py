@@ -1,18 +1,13 @@
 """`send_to_user`の呼出しと送達後の応答を、同じターンの記録で検査する。
 
-規範（`atk-mode`の`playbooks/host-claude-code.md`「ターンの終え方」）は、送達後に待機・完了を問わず`…`だけで閉じることを求める。
-通常の対話では1文の送達確認も遮断する。process-loopの統括とrun-skillでは、担当工程完了の1文を許す。
-同じターンの直近の送達が失敗したら、未表示の本文で終了できる。非同期の待機が残るStopにも適用する。
-
-通知を遮断にする根拠: 警告では、送達した内容を応答本文へ再掲する事象が止まらなかった。
-遮断された主体は応答本文を`…`だけにするか、新しい内容を`send_to_user`で送るだけで回復できるため、
-`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`の遮断の条件に当たる。
+同じターンで成功した送達と通常本文に同じ文がある場合に限り、再掲として差し戻す。
+短い確認や新しく得た情報は、送達した文に含まれなければ差し戻さない。
+送達に失敗した場合は未表示の情報を通常本文で伝えられる。
 連続blockの上限は`stop.py`が管理する。
 
 委譲先での実行可否: ユーザーへ送達するメインだけを対象とし、サブエージェントと委譲先、`send_to_user`の無いCodexは判定しない。
 """
 
-import os
 import re
 
 from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
@@ -21,11 +16,9 @@ from agent_toolkit._hooks import notice
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
-lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.run_skill_report_gate import RUN_ID_ENV
 lazy from agent_toolkit._hooks.user_response_advisor import _input_text, latest_human_turn
 
 # 再開した会話の記録では改名前のツール名も送達の根拠になる。
@@ -65,11 +58,11 @@ def _send_required(entries: list[dict]) -> bool:
     return False
 
 
-def _delivery_report(entries: list[dict]) -> tuple[str, bool]:
-    """送達成功後の最後の本文と、成功または失敗の結果が記録されたかを返す。"""
-    sent_ids: set[str] = set()
+def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
+    """最後の通常本文、表示した報告の文、送達結果の有無を返す。"""
+    messages: dict[str, str] = {}
+    delivered: set[str] = set()
     completed = False
-    delivered = False
     last = ""
     for entry in entries:
         message = entry.get("message")
@@ -89,14 +82,24 @@ def _delivery_report(entries: list[dict]) -> tuple[str, bool]:
                     and isinstance(identifier := block.get("id"), str)
                     and identifier
                 ):
-                    sent_ids.add(identifier)
-            elif block.get("type") == "tool_result" and str(block.get("tool_use_id", "")) in sent_ids:
-                completed = True
-                # 途中報告の後で次の送達が失敗したら、未表示の本文で終了できるようにする。
-                delivered, last = block.get("is_error") is not True, ""
+                    inputs = block.get("input")
+                    message_text = inputs.get("message") if isinstance(inputs, dict) else None
+                    messages[identifier] = message_text if isinstance(message_text, str) else ""
+            elif block.get("type") == "tool_result" and (identifier := str(block.get("tool_use_id", ""))) in messages:
+                completed, last = True, ""
+                if block.get("is_error") is True:
+                    # 最後の送達が失敗したら、未表示の本文を通常経路で伝えられるようにする。
+                    delivered.clear()
+                else:
+                    delivered.update(_sentences(messages[identifier]))
         if delivered and texts:
             last = "".join(texts)
-    return last, completed
+    return last, delivered, completed
+
+
+def _sentences(text: str) -> set[str]:
+    """空白・Markdownの外側の記号・文末記号の違いだけを無視する。"""
+    return {line for part in _SENTENCE_BREAK.split(text) if (line := " ".join(part.split()).strip(">*_`#… "))}
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -116,7 +119,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
     turn = latest_human_turn(lines) if lines is not None else None
-    body, completed = _delivery_report(turn[1]) if turn else ("", False)
+    body, delivered, completed = _delivery_report(turn[1]) if turn else ("", set(), False)
     if (
         turn
         and not completed
@@ -129,13 +132,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             fix=f"`REPL` では `await {_SEND_CALL}` を呼べ。ツールを直接呼べる場合は "
             "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡せ。呼出しに失敗した場合は通常本文で伝える。",
         )
-    if not body.replace("…", "").strip():
-        return "approve", ""
-    allows_completion_sentence = is_process_loop_session(session_id, os.environ) or bool(os.environ.get(RUN_ID_ENV))
-    if allows_completion_sentence and sum(1 for sentence in _SENTENCE_BREAK.split(body) if sentence.strip()) < 2:
+    if not delivered.intersection(_sentences(body)):
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_delivered_repost", {})
     return "block", _block_notice(
-        "`send_to_user`の送達後に、応答本文が残っている。送達の確認や要約は不要である。",
-        fix="応答本文を`…`だけにして閉じよ。新しく伝える内容があれば`send_to_user`で送れ。",
+        "`send_to_user`で送信済みの文が通常の応答本文にある。",
+        fix="再掲した文を除き、新しく伝えることが無ければ本文を加えずに終える。",
     )
