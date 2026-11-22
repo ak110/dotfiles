@@ -436,7 +436,9 @@ def update_claude_settings(
         logger.info(log_format.format_status(short, "変更なし"))
         return False
     settings_path.parent.mkdir(parents=True, exist_ok=True)
-    if not common.write_settings_hybrid(settings_path, original, data, tag=short, source=source, preserve_bom=True):
+    if not common.write_settings_hybrid(
+        settings_path, original, data, tag=short, source=source, preserve_bom=True, check_source=True
+    ):
         return None
     logger.info(log_format.format_status(short, "更新しました"))
     for line in _diff_lines(original, data):

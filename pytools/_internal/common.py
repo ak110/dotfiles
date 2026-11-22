@@ -408,7 +408,13 @@ def load_json_dict(
 
 
 def _atomic_write(
-    path: Path, writer: Callable[[typing.IO[typing.Any]], object], *, binary: bool, mode: int | None, tag: str | None
+    path: Path,
+    writer: Callable[[typing.IO[typing.Any]], object],
+    *,
+    binary: bool,
+    mode: int | None,
+    tag: str | None,
+    before_replace: Callable[[], None] | None = None,
 ) -> bool:
     """同一ディレクトリのtempfile + `Path.replace` で原子的に保存する共通実装。
 
@@ -438,10 +444,12 @@ def _atomic_write(
             prefix=f"{path.name}.",
             suffix=".tmp",
         ) as tmp:
-            writer(tmp)
             tmp_path = Path(tmp.name)
+            writer(tmp)
         if mode is not None and sys.platform != "win32":
             tmp_path.chmod(mode)
+        if before_replace is not None:
+            before_replace()
         tmp_path.replace(path)
         return True
     except OSError as e:
@@ -542,19 +550,42 @@ def write_settings_hybrid(
     tag: str | None = None,
     source: str | None = None,
     preserve_bom: bool = False,
+    check_source: bool = False,
 ) -> bool:
     """既存のスカラー値はJSONC上で編集し、構造変更や編集できない場合はJSONで原子的に保存する。
 
     合成元の本文を渡した場合は、その本文へのルートキーの追加でもコメントと改行を保つ。
     本文を渡さない呼び出し元では従来どおり、スカラーの編集時にファイルを読み直す。
     """
+    expected = source.encode("utf-8") if source is not None else None
+
+    def verify_source() -> None:
+        try:
+            current = path.read_bytes()
+        except FileNotFoundError:
+            current = None
+        if current != expected:
+            raise OSError("設定を読み取った後に別の処理が編集したため保存を中止しました")
+
+    def save(content: str) -> bool:
+        if not check_source:
+            return atomic_write_bytes(path, content.encode("utf-8"), tag=tag)
+        return _atomic_write(
+            path,
+            lambda tmp: tmp.write(content.encode("utf-8")),
+            binary=True,
+            mode=None,
+            tag=tag,
+            before_replace=verify_source,
+        )
+
     unedited = source
     if source is not None and isinstance(original, dict) and isinstance(data, dict):
         additions = {key: value for key, value in data.items() if key not in original}
         if additions:
             source = _insert_root_settings(source, additions, has_members=bool(original))
             original = original | additions
-    if source is not None or path.exists():
+    if source is not None or (not check_source and path.exists()):
         updates = _collect_value_only_updates(original, data)
         if updates is not None:
             with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
@@ -562,7 +593,10 @@ def write_settings_hybrid(
                     source = unedited = path.read_text(encoding="utf-8", newline="")
                 if updates:
                     source = _edit_jsonc_values(source, updates)
-                return source == unedited or atomic_write_bytes(path, source.encode("utf-8"), tag=tag)
+                return source == unedited or save(source)
+    if check_source:
+        bom = "\ufeff" if preserve_bom and expected is not None and expected.startswith(codecs.BOM_UTF8) else ""
+        return save(bom + json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 

@@ -586,3 +586,23 @@ def test_run_fails_without_dotfiles_root(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
     assert outcome.failure == "dotfilesの作業ツリーを解決できない"
     assert not settings_path.exists()
+
+
+@pytest.mark.parametrize("exists", [True, False])
+def test_run_rejects_edit_after_merging(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exists: bool) -> None:
+    path = _setup_run_paths(tmp_path, monkeypatch, {"cleanupPeriodDays": 180})
+    if exists:
+        path.write_text('{"cleanupPeriodDays": 30}', encoding="utf-8")
+    edited = '/* 他の処理による編集 */ {"theme": "dark"}\n'
+    real_write = common.write_settings_hybrid
+
+    def edit_then_write(*args, **kwargs):
+        path.write_text(edited, encoding="utf-8")
+        return real_write(*args, **kwargs)
+
+    monkeypatch.setattr(common, "write_settings_hybrid", edit_then_write)
+
+    outcome = mod.run()
+    assert not outcome.changed and outcome.failure is not None
+    assert path.read_text(encoding="utf-8") == edited
+    assert not list(tmp_path.glob("settings.json.*.tmp"))
