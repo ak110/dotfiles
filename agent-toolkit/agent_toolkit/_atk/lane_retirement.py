@@ -79,6 +79,35 @@ def upstream_branches(repo: pathlib.Path) -> set[str]:
     }
 
 
+def symbolic_branches(repo: pathlib.Path) -> set[str]:
+    return {
+        ref
+        for line in _lane_records.git(repo, "for-each-ref", "--format=%(refname)%00%(symref)", "refs/heads").splitlines()
+        for ref, _, target in [line.partition("\0")]
+        if target
+    }
+
+
+def operation_branches(repo: pathlib.Path) -> set[str]:
+    common = pathlib.Path(_lane_records.common(repo))
+    branches: set[str] = set()
+    try:
+        linked = list((common / "worktrees").iterdir())
+    except FileNotFoundError:
+        linked = []
+    for gitdir in (common, *(path for path in linked if path.is_dir())):
+        for name in ("rebase-apply/head-name", "rebase-merge/head-name", "BISECT_START", "rebase-merge/update-refs"):
+            try:
+                lines = (gitdir / name).read_text(encoding="utf-8", errors="surrogateescape").splitlines()
+            except FileNotFoundError:
+                continue
+            if name == "rebase-merge/update-refs":
+                branches.update(lines[::3])
+            elif lines and lines[0] != "detached HEAD":
+                branches.add(lines[0] if lines[0].startswith("refs/") else f"refs/heads/{lines[0]}")
+    return branches
+
+
 def orphan_candidates(
     repo: pathlib.Path, registered: list[dict[str, typing.Any]], *, caller: pathlib.Path | None = None
 ) -> list[dict[str, str | None]]:
@@ -92,6 +121,7 @@ def orphan_candidates(
     if caller is not None:
         protected.update(path for path in trees if caller.resolve().is_relative_to(path))
     upstream = upstream_branches(repo)
+    symbolic = symbolic_branches(repo)
     managed_root = temp_paths.temp_root_path().resolve()
     nested_paths = {parent for path in set(trees) | protected | owned_paths for parent in pathlib.Path(path).parents}
 
@@ -108,6 +138,8 @@ def orphan_candidates(
             reason = "主・呼出元・統合先のworktreeまたはbranchを回収しない"
         elif path is not None and pathlib.Path(path) in nested_paths:
             reason = "別のworktreeを内包するため回収しない"
+        elif f"refs/heads/{branch}" in symbolic:
+            reason = "シンボリックrefを回収しない"
         elif branch in upstream:
             reason = "upstreamを設定したbranchを回収しない"
         elif origin == "unknown":
