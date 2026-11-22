@@ -166,6 +166,7 @@ def test_review_adoption_counts_periods_levels_reasons_and_models(dataset, capsy
         (11, "判断主体不明"),
     }
     notes, _, _ = dataset
+    assert current["unknown_model_tables"] == [str(notes / "plans/2026/11/03-0001_unknown.exec-review.tsv")]
     assert current["excluded_judgment_count"] == 8
     assert current["excluded_judgments"] == [
         {"table": str(notes / "plans/2026/11" / name), "row": number}
@@ -245,3 +246,13 @@ def test_review_adoption_finds_request_after_large_preamble_and_ignores_quotes(d
     assert "モデル不明" not in current["by_model"]
     assert [model for model in current["by_model"] if model.startswith("codex:")] == ["codex:gpt-6.1-sol/medium"]
     assert not any("claude-quote-1" in model for model in current["by_model"])
+
+
+def test_one_review_record_attributes_every_matching_table(dataset, capsys):
+    _, claude, _ = dataset
+    first = "03-0000_known.exec-review.tsv"
+    second = "03-0001_unknown.exec-review.tsv"
+    _claude_review(claude / "multi-review.jsonl", f"{first}、{second}", "claude-opus-5-5")
+    periods = {row["period"]: row for row in _run(dataset, capsys) if row["kind"] == "review-adoption-period"}
+    assert not periods["current"]["unknown_model_tables"]
+    assert periods["current"]["by_model"]["claude:claude-opus-5-5/high"]["tables"] == 3

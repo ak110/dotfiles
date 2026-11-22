@@ -216,7 +216,7 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
                 _notice(
                     f"同じ計測種別で{REVIEW_SECONDS}秒以上の完了が3件続いた。{kind}: "
                     + "、".join(f"{value:.1f}秒" for value in review)
-                    + f"。合計{sum(review):.1f}秒。",
+                    + "。",
                     tag="warn",
                     removable_cause=False,
                     subject=f"{actor}:{identifier}:review",

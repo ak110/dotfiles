@@ -95,7 +95,8 @@ def test_slow_runs_reset_and_notify_once_per_interval(_clock, capsys):
         _invoke(dispatch.main, {**payload, "hook_event_name": "PreToolUse"}, capsys)
         outputs.append(_invoke(posttooluse.main, {**payload, "duration_ms": seconds * 1000}, capsys))
     assert all("3件続いた" not in outputs[index] for index in (0, 1, 2, 4, 5, 6, 7))
-    assert "合計30.0秒" in outputs[3] and "3件続いた" in outputs[8]
+    assert "10.0秒、10.0秒、10.0秒" in outputs[3] and "合計" not in outputs[3]
+    assert "3件続いた" in outputs[8]
     assert "無進捗" not in outputs[3]
 
 
@@ -158,7 +159,7 @@ def test_background_wait_does_not_reset_the_measured_work_sequence(_clock):
 
     last = _payload("work-last", duration_ms=10000)
     command_timing.start(last)
-    assert any("合計30.0秒" in line for line in command_timing.observe(last))
+    assert any("10.0秒、10.0秒、10.0秒" in line and "合計" not in line for line in command_timing.observe(last))
 
 
 @pytest.mark.parametrize(

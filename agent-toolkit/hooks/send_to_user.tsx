@@ -26,7 +26,7 @@ function statusCheck<const Value extends string, const Category extends string>(
 const STATUS_CHECKS = [
   statusCheck(
     "不要",
-    ["非欠陥", "処置済み", "被覆", "見送り"],
+    ["非欠陥", "処置済み", "被覆", "所有範囲外", "見送り"],
     "<理由>",
     "`見送り`の理由には`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`をセミコロンで区切って書け。",
   ),
@@ -138,6 +138,11 @@ function reportedLines(message: string): string[] {
 // 区分名で始まらない値、未調査を理由にした`不要`、逸脱の報告に欠けた記録の行の警告を、重複を除いて返す。
 export function reportWarnings(message: string): string[] {
   const warnings = new Set<string>();
+  const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
+  if (clockClaims.some((line) => /(?:^|[^0-9A-Za-z_])(?:(?:[01]?\d|2[0-3]):(?:[0-5][xX]|[xX][0-9xX])|(?:[012][xX]|[xX][0-9xX]):(?:[0-5][0-9xX]|[xX][0-9xX]))(?![0-9A-Za-z_])/.test(line))) {
+    warnings.add(automatedMessage("send-to-user", "warn",
+      "本文は表示済みである。時刻の一部が伏せ字になっている。観測値か、推定と分かる時間帯を示す。"));
+  }
   for (const line of reportedLines(message)) {
     for (const matched of line.matchAll(STATUS_MARKER)) {
       const check = STATUS_CHECKS.find((candidate) => candidate.value === matched[1])!;

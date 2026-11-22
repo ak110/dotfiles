@@ -59,6 +59,8 @@
    読みは`agent-toolkit:atk-mode/references/omission-check.md`「点検類型」(l)で比較する。
    コード例は実効設定と効果に分け、`agent-toolkit:atk-mode/references/drafting-decisions.md`「採否と実現方式の確定」で成立条件と保つ機能を確かめる。
    定義元、被覆、同じ条件での観測、改善の採否と理由を対応表にし、充足には同じ条件で働いた観測を求める。
+   CLIやSDKが入力を変換する場合は、呼出元が問題の形式を直接作らないことと、変換後の入力にも問題の形式がないことを区別する。
+   採否が変わる境界だけ、実際に使うCLIやSDKの版で変換後の入力を確かめる。
    観測が取れなければ未確認とし、ユーザーへは調査中と伝える。
    判定と観測は指摘対応記録の`material_claims`に残す。
    URLを含む発話を受けた投入では、途中で初めて受けた場合も`atk wi submission end`が検査する（形式は同コマンドの`--help`）。

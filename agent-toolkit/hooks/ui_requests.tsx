@@ -78,7 +78,11 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           const placed = await $.ui.place({ id: request.id });
           ok = placed.isPlaced;
           reason = placed.isPlaced ? "" : placed.reason;
-          if (ok) reason = [turnEndAfterDelivery, ...reportWarnings(request.input.message)].join("\n");
+          if (ok) {
+            const delivered = (await $.state.get({ plugin: "agent-toolkit", key: "uiDeliveryTimes" })).value ?? {};
+            await $.state.set({ plugin: "agent-toolkit", key: "uiDeliveryTimes" }, { ...delivered, [request.id]: Date.now() });
+            reason = [turnEndAfterDelivery, ...reportWarnings(request.input.message)].join("\n");
+          }
           if (!ok) await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, messages);
           else if (typeof request.input.tool_use_id === "string") {
             const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
@@ -178,10 +182,15 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
     if (e.props.plugin !== $.plugin.name) return next(e);
     const message = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
     if (message === undefined) return next(e);
+    const deliveredAt = (await $.state.get({ plugin: "agent-toolkit", key: "uiDeliveryTimes" })).value?.[e.props.id];
     const { Markdown, Box } = $.ui.resolve(e);
     // 前後の会話行と区別しやすいよう、本文の上下に1行の余白を置く。
     return (
       <Box marginTop={1} marginBottom={1}>
+        {deliveredAt !== undefined && <Markdown text={`送達時刻: ${new Intl.DateTimeFormat("ja-JP", {
+          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+          hourCycle: "h23", timeZoneName: "shortOffset",
+        }).format(deliveredAt)}`} />}
         <Markdown text={message} />
       </Box>
     );

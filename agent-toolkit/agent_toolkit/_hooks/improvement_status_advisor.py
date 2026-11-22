@@ -29,7 +29,7 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 # `不要`の理由の先頭に置く区分名。
 # 書式と区分の定義元は`atk-mode`の`playbooks/main-reporting.md`「進捗報告」にある。通知は区分を本文に挙げる。
-_UNNEEDED_CATEGORIES = ("非欠陥", "処置済み", "被覆", "見送り")
+_UNNEEDED_CATEGORIES = ("非欠陥", "処置済み", "被覆", "所有範囲外", "見送り")
 _UNNEEDED_STATUS = re.compile(r"AWI化ステータス:\s*不要[ \t]*")
 _CATEGORY_STATUS = re.compile(r"AWI化ステータス:\s*(不要|予定)[ \t]*")
 _DEFERRAL_FIELDS = ("作り込み側の候補", "見逃し側の候補", "比較結論")

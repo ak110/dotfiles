@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import UTC, datetime
 
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import read_state, update_state
@@ -253,9 +252,10 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
     agent_id = resolve_hook_agent_id(payload)
     current_time = time.time() if now is None else now
     elapsed: float | None = None
+    since_notice: float | None = None
 
     def _mutate(state: dict) -> dict | None:
-        nonlocal elapsed
+        nonlocal elapsed, since_notice
         entries = state.get(STATE_KEY)
         entries = dict(entries) if isinstance(entries, dict) else {}
         entry = entries.get(agent_id)
@@ -279,6 +279,8 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         reserved = reserved_at is not None and reserved_at > confirmed and current_time - reserved_at < RESERVATION_SECONDS
         if due and not reserved:
             elapsed = current_time - started_at
+            if confirmed > started_at:
+                since_notice = current_time - confirmed
             entry[_RESERVED_AT_KEY] = current_time
         elif not (isinstance(delivered, dict) and agent_id in delivered):
             return None
@@ -290,7 +292,6 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         return None
     # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
     _reservations.append((session_id, agent_id, current_time))
-    observed_at = datetime.fromtimestamp(current_time, tz=UTC).isoformat()
     elapsed_text = (
         f"この主体の初回観測から{_format_elapsed(elapsed)}たった。"
         if elapsed >= 0
@@ -298,7 +299,8 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
     )
     main_agent = is_main_agent_context(payload)
     instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
-    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _saturation_text(session_id) + instruction
+    previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
+    body = elapsed_text + previous + _saturation_text(session_id) + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None

@@ -225,7 +225,8 @@ def test_notice_reports_elapsed_time_since_session_start(elapsed_seconds: int, e
     _seed(sid, "main", started_at=now - elapsed_seconds, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
     assert notice is not None and f"この主体の初回観測から{expected}たった。" in notice
-    assert "1970-01-02T03:46:40+00:00" in notice
+    assert "前回の通知から30分たった" in notice
+    assert "+00:00" not in notice
 
 
 def test_agents_in_same_session_have_independent_timers() -> None:
@@ -238,16 +239,14 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
 
 
-@pytest.mark.parametrize(
-    ("now", "expected"),
-    [(86399.0, "1970-01-01T23:59:59+00:00"), (86400.0, "1970-01-02T00:00:00+00:00")],
-)
-def test_notice_observation_keeps_the_date_at_midnight(now: float, expected: str) -> None:
-    """日付またぎでも、通知生成に使った時計をオフセット付きで伝える。"""
+@pytest.mark.parametrize("now", [86399.0, 86400.0])
+def test_notice_reports_elapsed_time_across_midnight(now: float) -> None:
+    """日付をまたいでも、初回通知は初回観測からの経過だけを示す。"""
     sid = _session_id()
     _seed(sid, "main", started_at=now - _INTERVAL, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
-    assert notice is not None and expected in notice
+    assert notice is not None and "初回観測から30分" in notice
+    assert "前回の通知から" not in notice and "+00:00" not in notice
     progress_self_check.release_reservations()
 
 

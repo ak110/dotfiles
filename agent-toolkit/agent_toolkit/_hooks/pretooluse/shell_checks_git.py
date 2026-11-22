@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+lazy import subprocess
 lazy from collections.abc import Iterable, Sequence
 
 lazy from agent_toolkit._common import shell_cwd
@@ -12,6 +13,7 @@ lazy from agent_toolkit._common.heredocs import mask_heredoc_bodies
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer
 lazy from agent_toolkit._common.shell_segments import ExecutionSegment
 lazy from agent_toolkit._common.shell_tokens import is_atk_command, strip_redirections
+lazy from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._hooks.pretooluse.notices import _block_notice, _llm_notice
 
@@ -215,6 +217,70 @@ def _git_commit_messages(command: str, *, cwd: str = "") -> Iterable[str]:
         if unknown or not messages:
             continue
         yield "\n\n".join(messages)
+
+
+def duplicate_autosquash_subject(command: str, cwd: str) -> str | None:
+    """対象リポジトリと未公開件名を解決できる場合だけ、誤った統合先を拒否する。"""
+    for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd):
+        tokens = invocation.segment.tokens
+        parsed = git_subcommand_tokens(invocation.segment)
+        if parsed is None or parsed[0] != "commit" or not current.resolved:
+            continue
+        if not tokens or pathlib.Path(tokens[0]).name not in {"git", "git.exe"}:
+            continue
+        prefix = tokens[1 : len(tokens) - len(parsed[1]) - 1]
+        if len(prefix) % 2 or any(key != "-C" for key in prefix[::2]) or any(is_unknown_word(x) for x in prefix):
+            continue
+        for flag, argument in git_commit_options(parsed[1]):
+            if flag not in {"--fixup", "--squash"} or not argument or is_unknown_word(argument) or "\x00" in argument:
+                continue
+            modifier, sep, rev = argument.partition(":")
+            revise = flag == "--fixup" and sep and modifier in {"amend", "reword"}
+            subject = _duplicate_subject(current.path, prefix, rev if revise else argument)
+            if subject is None:
+                continue
+            oid = subject
+            action = (
+                "amend/rewordのfixupを作らずautosquashを中止する。"
+                if revise
+                else f"`{flag}`を外し、件名を`{'fixup' if flag == '--fixup' else 'squash'}! {oid}`にして作り直す。"
+            )
+            return _block_notice(
+                "未公開の履歴に同じ件名のcommitがあり、autosquashの統合先を一意に決められない。",
+                fix=action + _COMMIT_BLOCK_RERUN,
+            )
+    return None
+
+
+def _duplicate_subject(cwd: str, prefix: Sequence[str], revision: str) -> str | None:
+    try:
+        target = git_command.run(
+            [*prefix, "show", "-s", "--format=%H%x00%s", "--end-of-options", f"{revision}^{{commit}}", "--"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        oid, boundary, subject = target.stdout.rstrip("\n").partition("\x00")
+        if target.returncode or not boundary or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", oid):
+            return None
+        log = git_command.run(
+            [*prefix, "log", "--format=%H%x00%s", "HEAD", "--not", "--remotes", "--"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+        if log.returncode == 0 and any(
+            other_oid != oid and other_subject == subject
+            for other_oid, _, other_subject in (line.partition("\x00") for line in log.stdout.split("\n"))
+        ):
+            return oid
+    except OSError, subprocess.TimeoutExpired:
+        pass
+    return None
 
 
 def _unknown_global_words(prefix: Sequence[str]) -> bool | None:

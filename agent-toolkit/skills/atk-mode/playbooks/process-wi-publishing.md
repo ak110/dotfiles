@@ -174,7 +174,8 @@
    常駐起動の統括と単独のメインのホストの終了はreport-completionが所有する。
 5. 通常の終了時の`atk agents-exit-session`と、process-loopの子セッションの終了後の処理は、所有セッションに属するレーンの資源を`atk lane delete`と同じ条件で回収する。
    メインは終了の要求の前にも既知の残った資源と誤った変更を`agent-toolkit:atk-mode/references/operations.md`「プロセス終了の安全規定」で調べ、解消できる保持理由を正して既存の回収操作へ戻す。
-   返却に未回収の対象があれば`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「未回収レーンの再回収」に従い、保持が要る対象は保護する成果、現在の担当、残るユーザー判断と再開条件を報告へ記録する。
+   返却に未回収の対象があれば`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「未回収レーンの再回収」に従い、認可の範囲で再回収する。
+   保持が残る対象は`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」の手順2に従い、使用中の保護とユーザーへの個別UWIを区別する。
    回収の失敗をホストの終了要求の成功で覆わず、次回の`atk lane delete --list`へ引き継ぐ。
    統括は各担当の終了結果と続行の予定、保持すべき成果を検収し、既存のレーンの回収条件に従う。
 

@@ -30,6 +30,8 @@ Claude Codeは`additionalContext`を10,000文字で保存先とプレビュー�
 """
 
 RETURN_CRITERION = (
+    "要求・制約・訂正を含む発話を受けたら、成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映せよ。"
+    "質問、状況照会、継続だけなら更新しない。"
     "要求の統合・回答後の再開・完了判断は、`agent-toolkit/skills/atk-mode/references/work-contract.md`"
     "「追加入力の統合」「更新する時点」「工程境界での要求と成果の確認」に従え。"
 )

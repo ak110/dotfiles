@@ -10,7 +10,13 @@ import pathlib
 import pytest
 
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
+from agent_toolkit._hooks import (
+    termination_evidence,
+    termination_evidence_operations,
+    termination_order_advisor,
+    user_prompt_submit,
+)
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import (
     _missing_completion,
     human_input,
@@ -164,3 +170,17 @@ def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path
     assert decision == "notify"
     assert "作業 work-1: commit" in reason
     assert later_id not in reason
+
+
+def test_managed_temp_exemption_preserves_linked_external_repository(tmp_path, monkeypatch):
+    temporary = tmp_path / "managed"
+    temporary.mkdir()
+    isolated = git_repository.init_repository(temporary / "clone")
+    external = git_repository.init_repository(tmp_path / "normal")
+    git_repository.run_git(external, "commit", "--allow-empty", "-m", "初期")
+    linked = temporary / "linked"
+    git_repository.run_git(external, "worktree", "add", "--detach", str(linked))
+    monkeypatch.setattr(termination_evidence_operations, "temp_root_path", lambda: temporary)
+    assert termination_evidence_operations._temporary_git_repository(isolated)
+    assert not termination_evidence_operations._temporary_git_repository(linked)
+    assert not termination_evidence_operations._temporary_git_repository(external)

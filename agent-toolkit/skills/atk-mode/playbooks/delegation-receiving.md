@@ -119,6 +119,10 @@ process-wiのレーンの返却は`agent-toolkit:atk-mode/playbooks/lane-receipt
    応答欄は`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の行頭ラベルと構成で書き、`atk review-table respond`で更新する（ラベルが足りないと更新は失敗する）。
 7. 委譲先の動作や運用そのものを分析する時は、稼働中のその委譲先の完了報告も観測に含めてから結論を出す。
 
+受付IDを受け取った改善点は `agent-toolkit:atk-mode/playbooks/main-reporting.md` の受付手順で証拠と処置を確認する。
+正式WIへの引き継ぎは、未処置の候補と確定した結果を比べ、別の親から届いた報告も担当メインが1つの判断にまとめる。
+即時通知は受付から独立させ、受付失敗の報告も中継する。
+
 ### 改善点の中継と送達の記録
 
 実行中の通知、返却（`Agent`ツールの戻り値を含む）、`agents_server`の結果に`気付いた改善点:`で始まる行があれば、次の順で扱う。

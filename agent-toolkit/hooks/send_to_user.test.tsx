@@ -54,6 +54,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         expect(notice).toMatch(/質問.*AskUserQuestion/);
         expect(notice).toContain(`await tools['${tool}']({message})`);
         expect(notice).toContain("呼出しに失敗した時だけ通常本文");
+        expect(notice).toContain("searchTools");
         expect(notice).not.toContain("ツールが無い時");
         expect(notice).toContain("…");
         expect(notice.length).toBeLessThanOrEqual(300);

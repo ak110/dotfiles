@@ -20,6 +20,10 @@
    両立しない部分があれば保存を控え、元の要求と回答を優先して本文を直す。
    ユーザーだけが決められる値が残る場合に限り、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認する。
 3. 保存せずに検証する。
+   登録した環境のホーム・ドライブ・一時領域・ローカルログを開かなくても、判断・再現・実行に必要な情報が本文にあるか確かめる。
+   必須の情報が参照にしかなければ原稿へ戻す。
+   リポジトリ相対パスと担当が利用できる共有資料は補助に使える。
+   引用を匿名化した場合は逐語引用とせず、匿名化した抜粋と明記する。
    - 新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <source>`を使う。
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。

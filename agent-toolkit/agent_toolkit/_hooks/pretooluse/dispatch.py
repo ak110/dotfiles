@@ -89,6 +89,7 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks import (
     bugfix_gate,
+    clock_claims,
     command_timing,
     progress_self_check,
     repository_protection,
@@ -137,6 +138,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import duplicate_autosquash_subject
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
 lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
@@ -272,7 +274,11 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     ):
         return Decision(block=bugfix_block)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
-        return Decision(allow=True)
+        message = tool_input.get("message")
+        timing = (
+            clock_claims.warning([message], payload) if is_send_to_user_tool(tool_name) and isinstance(message, str) else None
+        )
+        return Decision(allow=True, context=timing)
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
@@ -304,7 +310,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         notices += (trailer_notice,)
     if tool_name in _SEARCH_TOOL_NAMES:
         return Decision(notices=notices)
-    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=notices)
+    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd, payload), notices=notices)
 
 
 def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
@@ -360,6 +366,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         message = block()
         if message is not None:
             return Decision(block=message)
+    if duplicate_subject := duplicate_autosquash_subject(command, cwd):
+        return Decision(block=duplicate_subject)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
     if messages:
         checks_attribution = is_codex or not _claude_commit_attribution_disabled(cwd)
@@ -368,6 +376,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if commit_block is not None:
             return Decision(block=commit_block)
     warnings: list[str] = []
+    if timing := clock_claims.warning(clock_claims.wi_bodies(command, cwd), payload):
+        warnings.append(timing)
     for check in (
         _check_bash_option_after_terminator,
         _check_bash_atk_output_loss,
@@ -597,7 +607,7 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     return Decision(context=format_warning_context(warnings) if warnings else None)
 
 
-def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str) -> Decision:
+def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str, payload: dict | None = None) -> Decision:
     """共通編集単位ごとに警告が必要か判定する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの`apply_patch`を`_hook_tool_input`が
@@ -611,4 +621,9 @@ def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str) -> Decision:
     warnings = _check_lockfiles(tool_name, [path for operation in operations for path in operation.display_paths])
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images))
+    if timing := clock_claims.warning(
+        (fragment.after for operation in operations for fragment in operation.fragments if isinstance(fragment.after, str)),
+        payload,
+    ):
+        warnings.append(timing)
     return Decision(context=format_warning_context(warnings) if warnings else None)

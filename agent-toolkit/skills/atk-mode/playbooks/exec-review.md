@@ -4,6 +4,9 @@
 レビューの基準は`agent-basics:review-standards`が定義元で、本書はagent-toolkit固有の差分だけを置く。
 終了条件は、全条件の判定と管理表の検査を終え、役割文書「出力」の形式で返した時点である。
 
+条件表の各行は、`agent-toolkit:atk-mode/references/review-contract.md` に従って条件本文または一意な原本参照を受け取る。
+行数や出典番号が正しくても、原本の後続行にある条件や具体的成果が欠けていないかを意味検収する。
+
 ## 着手時の確認
 
 1. `agent-basics:review-standards`と`agent-basics:writing-standards`を起動し、前者は索引のレビュー担当と実行レビューの行、後者は変更ファイルの成果物の種類に合う資料を読む。

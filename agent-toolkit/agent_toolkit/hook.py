@@ -188,7 +188,10 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
             "この診断は元の操作の成否を示さない。",
             tag="warn",
             removable_cause=False,
-            fix="元の操作の結果を確認せよ。自動処理の失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            fix=(
+                "元の操作と自動処理の成否を分けて確認せよ。再発を待たずに`agent-basics:bugfix`の初動を適用し、"
+                "原因と影響を調べよ。認可の範囲内で自ら是正し、担当外の是正だけを委譲元へ渡せ。"
+            ),
         )
         _append_warning(result, subcommand, warning, payload)
     if response is None and result:
