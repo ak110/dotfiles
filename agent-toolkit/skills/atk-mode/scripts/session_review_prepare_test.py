@@ -535,9 +535,17 @@ def test_default_review_uses_completed_scope_and_full_ignores_it(tmp_path, capsy
         entry["path"] = str(tmp_path / "missing.jsonl")
     orphan = reviewed / "orphan.json"
     session_review.write(orphan, orphan_scope)
+    referenced = reviewed / "referenced.json"
+    referenced.write_bytes(expired.read_bytes())
+    os.utime(referenced, (1_700_000_000, 1_700_000_000))
+    session_review.write(
+        session_review.directory() / "runs" / "prior.json",
+        {"status": "completed", "targets": [{"key": referenced.stem}]},
+    )
     assert session_review_state.main(["complete", "--prepared", str(prepared)]) == 0
     assert not orphan.exists()
     assert not expired.exists()
+    assert referenced.exists()
     capsys.readouterr()
 
     support.write_jsonl(transcript, [initial, appended])
@@ -554,4 +562,12 @@ def test_default_review_uses_completed_scope_and_full_ignores_it(tmp_path, capsy
     result = capsys.readouterr()
     assert json.loads(result.out)["session_id"] == transcript.stem
     assert str(broken) in result.err
-    assert "session-review-state complete" in result.err
+    assert "session-review-state -- complete --prepared" in result.err
+    broken.unlink()
+    invalid_scope = reviewed / "broken.json"
+    for invalid in ("{", '{"version": 1, "records": []}', '{"version": 1, "records": null}'):
+        invalid_scope.write_text(invalid, encoding="utf-8")
+        assert session_review_state.main(["complete", "--prepared", str(prepared)]) == 0
+        result = capsys.readouterr()
+        assert json.loads(result.out)["session_id"] == transcript.stem
+        assert str(invalid_scope) in result.err

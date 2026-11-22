@@ -376,7 +376,10 @@ def key(host: str, session_id: str) -> str:
 
 def read(path: pathlib.Path) -> dict[str, Any]:
     """保存済みJSONオブジェクトを読む。破損を空集合へ読み替えない。"""
-    value = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise ValueError(f"{path}: {error}") from error
     if not isinstance(value, dict):
         raise ValueError(f"JSONオブジェクトでない: {path}")
     return value
@@ -803,8 +806,8 @@ def sweep_reviewed(*, now: float) -> None:
     with locked():
         referenced = {target["key"] for target in pending()}
         for path in (directory() / "runs").glob("*.json"):
+            manifest = read(path)
             try:
-                manifest = read(path)
                 # 旧形式の完了済みbundleも、batchの回収まで成功範囲を参照する。
                 if manifest["status"] != "resolved":
                     referenced.update(target["key"] for target in manifest["targets"])
@@ -818,9 +821,15 @@ def _sweep_reviewed(referenced: set[str], *, expired_before: float | None = None
         if path.stem in referenced:
             continue
         value = read(path)
-        if (
-            expired_before is not None
-            and path.stat().st_mtime < expired_before
-            or all(not pathlib.Path(item["path"]).exists() for item in value["records"].values())
-        ):
-            path.unlink()
+        try:
+            records = value["records"]
+            if not isinstance(records, dict):
+                raise TypeError("records")
+            if (
+                expired_before is not None
+                and path.stat().st_mtime < expired_before
+                or all(not pathlib.Path(item["path"]).exists() for item in records.values())
+            ):
+                path.unlink()
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError(f"処理済み範囲を回収できない: {path}: {error}") from error

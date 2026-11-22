@@ -33,7 +33,8 @@ def main(argv: list[str] | None = None) -> int:
                 # 範囲の確定は完了済みなので、回収の診断を成功JSONに混ぜない。
                 print(
                     f"警告: 処理済み範囲の回収を保留: {error}。保存物の内容とアクセス権を確かめ、"
-                    "原因を直して session-review-state complete を再実行する",
+                    "原因を直して atk run-script session-review-state -- complete "
+                    "--prepared <元の準備結果の絶対パス> を再実行する",
                     file=sys.stderr,
                 )
         else:
