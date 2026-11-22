@@ -518,8 +518,10 @@ def _selection_procedure(plugin_root: pathlib.Path) -> str:
 
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
-    """生成・消費が共有する書式の定義（書式、欄の意味、生成入力を1か所に持つ）を取得する。"""
-    return (plugin_root / "skills/atk-mode/references/process-wi-selection-format.md").read_text(encoding="utf-8")
+    """生成・消費が共有する選定の書式、欄の意味、生成入力を取得する。"""
+    references = plugin_root / "skills/atk-mode/references"
+    names = ("process-wi-selection-format.md", "process-wi-selection-fields.md")
+    return "\n".join((references / name).read_text(encoding="utf-8") for name in names)
 
 
 def _selection_documents(plugin_root: pathlib.Path) -> str:

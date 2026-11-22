@@ -13,6 +13,13 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
   委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を使う。
 - `Stop`と`SubagentStop`の判別は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「委譲先での発火」に従う。
 
+## 同期hookの所要
+
+[Claude Code公式のhook仕様](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)では、既定の同期hookは完了まで実行を止める。
+[タイムアウト](https://code.claude.com/docs/en/hooks#timeouts)はhookの種類・イベントで異なり、個々の処理に許容される所要の目安ではない。
+圧縮後の要約は、WI `20261123-012545-001.md` に記録された事例では内部の15秒上限に達し、手動では約45秒で成功した。
+入力の量で所要が大きく変わる処理は同期hookから外し、必要な結果を得る手動操作か、結果を回収する主体が明確な背景処理へ移す。
+
 ## フック実装の配置先（個人フックと配布物）
 
 dotfiles固有の運用（配布先の構成、個人の命名規則など）を前提にするhookは個人のhookへ、前提を持たない汎用の機能はプラグインへ置く。

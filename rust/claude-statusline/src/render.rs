@@ -1,4 +1,4 @@
-//! statusline系の各行（subagentStatusLineとagents_serverのsession行）が共有する描画補助。
+//! agents_serverのsession行の描画補助。
 //!
 //! 表示幅の計算、省略記号付きの切り詰め、経過時間の整形と、名前列・説明・右寄せ要素の
 //! 共通レイアウトを持つ。行の内容を組み立てる各モジュールは、ここから同じレイアウトを使う。
@@ -154,4 +154,38 @@ pub(crate) fn truncate(text: &str, budget: usize) -> String {
     }
     result.push_str(ELLIPSIS);
     result
+}
+
+pub(crate) fn format_tokens(
+    token_count: Option<&Value>,
+    context_window_size: Option<&Value>,
+) -> Option<String> {
+    let count = as_number(token_count)?;
+    let mut text = format!("{:.1}k", count / 1000.0);
+    if let Some(pct) = context_usage_pct(token_count, context_window_size) {
+        text.push_str(&format!("/{pct:.0}%"));
+    }
+    Some(text)
+}
+
+fn context_usage_pct(
+    token_count: Option<&Value>,
+    context_window_size: Option<&Value>,
+) -> Option<f64> {
+    let count = as_number(token_count)?;
+    let window = as_number(context_window_size)?;
+    if window <= 0.0 {
+        return None;
+    }
+    let percentage = count / window * 100.0;
+    percentage.is_finite().then_some(percentage)
+}
+
+fn as_number(value: Option<&Value>) -> Option<f64> {
+    match value {
+        Some(Value::Number(n)) => n
+            .as_f64()
+            .filter(|value| value.is_finite() && *value >= 0.0),
+        _ => None,
+    }
 }

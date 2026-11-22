@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::render::format_tokens;
 use crate::render::{display_width, format_elapsed, normalize_description, render_line};
-use crate::subagent::format_tokens;
 
 use super::{DisplaySession, Session, StateFile, USAGE_LIMIT_ERROR_TYPE};
 
