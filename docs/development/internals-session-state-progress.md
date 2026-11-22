@@ -25,9 +25,6 @@
 - `process_wi_skill_invoked`: process-wi起動フラグ。
   PostToolUse(Skill)・UserPromptSubmitが記録、`atk agents-exit-session`の機械可読応答で偽へ戻す。
   セッション終了まで保持する
-- `autonomous_exit_invoked`: `_hooks/posttooluse.py`が`atk agents-exit-session`の実行・機械可読応答を記録。
-  `_hooks/autonomous_exit.py`がprocess-loopのStop判定で参照し、未完了バックグラウンドタスクによる終了取消で偽、再実行で真とする。
-  セッション中だけ保持し、スキル完了では再利用しない
 - `stop_no_tool_turn_count`: `agent-toolkit/agent_toolkit/_hooks/busy_loop_guard.py`が、自セッションでツール呼び出しをしなかったターンの連続回数を記録し、常駐ループの停止判定に使用する。
   ツール呼び出しを観測したターン、委譲先やバックグラウンドタスクの完了を待つターン、停止工程の実行時は0に戻す。
   セッション終了まで保持する

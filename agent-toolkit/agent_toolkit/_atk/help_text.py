@@ -249,6 +249,7 @@ HELP: dict[str, dict[str, str]] = {
         "判定に不確かさがあればuncertainをtrueとする。保存状態は変更しない。\n"
         "前提: 投入先をoriginの正規化URLに対応付けられること。\n"
         "復元・後始末: 活動がある時は終了を待ってから候補と活動を確かめ直す。",
+        "epilog": "実行例:\n\n  atk wi submission activity --target-repo /home/user/repo",
     },
     "atk wi process-loop": {
         "summary": "巡回を担う対話セッションを起動・再起動する",
@@ -444,7 +445,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane": {
         "summary": "レーン資源の作成と終了時回収を管理する",
-        "description": "レーン資源の作成と終了時回収を管理する。\n\n目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 統合後も資源を保持し、agents-exit-sessionと、process-loopの子セッションの終了後の処理が、deleteと同じ回収を行う。保持した対象は結果の理由を解消してdeleteを再実行する。",
+        "description": "レーン資源の作成と終了時回収を管理する。\n\n目的: 専用worktree・branchと所有sessionを同じ操作で登録し、session終了時に安全な資源を回収する。\n利用場面: process-wiのレーンを準備するとき、終了後の残存資源を再回収するとき。\n対象と出力: createは準備済み資源とrecord_path、deleteはremoved・retainedとresult_pathをJSONで返す。所有登録と回収結果への参照は状態ディレクトリのlanes/<session_id>/へ置く。回収結果は専用資源の外のmanaged-tempへ保存し、既存の7日保持へ委ねる。delete --listは全sessionの登録と前回結果を読み、削除しない。\n前提: 所有sessionは環境から解決し、解決できない場合は--session-idを指定する。\n復元・後始末: 利用が終わったレーンをdeleteで回収する。通常終了時はagents-exit-session、巡回では統括がセッションを終える前に同じ回収条件を使う。保持した対象は結果の理由を解消してdeleteを再実行する。",
         "epilog": "実行例:\n\n  atk lane create --repo /absolute/repo --base-branch develop --lane lane-01 --selection-file /absolute/pick-wi.yaml\n  atk lane delete",
     },
     "atk lane create": {

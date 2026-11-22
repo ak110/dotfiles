@@ -180,7 +180,6 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
     assert not list(session_registry.registry_directory().glob("*.release-*"))
 
 
-@pytest.mark.parametrize("entrypoint", ["exit", "process-loop"])
 @pytest.mark.cpu_limit(
     1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.640秒。"
 )
@@ -188,7 +187,6 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    entrypoint: str,
 ) -> None:
     """無応答の所有者を持つ複数登録を理由付きで保持し、解放待機を省いて終了要求と回収結果を返す。
 
@@ -213,17 +211,13 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     monkeypatch.setattr(_lane_activity, "get_wait_timeout", unexpected_wait)
     started = lane.time.monotonic()
     with held_registry_lock("unresponsive-0"):
-        if entrypoint == "exit":
-            monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
-            with pytest.raises(SystemExit) as ended:
-                atk.main(["agents-exit-session"])
-            assert ended.value.code == 0
-            observed = json.loads(capsys.readouterr().out)
-            assert observed["exit_session_invoked"] is True
-            result = observed["lane_cleanup"]
-        else:
-            result = process_loop_session.cleanup_lane_session("lane-test-session")
-            assert "atk lane delete --session-id lane-test-session" in capsys.readouterr().err
+        monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+        with pytest.raises(SystemExit) as ended:
+            atk.main(["agents-exit-session"])
+        assert ended.value.code == 0
+        observed = json.loads(capsys.readouterr().out)
+        assert observed["exit_session_invoked"] is True
+        result = observed["lane_cleanup"]
     assert not result["removed"] and len(result["retained"]) == 2
     for index, (record, held) in enumerate(zip((first, second), result["retained"], strict=True)):
         assert f"unresponsive-{index}" in held["reason"] and "解放応答" in held["reason"]
@@ -233,24 +227,6 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     assert pathlib.Path(result["result_path"]).is_file()
     assert not list(session_registry.registry_directory().glob("*.release-*"))
     assert lane.time.monotonic() - started < 10
-
-
-@pytest.mark.parametrize("retire_integrated", [False, True])
-def test_process_loop_cleanup_retry_preserves_retirement_mode(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], retire_integrated: bool
-) -> None:
-    """保持時の再試行が自動回収と同じ種類の判定へ戻る。"""
-
-    def retain(session_id: str, *, wait_release: bool, retire_integrated: bool = False) -> dict[str, object]:
-        assert session_id == "lane-test-session" and not wait_release
-        return {"retained": [session_id], "retirement_enabled": retire_integrated}
-
-    monkeypatch.setattr(lane, "cleanup_session", retain)
-    result = process_loop_session.cleanup_lane_session("lane-test-session", retire_integrated=retire_integrated)
-    assert result["retirement_enabled"] is retire_integrated
-    diagnostic = capsys.readouterr().err
-    option = " --retire-integrated" if retire_integrated else ""
-    assert f"atk lane delete --session-id lane-test-session{option} を実行" in diagnostic
 
 
 @pytest.mark.cpu_limit(
@@ -280,7 +256,11 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
     3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.560秒。"
 )
 def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    exit_code: int,
 ) -> None:
     """CLIの正常・異常終了後も対象別所有者が回収を判断でき、起点と選定原本を維持する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
@@ -309,7 +289,7 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
         return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None
 
     monkeypatch.setattr(process_loop_session, "_build_session_argv", child_argv)
-    args = argparse.Namespace(no_update=True)
+    args = argparse.Namespace()
 
     def execute() -> bool:
         return process_loop_session.run_process_session(
@@ -326,7 +306,9 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     assert execute() is (exit_code == 0)
     created = json.loads(snapshot.read_text(encoding="utf-8"))
     assert pathlib.Path(created["worktree"]).exists() and pathlib.Path(created["record_path"]).exists()
-    process_loop_session.cleanup_lane_session(created["session_id"])
+    code, cleanup, stderr = _invoke(capsys, "delete", "--session-id", created["session_id"])
+    assert code == 0, stderr
+    assert cleanup["removed"] == ["lane-01"]
     assert not pathlib.Path(created["worktree"]).exists() and not pathlib.Path(created["record_path"]).exists()
     assert repo.is_dir() and selected.is_file()
 

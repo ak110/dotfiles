@@ -519,21 +519,18 @@ def _stop_orchestrator(
     on_residual: Callable[[process_tree.ReclaimError], None] | None,
     known: list[psutil.Process] | None = None,
     pins: process_tree.ProcessIdentityPins | None = None,
-    raise_on_residual: bool = False,
-) -> list[str]:
-    """統括CLIを子孫ごと停止し、回収できなかった対象を診断して呼び出し元へ渡し、その記述を返す。
+) -> None:
+    """統括CLIを子孫ごと停止し、回収できなかった対象を例外で呼び出し元へ渡す。
 
     回収できない子孫は所有資源の停止未完了であり、警告ログだけで次の処理へ進むと同じ対象の次の統括と資源を奪い合う。
     """
     failure = process_tree.stop_owned_process(process, context=context, known=known or (), pins=pins)
     if failure is None:
-        return []
+        return
     process_tree.log_residual(failure.residual, context=context)
     if on_residual is not None:
         on_residual(failure)
-    if raise_on_residual:
-        raise failure
-    return failure.residual
+    raise failure
 
 
 def _raise_claude_usage_limit(
@@ -555,14 +552,13 @@ def _raise_claude_usage_limit(
         return
     if not limited:
         return
-    residual = _stop_orchestrator(
-        process, context="process-loop usage-limit switch", on_residual=on_residual, known=known, pins=pins
+    _stop_orchestrator(
+        process,
+        context="process-loop usage-limit switch",
+        on_residual=on_residual,
+        known=known,
+        pins=pins,
     )
-    if residual:
-        raise _next_action.ActionableError(
-            f"接続切替前に旧Claude CLIの終了を確認できない: {residual}",
-            next_action="記録したPIDと起動時刻から旧CLIの終了を確認して同じ会話を再開する",
-        )
     request.unlink(missing_ok=True)
     raise _ClaudeUsageLimit(identifier)
 
@@ -735,7 +731,6 @@ def _run_cli_session(
                             on_residual=on_residual,
                             known=known,
                             pins=pins,
-                            raise_on_residual=True,
                         )
                         return subprocess.CompletedProcess(argv, 1)
                     if orchestrator == "codex" and rollout is not None and _codex_usage_limit.from_rollout(rollout) is not None:
@@ -746,18 +741,16 @@ def _run_cli_session(
                             on_residual=on_residual,
                             known=known,
                             pins=pins,
-                            raise_on_residual=True,
                         )
                         return subprocess.CompletedProcess(argv, 0)
         except BaseException as error:
-            if process is not None and not isinstance(error, _ClaudeUsageLimit):
+            if process is not None and not isinstance(error, (_ClaudeUsageLimit, process_tree.ReclaimError)):
                 _stop_orchestrator(
                     process,
                     context="process-loop exception",
                     on_residual=on_residual,
                     known=known,
                     pins=pins,
-                    raise_on_residual=True,
                 )
             raise
 

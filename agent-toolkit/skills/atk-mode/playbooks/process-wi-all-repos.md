@@ -9,12 +9,14 @@
 
 1. 統括は本書「登録集合」から対象と系統を確定する。
    既存の作業記録から有効な対象一覧と`result_file`を読める再開では、候補・所有・結果とともに再利用する。
-   初回は各対象の登録元を直接編集せず、本書「worktreeと資源」で残存資源を処置し、対象の固有手順か既存のWorktreeCreateで系統の先端から専用作業ツリーを準備する。
+   初回は各対象の登録元を直接編集せず、本書「worktreeと資源」で残存登録と稼働中のwriterを調べる。
+   同じ対象と系統を使用中なら保留し、空いている対象は固有手順か既存のWorktreeCreateで系統の先端から専用作業ツリーを準備する。
 2. 開始時に、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「直前の同期結果の検分」の更新ログの確認を、選定と担当の起動と並行して始める。
    対象が複数でも同じ更新の実行の確認は1つにまとめ、結果と処置を全体の進捗記録から参照する。
 3. 初回は対象の作業ツリーで`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の初回取得を`--jsonl`で行い、候補の出力と開始時集合をそれぞれ`candidate_file`と`snapshot_file`へ保存する。
    開始条件の診断と対象ごとの候補・作業ツリーを `repositories` の順序付きJSON配列へ記録する。
-   初回の`result_file`は担当起動前にmanaged-tempの絶対パスへ作り、「結果と終了」で定める対象キーを`pending`で初期化し、対象一覧と両方の保存先を統括の引き継ぎ記録に残す。
+   初回の`result_file`は担当起動前にmanaged-tempへ作り、[結果と終了](process-wi-all-repos-results.md#結果と終了)の対象キーを`pending`で初期化する。
+   対象一覧と両方の保存先の絶対パスを統括の引き継ぎ記録に残す。
    各対象の書込担当を重ねず、選定から検収まで同じ作業ツリーを使う。
    `lane_session_id`は対象・系統ごとに別の識別子を初回に割り当て、既存の所有から再開する時はその値を保ち、レーン操作の`--session-id`へ明示する。
 4. 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。

@@ -297,13 +297,7 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
             raise RuntimeError("統括の起動処理の失敗")
 
     received: list[process_tree.ReclaimError] = []
-    expected: type[BaseException] | None = {
-        "exception": process_tree.ReclaimError,
-        "claude-usage-limit": process_tree.ReclaimError,
-    }.get(site)
-    with contextlib.ExitStack() as stack:
-        if expected is not None:
-            stack.enter_context(pytest.raises(expected))
+    with pytest.raises(process_tree.ReclaimError):
         _ORIGINAL_CODEX_SESSION(
             [sys.executable, "-c", late_descendant.held_source(tmp_path / "residual.release")],
             env,
@@ -312,7 +306,13 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
             on_process_started=started_process,
             on_residual=received.append,
         )
-    assert len(stopped) == (2 if site == "claude-usage-limit" else 1)
+    expected = {
+        "stalled": "stalled",
+        "codex-usage-limit": "usage-limit",
+        "exception": "exception",
+        "claude-usage-limit": "usage-limit switch",
+    }
+    assert stopped == [f"process-loop {expected[site]}"]
     assert all([process.pid for process in failure.processes] == [survivor.pid] for failure in received)
-    assert received
+    assert len(received) == 1
     monkeypatch.undo()

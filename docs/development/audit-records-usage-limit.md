@@ -36,8 +36,9 @@ atk run-script session-review-evidence -- --claude-session-id '<対象session ID
 
 - 観測日: 2026年11月12日
 - 観測した版数: agent-toolkit 2.257.0、実装commit 784f3126c
-- 再検証手段: `_atk/wi/process_loop.py`の`_run_coordinator`・`cmd_process_loop`と`process_loop_session.py`の`_run_cli_session`・`_stop_orchestrator`を読む。
+- 当時の再検証手段: `_atk/wi/process_loop.py`の`_run_coordinator`・`cmd_process_loop`と`process_loop_session.py`の`_run_cli_session`・`_stop_orchestrator`を読む。
   更新が統括起動前に1回行われる条件、通常終了後の結果・writer検収、明示resumeの初回消費、利用上限と例外時の子孫停止を比較する。
   `process_loop_session_lifecycle_test.py`の停止・再開の合成プロセス試験も参照する。
   稼働中のprocess-loopのargvにはresume指定が無い通常起動を観測した。
   実稼働中の統括を停止する実験と自然発生する利用上限からの復帰は実施していない
+- 現行版の巡回の終了前検収は`agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」、CLIの起動・終了と再開予約は`_atk/wi/process_loop.py`の`_run_loop`で確かめる

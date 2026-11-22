@@ -9,6 +9,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import process_loop, process_loop_control, process_loop_env, process_loop_log, process_loop_session
+from agent_toolkit._common import process_tree
 
 
 def _launch(monkeypatch: pytest.MonkeyPatch, outcomes: list[bool], tmp_path: pathlib.Path) -> list[pathlib.Path]:
@@ -67,6 +68,24 @@ def test_public_launcher_does_not_restart_after_abort(monkeypatch: pytest.Monkey
 
     assert exit_result.value.code == 0
     assert started == [tmp_path]
+
+
+def test_public_launcher_reports_unreclaimed_child_without_retry(monkeypatch, tmp_path, capsys) -> None:
+    started = _launch(monkeypatch, [], tmp_path)
+
+    def incomplete(_args, cwd, *_rest, **_kwargs):
+        started.append(cwd)
+        raise process_tree.ReclaimError(["4321: child"], [], context="process-loop usage-limit switch")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(process_loop_session, "run_process_session", incomplete)
+    with pytest.raises(SystemExit) as exit_result:
+        atk.main(["wi", "process-loop"], home=tmp_path)
+    assert exit_result.value.code == 1
+    assert started == [tmp_path]
+    stderr = capsys.readouterr().err
+    assert "失敗:" in stderr and "4321: child" in stderr and "次の操作:" in stderr
+    assert "Traceback" not in stderr
 
 
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])

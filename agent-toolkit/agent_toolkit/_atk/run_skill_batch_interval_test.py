@@ -126,8 +126,18 @@ def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_p
     assert calls == [(f"github.com/test/{expected}", tmp_path.resolve())]
 
 
-@pytest.mark.parametrize("work_dir", [None, "missing", "relative", "file", "~atk-no-such-user-5d2f8b614ac74"])
-def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path, work_dir, capsys):
+@pytest.mark.parametrize(
+    ("option", "work_dir"),
+    [
+        (None, None),
+        ("--work-dir", "missing"),
+        ("--work-dir", "relative"),
+        ("--work-dir", "file"),
+        ("--work-dir", "~atk-no-such-user-5d2f8b614ac74"),
+        ("--target-repo", "~atk-no-such-user-5d2f8b614ac74"),
+    ],
+)
+def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path, option, work_dir, capsys):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("起動してはならない"))
@@ -136,8 +146,10 @@ def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path
         (tmp_path / work_dir).touch()
     if work_dir == "relative":
         (tmp_path / work_dir).mkdir()
+    if work_dir and work_dir.startswith("~"):
+        (tmp_path / work_dir).mkdir()
     if work_dir is not None:
-        argv += ["--work-dir", work_dir if work_dir == "relative" or work_dir.startswith("~") else str(tmp_path / work_dir)]
+        argv += [option, work_dir if work_dir == "relative" or work_dir.startswith("~") else str(tmp_path / work_dir)]
     with pytest.raises(SystemExit) as result:
         atk.main(argv)
     assert result.value.code == 2

@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi import process_loop_control as control
 from agent_toolkit._atk.wi import process_loop_env as env
 from agent_toolkit._atk.wi import process_loop_log as log
 from agent_toolkit._atk.wi import process_loop_session as session
+from agent_toolkit._common import process_tree
 from agent_toolkit._common.console_title import console_title
 
 _MAX_CONSECUTIVE_FAILURES = 3
@@ -95,6 +96,12 @@ def cmd_process_loop(args: argparse.Namespace) -> int:
                 return _run_loop(once=args.once)
             except _StopRequested as stop:
                 return 128 + int(stop.args[0])
+            except process_tree.ReclaimError as error:
+                outcome.report_failure(
+                    f"統括CLIの子孫を回収できない（{error.context}）: {error.residual}",
+                    next_action="表示されたPIDと起動コマンドを調べ、残った子孫の終了を確かめてから同じ会話を再開する",
+                )
+                return 1
             finally:
                 for signum, handler in previous_signals.items():
                     signal.signal(signum, handler)

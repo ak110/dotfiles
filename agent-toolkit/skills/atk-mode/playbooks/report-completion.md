@@ -113,7 +113,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    自律モードでは報告用UWIを更新し、協調モードではユーザーの判断や次の操作を変える訂正だけを届ける。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
-区切りやセッション終了時の単発の振り返りは、`agent-toolkit:atk-mode/playbooks/review-session.md`に従い、本書の工程と送達の条件とは分ける。
+`agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは、必要時か巡回の指定の区切りで行い、本書の工程と送達の条件とは分ける。
 batchによる未処理セッションの回収は別に行う。
 
 ## 常時稼働サーバーへの反映

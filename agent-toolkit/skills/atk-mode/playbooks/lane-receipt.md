@@ -110,7 +110,7 @@ WIへ直接書かれた質問（AWIの`## ユーザーコメント`、UWIの`## 
    収束後に再レビューを省いた修正があれば、`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「レビュー修正」で保った修正後のHEADとする。
 3. `マージあり`では、指示の前に次を確かめる。
    - 完成条件証拠: レビュー単位ごとに受理した最後の実行レビューの返却ファイル（`agent_message_path`）と`レビューHEAD`を保つ。
-     再レビュー不要の修正で採否を変える条件は、引き継ぎ記録にある検収済みの修正後証拠も保つ。
+     再レビュー不要の修正で採否を変える条件は、指摘管理表の応答か引き継ぎ記録にある検収済みの修正後証拠も保つ。
      `agent-toolkit:atk-mode/references/lane-integration-format.md`「入力」の`完成条件証拠`の確認をし、欠ければレビューの起動元へ差し戻す。
      各AWIの全行を`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件で検収する。
      内部の群では、群の局所の判定に加えて`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」手順1の群間の検収を求める。

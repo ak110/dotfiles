@@ -29,8 +29,7 @@ process-loopの統括と`atk run-skill`が起動したセッションでは、�
 
 Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終了要求は、Stopの全判定が完了した後に共通ハンドラー（`stop.py`）から発行される。
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。
-このため`autonomous_exit_invoked`が偽のままでも、無進捗停止の終了要求は`turn.complete`で消費される。
-`autonomous_exit_invoked`が記録するのは`atk agents-exit-session`の実行履歴だけで、Stop内部で発行した終了要求はこのフラグと独立に終了要求ファイルの状態で管理する。
+Stop内部で発行した終了要求は終了要求ファイルで管理し、`turn.complete`で消費する。
 
 通常のSessionEndでは、現行セッションの読み込み目印、終了要求、定期再確認の判定結果、および利用上限の記録ファイルを保持したまま、保持期限を過ぎた他セッションの古いファイルを回収する。
 定期再確認の判定は`docs/development/internals-session-state-function-hooks-recheck.md`に従う。
