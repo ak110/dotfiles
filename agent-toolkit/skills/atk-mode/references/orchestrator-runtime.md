@@ -12,7 +12,7 @@ process-loop・run-skillの統括の挙動（起動、turn終了、再開、外�
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 |
 | --- | --- | --- | --- |
 | process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は目的文、再開は元の目的の続行入力 | ターン終了は会話の終了ではない。ランチャーは対話CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う |
-| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する | ターン終了後も対話CLIは操作を待つ | 上限を検出するとCLIを止め、次の起動で候補の可用性を確かめる。同じ会話の再開は予約から`codex resume`へ接続 |
+| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する | ターン終了後も対話CLIは操作を待つ | 上限を検出するとCLIを止め、常駐時だけ次の起動で候補の可用性を確かめる。同じ会話の再開は予約から`codex resume`へ接続 |
 | process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する | ランチャーは対話CLIの終了を待つ | 再開指定は`--conversation`。IDを省略した会話選択は非対応 |
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は目的文 | 報告用UWIの保存を確かめられない終了はStop hookが遮断する。バックグラウンドタスクの完了待ちのturn終了は許し、完了通知で再開する。最終応答でCLIが終わり、起動元が報告の保存を検収する | 利用上限の解除後は`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>` | 同上 | 利用上限の解除後は`codex exec resume`で自動再開。明示再開はRUN_ID |
@@ -31,6 +31,8 @@ agents_serverの配送結果と、受信側が本文を読んで処置したこ�
 CLIは対話セッションを起動し、登録リポジトリの巡回はそのセッションで行う。
 巡回の手順は `agent-toolkit:atk-mode/playbooks/process-loop.md`、対象ごとの配分は `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md` を使う。
 `--once`は対話CLIが終了した後に再起動しない指定である。
+Codexの上限を検出した単回実行の終了0はCLIの停止を示す。
+処理の完遂は、統括が保存した対象別の結果と残工程で確かめる。
 登録全体を手動で1回だけ処理する場合は `process-wi all-repos` を選ぶ。
 
 ## 常駐・単発・明示再開の違い

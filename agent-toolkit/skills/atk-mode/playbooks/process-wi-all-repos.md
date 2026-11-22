@@ -7,14 +7,16 @@
 
 ## 開始と振り分け
 
-1. 統括が登録対象、各系統の候補、処理の開始条件を確認し、対象と系統ごとの専用作業ツリーを用意する。
-   既存の候補原本と保存した結果が利用できる時は再利用する。
-   登録元checkoutは直接編集せず、選定、公開、対象の所有確認を個別に行う。
+1. 統括は本書「登録集合」から対象と系統を確定する。
+   既存の作業記録から有効な対象一覧と`result_file`を読める再開では、候補・所有・結果とともに再利用する。
+   初回は各対象の登録元を直接編集せず、本書「worktreeと資源」で残存資源を処置し、対象の固有手順か既存のWorktreeCreateで系統の先端から専用作業ツリーを準備する。
 2. 開始時に、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「直前の同期結果の検分」の更新ログの確認を、選定と担当の起動と並行して始める。
    対象が複数でも同じ更新の実行の確認は1つにまとめ、結果と処置を全体の進捗記録から参照する。
-3. 対象ごとの候補と作業ツリーを `repositories` の順序付きJSON配列へ記録する。
+3. 初回は対象の作業ツリーで`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の初回取得を`--jsonl`で行い、候補の出力と開始時集合をそれぞれ`candidate_file`と`snapshot_file`へ保存する。
+   開始条件の診断と対象ごとの候補・作業ツリーを `repositories` の順序付きJSON配列へ記録する。
+   初回の`result_file`は担当起動前にmanaged-tempの絶対パスへ作り、「結果と終了」で定める対象キーを`pending`で初期化し、対象一覧と両方の保存先を統括の引き継ぎ記録に残す。
    各対象の書込担当を重ねず、選定から検収まで同じ作業ツリーを使う。
-   `lane_session_id`は対象ごとに持ち、レーン操作の`--session-id`へ明示する。
+   `lane_session_id`は対象・系統ごとに別の識別子を初回に割り当て、既存の所有から再開する時はその値を保ち、レーン操作の`--session-id`へ明示する。
 4. 対象worktreeの作業に入る前に、その対象の`AGENTS.md`、`CLAUDE.md`、作業に関わるプロジェクトスキルの実在する`SKILL.md`を絶対パスで読んで適用する。
    ホームなどプロジェクト外のcwdでは、対象のプロジェクトスキルを明示的に読み込み、通常のプロジェクトhookが担う確認を自分で行う。
    WorktreeCreateとWorktreeRemoveは、対象の設定を読む既存の`atk`操作で実行する。
@@ -66,9 +68,9 @@
 通常起動（`mode: delegate`）の共通の準備: 起動の前に`agent-toolkit:atk-mode/references/work-contract.md`に従う全体作業契約を用意し、`extra_params`とは別の公開入力`whole_contract_path`へ絶対パスを渡す。
 
 - 必須入力名: `引き継ぎ記録先`
-- 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`
-- 任意入力名: `lane_session_id`、`previous`、`common_dir`、`registered_worktree`、`target`、`target_branch`
-- 任意入力名: `default_branch`、`追加指示`
+- 任意入力名: `repositories`、`target_repo`、`worktree`、`candidate_file`、`snapshot_file`、`readiness`
+- 任意入力名: `lane_limit`、`lane_session_id`、`previous`、`common_dir`、`registered_worktree`、`target`
+- 任意入力名: `target_branch`、`default_branch`、`追加指示`
 
 <!-- input-contract:repository-process:end -->
 
@@ -83,7 +85,7 @@
    | `subagent_md_path` | `repository-process` |
    | `extra_params` | 次の名前付き入力だけ |
 
-   - 単一対象では、`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`lane_session_id`に対象一覧の同名の値を渡す。
+   - 単一対象では、`target_repo`、`worktree`、`candidate_file`、`snapshot_file`、`readiness`、`lane_limit`、`lane_session_id`に対象一覧の同名の値を渡す。
    - まとめ担当では、割り当てる対象要素をそのまま順序付きのJSON配列へ保存し、単一対象の各欄の代わりにその絶対パスを`repositories`へ渡す。
    - `previous`、`common_dir`、`registered_worktree`、`target`、`target_branch`、`default_branch`は、対象要素に値がある場合だけ渡す。
    - `追加指示`は、`instruct`のうち対象に関係する部分がある場合だけ渡す。
@@ -198,7 +200,8 @@ writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列
    自分で調達できる入力の不足はこの回答待ちに含めず、通常の調査と再開へ渡す。
 2. 所有は対象（`target`が示すoriginと系統の組）ごとで、所有待ちや準備失敗の対象を除いて独立した対象の処理を続ける。
    明示resumeと会話選択画面からの再開では、実際のworktreeと残っているwriterを確かめ、対象の所有を確定してから元の作業を続け、選ばれなかった対象へ結果を転用しない。
-3. 統括と配下のwriterの終了を確かめた対象だけ所有を解放し、既存のlaneを回収する（CLIの終了と書込担当の終了は別に観測する）。
+3. 通常終了では、配下のwriterが停止し、統括自身も対象への書込を終えたことを確かめてから、統括がセッション終了前に所有を解放し、既存のlaneを回収する。
+   異常終了で残った資源は、次の統括が本書「worktreeと資源」に従って判定する。
    完成結果とwriterの停止を確認した通常の終了では、選定が未統合でもbranchの変更が統合先にあれば回収する。
    続行予定、停止が未確認、dirty、使用中、未取込み、回収失敗の資源は保持する。
    回収の結果と理由をログへ残し、理由を解消したら [レーン資源の回収](process-wi-lane-resources.md) に従って元の判定モードで再試行する。

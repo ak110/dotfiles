@@ -11,6 +11,7 @@ optional_inputs:
 - target_repo
 - worktree
 - candidate_file
+- snapshot_file
 - readiness
 - lane_limit
 - lane_session_id
@@ -50,6 +51,8 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 - `target`、`target_branch`、`default_branch`: 結果を対応付ける対象の識別子と、系統を登録したリポジトリで処理する系統と、系統を省略したWIの宛先の系統。
   `target`が無い対象は`target_repo`を識別子とする。
 - `candidate_file`、`readiness`、`lane_limit`: 開始時の候補の原本、着手可否の診断、対象別のレーン上限。
+- `snapshot_file`: 同じ初回取得で保存した開始時集合の絶対パス。
+  行がなければ、新着の判定前に既存の開始時集合を統括から取得する。
 - `lane_session_id`: 対象ごとのレーン操作の識別子。
   レーン操作の`--session-id`へ`lane_session_id`を明示する。
 - `previous`: 前回の未完了の成果と再開位置。

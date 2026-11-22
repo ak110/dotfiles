@@ -120,7 +120,6 @@
    合意済みの担当は`--writer-session`で指定する（`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」）。
    完了済みのレーンと所属WIの記録は、追加の作業に備えて保つ。
 5. 資源は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で`atk lane delete`で回収し、ターンごとの`SessionEnd`では回収しない。
-   通常の終了時の`atk agents-exit-session`と、`process-loop`が子セッションの終了後に行う処理も同じ回収操作を呼ぶ。
    未統合、dirty、稼働中、状態不明、途中で失敗した対象は、理由と残る操作を回収対象の外へ保存し、再実行では残りから再開する。
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
