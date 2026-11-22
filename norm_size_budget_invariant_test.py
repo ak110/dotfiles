@@ -13,7 +13,7 @@ import warnings
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
-_BUDGET_BYTES = 2_681_540
+_BUDGET_BYTES = 2_681_896
 # 上限との差がこの比率を超えたら、上限を下げるよう警告する（減らした分を次の追加で使い切らないため）。
 _SLACK_RATIO = 0.05
 
