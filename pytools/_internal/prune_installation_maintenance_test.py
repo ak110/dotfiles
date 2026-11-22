@@ -319,6 +319,8 @@ def test_tool_cleanup_is_deferred_when_uv_cleanup_runs_long(tmp_path, monkeypatc
     assert ["/fixture/npm", "cache", "verify"] not in calls
     assert ["/fixture/mise", "cache", "prune"] not in calls
     assert json.loads(state_path("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "deferred"
+    notices = [notice.message for notice in prune_installation.run().notices]
+    assert any("mise・npm・pnpmの整理を保留しました" in message for message in notices)
 
 
 def test_maintenance_defers_while_update_is_running(tmp_path, monkeypatch):

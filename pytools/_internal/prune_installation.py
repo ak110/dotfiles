@@ -130,8 +130,9 @@ _UV_LOCK_TIMEOUT_SECONDS = "30"
 _UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
 
 
-# 更新のロック待ち上限600秒を超えないよう、uvの整理が長引いたら他ツールは次回へ回す。  # pyfltr: allow-comment
+# uvの整理が長引いたら他ツールは次回へ回し、更新のロック待ち上限に届く危険を下げる（保証はしない）。  # pyfltr: allow-comment
 _TOOLS_START_BUDGET_SECONDS = 300
+_TOOLS_DEFERRED_BY_BUDGET = "uvの整理が長引いたため次回へ回す"
 
 
 class _InUseError(Exception):
@@ -726,7 +727,7 @@ def maintain_caches() -> None:
                 if time.monotonic() - started < _TOOLS_START_BUDGET_SECONDS:
                     _run_maintenance(_CacheGroup.TOOLS, clean_caches)
                 else:
-                    _write_maintenance_record(_CacheGroup.TOOLS, MaintenanceResult.DEFERRED, "uvの整理が長引いたため次回へ回す")
+                    _write_maintenance_record(_CacheGroup.TOOLS, MaintenanceResult.DEFERRED, _TOOLS_DEFERRED_BY_BUDGET)
         except filelock.Timeout:
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.DEFERRED, "他の更新が実行中")
@@ -763,6 +764,16 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
                 notices=(
                     post_apply_outcome.PostApplyNotice(
                         f"prune: uvキャッシュが使用中のため整理を保留しました。{retry}",
+                        log=_record_path(group),
+                        warning=False,
+                    ),
+                )
+            )
+        if group is _CacheGroup.TOOLS and record.detail == _TOOLS_DEFERRED_BY_BUDGET:
+            return post_apply_outcome.PostApplyOutcome(
+                notices=(
+                    post_apply_outcome.PostApplyNotice(
+                        f"prune: uvの整理が長引いたため、mise・npm・pnpmの整理を保留しました。{retry}",
                         log=_record_path(group),
                         warning=False,
                     ),
