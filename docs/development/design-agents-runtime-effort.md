@@ -3,7 +3,7 @@
 通常委譲の文脈を保ちながら推論量を調整するため、`atk agents effort up|down [session_id]`を使う。
 実行時の判断基準は`agent-toolkit/skills/atk-mode/references/model-settings.md`「同じ会話のeffortの上げ下げ」が所有する。
 engine/modelの変更は[引き継ぎ起動](design-agents-runtime-handoff-resume.md)で別の会話へ移す。
-規範の受信量で変更を案内した仕組みは2026年11月20日に撤去した（[撤去した仕組み: hookと配送](removed-mechanisms-hooks.md)）。
+規範の受信量で変更を案内した仕組みは2026年11月20日に撤去した（削除前の撤去台帳`docs/development/removed-mechanisms-hooks.md`）。
 
 ## 対象と権限
 

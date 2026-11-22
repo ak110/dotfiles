@@ -97,12 +97,11 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
 2. 同書「自動コードレビュー監査」で監査の要否を判定して必要な監査を起動し、その終了を待たずにメイン自身が対象を選定して、集合を確定した直後に処理を始める。
    統括から受け取ったリポジトリ担当は初回の候補を使い、選定を別の担当へ委譲することは避ける。
    監査の結果が一部の候補の判断に要る場合は、その判断だけを待ち、独立した候補の選定と開始できるレーンの起動を進める。
-3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`段階`と`先行レーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
+3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`着手前に必要なレーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
    frontmatterに`merge_branch`を持つマージ用AWIはレーンを割り当てず、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従ってメインが直接取り込み、公開工程へ合流する。
-   後続のレーンは、先行レーンの統合と書込の主体の解放を確かめてから、現行のHEADを起点に作る。
    Claude Codeでは、各段階の最初の起動を全て終えてから、同書「各段階の全初期通常レーン起動後の会話圧縮」へ進む。
 4. メインは各レーンからのユーザー判断の通知を中継し、レーン間の書込競合と依存を調停する。
-5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、依存の条件を満たせば先行レーンの`統合完了`を待たずに`統合許可`を出す。
+5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、選定結果の`先行レーン`が全て統合済みなら`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。
 7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開とセッションの終了を完遂する。

@@ -433,7 +433,10 @@ def main() -> int:
         print(
             json.dumps({"exit_session_invoked": True, "status": "unsupported", "lane_cleanup": cleanup}, separators=(",", ":"))
         )
-        _outcome.report_warning("現在の対話CLI本体を一意に識別できない", next_action="/exitまたは/quitを入力して終了する")
+        _outcome.report_warning(
+            "現在の対話CLI本体を一意に識別できない",
+            next_action="対話CLIで実行している場合は /exit または /quit で終了する。IDE拡張やアプリでは操作が不要な場合がある",
+        )
         return 0
     if status == "changed":
         print(json.dumps({"exit_session_invoked": True, "status": "changed", "lane_cleanup": cleanup}, separators=(",", ":")))

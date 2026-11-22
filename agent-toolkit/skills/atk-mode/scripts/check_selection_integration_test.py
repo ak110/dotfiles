@@ -508,6 +508,8 @@ def test_merged_lane_keeps_integrated_items_exempt(
     # 合流した追加項目は未統合として従来どおり判定する。
     (repo / "pytools/post_apply.py").unlink()
     (repo / "pytools").rmdir()
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    (repo / "pytools").write_text("新設先の途中にあるファイル", encoding="utf-8")
     assert _dispatch(str(path), "--work-dir", str(repo)) == 1
 
 

@@ -31,5 +31,6 @@ Pythonは、標準ライブラリだけで済む簡単な確認には`python3`�
 ## 記録の所在
 
 経緯、根拠、構造の記録は`docs/development/index.md`から選ぶ。
-主な索引は、構成の`architecture.md`、運用の`operations.md`、設計の`design.md`、確定した方針の`concepts.md`、障害の`incidents.md`、撤去した仕組みの`removed-mechanisms.md`、内部仕様の`internals.md`である。
+主な索引は、構成の`architecture.md`、運用の`operations.md`、設計の`design.md`、確定した方針の`concepts.md`、内部仕様の`internals.md`である。
+障害と撤去した仕組みの経緯はcommit本文にあり、`git log --grep`で引く。
 各規範の条文が根拠とする検証の日付、版数、再検証の手順は`docs/development/audit-records.md`にある。

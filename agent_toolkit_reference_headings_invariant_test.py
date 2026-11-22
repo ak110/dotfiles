@@ -50,7 +50,7 @@ def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]
 def _extended_heading_reference_sources(sources: list[pathlib.Path]) -> list[pathlib.Path]:
     """規範Markdownの外で見出し名参照を検査する追跡ファイル（テスト以外のPythonと設計文書）を返す。
 
-    テストは欠落した参照をfixtureとして意図的に含み、方針記録（`concepts*.md`）と障害記録（`incidents*.md`）は
+    テストは欠落した参照をfixtureとして意図的に含み、方針記録（`concepts*.md`）は
     当時の節名を記録として保持するため、検査の対象から外す。
     """
     return [
@@ -274,7 +274,7 @@ def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> N
 
 
 def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
-    """テスト、方針記録および障害記録を見出し名参照の拡大範囲から外し、コードと設計文書を含める。"""
+    """テストと方針記録を見出し名参照の拡大範囲から外し、コードと設計文書を含める。"""
     paths = [
         pathlib.Path("src/sample.py"),
         pathlib.Path("src/sample_test.py"),
@@ -282,7 +282,6 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
         pathlib.Path("docs/development/architecture.md"),
         pathlib.Path("docs/development/operations.md"),
         pathlib.Path("docs/development/concepts-codex-context.md"),
-        pathlib.Path("docs/development/incidents-reporting.md"),
     ]
 
     assert _extended_heading_reference_sources(paths) == [paths[0], paths[2], paths[3], paths[4]]

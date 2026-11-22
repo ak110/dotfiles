@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import skill_modes
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 
@@ -177,12 +178,36 @@ def compare_draft_openings(
     return openings
 
 
-def print_draft_openings(messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None) -> None:
+def print_draft_openings(
+    messages: list[str],
+    sources: list[str],
+    *,
+    compare_paths: list[str] | None = None,
+    output_paths: list[str] | None = None,
+) -> None:
     """検証済み原稿の冒頭を比較・保存し、入力との対応と原文を表示する。"""
     saved: list[tuple[str, pathlib.Path, str]] = []
     try:
-        for source, opening in compare_draft_openings(messages, sources, compare_paths=compare_paths):
-            path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
+        openings = compare_draft_openings(messages, sources, compare_paths=compare_paths)
+        targets = [pathlib.Path(path).expanduser().resolve() for path in output_paths or ()]
+        if output_paths is not None:
+            if len(targets) != len(openings) or len(set(targets)) != len(targets):
+                raise WebInputError(
+                    "冒頭抜粋の保存先が原稿と一対一で対応しない",
+                    next_action="原稿と同じ件数・順序で異なる--opening-outputを指定する",
+                )
+            inputs = {pathlib.Path(path).expanduser().resolve() for path in [*sources, *(compare_paths or ())]}
+            if inputs.intersection(targets):
+                raise WebInputError(
+                    "冒頭抜粋の出力先と原稿または比較入力が同じ",
+                    next_action="作業用の--opening-outputを原稿・比較入力と異なるパスに指定する",
+                )
+        for index, (source, opening) in enumerate(openings):
+            if targets:
+                path = targets[index]
+                atomic_write(path, opening)
+            else:
+                path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
             saved.append((source, path, opening))
     except (OSError, ManagedTempError) as error:
         raise WebInputError(

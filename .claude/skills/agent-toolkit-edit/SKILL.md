@@ -26,7 +26,7 @@ description: >
 | 新しいCLI、コマンド、ラッパースクリプトを公開する計画を起草する | `references/distribution.md`「新規CLI公開時の疎通確認」 |
 | `agent-toolkit:atk-mode`の作業`process-wi`で全レーンの完了後に版数を上げる | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`、続けて`references/distribution.md`「バージョン更新」 |
 | hookの実装、登録、判定、通知、出力と、`atk`のサブコマンドと出力を新設・変更する | `references/hooks.md` |
-| 既存のhookの実装、登録、判定を変える計画の採否を決める（実装だけの改修を含む） | `docs/development/incidents.md`「区分」から「フックとセッション状態の不全」の所在ファイルを選んで同じ原因条件の事例を読み、`docs/development/design.md`の索引から選ぶhookの設計記録の該当節を読む。読んだ事例から守る条件を採否と検証へ対応付ける |
+| 既存のhookの実装、登録、判定を変える計画の採否を決める（実装だけの改修を含む） | 変更するhookの名前と働きを表す語で`git log -i -E --grep=<語>`を検索して同じ原因条件の障害を記したcommit本文を読み、`docs/development/design.md`の索引から選ぶhookの設計記録の該当節を読む。読んだ障害から守る条件を採否と検証へ対応付ける |
 | hook、自動チェック、永続状態、配送経路など新しい仕組みを足す計画を起草する、その変更を実行レビューする | `.claude/skills/edit-dotfiles-norms/SKILL.md` |
 | `agent-toolkit/agent_toolkit/`と`agent-toolkit/scripts/`の配置とimport、起動と依存の準備、toolkitのPython実装、機械チェックスクリプト、常駐CLIの待機と自動起動、MCPサーバーの識別子とツール名、プラグイン内の実行パス、権限設定、計画ファイルの構造定数、`atk serve`の静的資産を新設・変更する | `references/implementation.md` |
 | サブエージェント定義と役割文書（`<役割名>.parent.md`、`<役割名>.subagent.md`）か、それらが関わる手順を作る・改める | `references/roles.md`。コンテキスト境界の判断は`agent-toolkit:atk-mode/references/agent-documents.md` |

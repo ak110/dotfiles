@@ -59,6 +59,30 @@ def test_public_dry_run_compares_received_opening(tmp_path, monkeypatch, capsys,
         assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_dry_run_updates_same_opening_output(tmp_path, monkeypatch, capsys, operation):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = tmp_path / "draft.md"
+    saved = tmp_path / "opening.md"
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body), "--dry-run"]
+    if operation == "edit":
+        _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    for heading in ("初回", "修正"):
+        body.write_text(f"# {heading}\n\n説明。\n", encoding="utf-8")
+        with pytest.raises(SystemExit) as result:
+            atk.main([*argv, "--opening-output", str(saved)], home=tmp_path)
+        assert result.value.code == 0
+        assert saved.read_bytes().startswith(f"# {heading}".encode())
+        capsys.readouterr()
+    with pytest.raises(SystemExit) as result:
+        atk.main([*argv, "--opening-output", str(saved), "--compare-opening-file", str(saved)], home=tmp_path)
+    assert result.value.code != 0
+    assert saved.read_bytes().startswith("# 修正".encode())
+
+
 @pytest.mark.parametrize("difference", ["body", "newline", "trailing", "missing", "encoding"])
 @pytest.mark.parametrize("operation", ["add", "edit"])
 def test_public_dry_run_rejects_changed_or_unreadable_opening(tmp_path, monkeypatch, capsys, operation, difference):

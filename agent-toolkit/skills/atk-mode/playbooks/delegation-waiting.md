@@ -84,7 +84,8 @@
 ## `atk agents wait`の応答の扱い
 
 1. 行の形式と待機の成立の判定は`atk agents wait --help`が定める。
-   どの依頼の行かは`label`で判別し、失敗の行は`error`と`next_action`に従う。
+   回収行の依頼は`label`で判別し、失敗の行は`error`と`next_action`に従う。
+   既回収の`awaiting_reply`行は`session_id`で依頼を識別し、結果の再回収をせず`next_action`に従う。
 2. 本文は終了行の`agent_message_path`のファイルにある。
    要約に本文が無い時、後のターンで読み直す時、他の担当へ渡す時は、このファイルを直接読む。
 3. 終了コード3と`status: running`は未終了を示し、同じコマンドを再発行して待機を続ける。
@@ -222,9 +223,9 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
    - 処置した世代が`list`の`server_generations`から消えたことを確かめる。
      `show`では処置したturnの終了を確認する。
      新世代が自動再開した場合は、`interrupted_turns`のturn番号と診断のサーバー識別子が処置した対象と一致することを確かめる。
-   - MCPの再接続が要る時は、接続が健全な間に`apply_runtime_changes`の`targets`へ`agents_server`を指定して予約し、受付と反映の結果を分けて確かめる。
+   - Claude CodeでMCPの再接続が要る時は、`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「ツールの入出力」に従う。
      管理サービスが応答しない時は、予約の受付を未確認として扱い、待機に入る前に接続の復旧へ進む。
-     予約が失敗するホスト（Codex、ホストのUIの無い実行）と接続を失った後は、ホストの再接続の手段（Claude Codeでは`/mcp`）をユーザーへ依頼する。
+     Claude Code以外で予約できない場合や接続を失った後は、ホストの再接続の手段で復旧するようユーザーへ依頼する。
      停止・再起動を伴う場合の担当の記録と引き継ぎは、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「管理サービスへの操作が応答しない場合」に従う。
 
 ## 返す報告に含める項目

@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from agent_toolkit._agents_server import (
+    continuation_wait,
     logging_config,
     notice_inbox,
     owner_lost,
@@ -503,6 +504,10 @@ def _wait_for_result(
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
+        awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
+        if awaiting:
+            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+            return 0
         return _absent_wait_result(identity.file_name, current_run_path, released_interruptions)
     if current_run_error is not None:
         raise current_run_error
@@ -629,8 +634,14 @@ def _wait_for_result(
                             is not None
                         ),
                     ]
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
                     if interrupted_sessions:
                         absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
+                        if awaiting:
+                            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+                    elif awaiting:
+                        output = "\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting)
+                        return _publish_wait_result(run_path, output, 0)
                     return _publish_wait_result(
                         run_path,
                         with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),
@@ -725,7 +736,13 @@ def _wait_for_result(
                                 )
                         if notices:
                             result["notices"] = notices
-                        collected.append(_with_result_next_action(result))
+                        result = _with_result_next_action(result)
+                        seconds = continuation_wait.continuation_wait_seconds(session_id, state_root=state_root)
+                        if seconds is not None:
+                            result = result_projection.append_result_next_action(
+                                result, continuation_wait.continuation_action(seconds)
+                            )
+                        collected.append(result)
                         wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                         continue
                     if notices:
@@ -735,13 +752,14 @@ def _wait_for_result(
                         response["next_action"] = _notice_next_action(response.get("label"))
                         collected.append(response)
                 if collected:
+                    continuable = all(item.get("status") == "running" for item in collected)
+                    collected.extend(continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root))
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                     _LOG.info(
                         "wait_return reason=collected count=%d session_ids=%s",
                         len(collected),
                         ",".join(str(item["session_id"]) for item in collected),
                     )
-                    continuable = all(item.get("status") == "running" for item in collected)
                     return _publish_wait_result(run_path, output, 0, continuable=continuable, result_turns=result_turns)
                 if read_failure is not None:
                     return _publish_wait_result(
@@ -762,7 +780,10 @@ def _wait_for_result(
                 remaining = deadline - now
                 if remaining <= 0:
                     response["next_action"] = _RERUN_WAIT_NEXT_ACTION
-                    output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root)
+                    output = "\n".join(
+                        json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in (response, *awaiting)
+                    )
                     _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
                     return _publish_wait_result(run_path, output, 3, continuable=True)
                 time.sleep(min(1.0, remaining))

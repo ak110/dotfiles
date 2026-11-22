@@ -2,6 +2,7 @@
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -161,3 +162,23 @@ def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPat
         monkeypatch.setattr(sys, "stdin", input_stream)
         assert launch.main() == {"pre": 17, "agy": 17, "timeout": 124, "cancel": 128 + signal.SIGTERM}[case]
     assert events == ["lock", "spawn", *(["cancel"] if case == "cancel" else []), "reclaim", "unlock"]
+
+
+@pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse", "UserPromptSubmit"])
+def test_unprepared_hook_returns_context(monkeypatch, tmp_path, capsys, event):
+    launch = _load_launch()
+    target = tmp_path / "agent_toolkit" / "hook.py"
+    target.parent.mkdir()
+    target.touch()
+    raw = io.BytesIO(json.dumps({"hook_event_name": event}).encode())
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(raw))
+    monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(tmp_path), str(target)])
+    monkeypatch.setattr(launch.plugin_environment, "prepared_python", lambda *_: None)
+    monkeypatch.setattr(launch.shutil, "which", lambda *_: "uv")
+
+    assert launch.main() == 1
+    captured = capsys.readouterr()
+    response = json.loads(captured.out)["hookSpecificOutput"]
+    assert response["hookEventName"] == event
+    assert "未準備" in response["additionalContext"] and "準備状態" in response["additionalContext"]
+    assert "未準備" in captured.err

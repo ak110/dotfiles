@@ -77,6 +77,8 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 3. stdioのMCPサーバーは起動から登録まで数秒かかる場合があり、起動の直後に見つからない時は少し待って別の`exec`で照会し直す。
    一覧に名前が無いという1回の観測を、接続の切断の証拠として扱う誤りを避ける。
 
+機械処理の例は`../references/operations.md`「出力の保持と観測」に従う。
+
 ### コマンドの実行とファイルの編集
 
 1. `functions.exec`の入力には生のJavaScriptだけを渡し、説明は入力の外か`//`のコメントに置く。
@@ -95,8 +97,8 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 
 1. 読取には`cat -- <絶対パス>`か`sed -n '<開始行>,<終了行>p' -- <絶対パス>`を、JSONには`jq`を使う。
    hookの対象一覧のプラグイン名は起動通知の実在するルートへ、スキル名は`skills/<名前>/SKILL.md`へ、参照資料はルート直下と`skills/`配下の一意な実在パスへ解決する。
-2. `shell`を指定しないコマンドがPowerShellで動く環境では、`Get-Command bash`などで実在を確かめたbashを`exec_command`の`shell`へ指定する（インストール先の推測は避ける）。
-   bashが無ければ`Get-Content -LiteralPath <絶対パス> -Encoding utf8 | Select-Object -Skip <開始行-1> -First <行数>`で同じ範囲を読む。
+2. シェルを指定しないコマンドがPowerShellで動くなら、全文は`Get-Content -LiteralPath '<絶対パス>' -Encoding utf8 -ErrorAction Stop`で読む。
+   行範囲には`| Select-Object -Skip <開始行-1> -First <行数>`を続ける。
 3. 本文の初回の取得では、内側の`exec_command`と外側の`functions.exec`の`max_output_tokens`をともに20000と明示する。
    文章主体ならUTF-8のバイト数÷3の切り上げで見積もり、外側の予算には内側の合計とJSONの包絡を含め、超える見積りなら最初から行範囲かセルを分ける。
    nativeの`original token count`が予算を超えた時は、その値以上の枠を両層で確保できる場合だけ1回取り直し、できなければ行範囲へ分ける。

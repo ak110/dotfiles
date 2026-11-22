@@ -96,6 +96,31 @@ def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     assert "decision" not in _stop([_human("進捗を教えて")], tmp_path, monkeypatch)
 
 
+@pytest.mark.parametrize(
+    "correction",
+    [
+        "手戻り多すぎない？",
+        "ちゃんと分析して直すべきでしょ。",
+        "処理する手順になってなかったっけ？",
+        "自分でできるはずでしょ。ユーザーの手を煩わせないで！",
+        "再発防止しないとまた再発するでしょ！！",
+    ],
+)
+def test_each_queued_correction_needs_its_own_bugfix(
+    correction: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同じホストターンの先行する起動は、新しい割り込みの遮断を解除しない。"""
+    entries = [
+        _human("ここがバグっている"),
+        _BUGFIX,
+        {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": correction}},
+    ]
+    assert _pretooluse_denied(_payload(entries, tmp_path))
+    assert _stop(entries, tmp_path, monkeypatch)["decision"] == "block"
+    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
+
+
 @pytest.mark.parametrize("previous_skill", [False, True])
 @pytest.mark.parametrize("args,defect", [("進捗を教えて", False), ("まだバグがある", True)])
 def test_command_arguments_and_bugfix_invocation_belong_to_current_turn(

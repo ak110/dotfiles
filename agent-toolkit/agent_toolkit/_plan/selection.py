@@ -21,6 +21,7 @@ RATIONALE_KEY = "根拠"
 MODEL_TYPES_KEY = "担当モデル"
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
+START_DEPENDENCIES_KEY = "着手前に必要なレーン"
 LANE_OVERLAPS_KEY = "レーン間の重なり"
 SINGLE_STAGE_ESTIMATE_KEY = "単一段階案の完了見込み秒数"
 STAGED_ESTIMATE_KEY = "段階案の完了見込み秒数"
@@ -92,6 +93,7 @@ def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
                     STAGE_KEY: row.get(STAGE_KEY, 1),
                     WI_KEY: [item[WI_KEY] for item in members],
                     PRIOR_LANES_KEY: row.get(PRIOR_LANES_KEY, []),
+                    START_DEPENDENCIES_KEY: row.get(START_DEPENDENCIES_KEY, []),
                 }
             )
     return pending
