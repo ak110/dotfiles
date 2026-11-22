@@ -6,6 +6,7 @@
 
 操作種別はargvで受け取る（`list`・`read`・`serve`）。
 `list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧、Codexの記録ではthread名をJSONで返す。
+`search`は一覧の範囲で記録本文を検索し、一致するパスだけを返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 `serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
@@ -21,6 +22,7 @@ import pathlib
 import socket
 import sys
 import threading
+import time
 import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -28,6 +30,7 @@ from agent_toolkit._atk import session_record_format  # noqa: E402  # pylint: di
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
     session_parents,
     session_watch,
+    sessions_models,
 )
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
     host_homes,
@@ -132,6 +135,7 @@ def _list_payload(
         parent_path = links.get(entry["path"]) if isinstance(entry.get("path"), str) else None
         if parent_path is not None:
             entry["parent_path"] = parent_path
+            entry["label"] = index.delegation_labels(pathlib.Path(parent_path)).get(entry["session_id"])
     entries.sort(key=lambda item: item["started_at"] or "", reverse=True)
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda item: item.get("path"), parent_of=lambda item: item.get("parent_path")
@@ -181,6 +185,30 @@ def _is_safe_record_path(raw: str) -> bool:
             continue
         return True
     return False
+
+
+def _search_payload(
+    query_b64: str,
+    tracker: session_watch.RecordChangeTracker | None = None,
+    index: session_watch.RecordSummaryIndex | None = None,
+) -> dict[str, typing.Any]:
+    query = base64.b64decode(query_b64, validate=True).decode("utf-8").strip().casefold()
+    if not 0 < len(query) <= 1024:
+        raise ValueError("検索語は1〜1024文字で指定してください")
+    paths = []
+    incomplete = False
+    deadline = time.monotonic() + sessions_models.OPERATION_TIMEOUT_SEC["search"]
+    for entry in _list_payload(tracker, index)["entries"]:
+        raw = entry.get("path")
+        if not isinstance(raw, str) or not _is_safe_record_path(raw):
+            incomplete = True
+            continue
+        try:
+            if sessions_models.record_matches(pathlib.Path(raw), query, deadline=deadline):
+                paths.append(raw)
+        except OSError, ValueError:
+            incomplete = True
+    return {"paths": paths, "incomplete": incomplete}
 
 
 def _read_payload(path_b64: str) -> dict[str, typing.Any]:
@@ -240,6 +268,8 @@ def _handle_request(
     try:
         if op == "list":
             return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker, index)}
+        if op == "search":
+            return {"type": "response", "id": req_id, "ok": True, **_search_payload(str(req.get("query", "")), tracker, index)}
         if op == "read":
             return {"type": "response", "id": req_id, "ok": True, **_read_payload(str(req.get("path", "")))}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
@@ -277,6 +307,7 @@ def _serve() -> int:
     RPCプロトコル（行区切りJSON）:
         リクエスト（stdin）: {"id":<int>, "op":"list"}
                             または{"id":<int>, "op":"read", "path":"<base64絶対パス>"}
+                            または{"id":<int>, "op":"search", "query":"<base64検索語>"}
         応答（stdout）:
             成功: {"type":"response", "id":<int>, "ok":true, ...}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
@@ -309,13 +340,16 @@ def _serve() -> int:
 
 
 def main() -> int:
-    """argvの操作種別に応じて一覧・読み取り・常駐モードを実行する。"""
+    """argvの操作種別に応じて一覧・読み取り・検索・常駐モードを実行する。"""
     if len(sys.argv) < 2:
         sys.stderr.write("missing operation\n")
         return 2
     op = sys.argv[1]
     if op == "list":
         json.dump(_list_payload(), sys.stdout, ensure_ascii=False)
+        return 0
+    if op == "search" and len(sys.argv) == 3:
+        json.dump(_search_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
         return 0
     if op == "read":
         if len(sys.argv) < 3:

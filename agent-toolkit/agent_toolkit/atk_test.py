@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -411,6 +412,45 @@ class TestMainFailureNextAction:
         _git_sync.mark_reported(error)
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert not any(line.startswith("失敗: ") for line in lines)
+
+
+@pytest.mark.usefixtures("_isolate_agent_and_managed_temp_environment")
+def test_wi_preview_keeps_pressure_cleanup_for_the_next_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """原稿の表示は回収を待たず、続く更新はディスクの空きを回復してから始まる。"""
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    monkeypatch.setenv(_sweep.MIN_FREE_RATIO_ENV, "0.10")
+    idle = _managed_temp.temp_root_path() / "idle-old"
+    idle.mkdir(parents=True)
+    now = datetime.datetime.now()
+    _sweep._save_sweep_time(_sweep.paths.state_root(), _sweep._now_ns(now))  # pylint: disable=protected-access
+    old = (now - datetime.timedelta(days=8)).timestamp()
+    os.utime(idle, (old, old))
+    monkeypatch.setattr(
+        _sweep,
+        "_disk_usage",
+        lambda _path: SimpleNamespace(total=100, free=5 if idle.exists() else 15),
+    )
+    preview = _prepare_non_saving_operation("add --dry-run", notes, tmp_path, monkeypatch)
+    with pytest.raises(SystemExit) as preview_result:
+        atk.main(preview, home=tmp_path, now=now)
+    assert preview_result.value.code == 0 and idle.is_dir()
+    assert _DRY_RUN_SUCCESS in capsys.readouterr().out
+
+    def ensure_after_cleanup(_home: pathlib.Path) -> pathlib.Path:
+        assert not idle.exists()
+        return notes
+
+    monkeypatch.setattr(_wi_sync, "ensure_environment", ensure_after_cleanup)
+    write = _prepare_sync_mutation("wi start-processing", monkeypatch)
+    with pytest.raises(SystemExit) as write_result:
+        atk.main(write, home=tmp_path, now=now)
+    assert write_result.value.code == 0 and not idle.exists()
+    assert (notes / "started.txt").is_file()
+    assert "空きが下限" in capsys.readouterr().err
 
 
 def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:

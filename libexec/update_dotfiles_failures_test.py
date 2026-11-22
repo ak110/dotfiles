@@ -38,16 +38,27 @@ class TestStepFailureStopsExecution:
     失敗しても前提を壊さない段は、後続の段を続けて終了コード1で終える。
     """
 
-    def test_step2_failure_skips_step3_and_4(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    def test_step2_failure_skips_step3_and_4(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        sync_report_path: pathlib.Path,
+    ) -> None:
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
-        monkeypatch.setattr(subprocess, "run", _fake_run({"init": 3}, calls))
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({"init": 3}, calls, stderr_by_command={"init": "chezmoi: template evaluation failed\n"}),
+        )
         monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
         assert update_dotfiles.main() == 3
         assert len(calls) == 3
         assert calls[1][:2] == ["chezmoi", "init"]
         assert calls[2][:2] == ["chezmoi", "init"]
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert "template evaluation failed" in report["stderr_tail"]
 
     def test_dotfiles_pull_failure_stops_before_init(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """dotfiles自身のpullの失敗は、不確定なソースを配備しないよう以降の段を止める。"""

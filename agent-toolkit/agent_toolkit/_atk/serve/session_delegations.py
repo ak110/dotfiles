@@ -17,6 +17,7 @@ class DelegationCollector:
         self.engine = engine
         self._call_ids: set[str] = set()
         self._children: set[str] = set()
+        self.labels: dict[str, str] = {}
 
     def wants(self, line: str) -> bool:
         """行をJSONとして解析する必要があるかを返す。
@@ -45,6 +46,8 @@ class DelegationCollector:
             child = value.get(key)
             if isinstance(child, str) and child:
                 self._children.add(child)
+                if isinstance(label := value.get("label"), str) and label:
+                    self.labels[child] = label
                 break
         excluded = value.get("excluded_candidates")
         if isinstance(excluded, list):

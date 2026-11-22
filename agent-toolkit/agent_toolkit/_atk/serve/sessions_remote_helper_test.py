@@ -2,6 +2,7 @@
 
 # pylint: disable=protected-access
 
+import base64
 import importlib.util
 import io
 import json
@@ -93,7 +94,7 @@ def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path)
             },
             {
                 "type": "user",
-                "toolUseResult": {"session_id": "child"},
+                "toolUseResult": {"session_id": "child", "label": "exec-lane-search"},
                 "message": {"content": [{"type": "tool_result", "tool_use_id": "call", "content": "起動"}]},
             },
         ],
@@ -116,6 +117,21 @@ def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path)
     entries = {entry["path"]: entry for entry in json.loads(result.stdout)["entries"]}
 
     assert entries[str(child)]["parent_path"] == str(parent)
+    assert entries[str(child)]["label"] == "exec-lane-search"
+
+    search = subprocess.run(
+        [
+            sys.executable,
+            str(pathlib.Path(__file__).resolve().parents[3] / "scripts" / "atk_serve_sessions_remote_helper.py"),
+            "search",
+            base64.b64encode("子".encode()).decode(),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    assert json.loads(search.stdout) == {"paths": [str(child)], "incomplete": False}
 
 
 @pytest.mark.asyncio

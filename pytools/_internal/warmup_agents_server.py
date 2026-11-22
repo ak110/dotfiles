@@ -92,8 +92,9 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     for command in commands:
         paths.extend((Path(command[0]), Path(command[1])))
         paths.append(Path(command[command.index("--project") + 1]) if "--project" in command else Path(command[-1]))
-    # 更新側のログ対応付けと後続の整理に使う値は、管理サービスの起動条件に含めない。
+    # 更新のログ、診断、後続の整理に使う値は、管理サービスの起動条件に含めない。
     update_markers = {
+        "DOTFILES_PYTOOLS_INSTALL_DETAIL",
         "UPDATE_DOTFILES_RUN_ID",
         "DOTFILES_PRUNE_READY_FILE",
         "UPDATE_DOTFILES_BOOTSTRAP_REPORT",

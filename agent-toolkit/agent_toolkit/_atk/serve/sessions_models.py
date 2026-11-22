@@ -1,10 +1,13 @@
 """セッション画面の表示モデルと共有設定。"""
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime
+import json
 import pathlib
 import threading
+import time
 import typing
 
 from agent_toolkit._atk import session_record_format
@@ -56,12 +59,12 @@ STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # `list`は全記録を走査し、常駐ヘルパーの最初の要求と単発SSHでは所要時間が記録量に比例する。
 # 値の根拠（初回走査の観測値）は`docs/development/design-serve-session-list.md`の「一覧と識別」にある。
 # `read`は記録1件の読み取りで、記録量に比例しない。
-OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0}
+OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0, "search": 30.0}
 
 
 # RPCが上限を超えても単発SSHへ切り替えない操作。単発SSHは同じ走査を索引の無い新しいプロセスで
 # 最初からやり直すため、走査を続けている常駐ヘルパーより先に終わらず、常駐ヘルパーとCPUを奪い合う。
-_NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list"})
+_NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list", "search"})
 
 
 # 常駐SSH接続のstdout用bufferのフロー制御閾値（バイト）。JSONの行長はchunkからの復元で扱う。
@@ -97,10 +100,38 @@ class SessionSummary:
     size: int | None
     warning: str | None = None
     parent_path: str | None = None
+    label: str | None = None
 
     def to_json(self) -> dict[str, typing.Any]:
         """JSON応答向けの辞書へ変換する。"""
         return dataclasses.asdict(self)
+
+
+def record_matches(path: pathlib.Path, query: str, *, deadline: float) -> bool:
+    """1件の許可済み記録を、詳細表示と同じ上限内で検索する。"""
+    if path.stat().st_size > MAX_RECORD_BYTES:
+        raise ValueError("記録が大きすぎます")
+    with path.open("rb") as stream:
+        remaining = MAX_RECORD_BYTES
+        while remaining:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("記録の検索が上限時間に達しました")
+            raw = stream.readline(remaining + 1)
+            if not raw:
+                return False
+            remaining -= len(raw)
+            if remaining < 0:
+                break
+            line = raw.decode("utf-8", errors="replace")
+            if query in line.casefold():
+                return True
+            if "\\u" in line:
+                with contextlib.suppress(ValueError, RecursionError):
+                    if query in json.dumps(json.loads(line), ensure_ascii=False).casefold():
+                        return True
+        if remaining < 0 or stream.read(1):
+            raise ValueError("記録が大きすぎます")
+    return False
 
 
 def _isoformat(epoch: float | None) -> str | None:
