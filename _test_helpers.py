@@ -379,17 +379,20 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
     for value in workflow_jobs(workflow).values():
         for step in expanded_workflow_steps(workflow_mapping(value)):
             command = workflow_step_source(step) if "run" in step else None
-            if not isinstance(command, str) or "pytest" not in command.split():
+            if command is None:
                 continue
-            tokens = shlex.split(command)
-            if "pytest" not in tokens:
-                continue
-            pytest_index = tokens.index("pytest")
-            targets.extend(
-                token
-                for token in tokens[pytest_index + 1 :]
-                if not token.startswith("-") and ("/" in token or token.endswith(".py"))
-            )
+            for line in command.replace("`\n", " ").replace("\\\n", " ").splitlines():
+                words = line.split()
+                if "pytest" not in words:
+                    continue
+                index = words.index("pytest")
+                launch = [word for word in words[:index] if "=" not in word]
+                if launch[:2] != ["uv", "run"]:
+                    continue
+                arguments = shlex.split(line)[index + 1 :]
+                targets.extend(
+                    token for token in arguments if not token.startswith(("-", "$")) and ("/" in token or token.endswith(".py"))
+                )
     return targets
 
 

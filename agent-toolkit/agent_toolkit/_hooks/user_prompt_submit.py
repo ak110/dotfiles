@@ -1,4 +1,4 @@
-"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitでセッション状態を記録し、応答の契約を注入する。
+"""UserPromptSubmitでセッション状態と応答の案内を扱う。  pyfltr: allow-comment
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
 Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
@@ -24,7 +24,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 実ユーザー発話と機械注入ターンの両方で前回通知からの経過時間に基づいて付ける。
 成立した注記を1つの`additionalContext`へまとめる。
 
-指摘を受けたときの初動は、発話の意味を受領側で判定できるよう、受付時刻とともに毎回届ける。
+発話ごとの初動（「発話の理解」）の案内は、指摘かどうかを受領側に判定させず、受付時刻とともに毎回届ける。
 ユーザー発話向けの注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
 機械注入ターンでは、実ユーザー発話向けの起動案内を返さず、配送待ちの状態も消費しない。
@@ -50,6 +50,7 @@ from agent_toolkit._hooks.notice import begin_delivery, emit_response, informati
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    UTTERANCE_UNDERSTANDING_NOTICE_BODY,
     content_notices,
 )
 lazy from agent_toolkit._common import (
@@ -137,11 +138,7 @@ def _clock_notice(session_id: str) -> str:
     resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
 
     return informational(
-        _llm_notice(
-            f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n"
-            "指摘、訂正、是正要求、異議（疑問形を含む）の場合だけ、"
-            "調査より先に`agent-toolkit:atk-mode`「ユーザーの方針」の「指摘の理解」を適用する。"
-        )
+        _llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n{UTTERANCE_UNDERSTANDING_NOTICE_BODY}")
     )
 
 

@@ -40,6 +40,15 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
                 body = definitions[name].body
 
 
+def test_direct_pytest_targets_ignore_other_shell_statements() -> None:
+    script = """uv run pytest -v first_test.py
+export PYFLTR_GLOBAL_CONFIG="$RUNNER_TEMP/pytest-root-pyfltr.toml"
+TESTSCOPE=off uv run --frozen pytest -v "${targets[@]}" second_test.py
+"""
+    workflow: dict[str, object] = {"jobs": {"test": {"steps": [{"run": script}]}}}
+    assert direct_pytest_targets(workflow) == ["first_test.py", "second_test.py"]
+
+
 def _pytest_arguments(command: str) -> list[str] | None:
     tokens = shlex.split(command)
     if "pytest" in tokens:

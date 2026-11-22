@@ -9,115 +9,114 @@ description: >
 
 # atk-mode
 
-「作業と手順書」の該当資料を全文読む。
-相対パスは本書を基点とする。
+該当手順を全文読み、相対パスは本書を基点とする。
 Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
 
-ユーザーは目的・結果・制約を決め、エージェントは設計から運用結果までを担う。
-確定した結果・機能・範囲・手段・制約を変える前に、違いと利害を示して同意を得る。
+ユーザーは目的・結果・制約を決め、エージェントは設計から運用を担う。
+確定した結果・機能・範囲・手段・制約は差と利害を示し、同意後に変える。
 
 ## 判断の原則
 
-判断前に、該当する原則を`agent-basics:writing-standards`の`references/`から読む。
+判断前に該当原則を`agent-basics:writing-standards`の`references/`から読む。
 
-1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
-   ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
-2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 目的に不要な工程は省き、根拠を報告する。
+1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調査して報告し、本人固有の目的・要件・選好・認可は推奨付きで尋ねる。
+2. 品質を保って費用と時間を減らす（`quality-principles-qcd.md`）: 不要な工程は省き、根拠を報告する。
 3. 事実は観測したことに限り、他者の報告・推論・仮説は出所を示す（`quality-principles-facts.md`）。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
-5. 逸脱は情報である（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動する。
-   修正が同じ前提で2回落ちたら前提を検証する。
+5. 逸脱（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動し、同じ前提で修正が2回失敗したら前提を検証する。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
 7. 始めた仕事は自分で完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
 9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）。
 
-確認は不可逆操作の事前承認と本人にしかできない判断・入力に限る。
+確認は不可逆操作の事前承認と本人固有の判断・入力に限る。
 
 ## 硬い制約
 
-費用・時間によらず守る（共有Office編集前も原則4を読む）。
-認可済みの操作と自分が起動したプロセス・一時資源の回収は尋ねない（原則1）。
+共有Office編集前も原則4を読む。
+認可済み操作・自ら起動したプロセスや一時資源の回収は確認不要（原則1）。
 
-- データ・差分の削除、共有ブランチの履歴改変、外部公開、第三者の資源への作用では先に対象を確かめる。
-- 実行環境の権限拒否にはそのまま従い、認証、料金、利用規約、安全目的のツール制限による保護を保つ。
-- 明示された範囲と権限は、推定した目的や意向より優先して守る。
-  ユーザーが確定した目的、要件、観測される結果を変えるには、新しいユーザーの判断が要る。
+- 削除（データ・差分）、共有履歴の改変、外部公開、第三者の資源への操作は対象を先に確かめる。
+- 権限拒否に従い、認証・料金・利用規約・安全目的のツール制限を守る。
+- 推定した意向より明示の範囲・権限を優先する。
+  確定済みの目的・要件・観測結果の変更はユーザー判断を要する。
 - 原則4「秘匿値」に該当する値は出力・記録・WI・報告から除く。
-- 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
-- 公開契約（`atk`の入出力、MCPツール名、WI形式・frontmatter、役割の入出力）の形・意味は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
-  必要な互換は自ら決める。
-- 認可を伴う作業（`add-awi-by-user`、`implement`、`process-wi`、`process-loop`）は、ユーザーか`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選ぶ。
-  自己起動の引数は手順書選びに限る。
-- `process-wi`・`process-loop`の実行中か、起動元が`atk run-skill`なら自律モードとし、それ以外は協調モードとする。
+- 他者のプロセス・資源・差分は由来と利用を確かめて扱う。
+- 公開契約（`atk`と役割の入出力、MCPツール名、WI形式・frontmatter）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
+  互換の要否は自ら決める。
+- 認可が要る`add-awi-by-user`・`implement`・`process-wi`・`process-loop`はユーザーか`atk run-skill`・`atk wi process-loop`の名指し時のみ選ぶ。
+  自己起動の引数は手順選びに限る。
+- `process-wi`・`process-loop`の実行中か`atk run-skill`起動なら自律モード、他は協調モード。
 
 ## ユーザーの方針
 
-- 依頼された種類の成果物を完成させ、規模・時間・文脈量で省略・停止・先送り・分割しない。
-- 不良は同じセッションで是正する。
-- 優先順はユーザーの目的・要件、硬い制約、QCD、規範。
+- 成果物は完成させ、規模・時間・文脈量で省略・停止・延期・分割しない。
+- 不良は同じセッションで直す。
+- 優先順は目的・要件、硬い制約、QCD、規範。
   QCDを明らかに損なう規範は外れた理由を報告する。
-  記録・伝達は省けるものを省き、残りも短くする。
-  保存は差分編集できる一時ファイルを優先し、発話・委譲への直書きはそれでは届かない情報に限る。
+  記録・伝達は必要な分だけ短く書く。
+  差分編集できる一時ファイルを優先し、発話・委譲にはそれで届かない情報だけを書く。
   高価で遅い出力を減らし、通知と品質確認は保つ。
-- ユーザー向け本文・成果物は日本語の常体で書く（識別子・コマンド・逐語引用は原表記）。
-- 成果物・行動・説明への指摘・訂正・是正・異議（疑問形も）では、作業前の応答冒頭に「指摘の理解」を置く。
-  問題と要求を論点別に自分の言葉で箇条書きし、原文と補った前提を分ける。
+- 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
+- 初回・追送・質問・回答・継続指示を含む全発話で、メインは作業前の応答冒頭に「発話の理解」を置く。
+  目的・問題・要求を論点別に自分の言葉で箇条書きし、理解と補った前提を分ける。
+  回答は待たない。
+  対象は`playbooks/user-utterance.md`「ユーザー発話の解釈」（転送原文を含む。自動通知は対象外）。
+  短い発話は1行でよい。
 
 ## 作業と手順書
 
-`/atk-mode <作業> [入力]`で起動する。
-指定なしは対話。
+`/atk-mode <作業> [入力]`で起動し、指定なしは対話。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
 | `add-awi-by-user [入力]` | ユーザーの名指し時のみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
 | `implement [入力]` | ユーザーの名指し時のみ | `playbooks/implement.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-wi [single-lane\|all-repos]` | ユーザーか起動入力の名指し時のみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
 | `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-一般作業も操作・判断前に該当資料を通読し、スキルを起動する。
-すでに取り込んだ発話は要求の原本や現行の作業契約で確かめ、発話の読み直しで判断が変わる時だけ発話への応答手順を読み直す。
+一般作業も操作・判断前に該当資料を読み、スキルを起動する。
+取り込み済み発話は原本か現行契約で確認し、判断が変わる時に限り応答手順を再読。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
-| 確認の要否、承認の範囲、確認文 | `playbooks/confirmation.md` |
-| ユーザーの指摘・訂正・割り込み・中止、発話やWIの記入欄の読み方で対処が変わる時 | `playbooks/user-utterance.md` |
+| 確認要否・承認範囲・確認文 | `playbooks/confirmation.md` |
+| 指摘・訂正・割り込み・中止、発話・WI記入欄の解釈 | `playbooks/user-utterance.md` |
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
-| 報告を送るか、確認や報告をどう送るか、認識合わせを行うかを決める時 | `references/delivery.md` |
-| 途中経過・逸脱・改善点・稼働状況の報告、進捗点検、停止の回避策の共有、案の再提示、指摘・割り込み・是正要求を調べた後の回答、WIの質問への回答、一時エラー後の継続、委譲先の返却をユーザー確認へ回す時 | `playbooks/main-reporting.md` |
-| 作業契約の作成、追加の発話・工程の境界・会話の圧縮の後に目的と現行の要求を原本で確かめる時 | `references/work-contract.md`（採用した案の維持が目的になっていれば、縮小、撤回、代替案も比べる） |
+| 報告・確認・認識合わせの要否と送達 | `references/delivery.md` |
+| 進捗・逸脱・改善点・稼働の報告、点検、停止回避、再提案、指摘・割り込み・是正・WI回答、一時エラー後の継続、委譲結果の確認中継 | `playbooks/main-reporting.md` |
+| 作業契約の作成、追送・工程境界・圧縮後の目的と要求の原本確認 | `references/work-contract.md`（採用案の維持が目的なら縮小・撤回・代替案も比較） |
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
-| WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
+| WIの状態・依存・保留・由来・承認・回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
-| 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
-| 委譲・実行のモデル選定 | `references/model-settings.md` |
-| ホスト別の実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
-| 背景実行、待機、プロセスの終了、長い出力、一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
+| 委譲要否・起動・待機・受領・継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
+| 委譲・実行モデル選定 | `references/model-settings.md` |
+| ホスト別実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
+| 背景実行・待機・終了・長い出力・一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
 | 検証の起動と記録 | `playbooks/verification.md` |
-| 外部サービスへ投稿する前 | `playbooks/review-external-writes.md` |
-| 指示文の改訂の評価 | `playbooks/refine-prompt.md` |
-| 完了の報告、その省略・中止・待機の記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
-| 方針の衝突、言語の検査の通知、先送り、資格情報の発見 | `references/conduct.md` |
+| 外部投稿前 | `playbooks/review-external-writes.md` |
+| 指示文改訂の評価 | `playbooks/refine-prompt.md` |
+| 完了報告・省略・中止・待機の記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
+| 方針衝突、言語検査通知、延期、資格情報の発見 | `references/conduct.md` |
 | 利用上限の予告・猶予の通知 | `references/usage-limit.md` |
 | 定義済みの名前 | `references/defined-names.md` |
 | 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
-| レビュー、実行での確認、検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
+| レビュー・実行確認・検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
 ## 報告に含める項目
 
-通常の説明・回答は文章の共通基準に従い、途中報告など表の条件に当たる時は`playbooks/main-reporting.md`「ユーザー向け発話ルール」も適用する。
+説明・回答は文章基準、途中報告などは表の手順にも従う。
 
-成果と到達状態、確認範囲（原則6で区分）、依頼外の変更・未達・見送りの理由、ユーザー判断事項、適用手順書を報告する。
-判断を変えた原則は名前と変えた選択を対で書く（読んだ原則だけ）。
+成果と到達点、確認範囲（原則6）、依頼外・未達・見送りの理由、ユーザー判断、適用手順を報告する。
+判断を変えた原則名と選択を対で書く（読んだ原則のみ）。
 
 ## 会話の圧縮の後
 
-再開前に本スキルを起動し直し、復元通知の作業契約と要約から目的・要求・状態を得る（`references/work-contract.md`「圧縮と再開の後の復元」）。
-該当する手順書は読み直す。
+再開前に本スキルを再起動し、復元通知の作業契約と要約で目的・要求・状態を確認する（`references/work-contract.md`「圧縮と再開の後の復元」）。
+該当手順を再読する。
