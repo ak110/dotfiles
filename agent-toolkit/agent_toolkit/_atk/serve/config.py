@@ -12,8 +12,6 @@ from agent_toolkit._atk import config as _config
 
 @dataclasses.dataclass(frozen=True)
 class PlansConfig:
-    """計画ファイル画面の参照元。"""
-
     # 未指定時はprivate-notes配下のplansと`~/.claude/plans`の2つのrootを用いる。
     root: str | None = None
     remote_hosts: tuple[str, ...] = ()
@@ -21,8 +19,6 @@ class PlansConfig:
 
 @dataclasses.dataclass(frozen=True)
 class SessionsConfig:
-    """セッション画面の参照元。"""
-
     # 未指定時はそれぞれClaude Codeの設定ディレクトリとCodexのホーム（`agent_toolkit._common.host_homes`）を用いる。
     claude_home: str | None = None
     codex_home: str | None = None
@@ -31,8 +27,6 @@ class SessionsConfig:
 
 @dataclasses.dataclass(frozen=True)
 class ServeConfig:
-    """Webサーバーの解決済み設定。"""
-
     host: str
     port: int
     plans: PlansConfig = dataclasses.field(default_factory=PlansConfig)
@@ -40,7 +34,6 @@ class ServeConfig:
 
 
 def _path_or_none(key: str) -> str | None:
-    """パスの設定値を返す。空文字列は未指定として`None`を返す。"""
     return _config.resolve_mutable_setting(key) or None
 
 

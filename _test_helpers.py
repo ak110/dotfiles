@@ -337,7 +337,6 @@ def workflow_steps(job: dict[str, object]) -> list[dict[str, object]]:
 
 
 def expanded_workflow_steps(job: dict[str, object]) -> list[dict[str, object]]:
-    """ローカルcompositeの呼出先まで検査対象をたどる。条件式の評価は行わない。"""
     steps: list[dict[str, object]] = []
     for step in workflow_steps(job):
         uses = str(step.get("uses", ""))
@@ -352,7 +351,6 @@ def expanded_workflow_steps(job: dict[str, object]) -> list[dict[str, object]]:
 
 
 def workflow_step_source(step: dict[str, object]) -> str:
-    """CIが起動する固定のスクリプト参照を解決し、検証用に本文を返す。"""
     command = str(step["run"])
     if command.startswith(("python3 scripts/", "bash scripts/")):
         return (REPO_ROOT / command.split()[1]).read_text(encoding="utf-8-sig")
@@ -381,17 +379,28 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
     for value in workflow_jobs(workflow).values():
         for step in expanded_workflow_steps(workflow_mapping(value)):
             command = workflow_step_source(step) if "run" in step else None
-            if not isinstance(command, str) or "pytest" not in command.split():
+            if command is None:
                 continue
-            tokens = shlex.split(command)
-            if "pytest" not in tokens:
-                continue
-            pytest_index = tokens.index("pytest")
-            targets.extend(
-                token
-                for token in tokens[pytest_index + 1 :]
-                if not token.startswith("-") and ("/" in token or token.endswith(".py"))
-            )
+            for line in command.replace("`\n", " ").replace("\\\n", " ").splitlines():
+                if "pytest" not in line.split() or "uv run" not in line:
+                    continue
+                lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|<>")
+                lexer.whitespace_split = True
+                statement: list[str] = []
+                for token in [*lexer, ";"]:
+                    if token and all(char in ";&|<>" for char in token):
+                        if "pytest" in statement:
+                            index = statement.index("pytest")
+                            launch = [word for word in statement[:index] if "=" not in word]
+                            if launch[:2] == ["uv", "run"]:
+                                targets.extend(
+                                    arg
+                                    for arg in statement[index + 1 :]
+                                    if not arg.startswith(("-", "$")) and ("/" in arg or arg.endswith(".py"))
+                                )
+                        statement.clear()
+                    else:
+                        statement.append(token)
     return targets
 
 
@@ -435,7 +444,6 @@ _AUDIT_RECORDS = pathlib.Path("docs/development/audit-records.md")
 
 
 def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE_SUFFIXES) -> list[pathlib.Path]:
-    """追跡済みとignore対象外の新規ファイルから、検査対象の相対パスを返す。"""
     result = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
         cwd=root,
@@ -450,7 +458,6 @@ def _tracked_source_paths(root: pathlib.Path, suffixes: frozenset[str] = _SOURCE
 
 
 def _format_unresolved(entries: list[tuple[str, pathlib.Path]]) -> str:
-    """未解決参照を参照元と対にして整形する。"""
     return "\n".join(f"{reference} <- {source}" for reference, source in entries)
 
 
@@ -478,7 +485,6 @@ _JUNIT_UPLOAD = "${{ !cancelled() && " + _OWNS + " && steps.pytest.outputs.junit
 
 @pytest.fixture(name="raw_base_url", scope="module")
 def raw_base_url_fixture() -> typing.Iterator[str]:
-    """リポジトリのファイルを配るテスト用の取得元URLを返す。"""
     yield from serve_repository()
 
 

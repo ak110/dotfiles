@@ -100,7 +100,6 @@ export function isSelected(selection, candidate) {
   return Boolean(selection) && Object.keys(selection).every((key) => selection[key] === candidate[key]);
 }
 
-// 一覧の前後へ移動するボタンを、表示中の一覧での選択位置から有効・無効にする。
 // 選択が表示中の一覧に無い場合は両方を無効にする。
 export function updateNavButtons(previousButton, nextButton, items, isCurrent) {
   const index = items.findIndex(isCurrent);

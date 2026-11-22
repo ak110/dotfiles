@@ -24,6 +24,7 @@ import pydantic
 from agent_toolkit._common import (
     atomic_file,
     delegated_session,
+    mcp_environment,
     session_activity,
     session_family,
     session_launchers,
@@ -33,6 +34,7 @@ from agent_toolkit._common import (
     state_paths,
 )
 
+META_SCOPE = "agent-toolkit:review-session meta"
 BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
@@ -41,8 +43,6 @@ LAUNCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"
 
 
 class LaunchStatus(enum.StrEnum):
-    """受付前の起動責任と、受付後への移管を区別する。"""
-
     STARTING = "starting"
     ACCEPTED = "accepted"
     SETTLED = "settled"
@@ -50,28 +50,24 @@ class LaunchStatus(enum.StrEnum):
 
 
 class LaunchAttempt(pydantic.BaseModel):
-    """起動試行の保存境界。OSの生存はProcessIdentityから都度取得する。"""
-
     model_config = pydantic.ConfigDict(extra="allow", frozen=True)
     status: LaunchStatus
     manifest_path: str | None = None
     exited: pydantic.StrictBool = False
+    exit_code: pydantic.StrictInt | None = None
     owner: session_registry.ProcessIdentity | None = None
     process: session_registry.ProcessIdentity | None = None
 
     @pydantic.model_validator(mode="after")
     def check_receipt(self) -> Self:
-        """受付済みの試行は移管先を必須とする。"""
         if (self.status == LaunchStatus.ACCEPTED) != bool(self.manifest_path):
             raise ValueError("起動試行の受付状態とmanifestが一致しない")
         return self
 
     def save(self, path: pathlib.Path) -> None:
-        """検証済みの試行を保存キーの追加なしで交換する。"""
         write(path, self.model_dump(mode="json", exclude_unset=True))
 
     def receipt(self, manifest: pathlib.Path | None) -> LaunchAttempt:
-        """受付済み試行への遅れた見送りで所有移管を取り消さない。"""
         if self.status != LaunchStatus.STARTING:
             return self
         return LaunchAttempt.model_validate(
@@ -83,7 +79,6 @@ class LaunchAttempt(pydantic.BaseModel):
         )
 
     def attach(self, identity: session_registry.ProcessIdentity | None) -> LaunchAttempt:
-        """起動プロセスの発行結果を保存する。"""
         if self.status != LaunchStatus.STARTING:
             raise ValueError("受付終了した試行へプロセスを追加できない")
         return LaunchAttempt.model_validate(
@@ -95,24 +90,20 @@ class LaunchAttempt(pydantic.BaseModel):
         )
 
     def notify(self) -> LaunchAttempt:
-        """受付前に終了した試行だけを通知済みへ移す。"""
         if self.status != LaunchStatus.STARTING:
             raise ValueError("受付終了した試行は失敗通知できない")
         return LaunchAttempt.model_validate({**self.model_dump(exclude_unset=True), "status": LaunchStatus.NOTIFIED})
 
 
 class BatchStatus(enum.StrEnum):
-    """分析・報告の独立した結果をまとめて確定するbatchの段階。"""
-
     RUNNING = "running"
+    USAGE_LIMIT_PAUSED = "usage-limit-paused"
     FAILED = "failed"
     COMPLETED = "completed"
     RESOLVED = "resolved"
 
 
 class ReviewBatch(pydantic.BaseModel):
-    """既存の保存キーを保持して、状態値と更新条件を検証する。"""
-
     model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
     status: BatchStatus
     run_id: str
@@ -122,18 +113,19 @@ class ReviewBatch(pydantic.BaseModel):
     report_synced: bool = False
     failure_key: str | None = None
     error: str | None = None
+    usage_resume_at: float | None = None
 
     @pydantic.model_validator(mode="after")
     def check_failure(self) -> Self:
         """失敗状態は診断と報告識別子を必須とする。"""
         if self.status == BatchStatus.FAILED and (not self.failure_key or not self.error):
             raise ValueError("失敗batchにfailure_keyまたはerrorが無い")
+        if self.status == BatchStatus.USAGE_LIMIT_PAUSED and self.usage_resume_at is None:
+            raise ValueError("利用上限で中断したbatchに再開予定時刻が無い")
         return self
 
 
 class ScopeEntry(pydantic.BaseModel):
-    """元記録の処理済み接頭辞を識別する。"""
-
     model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
     path: str
     through_line: int = pydantic.Field(ge=0)
@@ -141,16 +133,12 @@ class ScopeEntry(pydantic.BaseModel):
 
 
 class ReviewedScope(pydantic.BaseModel):
-    """pending世代とは独立に残る処理済み範囲。"""
-
     model_config = pydantic.ConfigDict(extra="allow", frozen=True, strict=True)
     version: Literal[1]
     records: dict[str, ScopeEntry]
 
 
 class TargetStatus(enum.StrEnum):
-    """会話の待ち世代と処理済み範囲の存在を区別する。"""
-
     ABSENT = "absent"
     PENDING = "pending"
     REVIEWED = "reviewed"
@@ -190,13 +178,11 @@ class TargetGeneration:
 
     @property
     def status(self) -> TargetStatus:
-        """保存状態から導出し、別の永続フラグは持たない。"""
         if self.pending is not None:
             return TargetStatus.PENDING_REVIEWED if self.reviewed is not None else TargetStatus.PENDING
         return TargetStatus.REVIEWED if self.reviewed is not None else TargetStatus.ABSENT
 
     def register(self, value: dict[str, Any]) -> None:
-        """新しい入力世代を登録する。"""
         self.pending = PendingGeneration.model_validate(value)
         write(self.pending_path, self.pending.model_dump(mode="json", exclude_unset=True))
 
@@ -213,7 +199,6 @@ class TargetGeneration:
             )
 
     def discard(self, generation: str) -> bool:
-        """振り返る記録の無い待ち世代を除去する。選定後に再登録された世代は残す。"""
         if self.pending is None or self.pending.generation != generation:
             return False
         self.pending_path.unlink()
@@ -221,7 +206,6 @@ class TargetGeneration:
         return True
 
     def complete(self, scope: dict[str, Any], generation: str | None, *, appended: bool) -> None:
-        """処理範囲を保存し、準備時と一致した待ちだけを除去する。"""
         reviewed = ReviewedScope.model_validate(scope)
         write(self.reviewed_path, scope)
         if self.pending is not None and self.pending.generation == generation and not appended:
@@ -237,11 +221,9 @@ class BatchWriter:
         self.path = path
 
     def load(self) -> ReviewBatch:
-        """保存境界で状態値と各軸の型を検証する。"""
         return ReviewBatch.model_validate_json(self.path.read_text(encoding="utf-8"))
 
     def create(self, value: dict[str, Any]) -> dict[str, Any]:
-        """固定した対象集合の実行を開始する。"""
         with locked():
             if self.path.exists():
                 raise ValueError("既存batchは作成し直せない")
@@ -289,8 +271,25 @@ class BatchWriter:
                 )
             return value
 
+    def pause_for_usage_limit(self, resume_at: float, exit_code: int) -> None:
+        with locked():
+            self._save(
+                {
+                    **self._active(),
+                    "status": BatchStatus.USAGE_LIMIT_PAUSED,
+                    "usage_resume_at": resume_at,
+                    "exit_code": exit_code,
+                }
+            )
+
+    def resume_usage_limited(self) -> None:
+        with locked():
+            value = self._active()
+            if value["status"] == BatchStatus.USAGE_LIMIT_PAUSED:
+                value.pop("usage_resume_at", None)
+                self._save({**value, "status": BatchStatus.RUNNING})
+
     def analyze(self) -> dict[str, Any]:
-        """finishは分析成功だけを記録し、範囲の確定は起動側へ残す。"""
         with locked():
             value = self._active()
             if not value.get("prepared") or any(
@@ -300,7 +299,6 @@ class BatchWriter:
             return self._save({**value, "analysis_succeeded": True})
 
     def prepare(self, prepared: dict[str, Any]) -> dict[str, Any]:
-        """準備済み範囲を同じbatchへ追加する。"""
         with locked():
             value = self._active()
             return self._save({**value, "prepared": [*value.get("prepared", []), prepared]})
@@ -312,7 +310,6 @@ class BatchWriter:
             return self._save({**value, "targets": targets, "target_repo": target_repo})
 
     def attach(self, identity: session_registry.ProcessIdentity) -> None:
-        """生存判定の一次情報を照会できるPID世代を保存する。"""
         with locked():
             self._save(
                 {
@@ -358,12 +355,10 @@ class BatchWriter:
 
 
 def directory() -> pathlib.Path:
-    """OSアカウント共通の状態保存先を返す。"""
     return state_paths.state_dir() / "session-review"
 
 
 def timestamp() -> str:
-    """状態へ保存するUTC日時を返す。"""
     return datetime.datetime.now(datetime.UTC).isoformat()
 
 
@@ -375,15 +370,16 @@ def key(host: str, session_id: str) -> str:
 
 
 def read(path: pathlib.Path) -> dict[str, Any]:
-    """保存済みJSONオブジェクトを読む。破損を空集合へ読み替えない。"""
-    value = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        raise ValueError(f"{path}: {error}") from error
     if not isinstance(value, dict):
         raise ValueError(f"JSONオブジェクトでない: {path}")
     return value
 
 
 def write(path: pathlib.Path, value: dict[str, Any]) -> None:
-    """状態を原子的に交換する。"""
     atomic_file.atomic_write(path, json.dumps(value, ensure_ascii=False) + "\n")
 
 
@@ -397,7 +393,6 @@ def locked() -> Generator[None]:
 
 
 def discard_pending(target: Mapping[str, Any]) -> bool:
-    """記録ファイルが作られなかった会話など、振り返る内容の無い待ちを同じ世代に限って除去する。"""
     with locked():
         return TargetGeneration(target["host"], target["session_id"]).discard(target["generation"])
 
@@ -415,7 +410,6 @@ def failure_version(target: Mapping[str, Any], current: str) -> str:
 
 
 def failure_reported(failure_key: str, *, reported: bool | None = None) -> bool:
-    """キューの削除と独立した起票済み記録を交換する。終了AWIの観測時だけ解除する。"""
     name = hashlib.sha256(failure_key.encode()).hexdigest()
     with locked():
         path = directory() / "failures" / f"{name}.json"
@@ -431,7 +425,6 @@ def failure_reported(failure_key: str, *, reported: bool | None = None) -> bool:
 
 
 def pending() -> list[dict[str, Any]]:
-    """待ち記録を全件返す。読取不能を不在と扱わない。"""
     return [
         PendingGeneration.model_validate(read(path)).model_dump(mode="json", exclude_unset=True)
         for path in sorted((directory() / "pending").glob("*.json"))
@@ -439,39 +432,77 @@ def pending() -> list[dict[str, Any]]:
 
 
 def auto_start_due(*, now: float) -> bool:
-    """相談会話が閉じ、直前のbatch開始から6時間以上経過したか返す。"""
     interval = 6 * 60 * 60
     for path in (directory() / "runs").glob("*.json"):
-        # 記録は開始時以降に書かれるため、間隔より前に更新された記録の開始も間隔より前である。新しい記録だけを読む。
         if now - path.stat().st_mtime >= interval:
             continue
         value = read(path)
         started_at = value.get("started_at")
-        # 開始日時を保存していない世代は、既存記録の更新日時で保守的に間隔を保つ。
+
         started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
         if now - started < interval:
             return False
-    return not any(
+    return not _consultation_open()
+
+
+def meta_start_due(*, now: float) -> bool:
+    path = directory() / "meta-start.json"
+    try:
+        started = datetime.datetime.fromisoformat(read(path)["started_at"]).timestamp()
+    except FileNotFoundError:
+        return not _consultation_open()
+    return now - started >= 7 * 24 * 60 * 60 and not _consultation_open()
+
+
+def _consultation_open() -> bool:
+    return any(
         session_state.read_state(session_id).get("add_awi_skill_invoked") is True
         for session_id in session_activity.living_root_session_ids()
     )
 
 
-def launch_result(*, manifest: pathlib.Path | None = None) -> None:
-    """受付前の試行を正常見送り、または既存の実行記録の責任へ移す。"""
+def is_review_run() -> bool:
+    """非同期振り返り自身は重ねて自動起動せず、通常の分析対象とも区別する。"""
+    if os.environ.get(BATCH_ENV):
+        return True
+    try:
+        data = json.loads(os.environ.get(mcp_environment.SESSION_START_INPUT_ENV, ""))
+    except ValueError:
+        return False
+    if not isinstance(data, dict) or not isinstance(skill := data.get("skill"), str):
+        return False
+    arguments = data.get("arguments")
+    return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) == META_SCOPE
+
+
+def _launch_path() -> pathlib.Path | None:
     launch_id = os.environ.get(LAUNCH_ENV)
     if launch_id is None:
-        return
+        return None
     # 環境から任意パスを指定できないよう、生成したUUIDの形式だけを受け付ける。
     if len(launch_id) != 32 or any(character not in "0123456789abcdef" for character in launch_id):
         raise ValueError("振り返りの起動試行IDが不正")
+    return directory() / "launches" / f"{launch_id}.json"
+
+
+def launch_result(*, manifest: pathlib.Path | None = None) -> None:
+    if (path := _launch_path()) is None:
+        return
     with locked():
-        path = directory() / "launches" / f"{launch_id}.json"
         LaunchAttempt.model_validate(read(path)).receipt(manifest).save(path)
 
 
+def launch_exited(code: int) -> None:
+    if (path := _launch_path()) is None:
+        return
+    with locked():
+        value = read(path)
+        attempt = LaunchAttempt.model_validate(value)
+        if attempt.status == LaunchStatus.STARTING:
+            LaunchAttempt.model_validate({**value, "exited": True, "exit_code": code}).save(path)
+
+
 def launch_notice(host: str) -> str | None:
-    """次の開始時に、受付されず終了した起動試行だけを一度通知する。"""
     failures = []
     with locked():
         for path in sorted((directory() / "launches").glob("*.json")):
@@ -483,27 +514,31 @@ def launch_notice(host: str) -> str | None:
                 continue
             if attempt.process is None and not attempt.exited and (attempt.owner is None or attempt.owner.exists()):
                 continue
-            # PID保存前に親も終了した試行は、受付記録の無い起動中断である。
+
             log_path = str(value["log_path"])
             read_command = (
                 "Get-Content -LiteralPath '" + log_path.replace("'", "''") + "' -Encoding utf8"
                 if os.name == "nt"
                 else "cat -- " + shlex.quote(log_path)
             )
-            failures.append(f"{value['host']} {value['event']}: `{read_command}`")
+            code = f" 終了コード{attempt.exit_code}" if attempt.exit_code is not None else ""
+            if value.get("mode") == "meta":
+                retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
+            else:
+                retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
+            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
             attempt.notify().save(path)
     if not failures:
         return None
     return (
         "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
         + "、".join(failures)
-        + f"。原因を確認・是正して`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
+        + "。"
         "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
     )
 
 
 def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = None) -> bool:
-    """最上位の開始または処理済み会話への新しい入力を待ちへ登録する。"""
     session_id = payload.get("session_id")
     if (
         not isinstance(session_id, str)
@@ -531,7 +566,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
             "key": name,
             "host": host,
             "session_id": session_id,
-            "review_batch": bool(os.environ.get(BATCH_ENV) or prior.get("review_batch") or previous.get("review_batch")),
+            "review_batch": bool(is_review_run() or prior.get("review_batch") or previous.get("review_batch")),
             "transcript_path": transcript,
             "cwd": payload.get("cwd") or prior.get("cwd"),
             "target_repo": target_repo or prior.get("target_repo"),
@@ -544,13 +579,11 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
 
 
 def previous_scope(target: Mapping[str, Any]) -> pathlib.Path | None:
-    """会話を再開しても保持する前回の処理範囲を返す。"""
     path = directory() / "reviewed" / f"{key(str(target['host']), str(target['session_id']))}.json"
     return path if path.exists() else None
 
 
 def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) -> dict[str, Any]:
-    """解析済みの完全行だけを範囲へ記録し、前回の接頭辞が保たれていることを確かめる。"""
     previous = read(after).get("records", {}) if after is not None else {}
     records: dict[str, Any] = {}
     for item in collected:
@@ -570,12 +603,11 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     missing = set(previous) - set(records)
     if missing:
         raise ValueError(f"前回の子孫記録を再収集できない: {', '.join(sorted(missing))}")
-    # 同じ記録の再照会では、summary-onlyを含め保存scopeの内容を一定に保つ。
+
     return {"version": 1, "records": records}
 
 
 def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = False) -> dict[str, Any]:
-    """準備済みの範囲だけを成功確定し、並行する再開と追記を保持する。"""
     partial = allow_partial_analysis and prepared.get("partial_analysis") is True
     if prepared.get("unconfirmed_scope") and not partial:
         raise ValueError("未確認範囲を含む準備は成功確定できない")
@@ -590,7 +622,7 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
             or entry["through_line"] < 0
         ):
             raise ValueError("準備済みscopeの行境界が不正")
-        # prepareと同じJSONL回復・正規化を適用し、元行との一致を判定する。
+
         boundary = entry.get("observed_through_line", entry["through_line"]) if partial else entry["through_line"]
         if not isinstance(boundary, int) or isinstance(boundary, bool) or boundary < entry["through_line"]:
             raise ValueError("準備済みscopeの観測行境界が不正")
@@ -615,14 +647,13 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
                 scope["records"][record_id] = previous
         scope["records"] = {**old["records"], **scope["records"]}
         if old.get("partial_analysis") or scope.get("partial_analysis"):
-            # 遅い結果でも、新しい成功範囲に含まれる欠測・回復情報を失わない。
             scope["partial_analysis"] = True
             for field in ("unconfirmed_scope", "recovered_record_lines"):
                 scope[field] = list(
                     {json.dumps(item, sort_keys=True): item for item in [*old.get(field, []), *scope.get(field, [])]}.values()
                 )
         scope.update(host=host, session_id=session_id, review_batch=bool((target or old).get("review_batch")))
-        # 新しいSessionStart/UserPromptSubmitがあれば、同じ会話でも後続世代を消さない。
+
         appended = any(
             any(
                 line.strip()
@@ -637,7 +668,6 @@ def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = Fals
 
 
 def prepare_identity(host: str, session_id: str) -> dict[str, Any]:
-    """prepare開始時点の待ち世代を取得する。"""
     with locked():
         state = TargetGeneration(host, session_id)
         return {
@@ -650,7 +680,6 @@ def prepare_identity(host: str, session_id: str) -> dict[str, Any]:
 def cleanup_prepared(
     prepared: Mapping[str, Any], *, completed_before: float | None = None, allow_partial_analysis: bool = False
 ) -> bool:
-    """回収の障害を成功確定から分離し、残りは次回sweepへ渡す。"""
     try:
         return _cleanup_prepared(prepared, completed_before=completed_before, allow_partial_analysis=allow_partial_analysis)
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -664,7 +693,6 @@ def cleanup_prepared(
 
 
 def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | None, allow_partial_analysis: bool) -> bool:
-    """成功保存後、生成時と同一の全量抽出物だけを回収する。scopeと候補の証拠は残す。"""
     if prepared.get("unconfirmed_scope") and not (allow_partial_analysis and prepared.get("partial_analysis") is True):
         return False
     scope = pathlib.Path(str(prepared.get("bundle_scope_path", prepared["scope_path"])))
@@ -697,7 +725,6 @@ def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | 
     }
     fingerprints = prepared.get("disposable_bundle_files")
     if fingerprints is None:
-        # 旧生成物は成功scopeとの一致と、完了保存より古い実体だけを根拠にする。
         try:
             previous = previous_scope(prepared)
             if completed_before is None or previous is None or read(previous)["records"] != read(scope)["records"]:
@@ -738,13 +765,11 @@ def _cleanup_prepared(prepared: Mapping[str, Any], *, completed_before: float | 
 
 
 def protected_logs() -> set[pathlib.Path]:
-    """未確定の振り返りが参照するログを年齢回収から保護する。"""
     protected = set()
     for path in (directory() / "runs").glob("*.json"):
         try:
             value = read(path)
         except OSError, ValueError:
-            # 読めないmanifestが参照するログを削除しない。他skillの起動は妨げない。
             return {
                 log
                 for pattern in ("*session-review*.log", "*review-session*.log")
@@ -756,7 +781,6 @@ def protected_logs() -> set[pathlib.Path]:
 
 
 def sweep(*, now: float) -> None:
-    """完了済み実行だけを30日で回収し、参照を失った処理済み範囲を回収する。"""
     with locked():
         for path in (directory() / "launches").glob("*.json"):
             attempt = LaunchAttempt.model_validate(read(path))
@@ -795,9 +819,36 @@ def sweep(*, now: float) -> None:
         launch_log = directory() / "launch.log"
         if not referenced and launch_log.exists() and now - launch_log.stat().st_mtime > 30 * 24 * 60 * 60:
             launch_log.unlink()
-        for path in (directory() / "reviewed").glob("*.json"):
-            value = read(path)
-            if path.stem not in referenced and all(
-                not pathlib.Path(item["path"]).exists() for item in value["records"].values()
+        _sweep_reviewed(referenced)
+
+
+def sweep_reviewed(*, now: float) -> None:
+    with locked():
+        referenced = {target["key"] for target in pending()}
+        for path in (directory() / "runs").glob("*.json"):
+            manifest = read(path)
+            try:
+                if manifest["status"] != "resolved":
+                    referenced.update(target["key"] for target in manifest["targets"])
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ValueError(f"batchの実行記録を確認できない: {path}: {error}") from error
+        _sweep_reviewed(referenced, expired_before=now - 30 * 24 * 60 * 60)
+
+
+def _sweep_reviewed(referenced: set[str], *, expired_before: float | None = None) -> None:
+    for path in (directory() / "reviewed").glob("*.json"):
+        if path.stem in referenced:
+            continue
+        value = read(path)
+        try:
+            records = value["records"]
+            if not isinstance(records, dict):
+                raise TypeError("records")
+            if (
+                expired_before is not None
+                and path.stat().st_mtime < expired_before
+                or all(not pathlib.Path(item["path"]).exists() for item in records.values())
             ):
                 path.unlink()
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError(f"処理済み範囲を回収できない: {path}: {error}") from error

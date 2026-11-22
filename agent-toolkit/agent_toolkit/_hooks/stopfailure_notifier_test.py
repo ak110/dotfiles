@@ -22,7 +22,6 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 def test_rate_limit_command_hook_hands_request_to_turn_complete(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: str, delegated: bool, agent: str | None
 ) -> None:
-    """StopFailureの公開errorからメインだけの再開要求を作成する。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
@@ -61,6 +60,5 @@ def test_failure_does_not_create_a_log_or_transcript_summary(tmp_path: pathlib.P
 
 
 def test_invalid_json_exits_safely():
-    """不正JSON入力でも例外を送出せず正常終了する。"""
     result = _fork_runner.run_script(_SCRIPT, argv=("stopfailure_notifier",), input="not json")
     assert result.returncode == 0

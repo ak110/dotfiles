@@ -17,7 +17,6 @@ from agent_toolkit._testing import session_release_support as subject
 async def test_retained_executor_releases_child_when_manager_fails(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    """yield前の準備とmanager解放の例外で、所有済み実子と全pipeを回収する。"""
     acquired: list[subprocess.Popen[Any]] = []
     real_scope = subject.process_tree.process_scope
 

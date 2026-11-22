@@ -1,5 +1,3 @@
-"""エンドユーザーが使うatk commitコマンドを通して候補切替を検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -185,7 +183,6 @@ def _stream(*events: dict[str, Any]) -> str:
 def test_public_commit_preserves_unicode_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], separator: str
 ) -> None:
-    """stream-jsonの結果本文をUnicode区切りで分断せず、公開出力へそのまま渡す。"""
     repository = _repo(tmp_path)
     monkeypatch.chdir(repository)
     monkeypatch.setattr(commit.config, "resolve_model_candidates", lambda *_args, **_kwargs: [("claude", "sonnet", "high")])
@@ -326,7 +323,6 @@ def _next_action_line(stderr: str) -> str:
 def test_no_changes_reports_that_commit_is_unnecessary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """変更が無い場合はcommitが不要であることと再実行の条件を案内する。"""
     repository = _repo(tmp_path)
     (repository / "change.txt").unlink()
     monkeypatch.chdir(repository)

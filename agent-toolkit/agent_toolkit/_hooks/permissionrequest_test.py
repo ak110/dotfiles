@@ -21,26 +21,22 @@ _ALLOW_RESPONSE = {
 
 @pytest.fixture(autouse=True)
 def _isolate_owner_session_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """最上位セッションの識別子の解決元となる環境変数を、テスト実行環境から切り離す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
 
 
 @pytest.fixture(name="state_dir")
 def _state_dir(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """記録先の状態ディレクトリをテスト用一時ディレクトリへ差し替える。"""
     state_dir = tmp_path / "state"
     monkeypatch.setattr(state_paths, "state_dir", lambda: state_dir)  # noqa: SLF001  # pylint: disable=protected-access
     return state_dir
 
 
 def _log_path(state_dir: pathlib.Path) -> pathlib.Path:
-    """記録先ファイルのパスを返す。"""
     return state_dir / "permissionrequest.log"
 
 
 def _rotated_log_path(state_dir: pathlib.Path) -> pathlib.Path:
-    """退避先ファイルのパスを返す。"""
     return state_dir / "permissionrequest.log.1"
 
 
@@ -68,10 +64,7 @@ class TestAllowAlways:
 
 
 class TestRecord:
-    """許可した要求の記録内容と退避を検証する。"""
-
     def test_appends_one_json_line_per_request(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """要求ごとに1行1レコードのJSONが追記され、payload由来の項目を保持する。"""
         payloads = [
             {"session_id": "s1", "cwd": "/home/user/repo", "tool_name": "Bash", "tool_input": {"command": "ls"}},
             {"session_id": "s2", "cwd": "/home/user/other", "tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}},
@@ -89,13 +82,12 @@ class TestRecord:
             assert record["tool_name"] == payload["tool_name"]
             assert record["tool_input"] == payload["tool_input"]
             assert record["root_session_id"] is None
-            # UTCのISO 8601表記であることを、時差表記の有無で判定する。
+
             assert record["time"].endswith("+00:00")
 
     def test_missing_payload_keys_are_recorded_as_null(
         self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """payloadに無いキーはnullとして残り、後段の集計で欠落と区別できる。"""
         assert hook.main(json.dumps({"tool_name": "Bash"})) == 0
         capsys.readouterr()
 
@@ -109,7 +101,6 @@ class TestRecord:
     def test_unparsable_payload_is_recorded_with_null_fields(
         self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """解釈できないpayloadでも記録は残り、payload由来の項目はnullになる。"""
         assert hook.main("{不正なJSON") == 0
         capsys.readouterr()
 
@@ -133,7 +124,6 @@ class TestRecord:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """委譲の起点となった最上位セッションの識別子を、委譲元が渡す変数を優先して記録する。"""
         for key, value in environment.items():
             monkeypatch.setenv(key, value)
 
@@ -145,7 +135,6 @@ class TestRecord:
         assert record["session_id"] == "child-session"
 
     def test_rotates_when_log_reaches_size_limit(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """上限へ達した記録先は追記前に退避され、新しい記録先へ書き直される。"""
         state_dir.mkdir(parents=True)
         old_content = "x" * hook._LOG_SIZE_LIMIT  # noqa: SLF001  # pylint: disable=protected-access
         _log_path(state_dir).write_text(old_content, encoding="utf-8")
@@ -159,7 +148,6 @@ class TestRecord:
     def test_rotation_overwrites_existing_rotated_log(
         self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """退避は1世代だけ保持し、既存の退避先を上書きする。"""
         state_dir.mkdir(parents=True)
         old_content = "y" * hook._LOG_SIZE_LIMIT  # noqa: SLF001  # pylint: disable=protected-access
         _log_path(state_dir).write_text(old_content, encoding="utf-8")
@@ -171,7 +159,6 @@ class TestRecord:
         assert _rotated_log_path(state_dir).read_text(encoding="utf-8") == old_content
 
     def test_keeps_log_when_below_size_limit(self, state_dir: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """上限未満の記録先は退避せず追記を続ける。"""
         state_dir.mkdir(parents=True)
         _log_path(state_dir).write_text("z" * (hook._LOG_SIZE_LIMIT - 1), encoding="utf-8")  # noqa: SLF001  # pylint: disable=protected-access
 
@@ -183,7 +170,6 @@ class TestRecord:
     def test_returns_allow_when_log_is_unwritable(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """記録先を作成できない場合も許可の応答を返す。"""
         blocked = tmp_path / "blocked"
         blocked.write_text("状態ディレクトリの位置にある通常ファイル", encoding="utf-8")
         monkeypatch.setattr(state_paths, "state_dir", lambda: blocked)  # noqa: SLF001  # pylint: disable=protected-access
@@ -193,8 +179,6 @@ class TestRecord:
 
 
 class TestEndToEnd:
-    """サブプロセス経由で stdin / stdout の応答を検証する。"""
-
     def _run(self, payload_text: str, state_dir: pathlib.Path) -> tuple[int, str]:
         result = _fork_runner.run_script(
             _SCRIPT_PATH,

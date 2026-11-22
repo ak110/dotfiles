@@ -9,9 +9,6 @@ import pytest
 
 from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import listing
-from agent_toolkit._atk.wi import process_loop_ownership as ownership
-from agent_toolkit._atk.wi import process_loop_session as session
-from agent_toolkit._atk.wi import snapshot as wi_snapshot
 from agent_toolkit._testing import git_repository as git
 
 
@@ -39,11 +36,10 @@ def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tu
 
 
 def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """設定CLIのJSON登録を読み、同originをまとめ、空・不正登録を区別する。"""
     one = git.init_repository(tmp_path / "one", origin="https://example.test/team/one.git")
     clone = git.init_repository(tmp_path / "clone", origin="git@example.test:team/one.git")
     two = git.init_repository(tmp_path / "two", origin="https://example.test/team/two.git")
-    # 旧パス配列の初回移行でも、同originのcloneは最初のworktreeだけを残す。
+
     path = config._config_file_path()  # noqa: SLF001  # pylint: disable=protected-access
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"process_loop_repositories": json.dumps([str(one), str(clone), str(two)])}), encoding="utf-8")
@@ -64,7 +60,6 @@ def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
 def test_configured_repo_snapshot(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """キューを1回だけ取得し、リポジトリ別の依存・候補上限・登録外の除外を反映した一覧を渡す。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one, two, _empty = (repository.repo_id for repository in repositories)
@@ -109,7 +104,6 @@ def test_configured_repo_snapshot(
 
 
 def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部依存を待つprocessingの項目を候補に保ち、通常の除外を適用した後の件数からレーン上限を算出する。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one = repositories[0]
@@ -137,60 +131,3 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
         next(record for record in records if record["filename"] == "processing-00.md")["blocked_reason"]
         == "dependency-unmet-external"
     )
-
-
-def test_repository_input_passes_initial_snapshot_through_resume(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """担当準備後の投入を初回集合へ混ぜず、対象別基準を再開後の一覧でも再利用する。"""
-    notes = tmp_path / "notes"
-    repositories = tuple(
-        config.ConfiguredRepository(
-            f"example.test/team/{name}",
-            git.init_repository(tmp_path / name, origin=f"https://example.test/team/{name}.git"),
-            tmp_path / name / ".git",
-        )
-        for name in ("one", "two")
-    )
-    for repository in repositories:
-        _write(notes, f"{repository.worktree.name}-ready.md", repository.repo_id)
-        _write(notes, f"{repository.worktree.name}-ended.md", repository.repo_id, state="adopted")
-    initial = listing.configured_repo_snapshot(notes, repositories)
-    # 担当ごとの準備の間にキューが変わっても、一括取得の結果から保存する。
-    for repository in repositories:
-        _write(notes, f"{repository.worktree.name}-new.md", repository.repo_id)
-    for snapshot in initial:
-        repository = snapshot.repository
-        owner = ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
-        assert owner is not None
-        original = session.repository_input(snapshot, owner, worktree=repository.worktree)
-        baseline = pathlib.Path(original["snapshot_file"])
-        assert wi_snapshot.read(baseline) == {
-            (repository.repo_id, f"{repository.worktree.name}-ready.md"),
-            (repository.repo_id, f"{repository.worktree.name}-ended.md"),
-        }
-        manifest = tmp_path / f"{repository.worktree.name}.json"
-        manifest.write_text(json.dumps({"repositories": [original]}), encoding="utf-8")
-        ownership.update_prepared(owner, repository.worktree, manifest)
-        ownership.release(owner, completed=False)
-        owner = ownership.try_acquire(repository.repo_id, worktree=repository.worktree, mode="coordinator")
-        assert owner is not None
-        current = listing.configured_repo_snapshot(notes, (repository,))[0]
-        resumed = session.repository_input(current, owner, worktree=repository.worktree, reuse_candidates=True)
-        assert resumed["snapshot_file"] == original["snapshot_file"]
-        assert resumed["candidate_file"] == original["candidate_file"]
-        args = argparse.Namespace(
-            skip_pull=True,
-            target_repo=repository.repo_id,
-            status="all",
-            type="all",
-            answered="all",
-            source=None,
-            count=True,
-            summary_only=False,
-            new_since=baseline,
-        )
-        listing.cmd_list(args, notes)
-        assert capsys.readouterr().out == "1\n"
-        ownership.release(owner)
-        assert not baseline.exists()

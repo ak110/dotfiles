@@ -15,7 +15,7 @@ from collections.abc import Sequence
 lazy import asyncio
 
 lazy import psutil
-lazy from agent_toolkit._common import process_identity, process_tree
+lazy from agent_toolkit._common import process_identity, process_tree, startup_features
 
 from pytools._internal import codex_runtime
 lazy from pytools._internal import common
@@ -39,6 +39,8 @@ _VALUE_OPTIONS = frozenset(
         "--profile",
         "-s",
         "--sandbox",
+        "-a",
+        "--ask-for-approval",
         "-C",
         "--cd",
         "--add-dir",
@@ -81,7 +83,7 @@ _INTERRUPTED = frozenset({130, 143, -2, -15, 0xC000013A, -1073741510})
 _TOKEN_ENV = "DOTFILES_CODEX_RECOVERY_TOKEN"
 
 
-def _interactive(arguments: Sequence[str]) -> bool:
+def is_interactive(arguments: Sequence[str]) -> bool:
     options = arguments[: arguments.index("--")] if "--" in arguments else arguments
     if any(token.split("=", 1)[0] in {"--remote", "--no-daemon", "--help", "-h", "--version", "-V"} for token in options):
         return False
@@ -103,9 +105,26 @@ def _interactive(arguments: Sequence[str]) -> bool:
     return True
 
 
+def uses_startup_features(arguments: Sequence[str]) -> bool:
+    tokens = iter(arguments)
+    command = None
+    for token in tokens:
+        if token == "--":
+            break
+        option, equal, _value = token.partition("=")
+        if option in {"--help", "-h", "--version", "-V"}:
+            return False
+        if option in _VALUE_OPTIONS and not equal:
+            next(tokens, None)
+        elif command is None and not token.startswith("-"):
+            command = token
+        elif command in {"exec", "e"} and token == "help":
+            return False
+    return command not in _COMMANDS or command in {"exec", "e", "review", "resume", "fork"}
+
+
 def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
-    # --remote接続のTUIは自身のcwdを送らず、管理daemonのcwdで会話を始める。
-    # 通常起動と同じく起動したディレクトリを作業ルートにするため、指定が無ければ補う。
+
     options = arguments[: arguments.index("--")] if "--" in arguments else arguments
     if any(token in {"-C", "--cd"} or token.startswith(("-C", "--cd=")) for token in options):
         return list(arguments)
@@ -113,7 +132,7 @@ def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
 
 
 def _resume_arguments(arguments: Sequence[str], identifier: str, cwd: str) -> list[str]:
-    # 初期プロンプト・画像・worktree作成は元turnへ保存済み。再開時に再投入しない。
+
     result: list[str] = []
     index = 0
     while index < len(arguments):
@@ -136,9 +155,9 @@ def _resume_arguments(arguments: Sequence[str], identifier: str, cwd: str) -> li
     return [*result, "--cd", cwd, "resume", identifier]
 
 
-async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) -> int:
+async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float, full: bool) -> int:
     environment = dict(os.environ)
-    # native自身が通常起動で行う起動処理を、IPC中継の接続より先に終える。
+
     started = await asyncio.to_thread(
         common.run_subprocess,
         [str(binary), "app-server", "daemon", "start"],
@@ -149,7 +168,7 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
     if started is None or started.returncode != 0:
         print(f"Codexの管理daemonを起動できない: {common.format_cli_error(started)}。codex doctorで確認する", file=sys.stderr)
         return 1
-    async with RecoveryBridge(str(binary), environment, codex_runtime.codex_home(), timeout=timeout) as bridge:
+    async with RecoveryBridge(str(binary), environment, codex_runtime.codex_home(), timeout=timeout, full=full) as bridge:
         environment[_TOKEN_ENV] = bridge.token
         command = _with_cwd(arguments, os.getcwd())
         while True:
@@ -175,7 +194,6 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
                         raise bridge.failure.result()
                     code = waited.result()
                     if code == 0 or code in _INTERRUPTED:
-                        # 明示終了では対話待ちの復旧を中断し、context managerで所有資源を回収する。
                         return code if code >= 0 else 128 - code
                     await bridge.wait_tui_closed()
                 finally:
@@ -198,29 +216,40 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float) ->
 
 
 def main(argv: list[str] | None = None) -> int:
-    """通常TUIだけを管理し、その他の公開コマンドはnativeへそのまま渡す。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")
     arguments = list(sys.argv[1:] if argv is None else argv)
+    full_index = 0
+    if arguments[:2] in (["--config", "model_reasoning_effort=medium"], ["--config", "model_reasoning_effort=xhigh"]):
+        full_index = 2
+    full = arguments[full_index : full_index + 1] == ["--full"]
+    if full:
+        arguments.pop(full_index)
     binary = codex_runtime.find_runtime_launcher(windows=sys.platform == "win32")
     if binary is None:
         print("管理対象のCodexが見つからない。update-dotfilesでCodexを導入して再実行する", file=sys.stderr)
         return 1
-    if not _interactive(arguments) or not sys.stdin.isatty():
+    if not is_interactive(arguments) or not sys.stdin.isatty():
+        if not full and uses_startup_features(arguments):
+            arguments[:0] = startup_features.codex_arguments()
         if sys.platform == "win32":
             # WindowsのCRT execvは空白を含むargvと子の終了状態を保持しない。
             return process_tree.run_with_timeout([str(binary), *arguments]).returncode
         os.execv(str(binary), [str(binary), *arguments])
+    return run_interactive(binary, arguments, full=full)
+
+
+def run_interactive(binary: pathlib.Path, arguments: list[str], *, full: bool = False) -> int:
+    """選択済みの公式実行体で対話の自動復旧を行う。"""
     try:
         timeout = float(os.environ.get("DOTFILES_CODEX_RECOVERY_TIMEOUT_SECONDS", "60"))
         if timeout <= 0 or not math.isfinite(timeout):
             raise ValueError("復旧待機時間には有限の正数が必要")
-        return asyncio.run(_run(binary, arguments, timeout=timeout))
+        return asyncio.run(_run(binary, arguments, timeout=timeout, full=full))
     except KeyboardInterrupt:
         return 130
     except Exception as error:  # pylint: disable=broad-exception-caught
-        # 外部RPCの検証例外は入力を含み得るため、本文を端末やログへ複製しない。
         diagnostic = _safe_error(error)
         print(f"Codexの自動復旧に失敗: {diagnostic}。codex doctorで確認し、元の会話をcodex resumeで再開する", file=sys.stderr)
         return 1

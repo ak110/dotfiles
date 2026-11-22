@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_prepare_support）。"""
-
 from __future__ import annotations
 
 import datetime
@@ -36,7 +34,6 @@ def _work_dir(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _bundle_rows(record: dict[str, Any], filename: str) -> list[dict[str, Any]]:
-    """準備結果が案内する保存証拠を読む。"""
     path = pathlib.Path(record["work_dir"]) / "bundle" / filename
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 

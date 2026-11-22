@@ -47,10 +47,6 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     limit_type: str,
     progress: bool,
 ) -> None:
-    """公開CLIは表示設定によらず本作業の上限を待ち、同じ会話と実行時間予算を引き継ぐ。
-
-    CLIイベントとrolloutは20261014-210511-001/002の実現性で観測された形を使う。
-    """
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_USAGE_LIMIT_WAIT", "always")
     monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")
@@ -130,3 +126,18 @@ def test_usage_limit_outside_wait_policy_returns_failure(
     assert "異常終了" in err
     assert len(_records(engine_env, "session")) == 1
     assert not sleeps
+
+
+def test_claude_session_retry_pauses_without_waiting_for_cli_exit(engine_env, monkeypatch, capsys):
+    set_orchestrate_environment(monkeypatch, "claude:test-model/high")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+    monkeypatch.setenv("FAKE_SESSION_LIMIT_COUNT", "1")
+    monkeypatch.setenv("FAKE_LIMIT_TYPE", "seven_day")
+    monkeypatch.setenv("FAKE_USAGE_LIMIT_RETRY", "1")
+    code, _out, err = _run(["--target-repo", str(engine_env.repo), "--timeout", "15", "nonwaiting-skill"], capsys)
+    assert code == run_skill.USAGE_LIMIT_PAUSE_EXIT_CODE
+    assert len(_records(engine_env, "session")) == 1
+    reset = "1970-01-01T00:16:50+00:00"
+    assert "seven_day" in err and reset in err and "run-skill --resume" in err
+    log = _log_files(engine_env)[0].read_text(encoding="utf-8")
+    assert reset in log and "run-skill --resume" in log

@@ -1,5 +1,3 @@
-"""証拠抽出の`--grep`・`--detail`照会。記録の本文の検索と、行番号を指定した記録1行の詳細を返す。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -32,7 +30,6 @@ _MAX_DETAIL_LENGTH = 8000
 
 
 def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[str, Any]]:
-    """エントリ内の全本文から一致行を集め、一致したエントリ数の要約を末尾へ付ける。"""
     events: list[dict[str, Any]] = []
     matched = 0
     for record in _scannable_records(records):
@@ -46,20 +43,24 @@ def _grep_events(records: list[_Record], pattern: re.Pattern[str]) -> list[dict[
     return events
 
 
-def _detail_events(records: list[_Record], numbers: list[int]) -> tuple[list[dict[str, Any]], int]:
-    """指定行のエントリを整形して返す。範囲外の行番号はエラーと終了コード2を返す。"""
+def _detail_events(records: list[_Record], numbers: list[int], *, codex: bool) -> tuple[list[dict[str, Any]], int]:
     index = {record.line: record.raw_entry for record in records}
     events: list[dict[str, Any]] = []
     for number in numbers:
         entry = index.get(number)
         if entry is None:
             return [_error_event(f"行番号{number}は範囲外", next_action=_RECORD_LOCATOR_NEXT_ACTION)], 2
-        events.extend(_entry_detail_events(number, entry, full_message_text=True))
+        events.extend(_entry_detail_events(number, entry, full_message_text=True, codex=codex))
     return events, 0
 
 
 def _entry_detail_events(
-    line: int, entry: dict[str, Any], *, limit: int = _MAX_DETAIL_LENGTH, full_message_text: bool = False
+    line: int,
+    entry: dict[str, Any],
+    *,
+    limit: int = _MAX_DETAIL_LENGTH,
+    full_message_text: bool = False,
+    codex: bool = False,
 ) -> list[dict[str, Any]]:
     """1エントリの詳細を、tool_use・tool_resultのブロック単位で整形する。
 
@@ -105,20 +106,33 @@ def _entry_detail_events(
                         "line": line,
                         "timestamp": timestamp,
                         "tool": str(block.get("tool_use_id", "")),
+                        **({"is_error": block["is_error"]} if isinstance(block.get("is_error"), bool) else {}),
                         "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )
     if not events:
         events = _codex_detail_events(line, entry, budget)
     if not events:
-        events = [
-            {
-                "kind": "detail",
-                "line": line,
-                "timestamp": timestamp,
-                "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
-            }
-        ]
+        payload = entry.get("payload")
+        outer_type = entry.get("type")
+        if (
+            codex
+            or isinstance(outer_type, str)
+            and outer_type in {"session_meta", "response_item", "event_msg", "turn_context"}
+        ):
+            event_type = payload.get("type") if isinstance(payload, dict) else None
+            if not isinstance(event_type, str):
+                event_type = outer_type if isinstance(outer_type, str) else "unknown"
+            events = [{"kind": "detail", "line": line, "timestamp": timestamp, "event_type": budget.clip(event_type)}]
+        else:
+            events = [
+                {
+                    "kind": "detail",
+                    "line": line,
+                    "timestamp": timestamp,
+                    "text": budget.clip(json.dumps(entry, ensure_ascii=False, indent=2)),
+                }
+            ]
     source = entry.get("opencode_source")
     if isinstance(source, dict):
         for event in events:
@@ -135,9 +149,17 @@ def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget
     if not isinstance(payload, dict):
         return []
     kind = payload.get("type")
+    if not isinstance(kind, str):
+        return []
     common = {"kind": "detail", "line": line, "timestamp": _entry_timestamp(entry)}
     if entry.get("type") == "response_item":
         if kind == "message":
+            if payload.get("role") == "developer":
+                return [
+                    {**common, "role": "developer", "text": budget.clip(text)}
+                    for text in _codex_text_blocks(payload.get("content"))
+                    if text.strip()
+                ]
             return [{**common, "role": role, "text": budget.clip(text)} for role, text in _message_texts(entry)]
         if kind in {"function_call", "custom_tool_call"}:
             raw = payload.get("arguments") if kind == "function_call" else payload.get("input")
@@ -196,7 +218,6 @@ def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget
 
 
 def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
-    """役割と可視本文を返す。送信ツールの入力はassistantの本文にだけ含める。"""
     message = entry.get("message")
     if (
         isinstance(message, dict)
@@ -222,18 +243,11 @@ def _message_texts(entry: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def _entry_timestamp(entry: dict[str, Any]) -> str | None:
-    """元記録行の時刻を返す。時刻を持たないエントリは`None`とする。"""
     timestamp = entry.get("timestamp")
     return timestamp if isinstance(timestamp, str) else None
 
 
 def _persisted_result(result: Any) -> Any:
-    """退避した実行結果の`stdout`を、保存先のファイルの内容へ置き換えた写しを返す。
-
-    agent-toolkitのPostToolUseは、退避したシェル出力の`stdout`を未読の通知へ置き換え、元の出力は
-    `persistedOutputPath`のファイルだけが持つ。保存先が実在するファイルならその内容を実体とし、
-    無い場合（回収済みなど）は記録の値をそのまま返す。
-    """
     if not isinstance(result, dict):
         return result
     path = result.get("persistedOutputPath")
@@ -266,7 +280,6 @@ def _tool_result_body(block: dict[str, Any], entry: dict[str, Any]) -> str:
 
 
 def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
-    """入力の構造を保ったまま、文字列だけをエントリ共有の予算で制限する。"""
     if isinstance(value, str):
         return budget.clip(value)
     if isinstance(value, dict):
@@ -274,6 +287,17 @@ def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
     if isinstance(value, list):
         return [_clip_structure(item, budget) for item in value]
     return value
+
+
+def _clip_event_body(event: dict[str, Any], budget: _DetailBudget) -> dict[str, Any]:
+    local_budget = _DetailBudget(budget.remaining)
+    body_fields = {"text", "input", "command", "stderr", "error"}
+    result = {key: _clip_structure(value, local_budget) if key in body_fields else value for key, value in event.items()}
+    budget.remaining = local_budget.remaining
+    if local_budget.omitted:
+        result["omitted"] = True
+        budget.omitted = True
+    return result
 
 
 def _entry_texts(entry: dict[str, Any]) -> list[str]:
@@ -294,7 +318,7 @@ def _entry_texts(entry: dict[str, Any]) -> list[str]:
     """
     texts: list[str] = []
     _collect_texts(entry, texts)
-    # 退避した実行結果の実体は保存先のファイルだけが持つため、記録の値に加えてその内容も検索の対象にする。
+
     result = entry.get("toolUseResult")
     persisted = _persisted_result(result)
     if persisted is not result:
@@ -321,12 +345,6 @@ def _collect_texts(value: Any, texts: list[str], *, in_body: bool = False) -> No
 
 
 def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]:
-    """エントリ内で一致した行を、同一本文の重複を除いて出現順に返す。
-
-    退避された実行結果と可視テキストのように、同一の本文が複数のフィールドへ重複して格納される場合がある。
-    また、退避出力だけへ付く行番号接頭辞を別本文の番号なし行と比較する場合がある。
-    そのため、別本文に同じ番号なし行がある行番号付き行だけを本文の重複として扱い、表示は最初に現れた原文を保つ。
-    """
     texts = _entry_texts(entry)
     unnumbered_lines_by_text = [
         {line_text.strip() for line_text in text.splitlines() if _LINE_NUMBER_PREFIX.match(line_text) is None} for text in texts
@@ -353,7 +371,6 @@ def _matched_lines(entry: dict[str, Any], pattern: re.Pattern[str]) -> list[str]
 
 
 def _tool_hint(entry: dict[str, Any]) -> str | None:
-    """エントリに含まれるコマンド先頭行またはtool_use_idを取得する。"""
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if isinstance(content, list):
@@ -398,7 +415,6 @@ def _grep_collection_events(
 def _fixed_string_collection_events(
     collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], phrases: list[str]
 ) -> list[dict[str, Any]]:
-    """固定文字列ごとに一致entry数とlocatorだけを返す。"""
     events: list[dict[str, Any]] = []
     for phrase in phrases:
         locators: list[dict[str, Any]] = []
@@ -420,7 +436,6 @@ def _fixed_string_collection_events(
 
 
 def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> tuple[_CollectedRecord | None, bool]:
-    """正規IDまたは一意な旧IDを解決し、旧IDが曖昧なら印を返す。"""
     canonical = [item for item in collected if item.record_id == record_id]
     if canonical:
         return canonical[0], False
@@ -433,7 +448,6 @@ def _resolve_record_alias(collected: list[_CollectedRecord], record_id: str) -> 
 def _resolve_record_locator(
     collected: list[_CollectedRecord], locator: str, *, label: str
 ) -> tuple[_CollectedRecord | None, int | None, list[dict[str, Any]] | None]:
-    """公開locatorを正規IDと行番号へ解決する。"""
     if ":" in locator:
         record_id, raw_line = locator.rsplit(":", 1)
     else:
@@ -458,7 +472,9 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
         if error_events is not None:
             return error_events, 2
         assert selected is not None and line is not None
-        record_events, exit_code = _detail_events(selected.records, [line])
+        record_events, exit_code = _detail_events(
+            [*selected.records, *selected.fork_context], [line], codex=selected.runtime == "codex"
+        )
         if exit_code:
             return record_events, exit_code
         events.extend(_events_with_record(record_events, selected.record_id))

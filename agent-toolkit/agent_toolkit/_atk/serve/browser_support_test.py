@@ -1,5 +1,3 @@
-"""`atk serve`の実ブラウザー統合テストが共有する更新制御、サーバーの起動、fixtureと補助。"""
-
 import asyncio
 import contextlib
 import dataclasses
@@ -43,7 +41,6 @@ async def _hold_route(
 
 
 async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
-    """遷移前に、実SSEの確立と一覧・リポジトリ応答本文の消費を観測する。"""
     await page.add_init_script(
         """(() => {
           // completedByUrlは、同じパスへ並行する別条件の取得と区別して特定の要求の本文消費を待つ試験が使う。
@@ -92,7 +89,6 @@ async def _observe_screen_requests(page: playwright.async_api.Page) -> None:
 
 
 async def _wait_screen_requests_consumed(page: playwright.async_api.Page, streams: tuple[str, ...]) -> None:
-    """初期SSE購読と、それに伴う取得の本文消費が終わってから観測区間を始める。"""
     await page.wait_for_function(
         """paths => {
           const probe = window.__screenRequests;
@@ -105,8 +101,6 @@ async def _wait_screen_requests_consumed(page: playwright.async_api.Page, stream
 
 
 class _BrowserMutation(wi_sync.Mutation):
-    """画面試験では本文保存を通し、Gitのcommit・pushだけを省く。"""
-
     def commit(self, message: str, rel_paths: Iterable[str]) -> int | None:
         del message, rel_paths
         return 0
@@ -154,7 +148,6 @@ class _BrowserOperations(wi_operations.Operations):
         self.user_comment_calls = 0
 
     def sync(self) -> bool:
-        """テストでは外部Git操作を行わない。"""
         return True
 
     def background_sync(self) -> bool:
@@ -399,14 +392,12 @@ async def _open_question(page: playwright.async_api.Page) -> playwright.async_ap
 
 
 async def _open_filters(page: playwright.async_api.Page) -> None:
-    """WI一覧のフィルターが閉じている場合にエンドユーザーの操作で開く。"""
     details = page.locator(".filters details")
     if not await details.evaluate("element => element.open"):
         await details.locator("summary").click()
 
 
 async def _shift_click_default_prevented(link: playwright.async_api.Locator) -> bool:
-    """Shiftクリックを送り、アプリケーションの処理後、ブラウザーの標準動作が抑止された状態を返す。"""
     default_prevented = await link.evaluate(
         """element => {
           let defaultPrevented = null;
@@ -427,13 +418,7 @@ async def _shift_click_default_prevented(link: playwright.async_api.Locator) -> 
     return bool(default_prevented)
 
 
-# --------------------------------------------------------------------------------------
-# 計画ファイル画面とセッション画面
-# --------------------------------------------------------------------------------------
-
-
 def _valid_diagram_markdown(label: str) -> str:
-    """MermaidとSVGの両方を含む計画本文を組み立てる。"""
     return (
         f"# {label}\n\n"
         f"本文-{label}\n\n"
@@ -462,7 +447,6 @@ class _ScreenHarness:
     sessions_context: serve_sessions.SessionsContext
 
     async def notify_file_update(self, markdown: str) -> None:
-        """計画ファイルを書き換え、更新通知を配信する。"""
         for _ in range(100):
             if self.plans_state.subscribers:
                 break
@@ -480,7 +464,6 @@ class _ScreenHarness:
 
 
 def _isolate_creation_time_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """作成日時インデックスを一時ディレクトリへ隔離し、開発環境の索引を書き換えない。"""
     monkeypatch.setattr(plan_creation_times, "_CREATION_TIME_INDEX_PATH", tmp_path / "cache" / "index.json")
 
 
@@ -489,7 +472,6 @@ async def _serve(
     app: Any,
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[tuple[playwright.async_api.BrowserContext, playwright.async_api.Page, int]]:
-    """テスト用サーバーを起動し、ページとブラウザーコンテキストを提供する。"""
     port = _reserve_port()
     shutdown = asyncio.Event()
 
@@ -515,7 +497,6 @@ async def _serve(
 
 
 def _browser_app(tmp_path: Path, plans_root: Path, **sessions_options: Any) -> Any:
-    """3画面を登録したテスト用アプリを生成する。`sessions_options`はセッション画面のコンテキストへ渡す。"""
     return serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -549,14 +530,10 @@ async def test_serve_stops_server_when_browser_context_close_fails(monkeypatch: 
             raise RuntimeError("context close failed")
 
     class Browser:
-        """コンテキストを生成するブラウザーの代用。"""
-
         async def new_context(self) -> Any:
             return Context()
 
     class App:
-        """停止イベントの受信と終了を記録するサーバーの代用。"""
-
         async def run_task(self, *_args: Any, shutdown_trigger: Any, **_kwargs: Any) -> None:
             try:
                 await shutdown_trigger()
@@ -579,7 +556,6 @@ async def _screen_harness_fixture(
     monkeypatch: pytest.MonkeyPatch,
     browser: playwright.async_api.Browser,
 ) -> AsyncGenerator[_ScreenHarness]:
-    """3画面を登録したアプリと、計画ファイル1件・両実行系のセッション記録を用意する。"""
     _isolate_creation_time_index(tmp_path, monkeypatch)
     _write_entries(tmp_path)
     plans_root = tmp_path / "plans"
@@ -639,11 +615,10 @@ def _write_session_records(root: Path) -> None:
             ensure_ascii=False,
         )
         + "\n"
-        # 書き込み途中の行が混在しても他の行を失わせないことを画面側でも確認する。
         + '{"type":"user","message":{"content":"途中で途絶\n',
         encoding="utf-8",
     )
-    # 記録本体を持つサブエージェントと、meta情報だけが残るより深いサブエージェントを1件ずつ用意する。
+
     subagents = claude_path.with_suffix("") / "subagents"
     subagents.mkdir(parents=True, exist_ok=True)
     (subagents / "agent-first.meta.json").write_text(

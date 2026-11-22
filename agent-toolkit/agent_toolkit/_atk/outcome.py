@@ -23,8 +23,6 @@ NO_MATCH_PREFIX = "該当0件: "
 
 
 class ResultKind(enum.Enum):
-    """結果行の出力先を決めるリーフサブコマンドの区分。"""
-
     STATE_CHANGE = "state-change"
     """標準出力が値・構造化データ・本文の表示を担わない状態変更報告型。成功行は標準出力へ書く。"""
 
@@ -107,6 +105,7 @@ READ_ONLY_COMMANDS = frozenset(
         "atk wi show",
         "atk wi grep",
         "atk wi process-loop status",
+        "atk wi submission activity",
         "atk plans list",
         "atk config",
         "atk config show",
@@ -145,7 +144,6 @@ def force_utf8_stdio() -> None:
 
 
 def report_success(message: str, kind: ResultKind = ResultKind.STATE_CHANGE) -> None:
-    """状態変更の完了を1行で書く。値出力型は返された値を結果通知とする。"""
     if kind is ResultKind.STATE_CHANGE:
         print(f"{SUCCESS_PREFIX}{message}")
 
@@ -170,7 +168,6 @@ def report_warning(message: str, *, next_action: str, to_stderr: bool = True) ->
 
 
 def claim_persistent_warning(message: str, *, session_id: str | None = None) -> bool:
-    """同じ会話で同じ持続状態を初めて報告する場合だけ真を返す。"""
     session_id = session_id or next(
         (
             os.environ[key]
@@ -199,11 +196,9 @@ def claim_persistent_warning(message: str, *, session_id: str | None = None) -> 
 
 
 def report_persistent_warning(message: str, *, next_action: str) -> None:
-    """共通起動の警告を、委譲先を除いて会話ごとに1回出力する。"""
     if not delegated_session.is_delegated(os.environ) and claim_persistent_warning(message):
         report_warning(message, next_action=next_action)
 
 
 def report_no_match(message: str) -> None:
-    """該当0件で終了コード1を返す読み取りのコマンドが正常に完了したことを標準エラーへ書く。"""
     print(f"{NO_MATCH_PREFIX}{message}", file=sys.stderr)

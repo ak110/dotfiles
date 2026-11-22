@@ -99,7 +99,6 @@ async def test_start_rejects_existing_thread_before_alias_and_client_registratio
 async def test_resume_retains_request_delivery(
     outcome: str, notification_first: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """実backendの配送結果は、開始応答と終了通知の前後を通じて一定である。"""
     async with subject.AppServerManager() as backend:
         client = _TierClient()
         original = client.request
@@ -107,6 +106,7 @@ async def test_resume_retains_request_delivery(
 
         async def complete() -> None:
             session = backend.sessions["resume-delivery"]
+            session.agent_message = "状態: completed"
             event = _completed_turn(session)
             event["params"]["turn"]["id"] = "resume-turn"
             if outcome == "execution-failed":
@@ -146,7 +146,6 @@ async def test_resume_retains_request_delivery(
 async def test_start_and_resume_record_owner_and_app_server_processes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """新規起動と再開の登録簿の記録は、所有プロセスとturnを実行するApp Serverの識別を持つ。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(config_settings, "config_dir", lambda: tmp_path / "config")
     owner = session_registry.owner_process()
@@ -174,7 +173,6 @@ async def test_start_and_resume_record_owner_and_app_server_processes(
 async def test_config_changes_apply_to_new_reply_and_restored_turns(
     initial: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開configの変更を3種類のRPCの要求へ明示し、実際に送った最新turnの速度を保持する。"""
     monkeypatch.setattr(config_settings, "config_dir", lambda: tmp_path / "config")
     monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_FAST_MODE", raising=False)
 

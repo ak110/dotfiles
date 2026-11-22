@@ -20,7 +20,6 @@ from agent_toolkit._testing.normative_contract import line_references, read_cont
 
 
 def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> None:
-    """WI鮮度は選定、計画起草および計画なしレビューへ到達する。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     lane = _lane_planning_contract(plugin_root)
@@ -40,11 +39,6 @@ def test_wi_staleness_contract_reaches_selection_lane_and_execution_review() -> 
 
 
 def test_selection_explanation_contract_covers_questions_without_state_changes() -> None:
-    """選定理由への質問には選定したメインが保存済みの判断から答え、選定結果とキュー状態を変更しない。
-
-    説明のための担当を起動すると、同じ選定資料を別の担当が読み直して判断を再構成する。
-    未取得の事実の収集だけを読み取り専用の探索へ渡し、状態を変える`atk wi`の操作を含めない。
-    """
     plugin_root = pathlib.Path(__file__).resolve().parent
     playbooks = plugin_root / "skills" / "atk-mode" / "playbooks"
     explanation = (playbooks / "process-wi-selection-explanation.md").read_text(encoding="utf-8")
@@ -62,7 +56,6 @@ def test_selection_explanation_contract_covers_questions_without_state_changes()
 
 
 def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
-    """選定で列挙した書込対象を受領側が比較できる。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
@@ -80,17 +73,17 @@ def test_write_files_contract_reaches_selection_output_and_receipt() -> None:
     assert "`/`" in output
     assert "パス要素" in generation
     assert "狭い方の範囲" in generation
-    # 重なりと公開工程の書込対象の機械的な判定は受領側も同じ`pick-wi-check`へ委ね、意味の独立性だけを本文で読む。
+
     assert "レーン間の重なり:" in output_format
     overlap_fields = {"共通パス", "レーン1の定義", "レーン2の定義", "判定"}
     assert overlap_fields <= set(re.findall(r"^  ([^\s:]+):", output_format, flags=re.MULTILINE))
     assert overlap_fields <= set(re.findall(r"`([^`]+)`", receipt))
-    # 選定時と受領時の双方で、反映先と`書込対象`の対応を同じ公開コマンドで確かめる。
+
     assert "書き込まない反映先" in fields
     assert "`書き込まない反映先`" in output
     assert "atk run-script pick-wi-check" in _h2_section(parent, "保存後のチェック")
     assert "pick-wi-check" in run_script.SCRIPT_PATHS
-    # 検査結果はWI属性へ複製せず、構造検査と意味検収を選定主体が保持する。
+
     assert "書込対象の検査" not in fields
     check = _h2_section(parent, "保存後のチェック")
     assert "終了コード0" in check and "終了コード2" in check and "`次の操作:`" in check
@@ -145,7 +138,7 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     assert all(field in lane_resume for field in ("実装commit", "残る完成条件", "観測手段"))
     assert "`計画なし`" in lane_resume and "マージなし" in lane_resume
     assert "再開記録" in _h2_section(lanes, "中断レーンの再開")
-    # 計画パスの再開位置の検収は観測のみの値へ当てはめず、観測のみの書式は再開記録を読んだ項目だけに使う。
+
     receipt = _h2_section(parent, "保存後の意味検収")
     assert f"再開位置が設定されており、その値が`{prefix}`で始まらない項目については" in receipt
     assert "前述の計画ファイルの確認に代えて" in receipt
@@ -155,7 +148,6 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
 
 
 def test_staged_lane_contract_reaches_selection_and_execution() -> None:
-    """後段の開始条件が選定、受領、実行へ届く。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     selection_text = _selection_documents(plugin_root)
     parent = _selection_procedure(plugin_root)
@@ -165,13 +157,14 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     assert "  段階:" in selection_text and "  先行レーン:" in selection_text
     assert "先行統合条件" in parent
     completion = (plugin_root / "skills/atk-mode/playbooks/process-wi-all-repos-results.md").read_text(encoding="utf-8")
-    assert "すべての先行レーンの統合完了後に" in lanes
+    assert f"`{selection.START_DEPENDENCIES_KEY}`が全て統合済み" in lanes
+    assert "`先行レーン`は統合許可の順序に使い、着手を止めない" in lanes
     assert (
         "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する"
         in lanes
     )
     assert "先行工程を正当な理由で次の巡回へ回す場合" in lanes
-    assert "先行成果が必要な後段は統合完了まで待ち" in lanes
+    assert "先行成果が必要な後段は統合完了まで待つ" in lanes
     assert (
         "成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする"
         in lanes
@@ -179,11 +172,12 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
     assert "書込競合だけで後段にした工程など先行成果を要さない工程は" in completion
     assert "今回の巡回で実装・検証まで進める" in completion
     assert "先行を次の巡回へ回し後段を今回進めると判定した時に" not in lanes
-    assert "統合先の最新HEADからworktreeを作成する" in lanes
+    assert "統合先の最新HEADからworktreeを作成し" in lanes
     output = _selection_format(plugin_root)
     yaml_block = output.split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     top_fields = set(re.findall(r"^([^\s:]+):", yaml_block, flags=re.MULTILINE))
     assert selection.SINGLE_STAGE_ESTIMATE_KEY in top_fields
+    assert f"  {selection.START_DEPENDENCIES_KEY}:" in yaml_block
     assert all(f"`{selection.SINGLE_STAGE_ESTIMATE_KEY}`" in content for content in (parent, explanation))
 
 
@@ -246,7 +240,6 @@ def test_history_rewrite_phase_names_are_defined_by_lane_contract() -> None:
 
 
 def test_review_fix_completion_values_match_receiver() -> None:
-    """実行レビューの委譲元が分岐に使う返却値を、レビュー修正の担当が返却値として定める。"""
     plugin_root = pathlib.Path(__file__).resolve().parent
     review_parent = read_contract_section(
         plugin_root / "skills/atk-mode/roles/exec-review.parent.md",
@@ -298,10 +291,6 @@ def test_lane_launch_inputs_reach_lane_owner() -> None:
 
 
 def test_integration_start_sends_only_lane_integration_inputs() -> None:
-    """`統合開始`の継続入力は統合の役割の入力宣言と同じで、レーン担当が起動時に受け取る値を送り直さない。
-
-    同じ値を起動と継続の両方で定めると、起動時と統合時で違う統合先や開始時刻を渡す余地ができる。
-    """
     roles = pathlib.Path(__file__).resolve().parent / "skills/atk-mode/roles"
     executor = task_documents.read_declaration(roles / "exec.subagent.md")
     integration = task_documents.read_declaration(roles / "lane-integration.subagent.md")
@@ -317,7 +306,6 @@ def test_integration_start_sends_only_lane_integration_inputs() -> None:
 
 
 def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
-    """公開後操作の前提不足を受領し、同じcommitの未完了操作へ戻す。"""
     root = pathlib.Path(__file__).resolve().parent
     parent = (root / "skills/atk-mode/roles/session-termination.parent.md").read_text(encoding="utf-8")
     finish = (root / "skills/atk-mode/playbooks/process-wi-publishing.md").read_text(encoding="utf-8")
@@ -339,7 +327,6 @@ def test_post_publish_prerequisite_failure_preserves_resumable_work() -> None:
 
 
 def test_publication_recovery_references_resolve_to_shared_sections() -> None:
-    """続行不能の送信側と受信側が、実在する同じ回復節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
     publish = "skills/atk-mode/playbooks/publish.md"
     finish = "skills/atk-mode/playbooks/process-wi-publishing.md"
@@ -351,7 +338,6 @@ def test_publication_recovery_references_resolve_to_shared_sections() -> None:
         ("skills/atk-mode/roles/session-termination.subagent.md", publish, "公開工程の続行不能の受渡し"),
     ]
     for source, target, heading in routes:
-        # 「本書「<節>」」は名指しした文書自身の節を指す。
         resolved = [
             found
             for line in (root / source).read_text(encoding="utf-8").splitlines()

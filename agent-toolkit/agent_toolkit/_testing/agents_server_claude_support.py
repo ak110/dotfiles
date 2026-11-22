@@ -59,7 +59,6 @@ class _SilentClient:
 
 
 def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
-    """`_build_options`がSDKへ渡す引数を捕捉する。"""
     captured: dict[str, object] = {}
 
     class Options:
@@ -72,7 +71,6 @@ def _capture_options(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
 
 
 def _lightweight_environment(launch_kind: str) -> dict[str, str]:
-    """軽量起動の委譲先へ渡す、起動区分と保持済みrootのCLIとデータ領域を含む環境を返す。"""
     return {
         "AGENT_TOOLKIT_DELEGATED_SESSION": "1",
         "AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND": launch_kind,
@@ -86,8 +84,6 @@ def _lightweight_environment(launch_kind: str) -> dict[str, str]:
 
 
 class _TransportClient(FakeClaudeClient):
-    """SDKの転送が起動したCLIの子プロセスを持つ偽クライアント。"""
-
     def __init__(self, streams: list[list[Any]], *, pid: int) -> None:
         super().__init__(streams)
         self._transport = SimpleNamespace(_process=SimpleNamespace(pid=pid))

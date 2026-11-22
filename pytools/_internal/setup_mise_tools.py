@@ -1,5 +1,3 @@
-"""setup_miseの管理ツールの導入・修復と整理。"""
-
 import json
 import os
 import secrets
@@ -73,11 +71,6 @@ def ensure_working_tree_trusted(mise_bin: Path) -> bool:
 
 
 def ensure_global_node(mise_bin: Path) -> bool:
-    """global設定にnodeがなければ `mise use --global node@lts` を実行する。
-
-    Returns:
-        nodeを新たに設定した場合True。
-    """
     result = setup_mise_common.run_mise(mise_bin, ["ls", "--global", "--json"])
     if result is None or result.returncode != 0:
         setup_mise_common.logger.warning(
@@ -133,14 +126,6 @@ def ensure_global_node(mise_bin: Path) -> bool:
 
 
 def _has_global_node(data: object) -> bool:
-    """`mise ls --global --json` の戻り値にnodeエントリがあるかを判定する。
-
-    miseの出力形式はversionにより揺れがあるため、以下の全パターンに対応する。
-
-    - ``{"node": [{...}, ...]}``: キーがツール名
-    - ``[{"name": "node", ...}, ...]``: 配列の各要素に ``name``
-    - 上記のネスト（例: ``{"tools": ...}``）
-    """
     if isinstance(data, dict):
         if "node" in data:
             return True
@@ -151,7 +136,6 @@ def _has_global_node(data: object) -> bool:
 
 
 def _list_item_is_node(item: object) -> bool:
-    """`mise ls --global --json` の list 形式 1 エントリが node を指しているかを判定する。"""
     if not isinstance(item, dict):
         return False
     item_dict = typing.cast("dict[object, object]", item)
@@ -166,7 +150,7 @@ _LOCKED_INSTALL_ENV = {"MISE_LOCKED": "1", "MISE_LOCKED_SCOPES": "project"}
 # miseの出力が原因を示すため、その出力を添えてmiseの開発元へ報告する。
 _MISE_REPORT_FALLBACK = "手動でも同じ失敗が続く場合は、表示されたmiseの出力を添えてmiseの開発元（GitHubの`jdx/mise`）へ報告する"
 
-# 手動導入でもprojectのlockを書き戻さない。
+
 _INSTALL_NEXT_ACTION = (
     "表示された接続先へのネットワーク到達（プロキシ設定を含む）を確かめてから`update-dotfiles`を再実行する"
     "（手動で導入する場合は、chezmoiの作業ツリーで`MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install`を実行する。"
@@ -245,7 +229,6 @@ def _stored_target(link: Path) -> Path:
 
 
 def _connect_typescript_lsp(installs: dict[Path, tuple[str, str]]) -> bool:
-    """独立prefixのLSPへtsserverを接続し、完了時はTrueを返す。独自成果は保持する。"""
     servers = [path for path, (tool, _) in installs.items() if tool == "npm:typescript-language-server"]
     typescripts = [path for path, (tool, version) in installs.items() if tool == "npm:typescript" and version.startswith("6.")]
     if not servers:
@@ -338,7 +321,6 @@ def ensure_tool_bin_paths_present(mise_bin: Path) -> bool:
         if dotfiles_mode.is_minimal() and (owner is None or owner[0] not in setup_mise_common.LIGHTWEIGHT_TOOLS):
             continue
         if owner is None:
-            # 共有ランタイムへのリンクで導入されるツール（dotnet-root、~/.cargo/binなど）は再導入で生成されない。
             setup_mise_common.logger.warning(
                 log_format.format_status(
                     "mise",
@@ -490,7 +472,6 @@ def _installed_tool_paths(mise_bin: Path, cwd: Path | None) -> dict[Path, tuple[
 
 
 def _owning_tool(directory: Path, installs: dict[Path, tuple[str, str]]) -> tuple[str, str] | None:
-    """配置先ディレクトリを配下に持つ導入先のうち最も深いもののツール名と版を返す。"""
     owners = [install_path for install_path in installs if directory.is_relative_to(install_path)]
     if not owners:
         return None
@@ -498,12 +479,6 @@ def _owning_tool(directory: Path, installs: dict[Path, tuple[str, str]]) -> tupl
 
 
 def ensure_orphan_shims_removed(mise_bin: Path) -> bool:
-    """`mise prune`と`mise reshim`で管理外の孤児shimを除去する。
-
-    shimの再生成元は`installs/`配下の実体であり、`prune`を伴わない`reshim`では
-    管理外shimが再生成される。`prune`はtracked configが参照するツールの現行版を
-    削除しないため、`mise install`の後に未参照実体を除去してshimを強制再構築する。
-    """
     prune = setup_mise_common.run_mise(mise_bin, ["prune", "-y"], timeout=setup_mise_common.MISE_INSTALL_TIMEOUT)
     if prune is None:
         setup_mise_common.logger.warning(

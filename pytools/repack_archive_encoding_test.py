@@ -1,5 +1,3 @@
-"""repack_archiveのencodingの試験。"""
-
 # pylint: disable=protected-access
 
 import pathlib
@@ -19,8 +17,6 @@ from pytools._internal.repack_archive_test_helpers import (
 
 
 class TestBrokenZip:
-    """末尾 EOCD を欠いた破損 ZIP を明示エラー化する挙動の検証。"""
-
     @pytest.mark.parametrize("truncate_bytes", [22, 23])
     def test_truncated_zip_raises(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, truncate_bytes: int) -> None:
         """EOCD を含む末尾 ``truncate_bytes`` バイトを切り詰めた ZIP は失敗扱いで副作用なく停止する。
@@ -40,31 +36,22 @@ class TestBrokenZip:
 
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 1
-        # 副作用が起きていないこと: 原本は元位置に残り、バックアップ・出力 ZIP は生成されない
+
         assert archive.exists()
         assert not (tmp_path / "bk").exists()
-        # 出力 ZIP は同じパスのため、サイズが切り詰め後のまま (= 上書きされていない)
+
         assert archive.stat().st_size == len(original) - truncate_bytes
 
     def test_non_pk_prefix_is_not_rejected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """先頭が ``PK\\x03\\x04`` でない破損ファイルは truncated-ZIP 判定で拒否されず後段に委ねる。
-
-        ``main()`` に渡すと後段の libarchive がフォーマットエラーとして処理し、
-        failed_targets に加わって SystemExit(1) で終了する。
-        事前の truncated-ZIP 判定では例外を送出しないことを振る舞いで担保する。
-        """
         target = tmp_path / "garbage.zip"
         target.write_bytes(b"not a zip file at all")
-        # SystemExit(1) で終了するが、その前段の preflight/truncated 判定では例外なし
+
         exit_code = _run_main(monkeypatch, ["--no-trash", str(target)])
         assert exit_code == 1
 
 
 class TestFilenameEncoding:
-    """ZIP のファイル名エンコーディング破損を避ける挙動の検証。"""
-
     def test_cp932_zip_decodes_correctly(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """bit 11 未設定の CP932 ZIP で日本語ファイル名を正しく復元できる。"""
         archive = tmp_path / "ja.zip"
         _make_cp932_zip(
             archive,
@@ -76,7 +63,7 @@ class TestFilenameEncoding:
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 0
         entries = _zip_entries(tmp_path / "ja.zip")
-        # 単一ルート "フォルダ" は平坦化されないよう、ルートが複数になる構造にしてある
+
         assert entries == {"あいう.txt", "フォルダ/項目.txt"}
 
     def test_mixed_ascii_and_utf8_zip(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,7 +74,6 @@ class TestFilenameEncoding:
         """
         archive = tmp_path / "mixed.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
-            # ASCII 名: zipfile へフラグを指定しない書き込みで bit 11 未設定
             zf.writestr("README.txt", b"readme")
             # 日本語名: zipfile へフラグを指定しない書き込みで UTF-8 + bit 11 設定
             zf.writestr("日本語.txt", b"ja")
@@ -99,20 +85,11 @@ class TestFilenameEncoding:
     def test_sjis_backslash_byte_is_decoded_as_single_path_component(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """SJIS 2バイト目に 0x5C を含む文字 (例: ソ) でディレクトリ階層が破壊されない。
-
-        報告された系統 B の再現。``ソ`` の SJIS バイト列は ``b"\\x83\\x5c"`` で、
-        2 バイト目が ASCII のバックスラッシュと同値である。文字列処理を誤ると
-        ``\\`` がパス区切りと解釈され、``pathlib.Path`` が意図しないディレクトリ階層に
-        分割してしまう。
-        """
         archive = tmp_path / "sjis.zip"
         _make_cp932_zip(
             archive,
             {
-                # "ソート" は先頭 "ソ" が 0x83 0x5C
                 "ソート/メモ.txt": b"x",
-                # 単一ルート平坦化を避けるため別ルートも置く
                 "他.txt": b"y",
             },
         )
@@ -167,7 +144,7 @@ class TestFilenameEncoding:
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr(_Cp932ZipInfo("和文.txt"), b"a")
             zf.writestr(_RawBytesZipInfo(raw_invalid), b"b")
-            # 単一ルート平坦化に巻き込まれないよう ASCII エントリも追加
+
             zf.writestr("safe.txt", b"c")
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 0
@@ -188,18 +165,18 @@ class TestExtractZipPathSafety:
             # PureWindowsPath で root 持ち判定になるバックスラッシュ前置きも拒否
             zf.writestr(_RawBytesZipInfo(b"\\back.txt"), b"b")
             zf.writestr("safe.txt", b"s")
-        # 不正パスエントリは error として集計され、exit 1 で終了する
+
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 1
 
         # 安全なエントリは出力 ZIP に含まれる
         entries = _zip_entries(tmp_path / "unsafe.zip")
         assert "safe.txt" in entries
-        # 不正パスエントリは出力 ZIP に含まれない
+
         assert "../escape.txt" not in entries
         assert "/abs.txt" not in entries
         assert "C:/win.txt" not in entries
-        # 親ディレクトリへの脱出は阻止されている
+
         assert not (tmp_path / "escape.txt").exists()
 
 
@@ -220,7 +197,6 @@ class TestExtractLibarchivePathSafety:
         entry_path: str,
         config_text: str | None,
     ) -> None:
-        """通常の親参照とignore_dirs配下の親参照を作業領域外へ書き込まない。"""
         archive = tmp_path / "unsafe.tar"
         _make_tar(archive, {entry_path: b"escaped", "safe.txt": b"safe"})
         args = ["--no-trash"]

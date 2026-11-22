@@ -1,5 +1,3 @@
-"""保存済みセッションの共通イベント列をMarkdownへ描画する。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -17,8 +15,6 @@ _TOOL_RESULT_MAX_CHARS = 2000
 
 @dataclasses.dataclass(frozen=True)
 class RecordMetadata:
-    """Markdownの見出し、表、出力ファイル名へ用いる記録内の値。"""
-
     session_id: str
     title: str
     cwd: str | None
@@ -32,7 +28,6 @@ def metadata_from_records(
     records: list[dict[str, typing.Any]],
     session_id: str,
 ) -> RecordMetadata:
-    """実行系の記録形式から表示用メタデータを取り出す。"""
     cwd: str | None = None
     branch: str | None = None
     slug: str | None = None
@@ -83,7 +78,6 @@ def render_session(
     include_subagents: bool = False,
     tool_details: bool = True,
 ) -> str:
-    """既存の記録解析から人とアシスタントの会話をMarkdownへまとめる。"""
     metadata = metadata_from_records(engine, records, session_id)
     lines = [f"# Session: {metadata.title}", "", "| 項目 | 値 |", "| --- | --- |"]
     for label, value in (
@@ -161,7 +155,6 @@ def _render_events(
     include_thinking: bool,
     tool_details: bool,
 ) -> None:
-    """tool結果を呼出しへ結び、人とアシスタントのターンを描画する。"""
     results: dict[str, list[str]] = {}
     for event in events:
         if event.kind == "tool_result" and event.call_id and event.text:
@@ -197,7 +190,6 @@ def _render_turn(
     heading_level: int,
     tool_details: bool,
 ) -> None:
-    """1ターンの本文を元のイベント順に出力する。"""
     lines.extend(["---", "", f"{'#' * heading_level} {role}", ""])
     for event in events:
         if event.kind in {"user", "assistant"} and event.text:
@@ -215,7 +207,6 @@ def _render_tool_call(
     *,
     tool_details: bool,
 ) -> None:
-    """ツール入力と対応する結果を折り畳み可能な表示へまとめる。"""
     raw_input = event.detail.get("input") if event.detail else None
     summary = _tool_summary(event.name or "Unknown", raw_input)
     if not tool_details:
@@ -234,7 +225,6 @@ def _render_tool_call(
 
 
 def _tool_summary(name: str, raw_input: typing.Any) -> str:
-    """ツール名とユーザーが識別する入力の短い要約を返す。"""
     parsed = raw_input
     if isinstance(parsed, str):
         try:
@@ -266,14 +256,12 @@ def _tool_summary(name: str, raw_input: typing.Any) -> str:
 
 
 def _fenced(value: str, language: str = "") -> list[str]:
-    """入力に含まれるバッククォートより長いコードフェンスを選ぶ。"""
     longest = max((len(run) for run in re.findall(r"`+", value)), default=0)
     fence = "`" * max(3, longest + 1)
     return [f"{fence}{language}", value, fence]
 
 
 def _period(started_at: str | None, ended_at: str | None) -> str | None:
-    """開始と終了の時刻を表の1行にまとめる。"""
     if started_at is None:
         return None
     start = _format_timestamp(started_at)
@@ -282,13 +270,11 @@ def _period(started_at: str | None, ended_at: str | None) -> str | None:
 
 
 def _format_timestamp(value: str) -> str:
-    """ISO 8601を人間が読みやすい時刻へ変換する。"""
     parsed = _parse_timestamp(value)
     return parsed.strftime("%Y-%m-%d %H:%M:%S %Z") if parsed is not None else value
 
 
 def _parse_timestamp(value: str) -> datetime.datetime | None:
-    """日付順と表示に使えるタイムゾーン付き時刻へ変換する。"""
     try:
         parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
@@ -297,10 +283,8 @@ def _parse_timestamp(value: str) -> datetime.datetime | None:
 
 
 def _optional_text(value: typing.Any) -> str | None:
-    """空でない文字列だけを受け取る。"""
     return value if isinstance(value, str) and value else None
 
 
 def _escape_cell(value: str) -> str:
-    """メタデータの区切り文字と改行を表のセル内に保つ。"""
     return value.replace("|", "\\|").replace("\r", " ").replace("\n", " ")

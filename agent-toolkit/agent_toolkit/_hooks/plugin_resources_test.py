@@ -10,7 +10,6 @@ from agent_toolkit._hooks import plugin_resources
 
 
 def test_skill_reference_includes_an_existing_absolute_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実在する資料では、スキル名に加えて実在する絶対パスを併記する。"""
     monkeypatch.delenv(delegated_session.PLUGIN_ROOT_ENV, raising=False)
     reference = plugin_resources.skill_reference("atk-mode", "SKILL.md")
 
@@ -21,7 +20,6 @@ def test_skill_reference_includes_an_existing_absolute_path(monkeypatch: pytest.
 
 
 def test_skill_reference_omits_the_path_when_the_resource_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実体が無い場合は従来どおりスキル名と相対パスだけを返す。"""
     monkeypatch.delenv(delegated_session.PLUGIN_ROOT_ENV, raising=False)
     reference = plugin_resources.skill_reference("atk-mode", "references/absent.md")
 
@@ -32,7 +30,6 @@ def test_skill_reference_omits_the_path_when_the_resource_is_absent(monkeypatch:
 def test_explicit_invalid_root_is_diagnosed_without_fallback(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, value: str
 ) -> None:
-    """明示指定の不正を別版の資料案内で隠さない。"""
     if value == "wrong-plugin":
         root = tmp_path / value
         (root / "skills").mkdir(parents=True)

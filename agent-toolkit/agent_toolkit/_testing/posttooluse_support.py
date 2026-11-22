@@ -1,5 +1,3 @@
-"""posttooluse_testの共通試験準備。"""
-
 import functools
 import importlib.util
 import json
@@ -55,7 +53,6 @@ _POSTTOOLUSE_MODULE = _load_posttooluse_module()
 
 
 def _observe(payload: dict) -> list[str]:
-    """PostToolUseの入力を解析して記録処理へ渡し、コーディングエージェントへ返す通知を返す。"""
     parsed = _POSTTOOLUSE_MODULE._parse_hook_payload(json.dumps(payload))  # pylint: disable=protected-access
     if parsed is None:
         return []
@@ -63,7 +60,6 @@ def _observe(payload: dict) -> list[str]:
 
 
 def _isolate_conversation(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, conversation_session_id: str) -> None:
-    """会話側の現行session識別子と状態ディレクトリをテスト用に固定する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", conversation_session_id)
     for name in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_STATUS_HOST_SESSION"):
         monkeypatch.delenv(name, raising=False)
@@ -115,7 +111,6 @@ def _run_codex_delegate_hook(
 
 
 def _state_path(session_id: str) -> pathlib.Path:
-    """試験用のJSONを現行の公開パスへ準備する。"""
     path = session_state.state_path(session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
@@ -136,8 +131,7 @@ def _run(
     if home_dir is not None:
         env["HOME"] = str(home_dir)
     env.update(extra_env or {})
-    # plan fileの書式を判定する処理はplan_mode_skill_invokedが真の場合のみ実行されるため、
-    # 書式の判定を期待するテストでは事前に状態ファイルへ同フラグを書き込んでおく。
+
     if plan_mode_skill_invoked and state_dir is not None and isinstance(payload, dict):
         sid = payload.get("session_id", "")
         if isinstance(sid, str) and sid:
@@ -150,7 +144,6 @@ def _run(
 
 
 def _run_pretooluse(payload: dict, state_dir: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """同じ一時状態ディレクトリでPreToolUse hookを実行する。"""
     env = os.environ.copy()
     env.update({"TMPDIR": str(state_dir), "TEMP": str(state_dir), "TMP": str(state_dir)})
     return _fork_runner.run_script(
@@ -184,7 +177,6 @@ def _ask_user_question_payload(session_id: str, tool_response: dict) -> dict:
 
 
 def _single_notice_body(result: subprocess.CompletedProcess[str], source: str) -> str:
-    """hookの出力から指定した生成元の`notice`の本文を1件取り出す。"""
     assert result.returncode == 0, result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     opening = f'<atk-auto source="{source}" kind="notice">\n'
@@ -193,7 +185,6 @@ def _single_notice_body(result: subprocess.CompletedProcess[str], source: str) -
 
 
 def _registered_posttooluse_names(event: str = "PostToolUse") -> set[str]:
-    """現在の完全一致matcherが選択するツール集合を返す。"""
     hooks = json.loads(_HOOKS_JSON_PATH.read_text(encoding="utf-8"))["hooks"][event]
     return {name for entry in hooks for name in entry["matcher"].split("|")}
 
@@ -262,7 +253,6 @@ class _TestAgentsServerSessionStateSupport:
 
     @staticmethod
     def _background_notice_response(operation: str) -> dict:
-        """実行環境が上限到達で返すバックグラウンドタスクへの移行通知を模したtool_responseを組み立てる。"""
         return {
             "content": [
                 {
@@ -277,7 +267,6 @@ class _TestAgentsServerSessionStateSupport:
 
     @staticmethod
     def _start_pending_session(tmp_path: pathlib.Path, sid: str, remote_session_id: str) -> None:
-        """観測すべき作業を持つsessionを`start`の構造化応答から作成する。"""
         result = _run(
             {
                 "session_id": sid,

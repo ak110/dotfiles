@@ -44,7 +44,6 @@ from agent_toolkit._testing.agents_server_support import (
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
 @pytest.mark.usefixtures("agents_server_isolation")
 def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
-    """pyfltrの既存起動定義を使い、個別MCPツールの用途は探索プロンプトへ委ねる。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore")
     root = claude.plugin_roots.SERVER_PLUGIN_ROOT
     definition = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
@@ -67,7 +66,9 @@ async def test_claude_start_records_owner_and_cli_processes(
     with late_descendant.held_process(tmp_path, env=host_environ()) as process:
         child = session_registry.ProcessIdentity.of(process.pid)
         assert child is not None
-        client = _TransportClient([[SystemMessage("claude-recorded"), ResultMessage("完了")]], pid=process.pid)
+        client = _TransportClient(
+            [[SystemMessage("claude-recorded"), ResultMessage("状態: completed\n結果: 完了")]], pid=process.pid
+        )
         async with claude.ClaudeServerManager(client_factory=lambda _options: client, publish_registry=True) as manager:
             monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: options)
             session = await manager.start("調査", str(tmp_path))
@@ -85,8 +86,8 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
     """Claudeのinit、結果の受信、終了後のreplyを1つの長命タスクで処理する。"""
     client = FakeClaudeClient(
         [
-            [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("Claude結果")],
-            [SystemMessage("claude-session"), AssistantMessage("reply中"), ResultMessage("reply結果")],
+            [SystemMessage("claude-session"), AssistantMessage("途中経過"), ResultMessage("状態: completed\n結果: Claude結果")],
+            [SystemMessage("claude-session"), AssistantMessage("reply中"), ResultMessage("状態: completed\n結果: reply結果")],
         ]
     )
     options = SimpleNamespace(system_prompt={"type": "preset", "preset": "claude_code"})
@@ -99,11 +100,11 @@ async def test_claude_start_result_wait_and_reply(monkeypatch: pytest.MonkeyPatc
             await asyncio.sleep(0.01)
         assert session.session_id == "claude-session"
         assert session.status == "completed"
-        assert session.agent_message == "Claude結果"
+        assert session.agent_message == "状態: completed\n結果: Claude結果"
         assert session.progress == "途中経過"
         reply = await manager.send_message(session, "続行")
         assert reply["delivery"] == "reply_started"
-        assert reply["previous_result"]["agent_message"] == "Claude結果"
+        assert reply["previous_result"]["agent_message"] == "状態: completed\n結果: Claude結果"
         _assert_no_forbidden_keys(reply)
         assert client.queries == ["調査", "続行"]
     assert client.connected is True
@@ -116,19 +117,21 @@ async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """initの再送時も所有タスクのキューと状態を再生成しない。"""
     client = FakeClaudeClient(
         [
-            [SystemMessage("claude-stable"), ResultMessage("初回結果")],
-            [SystemMessage("claude-stable"), ResultMessage("1回目のreply結果")],
-            [SystemMessage("claude-stable"), ResultMessage("2回目のreply結果")],
+            [SystemMessage("claude-stable"), ResultMessage("状態: completed\n結果: 初回結果")],
+            [SystemMessage("claude-stable"), ResultMessage("状態: completed\n結果: 1回目のreply結果")],
+            [SystemMessage("claude-stable"), ResultMessage("状態: completed\n結果: 2回目のreply結果")],
         ]
     )
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
         channel = manager._channels[session.session_id]
-        for prompt, expected in (("続行1", "1回目のreply結果"), ("続行2", "2回目のreply結果")):
+        for prompt, expected in (
+            ("続行1", "状態: completed\n結果: 1回目のreply結果"),
+            ("続行2", "状態: completed\n結果: 2回目のreply結果"),
+        ):
             for _ in range(200):
                 if session.result_available:
                     break
@@ -180,7 +183,9 @@ async def test_claude_kill_uses_owner_task_interrupt_and_maps_terminal_reason(
 @pytest.mark.asyncio
 async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     """旧poll期限を過ぎてもstreamを維持し、解放後の結果を返す。"""
-    client = DelayedClaudeClient([[SystemMessage("claude-delayed"), AssistantMessage("途中"), ResultMessage("完了")]])
+    client = DelayedClaudeClient(
+        [[SystemMessage("claude-delayed"), AssistantMessage("途中"), ResultMessage("状態: completed\n結果: 完了")]]
+    )
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         starting = asyncio.create_task(manager.start("調査", str(tmp_path)))
@@ -203,7 +208,7 @@ async def test_claude_message_gap_does_not_cancel_stream(monkeypatch: pytest.Mon
                 break
             await asyncio.sleep(0.01)
         assert session.status == "completed"
-        assert session.agent_message == "完了"
+        assert session.agent_message == "状態: completed\n結果: 完了"
         assert session.progress == "途中"
     assert client.disconnected is True
 
@@ -243,7 +248,9 @@ async def test_claude_concatenates_multiple_text_blocks(monkeypatch: pytest.Monk
     """Claudeの複数TextBlockを改行区切りで連結して進捗へ保持する。"""
     assistant_message = AssistantMessage("一")
     assistant_message.content = MultipleBlockAssistantMessage("一", "二").content
-    client = FakeClaudeClient([[SystemMessage("claude-blocks"), assistant_message, ResultMessage("完了")]])
+    client = FakeClaudeClient(
+        [[SystemMessage("claude-blocks"), assistant_message, ResultMessage("状態: completed\n結果: 完了")]]
+    )
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
         session = await manager.start("調査", str(tmp_path))
@@ -260,7 +267,6 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """message taskの例外時に切断し、failedの結果を共有sessionへ保持する。"""
     client = FailingClaudeClient([])
     sessions: dict[str, state.SessionState] = {}
     async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as manager:
@@ -307,7 +313,6 @@ async def test_claude_empty_result_is_not_completed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """非空assistant本文を伴わないResultMessageは正常完了にしない。"""
     client = FakeClaudeClient([[SystemMessage("claude-empty"), AssistantMessage(""), ResultMessage("")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
@@ -328,7 +333,7 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
 ) -> None:
     """保持期限経過時にSDKを切断し、未回収結果を伴う再開状態を退避する。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.01)
-    client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("完了")]])
+    client = FakeClaudeClient([[SystemMessage("claude-expired"), ResultMessage("状態: completed\n結果: 完了")]])
     sessions: dict[str, state.SessionState] = {}
     async with server_manager.AgentsServerManager() as manager:
         manager.sessions = sessions
@@ -362,15 +367,19 @@ async def test_claude_retention_expiry_disconnects_and_retains_result_record(
                     updated_at=session.updated_at,
                     turn_seq=session.turn_seq,
                     status="completed",
-                    agent_message="完了",
-                    final_responses=((1, "完了"),),
+                    agent_message="状態: completed\n結果: 完了",
+                    final_responses=((1, "状態: completed\n結果: 完了"),),
                     finalized_at=session.finalized_at,
                     result_delivered=False,
                     retention_deadline=session.retention_deadline,
                 )
             }
             response = await manager.wait()
-            assert response == {"session_id": session.session_id, "status": "completed", "agent_message": "完了"}
+            assert response == {
+                "session_id": session.session_id,
+                "status": "completed",
+                "agent_message": "状態: completed\n結果: 完了",
+            }
             assert await manager.wait() == {"status": "expired"}
 
 
@@ -380,8 +389,7 @@ async def test_claude_server_close_disconnects_and_retains_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """サーバー終了時にSDKを切断し、取得済みの結果recordは保持する。"""
-    client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("完了")]])
+    client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("状態: completed\n結果: 完了")]])
     sessions: dict[str, state.SessionState] = {}
     async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as backend:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
@@ -392,7 +400,7 @@ async def test_claude_server_close_disconnects_and_retains_result(
             await asyncio.sleep(0.01)
         await backend.close()
         assert client.disconnected is True
-        assert sessions[session.session_id].agent_message == "完了"
+        assert sessions[session.session_id].agent_message == "状態: completed\n結果: 完了"
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -400,7 +408,6 @@ async def test_claude_server_close_disconnects_and_retains_result(
 async def test_close_reclaims_cli_when_sdk_disconnect_never_returns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """SDK切断が返らない場合も、切断前に確保した実CLIと子孫を回収する。"""
     script = tmp_path / "runtime.py"
     script.write_text(
         "import pathlib, subprocess, sys, time\n"
@@ -422,7 +429,7 @@ async def test_close_reclaims_cli_when_sdk_disconnect_never_returns(
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     with process_tree.process_scope([sys.executable, str(script), str(tmp_path / "child.pid")], env=host_environ()) as process:
         targets = [psutil.Process(process.pid)]
-        client = StalledClient([[SystemMessage("claude-stalled-disconnect"), ResultMessage("完了")]])
+        client = StalledClient([[SystemMessage("claude-stalled-disconnect"), ResultMessage("状態: completed\n結果: 完了")]])
         client._transport = SimpleNamespace(_process=process)
         try:
 

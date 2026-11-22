@@ -21,7 +21,6 @@ _HOOK_ID = "subagent-stop"
 
 
 def _is_empty_completion_report(text: object) -> bool:
-    """完了報告が空文字列だけで構成される場合に真を返す。"""
     return isinstance(text, str) and not text.strip()
 
 
@@ -29,7 +28,6 @@ _block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def main(payload_text: str) -> int:
-    """SubagentStop hookのエントリポイント。"""
     try:
         payload = json.loads(payload_text or "{}")
     except json.JSONDecodeError:

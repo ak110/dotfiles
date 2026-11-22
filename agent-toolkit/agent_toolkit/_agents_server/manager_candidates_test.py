@@ -32,10 +32,6 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """利用上限で終了した候補を除外し、別engineの次候補で起動する。
-
-    起動応答の前に終了した場合と、応答の後に終了した場合の双方を対象とする。
-    """
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("claude") as (manager, claude):
@@ -67,7 +63,6 @@ async def test_start_advances_candidate_when_engine_reports_unavailable(
 
 @pytest.mark.asyncio
 async def test_agy_init_failure_advances_direct_candidate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """agyがinit前に標準エラー付きで終了しても、直接指定した次候補へ進む。"""
     async with _manager_with_fake("claude") as (manager, claude):
         agy = FakeBackend(manager.sessions, "agy")
         start_mock = AsyncMock(
@@ -170,7 +165,6 @@ async def test_abandoned_candidate_is_released(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補切替の前に、放棄したsessionの保持情報・結果・backend資源を除く。"""
     candidates = [("codex", "first", "high"), ("claude", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     writer = status_file.StatusFileWriter(
@@ -274,7 +268,6 @@ async def test_engine_switch_is_written_to_the_diagnostic_log(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """候補の切替は、除外した候補と採用した候補を持つ行として診断ログへ残る。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:
@@ -300,7 +293,6 @@ async def test_exclusion_record_is_read_by_a_newly_created_manager(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """除外した候補は状態ディレクトリの記録から解決し、別のmanagerの起動でも先頭候補を試さない。"""
     candidates = [("claude", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as failing:

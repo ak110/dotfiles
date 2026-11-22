@@ -15,8 +15,7 @@ _TMPFILES_CLEAN_TIMER_NAME = "systemd-tmpfiles-clean.timer"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """旧自動更新を撤去し、一時ファイルの経過削除を有効化する。"""
-    # 2026-11-08登録。全既存ホストへ撤去が1回反映されたことを確認した後に移行処理を削除する。
+
     unit_dir = pathlib.Path.home() / ".config/systemd/user"
     units = [unit_dir / name for name in ("dotfiles-autoupdate.timer", "dotfiles-autoupdate.service")]
     state = pathlib.Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / "auto-update"

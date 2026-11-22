@@ -1,5 +1,3 @@
-"""停止taskの完了待ちの上限を検証する。"""
-
 import asyncio
 import contextlib
 

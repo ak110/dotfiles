@@ -5,7 +5,7 @@
 案内や基準があること、本文を読んだこと、実際に適用したこと、処置で期待した結果が得られたことは分けて確かめる（`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の解消と対策の効果は適用機会と観測結果で判定する。
 
-`/atk-mode review-session [batch] [着眼点]`の先頭語（区切りは空白・タブ・改行）が`batch`と完全一致する時だけbatchを選ぶ。
+`/atk-mode review-session [batch|meta] [着眼点]`の先頭語（区切りは空白・タブ・改行）が`batch`か`meta`と完全一致する時だけ該当するモードを選ぶ。
 残り（通常は引数全体）は着眼点であり、調査対象を狭めない。
 `batch auto`の`auto`も着眼点で、自動かどうかは起動元で判定する。
 
@@ -18,6 +18,7 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 | 条件 | 行動 |
 | --- | --- |
 | 引数の先頭語が`batch`と完全一致する | `agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従う |
+| 引数の先頭語が`meta`と完全一致する | 本書「週次のメタ分析」を上から行う |
 | それ以外（引数なしを含む） | 本書「工程」を上から行う |
 | 工程1の準備が失敗した | 本書「準備の失敗」へ進む |
 | 事実関係の調査を独立した担当へ分担する | `agent-toolkit:atk-mode/playbooks/delegation.md`を全文読み、「条件と行動」に従う |
@@ -26,9 +27,10 @@ AWIの登録や既存AWIの存在は起票の証拠として扱い、原因の�
 
 ## 起動するエージェント
 
-- 手動の振り返りは、現在のセッションを統括するメインが起動する。
+- 通常の作業の区切りやセッションの終了前は、必要な時にそのセッションのメインが単発の振り返りを起動する。
+  `process-loop`の区切りでは、巡回の手順に従って単発の振り返りを行う。
 - 委譲先は振り返りを起動せず、観測した事象と調査結果を委譲元へ返す。
-- 各セッションの終了時の振り返りは、SessionStartが登録した待ちから、batchの担当が非活動の時にまとめて処理する。
+- 非同期の`review-session batch`は、SessionStartが登録した待ちのうち非活動のセッションを振り返り、その場の`bugfix`や単発の振り返りで扱い切れなかった問題を拾う。
   中断、利用上限、未再開の記録も、最終報告の有無によらず、待ちと実際に処理した範囲で扱う。
 - 作業完了報告、公開、ホストの停止は元の作業のメインが担い、振り返りとは独立に進める。
 - 再発防止策のAWIの起草と登録は、`agent-toolkit:atk-mode/roles/add-wi.parent.md`の付随型でWI投入担当へ委譲する（`source: session-review`）。
@@ -50,6 +52,9 @@ atk run-script session-review-prepare -- --transcript <transcriptの絶対パス
 atk run-script session-review-prepare -- --codex-thread-id <thread ID> --target-repo <対象リポジトリの絶対パス>
 atk run-script session-review-prepare -- --opencode-session-id <session ID> --target-repo <対象リポジトリの絶対パス>
 ```
+
+前回の振り返りで範囲を確定していれば、その位置より後だけを分析する。
+全量を再分析する場合は `--full`、前回範囲のファイルを指定する場合は `--after <scope JSONの絶対パス>` を渡す。
 
 OpenCodeの記録の所在を明示する時は`--opencode-db <SQLiteの絶対パス>`を足す。
 OpenCodeの記録位置（line）はメッセージとパートの並びに基づく論理位置であり、元のデータベースが更新されるとずれるので、証拠は同じbundleから読む。
@@ -103,8 +108,44 @@ OpenCodeの記録位置（line）はメッセージとパートの並びに基�
    起動の形はホストに合わせて書く（Claude Codeは`/atk-mode review-session`、Codexは`$atk-mode review-session`）。
    記録にはtranscriptのパスを含めず、記録の全体をメインの文脈へ読み込んで分析する代替も避ける。
 4. 空の文書を作ったり、別のセッションの分析結果を流用したりして完了扱いにすることは避ける。
-   振り返りの完了は、セッション全体の取得、分析、報告を全て終えた時に判定する。
+   振り返りの完了は、今回の対象範囲の取得、分析、報告を全て終えた時に判定する。
 5. 手動の起動では、分析が未完了であることと登録した欠陥AWIを、`agent-toolkit:atk-mode/references/report-formats-retrospective.md`「未実施と失敗の報告」の書式で報告する。
    振り返りの再開は、元の作業の完了報告とは独立に行う。
 
 返す報告に含める項目: 結果の本文（`report-formats-retrospective.md`の書式）、投入したAWI、準備済みの範囲の確定の成否と残る待ちの件数、未処理として残した範囲。
+
+## 週次のメタ分析
+
+起動入力を受け取っていない対話側は `atk run-skill --args "meta <着眼点>" review-session` を使い、前回の日付では制限しない。
+run-skillが起動した担当は再起動せず、個別セッションの範囲確定も行わない。
+
+1. 起動時から遡る7日間と、その前の7日間を分け、`atk wi list --state=all --target-repo=all --jsonl` で集める。
+   投入日で区切って採否と効果状態を取り、`scope`と`run_skill_report`は`atk wi show`のfrontmatterで確かめる。
+   直前のmeta報告と回答は期間・リポジトリを限定せず取得し、期間外の未分析の束も引き継ぐ。
+2. 初段で読むのは、対象期間のAWI（`source: session-review`、`source: add-awi-by-user`、`source`なし）の題名・冒頭、全WIの記入欄、報告用以外のUWIの本文と前回meta報告だけである。
+   記入欄の「ユーザーコメント」「回答」「ユーザー指摘の逐語引用」を起点に、題名ではなく消費主体から見た損失で束ねる。
+   比較期間は題名と件数を取り、全文を読むのは反復する束に関係するAWI・batch報告とその回答に限る。
+3. 配布済み対策の後に同じ害が出た、効果不足が記録された、ユーザーが反復を述べた、または同じ害のAWIが対象期間に2件以上あるなら反復とする。
+   未分析から引き継いだ束を先に、それ以外はユーザーが介入した束から扱う。
+4. `atk wi grep --state=all --target-repo=all` と `atk wi show` で過去の対策を期間を区切らず読み、`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「原因と対策」で効果を判定する。
+   区分は未反映・未適用・範囲不足・適用後の同原因・別原因・効果未確認を使う。
+   会話の照会は反復の束の適用証拠を得る箇所だけにし、`session-review-evidence` で必要な位置を得る。
+5. 対策の撤去・単純化、誤りを防ぐ構造か既存のチェック、重複の統合、文面修正の順に比べ、束ごとに1案へ絞る。
+   文面を変える案では以前の文面対策の失敗理由が当てはまらない根拠を示す。
+   同じ束の未着手のエージェント由来AWIへ統合できるか確かめ、他は `source: session-review` のAWIとして検収して投入する。
+   人間由来と処理中の項目は参照にとどめ、確定した対策の効果は `atk wi effect-check` で保存する。
+6. 反復や決定論的な検査への移行を判定するのに必要な件数を下から選び、2期間で比べる。
+   GitとCIを使う時は配布元のリポジトリで同じ日時境界を使う。
+   件数から対策の量産や偏りが分かれば、振り返り自体の是正を同じ基準で検討する。
+   確定済みのユーザー方針を変える時は先に事前承認型UWIで確かめる。
+7. 起動入力の報告先を使い、`agent-toolkit:atk-mode/playbooks/report-completion.md`で事後承認型の報告用UWIを1件保存する。
+   `source: run-skill`、起動入力の`accepted_scopes`の先頭、`run_skill_report: true` を付ける。
+   冒頭に束ごとの害、両期間の発生数、対策の件数と効果不足の区分、是正とAWI名を置く。
+   比較の件数、効果を保存した件数、残る未分析の束の害とWI名、実行所要を続ける。
+
+| 比較の候補 | 件数の出所 |
+| --- | --- |
+| 登録と結果 | 振り返り由来AWIの登録・採否・効果状態、反復の束、ユーザー起票と`## ユーザーコメント`見出しを持つ項目の件数（すべて投入日で区切る） |
+| 規範と自動チェック | 期間末のdevelopで `agent-toolkit`・`agent-basics`・`.claude/skills` のMarkdownの数とバイト数、`scripts/check_*.py` の試験以外の本数、`pyproject.toml` のcustom-commands数 |
+| 修正の割合と種類 | 非mergeの `git log` で件名が`fix`から始まる数と割合。その修正の規範変更、規範だけの変更、`*_test.py`・`*.test.ts`・`*.test.tsx`・`scripts/check_*.py`の新設、削除行が上回る件数（区分は重複可） |
+| CIの結果 | developのCIの実行結果別件数と失敗率。取得が件数上限に達したら期間を分割し、成功・失敗の母集団をそろえる。同じジョブの反復は `gh run view` で失敗の段と最初のエラーを比べる |

@@ -57,6 +57,16 @@ def test_first_observation_records_start_without_notice() -> None:
     assert _entries(sid) == {"main": {"started_at": 1000.0, "last_notified_at": 1000.0}}
 
 
+def test_periodic_recheck_absorbs_one_minute_of_clock_jitter() -> None:
+    sid = _session_id()
+    payload = {"session_id": sid}
+    assert progress_self_check.claim_notice(payload, now=1000.0) is None
+    early = 1000.0 + _INTERVAL - 1
+    assert progress_self_check.claim_notice(payload, now=early) is None
+    assert progress_self_check.claim_notice(payload, now=early, periodic_recheck=True) is not None
+    progress_self_check.release_reservations()
+
+
 def test_notice_waits_for_interval_and_fires_once() -> None:
     sid = _session_id()
     payload = {"session_id": sid}
@@ -66,18 +76,17 @@ def test_notice_waits_for_interval_and_fires_once() -> None:
 
     notice = progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL)
     assert notice is not None and notice.startswith(_OPENING)
-    # 通知だけで報告の1行目を埋められる。
+
     assert "1行目" in notice
     assert "進捗 N%・完了見込み HH:MM（根拠: …）" in notice
     assert "git -C" not in notice
     assert ".md" not in notice
     assert "cat --" not in notice and "Get-Content" not in notice
-    # 生成しただけでは期日を消費せず、最終出力へ採用された時点で確定する。
+
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0
     notice_module.record_delivery(notice)
     progress_self_check.release_reservations()
 
-    # 通知した直後は次の間隔が経過するまで再び通知しない。
     assert progress_self_check.claim_notice(payload, now=1000.0 + _INTERVAL + 60) is None
     assert _entries(sid)["main"]["last_notified_at"] == 1000.0 + _INTERVAL
     assert progress_self_check.claim_notice(payload, now=1000.0 + 2 * _INTERVAL) is not None
@@ -159,7 +168,6 @@ def test_in_process_subagent_notice_does_not_require_user_report() -> None:
 
 
 def test_undelivered_notice_keeps_the_due_time_for_the_next_call() -> None:
-    """未採用の通知は期日を消費せず、予約の解除後の次の呼出しで通知する。"""
     sid = _session_id()
     _seed(sid, "main", started_at=1000.0, last_notified_at=1000.0)
     payload = {"session_id": sid}
@@ -174,7 +182,6 @@ def test_undelivered_notice_keeps_the_due_time_for_the_next_call() -> None:
 
 
 def test_parallel_claim_of_the_same_subject_is_suppressed() -> None:
-    """予約中の同じ主体は重ねて通知せず、別主体は独立して通知する。"""
     sid = _session_id()
     _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
     _seed(sid, "sub-1", started_at=0.0, last_notified_at=0.0)
@@ -182,14 +189,13 @@ def test_parallel_claim_of_the_same_subject_is_suppressed() -> None:
     assert first is not None
     assert progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL) + 1) is None
     assert progress_self_check.claim_notice({"session_id": sid, "agent_id": "sub-1"}, now=float(_INTERVAL) + 1) is not None
-    # 予約は失効時間を過ぎれば外れ、配送されなかった期日を後続の呼出しが引き継ぐ。
+
     later = float(_INTERVAL) + progress_self_check.RESERVATION_SECONDS + 1
     assert progress_self_check.claim_notice({"session_id": sid}, now=later) is not None
     progress_self_check.release_reservations()
 
 
 def test_older_delivery_receipt_does_not_rewind_the_confirmed_time() -> None:
-    """古い試行の採用記録が後から届いても、新しい確定時刻を巻き戻さない。"""
     sid = _session_id()
     _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
     old = progress_self_check.claim_notice({"session_id": sid}, now=float(_INTERVAL))
@@ -219,17 +225,16 @@ def test_older_delivery_receipt_does_not_rewind_the_confirmed_time() -> None:
     [(45 * 60, "45分"), (2 * 3600, "2時間"), (13 * 3600 + 5 * 60, "13時間5分")],
 )
 def test_notice_reports_elapsed_time_since_session_start(elapsed_seconds: int, expected: str) -> None:
-    """経過時間は最後の通知ではなく、セッション開始を起点に数える。"""
     sid = _session_id()
     now = 100000.0
     _seed(sid, "main", started_at=now - elapsed_seconds, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
     assert notice is not None and f"この主体の初回観測から{expected}たった。" in notice
-    assert "1970-01-02T03:46:40+00:00" in notice
+    assert "前回の通知から30分たった" in notice
+    assert "+00:00" not in notice
 
 
 def test_agents_in_same_session_have_independent_timers() -> None:
-    """in-processのサブエージェントは同じsession_idでも、メインと別の時刻で判定する。"""
     sid = _session_id()
     _seed(sid, "main", started_at=0.0, last_notified_at=0.0)
     now = float(_INTERVAL * 2)
@@ -238,21 +243,17 @@ def test_agents_in_same_session_have_independent_timers() -> None:
     assert _entries(sid)["sub-1"] == {"started_at": now, "last_notified_at": now}
 
 
-@pytest.mark.parametrize(
-    ("now", "expected"),
-    [(86399.0, "1970-01-01T23:59:59+00:00"), (86400.0, "1970-01-02T00:00:00+00:00")],
-)
-def test_notice_observation_keeps_the_date_at_midnight(now: float, expected: str) -> None:
-    """日付またぎでも、通知生成に使った時計をオフセット付きで伝える。"""
+@pytest.mark.parametrize("now", [86399.0, 86400.0])
+def test_notice_reports_elapsed_time_across_midnight(now: float) -> None:
     sid = _session_id()
     _seed(sid, "main", started_at=now - _INTERVAL, last_notified_at=now - _INTERVAL)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=now)
-    assert notice is not None and expected in notice
+    assert notice is not None and "初回観測から30分" in notice
+    assert "前回の通知から" not in notice and "+00:00" not in notice
     progress_self_check.release_reservations()
 
 
 def test_notice_does_not_report_negative_elapsed_after_clock_disagreement() -> None:
-    """起点と時計が食い違っても、負の経過時間を通常の経過として示さない。"""
     sid = _session_id()
     _seed(sid, "main", started_at=100000.0, last_notified_at=1000.0)
     notice = progress_self_check.claim_notice({"session_id": sid}, now=2800.0)
@@ -282,7 +283,7 @@ def _run_hook(subcommand: str, payload: dict) -> subprocess.CompletedProcess[str
 
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
     assert result.returncode == 0, result.stderr
-    # フックは例外でも終了コード0を返すため、例外の出力が無いことも確かめる。
+
     assert "Traceback" not in result.stderr, result.stderr
     if not result.stdout:
         return ""
@@ -340,7 +341,6 @@ def _in_process(subcommand: str, payload: dict) -> str:
     ),
 )
 def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実発話・機械注入・PostToolUseが30分未満の間隔で続いても、期日到達後の最初のイベントで周期どおり通知する。"""
     sid = _session_id()
     clock = {"now": 10_000.0}
     monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
@@ -360,8 +360,22 @@ def test_mixed_event_sequence_keeps_the_period_across_cycles(monkeypatch: pytest
             notified.append(clock["now"])
         step += 1
         clock["now"] += 10 * 60
-    # 初回観測は通知せず、1800秒以上たった最初のイベントごとに1回だけ通知し、期日の延期は起きない。
+
     assert notified == [10_000.0 + 1800.0, 10_000.0 + 3600.0, 10_000.0 + 5400.0]
+
+
+def test_two_periodic_prompts_notify_just_before_the_normal_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    sid = _session_id()
+    clock = {"now": 10_000.0}
+    monkeypatch.setattr(progress_self_check.time, "time", lambda: clock["now"])
+    _seed(sid, "main", started_at=clock["now"], last_notified_at=clock["now"])
+    periodic = {"session_id": sid, "prompt": f"{PERIODIC_RECHECK_MARKER}\n確認する。\n</atk-auto>"}
+    for _ in range(2):
+        clock["now"] += _INTERVAL - 1
+        assert _OPENING not in _in_process("user_prompt_submit", {"session_id": sid, "prompt": "状況は？"})
+        assert _OPENING not in _in_process("posttooluse", {**_POSTTOOLUSE_PAYLOAD, "session_id": sid})
+        assert _in_process("user_prompt_submit", periodic).count(_OPENING) == 1
+        assert session_state.read_state(sid)[progress_self_check.DELIVERED_KEY]["main"] == [str(clock["now"])]
 
 
 def test_format_failure_after_claim_does_not_consume_the_due_time(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -407,7 +421,6 @@ def test_output_failure_after_claim_does_not_consume_the_due_time(monkeypatch: p
 def test_notice_reports_machine_concurrency_and_recent_hook_durations(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """点検の通知に、マシン全体の作業中の数と直近のhook所要が現れ、飽和を進め方と分けて判定できる。"""
     from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
     from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
 
@@ -464,7 +477,6 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
 
 
 def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """読めない状態ファイルが4件以上でも、通知が示す保存先から全件の所在と診断を取得できる。"""
     from agent_toolkit._agents_server import admission  # pylint: disable=import-outside-toplevel
     from agent_toolkit._atk import managed_temp  # pylint: disable=import-outside-toplevel
 

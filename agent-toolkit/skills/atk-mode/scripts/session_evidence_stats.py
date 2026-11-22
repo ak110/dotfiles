@@ -1,5 +1,3 @@
-"""証拠抽出の`--stats`照会。トークン使用量、ツール呼び出しの内訳、コンパクションの集計を返す。"""
-
 from __future__ import annotations
 
 import collections
@@ -51,23 +49,15 @@ _CLAUDE_HINT_KEYS = ("command", "CommandLine", "file_path", "path", "Path", "pat
 
 
 def _parse_cli_timestamp(value: str) -> datetime.datetime:
-    """CLI引数で受け取ったISO 8601の時刻を解析し、タイムゾーン無しの値を実行ホストのローカル時刻として返す。
-
-    人やエージェントが手で書く境界は同じホストの`date`などで得たローカル時刻から書かれるため、
-    記録向けの`_parse_timestamp`と同じくUTCとみなすと、ローカルタイムゾーンとUTCの差だけ境界がずれ、
-    該当0件の結果と区別できない。日付だけの値はその日のローカル時刻0時とする。
-    """
     parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.astimezone()
 
 
 def _apply_observation_boundary(records: list[_Record], boundary: datetime.datetime) -> list[_Record]:
-    """時刻無しと境界以前のメイン記録を、元の行番号を保って返す。"""
     return [record for record in records if (timestamp := _record_timestamp(record)) is None or timestamp <= boundary]
 
 
 def _elapsed_until_event(records: list[_Record], until_text: str) -> dict[str, Any] | str:
-    """最初の記録から指定時刻までの経過時間イベントまたはエラー文を返す。"""
     try:
         until = _parse_cli_timestamp(until_text)
     except ValueError:
@@ -295,17 +285,6 @@ def _stats_summary_data(records: list[_Record], runtime: _Runtime) -> dict[str, 
 
 
 def _claude_call_hint(block_input: Any) -> str | None:
-    """tool_use入力から反復照会の識別に用いる代表的な対象値を取得する。
-
-    `command`を持たないツール（`Read`・`Edit`・`Grep`など）では、対象を表す入力キーを
-    定義順に探す。列挙は全ツール種別の網羅を目的とせず、取得できた値だけをヒントとする。
-    いずれのキーも持たない呼び出しはヒントなしとし、反復集計の対象から外れる。
-
-    値は先頭行への切り詰めも文字数の切り詰めも行わず全体を返す。複数行のコマンドは先頭行が
-    `cd <ディレクトリ>`・変数代入・ヒアドキュメント開始行などで一致しやすく、
-    先頭行だけをヒントにすると内容の異なる呼び出しが同じ反復組へ集まるためである。
-    同じ理由で文字数の切り詰めも反復判定より後段（表示時）へ置く。
-    """
     if not isinstance(block_input, dict):
         return None
     for key in _CLAUDE_HINT_KEYS:
@@ -340,12 +319,6 @@ def _codex_call_hint(payload: dict[str, Any]) -> str | None:
 
 
 def _stats_call_entries(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
-    """ツール呼び出しと結果を対応付け、所要時間と入力ヒントを持つ呼び出しエントリを返す。
-
-    エントリは表示用の`hint`（`_clip`で切り詰めた値）と、反復判定用の`hint_key`（切り詰め前の原文）を
-    分けて持つ。切り詰め後の値で反復を判定すると、上限まで前方一致するだけの別内容の呼び出しが
-    同じ反復組へ集約されるためである（記録の確認結果: 上限2000文字の一致で内容の異なる組が実記録に存在する）。
-    """
     if runtime == "opencode":
         return _stats_call_entries(_opencode_records(records), "claude")
     records = [
@@ -418,9 +391,6 @@ def _stats_token_peaks(records: list[_Record], runtime: _Runtime) -> list[dict[s
             )
     else:
         for record, raw in _codex_token_usages(records):
-            # `cached_input_tokens`が`input_tokens`へ内包される関係は`last_token_usage`でも同じであり、
-            # 変換しないとキャッシュ済み入力が非キャッシュ入力の欄へ混入し、
-            # 同じ実行の`stats-total`（変換済み）と数値が矛盾する。
             normalized = _codex_normalized_tokens(raw)
             candidates.append(
                 {
@@ -486,7 +456,6 @@ def _compaction_event(record: _Record, record_id: str) -> dict[str, Any] | None:
 
 
 def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
-    """threadの有効な計測記録から所要秒数を記録順で返す。"""
     try:
         lines = split_lines((directory / f"{thread_id}.jsonl").read_text(encoding="utf-8"))
     except OSError, UnicodeError:
@@ -505,9 +474,6 @@ def _compaction_durations(directory: Path, thread_id: str) -> list[float]:
     return durations
 
 
-# エージェント向け文書の表示とみなすパス。配布物の原本と、プロジェクトスキルを対象にする。
-# 版付きのプラグインキャッシュ（`agent-toolkit/<版>/share/...`）も同じ文書として数えるため、
-# プラグイン名と区分の間に任意の階層を許し、集計の鍵は`<プラグイン>/<区分>/<残り>`へ正規化する。
 _NORM_DOC_PATTERN = re.compile(
     r"(?:(?P<plugin>agent-basics|agent-toolkit)(?:/[^/\s'\"`|;&()<>]+)*?/(?P<kind>skills|share|rules)"
     r"|(?P<project>\.claude/skills))/(?P<rest>[^\s'\"`|;&()<>]+?\.md)\b"
@@ -521,7 +487,6 @@ _COMPACTION_TOP_DOCUMENTS = 5
 
 
 def _norm_documents(text: str) -> list[str]:
-    """文字列が指すエージェント向け文書の正規化パスを出現順・重複なしで返す。"""
     found: list[str] = []
     for match in _NORM_DOC_PATTERN.finditer(text):
         key = (
@@ -535,7 +500,6 @@ def _norm_documents(text: str) -> list[str]:
 
 
 def _displayed_norm_documents(tool: str, block_input: Any, hint: str | None) -> list[str]:
-    """呼び出しがエージェント向け文書の本文を表示する場合に、その文書の正規化パスを返す。"""
     if tool in _DISPLAY_TOOLS and isinstance(block_input, dict):
         for key in ("file_path", "path"):
             value = block_input.get(key)
@@ -564,12 +528,6 @@ def _output_bytes(value: Any) -> int:
 
 
 def _compaction_usage_events(item: _CollectedRecord) -> list[dict[str, Any]]:
-    """圧縮で終わる区間ごとに、ツール出力とエージェント向け文書の表示が占めるバイト数を返す。
-
-    区間は直前の圧縮（無ければ記録の先頭）からその圧縮までとする。
-    1回の表示で複数の文書を出力した呼び出しは、出力の全量をエージェント向け文書の表示として数え、
-    文書別の内訳では各文書へ同じ量を計上する。このためエージェント向け文書のバイト数は上限寄りの値になる。
-    """
     runtime = item.runtime
     if runtime not in {"claude", "codex"}:
         return []
@@ -644,11 +602,6 @@ def _stats_compaction_events(
     collected: list[_CollectedRecord],
     compaction_record_dir: Path,
 ) -> list[dict[str, Any]]:
-    """全記録のコンパクションの発生位置と件数を返す。
-
-    メイン記録・サブエージェント記録・委譲先セッションのいずれで発生した分も数える。
-    発生が無い場合も件数0の集計イベントだけは返し、発生の有無を呼び出し側が判別できるようにする。
-    """
     events: list[dict[str, Any]] = []
     usage: list[dict[str, Any]] = []
     for item in collected:
@@ -680,10 +633,6 @@ def _stats_compaction_events(
 
 
 def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[dict[str, Any]]:
-    """1つの記録の記録間隔、ツール別、反復および遅い呼び出しの集計イベントを返す。
-
-    メイン記録と各agent threadの記録へ同じ集計を適用する。行番号はその記録の行番号である。
-    """
     events: list[dict[str, Any]] = []
     timestamped_records = [(record, timestamp) for record in records if (timestamp := _record_timestamp(record)) is not None]
     gaps = sorted(
@@ -717,8 +666,7 @@ def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[d
             :20
         ]
     )
-    # 入力ヒントを取れない呼び出しは対象が異なっても同じ組へ集まり、
-    # 反復照会の実態と異なる件数を報告する。集計対象から除く。
+
     repeats: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for call in calls:
         hint_key = call.get("hint_key")
@@ -746,12 +694,6 @@ def _stats_breakdown_events(records: list[_Record], runtime: _Runtime) -> list[d
 
 
 def _thread_breakdown_events(thread: _CollectedRecord, runtime: _Runtime) -> list[dict[str, Any]]:
-    """Agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
-
-    律速区間となった委譲先の内部の工程を、振り返りが追加の照会なしで読めるようにする。
-    種別はメイン記録の集計と区別するため`stats-thread-`で始め、行番号は`--detail`へそのまま渡せる
-    `<記録ID>:<行番号>`の記録位置へ置き換える。
-    """
     thread_id = thread.record_id.split(":", 1)[1]
 
     def locate(line: Any) -> str:
@@ -772,7 +714,6 @@ def _thread_breakdown_events(thread: _CollectedRecord, runtime: _Runtime) -> lis
 
 
 def _response_usages(records: list[_Record], runtime: _Runtime) -> list[dict[str, int]]:
-    """応答1回ごとの入力・出力トークンを、エンジンの差を除いた形で返す。"""
     if runtime == "opencode":
         return _response_usages(_opencode_records(records), "claude")
     if runtime == "claude":
@@ -927,8 +868,6 @@ def _stats_events(collected: list[_CollectedRecord], compaction_record_dir: Path
         thread_summaries,
         key=lambda item: (-item[2].get("tokens", {}).get("total_tokens", 0), item[0].record_id),
     ):
-        # `line`はメイン記録の`--detail`用であるため、メイン以外から見つけた委譲先では
-        # 由来記録IDを`agent`へ付ける。
         thread_event: dict[str, Any] = {
             "kind": "stats-agent-thread",
             "engine": thread_runtime,

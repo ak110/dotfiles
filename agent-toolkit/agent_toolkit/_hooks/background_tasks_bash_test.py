@@ -65,10 +65,6 @@ class TestIsPendingAsyncWork:
         ],
     )
     def test_pending_background_bash(self, tmp_path: pathlib.Path, pending_entries: list[dict], expected: bool):
-        """background Bashの起動・完了通知の有無で判定が決まることを検証する。
-
-        3ケース目はAgent完了とBash未完了の混在で、Bash側のみ残ることを確認する。
-        """
         entries: list[dict] = [_user_entry("hello")]
         entries.extend(pending_entries)
         entries.append(_user_entry("続き"))
@@ -77,7 +73,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     def test_sidechain_background_bash_is_ignored(self, tmp_path: pathlib.Path):
-        """sidechain内の背景Bash起動は未完了扱いしない。"""
         entries = [
             _user_entry("hello"),
             _user_background_bash_entry("toolu_bash1", sidechain=True),
@@ -88,7 +83,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_stop_success_completes_background_bash(self, tmp_path: pathlib.Path) -> None:
-        """停止成功結果だけが残る場合は背景Bashを完了済みとして扱う。"""
         entries = [
             _user_background_bash_entry("toolu_bash1"),
             _user_task_stop_success_entry("bash-task-x"),
@@ -103,7 +97,6 @@ class TestIsPendingAsyncWork:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """別識別子の停止結果では対象の背景Bashを未完了のまま保つ。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_background_bash_entry("toolu_bash1"),
@@ -117,7 +110,6 @@ class TestIsPendingAsyncWork:
         assert "decision=task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
     def test_foreground_agent_is_not_tracked(self, tmp_path: pathlib.Path):
-        """foreground Agent（`toolUseResult.status == "completed"`）は未完了扱いしない。"""
         entries = [
             _user_entry("hello"),
             _user_foreground_agent_entry("toolu_a"),

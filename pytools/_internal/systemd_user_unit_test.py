@@ -1,5 +1,3 @@
-"""systemd user unit共通処理のテスト。"""
-
 import pathlib
 import subprocess
 import typing
@@ -20,7 +18,6 @@ def _no_wait(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _show_aware(stdout: str = "Linger=yes", returncode: int = 0, *, stable: bool = False):
-    """showコマンドへ常駐状態を返すrun_subprocess stubを生成する。"""
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
@@ -34,7 +31,6 @@ def _show_aware(stdout: str = "Linger=yes", returncode: int = 0, *, stable: bool
 
 
 def _recording(commands: list[list[str]], *, stable: bool = False):
-    """呼び出し履歴を記録しつつ常駐状態を返すstubを生成する。"""
     inner = _show_aware(stable=stable)
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -45,7 +41,6 @@ def _recording(commands: list[list[str]], *, stable: bool = False):
 
 
 def test_setup_writes_and_applies_unit(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
-    """unit配置後にsystemd状態を更新する。"""
     executable = tmp_path / "bin/tool"
     executable.parent.mkdir()
     executable.write_text("", encoding="utf-8")
@@ -71,7 +66,6 @@ def test_setup_writes_and_applies_unit(tmp_path: pathlib.Path, monkeypatch: typi
 
 
 def test_setup_records_known_restart_reasons_before_restart(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """設定変更と停止状態の理由をjournalへ記録してから再起動する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     events: list[tuple[str, str]] = []
@@ -106,7 +100,6 @@ def test_setup_records_known_restart_reasons_before_restart(tmp_path: pathlib.Pa
 
 
 def test_setup_skips_missing_executable(tmp_path: pathlib.Path) -> None:
-    """実行ファイル不在時は変更しない。"""
     assert not systemd_user_unit.setup(
         unit_path=tmp_path / "tool.service",
         executable_path=tmp_path / "missing",
@@ -117,7 +110,6 @@ def test_setup_skips_missing_executable(tmp_path: pathlib.Path) -> None:
 
 
 def test_setup_does_not_rewrite_matching_unit(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
-    """一致するunitを再書込みせずdaemon-reloadも省く。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     unit = tmp_path / "tool.service"
@@ -160,7 +152,6 @@ def test_setup_repairs_service_state_or_launcher_change(
     restart_needed: bool,
     expected_actions: list[str],
 ) -> None:
-    """unit一致時も無効・停止・ランチャー変更には再起動で追随する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     unit = tmp_path / "tool.service"
@@ -193,7 +184,6 @@ def test_setup_repairs_service_state_or_launcher_change(
 
 
 def test_setup_uses_atomic_write(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
-    """変更時のunit配置にatomic writeと所定modeを使う。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     writes: list[tuple[pathlib.Path, str, int, str]] = []
@@ -330,7 +320,6 @@ def test_setup_raises_when_service_never_activates(
     tmp_path: pathlib.Path,
     monkeypatch: typing.Any,
 ) -> None:
-    """制限時間内にactiveへ至らない場合はSetupErrorを送出する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     monkeypatch.setattr(systemd_user_unit, "_ACTIVE_TIMEOUT_SECONDS", 0.0)
@@ -356,7 +345,6 @@ def test_setup_raises_when_service_restarts_repeatedly(
     tmp_path: pathlib.Path,
     monkeypatch: typing.Any,
 ) -> None:
-    """2回の観測でNRestartsが増える場合はSetupErrorを送出する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     restarts = iter(["1", "2"])
@@ -412,7 +400,6 @@ def test_setup_timer_writes_units_and_enables_only_timer(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """2 unitを配置し、timerだけを有効化する。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
     service_unit = tmp_path / "tool.service"
@@ -442,7 +429,6 @@ def test_setup_timer_writes_units_and_enables_only_timer(
 
 
 def test_setup_timer_skips_missing_executable(tmp_path: pathlib.Path) -> None:
-    """実行ファイル不在時はunitを配置しない。"""
     assert not systemd_user_unit.setup_timer(
         service_unit_path=tmp_path / "tool.service",
         timer_unit_path=tmp_path / "tool.timer",
@@ -458,7 +444,6 @@ def test_setup_timer_matching_units_skip_daemon_reload(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """2 unitが同一内容の場合は再配置せずdaemon-reloadを省く。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
     service_unit = tmp_path / "tool.service"
@@ -526,7 +511,6 @@ def test_setup_timer_raises_when_timer_is_not_active(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """timerがactiveでない場合はSetupErrorを送出する。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
 
@@ -550,7 +534,6 @@ def test_setup_timer_raises_when_timer_is_not_active(
 
 
 def test_setup_raises_when_unit_write_fails(tmp_path: pathlib.Path, monkeypatch: typing.Any) -> None:
-    """unitを書き込めない場合は、古いunitのまま再起動へ進まず例外を送出する。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     monkeypatch.setattr(common, "atomic_write_text", lambda *_args, **_kwargs: False)
@@ -566,7 +549,6 @@ def test_setup_raises_when_unit_write_fails(tmp_path: pathlib.Path, monkeypatch:
 
 
 def _setup_timer(tmp_path: pathlib.Path, executable: pathlib.Path) -> bool:
-    """既定の引数でsetup_timerを呼ぶ。"""
     return systemd_user_unit.setup_timer(
         service_unit_path=tmp_path / "tool.service",
         timer_unit_path=tmp_path / "tool.timer",
@@ -582,7 +564,6 @@ _BUS_ERROR = "Failed to connect to user scope bus via local transport: 接続を
 
 
 def _unreachable_run(commands: list[list[str]]):
-    """ユーザーマネージャー停止時のsystemctl（標準エラー付きの終了コード1）を返すstubを生成する。"""
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         del kwargs
@@ -596,7 +577,6 @@ def test_setup_reports_user_manager_unavailable_without_enable(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ユーザーマネージャーへ接続できない場合はenable・restartを試みず、復旧コマンドを示す。"""
     executable = tmp_path / "tool"
     executable.write_text("", encoding="utf-8")
     unit = tmp_path / "tool.service"
@@ -622,7 +602,6 @@ def test_setup_timer_reports_user_manager_unavailable_without_restart(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """timer設定でも接続不能なら復旧コマンドを示し、後続のrestartへ進まない。"""
     executable = tmp_path / "uv"
     executable.write_text("", encoding="utf-8")
     commands: list[list[str]] = []

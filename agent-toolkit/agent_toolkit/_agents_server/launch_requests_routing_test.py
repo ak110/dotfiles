@@ -4,7 +4,6 @@ from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
-import json
 import pathlib
 import re
 from unittest.mock import AsyncMock
@@ -41,7 +40,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_explore_result_matches_delivered_role(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: bool, message: str
 ) -> None:
-    """公開startで渡した役割の有無を結果確定まで保ち、共通形式と専用形式を公開する。"""
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -143,7 +141,7 @@ async def test_start_without_launch_kind_uses_delegate(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`mode:`へ改める前の`起動種別:`行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
+    """`mode:`へ改める前の宣言行を持つ旧形式の`<役割名>.subagent.md`も同じ値で読む。"""
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     current = _write_declared_task_document(tmp_path / "current", "必須入力名: 対象\nmode: explore")
@@ -172,11 +170,15 @@ async def test_start_reads_legacy_launch_kind_line(monkeypatch: pytest.MonkeyPat
     ],
 )
 def test_observed_delegation_prompts_include_required_inputs(task_name: str, tmp_path: pathlib.Path) -> None:
-    """実運用で観測した最小の委譲プロンプトが必須入力の確認処理を通過する。"""
     task_document = launch_requests.resolve_task_document_path(task_name.removesuffix(".subagent.md"))
     extra_params = _observed_input_params(task_name, tmp_path)
     if task_name == "exec-review.subagent.md":
         _prepare_exec_review_plan(tmp_path)
+    if task_name == "repository-process.subagent.md":
+        with pytest.raises(ActionableError, match="ownership_record"):
+            launch_requests._validate_required_prompt_inputs(task_document, extra_params)
+        del extra_params["ownership_record"]
+        del extra_params["ownership_token"]
 
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
 
@@ -186,7 +188,6 @@ _LANE_OWNER_INPUTS = ("所有登録", "統合先worktree", "統合先branch", "�
 
 @pytest.mark.parametrize("missing", _LANE_OWNER_INPUTS)
 def test_lane_owner_launch_without_lane_input_is_rejected(missing: str, tmp_path: pathlib.Path) -> None:
-    """`担当種別: レーン担当`の起動で資源と統合先と開始時刻のどれかが欠けると、起動前に不足の名前を示して拒否する。"""
     task_document = launch_requests.resolve_task_document_path("exec")
     extra_params = _observed_input_params("exec.subagent.md", tmp_path)
     assert extra_params["担当種別"] == "レーン担当" and set(_LANE_OWNER_INPUTS) <= set(extra_params)
@@ -211,7 +212,6 @@ def test_lane_owner_launch_without_lane_input_is_rejected(missing: str, tmp_path
 def test_lane_owner_launch_with_wrong_value_is_rejected(
     name: str, value: str, rejected: str, reason: str, tmp_path: pathlib.Path
 ) -> None:
-    """統括が渡したレーンの値が所有登録と合わないか形式が不正なら、起動前に入力名と理由を示して拒否する。"""
     task_document = launch_requests.resolve_task_document_path("exec")
     extra_params = _observed_input_params("exec.subagent.md", tmp_path)
     assert launch_requests._validate_required_prompt_inputs(task_document, extra_params) is None
@@ -224,7 +224,6 @@ def test_lane_owner_launch_with_wrong_value_is_rejected(
 
 @pytest.mark.parametrize("kind", ["CI修正担当", "レビュー修正担当"])
 def test_fix_owner_launch_does_not_need_lane_inputs(kind: str, tmp_path: pathlib.Path) -> None:
-    """修正担当の起動は、レーン担当だけの入力が無くても起動前の検査で拒否されない。"""
     task_document = launch_requests.resolve_task_document_path("exec")
     extra_params = {
         name: value
@@ -241,7 +240,6 @@ def test_fix_owner_launch_does_not_need_lane_inputs(kind: str, tmp_path: pathlib
 async def test_reader_fit_public_start_accepts_declared_review_inputs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, rereview: bool
 ) -> None:
-    """親が渡す初回・再レビューの入力をstartで受理し、宣言外入力だけを拒否する。"""
     task = launch_requests.resolve_task_document_path("reader-fit-review")
     manager = TaskManager(
         start=AsyncMock(return_value={"session_id": "reader", "status": "running", "label": "reader-fit-review"})
@@ -267,7 +265,6 @@ async def test_reader_fit_public_start_accepts_declared_review_inputs(
 async def test_exec_review_public_start_accepts_previous_revision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """引き継ぎ再レビューの比較元を宣言済み入力として委譲プロンプトへ配送する。"""
     task = launch_requests.resolve_task_document_path("exec-review")
     _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "exec-review"}))
@@ -288,10 +285,6 @@ async def test_exec_review_public_start_accepts_previous_revision(
 async def test_public_start_uses_high_tier_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, task_name: str
 ) -> None:
-    """調査担当とレーン担当は段位省略の`start`から`high_tier`で起動し、出所と入力を載せる。
-
-    工程別モデルの対応が欠けると`start`が起動を拒否し、段位を誤ると調査を上位モデルで行えない。
-    """
     task_document = launch_requests.resolve_task_document_path(task_name.removesuffix(".subagent.md"))
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "session", "status": "running", "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -310,7 +303,6 @@ async def test_public_start_uses_high_tier_model(
 
 @pytest.mark.asyncio
 async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """段位省略のレーン担当が保存設定の上位候補を解決し、backendへ渡す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:opus/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:sonnet/medium")
     async with _manager_with_fake("claude") as (manager, _backend):
@@ -332,7 +324,6 @@ async def test_public_lane_resolves_high_tier_candidates(tmp_path: pathlib.Path,
 async def test_wi_owner_uses_default_base_high_tier_candidates(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, route: str
 ) -> None:
-    """両投入形態の段位省略startは役割のbase・上位候補を使い、最上位用途の設定を保つ。"""
     other = "codex" if engine == "claude" else "claude"
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", f"{engine}:wi-owner/high")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_ORCHESTRATE_MODEL", f"{other}:orchestrator/high")
@@ -351,47 +342,15 @@ async def test_wi_owner_uses_default_base_high_tier_candidates(
 
 @pytest.mark.asyncio
 async def test_start_accepts_independent_wi_draft_review(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """専念型の投入前レビューが宣言入力だけで中位・review用途として起動する。"""
     task_document = launch_requests.resolve_task_document_path("wi-draft-review")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")}
-    for key in ("原稿", "要求と出所", "成立性の証拠"):
+    params = {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求原本", "引き継ぎ記録先")}
+    for key in ("原稿", "要求原本"):
         pathlib.Path(params[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=params)
     assert manager.start.await_args.args[0] == "review"
     assert "usage" not in manager.start.await_args.kwargs
-
-
-@pytest.mark.parametrize("model_type", [None, "chores_fast"])
-@pytest.mark.asyncio
-async def test_recurrence_self_check_public_start_keeps_review_usage(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, model_type: str | None
-) -> None:
-    """セルフチェックが宣言入力からexplore・中位で起動し、明示段位でもreview用途を保つ。"""
-    manager = TaskManager(start=AsyncMock(return_value={"session_id": "check", "status": "running", "label": "check"}))
-    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-    params = {
-        "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
-        "今回差分": str(tmp_path / "change.patch"),
-        "変更ファイル一覧": "example.py",
-        "対象worktree": str(tmp_path),
-        "未解決指摘": "なし",
-    }
-    await mcp_tools.start(str(tmp_path), subagent_md_path="recurrence-self-check", extra_params=params, model_type=model_type)
-    call = manager.start.await_args
-    assert call.args[0] == (model_type or "review")
-    assert "usage" not in call.kwargs
-    assert call.kwargs["launch_kind"] == "explore"
-    assert all(f"{key}: {value}" in call.args[1] for key, value in params.items())
-    manager.start.reset_mock()
-    with pytest.raises(ActionableError, match="未解決指摘"):
-        await mcp_tools.start(
-            str(tmp_path),
-            subagent_md_path="recurrence-self-check",
-            extra_params={key: value for key, value in params.items() if key != "未解決指摘"},
-        )
-    manager.start.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -406,7 +365,6 @@ async def test_recurrence_self_check_public_start_keeps_review_usage(
         ("exec-review", "review"),
         ("usability-review", "review"),
         ("wi-draft-review", "review"),
-        ("recurrence-self-check", "review"),
         ("bulk-replace-review", "review_fast"),
         ("external-write-review", "review_fast"),
         ("reader-fit-review", "review_fast"),
@@ -414,7 +372,7 @@ async def test_recurrence_self_check_public_start_keeps_review_usage(
     ],
 )
 @pytest.mark.asyncio
-async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
+async def test_public_start_resolves_roles_to_required_engineering_stage(tmp_path, monkeypatch, role, expected):
     if role == "exec-review":
         _prepare_exec_review_plan(tmp_path)
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "role", "status": "running", "label": role}))
@@ -428,21 +386,12 @@ async def test_public_start_resolves_all_fourteen_roles_to_required_engineering_
             "引き継ぎ記録先": str(tmp_path / "handoff.md"),
             "round": "1",
         },
-        "wi-draft-review": {
-            key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求と出所", "成立性の証拠", "引き継ぎ記録先")
-        },
-        "recurrence-self-check": {
-            "観点ファイル": json.dumps([str(tmp_path / "items.md")]),
-            "今回差分": str(tmp_path / "change.patch"),
-            "変更ファイル一覧": "example.py",
-            "対象worktree": str(tmp_path),
-            "未解決指摘": "なし",
-        },
+        "wi-draft-review": {key: str(tmp_path / f"{key}.md") for key in ("原稿", "要求原本", "引き継ぎ記録先")},
         "refine-prompt": {"対象プロンプト": str(tmp_path / "prompt.md"), "シナリオ": "なし"},
     }
     inputs = additional_inputs[role] if role in additional_inputs else _observed_input_params(f"{role}.subagent.md", tmp_path)
     if role == "wi-draft-review":
-        for key in ("原稿", "要求と出所", "成立性の証拠"):
+        for key in ("原稿", "要求原本"):
             pathlib.Path(inputs[key]).write_text("# 資料\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path=role, extra_params=inputs)
     assert manager.start.await_args.args[0] == expected
@@ -455,7 +404,7 @@ def test_wi_draft_review_requires_material_for_selected_stage(tmp_path: pathlib.
     document = launch_requests.resolve_task_document_path("wi-draft-review")
     path = tmp_path / "資料.md"
     path.write_text("# 資料\n", encoding="utf-8")
-    params = {name: str(path) for name in ("要求と出所", "成立性の証拠", "引き継ぎ記録先")}
+    params = {name: str(path) for name in ("要求原本", "引き継ぎ記録先")}
     if stage is not None:
         params["確認段階"] = stage
     material = "方針" if stage == "方針" else "原稿"

@@ -1,5 +1,3 @@
-"""旧制御主体の登録更新を、同じ管理領域の現行サービスだけに保存させる。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,13 +17,10 @@ _RECOVERY_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent
 
 
 async def restore_generation(registry: GenerationRegistry) -> dict[str, Any] | None:
-    """静止の解除に必要な復旧は、登録保存が解除を待つexecutorへ並べない。"""
     return await finish_task(asyncio.get_running_loop().run_in_executor(_RECOVERY_EXECUTOR, registry.restore))
 
 
 class RegistryForwarder:
-    """元のPID・起動単位・effort受理先を保持し、移譲済み所有者への遅延更新を防ぐ。"""
-
     def __init__(self, generation: str, directory: pathlib.Path) -> None:
         self.generation = generation
         self.registry = GenerationRegistry(directory)

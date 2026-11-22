@@ -1,5 +1,3 @@
-"""post-applyテンプレートの最終実行順序を検証する。"""
-
 import json
 import os
 import re
@@ -40,8 +38,7 @@ def test_windows_post_apply_failure_exit_propagates(tmp_path: Path) -> None:
     assignment = final_block.splitlines()[0]
     escaped_path = str(post_apply).replace("'", "''")
     final_block = final_block.replace(assignment, f"$postApplyBin = '{escaped_path}'", 1)
-    # テンプレートは本体をtryの内側へ置き、finallyで出力の文字コードを戻す。
-    # exitがfinallyを経ても終了コードを保つことを確かめる。
+
     runner = tmp_path / "run-post-apply.ps1"
     runner.write_text("$originalOutputEncoding = [Console]::OutputEncoding\ntry {\n" + final_block, encoding="utf-8-sig")
 
@@ -90,12 +87,11 @@ def test_windows_template_limits_to_reinstall() -> None:
     assert "Invoke-PytoolsMediaRemoteStop -Processes $restorableProcs" in text
     assert f"$env:{setup_media_remote.STOPPED_ENV} = " in text
     assert f"$env:{setup_media_remote.REINSTALL_ENV} = " in text
-    # 渡した後にpost-applyを起動する。
+
     assert text.index(f"$env:{setup_media_remote.STOPPED_ENV} = ") < text.index("& $postApplyBin")
 
 
 def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> None:
-    """復元不能なlocking processがある場合は停止と再導入を行わず、後続処理を継続する。"""
     text = _read(WINDOWS_TEMPLATE)
 
     classification = text.index("$unrestorableProcs += $p")
@@ -121,7 +117,6 @@ def test_windows_reinstall_defers_without_stopping_unrestorable_processes() -> N
 def test_windows_locking_processes_classify_and_record_restart_state(
     tmp_path: Path,
 ) -> None:
-    """配布exeとmoduleを分類し、停止前の再起動対象を正しく記録する。"""
     powershell = POWERSHELL
     assert powershell is not None
     text = _read(WINDOWS_TEMPLATE)
@@ -315,7 +310,6 @@ $env:DOTFILES_PYTOOLS_INSTALL_DETAIL = ''
     ],
 )
 def test_expected_shims_cover_project_scripts(template: Path, suffix: str, pattern: str) -> None:
-    """両テンプレートの期待シムをproject.scriptsの全キーから導出する。"""
     completed = subprocess.run(
         [
             "chezmoi",
@@ -565,6 +559,5 @@ public class Program {
         assert not log.exists()
         assert "inventory unavailable" in result.stderr
     elif not missing:
-        # Get-Processは列挙後に消えたPIDを返す。消滅は停止済みとして更新・復帰へ進む。
         assert log.read_text(encoding="utf-8").splitlines() == ["upgrade", "restart"]
         assert ("pre-release" in result.stderr) is preview

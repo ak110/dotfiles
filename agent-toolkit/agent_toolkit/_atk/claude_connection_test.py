@@ -85,7 +85,6 @@ def test_candidates_skip_unconfigured_kinds(
 
 @pytest.mark.parametrize("role", ["orchestrator", "delegate"])
 def test_payg_is_used_only_when_listed(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str) -> None:
-    """従量課金のenvファイルを設定しても、初期値の使用順（paygを含まない）では候補にしない。"""
     _configure(monkeypatch, payg=_write_env(tmp_path / "payg.env"), subscription=False)
     choices = connection.candidates(role)
     assert not choices.connections
@@ -121,7 +120,6 @@ def test_unmanaged_environment_inherits(monkeypatch: pytest.MonkeyPatch) -> None
 @pytest.mark.parametrize("kind", ["subscription", "credits", "payg"])
 @pytest.mark.parametrize("resumed", [False, True])
 def test_all_api_files_are_isolated(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str, resumed: bool) -> None:
-    """親の接続由来にかかわらず、子環境とsettingsは選んだ接続の値だけを使う。"""
     credits_path = tmp_path / "credits.env"
     payg = tmp_path / "payg.env"
     credits_path.write_text("ANTHROPIC_API_KEY=credits-key\nCREDITS_ONLY=credits\n", encoding="utf-8")
@@ -130,7 +128,6 @@ def test_all_api_files_are_isolated(tmp_path: pathlib.Path, monkeypatch: pytest.
     parent = {"CREDITS_ONLY": "parent-credits", "PAYG_ONLY": "parent-payg", "CLAUDE_CODE_OAUTH_TOKEN": "subscription"}
     selected = next(item for item in connection.candidates("delegate", env=parent).connections if item.kind == kind)
     if resumed:
-        # 再開前に保存していたファイル集合が不完全でも、現在の設定から全集合を補う。
         selected = connection.apply_current_settings(
             connection.Connection(kind, selected.api_env_file, (str(credits_path),)), env=parent
         )
@@ -145,7 +142,6 @@ def test_all_api_files_are_isolated(tmp_path: pathlib.Path, monkeypatch: pytest.
 
 
 def test_cli_uses_all_api_isolation_files(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLIでcreditsを候補から外しても、そのファイル由来の親変数を隔離する。"""
     credits_path = tmp_path / "credits.env"
     payg = tmp_path / "payg.env"
     credits_path.write_text("ANTHROPIC_API_KEY=credits-key\nCREDITS_ONLY=credits\n", encoding="utf-8")
@@ -163,7 +159,6 @@ def test_invalid_env_file_disables_api_candidate(
     monkeypatch: pytest.MonkeyPatch,
     invalid: str,
 ) -> None:
-    """無効パスは保存値を保ち、起動時の候補から除いて復旧操作を返す。"""
     path = tmp_path / invalid
     if invalid == "directory":
         path.mkdir()
@@ -189,13 +184,10 @@ def test_invalid_env_file_disables_api_candidate(
 @pytest.mark.parametrize(
     ("saved", "order", "expected"),
     [
-        # 保持した種別が使用順に含まれる間は、その接続を使い続ける。
         ("subscription", "credits,subscription", "subscription"),
         ("credits", "credits,subscription", "credits"),
-        # 使用順から外した種別は、使用順の先頭の利用可能な候補へ移す（旧api-only相当）。
         ("subscription", "payg", "payg"),
         ("credits", "subscription,payg", "subscription"),
-        # 接続を管理する前に開始したinheritの会話も、使用順の種別ではないため先頭の候補へ移す。
         ("inherit", "credits,subscription", "credits"),
     ],
 )
@@ -215,7 +207,6 @@ def test_saved_connection_moves_only_when_outside_order(
 def test_legacy_api_connection_resumes_with_saved_env_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path_name: str, expected: str
 ) -> None:
-    """種別を区別する前に保存した`api`の会話は、保存済みのenvファイルのパスで同じ接続を続ける。"""
     credits_file = _write_env(tmp_path / "credits.env")
     saved = _write_env(tmp_path / path_name)
     _configure(monkeypatch, credits_file=credits_file, worker_order="credits,payg,subscription")
@@ -311,7 +302,6 @@ def test_process_loop_preparation_failure_leaves_no_settings(
 
 
 def test_probe_settings_are_reclaimed_on_interrupt(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """probeの子実行が中断しても、API接続の合成設定を回収する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=key\nCUSTOM_CONNECTION=selected\n", encoding="utf-8")
     monkeypatch.setattr(

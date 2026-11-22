@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: stalenessのテスト。"""
 
 import datetime
 import json
@@ -34,7 +33,6 @@ def test_named_staleness_reads_and_checks_only_requested_wis_after_migration(
     target_count: int,
     legacy_count: int,
 ) -> None:
-    """共通の移行を除けば、通常配置の件数にかかわらず対象数と同じ回数だけ本文を読み履歴を照会する。"""
     notes = _setup_notes(tmp_path)
     repository = tmp_path / "repository"
     base = _git_repository_with_old_later_commit(repository)
@@ -79,7 +77,6 @@ def test_named_staleness_reads_and_checks_only_requested_wis_after_migration(
 
 
 def test_named_staleness_honors_requested_state(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """採用済みの指定名も、activeを指定した場合は通常の一覧と同様に除く。"""
     notes = _setup_notes(tmp_path)
     name = "20260101-000000-001.md"
     path = entry_path(notes, name)
@@ -95,7 +92,6 @@ def test_named_staleness_honors_requested_state(tmp_path: pathlib.Path, capsys: 
 def test_named_staleness_does_not_scan_on_missing_or_invalid_name(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str
 ) -> None:
-    """不在や範囲外の名前は、全状態の一覧を読むことなく拒む。"""
     _setup_notes(tmp_path)
 
     def reject_full_scan(*_args, **_kwargs):
@@ -115,7 +111,6 @@ def test_named_staleness_does_not_scan_on_missing_or_invalid_name(
 def test_named_staleness_stops_default_storage_check_at_first_wi(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], queue_size: int
 ) -> None:
-    """保存先の指定が無い時は、キューが空なら警告し、空でなければ最初の1件で判定する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
     data = tmp_path / "default-storage"
     monkeypatch.setattr(platformdirs, "user_data_dir", lambda *_args, **_kwargs: str(data))
@@ -220,12 +215,6 @@ def test_list_with_staleness_judges_history_in_local_worktree(
     target_repo_arguments: list[str],
     expected: dict[str, object],
 ) -> None:
-    """鮮度は`--target-repo`の作業ツリー（省略時は現在位置）の履歴で判定し、URL指定では作業ツリー不在を返す。
-
-    frontmatterの`target_repo`（正規化リモートURL）を`git -C`へ渡す取り違えでは、
-    作業ツリーの履歴に`target_commit`があっても全項目が`history-unavailable`になる。
-    `subprocess.run`を差し替えず、`cmd_list`の呼び出しから`git -C`へ渡す引数までを実際のGitで実行する。
-    """
     notes = _setup_notes(tmp_path)
     repository = tmp_path / "repository"
     base = _git_repository_with_old_later_commit(repository)

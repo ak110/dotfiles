@@ -48,7 +48,6 @@ class TestIsPendingAsyncWork:
     """
 
     def test_missing_transcript_returns_false(self):
-        """transcript が存在しない → False（Stop抑止しない）。"""
         assert is_pending_async_work("/nonexistent/transcript.jsonl", "", session_state=None) is False
 
     @pytest.mark.usefixtures("real_end_turn_wait")
@@ -90,10 +89,6 @@ class TestIsPendingAsyncWork:
         assert appended
 
     def test_sendmessage_bg_resume_detected(self, tmp_path: pathlib.Path):
-        """SendMessage呼び出しと対応する背景再開tool_resultが存在する場合に`True`を返す。
-
-        誤発動防止のコア観点。SendMessage起動直後のStop hookで継続中と判定されることを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -105,10 +100,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_completed_by_notification(self, tmp_path: pathlib.Path):
-        """SendMessage背景再開後に同`tool_use_id`の完了通知を受信した場合は`False`を返す。
-
-        完了済み相殺の観点。`launched - completed`が空になり抑止しないことを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -121,11 +112,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_bg_resume_completed_by_attachment_notification(self, tmp_path: pathlib.Path):
-        """SendMessage背景再開後に同`tool_use_id`の新形式完了通知（attachment形式）を受信した場合は`False`を返す。
-
-        完了済み相殺（attachment形式）の観点。`type=="attachment"`・`commandMode=="task-notification"`の
-        完了通知でも`launched - completed`から相殺されることを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -138,11 +124,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sendmessage_bg_resume_str_content_detected(self, tmp_path: pathlib.Path):
-        """tool_result contentが文字列形式の背景再開エントリも`True`を返す。
-
-        content形式バリエーション（文字列形式）の観点。
-        `_extract_sendmessage_bg_resume_id`が両形式を処理することを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -154,11 +135,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_current_format_detected(self, tmp_path: pathlib.Path):
-        """現行形式（`toolUseResult.resumedAgentId`）の背景再開を`True`と判定する。
-
-        構造化フィールド優先の観点。tool_result本文が旧マーカーを含まなくても
-        起動集合へ加算されることを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -170,10 +146,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is True
 
     def test_sendmessage_bg_resume_current_format_completed_by_notification(self, tmp_path: pathlib.Path):
-        """現行形式の背景再開も同`tool_use_id`の完了通知で相殺され`False`を返す。
-
-        永続pending防止の観点。起動集合と完了集合が同じ`tool_use_id`名前空間で突合することを確認する。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_sendmessage_entry("toolu_sm1"),
@@ -225,10 +197,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is expected
 
     def test_sendmessage_bg_resume_current_format_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
-        """SendMessage呼び出し由来でない`tool_use_id`は現行形式でも加算しない。
-
-        境界の観点。`sendmessage_ids`に含まれない`tool_use_id`は構造化フィールドがあっても対象外とする。
-        """
         entries = [
             _user_entry("hello"),
             _assistant_entry(
@@ -271,11 +239,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_marker_in_other_tool_result_without_sendmessage_call_returns_false(self, tmp_path: pathlib.Path):
-        """SendMessage呼び出しなしでマーカー文字列が他ツールtool_resultに含まれる場合は`False`を返す。
-
-        誤検知防止の観点。SendMessage tool_use id集合が空のため、マーカーが他ツール出力に
-        あっても起動集合へ加算されないことを確認する。
-        """
         marker_in_read_result = {
             "type": "user",
             "message": {

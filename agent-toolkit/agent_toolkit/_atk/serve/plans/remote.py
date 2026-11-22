@@ -16,10 +16,6 @@ import typing
 
 from agent_toolkit._atk.serve import remote as _atk_serve_remote
 from agent_toolkit._atk.serve.plans.local_scan import REMOTE_BOOTSTRAP
-
-# --------------------------------------------------------------------------------------
-# リモートホスト統合
-# --------------------------------------------------------------------------------------
 from agent_toolkit._atk.serve.plans.roots import (
     DEFAULT_REMOTE_SEARCH_LIMIT,
     REMOTE_BACKOFF_INITIAL_SEC,
@@ -57,7 +53,6 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
 
 
 def _decode_read_payload(payload: typing.Mapping[str, typing.Any]) -> str:
-    """`read`応答辞書（RPC・fallback共通）から本文を取り出す。"""
     data_b64 = str(payload["data"])
     return base64.b64decode(data_b64).decode("utf-8", errors="replace")
 
@@ -70,12 +65,6 @@ async def fetch_remote_file(
     *,
     source_id: str = "",
 ) -> str:
-    """リモートホストの指定ファイル本文を返す。
-
-    `watcher`が渡され、対応する常駐SSH接続が`connected`状態にあればRPC経由で読み取る。
-    未接続・タイムアウト・例外などRPC不可状態では`ssh_runner`経由のfallbackへ切り替える。
-    RPCが確定した不在はFileNotFoundErrorで伝え、存在確認での警告や追加SSHを生まない。
-    """
     rel_b64 = base64.b64encode(rel.encode("utf-8")).decode("ascii")
     request_args: dict[str, str] = {"path": rel_b64}
     if source_id:
@@ -110,7 +99,6 @@ class RemoteSearchSuperseded(Exception):
     """
 
 
-# コーディネーター経由で実行する検索本体。結果は一致した相対パス集合とする。
 type RemoteSearchResult = set[str] | set[tuple[str, str]]
 type RemoteSearchRunner = typing.Callable[[], typing.Awaitable[RemoteSearchResult]]
 
@@ -136,11 +124,10 @@ class RemoteSearchCoordinator:
         self._semaphore = asyncio.Semaphore(limit)
         # host -> 待機中の要求。実行中の要求はワーカーが保持するためここには現れない。
         self._pending: dict[str, _PendingSearch] = {}
-        # host -> 稼働中のワーカータスク。キーの有無をホスト単位の実行中判定に使う。
+
         self._workers: dict[str, asyncio.Task[None]] = {}
 
     async def submit(self, host: str, run: RemoteSearchRunner) -> RemoteSearchResult:
-        """検索本体をホストの実行枠へ載せ、自身の要求に対応する結果を返す。"""
         loop = asyncio.get_running_loop()
         request = _PendingSearch(run=run, future=loop.create_future())
         if host in self._workers:
@@ -152,7 +139,7 @@ class RemoteSearchCoordinator:
             # 最初の要求は待機列を経由せず実行枠へ渡す。待機列へ置くと、
             # ワーカーの起動前に到着した後続要求が最初の要求を置き換える。
             self._workers[host] = asyncio.create_task(self._run_host(host, request))
-        # 呼び出し元（HTTP要求）のキャンセルがワーカーへ波及しないよう遮蔽する。
+
         return await asyncio.shield(request.future)
 
     async def _run_host(self, host: str, request: _PendingSearch) -> None:
@@ -166,7 +153,6 @@ class RemoteSearchCoordinator:
                         request.future.cancel()
                     raise
                 except Exception as error:  # noqa: BLE001
-                    # 例外は握り潰さず、要求元のFutureへそのまま転送する。
                     if not request.future.done():
                         request.future.set_exception(error)
                 else:
@@ -174,7 +160,6 @@ class RemoteSearchCoordinator:
                         request.future.set_result(result)
             next_request = self._pending.pop(host, None)
             if next_request is None:
-                # 削除と終了の間にawaitが無いため、この直後の`submit`は新しいワーカーを起動できる。
                 self._workers.pop(host, None)
                 return
             request = next_request
@@ -189,11 +174,6 @@ async def search_remote_files(
     *,
     source_id: str | None = None,
 ) -> RemoteSearchResult:
-    """リモートホストで本文検索を実行し、一致した相対パス集合を返す。
-
-    `coordinator`を渡した場合、SSHによる代替の検索だけが直列化と全体上限の対象になる。
-    常駐SSH接続経由のRPCはプロセスを起動しないため対象外とする。
-    """
     query_b64 = base64.b64encode(query.encode("utf-8")).decode("ascii")
     rpc_args: dict[str, str] = {"query": query_b64}
     if source_id:
@@ -247,7 +227,6 @@ async def search_remote_files(
 
 
 def _decode_root_info(raw: typing.Any) -> dict[str, dict[str, typing.Any]]:
-    """snapshotの新旧形式のroot情報を、source IDをキーとする辞書へ正規化する。"""
     if isinstance(raw, dict):
         if "root" in raw or "portable_root" in raw or "source_id" in raw:
             return {str(raw.get("source_id", "")): dict(raw)}
@@ -258,7 +237,6 @@ def _decode_root_info(raw: typing.Any) -> dict[str, dict[str, typing.Any]]:
 
 
 def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
-    """snapshotのroot状態を、source IDをキーとする辞書へ正規化する。"""
     if not isinstance(raw, dict):
         return {}
     if "status" in raw:
@@ -267,45 +245,28 @@ def _decode_root_status(raw: typing.Any) -> dict[str, dict[str, str]]:
 
 
 def _is_listed_remote_path(path: str) -> bool:
-    """リモートwatchイベントのパスが一覧対象かを判定する。"""
-    # 変更通知からは同じstemのメイン計画の有無を観測できないため、レビュー指摘管理表も付属ファイルとして扱う。
+
     return _bundle_kinds.is_listed_name(pathlib.PurePosixPath(path).name, main_exists=True)
 
 
 class RemoteWatcher:
-    """1ホスト分のwatchとRPCの常駐接続を、接続から切断後の再接続まで管理するクラス。
-
-    リモート監視はwatchdogによるpush方式を採用する。
-    ポーリング方式は対象ファイル数が増えた場合や低リソースホストでのコストが懸念されるため、
-    SSH越しに長時間watchプロセスを常駐させて差分イベントだけを配信する。
-
-    `run()`の流れ:
-      1. host_statusを"connecting"へ更新しSSE配信
-      2. SSH経由でPython bootstrapを実行し、リモート側ヘルパーの`serve`を起動
-      3. stdoutの行を読みつつ`_handle_event`でキャッシュ・SSE・RPC応答を処理
-      4. snapshotを受信したら"connected"へ遷移し、以降は`request()`によるRPCも可能になる
-      5. EOF・例外で"disconnected"へ遷移し、pending RPCを打ち切ってから指数バックオフで再接続
-    """
-
     def __init__(self, host: str, state: BroadcastState) -> None:
         self.host = host
         self.state = state
-        # 長時間維持された接続が途絶した後の再接続時にバックオフが最大値から始まらないよう、
-        # snapshot受信（接続成功）時にリセットする。
+
         self._backoff = REMOTE_BACKOFF_INITIAL_SEC
-        # RPC状態。接続未確立または接続切断中はNone。
+
         self._proc: _async_subprocess.Process | None = None
-        # request id -> 応答待ちFuture。応答到着・タイムアウト・切断のいずれかで解決する。
+
         self._pending: dict[int, asyncio.Future[dict[str, typing.Any]]] = {}
         self._next_request_id = 1
         # stdinへの書き込みは複数タスクから発生し得るため`asyncio.Lock`で排他する。
         self._send_lock = asyncio.Lock()
-        # snapshot受信後にTrueになり、接続切断時にFalseに戻る。
+
         self._connected = False
         self._stderr_task: asyncio.Task[None] | None = None
 
     def is_connected(self) -> bool:
-        """RPCを送信可能な状態か（snapshot受信済みかつstdinが生存）を返す。"""
         if not self._connected:
             return False
         proc = self._proc
@@ -319,11 +280,6 @@ class RemoteWatcher:
         args: dict[str, typing.Any],
         timeout: float = RPC_REQUEST_TIMEOUT_SEC,
     ) -> dict[str, typing.Any]:
-        """常駐SSH接続経由でRPCリクエストを送信し、応答辞書を返す。
-
-        接続未確立・切断中では`RuntimeError`を送出する。
-        timeout時は対応するpendingエントリを除去し、操作名と上限秒数を含む`TimeoutError`を送出する。
-        """
         if not self.is_connected():
             raise RuntimeError(f"watch not connected: host={self.host}")
         proc = self._proc
@@ -368,11 +324,11 @@ class RemoteWatcher:
                 self._fail_pending(ConnectionError(f"watch disconnected: host={self.host}"))
                 stderr_task, self._stderr_task = self._stderr_task, None
                 self._connected = False
-                # 停止を確認するまで参照を保持し、確認できない間は次の接続を起動しない。
+
                 await _atk_serve_remote.stop_resident_helper_until_confirmed(proc, stderr_task, backoff=self._backoff)
                 self._proc = None
             _atk_serve_remote.raise_if_cancelling()
-            # 指数バックオフ（上限・±20%ジッタ）。リトライ上限なし。
+
             jittered = self._backoff * random.uniform(*REMOTE_BACKOFF_JITTER_RANGE)
             await asyncio.sleep(jittered)
             self._backoff = min(self._backoff * 2, REMOTE_BACKOFF_MAX_SEC)
@@ -389,7 +345,6 @@ class RemoteWatcher:
         return proc
 
     async def _process_stream(self, lines: LineSource) -> None:
-        """行ストリームを受け取り、type別にハンドラへ振り分ける。"""
         async for raw_line in lines:
             line = raw_line.strip()
             if not line:
@@ -440,7 +395,6 @@ class RemoteWatcher:
         logger.warning("リモートwatch 未知のイベント host=%s type=%r", self.host, kind)
 
     async def _handle_snapshot(self, event: typing.Mapping[str, typing.Any]) -> None:
-        """初回・再接続時のsnapshotをキャッシュへ反映し、接続確立を配信する。"""
         entries = [
             make_file_entry(self.host, item) for item in event.get("entries", []) if _is_listed_remote_path(str(item["path"]))
         ]
@@ -463,7 +417,7 @@ class RemoteWatcher:
                 self.state.root_status.pop(self.host, None)
         await self._set_status("connected")
         self._connected = True
-        # 接続成功時にバックオフをリセットし、次回切断後の再接続を初期値から始める。
+
         self._backoff = REMOTE_BACKOFF_INITIAL_SEC
         await deliver_refresh(self.state)
         if isinstance(host_info, dict):
@@ -474,10 +428,6 @@ class RemoteWatcher:
             await deliver_root_status(self.state, self.host, decoded_root_status)
 
     def _resolve_response(self, event: typing.Mapping[str, typing.Any]) -> None:
-        """`type=response`イベントに対し、対応するpending Futureを解決する。
-
-        対応Futureが既に取り消されている・タイムアウト後の遅延応答である場合は破棄する。
-        """
         req_id = event.get("id")
         if not isinstance(req_id, int):
             logger.warning("リモートwatch 不正な応答id host=%s id=%r", self.host, req_id)
@@ -488,7 +438,6 @@ class RemoteWatcher:
         fut.set_result(dict(event))
 
     def _fail_pending(self, exc: BaseException) -> None:
-        """切断・キャンセル時に全pending Futureを例外で解決する。"""
         if not self._pending:
             return
         pending = self._pending
@@ -502,8 +451,6 @@ class RemoteWatcher:
             previous = self.state.host_status.get(self.host)
             self.state.host_status[self.host] = status
             if status == "disconnected":
-                # 接続喪失時は`host_info`のキー自体を削除する（`None`値保持ではない）。
-                # 再接続成功時はsnapshot分岐で再登録される。
                 self.state.host_info.pop(self.host, None)
                 self.state.root_info.pop(self.host, None)
                 self.state.root_status.pop(self.host, None)
@@ -522,11 +469,6 @@ async def _iter_stream_lines(stream: asyncio.StreamReader) -> typing.AsyncIterat
 
 
 def is_safe_remote_relpath(rel: str) -> bool:
-    """SSHヘルパーへ渡す前に相対パスのトラバーサルを検証する。
-
-    リモート側でも検証するが、サーバー側で先に拒否することで不要なSSH呼び出しを避け、
-    ログにも危険な相対パスが残らないようにする。
-    """
     if not rel or rel.startswith("/") or "\\" in rel:
         return False
     parts = pathlib.PurePosixPath(rel).parts

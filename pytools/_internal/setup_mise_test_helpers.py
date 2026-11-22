@@ -1,5 +1,3 @@
-"""setup_mise試験の共通fixture・入力と補助関数。"""
-
 import json
 import subprocess
 import typing
@@ -27,15 +25,9 @@ def _expected_env(record: dict[str, typing.Any]) -> dict[str, str]:
 
 
 class _MiseSubprocessStub:
-    """`common.run_subprocess` を差し替えるスタブ。
-
-    `mise <subcommand>` の呼び出しを `records` に蓄積し、登録された
-    `handlers` から前方一致でレスポンスを返す。
-    """
-
     def __init__(self) -> None:
         self.records: list[dict[str, typing.Any]] = []
-        # 呼び出しごとに応答が変わる場合（修復の前後で異なる`bin-paths`など）は、コマンドを受け取る関数を登録する。
+
         self.handlers: dict[
             tuple[str, ...],
             subprocess.CompletedProcess[str] | None | typing.Callable[[list[str]], subprocess.CompletedProcess[str] | None],
@@ -74,7 +66,6 @@ class _MiseSubprocessStub:
 
 
 def _ls_response(payload: object) -> subprocess.CompletedProcess[str]:
-    """`mise ls --global --json` 用のレスポンスを生成する。"""
     return subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps(payload, ensure_ascii=False), stderr="")
 
 
@@ -114,8 +105,6 @@ def _completed(stdout: str = "", returncode: int = 0, stderr: str = "") -> subpr
 
 
 class _WinregFake:
-    """`winutils.import_winreg()` が返すモジュールのスタブ。"""
-
     REG_SZ = 1
     REG_EXPAND_SZ = 2
 
@@ -132,7 +121,7 @@ def _windows_env(
     レジストリの読み書きをスタブで差し替える。``state['existing']`` を
     更新してから ``run()`` を呼び、``state['writes']`` を観測する。
     """
-    # 前段（trust・ls・install）の影響を排して PATH 操作のみを観測する
+
     mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
     monkeypatch.setattr(setup_mise_common, "is_windows", lambda: True)
 

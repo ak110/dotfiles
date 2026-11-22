@@ -144,3 +144,46 @@ for (const scenario of ["low", "elapsed", "running", "completed"] as const) {
     expect(compacted).toBe(scenario === "elapsed" || scenario === "running" ? 1 : 0);
   });
 }
+
+for (const scenario of ["unrequested", "default", "resume", "skip", "failure", "headless", "lost-surface"] as const) {
+  test(`圧縮への明示指定と実行結果で自動再開を決める: ${scenario}`, async ($, on) => {
+    mock.env(on, { HOME: "/home/tester" });
+    const clock = mock.clock(on);
+    const events: string[] = [];
+    const id = "f".repeat(32);
+    const source = `ui-request-compact-resume-${id}.txt`;
+    on("session.id", () => ({ value: "compact-resume" }));
+    on("session.start", (_$, e) => ({ cwd: e.cwd }));
+    on("command.register", (_$, e) => ({ value: { command: e.name } }));
+    on("session.messages", () => ({ value: [] }));
+    on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+    on("turn.complete", () => ({ text: "" }));
+    on("fs.list", () => ({ value: scenario === "unrequested" ? [] : [{ name: source, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
+    on("fs.read", (_$, e) => ({ value: e.path.endsWith(source) ? JSON.stringify({ id, operation: "compact_conversation", input: { resume: scenario !== "default" }, expires: 99999999999 }) : "consumed" }));
+    on("fs.write", () => ({ value: undefined }));
+    on("fs.exists", () => ({ value: true }));
+    on("process.run", () => ({ value: { exitCode: 2, stdout: "", stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+    let hasSurface = scenario !== "headless";
+    on("session.surfaces", () => ({ value: hasSurface ? ["terminal"] : [] }));
+    on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 1000, window: 1_000_000, percent: 1 }, rateLimits: [] } }));
+    on("session.compact", () => {
+      events.push("compact");
+      if (scenario === "failure") throw new Error("圧縮に失敗");
+      return scenario === "skip" ? { skip: "見送り" } : { messages: [{ role: "user", text: "圧縮結果", toolUses: [] }] };
+    });
+    on("command.run", () => { events.push("command"); return {}; });
+    on("prompt.submit", () => { events.push("resume"); return { text: "" }; });
+    on("ui.toast", () => ({ value: undefined }));
+    await $.session.start({ cwd: "/work", surface: null, isInteractive: scenario !== "headless" });
+    await $.turn.start({ text: "圧縮を予約する", turnId: "compact-turn" });
+    await clock.advance(200);
+    if (scenario === "lost-surface") hasSurface = false;
+    expect(events).toEqual([]);
+    const finish = { answer: "", durationMs: 0, isAborted: false, turnId: "compact-turn", reason: "answer" as const };
+    await $.turn.complete(finish);
+    await clock.advance(1);
+    await $.turn.complete(finish);
+    await clock.advance(1);
+    expect(events).toEqual(scenario === "resume" ? ["compact", "resume"] : scenario === "unrequested" || scenario === "headless" || scenario === "lost-surface" ? [] : ["compact"]);
+  });
+}

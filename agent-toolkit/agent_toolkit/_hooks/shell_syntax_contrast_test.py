@@ -75,13 +75,11 @@ def test_wait_collection_uses_segment_execution_positions(command: str, *, expec
     ],
 )
 def test_verification_commands_accept_quoted_operators(cell: str, argv: list[str]) -> None:
-    """検証コマンドの限定文法は、引用した演算子をargvの値として受理する。"""
     assert [command[1] for command in verification.commands_from_cell(cell)] == [argv]
 
 
 @pytest.mark.parametrize("cell", ["`echo | x`", "`echo > out`", "`echo a; echo b`", '`echo "$HOME"`', "`FOO=1 echo`"])
 def test_verification_commands_reject_shell_reevaluation(cell: str) -> None:
-    """引用の外側の区切り・リダイレクト・展開・前置代入はshellの再評価を要するため拒否する。"""
     with pytest.raises(ActionableError, match="shellの再評価"):
         verification.commands_from_cell(cell)
 

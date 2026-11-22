@@ -1,5 +1,3 @@
-"""委譲先の起動の本文へ資料の全文が入ることを、公開の`start`から確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -33,7 +31,6 @@ def _body(path: pathlib.Path) -> str:
 async def _delivered(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, params: dict[str, str] | None = None
 ) -> str:
-    """役割を公開の`start`で起動し、backendへ渡った起動の本文を返す。"""
     contract = tmp_path / "work-contract.md"
     contract.write_text("# 全体作業契約\n目的: 起動時の配送の検証\n", encoding="utf-8")
     _recording_candidates(monkeypatch)
@@ -68,7 +65,6 @@ async def test_role_launch_delivers_contract_and_declared_document(
 async def test_conditional_document_follows_launch_input(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, kind: str, delivered: bool
 ) -> None:
-    """`when`の入力が一致した起動だけに条件付きの資料が届き。"""
     params = _observed_input_params("exec.subagent.md", tmp_path) | {"担当種別": kind}
     prompt = await _delivered(monkeypatch, tmp_path, "exec", params)
     assert (_body(_ATK_MODE / "playbooks/process-wi-execution.md") in prompt) is delivered
@@ -78,7 +74,6 @@ async def test_conditional_document_follows_launch_input(
 async def test_lightweight_role_receives_only_its_declared_documents(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """軽量の起動の役割には、役割が宣言した資料だけが届き。"""
     params = {"判定規則": "固定文字列の一致", "母集団": "agent-toolkit/skills配下の.md", "判定基準": "同じ誤りの再発"}
     prompt = await _delivered(monkeypatch, tmp_path, "similar-review", params)
     assert _body(_BASICS / "bugfix/references/spread.md") in prompt
@@ -86,7 +81,6 @@ async def test_lightweight_role_receives_only_its_declared_documents(
 
 
 def _role_plugin(root: pathlib.Path, startup: str) -> pathlib.Path:
-    """`startup_documents`を宣言した役割文書と手順書を持つ、agent-toolkitと同じ構造の配布物を作る。"""
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin/plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
     role = root / "skills/atk-mode/roles/probe.subagent.md"
@@ -101,7 +95,6 @@ def _role_plugin(root: pathlib.Path, startup: str) -> pathlib.Path:
 
 @pytest.mark.asyncio
 async def test_revised_document_is_delivered_on_next_launch(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """資料を改訂した後の起動には、改訂後の本文と新しい本文識別子が届く。"""
     role = _role_plugin(tmp_path / "plugin", "startup_documents:\n- agent-toolkit:atk-mode/playbooks/probe.md\n")
     playbook = role.parents[1] / "playbooks/probe.md"
     playbook.parent.mkdir()
@@ -163,6 +156,5 @@ def test_missing_document_in_selected_installation_names_repair(
     ],
 )
 def test_malformed_startup_documents_are_rejected(tmp_path: pathlib.Path, startup: str) -> None:
-    """形式の誤り（配列でない、参照の形、未知のplugin、宣言外の入力名、whenの形、未知の項目）を宣言の解析が拒否する。"""
     declaration = task_documents.read_declaration_unchecked(_role_plugin(tmp_path / "plugin", startup))
     assert isinstance(declaration, str) and "startup_documents" in declaration

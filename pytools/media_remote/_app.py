@@ -1,5 +1,3 @@
-"""Quartアプリ生成。"""
-
 import json
 from collections.abc import Callable
 
@@ -7,7 +5,6 @@ import quart
 
 from pytools.media_remote import _assets, _keys
 
-# Cookie名・寿命。`HttpOnly` + `SameSite=Lax`で他オリジン経路からの参照を抑える。
 COOKIE_NAME = "mrt"
 COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 
@@ -40,7 +37,7 @@ def create_app(token: str, send_key: Callable[[str], None] | None = None) -> qua
             content_type="text/html; charset=utf-8",
             headers={"Cache-Control": "no-store"},
         )
-        # クエリトークン経由の初回アクセス時にだけCookieを発行し、以降の起動はCookieだけで通す。
+
         if quart.request.args.get("t") == token:
             response.set_cookie(
                 COOKIE_NAME,

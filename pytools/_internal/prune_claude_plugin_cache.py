@@ -46,7 +46,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             )
         )
         return post_apply_outcome.PostApplyOutcome()
-    # 稼働中の参照は別に判定するため、猶予期間は参照を判定する候補の選択だけに使う。
+
     deadline = time.time() - plugin_cache_versions.GRACE_DAYS * 86400
     removed = 0
     held = 0
@@ -146,7 +146,6 @@ def _current_install_paths() -> dict[tuple[str, str], set[Path]] | None:
 
 
 def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -> list[Path]:
-    """後継版の導入時刻が`deadline`以前である非現行の版ディレクトリを返す。"""
     try:
         candidates = [child for child in plugin_dir.iterdir() if not _is_link_like(child) and child.is_dir()]
     except OSError:
@@ -155,7 +154,6 @@ def _expired_versions(plugin_dir: Path, installed: set[Path], deadline: float) -
 
 
 def _remove_version_dir(version_dir: Path, cache_resolved: Path) -> bool:
-    """cache配下にあることを確認してから版ディレクトリを削除する。"""
     try:
         version_dir.resolve().relative_to(cache_resolved)
     except OSError, ValueError:
@@ -179,7 +177,6 @@ def _is_link_like(path: Path) -> bool:
 
 
 def _resolve(path: Path) -> Path:
-    """比較用に実体パスへ解決する。解決できない場合は入力をそのまま返す。"""
     try:
         return path.resolve()
     except OSError:

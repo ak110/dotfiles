@@ -22,7 +22,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_turn_start_rejection_keeps_diagnostic_log_for_generic_error(monkeypatch, tmp_path, provider_environment, caplog):
-    """上限中のサブスクリプションを除いた従量課金の拒否は、公開errorへ接続先を出さず診断ログへ残す。"""
     del provider_environment
     caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.codex")
     async with manager.AgentsServerManager() as root:
@@ -60,7 +59,7 @@ async def test_turn_start_rejection_keeps_diagnostic_log_for_generic_error(monke
                     for r in caplog.records
                     if session.session_id in r.getMessage() and "汎用文言" in r.getMessage()
                 ]
-                # 従量課金の候補ごとの拒否が1行ずつ残る。
+
                 assert len(logged) == 2
                 assert "provider=paid-a" in logged[0] and "provider=paid-b" in logged[1]
                 assert all("payg provider refused the turn" in line and "code=-32600" in line for line in logged)
@@ -257,7 +256,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                             "params": {
                                 "threadId": session.session_id,
                                 "turnId": session.turn_id,
-                                "item": {"type": "agentMessage", "id": "answer", "text": "継続後の結果"},
+                                "item": {"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 継続後の結果"},
                             },
                         }
                     )
@@ -290,7 +289,7 @@ async def test_provider_failover_result_collection(monkeypatch, tmp_path, provid
                 result = await asyncio.wait_for(wait_task, 5)
                 assert not returned_during_read, "利用上限の保留判定中に公開waitが復帰した"
                 assert result["status"] == "completed"
-                assert result["agent_message"] == "継続後の結果"
+                assert result["agent_message"] == "状態: completed\n結果: 継続後の結果"
                 public = json.dumps([started, result, (await root.list_sessions()), (await root.show_session("thread-codex"))])
                 assert "paid-a" not in public and "codex_model_provider" not in public
                 assert "isolated-fake-api-key" not in caplog.text

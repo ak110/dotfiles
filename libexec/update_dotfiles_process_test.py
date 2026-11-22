@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのprocessの試験。"""
 
 # pylint: disable=protected-access
 
@@ -51,7 +50,6 @@ def test_run_git_pull_disables_mise_auto_install(monkeypatch: pytest.MonkeyPatch
 
 
 def test_run_git_pull_disables_submodule_recursion(monkeypatch: pytest.MonkeyPatch) -> None:
-    """工程1がgitのサブコマンドより前に`-c submodule.recurse=false`を渡す。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
 
@@ -73,7 +71,6 @@ def test_run_git_pull_decodes_output_as_utf8(monkeypatch: pytest.MonkeyPatch) ->
 
 @pytest.mark.parametrize("probe", ["timeout", "success", "denied"])
 def test_github_transport_recovery_preserves_repository_and_budget(monkeypatch: pytest.MonkeyPatch, probe: str) -> None:
-    """非対話SSHの停滞だけを同repoのHTTPSへ回復し、残予算内でpullする。"""
     calls: list[list[str]] = []
     environments: list[dict[str, str]] = []
     timeouts: list[int | None] = []
@@ -175,7 +172,6 @@ def test_invalid_git_timeout_returns_2_without_starting_process(
     raw_value: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """負数と整数でない上限値を値と受理条件付きで拒否する。"""
     monkeypatch.setenv("UPDATE_DOTFILES_GIT_TIMEOUT_SEC", raw_value)
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: pytest.fail(f"Popen: {args}, {kwargs}"))
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail(f"run: {args}, {kwargs}"))
@@ -190,7 +186,6 @@ def test_git_timeout_reclaims_owned_tree_and_limits_output_recovery(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """上限超過時に共通回収へ所有情報を渡し、回収上限を付けて未完了を報告する。"""
     calls: list[list[str]] = []
     communicate_timeouts: list[int | None] = []
     process = _TimeoutPopen(
@@ -208,7 +203,7 @@ def test_git_timeout_reclaims_owned_tree_and_limits_output_recovery(
     reclaimed: list[int] = []
 
     def reclaim(child, *, known, pins, output_open, **_kwargs):
-        # 時間切れの時点で出力を引き継いだ子孫も回収させる。
+
         assert child is process and known == descendants and pins is not None and output_open
         reclaimed.append(child.pid)
         child.kill()
@@ -271,7 +266,7 @@ def test_git_timeout_does_not_wait_again_when_output_recovery_times_out(
     )
     monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: process)
     monkeypatch.setattr(update_dotfiles_process, "kill_process_tree", lambda _process, **_kwargs: None)
-    # os.name全体を変えるとpathlibの実装選択へ波及するため、対象モジュールだけを差し替える。
+
     monkeypatch.setattr(update_dotfiles_process, "os", type("Platform", (), {"name": platform_name}))
     monkeypatch.setattr(update_dotfiles_runtime, "child_env", lambda: {})
 
@@ -287,7 +282,6 @@ def test_git_timeout_does_not_wait_again_when_output_recovery_times_out(
 def test_git_pull_closes_real_pipes_after_detached_descendant_timeout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """直接子が終了し別sessionの孫だけがpipeを保持しても、二重timeout後に両pipeを閉じる。"""
     # Linux prctlの公開定数。孤児の孫を本テストがwaitpidし、PID 1へ残さない。
     libc = ctypes.CDLL(None, use_errno=True)
     previous = ctypes.c_int(0)
@@ -369,7 +363,6 @@ def test_git_subprocess_closes_both_pipes_when_one_close_fails(monkeypatch: pyte
 def test_git_reclaim_after_root_exit_keeps_retry_ownership(
     retain: bool, host_environ: typing.Callable[[], dict[str, str]]
 ) -> None:
-    """Gitの起点終了を空集合成功にせず、保持した既知子孫は回収する。"""
     source = (
         "import subprocess,sys; child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); "
         "print(child.pid,flush=True); sys.stdin.readline()"

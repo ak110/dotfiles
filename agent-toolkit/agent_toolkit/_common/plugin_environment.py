@@ -13,6 +13,7 @@ import platform
 import shlex
 import sys
 import time
+import tomllib
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -56,7 +57,6 @@ def runtime_data(environment: Mapping[str, str]) -> Path:
 
 
 def _writable_directory(path: Path) -> bool:
-    """ディレクトリを作成でき、書き込み可能なら真を返す。"""
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -99,7 +99,6 @@ def base_python(python_executable: Path | None = None) -> Path:
 
 
 def dependency_lock(root: Path) -> Path:
-    """配布rootの実行依存の固定内容（uvがスクリプトの隣に置くlockfile）を返す。"""
     script = root / DEPENDENCY_SCRIPT
     return script.with_name(script.name + ".lock")
 
@@ -110,51 +109,124 @@ def project_environment(root: Path, environment: Mapping[str, str], *, python_ex
     lockfileは依存宣言（manifest）と解決オプションも記録し、同期は宣言との一致を`--locked`で確かめるため、
     lockfileの内容だけで依存構成を識別する。
     """
-    root = root.resolve()
+    return _current_environment(dependency_digest(root.resolve()), environment, python_executable)
+
+
+def _current_environment(digest: str, environment: Mapping[str, str], python_executable: Path | None) -> Path:
     payload = {
-        "lock": hashlib.sha256(dependency_lock(root).read_bytes()).hexdigest(),
+        "lock": digest,
         # 作業ディレクトリの仮想環境と共有環境自身は、同じPython本体の別パスとして現れる。
         # 呼び出し元の文脈によらず同じ共有環境を得るため、Python本体だけで識別する。
         "python": str(base_python(python_executable)),
         "platform": {"os": sys.platform, "machine": platform.machine()},
     }
+    return _environment_from_payload(payload, environment)
+
+
+def _environment_from_payload(payload: object, environment: Mapping[str, str]) -> Path:
     encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
     digest = hashlib.sha256(encoded)
     return runtime_data(environment) / "environments" / digest.hexdigest()
 
 
-def launch_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """準備・直接起動の子プロセス環境を組み立てる。"""
+def legacy_project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path) -> Path:
+    data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+    project = data.get("project", {})
+    build = data.get("build-system", {})
+    if not isinstance(project, dict) or not isinstance(build, dict):
+        raise ValueError(f"旧形式の依存定義を確認できない: {root}")
+    tool = data.get("tool", {})
+    return _environment_from_payload(
+        {
+            "dependency_project": {
+                "project": {
+                    key: project[key] for key in ("requires-python", "dependencies", "optional-dependencies") if key in project
+                },
+                "dependency-groups": data.get("dependency-groups", {}),
+                "build-system": {key: build[key] for key in ("requires", "build-backend") if key in build},
+                "uv": tool.get("uv", {}) if isinstance(tool, dict) else {},
+            },
+            "lock": hashlib.sha256((root / "uv.lock").read_bytes()).hexdigest(),
+            "python": str(base_python(python_executable)),
+            "platform": {"os": sys.platform, "machine": platform.machine()},
+        },
+        environment,
+    )
+
+
+def dependency_digest(root: Path) -> str:
+    return hashlib.sha256(dependency_lock(root).read_bytes()).hexdigest()
+
+
+def registered_roots(target: Path) -> dict[Path, str]:
+    try:
+        value = json.loads((target / ".agent-toolkit-registered-roots.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    if not isinstance(value, dict) or not all(
+        isinstance(root, str)
+        and Path(root).is_absolute()
+        and isinstance(digest, str)
+        and len(digest) == 64
+        and all(char in "0123456789abcdef" for char in digest)
+        for root, digest in value.items()
+    ):
+        raise ValueError("共有環境の配布元登録が不正")
+    return {Path(root): digest for root, digest in value.items()}
+
+
+def register_source(root: Path, target: Path, environment: Mapping[str, str], *, python_executable: Path) -> None:
+    """準備ロックの内側でのみ、更新器が確認した配布元を永続化する。"""
+    roots = registered_roots(target)
+    root = root.resolve(strict=True)
+    digest = dependency_digest(root)
+    if _current_environment(digest, environment, python_executable) != target:
+        raise ValueError(f"準備から登録までに依存の固定内容が変わった: {root}")
+    if roots.get(root) != digest:
+        roots[root] = digest
+        path = target / ".agent-toolkit-registered-roots.json"
+        temporary = path.with_suffix(f".tmp-{os.getpid()}")
+        try:
+            temporary.write_text(
+                json.dumps({str(path): value for path, value in roots.items()}, ensure_ascii=False, sort_keys=True),
+                encoding="utf-8",
+            )
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def launch_environment(root: Path, environment: Mapping[str, str], *, selected: Path | None = None) -> dict[str, str]:
     result = dict(environment)
     inherited_venv.strip_inherited_venv(result)
     caller = dict(result)
     if "UV_PROJECT_ENVIRONMENT" in result:
         result[inherited_venv.CALLER_PROJECT_ENVIRONMENT_KEY] = result["UV_PROJECT_ENVIRONMENT"]
-    selected = str(project_environment(root, environment))
+    selected_text = str(project_environment(root, environment) if selected is None else selected)
     result[RUNTIME_DATA_ENV] = str(runtime_data(environment))
-    result[RUNTIME_ENVIRONMENT_ENV] = selected
-    result["UV_PROJECT_ENVIRONMENT"] = selected
+    result[RUNTIME_ENVIRONMENT_ENV] = selected_text
+    result["UV_PROJECT_ENVIRONMENT"] = selected_text
     inherited_venv.record_launch_changes(result, caller)
     return result
 
 
 def python_path(environment: Path) -> Path:
-    """共有依存環境のPython実行ファイルを返す。"""
     return environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
 def prepared_python(root: Path, environment: Mapping[str, str]) -> Path | None:
-    """完了を公開済みの共有環境のPythonだけを返す。"""
-    selected = project_environment(root, environment)
+    return prepared_environment_python(project_environment(root, environment))
+
+
+def prepared_environment_python(selected: Path) -> Path | None:
     executable = python_path(selected)
     if (selected / _READY_FILE).is_file() and executable.is_file():
         return executable
     return None
 
 
-def direct_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """rootのコードを共有依存環境のPythonで解決する環境を返す。"""
-    result = launch_environment(root, environment)
+def direct_environment(root: Path, environment: Mapping[str, str], *, selected: Path | None = None) -> dict[str, str]:
+    result = launch_environment(root, environment, selected=selected)
     caller = dict(result)
     inherited_venv.strip_inherited_venv(caller)
     root_text = str(root.resolve())
@@ -224,9 +296,9 @@ def _unlock_file(stream: BinaryIO) -> None:
     fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
 
 
-def publish_prepared_environment(root: Path, environment: Mapping[str, str]) -> Path:
+def publish_prepared_environment(root: Path, environment: Mapping[str, str], *, selected: Path | None = None) -> Path:
     """最終パスの同期完了をready markerの原子的配置で公開する。"""
-    target = project_environment(root, environment)
+    target = project_environment(root, environment) if selected is None else selected
     temporary = target / f"{_READY_FILE}.tmp-{os.getpid()}"
     temporary.write_text("ready\n", encoding="utf-8")
     temporary.replace(target / _READY_FILE)
@@ -250,7 +322,6 @@ def record_source(root: Path, target: Path) -> None:
 
 
 def _record_source(root: Path, target: Path) -> None:
-    """破損した対応情報は上書きせず、準備完了とも切り離して扱う。"""
     path = target / ".agent-toolkit-sources.json"
     try:
         sources = json.loads(path.read_text(encoding="utf-8"))
@@ -280,7 +351,6 @@ def launch_command(root: Path, target: Path) -> list[str]:
 
 
 def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """委譲先が保持したrootのCLIを名前で呼べるよう、PATHとデータ領域の環境変数を加えた環境を返す。"""
     result = dict(environment)
     scripts = str(root.resolve() / "scripts")
     path = result.get("PATH", "")
@@ -291,7 +361,6 @@ def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str
 
 
 def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> None:
-    """提供されたBash環境ファイルへ追記し、別hookの設定と後続のPATHを保持する。"""
     if not (value := environment.get("CLAUDE_ENV_FILE")):
         return
     scripts = shlex.quote(str(root.resolve() / "scripts"))
@@ -304,7 +373,6 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
 
 
 def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
-    """直接起動と委譲の文脈へ、同じrootのCLIとホストに合う呼び方を示す。"""
     is_windows = os.name == "nt" if windows is None else windows
     scripts = root / "scripts"
     argument_note = ""

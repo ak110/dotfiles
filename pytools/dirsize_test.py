@@ -1,5 +1,3 @@
-"""公開mainからレポートとCSV履歴の結果を検証する。"""
-
 import contextlib
 import csv
 import json
@@ -31,7 +29,6 @@ def _isolate_uv(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def run_report(monkeypatch: pytest.MonkeyPatch, target: pathlib.Path, output: pathlib.Path, *extra: str, code: int = 0) -> dict:
-    """公開mainを指定引数で呼び、保存されたレポートを返す。"""
     monkeypatch.setattr(sys, "argv", ["dirsize", "--report-dir", str(output), *extra, str(target)])
     with pytest.raises(SystemExit) as exc:
         dirsize.main()
@@ -47,7 +44,6 @@ def _data(output: pathlib.Path) -> dict:
 
 
 def mock_uv(monkeypatch: pytest.MonkeyPatch, root: pathlib.Path) -> list[list[str]]:
-    """uv照会だけを指定ルートへ差し替え、呼び出しを記録する。"""
     calls: list[list[str]] = []
 
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -61,7 +57,6 @@ def mock_uv(monkeypatch: pytest.MonkeyPatch, root: pathlib.Path) -> list[list[st
 
 
 def mock_uv_command(monkeypatch: pytest.MonkeyPatch, run: Callable[..., subprocess.CompletedProcess[str]]) -> None:
-    """uv照会の結果・例外を公開CLIとブラウザーテストで共有する。"""
 
     @contextlib.contextmanager
     def scope(command: list[str], **kwargs: Any) -> Generator[types.SimpleNamespace]:

@@ -25,16 +25,15 @@ from agent_toolkit._common.runtime_inserted import is_runtime_generated, is_runt
 logger = logging.getLogger(__name__)
 
 _CLAUDE_META_SUFFIX = ".meta.json"
-# 変更をまとめて通知する時間窓（秒）。書き込みのたびに通知すると、進行中のセッションで通知が連続する。
+
 DEFAULT_DEBOUNCE_SEC = 0.5
 
-# 通知の種類。`refresh`は一覧の再取得を促し、`record`は記録1件の更新を示す。
+
 REFRESH_TYPE = "refresh"
 RECORD_TYPE = "record"
 
 
 def _first_line(value: typing.Any) -> str | None:
-    """本文として解釈できる値の先頭1行を返す。"""
     text = as_text(value)
     if text is None:
         return None
@@ -91,17 +90,14 @@ class _SummaryScan:
 
     @property
     def done(self) -> bool:
-        """以後の行が値を変えないか。"""
         return self.first_visible_user_seen and self._identified()
 
     def wants(self, line: str) -> bool:
-        """行をJSONとして解析する必要があるかを返す。"""
         if self.done:
             return False
         return not self._identified() or _USER_MARKER in line
 
     def feed(self, record: typing.Any) -> None:
-        """`wants`が真を返した行を解析した値を受け取る。"""
         if not isinstance(record, dict):
             return
         if self.first_timestamp is None and isinstance(record.get("timestamp"), str):
@@ -142,16 +138,14 @@ class _SummaryScan:
                     self.first_user_message = _first_line(content)
 
     def fields(self, *, readable: bool) -> SummaryFields:
-        """求めた値を返す。記録を読み取れなかった場合は発話の有無を`None`とする。"""
         has_user = self.first_user_seen if readable else None
         return self.cwd, self.started_at or self.first_timestamp, has_user, self.parent_thread_id
 
 
 @dataclasses.dataclass(frozen=True)
 class RecordScan:
-    """記録1件の1回の走査で求めた、一覧が使う値。"""
-
     fields: SummaryFields
+    labels: dict[str, str]
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`scan_record`へ`delegations=False`を渡した場合は求めずに空集合とする。"""
 
@@ -193,7 +187,8 @@ def scan_record(path: pathlib.Path, engine: str, *, delegations: bool = True) ->
     except OSError:
         readable = False
     delegated = collector.children if collector is not None and readable else frozenset()
-    return RecordScan(fields=summary.fields(readable=readable), delegated_ids=delegated)
+    labels = collector.labels if collector is not None and readable else {}
+    return RecordScan(fields=summary.fields(readable=readable), delegated_ids=delegated, labels=labels)
 
 
 def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
@@ -209,7 +204,6 @@ def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
 
 
 def first_user_message(path: pathlib.Path, engine: str) -> str | None:
-    """表示対象の最初の発話の先頭1行全体を取得する。本文なしの最初の発話もそのまま返す。"""
     summary = _SummaryScan(engine, include_message=True)
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
@@ -229,10 +223,6 @@ def first_user_message(path: pathlib.Path, engine: str) -> str | None:
 
 
 def has_user_message(path: pathlib.Path, engine: str) -> bool | None:
-    """記録がユーザー発話の記録行を持つかを返す。読み取れない場合は`None`を返す。
-
-    `"user"`を含まない行はユーザー発話になり得ないため、JSONとして解析しない。
-    """
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -255,13 +245,12 @@ _TRUSTED_AGE_NS = 2_000_000_000
 
 @dataclasses.dataclass(frozen=True)
 class _IndexedRecord:
-    """記録1件の無効化キーと解析結果。"""
-
     mtime_ns: int
     size: int
     trusted: bool
     """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     fields: SummaryFields
+    labels: dict[str, str]
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`fields`と同じ走査で求める。"""
 
@@ -302,7 +291,6 @@ class RecordSummaryIndex:
             self._load_cache(cache_path)
 
     def _load_cache(self, path: pathlib.Path) -> None:
-        """保存済みの解析結果を読み込む。不在・破損・版違いは空の索引から始める（補助の記録であるため）。"""
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
@@ -337,6 +325,7 @@ class RecordSummaryIndex:
                     "size": record.size,
                     "fields": list(record.fields),
                     "delegated_ids": sorted(record.delegated_ids),
+                    "labels": record.labels,
                     **(
                         {"message": self._messages[key][1]}
                         if key in self._messages and self._messages[key][0] is record
@@ -367,12 +356,10 @@ class RecordSummaryIndex:
                 self._save_warned = True
 
     def begin_scan(self) -> None:
-        """走査の開始を記録し、走査で参照した記録の集合を空にする。"""
         with self._lock:
             self._seen = set()
 
     def finish_scan(self) -> None:
-        """走査で参照しなかった記録の解析結果を破棄し、保存先があれば間隔を置いて保存する。"""
         with self._lock:
             kept = {key: value for key, value in self._records.items() if key in self._seen}
             if len(kept) != len(self._records):
@@ -384,10 +371,6 @@ class RecordSummaryIndex:
             self._save_cache()
 
     def summary(self, path: pathlib.Path, engine: str) -> tuple[SummaryFields, os.stat_result | OSError]:
-        """記録の`summary_fields`の値と、無効化の判定に使った`stat`の結果を返す。
-
-        `stat`できない記録は保持せずに解析し、`stat`の結果の代わりにその例外を返す。
-        """
         analysis_started_ns = time.time_ns()
         try:
             st = path.stat()
@@ -406,6 +389,7 @@ class RecordSummaryIndex:
             trusted=analysis_started_ns - st.st_mtime_ns >= _TRUSTED_AGE_NS,
             fields=scan.fields,
             delegated_ids=scan.delegated_ids,
+            labels=scan.labels,
         )
         with self._lock:
             self._records[key] = record
@@ -414,7 +398,6 @@ class RecordSummaryIndex:
         return scan.fields, st
 
     def display_messages(self, records: typing.Iterable[tuple[pathlib.Path, str]]) -> dict[str, str | None]:
-        """表示対象だけの本文を返し、選外となった本文のキャッシュを破棄する。"""
         messages: dict[str, str | None] = {}
         retained: dict[str, tuple[_IndexedRecord, str | None]] = {}
         for path, engine in records:
@@ -434,12 +417,12 @@ class RecordSummaryIndex:
             self._messages = retained
         return messages
 
-    def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
-        """記録が起動した子セッションIDの集合を返す。
+    def delegation_labels(self, path: pathlib.Path) -> dict[str, str]:
+        with self._lock:
+            cached = self._records.get(str(path))
+        return cached.labels if cached is not None else {}
 
-        `summary`が要約と同じ走査で求めて保持した集合を、記録を開かずに返す。
-        保持していない記録（`stat`できなかった記録など）だけ記録を読む。
-        """
+    def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
         with self._lock:
             cached = self._records.get(str(path))
         if cached is not None:
@@ -448,11 +431,13 @@ class RecordSummaryIndex:
 
 
 def _cached_record(item: typing.Any) -> _IndexedRecord | None:
-    """保存した解析結果1件を復元する。形式が合わない項目は`None`を返して読み直しへ回す。"""
     if not isinstance(item, dict):
         return None
     mtime_ns, size, fields, delegated = item.get("mtime_ns"), item.get("size"), item.get("fields"), item.get("delegated_ids")
     if not (isinstance(mtime_ns, int) and isinstance(size, int) and isinstance(fields, list) and len(fields) == 4):
+        return None
+    labels = item.get("labels")
+    if not isinstance(labels, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in labels.items()):
         return None
     cwd, started_at, has_user, parent_thread_id = fields
     if not (
@@ -470,6 +455,7 @@ def _cached_record(item: typing.Any) -> _IndexedRecord | None:
         trusted=True,
         fields=(cwd, started_at, has_user, parent_thread_id),
         delegated_ids=frozenset(delegated),
+        labels=labels,
     )
 
 
@@ -504,16 +490,12 @@ class RecordChangeTracker:
         self._pending_records: dict[tuple[str, str], None] = {}
         self._timer: threading.Timer | None = None
         self._stopped = False
-        # 前回の一覧の取得以降に、一覧の集合か親子関係が変わり得る変更があったか。初回は取得させるため真とする。
+
         self._list_invalid = True
-        # 前回の一覧の取得以降に追記された、一覧に載っている記録のパス。
+
         self._list_appended: set[str] = set()
 
     def take_list_changes(self) -> tuple[bool, frozenset[str]]:
-        """前回の呼び出し以降の変更を返して消去する。
-
-        戻り値は、一覧を取得し直す必要があるかと、一覧に載っている記録のうち追記されたもののパスである。
-        """
         with self._lock:
             invalid = self._list_invalid
             appended = frozenset(self._list_appended)
@@ -529,12 +511,10 @@ class RecordChangeTracker:
                 self._list_appended.add(appended)
 
     def prime(self, path: str, listed: bool) -> None:
-        """一覧の取得で判定した発話の有無を保持する。"""
         with self._lock:
             self._listed[path] = listed
 
     def engine_of(self, path: pathlib.Path) -> str | None:
-        """記録のパスが属するrootの実行系を返す。対象外のパスは`None`を返す。"""
         for root, engine in self.roots:
             try:
                 relative = path.relative_to(root)
@@ -550,12 +530,10 @@ class RecordChangeTracker:
         return None
 
     def record_changed(self, path: pathlib.Path) -> None:
-        """記録の作成または追記を反映する。"""
         engine = self.engine_of(path)
         if engine is None:
             return
         if not path.name.endswith(RECORD_SUFFIX):
-            # サブエージェントのmetadataは親子関係を変えるため、一覧の再取得を促す。
             self._note_list_change()
             self._schedule(refresh=True)
             return
@@ -568,18 +546,15 @@ class RecordChangeTracker:
             return
         listed = has_user_message(path, engine)
         if listed is not False:
-            # 発話を持った記録と、読めずに判定できない記録（一覧は警告付きで載せる）は一覧の集合を変え得る。
-            # 発話の無い記録は一覧に載らないため、一覧の再取得の通知と同じく取得し直さない。
             self._note_list_change()
         if listed is None:
             return
         with self._lock:
             self._listed[key] = listed
-        # 未判定の記録は、一覧に載っていたかを確定できないため、発話があれば一覧の再取得を促す。
+
         self._schedule(refresh=listed, record=(engine, key))
 
     def record_removed(self, path: pathlib.Path) -> None:
-        """記録の削除を反映する。一覧に載っていないと分かっている記録では通知しない。"""
         engine = self.engine_of(path)
         if engine is None:
             return
@@ -592,7 +567,6 @@ class RecordChangeTracker:
         self._schedule(refresh=True)
 
     def structure_changed(self) -> None:
-        """ディレクトリの作成など、記録の集合が変わり得る変更を反映する。"""
         self._note_list_change()
         self._schedule(refresh=True)
 
@@ -610,7 +584,6 @@ class RecordChangeTracker:
             self._timer.start()
 
     def flush(self) -> None:
-        """保留中の通知を1回にまとめて送る。"""
         with self._lock:
             self._timer = None
             if self._stopped:
@@ -623,7 +596,6 @@ class RecordChangeTracker:
             self._on_flush(refresh, records)
 
     def stop(self) -> None:
-        """保留中の通知を破棄し、以後の通知を止める。"""
         with self._lock:
             self._stopped = True
             pending = self._timer
@@ -635,14 +607,6 @@ class RecordChangeTracker:
 
 
 class RecordWatch:
-    """記録のrootをwatchdogで監視し、`RecordChangeTracker`へ変更を渡す。
-
-    rootが起動時に存在しない場合は、存在する最も近い祖先を非再帰で監視し、
-    ディレクトリの作成を契機に監視の登録をやり直す。監視の開始後に作成したrootの記録も検知するためである。
-    登録をやり直すたびに、どの未作成rootの祖先でもなくなった非再帰の監視を外す。
-    残すと祖先直下の無関係なディレクトリ作成が一覧の再取得通知になるためである。
-    """
-
     def __init__(self, tracker: RecordChangeTracker) -> None:
         self.tracker = tracker
         self._observer: typing.Any = None
@@ -653,15 +617,12 @@ class RecordWatch:
         self._recursive: set[str] = set()
 
     def start(self) -> None:
-        """監視を開始する。watchdogはここで読み込む。"""
         import watchdog.events  # pylint: disable=import-outside-toplevel
         import watchdog.observers  # pylint: disable=import-outside-toplevel
 
         watch = self
 
         class Handler(watchdog.events.FileSystemEventHandler):
-            """watchdogのイベントを記録の変更へ変換する。"""
-
             @typing.override
             def on_any_event(self, event: typing.Any) -> None:
                 watch.handle(event)
@@ -677,7 +638,6 @@ class RecordWatch:
             raise
 
     def stop(self) -> None:
-        """監視スレッドを終了させる。"""
         errors: list[BaseException] = []
         try:
             self.tracker.stop()
@@ -704,7 +664,6 @@ class RecordWatch:
             raise BaseExceptionGroup("セッション記録の監視資源の回収に失敗した", errors)
 
     def _schedule_roots(self) -> None:
-        """各rootを再帰で、存在しないrootは最も近い祖先を非再帰で監視へ登録し、不要になった祖先の監視を外す。"""
         with self._lock:
             ancestors: set[str] = set()
             for root, _engine in self.tracker.roots:
@@ -744,13 +703,10 @@ class RecordWatch:
         return any(path.is_relative_to(root) for root in recursive)
 
     def handle(self, event: typing.Any) -> None:
-        """1件のイベントを記録の変更へ変換する。"""
         events = self._event_types
         if isinstance(event, (events.FileOpenedEvent, events.FileClosedNoWriteEvent)):
             return
         if event.is_directory:
-            # root配下のディレクトリの作成は、その中の記録の作成イベントで扱う。
-            # rootの外（祖先の監視）で作成したディレクトリだけが、監視の登録をやり直す契機となる。
             if isinstance(event, (events.DirCreatedEvent, events.DirMovedEvent)) and not self._in_watched_root(
                 pathlib.Path(str(event.src_path))
             ):

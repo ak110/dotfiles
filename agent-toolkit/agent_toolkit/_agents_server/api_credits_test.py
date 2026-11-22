@@ -27,7 +27,6 @@ def test_credits_move_behind_subscription_only_within_ttl(elapsed: float, reorde
 
 
 def test_observation_is_kept_per_engine() -> None:
-    """一方のエンジンの残高不足は、他方のエンジンの使用順を変えない。"""
     api_credits.record_shortage("codex", now=0.0)
     assert api_credits.shortage_active("codex", now=1.0)
     assert not api_credits.shortage_active("claude", now=1.0)

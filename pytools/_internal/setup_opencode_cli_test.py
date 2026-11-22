@@ -22,11 +22,6 @@ def _executable(path: Path) -> Path:
 
 
 def test_shim_only_path_uses_installed_opencode_without_reinstall(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """PATHがmiseのshimと`~/.local/bin`だけでも、導入後確認が成功し2回目は再導入しない。
-
-    mise管理のnodeに付属するnpmは、nodeの導入先へ`opencode`を置く。その導入先はPATHに無く、
-    `mise reshim`がshimを生成した後にだけPATHから起動できる。
-    """
     mise_data = tmp_path / "mise"
     shims = mise_data / "shims"
     local_bin = tmp_path / "home" / ".local" / "bin"
@@ -64,7 +59,6 @@ def test_shim_only_path_uses_installed_opencode_without_reinstall(monkeypatch: p
 
 
 def test_stale_shim_triggers_install(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """有効なnodeの版に導入されていない古いshimは、導入済みと判定しない。"""
     shim = tmp_path / "opencode"
     npm = tmp_path / "npm"
     installed: list[bool] = []

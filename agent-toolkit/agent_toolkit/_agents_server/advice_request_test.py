@@ -1,5 +1,3 @@
-"""助言依頼の対象となる実モデルと起動形の組を検証する。"""
-
 import pytest
 
 from agent_toolkit._agents_server import advice_request

@@ -10,7 +10,6 @@ from agent_toolkit._hooks import response_language_advisor, stop, subagent_stop_
 
 @pytest.mark.parametrize("entrypoint", ["parent", "child"])
 def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint, capsys, monkeypatch):
-    """直接送達する親の本文を保護し、子の内部返却は言語で遮断しない。"""
     monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("response_language_advisor",))
     payload: dict[str, object] = {
         "session_id": "language-probe",
@@ -50,13 +49,11 @@ def test_codex_completion_rewrites_explanation_and_preserves_material(entrypoint
 
 @pytest.mark.parametrize("payload", [{}, [], {"turn_id": "t", "last_assistant_message": None}])
 def test_unavailable_or_other_host_input_is_not_blocked(payload):
-    """取得不能や別ホストを未観測の欠陥へ読み替えない。"""
     assert response_language_advisor.evaluate(json.dumps(payload)) == ("", "")
 
 
 @pytest.mark.parametrize("actor", ["main", "subagent", "delegated", "owner", "codex"])
 def test_recovery_preserves_delegated_return_contract(actor, monkeypatch):
-    """最終本文の受取先ごとに、画面の終了と委譲の返却を保つ回復操作を選ぶ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     payload = {"last_assistant_message": "The task completed successfully."}
@@ -80,7 +77,6 @@ def test_recovery_preserves_delegated_return_contract(actor, monkeypatch):
 @pytest.mark.parametrize("delegated", ["0", "1"])
 @pytest.mark.parametrize("child", [False, True])
 def test_claude_english_completion_rewrites_once(delegated, child, monkeypatch, capsys):
-    """直接送達するメインの本文だけを書き直す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated)
     payload: dict[str, object] = {"last_assistant_message": "The work is complete."}
     if child:

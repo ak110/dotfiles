@@ -18,7 +18,7 @@ for (const [surface, delegated, tool, shouldDeliver] of [
       expect(shown.isDeferred).toBe(false);
       for (const purpose of ["メイン", "進捗", "完了報告", "前置き"]) expect(shown.description).toContain(purpose);
       expect(shown.description).toMatch(/質問[^。]*ツール一覧[^。]*AskUserQuestion/);
-      expect(shown.description).toContain("`…`だけ");
+      expect(shown.description).not.toContain("送信済み");
       expect(shown.description).toContain(original.description);
     } else {
       expect(shown).toEqual(original);
@@ -28,13 +28,13 @@ for (const [surface, delegated, tool, shouldDeliver] of [
 
 for (const [surface, delegated, owner, registered, shouldDeliver] of [
   ["terminal", "", "", true, true],
-  ["terminal", "", "", false, false],
+  ["terminal", "", "", false, true],
   ["terminal", "1", "", true, false],
   ["terminal", "", "parent", true, false],
   ["desktop", "", "", true, false],
   [null, "", "", true, false],
 ] as const) {
-  test(`入力ごとの送り先は登録済みの端末のメインだけに届く: ${surface}/${delegated}/${owner}/${registered}`, async ($, on) => {
+  test(`入力ごとの送り先は端末のメインだけに届く: ${surface}/${delegated}/${owner}/${registered}`, async ($, on) => {
     mock.env(on, { AGENT_TOOLKIT_DELEGATED_SESSION: delegated, AGENT_TOOLKIT_OWNER_SESSION: owner });
     on("session.surfaces", () => ({ value: surface ? [surface] : [] }));
     const tool = "mcp__plugin_agent-toolkit_agents_server__send_to_user";
@@ -52,10 +52,12 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         const notice = context.at(-1) ?? "";
         expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
         expect(notice).toMatch(/質問.*AskUserQuestion/);
-        expect(notice).toContain(`await tools['${tool}']({message})`);
-        expect(notice).toContain("呼出しに失敗した時だけ通常本文");
+        expect(notice).toContain(tool);
+        if (registered) expect(notice).toContain(`await tools['${tool}']({message})`);
+        expect(notice).toContain(registered ? 'source="send-to-user-contract"' : 'source="send-to-user-search"');
+        expect(notice).toContain("searchTools");
         expect(notice).not.toContain("ツールが無い時");
-        expect(notice).toContain("…");
+        expect(notice).not.toContain("送信済み");
         expect(notice.length).toBeLessThanOrEqual(300);
       } else {
         expect(context).toEqual(previous ?? []);
@@ -116,5 +118,25 @@ for (const [message, heads] of [
     for (const head of ["処置", "再発防止"]) {
       expect(warnings.some((warning) => warning.includes(`\`${head}:\`の行が無い`))).toBe((heads as readonly string[]).includes(head));
     }
+  });
+}
+
+for (const [line, warns] of [
+  ["再発防止: 文章は足さない。私が書く完成条件を通常の運用の範囲で書く。", true],
+  ["再発防止: 私の手順の変更で、規範は増やさない。", true],
+  ["再発防止: agent-toolkit/skills/atk-mode/references/recurrence-self-check-items.md の観点を通常運用に限る。", false],
+  ["再発防止: 処置済み。同じ作業で原因の条件を消した。", false],
+  ["再発防止: 回帰試験を c5a338135 で追加した。", false],
+  ["再発防止: Makefile の検証対象を修正した。", false],
+  ["再発防止: 調査へ引き継ぐ。観測: 完了通知の直後に結果が欠落した。次に確かめる問い: 通知時点で出力は保存済みか。引継先: 実装担当。", false],
+  ["再発防止: 完了通知の直後に結果が欠落した。通知時点で出力が保存済みだったかを調べるため、実装担当に引き継ぐ。", false],
+  ["再発防止: 担当が注意するだけでは防げないため、Makefile に検査を追加した。", false],
+  ["再発防止: .pre-commit-config.yaml を変更して検査を追加した。", false],
+  ["再発防止: .gitignore に生成物を追加した。", false],
+  ["再発防止: 完了通知の直後に結果が欠落した。通知時点で出力が保存済みだったかの調査を実装担当に依頼する。", false],
+] as const) {
+  test(`再発防止の行が変える成果物か区分名を示す: ${line.slice(0, 20)}`, () => {
+    const message = "ユーザーの指摘を受けた不具合を直した。\n処置: 直した。\n" + line;
+    expect(reportWarnings(message).some((warning) => warning.includes("変える成果物"))).toBe(warns);
   });
 }

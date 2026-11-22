@@ -1,9 +1,3 @@
-"""常駐fork-serverプロセス経由でスクリプトを同一プロセス内実行し、フルPythonインタプリタ起動を省くテストヘルパー。
-
-本モジュールは「クライアントAPI」（`run_script`）と「サーバー本体」（`_serve`以降、
-`if __name__ == "__main__":`配下）を兼ねる。処理の詳細は各関数のdocstringを参照する。
-"""
-
 # pylint: disable=import-outside-toplevel
 
 from __future__ import annotations
@@ -31,7 +25,7 @@ _SERVER_SHUTDOWN_TIMEOUT = 1.0
 
 
 class ForkServerCommunicationError(RuntimeError):
-    """要求送信後にfork-serverとの通信が途絶したことを示す。"""
+    pass
 
 
 class _ServerStartFailed(Exception):
@@ -132,7 +126,6 @@ def _run_via_server(
                 server.stdin.flush()
                 response_line = server.stdout.readline()
             except BaseException as exc:
-                # 未回収の応答を次の要求へ渡さず、一時ファイルの削除前に実行中の子孫も回収する。
                 try:
                     if failure := process_tree.stop_owned_process(server, context="fork-server response interrupted"):
                         exc.add_note(str(failure))
@@ -152,7 +145,6 @@ def _run_via_server(
             stdout_text = stdout_path.read_text(encoding="utf-8", errors="replace") if stdout_path.exists() else ""
             stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace") if stderr_path.exists() else ""
     if response.get("timeout"):
-        # timeout応答はサーバー側が timeout is not None の場合にのみ返す（_wait_with_timeout参照）。
         assert timeout is not None  # noqa: S101 -- 上記不変条件の表明
         # subprocess.runの契約と揃え、タイムアウト時点までの部分出力をoutput/stderrへ格納する。
         raise subprocess.TimeoutExpired(
@@ -174,7 +166,6 @@ def _ensure_server() -> subprocess.Popen[bytes]:
         _close_server(_SERVER)
         _SERVER = None
     try:
-        # 同じテストprocess内の後続要求も使うserverであり、atexitの_terminate_serverが寿命を所有する。
         server = subprocess.Popen(  # noqa: S603 -- 自モジュールの再起動でありユーザー入力を経由しない  # pylint: disable=consider-using-with
             [sys.executable, str(Path(__file__).resolve())],
             stdin=subprocess.PIPE,
@@ -195,7 +186,6 @@ def _terminate_server() -> None:
 
 
 def _close_server(server: subprocess.Popen[bytes]) -> None:
-    """fork-serverを終了し、所有するパイプを解放する。"""
     try:
         if server.poll() is None:
             with contextlib.suppress(ProcessLookupError):
@@ -217,13 +207,8 @@ def _close_server(server: subprocess.Popen[bytes]) -> None:
 atexit.register(_terminate_server)
 
 
-# --- サーバー本体（`subprocess.Popen`で子プロセスとして起動される） ---
-
-
 def _serve() -> None:  # pylint: disable=import-outside-toplevel
-    """標準入力から1行1リクエストのJSONを読み、forkした子でスクリプトを実行し応答を返す。"""
-    # サーバー起動時に重い共通依存を事前importし、以降のfork子でimportコストを省く
-    # （対象スクリプト自体はimportしない。対象は都度runpyで実行するため）。
+
     import pyfltr.colloquial  # noqa: F401,PLC0415 -- 事前importが目的でありモジュール自体は未使用  # pylint: disable=import-outside-toplevel
     import yaml  # noqa: F401,PLC0415 -- 同上  # pylint: disable=import-outside-toplevel
 
@@ -330,9 +315,7 @@ def _wait_with_timeout(pid: int, timeout: float | None) -> tuple[int, bool]:
         _, status = os.waitpid(pid, 0)
         return os.waitstatus_to_exitcode(status), False
     deadline = time.monotonic() + timeout
-    # 簡略化: タイムアウト監視をos.waitpid(WNOHANG)+0.01秒間隔ポーリングで実装している。
-    # 既知の限界: 高頻度にtimeout指定するテストが大量発生するとCPUを消費する。
-    # 見直し契機: timeout付きrun_script呼び出しが多数を占め体感の遅延が観測された時点。
+
     while True:
         finished_pid, status = os.waitpid(pid, os.WNOHANG)  # type: ignore[attr-defined]  # 同上
         if finished_pid != 0:
@@ -351,13 +334,11 @@ def _run_child(request: dict) -> None:
     os.dup2(stdin_fd, 0)
     os.dup2(stdout_fd, 1)
     os.dup2(stderr_fd, 2)
-    # サーバーが差し替えたsys.stdin/stdout/stderrオブジェクトを再接続後のfdへ再束縛する
-    # （fd差し替えのみでは対象スクリプトのsys.stdin.read()・printが一時ファイルへ到達しない）
-    # forkした子の標準streamとしてos._exitまで使い、fdはprocess終了時にOSが回収する。
+
     sys.stdin = open(0, encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with
     sys.stdout = open(1, "w", encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with
     sys.stderr = open(2, "w", encoding="utf-8", closefd=False)  # noqa: SIM115  # pylint: disable=consider-using-with
-    # env・cwdはクライアント側で常に格納されるため無条件に適用する
+
     os.environ.clear()
     os.environ.update(request["env"])
     os.chdir(request["cwd"])

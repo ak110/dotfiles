@@ -11,42 +11,35 @@ process-loop・run-skillの統括の挙動（起動、turn終了、再開、外�
 
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 |
 | --- | --- | --- | --- |
-| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は目的文、再開は元の目的の続行入力 | 終了工程`atk agents-exit-session`の実行記録が無い終了はStop hookが遮断して続行させる。workerはCLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う |
-| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する | 同上。turn終了後も対話CLIの終了が要る | 上限を検出するとCLIを止め、対象別の結果と未完了を検収する。同じ会話の再開は予約から`codex resume`へ接続 |
-| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する | 同上（変換層経由のStop hook）。終了工程はLinuxの対話agyへ終了要求を送る | 再開指定は`--conversation`。IDを省略した会話選択は非対応 |
+| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は目的文、再開は元の目的の続行入力 | ターン終了は会話の終了ではない。ランチャーは対話CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う |
+| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する | ターン終了後も対話CLIは操作を待つ | 上限を検出するとCLIを止め、常駐時だけ次の起動で候補の可用性を確かめる。同じ会話の再開は予約から`codex resume`へ接続 |
+| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する | ランチャーは対話CLIの終了を待つ | 再開指定は`--conversation`。IDを省略した会話選択は非対応 |
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は目的文 | 報告用UWIの保存を確かめられない終了はStop hookが遮断する。バックグラウンドタスクの完了待ちのturn終了は許し、完了通知で再開する。最終応答でCLIが終わり、起動元が報告の保存を検収する | 利用上限の解除後は`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>` | 同上 | 利用上限の解除後は`codex exec resume`で自動再開。明示再開はRUN_ID |
 | run-skill・agy | 非対話の`agy -p <目的文> --model … --effort … --output-format stream-json` | 同上（変換層経由） | 明示再開は`--conversation`。利用上限の自動再開はCLI出力から上限を検出できた場合だけ |
 | agents_server通常委譲 | claudeはClaude Agent SDK、codexはApp Serverの`turn/start`、agyは`agy -p`へ、prompt・`model`・`effort`を渡す | turnの結果を管理して公開する。対話端末の入力待ちとは別の管理 | `send_message`は実行中turnへ配送し、終了済みなら同じ会話を再開する（agyは実行中turnへの配送を拒否する）。`kill`はturnへの中断要求 |
 | ユーザーが直接操作する対話中のメイン | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後は入力を待つ。統括とrun-skill向けのStop hookの続行判定は働かない | ユーザーの入力とホストの再開操作。Claude Codeの`/restart`・`/update`は同じPID・会話IDで再起動し、modが自身の背景waitを停止した場合だけ自動で続行する |
 
-process-loopの統括とrun-skillのセッションは、目的文（`atk-auto`要素）を最初の入力として受け取り、完了までの続行はStop hookの機械判定が担う。
-判定は環境印で識別した最上位だけに働き、委譲先と人が操作する対話セッションには働かない。
-判定が見るのは終了工程の実行記録と報告用UWIの保存であり、作業内容の未達は常駐と起動元の検収が検出する。
-遮断が連続上限に達すると、process-loopの統括は終了要求で終わって常駐の検収へ戻り、run-skillは起動元が報告用UWI未保存の失敗として報告する。
+process-loopとrun-skillは、最初の入力で作業を名指しする。
+process-loopは巡回の手順に従い、反映後の圧縮や入力待ちのためにターンを終えられる。
+run-skillでは最上位の報告用UWIの保存をStop hookが確認し、保存の検収を起動元が行う。
 agents_serverの配送結果と、受信側が本文を読んで処置したことは別々に確かめる。
 長いツール実行の途中へ即座に割り込めるという案は、該当engineの配送条件を確かめてから出す。
 
 ## 対象の分担と単回実行
 
-常駐は今回の全対象を1つの統括会話へ渡し、対象ごとの準備・所有・終了検収を管理する。
-同時に起動する統括会話は1つで、統括は選定・レビュー・公開・CI・完了報告・報告用UWI・結果の保存まで担当する。
-会話の再開は`resume [ID|auto]`で予約した場合に限り、予約の無い起動は新しい会話で始める。
-今回の対象が1リポジトリならレーン数の上限によらず統括が自ら処理し、複数なら負荷が最大のリポジトリを統括が直接担当する。
-具体的な選定と継続は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「開始と振り分け」に従う。
-登録と再開の条件は`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`に従う。
-計画・検証・レビュー・公開は対象worktreeごとに分け、process-wiの実行全体の完了報告は統括が行う。
-
-非常駐の全体処理は`agent-toolkit:atk-mode`の作業`process-wi all-repos`を手動で起動し、同作業は`atk wi process-loop --once`で常駐と同じ取得・所有・準備・検収・回収を1集合に対して行う。
-対象が0件なら待たずに終わり、未完了・所有待ち・準備失敗が残れば非0で終わる。
-次回の再開は`atk wi process-loop resume auto`で予約し、停止中は予約の後に`--once`を起動する。
-`resume ID`は指定会話、値を省いた`resume`はCLIの会話選択画面を予約し、`resume-cancel`は未消費の予約を取り消し、予約状態は`status`で確かめる。
-対象リポジトリの単発処理は`agent-toolkit:atk-mode`の作業`process-wi`か`agent-toolkit:atk-mode`の作業`process-wi single-lane`を使う。
+CLIは対話セッションを起動し、登録リポジトリの巡回はそのセッションで行う。
+巡回の手順は `agent-toolkit:atk-mode/playbooks/process-loop.md`、対象ごとの配分は `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md` を使う。
+`--once`は対話CLIが終了した後に再起動しない指定である。
+Codexの上限を検出した単回実行の終了0はCLIの停止を示す。
+処理の完遂は、統括が保存した対象別の結果と残工程で確かめる。
+登録全体を手動で1回だけ処理する場合は `process-wi all-repos` を選ぶ。
 
 ## 常駐・単発・明示再開の違い
 
-- `atk wi process-loop`は統括会話のCLIの終了後に、対象ごとの結果・残件・writerの終了を検収してから次の統括会話を始める。
-- process-loopの`resume [ID|auto]`は次の実起動への予約である。
+- `atk wi process-loop`は統括CLIの終了後に次の会話を起動する。
+  対象ごとの結果・残件・writerの終了は統括がセッション内で検収する。
+- process-loopの`resume [ID]`は次の実起動への予約である。
   予約は起動の成功で1回消費し、起動前の失敗とabortでは保持する。
   再開は未完了の元会話・候補・計画・`lane_session_id`と、保持したモデル・effortを再利用する。
 - run-skillの`--resume <RUN_ID>`は保存した入力・報告先・残時間・会話を再利用し、同じ対象のロックと旧実行主体の終了を確かめ、未完了の実行だけを再開する。

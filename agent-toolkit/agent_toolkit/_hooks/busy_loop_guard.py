@@ -1,12 +1,12 @@
 """常駐ループのセッションが無進捗の反復に入った状態を検知して停止するStopフック。
 
-`atk wi process-loop`が起動したセッションでは、完了するまでStop hook（`autonomous_exit`）がターンの終了を止めて続行させる。
+`atk wi process-loop`が起動したセッションでも、無進捗が続くときだけ終了を求める。
 権限拒否などで工程が進まない状態では、ツール呼び出しを伴わないターンと続行要求だけが繰り返され、
 ユーザーが介入するまでトークンを消費し続ける。本判定はこの反復を検知し、そのセッションへ終了要求を送る。
 
 統括への終了要求は本モジュールの`terminate`だけが送る。
 無進捗の停止（`halt`）と、`stop.py`が連続blockの上限で遮断を打ち切る場合の終了はどちらも`terminate`を呼び、
-対話型の統括は入力待ちのまま残らずに常駐側の検収へ戻る。
+対話型の統括は入力待ちのまま残らず、ランチャーへ終了を返す。
 
 適用対象は、統括の会話IDを確定でき（`is_identified_process_loop_session`）、hook入力の会話IDと一致する最上位セッションに限る。
 委譲先セッション、対話セッション、統括が入れ子で起動したCLIは対象外とする。
@@ -35,7 +35,6 @@ Stopの共通ハンドラー（`stop.py`）が全判定を終えてから`halt`�
 import os
 from collections.abc import Mapping
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session
 lazy from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
@@ -45,18 +44,16 @@ lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 lazy from agent_toolkit._hooks.transcript_scan import has_tool_use_block, read_transcript_entries_cached
 
-# 停止工程へ進む連続無進捗ターン数。
 _THRESHOLD = 3
 
-# 連続した無進捗ターン数を保持するセッション状態のキー。
+
 _COUNT_STATE_KEY = "stop_no_tool_turn_count"
 
-# 観測済みのセッション記録エントリ数を保持するセッション状態のキー。
+
 _OBSERVED_STATE_KEY = "stop_observed_entry_count"
 
 
 def _read_int_state(state: dict, key: str) -> int:
-    """セッション状態から非負整数を読み取る。値が不正な場合は0を返す。"""
     value = state.get(key)
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         return 0
@@ -64,7 +61,6 @@ def _read_int_state(state: dict, key: str) -> int:
 
 
 def _store(session_id: str, count: int, observed: int) -> None:
-    """連続回数と観測済みエントリ数をセッション状態へ書き込む。"""
 
     def _update(state: dict) -> dict:
         state[_COUNT_STATE_KEY] = count
@@ -75,12 +71,10 @@ def _store(session_id: str, count: int, observed: int) -> None:
 
 
 def is_target_session(session_id: str, payload: dict) -> bool:
-    """会話IDで確定した常駐ループの統括の最上位セッションである場合に真を返す。"""
     return is_identified_process_loop_session(session_id, os.environ) and is_main_agent_context(payload)
 
 
 def halt(session_id: str, count: int) -> tuple[str, str]:
-    """無進捗の反復を理由に現在の会話へ終了を要求し、その状態とユーザーへ伝える本文を返す。"""
     return terminate(
         session_id,
         f"無進捗のターンが{count}回続いた。",
@@ -90,11 +84,6 @@ def halt(session_id: str, count: int) -> tuple[str, str]:
 
 
 def terminate(session_id: str, cause: str, log_decision: str, log_context: Mapping[str, object]) -> tuple[str, str]:
-    """現在の会話へ終了を要求し、その状態とユーザーへ伝える本文を返す。
-
-    状態は`agents_exit_session.request_termination`の戻り値（`exit_requested`・`terminating`・`changed`・`unsupported`）とする。
-    `cause`は本文の1行目に置く終了の理由、`log_decision`と`log_context`は常時ログの判定名と根拠とする。
-    """
     status, target = _agents_exit_session.request_termination(session_id=session_id)
     append_stop_log(session_id, log_decision, {**log_context, "termination": status})
     lines = [cause]
@@ -115,7 +104,6 @@ def terminate(session_id: str, cause: str, log_decision: str, log_context: Mappi
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """無進捗ターンの連続を判定し、閾値へ達した場合は`halt`と連続回数を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""

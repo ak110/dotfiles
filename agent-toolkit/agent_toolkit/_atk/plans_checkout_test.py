@@ -61,7 +61,6 @@ def test_checkout_copies_saved_bundle_into_working_root(tmp_path: pathlib.Path) 
 def test_cli_checkout_edit_and_commit_saved_bundle(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], input_source: str
 ) -> None:
-    """公開CLIで保存済み計画を取得し、編集内容を元の保存先へ反映する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_remote_notes(notes, tmp_path / "origin.git")
@@ -95,7 +94,6 @@ def test_cli_checkout_edit_and_commit_saved_bundle(
 def test_plan_absolute_path_outside_roots_is_rejected_without_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str
 ) -> None:
-    """許可root外の絶対パスを、状態変更前に受理範囲の案内付きで拒否する。"""
     notes = tmp_path / "notes"
     _init_local_notes(notes)
     outside = tmp_path / "14-1310_計画.md"
@@ -113,7 +111,6 @@ def test_plan_absolute_path_outside_roots_is_rejected_without_changes(
 
 
 def test_commit_accepts_legacy_dated_working_absolute_path(tmp_path: pathlib.Path) -> None:
-    """日付階層に残る旧作業ファイルも、listが返す絶対パスのまま保存できる。"""
     notes = tmp_path / "notes"
     home = tmp_path / "home"
     _init_local_notes(notes)
@@ -153,7 +150,6 @@ def test_checkout_syncs_remote_before_reading_saved_bundle(tmp_path: pathlib.Pat
 
 
 def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) -> None:
-    """取得済みのため拒否する場合は、取得記録の回収と再取得のコマンドを示す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -164,7 +160,6 @@ def test_checkout_rejection_reports_recovery_commands(tmp_path: pathlib.Path) ->
     with pytest.raises(_wi_web_input.WebInputError) as exc_info:
         _atk_plans.checkout_plan(notes, relative.as_posix(), home=home)
 
-    # 次の操作は理由と別の行で届くため、2行の本文から回収コマンドを確かめる。
     message = exc_info.value.message
     assert "\n次の操作: " in message
     assert f"atk plans commit {main.name}" in exc_info.value.next_action
@@ -176,7 +171,6 @@ def test_checkout_rejects_conflicting_working_file_and_existing_record(
     tmp_path: pathlib.Path,
     conflict: str,
 ) -> None:
-    """作業側の同名ファイル、取得済み、メイン計画の欠落のいずれでも、保存側と作業側を変えずに拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -288,7 +282,6 @@ def test_commit_rejects_remote_saved_bundle_change_after_checkout(
 
 
 def test_commit_rejects_broken_checkout_record_with_recovery_steps(tmp_path: pathlib.Path) -> None:
-    """壊れた取得記録は、記録を削除して再取得する手順を次の操作として返す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -308,7 +301,6 @@ def test_commit_rejects_broken_checkout_record_with_recovery_steps(tmp_path: pat
 def test_public_save_all_then_restore_unfinished_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """順序付きの全計画保存を終えてから、未終了だけをcheckoutで再開できる場所へ戻す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -347,7 +339,6 @@ def test_public_save_all_then_restore_unfinished_plan(
 
 
 def test_generated_plan_names_are_current_and_help_shares_the_format(capsys: pytest.CaptureFixture[str]) -> None:
-    """作成側の生成名を保存検査が現行として受理し、現行名の拒否にも同じ形式を案内する。"""
     creator = runpy.run_path(str(run_script.PLUGIN_ROOT / "skills/atk-mode/scripts/create_plan_files.py"))
     now = datetime.datetime(2026, 10, 14, 13, 10, tzinfo=datetime.UTC)
     stems = [creator["process_lane_plan_name"]("lane-01", now=now), creator["named_plan_name"]("計画", now=now)]

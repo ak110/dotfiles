@@ -24,7 +24,6 @@ from agent_toolkit._testing.rules_context_support import _output, _session_start
 
 # test-copy-contract: 実際に生成したSubagentStart全出力がホストの文字数上限に収まる容量契約。
 def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixture[str]) -> None:
-    """SubagentStart本文がhook上限へ収まる。"""
     rules_context.main(json.dumps({"hook_event_name": "SubagentStart", "agent_type": "general-purpose"}))
     assert len(_output(capsys)) <= rules_context.CLAUDE_CODE_OUTPUT_LIMIT
 
@@ -33,7 +32,6 @@ def test_subagent_start_context_fits_claude_code_cap(capsys: pytest.CaptureFixtu
 def test_subagent_start_does_not_create_session_scoped_managed_temp(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SubagentStartはsession_idを受け取っても領域を確保しない。"""
     monkeypatch.setattr(
         rules_context.managed_temp,
         "resolve_session_temp",
@@ -52,7 +50,6 @@ def test_session_start_provides_one_session_scoped_managed_temp(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """同じsession_idの全SessionStartで1件の領域と同じ絶対パスを渡す。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     payload = json.dumps({"hook_event_name": "SessionStart", "source": source, "session_id": "session-1"})
@@ -92,11 +89,6 @@ def test_session_start_context_fits_cap_with_maximum_instruction(
     root_length: int,
     contract: str,
 ) -> None:
-    """追加指示が上限まで載った場合も、固定分との合計がhook上限へ収まる。
-
-    CLIのrootと一時領域は通知本文へそのまま入るため、実checkoutやpytestの一時パスの長さで結果が変わらないよう、
-    観測した短い配置（21文字）と長い配置（241文字）を明示した値で固定する。
-    """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -167,7 +159,6 @@ def test_direct_hooks_deliver_cli_when_bash_environment_file_is_unavailable(
 def test_session_start_injects_process_loop_instruction(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """process-loopが渡した追加指示をメインへ注入し、委譲先へは注入しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setenv(rules_context.PROCESS_LOOP_INSTRUCTION_ENV, "既存のテストコードを先に読む")
@@ -191,7 +182,6 @@ def test_session_start_injects_process_loop_instruction(
 @pytest.mark.parametrize("host", ["claude", "codex", "agy"])
 @pytest.mark.parametrize("actor", ["main", "delegated", "owner", "subagent"])
 def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatch, capsys):
-    """同じ実行の再開でも元のデータを届け、継承した委譲環境とサブエージェントへ適用しない。"""
     data = {"source": "run-skill", "skill": "example:check", "arguments": "</atk-auto>\n追加指示"}
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data))
     if actor == "delegated":
@@ -216,14 +206,12 @@ def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatc
 
 @pytest.mark.parametrize("value", ["{", "[]", '{"source": []}', '{"source": "unknown"}'])
 def test_invalid_startup_input_is_diagnosed(value, monkeypatch):
-    """不正な起動入力を実行データとして配送しない。"""
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", value)
     with pytest.raises(ValueError):
         rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup"}))
 
 
 def test_large_startup_input_keeps_all_data_within_hook_cap(tmp_path, monkeypatch, capsys):
-    """自由記述がhook上限より長くても、原本への参照から全実行データを取得できる。"""
     data = {"source": "run-skill", "skill": "example:check", "arguments": "追加指示" * 10000}
     monkeypatch.setenv("AGENT_TOOLKIT_SESSION_START_INPUT", json.dumps(data, ensure_ascii=False))
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
@@ -300,10 +288,6 @@ def _process_loop_input(manifest: pathlib.Path) -> dict[str, str]:
 
 @pytest.mark.parametrize("resume_only", [True, False])
 def test_picker_resume_of_ordinary_conversation_stays_out_of_autonomous_mode(resume_only, monkeypatch, capsys, tmp_path):
-    """`process-loop resume`のpickerで統括でない会話を選んだ再開は、元の目的の続行だけを通知し自律モードを立てない。
-
-    統括の会話を選んだ再開（`resume_only`が偽）は、作業`process-wi all-repos`の統括として立てる。
-    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     manifest = tmp_path / "manifest.json"

@@ -1,5 +1,3 @@
-"""セッション画面の公開操作とホスト間の調整。"""
-
 import asyncio
 import base64
 import contextlib
@@ -7,6 +5,7 @@ import json
 import logging
 import pathlib
 import socket
+import time
 import typing
 
 from agent_toolkit._atk import session_record_format
@@ -43,6 +42,7 @@ from agent_toolkit._atk.serve.sessions_models import (
     _isoformat,
     _started_at,
     build_detail,
+    record_matches,
 )
 from agent_toolkit._atk.serve.sessions_remote import (
     RemoteSessionClient,
@@ -69,7 +69,6 @@ def create_context(
     ssh_runner: SshRunner | None = None,
     state_dir: pathlib.Path | None = None,
 ) -> SessionsContext:
-    """セッション画面の依存と初期接続状態を生成する。"""
     resolved_hostname = hostname if hostname is not None else socket.gethostname()
     hosts = tuple(remote_hosts or ())
     if resolved_hostname in hosts:
@@ -98,12 +97,10 @@ def create_context(
 
 
 async def create_context_async(**kwargs: typing.Any) -> SessionsContext:
-    """保存先の設定解決をworkerで完了して初期状態を返す。"""
     return await run_sync_operation(create_context, **kwargs)
 
 
 def _retrieve_exception(task: asyncio.Future[typing.Any]) -> None:
-    """待つ要求が残らずに終わった取得の例外を回収し、未回収の例外としてログへ出力しない。"""
     if not task.cancelled():
         task.exception()
 
@@ -129,10 +126,6 @@ async def list_sessions(context: SessionsContext) -> tuple[list[SessionSummary],
 
 
 async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSummary], list[dict[str, str]]]:
-    """ローカルと設定済みリモートホストの一覧を取得する。
-
-    到達できないホストがある場合も、他のホストとローカルの一覧は返す。
-    """
     local_entries, remote_results = await asyncio.gather(
         asyncio.to_thread(list_local_sessions, context),
         asyncio.gather(*(_remote_sessions(context, host) for host in context.remote_hosts)),
@@ -144,7 +137,7 @@ async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSumma
         if warning is not None:
             warnings.append(warning)
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
-    # 親の参照は同じホストの記録を指すため、ホストとパスの組で祖先を戻す。
+
     limited = session_parents.limit_with_ancestors(
         entries,
         MAX_LIST_ENTRIES,
@@ -154,8 +147,49 @@ async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSumma
     return limited, warnings
 
 
+def _search_local(context: SessionsContext, entries: list[SessionSummary], query: str) -> tuple[set[str], bool]:
+    found: set[str] = set()
+    incomplete = False
+    deadline = time.monotonic() + OPERATION_TIMEOUT_SEC["search"]
+    for entry in entries:
+        if not is_local_record_path(context, entry.path):
+            incomplete = True
+            continue
+        try:
+            if record_matches(pathlib.Path(entry.path), entry.engine, query, deadline=deadline):
+                found.add(entry.path)
+        except OSError, ValueError:
+            incomplete = True
+    return found, incomplete
+
+
+async def search_sessions(context: SessionsContext, query: str) -> tuple[list[SessionSummary], bool]:
+    entries, warnings = await list_sessions(context)
+    by_host: dict[str, list[SessionSummary]] = {}
+    for entry in entries:
+        by_host.setdefault(entry.host, []).append(entry)
+    encoded_query = base64.b64encode(query.encode("utf-8")).decode("ascii")
+
+    async def search_host(host: str, candidates: list[SessionSummary]) -> tuple[list[SessionSummary], bool]:
+        if host == context.hostname:
+            paths, incomplete = await asyncio.to_thread(_search_local, context, candidates, query)
+        else:
+            try:
+                response = await _remote_call(context, host, "search", {"query": encoded_query})
+            except OSError, ValueError, RuntimeError:
+                return [], True
+            supplied = response.get("paths")
+            if not isinstance(supplied, list) or not all(isinstance(path, str) for path in supplied):
+                return [], True
+            paths = set(supplied)
+            incomplete = response.get("incomplete") is not False
+        return [entry for entry in candidates if entry.path in paths], incomplete
+
+    results = await asyncio.gather(*(search_host(host, candidates) for host, candidates in by_host.items()))
+    return [entry for matches, _ in results for entry in matches], bool(warnings) or any(flag for _, flag in results)
+
+
 async def session_detail(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
-    """指定ホストの記録1件を共通の表示モデルへ正規化して返す。"""
     if engine not in {"claude", "codex"}:
         raise SessionNotFoundError(f"未知の実行系です: {engine}")
     if host == context.hostname:
@@ -189,13 +223,12 @@ async def session_detail(context: SessionsContext, engine: str, host: str, path:
         if engine == "claude"
         else (thread_name if isinstance(thread_name, str) and thread_name.strip() else None)
     )
-    # 算出は記録があるホストで行う。子孫の本文を画面サーバーへ転送しない。
+
     detail["cost"] = payload.get("cost")
     return detail
 
 
 async def session_cost(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:
-    """ローカルの記録の推定費用を返す。リモートの記録の費用は詳細の応答に含まれるため対象外とする。"""
     if host != context.hostname:
         raise SessionNotFoundError(
             f"推定費用を別に取得できるのはローカルの記録だけです: {host}。"
@@ -205,13 +238,11 @@ async def session_cost(context: SessionsContext, engine: str, host: str, path: s
 
 
 async def host_status(context: SessionsContext) -> dict[str, str]:
-    """ホストごとの接続状態を返す。"""
     async with context.state.lock:
         return dict(context.state.host_status)
 
 
 def start_remote_clients(context: SessionsContext) -> None:
-    """設定済みリモートホストの常駐接続を開始する。"""
     for host in context.remote_hosts:
         client = RemoteSessionClient(host, context.state)
         context.state.clients[host] = client
@@ -219,7 +250,6 @@ def start_remote_clients(context: SessionsContext) -> None:
 
 
 async def stop_remote_clients(context: SessionsContext) -> None:
-    """常駐接続をまとめて終了させる。"""
     for task in context.state.tasks:
         task.cancel()
     for task in context.state.tasks:

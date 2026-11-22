@@ -4,7 +4,6 @@
 Stop時の書き込み完了の待機、走査範囲（sidechainの扱い）とtool_use・tool_resultの取り出しを担う。
 """
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import json
 lazy import collections.abc
 lazy import os
@@ -80,7 +79,6 @@ def wait_for_end_turn(transcript_path: str, *, timeout: float = 0.3) -> None:
 
 
 def _latest_assistant_ended(lines: list[str]) -> bool:
-    """最新の非sidechain assistantエントリの`stop_reason`が`end_turn`なら真を返す。"""
     for line in reversed(lines):
         try:
             entry = json.loads(line)
@@ -89,18 +87,16 @@ def _latest_assistant_ended(lines: list[str]) -> bool:
         if not isinstance(entry, dict) or entry.get("type") != "assistant" or entry.get("isSidechain"):
             continue
         message = entry.get("message")
-        # 最新assistantエントリがend_turnではない（tool_use等）場合はレース状態の可能性があり、到着を待つ。
+
         return isinstance(message, dict) and message.get("stop_reason") == "end_turn"
     return False
 
 
 def entry_in_scan_scope(entry: dict, *, include_sidechain: bool) -> bool:
-    """エントリが呼び出し元に応じた走査範囲に含まれる場合に真を返す。"""
     return include_sidechain or entry.get("isSidechain") is not True
 
 
 def iter_assistant_blocks(entries: list[dict], *, include_sidechain: bool = False) -> collections.abc.Iterator[dict]:
-    """走査範囲内のassistantエントリのcontent辞書を時系列で返す。"""
     for entry in entries:
         if entry.get("type") != "assistant" or not entry_in_scan_scope(entry, include_sidechain=include_sidechain):
             continue
@@ -112,10 +108,6 @@ def iter_assistant_blocks(entries: list[dict], *, include_sidechain: bool = Fals
 
 
 def has_tool_use_block(entries: list[dict]) -> bool:
-    """走査範囲内のassistantエントリにツール呼び出しが1件以上ある場合に真を返す。
-
-    委譲先（sidechain）のエントリは走査範囲の外とし、自セッションの進捗だけを数える。
-    """
     return any(block.get("type") == "tool_use" for block in iter_assistant_blocks(entries))
 
 
@@ -142,7 +134,6 @@ def last_tool_use_block(entries: list[dict]) -> dict | None:
 
 
 def tool_result_text_blocks(content: object) -> list[str]:
-    """tool_result本文を文字列列へ正規化する。"""
     if isinstance(content, str):
         return [content]
     if not isinstance(content, list):

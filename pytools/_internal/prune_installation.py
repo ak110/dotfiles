@@ -27,7 +27,16 @@ import platformdirs
 import psutil
 from agent_toolkit._common import dotfiles_mode, plugin_environment, windows_job
 
-from pytools._internal import codex_processes, common, log_format, post_apply_outcome, setup_mise, update_log, warmup_pyfltr_mcp
+from pytools._internal import (
+    codex_processes,
+    common,
+    log_format,
+    post_apply_outcome,
+    setup_cli_common,
+    setup_mise,
+    update_log,
+    warmup_pyfltr_mcp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,28 +68,29 @@ FULL_TOOLS = frozenset(
     }
 )
 
-# fullでnpmのglobalへ導入しうるパッケージ。minimalではmise管理か否かを問わず外す。
-_NPM_PACKAGES = ("opencode-ai", "@anthropic-ai/claude-code", "@openai/codex", "@google/gemini-cli", "aws-cdk")
+# minimalで整理するnpmのglobal導入物。旧npm版CLIは整理せず、配置を案内する。
+_NPM_PACKAGES = ("opencode-ai", "@google/gemini-cli", "aws-cdk")
 
 
 def excluded_tools(root: Path, *, minimal: bool) -> frozenset[str]:
-    """現行の作業ツリー定義を照合し、モードの導入対象外のツールを返す。"""
     configuration = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8"))
     project_tools = frozenset(configuration.get("tools", {}))
     return DEVELOPMENT_TOOLS | FULL_TOOLS | project_tools if minimal else DEVELOPMENT_TOOLS - project_tools
 
 
+def _rustup_home() -> Path:
+    return Path(os.environ.get("RUSTUP_HOME", Path.home() / ".rustup"))
+
+
 def removal_paths() -> tuple[Path, ...]:
-    """minimalで除去する配布実体とキャッシュの絶対パスを返す。"""
     home = Path.home()
     local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
     data = Path(os.environ.get("MISE_DATA_DIR", platformdirs.user_data_dir("mise", appauthor=False)))
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
     claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude"))
-    rustup = Path(os.environ.get("RUSTUP_HOME", home / ".rustup"))
+    rustup = _rustup_home()
     cargo = Path(os.environ.get("CARGO_HOME", home / ".cargo"))
     paths = [
-        # 共有ホームの設定・資格情報・ユーザー導入物は残し、再生成可能な実体だけを整理する。
         *(rustup / name for name in ("toolchains", "downloads", "tmp", "update-hashes")),
         *(cargo / name for name in ("registry", "git")),
         Path(os.environ.get("MISE_DOTNET_ROOT", data / "dotnet-root")),
@@ -104,7 +114,9 @@ def removal_paths() -> tuple[Path, ...]:
         local / "Programs/Herdr",
         home / ".gemini/config/skills/modern-web-guidance",
     ]
-    for name in ("claude", "codex", "atk-hook", "agy", "herdr", "opencode", "claude-statusline"):
+
+    paths.extend(home / ".local/bin" / name for name in ("claude.exe", "codex.exe"))
+    for name in ("atk-hook", "agy", "herdr", "opencode", "claude-statusline"):
         for suffix in ("", ".exe", ".cmd", ".ps1"):
             paths.append(home / ".local/bin" / (name + suffix))
     return tuple(dict.fromkeys(paths))
@@ -119,7 +131,7 @@ _UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
 
 
 class _InUseError(Exception):
-    """他のプロセスが使用中のため、削除を保留した。"""
+    pass
 
 
 def _command(command: list[str], *, path: str | None = None) -> None:
@@ -145,7 +157,6 @@ def _command(command: list[str], *, path: str | None = None) -> None:
 
 
 def _active_users(paths: tuple[Path, ...]) -> list[str]:
-    """対象実体の参照またはAIの実行体を自ユーザーのプロセスから検出する。"""
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     attribute = "username" if windows else "uids"
@@ -177,14 +188,13 @@ def _active_users(paths: tuple[Path, ...]) -> list[str]:
         uses_pyfltr = any(
             Path(value.replace("\\", "/")).name.removesuffix(".exe") in {"pyfltr", "pyfltr-mcp"} for value in values if value
         )
-        # rustup本体はtoolchains外にあるが、列挙や導入中も同じ配置を使用する。
+
         if uses_path or uses_pyfltr or name in {"claude", "codex", "agy", "herdr", "opencode", "claude-statusline", "rustup"}:
             active.append(f"{name or 'process'} (pid {process.pid})")
     return active
 
 
 def _stop_daemon() -> None:
-    """利用セッションが無い管理daemonだけを公開CLIで停止する。"""
     processes = codex_processes.codex_processes()
     sessions = [process.label for process in processes if process.role == "session"]
     if sessions:
@@ -209,6 +219,212 @@ def _remove(path: Path) -> bool:
     return True
 
 
+def _check_shared_runtime_root(path: Path, checkout: Path | None) -> None:
+    resolved = path.resolve()
+    if Path.home().resolve().is_relative_to(resolved) or (checkout is not None and checkout.resolve().is_relative_to(resolved)):
+        raise ValueError(f"共有ランタイム設定がホームまたは作業ツリー全体を含むため削除しません: {path}")
+
+
+@dataclasses.dataclass(frozen=True)
+class _NpmRoot:
+    modules: Path | None
+    kept: bool = False
+
+
+def _prune_global_npm(command: list[str], root: Path, *, path: str | None = None) -> _NpmRoot:
+    overrides = {"MISE_AUTO_INSTALL": "0"}
+    if path is not None:
+        overrides["PATH"] = path
+    result = common.run_subprocess(
+        [*command, "root", "--global"], timeout=common.COMMAND_TIMEOUT, cwd=Path.home(), tag="prune", env_overrides=overrides
+    )
+    modules = Path((result.stdout or "").strip()) if result is not None and result.returncode == 0 else None
+    if modules is None or not modules.is_absolute():
+        logger.warning(
+            "npmの導入先を確認できないため、旧npm版の有無を確かめずにそのnpmのパッケージとmise管理のNodeを保持: %s（%s）。"
+            "%sが導入先の絶対パスを表示するようnpmを%s",
+            setup_cli_common.format_command(command),
+            common.format_cli_error(result),
+            setup_cli_common.format_command([*command, "root", "--global"]),
+            setup_cli_common.RERUN_AFTER_REPAIR,
+        )
+        return _NpmRoot(None, kept=True)
+    kept = False
+    targets = []
+    candidates = (*setup_cli_common.LEGACY_NPM_CLIS, *_NPM_PACKAGES)
+    for package_name in candidates:
+        package = modules.joinpath(*package_name.split("/"))
+        manifest = package / "package.json"
+        try:
+            metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
+        except FileNotFoundError:
+            if package_name in setup_cli_common.LEGACY_NPM_CLIS and (package.exists() or package.is_symlink()):
+                # package.jsonの無い旧版は、npmが一緒に削除する起動ファイルを特定できない。
+                _warn_unconfirmed_package(manifest, "package.jsonが無い")
+                kept = True
+            continue
+        except (OSError, ValueError) as error:
+            _warn_unconfirmed_package(manifest, str(error))
+            kept = True
+            continue
+        if not isinstance(metadata, dict):
+            _warn_unconfirmed_package(manifest, "JSONのobjectではない")
+            kept = True
+            continue
+        if setup_cli_common.protected_npm_package(package_name, metadata):
+            kept = True
+            bins = {Path(name.lower()).stem for name in setup_cli_common.normalize_npm_package_bins(metadata)}
+            cli = setup_cli_common.LEGACY_NPM_CLIS.get(package_name) or ("claude" if "claude" in bins else "codex")
+            windows = sys.platform == "win32"
+            canonical = (
+                root / "bin" / ("codex.cmd" if windows else "codex")
+                if cli == "codex"
+                else Path.home() / ".local/bin" / ("claude.exe" if windows else "claude")
+            )
+            setup_cli_common.warn_about_retained_npm_package(
+                package, [*command, "uninstall", "--global", package_name], canonical, minimal=True
+            )
+        elif package_name in _NPM_PACKAGES:
+            targets.append(package_name)
+    if targets:
+        _command([*command, "uninstall", "--global", *targets], path=path)
+    return _NpmRoot(modules, kept=kept)
+
+
+def _warn_unconfirmed_package(manifest: Path, reason: str) -> None:
+    logger.warning(
+        "npmのパッケージ情報を確認できないため、旧npm版かを確かめずにパッケージと同じprefixの起動ファイルを保持: %s（%s）。"
+        "このパッケージ配下の内容とpackage.jsonを確認し、同じ版のpackage.jsonを復元するか読取権限を%s",
+        manifest,
+        reason,
+        setup_cli_common.RERUN_AFTER_REPAIR,
+    )
+
+
+# Node.jsの配布物（Linux・macOSのtar、Windowsのzip）が導入先直下に置く項目（小文字）。
+_NODE_DISTRIBUTION = frozenset(
+    {
+        "bin",
+        "include",
+        "lib",
+        "share",
+        "changelog.md",
+        "license",
+        "readme.md",
+        "node.exe",
+        "node_modules",
+        "install_tools.bat",
+        "nodevars.bat",
+        "node_etw_provider.man",
+        *(f"{name}{suffix}" for name in ("npm", "npx", "corepack") for suffix in ("", ".cmd", ".ps1")),
+    }
+)
+
+_NODE_DISTRIBUTION_CHILDREN = {"lib": frozenset({"node_modules"}), "include": frozenset({"node"}), "share": None}
+_MAX_LAUNCHER_BYTES = 64 * 1024
+"""npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
+
+
+def _node_unconfirmed_entries(install_path: Path) -> list[str]:
+    """mise管理のNodeの配下のうち、削除してよいと確認できない項目を返す。空ならNodeを削除してよい。
+
+    削除してよいのは、Node.jsの配布物と、旧npm版でないと確認できたnpmのglobalパッケージと、
+    そのパッケージを指す起動ファイルだけである。旧版らしいものを探すのではなく、確認できたもの以外を全て残す。
+    POSIX（`lib/node_modules`と`bin`）とWindows（`node_modules`と導入先直下）の両方の配置を調べる。
+    """
+    if not install_path.exists():
+        return []
+    reasons: list[str] = []
+    confirmed: list[Path] = []
+    bins: set[str] = set()
+    for modules in (install_path / "lib" / "node_modules", install_path / "node_modules"):
+        try:
+            entries = sorted(modules.iterdir())
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            reasons.append(f"{modules}を読めない（{error}）")
+            continue
+        packages: list[Path] = []
+        for entry in entries:
+            if entry.name.startswith("@") and entry.is_dir() and not entry.is_symlink():
+                try:
+                    packages.extend(sorted(entry.iterdir()))
+                except OSError as error:
+                    reasons.append(f"{entry}を読めない（{error}）")
+                continue
+            packages.append(entry)
+        for package in packages:
+            try:
+                metadata = json.loads((package / "package.json").read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError) as error:
+                reasons.append(f"npmのパッケージと確認できない{package}（{error}）")
+                continue
+            if not isinstance(metadata, dict):
+                reasons.append(f"npmのパッケージと確認できない{package}")
+            elif setup_cli_common.protected_npm_package(package.relative_to(modules).as_posix(), metadata):
+                reasons.append(f"旧npm版に関係するパッケージ{package}")
+            else:
+                confirmed.append(common.safe_resolve(package))
+                bins |= {Path(name.lower()).stem for name in setup_cli_common.normalize_npm_package_bins(metadata)}
+    try:
+        top = sorted(install_path.iterdir())
+    except OSError as error:
+        return [*reasons, f"{install_path}を読めない（{error}）"]
+    for entry in top:
+        lowered = entry.name.lower()
+        if lowered in _NODE_DISTRIBUTION:
+            if lowered in _NODE_DISTRIBUTION_CHILDREN and entry.is_dir() and not entry.is_symlink():
+                allowed = _NODE_DISTRIBUTION_CHILDREN[lowered]
+                if allowed is not None:
+                    try:
+                        extra = [child for child in sorted(entry.iterdir()) if child.name.lower() not in allowed]
+                    except OSError as error:
+                        extra = []
+                        reasons.append(f"{entry}を読めない（{error}）")
+                    reasons.extend(f"Node.jsの配布物と確認できない{child}" for child in extra)
+            continue
+        # Windowsのnpmは導入先直下へ、globalパッケージの起動ファイル（拡張子なし・.cmd・.ps1）を置く。
+        if lowered.removesuffix(".cmd").removesuffix(".ps1") in bins:
+            continue
+        reasons.append(f"Node.jsの配布物と確認できない{entry}")
+    try:
+        launchers = sorted((install_path / "bin").iterdir())
+    except FileNotFoundError:
+        launchers = []
+    except OSError as error:
+        launchers = []
+        reasons.append(f"{install_path / 'bin'}を読めない（{error}）")
+    for launcher in launchers:
+        if launcher.name == "node" and launcher.is_file() and not launcher.is_symlink():
+            continue
+        target = common.safe_resolve(launcher)
+        if launcher.is_symlink() and any(target.is_relative_to(package) for package in confirmed):
+            continue
+        reasons.append(f"確認できたnpmパッケージを指さない起動ファイル{launcher}")
+    return reasons
+
+
+def _unconfirmed_user_launcher(path: Path) -> str | None:
+    """`~/.local/bin`の削除候補が、npmの起動ファイルでないと確認できない場合に理由を返す。
+
+    npmのglobal prefixが`~/.local`なら、POSIXは`~/.local/lib/node_modules`、Windowsの配置なら
+    `~/.local/bin/node_modules`を持つ。そのどちらも無く、候補が`node_modules`を参照しない場合だけ削除してよい。
+    """
+    local = Path.home() / ".local"
+    for modules in (local / "lib" / "node_modules", local / "bin" / "node_modules"):
+        if modules.exists() or modules.is_symlink():
+            return f"{local}がnpmの導入先（{modules}）"
+    if path.is_symlink():
+        return "node_modulesを指すリンク" if "node_modules" in common.safe_resolve(path).parts else None
+    try:
+        if path.is_file() and path.stat().st_size <= _MAX_LAUNCHER_BYTES and b"node_modules" in path.read_bytes():
+            return "node_modulesを参照する起動スクリプト"
+    except OSError as error:
+        return f"内容を読めない（{error}）"
+    return None
+
+
 def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
     """実体を保護判定してから削除し、撤去失敗をpost-applyの失敗として返す。"""
     root = common.find_dotfiles_root()
@@ -223,9 +439,7 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
         paths = (*removal_paths(), root / "agent-toolkit-codex", root / "agent-toolkit/.venv") if minimal else ()
         roots = tuple(Path(os.environ[name]) for name in ("RUSTUP_HOME", "CARGO_HOME") if name in os.environ) if minimal else ()
         for path in (*paths, *roots):
-            resolved = path.resolve()
-            if Path.home().resolve().is_relative_to(resolved) or root.resolve().is_relative_to(resolved):
-                raise ValueError(f"共有ランタイム設定がホームまたは作業ツリー全体を含むため削除しません: {path}")
+            _check_shared_runtime_root(path, root)
         if minimal:
             _stop_daemon()
             active = _active_users(paths)
@@ -247,9 +461,23 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
         # Node本体を削除する前に、npmの外部global prefixも対象にする。
         # minimalの設定はNodeの版を持たずnpmとnodeのshimが失敗するため、mise管理のNodeは導入済みの版を指定し、
         # mise以外のnpm（nvm、OSのパッケージなど）はshimを除いたPATHで実行する。
+        keep_node = False
         if minimal:
-            for entry in installed.get("node", []):
-                _command([str(mise), "exec", f"node@{entry['version']}", "--", "npm", "uninstall", "--global", *_NPM_PACKAGES])
+            queried: list[Path] = []
+            retained: list[Path] = []
+            node_reasons: list[str] = []
+
+            def record(result: _NpmRoot) -> None:
+                if result.modules is None:
+                    node_reasons.append("npmの導入先を確認できない")
+                    return
+                queried.append(result.modules)
+                if result.kept:
+                    retained.append(result.modules)
+
+            installed_nodes = installed.get("node", [])
+            for entry in installed_nodes:
+                record(_prune_global_npm([str(mise), "exec", f"node@{entry['version']}", "--", "npm"], root))
             shims = common.mise_shim_directories()
             search_path = os.pathsep.join(
                 directory
@@ -258,7 +486,59 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
             )
             npm = shutil.which("npm", path=search_path)
             if npm is not None:
-                _command([npm, "uninstall", "--global", *_NPM_PACKAGES], path=search_path)
+                record(_prune_global_npm([npm], root, path=search_path))
+            for entry in installed_nodes:
+                install_path = entry.get("install_path")
+                if not install_path:
+                    node_reasons.append(f"node@{entry.get('version')}の導入先を確認できない")
+                    continue
+                node_reasons.extend(_node_unconfirmed_entries(Path(install_path)))
+                node_reasons.extend(
+                    f"旧npm版を保持したnpm root {modules}"
+                    for modules in retained
+                    if common.safe_resolve(modules).is_relative_to(common.safe_resolve(Path(install_path)))
+                )
+            keep_node = bool(installed_nodes) and bool(node_reasons)
+            if keep_node:
+                logger.warning(
+                    "削除してよいと確認できない項目があるため、mise管理のNodeを保持: %s。"
+                    "保持したままでも動作に支障はない。Nodeを削除する場合は、列挙した項目を確認する。"
+                    "旧npm版などの不要な導入物は自分で整理し、使う項目は別の場所へ移してから"
+                    "`update-dotfiles`を再実行すると、確認できたNodeを削除する",
+                    "、".join(dict.fromkeys(node_reasons)),
+                )
+                excluded -= {"node"}
+            user_bin = common.safe_resolve(Path.home() / ".local/bin")
+            # 照会したnpmのprefixの起動ファイルの置き場（POSIXは`<prefix>/bin`、Windowsは`<prefix>`）。
+            npm_bins = {
+                common.safe_resolve(directory): modules
+                for modules in queried
+                for directory in (modules.parent, modules.parent.parent / "bin")
+            }
+            held: list[str] = []
+            kept_paths: list[Path] = []
+            for path in paths:
+                target = common.safe_resolve(path)
+                if any(common.safe_resolve(modules).is_relative_to(target) for modules in queried):
+                    held.append(f"{path}（npmの導入先を含む）")
+                elif common.safe_resolve(path.parent) in npm_bins:
+                    held.append(f"{path}（npmの導入先{npm_bins[common.safe_resolve(path.parent)]}の起動ファイルの置き場）")
+                elif common.safe_resolve(path.parent) == user_bin and (path.exists() or path.is_symlink()):
+                    reason = _unconfirmed_user_launcher(path)
+                    if reason is None:
+                        kept_paths.append(path)
+                    else:
+                        held.append(f"{path}（{reason}）")
+                else:
+                    kept_paths.append(path)
+            if held:
+                logger.warning(
+                    "npmの導入物でないと確認できないため、削除せず保持: %s。"
+                    "PATHで先に解決される間はこちらが起動する。不要と確認できた場合だけ、"
+                    "自分で配置・編集したファイルを退避してから手動で削除する",
+                    "、".join(held),
+                )
+            paths = tuple(kept_paths)
         for tool in sorted(excluded):
             short = tool.split(":", 1)[-1].split("/")[-1]
             if tool in installed or short in installed:
@@ -266,8 +546,9 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
                 changed = True
         for path in paths:
             changed |= _remove(path)
-        for command in ([str(mise), "prune", "-y"], [str(mise), "reshim", "--force"]):
-            _command(command)
+        if not keep_node:
+            _command([str(mise), "prune", "-y"])
+        _command([str(mise), "reshim", "--force"])
     except (OSError, ValueError, RuntimeError, psutil.Error) as error:
         return post_apply_outcome.PostApplyOutcome(
             changed=changed,
@@ -287,7 +568,6 @@ def update_lock_path() -> Path:
 
 
 def _clean_uv_cache(uv: Path) -> None:
-    """実キャッシュルートごとの全消去成功から30日間は通常pruneを使う。"""
     resolved = common.run_subprocess([str(uv), "cache", "dir"], tag="prune", timeout=30)
     if resolved is None or resolved.returncode != 0:
         raise RuntimeError(common.format_cli_error(resolved))
@@ -344,8 +624,6 @@ class _CacheGroup(enum.StrEnum):
 
 
 class MaintenanceResult(enum.StrEnum):
-    """キャッシュ整理の独立プロセスが記録する結果の種別。"""
-
     NONE = "none"
     DEFERRED = "deferred"
     FAILED = "failed"
@@ -354,8 +632,6 @@ class MaintenanceResult(enum.StrEnum):
 
 @dataclasses.dataclass(frozen=True)
 class _MaintenanceRecord:
-    """キャッシュ整理の独立プロセスの最新の結果。次の更新が読んで表示する。"""
-
     result: MaintenanceResult
     finished_at: str
     detail: str
@@ -369,7 +645,6 @@ def _record_path(group: _CacheGroup) -> Path:
 
 
 def _read_maintenance_record(group: _CacheGroup) -> _MaintenanceRecord | None:
-    """独立プロセスの最新の結果を返す。記録が無ければ`None`、読めない記録は`OSError`か`ValueError`を送出する。"""
     try:
         data = json.loads(_record_path(group).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -392,7 +667,7 @@ def _write_maintenance_record(group: _CacheGroup, result: MaintenanceResult, det
         try:
             previous = _read_maintenance_record(group)
         except OSError, ValueError:
-            previous = None
+            return
         if previous is not None and previous.result is MaintenanceResult.FAILED:
             record = dataclasses.replace(previous, deferred_at=now, deferred_detail=detail)
     if not common.atomic_write_json(_record_path(group), dataclasses.asdict(record), tag="prune"):
@@ -400,7 +675,6 @@ def _write_maintenance_record(group: _CacheGroup, result: MaintenanceResult, det
 
 
 def clean_uv_cache() -> tuple[MaintenanceResult, str]:
-    """uvのキャッシュ整理の結果と診断を返す。"""
     uv = common.resolve_executable("uv")
     if uv is None:
         logger.info("prune: uvは未導入のため対象なし")
@@ -427,7 +701,6 @@ def _run_maintenance(group: _CacheGroup, clean: Callable[[], tuple[MaintenanceRe
 
 
 def maintain_caches() -> None:
-    """整理の重複起動を避け、uvとそれ以外の結果を別々に次の更新へ引き継ぐ。"""
     update_path = update_lock_path()
     worker = filelock.FileLock(str(update_path.with_name("cache-maintenance.lock")), timeout=0, preserve_lock_file=True)
     with contextlib.ExitStack() as stack:
@@ -480,7 +753,15 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
             "prune: 前回の%sの整理は保留した（%s）: %s", group, record.finished_at, record.detail, extra=log_format.LOG_ONLY
         )
         if group is _CacheGroup.UV and _UV_LOCK_TIMEOUT_MARKER in record.detail:
-            logger.info("prune: uvキャッシュが使用中のため整理を保留しました。%s詳細: %s", retry, log, extra=log_format.SHOW)
+            return post_apply_outcome.PostApplyOutcome(
+                notices=(
+                    post_apply_outcome.PostApplyNotice(
+                        f"prune: uvキャッシュが使用中のため整理を保留しました。{retry}",
+                        log=_record_path(group),
+                        warning=False,
+                    ),
+                )
+            )
     elif record.result is MaintenanceResult.COMPLETED:
         logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at, extra=log_format.LOG_ONLY)
     elif record.result is MaintenanceResult.FAILED:
@@ -505,13 +786,11 @@ def start_cache_maintenance() -> int:
     command = [sys.executable, "-m", "pytools.post_apply", "--internal-uv-cache-maintenance"]
     attempts: list[dict[str, Any]] = [{"start_new_session": True}]
     if os.name == "nt":
-        # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動し直す。
         flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
         attempts = [{"creationflags": flags | windows_job.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": flags}]
     refused = False
     for index, options in enumerate(attempts):
         try:
-            # 時間上限なし: 待たずに切り離す起動であり、uvの操作は`_command`の上限で終わる。
             process = subprocess.Popen(  # pylint: disable=consider-using-with
                 command,
                 stdin=subprocess.DEVNULL,
@@ -530,7 +809,7 @@ def start_cache_maintenance() -> int:
                 "prune: 起動元のWindows Jobが離脱を許可しないため、離脱せずにキャッシュ整理の独立プロセスを開始した。"
                 "起動元のJobが終了すると整理も止まり、次の更新で再試行する"
             )
-        # 起動元が存続する間に終えた子をzombieとして残さない。起動元が先に終えればOSが引き取る。
+
         threading.Thread(target=process.wait, daemon=True).start()
         return process.pid
     raise AssertionError("起動の試行が空です")
@@ -557,8 +836,40 @@ def _start_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
     )
 
 
+def _clean_rustup_tmp() -> MaintenanceResult:
+    home = _rustup_home()
+    root = home / "tmp"
+    if not root.is_absolute() or root.is_symlink() or root.is_junction():
+        return MaintenanceResult.NONE
+    try:
+        _check_shared_runtime_root(home, common.find_dotfiles_root())
+    except ValueError:
+        return MaintenanceResult.NONE
+    cutoff = time.time() - 86_400
+    expired: list[Path] = []
+    try:
+        for child in root.iterdir():
+            with contextlib.suppress(FileNotFoundError):
+                if child.is_dir(follow_symlinks=False) and not child.is_junction() and child.stat().st_mtime < cutoff:
+                    expired.append(child)
+    except FileNotFoundError:
+        return MaintenanceResult.NONE
+    if not expired:
+        return MaintenanceResult.NONE
+    if any(
+        str(process.info.get("name") or "").lower().removesuffix(".exe") == "rustup"
+        for process in psutil.process_iter(["name"])
+    ):
+        return MaintenanceResult.DEFERRED
+
+    for child in expired:
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(child)
+    return MaintenanceResult.COMPLETED
+
+
 def clean_caches() -> tuple[MaintenanceResult, str]:
-    """uv以外の取得キャッシュを公式操作で整理し、1対象の失敗でも残りを続ける。"""
+    """uv以外の取得キャッシュとrustupの一時領域を整理し、1対象の失敗でも残りを続ける。"""
     failures: list[str] = []
     commands: list[tuple[str, list[str]]] = []
     mise = setup_mise.find_mise_binary()
@@ -576,11 +887,18 @@ def clean_caches() -> tuple[MaintenanceResult, str]:
             logger.info("prune: %sのキャッシュ整理を完了", name)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(f"{name}: {error}")
+    rustup = MaintenanceResult.NONE
+    try:
+        rustup = _clean_rustup_tmp()
+    except (OSError, ValueError) as error:
+        failures.append(f"rustup/tmp: {error}")
     if failures:
         detail = " / ".join(failures)
         logger.error("prune: キャッシュ整理に失敗: %s", detail)
         return MaintenanceResult.FAILED, detail
-    return (MaintenanceResult.COMPLETED if commands else MaintenanceResult.NONE), ""
+    if rustup is MaintenanceResult.DEFERRED:
+        return rustup, "rustupが使用中のため一時ディレクトリを保持"
+    return (MaintenanceResult.COMPLETED if commands else rustup), ""
 
 
 def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome.PostApplyOutcome:
@@ -588,6 +906,7 @@ def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome
     next_actions = dict.fromkeys(outcome.next_action for outcome in outcomes if outcome.next_action is not None)
     return post_apply_outcome.PostApplyOutcome(
         changed=any(outcome.changed for outcome in outcomes),
+        notices=tuple(notice for outcome in outcomes for notice in outcome.notices),
         deferred=any(outcome.deferred for outcome in outcomes),
         failure=" / ".join(failures) or None,
         next_action=" ".join(next_actions) or None,

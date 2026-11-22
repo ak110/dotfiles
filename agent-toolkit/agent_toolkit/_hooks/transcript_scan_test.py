@@ -49,7 +49,6 @@ class TestReadTranscriptEntriesCached:
         assert calls["read"] == 1
 
     def test_different_path_invalidates_cache(self, tmp_path: pathlib.Path) -> None:
-        """異なる`transcript_path`への呼び出しはキャッシュを入れ替えて再解析する。"""
         _transcript_scan._TRANSCRIPT_ENTRIES_CACHE.clear()  # pylint: disable=protected-access
         first_dir, second_dir = tmp_path / "a", tmp_path / "b"
         first_dir.mkdir()
@@ -99,7 +98,6 @@ class _ClockAndReads:
 
 @pytest.mark.usefixtures("real_end_turn_wait")
 def test_wait_for_end_turn_reads_unchanged_transcript_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """未変更の記録はpollを重ねても1回だけ読み、末尾にsidechainや不正JSONが続いても再変換しない。"""
     transcript = tmp_path / "unchanged.jsonl"
     transcript.write_text(_jsonl([_assistant("tool_use"), _assistant("end_turn", sidechain=True), "{broken"]), encoding="utf-8")
     counter = _ClockAndReads(monkeypatch, [])
@@ -111,7 +109,6 @@ def test_wait_for_end_turn_reads_unchanged_transcript_once(tmp_path: pathlib.Pat
 @pytest.mark.parametrize("change", ["append", "same-size", "replace", "shrink"])
 @pytest.mark.usefixtures("real_end_turn_wait")
 def test_wait_for_end_turn_rereads_after_change(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str) -> None:
-    """記録の追記・同サイズ更新・置換・縮小を観測した回は読み直し、end_turnの到着で戻る。"""
     transcript = tmp_path / "changed.jsonl"
     pending = (
         _jsonl([_assistant("tool_use"), _assistant("max_tokens")]) if change == "shrink" else _jsonl([_assistant("tool_use")])
@@ -123,7 +120,6 @@ def test_wait_for_end_turn_rereads_after_change(tmp_path: pathlib.Path, monkeypa
             with transcript.open("a", encoding="utf-8") as stream:
                 stream.write(_jsonl([_assistant("end_turn")]))
         elif change == "same-size":
-            # `tool_use`と`end_turn`は同じ長さのため、サイズを変えずに内容だけを更新する。
             transcript.write_text(pending.replace("tool_use", "end_turn"), encoding="utf-8")
             assert transcript.stat().st_size == len(pending)
         elif change == "replace":

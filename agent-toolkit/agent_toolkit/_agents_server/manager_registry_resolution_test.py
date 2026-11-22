@@ -29,7 +29,6 @@ async def test_show_reports_another_writer_for_running_registry_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿が実行中として保持する識別子は、別主体の実行中として案内する。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
         monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -44,7 +43,7 @@ async def test_show_reports_another_writer_for_running_registry_record(
         assert "may have restarted" not in message
         assert "another writer" in message
         assert "atk agents wait" in message
-        # 所有サーバーと照会したサーバーを区別し、自身の接続先を止めない案内を返す。
+
         assert "owner_server_instance=" in message
         assert f"queried_server_instance={session_registry.owner_server_instance()}" in message
         assert "自身のMCP接続先" in message
@@ -56,7 +55,6 @@ async def test_show_keeps_lost_session_diagnosis_without_registry_record(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """登録簿にレコードが無い識別子では従来の喪失の案内を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "5c9c2ec4-08f0-4a1e-9a02-9e8f0a4a4f21"
         monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
@@ -74,7 +72,6 @@ async def test_show_returns_terminal_session_restored_from_registry(
     tmp_path: pathlib.Path,
     owner: str | None,
 ) -> None:
-    """登録簿から復元できた終了sessionは通常の応答として返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "9f2a37f4-40f8-4d38-9c1b-1f6f9f52a1c3"
         monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", owner)
@@ -94,7 +91,6 @@ async def test_show_returns_terminal_session_restored_from_registry(
 async def test_show_does_not_attribute_terminal_snapshot_to_later_turn(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """別のturnの所有者を、退避済みの終了状態の所有者として返さない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionResumeState("old-turn", str(tmp_path), None, None, "codex", status="completed", turn_seq=1)
         manager.stopped_sessions[session.session_id] = session
@@ -116,7 +112,6 @@ async def test_other_manager_shows_saved_activity_and_lists_unknown_legacy_time(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """別Managerが復元したsessionの一覧・詳細は保存時刻を使い、旧記録を照会時刻で補わない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with _manager_with_fake("codex") as (owner, _):
         session = state.SessionState("saved-activity", str(tmp_path), engine="codex", publish_registry=True)
@@ -211,11 +206,6 @@ async def test_session_released_by_another_server_is_reported_as_released(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """別のagents_serverが解放したsessionの照会は、解放済みであることと理由・時刻を返す。
-
-    どちらの応答も継続不能の判定に使う`unknown session: <id>`で始め、再起動を案内しない。
-    記録が無い識別子とは文面が異なる。
-    """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "7f0c2b8e-5d1a-4e3b-9c6f-2a8d4e1b7c90"
     async with _manager_with_fake("codex") as (owner, _):
@@ -252,7 +242,6 @@ async def test_session_released_by_another_server_is_reported_as_released(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["send_message", "kill", "stop"])
 async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(operation: str) -> None:
-    """体系外の識別子をsession喪失と区別して公開操作から返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         with pytest.raises(ValueError) as exc_info:
             if operation == "send_message":
@@ -269,7 +258,6 @@ async def test_non_uuid_session_id_reports_identifier_scheme_mismatch(operation:
 
 @pytest.mark.asyncio
 async def test_identifier_resolution_precedes_scheme_classification(tmp_path: pathlib.Path) -> None:
-    """登録済み状態の解決後にだけ未解決識別子の体系を判定する。"""
     async with _manager_with_fake("codex") as (manager, _):
         registered = state.SessionState("agent-session", str(tmp_path), engine="codex")
         _complete(registered, message="登録済み")

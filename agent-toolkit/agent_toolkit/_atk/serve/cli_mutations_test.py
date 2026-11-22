@@ -1,5 +1,3 @@
-"""serveのcliに関するmutationsの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -22,7 +20,6 @@ from agent_toolkit._testing.serve_support import _disable_wi_git, _patch_comment
 async def test_transition_routes_forward_only_supported_explicit_states(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """明示状態の対象だけを遷移・削除し、省略時の解決と禁止状態の拒否を保つ。"""
     _disable_wi_git(monkeypatch)
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
@@ -60,7 +57,6 @@ async def test_answer_and_remove_apis_target_state_and_keep_legacy_resolution(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態指定の有無にかかわらず一意なfilenameへ作用し、processingの削除を保護する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -169,7 +165,6 @@ async def test_web_add_mutations_reject_null_target_repo(
 
 
 def test_user_comment_pure_update_preserves_frontmatter_and_previous_body() -> None:
-    """予約節の置換でfrontmatterと通常本文を保持し、再抽出できる。"""
     original = _session_review_awi("通常本文\n\n## 実装メモ\n\n既存の見出し本文\n\n## ユーザーコメント\n\n旧コメント\n")
 
     updated = user_comment.update_user_comment(original, "\n\n新しいコメント\n\n2行目\n\n")
@@ -185,7 +180,6 @@ async def test_user_comment_api_appends_and_replaces_inbox_and_hold_session_revi
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """専用APIがinboxとholdの対象本文へ追記し、同じ節だけを置換する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()

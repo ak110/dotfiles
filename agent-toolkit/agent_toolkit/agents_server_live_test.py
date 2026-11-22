@@ -72,8 +72,7 @@ BACKGROUND_RESUME_INPUTS: dict[str, LiveInput] = {
     ),
 }
 
-# 読取限定の探索起動へ渡す入力。新規起動と同じsessionへの継続の双方で既知のファイルを読ませる。
-# 読ませる内容は本文へ書かず、ファイルを読まなければ応答できない形にする。
+
 EXPLORE_READ_INPUT = LiveInput(
     "explore",
     (
@@ -129,7 +128,6 @@ asyncio.run(main())
 
 
 def _investigation_snapshot(repository: pathlib.Path) -> dict[str, Any]:
-    """入力集合の全バイトとGitの版・index・worktreeを比較可能な値へ写す。"""
     return {
         "files": {
             str(p.relative_to(repository)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -144,7 +142,6 @@ def _investigation_snapshot(repository: pathlib.Path) -> dict[str, Any]:
 
 
 def _investigation_events(session_id: str) -> tuple[list[str], list[dict[str, Any]]]:
-    """今回起動したsessionの実ツール記録を、各backendの既存の保存先から読む。"""
     record = record_paths.find_session_record(session_id)
     assert record is not None, f"sessionの実記録がない: {session_id}"
     rows = []
@@ -167,7 +164,6 @@ def _investigation_events(session_id: str) -> tuple[list[str], list[dict[str, An
 @pytest.mark.timeout(900)
 @pytest.mark.parametrize("engine", ["claude", "codex", "agy"])
 async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ調査を全backendの新規・同session再開で実行し、実ツール結果と対象不変を確認する。"""
     text = "P4_READ_ALPHA\n日本語の本文 " + uuid.uuid4().hex + "\nP4_READ_BETA\n"
     repository = init_repository(
         tmp_path / "target",
@@ -300,7 +296,6 @@ async def test_live_launch_waits_for_automatic_resume(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bashを公開する起動ツール`start`のmodeが、再開指示なしでバックグラウンドタスク完了後の結果を返す。"""
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         cwd = str(pathlib.Path(__file__).parents[2])
@@ -341,7 +336,6 @@ async def test_live_explore_reads_file_and_continues_same_session(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """探索起動が既知のファイルを読んで内容を返し、同じsessionへの継続でも別のファイルを読んで返す。"""
     async with server_manager.AgentsServerManager() as manager:
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         # 作業ディレクトリの外の読取は権限確認を要するため、読ませるファイルを置く一時ディレクトリをcwdにする。
@@ -371,9 +365,6 @@ async def test_live_explore_reads_file_and_continues_same_session(
         assert result["status"] == "completed", result
         assert result["agent_message"].strip() == "EXPLORE_CONTINUED_CONTENT", result
         assert session.turn_seq == 2
-
-    # 孫sessionの終了による自動再開を確かめる入力。MCPの起動ツールと`atk agents wait`の実行を要求するため、
-    # 組込ツールとMCPを制限しない通常起動へ渡す。
 
 
 GRANDCHILD_INPUT = LiveInput(
@@ -438,7 +429,7 @@ _SWITCH_TASK_MARKER = "PROVIDER_SWITCH_TASK"
 _PRE_SWITCH_RESPONSE = "PRE_SWITCH_RESPONSE"
 _ENCRYPTED_REASONING = "PSEUDO_ENCRYPTED_REASONING"
 _TOOL_CALL_ID = "call_provider_switch"
-# コマンドの実行結果にだけ現れる文字列。引数の文字列と区別するため、実行時に連結させる。
+
 _TOOL_OUTPUT = "PROVIDER_SWITCH_TOOL_OUTPUT"
 _TOOL_COMMAND = "printf 'PROVIDER_SWITCH_%s' TOOL_OUTPUT"
 _SWITCH_COMPLETED = "PROVIDER_SWITCH_COMPLETED"
@@ -605,7 +596,7 @@ stream_max_retries = 0
             for name in (_PRIMARY_PROVIDER, _FALLBACK_PROVIDER)
         )
         (codex_home / "config.toml").write_text(providers, encoding="utf-8")
-        # miseのshimがホストの設定を読めるよう、HOME・設定ディレクトリ・PATHをまとめて戻す。
+
         isolation.restore_host_environment(monkeypatch)
         monkeypatch.setenv("CODEX_HOME", str(codex_home))
         monkeypatch.setenv(_PSEUDO_API_KEY_ENV, "pseudo-api-key")
@@ -634,7 +625,7 @@ stream_max_retries = 0
 
     assert result["status"] == "completed", result
     assert result["agent_message"].strip() == _SWITCH_COMPLETED, result
-    # 主接続先はツール実行結果を含む要求で上限に達した。
+
     assert primary, api.requests
     assert _has_item(primary[-1], "function_call_output"), primary[-1]
     assert fallback, api.requests
@@ -649,5 +640,5 @@ stream_max_retries = 0
     outputs = [item for item in items if item.get("type") == "function_call_output" and item.get("call_id") == _TOOL_CALL_ID]
     assert outputs, items
     assert _TOOL_OUTPUT in json.dumps(outputs[0].get("output"), ensure_ascii=False), outputs
-    # 続行指示は切替前の履歴の後に置かれた最後のuser入力である。
+
     assert codex_providers.CONTINUE_PROMPT in user_texts[-1], user_texts

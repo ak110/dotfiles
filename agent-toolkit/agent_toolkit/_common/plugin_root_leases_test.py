@@ -1,11 +1,10 @@
-"""共有leaseの使用登録と生存判定を、PID再利用・記録破損・取得拒否の条件で検証する。"""
-
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import pathlib
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -22,7 +21,6 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
     monkeypatch: pytest.MonkeyPatch,
     observation: str,
 ) -> None:
-    """生存中と取得不能の使用記録を保持し、PID再利用だけを失効として回収する。"""
     area = tmp_path / "plugin-root"
     area.mkdir()
     with subject.plugin_root_lock(area):
@@ -53,13 +51,15 @@ def test_plugin_root_in_use_distinguishes_live_stale_and_unknown(
 @pytest.mark.parametrize("observation", ["direct", "unattributed", "denied", "vanished", "other-user", "zombie", "dead"])
 @pytest.mark.parametrize("shared", [False, True])
 def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monkeypatch, observation, shared):
-    """旧形式も共有形式も、直接参照を保護し、無帰属のプロセスへは帰属させない。"""
     area = tmp_path / ("agents-server-plugin-root-shared-current" if shared else "agents-server-plugin-root-legacy")
     area.mkdir()
     own = subject.psutil.Process()
 
     class Consumer:
         pid = 123
+
+        def name(self):
+            return "python"
 
         def create_time(self):
             return 1.0
@@ -91,6 +91,54 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monk
     assert subject.plugin_root_in_use(area) is (observation in {"direct", "denied"})
 
 
+@pytest.mark.parametrize(
+    ("process_name", "parent_pid", "system_name", "protected"),
+    [
+        ("Secure System", 4, "System", False),
+        ("Secure System", 9, "System", True),
+        ("client.exe", 4, "System", True),
+        ("Secure System", 4, "other", True),
+    ],
+)
+def test_windows_only_ignores_access_denied_for_verified_secure_system(
+    tmp_path, monkeypatch, process_name, parent_pid, system_name, protected
+):
+    area = tmp_path / "agents-server-plugin-root-held"
+    area.mkdir()
+    own = subject.psutil.Process()
+
+    class Process:
+        pid = 123
+
+        def name(self):
+            return process_name
+
+        def ppid(self):
+            return parent_pid
+
+        def cmdline(self):
+            raise subject.psutil.AccessDenied(self.pid)
+
+        def username(self):
+            raise subject.psutil.AccessDenied(self.pid)
+
+    class KernelSystem:
+        def name(self):
+            return system_name
+
+        def ppid(self):
+            return 0
+
+    process = Process()
+    kernel = KernelSystem()
+    monkeypatch.setattr(subject, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(subject.psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(
+        subject.psutil, "Process", lambda pid=None: own if pid is None else {4: kernel, process.pid: process}.get(pid, own)
+    )
+    assert subject.plugin_root_in_use(area) is protected
+
+
 def test_nonblocking_lock_reports_conflict(tmp_path: pathlib.Path) -> None:
     """非待機の取得は保持中のロックを待たずに失敗を返し、解放後は非待機でも取得できる。"""
     area = tmp_path / "plugin-root"
@@ -102,7 +150,6 @@ def test_nonblocking_lock_reports_conflict(tmp_path: pathlib.Path) -> None:
 
 
 def test_legacy_area_not_attributed_to_unreferencing_mcp(tmp_path, monkeypatch):
-    """使用の記録も直接参照もないMCPは旧形式の保持根拠にならない。"""
     area = tmp_path / "agents-server-plugin-root-legacy"
     area.mkdir()
     process = subject.psutil.Process()
@@ -118,12 +165,11 @@ def test_legacy_area_judgement_reads_current_generation_despite_cached_previous_
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """列挙キャッシュに以前の世代の起動時刻が残っていても、直接参照の保持根拠を現在の起動時刻で記録する。"""
     area = tmp_path / "agents-server-plugin-root-legacy"
     area.mkdir()
     process = subject.psutil.Process()
     created_at = process.create_time()
-    # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+
     stale = subject.psutil.Process(process.pid)
     monkeypatch.setattr(stale, "_create_time", created_at - 10000)
     monkeypatch.setattr(stale, "_ident", (process.pid, created_at - 10000))
@@ -142,7 +188,6 @@ def test_legacy_area_judgement_reads_current_generation_despite_cached_previous_
     assert basis["created_at"] == created_at
     assert subject.usage_basis_is_current(basis)
 
-    # 1回の掃引で共有する列挙も、現在の世代のProcessを保持する。
     with subject.reuse_process_observation():
         assert subject.plugin_root_in_use(area)
         assert subject.plugin_root_in_use(area)
@@ -236,14 +281,14 @@ def test_sweep_keeps_locks_while_legacy_server_may_hold_them(tmp_path):
     directory = state_paths.state_dir() / "plugin-root-leases"
     directory.mkdir(parents=True, exist_ok=True)
     own = subject.psutil.Process()
-    # 変更前の版のサーバーが起動時に書く対応能力の記録。生存中の自プロセスを変更前の版とみなす。
+
     (directory / f"capability-{own.pid}.json").write_text(
         json.dumps({"pid": own.pid, "created_at": own.create_time(), "lease_capable": True}), encoding="utf-8"
     )
     area = tmp_path / "area"
     key = hashlib.sha256(os.fsencode(os.path.normcase(os.path.abspath(area)))).hexdigest()
     path = directory / f"{key}.lock"
-    # 変更前の版の取得手順（開いてから取得し、開いたファイルが同じパスに残るかを確かめない）を再現する。
+
     with path.open("a+", encoding="utf-8") as legacy:
         subject.sweep_plugin_root_records()
         assert path.exists()

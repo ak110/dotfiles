@@ -30,7 +30,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def test_public_tools_expose_single_start_with_modes() -> None:
-    """公開ツールの集合と、modeごとのstart入力を検証する。"""
     assert set(mcp_tools.mcp._tool_manager._tools) == {
         "start",
         "send_message",
@@ -57,6 +56,8 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "model_type",
         "handoff_from",
         "whole_contract_path",
+        "start_observation",
+        "startup_profile",
     }
     assert {"engine", "model", "effort"}.isdisjoint(properties)
     assert tuple(properties["mode"]["anyOf"][0]["enum"]) == tool_names.START_MODES
@@ -94,7 +95,6 @@ async def test_public_kill_marks_wait_statement_without_review_receipt(monkeypat
 
 @pytest.mark.asyncio
 async def test_public_kill_guides_recovery_of_unobserved_children(monkeypatch: pytest.MonkeyPatch) -> None:
-    """killで通常本文を回収しても、子の回収操作はwaitの場合と同じにする。"""
     result = {
         "status": "completed",
         "label": "scope-review",
@@ -232,7 +232,6 @@ async def test_public_start_variants_and_send_message_return_minimal_responses(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """公開ラッパーは後続操作に必要な最小項目だけを返す。"""
     response = {
         "session_id": "session",
         "status": "running",
@@ -307,7 +306,6 @@ async def test_success_response_key_sets_for_all_tools(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """8ツールの成功応答を消費側が使うキー集合へ固定する。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -366,11 +364,6 @@ async def test_success_response_key_sets_for_all_tools(
 
 @pytest.mark.asyncio
 async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """MCPツール`send_message`の応答は、同じサーバーの`list`と同じ`root_session_id`を返す。
-
-    再起動した会話の最初のMCP操作が`send_message`でも、PostToolUseがこの値で別名索引を書くため、
-    欠けると`atk agents wait`が旧ルートを読んで結果を受け取れない。
-    """
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -391,7 +384,6 @@ async def test_send_message_tool_returns_same_root_as_list(monkeypatch: pytest.M
 
 @pytest.mark.asyncio
 async def test_list_returns_root_session_id_when_session_list_is_empty(tmp_path: pathlib.Path) -> None:
-    """空一覧でもPostToolUseがルートsessionの索引を復旧できる値を返す。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -438,7 +430,6 @@ async def test_send_message_response_adds_next_action_for_unconfirmed_reply(
     expects_next_action: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """新しいturnを開始できなかったか確定できなかった配送は、`atk agents wait`での確認を`next_action`で示す。"""
     manager = SimpleNamespace(send_message=AsyncMock(return_value={"delivery": delivery, "label": "担当"}))
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
 

@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_warn_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ def test_warn_excludes_hook_marker_in_command_output(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """コマンド出力に現れたフック通知標識を実行時のフック警告として返さない。"""
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 文書中の例示"
     transcript = _write_transcript(
         tmp_path,
@@ -40,7 +37,6 @@ def test_warn_keeps_hook_marker_in_hook_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """フック実行の記録に由来する通知標識を実行時警告として返す。"""
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 実行時の警告"
     transcript = _write_transcript(
         tmp_path,
@@ -59,7 +55,9 @@ def test_warn_keeps_hook_marker_in_hook_record(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
-    assert read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": notice}]
+    assert read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": notice, "source": "pretooluse", "full_text": "実行時の警告"}
+    ]
 
 
 @pytest.mark.parametrize("element", ["agent-toolkit-hook-message", "agent-toolkit-auto-inserted"])
@@ -73,7 +71,6 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
     element: str,
     attributes: str,
 ) -> None:
-    """XML境界のwarn通知を実行時警告として返す。"""
     notice = f"<{element} {attributes}>\n実行時の警告\n</{element}>"
     transcript = _write_transcript(
         tmp_path,
@@ -91,14 +88,15 @@ def test_warn_keeps_xml_hook_marker_in_hook_record(
 
     assert evidence.main([str(transcript), "--warn"]) == 0
 
-    assert read_jsonl(capsys) == [{"kind": "warning", "line": 1, "text": "実行時の警告"}]
+    assert read_jsonl(capsys) == [
+        {"kind": "warning", "line": 1, "text": "実行時の警告", "source": "pretooluse", "full_text": "実行時の警告"}
+    ]
 
 
 def test_warn_keeps_command_output_warning(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """フック通知標識を持たないコマンド出力の警告は検出対象に保つ。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -167,7 +165,6 @@ def test_warn_excludes_absence_statement(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """問題の不在を述べる警告本文を除き、実在する警告は保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -245,7 +242,6 @@ def test_warn_mode_reports_matching_entries_with_line_and_tool(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告に一致したエントリだけを、行番号と手掛かりのツール識別子付きで照会する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -282,7 +278,6 @@ def test_warn_mode_excludes_plain_warning_lines_from_external_content_tools(
     capsys: pytest.CaptureFixture[str],
     tool_name: str,
 ) -> None:
-    """外部検索および文書取得の本文にある警告語を実行時警告へ数えない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -312,7 +307,6 @@ def test_warn_mode_keeps_structured_warning_from_external_tool(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """外部ツールも構造化して返した警告は実行時警告として保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -372,7 +366,6 @@ def test_warn_mode_excludes_plain_warning_lines_from_unmatched_results(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """呼び出し名を対応付けられない結果本文を実行時警告へ数えない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -411,7 +404,6 @@ def test_warn_mode_reports_absence_when_no_entry_matches(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """一致が無い場合も、事実を1行で照会結果として返す。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
     assert evidence.main([str(transcript), "--warn"]) == 0

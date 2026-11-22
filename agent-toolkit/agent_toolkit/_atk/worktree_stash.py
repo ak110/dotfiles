@@ -21,7 +21,6 @@ _QUEUE_REPOSITORY_NEXT_ACTION = (
 
 
 def _run_git(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """指定worktreeでgitを実行する。"""
     return _git_command.run([*args], cwd, capture_output=True, text=True, check=False)
 
 
@@ -32,7 +31,6 @@ def _git_output(args: list[str], cwd: pathlib.Path) -> str | None:
 
 
 def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
-    """worktreeからGit共通ディレクトリを絶対パスへ解決する。"""
     result = _run_git(["rev-parse", "--git-common-dir"], cwd)
     if result.returncode != 0 or not result.stdout.strip():
         _outcome.report_failure(
@@ -45,7 +43,6 @@ def _common_dir(cwd: pathlib.Path) -> pathlib.Path | None:
 
 
 def _is_queue_repository(worktree: pathlib.Path, private_notes: pathlib.Path | None) -> bool:
-    """private-notesでは退避を拒否し、並行するキュー操作の喪失を防ぐ。"""
     if private_notes is None or not private_notes.exists():
         return False
     common_dirs: list[pathlib.Path] = []
@@ -76,12 +73,10 @@ def _ref_exists(ref: str, cwd: pathlib.Path) -> bool | None:
 
 
 def _stash_oid(cwd: pathlib.Path) -> str | None:
-    """`refs/stash`先頭のOIDを返す。未作成時はNoneを返す。"""
     return _git_output(["rev-parse", "--verify", "refs/stash"], cwd)
 
 
 def _protection_ref(ref: str, cwd: pathlib.Path, common_dir: pathlib.Path) -> str | None:
-    """Gitのworktree識別子とlabelから、全worktreeのGCが参照する共有refを得る。"""
     value = _git_output(["rev-parse", "--absolute-git-dir"], cwd)
     if value is None:
         _outcome.report_failure(f"worktree識別子を解決できない: {ref}", next_action="Gitの状態を確認して再実行する")
@@ -146,7 +141,6 @@ def _report_failure(
 
 
 def _worktree_ref(label: str, cwd: pathlib.Path) -> str | None:
-    """有効な退避ラベルからworktree固有refを返す。"""
     ref = f"refs/worktree/{label}"
     check = _run_git(["check-ref-format", ref], cwd)
     if check.returncode == 0:
@@ -161,7 +155,6 @@ def save(
     cwd: pathlib.Path | None = None,
     private_notes: pathlib.Path | None = None,
 ) -> int:
-    """現在worktreeの変更を`refs/worktree/<label>`へ退避する。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if _is_queue_repository(worktree, private_notes):
         _outcome.report_failure(_QUEUE_REPOSITORY_ERROR, next_action=_QUEUE_REPOSITORY_NEXT_ACTION)
@@ -261,7 +254,6 @@ def save(
 
 
 def _drop_ref(identifier: str, shared_ref: str, cwd: pathlib.Path) -> int:
-    """固有refを先に削除し、共有保護だけが残る状態も同じ識別子で回収する。"""
     refs: list[tuple[str, str]] = []
     for ref in (identifier, shared_ref):
         exists = _ref_exists(ref, cwd)
@@ -355,7 +347,6 @@ def drop(
 
 
 def build_parser(parser: argparse.ArgumentParser, *, command_dest: str = "command") -> None:
-    """worktree退避サブコマンドを登録する。"""
     subparsers = _atk_help.add_subcommands(parser, dest=command_dest)
     save_parser = _atk_help.add_command(subparsers, "save", **_atk_help.HELP["atk worktree-stash save"])
     save_parser.add_argument("--label", required=True, help="退避先refのラベル")
@@ -369,7 +360,6 @@ def dispatch(
     command_dest: str = "command",
     private_notes: pathlib.Path | None = None,
 ) -> int:
-    """解析済み引数に対応する退避操作を実行する。"""
     command = getattr(args, command_dest)
     if command == "save":
         return save(args.label, private_notes=private_notes)
@@ -379,7 +369,6 @@ def dispatch(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI引数を解釈してworktreeの変更を退避する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     build_parser(parser)
     return dispatch(parser.parse_args(argv))

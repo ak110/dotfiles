@@ -1,8 +1,8 @@
 """post-applyステップの構造化結果を定義する。"""
 
 from dataclasses import dataclass
+from pathlib import Path
 
-# 工程固有の対処がなく、実行の最後に親がまとめて案内する場合。
 CHECK_UPDATE_LOG = "失敗理由を確認し、`update-dotfiles`を再実行する"
 
 
@@ -12,41 +12,22 @@ class PostApplyNotice:
 
     message: str
     command: str | None = None
+    log: Path | None = None
+    warning: bool = True
 
     def render(self) -> str:
         """本文にないコマンドだけを次の行へ字下げして示す。"""
+        message = self.message if self.log is None else f"{self.message}詳細: {self.log}"
         if self.command is None or f"`{self.command}`" in self.message:
-            return self.message
-        return f"{self.message}\n    {self.command}"
+            return message
+        return f"{message}\n    {self.command}"
 
 
 @dataclass(frozen=True)
 class PostApplyOutcome:
-    """post-applyステップの結果。全ステップの`run`はこの型だけを返す。
-
-    `failure`が`None`でなければ「失敗」、`None`なら`changed`の真偽で「更新」か「スキップ」と数える。
-    post-applyは失敗が1件でもあれば終了コード1、無ければ0で終わる。
-    失敗には理由と次の操作を指定し、どちらかを欠く結果は作成時に拒否する。
-
-    失敗の分類は、失敗した操作の種類で判定する。
-    1つのステップが取得と設定の書き換えの両方を行う場合は、失敗した操作ごとに分類する。
-
-    - 外部のツール、plugin、バイナリ、依存の取得と導入（ネットワーク越しの取得、
-      パッケージマネージャーによる導入と更新、uv環境の構築）ができない場合は、警告を出力して「スキップ」を返す。
-      ネットワークの不達などdotfilesユーザーが対処できない理由で毎回の終了コードを1にしないためである。
-    - 設定ファイル、環境変数、レジストリ、リンク、systemd unit、配布先のファイルの書き換えと撤去が失敗した場合は、
-      `failure`へ内容を入れて「失敗」を返すか、例外を送出する。配布した設定が反映されない状態を、post-applyが終了コードでdotfilesユーザーへ伝えるためである。
-    - ステップが使うツールが無いために処理できない場合（先行ステップの取得・導入がスキップされた場合を含む）は
-      「スキップ」とする。
-    - 予期しない例外は、`post_apply`が「失敗」と数える。
-
-    `deferred`は、必要な更新を稼働中の利用を守るために延期したことを示す（数え方は「スキップ」と同じ）。
-    延期した工程は、利用終了後の手動再実行を案内する。
-    """
-
     changed: bool = False
     notices: tuple[PostApplyNotice, ...] = ()
-    # 完了時に標準出力へ表示する推奨コマンド。
+
     recommendations: tuple[str, ...] = ()
     failure: str | None = None
     next_action: str | None = None

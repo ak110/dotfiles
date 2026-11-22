@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._atk import run_skill, session_record_format, session_records
+from agent_toolkit._atk import run_skill_execution, session_record_format, session_records
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._atk.wi.constants import PROCESS_LOOP_GOAL_BODY
 from agent_toolkit._common import skill_modes
@@ -57,7 +57,6 @@ def _codex_message_record(*, role: str, item_type: str, text: str) -> dict[str, 
 
 
 def test_display_distinguishes_plugin_origin_from_human() -> None:
-    """同形のコマンドでもplugin起点だけをinjectedの表示イベントへ分類する。"""
     records = [
         {**_claude_user_text_record("/compact 指示"), "origin": {"kind": "plugin", "name": "別プラグイン"}},
         {**_claude_user_text_record("/compact 指示"), "origin": {"kind": "human"}},
@@ -97,7 +96,6 @@ class TestParsedRecords:
     @pytest.mark.parametrize("ending", ["\n", "\r\n"])
     @pytest.mark.parametrize("trailing", ["", "\n"])
     def test_parse_records_uses_lf_boundaries(self, separator: str, ending: str, trailing: str) -> None:
-        """Unicode区切り入りの正常2件と空行を読み、破損JSONだけを1件と数える。"""
         records = [_claude_user_text_record(f"前{separator}後"), _claude_assistant_text_record("回答")]
         text = ending.join(["", *(json.dumps(record, ensure_ascii=False) for record in records), ""])
         assert session_record_format.parse_records(text + trailing) == (records, 0)
@@ -166,7 +164,6 @@ class TestInvokedProcessWi:
     @pytest.mark.parametrize("engine", ["codex", "agy"])
     @pytest.mark.parametrize("role", ["user", "assistant"])
     def test_process_loop_goal_is_detected_only_as_input(self, tmp_path: pathlib.Path, engine: str, role: str) -> None:
-        """常駐が実際に渡す新Goalを検出し、モデル自身の発言を起動の根拠にしない。"""
         text = "# AGENTS.md instructions\n" + _pl_session.build_process_loop_prompt()
         record = (
             _codex_message_record(role=role, item_type="input_text", text=text)
@@ -194,7 +191,7 @@ class TestInvokedProcessWi:
         """入口`atk-mode`へ移した後の目的文と、移す前の常駐の目的文を、Claude Codeの記録でも起動として判別する。"""
         text = {
             "process-loop": _pl_session.build_process_loop_prompt(),
-            "run-skill": run_skill.build_goal(skill_modes.PROCESS_WI, "single-lane"),
+            "run-skill": run_skill_execution.build_goal(skill_modes.PROCESS_WI, "single-lane"),
             "legacy-loop": "/goal " + PROCESS_LOOP_GOAL_BODY,
         }[prompt]
         record = (
@@ -217,7 +214,6 @@ class TestInvokedProcessWi:
         ],
     )
     def test_claude_entry_skill_launch_is_detected(self, tmp_path: pathlib.Path, tool_input: dict, expected: bool) -> None:
-        """入口の`Skill`起動は確認文言に引数を含まないため、起動の`tool_use`の引数から作業を読む。"""
         record = {
             "type": "assistant",
             "message": {
@@ -231,7 +227,7 @@ class TestInvokedProcessWi:
 
     def test_codex_run_skill_goal_is_detected(self, tmp_path: pathlib.Path) -> None:
         """`atk run-skill`が渡す目的文の作業の起動の文を、Codexの記録でも起動として判別する。"""
-        text = "# AGENTS.md instructions\n" + run_skill.build_goal(skill_modes.PROCESS_WI, None)
+        text = "# AGENTS.md instructions\n" + run_skill_execution.build_goal(skill_modes.PROCESS_WI, None)
         path = tmp_path / "records.jsonl"
         _write_record(path, [_codex_message_record(role="user", item_type="input_text", text=text)])
         assert session_records.invoked_process_wi(path, "codex") is True

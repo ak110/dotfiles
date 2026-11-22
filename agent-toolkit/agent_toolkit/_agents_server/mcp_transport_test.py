@@ -33,9 +33,10 @@ from agent_toolkit._agents_server import (
     logging_config,
     mcp_tools,
     mcp_transport,
+    service_transport,
     session_errors,
 )
-from agent_toolkit._common import process_identity, process_tree, state_paths
+from agent_toolkit._common import process_identity, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing import late_descendant
 from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
@@ -46,7 +47,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @contextlib.asynccontextmanager
 async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]) -> AsyncGenerator[ClientSession]:
-    """リポジトリの仮想環境のPythonでagents_serverを起動し、専用の状態領域へ分離する。"""
     plugin_root = pathlib.Path(__file__).resolve().parents[2]
     env = {
         key: value
@@ -54,7 +54,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
         if key not in {"AGENT_TOOLKIT_OWNER_SESSION", "CLAUDE_CODE_SESSION_ID", "VIRTUAL_ENV"}
     }
     env.update(XDG_STATE_HOME=str(tmp_path), LOCALAPPDATA=str(tmp_path))
-    # 分離HOMEではmiseのshimが親のtrust状態を読めないため、uv本体を選ぶ。
+
     search_path = os.pathsep.join(
         directory for directory in os.get_exec_path(host_environment) if pathlib.Path(directory).name != "shims"
     )
@@ -67,6 +67,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
     service: psutil.Process | None = None
     supervisor: psutil.Process | None = None
     identity: process_identity.ProcessIdentity | None = None
+    registry_dir = service_transport.namespace(runtime_environment.CallerContext(env, tmp_path))
     try:
         with anyio.fail_after(20):
             async with stdio_client(params) as streams:
@@ -74,7 +75,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                 async with ClientSession(read, write) as client:
                     initialized = await client.initialize()
                     assert initialized.protocol_version == "2025-11-25"
-                    [path] = list(tmp_path.rglob("generations.json"))
+                    path = registry_dir / "generations.json"
                     registry = json.loads(path.read_text(encoding="utf-8"))
                     target = registry["generations"][registry["current"]]
                     service = psutil.Process(int(target["process"].split(":", 1)[0]))
@@ -85,7 +86,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
                     yield client
     except BaseException:
         # CIの一時領域は終了後に消えるため、起動失敗の一次診断を試験の保存出力へ含める。
-        for diagnostic in (tmp_path / "agent-toolkit/services/agents-server").glob("*.stderr.log"):
+        for diagnostic in registry_dir.glob("*.stderr.log"):
             print(f"{diagnostic}:\n{diagnostic.read_text(encoding='utf-8', errors='replace')}", file=sys.stderr)
         raise
     finally:
@@ -119,7 +120,6 @@ _EXPECTED_TOOLS = {
     2.5, reason="準備済みruntimeで実MCPのschemaを取得し、サービス・共有リスナーの回収まで確認する（Linux CI CPU合計1.084秒）。"
 )
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """公開stdioのschemaとinitialize診断を取得し、明示的なservice回収でclose完了を記録する。"""
     async with _stdio_client(tmp_path, launcher_environment) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
         assert set(tools) == _EXPECTED_TOOLS
@@ -154,7 +154,6 @@ async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, launche
     ),
 )
 async def test_stdio_tool_results(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """SDK経由の接続で、成功時は構造化された結果を返し、呼び出し側が修正できる入力の不備はエラーとして返す。"""
     async with _stdio_client(tmp_path, launcher_environment) as client:
         result = await client.call_tool("list", {})
         assert not result.is_error
@@ -169,7 +168,6 @@ async def test_stdio_tool_results(tmp_path: pathlib.Path, launcher_environment: 
 
 @pytest.mark.asyncio
 async def test_registered_tool_processing_exception(monkeypatch: pytest.MonkeyPatch) -> None:
-    """共有管理サービスが振り分けたツール呼出しでも、処理の例外は理由と次の操作を持つエラー結果として返る。"""
 
     def fail_list(**_kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("injected processing failure")
@@ -293,13 +291,11 @@ _LAUNCH_TIMEOUT = 60.0
 
 @pytest.fixture(scope="session", name="launcher_runtime")
 def _launcher_runtime(tmp_path_factory: pytest.TempPathFactory) -> pathlib.Path:
-    """同じworker内で依存環境を共有し、試験ごとの複製・削除を避ける。"""
     return tmp_path_factory.mktemp("launcher-runtime")
 
 
 @pytest.fixture(name="launcher_environment")
 def _launcher_environment(launcher_runtime: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> dict[str, str]:
-    """依存だけを共有し、各試験が指定するサービスと状態領域は分離する。"""
     environment = host_environ()
     environment["AGENT_TOOLKIT_RUNTIME_DATA"] = str(launcher_runtime)
     environment.pop("UV_FROZEN", None)
@@ -308,8 +304,6 @@ def _launcher_environment(launcher_runtime: pathlib.Path, host_environ: Callable
 
 
 class _LaunchedServer:
-    """起動ランチャーまたは変更前の起動形でagents_serverを起動し、JSON-RPCを1行ずつ送受信する。"""
-
     def __init__(
         self,
         tmp_path: pathlib.Path,
@@ -344,7 +338,7 @@ class _LaunchedServer:
         self.state_dir = tmp_path / "agent-toolkit"
         self._state_base = tmp_path
         self.temporary = tmp_path / "tmp"
-        # テストを実行する端末のCtrl-Cが子へ届かないよう、独立したセッションで起動する。
+
         self._owner = contextlib.ExitStack()
         self._closed = False
         self._services: list[tuple[psutil.Process, process_identity.ProcessIdentity, list[str]]] = []
@@ -378,7 +372,6 @@ class _LaunchedServer:
         self.close()
 
     def close(self) -> None:
-        """子の停止、開始済みreaderのjoin、全パイプのcloseを全件実行する。"""
         if self._closed:
             return
         self._closed = True
@@ -392,7 +385,7 @@ class _LaunchedServer:
             self._owner.close()
             if not self._services:
                 _stop_mcp_services(self._state_base)
-            # 診断を書くsupervisorを残し、管理本体の終了を先に確定する。
+
             for process, identity, arguments in self._services:
                 try:
                     if not process.is_running() or process.status() in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
@@ -402,7 +395,6 @@ class _LaunchedServer:
                         continue
                     command = process.cmdline()
                     if not command:
-                        # 終了処理中のプロセスは、メモリ解放後からzombie化までの間もcmdlineが空になる。終了の完了を待つ。
                         assert not process_tree.wait_until_released([process], timeout=_LAUNCH_TIMEOUT)
                         continue
                     assert command == arguments
@@ -446,7 +438,7 @@ class _LaunchedServer:
         )
         assert "result" in response
         self.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-        # boundはschema接続ではなく、会話Managerが状態の所有者になった診断である。
+
         listed = self.request(10, "tools/call", {"name": "list", "arguments": {}})
         assert "result" in listed and not listed["result"].get("isError", False)
         [path] = list(self.state_dir.rglob("generations.json"))
@@ -461,19 +453,16 @@ class _LaunchedServer:
             self._services.append((member, process_identity.ProcessIdentity.capture(member), arguments))
 
     def service_process(self) -> psutil.Process:
-        """initialize時に隔離世代から特定した管理本体を返す。"""
         process, identity, arguments = self._services[0]
         assert identity.matches(process) and process.cmdline() == arguments
         return process
 
     def supervisor_process(self) -> psutil.Process:
-        """管理本体の専用supervisorを返す。"""
         process, identity, arguments = self._services[1]
         assert identity.matches(process) and process.cmdline() == arguments
         return process
 
     def wait(self) -> int:
-        """終了を待ち、読取threadを回収してから全パイプを閉じる。"""
         returncode = self.process.wait(timeout=_LAUNCH_TIMEOUT)
         self.close()
         return returncode
@@ -501,7 +490,6 @@ class _LaunchedServer:
     ),
 )
 def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """EOFは転送だけを終了し、管理本体の明示回収で正常終了・supervisor診断とtools/listを保つ。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         tools = server.request(2, "tools/list", {})["result"]["tools"]
@@ -538,8 +526,7 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_envi
     reason=("実launcherの依存確認をwarmupと確認の2起動で比較し、両起動の資源回収まで検証する（Linux CI CPU合計最大0.852秒）。"),
 )
 def test_launcher_check_dependencies_exits_silently(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """起動単位を持たない正常終了は、診断ファイルの所在を受け取れなかった旨を標準エラーへ出力しない。"""
-    # 依存準備を済ませた通常起動は、初回と再実行の両方で終了0と静かな終了を保つ。
+
     with _LaunchedServer(tmp_path / "warmup", launcher_environment, arguments=("--check-dependencies",)) as warmup:
         assert warmup.wait() == 0, warmup.stderr
         with _LaunchedServer(tmp_path, launcher_environment, arguments=("--check-dependencies",)) as server:
@@ -561,11 +548,6 @@ def test_launcher_preserves_signal_exit_status(
     signum: signal.Signals,
     launcher_environment: dict[str, str],
 ) -> None:
-    """ランチャーが受けたシグナルを記録し、変更前の起動形と同じ終了状態を呼出元へ返す。
-
-    MCPホストと同じく、シグナルは起動したプロセスのpidへ送る（uvもpid宛てのSIGINT・SIGTERMを子へ転送する）。
-    シグナルは転送側だけを終了させ、共有管理本体の寿命を変えない。
-    """
 
     def deliver(launched: _LaunchedServer) -> None:
         launched.process.send_signal(signum)
@@ -596,7 +578,6 @@ def test_launcher_preserves_signal_exit_status(
     reason=("実launcher/MCPのserverをSIGKILLし、終了ログとreader回収を検証する（Linux CI CPU合計最大1.339秒）。"),
 )
 def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """サーバーだけが記録できずに終わった場合も、ランチャーが終了状態と標準エラー末尾を記録する。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         server.service_process().kill()
@@ -618,12 +599,10 @@ def test_launcher_records_server_kill(tmp_path: pathlib.Path, launcher_environme
     reason=("実launcherとMCPを起動しSIGKILL後の終了記録と子孫回収を確認する境界（Linux CI CPU合計最大0.926秒）。"),
 )
 def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
-    """ランチャーとサーバーがともに記録できずに終わった診断は`incomplete`として返し、終了状態を補わない。"""
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         server_process = server.service_process()
-        # ランチャーの死亡を先に確定し、サーバーの終了を観測する主体を残さない。
-        # サーバーが標準出力を保持するため、readerの回収は両方を止めた後に行う。
+
         supervisor = server.supervisor_process()
         supervisor.kill()
         assert not process_tree.wait_until_released([supervisor], timeout=5)
@@ -631,7 +610,7 @@ def test_launcher_and_server_kill_is_incomplete(tmp_path: pathlib.Path, launcher
         assert server.process.stdin is not None
         server.process.stdin.close()
         server.wait()
-        # 孤児の回収時機はPID 1に依存する。終了済みzombieは記録を書けず、PIDが残っていても停止済みである。
+
         assert not process_tree.wait_until_released([server_process], timeout=_LAUNCH_TIMEOUT)
 
         names = {event["event"] for event in server.events()}

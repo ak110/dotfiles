@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: metadataのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -25,7 +24,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 def test_flat_add_operation_is_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開の`add_entries`が生成したファイル名を返し、frontmatter付きファイルを書き込む。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -93,7 +91,6 @@ def test_cli_add_does_not_output_body_verification_details(
     capsys: pytest.CaptureFixture[str],
     count: int,
 ) -> None:
-    """単件・複数件の投入で本文と一致確認の内部情報を再掲しない。"""
     _setup_notes(tmp_path)
     messages = [
         '1件目。"引用"を含む。\n\n## 見出し\n\n複数行。',
@@ -126,7 +123,6 @@ def test_flat_add_operation_records_matching_target_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """fallbackと同じtarget_repoの全メッセージへ投入時の40文字OIDを記録する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -151,7 +147,6 @@ def test_flat_add_operation_omits_commit_for_frontmatter_repo_override(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """frontmatterが別リポジトリを指定したメッセージへfallback側OIDを記録しない。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -177,7 +172,6 @@ def test_flat_add_operation_rejects_input_target_commit(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """自動記録するtarget_commitの本文指定は、保存前に拒否する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -203,7 +197,6 @@ def test_flat_add_operation_rejects_non_full_oid(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """共有add操作は解決済みの40桁または64桁OID以外を拒否する。"""
     notes = tmp_path / "private-notes"
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
 
@@ -219,13 +212,12 @@ def test_flat_add_operation_rejects_non_full_oid(
 
 
 def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """frontmatter由来target_repoが正規化されて保存される。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    # frontmatterに大文字小文字混在のURLを指定
+
     message = f"---\ntarget_repo: GitHub.com/Example/Repo\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
     generated = add_module.add_entries(
         notes,
@@ -235,22 +227,21 @@ def test_flat_add_operation_normalizes_frontmatter_target_repo(tmp_path: pathlib
         now=_FIXED_DT,
     )
     content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
-    # 保存されたcontentは正規化後の値を含むべき
+
     assert "target_repo: github.com/example/repo" in content
-    # 正規化前の値は含まれていない
+
     assert "GitHub.com/Example/Repo" not in content
 
 
 def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """target_repo・source以外のfrontmatterキー（alert_keys等）を入力順で引き継ぐ。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
-    # 既に正規化済みのURLとサフィックス付きURLの両方をテスト
+
     message = (
         "---\ntarget_repo: github.com/example/repo.git\nsource: alert-monitor\n"
         f"alert_keys: github-run:1\n---\n\n{_AGENT_AWI_BODY}"
@@ -263,9 +254,9 @@ def test_flat_add_operation_carries_over_unknown_frontmatter_keys(
         now=_FIXED_DT,
     )
     content = (notes / "2024" / "01" / generated[0]).read_text(encoding="utf-8")
-    # alert_keysが引き継がれている
+
     assert "alert_keys: github-run:1" in content
-    # target_repoが正規化されている（`.git`サフィックスが除去されている）
+
     assert "target_repo: github.com/example/repo" in content
     assert "github.com/example/repo.git" not in content
     assert content.index("source: alert-monitor") < content.index("alert_keys: github-run:1")
@@ -275,7 +266,6 @@ def test_flat_add_operation_preserves_nonreserved_frontmatter_for_cross_reposito
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """別リポジトリへ移管する本文が持つ非予約frontmatter（`source`・`alert_keys`）を保存時に保持する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -306,7 +296,6 @@ def test_flat_add_operation_rejects_input_queue_schedule(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """通常投入でqueue_scheduleを指定すると、保存前にbatchの利用を案内する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -357,7 +346,6 @@ def test_flat_add_operation_rejects_reserved_metadata_atomically(
     monkeypatch: pytest.MonkeyPatch,
     entry_type: str,
 ) -> None:
-    """予約キーの本文指定は、複数本文のどの位置でも全件を保存前に拒否する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -386,7 +374,6 @@ def test_add_reports_body_mismatch_when_saved_body_is_altered(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存の処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -424,7 +411,6 @@ def test_add_reports_body_match_for_trailing_newline_difference_only(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """末尾改行の有無だけが異なる保存本文は一致と判定する。"""
     notes = tmp_path / "private-notes"
     (notes / "2024" / "01").mkdir(parents=True)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
@@ -488,7 +474,6 @@ def test_cli_add_outputs_source_and_extra_frontmatter(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """投入の出力はsourceと非予約frontmatterを表示する。"""
     message = f"---\ncustom_key: 値\n---\n投入本文\n\n{_AGENT_AWI_SECTIONS}"
     _invoke_add_body_file(monkeypatch, tmp_path, message, "--source", "test-source")
     output = capsys.readouterr().out
@@ -501,7 +486,6 @@ def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """sourceと非予約frontmatterが無い投入は「なし」と表示する。"""
     _invoke_add_body_file(monkeypatch, tmp_path, "投入本文")
     output = capsys.readouterr().out
     assert "    source: なし\n" in output

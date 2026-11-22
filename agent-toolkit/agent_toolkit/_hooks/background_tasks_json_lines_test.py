@@ -11,7 +11,6 @@ from agent_toolkit._hooks import background_tasks
 @pytest.mark.parametrize("ending", [b"\n", b"\r\n"])
 @pytest.mark.parametrize("trailing", [False, True])
 def test_async_launch_offsets_keeps_raw_byte_positions(tmp_path: pathlib.Path, ending: bytes, trailing: bool) -> None:
-    """Unicode本文・空行・壊れた行・重複ID・sidechainがあっても最初の起動バイト位置を保つ。"""
     first = {
         "type": "assistant",
         "message": {

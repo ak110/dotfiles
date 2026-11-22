@@ -27,7 +27,6 @@ from agent_toolkit._testing.lane_support import _create, _create_args, _create_i
 def test_delete_uses_held_selection_after_selection_file_expires(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], integrated: bool
 ) -> None:
-    """選定原本が失効しても、所有登録が保持した統合状態で回収と保持を判定する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _selection(selected, integrated=integrated)
     code, _held, stderr = _invoke(capsys, *_create_args(repo, selected))
@@ -47,7 +46,6 @@ def test_delete_uses_held_selection_after_selection_file_expires(
 def test_retired_lane_only_removes_covered_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
 ) -> None:
-    """未統合の選定の終了を偽らず、確認済み取込み・未使用・cleanの旧資源だけ回収する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _selection(selected, integrated=False)
     worktree = pathlib.Path(record["worktree"])
@@ -95,7 +93,6 @@ def test_retired_lane_only_removes_covered_changes(
 def test_list_candidates_distinguishes_unregistered_resources(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """名前だけで所有を認めず、候補に出して保持する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     git_repository.run_git(repo, "branch", "orch/unregistered")
     detached = tmp_path / "managed-temp" / "old-copy"
@@ -118,7 +115,6 @@ def test_list_candidates_distinguishes_unregistered_resources(
 def test_retirement_proof_never_ignores_unmerged_gitlink(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Gitの表示設定がgitlinkを隠しても、一致の証拠としない。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "same.txt").write_text("取込済み", encoding="utf-8")
@@ -137,7 +133,6 @@ def test_retirement_proof_never_ignores_unmerged_gitlink(
 def test_lane_usage_check_keeps_dirty_submodule(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """サブモジュールの表示設定で隠れても、作業ツリーをcleanとして扱わない。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     child = git_repository.init_repository(
@@ -161,10 +156,9 @@ def test_lane_usage_check_keeps_dirty_submodule(
 def test_integrate_finalizes_and_cleans_after_selection_file_expires(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合の前に選定原本が失効しても、保持したWI集合とmanifestを比べ、最終化と終了時回収まで完了する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
-    # 選定の確定後に作業場所を開く通常の順序に合わせ、確定した選定を所有登録へ取り込む。
+
     code, _reused, stderr = _invoke(capsys, *_create_args(repo, selected))
     assert code == 0, stderr
     worktree = pathlib.Path(record["worktree"])
@@ -210,14 +204,12 @@ def test_integrate_finalizes_and_cleans_after_selection_file_expires(
 def test_recover_releases_legacy_registration_and_keeps_branch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], entity: str
 ) -> None:
-    """旧形式の登録は元branchの成果を残して作成先を解放し、別sessionが同じ固定作成先へ作成できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     (worktree / "unmerged.txt").write_text("未統合の成果", encoding="utf-8")
     head = git_repository.commit_all(worktree, "未統合の成果")
     _legacy(record)
     if entity == "missing":
-        # 作業ツリーの実体だけが失われ、Gitの登録が残った状態。
         subprocess.run(["rm", "-rf", str(worktree)], check=True)
     code, held, stderr = _invoke(capsys, "delete")
     assert code == 1 and "atk lane recover --session-id lane-test-session --lane lane-01" in held["retained"][0]["reason"]
@@ -250,7 +242,6 @@ def test_recover_releases_legacy_registration_and_keeps_branch(
 def test_recover_keeps_registrations_with_selection_information(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """選定原本か保持した選定情報を持つ登録は回復せず、通常の回収と再利用を案内する。"""
     _repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     before = pathlib.Path(record["record_path"]).read_bytes()
     for _ in range(2):
@@ -258,7 +249,7 @@ def test_recover_keeps_registrations_with_selection_information(
         assert code == 1 and "回復の対象外" in result["retained"][0]["reason"]
         assert pathlib.Path(record["record_path"]).read_bytes() == before
         assert pathlib.Path(record["worktree"]).is_dir()
-        # 2回目は原本だけが失効し、所有登録の保持値が残る場合を確かめる。
+
         selected.unlink(missing_ok=True)
 
 
@@ -323,7 +314,6 @@ def test_recover_protects_unfinished_work_and_resumes_after_failure(
 def test_reuse_switches_held_selection_to_current_selection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再利用では前回の選定を引き継がず、今回の選定のWI集合と統合状態を保持する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _selection_with(selected, ["previous.md"])
     code, _reused, stderr = _invoke(capsys, *_create_args(repo, selected))

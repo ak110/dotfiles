@@ -1,6 +1,6 @@
 # pyfltrのチェック設定の設計記録
 
-[設計記録の索引](design.md)から参照する、pyfltrのチェック設定の記録である。
+[設計記録の索引](design.md)
 
 ## pyfltrのsubproject分割とチェック設定の置き場所
 
@@ -10,13 +10,9 @@ SDK移行後は通常解決で脆弱版の固定を避けられるため、直�
 宣言依存の両立判定をuvへ戻し、将来の要求の衝突を解決時に検出する。
 別環境のuvx起動の成功を、プロジェクト環境や配布先導入の依存充足の代わりにはしない。
 
-`agent-toolkit/`は`pyproject.toml`と`uv.lock`を持たず、uvのプロジェクトでもpyfltrのサブプロジェクトでもない。
-pytest、mypy、pyright、ty、pylintなどのPython系のチェックはリポジトリ直下の設定と仮想環境で`agent-toolkit/`を含めて実行し、設定の値を2か所へ置いて揃える運用は不要である。
-
-pyfltrがサブプロジェクトとして検出するのは、`Cargo.toml`を持つ`rust/claude-statusline/`だけである。
-リポジトリ直下からの相対パスでスクリプトや設定を参照するチェックと、markdownlint・textlint・lychee・直下で定義した全カスタムコマンドなどリポジトリ全体を1回で調べるチェックは、`<名前>-subproject-aware = false`で分割を無効にする。
-分割しないチェックのキーと設定ファイル（`.lycheeignore`、`.markdownlint-cli2.*`、`.textlintrc*`、`.textlintignore`）はサブプロジェクト側に置かない。
-置いても読まれず、直下と値が一致しなくても気付けない。
+Python系のチェック設定は[リポジトリ直下の設定](../../pyproject.toml)に集約する。
+リポジトリ全体を一度だけ検査するコマンドは分割しない。
+分割しないチェックの設定をサブプロジェクトへ置いても読まれないため、直下にだけ置く。
 
 `subproject-exclude`で分割そのものを外す案は、サブプロジェクト側のチェックが直下の環境で動き、サブプロジェクトの設定を使えなくなるため採らない。
 

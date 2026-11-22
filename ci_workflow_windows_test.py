@@ -33,7 +33,6 @@ _MOZILLA_STEP = "Mozilla予約タスクの停止"
 
 
 def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: dict[str, object]) -> None:
-    """更新検証の通常profile監視より前に、同じ実行条件でMozilla予約タスクを止める。"""
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     stop_index, stop_step = _windows_step(steps, _MOZILLA_STEP)
     check_index, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
@@ -305,7 +304,6 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
     expected_lines: list[str],
     unexpected: str,
 ) -> None:
-    """ステップ本体は`\\Mozilla\\`配下だけを停止・無効化して結果を出力し、0件でも成功する。"""
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     script = workflow_step_source(_windows_step(steps, _MOZILLA_STEP)[1])
     assert isinstance(script, str)
@@ -343,13 +341,12 @@ def test_windows_mozilla_step_disables_only_mozilla_tasks(
 
 
 def test_windows_install_checks_public_script_and_preserved_configuration(workflow_data: dict[str, object]) -> None:
-    """候補版の公開導入を実行し、モード・復元用コピー・実適用結果を同じCIで確認する。"""
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["test-windows-install"]))
     installation = next(step for step in steps if step.get("name") == "install.ps1から初回導入とバックアップを検証")
     script = str(installation["run"])
     assert '& "$env:DOTFILES_DIR\\install.ps1" -Mode full' in script
     assert script.index("WriteAllText") < script.index("install.ps1") < script.index("$config =")
-    # setup-uvのシム配置を通常のユーザー配置へ戻してから導入し、後処理まで到達させる。
+
     assert script.index("$env:UV_TOOL_BIN_DIR = Join-Path $env:USERPROFILE '.local\\bin'") < script.index("install.ps1")
     # 導入モードはWindowsのuser_config_dir（%LOCALAPPDATA%）から読む。
     assert "Join-Path $env:LOCALAPPDATA 'agent-toolkit\\config.json'" in script

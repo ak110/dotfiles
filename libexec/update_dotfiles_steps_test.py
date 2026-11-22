@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのstepsの試験。"""
 
 # pylint: disable=protected-access
 
@@ -123,7 +122,6 @@ def test_run_step_preserves_exit_and_non_utf8_diagnostic(capsys: pytest.CaptureF
 
 @pytest.mark.parametrize("exit_code", [0, 4])
 def test_run_step_streams_interleaved_child_output_in_write_order(capfd: pytest.CaptureFixture[str], exit_code: int) -> None:
-    """子が交互に書いた出力のストリームを分離し、終了コードを保持する。"""
 
     returncode, output = update_dotfiles._run_step(  # pylint: disable=protected-access
         3, 5, "chezmoi apply", [sys.executable, "-c", _INTERLEAVED_CHILD_CODE, str(exit_code)]
@@ -138,7 +136,6 @@ def test_run_step_streams_interleaved_child_output_in_write_order(capfd: pytest.
 
 
 def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の環境変数が保持される。"""
     monkeypatch.setenv("UPDATE_DOTFILES_TEST_SENTINEL", "preserved")
 
     environment = update_dotfiles_runtime.child_env()  # pylint: disable=protected-access
@@ -149,7 +146,6 @@ def test_child_env_preserves_existing_environment(monkeypatch: pytest.MonkeyPatc
 
 
 def test_inherited_streams_preserve_combined_write_order() -> None:
-    """端末と同じ出力先を使う場合、子の交互出力は見出しの後へ書込順で届く。"""
     code = (
         "import sys, update_dotfiles; "
         f"rc, _ = update_dotfiles._run_step(3, 5, 'apply', [sys.executable, '-c', {_INTERLEAVED_CHILD_CODE!r}, '4']); "

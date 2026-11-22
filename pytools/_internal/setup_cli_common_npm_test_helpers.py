@@ -1,5 +1,3 @@
-"""pytools._internal.setup_cli_common_npm_test.pyとsetup_cli_common_npm_held_test.pyが共有する、npmの導入先のfixtureと補助関数。"""
-
 import shutil
 import subprocess
 from pathlib import Path
@@ -23,7 +21,6 @@ class _GlobalNpm:
         prefix: Path,
         *,
         windows: bool,
-        uninstall_returncode: int = 0,
         cmd_shim: tuple[str, str] = ("8.0.0", "node"),
     ) -> None:
         self.windows = windows
@@ -33,7 +30,6 @@ class _GlobalNpm:
         self.package = self.root / "@openai" / "codex"
         self.npm = self.bin_dir / ("npm.cmd" if windows else "npm")
         self.launchers = [self.bin_dir / f"codex{suffix}" for suffix in (("", ".cmd", ".ps1") if windows else ("",))]
-        self.uninstall_returncode = uninstall_returncode
         self.uninstalls: list[list[str]] = []
         entrypoint = self.package / "bin" / "codex.js"
         entrypoint.parent.mkdir(parents=True)
@@ -57,15 +53,12 @@ class _GlobalNpm:
             return subprocess.CompletedProcess(command, 0, f"{self.root}\n", "")
         assert command == [str(self.npm), "uninstall", "--global", "@openai/codex"], command
         self.uninstalls.append(command)
-        if self.uninstall_returncode:
-            return subprocess.CompletedProcess(command, self.uninstall_returncode, "", "npm ERR! EBUSY")
         shutil.rmtree(self.package)
         for launcher in self.launchers:
             launcher.unlink(missing_ok=True)
         return subprocess.CompletedProcess(command, 0, "", "")
 
     def removal(self) -> str:
-        """警告が示す、旧npm版の削除コマンド。"""
         if self.windows:
             return f"PowerShellで`& '{self.npm}' uninstall --global @openai/codex`を実行"
         return f'`"{self.npm}" uninstall --global @openai/codex`を実行'
@@ -76,19 +69,17 @@ def _install_global_npm(
     tmp_path: Path,
     *,
     windows: bool,
-    processes: list[object] | None = None,
-    uninstall_returncode: int = 0,
     cmd_shim: tuple[str, str] = ("8.0.0", "node"),
 ) -> _GlobalNpm:
     """npmでグローバルに導入した旧版のCodexを、PATHで見つかる状態にする。
 
-    Windowsでは`processes`が動いていて、起動スクリプトは`cmd_shim`（cmd-shimの版と、binの実体の先頭行の種類）が生成した形である。
+    Windowsの起動スクリプトは`cmd_shim`（cmd-shimの版と、binの実体の先頭行の種類）が生成した形である。
     """
     if windows:
-        patch_windows_processes(monkeypatch, processes or [])
+        patch_windows_processes(monkeypatch, [])
     else:
         monkeypatch.setattr(setup_cli_common.sys, "platform", "linux")
-    npm = _GlobalNpm(tmp_path / "npm", windows=windows, uninstall_returncode=uninstall_returncode, cmd_shim=cmd_shim)
+    npm = _GlobalNpm(tmp_path / "npm", windows=windows, cmd_shim=cmd_shim)
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", npm.run)
     monkeypatch.setenv("PATH", str(npm.bin_dir))
     return npm
@@ -98,13 +89,12 @@ def _canonical(tmp_path: Path, *, windows: bool) -> Path:
     return tmp_path / "dotfiles" / "bin" / ("codex.cmd" if windows else "codex")
 
 
-def _migrate(tmp_path: Path, *, windows: bool) -> bool:
+def _migrate(tmp_path: Path, *, windows: bool) -> None:
     canonical = _canonical(tmp_path, windows=windows)
-    return setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "standalone")
+    setup_cli_common.warn_about_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "standalone")
 
 
 def _shown(path: Path) -> Path:
-    """警告が示すパス。ディレクトリだけを実体のパスにし、シンボリックリンクはたどらない。"""
     return path.parent.resolve() / path.name
 
 

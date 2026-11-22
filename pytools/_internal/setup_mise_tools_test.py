@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""setup_miseのtoolsの試験。"""
 
 # pylint: disable=protected-access
 
@@ -79,8 +78,6 @@ class TestRunTrustsWorkingTree:
 
 
 class TestRunNodeProvisioning:
-    """`mise ls --global --json` 結果に応じて `use --global node@lts` 発行が決まる。"""
-
     @pytest.mark.parametrize(
         ("ls_payload", "use_expected"),
         [
@@ -134,8 +131,6 @@ class TestRunNodeProvisioning:
 
 
 class TestRunInstallStep:
-    """`mise install` の結果は後続を止めず、タイムアウトと env_overrides が注入される。"""
-
     @pytest.mark.parametrize(
         "install_response",
         [
@@ -155,10 +150,10 @@ class TestRunInstallStep:
         install_calls = mise_stub.calls_for("install")
         assert len(install_calls) == 1
         assert install_calls[0]["args"] == ["install"]
-        # インストール処理は通常コマンドより長いタイムアウト（600 秒）で呼ばれる
+
         assert install_calls[0]["timeout"] == 600
         assert install_calls[0]["env_overrides"] == _EXPECTED_INSTALL_ENV_OVERRIDES
-        # working treeが無い場合は実行位置を指定しない（従来どおりglobal設定だけが対象）
+
         assert install_calls[0]["cwd"] is None
 
     def test_install_runs_in_working_tree_when_config_exists(
@@ -242,15 +237,8 @@ class TestRunInstallStep:
 
 
 class TestRunRepairsMissingBinPaths:
-    """導入済みツールの実行ファイルの配置先が欠落した場合に、同じ版を強制再インストールする。
-
-    配置先を変えるツールオプション（`symlink_bins`など）を導入後に加えると、`mise install`は導入済みの版を
-    再導入せず成功するため、コマンドを解決できない状態がユーザーの手作業なしには解消しない。
-    """
-
     @staticmethod
     def _layout(tmp_path: Path) -> dict[str, Path]:
-        """導入先と配置先の実体を作成する。actionlintだけ配置先`.mise-bins`が欠落している。"""
         installs = tmp_path / "installs"
         paths = {
             "actionlint": installs / "actionlint" / "1.7.12",
@@ -273,7 +261,6 @@ class TestRunRepairsMissingBinPaths:
         )
 
     def test_no_missing_bin_path_skips_force_install(self, mise_stub: _MiseSubprocessStub, tmp_path: Path) -> None:
-        """配置先が全て実在する場合は`install --force`を呼ばない。"""
         paths = self._layout(tmp_path)
         (paths["actionlint"] / ".mise-bins").mkdir()
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
@@ -293,7 +280,6 @@ class TestRunRepairsMissingBinPaths:
         tmp_path: Path,
         with_working_tree: bool,
     ) -> None:
-        """欠落したツールだけを同じ版で再導入し、`install`と同じ実行位置で`prune -y`より前に呼ぶ。"""
         paths = self._layout(tmp_path / "data")
         working_tree = tmp_path / "wt"
         working_tree.mkdir()
@@ -332,7 +318,6 @@ class TestRunRepairsMissingBinPaths:
         tmp_path: Path,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """どの導入先の配下にも無い欠落（共有ランタイムへのリンクなど）は再導入せず警告する。"""
         paths = self._layout(tmp_path)
         (paths["actionlint"] / ".mise-bins").mkdir()
         shared = tmp_path / "dotnet-root"
@@ -425,8 +410,6 @@ def _link_directory(link: Path, target: Path) -> None:
 
 
 class TestTypeScriptLspConnection:
-    """通常更新が独立prefixを接続し、独自成果を保持する。"""
-
     @staticmethod
     def _layout(tmp_path: Path, mise_stub: _MiseSubprocessStub) -> tuple[Path, Path]:
         server = tmp_path / "installs" / "npm-typescript-language-server" / "6.0.3"
@@ -492,7 +475,6 @@ class TestTypeScriptLspConnection:
     def test_windows_moves_old_link_to_junction_without_symlink_privilege(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, old_kind: str
     ) -> None:
-        """シンボリックリンクの作成特権が無くても、旧版への接続をジャンクションで現行版へ移す。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
         link, source = self._layout(tmp_path, mise_stub)
         old = source.parent.parent.parent / "6.0.2" / "node_modules" / "typescript"
@@ -508,7 +490,7 @@ class TestTypeScriptLspConnection:
                 pytest.skip("旧版を指すシンボリックリンクを用意する特権が無い")
 
         def deny_symlink(*_args: object, **_kwargs: object) -> None:
-            # 管理者として実行しても、開発者モードでも管理者でもないユーザーと同じ拒否を起こす。
+
             raise OSError(None, "クライアントは要求された特権を保有していません。", None, 1314)
 
         monkeypatch.setattr(os, "symlink", deny_symlink)
@@ -525,11 +507,6 @@ class TestTypeScriptLspConnection:
     def test_connects_when_os_refuses_to_traverse_aube_link(
         self, tmp_path: Path, mise_stub: _MiseSubprocessStub, monkeypatch: pytest.MonkeyPatch, state: str
     ) -> None:
-        """aubeが作る`node_modules/typescript`のリンクをOSが通過させなくても、接続を完了する。
-
-        2026-11-19、sthenoのSSH配下の`update-dotfiles`で、RedirectionGuardが非管理者の作ったジャンクションの通過を
-        WinError 448で拒否し、接続済みでも「tsserver.jsが見つからない」と報告した。
-        """
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_DOTFILES_MODE", "full")
         link, source = self._layout(tmp_path, mise_stub)
         package = source.parent / ".mise" / "typescript@6.0.3" / "node_modules" / "typescript"

@@ -1,5 +1,3 @@
-"""記録からの証拠イベント抽出（session_evidence_extract_commands）。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -12,13 +10,6 @@ from session_evidence_extract_common import _ENV_ASSIGNMENT, _PATH_SEPARATORS, _
 
 
 def _scannable_records(records: list[_Record]) -> list[_Record]:
-    """照会の走査対象から、本スクリプト自身の実行記録を除いたレコードを返す。
-
-    本スクリプトを呼び出したコマンドの記録には、`--warn`のフラグ文字列や過去の照会結果本文が
-    そのまま残る。これらは検索語へ機械的に一致し、実在しない警告・一致として報告される。
-    除外対象は自己呼び出しの記録と、対応する実行結果の記録だけとし、
-    本文が同じ文字列を含むだけの無関係な記録は走査対象に残す。
-    """
     self_call_ids: set[str] = set()
     scannable: list[_Record] = []
     for record in records:
@@ -33,11 +24,6 @@ def _scannable_records(records: list[_Record]) -> list[_Record]:
 
 
 def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
-    """本スクリプト自身を呼び出した記録なら呼び出しIDの集合を、そうでなければ`None`を返す。
-
-    実行結果を呼び出しと同じ記録へ含む形式では対応付けが不要なため、空集合を返す場合がある。
-    判定対象は実行されたコマンドに限り、スクリプトを検索・閲覧・編集する操作は自己呼び出しとみなさない。
-    """
     call_ids: set[str] = set()
     invoked = False
     message = entry.get("message")
@@ -63,11 +49,6 @@ def _self_invocation_call_ids(entry: dict[str, Any]) -> set[str] | None:
 
 
 def _runs_self_script(command: str | list[str]) -> bool:
-    """コマンド列のいずれかの実行が本スクリプトを呼び出しているかを判定する。
-
-    スクリプト名が現れるだけでは実行と扱わない。検索・閲覧・編集コマンドの引数として
-    ファイル名を渡す操作を実行と誤認すると、その実行結果に含まれる実在の警告を照会できなくなる。
-    """
     tokens = _shell_tokens(command) if isinstance(command, str) else command
     if not any(_SELF_SCRIPT_STEM in token for token in tokens):
         return False
@@ -76,7 +57,6 @@ def _runs_self_script(command: str | list[str]) -> bool:
 
 
 def _command_segments(command: str) -> list[list[str]]:
-    """引用を外す前に演算子と改行で区切り、データ中の区切り文字を保持する。"""
     segments: list[list[str]] = []
     scanner = _shell_quoting.QuotingScanner(command)
     start = 0
@@ -96,11 +76,6 @@ def _command_segments(command: str) -> list[list[str]]:
 
 
 def _command_runs_self(tokens: list[str]) -> bool:
-    """1つのコマンドの実行形式と引数の並びから、本スクリプトの実行かどうかを判定する。
-
-    先頭語がスクリプト自身なら直接起動、インタープリターなら引数の位置での起動と扱う。
-    シェルへコマンド文字列を渡す形式では、その文字列を1つのコマンドとして再帰的に判定する。
-    """
     index = 0
     while index < len(tokens) and _ENV_ASSIGNMENT.match(tokens[index]):
         index += 1
@@ -123,17 +98,14 @@ def _command_runs_self(tokens: list[str]) -> bool:
 
 
 def _is_self_script(token: str) -> bool:
-    """トークンが本スクリプトのファイルを指しているかを返す。"""
     return _basename(token).startswith(_SELF_SCRIPT_STEM)
 
 
 def _basename(token: str) -> str:
-    """パス区切りを除いたトークン末尾の名前を返す。"""
     return _PATH_SEPARATORS.split(token)[-1]
 
 
 def _shell_tokens(command: str) -> list[str]:
-    """コマンド文字列をシェルの引用規則で分解する。分解できない場合は空白で分ける。"""
     try:
         return list(_shell_tokens_module.split_words(command))
     except ValueError:
@@ -169,7 +141,6 @@ def _payload_command_input(payload: dict[str, Any]) -> str | list[str]:
 
 
 def _result_call_ids(entry: dict[str, Any]) -> set[str]:
-    """エントリが返しているツール実行結果の呼び出しIDを取得する。"""
     call_ids: set[str] = set()
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
@@ -181,7 +152,11 @@ def _result_call_ids(entry: dict[str, Any]) -> set[str]:
         }
 
     payload = entry.get("payload")
-    if isinstance(payload, dict) and payload.get("type") == "function_call_output" and isinstance(payload.get("call_id"), str):
+    if (
+        isinstance(payload, dict)
+        and payload.get("type") in ("function_call_output", "custom_tool_call_output")
+        and isinstance(payload.get("call_id"), str)
+    ):
         call_ids.add(payload["call_id"])
     return call_ids
 

@@ -13,8 +13,6 @@ from agent_toolkit._testing.shell_checks_support import _existing_work_contract 
 
 
 class TestBashGitRevParseShortMultiple:
-    """通常modeの単一revision検証へ複数revisionを渡す操作の遮断。"""
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -82,7 +80,6 @@ class TestBashGitRevParseShortMultiple:
 
     @pytest.mark.parametrize("options", [["--short"], ["--short=12"], ["--verify"], ["--verify", "--quiet"]])
     def test_individual_revision_fix_succeeds(self, options: list[str], tmp_path: pathlib.Path):
-        """履歴を自ら準備し、案内した入力分割で元のoptionを保ったGit実行が成功する。"""
         repository = git_repository.init_repository(tmp_path / "repo", commit_message="最初のcommit")
         git_repository.commit_all(repository, "次のcommit")
         for revision in ["HEAD", "HEAD~1"]:
@@ -114,3 +111,12 @@ def test_git_subcommand_tokens_recognizes_only_the_fixed_commit_wrapper(
     segments = shell_checks.extract_execution_segments(command)
     assert len(segments) == 1
     assert shell_checks.git_subcommand_tokens(segments[0]) == expected
+
+
+@pytest.mark.parametrize("launcher", ["git commit", "atk run-script commit-with-timeout -- --timeout 3 --"])
+def test_fixup_ambiguous_subject_is_blocked_in_the_actual_repository(tmp_path, launcher):
+    git_repository.init_repository(tmp_path)
+    for _ in range(2):
+        git_repository.run_git(tmp_path, "commit", "--allow-empty", "-m", "同じ件名")
+    result = _run({"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": f"{launcher} --fixup=HEAD"}})
+    assert "`autosquash`の統合先を一意に決められない" in result.stdout

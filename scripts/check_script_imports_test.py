@@ -1,5 +1,3 @@
-"""scripts/check_script_imports.pyの静的解析検査のテスト。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -13,7 +11,6 @@ _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
 
 def _write_pep723_script(path: pathlib.Path, *, dependencies: list[str] | None = None, body: str = "") -> None:
-    """PEP 723ヘッダー付きの単独実行スクリプトを`path`へ生成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     deps = ", ".join(f'"{dep}"' for dep in (dependencies or []))
     header = (
@@ -24,7 +21,6 @@ def _write_pep723_script(path: pathlib.Path, *, dependencies: list[str] | None =
 
 @pytest.fixture(autouse=True)
 def _isolate_repo_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """検査対象のリポジトリルートと走査対象ディレクトリ集合を一時領域へ差し替える。"""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "agent-toolkit/scripts").mkdir(parents=True)
     (tmp_path / "agent-toolkit/agent_toolkit").mkdir(parents=True)
@@ -36,7 +32,6 @@ def _isolate_repo_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_resolvable_imports_only_returns_zero(_isolate_repo_root: pathlib.Path) -> None:
-    """標準ライブラリ・宣言済み依存・同一ディレクトリのモジュールだけならexit 0。"""
     scripts_dir = _isolate_repo_root / "scripts"
     (scripts_dir / "_helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     _write_pep723_script(
@@ -48,7 +43,6 @@ def test_resolvable_imports_only_returns_zero(_isolate_repo_root: pathlib.Path) 
 
 
 def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """独立スクリプトのimport不備とproject moduleのPEP 723残存を報告する。"""
     _write_pep723_script(
         _isolate_repo_root / _TOOLKIT_PREFIX / "scripts/broken.py",
         body="import missing_toolkit_dependency",
@@ -66,7 +60,6 @@ def test_all_script_directories_are_scanned(_isolate_repo_root: pathlib.Path, ca
 
 
 def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """サブディレクトリのPEP 723起点も再帰走査する。"""
     _write_pep723_script(
         _isolate_repo_root / _TOOLKIT_PREFIX / "scripts/_pkg/broken.py",
         body="import missing_nested_dependency",
@@ -87,7 +80,6 @@ def test_subdirectory_pep723_script_is_scanned(_isolate_repo_root: pathlib.Path,
 def test_nested_layer_import_rules(
     _isolate_repo_root: pathlib.Path, relative_path: str, import_line: str, expected: int
 ) -> None:
-    """入れ子のモジュールでも禁止辺を拒否し、許可辺を受理する。"""
     scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
     for package in ("_common", "_hooks", "_testing"):
         package_dir = scripts_root / package
@@ -105,14 +97,13 @@ def test_nested_layer_import_rules(
 def test_private_module_directly_under_agent_toolkit_is_reported(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """直下へ公開スクリプト以外の実装モジュールを置くとexit 1で、そのファイル名を報告する。"""
     scripts_root = _isolate_repo_root / "agent-toolkit/agent_toolkit"
     (scripts_root / "atk.py").write_text("", encoding="utf-8")
     private_module = scripts_root / "_feature.py"
     private_module.write_text("", encoding="utf-8")
 
     assert check_script_imports.main() == 1
-    # 期待値をパスのリテラルで書くと、参照解決テストが実在しないパスへの参照として収集する
+
     assert private_module.relative_to(_isolate_repo_root).as_posix() in capsys.readouterr().err
 
 
@@ -129,7 +120,6 @@ def test_public_scripts_and_tests_directly_under_agent_toolkit_are_accepted(_iso
 def test_unresolvable_import_reports_script_and_module(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """解決不能なimportはexit 1で、起点スクリプト名とモジュール名を出力する。"""
     _write_pep723_script(_isolate_repo_root / "scripts/broken.py", body="import nonexistent_package")
     assert check_script_imports.main() == 1
     captured = capsys.readouterr()
@@ -145,7 +135,6 @@ def test_unresolvable_import_reports_script_and_module(
     ],
 )
 def test_static_sys_path_forms_resolve_internal_module(_isolate_repo_root: pathlib.Path, path_expression: str) -> None:
-    """許可されたPath式・単純代入・`str`を経た探索パスから内部モジュールを解決する。"""
     library = _isolate_repo_root / "lib"
     library.mkdir()
     (library / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -163,7 +152,6 @@ def test_static_sys_path_forms_resolve_internal_module(_isolate_repo_root: pathl
 def test_indirect_external_import_is_reported_with_via_path(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """内部モジュールがimportする未宣言外部依存を経由ファイル付きで報告する。"""
     (_isolate_repo_root / "scripts/helper.py").write_text("import indirect_dependency\n", encoding="utf-8")
     _write_pep723_script(_isolate_repo_root / "scripts/main.py", body="import helper")
 
@@ -200,14 +188,12 @@ def test_package_submodule_and_intermediate_initializers_are_traversed(
 
 
 def test_from_import_object_falls_back_to_parent_module(_isolate_repo_root: pathlib.Path) -> None:
-    """`from module import object`は親モジュールが実在すれば解決済みとする。"""
     (_isolate_repo_root / "scripts/helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     _write_pep723_script(_isolate_repo_root / "scripts/main.py", body="from helper import VALUE")
     assert check_script_imports.main() == 0
 
 
 def test_transitive_module_can_extend_search_paths(_isolate_repo_root: pathlib.Path) -> None:
-    """推移先が追加した探索パスを同一起点の後続import解決へ用いる。"""
     first = _isolate_repo_root / "first"
     second = _isolate_repo_root / "second"
     first.mkdir()
@@ -232,7 +218,6 @@ def test_transitive_module_can_extend_search_paths(_isolate_repo_root: pathlib.P
 def test_optional_imports_are_excluded_but_other_handlers_are_not(
     _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """import系例外で保護されたimportだけを検査対象から除外する。"""
     _write_pep723_script(
         _isolate_repo_root / "scripts/main.py",
         body=(
@@ -250,7 +235,6 @@ def test_optional_imports_are_excluded_but_other_handlers_are_not(
 
 
 def test_distribution_name_mapping_resolves_import(_isolate_repo_root: pathlib.Path) -> None:
-    """配布名とimport名が異なる依存宣言を対応表で解決する。"""
     _write_pep723_script(
         _isolate_repo_root / "scripts/main.py",
         dependencies=["Markdown-It-Py>=3", "PyYAML>=6"],
@@ -269,7 +253,6 @@ def test_cyclic_internal_imports_terminate(_isolate_repo_root: pathlib.Path) -> 
 
 
 def test_non_pep723_module_is_not_an_entry_point(_isolate_repo_root: pathlib.Path) -> None:
-    """到達しないshebang無しヘルパーモジュールは起点として検査しない。"""
     (_isolate_repo_root / "scripts/lib_only.py").write_text("import nonexistent_package\n", encoding="utf-8")
     assert check_script_imports.main() == 0
 
@@ -281,7 +264,6 @@ def test_test_files_are_excluded(_isolate_repo_root: pathlib.Path) -> None:
 
 
 def test_project_scripts_missing_module_reports(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`[project.scripts]`が参照するモジュールファイルが無い場合を検出する。"""
     (_isolate_repo_root / "pyproject.toml").write_text(
         '[project.scripts]\nfoo-cmd = "pkg.missing_module:main"\n', encoding="utf-8"
     )
@@ -292,7 +274,6 @@ def test_project_scripts_missing_module_reports(_isolate_repo_root: pathlib.Path
 
 
 def test_project_scripts_missing_function_reports(_isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`[project.scripts]`の参照関数が対象モジュールに無い場合を検出する。"""
     pkg_dir = _isolate_repo_root / "pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
@@ -305,7 +286,6 @@ def test_project_scripts_missing_function_reports(_isolate_repo_root: pathlib.Pa
 
 
 def test_project_scripts_resolvable_returns_zero(_isolate_repo_root: pathlib.Path) -> None:
-    """`[project.scripts]`の参照モジュールと関数が実在すればexit 0。"""
     pkg_dir = _isolate_repo_root / "pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
@@ -325,7 +305,6 @@ _REAL_TOOLKIT_ROOT = pathlib.Path(check_script_imports.__file__).resolve().paren
 
 
 def _split_package_modules() -> list[str]:
-    """責務別に分けた5パッケージの非テストのサブモジュール名を返す。"""
     modules: list[str] = []
     for package in _SPLIT_PACKAGES:
         package_dir = _REAL_TOOLKIT_ROOT / "agent_toolkit" / package
@@ -339,7 +318,6 @@ def _split_package_modules() -> list[str]:
 
 @pytest.mark.parametrize("module", _split_package_modules())
 def test_agent_toolkit_split_packages_import_standalone(module: str) -> None:
-    """責務別のサブモジュールは、兄弟モジュールの名前の注入に頼らず新しいプロセスで単独にimportできる。"""
     completed = subprocess.run(
         [sys.executable, "-c", f"import importlib; importlib.import_module({module!r})"],
         cwd=_REAL_TOOLKIT_ROOT,
@@ -353,7 +331,6 @@ def test_agent_toolkit_split_packages_import_standalone(module: str) -> None:
 
 
 def _write_toolkit_module(root: pathlib.Path, relative_path: str, body: str) -> pathlib.Path:
-    """一時ツリーの`agent_toolkit/`配下へモジュールを書く。"""
     path = root / "agent-toolkit/agent_toolkit" / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
@@ -420,6 +397,18 @@ def test_agent_toolkit_allows_line_level_f821_noqa(_isolate_repo_root: pathlib.P
     _write_toolkit_module(_isolate_repo_root, "_atk/feature/view_test.py", "# ruff: noqa: F821\n")
 
     assert check_script_imports.main() == 0
+
+
+@pytest.mark.parametrize(
+    "statement", ["from . import entry", "def load():\n    from .._hooks import stop_gate", "lazy from . import entry"]
+)
+def test_agent_toolkit_layers_reject_relative_imports(
+    _isolate_repo_root: pathlib.Path, capsys: pytest.CaptureFixture[str], statement: str
+) -> None:
+    _write_toolkit_module(_isolate_repo_root, "_common/consumer.py", statement + "\n")
+
+    assert check_script_imports.main() == 1
+    assert "_common/consumer.py:" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -490,7 +479,6 @@ def test_agent_toolkit_allows_git_subprocess_in_git_layer(_isolate_repo_root: pa
 
 
 def _write_toolkit_dependencies(root: pathlib.Path) -> None:
-    """一時ツリーへ、pytools専用と開発用の依存を含む直下の宣言と、agent-toolkitの実行依存の固定内容を書く。"""
     (root / "pyproject.toml").write_text(
         '[project]\ndependencies = ["pyyaml", "pyfltr>=3", "numpy"]\n\n'
         '[dependency-groups]\ndev = ["jsonschema>=4", "pyfltr[python]>=3", "hypothesis"]\n',
@@ -520,7 +508,7 @@ def test_agent_toolkit_dev_dependency_import_is_reported(
 
     assert check_script_imports.main() == 1
     reported = [line for line in capsys.readouterr().err.splitlines() if "agent-toolkitの実行依存に無い" in line]
-    # `from ... import`は同じ行を1件だけ報告する。
+
     assert len(reported) == 4
     for location in (
         "agent_toolkit/_common/schema.py:3:",

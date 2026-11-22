@@ -1,5 +1,3 @@
-"""証拠抽出のツール呼び出し（session_evidence_tool_calls_definitions）。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from session_evidence_tool_calls_records import _record_tool_calls, _recorded_in
 
 
 def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:
-    """静的に読取操作へ対応付けられた定義の対象だけを返す。"""
     reads, _unresolved = _definition_read_operations(tool, inputs, text)
     return list(dict.fromkeys(target for row in reads for target in row["targets"]))
 
@@ -23,7 +20,6 @@ def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> li
 def _definition_read_operations(
     tool: str, inputs: dict[str, Any], text: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """共通の実行入力・区間境界から、明示読取と取得未確定の材料を分ける。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
     if name in {"Read", "read_file", "read"}:
         path = inputs.get("file_path", inputs.get("filePath", inputs.get("path", inputs.get("Path"))))
@@ -85,6 +81,8 @@ def _may_name_definition(target: str) -> bool:
     最後の動的展開より後ろの固定の末尾が`.subagent.md`で終わるか、`.subagent.md`の末尾部分（空、`.md`など）であれば
     読み得るとする。`$d/test-linux.log`のように固定の末尾から手順書になり得ない対象を未確定へ出さないためである。
     """
+    if target.endswith(_SUBAGENT_SUFFIX):
+        return True
     if "**" not in target:
         parts = target.split("/")
         patterned = [index for index, part in enumerate(parts) if any(char in part for char in "*?[")]
@@ -107,7 +105,6 @@ def _may_name_definition(target: str) -> bool:
             tail_start = index
             continue
         if char == "$":
-            # 変数名（`$NAME`）か特殊変数（`$?`・`$1`など）までを展開とみなす。
             match = re.match(r"\$(?:[A-Za-z_]\w*|.)?", target[index:])
             assert match is not None
             index += len(match[0])
@@ -120,8 +117,30 @@ def _may_name_definition(target: str) -> bool:
     return tail.endswith(_SUBAGENT_SUFFIX) or _SUBAGENT_SUFFIX.endswith(tail)
 
 
+def _xargs_only_other_suffixes(value: str) -> bool:
+    pipelines = shell_segments.extract_execution_pipelines(value, expand_shell=False)
+    if len(pipelines) != 1 or len(pipelines[0]) != 2:
+        return False
+    producer, consumer = (segment.raw_tokens for segment in pipelines[0])
+    if consumer not in {("xargs", "-0", "cat", "--"), ("xargs", "-0", "-r", "cat", "--")}:
+        return False
+    if producer[:2] != ("git", "diff") or "--" not in producer:
+        return False
+    end = producer.index("--")
+    if set(producer[2:end]) != {"--name-only", "-z"}:
+        return False
+    pathspecs = producer[end + 1 :]
+    return bool(pathspecs) and all(
+        isinstance(item, shell_tokens.ShellWord)
+        and not item.expansion
+        and not item.unquoted
+        and re.fullmatch(r"[*]\.[A-Za-z0-9]+", item)
+        and not _may_name_definition(item)
+        for item in pathspecs
+    )
+
+
 def _strip_env_prefix(words: list[str]) -> list[str] | None:
-    """`env`の値の境界が既知のオプション（`-i`、`-u NAME`）と代入を除いた後続の語を返す。未知のオプションでは`None`を返す。"""
     index = 1
     while index < len(words):
         word = words[index]
@@ -141,11 +160,6 @@ def _strip_env_prefix(words: list[str]) -> list[str] | None:
 def _simple_command_reads(
     words: list[str], value: str, original: dict[str, Any]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """単純コマンド1件の手順書の読取と、読んだか静的に決められない材料を返す。
-
-    実行コマンドを持たない区間（代入だけ、引数の無い`env`、`command -v`）、`for`・`select`の見出し、
-    条件判定（`[`・`[[`）は本文を読まないため判定しない。
-    """
     index = 0
     while index < len(words) and shell_segments.ENV_ASSIGN_PATTERN.match(words[index]):
         index += 1
@@ -165,6 +179,8 @@ def _simple_command_reads(
         return [], []
     segment = shell_segments.resolve_execution_segment(list(words))
     if not segment.resolved:
+        if words[0] == "xargs" and _xargs_only_other_suffixes(value):
+            return [], []
         if not any(pathlib.PurePosixPath(word).name == "xargs" or _may_name_definition(word) for word in words):
             return [], []
         return [], [{**original, "reason": "シェル区間の実行位置を静的に確定できない"}]
@@ -197,7 +213,8 @@ def _simple_command_reads(
         if reason is not None:
             return [], [{**original, "reason": reason}]
     else:
-        if _SUBAGENT_SUFFIX in value and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", " ".join(tokens)):
+        rendered = " ".join(tokens)
+        if _SUBAGENT_SUFFIX in rendered and re.search(r"read_text|readFile|open\s*\(|\.read\s*\(", rendered):
             unresolved.append({**original, "reason": "コード内の読取と対象の対応は静的抽出の対象外"})
         return [], unresolved
     static = []
@@ -208,38 +225,6 @@ def _simple_command_reads(
         elif target.endswith(_SUBAGENT_SUFFIX):
             static.append(target)
     return ([{**original, "targets": static}] if static else []), unresolved
-
-
-def _inner_executions(call: _ToolCall, calls: list[_ToolCall]) -> tuple[list[_ToolCall] | None, str | None]:
-    """完結した外側execの結果範囲内にある内側実行だけを返す。"""
-    if (
-        call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() != "exec"
-        or call.turn_id is None
-        or not session_evidence_execution.command_input_observations(call.tool, call.text)
-    ):
-        return [], None
-    if call.result_line is None:
-        return None, "外側execの結果記録が無くセルの完結境界を確定できない"
-    outers = [
-        item
-        for item in calls
-        if item.turn_id == call.turn_id and item.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1].casefold() == "exec"
-    ]
-    executions = [
-        item
-        for item in calls
-        if item.turn_id == call.turn_id and item.tool == "CommandExecution" and call.line < item.line < call.result_line
-    ]
-    overlapping = [
-        other
-        for other in outers
-        if other is not call and other.line < call.result_line and (other.result_line is None or call.line < other.result_line)
-    ]
-    if overlapping:
-        return None, "同一turnの外側execの完結範囲が重なり内側実行の帰属が曖昧である"
-    if not executions:
-        return None, "外側execの範囲で完了済みCommandExecutionを確認できず、実行の完了状態が未確定"
-    return executions, None
 
 
 _START_ROLE = re.compile(r"""subagent_md_path["']?\s*:\s*["'`]([^"'`]+)["'`]""")
@@ -276,12 +261,6 @@ def _launched_roles(call: _ToolCall, inputs: dict[str, Any], definitions: set[st
 def _launch_check(
     call: _ToolCall, targets: list[str], role_document: str | None, launches: list[tuple[_ToolCall, set[str]]]
 ) -> dict[str, Any]:
-    """手順書の読取が、起動準備の読込（別の担当を起動する前にその手順書を読むこと）に当たり得るかを判定する。
-
-    同じ記録で読取より後に同じ役割を起動した読取だけを疑いあり（`suspected`）とし、後続の起動が無い読取と、
-    読む主体の役割文書と同じ手順書の読取は判定済み（`cleared`）とする。起動の無い読取は禁止事項の対象外であり、
-    自身の役割文書は受領した定義だからである。同じセル内の`start(`は前後を決められないため後続として扱う。
-    """
     roles = {_role_name(target) for target in targets}
     if role_document is not None and roles <= {role_document}:
         return {"status": "cleared", "reason": "読む主体の役割文書と同じ手順書（自身が受領した定義）", "launch_lines": []}
@@ -296,20 +275,12 @@ def _launch_check(
 
 
 def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """正常終了も含む定義本文の取得を、目的未判定の材料と前後の起動・編集の位置付きで返す。"""
     events: list[dict[str, Any]] = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}
         calls = _record_tool_calls(item.records)
         role_document = _role_document(item)
         related = []
-        associations = {call.line: _inner_executions(call, calls) for call in calls}
-        linked_executions = {
-            execution.line
-            for executions, _reason in associations.values()
-            if executions is not None
-            for execution in executions
-        }
         for call in calls:
             name = call.tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
             if name in {"Agent", "Task", "spawn_agent", "start", "Edit", "Write", "apply_patch"} or (
@@ -328,26 +299,8 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         ]
         for call in calls:
             inputs = _recorded_input(entries[call.line], call.call_id)
-            executions, association_reason = associations[call.line]
-            if executions is not None and executions:
-                reads: list[dict[str, Any]] = []
-                unresolved: list[dict[str, Any]] = []
-                for execution in executions:
-                    resolved, unresolved_rows = _definition_read_operations(
-                        execution.tool, {"command": execution.text}, execution.text
-                    )
-                    for row in [*resolved, *unresolved_rows]:
-                        row["execution_line"] = execution.line
-                        row["execution_result_line"] = execution.result_line
-                    reads.extend(resolved)
-                    unresolved.extend(unresolved_rows)
-            else:
-                reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
-                if unresolved and association_reason is not None:
-                    # 入力だけでは読取の有無を決められない操作に、内側実行を使えない理由を付ける。
-                    unresolved = [{"input": call.text, "reason": association_reason, "outer_turn_id": call.turn_id}]
-            if call.tool == "CommandExecution" and call.line in linked_executions:
-                continue
+
+            reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
             if not reads and not unresolved:
                 continue
             before = [other for other in related if other.line < call.line]
@@ -393,7 +346,6 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
 
 
 def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
-    """本文取得と明示された単独操作だけを、大出力の点検上位から除く。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
     if name in {"Read", "read_file", "Skill", "read", "skill"}:
         return True
@@ -409,7 +361,7 @@ def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
         words = shell_tokens.split_words(commands[0][1])
     except ValueError:
         return False
-    # 単独操作だけを除外する。引用の外側のリダイレクトやサブシェルを含む入力は除外しない。
+
     if any(word.redirection or set("()<>") & set(word.unquoted) for word in words):
         return False
     argv = list(words)

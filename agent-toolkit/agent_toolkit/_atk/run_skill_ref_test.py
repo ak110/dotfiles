@@ -19,7 +19,6 @@ from agent_toolkit.atk_test import _setup_notes
 def test_synced_report_with_branch_tag_collision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, same_name_tag: bool
 ) -> None:
-    """追跡設定とpush済み報告を持つbranchへ同名tagを加えても保存到達を確認できる。"""
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes, files={"README.md": "報告\n"}, commit_message="初期状態")
     git_repository.run_git(notes, "checkout", "-b", "feature/reports")

@@ -1,5 +1,3 @@
-"""計画形式の共通解析を検証する。"""
-
 import pathlib
 
 import pytest
@@ -32,7 +30,6 @@ pytestmark = pytest.mark.windows
 
 @pytest.mark.parametrize("heading", ["### ユーザー発言0", "### ユーザー発言2"])
 def test_human_readable_history_rejects_invalid_user_event_sequence(heading: str) -> None:
-    """連番が1から欠番なく昇順に並ばないユーザー発言見出しを拒否する。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, heading, 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert errors, errors
@@ -40,7 +37,6 @@ def test_human_readable_history_rejects_invalid_user_event_sequence(heading: str
 
 @pytest.mark.parametrize("decision", plan_constants.PLAN_ACTION_DECISIONS)
 def test_human_readable_review_origin_applies_root_rule_before_decision(tmp_path: pathlib.Path, decision: str) -> None:
-    """計画レビュー由来は採否より先に判定し、採用以外ではTSV参照に理由を続ける。"""
     review_path = tmp_path / "review.tsv"
     review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
     root = f"{review_path.as_posix()}のround 2"
@@ -57,7 +53,6 @@ def test_human_readable_review_origin_applies_root_rule_before_decision(tmp_path
 
 
 def test_agent_wi_adopted_action_without_reason_yields_migration_notice() -> None:
-    """エージェント由来のWIの旧採用行は読み取り時に移行の指摘を返す。"""
     row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | - |"
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
     notices: list[str] = []
@@ -67,7 +62,6 @@ def test_agent_wi_adopted_action_without_reason_yields_migration_notice() -> Non
 
 
 def test_wi_origin_diagnostic_shows_expected_format() -> None:
-    """受理形式に一致しない`由来`欄の診断は、半角丸括弧を用いた期待書式の実例を示す。"""
     example = "`エージェント由来のWI (20260831-000000-001.md)`"
     origin = f"人間由来のWI ({_plan_fixture.WI_FILES[0][0]})"
     full_width = _HUMAN_MAIN_CONTENT.replace(origin, f"人間由来のWI（{_plan_fixture.WI_FILES[0][0]}）", 1)
@@ -93,7 +87,6 @@ def test_wi_origin_diagnostic_shows_expected_format() -> None:
     ],
 )
 def test_related_wi_rejects_invalid_children(replacement: str, expected: str) -> None:
-    """関連WIの要約欠落、重複および`なし`との併記を拒否する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
         "- 関連WI:\n  - 20260817-223603-001.md: 入力の境界を追加確認する",
         replacement,
@@ -104,7 +97,6 @@ def test_related_wi_rejects_invalid_children(replacement: str, expected: str) ->
 
 
 def test_bug_file_structure_rejects_missing_record_line() -> None:
-    """付属ファイルの記録から`確認:`の行が欠けた場合を、欠けた行頭語と書く内容を示して拒否する。"""
     content = _BUG_FILE_CONTENT.replace(f"{_plan_fixture.cause_record_line('確認')}\n", "")
     errors = plan_sections.check_bug_file_structure(content)
     content_of_check = _plan_format.CAUSE_RECORD_REQUIRED_LABELS["確認"]
@@ -112,14 +104,12 @@ def test_bug_file_structure_rejects_missing_record_line() -> None:
 
 
 def test_bug_file_structure_accepts_saved_legacy_tables() -> None:
-    """廃止直前の原因分析表と調査表を持つ保存済みの付属ファイルを読み取りで受理し、移行の対象として判別する。"""
     assert not plan_sections.check_bug_file_structure(_LEGACY_TABLES_BUG_FILE_CONTENT)
     assert plan_sections.has_legacy_cause_record(_LEGACY_TABLES_BUG_FILE_CONTENT)
     assert not plan_sections.has_legacy_cause_record(_BUG_FILE_CONTENT)
 
 
 def test_history_review_rows_reject_duplicate_track_and_round() -> None:
-    """異なる表記でも同じ系統・ラウンドを表すレビュー指摘行を拒否する。"""
     review_rows = (
         "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |\n"
         "| R01-conformance | レビュー指摘 | 追加の指摘。 | 1件を採用した。 | `## 変更履歴` |\n"
@@ -134,7 +124,6 @@ def test_history_review_rows_reject_duplicate_track_and_round() -> None:
 
 
 def test_duplicate_fixed_table_is_rejected() -> None:
-    """同一H2内に複製した固定表を拒否する。"""
     duplicate = """| 実施内容 | 採否 | ユーザー指示との関係 | 根拠 |
 | --- | --- | --- | --- |
 | 追加の変更 | 採用 | 具体化 | R-P-001-001 |
@@ -146,28 +135,24 @@ def test_duplicate_fixed_table_is_rejected() -> None:
 
 
 def test_permanence_table_accepts_multiple_findings() -> None:
-    """恒久化表は知見を複数行で記載できる。"""
     row = _plan_fixture.PERMANENCE_ROW
     additional = "| 公開契約を維持する | P-001 | 計画限り | 既存文書へ記載済みのため。 |"
     assert not plan_sections.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
 
 
 def test_permanence_sections_reject_conclusion_words_only() -> None:
-    """恒久化等の結論語だけの記載を検討の省略として拒否する。"""
     content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_TABLE, "該当なし", 1)
     errors = plan_sections.check_plan_structure(content)
     assert any("結論語だけの記載は成立しない" in error for error in errors), errors
 
 
 def test_extract_tables_keeps_row_column_count() -> None:
-    """列数が見出しと異なる行を切り詰めずに返し、列数不一致を後段で検出できるようにする。"""
     table = "| A | B |\n| --- | --- |\n| 1 | 2 | 3 |\n| 4 |"
     lines: list[tuple[int, str]] = list(enumerate(table.splitlines(), start=1))
     assert plan_markdown.extract_tables(lines)[0].rows == (("1", "2", "3"), ("4",))
 
 
 def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
-    """新旧形式の素材と要求を識別し、ID集合を返す。"""
     materials, errors = plan_materials.parse_plan_materials(_VALID_CONTENT)
     assert not errors
     assert materials == plan_materials.PlanMaterials(
@@ -185,7 +170,6 @@ def test_parse_plan_materials_returns_structured_ids_and_legacy_flag() -> None:
 
 @pytest.mark.parametrize("decision", plan_constants.PLAN_ACTION_DECISIONS)
 def test_action_decisions_accept_all_declared_values(decision: str) -> None:
-    """実施内容表が定義する7種類の採否値を受理する。"""
     relation = "指示どおり" if decision in {"採用", "部分採用"} else "非該当"
     root = "R-P-001-001" if decision in {"採用", "部分採用"} else "R-P-001-002を採用しない理由を記載する。"
     if decision == "移管":
@@ -207,12 +191,10 @@ def test_action_decisions_accept_all_declared_values(decision: str) -> None:
 
 
 def test_requirement_coverage_excludes_terminal_only_adopted_requirement() -> None:
-    """`採用範囲`が`公開工程のみ`で始まる採用要求は被覆されていなくても受理する。"""
     assert not plan_sections.check_plan_structure(_plan_with_uncovered_requirement("公開工程のみ適用する"))
 
 
 def test_structured_material_contract_rejects_duplicate_material_id() -> None:
-    """素材IDの重複を拒否する。"""
     content = _VALID_CONTENT.replace(
         "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
         "| P-001 | 利用者合意 | 非該当 | 本セッション | 全文 |\n| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
@@ -236,7 +218,6 @@ def test_structured_material_contract_rejects_duplicate_material_id() -> None:
     ],
 )
 def test_structured_material_types_preserve_source_and_citation(row: str) -> None:
-    """フィードバック以外の素材種別も投入元と引用範囲を保持して受理する。"""
     content = _VALID_CONTENT.replace(
         "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
         row,
@@ -270,19 +251,17 @@ def test_metadata_rejects_conflicting_values() -> None:
 
 
 def test_duplicate_headings_rejects_same_text_under_same_parent() -> None:
-    """同じ親の下に同じ文言の見出しが現れた場合は文言と両方の行番号を返す。"""
     content = "# 計画\n\n## 親\n\n### 子\n\n### 子\n"
 
     errors = plan_markdown.check_duplicate_headings(content)
 
     assert len(errors) == 1
     assert errors[0].startswith("同じ見出しが重複している: `### 子`（計画/親配下、5行目と7行目）。")
-    # 位置に加えて直し方（削除か文言の区別）を示す。
+
     assert "一方を削除するか、見出しの文言を区別する" in errors[0]
 
 
 def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
-    """H4以深の重複を検出し、コードフェンス内の見出し記法は除外する。"""
     content = "# 計画\n\n## 親\n\n### 子\n\n#### 深部\n\n```md\n#### 深部\n```\n\n#### 深部\n"
 
     errors = plan_markdown.check_duplicate_headings(content)
@@ -293,7 +272,6 @@ def test_duplicate_headings_checks_deep_headings_and_ignores_fences() -> None:
 
 
 def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> None:
-    """人間向け実施内容のエージェント提案と判断表を一対一で対応させる。"""
     _work_type, errors = plan_sections.check_plan_main_structure(_canonical_human_main_content())
     assert not errors, errors
 
@@ -307,7 +285,6 @@ def test_human_main_structure_requires_one_judgment_row_per_agent_proposal() -> 
 
 
 def test_detail_structure_requires_implementation_units() -> None:
-    """detail側の`## 実装資料`直下に実装単位表を必須とする。"""
     start = _VALID_DETAIL_CONTENT.index("### 実装単位")
     end = _VALID_DETAIL_CONTENT.index(f"### {_plan_fixture.IMPLEMENTATION_H3}")
     content = _VALID_DETAIL_CONTENT[:start] + _VALID_DETAIL_CONTENT[end:]
@@ -316,7 +293,6 @@ def test_detail_structure_requires_implementation_units() -> None:
 
 
 def test_human_detail_structure_accepts_multiple_ascii_comma_dependencies() -> None:
-    """人間向け実装単位は複数の先行依存をASCIIカンマで列挙できる。"""
     second = "| 調査結果の整理 | 既存の判断材料を整理する | なし | 2 | `pytest` |\n"
     content = _HUMAN_DETAIL_CONTENT.replace(
         "| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
@@ -330,19 +306,17 @@ def test_human_detail_structure_accepts_multiple_ascii_comma_dependencies() -> N
 
 
 def test_main_structure_rejects_empty_verification_command() -> None:
-    """`## 検証区分`の各行に空の検証コマンドを置けない。"""
     content = _VALID_MAIN_CONTENT.replace(
         f"| {_plan_format.PLAN_VERIFICATION_TABLE_ROWS[1]} | {_plan_fixture.INTEGRATION_COMMAND} |", "| 統合後検証 |  |"
     )
     _work_type, errors = plan_sections.check_plan_main_structure(content)
     matched = [error for error in errors if "空の検証コマンドがある" in error]
     assert matched, errors
-    # 位置に加えて、検証コマンドの欄へ実行するコマンドを書く直し方を示す。
+
     assert all("検証コマンドの欄には実行するコマンドを書く" in error for error in matched)
 
 
 def test_origin_check_is_inactive_without_collectors(tmp_path: pathlib.Path) -> None:
-    """収集用の一覧を渡さない既存の呼び出しではWI本文との比較を行わない。"""
     _write_wi(tmp_path, _wi_source(source=True))
     _work_type, errors = plan_sections.check_plan_main_structure(_HUMAN_MAIN_CONTENT)
     assert not errors, errors

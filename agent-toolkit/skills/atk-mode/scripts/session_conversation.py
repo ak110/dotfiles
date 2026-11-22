@@ -10,7 +10,6 @@ from typing import Any
 
 
 def positive_integer(value: str) -> int:
-    """公開表示オプションの正整数を検証する。"""
     number = int(value)
     if number <= 0:
         raise argparse.ArgumentTypeError("正整数を指定する")
@@ -18,7 +17,6 @@ def positive_integer(value: str) -> int:
 
 
 def nonnegative_integer(value: str) -> int:
-    """同一bundle内のイベント位置を検証する。"""
     number = int(value)
     if number < 0:
         raise argparse.ArgumentTypeError("非負整数を指定する")
@@ -26,7 +24,6 @@ def nonnegative_integer(value: str) -> int:
 
 
 def timestamp(value: str) -> datetime.datetime:
-    """期間の境界をtimezone付きISO8601として受け付ける。"""
     try:
         parsed = datetime.datetime.fromisoformat(value)
         if parsed.tzinfo is None:
@@ -74,7 +71,7 @@ def window_document(
         raise ValueError("--conversation-afterがbundleの範囲外。次の操作: 同じwork-dirの前回位置を指定する")
     records = args.conversation_record
     since, until = args.conversation_since, args.conversation_until
-    # 記録別の連結順は全担当の直近を表さない。同じ保存bundleから毎回同じ位置を再構成する。
+
     ordered = sorted(
         ((_event_time(event), event) for event in events),
         key=lambda item: (item[0] is None, item[0] or datetime.datetime.min.replace(tzinfo=datetime.UTC)),
@@ -137,7 +134,6 @@ def window_document(
             f"全文は元記録から取得する。詳細: `{detail_command} --detail <記録>:<行番号>`。\n"
         )
 
-    # 案内が長い入力でも文書全体の予算を守る。固定部を短縮すると対象や再取得操作が曖昧になるため拒否する。
     cursor = after
     if len((header + footer(0, cursor, 0)).encode("utf-8")) > max_bytes:
         raise ValueError("会話表示の最小固定部が予算を超えた。次の操作: --conversation-max-bytesを増やして再実行する")
@@ -202,7 +198,6 @@ _DIGEST_ELIDED_MIN_BYTES = 600
 
 
 def _omission_note(omitted: int) -> str:
-    """省いたエージェント発話の件数を示す行を返す。省いていなければ空文字列を返す。"""
     return f"- （古いエージェント発話{omitted}件を省いた。残した行は元の順である）\n" if omitted else ""
 
 
@@ -280,7 +275,7 @@ def digest_document(
             break
         total -= len(lines.pop(index).encode("utf-8"))
         omitted += 1
-    # 実際に出す件数の行の分だけを、本文の予算から除く。
+
     note = _omission_note(omitted)
     budget = max_bytes - len(note.encode("utf-8"))
     for index in recent:

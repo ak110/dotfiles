@@ -1,5 +1,3 @@
-"""全工程の静的見込みと入力境界を、小さい合成DAGで検証する。"""
-
 from __future__ import annotations
 
 import copy

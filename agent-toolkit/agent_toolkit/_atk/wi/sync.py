@@ -1,19 +1,3 @@
-"""WI保存リポジトリ（private-notes）の準備、remote同期、排他ロックとcommit・push。
-
-不変条件: WI保存リポジトリへのgit操作・ファイル変更は、`repo_lock(private_notes)`保持下でのみ行う。
-複数プロセスが同一クローンへ並行アクセスする運用（`atk wi process-loop`の複数常駐等）を前提とし、
-この不変条件を破るとremote同期とファイル操作・commitの交錯によるfast-forward失敗を招く。
-`repo_lock`はロックファイル名を対象パスから導出するため、WI保存リポジトリ以外の
-git作業コピー（`atk wi process-loop`が上流差分を確認するdotfilesチェックアウト等）にも適用する。
-計画ロックの除外設定はGitの版管理の対象外へ書くため、この不変条件の対象には当たらない。
-
-不変条件: `list`のような読み取り専用のサブコマンドは、WI保存リポジトリの版管理を
-書き換えない。前段の環境準備は対話シェルの起動ごとにも実行されるため、この不変条件を破ると
-ユーザーの操作と無関係なcommitとpushが起動のたびに発生し、他cloneとの競合を招く。
-
-旧形式の移行: `ensure_environment`は毎回`migrate_legacy_layout`を、`pull`は毎回`migrate_legacy_reservations`を呼ぶ。
-"""
-
 import contextlib
 import dataclasses
 import datetime
@@ -144,14 +128,13 @@ def ensure_environment(home: pathlib.Path) -> pathlib.Path:
 
 def _has_no_items(root: pathlib.Path) -> bool:
     """年月配置にWIの`.md`が無く、`plans/`にも計画ファイルが無いかを返す。"""
-    # 警告に必要なのは空かどうかだけであり、WIを全件取得して並べる必要はない。
+
     for month in root.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]"):
         try:
             with os.scandir(month) as entries:
                 if any(os.path.normcase(entry.name).endswith(".md") for entry in entries):
                     return False
         except OSError:
-            # globと同じく、消滅・読取不能の候補は次の月へ進む。
             continue
     plans = root / "plans"
     return not plans.is_dir() or next(plans.rglob("*.md"), None) is None

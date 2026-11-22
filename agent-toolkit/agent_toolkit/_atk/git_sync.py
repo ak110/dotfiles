@@ -70,23 +70,14 @@ _DivergenceRecovery = Callable[[pathlib.Path], bool]
 
 
 class _GitRunner(Protocol):
-    """終了時に例外を送出するGit実行関数の型。"""
-
     def __call__(self, args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None: ...
 
 
 class _GitResultRunner(Protocol):
-    """終了コードを保持するGit実行関数の型。"""
-
     def __call__(self, args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]: ...
 
 
 class RebaseInProgressError(RuntimeError):
-    """rebase中の作業コピーで新しい更新を開始しようとした。
-
-    `str()`は理由だけを返す。次の操作は原因が1つに決まるため`next_action`へ固定する。
-    """
-
     next_action = (
         "現在の競合を解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、`git push`を実行するか、"
         "不要であれば`git -c submodule.recurse=false rebase --abort`を実行してから、元の`atk`操作を再実行する"
@@ -123,7 +114,6 @@ class RepoLockTimeoutError(filelock.Timeout):
 
 
 def git_timeout_reason(error: subprocess.TimeoutExpired) -> str:
-    """gitの時間切れについて、打ち切ったコマンド、上限秒数、作業ディレクトリを示す理由を返す。"""
     command = " ".join(error.cmd) if isinstance(error.cmd, list | tuple) else str(error.cmd)
     return (
         f"gitが時間上限の{error.timeout:.0f}秒に達したため、子プロセスまで止めて打ち切った: `{command}`"
@@ -150,20 +140,16 @@ def _run_git(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool =
 
 
 def _forward_error_output(error: subprocess.CalledProcessError) -> None:
-    """保持したGitの標準出力と標準エラーを呼び出し側の標準エラーへ転送する。"""
     for output in (error.output, error.stderr):
         if isinstance(output, str) and output:
             print(output, file=sys.stderr, end="")
 
 
 def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """Gitコマンドを終了コード付きで実行する。"""
     return _git_command.run(args, cwd, check=False, capture_output=True, text=True)
 
 
 class _ThreadLocalHeldPaths(threading.local):
-    """現在のスレッドが保持しているGit common directoryを記録する。"""
-
     def __init__(self) -> None:
         self.paths: dict[pathlib.Path, int] = {}
         self.push_deferred: set[pathlib.Path] = set()
@@ -260,8 +246,6 @@ def _describe_holder(lock_file: str) -> str:
 
 
 class _RepoLock(filelock.FileLock):
-    """Git common directory単位で保持記録を管理するFileLock。"""
-
     def __init__(self, repo_path: pathlib.Path, *, timeout: float) -> None:
         self._repo_path = repo_path
         self._target = _lock_key(repo_path)
@@ -308,7 +292,7 @@ class _RepoLock(filelock.FileLock):
         _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
         if self.lock_counter == 1:
             _write_holder(self.lock_file)
-            # 呼び出し側ごとの指定に頼らず、保持区間のgit操作全体を有限にする。
+
             self._hold_scope = contextlib.ExitStack()
             self._hold_scope.enter_context(_git_command.timeout_scope(LOCK_HOLD_TIMEOUT_SECONDS))
         if observer is not None and self._acquired_at is None:
@@ -344,7 +328,7 @@ def repo_lock(repo_path: pathlib.Path, *, timeout: float | None = None) -> filel
     待機上限に達すると、保持者を示す`RepoLockTimeoutError`（`filelock.Timeout`の派生）を送出する。
     保持している間のgit操作は、合計で`LOCK_HOLD_TIMEOUT_SECONDS`を上限とする。
     """
-    # filelockは生成時の引数を検証するため、省略値はここで秒数へ解決する。
+
     return _RepoLock(repo_path, timeout=LOCK_WAIT_TIMEOUT_SECONDS if timeout is None else timeout)
 
 
@@ -376,22 +360,18 @@ def _report_missing_upstream(private_notes: pathlib.Path) -> None:
 
 
 def push_was_deferred(private_notes: pathlib.Path) -> bool:
-    """現在のスレッドの直近pushで保留を報告したか返す。"""
     return private_notes.resolve() in _LOCK_HELD_PATHS.push_deferred
 
 
 def reset_sync_attempt() -> None:
-    """現在のスレッドの、commitと送信の試行の記録を消す。CLIが1回の操作を始める前に呼ぶ。"""
     _LOCK_HELD_PATHS.sync_attempted = False
 
 
 def sync_attempted() -> bool:
-    """`reset_sync_attempt`の後に、現在のスレッドがcommitしたか未pushのcommitの送信を試みたかを返す。"""
     return _LOCK_HELD_PATHS.sync_attempted
 
 
 def _git_path(private_notes: pathlib.Path, name: str, *, result_runner: _GitResultRunner) -> pathlib.Path | None:
-    """Git管理下の特殊パスを解決する。"""
     result = result_runner(["rev-parse", "--git-path", name], private_notes)
     if result.returncode != 0 or not result.stdout.strip():
         return None
@@ -406,7 +386,6 @@ def is_rebase_in_progress(
     *,
     result_runner: _GitResultRunner = _run_git_result,
 ) -> bool:
-    """Git common directoryにrebase中間状態が存在するか判定する。"""
     if not (private_notes / ".git").exists():
         return False
     for name in ("rebase-merge", "rebase-apply"):
@@ -420,7 +399,6 @@ def is_rebase_in_progress(
 
 
 def ensure_not_rebasing(private_notes: pathlib.Path) -> None:
-    """新しい更新を受け付けられる状態か検証する。"""
     if is_rebase_in_progress(private_notes):
         raise RebaseInProgressError("rebase中のため新しい更新を開始できない")
 
@@ -457,7 +435,6 @@ def _pull_impl(
     result_runner: _GitResultRunner,
     redundant_divergence: _DivergenceRecovery | None,
 ) -> None:
-    """pullのGit操作本体を実行する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
@@ -514,7 +491,6 @@ def _is_ancestor(
     *,
     run_git: _GitRunner,
 ) -> bool:
-    """Gitの終了コードで祖先関係を判定する。"""
     try:
         run_git(["merge-base", "--is-ancestor", older, newer], private_notes)
     except subprocess.CalledProcessError as error:
@@ -525,7 +501,6 @@ def _is_ancestor(
 
 
 def _history_has_diverged(private_notes: pathlib.Path, *, run_git: _GitRunner) -> bool:
-    """HEADとupstreamの双方に相手へ含まれないcommitがあるか返す。"""
     local_is_ancestor = _is_ancestor("HEAD", "@{u}", private_notes, run_git=run_git)
     remote_is_ancestor = _is_ancestor("@{u}", "HEAD", private_notes, run_git=run_git)
     return not local_is_ancestor and not remote_is_ancestor
@@ -537,7 +512,6 @@ def is_worktree_dirty(
     paths: Iterable[str] | None = None,
     result_runner: _GitResultRunner = _run_git_result,
 ) -> bool:
-    """index・worktree・未追跡ファイルを含む変更の有無を返す。"""
     args = ["status", "--porcelain"]
     if paths is not None:
         args.extend(("--", *paths))
@@ -552,7 +526,6 @@ def pending_commit_count(
     *,
     result_runner: _GitResultRunner = _run_git_result,
 ) -> int | None:
-    """upstreamへ未送信のローカルcommit数を返す。"""
     if not has_remote(private_notes):
         return 0
     result = result_runner(["rev-list", "--count", "@{u}..HEAD"], private_notes)
@@ -586,7 +559,6 @@ def _recover_matching_tree_divergence(
     run_git: _GitRunner,
     result_runner: _GitResultRunner,
 ) -> bool:
-    """HEADとupstreamの木が一致する分岐をindexを保ったまま解消する。"""
     result = result_runner(["diff", "--quiet", "HEAD", "@{u}"], private_notes)
     if result.returncode != 0:
         return False
@@ -599,7 +571,6 @@ def _divergence_details(
     *,
     result_runner: _GitResultRunner,
 ) -> str:
-    """分岐の件数と内容差を、出力先と成否を決めずに組み立てる。"""
     count_text = "取得できなかった"
     try:
         counts = result_runner(["rev-list", "--left-right", "--count", "HEAD...@{u}"], private_notes)
@@ -644,6 +615,7 @@ def _report_divergence(
             "`git -c submodule.recurse=false rebase @{u}`を実行する。"
             "競合したら解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、"
             "`git push`の順に実行する。\n"
+            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
             "同じ変更がupstreamに存在する重複commitなら、内容を確認して"
             "`git -c submodule.recurse=false rebase --skip`を実行できる。"
             "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
@@ -667,6 +639,7 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
         next_action=(
             "競合を解消した後、`git add <競合解消済みパス>`、"
             "`git -c submodule.recurse=false rebase --continue`、`git push`の順に実行する。\n"
+            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
             "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して"
             "`git -c submodule.recurse=false rebase --skip`を実行できる。"
             "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
@@ -757,7 +730,6 @@ def push_pending_commits(
     result_runner: _GitResultRunner = _run_git_result,
     redundant_divergence: _DivergenceRecovery | None = None,
 ) -> int | None:
-    """branch上の未push commitを送信し、履歴分岐だけをrebaseして再送する。"""
     _LOCK_HELD_PATHS.push_deferred.discard(private_notes.resolve())
     try:
         return _push_pending_commits_impl(
@@ -783,7 +755,6 @@ def _push_pending_commits_impl(
     result_runner: _GitResultRunner,
     redundant_divergence: _DivergenceRecovery | None,
 ) -> int | None:
-    """pushのGit操作本体を実行する。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     if not has_remote(private_notes):
@@ -862,11 +833,6 @@ def _target_has_staged_changes(
     *,
     result_runner: _GitResultRunner,
 ) -> bool | None:
-    """対象pathだけのstage差分を終了コードで判定する。
-
-    Gitリポジトリでないテスト用fake runnerでは`None`を返し、従来どおりcommitを試す。
-    実Gitの予期しない終了コードは例外として扱う。
-    """
     if not (private_notes / ".git").exists():
         return None
     try:
@@ -893,7 +859,6 @@ def _usable_pathspecs(
     *,
     result_runner: _GitResultRunner,
 ) -> list[str]:
-    """実在するパスか、追跡済みで削除されたパスに限定したpathspecを返す。"""
     if not (private_notes / ".git").exists():
         return paths
     usable: list[str] = []
@@ -929,7 +894,6 @@ def commit_and_push(
     result_runner: _GitResultRunner = _run_git_result,
     push_pending_fn: Callable[[pathlib.Path], int | None] | None = None,
 ) -> int | None:
-    """許可pathだけをstage・commitし、branch上のpending commitをpushする。"""
     assert_repo_lock_held(private_notes)
     ensure_not_rebasing(private_notes)
     paths = list(dict.fromkeys(rel_paths))
@@ -961,7 +925,6 @@ def require_upstream(
     *,
     result_runner: _GitResultRunner = _run_git_result,
 ) -> str:
-    """upstreamが解決できることを検証し、表示用の参照名を返す。"""
     result = result_runner(
         ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
         private_notes,
@@ -979,11 +942,9 @@ def remote_contains_head(
     *,
     run_git: _GitRunner = _run_git,
 ) -> bool:
-    """upstreamが現在のHEADを含むか終了コードで検証する。"""
     return _is_ancestor("HEAD", "@{u}", private_notes, run_git=run_git)
 
 
-# 既存のプライベート呼び出し元が段階的に移行できるよう、旧命名も公開する。
 _git_common_dir = git_common_dir
 _repo_lock_path = repo_lock_path
 _repo_lock = repo_lock

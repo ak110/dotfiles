@@ -50,13 +50,12 @@ if prompt.endswith("auth-failure") or "\\nauth-failure\\n" in prompt:
     sys.exit(1)
 if prompt.endswith("no-output") or "\\nno-output\\n" in prompt:
     sys.exit(0)
-emit("text", part=dict(type="text", text=prompt[-8:]))
+emit("text", part=dict(type="text", text="状態: completed\\n結果: " + prompt[-8:]))
 emit("step_finish", part=dict(type="step-finish", reason="stop", cost=0.01, tokens=dict(total=30, input=20, output=10)))
 """
 
 
 def _install_cli(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """ホストのPythonから起動する偽CLIと、その引数の保存先を用意する。"""
     restore_host_environment(monkeypatch)
     directory = tmp_path / "bin"
     directory.mkdir()
@@ -95,7 +94,6 @@ async def _finished(manager: opencode.OpenCodeManager, session: SessionState) ->
 async def test_cli_start_reply_and_raw_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, configured: str, model: str, effort: str
 ) -> None:
-    """同じIDで継続し、モデルとvariantを分離して渡し、元のイベントを両turnとも保存する。"""
     capture = _install_cli(tmp_path, monkeypatch)
     engine, selected_model, selected_effort = config.parse_stage_model_candidates(f"opencode:{configured}")[0]
     assert engine == "opencode"
@@ -155,7 +153,6 @@ async def test_missing_cli_and_missing_model_fail_start(tmp_path: pathlib.Path, 
 
 @pytest.mark.asyncio
 async def test_cli_receives_all_plugin_and_user_rules(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行する子へ、起動の本文とユーザーの再帰的な規範集合を届け、agent-toolkitの旧い配布物は読まない。"""
     capture = _install_cli(tmp_path, monkeypatch)
     custom = tmp_path / "claude" / "rules" / "nested" / "custom.md"
     custom.parent.mkdir(parents=True)
@@ -181,9 +178,6 @@ async def test_public_start_uses_configured_candidate_and_fallback(
     """公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。"""
     capture = _install_cli(tmp_path, monkeypatch)
     script = capture.parent / "bin" / "opencode"
-    source = script.read_text(encoding="utf-8")
-    assert source.count("text=prompt[-8:]") == 1
-    script.write_text(source.replace("text=prompt[-8:]", 'text=prompt[-8:] + "\\n状態: completed"'), encoding="utf-8")
 
     async def launch_fake(*args: str, **kwargs: Any) -> asyncio.subprocess.Process:
         if args[0] == sys.executable:

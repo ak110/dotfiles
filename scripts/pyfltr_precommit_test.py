@@ -1,5 +1,3 @@
-"""commitのhookがpytestを再利用する条件と、再利用しない場合の全体実行を確かめる。"""
-
 import datetime
 import json
 import os
@@ -13,7 +11,7 @@ import pytest
 from agent_toolkit._testing.git_repository import commit_all, init_repository
 
 _VERSION = "3.30.1"
-# 整形段がファイルを書き直す実行を表すため、実行の開始は作業ツリーの変更より前に置く。
+
 _RUN_STARTED_AT = "2000-01-01T00:00:00+00:00"
 
 
@@ -60,7 +58,6 @@ def test_consumer_failure_reports_diagnostic_and_retry(
 def test_verify_run_discovers_consumers_from_public_argv(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, targets: list[str], expected: int, options: list[str]
 ) -> None:
-    """標準の統合呼出しが実ファイルの候補不足を拒否し、明示試験・親ディレクトリ・全体を受理する。"""
     repository = _repository(tmp_path)
     (repository / "src" / "consumer_test.py").write_text("import a as alias\n", encoding="utf-8")
     commit_all(repository, "consumer")
@@ -71,17 +68,33 @@ def test_verify_run_discovers_consumers_from_public_argv(
 
 
 def test_consumer_and_verify_modes_are_exclusive() -> None:
-    """併用によるverify-runの黙った無視を防ぐ。"""
     with pytest.raises(SystemExit) as exc:
         pyfltr_precommit.main(["--consumer-tests", "--verify-run", "01RUN"])
     assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("include_consumer", [False, True])
+def test_scoped_run_is_only_reusable_for_lane_verification(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, include_consumer: bool
+) -> None:
+    repository = _repository(tmp_path)
+    consumer = "src/consumer_test.py"
+    (repository / consumer).write_text("import a\n", encoding="utf-8")
+    commit_all(repository, "consumer")
+    monkeypatch.chdir(repository)
+    argv = ["run", "--no-always-targets", "src/a.py"]
+    if include_consumer:
+        argv.append(consumer)
+    _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=argv)
+    assert pyfltr_precommit.main(["--check-argv", json.dumps(argv)]) == int(not include_consumer)
+    assert (pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN").run_id == "01RUN") is include_consumer
+    assert pyfltr_precommit.find_reusable_run(repository, "pyfltr").run_id is None
 
 
 @pytest.mark.parametrize("option", ["--pytest-args=-v", "--pytest-args=-v -rA --maxfail=10", "--only-failed"])
 def test_planned_argv_rejects_same_non_neutral_input_as_verify(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], option: str
 ) -> None:
-    """長い試験を起動する前と実受理で同じ引数の拒否理由を取得する。"""
     repository = _repository(tmp_path)
     monkeypatch.chdir(repository)
     planned = ["run", option, "src/a.py"]
@@ -98,7 +111,6 @@ def test_planned_argv_rejects_same_non_neutral_input_as_verify(
 def test_ambiguous_candidate_proof_is_shared_by_preflight_and_verify(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """偶然一致の除外理由は受理するが、欠落・古い候補の判定は受理しない。"""
     repository = _repository(tmp_path)
     (repository / "unrelated_test.py").write_text("# a.pyという名称への言及だけ\n", encoding="utf-8")
     commit_all(repository, "candidate")
@@ -131,13 +143,11 @@ def test_ambiguous_candidate_proof_is_shared_by_preflight_and_verify(
 
 @pytest.mark.parametrize("value", ["{}", "[1]", "null", "invalid"])
 def test_preflight_rejects_invalid_argv_json(value: str) -> None:
-    """公開境界で不正な入力を実行済みの成功へ変換しない。"""
     assert pyfltr_precommit.main(["--check-argv", value]) == 2
 
 
 @pytest.mark.parametrize("planned", [["fast"], ["run", "--commands=ruff-check"], ["run", "--commands", "ruff-check"]])
 def test_preflight_rejects_known_pytest_scope_omissions(planned: list[str]) -> None:
-    """不変条件だけのfastやpytestを外す指定を最終検証として受理しない。"""
     assert pyfltr_precommit.main(["--check-argv", json.dumps(planned)]) == 1
 
 
@@ -153,7 +163,6 @@ def _install_pyfltr(
     list_returncode: int = 0,
     launch_boundary_at: str | None = None,
 ) -> list[list[str]]:
-    """pyfltrの照会コマンドの公開出力を差し替え、呼び出された引数を記録する。"""
     calls: list[list[str]] = []
     pytest_command: dict[str, str] = {"command": "pytest", "status": pytest_status, "started_at": pytest_started_at}
     if launch_boundary_at is not None:
@@ -192,7 +201,6 @@ def _install_pyfltr(
 
 
 def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """pytestの開始後に作業ツリーが変わっていなければ、整形段より前の実行開始によらずpytestを再利用する。"""
     repository = _repository(tmp_path)
     _install_pyfltr(
         monkeypatch, repository, pytest_started_at=_iso(60), argv=["run", "--output-format", "jsonl", "--commands=pytest"]
@@ -211,7 +219,6 @@ def test_reuses_successful_pytest_on_unchanged_tree(tmp_path: pathlib.Path, monk
 def test_reuses_run_with_parallelism_and_maxfail_only(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, argv: list[str]
 ) -> None:
-    """並列数と打ち切り数だけを変える`--pytest-args`は試験の範囲を変えないため再利用する。"""
     repository = _repository(tmp_path)
     _install_pyfltr(monkeypatch, repository, pytest_started_at=_iso(60), argv=argv)
 
@@ -262,7 +269,6 @@ def test_runs_pytest_unless_every_condition_holds(
 def test_worktree_differing_from_index_is_not_reused(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str
 ) -> None:
-    """commit対象のindexと作業ツリーが異なる場合は、pyfltrを照会せずに全体を実行する。"""
     repository = _repository(tmp_path)
     target = repository / "src" / "a.py"
     if change == "modify":
@@ -287,7 +293,6 @@ def test_worktree_differing_from_index_is_not_reused(
 def test_main_disables_only_pytest_when_reusing(
     monkeypatch: pytest.MonkeyPatch, reuse: pyfltr_precommit.Reuse, expected_extra: list[str]
 ) -> None:
-    """再利用する場合だけpytestを外し、他のチェックと終了コードはpyfltrのものを返す。"""
     launched: list[list[str]] = []
 
     def _find(directory: pathlib.Path, pyfltr: str) -> pyfltr_precommit.Reuse:
@@ -312,7 +317,6 @@ def test_main_disables_only_pytest_when_reusing(
 def test_untracked_file_added_after_pytest_start_is_not_reused(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, add_untracked: bool, reused: bool
 ) -> None:
-    """pytestの開始後に加えた未追跡ファイルは、その更新時刻で検出して再利用しない。"""
     repository = _repository(tmp_path)
     # 作成した作業ツリーの更新時刻より後、追加するファイルの更新時刻より前にpytestが始まった実行を表す。
     # 秒未満を記録しないファイルシステムでも作業ツリーの作成と区別できるよう、次の秒に入ってから開始とする。
@@ -329,7 +333,6 @@ def test_untracked_file_added_after_pytest_start_is_not_reused(
 
 
 def _set_second_precision_times(repository: pathlib.Path, second: int) -> None:
-    """秒未満を記録しないファイルシステムで、整形が秒`second`の中に書き直した状態を作る。"""
     index = pathlib.Path(
         subprocess.run(
             ["git", "-C", str(repository), "rev-parse", "--path-format=absolute", "--git-path", "index"],
@@ -359,23 +362,16 @@ def test_launch_boundary_accepts_same_second_formatting_only(
     edit_after: bool,
     reused: bool,
 ) -> None:
-    """整形と同じ秒に始まった試験は、整形の秒を過ぎた開始境界の記録がある場合だけ受理する。
-
-    pyfltrはテスターを整形の秒が終わってから起動し、その時刻を`launch_boundary_at`へ記録する。
-    境界の後の秒に記録された変更は、境界より後に起きた可能性があるため受理しない。
-    """
     repository = _repository(tmp_path)
     if edit_after:
-        # commit済みにして、指定runでもindexとHEADの一致ではなく時刻の判定で拒否されることを確かめる。
         (repository / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
         commit_all(repository, "edit")
-    # ctimeは書き換えられないため、秒の先頭で整形を模した更新を行い、ctimeも同じ秒に収める。
+
     time.sleep(1.05 - time.time() % 1)
     formatted_second = int(time.time())
     epoch = datetime.datetime.fromtimestamp(formatted_second, tz=datetime.UTC)
     _set_second_precision_times(repository, formatted_second)
     if edit_after:
-        # 境界の後に記録された変更。秒精度の記録では境界の直後の変更と区別できない。
         time.sleep(formatted_second + 1.05 - time.time())
         edited = (formatted_second + 1) * 1_000_000_000
         os.utime(repository / "src" / "a.py", ns=(edited, edited))
@@ -397,14 +393,13 @@ def test_launch_boundary_accepts_same_second_formatting_only(
 def test_reuse_tracks_commit_inputs_not_ignored_directory_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, change: str, run_id: str | None
 ) -> None:
-    """除外ファイルの生成・削除は受理し、追跡内容の変更・削除・改名は拒否する。"""
     repository = _repository(tmp_path)
     (repository / ".gitignore").write_text("src/*.log\n", encoding="utf-8")
     commit_all(repository, "ignore logs")
     ignored = repository / "src" / "output.log"
     if change == "ignored-delete":
         ignored.write_text("before", encoding="utf-8")
-    # 秒精度のファイルシステムでも、準備と操作の時刻を分離する。
+
     time.sleep(1.05 - time.time() % 1)
     pytest_started_at = _iso(0)
     time.sleep(0.05)
@@ -429,7 +424,6 @@ def test_reuse_tracks_commit_inputs_not_ignored_directory_changes(
 
 
 def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """照会出力の形式の変化などで判定中に例外が出た場合も、hookは止まらずpytestを含めて実行する。"""
     launched: list[list[str]] = []
 
     def _find(directory: pathlib.Path, pyfltr: str) -> pyfltr_precommit.Reuse:
@@ -463,7 +457,6 @@ def test_main_runs_pytest_when_query_output_is_unexpected(monkeypatch: pytest.Mo
 def test_main_skips_pytest_only_outside_integration_branches(
     monkeypatch: pytest.MonkeyPatch, branch: str | None, expected_extra: list[str], queried: bool
 ) -> None:
-    """統合先のブランチとブランチを特定できない状態ではpytestを含め、他のブランチではpytestを外す。"""
     launched: list[list[str]] = []
     finds: list[pathlib.Path] = []
 
@@ -487,8 +480,41 @@ def test_main_skips_pytest_only_outside_integration_branches(
     assert bool(finds) is queried
 
 
+@pytest.mark.parametrize(
+    ("script", "candidate"),
+    [
+        ("#!/usr/bin/env bash\nset -euo pipefail\nproducer | grep -qxF token\n", "grep"),
+        ("set -o pipefail; producer | grep -m 1 token", "grep"),
+        ("set -o pipefail; producer | head -n 10", "head"),
+        ("set -o pipefail; producer | grep -F token", None),
+        ("set -o pipefail; producer | grep -- -q", None),
+        ("set -o pipefail; producer | grep -e -q", None),
+        ("set -o pipefail; printf '%s\n' 'producer | head'", None),
+        ("set -o pipefail; set +o pipefail; producer | head", None),
+    ],
+)
+def test_main_observes_early_pipe_read_without_changing_exit(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    script: str,
+    candidate: str | None,
+) -> None:
+    """候補を実行の失敗とみなさず、pyfltrの終了値をそのまま返す。"""
+    monkeypatch.chdir(tmp_path)
+    pathlib.Path("script.sh").write_text(script, encoding="utf-8")
+    monkeypatch.setattr(pyfltr_precommit.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(pyfltr_precommit, "current_branch", lambda directory: "lane")
+    monkeypatch.setattr(pyfltr_precommit.subprocess, "run", lambda argv, **kwargs: subprocess.CompletedProcess(argv, 7))
+
+    assert pyfltr_precommit.main(["script.sh"]) == 7
+    diagnostic = capsys.readouterr().err
+    assert ("早期終了が重なる候補" in diagnostic) is (candidate is not None)
+    if candidate is not None:
+        assert f"後段{candidate}" in diagnostic
+
+
 def test_current_branch_reads_branch_and_detached_head(tmp_path: pathlib.Path) -> None:
-    """実際のリポジトリでブランチ名を返し、detached HEADではNoneを返す。"""
     repository = _repository(tmp_path)
     subprocess.run(["git", "-C", str(repository), "checkout", "-q", "-b", "work"], check=True)
     assert pyfltr_precommit.current_branch(repository) == "work"
@@ -497,7 +523,6 @@ def test_current_branch_reads_branch_and_detached_head(tmp_path: pathlib.Path) -
 
 
 def test_current_branch_is_not_confused_by_same_named_tag(tmp_path: pathlib.Path) -> None:
-    """統合先のブランチと同名のタグがあっても、ブランチ名をそのまま返す。"""
     repository = _repository(tmp_path)
     subprocess.run(["git", "-C", str(repository), "checkout", "-q", "-b", "develop"], check=True)
     subprocess.run(["git", "-C", str(repository), "tag", "develop"], check=True)
@@ -506,7 +531,6 @@ def test_current_branch_is_not_confused_by_same_named_tag(tmp_path: pathlib.Path
 
 @pytest.mark.parametrize("staged_change", [False, True], ids=["head-content", "index-differs-from-head"])
 def test_verify_run_requires_head_content(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, staged_change: bool) -> None:
-    """指定した実行はHEADの内容でpytestに成功した場合だけ確かめられ、indexがHEADと異なれば確かめられない。"""
     repository = _repository(tmp_path)
     if staged_change:
         (repository / "src" / "a.py").write_text("x = 2\n", encoding="utf-8")
@@ -516,7 +540,7 @@ def test_verify_run_requires_head_content(tmp_path: pathlib.Path, monkeypatch: p
     reuse = pyfltr_precommit.find_reusable_run(repository, "pyfltr", run_id="01RUN")
 
     assert (reuse.run_id == "01RUN") is not staged_change
-    # 指定した実行だけを調べ、一覧の照会はしない。
+
     assert all(call[0] != "list-runs" for call in calls)
 
 
@@ -529,7 +553,6 @@ def test_main_verify_run_returns_result_without_commit(
     reuse: pyfltr_precommit.Reuse,
     expected: int,
 ) -> None:
-    """`--verify-run`は`pyfltr fast`を起動せず、確かめた結果を終了コードで返す。"""
     launched: list[list[str]] = []
 
     def _find(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None) -> pyfltr_precommit.Reuse:
@@ -591,17 +614,13 @@ def test_git_failure_reports_context_independent_index_inspection(
 def test_index_rewritten_after_boundary_by_stat_refresh(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, run_id: str | None, reused: bool
 ) -> None:
-    """整形で時刻だけ変わったファイルにより後のGit操作がindexを書き直しても、指定runはHEADとの一致で受理する。
-
-    自動選択はcommitの直前にindexの内容をHEADと比べないため、従来どおりindexの時刻を保守的に比べる。
-    """
     repository = _repository(tmp_path)
     time.sleep(1.05 - time.time() % 1)
     formatted_second = int(time.time())
     _set_second_precision_times(repository, formatted_second)
     epoch = datetime.datetime.fromtimestamp(formatted_second, tz=datetime.UTC)
     time.sleep(formatted_second + 1.05 - time.time())
-    # 境界の後にGitがstatの再確認でindexを書き直した状態を表す。内容はHEADと同じ。
+
     subprocess.run(["git", "-C", str(repository), "update-index", "--really-refresh"], check=False, capture_output=True)
     index = repository / ".git" / "index"
     os.utime(index)

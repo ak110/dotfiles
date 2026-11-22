@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_timings）。"""
-
 from __future__ import annotations
 
 import collections
@@ -14,7 +12,6 @@ from agent_toolkit._common.json_lines import split_lines
 
 
 def _hook_timing_stats(session_id: str) -> dict[str, Any]:
-    """有限な診断記録のスナップショットを区間別に集計し、未記録と不正行を区別する。"""
     result: dict[str, Any] = {
         "kind": "stats-hook-timings",
         "session_id": session_id,

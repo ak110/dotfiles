@@ -20,21 +20,26 @@ import json
 import sys
 
 args = sys.argv[1:]
+if args == ["--version"]:
+    print("1.5.13")
+    sys.exit(0)
+assert json.loads(args[args.index("--settings") + 1]) == {{"modelProvider": "gemini"}}
 conversation = args[args.index("--conversation") + 1] if "--conversation" in args else "conv-1"
 prompt = args[args.index("-p") + 1]
 print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"model": "gemini-3.8-flash"}}}}), flush=True)
 print(json.dumps({{"event": "step_update", "step_update": {{"text_delta": "調査中"}}}}), flush=True)
-print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": prompt[-20:]}}}}), flush=True)
+response = "状態: completed\\n結果: " + prompt[-20:]
+print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": response}}}}), flush=True)
 """
 
 
 @pytest.mark.asyncio
 async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """MCPの共通整備後に起動するCLIは、起動元contextを除いて明示ownerと委譲印を受け取る。"""
     for name in mcp_environment._NON_INHERITABLE_NAMES:  # pylint: disable=protected-access
         monkeypatch.setenv(name.upper(), "source-context")
     mcp_tools._prepare_child_environment()  # pylint: disable=protected-access
     captured: dict[str, str] = {}
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _environment: "agy")
 
     async def spawn(*_args: Any, **kwargs: Any) -> Any:
         captured.update(kwargs["env"])
@@ -54,18 +59,23 @@ async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytes
 
 
 def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """PATHの先頭へstream-jsonを返す`agy`のスタブを置く。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     fake = bin_dir / "agy"
     fake.write_text(_FAKE_AGY.format(python=sys.executable), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(antigravity.host_homes.claude_config_dir()))
+    home = tmp_path / "agy-home"
+    monkeypatch.setenv("USERPROFILE" if os.name == "nt" else "HOME", str(home))
+    settings = home / ".gemini" / "antigravity-cli" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"modelProvider":"gemini"}', encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
     return fake
 
 
 def test_build_command_passes_model_effort_and_conversation() -> None:
-    """モデル、effort、会話識別子と事前承認の指定をコマンド列へ渡す。"""
     command = antigravity.AntigravityManager.build_command(
         prompt="推敲して", model="gemini-3.8-flash", effort="medium", conversation_id="conv-1"
     )
@@ -77,12 +87,11 @@ def test_build_command_passes_model_effort_and_conversation() -> None:
     assert command[command.index("--effort") + 1] == "medium"
     assert command[command.index("--conversation") + 1] == "conv-1"
     assert "--dangerously-skip-permissions" in command
-    # 非対話実行で上限を指定しない場合は5分で終了するため、1turnを完了できる上限を明示する。
+
     assert command[command.index("--print-timeout") + 1] == "3600s"
 
 
 def test_build_command_omits_absent_options() -> None:
-    """モデル、effort、会話識別子を指定しない起動ではこれらのオプションを渡さない。"""
     command = antigravity.build_command("推敲して", None, None, None)
 
     assert "--model" not in command
@@ -91,8 +100,26 @@ def test_build_command_omits_absent_options() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_missing_gemini_opt_in_or_key_prevents_agent_spawn(tmp_path, monkeypatch, explicit):
+    _install_fake_agy(tmp_path, monkeypatch)
+    home = tmp_path / "agy-home"
+    if explicit:
+        monkeypatch.delenv("GEMINI_API_KEY")
+    else:
+        (home / ".gemini" / "antigravity-cli" / "settings.json").write_text("{}", encoding="utf-8")
+
+    async def unexpected(*_args, **_kwargs):
+        pytest.fail("APIキー方式の要件を満たさない委譲を起動した")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", unexpected)
+    async with antigravity.AntigravityManager() as backend:
+        with pytest.raises(session_errors.DelegateBackendError, match="Gemini|GEMINI"):
+            await backend.start("試験", str(tmp_path))
+
+
+@pytest.mark.asyncio
 async def test_explore_reaches_cli_on_start_and_resume(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """探索も同じCLIを開始・再開し、共通の読取責務と調査要求を届ける。"""
     fake = _install_fake_agy(tmp_path, monkeypatch)
     source = fake.read_text(encoding="utf-8")
     assert source.count("prompt[-20:]") == 1
@@ -131,14 +158,12 @@ def test_result_values_maps_status(payload: dict[str, Any], expected_status: str
 
 
 def test_decode_event_ignores_non_json_lines() -> None:
-    """JSONでない行と空行は無視する。"""
     assert antigravity.decode_event(b"\n") is None
     assert antigravity.decode_event(b"loading...\n") is None
     assert antigravity.decode_event(b'{"type": "init"}\n') == {"type": "init"}
 
 
 def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`init`でsessionを生成し、`result`で終了時の結果を確定する。"""
     _install_fake_agy(tmp_path, monkeypatch)
 
     async def scenario() -> shared_state.SessionState:
@@ -161,13 +186,14 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
 
 def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """CLIが未導入の起動失敗を委譲先CLIの失敗として送出し、導入と認証の確認へ分類されるようにする。"""
+    _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
 
     async def scenario() -> None:
         async with antigravity.AntigravityManager() as manager:
             await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
 
-    with pytest.raises(session_errors.DelegateBackendError, match="failed to start Antigravity CLI"):
+    with pytest.raises(session_errors.DelegateBackendError, match="agyが見つかりません"):
         asyncio.run(scenario())
 
 
@@ -207,7 +233,6 @@ def test_delegate_prompt_carries_language_condition(tmp_path: pathlib.Path, monk
 def test_send_message_starts_a_new_turn_on_the_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """継続は同じ会話識別子の新しい実行として開始する。"""
     _install_fake_agy(tmp_path, monkeypatch)
 
     async def scenario() -> tuple[dict[str, Any], shared_state.SessionState]:
@@ -234,7 +259,6 @@ def test_send_message_starts_a_new_turn_on_the_same_conversation(
 
 
 def test_each_turn_records_owner_and_cli_processes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """登録簿の記録は所有プロセスとturnごとに起動したCLIの識別を持ち、継続のturnで起動し直したCLIへ更新する。"""
     fake = _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     gates = tmp_path / "executor-gates"
@@ -310,7 +334,6 @@ while not (gates / str(os.getpid())).exists():
 
 
 def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開JSON出力を保存し、継続したturnを同じ記録へ追記する。"""
     _install_fake_agy(tmp_path, monkeypatch)
     log_directory = tmp_path / "logs"
 
@@ -338,7 +361,6 @@ def test_stream_events_are_saved_across_turns(tmp_path: pathlib.Path, monkeypatc
 async def test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """重複initはイベントログと既存状態を保持し、同じIDを指定した再開は成功する。"""
     _install_fake_agy(tmp_path, monkeypatch)
     directory = tmp_path / "logs"
     directory.mkdir()
@@ -395,7 +417,6 @@ def test_event_log_write_failure_does_not_fail_session(
 
 
 def test_send_message_rejects_an_unfinished_turn() -> None:
-    """実行中のturnへの継続は受理せず、終了の観測後に再送する操作を示す。"""
     session = shared_state.SessionState(session_id="conv-1", cwd=".", engine="agy", status="running")
 
     async def scenario() -> None:
@@ -432,7 +453,7 @@ for step_type in ("user_input", "system_message", "error_message"):
 wait_for("output")
 emit({{"event": "step_update", "step_update": {{"conversation_id": "conv-1", "state": "DONE", "step_type": "agent_response"}}}})
 wait_for("finish")
-emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "完了"}}}})
+emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "状態: completed\\n結果: 完了"}}}})
 """
 
 
@@ -445,6 +466,7 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
     fake = bin_dir / "agy"
     fake.write_text(_GATED_AGY.format(python=sys.executable, gate_dir=str(gate_dir)), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _env: str(fake))
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     log_directory = tmp_path / "logs"
 
@@ -474,14 +496,14 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
 
 
 def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動と継続の子環境は、環境の別ownerよりManagerのrootを優先する。"""
     fake = _install_fake_agy(tmp_path, monkeypatch)
     captured = tmp_path / "roots.jsonl"
     fake.write_text(
         _FAKE_AGY.format(python=sys.executable).replace(
             "import sys\n",
-            f'import sys\nimport os\nwith open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
-            '    stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
+            f'import sys\nimport os\nif sys.argv[1:] != ["--version"]:\n'
+            f'    with open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
+            '        stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
         ),
         encoding="utf-8",
     )
@@ -569,7 +591,9 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
             while not session.terminal:
                 await asyncio.sleep(0.01)
         session.live_child_session_ids.add("child-session")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中: child-session"}}
+        )
         assert session.awaiting_auto_resume
         assert not session.terminal
         assert session.pending_result is not None
@@ -583,8 +607,10 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
         assert session.agent_message.endswith("子が完了したため継続")
         assert not session.awaiting_auto_resume
         session.live_child_session_ids.add("second-child")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "完了"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "状態: completed\n結果: 完了"}}
+        )
         assert not session.terminal
         assert session.awaiting_auto_resume
         assert session.live_child_session_ids == {"second-child"}
-        assert session.pending_result == {"status": "completed", "agent_message": "完了", "error": None}
+        assert session.pending_result == {"status": "completed", "agent_message": "状態: completed\n結果: 完了", "error": None}

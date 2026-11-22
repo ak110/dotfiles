@@ -1,5 +1,3 @@
-"""SessionStartの公開hookを再生する検証が、振り返り待ちを隔離した保存先だけへ登録することを確かめる。"""
-
 import io
 import json
 import os
@@ -40,7 +38,6 @@ _PROBE = textwrap.dedent(
 
 
 def _session_start_input(cwd: pathlib.Path) -> str:
-    """受入probeが再生した合成会話のSessionStart入力を返す。"""
     payload = {
         "hook_event_name": "SessionStart",
         "source": "compact",
@@ -58,7 +55,6 @@ def _additional_context(stdout: str) -> str:
 def test_pytest_replay_registers_pending_under_test_root(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """pytestの自動隔離のもとでは、公開hookの再生で作られる振り返り待ちが試験の一時領域へ向く。"""
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(_session_start_input(tmp_path).encode())))
 
     assert hook.main(["rules_context"]) == 0
@@ -105,7 +101,6 @@ def test_one_shot_probe_registers_pending_only_in_its_store(tmp_path: pathlib.Pa
 
 
 def test_isolated_development_state_applies_pytest_isolation_and_restores(tmp_path: pathlib.Path) -> None:
-    """単発スクリプト向けの区間はpytestと同じ隔離を適用し、区間の終了時に元の環境へ戻す。"""
     before = dict(os.environ)
 
     with isolation.isolated_development_state(tmp_path / "probe-root"):
@@ -118,7 +113,6 @@ def test_isolated_development_state_applies_pytest_isolation_and_restores(tmp_pa
 def test_isolated_development_state_reentry_keeps_non_cli_tools(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同じrootで区間へ入り直しても、エージェントCLIと同じディレクトリにある他のツールをPATHから失わない。"""
     host_bin = tmp_path / "host-bin"
     host_bin.mkdir()
     for name in ("codex", "probe-tool"):

@@ -1,5 +1,3 @@
-"""本体の反映後にdotfilesプラグインの配布物と後処理を名前順に適用する。"""
-
 import logging
 import shutil
 from pathlib import Path

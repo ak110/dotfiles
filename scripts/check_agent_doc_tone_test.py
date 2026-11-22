@@ -100,7 +100,6 @@ def test_report_counts_markdown_blocks_and_preserves_physical_positions(
 
 
 def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
-    """否定形終端と「当該」をそれぞれ数える。"""
     text = "当該対象は変更しない。当該値を根拠にしない。当該条件だけを判定しない。肯定形の文である。\n"
 
     metrics = check_agent_doc_tone.Metrics(_write(tmp_path, text), text)
@@ -125,7 +124,6 @@ def test_metrics_count_each_indicator(tmp_path: pathlib.Path) -> None:
 def test_density_keeps_detection_data_out_of_rewrite_candidates(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], data: str
 ) -> None:
-    """本文以外の対象語だけを変えても密度と診断は変わらず、本文の出現だけを編集候補にする。"""
     prose = "本文を読む。\n" * 20
     for prefix in (data, data.replace("当該", "別の")):
         body = prefix + "\n" + prose
@@ -148,14 +146,12 @@ def test_density_keeps_detection_data_out_of_rewrite_candidates(
 
 
 def test_density_preserves_inline_code_data(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """本文のインラインコード内の検出データを密度に含めない。"""
     body = "`当該`を記録する。\n" * 20
     assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
     assert capsys.readouterr().err == ""
 
 
 def test_density_counts_quote_paragraphs_in_every_indicator(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引用内の本文を文数・否定形終端・対象語の全てへ含め、保存データを除く。"""
     body = "> 当該の値は変更しない\n>\n> 結果を読む\n\n" + "本文を読む。\n" * 18
     body += "\n```text\n当該のデータは変更しない。\n```\n"
     path = _write(tmp_path, body)
@@ -171,7 +167,6 @@ def test_density_counts_quote_paragraphs_in_every_indicator(tmp_path: pathlib.Pa
 
 
 def test_short_document_skips_ratio_thresholds(tmp_path: pathlib.Path) -> None:
-    """文数が20未満のファイルへは割合の閾値を適用しない。"""
     text = "当該対象は変更しない。\n"
 
     metrics = check_agent_doc_tone.Metrics(_write(tmp_path, text), text)
@@ -181,7 +176,6 @@ def test_short_document_skips_ratio_thresholds(tmp_path: pathlib.Path) -> None:
 
 
 def test_ratio_thresholds_apply_to_long_document(tmp_path: pathlib.Path) -> None:
-    """文数が20以上のファイルでは否定形終端率と「当該」の出現率を判定する。"""
     text = "当該対象は変更しない。" * 20
 
     metrics = check_agent_doc_tone.Metrics(_write(tmp_path, text), text)
@@ -193,7 +187,6 @@ def test_ratio_thresholds_apply_to_long_document(tmp_path: pathlib.Path) -> None
 
 
 def test_main_reports_violation_and_returns_one(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """閾値を超えたファイルを標準出力へ書いて終了コード1で終わる。"""
     path = _write(tmp_path, "当該対象は変更しない。" * 20)
 
     assert check_agent_doc_tone.main([str(path)]) == 1
@@ -204,7 +197,6 @@ def test_main_reports_violation_and_returns_one(tmp_path: pathlib.Path, capsys: 
 
 
 def _diagnostic_lines(output: str, path: pathlib.Path) -> list[tuple[int, str]]:
-    """標準エラーの診断から対象ファイルの行番号と本文を取り出し、全件が`error`の重大度を持つことを確かめる。"""
     diagnostics: list[tuple[int, str]] = []
     for row in output.splitlines():
         line, _, rest = row.removeprefix(f"{path}:").partition(": ")
@@ -217,7 +209,6 @@ def _diagnostic_lines(output: str, path: pathlib.Path) -> list[tuple[int, str]]:
 def test_density_lists_every_counted_element_with_physical_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """密度の指標ごとに、数えた要素を入力ファイルの物理行の位置付きで全件列挙する。"""
     path = _write(tmp_path, _DENSITY_BODY)
 
     assert check_agent_doc_tone.main([str(path)]) == 1
@@ -240,7 +231,6 @@ def test_density_lists_every_counted_element_with_physical_line(
 def test_density_rewriting_required_sentences_clears_the_metric(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """要約が示す最少件数の文を、文数を変えずに肯定形へ書き換えると、その指標の診断は出力されない。"""
     body = _DENSITY_BODY.replace("対象は変更しない。", "対象を保つ。").replace("値は書かない。", "値を保つ。")
     path = _write(tmp_path, body)
 
@@ -259,20 +249,17 @@ def test_density_rewriting_required_sentences_clears_the_metric(
 def test_density_elements_are_not_listed_within_threshold(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
 ) -> None:
-    """文数20未満のファイルと上限以下のファイルでは、要素ごとの診断を出力しない。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
     assert capsys.readouterr().err == ""
 
 
 def test_main_accepts_compliant_document(tmp_path: pathlib.Path) -> None:
-    """閾値を満たすファイルは終了コード0で終わる。"""
     path = _write(tmp_path, "対象を実際に動かしてから確定する。観測した値を計画へ書く。\n")
 
     assert check_agent_doc_tone.main([str(path)]) == 0
 
 
 def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """`--report`は判定せず、3指標とファイル名を表で出力する。"""
     path = _write(tmp_path, "その値を根拠にしない。\n")
 
     assert check_agent_doc_tone.main(["--report", str(path)]) == 0
@@ -284,7 +271,6 @@ def test_report_mode_prints_metrics_without_judging(tmp_path: pathlib.Path, caps
 
 @pytest.mark.parametrize("name", ["tone-examples.md", "textlint-violations.md"])
 def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str) -> None:
-    """例を置く各ファイルも密度の判定へ到達し、超過した指標を報告する。"""
     owner = (
         "agent-toolkit/skills/atk-mode/references"
         if name == "textlint-violations.md"
@@ -299,7 +285,6 @@ def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.C
 
 
 def test_term_scope_preserves_existing_density_check(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """語の判定を限定した場合も、従来の文体の密度は同じ対象で判定する。"""
     path = _write(tmp_path, "当該対象は変更しない。" * 20)
     scope = tmp_path / "separate"
     scope.mkdir()
@@ -309,7 +294,6 @@ def test_term_scope_preserves_existing_density_check(tmp_path: pathlib.Path, cap
 
 
 def test_read_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """読み取れない入力は対象パスと代替位置を持つ診断で終了コード2を返す。"""
     path = tmp_path / "missing.md"
 
     assert check_agent_doc_tone.main([str(path)]) == 2
@@ -318,7 +302,6 @@ def test_read_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: p
 
 
 def test_parse_error_is_a_positioned_diagnostic(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """構文不正は対象パスと利用可能な位置を持つ診断で終了コード2を返す。"""
     path = _write(tmp_path, "{\n", name="config.json")
 
     assert check_agent_doc_tone.main([str(path)]) == 2

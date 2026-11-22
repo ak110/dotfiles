@@ -1,5 +1,3 @@
-"""公開CLIの相対操作だけを受理し、会話IDと環境を所有要求へ渡す。"""
-
 import json
 
 import pytest

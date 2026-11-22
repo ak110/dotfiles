@@ -29,7 +29,6 @@ __all__ = ["_engine_env"]
 def test_tty_progress_arrives_before_child_exits(
     engine_env: _Env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, skill: str, mode: str
 ) -> None:
-    """公開CLIはstdoutをリダイレクトしても、終了前の開始情報・発言・toolだけをstderrへ到着順に出力する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     progress_dir = tmp_path / "progress"
     progress_dir.mkdir()
@@ -155,14 +154,13 @@ def test_session_readers_close_both_pipes(
     mode: str,
     expected: int | None,
 ) -> None:
-    """公開CLIの正常・非0・timeoutのいずれも、読み終えた実pipeを閉じて結果とログを返す。"""
     real_popen = subprocess.Popen
     sessions: list[subprocess.Popen[typing.Any]] = []
     rescue = contextlib.ExitStack()
     request.addfinalizer(rescue.close)
 
     def popen(argv: list[str], **kwargs: typing.Any) -> typing.Any:
-        # 被検証関数へ所有権を渡し、reader自身によるcloseを観測する。
+
         process = real_popen(argv, **kwargs)  # pylint: disable=consider-using-with
         if "--session-id" in argv:
             sessions.append(process)

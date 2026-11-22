@@ -25,19 +25,15 @@ _REAL_REMOVE_UNUSED_PLUGINS = _install_claude_plugins._remove_unused_plugins  # 
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧pluginの削除は専用テストへ分ける。"""
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
 
 
 class TestComputeRecommendedCommands:
-    """`compute_recommended_commands` の単体テスト (install/enable のみ)。"""
-
     _ENABLE_TARGET = "typescript-lsp@claude-plugins-official"
 
     def test_install_recommended_when_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """有効化対象が未インストールなら install コマンドを提案する。"""
         # _AUTO_ENABLED_PLUGIN_IDS はモジュールレベルのグローバル定数のため、
         # 引数注入では制御不能。テスト用に1件に固定して振る舞いを確認する。
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
@@ -50,7 +46,6 @@ class TestComputeRecommendedCommands:
         assert f"claude plugin install {self._ENABLE_TARGET} --scope=user" in result
 
     def test_enable_recommended_when_explicitly_disabled(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins=false` なら enable コマンドを提案する。"""
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET})
         )
@@ -62,7 +57,6 @@ class TestComputeRecommendedCommands:
         assert result == [f"claude plugin enable {self._ENABLE_TARGET} --scope=user"]
 
     def test_no_recommendation_when_enabled(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ既に有効なら何も提案しない。"""
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET})
         )
@@ -73,7 +67,6 @@ class TestComputeRecommendedCommands:
         assert not _install_claude_plugins.compute_recommended_commands(raw_data, {self._ENABLE_TARGET: True})
 
     def test_no_recommendation_when_key_missing(self, monkeypatch: pytest.MonkeyPatch):
-        """インストール済みかつ `enabledPlugins` に対象キーが無い (設定が無ければ有効) なら提案しない。"""
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({self._ENABLE_TARGET})
         )
@@ -93,7 +86,6 @@ class TestAutoDisablePlugins:
 
     _DISABLE_TARGET = "serena@claude-plugins-official"
 
-    # target_versions と deprecated_names がともに空だと run() が早期リターンするため必要。
     _DEPRECATED_SENTINEL = "deprecated-sentinel"
 
     def _setup_run(
@@ -104,11 +96,6 @@ class TestAutoDisablePlugins:
         installed_ids: list[str],
         enabled_map: dict[str, bool] | None,
     ) -> list[list[str]]:
-        """``run()`` を最小限の前提で動かし、CLI 呼び出しリストを返す。
-
-        ``_read_target_info`` は未導入のdeprecated対象だけを返し、管理対象pluginの
-        install/updateと完了検証をこのテストの責務から分離する。
-        """
         monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(
             _install_claude_plugins,
@@ -149,7 +136,6 @@ class TestAutoDisablePlugins:
         return calls
 
     def test_disable_called_when_installed_and_not_disabled(self, monkeypatch: pytest.MonkeyPatch):
-        """無効化対象がインストール済みかつ `enabledPlugins` で false でないなら disable CLI を発行する。"""
         calls = self._setup_run(
             monkeypatch,
             disable_target=self._DISABLE_TARGET,
@@ -173,7 +159,6 @@ class TestAutoDisablePlugins:
         assert ["claude", "plugin", "disable", self._DISABLE_TARGET, "--scope=user"] in calls
 
     def test_disable_skipped_when_already_disabled(self, monkeypatch: pytest.MonkeyPatch):
-        """既に `enabledPlugins=false` なら disable CLI を発行しない。"""
         calls = self._setup_run(
             monkeypatch,
             disable_target=self._DISABLE_TARGET,
@@ -185,7 +170,6 @@ class TestAutoDisablePlugins:
         assert not any(command_matches(c, ["claude", "plugin", "disable"]) for c in calls)
 
     def test_disable_skipped_when_not_installed(self, monkeypatch: pytest.MonkeyPatch):
-        """未インストールなら disable CLI を発行しない (install して無効化するのは過剰介入)。"""
         calls = self._setup_run(
             monkeypatch,
             disable_target=self._DISABLE_TARGET,
@@ -233,8 +217,6 @@ class TestAutoDisablePlugins:
 
 
 class TestRunAutoDisable:
-    """`run()` から自動 disable 経路が発火するエンドツーエンドテスト。"""
-
     def test_disable_called_and_changed_set(self, monkeypatch: pytest.MonkeyPatch):
         """インストール済みかつ有効な disable 対象に対し `claude plugin disable` が発行され changed が真になる。"""
         target_disable = "serena@claude-plugins-official"
@@ -251,7 +233,7 @@ class TestRunAutoDisable:
             "read_enabled_plugins",
             lambda: {"agent-toolkit@ak110-dotfiles": True},
         )
-        # 有効化対象の自動 install/enable には立ち入らないよう空集合にする
+
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset()
         )
@@ -292,10 +274,7 @@ class TestRunAutoDisable:
 
 
 class TestRunNoAutomaticStateChange:
-    """対象が空のとき、`run()` は外部 marketplace 向けの install/enable/disable CLI を発行しないこと。"""
-
     def test_no_state_change_cli_and_recommendations_returned(self, monkeypatch: pytest.MonkeyPatch):
-        """有効化対象は未インストール、無効化対象は空集合のときに CLI 発行なしで推奨のみ返す。"""
         monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(
             _install_claude_plugins,
@@ -312,7 +291,7 @@ class TestRunNoAutomaticStateChange:
                 "sample-plugin@ak110-dotfiles": True,
             },
         )
-        # 有効化対象を全て未インストール状態に限定して検証する
+
         target_enable = "typescript-lsp@claude-plugins-official"
         monkeypatch.setattr(  # noqa: SLF001 -- グローバル定数のため引数注入では到達不能
             _install_claude_plugins, "_AUTO_ENABLED_PLUGIN_IDS", frozenset({target_enable})

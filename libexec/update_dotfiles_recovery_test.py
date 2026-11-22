@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのrecoveryの試験。"""
 
 # pylint: disable=protected-access
 
@@ -43,7 +42,6 @@ from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_ag
 
 
 def test_save_worktree_uses_repository_launcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    """worktree退避は同じPythonからcheckoutの共通実装を起動する。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(
         subprocess,
@@ -255,8 +253,6 @@ class TestGitConflictRecovery:
 
 @pytest.mark.usefixtures("real_stash_runtime")
 class TestStashLifecycle:
-    """公開された更新コマンドで復元・回収・旧退避保護の寿命を確認する。"""
-
     @pytest.mark.cpu_limit(
         1.0,
         reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.361秒。"),
@@ -280,7 +276,6 @@ class TestStashLifecycle:
         monkeypatch.setattr(update_dotfiles_git, "update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
         monkeypatch.setattr(update_dotfiles_process, "run_git_pull", lambda *_args, **_kwargs: pull_code)
         monkeypatch.setattr(update_dotfiles, "_run_step", lambda *_args, **_kwargs: (0, ""))
-        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", lambda: None)
         run_stash = update_dotfiles_stashing._run_worktree_stash
 
         def fail_drop(*arguments: str) -> subprocess.CompletedProcess[str] | None:
@@ -332,8 +327,6 @@ class TestStashLifecycle:
 
 @pytest.mark.usefixtures("real_stash_runtime")
 class TestMiseLockDiscard:
-    """pull前に`mise.lock`の差分を破棄し、他の未コミット内容だけを退避・復元する。"""
-
     def test_mise_lock_only_change_is_discarded_without_stash(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -361,7 +354,6 @@ class TestMiseLockDiscard:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """他のファイルの差分（stage済み・未追跡を含む）は退避・復元し、退避内容に`mise.lock`を含めない。"""
         local, seed, _remote = _create_git_pair(tmp_path)
         _track_mise_lock(local, seed)
         (local / "mise.lock").write_text("rewritten by mise\n", encoding="utf-8")

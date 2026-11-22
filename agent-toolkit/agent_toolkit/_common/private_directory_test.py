@@ -14,7 +14,6 @@ pytestmark = pytest.mark.windows
 
 
 def test_make_temporary_creates_distinct_owner_directories(tmp_path: pathlib.Path) -> None:
-    """同じ接頭辞の呼び出しごとに、親の直下へ別の絶対パスのディレクトリを作成する。"""
     first = private_directory.make_temporary(tmp_path, "work-")
     second = private_directory.make_temporary(tmp_path, "work-")
     assert first != second
@@ -33,7 +32,6 @@ def test_mode_keeps_posix_directories_owner_only(tmp_path: pathlib.Path) -> None
 
 
 def test_temporary_removes_read_only_contents(tmp_path: pathlib.Path) -> None:
-    """読取専用属性の付いたファイルを含んでも、終了時にディレクトリごと削除する。"""
     with private_directory.temporary(tmp_path, "staging-") as staging:
         assert staging.parent == tmp_path and staging.name.startswith("staging-")
         locked = staging / "nested" / "locked.txt"
@@ -44,7 +42,6 @@ def test_temporary_removes_read_only_contents(tmp_path: pathlib.Path) -> None:
 
 
 def test_temporary_allows_body_to_remove_directory(tmp_path: pathlib.Path) -> None:
-    """本体が一時ディレクトリを先に削除しても、終了時に例外を送出しない。"""
     with private_directory.temporary(tmp_path, "staging-") as staging:
         staging.rmdir()
     assert not staging.exists()

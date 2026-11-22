@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -24,7 +22,6 @@ from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_pa
 
 @pytest.mark.asyncio
 async def test_watch_restores_long_snapshot_and_rpc_response(tmp_path: pathlib.Path) -> None:
-    """長いsnapshotと後続RPCをtransportの上限で分断せず、EOFの応答まで処理する。"""
     context = _context(tmp_path, remote_hosts=["remote-host"])
     watcher = plans_remote.RemoteWatcher("remote-host", context.state)
     response = {"type": "response", "id": 1, "ok": True, "data": "あ" * 50000}
@@ -43,7 +40,6 @@ async def test_watch_restores_long_snapshot_and_rpc_response(tmp_path: pathlib.P
 
 
 def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """走査結果に現れないキーを回収し、別のrootに属するキーは維持する。"""
     first_root = tmp_path / "first"
     second_root = tmp_path / "second"
     first_root.mkdir()
@@ -65,18 +61,16 @@ def test_absent_entries_are_pruned_and_other_roots_are_kept(tmp_path: pathlib.Pa
 
 
 def test_svg_fence_is_rendered_as_source_only_image() -> None:
-    """SVGのフェンスは原文を直接埋め込まず、画像要素と原文表示へ変換する。"""
     html = plans_rendering.markdown_to_html('```svg\n<svg onload="alert(1)"></svg>\n```\n')
 
     assert 'class="diagram diagram-svg"' in html
     assert 'class="diagram-output svg-output"' in html
-    # 原文はエスケープして`details`内へ置き、能動的な内容をDOMへ追加しない。
+
     assert "&lt;svg onload=" in html
     assert "<svg" not in html
 
 
 def test_malformed_review_table_falls_back_to_escaped_source() -> None:
-    """列数や形式が合わない表は原文をエスケープして表示する。"""
     html = plans_views.review_table_html("<b>1</b>\t2\n")
 
     assert "<table" not in html
@@ -84,7 +78,6 @@ def test_malformed_review_table_falls_back_to_escaped_source() -> None:
 
 
 def test_attached_files_are_excluded_from_the_listing(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """付属計画は一覧へ出力せず、検索とパス解決の対象には残す。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -104,7 +97,6 @@ async def test_same_relative_path_in_two_roots_stays_separate(
     tmp_path: pathlib.Path,
     index_path: pathlib.Path,
 ) -> None:
-    """別rootの同名ファイルは、保存元IDで区別して両方返す。"""
     del index_path
     first = tmp_path / "first"
     second = tmp_path / "second"
@@ -130,7 +122,6 @@ async def test_same_relative_path_in_two_roots_stays_separate(
 
 @pytest.mark.asyncio
 async def test_remote_read_passes_source_id_before_the_path() -> None:
-    """遠隔保存元の同名ファイルを取り違えず、それぞれの本文を取得する。"""
     bodies = {(plans.NEW_SOURCE_ID, "same.md"): "新しい保存元の本文", (plans.LEGACY_SOURCE_ID, "same.md"): "従来の保存元の本文"}
 
     async def runner(host: str, operation: str, args: list[str]) -> str:
@@ -149,7 +140,6 @@ async def test_remote_read_passes_source_id_before_the_path() -> None:
 
 
 def test_local_hostname_must_not_collide_with_remote_hosts(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """ローカルホスト名とリモートホスト名の重複は起動時に拒絶する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()

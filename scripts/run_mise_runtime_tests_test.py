@@ -22,7 +22,6 @@ def _executable(directory: pathlib.Path) -> pathlib.Path:
 def test_cli_uses_shim_and_preserves_pytest_arguments_and_exit_code(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """uvが先に置いたruntimeよりshimを優先し、同じプロセスのpytestへ元の引数と終了状態を渡す。"""
     shim = _executable(tmp_path / "shims")
     other = _executable(tmp_path / "other")
     monkeypatch.setenv("PATH", str(other.parent))
@@ -49,7 +48,6 @@ def test_cli_uses_shim_and_preserves_pytest_arguments_and_exit_code(
 def test_cli_rejects_runtime_outside_shims_before_pytest(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], fallback: bool
 ) -> None:
-    """shimの欠落時は別のruntimeも試験へ渡さず、解決先と次の操作を示す。"""
     shims = tmp_path / "shims"
     shims.mkdir()
     old_path = str(_executable(tmp_path / "other").parent) if fallback else str(tmp_path / "missing")

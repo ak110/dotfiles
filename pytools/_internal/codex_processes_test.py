@@ -21,11 +21,6 @@ def _posix_owner(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _patch_enumeration(monkeypatch: pytest.MonkeyPatch, processes: list[typing.Any], own: object = None) -> None:
-    """列挙と、列挙した直後のPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。
-
-    製品は列挙したPIDから新しいProcessを構築して属性を読むため、偽の`info`をその構築結果から返す。
-    `own`は引数なしの`psutil.Process()`（自プロセスの照会）が返す値とする。
-    """
     current: list[typing.Any] = []
 
     def listed(*_args: object, **_kwargs: object) -> typing.Iterator[typing.Any]:
@@ -45,7 +40,6 @@ def _patch_enumeration(monkeypatch: pytest.MonkeyPatch, processes: list[typing.A
 
 
 def test_daemon_detection_excludes_other_users_and_prompt_arguments(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ所有者のdaemonを検出し、他ユーザーと引数中の検索語を稼働判定へ混ぜない。"""
     uid = 1000
     monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
     processes = [
@@ -78,7 +72,7 @@ def test_daemon_detection_excludes_zombie_of_same_user(monkeypatch: pytest.Monke
     uid = 1000
     monkeypatch.setattr(codex_processes.os, "getuid", lambda: uid, raising=False)
     owner = SimpleNamespace(real=uid)
-    # ゾンビは実行名を返し、command lineを返さない。
+
     zombies = [
         SimpleNamespace(pid=pid, info={"name": "codex", "exe": "", "cmdline": [], "uids": owner, "status": status})
         for pid, status in ((1, codex_processes.psutil.STATUS_ZOMBIE), (2, codex_processes.psutil.STATUS_DEAD))
@@ -123,7 +117,6 @@ def _patch_processes(monkeypatch: pytest.MonkeyPatch, processes: list[SimpleName
 
 
 def test_managed_daemon_and_update_loop_are_classified_by_launch_form(monkeypatch: pytest.MonkeyPatch) -> None:
-    """管理daemonとその補助実行体はdaemonへ、更新ループは利用プロセスの外へ分類する。"""
     _patch_processes(
         monkeypatch,
         [
@@ -152,7 +145,6 @@ def test_managed_daemon_and_update_loop_are_classified_by_launch_form(monkeypatc
 
 
 def test_update_loop_alone_is_not_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    """管理daemonの停止後に更新ループだけが残る場合は、plugin実体と診断ログDBを参照するプロセスは無い。"""
     _patch_processes(monkeypatch, [_process(10, [_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"])])
     assert not codex_processes.running_codex_processes()
     assert [process.role for process in codex_processes.codex_processes()] == ["update-loop"]
@@ -175,7 +167,6 @@ def test_use_sessions_are_not_mistaken_for_daemon_processes(monkeypatch: pytest.
 
 
 def test_child_of_session_is_not_daemon_helper(monkeypatch: pytest.MonkeyPatch) -> None:
-    """管理daemon以外の子として動く補助実行体は、親の利用セッションとともに保護する。"""
     _patch_processes(
         monkeypatch,
         [
@@ -192,7 +183,6 @@ def test_child_of_session_is_not_daemon_helper(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_node_package_update_loop_is_recognized(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`node <entry point>`形式の起動では、entry pointの後ろから起動形を判別する。"""
     entry = "/opt/node_modules/@openai/codex/bin/codex.js"
     _patch_processes(
         monkeypatch,
@@ -215,10 +205,6 @@ def test_windows_process_owner_and_executable(monkeypatch: pytest.MonkeyPatch) -
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
-    """列挙が再利用するProcessだけを以前の世代の実行名・実行ファイルにし、走査を対象のPIDへ限る。
-
-    PIDの自然な再利用や実行ファイルの置き換えを待たずに、列挙キャッシュへ以前の値が残った状態を作る。
-    """
     stale = psutil.Process(pid)
     monkeypatch.setattr(stale, "_name", name)
     monkeypatch.setattr(stale, "_exe", exe)
@@ -249,7 +235,6 @@ def test_stale_enumeration_cache_does_not_change_classification(
     child_command = [executable, "-c", "import time; time.sleep(60)"]
     with subprocess.Popen(child_command) as child:
         try:
-            # 実行体の公開前に走査すると、親のcmdlineを子の起動形と取り違える。
             deadline = time.monotonic() + 5
             while True:
                 observed = psutil.Process(child.pid)

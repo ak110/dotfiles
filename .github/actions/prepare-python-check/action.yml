@@ -44,5 +44,5 @@ runs:
         # 保存を静的検査の1ジョブに限り、試験分割数による同じ内容の重複保存を避ける。
         key: pyfltr-mise-${{ runner.os }}-${{ steps.image.outputs.pyfltr-version }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'agent-toolkit/scripts/launch.py.lock', 'mise.toml', 'mise.lock') }}
     - name: Install dependencies
-      run: uv sync --all-groups --all-extras
+      run: uv sync --all-groups --no-group pytest-impact --all-extras
       shell: bash

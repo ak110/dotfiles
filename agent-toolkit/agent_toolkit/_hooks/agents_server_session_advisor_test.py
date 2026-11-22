@@ -7,9 +7,11 @@ import re
 
 import pytest
 
-from agent_toolkit._common import session_state, state_paths
+from agent_toolkit._agents_server import continuation_wait
+from agent_toolkit._common import session_registry, session_state, state_paths, task_documents
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import agents_server_observations, stop
+from agent_toolkit._hooks import agents_server_session_advisor as advisor
 from agent_toolkit._testing import fork_runner as _fork_runner
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _read_state
@@ -23,7 +25,6 @@ _NEXT_ACTION_PATTERN = re.compile(r"\n[^\n]*`atk agents wait`[^\n]*`kill\(sessio
 
 
 def _environment(state_directory: pathlib.Path) -> dict[str, str]:
-    """セッション状態をテストごとに分離する環境を返す。"""
     env = os.environ.copy()
     env.update(
         {
@@ -43,13 +44,11 @@ def _record_operation(
     *,
     agent_id: str | None = None,
 ) -> None:
-    """PostToolUseを通してagents_serverの公開操作応答を記録する。"""
     remote_session_id = str(response["session_id"])
     tool_input: dict[str, object] = {"session_id": remote_session_id}
     if operation == "start":
         tool_input = {"cwd": str(state_directory), "mode": "explore", "prompt": "委譲する"}
     elif operation == "start_explore":
-        # 統合前の起動ツール名で記録される呼び出し。
         tool_input = {"cwd": str(state_directory), "prompt": "委譲する"}
     elif operation == "send_message":
         tool_input["prompt"] = "続行する"
@@ -105,6 +104,22 @@ def _run_stop(
     return result.stdout
 
 
+@pytest.mark.parametrize("host_fields", [{}, {"turn_id": "turn-1"}, {"runtime": "agy"}])
+def test_unobserved_stop_advice_matches_host(monkeypatch, host_fields):
+    monkeypatch.setattr(advisor, "read_state", lambda _: {})
+    monkeypatch.setattr(agents_server_observations, "pending_session_ids", lambda *_: ["child"])
+    monkeypatch.setattr(agents_server_observations, "actively_waited_session_ids", lambda _: set())
+    decision, warning = advisor.evaluate(json.dumps({"session_id": "local", **host_fields}))
+    assert decision == "notify"
+    assert "`kill(session_id)`" in warning
+    if host_fields:
+        assert "実行ホストの`atk agents wait`" in warning
+        assert "背景起動" not in warning
+    else:
+        assert "引数なしの `atk agents wait` を単独で背景起動し、起動を確認してからターンを終えよ" in warning
+        assert "背景実行が使えないなら同じターンで前景回収せよ" in warning
+
+
 def _record_start(state_directory: pathlib.Path, local_session_id: str, remote_session_id: str) -> None:
     _record_operation(
         state_directory,
@@ -129,7 +144,6 @@ def _record_send_message(state_directory: pathlib.Path, local_session_id: str, r
 
 
 def _record_bash(state_directory: pathlib.Path, local_session_id: str, command: str) -> None:
-    """PostToolUseを通して成功したBash入力を記録する。"""
     payload = {
         "session_id": local_session_id,
         "hook_event_name": "PostToolUse",
@@ -147,7 +161,6 @@ def _record_bash(state_directory: pathlib.Path, local_session_id: str, command: 
 
 
 def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_path: pathlib.Path) -> None:
-    """未観測作業の警告はStop用additionalContextだけを返す。"""
     local_session_id = "pending-output"
     state_path = session_state.state_path(local_session_id)
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -177,13 +190,11 @@ def test_pending_observation_emits_stop_hook_event_and_additional_context(tmp_pa
 
 
 def test_start_only_record_emits_warning(tmp_path: pathlib.Path) -> None:
-    """startだけの操作列は未観測作業を警告する。"""
     _record_start(tmp_path, "start-only", "remote-start-only")
     assert _run_stop(tmp_path, "start-only")
 
 
 def test_main_stop_warns_only_sessions_started_by_main(tmp_path: pathlib.Path) -> None:
-    """同じローカルsessionのサブエージェントが起動した作業をメインへ警告しない。"""
     local_session_id = "owner-filter"
     _record_operation(
         tmp_path,
@@ -233,14 +244,12 @@ def test_subagent_transcript_path_does_not_identify_the_caller(tmp_path: pathlib
 
 
 def test_running_wait_satisfies_observation(tmp_path: pathlib.Path) -> None:
-    """runningを返すwaitでも観測義務を解消する。"""
     _record_start(tmp_path, "running-wait", "remote-running-wait")
     _record_running_wait(tmp_path, "running-wait", "remote-running-wait")
     assert _run_stop(tmp_path, "running-wait") == ""
 
 
 def test_send_message_after_wait_reopens_observation(tmp_path: pathlib.Path) -> None:
-    """観測後のsend_messageが新しい観測義務を発生させる。"""
     _record_start(tmp_path, "send-after-wait", "remote-send-after-wait")
     _record_running_wait(tmp_path, "send-after-wait", "remote-send-after-wait")
     _record_send_message(tmp_path, "send-after-wait", "remote-send-after-wait")
@@ -250,7 +259,6 @@ def test_send_message_after_wait_reopens_observation(tmp_path: pathlib.Path) -> 
 @pytest.mark.parametrize("intermediate_stop", [False, True])
 @pytest.mark.parametrize("resolution", ["wait", "script-wait", "kill", "background-kill"])
 def test_public_stop_renotifies_only_after_actual_observation(tmp_path, monkeypatch, resolution, intermediate_stop):
-    """公開Stopで配送済みの警告も、実観測・破棄後の同じ子への再依頼では再配送する。"""
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
     session, remote = "public-reopened", "remote-reopened"
 
@@ -303,7 +311,6 @@ def test_public_stop_renotifies_only_after_actual_observation(tmp_path, monkeypa
 
 @pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered"])
 def test_public_unresolved_followup_preserves_notice(tmp_path, monkeypatch, delivery):
-    """未解消作業への追送では配送記録を保持し、同文警告を反復しない。"""
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
     session, remote = "unresolved-followup", "remote-followup"
     _record_start(tmp_path, session, remote)
@@ -317,7 +324,6 @@ def test_public_unresolved_followup_preserves_notice(tmp_path, monkeypatch, deli
 
 
 def test_public_reopened_child_preserves_other_owner_and_pending_child(tmp_path, monkeypatch):
-    """一部の子の解消だけでは通知を解除せず、同主体の新作業後に再通知する。"""
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("agents_server_session_advisor",))
     session = "multiple-children"
     for remote, actor in [("child-a", "main"), ("child-b", "main"), ("child-other", "other")]:
@@ -404,7 +410,6 @@ def test_temporary_stop_exemption_preserves_delivered_fingerprint(tmp_path, monk
 
 
 def test_wait_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
-    """send_message後の未観測作業をwaitだけで解消する。"""
     _record_start(tmp_path, "wait-clears", "remote-wait-clears")
     _record_running_wait(tmp_path, "wait-clears", "remote-wait-clears")
     _record_send_message(tmp_path, "wait-clears", "remote-wait-clears")
@@ -413,7 +418,6 @@ def test_wait_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 
 
 def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
-    """send_message後の未観測作業をwaitを経由せずkillだけで解消する。"""
     local_session_id = "kill-clears"
     remote_session_id = "remote-kill-clears"
     _record_start(tmp_path, local_session_id, remote_session_id)
@@ -429,7 +433,6 @@ def test_kill_alone_clears_pending_observation(tmp_path: pathlib.Path) -> None:
 
 
 def test_agents_wait_bash_clears_pending_observation(tmp_path: pathlib.Path) -> None:
-    """Bash経由のatk agents waitが未観測作業を解消する。"""
     commands = (
         "atk agents wait",
         "uv run --project /plugin/agent-toolkit --locked --no-default-groups "
@@ -455,7 +458,6 @@ def test_agents_wait_resolves_pending_observation_for_all_owned_sessions(tmp_pat
 
 
 def _status_directory(state_directory: pathlib.Path, local_session_id: str) -> pathlib.Path:
-    """そのルートsessionの状態ディレクトリを返す。"""
     del state_directory
     return state_paths.state_dir() / "agents-server" / local_session_id
 
@@ -538,7 +540,7 @@ def test_delegate_waiting_declaration_is_excluded_only_for_that_stop(tmp_path: p
 
     assert _run_stop(tmp_path, local_session_id, last_assistant_message=f"待機中: {remote_session_id}", delegated=True) == ""
     state = _read_state(tmp_path, local_session_id)
-    # 同じ記録を読む継続判定（background_tasks）と終了証拠（termination_evidence）も未観測のまま扱う。
+
     assert agents_server_observations.has_pending_owned_observation(state, "main")
     assert agents_server_observations.pending_session_ids(state, "main") == [remote_session_id]
     assert _WARNING_BODY in _run_stop(
@@ -631,7 +633,6 @@ def test_agents_wait_bash_clears_expired_session_without_result(tmp_path: pathli
 
 
 def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_path: pathlib.Path) -> None:
-    """引数に現れる旧agents-waitの文字列は観測の試みとして扱わない。"""
     local_session_id = "agents-wait-argument"
     remote_session_id = "remote-argument"
     _record_start(tmp_path, local_session_id, remote_session_id)
@@ -642,7 +643,6 @@ def test_agents_wait_text_as_argument_does_not_clear_pending_observation(tmp_pat
 
 
 def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:
-    """記録不在、偽の記録および責任主体を確定できない旧記録では何も出力しない。"""
     assert _run_stop(tmp_path, "no-state") == ""
     local_session_id = "all-observed"
     state_path = session_state.state_path(local_session_id)
@@ -662,13 +662,11 @@ def test_no_pending_observation_emits_nothing(tmp_path: pathlib.Path) -> None:
 
 
 def test_stop_hook_active_emits_nothing(tmp_path: pathlib.Path) -> None:
-    """Stop継続後の再呼び出しでは判定を繰り返さない。"""
     _record_start(tmp_path, "active-stop", "remote-active-stop")
     assert _run_stop(tmp_path, "active-stop", stop_hook_active=True) == ""
 
 
 def test_malformed_payload_allows_stop(tmp_path: pathlib.Path) -> None:
-    """payload不正時は何も出力せず終了を許可する。"""
     result = _fork_runner.run_script(
         _STOP_CHECK_RUNNER,
         argv=("agents_server_session_advisor",),
@@ -677,3 +675,49 @@ def test_malformed_payload_allows_stop(tmp_path: pathlib.Path) -> None:
     )
     assert result.returncode == 0
     assert result.stdout == ""
+
+
+def test_recovered_results_only_warn_for_child_still_awaiting_reply(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = task_documents.require_role_document(pathlib.Path(__file__).resolve().parents[2], "exec")
+
+    def resolve(identifier, **_kwargs):
+        seq = 2 if identifier == "answered" else 1
+        head = "統合完了" if identifier == "finished" else "統合準備完了"
+        launch = session_registry.LaunchInfo(prompt=task_documents.task_prompt_header(path), final_responses=((1, head),))
+        return session_registry.SessionResolution(
+            session_registry.Resolution.TERMINAL,
+            session_registry.ResumeInfo(
+                "claude",
+                ".",
+                None,
+                None,
+                None,
+                "delegate",
+                seq,
+                "completed",
+                launch,
+                session_updated_at="2026-11-22T00:00:00+00:00",
+            ),
+        )
+
+    monkeypatch.setattr(session_registry, "resolve", resolve)
+    monkeypatch.setattr(continuation_wait.result_projection, "elapsed_seconds", lambda _: 42)
+    monkeypatch.setattr(
+        advisor,
+        "read_state",
+        lambda _: {
+            "agents_server_sessions": {
+                identifier: {"owner_agent_id": "main", "pending_observation": False}
+                for identifier in ("answered", "awaiting", "finished")
+            }
+        },
+    )
+    monkeypatch.setattr(agents_server_observations, "retained_running_session_ids", lambda *_: [])
+    monkeypatch.setattr(advisor, "_notice", lambda body, **_kwargs: body)
+
+    assert continuation_wait.continuation_wait_seconds("answered") is None
+    assert continuation_wait.continuation_wait_seconds("awaiting") == 42
+    assert continuation_wait.continuation_wait_seconds("finished") is None
+    decision, body = advisor.evaluate(json.dumps({"session_id": "owner"}))
+    assert decision == "notify"
+    assert body == "応答待ち: awaiting（返却から 42 秒）"

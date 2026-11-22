@@ -39,23 +39,19 @@ class UsageLimitState:
 
     @property
     def is_wait_target(self) -> bool:
-        """解除まで待つ対象の拒否かを返す。"""
         return self.status == _REJECTED and self.limit_type in WAIT_LIMIT_TYPES
 
     def delay_seconds(self, now: float) -> float:
-        """次に可用性を確かめるまでの秒数を返す。`now`はUNIX時刻。"""
         if self.resets_at is not None and self.resets_at > now:
             return float(self.resets_at) - now
         return RECHECK_SECONDS
 
     def resets_at_iso(self) -> str | None:
-        """解除予定時刻をISO 8601のUTCで返す。"""
         if self.resets_at is None:
             return None
         return datetime.datetime.fromtimestamp(self.resets_at, datetime.UTC).isoformat()
 
     def describe(self) -> str:
-        """ユーザーへ示す1行の説明を返す。"""
         resets = self.resets_at_iso() or "不明（一定間隔で確認する）"
         return f"Claude Codeの利用上限（{self.limit_type}）の解除待ち。解除予定: {resets}"
 
@@ -71,7 +67,6 @@ def _int_or_none(value: Any) -> int | None:
 
 
 def from_info(info: Any) -> UsageLimitState | None:
-    """SDKの`RateLimitInfo`か、CLIの`rate_limit_info`の辞書から状態を得る。"""
     if info is None:
         return None
     if isinstance(info, dict):
@@ -88,7 +83,6 @@ def from_info(info: Any) -> UsageLimitState | None:
 
 
 def from_event(event: Any) -> UsageLimitState | None:
-    """SDKの`RateLimitEvent`か、CLIの`stream-json`の1イベント（辞書）から状態を得る。"""
     if isinstance(event, dict):
         if event.get("type") != "rate_limit_event":
             return None
@@ -97,7 +91,6 @@ def from_event(event: Any) -> UsageLimitState | None:
 
 
 def from_stream_lines(lines: Iterable[str]) -> UsageLimitState | None:
-    """CLIの`--output-format stream-json`の出力から、最後に報告された利用枠の状態を返す。"""
     latest: UsageLimitState | None = None
     for line in lines:
         text = line.strip()
@@ -114,7 +107,6 @@ def from_stream_lines(lines: Iterable[str]) -> UsageLimitState | None:
 
 
 def session_id_from_stream_lines(lines: Iterable[str]) -> str | None:
-    """CLIの`stream-json`の出力から会話のsession識別子を返す。"""
     for line in lines:
         text = line.strip()
         if not text.startswith("{"):
@@ -129,7 +121,6 @@ def session_id_from_stream_lines(lines: Iterable[str]) -> str | None:
 
 
 def result_from_stream_lines(lines: Iterable[str]) -> dict[str, Any] | None:
-    """CLIの`stream-json`の出力から最後の`result`イベントを返す。"""
     latest: dict[str, Any] | None = None
     for line in lines:
         text = line.strip()

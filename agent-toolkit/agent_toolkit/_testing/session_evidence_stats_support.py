@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_support）。"""
-
 from __future__ import annotations
 
 import json

@@ -19,7 +19,6 @@ _RESULT = "この呼び出しは全体を実行していない（同じ呼び出
 
 @pytest.fixture(autouse=True)
 def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """通知の理由と次操作を検査し、対象外の全資料の解析は繰り返さない。"""
     monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
@@ -43,7 +42,6 @@ def _no_material_declarations(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_block_notices_preserve_cause_and_next_action(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], codex: bool, case: str
 ) -> None:
-    """遮断理由と復旧操作を保持し、ホストが示す未実行の説明を重ねない。"""
     document = tmp_path / "plugin/skills/atk-mode/roles/sample.subagent.md"
     document.parent.mkdir(parents=True)
     manifest = tmp_path / "plugin/.claude-plugin/plugin.json"
@@ -102,7 +100,6 @@ def test_block_notices_preserve_cause_and_next_action(
 
 
 def test_repeated_warning_preserves_normal_operation(capsys: pytest.CaptureFixture[str]) -> None:
-    """警告の回数が増えても通常の操作を遮断しない。"""
     notice.set_warning_session_id("escalated-block")
     warning = notice.warning_formatter("pretooluse")
     for _ in range(2):

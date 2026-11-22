@@ -13,7 +13,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 
 def test_new_session_start_records_internal_stages(tmp_path, monkeypatch, capsys):
-    """領域がまだ無い新規セッションでも、初回の計測を保存する。"""
     monkeypatch.setattr(paths, "_temp_root_path", lambda: tmp_path / "temp")
     monkeypatch.setattr(paths, "_state_root_path", lambda: tmp_path / "state")
     monkeypatch.setattr(rules_context, "compose_session_start", lambda *_args, **_kwargs: "")
@@ -36,7 +35,6 @@ def test_new_session_start_records_internal_stages(tmp_path, monkeypatch, capsys
 
 
 def test_timing_records_only_operational_metadata(tmp_path, monkeypatch):
-    """入力本文とセッション識別子をログへ保存しない。"""
     monkeypatch.setattr(timing.managed_temp, "find_session_temp", lambda _session: tmp_path)
     timing.record(
         {"session_id": "secret-id", "hook_event_name": "PreToolUse", "prompt": "secret-input"},
@@ -52,7 +50,6 @@ def test_timing_records_only_operational_metadata(tmp_path, monkeypatch):
 
 
 def test_timing_retains_recent_complete_records_within_limit(tmp_path, monkeypatch):
-    """上限到達後も最新行と完全なJSON Linesを保持する。"""
     monkeypatch.setattr(timing.managed_temp, "find_session_temp", lambda _session: tmp_path)
     monkeypatch.setattr(timing, "_MAX_BYTES", 400)
     for index in range(20):
@@ -72,7 +69,6 @@ def test_timing_retains_recent_complete_records_within_limit(tmp_path, monkeypat
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_public_hook_records_event_and_result(tmp_path, monkeypatch, failure):
-    """公開entrypointの正常処理と読込障害を、保存した診断の成否へ対応付ける。"""
     monkeypatch.setattr(timing.managed_temp, "find_session_temp", lambda _session: tmp_path)
     original = importlib.import_module
 

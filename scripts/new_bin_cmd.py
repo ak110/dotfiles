@@ -53,7 +53,7 @@ def _generate_bash(name: str, command: str) -> None:
         )
         return
     content = f'#!/usr/bin/env bash\n# NOTE: 対応する Windows 版 → bin/{name}.cmd\nexec {command} "$@"\n'
-    path.write_text(content, encoding="utf-8")
+    path.write_text(content, encoding="utf-8", newline="\n")
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"生成: {path.relative_to(_REPO_ROOT)}")
 

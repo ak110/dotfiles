@@ -1,5 +1,3 @@
-"""所有元に固定した生I/Oと、移譲可能な制御所有権を分離する。"""
-
 from __future__ import annotations
 
 # JSONの組込み型と許可したSDK型だけを受理し、同名の派生型を混ぜない。
@@ -14,8 +12,6 @@ from typing import Any, cast
 
 
 class ResourceBroker:
-    """移譲中のI/Oを完走させ、未保存イベントへbackpressureを掛ける。"""
-
     def __init__(self, origin_generation: str, *, owner_identity: str | None = None) -> None:
         self.origin_generation = origin_generation
         self.owner_identity = owner_identity or origin_generation
@@ -23,7 +19,6 @@ class ResourceBroker:
         self._event_limit = 256
 
     def register(self, operations: dict[str, Callable[..., Awaitable[Any]]]) -> str:
-        """closeを含む生I/O操作を、所有元世代に登録する。"""
         if "close" not in operations or any(not callable(value) for value in operations.values()):
             raise ValueError("資源にはcloseを含む非同期操作が必要です")
         identifier = f"{self.origin_generation}:{uuid.uuid4()}"
@@ -90,14 +85,12 @@ class ResourceBroker:
             if resource["released"]:
                 raise PermissionError("資源は解放されています")
             if len(resource["events"]) >= self._event_limit:
-                # 解放中は空きを待たない。読む主体が止まると空きは生じず、解放はこの操作の終了を待ち続ける。
                 raise PermissionError("解放中の資源のイベントが上限に達しています")
             resource["sequence"] += 1
             resource["events"].append({"sequence": resource["sequence"], "payload": payload})
             resource["condition"].notify_all()
 
     def backlog(self, resource_id: str) -> tuple[int, int] | None:
-        """未確認イベント数と、emitが空きを待ち始める上限を返す。解放済みの資源はNoneを返す。"""
         resource = self._resources.get(resource_id)
         return None if resource is None else (len(resource["events"]), self._event_limit)
 
@@ -132,7 +125,6 @@ class ResourceBroker:
             resource["condition"].notify_all()
 
     async def discard(self, resource_id: str, owner_generation: str) -> None:
-        """解放後に読む主体の無くなった未確認イベントを捨て、資源の登録を除く。除かれた資源には何もしない。"""
         resource = self._resources.get(resource_id)
         if resource is None:
             return
@@ -172,7 +164,6 @@ class ResourceBroker:
 
 
 def _json_value(value: Any) -> Any:
-    """可変値を複製し、JSONで意味を保てない値を拒否する。"""
     if value is None or type(value) in (str, bool, int):
         return value
     if type(value) is float and math.isfinite(value):
@@ -185,8 +176,6 @@ def _json_value(value: Any) -> Any:
 
 
 class DataclassCodec:
-    """明示したSDK公開型の対応表だけから、全フィールドを往復する。"""
-
     def __init__(self, types: dict[str, type]) -> None:
         if any(not inspect.isclass(cls) or not dataclasses.is_dataclass(cls) for cls in types.values()):
             raise TypeError("対応表には公開dataclass型を指定してください")
@@ -195,12 +184,15 @@ class DataclassCodec:
         self._types = dict(types)
         self._names = {cls: name for name, cls in types.items()}
 
+    def _field_names(self, cls: type) -> tuple[str, ...]:
+        return tuple(field.name for field in dataclasses.fields(cast(Any, cls)))
+
     def encode(self, value: Any) -> Any:
         if type(value) in self._names:
             return {
                 "kind": "dataclass",
                 "type": self._names[type(value)],
-                "fields": {field.name: self.encode(getattr(value, field.name)) for field in dataclasses.fields(value)},
+                "fields": {name: self.encode(getattr(value, name)) for name in self._field_names(type(value))},
             }
         if type(value) is dict:
             if not all(type(key) is str for key in value):
@@ -226,14 +218,21 @@ class DataclassCodec:
         if kind == "dataclass":
             cls = self._types[value["type"]]
             fields = value["fields"]
-            if set(fields) != {field.name for field in dataclasses.fields(cast(Any, cls))}:
+            allowed = set(self._field_names(cls))
+            declared = (field for field in dataclasses.fields(cast(Any, cls)) if field.name in allowed)
+            # SDKの更新で省略できるフィールドが増えても、旧版が保存したイベントを読めるようにする。
+            required = {
+                field.name
+                for field in declared
+                if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING
+            }
+            if not required <= set(fields) <= allowed:
                 raise ValueError("SDKイベントのフィールドが一致しません")
             return cls(**{key: self.decode(item) for key, item in fields.items()})
         raise ValueError("未対応のcodec種別です")
 
 
 def sdk_event_codec() -> DataclassCodec:
-    """実行オプションやcallbackを除き、SDK公開イベントと内容の型を許可する。"""
     import claude_agent_sdk as sdk  # pylint: disable=import-outside-toplevel  # Claude接続時だけSDK型を読み込む。
 
     names = (

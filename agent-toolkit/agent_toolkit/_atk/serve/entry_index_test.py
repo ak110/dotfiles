@@ -1,5 +1,3 @@
-"""ワークアイテム一覧のプロセス内索引のテスト。"""
-
 import datetime
 import os
 import pathlib
@@ -23,7 +21,6 @@ def _write_entry(root: pathlib.Path, state: str, filename: str, body: str) -> pa
 
 
 def _age(path: pathlib.Path) -> None:
-    """更新時刻を信用判定の幅より十分前へ移す。"""
     past_ns = time.time_ns() - 10_000_000_000
     os.utime(path, ns=(past_ns, past_ns))
 
@@ -32,7 +29,6 @@ def test_index_reuses_unchanged_files_without_reading_or_parsing(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """更新から2秒より後に解析した同じ無効化キーのファイルは、2回目の走査で読み直さず解析もしない。"""
     _age(_write_entry(tmp_path, "inbox", "one.md", "本文1"))
     _age(_write_entry(tmp_path, "inbox", "two.md", "本文2"))
     index = entry_index.EntryIndex(tmp_path)
@@ -70,7 +66,6 @@ def test_index_invalidates_changed_file_and_removes_deleted_file(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """変更した1件だけを再解析し、消えたファイルを次の結果から除く。"""
     changed = _write_entry(tmp_path, "inbox", "changed.md", "変更前")
     deleted = _write_entry(tmp_path, "inbox", "deleted.md", "削除前")
     index = entry_index.EntryIndex(tmp_path)
@@ -102,7 +97,6 @@ def test_index_omits_file_moved_during_parse(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """解析中に別の状態へ移動したファイルを元の状態の結果へ含めない。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "本文")
     original_parse = entry_index.frontmatter.parse_frontmatter
 
@@ -122,7 +116,6 @@ def test_operations_entries_and_target_repos_share_index(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧の直後の候補取得は同じ索引を使い、frontmatterを再解析しない。"""
     _age(_write_entry(tmp_path, "inbox", "entry.md", "本文"))
     operations = wi_operations.Operations(tmp_path)
     entries, warnings = operations.entries_with_warnings({"status": "active"})
@@ -146,11 +139,10 @@ def test_index_uses_nanosecond_mtime_and_size_as_invalidation_key(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """信用済みの解析結果でも、秒単位の更新日時が同じままナノ秒値が変われば本文を更新する。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "変更前")
     original_stat = pathlib.Path.stat
     file_stat = path.stat()
-    # 信用判定で読み直さないよう、報告する更新時刻を信用判定の幅より前へ置く。
+
     reported_mtime_ns = (time.time_ns() - 10_000_000_000) // 1_000_000_000 * 1_000_000_000 + 1
 
     def reported_stat(*_args: typing.Any, **_kwargs: typing.Any) -> types.SimpleNamespace:
@@ -180,7 +172,6 @@ def _report_fixed_stat(
     path: pathlib.Path,
     mtime_ns: int,
 ) -> None:
-    """対象ファイルの`stat`の報告値を、書き換え後も同じ更新時刻と書き換え前のサイズへ固定する。"""
     original_stat = pathlib.Path.stat
     file_stat = path.stat()
 
@@ -198,7 +189,6 @@ def _patch_stat(
     original_stat: typing.Callable[..., typing.Any],
     reported_stat: typing.Callable[..., typing.Any],
 ) -> None:
-    """対象ファイルの`Path.stat`と、走査が使う`os.lstat`の結果を`reported_stat`へ差し替える。"""
     original_lstat = os.lstat
 
     def path_stat(candidate: pathlib.Path, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
@@ -219,9 +209,8 @@ def test_index_rereads_same_size_rewrite_within_mtime_precision(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """時刻精度の範囲内で更新時刻とサイズが変わらない書き換えも、次の走査で新しい本文を返す。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "VALUE-A")
-    # 秒単位の精度のファイルシステムで、書き換え前後に同じ値が報告される状況を再現する。
+
     _report_fixed_stat(monkeypatch, path, time.time_ns() // 1_000_000_000 * 1_000_000_000)
     index = entry_index.EntryIndex(tmp_path)
     first, _warnings = index.scan(("inbox",))
@@ -238,7 +227,6 @@ def test_index_trusts_parsed_result_after_mtime_precision_window(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """更新から2秒以内の走査は読み直し、2秒経過後に読み直した結果は以降の走査で再利用する。"""
     path = _write_entry(tmp_path, "inbox", "entry.md", "本文")
     mtime_ns = path.stat().st_mtime_ns
     now_ns = mtime_ns + 1_000_000_000
@@ -278,7 +266,6 @@ async def test_entries_and_repos_api_reflect_same_size_rewrite_within_mtime_prec
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧・検索・対象リポジトリ候補のAPIは、時刻精度の範囲内の同サイズの書き換え後に新しい値を返す。"""
     path = tmp_path / "2026" / "10" / "entry.md"
     path.parent.mkdir(parents=True)
     path.write_text("---\nstate: inbox\ntype: awi\ntarget_repo: example/aaaa\n---\n\nBEFORE\n", encoding="utf-8")
@@ -304,7 +291,6 @@ def test_switching_states_keeps_index_of_unscanned_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧の状態をactiveとadoptedで交互に切り替えても、走査していない状態の索引を保持して再利用する。"""
     _age(_write_entry(tmp_path, "inbox", "active.md", "本文"))
     _age(_write_entry(tmp_path, "adopted", "done.md", "本文"))
     operations = wi_operations.Operations(tmp_path)
@@ -332,7 +318,6 @@ def test_target_repos_does_not_reparse_terminal_entries(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """直近7日の終了項目の判定は、変更の無いファイルの処理日時を再解析せず、境界より十分前に更新したファイルを解析しない。"""
     now = datetime.datetime.now(datetime.UTC)
     recent = _write_entry(
         tmp_path,
@@ -365,7 +350,6 @@ def test_target_repos_does_not_reparse_terminal_entries(
 
 
 def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: pathlib.Path) -> None:
-    """本文を読めない固定配置の項目は状態をunknownとして返す。"""
     directory = tmp_path / "2026" / "10"
     directory.mkdir(parents=True)
     broken = directory / "broken.md"
@@ -384,7 +368,6 @@ def test_warnings_report_unknown_state_for_unreadable_fixed_entry(tmp_path: path
 
 
 def test_warnings_carry_path_and_fix_action_for_invalid_state(tmp_path: pathlib.Path) -> None:
-    """不正なstateで一覧から除外した項目の警告は、年月の保存先と、発生源が持つstateの修正操作を持つ。"""
     path = _write_entry(tmp_path, "bogus", "bad-state.md", "本文")
 
     result, warnings = entry_index.EntryIndex(tmp_path).scan(("inbox", "adopted"))
@@ -394,7 +377,7 @@ def test_warnings_carry_path_and_fix_action_for_invalid_state(tmp_path: pathlib.
     warning = warnings[0]
     assert (warning["state"], warning["filename"], warning["path"]) == ("unknown", "bad-state.md", str(path))
     assert "stateが不正" in warning["reason"]
-    # 理由は理由だけを保ち、次の操作を別項目へ分ける。
+
     assert "修正する" not in warning["reason"]
     assert str(path) in warning["next_action"]
     assert warning["next_action"].endswith("のいずれかへ修正する")
@@ -473,7 +456,6 @@ def test_tracked_index_skips_walk_until_change_or_rescan_interval(
 
 
 def test_untracked_index_walks_every_scan(tmp_path: pathlib.Path) -> None:
-    """変更追跡を有効にしない索引（ファイル監視の無い構成）は、毎回全件を確かめて外部の追加を返す。"""
     _age(_write_entry(tmp_path, "inbox", "one.md", "本文1"))
     index = entry_index.EntryIndex(tmp_path)
     index.scan(("inbox",))
@@ -486,10 +468,6 @@ def test_tracked_index_rereads_only_pending_entries_after_write(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """書込直後で解析結果を信用できない項目が残る間は、全件を列挙せずにその項目だけを読み直す。
-
-    外部の追加や保存の直後は画面の再読込が続けて届き、要求ごとに全件を走査すると1回ごとに秒単位かかるためである。
-    """
     _age(_write_entry(tmp_path, "inbox", "old.md", "本文1"))
     fresh = _write_entry(tmp_path, "inbox", "new.md", "書込直後")
     index = entry_index.EntryIndex(tmp_path)
@@ -504,7 +482,7 @@ def test_tracked_index_rereads_only_pending_entries_after_write(
 
     monkeypatch.setattr(entry_index, "iter_entry_paths", counting_iter)
     index.scan(("inbox",))
-    # 更新時刻と大きさを変えずに書き換えても、信用待ちの項目は読み直して新しい本文を返す。
+
     fresh.write_text(fresh.read_text(encoding="utf-8").replace("書込直後", "書換え後"), encoding="utf-8")
     entries, _ = index.scan(("inbox",))
     assert (sorted(item.path.name for item in entries), walks) == (["new.md", "old.md"], 1)
@@ -519,10 +497,6 @@ def test_saved_index_skips_parsing_after_restart_and_reads_body_on_demand(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """保存した解析結果を次の起動で使い、変更の無いファイルは解析せず本文も読まない。変わったファイルだけ解析し直す。
-
-    `atk serve`の起動直後の最初の一覧は全件の走査を待つため、数千件の解析と読込を繰り返すと数秒かかる。
-    """
     notes = tmp_path / "notes"
     cache = tmp_path / "state" / "wi-entry-index.json"
     stable = _write_entry(notes, "inbox", "stable.md", "変わらない本文")
@@ -562,7 +536,6 @@ def test_saved_index_skips_parsing_after_restart_and_reads_body_on_demand(
 
 
 def test_body_read_after_rewrite_follows_new_frontmatter(tmp_path: pathlib.Path) -> None:
-    """保存した解析結果の項目を走査した後に書き換えた場合、本文は読んだ時点の内容から求め直す。"""
     notes = tmp_path / "notes"
     cache = tmp_path / "state" / "wi-entry-index.json"
     path = _write_entry(notes, "inbox", "entry.md", "本文")
@@ -577,10 +550,6 @@ def test_preloaded_texts_let_first_search_after_restart_skip_reading_bodies(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """再起動後に本文を先読みしておくと、最初の検索は本文のファイルを読まずに一致を判定する。
-
-    保存した解析結果から作った項目は本文を必要時に読むため、先読みしないと最初の検索が全項目の本文の読込を待つ。
-    """
     notes = tmp_path / "notes"
     cache = tmp_path / "state" / "wi-entry-index.json"
     for index in range(3):

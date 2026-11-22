@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::render::format_tokens;
 use crate::render::{display_width, format_elapsed, normalize_description, render_line};
-use crate::subagent::format_tokens;
 
 use super::{DisplaySession, Session, StateFile, USAGE_LIMIT_ERROR_TYPE};
 
@@ -54,7 +54,7 @@ pub(crate) fn render_state_files(
                 item.session.status.as_str(),
                 "completed" | "failed" | "interrupted"
             ) {
-                "対応不要: 委譲元の結果回収・子孫session終了後に非表示".to_string()
+                item.session.last_action.clone()
             } else if item.session.last_action.is_empty() {
                 item.session.progress.clone()
             } else {

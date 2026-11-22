@@ -27,7 +27,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_stage_model_change_precedes_codex_usage_wait_and_provider_migration(
     monkeypatch, tmp_path, provider_environment, route
 ):
-    """同じ拒否を公開通知へ渡し、工程の別モデル設定だけを引き継ぎ終了へ進める。"""
     del provider_environment
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:gpt-before/medium")
     monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), "always")
@@ -67,7 +66,6 @@ async def test_stage_model_change_precedes_codex_usage_wait_and_provider_migrati
 async def test_codex_usage_wait_policy_selects_same_session_or_api(
     monkeypatch, tmp_path, provider_environment, policy, minutes, waits
 ):
-    """保存記録の実際の窓長と設定から、同一会話の解除待ちとAPI候補への継続を選ぶ。"""
     del provider_environment
     monkeypatch.setenv(config._config_env_name("codex_usage_limit_wait"), policy)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))

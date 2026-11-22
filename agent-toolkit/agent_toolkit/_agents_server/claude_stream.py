@@ -47,7 +47,6 @@ def _preserve_unaccepted_client(client: SdkResource | None, initialized: asyncio
 
 
 async def _raise_changed_model(session: SessionState, status: object) -> None:
-    """拒否された利用枠がある429だけを、現在設定への引き継ぎに変換する。"""
     if (
         status == 429
         and not session.interrupt_requested
@@ -109,9 +108,7 @@ class ClaudeStream(ClaudeTurns):
             await self._notify_waiters()
 
     async def _receive_eof(self, client: Any, session: SessionState | None) -> bool:
-        """受信列を閉じ、制御を新世代へ渡した場合だけ旧タスクを終える。"""
         if isinstance(client, SdkResource) and client.transferred:
-            # 移譲で旧デコーダだけが閉じた。受信元と保留中の結果は新世代へ渡す。
             return True
         if session is not None and resume_waits.is_background_completion_wait(session):
             await self._finalize_pending_result(session)
@@ -156,7 +153,7 @@ class ClaudeStream(ClaudeTurns):
         reloader = ClaudePluginReloader(vars(options), asyncio.get_running_loop())
         retrieved: _Command | None = None
         active_future: asyncio.Future[_DeliveryResult] | None = None
-        # `SystemMessage(init)`より前に届いた利用枠の報告。sessionの作成時に引き継ぐ。
+
         early_usage_limit: claude_usage_limit.UsageLimitState | None = None
         early_api_retry: dict[str, Any] | None = None
         # `SystemMessage(init)`より前に届いたturn状態の報告。CLIはコマンドループの先頭で最初のturnの`running`を
@@ -190,7 +187,7 @@ class ClaudeStream(ClaudeTurns):
             )
             session.claude_connection = connection_kind
             session.claude_api_env_file = api_env_file
-            # 使用順にサブスクリプションが無い会話は、上限解除後もサブスクリプションへ戻さない。
+
             if not claude_connection.order_includes("subscription", session.claude_role or "delegate"):
                 session.claude_subscription_retry_at = None
             self.sessions[session_id] = session
@@ -293,8 +290,6 @@ class ClaudeStream(ClaudeTurns):
                 if command_task is None and retrieved is None:
                     command_task = asyncio.create_task(channel.get())
                 if retrieved is not None:
-                    # 新queryより前に既に届いたイベントを処理する。読取taskが新しい
-                    # イベントを待つ状態になったところで、保持していたコマンドを配送する。
                     await asyncio.sleep(0)
                     if message_task is None or not message_task.done():
                         command = retrieved
@@ -348,8 +343,7 @@ class ClaudeStream(ClaudeTurns):
                         try:
                             diagnostic.record_message(message)
                             name = _message_name(message)
-                            # 公開済みのturnの後始末も同じ受信列から回収する。新queryを送るまで
-                            # assistant/resultを公開済みの状態へ適用せず、旧結果の二重公開を防ぐ。
+
                             if (
                                 session is not None
                                 and session.terminal
@@ -368,10 +362,7 @@ class ClaudeStream(ClaudeTurns):
                                     raise session_errors.DelegateBackendError("Claude init message did not contain session_id")
                                 if expected_session_id is not None and session_id != expected_session_id:
                                     raise session_errors.DelegateBackendError("Claude resume returned an unexpected session_id")
-                                # `_CommandChannel`と`SessionState`は所有タスクの生存期間で1つだけ保持する。
-                                # キューは永続session IDを要しないため所有タスクの開始時に生成する。
-                                # 状態は同IDをinitからしか取得できないため、最初の有効なinitで生成し、
-                                # turnごとにinitが再送されても再生成しない。
+
                                 if session is None:
                                     await initialize_session(session_id, data)
                                 elif session_id != session.session_id:
@@ -431,7 +422,6 @@ class ClaudeStream(ClaudeTurns):
                                         await _apply_api_retry(session, data, runtime_started_at)
                                         await self._notify_waiters()
                             elif name == "RateLimitEvent":
-                                # 利用枠の報告はモデル活動ではないため活動時刻を進めない。
                                 usage_limit = await _consume_rate_limit(message, session)
                                 if session is None:
                                     early_usage_limit = usage_limit or early_usage_limit
@@ -498,7 +488,6 @@ class ClaudeStream(ClaudeTurns):
                 if client is not None:
                     try:
                         try:
-                            # 最後のyieldで停止した受信列も、所有タスクの終了時に閉じる。
                             close_iterator = getattr(iterator, "aclose", None)
                             if callable(close_iterator):
                                 # Pylintは動的取得したacloseのCallableへのcastを呼出不能と誤推論する。
@@ -549,8 +538,6 @@ class ClaudeStream(ClaudeTurns):
                                         self._adopt_unreclaimed(runtime_key, reloader)
                                         await self._reclaim_runtime(runtime_key, pins=pins)
                 elif reloader.unreclaimed:
-                    # 接続前の入力準備で回収できなかった子孫は、クライアントが無く接続の後始末を実行しないため、
-                    # ここで所有対象へ移す。
                     runtime_key = session.session_id if session is not None else f"initialization:{diagnostic.debug_file}"
                     self._adopt_unreclaimed(runtime_key, reloader)
                     await self._reclaim_runtime(runtime_key, pins=pins)
@@ -574,6 +561,10 @@ class ClaudeStream(ClaudeTurns):
                     await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 
             await finish_task(asyncio.create_task(cleanup()))
+            if initialized.cancelled() and shared_state.finish_unowned_start(
+                initialized, turn_seq, asyncio.CancelledError(), session=session
+            ):
+                await self._notify_waiters()
 
     async def _consume_session_message(
         self,
@@ -582,7 +573,6 @@ class ClaudeStream(ClaudeTurns):
         name: str,
         usage_observer: _ContextUsageObserver,
     ) -> None:
-        """初期化後の出力・背景資源・結果を、同じ保存ACKの内側で適用する。"""
         from claude_agent_sdk import TERMINAL_TASK_STATUSES
 
         if name == "AssistantMessage":

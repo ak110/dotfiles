@@ -1,5 +1,3 @@
-"""WI投入本文・frontmatter・原因分析の検証。"""
-
 import datetime
 import re
 
@@ -22,7 +20,6 @@ def _target_repo_error(value: object, error: WebInputError) -> WebInputError:
 
 
 def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
-    """共有frontmatterパーサーへの薄いラッパー。"""
     parsed = _frontmatter.parse_frontmatter(message)
     if parsed is None:
         return {}, message
@@ -30,13 +27,6 @@ def _parse_leading_frontmatter(message: str) -> tuple[dict[str, object], str]:
 
 
 def body_is_effectively_empty(body: str) -> bool:
-    """本文が実質空か判定する。
-
-    実質空とは、空文字・空白のみ、または全ての非空行が箇条書きマーカー
-    （`-`・`*`・`+`のいずれか単独文字）のみで構成される状態を指す。
-    review-session自動投入・ユーザー直接投入のどちらでも、
-    実効的な指示・観察事象を含まない投入をCLI側で一律検出するための基準とする。
-    """
     non_empty_lines = [line.strip() for line in body.split("\n") if line.strip()]
     if not non_empty_lines:
         return True
@@ -63,6 +53,13 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type != WI_TYPE_AWI:
         body = _uwi.strip_unanswered_uwi_wrapper(body)
         _uwi.reject_reserved_uwi_markup(body)
+        if not _uwi.question_opening(body).strip():
+            raise WebInputError(
+                "UWIの質問の冒頭が空です",
+                next_action=(
+                    "本文の先頭（最初のH2見出しより前）に質問の内容を書く。保存形式の`## 質問`・`## 回答`は`atk`が付ける"
+                ),
+            )
     return frontmatter, body
 
 
@@ -73,12 +70,6 @@ def require_agent_awi_sections(
     entry_type: str,
     source: str | None,
 ) -> None:
-    """`source`を持つ通常AWIが必須H2を全件持ち、規定順序に従うことを検証する。
-
-    節の定義と判定は、計画ファイルの要求を書く節と同じ`request_section_problems`を使う。
-    不足と順序の不一致は1件の例外へまとめて返す。
-    1件ずつ返すと、起草側が本文を書き直して再投入する往復が不足節の件数だけ生じるためである。
-    """
     raw_source = frontmatter.get("source", source)
     item_source = raw_source if isinstance(raw_source, str) else source
     if entry_type != WI_TYPE_AWI or not item_source:
@@ -113,10 +104,6 @@ _TABLE_CELL_DECORATION = "*_`~"
 
 
 def _strip_table_cell(cell: str) -> str:
-    """表のセル値から前後の空白とMarkdown装飾を除く。
-
-    空白はUnicodeの空白（全角空白を含む）として扱い、装飾と空白が交互に並ぶ場合もすべて除く。
-    """
     while True:
         stripped = cell.strip().strip(_TABLE_CELL_DECORATION)
         if stripped == cell:
@@ -133,10 +120,6 @@ UNDETERMINED_CAUSE_NEXT_ACTION = (
 
 
 def undetermined_cause_lines(body: str) -> list[str]:
-    """原因の未確定を宣言する`原因:`の行と、保存済みの旧形式の表の`直接的原因`の行を返す。
-
-    コードフェンスの内側は引用・例示として扱い、判定しない。
-    """
     normalized = _frontmatter.normalize_newlines(body)
     lines = normalized.split("\n")
     found = [
@@ -224,11 +207,6 @@ def _require_agent_source(frontmatter: dict[str, object], source: str | None) ->
 
 
 def _verify_frontmatter_target_repos(parsed_messages: list[tuple[dict[str, object], str]]) -> None:
-    """`target_repo`省略時に、全メッセージのfrontmatterが解決可能な対象リポジトリを持つことを検証する。
-
-    キー欠落・非文字列値・空文字列・解決不能をいずれも原因別の`WebInputError`で拒否し、
-    `_wi_sync.repo_lock`取得前に全件を確定する。
-    """
     for frontmatter, _body in parsed_messages:
         raw_target_repo = frontmatter.get("target_repo")
         if raw_target_repo is None:
@@ -278,7 +256,6 @@ _RESERVED_FRONTMATTER_KEYS = ("target_repo", "target_branch", "source", *_RESERV
 
 
 def normalize_cooldown_until(value: str) -> str:
-    """投入と編集の外部入力を、タイムゾーン付きISO 8601日時へ正規化する。"""
     next_action = "--cooldown-untilへ空でないタイムゾーン付きISO 8601日時を指定する"
     try:
         deadline = datetime.datetime.fromisoformat(value)
@@ -302,7 +279,6 @@ def _validate_add_entries(
     source: str | None = None,
     cooldown_until: str | None = None,
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
-    """保存前の入力検証を行い、正規化済みの値を返す。"""
     if not messages:
         raise WebInputError("messagesには1件以上を指定してください", next_action="本文を1件以上指定して再投入する")
     normalized_cooldown = None

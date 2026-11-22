@@ -1,5 +1,3 @@
-"""取得済み候補と選定YAMLを読み込み、初回配分との一致を確かめる。"""
-
 from __future__ import annotations
 
 import functools
@@ -16,7 +14,7 @@ from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
 from check_selection_common import _FIX_CONTENT, _FIX_PATHS, _FIX_PRIVATE_NOTES, InputError, Violation
-from check_selection_lanes import _resume_plan_id
+from check_selection_lanes import _resume_plan_id, derive_lane_order, derives_lane_order
 
 _FIX_YAML = (
     "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"
@@ -33,7 +31,6 @@ _NEXT_SOURCE_MISMATCH = "一致しない欄を、元のWIのfrontmatterの`depen
 
 
 def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[Violation]:
-    """依存の型付き根拠を元のWIのfrontmatterと対応付け、一致しない欄と両方の値を示す。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     items = {
         item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
@@ -44,7 +41,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
     for group in data["不可分成分"]:
         for edge in group["結合条件"]:
             first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
-            # 書込重複は成立の判定が選定の現在値を使うため、比べる元入力を持たない。
+
             if (
                 kind == "書込重複"
                 or first not in items
@@ -70,7 +67,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                             sources[name]["state"] = source.parent.name
                 source_name = evidence["依存元"]
                 header = sources[source_name]
-                # 終了した項目は初回配分の履歴だけを残し、終了時に解除した依存を戻させない。
+
                 if header.get("state") not in (WI_STATE_ADOPTED, WI_STATE_REJECTED):
                     actual = header.get("depends_on", [])
                     if actual != evidence["depends_on"]:
@@ -82,8 +79,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                         mismatches.append(
                             f"リポジトリ{index}: 根拠={evidence[f'リポジトリ{index}']}、{name}のtarget_repo={resolved}"
                         )
-            # 再開計画の根拠は初回の結合履歴であり、要求変更後の現在の再開位置とは比較しない。
-            # 根拠自身の整合性と元レーンの保持は初回配分検査、現在の共有計画はレーン検査が担う。
+
             if mismatches:
                 errors.append(
                     Violation(
@@ -95,7 +91,6 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
 
 
 def _candidate_records(path: pathlib.Path) -> list[dict[str, typing.Any]]:
-    """取得済みwi listのJSON LinesまたはJSON配列を読む。新しい候補照会は行わない。"""
     try:
         text = path.read_text(encoding="utf-8")
         if not text.strip():
@@ -148,6 +143,7 @@ def load_selection(
     *,
     additional: bool = False,
     candidate_file: pathlib.Path | None = None,
+    reorder: bool = False,
 ) -> dict[str, object]:
     """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
 
@@ -170,7 +166,22 @@ def load_selection(
         selection = _generate_selection(selection, candidate_file, additional=additional)
     elif not additional:
         _drop_write_scope_reasons(selection)
+    if reorder and isinstance(selection, dict):
+        costs = _selection.lane_costs(selection)
+        if costs is not None:
+            integrated = _selection.integrated_lanes(selection)
+            for row in costs:
+                if isinstance(row, dict) and row.get(_selection.LANE_KEY) not in integrated:
+                    row.pop(_selection.STAGE_KEY, None)
+                    row.pop(_selection.PRIOR_LANES_KEY, None)
+            selection.pop("lane_costs", None)
+            selection[_selection.LANE_COSTS_KEY] = costs
     errors, model_errors = selection_contract.structure_errors(selection)
+    if candidate_file is not None and not additional and not (errors or model_errors) and derives_lane_order(selection):
+        try:
+            derive_lane_order(selection)
+        except (KeyError, ValueError) as error:
+            raise InputError(str(error), next_action=_FIX_CONTENT) from error
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
             "初回配分がない。初回候補WI・レーン割当・不可分成分の構成WIと結合条件を、"
@@ -186,11 +197,6 @@ def load_selection(
 
 
 def _drop_write_scope_reasons(selection: object) -> None:
-    """旧版が保存した選定結果の`書込範囲の理由`を捨てる。
-
-    同欄は重なりの判定と配分に寄与しないため撤去した。保存済みの選定結果をそのまま読めるよう、
-    読取時に除いて保存時にも出力しない。新しく書く入力（生成入力・追加入力）の同欄は未知の欄として拒否する。
-    """
     if not isinstance(selection, dict):
         return
     items = selection.get(_selection.DECISIONS_KEY, selection.get("decisions"))

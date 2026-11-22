@@ -1,5 +1,3 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
 import ast
@@ -12,7 +10,6 @@ from _test_helpers import _tracked_source_paths
 
 
 def _path_values(node: ast.AST, values: dict[str, list[pathlib.Path]], source: pathlib.Path) -> list[pathlib.Path]:
-    """静的に確定できるpathlib式をパスの一覧へ変換する。"""
     if isinstance(node, ast.Name):
         if node.id == "__file__":
             return [source]
@@ -66,7 +63,6 @@ def _path_values(node: ast.AST, values: dict[str, list[pathlib.Path]], source: p
 
 
 def _read_paths(node: ast.AST, values: dict[str, list[pathlib.Path]], source: pathlib.Path) -> list[pathlib.Path]:
-    """構文木の呼び出しから直接読取り対象を返す。"""
     paths: list[pathlib.Path] = []
     for candidate in ast.walk(node):
         if (
@@ -83,7 +79,6 @@ def _function_reads(
     module_values: dict[str, list[pathlib.Path]],
     source: pathlib.Path,
 ) -> list[pathlib.Path]:
-    """関数内の代入と反復をたどって直接読取り対象を返す。"""
     reads: list[pathlib.Path] = []
 
     def visit(statements: list[ast.stmt], values: dict[str, list[pathlib.Path]]) -> None:
@@ -103,7 +98,6 @@ def _function_reads(
 
 
 def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib.Path]) -> list[str]:
-    """通常テストから追跡中のエージェント向け文書を読む関数を列挙する。"""
     violations: list[str] = []
     for relative_source in sources:
         if relative_source.name.endswith("_invariant_test.py"):
@@ -117,7 +111,7 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
         pending: list[ast.AST] = [tree]
         while pending:
             function = pending.pop()
-            # 関数定義は文の配下にある。巨大なfixture文字列や式は関数探索で走査し直さない。
+
             pending.extend(
                 child
                 for child in ast.iter_child_nodes(function)
@@ -139,7 +133,6 @@ def _agent_doc_reader_violations(repository: pathlib.Path, sources: list[pathlib
     9.5, reason="全追跡試験のASTと読取先を解析し、別配置の規範読取も検出するため局所化できない（Linux CI CPU4.475秒）"
 )
 def test_agent_doc_readers_are_in_invariant_tests() -> None:
-    """追跡中のエージェント向け文書を読むテストをfast対象へ置く。"""
     repository = pathlib.Path(__file__).resolve().parent
     sources = [path for path in _tracked_source_paths(repository) if path.name.endswith("_test.py")]
 
@@ -152,7 +145,6 @@ def test_agent_doc_readers_are_in_invariant_tests() -> None:
 def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_documents(
     tmp_path: pathlib.Path,
 ) -> None:
-    """一時fixtureを除外し、実リポジトリの文書読取りだけを配置違反にする。"""
     repository = tmp_path / "repo"
     repository.mkdir()
     (repository / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
@@ -186,7 +178,6 @@ def test_agent_doc_reader_detector_ignores_fixture_paths_and_reports_repository_
     ],
 )
 def test_agent_doc_reader_detector_keeps_nested_definitions(tmp_path, container, names, method):
-    """文に入れ子になった関数とUnicode正規化される属性も、式の走査を省いた探索で検出する。"""
     (tmp_path / "AGENTS.md").write_text("# 規範\n", encoding="utf-8")
     function = f"    def read():\n        pathlib.Path(__file__).with_name('AGENTS.md').{method}()\n"
     source = tmp_path / "example_test.py"

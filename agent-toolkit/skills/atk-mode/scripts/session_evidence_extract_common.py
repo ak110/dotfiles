@@ -1,5 +1,3 @@
-"""記録からの証拠イベント抽出（session_evidence_extract_common）。"""
-
 from __future__ import annotations
 
 import contextvars
@@ -11,7 +9,6 @@ from agent_toolkit._common import message_format as _message_format
 from agent_toolkit._common import runtime_inserted as _runtime_inserted
 from agent_toolkit._common.runtime_inserted import is_runtime_inserted_text as _is_runtime_inserted_text
 
-# 本文の上限と省略の標識は、`--verbose`を付けない`atk agents logs`のtext表示と共有する。
 _MAX_TEXT_LENGTH = _session_record_format.SUMMARY_TEXT_LIMIT
 
 
@@ -47,13 +44,6 @@ _HOOK_RECORD_TYPES = frozenset({"hook_additional_context", "hook_system_message"
 
 
 def _is_hook_record(value: dict[str, Any]) -> bool:
-    """hook実行の記録に当たるかを`type`の値で判定する。
-
-    `type`の値は文字列とは限らない。ツール定義を含む記録では
-    `attachment.tools[].schema.input_schema.properties`配下に`type`という名前の
-    プロパティ定義が現れ、その値はJSON Schemaのdictになる。
-    集合に含まれるか判定する前に文字列であることを確かめないと`TypeError`で走査が止まる。
-    """
     return isinstance(value.get("type"), str) and value["type"] in _HOOK_RECORD_TYPES
 
 
@@ -88,7 +78,6 @@ _FALLBACK_TEXT = (
 
 _METADATA_KEYS = frozenset(
     {
-        # 識別子・署名
         "uuid",
         "parentUuid",
         "leafUuid",
@@ -109,10 +98,8 @@ _METADATA_KEYS = frozenset(
         "ownerAccountUuid",
         "ownerOrganizationUuid",
         "signature",
-        # 時刻
         "timestamp",
         "backupTime",
-        # 形式・区分の名称
         "type",
         "subtype",
         "kind",
@@ -151,7 +138,6 @@ _METADATA_KEYS = frozenset(
 
 _BODY_KEYS = frozenset(
     {
-        # 自由形式の本文を保持するフィールド。内部のキー名はユーザーの入力に由来する
         "input",
         "output",
         "arguments",
@@ -168,7 +154,6 @@ _TEXT_LIMIT: contextvars.ContextVar[int | None] = contextvars.ContextVar("_TEXT_
 
 
 def _clip(text: str, limit: int | None = None) -> str:
-    """証拠の意味を保ったまま巨大な本文を制限する。"""
     normalized = text.strip()
     effective = _TEXT_LIMIT.get() if limit is None else limit
     if effective is None or len(normalized) <= effective:
@@ -188,7 +173,6 @@ _PRESERVED_MARKERS = ("続行できない区分:", "続行できない理由:", 
 
 
 def _clip_assistant_text(text: str) -> str:
-    """本文の先頭を短縮し、省略区間にある返却の標識行は全文で保持する。"""
     normalized = text.strip()
     clipped = _clip(normalized)
     if clipped == normalized:
@@ -214,26 +198,11 @@ def _clip_assistant_text(text: str) -> str:
 
 
 class _DetailBudget:
-    """1エントリの詳細出力が共有する残り文字数と、省略の発生有無。
-
-    詳細は`--detail`の指定行ごとに複数の文字列へ分かれるため、上限を文字列単位で適用すると
-    1エントリの出力量が指定上限を超える。残り予算を出現順に配分して本文の合計を上限内へ収める。
-    省略標識も返す文字数として予算から差し引くため、文字列値の個数が増えても合計は上限を超えない。
-    予算が標識の長さに満たない時点以降の本文は空文字列となり、本文が元から空である場合と
-    文字列単体では区別できない。この区別のため、省略が1回でも生じたかを`omitted`が保持し、
-    呼び出し側がそのエントリのイベントへ標識として付ける。
-    """
-
     def __init__(self, limit: int) -> None:
         self.remaining = limit
         self.omitted = False
 
     def clip(self, text: str) -> str:
-        """残り予算の範囲で本文を制限し、返した文字数を予算から差し引く。
-
-        予算を超える非空の本文は、省略標識を含めて残り予算へ収まる範囲まで切り詰める。
-        省略標識を置く余地も無い場合は空文字列を返す。いずれの場合も省略の発生を記録する。
-        """
         normalized = text.strip()
         if len(normalized) <= self.remaining:
             self.remaining -= len(normalized)
@@ -247,7 +216,6 @@ class _DetailBudget:
 
 
 def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] | None:
-    """共通イベントを生成し、アシスタント本文の省略区間の改善点を候補判定まで保つ。"""
     runtime_inserted = kind == "user" and _is_runtime_inserted_text(text)
     clipped = _clip_assistant_text(text) if kind == "assistant" else _clip(text)
     if not clipped:
@@ -265,11 +233,6 @@ def _event(kind: str, text: str, *, tool: str | None = None) -> dict[str, Any] |
 
 
 def _generated_user_event(event: dict[str, Any]) -> bool:
-    """人間入力の抽出で除く生成ユーザーイベントかを、原文由来の標識で返す。
-
-    agents_serverの配送境界に包まれた委譲元の依頼も生成扱いになる。
-    委譲元の依頼を必要とする消費側は、配送境界を別に判定する。
-    """
     return event.get("runtime_generated") is True or event.get("runtime_inserted") is True
 
 

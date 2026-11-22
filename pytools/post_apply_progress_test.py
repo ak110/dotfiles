@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのprogressの試験。"""
 
 # pylint: disable=protected-access
 
@@ -23,7 +22,6 @@ from pytools._internal.post_apply_test_helpers import _isolate_update_log as _is
 
 @pytest.mark.parametrize("human", [True, False], ids=["terminal", "not-terminal"])
 def test_progress_is_one_rewritten_line(monkeypatch, capsys, human):
-    """端末では進捗が1行の書き換えになり、結果行に残らない。端末でなければ出力しない。"""
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: human)
     monkeypatch.setattr(post_apply.shutil, "get_terminal_size", lambda *_args, **_kwargs: os.terminal_size((40, 24)))
     steps = _gated_steps(4, monkeypatch)
@@ -34,7 +32,7 @@ def test_progress_is_one_rewritten_line(monkeypatch, capsys, human):
     if not human:
         assert not captured.err
         return
-    # 新しい行を追加せず、書き換えと消去だけで終わる。
+
     assert "\n" not in captured.err
     assert captured.err.count("post-apply実行中") >= 2
     assert captured.err.endswith("\r")
@@ -43,7 +41,6 @@ def test_progress_is_one_rewritten_line(monkeypatch, capsys, human):
 
 
 def test_progress_is_cleared_before_outcome_lines(monkeypatch):
-    """工程結果の出力前に進捗の行を消去し、標準出力と標準エラーが同じ端末で混ざらない。"""
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: True)
     monkeypatch.setattr(post_apply.shutil, "get_terminal_size", lambda *_args, **_kwargs: os.terminal_size((200, 24)))
     events: list[str] = []
@@ -167,7 +164,6 @@ def test_parallel_warmup_keeps_root_order_and_worker_log_capture(monkeypatch, tm
 
 @pytest.mark.parametrize("via_update_dotfiles", [False, True], ids=["standalone", "via-update-dotfiles"])
 def test_only_standalone_child_prints_log_and_update_retry(monkeypatch, capsys, via_update_dotfiles):
-    """単独時だけ例外を書いた子が所在と再実行を案内し、更新中は親がまとめて案内する。"""
     if via_update_dotfiles:
         monkeypatch.setenv(post_apply._UPDATE_RUN_ID_ENV, "run-1")  # noqa: SLF001
 
@@ -190,7 +186,6 @@ def test_only_standalone_child_prints_log_and_update_retry(monkeypatch, capsys, 
 
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, capsys, agent):
-    """保留中の工程を含む全体状態が届き、列挙順の結果と永続ログを保つ。"""
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: not agent)
     real_wait = post_apply.wait
     release = threading.Event()
@@ -232,7 +227,6 @@ def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, cap
 
 
 def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch, tmp_path, capsys):
-    """端末でない出力でも、終わらない工程の名前を一定間隔で記録し、止まった工程を判別できる。"""
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: False)
     monkeypatch.setattr(post_apply, "_RUNNING_NOTICE_SECONDS", 0.05)
     release = threading.Event()

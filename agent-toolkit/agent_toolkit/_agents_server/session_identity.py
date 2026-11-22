@@ -1,5 +1,3 @@
-"""backendが報告した新規会話識別子を、永続化と共有一覧の更新前に検収する。"""
-
 from collections.abc import Callable, Mapping
 
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -10,7 +8,7 @@ IdentityValidator = Callable[[str, str | None], None]
 
 
 class DuplicateSessionIdentityError(ActionableError):
-    """候補の可用性と独立して起動を拒否する会話識別子の重複。"""
+    pass
 
 
 class _RegistryValidator:
@@ -57,7 +55,6 @@ class _RegistryValidator:
 
 
 async def validate_identity(validator: IdentityValidator, session_id: str, expected_session_id: str | None) -> None:
-    """登録簿をworkerで読み、共有一覧の重複をloopで最終確認する。"""
     if isinstance(validator, _RegistryValidator):
         await validator.validate_async(session_id, expected_session_id)
     else:
@@ -69,5 +66,4 @@ def identity_validator(
     root_session_id: str | None,
     *retained: Mapping[str, object],
 ) -> IdentityValidator:
-    """共有一覧・保持状態・登録簿との重複を判定する関数を返す。"""
     return _RegistryValidator(sessions, root_session_id, retained)

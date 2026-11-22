@@ -1,5 +1,3 @@
-"""レビューと探索の起動に必要な保存資料と、レーン担当の資源の入力値の検査。"""
-
 from __future__ import annotations
 
 import json
@@ -20,7 +18,6 @@ from agent_toolkit._plan import commit_mapping, review_contract
 
 
 def _material_error(name: str, reason: str) -> ActionableError:
-    """不足資料と、保存して再発行する操作を同じ応答へ載せる。"""
     return ActionableError(
         f"探索資料の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
         next_action=(
@@ -37,7 +34,6 @@ def _material_error(name: str, reason: str) -> ActionableError:
 
 
 def _material_paths(name: str, value: str) -> list[pathlib.Path]:
-    """JSON配列と既存の保存ファイル指定を、共通の読取検査へ渡す。"""
     value = value.strip()
     if value.startswith("["):
         try:
@@ -47,7 +43,6 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
         if not isinstance(items, list) or not items or any(not isinstance(item, str) for item in items):
             raise _material_error(name, "絶対パスの空でないJSON配列が必要")
     else:
-        # 全体が実在するパスの場合は、空白・日本語の区切り文字を含む名前もそのまま保つ。
         if pathlib.Path(value).is_absolute() and pathlib.Path(value).is_file():
             items = [value]
         else:
@@ -73,10 +68,6 @@ def _material_paths(name: str, value: str) -> list[pathlib.Path]:
 
 
 def _check_reader_unresolved(params: Mapping[str, str], review_kind: str) -> None:
-    """再レビューで必要な未解決事項の保存物を、パスだけの値として確かめる。
-
-    パスに説明を連結した値は、説明の対象が別の成果物でも探索担当が今回の資料の範囲と誤認するため受理しない。
-    """
     unresolved = params.get("未解決事項", "なし" if review_kind == "初回レビュー" else "").strip()
     if unresolved == "なし":
         return
@@ -91,10 +82,6 @@ _HUNK_HEADER = re.compile(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
 def _apply_unified_diff(before: str, patch: str) -> str | None:
-    """1ファイル分の統一差分を比較元本文へ適用した本文を返し、適用できない差分ではNoneを返す。
-
-    行位置を持たない帰属限定差分、複数ファイルの差分、比較元と文脈が一致しない差分は適用できない。
-    """
     lines = patch.splitlines(keepends=True)
     if sum(1 for line in lines if line.startswith("+++ ")) > 1:
         return None
@@ -149,7 +136,6 @@ def _apply_unified_diff(before: str, patch: str) -> str | None:
 
 
 def _patch_target_error(patch: str, current: pathlib.Path) -> str | None:
-    """差分の新しい側のファイル見出しが現行本文と異なるファイルを指す場合に理由を返す。"""
     for line in patch.splitlines():
         if not line.startswith("+++ "):
             continue
@@ -166,10 +152,6 @@ def _patch_target_error(patch: str, current: pathlib.Path) -> str | None:
 
 
 def _check_patch_consistency(name: str, before: str, patch_path: pathlib.Path, current: pathlib.Path) -> None:
-    """比較元本文へ今回差分を適用した結果が現行本文と一致するかを確かめる。
-
-    別成果物の差分、計画別の判定範囲だけの差分、レビューHEADと異なる現行本文は、いずれもこの一致が崩れる。
-    """
     patch = patch_path.read_text(encoding="utf-8")
     if error := _patch_target_error(patch, current):
         raise _material_error(name, error)
@@ -184,7 +166,6 @@ def _check_patch_consistency(name: str, before: str, patch_path: pathlib.Path, c
 
 
 def _check_reader_materials(params: Mapping[str, str]) -> None:
-    """現行本文・比較元・今回差分を区別し、再レビューの証拠も起動前に読む。"""
     current = _material_paths("成果物", params["成果物"])
     if len(set(current)) != len(current):
         raise _material_error("成果物", "現行本文のパスが重複している")
@@ -241,7 +222,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
     else:
         if len(current) != 1:
             raise _material_error("比較資料", "複数成果物には比較資料の配列が必要")
-        # 旧形式も保存ファイルを共通検査へ通す。本文や差分の説明だけでは成立しない。
+
         scope = params["修正範囲"]
         is_new = scope.startswith("新規") and "全文" in scope
         if not is_new:
@@ -249,7 +230,7 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
             saved = list(dict.fromkeys(path for path in paths if path != current[0]))
             if len(saved) < 2:
                 raise _material_error("比較資料", "比較元本文と今回差分の保存物が必要")
-            # 旧形式は役割を名前で示さないため、差分の形を持つファイルを1件に識別できる場合だけ同じ対応を確かめる。
+
             patches = [path for path in saved if path.read_text(encoding="utf-8").startswith(("diff --git ", "--- "))]
             if len(patches) == 1 and len(saved) == 2:
                 before_path = next(path for path in saved if path != patches[0])
@@ -262,7 +243,6 @@ def _check_reader_materials(params: Mapping[str, str]) -> None:
 
 
 def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, str]) -> None:
-    """読取と検索だけで動く担当の保存資料を、起動要求の境界で検査する。"""
     role = task_document.name.removesuffix(task_documents.TASK_DOCUMENT_SUFFIX)
     if role == "wi-draft-review":
         stage = params.get("確認段階", "本文")
@@ -271,7 +251,9 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
         name = "方針" if stage == "方針" else "原稿"
         if not params.get(name):
             raise _material_error(name, f"{stage}段階で必要")
-        for material in (name, "要求と出所", "成立性の証拠"):
+        for material in (name, "要求原本", "調査原本", "ユーザー向け部分"):
+            if material not in params:
+                continue
             path = pathlib.Path(params[material])
             if not path.is_absolute() or not path.is_file():
                 raise _material_error(material, "実在するファイルの絶対パスが必要")
@@ -306,10 +288,6 @@ def _lane_input_error(name: str, reason: str) -> ActionableError:
 
 
 def check_lane_owner_inputs(params: Mapping[str, str]) -> None:
-    """渡されたレーンの資源と統合先の値を、所有登録と照らして起動前に検査する。
-
-    検査は値の形式と所有登録との一致までで、所有登録がこの担当のレーンのものかは`レーン識別子`が渡された時だけ確かめる。
-    """
     if "所有登録" in params:
         path = pathlib.Path(params["所有登録"])
         try:
@@ -344,7 +322,6 @@ _REVIEW_BASIS_INPUTS: dict[str, tuple[str, ...]] = {
 
 
 def _review_basis_error(reason: str) -> ActionableError:
-    """基準名と基準別の追加入力の誤りを、正しい指定方法とともに返す。"""
     return ActionableError(
         f"exec-reviewの起動入力が不成立です: {reason}。委譲先は起動していない。",
         next_action=(
@@ -359,10 +336,6 @@ def _review_basis_error(reason: str) -> ActionableError:
 
 
 def _check_review_bases(params: Mapping[str, str]) -> None:
-    """`レビュー基準`の基準名と、選んだ基準が求める追加入力を資料検査の前に確かめる。
-
-    基準名へパスや説明を連結した値は、別入力の資料が無いまま起動して担当が初めて不足に気付くため拒否する。
-    """
     value = params.get("レビュー基準", "").strip()
     items = [item.strip() for item in re.split(r"[、,，､]", value)]
     unknown = [item for item in items if item not in _REVIEW_BASES]
@@ -383,7 +356,6 @@ def _check_review_bases(params: Mapping[str, str]) -> None:
 
 
 def _check_exec_review_materials(params: Mapping[str, str]) -> None:
-    """基準と追加入力を確かめてから、新形式AWIの条件表を起動前に構造だけ検査する。内容の評価はレビュー担当が担う。"""
     _check_review_bases(params)
     names: set[str] = set()
     if plan := params.get("計画"):
@@ -444,7 +416,6 @@ def _check_exec_review_materials(params: Mapping[str, str]) -> None:
 
 
 def _check_git_reader_materials(materials: dict[str, Any], current: list[pathlib.Path]) -> None:
-    """保存物と同じ比較対象を、Git識別子で受け取る。"""
     repository = materials["repository"]
     paths = materials["paths"]
     if not isinstance(repository, str) or not pathlib.Path(repository).is_absolute():

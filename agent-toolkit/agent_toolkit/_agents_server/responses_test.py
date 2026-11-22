@@ -22,7 +22,6 @@ def test_observed_session_identity_uses_last_identity_from_unique_physical_recor
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了応答の観測identityは一意な物理記録の最後の観測値を使う。"""
     record = tmp_path / "session.jsonl"
     # Codex 0.160.1の記録の`turn_context`行の形（最上位の`type`、`payload`の`model`と`effort`）を写した。
     entries = [

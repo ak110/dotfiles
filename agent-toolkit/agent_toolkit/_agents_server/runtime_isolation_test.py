@@ -37,7 +37,6 @@ async def _ignore_message(_value: dict[str, Any]) -> None:
 async def test_sdk_child_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str, configured: bool
 ) -> None:
-    """SDK環境とsettingsを合成した子環境で、設定ファイルが指定するキーだけが空になる。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=api-key\nAWS_PROFILE=api-profile\nCUSTOM_CONNECTION=api-value\n")
     configure_claude_payg(monkeypatch, str(api))
@@ -85,7 +84,6 @@ async def test_sdk_child_environment(
 async def test_api_only_continues_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str, cold: bool
 ) -> None:
-    """従量課金だけの使用順では、既存接続と保存済み会話の両方を同じIDのresumeでAPIへ移す（旧api-only相当）。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=api-key\n")
     configure_claude_payg(monkeypatch, str(api), worker="payg")
@@ -126,7 +124,6 @@ async def test_api_only_continues_same_conversation(
 @pytest.mark.parametrize("record", ["server", "parent", "explicit", "continued", "none"])
 @pytest.mark.asyncio
 async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, record: str) -> None:
-    """生成・明示・前任からの継続の同じパスを、両backendの起動環境へ渡す。"""
     path = tmp_path / "parent-record.md"
     if record == "server":
         monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -183,7 +180,6 @@ async def test_handoff_path_reaches_both_backends(tmp_path: pathlib.Path, monkey
 
 @pytest.mark.asyncio
 async def test_codex_receives_original_connection_values(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """サーバーが保持した接続値をApp Serverの起動環境へ戻す。"""
     api = tmp_path / "api.env"
     api.write_text("CUSTOM_CONNECTION=api\nAWS_PROFILE=api-profile\n")
     configure_claude_payg(monkeypatch, str(api))

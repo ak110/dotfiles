@@ -80,7 +80,7 @@ async def test_recovery_rechecks_user_revision_and_interruption(tmp_path: pathli
     front.send = AsyncMock()
     back.send = AsyncMock(side_effect=send)
     back.receive = AsyncMock(side_effect=receive)
-    # 部分的な復旧の差替えを避け、initializeから続行の送信まで実装を通す。
+
     await bridge._recover(front, back)  # pylint: disable=protected-access
     assert [message["method"] for message in sent] == [
         "initialize",

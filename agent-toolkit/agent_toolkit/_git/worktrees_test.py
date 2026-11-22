@@ -20,12 +20,10 @@ pytestmark = pytest.mark.windows
 
 @pytest.fixture(autouse=True)
 def _leaf_git_launch(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実Gitの登録形式を検査し、独立した子孫回収の走査を各照会へ重ねない。"""
     monkeypatch.setattr(command, "_launch", subprocess.run)
 
 
 def _porcelain_z(repo: pathlib.Path) -> dict[pathlib.Path, dict[str, str]] | None:
-    """`-z`を受理するGitでは、Git自身の列挙をパスごとの属性へ変換して返す。受理しない版では`None`を返す。"""
     result = git_repository.run_git(repo, "worktree", "list", "--porcelain", "-z", check=False)
     if result.returncode:
         return None
@@ -62,7 +60,7 @@ def _assert_matches_git(repo: pathlib.Path, listed: list[worktrees.Worktree]) ->
     if expected is None:
         return
     observed = {entry.path: _summary(entry) for entry in listed}
-    # Gitの出力は種別ごとに理由やOIDを値に持つ。比べるのは属性の有無とbranchの参照名に限る。
+
     normalized = {
         path: {name: (value if name == "branch" else "") for name, value in fields.items() if name != "HEAD"}
         for path, fields in expected.items()
@@ -80,7 +78,6 @@ def _assert_matches_git(repo: pathlib.Path, listed: list[worktrees.Worktree]) ->
     ),
 )
 def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
-    """空白・日本語・改行を含むパスとdetached・locked・prunableの登録を、元の登録と同じパス・branchで返す。"""
     repo = git_repository.init_repository(tmp_path / "主 repo", initial_branch="main", commit_message="初期")
     names = ["with space", "日本語の作業ツリー"]
     if sys.platform != "win32":
@@ -125,7 +122,6 @@ def test_lists_special_paths_and_states(tmp_path: pathlib.Path) -> None:
     ),
 )
 def test_lists_bare_repository_and_its_linked_worktree(tmp_path: pathlib.Path) -> None:
-    """bareリポジトリの主項目をbareとして返し、そこから作成したworktreeのbranchを返す。"""
     seed = git_repository.init_repository(tmp_path / "seed", initial_branch="main", commit_message="初期")
     bare = tmp_path / "bare.git"
     git_repository.run_git(tmp_path, "clone", "--quiet", "--bare", str(seed), str(bare))
@@ -165,7 +161,6 @@ def test_reports_failure_outside_repository(tmp_path: pathlib.Path) -> None:
     ),
 )
 def test_owning_worktree(tmp_path: pathlib.Path) -> None:
-    """主作業ツリーと入れ子の登録を区別し、登録外のパスは所属なしとする。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期")
     nested = repo / ".claude/worktrees/nested"
     git_repository.run_git(repo, "worktree", "add", "-b", "nested", str(nested))
@@ -198,7 +193,6 @@ def test_main_worktree_path_strips_git_suffix_in_git_format(common_dir: str, exp
     ),
 )
 def test_main_worktree_is_listed_without_git_suffix_from_both_starting_points(tmp_path: pathlib.Path) -> None:
-    """主・linkedどちらの作業ツリーを起点にしても、列挙した主作業ツリーに`.git`が残らず、主ルート直下のファイルが主作業ツリーに属する。"""
     repository = git_repository.init_repository(
         tmp_path / "主 repo", initial_branch="main", files={"CLAUDE.md": "完了報告を省く。\n"}, commit_message="規範を保存"
     )

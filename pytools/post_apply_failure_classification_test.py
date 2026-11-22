@@ -493,7 +493,6 @@ def test_failure_classification_per_step(
     step = next(step for step in post_apply.DEFAULT_STEPS if step.name == name)
     simulation(monkeypatch, tmp_path)
 
-    # 対象OSの判定と先行工程を外し、工程の`run`だけを実行する。
     with pytest.raises(SystemExit) as exc_info:
         post_apply.main(runner=lambda: post_apply.run([(step.name, step.run)]))
 

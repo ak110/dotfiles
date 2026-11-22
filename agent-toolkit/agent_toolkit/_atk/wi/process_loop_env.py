@@ -1,5 +1,3 @@
-"""`atk wi process-loop`が起動する子プロセスの環境、実行ファイルの解決とコンソールの復元。"""
-
 import os
 import pathlib
 import shutil
@@ -28,7 +26,6 @@ PROCESS_LOOP_SESSION_ENV = _orchestrator.PROCESS_LOOP_SESSION_ENV
 PROCESS_LOOP_SESSION_ID_ENV = _orchestrator.PROCESS_LOOP_SESSION_ID_ENV
 
 
-# 次に起動する1セッションだけへ渡すユーザーの追加指示。SessionStart hookが本文を注入する。
 PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 
 
@@ -37,11 +34,6 @@ _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
 def dialog_timeout_settings() -> str:
-    """メイン会話の質問タイムアウトとRemote Control無効化の設定を返す。
-
-    Remote Controlのbridgeが接続されると質問の自動送出が無効になるため、
-    process-loopが起動するセッションでは起動時の接続を無効にする。
-    """
     if _wait_schedule.get_prompt_cache_ttl("main") == "5m":
         return '{"askUserQuestionTimeout": "60s", "dialogExpiry": "60s", "remoteControlAtStartup": false}'
     return '{"askUserQuestionTimeout": "5m", "dialogExpiry": "5m", "remoteControlAtStartup": false}'
@@ -81,7 +73,6 @@ def reset_console(*, platform: str = os.name, stream: typing.TextIO | None = Non
         return
     executable = shutil.which("reset")
     if executable is not None:
-        # 時間上限なし: 端末の初期化であり、外部の応答を待たない。
         subprocess.run([executable], check=False)
 
 
@@ -98,7 +89,6 @@ def create_hook_debug_log(env: dict[str, str]) -> pathlib.Path:
 
 
 def resolve_executable(command: str) -> str | None:
-    """実行可能ファイルを環境の探索規則で解決し、利用不能時は警告する。"""
     executable = shutil.which(command)
     if executable is None:
         _next_action.report(
@@ -109,7 +99,6 @@ def resolve_executable(command: str) -> str | None:
 
 
 def restore_process_loop_env(previous_values: dict[str, str | None]) -> None:
-    """process-loop識別環境変数を呼び出し前の状態へ戻す。"""
     for key, previous_value in previous_values.items():
         if previous_value is None:
             os.environ.pop(key, None)

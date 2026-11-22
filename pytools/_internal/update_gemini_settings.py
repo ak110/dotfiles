@@ -1,5 +1,3 @@
-"""Gemini CLIの管理設定をJSONCのユーザー設定へ反映する。"""
-
 import copy
 import json
 import logging
@@ -31,7 +29,7 @@ def run(*, home: Path | None = None, dotfiles_root: Path | None = None) -> post_
     if not isinstance(data, dict):
         raise ValueError("Gemini settings.jsonのルートにはJSONオブジェクトが必要です。")
     original = copy.deepcopy(data)
-    # generalの管理値が旧experimentalの値より優先する。旧設定の他の項目も保持する。
+
     for section, values in managed.items():
         if isinstance(values, dict) and isinstance(data.get(section), dict):
             data[section].update(values)

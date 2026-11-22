@@ -1,5 +1,3 @@
-"""引用状態ごとのエスケープと実行位置の回帰試験。"""
-
 import pytest
 
 from agent_toolkit._common.shell_segments import extract_execution_segments, split_bash_segments

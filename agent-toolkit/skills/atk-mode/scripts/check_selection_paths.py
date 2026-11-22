@@ -1,5 +1,3 @@
-"""WI本文の反映先パスの抽出と正規化。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -23,15 +21,12 @@ _UWI_TYPE = "uwi"
 _MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 
 
-# 末尾の`:<行番号>`と`:<行番号>-<行番号>`は参照位置の付記であり、パスの一部ではない。
 _LINE_SUFFIX_RE = re.compile(r":\d+(?:-\d+)?$")
 
 
-# 絶対パス、ホーム起点、変数展開、プレースホルダーはリポジトリ相対パスではない。
 _NON_PATH_PREFIXES = ("/", "~", "$", "<")
 
 
-# ワイルドカードとURLは個別のパスを指さない。
 _NON_PATH_FRAGMENTS = ("*", "://")
 
 
@@ -44,37 +39,29 @@ _PATH_TOKEN_RE = re.compile(
 _LIST_GAP_RE = re.compile(r"(?:\s*(?:と|および|ならびに|、|・|,))+\s*")
 
 
-# 語の直後に続くと、その語がグロブや波括弧展開の途中で途切れたことを示す記号。
 _GLOB_CHARS = frozenset("*?[{")
 
 
-# 新設先として採るファイル名は、拡張子までそろった完全な名前に限る。
 _COMPLETE_FILE_NAME_RE = re.compile(r"[^/]*[^/.]\.[A-Za-z0-9]+")
 
 
-def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
-    """WIファイルの全文から反映先パスの集合を返す。
-
-    UWIはfrontmatterを除く本文全体、それ以外は`## 反映内容と反映先`の節を抽出の対象にする。
-    """
+def reflected_paths(text: str, work_dir: pathlib.Path, *, declared_paths: frozenset[str] = frozenset()) -> set[str]:
     parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(text))
     if parsed is not None and parsed[0].get("type") == _UWI_TYPE:
-        return _explicit_paths(parsed[1], work_dir)
+        return _explicit_paths(parsed[1], work_dir, declared_paths)
     section = _section_text(text, _TARGET_SECTION)
     if section is None:
         return set()
-    return _explicit_paths(section, work_dir)
+    return _explicit_paths(section, work_dir, declared_paths)
 
 
 @dataclasses.dataclass(frozen=True)
 class _Segment:
-    """段落の文章かインラインコードの1区間。`code`は内容全体を1つのパス候補とするインラインコードかを表す。"""
-
     text: str
     code: bool
 
 
-def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset[str]) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
     インラインコードは、内容全体が解決可能なパスの場合に空白を含めて1つの候補とし、非ASCIIの文字を含む
@@ -82,7 +69,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
     実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
     パスの途中で終わった部分として採らない。
-    抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
+    抽出結果は、作業ツリーに実在するパスか、実在する祖先を持つ完全なファイル名の新設先に限る。
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
     それ以外は`_new_file_path`の新設先の条件で採る。
@@ -98,7 +85,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         explicit_directory = False
         directory_particle = False
         last_end = 0
-        for start, end in _path_tokens(segments, work_dir):
+        for start, end in _path_tokens(segments, work_dir, declared_paths):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
             if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
@@ -108,7 +95,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                 directory = None
                 continue
             if "/" in candidate:
-                resolved = _repository_path(candidate, work_dir)
+                resolved = _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths)
                 if resolved is None:
                     directory = None
                     continue
@@ -133,19 +120,22 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return paths
 
 
-def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int]]:
-    """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_paths: frozenset[str]) -> list[tuple[int, int]]:
     tokens: list[tuple[int, int]] = []
     offset = 0
     for segment in segments:
         content = segment.text
-        # グロブや波括弧展開を含むインラインコードは個別のパスを指さないため、文章と同じ規則で断片を除く。
+        candidate = content.strip()
+
         if (
             segment.code
-            and content.strip()
+            and candidate
             and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
-            and (_repository_path(content.strip(), work_dir) is not None or (work_dir / content.strip()).is_file())
+            and (
+                _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths) is not None
+                or (work_dir / candidate).is_file()
+            )
         ):
             tokens.append((offset, offset + len(content)))
             offset += len(content)
@@ -163,12 +153,10 @@ def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple
 
 
 def _is_non_ascii_word_char(char: str) -> bool:
-    """非ASCIIの文字か数字（かな、漢字、アクセント付きのラテン文字など）かを返す。句読点、括弧、`・`は含まない。"""
     return ord(char) > 0x7F and unicodedata.category(char)[0] in {"L", "N"}
 
 
 def _existing_extension(content: str, start: int, end: int, work_dir: pathlib.Path) -> int | None:
-    """ASCIIの候補の直後に続く非ASCIIの文字まで伸ばした文字列のうち、作業ツリーに実在する最長のパスの終了位置を返す。"""
     limit = end
     while limit < len(content) and (
         _is_non_ascii_word_char(content[limit])
@@ -184,16 +172,12 @@ def _existing_extension(content: str, start: int, end: int, work_dir: pathlib.Pa
 
 
 def _is_complete_ascii_part(value: str) -> bool:
-    """ASCIIの候補が`/`で終わるか最後の要素に`.`を持つ（パスの途中で終わっていない）かを返す。"""
     return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
-def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None) -> str | None:
-    """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
-
-    推測した親に実体が無い略記は元の名前を追跡ファイルの末尾と比べ、複数候補には明示を求める。
-    いずれにも当たらない候補（不在のディレクトリ範囲、途切れた名前など）は`None`を返す。
-    """
+def _repository_path(
+    candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None, allow_root_ancestor: bool = False
+) -> str | None:
     target = work_dir / candidate
     if candidate.endswith("/"):
         return candidate if target.is_dir() else None
@@ -211,29 +195,34 @@ def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name
             "意図するファイルをリポジトリ相対パスで明示する",
             next_action="本文の略記を意図するファイルのリポジトリ相対パスへ直し、選定を再検証する",
         )
-    return _new_file_path(candidate, work_dir)
+    return _new_file_path(candidate, work_dir, allow_root_ancestor=allow_root_ancestor)
 
 
-def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
-    """拡張子までそろった完全なファイル名で親ディレクトリが実在する候補を、新設先として返す。"""
-    name = candidate.rsplit("/", 1)[-1]
-    if _COMPLETE_FILE_NAME_RE.fullmatch(name) and (work_dir / candidate).parent.is_dir():
-        return candidate
-    return None
+def _new_file_path(candidate: str, work_dir: pathlib.Path, *, allow_root_ancestor: bool = False) -> str | None:
+    if _normalize_candidate(candidate) != candidate or not _COMPLETE_FILE_NAME_RE.fullmatch(candidate.rsplit("/", 1)[-1]):
+        return None
+    target = work_dir / candidate
+    try:
+        root = work_dir.resolve()
+        if not target.resolve().is_relative_to(root):
+            return None
+        for parent in target.parents:
+            if parent == work_dir:
+                break
+            if parent.exists() or parent.is_symlink():
+                return candidate if parent.is_dir() else None
+    except OSError, RuntimeError:
+        return None
+
+    return candidate if target.parent == work_dir or allow_root_ancestor else None
 
 
 def clear_caches() -> None:
-    """1回の確認の実行ごとに、作業ツリーから読んだ追跡ファイルの一覧を捨てる。
-
-    同じプロセスで`check_selection`を繰り返し起動する呼び出し元（`atk run-script`の試験など）でも、
-    起動のたびに作業ツリーの現在の状態を読むためである。
-    """
     _tracked_files.cache_clear()
 
 
 @functools.cache
 def _tracked_files(work_dir: pathlib.Path) -> tuple[str, ...]:
-    """`work_dir`の追跡ファイルのリポジトリ相対パスを返す。Gitで取得できない場合は空にする。"""
     result = _git_command.run(["-C", str(work_dir), "ls-files", "-z"], capture_output=True, text=True, check=False, timeout=60)
     if result.returncode != 0:
         return ()
@@ -241,7 +230,6 @@ def _tracked_files(work_dir: pathlib.Path) -> tuple[str, ...]:
 
 
 def _section_text(body: str, heading: str) -> str | None:
-    """トップレベルのATX H2のうち`heading`の節の本文を返す。節が無ければ`None`を返す。"""
     normalized = _markdown_headings.normalize_newlines(body)
     lines = normalized.split("\n")
     headings = _markdown_headings.top_level_atx_headings(normalized, 2)
@@ -256,7 +244,6 @@ def _section_text(body: str, heading: str) -> str | None:
 
 
 def _inline_runs(text: str) -> list[list[_Segment]]:
-    """コードフェンスの外にある文章とインラインコードを、段落ごとに出現順の区間の列で返す。"""
     runs: list[list[_Segment]] = []
     for token in _MARKDOWN.parse(text):
         if token.type != "inline" or not token.children:
@@ -272,7 +259,6 @@ def _inline_runs(text: str) -> list[list[_Segment]]:
 
 
 def _normalize_candidate(candidate: str) -> str | None:
-    """インラインコードの内容をリポジトリ相対パスの候補へ整え、パスでなければ`None`を返す。"""
     value = _LINE_SUFFIX_RE.sub("", candidate.strip().split("#", 1)[0])
     if not value:
         return None
@@ -284,10 +270,8 @@ def _normalize_candidate(candidate: str) -> str | None:
 
 
 def _is_range(path: str) -> bool:
-    """末尾の`/`でディレクトリ範囲を表す。"""
     return path.endswith("/")
 
 
 def _covers(entry: str, path: str) -> bool:
-    """`entry`が`path`を同じパスとして、またはパス要素単位の配下として含むかを返す。"""
     return entry == path or (_is_range(entry) and path.startswith(entry))

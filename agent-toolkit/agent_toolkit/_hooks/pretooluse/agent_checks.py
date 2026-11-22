@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
 lazy import hashlib
 lazy import re
@@ -48,35 +46,21 @@ _AGENTS_SERVER_TOOL_NAMES = (
 # 集合の一致を確かめるテスト（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
-# --- 計画単位の状態管理 ---
-
-# --- Agent・Task: 組み込みの汎用定義の起動 ---
 
 # Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
 # `agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」は専用定義の例外に含めない。
 # `subagent_type`を省いた起動は`general-purpose`で動く。
 # `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は対象外とする。
-_GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "web-fetch", "claude"})
-# 複数の並行依頼を再発行できる余裕を持たせつつ、入力本文を保存せず状態の増加を抑える。
+# `web-fetch`は、直接の`WebFetch`を持たない会話でClaude CodeがWebページを読む標準の手段のため対象外とする。
+_GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "claude"})
+
 _GENERIC_AGENT_RETRY_LIMIT = 32
 
 
 def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict) -> tuple[str | None, str | None]:
-    """汎用定義の起動を遮断し、同じ主体による同一入力の再発行だけを一度通す。
-
-    戻り値は（遮断の通知, 非遮断の警告）で、どちらも無ければ対象外か再発行の通過である。
-
-    通常の遮断基準の4条件には該当しないが、web-fetchへのユーザーの切替要求と、
-    web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
-    同じ依頼を対応するmodeへ渡せるため、損失は起動の再発行に限られる。
-    例外の成否は入力から判定できず受信側へ委ねる。別操作による例外の確認と複数依頼を支えるため、
-    主体別に直近32件の指紋を保持し、通過時に消費する。寿命はセッション状態の回収に従う。
-    軽量起動の委譲先は再委譲が禁止され、委譲のスキルも配送されないため対象外とする。
-    再発行の記録を保存できない場合は、案内した再発行も通せず遮断が続くため、警告だけを返して起動を通す。
-    """
     if payload.get("runtime") == "agy" or _delegated_session.is_lightweight_delegated(os.environ):
         return None, None
-    # ホストが`general-purpose`で起動するのはキーの省略と空文字だけで、明示の`null`などの文字列以外は判定できないため通す。
+
     agent_type = tool_input.get("subagent_type", "")
     if agent_type == "":
         agent_type = "general-purpose"
@@ -85,7 +69,7 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
     repeated = _generic_agent_retry(payload, tool_name, tool_input)
     if repeated:
         return None, None
-    mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
+    mode = "`explore`" if agent_type == "Explore" else "`delegate`または役割文書のある`task`"
     if repeated is None:
         return None, _llm_notice(
             f"`{tool_name}`の汎用定義`{agent_type}`の起動は通した。再発行の記録を保存できなかった。",
@@ -141,9 +125,6 @@ def _generic_agent_retry(payload: dict, tool_name: str, tool_input: dict) -> boo
 
     # 更新関数は常に辞書を返すため、偽は保存の失敗だけを表す。
     return repeated if update_state(session_id, update) else None
-
-
-# --- TaskStop: 初回遮断と再実行窓 ---
 
 
 def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
@@ -216,7 +197,9 @@ def _record_iss_sidechain_probe(
         pass
 
 
-def _check_agents_server_continuation_target(session_id: str, tool_input: dict, tool_name: str) -> Decision:
+def _check_agents_server_continuation_target(
+    session_id: str, tool_input: dict, tool_name: str, *, actor: str | None = None
+) -> Decision:
     """`send_message`・`kill`の対象sessionを、呼出元に保存された絶対cwdで確認する。
 
     入力形式（`prompt`か`instruction`・`extra_params`か、`session_id`の有無と形式）の受理条件と修正案内は
@@ -229,15 +212,19 @@ def _check_agents_server_continuation_target(session_id: str, tool_input: dict, 
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or not remote_session_id:
         return Decision(allow=True)
-    if _agents_server_observations.session_cwd(read_state(session_id), remote_session_id) is None:
+    state = read_state(session_id)
+    record = _agents_server_observations.session_record(state, remote_session_id)
+    if record is not None and record.get("recovered_start") is True and record.get("launcher_agent_id") != actor:
+        return Decision(block=_block_notice("起動を回復した主体と操作の呼出主体が異なる。", fix="起動時の主体から操作せよ。"))
+    if _agents_server_observations.session_cwd(state, remote_session_id) is None:
         display_name = tool_name.rsplit("__", 1)[-1]
         return Decision(
             block=_block_notice(
                 f"{display_name}の対象`{remote_session_id}`に対応する絶対`cwd`が保存されていない。",
                 fix=(
                     f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
-                    "永続登録の起動元と呼出主体が一致し、応答の識別子と絶対`cwd`を確認できた場合は記録を回復するため、"
-                    "元の操作を再発行せよ。所有を確認できない場合は遮断を維持する。"
+                    "起動時の呼出主体が保存され、永続登録の起動元・応答の識別子・絶対`cwd`も確認できた場合だけ、"
+                    "元の操作を再発行せよ。起動時の識別子から呼出主体を確認できない場合は、`show`を繰り返しても回復しない。"
                     "自身が起動していない対象は、所有を確認できるまで操作しない。"
                 ),
             )

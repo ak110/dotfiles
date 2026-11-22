@@ -9,7 +9,6 @@ from agent_toolkit._common import host_homes
 
 
 def paths(repo: pathlib.Path, *, project: bool = True) -> tuple[pathlib.Path, ...]:
-    """リポジトリrootに対する自動読込設定のパスを返す。"""
     user = (host_homes.claude_config_dir() / "settings.json",)
     return user + (repo / ".claude/settings.json", repo / ".claude/settings.local.json") if project else user
 
@@ -28,7 +27,6 @@ def _loaded(cwd: str | pathlib.Path | None, project: bool) -> list[object]:
 
 
 def environment_keys(cwd: str | pathlib.Path | None, *, project: bool = True) -> frozenset[str]:
-    """子CLIが自ら読み込む設定のenvのキーだけを集める。"""
     keys: set[str] = set()
     for settings in _loaded(cwd, project):
         env = settings.get("env", {}) if isinstance(settings, dict) else {}
@@ -38,5 +36,4 @@ def environment_keys(cwd: str | pathlib.Path | None, *, project: bool = True) ->
 
 
 def setting_keys(cwd: str | pathlib.Path | None, *, project: bool = True) -> frozenset[str]:
-    """子CLIが自ら読み込む設定の最上位のキーだけを集める。"""
     return frozenset(key for settings in _loaded(cwd, project) if isinstance(settings, dict) for key in settings)

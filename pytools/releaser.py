@@ -19,8 +19,6 @@ from pathlib import Path
 from typing import Any
 
 from agent_toolkit._git import stale_lock
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import yaml
 
 from pytools._internal.cli import enable_completion, setup_logging
@@ -31,7 +29,7 @@ logger = logging.getLogger(__name__)
 # 60秒待っても出現しない場合はブランチフィルター等で対象外と判断してスキップする。
 _CI_RUN_APPEAR_TIMEOUT_SEC = 60
 _CI_RUN_APPEAR_INTERVAL_SEC = 5
-# 一般的なCIの実行時間を考慮し、完了まで最大30分待つ。
+
 _CI_COMPLETE_TIMEOUT_SEC = 1800
 _CI_COMPLETE_INTERVAL_SEC = 15
 # workflow_dispatch起動後に新規runが確認できるまでの待機上限。
@@ -49,12 +47,12 @@ _RELEASE_WORKFLOW_FILENAME = "release.yaml"
 _RELEASE_WORKFLOW_RELATIVE = Path(".github/workflows") / _RELEASE_WORKFLOW_FILENAME
 # GitHub Actionsの実行中ステータス。これらが残っている間は完了扱いしない。
 _IN_PROGRESS_STATUSES = frozenset({"queued", "in_progress", "waiting", "requested", "pending"})
-# 成功扱いするconclusion。skipped/neutralも障害扱いにしない。
+
 _ACCEPTABLE_CONCLUSIONS = frozenset({"success", "skipped", "neutral"})
 
 
 class _ReleaserError(Exception):
-    """releaserが扱う想定済みエラー。`main()`で捕捉し`sys.exit(1)`へ集約する。"""
+    pass
 
 
 def main() -> None:
@@ -108,7 +106,6 @@ def _run_release_flow(bump: str) -> None:
 
 
 def _show_unreleased(parser: argparse.ArgumentParser) -> None:
-    """ヘルプと未リリースコミット一覧を表示する（副作用なし）。"""
     parser.print_help()
     if not _is_git_repo():
         return
@@ -165,7 +162,6 @@ def _get_git_root() -> Path:
 
 
 def _get_latest_release_tag() -> str | None:
-    """HEADから到達可能な最新の`v[0-9]*`タグを返す。無ければNone。"""
     result = subprocess.run(
         ["git", "describe", "--tags", "--abbrev=0", "--match=v[0-9]*"],
         capture_output=True,
@@ -180,7 +176,6 @@ def _get_latest_release_tag() -> str | None:
 
 
 def _ensure_default_branch() -> None:
-    """デフォルトブランチ（origin/HEADが指すブランチ）で実行されていることを確認する。"""
     current = _get_current_branch()
     default = _get_default_branch()
     if current != default:
@@ -203,7 +198,6 @@ def _get_current_branch() -> str:
 
 
 def _get_default_branch() -> str:
-    """origin/HEADが指すデフォルトブランチ名を返す（例: 'master'）。"""
     result = subprocess.run(
         ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
         capture_output=True,
@@ -219,7 +213,6 @@ def _get_default_branch() -> str:
 
 
 def _ensure_clean_working_tree() -> None:
-    """作業ツリーがクリーンであることを確認する（追跡外も対象）。"""
     result = subprocess.run(
         ["git", "status", "--porcelain"],
         capture_output=True,
@@ -233,7 +226,6 @@ def _ensure_clean_working_tree() -> None:
 
 
 def _push_to_remote() -> None:
-    """未プッシュコミットがあればpushする。"""
     result = subprocess.run(
         ["git", "rev-list", "@{u}..HEAD", "--count"],
         capture_output=True,
@@ -262,8 +254,6 @@ def _wait_for_ci(git_root: Path) -> None:
 
     runs = _wait_for_non_release_runs(sha, release_name)
     if runs is None:
-        # ブランチフィルターやpath-filterで対象外の場合、push後にrunが登録されない。
-        # CIなしと同等の扱いとし、警告のみで処理を継続する。
         logger.warning(
             "コミット %s に対するCI runが見つかりません。ブランチフィルター等の対象外の可能性があるためCI待機をスキップする。"
             "処理は続行します。gh run list --commit=%sでrunを確認し、CI対象外なら対応不要です。"
@@ -415,7 +405,6 @@ def _list_runs_for_commit(
 
 
 def _wait_for_non_release_runs(sha: str, release_name: str) -> list[dict[str, Any]] | None:
-    """非release runが少なくとも1件出現するまでpollする。タイムアウトでNone。"""
     deadline = time.monotonic() + _CI_RUN_APPEAR_TIMEOUT_SEC
     while time.monotonic() < deadline:
         runs = _list_runs_for_commit(sha)
@@ -580,7 +569,6 @@ def _dispatch_release_workflow(bump: str) -> None:
 
 
 def _wait_for_new_release_run(last_id: int | None) -> int:
-    """前回IDより新しいrelease runが現れるまでpollする。"""
     deadline = time.monotonic() + _DISPATCH_RUN_APPEAR_TIMEOUT_SEC
     while time.monotonic() < deadline:
         for run in _list_release_runs():

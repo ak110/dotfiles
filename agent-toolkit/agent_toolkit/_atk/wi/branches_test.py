@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""保守ブランチと次期開発ブランチ（系統）を、WIとprocess-loopで別々に扱う動作を2ブランチのoriginで確かめる。"""
 
 import dataclasses
 import datetime
@@ -13,13 +12,8 @@ import sys
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import config, lane, lane_create, lane_records
-from agent_toolkit._atk.wi import alerts, listing
-from agent_toolkit._atk.wi import process_loop_launch_gate as launch_gate
-from agent_toolkit._atk.wi import process_loop_ownership as ownership
-from agent_toolkit._atk.wi import process_loop_scheduled as scheduled
-from agent_toolkit._atk.wi import process_loop_session as session
-from agent_toolkit._atk.wi import process_loop_worktree as worktree
+from agent_toolkit._atk import config, lane
+from agent_toolkit._atk.wi import alerts
 from agent_toolkit._atk.wi.mutations import targets
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._git import remote
@@ -54,8 +48,6 @@ _LEGACY_JSON_KEYS = {
 
 @dataclasses.dataclass(frozen=True)
 class BranchRepository:
-    """系統releaseとmainを持つoriginと、その登録パスのclone。"""
-
     origin: pathlib.Path
     seed: pathlib.Path
     repo: pathlib.Path
@@ -136,7 +128,6 @@ def _list(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *arguments
 def test_unregistered_repository_keeps_current_behavior(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """系統を登録しないrepositoryは、投入・一覧・処理対象・作業ツリーの準備が系統を持たない従来の形のまま動く。"""
     assert _add(tmp_path, "--target-repo", str(branch_repo.plain)) == 0
     (saved,) = _saved(branch_repo.notes)
     assert "target_branch" not in saved
@@ -148,10 +139,6 @@ def test_unregistered_repository_keeps_current_behavior(
     assert "target_branch" not in out
     plain = next(item for item in config.resolve_configured_repositories() if item.repo_id == PLAIN_ID)
     assert (plain.key, plain.branch, plain.is_default) == (PLAIN_ID, None, True)
-    assert worktree.prepare_session_target(plain.worktree, PLAIN_ID, "", worktree_name=None, resume_pending=False) == (
-        branch_repo.plain,
-        "",
-    )
     assert _add(tmp_path, "--target-repo", str(branch_repo.plain), "--target-branch", "main") == 1
     assert "系統を登録していない" in capsys.readouterr().err
     assert len(_saved(branch_repo.notes)) == 1
@@ -160,7 +147,6 @@ def test_unregistered_repository_keeps_current_behavior(
 def test_add_defaults_to_default_branch_and_rejects_unknown(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """系統の省略はdefault_branchの系統で保存し、target_commitは宛先の系統の先端を記録する。登録外の系統は保存しない。"""
     assert _add(tmp_path, "--target-repo", str(branch_repo.repo)) == 0
     assert _add(tmp_path, "--target-repo", str(branch_repo.repo), "--target-branch", "release") == 0
     default, release = _saved(branch_repo.notes)
@@ -177,7 +163,6 @@ def test_add_defaults_to_default_branch_and_rejects_unknown(
 def test_list_filters_and_shows_branches(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """一覧は系統で限定でき、target_branchを持たない保存済みWIはdefault_branchの系統、登録外の系統は着手不能として示す。"""
     _write(branch_repo.notes, "rel.md", REPO_ID, "target_branch: release\n")
     _write(branch_repo.notes, "legacy.md", REPO_ID)
     _write(branch_repo.notes, "gone.md", REPO_ID, "target_branch: removed\n")
@@ -209,7 +194,6 @@ def test_list_filters_and_shows_branches(
 
 @pytest.mark.usefixtures("branch_repo")
 def test_edit_validates_branch_and_drops_target_commit() -> None:
-    """編集で変えた系統が登録にあるかを確かめ、旧系統の先端を指すtarget_commitを外す。"""
     original = f"---\ntarget_repo: {REPO_ID}\ntarget_branch: main\ntarget_commit: abc\ntype: awi\n---\n\n本文\n"
     moved = targets.invalidate_repo_bound_metadata(original, original.replace("target_branch: main", "target_branch: release"))
     assert "target_branch: release" in moved
@@ -218,89 +202,12 @@ def test_edit_validates_branch_and_drops_target_commit() -> None:
         targets.invalidate_repo_bound_metadata(original, original.replace("target_branch: main", "target_branch: x"))
 
 
-def test_process_loop_targets_each_branch_without_switching_registered_worktree(
-    branch_repo: BranchRepository,
-) -> None:
-    """系統ごとに別の処理対象になり、各対象の作業ツリーは系統の先端にあり、登録パスのブランチは変わらない。"""
-    _write(branch_repo.notes, "rel.md", REPO_ID, "target_branch: release\n")
-    _write(branch_repo.notes, "main.md", REPO_ID, "target_branch: main\n")
-    _write(branch_repo.notes, "legacy.md", REPO_ID)
-    _write(branch_repo.notes, "gone.md", REPO_ID, "target_branch: removed\n")
-    repositories = tuple(item for item in config.resolve_configured_repositories() if item.repo_id == REPO_ID)
-    assert [(item.key, item.is_default) for item in repositories] == [(f"{REPO_ID}@release", False), (f"{REPO_ID}@main", True)]
-    snapshots = listing.configured_repo_snapshot(branch_repo.notes, repositories)
-    assert [sorted(entry[0].name for entry in snapshot.candidates) for snapshot in snapshots] == [
-        ["rel.md"],
-        ["legacy.md", "main.md"],
-    ]
-    assert {record["target_branch"] for record in snapshots[0].candidate_records()} == {"release"}
-    registered_branch = git.git_output(branch_repo.repo, "symbolic-ref", "HEAD")
-    prepared = {}
-    for repository in repositories:
-        result = worktree.prepare_session_target(
-            repository.worktree, repository.repo_id, "", worktree_name=None, resume_pending=False, branch=repository.branch
-        )
-        assert result is not None
-        prepared[repository.branch] = result[0]
-        tip = git.git_output(branch_repo.repo, "rev-parse", f"refs/remotes/origin/{repository.branch}")
-        assert git.git_output(result[0], "rev-parse", "HEAD") == tip
-        assert git.git_output(result[0], "rev-parse", "--abbrev-ref", "@{u}") == f"origin/{repository.branch}"
-    assert prepared["release"] != prepared["main"]
-    assert git.git_output(branch_repo.repo, "symbolic-ref", "HEAD") == registered_branch
-    # 一方の系統の公開は、その系統のリモートブランチだけを進める。
-    main_before = git.git_output(branch_repo.origin, "rev-parse", "main")
-    (prepared["release"] / "fix.txt").write_text("fix\n", encoding="utf-8")
-    pushed = git.commit_all(prepared["release"], "保守ブランチの修正")
-    git.run_git(prepared["release"], "push", "--quiet", "origin", "HEAD:refs/heads/release")
-    assert git.git_output(branch_repo.origin, "rev-parse", "release") == pushed
-    assert git.git_output(branch_repo.origin, "rev-parse", "main") == main_before
-    # 系統ごとの処理が同じレーン名を使っても、固定作成先は系統ごとに分かれる。
-    lanes = {
-        lane_records.fixed_worktree(
-            prepared[name],
-            "lane-01",
-            lane_create._branch_scope(prepared[name], f"worktree-process-loop-{name}"),  # pylint: disable=protected-access  # noqa: SLF001
-        )
-        for name in ("release", "main")
-    }
-    assert len(lanes) == 2
-    plain = lane_records.fixed_worktree(
-        branch_repo.plain,
-        "lane-01",
-        lane_create._branch_scope(branch_repo.plain, "main"),  # pylint: disable=protected-access  # noqa: SLF001
-    )
-    assert plain.name == "process-wi-lane-01"
-
-
-def test_branch_without_work_is_not_launched_for_other_branch(
-    branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """別の系統の着手可能なWI・修復診断・依存先は、その系統の候補・起動入力・内部依存待ちに数えない。"""
-    _write(branch_repo.notes, "main-only.md", REPO_ID, "target_branch: main\n")
-    _write(branch_repo.notes, "main-broken.md", REPO_ID, "target_branch: main\ndepends_on: 20990101-000000-001.md\n")
-    _write(branch_repo.notes, "rel-waits.md", REPO_ID, "target_branch: release\ndepends_on: [main-only.md]\n")
-    repositories = tuple(item for item in config.resolve_configured_repositories() if item.repo_id == REPO_ID)
-    release, main = listing.configured_repo_snapshot(branch_repo.notes, repositories)
-    assert (release.candidates, release.has_work, release.readiness.ready) == ((), False, ())
-    assert not launch_gate.repository_input(release, None).items
-    assert main.readiness.ready == ("main-only.md",)
-    assert main.readiness.invalid_dependencies == ("main-broken.md",)
-    inputs, skipped = scheduled._launch_plan((release, main), set(), {})  # pylint: disable=protected-access  # noqa: SLF001
-    assert (sorted(inputs), skipped) == ([f"{REPO_ID}@main"], [])
-    code, out, _err = _list(tmp_path, capsys, f"--target-repo={branch_repo.repo}", "--target-branch=release", "--jsonl")
-    assert code == 0
-    assert [(record["filename"], record["blocked_reason"]) for record in map(json.loads, out.splitlines())] == [
-        ("rel-waits.md", "dependency-unmet-external")
-    ]
-
-
 def test_lane_hook_names_differ_per_branch(
     branch_repo: BranchRepository,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """WorktreeCreate hookを使うrepositoryでも、系統ごとの処理が同じレーン名で別の作業ツリーを作る。"""
     created = tmp_path / "hook-created"
     script = tmp_path / "hook.py"
     script.write_text(
@@ -334,30 +241,6 @@ def test_lane_hook_names_differ_per_branch(
     assert sorted(pathlib.Path(path).name for path in worktrees.values()) == [
         "process-wi-main-lane-01",
         "process-wi-release-lane-01",
-    ]
-
-
-def test_coordinator_input_carries_branch(branch_repo: BranchRepository) -> None:
-    """統括へ渡す対象は系統を含み、結果の対応に使う識別子を持つ。系統の無い対象はtarget_repoと同じ識別子になる。"""
-
-    repositories = config.resolve_configured_repositories()
-    snapshots = listing.configured_repo_snapshot(branch_repo.notes, repositories)
-    owners = [
-        ownership.try_acquire(item.repo_id, worktree=item.worktree, mode="coordinator", branch=item.branch)
-        for item in repositories
-    ]
-    # 同じrepositoryの別の系統が処理中でも、系統ごとに所有を取得できる。
-    assert all(owner is not None for owner in owners)
-    assert len({owner.path for owner in owners if owner is not None}) == 3
-    inputs = [
-        session.repository_input(snapshot, owner, worktree=snapshot.repository.worktree)
-        for snapshot, owner in zip(snapshots, owners, strict=True)
-        if owner is not None
-    ]
-    assert [(item["target"], item.get("target_branch"), item.get("default_branch")) for item in inputs] == [
-        (f"{REPO_ID}@release", "release", "main"),
-        (f"{REPO_ID}@main", "main", "main"),
-        (PLAIN_ID, None, None),
     ]
 
 

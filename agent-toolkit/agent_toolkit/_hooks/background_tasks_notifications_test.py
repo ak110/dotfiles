@@ -43,7 +43,6 @@ class TestIsPendingAsyncWork:
 
     @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
     def test_notification_status_variants_count_as_completed(self, tmp_path: pathlib.Path, status: str):
-        """`<status>`の値が`completed`／`failed`／`cancelled`のいずれでも完了扱い。"""
         entries = [
             _user_entry("hello"),
             _user_async_launched_entry("toolu_a"),
@@ -55,7 +54,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_sidechain_async_launched_is_ignored(self, tmp_path: pathlib.Path):
-        """sidechain内の`async_launched`は未完了扱いしない。"""
         entries = [
             _user_entry("hello"),
             _user_async_launched_entry("toolu_a", sidechain=True),
@@ -68,7 +66,6 @@ class TestIsPendingAsyncWork:
     @pytest.mark.parametrize(
         ("pending_entries", "expected"),
         [
-            # 新形式単独で完了通知を受信し、起動と完了が紐付く
             (
                 [
                     _user_async_launched_entry("toolu_a"),
@@ -76,7 +73,6 @@ class TestIsPendingAsyncWork:
                 ],
                 False,
             ),
-            # 旧user形式と新attachment形式の混在で双方の完了が完了集合へ追加される
             (
                 [
                     _user_async_launched_entry("toolu_old"),
@@ -86,7 +82,6 @@ class TestIsPendingAsyncWork:
                 ],
                 False,
             ),
-            # `commandMode`が`task-notification`以外のattachmentエントリは完了集合へ寄与しない
             (
                 [
                     _user_async_launched_entry("toolu_a"),
@@ -94,7 +89,6 @@ class TestIsPendingAsyncWork:
                 ],
                 True,
             ),
-            # `isSidechain`が真のattachmentエントリは完了集合へ寄与しない
             (
                 [
                     _user_async_launched_entry("toolu_a"),
@@ -102,7 +96,6 @@ class TestIsPendingAsyncWork:
                 ],
                 True,
             ),
-            # `attachment`がdictでないエントリは防御ガードで無視され、起動が残るため未完了扱い
             (
                 [
                     _user_async_launched_entry("toolu_a"),
@@ -110,7 +103,6 @@ class TestIsPendingAsyncWork:
                 ],
                 True,
             ),
-            # `attachment.prompt`が文字列でないエントリは防御ガードで無視される
             (
                 [
                     _user_async_launched_entry("toolu_a"),
@@ -135,3 +127,18 @@ class TestIsPendingAsyncWork:
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "", session_state=None) is expected
+
+
+def test_unresolved_completion_log_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_toolkit._hooks import background_tasks_notifications  # pylint: disable=import-outside-toplevel
+
+    recorded: list[dict] = []
+    monkeypatch.setattr(
+        background_tasks_notifications, "append_stop_log", lambda _session, _decision, context: recorded.append(context)
+    )
+    detail = "z" * 480 + " https://" + "A" * 45 + "@example.org token=synthetic-secret-0123"
+    background_tasks_notifications._log_unresolved_completion("S1", detail)  # pylint: disable=protected-access
+
+    saved = recorded[0]["notification"]
+    assert "A" * 10 not in saved
+    assert len(saved) <= 500

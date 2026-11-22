@@ -49,13 +49,12 @@ def _hook_entry(**overrides: Any) -> dict[str, Any]:
 
 @pytest.fixture(autouse=True)
 def _empty_unused_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ローカルpluginのテストでは不要pluginの除去を無効にする。"""
     monkeypatch.setattr(install_codex_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ())
     # 既存のtoolkit固有シナリオは単一対象へ限定し、2件の導入契約は結合シナリオで検証する。
     monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-toolkit",))
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: False)
-    # 実daemonへの作用を防ぎ、更新後のrestartだけを成功する外部境界へ差し替える。
+
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
     real_run = common.run_subprocess
 
@@ -157,7 +156,6 @@ def _installed_state(*, version: str = "1.2.3", enabled: bool = True) -> dict[st
 
 
 def _recording_success(calls: list[list[str]], *, daemon_running: bool = True) -> Callable[[list[str]], bool]:
-    """引数を記録して成功を返すコマンドスタブを作成する。"""
 
     def command(args: list[str]) -> bool:
         calls.append(args)

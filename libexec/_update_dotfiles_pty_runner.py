@@ -2,7 +2,6 @@
 # requires-python = ">=3.15"
 # dependencies = ["filelock", "psutil", "platformdirs"]
 # ///
-"""pytestの他スレッドを継承せず、端末テストを実行する専用プロセス。"""
 
 import contextlib
 import json
@@ -22,7 +21,6 @@ import update_dotfiles
 
 
 def main() -> int:
-    """要求を読み、実物のgit pullの終了コードと端末出力を返す。"""
     request = json.load(sys.stdin)
     # ランナーの起動・importを除き、端末内の待機と子孫回収を計測する。
     started = time.monotonic()
@@ -59,7 +57,6 @@ def _run_in_terminal(timeout: float | None, input_text: str | None) -> tuple[int
                     overrides.enter_context(mock.patch.object(update_dotfiles.subprocess, "Popen", ReadyPopen))
                 returncode = update_dotfiles.run_git_pull(1, 4, timeout=timeout)  # noqa: SLF001  # pylint: disable=protected-access
         except Exception:  # pylint: disable=broad-exception-caught
-            # 子の例外を端末出力へ残し、親のJSON出力へ混ぜない。
             traceback.print_exc()
         finally:
             sys.stdout.flush()
@@ -85,7 +82,7 @@ def _run_in_terminal(timeout: float | None, input_text: str | None) -> tuple[int
                 break
         if status is None:
             raise TimeoutError("疑似端末内のgit pullテストが20秒以内に終了しなかった。端末テストの診断を確認してください。")
-        # 救済のkillより前の状態で製品の回収結果を判定する。
+
         descendant_running = False
         pid_path = pathlib.Path(os.environ["UPDATE_DOTFILES_TEST_PID_PATH"])
         if pid_path.exists():

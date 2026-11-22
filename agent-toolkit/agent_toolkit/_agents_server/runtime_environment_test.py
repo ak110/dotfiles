@@ -14,7 +14,6 @@ from agent_toolkit._common import runtime_environment
 async def test_parallel_callers_keep_environment_in_tasks_and_workers(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """元scopeの終了後も生成済みtaskの環境を保持し、プロセス環境を変更しない。"""
     monkeypatch.setenv("CALLER_MARKER", "host")
     monkeypatch.setattr(child_environment, "_INHERITED", {"LEGACY_AUTH_MARKER": "legacy"})
     gate = asyncio.Event()

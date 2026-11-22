@@ -29,6 +29,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | `計画` | 計画ファイルの絶対パス |
    | `WI記録` | 計画の`## 実施内容`に無い対象WIのファイル名、要求、完成条件、由来、採否（計画が無ければ全ての対象） |
    | `開始時のHEAD` | 専用branchなら起動の直前に`git merge-base <専用branch> <ベースbranch>`で解決した分岐元（計画の有無によらない）。それ以外で`計画`を含まずに`WI`を渡す時（`CI記録`との併用を含む）は作業開始時のHEAD |
+   | `対象HEAD` | 起動の直前に対象worktreeで`git rev-parse HEAD`を実行して得た完全OID |
    | `引き継ぎ記録先` | `agent-toolkit:atk-mode/references/delegation-prompt.md`「引き継ぎ記録先」で決める |
    | `review_contract` | 複数の計画、計画外の条項、新形式AWIのどれかがあれば`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」で作り、初回から渡す |
    | `レーン識別子` | 特定のレーンの作業なら渡し、セッション識別名を`<レーン識別子>-exec-review`とする |
@@ -36,7 +37,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | `レビュー種別`、`round` | 初回は省く。再レビューは本書「ラウンド番号の保持先」の値を`round: <ラウンド番号>`で渡す |
    | `Git管理外の変更` | 引き継ぎ記録にある変更前後の複製の全ての対。無ければ省く |
 
-   リポジトリ、レビューHEAD、変更ファイル、検証結果、指摘管理表はレビュー担当が解決する。
+   リポジトリ、対象HEADからの変更ファイル、検証結果、指摘管理表はレビュー担当が解決する。
 5. 基準、開始時点、指摘管理表、`review_contract`が全て同じリポジトリに属し、渡すパスが実在することを確かめ、不足があれば起動せずに不足を委譲元へ返す。
 6. `agents_server`の`start`を、`cwd`に対象worktreeの絶対パス、`subagent_md_path`に`exec-review`、`extra_params`に手順4の入力、`model_type`に手順2の値（無ければ省く）を渡して呼ぶ。
    通知を変えた差分では、検証記録の最終の配送本文の保存先と入力・版・ホスト・生成元を渡し、レビュー担当が全文を開けることを確かめる（ソースのリテラルや合格の総数で代用しない）。
@@ -51,8 +52,9 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 正式原本の所在が返れば、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領手段と報告様式の選択」で対応付けた原本を返却本文とする。
 
 1. 返却が`agent-toolkit:atk-mode/roles/exec-review.parent.md`「実行レビューの返却契約」の行（出るべき条件別判定行を含む）を欠くか自然文だけなら受理せず、同じ担当に不足の行を足して出し直させる。
-2. `git rev-parse <返却の値>`で解決した`レビューHEAD`が、対象worktreeの最新のHEADと完全に一致することを確かめ、違えば同じ担当に現在のHEADで判定し直させる。
-   一致したら、round、指摘管理表のパス、`レビュー開始時点`、`前回確認版の開始時点`、`前回確認版HEAD`を一連の結果として保つ。
+2. `git rev-parse <返却の値>`で解決した`レビューHEAD`が起動時に固定した対象と一致することを確かめる。
+   round、指摘管理表、開始時点と前回確認版、再レビューの要否と評価前提を同じ結果として保つ。
+   要否・評価前提の欠落や不正は担当へ返し、次のラウンドの起動や「不要」で代えない。
 3. 返却の`未解決の指摘数`が`atk review-table show <表の絶対パス> --format=summary --round <round>`の`unanswered_count`と一致し、`recheck_pending_count`があれば0であることを確かめる。
    0でなければ同じ担当に前回の指摘を再確認させる。
 4. `読者別探索`の申告が返却契約の定める全ての申告対象と想定読者を覆い、各ファイルの値が返却契約の条件を満たすことを確かめ、満たさなければ同じ担当に探索と判定をやり直させる。
@@ -63,8 +65,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    組を欠く`達成`行と、条件文の文末だけを変えた定型句の`達成`行は、件数とHEADが一致していても同じ担当へ差し戻す。
    `失効`の行とレーン担当による条件の除外は、本書「技術判断で外せる完成条件」の境界と、要求の取り下げか不採用の根拠との対応を本文で確かめ（`review_contract`の記述だけをユーザーの判断の代わりにしない）、足りなければ本書「エスカレーションの事由別の扱い」で差し戻す。
 7. 受理した返却本文のパス（正式原本ならそのパス）を、計画名、対象WI集合、`レビューHEAD`、原要求と`review_contract`、指摘管理表の所在とroundに対応付け、`受理済みの完成条件証拠`として進捗ログ（計画なしでは引き継ぎ記録）へ記録する。
-8. 受理の後にHEADが変わったら（レビュー修正、mergeの競合の解消、rebase）、最新のHEADで全ての条件を判定し直した返却を受理してから進む。
-   `agent-toolkit:atk-mode/references/exec-review-head-update.md`「HEADの更新と再レビューの要否」で影響が無いと確かめた計画は除く。
+8. HEADが変わったら`agent-toolkit:atk-mode/references/exec-review-head-update.md`で影響を調べ、必要と明示された範囲だけを再レビューする。
 
 ## 返却に含まれる既存不良の受領
 
@@ -87,21 +88,24 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 1. 起動側が書込所有者（レーン担当、single-laneのメイン）なら、同書に従って自分で直す。
 2. 書込所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、前提・必要性・修正の規模への疑問を指摘ごとに`レビュー参考意見`にする。
    追加の探索や再現はせず、疑いだけで指摘を消すことも対応済みにすることもしない。
+   通常運用での実害の裏付けが無い指摘（合成した構成だけで再現した指摘など）は、その旨を根拠に不採用の参考意見にする（`agent-basics:review-standards/references/reviewee.md`の採用条件）。
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
 3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。
 4. 修正の返却（`対応完了`、`対応完了（再レビュー不要）`）に`検証結果`と`画面差分`の行が無ければ出し直させる。
-   返却の種類は修正commitの有無で判定せず、本書「応答済みの判定」で未応答0件を確かめ、全ての指摘を根拠付きで不採用とした`対応完了`も再レビューへ進める。
-5. `対応完了`では、同じレビューのthreadへ`send_message`の`instruction: 再レビューせよ`と`round: <ラウンド番号>`を送る。
+   全指摘について本書「応答済みの判定」で未応答0件と、採用した修正の検証を確かめる。
+   返却の種類、指摘数、修正commitの有無で再レビューの要否を決めない。
+5. レビュー担当が「要」とした範囲だけ、同じthreadへ`send_message`の`instruction: 再レビューせよ`、`round: <ラウンド番号>`、送信直前に固定した`対象HEAD: <完全OID>`を送る。
    - 方式の見直しで守る挙動と許容する挙動を決めた時は、起動側が管理表の応答を要求と認可に照らして確かめ、`review_contract`へ反映する。
    - 開始時からの累積差分に別の計画の認可commitがあれば、判定対象外commitを最新のOIDへ更新する。
    - 契約を更新する時は`agent-toolkit:atk-mode/references/review-contract.md`「`review_contract`の生成」に従い、初回の条項を保つ。
      初回が計画だけの時も契約を作り、更新をまとめた新版を`review_contract: <絶対パス>`で渡す。
    - 前回の後に履歴を書き換えたら、`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」が保存したJSONを`rewrite_map: <絶対パス>`で渡す（引き継ぎ再レビューでは`extra_params`）。
-   - `画面差分: あり`なら、ユーザビリティレビューの再判定（未起動なら初回）も同時に依頼する。
-6. `対応完了（再レビュー不要）`では、修正が`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の再レビューを省ける修正に当たることを確かめる。
-   低リスクの段階を根拠にした時は、修正後のHEADで`agent-toolkit:atk-mode/playbooks/review-fix.md`「完了報告」の判定コマンドを自分でも実行する。
-   直前の返却に、修正に関わる`未達`か`根拠不足`の行が受理できないまま残れば、再レビューする。
+   - `画面差分: あり`で未起動のレビューには初回を依頼する。
+     既に判定を受けた範囲は、その担当が必要と明示した時だけ再レビューする。
+6. レビュー担当が「不要」とした範囲は、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」に従い、評価の前提を修正後も保つか確かめる。
+   前提が保たれる場合は、修正後の検証が示す条件の証拠を受領側が検収する。
+   不足があれば修正担当へ補完を求める。
 7. 再レビューを省くと確かめたら、統合入力HEADを判定行の`レビューHEAD`と別に確定する（amendかautosquashでOIDが変わるため）。
    新しい画面資産が加わっていれば、ユーザビリティレビューは省かず同じHEADで依頼する。
    未応答0件と管理表の修正前後の短縮OIDの対応を確かめ、`git rev-parse --short=7`で解決した専用branchのHEADが修正後の短縮OIDと一致することを確かめる。
@@ -116,7 +120,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    再レビューの範囲は、前回指摘の修正、前回のレビューHEADから今回のHEADまでの修正差分、変えた識別子と契約の直接影響範囲である（定義元は`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」）。
 3. 本書「完成条件証拠の受領確認」の手順2で保った開始時点とHEADは、rebaseで開始時点が変わっても上書きせず、両方の差分の一致とファイル別の申告を同じ受領確認へ渡す。
    履歴を書き換えた後の開始時点には、書き換え後の対応するOIDを使う。
-4. 第3ラウンド以降も未解決の指摘が残る時は、修正に着手する前に`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」を適用させる。
+4. 修正に着手する前に、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の手順11に該当するかを確かめる。
 
 ## ラウンド番号の保持先
 
@@ -146,7 +150,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 ## 収束と統合への引渡し
 
 1. 次の全てを満たした時に収束とする。
-   - 全てのレビューが最終のHEADで完了しているか、最後のレビューの後の差分が`agent-toolkit:atk-mode/references/exec-review-head-update.md`「HEADの更新と再レビューの要否」で影響しない修正だけである。
+   - 初回レビューは全て完了し、レビュー担当が要とした範囲の独立確認と、不要とした範囲の修正後の検証がそろっている。
    - 元のWI全体の条件別判定が`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」の受理条件を満たす。
    - 全ての指摘管理表の未解決の指摘が0件である。
 2. 指摘管理表は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の保存」に従って保存するか削除する。

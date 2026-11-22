@@ -21,6 +21,7 @@ RATIONALE_KEY = "根拠"
 MODEL_TYPES_KEY = "担当モデル"
 STAGE_KEY = "段階"
 PRIOR_LANES_KEY = "先行レーン"
+START_DEPENDENCIES_KEY = "着手前に必要なレーン"
 LANE_OVERLAPS_KEY = "レーン間の重なり"
 SINGLE_STAGE_ESTIMATE_KEY = "単一段階案の完了見込み秒数"
 STAGED_ESTIMATE_KEY = "段階案の完了見込み秒数"
@@ -48,7 +49,6 @@ TRANSFERRED_FROM_KEY = "移管元レーン"
 
 
 def correction_coefficients(correction: dict[str, object]) -> tuple[float, float]:
-    """型検査済みの工程別係数を返す。旧形式の未分離係数は両工程へ適用する。"""
     if "係数" in correction:
         coefficient = typing.cast(float, correction["係数"])
         return coefficient, coefficient
@@ -59,7 +59,6 @@ def correction_coefficients(correction: dict[str, object]) -> tuple[float, float
 
 
 def integrated_lanes(selection: object) -> set[str]:
-    """統合済みとして記録されたレーンを返す。省略した状態は未統合である。"""
     return {
         str(row[LANE_KEY])
         for row in lane_costs(selection) or []
@@ -68,7 +67,6 @@ def integrated_lanes(selection: object) -> set[str]:
 
 
 def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
-    """選定全体の所属と状態の整合性を検査し、公開前に判断する未統合集合を返す。"""
     items = typing.cast(list[dict[str, object]], decisions(selection))
     costs = typing.cast(list[dict[str, object]], lane_costs(selection))
     names = [str(item[WI_KEY]) for item in items]
@@ -92,6 +90,7 @@ def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
                     STAGE_KEY: row.get(STAGE_KEY, 1),
                     WI_KEY: [item[WI_KEY] for item in members],
                     PRIOR_LANES_KEY: row.get(PRIOR_LANES_KEY, []),
+                    START_DEPENDENCIES_KEY: row.get(START_DEPENDENCIES_KEY, []),
                 }
             )
     return pending
@@ -99,7 +98,7 @@ def pending_lanes(selection: dict[str, object]) -> list[dict[str, object]]:
 
 _LEGACY_DECISIONS_KEY = "decisions"
 
-# 旧欄名から新しい欄名への対応。項目の欄だけを対象とし、値は変えない。
+
 _LEGACY_DECISION_KEYS: typing.Final[dict[str, str]] = {
     "awi": WI_KEY,
     "lane": LANE_KEY,
@@ -148,7 +147,6 @@ def lane_costs(selection: object) -> list[object] | None:
 
 
 def _normalize(item: object, keys: dict[str, str]) -> object:
-    """1件の項目の旧欄名を新しい欄名へ置き換える。"""
     if not isinstance(item, dict):
         return item
     normalized = {key: value for key, value in item.items() if key not in keys}

@@ -1,11 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""同名ファイルを検出して重複を削除する (C# deletehomonym の Python 移植)。
-
-オプションを指定しない場合はファイル名 (拡張子除外・小文字化) が MD5/SHA-1 形式の 16 進文字列の
-ファイルだけを対象とする。ハッシュ名で同名のファイルが複数見つかった場合、
-サイズが一致すれば新しい方を残し古い方を削除する。サイズが異なる場合は
-ハッシュ衝突を意味するので警告のみ表示する。
-"""
 
 import argparse
 import contextlib
@@ -23,7 +16,6 @@ _HASH_RE = re.compile(r"^([0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 def main() -> None:
-    """同名ファイルを検出して重複を削除するエントリポイント。"""
     parser = argparse.ArgumentParser(description="同名ファイルの重複を削除する")
     parser.add_argument("-r", "--recursive", action="store_true")
     parser.add_argument("-n", "--no-hash-only", action="store_true", help="ハッシュ名以外も対象にする")
@@ -55,7 +47,6 @@ def delete_homonym(
     dry_run: bool = False,
     log_fp: io.TextIOBase | None = None,
 ) -> None:
-    """重複ファイルを削除する。"""
     registry: dict[str, pathlib.Path] = {}
     for base in paths:
         base = base.resolve()

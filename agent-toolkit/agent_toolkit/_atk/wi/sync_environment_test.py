@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのsync: environmentのテスト。"""
 
 import os
 import pathlib
@@ -28,26 +27,22 @@ class TestPrivateNotesAutoCreate:
 
     @pytest.fixture(autouse=True)
     def _isolate_data_dir(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """自動生成先を実環境の`user_data_dir`から隔離し、テストの準備で設定した環境変数による上書きを解除する。"""
         monkeypatch.delenv("AGENT_TOOLKIT_PRIVATE_NOTES", raising=False)
         monkeypatch.setattr(platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
 
     def test_private_notes_path_falls_back_to_platformdirs_when_default_missing(self, tmp_path: pathlib.Path) -> None:
-        """未指定の場合に使う`home/private-notes`が不在の場合、platformdirs配下へフォールバックする。"""
         home = tmp_path / "home"
         home.mkdir()
         resolved = _private_notes.default_private_notes(home)
         assert resolved == tmp_path / "data" / "private-notes"
 
     def test_private_notes_path_prefers_existing_default(self, tmp_path: pathlib.Path) -> None:
-        """省略時に使うパスが実在する場合はplatformdirsへフォールバックせずそちらを返す。"""
         home = tmp_path / "home"
         (home / "private-notes").mkdir(parents=True)
         resolved = _private_notes.default_private_notes(home)
         assert resolved == home / "private-notes"
 
     def test_ensure_environment_initializes_local_repo(self, tmp_path: pathlib.Path) -> None:
-        """省略時に使うパスが不在の場合、`ensure_environment`はローカルgitリポジトリを自動生成して返す。"""
         home = tmp_path / "home"
         home.mkdir()
         root = _wi_sync.ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
@@ -74,7 +69,6 @@ class TestPrivateNotesAutoCreate:
         tmp_path: pathlib.Path,
         capfd: pytest.CaptureFixture[str],
     ) -> None:
-        """初回の`wi list`はローカルリポジトリを生成してもGitの成功出力を残さず、保存先の警告だけを書く。"""
         home = tmp_path / "home"
         home.mkdir()
 
@@ -104,10 +98,6 @@ class TestPrivateNotesAutoCreate:
         argv: list[str],
         stdout: str,
     ) -> None:
-        """省略時に解決した空の保存先を使う場合、標準出力を変えずに保存先と設定方法を標準エラーへ警告する。
-
-        既存のキューが別の場所にあるエンドユーザーは、無出力の結果をキューが空であることと区別できない。
-        """
         home = tmp_path / "home"
         home.mkdir()
 
@@ -131,7 +121,6 @@ class TestPrivateNotesAutoCreate:
         capfd: pytest.CaptureFixture[str],
         condition: str,
     ) -> None:
-        """環境変数の指定、`~/private-notes`の実在、WIか計画を持つ保存先では警告しない。"""
         home = tmp_path / "home"
         home.mkdir()
         if condition == "override":
@@ -152,7 +141,6 @@ class TestPrivateNotesAutoCreate:
         assert capfd.readouterr().err == ""
 
     def test_ensure_environment_is_idempotent(self, tmp_path: pathlib.Path) -> None:
-        """2回連続で呼んでも2回目は既存のローカルリポジトリをそのまま返す（再初期化しない）。"""
         home = tmp_path / "home"
         home.mkdir()
         first = _wi_sync.ensure_environment(home)  # pylint: disable=protected-access  # noqa: SLF001
@@ -182,7 +170,6 @@ class TestPrivateNotesAutoCreate:
         assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_ensure_environment_keeps_recorded_gitignore_pattern(self, tmp_path: pathlib.Path) -> None:
-        """`.gitignore`へ記録済みの管理パターンとユーザーの変更を、commitも削除もしない。"""
         home = tmp_path / "home"
         root = home / "private-notes"
         git_repository.init_repository(root)
@@ -202,12 +189,6 @@ class TestPrivateNotesAutoCreate:
 
 
 class TestMigrateLegacyLayout:
-    """旧2階層レイアウトから平坦レイアウトへの自動移行を検証する。
-
-    管理repoのパスはconftestが適用する隔離（`agent_toolkit._testing.isolation`）が`tmp_path/private-notes`へ差し替えるため、
-    `ensure_environment`へ渡すhomeは解決結果に影響しない。
-    """
-
     @pytest.mark.parametrize(
         "filename",
         [
@@ -222,7 +203,6 @@ class TestMigrateLegacyLayout:
     def test_migrates_entries_and_removes_legacy_dirs(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], filename: str
     ) -> None:
-        """種別ディレクトリ配下のエントリへtypeを補って状態ディレクトリ直下へ移し、旧ディレクトリを削除する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root,
@@ -255,7 +235,6 @@ class TestMigrateLegacyLayout:
         assert not git_repository.git_output(root, "status", "--porcelain")
 
     def test_is_noop_after_migration(self, tmp_path: pathlib.Path) -> None:
-        """移行後の再実行では追加のコミットを生成しない。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(root, {"feedback/inbox/20260101-000000-001.md": _LEGACY_AWI})
         _wi_sync.ensure_environment(tmp_path)  # pylint: disable=protected-access  # noqa: SLF001
@@ -284,7 +263,6 @@ class TestMigrateLegacyLayout:
         assert git_repository.git_output(root, "rev-list", "--count", "HEAD") == "2"
 
     def test_removes_empty_legacy_dirs_without_commit(self, tmp_path: pathlib.Path) -> None:
-        """エントリを含まない旧ディレクトリだけがある場合は削除のみで完結する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root, {"2026/01/20260101-000000-001.md": "---\ntarget_repo: r\ntype: awi\nstate: inbox\n---\n\n本文\n"}
@@ -301,7 +279,6 @@ class TestMigrateLegacyLayout:
     def test_aborts_without_changes_when_entry_is_broken(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """frontmatterが不正なエントリがある場合、何も移さずexit 2で原因を案内する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root,
@@ -320,7 +297,6 @@ class TestMigrateLegacyLayout:
         assert not (root / "inbox").exists()
 
     def test_aborts_when_destination_conflicts(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """種別違いで同名のエントリがある場合は移行先衝突として中止する。"""
         root = tmp_path / "private-notes"
         _init_legacy_repo(
             root,

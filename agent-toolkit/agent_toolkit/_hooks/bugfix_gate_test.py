@@ -65,13 +65,11 @@ def test_defect_report_judgement(prompt: str, expected: bool) -> None:
 
 
 def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) -> None:
-    """欠陥指摘の後にbugfixを起動せず`send_to_user`を呼ぶと遮断され、起動後は通る。"""
     assert _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path))
     assert not _pretooluse_denied(_payload([_human("ここがバグっている"), _BUGFIX], tmp_path))
 
 
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:
-    """欠陥指摘ではない発話、前のターンの起動、サブエージェントの呼出しは遮断しない。"""
     assert not _pretooluse_denied(_payload([_human("進捗を教えて")], tmp_path))
     assert _pretooluse_denied(_payload([_BUGFIX, _human("まだバグっている")], tmp_path))
     assert not _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path, agent_id="sub-1"))
@@ -82,10 +80,57 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, monkeypatch: pytest.Monke
     return stop.evaluate(json.dumps(_payload(entries, tmp_path, **extra)))
 
 
+@pytest.mark.parametrize(
+    ("case", "denied"),
+    [
+        ("initial", False),
+        ("already-loaded", False),
+        ("pending", True),
+        ("failed", True),
+        ("source-only", True),
+        ("prior", True),
+    ],
+)
+def test_repl_needs_the_host_skill_result_for_current_prompt(tmp_path, monkeypatch, case, denied):
+    human = _human("ここがバグっている")
+    invocation = _tool_use("Skill", {"skill": "agent-basics:bugfix"})
+    invocation["isVirtual"] = True
+    invocation["message"]["content"][0]["id"] = "repl_1"
+    result = {
+        "type": "user",
+        "isVirtual": True,
+        "message": {"content": [{"type": "tool_result", "tool_use_id": "repl_1", "content": "", "is_error": case == "failed"}]},
+        "toolUseResult": {"success": case != "failed", "commandName": "agent-basics:bugfix"},
+    }
+    if case == "source-only":
+        entries = [human, _tool_use("REPL", {"code": "tools.Skill({skill: 'agent-basics:bugfix'})"})]
+    elif case == "prior":
+        entries = [invocation, result, human]
+    elif case == "pending":
+        entries = [human, invocation]
+    else:
+        entries = [human, invocation, result]
+    if case == "already-loaded":
+        entries = [
+            _BUGFIX,
+            *entries,
+            {
+                "type": "api-request-blob",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "Skill /agent-basics:bugfix is already loaded above; instructions unchanged."}
+                    ]
+                },
+            },
+        ]
+
+    assert _pretooluse_denied(_payload(entries, tmp_path)) is denied
+    assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is denied
+
+
 def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """応答本文だけで終えるStopも同じ判定で遮断し、bugfix起動後と`stop_hook_active`の再呼出しでは通す。"""
     entries = [_human("ここがバグっている")]
     blocked = _stop(entries, tmp_path, monkeypatch)
     assert blocked["decision"] == "block" and "agent-basics:bugfix" in str(blocked["reason"])
@@ -96,12 +141,35 @@ def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     assert "decision" not in _stop([_human("進捗を教えて")], tmp_path, monkeypatch)
 
 
+@pytest.mark.parametrize(
+    "correction",
+    [
+        "手戻り多すぎない？",
+        "ちゃんと分析して直すべきでしょ。",
+        "処理する手順になってなかったっけ？",
+        "自分でできるはずでしょ。ユーザーの手を煩わせないで！",
+        "再発防止しないとまた再発するでしょ！！",
+    ],
+)
+def test_each_queued_correction_needs_its_own_bugfix(
+    correction: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entries = [
+        _human("ここがバグっている"),
+        _BUGFIX,
+        {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": correction}},
+    ]
+    assert _pretooluse_denied(_payload(entries, tmp_path))
+    assert _stop(entries, tmp_path, monkeypatch)["decision"] == "block"
+    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
+
+
 @pytest.mark.parametrize("previous_skill", [False, True])
 @pytest.mark.parametrize("args,defect", [("進捗を教えて", False), ("まだバグがある", True)])
 def test_command_arguments_and_bugfix_invocation_belong_to_current_turn(
     previous_skill: bool, args: str, defect: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """包装の欠陥語と旧ターンの指摘・起動を除き、今回のコマンド引数だけを両入口で判定する。"""
     entries = [_human("以前のバグを直して")]
     if previous_skill:
         entries.append(_BUGFIX)
@@ -152,7 +220,7 @@ def test_verification_failure_requires_same_actor_bugfix_before_changes(tmp_path
         return "verification-bugfix" in body.get("additionalContext", "")
 
     monkeypatch.setattr(dispatch, "_decide", lambda *_args, **_kwargs: dispatch.Decision())
-    # Skill本文の取得記録は専用の受領試験へ分担し、この遷移では全宣言の解析を繰り返さない。
+
     monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
     assert not pre()
     posttooluse.main(json.dumps(failure))

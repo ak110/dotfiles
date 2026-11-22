@@ -39,13 +39,11 @@ CASES_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_cases.json"
 MATERIALS_PATH = pathlib.Path(__file__).resolve().with_name("review_eval_materials")
 _ISSUE_COLUMN = 3
 _LOCATION_COLUMN = 2
-_DRAFT_BODY_INPUTS = ("原稿", "要求と出所", "成立性の証拠")
+_DRAFT_BODY_INPUTS = ("原稿", "要求原本")
 
 
 @dataclasses.dataclass(frozen=True)
 class _Expectation:
-    """事例の期待1件。全ての照合語句が同じ指摘行に一致したときに、その指摘が該当したとみなす。"""
-
     id: str
     description: str
     patterns: tuple[re.Pattern[str], ...]
@@ -82,16 +80,15 @@ class _Case:
     description: str
     detect: tuple[_Expectation, ...]
     absent: tuple[_Expectation, ...]
-    # 実行レビュー以外の役割の起動入力。値の`{plan}`・`{base}`・`{case_dir}`は準備時に置き換える。
-    # 省略時は実行レビュー（exec-review）の入力を組み立てる。
+
     extra_params: dict[str, str] | None = None
     wi_revisions: dict[str, str] = dataclasses.field(default_factory=dict)
     # 評価用の資料の保存版。`revision`はprivate-notesの完全OID、`plan`と`contract`はそのcommitでのパス（どちらも省略可）。
     # `plan`は保存版の計画の代わりにレビュー担当へ渡す評価用の計画、`contract`は自動生成の代わりに渡す確かめた条件表である。
     fixtures: dict[str, str] = dataclasses.field(default_factory=dict)
-    # 合成素材から入力を用意する事例。指定した事例は`repo`・`plan`・`revision`・`wi_revisions`・`fixtures`を持たない。
+
     material: _Material | None = None
-    # 元事例との対応。`cases`は同じ評価セットの全履歴版の事例ID、`source`は事例を持たない原本の所在と範囲である。
+
     origin: dict[str, Any] = dataclasses.field(default_factory=dict)
 
 
@@ -102,7 +99,6 @@ def _expectations(items: list[dict[str, Any]]) -> tuple[_Expectation, ...]:
 
 
 def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
-    """評価セットを読み、照合語句を正規表現として検証した事例の一覧を返す。"""
     path = path or CASES_PATH
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -145,7 +141,6 @@ def load_cases(path: pathlib.Path | None = None) -> list[_Case]:
 
 
 def _check_origins(cases: list[_Case]) -> None:
-    """小さい事例が指す元事例が評価セットに残っていることを確かめる。元事例を消すと対応が失われるため拒否する。"""
     ids = {case.id for case in cases}
     for case in cases:
         origin = case.origin
@@ -192,7 +187,6 @@ def _parse_case(item: dict[str, Any]) -> _Case:
 
 
 def _commit_range(commits_path: pathlib.Path) -> tuple[str, str]:
-    """WI実装commitの対応記録から、履歴書換え後のOIDで最初の変更の親と最後のcommitを返す。"""
     order: list[str] = []
     for line in split_lines(commits_path.read_text(encoding="utf-8")):
         try:
@@ -230,7 +224,6 @@ def _git(repo: pathlib.Path, *args: str) -> str:
 
 
 def _remove_eval_worktree(repo: pathlib.Path, worktree: pathlib.Path) -> None:
-    """回収の出力は例外に保持し、操作案内は呼び出し側で決める。"""
     _run_git(repo, "worktree", "remove", str(worktree)).check_returncode()
 
 
@@ -275,7 +268,6 @@ def _contract_rows(texts: dict[str, str]) -> list[str]:
 
 
 def _opening(text: str) -> str:
-    """AWI本文のH1と、その直後の最初の段落を返す。"""
     lines = text.splitlines()
     for index, line in enumerate(lines):
         if line.startswith("# "):
@@ -293,17 +285,15 @@ def _opening(text: str) -> str:
 
 
 def _cell(value: str) -> str:
-    """表の1セルへ収めるため、改行を空白へ、縦線をエスケープへ置き換える。"""
     return " ".join(value.split()).replace("|", "\\|")
 
 
 def _saved_text(notes: pathlib.Path, revision: str, path: str) -> str:
-    """明示した保存commitの本文だけを取り出し、現行本文へ代替しない。"""
     if not isinstance(revision, str) or re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise ValueError(f"保存revisionが不正: {revision!r}。評価セットのrevisionを完全なcommit OIDへ直す")
     try:
         _git(notes, "rev-parse", "--verify", f"{revision}^{{commit}}")
-        # _gitのstripは本文の前後の空白を除去するため、保存原本は直接bytesからデコードする。
+
         result = subprocess.run(["git", "-C", str(notes), "show", f"{revision}:{path}"], capture_output=True, check=False)
         if result.returncode:
             raise ValueError(result.stderr.decode("utf-8", errors="replace").strip())
@@ -342,7 +332,7 @@ def _saved_wis(case: _Case, notes: pathlib.Path, names: set[str]) -> dict[str, s
 
 
 _TARGET_REPOSITORY_LINE = re.compile(r"^(- 対象リポジトリ: )`[^`\n]*`", re.MULTILINE)
-# 計画と条件表が参照する一時領域（managed-temp）の絶対パス。区切りの記号と日本語の句読点の手前までをパスとして扱う。
+
 _TEMPORARY_PATH = re.compile(r"/[A-Za-z0-9_./@+-]*/managed-temp/[A-Za-z0-9_./@+-]*[A-Za-z0-9_@+-]")
 
 
@@ -377,11 +367,6 @@ def store(
 
 @dataclasses.dataclass(frozen=True)
 class _Inputs:
-    """事例の出力先へ書き出す入力。
-
-    `retarget_repair`があれば計画の対象リポジトリの行を今回の作業ツリーへ付け替え、付け替えられない時の直し方として示す。
-    """
-
     repo: pathlib.Path
     base: str
     head: str
@@ -398,7 +383,6 @@ def _new_case_dir(case_dir: pathlib.Path) -> None:
 
 
 def _saved_inputs(case: _Case, case_dir: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> _Inputs:
-    """private-notesの保存版と、計画のcommit対応記録が指す対象リポジトリのcommitから入力を再構成する。"""
     if case.repo not in repos:
         raise ValueError(f"対象リポジトリの所在が無い: {case.repo}。--repo {case.repo}=<絶対パス>を指定して再実行する")
     repo = repos[case.repo]
@@ -419,7 +403,6 @@ def _saved_inputs(case: _Case, case_dir: pathlib.Path, repos: dict[str, pathlib.
         plan_name=pathlib.Path(f"{case.plan}.md").name,
         plan_text=plan_text,
         texts=texts,
-        # 評価用の計画は保存時の作業ツリーを指しているため、今回の準備で作る作業ツリーへ付け替える。
         retarget_repair=(
             f"評価セットのfixtures.plan（{case.fixtures['plan']}）を直し、storeで保存し直す"
             if "plan" in case.fixtures
@@ -428,7 +411,6 @@ def _saved_inputs(case: _Case, case_dir: pathlib.Path, repos: dict[str, pathlib.
     )
 
 
-# 合成素材のcommitでは、実行中のOSアカウントのGit設定（署名、hook）を使わない。
 _MATERIAL_GIT = (
     "-c",
     "user.name=review-eval",
@@ -442,10 +424,6 @@ _MATERIAL_GIT = (
 
 
 def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -> _Inputs:
-    """合成素材の差分から変更前と変更後の2つのcommitを持つリポジトリを作り、素材の計画とWI原本を入力にする。
-
-    計画の名前とcommit件名は、同じ素材の事例どうしで同じ名前にし、素材のファイル名（欠陥の差分か正常対照か）を担当へ見せない。
-    """
     plan_path = material.root / material.plan
     plan_text = plan_path.read_bytes().decode("utf-8")
     names = commit_mapping.plan_allowed_wis(plan_text, plan_path) if case.extra_params is None else set()
@@ -473,20 +451,19 @@ def _material_inputs(case: _Case, material: _Material, case_dir: pathlib.Path) -
 
 
 def _case_dir_name(case: _Case) -> str:
-    """事例の出力先の名前。担当へ渡すパスから事例ID（欠陥の事例か正常対照か）を読み取れないよう、IDの要約値にする。"""
     return hashlib.sha256(case.id.encode("utf-8")).hexdigest()[:12]
 
 
 def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> None:
-    """本文段階の原稿を保存せず検証し、レビュー用の成立性の証拠へ抽出の対応を加える。"""
     draft = pathlib.Path(params["原稿"])
-    texts: dict[str, str] = {}
-    for name in _DRAFT_BODY_INPUTS:
+    for name in (*_DRAFT_BODY_INPUTS, "調査原本"):
+        if name not in params:
+            continue
         path = pathlib.Path(params[name])
         try:
             if not path.is_absolute():
                 raise ValueError("絶対パスで指定する")
-            texts[name] = path.read_text(encoding="utf-8")
+            path.read_text(encoding="utf-8")
             if name == "原稿":
                 draft = path.resolve(strict=True)
         except (OSError, ValueError) as error:
@@ -538,25 +515,10 @@ def _prepare_draft_opening(case_dir: pathlib.Path, params: dict[str, str]) -> No
             f"dry-runが返した冒頭を取得できない: {opening}（{error}）",
             next_action="managed-tempの保存先と読取権限を確認し、新しい--outで同じ事例をprepareする",
         ) from error
-    evidence_path = case_dir / "evidence.md"
-    try:
-        evidence_path.write_text(
-            f"{texts['成立性の証拠'].rstrip()}\n\n原稿: {draft}\n冒頭保存先: {opening}\n",
-            encoding="utf-8",
-        )
-    except (OSError, UnicodeError) as error:
-        raise ActionableError(
-            f"本文評価の成立性の証拠を保存できない: {evidence_path}（{error}）",
-            next_action="保存先の書込権限と空き容量を確認し、新しい--outで同じ事例をprepareする",
-        ) from error
-    params["成立性の証拠"] = str(evidence_path)
+    params["ユーザー向け部分"] = str(opening)
 
 
 def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], private_notes: pathlib.Path) -> dict[str, Any]:
-    """事例の入力を`out`の下の事例ごとの出力先へ再構成し、レビュー担当の起動に渡す値を返す。
-
-    事例IDと種類は返す値の`case`・`kind`だけに置き、`start`（担当へ渡す値）と出力先の名前には含めない。
-    """
     declared = case.extra_params or {}
     draft_body = case.role == "wi-draft-review" and declared.get("確認段階", "本文") == "本文"
     if draft_body:
@@ -610,7 +572,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
                 lambda match: originals.get(pathlib.PurePosixPath(match[0]).name, match[0]),
                 _saved_text(private_notes, case.fixtures["revision"], case.fixtures["contract"]),
             )
-            # 旧形式の要求には条件表の行が無く、評価の範囲だけを定める保存版もあるため、行の有無によらず渡す。
+
             deliver = True
             repair = f"評価セットのfixtures.contract（{case.fixtures['contract']}）を直し、storeで保存し直して再準備する"
         else:
@@ -682,7 +644,6 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
 
 
 def _draft_findings(path: pathlib.Path) -> list[str]:
-    """単一原稿の指摘と追加報告を分け、字下げ補足を親の指摘へ保持する。"""
     text = path.read_text(encoding="utf-8")
     fields = {}
     findings: list[str] = []
@@ -723,7 +684,6 @@ def _draft_findings(path: pathlib.Path) -> list[str]:
 
 
 def score(case: _Case, table: pathlib.Path) -> dict[str, Any]:
-    """返却された管理表の指摘行を期待と照合し、検出・見逃し・誤指摘・未分類を返す。"""
     try:
         rows = (
             [["", "", str(table), item] for item in _draft_findings(table)]
@@ -779,7 +739,6 @@ def _parse_repos(values: list[str]) -> dict[str, pathlib.Path]:
 
 
 def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
-    """コードを保持した評価worktreeの、未使用の再生成環境を回収する。"""
     try:
         registered = _git(worktree, "worktree", "list", "--porcelain")
         if f"worktree {worktree}" not in registered.splitlines():
@@ -799,11 +758,18 @@ def _cleanup_retained_environment(worktree: pathlib.Path) -> str:
 
 
 def _cleanup_scored(case: _Case, table: pathlib.Path, *, retain: bool) -> dict[str, str]:
-    """採点を保存した評価だけをGitで回収し、拒否と後続利用は保持理由として返す。"""
     worktree = table.resolve().parent / "worktree"
     if not worktree.exists():
         return {"status": "absent"}
-    if worktree.parent.name != _case_dir_name(case) or not (worktree / ".git").is_file():
+    if worktree.parent.name != _case_dir_name(case):
+        return {
+            "status": "retained",
+            "reason": (
+                f"{worktree}: 現行の事例ディレクトリ名と異なり、準備時の対象と確認できないため保持。"
+                "git worktree listで登録元を調べ、準備時の版と事例IDを照合する"
+            ),
+        }
+    if not (worktree / ".git").is_file():
         return {"status": "retained", "reason": "評価用worktreeの配置を確認できない"}
     if retain:
         return {"status": "retained", "reason": "後続参照あり。" + _cleanup_retained_environment(worktree)}

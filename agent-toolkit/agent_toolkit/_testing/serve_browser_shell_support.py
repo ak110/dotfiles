@@ -1,5 +1,3 @@
-"""serveのbrowser_shell試験が共有する入力と補助処理。"""
-
 import asyncio
 import urllib.parse
 
@@ -37,7 +35,6 @@ def _request_count(harness: _ScreenHarness, path: str) -> int:
 
 
 async def _open_all_screens(harness: _ScreenHarness) -> None:
-    """3画面を初期化し、各画面のSSE購読と初期取得が済むまで待つ。"""
     await _observe_screen_requests(harness.page)
     await harness.page.goto(harness.base_url + "/sessions")
     await playwright.async_api.expect(harness.page.locator("#sessions .session-item")).to_have_count(2)
@@ -47,7 +44,6 @@ async def _open_all_screens(harness: _ScreenHarness) -> None:
 
 
 async def _resynchronize_visible(page: playwright.async_api.Page, *, timeout: float = 10_000) -> None:
-    """可視化の操作後に、WI・セッション双方の取得本文が消費されることを確かめる。"""
     paths = [_SCREEN_STREAMS[name][1] for name in ("wi", "sessions")]
     before = await page.evaluate(
         "paths => Object.fromEntries(paths.map(path => [path, window.__screenRequests.completed[path] || 0]))", paths
@@ -87,9 +83,7 @@ class _DelayedResponse:
         self.fulfilled.set()
 
     async def finish(self, page: playwright.async_api.Page) -> None:
-        """応答を返し、画面が応答を処理するまで待つ。"""
-        # selectEntryのfinallyは旧行のbusyを解除し、searchFullTextは結果反映かcatchでstatusを更新する。
-        # どちらも呼出側の末尾の観測点なので、本文の消費後にawaitが増えても早く解放しない。
+
         if urllib.parse.urlsplit(self.url).path.startswith("/api/entries/"):
             row = page.locator('.entry-select[data-key="awi.md"]').locator("xpath=..")
             await playwright.async_api.expect(row).to_have_attribute("aria-busy", "true")

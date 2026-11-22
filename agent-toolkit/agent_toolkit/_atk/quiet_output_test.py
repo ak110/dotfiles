@@ -1,5 +1,3 @@
-"""明示的な正常選択と対応を要する出力を区別する。"""
-
 import pathlib
 import subprocess
 from typing import Any

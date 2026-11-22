@@ -71,7 +71,6 @@ _STATS_MAX_BYTES = 30_000
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """コマンドライン引数を定義する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--allow-partial-records", action="store_true", help="欠測付きの正常行を取得する。")
     session = parser.add_mutually_exclusive_group(required=True)
@@ -99,7 +98,9 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="引き継ぎ用の会話の流れと原本範囲を保存する。全量分析・候補文書・統計・failure ledgerは生成・更新しない。",
     )
-    parser.add_argument("--after", metavar="PATH", help="前回のscope JSON。処理済み位置より後だけをbatchの分析対象にする。")
+    extent = parser.add_mutually_exclusive_group()
+    extent.add_argument("--after", metavar="PATH", help="前回範囲に使うscope JSONを明示する。")
+    extent.add_argument("--full", action="store_true", help="前回確定済みの範囲を使わず全量を分析する。")
     parser.add_argument("--conversation-window", action="store_true", help="会話を少量表示する。候補・統計は更新しない。")
     parser.add_argument(
         "--conversation-digest",
@@ -157,18 +158,16 @@ _MISSING_NEXT_ACTIONS = {
 
 
 def _missing(item: str, detail: str | None = None) -> int:
-    """取得できなかった準備項目を、項目に対応する引数と取得方法とともに報告する。"""
     print(f"不足: {item}", file=sys.stderr)
     if detail:
         print(detail, file=sys.stderr)
-    # 原因が固有の次の操作を持つ場合は、項目の一般的な取得方法を重ねない。
+
     if detail is None or _next_action.NEXT_ACTION_PREFIX not in detail:
         print(_next_action.next_action_line(_MISSING_NEXT_ACTIONS[item]), file=sys.stderr)
     return 2
 
 
 def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pathlib.Path | None:
-    """Git共通ディレクトリ（`--git-common-dir`）から対象リポジトリ固有の振り返り参照文書を解決する。"""
     if target_repo is None:
         return None
     try:
@@ -189,7 +188,6 @@ def _reference_document(target_repo: pathlib.Path | None, *, codex: bool) -> pat
     return path if path.is_file() else None
 
 
-# 未解決の対象と回復した記録行は、どのbundleファイルにも保存されず標準出力だけで届く。
 _SCOPE_EVENT_KINDS = frozenset({"unresolved-record", "unresolved-delegation", "recovered-record-line", "record-gap"})
 
 
@@ -199,9 +197,9 @@ def _extract_bundle(
     *,
     conversation_output: list[dict[str, Any]],
     conversation_only: bool,
+    conversation_main_only: bool = False,
     conversation_scope: pathlib.Path | None = None,
 ) -> tuple[str | None, list[dict[str, Any]]]:
-    """bundleの成功時も未解決通知を受け渡し、走査全量と最終JSONへ混ぜない。"""
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         exit_code = session_review_evidence.main(
@@ -209,6 +207,7 @@ def _extract_bundle(
             conversation_output=conversation_output,
             conversation_scope=conversation_scope,
             conversation_only=conversation_only,
+            conversation_main_only=conversation_main_only,
         )
     if exit_code != 0:
         return captured.getvalue() or f"atk run-script session-review-evidenceの終了コード: {exit_code}", []
@@ -220,7 +219,6 @@ def _extract_bundle(
 
 
 def _recovered_line(event: dict[str, Any]) -> str:
-    """回復した1行を、方式ごとに読み手が除いた範囲と根拠を取り違えない形で示す。"""
     method = event.get("method")
     if method in ("joined-fragment-superseded", "joined-fragment-lost"):
         complete = f"{event['superseded_by']}行目" if event.get("superseded_by") is not None else "完全な版なし"
@@ -233,7 +231,6 @@ def _recovered_line(event: dict[str, Any]) -> str:
 
 
 def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, Any]]) -> list[str]:
-    """候補件数と区別した確認範囲と回復した記録行を、全ての準備文書へ同じ集合で示す。"""
     lines = ["", "## 未確認範囲", ""]
     if not events:
         lines.append("未解決の対象は無い。")
@@ -261,7 +258,6 @@ def _unconfirmed_lines(events: list[dict[str, Any]], recovered: list[dict[str, A
 
 @session_evidence_execution.shell_parse_scope()
 def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None) -> int:
-    """振り返りの入力を作業ディレクトリへ書き、所在と件数を1行のJSONで出力する。"""
     args = _build_parser().parse_args(argv)
     if args.agents_session_id is not None:
         try:
@@ -343,8 +339,13 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             session_arguments.extend(["--opencode-db", str(pathlib.Path(args.opencode_db).expanduser().resolve())])
     else:
         session_arguments = ["--codex-thread-id", args.codex_thread_id]
-    if args.after is not None:
-        session_arguments.extend(["--after", args.after])
+    lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
+    after = args.after
+    if after is None and not args.full and not lightweight:
+        previous = session_review.previous_scope(identity)
+        after = str(previous) if previous is not None else None
+    if after is not None:
+        session_arguments.extend(["--after", after])
     if args.allow_partial_records:
         session_arguments.append("--allow-partial-records")
     bundle_dir = work_dir / "bundle"
@@ -352,7 +353,6 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     source_path = bundle_dir / "conversation-source.json"
     current = now if now is not None else datetime.datetime.now(datetime.UTC)
     observed_at = current.astimezone(datetime.UTC).isoformat()
-    lightweight = args.conversation_only or args.conversation_window or args.conversation_digest
     conversation_output: list[dict[str, Any]] = []
     if args.conversation_after is not None:
         try:
@@ -378,6 +378,7 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
             bundle_dir,
             conversation_output=conversation_output,
             conversation_only=lightweight,
+            conversation_main_only=args.conversation_digest,
         )
     unresolved = [event for event in scope_events if event["kind"] != "recovered-record-line"]
     recovered = [event for event in scope_events if event["kind"] == "recovered-record-line"]
@@ -407,18 +408,21 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         evidence_index = [] if lightweight else _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
-    (bundle_dir / "unconfirmed.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
-    )
-    (bundle_dir / "recovered.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
-    )
-    source_path.write_text(
-        json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False), encoding="utf-8"
-    )
+    first_window = args.conversation_window and args.conversation_after is None
+    if first_window or (not lightweight and unresolved):
+        (bundle_dir / "unconfirmed.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
+        )
+    if first_window or (not lightweight and recovered):
+        (bundle_dir / "recovered.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
+        )
+    if first_window:
+        source_path.write_text(
+            json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
-    # 準備と証拠照会で同じ入力指定を使い、
-    # 全文を照会するコマンドとして示す。
     detail_command = "atk run-script session-review-evidence -- " + shlex.join(session_arguments)
     conversation_path = work_dir / CONVERSATION_FILENAME
     candidates_path = work_dir / CANDIDATES_FILENAME
@@ -431,7 +435,11 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
     conversation_text = (
         None
         if args.conversation_window or args.conversation_digest
-        else _conversation_document(conversation, detail_command, str(main_record) if main_record else None)
+        else _conversation_document(
+            [*conversation, *(event for event in timeline if event.get("fork_lines"))],
+            detail_command,
+            str(main_record) if main_record else None,
+        )
     )
     conversation_limit = args.conversation_max_bytes if args.conversation_window else _CONVERSATION_MAX_BYTES
     if args.conversation_digest:

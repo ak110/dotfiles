@@ -13,8 +13,6 @@ import os
 import pathlib
 import re
 lazy import tempfile
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from collections.abc import Callable, Sequence
 
 lazy from agent_toolkit._atk import managed_temp
@@ -61,8 +59,6 @@ _GREP_LONG_OPTIONS_WITH_VALUE = frozenset(
 
 @dataclasses.dataclass(frozen=True)
 class OperationSkill:
-    """操作を起動の契機とするスキルと、その操作の判定関数の組。"""
-
     skill_name: str
     short_name: str
     operation: str
@@ -71,7 +67,6 @@ class OperationSkill:
 
 
 def _grep_is_recursive(arguments: Sequence[str]) -> bool:
-    """`grep`系の引数列が再帰オプションを持つかを返す。"""
     index = 0
     while index < len(arguments):
         token = arguments[index]
@@ -91,7 +86,6 @@ def _grep_is_recursive(arguments: Sequence[str]) -> bool:
             if char in _GREP_RECURSIVE_SHORT_OPTIONS:
                 return True
             if char in _GREP_SHORT_OPTIONS_WITH_VALUE:
-                # 値を同じトークンへ連結しない場合は次のトークンが値になる。
                 if position == len(token) - 1:
                     index += 1
                 break
@@ -99,7 +93,6 @@ def _grep_is_recursive(arguments: Sequence[str]) -> bool:
 
 
 def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
-    """パイプラインの先頭区間が、リポジトリまたはディレクトリを検索するコマンドかを返す。"""
     if not segment.resolved or not segment.tokens:
         return False
     name = pathlib.PurePath(segment.tokens[0]).name
@@ -112,10 +105,6 @@ def _is_search_segment(segment: _shell_segments.ExecutionSegment) -> bool:
 
 
 def _is_search_operation(tool_name: str, tool_input: dict) -> bool:
-    """`agent-basics:search`の起動の契機とする検索の呼び出しかを返す。
-
-    パイプラインの2番目以降の区間は標準入力を検索するため対象から外す。
-    """
     if tool_name in {"Grep", "Glob"}:
         return True
     if tool_name != "Bash":
@@ -144,12 +133,10 @@ def _is_root_cause_writing(tool_name: str, tool_input: dict) -> bool:
 
 
 def _python_write_paths(code: str) -> list[str]:
-    """読取と共用する直列の解析から、静的なPythonの書込先を返す。"""
     return python_file_paths(code, writing=True)
 
 
 def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """in-place編集のsedから、スクリプトとオプションの値を除いたファイル引数を返す。"""
     paths: list[str] = []
     has_script = False
     inplace = False
@@ -186,7 +173,6 @@ def _sed_write_paths(arguments: tuple[str, ...]) -> list[str]:
 
 
 def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
-    """転送先が明示されたコピー・移動・導入の書込先を返す。"""
     operands: list[str] = []
     directory: str | None = None
     no_directory = False
@@ -238,11 +224,6 @@ def _copy_write_paths(name: str, arguments: tuple[str, ...]) -> list[str]:
 
 
 def _perl_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """perlのin-place編集の対象を返す。オプションの値とprogramfile以降の引数はオプションとして読まない。
-
-    値を必須とするオプションは連結部分または次の語を値として消費し、値を任意とするオプションは同じ語だけを値とする。
-    -l/-0の数値部分の後に続く-piなどはオプションとして読む。
-    """
     inplace = False
     inline = False
     operands: list[str] = []
@@ -302,7 +283,6 @@ def _static_write_path(path: str, *, partial: bool = False) -> str | None:
 
 
 def _gawk_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """inplaceライブラリを指定したgawkの入力ファイルを返す。"""
     inplace = False
     has_program = False
     operands: list[str] = []
@@ -333,7 +313,6 @@ def _gawk_write_paths(arguments: tuple[str, ...]) -> list[str]:
 
 
 def _stream_write_paths(arguments: tuple[str, ...]) -> list[str]:
-    """tee・spongeのオプション領域と書込先を区別する。"""
     paths: list[str] = []
     for index, arg in enumerate(arguments):
         if arg == "--":
@@ -347,11 +326,9 @@ def _stream_write_paths(arguments: tuple[str, ...]) -> list[str]:
 
 
 def _is_discard_path(path: pathlib.Path) -> bool:
-    """実行OSの破棄デバイスと同じ実体への出力かを返す。"""
     try:
         return path.samefile(os.devnull)
     except OSError:
-        # 実体を確認できない宛先は通常の書込検出を維持する。
         return False
 
 
@@ -413,7 +390,6 @@ def _bash_write_paths(command: str, cwd: str | None = None, *, partial: bool = F
 
 
 def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
-    """入力から確定した書込先を、操作時点のcwdに対応する絶対パスで返す。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
         return _bash_write_paths(command, cwd) if isinstance(command, str) else []
@@ -426,7 +402,6 @@ def written_paths(tool_name: str, tool_input: dict, cwd: str) -> list[str]:
 
 
 def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    """編集ツールとBashの書込先がエージェント向け文書なら真を返す。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
         return isinstance(command, str) and any(
@@ -441,7 +416,6 @@ def _is_agent_document_writing(tool_name: str, tool_input: dict, cwd: str = "") 
 
 
 def is_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    """編集入力と、静的に確定した本文書込を同じ基準で判定する。"""
     if tool_name == "Bash":
         command = tool_input.get("command")
         if not isinstance(command, str):
@@ -483,10 +457,6 @@ def _is_temporary_path(path: str) -> bool:
 
 
 def _is_artifact_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -> bool:
-    """成果物の本文の作成・更新かを返す。
-
-    一時領域だけへの書込は、使い捨てのスクリプト・データと作業記録などの個人記録であり、成果物の本文に当たらない。
-    """
     written = written_paths(tool_name, tool_input, cwd)
     if written and all(_is_temporary_path(path) for path in written):
         return False
@@ -494,7 +464,6 @@ def _is_artifact_body_writing(tool_name: str, tool_input: dict, cwd: str = "") -
 
 
 def _bash_body_writing(command: str, cwd: str = "") -> bool:
-    """本文をコマンド内に持つ書込だけを選び、出力保存と複製を除く。"""
     for invocation, base in shell_cwd.bash_invocation_cwds(command, cwd):
         tokens = invocation.static_tokens
         name = pathlib.PurePath(tokens[0]).name
@@ -556,7 +525,6 @@ _UV_VALUE_OPTIONS = frozenset(
 
 
 def _skip_runner_options(tokens: Sequence[str]) -> Sequence[str]:
-    """`uv run`・`uvx`・`npx`のオプションとその値を除き、実行するコマンドからのトークン列を返す。"""
     index = 0
     while index < len(tokens) and tokens[index].startswith("-"):
         index += 2 if tokens[index] in _UV_VALUE_OPTIONS else 1
@@ -568,7 +536,6 @@ def _is_task_target(target: str) -> bool:
 
 
 def _is_verification_tokens(tokens: Sequence[str]) -> bool:
-    """1つの実行位置のトークン列が、変更範囲の検証を実行するかを返す。ヘルプ・版表示・一覧などの照会は除く。"""
     if not tokens or _QUERY_OPTIONS.intersection(tokens):
         return False
     name = pathlib.PurePath(tokens[0]).name
@@ -595,10 +562,6 @@ def _is_verification_tokens(tokens: Sequence[str]) -> bool:
 
 
 def is_verification_operation(tool_name: str, tool_input: dict) -> bool:
-    """`agent-basics:check-execution`の起動の契機とする検証の実行かを返す。
-
-    複合文と置換の内側も共通のBash解析から実行位置を得て判定する。保存ログの表示と状態の照会は対象外とする。
-    """
     if tool_name in _VERIFICATION_MCP_TOOL_NAMES:
         return True
     if tool_name != "Bash":
@@ -629,7 +592,6 @@ NOTIFIED_KEY = "operation_skills_notified"
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
-    """Skill起動の名前が表のスキルを指す場合に、その完全名を返す。"""
     return next(
         (entry.skill_name for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}),
         None,
@@ -637,10 +599,6 @@ def canonical_skill_name(skill_name: object) -> str | None:
 
 
 def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
-    """表のスキルの操作を検出したら、そのスキルの起動を求める通知を返す。
-
-    通知は出力へ採用された時に案内済みとして記録する。スキルを起動できない軽量の委譲先には返さない。
-    """
     if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
         return []
     subject = _agent_id.resolve_hook_agent_id(payload)
@@ -681,7 +639,6 @@ def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
 
 
 def forget_subject(session_id: str, subject: str) -> None:
-    """文脈を失った主体（会話圧縮・clear）の記録を消し、次の操作で再び案内する。"""
 
     def forget(state: dict) -> dict | None:
         records = state.get(NOTIFIED_KEY)

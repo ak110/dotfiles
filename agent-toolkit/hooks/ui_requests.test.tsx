@@ -1,5 +1,6 @@
 import type { On } from "claude-code";
 import { expect, mock, test } from "claude-code/testing";
+import { placedMessage } from "./ui_requests.tsx";
 
 function queue(on: On, session: string, id: string) {
   on("fs.list", () => ({ value: [{ name: `ui-request-${session}-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
@@ -55,9 +56,15 @@ for (const placed of [true, false]) {
     expect(response.id).toBe(id);
     expect(response.ok).toBe(placed);
     if (placed) {
-      expect(response.reason).toContain("AskUserQuestion");
-      expect(response.reason).toContain("`…`だけ");
-    } else expect(response.reason).toBe("対応画面なし");
+      expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。");
+      expect(response.reason).toContain("新しい報告はsend_to_userで送る");
+      expect(response.reason).toContain("Claude Codeが可視の本文を求める場合の最小の応答は「…」");
+    } else {
+      expect(response.reason).toContain("対応画面なし");
+      expect(response.reason).toContain("未送信");
+      expect(response.reason).toContain("通常の応答本文で伝えて");
+      expect(response.reason).not.toContain("送信済み");
+    }
   });
 }
 
@@ -184,4 +191,9 @@ test("再開後にまとめられた送達は展開して呼び出しごとに�
   });
   await $.ui.render({ surface: "terminal", component: "ToolGroup", requestId: "group", props: { calls: [call("一つ目"), call("二つ目")], isActive: false, isExpanded: false } });
   expect(expanded).toEqual([true]);
+});
+
+test("旧modの配置状態は本文だけを保持する", () => {
+  expect(placedMessage("旧版の本文")).toEqual({ message: "旧版の本文" });
+  expect(placedMessage({ message: "新版の本文", placedAt: 10 })).toEqual({ message: "新版の本文", placedAt: 10 });
 });

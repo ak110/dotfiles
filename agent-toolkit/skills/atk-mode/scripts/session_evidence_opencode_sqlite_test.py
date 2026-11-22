@@ -143,7 +143,6 @@ def test_prepare_opencode_sqlite_family_and_queries(
     *,
     explicit_database: bool,
 ) -> None:
-    """公開CLIから4文書・証拠・統計を得て、SQLiteを保持したまま原文を照会できる。"""
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
@@ -221,7 +220,6 @@ def test_opencode_sqlite_input_failure_is_actionable_and_read_only(
     capsys: pytest.CaptureFixture[str],
     failure: str,
 ) -> None:
-    """取得不能を終了コード2で返し、空の成功文書や新しいSQLiteを生成しない。"""
     database = tmp_path / "opencode.db"
     session = "ses_main"
     if failure != "missing-database":

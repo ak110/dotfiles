@@ -17,7 +17,6 @@ from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
 
 @pytest.mark.parametrize("operation", ["start", "send_message", "kill", "stop"])
 def test_mcp_only_operations_are_actionable_errors(operation: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """MCP専用操作を実行せず、対応する公開ツールの説明へ案内する。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", operation])
     captured = capsys.readouterr()
@@ -31,7 +30,6 @@ def test_mcp_only_operations_are_actionable_errors(operation: str, capsys: pytes
 
 @pytest.mark.parametrize("operation", ["wait", "notify", "list", "show", "logs", "effort"])
 def test_existing_agents_operations_keep_help(operation: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """既存CLIのヘルプは実行せず正常終了し、一般の誤入力は拒否する。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", operation, "--help"])
     assert "使い方:" in capsys.readouterr().out
@@ -42,7 +40,6 @@ def test_existing_agents_operations_keep_help(operation: str, capsys: pytest.Cap
 
 @pytest.mark.usefixtures("session_environment")
 def test_agents_show_selects_one_session(capsys: pytest.CaptureFixture[str]) -> None:
-    """showは完全識別子で指定した1件だけを返す。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "show", "session-1"])
 
@@ -119,7 +116,6 @@ async def test_public_show_preserves_latest_speed_in_live_and_retained_results(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実際の共有状態と保持結果を公開showへ渡し、他engineと旧形式へ速度項目を加えない。"""
     session = state.SessionState(
         "fast-session",
         str(tmp_path),
@@ -167,7 +163,6 @@ def test_agents_show_keeps_single_line_in_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境では1件の状態を空白を含めない1行で書き、非ASCII文字をそのまま残す。"""
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(environment_name, "")
@@ -184,7 +179,6 @@ def test_agents_show_keeps_single_line_in_agent_environment(
 
 @pytest.mark.usefixtures("session_environment")
 def test_agents_show_rejects_unknown_session(capsys: pytest.CaptureFixture[str]) -> None:
-    """未知の識別子は非0と理由で拒否し、一覧で識別子を確かめる操作を示す。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "show", "missing"])
 

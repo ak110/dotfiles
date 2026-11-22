@@ -1,5 +1,3 @@
-"""移譲の成否不明時の二重実行と、背景資源を巻き込む接続回収を防ぐ。"""
-
 # 外部I/Oを代用し、所有CASと受付予約の内部境界を検証する。
 # pylint: disable=protected-access
 
@@ -157,7 +155,6 @@ async def test_abort_waits_for_inflight_commit_and_reports_the_committed_owner(
 
 
 def _transfers(monkeypatch: pytest.MonkeyPatch, published: list[int] | None = None) -> list[tuple[str, list[int]]]:
-    """移譲先は予約と受入に成功する。各要求の時点で完了していた登録公開も記録する。"""
     sent: list[tuple[str, list[int]]] = []
 
     async def request(_target: dict, operation: str, _arguments: dict, **_kwargs: Any) -> dict:
@@ -185,7 +182,7 @@ async def test_move_waits_registration_started_while_saving_control_state(
         published.append(session.turn_seq)
 
     async def save_control_state() -> None:
-        # 保存の応答を待つ間に届いた通知が、同じsessionで新しい登録公開を始める。
+
         if not published:
             session._registration_task = asyncio.create_task(publish())
 
@@ -241,7 +238,6 @@ async def test_failed_save_before_transfer_returns_detached_resources_to_source(
 async def test_inflight_codex_request_survives_failed_move(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, returned: bool
 ) -> None:
-    """配送中で移せない間も同じclientが応答と後着通知を受け取り、旧所有者は照会に応じる。"""
     coordinator, session, _backend = _coordinator(tmp_path, monkeypatch, current=False)
     identifier = session.session_id
     runtime = coordinator._runtime
@@ -395,7 +391,7 @@ async def test_returned_source_rechecks_only_unconfirmed_ownership(
         async with asyncio.timeout(5):
             coordinator.boundary(session, client)
             monkeypatch.setattr(coordinator.registry, "current", lambda: coordinator.target)
-            # 旧側に配送済みの制御要求が終わる前でも、生I/Oの所有者を確認できる。
+
             async with coordinator.gate.admit(new_turn=False, session_id=identifier):
                 with pytest.raises(EOFError):
                     await coordinator.move(identifier)
@@ -430,7 +426,6 @@ async def test_returned_source_rechecks_only_unconfirmed_ownership(
 
 
 def _stoppable_client(coordinator: ServiceCoordinator, session: state.SessionState, backend: Any) -> dict:
-    """終了境界で止めると切り離し済みとして観測できるclientにし、切り離したときの実行資源の記述を返す。"""
     runtime = coordinator._runtime
     assert runtime is not None
     descriptor = {
@@ -450,20 +445,16 @@ async def test_client_stopped_at_boundary_resumes_when_acceptance_returns_before
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """終了境界で止めたclientは、移譲を待つ間に受付先が自世代へ戻れば取り込み直し、次の応答を受け取れる状態へ戻す。
-
-    公開を確定した新世代が終了すると、生存する旧世代へ受付が戻る。止めたままでは、その会話のdecodeが再開しない。
-    """
     coordinator, session, backend = _coordinator(tmp_path, monkeypatch, current=False)
     descriptor = _stoppable_client(coordinator, session, backend)
     client = backend._clients[session.session_id]
     current = [{"generation": "G3", "epoch": 3, "process": "3:new"}]
     monkeypatch.setattr(coordinator.registry, "current", lambda: current[0])
-    # 同じsessionの別のtool呼出しがsessionの直列化を保持している間に、turnが終わる。
+
     async with coordinator._locks.setdefault(session.session_id, asyncio.Lock()):
         coordinator.boundary(session, client)
         assert client.transferred
-        # 受付先の新世代が終了し、受付が旧世代へ戻る。
+
         current[0] = coordinator.target
     async with asyncio.timeout(5):
         assert await coordinator.move(session.session_id) == {"moved": False}
@@ -536,7 +527,6 @@ async def test_client_stopped_during_update_resumes_after_publisher_keeps_accept
     backend.adopt_session.assert_not_awaited()
     async with asyncio.timeout(5):
         if failing_stage == "registry.restore":
-            # 準備中の移譲を確かめた後に公開元を終了させ、復旧workerとの実行順に依存させない。
             monkeypatch.setattr(service_transport, "process_alive", lambda _process: False)
         else:
             await coordinator.commit_update("token", coordinator.target)
@@ -550,10 +540,6 @@ async def test_prepare_move_failure_after_client_stopped_adopts_session_back(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """準備中に止めたclientで、移譲先へ届かない予約の要求が例外を出したら、取り込み直して制御の受付を残さない。
-
-    公開元が既に終了して接続先が無い状態を、実在しないsocketのendpointと実物のservice_rpc.requestで作る。
-    """
     coordinator, session, backend = _coordinator(tmp_path, monkeypatch)
     coordinator.projections = types.SimpleNamespace(freeze=AsyncMock(), thaw=AsyncMock(), inventory=dict)
     coordinator.registrations = types.SimpleNamespace(freeze=AsyncMock(), thaw=Mock())
@@ -607,7 +593,7 @@ async def test_show_keeps_owner_and_queried_generation_distinct(
     monkeypatch.setattr(coordinator, "_owns", AsyncMock(return_value=True))
     if moving:
         coordinator._uncertain[session.session_id] = "移譲の結果を確認できない"
-    # 未更新の旧世代の正常応答にも、受付側で両識別子を補える。
+
     original = {"session_id": session.session_id, "status": "running"}
     request = AsyncMock(
         return_value={
@@ -631,6 +617,27 @@ async def test_show_keeps_owner_and_queried_generation_distinct(
         assert not result.is_error
         assert result.structured_content == expected
         assert json.loads(result.content[0].text) == expected
+
+
+@pytest.mark.asyncio
+async def test_busy_session_control_reports_before_delivery(tmp_path, monkeypatch):
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch)
+    manager = coordinator.managers.conversations["parent"].manager
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams, **_kwargs: Any):
+        yield manager
+
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+    lock = coordinator._locks.setdefault(session.session_id, asyncio.Lock())
+    async with lock:
+        with runtime_environment.bind(CallerContext({}, tmp_path)):
+            async with asyncio.timeout(2):
+                result = await coordinator.call_tool(
+                    None, CallToolRequestParams(name="kill", arguments={"session_id": session.session_id, "timeout": 0.25})
+                )
+    assert result.is_error
+    assert "停止要求は未配送" in result.content[0].text
 
 
 @pytest.mark.asyncio
@@ -720,7 +727,7 @@ async def test_registry_derived_stopped_sessions_move_with_their_context(
     await new.accept_context(packets[0])
     assert received.stopped_sessions == {"child": stopped, "local": local}
     assert received.expired_sessions == {"gone": expired}
-    # 基底の再開状態へ縮退すると、結果の原本の所在と照会時の鮮度確認が失われる。
+
     copied = {**received.stopped_sessions, **received.expired_sessions}
     assert {identifier: type(value) for identifier, value in copied.items()} == {
         "child": state.RegistryResumeState,
@@ -731,7 +738,6 @@ async def test_registry_derived_stopped_sessions_move_with_their_context(
 
 
 def _seed(source: str) -> dict:
-    """状態保存の代わりに、射影の保存の受付だけを通す操作。"""
     return {
         "identity": dataclasses.asdict(shared_roots.StatusFileIdentity("root", "root.json", None)),
         "source": source,
@@ -743,7 +749,6 @@ def _seed(source: str) -> dict:
 def _generation_one(
     directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch, managers: ServiceManagers
 ) -> tuple[ServiceCoordinator, dict, list[bool]]:
-    """受付先のままの旧世代G1と、準備を求める新世代の生存の切替を作る。"""
     target = {"generation": "G1", "epoch": 1, "process": "1:owner"}
     coordinator = ServiceCoordinator(
         target, directory, managers, ProjectionHub("G1", directory), RegistryForwarder("G1", directory)
@@ -762,17 +767,12 @@ async def test_prepare_left_by_exited_generation_is_released(
     monkeypatch: pytest.MonkeyPatch,
     exit_at: str | None,
 ) -> None:
-    """準備させた新世代が受付を公開せず終了したら、旧世代は静止を解き、状態保存と新しいturnの受付を続ける。
-
-    この場合は受付公開の確定が届かず、静止したままだと状態保存・新しいturn・自動再開が止まり続ける。
-    新世代が生存している間は、準備中の引継ぎを失わないよう、生存の確認を繰り返しても静止を保つ。
-    """
     monkeypatch.setattr(service_coordinator, "_PUBLISHER_PROBE_SECONDS", 0.01)
     coordinator, _target, exited = _generation_one(tmp_path / "services" / "generations", monkeypatch, ServiceManagers())
     freeze_projections = coordinator.projections.freeze
 
     async def exit_while_preparing(token: str) -> None:
-        # 準備の途中で新世代が終了し、その終了の観測が残りの静止より先に進む。
+
         exited[0] = True
         await asyncio.sleep(0.1)
         await freeze_projections(token)
@@ -801,10 +801,6 @@ async def test_update_left_by_exited_generation_is_released_while_monitor_waits_
     monkeypatch: pytest.MonkeyPatch,
     waiting_save: str,
 ) -> None:
-    """共有監視の1巡が静止中の状態保存で止まっていても、準備させた新世代の終了を受けて静止を解き、その保存を完了させる。
-
-    解放要求の処理やheartbeatの保存は、静止中は解除を待つ。解除を同じ1巡の処理に置くと、そこへ到達しない。
-    """
     session = state.SessionState("session", str(tmp_path), engine="codex", turn_end=turn_state.TurnEnd.COMPLETED)
     saved: list[str] = []
     managers = ServiceManagers(state_root=tmp_path)
@@ -829,14 +825,19 @@ async def test_update_left_by_exited_generation_is_released_while_monitor_waits_
         _process_auto_resume=AsyncMock(return_value=False),
     )
     managers.conversations["parent"] = Conversation(manager, CallerContext({}, tmp_path))
-    requested = {session.session_id} if waiting_save == "release_request" else set()
+    requested = [(tmp_path / "fixture.release-request", {"session_id": session.session_id})]
+    if waiting_save == "heartbeat":
+        requested.clear()
 
-    async def process_release_requests(sessions: dict, stop_session: Any, *, state_root: pathlib.Path) -> None:
-        del state_root
-        for identifier in tuple(requested & set(sessions)):
-            requested.discard(identifier)
-            await stop_session(identifier)
+    async def process_release_requests(sessions: dict, stop_session: Any, *, state_root: pathlib.Path, requests: list) -> None:
+        assert state_root == tmp_path and requests == requested
+        path, payload = requests[0]
+        identifier = payload["session_id"]
+        assert identifier in sessions
+        requested.remove((path, payload))
+        await stop_session(identifier, retain_result=True)
 
+    monkeypatch.setattr(service_context.session_release, "pending", lambda _state_root: list(requested))
     monkeypatch.setattr(service_context.session_release, "process_requests", process_release_requests)
     await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
     async with managers:

@@ -30,8 +30,6 @@ import re
 
 from agent_toolkit._hooks.notice import _WARN_TAG, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.agents_exit_session import function_hook_paths
 lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common.session_state import read_state, update_state
@@ -62,22 +60,16 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 
 def _notification_elements(content: str) -> list[str]:
-    """キュー項目の本文から`<task-notification>`要素を取り出す。
-
-    閉じタグを持たない本文は、本文全体を1件の通知として扱う。
-    """
     elements = _TASK_NOTIFICATION_RE.findall(content)
     return elements if elements else [content]
 
 
 def _first(pattern: re.Pattern[str], text: str) -> str | None:
-    """最初の一致の値を前後の空白を除いて返す。"""
     match = pattern.search(text)
     return match.group(1).strip() if match else None
 
 
 def _notification_key(notification: str) -> str:
-    """案内済みかを判定する通知の識別子を返す。"""
     task_id = _first(_TASK_ID_RE, notification)
     if task_id:
         return f"task:{task_id}"
@@ -88,7 +80,6 @@ def _notification_key(notification: str) -> str:
 
 
 def _describe(notification: str, *, include_output_file: bool = True) -> str:
-    """通知1件の`<task-id>`と`<output-file>`を1行で示す。"""
     task_id = _first(_TASK_ID_RE, notification) or _first(_TOOL_USE_ID_RE, notification) or "不明"
     output_file = _first(_OUTPUT_FILE_RE, notification) if include_output_file else None
     if output_file is None:
@@ -97,7 +88,6 @@ def _describe(notification: str, *, include_output_file: bool = True) -> str:
 
 
 def _notified_keys(state: dict) -> set[str]:
-    """セッション状態から案内済みの識別子を返す。"""
     value = state.get(_SESSION_STATE_KEY)
     if not isinstance(value, list):
         return set()
@@ -105,7 +95,6 @@ def _notified_keys(state: dict) -> set[str]:
 
 
 def _record_notified(session_id: str, keys: list[str]) -> None:
-    """案内した識別子をセッション状態へ追記する。"""
 
     def _mutator(state: dict) -> dict:
         known = state.get(_SESSION_STATE_KEY)
@@ -118,7 +107,6 @@ def _record_notified(session_id: str, keys: list[str]) -> None:
 
 
 def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, str]:
-    """未配送の完了通知の案内要否と、案内する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -135,7 +123,6 @@ def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, s
     for content in _background_tasks.queued_task_notification_contents(entries):
         for notification in _notification_elements(content):
             if _first(_TASK_ID_RE, notification) in restarted_waits:
-                # 停止したwaitの通知は配送せず、再開promptによる結果の再回収へ進める。
                 continue
             key = _notification_key(notification)
             if key not in pending and (allow_delivery or key not in notified):
@@ -164,7 +151,6 @@ def evaluate(payload_text: str, *, allow_delivery: bool = False) -> tuple[str, s
 
 
 def _restarted_wait_ids(session_id: str, payload: dict) -> set[str]:
-    """process-loopの再起動で停止し、自動続行を消費したwaitだけを区別する。"""
     if (
         os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1"
         or payload.get("agent_id") is not None

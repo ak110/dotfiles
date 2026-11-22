@@ -23,7 +23,6 @@ from agent_toolkit._testing.pretooluse_support import run_without_skill_notices 
 
 @pytest.mark.parametrize("pending", [False, True])
 def test_pending_background_output_read_distinguishes_progress_from_result(monkeypatch, tmp_path, pending):
-    """未完了出力の読取には用途と再取得を示し、完了した出力には警告しない。"""
     output = tmp_path / "background-output.log"
     output.write_text("途中の出力", encoding="utf-8")
     _write_session_state(tmp_path, "pending-output-read", {"background_task_ids": ["task-1"]})
@@ -49,7 +48,6 @@ def test_pending_background_output_read_distinguishes_progress_from_result(monke
 
 @pytest.mark.parametrize("module_name", sorted(hook._SUBCOMMANDS))  # noqa: SLF001  # pylint: disable=protected-access
 def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
-    """exit 0で届かないstderrへwarn通知を出力する実装の再混入を検出する。"""
     package_dir = pathlib.Path(pretooluse.__file__).parent
     if module_name == "pretooluse":
         source = "\n".join(
@@ -65,7 +63,6 @@ def test_warn_notices_are_not_written_to_stderr(module_name: str) -> None:
 
 
 def test_stderr_warn_offenders_detects_indirect_binding() -> None:
-    """warn通知を返す関数の結果を束縛してstderrへ渡す形を、定義順によらず検出する。"""
     source = textwrap.dedent(
         """\
         import sys
@@ -94,7 +91,6 @@ def test_stderr_warn_offenders_detects_indirect_binding() -> None:
 
 
 def test_second_removable_warning_is_suppressed(tmp_path: pathlib.Path) -> None:
-    """同じ対象・原因・対処の通知は初回に届け、継続中の2回目を抑止する。"""
     payload = {
         "tool_name": "Write",
         "tool_input": {"file_path": str(tmp_path / "uv.lock"), "content": "version = 1\n"},
@@ -123,10 +119,9 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """除去可能性の区分が変わっても同じ原因・本文・対処の反復を抑止する。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
-    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str) -> Decision:
+    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str, _payload: dict) -> Decision:
         notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
             "controlled warning",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access

@@ -1,5 +1,3 @@
-"""公開起動・追送・保存再開から、正式解決した品質資料の配送を検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -42,8 +40,6 @@ _CANDIDATES = {
 
 
 class ResourceInventory:
-    """各host・projectの公開一覧と、そこに登録された実在資料を用意する。"""
-
     def __init__(self, root: pathlib.Path, toolkit: pathlib.Path) -> None:
         self.root = root
         self.toolkit = toolkit
@@ -52,7 +48,6 @@ class ResourceInventory:
         self.calls: list[tuple[str, pathlib.Path]] = []
 
     def basics(self, host: str, project: pathlib.Path, generation: int | None = None) -> pathlib.Path:
-        """toolkitと独立した版・配置の品質資料rootを返す。"""
         version = f"1.{generation or self.generation}.{project.name}"
         if host == "codex":
             return self.root / "codex/plugins/cache/mine/agent-basics" / version
@@ -60,7 +55,6 @@ class ResourceInventory:
         return parent / ("agent-basics-agy" if host == "agy" else "agent-basics")
 
     def inventory(self, host: str, project: pathlib.Path) -> object:
-        """ホスト別の正式一覧形式で、欠落・無効・重複も再現する。"""
         self.calls.append((host, project))
         root = self.basics(host, project)
         paths = [] if self.defect == "missing" else [root]
@@ -113,7 +107,6 @@ class ResourceInventory:
 
 @pytest.fixture(name="resources")
 def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> ResourceInventory:
-    """保持toolkitと導入basicsを分離し、解決処理の外部一覧だけを差し替える。"""
     source = plugin_root.SERVER_PLUGIN_ROOT
     toolkit = tmp_path / "held/toolkit-2.248.0"
     for directory in ("skills/atk-mode/playbooks", "skills/atk-mode/roles", "scripts", ".claude-plugin"):
@@ -161,8 +154,6 @@ def _resources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Resou
 
 
 class ResourceBackend(FakeBackend):
-    """外部接続を省き、実際のbackend指示生成と配送本文を記録する。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], engine: str) -> None:
         super().__init__(sessions, engine)
         self.delivered: list[str] = []
@@ -170,7 +161,6 @@ class ResourceBackend(FakeBackend):
         self.reject_start = False
 
     def capture(self, prompt: str, cwd: str, launch_kind: state.LaunchKind) -> None:
-        """実backendが用いる指示生成を通し、品質資料への到達を観測可能にする。"""
         if self.engine == "codex":
             system = codex._developer_instructions(launch_kind)  # noqa: SLF001  # pylint: disable=protected-access
         elif self.engine == "claude":
@@ -275,7 +265,6 @@ async def _start(
 async def test_public_start_delivers_both_resource_roots(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, host: str, mode: tool_descriptions.StartMode
 ) -> None:
-    """全engine・起動形で、実配送したrootから現在projectの品質資料を読める。"""
     project = resources.root / "project-b"
     async with manager.AgentsServerManager(None) as current:
         backend = ResourceBackend(current.sessions, host)
@@ -298,7 +287,6 @@ async def test_public_start_delivers_both_resource_roots(
 async def test_public_start_resolves_resources_again_after_engine_fallback(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    """先頭engineの資料未導入を候補選択へ渡し、次engineの実在資料だけを配送する。"""
     original = resources.inventory
 
     def inventory(host: str, project: pathlib.Path) -> object:
@@ -330,7 +318,6 @@ async def test_public_start_resolves_resources_again_after_engine_fallback(
 async def test_public_send_message_refreshes_resource_roots(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, host: str, saved: bool
 ) -> None:
-    """通常追送と保存済み再開で、現在のhost/cwdの更新済み導入rootを再解決する。"""
     project = resources.root / "project-b"
     async with manager.AgentsServerManager(None) as first:
         backend = ResourceBackend(first.sessions, host)
@@ -368,8 +355,7 @@ async def test_public_send_message_refreshes_resource_roots(
 async def test_public_start_does_not_succeed_without_unique_enabled_basics(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, host: str, defect: str
 ) -> None:
-    """正式解決できない資料は起動前の診断とし、backendの起動成功へ変換しない。"""
-    # OpenCodeの正式一覧には有効・無効の項目が無く、未登録と重複で検査する。
+
     resources.defect = defect
     async with manager.AgentsServerManager(None) as current:
         backend = ResourceBackend(current.sessions, host)
@@ -389,10 +375,6 @@ def _stale_claude_installation(
     *,
     shared_folder: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
-    """必須資料を欠いた旧版のproject導入と、資料の揃ったuser導入を併存させ、両rootを返す。
-
-    `shared_folder`では、両scopeが同じ配布元フォルダー（`readFromFolder`）を読む導入を再現する。
-    """
     user = resources.basics("claude", resources.root / "project-a")
     stale = resources.root / "installed/claude/stale/1.18.0/agent-basics"
     for root in (user, stale):
@@ -433,11 +415,6 @@ def _stale_claude_installation(
 async def test_role_start_names_incomplete_selected_installation(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch, shared_folder: bool
 ) -> None:
-    """選択したproject導入に必須資料が無ければ、user導入へ切り替えず、修復する導入と不足資料を示して起動しない。
-
-    user導入が同じフォルダーを読む場合も、選別が採らないuser導入の修復は案内しない。
-    修復後の同じ入力では、選択したproject導入の資料で起動する。
-    """
     project = resources.root / "project-a"
     missing = "skills/writing-standards/references/writing.md"
     stale, user = _stale_claude_installation(resources, monkeypatch, missing, project, shared_folder=shared_folder)
@@ -471,7 +448,6 @@ async def test_role_start_names_incomplete_selected_installation(
 async def test_role_start_ignores_stale_installation_of_other_project(
     resources: ResourceInventory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """別projectに残る古い導入記録は、対象projectの導入選択と起動前検査に影響しない。"""
     _stale, user = _stale_claude_installation(
         resources, monkeypatch, "skills/writing-standards/references/writing.md", resources.root / "project-a"
     )

@@ -1,5 +1,3 @@
-"""agents_serverが保存した終了時の結果または通知を待つ。"""
-
 from __future__ import annotations
 
 import datetime
@@ -15,6 +13,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from agent_toolkit._agents_server import (
+    continuation_wait,
     logging_config,
     notice_inbox,
     owner_lost,
@@ -43,6 +42,20 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 # 次の操作の文面。待機の結果を受け取った主体が、再待機・調査・巻き取りのどれへ進むかを応答だけで決められるようにする。
 _RERUN_WAIT_NEXT_ACTION = "`atk agents wait`を再実行して待機を続ける"
 _NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終了を待つ場合は`atk agents wait`を再実行する"
+
+
+def _notice_next_action(label: object) -> str:
+    if not isinstance(label, str) or not label.endswith(result_projection.REVIEW_LABEL_SUFFIX):
+        return _NOTICE_NEXT_ACTION
+    receipt = (
+        "`reader-fit-review.parent.md`「受領」" if label.endswith("reader-fit-review") else "同スキルの`references/reviewee.md`"
+    )
+    return (
+        f"{_NOTICE_NEXT_ACTION}\n通知が指摘を含む場合は、採否を確定する前に`agent-basics:review-standards`を起動し、"
+        f"{receipt}に従って採否と修正を確定する"
+    )
+
+
 _CONSUMED_NEXT_ACTION = (
     "結果は別の`atk agents wait`が受領済みのため、その出力を参照する。後続の結果を待つ場合は`atk agents wait`を再実行する"
 )
@@ -81,13 +94,6 @@ _BODY_DIRECTORY_NAME = "agents-wait"
 
 
 class _BodyFileWriter:
-    """終了時の結果の`agent_message`をエスケープを含まないMarkdownファイルへ書き、その絶対パスを返す。
-
-    呼び出し元がJSON文字列のエスケープを解く処理を持たずに結果本文を読めるようにするためである。
-    本文は終了ごとにこの1ファイルだけが持ち、run記録と標準出力の保存物へ重ねない。
-    同じsessionの次のturnの終了は、前の本文を上書きせずに番号付きの別ファイルへ書く。
-    """
-
     def __init__(self) -> None:
         self._directory: pathlib.Path | None = None
 
@@ -103,7 +109,6 @@ class _BodyFileWriter:
         return self._directory
 
     def write(self, session_id: str, result: Mapping[str, Any]) -> pathlib.Path:
-        """本文を書いたファイルの絶対パスを返す。書けない場合は`OSError`か`ManagedTempError`を送出する。"""
         directory = self._resolve_directory()
         for index in range(1, 10_000):
             path = directory / (f"{session_id}.md" if index == 1 else f"{session_id}-{index}.md")
@@ -140,11 +145,10 @@ def _read_current(path: pathlib.Path) -> wait_run.CurrentRun | None:
 
 
 class _WaitStateReadError(ValueError):
-    """不在として扱うと回復用runを上書きする読取異常。"""
+    pass
 
 
 def _saved_wait_recovery(run_path: pathlib.Path | None) -> dict[str, Any]:
-    """同じ所有者の配送済みrunから、再配送せずに本文へ戻る情報を得る。"""
     if run_path is None:
         return {"status": "missing"}
     base: dict[str, Any] = {"run_path": str(run_path.resolve())}
@@ -215,7 +219,6 @@ def _matching_current_wait_run(run_directory: pathlib.Path, targets: list[str]) 
 
 
 def _stashed_wait_targets(run_path: pathlib.Path) -> set[str]:
-    """回収途中に原本から移した結果と通知のsessionを返す。"""
     stash = run_path.with_suffix("")
     result_ids = {path.stem for path in (stash / "results").glob("*.json")}
     notice_ids = {path.name.split(".", 1)[0] for path in (stash / "notices").glob("*.json")}
@@ -244,7 +247,6 @@ def _publish_wait_result(
 
 
 def _remove_wait_stash(run_path: pathlib.Path) -> None:
-    """公開済みrunの回復用退避物を回収する。"""
     try:
         shutil.rmtree(run_path.with_suffix(""))
     except FileNotFoundError:
@@ -282,10 +284,6 @@ def _absent_targets_message(owner_status_file: str) -> str:
 
 
 def _fail(message: str, code: int, *, next_action: str, session_id: str | None = None) -> int:
-    """標準エラーへ理由と次の操作を出力してから非0の終了コードで異常終了する。
-
-    異常終了を返すときに理由と次の操作を必ず示すため、`message`と`next_action`を必須の引数とする。
-    """
     _LOG.info("wait_return reason=abnormal code=%d session_id=%s", code, session_id or "none")
     report(message, next_action=next_action)
     return code
@@ -360,8 +358,7 @@ def _target_origins(
         ):
             wait_targets.release_wait_target(root_session_id, owner_status_file, session_id, state_root)
             registered_ids.remove(session_id)
-    # 状態ファイルにも結果ファイルにも無い登録は、登録簿が喪失か終了を示す場合に結果が生じないため解放する。
-    # 終了の公開から結果ファイルの書込までの間は状態ファイルに行が残るため、回収前の対象を解放しない。
+
     releasable = {
         session_registry.Resolution.MISSING,
         session_registry.Resolution.RELEASED,
@@ -398,7 +395,6 @@ def wait_for_result(
     state_root: pathlib.Path | None = None,
     root_session_id: str | None = None,
 ) -> int:
-    """回復用記録の異常は診断を返し、既存runと退避済みの結果を保持する。"""
     try:
         return _wait_for_result(environment=environment, state_root=state_root, root_session_id=root_session_id)
     except _WaitStateReadError as error:
@@ -474,7 +470,6 @@ def _wait_for_result(
     try:
         current_run = _read_run(current_run_path) if current_run_path is not None else None
     except _WaitStateReadError as error:
-        # 対象0件の診断は保存runのunreadableを添えて終了するため、対象集合の確定まで異常を保持する。
         current_run = None
         current_run_error = error
     if isinstance(current_run, (wait_run.RunningRun, wait_run.PublishedRun)) and current_run_path is not None:
@@ -488,6 +483,10 @@ def _wait_for_result(
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
             return _fail(reason, 4, next_action=next_action)
+        awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
+        if awaiting:
+            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+            return 0
         return _absent_wait_result(identity.file_name, current_run_path, released_interruptions)
     if current_run_error is not None:
         raise current_run_error
@@ -614,8 +613,14 @@ def _wait_for_result(
                             is not None
                         ),
                     ]
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(), state_root)
                     if interrupted_sessions:
                         absent_message += "; " + _interrupted_sessions_text(interrupted_sessions)
+                        if awaiting:
+                            _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+                    elif awaiting:
+                        output = "\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting)
+                        return _publish_wait_result(run_path, output, 0)
                     return _publish_wait_result(
                         run_path,
                         with_next_action(absent_message, _ABSENT_TARGETS_NEXT_ACTION),
@@ -655,8 +660,7 @@ def _wait_for_result(
                         state_root=state_root,
                         stash_path=run_path.with_suffix("") / "results" / f"{session_id}.json",
                     )
-                    # 自身の状態ファイルに無いsessionは登録簿から解決した対象であり、委譲元のサーバーが替わると
-                    # 通知と終了時の結果が旧ルートに残るため、所有者のいない他のルートからも回収する。
+
                     registry_resolved = "status" not in current_origins.get(session_id, set())
                     if registry_resolved and stranded_roots is None:
                         stranded_roots = status_reader.ownerless_root_session_ids(root_session_id, state_root)
@@ -710,23 +714,30 @@ def _wait_for_result(
                                 )
                         if notices:
                             result["notices"] = notices
-                        collected.append(_with_result_next_action(result))
+                        result = _with_result_next_action(result)
+                        seconds = continuation_wait.continuation_wait_seconds(session_id, state_root=state_root)
+                        if seconds is not None:
+                            result = result_projection.append_result_next_action(
+                                result, continuation_wait.continuation_action(seconds)
+                            )
+                        collected.append(result)
                         wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
                         continue
                     if notices:
                         response = _running_response(session_id, _session_output_activity(status_paths, session_id))
                         _add_session_label(response, status_paths, session_id)
                         response["notices"] = notices
-                        response["next_action"] = _NOTICE_NEXT_ACTION
+                        response["next_action"] = _notice_next_action(response.get("label"))
                         collected.append(response)
                 if collected:
+                    continuable = all(item.get("status") == "running" for item in collected)
+                    collected.extend(continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root))
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                     _LOG.info(
                         "wait_return reason=collected count=%d session_ids=%s",
                         len(collected),
                         ",".join(str(item["session_id"]) for item in collected),
                     )
-                    continuable = all(item.get("status") == "running" for item in collected)
                     return _publish_wait_result(run_path, output, 0, continuable=continuable, result_turns=result_turns)
                 if read_failure is not None:
                     return _publish_wait_result(
@@ -747,7 +758,10 @@ def _wait_for_result(
                 remaining = deadline - now
                 if remaining <= 0:
                     response["next_action"] = _RERUN_WAIT_NEXT_ACTION
-                    output = json.dumps(response, ensure_ascii=False, separators=(",", ":"))
+                    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root)
+                    output = "\n".join(
+                        json.dumps(row, ensure_ascii=False, separators=(",", ":")) for row in (response, *awaiting)
+                    )
                     _LOG.info("wait_return reason=timeout session_id=%s", selected or "none")
                     return _publish_wait_result(run_path, output, 3, continuable=True)
                 time.sleep(min(1.0, remaining))
@@ -757,7 +771,6 @@ def _wait_for_result(
 
 
 def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status_file: str) -> set[str]:
-    """自身の書込主体が公開した終了時の結果のsession識別子を返す。"""
     try:
         paths = tuple(result_directory.iterdir())
     except OSError:
@@ -781,7 +794,6 @@ def _retained_result_session_ids(result_directory: pathlib.Path, *, owner_status
 
 
 def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]:
-    """終了時の結果を読み、不在と破損を区別して返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -794,7 +806,6 @@ def _read_result(path: pathlib.Path) -> tuple[dict[str, Any] | None, str | None]
 
 
 def _session_is_retained(paths: list[pathlib.Path], session_id: str) -> bool | None:
-    """状態ファイル群からsessionの保持有無を読み、全て解釈不能なら`None`を返す。"""
     parsed = False
     for path in paths:
         sessions = _read_sessions(path)
@@ -807,7 +818,6 @@ def _session_is_retained(paths: list[pathlib.Path], session_id: str) -> bool | N
 
 
 def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict[str, Any]:
-    """状態ファイルから保持中sessionの活動とテキスト出力の観測値を返す。"""
     for path in paths:
         sessions = _read_sessions(path)
         if sessions is None:
@@ -839,7 +849,6 @@ def _add_session_label(response: dict[str, Any], paths: list[pathlib.Path], sess
 
 
 def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
-    """状態ファイルを解釈し、session一覧または`None`を返す。"""
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError:
@@ -853,7 +862,6 @@ def _read_sessions(path: pathlib.Path) -> list[dict[str, Any]] | None:
 
 
 def _public_wait_output(output: str, stream: str | None) -> str:
-    """標準エラーの診断は保持し、標準出力のJSON Linesへ公開射影を適用する。"""
     if stream == "stderr":
         return output
     return "\n".join(
@@ -863,7 +871,6 @@ def _public_wait_output(output: str, stream: str | None) -> str:
 
 
 def _without_bodies(output: str, stream: str) -> str:
-    """run記録へ残す出力から、本文ファイルが持つ`agent_message`を除く。"""
     if stream == "stderr":
         return output
     rows = [json.loads(line) for line in split_lines(output) if line.strip()]
@@ -874,7 +881,6 @@ def _without_bodies(output: str, stream: str) -> str:
 
 
 def _with_body(row: dict[str, Any]) -> dict[str, Any]:
-    """本文を除いて保存した行へ、本文ファイルから`agent_message`を戻す。読めない場合はパスだけを残す。"""
     path = row.get("agent_message_path")
     if "agent_message" in row or not isinstance(path, str):
         return row

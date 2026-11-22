@@ -1,5 +1,3 @@
-"""WI投入のCLI入口と保存処理。"""
-
 import argparse
 import datetime
 import json
@@ -34,7 +32,7 @@ from agent_toolkit._atk.wi.add_validation import (
     require_cause_analysis_format,
     require_confirmed_cause,
 )
-from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
+from agent_toolkit._atk.wi.constants import WI_STATE_HOLD, WI_STATE_INBOX, WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.filenames import MISSING_DEPENDENCY_NEXT_ACTION
 from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
@@ -45,23 +43,16 @@ from agent_toolkit._plan import owner_records as _owner_records
 
 
 def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
-    """報告区分を明示したUWIへ、起動元が発行した実行対応を設定する。"""
     if data.get("run_skill_report") == "true" and (run_id := os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")):
         return {**data, "run_skill_run_id": run_id}
     return data
 
 
 def _saved_mismatch_next_action(filename: str) -> str:
-    """保存後の読み戻しが送信した本文と一致しないときの次の操作を返す。"""
     return f"保存は済んでいる。`atk wi show {filename}`で確認し、`atk wi edit {filename} --body-file <本文ファイル>`で直す"
 
 
 def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、本文の一致を検証したうえで一致確認の対象を示すメタデータを返す。
-
-    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存の処理中に本文が欠落または改変されて
-    いないことを、呼び出し元が終了状態で確定できるようにする。
-    """
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
     parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
@@ -92,7 +83,6 @@ def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[
 
 
 def print_entry_details(details: dict[str, object | None]) -> None:
-    """一致を確認したエントリの項目を決まった順で表示する。"""
     for key in ("target_repo", "target_branch", "target_commit"):
         value = details.get(key)
         if key == "target_branch" and value is None:
@@ -117,7 +107,6 @@ def print_entry_details(details: dict[str, object | None]) -> None:
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
-    """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
     return tuple(dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
@@ -127,12 +116,6 @@ def _missing_dependency_warnings(
     generated: list[str],
     dependencies: tuple[str, ...],
 ) -> list[str]:
-    """投入したエントリの依存先のうち、取り込み先に実在しないものを警告文へ列挙する。
-
-    依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
-    `--depends-on`はその呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
-    判定と文面は`--batch`指定時と共有し、どちらの場合も同じ条件の参照へ同じ警告が出る状態を保つ。
-    """
     if not dependencies:
         return []
     return _wi_filenames.missing_dependency_warnings(
@@ -171,6 +154,7 @@ def _add_entries_locked(
     submitter_session: str | None = None,
     item_branches: list[str | None] | None = None,
     target_commit_branch: str | None = None,
+    initial_state: str = WI_STATE_INBOX,
 ) -> list[tuple[str, str]]:
     """取得済みrepoロック内でエントリを書き込み、生成ファイル名と確定本文の組を返す。
 
@@ -219,7 +203,7 @@ def _add_entries_locked(
         frontmatter_data: dict[str, object] = {"target_repo": item_target_repo}
         if item_branch is not None:
             frontmatter_data[_wi_branches.KEY] = item_branch
-        frontmatter_data.update(type=entry_type, state=WI_STATE_INBOX)
+        frontmatter_data.update(type=entry_type, state=initial_state)
         if target_commit is not None and item_target_repo == target_repo and item_branch == target_commit_branch:
             frontmatter_data["target_commit"] = target_commit
         if item_source:
@@ -274,6 +258,7 @@ def add_entries(
     saved_details: dict[str, dict[str, object | None]] | None = None,
     submitter_session: str | None = None,
     target_branch: str | None = None,
+    initial_state: str = WI_STATE_INBOX,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
@@ -285,6 +270,7 @@ def add_entries(
     `submitter_session`はUWI種別のfrontmatterへだけ保存し、回答の通知先としてその会話のセッション状態へファイル名を記録する。
     `target_branch`はfrontmatterに`target_branch`の無い`target_repo`宛ての項目の宛先の系統とする。
     系統を登録したrepository宛てで省略した項目はdefault_branchの系統で保存し、登録に無い系統は保存前に拒否する。
+    `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     """
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
@@ -315,6 +301,7 @@ def add_entries(
             submitter_session=submitter_session,
             item_branches=item_branches,
             target_commit_branch=target_commit_branch,
+            initial_state=initial_state,
         )
         generated = [filename for filename, _content in written]
         count = len(generated)
@@ -343,7 +330,6 @@ def _resolve_item_branches(
     target_repo: str | None,
     target_branch: str | None,
 ) -> tuple[list[str | None], str | None]:
-    """各メッセージの宛先の系統を保存前に検証し、`target_commit`を記録する系統と合わせて返す。"""
     branch_settings = _wi_branches.registry()
     resolved: list[str | None] = []
     for frontmatter, _body in parsed_messages:
@@ -390,7 +376,6 @@ def read_body_files(paths: list[str]) -> list[str]:
 
 
 def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
-    """巡回中の新規AWIの時機と種別を検査し、確定欠陥の調査は次回へ送らない。"""
     timing = getattr(args, "process_wi_timing", None)
     kind = getattr(args, "process_wi_kind", None)
     category = getattr(args, "defer_category", None)
@@ -405,6 +390,11 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-kind <defect|improvement> と "
         "--process-wi-timing this-run または --process-wi-timing next-run --defer-category <区分> を指定して再投入する"
     )
+    if in_process_wi and timing is None and getattr(args, "hold", False):
+        raise WebInputError(
+            "process-wi実行中のAWIは--holdで保存できない",
+            next_action=f"--holdを外し、{next_action}",
+        )
     if in_process_wi and timing is None:
         raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
     if (timing is None) != (kind is None):
@@ -448,6 +438,7 @@ def cmd_add(
     （`_resolve_submitter_session`、`_common/uwi_watch.py`）。
     """
     body_files = getattr(args, "body_file", None)
+    hold = bool(getattr(args, "hold", False))
     if body_files:
         try:
             messages = read_body_files(body_files)
@@ -507,7 +498,6 @@ def cmd_add(
             else:
                 validation_errors.append(error)
     if validation_errors:
-        # 全メッセージの違反を1回で返し、次の操作は重複を除いて同じ順に並べる。
         next_actions = dict.fromkeys(error.next_action for error in validation_errors)
         _outcome.report_failure(
             "投入を拒否した: " + "\n".join(error.reason for error in validation_errors),
@@ -564,12 +554,20 @@ def cmd_add(
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
             _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
-            print_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
+            print_draft_openings(
+                messages,
+                sources,
+                compare_paths=args.compare_opening_file,
+                output_paths=args.opening_output,
+                is_uwi=args.type == WI_TYPE_UWI,
+            )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         if args.compare_opening_file is not None:
-            # 保存より前に全原稿の冒頭を比較し、不一致なら1件も保存しない。
-            compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
+            if args.type == WI_TYPE_UWI:
+                for message in messages:
+                    parse_entry_message(message, entry_type=WI_TYPE_UWI)
+            compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file, is_uwi=args.type == WI_TYPE_UWI)
         generated = add_entries(
             private_notes,
             messages=messages,
@@ -586,6 +584,7 @@ def cmd_add(
             saved_details=saved_details,
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
             target_branch=target_branch,
+            initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
@@ -603,7 +602,7 @@ def cmd_add(
     inbox_dir = private_notes
     for warning in _missing_dependency_warnings(private_notes, inbox_dir, generated, canonical_dependencies):
         _outcome.report_warning(warning, next_action=MISSING_DEPENDENCY_NEXT_ACTION)
-    _outcome.report_success(f"{count}件をinboxへ投入した")
+    _outcome.report_success(f"{count}件をholdへ保存した" if hold else f"{count}件をinboxへ投入した")
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])

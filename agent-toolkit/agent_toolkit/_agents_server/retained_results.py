@@ -30,7 +30,6 @@ type ResultEnd = tuple[int, str]
 
 
 def result_end(payload: dict[str, Any]) -> ResultEnd | None:
-    """旧形式で識別を持たない結果は、特定turnの受領の根拠に使わない。"""
     seq, finalized = payload.get("turn_seq"), payload.get("finalized_at")
     return (seq, finalized) if isinstance(seq, int) and not isinstance(seq, bool) and isinstance(finalized, str) else None
 
@@ -61,7 +60,7 @@ def _locked(path: pathlib.Path, *, blocking: bool = True) -> Generator[None]:
 
 
 class _UnreadableResult(ValueError):
-    """指定した結果原本を読めない。別turnへの操作は続けられる。"""
+    pass
 
 
 def _read(path: pathlib.Path, *, allow_missing_status: bool = False) -> dict[str, Any] | None:
@@ -91,7 +90,7 @@ def _entries(
     unreadable: list[str] | None = None,
 ) -> Iterator[tuple[pathlib.Path, dict[str, Any]]]:
     others = path.parent.glob(f"{path.stem}.*.json") if end is None else [path.with_suffix(f".{_suffix(end)}.json")]
-    # 別名から旧名への移動中でも両方を読み逃さないように、移動先を最後に読む。
+
     for candidate in (*others, path):
         try:
             payload = _read(candidate)
@@ -109,7 +108,6 @@ def _entries(
 
 
 def mark_published(path: pathlib.Path, end: ResultEnd) -> None:
-    """同じ終了結果を再作成しない印を残す。旧形式からの移行時は旧台帳による決着も含む。"""
     marker = _published(path, end)
     if not marker.exists():
         marker.parent.mkdir(parents=True, exist_ok=True)
@@ -117,7 +115,6 @@ def mark_published(path: pathlib.Path, end: ResultEnd) -> None:
 
 
 def expose_legacy_slots(directory: pathlib.Path, owner: str, *, sessions: set[str] | None = None) -> None:
-    """旧CLIが旧名を回収した後、保存時に次の未回収結果を旧名へ移す。"""
     for identifier in {result_session_id(entry) for entry in directory.glob("*.*.json")}:
         if identifier is None or (sessions is not None and identifier not in sessions):
             continue
@@ -139,9 +136,7 @@ def expose_legacy_slots(directory: pathlib.Path, owner: str, *, sessions: set[st
 
 
 def legacy_publication(path: pathlib.Path, *, missing: ResultEnd | None = None) -> ResultEnd | None:
-    """旧名の識別を読む。識別を持たない原本がある場合に、不在時の判断を使わない。"""
     try:
-        # 旧名の索引移行では終了の識別子だけを読み、本文としては公開しない。
         payload = _read(path, allow_missing_status=True)
     except _UnreadableResult as error:
         _warn_unreadable(str(error))
@@ -150,17 +145,15 @@ def legacy_publication(path: pathlib.Path, *, missing: ResultEnd | None = None) 
 
 
 def result_state(path: pathlib.Path, end: ResultEnd) -> str:
-    """指定したturnの原本が残っているか、既に回収されたかを返す。"""
     published = _published(path, end).exists()
     unreadable: list[str] = []
     if next(_entries(path, end=end, unreadable=unreadable), None) is not None:
         if not published:
-            # 旧writerのファイルを実際に読めた時点で、その終了結果の公開だけを記録する。
             mark_published(path, end)
         return "published"
     if unreadable and (published or path.with_suffix(f".{_suffix(end)}.json").exists()):
         return "unreadable"
-    # 壊れた旧名だけでは、識別が異なる新しい終了の公開を妨げない。
+
     return "consumed" if published else "unpublished"
 
 
@@ -170,7 +163,6 @@ def _owned(payload: dict[str, Any], owner: str) -> bool:
 
 
 def publish_result(path: pathlib.Path, payload: dict[str, Any]) -> None:
-    """最初の未回収結果は旧名に残し、重なる結果だけを別名へ保存する。"""
     end = result_end(payload)
     assert end is not None
     with _locked(path.with_suffix(".publish.lock")):
@@ -185,7 +177,6 @@ def publish_result(path: pathlib.Path, payload: dict[str, Any]) -> None:
 
 
 def discard_result(path: pathlib.Path, owner: str, end: ResultEnd) -> bool:
-    """追送などが返すメモリー上の結果を確保する。CLIが先に受領していれば返さない。"""
     with _locked(path.parent / f".{path.stem}.claim.lock"), _locked(path.with_suffix(".publish.lock")):
         unreadable: list[str] = []
         entry = next(_entries(path, end=end, unreadable=unreadable), None)
@@ -209,7 +200,6 @@ def discard_stopped_session(
     state_root: pathlib.Path | None,
     expected_owner: tuple[str | None, int | None],
 ) -> bool:
-    """停止対象までを破棄し、session単位の旧公開索引も外せる場合だけ真を返す。"""
     if (
         not valid_session_id(root_session_id)
         or not valid_session_id(session_id)
@@ -238,7 +228,7 @@ def discard_stopped_session(
                 forget_session = False
                 continue
             end = result_end(payload)
-            # 所有移譲後は、停止対象と識別できる旧turnだけを破棄する。
+
             if not still_stopped and (end is None or (seq == through_turn and end[1] != finalized_at)):
                 continue
             if end is not None:
@@ -246,13 +236,12 @@ def discard_stopped_session(
             source.unlink()
             _LOG.info("result_deleted session_id=%s writer=%s collector=stop", path.stem, owner)
         if finalized_at is not None:
-            # 停止時にまだファイルのなかった終了も、遅れた射影保存から復活させない。
             mark_published(path, (through_turn, finalized_at))
         return forget_session
 
 
 class ResultBeingCollected(ActionableError):
-    """別の回収または公開が進行中。原本は変更していない。"""
+    pass
 
 
 async def take_for_response(
@@ -265,7 +254,6 @@ async def take_for_response(
     expected_turn_seq: int | None,
     expected_finalized_at: str | None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """応答の最後で使う。取消可能なworkerは原本を読むだけで、削除は応答を返すtaskが確定する。"""
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
@@ -315,7 +303,6 @@ def read_retained_result(
     expected_turn_seq: int | None = None,
     expected_finalized_at: str | None = None,
 ) -> dict[str, Any] | None:
-    """同じルートsessionの未回収終了時の結果を削除せずに読む。"""
     if not valid_session_id(session_id):
         return None
     path = results_directory(root_session_id, state_root) / f"{session_id}.json"
@@ -368,13 +355,6 @@ def take_result(
     expected_turn_seq: int | None = None,
     expected_finalized_at: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """所有者が一致するか確かめ、CLI用の退避先があれば保存後に原本を回収する。
-
-    回収後に呼び出し元へ返す項目を公開する項目に限定し、内部の所有者・保持状態・時刻は退避先へ保存した記録だけに残す。
-    起動時の`label`は、依頼と結果の対応に使う。
-    呼び出し元が`session_id`から依頼名への対応表を持たずに、どの依頼の結果かを判別できるようにするためである。
-    レビューを目的とするsessionの完了結果へは採否確定の次の操作を加える。
-    """
     if not valid_session_id(session_id):
         raise ValueError(f"invalid session_id: {session_id}")
     directory = results_directory(root_session_id, state_root)
@@ -429,7 +409,6 @@ def take_result(
 
 
 def stashed_result_turn(path: pathlib.Path) -> int | None:
-    """配送する退避済み結果のturn番号を返す。証拠が読めない場合は番号を推定しない。"""
     try:
         payload = _read(path)
     except OSError, UnicodeError, ValueError, _UnreadableResult:

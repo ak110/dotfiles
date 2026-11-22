@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -109,7 +110,6 @@ def test_persistent_warning_once_per_session(
 
 
 def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`atk.main`は開始時に、起動層が変えた値を呼出元の値へ戻し、`atk commit`や`$EDITOR`などの子へ渡さない。"""
     monkeypatch.setenv("PYTHONPATH", "/plugin-root")
     monkeypatch.setenv(inherited_venv.LAUNCH_RESTORE_KEY, json.dumps({"PYTHONPATH": [None, "/plugin-root"]}))
     atk.main(["info"])
@@ -118,7 +118,6 @@ def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.Monk
 
 
 def test_info_reports_current_execution_context(capsys: pytest.CaptureFixture[str]) -> None:
-    """公開CLIのinfoが実行文脈とplugin版数の所在を返す。"""
     atk.main(["info"])
 
     output = capsys.readouterr().out
@@ -161,7 +160,7 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
         fake_codex.write_text(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n", encoding="utf-8")
         fake_codex.chmod(0o755)
         env["PATH"] = os.pathsep.join((str(fake_bin), env.get("PATH", "")))
-        # Gitの作業ツリー外で起動し、`--target-repo`を省略した場合も対象を限定しない状態にする。
+
         with subprocess.Popen(  # noqa: S603
             [sys.executable, str(_ATK_PATH), *argv],
             stdout=write_fd,
@@ -179,11 +178,6 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
 
 
 def test_child_config_env_derives_values_from_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    """書式の異なる設定キーを加えても、組み立てた全キーの値が設定の検証に合格する。
-
-    テストが値の書式を自前で持つと、段位モデルとengine順以外の書式のキーを加えるたびに検証で拒否される。
-    加えるキーは候補列の検証（engine接頭辞付き）の対象になり、キー名から書式を推測する値（`opus/medium`）は拒否される。
-    """
     monkeypatch.setitem(
         _config._MUTABLE_KEY_DEFAULTS,  # pylint: disable=protected-access  # noqa: SLF001
         "future_stage_model",
@@ -212,11 +206,10 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     capsys: pytest.CaptureFixture[str],
     entry: str,
 ) -> None:
-    """commitか送信を試みた操作は、送信できずに残った未pushを終了コード3で通知する。"""
     notes = _setup_notes_with_pending_commit(tmp_path)
     monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     monkeypatch.setattr(_wi_listing, "cmd_list", lambda *_args: None)
-    # 送信が成立しなかった状態を作る。commitは行われ、リモートへは届かない。
+
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _notes: 0)
     argv = _prepare_sync_mutation(entry, monkeypatch)
 
@@ -226,7 +219,7 @@ def test_main_reports_pending_commit_only_for_sync_mutations(
     assert exc_info.value.code == 3
     output = capsys.readouterr()
     assert "警告: private-notesに未pushのcommitが" in output.err
-    # pushの手順は警告行に続く次の操作の行へ置く。
+
     next_action = next(line for line in output.err.splitlines() if line.startswith("次の操作: "))
     assert f"`git -C {notes.resolve()} status`" in next_action
     assert "atk wi commit" in next_action
@@ -246,7 +239,6 @@ def test_main_does_not_report_pending_commit_for_operations_without_commit(
     capsys: pytest.CaptureFixture[str],
     entry: str,
 ) -> None:
-    """commitも送信も試みない操作は、他の主体が残した未pushを警告にも終了コードにも反映しない。"""
     notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
     _write_awi_file(notes, _EDIT_TARGET, body=_wi_bodies.AGENT_AWI_BODY, source="session-review")
     git_repository.commit_all(notes, "awi")
@@ -321,7 +313,6 @@ class TestMainFailureNextAction:
         capsys: pytest.CaptureFixture[str],
         error: BaseException,
     ) -> list[str]:
-        """`atk wi commit`の処理が`error`を送出したときの標準エラーの行を返す。"""
         monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: tmp_path)
 
         def fail(*_args: object) -> None:
@@ -343,7 +334,6 @@ class TestMainFailureNextAction:
     def test_actionable_error_prints_its_next_action(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """`WebInputError`は発生源が渡した次の操作を出力する。"""
         error = _wi_web_input.WebInputError("対象が無い", next_action="`atk wi list`で対象を確認する")
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, error)
         assert lines[0] == "失敗: 操作を拒否した: 対象が無い"
@@ -352,7 +342,6 @@ class TestMainFailureNextAction:
     def test_plain_value_error_names_help_and_bug_report(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """共通型でない`ValueError`は受理形式の確認と不具合の報告を案内する。"""
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, ValueError("想定外の値"))
         next_action = self._next_action_after_failure(lines)
         assert "`atk wi commit --help`" in next_action
@@ -372,7 +361,6 @@ class TestMainFailureNextAction:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """rebaseの中間状態が残るWI保存リポジトリでは、`atk wi edit`が本文を変える前に拒否し、解消操作を示す。"""
         notes = tmp_path / "notes"
         git_repository.init_repository(notes)
         original = "---\nstate: inbox\ntype: awi\ntarget_repo: github.com/example/repo\n---\n\n本文\n"
@@ -413,8 +401,58 @@ class TestMainFailureNextAction:
         assert not any(line.startswith("失敗: ") for line in lines)
 
 
+@pytest.mark.usefixtures("_isolate_agent_and_managed_temp_environment")
+def test_wi_preview_keeps_pressure_cleanup_for_the_next_write(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
+    monkeypatch.setenv(_sweep.MIN_FREE_RATIO_ENV, "0.10")
+    idle = _managed_temp.temp_root_path() / "idle-old"
+    idle.mkdir(parents=True)
+    now = datetime.datetime.now()
+    _sweep._save_sweep_time(_sweep.paths.state_root(), _sweep._now_ns(now))  # pylint: disable=protected-access
+    old = (now - datetime.timedelta(days=8)).timestamp()
+    os.utime(idle, (old, old))
+    monkeypatch.setattr(
+        _sweep,
+        "_disk_usage",
+        lambda _path: SimpleNamespace(total=100, free=5 if idle.exists() else 15),
+    )
+    preview = _prepare_non_saving_operation("add --dry-run", notes, tmp_path, monkeypatch)
+    with pytest.raises(SystemExit) as preview_result:
+        atk.main(preview, home=tmp_path, now=now)
+    assert preview_result.value.code == 0 and idle.is_dir()
+    assert _DRY_RUN_SUCCESS in capsys.readouterr().out
+
+    table = tmp_path / "review.tsv"
+    table.touch()
+    for query in (
+        ["plans", "list"],
+        ["review-table", "show", str(table)],
+        ["review-table", "validate", str(table), "--allow-unanswered"],
+        ["config", "repos", "list"],
+    ):
+        with pytest.raises(SystemExit) as observed:
+            atk.main(query, home=tmp_path, now=now)
+        assert observed.value.code == 0 and idle.is_dir(), query
+    capsys.readouterr()
+
+    def ensure_after_cleanup(_home: pathlib.Path) -> pathlib.Path:
+        assert not idle.exists()
+        return notes
+
+    monkeypatch.setattr(_wi_sync, "ensure_environment", ensure_after_cleanup)
+    write = _prepare_sync_mutation("wi start-processing", monkeypatch)
+    with pytest.raises(SystemExit) as write_result:
+        atk.main(write, home=tmp_path, now=now)
+    assert write_result.value.code == 0 and not idle.exists()
+    assert (notes / "started.txt").is_file()
+    assert "空きが下限" in capsys.readouterr().err
+
+
 def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
-    """回収した起動は回収量の上位の対象名を標準エラーへ、標準出力へは何も出さない。"""
     gib = 1024**3
     pressure = _managed_temp.SpacePressure(
         100 * gib, 5 * gib, 12 * gib, 7 * gib, (("pytest-old", 4 * gib), ("big-area", 3 * gib)), None
@@ -431,8 +469,7 @@ def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.Cap
 def test_report_space_pressure_warns_with_usage_when_still_low(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """回収できず下限を割ったままなら、空きと一時rootの使用量を標準エラーへ出す。"""
-    # 試験基盤が子プロセス向けに設定した下限の上書きを外し、容量の10%の下限で判定する。
+
     monkeypatch.delenv(_sweep.MIN_FREE_RATIO_ENV, raising=False)
     gib = 1024**3
     pressure = _managed_temp.SpacePressure(100 * gib, 3 * gib, 3 * gib, 0, (), 20 * gib)

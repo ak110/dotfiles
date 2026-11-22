@@ -1,6 +1,6 @@
 # agents_serverの共有状態と読み書きの担当：セッション登録と再開・解放
 
-会話の少量取得の基準は`agent-toolkit:/share/session-conversation-extraction.md`にある。
+会話の少量取得の基準は`agent-toolkit:atk-mode/references/work-contract.md`「会話の少量取得」にある。
 
 ## セッション登録と再開・解放
 
@@ -20,11 +20,11 @@ raw資源の生成元は受付先の変更で書き換えない。
 | 同じ終了turnの再開予約 | セッション登録簿内の`resume_claim`（元turn番号と予約プロセスのPID・起動時刻） | `session_registry.resolve`、Managerの再開・自動復旧、結果回収 | `manager_resume.py`が既存のsession別ロックで取得し、元turnの公開を抑止する。予約中は次turnの開始待ちとして解決し、起動成功による次turnの公開または開始失敗で予約を除く。予約プロセスの消失後は再取得できる。起動前の予約とバックエンドの起動済み登録は区別する |
 | 引き継ぐ用途・配送済み追送・各turnの最終応答全文と終了エラー | `SessionState`、`SessionResumeState`、およびセッション登録簿の`LaunchInfo`（リソース解放済みの記録では内部の`handoff_info`） | Managerの引き継ぎ起動処理および再開処理 | 所有MCPサーバーが起動時・追送時・終了時に更新し、リソース解放後も既存の登録簿へ保持する |
 | 全体の現行要求と通常委譲の作業記録 | 各会話のmanaged-temp直下にある`work-contract.md`、および通常の`task`・`delegate`に割り当てられる専用の引き継ぎ記録先ファイル | 起動処理が全体記録の所在を解決する。探索順序は、`start`の`whole_contract_path`、直接の委譲元が起動時に受け取った参照（セッション登録簿の委譲プロンプト）、所有会話（起動時に保持した会話、またはそれがプロセス専用ルートもしくは不在ならManagerが解決した委譲元会話）の`work-contract.md`の順とし、特定した参照を委譲先へ渡す。参照を解決できない起動リクエストは拒否する。委譲元は委譲先セッションの終了後に専用記録の内容を検収する | メインエージェントが全体記録を作成・更新し、委譲先エージェントが自身の専用記録を作成・更新する。MCP側は記録先のパスを確定して委譲プロンプトとレスポンスに渡すのみとし、ファイル本文の書き込みは各エージェントの担当とする。後任エージェントは前任と同じ引き継ぎ記録を継続して利用し、軽量起動の場合は委譲元の記録に対応付ける |
-| 全sessionの終了登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻。`processes`の先頭が所有サーバー、以降が委譲先CLI）、所有サーバーのルート（`owner_root_session_id`）、所有するagents_serverの起動単位（`server_instance`）、中断で終わったturnの履歴（`interrupted_turns`。turn番号・中断の理由・そのturnを所有した起動単位。新しい順に16件）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/sessions/<session_id>.json` | 親セッションを所有するMCPサーバー、同一識別子を再解決するMCPサーバー、自身が管理していない識別子への応答時に診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに存在しないセッションの実行中・終了状態の確認）、`atk serve`のセッション一覧（ローカルおよびリモートヘルパー。親子関係の構築用に委譲元のみを参照）、`session-review-evidence`（共通の親子判定処理が登録簿の委譲元情報を起動結果の補助情報として参照）、`atk lane create/delete`（専用worktreeを使用する担当のcwdと`session_registry.resolve`の解決結果から終了を判定）、`atk lane integrate`（上記の解決結果に加え、委譲プロンプト`prompt`の1行目からロール定義文書を特定して書込権限の宣言を読み取り、`launcher_session_id`から呼び出し元の委譲元チェーンを追跡）、通常の`task`・`delegate`を起動するMCPサーバー（委譲元セッションの委譲プロンプトから受領済みの全体作業契約への参照を読み取る。解放済み記録の場合は`handoff_info`内の委譲プロンプトを参照）。実行状態を読み取る主体は`session_registry.resolve`を通じて解決し、実行プロセスの不在による中断も同様に処理する | 該当セッションを所有するMCPサーバー（停止時の終了情報の公開、中断ターン履歴への追加、委譲先CLIを再起動した際の情報更新を含む）。なお、所有者が存在しない`running`レコードに対する終了情報の公開に限っては、再起動後に同一識別子を照会したMCPサーバーも行うことができる（後述の「再起動をまたぐsessionの解決」の条件、および所有サーバーが失われた実行中セッションへの明示的な`kill`時）。process-loopはオーケストレーターの記録を作成し、`claude`の子プロセスを委譲先CLIとして追加する。この公開処理は元の`server_instance`を維持したまま中断ターンを履歴へ追加する。各書き込み処理は既存の`interrupted_turns`を引き継ぎ、解放済みレコードへの更新時にも`server_instance`と`interrupted_turns`の値を保持する |
+| 全sessionの終了登録と再開情報、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（pidと起動時刻。`processes`の先頭が所有サーバー、以降が委譲先CLI）、所有サーバーのルート（`owner_root_session_id`）、所有するagents_serverの起動単位（`server_instance`）、中断で終わったturnの履歴（`interrupted_turns`。turn番号・中断の理由・そのturnを所有した起動単位。新しい順に16件）、所有側による解放済みの理由と時刻、作成時点の委譲元（`launcher_session_id`） | `<状態ディレクトリ>/agents-server/sessions/<session_id>.json` | 親セッションを所有するMCPサーバー、同一識別子を再解決するMCPサーバー、自身が管理していない識別子への応答時に診断するMCPサーバー、`atk agents wait`、`atk agents show`（状態ファイルに存在しないセッションの実行中・終了状態の確認）、`atk serve`のセッション一覧（ローカルおよびリモートヘルパー。親子関係の構築用に委譲元のみを参照）、`session-review-evidence`（共通の親子判定処理が登録簿の委譲元情報を起動結果の補助情報として参照）、`atk lane create/delete`（専用worktreeを使用する担当のcwdと`session_registry.resolve`の解決結果から終了を判定）、`atk lane integrate`（上記の解決結果に加え、委譲プロンプト`prompt`の1行目からロール定義文書を特定して書込権限の宣言を読み取り、`launcher_session_id`から呼び出し元の委譲元チェーンを追跡）、通常の`task`・`delegate`を起動するMCPサーバー（委譲元セッションの委譲プロンプトから受領済みの全体作業契約への参照を読み取る。解放済み記録の場合は`handoff_info`内の委譲プロンプトを参照）。実行状態を読み取る主体は`session_registry.resolve`を通じて解決し、実行プロセスの不在による中断も同様に処理する | 該当セッションを所有するMCPサーバー（停止時の終了情報の公開、中断ターン履歴への追加、委譲先CLIを再起動した際の情報更新を含む）。なお、所有者が存在しない`running`レコードに対する終了情報の公開に限っては、再起動後に同一識別子を照会したMCPサーバーも行うことができる（後述の「再起動をまたぐsessionの解決」の条件、および所有サーバーが失われた実行中セッションへの明示的な`kill`時）。process-loopはオーケストレーターの記録を作成し、`claude`の子プロセスを委譲先CLIとして追加する。この公開処理は元の`server_instance`を維持したまま中断ターンを履歴へ追加する。各書き込み処理は既存の`interrupted_turns`を引き継ぎ、解放済みレコードへの更新時にも`server_instance`と`interrupted_turns`の値を保持する |
 | 記録済み実行の停止で回収できなかった所有対象と回収（親による待機）を確認できなかった直接の子（それぞれPIDと起動時刻）、生成停止を確認できなかった理由 | `<状態ディレクトリ>/recorded-process-reclaim/<起点のpid>-<起点の起動時刻>.json` | `recorded_process.stop_recorded_executor`（同じ起点の再停止で回収を再試行）、`session_registry.resolve`（記録した対象が残る委譲先CLIか未確認の理由を持つ記録を生存中として扱い、終了の推定を止める。回収待ちの直接の子はzombie表示でも同じPID世代が残る間は残るとみなす）、`run_skill_state.RecordWriter.finish`（回収待ちが残る間は実行記録のPID世代を消さず、`atk run-skill --resume`の再試行へ渡す） | `recorded_process.stop_recorded_executor`が残存・未確認の時に保存し、`atk run-skill`が起動した子を直接停止して回収できなかった時は`recorded_process.retain_unreclaimed`が同じ形式で保存する。残存は回収を確認した時と記録した対象が全て終了していた時に削除する。回収待ちの直接の子は、強制終了の後に同じPID世代の消滅を確かめるまで残す。生成停止を確認できなかった理由は再試行で解消しないため、運用者がこの実行の残存プロセスが無いことを確かめてから記録を削除するまで残す。書込は`reclaim_records`が原子的に行う |
 | マシン全体の同時稼働数の上限による起動待ちと許可直後の起動（依頼したプロセスのPID、委譲元`host_session_id`、待機の更新時刻または許可時刻） | `<状態ディレクトリ>/admission/<依頼時刻>-<pid>-<uuid>.json`と排他用の`.lock` | `_agents_server/admission.py`（`start`と止まったsessionを動かす追送の待機）、進捗点検hook（作業中の数と起動待ちの表示） | `admission.acquire`が依頼時に作成し、待機中は照会ごとに更新して許可時に許可時刻へ書き換える。起動処理の終了時に削除する。依頼プロセスの消失、30秒更新の無い待機、60秒を過ぎた許可は照会側が削除して枠を解放する。作業中の数は各ルートの状態ファイルの`starting`・`running`から、`atk agents wait`の待機run（ルートの`wait-results/<状態ファイル名>/`）が実行中の委譲元と子の起動の許可を待っている委譲元を除いて数える。上限は許可時点で判定し、許可後に依頼元が作業を続ける場合の依頼元1件あたり最大1の一時超過を許容する |
 | 登録簿と結果待ちの記録の派生値（委譲元、cwd、起動単位、保留・再開予約・解放の真偽、未回収の対象） | `<状態ディレクトリ>/agents-server/sessions-index.json`と`wait-results-index.json` | `_common/registry_index.py`（子・子孫・保留の照会、掃引の保護、レーンの使用判定） | 照会した各プロセスが、識別（inode・更新時刻・大きさ）か派生値を計算するコードの版が変わったファイルだけを解析し直して全体を置き換える。書込から2秒以内のファイルは保存しない。再生成できる値であり、壊れた索引と別のコードの索引は使わない |
-| 終了済み委譲sessionの解放要求と応答 | `<状態ディレクトリ>/sessions/<uuid>.release-request`および同名の`.release-response` | レーン回収CLI、および対象セッションを所有するMCPサーバー | CLIが解放要求を作成し、所有MCPサーバーが終了状態と所有関係を再確認した上で結果保持付きの停止（stop）を実行し、応答を書き込む。CLIの処理完了時に両ファイルとも削除・回収される。削除と応答の書込が重なった場合は、所有MCPサーバーが自分の書いた応答を削除する |
+| 終了済み委譲sessionの解放要求と結果 | `<状態ディレクトリ>/agents-server/sessions/<uuid>.release-request`、結果確定後は`.release-request-result` | レーン回収CLIと所有MCPサーバー | CLIが要求IDを保存し、所有MCPが終了状態と所有関係を再確認して結果保持付きの停止を実行する。結果は同じ要求記録へ保存し、待機終了とは独立した期限掃引で回収する。旧版の結果は同じIDの`.release-response`を使う |
 
 | 対象 | モジュール |
 | --- | --- |
@@ -86,7 +86,7 @@ PostToolUseフックはこの引き継ぎ起動時に限りレスポンスから
 通常の起動時には、指定された入力のcwdとmodel_typeを検証して受け付ける。
 引き継ぎに必要な会話ログの抽出には、`atk run-script session-review-prepare`の`--conversation-only`オプションを使用する。
 指定した記録から会話のbundleを生成し、候補文書、比較資料、統計データの生成とfailure ledgerの更新を省く。
-少量表示と保存済みbundleからの継続取得は、`agent-toolkit:/share/session-conversation-extraction.md`「会話の少量取得」に従う。
+少量表示と保存済みbundleからの継続取得は、`agent-toolkit:atk-mode/references/work-contract.md`「会話の少量取得」に従う。
 生成されたログデータの保存期間は、managed-tempの保持期限に従う。
 
 - 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として管理し、各利用側は共通の`_refresh_resume_state`を呼び出して共有登録情報の最新ターンと状態を再確認する。
@@ -107,12 +107,11 @@ API接続へ移行した会話については、Codexでは利用プロバイダ
 ユーザー等から明示的に実行された`atk lane delete`は、メイン側の待機タイムアウトから算出した共通の期限（deadline）内で応答とリソースの終了を待ち、リソースが使用中かどうかの判定を再度行う。
 一方、バックグラウンド等による自動回収処理は解放完了をブロッキングして待つことはせず、その時点の登録簿と使用状況の判定結果に基づいて、即座に回収可能なリソースのみを回収する。
 未解放、使用中、または状態確認が取れないリソースについては、回収できなかった理由と再開手順を提示した上でそのまま保持する。
-要求ファイルと応答ファイルは、CLI処理の完了時にCLIが要求、応答の順に削除・回収する。
-所有MCPサーバーは応答を書いた後に要求の有無を確かめ直し、要求が削除済みなら自分の書いた応答を削除する。
-これにより、CLIの削除と応答の書込がどの順で重なっても応答は残らない。
-Windowsの一時的な共有拒否に備え、CLIは応答の読取を要求の期限内で読み直し、削除は短い上限で再試行する。
+要求側が待機を終えても操作結果は未確定の場合があるため、要求記録をその場で削除しない。
+結果の確定時は、同じIDのファイルへ結果を書き、監視が受付候補として走査しない名前へ置き換える。
+旧版の要求や応答の組は従来の形式で受け付ける。
+Windowsの一時的な共有拒否では、CLIは期限内に読み直す。
 読取拒否が期限まで続いた場合は、期限切れの報告に応答のパスと最後のOSエラーを加える。
-それでも消せない場合は操作の結果を変えず、診断を標準エラーへ出して既存の掃引へ渡す。
 プロセスの異常終了によって残されたファイルについては、既存のセッションファイルと同様に7日間の定期掃引処理に委ねる。
 
 サーバー停止処理は、再開処理と同じ`turn_control_lock`を取得して直列に実行され、管理対象のSDKタスク、CLIのルートプロセス、およびその子孫プロセスのクリーンアップが完了した後に、未終了ターンを`interrupted`として外部へ公開する。
@@ -199,19 +198,22 @@ Managerの`activate`・`activate_async`がeffort監視への対応をプロセ�
 CLIは保存前に宣言・所有者・現在のPID世代を照合し、確認できなければ要求を作らず未送信と安全な更新・再起動の案内を返す。
 配布ファイルの版だけでは稼働側の対応を推定しない。
 
-相対effortの要求は`<状態ディレクトリ>/sessions/<uuid>.effort-request`、応答は同名の`.effort-response`で受け渡す。
+相対effortの要求は`<状態ディレクトリ>/agents-server/sessions/<uuid>.effort-request`、結果確定後は`.effort-request-result`で受け渡す。
 会話IDを環境へ渡さないAntigravity・OpenCodeのCLI呼出元は、所有ルート内の状態ファイルにあるsessionと登録簿を読む。
 登録済み実行プロセスのPID世代が呼出元の最も近い祖先に一致するsessionだけを本人とし、同距離の複数候補や不一致では操作を拒否する。
 起動の可用性確認中でsessionが表示前の場合は、同じ要求の30秒期限内で表示を待つ。
 全ルートの走査や新しい索引は加えない。
 CLIが自身の会話ID・対象・方向と所有プロセス・有限期限を渡す。
 所有MCPの既存監視loopが登録簿の直接親子関係と起動区分を再検査し、受理段を確認して現在値・変更履歴を公開した後に応答する。
-CLI終了時に要求、応答の順に両ファイルを除き、異常終了時は既存の保持・掃引へ渡す。
-所有MCPは解放要求と同じく、応答を書いた後に要求が除かれていれば自分の応答も除く。
+解放要求と同じく、CLIの待機終了と結果の確定を分ける。
+旧版の応答は同じIDの`.effort-response`を読む。
 
 effortの希望値は`SessionState.effort`から既存の状態・登録簿へ射影する。
 `LaunchInfo.effort_history`は時刻・前値・後値・操作主体の4文字列組、`effort_levels`は確認済み受理段を保持し、再開・解放時も起動情報とともに保存する。
-`SessionState.effort_resume_turn`は自身で変更したturn番号を保持し、監視loopがそのturnの終了後に1回消費する。
+effortの再開状態は、予約なし、対象turn番号を持つ予約、実行中のいずれかとする。
+監視loopは予約したturnが終わった後に予約を1回消費する。
+Codexの進行中itemと受信時刻、過負荷と利用上限それぞれの連鎖の回数と初回時刻は、各組を1値で更新する。
+世代間の保存形では、稼働中の別版と互換になるよう、従来の個別項目へ射影して渡す。
 別経路で次turnが始まった場合は予約を除き、重複再開しない。
 Claudeの接続済みeffortは`claude_applied_effort`で希望値と区別し、同じ会話の次turn設定を所有タスクへ渡す。
 Codexは既存のturn/start、OpenCodeとAntigravityは既存のturn別引数を使う。

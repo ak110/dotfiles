@@ -36,7 +36,6 @@ def _git(root: pathlib.Path, *arguments: str, data: bytes | None = None) -> byte
 
 
 def check_repository(directory: pathlib.Path) -> int:
-    """指定ディレクトリが属する作業ツリー全体を検査する。"""
     try:
         root = pathlib.Path(os.fsdecode(_git(directory, "rev-parse", "--show-toplevel").rstrip(b"\n")))
         tracked = _git(root, "ls-files", "-z")
@@ -81,7 +80,6 @@ def check_repository(directory: pathlib.Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """引数なしで現在の作業ツリー全体を検査する。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

@@ -4,7 +4,6 @@ from agent_toolkit._common import session_parents
 
 
 def test_loop_descendants() -> None:
-    """別loopと同じ実行系・cwdの子を混同せず、確定した親子だけをたどる。"""
     sources = [
         session_parents.ParentSource("loop", "claude", "loop", None, None),
         session_parents.ParentSource("child", "codex", "child", None, None),
@@ -39,7 +38,6 @@ def test_parent_precedence_and_cycles() -> None:
 
 
 def test_list_limit_preserves_ancestors() -> None:
-    """表示上限で項目を絞っても、残した子の祖先を一覧へ戻す。"""
     parents = {"child": "parent", "parent": "grandparent"}
     assert session_parents.limit_with_ancestors(
         ["child", "other", "parent", "grandparent"],

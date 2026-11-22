@@ -21,7 +21,6 @@ def _resolve_codex(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureReque
 
 
 def test_wrapper_alone_does_not_trigger_removal(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """wrapperだけが見つかる未導入環境では削除コマンドを実行しない。"""
     monkeypatch.setattr(remove_codex_claude_mcp, "sys", types.SimpleNamespace(platform="win32"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty"))
     monkeypatch.setenv("CODEX_INSTALL_DIR", str(tmp_path / "empty-visible"))
@@ -37,7 +36,6 @@ def test_wrapper_alone_does_not_trigger_removal(monkeypatch: pytest.MonkeyPatch,
 
 
 def _result(returncode: int, *, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess[str]:
-    """テスト用のコマンド結果を返す。"""
     return subprocess.CompletedProcess(["codex"], returncode, stdout=stdout, stderr=stderr)
 
 
@@ -88,7 +86,6 @@ def test_run_skips_removal_when_claude_mcp_is_not_registered(monkeypatch: pytest
 
 
 def test_run_removes_registered_claude_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    """登録済みなら取得後に削除して変更ありを返す。"""
     calls: list[Call] = []
     results: list[Result] = [_result(0, stdout='{"name":"claude"}'), _result(0)]
     monkeypatch.setattr(
@@ -164,7 +161,6 @@ def test_run_reports_failure_when_remove_fails(
     result: Result,
     error_detail: str,
 ) -> None:
-    """削除不能と非ゼロ終了を例外として上位へ伝える。"""
     calls: list[Call] = []
     monkeypatch.setattr(
         remove_codex_claude_mcp.common,

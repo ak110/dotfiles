@@ -46,12 +46,11 @@ cloneの無い対象も`atk config repos add github.com/example/project --edit a
 検証OSを限定する場合は`atk config repos set ~/project-a --platforms windows`のように指定する（未指定はLinuxとWindows）。
 保守ブランチと次期開発ブランチのように作業が入るブランチが複数あるリポジトリは、ブランチを系統として登録すると系統ごとに処理される（[ブランチの系統](claude-code-wi.md#ブランチの系統)）。
 ほかの配列設定は`atk config add serve_plans_remote_hosts remote-host`と`atk config remove serve_plans_remote_hosts remote-host`で要素単位に操作できる。
-dotfilesリポジトリでは自動で専用worktreeを使い、ほかのリポジトリでworktreeを分ける場合は`--worktree[=NAME]`を指定する。
+巡回する会話が、登録した対象と系統ごとに専用worktreeを用意する。
 統括担当をCodexにする場合は、起動前に`atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium`を実行する。
 
-`/agent-toolkit:atk-mode add-awi-by-user`でAWIを登録している間や、未回答のUWIがある間は、処理の開始を最長10分程度待つ。
-待機理由と期限は端末に表示される。
-すぐに始めたい場合は、process-loopを動かす端末（tmuxではそのペイン）でEnterを押すと今回だけ待機を解除できる。
+AWIを投入中のリポジトリは、その投入を待つ間だけ保留する。
+未回答の確認がある場合は、回答に依存する項目だけを保留し、同じリポジトリの独立した作業も続ける。
 
 常駐中の操作は次のコマンドで行う。
 
@@ -61,17 +60,19 @@ atk wi process-loop abort
 atk wi process-loop instruct '次の処理へ適用する指示'
 ```
 
-`abort`は新しい対象の起動を止め、処理中の全実行が終了してから常駐を終了する。
+`abort`は次の巡回会話の起動を止める予約であり、現在の会話を中断する場合はその会話に直接依頼する。
 登録した全リポジトリを1つの統括会話が処理し、その対話CLIが端末の前景に表示されるため、画面を見て直接入力できる。
 前回の会話は、`resume`で予約した場合だけ再開する。
 `instruct`は次に実起動する1会話へ指示を渡す。
-中断した処理は`atk wi process-loop resume ID`か`atk wi process-loop resume auto`で次回の再開を予約する。
+中断した処理は `atk wi process-loop resume ID` で次回の再開を予約する。
 値なしの`atk wi process-loop resume`はCLI本来の会話選択画面を予約し、`resume-cancel`で未消費の予約を取り消せる。
 予約コマンド自体は会話を起動しない。
-詳しい操作と検証OSの意味は[WIの登録と回答](claude-code-wi.md)を参照する。
+旧方式の再開予約の確認と取消、検証OSの意味は[WIの登録と回答](claude-code-wi.md)を参照する。
 
-常駐させずに登録全体を1回だけ処理する場合は、`atk wi process-loop --once`を実行する（会話からは`/agent-toolkit:atk-mode process-wi all-repos`）。
-対象が0件なら直ちに終了し、未完了の対象が残ると非0で終了するため、表示された記録を確認して`atk wi process-loop resume auto`を予約し、`atk wi process-loop --once`で再開する。
+登録全体を1回だけ処理する場合は、会話で `/agent-toolkit:atk-mode process-wi all-repos` を実行する。
+`atk wi process-loop --once` は、起動した会話が終わった後に次の会話を起動しない指定である。
+単回の終了コードと`status`で照会できる操作要求は、[WIの登録と回答](claude-code-wi.md)を参照する。
+各リポジトリの結果は巡回会話の報告で確かめる。
 
 CIの失敗だけを1回確認してAWIとして登録する場合は、`atk wi check-alerts --target-repo <リポジトリの絶対パス>`を実行する（省略時は現在の作業ツリー）。
 AWIの処理は始めず、取得に失敗した場合は理由を示して終了コード1で終わる。

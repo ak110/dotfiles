@@ -37,7 +37,7 @@ from agent_toolkit._common import state_paths as _state_paths
 CONFIG_KEY = "agents_concurrency"
 DEFAULT_SETTING = "2.5x"
 POLL_SECONDS = 1.0
-# 許可した起動が状態ファイルへ`running`として現れるまでの猶予。この間は許可を枠として数える。
+
 ADMITTED_GRACE_SECONDS = 60.0
 # 待機中の記録は毎回の照会で更新する。長く更新の無い記録は、共有サービスのように生存し続けるプロセス内で
 # 待機が失われたものとして削除し、依頼順の先頭を塞がないようにする。
@@ -77,8 +77,6 @@ def _waiting_on_children(root_session_id: str, owner_status_file: str, state_roo
 
 @dataclasses.dataclass(frozen=True)
 class Limit:
-    """設定から求めた上限。`value`がNoneなら制限しない。"""
-
     value: int | None
     source: str
 
@@ -105,15 +103,12 @@ def configured_limit() -> Limit:
 
 
 def admission_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """起動待ちと許可直後の起動を記録するディレクトリを返す。"""
     root = _state_paths.state_dir() if state_root is None else state_root
     return root / "agents-server" / "admission"
 
 
 @dataclasses.dataclass(frozen=True)
 class Observation:
-    """作業中の数とその内訳。点検や起動結果へそのまま渡す。"""
-
     working: int
     admitted: int
     waiting: int
@@ -131,7 +126,6 @@ def _live(pid: object) -> bool:
 
 
 def _read_tickets(directory: pathlib.Path, now: float) -> list[tuple[pathlib.Path, dict[str, object]]]:
-    """生存中のプロセスが持つ記録だけを返し、異常終了したプロセスの記録は削除して枠を解放する。"""
     tickets: list[tuple[pathlib.Path, dict[str, object]]] = []
     try:
         paths = sorted(directory.glob("*.json"))
@@ -158,12 +152,6 @@ def _read_tickets(directory: pathlib.Path, now: float) -> list[tuple[pathlib.Pat
 
 
 def observe(state_root: pathlib.Path | None = None, *, now: float | None = None) -> Observation:
-    """全ルートの状態ファイルと起動記録から、作業中の数を求める。
-
-    作業中は`starting`か`running`のsessionとする。`atk agents wait`で子を待っている最中の委譲元と、
-    子の起動の許可を待っている委譲元は、子を待つだけの親として数えない。
-    状態ファイルの一部を読めない場合は`failures`へ残し、数は部分観測であることを呼出側が示す。
-    """
     now = time.time() if now is None else now
     tickets = _read_tickets(admission_directory(state_root), now)
     waiting_hosts = {
@@ -189,7 +177,7 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
     working_sessions = tuple(
         sorted(key for key, value in active.items() if key not in waiting_hosts and key not in waiting_parents)
     )
-    # 起動処理中の許可は状態ファイルへ現れる前から数える。現れた後の短い重複は上限を下げる側へ倒れるだけである。
+
     admitted = sum(1 for _path, payload in tickets if payload.get("admitted_at") is not None)
     waiting = sum(1 for _path, payload in tickets if payload.get("admitted_at") is None)
     return Observation(len(working_sessions), admitted, waiting, tuple(failures), working_sessions)
@@ -197,8 +185,6 @@ def observe(state_root: pathlib.Path | None = None, *, now: float | None = None)
 
 @dataclasses.dataclass
 class Admission:
-    """許可済みの起動。起動処理を終えたら`release`で記録を消す。"""
-
     path: pathlib.Path | None
     waited_seconds: float
     limit: Limit
@@ -209,7 +195,6 @@ class Admission:
                 self.path.unlink()
 
     def response_fields(self) -> dict[str, object]:
-        """起動を依頼した側が既存の起動結果から待ちを知るための項目。待ちが無ければ空。"""
         if self.waited_seconds < POLL_SECONDS:
             return {}
         return {"admission_wait_seconds": round(self.waited_seconds, 1), "admission_limit": self.limit.source}
@@ -239,10 +224,6 @@ async def acquire(
     state_root: pathlib.Path | None = None,
     sleep: Callable[[float], object] | None = None,
 ) -> Admission:
-    """上限に空きが出るまで待ち、依頼順に許可する。
-
-    待っている間は依頼元（`host_session_id`）を子を待つ親として数えないため、親の枠が子の起動を塞がない。
-    """
     limit = await asyncio.to_thread(configured_limit) if limit is None else limit
     if limit.value is None:
         return Admission(None, 0.0, limit)

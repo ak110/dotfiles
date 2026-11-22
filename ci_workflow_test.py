@@ -67,9 +67,8 @@ def test_statusline_version_develop_push_reaches_version_check(
     expected_returncode: int,
     expected_output: str,
 ) -> None:
-    """developへのpushではmasterとの共通祖先を解決し、statuslineの変更有無を検査する。"""
     checkout, current_sha = _create_statusline_repository(tmp_path, statusline_changed=statusline_changed)
-    # stepはリポジトリ直下の判定スクリプトを相対パスで呼ぶため、検査対象の複製へ同じ位置で置く。
+
     scripts = checkout / "scripts"
     scripts.mkdir()
     (scripts / "check_statusline_version.py").write_bytes((REPO_ROOT / "scripts" / "check_statusline_version.py").read_bytes())
@@ -100,7 +99,6 @@ def test_statusline_version_develop_push_reaches_version_check(
 
 
 def test_plugin_version_job_compares_previous_published_commit(workflow_data: dict[str, object]) -> None:
-    """developへのpushでは、push前の公開済みcommitと今回のcommitを版数据置き検査へ渡す。"""
     jobs = [
         job
         for value in workflow_jobs(workflow_data).values()
@@ -118,7 +116,6 @@ def test_plugin_version_job_compares_previous_published_commit(workflow_data: di
 
 
 def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object]) -> None:
-    """同一検査の分割だけをmatrixにし、異なる責務は別jobで実行する。"""
     jobs = workflow_jobs(workflow_data)
     for name in ("python-lint", "pylint", "pytest-root"):
         assert "strategy" not in workflow_mapping(jobs[name])
@@ -150,7 +147,6 @@ def test_python_jobs_separate_responsibilities(workflow_data: dict[str, object])
     "job_name,dependencies", [("pytest-toolkit-result", ["pytest-toolkit"]), ("python-lint-result", ["python-lint", "pylint"])]
 )
 def test_required_results_use_needs(workflow_data: dict[str, object], job_name: str, dependencies: list[str]) -> None:
-    """必須checkは検査の依存先を直接待ち、結果を集約する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)[job_name])
     assert job["needs"] == ["common-ci-owner", *dependencies]
     assert job["if"] == "${{ !cancelled() }}"
@@ -161,7 +157,6 @@ def test_required_results_use_needs(workflow_data: dict[str, object], job_name: 
 
 @pytest.mark.parametrize("name", ["ci.yaml", "audit.yaml", "release-statusline.yaml"])
 def test_every_job_fails_on_unintended_slowdown(name: str) -> None:
-    """全jobが明示の時間上限を持ち、意図しない遅延を既定の360分まで待たずに非成功とする。"""
     text = (REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
     jobs = workflow_jobs(workflow_mapping(yaml.load(text, Loader=yaml.BaseLoader)))
     for job_name, job in jobs.items():
@@ -170,7 +165,6 @@ def test_every_job_fails_on_unintended_slowdown(name: str) -> None:
 
 
 def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
-    """時間上限で止まりcancelledで終わったjobでも、診断ログを保存する。"""
     saving = []
     for action in sorted((REPO_ROOT / ".github" / "actions").glob("*/action.yml")):
         runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
@@ -200,7 +194,6 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
 
 
 def test_required_check_display_names(workflow_data: dict[str, object]) -> None:
-    """rulesetが参照する9表示名と、共通checkの非所有名を維持する。"""
     jobs = workflow_jobs(workflow_data)
     for key, display in {
         "test-linux": "test-linux",
@@ -226,10 +219,6 @@ def _makefile_variable(name: str) -> str:
 
 
 def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) -> None:
-    """`make ci-deps-check`がCIのpython-lint jobと同じimage・導入パッケージ・Python版で依存導入を再現する。
-
-    CI定義だけを変えた場合も、Makefileの値との不一致でpush前の再現手段のずれを検出する。
-    """
     job = workflow_mapping(workflow_jobs(workflow_data)["python-lint"])
     container = workflow_mapping(job["container"])
     assert _makefile_variable("CI_CONTAINER_IMAGE") == container["image"]
@@ -249,7 +238,6 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
 
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
-    """依存更新は直下とagent-toolkitの実行依存の両lockの更新後にcontainerの依存導入を確かめ、全体試験を呼ばない。"""
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
     match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
     assert match is not None
@@ -269,7 +257,6 @@ def test_update_checks_container_dependencies_after_lock_updates() -> None:
 
 @pytest.mark.parametrize("scope", ["直下", "toolkit"])
 def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object], scope: str) -> None:
-    """両pytest要素が、READMEの対応版のGitを通常pytestへ渡して各1回実行する。"""
     job = workflow_mapping(workflow_jobs(workflow_data)["pytest-root" if scope == "直下" else "pytest-toolkit"])
     steps = expanded_workflow_steps(job)
     names = [step.get("name") for step in steps]
@@ -293,7 +280,6 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
 
     environment = workflow_mapping(pytest_step["env"])
     assert environment["AGENT_TOOLKIT_TEST_GIT"] == f"${{{{ steps.{install['id']}.outputs.git }}}}"
-    assert "--maxfail=0" in str(pytest_step["run"])
 
     # 全ケースの合否と個別所要を、pytestの成否によらず各jobの同じ結果としてartifactへ保存する。
     command = str(pytest_step["run"])
@@ -313,7 +299,8 @@ def test_minimum_git_is_passed_to_normal_pytest(workflow_data: dict[str, object]
         assert 'junit="$RUNNER_TEMP/pytest-root-junit.xml"' in command
         assert settings["name"] == "pytest-root-junit"
     else:
-        # artifact名は分割ごとに一意にし、名前に使えない`/`を分割指定から除く。
+        assert "--maxfail=0" in command
+
         assert 'shard="${TEST_SHARD%%/*}-of-${TEST_SHARD##*/}"' in command
         assert 'junit="$RUNNER_TEMP/pytest-toolkit-junit-$shard.xml"' in command
         assert 'echo "artifact=pytest-toolkit-junit-$shard"' in command
@@ -359,9 +346,8 @@ def test_removal_registry_expiry_runs_only_in_scheduled_audit() -> None:
 def test_rust_audit_distinguishes_findings_and_tool_failure(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], report: str, audit_rc: int, expected_rc: int, message: str
 ) -> None:
-    """実workflowのシェルでRustSec結果とツール異常を区別し、検出を正常へ変換しない。"""
     audit = yaml.safe_load((REPO_ROOT / ".github/workflows/audit.yaml").read_text(encoding="utf-8"))
-    # cargo-auditの導入はCリンカーを要するため、Python監査のpyfltrコンテナーとは別のホストrunnerで実行する。
+
     rust_job = audit["jobs"]["rust-audit"]
     assert "container" not in rust_job
     steps = rust_job["steps"]

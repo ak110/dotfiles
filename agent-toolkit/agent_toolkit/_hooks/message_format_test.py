@@ -40,21 +40,18 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
     ],
 )
 def test_llm_notice_wraps_body_with_xml_boundary(tag: str, expected_kind: str) -> None:
-    """タグ有無にかかわらず出所、種別および本文を保つ。"""
     notice = llm_notice("本文", "example", tag=tag)
     assert auto_message_opening_attributes(notice) == {"source": "example", "kind": expected_kind}
     assert notice.endswith("\n本文\n</atk-auto>")
 
 
 def test_llm_notice_escapes_attribute_values() -> None:
-    """属性値にXMLメタ文字があっても境界を壊さない。"""
     notice = llm_notice("本文", '"example&', tag="warn")
     element = ET.fromstring(notice)
     assert element.attrib["source"] == '"example&'
 
 
 def _assert_machine_boundary(text: str) -> dict[str, str]:
-    """本文全体の境界と、ユーザー入力を消費する実際の共通判定を同じ値で確かめる。"""
     assert automated_prompt.contains(text)
     generated = text.partition("\n\n<forwarded-user-input ")[0].rstrip()
     assert generated.endswith("\n</atk-auto>")
@@ -69,7 +66,6 @@ def test_process_loop_commit_hook_and_periodic_generators_share_the_receive_cont
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """正常な別生成元と定期promptも、受信側が機械本文の出所・用途と全体境界を区別できる。"""
     commit_body = commit._prompt(  # noqa: SLF001  # pylint: disable=protected-access
         root=tmp_path,
         format_instructions="日本語のcommit",
@@ -116,7 +112,6 @@ def test_run_skill_generated_probe_and_goal_reach_shared_receiver(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run-skillが外部プロセスへ渡す可用性照会と目的文の、実際の送出値を取得する。"""
     bodies: list[str] = []
     notes = git_repository.init_repository(tmp_path / "notes")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -169,7 +164,6 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """開始・追送・子孫終了・過負荷・利用上限の各生成元の送出値を、backend境界で取得する。"""
     async with manager.AgentsServerManager() as owner:
         bodies: list[str] = []
 
@@ -188,7 +182,6 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
             bodies.append(body)
             return {"delivery": "steered"}
 
-        # 候補解決とモデル起動・配送の外部I/Oを代替し、各操作自身による本文生成を通す。
         monkeypatch.setattr(owner, "_resolve_start_candidates", candidates)
         monkeypatch.setattr(owner, "_start_until_initialized", initialize)
         monkeypatch.setattr(owner, "_backend", lambda _engine: types.SimpleNamespace(send_message=deliver))
@@ -216,7 +209,6 @@ async def test_start_followup_and_auto_resume_generated_deliveries_reach_shared_
 
 
 def test_notify_saved_delivery_reaches_shared_receiver(tmp_path: pathlib.Path) -> None:
-    """委譲元への保存済み通知も、実際に送出するbodyの境界・送信元を保持する。"""
     assert (
         notify.send_notification(
             "通知本文", environment={"AGENT_TOOLKIT_OWNER_SESSION": "parent", "CODEX_THREAD_ID": "child"}, state_root=tmp_path
@@ -239,7 +231,7 @@ def test_typescript_mod_emitted_values_reach_python_shared_receiver(
     script = tmp_path / "mod-deliveries.mjs"
     script.write_text(
         """const {register: compact} = await import(process.argv[2]);
-const {mountForStart} = await import(process.argv[3]);
+const {mountPeriodicRecheck} = await import(process.argv[3]);
 const {automatedMessage} = await import(process.argv[4]);
 const schedule = JSON.parse(process.argv[5]);
 const bodies = [];
@@ -263,7 +255,7 @@ await compactCall({...base, clock: {after: (_time, callback) => timers.push(call
   ui: {toast: (text) => bodies.push(text)}}, {turnId: 'turn-1'}, async () => ({}));
 await timers[0]();
 for (const success of [true, false]) {
-  const warning = await mountForStart({...base,
+  const warning = await mountPeriodicRecheck({...base,
     session: {id: async () => 'current'},
     tool: {check: async () => ({decision: 'allow'}), call: async ({tool}) => tool === 'CronList'
       ? {result: {jobs: []}} : {result: {id: 'task-1'}}},

@@ -1,5 +1,3 @@
-"""公開ランチャーを検証する試験の共有依存環境を、一時領域へ準備する。"""
-
 import os
 import pathlib
 import shutil
@@ -17,7 +15,7 @@ def prepare_plugin_environment(root: pathlib.Path, environment: dict[str, str], 
     directories = []
     for directory in os.get_exec_path(environment):
         uv = shutil.which("uv", path=directory)
-        # PATH隔離はshimへのsymlinkを数値名ディレクトリへ移すため、実体も確認する。
+
         if pathlib.Path(directory).name == "shims" or (uv and pathlib.Path(uv).resolve().stem.casefold() == "mise"):
             continue
         directories.append(directory)

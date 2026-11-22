@@ -1,8 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""実行中プロセスの実行ファイルパスを検索する (C# psgrep の Python 移植)。
-
-元 C# 実装は grep 部分が未実装だったため、`psutil` でクロスプラットフォームに実装する。
-"""
 
 import argparse
 import fnmatch
@@ -10,7 +6,6 @@ import logging
 import re
 import sys
 
-# 検索しないヘルプ・補完経路ではプロセス列挙の依存を読み込まない。
 lazy import psutil
 
 from pytools._internal.cli import enable_completion, setup_logging
@@ -19,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """実行中プロセスのパスを検索するエントリポイント。"""
     parser = argparse.ArgumentParser(description="プロセスの実行ファイルパスを検索する")
     parser.add_argument("pattern", type=str, help="検索パターン")
     parser.add_argument("--regex", action="store_true", help="正規表現マッチ (省略時は部分一致/ワイルドカード)")
@@ -34,7 +28,6 @@ def main() -> None:
 
 
 def grep(pattern: str, *, regex: bool = False, ignore_case: bool = False) -> list[tuple[int, str]]:
-    """検索パターンにマッチするプロセスの (pid, exe) リストを返す。"""
     flags = re.IGNORECASE if ignore_case else 0
     compiled = re.compile(pattern, flags=flags) if regex else None
     needle = pattern.lower() if ignore_case else pattern

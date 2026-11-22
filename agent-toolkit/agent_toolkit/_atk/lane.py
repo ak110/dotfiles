@@ -1,5 +1,3 @@
-"""レーン資源の公開CLI。"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,7 +46,6 @@ __all__ = [
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """レーンの作成と、指定sessionの回収を公開する。"""
     children = help_text.add_subcommands(parser, dest="lane_subcommand", required=True)
     create_parser = help_text.add_command(children, "create", **help_text.HELP["atk lane create"])
     create_parser.add_argument("--repo", type=pathlib.Path, required=True, help="対象repoの絶対パス。")
@@ -121,7 +118,6 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """機械可読な資源と、残存理由を出力する。"""
     if args.lane_subcommand == "delete" and getattr(args, "list", False):
         try:
             listed = _lane_records.list_resources(args.session_id)

@@ -15,7 +15,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import notice_inbox, state
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import inherited_venv, state_paths
+from agent_toolkit._common import inherited_venv, startup_features, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -47,7 +47,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 async def test_manager_root_connects_codex_start_resume_and_notification(
     environment_owner: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """環境ownerの有無にかかわらず、Managerのrootで起動・再開・通知回収を接続する。"""
     for name in (
         "AGENT_TOOLKIT_OWNER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
@@ -145,7 +144,6 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回のturn/startの応答が失われた後もsessionを保持し、完了通知から結果を取得できるようにする。"""
     async with subject.AppServerManager() as manager:
         client = LostTurnStartClient()
 
@@ -156,6 +154,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
         session = await manager.start("調査", str(tmp_path))
         assert session.status == "running"
         assert session.turn_start_ambiguous is True
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",
@@ -174,7 +173,6 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """steer拒否後は同一turnの終了を待ってからreplyへ切り替える。"""
     async with subject.AppServerManager() as manager:
         client = SteerRaceClient()
 
@@ -186,6 +184,7 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
         send_task = asyncio.create_task(manager.send_message(session, "続行"))
         await client.steer_called.wait()
         assert send_task.done() is False
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",
@@ -206,7 +205,6 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
 async def test_resume_waits_for_thread_close_after_unsubscribe(
     monkeypatch: pytest.MonkeyPatch, notification_first: bool
 ) -> None:
-    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、閉鎖通知が先に届いても取りこぼさない。"""
     async with subject.AppServerManager() as backend:
         client = FakeCodexClient()
         closed_notice = {"method": "thread/closed", "params": {"threadId": "thread-1"}}
@@ -267,7 +265,6 @@ async def test_resume_close_wait_preserves_initialization_timeout(monkeypatch: p
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_path: pathlib.Path) -> None:
-    """turn/interruptの応答エラーを対象turnの状態へ記録する。"""
     async with subject.AppServerManager() as manager:
         client = InterruptErrorClient()
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
@@ -296,6 +293,60 @@ async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tm
         assert response["status"] == "running"
         assert response["previous_result"]["agent_message"] == "Codex結果"
         _assert_no_forbidden_keys(response)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delivered", [False, True])
+async def test_reply_resume_error_does_not_replace_old_turn(tmp_path, monkeypatch, delivered):
+    async with subject.AppServerManager() as manager:
+        client = FakeCodexClient()
+        session = state.SessionState("thread-codex", str(tmp_path), engine="codex")
+        session.turn_id = "turn-old"
+        _complete(session, message="Codex結果")
+        session.result_delivered = delivered
+        previous_seq = session.turn_seq
+        manager.sessions[session.session_id] = session
+        manager._clients[session.session_id] = cast(Any, client)
+        monkeypatch.setattr(manager, "_resume_thread", AsyncMock(side_effect=OSError("接続失敗")))
+
+        response = await manager.send_message(session, "続行")
+        assert response["delivery"] == "reply_failed"
+        assert response["previous_result"] == {}
+        assert session.status == "completed" and session.turn_seq == previous_seq
+        assert session.agent_message == "Codex結果" and session.result_delivered is delivered
+        assert not any(method == "turn/start" for method, _ in client.requests)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_wait_sees_reply_initialization_after_old_result_delivered(tmp_path, monkeypatch):
+    async with (
+        server_manager.AgentsServerManager(status_writer=None) as manager,
+        subject.AppServerManager(manager.sessions, manager._condition) as backend,
+    ):
+        install_backend(manager, "codex", backend)
+        session = state.SessionState("thread-codex", str(tmp_path), engine="codex")
+        session.turn_id = "turn-old"
+        _complete(session)
+        session.result_delivered = True
+        manager.sessions[session.session_id] = session
+        backend._clients[session.session_id] = cast(Any, FakeCodexClient())
+        entered, resume = asyncio.Event(), asyncio.Event()
+
+        async def resume_thread(*_args: Any) -> None:
+            entered.set()
+            await resume.wait()
+
+        monkeypatch.setattr(backend, "_resume_thread", resume_thread)
+        monkeypatch.setattr(manager, "_resolve_wait_timeout", AsyncMock(return_value=0))
+        reply = asyncio.create_task(backend.send_message(session, "続行"))
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            assert (await manager.wait())["status"] == "running"
+        finally:
+            resume.set()
+            await asyncio.wait_for(reply, 2)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -382,7 +433,13 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
                 "serviceTier": "default",
                 "model": "gpt-test",
                 "modelProvider": "openai",
-                "config": {"bypass_hook_trust": True, "features": {"context_management": {"experimental_mode": False}}},
+                "config": {
+                    "bypass_hook_trust": True,
+                    "features": {
+                        "context_management": {"experimental_mode": False},
+                        **dict.fromkeys(startup_features.CODEX_DISABLED, False),
+                    },
+                },
                 "developerInstructions": subject._developer_instructions("delegate"),  # noqa: SLF001
             },
         )
@@ -417,8 +474,20 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
         )
 
         try:
-            with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
-                await manager.send_message(session_id, "再開指示", timeout=0.01)
+            send_timeout = 42.0
+            timeout = asyncio.timeout
+            boundary = timeout(None)
+
+            async def expire_after_resume() -> None:
+                await asyncio.wait_for(client.resume_started.wait(), timeout=5)
+                boundary.reschedule(asyncio.get_running_loop().time())
+
+            with monkeypatch.context() as deadline:
+                deadline.setattr(asyncio, "timeout", lambda seconds: boundary if seconds == send_timeout else timeout(seconds))
+                async with asyncio.TaskGroup() as tasks:
+                    tasks.create_task(expire_after_resume())
+                    with pytest.raises(TimeoutError, match="send_message timed out: thread-pending"):
+                        await manager.send_message(session_id, "再開指示", timeout=send_timeout)
 
             response = await manager.wait()
             assert set(response) == {"session_id", "status", "progress", "elapsed_seconds"}
@@ -429,7 +498,7 @@ async def test_codex_resume_timeout_drops_prompt_without_duplicate_resume(
             assert session_id not in manager.expired_sessions
 
             client.release_resume.set()
-            await asyncio.wait_for(client.resume_finished.wait(), timeout=0.1)
+            await asyncio.wait_for(client.resume_finished.wait(), timeout=5)
             assert [method for method, _params in client.requests] == ["config/read", "thread/read", "thread/resume"]
             response = await manager.send_message(session_id, "後続指示", timeout=1)
 
@@ -454,7 +523,6 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開turnの応答待ちでもkillだけでApp Server側作業を終える。"""
     async with _pending_codex_manager(monkeypatch, HoldingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,
@@ -493,7 +561,6 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中のresumeを取り消す間に自然に終了したturnを、中断要求済みと報告しない。"""
     async with _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,

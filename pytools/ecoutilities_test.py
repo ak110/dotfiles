@@ -1,5 +1,3 @@
-"""ecoutilitiesモジュールのテスト。"""
-
 import datetime
 import errno
 import os
@@ -26,15 +24,12 @@ from pytools.ecoutilities import (
 
 
 def _make_file(path: Path, when: datetime.datetime) -> None:
-    """指定の更新日時を持つファイルを作成する。"""
     path.write_bytes(b"x")
     ts = when.timestamp()
     os.utime(path, (ts, ts))
 
 
 class TestYearMonthFolder256:
-    """更新日時順に256件単位で年月フォルダーへ移動する。"""
-
     @pytest.mark.parametrize(("count", "expected_folders"), [(255, 1), (256, 1), (257, 2)])
     def test_block_split(self, tmp_path: Path, count: int, expected_folders: int):
         """256件の境界でブロックが分割され、全ファイルが移動する。"""
@@ -69,7 +64,6 @@ class TestYearMonthFolder256:
         assert names == ["2020-01-00", "2020-02-00"]
 
     def test_no_move_when_already_in_place(self, tmp_path: Path):
-        """ファイルが既に目的フォルダーにある場合は移動せず保持する。"""
         base = tmp_path / "src"
         target = base / "2020" / "2020-01-00"
         target.mkdir(parents=True)
@@ -82,7 +76,6 @@ class TestYearMonthFolder256:
 
 
 def test_delete_empty_folders(tmp_path: Path):
-    """空ディレクトリと入れ子の空ディレクトリを削除し、非空は残す。"""
     base = tmp_path / "src"
     (base / "empty").mkdir(parents=True)
     (base / "keep").mkdir()
@@ -97,11 +90,8 @@ def test_delete_empty_folders(tmp_path: Path):
 
 
 class TestFixGvb:
-    """gvb内の絶対パス行を実在パスへ付け替える。"""
-
     @pytest.mark.parametrize(("stem_len", "replaced"), [(31, False), (32, True)])
     def test_replace_by_name_length(self, tmp_path: Path, stem_len: int, replaced: bool):
-        """ファイル名長が32+4文字以上のときのみ置換対象になる。"""
         gvb_dir = tmp_path / "gvb"
         gvb_dir.mkdir()
         data_dir = tmp_path / "data"
@@ -119,7 +109,6 @@ class TestFixGvb:
         assert result[0] == (str(data_file) if replaced else old)
 
     def test_skips_zip_relative_existing(self, tmp_path: Path):
-        """相対パス・`.zip\\`を含む行・既存ファイル行は対象外とする。"""
         gvb_dir = tmp_path / "gvb"
         gvb_dir.mkdir()
         data_dir = tmp_path / "data"
@@ -145,14 +134,12 @@ class TestFixGvb:
         assert result[3] == str(data_file)
 
     def test_usage_when_not_directory(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-        """引数が既存ディレクトリでない場合はUsageを表示する。"""
         fix_gvb_by_file_name(str(tmp_path / "nonexist"), str(tmp_path))
 
         assert "Usage" in capsys.readouterr().out
 
 
 def test_dispose_tc_bookmarks(tmp_path: Path):
-    """`-m`接尾の項目ごとに同一接頭辞のファイルをまとめて移動する。"""
     base = tmp_path / "bm"
     base.mkdir()
     for name in ["abc-1.gvb", "abc-m.gvb", "xyz-m.gvb", "xyz-2.gvb"]:
@@ -166,7 +153,6 @@ def test_dispose_tc_bookmarks(tmp_path: Path):
 
 
 def test_dispose_tc_bookmarks_count_boundary(tmp_path: Path):
-    """連番が10に達すると2階層目のサブフォルダーが繰り上がる。"""
     base = tmp_path / "bm"
     base.mkdir()
     for i in range(11):
@@ -179,11 +165,8 @@ def test_dispose_tc_bookmarks_count_boundary(tmp_path: Path):
 
 
 class TestRandomList:
-    """ランダム抽出してリストを出力する。"""
-
     @pytest.mark.parametrize(("count", "expected"), [(0, 0), (63, 63), (64, 64), (100, 64)])
     def test_count(self, tmp_path: Path, count: int, expected: int):
-        """抽出件数は最大64件で頭打ちになる。"""
         src = tmp_path / "src"
         src.mkdir()
         for i in range(count):
@@ -207,7 +190,6 @@ class TestRandomList:
         assert out.read_bytes().startswith(b"\xef\xbb\xbf")
 
     def test_cp932(self, tmp_path: Path):
-        """cp932指定時はcp932で読み込める内容を出力する。"""
         src = tmp_path / "src"
         src.mkdir()
         (src / "a.txt").write_bytes(b"x")
@@ -219,7 +201,6 @@ class TestRandomList:
 
 
 def test_sites_xml_roundtrip(tmp_path: Path):
-    """サンプル出力したXMLを読み戻すと同じ設定になる。"""
     path = tmp_path / "Sites.xml"
     run_download_custom(str(path))
 
@@ -236,7 +217,6 @@ def test_sites_xml_roundtrip(tmp_path: Path):
 
 
 def test_run_download_custom_writes_sample(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
-    """設定ファイルが無い場合はサンプルを出力する。"""
     path = tmp_path / "Sites.xml"
 
     run_download_custom(str(path))
@@ -246,12 +226,10 @@ def test_run_download_custom_writes_sample(tmp_path: Path, capsys: pytest.Captur
 
 
 def _client(handler) -> httpx.Client:
-    """MockTransportで擬似応答を返すHTTPクライアントを生成する。"""
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
 def test_crawl_single_pattern(tmp_path: Path):
-    """単一パターンでBaseURL配下のリンクのみダウンロードする。"""
     dl = tmp_path / "dl"
     base = "http://example.com/"
     body = '<a href="http://example.com/img/a.jpg">x</a><a href="http://other.com/b.jpg">y</a>'
@@ -277,7 +255,6 @@ def test_crawl_single_pattern(tmp_path: Path):
 
 
 def test_crawl_two_patterns(tmp_path: Path):
-    """2段パターンで一覧から個別ページを辿ってダウンロードする。"""
     dl = tmp_path / "dl"
     base = "http://example.com/"
 
@@ -303,7 +280,6 @@ def test_crawl_two_patterns(tmp_path: Path):
 
 
 def test_crawl_exclude_pattern(tmp_path: Path):
-    """除外パターンに一致するURLは保存しない。"""
     dl = tmp_path / "dl"
     base = "http://example.com/"
     body = '<a href="http://example.com/a.jpg">1</a><a href="http://example.com/skip.avi">2</a>'
@@ -328,7 +304,6 @@ def test_crawl_exclude_pattern(tmp_path: Path):
 
 
 def test_crawl_flat_directory(tmp_path: Path):
-    """FlatDirectory指定時は区切り文字を置換して平坦化する。"""
     dl = tmp_path / "dl"
     base = "http://example.com/"
 
@@ -351,7 +326,6 @@ def test_crawl_flat_directory(tmp_path: Path):
 
 
 def test_crawl_skips_existing_file(tmp_path: Path):
-    """既存ファイルは再取得しない。"""
     dl = tmp_path / "dl"
     dl.mkdir()
     base = "http://example.com/"
@@ -425,7 +399,6 @@ class TestMainExitCode:
         assert not (base / "empty").exists()
 
     def test_fix_gvb_exit_code_one_when_not_directory(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ディレクトリ指定が不正ならUsageを表示して終了コード1で終える。"""
         assert self._run_main(monkeypatch, "FixGVBByFileName", str(tmp_path / "missing"), str(tmp_path)) == 1
 
     @staticmethod

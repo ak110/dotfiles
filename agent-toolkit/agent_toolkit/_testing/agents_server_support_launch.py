@@ -1,5 +1,3 @@
-"""起動入力と事前確認を組み立てる共有補助。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -23,7 +21,6 @@ _REAL_PLUGIN_PREFLIGHT_ASYNC = launch_requests.check_plugin_commands
 
 
 def _use_real_plugin_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """事前確認を実装どおりに実行させる。"""
     monkeypatch.setattr(launch_requests, "check_plugin_commands", _REAL_PLUGIN_PREFLIGHT_ASYNC)
 
 
@@ -42,14 +39,12 @@ def _write_declared_task_document(tmp_path: pathlib.Path, input_block: str) -> p
     task_document = plugin_root / "skills" / "atk-mode" / "roles" / "declared.subagent.md"
     task_document.parent.mkdir(parents=True)
     if "作業ツリーへの書込: " not in input_block:
-        # 書込宣言は必須行のため、宣言の他の行を確かめる試験では書き込む役割として補う。
         input_block += "\n作業ツリーへの書込: あり"
     task_document.write_text(f"# 担当\n\n## 入力\n\n```text\n{input_block}\n```\n\n## 出力\n\n結果を返す。\n", encoding="utf-8")
     return task_document
 
 
 def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool = False) -> list[str]:
-    """実運用で観測した委譲プロンプトの名前付き入力を組み立てる。"""
     handoff = f"引き継ぎ記録先: {root / 'handoff.md'}"
     if task_name == "exec-review.subagent.md":
         return [
@@ -96,7 +91,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             handoff,
         ]
     if task_name == "add-wi.subagent.md":
-        return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+        return ["投入する要求: request-1=github.com/example/repository=awi=検出条件の追加", handoff]
     if task_name == "external-write-review.subagent.md":
         for name in ("pr-body.md", "diff.patch"):
             (root / name).write_text("投稿の比較資料\n", encoding="utf-8")
@@ -133,7 +128,6 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
 
 
 def _observed_input_params(task_name: str, root: pathlib.Path) -> dict[str, str]:
-    """実運用の入力行を専用startの名前付きパラメータへ変換する。"""
     return dict(line.split(": ", 1) for line in _observed_input_lines(task_name, root))
 
 
@@ -198,7 +192,6 @@ _LAUNCH_VALUES: dict[str, Any] = {
 
 
 def _recording_candidates(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """候補列の解決へ渡った`model_type`を記録し、常に同じ候補を返す。"""
     requested: list[str] = []
 
     def fake_parse(model_type: str, **_kwargs: str | None) -> list[tuple[str, str, str]]:
@@ -238,7 +231,6 @@ _MODE_INPUT_CASES = [
 
 
 def _write_failing_uv(bin_dir: pathlib.Path) -> None:
-    """未trustのmise shimと同じく、標準エラーへ理由を書いて終了コード1で終わる`uv`・`uvx`を置く。"""
     bin_dir.mkdir()
     for name in ("uv", "uvx"):
         path = bin_dir / name

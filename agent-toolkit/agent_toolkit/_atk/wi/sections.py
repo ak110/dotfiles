@@ -13,7 +13,6 @@ _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
 
 def _lines(text: str) -> collections.abc.Iterator[tuple[str, bool]]:
-    """frontmatterを除いた本文の各行と、その行がフェンスの外にあるかを返す。"""
     parsed = parse_frontmatter(text)
     body = parsed[1] if parsed is not None else text
     fence: str | None = None
@@ -32,7 +31,6 @@ def _lines(text: str) -> collections.abc.Iterator[tuple[str, bool]]:
 
 
 def h2_section_items(text: str) -> list[tuple[str, str]]:
-    """H2の節名と本文を出現順に返し、同じ名前の節も保持する。"""
     sections: list[tuple[str, str]] = []
     current: str | None = None
     lines: list[str] = []
@@ -49,12 +47,10 @@ def h2_section_items(text: str) -> list[tuple[str, str]]:
 
 
 def h2_sections(text: str) -> dict[str, str]:
-    """H2見出し名ごとの節の本文を返す。同名の節は後の節を返す。"""
     return dict(h2_section_items(text))
 
 
 def title(text: str) -> str:
-    """AWIのH1タイトル、H1を持たないUWIでは`## 質問`の最初の空でない行を返す。取得できない場合は空文字列を返す。"""
     for line, outside in _lines(text):
         if outside and line.startswith("# "):
             return line[2:].strip()

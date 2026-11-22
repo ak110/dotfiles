@@ -1,5 +1,3 @@
-"""sync_generated_filesのテスト。"""
-
 import re
 from pathlib import Path
 
@@ -42,7 +40,6 @@ def test_aggregates_failures_without_stopping(monkeypatch, capsys) -> None:
 
 @pytest.mark.parametrize("arguments,code", [(["--help"], 0), (["--check"], 2), (["--unknown"], 2), (["extra"], 2)])
 def test_input_is_handled_before_generation(monkeypatch, capsys, arguments, code) -> None:
-    """公開された起動コマンドの入力検査では生成器の子プロセスを起動しない。"""
     calls = []
     monkeypatch.setattr(subject.subprocess, "run", lambda *args, **kwargs: calls.append(args))
     monkeypatch.setattr(subject, "sync_quality_principles", lambda: calls.append("quality"))
@@ -154,7 +151,6 @@ def test_input_sync_checks_all_boundaries_before_writing(tmp_path: Path) -> None
 
 
 def test_quality_source_updates_every_delivery_target(tmp_path: Path) -> None:
-    """原則の正本改訂が全同梱先へ届き、指定節の外の本文と同梱先の固有本文を保つ。"""
     for _, key, title, _ in subject.QUALITY_TARGETS:
         source = tmp_path / subject.QUALITY_SOURCE.format(key="facts" if key == "result" else key)
         source.parent.mkdir(parents=True, exist_ok=True)
@@ -200,7 +196,6 @@ def test_quality_sync_failure_stops_downstream_generation(monkeypatch, capsys) -
 
 @pytest.mark.parametrize("relative,key,title,level", subject.QUALITY_TARGETS)
 def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatch, relative, key, title, level) -> None:
-    """移動した実正本から、既存5区画の本文・階層を変えず生成元だけを更新する。"""
     monkeypatch.setattr(subject, "QUALITY_TARGETS", ((relative, key, title, level),))
     source_relative = (
         "agent-basics/skills/writing-standards/references/quality-principles-" + ("facts" if key == "result" else key) + ".md"
@@ -221,7 +216,7 @@ def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatc
     after_prefix, after_block = after.split(start)
     after_body, after_suffix = after_block.split(end)
     assert (after_prefix, after_suffix) == (before_prefix, before_suffix)
-    # チェックイン済みの写しは1文1行整形前のため、改行を除いて比較する。
+
     expected = re.sub(r"<!-- 生成元: [^\n]+ -->", "", before_body)
     actual = re.sub(r"<!-- 生成元: [^\n]+ -->", "", after_body)
     assert re.sub(r"\n[ \t]*", "", actual) == re.sub(r"\n[ \t]*", "", expected)
@@ -231,7 +226,6 @@ def test_real_split_quality_sources_preserve_generated_body(tmp_path, monkeypatc
 
 
 def test_return_targets_cover_all_roles_and_declared_callers() -> None:
-    """役割群全体と各役割が宣言する呼出側を生成対象表へ対応付ける。"""
     plugin = subject.REPO_ROOT / "agent-toolkit"
     sources = {path.name.removesuffix(".subagent.md"): path for path in task_documents.role_documents(plugin)}
     targets = {role: relative for role, relative, _title, _level in subject.RETURN_TARGETS}
@@ -246,7 +240,6 @@ def test_return_targets_cover_all_roles_and_declared_callers() -> None:
 
 @pytest.mark.parametrize("role,relative,title,level", subject.RETURN_TARGETS)
 def test_return_contract_sync_tracks_output_only(tmp_path, monkeypatch, role, relative, title, level) -> None:
-    """正本の固有欄だけが追随し、内部手順を混入せず、再生成で差分が増えない。"""
     monkeypatch.setattr(subject, "RETURN_TARGETS", ((role, relative, title, level),))
     plugin = tmp_path / "agent-toolkit"
     source = plugin / f"skills/atk-mode/roles/{role}.subagent.md"
@@ -291,7 +284,6 @@ def test_return_contract_sync_tracks_output_only(tmp_path, monkeypatch, role, re
 
 
 def test_return_sync_invalid_boundary_does_not_write_any_target(tmp_path, monkeypatch) -> None:
-    """後半の生成境界が壊れても、先行文書を途中まで書き換えない。"""
     targets = subject.RETURN_TARGETS[:2]
     monkeypatch.setattr(subject, "RETURN_TARGETS", targets)
     for role, relative, _title, _level in targets:
@@ -311,7 +303,6 @@ def test_return_sync_invalid_boundary_does_not_write_any_target(tmp_path, monkey
 
 
 def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
-    """実在する全正本と配置先を隔離し、実行レビューの内部処理と相対参照も確認する。"""
     files = set()
     for role, relative, _title, _level in subject.RETURN_TARGETS:
         source = task_documents.require_role_document(subject.REPO_ROOT / "agent-toolkit", role)
@@ -362,7 +353,7 @@ def test_real_return_contracts_generate_in_isolated_fixture(tmp_path) -> None:
     subject.sync_return_contracts(tmp_path)
     after_addition = target.read_bytes()
     assert "追加固有欄: 節先頭の返却値" in after_addition.decode()
-    # 内部手順の境界は見出しで定まり、準備本文の改訂や追加で生成結果は変わらない。
+
     changed_preparation = added.replace("返却する前に、以下の処理を完了させる。", "内部準備の改訂文。")
     changed_preparation = changed_preparation.replace("## 返却前の処理\n", "## 返却前の処理\n\n追加した内部手順。\n")
     source.write_text(changed_preparation, encoding="utf-8")

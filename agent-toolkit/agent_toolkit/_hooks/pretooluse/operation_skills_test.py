@@ -51,7 +51,6 @@ def _add_file_patch(path: pathlib.Path, body: str) -> dict:
 
 
 def _notified(result: subprocess.CompletedProcess[str]) -> set[str]:
-    """公開hookが正常に終わったことを確かめ、応答が起動を案内したスキルの名前を返す。"""
     assert result.returncode == 0
     assert not result.stderr
     return set(_NOTICE.findall(_additional_context(result)))
@@ -59,7 +58,6 @@ def _notified(result: subprocess.CompletedProcess[str]) -> set[str]:
 
 @pytest.fixture(name="temp_root")
 def _temp_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """managed-tempの一時rootを試験の専用領域へ向けて返す。"""
     root = tmp_path / "managed-temp"
     monkeypatch.setattr(managed_temp, "temp_root_path", lambda: root)
     return root
@@ -107,13 +105,11 @@ def test_each_operation_notifies_only_its_skill(
 
 
 def test_one_call_with_several_operations_notifies_each_skill(tmp_path: pathlib.Path) -> None:
-    """検索と文書書込を含む1つのBash呼び出しでは、両方のスキルを同じ応答で案内する。"""
     payload = _bash("rg x; printf rule > AGENTS.md", "compound", cwd=str(tmp_path))
     assert _notified(_run(payload, _plan_file_state_env(tmp_path))) == {_SEARCH_SKILL, _WRITING_SKILL}
 
 
 def test_notice_is_given_once_per_subject(tmp_path: pathlib.Path) -> None:
-    """同じ主体へは2回目の同じ操作で案内せず、別の主体（サブエージェント）へは改めて案内する。"""
     env = _plan_file_state_env(tmp_path)
     main = {"tool_name": "Grep", "tool_input": {"pattern": "needle"}, "session_id": "subjects"}
     child = {**main, "agent_id": "child"}
@@ -136,7 +132,6 @@ def test_launched_skill_is_not_notified(tmp_path: pathlib.Path, skill: str) -> N
 @pytest.mark.parametrize("host", ["claude", "codex"])
 @pytest.mark.parametrize("kind", ["explore", "shell", "write"])
 def test_lightweight_delegate_is_not_notified(tmp_path: pathlib.Path, kind: str, host: str) -> None:
-    """スキルを使わない前提で起動した軽量の委譲先には、表の操作でも案内しない。"""
     marker = {"AGENT_TOOLKIT_DELEGATED_SESSION": "1"} if host == "claude" else {"AGENT_TOOLKIT_OWNER_SESSION": "owner"}
     env = {**_plan_file_state_env(tmp_path), **marker, delegated_session.LAUNCH_KIND_ENV: kind}
     extra = {"turn_id": "turn-1"} if host == "codex" else {}
@@ -144,7 +139,6 @@ def test_lightweight_delegate_is_not_notified(tmp_path: pathlib.Path, kind: str,
 
 
 def test_blocked_call_does_not_record_notice(tmp_path: pathlib.Path) -> None:
-    """遮断した呼び出しでは案内を記録せず、遮断後の通常の呼び出しで案内する。"""
     env = _plan_file_state_env(tmp_path)
     blocked = _run(_bash("rg -n needle . && pkill -f needle", "blocked"), env)
     assert denial_reason(blocked)
@@ -154,7 +148,6 @@ def test_blocked_call_does_not_record_notice(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("tool", ["Write", "Bash", "apply_patch"])
 def test_temporary_area_writes_are_not_notified(tmp_path: pathlib.Path, temp_root: pathlib.Path, tool: str) -> None:
-    """一時領域だけへの書込では本文の作成・更新を案内せず、同じ主体の成果物への書込で案内する。"""
     env = _plan_file_state_env(tmp_path)
 
     def payload(path: pathlib.Path) -> dict:
@@ -171,7 +164,6 @@ def test_temporary_area_writes_are_not_notified(tmp_path: pathlib.Path, temp_roo
 
 
 def test_mixed_temporary_and_artifact_writes_are_artifact_body_writing(tmp_path: pathlib.Path, temp_root: pathlib.Path) -> None:
-    """一時領域と成果物の両方へ書く呼び出しは、成果物の本文の作成・更新に当たる。"""
     draft = temp_root / "draft.md"
     mixed = {"command": f"tee {draft} {tmp_path / 'notes.md'} <<<'本文'"}
     assert operation_skills._is_artifact_body_writing("Bash", mixed, str(tmp_path))
@@ -255,7 +247,6 @@ def test_non_search_commands_are_not_search_operations(command: str) -> None:
     ],
 )
 def test_grep_option_values_do_not_count_as_recursion(arguments: str, recursive: bool) -> None:
-    """長形式の値が終端や再帰指定と同形でも、実際の再帰指定だけで`grep`を検索と判定する。"""
     assert operation_skills._is_search_operation("Bash", {"command": "grep " + arguments}) is recursive
 
 
@@ -448,7 +439,6 @@ _WRITE_FORMS = [
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
 def test_bash_static_document_suffix_is_agent_document_writing(form: str, prefix: str) -> None:
-    """展開される先頭と操作形式を組み合わせ、エージェント向け文書の書込の判定への一致を検証する。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     path = prefix + ".claude/rules/AGENTS.md" + closing_quote
     directory = prefix + ".claude/rules/" + closing_quote
@@ -460,7 +450,6 @@ def test_bash_static_document_suffix_is_agent_document_writing(form: str, prefix
 @pytest.mark.parametrize("form", _WRITE_FORMS)
 @pytest.mark.parametrize("prefix", ["", "/repo/", "~/", "$HOME/", '"$HOME/', "${HOME}/"])
 def test_bash_static_ordinary_suffix_is_not_agent_document_writing(form: str, prefix: str) -> None:
-    """同じ操作と各展開表記でも、通常文書の書込はエージェント向け文書の書込と判定しない。"""
     closing_quote = '"' if prefix.startswith('"') else ""
     command = form.replace("AGENTS.md", "README.md").format(
         path=prefix + "docs/README.md" + closing_quote,
@@ -562,7 +551,6 @@ def test_bash_document_write_negative_boundaries(command: str) -> None:
     ],
 )
 def test_perl_document_write_option_and_program_boundaries(options: str, writes: bool) -> None:
-    """perlのオプションの値とprogramfile以降の引数を読み分け、in-place編集だけを書込と判定する。"""
     command = f"perl {options} ~/.claude/rules/x.md"
     assert operation_skills._is_agent_document_writing("Bash", {"command": command}) is writes
 
@@ -590,7 +578,6 @@ def test_root_cause_writing_is_detected(payload: dict) -> None:
     ["## 原因分析の根拠\n", "### 原因分析\n", "`## 原因分析`を置く\n", "本文だけ\n"],
 )
 def test_writing_without_root_cause_heading_is_not_root_cause_writing(content: str) -> None:
-    """見出しだけから成る行でない記述を、原因分析の記述と判定しない。"""
     assert not operation_skills._is_root_cause_writing("Write", {"file_path": "/example/awi.md", "content": content})
 
 
@@ -660,7 +647,6 @@ def test_verification_queries_are_not_verification_operations(payload: dict) -> 
     + [("apply_patch", "mixed")],
 )
 def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: str) -> None:
-    """記録先1件だけへの編集では本文の作成・更新を案内せず、混在と他のファイルへの編集では案内する。"""
     env = _plan_file_state_env(tmp_path)
     own = str(tmp_path / "handoff.md")
     other = str(tmp_path / "awi-draft.md")
@@ -686,7 +672,6 @@ def test_only_own_handoff_is_exempt(tmp_path: pathlib.Path, tool: str, target: s
 @pytest.mark.parametrize("exists", [False, True])
 @pytest.mark.parametrize("tool", ["Write", "apply_patch", "Bash"])
 def test_body_writing_does_not_depend_on_existing_file(tmp_path: pathlib.Path, tool: str, exists: bool) -> None:
-    """新規作成と既存ファイルの書き換えを、どちらも本文の作成・更新と判定する。"""
     target = tmp_path / "memo.md"
     if exists:
         target.write_text("旧本文\n", encoding="utf-8")
@@ -715,7 +700,6 @@ def test_body_writing_does_not_depend_on_existing_file(tmp_path: pathlib.Path, t
     ],
 )
 def test_discard_output_is_not_body_writing(tmp_path: pathlib.Path, form: str) -> None:
-    """破棄だけの各書込構文を除外し、同じ構文の通常ファイル側を保持する。"""
     for path in (os.devnull, str(tmp_path / "memo.md")):
         data = {"command": form.format(path=path)}
         paths = operation_skills.written_paths("Bash", data, str(tmp_path))
@@ -728,7 +712,6 @@ def test_discard_output_is_not_body_writing(tmp_path: pathlib.Path, form: str) -
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのsymlinkと通常名NULを確認する")
 def test_discard_alias_and_mixed_output_keep_ordinary_files(tmp_path: pathlib.Path) -> None:
-    """実体がdevnullの別名だけを除き、通常名NULと混在する通常書込を保持する。"""
     alias = tmp_path / "AGENTS.md"
     alias.symlink_to(os.devnull)
     ordinary = tmp_path / "NUL"
@@ -744,14 +727,12 @@ def test_discard_alias_and_mixed_output_keep_ordinary_files(tmp_path: pathlib.Pa
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのfd別名を確認する")
 @pytest.mark.parametrize("alias", ["/dev/stdout", "/dev/stderr", "/dev/fd/1"])
 def test_standard_stream_alias_is_not_discarded_by_name(tmp_path: pathlib.Path, alias: str) -> None:
-    """fdの名前だけでは通常ファイルへの書込を除外しない。"""
     data = {"command": f"cat > {alias} <<<'本文'"}
     assert operation_skills.written_paths("Bash", data, str(tmp_path))
     assert operation_skills.is_body_writing("Bash", data, str(tmp_path))
 
 
 def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path) -> None:
-    """公開Pre/Post hookで破棄だけを本文の作成・更新や終了工程の作業として扱わない。"""
     env = _plan_file_state_env(tmp_path)
     payload = _bash(f"cat > {os.devnull} <<<'本文'", "discard-public", cwd=str(tmp_path))
     assert _WRITING_SKILL not in _notified(_run(payload, env))
@@ -763,7 +744,6 @@ def test_public_hook_discard_output_has_no_edit_guidance(tmp_path: pathlib.Path)
 
 @pytest.mark.parametrize("tool", ["Write", "Edit", "apply_patch"])
 def test_edit_tools_exclude_discard_destination(tmp_path: pathlib.Path, tool: str) -> None:
-    """編集ツールにも同じ破棄先の分類を適用する。"""
     data = {
         "Write": {"file_path": os.devnull, "content": "本文"},
         "Edit": {"file_path": os.devnull, "old_string": "旧", "new_string": "新"},
@@ -791,7 +771,6 @@ def test_unknown_output_path_is_not_converted_to_a_real_path(tmp_path: pathlib.P
 
 
 def test_partial_suffix_identifies_document_kind_without_a_real_path(tmp_path: pathlib.Path) -> None:
-    """未知の接頭部の後の静的な末尾は、文書種別の識別にだけ使う。"""
     data = {"command": 'cat > "$ROOT/.claude/skills/x/SKILL.md" <<<x'}
     assert not operation_skills.written_paths("Bash", data, str(tmp_path))
     assert operation_skills._is_agent_document_writing("Bash", data, str(tmp_path))

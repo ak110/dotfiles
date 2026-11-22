@@ -1,5 +1,3 @@
-"""レーン統合の入力検証・コマンド実行と履歴比較。"""
-
 from __future__ import annotations
 
 import argparse
@@ -67,7 +65,7 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
             seen.add(row["name"])
             if "commit_record" in row:
                 source = row["commit_record"]
-                # 最終化の計画保存で移動するため、実在の確認はGit統合直前に行う。
+
                 if (
                     name != "wis"
                     or not isinstance(source, str)
@@ -103,7 +101,6 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
         ):
             raise ValueError("processed_wisはmanifestのwisに含まれるWI名だけを重複なしの配列で指定する")
     if "lane_started_at" in manifest:
-        # Git統合後に最終化だけが入力の誤りで止まらないよう、完了時刻より後の値は統合の前に拒否する。
         check_lane_started_before_now(lane_started_at(manifest["lane_started_at"]))
     finalization = [value for name in ("plans", "wis") for row in manifest[name] for argv in row["commands"] for value in argv]
     referenced = False
@@ -126,14 +123,12 @@ def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -
     return manifest
 
 
-# 最終化argvが参照する確定値。値は最終化の最初の操作の前に1回だけ生成し、再開では保存値を使う。
 REFERENCE = re.compile(r"\{\{([^{}]*)\}\}")
 
 VALUE_REFERENCES = frozenset({"integrated_head_short", "completed_at", "lane_seconds"})
 
 
 def lane_started_at(value: object) -> datetime.datetime:
-    """manifestのレーン開始時刻を時差付きの日時として解釈する。"""
     try:
         started = datetime.datetime.fromisoformat(value) if isinstance(value, str) else None
     except ValueError:
@@ -144,7 +139,6 @@ def lane_started_at(value: object) -> datetime.datetime:
 
 
 def check_lane_started_before_now(started: datetime.datetime) -> datetime.datetime:
-    """レーン開始時刻が現在時刻より後なら拒否し、現在時刻を返す。"""
     now = datetime.datetime.now().astimezone()
     if started > now:
         raise ValueError(
@@ -156,7 +150,6 @@ def check_lane_started_before_now(started: datetime.datetime) -> datetime.dateti
 
 
 def finalization_values(state: dict[str, typing.Any], started: datetime.datetime) -> dict[str, str]:
-    """統合後HEAD・完了時刻・レーン稼働秒数を生成する。計測の終点は最終化の最初の操作の前とする。"""
     completed = check_lane_started_before_now(started)
     seconds = math.floor((completed - started).total_seconds())
     target = pathlib.Path(state["input"]["target"])
@@ -168,10 +161,6 @@ def finalization_values(state: dict[str, typing.Any], started: datetime.datetime
 
 
 def expand(record: dict[str, typing.Any], values: dict[str, str] | None, argv: list[str]) -> list[str]:
-    """最終化argvの確定値の参照をshellを介さず展開する。テンプレートは展開した複製のパスへ置き換える。
-
-    テンプレート本文では確定値の参照だけを置き換え、他の`{{...}}`はそのまま残す。
-    """
     if not values:
         return argv
     replacements = values
@@ -215,8 +204,7 @@ def integration_command(
 
 
 def verify(record: dict[str, typing.Any], state: dict[str, typing.Any], argvs: list[list[str]], cwd: pathlib.Path) -> None:
-    # 自身に上限が無い検証だけ、manifestの明示値を内部実行へ渡す。
-    # 固有手順向けのprocedure_timeoutは重ねず、実行枠の待ちも実処理の上限から外す。
+
     for index, argv in enumerate(argvs):
         key = f"verification-{index}"
         sources = [*state["input"]["manifest"].get("verification_records", [])]
@@ -287,9 +275,8 @@ def amend_finalization(state: dict[str, typing.Any], identity: dict[str, typing.
 
 
 def has_worktree_changes(tree: pathlib.Path) -> bool:
-    """子のcheckout先だけの違いを除き、親と子の未保存の変更を判定する。"""
     status = _lane_records.git(tree, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--ignore-submodules=none")
-    # .M は親のindexに変更がなく、SC.. は子のcommitだけが異なる。パスは比較しない。
+
     return any(entry and not entry.startswith("1 .M SC.. ") for entry in status.split("\0"))
 
 
@@ -329,7 +316,6 @@ def assert_integration_tree(
 
 
 def processed_wis(manifest: dict[str, typing.Any]) -> list[str]:
-    """明示された処置済み項目を使い、省略時は従来どおり所属全件を返す。"""
     if "processed_wis" in manifest:
         return list(manifest["processed_wis"])
     return [row["name"] for row in manifest["wis"]]
@@ -346,7 +332,7 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
                 parser = argparse.ArgumentParser(prog="atk wi", allow_abbrev=False)
                 sub = help_text.add_subcommands(parser, dest="wi_subcommand", required=False, show_help_when_missing=True)
                 wi_arguments.add_adopt_parser(sub)
-            # パスの型検査にはテンプレート元を使い、複製と本文展開はGit統合後の_expandで行う。
+
             validation_argv = [
                 REFERENCE.sub(
                     lambda match: (
@@ -392,7 +378,6 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
                 ) from error
             effective_commits = specified
             if any("{{integrated_head_short}}" in value for value in specified):
-                # fast-forwardするHEADの短縮OIDは、最終化の_expandへ渡す値と同じになる。
                 short = _lane_records.git(worktree, "rev-parse", "--short=7", "HEAD")
                 effective_commits = [value.replace("{{integrated_head_short}}", short) for value in specified]
             try:
@@ -407,7 +392,6 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
 
 
 def check_legacy_mapping(state: dict[str, typing.Any], manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:
-    """旧rebase成果の対応継承が必要な場合だけ、保存した証拠を使う汎用操作へ戻す。"""
     sources = {row["commit_record"] for row in manifest["wis"] if row.get("commit_record")}
     if manifest.get("handoff"):
         sources.add(manifest["handoff"])

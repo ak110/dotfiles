@@ -32,20 +32,12 @@ AUTO_RESET_RPC_TIMEOUT = 30.0
 
 @dataclasses.dataclass
 class _Progress:
-    """照会が時間内に終わらない時に、最後に到達した段階を示す。
-
-    送出の確認は、直接接続では書込みの完了、管理サービス経由では受信処理による送出通知の処理で届く。
-    """
-
     method: str = ""
     stage: typing.Literal["", "設定確認", "送出確認待ち", "応答待ち"] = ""
 
 
 def _reset_enabled() -> bool:
-    return (
-        _atk_config.resolve_mutable_setting("codex_auto_reset") == "true"
-        or _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
-    )
+    return _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
 
 
 class CodexResetMixin:
@@ -57,7 +49,6 @@ class CodexResetMixin:
     def _hold_usage_limit_failure(
         self: CodexManager, session: SessionState, limit: codex_usage_limit.UsageLimitState | None
     ) -> bool:
-        """読取済みの利用枠を使い、終了反映と同じloop区間で保留を確定する。"""
         if session.status != "failed" or limit is None:
             return False
         error = {
@@ -75,9 +66,7 @@ class CodexResetMixin:
                 asyncio.get_running_loop().time() + limit.delay_seconds(time.time()),
             )
         )
-        session.usage_limit_wait_count += 1
-        if session.usage_limit_first_at is None:
-            session.usage_limit_first_at = utc_now()
+        session.advance_usage_limit_retry()
         session.api_error = {
             "type": "usage_limit",
             "limit_type": limit.limit_type,
@@ -118,7 +107,7 @@ class CodexResetMixin:
             except ValueError:
                 _LOG.exception(
                     "Codex自動reset設定を解決できません: session_id=%s。"
-                    "atk config get codex_auto_resetとAGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESETを確認してください",
+                    "atk config get usage_auto_allocation usage_reset_permissionsを確認してください",
                     session.session_id,
                 )
                 continue
@@ -132,7 +121,7 @@ class CodexResetMixin:
         client = self._owned_client(session)
         if client is None:
             return
-        # 通知readerへ戻る前に保留を標示し、結果公開と起動可用性の確定を防ぐ。
+
         session.codex_auto_reset_pending = True
         task = asyncio.create_task(self._check_auto_reset(session, client, session.turn_seq))
         self._auto_reset_checks[session.session_id] = task
@@ -149,7 +138,7 @@ class CodexResetMixin:
             progress.method, progress.stage = method, "設定確認"
             enabled = await run_file_operation(_reset_enabled)
             if not enabled:
-                raise AppServerError("確認中にcodex_auto_resetが無効になった")
+                raise AppServerError("確認中にusage_auto_allocationが無効になった")
             if (
                 session.turn_seq != turn_seq
                 or self._owned_client(session) is not client
@@ -162,9 +151,8 @@ class CodexResetMixin:
         try:
             try:
                 root = await run_file_operation(state_paths.state_dir)
-                automatic = _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
-                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions")) if automatic else None
-                observed = usage_observation.snapshot() if automatic else {}
+                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions"))
+                observed = usage_observation.snapshot()
                 window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
                 weekly_rates = [
                     window_rates.get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
@@ -185,8 +173,8 @@ class CodexResetMixin:
             except TimeoutError:
                 _LOG.exception(
                     "Codex自動resetの照会が時間内に終わりません: session_id=%s method=%s stage=%s connection=%s。"
-                    "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞、"
-                    "consumerが停止なら受信処理の停止で止まっている。"
+                    "backlogが上限なら受信処理が停滞している。送出確認待ちでは送出の有無が分からず、"
+                    "別世代では元の通知列を確認できない。"
                     "停止した会話は利用枠回復後にsend_messageで継続してください",
                     session.session_id,
                     progress.method,
@@ -231,7 +219,6 @@ class CodexResetMixin:
 
     @staticmethod
     async def _read_usage_limit_failure(session: SessionState, error: Any) -> codex_usage_limit.UsageLimitState | None:
-        """終了を公開する前に、保留判定に必要な利用枠だけを読み取る。"""
         if not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
             return None
         limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)
@@ -242,7 +229,7 @@ class CodexResetMixin:
         if not task.cancelled() and (error := task.exception()) is not None:
             _LOG.error(
                 "Codex自動resetの監視・確認taskが失敗しました。"
-                "この例外ログとatk config get codex_auto_resetを確認し、"
+                "この例外ログとatk config get usage_auto_allocation usage_reset_permissionsを確認し、"
                 "停止した会話は利用枠回復後にsend_messageで継続してください",
                 exc_info=error,
             )

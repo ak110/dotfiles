@@ -1,5 +1,3 @@
-"""`_atk/wi/mutations/`のテストが共有する、WIエントリと計画の作成およびGit操作の差し替え。"""
-
 import contextlib
 import pathlib
 
@@ -23,7 +21,6 @@ def _write_uwi_entry(
     frontmatter: str = "target_repo: github.com/example/foo\ntype: uwi\nquestion_type: free-form",
     legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """非対話edit用のUWIエントリを書き込む。"""
     path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
     state_line = "" if legacy_layout else "state: inbox\n"
     path.write_text(
@@ -49,7 +46,6 @@ def _disable_transition_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.Path:
-    """変換テスト用の計画ファイルを作成する。"""
     directory.mkdir(parents=True, exist_ok=True)
     plan = directory / "plan.md"
     plan.write_text(
@@ -60,7 +56,6 @@ def _write_convert_plan(directory: pathlib.Path, target_commit: str) -> pathlib.
 
 
 def _edit_plan_args(tmp_path: pathlib.Path, filename: str, body: str, plan: pathlib.Path) -> list[str]:
-    """計画型編集を本文ファイル経由で呼ぶCLI引数を返す。"""
     body_file = tmp_path / "body.md"
     body_file.write_text(body, encoding="utf-8")
     return [
@@ -87,7 +82,6 @@ def _write_convert_awi(
     schedule_mapping: str = "",
     legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """変換テスト用のエントリを書き込む。"""
     path = wi_entry_files.entry_path(notes, filename, state=state, legacy_layout=legacy_layout)
     state_line = "" if legacy_layout else f"state: {state}\n"
     path.write_text(
@@ -99,7 +93,6 @@ def _write_convert_awi(
 
 
 def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
-    """変換テストでprivate-notesへのgit操作を無効化する。"""
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _path: None)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -108,7 +101,6 @@ def _disable_convert_git(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _init_notes_with_origin(notes: pathlib.Path, remote: pathlib.Path) -> None:
-    """private-notesをGitリポジトリにして全ファイルを基準commitへ記録し、bareの`origin`へpushする。"""
     git_repository.init_repository(notes, initial_branch="main", origin=str(remote), commit_message="base")
     git_repository.init_bare_repository(remote)
     git_repository.run_git(notes, "push", "--set-upstream", "origin", "main")

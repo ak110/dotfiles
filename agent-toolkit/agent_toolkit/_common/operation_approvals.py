@@ -7,13 +7,11 @@ from typing import Any, TypeGuard
 
 
 def fingerprint(value: Any) -> str:
-    """JSON値全体の安定した識別子を返す。"""
     encoded = json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 def validate_request(value: Any) -> TypeGuard[dict[str, Any]]:
-    """省略のない単一操作の要求だけを受け付ける。"""
     if not isinstance(value, dict):
         return False
     required = ("request_id", "tool_name", "cwd", "target_repo", "scope", "allow_choice")
@@ -35,12 +33,10 @@ def validate_request(value: Any) -> TypeGuard[dict[str, Any]]:
 
 
 def request_display(request: dict[str, Any]) -> str:
-    """問いに含める実入力全体を返す。"""
     return json.dumps(request, sort_keys=True, ensure_ascii=False, allow_nan=False, indent=2)
 
 
 def parse_request(value: Any) -> dict[str, Any] | None:
-    """WIのJSON文字列とセッション状態のオブジェクトを同じ検証へ通す。"""
     if isinstance(value, str):
         try:
             value = json.loads(value)
@@ -50,7 +46,6 @@ def parse_request(value: Any) -> dict[str, Any] | None:
 
 
 def operation_limit(request: dict[str, Any]) -> int | None:
-    """今回限りか、実入力を変えない有限回の試行という明示範囲を解釈する。"""
     scope = request.get("scope")
     if scope == "once":
         return 1
@@ -64,7 +59,6 @@ def legacy_request(
     answer: str,
     requests: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    """旧UWIの逐語入力と明示的な許可回答が、保留中の1操作だけを指す場合に限る。"""
     if "permission_request" in metadata or "legacy_operation_approval" in metadata:
         return None
     if answer.strip().removesuffix(" (Recommended)") not in {
@@ -81,7 +75,7 @@ def legacy_request(
         return None
 
     def quoted(value: str) -> bool:
-        # コマンドの接頭辞が別操作の一部に一致することを避け、表示された全入力を比べる。
+
         return (
             f"`{value}`" in question
             or json.dumps(value, ensure_ascii=False) in question
@@ -114,7 +108,6 @@ def _remaining(approval: dict[str, Any], limit: int) -> int | None:
 
 
 def bind_answer(metadata: dict[str, Any], question: str, answer: str) -> None:
-    """保存される回答を要求へ結び、曖昧な回答では既存承認を失効させる。"""
     previous = metadata.pop("operation_approval", None)
 
     def invalidate() -> None:
@@ -126,7 +119,7 @@ def bind_answer(metadata: dict[str, Any], question: str, answer: str) -> None:
         invalidate()
         return
     choices = metadata.get("choices")
-    # 公開atk wi addのchoicesはカンマ区切りの文字列でも保存される。
+
     if isinstance(choices, str):
         choices = [choice.strip() for choice in choices.split(",")]
     if not isinstance(choices, list) or choices.count(request["allow_choice"]) != 1:
@@ -147,7 +140,7 @@ def bind_answer(metadata: dict[str, Any], question: str, answer: str) -> None:
     limit = operation_limit(request)
     if limit is not None and limit > 1:
         approval["remaining"] = str(limit)
-    # 同じ回答の再保存で一度消費した許可を復活させない。
+
     if isinstance(previous, dict) and previous.get("request_hash") == approval["request_hash"]:
         approval["state"] = previous.get("state", "invalid")
         if limit is not None and limit > 1:
@@ -160,7 +153,6 @@ def bind_answer(metadata: dict[str, Any], question: str, answer: str) -> None:
 
 
 def matches(metadata: dict[str, Any], question: str, answer: str, operation: dict[str, Any]) -> bool:
-    """現在の要求・回答・操作の完全一致を確認する。上位の拒否判定は変更しない。"""
     candidate = dict(metadata)
     bind_answer(candidate, question, answer)
     approval = candidate.get("operation_approval")

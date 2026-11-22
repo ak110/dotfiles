@@ -1,5 +1,3 @@
-"""警告の次の操作が無操作だけになる記述と、終止形の行動要求を検出する。"""
-
 from __future__ import annotations
 
 import ast
@@ -134,7 +132,6 @@ def test_warning_actionability_invariant() -> None:
 
 
 def test_warning_actionability_resolves_constants() -> None:
-    """無操作の定数参照を検出し、条件付き操作を受理する。"""
     assert _violations('ACTION = "対応不要（処理は継続した）"\noutcome.report_warning("結果", next_action=ACTION)') == [2]
     assert not _violations('outcome.report_warning("保持", next_action="使用中だった場合は確認せよ")')
     assert _violations(
@@ -147,7 +144,6 @@ def test_warning_actionability_resolves_constants() -> None:
 )
 @pytest.mark.parametrize("argument", ["fix", "next_action"])
 def test_action_sentences_require_imperative(verb: str, argument: str) -> None:
-    """行動の要求である引数は、途中の文も含め終止形を検出する。"""
     assert _violations(f'formatter("理由", tag="warn", {argument}="対象を{verb}。復旧後に続けよ。")') == [1]
 
 
@@ -155,7 +151,6 @@ def test_action_sentences_require_imperative(verb: str, argument: str) -> None:
     "text", ["対象は記録済みである。", "記録を取得できない。", "生成元が処理した。", "確認する場合は対象を保存せよ。"]
 )
 def test_fact_sentences_and_conditions_are_allowed(text: str) -> None:
-    """事実の平叙文と、命令文へ続く条件節を誤検出しない。"""
     assert not _violations(f'formatter("理由", tag="warn", fix="{text}")')
 
 
@@ -167,7 +162,6 @@ def test_fact_sentences_and_conditions_are_allowed(text: str) -> None:
     ],
 )
 def test_default_warning_formatters_require_imperative(definition: str) -> None:
-    """別名で生成した警告formatterも、tag省略時のfixを検出する。"""
     assert _violations(definition + '\nnotice("理由", fix="資料を取得する。")') == [3]
 
 

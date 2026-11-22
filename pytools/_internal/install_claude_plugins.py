@@ -29,7 +29,6 @@ from pytools._internal import (
 logger = logging.getLogger(__name__)
 
 
-# plugin cache の version 直下に全plugin共通で揃っている必要があるファイル。
 _PLUGIN_CACHE_REQUIRED_FILES: tuple[str, ...] = (".claude-plugin/plugin.json",)
 
 # Python実行pluginは起動スクリプトが共有環境の`launch.py`で依存を解決する。
@@ -149,7 +148,6 @@ def _install_plugins(initial_enabled: dict[str, bool]) -> tuple[bool, list[str],
         )
         return external_changed, [], 0, 0, False
 
-    # remove/add が設定を消す場合もあるため、修復前の user scope の選択を使う。
     expected = {}
     disabled_ids = []
     for name in target_versions:
@@ -163,7 +161,6 @@ def _install_plugins(initial_enabled: dict[str, bool]) -> tuple[bool, list[str],
         if not claude_marketplace.ensure_marketplace():
             return external_changed, [], 0, 0, False
 
-        # 修復で導入済み登録も変わり得るため、ここで一覧を取り直す。
         raw_data: object = _read_installed_plugins_from_file()
         if raw_data is None:
             raw_data = _get_installed_plugins_raw()
@@ -196,7 +193,6 @@ def _sync_plugins(
 ) -> tuple[bool, list[str], int, int, bool]:
     any_change = False
 
-    # deprecated プラグインをアンインストール
     for name in deprecated_names:
         if _uninstall_deprecated(name, raw_data):
             any_change = True
@@ -297,7 +293,6 @@ def _sync_plugins(
 
 
 def _plugin_content_matches(root: Path, name: str) -> bool:
-    """marketplace原本と導入先の全配布内容を比べ、同版の編集や欠落も検出する。"""
     marketplace = common.load_json_dict(root / ".claude-plugin" / "marketplace.json")
     entries = marketplace.get("plugins") if marketplace is not None else None
     if not isinstance(entries, list):
@@ -313,7 +308,6 @@ def _plugin_content_matches(root: Path, name: str) -> bool:
 
 
 def _remove_unused_plugins() -> bool:
-    """導入済みのcompact-plusと、そのmarketplace登録を削除する。"""
     changed = False
     installed = _get_installed_plugins_raw()
     if installed is None:
@@ -359,7 +353,6 @@ def _get_marketplaces_raw() -> object | None:
 
 
 def _marketplace_entry(data: object, marketplace_name: str) -> dict[str, object] | None:
-    """指定したマーケットプレイス名の一覧要素を返す。"""
     if isinstance(data, dict):
         dict_data = cast("dict[str, object]", data)
         if "marketplaces" in dict_data:
@@ -560,7 +553,7 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
         for item in list_data:
             if isinstance(item, dict):
                 item_dict = cast("dict[str, object]", item)
-                # user scope 以外のエントリは管理対象外
+
                 if item_dict.get("scope") not in (None, "user"):
                     continue
                 name = _name_from_entry(item_dict)
@@ -572,7 +565,6 @@ def _extract_plugin_version_map(data: object) -> dict[str, str]:
 
 
 def _name_from_entry(entry: dict[str, object]) -> str | None:
-    """対象marketplaceのplugin名を返す。marketplaceを持たない旧形式は名前で判定する。"""
     raw_id = entry.get("id")
     if isinstance(raw_id, str):
         plugin_name, separator, marketplace = raw_id.partition("@")
@@ -625,7 +617,6 @@ def _read_target_info(dotfiles_root: Path) -> tuple[dict[str, str], set[str]]:
 
 
 def _is_installed(name: str, raw_data: object) -> bool:
-    """指定プラグインが何らかのスコープでインストール済みか判定する。"""
     if not isinstance(raw_data, list):
         return False
     for item in cast("list[object]", raw_data):
@@ -671,7 +662,6 @@ def _is_managed_cache(directory: Path) -> bool:
 
 
 def _install_plugin(name: str) -> bool:
-    """指定 plugin をインストールする (成功時 True を返す)。"""
     with _cache_operation_lock(name):
         result = claude_common.run_claude(
             ["plugin", "install", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user", "-y"],
@@ -696,7 +686,6 @@ def _install_plugin(name: str) -> bool:
 
 
 def _update_plugin(name: str) -> bool:
-    """指定 plugin を最新版へ更新する (成功時 True を返す)。"""
     with _cache_operation_lock(name):
         result = claude_common.run_claude(
             ["plugin", "update", f"{name}@{claude_common.MARKETPLACE_NAME}", "--scope=user"],
@@ -740,14 +729,12 @@ def _plugin_cache_directory(name: str) -> Path | None:
 
 
 def _plugin_cache_required_files(name: str) -> tuple[str, ...]:
-    """pluginの配布形態に対応するcacheの必須ファイルを返す。"""
     if name in _PYTHON_RUNTIME_PLUGIN_NAMES:
         return _PYTHON_RUNTIME_PLUGIN_CACHE_REQUIRED_FILES + _PLUGIN_CACHE_REQUIRED_FILES
     return _PLUGIN_CACHE_REQUIRED_FILES
 
 
 def _missing_plugin_cache_files(name: str, cache_dir: Path) -> list[str]:
-    """必須ファイルのうち plugin cache に揃っていないものを列挙する。"""
     return [relative for relative in _plugin_cache_required_files(name) if not (cache_dir / relative).is_file()]
 
 
@@ -782,7 +769,6 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
             )
             return "unchanged"
         if not _is_managed_cache(cache_dir):
-            # 削除の対象は plugin cache の内側だけとし、想定外の位置にある導入先は削除しない。
             short = log_format.home_short(cache_dir)
             logger.info(
                 log_format.format_status(
@@ -956,7 +942,7 @@ def _verify_target_plugins(
         elif name not in failed_operations:
             # 導入できなかったpluginの設定欠落は、独立した設定の失敗ではない。
             plugin_id = f"{name}@{claude_common.MARKETPLACE_NAME}"
-            # install は有効化する。導入済みの update・現状確認は未指定のキーを作らない。
+
             if name in expected_enabled or plugin_id in enabled:
                 expected = expected_enabled.get(name, True)
                 if enabled.get(plugin_id) is not expected:

@@ -53,21 +53,17 @@ class _ThreadResult(BaseModel):
 
 @dataclasses.dataclass(frozen=True)
 class UnselectedConversation:
-    """ユーザーの会話が未選択である。"""
+    pass
 
 
 @dataclasses.dataclass(frozen=True)
 class SelectedConversation:
-    """会話を選択済みで、観測したturnが無い。"""
-
     thread_id: str
     cwd: str
 
 
 @dataclasses.dataclass(frozen=True)
 class RunningTurn:
-    """選択した会話のturnが実行中である。"""
-
     thread_id: str
     cwd: str
     turn_id: str
@@ -75,8 +71,6 @@ class RunningTurn:
 
 @dataclasses.dataclass(frozen=True)
 class CompletedTurn:
-    """観測したturnが終了している。"""
-
     thread_id: str
     cwd: str
     turn_id: str
@@ -84,8 +78,6 @@ class CompletedTurn:
 
 @dataclasses.dataclass(frozen=True)
 class InterruptedConversation:
-    """ユーザーが中断または購読解除を要求した会話である。"""
-
     thread_id: str
     cwd: str
     turn_id: str | None
@@ -111,21 +103,17 @@ class ConversationRecovery:
 
     @property
     def conversation(self) -> ConversationState:
-        """会話の現在状態を読み取り専用で返す。"""
         return self._conversation
 
     @property
     def thread_id(self) -> str | None:
-        """選択した会話のIDを返す。"""
         return None if isinstance(self._conversation, UnselectedConversation) else self._conversation.thread_id
 
     @property
     def cwd(self) -> str | None:
-        """選択した会話の作業ディレクトリを返す。"""
         return None if isinstance(self._conversation, UnselectedConversation) else self._conversation.cwd
 
     def restore_running_turn(self, original: RunningTurn) -> bool:
-        """復旧前のturnを、中断要求を保ったまま続行判定へ戻す。"""
         selected = self._conversation
         if isinstance(selected, (UnselectedConversation, InterruptedConversation)):
             return False
@@ -133,7 +121,6 @@ class ConversationRecovery:
         return True
 
     def observe_client(self, message: dict[str, Any]) -> None:
-        """中継する要求から会話の選択と明示中止を記録する。"""
         method, params = message.get("method"), message.get("params")
         if not isinstance(params, dict):
             return
@@ -167,7 +154,6 @@ class ConversationRecovery:
             )
 
     def observe_server(self, message: dict[str, Any]) -> None:
-        """同じ会話の通知だけを活動と終了へ反映する。"""
         identifier = message.get("id")
         request = self._pending.pop(identifier, None) if isinstance(identifier, (str, int)) else None
         if request is not None and "result" in message:
@@ -197,7 +183,6 @@ class ConversationRecovery:
             self._conversation = CompletedTurn(selected.thread_id, selected.cwd, selected.turn_id)
 
     def resume_parameters(self) -> dict[str, Any]:
-        """元の公開起動条件を使うthread/resumeの入力を返す。"""
         if self.thread_id is None:
             raise RuntimeError("Codexの会話IDを取得していないため、自動再開できない")
         result = copy.deepcopy(self._startup)
@@ -210,7 +195,6 @@ class ConversationRecovery:
         return result
 
     def continuation_parameters(self, thread: dict[str, Any], turns: list[dict[str, Any]]) -> dict[str, Any] | None:
-        """元turnが未完了で現在のwriterが無い場合に限り、自動続行の入力を返す。"""
         if thread.get("id") != self.thread_id or thread.get("cwd") != self.cwd:
             raise RuntimeError("再開したCodexの会話IDまたは作業ディレクトリが元の実行と一致しない")
         selected = self._conversation

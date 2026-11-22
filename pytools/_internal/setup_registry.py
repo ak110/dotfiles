@@ -76,7 +76,6 @@ def run(
 
 
 def _apply_all(specs: Sequence[_RegistrySpec]) -> None:
-    """`specs` の各エントリを HKCU 配下に書き込む。"""
     wr = winutils.import_winreg()
     for spec in specs:
         logger.info(log_format.format_status("registry", spec.description))

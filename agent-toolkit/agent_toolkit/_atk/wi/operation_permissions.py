@@ -1,5 +1,3 @@
-"""実際の拒否・ユーザー回答・実入力を対応付け、確認済みのsoft拒否だけに承認を適用する。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -19,8 +17,6 @@ from agent_toolkit._git import remote as git_remote
 lazy from agent_toolkit._atk.wi import entries, frontmatter, sync, uwi_scan
 lazy from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES
 lazy from agent_toolkit._atk.wi.uwi import ANSWER_MARKER
-
-# pydanticを読み込む判定器は承認を判定する時だけ使う。全ツール呼び出しのhookで毎回読み込まない。
 lazy from agent_toolkit._common import approval_classifier
 
 _PENDING = "operation_permission_denials"
@@ -31,8 +27,6 @@ _LIMIT = 64
 
 @dataclasses.dataclass(frozen=True)
 class Authorization:
-    """承認を適用できるかと、その判定根拠を保持する。"""
-
     allow: bool = False
     context: str = ""
 
@@ -116,7 +110,6 @@ def observe_denial(payload: dict[str, Any]) -> None:
 
 
 def pending_requests(session_id: str) -> list[dict[str, Any]]:
-    """確認画面と要求起草へ、ホストの拒否から作った具体的要求を返す。"""
     values = read_state(session_id).get(_PENDING)
     return [value for value in values.values() if isinstance(value, dict)] if isinstance(values, dict) else []
 
@@ -140,7 +133,6 @@ def _remember_use(state: dict, key: str, payload: dict, request: dict, *, source
 
 
 def observe_answer(payload: dict[str, Any]) -> None:
-    """AskUserQuestionの実応答を、表示した要求全体へ結ぶ。モデルが与えたanswersは受け付けない。"""
     if payload.get("tool_name") != "AskUserQuestion" or payload.get("hook_event_name") != "PostToolUse":
         return
     inputs = payload.get("tool_input")
@@ -199,7 +191,6 @@ def _actual_request(request: object, operation: dict[str, Any]) -> dict[str, Any
 
 
 def pretooluse(payload: dict[str, Any]) -> Authorization | None:
-    """メインが同じ入力を実行するとき、実効soft規則と保存済み承認の一致を確かめる。"""
     if payload.get("agent_id") is not None or delegated_session.is_delegated(os.environ):
         return None
     session = payload.get("session_id")
@@ -405,7 +396,6 @@ def _consume_uwi(
 
 
 def observe_result(payload: dict[str, Any]) -> None:
-    """許可の応答と実行の終了結果を区別して記録する。"""
     session = payload.get("session_id")
     event = payload.get("hook_event_name")
     if not isinstance(session, str) or not session or event not in ("PostToolUse", "PostToolUseFailure"):
@@ -427,7 +417,7 @@ def observe_result(payload: dict[str, Any]) -> None:
                 continue
             if result.get("tool_name") != payload.get("tool_name"):
                 continue
-            # ツール応答の到着は、コマンドや業務処理の成功を保証しない。
+
             result["status"] = "failed" if event == "PostToolUseFailure" else "returned"
             result["finished_at"] = datetime.datetime.now(datetime.UTC).isoformat()
             changed = True
@@ -437,7 +427,6 @@ def observe_result(payload: dict[str, Any]) -> None:
 
 
 def prepare_request(session_id: str, request_id: str, *, scope: str = "once") -> dict[str, Any] | None:
-    """表示する試行範囲を準備するだけで、承認は生成しない。範囲変更は別の要求にする。"""
     if operation_approvals.operation_limit({"scope": scope}) is None:
         return None
     prepared: dict[str, Any] | None = None
@@ -464,7 +453,6 @@ def prepare_request(session_id: str, request_id: str, *, scope: str = "once") ->
 
 
 def adopt_request(session_id: str, source_session: str, request_id: str) -> dict[str, Any] | None:
-    """呼出側が既存Managerで所有を確認した委譲先の拒否を、入力を広げず引き継ぐ。"""
     if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", source_session):
         return None
     pending = read_state(source_session).get(_PENDING)
@@ -502,7 +490,6 @@ def adopt_request(session_id: str, source_session: str, request_id: str) -> dict
 
 
 def permission_status(session_id: str, *, request_id: str | None = None) -> dict[str, Any]:
-    """現在会話の拒否、承認の出所、実行応答を明示更新用に取得する。"""
     state = read_state(session_id)
     pending = pending_requests(session_id)
     requests = {
@@ -617,7 +604,6 @@ def permission_status(session_id: str, *, request_id: str | None = None) -> dict
 
 
 def revoke_permission(session_id: str, request_id: str) -> dict[str, bool]:
-    """現在会話で確認済みの操作承認を取り消す。"""
     status = permission_status(session_id, request_id=request_id)
     known = [value["request"] for value in status["pending"] if operation_approvals.validate_request(value.get("request"))]
     known += [value["request"] for value in status["approvals"] if operation_approvals.validate_request(value.get("request"))]

@@ -1,5 +1,3 @@
-"""agents_serverとbackendが送出する、委譲先sessionの起動と所有に関する例外。"""
-
 from __future__ import annotations
 
 import logging
@@ -14,11 +12,12 @@ KILL_NOT_DELIVERED_NEXT_ACTION = (
 )
 
 
-class SessionInitializationTimeoutError(RuntimeError):
-    """backendがsessionの初期化を上限内に完了せず、起動を打ち切ったことを示す。
+class ProcessIdentityMismatch(PermissionError):
+    pass
 
-    起動を要求した主体は無制限に待たされる代わりに本例外を受領し、対象と原因を報告できる。
-    """
+
+class SessionInitializationTimeoutError(RuntimeError):
+    pass
 
 
 class DelegateBackendError(RuntimeError):
@@ -29,18 +28,15 @@ class DelegateBackendError(RuntimeError):
 
 
 class ActionableRuntimeError(ActionableError, RuntimeError):
-    """次の操作を持つ`RuntimeError`。既存の`except RuntimeError`節が捕捉する範囲を保つために使う。"""
+    pass
 
 
 class ActionableTimeoutError(ActionableError, TimeoutError):
-    """次の操作を持つ`TimeoutError`。既存の`except TimeoutError`節が捕捉する範囲を保つために使う。"""
+    pass
 
 
 class SessionOwnerGoneError(RuntimeError):
-    """session所有タスクが終了し、継続要求または中断要求を配送できないことを示す。
-
-    MCP層はこの例外を受領して、保存済みの再開状態から同じ会話を再開する。
-    """
+    pass
 
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")

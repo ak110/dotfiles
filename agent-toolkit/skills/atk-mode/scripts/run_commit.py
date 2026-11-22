@@ -20,7 +20,6 @@ from pyfltr.command import execution_slot
 
 @contextlib.contextmanager
 def _finish_interruption() -> Generator[None]:
-    """有限の回収中に同じ中断を重ねず、呼出側のシグナル設定へ戻す。"""
     previous = {number: signal.signal(number, signal.SIG_IGN) for number in (signal.SIGINT, signal.SIGTERM)}
     try:
         yield
@@ -30,7 +29,6 @@ def _finish_interruption() -> Generator[None]:
 
 
 def _interrupt(process: subprocess.Popen[bytes]) -> None:
-    """親が先に終了しても、終了要求前に所有したhook・検証子を回収する。"""
     with _finish_interruption(), process_tree.ProcessIdentityPins() as pins:
         try:
             root = psutil.Process(process.pid)
@@ -39,8 +37,7 @@ def _interrupt(process: subprocess.Popen[bytes]) -> None:
         except psutil.NoSuchProcess:
             process.wait(timeout=process_tree.RECLAIM_TIMEOUT_SECONDS)
             return
-        # 別セッションの検証にも届くよう、グループだけでなく所有した各世代へ送る。
-        # prekにはSIGINTで退避を戻す機会を与え、その終了も資源回収の対象に含める。
+
         for target in targets:
             with contextlib.suppress(psutil.NoSuchProcess):
                 target.send_signal(signal.SIGINT)
@@ -56,7 +53,6 @@ def _term_as_interrupt(_number: int, _frame: object) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """公開commit-with-timeoutからGitの終了コード、上限124、中断130を返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--timeout", required=True, type=float, help="実行枠の順番待ちを含むcommit全体の時間上限（正の有限秒数）"
@@ -69,11 +65,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("この中断・退避復元の実行方法はPOSIX専用。Windowsでは確認済みのホスト実行手段を使う")
     arguments = args.commit_args[1:] if args.commit_args[:1] == ["--"] else args.commit_args
     previous = signal.signal(signal.SIGTERM, _term_as_interrupt)
-    # 上限は実行枠の順番待ちを含むコマンド全体に適用する。枠待ちを除くと全体の所要が決まらず、呼び出し側が
-    # ホストの時間上限をこの上限より長く指定しても、ホストがhookの実行中に先に止めて退避が戻らない。
+
     deadline = time.monotonic() + args.timeout
     try:
-        # hookは祖先の所有を継承し、commit単位で保持する。
         with (
             execution_slot.hold(label="git commit", should_abort=lambda: time.monotonic() >= deadline),
             process_tree.process_scope(
@@ -95,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     except execution_slot.WaitAborted:
         if time.monotonic() < deadline:
             raise
-        # commitを起動する前であり、hookの退避も行われていない。時間切れとして同じ終了コードを返す。
+
         next_action.report(
             f"実行枠の順番待ちのまま時間上限（{args.timeout:.0f}秒）に達した。commitは開始していない",
             next_action="実行枠を保持している検証の終了を待つか、上限を延ばして同じcommitを再実行する",

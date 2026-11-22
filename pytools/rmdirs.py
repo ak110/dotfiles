@@ -1,5 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""正規表現でディレクトリ削除。"""
 
 import argparse
 import pathlib
@@ -11,7 +10,6 @@ from pytools._internal.cli import enable_completion
 
 
 def main() -> None:
-    """正規表現でディレクトリを削除するエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("-d", "--dry-run", action="store_true")

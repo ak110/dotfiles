@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_bundle_failures_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -30,7 +28,6 @@ from agent_toolkit._testing.session_review_evidence_support import _bundle_deleg
 )
 @pytest.mark.parametrize("status", ["failed", "completed"])
 def test_public_bundle_keeps_quoted_diagnostics_as_command_results(tmp_path, capsys, output, status) -> None:
-    """公開入口で引用を実拒否へ変えず、非0終了だけを元の記録位置で保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -113,7 +110,6 @@ def test_codex_failed_commands_group_by_executable_exit_and_diagnostic(
 
 
 def test_bundle_excludes_transient_classifier_failure(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """auto mode classifierの一時的な判定不能は候補にせず専用区分へ数える。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -302,7 +298,6 @@ def test_bundle_excludes_delegate_returns_that_only_report_success(
     final_text: str,
     expected: list[str],
 ) -> None:
-    """`--bundle`の候補から成功の定型形式だけの返却を除き、想定外事象を持つ定型返却は残す。"""
     texts = _bundle_delegate_return_texts(
         tmp_path,
         [

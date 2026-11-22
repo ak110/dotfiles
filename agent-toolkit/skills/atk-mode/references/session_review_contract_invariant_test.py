@@ -1,5 +1,3 @@
-"""振り返り手順の実行例が登録済みコマンドに到達することを確かめる。"""
-
 import pathlib
 import shlex
 from typing import Any
@@ -10,7 +8,6 @@ from agent_toolkit._testing import cli_examples
 
 
 def test_session_review_documents_use_public_script_entries() -> None:
-    """振り返りの手順書の実行例が登録済みのコマンドを使い、実装ファイルを直接起動しない。"""
     documents = (run_script.PLUGIN_ROOT / "skills/atk-mode/playbooks/review-session.md",)
     commands: list[list[str]] = []
     for document in documents:
@@ -48,7 +45,6 @@ def test_document_option_mutation_is_detected(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_receiver_required_input_mutation_is_detected() -> None:
-    """受理側だけが必須入力を増やす変更も、文書の実物との不一致として検出する。"""
     parser = cli_examples.registered_parser("session-review-prepare")
     parser.add_argument("--required-contract-input", required=True)
     document = run_script.PLUGIN_ROOT / "skills/atk-mode/playbooks/review-session.md"

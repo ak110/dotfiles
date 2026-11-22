@@ -1,5 +1,3 @@
-"""利用上限の拒否時だけ、工程の現在設定に従うモデル切替を判定する。"""
-
 from __future__ import annotations
 
 import datetime

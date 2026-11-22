@@ -67,7 +67,6 @@ class HeldTurn:
 
     @classmethod
     def capture(cls, session: SessionState) -> HeldTurn | None:
-        """保留中だけ復元に必要なturn情報を退避する。"""
         if not is_observation_preserving_reply(session):
             return None
         assert session.hold is not None
@@ -128,7 +127,6 @@ def is_background_completion_wait(session: SessionState) -> bool:
 
 
 def is_observation_preserving_reply(session: SessionState) -> bool:
-    """背景完了と形式回復の追送は、既存の未回収対象を新turnへ引き継ぐ。"""
     return isinstance(session.hold, turn_state.BackgroundWait | turn_state.ResultContractWait)
 
 
@@ -233,11 +231,9 @@ def is_overload_failure(session: SessionState) -> bool:
 
 
 def clear_overload_resume(session: SessionState) -> None:
-    """過負荷による自動継続の連鎖を終える。"""
-    session.overload_resume_count = 0
+    session.reset_overload_retry()
     if isinstance(session.hold, turn_state.OverloadWait):
         session.clear_hold()
-    session.overload_first_at = None
 
 
 def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) -> bool:
@@ -253,9 +249,7 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
     session.hold_result(
         turn_state.OverloadWait(result, asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count])
     )
-    session.overload_resume_count = count + 1
-    if session.overload_first_at is None:
-        session.overload_first_at = utc_now()
+    session.advance_overload_retry()
     session.api_error = {
         "type": OVERLOAD_ERROR_INFO,
         "http_status": None,
@@ -267,11 +261,9 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
 
 
 def clear_usage_limit_wait(session: SessionState) -> None:
-    """利用上限の解除待ちの連鎖を終える。"""
-    session.usage_limit_wait_count = 0
+    session.reset_usage_limit_retry()
     if isinstance(session.hold, turn_state.UsageLimitWait):
         session.clear_hold()
-    session.usage_limit_first_at = None
 
 
 def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
@@ -288,7 +280,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     failure_text = str(result.get("error", "")) + str(result.get("agent_message", ""))
     credit_shortage = api_credits.is_credit_shortage(failure_text)
     current = session.claude_connection or ("api" if session.claude_api_env_file else "inherit")
-    # API接続（クレジット・従量課金）の不受理として、残高不足と利用上限の応答を次の候補へ移す根拠にする。
+
     credit_error = (current in claude_connection.API_KINDS or current == "api") and (
         credit_shortage or "usage limit" in failure_text.casefold()
     )
@@ -357,8 +349,6 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
             and limit is not None
             and limit.is_wait_target
         ):
-            # 上限の解除後に始まるturnでサブスクリプションへ戻すため、解除予定時刻を保持する。
-            # 不明な場合は解除待ちと同じ再確認の時刻を使う。
             now = time.time()
             session.claude_subscription_retry_at = now + limit.delay_seconds(now)
         session.claude_api_env_file = selected.api_env_file
@@ -405,16 +395,13 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     error["usageLimit"] = {"type": limit.limit_type, "resetsAt": resets_at}
     result = {**result, "error": error}
     session.hold_result(turn_state.UsageLimitWait(result, asyncio.get_running_loop().time() + limit.delay_seconds(time.time())))
-    session.usage_limit_wait_count += 1
-    if session.usage_limit_first_at is None:
-        session.usage_limit_first_at = utc_now()
+    session.advance_usage_limit_retry()
     _record_usage_limit_error(session, limit, error)
     state.notify_touch_listeners(session)
     return True
 
 
 def _record_usage_limit_error(session: SessionState, limit: claude_usage_limit.UsageLimitState, error: Any) -> None:
-    """切替待ちと解除待ちへ同じ利用枠の診断を公開する。"""
     http_status = error.get("apiErrorStatus") if isinstance(error, dict) else None
     previous = session.api_error or {}
     session.api_error = {
@@ -451,13 +438,11 @@ def release_auto_resume_hold(session: SessionState) -> bool:
 
 
 def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
-    """未観測の孫session識別子を既存のerror項目へ併合する。"""
     _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, session_ids)
     session.touch()
 
 
 def _merge_error_identifiers(session: SessionState, key: str, identifiers: set[str]) -> None:
-    """識別子の集合を既存のerrorの`key`項目へ併合する。集合が空ならerrorを変えない。"""
     if not identifiers:
         return
     merged = set(identifiers)

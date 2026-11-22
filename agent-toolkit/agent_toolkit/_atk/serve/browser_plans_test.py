@@ -62,7 +62,6 @@ async def test_plan_copy_feedback_preserves_toolbar_positions(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_plan_filename_link_supports_get_and_shift_click(screen_harness: _ScreenHarness) -> None:
-    """計画名はプレビューを復元するGET URLを持ち、Shiftクリックをブラウザーへ委ねる。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/plans")
@@ -90,7 +89,7 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
     """
     harness = screen_harness
     page = harness.page
-    # 更新通知の購読を止め、削除後も一覧が古いままの状態で項目を選ぶ。
+
     await page.route("**/api/plans/events", lambda route: route.abort())
     body_delivered = asyncio.Event()
     release_body = asyncio.Event()
@@ -112,7 +111,6 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
 
     harness.plan_path.unlink()
     if delay_auto_opened_body:
-        # 遅れた本文の応答が画面へ届いてから項目を選び、削除と本文の取得が重なる順序を固定する。
         await asyncio.wait_for(body_delivered.wait(), timeout=5)
     await item.click()
 
@@ -131,7 +129,6 @@ async def test_selecting_deleted_plan_refreshes_list(screen_harness: _ScreenHarn
 async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile(
     screen_harness: _ScreenHarness, tmp_path: Path
 ) -> None:
-    """狭幅で失効後に一覧を開いても理由を読み、別の計画へ進める。"""
     harness = screen_harness
     page = harness.page
     next_plan = harness.root / "next-plan.md"
@@ -173,7 +170,6 @@ async def test_deleted_plan_status_remains_visible_while_choosing_next_on_mobile
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
 async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
-    """狭い画面で一覧の初期取得中に開いた一覧を取得後も開いたまま保ち、項目の選択後と操作しない再読み込み後は閉じていることも確かめる。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     started = asyncio.Event()
@@ -218,7 +214,6 @@ async def test_mobile_plan_drawer_keeps_user_open_during_initial_fetch(screen_ha
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _ScreenHarness) -> None:
-    """390px幅の計画画面で本文とパスのコピー操作を1行の高さに保つ。"""
     page = screen_harness.page
     await page.route("https://cdn.jsdelivr.net/**", lambda route: route.abort())
     await page.set_viewport_size({"width": 390, "height": 844})
@@ -246,7 +241,6 @@ async def test_mobile_plan_copy_buttons_stay_on_one_line(screen_harness: _Screen
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenHarness) -> None:
-    """更新時刻を変えない連続書き換えでも、SSE通知後に新しい本文と図を表示する。"""
     harness = screen_harness
     harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await harness.page.goto(harness.base_url + "/plans")
@@ -255,7 +249,7 @@ async def test_same_mtime_rewrites_refresh_plan_preview(screen_harness: _ScreenH
     fixed_stat = harness.plan_path.stat()
 
     async def rewrite_keeping_mtime(markdown: str) -> None:
-        # 同じ時刻刻み内の連続書き換えを、実行速度によらず再現するため更新時刻を初回の値へ戻す。
+
         harness.plan_path.write_text(markdown, encoding="utf-8")
         os.utime(harness.plan_path, ns=(fixed_stat.st_atime_ns, fixed_stat.st_mtime_ns))
         assert harness.plan_path.stat().st_mtime_ns == fixed_stat.st_mtime_ns
@@ -293,7 +287,7 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
     page = harness.page
     harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
-    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+
     sent: list[dict] = []
     reload_sent = asyncio.Event()
 
@@ -343,7 +337,6 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
 async def test_review_table_uses_available_width_and_markdown_keeps_width_limit(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """レビュー指摘管理表は全幅を使い、Markdown本文は読みやすさのため幅上限を保つ。"""
     harness = screen_harness
     review_row = '"1"\t"implementation-review"\t"a.py:1"\t"指摘"\t"要"\t"対応済み"\t""\n'
     (harness.root / "plan.exec-review.tsv").write_text(review_row, encoding="utf-8")

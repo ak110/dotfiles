@@ -1,5 +1,3 @@
-"""WIサブパーサーが共有する引数・補完・型検証。"""
-
 import argparse
 import math
 import re
@@ -37,7 +35,6 @@ _uwi_filename_completer = _wi_filenames.make_filename_completer(_wi_constants.WI
 
 
 def _cooldown_days(value: str) -> int:
-    """3以上の再処理抑制日数をargparse向けに検証する。"""
     try:
         days = int(value)
     except ValueError as error:
@@ -48,7 +45,6 @@ def _cooldown_days(value: str) -> int:
 
 
 def _nonnegative_finite_float(value: str) -> float:
-    """0以上の有限な浮動小数点数だけをargparseへ渡す。"""
     try:
         parsed = float(value)
     except ValueError as exc:
@@ -59,7 +55,6 @@ def _nonnegative_finite_float(value: str) -> float:
 
 
 def _worktree_name(value: str) -> str:
-    """worktree名としてパス逸脱を起こさない値を検証する。"""
     if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value) is None or ".." in value:
         raise _cli_support.argument_type_error(
             f"worktree名として使えない: {value}",
@@ -69,7 +64,6 @@ def _worktree_name(value: str) -> str:
 
 
 def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
-    """一覧・全文表示・検索へ共通の重要フラグの限定を登録する。"""
     parser.add_argument(
         "--important",
         choices=("all", "yes", "no"),
@@ -79,7 +73,6 @@ def _add_important_filter_arg(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_target_branch_filter_arg(parser: argparse.ArgumentParser) -> None:
-    """一覧・全文表示・検索へ共通の宛先の系統の限定を登録する。"""
     parser.add_argument(
         "--target-branch",
         metavar="BRANCH",
@@ -107,7 +100,12 @@ def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_draft_comparison_arg(parser: argparse.ArgumentParser) -> None:
-    """新規・編集のdry-runと本保存へ同じ原稿冒頭の比較入力を登録する。"""
+    parser.add_argument(
+        "--opening-output",
+        metavar="PATH",
+        action="append",
+        help="--dry-runの冒頭抜粋を指定先に保存する。複数原稿では--body-fileと同じ件数・順序で反復指定する。",
+    )
     parser.add_argument(
         "--compare-opening-file",
         metavar="PATH",

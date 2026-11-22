@@ -1,5 +1,3 @@
-"""選定項目の書込区分と導出した新設先の検査。"""
-
 from __future__ import annotations
 
 import itertools
@@ -26,7 +24,7 @@ _NEXT_SECTION_OVERLAP = "区分間で重複するパスは、所有する1区分
 
 
 _NEXT_DERIVED = (
-    "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスは実在する親ディレクトリと拡張子を持つ完全な名前にし、"
+    "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスはリポジトリ内の実在する祖先と拡張子を持つ完全な名前にし、"
     "反映範囲を配置根拠のある実在ディレクトリへ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
 )
 
@@ -40,7 +38,6 @@ def check_decision(
     work_dir: pathlib.Path | None = None,
     derived_new_paths: list[dict[str, str]] | None = None,
 ) -> list[Violation]:
-    """選定結果の1件の項目の違反を、AWIのファイル名・区分・パスを含む理由と次の操作の組の一覧で返す。"""
     errors: list[Violation] = []
     derived_paths: set[str] = set()
     if work_dir is not None:
@@ -82,7 +79,6 @@ def check_decision(
             for first in first_paths
             for second in second_paths
             if (_covers(first, second) or _covers(second, first))
-            # 書き込まない範囲が書込区分のパスを真に含む組は、範囲の残りを書き込まない選定として受理する。
             and not (second_name == _selection.EXCLUDED_PATHS_KEY and first != second and _covers(second, first))
         }
         errors.extend(
@@ -95,7 +91,6 @@ def check_decision(
 def _check_derived_paths(
     awi: str, writes: list[str], records: list[dict[str, str]], work_dir: pathlib.Path
 ) -> tuple[set[str], set[str], list[Violation]]:
-    """導出記録のパス・範囲・書込への対応を確かめ、正当な新設先を返す。"""
     paths: set[str] = set()
     scopes: set[str] = set()
     seen: set[str] = set()
@@ -122,7 +117,6 @@ def _check_derived_paths(
 
 
 def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> list[str]:
-    """導出記録1件のパスと反映範囲について、成立しない条件を比べた値とともに返す。"""
     failures: list[str] = []
     if (
         _normalize_candidate(path) != path
@@ -133,7 +127,7 @@ def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> l
     elif (work_dir / path).exists() and not (work_dir / path).is_file():
         failures.append("パスの実在先が通常ファイルではない")
     elif _new_file_path(path, work_dir) != path:
-        failures.append("パスが実在する親ディレクトリと拡張子を持つ完全な新設名ではない")
+        failures.append("パスがリポジトリ内の実在する祖先と拡張子を持つ完全な新設名ではない")
     if (
         _normalize_candidate(scope) != scope
         or not scope.endswith("/")
@@ -149,7 +143,6 @@ def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> l
 def _write_path_failure(
     entry: str, work_dir: pathlib.Path, reflected: set[str], derived_paths: set[str], declared: set[str]
 ) -> str | None:
-    """書込区分の要素1件が成立しない条件を返す。成立する場合は`None`を返す。"""
     target = work_dir / entry
     if _normalize_candidate(entry) != entry:
         return "正規化したリポジトリ相対パスではない"

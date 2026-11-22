@@ -30,6 +30,8 @@ _REG_EXPAND_SZ = 2
 # 最長一致優先で評価する環境変数名。長いパス (LOCALAPPDATA / APPDATA) を
 # USERPROFILE より先に評価し、前方一致が成立した時点で確定する順序とする。
 _PLACEHOLDER_VAR_ORDER: tuple[str, ...] = ("LOCALAPPDATA", "APPDATA", "USERPROFILE")
+_RETIRED_WINGET_IDS = frozenset({"burntsushi.ripgrep.msvc", "twpayne.chezmoi"})
+_WINGET_SOURCE_MARKER = "_microsoft.winget.source_"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -52,7 +54,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
     env_map = _collect_userprofile_env(os.environ)
 
-    # (1) プレースホルダー化
     original_entries = _split(user_value)
     replacements: list[tuple[str, str]] = []
     placeholder_entries: list[str] = []
@@ -62,12 +63,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         if new_entry != entry:
             replacements.append((entry, new_entry))
 
-    # (2) 廃止済みのパスとシステム側との重複除外
     new_value, removed = _filter_user_path(
         _PATH_SEPARATOR.join(placeholder_entries), system_value or "", obsolete_key=_obsolete_toolkit_bin_key()
     )
+    new_value, removed_winget = _filter_retired_winget_paths(new_value)
+    removed.extend(removed_winget)
 
-    # (3) 存在チェック警告
     missing, unresolved = _find_missing_paths(_split(new_value))
     for original, expanded in missing:
         logger.warning(
@@ -92,7 +93,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     needs_type_promotion = reg_type == _REG_SZ and "%" in new_value
     new_reg_type = _REG_EXPAND_SZ if needs_type_promotion else reg_type
 
-    # (5) 書き戻し
     if not (replacements or removed or needs_type_promotion):
         return post_apply_outcome.PostApplyOutcome()
     try:
@@ -108,6 +108,65 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
     winutils.broadcast_environment_change()
     return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
+def remove_winget_package_paths(package_directories: Iterable[Path]) -> bool:
+    directory_keys = frozenset(winutils.path_key(str(path)) for path in package_directories)
+    if not directory_keys:
+        return False
+    value, reg_type = winutils.read_user_env_var("Path")
+    if not value:
+        return False
+    updated, removed = _filter_retired_winget_paths(value, directory_keys=directory_keys, include_known=False)
+    if not removed:
+        return False
+    winutils.write_user_env_var("Path", updated, reg_type)
+    for entry in removed:
+        logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
+    winutils.broadcast_environment_change()
+    return True
+
+
+def _filter_retired_winget_paths(
+    value: str, *, directory_keys: frozenset[str] = frozenset(), include_known: bool = True
+) -> tuple[str, list[str]]:
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return value, []
+    packages = PureWindowsPath(local) / "Microsoft" / "WinGet" / "Packages"
+    kept: list[str] = []
+    removed: list[str] = []
+    for entry in _split(value):
+        expanded = ntpath.expandvars(entry)
+        path = PureWindowsPath(expanded)
+        try:
+            relative = path.relative_to(packages)
+        except ValueError:
+            kept.append(entry)
+            continue
+        if not relative.parts or ".." in relative.parts or "%" in expanded:
+            kept.append(entry)
+            continue
+        folder = relative.parts[0]
+        package_id, marker, source = folder.casefold().partition(_WINGET_SOURCE_MARKER)
+        matched = (
+            marker
+            and source
+            and (
+                (include_known and package_id in _RETIRED_WINGET_IDS)
+                or winutils.path_key(str(packages / folder)) in directory_keys
+            )
+        )
+        if matched:
+            try:
+                Path(str(packages / folder)).lstat()
+            except FileNotFoundError:
+                removed.append(entry)
+                continue
+            except OSError:
+                pass
+        kept.append(entry)
+    return _PATH_SEPARATOR.join(kept) if removed else value, removed
 
 
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:
@@ -157,7 +216,6 @@ def _replace_placeholders(entry: str, env_map: Mapping[str, str]) -> str:
 
 
 def _obsolete_toolkit_bin_key() -> str | None:
-    """現在の配布元で廃止した旧binが実在しない場合だけ、既知の撤去対象を返す。"""
     root = common.find_dotfiles_root()
     if root is None:
         return None
@@ -198,11 +256,6 @@ def _filter_user_path(user_value: str, system_value: str, *, obsolete_key: str |
 def _find_missing_paths(
     entries: Iterable[str],
 ) -> tuple[list[tuple[str, str]], list[tuple[str, str, OSError]]]:
-    """存在しないエントリーと検査できないエントリーを返す。
-
-    展開後にも `%` が残るエントリー（未定義変数残留）は判定不能として除外する。
-    判定は `pathlib.Path(p).exists()` で行う。
-    """
     missing: list[tuple[str, str]] = []
     unresolved: list[tuple[str, str, OSError]] = []
     for entry in entries:
@@ -220,5 +273,4 @@ def _find_missing_paths(
 
 
 def _split(path_value: str) -> list[str]:
-    """`;` 区切りの PATH 文字列をエントリー配列に分解する。空エントリーは除く。"""
     return [entry for entry in path_value.split(_PATH_SEPARATOR) if entry]

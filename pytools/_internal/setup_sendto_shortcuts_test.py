@@ -1,5 +1,3 @@
-"""pytools._internal.setup_sendto_shortcuts のテスト。"""
-
 import pathlib
 
 import pytest
@@ -23,8 +21,6 @@ class TestRunPlatformGuard:
 
 
 class TestRunSendToMissing:
-    """SendTo ディレクトリが存在しない場合のスキップ動作。"""
-
     def test_sendto_dir_missing_returns_false(self, windows_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
         del windows_home
         calls: list[list[str]] = []
@@ -39,8 +35,6 @@ class TestRunSendToMissing:
 
 
 class TestRunTargetMissing:
-    """ターゲット exe が未配置の場合のスキップ動作。"""
-
     def test_target_missing_skips_without_subprocess(self, windows_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
         sendto = windows_home / "AppData" / "Roaming" / "Microsoft" / "Windows" / "SendTo"
         sendto.mkdir(parents=True)
@@ -58,8 +52,6 @@ class TestRunTargetMissing:
 
 
 class TestRunShortcutCreation:
-    """SendTo + ターゲット exe 配置済みの状態でショートカットを操作する。"""
-
     @pytest.fixture(name="prepared")
     def _prepared(self, windows_home: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
         sendto = windows_home / "AppData" / "Roaming" / "Microsoft" / "Windows" / "SendTo"
@@ -94,7 +86,7 @@ class TestRunShortcutCreation:
         self, prepared: tuple[pathlib.Path, pathlib.Path, pathlib.Path], monkeypatch: pytest.MonkeyPatch
     ):
         _, target, lnk = prepared
-        lnk.touch()  # 既存ファイル扱いにする
+        lnk.touch()
         calls: list[list[str]] = []
         monkeypatch.setattr(
             setup_sendto_shortcuts.common,
@@ -104,7 +96,7 @@ class TestRunShortcutCreation:
 
         assert setup_sendto_shortcuts.run().changed is False
         cmd_strings = [" ".join(c) for c in calls]
-        # 読み取りで一致が確認できるため生成は呼ばれない
+
         assert not any("Save()" in s for s in cmd_strings)
 
     def test_idempotent_match_is_case_insensitive(
@@ -191,7 +183,6 @@ class TestRunShortcutCreation:
         assert any("O''Tool.lnk" in s for s in cmd_strings)
 
     def test_processes_all_entries_in_table(self, windows_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-        """`_SHORTCUTS` の全エントリが順に処理される。"""
         sendto = windows_home / "AppData" / "Roaming" / "Microsoft" / "Windows" / "SendTo"
         sendto.mkdir(parents=True)
         target1 = windows_home / ".local" / "bin" / "tool1.exe"

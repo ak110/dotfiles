@@ -1,5 +1,3 @@
-"""repack_archiveの基本動作の試験。"""
-
 # pylint: disable=protected-access
 
 import pathlib
@@ -17,7 +15,6 @@ class TestConditionalDirectoryExclusion:
     def test_sibling_conditions_apply_before_flattening(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source_kind: str
     ) -> None:
-        """同じ親の別フォルダーだけを条件にし、文字列規則と混在させて出力まで確認する。"""
         files = {
             "cover.txt": b"cover",
             "series/one/JpG/drop.txt": b"drop",
@@ -63,7 +60,6 @@ class TestConditionalDirectoryExclusion:
     def test_mutual_conditions_use_original_tree_and_restore_empty_result(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """相互条件の片方だけを残さず、全件除外時は空ZIPで原本を置き換えない。"""
         source = tmp_path / "book.zip"
         _make_zip(source, {"jpg/a.txt": b"a", "png/b.txt": b"b"})
         original = source.read_bytes()
@@ -79,7 +75,6 @@ class TestConditionalDirectoryExclusion:
     def test_directory_does_not_count_itself_as_sibling(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, dry_run: bool
     ) -> None:
-        """同じ正規表現でも自分自身は条件を満たさず、dry-runも入力を保持する。"""
         source = tmp_path / "book.zip"
         _make_zip(source, {"jpg/keep.txt": b"keep"})
         original = source.read_bytes()
@@ -120,7 +115,6 @@ class TestPreflight:
             repack_archive.main()
 
     def test_existing_output_rejected_when_path_differs(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """入力と異なるパスの出力 ZIP が既存なら拒否する (ディレクトリ入力)。"""
         src = tmp_path / "book"
         src.mkdir()
         (src / "01.txt").write_bytes(b"1")
@@ -130,10 +124,9 @@ class TestPreflight:
             repack_archive.main()
 
     def test_same_path_output_not_rejected(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """入力と出力が同一パスのアーカイブ入力は既存出力チェックで誤拒否しない。"""
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"a.txt": b"a"})
-        # 出力 foo.zip は入力自身であり拒否されない (exit 0 で正常完了)
+
         exit_code = _run_main(monkeypatch, ["--no-trash", str(archive)])
         assert exit_code == 0
 
@@ -194,7 +187,7 @@ class TestProcessArchive:
         )
         assert exit_code == 0
         entries = _zip_entries(tmp_path / "foo.zip")
-        # `keep/` だけが残り、単一ルートが平坦化されて `a.txt` のみになる
+
         assert entries == {"a.txt"}
 
     def test_ignore_dir_only_archive_promotes_contents_before_removal(
@@ -202,7 +195,6 @@ class TestProcessArchive:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """無視対象ディレクトリだけを含む入力でも、初回平坦化後の内容を残す。"""
         archive = tmp_path / "foo.zip"
         _make_zip(archive, {"NoText/b.txt": b"b"})
         config_yaml = tmp_path / "repack-archive.yaml"
@@ -218,7 +210,6 @@ class TestProcessArchive:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """libarchive経路でもignore_dirs除去後に残存階層を平坦化する。"""
         archive = tmp_path / "foo.tar"
         _make_tar(
             archive,
@@ -240,7 +231,6 @@ class TestProcessArchive:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """libarchive経路でも単独の無視対象ラッパー配下をルートへ昇格する。"""
         archive = tmp_path / "foo.tar"
         _make_tar(archive, {"NoText/b.txt": b"b"})
         config_yaml = tmp_path / "repack-archive.yaml"
@@ -266,7 +256,6 @@ class TestProcessArchive:
         assert entries == {"01.txt", "02.txt"}
 
     def test_flatten_nested_single_root(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """連続した単一ディレクトリチェーンを最深まで除去する。"""
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -281,10 +270,8 @@ class TestProcessArchive:
         assert entries == {"01.txt", "02.txt"}
 
     def test_flatten_empty_sibling_after_ignore(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ignore_files で空になった兄弟ディレクトリが平坦化を阻害しないこと。"""
         archive = tmp_path / "foo.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            # 明示ディレクトリエントリー (末尾 "/" 付き空書き込み)
             zf.writestr("Series/", b"")
             zf.writestr("Series/Vol01/", b"")
             zf.writestr("Series/Vol02/", b"")
@@ -301,7 +288,6 @@ class TestProcessArchive:
         assert entries == {"001.txt"}
 
     def test_flatten_name_collision(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """同名親子 (foo/foo/bar.txt) でも平坦化が破綻しないこと。"""
         archive = tmp_path / "foo.zip"
         _make_zip(
             archive,
@@ -329,7 +315,6 @@ class TestProcessArchive:
         assert entries == {"a/01.txt", "b/02.txt"}
 
     def test_rename_rules_apply_to_archive_stem(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """rename_rules は出力 ZIP の stem (アーカイブ名) に適用される。"""
         pattern_file = tmp_path / "rules.txt"
         pattern_file.write_text("^foo$\tbar\n", encoding="utf-8")
         archive = tmp_path / "foo.zip"
@@ -350,11 +335,10 @@ class TestProcessArchive:
         # 出力 ZIP は rename 適用後の stem
         assert (tmp_path / "bar.zip").exists()
         assert not (tmp_path / "foo.zip").exists()
-        # バックアップは元の名前のまま
+
         assert (tmp_path / "bk" / "foo.zip").exists()
 
     def test_rename_rules_do_not_apply_to_inner_entries(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """rename_rules はアーカイブ内ファイル名・ディレクトリ名には適用されない。"""
         pattern_file = tmp_path / "rules.txt"
         pattern_file.write_text("^img_\t\n", encoding="utf-8")
         archive = tmp_path / "foo.zip"
@@ -373,16 +357,14 @@ class TestProcessArchive:
             ["--no-trash", "--config", str(config_yaml), str(archive)],
         )
         assert exit_code == 0
-        # アーカイブ stem "foo" は rule にマッチしないので出力名は変わらない
+
         entries = _zip_entries(tmp_path / "foo.zip")
-        # 内部のファイル名・ディレクトリ名はそのまま保持される
+
         assert entries == {"img_dir/img_01.txt", "img_dir/img_02.txt", "other.txt"}
 
     def test_natsort_order_in_output_zip(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """最終 ZIP のエントリ順は natsort 順 (自然順) に揃う。"""
         archive = tmp_path / "foo.zip"
-        # 辞書順だと "001 -> 002 -> 010 -> 020 -> 100" だが、
-        # 入力順を入れ替えても natsort で同じ並びになることを検証する
+
         _make_zip(
             archive,
             {
@@ -428,7 +410,7 @@ class TestProcessDirectory:
         assert (tmp_path / "book.zip").exists()
         entries = _zip_entries(tmp_path / "book.zip")
         assert entries == {"01.txt", "02.txt"}
-        # 元ディレクトリはバックアップへ退避され、入力位置から削除される
+
         assert (tmp_path / "bk" / "book").exists()
         assert not src.exists()
 
@@ -437,7 +419,6 @@ class TestProcessDirectory:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ディレクトリ入力でもignore_dirs除去後に残存階層を平坦化する。"""
         src = tmp_path / "book"
         (src / "keep").mkdir(parents=True)
         (src / "NoText").mkdir()
@@ -456,7 +437,6 @@ class TestProcessDirectory:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ディレクトリ入力でも単独の無視対象ラッパー配下をルートへ昇格する。"""
         src = tmp_path / "book"
         (src / "NoText").mkdir(parents=True)
         (src / "NoText" / "01.txt").write_bytes(b"1")

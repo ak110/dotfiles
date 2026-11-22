@@ -1,9 +1,3 @@
-"""ローカルのrootにある計画ファイルの走査と全文検索、変更の監視。
-
-対象判定、走査と検索の処理はSSH先のリモートヘルパーと共有する`_plan.viewer_files`が持ち、
-本モジュールは一覧の項目への変換、停止要求の伝達とローカルの変更監視を担う。
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -33,18 +27,7 @@ _STATIC_DIR = pathlib.Path(__file__).with_name("static")
 REMOTE_BOOTSTRAP = _atk_serve_remote.remote_bootstrap("atk_serve_plans_remote_helper.py")
 
 
-# --------------------------------------------------------------------------------------
-# ローカル走査
-# --------------------------------------------------------------------------------------
-
-
 class PlansEventHandler(watchdog.events.FileSystemEventHandler):
-    """watchdogのイベントを受信してSSE購読者へ通知するハンドラ。
-
-    watchdogコールバックはwatchdog側のスレッドで実行されるため、
-    `run_coroutine_threadsafe`でasyncioループへ処理を渡す。
-    """
-
     def __init__(
         self,
         root: pathlib.Path,
@@ -58,7 +41,6 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
 
     @typing.override
     def on_any_event(self, event: watchdog.events.FileSystemEvent) -> None:
-        """ファイルシステムイベントをフィルタリングして購読者へ通知する。"""
         if not isinstance(event, _WATCHED_EVENT_TYPES):
             return
         if event.is_directory:
@@ -78,7 +60,6 @@ class PlansEventHandler(watchdog.events.FileSystemEventHandler):
             return
         loop = self.state.loop
         if loop is None:
-            # 起動直後にループ参照が未設定のイベントは取りこぼしてよい（直後のイベントで再通知される）。
             return
         asyncio.run_coroutine_threadsafe(schedule_broadcast(self.state), loop)
 
@@ -91,11 +72,6 @@ def scan_files(
     migrate_legacy_ctime: bool | None = None,
     stop: threading.Event | None = None,
 ) -> tuple[list[FileEntry], str | None]:
-    """`root`を走査し、作成日時の降順の一覧とroot単位の警告を返す。
-
-    走査と警告の扱いは`viewer_files.scan_root`が定める。
-    `stop`が設定されると走査の途中で`ServeStopping`を送出し、途中までの観測でインデックスを更新しない。
-    """
     items, warning = _viewer_files.scan_root(
         root,
         host,
@@ -109,27 +85,15 @@ def scan_files(
 
 
 def list_files(root: pathlib.Path, host: str, source_id: str = "") -> list[FileEntry]:
-    """`root`から一覧対象の計画ファイルを再帰的に探し、作成日時の降順で返す。"""
     entries, _ = scan_files(root, host, source_id)
     return entries
 
 
 def search_files(root: pathlib.Path, query: str, source_id: str = "", *, stop: threading.Event | None = None) -> set[str]:
-    """本文へ検索語が部分一致する計画ファイルの相対パス集合を返す。
-
-    `stop`が設定されるとファイル1件ごとの確認で`ServeStopping`を送出して打ち切る。
-    """
     return _viewer_files.search_root(root, query, source_id, check_stop=lambda: _atk_serve_remote.raise_if_stopping(stop))
 
 
 def read_pygments_css() -> str:
-    """Pygmentsのスタイルシートを返す。
-
-    pygmentsの基本ルール（`.codehilite { background: ...; color: ... }`）は除外し、
-    トークン別カラールール（`.codehilite .k`等）のみを返す。
-    背景と、トークンごとに指定しない文字色はapp.css側の`pre code`ルールで定め、
-    `<pre>`の背景の上に別の色の矩形が表示されることを防ぐ。
-    """
     raw = _PYGMENTS_FORMATTER.get_style_defs(f".{_PYGMENTS_CSS_CLASS}")
     base_selector = f".{_PYGMENTS_CSS_CLASS}"
     kept: list[str] = []

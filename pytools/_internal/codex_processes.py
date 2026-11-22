@@ -13,7 +13,7 @@ _ACCESS_DENIED = object()
 _CODEX_LABEL_SUBCOMMANDS = frozenset({"app-server", "exec", "exec-server", "mcp-server", "remote-control"})
 # `node <package entry point>`形式でCodexを起動する実行体の名前。
 _NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
-# 終了済みで、ログやplugin実体を参照し得ないプロセスの状態。
+
 _TERMINATED_STATUSES = frozenset({psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
 # `codex app-server daemon start`が起動する管理daemonの起動形の標識。
 _MANAGED_DAEMON_FLAG = "--managed-daemon"
@@ -40,7 +40,7 @@ class CodexProcess:
     role: CodexRole
     executable: str | None = None
     identified: bool = True
-    # 起動時刻（epoch秒）。取得できない場合は`None`。
+
     started_at: float | None = None
 
 
@@ -63,8 +63,7 @@ def codex_processes() -> tuple[CodexProcess, ...]:
     owner_attribute = "username" if windows else "uids"
     candidates: list[tuple[int, typing.Any, str, CodexRole, str | None, bool, float | None]] = []
     attributes = ["name", "exe", "cmdline", owner_attribute]
-    # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
-    # 列挙は現在のPIDの取得だけに使い、分類と実行パスは新しく構築したProcessから読む。
+
     for listed in psutil.process_iter():
         try:
             process = psutil.Process(listed.pid)
@@ -123,7 +122,6 @@ def running_codex_processes() -> tuple[str, ...]:
 
 
 def _process_role(arguments: list[str]) -> CodexRole:
-    """実行体名を除くcommand lineから、管理daemonと更新ループの公開された起動形を判別する。"""
     if tuple(arguments[: len(_UPDATE_LOOP_ARGUMENTS)]) == _UPDATE_LOOP_ARGUMENTS:
         return "update-loop"
     if arguments[:1] == ["app-server"] and _MANAGED_DAEMON_FLAG in arguments[1:]:
@@ -149,14 +147,12 @@ def _process_label(name: str, exe: str, cmdline_values: list[str], pid: int) -> 
 
 
 def _executable_name(value: str) -> str:
-    """パス表記を含み得る値から、拡張子を除いた実行ファイル名を取り出す。"""
     if not value:
         return ""
     return pathlib.PurePosixPath(value.replace("\\", "/")).name.removesuffix(".exe")
 
 
 def format_running_processes(labels: tuple[str, ...]) -> str:
-    """ラベルごとの件数を数え、ラベル昇順で`<ラベル> (<件数>件)`を連結する。"""
     counts = collections.Counter(labels)
     return ", ".join(f"{label} ({count}件)" for label, count in sorted(counts.items()))
 
@@ -173,7 +169,6 @@ def _is_codex_process_value(value: str) -> bool:
 
 
 def _is_node_executable(name: str, exe: str) -> bool:
-    """実行名または実行ファイルパスがnode系実行体を示すか判定する。"""
     return any(_executable_name(value.replace("\\", "/").lower()) in _NODE_EXECUTABLE_NAMES for value in (name, exe))
 
 

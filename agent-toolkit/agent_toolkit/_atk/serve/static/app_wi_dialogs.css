@@ -197,7 +197,6 @@
   gap: var(--space-2);
   align-items: flex-end;
 }
-/* 入力欄が幅を取っても保存ボタンのラベルを語の途中で折り返さない。 */
 #screen-wi #save-answer-button {
   flex: 0 0 auto;
   white-space: nowrap;
@@ -328,7 +327,6 @@
     flex-wrap: wrap;
   }
 }
-/* 題名の先頭とコピー完了文言を横に置けない幅では、コピーを次の行へ置く。 */
 @container wi-list (max-width: 20rem) {
   #screen-wi .entry-row {
     grid-template-columns: minmax(0, 1fr);

@@ -7,56 +7,75 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob
+from agent_toolkit._common.windows_job import CREATE_SUSPENDED, WindowsJob, start_owned_process
 from agent_toolkit._testing import late_descendant
 
 
 @pytest.mark.windows
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows Jobの所属・離脱と実際のプロセス回収を検証する")
 def test_job_reclaims_orphan_and_preserves_explicit_breakaway(tmp_path, host_environ):
-    """短命な親の子を回収し、明示離脱した短命コマンドの成功を保持する。"""
     script = tmp_path / "inner.py"
     outside = tmp_path / "outside.txt"
+    release = tmp_path / "outside.release"
+    ready = tmp_path / "outside.ready"
+    outside_source = (
+        "from pathlib import Path\n"
+        "import sys, time\n"
+        "Path(sys.argv[3]).touch()\n"
+        "deadline = time.monotonic() + 45\n"
+        "while not Path(sys.argv[2]).exists():\n"
+        "    if time.monotonic() >= deadline: raise SystemExit(1)\n"
+        "    time.sleep(0.01)\n"
+        "path = Path(sys.argv[1])\n"
+        "pending = path.with_suffix('.tmp')\n"
+        "pending.write_text('outside', encoding='utf-8')\n"
+        "pending.replace(path)\n"
+    )
     script.write_text(
-        "import pathlib, subprocess, sys, time\n"
-        "subprocess.run([sys.executable, '-c', "
-        '\'import pathlib, sys; path = pathlib.Path(sys.argv[1]); pending = path.with_suffix(".tmp"); '
-        'pending.write_text("outside", encoding="utf-8"); pending.replace(path)\', sys.argv[1]], '
-        "creationflags=0x01000208, check=True, timeout=5)\n" + late_descendant.held_source(tmp_path / "job.release"),
+        "import subprocess, sys\n"
+        "from agent_toolkit._common.windows_job import start_independent_process\n"
+        f"start_independent_process([sys.executable, '-c', {outside_source!r}, sys.argv[1], sys.argv[2], sys.argv[3]], "
+        "windows=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        + late_descendant.held_source(tmp_path / "job.release"),
         encoding="utf-8",
     )
     with (
         WindowsJob() as job,
-        subprocess.Popen(
-            late_descendant.cli_command(tmp_path, str(script), str(outside)),
-            creationflags=CREATE_SUSPENDED,
+        start_owned_process(
+            late_descendant.cli_command(tmp_path, str(script), str(outside), str(release), str(ready)),
+            job=job,
             env=host_environ(),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         ) as root,
     ):
+        closed = False
         try:
-            # CPythonのPopenが元世代を保持するhandleを使い、PIDの再解決による所属登録を行わない。
-            # _handleはWindows版CPythonの属性であり、Linux上のPylintからは解決できない。
-            job.assign_suspended(
-                int(cast(Any, root)._handle),  # noqa: SLF001  # pylint: disable=protected-access,no-member
-                root.pid,
-            )
             late_descendant.wait_spawner(tmp_path)
             late_descendant.trigger(tmp_path)
+            deadline = time.monotonic() + 10
+            while not ready.exists():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("明示離脱したコマンドの起動を確認できませんでした")
+                time.sleep(0.01)
+            job.terminate()
+            job.close()
+            closed = True
+            root.wait(timeout=10)
+            late_descendant.assert_released(tmp_path)
+            release.touch()
             deadline = time.monotonic() + 10
             while not outside.exists():
                 if time.monotonic() >= deadline:
                     raise TimeoutError("明示離脱したコマンドが完了しませんでした")
                 time.sleep(0.01)
             assert outside.read_text(encoding="utf-8") == "outside"
-            job.terminate()
-            root.wait(timeout=10)
-            late_descendant.assert_released(tmp_path)
         finally:
+            release.touch()
             # Popen.__exit__が待つ前に、失敗時もJobの全所属を停止する。
             try:
-                job.terminate()
+                if not closed:
+                    job.terminate()
             finally:
                 try:
                     job.close()

@@ -1,5 +1,3 @@
-"""保持中・復元済みsessionの一覧と詳細表示。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -20,8 +18,6 @@ from agent_toolkit._common.next_action import ActionableError
 
 
 class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
-    """状態と活動の公開項目を一覧・詳細へ射影する。"""
-
     async def list_sessions(self, *, include_terminated: bool = False) -> dict[str, Any]:
         """保持中のsessionを開始時刻順の公開項目へ射影する。
 
@@ -112,7 +108,6 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             if identifier in self.sessions or identifier in self._pending_resumes:
                 entry["owner_server_instance"] = queried
             else:
-                # 退避した終了済みsessionは、登録簿へ最後に書いた所有サーバーを示す。
                 resolution = await run_file_operation(session_registry.resolve, identifier)
                 entry["owner_server_instance"] = resolution.server_instance
         sessions = [entry for _, entry in sorted(listed.values(), key=lambda item: (item[0] is None, item[0] or ""))]
@@ -135,24 +130,16 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         return response
 
     def status_owner(self) -> tuple[str | None, str | None]:
-        """このManagerが状態ファイルを書くルートsession識別子と書込主体を返す。"""
         writer = self._status_writer
         return (None, None) if writer is None else (writer.root_session_id, writer.path.name)
 
     async def _show_registry_record(self, session_id: str) -> session_registry.SessionResolution | None:
-        """保持中のsessionを表示するとき、読める場合だけ登録簿の情報を補う。"""
         try:
             return await run_file_operation(session_registry.resolve, session_id)
         except OSError, ValueError:
             return None
 
     async def show_session(self, session_id: str, *, verbose: bool = False) -> dict[str, Any]:
-        """保持中または再開可能なsessionの復旧用詳細を返す。
-
-        自プロセスの保持状態に無い識別子は、共有の登録簿に記録されているか確かめて在否を判定する。
-        そのsessionを別のMCPサーバープロセスが実行中である場合と、登録簿にレコードが無い場合を
-        区別せずに喪失として案内すると、照会した主体が新しいsessionの起動へ進む。
-        """
         session: SessionState | SessionResumeState | None = self.sessions.get(session_id)
         if session is None and session_id in self._pending_resumes:
             session = self._pending_resumes[session_id].state
@@ -186,7 +173,6 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         queried = session_registry.owner_server_instance()
         owner = queried if locally_owned else None
         if not locally_owned and resolution is not None and resolution.recorded_turn_seq in (None, session.turn_seq):
-            # 表示する終了状態に、照会中に始まった別のturnの所有者を付けない。
             owner = resolution.server_instance
         status = "running" if session_id in self._pending_resumes else session.status
         result_available = bool(
@@ -224,15 +210,12 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
             response["error"] = result_projection.refresh_error_diagnostics(session.error)
         interrupted_turns = result_projection.interrupted_turns_projection(resolution.interrupted_turns) if resolution else []
         if interrupted_turns:
-            # 再開・解放の後も、過去に中断したturnと終了診断を識別できるようにする。
             response["interrupted_turns"] = interrupted_turns
         if status == "running" and isinstance(session, SessionState):
             active_tool_uses = session.active_tool_uses()
             if active_tool_uses:
                 response["active_tool_uses"] = active_tool_uses
         if status == "running" and isinstance(session, SessionState) and session.live_child_session_ids:
-            # 委譲元がその識別子へ`send_message`と`kill`を発行できるよう、許可判定の入力となる`cwd`を併記する。
-            # `cwd`を解決できない識別子は、対を持たない側の項目として区別できる形で返す。
             resolved: list[dict[str, str]] = []
             unresolved: list[str] = []
             for child_session_id in sorted(session.live_child_session_ids):
@@ -283,7 +266,6 @@ class ManagerRegistryDisplay(manager_registry_restore.ManagerRegistryRestore):
         return response
 
     async def _owner_lost_show_response(self, diagnosis: owner_lost.OwnerLost, *, verbose: bool) -> dict[str, Any]:
-        """所有サーバーを失った実行中のsessionを、登録簿の起動情報と診断・案内付きの実行中として返す。"""
         session_id = diagnosis.session_id
         info = diagnosis.resolution.resume_info
         assert info is not None

@@ -1,5 +1,3 @@
-"""結果だけからの引き継ぎ案内が、各backendの可用性判定と一致することを確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -25,7 +23,6 @@ from agent_toolkit._agents_server import handoff_next_action, session_handoff
     ],
 )
 def test_result_guidance_preserves_backend_availability_contract(engine: str, status: str, error: Any) -> None:
-    """軽い結果投影とbackend本体が、可用性・利用枠・モデル拒否を同じ対象として扱う。"""
     expected = session_handoff.availability_reason(engine, status, error) is not None
     action = handoff_next_action.result_next_action(
         {"session_id": "predecessor", "engine": engine, "status": status, "error": error}

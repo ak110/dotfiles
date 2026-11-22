@@ -11,9 +11,17 @@ HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
 """再開turnの結果ではなく、元の待機表明を確定したときに`error`へ付ける項目名。"""
 
 
-class TurnStart(enum.Enum):
-    """開始要求の受理段階。結果の終了と中断要求は別の状態軸である。"""
+@dataclasses.dataclass(frozen=True)
+class EffortResumePending:
+    turn_seq: int
 
+
+@dataclasses.dataclass(frozen=True)
+class EffortResumeRunning:
+    pass
+
+
+class TurnStart(enum.Enum):
     UNSENT = enum.auto()
     SENT = enum.auto()
     STARTED = enum.auto()
@@ -47,8 +55,6 @@ class OverloadWait:
 
 @dataclasses.dataclass(frozen=True)
 class UsageLimitWait:
-    """利用上限の解除時刻を待つ結果。"""
-
     result: dict[str, Any]
     resume_at: float
 
@@ -69,16 +75,12 @@ class CodexProviderWait:
 
 @dataclasses.dataclass(frozen=True)
 class ResultContractWait:
-    """返却形式の回復入力を送るまで保留する結果。"""
-
     result: dict[str, Any]
     reason: str
 
 
 @dataclasses.dataclass(frozen=True)
 class InterruptedWait:
-    """中断要求の所有者がCLIの終了を確認するまで保留する結果。"""
-
     result: dict[str, Any]
 
 

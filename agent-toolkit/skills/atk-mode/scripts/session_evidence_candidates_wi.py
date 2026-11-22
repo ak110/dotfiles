@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_wi）。"""
-
 from __future__ import annotations
 
 import re
@@ -39,13 +37,6 @@ _YES_NO_CHOICES = ("はい", "いいえ")
 
 
 def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
-    """メインと全ての委譲先が実行したシェルコマンドから、処理したWIのファイル名を返す。
-
-    コマンドの実行位置にある`atk wi <サブコマンド>`だけを対象とし、引用や説明文の中の文字列は対象から外す。
-    複合コマンド（`for`・`if`・`{ }`など）とコマンド置換の内側の実行も同じ基準で数え、`for <変数> in <値…>`の本体にある
-    `$<変数>`・`${<変数>}`の引数は各値へ展開する。
-    入力ファイルから値を読む`while read`の変数は値を静的に求められないため数えない。
-    """
     names: set[str] = set()
     for item in collected:
         for call in _record_tool_calls(item.records):
@@ -73,10 +64,6 @@ def _processed_wi_filenames(collected: list[_CollectedRecord]) -> set[str]:
 
 
 def _wi_entry(text: str, section: str) -> str:
-    """WIの指定した節から、回答欄の注記行（HTMLコメントだけの行）を除いた記入を返す。
-
-    `## ユーザーコメント`は処理結果の節が後ろに続く終了済みの項目もあるため、節の位置を問わずに読む。
-    """
     lines = [
         line
         for line in _wi_sections.h2_sections(text).get(section, "").splitlines()
@@ -86,7 +73,6 @@ def _wi_entry(text: str, section: str) -> str:
 
 
 def _wi_choices(metadata: dict[str, Any]) -> tuple[str, ...]:
-    """UWIの回答画面が示す選択肢を返す。"""
     if metadata.get("question_type") == _wi_constants.QUESTION_TYPE_YES_NO:
         return _YES_NO_CHOICES
     choices = metadata.get("choices")
@@ -138,10 +124,6 @@ def _wi_candidate_events(collected: list[_CollectedRecord], session_id: str) -> 
 
 
 def _adhoc_processing_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """メイン記録と全ての委譲先の記録から、その場のコードによる加工に当たるシェル呼び出しを返す。
-
-    全担当の通読へ渡す操作と同じ呼び出し位置を保持し、候補でも操作入力の全文を残す。
-    """
     events: list[dict[str, Any]] = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}

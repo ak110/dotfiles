@@ -18,7 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, session_release
 from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
@@ -33,7 +33,6 @@ from agent_toolkit._testing.session_release_support import held_registry_lock, r
 def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
-    """判定不能・未完了を削除せず、成立した後は同じ公開操作で回収する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     if condition == "unintegrated":
@@ -43,7 +42,6 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
     elif condition == "unmerged":
         git_repository.commit_all(worktree, "未統合の成果")
     else:
-        # 生存するプロセスを記録した実行中の記録と、識別を持たない実行中の記録は、どちらも担当の終了を確認できない。
         owner = session_registry.owner_process()
         assert owner is not None
         processes = (owner,) if condition == "active-session" else ()
@@ -78,7 +76,6 @@ def test_delete_preserves_unfinished_work_and_recovers_after_condition_is_resolv
 def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有側が終了を公開せずに終了し、記録した全プロセスが存在しない担当は終了として回収する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     with subprocess.Popen([sys.executable, "-c", "pass"]) as exited:
@@ -100,7 +97,6 @@ def test_delete_treats_session_whose_recorded_processes_exited_as_finished(
 def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同名tagで未統合成果の判定を変えず、統合後はbranchだけを回収する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     git_repository.commit_all(worktree, "未統合の成果")
@@ -123,7 +119,6 @@ def test_cleanup_uses_branch_refs_when_tags_have_the_same_names(
 def test_live_external_process_holds_worktree_until_it_ends(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """担当が終了しても、その作業先を使う外部プロセスを削除で巻き込まない。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     with subprocess.Popen(
         [sys.executable, "-c", "import sys;print('ready',flush=True);sys.stdin.read()"],
@@ -156,7 +151,6 @@ def test_live_external_process_holds_worktree_until_it_ends(
 def test_lane_preserves_session_when_running_or_owner_unresponsive(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], terminal: bool
 ) -> None:
-    """実行中は終了・結果回収後のstopを案内し、無応答の所有側も資源を保持して再回収へ接続する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     owner = session_registry.owner_process()
     assert owner is not None
@@ -177,10 +171,19 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
         assert reason.index("自然終了") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
         assert session_registry.resolve("held-session").state is session_registry.Resolution.RUNNING
     assert pathlib.Path(record["worktree"]).is_dir()
-    assert not list(session_registry.registry_directory().glob("*.release-*"))
+    requests = list(session_registry.registry_directory().glob("*.release-*"))
+    if terminal:
+        (request,) = requests
+        assert request.suffix == ".release-request"
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert packet["session_id"] == "held-session"
+        assert "result" not in packet
+        assert not session_release.pending()
+    else:
+        assert not requests
 
 
-@pytest.mark.parametrize("entrypoint", ["exit", "process-loop"])
 @pytest.mark.cpu_limit(
     1.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大0.640秒。"
 )
@@ -188,7 +191,6 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    entrypoint: str,
 ) -> None:
     """無応答の所有者を持つ複数登録を理由付きで保持し、解放待機を省いて終了要求と回収結果を返す。
 
@@ -213,17 +215,13 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
     monkeypatch.setattr(_lane_activity, "get_wait_timeout", unexpected_wait)
     started = lane.time.monotonic()
     with held_registry_lock("unresponsive-0"):
-        if entrypoint == "exit":
-            monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
-            with pytest.raises(SystemExit) as ended:
-                atk.main(["agents-exit-session"])
-            assert ended.value.code == 0
-            observed = json.loads(capsys.readouterr().out)
-            assert observed["exit_session_invoked"] is True
-            result = observed["lane_cleanup"]
-        else:
-            result = process_loop_session.cleanup_lane_session("lane-test-session")
-            assert "atk lane delete --session-id lane-test-session" in capsys.readouterr().err
+        monkeypatch.setattr(agents_exit_session, "request_termination", lambda **_kwargs: ("unsupported", None))
+        with pytest.raises(SystemExit) as ended:
+            atk.main(["agents-exit-session"])
+        assert ended.value.code == 0
+        observed = json.loads(capsys.readouterr().out)
+        assert observed["exit_session_invoked"] is True
+        result = observed["lane_cleanup"]
     assert not result["removed"] and len(result["retained"]) == 2
     for index, (record, held) in enumerate(zip((first, second), result["retained"], strict=True)):
         assert f"unresponsive-{index}" in held["reason"] and "解放応答" in held["reason"]
@@ -231,26 +229,18 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
         assert pathlib.Path(record["worktree"]).is_dir()
         assert record["branch"] in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
     assert pathlib.Path(result["result_path"]).is_file()
-    assert not list(session_registry.registry_directory().glob("*.release-*"))
+    requests = list(session_registry.registry_directory().glob("*.release-*"))
+    assert len(requests) == 2
+    sessions = set()
+    for request in requests:
+        assert request.suffix == ".release-request"
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert "result" not in packet
+        sessions.add(packet["session_id"])
+    assert sessions == {"unresponsive-0", "unresponsive-1"}
+    assert not session_release.pending()
     assert lane.time.monotonic() - started < 10
-
-
-@pytest.mark.parametrize("retire_integrated", [False, True])
-def test_process_loop_cleanup_retry_preserves_retirement_mode(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], retire_integrated: bool
-) -> None:
-    """保持時の再試行が自動回収と同じ種類の判定へ戻る。"""
-
-    def retain(session_id: str, *, wait_release: bool, retire_integrated: bool = False) -> dict[str, object]:
-        assert session_id == "lane-test-session" and not wait_release
-        return {"retained": [session_id], "retirement_enabled": retire_integrated}
-
-    monkeypatch.setattr(lane, "cleanup_session", retain)
-    result = process_loop_session.cleanup_lane_session("lane-test-session", retire_integrated=retire_integrated)
-    assert result["retirement_enabled"] is retire_integrated
-    diagnostic = capsys.readouterr().err
-    option = " --retire-integrated" if retire_integrated else ""
-    assert f"atk lane delete --session-id lane-test-session{option} を実行" in diagnostic
 
 
 @pytest.mark.cpu_limit(
@@ -280,9 +270,12 @@ def test_exit_entrypoint_cleans_resources_even_when_interactive_host_is_unidenti
     3.0, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.560秒。"
 )
 def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, exit_code: int
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    engine: str,
+    exit_code: int,
 ) -> None:
-    """CLIの正常・異常終了後も対象別所有者が回収を判断でき、起点と選定原本を維持する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
     selected = tmp_path / "selection.yaml"
     snapshot = tmp_path / "created.json"
@@ -309,7 +302,7 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
         return [sys.executable, str(script), str(repo), str(selected), str(snapshot), str(exit_code)], None
 
     monkeypatch.setattr(process_loop_session, "_build_session_argv", child_argv)
-    args = argparse.Namespace(no_update=True)
+    args = argparse.Namespace()
 
     def execute() -> bool:
         return process_loop_session.run_process_session(
@@ -326,7 +319,9 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
     assert execute() is (exit_code == 0)
     created = json.loads(snapshot.read_text(encoding="utf-8"))
     assert pathlib.Path(created["worktree"]).exists() and pathlib.Path(created["record_path"]).exists()
-    process_loop_session.cleanup_lane_session(created["session_id"])
+    code, cleanup, stderr = _invoke(capsys, "delete", "--session-id", created["session_id"])
+    assert code == 0, stderr
+    assert cleanup["removed"] == ["lane-01"]
     assert not pathlib.Path(created["worktree"]).exists() and not pathlib.Path(created["record_path"]).exists()
     assert repo.is_dir() and selected.is_file()
 
@@ -337,7 +332,6 @@ def test_process_loop_child_exit_leaves_cleanup_to_repository_owner(
 def test_integrate_ignores_session_in_nested_lane_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合先配下の別レーンの担当を所有へ含めずに統合を完了できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     nested = repo / ".claude/worktrees/other"
@@ -364,7 +358,6 @@ def test_integrate_ignores_session_in_nested_lane_worktree(
 def test_integrate_rejects_session_in_target_outside_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], relative: str
 ) -> None:
-    """統合先の直下と通常の子ディレクトリを使う合意外の担当を検出する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     session_registry.publish("target-writer", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(repo / relative))
     code, _result, stderr = _invoke(capsys, *_integration_args(record, repo, tmp_path / "unused", record["initial_head"]))
@@ -377,7 +370,6 @@ def test_integrate_rejects_session_in_target_outside_nested_worktree(
 def test_worktree_activity_ignores_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """解放対象の選別と再走査で、入れ子の別worktreeの担当を区別する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     nested = worktree / ".claude/worktrees/nested"
@@ -399,7 +391,6 @@ def test_worktree_activity_ignores_nested_worktree(
 def test_process_activity_ignores_nested_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], source: str
 ) -> None:
-    """プロセスのcwdと絶対引数の双方で入れ子の別worktreeを区別する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     nested = worktree / ".claude/worktrees/nested"
@@ -407,17 +398,13 @@ def test_process_activity_ignores_nested_worktree(
     location = nested
 
     class Process:
-        """外部プロセスの照会を決定論的なパスへ向ける。"""
-
         pid = 12345
         info = {"username": lane.psutil.Process().username()}
 
         def cwd(self) -> str:
-            """照会対象のcwdを返す。"""
             return str(location if source == "cwd" else tmp_path)
 
         def cmdline(self) -> list[str]:
-            """照会対象の絶対引数を返す。"""
             return ["program", f"--file={location / 'file'}"] if source == "argv" else ["program"]
 
     monkeypatch.setattr(lane.psutil, "process_iter", lambda *_args, **_kwargs: [Process()])
@@ -430,7 +417,6 @@ def test_process_activity_ignores_nested_worktree(
 def test_process_activity_follows_symlinked_cwd_and_argument(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """シンボリックリンク経由のcwdと絶対引数も、解決先のworktreeの使用として検出する。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     link = tmp_path / "link"
@@ -438,8 +424,6 @@ def test_process_activity_follows_symlinked_cwd_and_argument(
     sources: dict[str, Any] = {"cwd": str(tmp_path), "argv": ["program"]}
 
     class Process:
-        """照会対象のcwdと引数を差し替えられる外部プロセス。"""
-
         pid = 12345
         info = {"username": lane.psutil.Process().username()}
 
@@ -460,13 +444,10 @@ def test_process_activity_follows_symlinked_cwd_and_argument(
 def test_process_activity_resolves_registered_roots_once_per_scan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """1回の走査で登録rootの解決をプロセス数・絶対引数数に比例して繰り返さない。"""
     _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
 
     class Process:
-        """対象外のcwdと絶対引数を持つ外部プロセス。"""
-
         pid = 12345
         info = {"username": lane.psutil.Process().username()}
 
@@ -525,7 +506,6 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
     entrypoint: str,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """cwd保持中の終了資源を所有側が解放し、公開CLI・終了時回収・再利用・移管を通して未回収結果を取得できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(_lane_activity, "get_wait_timeout", lambda _bucket: 5.0)
     async with retained_executor(
@@ -583,7 +563,11 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
         else:
             assert result["session_id"] == "next-session"
             assert result["worktree"] == record["worktree"]
-        assert not list(session_registry.registry_directory(retained.state_root).glob("*.release-*"))
+        (request,) = session_registry.registry_directory(retained.state_root).glob("*.release-*")
+        assert request.suffix in {".release-request", ".release-request-result"}
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert packet["session_id"] == retained.session_id
         assert retained.wait_result() == 0
         assert json.loads(capsys.readouterr().out)["agent_message"] == "回収後も受領する結果"
         resumed = await retained.resume("再開")
@@ -605,7 +589,6 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
     activity: str,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """解放成功後に残る独立使用を1回で返し、全消費経路の資源保持と同じ操作での再開を確かめる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     if operation == "recover":
@@ -673,7 +656,6 @@ async def test_lane_returns_independent_activity_after_owner_release_without_rep
 def test_unreadable_registration_stops_destructive_operations_with_recovery(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """読めない担当登録は、削除を止めて登録の絶対パスと回復手段を示し、新しいworktreeの作成は止めない。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     directory = session_registry.registry_directory()
     directory.mkdir(parents=True, exist_ok=True)
@@ -707,7 +689,6 @@ def test_unreadable_registration_stops_destructive_operations_with_recovery(
 def test_readable_registration_of_another_worktree_is_excluded_from_decision(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """読める登録が対象外のworktreeのものなら、判定から除かれて削除が成功する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     elsewhere = repo / ".claude/worktrees/elsewhere"
     git_repository.run_git(repo, "worktree", "add", "-b", "elsewhere", str(elsewhere))

@@ -70,7 +70,6 @@ async def test_root_writer_removes_stale_files_on_activate(tmp_path: pathlib.Pat
 async def test_root_writer_activates_when_temporary_file_vanishes_after_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """列挙した自身の名前の一時ファイルが削除前に消えても、起動時の不要ファイルの削除を続けて起動する。"""
     writer = subject.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -98,7 +97,6 @@ async def test_root_writer_activates_when_temporary_file_vanishes_after_listing(
 
 @pytest.mark.asyncio
 async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathlib.Path) -> None:
-    """生存の印が失効した他の状態ファイルを削除する。"""
     directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     stale = directory / "stale.json"
@@ -133,7 +131,6 @@ async def test_writer_removes_state_file_with_expired_heartbeat(tmp_path: pathli
 
 @pytest.mark.asyncio
 async def test_writer_preserves_state_file_without_heartbeat(tmp_path: pathlib.Path) -> None:
-    """旧形式の状態ファイルは他の書込主体が回収しない。"""
     directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     legacy = directory / "legacy.json"
@@ -154,7 +151,6 @@ async def test_writer_preserves_state_file_without_heartbeat(tmp_path: pathlib.P
 
 @pytest.mark.asyncio
 async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """managerは稼働中に生存の印を定期更新し、終了時に更新タスクを回収する。"""
     monkeypatch.setattr(subject, "HEARTBEAT_INTERVAL_SECONDS", 0.01)
     writer = subject.StatusFileWriter(
         {},
@@ -166,7 +162,6 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
         manager.activate()
         initial = json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"]
 
-        # 定期更新の保存はファイル操作のスレッドを経て完了するため、固定時間でなく生存の印の更新を待つ。
         await _until(lambda: json.loads(writer.path.read_text(encoding="utf-8"))["heartbeat_at"] > initial)
 
         await manager.close()
@@ -175,7 +170,6 @@ async def test_manager_refreshes_heartbeat_until_close(monkeypatch: pytest.Monke
 
 @pytest.mark.asyncio
 async def test_nested_writer_preserves_root_file_on_deactivate(tmp_path: pathlib.Path) -> None:
-    """入れ子の書込主体は自身のファイルだけを回収する。"""
     directory = shared_layout.status_directory("root", tmp_path)
     directory.mkdir(parents=True)
     root_file = directory / "root.json"

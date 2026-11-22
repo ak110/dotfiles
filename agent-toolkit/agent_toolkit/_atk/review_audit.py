@@ -61,7 +61,6 @@ def _graphql_error(reason: str) -> _next_action.ActionableError:
 
 
 def _record_path() -> Path:
-    """判定済みreviewの記録ファイルを返す。"""
     return _state_paths.state_dir() / "review-audit.json"
 
 
@@ -81,7 +80,6 @@ def _validate_identifiers(identifiers: list[str]) -> None:
 
 
 def _read_records(path: Path) -> dict[str, dict[str, Any]]:
-    """記録を読み、解釈できないファイルと最上位が辞書でないファイルを空として扱う。"""
     try:
         records = json.loads(path.read_text(encoding="utf-8"))
     except OSError, json.JSONDecodeError:
@@ -97,7 +95,6 @@ def _repository_records(records: dict[str, dict[str, Any]], repository: str) -> 
 
 
 def _identifier_sort_key(identifier: str) -> tuple[bool, int]:
-    """reviewの`databaseId`を先に、各種別の中では番号の昇順に並べる。"""
     is_dependabot = identifier.startswith(DEPENDABOT_PREFIX)
     return is_dependabot, int(identifier.removeprefix(DEPENDABOT_PREFIX))
 
@@ -130,7 +127,6 @@ def _validate_revision(revision: str | None) -> str | None:
 
 
 def _effective_records(records: dict[str, Any], revision: str) -> dict[str, Any]:
-    """Dependabotの判定だけを確認版に限定する。日時だけの旧記録は再判定する。"""
     return {
         identifier: record
         for identifier, record in records.items()
@@ -224,12 +220,10 @@ def _dependabot_error(reason: str) -> _next_action.ActionableError:
 
 
 class _NotFound(Exception):
-    """REST APIがHTTP 404を返したことを呼び出し元の分岐へ伝える。"""
+    pass
 
 
 class _Forbidden(Exception):
-    """REST APIがHTTP 403を返したことと応答本文のmessageを呼び出し元の分岐へ伝える。"""
-
     def __init__(self, message: str) -> None:
         super().__init__(message)
         self.message = message
@@ -321,7 +315,6 @@ def dependabot_pending(repository: str) -> dict[str, Any]:
 
 
 def _default_revision(repository: str, branch: str) -> str:
-    """マニフェスト照会と判定記録が同じ不変の版を参照するため、branchをSHAへ解決する。"""
     try:
         response = _gh_rest(
             f"repos/{repository}/commits/{urllib.parse.quote(branch, safe='')}", operation="default_branchのrevision取得"
@@ -364,7 +357,6 @@ def _manifest_exists(repository: str, manifest_path: str, branch: str) -> bool:
 
 
 def _pending(repository: str) -> int:
-    """未判定reviewと未解決のCopilot由来threadがあるPR、および未判定のDependabotアラートを返す。"""
     _validate_repository(repository)
     owner, name = repository.split("/", 1)
     recorded = _repository_records(_read_records(_record_path()), repository)
@@ -420,7 +412,6 @@ def _pending(repository: str) -> int:
 
 
 def summarize_saved_pending(path: Path) -> None:
-    """生成元の保存先を維持し、監査の起動判断に必要な値を表示する。"""
     result = json.loads(path.read_text(encoding="utf-8"))
     counts = result["counts"]
     if any(
@@ -455,7 +446,6 @@ def _mark(repository: str, identifiers: list[str], revision: str | None = None) 
 
 
 def build_parser(parent: argparse._SubParsersAction) -> None:
-    """`review-audit`配下のサブコマンドを登録する。"""
     review_audit = _atk_help.add_command(parent, "review-audit", **_atk_help.HELP["atk review-audit"])
     subcommands = _atk_help.add_subcommands(
         review_audit,
@@ -479,7 +469,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果を判定済み記録と未判定対象の操作へ振り分ける。"""
     if args.review_audit_subcommand == "list":
         return _list(args.repo, args.revision)
     if args.review_audit_subcommand == "pending":

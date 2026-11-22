@@ -1,5 +1,3 @@
-"""委譲先の記録解決を公開CLIと一時的な会話・登録簿で検証する。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -66,7 +64,6 @@ def test_delegation_record_selects_parent_and_root_after_clear(
     codex_child: bool,
     stale_registry: bool,
 ) -> None:
-    """二段の委譲と古い登録簿でも起動結果を優先し、直接指定と同じrecordを返す。"""
     claude, codex = record_roots
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "old" if stale_registry else "root")
     child_id = "11111111-1111-4111-8111-111111111111" if codex_child else "child"
@@ -142,7 +139,6 @@ def test_delegation_record_retains_no_display_text(
     registered: bool,
     codex_child: bool,
 ) -> None:
-    """登録簿と無関係な記録を含む全探索で親子を保ち、走査結果を本文長から独立させる。"""
     claude, codex = record_roots
     child_id = "11111111-1111-4111-8111-111111111111" if codex_child else "child"
     root = _claude_record(claude, "root", "parent")
@@ -239,7 +235,6 @@ def test_delegation_record_rejects_unresolved_relationship(
     capsys: pytest.CaptureFixture[str],
     failure: str,
 ) -> None:
-    """出所を確定できない関係から発話を返さず、明示指定の再実行へ接続する。"""
     claude, _ = record_roots
     if failure != "missing-self":
         _claude_record(claude, "child", "parent" if failure == "cycle" else None)
@@ -265,7 +260,6 @@ def test_owner_session_failure_keeps_identity_private(
     capsys: pytest.CaptureFixture[str],
     owner: str | None,
 ) -> None:
-    """所有会話が解決不能な場合も環境の識別子を出力しない。"""
     del record_roots
     if owner is None:
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -297,7 +291,6 @@ def test_owner_session_rejects_multiple_records(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じ識別子の記録を複数projectに持つ場合は先頭を選ばない。"""
     claude, _ = record_roots
     path = _claude_record(claude, "duplicate")
     other = claude / "projects" / "another" / path.name
@@ -317,6 +310,5 @@ def test_implicit_source_rejects_another_source(
     capsys: pytest.CaptureFixture[str],
     source: list[str],
 ) -> None:
-    """指定した対象記録と委譲関係からの選択を混ぜて別の会話を読むことを防ぐ。"""
     assert evidence.main([*source, "--transcript", str(tmp_path / "record.jsonl"), "--user-events"]) == 2
     assert read_jsonl(capsys, raw=True)[0]["kind"] == "error"

@@ -12,7 +12,6 @@ PostToolUseフックから毎回呼ばれる。確かめる対象は、`atk wi a
 実行されるまで観測できない。
 """
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import pathlib
 lazy import time
 
@@ -49,7 +48,6 @@ _ADOPT_RETRY_SECONDS = 60.0
 
 
 def _baseline(state: dict) -> dict | None:
-    """走査方式の版が残した、通知済みの基準値（対象リポジトリID → 回答済みのファイル名一覧）を返す。無ければNoneを返す。"""
     for key in _SCAN_ANSWERED_KEYS:
         by_agent = state.get(key)
         by_repo = by_agent.get(MAIN_AGENT_ID) if isinstance(by_agent, dict) else None
@@ -103,11 +101,6 @@ def _adopt_scan_state(session_id: str, state: dict) -> list[str]:
 
 
 def _discard(session_id: str, finished: list[str], answered: dict[str, list[str]]) -> bool:
-    """確認を終えたUWIを記録から外す。書き込んだ場合だけ真を返す。
-
-    引き継ぎを保留している会話では、通知したUWIを同じ書き込みで基準値へ加える。
-    基準値に無い回答済みUWIを引き継ぐ`_adopt_scan_state`が、走査の回復後に同じ回答を再び通知しないためである。
-    """
     removed = set(finished)
 
     def _update(current: dict) -> dict:
@@ -147,7 +140,6 @@ def _settled(root: pathlib.Path, filename: str) -> tuple[bool, str | None]:
 
 
 def build_notice(session_id: str) -> str | None:
-    """この会話が投入したUWIに回答が付いていれば通知本文を返す。それ以外はNoneを返す。"""
     state = read_state(session_id)
     if any(key in state for key in _SCAN_ANSWERED_KEYS):
         awaiting = _adopt_scan_state(session_id, state)
@@ -168,7 +160,7 @@ def build_notice(session_id: str) -> str | None:
         finished.append(filename)
         if target_repo is not None:
             answered.setdefault(target_repo, []).append(filename)
-    # 記録から外せないまま通知すると、同じ回答を次回以降も繰り返し通知する。
+
     if not finished or not _discard(session_id, finished, answered) or not answered:
         return None
 

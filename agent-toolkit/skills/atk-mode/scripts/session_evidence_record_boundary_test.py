@@ -30,7 +30,6 @@ from agent_toolkit._testing.session_evidence_support import read_jsonl
     ],
 )
 def test_request_copies_do_not_create_conversation_events(tmp_path: pathlib.Path, capsys, query) -> None:
-    """会話と同じmessageを持つ別種のエントリを追加しても抽出結果を増やさない。"""
     entries = [
         {
             "type": "assistant",
@@ -69,13 +68,12 @@ def test_request_copies_do_not_create_conversation_events(tmp_path: pathlib.Path
     assert any(event.get("line") == 4 for event in read_jsonl(capsys))
     assert evidence.main([str(transcript), "--fixed-string", "false"]) == 0
     matches = read_jsonl(capsys)
-    # 固定文字列はgrepと同じ生の本文の照会であり、WIが保持を求める写しの所在も返す。
+
     assert any(locator["line"] == 4 for event in matches for locator in event.get("locators", []))
 
 
 @pytest.mark.parametrize("content", [b"\xff", b"not json", None])
 def test_unreadable_main_record_is_query_error(tmp_path: pathlib.Path, capsys, content) -> None:
-    """読取不能なJSONLを原因と次の操作が分かる終了2へ変換する。"""
     transcript = tmp_path / "broken.jsonl"
     if content is None:
         transcript.mkdir()
@@ -147,7 +145,6 @@ def test_catalog_retains_readable_records_and_unconfirmed_scope(tmp_path: pathli
 def test_catalog_second_pass_read_failure_is_actionable(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], query: list[str]
 ) -> None:
-    """索引作成後の再読込不能を公開照会の終了2へ変換し、途中結果を成功として返さない。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "timestamp": "2026-10-01T00:00:01Z", "message": {"role": "user", "content": "依頼"}}],
@@ -208,7 +205,6 @@ def test_subagent_read_failure_keeps_normal_sibling(tmp_path: pathlib.Path, caps
 
 
 def test_prepare_bundle_does_not_read_request_copies_as_conversation(tmp_path: pathlib.Path, capsys) -> None:
-    """準備文書とbundleの位置が写しを追加する前と同じ実エントリを指す。"""
     entries = [
         {
             "type": "assistant",

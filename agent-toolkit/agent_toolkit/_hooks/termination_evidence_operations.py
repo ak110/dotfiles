@@ -8,6 +8,7 @@ lazy import subprocess
 lazy from typing import Any
 
 lazy from agent_toolkit._agents_server import tool_names
+lazy from agent_toolkit._atk.managed_temp import temp_root_path
 lazy from agent_toolkit._atk.wi import uwi_scan
 lazy from agent_toolkit._common import session_state, shell_cwd, skill_modes
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
@@ -31,14 +32,12 @@ lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
 
 
 def _skill_name(value: object) -> str | None:
-    """Skillの名前から`agent-toolkit:`の修飾を除いた短縮名を返す。"""
     if not isinstance(value, str) or not value:
         return None
     return value.removeprefix("agent-toolkit:")
 
 
 def published_git_operations(command: str) -> list[str]:
-    """Bashのコマンドが実行する`git commit`・`git push`を、試行・ヘルプ・背景実行を除いて返す。"""
     operations: list[str] = []
     for invocation in extract_bash_invocations(command):
         parsed = _git_subcommand_tokens(invocation.segment)
@@ -67,7 +66,6 @@ def published_git_operations(command: str) -> list[str]:
 
 
 def _saved_operations(command: str) -> list[str]:
-    """Bashのコマンドから、WI・計画を保存する操作を返す。"""
     saved: list[str] = []
     for segment in extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
@@ -92,7 +90,6 @@ def _saved_operations(command: str) -> list[str]:
 # 読取の`tool_response`の形とStopの出力契約の監査記録は`docs/development/audit-records.md`の
 # 「agent-toolkit/agent_toolkit/_hooks/termination_evidence.py：終了工程の証拠のStop判定：2026年10月3日」にある。
 def _started_work(skill: object, arguments: object) -> str | None:
-    """Skillの起動が始める対象の名前を返す。入口の起動は引数の先頭語から作業の名前を読む。"""
     if _skill_name(skill) == skill_modes.ENTRY_SKILL:
         work = (arguments.split() or [""])[0] if isinstance(arguments, str) else ""
         return work if work in {COMPLETION_REPORT, *TARGET_ENTRY_WORKS} else None
@@ -100,13 +97,11 @@ def _started_work(skill: object, arguments: object) -> str | None:
 
 
 def _start_label(work: str) -> str:
-    """成果作業の開始を示す表示名を返す。入口の作業は入口の起動の形で示す。"""
     name = f"{skill_modes.ENTRY_SKILL} {work}" if work in TARGET_ENTRY_WORKS else work
     return f"agent-toolkit:{name}の開始"
 
 
 def _read_work(path: pathlib.Path) -> str | None:
-    """読取の対象が入口の作業の手順書（`skills/atk-mode/playbooks/<作業>.md`）であれば、作業の名前を返す。"""
     parts = path.parts
     if len(parts) < 4 or parts[-4:-1] != ("skills", skill_modes.ENTRY_SKILL, "playbooks") or not path.is_file():
         return None
@@ -126,7 +121,6 @@ def _is_completion_playbook(path: pathlib.Path) -> bool:
 
 
 def _read_works(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, response: str) -> list[str]:
-    """シェルのコマンドが現在の全文を返した入口の作業の手順書から、作業の名前を返す。"""
     return [
         work
         for path in full_reads.invocation_full_reads(invocation, cwd, response, lambda path: _read_work(path) is not None)
@@ -175,7 +169,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
             if not path.is_absolute() or private is not None and path.is_relative_to(private):
                 continue
             repository = _git_root(str(path.parent))
-            if repository is not None:
+            if repository is not None and not _temporary_git_repository(repository):
                 grouped.setdefault(repository, []).append(path.relative_to(repository).as_posix())
         for repository, relative in grouped.items():
             if relative:
@@ -215,7 +209,6 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
 
 
 def _invocation_repository(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution) -> pathlib.Path | None:
-    """操作ごとの実行位置とGitの位置指定から所属先を求める。"""
     if not cwd.resolved or not invocation.arguments_known:
         return None
     tokens = invocation.segment.tokens
@@ -225,7 +218,6 @@ def _invocation_repository(invocation: shell_cwd.BashInvocation, cwd: shell_cwd.
 
 
 def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None:
-    """書込時の作業ディレクトリが属するGitリポジトリだけを解決する。"""
     try:
         result = git_command.run(
             [*options, "rev-parse", "--show-toplevel"],
@@ -240,8 +232,21 @@ def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None
     return pathlib.Path(result.stdout.strip()).resolve() if result.returncode == 0 and result.stdout.strip() else None
 
 
+def _temporary_git_repository(root: pathlib.Path) -> bool:
+    try:
+        temporary = temp_root_path()
+        if not root.is_relative_to(temporary):
+            return False
+        result = git_command.run(
+            ["rev-parse", "--git-common-dir"], cwd=root, capture_output=True, text=True, check=False, timeout=5
+        )
+        common = result.stdout.strip()
+        return result.returncode == 0 and bool(common) and (root / common).resolve().is_relative_to(temporary)
+    except OSError, subprocess.TimeoutExpired:
+        return False
+
+
 def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:
-    """成功した自編集の対象だけを現在のGit状態と比べる。"""
     try:
         result = git_command.run(
             ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", *paths],

@@ -40,7 +40,6 @@ def test_native_records_project_user_messages_and_events(tmp_path: Path) -> None
 
 
 def test_stream_tool_updates_keep_one_call() -> None:
-    """ACTIVEとDONEの更新を同じ呼び出しとして数え、完了結果を保持する。"""
     entries = [
         {
             "event": "step_update",
@@ -60,7 +59,6 @@ def test_stream_tool_updates_keep_one_call() -> None:
 
 
 def test_native_workflow_recovery_uses_recorded_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """メイン候補を会話IDで列挙し、hook観測cwd・起動標識・終了応答を読む。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     path = tmp_path / ".gemini/antigravity-cli/brain/main/.system_generated/logs/transcript_full.jsonl"

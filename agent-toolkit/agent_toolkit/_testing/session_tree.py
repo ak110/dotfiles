@@ -28,8 +28,6 @@ TOTAL_ENTRIES = 11
 
 @dataclasses.dataclass(frozen=True)
 class SessionTree:
-    """作成したテスト用の記録のパスと、子の記録ごとの期待する親の記録のパス。"""
-
     paths: dict[str, pathlib.Path]
     expected_parents: dict[str, str]
 
@@ -111,7 +109,6 @@ def _codex(
 
 
 def write_session_tree(claude_home: pathlib.Path, codex_home: pathlib.Path, state_dir: pathlib.Path) -> SessionTree:
-    """親子付けの情報源ごとの親子と、件数上限で外れる親を持つテスト用の記録を作成する。"""
     project = claude_home / "projects" / "repo"
     sessions = codex_home / "sessions"
     paths: dict[str, pathlib.Path] = {}

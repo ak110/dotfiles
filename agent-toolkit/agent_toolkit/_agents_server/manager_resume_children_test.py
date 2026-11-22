@@ -88,7 +88,6 @@ async def test_auto_resume_delivery_failure_terminates_as_failed(
 async def _delegate_with_child_writer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, FakeBackend, state.SessionState, status_file.StatusFileWriter]]:
-    """委譲先1件と、その委譲先が別プロセスのMCPサーバーで子sessionを起動する書込主体を用意する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("claude", "model", "high")]
@@ -150,10 +149,6 @@ async def test_wait_delivers_child_session_result_without_kill(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """別プロセスが起動した子sessionの終了後、killを用いないwaitが委譲先の結果を配送する。
-
-    子sessionの登録簿レコードが残らない場合も、共有の終了時の結果ファイルから終了を判定する。
-    """
     async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
         child = state.SessionState("grandchild", str(tmp_path), engine="claude", launch_kind="explore")
         child_writer.sessions[child.session_id] = child
@@ -178,7 +173,7 @@ async def test_wait_delivers_child_session_result_without_kill(
         # 子sessionの終了を観測した待機が、killを伴わずに継続指示を1回配送する。
         assert pending["status"] == "running"
         assert backend.send_calls == 1
-        # 保留した前の結果は新しいturnの結果で差し替わるため、継続入力は最後の応答へ全文を書くよう伝える。
+
         assert backend.prompts[-1].count(FINAL_RESPONSE_NOTICE) == 1
         assert (shared_layout.results_directory("root-session", tmp_path) / f"{child.session_id}.json").is_file()
 
@@ -195,7 +190,6 @@ async def test_wait_delivers_child_session_result_without_kill(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["foreground-delivered", "consumed", "published", "old-turn", "other-parent", "legacy"])
 async def test_shared_wait_delivery_releases_tracking(monkeypatch, tmp_path, case):
-    """親自身へ配送した子の現在turnだけで、完了の保留を解除する。"""
     async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
         child = "grandchild"
         delegate.live_child_session_ids.add(child)
@@ -230,7 +224,6 @@ async def test_shared_wait_delivery_releases_tracking(monkeypatch, tmp_path, cas
 
 @pytest.mark.asyncio
 async def test_wait_delivery_does_not_remove_child_restarted_during_other_receipt_check(monkeypatch, tmp_path):
-    """複数件の照会中に新たに追跡を始めたturnを、先の配送結果で解除しない。"""
     async with _delegate_with_child_writer(monkeypatch, tmp_path) as (manager, backend, delegate, child_writer):
         children = {"child-a", "child-b"}
         delegate.live_child_session_ids.update(children)
@@ -292,7 +285,6 @@ async def test_child_collected_early_is_not_redelivered_and_remaining_child_resu
             )
         child_writer.flush()
 
-        # 先に終わった子は、委譲先が同じturnの`atk agents wait`で回収して次の工程へ使う。
         _complete(children["child-early"], message="早い結果")
         child_writer.flush()
         wait_output_tracking.consume_agents_wait_output(
@@ -324,7 +316,6 @@ async def test_send_message_resumes_stopped_session(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """破棄後も別保持先の最小状態から同じsessionを暗黙再開する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("stopped", str(tmp_path), engine="codex")
         _complete(session)
@@ -364,7 +355,6 @@ async def test_resume_rejects_cwd_where_plugin_commands_fail(monkeypatch: pytest
 async def test_resume_reports_removed_cwd_instead_of_missing_executable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """作業ディレクトリが削除された終了済みsessionへの追送は、PATHの確認ではなく作業ディレクトリの不在を返す。"""
     worktree = tmp_path / "removed-worktree"
     worktree.mkdir()
     async with _manager_with_fake("codex") as (manager, backend):

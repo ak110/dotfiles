@@ -57,18 +57,13 @@ LEGACY_API_KIND = "api"
 
 @dataclasses.dataclass(frozen=True)
 class Connection:
-    """登録簿へ保存できる接続種別（`subscription`・`credits`・`payg`・`inherit`）と、API環境ファイルの所在。"""
-
     kind: str
     api_env_file: str | None = None
     isolation_env_files: tuple[str, ...] = ()
 
 
 class SettingsFile(str):
-    """この起動が所有する合成設定のパス。SDKへは文字列として渡す。"""
-
     def cleanup(self) -> None:
-        """他の起動の設定を触らず、自身のファイルを回収する。"""
         pathlib.Path(self).unlink(missing_ok=True)
 
     def __enter__(self) -> SettingsFile:
@@ -79,7 +74,6 @@ class SettingsFile(str):
 
 
 def read_api_env_file(path: str) -> dict[str, str]:
-    """限定形式のenvファイルを毎起動読み、変数展開をせず値を返す。"""
     values: dict[str, str] = {}
     for line in pathlib.Path(path).read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -111,12 +105,8 @@ def merge_settings(
     cwd: str | pathlib.Path | None = None,
     project_settings: bool = True,
     drop_parent_env: frozenset[str] = frozenset(),
+    startup_overrides: Mapping[str, bool] | None = None,
 ) -> str:
-    """親のJSONの意味を保ち、委譲先のenvを最後に適用する。
-
-    親の設定がファイルの場合と`force_file`の指定時は、所有者だけが読める起動ごとのファイルへ書き、そのパスを返す。
-    親の設定を読めない場合、JSONとして不正な場合およびobjectでない場合は継承せず、envだけを渡す。
-    """
     from_file = parent is not None and not parent.lstrip().startswith("{")
     try:
         raw = pathlib.Path(parent).read_text(encoding="utf-8") if from_file and parent is not None else parent or "{}"
@@ -124,6 +114,8 @@ def merge_settings(
     except OSError, ValueError, UnicodeError:
         value = {}
     settings = value if isinstance(value, dict) else {}
+    if startup_overrides is not None:
+        settings.update(startup_overrides)
     inherited = settings.get("env")
     if isolate_auth and (
         "apiKeyHelper" in settings or "apiKeyHelper" in claude_settings_sources.setting_keys(cwd, project=project_settings)
@@ -166,7 +158,6 @@ def merge_settings(
 
 
 def api_key_helper(path: str) -> str:
-    """対話起動のAPIキー確認を要しない、ファイルからのキー取得コマンドを返す。"""
     root = pathlib.Path(__file__).resolve().parents[2]
     argv = [
         sys.executable,
@@ -182,7 +173,6 @@ def api_key_helper(path: str) -> str:
 
 
 def cleanup_settings(options: object) -> None:
-    """SDK設定が保持する、この起動自身の合成ファイルだけを回収する。"""
     settings = getattr(options, "settings", None)
     if isinstance(settings, SettingsFile):
         settings.cleanup()
@@ -235,17 +225,14 @@ def clean_environment(
 
 
 def api_environment_keys(paths: Iterable[str]) -> frozenset[str]:
-    """設定済みの全APIファイルから、親と子の両境界で隔離するキーを導く。"""
     keys = set(AUTH_ENV)
     for path in paths:
-        # 設定不良の診断は接続候補側が所有し、他backendの起動は妨げない。
         with contextlib.suppress(OSError, ValueError, UnicodeError):
             keys.update(read_api_env_file(path))
     return frozenset(keys)
 
 
 def isolation_keys(connection: Connection) -> frozenset[str]:
-    """選択した接続で親から継承しない変数名を返す。"""
     if connection.kind == "inherit":
         return frozenset()
     paths = (*connection.isolation_env_files, *((connection.api_env_file,) if connection.api_env_file else ()))
@@ -256,7 +243,6 @@ def isolation_keys(connection: Connection) -> frozenset[str]:
 
 
 def connection_overrides(connection: Connection) -> dict[str, str]:
-    """選択したAPI接続が明示する値だけを返す。"""
     if connection.kind in API_KINDS and connection.api_env_file:
         return {
             key: value
@@ -267,7 +253,6 @@ def connection_overrides(connection: Connection) -> dict[str, str]:
 
 
 def connection_environment(env: Mapping[str, str], connection: Connection) -> dict[str, str]:
-    """親の隔離対象を除去して、選択したAPIファイルだけを適用する。"""
     result = clean_environment(env, isolation_keys=isolation_keys(connection))
     result.update(connection_overrides(connection))
     return result

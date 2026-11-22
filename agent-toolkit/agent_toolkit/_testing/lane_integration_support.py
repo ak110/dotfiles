@@ -1,5 +1,3 @@
-"""lane_integrationの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import json
@@ -20,7 +18,6 @@ from agent_toolkit._testing.lane_support import _create, _invoke
 
 
 def _cleanup_integration_manifest(tmp_path: pathlib.Path, *, handoff_text: str) -> pathlib.Path:
-    """回収試験の実成果に対応する引継ぎと、WI最終化のmanifestを保存する。"""
     handoff = tmp_path / "handoff.md"
     handoff.write_text(handoff_text, encoding="utf-8")
     manifest = tmp_path / "integration.json"
@@ -46,7 +43,6 @@ def _finalize_lane_for_cleanup(
     feature_name: str,
     feature_text: str,
 ) -> tuple[pathlib.Path, dict[str, Any], pathlib.Path, str]:
-    """指定した成果を公開integrateで最終化し、回収試験へ資源と入力HEADを渡す。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -206,7 +202,6 @@ def prepare_lane_verification(
 
 
 def _write_empty_finalization_manifest(tmp_path: pathlib.Path) -> pathlib.Path:
-    """最終化操作なし・単純検証ありの統合入力を作成する。"""
     handoff = tmp_path / "handoff.md"
     handoff.touch()
     manifest = tmp_path / "integration.json"
@@ -314,7 +309,6 @@ def _timed_integration(
 
 
 def _selection_with(path: pathlib.Path, wis: list[str], *, integrated: bool = True) -> None:
-    """選定の項目と統合状態を持つ選定YAMLを書く。"""
     path.write_text(
         yaml.safe_dump(
             {
@@ -328,7 +322,6 @@ def _selection_with(path: pathlib.Path, wis: list[str], *, integrated: bool = Tr
 
 
 def _legacy(record: dict[str, Any]) -> None:
-    """選定情報を持たない旧形式の登録を再現する（選定原本も失効させる）。"""
     path = pathlib.Path(record["record_path"])
     stored = json.loads(path.read_text(encoding="utf-8"))
     stored.pop("selection", None)
@@ -345,7 +338,7 @@ def _role_document(role: str) -> pathlib.Path:
 
 
 def _caller(monkeypatch: pytest.MonkeyPatch, *, claude: str | None = None, codex: str | None = None) -> None:
-    # 実行ホストのsessionで結果が変わらないよう、呼出元の識別子を明示する。
+
     for name, value in (("CLAUDE_CODE_SESSION_ID", claude), ("CODEX_THREAD_ID", codex)):
         if value is None:
             monkeypatch.delenv(name, raising=False)
@@ -363,7 +356,6 @@ def _running(
     launcher: str | None = None,
     terminal: bool = False,
 ) -> None:
-    """agents_serverが`start`で公開するのと同じ形の担当記録を登録簿へ置く。"""
     if role is not None:
         prompt = task_documents.task_prompt_header(_role_document(role)) + "\n本文"
     session_registry.publish(

@@ -13,10 +13,6 @@ _OUTPUT_PATH_RE = re.compile(r"Output is being written to:\s*(/\S+)", re.IGNOREC
 
 
 def output_paths(text: str) -> list[str]:
-    """通知文が示す出力ファイルの絶対パスを出現順に返す。
-
-    通知文はパスの後に文を続けるため、パス末尾の句読点を除く。絶対パスでない値は返さない。
-    """
     paths: list[str] = []
     for match in _OUTPUT_PATH_RE.finditer(text):
         path = match.group(1).rstrip(".,;:)")

@@ -2,7 +2,7 @@
 
 振り返りのbatchが、不採用の多いレビュー担当のモデルやlevel、同じ理由の不採用の反復を改善候補にするための入力を返す。
 表の読込と期間の割当は`cost_metrics.saved_review_tables`を共有する。
-レビュー担当のモデルは、表のファイル名を本文に含み、実行レビュー担当の役割文書を配送されたセッション記録から求める。
+レビュー担当のモデルは、表のファイル名を本文に含むセッション記録から、役割の配送標識か組み込み委譲の記録を使って求める。
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import datetime
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from agent_toolkit._atk import review_table_format
 from agent_toolkit._common import private_notes
@@ -22,18 +22,16 @@ from agent_toolkit._common.runtime_identity import distinct_identities
 from cost_metrics import _history, saved_review_tables
 from session_evidence_stats import _parse_cli_timestamp
 
-# 実行レビュー担当の記録だけを選ぶ標識。agents_serverは役割文書の所在を`出所:`の行で最初の入力へ配送する。
-# 委譲元の記録にも同じ管理表の名前が現れるため、名前の一致だけでは帰属させない。
-# 集計期間には役割文書を`share/`から配送していた移行前の記録も含むため、旧所在も標識として残す。
 _ROLE_MARKER = re.compile(r"出所: \S*(?:share|skills/atk-mode/roles)/exec-review\.subagent\.md")
 # Codexの記録で、モデルの出力として現れる`response_item`の種類。これより前の入力だけを依頼文の候補にする。
 _CODEX_OUTPUT_TYPES = frozenset({"reasoning", "function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
+_CODEX_TOOL_TYPES = frozenset({"function_call", "custom_tool_call", "local_shell_call", "web_search_call"})
+_ROLE_DOCUMENT = re.compile(r"(?<![\w.-])roles/exec-review\.subagent\.md(?![\w.-])")
 _MODEL_UNKNOWN = "モデル不明"
 _LOCATION, _LEVEL, _NO_RESPONSE = 2, 4, 6
 
 
 def _input_texts(entry: dict[str, Any]) -> list[str] | None:
-    """記録の1行から、user役割の入力本文を返す。モデルの出力ならNoneを返す。"""
     message = entry.get("message")
     payload = entry.get("payload")
     content: Any = None
@@ -56,13 +54,36 @@ def _input_texts(entry: dict[str, Any]) -> list[str] | None:
     return []
 
 
-def _is_review_record(path: Path) -> bool:
-    """最初のモデル出力より前の入力本文に、実行レビュー担当の役割文書の配送があるかを返す。
+class _RecordRole(NamedTuple):
+    thread: str | None = None
+    marked: bool = False
+    review_parent: str | None = None
 
-    依頼文より前に置かれる内容（道具の定義、規範の配送、環境の状態）の大きさは配布物の量で変わるため、
-    先頭からの固定長では依頼文に届かない記録がある。記録の構造から依頼文の位置を決める。
-    最初のモデル出力より後ろは読まない。標識の文字列を引用しただけの会話を、レビュー担当の記録と区別するためである。
-    """
+
+def _meta(payload: object) -> tuple[str | None, str | None]:
+    """Codex記録のスレッドIDと、組み込み委譲による親IDを得る。"""
+    if not isinstance(payload, dict):
+        return None, None
+    thread = payload.get("id")
+    source = payload.get("source")
+    subagent = source.get("subagent") if isinstance(source, dict) else None
+    spawn = subagent.get("thread_spawn") if isinstance(subagent, dict) else None
+    parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
+    return thread if isinstance(thread, str) and thread else None, parent if isinstance(parent, str) and parent else None
+
+
+def _calls_role_document(payload: dict[str, Any]) -> bool:
+    if payload["type"] == "local_shell_call":
+        action = payload.get("action")
+        command = action.get("command") if isinstance(action, dict) else None
+        return isinstance(command, list) and any(isinstance(arg, str) and _ROLE_DOCUMENT.search(arg) for arg in command)
+    command = payload.get("arguments") if payload["type"] == "function_call" else payload.get("input")
+    return isinstance(command, str) and _ROLE_DOCUMENT.search(command) is not None
+
+
+def _record_role(path: Path) -> _RecordRole:
+    thread = parent = None
+    before_output = True
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -72,18 +93,53 @@ def _is_review_record(path: Path) -> bool:
                     continue
                 if not isinstance(entry, dict):
                     continue
-                texts = _input_texts(entry)
-                if texts is None:
-                    return False
-                if any(_ROLE_MARKER.search(text) for text in texts):
-                    return True
+                if entry.get("type") == "session_meta" and before_output and thread is None:
+                    thread, parent = _meta(entry.get("payload"))
+                if before_output:
+                    texts = _input_texts(entry)
+                    if texts is None:
+                        before_output = False
+                        if parent is None:
+                            break
+                    elif any(_ROLE_MARKER.search(text) for text in texts):
+                        return _RecordRole(thread, marked=True)
+                payload = entry.get("payload")
+                if (
+                    parent
+                    and entry.get("type") == "response_item"
+                    and isinstance(payload, dict)
+                    and payload.get("type") in _CODEX_TOOL_TYPES
+                ):
+                    return _RecordRole(thread, review_parent=parent if _calls_role_document(payload) else None)
     except OSError:
-        return False
-    return False
+        return _RecordRole()
+    return _RecordRole(thread)
+
+
+def _review_records(roots: list[Path]) -> list[Path]:
+    roles: dict[Path, _RecordRole] = {}
+    by_thread: dict[str, set[_RecordRole]] = collections.defaultdict(set)
+    for root in roots:
+        for path in sorted(root.rglob("*.jsonl")):
+            if path in roles or not path.is_file():
+                continue
+            role = roles[path] = _record_role(path)
+            if role.thread:
+                by_thread[role.thread].add(role)
+
+    return [
+        path
+        for path, role in roles.items()
+        if role.marked
+        or (
+            role.review_parent != role.thread
+            and (parents := by_thread.get(role.review_parent or ""))
+            and not any(parent.marked or parent.review_parent for parent in parents)
+        )
+    ]
 
 
 def _record_identity(path: Path, text: str) -> str:
-    """実行レビュー担当の記録の本文から、観測したモデルを`engine:model/effort`で返す。"""
     runtime = "codex" if "/.codex/" in path.as_posix() or path.name.startswith("rollout-") else "claude"
     entries = []
     for line in split_lines(text):
@@ -98,30 +154,30 @@ def _record_identity(path: Path, text: str) -> str:
 
 
 def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
-    """管理表のファイル名ごとに、その名前を本文に含む実行レビュー担当の記録から求めたモデルを返す。
-
-    配布先にripgrepがあるとは限らないため、外部コマンドを使わずに走査する。
-    全記録の本文を読むと重いため、最初のモデル出力より前の役割標識で対象を実行レビュー担当の記録に限定してから本文を読む。
-    """
     if not names:
         return {}
     models: dict[str, set[str]] = collections.defaultdict(set)
-    for root in roots:
-        if not root.is_dir():
+    names_set = set(names)
+    lengths = {len(name) for name in names_set}
+    table_suffix = re.compile(r"\.exec-review\.tsv")
+    for record in _review_records(roots):
+        try:
+            text = record.read_text(encoding="utf-8", errors="replace")
+        except OSError:
             continue
-        for record in sorted(root.rglob("*.jsonl")):
-            if not record.is_file() or not _is_review_record(record):
-                continue
-            try:
-                text = record.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            matched = [name for name in names if name in text]
-            if not matched:
-                continue
-            identity = _record_identity(record, text)
-            for name in matched:
-                models[name].add(identity)
+
+        matched = {
+            text[end - length : end]
+            for suffix in table_suffix.finditer(text)
+            for end in (suffix.end(),)
+            for length in lengths
+            if length <= end and text[end - length : end] in names_set
+        }
+        if not matched:
+            continue
+        identity = _record_identity(record, text)
+        for name in matched:
+            models[name].add(identity)
     return {name: ",".join(sorted(values)) for name, values in models.items()}
 
 
@@ -140,6 +196,7 @@ def _period_events(
         "table_count": len(tables),
         "excluded_judgment_count": 0,
         "excluded_judgments": [],
+        "unknown_model_tables": [],
         **_empty_counts(),
         "by_level": collections.defaultdict(_empty_counts),
         "by_model": collections.defaultdict(lambda: {**_empty_counts(), "tables": 0}),
@@ -149,6 +206,8 @@ def _period_events(
     for table in tables:
         model = models.get(table.path.name, _MODEL_UNKNOWN)
         summary["by_model"][model]["tables"] += 1
+        if model == _MODEL_UNKNOWN:
+            summary["unknown_model_tables"].append(str(table.path.absolute()))
         summary["excluded_judgment_count"] += len(table.judgment_rows)
         summary["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
         for number, row in table.rows:
@@ -178,7 +237,6 @@ def _period_events(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """公開CLIから期間を受け取り、今回と直前の同じ長さの期間の採否集計をJSON Linesで返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--since", required=True, metavar="DATE", help="今回の期間の開始日時（必須）。時差なしはローカル時刻。")
     parser.add_argument("--until", metavar="DATE", help="今回の期間の終了日時。省略時は実行時刻。")

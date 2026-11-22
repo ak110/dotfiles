@@ -1,5 +1,3 @@
-"""laneの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import json

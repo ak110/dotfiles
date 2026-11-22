@@ -43,7 +43,6 @@ pathlib.Path(os.environ["HOOK_RESULT"]).write_text("|".join(sys.argv[1:]), encod
 def test_external_hook_uses_effective_scope_and_reports_failed_resolution(
     tmp_path: Path, failure: str | None, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """単独複製shimから公開CLIを経由し、project/scopeを反映した実launcherを起動する。"""
     wrapper = tmp_path / "bin/atk-hook"
     wrapper.parent.mkdir()
     shutil.copyfile(Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook", wrapper)
@@ -69,7 +68,7 @@ def test_external_hook_uses_effective_scope_and_reports_failed_resolution(
         )
         if not (failure == "missing" and scope == "local"):
             (root / "skills").mkdir()
-        # versionや更新日時では選ばないことを、別projectの新しい記録で検証する。
+
         installed.append(
             {
                 "id": "agent-toolkit@ak110-dotfiles",
@@ -119,14 +118,13 @@ def test_external_hook_uses_effective_scope_and_reports_failed_resolution(
             ] in result.stderr
         else:
             assert result.returncode == 0, result.stderr
-            # launcher自身の実行結果と、execへ渡された絶対パスの版を確認する。
+
             assert (
                 output.read_text(encoding="utf-8") == ("local" if index == 0 else "user") + "|agent_toolkit/hook.py|pretooluse"
             )
 
 
 def test_commit_time_auto_refresh_recovers_the_live_hook_from_claude_cache(tmp_path: Path) -> None:
-    """commitを契機とする別processの自動導入後も、live sessionのhookを同版配布物から復旧する。"""
     version = "1.2.2"
     sync_script = """import json, pathlib
 root = pathlib.Path(__file__).parent
@@ -213,7 +211,6 @@ for child in tuple(cache.iterdir()):
 def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """update-dotfilesからpost-applyを完遂し、外部CLIが削除した旧cacheを復旧する。"""
     home = tmp_path / "home"
     root = tmp_path / "dotfiles"
     marketplace = root / ".agents/plugins/marketplace.json"
@@ -289,11 +286,6 @@ def test_update_dotfiles_public_entry_restores_all_previous_plugin_caches(
     monkeypatch.setattr(update_dotfiles.update_dotfiles_runtime, "LOG_PATH", tmp_path / "state/update-dotfiles.log")
     monkeypatch.setattr(update_dotfiles.sync_report, "REPORT_PATH", tmp_path / "state/sync-report.json")
     monkeypatch.setattr(update_dotfiles.update_dotfiles_git, "update_git_with_recovery", lambda *_args, **_kwargs: 0)
-
-    def no_daemon_pause() -> None:
-        return None
-
-    monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", no_daemon_pause)
 
     def run_step(_step: int, _total: int, _title: str, command_line: list[str], **_kwargs: object) -> tuple[int, str]:
         if command_line == ["chezmoi", "apply", "--force"]:

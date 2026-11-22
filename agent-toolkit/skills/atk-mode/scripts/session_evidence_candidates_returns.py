@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_returns）。"""
-
 from __future__ import annotations
 
 import collections
@@ -17,12 +15,9 @@ from session_evidence_candidates_wi import _ADHOC_SHELL_TOOLS
 from session_evidence_extract import _CollectedRecord
 from session_evidence_tool_calls import _conversation_tool_calls, _record_tool_calls
 
-# 委譲先の返却形式の欄名。日本語名へ改める前の英字の欄名（後者）で返す版の委譲先も同じ意味で読む。
 _RETURN_STATUS_PREFIXES = ("状態:", "status:")
 
 
-# 委譲先は続行できないことを`続行できない理由:`の行で表す。値が空の行（後続行へ列挙する形式の見出し）と、
-# 省略時の値「なし」を書いた旧形式の行は続行不能を示さない。
 _ESCALATION_REASON_PREFIX = "続行できない理由:"
 
 
@@ -77,7 +72,6 @@ _REPORTED_NONZERO_COUNT = re.compile(
 
 
 def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """実際のwaitの結果で受信した改善点を、完了前も原記録の位置へ対応付ける。"""
     events = []
     for item in collected:
         calls = _record_tool_calls(item.records)
@@ -110,7 +104,6 @@ def _delegate_notice_events(collected: list[_CollectedRecord]) -> list[dict[str,
 
 
 def _wait_response_parts(value: Any) -> tuple[list[str], set[tuple[str, int | str]]]:
-    """waitの本文と、後続回収へ引き継ぐ実行識別子を読む。"""
     bodies: list[str] = []
     handles: set[tuple[str, int | str]] = set()
     if isinstance(value, list):
@@ -162,13 +155,6 @@ def _wait_response_parts(value: Any) -> tuple[list[str], set[tuple[str, int | st
 
 
 def _is_delegate_return(event: dict[str, Any], *, main_record_id: str = "main") -> bool:
-    """委譲先の空でない最終返却のうち、明示的なエスカレーション以外を返す。
-
-    `final-result`は記録ごとの最後の非commentaryのアシスタントイベントであり、
-    委譲先の記録ではその委譲先が委譲元へ返した返却値に対応する。
-    成功の定型形式だけの返却の除外は、`_is_normal_delegate_return`が候補の集約時に行う。
-    メイン記録の最終出力は委譲返却ではない。明示的なエスカレーションは独立した候補へ送る。
-    """
     if event.get("kind") != "final-result" or event.get("record") == main_record_id:
         return False
     text = event.get("text")
@@ -176,10 +162,6 @@ def _is_delegate_return(event: dict[str, Any], *, main_record_id: str = "main") 
 
 
 def _is_escalation_return(event: dict[str, Any]) -> bool:
-    """上位判断を要求する明示的な最終返却であるかを返す。
-
-    値を持つ`続行できない理由:`の行を持つ返却と、旧形式の状態値で続行不能を示した返却を対象とする。
-    """
     if event.get("kind") != "final-result":
         return False
     text = event.get("text")

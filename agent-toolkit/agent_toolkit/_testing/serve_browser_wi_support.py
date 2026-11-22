@@ -1,5 +1,3 @@
-"""serveのbrowser_wi試験が共有する入力と補助処理。"""
-
 import asyncio
 import dataclasses
 import datetime
@@ -21,7 +19,6 @@ from agent_toolkit._testing import git_repository
 
 
 def _entry_path(root: pathlib.Path, filename: str) -> pathlib.Path:
-    """画面試験用WIの固定パスを解決し、保存先を用意する。"""
     path = wi_entries.entry_path(root, filename, fallback_date=datetime.date(2026, 10, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
@@ -29,13 +26,12 @@ def _entry_path(root: pathlib.Path, filename: str) -> pathlib.Path:
 
 async def _wait_for_detail_reload_deferred(page: playwright.async_api.Page) -> None:
     """公開された状態の生きた参照を取得し、保留の成立を同期の真偽値で待つ。"""
-    # wait_for_functionへasync関数を渡すと、falseを解決するPromise自体がtruthyとして成立する。
+
     await page.evaluate("async () => { window.__detailReloadState = (await import('/static/wi_state.js')).wiState; }")
     await page.wait_for_function("window.__detailReloadState.detailReloadDeferred", timeout=5000)
 
 
 def _state_text(content: str, state: str) -> str:
-    """外部操作を再現する入力の状態をfrontmatterへ設定する。"""
     parsed = wi_frontmatter.parse_frontmatter(content)
     metadata, body = parsed if parsed is not None else ({}, content)
     metadata["state"] = state
@@ -43,7 +39,6 @@ def _state_text(content: str, state: str) -> str:
 
 
 def _set_entry_state(path: pathlib.Path, state: str) -> None:
-    """同じパスを保った外部状態変更を保存する。"""
     path.write_text(_state_text(path.read_text(encoding="utf-8"), state), encoding="utf-8")
 
 
@@ -68,8 +63,6 @@ _SELF_WRITE_WARNINGS = ("外部で項目が更新されました", "削除され
 
 @dataclasses.dataclass(frozen=True)
 class _DetailMutationCase:
-    """詳細ダイアログから送信する変更操作1件の手順と期待結果。"""
-
     state: str
     content: str
     mode_button: str | None
@@ -207,7 +200,6 @@ _DETAIL_MUTATION_CASES = {
 
 
 async def _record_self_write_warnings(page: playwright.async_api.Page) -> None:
-    """詳細と通知の表示へ、自分の書込みを外部更新とみなした表示が一度でも現れたかを記録する。"""
     await page.evaluate(
         """warnings => {
           window.__selfWriteWarnings = [];
@@ -374,13 +366,12 @@ async def _saved_mutation_commit_failure(
 
 
 async def _assert_detail_notice_and_controls_reachable(page: playwright.async_api.Page, notice_image: pathlib.Path) -> None:
-    """通知の各文字と表示中の全ボタンが、スクロール後の可視領域へ入り覆われないことを確認する。"""
     assert await page.evaluate("""() => {
       const body = document.getElementById('detail-dialog-body').getBoundingClientRect();
       const footer = document.getElementById('detail-footer').getBoundingClientRect();
       return body.bottom <= footer.top;
     }""")
-    # stickyな通知が表示領域より高いと、scrollHeightだけでは末尾の可読性を保証できない。
+
     await page.evaluate("""async () => {
       const dialog = document.getElementById('detail-dialog');
       const alert = document.getElementById('detail-alert');
@@ -430,7 +421,6 @@ async def _assert_detail_notice_and_controls_reachable(page: playwright.async_ap
 
 
 async def _release_save_when_waiting(page: playwright.async_api.Page, release: threading.Event) -> None:
-    """保存中の表示と前回通知の消去を観測してから保存を解放する。"""
     try:
         await playwright.async_api.expect(page.locator("#save-user-comment-button")).to_be_disabled()
         await playwright.async_api.expect(

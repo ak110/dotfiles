@@ -1,5 +1,3 @@
-"""CLI要求から所有MCPへの適用、認可、1回の自己再開を検証する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +23,6 @@ from agent_toolkit._testing.agents_server_support import FakeBackend, install_ba
 @pytest.mark.parametrize("initially_visible", [True, False])
 @pytest.mark.asyncio
 async def test_cli_without_conversation_environment_resolves_only_own_executor(engine, initially_visible, monkeypatch):
-    """同じルートでも実行プロセスの世代が一致する会話だけを本人として選ぶ。"""
     session = _session()
     session.engine = engine
     session.attach_executor(os.getpid())
@@ -121,36 +118,23 @@ async def test_cli_request_applies_one_step_and_persists_history(actor):
         await asyncio.gather(task, return_exceptions=True)
 
 
-@pytest.mark.parametrize("fault", ["read", "cleanup-request", "cleanup-response"])
 @pytest.mark.asyncio
-async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault):
-    """Windowsの一時的な共有拒否が、応答の最初の読取や要求側の後始末で一度起きても、effortの適用結果を成功として返す。
-
-    要求側を応答の最初の読取の直前で止め、所有側が適用と応答の公開を終えてから読ませる。
-    """
+async def test_cli_request_survives_transient_sharing_denial(monkeypatch):
     session = _session()
-    denied: list[str] = []
+    attempts: list[pathlib.Path] = []
     polling, answered = threading.Event(), threading.Event()
-    original_read, original_unlink = pathlib.Path.read_text, pathlib.Path.unlink
+    original_read = pathlib.Path.read_text
 
     def read_text(self, *args, **kwargs):
-        if self.name.endswith(".effort-response"):
+        if self.name.endswith(".effort-request-result"):
+            attempts.append(self)
             polling.set()
             assert answered.wait(timeout=10), "所有側が応答を公開しない"
-            if fault == "read" and not denied:
-                denied.append(self.name)
+            if len(attempts) == 1:
                 raise PermissionError(13, "modeled WinError 32: sharing violation")
         return original_read(self, *args, **kwargs)
 
-    def unlink(self, *args, **kwargs):
-        suffix = ".effort-request" if fault == "cleanup-request" else ".effort-response"
-        if fault.startswith("cleanup") and self.name.endswith(suffix) and not denied:
-            denied.append(self.name)
-            raise PermissionError(13, "modeled WinError 5: access denied")
-        return original_unlink(self, *args, **kwargs)
-
     monkeypatch.setattr(pathlib.Path, "read_text", read_text)
-    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
     task = asyncio.create_task(asyncio.to_thread(effort_requests.request, "up", "child", {"CODEX_THREAD_ID": "parent"}))
     try:
         assert await asyncio.to_thread(polling.wait, 10), "要求側が応答を読まない"
@@ -158,8 +142,11 @@ async def test_cli_request_survives_transient_sharing_denial(monkeypatch, fault)
         answered.set()
         result = await task
         assert result["effort"] == "medium" and result["changed"] is True
-        assert denied
-        assert not list(session_registry.registry_directory().glob("*.effort-*"))
+        (retained,) = session_registry.registry_directory().glob("*.effort-*")
+        assert retained.suffix == ".effort-request-result"
+        assert len(attempts) >= 2 and set(attempts) == {retained}
+        packet = json.loads(original_read(retained, encoding="utf-8"))
+        assert packet["request_id"] == retained.stem and packet["result"] == result
     finally:
         answered.set()
         await asyncio.gather(task, return_exceptions=True)
@@ -169,9 +156,11 @@ def test_persistent_read_denial_is_reported_with_path_and_error(monkeypatch):
     """応答の読取拒否が期限まで続けば、期限切れに応答のパスと最後のOSエラーを加え、現在値の確認と再送しない案内を残す。"""
     _session()
     original_read = pathlib.Path.read_text
+    denied: list[pathlib.Path] = []
 
     def read_text(self, *args, **kwargs):
-        if self.name.endswith(".effort-response"):
+        if self.name.endswith(".effort-request-result"):
+            denied.append(self)
             raise PermissionError(13, "modeled permanent EACCES", str(self))
         return original_read(self, *args, **kwargs)
 
@@ -182,9 +171,12 @@ def test_persistent_read_denial_is_reported_with_path_and_error(monkeypatch):
     with pytest.raises(TimeoutError) as raised:
         effort_requests.request("up", "child", {"CODEX_THREAD_ID": "parent"})
     message = str(raised.value)
-    assert ".effort-response" in message and "modeled permanent EACCES" in message
+    (request,) = session_registry.registry_directory().glob("*.effort-*")
+    assert set(denied) == {request.with_suffix(".effort-request-result")}
+    assert f"応答ファイル{denied[0]}を読めなかった" in message and "modeled permanent EACCES" in message
     assert "atk agents show" in message and "再送しない" in message
-    assert not list(session_registry.registry_directory().glob("*.effort-*"))
+    packet = json.loads(original_read(request, encoding="utf-8"))
+    assert request.suffix == ".effort-request" and packet["request_id"] == request.stem and "result" not in packet
 
 
 @pytest.mark.parametrize("actor", ["sibling", "grandparent"])
@@ -257,7 +249,7 @@ async def test_apply_exception_is_request_error_and_does_not_change_effort():
 @pytest.mark.asyncio
 async def test_self_change_resumes_only_once_after_turn_end():
     session = _session()
-    session.effort_resume_turn = session.turn_seq
+    session.reserve_effort_resume(session.turn_seq)
     sent = []
 
     async def send(current, body):
@@ -279,7 +271,7 @@ async def test_self_change_resumes_only_once_after_turn_end():
 @pytest.mark.asyncio
 async def test_independent_next_turn_consumes_self_resume_reservation():
     session = _session()
-    session.effort_resume_turn = 0
+    session.reserve_effort_resume(0)
 
     async def unexpected(_session, _prompt):
         raise AssertionError("別経路で開始したturnへ重複送信した")
@@ -288,9 +280,33 @@ async def test_independent_next_turn_consumes_self_resume_reservation():
     assert session.effort_resume_turn is None
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interrupted", [False, True])
+async def test_effort_resume_releases_result_after_interrupt_or_send_failure(interrupted):
+    session = _session()
+    session.reserve_effort_resume(session.turn_seq)
+    session.status = "completed"
+    session.record_turn_completed()
+    session.interrupt_requested = interrupted
+    sent = []
+
+    async def unavailable(current, _body):
+        assert not current.result_available
+        sent.append(current.session_id)
+        raise RuntimeError("再開の送信に失敗")
+
+    await effort_control.resume_changed({"child": session}, unavailable)
+    await effort_control.resume_changed({"child": session}, unavailable)
+
+    assert sent == ([] if interrupted else ["child"])
+    assert session.effort_resume_turn is None and not session.effort_resuming
+    assert session.result_available
+    if not interrupted:
+        assert session.error["message"] == "再開の送信に失敗"
+
+
 @pytest.mark.parametrize("fault", ["missing", "version", "owner", "generation"])
 def test_cli_refuses_unverified_receiver_without_saving(fault):
-    """未宣言・別世代では会話を保持し、要求を送らない。"""
     _session()
     path = session_registry.registry_directory() / "child.json"
     payload = json.loads(path.read_text(encoding="utf-8"))

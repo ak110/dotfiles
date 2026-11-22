@@ -1,5 +1,3 @@
-"""Bashの作用範囲と読取・書込先への実行位置の受け渡しを確かめる。"""
-
 import pathlib
 import shlex
 
@@ -43,13 +41,11 @@ def test_invocation_cwds_preserve_shell_scope(tmp_path: pathlib.Path, command: s
 
 
 def test_unknown_marker_is_not_a_directory() -> None:
-    """展開の標識をパスへ混ぜず、後続の位置を不明として渡す。"""
     positions = list(shell_cwd.bash_invocation_cwds('cd "$D" && cat file', "/base"))
     assert not positions[-1][1].resolved
 
 
 def test_substitution_inherits_cwd_before_outer_directory_change(tmp_path: pathlib.Path) -> None:
-    """外側のcdを実行する前のcwdを置換へ渡す。"""
     positions = list(shell_cwd.bash_invocation_cwds('cd "$(cd sub; echo target)"; cat file', str(tmp_path)))
     inner = next(current for invocation, current in positions if invocation.segment.tokens[0] == "echo")
     assert inner.resolved and pathlib.Path(inner.path) == tmp_path / "sub"

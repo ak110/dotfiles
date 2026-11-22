@@ -1,5 +1,3 @@
-"""WIのmutations content: body_fileのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -17,8 +15,6 @@ from agent_toolkit.atk_test import _GitCall, _make_subprocess_fake, _setup_notes
 
 
 class TestEditBodyFile:
-    """本文ファイルによる編集の検証。"""
-
     @pytest.mark.parametrize("newline", ["\n", "\r\n"])
     def test_body_file_preserves_multiline_content(
         self,
@@ -48,7 +44,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """本文ファイルを追記でき、位置引数の本文は書込前に拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="編集前")
         body_path = tmp_path / "body.md"
@@ -79,7 +74,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """既存ファイルパスだけの本文を通常編集と追記でそのまま保存する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="編集前")
         message_file = tmp_path / "message.txt"
@@ -104,7 +98,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """本文ファイル内の既存ファイルパスを本文として保存する。"""
         notes = _setup_notes(tmp_path)
         filename = "20260907-000000-001.md"
         _write_convert_awi(notes, filename, state="hold")
@@ -146,7 +139,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """解釈できない本文ファイルは終了コード1で拒否し、項目を保持する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "entry.md", body="編集前")
         original = path.read_bytes()
@@ -161,7 +153,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """本文ファイル指定時はEDITORが設定済みでもエディターを起動しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="編集前")
         monkeypatch.setenv("EDITOR", "must-not-run")
@@ -231,7 +222,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """論理本文が同一ならコミットせず差分なしを出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文")
         git_calls: list[_GitCall] = []
@@ -241,6 +231,6 @@ class TestEditBodyFile:
             atk.main(_edit_body_args(tmp_path, "fb-001.md", "本文"), home=tmp_path)
 
         assert exc_info.value.code == 0
-        # 接頭辞の無い行は成否を読み取れないため、差分なしも成功行として報告すること。
+
         assert capsys.readouterr().out.startswith("成功: 差分なし")
         assert not [call for call in git_calls if "commit" in call["cmd"]]

@@ -22,10 +22,10 @@ description: >
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
-| テストを追加・変更・レビューする | `references/verification.md`「テスト配置」「テストとCIの所要基準」 |
-| 変更を検証する（対象の選定、pyfltr・MCPの`run`・pytest・`make test`・`make format`の実行、統合前の最終の実行） | `references/verification.md`「変更範囲の検証の値」「検証コマンドの実行」 |
+| テストを追加・変更・レビューする | `references/verification.md`「テスト配置」、`references/verification-execution.md`「テストとCIの所要基準」 |
+| 変更を検証する（対象の選定、pyfltr・MCPの`run`・pytest・`make test`・`make format`の実行、統合前の最終の実行） | `references/verification.md`「変更範囲の検証の値」、`references/verification-execution.md`「検証コマンドの実行」 |
 | 公開前・push前の検証、ローカルの`make test`が実行しないCIジョブの確認 | `references/verification.md`「公開前の検証」「push前のチェックとCIだけが実行するチェック」 |
-| テストやCIの結果を成功時も含めて判定する | `references/verification.md`「テストとCIの所要基準」 |
+| テストやCIの結果を成功時も含めて判定する | `references/verification-execution.md`「テストとCIの所要基準」 |
 | `agent-doc-tone`の報告へ対処する | `references/verification-values-tone.md` |
 | 専用worktree・回収予定の検証用複製・miseの状態ディレクトリを準備する、専用worktreeの変更を`atk`で動かす | `references/worktree.md` |
 | `make update`・`make update-actions`を実行の候補にする | `references/dependency-update.md`、更新後の検証は`references/verification.md`「変更範囲の検証の値」 |

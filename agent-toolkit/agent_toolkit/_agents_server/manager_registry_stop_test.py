@@ -37,7 +37,6 @@ async def test_stop_discards_terminal_session(
     model_type: str | None,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了済みsessionを一覧と通常保持先から除き、backend資源を解放する。"""
     async with _manager_with_fake(engine) as (manager, backend):
         session = state.SessionState("terminal", str(tmp_path), engine=engine, model_type=model_type, turn_seq=3)
         _complete(session)
@@ -58,7 +57,6 @@ async def test_stop_discards_terminal_session(
 
 @pytest.mark.asyncio
 async def test_stop_retains_new_end_when_legacy_result_is_unreadable(tmp_path: pathlib.Path) -> None:
-    """停止による保持でも、旧名が壊れたことを別の未公開turnの公開済み判定にしない。"""
     writer = status_file.StatusFileWriter({}, shared_roots.StatusFileIdentity("root", "root.json", None), state_root=tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
         install_backend(manager, "codex", FakeBackend(manager.sessions, "codex"))
@@ -81,7 +79,6 @@ async def test_stop_removes_status_file_projection_and_retained_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """破棄したsessionをstatusLineの射影と終了時の結果ファイルから除く。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -121,7 +118,6 @@ async def test_explicit_stop_discards_only_its_sessions_outstanding_turns(tmp_pa
             session = state.SessionState("child", str(tmp_path), engine="codex", turn_seq=seq)
             _complete(session, message=f"turn {seq}")
             if seq == 1:
-                # 旧writerが公開した旧名の原本には、turn別の公開記録がまだない。
                 original = shared_layout.results_directory("parent", tmp_path) / "child.json"
                 original.parent.mkdir(exist_ok=True)
                 original.write_text(json.dumps(state.terminal_result_payload(session)), encoding="utf-8")
@@ -137,7 +133,7 @@ async def test_explicit_stop_discards_only_its_sessions_outstanding_turns(tmp_pa
         assert writer.result_exists("child")
         for _ in range(2):
             assert await manager.stop("child") == {}
-            # 破棄前の観測を再保存しても、旧名にもturn別名にも原本を戻さない。
+
             for previous in turns:
                 writer.retain_result(previous)
             await writer.flush_async()
@@ -356,7 +352,7 @@ async def test_stop_discards_expired_session(tmp_path: pathlib.Path) -> None:
         listed = await manager.list_sessions()
         assert listed["sessions"] == []
         assert "omitted" not in listed
-        # expiredへ移した時点で資源は解放済みなので、stopは再開状態の移動だけを行う。
+
         assert not backend.release_calls
 
 
@@ -416,10 +412,6 @@ async def test_unrecoverable_registry_record_reports_next_action(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開できない登録簿の状態は、`error.recovery`の値に加えて、取るべき操作を次の操作の行で示す。
-
-    `error.recovery`の値だけを返すと、委譲元は別の主体が実行中のsessionを新しいstartでやり直し得る。
-    """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_id = "0ba2f3f4-3e6c-4a1a-9a35-9f5e30b9f9b1"
     session_registry.publish(
@@ -438,7 +430,6 @@ async def test_unrecoverable_registry_record_reports_next_action(
 
 @pytest.mark.asyncio
 async def test_stop_rejects_running_session(tmp_path: pathlib.Path) -> None:
-    """実行中turnは中断も破棄もせず、killの先行を要求する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("running", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session
@@ -454,7 +445,6 @@ async def test_stop_rejects_running_session(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_stop_rejects_pending_resume(tmp_path: pathlib.Path) -> None:
-    """進行中の再開を実行中として拒否する。"""
     async with _manager_with_fake("codex") as (manager, _):
         resume_state = state.SessionResumeState.from_session(state.SessionState("pending", str(tmp_path)))
         manager.expired_sessions[resume_state.session_id] = resume_state
@@ -475,7 +465,6 @@ async def test_stop_rejects_pending_resume(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_stop_rejects_unknown_session() -> None:
-    """保持していないsession IDは既存の未解決診断を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         session_id = "3468feae-b2bf-4d67-ac55-3c40207e8b5b"
 

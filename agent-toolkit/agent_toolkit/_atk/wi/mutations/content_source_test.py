@@ -1,5 +1,3 @@
-"""WIのmutations content: sourceのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -13,15 +11,12 @@ from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_a
 
 
 class TestEditNoEditor:
-    """editサブコマンド: $EDITOR未設定でexit 1となる。"""
-
     def test_no_editor_exits(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """$EDITORが未設定の場合はexit 1と案内が出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         monkeypatch.delenv("EDITOR", raising=False)
@@ -35,8 +30,6 @@ class TestEditNoEditor:
 
 
 class TestNoninteractiveEdit:
-    """editサブコマンドの本文ファイル指定による非対話編集を検証する。"""
-
     @pytest.mark.parametrize("entry_type", ["awi", "uwi"])
     @pytest.mark.parametrize(
         ("stored_source", "replacement", "agent_environment", "accepted"),
@@ -59,7 +52,6 @@ class TestNoninteractiveEdit:
         agent_environment: bool,
         accepted: bool,
     ) -> None:
-        """AWI・UWIの編集は既存humanを保持し、エージェントによる新規humanを保存しない。"""
         notes = _setup_notes(tmp_path)
         if entry_type == "awi":
             path = _write_awi_file(notes, "entry.md", body="編集前", source=stored_source)
@@ -98,7 +90,6 @@ class TestNoninteractiveEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """EDITOR未設定でも本文を更新し、未指定メタデータを保持する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前", source="session-review")
         monkeypatch.delenv("EDITOR", raising=False)
@@ -119,7 +110,6 @@ class TestNoninteractiveEdit:
         tmp_path: pathlib.Path,
         dry_run: bool,
     ) -> None:
-        """人間由来の原文へ処理結果節を加える編集でも保存済みのsource欠落を保持する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="人間が入力した要求。")
         original = path.read_text(encoding="utf-8")
@@ -145,7 +135,6 @@ class TestNoninteractiveEdit:
         source: str | None,
         replacement: str,
     ) -> None:
-        """sourceの明示時は原本の由来によらず非空文字列を要求し、拒否時は原本を保つ。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前", source=source)
         original = path.read_text(encoding="utf-8")
@@ -167,7 +156,6 @@ class TestNoninteractiveEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示sourceのある原本からEDITORでキーを削除した場合は保存しない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         original = path.read_text(encoding="utf-8")
@@ -194,7 +182,6 @@ class TestNoninteractiveEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """エージェント編集でsourceの新規指定と変更を受理する。"""
         notes = _setup_notes(tmp_path)
         missing = _write_awi_file(notes, "missing.md", body="編集前")
         existing = _write_awi_file(notes, "existing.md", body="編集前", source="old")

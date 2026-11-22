@@ -1,5 +1,3 @@
-"""`atk review-table`の引数を解析し、レビュー指摘管理表の操作へ振り分ける。"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,7 +36,6 @@ _ActionableError = _next_action.ActionableError
 
 
 def _row_id(raw: str) -> int:
-    """1始まりの行識別子を検証する。"""
     try:
         value = int(raw)
     except ValueError as error:
@@ -53,11 +50,6 @@ def _row_id(raw: str) -> int:
 
 
 def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
-    """セル本文をファイルから読むオプションを登録する。
-
-    `atk wi add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
-    シェルの引用規則を経由せずに渡せるようにする。
-    """
     parser.add_argument(
         f"--{option}-file",
         metavar="PATH",
@@ -83,7 +75,6 @@ def _read_cell_file(option: str, raw_path: str) -> str:
 
 
 def _cell_value(args: argparse.Namespace, dest: str) -> str:
-    """`--<名前>-file`からセル本文を返す。"""
     raw_path = getattr(args, f"{dest}_file", None)
     if raw_path is not None:
         return _read_cell_file(f"--{dest.replace('_', '-')}-file", raw_path)
@@ -101,7 +92,7 @@ def _required_value(args: argparse.Namespace, option: str) -> str:
 
 def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[str]]:
     """UTF-8 JSON配列の指摘本文とレベルを、共通round・trackの行へ変換する。"""
-    guidance = "--items-fileへlocation・issue・levelの文字列3キーを持つ非空JSON配列をUTF-8で保存して指定する"
+    guidance = "--items-fileへlocation・issueを必須とし、levelを省略できる非空JSON配列をUTF-8で保存して指定する"
     try:
         items = json.loads(_read_cell_file("--items-file", raw_path))
     except json.JSONDecodeError as error:
@@ -112,22 +103,21 @@ def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[st
     for index, item in enumerate(items, start=1):
         if (
             not isinstance(item, dict)
-            or set(item) != {"location", "issue", "level"}
+            or not {"location", "issue"} <= item.keys() <= {"location", "issue", "level"}
             or any(not isinstance(value, str) for value in item.values())
         ):
             raise _ActionableError(f"--items-fileの項目{index}のキーか値の型が不正である", next_action=guidance)
-        if item["level"] not in LEVEL_VALUES:
+        if "level" in item and item["level"] not in LEVEL_VALUES:
             raise _ActionableError(
                 f"--items-fileの項目{index}のlevelが正規値ではない",
                 next_action=f"levelを{', '.join(LEVEL_VALUES)}のいずれかにして再実行する",
             )
         _require_issue_labels(item["location"], item["issue"], round_value, f"--items-fileの項目{index}のissue")
-        rows.append([round_value, _normalize_track(track), item["location"], item["issue"], item["level"], "", ""])
+        rows.append([round_value, _normalize_track(track), item["location"], item["issue"], item.get("level", ""), "", ""])
     return rows
 
 
 def build_parser(parent: argparse._SubParsersAction) -> None:
-    """`review-table`配下のサブコマンドを登録する。"""
     review = _atk_help.add_command(parent, "review-table", **_atk_help.HELP["atk review-table"])
     sub = _atk_help.add_subcommands(
         review,
@@ -156,16 +146,16 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
         choices=_TRACK_INPUT_VALUES,
         help="指摘を登録するレビューの区分。レビュー工程に対応する正規値から指定する。",
     )
-    add_input = add_command_parser.add_mutually_exclusive_group(required=True)
+    add_input = add_command_parser.add_mutually_exclusive_group()
     add_input.add_argument(
         "--level",
         choices=LEVEL_VALUES,
-        help="指摘レベル。要件、仕様、詳細または実装を指定する。",
+        help="指摘レベル。省略時は空で保存する。",
     )
     add_input.add_argument(
         "--items-file",
         metavar="PATH",
-        help="複数指摘のUTF-8 JSON配列。各要素は文字列location・issue・levelの3必須キー。"
+        help="複数指摘のUTF-8 JSON配列。各要素は文字列のlocation・issueが必須、levelは任意。"
         "round・trackは全件共通。単数形の--level・--location-file・--issue-fileとは併用できない。",
     )
     for name, description in (
@@ -268,7 +258,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果をレビュー指摘管理表の操作へ振り分ける。"""
     command = args.review_table_subcommand
     if command == "init":
         _require_writable_exec_review(args.path)
@@ -290,7 +279,7 @@ def dispatch(args: argparse.Namespace) -> int:
         location = _required_value(args, "location")
         issue = _required_value(args, "issue")
         _require_issue_labels(location, issue, args.round, "--issue-file")
-        return add(args.path, args.round, args.track, location, issue, args.level)
+        return add(args.path, args.round, args.track, location, issue, args.level or "")
     if command == "recheck":
         _require_writable_exec_review(args.path)
         return recheck(args.path, args.row_id, args.round, args.verdict, _cell_value(args, "issue"))
@@ -324,7 +313,6 @@ def dispatch(args: argparse.Namespace) -> int:
 
 
 def _require_writable_exec_review(raw_path: str) -> None:
-    """保存済み計画の領域の表と、保存済みの旧計画レビュー表を更新対象から除外する。"""
     target = _path(raw_path)
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name

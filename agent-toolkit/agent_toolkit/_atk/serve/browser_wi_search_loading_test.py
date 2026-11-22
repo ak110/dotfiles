@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するsearch_loadingの試験。"""
-
 import asyncio
 import functools
 
@@ -27,7 +25,6 @@ pytestmark = [
 async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """同じ状態の対象リポジトリ候補の要求がSSEで後から発行されても、エンドユーザーの操作による件数通知を完了する。"""
     harness = browser_harness
     page = harness.page
     await _observe_screen_requests(page)
@@ -56,7 +53,7 @@ async def test_user_filter_announcement_survives_same_state_sse_repo_request(
     await page.route("**/api/repos?status=all", delay_first_repo_request)
     await page.locator("#result-status").evaluate("element => { element.textContent = '変更前の通知'; }")
     await page.locator("#kind-filter").evaluate("element => { element.value = 'awi'; }")
-    # 状態フィルター変更時の処理を起動し、対象リポジトリの再取得を伴う一覧の更新を実行する。
+
     await page.locator("#state-filter").dispatch_event("change")
     await asyncio.wait_for(first_started.wait(), timeout=5)
     try:
@@ -112,7 +109,6 @@ async def test_manual_sync_stays_busy_until_entries_render(browser_harness: _Bro
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_clear_filters_stays_busy_through_repos_and_entries(browser_harness: _BrowserHarness) -> None:
-    """条件クリア後の候補取得と一覧取得の両方を処理中として表示する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
@@ -142,7 +138,6 @@ async def test_clear_filters_stays_busy_through_repos_and_entries(browser_harnes
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_search_stays_busy_during_debounce_and_entries(browser_harness: _BrowserHarness) -> None:
-    """検索入力直後から遅延取得の描画完了まで処理中を保つ。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")

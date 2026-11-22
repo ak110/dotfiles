@@ -5,7 +5,6 @@
 判定の詳細を調べるDEBUG相当の出力は`background_tasks`が環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`の指定時だけ標準エラーへ書く。
 """
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 import json
 import pathlib
 lazy import collections.abc
@@ -30,7 +29,7 @@ def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes:
 
     `decision`は呼び出し側が渡す最終判定ラベル（`approve_no_env`・
     `approve_pending_async`・`approve_exit_invoked`・`approve_block_limit_reached`・
-    `block_autonomous_exit`など）。`context`は任意のkey-valueの辞書で、
+    `block_busy_loop`など）。`context`は任意のkey-valueの辞書で、
     `last_tool`・`launched`・`pending`・`pending_ids`等を呼び出し側が任意で埋める。
 
     出力形式: `{ISO8601時刻} decision={...} k1=v1 k2=v2 ...`（1行）。
@@ -51,7 +50,7 @@ def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], Non
 
     JSON解析失敗またはsession_id欠落時は`approve`を呼び出したうえで`None`を返す。
     正常時は`(session_id, payload)`を返す。`stop_hook_active`判定・環境変数判定等の
-    後続分岐は呼び出し側ごとに判定順序（`autonomous_exit.py`は環境変数判定を
+    後続分岐は呼び出し側ごとに判定順序（`busy_loop_guard.py`は環境変数判定を
     `stop_hook_active`より先に行う等）が異なるため、本関数には含めず呼び出し側へ委ねる。
     """
     try:

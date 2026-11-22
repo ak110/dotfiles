@@ -13,7 +13,6 @@ from agent_toolkit._testing.isolation import build_host_environ
 
 
 def _native_uv(environ: dict[str, str]) -> Path | None:
-    """uv.exeという別名でも起動できる実体を探す。"""
     path = environ["PATH"]
     mise = shutil.which("mise", path=path)
     shim_target = Path(mise).resolve() if mise else None
@@ -87,7 +86,7 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
     if restrict_process:
         monkeypatch.setenv("PSEXECUTIONPOLICYPREFERENCE", "AllSigned")
     shell = Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    # 比較元には5.1自身が起動時に組み立てるモジュール探索先を使わせる。
+
     reference_env = os.environ.copy()
     reference_env.pop("PSMODULEPATH", None)
     expected = subprocess.run(
@@ -122,7 +121,6 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
 def test_notified_launcher_delivers_argv(
     tmp_path: Path, command_tail: str, argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """配布スクリプトとネイティブuvを通り、atk.pyで観測したargv、再起動先、終了値を比べる。"""
     source = Path(plugin_environment.__file__).resolve().parents[2] / "scripts"
     root = tmp_path / "plugin root"
     scripts = root / "scripts"
@@ -131,39 +129,29 @@ def test_notified_launcher_delivers_argv(
     shell = "powershell.exe" if os.name == "nt" else "pwsh"
     if os.name != "nt":
         monkeypatch.setattr(windows_powershell, "_execution_policy", lambda: "RemoteSigned")
-        # miseのshimは実行名でツールを引くので、uv.exeに改名するとuvを起動できない。
+
         uv = _native_uv(build_host_environ())
         if uv is None:
             pytest.skip("uv.exeとして起動できるネイティブのuvが見つからない。実体をPATHに加えて試験を再実行する。")
         (tmp_path / "uv.exe").symlink_to(uv)
         monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
-    restart = tmp_path / "new root"
-    for release in (root, restart):
-        (release / "scripts").mkdir(parents=True, exist_ok=True)
-        (release / "scripts/launch.py").write_text(
-            "import runpy, sys\nfrom pathlib import Path\n"
-            "assert sys.argv[1] == '--prepare-if-missing'\n"
-            "assert Path(sys.argv[2]).resolve().parents[1] == Path(__file__).resolve().parents[1]\n"
-            "sys.argv = sys.argv[2:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n",
-            encoding="utf-8",
-        )
-        (release / "agent_toolkit").mkdir()
-        (release / "agent_toolkit/atk.py").write_text(
-            "import json, os, sys\nfrom pathlib import Path\n"
-            "print(json.dumps(sys.argv[1:]))\n"
-            "if sys.argv[1:3] == ['wi', 'process-loop'] and os.environ['PROBE_EXIT'] != '75':\n"
-            "    Path(os.environ['AGENT_TOOLKIT_RESTART_SPEC']).write_text("
-            "os.environ['RESTART_CONTENT'], encoding='utf-8')\n"
-            "    sys.exit(75)\nsys.exit(int(os.environ['PROBE_EXIT']))\n",
-            encoding="utf-8",
-        )
-    restart_argv = ["wi", "grep", "-e", "red|blue", "-e", "two words", "--", "--%"]
-    monkeypatch.setenv("RESTART_CONTENT", "\n".join([str(restart / "agent_toolkit/atk.py"), *restart_argv, ""]))
+    (root / "scripts/launch.py").write_text(
+        "import runpy, sys\nfrom pathlib import Path\n"
+        "assert sys.argv[1] == '--prepare-if-missing'\n"
+        "assert Path(sys.argv[2]).resolve().parents[1] == Path(__file__).resolve().parents[1]\n"
+        "sys.argv = sys.argv[2:]\nrunpy.run_path(sys.argv[0], run_name='__main__')\n",
+        encoding="utf-8",
+    )
+    (root / "agent_toolkit").mkdir()
+    (root / "agent_toolkit/atk.py").write_text(
+        "import json, os, sys\nprint(json.dumps(sys.argv[1:]))\nsys.exit(int(os.environ['PROBE_EXIT']))\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv("PROBE_EXIT", str(exit_code))
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
     monkeypatch.setenv("PATH", str(plugin_environment.base_python().parent) + os.pathsep + os.environ["PATH"])
     command = plugin_environment.cli_instructions(root, windows=True).splitlines()[0].removeprefix("起動部分: ")
-    # 記号を含む試験値は、バッチでないことを確かめてから渡す。
+
     expected = scripts / "atk.ps1"
     assert command == "& '" + str(expected).replace("'", "''") + "'"
     invoke = f"{command} {command_tail}; exit $LASTEXITCODE"
@@ -176,4 +164,4 @@ def test_notified_launcher_delivers_argv(
     )
     assert result.returncode == exit_code, result.stderr
     observed = [json.loads(line) for line in result.stdout.splitlines()]
-    assert observed == ([argv, restart_argv] if exit_code == 7 else [argv])
+    assert observed == [argv]

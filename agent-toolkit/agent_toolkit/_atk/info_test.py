@@ -38,7 +38,6 @@ def test_info_reports_codex_distribution_version(
 def test_info_reports_source_layout_version(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """root直下のmanifestだけを持つ配置でも版数を表示する。"""
     _write_manifest(tmp_path, "plugin.json", {"name": "agent-toolkit", "version": "1.2.3"})
 
     output = _info_output(monkeypatch, capsys, tmp_path)
@@ -60,7 +59,6 @@ def test_info_reports_unknown_without_manifest_version(
     capsys: pytest.CaptureFixture[str],
     manifests: dict[str, object],
 ) -> None:
-    """実行rootのmanifestから版数を得られなければ、作業ツリーや別の導入版を推測せず不明と表示する。"""
     for relative, content in manifests.items():
         _write_manifest(tmp_path, relative, content)
 

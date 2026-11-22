@@ -25,7 +25,6 @@ def _model(model: str, *efforts: str, hidden: bool = False) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_family_resolution_uses_all_visible_pages_and_keeps_explicit_id() -> None:
-    """一覧の最終ページにある同系列最新版を選び、完全IDは固定する。"""
     calls: list[dict[str, Any]] = []
 
     async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -52,7 +51,6 @@ async def test_family_resolution_uses_all_visible_pages_and_keeps_explicit_id() 
 
 
 def test_family_resolution_reports_unavailable_family_and_effort() -> None:
-    """推測したIDや旧版への暗黙の退避をせず、利用不能の理由を示す。"""
     catalog = [_model("gpt-5.6-sol", "high"), _model("gpt-6-sol", "medium")]
     with pytest.raises(ValueError, match="sol.*high"):
         codex_models.resolve_candidates([("codex", "sol", "high")], catalog)
@@ -90,7 +88,6 @@ def test_model_list_failure_names_login_check_and_candidate_change(monkeypatch: 
 
 @pytest.mark.asyncio
 async def test_model_catalog_reads_long_response_and_unterminated_eof(monkeypatch: pytest.MonkeyPatch) -> None:
-    """初期化とモデル一覧を同じbufferへ受信しても、長い最終応答を欠損なく解析する。"""
     stream = asyncio.StreamReader(limit=64)
     model = {**_model("gpt-6-sol", "medium"), "description": "あ" * 50000}
     stream.feed_data(
@@ -141,7 +138,6 @@ for line in sys.stdin:
 async def test_model_list_reclaims_descendant_started_after_first_listing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一覧取得後の終了処理で、最初の列挙の後に起動した子孫も終了させてファイルを解放する。"""
     server = tmp_path / "model_list_server.py"
     server.write_text(_MODEL_LIST_SERVER + late_descendant.held_source(tmp_path / "model.release"), encoding="utf-8")
     model = _model("gpt-6-sol", "medium")

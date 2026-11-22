@@ -17,8 +17,6 @@ CLAUDE_SOURCE = "https://platform.claude.com/docs/en/about-claude/pricing"
 
 @dataclasses.dataclass(frozen=True)
 class ModelPrice:
-    """入力・キャッシュ書込・読取・出力の順の単価と、その出所。"""
-
     rates: tuple[float, float, float, float]
     source: str
     long_after: int | None = None
@@ -27,7 +25,6 @@ class ModelPrice:
 
 
 def _openai(input_rate: float, read_rate: float, output_rate: float, *, source: str = OPENAI_SOURCE) -> ModelPrice:
-    """272K超では入力・キャッシュが2倍、出力が1.5倍となるモデルの単価を組む。"""
     write_rate = input_rate * 1.25
     return ModelPrice(
         (input_rate, write_rate, read_rate, output_rate),
@@ -72,7 +69,6 @@ TOKEN_COMPONENTS = ("input_tokens", "cache_creation_input_tokens", "cache_read_i
 
 
 def response_price(model: str | None, tokens: dict[str, int], *, short_write_tokens: int = 0) -> float | None:
-    """応答の入力量から区分を選び、単価不明ではNoneを返す。"""
     name = model or ""
     if name.startswith("claude-"):
         name = re.sub(r"-\d{8}$", "", name.removesuffix("[1m]"))
@@ -92,7 +88,6 @@ def response_price(model: str | None, tokens: dict[str, int], *, short_write_tok
 
 
 def pricing_metadata() -> dict[str, Any]:
-    """出所・基準日・区分と、表示へ添える算出式を返す。"""
     return {
         "as_of": PRICE_DATE,
         "currency": "USD",

@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -18,7 +16,6 @@ from agent_toolkit._testing.session_evidence_support import read_jsonl
 def test_combined_locator_queries(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], schema_locators: list[str]
 ) -> None:
-    """本文と構造を同じ収集記録から取得し、反復指定した結果も単独照会と一致する。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "message": {"role": "user", "content": text}} for text in ("最初の入力", "追加の入力")],
@@ -54,7 +51,6 @@ def test_output_file_option_is_removed(capsys: pytest.CaptureFixture[str]) -> No
 
 
 def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None:
-    """send_to_userの`message`はユーザーへ届いた本文として、assistantのイベントにする。"""
     call = {"type": "tool_use", "id": "toolu_1", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "途中の報告"}}
     transcript = _write_transcript(
         tmp_path,
@@ -78,7 +74,6 @@ def test_send_to_user_message_is_assistant_event(tmp_path: pathlib.Path) -> None
 def test_sent_final_result_uses_work_order(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], work_position: str
 ) -> None:
-    """送信を報告として扱い、後続の作業だけで途中発話へ戻す。"""
     sent = {"type": "tool_use", "id": "sent", "name": "mcp__agent-toolkit__send_to_user", "input": {"message": "結果の報告"}}
     work = {"type": "tool_use", "id": "work", "name": "Bash", "input": {"command": "pwd"}}
     blocks = [work, sent] if work_position == "before" else [sent, work] if work_position == "after" else [sent]
@@ -214,7 +209,6 @@ def test_main_rejects_unreadable_transcript_path(
     transcript_path: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対象記録を解決できない呼び出しはerrorイベントと終了コード2を返す。"""
     assert evidence.main([transcript_path]) == 2
 
     assert read_jsonl(capsys) == [{"kind": "error", "text": f"対象記録を読み込めない: {transcript_path}"}]
@@ -295,7 +289,6 @@ def test_claude_normal_user_entry_keeps_multiple_text_blocks_in_order(tmp_path: 
 
 @pytest.mark.parametrize("field", ["isMeta", "turnCompanion"])
 def test_claude_runtime_generated_user_entry_is_marked(field: str, tmp_path: pathlib.Path) -> None:
-    """実行環境が生成したエントリのユーザーイベントへ標識を付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -387,7 +380,6 @@ def test_unsupported_nonempty_jsonl_returns_fallback(tmp_path: pathlib.Path) -> 
 
 
 def test_default_output_line_points_at_source_transcript_line(tmp_path: pathlib.Path) -> None:
-    """オプションを指定しない場合の出力の各イベントへ、由来したtranscript行の1始まり行番号を付ける。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -458,15 +450,10 @@ def test_final_result_skips_commentary_phase(tmp_path: pathlib.Path) -> None:
 
 # test-copy-contract: session-review-evidenceの解析登録を起動側の全engineと比べ、記録の未対応を検出する。
 def test_extractor_runtimes_match_supported_engines() -> None:
-    """本スクリプトが時系列へ変換できる実行系は、agents_serverが起動できる実行系と一致する。
-
-    実行系を追加して変換を追随させないと、その実行系の委譲先の記録は候補と集計へ現れない。
-    """
     assert set(evidence_extract.RUNTIME_EXTRACTORS) == backends.SUPPORTED_ENGINES
 
 
 def test_assistant_clipping_without_improvement_and_main_record_separation() -> None:
-    """標識の無い本文は元の短縮を使い、メインの標識は保持しても委譲返却候補にはしない。"""
     body = "本文" * 1500
     event = evidence_extract._event("assistant", body)  # pylint: disable=protected-access
     assert event is not None

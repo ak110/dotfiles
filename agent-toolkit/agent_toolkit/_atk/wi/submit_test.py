@@ -1,5 +1,3 @@
-"""独立受付の公開操作と実プロセス境界を、隔離notesで確認する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -119,7 +117,6 @@ sys.exit(code)
 
 
 def test_child_playbook_exists_with_session_contract() -> None:
-    """子セッションへ案内する手順書が配布物にあり、起動入力が名指しする節を持つ。"""
     playbook = pathlib.Path(submit.__file__).resolve().parents[3] / submit._PLAYBOOK  # pylint: disable=protected-access
     assert "\n## 投入セッション契約\n" in playbook.read_text(encoding="utf-8")
 
@@ -165,7 +162,6 @@ def _wait_receipt(identifier: str) -> dict[str, Any]:
     ),
 )
 def test_parent_exit_resend_ticket_and_synced_finish(notes, tmp_path, monkeypatch, capsys, host_environ, batched):
-    """親は受付直後に終了し、子が正式WI・finish・同一実行報告を保存する。"""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     engine = bin_dir / "claude"
@@ -553,7 +549,6 @@ def _pending(identifier: str) -> None:
 
 @pytest.fixture(name="executor")
 def _executor(tmp_path, monkeypatch):
-    """モデル境界だけを実Python子へ置き換え、監督・状態・停止を実行する。"""
     driver = tmp_path / "executor.py"
     driver.write_text(_EXECUTOR, encoding="utf-8")
     original = submit.process_tree.process_scope

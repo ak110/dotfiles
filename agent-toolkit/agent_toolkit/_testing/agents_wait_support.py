@@ -23,7 +23,6 @@ def _short_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None
 
 @pytest.fixture(name="wait_environment")
 def _wait_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """状態ファイルの解決先をテスト用ディレクトリへ隔離する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -46,7 +45,6 @@ def _running_body(response: dict[str, Any]) -> dict[str, Any]:
 
 
 def _write_own_status(results_directory: pathlib.Path, sessions: list[object]) -> pathlib.Path:
-    """自身の書込主体の状態ファイルを作成する。"""
     root_status = results_directory.parent / "root.json"
     root_status.parent.mkdir(parents=True, exist_ok=True)
     root_status.write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
@@ -54,7 +52,6 @@ def _write_own_status(results_directory: pathlib.Path, sessions: list[object]) -
 
 
 def _publish_result_on_sleep(results_directory: pathlib.Path) -> Callable[[float], None]:
-    """sleepの代わりに`session-1`の終了時の結果を公開する関数を返す。"""
 
     def publish_result(_seconds: float) -> None:
         results_directory.mkdir(parents=True, exist_ok=True)
@@ -67,7 +64,6 @@ def _publish_result_on_sleep(results_directory: pathlib.Path) -> Callable[[float
 
 
 def _wait_for_session_1_result(results_directory: pathlib.Path) -> int:
-    """テスト用のroot sessionから`session-1`の結果を待つ。"""
     return agents_wait.wait_for_result(
         environment={"CLAUDE_CODE_SESSION_ID": "root-session"},
         state_root=results_directory.parents[2],
@@ -112,7 +108,6 @@ _TTL_CASES = [
 
 
 def _set_ttl_environment(monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
-    """保持期間とホストの判定入力を指定の条件だけへ固定し、差し替えた上限の導出を実装の`get_cli_wait_timeout`へ戻す。"""
     for name in ("CLAUDECODE", "FORCE_PROMPT_CACHING_5M", "ENABLE_PROMPT_CACHING_1H", "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"):
         monkeypatch.delenv(name, raising=False)
     for name, value in environment.items():

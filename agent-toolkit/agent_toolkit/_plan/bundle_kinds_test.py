@@ -9,8 +9,6 @@ _STEM = "07-計画-ab12"
 
 
 class _Expected(typing.NamedTuple):
-    """種別ごとの期待値。"""
-
     name: str
     main_name: str | None
     listed_with_main: bool
@@ -37,7 +35,6 @@ _EXPECTED: dict[bundle_kinds.BundleKind, _Expected] = {
 
 
 def test_plan_bundle_kinds_cover_all_suffixes(tmp_path: pathlib.Path) -> None:
-    """全種別について、名前の判定と計画ファイル画面の一覧の判定が期待どおりの値を返す。"""
     assert set(_EXPECTED) == set(bundle_kinds.ALL_KINDS)
     for kind, expected in _EXPECTED.items():
         assert kind.name_for(_STEM) == expected.name
@@ -50,7 +47,6 @@ def test_plan_bundle_kinds_cover_all_suffixes(tmp_path: pathlib.Path) -> None:
         assert bundle_kinds.is_viewable_name(expected.name, current_only=True) is (expected.viewable and expected.current)
         assert kind.current is expected.current
 
-    # ローカルとSSH先の一覧は同じ`viewer_files`の判定の対象になる。メイン計画の有無に応じてレビュー指摘管理表を載せる。
     with_main = tmp_path / "with-main"
     without_main = tmp_path / "without-main"
     for root in (with_main, without_main):
@@ -71,7 +67,6 @@ def test_plan_bundle_kinds_cover_all_suffixes(tmp_path: pathlib.Path) -> None:
 
 
 def test_unknown_names_have_no_kind() -> None:
-    """いずれの種別の接尾辞も持たない名前は種別を持たず、一覧と表示の対象にもならない。"""
     for name in ("note.txt", "p.tsv", "p.json"):
         assert bundle_kinds.kind_of_name(name) is None
         assert bundle_kinds.main_name_of(name) is None

@@ -1,10 +1,39 @@
-﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly, [switch]$PrintPython)
+﻿param([Parameter(Mandatory = $true)][string]$UvPath, [switch]$PrepareOnly, [switch]$PrintPython, [switch]$ReportOnly)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:bootstrapFailures = @()
 $script:lastStageOutput = ''
 . (Join-Path $PSScriptRoot 'locking_process.ps1')
 . (Join-Path $PSScriptRoot 'update_stage.ps1')
+function Write-DeferredUvDiagnostic {
+    foreach ($failure in $script:bootstrapFailures) {
+        if ($failure.ContainsKey('saved') -and $failure.saved) {
+            $log = Join-Path $env:LOCALAPPDATA "agent-toolkit\uv-$($failure.title)-failed.log"
+            [UvOutputRecord]::PublishEvent("failure", "$($failure.title): $($failure.detail)", $log)
+        }
+    }
+}
+if ($ReportOnly) {
+    $report = $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT
+    if (-not $report) { exit 0 }
+    $directory = Join-Path $env:LOCALAPPDATA 'agent-toolkit'
+    $file = Get-Item -LiteralPath $report -ErrorAction Ignore
+    if (-not $file -or $file.DirectoryName -ne $directory -or $file.Name -notmatch '^update-bootstrap-\d+-\d+\.json$' -or
+        $file.Length -gt 65536 -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { exit 0 }
+    $seen = [Collections.Generic.HashSet[string]]::new()
+    $failures = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($failure in $failures) {
+        if ($failure.title -notin 'uvの自己更新','管理Pythonの更新' -or $failure.detail -notmatch '^exit=-?\d+$') { continue }
+        if ($failure.PSObject.Properties['saved'] -and $failure.saved -eq $true) {
+            $log = Join-Path $directory "uv-$($failure.title)-failed.log"
+            if ((Test-Path -LiteralPath $log -PathType Leaf) -and $seen.Add("$($failure.title): $($failure.detail)")) {
+                [UvOutputRecord]::PublishEvent("failure", "$($failure.title): $($failure.detail)", $log)
+            }
+        }
+    }
+    Remove-Item -LiteralPath $file.FullName -Force
+    exit 0
+}
 function Test-PythonPatchPending {
     # keyはビルド日付を含まず、同じpatch版の新しいビルドを検出できない。更新できない回の見送りの判定にだけ使う。
     $listed = @{}
@@ -23,9 +52,7 @@ try {
         $env:UV_NO_MODIFY_PATH = '1'
         # 自己更新補助と同じ公式の導入経路を使う。
         $installer = 'Invoke-RestMethod -Uri https://astral.sh/uv/install.ps1 -TimeoutSec 120 | Invoke-Expression'
-        try { [void](Invoke-UpdateStage 'uvの導入' abort 300 'powershell.exe' @('-NoProfile', '-Command', $installer)) }
-        catch [System.TimeoutException] { throw }
-        catch { [void](Invoke-UpdateStage 'uvの導入' abort 300 'powershell.exe' @('-NoProfile', '-Command', $installer)) }
+        [void](Invoke-UpdateInstallStage 'uvの導入' 300 'powershell.exe' @('-NoProfile', '-Command', $installer))
     }
     try {
     if (-not $PrepareOnly -and $env:AGENT_TOOLKIT_PROCESS_LOOP_SESSION -ne '1') {
@@ -99,9 +126,7 @@ try {
     $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
     if ($findCode -ne 0) {
         Write-UpdateError '管理Pythonの導入: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'
-        try { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
-        catch [System.TimeoutException] { throw }
-        catch { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
+        [void](Invoke-UpdateInstallStage '管理Pythonの導入' 900 $UvPath @('python', 'install', '3.15'))
         Write-UpdateError '管理Pythonの検索: Ctrl+Cで中断できます。'
         $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
         if ($findCode -ne 0) { throw '使える3.15がありません。uv python install 3.15を実行してください。' }
@@ -111,10 +136,12 @@ try {
         Write-UpdateError ("残った管理Pythonはpre-releaseです: $($script:lastStageOutput)。次回起動時に更新を再試行します。")
     }
 } catch {
+    if (-not $script:stageInterrupted) { Write-DeferredUvDiagnostic }
     Write-UpdateError ("$_")
     exit 1
 } finally {
     if ($script:stageInterrupted) {
+        Write-DeferredUvDiagnostic
         # -Fileで起動した専用ホストは、停止したパイプラインのexitだけでは0を返す場合がある。
         if (-not $MyInvocation.Line) { $Host.SetShouldExit(130) }
         exit 130
@@ -125,7 +152,7 @@ if ($env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -and $script:bootstrapFailures.Count) 
         [void](New-Item -ItemType Directory -Force -Path (Split-Path -Parent $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT))
         ConvertTo-Json -InputObject @($script:bootstrapFailures) -Compress |
             Set-Content -LiteralPath $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT -Encoding UTF8
-    } catch { Write-UpdateError ("更新失敗の記録を書けませんでした（保存先: $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT）: $_。保存先の親ディレクトリの書込権限を修復してupdate-dotfilesを再実行してください。") }
+    } catch { Write-DeferredUvDiagnostic; Write-UpdateError ("更新失敗の記録を書けませんでした（保存先: $env:UPDATE_DOTFILES_BOOTSTRAP_REPORT）: $_。保存先の親ディレクトリの書込権限を修復してupdate-dotfilesを再実行してください。") }
 }
 if ($PrintPython) { [Console]::Out.WriteLine($script:lastStageOutput) }
 exit 0

@@ -22,13 +22,6 @@ _TimerFactory = collections.abc.Callable[[float, collections.abc.Callable[..., N
 
 
 class ServeState(watchdog.events.FileSystemEventHandler):
-    """変更通知と購読者を管理する。
-
-    `monotonic`は保留期間の経過判定に使う単調時計、`timer_factory`は保留通知の遅延発火に使う
-    タイマーの生成関数とする。指定を省略した場合は標準ライブラリの実装を使い、呼び出し側が別の実装を渡すと
-    実時間の経過を待たずに発火時刻の決定を確認できる。
-    """
-
     # 変更が続く間に保留通知の発行を際限なく先送りしないよう、最大待機時間を決める倍率。
     # 閾値未満の間隔で変更が到着し続ける場合でも、最初の保留から
     # `debounce_seconds * _MAX_DEBOUNCE_FACTOR`が経過した時点で1回発行する。
@@ -46,7 +39,7 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.debounce_seconds = debounce_seconds
         self._monotonic = monotonic
         self._timer_factory = timer_factory
-        # Observerの構築だけでOS通知資源を確保する版があるため、監視開始時に所有する。
+
         self.observer: watchdog.observers.api.BaseObserver | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queues: set[asyncio.Queue[str]] = set()
@@ -55,13 +48,13 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self._pending_started_at: float | None = None
         self._pending_generation = 0
         self._stopped = False
-        # サーバーの停止要求。SSEの生成処理、処理中の要求の打ち切りおよびリモート接続の停止はこれを参照する。
+
         self.shutdown_requested = asyncio.Event()
-        # 同じ停止要求をスレッドで動く読み取り専用の走査から参照するための写し。
+
         self.stop_requested = threading.Event()
-        # 配信を所要の記録へ渡す観測先。`atk serve`のアプリが設定し、未設定なら記録しない。
+
         self.publish_listener: collections.abc.Callable[[str], None] | None = None
-        # Markdownの変更を受けた時点で呼ぶ観測先。一覧の索引が全件走査を省けるかの判定に使う。
+
         self.change_listener: collections.abc.Callable[[], None] | None = None
 
     async def __aenter__(self) -> ServeState:
@@ -70,7 +63,6 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         return self
 
     async def __aexit__(self, *_exception: object) -> None:
-        """全ての終了経路で監視と通知タイマーを回収する。"""
         await self.stop_async()
 
     def request_shutdown(self) -> None:
@@ -84,7 +76,6 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         self.stop_requested.set()
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
-        """監視を開始する。"""
         self._loop = loop
         self._stopped = False
         try:
@@ -102,11 +93,9 @@ class ServeState(watchdog.events.FileSystemEventHandler):
         )
 
     def is_watching(self) -> bool:
-        """ファイルの変更を監視しているかを返す。"""
         return self.observer is not None and self.observer.is_alive()
 
     async def start_async(self, loop: asyncio.AbstractEventLoop) -> None:
-        """loopの参照を保持し、監視の登録・準備完了をworkerで待つ。"""
         self._loop = loop
         self._stopped = False
         try:
@@ -116,11 +105,9 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             raise
 
     async def stop_async(self) -> None:
-        """監視終了とthreadの回収が完了するまで待つ。"""
         await run_sync_operation(self.stop)
 
     def stop(self) -> None:
-        """監視を停止してスレッド終了を待つ。"""
         with self._lock:
             self._stopped = True
             pending = self._pending_notification
@@ -155,18 +142,16 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             self._loop.call_soon_threadsafe(self._publish_if_running)
 
     def _publish_if_running(self) -> None:
-        """監視停止後のイベントループ上では通知を発行しない。"""
         with self._lock:
             if self._stopped:
                 return
         self.publish()
 
     def _publish_markdown_change(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdownの内容または配置の変更を購読者へ通知する。"""
         paths = (event.src_path, getattr(event, "dest_path", ""))
         if event.is_directory or not any(str(path).endswith(".md") for path in paths):
             return
-        # 一覧の索引は通知の間引きを待たずに無効化し、通知を受けた画面の再取得が変更を必ず読むようにする。
+
         if self.change_listener is not None:
             self.change_listener()
         if self.debounce_seconds <= 0:
@@ -206,19 +191,15 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             self._loop.call_soon_threadsafe(self._publish_if_running)
 
     def on_created(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdown作成を購読者へ通知する。"""
         self._publish_markdown_change(event)
 
     def on_modified(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdown変更を購読者へ通知する。"""
         self._publish_markdown_change(event)
 
     def on_deleted(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdown削除を購読者へ通知する。"""
         self._publish_markdown_change(event)
 
     def on_moved(self, event: watchdog.events.FileSystemEvent) -> None:
-        """Markdown移動を購読者へ通知する。"""
         self._publish_markdown_change(event)
 
     def publish(self, event: str = "changed") -> None:
@@ -232,13 +213,6 @@ class ServeState(watchdog.events.FileSystemEventHandler):
             queue.put_nowait(event)
 
     async def events(self, *, heartbeat: float = 15.0):
-        """SSE形式の変更イベントとheartbeatを生成する。
-
-        heartbeatは名前付きイベントで送る。ブラウザーの`EventSource`はコメント行を
-        スクリプトへ渡さないため、名前付きイベントにしないとクライアントが無通信を判定できない。
-        購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で
-        登録より先に届き得るため、画面はこの合図の後に初期取得して、最初の接続での全件の読み直しを省く。
-        """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=2)
         self._queues.add(queue)
         try:
@@ -250,15 +224,12 @@ class ServeState(watchdog.events.FileSystemEventHandler):
                 if received is HEARTBEAT:
                     yield "event: heartbeat\ndata: {}\n\n"
                 else:
-                    # 画面が通知の配信から再取得の完了までを計るため、配信を取り出した時刻を載せる。
                     yield f'event: {received}\ndata: {{"published_at_ms": {time.time() * 1000:.0f}}}\n\n'
         finally:
             self._queues.discard(queue)
 
 
 class _Signal:
-    """`next_subscription_item`が通知本文の代わりに返す区分。"""
-
     def __init__(self, name: str) -> None:
         self.name = name
 
@@ -275,11 +246,6 @@ async def next_subscription_item(
     shutdown: asyncio.Event,
     heartbeat: float,
 ) -> str | _Signal:
-    """購読キューの次の通知、heartbeat間隔の経過（`HEARTBEAT`）、停止要求（`SHUTDOWN`）のいずれかを返す。
-
-    SSEを返す各ハンドラーは本関数で待ち、`SHUTDOWN`を受けたら生成処理を終える。停止要求を参照しない待ちは、
-    クライアントが切断するまでサーバーの停止を妨げる。
-    """
     if shutdown.is_set():
         return SHUTDOWN
     get_task = asyncio.ensure_future(queue.get())

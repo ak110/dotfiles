@@ -1,5 +1,3 @@
-"""WIエントリの走査、種別の判定、処理結果の追記。"""
-
 import dataclasses
 import datetime
 import pathlib
@@ -38,14 +36,11 @@ __all__ = [
 
 @dataclasses.dataclass(frozen=True)
 class CommitMetadata:
-    """WIの処理結果へ保存するcommit識別情報。`short_oid`は記録時に一意な長さの短縮OID。"""
-
     short_oid: str
     subject: str
 
 
 def subdir(private_notes: pathlib.Path, name: str) -> pathlib.Path:
-    """管理repo直下の指定サブディレクトリパスを返す。必要時に作成する。"""
     path = private_notes / name
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -59,11 +54,6 @@ def stamp_result(
     commit: CommitMetadata | list[CommitMetadata] | None = None,
     note: str | None = None,
 ) -> None:
-    """対象ファイル末尾へ`## 処理結果`節を追記する。
-
-    outcomeは`adopted`・`rejected`のいずれかを受け取る。
-    commit・noteは省略可能で、指定時のみ対応する箇条書き項目を追加する。
-    """
     body = path.read_text(encoding="utf-8")
     if not body.endswith("\n"):
         body += "\n"
@@ -89,12 +79,10 @@ def stamp_result(
 
 
 def canonical_repo(value: str, cache: dict[str, str | None]) -> str | None:
-    """リポジトリ識別子を操作単位のキャッシュを介して正規化する。"""
     return _git_remote.canonical_repo(value, cache)
 
 
 def entry_type_of(path: pathlib.Path, text: str) -> str | None:
-    """エントリの種別を検証して返す。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
@@ -124,10 +112,6 @@ def iter_entries(
     *,
     texts: EntryTexts | None = None,
 ) -> Iterator[tuple[pathlib.Path, str, str, str, str | None]]:
-    """指定状態のエントリをパス・対象repo・本文・状態・種別の順で列挙する。
-
-    frontmatter全体が破損したエントリ（種別がNone）は`target_repo`を読めないため、対象repoの限定条件によらず返す。
-    """
     matcher = _wi_filters.TargetRepoMatcher(filter_repo)
     entry_types = {entry_type} if isinstance(entry_type, str) else set(entry_type)
     texts = texts if texts is not None else EntryTexts()
@@ -151,7 +135,6 @@ type EntryRecord = tuple[pathlib.Path, str, str, str, str | None]
 
 
 def validate_named_filenames(private_notes: pathlib.Path, filenames: list[str]) -> list[tuple[str, str]]:
-    """年月配置から探す明示名を検証し、要求名と正規化した名前を要求順に返す。"""
     for filename in filenames:
         parts = filename.replace("\\", "/").split("/")
         if len(parts) == 2 and parts[0] in WI_STATES and parts[1] not in ("", ".", ".."):
@@ -182,7 +165,7 @@ def read_named_entries(
     missing: list[str] = []
     texts = EntryTexts()
     candidates: dict[str, pathlib.Path] = {}
-    # 指定名がすべて年月保存先へ一意に決まる場合は、数千件の列挙を省く。
+
     dated = {normalized: unique_dated_entry_path(private_notes, normalized) for _, normalized in filenames}
     if all(path is not None for path in dated.values()):
         candidates = {name: path for name, path in dated.items() if path is not None}
@@ -226,7 +209,6 @@ def select_entries(
     target_branch: str | None = None,
     branch_settings: _wi_branches.Registry | None = None,
 ) -> list[EntryRecord]:
-    """一覧の状態・対象repo・種別・回答状況・source・重要フラグ・宛先の系統の積集合を返す。"""
     selected: list[EntryRecord] = []
     states = _wi_filters.resolve_states(status)
     kinds = {entry_type} if isinstance(entry_type, str) else set(entry_type)

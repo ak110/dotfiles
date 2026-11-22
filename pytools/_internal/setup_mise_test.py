@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""setup_miseの基本動作の試験。"""
 
 # pylint: disable=protected-access
 
@@ -26,8 +25,6 @@ from pytools._internal.setup_mise_test_helpers import _windows_env as _windows_e
 
 
 class TestFindMiseBinary:
-    """mise実行ファイルのPATH・既知パス探索を検証する。"""
-
     def test_returns_path_entry_as_absolute_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         mise_path = tmp_path / "bin" / "mise"
         monkeypatch.setattr(setup_mise_binary.shutil, "which", lambda _name: str(mise_path))
@@ -64,8 +61,6 @@ class TestFindMiseBinary:
 
 
 class TestRunMiseInstallation:
-    """mise未検出時の自動導入と再解決を検証する。"""
-
     def test_run_installs_mise_then_continues(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub):
         binaries = iter((None, Path("/fake/mise")))
         monkeypatch.setattr(_setup_mise, "find_mise_binary", lambda: next(binaries))
@@ -178,7 +173,6 @@ class TestEnsureMiseUpToDate:
         assert mise_stub.calls_for("install")
 
     def test_self_update_none_result_does_not_block_install(self, mise_stub: _MiseSubprocessStub):
-        """タイムアウト・例外で`None`が返っても後続ステップは継続する。"""
         mise_stub.handlers[("self-update", "-y")] = None
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
 
@@ -293,8 +287,6 @@ class TestUpgradeWingetManagedMise:
 
 
 class TestEnsureGcloudPluginUsable:
-    """同梱gcloudプラグインが壊れたmiseの版でだけ、Git配布のプラグインへ置き換える。"""
-
     @pytest.fixture(autouse=True)
     def _global_node(self, mise_stub: _MiseSubprocessStub) -> None:
         mise_stub.handlers[("ls", "--global", "--json")] = _ls_response({"node": [{}]})
@@ -342,7 +334,6 @@ class TestEnsureGcloudPluginUsable:
         assert mise_stub.calls_for("install")
 
     def test_minimal_mode_skips_plugin(self, monkeypatch: pytest.MonkeyPatch, mise_stub: _MiseSubprocessStub) -> None:
-        """minimalはgcloudを導入しないため、プラグインの置き換えもしない。"""
         monkeypatch.setattr(_setup_mise.dotfiles_mode, "is_minimal", lambda: True)
         mise_stub.handlers[("--version",)] = _version_response("2026.10.20")
 

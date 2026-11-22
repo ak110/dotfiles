@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: target_repoのテスト。"""
 
 import os
 import pathlib
@@ -19,15 +18,12 @@ from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _set
 
 
 class TestListTargetRepoFilter:
-    """listサブコマンド: --target-repo指定で一致するエントリのみ出力する。"""
-
     def test_filter_matches_single_group(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """複数target_repo混在でも--target-repo指定値と一致するエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar")
@@ -47,7 +43,6 @@ class TestListTargetRepoFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """ローカルパス指定は旧パス形と現行URL形を同じ対象集合として列挙する。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
@@ -71,7 +66,6 @@ class TestListTargetRepoFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """~プレフィックスのローカルパスがgit remote get-urlで正規化され、対応するエントリが出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/myrepo")
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -94,7 +88,6 @@ class TestListTargetRepoFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """一致するエントリが存在しない場合、標準出力は空になる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -108,15 +101,12 @@ class TestListTargetRepoFilter:
 
 
 class TestListTargetRepoDefault:
-    """listサブコマンド: --target-repo未指定時はカレントディレクトリのリポジトリを対象とする。"""
-
     def test_default_limits_to_current_repository(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未指定時はカレントディレクトリが属するリポジトリのエントリだけを出力する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -138,7 +128,6 @@ class TestListTargetRepoDefault:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--target-repo=all`はカレントディレクトリのリポジトリによらず全件を出力する。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -160,7 +149,6 @@ class TestListTargetRepoDefault:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """Gitの作業ツリー外では対象を限定せず全件を出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
         _write_awi_file(notes, "other.md", target_repo="github.com/example/other")
@@ -180,7 +168,6 @@ class TestListTargetRepoDefault:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """単一の対象リポジトリを確定するサブコマンドは`all`を受理せず終了コード2で終わる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "current.md", target_repo="github.com/example/myrepo")
         monkeypatch.setattr(subprocess, "run", _make_outside_worktree_fake())
@@ -193,13 +180,10 @@ class TestListTargetRepoDefault:
 
 
 class TestListNonTtyTargetRepo:
-    """listサブコマンド: 非TTYでは対象repoと要約を短縮しないことを検証する。"""
-
     _LONG_REPO = "github.com/organization-name/very-long-repository-name-example"
 
     @staticmethod
     def _display_width(text: str) -> int:
-        """東アジア文字幅に基づく出力文字列の表示幅を返す。"""
         return sum(2 if unicodedata.east_asian_width(char) in ("W", "F", "A") else 1 for char in text)
 
     def test_awi_non_tty_preserves_full_target_repo(
@@ -208,7 +192,6 @@ class TestListNonTtyTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非TTYのAWI行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:
@@ -237,7 +220,6 @@ class TestListNonTtyTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """TTYだけはtarget_repoと要約を端末幅へ短縮する。"""
         terminal_columns = 70
         notes = _setup_notes(tmp_path)
         body = "本文" * 80
@@ -265,7 +247,6 @@ class TestListNonTtyTargetRepo:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非TTYのUWI行はtarget_repoを完全に保持する。"""
         terminal_columns = 70
 
         def get_terminal_size(*args: object, **kwargs: object) -> os.terminal_size:

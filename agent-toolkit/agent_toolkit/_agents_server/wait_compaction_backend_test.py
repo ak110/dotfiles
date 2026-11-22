@@ -1,5 +1,3 @@
-"""実機で確認した独立圧縮turnと、担当結果の保留・追送の境界を再現する。"""
-
 # 通知と所有接続はbackendの境界から駆動し、公開show/waitで結果を検収する。
 # pylint: disable=protected-access
 from __future__ import annotations
@@ -126,7 +124,7 @@ async def test_claude_wait_changes_at_compaction_boundaries(tmp_path, monkeypatc
         elapsed.set()
         release.set()
         await asyncio.wait_for(asyncio.gather(reservation, return_exceptions=True), 2)
-        # キュー受付後に予約taskが先に終わる場合も、所有側の処理結果まで検収する。
+
         async with asyncio.timeout(2):
             while boundary == "delivery" and client.queries.count("/compact") == 0 and change == "partial":
                 await asyncio.sleep(0)
@@ -145,7 +143,7 @@ async def test_codex_partial_completion_keeps_a_compaction_reservation(tmp_path,
         client = FakeCodexClient()
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
         session = await backend.start("複数の処理を待つ", str(tmp_path))
-        session.agent_message = "待機中"
+        session.agent_message = "待機中: child"
         request = client.request
         compactions = []
 
@@ -283,7 +281,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
         client = FakeCodexClient()
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
         session = await backend.start("待機する作業", str(tmp_path))
-        session.agent_message = "待機中"
+        session.agent_message = "待機中: child"
         await backend._handle_notification(
             {
                 "method": "item/completed",
@@ -362,7 +360,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                 assert not compacting.done()
                 assert session.turn_id == original_turn and session.turn_seq == 1
                 assert (await owner.show_session(session.session_id))["result_held"]
-                assert session.agent_message == "待機中"
+                assert session.agent_message == "待機中: child"
                 await backend._handle_notification(
                     {
                         "method": "turn/completed",
@@ -395,7 +393,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                     "params": {
                         "threadId": session.session_id,
                         "turnId": session.turn_id,
-                        "item": {"type": "agentMessage", "id": "reply", "text": "子の結果を回収した"},
+                        "item": {"type": "agentMessage", "id": "reply", "text": "状態: completed\n結果: 子の結果を回収した"},
                     },
                 }
             )
@@ -408,7 +406,7 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
                     },
                 }
             )
-            assert (await owner.wait())["agent_message"] == "子の結果を回収した"
+            assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 子の結果を回収した"
         finally:
             if not compacting.done():
                 compacting.cancel()
@@ -417,7 +415,6 @@ async def test_codex_compaction_keeps_held_result_until_child_reply(tmp_path, mo
 
 @pytest.mark.asyncio
 async def test_codex_late_completion_releases_a_cancelled_compaction(tmp_path, monkeypatch):
-    """受付後の取消しだけで圧縮終了とせず、後着完了の観測で所有状態を解く。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="work-turn")
     session.live_child_session_ids.add("child")
     session.hold_result(turn_state.BackgroundWait({"status": "completed", "agent_message": "待機中", "error": None}, None))

@@ -1,5 +1,3 @@
-"""親MCPの公開起動・終了・再起動を経由する委譲先の復旧を検証する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -57,8 +55,6 @@ def _recovery_log(caplog: pytest.LogCaptureFixture) -> Iterator[pytest.LogCaptur
 
 
 class _RecoveryBackend(FakeBackend):
-    """モデル呼出だけを代用し、登録・結果の永続化は実Managerへ委ねる。"""
-
     on_resume: Callable[[state.SessionState], Awaitable[None]] | None = None
     root_session_id: str | None = None
 
@@ -90,12 +86,11 @@ class _RecoveryBackend(FakeBackend):
 async def test_parent_mcp_restart_recovers_same_child_and_uncollected_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, previous_outcome: str, engine: str
 ) -> None:
-    """公開startの子を保存し、親の再起動だけで同一IDの続行または元結果の回収へ進む。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [(engine, "model", "high")])
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備のみを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     old_writer = status_file.StatusFileWriter(
@@ -261,7 +256,7 @@ async def test_mixed_child_and_grandchild_resume_without_followup(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部CLIの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     async with _mcp_owner(monkeypatch, tmp_path, "old-parent-root", "parent", "claude"):
@@ -280,7 +275,7 @@ async def test_mixed_child_and_grandchild_resume_without_followup(
             assert result["status"] == "completed"
             assert not backend.start_calls
             resumed_grandchildren.extend(backend.resume_calls)
-        # 同一プロセスで代用するMCPのグローバルを元へ戻してから親の結果を公開する。
+
         _complete(session, message=f"孫の成果を受領: {result['agent_message']}")
 
     async with _mcp_owner(monkeypatch, tmp_path, "new-parent-root", "parent", "claude", on_resume=resume_child) as (
@@ -306,11 +301,10 @@ async def test_live_owner_is_observed_and_cli_collects_old_root_result_and_notic
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """旧所有者が生存する子を二重起動せず、その旧rootの通知・結果を公開waitから受領する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部CLIの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     async with _mcp_owner(monkeypatch, tmp_path, "old-live-root", "parent", "codex") as (old, _):
@@ -356,11 +350,10 @@ async def test_owner_lost_executor_stops_before_same_id_resume(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """生存CLIを残す所有者喪失を注入し、記録世代の実プロセス終了後だけ同一IDを再開する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     with subprocess.Popen(
@@ -436,7 +429,7 @@ async def test_simultaneous_parent_resumes_start_one_writer_and_collect_once(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     async with _mcp_owner(monkeypatch, tmp_path, "old-concurrent-root", "parent", "codex"):
@@ -514,11 +507,10 @@ async def test_reinterrupted_recovery_retains_original_launch_inputs(
     capsys: pytest.CaptureFixture[str],
     recovery_log: pytest.LogCaptureFixture,
 ) -> None:
-    """再開の初期公開後に故障しても元の依頼・追送を保ち、次の親復帰で同一IDを続行する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     async with _mcp_owner(monkeypatch, tmp_path, "original-root", "parent", "codex") as (owner, _):
@@ -597,7 +589,7 @@ async def test_recovery_failure_before_session_creation_reaches_public_wait(
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     async with _mcp_owner(monkeypatch, tmp_path, "before-failure-root", "parent", "codex"):
@@ -759,7 +751,6 @@ def test_new_process_recovers_tree_after_every_original_process_disappears(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """正常closeを省いて全記録プロセスが消失した後、新しいプロセスで元の親子孫を復旧する。"""
     root = tmp_path / "cold-state"
     root.mkdir()
     driver = tmp_path / "cold_recovery.py"

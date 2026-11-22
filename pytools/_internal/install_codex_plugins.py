@@ -32,17 +32,16 @@ CODEX_HOME = Path.home() / ".codex"
 _TIMEOUT = 60.0
 # nativeのoperation lock最大375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕。
 # https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon
-_DAEMON_RESTART_TIMEOUT = 750.0
 # `atk-hook`の復旧が中断して残す`.<version>-restore-*`などの`.`で始まる名前は版として扱わない。
 _VERSION_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\Z")
-# 削除を始めた旧versionの名前の接尾辞。
+
 _REMOVING_SUFFIX = "~removing"
-# 旧cacheを退避先から戻せなかった場合の案内。退避先は次回の実行が戻す。
+
 _SAVED_CACHE_RETRY = (
     "次回のupdate-dotfilesが退避先から戻します。解消しない場合は退避先を変更せず、"
     "表示された内容とパスをdotfilesの作者へ報告してください。"
 )
-# 自動更新タイマーを持たないホストで、延期した更新を反映する操作。
+
 _MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
@@ -57,7 +56,7 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
         "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
-        "フックの永続的な信頼登録は手動です。稼働中のdaemonはplugin更新時に自動で再起動します。"
+        "フックの永続的な信頼登録は手動です。"
     ),
     command="/hooks",
 )
@@ -90,7 +89,6 @@ def plugin_list_args(marketplace: str) -> list[str]:
 
 
 def _marketplace_of(plugin_id: str) -> str:
-    """`<plugin>@<marketplace>`形式のplugin IDからmarketplace名を返す。"""
     return plugin_id.rpartition("@")[2]
 
 
@@ -100,7 +98,6 @@ def _command(args: list[str]) -> bool:
 
 
 def _hooks_list() -> dict[str, Any] | None:
-    """短命app-serverから現在の作業ディレクトリに対するhook登録を取得する。"""
     try:
         with common.process_scope(
             [str(_CODEX_EXECUTABLE.get()), "app-server", "--stdio"],
@@ -128,7 +125,6 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
         messages: queue.Queue[str | None] = queue.Queue()
 
         def read_messages() -> None:
-            """stdoutは読み取りを終えた側が閉じ、主スレッドの回収を読み取り待ちで妨げない。"""
             with process_stdout:
                 for line in process_stdout:
                     messages.put(line)
@@ -185,19 +181,17 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
                 cleanup.callback(process.stdin.close)
             residual, owned = common.stop_owned_process(process, stdin_grace_seconds=2)
             if residual:
-                # 案内取得の不能（None）と区別し、cache復旧や旧リンク除去などの後続工程を始めさせない。
                 raise common.ProcessReclaimError(residual, owned, child=process)
 
 
 def _hook_trust_notice_required(result: dict[str, Any] | None, plugin_id: str) -> bool:
-    """対象pluginの有効な非managed hookに正規の信頼確認が必要かを返す。"""
     data = result.get("data") if isinstance(result, dict) else None
     if not isinstance(data, list):
         return False
     for item in data:
         if not isinstance(item, dict) or not isinstance(hooks := item.get("hooks"), list):
             continue
-        # 別hookの登録エラーや承認済み状態は、登録済みの対象hookへの確認案内を妨げない。
+
         if any(
             isinstance(hook, dict)
             and hook.get("pluginId") == plugin_id
@@ -249,7 +243,6 @@ def _target(root: Path, expected_name: str = "agent-toolkit") -> tuple[str, str,
 
 
 def _plugin_source(root: Path, marketplace_name: str, plugin_name: str) -> Path | None:
-    """marketplaceのlocal sourceからagent-toolkit原本を解決する。"""
     try:
         marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
         if not isinstance(marketplace, dict):
@@ -347,7 +340,6 @@ def _outcome(
     *,
     deferred: bool = False,
 ) -> post_apply_outcome.PostApplyOutcome:
-    """案内を初出順で重複排除した結果を返す。"""
     return post_apply_outcome.PostApplyOutcome(changed=changed, notices=tuple(dict.fromkeys(notices)), deferred=deferred)
 
 
@@ -355,31 +347,6 @@ def _append_restart_notice_if_daemon_running(notices: list[post_apply_outcome.Po
     """稼働中のCodex daemonがある場合だけ再起動案内を追加する。"""
     if _command(["app-server", "daemon", "version"]):
         notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
-
-
-def _restart_daemon_after_plugin_update(notices: list[post_apply_outcome.PostApplyNotice]) -> str | None:
-    """稼働中daemonへplugin更新を反映し、失敗理由を呼び出し元へ返す。"""
-    if not _command(["app-server", "daemon", "version"]):
-        return None
-    result = common.run_subprocess(
-        [str(_CODEX_EXECUTABLE.get()), "app-server", "daemon", "restart"],
-        timeout=_DAEMON_RESTART_TIMEOUT,
-        tag="codex",
-    )
-    exit_code = None if result is None else result.returncode
-    if exit_code == 0:
-        logger.info(log_format.format_status("codex plugins", "app-server daemonを自動再起動 (exit 0)"))
-        return None
-    logger.warning(
-        log_format.format_status(
-            "codex plugins",
-            f"app-server daemonの自動再起動に失敗 (exit {exit_code if exit_code is not None else 'codeなし'}: "
-            f"{common.format_cli_error(result)})。"
-            "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
-        )
-    )
-    notices.append(_CODEX_PLUGIN_RESTART_NOTICE)
-    return f"Codex daemonのplugin反映に失敗: {common.format_cli_error(result)}"
 
 
 def _codex_home() -> Path:
@@ -424,7 +391,6 @@ def _hook_bin() -> Path:
 
 
 def _install_hook_wrapper(root: Path) -> bool:
-    """plugin有効化前に安定したhook起動コマンドをPATH上へ配置する。"""
     changed = False
     for name in ("atk-hook", "atk-hook.cmd") if os.name == "nt" else ("atk-hook",):
         source = root / "agent-toolkit" / "scripts" / name
@@ -445,7 +411,7 @@ def _codex_processes_using_plugin() -> tuple[str, ...]:
 
     `plugin remove`はhook・スキル・MCP実体を回収するため、参照するプロセスが1件でもあれば除去を延期する。
     参照の有無はホストの役割と無関係に、プロセスの役割だけで判定する。
-    管理daemonとその補助実行体はセッション不在時に自動で再起動するため、
+    管理daemon自体の生存と、pluginを使うセッションの生存を分けて判定する。
     `session`の役割（判定素材を取得できないプロセスを含む）だけを数える。
     """
     return tuple(process.label for process in codex_processes.codex_processes() if process.role == "session")
@@ -610,7 +576,7 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
         else:
             replace_marker.unlink(missing_ok=True)
             copied_marker.unlink(missing_ok=True)
-    # 版を元のパスへ戻した直後に中断すると、対応する退避の無い印だけが残る。
+
     for orphan_marker in (*saved_root.glob("*~replace"), *saved_root.glob("*~copied")):
         orphan_marker.unlink()
     saved_root.rmdir()
@@ -620,11 +586,6 @@ def _restore_plugin_caches(cache_root: Path, saved_root: Path, *, installed_vers
 
 
 def _complete_from_saved(source: Path, destination: Path) -> None:
-    """退避した版にあって元のパスに無いファイルとディレクトリを補う。
-
-    元のパスに残るファイルはCLIが消せなかった使用中のファイルであり、置き換えずに残す。
-    各ファイルは隣で複製を仕上げてから名前の変更で置き、途中で止まっても欠けたファイルを元の名前で残さない。
-    """
     for directory, _subdirectories, files in source.walk():
         target = destination / directory.relative_to(source)
         target.mkdir(exist_ok=True)
@@ -662,9 +623,8 @@ def _sync_local_plugin(
             f"前回の実行が退避した旧cacheの復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
         ) from error
     if current is not None and current.get("enabled") is False:
-        # plugin addは有効化を伴うため、明示的に無効なpluginは版更新も保留する。
         return False, False
-    # 導入中の版と目標の版は、後継の導入時刻によらず残す。
+
     pruned = _prune_retired_versions(cache_root, {version} if current is None else {version, current["version"]})
     plugin_id = f"{plugin_name}@{marketplace_name}"
     needs_plugin_add = current is None or current.get("version") != version
@@ -695,7 +655,6 @@ def _sync_local_plugin(
                 notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
         finally:
             try:
-                # 既存セッションが参照する全旧パスを関数の終了時に成立させるため、復旧は保護区間の終端で行う。
                 _restore_plugin_caches(cache_root, saved_root, installed_version=version, rollback=False)
             except OSError as error:
                 raise RuntimeError(
@@ -895,16 +854,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
             plugin_updated = plugin_updated or (plugin_changed and (current is None or current.get("version") != version))
             local_changed = local_changed or plugin_changed
             deferred = deferred or plugin_deferred
-        # 全pluginの更新と旧cacheの復元を終えてから、新daemonが参照する集合を一度だけ反映する。
-        restart_error = _restart_daemon_after_plugin_update(notices) if plugin_updated else None
-        if restart_error is not None:
-            return post_apply_outcome.PostApplyOutcome(
-                changed=changed or local_changed,
-                notices=tuple(dict.fromkeys(notices)),
-                failure=restart_error,
-                next_action="codex app-server daemon restartを実行し、update-dotfilesを再実行してください。",
-                deferred=deferred or unused_deferred,
-            )
+        if plugin_updated:
+            _append_restart_notice_if_daemon_running(notices)
         return _outcome(changed or local_changed, notices, deferred=deferred or unused_deferred)
     except RuntimeError as error:
         # 導入・更新とその後の状態確認の失敗。設定ファイルとランチャーの書き込みの失敗（OSError）は失敗として送出する。

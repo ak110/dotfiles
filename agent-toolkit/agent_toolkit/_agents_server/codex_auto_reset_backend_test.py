@@ -148,7 +148,8 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 async def _environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True, policy: str = "five-hour"
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true" if enabled else "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true" if enabled else "false")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", policy)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     clients: list[_MemoryAppServer] = []
@@ -219,12 +220,12 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "継続後の成果"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 継続後の成果"}],
                 },
             },
         )
         await _until(backend, lambda: session.result_available)
-        assert (await owner.wait())["agent_message"] == "継続後の成果"
+        assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 継続後の成果"
         await backend.release_session(session)
         assert not backend._auto_reset_monitors and not backend._auto_reset_checks
         assert client.closed
@@ -235,7 +236,6 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
 async def test_unused_bucket_format_does_not_block_reset_and_unverified_window_blocks_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, primary_usage: Any
 ) -> None:
-    """未利用bucketの形式差は消費を止めず、使用率を確認できないwindowだけからは会話を再開しない。"""
     async with _environment(tmp_path, monkeypatch) as (owner, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
@@ -297,12 +297,27 @@ async def test_reset_outcomes_preserve_normal_wait_policy(
 
 
 @pytest.mark.asyncio
-async def test_periodic_check_resets_near_threshold_without_model_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("automatic", ["false", "true"])
+async def test_legacy_reset_flag_does_not_authorize_consumption(tmp_path, monkeypatch, automatic):
+    async with _environment(tmp_path, monkeypatch, policy="never") as (_, backend, clients):
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true")
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", automatic)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", "[]")
+        session = await backend.start("作業", str(tmp_path))
+        _fail(clients[0], session, tmp_path)
+        await _until(backend, lambda: session.result_available and not session.codex_auto_reset_pending)
+        assert not any(method == "account/rateLimitResetCredit/consume" for method, _ in clients[0].requests)
+
+
+@pytest.mark.asyncio
+async def test_periodic_check_resets_permitted_exhausted_window_without_model_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
     async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
-        client.weekly_usage = 99
+        client.weekly_usage = 100
         await asyncio.wait_for(client.consume_started.wait(), timeout=5)
         await _until(backend, lambda: not session.codex_auto_reset_pending)
         assert client.weekly_usage == 0
@@ -397,7 +412,7 @@ async def test_completed_turn_cannot_start_a_later_consumption(tmp_path: Path, m
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "完了"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 完了"}],
                 },
             },
         )
@@ -473,12 +488,12 @@ async def test_refresh_failure_recovers_same_session_without_second_consumption(
                     "id": session.turn_id,
                     "status": "completed",
                     "error": None,
-                    "items": [{"type": "agentMessage", "id": "answer", "text": "再取得後の成果"}],
+                    "items": [{"type": "agentMessage", "id": "answer", "text": "状態: completed\n結果: 再取得後の成果"}],
                 },
             },
         )
         await _until(backend, lambda: session.result_available)
-        assert (await owner.wait())["agent_message"] == "再取得後の成果"
+        assert (await owner.wait())["agent_message"] == "状態: completed\n結果: 再取得後の成果"
 
 
 _LOCAL_ORIGIN = {"generation": "G1", "process": "local"}
@@ -494,8 +509,6 @@ _PERMISSION = {
 
 
 class _Hub:
-    """保存の写し先だけを代用し、登録公開と状態の写しは実装を通す。"""
-
     def __init__(self, state_root: Path) -> None:
         self.state_root = state_root
         self._codec = SimpleNamespace(encode=lambda value: value)
@@ -509,7 +522,7 @@ async def _no_save() -> None:
 
 
 def _flood(client: _MemoryAppServer) -> None:
-    # 元I/O側の未確認イベント上限（256件）を超える通知を、照会の応答より先に読ませる。
+
     for index in range(300):
         client.emit("thread/tokenUsage/updated", {"index": index})
 
@@ -518,7 +531,6 @@ def _flood(client: _MemoryAppServer) -> None:
 async def _service_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, save: Callable[[], Awaitable[None]]
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
-    """管理サービスと同じく、App Serverの生I/Oをbroker経由の受信処理と保存に通す。"""
     with service_io.bind(service_io.Runtime("G1", _LOCAL_ORIGIN, ResourceBroker("G1"), save)):
         async with _environment(tmp_path, monkeypatch) as environment:
             yield environment
@@ -534,10 +546,6 @@ def _timeout_record(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
 async def test_account_read_proceeds_while_save_waits_registration_under_event_flood(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
 ) -> None:
-    """保存が登録公開の完了を待つ間も通知が上限を超えて届く負荷で、照会と許可の判定が進む。
-
-    2.262.3では保存の例外で受信処理が止まり、未確認イベントが上限に達して、照会が送出通知の空き待ちのまま時間切れになった。
-    """
     first = state.SessionState("first", str(tmp_path), engine="codex")
     second = state.SessionState("second", str(tmp_path), engine="codex")
     writer = service_projection.ServiceStatusWriter(
@@ -549,7 +557,7 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
     raced = asyncio.Event()
 
     async def publish_second(**_kwargs: Any) -> None:
-        # 後続sessionの公開を待つ間に届いた通知が、公開済みの先行sessionで新しい登録公開を始める。
+
         if not raced.is_set():
             raced.set()
             first._registration_task = asyncio.create_task(asyncio.sleep(0))
@@ -589,7 +597,6 @@ async def test_account_read_proceeds_while_save_waits_registration_under_event_f
 async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, service: bool
 ) -> None:
-    """送出後に応答が無い照会も時間内に終わり、応答待ちで止まったことを記録する。"""
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
     environment = _service_environment(tmp_path, monkeypatch, _no_save) if service else _environment(tmp_path, monkeypatch)
     async with environment as (_owner, backend, clients):
@@ -607,10 +614,9 @@ async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
 
 
 @pytest.mark.asyncio
-async def test_account_read_blocked_by_full_event_queue_reports_backlog(
+async def test_account_read_reports_reply_wait_and_full_event_queue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """受信処理の保存が止まって未確認イベントが上限に達すると、送出通知の空き待ちで止まったことを記録する。"""
     monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
     hold = asyncio.Event()
     release = asyncio.Event()
@@ -635,6 +641,6 @@ async def test_account_read_blocked_by_full_event_queue_reports_backlog(
             release.set()
         assert not clients[0].consume_started.is_set()
     message = _timeout_record(caplog).getMessage()
-    assert "method=account/read stage=送出確認待ち" in message
+    assert "method=account/read stage=応答待ち" in message
     assert "'consumer': '稼働中'" in message
     assert "'backlog': '256/256'" in message

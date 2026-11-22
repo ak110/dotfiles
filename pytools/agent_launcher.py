@@ -12,10 +12,12 @@ import sys
 from collections.abc import Callable
 from typing import NoReturn
 
+from agent_toolkit._common import startup_features
 lazy from agent_toolkit._common import codex_models
 
 from pytools._internal import common
 from pytools._internal.cli import enable_completion
+lazy from pytools import codex_launcher
 
 _LONG_OPTION_PATTERN = re.compile(r"(?<!\S)(--[A-Za-z0-9][A-Za-z0-9-]*)")
 
@@ -106,7 +108,6 @@ def _get_claude_options(claude_bin: str, *, run_help: HelpRunner = _run_help) ->
 
 
 def _resolve_executable(name: str, preferred_directories: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
-    """Mise shimを避け、実行名のシンボリックリンクを保持して探索する。"""
     shim_directories = common.mise_shim_directories()
     path_directories = (pathlib.Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen: set[pathlib.Path] = set()
@@ -165,6 +166,7 @@ def _run_model(
     run: CommandRunner,
     isatty: TerminalChecker,
     family: str | None = None,
+    full: bool = True,
 ) -> int:
     command_bin = _resolve_command(command_name, home, resolve)
     if command_bin is None:
@@ -177,15 +179,21 @@ def _run_model(
         )
         return 127
 
-    del which, isatty
+    del which
     if command_name == "claude" and _has_claude_model(argv):
         model_args = tuple(option for option in model_args if not option.startswith("--model="))
+    if command_name == "claude" and not full and _claude_conversation(argv):
+        model_args = _claude_startup_arguments(model_args)
     if family is not None:
         try:
-            model_args = _codex_model_args(command_bin, family, model_args[1], argv)
+            model_args = _codex_model_args(command_bin, family, argv)
         except ValueError as error:
             print(f"{error} --modelで完全なIDを指定して再実行できます。", file=sys.stderr)
             return 1
+        if isatty(0) and codex_launcher.is_interactive(argv):
+            return codex_launcher.run_interactive(pathlib.Path(command_bin), [*model_args, *argv], full=full)
+        if not full and codex_launcher.uses_startup_features(argv):
+            model_args = (*startup_features.codex_arguments(), *model_args)
     if os_name != "nt":
         try:
             os.execv(command_bin, [command_name, *model_args, *argv])
@@ -230,6 +238,7 @@ def _main(
     model_args: tuple[str, ...],
     argv: list[str] | None,
     *,
+    wrapper: str,
     os_name: str,
     home: pathlib.Path | None,
     which: CommandResolver,
@@ -240,6 +249,15 @@ def _main(
 ) -> NoReturn:
     _enable_model_completion(command_name)
     actual_argv = list(sys.argv[1:] if argv is None else argv)
+    full = actual_argv[:1] == ["--full"]
+    if full:
+        actual_argv.pop(0)
+    if _has_wrapper_help(command_name, actual_argv):
+        defaults = f"-m <利用可能な最新の{family}系列>" if family else " ".join(model_args)
+        print(f"使い方: {wrapper} [引数 ...]\n{command_name}を起動する。既定: {defaults}")
+        print(f"残りの引数は{command_name}へ渡す。本体のヘルプは `{command_name} --help` で表示する。")
+        print("先頭の --full で追加機能を止めずに起動する。")
+        sys.exit(0)
     actual_home = pathlib.Path.home() if home is None else home
     sys.exit(
         _run_model(
@@ -253,6 +271,7 @@ def _main(
             run=run,
             isatty=isatty,
             family=family,
+            full=full,
         )
     )
 
@@ -272,6 +291,7 @@ def main_sonnet(
         "claude",
         ("--permission-mode=auto", "--model=sonnet[1m]"),
         argv,
+        wrapper="sonnet",
         os_name=os_name,
         home=home,
         which=which,
@@ -296,6 +316,7 @@ def main_opus(
         "claude",
         ("--permission-mode=auto", "--model=opus[1m]"),
         argv,
+        wrapper="opus",
         os_name=os_name,
         home=home,
         which=which,
@@ -338,6 +359,7 @@ def main_poteto_mode(
         "claude",
         ("--permission-mode=auto", "--model=opus[1m]", f"--settings={_POTETO_MODE_SETTINGS}"),
         argv,
+        wrapper="poteto-mode",
         os_name=os_name,
         home=home,
         which=which,
@@ -369,6 +391,7 @@ def main_fable(
             "--fallback-model=opus[1m]",
         ),
         argv,
+        wrapper="fable",
         os_name=os_name,
         home=home,
         which=which,
@@ -378,15 +401,13 @@ def main_fable(
     )
 
 
-_CODEX_CONFIG_OPTIONS = frozenset({"-c", "--config", "--enable", "--disable"})
+_CODEX_CONFIG_OPTIONS = frozenset({"-c", "--config", "--enable", "--disable", "-p", "--profile"})
 _CODEX_CWD_OPTIONS = frozenset({"-C", "--cd"})
-_CODEX_FIXED_MODEL_OPTIONS = frozenset({"-p", "--profile", "--remote", "--ignore-user-config", "--strict-config"})
+_CODEX_CATALOG_SWITCHES = frozenset({"--ignore-user-config", "--strict-config"})
 _CODEX_VALUE_OPTIONS = (
     _CODEX_CONFIG_OPTIONS
     | _CODEX_CWD_OPTIONS
     | {
-        "-p",
-        "--profile",
         "--remote",
         "--remote-auth-token-env",
         "-i",
@@ -434,10 +455,54 @@ _CODEX_MANAGEMENT = frozenset(
 )
 
 
-def _codex_model_args(binary: str, family: str, fixed_model: str, argv: list[str]) -> tuple[str, ...]:
+def _has_wrapper_help(command_name: str, arguments: list[str]) -> bool:
+    value_options = (
+        (_CLAUDE_VALUE_OPTIONS - {"-r", "--resume"}) | {"--model"}
+        if command_name == "claude"
+        else _CODEX_VALUE_OPTIONS | {"-m", "--model"}
+    )
+    tokens = iter(arguments)
+    for token in tokens:
+        if token == "--":
+            break
+        if token in {"-h", "--help"}:
+            return True
+        if token in value_options:
+            value = next(tokens, None)
+            if value == "--":
+                break
+    return False
+
+
+def _claude_conversation(arguments: list[str]) -> bool:
+    tokens = iter(arguments)
+    for token in tokens:
+        if token == "--":
+            return True
+        if token in {"--version", "-v", "auth", "agents", "mcp", "plugin", "doctor", "install", "update"}:
+            return False
+        if token in _CLAUDE_VALUE_OPTIONS | {"--model"} and token not in {"-r", "--resume"}:
+            next(tokens, None)
+        elif not token.startswith("-"):
+            return True
+    return True
+
+
+def _claude_startup_arguments(model_args: tuple[str, ...]) -> tuple[str, ...]:
+    settings = dict(startup_features.CLAUDE_SETTINGS)
+    result = []
+    for option in model_args:
+        if option.startswith("--settings="):
+            settings.update(json.loads(option.partition("=")[2]))
+        else:
+            result.append(option)
+    return (*result, f"--settings={json.dumps(settings, separators=(',', ':'))}", "--no-chrome")
+
+
+def _codex_model_args(binary: str, family: str, argv: list[str]) -> tuple[str, ...]:
     settings: list[str] = []
     cwd = None
-    fixed = False
+    remote = False
     provider = None
     exec_subcommand = False
     first_positional = True
@@ -449,10 +514,13 @@ def _codex_model_args(binary: str, family: str, fixed_model: str, argv: list[str
         option, equal, value = token.partition("=")
         if len(option) > 2 and option[:2] in {"-m", "-p", "-c", "-C", "-i", "-s", "-a", "-o"}:
             option, value, equal = option[:2], token[2:], "="
-        if option in {"-m", "--model", "--oss", "--local-provider", "--help", "-h", "--version", "-V"}:
+        # 公式app-serverは--profileを受理しない。通常起動にはそのまま渡し、一覧で別条件のモデルを選ばない。
+        if option in {"-m", "--model", "-p", "--profile", "--oss", "--local-provider", "--help", "-h", "--version", "-V"}:
             return ()
-        if option in _CODEX_FIXED_MODEL_OPTIONS:
-            fixed = True
+        if option == "--remote":
+            remote = True
+        if token in _CODEX_CATALOG_SWITCHES:
+            settings.append(token)
         if option in _CODEX_VALUE_OPTIONS:
             if not equal:
                 index += 1
@@ -479,9 +547,8 @@ def _codex_model_args(binary: str, family: str, fixed_model: str, argv: list[str
         index += 1
     if provider not in (None, "openai"):
         return ()
-    if fixed:
-        # 同じ設定層・接続先の一覧を取得できる範囲だけで系列を解決する。
-        return ("-m", fixed_model)
+    if remote:
+        raise ValueError("リモート接続のモデル一覧を取得できません。")
     try:
         catalog = codex_models.list_models_at((binary, *settings, "app-server", "--stdio"), cwd=cwd)
     except OSError, ValueError:
@@ -494,7 +561,6 @@ def _codex_model_args(binary: str, family: str, fixed_model: str, argv: list[str
 
 def _main_codex(
     family: str,
-    model: str,
     argv: list[str] | None,
     *,
     os_name: str,
@@ -504,8 +570,9 @@ def _main_codex(
 ) -> NoReturn:
     _main(
         "codex",
-        ("-m", model),
+        (),
         argv,
+        wrapper=family,
         os_name=os_name,
         home=home,
         which=shutil.which,
@@ -525,7 +592,7 @@ def main_astra(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """AstraモデルでCodexを起動する。"""
-    _main_codex("astra", "gpt-6-astra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("astra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
 def main_sol(
@@ -537,7 +604,7 @@ def main_sol(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """SolモデルでCodexを起動する。"""
-    _main_codex("sol", "gpt-5.6-sol", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("sol", argv, os_name=os_name, home=home, resolve=resolve, run=run)
 
 
 def main_terra(
@@ -549,4 +616,4 @@ def main_terra(
     run: CommandRunner = _run_command,
 ) -> NoReturn:
     """TerraモデルでCodexを起動する。"""
-    _main_codex("terra", "gpt-5.6-terra", argv, os_name=os_name, home=home, resolve=resolve, run=run)
+    _main_codex("terra", argv, os_name=os_name, home=home, resolve=resolve, run=run)

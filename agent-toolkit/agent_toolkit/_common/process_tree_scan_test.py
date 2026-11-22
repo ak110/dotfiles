@@ -1,5 +1,3 @@
-"""子孫の走査と子プロセスの起動が、ホストのプロセス数に比例して照会を増やさないことを確かめる。"""
-
 import subprocess
 import sys
 import time
@@ -48,7 +46,6 @@ def test_scan_queries_do_not_grow_with_host_processes(monkeypatch, unrelated, pl
     found = process_tree._scan_descendants([root], retain=lambda _process: True)  # pylint: disable=protected-access
     assert found == [child]
     if platform == "win32":
-        # 初回の一覧と、子の候補を作った後の確認の一覧の2回。
         assert snapshots.call_count == 2
         assert not proc_reads
     else:
@@ -62,7 +59,6 @@ def test_scan_queries_do_not_grow_with_host_processes(monkeypatch, unrelated, pl
     reason="Linuxの/proc/<pid>/task/<tid>/childrenで子孫を辿る経路を検証する",
 )
 def test_periodic_descendant_collection_does_not_list_host_processes(monkeypatch):
-    """1秒周期の監視が使う子孫の列挙は、ホストの全プロセスを読まずにpsutilと同じ子孫を返す。"""
     with process_tree.process_scope(
         [sys.executable, "-c", "import subprocess, sys; subprocess.run([sys.executable, '-c', 'input()'])"],
         stdin=subprocess.PIPE,
@@ -88,10 +84,6 @@ def test_periodic_descendant_collection_does_not_list_host_processes(monkeypatch
 
 
 def test_short_command_lists_host_processes_a_bounded_number_of_times(monkeypatch):
-    """子孫を残さず終わる短いコマンドの起動・終了で、親PID一覧の照会は定数回に収まり、全PIDの列挙には使わない。
-
-    終了済みの親も世代のhandleを保持していれば辿るため、終了時の走査で一覧を1回は取る。
-    """
     ppid_map = vars(psutil)["_ppid_map"]
     calls = mock.Mock(side_effect=ppid_map)
     monkeypatch.setattr(psutil, "_ppid_map", calls)
@@ -102,7 +94,6 @@ def test_short_command_lists_host_processes_a_bounded_number_of_times(monkeypatc
 
 
 def test_parent_pids_falls_back_to_public_api_when_private_function_is_missing(monkeypatch):
-    """psutilが非公開の一括取得関数を持たない版でも、公開APIだけで親PIDの対応を作る。"""
     monkeypatch.setattr(process_tree, "_kernel_lists_children", lambda: False)
     monkeypatch.delattr(psutil, "_ppid_map", raising=False)
     monkeypatch.setattr(psutil, "pids", lambda: [11, 12, 13])

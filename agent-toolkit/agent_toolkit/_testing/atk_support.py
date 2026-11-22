@@ -1,5 +1,3 @@
-"""atkの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import datetime
@@ -78,7 +76,6 @@ _FIXED_ISO = _FIXED_DT.isoformat()
 
 
 def _body_file_args(tmp_path: pathlib.Path, *messages: str) -> list[str]:
-    """本文群をファイルへ保存し、繰り返し可能な`--body-file`引数列を返す。"""
     args: list[str] = []
     for index, message in enumerate(messages):
         path = tmp_path / f"body-{index}.md"
@@ -92,7 +89,6 @@ def _isolate_agent_and_managed_temp_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """listとmanaged-tempが引数を省略した場合の動作をホスト環境から隔離する。"""
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -130,10 +126,6 @@ def _make_subprocess_fake(
     *,
     has_upstream: bool = True,
 ) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """subprocess.runのfakeを返す。呼び出し引数をcallsへ記録する。
-
-    `text=True`が指定された場合は`stdout`/`stderr`を空文字列で返し、それ以外は空バイト列で返す。
-    """
 
     def fake(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         del args
@@ -146,7 +138,6 @@ def _make_subprocess_fake(
 
 
 def _setup_notes(tmp_path: pathlib.Path, *, legacy_layout: bool = False) -> pathlib.Path:
-    """private-notesディレクトリを準備する。"""
     notes = tmp_path / "private-notes"
     notes.mkdir()
     if legacy_layout:
@@ -163,7 +154,6 @@ def _write_awi_file(
     source: str | None = None,
     legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """状態付き項目を書き込み、移行検証の明示指定時は旧配置を使う。"""
     path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
     state_line = "" if legacy_layout else "state: inbox\n"
@@ -175,7 +165,6 @@ def _write_awi_file(
 
 
 def _setup_notes_with_pending_commit(tmp_path: pathlib.Path, *, pending: bool = True) -> pathlib.Path:
-    """upstreamより1件先行したprivate-notesのテスト用cloneを作成する。`pending=False`ではupstreamと一致させる。"""
     origin = tmp_path / "origin.git"
     git_repository.init_bare_repository(origin)
     notes = _setup_notes(tmp_path)
@@ -204,7 +193,7 @@ _NON_SAVING_ENTRIES = ("add --dry-run", "edit --dry-run", "edit without diff", "
 
 _EDIT_TARGET = "20260714-000001-001.md"
 
-# `_write_awi_file`が省略時に書く対象リポジトリ。実行位置から解決した値との不一致で編集が拒否されないよう明示する。
+
 _EDIT_TARGET_REPO = "github.com/example/foo"
 
 _DRY_RUN_SUCCESS = "成功: 投入前の検証が成立した（--dry-runのため保存していない）"
@@ -229,7 +218,6 @@ def _prepare_sync_mutation(entry: str, monkeypatch: pytest.MonkeyPatch) -> list[
 def _prepare_non_saving_operation(
     entry: str, notes: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> list[str]:
-    """保存しない操作ごとに入力を用意し、`atk.main`へ渡す引数を返す。"""
     body = tmp_path / "body.md"
     if entry == "add --dry-run":
         monkeypatch.setattr(_add, "resolve_add_target", lambda _value: ("github.com/example/repo", None))
@@ -310,7 +298,6 @@ def _write_uwi_file(
     source: str | None = None,
     legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """状態付きUWIを書き込み、移行検証の明示指定時は旧配置を使う。"""
     path = wi_entry_files.entry_path(notes, filename, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
     state_line = "" if legacy_layout else "state: inbox\n"

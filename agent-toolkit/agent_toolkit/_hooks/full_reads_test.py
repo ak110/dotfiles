@@ -27,7 +27,6 @@ def _entry(skill: str) -> pathlib.Path:
 
 
 def _read(kind: str, path: pathlib.Path, cwd: pathlib.Path) -> dict:
-    """読取の種類ごとに、ホストが返す形のPostToolUseの入力を作る。"""
     text = path.read_text(encoding="utf-8")
     base = {"session_id": _SESSION, "cwd": str(cwd), "hook_event_name": "PostToolUse", "tool_use_id": f"read-{kind}"}
     if kind == "claude-read":
@@ -75,7 +74,6 @@ def test_full_read_of_bugfix_entry_clears_verification_failure(tmp_path: pathlib
     ("kind", "counted"), [("claude-read", True), ("codex-sed", True), ("codex-variable", True), ("codex-partial", False)]
 )
 def test_full_read_of_skill_entry_stops_its_notice(tmp_path: pathlib.Path, kind: str, counted: bool) -> None:
-    """検索のスキルの入口の全文を返した読取の後は、検索の操作へ起動の案内を出さない。"""
     assert _run_hook_in_process("posttooluse", _read(kind, _entry("search"), tmp_path)).returncode == 0
     search = {"session_id": _SESSION, "cwd": str(tmp_path), "tool_name": "Bash", "tool_input": {"command": "rg needle ."}}
     if kind != "claude-read":

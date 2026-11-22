@@ -23,7 +23,6 @@ __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 
 def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """showのキーを加工せずsetへ渡し、コロンを含む値をgetできる。"""
     value = "claude:opus/high,codex:sol/medium"
     assert _main(tmp_path, "config", "set", "write_model", value) == 0
     capsys.readouterr()
@@ -39,8 +38,6 @@ def test_show_line_can_be_copied_to_set(tmp_path: pathlib.Path, capsys: pytest.C
 
 
 class TestCodexFastMode:
-    """公開config操作で速度の実効値・保存値・環境変数と既存プリセットの独立性を確かめる。"""
-
     @pytest.mark.parametrize("value", ["true", "false"])
     def test_public_round_trip_and_preset_preservation(
         self, value: str, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
@@ -94,56 +91,27 @@ class TestCodexFastMode:
         assert capsys.readouterr().out == "false\n"
 
 
-@pytest.mark.parametrize("value", ["true", "false"])
-def test_codex_auto_reset_public_round_trip(tmp_path, monkeypatch, capsys, value):
-    """自動resetは未設定時に無効となり、保存・表示・環境変数の優先順位を公開CLIで保つ。"""
-    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
-    assert capsys.readouterr().out == "false\n"
-    assert not _config_file(tmp_path).exists()
-    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 0
-    capsys.readouterr()
-    assert _saved(tmp_path)["codex_auto_reset"] == value
-    assert _main(tmp_path, "config", "apply-preset", "codex-primary") == 0
-    capsys.readouterr()
-    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
-    assert capsys.readouterr().out == value + "\n"
-    override = "false" if value == "true" else "true"
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", override)
-    assert _main(tmp_path, "config", "get", "codex_auto_reset") == 0
-    assert capsys.readouterr().out == override + "\n"
-    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 0
-    assert "AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET" in capsys.readouterr().err
-    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET")
-    assert _main(tmp_path, "config", "show") == 0
-    assert f"codex_auto_reset {value}\n" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("value", ["TRUE", "False", "1", "0", "yes", "", "[]", "null"])
-def test_codex_auto_reset_rejects_invalid_public_input(tmp_path, monkeypatch, capsys, value):
-    path = _write_config(tmp_path, {"codex_auto_reset": "true"})
-    before = path.read_bytes()
-    assert _main(tmp_path, "config", "set", "codex_auto_reset", value) == 2
-    assert "true, false" in capsys.readouterr().err
-    assert path.read_bytes() == before
-    if value:
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", value)
-        assert _main(tmp_path, "config", "get", "codex_auto_reset") == 2
-        assert "AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET" in capsys.readouterr().err
-        assert path.read_bytes() == before
+@pytest.mark.parametrize(
+    "config", [{"codex_auto_reset": "true"}, {"codex_auto_reset": "true", "usage_auto_allocation": "true"}]
+)
+def test_codex_auto_reset_retires_key_without_creating_permissions(tmp_path, capsys, config):
+    _write_config(tmp_path, config)
+    assert _main(tmp_path, "config", "get", "usage_auto_allocation", "usage_reset_permissions") == 0
+    output = capsys.readouterr()
+    assert output.out.splitlines() == [config.get("usage_auto_allocation", "false"), "[]"]
+    assert "消費許可は作成していない" in output.err
+    assert "codex_auto_reset" not in _saved(tmp_path)
+    for action in (["get", "codex_auto_reset"], ["set", "codex_auto_reset", "true"]):
+        assert _main(tmp_path, "config", *action) == 2
+        assert "usage_reset_permissions" in capsys.readouterr().err
 
 
 class TestConfigGet:
     def test_get_known_key(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """既知キーの値のみを1行で出力する。"""
         assert _main(tmp_path, "config", "get", "config_dir") == 0
         assert capsys.readouterr().out == f"{tmp_path / 'config'}\n"
 
     def test_get_state_dir_matches_public_helper(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """`state_dir()`の戻り値と`atk config get state_dir`の出力が一致する。
-
-        フックは`state_dir()`経由で状態ファイルを配置する。
-        両者が一致しない場合、ユーザーが`atk config get`で確認した位置と実際の配置先が異なる。
-        """
         assert _main(tmp_path, "config", "get", "state_dir") == 0
         assert capsys.readouterr().out == f"{state_paths.state_dir()}\n"
 
@@ -167,7 +135,6 @@ class TestConfigGet:
         assert capsys.readouterr().out == f"{expected}\n"
 
     def test_get_unknown_key_exits_2(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """未知キーはexit 2でエラー案内を出力する。"""
         assert _main(tmp_path, "config", "get", "no-such-key") == 2
         captured = capsys.readouterr()
         assert not captured.out
@@ -175,7 +142,6 @@ class TestConfigGet:
         assert "execute_fix_model" not in captured.err
 
     def test_get_known_and_unknown_keys_is_atomic(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """既知キーの間に未知キーがある場合は値を出力せずexit 2とする。"""
         assert _main(tmp_path, "config", "get", "config_dir", "no-such-key", "data_dir") == 2
         captured = capsys.readouterr()
         assert not captured.out
@@ -184,7 +150,6 @@ class TestConfigGet:
     def test_immutable_environment_name_does_not_override_private_notes(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """変更可能キー以外を模した環境変数は既存の設定値の解決に影響しない。"""
         assert _main(tmp_path, "config", "get", "private_notes") == 0
         original = capsys.readouterr().out
 
@@ -196,7 +161,6 @@ class TestConfigGet:
 
 class TestConfigSet:
     def test_legacy_execute_fix_model_get_is_rejected(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """旧`execute_fix_model`は`get`でも未知キーとして拒否する。"""
         assert _main(tmp_path, "config", "get", "execute_fix_model") == 2
         captured = capsys.readouterr()
         assert not captured.out
@@ -205,7 +169,6 @@ class TestConfigSet:
     def test_write_model_candidate_warnings_identify_only_unknown_candidate(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """write_modelは候補ごとに既知の一覧との一致を確かめ、一覧外の候補だけを警告する。"""
         known = "codex:gpt-6-astra/low"
         unknown = "claude:unknown-model/medium"
 
@@ -218,7 +181,6 @@ class TestConfigSet:
     def test_set_invalid_write_model_exits_2(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], value: str
     ) -> None:
-        """write_modelの不正な候補列はexit 2で受理可能書式を案内する。"""
         assert _main(tmp_path, "config", "set", "write_model", value) == 2
         assert "<claude|codex|agy>:<model>[/<effort>]" in capsys.readouterr().err
 
@@ -226,14 +188,12 @@ class TestConfigSet:
     def test_set_unknown_or_immutable_key_exits_2(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], key: str
     ) -> None:
-        """廃止したキーと導出値キーは変更できずexit 2でエラー案内を出力する。"""
         assert _main(tmp_path, "config", "set", key, "codex:gpt-5.6-sol/medium") == 2
         assert f"失敗: 変更できない設定キーを指定した: {key}" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("stage", ["execute", "review", "review_fast", "chores", "chores_fast", "orchestrate", "write"])
 def test_show_keeps_unknown_values_without_repeating_set_warnings(tmp_path, monkeypatch, capsys, stage):
-    """設定時の警告と、show/getの無警告の値表示を7工程で保持する。"""
     key = f"{stage}_model"
     unknown = "codex:unknown-model/ultra"
     assert _main(tmp_path, "config", "set", key, unknown) == 0

@@ -26,8 +26,6 @@ import pathlib
 import sys
 import time
 import types
-
-# 正常な呼出しで使わない診断とdump用の依存を、必要になるまで読み込まない。
 lazy import datetime
 
 from agent_toolkit._common import inherited_venv
@@ -97,7 +95,6 @@ def _record_activity(payload: object, *, output: str = "", returncode: int = 0) 
 
 
 def main(argv: list[str]) -> int:
-    """サブコマンド名から対象モジュールを解決し`main()`を呼び出す。"""
     started = time.monotonic()
     inherited_venv.strip_inherited_venv(os.environ)
     _configure_standard_output()
@@ -117,8 +114,7 @@ def main(argv: list[str]) -> int:
         payload = json.loads(payload_text)
     if isinstance(payload, dict):
         raw_session_id = payload.get("session_id")
-        # 会話IDは状態ファイルの名前になり、文字列でない値も文字列化して使われる。ファイル名にできない値は型によらず
-        # 会話IDの無い入力として扱い、状態の継承・記録の対象にしない。判定する各サブコマンドは、会話IDが無くても動作する。
+
         if raw_session_id not in (None, "") and _session_launchers.valid_launcher(raw_session_id) is None:
             input_warning = f"hook入力の会話IDが不正なため、会話IDの無い入力として扱う: {repr(raw_session_id)[:80]}"
             payload["session_id"] = ""
@@ -131,14 +127,15 @@ def main(argv: list[str]) -> int:
             if isinstance(session_id, str) and isinstance(transcript_path, str):
                 session_state = importlib.import_module("agent_toolkit._common.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
-    # Stopの処理中も活動中として扱い、正常な応答が決まった後だけ終了候補へ進める。
+    warning_event = _warning_event(argv[0], payload)
+
     if argv[0] != "session_activity":
         _record_activity(payload, returncode=2 if argv[0] in {"stop", "subagent_stop_advisor"} else 0)
     try:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     except Exception as exc:  # noqa: BLE001 -- 読込障害でも操作を継続する
         timing.record(payload, argv[0], started, "import-error")
-        _failure_response(argv[0], exc, payload=payload)
+        _failure_response(argv[0], exc, payload=payload, warning_event=warning_event)
         return 0
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
@@ -146,12 +143,12 @@ def main(argv: list[str]) -> int:
     try:
         with cycle:
             extra = {"input_warning": input_warning} if input_warning else {}
-            result = _invoke_module(module, payload_text, payload, argv, **extra)
+            result = _invoke_module(module, payload_text, payload, argv, warning_event=warning_event, **extra)
         timing.record(payload, argv[0], started, "returned-zero" if result == 0 else "nonzero")
         return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
         timing.record(payload, argv[0], started, "error")
-        _failure_response(argv[0], exc, payload=payload)
+        _failure_response(argv[0], exc, payload=payload, warning_event=warning_event)
         return 0
 
 
@@ -161,7 +158,6 @@ _CONTEXT_EVENTS = frozenset({"PreToolUse", "PostToolUse", "PostToolUseFailure", 
 
 
 def _warning_event(subcommand: str, payload: object) -> str | None:
-    """警告を連結できるイベント名を返す。入力のイベント名を優先し、受理しないイベントではNoneを返す。"""
     if subcommand not in _WARNING_EVENTS:
         return None
     event = payload.get("hook_event_name") if isinstance(payload, dict) else None
@@ -169,9 +165,7 @@ def _warning_event(subcommand: str, payload: object) -> str | None:
     return event if event in _CONTEXT_EVENTS else None
 
 
-def _append_warning(result: dict, subcommand: str, warning: str, payload: object = None) -> None:
-    """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
-    event = _warning_event(subcommand, payload)
+def _append_warning(result: dict, event: str | None, warning: str) -> None:
     if event is None:
         return
     specific = result.setdefault("hookSpecificOutput", {})
@@ -179,18 +173,27 @@ def _append_warning(result: dict, subcommand: str, warning: str, payload: object
     specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
 
 
-def _failure_response(subcommand: str, error: Exception, response: dict | None = None, *, payload: object = None) -> dict:
-    """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
+def _failure_response(
+    subcommand: str,
+    error: Exception,
+    response: dict | None = None,
+    *,
+    payload: object,
+    warning_event: str | None,
+) -> dict:
     result = response if response is not None else {}
-    if _warning_event(subcommand, payload) is not None:
+    if warning_event is not None:
         warning = _notice_formatter("hook")(
             f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
             "この診断は元の操作の成否を示さない。",
             tag="warn",
             removable_cause=False,
-            fix="元の操作の結果を確認せよ。自動処理の失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+            fix=(
+                "元の操作と自動処理の成否を分けて確認せよ。再発を待たずに`agent-basics:bugfix`の初動を適用し、"
+                "原因と影響を調べよ。認可の範囲内で自ら是正し、担当外の是正だけを委譲元へ渡せ。"
+            ),
         )
-        _append_warning(result, subcommand, warning, payload)
+        _append_warning(result, warning_event, warning)
     if response is None and result:
         _bound_pretooluse_context(result, payload, subcommand)
         _notice.emit_response(result)
@@ -228,7 +231,6 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
     return True
 
 
-# エージェント宛ての通知をユーザーの画面にも写すイベント。SessionStartなどの情報の配送と、ホストが画面へ出すStop系は含めない。
 _USER_COPY_SUBCOMMANDS: frozenset[str] = frozenset({"pretooluse", "posttooluse", "user_prompt_submit"})
 
 
@@ -256,18 +258,20 @@ def _add_user_copy(
 
 
 def _invoke_module(
-    module: types.ModuleType, payload_text: str, payload: object, argv: list[str], *, input_warning: str = ""
+    module: types.ModuleType,
+    payload_text: str,
+    payload: object,
+    argv: list[str],
+    *,
+    warning_event: str | None,
+    input_warning: str = "",
 ) -> int:
-    """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。
-
-    `input_warning`は入力の境界で補正した内容の警告で、通知を受理するイベントの応答へ連結する。
-    """
     started = time.monotonic()
     output = io.StringIO()
     error = None
     result = 0
     _notice.reset_informational()
-    # 写しは応答へ現れた通知を生成時の記録から選ぶ（`notice.user_copy`）。
+
     with _common_message_format.record_generated() as generated, _notice.defer_delivery(), contextlib.redirect_stdout(output):
         try:
             if argv[0] == "antigravity":
@@ -286,10 +290,10 @@ def _invoke_module(
             response = parsed
     if error is not None:
         with _common_message_format.record_generated() as failure_notices:
-            response = _failure_response(argv[0], error, response or {}, payload=payload)
+            response = _failure_response(argv[0], error, response or {}, payload=payload, warning_event=warning_event)
         generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
-    if input_warning and _warning_event(argv[0], payload) is not None:
+    if input_warning and warning_event is not None:
         with _common_message_format.record_generated() as input_notices:
             warning = _notice_formatter("hook")(
                 input_warning,
@@ -299,7 +303,7 @@ def _invoke_module(
             )
         generated.extend(input_notices)
         response = response if response is not None else {}
-        _append_warning(response, argv[0], warning, payload)
+        _append_warning(response, warning_event, warning)
         raw = json.dumps(response, ensure_ascii=False)
     if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
         raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""

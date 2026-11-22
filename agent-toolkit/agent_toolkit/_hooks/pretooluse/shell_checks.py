@@ -66,7 +66,6 @@ __all__ = [
 
 
 def _check_read_predicate_stderr_discard(command: str) -> str | None:
-    """読取の診断破棄を警告する。再取得で診断を復元できるため実行を続ける。"""
     for invocation in extract_bash_invocations(command):
         if is_read_predicate(invocation.segment.tokens) and invocation.outputs[1] == "/dev/null":
             return _llm_notice(
@@ -87,11 +86,6 @@ _ATK_PROCESS_LOOP_CONTROL_SUBCOMMANDS = frozenset({"abort", "abort-cancel", "sta
 
 
 def _is_atk_resident_display(tokens: tuple[str, ...]) -> bool:
-    """常駐と追従の表示（`atk serve`、`atk wi process-loop`の常駐、`atk agents logs --follow`）の起動かを返す。
-
-    これらは`atk`の長い出力の保存の対象外で、背景で起動するときは出力をログへ移す必要があるため、
-    リダイレクトの遮断から除く。
-    """
     arguments = tokens[1:]
     if arguments[:1] == ("serve",):
         return True
@@ -200,11 +194,6 @@ _PATH_ELEMENT_VARIABLE_PATTERN = re.compile(r"\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]
 
 
 def _segment_assignments(raw_tokens: Sequence[str]) -> list[tuple[str, str]]:
-    """区間の元トークン列から、先頭の代入の並びと`export`の引数にある代入を順に返す。
-
-    単独の代入文とコマンド前置の代入はいずれも先頭の`KEY=VALUE`の並びに現れる。
-    `export`の後の`KEY=VALUE`もシェル変数への代入として扱う。
-    """
     assignments: list[tuple[str, str]] = []
     index = 0
     while index < len(raw_tokens) and (match := _SHELL_ASSIGNMENT_PATTERN.match(raw_tokens[index])):
@@ -218,11 +207,6 @@ def _segment_assignments(raw_tokens: Sequence[str]) -> list[tuple[str, str]]:
 
 
 def _drive_letter_path_elements(value: str, assigned: dict[str, str]) -> list[str]:
-    r"""PATHの値のうち、ドライブ文字形式で始まる要素を説明用の文字列で返す。
-
-    要素の先頭（値の先頭かコロンの直後）がリテラルの`C:/`・`C:\\`形式である要素と、
-    同じコマンドの中でそれより前にドライブ文字形式の値を代入した変数の展開で始まる要素を対象とする。
-    """
     found: list[str] = []
     for position in range(len(value)):
         if position > 0 and value[position - 1] != ":":

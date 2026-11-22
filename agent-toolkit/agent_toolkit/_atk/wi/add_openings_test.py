@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: openingsのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -24,7 +23,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
 @pytest.mark.parametrize("entry_type", ["awi", "uwi"])
 @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
 def test_public_dry_run_compares_received_opening(tmp_path, monkeypatch, capsys, operation, entry_type, newline):
-    """新規・編集の公開操作だけで原改行、末尾空行、フェンス内H2を含む冒頭を比較する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     opening = "# 表題\n\n質問と理由。  \n\n```text\n## 引用\n```\n\n\n".replace("\n", newline)
@@ -59,10 +57,33 @@ def test_public_dry_run_compares_received_opening(tmp_path, monkeypatch, capsys,
         assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
 
 
+@pytest.mark.parametrize("operation", ["add", "edit"])
+def test_public_dry_run_updates_same_opening_output(tmp_path, monkeypatch, capsys, operation):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = tmp_path / "draft.md"
+    saved = tmp_path / "opening.md"
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body), "--dry-run"]
+    if operation == "edit":
+        _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    for heading in ("初回", "修正"):
+        body.write_text(f"# {heading}\n\n説明。\n", encoding="utf-8")
+        with pytest.raises(SystemExit) as result:
+            atk.main([*argv, "--opening-output", str(saved)], home=tmp_path)
+        assert result.value.code == 0
+        assert saved.read_bytes().startswith(f"# {heading}".encode())
+        capsys.readouterr()
+    with pytest.raises(SystemExit) as result:
+        atk.main([*argv, "--opening-output", str(saved), "--compare-opening-file", str(saved)], home=tmp_path)
+    assert result.value.code != 0
+    assert saved.read_bytes().startswith("# 修正".encode())
+
+
 @pytest.mark.parametrize("difference", ["body", "newline", "trailing", "missing", "encoding"])
 @pytest.mark.parametrize("operation", ["add", "edit"])
 def test_public_dry_run_rejects_changed_or_unreadable_opening(tmp_path, monkeypatch, capsys, operation, difference):
-    """本文変更、原改行・末尾空行の差、読取不能を公開比較で拒否し保存しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     opening = "# 表題\n\n説明\n\n"
@@ -108,7 +129,6 @@ def test_public_dry_run_rejects_changed_or_unreadable_opening(tmp_path, monkeypa
 @pytest.mark.parametrize("comparison", ["matching", "changed", "none"])
 @pytest.mark.parametrize("operation", ["add", "edit"])
 def test_public_save_compares_opening_before_writing(tmp_path, monkeypatch, capsys, operation, comparison):
-    """本保存でも冒頭を比較し、一致と比較なしは保存し、不一致は対象WIの書込とcommitを行わない。"""
     notes = _setup_notes(tmp_path)
     pushed: list[object] = []
     if operation == "add":
@@ -151,7 +171,6 @@ def test_public_save_compares_opening_before_writing(tmp_path, monkeypatch, caps
 
 @pytest.mark.parametrize("comparison", ["matching", "changed", "missing"])
 def test_public_edit_compares_opening_even_without_changes(tmp_path, monkeypatch, capsys, comparison):
-    """保存済みと同じ本文での本保存でも冒頭を比較し、不一致・読取不能を差分なしの成功にしない。"""
     notes = _setup_notes(tmp_path)
     stored = _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
     original = stored.read_bytes()
@@ -180,7 +199,6 @@ def test_public_edit_compares_opening_even_without_changes(tmp_path, monkeypatch
 
 @pytest.mark.parametrize("mode", ["no-body", "append"])
 def test_public_edit_rejects_comparison_without_replacing_body(tmp_path, monkeypatch, capsys, mode):
-    """本文を置き換えない編集で比較入力だけを指定すると、必要な入力を示して拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     stored = _write_awi_file(notes, "draft.md", target_repo="github.com/example/repo")
@@ -201,7 +219,6 @@ def test_public_edit_rejects_comparison_without_replacing_body(tmp_path, monkeyp
 
 @pytest.mark.parametrize("comparisons", ["matching", "swapped", "short", "long"])
 def test_public_dry_run_matches_each_opening_to_its_source(tmp_path, monkeypatch, capsys, comparisons):
-    """複数原稿の対応順と件数を検査し、全件一致した場合だけ成功する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     argv = ["wi", "add", "--target-repo", "github.com/example/repo", "--dry-run"]
@@ -234,7 +251,6 @@ def test_dry_run_opening_preserves_raw_input(
     newline: str,
     entry_type: str,
 ) -> None:
-    """複数原稿の原文冒頭をフェンス内H2と末尾空行を含めて保存・表示する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "", entry_type=entry_type, dry_run=True)
@@ -285,3 +301,67 @@ def test_dry_run_opening_save_failure_has_no_valid_result(
     assert "一時保存に失敗" in output.err
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "冒頭保存先:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("operation", ["add", "edit"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_wrapped_uwi_preview_matches_saved_question(tmp_path, monkeypatch, capsys, operation, newline):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _root: None)
+    opening = "反映してよいですか。\n\n変更の内容を説明します。\n"
+    body = tmp_path / "draft.md"
+    body.write_bytes(("## 質問\n\n" + opening).replace("\n", newline).encode())
+    preview = tmp_path / "opening.md"
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    if operation == "edit":
+        _write_uwi_file(notes, "draft.md", target_repo="github.com/example/repo", answer=uwi_module.ANSWER_MARKER)
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    else:
+        argv.extend(["--type=uwi", "--question-type=post-approval"])
+    with pytest.raises(SystemExit) as dry_run:
+        atk.main([*argv, "--dry-run", "--opening-output", str(preview)], home=tmp_path)
+    assert dry_run.value.code == 0, capsys.readouterr().err
+    assert preview.read_bytes() == opening.replace("\n", newline).encode()
+    with pytest.raises(SystemExit) as save:
+        atk.main([*argv, "--compare-opening-file", str(preview)], home=tmp_path)
+    assert save.value.code == 0, capsys.readouterr().err
+    expected_question = "## 質問\n\n" + opening
+    saved = [path for path in notes.rglob("*.md") if expected_question in path.read_text(encoding="utf-8")]
+    assert len(saved) == 1
+
+
+@pytest.mark.parametrize("mode", ["dry-run", "save-compare", "save"])
+def test_uwi_with_empty_opening_is_rejected_before_save(tmp_path, monkeypatch, capsys, mode):
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = tmp_path / "draft.md"
+    body.write_text("## 質問\n\n## 詳細\n根拠だけがある。\n", encoding="utf-8")
+    argv = [
+        "wi",
+        "add",
+        "--type=uwi",
+        "--question-type=post-approval",
+        "--target-repo",
+        "github.com/example/repo",
+        "--body-file",
+        str(body),
+    ]
+    if mode == "dry-run":
+        argv.append("--dry-run")
+    elif mode == "save-compare":
+        argv.extend(["--compare-opening-file", str(tmp_path / "missing.md")])
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    assert result.value.code != 0
+    error = capsys.readouterr().err
+    assert "UWIの質問の冒頭が空です" in error
+    assert "最初のH2見出しより前" in error and "は`atk`が付ける" in error
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+def test_wrapped_uwi_does_not_discard_answer_after_crlf_blank_lines():
+    question = "反映してよいですか。\r\n\r\n"
+    answered = "## 回答" + "\r\n" * 100 + "回答済み。"
+    assert uwi_module.strip_unanswered_uwi_wrapper("## 質問\r\n\r\n" + question + answered) == question + answered

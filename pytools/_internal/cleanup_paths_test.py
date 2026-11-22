@@ -1,5 +1,3 @@
-"""pytools._internal.cleanup_paths のテスト。"""
-
 import hashlib
 import logging
 from pathlib import Path
@@ -10,10 +8,7 @@ from pytools._internal.cleanup_paths import cleanup_empty_dirs, cleanup_paths, c
 
 
 class TestCleanupPaths:
-    """汎用「旧配布物の削除」関数のテスト。"""
-
     def test_directory_is_removed(self, tmp_path: Path):
-        """指定パスのディレクトリが再帰的に削除される。"""
         target = tmp_path / "skills" / "old-skill"
         target.mkdir(parents=True)
         (target / "SKILL.md").write_text("body", encoding="utf-8")
@@ -24,7 +19,6 @@ class TestCleanupPaths:
         assert not target.exists()
 
     def test_file_is_removed(self, tmp_path: Path):
-        """単一ファイルも削除できる。"""
         target = tmp_path / "old.txt"
         target.write_text("body", encoding="utf-8")
 
@@ -34,7 +28,6 @@ class TestCleanupPaths:
         assert not target.exists()
 
     def test_missing_path_is_noop(self, tmp_path: Path):
-        """対象が存在しなくてもエラーにならず、削除件数 0。"""
         removed = cleanup_paths(tmp_path, (Path("skills/missing"),))
         assert removed == 0
 
@@ -44,7 +37,6 @@ class TestCleanupPaths:
         assert removed == 0
 
     def test_symlink_outside_base_is_unlinked_without_deleting_target(self, tmp_path: Path):
-        """base_dir内のシンボリックリンクはリンク先を削除せずリンク自体だけ削除する。"""
         outside = tmp_path / "outside"
         outside.mkdir()
         (outside / "do_not_delete.txt").write_text("important", encoding="utf-8")
@@ -61,10 +53,9 @@ class TestCleanupPaths:
         assert (outside / "do_not_delete.txt").exists()
 
     def test_multiple_paths_counted(self, tmp_path: Path):
-        """削除件数は実際に削除したものだけをカウントする。"""
         (tmp_path / "a").mkdir()
         (tmp_path / "b").write_text("", encoding="utf-8")
-        # c は存在しない
+
         removed = cleanup_paths(tmp_path, (Path("a"), Path("b"), Path("c")))
         assert removed == 2
 
@@ -124,7 +115,6 @@ class TestCleanupPaths:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """リンク先を失ったジャンクション相当も存在判定を越えてrmdirする。"""
         target = tmp_path / "skills" / "old-skill"
         target.mkdir(parents=True)
         real_exists = Path.exists
@@ -148,10 +138,7 @@ class TestCleanupPaths:
 
 
 class TestCleanupPathsIfContentMatches:
-    """内容一致時のみ削除する関数のテスト。"""
-
     def test_matching_file_is_removed(self, tmp_path: Path):
-        """期待内容と一致するファイルは削除される。"""
         target = tmp_path / "CLAUDE.md"
         content = b"# \xe3\x82\xab\xe3\x82\xb9\xe3\x82\xbf\xe3\x83\xa0\n"
         target.write_bytes(content)
@@ -162,7 +149,6 @@ class TestCleanupPathsIfContentMatches:
         assert not target.exists()
 
     def test_modified_file_is_kept(self, tmp_path: Path):
-        """内容が異なるファイルは削除されず残る。"""
         target = tmp_path / "CLAUDE.md"
         target.write_bytes(b"user edited\n")
 
@@ -173,7 +159,6 @@ class TestCleanupPathsIfContentMatches:
         assert target.read_bytes() == b"user edited\n"
 
     def test_missing_path_is_noop(self, tmp_path: Path):
-        """対象が存在しなくてもエラーにならず、削除件数 0。"""
         removed = cleanup_paths_if_content_matches(tmp_path, {Path("missing.md"): b"x"})
         assert removed == 0
 
@@ -183,7 +168,6 @@ class TestCleanupPathsIfContentMatches:
         assert removed == 0
 
     def test_symlink_outside_base_is_skipped(self, tmp_path: Path):
-        """シンボリックリンク経由で base_dir 外を削除しようとしたらスキップする。"""
         outside = tmp_path / "outside"
         outside.mkdir()
         outside_file = outside / "secret.md"
@@ -198,7 +182,6 @@ class TestCleanupPathsIfContentMatches:
         assert outside_file.exists()
 
     def test_counts_only_matching(self, tmp_path: Path):
-        """一致・不一致・欠損が混在しても、一致したものだけが件数に含まれる。"""
         (tmp_path / "match.md").write_bytes(b"ok\n")
         (tmp_path / "mismatch.md").write_bytes(b"edited\n")
         # missing.md は存在しない
@@ -247,7 +230,6 @@ class TestCleanupPathsIfContentMatches:
 
 
 def test_cleanup_if_content_matches_accepts_sha256(tmp_path: Path) -> None:
-    """期待値にSHA-256の16進文字列を与えると、一致は削除し不一致は残す。bytes指定の動作は変わらない。"""
     content = b"# old\n" * 1000
     digest = hashlib.sha256(content).hexdigest()
     (tmp_path / "match").write_bytes(content)
@@ -266,10 +248,7 @@ def test_cleanup_if_content_matches_accepts_sha256(tmp_path: Path) -> None:
 
 
 class TestCleanupEmptyDirs:
-    """空ディレクトリの項目を削除する関数のテスト。"""
-
     def test_removes_empty_child_then_parent(self, tmp_path: Path) -> None:
-        """子を先に列挙すると、子の削除で空になった親も削除する。"""
         (tmp_path / "a" / "b").mkdir(parents=True)
 
         removed = cleanup_empty_dirs(tmp_path, [Path("a/b"), Path("a")])
@@ -278,7 +257,6 @@ class TestCleanupEmptyDirs:
         assert not (tmp_path / "a").exists()
 
     def test_keeps_non_empty_dir(self, tmp_path: Path) -> None:
-        """中身が残るディレクトリは削除しない。"""
         (tmp_path / "a" / "b").mkdir(parents=True)
         (tmp_path / "a" / "keep.txt").write_text("x\n", encoding="utf-8")
 
@@ -288,7 +266,6 @@ class TestCleanupEmptyDirs:
         assert (tmp_path / "a" / "keep.txt").is_file()
 
     def test_skips_link_and_outside(self, tmp_path: Path) -> None:
-        """リンク自体とリンク先の空ディレクトリを削除しない。"""
         base = tmp_path / "base"
         outside = tmp_path / "outside" / "empty"
         outside.mkdir(parents=True)
@@ -302,5 +279,4 @@ class TestCleanupEmptyDirs:
         assert (base / "link").is_symlink()
 
     def test_missing_base_dir_is_noop(self, tmp_path: Path) -> None:
-        """基点が無ければ何もしない。"""
         assert cleanup_empty_dirs(tmp_path / "missing", [Path("a")]) == 0

@@ -60,7 +60,7 @@ async def test_flush_waits_registration_started_while_draining_other_session(
         published.append("first")
 
     async def publish_second(**_kwargs: Any) -> None:
-        # 後続sessionの公開を待つ間に届いた通知が、公開済みの先行sessionで新しい登録公開を始める。
+
         first._registration_task = asyncio.create_task(publish_first())  # pylint: disable=protected-access
 
     monkeypatch.setattr(second, "publish_registration_async", publish_second)
@@ -86,7 +86,6 @@ def _writer(hub: _Hub, sessions: dict[str, state.SessionState], **kwargs: Any) -
 async def test_retain_result_waits_registration_started_as_previous_one_finished(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """登録公開の完了を待つ側が再開する前に始まった次の公開も、写す前に完了させる。"""
     session = state.SessionState("first", str(tmp_path), engine="codex")
     hub = _Hub(tmp_path)
     writer = _writer(hub, {"first": session})
@@ -101,7 +100,7 @@ async def test_retain_result_waits_registration_started_as_previous_one_finished
 
     async def previous() -> None:
         await publish("previous")
-        # 完了を待つ側が再開する前に、届いた通知が次の登録公開を始める。
+
         asyncio.get_running_loop().call_soon(start_next)
 
     session._registration_task = asyncio.create_task(previous())  # pylint: disable=protected-access
@@ -152,7 +151,6 @@ def _identity(parent: str) -> dict[str, Any]:
 
 
 async def _observed(hub: service_projection.ProjectionHub, parent: str, progress: str, effort: str | None) -> dict[str, Any]:
-    """世代が親会話ごとに保存する観測（状態表示の保存要求の本文）を作る。"""
     session = state.SessionState(f"{parent}-child", "/work", engine="codex", effort=effort, announced=True)
     session.set_progress(progress)
     return {
@@ -163,7 +161,6 @@ async def _observed(hub: service_projection.ProjectionHub, parent: str, progress
 
 
 async def _published_hub(tmp_path: pathlib.Path, groups: dict[str, tuple[str, str | None]]) -> service_projection.ProjectionHub:
-    """旧世代から2つの親会話の観測を受け取り、受付を公開した直後の新世代の状態表示を作る。"""
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
     process = service_transport.process_identity(os.getpid())
@@ -187,7 +184,6 @@ async def _published_hub(tmp_path: pathlib.Path, groups: dict[str, tuple[str, st
 
 
 def _displayed(tmp_path: pathlib.Path, parent: str) -> tuple[str, str | None]:
-    """ユーザーのstatuslineが読む状態ファイルから、親会話の子sessionの進捗とeffortを読む。"""
     path = session_layout.status_directory(parent, tmp_path / "agent-toolkit") / "root.json"
     [session] = json.loads(path.read_text(encoding="utf-8"))["sessions"]
     return session["progress"], session["effort"]
@@ -255,7 +251,6 @@ async def test_publication_keeps_progress_saved_by_previous_generation_while_act
 async def test_progress_saved_while_other_generation_leaves_parent_stays_displayed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同じ親会話から旧世代の観測が外れる間に新世代が保存した進捗とeffortを、外れた後の再描画で古い値へ戻さない。"""
     hub = await _published_hub(tmp_path, {"old": ("old-progress", "low"), "new": ("", None)})
     release = asyncio.Event()
     async with asyncio.timeout(10):
@@ -276,7 +271,6 @@ async def test_progress_saved_while_other_generation_leaves_parent_stays_display
 
 @pytest.mark.asyncio
 async def test_frozen_projection_preserves_exact_results_across_activation(tmp_path: pathlib.Path) -> None:
-    """最後の保存要求よりも後にCLIが回収した結果を、次のhubが再公開しない。"""
     directory = tmp_path / "services" / "agents-server"
     hub = service_projection.ProjectionHub("source", directory)
     successor = service_projection.ProjectionHub("successor", directory)
@@ -316,7 +310,6 @@ async def test_frozen_projection_preserves_exact_results_across_activation(tmp_p
 async def test_legacy_inventory_after_cli_claim(
     tmp_path: pathlib.Path, frozen_turn: int, in_slot: int | None, saved_again: bool, available: bool
 ) -> None:
-    """静止中に旧CLIが旧名を回収する。台帳が同じでも旧名の原本がどちらのturnだったかで結果が変わる。"""
     successor = service_projection.ProjectionHub("next", tmp_path / "services" / "agents-server")
     child = state.SessionState("child", str(tmp_path), announced=True, turn_seq=frozen_turn, status="completed")
     child.agent_message = f"結果{frozen_turn}"

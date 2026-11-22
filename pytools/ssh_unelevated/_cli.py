@@ -7,30 +7,132 @@
 import argparse
 import base64
 import codecs
+import contextlib
 import dataclasses
 import io
 import json
+import os
 import pathlib
 import secrets
+import selectors
+import signal
 import subprocess
 import sys
+import time
 from collections.abc import Sequence
 from importlib import resources
+
+import psutil
 
 from pytools._internal.cli import enable_completion
 from pytools._internal.common import process_scope
 
+_START_PREFIX = b"SSH_UNELEVATED_STARTED:"
 _RESULT_PREFIX = b"\nSSH_UNELEVATED_RESULT:"
-# 接続先の起動部が標準入力から本文を読み終えるまでの上限。
+
 _STDIN_TIMEOUT_SECONDS = 60
-# 接続、タスクの登録、後始末に要する時間の見込み。上限にこれを足しても終わらないsshは打ち切る。
+
 _SSH_MARGIN_SECONDS = 120
 _DEFAULT_TIMEOUT_SECONDS = 1800
 _EXIT_TIMEOUT = 124
 _EXIT_FAILURE = 125
 _EXIT_SSH_FAILURE = 255
 
-# 接続先が返す状態のうちスクリプトの終了コードを持たないものの、このコマンドの終了コードと診断。
+
+class SshReclaimError(RuntimeError):
+    pass
+
+
+def _communicate_posix(process: subprocess.Popen[bytes], payload: bytes, timeout: float) -> tuple[bytes, bytes]:
+    assert process.stdin is not None and process.stdout is not None and process.stderr is not None
+    stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
+    deadline = time.monotonic() + timeout
+    stdout_fd, stderr_fd = stdout.fileno(), stderr.fileno()
+    output = {stdout_fd: bytearray(), stderr_fd: bytearray()}
+    remaining = memoryview(payload)
+    stop_attempted = False
+
+    def group_has_live_member() -> bool:
+        for member in psutil.process_iter():
+            try:
+                if os.getpgid(member.pid) == process.pid and member.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD):
+                    return True
+            except ProcessLookupError, psutil.NoSuchProcess:
+                continue
+            except (OSError, psutil.Error) as error:
+                raise SshReclaimError("sshのプロセスグループの停止を確認できない") from error
+        return False
+
+    def stop_group() -> None:
+        nonlocal stop_attempted
+        stop_attempted = True
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError as error:
+            raise SshReclaimError("sshのプロセスグループを停止できない") from error
+        stop_deadline = time.monotonic() + 1.0
+        while group_has_live_member():
+            if time.monotonic() >= stop_deadline:
+                raise SshReclaimError("sshのプロセスグループに停止できなかったプロセスが残った")
+            time.sleep(0.02)
+
+    def exited() -> bool:
+        try:
+            state = os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        except (AttributeError, OSError) as error:
+            raise SshReclaimError("sshの終了を回収前に確認できない") from error
+        return state is not None and state.si_pid != 0
+
+    def close_input(selector: selectors.BaseSelector) -> None:
+        if not stdin.closed:
+            selector.unregister(stdin)
+            stdin.close()
+
+    try:
+        with selectors.DefaultSelector() as selector:
+            for stream in (stdin, stdout, stderr):
+                os.set_blocking(stream.fileno(), False)
+            selector.register(stdin, selectors.EVENT_WRITE)
+            selector.register(stdout, selectors.EVENT_READ)
+            selector.register(stderr, selectors.EVENT_READ)
+            while not stop_attempted or selector.get_map():
+                if not stop_attempted and exited():
+                    stop_group()
+                    close_input(selector)
+                delay = deadline - time.monotonic()
+                if delay <= 0:
+                    raise subprocess.TimeoutExpired(process.args, timeout, bytes(output[stdout_fd]), bytes(output[stderr_fd]))
+                if not selector.get_map() and stop_attempted:
+                    break
+                for key, _ in selector.select(min(delay, 0.05)):
+                    if key.fileobj is stdin:
+                        try:
+                            remaining = remaining[os.write(key.fd, remaining[:4096]) :]
+                        except BrokenPipeError:
+                            remaining = remaining[:0]
+                        except BlockingIOError:
+                            continue
+                        if not remaining:
+                            close_input(selector)
+                        continue
+                    try:
+                        chunk = os.read(key.fd, 65536)
+                    except BlockingIOError:
+                        continue
+                    if chunk:
+                        output[key.fd].extend(chunk)
+                    else:
+                        selector.unregister(key.fileobj)
+    finally:
+        if not stop_attempted:
+            exited()
+            stop_group()
+    process.wait()
+    return bytes(output[stdout_fd]), bytes(output[stderr_fd])
+
+
 _FAILURES: dict[str, tuple[int, str]] = {
     "timeout": (
         _EXIT_TIMEOUT,
@@ -68,8 +170,6 @@ class RemoteResult:
 
 @dataclasses.dataclass(frozen=True)
 class Outcome:
-    """このコマンドの終了コード、標準出力へ書くスクリプトの出力、標準エラーへ書く診断。"""
-
     exit_code: int
     output: str
     diagnostic: str | None = None
@@ -109,11 +209,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     limit = args.timeout + _SSH_MARGIN_SECONDS
     stderr = b""
     try:
+        payload = build_payload(script, run_id, args.timeout)
+        posix = os.name == "posix"
+        if posix and not all(hasattr(os, name) for name in ("waitid", "WNOWAIT", "WEXITED", "WNOHANG", "P_PID")):
+            raise SshReclaimError("この環境はsshの終了を回収前に確認できない")
         with process_scope(
-            build_ssh_command(args.host), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            build_ssh_command(args.host),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **({"start_new_session": True} if posix else {}),
         ) as process:
-            stdout, stderr = process.communicate(build_payload(script, run_id, args.timeout), timeout=limit)
+            if posix:
+                stdout, stderr = _communicate_posix(process, payload, limit)
+            else:
+                stdout, stderr = process.communicate(payload, timeout=limit)
             returncode = process.returncode
+    except SshReclaimError as e:
+        outcome = Outcome(_EXIT_FAILURE, "", str(e))
     except FileNotFoundError:
         outcome = Outcome(_EXIT_FAILURE, "", "sshが見つからない。OpenSSHのクライアントを導入してから再実行する。")
     except KeyboardInterrupt:
@@ -126,8 +239,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         stderr = e.stderr or b""
         outcome = Outcome(
             _EXIT_TIMEOUT,
-            _decode(e.stdout or b""),
-            f"sshが{limit}秒以内に終わらなかったため打ち切った。{args.host}に残った予定タスクと一時ファイルは次回の実行が片付ける。",
+            _decode(_split_start(e.stdout or b"", run_id)[1]),
+            f"sshが{limit}秒以内に終わらず打ち切った。{args.host}での実行結果は不明。再実行する前に接続先の結果を確かめる。",
         )
     else:
         outcome = interpret(stdout, returncode, run_id=run_id, host=args.host, timeout=args.timeout)
@@ -182,11 +295,42 @@ def build_payload(script: str, run_id: str, timeout: int) -> bytes:
     return base64.b64encode(invocation.encode("utf-8"))
 
 
+def _split_start(stdout: bytes, run_id: str) -> tuple[bool, bytes]:
+    marker = _START_PREFIX + run_id.encode("ascii") + b"\n"
+    if stdout.startswith(marker):
+        return True, stdout[len(marker) :]
+    return False, stdout
+
+
+def _is_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def interpret(stdout: bytes, returncode: int, *, run_id: str, host: str, timeout: int) -> Outcome:
-    """sshの標準出力と終了コードから、このコマンドの結果を決める。"""
+    started, stdout = _split_start(stdout, run_id)
     marker = _RESULT_PREFIX + run_id.encode("ascii") + b" "
     index = stdout.rfind(marker)
-    if index < 0:
+    result = None
+    if index >= 0:
+        payload = stdout[index + len(marker) :]
+        line, separator, remainder = payload.partition(b"\n")
+        if separator and not remainder:
+            with contextlib.suppress(TypeError, ValueError):
+                result = RemoteResult(**json.loads(line))
+    output = _decode(stdout if index < 0 else stdout[:index])
+    if (
+        result is None
+        or not isinstance(result.status, str)
+        or (result.status == "completed" and not _is_integer(result.exit_code))
+        or (result.status in {"not_started", "no_result"} and not _is_integer(result.task_result))
+        or (result.status != "completed" and result.status not in _FAILURES)
+    ):
+        if started:
+            return Outcome(
+                _EXIT_FAILURE,
+                output,
+                f"{host}で開始を確認したが、実行結果は不明。再実行する前に接続先の結果を確かめる。",
+            )
         if returncode == _EXIT_SSH_FAILURE:
             return Outcome(
                 _EXIT_SSH_FAILURE,
@@ -194,8 +338,6 @@ def interpret(stdout: bytes, returncode: int, *, run_id: str, host: str, timeout
                 f"sshで{host}へ接続できなかった（終了コード255）。sshの設定と{host}の起動状態を確かめる。",
             )
         return Outcome(_EXIT_FAILURE, _decode(stdout), f"{host}から結果が返らなかった（sshの終了コード{returncode}）。")
-    output = _decode(stdout[:index])
-    result = RemoteResult(**json.loads(stdout[index + len(marker) :].split(b"\n", 1)[0]))
     if result.status == "completed":
         assert result.exit_code is not None
         if 0 <= result.exit_code <= 255:

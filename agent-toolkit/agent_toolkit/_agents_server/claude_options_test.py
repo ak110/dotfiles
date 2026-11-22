@@ -21,7 +21,7 @@ import pytest
 
 from agent_toolkit._agents_server import claude, claude_options, launch_prompts, state
 from agent_toolkit._common import claude_connection as claude_settings
-from agent_toolkit._common import plugin_environment
+from agent_toolkit._common import plugin_environment, startup_features
 from agent_toolkit._testing.agents_server_claude_support import _capture_options, _lightweight_environment
 from agent_toolkit._testing.agents_server_support import FakeClaudeClient, ResultMessage, SystemMessage
 
@@ -34,7 +34,6 @@ def test_build_options_inherits_parent_settings(
     settings_kind: str,
     launch_kind: claude.LaunchKind,
 ) -> None:
-    """全起動区分で親のsettingsのenv以外の項目を保ち、SDKへ付与する全envを親のenvより優先する値としてsettingsにも書く。"""
     captured: dict[str, object] = {}
 
     class Options:
@@ -84,7 +83,7 @@ def test_build_options_inherits_parent_settings(
         assert value["env"]["OTHER"] == "secret-parent-value"
         assert value["disableAllHooks"] is True
     else:
-        assert set(value) == {"env"}
+        assert set(value) == {"env", *startup_features.CLAUDE_SETTINGS}
     claude_settings.cleanup_settings(options)
     if isinstance(merged, claude_settings.SettingsFile):
         assert not pathlib.Path(merged).exists()
@@ -109,7 +108,6 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(monkeypatch: pytes
     """
     captured = _capture_options(monkeypatch)
 
-    # 受理しない値を意図的に渡すテストのため、静的な型判定の対象から外す。
     claude._build_options("/tmp", "model", "medium", launch_kind="delegate")  # pylint: disable=protected-access
 
     assert captured["permission_mode"] == "auto"
@@ -138,18 +136,16 @@ def test_build_options_loads_user_hooks_for_every_launch(
 
 
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """診断ログの保存先を委譲先CLIの引数として渡す。"""
     captured = _capture_options(monkeypatch)
     debug_file = tmp_path / "delegate.log"
 
     claude._build_options("/tmp", "model", "medium", debug_file=debug_file)  # pylint: disable=protected-access
 
-    assert captured["extra_args"] == {"debug-file": str(debug_file)}
+    assert captured["extra_args"] == {"debug-file": str(debug_file), "no-chrome": None}
 
 
 @pytest.mark.parametrize("cli_path", ["/opt/claude/bin/claude", None])
 def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, cli_path: str | None) -> None:
-    """PATHで見つかったCLIだけをSDKへ渡す。"""
     captured = _capture_options(monkeypatch)
     monkeypatch.setattr(claude.shutil, "which", lambda _name, **_kwargs: cli_path)
 
@@ -160,12 +156,11 @@ def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, c
 
 
 def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存先を指定しない起動では診断ログの引数を渡さない。"""
     captured = _capture_options(monkeypatch)
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
 
-    assert "extra_args" not in captured
+    assert captured["extra_args"] == {"no-chrome": None}
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
@@ -252,7 +247,7 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
-        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("完了")]])
+        return FakeClaudeClient([[SystemMessage("cli-session"), ResultMessage("状態: completed\n結果: 完了")]])
 
     async with claude.ClaudeServerManager(client_factory=factory, root_session_id="explicit-owner") as manager:
         await manager.start("開始", str(tmp_path), launch_kind=launch_kind)
@@ -299,16 +294,16 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
 @pytest.mark.usefixtures("agents_server_isolation")
 def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
-    """新規・再接続の両方でコマンド検索とpyfltrへ到達し、診断ログの指定を保つ。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
     assert options.tools == {"type": "preset", "preset": "claude_code"}
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__pyfltr__*"}
     assert options.permission_mode == "auto"
     assert not options.hooks
     assert options.disallowed_tools == ["Skill"]
     assert options.extra_args == {
         "debug-file": str(tmp_path / "debug.log"),
         "permission-prompts": "none",
+        "no-chrome": None,
     }
     assert launch_prompts.python_runtime_instructions() in options.system_prompt
 
@@ -333,9 +328,19 @@ def test_claude_explore_options_reduce_instruction_sources_and_keep_tools(
         f"{launch_prompts.cli_runtime_instructions(claude.plugin_roots.SERVER_PLUGIN_ROOT)}"
     )
     assert options.tools == {"type": "preset", "preset": "claude_code"}
-    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "mcp__pyfltr__*"}
+    assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__pyfltr__*"}
     assert set(options.mcp_servers) == {"pyfltr"}
-    assert options.extra_args == {"permission-prompts": "none"}
+    assert options.extra_args == {"permission-prompts": "none", "no-chrome": None}
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.usefixtures("_owner_session_environment")
+def test_full_explore_keeps_role_and_skips_feature_suppression(tmp_path: pathlib.Path) -> None:
+    options = claude._build_options(str(tmp_path), "model", "high", launch_kind="explore", startup_profile="full")
+    assert options.setting_sources == ["user", "project"]
+    assert {"Read", "Glob", "Grep"}.issubset(options.allowed_tools)
+    assert "no-chrome" not in options.extra_args
+    assert not startup_features.CLAUDE_SETTINGS.keys() & json.loads(options.settings).keys()
 
 
 @pytest.mark.usefixtures("agents_server_isolation")

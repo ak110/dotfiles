@@ -1,5 +1,3 @@
-"""変更を読んでGitコミットを作成する子エージェントを起動する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -163,8 +161,6 @@ def _command(
     resume: bool = False,
 ) -> list[str]:
     if engine == "claude":
-        # 利用上限で中断した会話を同じ会話のまま続けられるよう、会話を保存して識別子を指定する。
-        # 利用枠の種類と解除予定時刻を読み取るため、構造化出力で起動する。
         session = [f"--resume={session_id}"] if resume else [f"--session-id={session_id}"]
         return [
             executable,
@@ -254,7 +250,6 @@ def _agent_output(engine: str, stdout: str | None) -> str:
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk commit`の引数を登録する。"""
     parser.add_argument("--amend", action="store_true", help="HEADのコミットを改訂する。")
     parser.add_argument("--dry-run", action="store_true", help="コミットせず候補メッセージを表示する。")
     parser.add_argument(

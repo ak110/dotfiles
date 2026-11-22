@@ -21,7 +21,7 @@ from agent_toolkit._agents_server.codex_auto_reset import check_auto_reset
 
 
 class _RPC:
-    def __init__(self, used: float = 99, count: int = 1) -> None:
+    def __init__(self, used: float = 100, count: int = 1) -> None:
         self.account: dict[str, Any] = {"account": {"type": "chatgpt", "email": "example@example.invalid"}}
         self.limits: dict[str, Any] = {
             "rateLimits": {
@@ -137,11 +137,16 @@ async def test_idle_or_near_natural_recovery_does_not_spend(tmp_path, monkeypatc
     assert not rpc.consumptions
 
 
-@pytest.mark.parametrize(("used", "count", "expected"), [(98, 1, False), (99, 1, True), (100, 1, True), (100, 0, False)])
+async def _check_permitted(rpc: _RPC, *, state_dir: Path, **kwargs: Any) -> codex_auto_reset.AutoResetResult:
+    permission = _permission(count=10, **{"from": "2000-01-01T00:00:00+00:00", "until": "2100-01-01T00:00:00+00:00"})
+    return await check_auto_reset(rpc, state_dir=state_dir, permissions=[permission], **kwargs)
+
+
+@pytest.mark.parametrize(("used", "count", "expected"), [(89, 1, False), (99, 1, False), (100, 1, True), (100, 0, False)])
 @pytest.mark.asyncio
 async def test_threshold_and_inventory(tmp_path: Path, used: float, count: int, expected: bool) -> None:
     rpc = _RPC(used, count)
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert result.reset_confirmed is expected
     assert len(rpc.consumptions) == int(expected)
     assert result.rate_limits == (rpc.refreshed if expected else rpc.limits)
@@ -154,10 +159,10 @@ async def test_threshold_and_inventory(tmp_path: Path, used: float, count: int, 
 async def test_definitive_non_consumption_closes_attempt(tmp_path: Path, outcome: str) -> None:
     rpc = _RPC()
     rpc.outcomes = [outcome, "reset"]
-    first = await check_auto_reset(rpc, state_dir=tmp_path)
+    first = await _check_permitted(rpc, state_dir=tmp_path)
     assert not first.reset_confirmed
     assert first.outcome == outcome
-    second = await check_auto_reset(rpc, state_dir=tmp_path)
+    second = await _check_permitted(rpc, state_dir=tmp_path)
     assert second.reset_confirmed
     assert rpc.consumptions[0]["idempotencyKey"] != rpc.consumptions[1]["idempotencyKey"]
 
@@ -167,10 +172,10 @@ async def test_unknown_consumption_reuses_persisted_key_even_without_inventory(t
     rpc = _RPC()
     rpc.outcomes = [OSError("response lost"), "alreadyRedeemed"]
     with pytest.raises(OSError, match="response lost"):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     rpc.limits["rateLimitResetCredits"]["availableCount"] = 0
     rpc.limits["rateLimits"]["secondary"]["usedPercent"] = 0
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert result.reset_confirmed
     assert result.outcome == "alreadyRedeemed"
     assert result.rate_limits == rpc.refreshed
@@ -180,8 +185,8 @@ async def test_unknown_consumption_reuses_persisted_key_even_without_inventory(t
 @pytest.mark.asyncio
 async def test_successful_window_is_not_consumed_again_with_stale_limits(tmp_path: Path) -> None:
     rpc = _RPC()
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert len(rpc.consumptions) == 1
     paths = list((tmp_path / "agents-server" / "codex-auto-reset").glob("*.json"))
     assert len(paths) == 1
@@ -189,7 +194,7 @@ async def test_successful_window_is_not_consumed_again_with_stale_limits(tmp_pat
     assert "example" not in paths[0].name
     rpc.limits["rateLimits"]["secondary"]["resetsAt"] += 604800
     rpc.outcomes = ["reset"]
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert rpc.consumptions[0]["idempotencyKey"] != rpc.consumptions[1]["idempotencyKey"]
 
 
@@ -197,11 +202,11 @@ async def test_successful_window_is_not_consumed_again_with_stale_limits(tmp_pat
 async def test_refresh_failure_preserves_success_guard(tmp_path: Path) -> None:
     rpc = _RPC()
     rpc.refresh_error = True
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert result.reset_confirmed and result.rate_limits is None
     assert "refresh lost" in result.diagnostic
     rpc.limits = rpc.refreshed
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert len(rpc.consumptions) == 1
 
 
@@ -210,10 +215,10 @@ async def test_refresh_failure_preserves_success_guard(tmp_path: Path) -> None:
 async def test_two_servers_and_cancellation_release_lock(tmp_path: Path, cancel: bool) -> None:
     first, second = _RPC(), _RPC()
     first.release = asyncio.Event()
-    task = asyncio.create_task(check_auto_reset(first, state_dir=tmp_path))
+    task = asyncio.create_task(_check_permitted(first, state_dir=tmp_path))
     try:
         await asyncio.wait_for(first.entered.wait(), timeout=5)
-        result = await check_auto_reset(second, state_dir=tmp_path)
+        result = await _check_permitted(second, state_dir=tmp_path)
         assert not result.reset_confirmed
         assert not second.calls
         if cancel:
@@ -224,7 +229,7 @@ async def test_two_servers_and_cancellation_release_lock(tmp_path: Path, cancel:
         else:
             first.release.set()
             assert (await task).reset_confirmed
-        resumed = await check_auto_reset(second, state_dir=tmp_path)
+        resumed = await _check_permitted(second, state_dir=tmp_path)
         assert resumed.reset_confirmed
         assert len(second.consumptions) == int(cancel)
         if cancel:
@@ -241,11 +246,11 @@ async def test_timeout_keeps_attempt_for_next_check(tmp_path: Path) -> None:
     rpc = _RPC()
     rpc.release = asyncio.Event()
     with pytest.raises(TimeoutError):
-        await check_auto_reset(rpc, state_dir=tmp_path, rpc_timeout=0.02)
+        await _check_permitted(rpc, state_dir=tmp_path, rpc_timeout=0.02)
     assert rpc.entered.is_set()
     rpc.release.set()
     rpc.outcomes = ["alreadyRedeemed"]
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert rpc.consumptions[0] == rpc.consumptions[1]
 
 
@@ -254,7 +259,7 @@ async def test_timeout_keeps_attempt_for_next_check(tmp_path: Path) -> None:
 async def test_unidentified_accounts_never_consume(tmp_path: Path, account: dict[str, Any] | None) -> None:
     rpc = _RPC()
     rpc.account = {"account": account}
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert not result.reset_confirmed
     assert result.diagnostic
     assert not rpc.consumptions
@@ -278,7 +283,7 @@ async def test_invalid_window_never_consumes(tmp_path: Path, field: str, value: 
     rpc = _RPC()
     rpc.limits["rateLimits"]["secondary"][field] = value
     with pytest.raises(ValidationError):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     assert not rpc.consumptions
 
 
@@ -288,7 +293,7 @@ async def test_invalid_inventory_never_consumes(tmp_path: Path, count: Any) -> N
     rpc = _RPC()
     rpc.limits["rateLimitResetCredits"]["availableCount"] = count
     with pytest.raises(ValidationError):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     assert not rpc.consumptions
 
 
@@ -299,13 +304,12 @@ async def test_multi_bucket_selects_codex_and_passes_available_credit(tmp_path: 
     rpc.limits["rateLimits"]["secondary"]["usedPercent"] = 0
     rpc.limits["rateLimitsByLimitId"] = {"codex": codex}
     rpc.limits["rateLimitResetCredits"]["credits"] = [{"id": "credit-1", "resetType": "codexRateLimits", "status": "available"}]
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert rpc.consumptions[0]["creditId"] == "credit-1"
 
 
 @pytest.mark.asyncio
 async def test_unused_formats_do_not_block_selection_or_refresh(tmp_path: Path) -> None:
-    """未利用bucket・非週次window・対象外creditの形式差では、初回確認と成功後の再取得を止めない。"""
     rpc = _RPC()
     codex = copy.deepcopy(rpc.limits["rateLimits"])
     codex["primary"] = {"usedPercent": "unknown", "windowDurationMins": 300, "resetsAt": None}
@@ -325,7 +329,7 @@ async def test_unused_formats_do_not_block_selection_or_refresh(tmp_path: Path) 
     refreshed = copy.deepcopy(rpc.limits)
     refreshed["rateLimitsByLimitId"]["codex"]["secondary"]["usedPercent"] = 0
     rpc.refreshed = refreshed
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert result.reset_confirmed
     assert result.rate_limits == refreshed
     assert [params.get("creditId") for params in rpc.consumptions] == ["credit-1"]
@@ -335,7 +339,7 @@ async def test_unused_formats_do_not_block_selection_or_refresh(tmp_path: Path) 
 async def test_non_chatgpt_account_details_are_not_validated(tmp_path: Path) -> None:
     rpc = _RPC()
     rpc.account = {"account": {"type": "apiKey", "email": 123}}
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert not result.reset_confirmed and result.diagnostic
     assert not rpc.consumptions
 
@@ -355,7 +359,7 @@ async def test_values_used_for_selection_or_consumption_are_still_validated(tmp_
     else:
         rpc.limits["rateLimits"]["limitId"] = 1
     with pytest.raises(ValidationError):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     assert not rpc.consumptions
 
 
@@ -371,7 +375,7 @@ async def test_ineligible_limits_do_not_consume(tmp_path: Path, change: str) -> 
         rpc.limits["rateLimitsByLimitId"] = {}
     else:
         rpc.limits["rateLimitResetCredits"] = None
-    result = await check_auto_reset(rpc, state_dir=tmp_path)
+    result = await _check_permitted(rpc, state_dir=tmp_path)
     assert not result.reset_confirmed
     assert not rpc.consumptions
 
@@ -381,8 +385,8 @@ async def test_invalid_consume_outcome_preserves_pending_key(tmp_path: Path) -> 
     rpc = _RPC()
     rpc.outcomes = ["unknown", "alreadyRedeemed"]
     with pytest.raises(ValidationError):
-        await check_auto_reset(rpc, state_dir=tmp_path)
-    assert (await check_auto_reset(rpc, state_dir=tmp_path)).reset_confirmed
+        await _check_permitted(rpc, state_dir=tmp_path)
+    assert (await _check_permitted(rpc, state_dir=tmp_path)).reset_confirmed
     assert rpc.consumptions[0] == rpc.consumptions[1]
 
 
@@ -392,10 +396,10 @@ async def test_corrupt_state_is_not_empty_state(tmp_path: Path, corruption: str)
     rpc = _RPC()
     rpc.outcomes = [OSError("response lost")]
     with pytest.raises(OSError):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     path = next((tmp_path / "agents-server" / "codex-auto-reset").glob("*.json"))
     path.write_text(corruption, encoding="utf-8")
     rpc.calls.clear()
     with pytest.raises((json.JSONDecodeError, ValidationError)):
-        await check_auto_reset(rpc, state_dir=tmp_path)
+        await _check_permitted(rpc, state_dir=tmp_path)
     assert not rpc.consumptions

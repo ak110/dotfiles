@@ -1,9 +1,3 @@
-"""保存記録と子孫の再帰収集を、証拠抽出・費用CLI・ローカル画面・SSH先で共有する。
-
-標準ライブラリと、標準ライブラリ・platformdirsだけで動く記録解決処理へ依存する。
-各ホストの独立した履歴ディレクトリで同じ家族を求め、金額と証拠で対象を変えない。
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -23,33 +17,16 @@ _Runtime = Literal["claude", "codex", "agy", "opencode"]
 
 
 class _Record(NamedTuple):
-    """transcriptの1エントリと、その由来行の1始まり行番号・原文。"""
-
     line: int
     text: str
     entry: dict[str, Any]
 
     @property
     def raw_entry(self) -> dict[str, Any]:
-        """行の生の内容を、明示的な本文・構造照会へ返す。"""
         return json.loads(self.text)
 
 
 class _RecordRecovery(NamedTuple):
-    """JSONとして成立しない行の回復の対応。行番号は1始まりで、原本は変更しない。
-
-    `method`ごとの項目の意味は次のとおりである。
-    - `superseded`: `line`を、同じ`ordinal`と`type`を持ち`line`の`payload`以降を接頭辞として含む後続の
-      `superseded_by`行で置き換えた。
-    - `zero-filled-skipped`: NULで始まる断片の`line`を解析対象から除いた。`superseded_by`・`ordinal`・
-      `entry_type`は直後の完全な行の値で、除いた行の内容は確かめられない。除外の根拠は、直前と直後の
-      完全な行の`ordinal`が連続し、記録に欠落が無いことである。
-    - `joined-fragment-superseded`・`joined-fragment-lost`: 途切れた断片と完全な記録が連結された`line`から、
-      断片（`length`バイト）だけを除いて後半の記録を同じ行番号で読んだ。前者は断片を接頭辞に持つ完全な版が
-      同じ記録の`superseded_by`行にあり、`entry_type`はその行の`type`である。後者は完全な版が無く、
-      断片の記録は失われている。どちらも`ordinal`は`None`、後者は`superseded_by`と`entry_type`も`None`。
-    """
-
     line: int
     superseded_by: int | None
     ordinal: int | None
@@ -59,15 +36,11 @@ class _RecordRecovery(NamedTuple):
 
 
 class _RecordLoadFailure(NamedTuple):
-    """記録を読めなかった理由と、JSONが成立しない行の1始まりの行番号。"""
-
     reason: str
     line: int | None = None
 
 
 class _RecordLoad(NamedTuple):
-    """記録の読込結果。`records`が`None`なら`failure`が理由を持つ。"""
-
     records: list[_Record] | None
     recoveries: tuple[_RecordRecovery, ...] = ()
     failure: _RecordLoadFailure | None = None
@@ -75,8 +48,6 @@ class _RecordLoad(NamedTuple):
 
 
 class _CollectedRecord(NamedTuple):
-    """全照会モードが共有する、由来と識別子を持つ1記録。"""
-
     record_id: str
     path: Path
     records: list[_Record]
@@ -88,11 +59,12 @@ class _CollectedRecord(NamedTuple):
     aliases: tuple[str, ...] = ()
     recoveries: tuple[_RecordRecovery, ...] = ()
     gaps: tuple[_RecordLoadFailure, ...] = ()
+    fork_context: tuple[_Record, ...] = ()
+    fork_parent: str | None = None
+    fork_attribution_known: bool = False
 
 
 class _UnresolvedRecord(NamedTuple):
-    """解決できない委譲または委譲先記録を機械可読イベントへ渡す。"""
-
     record_id: str
     line: int
     kind: Literal["unresolved-record", "unresolved-delegation"] = "unresolved-record"
@@ -103,7 +75,6 @@ class _UnresolvedRecord(NamedTuple):
 
 
 def _text_blocks(content: Any) -> list[str]:
-    """Message contentから可視テキストを取得する。"""
     if isinstance(content, str):
         return [content]
     if not isinstance(content, list):
@@ -131,7 +102,6 @@ def _codex_text_blocks(content: Any) -> list[str]:
 
 
 def _json_object(raw: Any) -> dict[str, Any] | None:
-    """JSON文字列がobjectなら返し、破損または別の値なら`None`を返す。"""
     if not isinstance(raw, str):
         return None
     try:
@@ -145,7 +115,6 @@ _AGY_EVENT_TYPES = frozenset({"init", "step_update", "result"})
 
 
 def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
-    """transcriptのエントリ形式から、記録を書いた実行系を判定して返す。"""
     if any(entry.get("type") == "agent_toolkit_input" or isinstance(entry.get("sessionID"), str) for entry in entries):
         return "opencode"
     if any(is_agy_entry(entry) for entry in entries):
@@ -161,9 +130,11 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
 
 
 def _analysis_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """記録原本を保持し、会話以外のmessageの写しを解析から外す。"""
     if entry.get("type") not in {"user", "assistant"} and "message" in entry:
-        return {key: value for key, value in entry.items() if key != "message"}
+        entry = {key: value for key, value in entry.items() if key != "message"}
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and "type" in payload and not isinstance(payload["type"], str):
+        entry = {**entry, "payload": {key: value for key, value in payload.items() if key != "type"}}
     return entry
 
 
@@ -245,7 +216,6 @@ class _RecordReadError(ValueError):
 
 
 def _joined_fragment_recovery(path: Path, number: int, fragment: bytes) -> _RecordRecovery:
-    """連結行から除く断片について、断片を接頭辞に持つ完全な版を同じ記録の全行（前方・後方）から探す。"""
     with path.open("rb") as stream:
         for other, value in enumerate(stream, start=1):
             if other == number or not value.startswith(fragment):
@@ -299,7 +269,6 @@ def _iter_record_lines(raw_path: str | None, recoveries: list[_RecordRecovery]) 
                         skipped, (number, raw) = zero_filled
                         recoveries.extend(skipped)
                     elif raw.startswith(b"\0"):
-                        # 除外の判定で後続の行を消費したため、部分書込みの回復へ進まない。
                         raise _RecordReadError(_RecordLoadFailure(f"{number}行目を読めない: {error}", number)) from error
                     elif _PARTIAL_HEAD.match(raw) is None and (joined := split_joined_line(raw)) is not None:
                         # Codex形式の部分書込みは既存の置換で扱い、それ以外の連結行は断片だけを除いて後半を読む。
@@ -346,7 +315,6 @@ def _load_records_checked(raw_path: str | None, *, allow_partial_records: bool =
 
 
 def _partial_record_load(path: Path) -> _RecordLoad:
-    """既存の回復を試み、回復不能行だけを欠測として保持する。"""
     try:
         with path.open("rb") as stream:
             lines = [(number, raw.removesuffix(b"\n").removesuffix(b"\r")) for number, raw in enumerate(stream, 1)]
@@ -394,7 +362,6 @@ def _partial_record_load(path: Path) -> _RecordLoad:
 
 
 def _mark_record_gaps(records: list[_Record], gaps: list[_RecordLoadFailure]) -> list[_Record]:
-    """欠測直後を示し、文脈と呼出し対応を欠測越しに推定させない。"""
     previous = 0
     marked = []
     for record in records:
@@ -405,8 +372,6 @@ def _mark_record_gaps(records: list[_Record], gaps: list[_RecordLoadFailure]) ->
 
 
 class _RecordMetadata(NamedTuple):
-    """全期間索引に残す識別子・時刻・参照。本文と解析エントリを所有しない。"""
-
     path: Path
     runtime: _Runtime | None = None
     record_id: str = ""
@@ -495,7 +460,7 @@ def _scan_record_metadata(path: Path) -> _RecordMetadata:
                 references.append((result_ids, direct, conditional, record.line))
     except _RecordReadError as error:
         return _RecordMetadata(path, failure=error.failure)
-    # 呼出より前の結果も通常読込と同じく解決する。保留するのは候補IDだけである。
+
     child_references = tuple(
         dict.fromkeys(
             (child, line) for ids, direct, conditional, line in references for child in (conditional if ids & calls else direct)
@@ -526,11 +491,6 @@ def _load_records(raw_path: str | None) -> list[_Record] | None:
 
 
 def _parse_timestamp(value: str) -> datetime.datetime:
-    """記録の`timestamp`などの内部データのISO 8601の時刻を解析し、タイムゾーン無しの値をUTCとして返す。
-
-    ホストは記録の時刻を`Z`付きのUTCで書くため、タイムゾーン無しの値もUTCとみなす。
-    CLI引数で受け取る時刻は`_parse_cli_timestamp`で解析する。
-    """
     parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=datetime.UTC)
 
@@ -548,7 +508,6 @@ def _record_timestamp(record: _Record) -> datetime.datetime | None:
 
 
 def _started_after_boundary(records: list[_Record], boundary: datetime.datetime) -> bool:
-    """記録の最初の時刻が観測境界より後かを返す。"""
     timestamps = [_record_timestamp(record) for record in records]
     known = [timestamp for timestamp in timestamps if timestamp is not None]
     return bool(known) and min(known) > boundary
@@ -557,8 +516,6 @@ def _started_after_boundary(records: list[_Record], boundary: datetime.datetime)
 _THREAD_ID_KEYS = ("session_id", "sessionId", "threadId", "conversationId")
 
 
-# 新しい委譲記録の発見元は子sessionを生成する起動ツールに限る。統合前に保存された記録の旧名も含める。
-# 既存session操作と外側実行セルの入力文字列は、新しい委譲の証拠にならない。
 _AGENTS_SERVER_TOOL_NAMES = frozenset(
     f"{namespace}{name}"
     for namespace in _agents_server_tool_names.MCP_NAMESPACES
@@ -600,7 +557,7 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
                     call_ids.add(call_id)
 
         payload = record.entry.get("payload")
-        if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call", "function_call"}:
+        if not isinstance(payload, dict) or payload.get("type") not in ("custom_tool_call", "function_call"):
             continue
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
@@ -630,7 +587,6 @@ def _codex_mcp_start_item(entry: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _codex_mcp_start_rejected(item: dict[str, Any]) -> bool:
-    """agents_serverがエラー応答で拒否した起動項目かを返す。拒否された起動には委譲先が存在しない。"""
     result = item.get("result")
     return isinstance(result, dict) and result.get("isError") is True
 
@@ -701,7 +657,7 @@ def _thread_ids_from_record(
 def _delegation_output_call_id(record: _Record, agents_server_call_ids: set[str]) -> str | None:
     """agents_server起動に対応するCodexの出力レコードから呼び出しIDを返す。"""
     payload = record.entry.get("payload")
-    if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call_output", "function_call_output"}:
+    if not isinstance(payload, dict) or payload.get("type") not in ("custom_tool_call_output", "function_call_output"):
         return None
     call_id = payload.get("call_id")
     return call_id if isinstance(call_id, str) and call_id in agents_server_call_ids else None
@@ -836,11 +792,6 @@ def _collect_records(
     main_recoveries: tuple[_RecordRecovery, ...] = (),
     record_loader: Callable[[str], _RecordLoad] = _load_records_checked,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
-    """メイン記録から全ての付随記録と委譲先を発見順に再帰収集する。
-
-    `record_loader`はメイン以外の記録の読込を差し替える。推定費用は、費用と家族の収集に使う行だけを
-    保持した記録（`session_cost_slim`）を渡し、記録の全行を読み直さない。
-    """
     main_records = [
         record if (normalized := _analysis_entry(record.entry)) is record.entry else record._replace(entry=normalized)
         for record in main_records
@@ -965,7 +916,6 @@ def _codex_thread_id_from_records(records: list[_Record]) -> str | None:
 
 
 def _physical_record_id(path: Path, records: list[_Record], runtime: _Runtime | None) -> str:
-    """物理記録のmetadataから正規record IDを返す。"""
     if runtime == "codex":
         return f"codex:{_codex_thread_id_from_records(records) or path.stem.removeprefix('rollout-')}"
     if runtime == "claude":

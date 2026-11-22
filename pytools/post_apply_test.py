@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyの基本動作の試験。"""
 
 # pylint: disable=protected-access
 
@@ -27,7 +26,6 @@ def test_main_rejects_nondefault_arguments_before_side_effects(
     capsys: pytest.CaptureFixture[str],
     sync_report_path: Path,
 ) -> None:
-    """確認引数と未知引数は更新処理や永続記録へ到達しない。"""
     called = False
 
     def runner() -> tuple[list[post_apply._StepResult], list[str]]:  # noqa: SLF001
@@ -75,7 +73,6 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
     capsys: pytest.CaptureFixture[str],
     sync_report_path: Path,
 ) -> None:
-    """複製作業ツリーで工程を指定せずに実行しても、全段と永続記録へ到達しない。"""
     root = tmp_path / "linked"
     canonical_root = tmp_path / "main"
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
@@ -104,7 +101,6 @@ def test_linked_worktree_is_rejected_before_any_step_or_record(
 
 
 def test_prune_only_rejects_linked_worktree_before_pruning(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """prune-onlyも通常更新と同じ正規root保護を先に通す。"""
     root = tmp_path / "linked"
     canonical_root = tmp_path / "main"
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
@@ -127,7 +123,6 @@ def test_canonical_root_or_explicit_override_runs_steps(
     tmp_path: Path,
     allow_non_canonical: bool,
 ) -> None:
-    """正規ルートと明示解除では既存の全段実行経路へ進む。"""
     canonical_root = tmp_path / "main"
     root = tmp_path / "linked" if allow_non_canonical else canonical_root
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: root)
@@ -190,7 +185,7 @@ class TestSubstitutedHome:
         for index, name in enumerate(self._HOST_RESOURCE_STEPS, start=1):
             record = next(r for r in caplog.records if r.getMessage().startswith(f"[{index}/3] {name}: "))
             assert "HOMEが実行ユーザーのホームと異なるため" in record.getMessage()
-            # 手動観測の実行者が画面で確認できるよう、画面から外す印を付けない。
+
             assert not post_apply.log_format.is_log_only(record)
 
     def test_actual_home_runs_host_resource_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -206,14 +201,11 @@ class TestSubstitutedHome:
 
 
 class TestPytoolsInstallNotices:
-    """テンプレートから渡されたpytools再導入状態の最終案内。"""
-
     def test_unset_state_does_not_print_notice(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """状態が未設定なら案内を表示しない。"""
         monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_STATE", raising=False)
         monkeypatch.delenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", raising=False)
 
@@ -228,7 +220,6 @@ class TestPytoolsInstallNotices:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """状態が空文字列なら案内を表示しない。"""
         monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "")
         monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "ignored")
 
@@ -272,7 +263,6 @@ class TestPytoolsInstallNotices:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """補足がある場合は状態案内の本文へ含める。"""
         monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_STATE", "failed")
         monkeypatch.setenv("DOTFILES_PYTOOLS_INSTALL_DETAIL", "uv tool install error")
 

@@ -16,7 +16,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, deni
 
 @pytest.fixture(autouse=True)
 def _skip_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
-    """保護の通過後に働く資料取得案内を分離し、Git境界と公開deny出力だけを検証する。"""
     monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
@@ -53,7 +52,6 @@ def test_public_edit_and_commit_protection(
     expected: str | None,
     kind: str,
 ) -> None:
-    """未登録・awi・denyだけを正常denyとし、拒否本文で次の行動を案内する。"""
     repository = git.init_repository(tmp_path / "repo", origin="git@example.test:team/repo.git")
     settings = {} if edit is None else {"example.test/team/repo": {"edit": edit}}
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps(settings))
@@ -68,7 +66,6 @@ def test_public_edit_and_commit_protection(
 
 @pytest.mark.parametrize("origin", [None, "https://example.test/team/repo.git"])
 def test_allowed_worktree_and_exempt_paths(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, origin: str | None) -> None:
-    """worktreeの同一識別とGit外・private-notes・managed-tempの例外を確かめる。"""
     repository = git.init_repository(tmp_path / "repo", origin=origin, commit_message="初期履歴")
     linked = tmp_path / "linked"
     git.run_git(repository, "worktree", "add", "-b", "linked", str(linked))
@@ -146,7 +143,6 @@ def test_commit_with_repository_environment_is_not_assumed_to_use_cwd(
 def test_git_dir_exemption_uses_repository_storage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, edit: str | None
 ) -> None:
-    """例外cwdから外部Git実体を指定しても、その実体の登録を適用する。"""
     allowed = git.init_repository(managed_temp.temp_root_path() / "allowed")
     target = git.init_repository(tmp_path / "target", origin="https://example.test/team/target.git")
     settings = {} if edit is None else {"example.test/team/target": {"edit": edit}}
@@ -190,7 +186,6 @@ def test_repository_environment_does_not_taint_independent_commit(monkeypatch: p
 def test_exempt_worktree_does_not_exempt_external_repository_storage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """例外領域へ置いたlinked worktreeも、更新する外部Git実体の登録でcommitを判定する。"""
     target = git.init_repository(tmp_path / "target", origin="https://example.test/team/target.git", commit_message="初期履歴")
     linked = managed_temp.temp_root_path() / "linked"
     git.run_git(target, "worktree", "add", "-b", "linked", str(linked))
@@ -200,7 +195,6 @@ def test_exempt_worktree_does_not_exempt_external_repository_storage(
 
 @pytest.mark.parametrize("reverse", [False, True])
 def test_patch_move_checks_both_paths(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, reverse: bool) -> None:
-    """移動元と移動先のどちらが禁止repositoryでも変更前に拒否する。"""
     allowed = git.init_repository(tmp_path / "allowed", origin="https://example.test/team/allowed.git")
     denied = git.init_repository(tmp_path / "denied", origin="https://example.test/team/denied.git")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps({"example.test/team/allowed": {"edit": "allow"}}))
@@ -219,7 +213,6 @@ def test_patch_move_checks_both_paths(tmp_path: pathlib.Path, monkeypatch: pytes
 
 
 def test_symlink_and_unrelated_missing_worktree(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """リンク先とリンク元を保護し、別repositoryの失われた処理対象でallowを拒否しない。"""
     allowed = git.init_repository(tmp_path / "allowed", origin="https://example.test/team/allowed.git")
     denied = git.init_repository(tmp_path / "denied", origin="https://example.test/team/denied.git")
     settings = {
@@ -239,7 +232,6 @@ def test_symlink_and_unrelated_missing_worktree(tmp_path: pathlib.Path, monkeypa
 
 
 def test_plain_shell_write_is_not_blocked(tmp_path: pathlib.Path) -> None:
-    """Bashの一般の書込みは要求どおり保護対象へ広げない。"""
     repository = git.init_repository(tmp_path / "unregistered")
     result = _run_hook_in_process(
         "pretooluse",
@@ -260,7 +252,6 @@ def test_session_start_notifies_delegates(
     capsys: pytest.CaptureFixture[str],
     delegated: bool,
 ) -> None:
-    """SessionStartはレーン担当の起動でも扱いと次の行動を通知する。"""
     repository = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REPOSITORIES", json.dumps({"example.test/team/repo": {"edit": "awi"}}))
     if delegated:

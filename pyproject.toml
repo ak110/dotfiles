@@ -27,7 +27,7 @@ dependencies = [
     "platformdirs>=4.0",
     "psutil>=6",
     "pydantic>=2",
-    "pyfltr>=3.30.1",
+    "pyfltr>=3.33.1",
     "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
@@ -97,12 +97,13 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.32.0",
+    "pyfltr[python]>=3.33.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
     "types-PyYAML",
 ]
+pytest-impact = ["testscope==0.4.2"]
 
 [tool.agent-toolkit.pick-wi-check]
 # `atk run-script pick-wi-check`が選定結果の`プロジェクト規範の指定`に求める本リポジトリの条件。
@@ -112,7 +113,6 @@ dev = [
 # 実測から選定量を決める目標。選定後の超過は警告として配分を比較し、着手済みの項目は外さない。
 target-seconds = 10800
 # 目標に収まる量が少なくても、候補がある限りこの件数まで先頭から選ぶ。
-minimum-items = 21
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
@@ -125,11 +125,13 @@ require-paths = true
 # 反映先にエージェント向け文書を含む項目には、計画の採否確定前に方針と障害の記録を読む要求を書く。
 name = "方針と障害記録を読む要求"
 agent-doc = true
-require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
+require-text = ["docs/development/concepts.md", "git log", "--grep"]
 
 [tool.pyfltr]
 preset = "latest"
 python = true
+comment-check = true
+comment-check-fast = true
 command-timeout = 900
 # 全通常pytestはCIの900秒時点で84%だったため、試験集合を保ってpytestだけに余裕を持たせる。
 pytest-timeout = 1500
@@ -169,7 +171,7 @@ markdownlint-subproject-aware = false
 textlint-subproject-aware = false
 lychee-subproject-aware = false
 sync-generated-files-subproject-aware = false
-test-copies-subproject-aware = false
+dotfiles-test-copies-subproject-aware = false
 check-cmd-encoding-subproject-aware = false
 check-templates-subproject-aware = false
 require-ps1-bom-subproject-aware = false
@@ -295,7 +297,7 @@ targets = ["*"]
 fast = true
 pass-filenames = false
 
-[tool.pyfltr.custom-commands.test-copies]
+[tool.pyfltr.custom-commands.dotfiles-test-copies]
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "scripts/check_test_copies.py"]
@@ -345,7 +347,15 @@ fast = true
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "scripts/check_function_hooks_types.py"]
-targets = ["agent-toolkit/hooks/*.ts", "agent-toolkit/hooks/*.tsx", "pyproject.toml", "scripts/check_function_hooks_types.py"]
+targets = ["agent-toolkit/hooks/*.ts", "agent-toolkit/hooks/*.tsx", "scripts/check_function_hooks_types.py"]
+fast = true
+pass-filenames = false
+
+[tool.pyfltr.custom-commands.managed-claude-settings-removals]
+type = "linter"
+path = "uv"
+args = ["run", "--frozen", "python", "scripts/check_managed_claude_settings_removals.py"]
+targets = ["share/claude_settings_json_managed*.json", "pytools/_internal/update_claude_settings.py", "scripts/check_managed_claude_settings_removals.py"]
 fast = true
 pass-filenames = false
 
@@ -481,11 +491,7 @@ baseline = "arid-baseline.json"
 line-length = 128
 
 [tool.ruff.lint]
-select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-ignore = ["D107", "D415"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+select = ["E", "F", "UP", "B", "SIM", "ICN", "I", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.ruff.lint.flake8-import-conventions]
 # 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
@@ -493,8 +499,7 @@ convention = "google"
 extend-aliases = { datetime = "datetime" }
 
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-"**/__init__.py" = ["D104"]
+"**_test.py" = ["S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.pyright]
 # agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。

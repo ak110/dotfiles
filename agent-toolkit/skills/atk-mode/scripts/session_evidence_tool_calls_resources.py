@@ -1,5 +1,3 @@
-"""証拠抽出のツール呼び出し（session_evidence_tool_calls_resources）。"""
-
 from __future__ import annotations
 
 import json
@@ -28,7 +26,6 @@ _LARGE_OUTPUT_MIN_BYTES = 8_192
 
 
 def _string_values(value: Any) -> list[str]:
-    """JSONの値にある本文を取り出し、識別子・数値の置換は行わない。"""
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
@@ -39,7 +36,6 @@ def _string_values(value: Any) -> list[str]:
 
 
 def _input_component(name: str, inputs: dict[str, Any]) -> str:
-    """生成した入力の用途を、公開ツール名と入力フィールドから分類する。"""
     if name in {"Write", "Edit", "MultiEdit", "apply_patch", "write", "edit", "patch"}:
         return "editing"
     if any(key in inputs for key in ("prompt", "message", "instructions")):
@@ -50,11 +46,6 @@ def _input_component(name: str, inputs: dict[str, Any]) -> str:
 
 
 def _partial_repetitions(item: _CollectedRecord) -> list[dict[str, Any]]:
-    """同じ記録へ新たに追加された文の一致位置を示す。APIの履歴再送量は数えない。
-
-    既存の要求単位抽出を使い、短い定型句も意味判断用の候補として残す。
-    圧縮・別担当への必要な配送と不要な再取込の区別は読者が前後関係から判断する。
-    """
     units: dict[str, list[dict[str, Any]]] = {}
     events = _conversation_tool_calls(item.records)
     for record in item.records:
@@ -70,7 +61,6 @@ def _partial_repetitions(item: _CollectedRecord) -> list[dict[str, Any]]:
         except ValueError, TypeError:
             value = text
         for body_number, body in enumerate(_string_values(value), 1):
-            # フェンス内の引用・JSON文字列も比較へ含める。分割自体は共通実装を使う。
             body = re.sub(r"^\s*```[^\n]*$", "", body, flags=re.MULTILINE)
             for unit_number, unit in enumerate(requirement_units.requirement_units(body.splitlines()), 1):
                 row = {
@@ -90,11 +80,6 @@ def _partial_repetitions(item: _CollectedRecord) -> list[dict[str, Any]]:
 
 
 def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """担当ごとの読込・Skill・反復・結果量を、欠陥の判定を加えず集計する。
-
-    shellとJavaScriptの入力は命令文字列のまま残し、ファイルの読了件数へ換算しない。
-    結果上位は各担当から選ぶため、非律速の担当の大量出力にも到達できる。
-    """
     events: list[dict[str, Any]] = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}
@@ -232,7 +217,6 @@ def resource_usage_events(collected: list[_CollectedRecord]) -> list[dict[str, A
 
 
 def _resource_target_groups(events: list[dict[str, Any]], field: str) -> list[dict[str, Any]]:
-    """同じ明示対象を担当横断でまとめ、担当内の回数と観測できた結果量を保持する。"""
     groups: dict[str, dict[str, Any]] = {}
     for event in events:
         for row in event[field]:

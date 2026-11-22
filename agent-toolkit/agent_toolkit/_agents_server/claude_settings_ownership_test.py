@@ -36,7 +36,6 @@ from agent_toolkit._testing.agents_server_support import (
     ],
 )
 def test_settings_from_cmdline(cmdline: bytes, expected: str | None) -> None:
-    """親プロセスの2種類のsettings引数だけから非空値を検出する。"""
     assert claude._settings_from_cmdline(cmdline) == expected  # pylint: disable=protected-access
 
 
@@ -78,7 +77,7 @@ async def test_settings_file_lives_until_backend_disconnect(
             assert paths[0].exists()
             await super().disconnect()
 
-    client = Client([[SystemMessage("settings-lifetime"), ResultMessage("完了")]])
+    client = Client([[SystemMessage("settings-lifetime"), ResultMessage("状態: completed\n結果: 完了")]])
 
     def factory(options: Any) -> Client:
         paths.append(pathlib.Path(options.settings))
@@ -99,7 +98,6 @@ async def test_settings_file_lives_until_backend_disconnect(
 
 
 def test_dependency_check_reclaims_its_settings_file(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """CLIを起動しない依存確認も、生成した合成ファイルを保持しない。"""
     parent = tmp_path / "parent.json"
     parent.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(claude_options, "_parent_settings", lambda: str(parent))

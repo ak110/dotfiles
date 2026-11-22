@@ -3,6 +3,7 @@
 ## 診断とログ
 
 共有serviceの起動診断は`state_dir/services/agents-server/<generation>.stderr.log`と世代ごとのready JSONで確認する。
+Windowsでは、実行時の昇格状態に応じて`agents-server-standard`または`agents-server-elevated`の診断を読む。
 終了診断は下表の既存インスタンス記録を使い、診断supervisorがserviceの終了状態と16KiBの標準エラー末尾を保持する。
 stdio転送のEOFと、会話を制御するserviceの終了は別々の停止原因として扱う。
 世代登録のPID起動世代、既存登録簿の制御所有者、raw資源のoriginを区別して照合する。

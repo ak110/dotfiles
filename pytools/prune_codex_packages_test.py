@@ -48,7 +48,6 @@ def test_cli_retains_selected_and_live_releases(
     capsys: pytest.CaptureFixture[str],
     configured_home: bool,
 ) -> None:
-    """両packageの選択先・更新ループ・補助実行体を保ち、使用終了後は旧版を回収する。"""
     monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
     home = tmp_path / "configured" if configured_home else tmp_path / ".codex"
     if configured_home:
@@ -75,6 +74,7 @@ def test_cli_retains_selected_and_live_releases(
         live.append(busy)
         selected.extend([current, migration, automatic])
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: tuple(processes))
+    monkeypatch.setattr(psutil, "pids", lambda: [])
     assert cli.main(["--dry-run"]) == 0
     assert all(path.is_dir() for path in obsolete)
     assert cli.main([]) == 0
@@ -199,14 +199,12 @@ def test_cli_failure_and_deferral_contracts(
 
 
 def test_absent_packages_succeed(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """未導入の正常な空集合はCLIと後処理の成功として返す。"""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     assert cli.main([]) == 0
     assert not prune_codex_packages.run().failure
 
 
 def test_help_preserves_packages(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """helpは整理を起動せず終了する。"""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     old = _release(tmp_path, "standalone", "0.150.0")
     with pytest.raises(SystemExit) as exception:
@@ -311,7 +309,6 @@ def test_stale_selection_history_skips_only_its_package(monkeypatch: pytest.Monk
     [
         "0.170.0-x86_64-unknown-linux-musl\n../outside\n",
         "../outside\n\n",
-        # releases直下にある、releasesの外へのリンク。
         "0.170.0-x86_64-unknown-linux-musl\nlinked\n",
     ],
 )

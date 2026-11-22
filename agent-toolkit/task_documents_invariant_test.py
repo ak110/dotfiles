@@ -1,5 +1,3 @@
-"""配布する役割定義の設定と返却形式の静的整合性を確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -17,7 +15,6 @@ _ROLES_DIR = _PLUGIN_ROOT / "skills" / "atk-mode" / "roles"
 
 @pytest.mark.parametrize("path", task_documents.role_documents(_PLUGIN_ROOT), ids=lambda path: path.name)
 def test_distributed_frontmatter_is_valid(path: Path) -> None:
-    """新しい定義もファイル追加だけで静的整合性の試験へ含める。"""
     result = validate_frontmatter(path, path.read_text(encoding="utf-8"))
     assert isinstance(result, task_documents.TaskDocumentDeclaration), result
     assert result == task_documents.read_declaration(path)
@@ -36,17 +33,19 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
         prompt=task_documents.task_prompt_header(path),
         launch_kind=declaration.launch_kind,
     )
-    example = body.replace("<共通契約の区分>", "owner_input")
-    example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+    examples = re.findall(r"(?ms)^```text\n(.*?)^```[ \t]*$", body)
     if path.name == "reader-fit-review.subagent.md":
         session.prompt += f"\n入力:\n成果物: {path}"
-        example = body.split("```text\n", 1)[1].split("```", 1)[0]
-        example = example.replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")
-    assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}) is None
+        examples = [examples[0].replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")]
+    reasons = []
+    for example in examples:
+        example = example.replace("<共通契約の区分>", "owner_input")
+        example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+        reasons.append(result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}))
+    assert None in reasons, reasons
 
 
 def test_shared_classification_table_matches_runtime() -> None:
-    """人が読む閉集合の各値を公開前検査が受理し、別の値を拒否する。"""
     rules = launch_prompts.result_contract()
     values = re.findall(r"^\| `([a-z_]+)` \|", rules, flags=re.MULTILINE)
     assert values and len(values) == len(set(values))
@@ -62,12 +61,6 @@ def test_shared_classification_table_matches_runtime() -> None:
 
 
 def test_role_documents_have_no_bare_return_line_examples() -> None:
-    """役割文書（`roles/*.md`）の返却形式の書式例が、フェンス外の裸のラベル行として置かれていないことを確かめる。
-
-    条件付き出力の書式例をフェンスの外へ置くと、常時出力する行と誤読される。
-    母集団は`roles/`直下の`*.md`全体とし、フェンスの内外を判別したうえで走査する。
-    文書の方針を示す`方針:`の行は返却形式ではないため除く。
-    """
     bare_label_line = re.compile(r"^[^\s#\-*>|`][^\n:`]*: \S.*$")
     offending: list[str] = []
     for path in sorted(_ROLES_DIR.glob("*.md")):
@@ -86,7 +79,7 @@ def test_role_documents_have_no_bare_return_line_examples() -> None:
                 continue
             if in_fence:
                 continue
-            # HTMLコメントは機械宣言であり、返却形式の裸のラベル行には含めない。
+
             if line.lstrip().startswith("<!--") and line.rstrip().endswith("-->"):
                 continue
             if bare_label_line.match(line) and not line.startswith("方針: "):
@@ -96,15 +89,12 @@ def test_role_documents_have_no_bare_return_line_examples() -> None:
 
 @pytest.mark.parametrize("grouped", [False, True])
 def test_repository_process_public_request_accepts_single_and_group(tmp_path: Path, grouped: bool) -> None:
-    """同じ役割の公開入力生成が、重い単一対象と軽い対象群を欠落なく引き渡す。"""
     target = {
         "target_repo": "example.test/team/one",
         "worktree": str(tmp_path / "one"),
         "candidate_file": str(tmp_path / "candidate.jsonl"),
         "readiness": "ready",
         "lane_limit": "1",
-        "ownership_record": str(tmp_path / "ownership.json"),
-        "ownership_token": "test-token",
         "lane_session_id": "test-lane-session",
     }
     params = {"引き継ぎ記録先": str(tmp_path / "handoff.md")}
@@ -125,4 +115,4 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
         assert "target_repo: example.test/team/one" not in prompt
     else:
         assert "target_repo: example.test/team/one" in prompt
-        assert "candidate_file:" in prompt and "ownership_token: test-token" in prompt
+        assert "candidate_file:" in prompt and "lane_session_id: test-lane-session" in prompt

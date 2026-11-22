@@ -1,5 +1,3 @@
-"""計画本文のスキル・エージェント参照と対象リポジトリの検査。"""
-
 from __future__ import annotations
 
 import difflib
@@ -34,11 +32,11 @@ _DIRECT_INVOCATION_RE = re.compile(r"^を(?:起動|呼び出)")
 _AGENT_CALL_RE = re.compile(r"(?:Agentツールで|subagent_type:\s*)`?([A-Za-z0-9:_-]+)`?")
 
 
-_GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan"})
+# Claude Codeの組み込みのagent定義。ローカルの定義ファイルを持たないため実在の検査から外す。
+_GENERIC_AGENT_TYPES = frozenset({"claude", "Explore", "Plan", "general-purpose", "web-fetch"})
 
 
 def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
-    """作業ディレクトリが属するGitルートの正規化済みパスを返す。"""
     result = _git_command.run(
         ["-C", str(work_dir), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
     )
@@ -48,7 +46,6 @@ def _git_root(work_dir: pathlib.Path) -> tuple[pathlib.Path | None, str | None]:
 
 
 def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> list[str]:
-    """宣言された対象リポジトリと作業ディレクトリのGitルートが一致するか確かめる。"""
     if declared_value is None:
         return []
     declared_text = declared_value[1:-1] if declared_value.startswith("`") and declared_value.endswith("`") else declared_value
@@ -68,7 +65,6 @@ def _check_target_repo(declared_value: str | None, work_dir: pathlib.Path) -> li
 
 
 def _check_references(text: str, work_dir: pathlib.Path) -> list[str]:
-    """コードフェンスを除く本文のスキル・専用agent参照が実在するか確かめる。"""
     inline_text = structure.markdown_body_text(text)
     errors: list[str] = []
     agent_calls = set(_AGENT_CALL_RE.findall(inline_text)) - _GENERIC_AGENT_TYPES
@@ -117,14 +113,12 @@ def _known_agent_names(work_dir: pathlib.Path) -> list[str]:
 
 
 def _missing_reference_message(kind: str, reference: str, known: list[str]) -> str:
-    """実在しない参照の違反文へ、近い名前の候補と直し方を加える。"""
     candidates = difflib.get_close_matches(reference, known, n=3, cutoff=0.6)
     hint = f"候補: {', '.join(candidates)}。" if candidates else ""
     return f"実在しない{kind}参照: {reference}。{hint}実在する{kind}名へ直すか、起動の形の参照をやめる"
 
 
 def _classify_skill_references(text: str) -> set[str]:
-    """起動または呼び出しを指示するスキル参照だけを返す。"""
     references: set[str] = set()
     for match in _INLINE_CODE_RE.finditer(text):
         reference = match.group(1)

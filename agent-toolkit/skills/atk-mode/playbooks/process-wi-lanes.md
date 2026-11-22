@@ -9,12 +9,12 @@
 ## レーンと資源
 
 1. 目標から始める判断は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「明示された目標からの実行」に従う。
-2. 選定結果の`段階`を昇順に処理し、同じ段階の独立したレーンを並行して起動する。
-   段階が1つだけなら全てのレーンを同時に作って起動する。
-   `先行レーン`を持つ後段は、列挙されたすべての先行レーンの統合完了後に、統合先の最新HEADからworktreeを作成する。
+2. 選定結果の`着手前に必要なレーン`が全て統合済みのレーンを、統合先の最新HEADからworktreeを作成し、段階をまたいで並行に起動する。
+   この欄が無いレーンも起動する。
    先行工程を正当な理由で次の巡回へ回す場合は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」の手順10で後続の先行条件を再判定する。
-   書込競合だけで後段にした工程など、先行成果を要さないと判定した工程は同じ手順で今回始める。
-   先行成果が必要な後段は統合完了まで待ち、成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする。
+   先行成果が必要な後段は統合完了まで待つ。
+   成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする。
+   `先行レーン`は統合許可の順序に使い、着手を止めない。
 3. レーンの専用worktree・branch・所有登録の作成・再利用・回収と、`レーン開始時刻`の記録は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`に従う。
 4. 同じレーンのAWIは選定結果の依存順を守り、依存先から処理する。
    計画が要るレーンは原則1つの計画にまとめ、単一の計画では行数の警告を避けられない初回の起草に限り`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」の手順4で分ける。
@@ -56,7 +56,8 @@
 3. 選定結果の担当モデル、起動側が解決したモデルの候補、終了後の実行ログから観測した実行のidentityを別々の値として比べ、不一致は値と出所を分け、観測できなければ未観測として後続へ渡す。
 4. レーン担当から確認事項や事後承認の対象を受けたら、その時点で根拠と既存の認可を確かめる。
    発行の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」と`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で決める。
-   - 確認の要らない技術判断は報告事項とし、事前承認が要る確認事項は受け取り次第すぐに発行する。
+   - `足りないユーザー固有の値:`と`対案を選ぶ理由:`を確かめ、欄が欠けるか技術と品質・費用・時間だけで判断できる事項は中継せず、担当へ返すか自分で決める。
+     既存の要求から決まらず、ユーザーの選好・費用・範囲・公開契約に依る事前承認だけを受け取り次第発行する。
    - 事後承認型のUWIは、実行レビュー（並行する画面レビューを含む）の収束後かつ統合の前に、最終的な実装と一致する本文で発行する。
      実行レビューしないレーン（`実装なし`と`マージなし`）では、終了の返却を受けた時点で発行する。
    - `atk wi add`の成功と作成したファイル名を記録し、回答を待たずに後続を続ける。
@@ -85,8 +86,8 @@
    - 外部環境の状態変化や上流の変更を待つ未実装の項目: `agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「延期adoptと反映後の観測」の境界に従ってUWIか依存・冷却を設定し、`inbox`へ戻す
    - 実装と統合を終え、反映後の完成条件の観測だけが残る項目: 延期`adopt`とし、観測のみの再開で確かめた結果で次のように扱う（再開記録の追記、状態の変更、計画への記録は同節に従う）。
      - 直接観測で完成条件を満たしたと確かめた場合: `adopt`
-     - 直接観測で完成条件を満たせなかったと確かめた場合: この実行では`adopt`せず、既存の実装commitの上へ実装し直すことも避けて、終了区分を`終了しない`とする。
-       `再開区分: 再実装へ戻す`の再開記録を追記し、再処理の抑制期限を付けずに`inbox`へ戻して、次回の実行で通常の項目として計画の起草から始める。
+     - 直接観測で完成条件を満たせなかったと確かめた場合: `adopt`せず、観測結果を使って同じ巡回で計画から再開し、既存の実装の未達部分を直す。
+       担当側で満たせない外部の前提で再開できない場合だけ、試した代替手段と結果を記録し、`再開区分: 再実装へ戻す`を追記して終了区分を`終了しない`とする。
      - 観測自体ができなかった場合: 採否を確定せず、レーン担当が返した観測結果（理由、足りない前提、前提を妨げる状態の生成元・起動元・起動の契機、未確定の範囲）から、残る完成条件ごとに前提を整えられる主体を判定する。
        エージェント自身や常駐のプロセスが作った状態は、OSの実行ユーザーが同じでも人間が起動した状態と区別し、生成元が未確定の状態や人間が通常操作する入力・環境であることだけを根拠にユーザーの操作が要ると判定しない。
        自己操作の手段が成り立つかは同節の自己観測の判定で確かめる。
@@ -102,6 +103,7 @@
 ## 統合とAWI終了
 
 1. 統合前の確認は`agent-toolkit:atk-mode/references/review-record-acceptance.md`「統合時の完成条件判定」に従う。
+   レーン担当が完遂できる未達は、`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「終了と報告内容の確認」に従って同じ担当へ戻す。
    レーン担当へ任せる統合の指示と、メイン自身がCLIを実行する場合の検収は`agent-toolkit:atk-mode/roles/exec.parent.md`と`agent-toolkit:atk-mode/playbooks/lane-receipt.md`に従う。
    内部の群の焦点の検証は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」に従う。
    内部の群の独立文脈レビューは`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`に従う。
@@ -110,7 +112,8 @@
    受理済みの同じ本文・環境・契約の結果は再利用し、全群の取り込み後に群間の契約、共有の生成物、組合せの差分と未達条件を検収してから統合入力を確定する。
 2. Git統合、全計画の保存、WIの採否の確定、選定の統合状態の更新は、同じ所有登録から`atk lane integrate`が一括で行う。
    引数とmanifestの作り方は`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」に従い、メイン自身が呼ぶ場合も独立文脈のレビューと完成条件の判定を通った同じ入力を使う。
-   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、メインは先行レーンの`統合完了`を待たずに次のレーンへ統合を許可できる（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
+   同じ統合先へのレーンの間で直列になるのは統合先HEADの一致の確認とfast-forwardの短い更新だけであり、先行レーンに列挙したレーンの`統合完了`を待ってから統合を許可する。
+   先行レーンにないレーンの最終化の完了を待つ必要はない（`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」）。
 3. 終了コード0、`phase: finalized`、統合結果のOID、計画ファイルの保存、終了対象のAWIの採否の確定を確かめる。
    `git-integrated`は最終化の途中の状態であり、統合完了とはみなさない。
    `終了しない`項目と延期の対象は採否を確定しない。
@@ -119,7 +122,6 @@
    合意済みの担当は`--writer-session`で指定する（`agent-toolkit:atk-mode/references/lane-integration-format.md`「公開統合操作」）。
    完了済みのレーンと所属WIの記録は、追加の作業に備えて保つ。
 5. 資源は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で`atk lane delete`で回収し、ターンごとの`SessionEnd`では回収しない。
-   通常の終了時の`atk agents-exit-session`と、`process-loop`が子セッションの終了後に行う処理も同じ回収操作を呼ぶ。
    未統合、dirty、稼働中、状態不明、途中で失敗した対象は、理由と残る操作を回収対象の外へ保存し、再実行では残りから再開する。
    セッションのmanaged-tempと証拠のファイルは専用worktreeの中に置かない（回収の対象から外すため）。
    統合済みの判定を確かめてからbranchを`-D`で削除するのは、通常の`-d`がupstreamを基準に判定し、push前のローカル統合を未統合として削除を拒否するためである。
@@ -160,7 +162,7 @@
    - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
      行の書き方は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
-   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
+   - 影響する利用側を検証し、解消差分の再レビューは`agent-toolkit:atk-mode/references/exec-review-head-update.md`で要否を確かめる。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。
 
@@ -169,7 +171,8 @@
 1. 同じレーン担当のthreadへ競合の解消を指示する（別の修正担当を起こさずに同じ担当で解く）。
    同じthreadを続けられない場合は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従い、新しいレーン担当へ`再開位置`として`~/.claude/plans`配下の計画ファイルの絶対パスを渡す。
 2. レーン担当は本節の手順1〜3を同じthreadで終える。
-3. 新しいHEADの受理済みレビューとmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる（既存の実装OIDの書換えや旧新の対応表は求めない）。
+3. 新しいHEADで受理した証拠とmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる。
+   既存の実装OIDの書換えや旧新の対応表は求めない。
 
 ## 統合後の変更範囲の検証の失敗
 

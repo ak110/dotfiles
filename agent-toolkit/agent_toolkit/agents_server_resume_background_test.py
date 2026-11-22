@@ -70,11 +70,11 @@ async def test_wait_returns_last_result_after_chained_auto_resumes(
         assert wait_task.done() is False
         assert session.awaiting_auto_resume is True
 
-        client.emit(ResultMessage("最終結果", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: 最終結果", origin={"kind": "task-notification"}))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "最終結果"
+        assert result["agent_message"] == "状態: completed\n結果: 最終結果"
 
 
 @pytest.mark.asyncio
@@ -82,14 +82,13 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクが残る初回結果を返さず、自動再開turnの結果を返す。"""
     monkeypatch.setattr(state, "RESULT_RETENTION_SECONDS", 0.05)
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("初回結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
 
         assert wait_task.done() is False
@@ -98,11 +97,11 @@ async def test_wait_skips_initial_result_and_returns_auto_resumed_result(
 
         client.emit(TaskUpdatedMessage("task-1", "completed"))
         client.emit(TaskNotificationMessage("task-1", "completed"))
-        client.emit(ResultMessage("再開結果", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: 再開結果", origin={"kind": "task-notification"}))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "再開結果"
+        assert result["agent_message"] == "状態: completed\n結果: 再開結果"
         assert not session.live_tasks
         await _await_state(lambda: session.session_id not in manager.sessions)
         assert await _wait_with_timeout(manager, 0) == {"status": "expired"}
@@ -117,7 +116,6 @@ async def test_claude_collects_background_wait_before_holding_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """背景waitの終了・読取・turn終了の順序で回収を反映し、残る対象だけを待って結果を公開する。"""
     client = ControlledClaudeClient("claude-collected-wait")
     async with _manager(client, monkeypatch) as (manager, _backend):
         output = tmp_path / "background-output.txt"
@@ -150,7 +148,7 @@ async def test_claude_collects_background_wait_before_holding_result(
         else:
             output.write_text(terminal, encoding="utf-8")
         client.emit(TaskUpdatedMessage("wait-job", "completed"))
-        client.emit(ResultMessage("待機中: remaining-child" if remaining == "child" else "実装完了"))
+        client.emit(ResultMessage("待機中: remaining-child" if remaining == "child" else "状態: completed\n結果: 実装完了"))
         await _await_state(lambda: session.turn_completed or session.awaiting_auto_resume)
 
         assert child not in session.live_child_session_ids
@@ -158,17 +156,19 @@ async def test_claude_collects_background_wait_before_holding_result(
         if remaining == "task":
             assert "remaining-task" in session.live_tasks
             client.emit(TaskNotificationMessage("remaining-task", "completed"))
-            client.emit(ResultMessage("残作業後の結果", origin={"kind": "task-notification"}))
+            client.emit(ResultMessage("状態: completed\n結果: 残作業後の結果", origin={"kind": "task-notification"}))
         elif remaining == "child":
             session_registry.publish("remaining-child", state=session_registry.PublicationState.RESULT_COMPLETED)
         wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
         if remaining == "child":
             await _await_state(lambda: len(client.queries) == 2)
             assert child not in client.queries[-1]
-            client.emit(ResultMessage("残作業後の結果"))
+            client.emit(ResultMessage("状態: completed\n結果: 残作業後の結果"))
         result = await wait_task
         assert result["status"] == "completed"
-        assert result["agent_message"] == ("実装完了" if remaining is None else "残作業後の結果")
+        assert result["agent_message"] == (
+            "状態: completed\n結果: 実装完了" if remaining is None else "状態: completed\n結果: 残作業後の結果"
+        )
         assert "error" not in result
         if remaining is None:
             assert len(client.queries) == 1
@@ -179,14 +179,13 @@ async def test_result_without_background_task_is_immediately_available(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクが無いturnは従来どおり最初の結果で終了する。"""
     client = ControlledClaudeClient()
     async with _manager(client, monkeypatch) as (manager, _backend):
         await _start(manager, tmp_path, monkeypatch)
-        client.emit(ResultMessage("通常結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 通常結果"))
         result = await _wait_with_timeout(manager, 1)
 
-        assert result["agent_message"] == "通常結果"
+        assert result["agent_message"] == "状態: completed\n結果: 通常結果"
 
 
 @pytest.mark.asyncio
@@ -210,10 +209,10 @@ async def test_pending_result_waits_for_background_task_up_to_bash_limit(
         assert deadline - asyncio.get_running_loop().time() >= resume_waits.CLAUDE_BACKGROUND_BASH_MAX_SECONDS
 
         client.emit(TaskNotificationMessage("long-ci-wait", "completed"))
-        client.emit(ResultMessage("CIの結果を確認した", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: CIの結果を確認した", origin={"kind": "task-notification"}))
         result = await wait_task
 
-        assert result["agent_message"] == "CIの結果を確認した"
+        assert result["agent_message"] == "状態: completed\n結果: CIの結果を確認した"
         assert "error" not in result
 
 
@@ -227,7 +226,7 @@ async def test_background_agent_survives_bash_notification_deadline(
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         client.emit(TaskStartedMessage("agent", task_type=task_type))
-        client.finish_turn(ResultMessage("背景エージェントを待機中"))
+        client.finish_turn(ResultMessage("待機中: agent"))
         await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
         session.set_background_deadline(0.0)
         # メッセージ受信を進め、backendとmanager双方の期限判定を通す。
@@ -236,9 +235,11 @@ async def test_background_agent_survives_bash_notification_deadline(
         assert session.awaiting_auto_resume
         client.emit(TaskNotificationMessage("agent", "completed"))
         client.emit(_session_state("running"))
-        client.finish_turn(ResultMessage("背景エージェントの成果を反映した", origin={"kind": "task-notification"}))
+        client.finish_turn(
+            ResultMessage("状態: completed\n結果: 背景エージェントの成果を反映した", origin={"kind": "task-notification"})
+        )
         result = await _wait_with_timeout(manager, 1)
-        assert result["agent_message"] == "背景エージェントの成果を反映した"
+        assert result["agent_message"] == "状態: completed\n結果: 背景エージェントの成果を反映した"
         assert "error" not in result
 
 
@@ -259,14 +260,14 @@ async def test_pending_result_is_finalized_without_auto_resume(
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("保留結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 保留結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
         if completion == "stream_end":
             client.end_stream()
 
         result = await _wait_with_timeout(manager, 1)
 
-        assert result["agent_message"] == "保留結果"
+        assert result["agent_message"] == "状態: completed\n結果: 保留結果"
         assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert session.awaiting_auto_resume is False
         assert session.pending_result is None
@@ -279,21 +280,17 @@ async def test_kill_interrupts_while_initial_result_is_pending(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中の中断要求はSDKへ配送し、CLI回収後に保留本文付きの停止結果を返して同じ会話の継続を受け付ける。
-
-    SDKはturnの外で受けた中断要求へ何も返さないため、保留結果を確定しないと`kill`はtimeoutまで待つ。
-    """
     client = ControlledClaudeClient("claude-kill")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("初回結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
 
         result = await manager.kill(session.session_id, timeout=1)
 
         assert result["status"] == "interrupted"
-        assert result["agent_message"] == "初回結果"
+        assert result["agent_message"] == "状態: completed\n結果: 初回結果"
         assert result["error"] == {"unfinishedBackgroundTasks": ["task-1"], "heldResultFinalized": True}
         assert result["kill_requested"] is True
         assert client.interrupts == 1
@@ -329,11 +326,11 @@ async def test_replaced_cli_process_forgets_background_tasks_of_stopped_process(
         # 利用上限の解除後の継続と同じく、同じ会話の状態を保ったまま所有タスクとCLIプロセスを入れ替える。
         await backend._resume_next_turn(session, "続行")
         assert stopped.disconnected
-        replacement.emit(ResultMessage("最終結果"))
+        replacement.emit(ResultMessage("状態: completed\n結果: 最終結果"))
         result = await _wait_with_timeout(manager, 1)
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "最終結果"
+        assert result["agent_message"] == "状態: completed\n結果: 最終結果"
         assert "error" not in result
 
 
@@ -342,7 +339,6 @@ async def test_show_reports_held_result_and_live_background_tasks(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """結果を保留している間だけ、`show`が保留と追跡中のバックグラウンドタスクを返す。"""
     client = ControlledClaudeClient("claude-show")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -353,7 +349,7 @@ async def test_show_reports_held_result_and_live_background_tasks(
         assert "result_held" not in running
         assert "live_background_tasks" not in running
 
-        client.emit(ResultMessage("初回結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
         held = await manager.show_session(session.session_id)
 
@@ -379,27 +375,26 @@ async def test_new_reply_can_auto_resume_after_prior_auto_resume(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """通常または自動再開済みsessionへのreplyは再度自動再開できる。"""
     client = ControlledClaudeClient("claude-repeat")
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
         if initial_auto_resume:
             client.emit(TaskStartedMessage("task-1"))
-            client.emit(ResultMessage("初回結果"))
+            client.emit(ResultMessage("状態: completed\n結果: 初回結果"))
             client.emit(TaskNotificationMessage("task-1", "completed"))
-            client.emit(ResultMessage("再開結果", origin={"kind": "task-notification"}))
+            client.emit(ResultMessage("状態: completed\n結果: 再開結果", origin={"kind": "task-notification"}))
         else:
-            client.emit(ResultMessage("通常結果"))
+            client.emit(ResultMessage("状態: completed\n結果: 通常結果"))
         await _wait_with_timeout(manager, 1)
 
         response = await manager.send_message(session.session_id, "次の作業", timeout=1)
         assert response["delivery"] == "reply_started"
 
         client.emit(TaskStartedMessage("task-2"))
-        client.emit(ResultMessage("次の初回結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 次の初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskNotificationMessage("task-2", "completed"))
-        client.emit(ResultMessage("次の再開結果", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: 次の再開結果", origin={"kind": "task-notification"}))
         result = await _wait_with_timeout(manager, 1)
 
-        assert result["agent_message"] == "次の再開結果"
+        assert result["agent_message"] == "状態: completed\n結果: 次の再開結果"

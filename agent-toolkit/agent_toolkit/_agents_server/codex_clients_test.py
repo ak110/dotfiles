@@ -90,7 +90,6 @@ async def test_close_attempts_other_connections_after_one_connection_fails(
 async def test_close_starts_all_clients_before_waiting(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, blocked: str
 ) -> None:
-    """background taskと1つの接続が停止していても、他の所有接続の停止を先に開始する。"""
     release = asyncio.Event()
     clients = [FakeCodexClient(), FakeCodexClient()]
     started = [asyncio.Event(), asyncio.Event()]
@@ -132,7 +131,6 @@ async def test_close_starts_all_clients_before_waiting(
 
 @pytest.mark.asyncio
 async def test_start_aborts_when_thread_start_never_returns(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """thread/startの応答が返らない起動を上限で打ち切り、session状態を登録せず、起動したApp Serverを終了させて例外で返す。"""
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     async with subject.AppServerManager() as manager:
         client = _SilentClient()

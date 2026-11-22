@@ -1,5 +1,3 @@
-"""通常mergeによる公開統合を検証する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -22,7 +20,6 @@ from agent_toolkit._testing.lane_support import _create, _invoke
     ),
 )
 def test_merge_preserves_lane_and_target_oids(tmp_path, monkeypatch, capsys):
-    """分岐を接続して元OIDを保ち、同じ公開入力で再開できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])

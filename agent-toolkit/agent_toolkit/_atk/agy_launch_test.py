@@ -14,11 +14,9 @@ import pytest
 from agent_toolkit._atk import orchestrator, run_skill
 from agent_toolkit._atk.wi import add as wi_add
 from agent_toolkit._atk.wi import process_loop_env, process_loop_log, process_loop_session
-from agent_toolkit._common import skill_modes
 
 
 def test_agy_probe_works_without_tier_settings(tmp_path: pathlib.Path) -> None:
-    """工程別のagy候補は、agyの段位設定を作らずに可用性を判定できる。"""
     binary = tmp_path / "agy"
     captured = tmp_path / "probe.json"
     binary.write_text(
@@ -44,7 +42,6 @@ def test_agy_probe_works_without_tier_settings(tmp_path: pathlib.Path) -> None:
 def test_process_loop_agy_interactive_and_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: str | None
 ) -> None:
-    """process-loopは新規目的文、直近継続、ID付き再開をagyの対話CLIへ渡す。"""
     calls: list[list[str]] = []
 
     def execute(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -58,10 +55,9 @@ def test_process_loop_agy_interactive_and_resume(
         return execute(argv, env=env, cwd=cwd)
 
     monkeypatch.setattr(process_loop_session, "_run_cli_session", launch)
-    monkeypatch.setattr(process_loop_session, "cleanup_lane_session", lambda *_args, **_kwargs: {})
     monkeypatch.setattr(process_loop_env, "reset_console", lambda: None)
     monkeypatch.setattr(process_loop_log, "append", lambda *_args, **_kwargs: None)
-    args = argparse.Namespace(resume=resume, no_update=True)
+    args = argparse.Namespace(resume=resume)
     if resume == "":
         with pytest.raises(ValueError, match="picker"):
             process_loop_session.run_process_session(
@@ -93,16 +89,13 @@ def test_process_loop_agy_interactive_and_resume(
     delivered = argv[argv.index("-i") + 1]
     assert delivered == (
         '<atk-auto source="process-loop" kind="goal">\n'
-        f"このセッションが統括として担当する{skill_modes.PROCESS_WI} all-reposの工程を完遂する"
-        "（正当な先送りを結果へ記録した終了を含み、終了後に常駐が行う検収は含まない）。"
-        "スキル`agent-toolkit:atk-mode`を作業`process-wi all-repos`で起動して始める。\n</atk-auto>"
+        "スキル`agent-toolkit:atk-mode`を作業`process-loop`で起動して始める。\n</atk-auto>"
     )
     if resume:
         assert argv[argv.index("--conversation") + 1] == resume
 
 
 def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """定期起動はagy -pで目的文を送り、成功時は報告保存の既存検収まで通す。"""
     binary = tmp_path / "agy"
     captured = tmp_path / "session.json"
     binary.write_text(

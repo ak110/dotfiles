@@ -1,5 +1,3 @@
-"""次の操作の共通出力手段のテスト。"""
-
 import io
 
 import pytest

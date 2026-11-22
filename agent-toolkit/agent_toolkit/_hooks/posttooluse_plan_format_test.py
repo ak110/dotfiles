@@ -23,7 +23,6 @@ def _run(
     home_dir: pathlib.Path | None = None,
     plan_mode_skill_invoked: bool = False,
 ) -> subprocess.CompletedProcess[str]:
-    """PostToolUseフックを隔離環境で実行する。"""
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if state_dir is not None:
@@ -41,7 +40,6 @@ def _run(
 
 
 def _prepare_plan_home(home_dir: pathlib.Path) -> pathlib.Path:
-    """計画ディレクトリを作成する。"""
     plans = home_dir / ".claude" / "plans"
     plans.mkdir(parents=True, exist_ok=True)
     return plans
@@ -80,20 +78,15 @@ def _run_codex_patch(
 
 
 def _plan_content() -> str:
-    """人間向け計画ファイル（メイン）の正規形の計画を返す。"""
     return _plan_fixture.human_main()
 
 
 def _detail_content() -> str:
-    """人間向け計画ファイル（詳細）の正規形を返す。"""
     return _plan_fixture.human_detail()
 
 
 class TestPlanPostWrite:
-    """計画ファイルへの書き込み後処理を検証する。"""
-
     def test_write_emits_check_notice_and_records_current_path(self, tmp_path: pathlib.Path) -> None:
-        """Write後に計画の構造を確かめるコマンドを案内し、現在の計画パスを記録する。"""
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "sample.md"
@@ -117,7 +110,6 @@ class TestPlanPostWrite:
         assert _read_state(state_dir, "plan-write")["current_plan_file_path"] == str(plan)
 
     def test_implementation_material_h3_is_not_constrained(self, tmp_path: pathlib.Path) -> None:
-        """実装資料配下のH3を変えてもPostToolUseは形式警告を返さない。"""
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plan = _prepare_plan_home(home) / "flexible.md"
@@ -143,7 +135,6 @@ class TestPlanPostWrite:
         assert "書き込み後に計画の構造を確かめ" in result.stdout
 
     def test_read_textlint_reference_does_not_record_plan_state(self, tmp_path: pathlib.Path) -> None:
-        """文章lint資料のReadは計画用状態フラグを記録しない。"""
         result = _run(
             {
                 "session_id": "read-reference",
@@ -156,7 +147,6 @@ class TestPlanPostWrite:
         assert not _read_state(tmp_path, "read-reference").get("textlint_violations_read", False)
 
     def test_non_plan_and_sidecar_paths_are_skipped(self, tmp_path: pathlib.Path) -> None:
-        """計画外パスと副次ファイルには案内を返さない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
         for target in (
@@ -192,7 +182,6 @@ class TestPlanPostWrite:
         command_builder,
         plan_mode_skill_invoked: bool,
     ) -> None:
-        """計画モード外、部分更新、削除では品質通知を出力しない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
         main = plans / "existing.md"
@@ -210,7 +199,6 @@ class TestPlanPostWrite:
         assert result.stdout.strip() == ""
 
     def test_codex_sidecar_is_silent(self, tmp_path: pathlib.Path) -> None:
-        """計画の副次ファイルは、計画ファイル（メイン）と計画ファイル（詳細）の組の判定に含めず、通知を出力しない。"""
         home = tmp_path / "home"
         plans = _prepare_plan_home(home)
         main = plans / "sample.md"
@@ -229,7 +217,6 @@ class TestPlanPostWrite:
         assert result.stdout.strip() == ""
 
     def test_codex_plan_path_with_spaces_records_plan_file(self, tmp_path: pathlib.Path) -> None:
-        """空白を含む計画パスでもapply_patchの対象を計画ファイル（メイン）として記録する。"""
         home = tmp_path / "home"
         state_dir = tmp_path / "state"
         plans = _prepare_plan_home(home)

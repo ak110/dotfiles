@@ -26,7 +26,7 @@ _MODULE_NAMES: dict[str, str] = {
     "stop_bell": "pytools.claude_hook.stop_bell",
 }
 
-# 例外時に`_approve()`（空JSON応答）フォールバックを呼ぶ対象（Stop系のみ、既存挙動を維持）。
+
 _APPROVE_FALLBACK_SUBCOMMANDS: frozenset[str] = frozenset({"stop_bell"})
 
 

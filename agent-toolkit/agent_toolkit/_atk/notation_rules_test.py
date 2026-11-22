@@ -15,7 +15,6 @@ import pyfltr.cli.mcp_server as pyfltr_mcp_server
 import pytest
 from mcp.types import CallToolResult
 
-# textlintをpnpmの`dlx`経由で実際に動かすため、取得物の保存先をホストと共有して毎回の取得し直しを避ける。
 pytestmark = pytest.mark.usefixtures("share_package_caches")
 
 _PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -24,12 +23,10 @@ _REPOSITORY_PYTHON = pathlib.Path(__file__).resolve()
 
 
 def _commands_for(target: pathlib.Path) -> list[str]:
-    """規範が定める拡張子別のコマンドを返す。"""
     return ["textlint", "colloquial-check", "writing-check-dash"] if target.suffix == ".md" else ["colloquial-check"]
 
 
 def _is_completed(result: dict[str, object], commands: list[str], *, target_count: int = 1) -> bool:
-    """規範が定める全対象の到達・完了条件をMCP応答またはCLIの`summary`へ適用する。"""
     completed_commands = result["completed_commands"]
     assert isinstance(completed_commands, list)
     return (
@@ -43,7 +40,6 @@ def _is_completed(result: dict[str, object], commands: list[str], *, target_coun
 
 
 def _run_mcp(target: pathlib.Path | list[pathlib.Path], *, allow_external_paths: bool) -> dict[str, object]:
-    """規範どおりの引数でpyfltr MCPの`run`を呼び、応答を辞書で返す。"""
     targets = [target] if isinstance(target, pathlib.Path) else target
     commands = sorted({command for path in targets for command in _commands_for(path)})
     result = asyncio.run(
@@ -80,7 +76,6 @@ def _external_markdown(tmp_path: pathlib.Path) -> pathlib.Path:
     ),
 )
 def test_mcp_run_with_documented_arguments_is_completed(kind: str, tmp_path: pathlib.Path) -> None:
-    """リポジトリ内のMarkdown・Python、許可指定付きの外部Markdownは完了と判定され、診断取得用の`run_id`を持つ。"""
     target = {
         "repository-markdown": _REPOSITORY_MARKDOWN,
         "repository-python": _REPOSITORY_PYTHON,
@@ -102,7 +97,6 @@ def test_mcp_run_with_documented_arguments_is_completed(kind: str, tmp_path: pat
     ),
 )
 def test_mcp_batch_requires_every_target_to_be_reached(tmp_path: pathlib.Path, include_missing: bool) -> None:
-    """MarkdownとPythonを同じ実行でチェックし、1件でも未到達ならバッチ全体を完了と扱わない。"""
     targets = [_external_markdown(tmp_path), _REPOSITORY_PYTHON]
     if include_missing:
         targets.append(tmp_path / "missing.md")
@@ -114,7 +108,6 @@ def test_mcp_batch_requires_every_target_to_be_reached(tmp_path: pathlib.Path, i
 
 
 def test_mcp_run_without_allow_external_paths_is_not_completed(tmp_path: pathlib.Path) -> None:
-    """外部Markdownで許可指定を外すと未完了になり、未完了のコマンドから理由を特定できる。"""
     target = _external_markdown(tmp_path)
 
     result = _run_mcp(target, allow_external_paths=False)
@@ -125,7 +118,6 @@ def test_mcp_run_without_allow_external_paths_is_not_completed(tmp_path: pathlib
 
 
 def test_mcp_run_for_missing_target_is_not_reached(tmp_path: pathlib.Path) -> None:
-    """存在しない対象は未到達になり、`missing_targets`から理由を特定できる。"""
     target = tmp_path / "missing.md"
 
     result = _run_mcp(target, allow_external_paths=True)
@@ -137,7 +129,6 @@ def test_mcp_run_for_missing_target_is_not_reached(tmp_path: pathlib.Path) -> No
 
 @pytest.mark.parametrize(("allow_external_paths", "expected"), [(True, True), (False, False)])
 def test_cli_summary_alone_decides_completion(tmp_path: pathlib.Path, allow_external_paths: bool, expected: bool) -> None:
-    """MCPを使えない場合のCLIでは、JSONL最終行の`summary`だけでMCPと同じ判定になる。"""
     targets = [_external_markdown(tmp_path), _REPOSITORY_PYTHON]
     commands = ["textlint", "colloquial-check", "writing-check-dash"]
     command = [

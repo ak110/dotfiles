@@ -13,13 +13,8 @@ import markdown_it.token
 import markdown_it.utils
 import pygments
 from pygments.util import ClassNotFound
-
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy from pygments.lexers import get_lexer_by_name
 
-# --------------------------------------------------------------------------------------
-# Markdownレンダリングとキャッシュ
-# --------------------------------------------------------------------------------------
 from agent_toolkit._atk.serve.plans.roots import (
     _PYGMENTS_CSS_CLASS,
     _PYGMENTS_FORMATTER,
@@ -51,7 +46,6 @@ def _render_fence(
     options: markdown_it.utils.OptionsDict,
     env: collections.abc.MutableMapping[str, typing.Any],
 ) -> str:
-    """MermaidとSVGのフェンスを専用HTML構造へ変換する。"""
     token = tokens[idx]
     info = token.info.strip() if token.info else ""
     name = info.split(maxsplit=1)[0].lower() if info else ""
@@ -77,13 +71,6 @@ def _render_fence(
 
 
 def make_md_renderer() -> markdown_it.MarkdownIt:
-    """Raw HTMLを無効化しPygmentsハイライトを注入したGFM相当のMarkdownレンダラを返す。
-
-    GFM相当プリセットの表・取り消し線は維持し、誤リンクを防ぐため裸URLの自動リンクだけを無効化する。
-    `html`も明示的に`False`へ上書きし、HTMLを解釈させずにXSSを防ぐ。
-    `highlight`コールバックの戻り値はそのままHTMLとして埋め込まれるため、
-    Pygmentsのエスケープ済み出力のみを返す。
-    """
     renderer = markdown_it.MarkdownIt(
         "gfm-like",
         {"html": False, "highlight": _highlight_code, "linkify": False},
@@ -93,21 +80,14 @@ def make_md_renderer() -> markdown_it.MarkdownIt:
 
 
 def markdown_to_html(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
-    """Markdown文字列をHTMLへ変換する。"""
     md = renderer if renderer is not None else make_md_renderer()
     return md.render(text)
 
 
-# キーは(host, source_id, path, 本文のSHA-256)。本文が変われば新しいエントリとなるため明示的な無効化は不要。
 type MarkdownCacheKey = tuple[str, str, str, str]
 
 
 class MarkdownCache:
-    """Markdownレンダリング結果のLRUキャッシュ。
-
-    キーへ取得済み本文のダイジェストを含めるため、更新時刻やwatch通知の遅延に左右されず本文と整合する。
-    """
-
     def __init__(
         self,
         max_entries: int = MARKDOWN_CACHE_MAX_ENTRIES,
@@ -115,26 +95,24 @@ class MarkdownCache:
     ) -> None:
         self._max_entries = max_entries
         self._max_bytes = max_bytes
-        # OrderedDictで挿入順を保ち、`move_to_end`でLRU順に保つ。
+
         self._entries: collections.OrderedDict[MarkdownCacheKey, str] = collections.OrderedDict()
         self._total_bytes = 0
 
     def get(self, key: MarkdownCacheKey) -> str | None:
-        """キャッシュ済みHTMLを返す。未保持ならNone。"""
         html = self._entries.get(key)
         if html is None:
             return None
-        # アクセスのたびに末尾へ移して最近使用扱いにする。
+
         self._entries.move_to_end(key)
         return html
 
     def put(self, key: MarkdownCacheKey, html: str) -> None:
-        """HTMLを保持し、上限超過分を古い順に破棄する。"""
         existing = self._entries.pop(key, None)
         if existing is not None:
             self._total_bytes -= len(existing.encode("utf-8"))
         size = len(html.encode("utf-8"))
-        # 単一エントリが上限を超える場合は保持しない（次回もキャッシュに無いため再レンダリングする）。
+
         if size > self._max_bytes:
             return
         self._entries[key] = html
@@ -150,5 +128,4 @@ class MarkdownCache:
         return len(self._entries)
 
     def total_bytes(self) -> int:
-        """テスト・観測用に現在の総バイト数を返す。"""
         return self._total_bytes

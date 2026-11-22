@@ -95,7 +95,6 @@ def test_windows_visible_native_survives_separate_config_home(monkeypatch, tmp_p
     ],
 )
 def test_windows_owned_path_namespace_comparison(monkeypatch, module, selected: str, root: str, owned: bool) -> None:
-    """公開選択・版確認で拡張パスとUNCを扱い、外向きの本体を実行しない。"""
     # Python3.15.2/Windowsのreadlinkが拡張パス、releases.resolveが通常パスを返した観測を再現する。
     # OSの字句・属性APIだけを代用し、製品の選択・境界比較とHerdrの版確認経路を通す。
     home = PureWindowsPath(root).parent
@@ -150,7 +149,6 @@ def test_windows_owned_path_namespace_comparison(monkeypatch, module, selected: 
 
 @pytest.mark.parametrize("layout", ["directory-bin", "directory-root", "link-bin"])
 def test_owned_current_layout_selects_native(monkeypatch, tmp_path: Path, layout: str) -> None:
-    """旧current実体と、別名参照を拒否されるcurrentリンクの両方から本体を選ぶ。"""
     _isolate(monkeypatch, tmp_path, "win32")
     root = tmp_path / ".codex/packages/standalone"
     current = root / "current"
@@ -222,13 +220,12 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
     def fake_prepend(path: Path) -> None:
         events.append(f"path:{path}")
 
-    def fake_migrate(*args: object, **kwargs: object) -> bool:
+    def fake_migrate(*args: object, **kwargs: object) -> None:
         del args, kwargs
         events.append("migrate")
-        return True
 
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", fake_prepend)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", fake_migrate)
     monkeypatch.setattr(
         setup_codex_cli.common,
         "run_subprocess",
@@ -281,12 +278,11 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
                 profile.write_text("# >>> Codex installer >>>\n", encoding="utf-8")
         return base_fake_run(command, **kwargs)
 
-    def fake_migrate(*args: object, **kwargs: object) -> bool:
+    def fake_migrate(*args: object, **kwargs: object) -> None:
         migrated.append((*args, kwargs))
-        return True
 
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", fake_migrate)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", fake_run)
 
     with _make_client() as client:
@@ -300,7 +296,7 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
         (
             "codex",
             "@openai/codex",
-            tmp_path / "dotfiles" / "bin" / "codex",
+            launcher,
             tmp_path / ".codex" / "packages" / "standalone",
             {
                 "extra_search_directories": (),
@@ -316,7 +312,7 @@ def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path
     calls: list[_Call] = []
     prepended: list[Path] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client() as client:
@@ -370,7 +366,7 @@ def test_run_selects_available_powershell(
 
     monkeypatch.setattr(setup_codex_cli.shutil, "which", fake_which)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with expectation, _make_client(requests) as client:
@@ -419,7 +415,7 @@ def test_run_obeys_official_installer_contract(
     requests: list[httpx.Request] = []
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client(requests) as client:
@@ -442,7 +438,7 @@ def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path
     launcher.write_text("", encoding="utf-8")
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
 
     with _make_client() as client:
@@ -458,7 +454,7 @@ def test_run_accepts_legacy_launcher_layout(monkeypatch, tmp_path: Path, platfor
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / name
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client() as client:
@@ -480,7 +476,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
     monkeypatch.setattr(
         setup_codex_cli.setup_cli_common,
-        "migrate_npm_launchers",
+        "warn_about_npm_launchers",
         lambda *args, **kwargs: migrated.append((*args, kwargs)),
     )
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
@@ -499,7 +495,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
         (
             "codex",
             "@openai/codex",
-            tmp_path / "dotfiles" / "bin" / "codex",
+            launcher,
             codex_home / "packages" / "standalone",
             {
                 "extra_search_directories": (),
@@ -522,7 +518,7 @@ def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Pa
         old.append(_release(home, package, "0.150.0"))
         (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
     calls: list[_Call] = []
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
     monkeypatch.setattr(prune_codex_packages.codex_processes, "codex_processes", lambda: ())
     with _make_client() as client:
@@ -536,7 +532,7 @@ def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Pa
 @pytest.mark.cpu_limit(
     1.25, reason="Windowsでnative実体と可視リンクの保持を実filesystemで照合する4条件。実測0.61〜0.66秒へ余裕を確保"
 )
-def test_public_install_keeps_native_package_and_selects_recovery_launcher(
+def test_public_install_keeps_native_package_and_official_launcher(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, windows: bool, custom_install: bool
 ) -> None:
     """公式の可視リンクを生成し、native実体を保ったまま通常呼出を起動管理へ接続する。"""
@@ -565,7 +561,6 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
             if not visible.exists():
                 visible.parent.mkdir(parents=True, exist_ok=True)
                 if windows:
-                    # install.ps1のEnsure-Junctionが公開する、package binと同じ実体を再現する。
                     visible.symlink_to(native.parent, target_is_directory=True)
                 else:
                     visible.mkdir()
@@ -573,7 +568,7 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         return result
 
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", installer)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda *_args, **_kwargs: None)
     with _make_client() as client:
         outcome = setup_codex_cli.run(client)
@@ -584,12 +579,11 @@ def test_public_install_keeps_native_package_and_selects_recovery_launcher(
         assert (visible / "codex.exe").samefile(native)
         assert not (native.parent / "codex.cmd").exists()
         entries = registry.user_path().split(";")
-        assert entries.index(str(root / "bin")) < entries.index(str(visible))
+        assert entries.index(str(visible)) < entries.index(str(root / "bin"))
         assert [entry for entry in entries if entry in {before, between, after}] == [before, between, after]
     else:
-        assert (visible / "codex").samefile(root / "bin" / "codex")
-        # Windowsのreadlinkは同じ参照先へ\\?\接頭辞を付けるため、ファイルの同一性を検証する。
-        assert (visible / ".dotfiles-codex-native").readlink().samefile(native)
+        assert (visible / "codex").samefile(native)
+        assert not (visible / ".dotfiles-codex-native").is_symlink()
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-runtime-home"))
     assert codex_runtime.find_standalone_launcher() is None
     runtime = codex_runtime.find_runtime_launcher(windows=windows)
@@ -607,10 +601,16 @@ def test_public_install_preserves_unmanaged_files(monkeypatch: pytest.MonkeyPatc
     protected.parent.mkdir(parents=True)
     protected.write_text("unmanaged", encoding="utf-8")
     native = tmp_path / ".codex/packages/standalone/current/bin/codex"
+    package = native.parent.parent.parent
+    selected = _release(tmp_path / ".codex", "standalone", "0.166.0")
+    (package / "current").symlink_to(selected, target_is_directory=True)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run([], launcher=native))
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     with _make_client() as client:
         outcome = setup_codex_cli.run(client)
-    assert outcome.failure is not None and str(protected) in outcome.failure
+    if name == "codex":
+        assert outcome.failure is not None and str(protected) in outcome.failure
+    else:
+        assert outcome.failure is None
     assert protected.read_text(encoding="utf-8") == "unmanaged"
     assert not protected.is_symlink()

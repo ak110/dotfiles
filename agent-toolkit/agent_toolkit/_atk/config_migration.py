@@ -1,5 +1,3 @@
-"""旧モデル・接続設定とserve.tomlの移行。"""
-
 from __future__ import annotations
 
 import json
@@ -85,7 +83,6 @@ def codex_connection_migration(value: str) -> dict[str, str]:
 
 
 def plan_connection_migration(config: dict[str, Any], updates: dict[str, str]) -> dict[str, Any]:
-    """旧接続設定キーを移行先へ書き換え、旧キーを除いた設定を返す。既に保存した移行先のキーは上書きしない。"""
     migrated = dict(config)
     additions: dict[str, str] = {}
     if any(key in config for key in _config_settings.CLAUDE_RETIRED_CONNECTION_KEYS):
@@ -103,13 +100,9 @@ def plan_connection_migration(config: dict[str, Any], updates: dict[str, str]) -
 
 
 def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
-    """旧設定を合成し、明示保存値を同じ原子的更新へまとめる。
-
-    読取時は全工程を検証する。明示保存では候補未設定の他工程を空のまま保持し、
-    その後のsetで修復できるようにする。新しいCLI値として空候補は受理しない。
-    """
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
+    migrated.pop("codex_auto_reset", None)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
         return migrated
@@ -158,12 +151,22 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
 def migrate_legacy_settings() -> None:
     """旧モデル設定と旧接続設定の保存値を移行先へ一括移行する。環境変数は保存しない。"""
     config = _config_settings.load_config_strict()
-    legacy_keys = (*_config_settings.RETIRED_MODEL_KEYS, *_config_settings.RETIRED_CONNECTION_KEYS, "process_loop_repositories")
+    legacy_keys = (
+        *_config_settings.RETIRED_MODEL_KEYS,
+        *_config_settings.RETIRED_CONNECTION_KEYS,
+        "process_loop_repositories",
+        "codex_auto_reset",
+    )
     if not any(key in config for key in legacy_keys):
         return
     migrated = plan_legacy_migration(config)
     if migrated != config:
         _config_settings.save_config(migrated)
+        if "codex_auto_reset" in config:
+            _outcome.report_warning(
+                "廃止したcodex_auto_resetを設定から削除した。利用枠の消費許可は作成していない",
+                next_action="自動配分と明示許可はusage_auto_allocationとusage_reset_permissionsで確認してください。",
+            )
 
 
 def legacy_serve_config_path() -> pathlib.Path:
@@ -260,7 +263,6 @@ def migrate_serve_settings() -> None:
 
 
 def check_legacy_environment() -> None:
-    """廃止キーの環境変数があれば、対応する工程別環境変数を案内する。"""
     _config_settings.check_repository_environment()
     found = sorted(
         key
@@ -293,7 +295,7 @@ def check_legacy_environment() -> None:
             f"{', '.join(_config_settings.config_env_name(key) for key in found)}",
             next_action="旧環境変数を解除し、工程別の環境変数へ置き換えて再実行する: " + "; ".join(replacements),
         )
-    # 空文字列は他の設定キーと同じく未設定として扱う。
+
     connection_found = [
         key
         for key in _config_settings.RETIRED_CONNECTION_KEYS

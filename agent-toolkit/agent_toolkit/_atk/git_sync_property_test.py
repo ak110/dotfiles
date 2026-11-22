@@ -17,12 +17,10 @@ from hypothesis import strategies as st
 from agent_toolkit._atk import git_sync
 from agent_toolkit._testing import git_repository
 
-# 5個の真偽値は全32通りを列挙でき、生成・縮小を使わず同じ状態空間を確かめられる。
 _SYNC_STATE_CASES = tuple(itertools.product((False, True), repeat=5))
 
 
 def _direct_git_init_lines(source: str) -> list[int]:
-    """共通補助を経由しない、リテラルargvによるGit初期化の行を返す。"""
     lines = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call) or not node.args or not isinstance(node.args[0], (ast.List, ast.Tuple)):
@@ -45,7 +43,6 @@ def _direct_git_init_lines(source: str) -> list[int]:
     ),
 )
 def test_git_initialization_is_owned_by_shared_test_helper() -> None:
-    """テスト内の直接初期化の混入を、呼び出す関数名によらず検出する。"""
     assert _direct_git_init_lines('subprocess.run(["git", "init", "repo"])') == [1]
     assert _direct_git_init_lines('runner(["git", "-C", "repo", "init", "--bare"])') == [1]
     assert not _direct_git_init_lines("git_repository.init_repository(path)")
@@ -59,7 +56,6 @@ def test_git_initialization_is_owned_by_shared_test_helper() -> None:
 
 
 def _init_synced_repositories(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-    """bare remote、upstreamを持つローカル、remoteへpushする別の作業コピーを同じ初期commitで用意する。"""
     remote = git_repository.init_bare_repository(root / "origin.git")
     local = git_repository.init_repository(root / "local", initial_branch="main", origin=str(remote))
     (local / "base.txt").write_text("base\n", encoding="utf-8")
@@ -72,13 +68,10 @@ def _init_synced_repositories(root: pathlib.Path) -> tuple[pathlib.Path, pathlib
     return remote, local, actor
 
 
-# 実Gitを起動する回数は生成例と操作の数に比例するため、テスト単位の時間上限に余裕を残す例数にする。
-# 分岐判定と回復操作の網羅は、Gitを差し替える下記のプロパティテストが多数の例で担う。
 @settings(max_examples=2, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
 @given(choices=st.lists(st.integers(min_value=0, max_value=100), min_size=8, max_size=18))
 @pytest.mark.cpu_limit(3.5, reason="固定8操作で主要分岐を通し、実Gitの生成例を5から2へ削減する。削減前の所有CPU最大4.515秒。")
 def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path: pathlib.Path, choices: list[int]) -> None:
-    """有効な操作列を独立した変更集合モデルと実Gitへ順に適用し、各遷移の内容と履歴を比較する。"""
     with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
         remote, local, actor = _init_synced_repositories(pathlib.Path(directory))
         local_changes: set[str] = {"base.txt"}
@@ -127,11 +120,11 @@ def test_generated_operations_preserve_history_and_uncommitted_content(tmp_path:
                 observed = set(git_repository.git_output(local, "ls-tree", "--name-only", "HEAD").splitlines())
                 assert observed == local_changes
                 assert (local / "base.txt").read_text(encoding="utf-8") == ("uncommitted\n" if dirty else "base\n")
-                # remoteの内容はremote側のcommitとpushでだけ変わるため、その遷移の後に比べる。
+
                 if operation in {"remote", "push"}:
                     published = set(git_repository.git_output(remote, "ls-tree", "--name-only", "main").splitlines())
                     assert published == remote_changes
-            # ローカルの件名は名前が一意で失われると戻らないため、例の終わりに一度比べれば欠落を検出できる。
+
             subjects = set(git_repository.git_output(local, "log", "--format=%s").splitlines())
             assert local_changes - {"base.txt"} <= subjects
             if dirty:
@@ -228,7 +221,6 @@ def test_divergence_recovery_matches_reference_model(
 
 
 def test_matching_tree_regression_preserves_index_with_soft_reset() -> None:
-    """既知事例: 履歴が分岐してもtreeが一致するなら未commit差分を保つ。"""
     fake = _GitDouble(local_ancestor=False, remote_ancestor=False, tree_matches=True, dirty=True)
     assert git_sync._recover_matching_tree_divergence(pathlib.Path("/repo"), run_git=fake.run, result_runner=fake.result)
     assert fake.mutations == [("reset", "--soft", "@{u}")]
@@ -247,7 +239,6 @@ def test_rebase_in_progress_is_reported_before_mutation(tmp_path: pathlib.Path) 
 
 
 def test_dirty_content_divergence_keeps_history_unchanged() -> None:
-    """既知事例: dirtyかつ内容差がある分岐はresetせず保留する。"""
     fake = _GitDouble(local_ancestor=False, remote_ancestor=False, tree_matches=False, dirty=True)
     recovered = git_sync._recover_redundant_divergence(
         pathlib.Path("/repo"),
@@ -313,7 +304,6 @@ def test_pull_event_sequence_matches_reference_model(
     fast_forward: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """fetch後のfast-forward、保留、回復とrebaseを独立した分岐表に合わせる。"""
     monkeypatch.setattr(git_sync, "assert_repo_lock_held", lambda _path: None)
     monkeypatch.setattr(git_sync, "ensure_not_rebasing", lambda _path: None)
     monkeypatch.setattr(git_sync, "has_remote", lambda _path: True)
@@ -363,7 +353,6 @@ def test_rejected_push_sequence_matches_reference_model(
     redundant: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """push拒否後は祖先関係と作業ツリー状態に応じた1つの回復操作だけを選ぶ。"""
     monkeypatch.setattr(git_sync, "assert_repo_lock_held", lambda _path: None)
     monkeypatch.setattr(git_sync, "ensure_not_rebasing", lambda _path: None)
     monkeypatch.setattr(git_sync, "has_remote", lambda _path: True)

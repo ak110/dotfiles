@@ -9,14 +9,13 @@ import stat
 import typing
 from collections.abc import Callable
 
-from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError, ManagedTempPermissionError
 
 
 @contextlib.contextmanager
 def descriptor(
     path: pathlib.Path | str | int, flags: int = 0, mode: int = 0o777, *, dir_fd: int | None = None
 ) -> typing.Generator[int]:
-    """獲得直後から記述子の寿命を閉じる。"""
     if isinstance(path, int):
         opened = os.dup(path)
     elif flags & os.O_CREAT:
@@ -39,7 +38,6 @@ def directory(
     recover: bool = True,
     display_path: pathlib.Path | str | None = None,
 ) -> typing.Generator[int]:
-    """非追跡で同一性と所有者を検証し、必要なowner modeを一時的に補う。"""
     before = os.stat(path, dir_fd=dir_fd, follow_symlinks=False) if expected is None else expected
     display = path if display_path is None else display_path
     if not stat.S_ISDIR(before.st_mode):
@@ -82,7 +80,7 @@ def _same_directory(opened: int, before: os.stat_result, path: pathlib.Path | st
 
 def _require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
     if metadata.st_uid != os.geteuid():
-        raise ManagedTempError(
+        raise ManagedTempPermissionError(
             f"所有者が異なるため現在のOSアカウントでは権限を補えない: {path} (uid={metadata.st_uid})",
             next_action=f"対象: {path} (uid={metadata.st_uid})。{ManagedTempError.PERMISSION_NEXT_ACTION}",
         )

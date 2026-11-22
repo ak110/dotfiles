@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 import re
 import time
-from datetime import UTC, datetime
 
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import read_state, update_state
@@ -88,14 +87,12 @@ def _report_block() -> str:
 
 
 def send_block(payload: dict, message: object) -> str | None:
-    """点検通知の後で、型の異なるユーザー向け送信を拒む。"""
     if _report_session(payload) is not None and not _report_matches(message):
         return _report_block()
     return None
 
 
 def _observe_report(payload: dict, message: object) -> None:
-    """型の合う報告を送達したら、点検の保留を解除する。"""
     if not _report_matches(message) or (session_id := _report_session(payload)) is None:
         return
 
@@ -109,7 +106,6 @@ def _observe_report(payload: dict, message: object) -> None:
 
 
 def _delivery_succeeded(response: object) -> bool:
-    """表示を確認したMCP応答だけを受理し、背景移行・未完了・エラーを除く。"""
     if isinstance(response, str):
         try:
             response = json.loads(response)
@@ -134,13 +130,11 @@ def _delivery_succeeded(response: object) -> bool:
 
 
 def observe_send(payload: dict, message: object) -> None:
-    """ユーザー画面への表示を確認した応答だけで保留を解除する。"""
     if _delivery_succeeded(payload.get("tool_response")):
         _observe_report(payload, message)
 
 
 def _format_elapsed(seconds: float) -> str:
-    """経過秒数を「N分」か「N時間M分」の表記へ変える。"""
     minutes = int(seconds // 60)
     if minutes < 60:
         return f"{minutes}分"
@@ -149,14 +143,12 @@ def _format_elapsed(seconds: float) -> str:
 
 
 def _number(value: object) -> float | None:
-    """状態に保存した時刻を数値として返す。数値でなければ`None`を返す。"""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
     return float(value)
 
 
 def _delivered_at(state: dict, agent_id: str) -> float | None:
-    """配送記録が示す最新の採用時刻を返す。"""
     delivered = state.get(DELIVERED_KEY)
     values = delivered.get(agent_id) if isinstance(delivered, dict) else None
     times = [number for value in values if (number := _number(_parse(value))) is not None] if isinstance(values, list) else []
@@ -192,7 +184,6 @@ def _saturation_text(session_id: str) -> str:
         limit_text = "上限なし" if limit.value is None else f"上限{limit.value}"
         working = f"作業中の委譲先はマシン全体で{observation.working}（{limit_text}、起動待ち{observation.waiting}）。"
         if observation.failures:
-            # 一覧コマンドは読めない状態ファイルを表示しないため、全件の診断をセッションの一時領域へ保存して所在を示す。
             base = state_paths.state_dir() / "agents-server"
             lines = [f"{base}/{failure}" for failure in observation.failures]
             saved = ""
@@ -242,7 +233,7 @@ def _saturation_text(session_id: str) -> str:
     return working + hooks
 
 
-def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
+def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
     """点検の期日に達していれば通知本文を返し、配送時に通知時刻を確定する予約をする。達していなければ`None`を返す。
 
     状態の読み書きは`update_state`の排他区間で行い、同じ主体の並列なフックが同じ通知を重ねて返さないようにする。
@@ -253,9 +244,10 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
     agent_id = resolve_hook_agent_id(payload)
     current_time = time.time() if now is None else now
     elapsed: float | None = None
+    since_notice: float | None = None
 
     def _mutate(state: dict) -> dict | None:
-        nonlocal elapsed
+        nonlocal elapsed, since_notice
         entries = state.get(STATE_KEY)
         entries = dict(entries) if isinstance(entries, dict) else {}
         entry = entries.get(agent_id)
@@ -271,14 +263,15 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
         confirmed = max(candidates) if candidates else started_at
         delivered = state.get(DELIVERED_KEY)
         if isinstance(delivered, dict) and agent_id in delivered:
-            # 採用記録を確定時刻へ畳み込み、記録が入力ごとに増えないようにする。
             state[DELIVERED_KEY] = {key: value for key, value in delivered.items() if key != agent_id}
             entry[_LAST_NOTIFIED_AT_KEY] = confirmed
         reserved_at = _number(entry.get(_RESERVED_AT_KEY))
-        due = current_time - confirmed >= SELF_CHECK_INTERVAL_SECONDS
+        due = current_time - confirmed >= SELF_CHECK_INTERVAL_SECONDS - (60 if periodic_recheck else 0)
         reserved = reserved_at is not None and reserved_at > confirmed and current_time - reserved_at < RESERVATION_SECONDS
         if due and not reserved:
             elapsed = current_time - started_at
+            if confirmed > started_at:
+                since_notice = current_time - confirmed
             entry[_RESERVED_AT_KEY] = current_time
         elif not (isinstance(delivered, dict) and agent_id in delivered):
             return None
@@ -288,9 +281,8 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
 
     if not update_state(session_id, _mutate) or elapsed is None:
         return None
-    # 整形や後続の出力が例外で終わっても終了時に予約を外せるよう、整形より先に解除の対象へ登録する。
+
     _reservations.append((session_id, agent_id, current_time))
-    observed_at = datetime.fromtimestamp(current_time, tz=UTC).isoformat()
     elapsed_text = (
         f"この主体の初回観測から{_format_elapsed(elapsed)}たった。"
         if elapsed >= 0
@@ -298,7 +290,8 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
     )
     main_agent = is_main_agent_context(payload)
     instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
-    body = f"通知生成時刻: {observed_at}。{elapsed_text}" + _saturation_text(session_id) + instruction
+    previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
+    body = elapsed_text + previous + _saturation_text(session_id) + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
@@ -309,11 +302,6 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
 
 
 def release_reservations() -> None:
-    """hook処理の終了時に、未採用のまま残った予約を解除する。
-
-    採用された通知は配送記録で確定時刻が進むため、予約を解除しても同じ期日で再通知しない。
-    未採用の通知は予約だけが残るため、解除して直後の正常な呼出しで改めて通知できるようにする。
-    """
     pending = list(_reservations)
     _reservations.clear()
     for session_id, agent_id, reserved_at in pending:

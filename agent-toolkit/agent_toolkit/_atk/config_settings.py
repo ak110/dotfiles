@@ -1,5 +1,3 @@
-"""設定キーの定義・形式検証とJSONの永続化。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -35,7 +33,7 @@ MODEL_DEFAULTS = {
     "write_model": "agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low",
 }
 
-# write_modelはプリセットによる変更対象から外す。
+
 PRESET_MODELS = {
     "codex-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
@@ -63,7 +61,7 @@ PRESET_MODELS = {
     },
 }
 
-# apply-presetの位置引数でプリセット名の代わりに受理し、全プリセットの値を表示する値。
+
 APPLY_PRESET_SHOW = "show"
 
 # IDEのリモート開発拡張はLinux側の待受ポートをWindows側へ自動転送するため、Windowsでも同じ番号を
@@ -75,11 +73,9 @@ SERVE_WINDOWS_DEFAULT_PORT = 28876
 
 
 def serve_default_port(platform: str | None = None) -> int:
-    """`atk serve`の待受ポートを指定しない場合に使うOS別の値を返す。"""
     return SERVE_WINDOWS_DEFAULT_PORT if (platform or sys.platform) == "win32" else SERVE_LINUX_DEFAULT_PORT
 
 
-# `atk serve`の設定。パスの空文字列は未指定を表し、`atk serve`が各画面の省略時の参照元を使う。
 SERVE_KEY_DEFAULTS = {
     "serve_host": "127.0.0.1",
     "serve_port": str(serve_default_port()),
@@ -134,11 +130,10 @@ PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
 
-# 挿入順は`atk config show`の表示順とキー案内の順を兼ねる。
+
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
-    "codex_auto_reset": "false",
     "usage_auto_allocation": "false",
     "usage_activity_mode": "continuous",
     "usage_reset_permissions": "[]",
@@ -175,7 +170,7 @@ CLAUDE_RETIRED_CONNECTION_KEYS = (
     "claude_api_mode",
 )
 
-# 旧キーは段位とengine順を1つの候補列で持っていた。保存値は移行先へ一括で移し、新しいget・setの対象から除く。
+
 LEGACY_TIER_DEFAULTS = {
     "claude_high_tier_model": "opus[1m]/medium",
     "claude_medium_tier_model": "sonnet[1m]/medium",
@@ -220,7 +215,7 @@ OPENCODE_MODEL_PATTERN = re.compile(r"^[^/:,@\s]+/[^/,@\s]+(?:/[^/,@\s]+)*(?:@[^
 
 CONFIG_ENV_PREFIX = "AGENT_TOOLKIT_CONFIG_"
 
-# 主に使うモデル名・effortの参考一覧。受理可否の判定には使わず、一覧外は警告のみで受理する。
+
 KNOWN_MODELS = {
     "claude": frozenset({"haiku", "sonnet", "opus", "fable", "sonnet[1m]", "opus[1m]", "claude-opus-5-5"}),
     "codex": frozenset(
@@ -259,17 +254,14 @@ def config_dir() -> pathlib.Path:
 
 
 def config_file_path() -> pathlib.Path:
-    """変更可能設定を永続化するJSONファイルの絶対パスを返す。"""
     return config_dir() / CONFIG_FILENAME
 
 
 def process_loop_configuration_path() -> pathlib.Path:
-    """常駐プロセスが登録先の変更を監視する設定ファイルのパスを返す。"""
     return config_file_path()
 
 
 def load_config() -> dict[str, str]:
-    """永続化済みの変更可能設定を読み込む。ファイル不在・破損時は空辞書を返す。"""
     path = config_file_path()
     if not path.exists():
         return {}
@@ -283,11 +275,6 @@ def load_config() -> dict[str, str]:
 
 
 def load_config_strict() -> dict[str, Any]:
-    """永続化済みの変更可能設定を読み込む。破損・形式不正は空とみなさず`ActionableError`を送出する。
-
-    他の設定を保持したまま一部のキーを書き込む処理が使う。破損したファイルを空として扱うと、
-    書込みが他用途の設定を失わせるためである。文字列以外の値は保持の対象として読んだまま返す。
-    """
     path = config_file_path()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -307,25 +294,26 @@ def load_config_strict() -> dict[str, Any]:
 
 
 def save_config(config: dict[str, Any]) -> None:
-    """変更可能設定をJSONファイルへ永続化する。"""
     path = config_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     atomic_write(path, json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
 
 
 def config_env_name(key: str) -> str:
-    """変更可能設定キーに対応する環境変数名を返す。"""
     return f"{CONFIG_ENV_PREFIX}{key.upper()}"
 
 
 def config_environment_variable_names() -> tuple[str, ...]:
-    """現行設定と、置換案内の対象である旧設定の環境変数名を返す。"""
-    keys = (*MUTABLE_KEY_DEFAULTS, *RETIRED_CONNECTION_KEYS, *sorted(RETIRED_MODEL_KEYS), "process_loop_repositories")
+    keys = (
+        *MUTABLE_KEY_DEFAULTS,
+        *RETIRED_CONNECTION_KEYS,
+        *sorted(RETIRED_MODEL_KEYS),
+        "process_loop_repositories",
+    )
     return tuple(config_env_name(key) for key in keys)
 
 
 def validate_stage_model_candidates(value: str) -> None:
-    """候補列の各候補を検証し、書式不正なら`ValueError`を送出する。"""
     candidates = value.split(",")
     if not candidates or any(
         STAGE_MODEL_PATTERN.fullmatch(candidate) is None
@@ -339,7 +327,6 @@ def validate_stage_model_candidates(value: str) -> None:
 
 
 def parse_engine_order(value: str) -> tuple[str, ...]:
-    """用途別engine順を検証して分解し、書式不正なら`ValueError`を送出する。"""
     engines = tuple(value.split(","))
     if any(engine not in {"claude", "codex", "opencode"} for engine in engines) or len(set(engines)) != len(engines):
         raise ValueError("受理可能書式: codex・claude・opencodeを重複なしで並べたASCIIカンマ区切り")
@@ -347,7 +334,6 @@ def parse_engine_order(value: str) -> tuple[str, ...]:
 
 
 def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
-    """`agents_concurrency`の設定値を(種別, 数値)へ変換する。`off`はNone、不正な値はValueErrorとする。"""
     text = value.strip()
     if text == "off":
         return None
@@ -362,7 +348,6 @@ def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
 
 
 def validate_mutable_setting(key: str, value: str) -> None:
-    """速度、接続先列、工程別モデル候補をそれぞれの受理形式で確かめる。"""
     if key == "dotfiles_mode":
         if value not in {"full", "minimal"}:
             raise ValueError("受理可能値: full, minimal")
@@ -397,7 +382,7 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: continuous, intermittent")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in {"codex_fast_mode", "codex_auto_reset", "session_review_auto_start", "usage_auto_allocation"}:
+    elif key in {"codex_fast_mode", "session_review_auto_start", "usage_auto_allocation"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in MODEL_DEFAULTS:
@@ -410,11 +395,6 @@ def validate_mutable_setting(key: str, value: str) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class ConfiguredRepository:
-    """process-loopの処理対象（repositoryと系統の組）と、登録した作業ツリー・Git共通ディレクトリ。
-
-    系統を登録しないrepositoryは`branch`がNoneの1件になり、処理対象の識別子`key`は`repo_id`と同じになる。
-    """
-
     repo_id: str
     worktree: pathlib.Path
     common_dir: pathlib.Path
@@ -423,22 +403,18 @@ class ConfiguredRepository:
 
     @property
     def key(self) -> str:
-        """所有・開始判定・結果の対応に使う処理対象の識別子を返す。"""
         return target_key(self.repo_id, self.branch)
 
     @property
     def is_default(self) -> bool:
-        """repository単位の仕事（Dependabotなどの監査）を担う対象かを返す。"""
         return self.branch is None or self.branch == self.default_branch
 
 
 def target_key(repo_id: str, branch: str | None) -> str:
-    """repositoryと系統の組の識別子を返す。系統の無い対象はrepository識別子そのものとする。"""
     return repo_id if branch is None else f"{repo_id}@{branch}"
 
 
 def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
-    """移行済みのrepository登録からprocess-loop対象のGit実体を、系統ごとに展開して返す。"""
     try:
         repositories = repository_settings()
         result = []
@@ -465,7 +441,6 @@ def resolve_configured_repositories() -> tuple[ConfiguredRepository, ...]:
 
 
 def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]]:
-    """登録を厳密に読み、hookは処理対象外のworktreeの存在確認を省く。"""
     check_repository_environment()
     data = load_config_strict()
     # repositoryを読む主体にはモデル移行を依存させず、同じ初回読取で旧repository登録だけを移す。
@@ -481,7 +456,6 @@ def repository_settings(*, check_paths: bool = True) -> dict[str, dict[str, Any]
 
 
 def repository_branch_settings() -> dict[str, config_repositories.BranchSettings]:
-    """系統を登録したrepositoryの識別子から系統の登録への対応を返す。"""
     return {
         repo_id: settings
         for repo_id, item in repository_settings(check_paths=False).items()
@@ -490,7 +464,6 @@ def repository_branch_settings() -> dict[str, config_repositories.BranchSettings
 
 
 def check_repository_environment() -> None:
-    """旧repository環境変数を新しい登録操作へ案内する。"""
     if runtime_environment.environment().get(config_env_name("process_loop_repositories")):
         raise _next_action.ActionableError(
             "廃止した環境変数AGENT_TOOLKIT_CONFIG_PROCESS_LOOP_REPOSITORIESが設定されている",
@@ -499,7 +472,6 @@ def check_repository_environment() -> None:
 
 
 def parse_remote_hosts(value: str) -> tuple[str, ...]:
-    """リモートホストの指定をSSH接続先名のJSON文字列配列として解釈する。空配列はリモートホストなしを表す。"""
     try:
         hosts = json.loads(value)
     except json.JSONDecodeError as error:
@@ -520,7 +492,6 @@ def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:
 
 
 def parse_connection_order(value: str) -> tuple[str, ...]:
-    """接続の使用順を検証して分解し、書式不正なら`ValueError`を送出する。"""
     kinds = tuple(part.strip() for part in value.split(","))
     if not value.strip() or any(kind not in CONNECTION_KINDS for kind in kinds) or len(set(kinds)) != len(kinds):
         raise ValueError("受理可能書式: subscription・credits・paygを重複なしで1つ以上並べたASCIIカンマ区切り")
@@ -528,29 +499,26 @@ def parse_connection_order(value: str) -> tuple[str, ...]:
 
 
 def build_connection_order_key(engine: str, role: str) -> str:
-    """エンジンと役割（`orchestrator`・`delegate`）から使用順の設定キーを返す。"""
     if engine not in {"claude", "codex"}:
         raise KeyError(engine)
     return f"{engine}_{'orchestrator' if role == 'orchestrator' else 'worker'}_connections"
 
 
 def connection_order_key(engine: str, role: str) -> str:
-    """診断で案内する使用順の設定キー名を返す。"""
     return build_connection_order_key(engine, role)
 
 
 def mutable_setting_default(key: str) -> str:
-    """変更可能な設定の初期値を返す。未知のキーは`KeyError`を送出する。"""
     return MUTABLE_KEY_DEFAULTS[key]
 
 
-def raw_mutable_setting(key: str) -> str:
+def raw_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     """変更可能な設定の検証前の値を、環境変数、保存値、初期値の順に解決して返す。未知のキーは`KeyError`を送出する。"""
     default = mutable_setting_default(key)
     explicit = runtime_environment.environment().get(config_env_name(key), "")
     if explicit:
         return explicit
-    return load_config().get(key, default)
+    return load_config().get(key, default if fallback is None else fallback)
 
 
 def normalize_setting(key: str, value: str) -> str:

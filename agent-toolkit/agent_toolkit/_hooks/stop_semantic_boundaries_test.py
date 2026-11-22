@@ -4,14 +4,12 @@ import json
 
 import pytest
 
-from agent_toolkit._common import session_activity
 from agent_toolkit._hooks import stop
 from agent_toolkit._testing.helpers import _write_transcript
 
 
 @pytest.mark.parametrize("text", ["### 機能が足りないのか？", "不明点があれば教えてください。", "次はどちらにするか？"])
 def test_stop_leaves_question_meaning_to_agent(tmp_path, monkeypatch, text):
-    """疑問符や定型表現を含む本文だけでは終了を差し戻さない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -21,15 +19,13 @@ def test_stop_leaves_question_meaning_to_agent(tmp_path, monkeypatch, text):
     assert "pending_question_advisor" not in stop.CHECK_MODULE_NAMES
 
 
-@pytest.mark.parametrize("scenario", ["language", "missing-summary", "complete"])
+@pytest.mark.parametrize("scenario", ["language", "complete"])
 def test_codex_stop_returns_blocking_results(monkeypatch, capsys, scenario):
     """Codexの公開Stopが必要な遮断を返し、Claude専用の通知欄を送らない。"""
     for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
         monkeypatch.delenv(name, raising=False)
     sid = f"codex-{scenario}"
     message = "The work is complete." if scenario == "language" else "完了した。"
-    if scenario == "missing-summary":
-        session_activity.record_submission_report(sid, ["指摘の分類と処置:", "- 確認の往復: 2回"])
     payload = {"session_id": sid, "turn_id": "turn", "last_assistant_message": message}
     assert stop.main(json.dumps(payload)) == 0
     output = capsys.readouterr()

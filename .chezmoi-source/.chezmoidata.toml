@@ -7,7 +7,7 @@
 # dotfilesの自動更新とatk serveの常駐を担うLinuxホスト
 linux_server = ["euryale"]
 # 全プロジェクトの作業ツリーを持つ開発環境
-all_projects = ["euryale", "euryale-container"]
+all_projects = ["euryale"]
 # gvとlcだけを持つWindowsアプリの開発環境
 windows_apps = ["stheno"]
 # media-remoteを自動起動するWindowsホスト

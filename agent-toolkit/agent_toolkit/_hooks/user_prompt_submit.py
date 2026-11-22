@@ -1,4 +1,4 @@
-"""Claude Code・Codex plugin agent-toolkit: UserPromptSubmitでセッション状態を記録し、応答の契約を注入する。
+"""UserPromptSubmitでセッション状態と応答の案内を扱う。  pyfltr: allow-comment
 
 ホスト別コマンド形式（Claude Codeは`/agent-toolkit:<name>`・`/<name>`、
 Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル起動を検出し、
@@ -24,7 +24,7 @@ Codexは`$agent-toolkit:<name>`・`$<name>`）で発話した手動のスキル�
 実ユーザー発話と機械注入ターンの両方で前回通知からの経過時間に基づいて付ける。
 成立した注記を1つの`additionalContext`へまとめる。
 
-指摘を受けたときの初動は、発話の意味を受領側で判定できるよう、受付時刻とともに毎回届ける。
+発話ごとの初動（「発話の理解」）の案内は、指摘かどうかを受領側に判定させず、受付時刻とともに毎回届ける。
 ユーザー発話向けの注記の対象は、自動的なプロンプトを除く全てのユーザー発話とする。ユーザー自身が入力した発話は、
 スラッシュコマンド（Claude Codeは`/`、Codexは`$`）で始まるものも対象に含める。
 機械注入ターンでは、実ユーザー発話向けの起動案内を返さず、配送待ちの状態も消費しない。
@@ -50,6 +50,7 @@ from agent_toolkit._hooks.notice import begin_delivery, emit_response, informati
 # pylint: disable-next=wrong-import-position,import-error
 from agent_toolkit._hooks.notice import formatter as _notice_formatter  # noqa: E402
 from agent_toolkit._hooks.posttooluse import (  # noqa: E402  # pylint: disable=wrong-import-position,import-error
+    UTTERANCE_UNDERSTANDING_NOTICE_BODY,
     content_notices,
 )
 lazy from agent_toolkit._common import (
@@ -71,9 +72,6 @@ lazy from agent_toolkit._hooks import command_timing, session_title, termination
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-# ホスト判定後の手動コマンドから<name>を抽出する。
-# 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
-# スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
 _USER_PROMPT_SOURCE_KEY = "source"
@@ -82,10 +80,6 @@ _llm_notice = _notice_formatter("user_prompt_submit")
 
 
 def _is_harness_message(prompt: str) -> bool:
-    """ハーネスが挿入したメッセージかを判定する。
-
-    ハーネス通知をユーザーのスラッシュコマンドとして扱わないために用いる。
-    """
     return _HARNESS_MESSAGE_RE.search(prompt) is not None
 
 
@@ -121,7 +115,6 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
 
 
 def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
-    """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
     if additional_context is not None:
         hook_specific_output["additionalContext"] = additional_context
@@ -137,29 +130,19 @@ def _work_contract_notice(session_id: str, body: str) -> str:
     記録はこの原因の1件だけを保つため、入力が続いても状態は増えない。
     """
     resolve_notice(session_id, "user_prompt_submit", "_work_contract_notice")
-    # 入力ごとに同じ本文を届ける配送であり、ユーザーの画面へは写さない。
+
     return informational(_llm_notice(body))
 
 
 def _clock_notice(session_id: str) -> str:
-    """実ユーザー入力ごとに、受付時刻と指摘への初動を届ける。
-
-    時刻を推測で記録しないためで、点検通知の生成時刻とは区別する。
-    入力ごとに本文が変わるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
-    """
     resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
-    # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
+
     return informational(
-        _llm_notice(
-            f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n"
-            "指摘、訂正、是正要求、異議（疑問形を含む）の場合だけ、"
-            "調査より先に`agent-toolkit:atk-mode`「ユーザーの方針」の「指摘の理解」を適用する。"
-        )
+        _llm_notice(f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n{UTTERANCE_UNDERSTANDING_NOTICE_BODY}")
     )
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。終了コードは常に0（fail-open原則）。"""
     begin_delivery()
     try:
         payload = json.loads(payload_text)
@@ -191,7 +174,12 @@ def main(payload_text: str) -> int:
             )
         )
 
-    self_check_notice = _progress_self_check.claim_notice(payload)
+    periodic_recheck = (
+        not is_codex_payload(payload)
+        and not payload.get("agent_id")
+        and prompt.split("\n", 1)[0].strip() == PERIODIC_RECHECK_MARKER
+    )
+    self_check_notice = _progress_self_check.claim_notice(payload, periodic_recheck=periodic_recheck)
 
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。
@@ -199,7 +187,6 @@ def main(payload_text: str) -> int:
         harness_notices: list[str] = list(initial_notices)
         harness_notices.extend(command_timing.observe_notifications(payload))
         if not is_codex_payload(payload):
-            # 完了通知のたびに同じ文面が出る定型の案内であり、ユーザーの画面へは写さない。
             harness_notices.append(
                 informational(
                     _llm_notice(
@@ -221,10 +208,9 @@ def main(payload_text: str) -> int:
     is_codex = is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
-    # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
-    # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
+
     is_normal_prompt = not machine_injected
-    # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
+
     notices: list[str] = list(initial_notices)
     if is_normal_prompt:
         try:
@@ -252,19 +238,17 @@ def main(payload_text: str) -> int:
         if match is not None:
             full_name = f"agent-toolkit:{match.group(1)}"
             arguments = prompt[len(command_prefix) + match.end() :]
-            # 入口`atk-mode <作業>`は作業の名前へ読み替える。委譲先の最初の入力は委譲元のエージェントが書くため、
-            # 読み替えない（エージェントが自分の判断でAWI投入と自律モードの状態を立てられなくする）。
+
             typed_name = full_name
             if not is_delegated(os.environ):
                 full_name, arguments = skill_modes.resolve_work(full_name, arguments)
-            # AWI投入はスキルを持たない作業であり、入口の名指しだけで始まる。
+
             named_by_entry = full_name != typed_name
             if named_by_entry:
                 session_title.observe_add_awi(session_id, full_name)
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
-            # 自律モードは入口`atk-mode`への作業`process-wi`の名指しだけで立てる（スキル`process-wi`は廃止した）。
             if named_by_entry and full_name == skill_modes.PROCESS_WI:
                 update_state(session_id, set_process_wi_invoked)
 

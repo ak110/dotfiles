@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import shared_roots, state, status_file
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     BlockingResultClaudeClient,
     BlockingResumeBackend,
@@ -33,7 +34,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_send_message_timeout_covers_resume(tmp_path: pathlib.Path) -> None:
-    """継続要求のtimeoutは保存済みsessionの再開待ちにも適用する。"""
     async with server_manager.AgentsServerManager() as manager:
         backend = BlockingResumeBackend(manager.sessions, "claude")
         install_backend(manager, "claude", backend)
@@ -61,7 +61,6 @@ async def test_kill_cancels_pending_resume_without_followup_message(
     session_id: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開入力のtimeout後は追加送信なしのkillで保留作業を回収する。"""
     async with server_manager.AgentsServerManager() as manager:
         backend = BlockingResumeBackend(manager.sessions, "claude")
         install_backend(manager, "claude", backend)
@@ -75,10 +74,10 @@ async def test_kill_cancels_pending_resume_without_followup_message(
         with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
             await manager.send_message(session.session_id, "追加指示", timeout=0.01)
 
-        response = await manager.kill(session.session_id, timeout=1)
+        with pytest.raises(ActionableError, match="中断要求は未配送"):
+            await manager.kill(session.session_id, timeout=1)
 
-        assert response["status"] == "interrupted"
-        assert response["kill_requested"] is False
+        assert session.status == "completed"
         assert not manager._pending_resumes
         assert backend.resume_finished.is_set()
         assert backend.interrupt_calls == 0
@@ -117,7 +116,7 @@ async def test_each_manager_delivers_its_root_to_claude_start_and_resume(
 
         def client_factory(options: Any) -> FakeClaudeClient:
             options_received.append(options)
-            return FakeClaudeClient([[SystemMessage("claude-root-test"), ResultMessage("完了")]])
+            return FakeClaudeClient([[SystemMessage("claude-root-test"), ResultMessage("状態: completed\n結果: 完了")]])
 
         monkeypatch.setattr(backend, "_client_factory", client_factory)
         session = await backend.start("新規", str(tmp_path))
@@ -218,10 +217,9 @@ async def test_claude_kill_cleans_owned_pending_resume(
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
         assert backend._tasks
-        response = await manager.kill(session_id, timeout=1)
+        with pytest.raises(ActionableError, match="中断要求は未配送"):
+            await manager.kill(session_id, timeout=1)
 
-        assert response["status"] == "interrupted"
-        assert response["kill_requested"] is False
         assert not manager._pending_resumes
         assert not backend._tasks
         assert client.disconnected is True
@@ -273,7 +271,7 @@ async def test_claude_resume_owns_saved_session(
     tmp_path: pathlib.Path,
 ) -> None:
     """Claude backendがresume後の同じsession IDを新しい所有タスクへ登録する。"""
-    client = FakeClaudeClient([[SystemMessage("claude-saved"), ResultMessage("再開結果")]])
+    client = FakeClaudeClient([[SystemMessage("claude-saved"), ResultMessage("状態: completed\n結果: 再開結果")]])
     captured: dict[str, str | None] = {}
 
     def build_options(_cwd: str, _model: str | None, _effort: str | None, session_id: str | None = None, **_kwargs: Any) -> Any:
@@ -290,7 +288,7 @@ async def test_claude_resume_owns_saved_session(
             await asyncio.sleep(0.01)
         assert captured == {"session_id": "claude-saved"}
         assert session.session_id == "claude-saved"
-        assert session.agent_message == "再開結果"
+        assert session.agent_message == "状態: completed\n結果: 再開結果"
 
 
 @pytest.mark.asyncio
@@ -298,7 +296,6 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """resumeは登録簿に残る前turnの終了状態を新しいturnへ引き継がない。"""
     session_id = "claude-retained"
     client = BlockingResultClaudeClient(session_id)
     async with claude_backend.ClaudeServerManager(client_factory=lambda _options: client) as manager:

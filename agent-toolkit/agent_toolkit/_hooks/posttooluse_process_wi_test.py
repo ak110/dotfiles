@@ -13,8 +13,6 @@ from agent_toolkit._testing.posttooluse_support import _run, _state_path
 
 
 class TestAgentLaunchDoesNotEnterAutonomousMode:
-    """エージェントによるスキルの起動からは自律モードの状態を立てない。"""
-
     @pytest.mark.parametrize(
         ("skill", "arguments"),
         [
@@ -33,8 +31,6 @@ class TestAgentLaunchDoesNotEnterAutonomousMode:
 
 
 class TestExitSessionResetsProcessAwisFlag:
-    """終了CLIの機械可読な応答で自動振り返り起点フラグをリセットする。"""
-
     @staticmethod
     def _invoke(session_id: str, state_dir: pathlib.Path, command: str = "atk agents-exit-session") -> None:
         result = _run(
@@ -51,7 +47,7 @@ class TestExitSessionResetsProcessAwisFlag:
 
     def test_reset_when_exit_session_invoked(self, tmp_path: pathlib.Path) -> None:
         sid = "exit-cli"
-        # 事前に自動振り返り起点フラグを立てる。
+
         _state_path(sid).write_text(
             json.dumps(
                 {
@@ -64,29 +60,14 @@ class TestExitSessionResetsProcessAwisFlag:
         self._invoke(sid, tmp_path)
         state = _read_state(tmp_path, sid)
         assert state.get("process_wi_skill_invoked") is False
-        assert state.get("autonomous_exit_invoked") is True
-
-    def test_reset_idempotent_when_already_false(self, tmp_path: pathlib.Path) -> None:
-        """既に偽の状態でも終了CLIの記録だけを追加する。"""
-        sid = "exit-idem"
-        _state_path(sid).write_text(
-            json.dumps({"process_wi_skill_invoked": False}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        self._invoke(sid, tmp_path)
-        state = _read_state(tmp_path, sid)
-        assert state.get("process_wi_skill_invoked") is False
-        assert state.get("autonomous_exit_invoked") is True
 
     def test_no_rewrite_when_exit_and_reset_state_is_already_complete(self, tmp_path: pathlib.Path) -> None:
-        """進捗起点と終了CLI記録とリセット済み状態がそろう場合は再書き込みしない。"""
         sid = "exit-no-rewrite"
         path = session_state.state_path(sid)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(
                 {
-                    "autonomous_exit_invoked": True,
                     "process_wi_skill_invoked": False,
                     "marker": "keep",
                 },
@@ -94,11 +75,11 @@ class TestExitSessionResetsProcessAwisFlag:
             ),
             encoding="utf-8",
         )
-        # 終了処理と独立した進捗起点の初回記録を、測定の前に通常のhook経由で済ませる。
+
         observed = _run({"session_id": sid, "tool_name": "Read", "tool_input": {}}, state_dir=tmp_path)
         assert observed.returncode == 0, observed.stderr
         assert "Traceback" not in observed.stderr, observed.stderr
-        # 更新精度が秒単位のファイルシステムでも、不要な書き込みを確実に検出する。
+
         os.utime(path, ns=(0, 0))
         mtime_before = path.stat().st_mtime_ns
         self._invoke(sid, tmp_path)
@@ -116,13 +97,12 @@ class TestExitSessionResetsProcessAwisFlag:
     def test_redirection_does_not_count_as_argument(self, tmp_path: pathlib.Path, command: str, recorded: bool) -> None:
         """リダイレクトだけを伴う起動は単独の起動として記録し、引数を伴う起動は記録しない。"""
         sid = "exit-redirect"
+        _state_path(sid).write_text(json.dumps({"process_wi_skill_invoked": True}), encoding="utf-8")
         self._invoke(sid, tmp_path, command)
-        assert (_read_state(tmp_path, sid).get("autonomous_exit_invoked") is True) is recorded
+        assert (_read_state(tmp_path, sid).get("process_wi_skill_invoked") is False) is recorded
 
 
 class TestProcessAwisInvokedNonIdempotent:
-    """終了CLIで戻した状態を、エージェントによる入口の起動で立て直さない。"""
-
     def test_reset_then_agent_launch_keeps_flag_false(self, tmp_path: pathlib.Path) -> None:
         sid = "reinvoke"
         _state_path(sid).write_text(json.dumps({"process_wi_skill_invoked": True}, ensure_ascii=False), encoding="utf-8")

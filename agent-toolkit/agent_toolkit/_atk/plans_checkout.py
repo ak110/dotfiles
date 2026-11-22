@@ -1,5 +1,3 @@
-"""計画バンドルのcheckoutと取得記録の管理。"""
-
 from __future__ import annotations
 
 import json
@@ -17,12 +15,10 @@ from agent_toolkit._plan import owner_records as _owner_records
 
 
 def checkout_record_root(relative_main: pathlib.Path) -> pathlib.Path:
-    """指定計画stemのcheckout記録ディレクトリを返す。"""
     return _state_paths.state_dir() / "plan-checkouts" / relative_main.stem
 
 
 def validate_saved_plan_relative_path(plan_file: str) -> pathlib.Path:
-    """正規形式または移行済み形式の`private-notes/plans/`相対メイン計画パスを返す。"""
     try:
         return _plan_file.validate_plan_relative_path(plan_file)
     except ValueError as canonical_error:
@@ -49,7 +45,6 @@ def validate_working_ci_review_relative_path(review_table: str) -> pathlib.Path:
 
 
 def validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
-    """Plans root相対のCI対応レビュー指摘管理表パスを返す。"""
     next_action = f"ci/{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}の形式で指定し直す"
     if "\0" in review_table or "\\" in review_table or "$(" in review_table:
         raise _wi_web_input.WebInputError("CI対応レビュー指摘管理表のパスが不正です", next_action=next_action)
@@ -63,18 +58,16 @@ def validate_saved_ci_review_relative_path(review_table: str) -> pathlib.Path:
 
 
 def validate_saved_checkout_relative_path(path: str) -> pathlib.Path:
-    """checkout記録が受理する計画またはCI対応レビュー指摘管理表の相対パスを返す。"""
     if _bundle_kinds.EXEC_REVIEW.matches(path):
         return validate_saved_ci_review_relative_path(path)
     return validate_saved_plan_relative_path(path)
 
 
 def read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, dict[str, bytes]] | None:
-    """checkout記録を検証して読み込む。"""
     root = checkout_record_root(relative_main)
     if not root.exists():
         return None
-    # 取得記録は取得時点の内容を持つ写しであり、壊れた記録を削除しても作業側は失われない。
+
     next_action = (
         f"`~/.claude/plans`直下の該当計画バンドルを`~/.claude/plans`の外へ退避してから取得記録{root}を削除し、"
         "`atk plans checkout <private-notes/plans/相対パス>`で再取得する"
@@ -102,7 +95,6 @@ def read_checkout_record(relative_main: pathlib.Path) -> tuple[pathlib.Path, dic
 
 
 def remove_checkout_record(relative_main: pathlib.Path) -> None:
-    """指定計画のcheckout記録だけを回収する。"""
     root = checkout_record_root(relative_main)
     if not root.exists():
         return

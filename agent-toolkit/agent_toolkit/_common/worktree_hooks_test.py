@@ -1,5 +1,3 @@
-"""プロジェクトの作成・撤去hookの公開入力と返却先を検証する。"""
-
 from __future__ import annotations
 
 import http.server
@@ -90,7 +88,6 @@ def test_hook_failure_preserves_diagnostic_and_partial_resource(tmp_path: pathli
 def test_hook_timeout_takes_precedence_over_caller_timeout(
     tmp_path: pathlib.Path, hook_timeout: int | None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """hook定義の`timeout`はhook自身の上限として呼出側の値より優先し、定義が無いhookだけを呼出側の値で打ち切る。"""
     repo, destination = tmp_path / "repo", tmp_path / "created"
     settings = repo / ".claude/settings.local.json"
     settings.parent.mkdir(parents=True)
@@ -181,7 +178,6 @@ def test_http_project_hook_lifecycle(tmp_path: pathlib.Path) -> None:
 def test_remove_nonzero_uses_resource_presence_and_preserves_diagnostic(
     tmp_path: pathlib.Path, removes_on_failure: bool
 ) -> None:
-    """作成先が無ければhookを呼ばず、hookの非0終了後は作成先の有無で成否を判定し、作成先が残った場合だけ次の撤去で同じhookを再び呼ぶ。"""
     repo = tmp_path / "repo"
     settings = repo / ".claude/settings.local.json"
     settings.parent.mkdir(parents=True)
@@ -268,7 +264,6 @@ def test_invalid_http_response_preserves_error_and_partial_resource(tmp_path: pa
 
 
 def test_diagnostic_redacts_command_response_without_changing_result(tmp_path, monkeypatch):
-    """返却値と終了コードを保持し、保存用stdout/stderrだけを伏せる。"""
     monkeypatch.setattr(worktree_hooks, "_hooks", lambda *_args: [{"type": "command", "command": "unused", "_environment": {}}])
     monkeypatch.setattr(
         worktree_hooks.process_tree,
@@ -285,7 +280,6 @@ def test_diagnostic_redacts_command_response_without_changing_result(tmp_path, m
 
 @pytest.mark.parametrize("kind", ["http", "exception"])
 def test_diagnostic_redacts_http_and_exception(tmp_path, monkeypatch, kind):
-    """HTTP応答と起動例外の本文を、判定に使った後で保存用に伏せる。"""
     hook = {"type": "http", "url": "http://127.0.0.1/", "_environment": {}}
     monkeypatch.setattr(worktree_hooks, "_hooks", lambda *_args: [hook])
 

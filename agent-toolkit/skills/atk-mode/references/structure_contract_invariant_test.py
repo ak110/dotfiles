@@ -1,5 +1,3 @@
-"""規範由来の計画入力を公開検査へ渡し、構造定義の片側改訂を検出する。"""
-
 import argparse
 import pathlib
 import re
@@ -23,14 +21,12 @@ def _layout() -> str:
 
 
 def _required_heading() -> str:
-    """規範が必須とする要求を書く節の見出し行を返す。"""
     required = re.search(r"`(## [^`]+)`を必須とし", _layout())
     assert required is not None
     return required[1]
 
 
 def _documented_plan(repo: pathlib.Path) -> str:
-    """製品定数や共通fixtureを使わず、規範の順序と雛形から記入済み本文を作る。"""
     layout = _layout()
     # 雛形はコードブロックの中にH2を持つため、次のH2までを節とみなさず、見出しの後の最初のコードブロックを取り出す。
     template = _after_heading("初回起草の雛形").split("```md\n", 1)[1].split("\n```", 1)[0]
@@ -54,7 +50,6 @@ def _documented_plan(repo: pathlib.Path) -> str:
 def test_documented_plan_is_checked_by_public_command(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """規範どおりの計画と説明追記を受理し、必須の見出しの欠落と受理側だけの変更は診断する。"""
     repo = git_repository.init_repository(tmp_path / "repo")
     path = tmp_path / "plan.md"
     content = _documented_plan(repo)
@@ -67,7 +62,6 @@ def test_documented_plan_is_checked_by_public_command(
         content = content.replace(required + "\n", "", 1)
         diagnostic = required.removeprefix("## ")
     elif case == "receiver-change":
-        # 入力は規範のまま固定し、受理側だけの改訂が見逃されないことを確認する。
         monkeypatch.setattr(_sections, "PLAN_H2_ORDER_TAIL", (*_sections.PLAN_H2_ORDER_TAIL, "未合意の節"))
         diagnostic = "固定H2`## 未合意の節`"
     path.write_text(content, encoding="utf-8")

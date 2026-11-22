@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: cause_analysisのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -57,10 +56,6 @@ def test_public_add_cause_analysis_format(
     *,
     agent: bool,
 ) -> None:
-    """エージェントが新しく書く`## 原因分析`は、バグ単位ごとに行頭語の行と本文を求め、人間の入力は拒否しない。
-
-    欠けた行頭語と本文の無い行は語と書く内容を診断に示し、廃止した表と表以前の短い記録は拒否する。
-    """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     for variable in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
@@ -103,11 +98,6 @@ def test_public_edit_keeps_saved_legacy_cause_table(
     legacy: str,
     edit: str,
 ) -> None:
-    """保存済みの旧形式の表を持つAWIは、`## 原因分析`節を変えない編集で受け付け、節を変える編集では新しい形を求める。
-
-    書式の改訂前に保存された未終了の項目へ、訂正や記録を追記できる必要がある。
-    追記は`--dry-run`と併用できないため保存まで行い、置換は`--dry-run`で判定だけを確かめる。
-    """
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -160,7 +150,6 @@ def test_add_accepts_undetermined_cause_in_awi(
     value: str,
     dry_run: bool,
 ) -> None:
-    """エージェントが原因の未確定を宣言した通常AWIを保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -193,7 +182,6 @@ def test_add_rejects_undetermined_cause_in_uwi(
     capsys: pytest.CaptureFixture[str],
     material: str,
 ) -> None:
-    """UWIは、旧形式の表の`直接的原因`行と`原因:`の行のどちらで原因の未確定を宣言しても拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -231,7 +219,6 @@ def test_add_accepts_determined_cause_variants(
     monkeypatch: pytest.MonkeyPatch,
     message: str,
 ) -> None:
-    """確定した原因の文中の語とコードフェンス内の例は、未確定の宣言として拒否しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -245,7 +232,6 @@ def test_add_accepts_undetermined_cause_from_human(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境の外からの投入は、`原因:`の行が未確定でも保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 

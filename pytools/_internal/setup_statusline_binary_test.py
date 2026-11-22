@@ -1,5 +1,3 @@
-"""pytools._internal.setup_statusline_binary のテスト。"""
-
 import collections.abc
 import subprocess
 import typing
@@ -13,18 +11,15 @@ from pytools._internal import setup_statusline_binary as mod
 
 
 def _client(handler) -> httpx.Client:
-    """MockTransportで擬似応答を返すHTTPクライアントを生成する。"""
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
 @pytest.fixture(autouse=True)
 def _without_working_tree(monkeypatch: pytest.MonkeyPatch) -> None:
-    """各テストの作業ツリー選択を明示的な入力だけに限定する。"""
     monkeypatch.delenv("CHEZMOI_WORKING_TREE", raising=False)
 
 
 def _git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    """一時Gitリポジトリへコマンドを実行する。"""
     return subprocess.run(
         ["git", "-C", str(repo), *args],
         capture_output=True,
@@ -35,7 +30,6 @@ def _git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _make_git_repo(tmp_path: Path) -> Path:
-    """origin/masterとdevelopが同じ初期コミットを指す一時Gitリポジトリを作成する。"""
     repo = tmp_path / "repo"
     _git(tmp_path, ["init", "--initial-branch=master", str(repo)])
     _git(repo, ["config", "user.email", "test@example.invalid"])
@@ -51,26 +45,22 @@ def _make_git_repo(tmp_path: Path) -> Path:
 
 
 def _write_statusline_change(repo: Path) -> None:
-    """statusline配下の追跡ファイルへ変更を加える。"""
     manifest = repo / "rust" / "claude-statusline" / "Cargo.toml"
     manifest.write_text(manifest.read_text(encoding="utf-8") + "description = 'changed'\n", encoding="utf-8")
 
 
 def _commit_statusline_change(repo: Path) -> None:
-    """statusline配下の変更をcommit済みにする。"""
     _write_statusline_change(repo)
     _git(repo, ["add", "rust/claude-statusline/Cargo.toml"])
     _git(repo, ["commit", "-m", "change"])
 
 
 def _stage_statusline_change(repo: Path) -> None:
-    """statusline配下の変更をstage済みにする。"""
     _write_statusline_change(repo)
     _git(repo, ["add", "rust/claude-statusline/Cargo.toml"])
 
 
 def _prepare_install_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path, Path]:
-    """バイナリとETagの導入先を一時ディレクトリへ向ける。"""
     install_dir = tmp_path / "install"
     install_path = install_dir / ("claude-statusline.exe" if mod.sys.platform == "win32" else "claude-statusline")
     etag_path = install_dir / ".claude-statusline.etag"
@@ -81,8 +71,6 @@ def _prepare_install_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> t
 
 
 class _GitAndMiseStub:
-    """Gitは実行し、miseのbuildだけを記録するスタブ。"""
-
     def __init__(self, *, build_returncode: int = 0, write_artifact: bool = True) -> None:
         self.build_returncode = build_returncode
         self.write_artifact = write_artifact
@@ -122,7 +110,6 @@ class _GitAndMiseStub:
 
 
 def _assert_local_build(stub: _GitAndMiseStub, repo: Path) -> None:
-    """mise経由のローカルビルド呼び出しを検証する。"""
     assert len(stub.build_calls) == 1
     record = stub.build_calls[0]
     assert record["command"] == [
@@ -157,7 +144,6 @@ def test_develop_builds_for_all_tracked_change_states(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """developのcommit済み・staged・unstaged差分をローカルビルドへ接続する。"""
     del _state
     repo = _make_git_repo(tmp_path)
     prepare_change(repo)
@@ -175,7 +161,6 @@ def test_develop_builds_for_all_tracked_change_states(
 
 
 def test_develop_builds_for_nonignored_untracked_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """developのignore対象外untracked差分をローカルビルドへ接続する。"""
     repo = _make_git_repo(tmp_path)
     untracked = repo / "rust" / "claude-statusline" / "local-config.toml"
     untracked.write_text("local\n", encoding="utf-8")
@@ -191,7 +176,6 @@ def test_develop_builds_for_nonignored_untracked_file(monkeypatch: pytest.Monkey
 
 
 def test_develop_without_statusline_diff_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """developでもstatusline差分が無ければRelease downloadを使う。"""
     repo = _make_git_repo(tmp_path)
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)
     requested_urls: list[str] = []
@@ -215,7 +199,6 @@ def test_develop_without_mise_uses_release_download(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """statusline差分があってもmiseが無ければRelease downloadを使う。"""
     repo = _make_git_repo(tmp_path)
     _write_statusline_change(repo)
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)
@@ -234,7 +217,6 @@ def test_develop_without_mise_uses_release_download(
 
 
 def test_ignored_untracked_file_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """ignore対象のuntrackedファイルだけではRelease downloadを維持する。"""
     repo = _make_git_repo(tmp_path)
     gitignore = repo / ".gitignore"
     gitignore.write_text("rust/claude-statusline/ignored.toml\n", encoding="utf-8")
@@ -255,7 +237,6 @@ def test_ignored_untracked_file_uses_release_download(monkeypatch: pytest.Monkey
 
 
 def test_non_develop_branch_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """develop以外のbranchではRelease downloadを使う。"""
     repo = _make_git_repo(tmp_path)
     _git(repo, ["switch", "master"])
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)
@@ -272,7 +253,6 @@ def test_non_develop_branch_uses_release_download(monkeypatch: pytest.MonkeyPatc
 
 
 def test_non_git_working_tree_uses_release_download(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Gitリポジトリでない作業ツリーではRelease downloadを使う。"""
     working_tree = tmp_path / "not-repository"
     working_tree.mkdir()
     _, install_path, _ = _prepare_install_paths(monkeypatch, tmp_path)

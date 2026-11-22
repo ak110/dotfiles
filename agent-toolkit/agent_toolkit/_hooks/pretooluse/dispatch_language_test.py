@@ -15,8 +15,6 @@ from agent_toolkit._testing.pretooluse_support import run_without_skill_notices 
 
 
 class TestResponseLanguageCheck:
-    """PreToolUseは直接入力を判定し、transcriptの判定はmodへ委ねる。"""
-
     @pytest.mark.parametrize("delegated", ["0", "1"])
     def test_transcript_language_does_not_block_current_operation(self, tmp_path: pathlib.Path, delegated: str) -> None:
         transcript = tmp_path / "transcript.jsonl"
@@ -74,11 +72,6 @@ class TestResponseLanguageCheck:
 
 
 class TestRemovedChecksAreSilent:
-    """規範の想起、CLI形式の事前検出または文体の検出を目的としていた撤去済みの判定処理が、通知も補正も返さないことを検証する。
-
-    撤去した判定処理の呼び出しが残ると、公開されたhookの出力へ警告・遮断・`updatedInput`のいずれかが現れる。
-    """
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -132,7 +125,6 @@ class TestRemovedChecksAreSilent:
             {"tool_name": "Read", "tool_input": {"file_path": str(tmp_path / ".env")}},
             {"tool_name": "WebFetch", "tool_input": {"url": "https://example.com", "prompt": "全文を返す"}},
             {
-                # 汎用定義は遮断の対象のため、専用定義で撤去済みの判定の無出力を確かめる。
                 "tool_name": "Agent",
                 "tool_input": {"subagent_type": "project-reviewer", "prompt": "調べる", "description": "調査"},
             },
@@ -168,7 +160,6 @@ class TestRemovedChecksAreSilent:
     ),
 )
 def test_repeated_pretooluse_does_not_reinject_language(tmp_path: pathlib.Path) -> None:
-    """11回以上の呼び出しでも定期の言語指示を返さない。"""
     for _ in range(12):
         result = _run(
             {"session_id": "no-language-reinjection", "tool_name": "Read", "tool_input": {}},

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: sectionsのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -23,7 +22,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 def test_public_add_post_approval_uses_fixed_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開CLIは専用の事後承認形式を保存し、選択肢の指定を要求しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "実施した対応で問題ありませんか？", source="test", entry_type="uwi")
@@ -69,7 +67,6 @@ def test_add_dry_run_rejects_invalid_input(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--dry-run`も必須の選択肢を欠く指定を公開CLIで拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     args = _cmd_add_args(tmp_path, "質問", entry_type=WI_TYPE_UWI, dry_run=True)
@@ -88,7 +85,6 @@ def test_add_dry_run_reports_all_reserved_uwi_markup(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """UWI本文の予約要素を一度のdry-runで全て報告する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     body = (
@@ -113,7 +109,6 @@ def test_add_dry_run_rejects_agent_awi_without_required_sections(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """必須節が無いエージェント由来AWIは検証と実登録が同じ理由で拒否する。"""
     notes = _setup_notes(tmp_path)
     git_repository.init_repository(notes, initial_branch="main")
     git_repository.run_git(notes, "commit", "--allow-empty", "-m", "base")
@@ -145,7 +140,6 @@ def test_add_dry_run_keeps_section_errors_without_style_warnings(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """表記診断を撤去しても、必須節の欠落は拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     with pytest.raises(SystemExit) as result:
@@ -165,7 +159,6 @@ def test_add_accepts_colloquial_and_dash_without_warnings(
     dry_run: bool,
     editor: bool,
 ) -> None:
-    """ファイルとエディター入力の口語・ダッシュを、保存とdry-runで警告せず保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -192,7 +185,6 @@ def test_add_dry_run_rejects_batch(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--dry-run`と`--batch`の併用はusage errorにする。"""
     body_path = tmp_path / "body.md"
     body_path.write_text("本文", encoding="utf-8")
     with pytest.raises(SystemExit) as exc_info:
@@ -206,7 +198,6 @@ def test_add_dry_run_rejects_batch(
 def test_add_rejects_empty_optional_section(
     section: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """設けた任意節が空なら保存を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"{_AGENT_AWI_BODY}\n\n## {section}\n"
@@ -219,7 +210,6 @@ def test_add_rejects_empty_optional_section(
 def test_add_rejects_unordered_optional_sections(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """任意節が規定順でなければ保存を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"{_AGENT_AWI_BODY}\n\n## 完成条件\n結果\n\n## 原因分析\n原因"
@@ -232,7 +222,6 @@ def test_add_rejects_unordered_optional_sections(
 def test_add_accepts_optional_sections_in_order(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """原因分析と調査結果などを正しい順で受理する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = (
@@ -247,7 +236,6 @@ def test_add_accepts_optional_sections_in_order(
 def test_add_ignores_required_heading_in_code_fence(
     fence: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """コード例中の見出しは必須節に数えない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"本文\n\n{fence}markdown\n## 反映内容と反映先\n見かけだけ\n{fence}"
@@ -269,7 +257,6 @@ def test_add_does_not_close_code_fence_with_shorter_or_different_marker(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """短いか異なるフェンスの後も必須見出しはコード内として扱う。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"本文\n\n{opening}\n例\n{non_closing}\n## 反映内容と反映先\n見かけだけ\n{closing}"
@@ -282,7 +269,6 @@ def test_add_does_not_close_code_fence_with_shorter_or_different_marker(
 def test_add_accepts_required_heading_after_longer_closing_fence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """長い閉じフェンスの後の必須見出しを認識する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"本文\n\n```markdown\n例\n````\n\n{_AGENT_AWI_SECTIONS}"

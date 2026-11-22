@@ -16,7 +16,6 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 def _render_config(content: str, environment: dict[str, str]) -> str:
-    """既存設定を実テンプレートで評価し、再適用できる本文を返す。"""
     return _test_helpers.render_chezmoi_modify_template(
         REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml", content, environment
     )
@@ -26,7 +25,6 @@ def _render_config(content: str, environment: dict[str, str]) -> str:
 def test_config_template_preserves_explicit_plugin_enabled_state(
     enabled: bool | None, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """pluginの明示状態と未知キーを再適用でも保持し、未設定の有効状態は新設しない。"""
     plugin_id = "agent-toolkit@ak110-dotfiles"
     content = f'[plugins."{plugin_id}"]\ncustom = "keep"\n'
     if enabled is not None:
@@ -45,7 +43,6 @@ def test_config_template_preserves_explicit_plugin_enabled_state(
 def test_config_template_disables_personality_and_reapplies(
     existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """未設定と既存有効値を無効値へ更新し、未知値と再適用後の値を保持する。"""
     content = existing + 'model = "custom-model"\n[mcp_servers.custom]\ncommand = "custom-command"\n'
     for _ in range(2):
         content = _render_config(content, host_environ())
@@ -129,7 +126,6 @@ def test_config_template_applies_context_overrides(context_config: str) -> None:
     ],
 )
 def test_config_template_removes_reasoning_overrides(reasoning_config: str) -> None:
-    """既存設定の有無と値によらず固定を解除し、無関係なユーザー設定を保つ。"""
     template = REPO_ROOT / ".chezmoi-source/dot_codex/modify_private_config.toml"
     result = subprocess.run(
         ["chezmoi", "execute-template", "--file", str(template), "--with-stdin", "--working-tree", str(REPO_ROOT)],
@@ -179,10 +175,6 @@ def test_config_template_sets_mouse_scroll_speed_and_keeps_tui_keys(
 def test_config_template_disables_experimental_context_management(
     existing: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """ホーム設定の実験的コンテキスト管理を無効にし、再適用でも同じ値と無関係なキーを保つ。
-
-    有効のままでは、保存の成否と独立に要約なしで会話文脈を破棄する操作がメイン会話へ公開される。
-    """
     content = existing if existing else existing + "[features]\nuser_feature = true\n"
     for _ in range(2):
         content = _render_config(content, host_environ())

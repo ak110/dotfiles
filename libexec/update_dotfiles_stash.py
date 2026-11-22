@@ -28,7 +28,6 @@ def _git_output(arguments: list[str], worktree: pathlib.Path, *, input_text: str
 
 
 def _parents(oids: set[str], worktree: pathlib.Path) -> dict[str, tuple[str, ...]] | None:
-    """指定したcommitの親を、履歴をたどらず1回で取得する。"""
     if not oids:
         return {}
     output = _git_output(["log", "--no-walk", "--stdin", "--format=%H %P"], worktree, input_text="\n".join(sorted(oids)))
@@ -38,7 +37,6 @@ def _parents(oids: set[str], worktree: pathlib.Path) -> dict[str, tuple[str, ...
 
 
 def _generated_only(oids: set[str], worktree: pathlib.Path) -> tuple[set[str], dict[str, str]] | None:
-    """mise.lockだけの退避と、その元履歴を保持する参照の読取値を返す。"""
     parents = _parents(oids, worktree)
     if parents is None:
         return None
@@ -53,7 +51,6 @@ def _generated_only(oids: set[str], worktree: pathlib.Path) -> tuple[set[str], d
     }
     requests: dict[str, str] = {}
     for oid, values in candidates.items():
-        # --stdinの比較結果は先頭commitのOIDを見出しにする。indexと未追跡も独立に調べる。
         requests[oid] = f"{oid} {values[0]}"
         requests[values[1]] = f"{values[1]} {values[0]}"
         if len(values) == 3:
@@ -84,7 +81,7 @@ def _generated_only(oids: set[str], worktree: pathlib.Path) -> tuple[set[str], d
     generated = {oid for oid, values in candidates.items() if not ({oid, *values[1:]} & user_content)}
     if not generated:
         return set(), {}
-    # 退避がローカルcommitの唯一の参照になっている場合は、その履歴も保全する。
+
     root_output = _git_output(
         ["for-each-ref", "--format=%(refname) %(objectname) %(symref)", "refs/heads/", "refs/remotes/"], worktree
     )
@@ -142,7 +139,6 @@ def _migrate_old(worktree: pathlib.Path, protection_prefix: str) -> int:
             protected += 1
     if commands:
         if removed:
-            # 到達性判定の根拠も同じトランザクションで検証し、途中のbranch移動による履歴喪失を防ぐ。
             commands = [*(f"verify {ref} {oid}" for ref, oid in retention_roots.items()), *commands]
         transaction = "\n".join(("start", *commands, "prepare", "commit", ""))
         if _git_output(["update-ref", "--stdin"], worktree, input_text=transaction) is None:
@@ -158,7 +154,6 @@ def _migrate_old(worktree: pathlib.Path, protection_prefix: str) -> int:
 
 
 def protect_old(*, cwd: pathlib.Path | None = None) -> int:
-    """旧退避を一括整理し、生成差分の蓄積と保護済み退避の再処理を防ぐ。"""
     worktree = (cwd or pathlib.Path.cwd()).resolve()
     if worktree_stash._is_queue_repository(worktree, private_notes.default_private_notes()):  # pylint: disable=protected-access
         outcome.report_failure(
@@ -190,7 +185,6 @@ def protect_old(*, cwd: pathlib.Path | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """共通CLIと同じ入力・保護条件で退避操作だけを実行する。"""
     outcome.force_utf8_stdio()
     arguments = sys.argv[1:] if argv is None else argv
     if arguments == ["protect-old"]:

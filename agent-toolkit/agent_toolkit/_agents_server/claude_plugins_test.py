@@ -1,5 +1,3 @@
-"""CLI一覧の境界を模擬し、子用入力の反映と監視資源の寿命を検証する。"""
-
 # SDKの制御境界と監視資源の終了を直接検証する。
 # pylint: disable=protected-access
 
@@ -50,13 +48,11 @@ def _inventory(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 @pytest.fixture(name="manual_observer")
 def _manual_observer(monkeypatch: pytest.MonkeyPatch) -> None:
-    """OSの通知を確かめない試験で、変更を`mark_changed`だけから与える。"""
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", ManualObserver)
 
 
 @pytest.fixture(autouse=True)
 def _shared_watch_released() -> Iterator[None]:
-    """各試験の終了時に、全接続が共有監視の参照を解除して監視threadが残らないことを確かめる。"""
     yield
     assert claude_plugins._shared_watch.observer is None
 
@@ -73,7 +69,6 @@ def _options(tmp_path: Path, root: Path) -> dict[str, Any]:
 
 @pytest.mark.asyncio
 async def test_local_root_and_cli_settings_are_preserved(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """明示した開発rootとCLIの設定読込条件を維持し、ローカル変更を通知する。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     options = _options(tmp_path, root)
@@ -98,7 +93,6 @@ async def test_local_root_and_cli_settings_are_preserved(tmp_path: Path, invento
 
 @pytest.mark.asyncio
 async def test_versioned_input_is_separate_from_server_copy(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """保持markerから現在版を選び、serverの保持内容を変えずに子用入力を用意する。"""
     original = tmp_path / "cache/mine/agent-toolkit/1.0.0"
     held = _plugin(tmp_path / "held/agent-toolkit")
     (held.parent / ".agent-toolkit-plugin-root.json").write_text(
@@ -124,7 +118,6 @@ async def test_versioned_input_is_separate_from_server_copy(tmp_path: Path, inve
 @pytest.mark.parametrize("failure", ["disabled", "other-project", "ambiguous"])
 @pytest.mark.asyncio
 async def test_invalid_inventory_never_enables_toolkit(tmp_path: Path, inventory: SimpleNamespace, failure: str) -> None:
-    """一覧を取得できても有効なtoolkitが一意に決まらなければ、子用toolkitを追加しない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     inventory.items = [_installed(root)]
     if failure == "disabled":
@@ -143,7 +136,6 @@ async def test_invalid_inventory_never_enables_toolkit(tmp_path: Path, inventory
 
 @pytest.mark.asyncio
 async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """CLIが読み込まないsynced項目の空installPathで、有効な導入一覧の解決を止めない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     # Claude Codeは同名の手元導入に隠されたsynced項目をinstallPath空文字で返す。
     inventory.items = [_installed(root), _installed(root, id="agent-toolkit@synced", scope="synced", installPath="")]
@@ -182,7 +174,6 @@ async def test_copy_failure_preserves_previous_input(
 
 @pytest.mark.asyncio
 async def test_observer_threads_are_joined_on_cancel(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """利用側の取消しでも所有observerとemitterを終了させる。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     ready = asyncio.Event()
@@ -206,7 +197,6 @@ async def test_observer_threads_are_joined_on_cancel(tmp_path: Path, inventory: 
 
 
 def test_source_root_keeps_development_path(tmp_path: Path) -> None:
-    """markerを持たないrootは導入済みcacheへ置換しない。"""
     assert plugin_root.plugin_source_root(tmp_path) == tmp_path
 
 
@@ -244,7 +234,6 @@ async def test_reload_switches_complete_input_before_control_request(
 
 @pytest.mark.asyncio
 async def test_settings_and_enabled_plugins_are_watched(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """無効pluginと別projectを除外し、指定した設定と有効plugin変更を監視する。"""
     root = _plugin(tmp_path / "checkout")
     enabled = tmp_path / "enabled-plugin"
     enabled.mkdir()
@@ -316,7 +305,6 @@ def _response(root: Path, version: str = "1.0.0") -> dict[str, Any]:
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
 async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventory: SimpleNamespace, new_version: str) -> None:
-    """同版の内容変更と導入先の版変更を固定dirへ反映し、成功時にdirtyを解除する。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     inventory.items = [_installed(root)]
     options = _options(tmp_path, root)
@@ -348,7 +336,6 @@ async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventor
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
 async def test_invalid_reload_response_preserves_old_input(tmp_path: Path, inventory: SimpleNamespace, failure: str) -> None:
-    """SDKの応答形式・plugin集合・版・エラー数が不正なら入力を復旧する。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     inventory.items = [_installed(root)]
     options = _options(tmp_path, root)
@@ -378,7 +365,6 @@ async def test_invalid_reload_response_preserves_old_input(tmp_path: Path, inven
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
 async def test_change_during_reload_is_kept_pending(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """制御要求の応答待ちに発生した更新通知を次のreloadまで保持する。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
@@ -399,7 +385,6 @@ async def test_change_during_reload_is_kept_pending(tmp_path: Path, inventory: S
 async def test_updated_input_keeps_mcp_on_server_runtime(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
 ) -> None:
-    """skill入力を新しい版へ交換しても、MCPの起動定義は所有serverの版へ固定する。"""
     runtime = _plugin(tmp_path / "held-runtime")
     original_server = {
         "command": "uv",
@@ -431,7 +416,6 @@ async def test_updated_input_keeps_mcp_on_server_runtime(
 
 @pytest.mark.asyncio
 async def test_unreclaimed_cli_keeps_input_but_stops_watch(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """CLIの終了が未確認なら、監視を止めた後も読み込み中の入力を回収しない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     inventory.items = [_installed(root)]
     options = _options(tmp_path, root)
@@ -454,7 +438,6 @@ async def test_unreclaimed_cli_keeps_input_but_stops_watch(tmp_path: Path, inven
 async def test_unused_installation_fields_do_not_block_prepare_or_reload(
     tmp_path: Path, inventory: SimpleNamespace, ignored: str
 ) -> None:
-    """対象外の空・変形pathは初回と同じ接続のreloadの期待集合へ入れない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
     extra: dict[str, Any] = {"id": "other@mine", "enabled": True, "scope": "synced", "installPath": ""}
     if ignored == "unknown-scope":
@@ -481,7 +464,6 @@ async def test_unused_installation_fields_do_not_block_prepare_or_reload(
 @pytest.mark.parametrize("path", ["", "relative", None, {"shape": "changed"}])
 @pytest.mark.asyncio
 async def test_selected_installation_path_remains_required(tmp_path: Path, inventory: SimpleNamespace, path: Any) -> None:
-    """利用対象の不正を任意監視の縮退で隠さない。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root, installPath=path)]
     with pytest.raises(ValidationError):
@@ -500,7 +482,6 @@ async def test_inventory_unavailable_keeps_explicit_input_and_only_disables_watc
     versioned: bool,
     failure: str,
 ) -> None:
-    """一覧を取得できない（子孫は回収済み）場合、版付き・非版付きの入力とも作業を止めず監視だけを無効にする。"""
     root = _plugin(tmp_path / ("cache/mine/agent-toolkit/1.0.0" if versioned else "checkout"))
     inventory.stdout = {"bad-json": "{", "bad-shape": "{}", "bad-item": "[1]"}.get(failure)
     inventory.returncode = 1 if failure == "nonzero" else 0
@@ -508,7 +489,6 @@ async def test_inventory_unavailable_keeps_explicit_input_and_only_disables_watc
 
         def fail(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
             if failure == "timeout":
-                # `run_with_timeout`は子孫を回収できた時間上限を`TimeoutExpired`で返す。
                 raise subprocess.TimeoutExpired(command, 30)
             raise OSError("実行ファイルを開始できない")
 
@@ -573,10 +553,10 @@ async def test_monitor_start_failure_preserves_prepared_input_and_reclaims_monit
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         input_root = Path(options["plugins"][0]["path"])
         assert (input_root / "skills/content.md").read_text(encoding="utf-8") == "初期内容"
-        # 開始済みの監視threadだけを停止し、開始できなかったthreadは停止の対象にしない。
+
         assert reloader._watch_keys is None and stopped == ([True] if failure == "schedule" else [])
         assert claude_plugins._shared_watch.observer is None
-        # 監視を無効にした接続でも、再読み込みは再登録せずに反映結果を確定する（20261106-201711-002のバグ単位B）。
+
         client._query._send_control_request.return_value = _response(input_root)
         await reloader.reload(client)
         assert reloader.updated and reloader._watch_keys is None
@@ -588,7 +568,6 @@ async def test_monitor_start_failure_preserves_prepared_input_and_reclaims_monit
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
 async def test_reload_ignores_unused_source_and_builtin_fields(tmp_path: Path, inventory: SimpleNamespace, source: Any) -> None:
-    """利用するname/path/versionを確認し、未利用のSDK欄の形を強制しない。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
@@ -627,7 +606,6 @@ async def test_reschedule_failure_keeps_confirmed_reload_and_stops_monitor(
 async def test_monitor_cleanup_and_programming_failures_are_not_hidden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, failure: str
 ) -> None:
-    """停止不能や実装不良を、補助機能の正常な縮退へ変換しない。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
 
@@ -655,7 +633,6 @@ async def test_monitor_cleanup_and_programming_failures_are_not_hidden(
 
 @pytest.mark.asyncio
 async def test_connections_share_one_registration_per_watch_target(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """同じ監視先を持つ2接続は監視先ごとに1件だけ登録し、参照が残る間は他方の変更検知を保つ。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     loop = asyncio.get_running_loop()
@@ -686,7 +663,6 @@ async def test_connections_share_one_registration_per_watch_target(tmp_path: Pat
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
 async def test_reload_accepts_listed_plugin_without_manifest(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    """manifestを持たない一覧由来のプラグインがあっても、再読み込みはpathの一致で成功する。"""
     root = _plugin(tmp_path / "checkout")
     # 2026-11-07のCLI 2.1.319の`claude plugin list --json`で、typescript-lsp@claude-plugins-officialの導入先は
     # LICENSEとREADME.mdだけを持ち、`.claude-plugin/plugin.json`を持たなかった。
@@ -723,7 +699,6 @@ async def test_explicit_plugin_without_manifest_still_fails_reload(tmp_path: Pat
 async def test_failed_reload_is_not_retriggered_by_inventory_in_use_markers(
     tmp_path: Path, inventory: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一覧取得が導入先の`.in_use/`へ書く印では再読み込みを要求せず、入力の変更だけを通知する。"""
     root = _plugin(tmp_path / "checkout")
     inventory.items = [_installed(root)]
     original = claude_plugins.process_tree.run_with_timeout
@@ -740,7 +715,6 @@ async def test_failed_reload_is_not_retriggered_by_inventory_in_use_markers(
 
     monkeypatch.setattr(claude_plugins.process_tree, "run_with_timeout", run)
     async with claude_plugins.ClaudePluginReloader(_options(tmp_path, root), asyncio.get_running_loop()) as reloader:
-        # 所有タスクと同じく、変更通知の集約を終えてから再読み込みする。
         reloader.mark_changed()
         await asyncio.wait_for(reloader.wait_for_change(), timeout=5)
         client = SimpleNamespace(

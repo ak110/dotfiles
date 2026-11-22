@@ -1,5 +1,3 @@
-"""managerの各責務が共有するsession状態、engine別のbackendの保持と終了の通知先。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -37,8 +35,6 @@ from agent_toolkit._common import runtime_environment, runtime_identity, session
 
 @dataclasses.dataclass
 class PendingResume:
-    """timeout後も同じsessionから観測・共有する再開操作。"""
-
     state: SessionResumeState
     task: asyncio.Task[SessionState]
     prompt: ResumePrompt
@@ -46,15 +42,12 @@ class PendingResume:
 
     @property
     def delivery(self) -> str:
-        """backendが要求単位で保持した配送結果を返す。"""
         return self.prompt.delivery
 
     def discard_previous_result(self) -> None:
-        """配送または明示的な破棄の後に退避済み結果本文を除く。"""
         self.previous_result = None
 
     def take_previous_result(self) -> dict[str, Any] | None:
-        """退避済み結果を返し、進行中再開から本文を取り除く。"""
         result = self.previous_result
         self.discard_previous_result()
         return result
@@ -67,8 +60,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class ManagerBase:
-    """managerの各責務が共有するsession状態とbackendを保持し、終了したsessionの記録を引き継ぐ。"""
-
     def __init__(
         self,
         status_writer: status_file.StatusFileWriter | None | object = _DEFAULT_STATUS_WRITER,
@@ -131,7 +122,6 @@ class ManagerBase:
             timer.cancel()
 
     async def save_control_state(self) -> None:
-        """生イベントの受領確認より先に、登録簿・終了結果・root射影を保存する。"""
         if self._status_writer is not None:
             await self._status_writer.flush_async()
         else:
@@ -178,7 +168,6 @@ class ManagerBase:
                     del self._resource_release_tasks[session_id]
 
     def _record_resources(self, session: SessionState, event: str) -> None:
-        """自身が所有するsessionの遷移だけを共有状態とホスト資源へ対応付ける。"""
         if self._status_writer is None or self.sessions.get(session.session_id) is not session:
             return
         task = asyncio.create_task(
@@ -197,7 +186,6 @@ class ManagerBase:
             await run_file_operation(resource_snapshot.record, *args, **kwargs)
 
     async def _drain_diagnostics(self) -> None:
-        """取得を開始した診断の完了を全件回収する。"""
         tasks = tuple(self._diagnostic_tasks)
         results = await asyncio.gather(*tasks, return_exceptions=True)
         self._diagnostic_tasks.difference_update(tasks)
@@ -206,7 +194,6 @@ class ManagerBase:
                 raise result
 
     async def _refresh_heartbeat(self) -> None:
-        """MCPサーバーの生存中に状態ファイルの生存の印を更新する。"""
         assert self._status_writer is not None
         while True:
             await asyncio.sleep(status_file.HEARTBEAT_INTERVAL_SECONDS)
@@ -220,7 +207,6 @@ class ManagerBase:
                 )
 
     def _backend(self, engine: str) -> backends.Backend:
-        """engineのbackendを返す。初めて使うengineではbackendを生成して保持する。"""
         backend = self._backends.get(engine)
         if backend is None:
             backend = backends.create_backend(
@@ -259,7 +245,6 @@ class ManagerBase:
         try:
             await session.drain_registration()
             if self._status_writer is not None:
-                # 回収が解放開始と交錯するため、開始時点の退避コピーから結果を再公開しない。
                 await self._status_writer.retain_result_async(session)
             await self._backend(session.engine).release_session(session)
             if session.publish_registry:
@@ -293,13 +278,10 @@ class ManagerBase:
         codex_thread_id = self._launcher_codex_thread_id
         return codex_thread_id if codex_thread_id and shared_layout.valid_session_id(codex_thread_id) else None
 
-    @property
-    def launcher_is_codex(self) -> bool:
-        """委譲元がCodexの会話かを返す。Codexには会話内modが無く、ホストの回復操作も異なる。"""
-        return bool(self._launcher_codex_thread_id)
+    def launcher_is_codex(self, session_id: str) -> bool:
+        return session_id == self._launcher_codex_thread_id
 
     def launcher_record_context(self) -> dict[str, Any]:
-        """直接の委譲元と、一意に解決した記録ファイルをtask本文へ渡す。"""
         launcher = self.launcher_session_id()
         if launcher is None:
             return {"status": "unresolved"}
@@ -325,7 +307,6 @@ class ManagerBase:
         return {**context, "status": "resolved", "record_path": str(record.paths[0].resolve())}
 
     def launcher_model(self) -> tuple[str, str] | None:
-        """直上の委譲元の登録を優先し、無ければ一意なセッション記録の最新モデルを返す。"""
         launcher = self.launcher_session_id()
         if launcher is None:
             return None

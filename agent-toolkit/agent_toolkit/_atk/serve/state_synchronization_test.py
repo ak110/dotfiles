@@ -1,5 +1,3 @@
-"""serveのstateに関するsynchronizationの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -63,7 +61,6 @@ async def test_state_publishes_at_max_wait_deadline_and_restarts_debounce(
     assert published == ["changed"]
     assert len(timers) == pending_before
 
-    # 以降は新しい保留期間となり、静穏期間の経過で再び1回発行する。
     clock[0] += 0.01
     current.on_modified(event)
     await asyncio.sleep(0)
@@ -100,7 +97,6 @@ async def test_cancelled_sync_request_does_not_cancel_shared_sync(
 
 @pytest.mark.asyncio
 async def test_serve_state_watches_all_queue_states(tmp_path: pathlib.Path) -> None:
-    """年月配下の各状態のファイルを追加・変更・削除すると、購読者へ通知する。"""
     directory = tmp_path / "2026" / "11"
     directory.mkdir(parents=True)
     async with state.ServeState(tmp_path, debounce_seconds=0.01) as current:
@@ -170,10 +166,6 @@ def test_sync_ignores_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
 
 
 def test_markdown_change_marks_index_before_debounced_publish(tmp_path: pathlib.Path) -> None:
-    """Markdownの変更は通知の間引きを待たずに索引の変更記録へ渡し、Markdown以外とディレクトリは渡さない。
-
-    間引き後の通知で画面が再取得したときに、索引が古い一覧を返さないようにするためである。
-    """
     current = state.ServeState(tmp_path, debounce_seconds=60, timer_factory=_FakeTimer)
     calls: list[str] = []
     current.change_listener = lambda: calls.append("changed")

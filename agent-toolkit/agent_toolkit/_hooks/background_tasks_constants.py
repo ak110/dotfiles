@@ -8,8 +8,6 @@ import re
 _ASYNC_WAIT_TOOLS: frozenset[str] = frozenset({"Agent", "ScheduleWakeup", "CronCreate", "Monitor"})
 
 
-# `<task-notification>...</task-notification>`要素を非貪欲に切り出す正規表現。
-# `re.DOTALL`で本文中の改行にも一致させる。
 _TASK_NOTIFICATION_RE = re.compile(r"<task-notification>.*?</task-notification>", re.DOTALL)
 
 
@@ -30,20 +28,12 @@ Bashの背景移行（実行上限、手動、`run_in_background`）は構造化
 """
 
 
-# 抽出した値はバックグラウンドタスクの識別子として`<task-id>`との突合と停止対象の所有判定へ渡すため、
-# 文末に付く句読点を識別子へ取り込まない。
-# 識別子の文字種を限定する形は採らない。限定した場合、その文字種に含まれない文字を持つ識別子は
-# 途中までしか一致せず、従来正しく抽出できていた入力の結果が変わるためである。
 _TRAILING_PUNCTUATION = ".,;:!?)]}\"'"
 
 
-# `<task-notification>`要素内の`<tool-use-id>toolu_xxx</tool-use-id>`から
-# `toolu_xxx`を抽出する正規表現。
 _TOOL_USE_ID_RE = re.compile(r"<tool-use-id>(toolu_[\w]+)</tool-use-id>")
 
 
-# `<task-id>...</task-id>`要素からagentId（task-id）を抽出する正規表現。
-# task-notification本文に`<tool-use-id>`が含まれない形式のフォールバック解決に用いる。
 _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 
 
@@ -56,7 +46,6 @@ _TASK_ID_RE = re.compile(r"<task-id>([^<]+)</task-id>")
 _SENDMESSAGE_BG_RESUME_MARKER = "resumed from transcript in the background"
 
 
-# Agent・Task起動結果の状態値と、statusを欠く実記録で起動成功を示す本文マーカー。
 _AGENT_ASYNC_LAUNCH_STATUS = "async_launched"
 
 
@@ -66,7 +55,6 @@ _AGENT_SYNC_COMPLETION_STATUSES: frozenset[str] = frozenset({"completed", "teamm
 _AGENT_ASYNC_LAUNCH_MARKER = "Async agent launched successfully"
 
 
-# TaskStop成功時の`toolUseResult.message`先頭に現れる固有マーカー。
 _TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
 
 
@@ -74,5 +62,4 @@ _TASK_STOP_SUCCESS_PREFIX = "Successfully stopped task"
 _DEBUG_TRUTHY_VALUES: frozenset[str] = frozenset({"1", "true", "yes", "on"})
 
 
-# 同一hookプロセスで複数判定が同じStop入力を参照する場合に、transcriptの全走査を再利用する。
-_PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], bool] = {}
+_PENDING_ASYNC_WORK_CACHE: dict[tuple[object, ...], str] = {}

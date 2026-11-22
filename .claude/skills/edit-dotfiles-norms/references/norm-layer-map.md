@@ -22,7 +22,7 @@
 | hook通知・CLIの出力 | `agent-toolkit/agent_toolkit/_hooks/`、`agent-toolkit/hooks/`、`atk`の`次の操作` | 通知の契機に当たったエージェント | 操作・ターンの境界（hookの発火、コマンドの実行） | 機械的な検出・強制の結果、必要な操作、規範の節への参照 | 判断手順や条件の本文（規範の節に書いて参照する） |
 | dotfilesのプロジェクト規範 | `AGENTS.md`、`.claude/skills/`（本スキルなど） | 本リポジトリを編集するエージェントだけ | 常時（`AGENTS.md`）、スキル起動時、読込表の条件 | 本リポジトリ固有の構成、開発・公開手順、記録の所在 | 配布先でも必要な規範（agent-basics・agent-toolkitへ置く） |
 
-設計記録（`docs/development/design*.md`・`concepts*.md`・`incidents*.md`）は経緯と理由の記録であり、実行時に従う規定を置く層には数えない。
+設計記録（`docs/development/design*.md`・`concepts*.md`）とcommit本文は経緯と理由の記録であり、実行時に従う規定を置く層には数えない。
 配布形式と配布先の対応は`.claude/skills/dotfiles-repo-layout/SKILL.md`、agent-basicsとagent-toolkitの境界の理由は`docs/development/design-agent-basics.md`を参照する。
 
 ## 選定の例

@@ -49,14 +49,13 @@ class TestRunWindowsPathSetup:
         assert windows_env["broadcasts"] == 0
 
     def test_already_registered_expanded_case_insensitive(self, windows_env: dict[str, typing.Any]):
-        # %LOCALAPPDATA% 展開済みかつ大小不一致のエントリを既登録として認識する
+
         expanded = str(windows_env["shims_dir"]).upper()
         windows_env["existing"] = (f"C:\\WINDOWS;{expanded}", _WinregFake.REG_EXPAND_SZ)
         _setup_mise.run()
         assert not windows_env["writes"]
 
     def test_already_registered_in_system_path(self, windows_env: dict[str, typing.Any]):
-        """システム側に同じディレクトリがあればユーザー側へ書き込まない。"""
         windows_env["existing"] = (r"C:\Windows", _WinregFake.REG_EXPAND_SZ)
         windows_env["system"] = str(windows_env["shims_dir"])
         _setup_mise.run()
@@ -72,14 +71,11 @@ class TestRunWindowsPathSetup:
 
 
 class TestWindowsProcessPathPriority:
-    """現プロセスPATHの既存優先順位を維持する。"""
-
     def test_appends_shims_after_existing_node_path(
         self,
         windows_env: dict[str, typing.Any],
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """既存Nodeのパスをmise shimsより前に保つ。"""
         node_path = r"C:\DATA\Apps\node"
         monkeypatch.setenv("PATH", node_path)
 
@@ -92,7 +88,6 @@ class TestWindowsProcessPathPriority:
         windows_env: dict[str, typing.Any],
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """空PATHではshimsだけを設定する。"""
         monkeypatch.setenv("PATH", "")
 
         _setup_mise.run()
@@ -104,7 +99,6 @@ class TestWindowsProcessPathPriority:
         windows_env: dict[str, typing.Any],
         monkeypatch: pytest.MonkeyPatch,
     ):
-        """shimが本体を起動できるよう、PATHに無いmise本体の配置も加える。"""
         links = Path(os.environ["LOCALAPPDATA"]) / "Microsoft" / "WinGet" / "Links"
         links.mkdir(parents=True)
         (links / "mise.exe").write_bytes(b"")

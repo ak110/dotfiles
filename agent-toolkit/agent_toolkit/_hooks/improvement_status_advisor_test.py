@@ -13,7 +13,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 @pytest.fixture(autouse=True)
 def _no_startup_input(monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行環境の起動入力を試験へ混ぜない。"""
     monkeypatch.setenv(mcp_environment.SESSION_START_INPUT_ENV, "{}")
 
 
@@ -30,7 +29,6 @@ def _payload(text: str, **extra: object) -> str:
     ],
 )
 def test_uninvestigated_reason_is_notified(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """観測した報告行と区分名付きの未調査理由へ、最小調査か引き継ぎを促す通知を返す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     decision, body = improvement_status_advisor.evaluate(_payload(text))
     assert decision == "notify"
@@ -54,13 +52,11 @@ def test_uninvestigated_reason_is_notified(text: str, monkeypatch: pytest.Monkey
     ],
 )
 def test_other_reports_examples_and_quotes_are_not_notified(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """処置を定めた理由、未調査を理由にしない説明、他の値、例と引用、報告行の外には通知しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     assert improvement_status_advisor.evaluate(_payload(text)) == ("", "")
 
 
 def test_subagent_and_delegated_session_are_not_notified(monkeypatch: pytest.MonkeyPatch) -> None:
-    """委譲先は改善点を委譲元へ返すため、委譲先では判定しない。"""
     text = "気付いた改善点: A（AWI化ステータス: 不要 原因が未調査）"
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     assert improvement_status_advisor.evaluate(_payload(text, agent_id="subagent-1")) == ("", "")
@@ -69,7 +65,6 @@ def test_subagent_and_delegated_session_are_not_notified(monkeypatch: pytest.Mon
 
 
 def test_stop_aggregates_notice_without_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stopの集約は通知を文脈へ渡し、ターンの終了を遮断しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("improvement_status_advisor",))
     result = stop.evaluate(_payload("気付いた改善点: A（AWI化ステータス: 不要 原因が未調査）"))
@@ -88,7 +83,6 @@ def test_stop_aggregates_notice_without_blocking(monkeypatch: pytest.MonkeyPatch
     ],
 )
 def test_stop_does_not_force_continuation_for_missing_record_lines(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """記録の行は以後の報告でしか補えないため、逸脱の報告で終えるStopは繰り返しても継続を求めない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("improvement_status_advisor",))
     for _ in range(3):
@@ -96,7 +90,6 @@ def test_stop_does_not_force_continuation_for_missing_record_lines(text: str, mo
 
 
 def test_stop_notice_is_not_repeated_after_continuation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じターンで一度継続した後のStopでは、改善点の通知を繰り返さない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     text = "気付いた改善点: A（AWI化ステータス: 不要 原因が未調査）"
     assert improvement_status_advisor.evaluate(_payload(text))[0] == "notify"
@@ -106,7 +99,6 @@ def test_stop_notice_is_not_repeated_after_continuation(monkeypatch: pytest.Monk
 # test-copy-contract: 不正な報告区分の入力には書式修正だけを案内し、追加資料の取得へ誤誘導しない契約。
 @pytest.mark.parametrize("status", ["不要。調査で正常と確認", "予定 入力が届いたら再開"])
 def test_format_correction_uses_delivered_template_without_extra_reads(status: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """区分名の取り違えは通知が挙げる書式と区分で直せ、追加資料の全文取得へ誘導しない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     result = _run_hook_in_process("improvement_status_advisor", _payload(f"気付いた改善点: A（AWI化ステータス: {status}）"))
     assert result.returncode == 0
@@ -122,7 +114,6 @@ def test_format_correction_uses_delivered_template_without_extra_reads(status: s
 @pytest.mark.parametrize("shape", ["empty", "omitted", "other-report"])
 @pytest.mark.parametrize("missing", [None, "作り込み側の候補", "見逃し側の候補", "比較結論"])
 def test_deferral_comparison_fields_are_checked_before_delivery_and_at_stop(missing, shape, monkeypatch):
-    """項目の非空だけを両入口で検査し、比較結果の採否へ踏み込まない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     fields = {"作り込み側の候補": "既存処理へ統合", "見逃し側の候補": "境界の試行", "比較結論": "継続費用が防げる損失を上回る"}
     if missing is not None:

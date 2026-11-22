@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_commands）。"""
-
 from __future__ import annotations
 
 import json
@@ -75,7 +73,6 @@ def _event_without_cd_prefix(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _event_with_command(event: dict[str, Any], args: list[str]) -> dict[str, Any]:
-    """判定用の引数だけを差し替え、元イベントは呼び出し側に保持する。"""
     result = {**event, "command": json.dumps(args, ensure_ascii=False), "command_full": json.dumps(args, ensure_ascii=False)}
     operation = _json_object(str(event.get("operation", "")))
     if operation is not None:
@@ -202,7 +199,6 @@ def _powershell_command_tokens(command: str) -> list[_ShellToken] | None:
 
 
 def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
-    """保存済み子結果の正常な包装だけを子コマンドへ帰属させる。"""
     args = _event_command_args(event)
     if args and _basename(args[0]) in _SHELL_NAMES and len(args) == 3 and args[1] in {"-c", "-lc"}:
         tokens = _shell_command_tokens(args[2])
@@ -237,7 +233,7 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
         return event
     inner = _event_with_command(event, child)
     inner["exit_code"] = code
-    # 検証の検出は出力を伴う。検索の否定では、子の診断が無いことをバイト数で保証する。
+
     if result["stdout_bytes"] or result["stderr_bytes"]:
         return inner if _is_check_detected(inner) else event
     inner["diagnostic"] = ""
@@ -246,10 +242,6 @@ def _event_without_run_command_wrapper(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _command_without_cd_prefix(command: str) -> str | None:
-    """先頭の`cd <パス>;`か`cd <パス> &&`を外したコマンド文字列を返す。前置が無い場合は`None`を返す。
-
-    残りの語は引用し直し、引用の外の演算子だけを演算子として残すため、連結の判定は元のコマンドと変わらない。
-    """
     tokens = _shell_command_tokens(command)
     if tokens is None or len(tokens) < 4:
         return None
@@ -268,7 +260,6 @@ def _command_without_cd_prefix(command: str) -> str | None:
 
 
 def _single_read_predicate(command: str, exit_code: int) -> bool:
-    """リダイレクト付きの単独述語へ終了1を帰属させる。制御演算子とパイプは既存分類へ委ねる。"""
     tokens = _shell_command_tokens(command)
     if (
         exit_code != 1
@@ -284,8 +275,6 @@ def _single_read_predicate(command: str, exit_code: int) -> bool:
 
 
 class _ShellToken(NamedTuple):
-    """シェルのコマンド文字列から得た語1件。`operator`は引用の外にある演算子であることを表す。"""
-
     value: str
     operator: bool
 
@@ -294,13 +283,8 @@ _DOUBLE_QUOTE_ESCAPABLE = frozenset('$`"\\\n')
 
 
 def _shell_command_tokens(command: str) -> list[_ShellToken] | None:
-    """シェルのコマンド文字列を、演算子を独立した要素とする語の列へ分解する。解釈できない場合は`None`を返す。
-
-    引用とエスケープは`QuotingScanner`で判定し、引用の外にある演算子文字の連続だけを演算子とする。
-    引用またはエスケープで渡された演算子形の文字はデータの語に残り、連結構造の判定に使わない。
-    """
     scanner = _QuotingScanner(command)
-    # 文字ごとの区分を集める。`None`は語の区切り、真偽値は引用の外の演算子文字かを表す。
+
     pieces: list[tuple[str, bool] | None] = []
     while scanner.index < len(command):
         char = command[scanner.index]
@@ -351,13 +335,6 @@ def _shell_command_tokens(command: str) -> list[_ShellToken] | None:
 
 
 def _is_negative_search_command(tokens: list[_ShellToken], exit_code: int) -> bool:
-    """出力の無い非0終了が、検索の一致0件という正常な否定結果に当たるかを返す。
-
-    `&&`で連結した全段が読取専用の述語であれば、終了コード1を正常な否定結果とする。
-    それ以外の演算子はパイプ（`|`）だけを許し、パイプラインの終了コードを決める最終段で判定する。
-    最終段が読取専用の述語で終了コード1、または最終段が検索を起動する`xargs`で終了コード123
-    （起動したコマンドのいずれかが1から125で終わったことを表す）の場合を一致0件とする。
-    """
     if _ShellToken("&&", True) in tokens:
         parts: list[list[str]] = [[]]
         for token in tokens:
@@ -428,7 +405,6 @@ def _failure_command_parts(event: dict[str, Any]) -> tuple[str, str, str, list[s
                 elif (word.startswith(("-u", "-C")) and len(word) > 2) or word.startswith(("--unset=", "--chdir=")):
                     index += 1
                 elif word.startswith("-"):
-                    # 未解釈の包装は入力全体で区別し、オプション名による誤統合を避ける。
                     return "env", shlex.join(args), display, args
                 else:
                     break
@@ -496,7 +472,6 @@ def _failure_exit_code(event: dict[str, Any]) -> int | None:
 
 
 def _is_check_detected(event: dict[str, Any]) -> bool:
-    """検証コマンドが欠陥を検出して終了コード1を返した結果かを判定する。"""
     if _failure_exit_code(event) != 1:
         return False
     name, subcommand, _, args = _failure_command_parts(event)

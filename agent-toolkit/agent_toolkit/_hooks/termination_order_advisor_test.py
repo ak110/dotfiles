@@ -14,8 +14,8 @@ import pytest
 
 from agent_toolkit._atk import run_script
 from agent_toolkit._common import automated_prompt
+from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import (
-    autonomous_exit,
     stop,
     termination_evidence,
     termination_evidence_operations,
@@ -23,7 +23,6 @@ from agent_toolkit._hooks import (
     termination_order_advisor,
     user_prompt_submit,
 )
-from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import emit_response, notice_cycle
 from agent_toolkit._testing import git_repository
@@ -34,7 +33,6 @@ from agent_toolkit._testing.termination_evidence_support import isolated_session
 
 @pytest.fixture(autouse=True)
 def _fresh_caches() -> None:
-    """前の試験のtranscript解析とバックグラウンドタスクの判定を流用しない。"""
     _clear_caches()
 
 
@@ -59,7 +57,6 @@ def _payload(session_id: str, transcript_path: str, *, agent_id: str | None = No
 def _observe(
     session_id: str, trace: pathlib.Path, tool_use_id: str, tool_name: str, tool_input: dict, response: object
 ) -> None:
-    """同じ呼び出しの開始と成功した応答を証拠の所有モジュールへ渡す。"""
     payload = {
         "session_id": session_id,
         "transcript_path": str(trace),
@@ -83,7 +80,6 @@ def _commit(session_id: str, trace: pathlib.Path, tool_use_id: str = "toolu_comm
 
 
 def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
-    """成果作業の無い回答・調査のセッションでは起動証拠を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-unrelated", trace, "agent-basics:writing-standards")
     _start_skill("sess-unrelated", trace, "agent-toolkit:atk-mode", "toolu_entry", arguments="この不具合を直して")
@@ -92,7 +88,6 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
 
 
 def _evaluate_delivered(payload: str) -> tuple[str, str]:
-    """判定で採用した通知だけを、Stopの公開応答形式で出力する。"""
     with notice_cycle(json.loads(payload)["session_id"], "stop", "main"):
         decision, body = termination_order_advisor.evaluate(payload)
         response = _stop_check_runner.response_for(decision, body)
@@ -111,7 +106,6 @@ def _evaluate_delivered(payload: str) -> tuple[str, str]:
 def test_notifies_target_skill_without_completion_report_once(
     tmp_path: pathlib.Path, skill: str, arguments: str | None, label: str
 ) -> None:
-    """対象スキルと入口の作業の起動不足は一度通知し、起動済みの作業では終了判断を求めない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-missing", trace, skill, arguments=arguments)
     decision, body = _evaluate_delivered(_payload("sess-missing", str(trace)))
@@ -126,7 +120,6 @@ def test_notifies_target_skill_without_completion_report_once(
 
 @pytest.mark.parametrize("compact", [False, True])
 def test_completion_before_target_restart_is_reused_until_compact(tmp_path: pathlib.Path, compact: bool) -> None:
-    """新しい依頼でも文脈内の読込を再利用し、圧縮で本文が失われた場合だけ再案内する。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_1", arguments="process-wi")
     _start_skill("sess-second", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
@@ -139,7 +132,6 @@ def test_completion_before_target_restart_is_reused_until_compact(tmp_path: path
 
 
 def test_completion_of_revised_playbook_is_not_reused(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """手順書が改訂された後は、改訂前の版の起動を文脈の読込として再利用しない。"""
     trace = _write_transcript(tmp_path, [])
     _start_skill("sess-revised", trace, "agent-toolkit:atk-mode", "toolu_1", arguments="process-wi")
     _start_skill("sess-revised", trace, "agent-toolkit:atk-mode", "toolu_2", arguments="report-completion")
@@ -152,7 +144,6 @@ def test_completion_of_revised_playbook_is_not_reused(tmp_path: pathlib.Path, mo
 
 
 def test_missing_completion_notice_resumes_after_condition_resolves(tmp_path, monkeypatch):
-    """同じ不足を抑え、起動後は新しい作業でも再利用し、圧縮後に不足すれば再通知する。"""
     trace = _write_transcript(tmp_path, [])
     session_id = "completion-notice-cycle"
     _commit(session_id, trace)
@@ -184,7 +175,6 @@ def test_approves_delegated_session(tmp_path: pathlib.Path, monkeypatch: pytest.
 
 
 def test_approves_native_subagent_even_when_parent_work_is_pending(tmp_path: pathlib.Path) -> None:
-    """親の成果作業の記録を共有する委譲先へ完了報告の手順書を要求しない。"""
     trace = _write_transcript(tmp_path, [])
     _commit("sess-native", trace)
     assert termination_order_advisor.evaluate(_payload("sess-native", str(trace), agent_id="agent-review")) == ("approve", "")
@@ -201,7 +191,6 @@ def test_approves_and_logs_when_transcript_unreadable(tmp_path: pathlib.Path) ->
 
 
 def _background_bash_entries(tool_use_id: str, task_id: str, command: str = "atk agents wait") -> list[dict]:
-    """背景Bashの起動と、`backgroundTaskId`を持つ起動結果のエントリを返す。"""
     return [
         {
             "type": "assistant",
@@ -231,7 +220,6 @@ def _append_entries(trace: pathlib.Path, entries: list[dict]) -> None:
 
 
 def _human_input(session_id: str, trace: pathlib.Path, turn_id: str, prompt: str) -> None:
-    """UserPromptSubmitへ人間の入力を渡し、その時点のtranscriptの位置を作業の開始位置として記録させる。"""
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(
             json.dumps({"session_id": session_id, "turn_id": turn_id, "prompt": prompt, "transcript_path": str(trace)})
@@ -239,7 +227,6 @@ def _human_input(session_id: str, trace: pathlib.Path, turn_id: str, prompt: str
 
 
 def test_unrelated_background_task_does_not_exempt_missing_completion(tmp_path: pathlib.Path) -> None:
-    """作業の開始より前から動く常駐タスクだけでは、起動不足を免除しない。"""
     trace = tmp_path / "trace.jsonl"
     _append_entries(trace, _background_bash_entries("toolu_server", "resident"))
     _human_input("background-unrelated", trace, "request", "作業を進める")
@@ -422,7 +409,6 @@ def _record_self_edit(payload: dict, target: pathlib.Path, *, tool: str = "Edit"
 
 @pytest.mark.parametrize("tool", ["Edit", "Write", "Bash"])
 def test_self_edit_requires_completion_report_and_shows_unscoped_paths(tmp_path: pathlib.Path, tool: str) -> None:
-    """成功した自編集を成果作業として通知し、公開範囲が未確定の未コミットの編集を添える。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md", tool=tool)
     decision, body = termination_order_advisor.evaluate(json.dumps(payload))
@@ -434,7 +420,6 @@ def test_self_edit_requires_completion_report_and_shows_unscoped_paths(tmp_path:
 @pytest.mark.parametrize("origin", ["instruction", "answer", "standing-authorization"])
 @pytest.mark.parametrize("scope", ["既存の判断基準どおり", "commitしない"])
 def test_public_scope_evidence_removes_unscoped_note(tmp_path: pathlib.Path, origin: str, scope: str) -> None:
-    """原入力または適用済み認可から確定した範囲は未確定の編集の注記を除き、起動不足は通知する。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md")
     quote = f"公開範囲は{scope}とする"
@@ -507,7 +492,6 @@ def test_codex_self_edit_does_not_block_stop(tmp_path: pathlib.Path) -> None:
 def test_public_context_supplies_exact_input_for_scope_recording(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """変更前でも原入力を公開コマンドで取得し、同じ入力だけを公開範囲の記録へ渡せる。"""
     payload, repository = _self_edit_setup(tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "self-edit")
     assert termination_evidence.main(["--context"]) == 0
@@ -537,7 +521,7 @@ def test_blocked_from_context_without_human_input(
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session_id)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     goal = automated_prompt.wrap("WIを処理する", source=automated_prompt.SOURCE_PROCESS_LOOP, kind=automated_prompt.KIND_GOAL)
-    # 自動起動の生成入力も、人間入力と同じUserPromptSubmitのhookへ届く。
+
     _human_input(session_id, trace, "goal", goal)
     _commit(session_id, trace)
     failure_response = {"stdout": "", "stderr": "接続できない", "exit_code": 1}
@@ -581,7 +565,6 @@ def test_blocked_from_context_without_human_input(
 
 
 def test_scope_metadata_keeps_cancelled_work_cancelled(tmp_path: pathlib.Path) -> None:
-    """公開範囲の証拠は、既存の中止判断を取り下げる操作ではない。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md")
     work_id = termination_evidence.session_works(payload)[-1][0]
@@ -664,7 +647,6 @@ def test_windows_edit_paths_match_git_status_paths(monkeypatch: pytest.MonkeyPat
 def _omit_self_edit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, codex: bool = False, deliverable: str = "edit"
 ) -> tuple[dict, pathlib.Path, str]:
-    """成果作業とその規範を用意し、公開CLIから省略を記録する。"""
     payload, repository = _self_edit_setup(tmp_path)
     if codex:
         payload["turn_id"] = "codex-turn"
@@ -712,7 +694,6 @@ def _omit_self_edit(
 def test_project_policy_omission_allows_completion_without_skill(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, deliverable: str, *, codex: bool
 ) -> None:
-    """両ホストで規範に基づく省略はスキルを起動せず成果を届けて終了できる。"""
     payload, _policy, _work_id = _omit_self_edit(tmp_path, monkeypatch, codex=codex, deliverable=deliverable)
     assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
 
@@ -721,7 +702,6 @@ def test_project_policy_omission_allows_completion_without_skill(
 def test_changed_omission_policy_restores_missing_completion(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, changed: str
 ) -> None:
-    """保存後の規範全文の変更と消失は、終了時に省略を無効にする。"""
     payload, policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
     if changed == "modified":
         policy.write_text("作業完了報告を実施する。\n", encoding="utf-8")
@@ -733,7 +713,6 @@ def test_changed_omission_policy_restores_missing_completion(
 
 @pytest.mark.parametrize("switch", ["input", "start"])
 def test_omission_does_not_exempt_later_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, switch: str) -> None:
-    """新入力の後の成果作業と明示した開始では、以前の省略を流用しない。"""
     payload, _policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
     termination_evidence.observe_user(json.dumps({**payload, "prompt_id": "next", "prompt": "次の成果を作成する"}))
     if switch == "start":
@@ -757,7 +736,6 @@ def test_omission_does_not_exempt_later_work(tmp_path: pathlib.Path, monkeypatch
 def test_next_decision_replaces_omission_without_changing_action_scope(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, action: str
 ) -> None:
-    """次の判断で省略を取り下げ、既存の中止・置換・再開・公開範囲の作用を維持する。"""
     payload, _policy, work_id = _omit_self_edit(tmp_path, monkeypatch)
     document = {
         "session_id": "self-edit",
@@ -775,7 +753,6 @@ def test_next_decision_replaces_omission_without_changing_action_scope(
 
 
 def test_omission_exempts_only_selected_work(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """省略した作業と、別の起動不足が共存する場合は別作業だけを通知する。"""
     payload, repository = _self_edit_setup(tmp_path)
     _record_self_edit(payload, repository / "README.md")
     first = termination_evidence.session_works(payload)[0][0]
@@ -879,18 +856,8 @@ def test_omission_does_not_survive_wait_or_failure_resolution(
     assert termination_order_advisor.evaluate(json.dumps(payload))[0] == "notify"
 
 
-def test_omission_keeps_autonomous_exit_obligation(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動を省略した成果作業でも、process-loopの終了コマンドの義務は残る。"""
-    payload, _policy, _work_id = _omit_self_edit(tmp_path, monkeypatch)
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
-    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "self-edit")
-    assert termination_order_advisor.evaluate(json.dumps(payload)) == ("approve", "")
-    assert autonomous_exit.evaluate(json.dumps(payload))[0] == "block"
-
-
 @pytest.mark.parametrize("codex", [False, True])
 def test_public_stop_leaves_started_completion_to_document(tmp_path, monkeypatch, codex):
-    """両ホストで起動済み作業の送達や残工程の判断を文書へ委ねる。"""
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("termination_order_advisor",))
     monkeypatch.setattr(stop, "CODEX_CHECK_MODULE_NAMES", ("termination_order_advisor",))
     session_id = "review-codex" if codex else "review-claude"

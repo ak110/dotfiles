@@ -24,7 +24,6 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 def test_decision_cli_reads_evidence_from_identifiers(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, action: str, quote_mode: str
 ) -> None:
-    """識別子だけで判断を記録し、明示した引用の不一致は全判断で拒否する。"""
     human_input(tmp_path, "request", "公開せず作業を進める")
     supply_commit(tmp_path)
     document: dict[str, Any] = {
@@ -85,7 +84,6 @@ def test_decision_cli_reads_evidence_from_identifiers(
 
 
 def test_omission_cli_resolves_policy_and_current_input(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """最小の省略JSONが全文と人間入力を保存し、規範の変更後は免除を失効させる。"""
     text = "完了報告は指示まで省く。\n"
     repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": text})
     policy = repository / "CLAUDE.md"
@@ -112,7 +110,6 @@ def test_omission_cli_resolves_policy_and_current_input(tmp_path: pathlib.Path, 
 
 
 def test_omission_policy_rejects_policy_in_nested_worktree(tmp_path: pathlib.Path) -> None:
-    """入れ子の別worktreeの規範では省略できず、対象自身の規範だけを受理する。"""
     repository = git_repository.init_repository(
         tmp_path / "repo", files={"CLAUDE.md": "完了報告を省く。\n"}, commit_message="規範を保存"
     )

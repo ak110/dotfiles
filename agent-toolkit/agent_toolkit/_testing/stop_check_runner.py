@@ -13,7 +13,6 @@ from agent_toolkit._hooks.notice import emit_response
 
 
 def response_for(decision: str, body: str) -> dict[str, object] | None:
-    """判定1件の結果を、その判定だけを含むStopの応答へ写す。終了の許可は`None`を返す。"""
     if decision == "block":
         return {"decision": "block", "reason": body}
     if decision == "notify":
@@ -24,7 +23,6 @@ def response_for(decision: str, body: str) -> dict[str, object] | None:
 
 
 def main(argv: list[str]) -> int:
-    """`argv[0]`の判定モジュールへ標準入力のStop入力を渡し、応答を標準出力へ書く。"""
     module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     decision, body = module.evaluate(sys.stdin.read())
     response = response_for(decision, body)

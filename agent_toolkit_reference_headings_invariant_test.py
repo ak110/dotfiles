@@ -1,5 +1,3 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -9,7 +7,6 @@ import pytest
 
 from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths, resolve_plugin_reference
 
-# 見出し名で節を指す参照を検査する規範Markdownの範囲。
 _NORMATIVE_MARKDOWN_PREFIXES = (
     "agent-basics/skills/",
     f"{_PLUGIN_PREFIX}/rules/",
@@ -27,19 +24,16 @@ _HEADING_REFERENCE_PATTERN = re.compile(
 )
 
 
-# `` `<パス>.md`の`### <見出し>` ``のように見出し記号付きで節を指す記法。
 _HEADING_SYMBOL_REFERENCE_PATTERN = re.compile(
     rf"(?:(?P<plugin>{_PLUGIN_PREFIX}|agent-basics):(?P<skill>[A-Za-z0-9_-]+)`?の)?"
     r"`(?P<path>[^`\s]+?\.md)`の`#{2,6} (?P<name>[^`\n]+)`"
 )
 
 
-# 規範Markdownに加えて見出し名参照を検査する設計文書。
 _EXTENDED_HEADING_REFERENCE_DOCS = re.compile(r"docs/development/(?:design[^/]*|architecture|operations)\.md")
 
 
 def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]:
-    """追跡ファイルのうち見出し名参照を検査する規範Markdownを返す。"""
     return [
         path
         for path in sources
@@ -48,11 +42,6 @@ def _normative_markdown_paths(sources: list[pathlib.Path]) -> list[pathlib.Path]
 
 
 def _extended_heading_reference_sources(sources: list[pathlib.Path]) -> list[pathlib.Path]:
-    """規範Markdownの外で見出し名参照を検査する追跡ファイル（テスト以外のPythonと設計文書）を返す。
-
-    テストは欠落した参照をfixtureとして意図的に含み、方針記録（`concepts*.md`）と障害記録（`incidents*.md`）は
-    当時の節名を記録として保持するため、検査の対象から外す。
-    """
     return [
         path
         for path in sources
@@ -69,11 +58,6 @@ def _resolve_heading_reference_target(
     markdown_paths: list[pathlib.Path],
     plugin: str | None = None,
 ) -> tuple[pathlib.Path | None, bool]:
-    """参照が一意に指すMarkdownと、候補が複数あって一意に決まらないかを返す。
-
-    候補が0件の参照（生成物の名前や`<役割名>`のような置換用の名前）は検査の対象外として`(None, False)`を返す。
-    スキル名で修飾した参照がそのスキルの配下に無い場合と、末尾一致の候補が複数ある場合は`(None, True)`を返す。
-    """
     for variable in _PLUGIN_ROOT_VARIABLES:
         reference = reference.replace(variable, f"{_PLUGIN_PREFIX}/")
     if reference.startswith(("agent-toolkit:", "agent-basics:")):
@@ -117,7 +101,6 @@ _HEADING_LINE_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
 def _section_body(path: pathlib.Path, name: str) -> str:
-    """コードフェンスの外で`name`と一致する見出しが1つだけある場合に、その節の本文を返す。無いか複数ならValueErrorを送出する。"""
     lines = path.read_text(encoding="utf-8").splitlines()
     headings: list[tuple[int, int, str]] = []
     fence = ""
@@ -256,7 +239,6 @@ def test_heading_symbol_reference_fails_after_heading_removal(tmp_path: pathlib.
 
 
 def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> None:
-    """直前に起動した同スキルのSKILLを、参照元自身のSKILLと区別する。"""
     root = tmp_path / "agent-basics/skills"
     manifest = root.parent / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(parents=True)
@@ -274,7 +256,6 @@ def test_heading_reference_keeps_same_skill_context(tmp_path: pathlib.Path) -> N
 
 
 def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
-    """テスト、方針記録および障害記録を見出し名参照の拡大範囲から外し、コードと設計文書を含める。"""
     paths = [
         pathlib.Path("src/sample.py"),
         pathlib.Path("src/sample_test.py"),
@@ -282,7 +263,6 @@ def test_extended_heading_reference_sources_exclude_tests_and_records() -> None:
         pathlib.Path("docs/development/architecture.md"),
         pathlib.Path("docs/development/operations.md"),
         pathlib.Path("docs/development/concepts-codex-context.md"),
-        pathlib.Path("docs/development/incidents-reporting.md"),
     ]
 
     assert _extended_heading_reference_sources(paths) == [paths[0], paths[2], paths[3], paths[4]]
@@ -316,7 +296,6 @@ def test_heading_reference_fails_after_heading_removal(tmp_path: pathlib.Path) -
 
 
 def test_heading_reference_resolves_skill_qualified_path(tmp_path: pathlib.Path) -> None:
-    """スキル名で修飾した参照資料のパスを、そのスキルの配下で解決する。"""
     target = tmp_path / _PLUGIN_PREFIX / "skills" / "atk-mode" / "playbooks" / "publish.md"
     target.parent.mkdir(parents=True)
     target.write_text("## 公開状態の4項目\n", encoding="utf-8")
@@ -359,7 +338,6 @@ def test_ambiguous_heading_reference_is_reported(tmp_path: pathlib.Path) -> None
 
 
 def test_paragraph_number_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """節名の後に段落番号で位置を指す参照を報告する。節の改訂で番号がずれても見出しの実在だけでは検出できない。"""
     target = tmp_path / "docs" / "prevention.md"
     target.parent.mkdir(parents=True)
     target.write_text("# 再発防止\n\n## 再発防止策\n\n本文\n\n## 自動検出の選定\n\n基準\n", encoding="utf-8")

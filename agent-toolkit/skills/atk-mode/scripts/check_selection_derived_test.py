@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の導出した新設先を検証する。"""
 
 import pathlib
 import typing
@@ -19,7 +18,6 @@ def test_public_check_accepts_related_fixture_outside_body_directories(
     section: str,
     documentation: bool,
 ) -> None:
-    """実装に必要な別配置のテストコードは、本文への文書範囲の併記にかかわらず個別登録できる。"""
     repo, notes = env
     (repo / "tests").mkdir()
     _awi(notes, "a.md", "`src/model.py`を是正する。" + ("`docs/`も更新する。" if documentation else ""))
@@ -80,7 +78,6 @@ def test_public_check_normalizes_equivalent_repository_addresses(
     tmp_path: pathlib.Path,
     env: tuple[pathlib.Path, pathlib.Path],
 ) -> None:
-    """SSH短縮形とHTTPSの構文差は所属の不一致にしない。"""
     repo, notes = env
     git_repository.run_git(repo, "remote", "set-url", "origin", "git@GitHub.com:TEST/REPO.git")
     _awi(notes, "a.md", "`src/model.py`を変更する。")
@@ -91,7 +88,6 @@ def test_public_check_normalizes_equivalent_repository_addresses(
 def test_public_check_accepts_derived_new_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], section: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """名前のない要求から導出した個別新設は、同じ親の別レーンとも独立して受理する。"""
     repo, notes = env
     items = []
     costs = []
@@ -109,7 +105,6 @@ def test_public_check_accepts_derived_new_paths(
 def test_public_mark_integrated_preserves_created_derived_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], section: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """新設先の作成をまたいでも、統合状態の反復保存と全WI対象の判定で判断履歴を保つ。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/`へ保存用入口を新設する。")
     record = _derived("src/save.py")
@@ -133,7 +128,6 @@ def test_public_mark_integrated_preserves_created_derived_paths(
 def test_public_check_derived_paths_from_answered_uwi(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """パスを示さない回答からも限定調査の範囲を渡せる。意味は本文と根拠で検収する。"""
     repo, notes = env
     (notes / "processing/u.md").write_text(
         "---\ntype: uwi\n---\n\n## 回答\n\n結果を保存する入口も新設する。\n", encoding="utf-8"
@@ -157,7 +151,7 @@ def test_public_check_derived_paths_from_answered_uwi(
         ("absolute", 1),
         ("escape", 1),
         ("glob", 1),
-        ("missing-parent", 1),
+        ("missing-parent", 0),
         ("outside", 1),
         ("missing-write", 1),
         ("excluded-only", 1),
@@ -170,7 +164,6 @@ def test_public_check_derived_paths_from_answered_uwi(
 def test_public_check_rejects_invalid_derived_new_paths(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], case: str, code: int, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """導出記録の不正を拒否し、他の本文パスの未列挙は受理する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/`へ保存用入口を新設する。")
     record = _derived("src/save.py")
@@ -215,7 +208,6 @@ def test_public_check_rejects_invalid_derived_new_paths(
         return
     before = path.read_bytes()
     if code == 1:
-        # 記録するレーンの項目は統合済みとして作業ツリーの状態を前提とする判定から外れ、統合状態を保存する。
         assert _dispatch(str(path), "--work-dir", str(repo), "--mark-integrated", "lane-01", "--output", str(path)) == 0
         assert yaml.safe_load(path.read_text(encoding="utf-8"))["選定"][0]["統合状態"] == "統合済み"
         path.write_bytes(before)

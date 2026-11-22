@@ -1,5 +1,3 @@
-"""review_tableの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import argparse
@@ -139,7 +137,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _invoke_table_operation(operation: str, path: pathlib.Path) -> int:
-    """レビュー指摘管理表を入力として受け取る4つの操作を、同じパスで呼び出す。"""
     return {
         "validate": lambda: table.validate(path),
         "show": lambda: table.show(path),
@@ -158,7 +155,6 @@ _SERIES_HEAD = "修正系列の開始時のHEAD"
 
 
 def _assert_guides_series_head_name(text: str) -> None:
-    """案内文が表の名前を修正系列の開始時のHEADで示し、原因commitで示さないことを確かめる。"""
     assert f"ci-<{_SERIES_HEAD}" in text
     assert "原因commit" not in text
 

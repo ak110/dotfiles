@@ -15,7 +15,6 @@ from agent_toolkit._testing import git_repository
 
 
 def _append_record(path_text: str, record: str, max_bytes: int) -> None:
-    """別プロセスから共有ログへテストレコードを追記する。"""
     _file_lock.locked_rotate_and_append(pathlib.Path(path_text), record + "\n", max_bytes)
 
 
@@ -23,7 +22,6 @@ class TestLockedRotateAndAppend:
     """排他付きローテーションと追記の不可分性を検証する。"""
 
     def test_concurrent_writers_preserve_all_records_at_rotation_boundary(self, tmp_path: pathlib.Path) -> None:
-        """閾値超過状態からの並行追記で全レコードを保持する。"""
         path = tmp_path / "parallel.log"
         max_bytes = 1_000
         path.write_text("x" * (max_bytes + 1), encoding="utf-8")
@@ -46,7 +44,6 @@ class TestEnsurePlanLockIgnored:
 
     @staticmethod
     def _exclude_path(repository: pathlib.Path) -> pathlib.Path:
-        """通常cloneの除外設定ファイルのパスを返す。"""
         return repository / ".git" / "info" / "exclude"
 
     def test_preserves_existing_content_and_ignores_all_plan_locks(self, tmp_path: pathlib.Path) -> None:
@@ -75,7 +72,6 @@ class TestEnsurePlanLockIgnored:
         assert not git_repository.git_output(tmp_path, "status", "--porcelain")
 
     def test_keeps_existing_gitignore_untouched(self, tmp_path: pathlib.Path) -> None:
-        """管理パターンが`.gitignore`へ残るcloneでも、そのファイルを変更しない。"""
         git_repository.init_repository(tmp_path)
         gitignore = tmp_path / ".gitignore"
         recorded = b"existing-pattern\n*.lock\n/plans/**/*.lock\n"
@@ -88,7 +84,6 @@ class TestEnsurePlanLockIgnored:
         assert self._exclude_path(tmp_path).read_bytes().splitlines().count(pattern) == 1
 
     def test_writes_shared_exclude_from_a_worktree(self, tmp_path: pathlib.Path) -> None:
-        """worktreeから呼んだ場合は共有側の除外設定へ書き、そのworktreeで除外が成立する。"""
         repository = tmp_path / "repository"
         repository.mkdir()
         git_repository.init_repository(repository)
@@ -121,7 +116,6 @@ class TestEnsurePlanLockIgnored:
         ],
     )
     def test_exclude_content_is_idempotent(self, tmp_path: pathlib.Path, content: bytes) -> None:
-        """初期内容にかかわらず、既存行を保持し再適用で内容が変化しない。"""
         git_repository.init_repository(tmp_path)
         exclude = self._exclude_path(tmp_path)
         exclude.write_bytes(content)
@@ -149,10 +143,7 @@ class TestEnsurePlanLockIgnored:
 
 
 class TestRotateIfNeeded:
-    """`rotate_if_needed`のローテーション動作。"""
-
     def test_rotates_when_size_exceeds_max_bytes(self, tmp_path: pathlib.Path) -> None:
-        """サイズが上限を超えた場合、`.1`サフィックス付きパスへリネームされる。"""
         path = tmp_path / "sample.log"
         path.write_text("0123456789", encoding="utf-8")
 
@@ -164,7 +155,6 @@ class TestRotateIfNeeded:
         assert not path.exists()
 
     def test_no_rotation_when_size_within_max_bytes(self, tmp_path: pathlib.Path) -> None:
-        """サイズが上限以内の場合はリネームしない。"""
         path = tmp_path / "sample.log"
         path.write_text("short", encoding="utf-8")
 
@@ -174,7 +164,6 @@ class TestRotateIfNeeded:
         assert not (tmp_path / "sample.log.1").exists()
 
     def test_no_rotation_when_file_missing(self, tmp_path: pathlib.Path) -> None:
-        """ファイルが存在しない場合は何もしない（例外を送出しない）。"""
         path = tmp_path / "missing.log"
 
         _file_lock.rotate_if_needed(path, max_bytes=1)
@@ -182,7 +171,6 @@ class TestRotateIfNeeded:
         assert not path.exists()
 
     def test_overwrites_existing_generation(self, tmp_path: pathlib.Path) -> None:
-        """既存の`.1`世代ファイルは上書きされる。"""
         path = tmp_path / "sample.log"
         path.write_text("new-content-long-enough", encoding="utf-8")
         (tmp_path / "sample.log.1").write_text("old", encoding="utf-8")
@@ -192,7 +180,6 @@ class TestRotateIfNeeded:
         assert (tmp_path / "sample.log.1").read_text(encoding="utf-8") == "new-content-long-enough"
 
     def test_rejects_multi_generation(self, tmp_path: pathlib.Path) -> None:
-        """`generations`に1以外を渡すと`NotImplementedError`を送出する。"""
         path = tmp_path / "sample.log"
         path.write_text("x", encoding="utf-8")
 
@@ -208,7 +195,6 @@ class _FakeClock:
         self.slept: list[float] = []
 
     def monotonic(self) -> float:
-        """現在時刻を返す。"""
         return self.now
 
     def sleep(self, seconds: float) -> None:
@@ -260,7 +246,6 @@ class TestAcquireWithDeadline:
         assert "elapsed=1.0s" in message
 
     def test_timeout_error_keeps_errno(self) -> None:
-        """元の`OSError`が`errno`を持つ場合は、加工後も同じ`errno`を保つ。"""
         clock = _FakeClock()
 
         def _always_fails() -> None:
@@ -280,7 +265,6 @@ class TestAcquireWithDeadline:
         assert "/tmp/example.lock" in str(excinfo.value)
 
     def test_returns_after_transient_failures(self) -> None:
-        """上限内に取得できた場合は例外を送出せず戻る。"""
         clock = _FakeClock()
         attempts: list[None] = []
 
@@ -309,7 +293,6 @@ def test_lock_target_returns_file_path(tmp_path: pathlib.Path) -> None:
 
 
 def test_acquire_and_release_blocking(tmp_path: pathlib.Path) -> None:
-    """選択されたOS別実装でブロッキング取得・解放が完了する。"""
     path = tmp_path / "lock"
     with open(path, "a+", encoding="utf-8") as fh:
         _file_lock.acquire_lock(fh)

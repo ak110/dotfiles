@@ -1,11 +1,11 @@
 # CIの実処理所有権の設計記録
 
-[設計記録の索引](design.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)
 
 ## CIの実処理所有権
 
 共通CIは`push`と`master`向け`pull_request`の全イベントでjobを開始し、job表示名とmatrixを評価する。
-共通jobの所有・非所有の切り替えはstep-level条件で行い、job表示名をどちらの経路でも評価する。
+step-level条件で共通jobの所有を切り替え、所有・非所有の両方でjob表示名を評価する。
 結果集約と領域選択のjobには`!cancelled()`を置き、先行jobの失敗・出力欠落を必須checkの失敗として残す。
 
 旧版からの更新検証（`test-linux`と`update-dotfiles-upgrade (windows)`）で旧版の初期適用が失敗した場合は、同じ検証homeで同じ旧版を1回だけ再適用する。
@@ -15,7 +15,8 @@
 
 | イベント | head repository | head branch | base branch | 共通8 jobの実処理所有者 | 表示名 |
 | --- | --- | --- | --- | --- | --- |
-| `push` | base repository | `master` | 該当なし | `master`の`push` run | 8件のrequired check名 |
+| `push` | base repository | `master`、同一treeのdevelop CIを再利用可能 | 該当なし | `develop`の`push` run | 8件の`(non-owner)`名 |
+| `push` | base repository | `master`、その他 | 該当なし | `master`の`push` run | 8件のrequired check名 |
 | `push` | base repository | `develop`、同一SHAの利用可能なmaster runあり | 該当なし | `master`の`push` run | 8件の`(non-owner)`名 |
 | `push` | base repository | その他 | 該当なし | この`push` run | 8件のrequired check名 |
 | `pull_request` | base repository | `develop` | `master` | `develop`の`push` run | 8件の`(non-owner)`名 |
@@ -23,10 +24,13 @@
 | `pull_request` | base repository以外 | 任意 | `master` | `pull_request` run | 8件のrequired check名 |
 
 先行job`common-ci-owner`が所有判定を1回だけ行い、全共通jobの表示名、非所有marker、後続stepの条件へ同じ出力を渡す。
+masterのpushでは2親のmergeで、第一親が第二親の祖先、mergeと第二親のtreeが同一の場合だけ、第二親のdevelop pushを照会する。
+同じリポジトリの正規CIが成功し、Rust・ブラウザーのstepと分割を含む全jobが同じattemptで実行され、成功した時だけ再利用する。
+欠落や結果の不一致、APIから取得できない時はmasterで実行する。
 `develop`へのpushでは、`actions: read`を持つ先行jobが同一repository・同一workflowのmaster push runを完全SHAで照会する。
 実行待ち・実行中または成功済みのrunがあれば、そのmaster runを所有者とする。
 該当runがない場合、失敗・取消済みのrunだけの場合、API照会が失敗した場合は、このdevelop runが共通検証を実行する。
-`master`へのpushは常に所有し、Release起点を維持する。
+`master`へのpushはReleaseの起点として維持する。
 concurrencyはeventとrefを分け、master runとdevelop runを相互取消しの対象にしない。
 実行中のmaster runが後に失敗した場合は、その失敗結果が残る。
 非所有側の別名checkはrequired checkの成功を代替しない。
@@ -55,7 +59,7 @@ toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pyte
 
 集約jobは`pytest-toolkit-result`と`python-lint-result`を分け、必須checkの`pytest-toolkit (3.15)`と`python-lint (3.15)`を所有する。
 必要な依存jobがすべて成功した場合だけ成功とし、失敗・取消・skip・所有出力欠落を失敗として残す。
-job表示名から検査を再発見するAPI照会を省き、依存関係を集約対象の定義元とする。
+同じrunの結果集約はAPIを照会せず、依存関係を集約対象の定義元とする。
 
 statuslineのCargo versionとbase・head versionおよびtagの確認は、共通`rust-lint`から分離した`statusline-version` jobが所有する。
 `statusline-version`は`pull_request`かつbaseが`master`の全pull requestと、`develop`へのpushで実行し、head repository、head branchおよびrelease条件を追加の限定に使わない。
@@ -73,5 +77,5 @@ agent-toolkitとagent-basicsの版数据置きは`plugin-version` jobが検出�
 差分の意味（挙動の変化の有無）で対象を絞る案は、文書だけの変更も配布物として稼働環境へ届ける必要があり、機械判定で区別できないため採らない。
 全0のOID、解決できないOID、upstreamの不在は成功扱いにせず終了2とする。
 2026年10月31日にhookの不具合修正が版数を据え置いたまま公開され、稼働中のCodexへ届かなかったため加えた。
-pyfltr側は`statusline-version`と同じく既定で無効、非fastとし、浅いcheckoutの`python-lint` jobでは無効化する。
+pyfltr側は`statusline-version`と同じく通常の実行とfastの対象から外し、浅いcheckoutの`python-lint` jobでは無効にする。
 required checkへは加えず、`develop`へのpushで失敗を可視化する。

@@ -86,7 +86,7 @@ def _format_value(value, vtype: int, winreg_mod) -> str:
         return f'"{value}"'
     if vtype == winreg_mod.REG_DWORD:
         return f"dword:{value:08x}"
-    return f"hex({vtype}):{value!r}"  # 簡易表現
+    return f"hex({vtype}):{value!r}"
 
 
 if __name__ == "__main__":

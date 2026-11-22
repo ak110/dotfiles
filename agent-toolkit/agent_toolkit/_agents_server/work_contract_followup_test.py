@@ -22,7 +22,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def _manager(launcher: str | None = None) -> SimpleNamespace:
-    """起動入力を記録し、指定した委譲元を解決するManagerの代替を返す。"""
     return SimpleNamespace(
         start=AsyncMock(return_value={"session_id": "child", "status": "running", "label": "担当"}),
         launcher_session_id=lambda: launcher,
@@ -31,7 +30,6 @@ def _manager(launcher: str | None = None) -> SimpleNamespace:
 
 
 def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode: Literal["task", "delegate"]) -> dict[str, Any]:
-    """通常起動の公開入力を返す。taskは記録先を宣言しない役割文書を使う。"""
     if mode == "delegate":
         return {"prompt": "Aを実装・検収する", "model_type": "chores"}
     document = task_documents.role_document_directory(tmp_path) / "task.subagent.md"
@@ -44,7 +42,6 @@ def _start_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mode:
 
 
 def _session_areas(monkeypatch: pytest.MonkeyPatch, areas: dict[str, pathlib.Path]) -> None:
-    """会話ごとの既存保存領域の解決を、指定した対応表へ差し替える。"""
     monkeypatch.setattr(launch_requests._managed_temp, "find_session_temp", lambda session_id, **_kwargs: areas.get(session_id))
 
 
@@ -142,7 +139,6 @@ async def test_unresolved_whole_contract_requires_explicit_path(
     session_id: str | None,
     mode: Literal["task", "delegate"],
 ) -> None:
-    """会話も保存領域も解決できない通常起動は、担当と専用記録先を作成せずに明示入力での再発行を返す。"""
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", (session_id,))
     _session_areas(monkeypatch, {})
     allocate = Mock(side_effect=AssertionError("拒否する起動で記録先を生成した"))
@@ -170,7 +166,6 @@ async def test_explicit_whole_contract_path_is_delivered(
     mode: Literal["task", "delegate"],
     auto_resolvable: bool,
 ) -> None:
-    """明示した全体記録を自動解決より優先して配送し、担当専用の記録先と区別する。"""
     explicit = tmp_path / "explicit" / "work-contract.md"
     explicit.parent.mkdir()
     explicit.write_text("目的: 明示した全体要求\n", encoding="utf-8")
@@ -199,7 +194,6 @@ async def test_first_public_start_accepts_documented_whole_contract_path(
     monkeypatch: pytest.MonkeyPatch,
     mode: Literal["task", "delegate"],
 ) -> None:
-    """公開例どおりの明示入力は自動解決が無い初回起動でも担当へ配送する。"""
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 初回起動の全体要求\n", encoding="utf-8")
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", (None,))
@@ -258,7 +252,6 @@ async def test_launcher_conversation_resolves_whole_contract(
     monkeypatch: pytest.MonkeyPatch,
     mode: Literal["task", "delegate"],
 ) -> None:
-    """共有ルートが会話を表さない起動は、Managerが解決した委譲元会話の全体記録と保存領域を使う。"""
     launcher_area = tmp_path / "launcher-area"
     launcher_area.mkdir()
     whole = launcher_area / "work-contract.md"
@@ -291,10 +284,6 @@ async def test_registered_launcher_reference_is_inherited(
     mode: Literal["task", "delegate"],
     released: bool,
 ) -> None:
-    """委譲元が受領済みの全体参照を孫へ継承し、委譲元自身の保存領域を全体記録として扱わない。
-
-    委譲元の登録簿は実行中と資源解放後の両方を扱う。旧形式の未解決の参照は所有会話の解決へ進む。
-    """
     whole = tmp_path / "root-area" / "work-contract.md"
     whole.parent.mkdir()
     whole.write_text("目的: メインの全体要求\n", encoding="utf-8")

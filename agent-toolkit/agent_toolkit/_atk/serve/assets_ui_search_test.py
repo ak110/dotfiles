@@ -1,5 +1,3 @@
-"""serveのassetsに関するui_searchの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._atk.serve import assets
@@ -7,7 +5,6 @@ from agent_toolkit._testing.serve_support import _run_node_ui, stale_search_scri
 
 
 def test_assets_render_single_list_warnings() -> None:
-    """一覧警告、種別不明と件数通知を検証する。"""
     result = _run_node_ui(
         """
 entries = [
@@ -119,7 +116,6 @@ process.stdout.write(JSON.stringify({warning, folded, cleared, messages}));
 
 
 def test_assets_populate_target_repo_choices() -> None:
-    """対象リポジトリの候補をフィルターと新規登録欄へ反映する。"""
     assert '<select id="target-filter">' in assets.HTML
     assert '<datalist id="repo-options"></datalist>' in assets.HTML
     result = _run_node_ui(
@@ -180,7 +176,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_discard_stale_search_response() -> None:
-    """後発の一覧要求が完了した後に旧応答が到着しても表示を上書きしない。"""
     result = _run_node_ui(
         stale_search_script(
             "let resolveSearch;",
@@ -206,7 +201,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_search_modes_share_effective_conditions_and_preserve_missing_repo() -> None:
-    """通常と検索の一覧・ページ・コピーが実効条件を共有し、候補外の手動選択も保持する。"""
     result = _run_node_ui(
         """
 const copied = [];
@@ -261,7 +255,6 @@ process.stdout.write(JSON.stringify({normalUrls, searchUrls, retainedTarget, can
 
 
 def test_assets_each_filter_enters_search_without_changing_other_manual_values() -> None:
-    """各フィルターの変更は検索へ切り替え、type=awiでもansweredを含む手動値を維持する。"""
     result = _run_node_ui(
         """
 bindEvents();
@@ -307,7 +300,6 @@ process.stdout.write(JSON.stringify({results}));
 
 
 def test_assets_keep_latest_repo_selection_when_stale_sse_candidates_finish() -> None:
-    """SSEを契機とした古い候補の応答が後から届いても、最新の対象リポジトリの選択と一覧条件を維持する。"""
     result = _run_node_ui(
         """
 let resolveActive;

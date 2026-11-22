@@ -1,5 +1,3 @@
-"""公開手順に書いたリリース前の取り込み元の確認が、未取り込みのcommitを検出することを確かめる。"""
-
 import pathlib
 import re
 
@@ -14,7 +12,6 @@ _PUBLISH = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbo
     1.5, reason="bare originへ2ブランチをpushし、公開手順の確認コマンドを実Gitで実行する（Linux CPU合計約0.5秒）。"
 )
 def test_release_merge_check_detects_unmerged_commits(tmp_path: pathlib.Path) -> None:
-    """取り込み元にだけあるcommitを、手順の2行を置換してそのまま実行すると検出し、マージ後は検出しない。"""
     origin = git.init_bare_repository(tmp_path / "origin.git")
     seed = git.init_repository(tmp_path / "seed", initial_branch="main", origin=str(origin), commit_message="base")
     git.run_git(seed, "push", "--quiet", "-u", "origin", "main")

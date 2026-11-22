@@ -20,6 +20,7 @@
 | 計画の各欄を書く、進捗を記録する、中断から再開する | `agent-toolkit:atk-mode/references/plan-format.md`を全文読み、該当する規定を適用する |
 | 保持、不変性、完全復元を契約か確認の選択肢へ書く、過去の契約へ戻すか撤去する変更を計画する | `agent-toolkit:atk-mode/references/plan-format.md`を全文読み、「保持・不変性・完全復元の契約」「復元・巻き戻し型の変更」に従う |
 | 計画を保存する、計画の名前か付属ファイルの参照を決める | `agent-toolkit:atk-mode/references/plan-storage.md`を全文読み、「計画ファイルの保存と参照」に従う |
+| 公開の使い方が変わるかを判定する | `agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」を読む |
 | 保存済みの旧形式の計画を読む、読み取り互換の実装か検査を変える | `agent-toolkit:atk-mode/references/plan-legacy-formats.md`を読む |
 
 ## 計画ファイルの作成要否

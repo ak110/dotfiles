@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_failures_test）。"""
 
 from __future__ import annotations
 
@@ -21,7 +20,6 @@ from agent_toolkit._testing.session_review_prepare_support import _isolate_failu
 
 
 def test_prepare_reuses_syntax_within_one_run_without_carryover(tmp_path, capsys, monkeypatch) -> None:
-    """別位置の証拠を保って同じ準備の中で構文を共有し、次の準備では解析し直す。"""
     parsed: list[str] = []
     original = execution._parse_shell_simple_commands  # pylint: disable=protected-access
 
@@ -55,7 +53,6 @@ def test_prepare_reuses_syntax_within_one_run_without_carryover(tmp_path, capsys
 
 
 def test_prepare_rejudges_env_representative_events(tmp_path, capsys) -> None:
-    """誤統合された旧署名を残さず、代表イベントの既知・未知env入力を再分類する。"""
     ledger = tmp_path / "state/session-review/failure-signatures.jsonl"
     ledger.parent.mkdir(parents=True)
     commands = ["env -u NAME git status", "env -u NAME pytest", "env -S git status", "env -S pytest"]
@@ -135,7 +132,6 @@ def test_failure_variable_values_share_signature(
 
 
 def test_prepare_recomputes_legacy_failure_ledger(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """旧形式の署名で集約された4セッションの記録を、保存済みの代表診断の理由で1・2・1件の署名へ分け直し、再準備でも記録を重複させず観測時刻を保つ。"""
     ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
     ledger.parent.mkdir(parents=True)
     diagnostics = [
@@ -272,7 +268,6 @@ def _write_failed_codex_transcript(tmp_path: pathlib.Path, session_id: str) -> p
 def test_prepare_promotes_failure_only_after_another_session(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """単発は件数表へ置き、別セッションの反復だけ候補へ上げ、同じセッションの再実行は重ねない。"""
     first = _write_failed_codex_transcript(tmp_path, "session-a")
     second = _write_failed_codex_transcript(tmp_path, "session-b")
     first_dir = tmp_path / "first"
@@ -358,7 +353,6 @@ def test_prepare_counts_wait_continuations_without_repeated_failure_signature(
 def test_prepare_prunes_old_and_skips_invalid_failure_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """30日より古い観測と破損行は反復に使わず、無視した行数を公開結果へ示す。"""
     ledger = tmp_path / "state" / "session-review" / "failure-signatures.jsonl"
     ledger.parent.mkdir(parents=True)
     ledger.write_text(
@@ -388,7 +382,6 @@ def test_prepare_prunes_old_and_skips_invalid_failure_records(
 
 
 def test_parallel_prepare_keeps_both_sessions_in_failure_ledger(tmp_path: pathlib.Path) -> None:
-    """別々の最上位セッションの準備を並行実行しても、共有記録へ両方の署名を残す。"""
     state_home = tmp_path / "state-home"
     environment = os.environ.copy()
     environment.update(

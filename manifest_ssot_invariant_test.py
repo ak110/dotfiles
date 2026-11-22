@@ -17,7 +17,6 @@ _MARKETPLACE_MANIFEST = _ROOT / ".claude-plugin" / "marketplace.json"
 
 @pytest.mark.parametrize("plugin_name", ["agent-basics", "agent-toolkit"])
 def test_plugin_manifest_matches_marketplace(plugin_name: str) -> None:
-    """marketplaceの該当エントリがplugin.jsonと同じversion・description・nameを持つ。"""
     plugin_manifest = json.loads((_ROOT / plugin_name / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
     marketplace = json.loads(_MARKETPLACE_MANIFEST.read_text(encoding="utf-8"))
 

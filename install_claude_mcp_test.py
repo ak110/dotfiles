@@ -92,7 +92,6 @@ def test_legacy_codex_mcp_cases_match_installers(
     tmp_path: pathlib.Path,
     raw_base_url: str,
 ) -> None:
-    """両インストーラーは共有ケース表の旧定義だけをUser scope限定で削除し、それ以外の定義を保持する。"""
     home = tmp_path / "home"
     home.mkdir()
     _write_claude_config(home, config)

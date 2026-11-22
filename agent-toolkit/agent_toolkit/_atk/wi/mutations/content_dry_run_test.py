@@ -1,5 +1,3 @@
-"""WIのmutations content: dry_runのテスト。"""
-
 import pathlib
 import re
 import subprocess
@@ -44,7 +42,6 @@ def test_edit_dry_run_validates_without_changing_notes_or_remote(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """受理される本文では成功の1行だけを書き、private-notesのcommit、remoteのbranch、対象ファイルを変えない。"""
     notes = _setup_notes_with_pending_commit(tmp_path, pending=False)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -67,7 +64,6 @@ def test_edit_dry_run_validates_without_changing_notes_or_remote(
     assert (_git_output(notes, "rev-parse", "HEAD"), _git_output(origin, "rev-parse", "main"), path.read_bytes()) == before
     assert _git_output(notes, "status", "--porcelain=v1") == ""
 
-    # 同じ本文は保存でも受理される。
     with pytest.raises(SystemExit) as saved:
         atk.main(args, home=tmp_path)
     assert saved.value.code == 0, capsys.readouterr().err
@@ -84,7 +80,6 @@ def test_edit_dry_run_opening_and_unchanged_input(
     newline: str,
     entry_type: str,
 ) -> None:
-    """差分なしのAWIとUWIも入力原稿の冒頭を原文のまま返す。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     expected = "# 表題\n\n問いと理由。  \n推奨回答。\n\n```text\n## 引用\n```\n\n\n".replace("\n", newline)
@@ -130,11 +125,6 @@ def test_edit_dry_run_matches_save_judgement(
     prepare: Callable[[pathlib.Path, pytest.MonkeyPatch], tuple[str, str]],
     expected_code: int,
 ) -> None:
-    """拒否の種類ごとに`--dry-run`と保存へ同じ入力を渡し、終了コード、理由、次の操作が一致する。
-
-    受理される旧書式の本文と口語を含む本文では、保存が本文を書き換え、`--dry-run`は書き換えない。
-    `--dry-run`のための検証を別に書き起こすと、保存側だけに加えた検証との差がここで現れる。
-    """
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     results = {}
     for mode in ("save", "dry-run"):
@@ -173,7 +163,6 @@ def test_edit_dry_run_rejects_unsupported_combinations(
     capsys: pytest.CaptureFixture[str],
     extra: list[str],
 ) -> None:
-    """`--append`・`--cooldown-until`との併用と`--body-file`なしの指定はusage errorで終了し、何も保存しない。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb-001.md")
     original = path.read_bytes()

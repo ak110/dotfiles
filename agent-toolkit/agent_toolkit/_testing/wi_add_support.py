@@ -1,5 +1,3 @@
-"""WIのadd試験で共有する準備処理。"""
-
 # pylint: disable=protected-access,subprocess-run-check
 
 import argparse
@@ -23,7 +21,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 @pytest.fixture(autouse=True)
 def _isolate_managed_temp(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """CLIの起動処理が作成するmanaged-tempと状態ディレクトリを、テストごとの一時ディレクトリへ隔離する。"""
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
     (tmp_path / "temp").mkdir()
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -38,7 +35,6 @@ def _cmd_add_args(
     dry_run: bool = False,
     depends_on: list[str] | None = None,
 ) -> argparse.Namespace:
-    """`cmd_add`の単体テストへ必要な引数を返す。"""
     body_path = tmp_path / "body.md"
     body_path.write_text(message, encoding="utf-8")
     return argparse.Namespace(
@@ -53,6 +49,7 @@ def _cmd_add_args(
         choices=None,
         dry_run=dry_run,
         compare_opening_file=None,
+        opening_output=None,
         subparser=None,
     )
 
@@ -63,7 +60,6 @@ def _run_public_add(
     now: object,
     home: pathlib.Path,
 ) -> None:
-    """公開CLIで同じWI投入を実行する。"""
     del notes, now
     argv = ["wi", "add", "--target-repo", args.target_repo]
     for body_file in args.body_file:
@@ -98,7 +94,6 @@ def _patch_cmd_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _with_cause(body: str, value: str) -> str:
-    """通常AWIの本文へ、`原因:`の行の本文を`value`にした原因分析の記録を加える。"""
     record = plan_fixture.cause_record().replace(
         plan_fixture.cause_record_line("原因"), plan_fixture.cause_record_line("原因", value), 1
     )
@@ -106,7 +101,6 @@ def _with_cause(body: str, value: str) -> str:
 
 
 def _choice_argv(tmp_path: pathlib.Path, choices: list[str]) -> list[str]:
-    """同じ公開CLI入力へ選択肢を指定順に加える。"""
     body = tmp_path / "choice.md"
     body.write_text("どの案を選びますか？", encoding="utf-8")
     argv = [
@@ -153,7 +147,6 @@ def _patch_add_git(monkeypatch: pytest.MonkeyPatch, repo: pathlib.Path, *, faili
 
 
 def _patch_add_editor(monkeypatch: pytest.MonkeyPatch, body: str) -> None:
-    """現在のGit fakeを保ったまま、本文を保存するエディターfakeを重ねる。"""
     git_run = cast(Callable[..., subprocess.CompletedProcess[Any]], subprocess.run)
 
     def fake_run(cmd: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
@@ -172,7 +165,6 @@ def _add_body_input_args(
     body: str,
     input_kind: str,
 ) -> list[str]:
-    """エディターまたは本文ファイルの指定に対応するadd引数列を返す。"""
     if input_kind == "editor":
         _patch_add_editor(monkeypatch, body)
         return ["wi", "add"]
@@ -187,7 +179,6 @@ def _invoke_add_body_file(
     body: str,
     *options: str,
 ) -> None:
-    """本文ファイルによるCLI投入をGit副作用なしで成功させる。"""
     _setup_notes(tmp_path)
     body_path = tmp_path / "body.md"
     body_path.write_text(body, encoding="utf-8")

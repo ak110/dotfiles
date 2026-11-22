@@ -20,8 +20,6 @@ _UNUSED_BRANCH_MODULES = (
 
 
 class TestLazyDependencyLoading:
-    """公開hookが処理分岐で使わない依存を読み込まず、遅延を無効化した場合と同じ応答を返すことを検証する。"""
-
     @pytest.mark.parametrize("subcommand", _SUBCOMMANDS)
     def test_each_hook_loads_fewer_modules_with_same_response(self, tmp_path: pathlib.Path, subcommand: str) -> None:
         lazy, lazy_modules = _run_with_module_record(tmp_path, "lazy", subcommand, b"{}")
@@ -29,7 +27,7 @@ class TestLazyDependencyLoading:
 
         assert (lazy.returncode, lazy.stdout, lazy.stderr) == (eager.returncode, eager.stdout, eager.stderr)
         assert len(lazy_modules) < len(eager_modules)
-        # session_idを持たない入力はどのhookでも委譲・バックグラウンドタスク・報告解析へ到達しない。
+
         assert not set(_UNUSED_BRANCH_MODULES) & lazy_modules
 
     @pytest.mark.parametrize(

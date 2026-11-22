@@ -28,7 +28,7 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     assert capsys.readouterr().out.startswith("成功: 指摘行を1件追加した:")
     items = [
         {"location": "日本語の位置\n行2\t列", "issue": _LABELS + '複数行\n"引用"と`記号`\t$(保持)', "level": "仕様"},
-        {"location": "別の位置", "issue": _LABELS + "結合文字e\u0301を保持\n", "level": "実装"},
+        {"location": "別の位置", "issue": _LABELS + "結合文字e\u0301を保持\n"},
     ]
     source = tmp_path / "items.json"
     source.write_text(json.dumps(items, ensure_ascii=False), encoding="utf-8")
@@ -63,8 +63,8 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     assert returned.value.code == 0
     assert events == ["lock", "read", "write", "read", "unlock"]
     saved = original_read(path)
-    assert saved[0] == ["1", _TRACK, "元の位置", "保持する指摘", "詳細", "", ""]
-    assert saved[1:] == [["2", _TRACK, item["location"], item["issue"], item["level"], "", ""] for item in items]
+    assert saved[0] == ["1", _TRACK, "元の位置", "保持する指摘", "", "", ""]
+    assert saved[1:] == [["2", _TRACK, item["location"], item["issue"], item.get("level", ""), "", ""] for item in items]
     output = capsys.readouterr()
     assert output.out.startswith("成功: 指摘行を2件追加した:")
     assert not output.err
@@ -75,7 +75,8 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     "suffix",
     [
         {"location": "後半", "issue": _LABELS + "不正", "level": "重大"},
-        {"location": "後半", "issue": _LABELS + "不正"},
+        {"location": "後半", "level": "詳細"},
+        {"location": "後半", "issue": _LABELS + "不正", "level": ""},
         {"location": "後半", "issue": 1, "level": "詳細"},
         {"location": "後半", "issue": _LABELS + "不正", "level": "詳細", "round": "3"},
         {"location": "  ", "issue": _LABELS + "不正", "level": "詳細"},
@@ -88,6 +89,7 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
     ids=[
         "level",
         "missing-key",
+        "empty-level",
         "value-type",
         "extra-key",
         "empty-location",
@@ -101,7 +103,6 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
 def test_public_add_items_rejects_invalid_later_item_without_partial_write(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], suffix: dict[str, str | int]
 ) -> None:
-    """後半の不正や重複、必須ラベルの欠落がある配列では、先頭の正常な指摘も保存しない。"""
     path = tmp_path / "plan.exec-review.tsv"
     table.add(path, "2", _TRACK, "既存", _LABELS + "保存済み")
     before = path.read_bytes()
@@ -125,7 +126,6 @@ def test_public_add_items_rejects_invalid_later_item_without_partial_write(
 
 @pytest.mark.parametrize("option", ["--level=詳細", "--location-file=location.txt", "--issue-file=issue.txt"])
 def test_public_add_items_rejects_single_options(tmp_path: pathlib.Path, option: str) -> None:
-    """配列入力と単数形のオプションを併用した場合は書き込まない。"""
     path = tmp_path / "plan.exec-review.tsv"
     with pytest.raises(SystemExit) as returned:
         atk.main(

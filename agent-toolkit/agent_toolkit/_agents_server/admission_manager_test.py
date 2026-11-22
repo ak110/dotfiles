@@ -1,5 +1,3 @@
-"""公開`start`がマシン全体の上限で待ち、空きで進み、待った秒数を起動結果へ返すことを確かめる。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +16,6 @@ from agent_toolkit._testing import agents_server_support
 async def test_public_start_waits_for_free_slot_and_reports_wait(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """上限1で作業中が1件ある間は公開startが待ち、空いたら起動して待ち時間を応答へ載せる。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_AGENTS_CONCURRENCY", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "claude:test/medium")
@@ -28,7 +25,7 @@ async def test_public_start_waits_for_free_slot_and_reports_wait(
 
     def observe(state_root: pathlib.Path | None = None, *, now: float | None = None) -> admission.Observation:
         observed = original(state_root, now=now)
-        # 別の委譲先が作業中である状態を、状態ファイルの集計結果へ加えて表す。
+
         return admission.Observation(observed.working + busy["working"], observed.admitted, observed.waiting)
 
     monkeypatch.setattr(admission, "observe", observe)
@@ -50,7 +47,6 @@ async def test_public_start_waits_for_free_slot_and_reports_wait(
 
 
 def test_resume_wait_is_recorded_in_last_action() -> None:
-    """止まったsessionを上限待ちの後に動かすと、一覧とshowが表示する最後の操作へ待ちが残る。"""
     from agent_toolkit._agents_server import manager_resume  # pylint: disable=import-outside-toplevel
     from agent_toolkit._agents_server.state import SessionState  # pylint: disable=import-outside-toplevel
 
@@ -59,4 +55,4 @@ def test_resume_wait_is_recorded_in_last_action() -> None:
     manager_resume.note_admission_wait(session, admission.Admission(None, 3.2, admission.Limit(1, "agents_concurrency=1")))
     assert "3.2秒" in session.last_action and "agents_concurrency=1" in session.last_action
     manager_resume.note_admission_wait(session, admission.Admission(None, 0.0, admission.Limit(1, "x")))
-    assert "3.2秒" in session.last_action  # 待ちが無ければ書き換えない
+    assert "3.2秒" in session.last_action

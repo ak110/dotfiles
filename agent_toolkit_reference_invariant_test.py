@@ -1,16 +1,17 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import pathlib
 import re
+import subprocess
+import tomllib
 
 import pytest
 from agent_toolkit._common import skill_modes
 
-from _test_helpers import _PLUGIN_PREFIX, _format_unresolved, _tracked_source_paths
+from _test_helpers import _PLUGIN_PREFIX, _tracked_source_paths
 
 _REFERENCE_BOUNDARY = r"(?<![A-Za-z0-9_:-])"
 
@@ -22,6 +23,10 @@ _SKILL_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/skills/[A-Za-z0-9][A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*/?"
 )
 
+_QUALIFIED_RESOURCE_PATTERN = re.compile(
+    rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}:(/?[A-Za-z0-9_-]+/[A-Za-z0-9_./-]+\.md)(?![A-Za-z0-9_./-])"
+)
+
 
 _PYTHON_PATH_PATTERN = re.compile(
     rf"{_REFERENCE_BOUNDARY}{_PLUGIN_PREFIX}/(?:scripts|agent_toolkit)/"
@@ -29,7 +34,6 @@ _PYTHON_PATH_PATTERN = re.compile(
 )
 
 
-# 内容を入口`atk-mode`の手順書へ移して廃止したスキル。過去の記録と保存値は当時の名前と配置を保持する。
 _ATK_MODE_RETIRED_SKILLS = (
     "add-awi-by-user",
     "wi-standards",
@@ -48,7 +52,6 @@ _ATK_MODE_RETIRED_SKILLS = (
 )
 
 
-# 履歴のないcheckoutでも監査時点の実在を検査する。更新時は全パスを `git ls-tree -rt --name-only <対象版>` と照合する。
 _FIXED_AUDIT_PATH_DIGESTS = {
     pathlib.Path(
         "docs/development/audit-opus55-hosts-2026-11-15.json"
@@ -63,19 +66,10 @@ _FIXED_AUDIT_PATH_DIGESTS = {
 
 
 def _is_historical_record(source: pathlib.Path) -> bool:
-    """当時の配置を残す記録（対象版を固定した監査記録、障害の記録、撤去台帳）かを返す。"""
-    return source in _FIXED_AUDIT_PATH_DIGESTS or (
-        source.parent == pathlib.Path("docs/development") and source.name.startswith(("incidents-", "removed-mechanisms"))
-    )
+    return source in _FIXED_AUDIT_PATH_DIGESTS
 
 
 def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
-    """コードと設定の中の、入口`atk-mode`の作業名の修飾名（`agent-toolkit:review-session`など）かを返す。
-
-    作業名は`atk run-skill`の位置引数、報告用UWIの`scope`、起動入力の値として保存され、同名のスキルが無くても実在の名前である。
-    文書（Markdown）の修飾名と、コード中の起動の形（`/`か`$`を前置した修飾名）は起動の案内になりうるため、
-    新しい起動の形へ直すか個別に許可する。起動の形が1つでもあるファイルでは、そのファイルの同じ修飾名を全て未解決とする。
-    """
     if source.suffix == ".md" or reference.removeprefix(f"{_PLUGIN_PREFIX}:") not in skill_modes.ENTRY_WORKS:
         return False
     content = (root / source).read_text(encoding="utf-8")
@@ -83,24 +77,11 @@ def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) 
 
 
 def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
-    """参照が`skills`のいずれかのスキル名か、その配下のパスを指す場合に真を返す。"""
     return any(
         reference in (f"{_PLUGIN_PREFIX}:{skill}", f"{_PLUGIN_PREFIX}/skills/{skill}")
         or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
         for skill in skills
     )
-
-
-_INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-hooks-202606-20260914.md")
-
-
-_INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-judgment-202608-20260901.md")
-
-
-_INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-stagnation-202607-20260906.md")
-
-
-_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-202607-202608.md")
 
 
 _CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")
@@ -116,7 +97,6 @@ _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_r
 
 
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
-    # 保存済みの起動標識とscopeを読むための旧名。現行入口としては提供しない。
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS): 2,
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
@@ -142,29 +122,18 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:session-review-batch",
         pathlib.Path("agent-toolkit/skills/atk-mode/references/answer-transitions.md"),
     ): 1,
-    (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
-    (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
-    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 1,
-    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_REVIEW_SCOPE): 1,
-    (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS_RUNTIME): 1,
-    (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS_RUNTIME): 5,
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
-    # 作業`process-wi`の修飾名と、それを含む子セッションの目的文の本体。保存値と起動入力の値であり、同名のスキルは無い。
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/constants.py")): 2,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 6,
-    # 作業`review-session`の保存値（報告用UWIの`scope`、起動入力の`skill`）と、変えない公開コマンド`atk run-skill`の位置引数。
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 4,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/report-completion.md")): 1,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md")): 2,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/review-session-cost.md")): 1,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("docs/guide/claude-code-guide.md")): 1,
-    # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
-    # 移行前の起動コマンドを含むセッション記録を読む試験の入力
-    (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submission_findings_test.py")): 3,
     (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
     (
         f"{_PLUGIN_PREFIX}:add-awi-by-user",
@@ -174,10 +143,8 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:write-plan",
         pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_review_evidence_user_events_test.py"),
     ): 2,
-    # 保存済みの計画が計画メタ情報の`起動経路`に持つ値。値は自由記述で、計画の検査は起動先の実在を求めない。
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_testing/plan_fixture.py")): 5,
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_plan/structure/constants_test.py")): 1,
-    # 廃止したスキル名の起動と発話が、計画の工程の開始・帰属行の配送・完了報告の起動証拠にならないことを確かめる試験の入力
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
     (f"{_PLUGIN_PREFIX}:commit", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/user_prompt_submit_test.py")): 2,
@@ -185,7 +152,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:report-completion",
         pathlib.Path("agent-toolkit/agent_toolkit/_hooks/termination_evidence_completion_test.py"),
     ): 1,
-    # 廃止したスキルの経緯を記す方針・設計の記録
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_DECISIONS): 1,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
 }
@@ -213,7 +179,6 @@ def _allowed_unresolved_reference_counts(
 
 
 def _reference_exists(root: pathlib.Path, reference: str) -> bool:
-    """起動名またはリポジトリ相対パスが実体へ解決する場合に真を返す。"""
     invocation_prefix = f"{_PLUGIN_PREFIX}:"
     if reference.startswith(invocation_prefix):
         skill_name = reference.removeprefix(invocation_prefix)
@@ -222,7 +187,6 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 
 
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
@@ -242,20 +206,115 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     return unresolved
 
 
+def _reference_diagnostic(root: pathlib.Path, source: pathlib.Path, reference: str) -> str:
+    forms = [reference]
+    if reference.startswith(f"{_PLUGIN_PREFIX}/"):
+        forms.append(f"{_PLUGIN_PREFIX}:/{reference.removeprefix(f'{_PLUGIN_PREFIX}/')}")
+        if reference.startswith(f"{_PLUGIN_PREFIX}/skills/"):
+            forms.append(f"{_PLUGIN_PREFIX}:{reference.removeprefix(f'{_PLUGIN_PREFIX}/skills/')}")
+    lines = [
+        str(number)
+        for number, line in enumerate((root / source).read_text(encoding="utf-8").splitlines(), 1)
+        if any(form in line for form in forms)
+    ]
+    location = f"{source}:" + (f"{','.join(lines)}:" if lines else "")
+    if _names_retired_skill(reference, _ATK_MODE_RETIRED_SKILLS):
+        return f"{location} 廃止したスキル参照 {reference}。agent-toolkit:atk-mode/SKILL.mdの手順の索引から移設先を選ぶ。"
+    if reference == f"{_PLUGIN_PREFIX}/share/session-conversation-extraction.md":
+        return (
+            f"{location} 廃止した参照 {reference}。"
+            "agent-toolkit:atk-mode/references/work-contract.md「会話の少量取得」へ置き換える。"
+        )
+    return f"{location} 参照先が存在しない: {reference}。現行のパスへ置き換える。"
+
+
+def _missing_pyright_paths(root: pathlib.Path) -> list[str]:
+    config = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get("pyright", {})
+    missing: list[tuple[str, str]] = []
+    for key in ("exclude", "ignore"):
+        for value in config.get(key, []):
+            path = pathlib.PurePosixPath(value)
+            if path.is_absolute() or ".." in path.parts or any(mark in value for mark in "*?[]{}\\:"):
+                continue
+            if not (root / path).exists():
+                missing.append((key, value))
+    if not missing:
+        return []
+    ignored = subprocess.run(
+        ["git", "check-ignore", "--no-index", "-z", "--stdin"],
+        cwd=root,
+        input="".join(value + "\0" for _, value in missing),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert ignored.returncode in (0, 1), ignored.stderr
+    generated = set(ignored.stdout.split("\0"))
+    return [
+        f"pyproject.toml: tool.pyright.{key}: {value} が存在しない。移設後のパスへ置き換える。"
+        for key, value in missing
+        if value not in generated
+    ]
+
+
 @pytest.mark.cpu_limit(
     4.5, reason="配布規範の全参照を実ファイルへ解決し、欠落と曖昧さを検出する全量検査が必要（Linux CI CPU2.004秒）"
 )
 def test_agent_toolkit_references_resolve() -> None:
-    """追跡中の`.json`・`.md`・`.py`にあるスキルとPython参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_source_paths(root)
     assert any(path.parts[0] == ".claude" for path in sources)
-    unresolved = _unresolved_references(root, sources)
-    assert not unresolved, _format_unresolved(unresolved)
+    unresolved = [
+        _reference_diagnostic(root, source, reference)
+        for reference, source in dict.fromkeys(_unresolved_references(root, sources))
+    ]
+    unresolved.extend(_missing_pyright_paths(root))
+    assert not unresolved, "\n".join(unresolved)
+
+
+def test_pyright_rejects_only_missing_literal_repository_paths(tmp_path: pathlib.Path) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True, capture_output=True)
+    (tmp_path / ".gitignore").write_text("/generated/\n", encoding="utf-8")
+    (tmp_path / "present").mkdir()
+    (tmp_path / "pyproject.toml").write_text(
+        '[tool.pyright]\nexclude = ["present", "moved/path.py", "src/**", "generated/code.py"]\n',
+        encoding="utf-8",
+    )
+    assert _missing_pyright_paths(tmp_path) == [
+        "pyproject.toml: tool.pyright.exclude: moved/path.py が存在しない。移設後のパスへ置き換える。"
+    ]
+
+
+def test_qualified_resources_in_reading_table_and_docstring(tmp_path: pathlib.Path) -> None:
+    skill = tmp_path / _PLUGIN_PREFIX / "skills" / "sample"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# 入口\n", encoding="utf-8")
+    present = f"{_PLUGIN_PREFIX}:sample/SKILL.md"
+    missing = f"{_PLUGIN_PREFIX}:sample/removed.md"
+    document = pathlib.Path("source.md")
+    module = pathlib.Path("source.py")
+    tests = pathlib.Path("source_test.py")
+    (tmp_path / document).write_text(f"| 読む | `{present}` |\n", encoding="utf-8")
+    (tmp_path / module).write_text(f'"""規定は`{missing}`を参照する。"""\n', encoding="utf-8")
+    (tmp_path / tests).write_text(f'"""検証する。"""\ncase = "{missing}"\n', encoding="utf-8")
+    assert _unresolved_references(tmp_path, [document, module, tests]) == [
+        (f"{_PLUGIN_PREFIX}/skills/sample/removed.md", module)
+    ]
+
+
+def test_moved_root_resource_names_its_replacement(tmp_path: pathlib.Path) -> None:
+    source = pathlib.Path("source.md")
+    old = "share/session-conversation-extraction.md"
+    (tmp_path / source).write_text(f"# 案内\n\n`{_PLUGIN_PREFIX}:/{old}`を参照する。\n", encoding="utf-8")
+    reference = f"{_PLUGIN_PREFIX}/{old}"
+    assert _unresolved_references(tmp_path, [source]) == [(reference, source)]
+    diagnostic = _reference_diagnostic(tmp_path, source, reference)
+    assert diagnostic.startswith(f"{source}:3: 廃止した参照 {reference}。")
+    assert "work-contract.md「会話の少量取得」へ置き換える" in diagnostic
 
 
 def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
-    """実在する起動名と相対パスを受理する。"""
     skill = tmp_path / _PLUGIN_PREFIX / "skills" / "present"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: present\n---\n", encoding="utf-8")
@@ -274,7 +333,6 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
 
 
 def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path) -> None:
-    """入口の作業名はコードの保存値として受理し、文書とコード中の起動の形は同名のスキルが無ければ未解決とする。"""
     reference = f"{_PLUGIN_PREFIX}:review-session"
     code = pathlib.Path("scope.py")
     document = pathlib.Path("guide.md")
@@ -293,7 +351,6 @@ def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path)
 
 
 def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.Path) -> None:
-    """所要記録の架空入力は案内と区別し、同じ文字列の現行文書は検査する。"""
     reference = f"{_PLUGIN_PREFIX}:fixture-only"
     record = pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json")
     (tmp_path / record).parent.mkdir(parents=True)
@@ -321,7 +378,6 @@ def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib
 
 
 def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path) -> None:
-    """Python参照の雛形とグロブを未解決の実体参照として扱わない。"""
     source = pathlib.Path("source.md")
     (tmp_path / source).write_text(
         "\n".join(
@@ -338,23 +394,15 @@ def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path
 
 
 def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
-    """分割後の事故記録へ保持する既知の失効参照を返す。"""
-    return {
-        _INCIDENTS_RUNTIME: [
-            f"{_PLUGIN_PREFIX}/scripts/hook.py",
-            *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
-        ],
-        _INCIDENTS_VALIDATION: [f"{_PLUGIN_PREFIX}:agent-standards"],
-        _INCIDENTS_WORKFLOWS: [
-            f"{_PLUGIN_PREFIX}:feedback-standards",
-            f"{_PLUGIN_PREFIX}:process-feedbacks",
-        ],
-        _INCIDENTS_REVIEW_SCOPE: [f"{_PLUGIN_PREFIX}:reviewee-standards"],
-    }
+    sources = (_SESSION_RECORDS, _SESSION_RECORDS_TEST)
+    by_source: dict[pathlib.Path, list[str]] = {source: [] for source in sources}
+    for (reference, source), count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items():
+        if source in by_source:
+            by_source[source].extend([reference] * count)
+    return by_source
 
 
-def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
-    """既知の失効参照を過不足なく保持し、各参照の不足と超過を報告する。"""
+def test_known_legacy_references_require_exact_counts(tmp_path: pathlib.Path) -> None:
     by_source = _known_legacy_references()
     for source, references in by_source.items():
         target = tmp_path / source
@@ -377,34 +425,7 @@ def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathl
         target.write_text("\n".join(references), encoding="utf-8")
 
 
-def test_incident_history_rejects_different_unresolved_references(tmp_path: pathlib.Path) -> None:
-    """既知参照を別の失効起動名へ置換し、失効パスも加えた違反を報告する。"""
-    by_source = _known_legacy_references()
-    for current_source, current_references in by_source.items():
-        target = tmp_path / current_source
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(current_references), encoding="utf-8")
-    source = _INCIDENTS_VALIDATION
-    references = by_source[source].copy()
-    replaced = references.pop(0)
-    missing_invocation = f"{_PLUGIN_PREFIX}:missing"
-    missing_path = f"{_PLUGIN_PREFIX}/skills/missing/SKILL.md"
-    (tmp_path / source).write_text(
-        "\n".join([missing_invocation, missing_path, *references]),
-        encoding="utf-8",
-    )
-
-    unresolved = _unresolved_references(tmp_path, list(by_source))
-    assert unresolved == [(missing_invocation, source), (missing_path, source), (replaced, source)]
-    formatted = _format_unresolved(unresolved)
-    assert missing_invocation in formatted
-    assert missing_path in formatted
-    assert replaced in formatted
-    assert str(source) in formatted
-
-
 def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """固定版の監査パスを検証し、現在のツリーで解決する起動名とパスを返す。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
         # キーは実行案内ではなく、旧入力や架空の起動名も含むpytest node IDである。
@@ -423,4 +444,15 @@ def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list
             )
         else:
             references.extend((path, relative) for path in paths)
+            qualified_text = content
+            if relative.name.endswith("_test.py") and _QUALIFIED_RESOURCE_PATTERN.search(content):
+                qualified_text = "\n".join(
+                    ast.get_docstring(node) or ""
+                    for node in ast.walk(ast.parse(content))
+                    if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                )
+            for match in _QUALIFIED_RESOURCE_PATTERN.finditer(qualified_text):
+                resource = match[1]
+                prefix = _PLUGIN_PREFIX if resource.startswith("/") else f"{_PLUGIN_PREFIX}/skills"
+                references.append((f"{prefix}/{resource.lstrip('/')}", relative))
     return references

@@ -21,7 +21,7 @@ _DOCUMENT = pathlib.Path(__file__).resolve().parents[1] / "skills/atk-mode/refer
 
 
 class _ParsedExample(Exception):
-    """引数解析の成功後に起動例の処理を止めるための例外。"""
+    pass
 
 
 def _documented_wait_ci_examples() -> list[str]:
@@ -33,12 +33,12 @@ def _documented_wait_ci_examples() -> list[str]:
 
 
 def _parse_documented_example(example: str, tmp_path: pathlib.Path) -> argparse.Namespace:
-    """起動例の`<…>`を実在する形の値へ置き換え、wait_ciの引数解析と引数の組合せの判定だけを通す。"""
     replacements = {
         "<owner/repo>": "owner/repository",
         "<destination-ref>": "refs/heads/main",
         "<source-ref>": "HEAD",
         "<40桁のSHA>": "a" * 40,
+        "<実際にpushしたSHA>": "a" * 40,
     }
     tokens = []
     for token in shlex.split(example.removeprefix("atk run-script wait-ci --")):
@@ -75,7 +75,9 @@ def _parse_documented_example(example: str, tmp_path: pathlib.Path) -> argparse.
     with (
         mock.patch.object(argparse.ArgumentParser, "parse_args", parse_args),
         mock.patch.object(wait_ci, "_wait_from_record", stop_after_checks),
-        mock.patch.object(wait_ci, "_resolve_sha", stop_after_checks),
+        mock.patch.object(wait_ci, "_matches_local_push_target", return_value=True),
+        mock.patch.object(wait_ci, "_resolve_sha", lambda *_args: "a" * 40),
+        mock.patch.object(wait_ci, "_default_run_list_fn", stop_after_checks),
         pytest.raises(_ParsedExample),
     ):
         wait_ci.main(tokens)

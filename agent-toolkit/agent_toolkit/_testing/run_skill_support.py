@@ -1,5 +1,3 @@
-"""run_skillの分割試験で共有する準備と補助処理。"""
-
 from __future__ import annotations
 
 import html
@@ -146,7 +144,10 @@ if os.environ.get("FAKE_SESSION_LIMIT_COUNT"):
         if rejected:
             print(json.dumps({{"type": "rate_limit_event", "rate_limit_info": {{
                 "status": "rejected", "rateLimitType": os.environ["FAKE_LIMIT_TYPE"], "resetsAt": 1010
-            }}}}))
+            }}}}), flush=True)
+            if os.environ.get("FAKE_USAGE_LIMIT_RETRY"):
+                print(json.dumps({{"type": "api_retry", "error_status": 429}}), flush=True)
+                time.sleep(30)
     else:
         assert "--json" in args
         thread = "01234567-89ab-cdef-0123-456789abcdef"
@@ -215,7 +216,6 @@ def _engine_env(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,
 ) -> _Env:
-    """偽の実行ファイル、隔離した状態ディレクトリと対象リポジトリを用意する。"""
     request.getfixturevalue("leaf_git_commands")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -265,7 +265,7 @@ def _engine_env(
                         stream.close()
             except BaseException as error:
                 failures.append(error)
-        # 正常終了済みはPID単独でも停止せず、親を失ったchildも起動時刻と実体で識別する。
+
         for record_path in records.glob("*.json"):
             record = json.loads(record_path.read_text(encoding="utf-8"))
             try:
@@ -273,8 +273,7 @@ def _engine_env(
                 if not process_identity.matches(recorded_process, record["created_at"]):
                     continue
                 command = recorded_process.cmdline()
-                # kill後のexit途中ではcmdlineが先に空になり、statusは一時的にrunningのままになる。
-                # 所有不明のまま信号を送らず、同世代の資源解放だけを有限に確認する。
+
                 if (
                     not command
                     and not process_tree.wait_until_released([recorded_process], timeout=1)

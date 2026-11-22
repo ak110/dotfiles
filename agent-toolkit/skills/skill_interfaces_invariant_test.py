@@ -1,5 +1,3 @@
-"""スキルの表示名がディレクトリ名と一致することを確かめる。"""
-
 from pathlib import Path
 
 import yaml

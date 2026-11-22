@@ -1,5 +1,3 @@
-"""serveのbrowser_shellに関するlayoutの試験。"""
-
 import json
 
 import playwright.async_api
@@ -20,7 +18,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _ScreenHarness) -> None:
-    """3画面の入力値とワークアイテム画面の算出フォントサイズを往復後も保持する。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -47,7 +44,6 @@ async def test_navigation_preserves_filters_and_screen_styles(screen_harness: _S
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) -> None:
-    """図の追加スタイルがあっても3画面で有効なapp.cssを1枚だけ共有する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/")
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
@@ -68,7 +64,6 @@ async def test_navigation_uses_one_stylesheet(screen_harness: _ScreenHarness) ->
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _ScreenHarness) -> None:
-    """3画面ともヘッダー下の本文要素をスクロールする。"""
     screen_harness.plan_path.write_text(
         "# 長い計画\n\n" + "\n\n".join(f"計画の段落{index}" for index in range(60)) + "\n",
         encoding="utf-8",
@@ -133,7 +128,6 @@ async def test_three_screens_scroll_below_the_fixed_header(screen_harness: _Scre
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_panes_follow_header_height_on_narrow_width(screen_harness: _ScreenHarness) -> None:
-    """ヘッダーが折り返す幅でも、主要領域の上端がヘッダーの下端と、下端がビューポートの下端と一致する。"""
     harness = screen_harness
     await harness.page.set_viewport_size({"width": 600, "height": 800})
 
@@ -151,7 +145,7 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
         pane_box = await pane.bounding_box()
         assert header_box is not None and pane_box is not None, path
         viewport_height = await harness.page.evaluate("document.documentElement.clientHeight")
-        # 小数の丸めだけを許容し、固定値の見積もりによるずれを検出する。
+
         assert abs(pane_box["y"] - (header_box["y"] + header_box["height"])) <= 1, path
         assert abs((pane_box["y"] + pane_box["height"]) - viewport_height) <= 1, path
 
@@ -165,7 +159,6 @@ async def test_panes_follow_header_height_on_narrow_width(screen_harness: _Scree
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness: _ScreenHarness) -> None:
-    """700・701・768pxでは一覧をメニューで開き、769pxから通常配置へ戻す。"""
     page = screen_harness.page
     for width in (700, 701, 768, 769):
         mobile = width <= 768
@@ -201,7 +194,6 @@ async def test_plan_and_session_drawers_share_the_768px_boundary(screen_harness:
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_drawers_labels_titles_and_reduced_motion(screen_harness: _ScreenHarness) -> None:
-    """狭い画面の一覧は閉じた状態でTab移動の対象から外れ、開閉と画面切替の前後でフォーカスを保つ。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.emulate_media(reduced_motion="reduce")

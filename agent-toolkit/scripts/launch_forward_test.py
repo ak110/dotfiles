@@ -1,12 +1,12 @@
-"""launcherによるMCPの転送と、hook本体の直接起動を検証する。"""
-
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
 import signal
 import sys
+import types
 import typing
 
 import pytest
@@ -74,7 +74,7 @@ def test_agents_server_forwards_only_when_root_has_shared_service(
     monkeypatch.setattr(launch.environment_usage, "lock", fake_lock)
     monkeypatch.setattr(launch.plugin_environment, "launch_environment", fake_environment)
     monkeypatch.setattr(launch.plugin_environment, "direct_environment", fake_environment)
-    monkeypatch.setattr(launch.plugin_environment, "prepared_python", fake_prepared_python)
+    monkeypatch.setattr(launch.plugin_environment, "prepared_environment_python", fake_prepared_python)
     monkeypatch.setattr(launch.plugin_environment, "project_environment", fake_prepared_python)
     monkeypatch.setattr(launch.shutil, "which", fake_which)
     monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(root), "agent_toolkit/agents_server_mcp.py"])
@@ -83,7 +83,7 @@ def test_agents_server_forwards_only_when_root_has_shared_service(
     assert calls == (["forward"] if has_service else [f"direct:{target.resolve()}"])
 
 
-@pytest.mark.parametrize("case", ["pre", "agy", "timeout", "cancel"])
+@pytest.mark.parametrize("case", ["pre", "agy", "timeout", "cancel", "changed"])
 def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str) -> None:
     """再入せずにhookを起動し、監視と回収が終わるまで共有ロックを保つ。"""
     if case == "cancel" and os.name == "nt":
@@ -103,13 +103,16 @@ def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPat
     usage_fds: tuple[int, ...] = ()
 
     @contextlib.contextmanager
-    def fake_lock(_environment: pathlib.Path) -> typing.Generator[typing.BinaryIO]:
+    def fake_lock(environment: pathlib.Path) -> typing.Generator[typing.BinaryIO]:
         nonlocal usage_fds
+        assert environment == tmp_path
         with (tmp_path / "usage-lock").open("wb") as handle:
             usage_fds = () if os.name == "nt" else (handle.fileno(),)
             events.append("lock")
-            yield handle
-            events.append("unlock")
+            try:
+                yield handle
+            finally:
+                events.append("unlock")
 
     class Process:
         def wait(self, *, timeout: float) -> int:
@@ -147,9 +150,20 @@ def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPat
         assert child is process and signum == signal.SIGKILL and graceful_timeout == 0
         events.append("cancel")
 
-    monkeypatch.setattr(launch.plugin_environment, "prepared_python", lambda *_: prepared_python)
-    monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_: tmp_path)
-    monkeypatch.setattr(launch.plugin_environment, "direct_environment", lambda *_: direct_env)
+    changed = tmp_path / "changed-by-update"
+    keys = iter((tmp_path, changed if case == "changed" else tmp_path, changed))
+
+    def python_for_key(selected: pathlib.Path) -> pathlib.Path:
+        assert selected == tmp_path
+        return prepared_python
+
+    def environment_for_key(*_args, selected: pathlib.Path) -> dict[str, str]:
+        assert selected == tmp_path
+        return direct_env
+
+    monkeypatch.setattr(launch.plugin_environment, "prepared_environment_python", python_for_key)
+    monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_: next(keys))
+    monkeypatch.setattr(launch.plugin_environment, "direct_environment", environment_for_key)
     monkeypatch.setattr(launch.environment_usage, "lock", fake_lock)
     monkeypatch.setattr(launch.shutil, "which", lambda *_: "uv")
     monkeypatch.setattr(launch, "_server_lifetime", fake_lifetime)
@@ -159,5 +173,56 @@ def test_hook_starts_prepared_python_under_monitor(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(tmp_path), str(target), *subcommand])
     with input_path.open("r", encoding="utf-8") as input_stream:
         monkeypatch.setattr(sys, "stdin", input_stream)
-        assert launch.main() == {"pre": 17, "agy": 17, "timeout": 124, "cancel": 128 + signal.SIGTERM}[case]
+        assert launch.main() == {"pre": 17, "agy": 17, "timeout": 124, "cancel": 128 + signal.SIGTERM, "changed": 1}[case]
+    assert next(keys) == changed
+    if case == "changed":
+        assert events == ["lock", "unlock"]
+        return
     assert events == ["lock", "spawn", *(["cancel"] if case == "cancel" else []), "reclaim", "unlock"]
+
+
+@pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse", "UserPromptSubmit"])
+def test_unprepared_hook_returns_context(monkeypatch, tmp_path, capsys, event):
+    launch = _load_launch()
+    target = tmp_path / "agent_toolkit" / "hook.py"
+    target.parent.mkdir()
+    target.touch()
+    raw = io.BytesIO(json.dumps({"hook_event_name": event}).encode())
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(raw))
+    monkeypatch.setattr(sys, "argv", ["launch.py", "--project", str(tmp_path), str(target)])
+    monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_: tmp_path)
+    monkeypatch.setattr(launch.plugin_environment, "prepared_environment_python", lambda *_: None)
+    monkeypatch.setattr(launch.shutil, "which", lambda *_: "uv")
+
+    assert launch.main() == 1
+    captured = capsys.readouterr()
+    response = json.loads(captured.out)["hookSpecificOutput"]
+    assert response["hookEventName"] == event
+    assert "未準備" in response["additionalContext"] and "準備状態" in response["additionalContext"]
+    assert "未準備" in captured.err
+
+
+@pytest.mark.parametrize("changes_before_sync", [False, True])
+def test_prepare_does_not_publish_changed_environment(monkeypatch, tmp_path, capsys, changes_before_sync):
+    launch = _load_launch()
+    target = tmp_path / "selected"
+    changed = tmp_path / "changed-by-update"
+    keys = iter((changed,) if changes_before_sync else (target, changed))
+    syncs = []
+
+    @contextlib.contextmanager
+    def sync(*_args, **kwargs):
+        syncs.append(kwargs["environment"]["VIRTUAL_ENV"])
+        yield types.SimpleNamespace(wait=lambda **_kwargs: 0)
+
+    monkeypatch.setattr(launch, "_server_lifetime", sync)
+    monkeypatch.setattr(launch.plugin_environment, "launch_environment", lambda *_: {"UV_PROJECT_ENVIRONMENT": str(target)})
+    monkeypatch.setattr(launch.plugin_environment, "project_environment", lambda *_: next(keys))
+    monkeypatch.setattr(launch.plugin_environment, "prepared_environment_python", lambda *_: None)
+    monkeypatch.setattr(
+        launch.plugin_environment, "publish_prepared_environment", lambda *_args, **_kwargs: pytest.fail("公開してはならない")
+    )
+
+    assert launch._prepare(tmp_path, "uv", {}) == 1  # pylint: disable=protected-access
+    assert syncs == ([] if changes_before_sync else [str(target)])
+    assert "依存の固定内容が変更された" in capsys.readouterr().err

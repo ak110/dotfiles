@@ -61,7 +61,9 @@ from agent_toolkit._common import (
     response_language_check,
     runtime_environment,
     runtime_inserted,
+    session_launchers,
     session_registry,
+    startup_features,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
@@ -120,8 +122,22 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
     try:
         return await function_hook_requests.request(identifier, operation, inputs)
+    except function_hook_requests.HookRequestRejected as error:
+        if operation == "send_to_user":
+            next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
+        elif operation == "apply_runtime_changes":
+            next_action = "再予約も手動反映もせずに現在のターンを終え、先行の予約の結果の通知を待つ"
+        else:
+            raise
+        raise ActionableError(str(error), next_action=next_action) from error
     except TimeoutError as error:
-        host = "codex" if manager.launcher_is_codex else "claude"
+        if caller is None:
+            is_codex = manager.launcher_is_codex(identifier)
+        else:
+            is_codex = identifier == caller.environment.get("CODEX_THREAD_ID") and identifier != caller.environment.get(
+                "CLAUDE_CODE_SESSION_ID"
+            )
+        host = "codex" if is_codex else "claude"
         raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
 
 
@@ -280,7 +296,6 @@ mcp = AgentsServerMCP(
     name="start",
     title="委譲sessionの開始",
     description=START_DESCRIPTION,
-    # 新しいsessionを起動するだけで、既存のsessionと結果を変えない。
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
@@ -296,9 +311,17 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     model_type: Annotated[str | None, Field(description=MODEL_TYPE_DESCRIPTION)] = None,
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
+    *,
+    start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
+    startup_profile: Annotated[
+        startup_features.StartupProfile | None,
+        Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
+    ] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
     if handoff_from is not None:
+        if startup_profile is not None:
+            raise ValueError("引き継ぎでは元のstartup_profileを使うため指定できない")
         launch_requests.validate_handoff_inputs(
             handoff_from,
             cwd=cwd,
@@ -332,59 +355,63 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         model_type=model_type,
         whole_contract_path=whole_contract_path,
     )
-    if mode == "task":
-        assert subagent_md_path is not None
-        params = extra_params or {}
-        launcher = await run_file_operation(_manager().launcher_session_id)
-        task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
-            task_document_request,
-            subagent_md_path,
-            params,
-            whole_contract_path=whole_contract_path,
-            launcher_session_id=launcher,
-        )
-        context = await run_file_operation(_manager().launcher_record_context)
-        task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-        warnings = model_override_warnings(model_type, default_type=task_model_type)
-        response = await _manager().start(
-            model_type or task_model_type,
-            task_prompt,
-            cwd,
-            launch_kind=launch_kind,
-            label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
-            startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
-            startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
-        )
-        if warnings:
-            response.setdefault("warnings", []).extend(warnings)
-        if handoff_path is not None:
+    with (
+        startup_features.selection(startup_profile),
+        session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
+    ):
+        if mode == "task":
+            assert subagent_md_path is not None
+            params = extra_params or {}
+            launcher = await run_file_operation(_manager().launcher_session_id)
+            task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
+                task_document_request,
+                subagent_md_path,
+                params,
+                whole_contract_path=whole_contract_path,
+                launcher_session_id=launcher,
+            )
+            context = await run_file_operation(_manager().launcher_record_context)
+            task_prompt = launch_requests.with_launcher_record(task_prompt, context)
+            warnings = model_override_warnings(model_type, default_type=task_model_type)
+            response = await _manager().start(
+                model_type or task_model_type,
+                task_prompt,
+                cwd,
+                launch_kind=launch_kind,
+                label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+                startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+                startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
+            )
+            if warnings:
+                response.setdefault("warnings", []).extend(warnings)
+            if handoff_path is not None:
+                public = public_start_response(response)
+                public["handoff_record_path"] = str(handoff_path)
+                return public
+        elif mode == "delegate":
+            assert prompt is not None and model_type is not None
+            launcher = await run_file_operation(_manager().launcher_session_id)
+            delegate_prompt, handoff_path = await run_file_operation(
+                launch_requests.delegate_request,
+                prompt,
+                whole_contract_path=whole_contract_path,
+                launcher_session_id=launcher,
+            )
+            response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
+            if warnings:
+                response.setdefault("warnings", []).extend(warnings)
             public = public_start_response(response)
             public["handoff_record_path"] = str(handoff_path)
             return public
-    elif mode == "delegate":
-        assert prompt is not None and model_type is not None
-        launcher = await run_file_operation(_manager().launcher_session_id)
-        delegate_prompt, handoff_path = await run_file_operation(
-            launch_requests.delegate_request,
-            prompt,
-            whole_contract_path=whole_contract_path,
-            launcher_session_id=launcher,
-        )
-        response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
-        if warnings:
-            response.setdefault("warnings", []).extend(warnings)
-        public = public_start_response(response)
-        public["handoff_record_path"] = str(handoff_path)
-        return public
-    elif mode == "explore":
-        assert prompt is not None
-        response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
-    elif mode == "write":
-        assert prompt is not None
-        response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
-    else:
-        assert command is not None and summary_policy is not None
-        response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
+        elif mode == "explore":
+            assert prompt is not None
+            response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
+        elif mode == "write":
+            assert prompt is not None
+            response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
+        else:
+            assert command is not None and summary_policy is not None
+            response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
     if mode != "task" and warnings:
         response.setdefault("warnings", []).extend(warnings)
     return public_start_response(response)
@@ -393,7 +420,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 @mcp.tool(
     name="send_message",
     title="委譲sessionへの指示の追送",
-    # 指示を追加で配送して新しいturnを始めうるが、既存の結果や会話は消さない。
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
@@ -478,7 +504,6 @@ async def send_message(
 @mcp.tool(
     name="kill",
     title="実行中turnの中断",
-    # 実行中turnを中断し、`stop=true`ではsessionも破棄する。
     annotations=ToolAnnotations(destructive_hint=True),
     structured_output=True,
 )
@@ -575,14 +600,12 @@ async def list_sessions(
     response = await manager.list_sessions(include_terminated=include_terminated)
     response["queried_server_instance"] = session_registry.owner_server_instance()
     if _SERVICE_MANAGERS is not None:
-        # ターンの途中で更新を迎えた会話は終了境界まで旧世代が所有するため、同じ親会話の分を加える。
         foreign = await _SERVICE_MANAGERS.other_generation_sessions(manager, include_terminated=include_terminated)
         listed = {item["session_id"] for item in response["sessions"]}
         response["sessions"].extend(item for item in foreign["sessions"] if item["session_id"] not in listed)
         if foreign["unreachable"]:
             response["unreachable_generations"] = foreign["unreachable"]
     if _SERVICE_MANAGERS is not None and (generations := await _SERVICE_MANAGERS.generations()):
-        # 退出していない世代が複数あれば更新中か旧世代の残存であり、sessionの所有者を確かめる手掛かりにする。
         response["server_generations"] = generations
     return response
 
@@ -707,7 +730,7 @@ async def send_to_user(
             "報告の案内を取得できなかった。報告した改善点は原因と影響を確かめてその場で是正するか、是正しない理由と担当を報告へ書く。"
             "報告した逸脱は`agent-basics:bugfix`を起動して診断と是正を行う。"
         )
-    # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
+
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
     result["guidance"] = guidance
@@ -769,9 +792,11 @@ async def permissions(
 
 
 @mcp.tool(name="compact_conversation", title="会話圧縮の予約", annotations=ToolAnnotations(destructive_hint=False))
-async def compact_conversation() -> dict[str, Any]:
-    """メイン専用。会話圧縮を予約する。受付後はターンを終え、ホストの圧縮結果を待つ。受付は完了ではない。"""
-    return await _ui_request("compact_conversation", {})
+async def compact_conversation(
+    resume: Annotated[bool, Field(description="trueなら圧縮成功後に対話画面の次のターンを開始する")] = False,
+) -> dict[str, Any]:
+    """メイン専用。会話圧縮を予約する。resumeを指定すると対話画面で圧縮成功後に次のターンを開始する。受付は完了ではない。"""
+    return await _ui_request("compact_conversation", {"resume": resume} if resume else {})
 
 
 @mcp.tool(name="apply_runtime_changes", title="同一会話への変更反映予約", annotations=ToolAnnotations(destructive_hint=False))
@@ -795,7 +820,7 @@ def _prepare_child_environment() -> None:
     child_environment.prepare(os.environ)
     _inherited_venv.strip_inherited_venv(os.environ)
     mcp_environment.strip_conversation_context(os.environ)
-    # 起動ランチャーとの合流ファイルはこのプロセスだけが使い、委譲先の内側のagents_serverへ継承させない。
+
     os.environ.pop(logging_config.LAUNCH_RECORD_ENV, None)
 
 

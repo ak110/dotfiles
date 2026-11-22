@@ -1,5 +1,3 @@
-"""WIのmutations content: metadataのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -17,8 +15,6 @@ from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_a
 
 
 class TestEditBodyFile:
-    """本文ファイルによる編集の検証。"""
-
     @pytest.mark.parametrize("question_type", ["choice", "post-approval"])
     def test_uwi_question_and_scope_update_preserves_answer(
         self,
@@ -26,7 +22,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         question_type: str,
     ) -> None:
-        """UWIの質問とscopeだけを更新し、回答領域を保持する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(
             notes,
@@ -64,10 +59,6 @@ class TestEditBodyFile:
         message: str,
         expected_code: int,
     ) -> None:
-        """本文のfrontmatterから投入元セッションを書き換えられない。
-
-        回答済みUWIの通知は保存した投入元セッションだけへ届くため、編集で値が変わると通知の宛先が変わる。
-        """
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(
             notes,
@@ -107,7 +98,6 @@ class TestEditBodyFile:
         capsys: pytest.CaptureFixture[str],
         message: str,
     ) -> None:
-        """予約要素と不正な質問メタデータを拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(notes, "uwi-001.md")
         original = path.read_text(encoding="utf-8")
@@ -126,7 +116,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """回答マーカー重複時も終了側を基準に質問だけを更新する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(
             notes,
@@ -165,7 +154,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """一般全文編集は予約frontmatterキーの追加・変更・削除を保存する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         parsed = frontmatter_parser.parse_frontmatter(path.read_text(encoding="utf-8"))
@@ -200,7 +188,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """Web API共通保存境界はtarget_repo変更時に旧target_commitを削除する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8").replace(
@@ -229,7 +216,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """plan_fileを持つ項目も本文だけの編集を許容する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "fb-001.md")
         original = path.read_text(encoding="utf-8").replace(
@@ -253,7 +239,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """frontmatter全体が破損している場合は編集を拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _fixed_path(notes, "fb-001.md")
         path.write_text("---\ntarget_repo: [broken\n---\n本文\n", encoding="utf-8")
@@ -289,7 +274,6 @@ def test_edit_reserved_metadata_roundtrip(
     key: str,
     value: object,
 ) -> None:
-    """非対話CLIは保存値の再提示・省略を受理し、予約値の追加・変更を保存前に拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = "fb-001.md"
     path = _write_awi_file(notes, filename) if entry_type == "awi" else _write_uwi_entry(notes, filename)
@@ -330,7 +314,6 @@ def test_show_body_edit_keeps_or_invalidates_target_commit(
     capsys: pytest.CaptureFixture[str],
     change_repo: bool,
 ) -> None:
-    """showの保存本文をdry-runと実保存へ戻し、対象変更時には再提示された旧commitを無効化する。"""
     notes = _setup_notes(tmp_path)
     filename = "fb-001.md"
     path = _write_awi_file(notes, filename, body="変更前")

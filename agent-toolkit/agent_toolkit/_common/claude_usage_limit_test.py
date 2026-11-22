@@ -11,7 +11,6 @@ from agent_toolkit._common import claude_usage_limit
 
 @pytest.mark.parametrize("limit_type", ["seven_day", "seven_day_opus", "seven_day_sonnet", "five_hour"])
 def test_rejected_weekly_and_five_hour_limits_are_wait_targets(limit_type: str) -> None:
-    """Weekly limitの3種類と5時間の利用上限の拒否は解除まで待つ対象とする。"""
     info = claude_agent_sdk.RateLimitInfo(status="rejected", rate_limit_type=cast(Any, limit_type), resets_at=1_900_000_000)
     event = claude_agent_sdk.RateLimitEvent(rate_limit_info=info, uuid="u", session_id="s")
 
@@ -41,7 +40,6 @@ def test_other_states_are_not_wait_targets(status: str, limit_type: str | None) 
 
 
 def test_delay_uses_reset_time_and_falls_back_to_recheck_interval() -> None:
-    """解除予定時刻までの秒数を返し、時刻の欠落と経過済みでは一定の再確認間隔を返す。"""
     now = 1_000.0
 
     assert claude_usage_limit.UsageLimitState("rejected", "seven_day", 1_600).delay_seconds(now) == 600.0
@@ -56,7 +54,6 @@ def test_delay_uses_reset_time_and_falls_back_to_recheck_interval() -> None:
 
 
 def test_stream_json_lines_yield_latest_limit_session_and_result() -> None:
-    """CLIの`stream-json`出力から最後の利用枠、session識別子と`result`イベントを読み取る。"""
     lines = [
         json.dumps({"type": "system", "subtype": "init", "session_id": "conversation"}),
         "not json",

@@ -28,7 +28,6 @@ from agent_toolkit._testing.lane_support import _create, _invoke
     ),
 )
 def test_legacy_rebase_migrates_without_losing_wi_mapping(tmp_path, monkeypatch, capsys, phase):
-    """保存済み旧対応を汎用操作で継承し、元成果と証拠を保って新方式へ再開する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     tree = pathlib.Path(record["worktree"])

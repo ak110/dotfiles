@@ -1,12 +1,9 @@
-"""atkの結果行出力のテスト。"""
-
 import pytest
 
 from agent_toolkit._atk import outcome
 
 
 def test_value_result_does_not_repeat_success(capsys: pytest.CaptureFixture[str]) -> None:
-    """値を受け取る呼出元には成功行を重ねず、標準出力の値を保持する。"""
     print('{"status":"completed","record_path":"result.json"}')
     outcome.report_success("外部コマンドが終了した", outcome.ResultKind.VALUE_OUTPUT)
 

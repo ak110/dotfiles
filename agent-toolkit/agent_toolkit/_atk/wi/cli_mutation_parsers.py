@@ -1,5 +1,3 @@
-"""WIの投入・編集・状態遷移の引数登録。"""
-
 from typing import Any
 
 from agent_toolkit._atk.wi.cli_parser_support import (
@@ -19,7 +17,6 @@ lazy from agent_toolkit._atk.wi import constants as _wi_constants
 
 
 def _add_wi_add_parser(sub: Any) -> None:
-    """投入サブコマンドを登録する。"""
     add = _atk_help.add_command(sub, "add", **_atk_help.HELP["atk wi add"])
     add.add_argument(
         "--body-file",
@@ -108,6 +105,15 @@ def _add_wi_add_parser(sub: Any) -> None:
         ),
     )
     add.add_argument(
+        "--hold",
+        action="store_true",
+        help=(
+            "AWIをinboxでなくholdへ保存し、保存した時点から自動処理の対象に入れない。"
+            "保存後に本文を仕上げてから`atk wi unhold`で戻す場合に使う。"
+            "UWI・--batch・--process-wi-timingとは併用できない。"
+        ),
+    )
+    add.add_argument(
         "--source",
         metavar="NAME",
         default=None,
@@ -159,7 +165,6 @@ def _add_wi_add_parser(sub: Any) -> None:
 
 
 def _add_mq_transition_parsers(sub: Any) -> None:
-    """状態遷移・削除サブコマンドを登録する。"""
     start_processing = _atk_help.add_command(sub, "start-processing", **_atk_help.HELP["atk wi start-processing"])
     start_processing.add_argument(
         "filenames",
@@ -320,7 +325,6 @@ def _add_mq_transition_parsers(sub: Any) -> None:
 
 
 def _add_mq_edit_parsers(sub: Any) -> None:
-    """本文編集・計画変換・依存更新サブコマンドを登録する。"""
     effect = _atk_help.add_command(sub, "effect-check", **_atk_help.HELP["atk wi effect-check"])
     effect.add_argument("filenames", metavar="FILENAME", nargs="+", help="効果を記録する採用済みAWIのファイル名（1件以上）")
     effect.add_argument("--worktree", required=True, help="対応commitの変更ファイルを確かめる対象リポジトリの作業ツリー")

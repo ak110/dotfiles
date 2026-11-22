@@ -16,7 +16,6 @@ _LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
 
 @pytest.mark.parametrize("tool", ["Read", "Grep"])
 def test_original_record_warning_offers_public_extraction(tmp_path, monkeypatch, capsys, tool):
-    """原記録の抽出手段を案内し、通常資料との境界と汎用の委譲指示の不在を保つ。"""
     home = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home))
     record = home / "projects/project/record.jsonl"
@@ -37,10 +36,6 @@ def test_original_record_warning_offers_public_extraction(tmp_path, monkeypatch,
 def test_claude_commit_block_lists_all_violations_for_variable_repository_path(
     capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
-    """`git -C $R`のcommitも検査し、作業項目のファイル名と帰属行の欠落を1回の遮断に並べる。
-
-    遮断は連結した`git add`を含むコマンド全体を止めるため、通知は未実行の範囲と再実行の範囲を示す。
-    """
     command = 'R=/repo; git -C $R add -- a.md && git -C $R commit -q -m "fix: 変更\n\n20261109-105107-001.md"'
 
     assert pretooluse.main(json.dumps(_claude_commit_hook_payload(tmp_path, command))) == 0
@@ -55,7 +50,6 @@ def test_claude_commit_block_lists_all_violations_for_variable_repository_path(
 def test_claude_commit_blocks_missing_trailer_for_quoted_variable_repository_path(
     capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
-    """引用した変数展開のパスを`git -C`へ渡したcommitも、帰属行の欠落で遮断する。"""
     payload = _claude_commit_hook_payload(tmp_path, "git -C \"$R\" commit -q -m 'fix: 変更'")
 
     assert pretooluse.main(json.dumps(payload)) == 0
@@ -84,7 +78,6 @@ def test_claude_commit_does_not_judge_unresolved_message_inputs(
 def test_observed_commit_trailer_matches_the_line_required_by_commit_check(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """事前に示す帰属行は遮断の検査が期待する行と一致し、観測できない場合と無効化設定では示さない。"""
     payload = _claude_commit_hook_payload(tmp_path, "git commit -m 'fix: 変更'")
     # 設定の探索先を試験のディレクトリへ固定する。実行環境の値が残ると、試験が置く設定を読まない。
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))

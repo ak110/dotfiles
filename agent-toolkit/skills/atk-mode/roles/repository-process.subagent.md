@@ -11,10 +11,9 @@ optional_inputs:
 - target_repo
 - worktree
 - candidate_file
+- snapshot_file
 - readiness
 - lane_limit
-- ownership_record
-- ownership_token
 - lane_session_id
 - previous
 - common_dir
@@ -43,16 +42,18 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 ## 入力
 
 `repositories`には、対象要素の空でない順序付きJSON配列を保存した既存ファイルの絶対パスを渡す。
-各要素は`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`ownership_record`、`ownership_token`、`lane_session_id`を持ち、任意の欄も対象ごとに持つ。
-省略時は単一対象の8欄を必須として受け取り、行が無い場合もこの単一対象の形式として読む。
+各要素は`target_repo`、`worktree`、`candidate_file`、`readiness`、`lane_limit`、`lane_session_id`を持ち、任意の欄も対象ごとに持つ。
+省略時は単一対象の同じ6欄を必須として受け取り、行が無い場合もこの単一対象の形式として読む。
 両形式を混ぜず、対象の重複や必須値の不足は推測せずに統括へ返す。
 
-- `target_repo`、`worktree`、`common_dir`、`registered_worktree`: 対象の識別と、常駐が準備した処理用worktreeの絶対パス。
+- `target_repo`、`worktree`、`common_dir`、`registered_worktree`: 対象の識別と、統括が準備した処理用worktreeの絶対パス。
   作業は各対象の`worktree`で行い、cwdは割り当てられた対象の準備済みworktreeの1つとする。
 - `target`、`target_branch`、`default_branch`: 結果を対応付ける対象の識別子と、系統を登録したリポジトリで処理する系統と、系統を省略したWIの宛先の系統。
   `target`が無い対象は`target_repo`を識別子とする。
 - `candidate_file`、`readiness`、`lane_limit`: 開始時の候補の原本、着手可否の診断、対象別のレーン上限。
-- `ownership_record`、`ownership_token`、`lane_session_id`: 常駐が取得済みの所有とレーン操作の識別子。
+- `snapshot_file`: 同じ初回取得で保存した開始時集合の絶対パス。
+  行がなければ、新着の判定前に既存の開始時集合を統括から取得する。
+- `lane_session_id`: 対象ごとのレーン操作の識別子。
   レーン操作の`--session-id`へ`lane_session_id`を明示する。
 - `previous`: 前回の未完了の成果と再開位置。
   指定があれば完了済みの工程を繰り返さず、残る工程から再開する。

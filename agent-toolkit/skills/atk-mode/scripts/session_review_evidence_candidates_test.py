@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_candidates_test）。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -14,7 +12,6 @@ from agent_toolkit._testing.session_review_evidence_support import _bundle_candi
 
 
 def test_candidates_bound_hook_notice_variants_and_keep_each_emitter() -> None:
-    """block/warn通知は発生源ごとに上位5種類の代表位置へ限定し、発生総数を保持する。"""
     notices: list[dict] = []
     line = 1
     for variant, count in enumerate(range(7, 0, -1)):
@@ -58,7 +55,6 @@ def test_transcript_alias_selects_the_single_record_source(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--transcript`を位置引数と同じ単一記録を指定する手段として扱う。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
 
     assert evidence.main(["--transcript", str(transcript)]) == 0
@@ -83,7 +79,6 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
 
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
-    """属性を伴う境界の要素で囲んだ自動注入本文を、実行環境の挿入として除外する。"""
     normative = '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
     hook_notice = (
         '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n注記\n</agent-toolkit-hook-message>'
@@ -104,7 +99,6 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
 
 
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
-    """先頭スキル要求と対応本文を別区分で除外し、後続のユーザー介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
         {"kind": "user", "record": "main", "line": 2, "text": f"${skill_modes.PROCESS_WI}"},
@@ -150,7 +144,6 @@ def test_bundle_selects_initial_request_after_runtime_injections(
 def test_bundle_selects_initial_skill_after_runtime_injections(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], closing: str
 ) -> None:
-    """注入後の初期スキルと対応本文は元の区分で除き、後続の是正を保持する。"""
     texts = [
         "# AGENTS.md instructions\n規範",
         '<atk-auto source="runtime" kind="notice">注入</atk-auto>',
@@ -171,10 +164,6 @@ def test_bundle_selects_initial_skill_after_runtime_injections(
 
 
 def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """PreToolUseのwarn候補の個別証拠が、同じ呼び出し識別子のコマンドと記録位置を持つ。
-
-    hook実行記録だけでは警告の対象を特定できず、分析主体が元記録を検索し直すことになる。
-    """
     candidates, items = _bundle_candidates_and_evidence(
         tmp_path,
         capsys,
@@ -216,13 +205,13 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
             "line": 2,
             "timestamp": "2026-09-25T00:00:01Z",
             "name": "Bash",
+            "call_id": "toolu_target",
             "input": {"command": "find . -name '*.md'", "description": "Markdownを探す"},
         }
     ]
 
 
 def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """blockまたはwarn以外の区分を持つhook出力は候補へ残らず、区分の種類によらず除外件数へ計上される。"""
     candidates, _ = _bundle_candidates_and_evidence(
         tmp_path,
         capsys,
@@ -264,3 +253,58 @@ def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.
     hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
     assert [item["locators"] for item in hook_candidates] == [[{"record": "claude:transcript", "line": 4}]]
     assert candidates[-1]["excluded"]["hook-notice-context"] == 2
+
+
+def test_public_bundle_keeps_result_status_when_another_result_consumes_budget(tmp_path, capsys):
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "normal", "is_error": False, "content": "a" * 4000},
+                    {"type": "tool_result", "tool_use_id": "failed", "is_error": True, "content": ""},
+                ],
+            },
+            "attachment": hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "failed",
+                    "content": ["[auto-generated: agent-toolkit/pretooluse][warn] warn: 一時通知"],
+                }
+            )["attachment"],
+        },
+    ]
+    _, items = _bundle_candidates_and_evidence(tmp_path, capsys, entries)
+    events = [event for item in items.values() for event in item["events"]]
+    assert any(event.get("tool") == "failed" and event.get("is_error") is True and event.get("text") == "" for event in events)
+    assert any(
+        event.get("tool") == "normal" and event.get("is_error") is False and event.get("omitted") is True for event in events
+    )
+
+
+@pytest.mark.parametrize("bad_type", [{"invalid": True}, ["invalid"]])
+def test_public_search_continues_after_nonstring_record_type(tmp_path, capsys, bad_type):
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "response_item", "payload": {"type": bad_type, "call_id": "bad", "output": "異常行"}},
+            {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "ok", "output": "検索対象"}},
+        ],
+    )
+    assert evidence.main([str(transcript), "--grep", "検索対象"]) == 0
+    assert any(event.get("kind") == "match" and event.get("line") == 2 for event in read_jsonl(capsys))
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    for flag in ("--warn", "--hook-notices", "--stats", "--tool-calls"):
+        assert evidence.main([str(transcript), flag]) == 0
+        capsys.readouterr()
+    assert evidence.main([str(transcript), "--context-at", "2", "--phrase=異常行"]) == 0
+    capsys.readouterr()
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+    [detail] = read_jsonl(capsys)
+    assert detail["event_type"] == "response_item" and "text" not in detail

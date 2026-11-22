@@ -24,7 +24,6 @@ from agent_toolkit._testing.agents_server_support import AssistantMessage, Queue
 
 
 def test_prepare_debug_file_tolerates_disappearance(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """一覧取得後に消えた補助診断は新しい再開用パスの準備を妨げない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = tmp_path / claude._DEBUG_LOG_DIR_NAME
     directory.mkdir()
@@ -46,7 +45,6 @@ def test_prepare_debug_file_tolerates_disappearance(monkeypatch: pytest.MonkeyPa
 def test_prepare_debug_file_disables_debug_when_directory_is_unavailable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """補助診断の保存先が使えなければdebug指定を無効にする。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     (tmp_path / claude._DEBUG_LOG_DIR_NAME).write_text("not a directory", encoding="utf-8")
     assert claude._prepare_debug_file("delegate") is None
@@ -55,7 +53,6 @@ def test_prepare_debug_file_disables_debug_when_directory_is_unavailable(
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_resume_without_debug_file_reaches_sdk(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """補助診断を作れない新規・再開でも同じ会話IDをSDKへ渡す。"""
     monkeypatch.setattr(claude, "_prepare_debug_file", lambda _kind: None)
     options: list[Any] = []
 
@@ -76,7 +73,6 @@ async def test_resume_without_debug_file_reaches_sdk(monkeypatch: pytest.MonkeyP
 
 
 def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathlib.Path) -> None:
-    """診断ログの名前にsession識別子を含め、時刻を比較せずに対応するsessionを判別できる状態にする。"""
     debug_file = tmp_path / "20260916T000000000000-delegate.log"
     debug_file.write_text("diagnostic", encoding="utf-8")
 
@@ -88,7 +84,6 @@ def test_debug_file_name_carries_session_id_after_initialization(tmp_path: pathl
 
 
 def test_debug_file_keeps_its_name_when_renaming_is_rejected(tmp_path: pathlib.Path) -> None:
-    """改名できない実行環境では元の名前を保ち、後続の記録先を失わない。"""
     debug_file = tmp_path / "missing" / "20260916T000000000000-delegate.log"
 
     renamed = claude.rename_debug_file_for_session(debug_file, "session-1", "delegate")
@@ -100,7 +95,6 @@ def test_prepare_debug_file_drops_records_beyond_retention(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保持世代を超えた古い診断ログを自動的に削除する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     directory = tmp_path / claude._DEBUG_LOG_DIR_NAME  # pylint: disable=protected-access
     directory.mkdir(parents=True)
@@ -123,7 +117,6 @@ def test_prepare_debug_file_drops_records_beyond_retention(
 
 
 def test_assistant_message_without_text_advances_activity_time() -> None:
-    """ツール呼び出しだけのassistantメッセージでも活動時刻を進め、テキスト出力時刻は進めない。"""
     session = state.SessionState("session-1", "/tmp")
     session.updated_at = "2000-01-01T00:00:00+00:00"
     message = types.SimpleNamespace(
@@ -140,7 +133,6 @@ def test_assistant_message_without_text_advances_activity_time() -> None:
 
 
 def test_assistant_message_with_text_updates_both_activity_and_output() -> None:
-    """テキストを持つassistantメッセージは活動時刻とテキスト出力時刻の双方を進める。"""
     session = state.SessionState("session-1", "/tmp")
     session.updated_at = "2000-01-01T00:00:00+00:00"
     message = types.SimpleNamespace(content=[types.SimpleNamespace(text="調査を続ける")])
@@ -199,7 +191,6 @@ def test_api_error_does_not_advance_activity() -> None:
 
 
 def test_initialization_diagnostic_identifies_received_messages() -> None:
-    """初期化診断は受信メッセージを種別と内容で識別できる形で保持する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
 
     diagnostic.record_message(types.SimpleNamespace(subtype="SessionStart"))
@@ -213,7 +204,6 @@ def test_initialization_diagnostic_identifies_received_messages() -> None:
 
 
 def test_initialization_diagnostic_lists_child_processes(tmp_path: pathlib.Path) -> None:
-    """初期化診断は委譲先プロセスが起動した子プロセスを列挙する。"""
     diagnostic = claude._InitializationDiagnostic()  # pylint: disable=protected-access
     with late_descendant.held_process(tmp_path) as child:
         try:
@@ -230,7 +220,6 @@ async def test_start_aborts_when_init_message_never_arrives(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """initへ到達しないsessionを上限で打ち切り、子プロセスを終了させて例外で返す。"""
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     client = _SilentClient()

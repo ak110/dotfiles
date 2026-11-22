@@ -27,7 +27,6 @@ class _SessionStartRun(typing.NamedTuple):
 def _run_session_start(
     root: pathlib.Path, session_id: object, transcript: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> _SessionStartRun:
-    """前身の会話の状態を置いた隔離環境で公開hookのSessionStart処理を実行し、その環境の下に作られたパスを返す。"""
     temporary = root / "tmp"
     temporary.mkdir(parents=True)
     monkeypatch.setenv("XDG_STATE_HOME", str(root / "state"))
@@ -139,7 +138,6 @@ class TestStandardInputAndPayloadDump:
         assert not stderr
 
     def test_entrypoint_inherits_predecessor_session_state(self, tmp_path: pathlib.Path) -> None:
-        """各サブコマンドへ渡す前に共通処理が前身状態を継承する。"""
         entrypoint = self._copy_entrypoint(tmp_path)
         self._write_echo_module(tmp_path)
         source_directory = _SCRIPT.parent
@@ -188,7 +186,7 @@ class TestStandardInputAndPayloadDump:
     def test_invalid_session_id_is_treated_as_absent_without_state_creation(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: object
     ) -> None:
-        """状態ファイル名へ使えない会話IDは、型によらず会話IDの無いSessionStartと同じ扱いとし、状態の継承も含めて状態を作らない。"""
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
         transcript = tmp_path / "transcript.jsonl"
         transcript.write_text(json.dumps({"sessionId": "previous"}) + "\n", encoding="utf-8")
         absent = _run_session_start(tmp_path / "absent", "", transcript, monkeypatch)
@@ -199,7 +197,6 @@ class TestStandardInputAndPayloadDump:
         assert not invalid.result.stderr
 
     def test_invalid_session_id_is_reported_in_notice_accepting_event(self, tmp_path: pathlib.Path) -> None:
-        """補正した会話IDの診断は、stderrへ出さず通知を受理するイベントの追加文脈で届ける。"""
         entrypoint = self._copy_entrypoint(tmp_path)
         self._write_echo_module(tmp_path)
         payload = json.dumps({"session_id": "bad id/..", "hook_event_name": "PreToolUse"})

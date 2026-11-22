@@ -31,13 +31,10 @@ from agent_toolkit.atk_test import (  # pylint: disable=wrong-import-position
 
 
 class TestGrepBasic:
-    """grepサブコマンド: 複数エントリ・複数行にまたがるマッチを検索する。"""
-
     @pytest.mark.parametrize("output", [[], ["-c"], ["-l"], ["--summary-only"]])
     def test_since_filters_submission_date_in_every_output(
         self, output: list[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """投入日の下限を含み、直前の日・日時不明の旧名を全出力で除く。"""
         notes = _setup_notes(tmp_path)
         for name in ("20261101-235959-001.md", "20261102-000000-001.md", "20261106-120000-001.md", "legacy.md"):
             _write_awi_file(notes, name, body="needle")
@@ -100,7 +97,6 @@ class TestGrepBasic:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """単一エントリ内の複数行マッチを`<ファイル名>:<行番号>:<該当行>`形式で出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="line1\nline2\nline3")
         git_calls: list[_GitCall] = []
@@ -120,7 +116,6 @@ class TestGrepBasic:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """該当0件時にexit 1で終了し標準出力が空であること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="line1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -189,15 +184,12 @@ class TestGrepBasic:
 
 
 class TestGrepIgnoreCase:
-    """grepサブコマンド: --ignore-caseで大文字小文字を無視する。"""
-
     def test_ignore_case_matches_different_case(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--ignore-case指定時に大文字小文字を無視して一致すること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -215,7 +207,6 @@ class TestGrepIgnoreCase:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--ignore-case未指定時は大文字小文字を区別すること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="Uppercase")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -229,15 +220,12 @@ class TestGrepIgnoreCase:
 
 
 class TestGrepFilters:
-    """grepサブコマンド: 各フィルターが`list`と同じ意味で作用すること。"""
-
     def test_adopted_session_review_search_limits_entries_before_matching(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """終了済み振り返りの検索対象は状態・投入元・対象リポジトリの積集合となる。"""
         notes = _setup_notes(tmp_path)
         for filename, source, repo in (
             ("matched.md", "session-review", "github.com/example/foo"),
@@ -272,7 +260,6 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--type=awi`でAWI種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="searchword")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
@@ -292,7 +279,6 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """grepも旧パス形と現行URL形を同じ対象として検索する。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         local_repo.mkdir()
@@ -314,7 +300,6 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=uwiでuwi種別のみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="searchword")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword")
@@ -334,7 +319,6 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """状態を指定せずactiveを使うgrepはhold配下のawiとUWIをいずれも含める。"""
         notes = _setup_notes(tmp_path)
         hold_dir = notes / "2026" / "10"
         hold_dir.mkdir(parents=True, exist_ok=True)
@@ -362,7 +346,6 @@ class TestGrepFilters:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--answered=noで未回答UWIのみを対象とする。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="searchword", answer="")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="other", answer="回答あり\n")
@@ -378,15 +361,12 @@ class TestGrepFilters:
 
 
 class TestGrepFrontmatter:
-    """grepサブコマンド: frontmatter部分（target_repo:等の行）も検索対象に含まれること。"""
-
     def test_grep_finds_match_in_frontmatter(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """frontmatter内のtarget_repoフィールドも検索対象に含まれること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/searchword", body="body")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -400,15 +380,12 @@ class TestGrepFrontmatter:
 
 
 class TestGrepInvalidRegex:
-    """grepサブコマンド: 不正な正規表現指定時にexit 2で終了する。"""
-
     def test_invalid_regex_exits_2(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """不正な正規表現指定時にexit 2で終了しエラーメッセージを標準エラーへ出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="text")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -419,7 +396,7 @@ class TestGrepInvalidRegex:
         assert exc_info.value.code == 2
         captured = capsys.readouterr()
         assert "正規表現が不正です" in captured.err
-        # 構文の確かめ方とエスケープを次の操作として続ける。
+
         assert "エスケープして再実行する" in captured.err.split("\n次の操作: ", 1)[1]
 
 
@@ -428,7 +405,6 @@ def _run_wi(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> tuple[int | str | None, str, str]:
-    """`atk wi <argv>`を実行し、終了コード・標準出力・標準エラーを返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(["wi", *argv, "--skip-pull"], home=tmp_path)
     captured = capsys.readouterr()
@@ -436,7 +412,6 @@ def _run_wi(
 
 
 def _write_output_form_queue(tmp_path: pathlib.Path) -> None:
-    """出力形式の検証用に、状態・種別・投入元・対象リポジトリ・回答状況の異なる項目を置く。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "multi.md", body="# 複数行の項目\n\nneedle first\nunrelated\nNeedle second\nneedle third")
     _write_awi_file(notes, "single.md", body="# 1行の項目\n\nneedle only", source="session-review")
@@ -474,7 +449,6 @@ class TestGrepOutputForms:
         capsys: pytest.CaptureFixture[str],
         condition: list[str],
     ) -> None:
-        """3形式の出力が行の列挙の項目ごとの行数と一致し、一致行の本文を含まない。"""
         _write_output_form_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -500,7 +474,7 @@ class TestGrepOutputForms:
         records = [json.loads(line) for line in out.splitlines()]
         assert [record["filename"] for record in records] == expected_order
         assert {record["filename"]: record["match_count"] for record in records} == dict(expected_counts)
-        # 一致行の本文は返さない（UWIの要約は質問本文の先頭行のため、AWIの本文行で確かめる）。
+
         assert "needle first" not in out
 
     def test_grep_summary_matches_list_summary(
@@ -509,7 +483,6 @@ class TestGrepOutputForms:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--summary-only`の`filename`と`summary`は`atk wi list --summary-only`の同じ項目と同じ値になる。"""
         _write_output_form_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -532,7 +505,6 @@ class TestGrepOutputForms:
         capsys: pytest.CaptureFixture[str],
         option: str,
     ) -> None:
-        """一致0件は行の列挙と同じく標準エラーの`該当0件: `と終了コード1になる。"""
         _write_output_form_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -552,7 +524,6 @@ class TestGrepOutputForms:
         capsys: pytest.CaptureFixture[str],
         options: list[str],
     ) -> None:
-        """2つの出力形式の併用は使い方の誤りとして終了コード2になる。"""
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "grep", *options, "needle", "--skip-pull"], home=tmp_path)
 
@@ -581,7 +552,6 @@ class TestGrepFixedStrings:
         capsys: pytest.CaptureFixture[str],
         option: str,
     ) -> None:
-        """記号を含む語の固定文字列検索は、エスケープした正規表現と同じ行を返す。"""
         self._write_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -598,7 +568,6 @@ class TestGrepFixedStrings:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`-F`の`a|b`は文字列そのものに一致し、`-F`なしでは正規表現の選択として一致する。"""
         self._write_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -617,7 +586,6 @@ class TestGrepFixedStrings:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`-F`と`-i`の併用は大文字小文字を無視し、`--type`は`-F`なしと同じ項目へ作用する。"""
         self._write_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -635,7 +603,6 @@ class TestGrepFixedStrings:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`-F`で一致しない語は`該当0件: `と終了コード1になる。正規表現として不正な語もエラーにならない。"""
         self._write_queue(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -647,8 +614,6 @@ class TestGrepFixedStrings:
 
 
 class TestGrepMultiplePatterns:
-    """反復-eの独立評価と、全出力形式への論理和の適用を公開CLIで検証する。"""
-
     @pytest.mark.parametrize("fixed", [False, True])
     @pytest.mark.parametrize("ignore_case", [False, True])
     def test_patterns_select_union_without_duplicate_lines(
@@ -659,7 +624,6 @@ class TestGrepMultiplePatterns:
         fixed: bool,
         ignore_case: bool,
     ) -> None:
-        """各語だけの行と両方を持つ行を、固定文字列・大文字小文字無視でも1回ずつ数える。"""
         notes = _setup_notes(tmp_path)
         body = "alpha[1]\nbeta[2]\nalpha[1] beta[2]\nALPHA[1]\nBETA[2]\n対象外"
         _write_awi_file(notes, "union.md", body=body)
@@ -694,7 +658,6 @@ class TestGrepMultiplePatterns:
         capsys: pytest.CaptureFixture[str],
         patterns: list[str],
     ) -> None:
-        """各パターンのインラインフラグとグループ参照を文字列合成で変えない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "independent.md", body="ALPHA\nalphaalpha\nbetabeta")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -707,7 +670,6 @@ class TestGrepMultiplePatterns:
     def test_invalid_pattern_arguments_exit_2(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
     ) -> None:
-        """欠落・値なし・位置引数との併用は検索結果を出さず終了2になる。"""
         code, output, error = _run_wi(["grep", *arguments], tmp_path, capsys)
         assert code == 2 and not output
         if len(arguments) > 1:
@@ -723,7 +685,6 @@ class TestGrepMultiplePatterns:
         option: list[str],
         patterns: list[str],
     ) -> None:
-        """不正な語を1個でも含む場合は結果の出力前に終了2、0件なら終了1となる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "match.md", body="alpha")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -740,7 +701,6 @@ class TestGrepMultiplePatterns:
         capsys: pytest.CaptureFixture[str],
         arguments: list[str],
     ) -> None:
-        """空文字列は未指定と区別され、空行を含む各行へ一致する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "empty.md", body="alpha\n\nbeta")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

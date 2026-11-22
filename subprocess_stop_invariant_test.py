@@ -1,12 +1,10 @@
-"""複数領域の子プロセス停止を検査するため、リポジトリrootへ配置する。"""
-
 import ast
 import pathlib
 import subprocess
+from collections import deque
 
 import pytest
 
-# キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
     (
         "agent-toolkit/agent_toolkit/_agents_server/service_forward.py",
@@ -92,20 +90,64 @@ _ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
+_WINDOWS_JOB_SOURCE = pathlib.Path("agent-toolkit/agent_toolkit/_common/windows_job.py")
+
+_WINDOWS_OWNED_START_STOPS = frozenset({"job.terminate", "process.kill"})
+
+
+def _is_owned_start_cleanup(node: ast.Call, owner: ast.AST, parents: dict[ast.AST, ast.AST]) -> bool:
+    if not isinstance(owner, ast.FunctionDef) or not isinstance(parents[owner], ast.Module):
+        return False
+
+    stores = [child.id for child in ast.walk(owner) if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)]
+    if "job" in stores or stores.count("process") != 1:
+        return False
+    if not any(
+        isinstance(statement, ast.Assign)
+        and len(statement.targets) == 1
+        and ast.unparse(statement.targets[0]) == "process"
+        and isinstance(statement.value, ast.Call)
+        and ast.unparse(statement.value.func) == "subprocess.Popen"
+        for statement in owner.body
+    ):
+        return False
+    ancestor = parents[node]
+    while ancestor is not owner:
+        if isinstance(ancestor, ast.ExceptHandler):
+            attempt = parents[ancestor]
+            if isinstance(attempt, ast.Try) and any(
+                isinstance(child, ast.Call)
+                and ast.unparse(child.func) == "job.assign_suspended"
+                and len(child.args) == 2
+                and ast.unparse(child.args[1]) == "process.pid"
+                for statement in attempt.body
+                for child in ast.walk(statement)
+            ):
+                return True
+        ancestor = parents[ancestor]
+    return False
+
+
 def _violations(path: pathlib.Path, source: str) -> list[str]:
     tree = ast.parse(source, filename=str(path))
-    parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    parents: dict[ast.AST, ast.AST] = {}
     modules = {"subprocess"}
     imports: set[str] = set()
-    for node in ast.walk(tree):
+    calls = []
+    pending: deque[ast.AST] = deque([tree])
+    while pending:
+        node = pending.popleft()
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+            pending.append(child)
         if isinstance(node, ast.Import):
             modules.update(alias.asname or alias.name for alias in node.names if alias.name == "subprocess")
         elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
             imports.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Call):
+            calls.append(node)
     failures = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
+    for node in calls:
         function = node.func
         subprocess_call = (
             isinstance(function, ast.Attribute) and isinstance(function.value, ast.Name) and function.value.id in modules
@@ -122,8 +164,18 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
         while owner is not None and not isinstance(owner, (ast.FunctionDef, ast.AsyncFunctionDef)):
             owner = parents.get(owner)
         name = owner.name if owner is not None else "<module>"
-        if (path.as_posix(), name) not in _ALLOWED:
-            failures.append(f"{path}:{node.lineno}: {name}: {ast.unparse(function)}")
+        call = ast.unparse(function)
+        if (path.as_posix(), name) in _ALLOWED:
+            continue
+        if (
+            path == _WINDOWS_JOB_SOURCE
+            and name == "start_owned_process"
+            and call in _WINDOWS_OWNED_START_STOPS
+            and owner is not None
+            and _is_owned_start_cleanup(node, owner, parents)
+        ):
+            continue
+        failures.append(f"{path}:{node.lineno}: {name}: {call}")
     return failures
 
 
@@ -131,7 +183,6 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
     8.0, reason="全追跡製品PythonのASTで子孫回収を迂回する停止処理を検出する全量走査が必要（Linux CI CPU3.606秒）"
 )
 def test_timeouts_and_kills_use_process_tree_helpers():
-    """追跡済み製品Pythonの停止処理が共通関数または理由付き許可箇所へ収まる。"""
     root = pathlib.Path(__file__).resolve().parent
     result = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z", "--", "agent-toolkit", "pytools", "libexec", "scripts"],
@@ -150,7 +201,6 @@ def test_timeouts_and_kills_use_process_tree_helpers():
 
 
 def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
-    """bootstrap固有の許可は同じファイルの一般呼出側や別ファイルへ広がらない。"""
     source = "def _stop_server_process(process):\n    process.kill()\n"
     assert not _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/agent_toolkit/atk.py"), source)
@@ -158,7 +208,6 @@ def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
 
 
 def test_native_update_stop_exception_is_limited_to_tree_owner():
-    """依存環境から独立した回収の許可を、workerの停止所有関数に限定する。"""
     source = "def _stop_tree(process):\n    process.kill()\n"
     assert not _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source)
     assert _violations(pathlib.Path("libexec/update_dotfiles.py"), source)
@@ -166,10 +215,35 @@ def test_native_update_stop_exception_is_limited_to_tree_owner():
 
 
 def test_goal_grader_exception_is_limited_to_report():
-    """隔離採点の許可を、固定課題のreport呼出箇所だけに限定する。"""
     path = pathlib.Path("agent-toolkit/skills/atk-mode/fixtures/multi-turn/goal_discovery/private/grade.py")
     source = "def _report(task):\n    subprocess.run([task], timeout=3)\n"
     assert not _violations(path, source)
     assert _violations(path, source.replace("_report", "main"))
     assert _violations(path.with_name("other.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/skills/atk-mode/scripts/multi_turn_trials.py"), source)
+
+
+def test_windows_owned_start_stop_exception_is_limited_to_its_resources():
+    """Windowsの起動時回収の許可は、その場で所有するJobと起点だけに限る。"""
+    source = (
+        "def start_owned_process(job):\n"
+        "    process = subprocess.Popen(['child'])\n"
+        "    try:\n"
+        "        job.assign_suspended(process.handle, process.pid)\n"
+        "    except BaseException:\n"
+        "        job.terminate()\n"
+        "        process.kill()\n"
+    )
+    assert not _violations(_WINDOWS_JOB_SOURCE, source)
+    assert _violations(_WINDOWS_JOB_SOURCE.with_name("other.py"), source)
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("start_owned_process", "start_independent_process"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("job.terminate", "other_job.terminate"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("process.kill", "other_process.kill"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("job.assign_suspended", "other_job.assign_suspended"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source + "    process.kill()\n")
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("    try:", "    job = other_job\n    try:"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("    try:", "    process = other_process\n    try:"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("subprocess.Popen(['child'])", "other_process"))
+    assert _violations(_WINDOWS_JOB_SOURCE, source.replace("process.pid", "other.pid"))
+    nested = "def unrelated():\n" + "".join(f"    {line}\n" for line in source.splitlines())
+    assert _violations(_WINDOWS_JOB_SOURCE, nested)

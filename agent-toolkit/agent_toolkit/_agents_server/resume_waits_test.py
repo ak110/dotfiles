@@ -9,7 +9,6 @@ from agent_toolkit._agents_server import resume_waits, state, turn_state
 
 @pytest.mark.parametrize("finished", [False, True])
 def test_finalize_normal_body_keeps_unobserved_child_at_idle_or_eof(finished: bool) -> None:
-    """直接確定でも通常本文を保ち、終了通知の順序によらず子の識別子を返す。"""
     parent = state.SessionState("parent-1", "/fixture")
     children = parent.terminal_child_session_ids if finished else parent.live_child_session_ids
     children.add("child-1")
@@ -44,18 +43,21 @@ def test_finalize_pending_result_records_remaining_wait_targets_and_keeps_error(
     )
     session.live_tasks["task-1"] = state.LiveTask("local_bash", "CIの完了待ち", "2026-10-06T05:59:06Z")
     session.live_child_session_ids.add("child-1")
-    session.overload_resume_count = 2
-    session.overload_first_at = "2026-10-06T05:58:06Z"
-    session.usage_limit_wait_count = 3
-    session.usage_limit_first_at = "2026-10-06T05:57:06Z"
+    for _ in range(2):
+        session.advance_overload_retry()
+    for _ in range(3):
+        session.advance_usage_limit_retry()
+    overload_first_at = session.overload_first_at
+    usage_limit_first_at = session.usage_limit_first_at
+    assert overload_first_at and usage_limit_first_at
 
     resume_waits.finalize_pending_result(
         session, touch=False, keep_resume_chain=keep_resume_chain, unobserved_sessions={"child-2"}
     )
 
     if keep_resume_chain:
-        assert session.overload_resume_count == 2 and session.overload_first_at == "2026-10-06T05:58:06Z"
-        assert session.usage_limit_wait_count == 3 and session.usage_limit_first_at == "2026-10-06T05:57:06Z"
+        assert session.overload_resume_count == 2 and session.overload_first_at == overload_first_at
+        assert session.usage_limit_wait_count == 3 and session.usage_limit_first_at == usage_limit_first_at
         assert session.error == {"message": "既存の失敗", "unobservedSessions": ["child-0"]}
     else:
         assert session.overload_resume_count == 0 and session.overload_first_at is None
@@ -71,7 +73,6 @@ def test_finalize_pending_result_records_remaining_wait_targets_and_keeps_error(
 @pytest.mark.parametrize("clear_overload", [True, False])
 @pytest.mark.parametrize("hold_kind", ["overload", "usage_limit", "background"])
 def test_clearing_wait_only_removes_the_matching_reason(clear_overload: bool, hold_kind: str) -> None:
-    """一方の解除処理が別理由の保留結果を失わせず、対応する履歴だけを初期化する。"""
     result = {"status": "failed", "agent_message": "待機", "error": None}
     holds: dict[str, turn_state.ResultHold] = {
         "overload": turn_state.OverloadWait(result, 10.0),
@@ -79,7 +80,11 @@ def test_clearing_wait_only_removes_the_matching_reason(clear_overload: bool, ho
         "background": turn_state.BackgroundWait(result, None),
     }
     hold = holds[hold_kind]
-    session = state.SessionState("parent", "/work", hold=hold, overload_resume_count=2, usage_limit_wait_count=3)
+    session = state.SessionState("parent", "/work", hold=hold)
+    for _ in range(2):
+        session.advance_overload_retry()
+    for _ in range(3):
+        session.advance_usage_limit_retry()
 
     if clear_overload:
         resume_waits.clear_overload_resume(session)

@@ -12,13 +12,74 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import time
 
+import psutil
 import pytest
 
 from pytools.ssh_unelevated import _cli
 
 _RUN_ID = "0123456789abcdef"
 _requires_pwsh = pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未導入")
+
+
+@pytest.mark.skipif(not hasattr(os, "WNOWAIT"), reason="waitidのWNOWAITが必要")
+@pytest.mark.parametrize(("exit_code", "inherit"), [(0, False), (23, False), (0, True)])
+def test_posix_reclaims_helpers_after_ssh_exits(exit_code: int, inherit: bool) -> None:
+    helper_stream = "None" if inherit else "subprocess.DEVNULL"
+    fake_ssh = (
+        "import subprocess, sys;"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+        f"stdout={helper_stream}, stderr={helper_stream});"
+        "print(p.pid, flush=True);"
+        f"sys.exit({exit_code})"
+    )
+    with _cli.process_scope(
+        [sys.executable, "-c", fake_ssh],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as process:
+        started = time.monotonic()
+        # pylint: disable-next=protected-access
+        stdout, _ = _cli._communicate_posix(process, b"", 15)
+        assert time.monotonic() - started < 15
+        assert process.returncode == exit_code
+        pid = int(stdout)
+        deadline = time.monotonic() + 3
+        while psutil.pid_exists(pid):
+            try:
+                if psutil.Process(pid).status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            if time.monotonic() >= deadline:
+                pytest.fail("sshの補助プロセスが残った")
+            time.sleep(0.02)
+
+
+@pytest.mark.skipif(not hasattr(os, "WNOWAIT"), reason="waitidのWNOWAITが必要")
+def test_posix_drains_large_output_while_sending_input() -> None:
+    size = 1024 * 1024
+    fake_ssh = (
+        "import sys;"
+        f"sys.stdout.buffer.write(b'o' * {size});"
+        f"sys.stderr.buffer.write(b'e' * {size});"
+        "sys.stdout.buffer.write(sys.stdin.buffer.read())"
+    )
+    with _cli.process_scope(
+        [sys.executable, "-c", fake_ssh],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as process:
+        # pylint: disable-next=protected-access
+        stdout, stderr = _cli._communicate_posix(process, b"i" * size, 15)
+        assert process.returncode == 0
+    assert stdout == b"o" * size + b"i" * size
+    assert stderr == b"e" * size
 
 
 def _remote_stdout(output: bytes, result: dict[str, object], run_id: str = _RUN_ID) -> bytes:
@@ -51,7 +112,6 @@ def test_interpret_maps_remote_status(result: dict[str, object], exit_code: int,
 
 
 def test_interpret_keeps_result_lines_of_other_runs_in_output() -> None:
-    """スクリプトの中で入れ子に実行した別の実行の結果の行は、出力として残す。"""
     nested = _remote_stdout(b"inner", {"status": "completed", "exit_code": 5}, run_id="ffffffffffffffff")
     outcome = _cli.interpret(
         _remote_stdout(nested, {"status": "completed", "exit_code": 0}), 0, run_id=_RUN_ID, host="stheno", timeout=60
@@ -154,13 +214,15 @@ def test_main_reports_stdin_not_arriving(
 
 
 def _run_runner(tmp_path: pathlib.Path, script: str) -> tuple[str, str]:
-    """remote.ps1が置く形でrunner.ps1とscript.ps1を置いて実行し、残った出力と終了コードを返す。"""
     runner = tmp_path / "runner.ps1"
     runner.write_bytes(pathlib.Path(_cli.__file__).with_name("runner.ps1").read_bytes())
     (tmp_path / "script.ps1").write_bytes(codecs.BOM_UTF8 + script.encode("utf-8"))
-    subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner)], check=True, timeout=60)
+    subprocess.run(["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner), "-RunId", _RUN_ID], check=True, timeout=60)
     output = (tmp_path / "output.txt").read_text(encoding="utf-8-sig")
-    return output, (tmp_path / "exit.txt").read_text(encoding="ascii").strip()
+    assert (tmp_path / "started.txt").read_text(encoding="ascii").strip() == _RUN_ID
+    run_id, code = (tmp_path / "exit.txt").read_text(encoding="ascii").split()
+    assert run_id == _RUN_ID
+    return output, code
 
 
 @_requires_pwsh
@@ -194,7 +256,9 @@ def test_runner_reports_failure_to_leave_task_job(tmp_path: pathlib.Path) -> Non
     (tmp_path / "script.ps1").write_bytes(codecs.BOM_UTF8 + b"Write-Output 'script-ran'")
 
     completed = subprocess.run(
-        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner), "-LeaveTaskJob"], check=False, timeout=60
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(runner), "-LeaveTaskJob", "-RunId", _RUN_ID],
+        check=False,
+        timeout=60,
     )
 
     assert completed.returncode == 1
@@ -202,3 +266,72 @@ def test_runner_reports_failure_to_leave_task_job(tmp_path: pathlib.Path) -> Non
     assert "予定タスクのジョブの外でスクリプトを起動できなかった" in output
     assert "script-ran" not in output
     assert not (tmp_path / "exit.txt").exists()
+
+
+@pytest.mark.parametrize("result_fragment", [b"", b'{"status":', b'{"status":"completed","exit_code":0}'])
+def test_interpret_disconnect_after_start_reports_unknown(result_fragment: bytes) -> None:
+    stdout = f"SSH_UNELEVATED_STARTED:{_RUN_ID}\n".encode()
+    stdout += _remote_stdout(b"partial", {"status": "completed", "exit_code": 0}, run_id="ffffffffffffffff")
+    if result_fragment:
+        stdout += f"\nSSH_UNELEVATED_RESULT:{_RUN_ID} ".encode() + result_fragment
+    outcome = _cli.interpret(stdout, 255, run_id=_RUN_ID, host="stheno", timeout=60)
+    assert outcome.exit_code != 0
+    assert outcome.diagnostic is not None and "実行結果は不明" in outcome.diagnostic
+    assert "partial" in outcome.output
+
+
+@_requires_pwsh
+def test_cleanup_skips_owned_and_running_requests(tmp_path: pathlib.Path) -> None:
+    remote_source = pathlib.Path(_cli.__file__).with_name("remote.ps1")
+    test_script = tmp_path / "test-stale.ps1"
+    test_script.write_text(
+        r"""
+param([string] $Remote, [string] $Parent)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+$null = $tokens = $errors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile($Remote, [ref] $tokens, [ref] $errors)
+if ($errors) { throw ($errors | Out-String) }
+$definition = $ast.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Clear-StaleRun'
+}, $false)
+. ([scriptblock]::Create($definition.Extent.Text))
+$namePattern = '^ssh-unelevated-(\d+)-[0-9a-f]+$'
+$now = 2
+$taskStateQueued = 2
+$taskStateRunning = 4
+function Get-ScheduledTask { param($TaskPath, $TaskName, $ErrorAction) }
+function Get-RunTask([string] $Name) {
+    if ($Name -eq 'ssh-unelevated-1-bbbb') { @{ State = 4 } }
+}
+function Get-RunProcessId([string] $Dir) {
+    if ($Dir.EndsWith('cccc')) { 20 }
+}
+function Clear-Run([string] $Name) {
+    if ($Name -eq 'ssh-unelevated-1-dddd') { throw 'cleanup raced' }
+    Write-Output $Name
+}
+foreach ($id in 'aaaa', 'bbbb', 'cccc', 'dddd', 'eeee') {
+    $dir = Join-Path $Parent "ssh-unelevated-1-$id"
+    New-Item -ItemType Directory -Path $dir | Out-Null
+    New-Item -ItemType File -Path (Join-Path $dir 'owner.lock') | Out-Null
+}
+$owner = [IO.File]::Open((Join-Path $Parent 'ssh-unelevated-1-aaaa/owner.lock'), 'Open', 'ReadWrite', 'None')
+try {
+    Clear-StaleRun $Parent
+} finally {
+    $owner.Dispose()
+}
+""",
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(test_script), str(remote_source), str(tmp_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.stdout.splitlines() == ["ssh-unelevated-1-eeee"]
+    assert "cleanup raced" in result.stderr

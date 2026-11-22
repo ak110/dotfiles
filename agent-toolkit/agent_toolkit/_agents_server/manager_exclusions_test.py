@@ -55,7 +55,6 @@ async def test_carried_over_exclusion_survives_a_successful_start(
     expected_model: str,
     expected_effort: str,
 ) -> None:
-    """API設定ありの旧利用上限は再確認し、未設定の候補除外は成功後も保持する。"""
     if providers:
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
@@ -79,7 +78,6 @@ async def test_carried_over_candidate_is_dropped_when_no_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """前回から持ち越した除外だけで候補が尽きる場合は、除外を破棄して全候補を使う。"""
     candidates = [("codex", "only", "high")]
     async with _carry_over_late_unavailability(monkeypatch, tmp_path, candidates) as (manager, available):
         response = await manager.start("plan", "再試行", str(tmp_path))
@@ -97,7 +95,6 @@ async def test_shell_launch_carries_over_candidate_within_shell_launch_kind(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """shell起動で記録した除外の持ち越しは、同じ起動区分だけへ適用する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(server_manager, "START_AVAILABILITY_TIMEOUT", 0.001)
@@ -132,7 +129,6 @@ async def test_stop_without_wait_carries_over_unavailable_candidate(
     expected_model: str,
     expected_effort: str,
 ) -> None:
-    """stop後の旧利用上限はAPI設定ありなら再確認し、未設定なら候補除外を保持する。"""
     if providers:
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_WORKER_CONNECTIONS", providers)
     candidates = [("codex", "first", "high"), ("codex", "second", "medium")]
@@ -175,7 +171,6 @@ async def test_start_keeps_failure_that_does_not_depend_on_the_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """engineの可用性以外で終了した候補では次候補へ進まない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:

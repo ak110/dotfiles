@@ -1,12 +1,9 @@
-"""serveのconfigに関するui_searchの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_ignore_out_of_order_repo_candidates_for_state_changes() -> None:
-    """候補要求が逆順に完了しても、最新の状態・候補・一覧を維持する。"""
     result = _run_node_ui(
         """
 let resolveAdopted;

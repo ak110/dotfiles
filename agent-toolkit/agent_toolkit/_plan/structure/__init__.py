@@ -1,19 +1,3 @@
-"""計画ファイルの構造が基準を満たすか判定する処理を、責務別のサブモジュールに持つパッケージ。
-
-構造の判定（`check_plan_file.py`）、`atk wi add`、
-2系統のPreToolUse（`_hooks/pretooluse/`・`pytools/claude_hook/pretooluse.py`）、
-PostToolUse（`_hooks/posttooluse.py`）が同じ判定結果を得る。
-成果物契約は`agent-toolkit/skills/atk-mode/references/plan-format.md`が定める。
-各判定関数のdocstringへ、判定する条件、受け取るトークン範囲、段落内の候補条件を記載する。
-判定する条件を追加する場合は、次の構文境界を含む共通コーパスへテスト入力を追加してから実装する。
-
-- インデント、コードブロック内の記述、見出しの閉じ記号
-- 表の外側パイプの省略、表トークンになる列数不一致、段落へ変換される列数不一致
-- 同名節の重複、親節の違い
-
-パッケージ外の呼び出し元が使う名前だけを定義元から再exportする。
-"""
-
 from agent_toolkit._plan.structure.constants import (
     BUMP_MANIFEST_PATHS,
     CAUSE_RECORD_OPTIONAL_LABELS,

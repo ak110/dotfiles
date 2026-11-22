@@ -1,5 +1,3 @@
-"""着手判定の修復・旧依存・リポジトリ境界に関する回帰試験。"""
-
 import datetime
 import pathlib
 
@@ -11,7 +9,6 @@ from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
 @pytest.mark.parametrize("repair_kind", [None, "frontmatter", "other"])
 def test_existing_repair_prevents_duplicate_request(tmp_path: pathlib.Path, repair_kind: str | None) -> None:
-    """未回答の修復UWIだけが同じ破損項目の再報告を抑制する。"""
     metadata = "repair_target: broken.md\n"
     if repair_kind is not None:
         metadata += f"repair_kind: {repair_kind}\n"
@@ -25,7 +22,6 @@ def test_existing_repair_prevents_duplicate_request(tmp_path: pathlib.Path, repa
 
 
 def test_pending_count_filters_repositories(tmp_path: pathlib.Path) -> None:
-    """他リポジトリの着手対象を呼出し元の件数へ混ぜない。"""
     write_awi(tmp_path, "local.md")
     write_awi(tmp_path, "other.md", target_repo="github.com/example/other")
     assert _wi_readiness.count_pending_entries(tmp_path, "github.com/example/repo") == 1
@@ -35,7 +31,6 @@ def test_pending_count_filters_repositories(tmp_path: pathlib.Path) -> None:
 @pytest.mark.parametrize("legacy", [False, True])
 @pytest.mark.parametrize("same_repo_answered", [False, True])
 def test_unanswered_dependency_prefers_same_repository(legacy: bool, same_repo_answered: bool) -> None:
-    """同名UWIの回答待ちは同じリポジトリを優先し、他リポジトリへ漏らさない。"""
     repo = "github.com/example/repo"
     other = "github.com/example/other"
     metadata: dict[str, object] = (
@@ -102,7 +97,6 @@ def test_satisfied_legacy_conditions_are_ready(tmp_path: pathlib.Path, dependenc
     ],
 )
 def test_invalid_legacy_conditions_require_repair(tmp_path: pathlib.Path, dependency: str) -> None:
-    """日時だけが正しくても、依存条件の不正型と欠落は着手させない。"""
     write_awi(tmp_path, "invalid.md", legacy_dependency=dependency)
     result = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
     assert not result.ready
@@ -119,7 +113,6 @@ def test_cooldown_result_preserves_deadline(tmp_path: pathlib.Path) -> None:
 
 
 def test_same_name_terminal_in_other_repo_does_not_release_dependency(tmp_path: pathlib.Path) -> None:
-    """別リポジトリの終了項目で、同じリポジトリの未終了依存を解消しない。"""
     repo = "github.com/example/repo"
     other = "github.com/example/other"
     snapshot = (
@@ -135,7 +128,6 @@ def test_same_name_terminal_in_other_repo_does_not_release_dependency(tmp_path: 
 
 @pytest.mark.parametrize("answered", [False, True])
 def test_answered_repair_does_not_suppress_new_request(tmp_path: pathlib.Path, answered: bool) -> None:
-    """破損が残るとき回答済みの修復依頼を再報告の代わりにしない。"""
     repo = "github.com/example/repo"
     snapshot = (
         (tmp_path / "broken.md", repo, "broken", "inbox", None),
@@ -156,7 +148,6 @@ def test_answered_repair_does_not_suppress_new_request(tmp_path: pathlib.Path, a
 def test_legacy_user_dependency_requires_answer_in_active_or_terminal_entry(
     tmp_path: pathlib.Path, state: str, answer: str
 ) -> None:
-    """終了済みUWIも回答本文に基づいてlegacyのユーザー待ちを解消する。"""
     write_awi(
         tmp_path,
         "request.md",
@@ -168,7 +159,6 @@ def test_legacy_user_dependency_requires_answer_in_active_or_terminal_entry(
 
 
 def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) -> None:
-    """報告UWIの後にあるAWIも走査し、報告待ちを内部依存へ昇格しない。"""
     repo = "github.com/example/repo"
     snapshot = (
         (tmp_path / "report.md", repo, "---\nrun_skill_report: true\n---\n\n## 回答\n", "inbox", "uwi"),
@@ -182,7 +172,6 @@ def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) ->
 
 
 def test_unanswered_cross_repository_fallback_and_missing_target() -> None:
-    """同じrepoの候補がなければ外部UWIを待ち、存在しない参照は回答待ちへ数えない。"""
     repo = "github.com/example/repo"
     records: tuple[tuple[pathlib.Path, str | None, str | None, dict[str, object], str], ...] = (
         (pathlib.Path("answer.md"), "github.com/example/other", "uwi", {}, "\n## 回答\n"),
@@ -199,7 +188,6 @@ def test_public_cooldown_parser_rejects_non_string_values(value: object) -> None
 
 
 def test_same_repo_terminal_wins_over_other_active_entry(tmp_path: pathlib.Path) -> None:
-    """同名の外部未終了項目で、自リポジトリの終了依存を再び待たせない。"""
     repo = "github.com/example/repo"
     snapshot = (
         (tmp_path / "request.md", repo, "---\ndepends_on: [target.md]\n---\n", "inbox", "awi"),
@@ -212,7 +200,6 @@ def test_same_repo_terminal_wins_over_other_active_entry(tmp_path: pathlib.Path)
 
 
 def test_later_invalid_user_dependency_is_not_hidden_by_explicit_dependency(tmp_path: pathlib.Path) -> None:
-    """トップレベル依存の走査後も、後続の不正legacy対象を修復診断する。"""
     repo = "github.com/example/repo"
     snapshot = (
         (tmp_path / "first.md", repo, "---\ndepends_on: []\n---\n", "inbox", "awi"),
@@ -238,7 +225,6 @@ def test_later_invalid_user_dependency_is_not_hidden_by_explicit_dependency(tmp_
 
 
 def test_future_upstream_wait_is_not_internal_dependency(tmp_path: pathlib.Path) -> None:
-    """時刻待ちは同一実行内で解消できるWI依存に数えない。"""
     write_awi(
         tmp_path,
         "waiting.md",
@@ -258,7 +244,6 @@ def test_future_upstream_wait_is_not_internal_dependency(tmp_path: pathlib.Path)
 def test_processing_uwi_outside_candidates_stays_external_wait(
     tmp_path: pathlib.Path, report: bool, answer: str, explicit: bool
 ) -> None:
-    """処理中でも未回答または報告用のUWIを内部候補へ投入しない。"""
     repo = "github.com/example/repo"
     dependency = (
         "depends_on: [answer.md]"
@@ -281,7 +266,6 @@ def test_processing_uwi_outside_candidates_stays_external_wait(
 
 
 def test_legacy_external_repo_waits_for_active_retry_even_with_terminal_copy(tmp_path: pathlib.Path) -> None:
-    """終了履歴があっても同じrepoの再処理中項目をlegacy依存の完了としない。"""
     repo = "github.com/example/repo"
     other = "github.com/example/other"
     body = (
@@ -304,7 +288,6 @@ def test_legacy_external_repo_waits_for_active_retry_even_with_terminal_copy(tmp
 
 
 def test_non_mapping_legacy_dependency_is_not_executed(tmp_path: pathlib.Path) -> None:
-    """構造の違う旧設定を依存mapとして呼び出さない。"""
     repo = "github.com/example/repo"
     text = "---\nqueue_schedule:\n  dependency: [entries]\n---\n"
     snapshot = ((tmp_path / "one.md", repo, text, "inbox", "awi"),)
@@ -326,7 +309,6 @@ def test_answered_same_repo_target_is_not_an_unanswered_dependency() -> None:
 
 
 def test_non_string_repair_target_does_not_suppress_broken_entry(tmp_path: pathlib.Path) -> None:
-    """不正な修復対象を集合キーに使わず、破損項目の報告を残す。"""
     repo = "github.com/example/repo"
     snapshot = (
         (tmp_path / "broken.md", repo, "broken", "inbox", None),
@@ -337,7 +319,6 @@ def test_non_string_repair_target_does_not_suppress_broken_entry(tmp_path: pathl
 
 
 def test_non_string_legacy_user_target_requires_repair(tmp_path: pathlib.Path) -> None:
-    """listのUWI名を辞書キーに使わず修復対象として診断する。"""
     write_awi(
         tmp_path,
         "invalid.md",

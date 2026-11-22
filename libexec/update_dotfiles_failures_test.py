@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのfailuresの試験。"""
 
 # pylint: disable=protected-access
 
@@ -38,16 +37,27 @@ class TestStepFailureStopsExecution:
     失敗しても前提を壊さない段は、後続の段を続けて終了コード1で終える。
     """
 
-    def test_step2_failure_skips_step3_and_4(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
+    def test_step2_failure_skips_step3_and_4(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: pathlib.Path,
+        sync_report_path: pathlib.Path,
+    ) -> None:
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
-        monkeypatch.setattr(subprocess, "run", _fake_run({"init": 3}, calls))
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            _fake_run({"init": 3}, calls, stderr_by_command={"init": "chezmoi: template evaluation failed\n"}),
+        )
         monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")
 
         assert update_dotfiles.main() == 3
         assert len(calls) == 3
         assert calls[1][:2] == ["chezmoi", "init"]
         assert calls[2][:2] == ["chezmoi", "init"]
+        report = json.loads(sync_report_path.read_text(encoding="utf-8"))
+        assert "template evaluation failed" in report["stderr_tail"]
 
     def test_dotfiles_pull_failure_stops_before_init(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """dotfiles自身のpullの失敗は、不確定なソースを配備しないよう以降の段を止める。"""
@@ -77,7 +87,7 @@ class TestStepFailureStopsExecution:
         monkeypatch.setenv(update_dotfiles_runtime.PRUNE_READY_ENV, str(ready))
 
         assert update_dotfiles.main() == 1
-        # 本体は中断していないため、ランチャーが整理へ進む印を残す。
+
         assert ready.exists()
         assert [call[1] for call in calls] == ["git", "init", "status", "diff", "apply"]
         err = capsys.readouterr().err
@@ -109,7 +119,6 @@ class TestStepFailureStopsExecution:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """標準エラーを継承した段の終了値だけでは、親は子の詳細を保存したと案内しない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
         monkeypatch.setattr(subprocess, "run", _fake_run({"apply": 1}, calls))
@@ -279,8 +288,6 @@ class TestSyncReport:
 
 
 class TestCapturedStderr:
-    """各段が生成する標準エラー出力の転送先を検証する。"""
-
     def test_successful_git_output_is_forwarded_to_stdout(
         self,
         monkeypatch: pytest.MonkeyPatch,

@@ -1,5 +1,3 @@
-"""WIのuwi試験で共有する準備処理。"""
-
 import pathlib
 import subprocess
 from collections.abc import Callable
@@ -16,20 +14,17 @@ _AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AG
 
 @pytest.fixture(autouse=True)
 def _clear_agent_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """回答テストをホスト側のエージェント環境変数から隔離する。"""
     for name in _AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
 
 
 def _body_file_args(tmp_path: pathlib.Path, body: str) -> list[str]:
-    """本文ファイルを作成してCLI引数を返す。"""
     body_file = tmp_path / "body.md"
     body_file.write_text(body, encoding="utf-8")
     return ["--body-file", str(body_file)]
 
 
 def _invoke_uwi_add(tmp_path: pathlib.Path, *args: str, body: str) -> SystemExit:
-    """本文ファイル経由でUWI投入を呼び出し、終了結果を返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(
             ["wi", "add", "--type=uwi", "--question-type=yes-no", *args, *_body_file_args(tmp_path, body)],
@@ -40,7 +35,6 @@ def _invoke_uwi_add(tmp_path: pathlib.Path, *args: str, body: str) -> SystemExit
 
 
 def _make_uwi_add_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """UWI投入検証用fake_runを生成する。`myrepo`のorigin URLのみ実URLを返し、それ以外は空応答を返す。"""
 
     def fake_run(cmd: list[str], *_a: object, **kw: object) -> subprocess.CompletedProcess[Any]:
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:

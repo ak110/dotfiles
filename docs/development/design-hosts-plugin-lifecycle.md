@@ -1,6 +1,6 @@
 # plugin導入と実体の回収の設計記録
 
-[設計記録の索引](design.md)から参照する、plugin導入と実体の回収の記録である。
+[設計記録の索引](design.md)
 
 ## Codexのlocal plugin導入
 
@@ -9,19 +9,11 @@ dotfilesの`post_apply`によるローカルagent-toolkit導入は、Codex CLI�
 明示的に無効なpluginは導入状態とcacheを保持し、版更新も保留する。
 明示的な再有効化後に通常の更新を再開する（[Codexガイド](../guide/codex-guide.md#プラグイン更新の反映)）。
 CLI成功後は同コマンドで`codex plugin list --json`を取得し、版数一致と有効状態を検証する。
-実際のaddまたはupdateとhook状態の確認を完了した後、daemonが稼働中であれば再起動方針を1回だけ適用する。
-利用セッションがあっても`codex app-server daemon restart`を自動実行し、同じ会話と子孫の継続は[Codexの起動管理とdaemon復旧](design-hosts-codex-runtime.md#codexの起動管理とdaemon復旧)へ委ねる。
-Linuxの`update-dotfiles`は適用差分があり利用セッションが無い場合だけ管理daemonをapply前に一時停止し、apply後にもセッション不在を確認して起動状態を戻す。
-再起動失敗はplugin導入を巻き戻さず、`PostApplyOutcome`から更新全体の非0終了と次の操作へ伝播する。
-daemon再起動の終了コード0と、会話・子孫の復旧成功は別の観測として扱う。
-restartの外側上限は、nativeの停止猶予を途中で打ち切らないようにする。
-Codex 0.166.0の操作lock待機375秒、停止猶予最大300秒、強制終了確認10秒、起動30秒と応答の余裕を含め、restart専用に750秒を確保する。
-根拠は[対象版のdaemon実装](https://github.com/openai/codex/tree/rust-v0.166.0/codex-rs/app-server-daemon)であり、通常のplugin照会は従来の上限を使う。
-無変更、marketplace登録だけの変更、daemon停止中および不要pluginの除去は自動再起動の対象に含めない。
-`atk config`へ設定を追加する案は、dotfiles更新処理だけが消費する真偽値のためにagent-toolkit pluginとpytoolsの設定契約を結合するので採用しない。
+実際の追加・更新後に共有daemonが稼働中なら、手動の再起動を案内する。
+通常の公式CLIにはdotfilesの復旧処理が介在しないため、Linuxの適用前を含め、自動停止・再起動はしない。
 現行versionの導入はCodex CLIへ委ねる。
 更新処理は`plugin add`の前に、通常のversionディレクトリを`CODEX_HOME`直下の固定の退避先（`.dotfiles-plugin-cache-saved/<marketplace>/<plugin>/`）へ移動する。
-導入後の状態確認とdaemon処理を含む最後のCodex CLI呼出後に、目標version以外を同じ絶対パスへ戻す。
+導入後の状態確認を含む最後のCodex CLI呼出後に、目標version以外を同じ絶対パスへ戻す。
 退避先とcacheが同じボリュームにある通常の構成では、退避と復元はversionごとの名前の変更で済み、旧versionの数とファイル数に比例する複製・削除を伴わない。
 `plugins`や`plugins/cache`が別ボリュームへのリンク・マウント・junctionの配下にある構成も許容し、名前の変更が失敗したversionは複製で退避・復元する。
 複製で戻す場合は元のパスの隣（`<version>~restoring`）で複製を仕上げてから名前の変更で元のパスへ置き、その後に退避を削除するため、途中で失敗しても欠けた版を元のパスに残さない。
@@ -108,7 +100,7 @@ Claude Code 2.1.303の`claude plugin uninstall`とmarketplaceの削除は、plug
 `install_claude_plugins.py`のdeprecated pluginの除去は、実体を削除せず、データ領域も`--keep-data`で残すため、稼働中のセッションが使う実体を削除する処理に当たらず、延期を設けない。
 `plugin.json`は設定項目を持たない。
 このため通常の環境では稼働中のセッションのhook・MCPはデータ領域を参照せず、削除しても動作は変わらないので、この修復は参照の終了を待つ延期の対象にしない。
-daemon自動再起動と旧versionの保持は独立している。
+旧versionの保持は、ユーザーがdaemonを再起動する時期と独立している。
 旧versionは移動して退避し、複製しない。
 複製する方式でも、CLIが`plugin add`で旧versionを削除してから復元の複製を終えるまで元のパスから実体へ到達できない。
 その区間は旧versionの総量に比例して伸びる。

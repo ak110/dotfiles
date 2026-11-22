@@ -42,7 +42,6 @@ _DECIMAL_INTEGER_RE = re.compile(r"[0-9]+")
 
 
 async def _request_json() -> typing.Any:
-    """不正なJSON本文をWeb API用入力エラーへ正規化する。"""
     try:
         return await quart.request.get_json()
     except werkzeug.exceptions.BadRequest as error:
@@ -91,7 +90,6 @@ def _specified_string(data: _wi_operations.JsonObject, name: str) -> str | None:
 
 
 def _specified_text(data: _wi_operations.JsonObject, name: str) -> str | None:
-    """指定済みの本文を空文字列も含めて受理する。"""
     if name not in data:
         return None
     value = data[name]
@@ -101,11 +99,9 @@ def _specified_text(data: _wi_operations.JsonObject, name: str) -> str | None:
 
 
 def _ignored_single_fields(data: dict[str, typing.Any]) -> list[str]:
-    """一括取り込みへ切り替えた登録で、使わなかった単件用の入力項目名を返す。"""
     ignored = [name for name in ("target_repo", "target_branch", "scope") if data.get(name)]
     question_type = data.get("question_type")
-    # 新規追加ダイアログが初期値として送る回答形式は、ユーザーが入力した値として扱わない。
-    # 初期値を選択肢の入力が要らない形式にし、種別を選び違えたshow形式の本文も一括登録へ切り替えられるようにする。
+
     if question_type is not None and question_type != wi_constants.QUESTION_TYPE_YES_NO:
         ignored.append("question_type")
     if data.get("choices"):
@@ -114,7 +110,6 @@ def _ignored_single_fields(data: dict[str, typing.Any]) -> list[str]:
 
 
 def _entry_page(filters: dict[str, str]) -> int | None:
-    """一覧APIの明示ページを正の10進整数として返す。"""
     raw_page = filters.get("page")
     if raw_page is None:
         return None
@@ -130,7 +125,6 @@ def _entry_page(filters: dict[str, str]) -> int | None:
 
 
 def _validate_entry_filters(filters: dict[str, str]) -> None:
-    """一覧APIのquery組合せを検証する。"""
     if "view" in filters and filters["view"] != "waiting":
         raise _wi_operations.WebApiInputError("viewはwaitingで指定してください")
     if filters.get("type", "all") not in {"all", *wi_constants.WI_TYPES}:
@@ -242,7 +236,6 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
 
 
 async def _transition_request(runtime: _runtime.ServeRuntime, action: str, allowed: set[str]) -> quart.Response:
-    """状態遷移APIの共通payloadを解析して操作する。"""
     data = _json_object(await _request_json(), allowed=allowed, required={"filenames"})
     filenames = _strings(data["filenames"], "filenames")
     optional = {name: _optional_string(data, name) for name in ("note", "commit", "target_repo") if name in allowed}
@@ -286,7 +279,6 @@ async def _transition_request(runtime: _runtime.ServeRuntime, action: str, allow
 
 
 def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> None:
-    """編集・投入・ユーザーコメント・回答・状態遷移ルートを登録する。"""
     ops, workers = runtime.operations, runtime.workers
 
     @app.after_request
@@ -364,7 +356,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
         ):
             if not isinstance(value, str) or not value.strip():
                 raise _wi_operations.WebApiInputError(f"{name}は空でない文字列で指定してください")
-        # 空のコメントはユーザーコメント節の削除を表すため、文字列であることだけを確かめる。
+
         if not isinstance(comment, str):
             raise _wi_operations.WebApiInputError("commentは文字列で指定してください")
         return quart.jsonify(
@@ -389,8 +381,7 @@ def _register_mutation_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) 
         raw_text = data.get("raw_text")
         if raw_text is not None and not isinstance(raw_text, str):
             raise _wi_operations.WebApiInputError("raw_textは文字列で指定してください")
-        # 種別の選び忘れで一括登録の本文を1件のWIとして保存しないよう、show形式の構造を持つ本文は一括取り込みへ切り替える。
-        # ブラウザーの単件送信はtrim済みのため、原文保持に必要な未trimの入力（raw_text）で判定・取り込みする。
+
         if raw_text is not None and awi_batch.is_show_batch_format(raw_text):
             result = await workers.run(ops.add_batch, raw_text)
             return quart.jsonify(batch=True, ignored_fields=_ignored_single_fields(data), **result), 201
@@ -478,7 +469,6 @@ def register_wi_routes(
     runtime: _runtime.ServeRuntime,
     plans_context: serve_plans.PlansContext,
 ) -> None:
-    """WI画面の資産・一覧・更新のルートをまとめて登録する。"""
     _shell_routes.register_awi_asset_routes(app, plans_context)
     _register_query_routes(app, runtime)
     _register_mutation_routes(app, runtime)

@@ -128,7 +128,6 @@ def _pending_cache_key(
     background_tasks: object,
     session_state: object,
 ) -> tuple[object, ...]:
-    """入力とtranscriptの現行状態を表すキャッシュキーを返す。"""
     try:
         stat = pathlib.Path(transcript_path).stat()
         transcript_state: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
@@ -146,19 +145,16 @@ def _pending_cache_key(
 
 
 def _valid_background_tasks(background_tasks: object) -> list[dict]:
-    """Stop入力の`background_tasks`から、空でない文字列の`type`を持つ有効なtaskを返す。"""
     if not isinstance(background_tasks, list):
         return []
     return [task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]]
 
 
 def active_non_teammate_tasks(background_tasks: object) -> list[dict]:
-    """Stop入力の有効taskのうち`teammate`以外を返す。"""
     return [task for task in _valid_background_tasks(background_tasks) if task["type"] != "teammate"]
 
 
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
-    """Stop入力の有効task件数、非`teammate`件数および一覧の権威性を返す。"""
     if not isinstance(background_tasks, list):
         return 0, 0, False
     valid_tasks = _valid_background_tasks(background_tasks)
@@ -191,7 +187,27 @@ def is_pending_async_work(
     session_state: object,
     owner_agent_id: str = "main",
 ) -> bool:
-    """セッションが構造的に継続中の場合に真を返す。
+    return (
+        pending_async_status(
+            transcript_path,
+            session_id,
+            background_tasks=background_tasks,
+            session_state=session_state,
+            owner_agent_id=owner_agent_id,
+        )
+        != "complete"
+    )
+
+
+def pending_async_status(
+    transcript_path: str,
+    session_id: str,
+    *,
+    background_tasks: object = None,
+    session_state: object,
+    owner_agent_id: str = "main",
+) -> str:
+    """待機中のうち実行中のバックグラウンドタスクだけを、装着を要する値として区別する。
 
     以下のいずれかの場合に真を返す。
     - 直前アシスタントターンの最後のtool_useが非同期待機系（`Agent`・`ScheduleWakeup`・
@@ -282,14 +298,8 @@ def is_pending_async_work(
     if pending_observation:
         pending_sources.append("agents_server_observation")
     source = "+".join(pending_sources) if pending_sources else "none"
-    pending = bool(
-        last_async
-        or payload_non_teammate
-        or (host_reported_remainder and not payload_authoritative)
-        or unreported_remainder
-        or queued_notification
-        or pending_observation
-    )
+    background = bool(payload_non_teammate or (host_reported_remainder and not payload_authoritative) or unreported_remainder)
+    pending = background or last_async or queued_notification or pending_observation
     last_tool = _describe_last_tool_use(last_tool_use)
     _emit_debug(
         pending,
@@ -319,8 +329,9 @@ def is_pending_async_work(
         },
     )
     _PENDING_ASYNC_WORK_CACHE.clear()
-    _PENDING_ASYNC_WORK_CACHE[cache_key] = pending
-    return pending
+    status = "pending-background" if background else "pending" if pending else "complete"
+    _PENDING_ASYNC_WORK_CACHE[cache_key] = status
+    return status
 
 
 def pending_async_task_ids(transcript_path: str, session_id: str, *, background_tasks: object = None) -> set[str]:
@@ -459,11 +470,6 @@ def _last_tool_use_is_async_wait(last_tool_use: dict | None) -> bool:
 
 
 def _describe_last_tool_use(last_tool_use: dict | None) -> str:
-    """最新assistantターン末尾のtool_use名をデバッグ出力向けに整形して返す。
-
-    Bashの場合は`Bash(bg=True)`または`Bash(bg=False)`形式で返す。
-    tool_useが存在しない場合は`-`を返す。
-    """
     if last_tool_use is None:
         return "-"
     name = last_tool_use.get("name", "")

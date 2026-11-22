@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのuwi: editingのテスト。"""
 
 import pathlib
 import subprocess
@@ -32,7 +31,6 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """edit: `--target-repo`不一致時にexit 2でエディターは起動されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -59,7 +57,6 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """adopt: `--target-repo`不一致時にexit 2でファイルは移動されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -78,7 +75,6 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """adopt: `--target-repo`一致時は通常通りadopted/へ移動する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -97,7 +93,6 @@ class TestUwiMutationTargetRepoVerification:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """rm: `--target-repo`不一致時にexit 2でファイルは削除されない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -137,15 +132,12 @@ def test_uwi_list_filters_answers_and_honors_sync_option(
 
 
 class TestUwiEdit:
-    """UWI編集の境界条件検証。"""
-
     def test_show_body_can_be_reused_without_duplicate_headings(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """showで取得した未回答の本文をそのまま編集入力へ戻せる。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -168,7 +160,6 @@ class TestUwiEdit:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """パストラバーサル系のファイル名でexit 2。"""
         _setup_notes(tmp_path)
         monkeypatch.setenv("EDITOR", "vi")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -183,7 +174,6 @@ class TestUwiEdit:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """編集差分なしの場合はcommit・pushしない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q")
         monkeypatch.setenv("EDITOR", "vi")

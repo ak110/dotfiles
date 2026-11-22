@@ -19,7 +19,6 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 @pytest.mark.parametrize("agent", [False, True], ids=["human", "agent"])
 @pytest.mark.parametrize("status", ["completed", "failed"])
 def test_cli_wait_reports_waiting_state_to_human_terminal(monkeypatch, wait_environment, capsys, agent, status):
-    """終了を公開する前に対象を表示し、公開後はJSON Linesを保つ。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 30)
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: not agent)
@@ -117,7 +116,6 @@ def test_agents_wait_handoff_guidance_matches_backend_availability(
 
 
 def test_wait_result_preserves_started_model() -> None:
-    """終了回収でモデル指定と実際の起動属性を保持する。"""
     session = state.SessionState(
         "session-1", "/workspace", engine="claude", model="opus", effort="high", model_type="claude:opus/high"
     )
@@ -139,11 +137,6 @@ def test_agents_wait_rows_carry_launch_label_and_body_file(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終了行と`status: running`の行が起動時の`label`を持ち、終了行の本文ファイルは`agent_message`と一致する。
-
-    `label`が無いと、呼び出し元は`session_id`から依頼名への対応表を自前で持つ。
-    本文がJSON文字列にだけあると、呼び出し元はエスケープを解く処理を自前で持つ。
-    """
     wait_environment.mkdir(parents=True)
     message = '## 結果\n\n- `a`と"b"を確認した\n'
     (wait_environment / "session-1.json").write_text(
@@ -280,7 +273,6 @@ def test_agents_wait_relays_improvements_with_existing_guidance(
     status: str,
     message: str,
 ) -> None:
-    """公開waitの出力が標識行の案内と既存の案内を保持し、結果本文と保存本文を変えない。"""
     wait_environment.mkdir(parents=True)
     payload = {"status": status, "agent_message": message, "next_action": "既存の案内", "session": {"label": label}}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -315,7 +307,6 @@ def test_agents_wait_uses_explicit_root_without_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """起動応答のルートを明示すれば環境の別名なしで終了時の結果を回収できる。"""
     results = shared_layout.results_directory("mcp-root", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True, exist_ok=True)
@@ -330,7 +321,6 @@ def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """解釈できない結果ファイルがある巡回でも、回収済みの本文を保持したまま配送する。"""
     wait_environment.mkdir(parents=True)
     payload = {"session_id": "session-1", "status": "completed"}
     (wait_environment / "session-1.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -387,3 +377,84 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     }
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
+
+
+@pytest.mark.parametrize("mode", ["reply_only", "completes", "disappears"])
+def test_wait_displays_recovered_continuation_without_redelivering_result(
+    wait_environment: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    _write_own_status(wait_environment, [] if mode == "reply_only" else [{"session_id": "session-3"}])
+    ticks = []
+
+    def publish_result(seconds: float) -> None:
+        ticks.append(seconds)
+        if mode == "disappears":
+            _write_own_status(wait_environment, [])
+            registry = agents_wait.session_registry
+            monkeypatch.setattr(registry, "resolve", lambda *_, **__: registry.SessionResolution(registry.Resolution.TERMINAL))
+        else:
+            wait_environment.mkdir(parents=True, exist_ok=True)
+            (wait_environment / "session-3.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")
+
+    monkeypatch.setattr(agents_wait.time, "sleep", publish_result)
+    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _: 30)
+    monkeypatch.setattr(
+        agents_wait.continuation_wait.session_state,
+        "read_state",
+        lambda _: {
+            "agents_server_sessions": {
+                identifier: {"owner_agent_id": "main", "pending_observation": False}
+                for identifier in ("session-1", "session-2")
+            }
+        },
+    )
+    monkeypatch.setattr(
+        agents_wait.continuation_wait,
+        "continuation_wait_seconds",
+        lambda identifier, **_: 42 if identifier == "session-2" else None,
+    )
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert bool(ticks) is (mode != "reply_only")
+    if mode == "completes":
+        assert rows.pop(0) == {"session_id": "session-3", "status": "completed"}
+    (row,) = rows
+    assert row["session_id"] == "session-2" and row["status"] == "awaiting_reply"
+    assert "応答待ち（返却から 42 秒）" in row["next_action"]
+    assert "agent_message" not in row
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [("exec-review", "references/reviewee.md"), ("lane-reader-fit-review", "reader-fit-review.parent.md"), ("lane-exec", None)],
+)
+def test_agents_wait_adds_review_receipt_to_review_session_notice(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    label: str,
+    expected: str | None,
+) -> None:
+    wait_environment.mkdir(parents=True)
+    _write_own_status(wait_environment, [{"session_id": "session-2", "label": label}])
+    notices = wait_environment.parent / "notices"
+    notices.mkdir(parents=True)
+    (notices / "session-2.1.json").write_text(
+        json.dumps({"version": 1, "session_id": "session-2", "sent_at": "2026-09-15T00:00:01+00:00", "body": "指摘"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    (running,) = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    action = running["next_action"]
+    assert "atk agents wait" in action
+    if expected is None:
+        assert "agent-basics:review-standards" not in action
+    else:
+        assert "agent-basics:review-standards" in action
+        assert expected in action
+
+        assert "通知が指摘を含む場合" in action
+        assert "指摘を受領した" not in action

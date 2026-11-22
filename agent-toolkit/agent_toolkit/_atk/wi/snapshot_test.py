@@ -1,5 +1,3 @@
-"""開始時集合の保存・新着抽出の公開一覧操作を検証する。"""
-
 import json
 import pathlib
 import subprocess
@@ -15,7 +13,6 @@ from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_a
 def test_list_snapshot_precedes_filters(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], configured: bool
 ) -> None:
-    """全状態・全種別を同じ取得から保存し、既存状態変更と時刻順によらず新着を区別する。"""
     notes = _setup_notes(tmp_path)
     for state in ("inbox", "processing", "hold", "adopted", "rejected"):
         path = _write_awi_file(notes, f"{state}.md", source="human")
@@ -117,7 +114,6 @@ def test_list_snapshot_precedes_filters(
 def test_list_rejects_invalid_baseline(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None
 ) -> None:
-    """不正な基準と読取不能は空の新着として扱わず、保存物を保持して診断する。"""
     _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     baseline = tmp_path / "baseline.json"
@@ -138,7 +134,6 @@ def test_list_rejects_invalid_baseline(
 def test_list_snapshot_normalizes_repo_and_preserves_broken_entries(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """URL表記の変更と破損項目を初回集合に保持し、空集合にも対応する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     baseline = tmp_path / "baseline.json"

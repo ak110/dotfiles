@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_conversation）。"""
-
 from __future__ import annotations
 
 import collections
@@ -21,7 +19,6 @@ _CODEX_EXIT_CODE = re.compile(r"^Process exited with code (\d+)$", re.MULTILINE)
 
 
 def _conversation_excerpt(text: str, limit: int) -> str:
-    """詳細照会を前提に、発話または入力の概要を1行で返す。"""
     return _clip_utf8(" ".join(text.split()), limit)
 
 
@@ -57,7 +54,6 @@ def _activity_summary(events: list[dict[str, Any]]) -> str:
 
 
 def _main_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
-    """メイン記録を実ユーザー発話から次の実ユーザー発話までの区間へ分ける。"""
     turns: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     for event in events:
@@ -71,8 +67,6 @@ def _main_turns(events: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
 
 
 class _ConversationRow(NamedTuple):
-    """会話概要の1行。`rank`は予算不足時に残す優先順位（小さいほど優先）である。"""
-
     prefix: str
     text: str
     rank: int
@@ -93,10 +87,6 @@ _RANK_ACTIVITY = 3
 
 
 def _main_turn_rows(events: list[dict[str, Any]], *, compact_calls: int = 0) -> list[_ConversationRow]:
-    """区間内の表示行を固定部と抜粋本文へ分け、結果本文を通読へ含めない。
-
-    `compact_calls`が1なら2件以上連続するツール呼出し、2なら発話の間にある全てのツール呼出しを操作要約1行へ集約する。
-    """
     failures = {
         item.get("call_id")
         for item in events
@@ -153,7 +143,6 @@ def _main_turn_rows(events: list[dict[str, Any]], *, compact_calls: int = 0) -> 
 
 
 def _spread(items: list[int], count: int) -> list[int]:
-    """順序付きの位置から、全期間へ等間隔に`count`件を選ぶ。"""
     if count >= len(items):
         return list(items)
     if count <= 0:
@@ -164,7 +153,6 @@ def _spread(items: list[int], count: int) -> list[int]:
 
 
 def _omission_row(rows: list[_ConversationRow]) -> str:
-    """省略した連続区間の件数と記録位置を1行にする。"""
     first = rows[0].locator
     last = rows[-1].locator
     span = first if first == last else f"{first}〜{last}"
@@ -177,12 +165,6 @@ def _rows_cost(rows: list[tuple[str, str]]) -> int:
 
 
 def _select_rows(rows: list[_ConversationRow], budget: int) -> list[tuple[str, str]]:
-    """固定部が予算を超える場合に、優先順位と全期間への等間隔の配分で残す行を選ぶ。
-
-    ユーザー発話、アシスタント発話、操作要約の順に残し、同じ順位の中は全期間へ均等に配分する。
-    先頭から詰めると後半の判断が欠けるため、省略は区間ごとの件数と記録位置で示す。
-    戻り値は選んだ行と省略行の（固定部、抜粋前の本文）を時系列順に並べた一覧である。省略行の本文は空とする。
-    """
     by_rank: dict[int, list[int]] = collections.defaultdict(list)
     for position, row in enumerate(rows):
         by_rank[row.rank].append(position)
@@ -222,12 +204,6 @@ def _select_rows(rows: list[_ConversationRow], budget: int) -> list[tuple[str, s
 
 
 def _delegate_rows(events: list[dict[str, Any]]) -> list[_ConversationRow]:
-    """委譲先1記録の依頼と最終観測発話を、メインの時系列へ並べる行にする。
-
-    記録だけでは途中の発話と返却を区別できないため、最後に観測したアシスタント発話を最終観測発話として示す。
-    アシスタント発話が無い記録は返却を示さず、依頼の後に操作などの記録があれば発話未観測の行に操作量を添える。
-    委譲先の内部の操作は詳細照会へ委ねる。
-    """
     users = [
         item
         for item in events
@@ -271,7 +247,6 @@ def _delegate_rows(events: list[dict[str, Any]]) -> list[_ConversationRow]:
 
 
 def _sort_key_time(value: str | None) -> datetime.datetime | None:
-    """ISO 8601の時刻を比較用に読み、読めない値は未知とする。"""
     if not value:
         return None
     try:
@@ -282,12 +257,6 @@ def _sort_key_time(value: str | None) -> datetime.datetime | None:
 
 
 def _merge_by_time(groups: list[list[_ConversationRow]]) -> list[_ConversationRow]:
-    """記録ごとの行を時刻順へ統合する。
-
-    時刻が未知の行は同じ記録の直前の既知時刻を引き継ぐ。
-    記録の時刻は前後しうるため、記録内では直前までの最大時刻を下限にして記録内の順序を保つ。
-    同じ時刻では入力の順（メインが先）を保つ。
-    """
     keyed: list[tuple[datetime.datetime, int, int, _ConversationRow]] = []
     floor = datetime.datetime.min.replace(tzinfo=datetime.UTC)
     for group_index, group in enumerate(groups):
@@ -302,10 +271,10 @@ def _merge_by_time(groups: list[list[_ConversationRow]]) -> list[_ConversationRo
 
 
 def _conversation_document(events: list[dict[str, Any]], detail_command: str, main_record: str | None) -> str:
-    """セッション全体の目的・判断・操作と手戻りを、担当間の時系列を合わせて1エージェントが通読できる量で示す。"""
     by_record: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in events:
-        by_record[str(event["record"])].append(event)
+        if event.get("kind") != "record-provenance":
+            by_record[str(event["record"])].append(event)
     if main_record is None and by_record:
         main_record = next(iter(by_record))
     header = [
@@ -322,14 +291,24 @@ def _conversation_document(events: list[dict[str, Any]], detail_command: str, ma
         "## 時系列",
         "",
     ]
+    fork_records = [event for event in events if event.get("kind") == "record-provenance" and event.get("fork_lines")]
+    if fork_records:
+        context = ["## 親から引き継いだ記録", ""]
+        for event in fork_records[:10]:
+            first, last = event["fork_lines"]
+            note = "親の記録と一致" if event["fork_attribution_known"] else "帰属不明のため操作数から除外"
+            context.append(f"- `{event['record']}:{first}〜{last}`: {note}。親の識別子: `{event['fork_parent']}`")
+        if len(fork_records) > 10:
+            context.append(f"- 残り{len(fork_records) - 10}記録の所在はbundle/timeline.jsonlのrecord-provenanceを参照する。")
+        header[-2:-2] = [*context, ""]
     main_events = by_record.pop(str(main_record), []) if main_record is not None else []
     turns = _main_turns(main_events)
     delegate_groups = [_delegate_rows(record_events) for record_events in by_record.values() if record_events]
     if not turns and not delegate_groups:
         return "\n".join([*header, "- 発話と操作は0件である。"]) + "\n"
-    # 見出しと本文を合わせた文書全体を予算内に収めるため、行へ配分する量から固定部を差し引く。
+
     budget = _CONVERSATION_MAX_BYTES - len(("\n".join(header) + "\n").encode("utf-8"))
-    # 抜粋量、連続する呼出し、発話間の全呼出しの順に縮め、なお収まらなければ全期間へ配分して行を選ぶ。
+
     rows: list[_ConversationRow] = []
     selected: list[tuple[str, str]] = []
     for level in (0, 1, 2):

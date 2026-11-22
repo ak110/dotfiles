@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi.layout import iter_entry_paths
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import skill_modes
+from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 
@@ -90,8 +91,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     continue
                 if remote_revision is None:
                     return True
-                # 回答と採否のcommitを除き、現在の報告本文を保存した最新の変更点を探す。
-                # 同じ本文の過去版へ戻した場合も、戻したcommitのpushを必要とする。
+
                 commit = ""
                 for revision in _git_command.output(["log", "--format=%H", "--", relative], private_notes).splitlines():
                     historical = _git_command.run(
@@ -114,22 +114,17 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
 
 
 def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:
-    """報告本体を、保存後に追加される回答・採否から区別する。"""
     parsed = _frontmatter.parse_frontmatter(content)
     if parsed is None:
         return None
     data, body = parsed
-    # answer_uwiと同じ最後のマーカーを境界にし、回答後の処理結果も除く。
+
     return {key: value for key, value in data.items() if key != "state"}, body.rsplit(_uwi.ANSWER_MARKER, 1)[0]
 
 
 def compare_draft_openings(
-    messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None
+    messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None, is_uwi: bool = False
 ) -> list[tuple[str, str]]:
-    """原稿ごとの冒頭を抽出し、比較入力があれば全件の一致を確かめて`(原稿, 冒頭)`を返す。
-
-    dry-runと本保存が同じ比較を使う。不一致・読取不能・件数違いは`WebInputError`で拒否し、呼出側は保存を始めない。
-    """
     if compare_paths is not None and len(compare_paths) != len(messages):
         raise WebInputError(
             f"原稿と冒頭比較ファイルの件数が一致しない: 原稿={len(messages)}、比較={len(compare_paths)}",
@@ -145,17 +140,20 @@ def compare_draft_openings(
             prefix = normalized[: len(normalized) - len(parsed[1])]
             lines = lines[prefix.count("\n") :]
         body = "".join(lines)
-        headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
-        start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
-        end = next(
-            (
-                token.map[0]
-                for token, _name in _markdown_headings.parse_headings(body, 2)
-                if token.level == 0 and token.map is not None and token.map[0] > start
-            ),
-            len(lines),
-        )
-        opening = "".join(lines[start:end])
+        if is_uwi:
+            opening = _uwi.question_opening(body)
+        else:
+            headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
+            start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
+            end = next(
+                (
+                    token.map[0]
+                    for token, _name in _markdown_headings.parse_headings(body, 2)
+                    if token.level == 0 and token.map is not None and token.map[0] > start
+                ),
+                len(lines),
+            )
+            opening = "".join(lines[start:end])
         if compare_paths is not None:
             comparison = pathlib.Path(compare_paths[index]).expanduser()
             try:
@@ -177,19 +175,43 @@ def compare_draft_openings(
     return openings
 
 
-def print_draft_openings(messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None) -> None:
-    """検証済み原稿の冒頭を比較・保存し、入力との対応と原文を表示する。"""
+def print_draft_openings(
+    messages: list[str],
+    sources: list[str],
+    *,
+    compare_paths: list[str] | None = None,
+    output_paths: list[str] | None = None,
+    is_uwi: bool = False,
+) -> None:
     saved: list[tuple[str, pathlib.Path, str]] = []
     try:
-        for source, opening in compare_draft_openings(messages, sources, compare_paths=compare_paths):
-            path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
+        openings = compare_draft_openings(messages, sources, compare_paths=compare_paths, is_uwi=is_uwi)
+        targets = [pathlib.Path(path).expanduser().resolve() for path in output_paths or ()]
+        if output_paths is not None:
+            if len(targets) != len(openings) or len(set(targets)) != len(targets):
+                raise WebInputError(
+                    "冒頭抜粋の保存先が原稿と一対一で対応しない",
+                    next_action="原稿と同じ件数・順序で異なる--opening-outputを指定する",
+                )
+            inputs = {pathlib.Path(path).expanduser().resolve() for path in [*sources, *(compare_paths or ())]}
+            if inputs.intersection(targets):
+                raise WebInputError(
+                    "冒頭抜粋の出力先と原稿または比較入力が同じ",
+                    next_action="作業用の--opening-outputを原稿・比較入力と異なるパスに指定する",
+                )
+        for index, (source, opening) in enumerate(openings):
+            if targets:
+                path = targets[index]
+                atomic_write(path, opening)
+            else:
+                path = _output_file.save_text(opening, lambda: create_output_temp("wi-draft"), filename="draft-opening.md")
             saved.append((source, path, opening))
     except (OSError, ManagedTempError) as error:
         raise WebInputError(
             f"原稿冒頭の一時保存に失敗した: {error}",
             next_action="managed-tempの権限・空き容量を確認し、同じ原稿でdry-runを再実行する",
         ) from error
-    # 全件の保存が成立するまで、有効な抽出として表示しない。
+
     for source, path, opening in saved:
         print(f"原稿: {source}\n冒頭保存先: {path}\n冒頭文字数: {len(opening)}\n冒頭本文:")
         sys.stdout.write(opening)

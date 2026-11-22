@@ -22,14 +22,12 @@ _NOTICE_TAG_PATTERN = re.compile(
 
 
 def _notice_body(delivered: str) -> str:
-    """通知本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
     matched = _NOTICE_TAG_PATTERN.fullmatch(delivered)
     assert matched is not None, delivered
     return matched["body"]
 
 
 def test_notice_body_accepts_reordered_attributes_and_outer_body() -> None:
-    """必要属性の順序が変わっても最後の終了タグまで本文を保つ。"""
     body = '<atk-auto source="inner" kind="notice">内側</atk-auto>\r\n次の行'
     delivered = f'<atk-auto kind="delivery" source="agents-notify" from="delegate:child">\n{body}\n</atk-auto>'
     assert _notice_body(delivered) == body
@@ -65,14 +63,12 @@ def test_notice_body_accepts_reordered_attributes_and_outer_body() -> None:
     ],
 )
 def test_notice_body_rejects_invalid_boundary(opening: str, closing: str) -> None:
-    """要素名、必要属性と外側の終了タグの相違を拒否する。"""
     with pytest.raises(AssertionError):
         _notice_body(f"{opening}\n本文\n{closing}")
 
 
 @pytest.fixture(name="notify_environment")
 def _notify_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """委譲先の識別子と状態保存先をテスト用に隔離する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
@@ -85,7 +81,6 @@ def test_agents_notify_preserves_body_exactly(
     notify_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """空白と改行を含む本文を正規化せず保存する。"""
     body = "  先頭\r\n末尾\n"
 
     with pytest.raises(SystemExit, match="0"):
@@ -127,7 +122,6 @@ def test_agents_notify_reads_shell_metacharacters_from_body_file(
     notify_environment: pathlib.Path,
     tmp_path: pathlib.Path,
 ) -> None:
-    """シェルメタ文字を含む本文をファイル経由で原文保持する。"""
     body = "error: can't expand '$VALUE' or `command`\nnext line\n"
     body_path = tmp_path / "body.txt"
     body_path.write_bytes(body.encode())
@@ -144,7 +138,6 @@ def test_agents_notify_rejects_missing_delegated_identity(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """委譲先の識別子が無い実行主体は終了コード4で拒否し、ルートでは通知が不要なことを示す。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -165,7 +158,6 @@ def test_agents_notify_rejects_root_identity(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ルートsession自身からの送信は終了コード4で拒否する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -185,7 +177,6 @@ def test_agents_notify_rejects_blank_body(
     notify_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """空白だけの本文は終了コード5で拒否し、ファイルを作成しない。"""
     with pytest.raises(SystemExit, match="5"):
         atk.main(["agents", "notify", "--body", " \n\t"])
 
@@ -197,7 +188,6 @@ def test_agents_notify_rejects_blank_body(
 
 
 def test_agents_notify_uses_unique_name(notify_environment: pathlib.Path) -> None:
-    """同じsessionの複数通知を上書きせず保存する。"""
     for body in ("1件目", "2件目"):
         with pytest.raises(SystemExit, match="0"):
             atk.main(["agents", "notify", "--body", body])
@@ -206,7 +196,6 @@ def test_agents_notify_uses_unique_name(notify_environment: pathlib.Path) -> Non
 
 
 def test_agents_notify_rejects_relative_body_file(capsys: pytest.CaptureFixture[str]) -> None:
-    """相対本文ファイルはargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "notify", "--body-file", "body.txt"])
     assert "絶対パス" in capsys.readouterr().err

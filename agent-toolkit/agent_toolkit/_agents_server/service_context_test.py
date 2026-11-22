@@ -1,5 +1,3 @@
-"""共有PID宛ての制御要求を、別会話で消費しない境界を検証する。"""
-
 # 保存完了と受付予約の内部境界を代用I/Oで検証する。
 # pylint: disable=protected-access
 
@@ -19,7 +17,34 @@ import pytest
 from agent_toolkit._agents_server import service_context, service_io, service_transport, service_turns
 from agent_toolkit._agents_server.service_coordinator import ServiceCoordinator
 from agent_toolkit._agents_server.state import SessionState
-from agent_toolkit._common import effort_requests, runtime_environment, session_registry, session_release
+from agent_toolkit._common import effort_requests, process_identity, runtime_environment, session_registry, session_release
+
+
+@pytest.mark.asyncio
+async def test_short_lived_host_exit_does_not_close_running_conversation(tmp_path):
+    from agent_toolkit._testing.agents_server_support import _manager_with_fake  # pylint: disable=import-outside-toplevel
+
+    async with _manager_with_fake("codex") as (manager, _backend):
+        session = SessionState("child", str(tmp_path), status="running", engine="codex")
+        manager.sessions[session.session_id] = session
+        caller = runtime_environment.CallerContext({"HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path)
+        pool = service_context.ServiceManagers(state_root=tmp_path)
+        host = cast(process_identity.ProcessIdentity, SimpleNamespace(exists=lambda: False))
+        conversation = service_context.Conversation(manager, caller, hosts={12: host}, connections={"short-mcp"})
+        pool.conversations["parent"] = conversation
+
+        pool.disconnect("short-mcp")
+        await pool._collect_disconnected_conversations()
+        assert pool.conversations["parent"] is conversation
+        assert session.status == "running"
+
+        session.status = "completed"
+        conversation.connections.add("replacement-mcp")
+        await pool._collect_disconnected_conversations()
+        assert pool.conversations["parent"] is conversation
+        pool.disconnect("replacement-mcp")
+        await pool._collect_disconnected_conversations()
+        assert "parent" not in pool.conversations
 
 
 @pytest.mark.asyncio
@@ -83,6 +108,52 @@ async def test_effort_request_is_consumed_by_its_conversation_only(monkeypatch, 
 
 
 @pytest.mark.asyncio
+async def test_waiting_control_does_not_block_next_session_request(monkeypatch, tmp_path):
+    first = SessionState("first", str(tmp_path), status="running", engine="codex")
+    second = SessionState("second", str(tmp_path), status="running", engine="codex")
+    started = asyncio.Event()
+    release = asyncio.Event()
+    finished = asyncio.Event()
+    seen: list[str] = []
+    waiting = [(tmp_path / "first.effort-request", {"session_id": "first"})]
+
+    async def process(*_args, requests, **_kwargs):
+        identifier = requests[0][1]["session_id"]
+        seen.append(identifier)
+        if identifier == "first":
+            started.set()
+            await release.wait()
+        else:
+            waiting.pop()
+            finished.set()
+
+    manager = SimpleNamespace(
+        sessions={item.session_id: item for item in (first, second)},
+        _pending_resumes={},
+        _recovery_attempts={},
+        _service_paused=set(),
+        _effort_catalog=AsyncMock(),
+        _apply_effort=AsyncMock(),
+        save_control_state=AsyncMock(),
+        _process_auto_resume=AsyncMock(return_value=False),
+    )
+    pool = service_context.ServiceManagers(state_root=tmp_path)
+    pool.conversations["owner"] = service_context.Conversation(
+        cast(service_context.AgentsServerManager, manager), runtime_environment.CallerContext({}, tmp_path)
+    )
+    monkeypatch.setattr(effort_requests, "pending", lambda **_kwargs: list(waiting))
+    monkeypatch.setattr(service_context.effort_control, "process_requests", process)
+    async with pool, asyncio.timeout(5):
+        try:
+            await started.wait()
+            waiting.append((tmp_path / "second.effort-request", {"session_id": "second"}))
+            await finished.wait()
+            assert seen == ["first", "second"]
+        finally:
+            release.set()
+
+
+@pytest.mark.asyncio
 async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_path):
     gate = service_turns.TurnGate("old", {"generation": "old", "epoch": 1})
     saving = asyncio.Event()
@@ -136,10 +207,6 @@ async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_generations_distinguish_current_queried_and_retired(tmp_path):
-    """照会した世代・受付中の世代を区別し、退出済みの世代と強制終了した世代を除いて返す。
-
-    強制終了した世代は退出を記録できない。一覧から消えることを処置後の終了観測に使うため、プロセスの生死で判定する。
-    """
     from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
 
     directory = tmp_path / "services/agents-server"

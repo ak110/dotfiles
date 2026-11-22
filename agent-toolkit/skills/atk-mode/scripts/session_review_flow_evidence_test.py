@@ -22,7 +22,6 @@ def _run(script: str, arguments: list[str]) -> int:
 def test_prepare_retains_each_main_utterance_and_input(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], user_count: int
 ) -> None:
-    """少数のユーザー発話でも29発話・76呼出の途中の手順を全て通読できる。"""
     entries = [support.timestamped_entry("2026-11-01T00:00:00Z", "作業を実施する")] if user_count else []
     expected: list[tuple[int, str]] = []
     for index in range(76):
@@ -78,7 +77,6 @@ def test_prepare_retains_each_main_utterance_and_input(
 def test_prepare_compacts_only_consecutive_calls_when_minimum_rows_overflow(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最小行の総量が予算を超えたら、発話と区間の位置を保って連続呼出を集約する。"""
     entries = []
     ranges = []
     for turn in range(3):
@@ -115,7 +113,6 @@ def test_prepare_compacts_only_consecutive_calls_when_minimum_rows_overflow(
 def test_prepare_shows_initial_delegate_request_and_user_query_keeps_human_origin(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *, wrapped: bool
 ) -> None:
-    """実配送生成を経た依頼の本文を通読へ載せ、追送と機械資料を依頼へ含めない。"""
     parent = tmp_path / "parent.jsonl"
     support.write_jsonl(parent, [support.timestamped_entry("2026-11-01T00:00:00Z", "メインへの依頼")])
     body = "最初の委譲依頼を実装する"
@@ -153,7 +150,7 @@ def test_codex_detail_exposes_inputs_outputs_and_execution_status(
 ) -> None:
     """既存Codex記録形式の入力・出力・CommandExecutionをJSON再解析なしで取得する。"""
     transcript = tmp_path / "codex.jsonl"
-    # response_itemとitem_completedの構造は既存のdetail・execution試験と共通である。
+
     payloads: list[dict[str, object]] = [
         {
             "type": "function_call",
@@ -189,7 +186,7 @@ def test_codex_detail_exposes_inputs_outputs_and_execution_status(
                 "result": {"content": [{"type": "text", "text": "MCP本文"}]},
             },
         },
-        {"type": "future_item", "value": "未知形式の保持"},
+        {"type": "future_item", "value": "展開しない未知の値"},
     ]
     support.write_jsonl(
         transcript,
@@ -217,7 +214,7 @@ def test_codex_detail_exposes_inputs_outputs_and_execution_status(
     assert events[5]["omitted"] is True and len(events[5]["input"]["body"]) <= 8000
     assert events[6]["input"] == {"path": "/repo/file"} and events[6]["text"] == "MCP本文"
     assert events[6]["call_id"] == "mcp" and events[6]["name"] == "mcp__files__read"
-    assert json.loads(events[7]["text"])["payload"]["value"] == "未知形式の保持"
+    assert events[7]["event_type"] == "future_item" and "text" not in events[7]
     assert [(event["record"], event["line"], event["timestamp"]) for event in events] == [
         ("codex:codex", line, "2026-11-01T00:00:00Z") for line in range(1, 9)
     ]
@@ -267,7 +264,6 @@ def test_codex_failed_execution_details_reach_bundle_evidence(
 def test_reported_improvements_keep_duplicate_sources_lines_and_full_bodies(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """長文の改善点、同じ出所の同文行、別出所の同文を位置と行順付きで保持する。"""
     repeated = "気付いた改善点: 同じ内容"
     long = "気付いた改善点: " + "長い改善の本文" * 1200
     parent = tmp_path / "parent.jsonl"
@@ -307,7 +303,6 @@ def test_reported_improvements_keep_duplicate_sources_lines_and_full_bodies(
 def test_reported_improvements_accept_list_items_and_keep_clipped_tail(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """箇条書きの改善点を項目記号なしで抽出し、長文の短縮後も本文を残し、例・引用は抽出しない。"""
     bullet = "- 気付いた改善点: 箇条書きの報告"
     numbered = "1. 気付いた改善点: 番号付きの報告"
     examples = "```text\n- 気付いた改善点: コード例\n```\n> - 気付いた改善点: 引用\n    気付いた改善点: 字下げしたコード例"
@@ -334,7 +329,6 @@ def test_reported_improvements_accept_list_items_and_keep_clipped_tail(
 def test_reported_improvements_distinguish_zero_and_unreadable_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """報告0件は要約、読込不能は非0と診断として区別する。"""
     transcript = tmp_path / "empty.jsonl"
     support.write_jsonl(transcript, [support.assistant_text("正常な返却")])
     assert _run("session-review-evidence", [str(transcript), "--reported-improvements"]) == 0

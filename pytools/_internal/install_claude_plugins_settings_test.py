@@ -22,7 +22,6 @@ from ._test_helpers import _FakeResult, assert_scope_user_install_calls, command
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧pluginの削除は専用テストへ分ける。"""
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
@@ -43,7 +42,6 @@ def _disable_auto_managed_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(name="enabled_target_plugins")
 def _enabled_target_plugins(monkeypatch: pytest.MonkeyPatch) -> None:
-    """管理対象pluginがsettingsで有効な状態を返す。"""
     monkeypatch.setattr(
         claude_plugin_settings,
         "read_enabled_plugins",
@@ -124,7 +122,6 @@ class TestReadInstalledFromFile:
     def test_unreadable_file_falls_back_to_cli(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, content: str | None
     ):
-        """ファイルが存在しないか不正な JSON の場合は CLI フォールバックで plugin list が呼ばれる。"""
         path = tmp_path / "installed_plugins.json"
         if content is not None:
             path.write_text(content, encoding="utf-8")
@@ -176,7 +173,6 @@ class TestCheckMarketplaceFromFile:
         assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_marketplace_not_registered(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """marketplace キーが存在しない場合 is_directory_type_registered は False を返す。"""
         path = tmp_path / "known_marketplaces.json"
         path.write_text(json.dumps({"other-marketplace": {}}, ensure_ascii=False), encoding="utf-8")
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", path)
@@ -184,7 +180,6 @@ class TestCheckMarketplaceFromFile:
         assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_file_not_found(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path):
-        """ファイルが存在しない場合 is_directory_type_registered は False を返す。"""
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "missing.json")
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -209,7 +204,6 @@ class TestHappyPathDirectoryType:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
-        """directory 型健全 + version 一致の場合、各プラグインに対して install が再実行される。"""
         # installed_plugins.json: 全プラグインが最新
         installed_path = tmp_path / "installed_plugins.json"
         installed_path.write_text(
@@ -261,8 +255,8 @@ class TestHappyPathDirectoryType:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _install_claude_plugins.run().changed is True
-        # 全プラグインに対して install が --scope=user で再実行される
+
         assert_scope_user_install_calls(calls)
-        # marketplace update / plugin update は呼ばれない
+
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "update"]) for c in calls)
         assert not any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)

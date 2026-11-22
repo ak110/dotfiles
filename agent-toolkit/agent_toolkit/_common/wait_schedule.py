@@ -33,13 +33,11 @@ import json
 import os
 import subprocess
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
 
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common.delegated_session import is_delegated
 
-# キャッシュTTLごとの再確認間隔。TTLが満了する前に必ず再確認するため、間隔はTTLより短く取る。
 _SCHEDULE_FOR_5M_TTL = "*/3 * * * *"
 _SCHEDULE_FOR_1H_TTL = "*/30 * * * *"
 # キャッシュTTLごとの委譲先の終了を待つ上限。TTLが満了する前に委譲元のターンが再開するよう、上限はTTLより短く取る。
@@ -130,7 +128,6 @@ def _has_valid_subscription_status() -> bool:
 
 
 def get_prompt_cache_ttl(request_bucket: str) -> str:
-    """Request bucketと公開情報からプロンプトキャッシュTTLを返す。"""
     if request_bucket not in _BUCKET_TTL_ENV:
         raise ValueError(f"未対応のrequest bucket: {request_bucket}")
 
@@ -170,7 +167,6 @@ def get_schedule(request_bucket: str) -> str:
 
 
 def _ttl_wait_timeout(request_bucket: str) -> float:
-    """各用途で共有する保持期間とホストの上限を導く。"""
     timeout = _WAIT_TIMEOUT_FOR_1H_TTL if get_prompt_cache_ttl(request_bucket) == "1h" else _WAIT_TIMEOUT_FOR_5M_TTL
     if "CLAUDECODE" not in os.environ:
         timeout = min(timeout, _WAIT_TIMEOUT_FOR_UNKNOWN_HOST)

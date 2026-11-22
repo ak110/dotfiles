@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_candidates_users_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -16,7 +14,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 
 def _answer_event(line: int, answers: list[str], *, intervention: bool = False) -> dict[str, object]:
-    """生成側が出力する形（回答値の本文、`user_response`、`assistant_context`）の回答イベントを返す。"""
     event: dict[str, object] = {
         "kind": "user",
         "record": "main",
@@ -31,7 +28,6 @@ def _answer_event(line: int, answers: list[str], *, intervention: bool = False) 
 
 
 def test_candidate_events_excludes_non_interventions_and_reports_counts() -> None:
-    """委譲入力、環境挿入および初期要求を決定的に除外し、選択肢どおりの回答は確認の候補にする。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "agent-1", "line": 1, "text": "委譲入力"},
@@ -51,7 +47,6 @@ def test_candidate_events_excludes_non_interventions_and_reports_counts() -> Non
 
 
 def test_candidate_events_keeps_answers_marked_as_intervention() -> None:
-    """選択肢の外の回答はユーザー介入、選択肢どおりの回答は確認の候補とし、どちらも除外しない。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         _answer_event(2, ["推奨"]),
@@ -74,7 +69,6 @@ _ORDINARY_UTTERANCE = "質問: 方針はどうしますか\n回答: 既存機構
 
 
 def _claude_question(question_id: str, answer: str, notes: str | None) -> list[dict[str, object]]:
-    """AskUserQuestionの質問と回答の2行を返す。notesは選択肢の外へ書いた自由記述とする。"""
     annotations = {"方針": {"notes": notes}} if notes is not None else {}
     return [
         {
@@ -100,7 +94,6 @@ def _claude_question(question_id: str, answer: str, notes: str | None) -> list[d
 
 
 def _codex_question(call_id: str, answer: str) -> list[dict[str, object]]:
-    """request_user_inputの質問と回答の2行を返す。"""
     arguments = {"questions": [{"id": "scope", "question": "方針", "options": _OFFERED}]}
     return [
         {
@@ -124,7 +117,6 @@ def _codex_question(call_id: str, answer: str) -> list[dict[str, object]]:
 
 
 def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], list[str], dict[str, int]]:
-    """生成側の抽出結果を候補抽出へ通し、ユーザー介入候補と確認候補の本文、除外件数を返す。"""
     events = [{**event, "record": "main"} for event in evidence_extract.load_and_extract(str(transcript))]
     candidates = evidence_candidates._candidate_events(events, [], [])  # pylint: disable=protected-access
     texts = [candidate["text"] for candidate in candidates[:-1] if candidate["candidate_kind"] == "user-intervention"]
@@ -135,11 +127,6 @@ def _extracted_candidates(transcript: pathlib.Path) -> tuple[list[str], list[str
 
 
 def test_claude_answers_from_transcript_are_classified_by_offered_choices(tmp_path: pathlib.Path) -> None:
-    """生成側が出力した回答イベントを、選択肢どおりなら確認の候補、是正を含めばユーザー介入候補にする。
-
-    回答イベントの本文は表示用の回答値であり、候補抽出が本文の書式で回答を推定すると、
-    書式の変更で選択肢どおりの回答が候補に残るか、同じ書式の通常の発話が回答として除外される。
-    """
     entries: list[dict[str, object]] = [
         {"type": "user", "message": {"role": "user", "content": "初期要求"}},
         *_claude_question("q1", "既存機構へ統合", None),
@@ -175,7 +162,6 @@ def test_codex_answers_from_transcript_are_classified_by_offered_choices(tmp_pat
 
 
 def test_candidate_events_excludes_runtime_generated_user_messages() -> None:
-    """process-loopの通知、定時promptおよび実行環境が挿入した本文をユーザー介入から除く。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {
@@ -278,7 +264,7 @@ def test_bundle_keeps_interrupt_markers_and_excludes_runtime_outputs(
     capsys.readouterr()
 
     records = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
-    # 候補の並びは記録の順序と一致しないため、順序を除いて比べる。
+
     assert sorted(item["text"] for item in records[:-1] if item["candidate_kind"] == "user-intervention") == sorted(
         expected_candidates
     )
@@ -288,7 +274,6 @@ def test_bundle_keeps_interrupt_markers_and_excludes_runtime_outputs(
 
 
 def test_candidate_events_excludes_runtime_generated_user_records() -> None:
-    """実行環境が生成した標識を持つユーザーイベントを候補から除き、除外種類別へ計上する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "初期要求"},
         {"kind": "user", "record": "main", "line": 2, "text": "注記", "runtime_generated": True},
@@ -302,7 +287,6 @@ def test_candidate_events_excludes_runtime_generated_user_records() -> None:
 
 
 def test_first_human_request_after_automated_start_is_initial_request() -> None:
-    """process-loop以外の自動挿入で始まる記録では、最初の人間の発話を初期要求として除く。"""
     timeline = [
         {
             "kind": "user",
@@ -359,7 +343,6 @@ def test_human_intervention_after_process_loop_start_remains_candidate(
 
 @pytest.mark.parametrize("prompt", [PROCESS_WI_GOAL_BODY, _pl_session.build_process_loop_prompt()])
 def test_process_loop_goal_matches_launch_prompt_body(prompt: str) -> None:
-    """旧目的文と新統括の目的文を初期要求として扱い、後続の人間の介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "<atk-auto>規範", "runtime_inserted": True},
         {"kind": "user", "record": "main", "line": 2, "text": "# AGENTS.md instructions\n" + prompt},

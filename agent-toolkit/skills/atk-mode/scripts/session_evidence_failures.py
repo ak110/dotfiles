@@ -25,7 +25,6 @@ from session_evidence_tool_calls_records import _recorded_input, _restored_resul
 
 
 def failure_calls(collected: list[_CollectedRecord], events: list[dict[str, Any]], phrase: str) -> list[dict[str, Any]]:
-    """成功結果と発話の引用を除き、元の入力と結果の位置を保持する。"""
     selected = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}
@@ -106,7 +105,7 @@ def scan_failures(args: argparse.Namespace) -> tuple[list[dict[str, Any]], int]:
     candidates = 0
     for path in sorted(root.rglob("*.jsonl")):
         raw = path.read_bytes()
-        # エスケープと退避参照は保守的に候補へ残す。生の文言だけで除くと復元後の一致を失う。
+
         if args.failure_fixed_string.encode("utf-8") not in raw and b"\\" not in raw and b"persisted" not in raw:
             continue
         candidates += 1

@@ -13,6 +13,13 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
   委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を使う。
 - `Stop`と`SubagentStop`の判別は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「委譲先での発火」に従う。
 
+## 同期hookの所要
+
+[Claude Code公式のhook仕様](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)では、既定の同期hookは完了まで実行を止める。
+[タイムアウト](https://code.claude.com/docs/en/hooks#timeouts)はhookの種類・イベントで異なり、個々の処理に許容される所要の目安ではない。
+圧縮後の要約は、WI `20261123-012545-001.md` に記録された事例では内部の15秒上限に達し、手動では約45秒で成功した。
+入力の量で所要が大きく変わる処理は同期hookから外し、必要な結果を得る手動操作か、結果を回収する主体が明確な背景処理へ移す。
+
 ## フック実装の配置先（個人フックと配布物）
 
 dotfiles固有の運用（配布先の構成、個人の命名規則など）を前提にするhookは個人のhookへ、前提を持たない汎用の機能はプラグインへ置く。
@@ -82,6 +89,32 @@ _llm_notice = formatter("myplugin/myhook")
 - 現在の名前が空か、前回自動で設定した名前と一致する時だけ更新し、ユーザーが手で設定したタイトルを保つ。
 - 命名用の種別は`PostToolUse(Skill)`と手動の起動時の`UserPromptSubmit`が通常の状態に記録し、タイトルは`process-loop`の環境の印と計画名から決める。
 - セッションタイトルの設定はClaude Codeに限る。
+
+### 委譲先で配送本文を検証する
+
+ホストを起動せず、`user_prompt_submit` コマンドへ合成したJSONを標準入力で渡す。
+実際の会話IDや本文は使わず、各条件の標準出力・標準エラー・終了コードを別々に保存する。
+POSIXでは、`uv run --frozen` で依存環境を選んだ後の子プロセスに、絶対パスの `XDG_STATE_HOME`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` を指定する。
+起動前に `XDG_STATE_HOME` を変更すると、miseの信頼済み設定を参照できなくなる場合がある。
+
+- 通常発話の対照: 子プロセスだけで `AGENT_TOOLKIT_OWNER_SESSION` を除き、`AGENT_TOOLKIT_DELEGATED_SESSION=0` にする。
+- 委譲先の対照: 別の隔離ディレクトリを使い、同じJSONを `AGENT_TOOLKIT_DELEGATED_SESSION=1` で渡す。
+  他の通知条件がない新規の合成セッションでは、`hookSpecificOutput.additionalContext` に入る通常発話向けの注記は通常発話の対照だけに現れる。
+
+次は通常発話の呼び出し例である。
+`scratch` は条件ごとに異なる隔離領域の絶対パスとする。
+委譲判定と状態保存先の変更は子プロセスに限る。
+
+```sh
+printf '%s\n' '{"hook_event_name":"UserPromptSubmit","session_id":"11111111-1111-4111-8111-111111111111","prompt":"隔離テスト","source":"user"}' > "$scratch/input.json"
+rc=0
+uv run --frozen env -u AGENT_TOOLKIT_OWNER_SESSION \
+  AGENT_TOOLKIT_DELEGATED_SESSION=0 XDG_STATE_HOME="$scratch/state" \
+  XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data" \
+  PYTHONPATH="$PWD/agent-toolkit" python -m agent_toolkit.hook user_prompt_submit \
+  < "$scratch/input.json" > "$scratch/output.json" 2> "$scratch/stderr.log" || rc=$?
+printf '%s\n' "$rc" > "$scratch/exit-code"
+```
 
 ## atkの実行結果出力
 

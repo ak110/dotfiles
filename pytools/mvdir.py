@@ -1,5 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""ディレクトリをマージするスクリプト。"""
 
 import argparse
 import logging
@@ -12,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """ディレクトリをマージするエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("src_dir", type=pathlib.Path)
     parser.add_argument("dest_dir", type=pathlib.Path)

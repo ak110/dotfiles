@@ -1,5 +1,3 @@
-"""agyの6イベントと、開いているbrain記録からの活動検出を検証する。"""
-
 import os
 import pathlib
 
@@ -9,7 +7,6 @@ from agent_toolkit._common import session_activity, session_registry
 
 
 def test_agy_hook_activity_and_stop_continue(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stop許可で応答待ちになり、継続・次の呼出で活動へ戻る。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     identity = session_registry.ProcessIdentity.of(os.getpid())
     assert identity is not None

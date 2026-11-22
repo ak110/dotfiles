@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""合流で記録不足になった重なりの案内が、そのとおりに直せば受理される記録へ導くことを検証する。"""
 
 import json
 import pathlib
@@ -11,7 +10,6 @@ from selection_merge_test import fixture_inputs as fixture_inputs
 
 
 def _guided_records(err: str) -> list[dict[str, object]]:
-    """記録不足の案内の括弧内の組を、括弧内のレーン名のとおりに記録する。"""
     records = []
     for line in err.splitlines():
         if "（未判定の組: " not in line:
@@ -25,12 +23,11 @@ def _guided_records(err: str) -> list[dict[str, object]]:
 def test_merge_missing_record_guidance_leads_to_accepted_record(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """合流後の名前で記録しても未判定の組は残り、案内が示す組と仮名のとおりに記録すると合流できる。"""
     repo, existing, added = inputs
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))
     addition["選定"] = [_item("c.md", "lane-03"), _item("d.md", "lane-04")]
     addition["レーンの所要時間"] = [_cost("lane-03"), _cost("lane-04")]
-    # 合流後の名前で書いた記録は、合流前の配置では既存のa-bの組を判定するだけになる。
+
     addition["レーン間の重なり"] = [_overlap("lane-01", "lane-02")]
     added.write_text(yaml.safe_dump(addition, allow_unicode=True), encoding="utf-8")
     mapping = tmp_path / "map.json"
@@ -50,10 +47,6 @@ def test_merge_missing_record_guidance_leads_to_accepted_record(
 def test_merge_rejects_temporary_lane_named_after_other_existing_lane(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """既存レーンと同じ名前の仮名を別の最終レーンへ写す合流は、付け替えの案内とともに保存前に拒否する。
-
-    合流前の配置では仮名の追加分と同じ名前の既存分が同じレーンに並ぶため、その組を判定する記録を書けない。
-    """
     repo, existing, added = inputs
     saved = existing.read_text(encoding="utf-8")
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))

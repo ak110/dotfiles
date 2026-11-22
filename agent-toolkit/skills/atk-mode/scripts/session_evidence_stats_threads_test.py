@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_threads_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -26,12 +24,6 @@ def test_stats_reports_breakdown_of_each_agent_thread(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各agent threadの記録へメイン記録と同じ内訳の集計を適用し、threadの識別子と記録位置を付けて返す。
-
-    内訳が無いと、律速区間となった委譲先の内部の工程を振り返りが追加の照会なしで読めない。
-    委譲先の呼び出しがメイン記録の`stats-tool`の件数へ加わると、メインの工程の所要時間を誤って読む。
-    記録位置は`--detail`へそのまま渡せる`<記録ID>:<行番号>`である必要がある。
-    """
     threads = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("HOME", str(threads.home))
     monkeypatch.setenv("CODEX_HOME", str(threads.codex_home))
@@ -85,7 +77,6 @@ def test_stats_reports_breakdown_of_each_agent_thread(
         (codex_id, "exec_command", 20.0, f"{codex_record}:3", "make build"),
     ]
 
-    # 記録位置を`--detail`へ渡すと、その呼び出しの記録が返る。
     assert evidence.main([str(threads.transcript), "--detail", f"{codex_record}:3"]) == 0
     detail = read_jsonl(capsys, raw=True)
     assert [(event["record"], event["line"]) for event in detail] == [(codex_record, 3)]
@@ -154,7 +145,6 @@ def test_stats_separates_turn_completion_from_trailing_records(
 
 
 def test_stats_outputs_every_subagent_without_limit(tmp_path: pathlib.Path, capsys) -> None:
-    """21件以上のサブエージェント記録を件数制限なく全成分合計降順で出力する。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
@@ -202,7 +192,6 @@ def test_stats_outputs_every_codex_thread_without_limit(tmp_path: pathlib.Path, 
 
 
 def test_stats_collects_thread_ids_from_every_subagent(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """全てのサブエージェント発の委譲を`agent`キー付きで出力し、種別による除外を行わない。"""
     normal_thread = "55555555-5555-4555-8555-555555555555"
     other_thread = "66666666-6666-4666-8666-666666666666"
     codex_home = tmp_path / "codex"
@@ -252,11 +241,6 @@ def test_stats_collects_thread_ids_from_every_subagent(tmp_path: pathlib.Path, m
 
 
 def test_stats_thread_line_only_for_main_transcript_threads(tmp_path: pathlib.Path, monkeypatch, capsys) -> None:
-    """`line`はメイン記録発の委譲だけに付け、サブエージェント記録発の委譲には付けない。
-
-    `line`は`--detail`が解決するメインtranscriptの行番号であり、サブエージェント記録の行番号を
-    同じキーで出力すると`--detail`が無関係なエントリを返すため。
-    """
     main_thread = "88888888-8888-4888-8888-888888888888"
     sub_thread = "99999999-9999-4999-8999-999999999999"
     codex_home = tmp_path / "codex"

@@ -1,5 +1,3 @@
-"""現在の対話CLI本体を一意に識別できる場合だけ終了を要求する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -13,7 +11,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
 
 from agent_toolkit._atk import lane as _lane
@@ -87,8 +84,8 @@ _NONINTERACTIVE = frozenset(
     }
 )
 _SHORT_WITH_VALUE = frozenset("cmp sCai".replace(" ", ""))
-# agy 1.5.10の`agy --help`が示すフラグ名（先頭の`-`を除く）。Goのflag解析は`-name`と`--name`を同じに扱う。
-# `i`（`prompt-interactive`）は対話起動の最初の入力を値に取る。`p`・`print`・`prompt`は非対話実行のため含めない。
+
+
 _AGY_ONE_VALUE = frozenset(
     {
         "add-dir",
@@ -127,8 +124,6 @@ _STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 
 @dataclass(frozen=True)
 class Target:
-    """単一プロセスが引き続き同じ対象であることを確かめるための識別情報。"""
-
     pid: int
     host: str
     create_time: float
@@ -193,11 +188,6 @@ def is_interactive_codex(argv: list[str]) -> bool:
 
 
 def is_interactive_agy(argv: list[str]) -> bool:
-    """agyの対話起動だけを受理する。
-
-    Goのflag解析は最初の位置引数で解析を終えるため、位置引数（サブコマンドを含む）を持つ起動と、
-    `-p`などの非対話実行・未知のフラグを含む起動は受理しない。
-    """
     if not argv or pathlib.Path(argv[0]).name not in {"agy", "agy.exe"}:
         return False
     index = 1
@@ -253,7 +243,6 @@ def _target(process: psutil.Process) -> Target | None:
 
 
 def identify_current_host() -> Target | None:
-    """現在プロセスの祖先から最初の対話ホストを一意に識別する。"""
     try:
         ancestors = process_identity.parents(psutil.Process(os.getpid()))
     except psutil.Error:
@@ -292,7 +281,6 @@ def _function_hook_dir() -> pathlib.Path | None:
 
 
 def function_hook_paths(session_id: str) -> tuple[pathlib.Path, pathlib.Path] | None:
-    """Function hooks moduleと共有する読込目印と終了要求のパスを返す。解決できなければNoneを返す。"""
     directory = _function_hook_dir()
     if directory is None or not _SESSION_ID.fullmatch(session_id):
         return None
@@ -391,7 +379,6 @@ def request_termination(
 
 
 def main() -> int:
-    """終了要求の実行証跡を出力し、現在の識別情報が一致すると確認した単一PIDだけを停止する。"""
     identifier = _lane.current_session_id()
     cleanup = _lane.cleanup_session(identifier, wait_release=False)
     if cleanup["retained"]:
@@ -419,21 +406,17 @@ def main() -> int:
             flush=True,
         )
 
-    from agent_toolkit._atk.wi import process_loop_control  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
-
-    reservation = process_loop_control.read_resume_request() if identifier else None
-    restarting = reservation is not None and reservation.mode == "id" and reservation.session_id == identifier
-    # 変更前にホストの目標評価付きで始まった会話は、未達の評価がStopで継続させるため、
-    # turn.completeにある旧modの/exitを待つと循環する。
-    # 本人IDの保存済み予約がある再起動だけ、既存のPID・起動時刻の一致確認と直接終了を使う。
-    status, target = request_termination(before_signal=_before_signal, defer_to_hook=not restarting)
+    status, target = request_termination(before_signal=_before_signal)
     if status == "terminating":
         return 0
     if status == "unsupported":
         print(
             json.dumps({"exit_session_invoked": True, "status": "unsupported", "lane_cleanup": cleanup}, separators=(",", ":"))
         )
-        _outcome.report_warning("現在の対話CLI本体を一意に識別できない", next_action="/exitまたは/quitを入力して終了する")
+        _outcome.report_warning(
+            "現在の対話CLI本体を一意に識別できない",
+            next_action="対話CLIで実行している場合は /exit または /quit で終了する。IDE拡張やアプリでは操作が不要な場合がある",
+        )
         return 0
     if status == "changed":
         print(json.dumps({"exit_session_invoked": True, "status": "changed", "lane_cleanup": cleanup}, separators=(",", ":")))
@@ -475,6 +458,5 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """呼び出し元のホストセッションの終了を要求し、終了コードを返す。"""
     del args
     return main()

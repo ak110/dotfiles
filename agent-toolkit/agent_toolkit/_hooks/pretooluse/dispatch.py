@@ -70,8 +70,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import dataclasses
 lazy import hashlib
 lazy from collections.abc import Iterable
@@ -89,7 +87,9 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks import (
     bugfix_gate,
+    clock_claims,
     command_timing,
+    norm_excuse_gate,
     progress_self_check,
     repository_protection,
     work_contract,
@@ -97,6 +97,7 @@ lazy from agent_toolkit._hooks import (
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
+lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
 lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
@@ -137,6 +138,7 @@ lazy from agent_toolkit._hooks.pretooluse.shell_checks import (
     _warn_git_rev_parse_short_multiple,
     _warn_windows_drive_letter_path,
 )
+lazy from agent_toolkit._hooks.pretooluse.shell_checks_git import duplicate_autosquash_subject
 lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL_NAMES, check_task_document_launch
 lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
@@ -144,7 +146,6 @@ lazy from agent_toolkit._hooks.pretooluse.warning_context import (
 
 
 def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
-    """設定ファイルが`attribution.commit`を文字列として定義するかと、その値を返す。"""
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError, ValueError:
@@ -158,7 +159,6 @@ def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
 
 
 def _claude_commit_attribution_disabled(cwd: str) -> bool:
-    """フックから観測できる設定範囲で、最上位の明示的な空文字設定を判定する。"""
     config_dir = _host_homes.claude_config_dir()
     project_raw = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     paths = [config_dir / "settings.json"]
@@ -181,6 +181,11 @@ _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
     for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
     for name in ("send_to_user", "compact_conversation", "apply_runtime_changes")
+)
+_SCOPE_REVIEW_MCP_TOOLS = frozenset(
+    f"{prefix}{name}"
+    for prefix in ("mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__")
+    for name in ("start", "send_message", "send_to_user")
 )
 
 
@@ -209,7 +214,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
     set_warning_session_id(session_id)
-    # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
+
     is_codex = is_codex_payload(payload)
 
     with notice_cycle(session_id, "pretooluse:" + str(tool_name), _agent_id.resolve_hook_agent_id(payload)):
@@ -251,7 +256,6 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
-    """ツールの種類ごとの判定を実行し、その結果を返す。"""
     # Code Modeも個々のMCP呼出しをこの設定hookへ通す。MCP起動環境には無い組込みagent_idもここで判定する。
     if tool_name in _MAIN_ONLY_MCP_TOOLS and (
         payload.get("agent_id") is not None or delegated_session.is_delegated(os.environ)
@@ -260,6 +264,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             block=_block_notice(
                 "メイン専用ツールのため実行していない。表示・圧縮・反映の成功として扱わない。",
                 fix="結果本文を委譲元へ最終応答で返せ。",
+            )
+        )
+    if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
+        reminder := work_contract.scope_review_before_send(
+            session_id,
+            payload.get("transcript_path"),
+            _scope_review_text(tool_name, tool_input),
+            actor=_agent_id.resolve_hook_agent_id(payload),
+        )
+    ):
+        return Decision(
+            block=_block_notice(
+                f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
+                fix="今回の対象と除外を確かめ、必要なら本文を直して再送せよ。",
             )
         )
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
@@ -271,8 +289,16 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None
     ):
         return Decision(block=bugfix_block)
+    if tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX) and (
+        excuse_block := norm_excuse_gate.text_block(payload, tool_input.get("message"), "ユーザーへの送達")
+    ):
+        return Decision(block=excuse_block)
     if tool_name in _MAIN_ONLY_MCP_TOOLS:
-        return Decision(allow=True)
+        message = tool_input.get("message")
+        timing = (
+            clock_claims.warning([message], payload) if is_send_to_user_tool(tool_name) and isinstance(message, str) else None
+        )
+        return Decision(allow=True, context=timing)
     if tool_name == "Skill":
         return Decision()
     if tool_name in _AGENTS_SERVER_TOOL_NAMES:
@@ -304,11 +330,10 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         notices += (trailer_notice,)
     if tool_name in _SEARCH_TOOL_NAMES:
         return Decision(notices=notices)
-    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd), notices=notices)
+    return dataclasses.replace(_decide_edit_tool(tool_name, tool_input, cwd, payload), notices=notices)
 
 
 def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
-    """判定の結果と保留の通知を標準出力・標準エラーへ書き、終了コードを返す。"""
     pending_notices.extend(decision.notices)
     hook_output: dict[str, object] = {"hookEventName": "PreToolUse"}
     # Codexは入力書換えを伴うallowだけを受理する。通常通過の権限判定はホストへ委ねる。
@@ -316,26 +341,32 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     if decision.block is not None:
         hook_output["permissionDecision"] = "deny"
         hook_output["permissionDecisionReason"] = decision.block
-    elif force_allow:
+    elif force_allow or decision.updated_input is not None:
         hook_output["permissionDecision"] = "allow"
+        if decision.updated_input is not None:
+            hook_output["updatedInput"] = decision.updated_input
     contexts = [decision.context] if decision.context else []
     contexts.extend(notice for notice in pending_notices if notice)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if decision.block is not None or force_allow or contexts:
+    if decision.block is not None or force_allow or decision.updated_input is not None or contexts:
         emit_response({"hookSpecificOutput": hook_output})
     return 0
 
 
 def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """agents_serverの開始点と観測点の条件をそれぞれ判定する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
     launch = check_task_document_launch(tool_name, tool_input)
     if launch.block is not None:
         return launch
     if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
-        return _check_agents_server_continuation_target(session_id, tool_input, tool_name)
+        return _check_agents_server_continuation_target(
+            session_id, tool_input, tool_name, actor=_agent_id.resolve_hook_agent_id(payload)
+        )
+    if tool_name.endswith("__start") and not is_codex_payload(payload):
+        updated = start_observation_input(session_id, tool_input, _agent_id.resolve_hook_agent_id(payload))
+        return dataclasses.replace(launch, allow=True, updated_input=updated)
     return dataclasses.replace(launch, allow=True)
 
 
@@ -360,6 +391,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         message = block()
         if message is not None:
             return Decision(block=message)
+    if duplicate_subject := duplicate_autosquash_subject(command, cwd):
+        return Decision(block=duplicate_subject)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
     if messages:
         checks_attribution = is_codex or not _claude_commit_attribution_disabled(cwd)
@@ -368,6 +401,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         if commit_block is not None:
             return Decision(block=commit_block)
     warnings: list[str] = []
+    if timing := clock_claims.warning(clock_claims.wi_bodies(command, cwd), payload):
+        warnings.append(timing)
     for check in (
         _check_bash_option_after_terminator,
         _check_bash_atk_output_loss,
@@ -395,7 +430,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)
     transcript_path = payload.get("transcript_path")
-    # 出力パスはtranscriptの起動記録だけが持つ。所有記録が空のセッションではtranscriptを読まない。
+
     if isinstance(transcript_path, str) and transcript_path and read_state(session_id).get("background_task_ids"):
         pending_paths = _background_task_outputs.pending_task_output_paths(transcript_path, session_id)
         if _background_task_outputs.command_reads_path(command, pending_paths):
@@ -409,7 +444,6 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     ),
                     removable_cause=True,
                     subject=command,
-                    # 途中経過の読取は進捗確認にも使う。反復だけでは結果の欠落を確定できない。
                     escalate_on_repeat=False,
                 )
             )
@@ -425,12 +459,10 @@ _COMMIT_MESSAGE_RULES = "/skills/atk-mode/references/commit-message.md"
 
 
 def _reads_commit_message_rules(paths: Iterable[pathlib.Path]) -> bool:
-    """静的に解決できる読取のファイル引数だけで帰属資料を識別する。"""
     return any(path.as_posix().endswith(_COMMIT_MESSAGE_RULES) and path.is_file() for path in paths)
 
 
 def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    """帰属資料の読取に添える、検査が期待する帰属行の通知を返す。観測できない場合と無効化した設定では返さない。"""
     trailer = observed_commit_trailer(payload, cwd, is_codex=is_codex)
     if trailer is None:
         return None
@@ -443,10 +475,6 @@ def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | 
 
 
 def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    """commitの帰属行の検査が期待する行を返す。観測できない場合と、帰属行を無効にした設定では`None`を返す。
-
-    事前に示す値と遮断の検査が期待する値を同じ生成元から作るために公開する。推測では補わない。
-    """
     if not is_codex and _claude_commit_attribution_disabled(cwd):
         return None
     identity = _hook_observed_identity(payload, is_codex=is_codex)
@@ -497,7 +525,6 @@ def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity
 
 
 def _hook_record_path(payload: dict) -> str | None:
-    """hook入力を発した実行主体の記録のパスを返す。subagentの記録を一意に解決できない場合は`None`を返す。"""
     transcript_path = payload.get("transcript_path")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
@@ -512,7 +539,6 @@ def _hook_record_path(payload: dict) -> str | None:
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
-    """ユーザーが直接読むツール入力から文字列フィールドを順序どおり抽出する。"""
     if tool_name == "ExitPlanMode":
         plan = tool_input.get("plan")
         return [("plan", plan)] if isinstance(plan, str) else []
@@ -538,6 +564,15 @@ def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str
                 if isinstance(value, str):
                     fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
     return fields
+
+
+def _scope_review_text(tool_name: str, tool_input: dict) -> str:
+    if tool_name == "AskUserQuestion":
+        return "\n".join(value for _, value in _user_facing_text_fields(tool_name, tool_input))
+    values = [tool_input.get(name) for name in ("message", "prompt", "instruction")]
+    if isinstance(extra := tool_input.get("extra_params"), dict):
+        values.extend(extra.values())
+    return "\n".join(value for value in values if isinstance(value, str))
 
 
 def _language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember: bool) -> bool:
@@ -573,6 +608,10 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
     """
     fields = _user_facing_text_fields(tool_name, tool_input)
+    if excuse_block := norm_excuse_gate.text_block(
+        _payload, "\n".join(text for _, text in fields), "ユーザーへの質問・計画の提示"
+    ):
+        return Decision(block=excuse_block)
     recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
     repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
     for name, text in fields:
@@ -597,7 +636,7 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
     return Decision(context=format_warning_context(warnings) if warnings else None)
 
 
-def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str) -> Decision:
+def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str, payload: dict | None = None) -> Decision:
     """共通編集単位ごとに警告が必要か判定する。
 
     ClaudeのWrite・Edit・MultiEditとCodexの`apply_patch`を`_hook_tool_input`が
@@ -611,4 +650,9 @@ def _decide_edit_tool(tool_name: str, tool_input: dict, cwd: str) -> Decision:
     warnings = _check_lockfiles(tool_name, [path for operation in operations for path in operation.display_paths])
     for index, operation in enumerate(operations):
         warnings.extend(_collect_edit_operation_warnings(tool_name, operation, index, images))
+    if timing := clock_claims.warning(
+        (fragment.after for operation in operations for fragment in operation.fragments if isinstance(fragment.after, str)),
+        payload,
+    ):
+        warnings.append(timing)
     return Decision(context=format_warning_context(warnings) if warnings else None)

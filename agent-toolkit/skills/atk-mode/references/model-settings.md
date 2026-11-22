@@ -12,7 +12,7 @@
 高速化では省いてはいけない処理を、レビューではエンドユーザーに影響する問題と根拠を指定し、処理の削除や指摘数だけを成果とみなさない。
 
 投稿者が主に使ったGPT-6.1 Solでは、レビュー、原因分析、バックエンド実装で強みが見られた一方、防御や設計が過剰になり、説明を並べて判断を避けることがあった。
-GPT-6.1 Solとして実行するあなたは、根拠から判断し、対症療法を重ねず原因を除く方法を選ぶ。
+これは1つの観測例であり、承認での前提確認と削減の判断はモデルによらず`agent-toolkit:atk-mode/playbooks/delegation-receiving.md`「受領後の扱い」に従う。
 画面では動くだけで終えず、見た目と使いやすさを確かめる。
 ユーザーは、Codex系が目的より指示の字面や件数を優先する傾向を挙げた。
 必要な処理を削る高速化や、実用性より指摘数を優先するレビューがその例である。
@@ -30,7 +30,7 @@ Codex系として実行するあなたは、明示された目標や件数だけ
 | `execute` | WI選定、レーン分け、計画、設計判断を伴う実装と修正、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` |
 | `chores` | 内容と完成判定が確定した単発のコーディング・修正・追随、中規模の走査。`refine-prompt`、`atk commit`の省略時 |
 | `chores_fast` | 定型走査、軽微な作業、コマンド実行。自由本文の`explore`・`shell`の省略時 |
-| `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー、再発防止セルフチェック。`exec-review`・`usability-review`・`wi-draft-review`・`recurrence-self-check` |
+| `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー。`exec-review`・`usability-review`・`wi-draft-review` |
 | `review_fast` | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` |
 | `orchestrate` | 最上位の統括、process-loopの新規セッション、run-skill。`repository-process`（`atk`か`agents_server`が起動する） |
 | `write` | 文章の起草。`write`の省略時 |

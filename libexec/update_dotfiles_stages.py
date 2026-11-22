@@ -9,7 +9,7 @@
 
 - `executor`: `run_stages`が表の順に実行する。
 - `main`: `update_dotfiles.main`が実行器の外側で実行する（実行器を包むロックの取得と、開始前の設定検証）。
-- `inline`: 他の段の処理の内側で実行する（`chezmoi apply`の前後で行うCodex管理daemonの停止と再開）。
+- `inline`: 他の段の処理の内側で実行する（更新失敗の起票）。
 - `bootstrap`: 実行器を起動する前に`libexec/update_bootstrap.sh`・`.ps1`が実行する。
   実行器はuvの管理Pythonで動くため、uvの自己更新と管理Pythonの更新は実行器の中から行えない。
   ブートストラップは同じ分類を段名と引数で受け取り、一致を`update_dotfiles_stages_test.py`が検査する。
@@ -27,12 +27,10 @@ Where = Literal["executor", "main", "inline", "bootstrap"]
 
 @dataclasses.dataclass(frozen=True)
 class Stage:
-    """1段の宣言。"""
-
     name: str
     where: Where = "executor"
     abort: bool = False
-    # 中断段の理由。続けると不確定な内容を配備する根拠を書く。
+
     reason: str = ""
     # 段が起動する子プロセスの待機上限（秒）。`None`は段が別の上限（Gitの環境変数、定数）を持つことを表す。
     timeout_sec: int | None = None
@@ -42,7 +40,6 @@ class Stage:
     platforms: tuple[str, ...] = ("linux", "win32")
 
     def __post_init__(self) -> None:
-        """中断理由と回復の宣言を検証する。"""
         if self.abort and not self.reason:
             raise ValueError(f"中断段{self.name}には理由が必要です")
         if self.retries and not self.abort:
@@ -56,7 +53,6 @@ _TIMEOUT_CHEZMOI_LIGHT = 300
 # Windows（stheno）の永続ログ（2026-09〜11月）の成功83回の最大492秒に50%の余裕を加えて10秒単位で切り上げた。
 # CIの正常所要（直近5回の成功で最大312秒）からの遅延は、ジョブの時間上限で検出する。
 # 時間切れでない失敗は1回再試行するため、この段のchezmoiの最長待ちは2試行と再試行前の待機の合計（1485秒）になる。
-# Linuxでは各試行の前後にCodex管理daemonの停止・再開の待ちが別の上限で加わる。
 # post-applyの短縮（WI 20261118-173146-001）の後、OS別の実測から見直す。
 _TIMEOUT_CHEZMOI_APPLY = 740
 _TIMEOUT_PREPARE = 900
@@ -101,7 +97,6 @@ STAGES: tuple[Stage, ...] = (
         retries=1,
         retry_wait_sec=_RETRY_WAIT,
     ),
-    Stage(update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE, where="inline", platforms=("linux",)),
     Stage("更新失敗の起票", where="inline", timeout_sec=120),
     Stage(
         "uvの導入",
@@ -134,7 +129,6 @@ Runner = Callable[[Stage], int]
 
 
 def stage(name: str) -> Stage:
-    """名前から宣言を返す。宣言に無い名前はプログラムの誤りとして`KeyError`にする。"""
     return _BY_NAME[name]
 
 
@@ -158,7 +152,6 @@ def run_stages(
     def unregistered(item: Stage) -> int:
         raise LookupError(f"段の処理が未登録です: {item.name}")
 
-    # 拡張された処理が分類表にまだ無い場合にも、既定の続行を適用する。
     for item in [*declared, *(Stage(name) for name in runners if name not in expected)]:
         code = _run_stage(item, runners.get(item.name, unregistered), fatal=fatal, sleep=sleep)
         if code != 0 and item.abort:
@@ -180,7 +173,9 @@ def _run_stage(item: Stage, runner: Runner, *, fatal: tuple[type[BaseException],
             raise
         except Exception as error:  # noqa: BLE001 -- 宣言に無い失敗は止めず、記録して続行する境界。
             update_dotfiles_runtime.logger.exception("stage例外: %s", item.name)
-            update_dotfiles_runtime.last_stderr_tail = f"{type(error).__name__}: {error}"
+            update_dotfiles_runtime.last_stderr_tail = update_dotfiles_runtime.sync_report.truncate_tail(
+                f"{type(error).__name__}: {error}"
+            )
             code = 1
         if code == 0:
             return 0

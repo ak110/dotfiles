@@ -1,5 +1,3 @@
-"""独立更新jobを隔離した公開ランチャーと小さな更新projectから検証する。"""
-
 import contextlib
 import ctypes
 import ctypes.wintypes
@@ -32,7 +30,6 @@ _POSIX = pytest.mark.skipif(sys.platform == "win32", reason="fake uvとUnixシ�
 
 @pytest.fixture(name="project")
 def _project(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> tuple[pathlib.Path, dict[str, str]]:
-    """実HOME・状態領域・実更新から独立したprojectとfake uvを用意する。"""
     root = tmp_path / "project with spaces"
     (root / "libexec").mkdir(parents=True)
     (root / "bin").mkdir()
@@ -161,7 +158,6 @@ def test_public_codex_job_orders_pipeline_and_retrieves_same_result(
     prune_exit: int,
     self_exit: int,
 ) -> None:
-    """自己更新・本体・成功後pruneを実行し、明示IDと自己threadで同じ終了値を再取得する。"""
     _root, environment = project
     environment.update(
         {"RUN_EXIT": str(run_exit), "PRUNE_EXIT": str(prune_exit), "SELF_EXIT": str(self_exit), "INSTALL_REQUIRED": "1"}
@@ -236,7 +232,6 @@ def test_codex_logs_and_help_do_not_start_jobs(
 # test-copy-contract: process-loop環境で公開launcherを実行し、自己更新を省いた本体とpruneの実argvを観測する。
 @_POSIX
 def test_process_loop_job_skips_uv_self_update(project: tuple[pathlib.Path, dict[str, str]]) -> None:
-    """process-loopの更新jobは自己更新を省いて本体の終了状態を保存する。"""
     _root, environment = project
     environment["AGENT_TOOLKIT_PROCESS_LOOP_SESSION"] = "1"
     result = _invoke(project)
@@ -266,7 +261,6 @@ def test_python_upgrade_failure_continues_with_existing_python(project: tuple[pa
 def test_success_passes_mode_and_prune_to_outside_cleanup(
     project: tuple[pathlib.Path, dict[str, str]], arguments: list[str]
 ) -> None:
-    """通常成功も整理の入口へ渡し、実効modeの判定に必要な元引数を保持する。"""
     result = _invoke(project, *arguments)
     assert result.returncode == 0, result.stdout + result.stderr
     calls = pathlib.Path(project[1]["CALLS"]).read_text(encoding="utf-8").splitlines()
@@ -275,7 +269,6 @@ def test_success_passes_mode_and_prune_to_outside_cleanup(
 
 @pytest.fixture(name="output_child")
 def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
-    """親の終了後もpipeを持つ子を、外部から解放できる入力にする。"""
     root, environment = project
     child = root / "libexec/child.py"
     child.write_text(
@@ -299,7 +292,6 @@ def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
         "temporary = ready.with_suffix('.tmp')\n"
         "temporary.write_text(str(os.getpid()), encoding='utf-8')\n"
         "temporary.replace(ready)\n"
-        # 子の回収はworkerとこの試験が所有する。親だけを終了させ、Popenの終了時破棄で子を扱わせない。
         "os._exit(int(os.environ.get('RUN_EXIT', '0')))\n",
         encoding="utf-8",
     )
@@ -310,7 +302,6 @@ def _output_child(project: tuple[pathlib.Path, dict[str, str]]) -> pathlib.Path:
 def _pending_output_job(
     project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path
 ) -> Generator[tuple[subprocess.Popen[str], pathlib.Path]]:
-    """親終了と子の準備を確認し、終了時には出力の解放と結果保存を待つ。"""
     root, environment = project
     with subprocess.Popen(
         [str(root / "bin/update-dotfiles")],
@@ -336,7 +327,6 @@ def _pending_output_job(
 def test_public_job_collects_output_after_parent_exit(
     project: tuple[pathlib.Path, dict[str, str]], output_child: pathlib.Path, run_exit: int
 ) -> None:
-    """親終了後の両pipe出力を初回から全量回収し、同じjobの再取得と一致させる。"""
     project[1]["RUN_EXIT"] = str(run_exit)
     with _pending_output_job(project, output_child) as (controller, job):
         pending = _invoke(project, "job", job.name)
@@ -370,8 +360,7 @@ def test_public_job_limits_output_wait_after_parent_exit(
         environment["CHILD_SESSION"] = "1"
         probe = project[0] / "pgid-probe"
         probe.mkdir()
-        # 別sessionへ移った子だけが残る状態で、回収済みrootの数値PGIDを外部の群とみなす。
-        # OS境界で拒否するため、実際の無関係なプロセス群へ信号を送らない。
+
         (probe / "sitecustomize.py").write_text(
             "import os, pathlib\n"
             "original_killpg = os.killpg\n"
@@ -404,7 +393,6 @@ def test_public_job_limits_output_wait_after_parent_exit(
 
 @_POSIX
 def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.Path, dict[str, str]]) -> None:
-    """両出力を分離したサービスが存続したまま、公開jobが正常完了する。"""
     root, environment = project
     release = pathlib.Path(environment["CHILD_READY"]).with_suffix(".release")
     child_source = (
@@ -430,7 +418,6 @@ def test_public_job_preserves_service_with_closed_output(project: tuple[pathlib.
             try:
                 service.wait(timeout=1)
             except psutil.TimeoutExpired:
-                # worker終了後のサービスはテストプロセスの子ではない。PID 1による回収前も区別する。
                 assert service.status() == psutil.STATUS_ZOMBIE
 
 
@@ -527,7 +514,9 @@ def test_native_worker_output_contract(
             assert json.loads((job / "result.json").read_text(encoding="utf-8"))["exit_code"] == code
             if scenario == "late":
                 assert (job / "stdout.log").read_text(encoding="utf-8") == "後続出力" * 20000
-                assert (job / "stderr.log").read_text(encoding="utf-8").split("\n", 1)[1] == "後続診断" * 20000
+                notice, diagnostics = (job / "stderr.log").read_text(encoding="utf-8").split("\n", 1)
+                assert notice == "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。"
+                assert diagnostics == "後続診断" * 20000
             if scenario == "detached":
                 assert child is not None and child.is_running()
             if scenario in ("deadline", "stop"):
@@ -602,7 +591,6 @@ def test_job_retrieval_does_not_wait_on_denied_result(
         assert update_dotfiles_job.main(["job", job.name]) == 1
         elapsed = time.monotonic() - started
     finally:
-        # 拒否の項目を残すと、一時領域の削除も拒否される。
         subprocess.run(["icacls", str(result), "/remove:d", user], check=True, capture_output=True, timeout=30)
     assert elapsed < 2, f"権限の拒否を共有違反として{elapsed:.1f}秒読み直した"
     assert "更新jobを取得・開始できません" in capsys.readouterr().err
@@ -614,7 +602,6 @@ def test_controller_lifetime_and_cancel_are_distinct(
     project: tuple[pathlib.Path, dict[str, str]],
     cancel: bool,
 ) -> None:
-    """controller喪失後は継続し、Ctrl+Cでは自身のworker停止と結果回収を行う。"""
     root, environment = project
     environment["HOLD"] = "1"
     with subprocess.Popen(
@@ -730,7 +717,6 @@ def test_tree_listing_failure_still_reaps_direct_child(monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize("identifier", ["../other", "not-a-uuid", "x; echo injected"])
 def test_job_rejects_non_uuid_without_running_update(identifier: str, capsys: pytest.CaptureFixture[str]) -> None:
-    """外部のjob指定を任意パスやshellとして解釈しない。"""
     assert update_dotfiles_job.main(["job", identifier]) == 1
     assert "job" in capsys.readouterr().err
 
@@ -752,7 +738,6 @@ def test_only_expired_completed_jobs_are_collected(
     monkeypatch: pytest.MonkeyPatch,
     finished: bool,
 ) -> None:
-    """保持期間を過ぎた完了jobだけ回収し、未完了出力を残す。"""
     monkeypatch.setattr(update_dotfiles_job, "state_root", lambda: tmp_path)
     old = tmp_path / str(uuid.uuid4())
     old.mkdir()
@@ -762,7 +747,6 @@ def test_only_expired_completed_jobs_are_collected(
             json.dumps({"exit_code": 0, "finished_at": "2000-01-01T00:00:00+00:00"}), encoding="utf-8"
         )
 
-    # 新規jobの起動だけを拒否し、mainの通常cleanupを通過させる。
     def unavailable(*_args: object, **_kwargs: object) -> None:
         raise OSError("test: worker unavailable")
 
@@ -803,7 +787,6 @@ def test_state_root_stays_in_isolated_platform_directory(
     monkeypatch: pytest.MonkeyPatch,
     platform: str,
 ) -> None:
-    """各OSの既存状態領域へjobを配置する。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
     monkeypatch.setenv("WIN_PD_OVERRIDE_LOCAL_APPDATA", str(tmp_path / "override"))

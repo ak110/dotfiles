@@ -1,5 +1,4 @@
-"""serveのbrowser_sessionsに関するtreeの試験。"""
-
+import json
 from pathlib import Path
 
 import playwright.async_api
@@ -30,7 +29,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_subagent_records_open_from_the_parent_detail(screen_harness: _ScreenHarness) -> None:
-    """親セッションの詳細からサブエージェント記録を開いて委譲元へ戻り、記録本体が無い項目は選択できない表示とする。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator('#sessions .session-item[data-engine="claude"]').click()
@@ -40,16 +38,15 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
     assert await items.count() == 2
     assert "所在の調査" in await items.nth(0).inner_text()
     assert "設計の検討" in await items.nth(1).inner_text()
-    # 記録本体が残っていない項目は開けないため選択できない。
+
     assert not await items.nth(0).is_disabled()
     assert await items.nth(1).is_disabled()
-    # 起動の深さを字下げで表す。
+
     offsets = [
         await items.nth(index).evaluate("(element) => parseFloat(getComputedStyle(element).paddingLeft)") for index in (0, 1)
     ]
     assert offsets[1] > offsets[0]
 
-    # 委譲元の記録は左ペインの一覧から選び直せるが、サブエージェントの記録は一覧に現れないため戻る操作を置く。
     assert await harness.page.locator("#detail .detail-back").count() == 0
     await items.nth(0).click()
     await harness.page.locator("#detail .event").first.wait_for(state="visible")
@@ -66,7 +63,6 @@ async def test_subagent_records_open_from_the_parent_detail(screen_harness: _Scr
 async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     remote_sessions_harness: _RemoteSessionsHarness,
 ) -> None:
-    """リモートホストのセッションでもサブエージェントを表示し、一覧を返さないホストでは取得不能を示す。"""
     harness = remote_sessions_harness
     await harness.page.goto(harness.base_url + "/sessions")
     await harness.page.locator("#sessions .session-item").nth(1).wait_for(state="visible")
@@ -76,7 +72,6 @@ async def test_remote_subagents_are_shown_or_reported_as_unavailable(
     assert "リモートの調査" in await harness.page.locator("#detail").inner_text()
     assert await harness.page.locator("#detail .unavailable").count() == 0
 
-    # 一覧を返さない版のヘルパーが動くホストでは、サブエージェントが無い場合と区別して取得不能を示す。
     await harness.page.locator(f'#sessions .session-item[data-host="{_LEGACY_REMOTE_HOST}"]').click()
     await harness.page.locator("#detail .unavailable").first.wait_for(state="visible")
     assert "サブエージェントの一覧を取得できません" in await harness.page.locator("#detail").inner_text()
@@ -85,7 +80,6 @@ async def test_remote_subagents_are_shown_or_reported_as_unavailable(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_expands_one_branch_and_retains_keyboard_focus(screen_harness: _ScreenHarness) -> None:
-    """親の展開操作で子だけを表示し、子の選択後もフォーカスを維持する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     rows = page.locator("#sessions .session-tree-row")
@@ -125,6 +119,29 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
     _write_entries(tmp_path)
     state_dir = tmp_path / "state" / "agent-toolkit"
     tree = session_tree.write_session_tree(tmp_path / "claude", tmp_path / "codex", state_dir)
+    delegated_child = None
+    body_query = '引用符 "abc" と逆斜線 \\ 終端'
+    for path in tree.paths.values():
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        result = next((record["toolUseResult"] for record in records if "toolUseResult" in record), None)
+        if isinstance(result, dict):
+            delegated_child = result["session_id"]
+            result["label"] = "exec-lane-search"
+            records.append(
+                {
+                    "type": "assistant",
+                    "message": {"content": f"exec-lane-search {body_query}"},
+                }
+            )
+            records.append(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "tool_use", "id": "lookup", "name": "document_lookup_demo", "input": {}}]},
+                }
+            )
+            path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+            break
+    assert delegated_child is not None
     monkeypatch.setattr(serve_sessions, "MAX_LIST_ENTRIES", session_tree.TOTAL_ENTRIES - 1)
     plans_root = tmp_path / "plans"
     plans_root.mkdir()
@@ -149,10 +166,59 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
             child_row = rows.filter(has=page.locator(f'.session-item[data-path="{child_path}"]'))
             await playwright.async_api.expect(child_row).to_have_attribute("aria-level", "2")
 
+        field = page.locator("#sessions-filter")
+        await field.fill("exec-lane-search")
+        await playwright.async_api.expect(rows).to_have_count(2)
+        child = page.locator(f'.session-item[data-path*="{delegated_child}"]')
+        await playwright.async_api.expect(child.get_by_text("exec-lane-search", exact=True)).to_be_visible()
+
+        async def list_without_label(route: playwright.async_api.Route) -> None:
+            response = await route.fetch()
+            payload = await response.json()
+            for entry in payload["sessions"]:
+                if entry.get("label") == "exec-lane-search":
+                    entry["label"] = None
+            await route.fulfill(response=response, json=payload)
+
+        await page.route("**/api/sessions/list", list_without_label)
+        async with page.expect_response("**/api/sessions/search") as requested:
+            await page.evaluate('document.dispatchEvent(new Event("visibilitychange"))')
+        await page.unroute("**/api/sessions/list", list_without_label)
+        assert (await requested.value).ok
+        await playwright.async_api.expect(rows).to_have_count(1)
+
+        async with page.expect_response("**/api/sessions/search") as requested:
+            await field.fill(body_query)
+        assert (await requested.value).ok
+        await playwright.async_api.expect(rows).to_have_count(1)
+
+        async with page.expect_response("**/api/sessions/search") as requested:
+            await field.fill("document_lookup_demo")
+        assert (await requested.value).ok
+        await playwright.async_api.expect(rows).to_have_count(1)
+
+        await field.fill("")
+        await playwright.async_api.expect(rows).to_have_count(session_tree.TOTAL_ENTRIES)
+        async with page.expect_response("**/api/sessions/search") as requested:
+            await field.fill("存在しない検索語")
+        assert (await requested.value).ok
+        empty_message = page.locator("#sessions-empty p")
+        await playwright.async_api.expect(empty_message).to_be_visible()
+        await playwright.async_api.expect(empty_message).to_have_text("一致するセッションはありません。")
+        new_record = tmp_path / "claude" / "projects" / "search" / "newly-listed.jsonl"
+        new_record.parent.mkdir()
+        records = [
+            {"type": "user", "timestamp": "2026-12-01T00:00:00Z", "message": {"content": "新しい記録"}},
+            {"type": "assistant", "message": {"content": "存在しない検索語"}},
+        ]
+        async with page.expect_response("**/api/sessions/search") as requested:
+            new_record.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+        assert (await requested.value).ok
+        await playwright.async_api.expect(page.locator('.session-item[data-path$="newly-listed.jsonl"]')).to_be_visible()
+
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_tree_aligns_rows_without_children(screen_harness: _ScreenHarness) -> None:
-    """子の無い行のマーカーは操作できず、Tab移動の対象にしない。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     rows = page.locator("#sessions .session-tree-row")
@@ -166,7 +232,7 @@ async def test_session_tree_aligns_rows_without_children(screen_harness: _Screen
     await playwright.async_api.expect(marker).to_have_attribute("aria-hidden", "true")
     assert await marker.evaluate("(element) => element.tagName") == "SPAN"
     assert await leaf.locator("button.session-tree-toggle").count() == 0
-    # Tab移動は子のある行の開閉ボタンと項目にだけ止まり、子の無い行の「−」には止まらない。
+
     await leaf.locator(".session-item").focus()
     await page.keyboard.press("Shift+Tab")
     focused_class = await page.evaluate("() => document.activeElement.className")

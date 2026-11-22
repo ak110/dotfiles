@@ -1,9 +1,9 @@
-"""PATH隔離で別名になったmise shimも公開prepareの前に除外する。"""
-
 import os
 import pathlib
 import shutil
 import subprocess
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,7 +13,6 @@ from agent_toolkit._testing import isolation, plugin_environment_support
 
 @pytest.mark.parametrize("masked", [False, True], ids=["direct-shims", "isolated-alias"])
 def test_prepare_skips_mise_uv_after_path_isolation(tmp_path, monkeypatch, masked):
-    """agent CLIを隠したsymlink経由でも、設定を要しないuv実体を選択する。"""
     suffix = ".exe" if os.name == "nt" else ""
     shims = tmp_path / "shims"
     shims.mkdir()
@@ -43,5 +42,8 @@ def test_prepare_skips_mise_uv_after_path_isolation(tmp_path, monkeypatch, maske
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     monkeypatch.setattr(plugin_environment_support.process_tree, "run_with_timeout", run)
+    monkeypatch.setattr(
+        plugin_environment_support, "sys", SimpleNamespace(base_prefix=str(tmp_path / "python"), executable=sys.executable)
+    )
     monkeypatch.setattr(plugin_environment, "prepared_python", lambda *_args: tmp_path / "ready-python")
     assert plugin_environment_support.prepare_plugin_environment(tmp_path, environment) == tmp_path / "ready-python"

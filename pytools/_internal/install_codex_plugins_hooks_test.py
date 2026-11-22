@@ -27,7 +27,6 @@ if sys.platform == "win32":
 
 @pytest.mark.parametrize("respond", [True, False])
 def test_hooks_list_closes_real_stdout_after_response_or_eof(monkeypatch: pytest.MonkeyPatch, respond: bool) -> None:
-    """短命app-serverの実pipeから応答またはEOFを読み、stdout・stdinと子を回収する。"""
     child_code = """
 import json, sys
 for line in sys.stdin:
@@ -43,8 +42,7 @@ for line in sys.stdin:
     children: list[subprocess.Popen[str]] = []
 
     def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
-        # 被検証関数がcloseと子の回収を担うことを観測する。
-        # app-serverはpipeの要求を待つため、返却前にwaitするPopen.__exit__を使わない。
+
         process = real_popen(  # pylint: disable=consider-using-with
             [sys.executable, "-c", child_code, str(int(respond))], **kwargs
         )
@@ -61,15 +59,13 @@ for line in sys.stdin:
 
 
 def test_hooks_list_reports_unreclaimed_app_server_instead_of_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """短命app-serverの子孫を回収できなければ、案内取得不能（None）と区別して回収不能を送出する。"""
     real_popen = subprocess.Popen
 
     def popen(_argv: list[str], **kwargs: Any) -> subprocess.Popen[str]:
         return real_popen([sys.executable, "-c", "import sys; sys.stdin.read()"], **kwargs)  # pylint: disable=consider-using-with
 
     def stop_root_only(process: subprocess.Popen[str], **_kwargs: Any) -> tuple[list[str], list[object]]:
-        # 実際の停止と同じく直接の子は終了・回収し、子孫だけが残った結果を返す。
-        # 起動した実プロセスを残すと、Popenの解放時のResourceWarningが別の試験へ帰属し得る。
+
         process.kill()
         process.wait()
         return ["1234: app-server child"], []
@@ -174,7 +170,6 @@ def test_external_hook_reports_the_claude_cause_and_command(tmp_path, monkeypatc
 
 @pytest.mark.parametrize("placement", ["bundled", "installed-new", "installed-legacy"])
 def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pytest.MonkeyPatch, placement: str) -> None:
-    """配布内は自身の版、外側の旧呼出しは導入版を使い、イベントと終了状態を渡す。"""
     del plugin_env
     source = Path(__file__).resolve().parents[2] / "agent-toolkit/scripts/atk-hook"
     root = source.parent.parent
@@ -252,7 +247,6 @@ def test_hook_wrapper_forwards_event_and_exit(plugin_env: Path, monkeypatch: pyt
 def test_hook_wrapper_restores_missing_pinned_root_from_same_claude_version(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """commit中の自動更新で旧cacheが消えても、独立した同版cacheからhook起動コマンドを復旧する。"""
     home = tmp_path / "home"
     if sys.platform == "win32":
         windows_tokens.create_profile_directory(home)

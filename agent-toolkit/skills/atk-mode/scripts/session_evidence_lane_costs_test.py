@@ -1,5 +1,3 @@
-"""保存済み計画とrolloutを指定する公開統計の回帰試験。"""
-
 from __future__ import annotations
 
 import json
@@ -335,7 +333,7 @@ def test_assignment_union_is_not_plan_completion(tmp_path: Path, capsys: pytest.
     assert event["assigned_record_rates"]["wi_count"] == 2
     assert event["assigned_record_rates"]["calls_per_wi"] == 3
     assert event["plan_wide_rates"] is None
-    # 同じ計画でも、呼出しの後から担当WIを足して記録全体の分母にはできない。
+
     with (tmp_path / "0.jsonl").open("a", encoding="utf-8") as stream:
         message = {"role": "user", "type": "message", "content": _task(plan, wis[1] + ".md")}
         stream.write("\n" + json.dumps({"type": "response_item", "payload": message}))

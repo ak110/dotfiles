@@ -14,9 +14,12 @@ import update_dotfiles_stages as stages  # noqa: E402  # pylint: disable=wrong-i
 
 @pytest.mark.parametrize("name", ["update_bootstrap.sh", "update_bootstrap.ps1"])
 def test_bootstrap_classification_matches_declarations(name: str) -> None:
-    """外側の更新段も宣言表と同じ中断集合を使う。"""
     text = pathlib.Path(__file__).with_name(name).read_text(encoding="utf-8-sig")
     declarations = re.findall(r"(?:run_stage|Invoke-UpdateStage) '([^']+)' (abort|continue)", text)
+    if name == "update_bootstrap.ps1":
+        helpers = re.findall(r"Invoke-UpdateInstallStage '([^']+)'", text)
+        assert helpers == ["uvの導入", "管理Pythonの導入"]
+        declarations.extend((title, "abort") for title in helpers)
     expected = {item.name: item.abort for item in stages.STAGES if item.where == "bootstrap"}
     assert {title for title, _classification in declarations} == set(expected)
     for title, classification in declarations:
@@ -25,7 +28,6 @@ def test_bootstrap_classification_matches_declarations(name: str) -> None:
 
 @pytest.mark.parametrize("missing_runner", [False, True])
 def test_unknown_optional_stage_never_prevents_known_updates(monkeypatch: pytest.MonkeyPatch, missing_runner: bool) -> None:
-    """追加段の宣言か実装の片方しか届かない場合も、既知の更新段を完了する。"""
     monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
     declared = [item.name for item in stages.STAGES if item.where == "executor"]
     visited: list[str] = []
@@ -81,3 +83,17 @@ def test_injected_failure_preserves_progress(failed: stages.Stage, error: Except
         assert visited == declared
         assert len(update_dotfiles_runtime.continued_failures) == 1
         assert update_dotfiles_runtime.finish(result) == 1
+
+
+def test_stage_exception_detail_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """段の未知例外の本文は、続行の記録と同期報告へ渡す前に共通の抜粋で伏せる。"""
+    monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
+    item = stages.Stage("future optional stage")
+
+    def run(_item: stages.Stage) -> int:
+        raise RuntimeError("password=synthetic-secret-0123456789")
+
+    # pylint: disable-next=protected-access
+    assert stages._run_stage(item, run, fatal=(), sleep=lambda _seconds: None) == 1
+    assert "synthetic-secret" not in (update_dotfiles_runtime.last_stderr_tail or "")
+    assert "synthetic-secret" not in (update_dotfiles_runtime.continued_failures[-1].detail or "")

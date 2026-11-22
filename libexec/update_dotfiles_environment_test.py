@@ -6,7 +6,6 @@ import update_dotfiles
 
 
 def test_child_env_removes_parent_virtual_environment(monkeypatch) -> None:
-    """仮想環境の印だけを除き、他の環境とmise設定を保持する。"""
     monkeypatch.setenv("VIRTUAL_ENV", "/tmp/parent-venv")
     monkeypatch.setenv("VIRTUAL_ENV_PROMPT", "(parent)")
     monkeypatch.setenv("PRESERVED_VALUE", "kept")

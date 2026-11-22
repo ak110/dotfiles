@@ -1,5 +1,3 @@
-"""通知の生成側と記録の消費側で、退避案内の形式を共有する。"""
-
 import pathlib
 import re
 
@@ -10,9 +8,8 @@ PERSISTED_OUTPUT_PREFIX = "<persisted-output>"
 
 
 def reference_path(body: str) -> pathlib.Path | None:
-    """既知の退避案内が持つ保存先を返す。Previewに含まれる引用は解析しない。"""
     body = body.lstrip()
-    # 保存案内の先頭だけを読む。通知本文やPreview内にも同じ文言が引用され得る。
+
     if body.startswith(PERSISTED_OUTPUT_PREFIX):
         match = re.match(
             rf"{re.escape(PERSISTED_OUTPUT_PREFIX)}\r?\nOutput too large[^\r\n]* Full output saved to: (?P<path>[^\r\n]+)",

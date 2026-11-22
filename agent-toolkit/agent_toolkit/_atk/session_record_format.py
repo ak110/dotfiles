@@ -68,12 +68,10 @@ agy_session_id = _record_paths.agy_session_id
 
 
 def agy_events(records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
-    """対話記録と委譲先ストリームを共通の表示イベントへ変換する。"""
     return claude_events(normalize_entries(list(records)))[0]
 
 
 def parsed_records(path: pathlib.Path) -> Iterator[dict[str, typing.Any]]:
-    """記録ファイルを1行ずつ読み、JSONとして解釈できる辞書の行だけを返す。"""
     with path.open(encoding="utf-8") as record_file:
         for line in record_file:
             try:
@@ -86,8 +84,6 @@ def parsed_records(path: pathlib.Path) -> Iterator[dict[str, typing.Any]]:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SessionEvent:
-    """詳細画面が時系列に並べる1件の発話・操作。"""
-
     kind: str
     timestamp: str | None
     text: str | None = None
@@ -98,7 +94,6 @@ class SessionEvent:
     message_id: str | None = None
 
     def to_json(self) -> dict[str, typing.Any]:
-        """JSON応答向けの辞書へ変換する。"""
         result = dataclasses.asdict(self)
         result.pop("call_id")
         result.pop("message_id")
@@ -106,7 +101,6 @@ class SessionEvent:
 
 
 def as_text(value: typing.Any) -> str | None:
-    """記録の本文欄を表示用の文字列へ正規化する。取り出せない場合は`None`を返す。"""
     if isinstance(value, str):
         return value
     if isinstance(value, list):
@@ -207,12 +201,6 @@ def _claude_block_event(
 
 
 def claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] | None:
-    """セッション本体に属するサブエージェント記録の親子関係を返す。
-
-    記録が無い場合は`None`を返し、取得不能であることを表す。
-    `path`はそのサブエージェントの記録本体であり、閲覧要求の対象として使う。記録が残っていない場合は`None`とする。
-    `parent_agent_id`は深さが2以上の記録にだけ現れるため、階層の復元は`spawn_depth`を典拠とする。
-    """
     directory = record_path.with_suffix("") / "subagents"
     if not directory.is_dir():
         return None
@@ -224,7 +212,7 @@ def claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] |
             continue
         if not isinstance(metadata, dict):
             continue
-        # `agent_id`は`agent-<16進数>`の形であり接頭辞を含むため、記録本体の名前へ重ねて付けない。
+
         agent_id = meta_path.name.removesuffix(".meta.json")
         agent_record = meta_path.with_name(f"{agent_id}{RECORD_SUFFIX}")
         found.append(
@@ -242,11 +230,6 @@ def claude_subagents(record_path: pathlib.Path) -> list[dict[str, typing.Any]] |
 
 
 def claude_subagent_records(record_path: pathlib.Path) -> list[tuple[str, pathlib.Path, str]]:
-    """セッション本体に属するサブエージェント記録を、エージェント識別子・記録のパス・親の記録のパスの組で返す。
-
-    親は`parent_agent_id`が指す兄弟の記録とし、深さ1の記録はセッション本体を親とする。
-    記録本体が残っていないものと、親を確定できないものは除く。
-    """
     subagents = claude_subagents(record_path) or []
     agent_paths = {item["agent_id"]: item["path"] for item in subagents if item["path"]}
     found: list[tuple[str, pathlib.Path, str]] = []
@@ -313,7 +296,6 @@ def _codex_apply_token_count(payload: dict[str, typing.Any], totals: dict[str, t
 
 
 def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) -> SessionEvent:
-    """`response_item`の1件を表示モデルのイベントへ変換する。"""
     payload_type = payload.get("type")
     if payload_type == "reasoning":
         summary = payload.get("summary")
@@ -351,7 +333,6 @@ def _codex_payload_event(payload: dict[str, typing.Any], timestamp: str | None) 
 
 
 def _stringify(value: typing.Any) -> str | None:
-    """辞書などの構造化された値を表示用の文字列へ変換する。"""
     if value is None:
         return None
     if isinstance(value, str):
@@ -360,7 +341,6 @@ def _stringify(value: typing.Any) -> str | None:
 
 
 def codex_metadata(records: typing.Iterable[dict[str, typing.Any]]) -> dict[str, typing.Any]:
-    """`session_meta`から作業ディレクトリと開始時刻を取り出す。"""
     for record in records:
         if record.get("type") != "session_meta":
             continue
@@ -415,15 +395,10 @@ def codex_thread_name(codex_home: pathlib.Path, thread_id: str) -> str | None:
 
 
 def codex_session_id(path: pathlib.Path) -> str:
-    """ロールアウトの識別子を、記録解決と共通の保存規約で取り出す。"""
     return _record_paths.codex_session_id(path)
 
 
 def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
-    """JSON Linesを解析し、解析できた行と解析できなかった行数を返す。
-
-    書き込み途中の行が含まれていても他の行を失わせないため、行単位で解析する。
-    """
     records: list[dict[str, typing.Any]] = []
     broken = 0
     for line in split_lines(text):
@@ -443,7 +418,6 @@ def parse_records(text: str) -> tuple[list[dict[str, typing.Any]], int]:
 
 
 def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
-    """保存済み記録を件数制限のない表示イベントへ変換する。"""
     if engine == "claude":
         return claude_events(records)[0]
     if engine == "codex":
@@ -456,7 +430,6 @@ def record_events(engine: str, records: typing.Iterable[dict[str, typing.Any]]) 
 
 
 def opencode_events(records: typing.Iterable[dict[str, typing.Any]]) -> list[SessionEvent]:
-    """OpenCodeの公開JSONと補ったturn入力を、本文・ツール・使用量へ変換する。"""
     events: list[SessionEvent] = []
     for record in records:
         raw_time = record.get("timestamp")

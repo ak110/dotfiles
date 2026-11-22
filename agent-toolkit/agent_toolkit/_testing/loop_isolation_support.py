@@ -1,5 +1,3 @@
-"""イベントループとテスト単位の環境隔離を公開pytestの対照実行で確かめる。"""
-
 import os
 import pathlib
 import subprocess
@@ -10,7 +8,6 @@ import textwrap
 def assert_loop_scope_isolation(
     tmp_path: pathlib.Path, *, configuration: pathlib.Path, scope: str | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """両起動設定でfunctionは成功し、sessionへ戻す対照では前テストの処理が別環境へ波及する。"""
     probe = tmp_path / "loop_scope_test.py"
     probe.write_text(
         textwrap.dedent("""\

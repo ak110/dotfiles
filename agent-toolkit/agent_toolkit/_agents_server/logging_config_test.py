@@ -1,5 +1,3 @@
-"""agents_serverの共通診断ログ設定を検証する。"""
-
 import asyncio
 import json
 import logging
@@ -36,7 +34,6 @@ def test_instance_diagnostics_independent_of_log_rotation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """共通ログの回転と別の起動単位の開始・終了は、記録済みの起動単位の終了診断を変えない。"""
     logger = logging.getLogger("agent-toolkit.agents-server")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
@@ -52,7 +49,6 @@ def test_instance_diagnostics_independent_of_log_rotation(
         second = logging_config.start_server_instance(environment={}, state_root=tmp_path)
         logging_config.record_instance_event("exited", outcome="exception", exception_type="RuntimeError", message="x")
     finally:
-        # 回転後のファイルを確かめる前に、ファイル向けworkerの出力を完了させる。
         logging_config.close_logging()
 
     assert (tmp_path / "agents-server.log.3").exists()
@@ -70,7 +66,6 @@ def test_instance_diagnostics_independent_of_log_rotation(
 async def test_file_log_redacts_formatted_exceptions(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, asynchronous: bool
 ) -> None:
-    """未知の呼出元でも書式引数と例外チェーンを保存前に伏せる。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     path = logging_config.configure_logging()
 
@@ -100,7 +95,6 @@ async def test_file_log_redacts_formatted_exceptions(
 
 
 def test_instance_redacts_nested_values(tmp_path: pathlib.Path) -> None:
-    """診断のキーと構造を保ち、入れ子の文字列値だけを伏せる。"""
     path = tmp_path / "instance.jsonl"
     assert logging_config.append_instance_event(
         path, writer="server", event="exited", detail={"password": ["password=fake-nested", 7]}
@@ -111,7 +105,6 @@ def test_instance_redacts_nested_values(tmp_path: pathlib.Path) -> None:
 
 
 def test_instance_redacts_credential_fields_and_split_text(tmp_path: pathlib.Path) -> None:
-    """裸の構造化資格情報とJSON化・切断済みの診断を保存境界へ渡す。"""
     path = tmp_path / "instance.jsonl"
     detail = {
         "api_key": "fake-bare-key",

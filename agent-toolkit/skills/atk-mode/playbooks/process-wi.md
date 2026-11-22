@@ -2,7 +2,7 @@
 
 `/atk-mode process-wi [single-lane|all-repos] [追加指示]`で始める、対象リポジトリのAWIを選定から計画、実装、レビュー、統合、公開まで処理する作業の入口である。
 この作業は、ユーザーの入力か`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選び、実行中は自律モードで動く。
-常駐process-loopの統括もall-reposで起動する。
+登録リポジトリを継続して処理する時は、`agent-toolkit:atk-mode/playbooks/process-loop.md` から対象ごとの本手順へ進む。
 モードを選び、「条件と手順書」「不変条件」「メインが読む対象の境界」を確認する。
 その後は選んだモードと実際に進む工程の資料を読む。
 採否と公開を終え、「終了」に従って報告するか委譲元へ返す。
@@ -62,7 +62,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 - **レーン担当**: 各レーンの計画、実装、レビュー指摘の修正、履歴の統合、主作業ツリーへの統合を同じスレッドで担う担当。
   担当の種別にはレーン担当、レビュー修正担当、CI修正担当がある（区分は`agent-toolkit:atk-mode/roles/exec.subagent.md`の操作区分）。
 - **主作業ツリー**: マージ先のbranchをcheckoutしている作業ツリー。
-  常駐起動では、process-loopが対象リポジトリ（系統を登録したリポジトリでは系統）ごとに準備して統括へ渡した作業ツリーを指し、統括自身の起動cwdとは区別する。
+  巡回では、統括が対象リポジトリと系統ごとに準備した作業ツリーを指し、統括自身の起動cwdとは区別する。
   この作業ツリーはマージ先のbranchの代わりに、それを追跡する専用branch（`worktree-`で始まる名前）をcheckoutしている。
   `agent-toolkit:atk-mode/playbooks/publish.md`「公開状態の4項目」のうちbranch名の項目は、`# branch.upstream`がマージ先のbranchの追跡refであることで確かめる。
   公開用に別のbranch名が要る場合もHEADを切り替えずに`git push <remote> HEAD:refs/heads/<公開用branch>`で送り、中間commitの検証などで切り替えた場合は工程の終わりに専用branchへ戻す。
@@ -85,7 +85,7 @@ all-reposではリポジトリごとにモードを決めた時点で、必要�
 - 計画ファイルとレビュー指摘管理表は、参照する全ての工程を終えてから片付ける。
   レーンの専用branchと専用worktreeは、`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「レーンworktreeの扱い」の時点で、所有登録とGit状態を確かめ直してから回収する。
 - メインの作業ディレクトリが実行環境の隔離worktree（Claude Codeの`EnterWorktree`など）の中にある場合は、専用worktreeの作成と回収が対象リポジトリのGit共通ディレクトリを変えるため、隔離を解いてから次へ進む。
-  `atk wi process-loop`が準備したworktreeは主作業ツリーそのものであり、解除の対象から外れる。
+  巡回セッションが用意した統合先worktreeは、レーンの隔離解除の対象から外れる。
 
 ## 実行順
 
@@ -97,12 +97,11 @@ all-reposの統括からリポジトリ担当として候補を受け取った�
 2. 同書「自動コードレビュー監査」で監査の要否を判定して必要な監査を起動し、その終了を待たずにメイン自身が対象を選定して、集合を確定した直後に処理を始める。
    統括から受け取ったリポジトリ担当は初回の候補を使い、選定を別の担当へ委譲することは避ける。
    監査の結果が一部の候補の判断に要る場合は、その判断だけを待ち、独立した候補の選定と開始できるレーンの起動を進める。
-3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`段階`と`先行レーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
+3. `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「レーンと資源」に従い、選定結果の`着手前に必要なレーン`で`atk lane create`へ対象を渡し、準備された資源でレーン担当を起動する。
    frontmatterに`merge_branch`を持つマージ用AWIはレーンを割り当てず、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従ってメインが直接取り込み、公開工程へ合流する。
-   後続のレーンは、先行レーンの統合と書込の主体の解放を確かめてから、現行のHEADを起点に作る。
    Claude Codeでは、各段階の最初の起動を全て終えてから、同書「各段階の全初期通常レーン起動後の会話圧縮」へ進む。
 4. メインは各レーンからのユーザー判断の通知を中継し、レーン間の書込競合と依存を調停する。
-5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、依存の条件を満たせば先行レーンの`統合完了`を待たずに`統合許可`を出す。
+5. `統合準備完了`を返したレーンには、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「統合の許可」に従い、選定結果の`先行レーン`が全て統合済みなら`統合許可`を出す。
    各レーンは`atk lane integrate`で統合から計画の最終化、AWIの終了、選定結果への統合済みの記録までを終え、メインは返された`統合完了`を同書「統合の指示と受領」の受領条件で検収する。
 6. 処理中に加えた処理対象WIも、`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理中に確定した必須是正レーン」で既存のレーンへ割り当て、同じレーン担当のスレッドで収束させて統合する。
 7. 全てのレーンが終わり、起動した監査の処置も確定したら、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`に従って公開とセッションの終了を完遂する。

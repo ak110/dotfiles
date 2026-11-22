@@ -26,11 +26,9 @@ class TestDebugOutput:
 
     @pytest.fixture(autouse=True)
     def _clear_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """環境変数の事前削除でテスト間の状態混入を防ぐ。"""
         monkeypatch.delenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", raising=False)
 
     def test_no_output_when_env_unset(self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-        """環境変数が未設定の場合はstderr出力なし。"""
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         is_pending_async_work(str(t), "", session_state=None)
         captured = capsys.readouterr()
@@ -40,7 +38,6 @@ class TestDebugOutput:
     def test_output_when_env_truthy(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
-        """環境変数が真値（小文字一致）の場合はstderrへ1行出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         is_pending_async_work(str(t), "", session_state=None)
@@ -58,7 +55,6 @@ class TestDebugOutput:
     def test_no_output_when_env_falsy(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, value: str
     ) -> None:
-        """環境変数が偽値の場合はstderr出力なし。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", value)
         t = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         is_pending_async_work(str(t), "", session_state=None)
@@ -68,7 +64,6 @@ class TestDebugOutput:
     def test_output_with_pending_remainder(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """残差がある場合は`result=True`・残差件数・残差IDを出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         t = _write_transcript(
             tmp_path,
@@ -95,7 +90,6 @@ class TestDebugOutput:
     def test_output_with_background_tasks_omits_task_body(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """payload taskの件数と判定源だけを出力し、任意フィールドを記録しない。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         transcript = _write_transcript(
             tmp_path,
@@ -123,7 +117,6 @@ class TestDebugOutput:
     def test_output_with_background_bash(
         self, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """直前tool_useが背景Bash（`run_in_background=true`）の場合は`Bash(bg=True)`を出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         t = _write_transcript(
             tmp_path,

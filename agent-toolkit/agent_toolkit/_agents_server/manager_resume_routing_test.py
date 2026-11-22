@@ -40,7 +40,6 @@ async def test_delegate_candidate_order_follows_mode(
     api_first: bool,
     unavailable: bool,
 ) -> None:
-    """新規起動は使用順に従い、使用順の並びを変えても継続・冷再開は選択済み接続を維持する。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
@@ -53,8 +52,12 @@ async def test_delegate_candidate_order_follows_mode(
             raise ConnectionError("起動前認証を利用できない")
         return FakeClaudeClient(
             [
-                [SystemMessage(options.resume or "candidate-order"), AssistantMessage("応答"), ResultMessage("完了")],
-                [AssistantMessage("追送"), ResultMessage("継続完了")],
+                [
+                    SystemMessage(options.resume or "candidate-order"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ],
+                [AssistantMessage("追送"), ResultMessage("状態: completed\n結果: 継続完了")],
             ]
         )
 
@@ -90,7 +93,6 @@ async def test_invalid_env_file_warning_reaches_start_response(
     monkeypatch: pytest.MonkeyPatch,
     content: str | None,
 ) -> None:
-    """無効なAPI環境ファイルでは委譲先がサブスクリプションで始まり、`start`応答の`warnings`へパスと修正操作を示す。"""
     path = tmp_path / "invalid.env"
     if content is not None:
         path.write_text(content, encoding="utf-8")
@@ -99,7 +101,9 @@ async def test_invalid_env_file_warning_reaches_start_response(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
-        return FakeClaudeClient([[SystemMessage("invalid-env"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("invalid-env"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,
@@ -158,7 +162,6 @@ async def test_api_credit_exhaustion_moves_to_subscription(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """API残高不足の同一会話をサブスクリプションで続け、停止後もその接続を保持する。"""
     path = tmp_path / "api.env"
     path.write_text("ANTHROPIC_API_KEY=test-api-key\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
@@ -171,7 +174,9 @@ async def test_api_credit_exhaustion_moves_to_subscription(
         identifier = options.resume or f"credits-{len(options_seen)}"
         if len(options_seen) == 1:
             return FakeClaudeClient([[SystemMessage(identifier), ResultMessage("Credit balance is too low", is_error=True)]])
-        return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,
@@ -197,7 +202,7 @@ async def test_api_credit_exhaustion_moves_to_subscription(
             assert fresh["session_id"] != started["session_id"]
             assert len(options_seen) == launches + 1
             assert not options_seen[-1].env.get("ANTHROPIC_API_KEY")
-            # 一定時間を過ぎた後に起動する新しい会話は、通常の接続順どおりAPIを再び試す。
+
             api_credits.record_shortage("claude", now=time.monotonic() - api_credits.CREDIT_SHORTAGE_TTL_SECONDS - 1)
             later = await manager.start("claude:sonnet/high", "新規2", str(tmp_path))
             assert (await _wait_until_terminal(manager))["status"] == "completed"
@@ -247,7 +252,6 @@ async def test_expired_explore_session_resumes_with_original_route_conditions(
 
 @pytest.mark.asyncio
 async def test_minimal_followup_uses_restored_launch_history(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """登録簿から戻した役割でも、余分な継続入力を配送前に拒否し必要なroundを保持する。"""
     (tmp_path / "計画.md").write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
         _, prompt, _, _ = launch_requests.task_document_request(

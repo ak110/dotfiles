@@ -32,6 +32,7 @@ from agent_toolkit._atk.wait_ci_forge import (
     _glab_job_list,
     _glab_pipeline_list,
     _is_ancestor_of_ref,
+    _matches_local_push_target,
     _normalize_gitlab_pipeline,
     _resolve_forge,
     _resolve_sha,
@@ -98,17 +99,6 @@ __all__ = [
 
 
 def _install_signal_handlers() -> None:
-    """SIGINT/SIGTERM受信時にexit codeを返す簡易ハンドラ。
-
-    ハンドラは即座に`sys.exit`する。実行中の子`gh`プロセスは明示的に終了させず、
-    `subprocess.run`側の`timeout`（`--subprocess-timeout`）到達による自然終了に委ねる。
-    厳密なプロセスグループ制御は、複雑化に見合う利得が無いため実装しない。
-
-    終了メッセージは`os.write`で書く。`print`は`sys.stderr`の
-    `BufferedWriter`を経由するため、メインフローが同じバッファへ書き込んでいる最中に
-    シグナルが到達すると再入となり`RuntimeError: reentrant call inside <_io.BufferedWriter>`で
-    異常終了する。`os.write`はバッファを介さないため再入が成立しない。
-    """
 
     def _handler(signum, _frame):
         os.write(
@@ -122,7 +112,6 @@ def _install_signal_handlers() -> None:
 
 
 def _positive_float(value: str) -> float:
-    """0より大きい有限`float`へ変換する。不正時はargparse標準のusage表示で終了させる。"""
     parsed = float(value)
     if not math.isfinite(parsed) or parsed <= 0:
         raise argparse.ArgumentTypeError(f"0より大きい有限の値を指定してください: {value!r}")
@@ -130,7 +119,6 @@ def _positive_float(value: str) -> float:
 
 
 def _non_negative_float(value: str) -> float:
-    """0以上の有限`float`へ変換する。不正時はargparse標準のusage表示で終了させる。"""
     parsed = float(value)
     if not math.isfinite(parsed) or parsed < 0:
         raise argparse.ArgumentTypeError(f"0以上の有限の値を指定してください: {value!r}")
@@ -138,7 +126,6 @@ def _non_negative_float(value: str) -> float:
 
 
 def _full_sha(value: str) -> str:
-    """Forge APIへそのまま渡せる完全長commit SHAを検証する。"""
     if re.fullmatch(r"[0-9a-fA-F]{40}", value) is None:
         raise argparse.ArgumentTypeError("40桁の完全長commit SHAを指定してください")
     return value.lower()
@@ -167,7 +154,6 @@ class _UsageErrorParser(argparse.ArgumentParser):
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析し、baseline作成またはCI通過確認を実行する。"""
     _outcome.force_utf8_stdio()
     _install_signal_handlers()
     parser = _UsageErrorParser(description=__doc__)
@@ -259,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         except RunListError as exc:
             print(f"[wait_ci] baseline検証に失敗: {exc}", file=sys.stderr)
             return _finish(EXIT_GH_ERROR, _NEXT_ACTION_BASELINE_MISMATCH)
-        # 省略した値はbaselineの保存値を使い、指定した値は後段でbaselineの保存値と比べる。
+
         explicit_repo = args.repo is not None
         args.repo = baseline.repository if args.repo is None else args.repo
         args.ref = baseline.ref if args.ref is None else args.ref
@@ -268,9 +254,16 @@ def main(argv: list[str] | None = None) -> int:
     if forge is None:
         print("[wait_ci] 対象forgeを--repoと作業ディレクトリのGit remoteから判別できない", file=sys.stderr)
         return _finish(EXIT_GH_ERROR, "`--forge github`または`--forge gitlab`を明示指定して再実行する")
+    explicit_sha = args.sha.lower() if args.sha is not None and re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) else None
     if args.write_baseline is not None:
+        if explicit_sha is None and not _matches_local_push_target(forge, args.repo, args.subprocess_timeout):
+            print("[wait_ci] 現在の作業ツリーのpush先と --repo の接続先の一致を確認できません", file=sys.stderr)
+            return _finish(
+                EXIT_USAGE,
+                "pushする作業ツリーでホスト付きの `--repo` を指定するか、そのツリーで解決した完全長SHAを `--sha` で指定する",
+            )
         revision = args.sha if args.sha is not None else args.source_ref
-        sha = _resolve_sha(revision, args.subprocess_timeout)
+        sha = explicit_sha or _resolve_sha(revision, args.subprocess_timeout)
         if sha is None:
             print(f"[wait_ci] {revision}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
             return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)
@@ -316,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sha is None:
             sha = baseline.sha
         else:
-            sha = _resolve_sha(args.sha, args.subprocess_timeout)
+            sha = explicit_sha or _resolve_sha(args.sha, args.subprocess_timeout)
             if sha is None:
                 print(f"[wait_ci] {args.sha}のcommit解決に失敗（git rev-parse）", file=sys.stderr)
                 return _finish(EXIT_GH_ERROR, _NEXT_ACTION_SHA_RESOLUTION)

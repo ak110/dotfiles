@@ -63,7 +63,6 @@ def test_since_without_timezone_is_local_time(
     capsys: pytest.CaptureFixture[str],
     since: str,
 ) -> None:
-    """タイムゾーンを省いた`--since`は、ローカルタイムゾーンのオフセットを付けた値と同じ結果を返す。"""
     transcript = local_time_transcript(tmp_path)
 
     assert evidence.main([str(transcript), "--user-events", "--since", since]) == 0
@@ -78,7 +77,6 @@ def test_user_events_returns_main_user_events_in_range(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """指定区間のメイン記録にあるユーザーイベントだけを由来位置付きで返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -128,7 +126,6 @@ def test_claude_session_id_unknown_returns_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """一致する記録が無いセッション識別子は、エラーイベントと終了コード2で拒否する。"""
     (tmp_path / "home" / ".claude" / "projects" / "-repo").mkdir(parents=True)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
 
@@ -207,11 +204,6 @@ _CODEX_QUESTION_REPLY = (
 def test_codex_async_answers_keep_identity_context_and_candidate_kind(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """実記録の遅延回答形式を使い、複数call・質問の順序差と未回答を消費側まで確かめる。
-
-    request_user_input_asyncのtitle・文字列options、accepted応答、後続XMLのquestionItemIdは
-    WI 20261021-122551-001.mdの調査記録と、同112847-001.mdの逐語引用に基づく。本文と識別子を短縮した。
-    """
     entries: list[dict] = [_codex_user_record("最初の依頼", "2026-10-21T00:00:00Z")]
     for call_id, questions in (
         ("call-one", [{"title": "対象範囲", "options": ["全体", "一部"]}, {"title": "方法"}]),
@@ -290,7 +282,7 @@ def test_codex_async_answers_keep_identity_context_and_candidate_kind(
     assert [event["user_response"] for event in answers] == [
         [{"answers": [answer]}] for answer in ("今回", "現在の案を見直して", "全体")
     ]
-    # 抽出した出力を変換せず引用の公開操作へ渡し、質問・選択肢・自由回答と原記録の位置を保つ。
+
     source = tmp_path / "async-user-events.jsonl"
     source.write_text(extracted, encoding="utf-8")
     body = tmp_path / "draft.md"
@@ -385,10 +377,6 @@ def test_user_events_without_since_starts_at_first_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--since`を省略すると記録の最初から、指定すると指定時刻より後だけを、同じ形の行で返す。
-
-    省略時に開始境界を推測で補うと最初の発話が欠け、指定時の範囲が変わると既存の呼び出しの出所が変わる。
-    """
     transcript = _write_transcript(
         tmp_path,
         [
@@ -416,7 +404,6 @@ def test_user_events_rejects_misused_since(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """照会開始境界の誤用・不正値と他モード併用を拒否する。`--since`の省略は受理する。"""
     transcript = _write_transcript(
         tmp_path,
         [timestamped_entry("2026-09-01T00:00:01Z", "入力")],
@@ -437,8 +424,7 @@ def test_user_events_rejects_misused_since(
 def test_saved_user_events_preserves_original_positions_and_all_fields(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """元記録の組（recordとline）で選び、重複と確認回答を入力順・全情報で返す。"""
-    # 保存形式は同モジュールの--user-events出力。質問と選択肢の欄も照会では再解釈しない。
+
     first = {"kind": "user", "record": "codex:parent:child", "line": 91, "text": "長い原文\n" * 2000}
     answer = {
         "kind": "user",
@@ -472,7 +458,6 @@ def test_saved_user_events_preserves_original_positions_and_all_fields(
 def test_saved_user_events_rejects_unknown_or_invalid_position(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], position: str
 ) -> None:
-    """不在と不正位置は成功や部分出力にせず、次の操作を持つerrorだけを返す。"""
     path = tmp_path / "events.jsonl"
     path.write_text(json.dumps({"kind": "user", "record": "codex:parent:child", "line": 91, "text": "本文"}), encoding="utf-8")
     assert evidence.main(["--user-events-file", str(path), "--user-event-at", position]) == 2
@@ -485,7 +470,6 @@ def test_saved_user_events_rejects_unknown_or_invalid_position(
 def test_saved_user_events_rejects_unreadable_or_invalid_jsonl(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], invalid: bytes | None
 ) -> None:
-    """一致行の後ろも含めて保存ファイルを読み、壊れた入力を成功にしない。"""
     path = tmp_path / "events.jsonl"
     if invalid is not None:
         path.write_bytes(invalid)
@@ -511,7 +495,6 @@ def test_saved_user_events_rejects_unreadable_or_invalid_jsonl(
 def test_saved_user_events_rejects_original_record_modes(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], extra: list[str]
 ) -> None:
-    """元記録の照会と保存済み照会を混ぜず、空の文字列の引数も指定として拒否する。"""
     path = tmp_path / "events.jsonl"
     path.write_text('{"record":"main","line":1,"text":"本文"}', encoding="utf-8")
     assert evidence.main(["--user-events-file", str(path), "--user-event-at", "main:1", *extra]) == 2
@@ -530,7 +513,6 @@ def test_saved_user_events_rejects_original_record_modes(
 def test_saved_user_events_requires_paired_arguments_and_absolute_path(
     capsys: pytest.CaptureFixture[str], arguments: list[str]
 ) -> None:
-    """入力の組と絶対パスを公開引数で確かめる。"""
     assert evidence.main(arguments) == 2
     events = read_jsonl(capsys, raw=True)
     assert len(events) == 1 and events[0]["kind"] == "error" and events[0]["next_action"]

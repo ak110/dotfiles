@@ -1,5 +1,3 @@
-"""記録ごとの値の索引が、記録とコードの変化に追従しつつ、変わらない記録を解析し直さないことを確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -22,7 +20,6 @@ _CHILD = "11111111-1111-4111-8111-111111111111"
 
 
 def _settle(*paths: pathlib.Path, offset: int = 0) -> None:
-    """書込から間もない記録は索引へ保存されないため、更新時刻を過去へ戻して保存の対象にする。"""
     for path in paths:
         os.utime(path, (_SETTLED + offset, _SETTLED + offset))
 
@@ -38,7 +35,6 @@ def _record(root: pathlib.Path, name: str, *, child: str | None = None) -> pathl
 
 
 def _expected(path: pathlib.Path) -> record_metadata_index.RecordSummary:
-    """記録を直接走査した値。索引はこれと同じ値を返す。"""
     meta = session_family._scan_record_metadata(path)  # pylint: disable=protected-access
     return record_metadata_index.RecordSummary(
         meta.runtime, meta.record_id, meta.thread_id, meta.start_value, meta.end_value, meta.child_references, meta.failure
@@ -74,7 +70,6 @@ def test_summaries_equal_the_record_scan(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("count", [5, 50])
 def test_unchanged_records_are_not_scanned_again(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, count: int) -> None:
-    """2回目以降に走査する記録は書き換えたものだけで、記録の件数に比例しない。書き換えた記録は新しい値を返す。"""
     root = tmp_path / "records"
     paths = [_record(root, f"session-{index}") for index in range(count)]
     _settle(*paths)
@@ -94,7 +89,6 @@ def test_unchanged_records_are_not_scanned_again(tmp_path: pathlib.Path, monkeyp
 def test_records_are_scanned_again_after_the_scanning_code_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """値を計算するコードが変わると（版を上げない開発中の編集を含む）、変わらない記録も走査し直す。"""
     root = tmp_path / "records"
     paths = [_record(root, f"session-{index}") for index in range(3)]
     _settle(*paths)
@@ -108,7 +102,6 @@ def test_records_are_scanned_again_after_the_scanning_code_changes(
 
 @pytest.mark.parametrize("content", ["{", '{"version": 2, "code": "x", "entries": {}}', "short-values"])
 def test_broken_index_is_ignored(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, content: str) -> None:
-    """壊れた索引・別のコードの索引・形の合わない値は保存されていなかったものとして扱い、走査した値を返す。"""
     root = tmp_path / "records"
     paths = [_record(root, "parent", child=_CHILD)]
     _settle(*paths)
@@ -124,7 +117,6 @@ def test_broken_index_is_ignored(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
 
 
 def test_recently_written_record_is_scanned_until_it_settles(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """更新時刻の刻みの中で内容だけが変わり得る書込直後の記録は、保存せずに照会のたびに走査する。"""
     root = tmp_path / "records"
     paths = [_record(root, "fresh")]
     scanned = _count_scans(monkeypatch)

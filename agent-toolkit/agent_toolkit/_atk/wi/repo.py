@@ -1,5 +1,4 @@
-"""`atk wi`の対象リポジトリの識別子の解決と、ローカル作業ツリーとの対応。"""
-
+import os
 import pathlib
 import re
 import sys
@@ -10,8 +9,6 @@ from agent_toolkit._atk.wi.constants import WI_STATES, unrepairable_entry_next_a
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
-
-# parserの定数参照と、実際のキュー操作の依存を分ける。
 lazy from agent_toolkit._atk.wi import entries as _wi_entries
 lazy from agent_toolkit._atk.wi import filenames as _wi_filenames
 lazy from agent_toolkit._atk.wi import frontmatter as _frontmatter
@@ -27,7 +24,6 @@ _TARGET_REPO_NEXT_ACTION = "`--target-repo`へローカルworktreeのパスかre
 
 
 def _entry_in_directory(private_notes: pathlib.Path, directory: pathlib.Path, filename: str) -> pathlib.Path:
-    """状態の指定を実パスへ解決する。"""
     normalized = _wi_filenames.validate_filename(filename, directory).name
     if directory.name in WI_STATES:
         dated = unique_dated_entry_path(private_notes, normalized)
@@ -52,8 +48,9 @@ def resolve_local_worktree(value: str | None) -> pathlib.Path:
     - `value`省略時は`git rev-parse --show-toplevel`の出力を返す。失敗時もexit 2
     """
     if value is not None:
-        local_path = pathlib.Path(value).expanduser()
-        if not local_path.exists():
+        expanded = os.path.expanduser(value)
+        local_path = pathlib.Path(expanded)
+        if (value.startswith("~") and expanded == value) or not local_path.exists():
             _outcome.report_failure(f"ローカルパスとして存在しない: {value}", next_action="実在するローカルパスを指定する")
             sys.exit(2)
         return local_path.resolve()
@@ -69,7 +66,6 @@ def resolve_local_worktree(value: str | None) -> pathlib.Path:
 
 
 def _origin_url(worktree: pathlib.Path) -> str:
-    """作業ツリーのoriginのURLを返す。取得できない場合は設定手順を次の操作とする例外を送出する。"""
     url = _git_remote.origin_url(worktree)
     if url is None:
         raise WebInputError(
@@ -80,7 +76,6 @@ def _origin_url(worktree: pathlib.Path) -> str:
 
 
 def _warn_non_origin_remote(repo_id: str, cwd: pathlib.Path | None) -> None:
-    """投入元のorigin以外に登録されたURLへの指定を警告し、指定値を受理する。"""
     worktree = pathlib.Path.cwd() if cwd is None else cwd
     origin = _git_remote.origin_url(worktree)
     if origin is None:
@@ -127,7 +122,6 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
       失敗行の出力は呼び出し元が担当する。`warn_non_origin`の警告は標準エラーへ書く
     """
     if value is not None:
-        # ローカルパスとして実在すればremote URLを取得して正規化、それ以外はURL文字列として正規化を試みる
         local_path = pathlib.Path(value).expanduser()
         if local_path.exists():
             local_path = local_path.resolve()
@@ -145,7 +139,6 @@ def resolve_repo_id_or_raise(value: str | None, *, cwd: pathlib.Path | None = No
             _warn_non_origin_remote(repo_id, cwd)
         return repo_id
 
-    # value省略時: ローカル作業ツリーを特定してからremoteを取得
     if cwd is None:
         cwd = resolve_local_worktree(None)
     try:
@@ -164,12 +157,6 @@ def resolve_repo_id(value: str | None, *, cwd: pathlib.Path | None = None, warn_
 
 
 def detect_current_repo_id() -> str | None:
-    """カレントディレクトリが属するリポジトリの識別子を返し、解決できない場合はNoneを返す。
-
-    `--target-repo`を省略したときに使う値とする。Gitの作業ツリー外、`origin`未設定、
-    リモートURLを正規化できない形式のいずれでもNoneを返す。Noneを受け取った呼び出し元は
-    対象を限定せず、全ての対象リポジトリを扱う。
-    """
     toplevel = _git_command.run(["rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if toplevel.returncode != 0:
         return None
@@ -183,7 +170,6 @@ def detect_current_repo_id() -> str | None:
 
 
 def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
-    """投入先のリポジトリ識別子と、特定できたローカルworktreeを返す。"""
     if value is None:
         local_worktree = resolve_local_worktree(None)
         return resolve_repo_id(None, cwd=local_worktree), local_worktree
@@ -205,7 +191,6 @@ def resolve_add_target(value: str | None) -> tuple[str, pathlib.Path | None]:
 
 
 def resolve_head_commit(local_worktree: pathlib.Path, *, revision: str = "HEAD") -> str:
-    """ローカルworktreeのHEAD（系統の宛先では`revision`のリモートブランチ）を40桁または64桁OIDとして返す。"""
     result = _git_command.run(
         ["-C", str(local_worktree), "rev-parse", "--verify", f"{revision}^{{commit}}"],
         capture_output=True,
@@ -236,7 +221,6 @@ def resolve_head_commit(local_worktree: pathlib.Path, *, revision: str = "HEAD")
 
 
 def verify_target_repo_content(path: pathlib.Path, content: str, normalized_expected: str | None) -> None:
-    """解決済み実体の`target_repo`が正規化済みの期待値と一致するかを確かめる。"""
     if normalized_expected is None:
         return
     actual = parse_target_repo(content)

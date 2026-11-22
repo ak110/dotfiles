@@ -7,27 +7,17 @@ from agent_toolkit._common.session_family import _analysis_entry
 
 
 class DelegationCollector:
-    """記録の行を順に受け取り、起動ツールの結果に記録された子セッションIDを集める。
-
-    記録を開いて読む処理は持たない。一覧の走査は記録1件を1回だけ開き、要約と子セッションIDを
-    同じ走査で求めるため、行の読み込みは`session_watch.scan_record`が担う。
-    """
-
     def __init__(self, engine: str) -> None:
         self.engine = engine
         self._call_ids: set[str] = set()
         self._children: set[str] = set()
+        self.labels: dict[str, str] = {}
 
     def wants(self, line: str) -> bool:
-        """行をJSONとして解析する必要があるかを返す。
-
-        `agents_server`を含む行と、起動の呼び出しを見つけて結果を待つ間の行だけが結果を変え得る。
-        """
         return bool(self._call_ids) or "agents_server" in line
 
     @property
     def children(self) -> frozenset[str]:
-        """これまでに受け取った行から求めた子セッションIDの集合。"""
         return frozenset(self._children)
 
     def _add_result(self, value: typing.Any) -> None:
@@ -45,6 +35,8 @@ class DelegationCollector:
             child = value.get(key)
             if isinstance(child, str) and child:
                 self._children.add(child)
+                if isinstance(label := value.get("label"), str) and label:
+                    self.labels[child] = label
                 break
         excluded = value.get("excluded_candidates")
         if isinstance(excluded, list):
@@ -54,7 +46,6 @@ class DelegationCollector:
                     self._children.add(child)
 
     def feed(self, record: typing.Any) -> None:
-        """`wants`が真を返した行を解析した値を受け取る。"""
         if not isinstance(record, dict):
             return
         record = _analysis_entry(record)

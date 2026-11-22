@@ -1,5 +1,3 @@
-"""カタログ走査が、保存した記録ごとの値から同じ結果を返し、記録の書き換え後は新しい親子関係で返すことを公開CLIで確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -24,7 +22,6 @@ _TIMESTAMP = "2026-10-06T00:00:00Z"
 
 
 def _record(root: pathlib.Path, runtime: str, identity: str, child: str | None = None) -> pathlib.Path:
-    """`child`を指定すると、その会話をagents_serverで起動した記録にする。"""
     if runtime == "claude":
         path = root / f"{identity}.jsonl"
         entries = [timestamped_entry(_TIMESTAMP, identity)]
@@ -66,7 +63,6 @@ def _catalog(root: pathlib.Path, runtime: str, capsys: pytest.CaptureFixture[str
 def test_catalog_reuses_saved_record_values_and_follows_rewrites(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """2回目の照会は保存した記録ごとの値から同じ結果を返し、記録の書き換え後は新しい親子関係で返す。"""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     root = tmp_path / "records"
     for identity in (_PARENT, _CHILD):

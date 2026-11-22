@@ -6,6 +6,7 @@
 
 操作種別はargvで受け取る（`list`・`read`・`serve`）。
 `list`は保存済みセッションの一覧を、`read`は1件の記録本文とサブエージェント記録の一覧、Codexの記録ではthread名をJSONで返す。
+`search`は一覧の範囲で記録本文を検索し、一致するパスだけを返す。
 `serve`はstdinから行区切りJSONのRPCを受け取り、同じ内容をstdoutへ返す常駐モードとする。
 `serve`は記録のrootの変更も監視し、一覧の再取得と記録1件の更新の通知を同じstdoutへ行で書く。
 
@@ -21,6 +22,7 @@ import pathlib
 import socket
 import sys
 import threading
+import time
 import typing
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -28,6 +30,7 @@ from agent_toolkit._atk import session_record_format  # noqa: E402  # pylint: di
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
     session_parents,
     session_watch,
+    sessions_models,
 )
 from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-import-position
     host_homes,
@@ -36,9 +39,8 @@ from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-impor
     state_paths,
 )
 
-# 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
-# 一覧が返す最大件数。古い記録は調査対象になりにくいため、開始日時の新しい順で打ち切る。
+
 MAX_LIST_ENTRIES = 2000
 
 
@@ -83,13 +85,6 @@ def _list_payload(
     tracker: session_watch.RecordChangeTracker | None = None,
     index: session_watch.RecordSummaryIndex | None = None,
 ) -> dict[str, typing.Any]:
-    """ローカルの保存済みセッション一覧を返す。
-
-    ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
-    `tracker`を渡した場合は、判定した発話の有無を変更監視の判定へ引き継ぐ。
-    `index`を渡した場合は記録単位の解析結果を再利用する。常駐モードが1プロセスに1つ持ち、
-    単発の`list`モードは保持先が無いため毎回新しい索引で走査する。
-    """
     if index is None:
         index = session_watch.RecordSummaryIndex()
     index.begin_scan()
@@ -107,7 +102,7 @@ def _list_payload(
         has_user = entry.pop("has_user_message")
         if tracker is not None and has_user is not None and isinstance(entry.get("path"), str):
             tracker.prime(entry["path"], has_user)
-        # 読めずに判定できなかった記録（`None`）は警告とともに一覧へ残す。
+
         if has_user is not False:
             kept.append(entry)
     entries = kept
@@ -132,6 +127,7 @@ def _list_payload(
         parent_path = links.get(entry["path"]) if isinstance(entry.get("path"), str) else None
         if parent_path is not None:
             entry["parent_path"] = parent_path
+            entry["label"] = index.delegation_labels(pathlib.Path(parent_path)).get(entry["session_id"])
     entries.sort(key=lambda item: item["started_at"] or "", reverse=True)
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda item: item.get("path"), parent_of=lambda item: item.get("parent_path")
@@ -148,10 +144,6 @@ def _list_payload(
 
 
 def _state_dir() -> pathlib.Path | None:
-    """agents_serverの状態ディレクトリを返す。解決に要る`platformdirs`が無い起動形では`None`を返す。
-
-    登録簿の委譲元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
-    """
     try:
         return state_paths.state_dir()
     except ImportError:
@@ -159,10 +151,6 @@ def _state_dir() -> pathlib.Path | None:
 
 
 def _is_safe_record_path(raw: str) -> bool:
-    """読み取り要求のパスが保存先配下の記録を指すかを検証する。
-
-    上位ディレクトリへの参照と対象外の接尾辞を拒否し、いずれかの保存先の配下だけを受理する。
-    """
     if not raw:
         return False
     pure_path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
@@ -181,6 +169,30 @@ def _is_safe_record_path(raw: str) -> bool:
             continue
         return True
     return False
+
+
+def _search_payload(
+    query_b64: str,
+    tracker: session_watch.RecordChangeTracker | None = None,
+    index: session_watch.RecordSummaryIndex | None = None,
+) -> dict[str, typing.Any]:
+    query = base64.b64decode(query_b64, validate=True).decode("utf-8").strip().casefold()
+    if not 0 < len(query) <= 1024:
+        raise ValueError("検索語は1〜1024文字で指定してください")
+    paths = []
+    incomplete = False
+    deadline = time.monotonic() + sessions_models.OPERATION_TIMEOUT_SEC["search"]
+    for entry in _list_payload(tracker, index)["entries"]:
+        raw = entry.get("path")
+        if not isinstance(raw, str) or not _is_safe_record_path(raw):
+            incomplete = True
+            continue
+        try:
+            if sessions_models.record_matches(pathlib.Path(raw), entry["engine"], query, deadline=deadline):
+                paths.append(raw)
+        except OSError, ValueError:
+            incomplete = True
+    return {"paths": paths, "incomplete": incomplete}
 
 
 def _read_payload(path_b64: str) -> dict[str, typing.Any]:
@@ -220,7 +232,6 @@ _STDOUT_LOCK = threading.Lock()
 
 
 def _emit(payload: dict[str, typing.Any]) -> None:
-    """1行JSONとして出力し、SSH切断時のSIGPIPEを即時に検出できるよう毎回フラッシュする。"""
     line = json.dumps(payload, ensure_ascii=False)
     with _STDOUT_LOCK:
         sys.stdout.write(line + "\n")
@@ -232,7 +243,6 @@ def _handle_request(
     tracker: session_watch.RecordChangeTracker | None = None,
     index: session_watch.RecordSummaryIndex | None = None,
 ) -> dict[str, typing.Any]:
-    """RPCリクエストを処理して応答辞書を返す。"""
     req_id = req.get("id")
     op = req.get("op")
     if not isinstance(req_id, int):
@@ -240,6 +250,8 @@ def _handle_request(
     try:
         if op == "list":
             return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker, index)}
+        if op == "search":
+            return {"type": "response", "id": req_id, "ok": True, **_search_payload(str(req.get("query", "")), tracker, index)}
         if op == "read":
             return {"type": "response", "id": req_id, "ok": True, **_read_payload(str(req.get("path", "")))}
         return {"type": "response", "id": req_id, "ok": False, "error": f"unknown op: {op}"}
@@ -248,10 +260,9 @@ def _handle_request(
 
 
 def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.RecordChangeTracker]:
-    """記録のrootの変更監視を開始する。監視を開始できない場合もRPCは続ける。"""
 
     def on_flush(refresh: bool, records: list[tuple[str, str]]) -> None:
-        # SSH接続の切断後の通知は届け先が無いため破棄する。RPCの読み取り側が切断を検知して終了する。
+
         with contextlib.suppress(OSError):
             if refresh:
                 _emit({"type": session_watch.REFRESH_TYPE})
@@ -277,6 +288,7 @@ def _serve() -> int:
     RPCプロトコル（行区切りJSON）:
         リクエスト（stdin）: {"id":<int>, "op":"list"}
                             または{"id":<int>, "op":"read", "path":"<base64絶対パス>"}
+                            または{"id":<int>, "op":"search", "query":"<base64検索語>"}
         応答（stdout）:
             成功: {"type":"response", "id":<int>, "ok":true, ...}
             失敗: {"type":"response", "id":<int>, "ok":false, "error":"<msg>"}
@@ -309,13 +321,15 @@ def _serve() -> int:
 
 
 def main() -> int:
-    """argvの操作種別に応じて一覧・読み取り・常駐モードを実行する。"""
     if len(sys.argv) < 2:
         sys.stderr.write("missing operation\n")
         return 2
     op = sys.argv[1]
     if op == "list":
         json.dump(_list_payload(), sys.stdout, ensure_ascii=False)
+        return 0
+    if op == "search" and len(sys.argv) == 3:
+        json.dump(_search_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
         return 0
     if op == "read":
         if len(sys.argv) < 3:

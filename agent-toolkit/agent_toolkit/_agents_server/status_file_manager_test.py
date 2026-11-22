@@ -30,7 +30,6 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """3つの起動手段と結果回収を状態ファイルへ反映する。"""
     writer = subject.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -64,7 +63,7 @@ async def test_manager_writes_three_launch_kinds_and_removes_waited_result(
         remaining = json.loads(writer.path.read_text(encoding="utf-8"))["sessions"]
         assert session.session_id not in {item["session_id"] for item in remaining}
         await manager.close()
-        # 公開済み結果を回収した場合は共有claim lockが残るため、自身の射影の削除を判定する。
+
         assert not writer.path.exists()
 
 
@@ -73,7 +72,6 @@ async def test_manager_removes_previous_result_when_new_turn_starts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """同じsessionの新しいturnを開始した時点で前の結果を削除する。"""
     writer = _status_writer(tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
         backend = _FakeStatusBackend(manager.sessions)
@@ -105,7 +103,6 @@ async def test_manager_writes_only_announced_candidate_after_fallback(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補切替で除外した試行を隠し、委譲元へ返したsessionだけを書く。"""
     writer = _status_writer(tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
         backend: _FakeStatusBackend = (
@@ -160,7 +157,6 @@ async def test_manager_writes_only_last_failure_when_all_candidates_are_unavaila
 async def test_manager_removes_kill_result_but_keeps_uncollected_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """killで返した結果だけを除き、未回収の終了時の結果は表示に残す。"""
     writer = _status_writer(tmp_path)
     async with server_manager.AgentsServerManager(writer) as manager:
         backend = _FakeStatusBackend(manager.sessions)
@@ -193,7 +189,6 @@ async def test_manager_removes_kill_result_but_keeps_uncollected_result(
 async def test_manager_without_writer_does_not_create_status_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """書込主体が無効なmanagerはsession開始後も状態ファイルを作成しない。"""
     async with server_manager.AgentsServerManager(None) as manager:
         install_backend(manager, "codex", _FakeStatusBackend(manager.sessions))
         _use_candidates(monkeypatch, ("codex", "model", "medium"))

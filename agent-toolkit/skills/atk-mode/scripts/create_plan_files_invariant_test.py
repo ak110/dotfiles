@@ -21,7 +21,6 @@ from create_plan_files_test import (  # pylint: disable=import-error,unused-impo
 def test_lane_planning_document_command_creates_plan_from_another_worktree(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """起草手順4の実物の書式へ案件値を指定すると、異なるcwdから対象repoの計画を作成できる。"""
     source = _source(repo, tmp_path)
     guide = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbooks/process-wi-execution.md"
     text = section_text(guide, "計画の起草")
@@ -49,12 +48,10 @@ def test_lane_planning_document_command_creates_plan_from_another_worktree(
 
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """構造の判定に使うGitリポジトリを準備する。"""
     return _make_repo(tmp_path, monkeypatch)
 
 
 def _lane_plan_creation_step() -> str:
-    """レーン担当が読む計画作成手順の本文を返す。"""
     task_path = pathlib.Path(__file__).resolve().parents[3] / "skills/atk-mode/playbooks/process-wi-execution.md"
     content = section_text(task_path, "計画の起草")
     steps = re.split(r"\n(?=\d+\. )", content)
@@ -66,7 +63,6 @@ def _lane_plan_creation_step() -> str:
 def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """計画作成手順が指示する引数名を現行CLIが受理する。"""
     step = _lane_plan_creation_step()
     source = _source(repo, tmp_path)
     placeholders = {"--main-source": str(source), "--lane": "lane-02"}
@@ -88,7 +84,6 @@ def test_lane_plan_creation_step_arguments_are_accepted_by_current_cli(
 def test_document_template_supports_create_progress_and_commit_lookup(
     repo: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """実在文書の雛形を記入し、公開操作だけで作成、進捗と対応の保存、取得まで進む。"""
     text = (pathlib.Path(__file__).resolve().parents[1] / "references" / "plan-format.md").read_text(encoding="utf-8")
     template = text.split("## 初回起草の雛形\n", 1)[1].split("```md\n", 1)[1].split("\n```", 1)[0]
     content = re.sub(r"<[^>]+>", "案件の記入内容", template).replace("/absolute/repository/path", str(repo))

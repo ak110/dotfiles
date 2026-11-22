@@ -37,7 +37,7 @@ SID = "claude-replaced"
 def _replacement(*, idle_after_empty: bool) -> ControlledClaudeClient:
     client = ControlledClaudeClient(SID)
     client.messages = asyncio.Queue()
-    # observe1.jsonl 29〜33行目の順序
+
     client.emit(TaskNotificationMessage("task-1", "stopped"))
     client.emit(_session_state("running"))
     client.emit(SystemMessage(SID))
@@ -76,12 +76,12 @@ async def test_observed_order_publishes_requested_turn(
         await asyncio.sleep(0.3)
         early = await _wait_with_timeout(manager, 0.5)
         assert early["status"] == "running", early
-        replacement.emit(AssistantMessage([SimpleNamespace(text="最終結果")]))
-        replacement.emit(ResultMessage("最終結果"))
+        replacement.emit(AssistantMessage([SimpleNamespace(text="状態: completed\n結果: 最終結果")]))
+        replacement.emit(ResultMessage("状態: completed\n結果: 最終結果"))
         replacement.emit(_session_state("idle"))
         result = await _wait_with_timeout(manager, 2)
         assert result["status"] == "completed", result
-        assert result["agent_message"] == "最終結果", result
+        assert result["agent_message"] == "状態: completed\n結果: 最終結果", result
         assert "error" not in result, result
 
 

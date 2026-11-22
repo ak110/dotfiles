@@ -30,7 +30,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_new_request_and_handoff_preserve_required_context(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """新要求を配送し、後任にも原要求と追送を保持したまま定型継続できる。"""
     _write_review_plan(tmp_path)
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -70,7 +69,6 @@ async def test_new_request_and_handoff_preserve_required_context(
 
 @pytest.mark.asyncio
 async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """未回収の結果を持つ終了済みsessionへ送ると、MCPの応答がその結果を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
@@ -88,7 +86,6 @@ async def test_send_message_tool_returns_previous_result(monkeypatch: pytest.Mon
 
 @pytest.mark.asyncio
 async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """定型追送へ説明と初回入力を加えると、公開send_messageは配送を拒否し履歴を保つ。"""
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session = manager.sessions[started["session_id"]]
     count = len(backend.prompts)
@@ -114,10 +111,6 @@ async def test_followup_rejects_extra_lines_before_delivery(monkeypatch: pytest.
 async def test_continuation_input_errors_return_reason_and_next_action(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """継続入力の形式不成立は、配送せずに理由と次の操作をツールのエラー応答で返す。
-
-    PreToolUseのhookは入力形式を判定しないため、修正案内はこの応答だけが担う。
-    """
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     session_id = started["session_id"]
     count = len(backend.prompts)
@@ -160,7 +153,6 @@ async def test_continuation_input_errors_return_reason_and_next_action(
 
 @pytest.mark.asyncio
 async def test_followup_preserves_required_and_updated_inputs(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """構造化・自由本文は必要な制御値と同じパスの更新を保持する。"""
     manager, backend, started = await _start_exec_review_session(monkeypatch, tmp_path)
     contract = tmp_path / "更新 契約.yaml"
     contract.write_text("clauses: []\n", encoding="utf-8")
@@ -255,16 +247,15 @@ async def test_continuation_recovery_without_readable_declaration(
 async def test_wi_policy_review_continues_to_draft_in_same_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """原稿なしの方針検収から、同じ公開sessionへの本文確認へ進める。"""
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         materials = {}
-        for name in ("方針", "原稿", "要求と出所", "成立性の証拠"):
+        for name in ("方針", "原稿", "要求原本"):
             path = tmp_path / f"{name}.md"
             path.write_text(f"# {name}\n", encoding="utf-8")
             materials[name] = str(path)
-        common = {key: materials[key] for key in ("要求と出所", "成立性の証拠")}
+        common = {key: materials[key] for key in ("要求原本",)}
         started = await mcp_tools.start(
             str(tmp_path),
             subagent_md_path="wi-draft-review",
@@ -319,7 +310,6 @@ async def test_declared_role_continuations_keep_required_inputs(
     instruction: str,
     params: dict[str, str],
 ) -> None:
-    """各役割の継続指示は必要入力だけを配送し、統合の指示は起動応答の実sessionを加えた書込担当一覧を送る。"""
     table = tmp_path / "review.tsv"
     if params.get("レビュー指摘管理表") in ("@table", "@tables"):
         table.write_text("指摘の記録\n", encoding="utf-8")
@@ -338,7 +328,7 @@ async def test_declared_role_continuations_keep_required_inputs(
         if role == "exec":
             initial_writers = _observed_input_params("exec.subagent.md", tmp_path)["書込担当一覧"]
             assert f"書込担当一覧: {initial_writers}" in backend.prompts[-1]
-            # 委譲元は起動の直後に追送せず、自分の記録の一覧へ起動応答の実sessionを加えて統合の指示で渡す。
+
             writers = json.dumps([*json.loads(initial_writers), started["session_id"]])
             if instruction == "統合開始":
                 params = {**params, "書込担当一覧": writers}

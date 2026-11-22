@@ -1,10 +1,8 @@
 """読取案内（探索の起動の本文の`launch_prompts.EXPLORE_CAPABILITIES`と`atk-mode`の`playbooks/host-codex.md`）の
 行範囲読取がWindowsで成立することを確かめる。
 
-案内は、シェルを指定しないコマンドがPowerShellで動く環境で、
-実在を確かめたbashの`sed -n`か、bashが無い場合の`Get-Content`を示す。
-どちらも日本語と空白を含む絶対パスの指定行を読み、終了コード0で同じ本文を返すこと、存在しないパスでは0以外で終わることを、
-Windows CIの「Windows境界テスト」（`pytest -m windows`）で実機の`powershell.exe`・`pwsh`・bashに対して観測する。
+シェルを指定しないコマンドがPowerShellで動くなら、日本語と空白を含む絶対パスの指定行を`Get-Content`で読み、
+不在のパスでは非0で終わることをWindows CIの`powershell.exe`・`pwsh`で観測する。
 """
 
 import os
@@ -25,9 +23,6 @@ _EXPECTED = ["二行目 日本語", "三行目"]
 # 起動ごとに固定の上限を置かず、試験の残り時間を各起動へ割り当てる。
 # pytestのテスト単位の上限（`--timeout=60`）より先に子の停止を検出して診断を残せる値にする。
 _TEST_BUDGET = 50
-# 起動できるかを試すbashの上限。応答しないbash（WSLの起動用`bash.exe`など）で試験の残り時間を失わないよう、短い上限を置く。
-_LAUNCH_PROBE_TIMEOUT = 10
-
 # 案内の`Get-Content`の行範囲読取。PowerShellがパイプへ書く文字コードは案内の対象外のホスト側の設定であり、
 # 本文の比較のために出力の文字コードだけをUTF-8へそろえる。
 _POWERSHELL_READ = (
@@ -63,7 +58,7 @@ def _powershells() -> list[str]:
 
 def test_powershell_get_content_reads_the_line_range(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`powershell.exe`（5.1）と`pwsh`の両方で、案内の`Get-Content`が指定行を返し、不在のパスでは失敗する。"""
-    # 案内が対象とするのはホストの実シェルなので、隔離したHOME・設定ディレクトリ・PATHをホストの値へ戻してから解決・起動する。
+
     restore_host_environment(monkeypatch)
     deadline = time.monotonic() + _TEST_BUDGET
     target = _target(tmp_path)
@@ -76,27 +71,3 @@ def test_powershell_get_content_reads_the_line_range(tmp_path: pathlib.Path, mon
         assert result.stdout.decode("utf-8").splitlines() == _EXPECTED, shell
         missing = _run(argv, target.with_name("存在しない.md"), deadline)
         assert missing.returncode != 0, shell
-
-
-def test_bash_found_by_get_command_reads_the_line_range(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`Get-Command bash`で実在を確かめたbashが起動できる場合、案内の`sed -n`が同じ指定行を返す。"""
-    restore_host_environment(monkeypatch)
-    deadline = time.monotonic() + _TEST_BUDGET
-    target = _target(tmp_path)
-    shell = _powershells()[0]
-    found = _run(
-        [shell, "-NoProfile", "-NonInteractive", "-Command", "(Get-Command bash -ErrorAction Stop).Source"], target, deadline
-    )
-    if found.returncode != 0:
-        pytest.skip("bashが無い環境は`Get-Content`の試験で確かめる")
-    bash = found.stdout.decode("utf-8", "replace").strip()
-    # WSLの起動用`bash.exe`のように、実在しても起動できないか応答しないbashは案内の「実在を確認したbash」に当たらない。
-    try:
-        launchable = _run([bash, "-c", "true"], target, min(deadline, time.monotonic() + _LAUNCH_PROBE_TIMEOUT)).returncode == 0
-    except TimeoutError:
-        launchable = False
-    if not launchable:
-        pytest.skip(f"Get-Commandが返したbashを起動できない: {bash}")
-    result = _run([bash, "-c", 'sed -n "2,3p" -- "$READ_TARGET"'], target, deadline)
-    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
-    assert result.stdout.decode("utf-8").splitlines() == _EXPECTED

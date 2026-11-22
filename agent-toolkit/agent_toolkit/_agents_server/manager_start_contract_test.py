@@ -34,10 +34,47 @@ from agent_toolkit._testing import agents_server_support
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
+@pytest.mark.parametrize(
+    ("role", "category", "exec_lane"),
+    [
+        ("exec.subagent.md", "レーン担当", True),
+        ("exec.subagent.md", "CI修正担当", False),
+        ("add-wi.subagent.md", "レーン担当", False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_default_effort_selection_recognizes_only_the_exec_lane_role(tmp_path, monkeypatch, role, category, exec_lane):
+    async def check_plugin_commands(_cwd):
+        return None
+
+    monkeypatch.setattr(launch_requests, "check_plugin_commands", check_plugin_commands)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "false")
+    monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", raising=False)
+    async with manager.AgentsServerManager(None) as current:
+
+        async def codex_candidate(stage, **kwargs):
+            selected = kwargs.get("exec_lane", False)
+            assert stage == "execute" and selected is exec_lane
+            candidates = atk_config.parse_unresolved_model_candidates(stage, exec_lane=selected)
+            return [(engine, "test", effort) for engine, _, effort in candidates if engine == "codex"], {}
+
+        agents_server_support.install_backend(current, "codex", ObservedBackend(current.sessions, "codex"))
+        monkeypatch.setattr(current, "_startup_documents", lambda *_args: [])
+        monkeypatch.setattr(current, "_resolve_start_candidates", codex_candidate)
+        response = await current.start(
+            "execute",
+            "処理",
+            str(tmp_path),
+            startup_document=tmp_path / role,
+            startup_inputs={"担当種別": category},
+        )
+        assert response["engine"] == "codex"
+        assert current.sessions[response["session_id"]].effort == ("medium" if exec_lane else "low")
+
+
 @pytest.mark.parametrize("first_engine,selected_engine", [("codex", "claude"), ("claude", "codex")])
 @pytest.mark.asyncio
 async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_engine, selected_engine):
-    """候補を切り替えた後の実モデルで通知を組み立て直す。"""
     async with manager.AgentsServerManager(None, launcher_environment={"CODEX_THREAD_ID": "parent-session"}) as current:
         session_registry.publish(
             "parent-session",
@@ -61,6 +98,8 @@ async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_
         marker = 'kind="advice-request"'
         assert (marker in unavailable.prompts[0]) is (first_engine != "codex")
         assert (marker in selected.prompts[0]) is (selected_engine != "codex")
+        completion = "許可された次の操作があるなら提案で止めず"
+        assert (completion in selected.prompts[0]) is (selected_engine == "codex")
         assert response["engine"] == selected_engine
         if selected_engine != "codex":
             assert "agent-toolkit:atk-mode/playbooks/advice-request.md" in selected.prompts[0]
@@ -69,7 +108,6 @@ async def test_advice_request_notice_follows_selected_candidate(tmp_path, first_
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.asyncio
 async def test_launcher_model_reads_latest_record_without_effort(tmp_path, monkeypatch, engine):
-    """登録簿の無い最上位の会話では最新モデルを読み、合成応答を除く。"""
     record = tmp_path / "parent.jsonl"
     entries = (
         [{"type": "assistant", "message": {"model": model}} for model in ("claude-opus-5", "claude-fable-5", "<synthetic>")]
@@ -119,8 +157,6 @@ class _WindowsAccessDenied(PermissionError):
 
 
 class ObservedBackend(agents_server_support.FakeBackend):
-    """モデル出力のある起動を、外部engineの代わりに公開startへ返す。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.model_output_observed = True
@@ -129,8 +165,6 @@ class ObservedBackend(agents_server_support.FakeBackend):
 
 
 class UnavailableProbeBackend(agents_server_support.FakeBackend):
-    """モデルとsessionの作成前に、確定した探索環境の拒否を返す。"""
-
     probe_calls = 0
 
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
@@ -144,7 +178,6 @@ class UnavailableProbeBackend(agents_server_support.FakeBackend):
 async def test_public_start_keeps_connection_and_mcp_diagnostics(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, mcp_diagnostic: str
 ) -> None:
-    """起動時の接続診断と、MCP回復中・未回復の診断を公開startへ一緒に届ける。"""
 
     class DiagnosticBackend(ObservedBackend):
         async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
@@ -209,7 +242,6 @@ async def test_public_start_classifies_dependency_import_failure(
 async def test_start_advances_only_for_confirmed_prelaunch_candidate_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開startは型付きの事前判定で不成立と確定した候補だけを除いて次の候補を起動し、別のmanagerもその除外記録を使う。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with manager.AgentsServerManager(None) as first:
         probe = UnavailableProbeBackend(first.sessions, "codex")
@@ -243,7 +275,6 @@ async def test_start_advances_only_for_confirmed_prelaunch_candidate_failure(
 
 @pytest.mark.asyncio
 async def test_engine_dependency_exhaustion_is_request_local(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同engineの候補が共通の依存で起動不能なら一度だけ試し、原因と次の操作を返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     async with manager.AgentsServerManager(None) as current:
 
@@ -295,7 +326,10 @@ async def _start_allocation_task(cwd: pathlib.Path) -> dict[str, Any]:
     return await mcp_tools.start(
         cwd=str(cwd),
         subagent_md_path="add-wi",
-        extra_params={"投入する要求": "request=/repo=awi=配分の試験", "引き継ぎ記録先": str(cwd / "handoff.md")},
+        extra_params={
+            "投入する要求": "request=github.com/example/repository=awi=配分の試験",
+            "引き継ぎ記録先": str(cwd / "handoff.md"),
+        },
     )
 
 
@@ -350,7 +384,7 @@ def recovered_weekly_subscription(
 @pytest.mark.usefixtures("recovered_weekly_subscription")
 async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = agents_server_support.FakeClaudeClient(
-        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("完了")]]
+        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("状態: completed\n結果: 完了")]]
     )
     async with agents_server_support.claude_manager(monkeypatch, client) as (current, _backend):
         agents_server_support.install_backend(current, "codex", UnavailableProbeBackend(current.sessions, "codex"))
@@ -565,7 +599,6 @@ async def test_registration_failure_keeps_started_session_and_recovers_on_flush(
 async def test_prelaunch_save_failure_does_not_register_an_unstarted_backend(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """backendの開始前の不成立と、起動済みのsessionを区別する。"""
     async with manager.AgentsServerManager(None) as current:
 
         class RejectedBeforeStart(agents_server_support.FakeBackend):
@@ -601,8 +634,6 @@ class ReplaceRefusal:
 
 
 class TerminalBeforeResponseBackend(ObservedBackend):
-    """起動応答を返す前にturnが終了したsessionを返す。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.status = "completed"
@@ -710,7 +741,6 @@ async def test_close_during_projection_failure_still_releases_writer(
             refusal.active = False
         released = writer.schedule not in state._TOUCH_LISTENERS  # pylint: disable=protected-access
         if close_error is not None or not released:
-            # 後続の試験へ購読を残さないよう、故障を解除して後始末を完了させてから判定する。
             await current.close()
         result = shared_layout.results_directory("root-session", tmp_path) / f"{started['session_id']}.json"
         assert json.loads(result.read_text(encoding="utf-8"))["status"] == "interrupted"
@@ -724,7 +754,6 @@ async def test_close_during_projection_failure_still_releases_writer(
 async def test_task_start_delivers_launcher_record_without_manual_input(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, record_count: int
 ) -> None:
-    """公開taskが直接の委譲元情報と、記録の一意性を起動本文へ配送する。"""
     monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
     async with manager.AgentsServerManager(None) as current:
         backend = ObservedBackend(current.sessions, "claude")
@@ -741,7 +770,10 @@ async def test_task_start_delivers_launcher_record_without_manual_input(
             cwd=str(tmp_path),
             subagent_md_path=str(role),
             model_type="claude:test/medium",
-            extra_params={"投入する要求": "request=/repo=awi=記録の取得", "引き継ぎ記録先": str(tmp_path / "handoff.md")},
+            extra_params={
+                "投入する要求": "request=github.com/example/repository=awi=記録の取得",
+                "引き継ぎ記録先": str(tmp_path / "handoff.md"),
+            },
         )
         match = re.search(
             r'<atk-auto source="agents-server" kind="launcher-record">\n(.*?)\n</atk-auto>',

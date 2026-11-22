@@ -46,6 +46,7 @@ process-loop、レーン操作、配布物保持が共有する状態も、同�
 ## 管理サービスの世代登録
 
 管理領域は`state_dir/services/agents-server`とし、既存セッション・結果領域の`state_dir/agents-server`と区別する。
+Windowsの管理領域は、通常権限では`services/agents-server-standard`、昇格時は`services/agents-server-elevated`に分ける。
 `service_generations.py`が`generations.json`へ受付先、コード実体・版、準備順、OSプロセス世代を保存する。
 これはジョブ台帳ではなく、実行の復旧には既存セッション登録簿とbackendの物理記録を使う。
 `startup.lock`・`publish.lock`・`generations.lock`は固定名で保持し、世代ごとの`<generation>.json`にreadyの接続先、`<generation>.stderr.log`に起動診断を置く。

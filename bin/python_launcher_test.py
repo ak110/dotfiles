@@ -17,7 +17,6 @@ _BIN = pathlib.Path(__file__).resolve().parent
 
 
 def _bash(command: str, path_entries: list[pathlib.Path]) -> subprocess.CompletedProcess[str]:
-    """`.bashrc`と同じく作業ツリーの`bin`をPATHの末尾に置き、指定したディレクトリだけを前方へ並べて実行する。"""
     path = os.pathsep.join(str(entry) for entry in [*path_entries, _BIN])
     return subprocess.run(
         ["/bin/bash", "-c", command],
@@ -47,7 +46,6 @@ def test_runs_python3_from_path_end(tmp_path: pathlib.Path) -> None:
 
 
 def test_passes_arguments_and_exit_code(tmp_path: pathlib.Path) -> None:
-    """スクリプトの引数をそのまま渡し、スクリプトの終了コードを返す。"""
     script = tmp_path / "script.py"
     script.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\nraise SystemExit(7)\n", encoding="utf-8")
 
@@ -58,7 +56,6 @@ def test_passes_arguments_and_exit_code(tmp_path: pathlib.Path) -> None:
 
 
 def test_prefers_python_earlier_in_path(tmp_path: pathlib.Path) -> None:
-    """PATHの前方に別の`python`があれば、そちらが実行される。"""
     front = tmp_path / "front"
     front.mkdir()
     (front / "python").write_text("#!/bin/bash\necho front-python\n", encoding="utf-8")

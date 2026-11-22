@@ -1,5 +1,3 @@
-"""孫sessionの終了、過負荷と利用上限の解除を待った後の自動再開と、`send_message`による保存済みsessionの再開。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -44,7 +42,7 @@ from agent_toolkit._agents_server.resume_waits import (
 )
 from agent_toolkit._agents_server.state import PreviousResult, ResumePrompt, SessionResumeState, SessionState
 from agent_toolkit._agents_server.wait_output_tracking import consume_agents_wait_background_outputs_async
-from agent_toolkit._common import session_registry, task_documents
+from agent_toolkit._common import session_registry, startup_features, task_documents
 from agent_toolkit._common.delegated_session import FINAL_RESPONSE_NOTICE
 from agent_toolkit._common.next_action import ActionableError
 
@@ -52,12 +50,10 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 def admission_wait_fields(manager: object) -> dict[str, dict[str, object]]:
-    """再開ごとの上限待ちの応答項目を、応答を組み立てる処理へ渡すための置き場を返す。"""
     return vars(manager).setdefault("_admission_wait_fields", {})
 
 
 def note_admission_wait(session: SessionState, ticket: admission.Admission) -> None:
-    """上限待ちがあった再開を、一覧と`show`が表示する最後の操作へ記録する。"""
     fields = ticket.response_fields()
     if fields:
         session.last_action = (
@@ -88,7 +84,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
-        # 実行中のturnへの入力は作業中の数を増やさないため、止まっているsessionを動かす場合だけ上限を待つ。
+
         ticket = (
             await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
             if session.status != "running"
@@ -100,17 +96,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
         finally:
             if ticket is not None:
                 ticket.release()
-        # 止まっていたsessionを上限待ちの後に動かした場合は、一覧・showの最後の操作から待ちを知れるようにする。
+
         if ticket is not None:
             note_admission_wait(session, ticket)
         return result
 
     async def _child_result_is_terminal(self, session_id: str) -> bool:
-        """孫sessionの共有された終了時の結果ファイルが終了を示すかを返す。
-
-        このファイルは同じルートsessionの`results`配下を全ての書込主体が共有するため、
-        別プロセスが起動した孫sessionの終了も同じ処理で判定できる。
-        """
         if self._status_writer is None or not shared_layout.valid_session_id(session_id):
             return False
         return (await run_file_operation(self._status_writer.read_result, session_id)) is not None
@@ -201,9 +192,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
             if asyncio.get_running_loop().time() >= session.usage_limit_resume_at:
                 await self._resume_after_usage_limit(session)
             return
-        # 背景実行の`atk agents wait`で回収済みの孫sessionは、登録簿と終了時の結果ファイルが消えた後も未観測にしない。
+
         await consume_agents_wait_background_outputs_async(session)
-        # 照会の`await`の間に委譲先の出力の追跡が同じ集合を更新するため、開始時点の写しを回す。
+
         own_pending = session.pending_result
         resolutions = {
             session_id: (await run_file_operation(session_registry.resolve, session_id))
@@ -236,8 +227,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.terminal_child_session_ids.discard(child_id)
         if session.pending_result is not own_pending:
             return
-        # 配送済みの子を除いた後、通常の最終本文は未回収の子だけを理由に保持しない。
-        # 子の所有と保持結果は変えず、元の委譲先へ回収を頼むために識別子を添える。
+
         if not cli_turn_may_continue(session) and is_final_response_with_unobserved_children(session):
             finalize_pending_result(session)
             return
@@ -266,8 +256,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session_registry.Resolution.UNREADABLE,
             }:
                 continue
-            # レコードの不在と解放済みは、所有側の解放と7日超の回収からも生じる。
-            # そのため、終了時の結果ファイルを終了の第2の根拠とする。
+
             if await self._child_result_is_terminal(session_id):
                 terminal.add(session_id)
                 continue
@@ -278,7 +267,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
         for session_id in terminal:
             session.live_child_session_ids.discard(session_id)
             session.terminal_child_session_ids.add(session_id)
-        # 観測不能は終了の証拠にならない。次の監視でも同じ識別子を再解決する。
 
         if not has_pending_auto_resume_targets(session) and (
             session.terminal_child_session_ids
@@ -326,7 +314,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session.record_turn_completed()
                 session.touch()
                 return
-            # 配送した完了だけを消費する。別の子の終了と次の実行は新しい観測単位になる。
+
             session.terminal_child_session_ids.difference_update(identifiers)
             session.codex_terminal_subagent_thread_ids.difference_update(identifiers)
             await self._discard_automatic_reply(session, delivery)
@@ -434,7 +422,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             await self._status_writer.delete_result_async(session.session_id, collector="auto-resume", expected_end=end)
 
     async def _pending_resume_status(self, pending: PendingResume) -> dict[str, Any]:
-        """進行中の再開操作を通常のrunning状態として射影する。"""
         session = self.sessions.get(pending.state.session_id)
         if session is not None:
             return await self._result_response_async(session, include_result=False)
@@ -484,7 +471,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             if resume_state.engine in {"claude", "codex"}:
                 provider_args["handoff_prompt"] = resume_state.prompt
             if supersede_interruption and self._is_registry_resume_state(resume_state):
-                # 所有者喪失の自動復旧は、中断結果を再開後の最終結果に置き換える。
                 try:
                     await self._take_stopped_result(session_id, resume_state, collector="auto-resume")
                 except retained_results.ResultBeingCollected as busy:
@@ -494,27 +480,29 @@ class ManagerResume(manager_registry.ManagerRegistry):
             # 止まっているsessionを再び動かす追送も、マシン全体の同時稼働数の上限に空きが出るまで待つ。
             ticket = await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
             try:
-                session = await backend.resume(
-                    session_id,
-                    prompt,
-                    resume_state.cwd,
-                    resume_state.model,
-                    resume_state.effort,
-                    model_type=resume_state.model_type,
-                    launch_kind=resume_state.launch_kind,
-                    excluded_candidates=resume_state.excluded_candidates,
-                    turn_seq=resume_state.turn_seq,
-                    fast_mode=resume_state.fast_mode,
-                    request_prompt=resume_state.prompt,
-                    result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
-                    **provider_args,
-                )
+                with startup_features.selection(resume_state.startup_profile):
+                    session = await backend.resume(
+                        session_id,
+                        prompt,
+                        resume_state.cwd,
+                        resume_state.model,
+                        resume_state.effort,
+                        model_type=resume_state.model_type,
+                        launch_kind=resume_state.launch_kind,
+                        excluded_candidates=resume_state.excluded_candidates,
+                        turn_seq=resume_state.turn_seq,
+                        fast_mode=resume_state.fast_mode,
+                        request_prompt=resume_state.prompt,
+                        result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
+                        **provider_args,
+                    )
             finally:
                 ticket.release()
-            # 再開の応答は別の箇所で組み立てるため、待った秒数をsession単位で渡す。
+
             admission_wait_fields(self)[session_id] = ticket.response_fields()
             note_admission_wait(session, ticket)
             session_registry.LaunchInfo.of(resume_state).apply_to(session)
+            session.startup_profile = resume_state.startup_profile
             session.result_contract_recovery_consumed = resume_state.result_contract_recovery_consumed
             if session.status == "starting":
                 session.status = "running"
@@ -530,7 +518,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return session
         except BaseException as error:
             if supersede_interruption and isinstance(error, ResumeDeferred):
-                # 次の復旧は登録簿から判断する。元の中断をwaitの最終結果として戻さない。
                 raise
             if session_id not in self.sessions:
                 self.expired_sessions[session_id] = resume_state
@@ -552,7 +539,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
 
     @staticmethod
     def _consume_resume_exception(task: asyncio.Task[SessionState]) -> None:
-        """timeout後に完了した管理対象taskの例外を回収する。"""
         with contextlib.suppress(asyncio.CancelledError):
             task.exception()
 
@@ -577,7 +563,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             try:
                 assert gate is not None
                 async with gate.admit(new_turn=True, session_id=session_id):
-                    # eager起動では予約だけを先に保持し、pendingの登録後に実処理を始める。
                     await asyncio.sleep(0)
                     entered = True
                     return await self._run_resume(
@@ -616,8 +601,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
         pending: PendingResume,
         timeout: float,
     ) -> tuple[SessionState, bool]:
-        """保留中の再開と配下作業を回収し、中断要求の受理有無を返す。"""
-        pending.discard_previous_result()
         pending.prompt.close()
         cancellation_requested = not pending.task.done()
         if cancellation_requested:
@@ -634,28 +617,19 @@ class ManagerResume(manager_registry.ManagerRegistry):
 
         resume_state = pending.state
         session = self.sessions.get(resume_state.session_id)
-        if session is None:
-            session = SessionState(
-                session_id=resume_state.session_id,
-                cwd=resume_state.cwd,
-                model=resume_state.model,
-                effort=resume_state.effort,
-                engine=resume_state.engine,
-                model_type=resume_state.model_type,
-                codex_model_provider=resume_state.codex_model_provider,
-                codex_subscription_provider=resume_state.codex_subscription_provider,
-                codex_state_provider=resume_state.codex_state_provider,
-                claude_api_env_file=resume_state.claude_api_env_file,
-                claude_connection=resume_state.claude_connection,
-                claude_role=resume_state.claude_role,
-                launch_kind=resume_state.launch_kind,
-                excluded_candidates=resume_state.excluded_candidates,
-                announced=True,
-                turn_seq=resume_state.turn_seq + 1,
-                result_contract_recovery_consumed=resume_state.result_contract_recovery_consumed,
+        if session is None or session.turn_seq <= resume_state.turn_seq:
+            identifier = resume_state.session_id
+            if session is None:
+                self.expired_sessions.pop(identifier, None)
+                self.stopped_sessions[identifier] = resume_state
+            if self._pending_resumes.get(identifier) is pending:
+                self._pending_resumes.pop(identifier, None)
+            await self._notify_waiters()
+            raise ActionableError(
+                "再開待ちを取り消した。新しいturnが成立しておらず、中断要求は未配送です",
+                next_action="showで元のturnを確認し、未回収の結果はwaitで回収する",
             )
-            session_registry.LaunchInfo.of(resume_state).apply_to(session)
-            self.sessions[session.session_id] = session
+        pending.discard_previous_result()
         self.expired_sessions.pop(session.session_id, None)
         if self._pending_resumes.get(session.session_id) is pending:
             self._pending_resumes.pop(session.session_id, None)

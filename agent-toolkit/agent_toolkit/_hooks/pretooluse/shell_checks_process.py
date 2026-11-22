@@ -26,12 +26,6 @@ _ASSIGNMENT_RE = re.compile(r"[A-Za-z_]\w*=")
 
 
 def _has_process_kill_substitution(segment: str) -> bool:
-    """能動的なコマンド置換・プロセス置換の本文に終了コマンド名があるかを返す。
-
-    置換の終端は共通解析で求め、外側のデータ引数にだけある語を置換内の語として扱わない。
-    閉じない置換や改行を含む未確定の区間は保守的に真とする。
-    通常の変数展開（`"$f"`）は実行位置を作らないため対象にしない。
-    """
     quote: str | None = None
     escaped = False
     index = 0
@@ -124,21 +118,15 @@ _ARGUMENT_EXECUTORS = frozenset(
 検索語として安全な`git grep`・`git log`の位置は後段の判定が扱う。
 """
 
-# 引数が常にプログラムの起動指定になるコマンド（端末多重化、名前空間への入場、一時実行ツール）。
+
 _STANDALONE_LAUNCHERS = frozenset({"bunx", "nsenter", "npx", "pipx", "screen", "tmux", "uvx"})
 
-# サブコマンドや区切りで別のプログラムを起動するコマンドと、その起動を示す引数。
+
 _SUBCOMMAND_LAUNCHERS = frozenset({"docker", "kubectl", "mise", "npm", "pnpm", "podman", "uv", "yarn"})
 _LAUNCH_ARGUMENTS = frozenset({"--", "dlx", "exec", "run", "x"})
 
 
 def _process_kill_command_shaped(token: str) -> bool:
-    """引数の本文が、別のコマンドに実行名として渡され得る形かを返す。
-
-    本文の先頭・空白・区切り記号の直後に置かれて後ろに空白が続く語を実行名の形とする（`'pkill -f x'`など）。
-    `tmux send-keys`のような未知の起動手段へ渡る文字列を保護する。
-    `/tmp/pkill dir/out.log`のようにパスの区切りの直後にある語はディレクトリ名として扱う。
-    """
     return any(
         token[match.end() : match.end() + 1].isspace()
         and (match.start() == 0 or token[match.start() - 1].isspace() or token[match.start() - 1] in ";&|(`'\"")
@@ -147,7 +135,6 @@ def _process_kill_command_shaped(token: str) -> bool:
 
 
 def _command_position_tokens(tokens: Sequence[str]) -> Sequence[str]:
-    """環境変数の代入と制御構文の語を除き、実行するコマンドから始まる語を返す。"""
     index = 0
     while index < len(tokens) and (tokens[index] in _SHELL_PREFIX_WORDS or _ASSIGNMENT_RE.match(tokens[index])):
         index += 1
@@ -155,7 +142,6 @@ def _command_position_tokens(tokens: Sequence[str]) -> Sequence[str]:
 
 
 def _expands_command_name(segment: str) -> bool:
-    """区間のコマンド名の位置が、変数展開やコマンド置換で決まるかを返す。"""
     try:
         tokens = _command_position_tokens(split_words(segment))
     except ValueError:
@@ -191,24 +177,17 @@ def _git_process_kill_match(segment: str, raw_tokens: Sequence[str]) -> bool:
 
 
 def _runs_arguments(name: str, tokens: Sequence[str]) -> bool:
-    """コマンドが、引数に渡された語をプログラムとして実行し得るかを返す。"""
     if name in _ARGUMENT_EXECUTORS or is_python_token(name):
-        # 読取・検索の解析が引数をデータと確定した呼出し（`sed -n '1p'`・`awk '{print}'`の読取を含む）は引数を実行しない。
         return not large_reads.arguments_are_data(tokens)
     if name in _STANDALONE_LAUNCHERS:
         return True
     if name in _SUBCOMMAND_LAUNCHERS:
         return not _LAUNCH_ARGUMENTS.isdisjoint(tokens[1:])
-    # 外部プログラムを起動する検索の指定（`rg --pre`）は実行位置と区別できない。
+
     return name == "rg" and any(token == "--pre" or token.startswith("--pre=") for token in tokens[1:])
 
 
 def _has_unsafe_process_kill_match(segment: str) -> bool:
-    """区間で、語が実行され得る位置にあるかを返す。
-
-    コマンド名の位置、置換の中、実行名の形の本文、引数を実行し得るコマンドの引数にある語を実行位置とする。
-    それ以外のコマンドの引数に語やその断片があるだけの区間は、検索・表示のデータとして扱う。
-    """
     try:
         raw_tokens = split_words(segment)
     except ValueError:
@@ -245,7 +224,7 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     matching_segments = [segment for segment in segments if "pkill" in segment or "killall" in segment]
     if not matching_segments:
         return None
-    # 語のある入力のどこかでコマンド名が変数展開で決まる場合は、展開の結果が終了コマンドかを確定できない。
+
     if not any(_has_unsafe_process_kill_match(segment) for segment in matching_segments) and not any(
         _expands_command_name(segment) for segment in segments
     ):
@@ -260,7 +239,6 @@ def _check_bash_process_kill_by_pattern(command: str) -> str | None:
     )
 
 
-# `pgrep`の値を取るオプション。パターンの位置を求めるとき、オプションの直後の値をパターンと取り違えないために使う。
 _PGREP_VALUE_OPTIONS = frozenset(
     {
         "-d",
@@ -295,10 +273,6 @@ _PGREP_VALUE_OPTIONS = frozenset(
 
 
 def _pgrep_full_pattern(tokens: Sequence[str]) -> str | None:
-    """`pgrep -f`のパターンを返す。`-f`が無いか、引数の形を確定できない場合はNoneを返す。
-
-    `-x`（コマンド行全体との完全一致）と`-v`（不一致の列挙）は、自身を囲むシェルを結果に含めないためNoneを返す。
-    """
     full = False
     pattern: str | None = None
     index = 1
@@ -316,7 +290,6 @@ def _pgrep_full_pattern(tokens: Sequence[str]) -> str | None:
         elif token.startswith("--") and "=" in token:
             pass
         elif token.startswith("-") and len(token) > 1:
-            # 短いオプションの連結（`-af`など）は、値を取る文字を含まない場合だけ解釈する。
             letters = token[1:]
             if any(f"-{letter}" in _PGREP_VALUE_OPTIONS for letter in letters) or "x" in letters or "v" in letters:
                 return None

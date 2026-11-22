@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_compaction_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -13,7 +11,6 @@ from agent_toolkit._testing.session_evidence_support import compaction_entry, ev
 
 
 def test_stats_reports_compaction_events_for_both_runtimes(tmp_path: pathlib.Path, capsys) -> None:
-    """メイン記録とサブエージェント記録のコンパクションを全件数え、記録に無い欄を補わない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -112,7 +109,6 @@ def test_stats_assigns_codex_compaction_measurements_in_occurrence_order(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じthreadの計測記録を発生順に対応付け、残りは所要時間不明として数える。"""
     thread_id = "019945be-498f-70f2-a964-93e2c8d38954"
     transcript = _write_transcript(
         tmp_path,
@@ -172,7 +168,6 @@ def _claude_result(timestamp: str, call_id: str, content) -> dict:
 
 
 def test_stats_reports_compaction_interval_usage_for_claude(tmp_path: pathlib.Path, capsys) -> None:
-    """圧縮で終わる区間ごとに、ツール出力の合計とエージェント向け文書の表示を分けて返し、区間ごとに数え直す。"""
     norm = "x" * 300
     transcript = _write_transcript(
         tmp_path,
@@ -301,7 +296,6 @@ def test_stats_reports_compaction_interval_usage_for_codex(tmp_path: pathlib.Pat
 
 
 def test_stats_reports_zero_compaction_total_without_records(tmp_path: pathlib.Path, capsys) -> None:
-    """コンパクションの記録が無い場合は件数0の集計だけを返す。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],

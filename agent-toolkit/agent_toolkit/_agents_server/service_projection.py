@@ -1,5 +1,3 @@
-"""実行中turnの制御状態を複製せず、状態表示・結果回収のwriterを現行世代へ集める。"""
-
 from __future__ import annotations
 
 # StatusFileWriterの保存・回収状態を移譲する実装であり、同じpackageの内部契約を共有する。
@@ -38,7 +36,6 @@ type FrozenSlots = dict[tuple[str, str], LegacyObservation]
 
 
 def observe_legacy_slots(state_root: pathlib.Path, process: str) -> FrozenSlots:
-    """旧hubを静止する前に旧名の原本を読む。静止中は旧CLIもその原本を削除できる。"""
     slots: FrozenSlots = {}
     pid = process.partition(":")[0]
     for root in shared_layout.list_root_session_ids(state_root):
@@ -52,7 +49,6 @@ def observe_legacy_slots(state_root: pathlib.Path, process: str) -> FrozenSlots:
             if not isinstance(writer, dict) or str(writer.get("pid")) != pid or not isinstance(rows, list):
                 continue
             for row in rows:
-                # 終了結果別の公開記録を持つwriterは、表示にもturn_seqを保存する。
                 if (
                     not isinstance(row, dict)
                     or "turn_seq" in row
@@ -77,8 +73,6 @@ class _RetryProjection(Exception):
 
 
 class ProjectionHub:
-    """会話ごとの観測用コピーだけで既存のStatusFileWriterを動かす。"""
-
     def __init__(self, generation: str, directory: pathlib.Path) -> None:
         self.generation = generation
         self.registry = GenerationRegistry(directory)
@@ -96,7 +90,6 @@ class ProjectionHub:
         self._update_lock = asyncio.Lock()
 
     async def request(self, identity: shared_roots.StatusFileIdentity, operation: str, arguments: dict) -> Any:
-        """受付先が進んだ場合も同じ観測元とwriter名を保って転送する。"""
         payload = {
             "identity": dataclasses.asdict(identity),
             "source": self.generation,
@@ -106,7 +99,6 @@ class ProjectionHub:
         return self._codec.decode(await self.apply(payload))
 
     async def close(self) -> None:
-        """予約した保存を回収し、現在もこの世代が持つ射影だけを終了する。"""
         current = self.registry.current()
         failures = []
         for writer in tuple(self.writers.values()):
@@ -120,7 +112,6 @@ class ProjectionHub:
             raise ExceptionGroup("射影の保存を回収できませんでした", failures)
 
     async def freeze(self, token: str) -> None:
-        """保存とtimerを回収してから静止し、移譲先の準備中は旧ファイルを書かない。"""
         async with self._update_lock:
             if token in self._freezes:
                 return
@@ -164,7 +155,6 @@ class ProjectionHub:
         }
 
     async def seed(self, inventory: dict, *, observed: FrozenSlots | None = None) -> None:
-        """受付公開前はファイルを書かず、受け取った観測をメモリーへ保持する。"""
         for item in inventory["writers"]:
             identity = item["identity"]
             key = identity["root_session_id"], identity["file_name"]
@@ -205,14 +195,14 @@ class ProjectionHub:
                     session.finalized_at,
                 ):
                     session.result_delivered |= prior.result_delivered
-                # 旧転送元が中間版の誤った受領を再送しても、未回収の原本を消さない。
+
                 if (
                     session.result_delivered
                     and not group.get("turn_receipts")
                     and await writer.result_state_async(session.session_id, session=session) == "published"
                 ):
                     session.result_delivered = False
-                # 観測用の状態は登録簿の制御所有者を書き換えない。
+
                 session.publish_registry = False
                 combined[session.session_id] = session
                 if prior is None and session.session_id in group["published"]:
@@ -234,7 +224,6 @@ class ProjectionHub:
     def _legacy_handover(
         self, writer: status_file.StatusFileWriter, inventory: dict, observed: LegacyObservation | None
     ) -> SlotEnds:
-        """原本の観測が無い旧形式だけ、旧hub同士の初回描画と同じ台帳で凍結turnを決着する。"""
         slots = set(observed.slots) if observed is not None else set()
         # 静止までに旧hubがもう一度保存した場合、以前見た原本とは別のturnも旧CLIへ届き得る。
         seen = set()
@@ -259,15 +248,13 @@ class ProjectionHub:
             session = service_state.restore(item)
             if session.finalized_at is None or not session.result_available:
                 continue
-            # 単一slotの旧writerは「台帳にあり、旧名が無い」を回収済みとした。
-            # これは過去の回収turnの特定ではない。引継ぎ後の別turnには適用しない。
+
             missing = (session.turn_seq, session.finalized_at) if identifier not in seen and identifier in listed else None
             if end := retained_results.legacy_publication(writer._result_path(identifier), missing=missing):
                 slots.add((identifier, end))
         return slots
 
     async def apply(self, payload: dict) -> Any:
-        """現在もwriterを所有する世代だけが、許可した射影操作を保存する。"""
         while True:
             target = self.registry.current()
             if target is not None and target["generation"] != self.generation:
@@ -313,7 +300,7 @@ class ProjectionHub:
                         "同じ会話の状態は旧MCP接続が所有しています。旧側の仕事と結果を保持しました",
                         next_action="初回移行では起動中の会話を旧接続のまま使う。会話終了後の通常起動で新版へ移る",
                     )
-                # 世代更新はsourceの保存停止後に同じファイルを引き継ぐ。起動時の別名writerは作らない。
+
                 writer._active = True
                 self.writers[key] = writer
                 self.groups[key] = {}
@@ -361,15 +348,12 @@ class ProjectionHub:
 
 
 async def seed_from_previous(hub: ProjectionHub, directory: pathlib.Path, previous: dict, target: dict, token: str) -> None:
-    """旧CLIが静止中に回収する前に旧名を観測し、静止後の台帳とともに引き継ぐ。"""
     observed = await run_file_operation(observe_legacy_slots, directory.parent.parent, previous["process"])
     inventory = await service_rpc.request(previous, "prepare_update", {"token": token, "target": target})
     await hub.seed(inventory, observed=observed)
 
 
 class ServiceStatusWriter(status_file.StatusFileWriter):
-    """終了結果の原本を転送元で確定し、表示用の観測を現行hubへ渡す。"""
-
     def __init__(self, sessions, identity, hub: ProjectionHub, **kwargs) -> None:
         super().__init__(sessions, identity, state_root=hub.state_root, **kwargs)
         self._hub = hub
@@ -431,7 +415,6 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
                     session.result_delivered = True
 
     async def _prepare_result_view(self, item: dict) -> dict:
-        """原本を公開してから、旧hubが表示だけを行う観測と、新hubが復元する終了状態に分ける。"""
         session = service_state.restore(item)
         await self._ensure_admitted(session.session_id)
         if session.result_delivered:
@@ -441,7 +424,7 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
                 retained_results.publish_result, self._result_path(session.session_id), self._result_payload(session)
             )
         fields = {key: item[key] for key in ("turn_end", "result_delivered", "retention_deadline")}
-        # 旧hubには終了statusを表示させるが、turnの完了通知（旧名の書込）も受領通知（削除）も渡さない。
+
         item["turn_end"] = self._hub._codec.encode(turn_state.TurnEnd.IN_PROGRESS)
         item["result_delivered"] = self._hub._codec.encode(False)
         if await self.result_state_async(session.session_id, session=session) == "consumed":
@@ -464,7 +447,7 @@ class ServiceStatusWriter(status_file.StatusFileWriter):
         await self._hub.request(self._identity, "deactivate", {})
 
     async def result_state_async(self, session_id: str, *, session=None) -> str:
-        # 受付世代が入れ替わっても結果の原本と公開記録は同じ。旧hubへ新しい引数を送らない。
+
         if session is None:
             local = self.sessions.get(session_id) or self.expired_sessions.get(session_id)
             if local is None or local.finalized_at is None:

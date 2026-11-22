@@ -35,7 +35,6 @@ def _mcp_background_timeout_entries(
     sidechain: bool = False,
     tool_name: str = "mcp__agents_server__start",
 ) -> list[dict]:
-    """MCP timeoutによる背景化を記録したassistant・userエントリを生成する。"""
     return [
         {
             "type": "assistant",
@@ -65,13 +64,7 @@ def _mcp_background_timeout_entries(
 
 
 class TestTaskIdFallbackCompletion:
-    """旧形式（userエントリの`<task-notification>`）における`<task-id>`フォールバック解決の検証。
-
-    通知形式のバリエーション: `<tool-use-id>`のみ・`<task-id>`のみ・両方あり・両方欠落。
-    """
-
     def test_tool_use_id_only_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<tool-use-id>`のみを持つ通知で完了解決される（既存挙動）。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _user_task_notification_entry("toolu_a", task_id=None),
@@ -81,7 +74,6 @@ class TestTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_id_only_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<task-id>`のみを持つ通知でも起動時agentId経由で完了解決される。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _user_task_notification_entry(None, task_id="agent-a"),
@@ -91,7 +83,6 @@ class TestTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_present_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<tool-use-id>`と`<task-id>`の両方があり、双方とも同一起動へ対応する通知でも完了解決される。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _user_task_notification_entry("toolu_a", task_id="agent-a"),
@@ -101,7 +92,6 @@ class TestTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_missing_leaves_pending(self, tmp_path: pathlib.Path) -> None:
-        """`<tool-use-id>`と`<task-id>`の両方が欠落した通知では完了解決されずpendingが残る。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _user_task_notification_entry(None, task_id=None),
@@ -112,15 +102,7 @@ class TestTaskIdFallbackCompletion:
 
 
 class TestAttachmentTaskIdFallbackCompletion:
-    """新形式（`type=="attachment"`の`<task-notification>`）における`<task-id>`フォールバック解決の検証。
-
-    attachment分岐が、共通ヘルパー`_resolve_task_notification_ids`を通して旧形式と同一の解決処理を使うことを確認する。
-    通知形式のバリエーション: `<tool-use-id>`のみ・`<task-id>`のみ・両方あり・両方欠落。
-    両方欠落時は`task_notification_unresolved`ログが出力されることも検証する。
-    """
-
     def test_tool_use_id_only_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<tool-use-id>`のみを持つattachment通知で完了解決される。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _attachment_task_notification_entry("toolu_a", task_id=None),
@@ -130,7 +112,6 @@ class TestAttachmentTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_task_id_only_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<task-id>`のみを持つattachment通知でも起動時agentId経由で完了解決される。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _attachment_task_notification_entry(None, task_id="agent-a"),
@@ -140,7 +121,6 @@ class TestAttachmentTaskIdFallbackCompletion:
         assert is_pending_async_work(str(t), "", session_state=None) is False
 
     def test_both_present_completion(self, tmp_path: pathlib.Path) -> None:
-        """`<tool-use-id>`と`<task-id>`の両方があり、双方とも同一起動へ対応するattachment通知でも完了解決される。"""
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _attachment_task_notification_entry("toolu_a", task_id="agent-a"),
@@ -152,10 +132,6 @@ class TestAttachmentTaskIdFallbackCompletion:
     def test_both_missing_leaves_pending_and_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """`<tool-use-id>`と`<task-id>`の両方が欠落したattachment通知は解決されずpendingが残る。
-
-        あわせて`task_notification_unresolved`が常時ログへ記録されることを検証する。
-        """
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
@@ -169,13 +145,10 @@ class TestAttachmentTaskIdFallbackCompletion:
 
 
 class TestNestedAgentTaskIdFallbackCompletion:
-    """孫Agentの`queue-operation`完了通知を`<task-id>`だけで突合する。"""
-
     @pytest.mark.parametrize(("operation", "pending"), [("enqueue", True), ("remove", False)])
     def test_task_id_only_queue_operation_completes_grandchild(
         self, tmp_path: pathlib.Path, operation: str, pending: bool
     ) -> None:
-        """task-id単独通知を解決し、投入だけなら配送待ちも残す。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -191,8 +164,6 @@ class TestNestedAgentTaskIdFallbackCompletion:
 
 
 class TestMcpBackgroundTaskCompletion:
-    """MCPタイムアウト通知とタスクIDだけの完了通知を突合する。"""
-
     def test_pending_mcp_task_is_completed_by_task_id_notification(self, tmp_path: pathlib.Path) -> None:
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp"),
@@ -218,7 +189,6 @@ class TestMcpBackgroundTaskCompletion:
         ],
     )
     def test_mcp_task_is_completed_by_tool_use_id_notification(self, tmp_path: pathlib.Path, notification: dict) -> None:
-        """MCP背景化は既存のtool-use-idだけの完了通知でも相殺される。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp"),
             notification,
@@ -228,7 +198,6 @@ class TestMcpBackgroundTaskCompletion:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_sidechain_mcp_timeout_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """sidechain内のMCP背景化は計画ファイル（メイン）側の未完了タスクに含めない。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp", sidechain=True),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
@@ -237,7 +206,6 @@ class TestMcpBackgroundTaskCompletion:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_non_mcp_timeout_text_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """MCP以外のtool_resultに同じ文言があっても背景化として誤検出しない。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_read", tool_name="Read"),
             _assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]),
@@ -246,7 +214,6 @@ class TestMcpBackgroundTaskCompletion:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_one_of_multiple_mcp_tasks_completed_leaves_other_pending(self, tmp_path: pathlib.Path) -> None:
-        """複数MCP背景化の一部だけが完了すると、未完了のタスクだけが残る。"""
         entries = [
             *_mcp_background_timeout_entries("mcp-task-1", "toolu_mcp_1"),
             *_mcp_background_timeout_entries("mcp-task-2", "toolu_mcp_2"),
@@ -272,7 +239,6 @@ class TestMcpBackgroundTaskCompletion:
     def test_multiple_mcp_results_in_one_user_entry_are_matched_individually(
         self, tmp_path: pathlib.Path, completed_entries: list[dict], expected: bool
     ) -> None:
-        """複数MCP結果を同じuserエントリで受領しても、各結果と完了通知を対応付ける。"""
         entries = [
             _assistant_entry(
                 [

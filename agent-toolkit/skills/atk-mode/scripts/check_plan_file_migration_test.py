@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""計画の旧書式の移行を検証する。"""
 
 import collections.abc
 import functools
@@ -32,7 +31,6 @@ type _MigrationInputFactory = collections.abc.Callable[[pathlib.Path], tuple[str
 
 
 def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧3列表だけを加えた現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     new_table = "\n".join(
         [
@@ -45,14 +43,12 @@ def _migration_legacy_action_input(repo: pathlib.Path) -> tuple[str, str]:
 
 
 def _migration_legacy_bug_table_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の本文内バグ調査表だけを加えた現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
     return main, _plan_fixture.inline_bug_section(variant=_plan_fixture.BUG_VARIANT_LEGACY_STANDALONE) + detail
 
 
 def _migration_legacy_history_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の変更履歴見出しだけを持つ現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return (
         main.replace(f"## {_plan_format.PLAN_H2_HISTORY}", f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", 1),
@@ -61,7 +57,6 @@ def _migration_legacy_history_input(repo: pathlib.Path) -> tuple[str, str]:
 
 
 def _migration_legacy_progress_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の進捗ログ見出しだけを持つ現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return (
         main.replace(f"## {_plan_format.PLAN_H2_PROGRESS}", f"## {_plan_format.PLAN_H2_LEGACY_PROGRESS}", 1),
@@ -70,7 +65,6 @@ def _migration_legacy_progress_input(repo: pathlib.Path) -> tuple[str, str]:
 
 
 def _migration_legacy_agent_judgment_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式のエージェント提案詳細の見出しだけを持つ現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return (
         main.replace(
@@ -83,32 +77,27 @@ def _migration_legacy_agent_judgment_input(repo: pathlib.Path) -> tuple[str, str
 
 
 def _migration_legacy_user_event_heading_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式のユーザー発言見出しだけを持つ現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return main.replace(_plan_fixture.USER_EVENT_HEADING, _plan_fixture.LEGACY_USER_EVENT_HEADING, 1), detail
 
 
 def _migration_legacy_metadata_name_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の計画メタ情報項目名だけを加えた現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return main.replace("- 作業種別:", "- 実装詳細: `legacy.detail.md`\n- 作業種別:", 1), detail
 
 
 def _migration_legacy_detail_reference_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の計画ファイル（詳細）参照だけを加えた現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     return main.replace("- 作業種別:", "- 計画ファイル（詳細）: `legacy.detail.md`\n- 作業種別:", 1), detail
 
 
 def _migration_legacy_materials_heading_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の提示素材見出しだけを加えた現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     history = f"## {_plan_format.PLAN_H2_HISTORY}"
     return main.replace(history, f"## {_plan_format.PLAN_H2_MATERIALS}\n\n旧形式の素材。\n\n{history}", 1), detail
 
 
 def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式のバグ調査ファイル参照だけを持つ現行形式の計画を返す。"""
     main, detail = human_new_format_plan(repo)
     main = main.replace("- 作業種別: 通常変更", "- 作業種別: バグ対応", 1)
     bug_path = (repo / "migration.bugs.md").resolve()
@@ -121,7 +110,6 @@ def _migration_legacy_bug_reference_input(repo: pathlib.Path) -> tuple[str, str]
 
 
 def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧ID形式だけを残した二ファイル計画を返す。"""
     main, detail = _new_format_plan(repo, git_repository.git_output(repo, "rev-parse", "HEAD"))
     start = main.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
     end = main.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}", start)
@@ -132,7 +120,6 @@ def _migration_legacy_two_file_id_input(repo: pathlib.Path) -> tuple[str, str]:
 
 
 def _migration_legacy_materials_input(repo: pathlib.Path) -> tuple[str, str]:
-    """旧形式の提示素材表を持つ二ファイル計画を返す。"""
     main, detail = _new_format_plan(repo, git_repository.git_output(repo, "rev-parse", "HEAD"))
     main = main.replace(
         _plan_fixture.TWO_FILE_ACTION_TABLE,
@@ -183,7 +170,6 @@ def test_new_format_accepts_legacy_bug_file_reference_with_warning(
 def test_rejects_current_single_file_structure_violations(
     repo: tuple[pathlib.Path, str], old: str, new: str, message: str
 ) -> None:
-    """現行書式の固定節、固定表、見出し深度の違反を拒否する。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(old, new, 1)
 
@@ -250,7 +236,6 @@ def test_rejects_each_migration_warning_for_new_creation(
     factory: _MigrationInputFactory,
     message: str,
 ) -> None:
-    """移行警告を個別に新規作成用のエラーへ移す。"""
     work_dir, _base = repo
     main_content, detail_content = factory(work_dir)
 
@@ -268,7 +253,6 @@ def test_rejects_each_migration_warning_for_new_creation(
 
 @pytest.fixture
 def reuse_markdown_layout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ本文の行分類だけを再利用し、各本文は実際のMarkdownパーサーで解析する。"""
     classify = _plan_markdown._markdown_excluded_line_indices  # noqa: SLF001  # pylint: disable=protected-access
     monkeypatch.setattr(_plan_markdown, "_markdown_excluded_line_indices", functools.cache(classify))
 
@@ -305,7 +289,6 @@ def test_rejects_progress_log_rows_only_for_new_creation(repo: tuple[pathlib.Pat
     ),
 )
 def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
-    """旧形式を拒否する場合も行数の助言を警告に残す。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     padding = 1201 - len(detail_content.splitlines())
@@ -323,7 +306,7 @@ def test_keeps_plan_size_advisory_when_rejecting_migration_warnings(repo: tuple[
     assert errors == [_TWO_FILE_MIGRATION]
     assert len(warnings) == 1
     assert warnings[0].startswith("計画の行数が閾値を超えている")
-    # 撤去済みの節と付属素材の規定を案内すると、実行主体が実在しない規定を探す。
+
     assert "実装資料と完了条件" not in warnings[0]
     assert "付属素材" not in warnings[0]
 
@@ -359,7 +342,6 @@ def test_rejects_all_migration_warnings_in_legacy_two_file_plan(repo: tuple[path
     ],
 )
 def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathlib.Path, str], variant: str) -> None:
-    """廃止した表と表以前の短い記録を持つ保存済みの付属ファイルを読み取りで受理し、移行warningを返す。"""
     work_dir, base = repo
     main_content, detail_content = _new_format_plan(work_dir, base, bug=True)
     legacy_bug_file = _plan_fixture.bug_file(variant=variant)
@@ -369,7 +351,6 @@ def test_new_format_accepts_legacy_bug_table_rows_with_warning(repo: tuple[pathl
 
 
 def _run_rejecting_migration_warnings(work_dir: pathlib.Path, path: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    """改訂用の`--reject-migration-warnings`を付けてCLIで計画を確かめる。"""
     return subprocess.run(
         [
             sys.executable,
@@ -403,7 +384,6 @@ def test_cli_rejects_migration_warnings_on_revision(repo: tuple[pathlib.Path, st
 
 
 def test_cli_allows_progress_rows_when_rejecting_migration_warnings(repo: tuple[pathlib.Path, str]) -> None:
-    """改訂用CLI入力は移行警告を拒否しても実行工程の進捗行を保持する。"""
     work_dir, _base = repo
     main_content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     main_content = main_content.replace(
@@ -444,7 +424,6 @@ def test_cli_accepts_review_ids_in_real_legacy_two_file_plan() -> None:
 
 @pytest.mark.usefixtures("reuse_markdown_layout")
 def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path, str]) -> None:
-    """新しい固定H2と旧ID表を混在させたcanonical形式を拒否する。"""
     work_dir, base = repo
     legacy_main_content, detail_content = _new_format_plan(work_dir, base, detail_name="canonical-plan.detail.md")
     main_content = _plan_fixture.to_canonical_main(legacy_main_content)
@@ -459,7 +438,6 @@ def test_new_canonical_headings_reject_legacy_id_tables(repo: tuple[pathlib.Path
 
 
 def test_legacy_wi_names_are_read_compatible_and_warned(repo: tuple[pathlib.Path, str]) -> None:
-    """改名前の項目名は読み取りで受理し、移行warningを返す。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     main_content = _plan_fixture.legacy_wi_names(main_content)
@@ -472,7 +450,6 @@ def test_legacy_wi_names_are_read_compatible_and_warned(repo: tuple[pathlib.Path
 
 
 def test_legacy_wi_names_are_rejected_on_creation(repo: tuple[pathlib.Path, str]) -> None:
-    """新規作成・改訂を行う場合は改名前の項目名を拒否する。"""
     work_dir, _base = repo
     main_content, detail_content = human_new_format_plan(work_dir)
     main_content = _plan_fixture.legacy_wi_names(main_content)

@@ -23,15 +23,14 @@ WRITER_CONFLICT_NEXT_ACTION = (
 
 
 class ThreadWriterConflictError(RuntimeError):
-    """対象threadのactive writerがあるため、再開要求が拒否された。"""
+    pass
 
 
 class IncompatibleResumeError(RuntimeError):
-    """会話状態を再開先が受理できる条件を確認できなかった。"""
+    pass
 
 
 def _opaque(value: Any) -> bool:
-    """Responsesの圧縮項目と暗号化内容を、値を解釈せず検出する。"""
     if isinstance(value, list):
         return any(_opaque(item) for item in value)
     if not isinstance(value, dict):
@@ -50,11 +49,6 @@ def validate_resume(
     confirmed_provider: str | None,
     record_path: str | None,
 ) -> None:
-    """同一生成先への再開か、不透明状態を含まない記録だけを許可する。
-
-    confirmed_providerは本関数が再開を許可した接続先、または新規開始で確定した接続先である。
-    旧版の選択済みproviderには、状態を受理しなかった移行先も含まれるため使用しない。
-    """
     if confirmed_provider == target:
         return
     paths = (Path(record_path),) if record_path else session_record_paths.find_codex_records(session_id)
@@ -79,7 +73,7 @@ def validate_resume(
                     metadata_providers.add(provider if isinstance(provider, str) and provider else None)
                 elif record.get("type") == "compacted" and isinstance(payload, dict):
                     history = payload.get("replacement_history")
-                    # replacement_historyがある圧縮は、その時点の再開対象の履歴を置換する。
+
                     opaque = _opaque(payload) if isinstance(history, list) else opaque or _opaque(payload)
                 elif record.get("type") == "response_item":
                     opaque = opaque or _opaque(payload)

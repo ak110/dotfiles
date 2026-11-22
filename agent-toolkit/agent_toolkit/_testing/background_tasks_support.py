@@ -1,5 +1,3 @@
-"""background_tasks_testの共通試験準備。"""
-
 import json
 import pathlib
 from typing import Literal
@@ -10,7 +8,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 
 def _describe_pending_background_tasks(transcript_path: str, session_id: str) -> tuple[set[str], set[str]]:
-    """transcriptを読み込み、非sidechainのバックグラウンドタスク起動集合と完了集合を返す。"""
     launched, completed, _host_reported = _background_tasks.describe_pending_background_entries(
         _transcript.read_transcript_entries(transcript_path),
         session_id,
@@ -31,11 +28,6 @@ def _host_mcp_notice(task_id: str, tool_name: str = "mcp__agents_server__wait") 
 
 
 def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reason: str = "end_turn") -> dict:
-    """アシスタントエントリを生成する。
-
-    `stop_reason`を省略すると`end_turn`（最終ターン相当）として扱う。
-    `_wait_for_end_turn`のポーリングを即時通過させるための設定。
-    """
     return {
         "type": "assistant",
         "message": {"id": msg_id, "role": "assistant", "content": content, "stop_reason": stop_reason},
@@ -43,7 +35,6 @@ def _assistant_entry(content: list[dict], *, msg_id: str = "msg_test", stop_reas
 
 
 def _user_entry(text: str) -> dict:
-    """ユーザーエントリを生成する。"""
     return {"type": "user", "message": {"role": "user", "content": text}}
 
 
@@ -76,7 +67,6 @@ def _user_async_launched_entry(
 
 
 def _assistant_agent_entry(tool_use_id: str, *, sidechain: bool = True) -> dict:
-    """Agent呼び出しを記録するassistantエントリを生成する。"""
     return {
         "type": "assistant",
         "isSidechain": sidechain,
@@ -89,7 +79,6 @@ def _assistant_agent_entry(tool_use_id: str, *, sidechain: bool = True) -> dict:
 
 
 def _user_agent_launch_marker_entry(tool_use_id: str, *, status: str | None = None) -> dict:
-    """起動成功本文を持つsidechainのAgent結果を実記録形状で生成する。"""
     tool_use_result: dict[str, object] = {"isAsync": True, "agentId": "agent-real-shape"}
     if status is not None:
         tool_use_result["status"] = status
@@ -138,7 +127,6 @@ def _user_background_bash_entry(tool_use_id: str, *, sidechain: bool = False) ->
 
 
 def _user_task_stop_success_entry(stopped_task_id: str, *, tool_use_id: str = "toolu_stop") -> dict:
-    """`TaskStop`の停止成功結果を実記録形状で生成する。"""
     return {
         "type": "user",
         "isSidechain": False,
@@ -163,11 +151,6 @@ def _user_task_stop_success_entry(stopped_task_id: str, *, tool_use_id: str = "t
 
 
 def _assistant_sendmessage_entry(tool_use_id: str, *, sidechain: bool = False) -> dict:
-    """SendMessage呼び出しを記録するassistantエントリを生成する。
-
-    `_collect_sendmessage_tool_use_ids`がSendMessage tool_use idを収集するための
-    非sidechain assistantエントリを再現する。
-    """
     return {
         "type": "assistant",
         "isSidechain": sidechain,
@@ -224,13 +207,6 @@ def _user_sendmessage_bg_resume_current_entry(
     resumed_agent_id: object = "aecb02dc74cf84e99",
     resume_text: str | None = None,
 ) -> dict:
-    """現行形式のSendMessage背景再開を記録するuserエントリを生成する。
-
-    `toolUseResult`が`resumedAgentId`と`Resuming agent <id>`形式の`message`を持ち、
-    tool_result本文が旧マーカーを含まない実記録の形式を再現する。
-    `resumed_agent_id`へ非文字列を渡すと構造化フィールド判定が成立しないテスト入力になり、
-    `resume_text`を渡すとtool_result本文を差し替えられる。
-    """
     body = resume_text if resume_text is not None else f"Resuming agent {resumed_agent_id}"
     return {
         "type": "user",
@@ -254,11 +230,6 @@ def _user_sendmessage_bg_resume_current_entry(
 
 
 def _task_notification_body(tool_use_id: str | None, *, task_id: str | None = "task-x", status: str = "completed") -> str:
-    """`<task-notification>`要素の本文を組み立てる。
-
-    `tool_use_id`または`task_id`に`None`を渡すと該当要素を省略する。
-    `<task-id>`要素経由のフォールバック解決・両者欠落ケースの検証に用いる。
-    """
     parts = ["<task-notification>"]
     if task_id is not None:
         parts.append(f"<task-id>{task_id}</task-id>")
@@ -271,10 +242,6 @@ def _task_notification_body(tool_use_id: str | None, *, task_id: str | None = "t
 def _user_task_notification_entry(
     tool_use_id: str | None, *, task_id: str | None = "task-x", status: str = "completed"
 ) -> dict:
-    """`<task-notification>`本文を持つuserエントリを生成する（旧形式）。
-
-    `tool_use_id`または`task_id`に`None`を渡すと該当要素を省略できる（`_task_notification_body`参照）。
-    """
     notification = _task_notification_body(tool_use_id, task_id=task_id, status=status)
     return {
         "type": "user",
@@ -286,7 +253,6 @@ def _user_task_notification_entry(
 
 
 def _monitor_launch_entries(tool_use_id: str, task_id: str) -> list[dict]:
-    """Monitorツール起動と対応結果のエントリを生成する。"""
     return [
         {
             "type": "assistant",
@@ -358,7 +324,6 @@ def _queue_operation_task_notification_entry(
     tool_use_id: str | None = None,
     task_id: str | None = "task-x",
 ) -> dict:
-    """最上位transcriptの`queue-operation`へ記録される完了通知を生成する。"""
     return {
         "type": "queue-operation",
         "operation": operation,
@@ -374,7 +339,6 @@ def _write_nested_subagent_fixture(
     child_id: str = "child-id",
     metadata: dict[str, object] | None = None,
 ) -> pathlib.Path:
-    """最上位transcriptと直接の子transcriptの最小fixtureを生成する。"""
     transcript = _write_transcript(directory, entries)
     subagents_dir = transcript.with_suffix("") / "subagents"
     subagents_dir.mkdir(parents=True)

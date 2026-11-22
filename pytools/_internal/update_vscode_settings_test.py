@@ -1,5 +1,3 @@
-"""update_vscode_settings モジュールのテスト。"""
-
 import itertools
 import json
 import math
@@ -28,25 +26,13 @@ def _make_settings_dir(tmp_path: Path, *, is_windows: bool) -> Path:
 
 
 class TestHostnameColor:
-    """`run()` 経由でホスト名カラーの動作を検証する。"""
-
     def test_palette_brightness_not_too_dark(self) -> None:
-        """パレット全色の加重平均輝度が閾値 140 以上である。
-
-        run() では1色しか生成しないため、パレット定数を直接参照して全色を検証する。
-        """
         for color in mod._HOST_COLORS:  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
             r, g, b = _hex_to_rgb(color)
             luminance = 0.299 * r + 0.587 * g + 0.114 * b
             assert luminance >= 140, f"パレット色 {color} が暗すぎる (輝度: {luminance:.1f})"
 
     def test_palette_min_distance(self) -> None:
-        """パレット内の全ペアの RGB ユークリッド距離が十分に離れている。
-
-        連続 HSL サンプリング時代にユーザーが「区別がつかない」と報告した近接ペアの
-        距離は約 23.96 だった。将来パレットを差し替えた際にも、少なくとも閾値 40 を
-        下回らないことをパレット自体のサニティーテストとして担保する。
-        """
         min_distance = min(
             math.dist(_hex_to_rgb(a), _hex_to_rgb(b))
             for a, b in itertools.combinations(mod._HOST_COLORS, 2)  # noqa: SLF001  # pylint: disable=protected-access  # パレット全色の品質検証はrun()経由で到達不能（1ホスト=1色のみ返るため）。writing-standardsの例外条件（引数注入では到達不能なロジックに限り最小限の範囲で許容）に該当
@@ -54,11 +40,10 @@ class TestHostnameColor:
         assert min_distance >= 40.0, f"パレット内の最小ペア距離 {min_distance:.2f} が閾値 40 を下回っている"
 
     def test_deterministic(self, tmp_path: Path) -> None:
-        """同じホスト名なら同じ色を返す。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         mod.run(hostname="stable-host", is_windows=False, home=tmp_path)
         first = json.loads(target.read_text(encoding="utf-8"))["workbench.colorCustomizations"]["activityBar.background"]
-        # ファイルを削除してから再度 run() する
+
         target.unlink()
         mod.run(hostname="stable-host", is_windows=False, home=tmp_path)
         second = json.loads(target.read_text(encoding="utf-8"))["workbench.colorCustomizations"]["activityBar.background"]
@@ -90,8 +75,6 @@ class TestSettingsPath:
 
 
 class TestApply:
-    """`run()` 経由で managed 設定のマージ動作を検証する。"""
-
     def test_creates_new_file(self, tmp_path: Path) -> None:
         """settings.json が存在しない場合、managed がそのまま出力される。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
@@ -101,7 +84,6 @@ class TestApply:
         assert "activityBar.background" in result["workbench.colorCustomizations"]
 
     def test_preserves_existing_keys(self, tmp_path: Path) -> None:
-        """既存キーが保持される。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps({"editor.fontSize": 14}, ensure_ascii=False), encoding="utf-8")
@@ -111,7 +93,6 @@ class TestApply:
         assert "workbench.colorCustomizations" in result
 
     def test_preserves_other_color_customizations(self, tmp_path: Path) -> None:
-        """colorCustomizations 内の他キーが保持される (浅い dict マージ)。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         existing = {"workbench.colorCustomizations": {"titleBar.activeBackground": "#112233"}}
@@ -122,7 +103,6 @@ class TestApply:
         assert "activityBar.background" in result["workbench.colorCustomizations"]
 
     def test_list_is_overwritten(self, tmp_path: Path) -> None:
-        """list 値は上書きされる (union マージではない)。"""
         target = _make_settings_dir(tmp_path, is_windows=True)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -132,11 +112,10 @@ class TestApply:
         (tmp_path / "Code").mkdir(exist_ok=True)
         mod.run(hostname="test", is_windows=True, environ={"APPDATA": str(tmp_path)})
         result = json.loads(target.read_text(encoding="utf-8"))
-        # managed の markdown-pdf.styles で上書きされる
+
         assert "/old/markdown-pdf.css" not in result["markdown-pdf.styles"]
 
     def test_legacy_keys_are_removed(self, tmp_path: Path) -> None:
-        """Machine scope では markdown.styles が削除される。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -155,15 +134,13 @@ class TestApply:
         assert result["editor.fontSize"] == 14
 
     def test_no_change_returns_false(self, tmp_path: Path) -> None:
-        """変更がなければ False を返す。"""
         _make_settings_dir(tmp_path, is_windows=False)
-        # 先に run() して現在の managed 設定を書き込む
+
         mod.run(hostname="test", is_windows=False, home=tmp_path)
-        # 同じ設定で再度 run() すれば変更なし
+
         assert mod.run(hostname="test", is_windows=False, home=tmp_path).changed is False
 
     def test_reads_jsonc_with_comments(self, tmp_path: Path) -> None:
-        """JSONC (コメント付き) ファイルをパースしてマージできる。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         jsonc_content = """{
@@ -180,7 +157,6 @@ class TestApply:
         assert "workbench.colorCustomizations" in result
 
     def test_reads_jsonc_with_line_comment_only(self, tmp_path: Path) -> None:
-        """行コメント (//) のみを含む JSONC ファイルをパースできる。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('{\n  // 行コメント\n  "key": "value"\n}', encoding="utf-8")
@@ -198,7 +174,6 @@ class TestApply:
         assert result["key"] == "value"
 
     def test_reads_pure_json_same_result(self, tmp_path: Path) -> None:
-        """純 JSON のファイルも従来どおりパースできる。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps({"editor.fontSize": 16}, ensure_ascii=False), encoding="utf-8")
@@ -207,7 +182,6 @@ class TestApply:
         assert result["editor.fontSize"] == 16
 
     def test_invalid_json_raises_json_decode_error(self, tmp_path: Path) -> None:
-        """不正な JSON は json.JSONDecodeError を送出する。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text("{invalid}", encoding="utf-8")
@@ -215,7 +189,6 @@ class TestApply:
             mod.run(hostname="test", is_windows=False, home=tmp_path)
 
     def test_reads_jsonc_with_trailing_comma(self, tmp_path: Path) -> None:
-        """トレーリングカンマ付きの JSONC をパースできる。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('{"a": 1, "b": 2,}', encoding="utf-8")
@@ -226,19 +199,10 @@ class TestApply:
 
 
 class TestJsoncCommentPreservation:
-    """JSONCコメント維持経路のテスト。
-
-    既存パスの値置換のみで済む更新は`pytilpack.jsonc.edit`経由で書き戻され、
-    ユーザーが加えた行コメント・空行・独自インデントを維持する。
-    構造変化（キー追加・list変更）を含む更新は現行の`json.dumps`経路にフォールバックする。
-    """
-
     def test_scalar_only_change_preserves_comments(self, tmp_path: Path) -> None:
-        """既存キーのスカラー値置換のみならコメントが維持される。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
-        # 既存設定を「マージ後にscalar差分のみ発生する」形へ調整する。
-        # workbench.colorCustomizations.activityBar.background の色だけ変わる想定。
+
         managed = {
             "workbench.colorCustomizations": {"activityBar.background": "#123456"},
             "markdown-pdf.styles": ["/tmp/existing.css"],
@@ -261,7 +225,6 @@ class TestJsoncCommentPreservation:
         assert '"activityBar.background": "#123456"' in text
 
     def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path) -> None:
-        """新規キー追加を含む更新はコメント維持できず全書き換えへフォールバックする。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         target.parent.mkdir(parents=True, exist_ok=True)
         managed = {
@@ -282,10 +245,7 @@ class TestJsoncCommentPreservation:
 
 
 class TestBuildManagedSettings:
-    """`run()` 経由で managed 設定のビルド結果を検証する。"""
-
     def test_user_scope_contains_all_keys(self, tmp_path: Path) -> None:
-        """User scope では markdown.styles を含むすべてのキーが含まれる。"""
         target = _make_settings_dir(tmp_path, is_windows=True)
         (tmp_path / "Code").mkdir(exist_ok=True)
         mod.run(hostname="test", is_windows=True, environ={"APPDATA": str(tmp_path)})
@@ -296,7 +256,6 @@ class TestBuildManagedSettings:
         assert "markdown-pdf.styles" in result
 
     def test_machine_scope_excludes_markdown_styles(self, tmp_path: Path) -> None:
-        """Machine scope では markdown.styles を含めない (User scope に一任する)。"""
         target = _make_settings_dir(tmp_path, is_windows=False)
         mod.run(hostname="test", is_windows=False, home=tmp_path)
         result = json.loads(target.read_text(encoding="utf-8"))
@@ -305,7 +264,6 @@ class TestBuildManagedSettings:
         assert "markdown-pdf.styles" in result
 
     def test_markdown_pdf_styles_points_to_share_vscode(self, tmp_path: Path) -> None:
-        """markdown-pdf.styles は両 scope で絶対パスとして share/vscode/ の CSS を指す。"""
         # User scope (Windows)
         target = _make_settings_dir(tmp_path, is_windows=True)
         if target.exists():
@@ -344,10 +302,7 @@ class TestBuildManagedSettings:
 
 
 class TestRun:
-    """run() の統合テスト。"""
-
     def test_skips_when_settings_path_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """`_settings_path` が None を返す場合スキップする。"""
         monkeypatch.setattr(mod, "_settings_path", lambda **_kwargs: None)
         assert mod.run().changed is False
 

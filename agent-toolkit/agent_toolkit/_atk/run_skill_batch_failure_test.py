@@ -48,7 +48,7 @@ def test_deleted_failure_waits_for_new_version_without_duplicate_report(tmp_path
     key = session_review.pending()[0]["failure_key"]
     assert session_review.pending()[0]["failure_version"] == "1.0"
     version = "2.0"
-    assert dispatch() == 0 and len(calls) == 1  # 未完了AWIは版にかかわらず抑止する。
+    assert dispatch() == 0 and len(calls) == 1
     version = "1.0"
     report.unlink()
     assert dispatch() == 0 and len(calls) == 1
@@ -225,7 +225,6 @@ def test_dangling_record_link_remains_a_prepare_failure(tmp_path):
 
 
 def test_model_failure_keeps_diagnostics_beyond_log_tail(tmp_path):
-    """会話出力が末尾を占めても、診断イベント・実行条件・終了状態を本文に残し、秘匿値と会話本文は転載しない。"""
     log = tmp_path / "model.log"
     conversation = '[stdout] {"type":"assistant","message":"会話本文の検出用' + "x" * 200 + '"}\n'
     log.write_text(
@@ -297,7 +296,6 @@ _LONG_EVENT = '[stdout] {"type":"result","is_error":true,"detail":"' + "y" * 300
     ids=["header", "tail", "events", "all"],
 )
 def test_log_diagnostics_stay_within_previous_tail_budget(tmp_path, text):
-    """巨大な行や大量の診断イベントがあっても、ログの抜粋は変更前の末尾の上限（8192バイト）を超えない。"""
     _body, details = _log_details(tmp_path, text)
     excerpt = [*details["header"], *details["error_events"], details["tail"]]
     assert sum(len(line.encode()) for line in excerpt) <= 8192
@@ -305,10 +303,13 @@ def test_log_diagnostics_stay_within_previous_tail_budget(tmp_path, text):
 
 
 def test_log_diagnostics_redact_before_truncating_lines(tmp_path):
-    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を残さない。"""
     token = "ghp_" + "A" * 40
     prefix = '{"type":"result","is_error":true,"detail":"'
     filler = "x" * (1990 - len(prefix) - len(" https://"))
     payload = f"{prefix}{filler} https://{token}@github.com/owner/repo" + '"}'
-    body, _details = _log_details(tmp_path, f"[stdout] {payload}\n[stderr] 終了 https://{filler}{token}@github.com\n")
+    stderr = f"[stderr] {filler} https://{token}@github.com"
+    body, details = _log_details(tmp_path, f"[stdout] {payload}\n{stderr}\n[stderr] 正常な行\n")
     assert "ghp_" not in body
+    assert details["error_events"] == [f"{prefix}{filler} https://[REDACTED]"]
+    assert details["tail"].endswith("\n[stderr] 正常な行")
+    assert "[REDACTED]" in details["tail"]

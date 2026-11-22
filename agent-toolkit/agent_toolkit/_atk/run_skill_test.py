@@ -76,7 +76,6 @@ def test_claude_session_runs_skill_with_goal_and_reports_log(
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("disabled", ["0", "1"])
 def test_regular_run_skill_preserves_background_setting(engine_env, monkeypatch, capsys, engine, disabled) -> None:
-    """通常起動では非対話であってもホストの背景実行設定を上書きしない。"""
     monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", disabled)
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
 
@@ -106,7 +105,6 @@ def test_codex_session_receives_goal_without_slash_command(
 def test_normal_exit_requires_same_run_synced_report(
     engine_env: _Env, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, mode: str
 ) -> None:
-    """子の正常終了と報告保存を独立に変え、未保存・途中確認・他実行・未commitの更新を拒否する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     monkeypatch.setenv("FAKE_REPORT_MODE", mode)
     code, out, err = _run(["--target-repo", str(engine_env.repo), "my-skill"], capsys)
@@ -158,7 +156,6 @@ def test_wi_save_and_edit_bind_report_to_run(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """WIの実保存と公開editは実行IDと報告区分を保持し、更新した本文のcommitを照会できる。"""
     del engine_env
     notes = pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"])
     monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", "run-1")
@@ -211,7 +208,7 @@ def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pa
     git_repository.run_git(notes, "remote", "add", "other", str(other))
     git_repository.run_git(notes, "push", "-u", "origin", "HEAD:refs/heads/published/reports")
     git_repository.run_git(notes, "push", "other", "HEAD:refs/heads/unrelated")
-    # 短縮表示heads/review/reportsでbranch設定を照会すると、別の送信先を選ぶ入力。
+
     git_repository.run_git(notes, "config", "branch.heads/review/reports.remote", "other")
     git_repository.run_git(notes, "config", "branch.heads/review/reports.merge", "refs/heads/unrelated")
     if collision == "branch-tag":
@@ -237,7 +234,6 @@ def test_report_sync_uses_current_branch_config_with_ref_collisions(tmp_path: pa
 
 
 def test_diagnostic_stream_preserves_conversation_but_redacts_errors(engine_env, capsys):
-    """正常会話は原文を保持し、標準エラーとエラーイベントだけを保存前に伏せる。"""
     conversation = '{"type":"assistant","text":"password=fake-conversation"}'
     error = '{"type":"error","message":"password=fake-error"}'
     engine = engine_env.bin_dir / "claude"

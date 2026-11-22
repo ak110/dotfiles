@@ -22,8 +22,7 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 バグという分類や改善の期待は、損失の根拠から外す。
 起票時はWI投入担当が、処理中に新たな影響や解消を観測した時は処理担当が、`atk wi set-priority`で付与、更新、解除する。
 区分の無い項目は通常の扱いとする。
-巡回の選定量から外れた未着手の項目は、量の調整だけを理由に保留、本文の変更、依存の追加をせず、`inbox`のまま次回の候補に残す。
-選ぶ順序と件数の下限は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`に従う。
+処理可能な候補は全件を選び、処理可否と順序は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`に従う。
 
 ## 状態と一覧集合
 
@@ -193,6 +192,10 @@ commitやレビュー記録などの詳細は、その1文の後ろに置く。
 - 変更対象の特定、差分の確認、commit、変更の退避や巻き戻しは、依頼が指定した対象リポジトリの作業ツリーで行う。
 - private-notesへの変更は、`atk wi`、`atk plans`、`atk serve`を通じて行う。
   `atk`がGit履歴の分岐やrebaseの失敗を報告し、再実行でも解消しない時に限り、その出力が示す回復手順の範囲で`git`を直接実行し、前後の状態と実施した操作を報告する。
+  回答やユーザーコメントが競合したら、その本文と、それを前提とした状態・処理結果を一緒に確認する。
+  現行の回答に適用できない旧結果は採らず、必要なら再処理へ戻す。
+  回答が同じなら有効な結果を保つ。
+  旧結果はGit履歴に残す。
   private-notesは常駐の`atk wi process-loop`、`atk serve`、別のセッションが並行して更新するため、回復手順の範囲でも`atk worktree-stash`、`git stash`、未コミット差分の破棄は行わない。
 - AWIとUWIは、`atk config get private_notes`が返す作業ツリーへ直接投入する。
   別に作った作業ツリーのローカルcommitは、ユーザーと後続のセッションが確認できないままになる。

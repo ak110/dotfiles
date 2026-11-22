@@ -1,5 +1,3 @@
-"""Bashコマンドの`cd`・`pushd`による現在ディレクトリの変化を静的に追跡する処理。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -15,8 +13,6 @@ _PUSHD_STACK_ROTATION_PATTERN = re.compile(r"^[+-]\d+$")
 
 @dataclasses.dataclass(frozen=True)
 class CwdResolution:
-    """シェルコマンドから得たcwdの解決結果を表す。"""
-
     path: str
     resolved: bool
     unresolved_expression: str | None = None
@@ -50,7 +46,6 @@ def bash_invocation_cwds(
 
 
 def resolve_cwd_change(tokens: list[str], current_cwd: CwdResolution) -> CwdResolution | None:
-    """cwdを変更するセグメントの解決結果を返す。"""
     start = skip_env_assignments(tokens, 0)
     if start >= len(tokens):
         return None
@@ -67,11 +62,6 @@ def resolve_cwd_change(tokens: list[str], current_cwd: CwdResolution) -> CwdReso
 
 
 def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdResolution:
-    """`cd`・`pushd`の引数を解釈して新しいcwdの解決結果を返す。
-
-    引数なし・オプション（`-`等）・シェル展開を含む場合は解決不能とする。
-    相対パスは解決済みの現在cwdを基点に`os.path.normpath`で正規化する。
-    """
     if start + 1 >= len(tokens):
         return CwdResolution("", False)
     arguments = tokens[start + 1 :]
@@ -102,12 +92,10 @@ def _apply_cd(tokens: list[str], start: int, current_cwd: CwdResolution) -> CwdR
 # バックスラッシュ・部分引用・`git -C`引数等で継続的に穴が生じた実績があり、費用対効果に見合わない。
 # メタ文字を含む対象は常に解決不能とし、安全側（過剰block/warn）で運用する。
 def _contains_shell_expansion(value: str) -> bool:
-    """静的解析で解決できないシェル展開の記号を含むか判定する。"""
     return any(marker in value for marker in ("\x00", "$", "`", "~", "*", "?", "[", "{"))
 
 
 def _normalize_relative(target: str, current_cwd: CwdResolution) -> CwdResolution:
-    """相対パスを現在cwd基点で正規化し、解決結果を返す。"""
     if _contains_shell_expansion(target):
         return CwdResolution("", False, target)
     if os.path.isabs(target):

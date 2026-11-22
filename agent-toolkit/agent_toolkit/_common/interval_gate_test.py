@@ -1,5 +1,3 @@
-"""間隔の記録が欠けた・壊れた・時計が戻った場合に処理を省かないことを確かめる。"""
-
 import pathlib
 
 import pytest
@@ -15,7 +13,6 @@ _NOW = 1_800_000_000.0
     ids=["missing", "broken", "future", "within", "elapsed"],
 )
 def test_claim_skips_only_within_the_interval(tmp_path: pathlib.Path, recorded: str | None, due: bool) -> None:
-    """記録から間隔内のときだけ省き、処理する場合は今回の時刻を記録して次の起動を省かせる。"""
     record = tmp_path / "sweeps" / "test"
     if recorded is not None:
         record.parent.mkdir()

@@ -72,7 +72,6 @@ __all__ = [
 
 
 def observe_user(payload_text: str) -> None:
-    """実際のUserPromptSubmit本文を、生成入力と区別して保存する。"""
     payload = _parse(payload_text)
     if payload is None:
         return
@@ -90,7 +89,7 @@ def observe_user(payload_text: str) -> None:
 
     def update(state: dict[str, Any]) -> dict[str, Any]:
         data = _data(state, payload["session_id"])
-        # この本文より前にセッション記録へ書かれた途中入力を先に取り込み、入力の順序を記録の順序と一致させる。
+
         _sync_queued_inputs(data, payload.get("transcript_path"))
         reference = payload.get("turn_id") or payload.get("prompt_id")
         if not isinstance(reference, str) or not reference:
@@ -104,7 +103,6 @@ def observe_user(payload_text: str) -> None:
 
 
 def observe_tool(payload_text: str, *, after: bool) -> None:
-    """同じtool_use_idの実行位置と応答を同じ作業へ対応付ける。"""
     resolved_payload = _parse(payload_text)
     if resolved_payload is None:
         return
@@ -198,7 +196,6 @@ def _observe_invocations(payload: dict[str, Any], invocations: list[dict[str, An
 
 
 def main(argv: list[str] | None = None) -> int:
-    """判断記録用のJSONファイルを既存run-scriptから受理する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     operation = parser.add_mutually_exclusive_group(required=True)
     operation.add_argument(
@@ -220,7 +217,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise ValueError("--contextは現在のClaude Codeメインで実行する")
 
             def synchronize(state: dict[str, Any]) -> dict[str, Any] | None:
-                # 直前の作業観測より後に届いた途中入力も、返す人間入力へ含める。
+
                 current = state.get(STATE_KEY)
                 if not isinstance(current, dict) or current.get("session_id") != session_id:
                     return None
@@ -236,9 +233,7 @@ def main(argv: list[str] | None = None) -> int:
                 or not isinstance(data.get("works"), dict)
             ):
                 raise ValueError("現在の会話の終了工程の証拠をまだ観測していない")
-            # 作業・会話の識別子と人間入力由来の項目を分けて返す。実行結果を根拠とする判断（blocked、委譲先のwait）は
-            # 人間入力を要さないため、自動起動の会話でも識別子の取得を止めない。人間の判断を要する記録の検証は
-            # record_decisionが担い、生成入力は人間入力として返さない。
+
             input_id = data.get("last_human_input", data.get("last_input"))
             entry = data.get("inputs", {}).get(input_id) if isinstance(data.get("inputs"), dict) else None
             human = isinstance(entry, dict) and entry.get("human") is True

@@ -31,7 +31,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_description_selects_mode_and_lists_minimal_calls(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開説明の最小例はschemaと起動条件を通り、記載されたmodeでsessionを生成する。"""
     tool = _start_tool()
     description = tool.description + tool.parameters["properties"]["mode"]["description"]
     examples = dict(re.findall(r"^- ([^:]+): `(\{[^`]+\})`", description, re.MULTILINE))
@@ -73,7 +72,6 @@ async def test_tool_descriptions_fit_claude_code_truncation_and_describe_every_a
 
 @pytest.mark.asyncio
 async def test_shared_mcp_does_not_designate_a_conversation_delivery_tool() -> None:
-    """modの無い会話にも同じMCP一覧が届く。MCPの登録だけでは、発話の送り先に指定しない。"""
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
     description = tools["send_to_user"].description
     assert description and "mod" in description
@@ -83,7 +81,6 @@ async def test_shared_mcp_does_not_designate_a_conversation_delivery_tool() -> N
 
 @pytest.mark.asyncio
 async def test_tool_input_schema_is_unchanged_by_error_wrapping() -> None:
-    """例外を包む共通層を通しても、ツールの引数と説明文はツール関数の定義から生成される。"""
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
     assert set(tools["send_message"].input_schema["properties"]) == {

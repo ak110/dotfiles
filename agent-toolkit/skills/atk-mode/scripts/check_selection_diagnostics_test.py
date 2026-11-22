@@ -11,7 +11,6 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
 
 
 def _diagnostic(output: str, marker: str) -> str:
-    """診断出力の違反行から`marker`を含む行を1行だけ選んで返す。"""
     lines = [line for line in output.splitlines() if marker in line and not line.startswith("次の操作:")]
     assert len(lines) == 1, output
     return lines[0]
@@ -29,7 +28,7 @@ def _diagnostic(output: str, marker: str) -> str:
             ["書込区分（`書込対象`・`公開工程の書込対象`）に同じパスが無い"],
         ),
         ("derived-directory", "`導出した新設先`の対応が不正", ["通常ファイルではない"]),
-        ("derived-missing-parent", "`導出した新設先`の対応が不正", ["完全な新設名", "src/missing/save.py"]),
+        ("derived-parent-file", "`導出した新設先`の対応が不正", ["完全な新設名", "src/missing/save.py"]),
         ("derived-scope-outside", "`導出した新設先`の対応が不正", ["反映範囲がパスを含まない", "docs/"]),
         ("broad", "広すぎる範囲", ["src/", "src/model.py"]),
         ("edge-definitions", "結合根拠が成立しない", ["定義が交わらない", "入力", "出力"]),
@@ -46,11 +45,10 @@ def test_compound_diagnostics_name_failed_condition(
     marker: str,
     expected: list[str],
 ) -> None:
-    """複数の条件をまとめた判定の診断行は、成立しなかった条件と直すのに要る値を含む。"""
     repo, notes = env
     plan = str(tmp_path / "shared.md")
     if case.startswith("derived"):
-        record = _derived("src/missing/save.py" if case == "derived-missing-parent" else "src/save.py")
+        record = _derived("src/missing/save.py" if case == "derived-parent-file" else "src/save.py")
         item: dict[str, typing.Any] = {
             "WI": "a.md",
             "レーン": "lane-01",
@@ -58,7 +56,9 @@ def test_compound_diagnostics_name_failed_condition(
             "導出した新設先": [record],
         }
         body = "`src/`へ保存用入口を新設する。"
-        if case == "derived-scope-missing":
+        if case == "derived-parent-file":
+            (repo / "src/missing").write_text("file", encoding="utf-8")
+        elif case == "derived-scope-missing":
             record["反映範囲"] = "missing/"
         elif case == "derived-duplicate":
             item["導出した新設先"].append(dict(record))
@@ -133,7 +133,6 @@ _ACTION_CONTRACTS = {
 
 
 def _next_action_case(case: str, tmp_path: pathlib.Path, notes: pathlib.Path) -> pathlib.Path:
-    """違反の種類ごとに、その種類の違反だけを生む選定YAMLを保存してそのパスを返す。"""
     item: dict[str, typing.Any] = {"WI": "a.md", "レーン": "lane-01", "書込対象": ["README.md"]}
     if case in {"uncovered", "uncovered-multiple", "broad", "uncovered-broad"}:
         reflected = {
@@ -203,7 +202,6 @@ def _next_action_case(case: str, tmp_path: pathlib.Path, notes: pathlib.Path) ->
         ("model-conflict", ["model-conflict"]),
         ("stage-gap", ["stage-gap"]),
         ("prior-missing", ["prior-missing"]),
-        # 成立しない辺は成分の連結も失わせるため、2つの種類の対処が1回ずつ現れる。
         ("edge-failure", ["edge-failure", "component-link"]),
         ("source-mismatch", ["source-mismatch"]),
         ("lane-bound", ["lane-bound"]),
@@ -216,7 +214,6 @@ def test_next_action_lists_only_reported_kinds(
     case: str,
     expected: list[str],
 ) -> None:
-    """次の操作は出力に現れた違反の種類の対処だけを種類ごとに1回含み、違反行は対処を重ねない。"""
     repo, notes = env
     path = _next_action_case(case, tmp_path, notes)
     assert _dispatch(str(path), "--work-dir", str(repo)) == 1
@@ -234,7 +231,6 @@ def test_next_action_lists_only_reported_kinds(
     for instruction in actions[0].removeprefix("次の操作: ").split("。"):
         assert not instruction or any(fragment in instruction for fragment in [*expected_fragments, "同じコマンド"]), lines
     if case in {"uncovered-multiple", "lane-bound"}:
-        # 同じ種類の違反が複数行あっても、その種類の対処は1回だけ現れる。
         assert len(violations) >= 2
     for line in violations:
         assert not any(fragments[0] in line for fragments in _ACTION_CONTRACTS.values()), line
@@ -303,7 +299,6 @@ def test_content_errors_guide_selection_fix(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """引数が正しく選定結果の内容が誤る場合は、終了コード2と、選定結果を直す次の操作を返す。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = tmp_path / "selection.yaml"
@@ -324,7 +319,6 @@ def test_content_errors_guide_selection_fix(
 def test_field_type_errors_are_reported_together(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
-    """1回の実行で全ての内容の誤りを返し、直すたびに次の誤りが現れる往復を生じさせない。"""
     repo, _notes = env
     selection = tmp_path / "selection.yaml"
     selection.write_text(
@@ -353,7 +347,6 @@ def test_path_errors_guide_argument_fix(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """選定結果のファイル、`--work-dir`、private-notesを解決できない場合は、終了コード2とその場所を直す次の操作を返す。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = _write_selection(
@@ -384,7 +377,6 @@ def test_path_errors_guide_argument_fix(
 def test_public_name_runs_selection_check(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`atk run-script pick-wi-check`の公開名から同じ検証へ到達する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = _write_selection(tmp_path / "selection.yaml", [{"awi": "a.md", "lane": "lane-01", "write_files": ["src/"]}])
@@ -396,7 +388,6 @@ def test_public_name_runs_selection_check(
 def test_public_check_rejects_missing_stage(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開名から、先行レーンが正しくても段階2の欠番を拒否する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     _awi(notes, "b.md", "`docs/development/design.md`を変える。")

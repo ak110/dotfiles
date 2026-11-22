@@ -1,5 +1,3 @@
-"""隔離private-notesと公開CLIで固定配置の全遷移・移行・履歴を検証する。"""
-
 import json
 import os
 import pathlib
@@ -9,9 +7,7 @@ import sys
 
 import pytest
 
-from agent_toolkit._atk import config
-from agent_toolkit._atk.wi import constants, entries, listing
-from agent_toolkit._atk.wi import process_loop_launch_gate as launch_gate
+from agent_toolkit._atk.wi import constants, entries
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 
@@ -35,7 +31,6 @@ def _run(notes: pathlib.Path, *arguments: str, expected: int = 0) -> subprocess.
 
 
 def test_public_transitions_keep_one_dated_file(tmp_path: pathlib.Path) -> None:
-    """公開addから全指定状態へ遷移し、filenameと実体位置を保持する。"""
     notes = git_repository.init_repository(tmp_path / "notes", commit_message="初期状態")
     body = tmp_path / "body.md"
     body.write_text(AGENT_AWI_BODY, encoding="utf-8")
@@ -70,7 +65,6 @@ def _selected(notes: pathlib.Path, state: str) -> set[str]:
 
 
 def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_path: pathlib.Path) -> None:
-    """一度の起動で全状態と旧種別を移し、履歴・状態別read集合・loop候補・遅着項目を維持する。"""
     names = {state: f"20261020-120000-{number:03d}.md" for number, state in enumerate(constants.WI_STATES, 1)}
     files = {
         f"{state}/{name}": f"---\ntype: awi\ntarget_repo: {_REPO}\n---\n\n# 移行対象\n" + "保存する本文\n" * 20
@@ -82,10 +76,8 @@ def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_
     files[f"feedback/hold/{old_feedback}"] = f"---\ntarget_repo: {_REPO}\n---\n\n# 移行対象\n" + "保存する本文\n" * 20
     notes = git_repository.init_repository(tmp_path / "notes", files=files, commit_message="旧配置の全状態")
     original_head = git_repository.git_output(notes, "rev-parse", "HEAD")
-    # 旧種別は旧readerの対象外なので、現行state配置だけの移行前集合を先に控える。
+
     before = {state: _selected(notes, state) for state in constants.WI_STATES}
-    repository = config.ConfiguredRepository(_REPO, notes, notes / ".git")
-    loop_before = launch_gate.repository_input(listing.configured_repo_snapshot(notes, (repository,))[0], None)
     _run(notes, "list", "--state=all", "--jsonl", "--skip-pull", f"--target-repo={_REPO}")
     assert git_repository.git_output(notes, "rev-list", "--count", "HEAD") == "2"
     assert not any((notes / state).exists() for state in (*constants.WI_STATES, "tbd", "feedback"))
@@ -94,10 +86,6 @@ def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_
         assert entries.entry_state_of(path) == state
         history = git_repository.git_output(notes, "log", "--follow", "--format=%H", "--", str(path.relative_to(notes)))
         assert original_head in history.splitlines()
-    loop_after = launch_gate.repository_input(listing.configured_repo_snapshot(notes, (repository,))[0], None)
-    assert {(name, kind) for name, _digest, kind in loop_after.items} == {
-        (name, kind) for name, _digest, kind in loop_before.items
-    }
     for state in constants.WI_STATES:
         expected = before[state] | {"inbox": {old_question}, "hold": {old_feedback}}.get(state, set())
         common = [f"--state={state}", "--skip-pull", f"--target-repo={_REPO}"]
@@ -117,7 +105,6 @@ def test_public_startup_migrates_all_states_and_keeps_history_and_selection(tmp_
 
 @pytest.mark.parametrize("problem", ["collision", "frontmatter"])
 def test_public_migration_reports_every_problem_without_partial_changes(tmp_path: pathlib.Path, problem: str) -> None:
-    """全衝突と全破損を一度に診断し、正常候補も含む全本文とHEADを変更しない。"""
     names = [f"20261020-120000-{number:03d}.md" for number in range(1, 4)]
     content = f"---\ntype: awi\ntarget_repo: {_REPO}\n---\n\n# 要求\n"
     files = {f"inbox/{name}": content for name in names}

@@ -1,5 +1,3 @@
-"""systemd user unitの共通セットアップ。"""
-
 import getpass
 import logging
 import os
@@ -11,9 +9,7 @@ from pytools._internal import common, log_format
 
 logger = logging.getLogger(__name__)
 
-# Environment=はspecifier展開を行う。ExecStartの絶対パス指定だけでは、起動された
-# プログラムが名前で解決する外部コマンドをカバーできない。実体を持つ~/.local/binを
-# miseのshimより優先し、shimの有効化状態によらず名前を解決できるようにする。
+
 USER_UNIT_PATH_ENVIRONMENT = (
     "Environment=PATH=%h/.local/bin:%h/.local/share/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n"
 )
@@ -22,27 +18,19 @@ USER_UNIT_PATH_ENVIRONMENT = (
 _SETTLE_SECONDS = 2.0
 _POLL_SECONDS = 1.0
 _ACTIVE_TIMEOUT_SECONDS = 30.0
-# unit本文のRestartSecより長い間隔を空けて2回目を観測する。
-# 起動直後に異常終了して再起動を繰り返すサービスは、1回目にactiveを観測できても
-# 2回目までにNRestartsが増えるため、2回の観測で常駐可否を判定できる。
+
+
 _CONFIRM_SECONDS = 6.0
 
 
-# ユーザーマネージャーが停止しているときのsystemctl --userの標準エラーの先頭。
-# 続く理由はロケールで翻訳されるため、この英語の前半だけで判定する。
 _USER_MANAGER_UNREACHABLE_MARKER = "Failed to connect to user scope bus"
 
 
 class SetupError(RuntimeError):
-    """サービスが常駐状態に至らなかったことを表す。"""
+    pass
 
 
 class UserManagerUnavailableError(SetupError):
-    """systemdのユーザーマネージャーへ接続できないことを表す。
-
-    `next_action`は呼出元が工程の次の操作として表示する復旧手順を持つ。
-    """
-
     def __init__(self, message: str, next_action: str) -> None:
         super().__init__(message)
         self.next_action = next_action
@@ -56,7 +44,6 @@ def _failure_message(subject: str, label: str, result: subprocess.CompletedProce
 
 
 def _raise_if_user_manager_unavailable(subject: str, label: str, result: subprocess.CompletedProcess[str] | None) -> None:
-    """接続不能の応答ならUserManagerUnavailableErrorを送出する。"""
     if result is None or result.returncode == 0 or _USER_MANAGER_UNREACHABLE_MARKER not in (result.stderr or ""):
         return
     uid = os.getuid()
@@ -76,7 +63,6 @@ def _raise_systemctl_failure(subject: str, label: str, result: subprocess.Comple
 
 
 def _ensure_unit_content(unit_path: pathlib.Path, unit_content: str, log_tag: str) -> bool:
-    """unit本文が異なる場合だけ配置し、変更の有無を返す。"""
     try:
         existing = unit_path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -256,7 +242,6 @@ def setup_timer(
 
 
 def _report_linger_status(log_tag: str) -> None:
-    """lingerを照会し、確認できない場合と無効の場合の手動操作を案内する。"""
     user = getpass.getuser()
     result = common.run_subprocess(["loginctl", "show-user", user, "--property=Linger"], timeout=15.0, tag=log_tag)
     if result is None:
@@ -286,11 +271,6 @@ def _report_linger_status(log_tag: str) -> None:
 
 
 def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
-    """サービスのActiveStateとNRestartsを取得する。
-
-    Raises:
-        SetupError: systemctlを実行できない場合に送出する。
-    """
     result = common.run_subprocess(
         ["systemctl", "--user", "show", service_name, "--property=ActiveState", "--property=NRestarts"],
         timeout=15.0,
@@ -308,11 +288,6 @@ def _query_service(service_name: str, log_tag: str) -> tuple[str, str]:
 
 
 def _wait_until_running(*, service_name: str, log_tag: str) -> None:
-    """restart後にサービスが常駐することを確認する。
-
-    Raises:
-        SetupError: 制限時間内にactiveへ至らない場合、または再起動を繰り返す場合に送出する。
-    """
     time.sleep(_SETTLE_SECONDS)
     deadline = time.monotonic() + _ACTIVE_TIMEOUT_SECONDS
     while True:

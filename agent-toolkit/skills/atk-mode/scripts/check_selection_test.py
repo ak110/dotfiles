@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の書込区分と本文検査範囲を検証する。"""
 
 import pathlib
 import typing
@@ -14,7 +13,6 @@ from agent_toolkit._testing.selection_check_support import fixture_env as fixtur
 def test_public_check_limits_body_scope(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """指定外の本文を取得せず、追加した処理対象WIだけの違反と成功要約、省略時の全件検査を保つ。"""
     repo, notes = env
     _awi(notes, "new.md", "`src/model.py`を変更する。")
     _awi(notes, "second.md", "`README.md`を変更する。")
@@ -63,7 +61,6 @@ def test_public_check_keeps_global_checks(
     expected: str,
     code: int,
 ) -> None:
-    """本文の指定外にある不正でも、選定全体の関係と入力構造の違反を見落とさない。"""
     repo, notes = env
     _awi(notes, "new.md", "`README.md`を変更する。")
     old: dict[str, typing.Any] = {"WI": "old.md", "レーン": "lane-01", "書込対象": ["src/model.py"]}
@@ -103,7 +100,6 @@ def test_public_check_applies_body_rules_only_to_selected_wis(
     capsys: pytest.CaptureFixture[str],
     violation: str,
 ) -> None:
-    """本文由来の書込予定・区分・規範指定の違反を持つ同じ項目を、指定ありと指定なしで比較する。"""
     repo, notes = env
     _awi(notes, "old.md", "`src/model.py`を変更する。")
     _awi(notes, "new.md", "`README.md`を変更する。")
@@ -133,7 +129,6 @@ def test_public_check_applies_body_rules_only_to_selected_wis(
 def test_public_check_rejects_unknown_body_wi(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """集合の指定誤りは本文違反とは区別して終了コード2と未知のWI名を返す。"""
     repo, _notes = env
     path = _write_selection(tmp_path / "selection.yaml", [])
     assert _dispatch(str(path), "--work-dir", str(repo), "--body-wi", "missing.md") == 2
@@ -145,7 +140,6 @@ def test_public_check_rejects_unknown_body_wi(
 def test_reports_uncovered_broad_and_invalid_exclusion(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """過大な範囲と記載済み除外の不正を診断し、非書込の未列挙は拒否しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "b.md", "`src/model.py`を変える。")
@@ -168,7 +162,6 @@ def test_reports_uncovered_broad_and_invalid_exclusion(
 def test_reads_current_field_names_like_legacy_ones(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """日本語の欄名で書いた選定結果からも、旧欄名の選定結果と同じ違反を報告する。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`と`docs/development/design.md`を変える。")
     _awi(notes, "c.md", "`src/model.py`を変える。`README.md`は変更しない。")
@@ -189,7 +182,6 @@ def test_reads_current_field_names_like_legacy_ones(
 def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全反映先を覆う選定結果、`lane: なし`、パスを明示しないUWIは違反なしで0を返す。"""
     repo, notes = env
     reflected = (
         "`src/model.py:12-20`と新設の`src/new_module.py`、範囲`src/`を変える。"
@@ -212,10 +204,6 @@ def test_accepts_covered_selection_and_skips_out_of_scope_decisions(
 def test_legacy_write_scope_reasons_are_dropped(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], legacy: bool
 ) -> None:
-    """旧版が保存した`書込範囲の理由`は読取時に破棄し、記録の過不足を判定せず、保存時にも出力しない。
-
-    同欄は重なりの判定と配分に寄与しないため撤去した。新しく書く追加入力の同欄は未知の欄として拒否する。
-    """
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     keys = ("awi", "lane", "write_files") if legacy else ("WI", "レーン", "書込対象")
@@ -287,7 +275,6 @@ def test_rejects_invalid_or_overlapping_public_write_target(
     public_value: object,
     expected: str,
 ) -> None:
-    """公開工程欄の型と3区分が重ならないことを、対象WI・欄・path付きで確かめる。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     decisions = [
@@ -310,7 +297,6 @@ def test_rejects_invalid_or_overlapping_public_write_target(
 def test_rejects_public_write_target_without_repository_rule_section_rationale(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開工程だけの所有を規範と節から確認できない分類を受理しない。"""
     repo, notes = env
     _awi(notes, "a.md", "`README.md`を変える。")
     decisions = [
@@ -347,7 +333,6 @@ def test_rejects_same_resume_plan_in_different_lanes(
     first_resume: str,
     second_resume: str,
 ) -> None:
-    """通常中断と観測のみのどちらでも、同じ再開計画を複数レーンへ割り当てた選定を拒否する。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "反映先のパスを持たない説明。")
@@ -378,7 +363,6 @@ def test_accepts_resume_plan_boundaries(
     first_resume: str,
     second_resume: str,
 ) -> None:
-    """同じ計画の同一レーン、計画なし、再開なし、異なる計画は計画所有の条件で拒否しない。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "反映先のパスを持たない説明。")
@@ -411,7 +395,6 @@ def test_uwi_paths_in_answer_and_materials_require_classification(
 def test_detects_observed_selection_defects(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """反映先の一部を欠いた`write_files`と、上位ディレクトリだけを書いた`write_files`の観測事例を検出する。"""
     repo, notes = env
     _awi(
         notes,
@@ -434,7 +417,6 @@ def test_detects_observed_selection_defects(
 def test_reports_missing_body_as_violation(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """private-notesに本文が無い項目は、項目の違反として返す。"""
     repo, _notes = env
 
     assert _run(tmp_path, repo, [{"awi": "absent.md", "lane": "lane-01", "write_files": []}]) == 1
@@ -448,11 +430,6 @@ def test_reports_missing_body_as_violation(
 def test_selection_values_with_yaml_syntax_characters_round_trip(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], model: str
 ) -> None:
-    """書式例どおり単一引用符で囲んだ値は、コロン・括弧・引用符・改行を含んでも同じ構造で読める。
-
-    保存後の検査と追加統合は同じ公開コマンドで同じ欄と型を受理するため、
-    ここで受理した選定結果は双方で同じ値として読まれる。
-    """
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`を変える。")
     selection = tmp_path / "selection.yaml"

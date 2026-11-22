@@ -67,7 +67,7 @@ class _Server:
     def load(self, thread_id: str, cwd: str) -> None:
         if thread_id in self.loaded:
             return
-        # MCPサーバー役はApp Serverより長く生存し得る実MCPを模すため、withで寿命を閉じない。
+
         release = self.log_path.with_name(f"{thread_id}.release")
         child = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with  # 試験用の固定した引数だけで起動する
             [sys.executable, "-c", _MCP_SCRIPT, str(release)],
@@ -93,7 +93,6 @@ class _Server:
         )
 
     def handle(self, request_id: object, method: str, params: dict[str, object]) -> list[dict[str, object]]:
-        """応答を送り、続けて送る通知を返す。"""
         if method == "initialize":
             self.send({"id": request_id, "result": {"userAgent": "fake-codex-app-server"}})
             return []
@@ -167,14 +166,13 @@ class _Server:
             "id": turn_id,
             "status": "completed",
             "error": None,
-            "items": [{"type": "agentMessage", "id": f"message-{turn_id}", "text": f"完了: {text}"}],
+            "items": [{"type": "agentMessage", "id": f"message-{turn_id}", "text": f"状態: completed\n結果: {text}"}],
         }
         completion = threading.Thread(target=self._complete_turn, args=(thread_id, turn), daemon=True)
         self._pending.append(completion)
         return [started]
 
     def start_completions(self) -> None:
-        """応答と開始通知を書き終えた後だけ、終了通知の解放待ちを開始する。"""
         for worker in self._pending:
             worker.start()
             self._workers.append(worker)

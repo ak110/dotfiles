@@ -31,7 +31,7 @@ _LEGACY_LAUNCH_KIND_PREFIX = "起動種別: "
 CONTINUATION_PREFIX = "継続入力: "
 WORKTREE_WRITE_PREFIX = "作業ツリーへの書込: "
 _WORKTREE_WRITE_VALUES = {"あり": True, "なし": False}
-# `agents_server`の`start`の`task`が委譲プロンプトの1行目へ置く見出し。session登録簿の起動本文から役割文書を特定する側も使う。
+
 _TASK_PROMPT_HEADER_PREFIX = "次の文書の手順を実行せよ（出所: "
 _TASK_PROMPT_HEADER_SUFFIX = "）。"
 INPUT_NAME_PATTERN = re.compile(r"^[^`\s:，、](?:[^`\s，、]*[^`\s:，、])?$")
@@ -62,19 +62,16 @@ _ROLE_DOCUMENT_PARTS = tuple(ROLE_DOCUMENT_DIRECTORY.split("/"))
 
 
 def role_document_directory(plugin_root: pathlib.Path) -> pathlib.Path:
-    """`plugin_root`の役割文書の置き場所を返す。"""
     return plugin_root.joinpath(*_ROLE_DOCUMENT_PARTS)
 
 
 def role_document_plugin_root(path: pathlib.Path) -> pathlib.Path | None:
-    """役割文書の置き場所の直下にあるパスから、その文書が属するplugin rootを返す。置き場所の外ならNoneを返す。"""
     if path.parent.parts[-len(_ROLE_DOCUMENT_PARTS) :] == _ROLE_DOCUMENT_PARTS:
         return path.parents[len(_ROLE_DOCUMENT_PARTS)]
     return None
 
 
 def document_plugin_root(path: pathlib.Path) -> pathlib.Path:
-    """置き場所を確かめた役割文書が属するplugin rootを返す。置き場所の外の文書は`ValueError`で拒否する。"""
     root = role_document_plugin_root(path)
     if root is None:
         raise ValueError(f"役割文書の置き場所（{ROLE_DOCUMENT_DIRECTORY}）の外にある: {path}")
@@ -96,7 +93,6 @@ def require_role_document(plugin_root: pathlib.Path, role: str) -> pathlib.Path:
 
 
 def role_documents(plugin_root: pathlib.Path, suffix: str = TASK_DOCUMENT_SUFFIX) -> list[pathlib.Path]:
-    """置き場所にある、`suffix`で終わる文書をファイル名順に返す。"""
     return sorted(role_document_directory(plugin_root).glob(f"*{suffix}"), key=lambda path: path.name)
 
 
@@ -191,7 +187,6 @@ class ContinuationDeclaration:
 
     @property
     def accepted(self) -> frozenset[str]:
-        """受理する名前付き入力。"""
         return frozenset((*self.required, *self.optional))
 
 
@@ -200,7 +195,6 @@ type InputCondition = tuple[tuple[str, str], ...]
 
 
 def parse_when(raw: object, declared: Collection[str]) -> InputCondition:
-    """frontmatterの`when`（宣言済みの入力名から空でない文字列の値への空でない対応）を解析する。"""
     if (
         not isinstance(raw, dict)
         or not raw
@@ -212,20 +206,16 @@ def parse_when(raw: object, declared: Collection[str]) -> InputCondition:
 
 
 def when_matches(condition: InputCondition, params: Mapping[str, str]) -> bool:
-    """`condition`の全ての入力が、渡された値と完全に一致するかを返す。"""
     return all(params.get(name) == value for name, value in condition)
 
 
 @dataclasses.dataclass(frozen=True)
 class ConditionalInputs:
-    """`when`が成立した時だけ必須になる入力（frontmatterの`required_inputs_when`の要素）。"""
-
     when: InputCondition
     inputs: tuple[str, ...]
 
 
 def parse_required_inputs_when(raw: object, declared: Collection[str]) -> tuple[ConditionalInputs, ...]:
-    """`required_inputs_when`を解析する。`when`と`inputs`の入力名は`declared`に含まれる必要がある。"""
     if not isinstance(raw, list):
         raise ValueError("required_inputs_whenは配列で指定する")
     entries: list[ConditionalInputs] = []
@@ -250,18 +240,14 @@ STARTUP_DOCUMENT_REFERENCE = re.compile(r"(?:agent-toolkit|agent-basics):[a-z0-9
 
 @dataclasses.dataclass(frozen=True)
 class StartupDocument:
-    """役割の起動の本文へ全文を入れる資料。`when`の全ての入力が値と完全に一致した時だけ入れる。"""
-
     reference: str
     when: InputCondition = ()
 
     def applies(self, inputs: Mapping[str, str]) -> bool:
-        """起動の入力がこの資料の条件を満たすかを返す。"""
         return when_matches(self.when, inputs)
 
 
 def parse_startup_documents(values: object, accepted: frozenset[str]) -> tuple[StartupDocument, ...]:
-    """frontmatterの`startup_documents`を検証して読む。形式の誤りは起動前に拒否する。"""
     if not isinstance(values, list):
         raise ValueError("startup_documentsは資料の参照の配列で指定する")
     documents: list[StartupDocument] = []
@@ -282,20 +268,13 @@ def parse_startup_documents(values: object, accepted: frozenset[str]) -> tuple[S
 
 @dataclasses.dataclass(frozen=True)
 class TaskDocumentDeclaration:
-    """役割文書が宣言する入力名・mode・モデル段位・用途・書込の値。
-
-    `writes_worktree`は起動時のcwdが属する作業ツリーへ書き込む役割かを表す。
-    `startup_documents`は役割の起動の本文へ全文を入れる、役割に固有の資料である（modeによらず入れる）。
-    """
-
     required: tuple[str, ...]
     optional: tuple[str, ...]
     launch_kind: LaunchKind
     writes_worktree: bool
     continuations: tuple[ContinuationDeclaration, ...] = ()
     model_type: str | None = None
-    # 共通の状態行（`状態:`）以外に、返却形式が先頭の固定行として定める値。
-    # `:`で終わる値は前方一致、それ以外は行全体の一致（直後の全角括弧の補足を許す）で受理する。
+
     result_heads: tuple[str, ...] = ()
     required_when: tuple[ConditionalInputs, ...] = ()
     startup_documents: tuple[StartupDocument, ...] = ()
@@ -309,7 +288,6 @@ class TaskDocumentDeclaration:
         return frozenset(self.required) | frozenset(self.optional)
 
     def required_for(self, params: Mapping[str, str]) -> tuple[str, ...]:
-        """`params`で成立した`required_when`の入力を加えた必須入力名を、宣言順に重複なく返す。"""
         names = list(self.required)
         for entry in self.required_when:
             if when_matches(entry.when, params):
@@ -318,7 +296,6 @@ class TaskDocumentDeclaration:
 
 
 def is_agent_toolkit_plugin_root(root: pathlib.Path) -> bool:
-    """manifestの名前がagent-toolkitであるかを返す。"""
     try:
         manifest = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError:
@@ -438,7 +415,6 @@ def read_declaration_unchecked(
             except (TypeError, ValueError) as error:
                 return f"必須入力を確認できません: 継続入力の書式が不正です: {task_document}: {error}"
     if writes_worktree is None:
-        # 新しい役割の作成者に書込先をその時点で決めさせるため、省略時の値を置かない。
         return (
             f"必須入力を確認できません: `作業ツリーへの書込:`の行がありません: {task_document}。"
             "`## 入力`のtextコードブロックへ`作業ツリーへの書込: <あり|なし>`の行を追加する"
@@ -453,12 +429,11 @@ def read_declaration_unchecked(
 
 
 def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) -> TaskDocumentDeclaration | str:
-    """実行に必要な設定を読み取る。定義の静的整合性は配布前の試験で保証する。"""
     try:
         lines = document_text.splitlines()
         end = lines.index("---", 1)
         values = yaml.safe_load("\n".join(lines[1:end]))
-        # 起動条件と書込主体を決める値は、既知の値を明示して受け取る。
+
         mode = values["mode"]
         writes = values["writes_worktree"]
         if mode not in LAUNCH_KINDS or not isinstance(writes, bool):
@@ -503,7 +478,6 @@ def _frontmatter_declaration(task_document: pathlib.Path, document_text: str) ->
 
 
 def task_prompt_header(task_document: pathlib.Path) -> str:
-    """`start`の`task`が委譲プロンプトの1行目へ置く見出しを返す。"""
     return f"{_TASK_PROMPT_HEADER_PREFIX}{task_document}{_TASK_PROMPT_HEADER_SUFFIX}"
 
 
@@ -520,7 +494,6 @@ def launched_task_document(launch_prompt: str) -> pathlib.Path | None:
 
 
 def parse_named_inputs(lines: list[str]) -> dict[str, str]:
-    """起動本文の名前付き入力を復元し、説明行・重複項目を拒否する。"""
     params: dict[str, str] = {}
     current: str | None = None
     first_continuation = False
@@ -544,7 +517,6 @@ def parse_named_inputs(lines: list[str]) -> dict[str, str]:
 
 
 def task_prompt_inputs(launch_prompt: str) -> dict[str, str]:
-    """生成された参照資料の区切りより前の入力を返す。保存済みの旧末尾入力も読む。"""
     instructions, boundary, _references = launch_prompt.partition(TASK_PROMPT_REFERENCES)
     if boundary:
         return parse_named_inputs(instructions.partition("\n入力:\n")[2].splitlines())
@@ -587,7 +559,6 @@ def _input_code_block(document_text: str) -> list[str] | str:
 
 
 def _parse_names(value: str) -> tuple[str, ...] | None:
-    """ASCIIカンマ区切りの入力名を返す。書式に合わない名前を含む場合はNoneを返す。"""
     names = tuple(value.split(","))
     if not names or any(not INPUT_NAME_PATTERN.fullmatch(name) for name in names):
         return None

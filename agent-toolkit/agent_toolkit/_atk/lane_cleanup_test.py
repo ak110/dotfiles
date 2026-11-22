@@ -26,7 +26,6 @@ from agent_toolkit._testing.lane_support import _create, _create_in, _invoke, _s
 
 @pytest.fixture(name="idle_lane")
 def _idle_lane(monkeypatch: pytest.MonkeyPatch) -> None:
-    """固有撤去の再開試験では、別途activity試験で扱うOSプロセス探索を隔離する。"""
     monkeypatch.setattr(lane_activity, "process_activity", lambda _worktree: None)
 
 
@@ -69,7 +68,6 @@ def test_delete_retains_resources_and_explains_retry_after_ignore_check_failure(
 def test_delete_recovers_finalized_lane_after_base_history_is_rewritten(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最終化時の入力HEADを保つレーンは、統合先の書換え後も回収する。"""
     repo, record, worktree, new_head = _finalize_lane_for_cleanup(
         tmp_path, monkeypatch, capsys, feature_name="feature.txt", feature_text="統合済みの成果"
     )
@@ -95,7 +93,6 @@ def test_delete_recovers_finalized_lane_after_base_history_is_rewritten(
 def test_delete_keeps_finalized_lane_with_a_later_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最終化後にレーンへ追加したcommitは統合済み記録と一致せず保持する。"""
     _repo, record, worktree, _head = _finalize_lane_for_cleanup(
         tmp_path, monkeypatch, capsys, feature_name="integrated.txt", feature_text="統合済み"
     )
@@ -121,7 +118,6 @@ def test_delete_keeps_finalized_lane_with_a_later_commit(
 def test_delete_recovers_missing_worktree_registration_without_delete_procedure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """実体の無い作業ツリーは固有撤去を呼ばず、登録と残るbranchを回収する。"""
     marker = tmp_path / "delete-ran"
     commands = tmp_path / "commands.json"
     commands.write_text(
@@ -162,7 +158,6 @@ def test_delete_recovers_missing_worktree_registration_without_delete_procedure(
 def test_delete_recovers_absent_resources_for_each_registration_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], state: str
 ) -> None:
-    """実体が全て無い登録は準備・選定・回復済みの状態を問わず回収する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     path = pathlib.Path(record["record_path"])
     if state in {"legacy", "recovered"}:
@@ -198,7 +193,6 @@ def test_delete_recovers_absent_resources_for_each_registration_state(
 def test_delete_recovers_permissions_before_checking_untracked_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], dirty: bool, operation: str
 ) -> None:
-    """読めない木の未追跡内容を再判定し、保存済みの木だけ登録と共に撤去する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     locked = worktree / "locked"
@@ -251,7 +245,6 @@ def test_delete_runs_project_teardown_before_preparing_foreign_ignored_output(
     operation: str,
     output: str,
 ) -> None:
-    """固有deleteはGitの保護判定後、別所有者の無視出力を撤去してから全木回収へ進む。"""
     commands = tmp_path / "commands.json"
     commands.write_text(
         json.dumps({"delete": [sys.executable, "-c", "import shutil,sys;shutil.rmtree(sys.argv[1])", "{worktree}/" + output]}),
@@ -312,7 +305,6 @@ def test_delete_protects_git_content_before_project_teardown(
     capsys: pytest.CaptureFixture[str],
     tracked: bool,
 ) -> None:
-    """ignore配下の追跡対象と、読めない非ignoreの未追跡成果は固有deleteより前に保護する。"""
     marker = tmp_path / "teardown-ran"
     commands = tmp_path / "commands.json"
     commands.write_text(
@@ -409,7 +401,6 @@ def test_recover_reaches_remove_hook_with_foreign_ignored_output(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """旧登録の固有hookが生成物を撤去し、元branchとHEADを残して作業木を解放する。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     destination = tmp_path / "hook-created"
     script = tmp_path / "hook.py"
@@ -449,7 +440,7 @@ def test_recover_reaches_remove_hook_with_foreign_ignored_output(
     foreign.mkdir(parents=True)
     (foreign / "payload").write_text("生成物", encoding="utf-8")
     _legacy(record)
-    # CIでは別uidの生成物を用意できないため、所有判定の境界で同じ保持理由を再現する。
+
     original_owner_check = lane.temp_permissions._require_owner  # noqa: SLF001  # pylint: disable=protected-access
 
     def require_owner(metadata: os.stat_result, path: pathlib.Path | str) -> None:
@@ -477,7 +468,6 @@ def test_recover_reaches_remove_hook_with_foreign_ignored_output(
 def test_lane_keeps_foreign_os_owner_and_reports_owner_action(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], operation: str
 ) -> None:
-    """所有者が異なる木はmode・内容・Git登録を保持し、所有者による回収を案内する。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     locked = worktree / "foreign-owner"
@@ -567,7 +557,6 @@ def test_project_teardown_failure_preserves_record_and_retries_remaining_cleanup
 def test_cleanup_rechecks_git_registration_after_project_teardown(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """固有手順の後にbranchが変わった作業先を削除せず、元の登録へ戻った後だけ回収する。"""
     commands = tmp_path / "commands.json"
     commands.write_text(json.dumps({"delete": ["git", "-C", "{worktree}", "switch", "-c", "different"]}), encoding="utf-8")
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys, "--commands-file", str(commands))
@@ -597,7 +586,6 @@ def test_missing_worktree_cleanup_distinguishes_branch_state(
     registration: str,
     branch: str,
 ) -> None:
-    """消失した木とGit登録の組合せで、到達性による保持と回収・最後のHEADの警告を確かめる。"""
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
     worktree = pathlib.Path(record["worktree"])
     record_path = pathlib.Path(record["record_path"])

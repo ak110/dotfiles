@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_elapsed_test）。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -14,7 +12,6 @@ def test_without_observation_boundary_output_is_unchanged(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """観測境界を指定しない呼び出しは境界後相当の記録も従来どおり返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -32,7 +29,6 @@ def test_invalid_observation_boundary_returns_exit_code_two(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """解析できない観測境界はエラーイベントと終了コード2を返す。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "記録")])
 
     assert evidence.main([str(transcript), "--observation-boundary", "not-a-timestamp"]) == 2
@@ -44,7 +40,6 @@ def test_elapsed_until_returns_seconds_from_first_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """指定時刻までの経過秒数と入力の時刻表現を返す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -69,7 +64,6 @@ def test_elapsed_until_with_observation_boundary_keeps_same_result(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """観測境界を併用しても経過時間の起点と終端を変えない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -90,7 +84,6 @@ def test_elapsed_until_rejects_invalid_observation_boundary(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """経過時間照会と併用した解析不能な観測境界を拒否する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "記録")])
 
     assert (
@@ -113,7 +106,6 @@ def test_elapsed_until_rejects_invalid_timestamp(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """解析できない経過時間の終端を拒否する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "記録")])
 
     assert evidence.main([str(transcript), "--elapsed-until", "not-a-timestamp"]) == 2
@@ -125,7 +117,6 @@ def test_elapsed_until_rejects_records_without_timestamp(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """起点になる時刻を持たない記録を拒否する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry(None, "記録")])
 
     assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:01Z"]) == 2
@@ -137,7 +128,6 @@ def test_elapsed_until_rejects_time_before_first_record(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """最初の記録より前の経過時間の終端を拒否する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:02Z", "記録")])
 
     assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:01Z"]) == 2
@@ -155,7 +145,6 @@ def test_elapsed_until_without_timezone_is_local_time(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """タイムゾーンを省いた`--elapsed-until`は、ローカルタイムゾーンのオフセットを付けた値と同じ経過秒数を返す。"""
     transcript = local_time_transcript(tmp_path)
 
     assert evidence.main([str(transcript), "--elapsed-until", "2026-10-07T00:01:00"]) == 0
@@ -170,7 +159,6 @@ def test_elapsed_until_after_reconciliation_includes_finalization_time(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再比較後の成果確定時刻までを経過時間へ含める。"""
     transcript = _write_transcript(
         tmp_path,
         [

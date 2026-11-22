@@ -29,8 +29,6 @@ type Outcome = Literal["reset", "alreadyRedeemed", "nothingToReset", "noCredit"]
 
 @dataclass(frozen=True)
 class AutoResetResult:
-    """消費成功の確認と、確認時点の利用枠を分けて返す。"""
-
     reset_confirmed: bool = False
     rate_limits: dict[str, Any] | None = None
     diagnostic: str = ""
@@ -55,8 +53,6 @@ class _AccountResponse(_Boundary):
 
 
 class _AccountIdentity(_Boundary):
-    """ChatGPTアカウントだけで検証する、アカウント別の冪等記録に使う識別値。"""
-
     email: str | None = None
 
 
@@ -119,7 +115,6 @@ def _select_weekly(raw: dict[str, Any]) -> _Weekly:
 
 
 def _available_credit(reset_credits: dict[str, Any]) -> _Credit | None:
-    """消費対象の種類・状態のcreditだけを検証し、対象外creditの詳細は使わない。"""
     for item in _Credits.model_validate(reset_credits).credits or []:
         if isinstance(item, dict) and item.get("status") == "available" and item.get("resetType") == "codexRateLimits":
             return _Credit.model_validate(item)
@@ -146,7 +141,7 @@ async def check_auto_reset(
     *,
     state_dir: Path,
     rpc_timeout: float = 30.0,
-    permissions: list[dict[str, Any]] | None = None,
+    permissions: list[dict[str, Any]],
     active: bool = True,
     pace: float | None = None,
 ) -> AutoResetResult:
@@ -158,8 +153,7 @@ async def check_auto_reset(
     """
     if not 0 < rpc_timeout < float("inf"):
         raise ValueError("rpc_timeoutには有限の正数が必要")
-    if permissions is not None:
-        validate_permissions(json.dumps(permissions))
+    validate_permissions(json.dumps(permissions))
     root = state_dir / "agents-server" / "codex-auto-reset"
     async with _transaction_lock(root) as locked:
         if not locked:
@@ -185,55 +179,47 @@ async def check_auto_reset(
         same_window = previous is not None and previous.resets_at == weekly.resetsAt
         if same_window and previous is not None and previous.status == "success":
             return AutoResetResult(reset_confirmed=True, rate_limits=raw, diagnostic="同じweekly窓のresetは成功確認済み")
-        permission_id = None
-        permission_end = None
         used_permissions = dict(previous.used_permissions) if previous is not None else {}
-        if permissions is not None:
-            now = time.time()
-            permitted = []
-            for permission in permissions:
-                if permission.get("engine") != "codex" or permission.get("account") not in {
-                    email,
-                    identity,
-                    raw.get("accountId"),
-                }:
-                    continue
-                if permission.get("scope") != "codex":
-                    continue
-                beginning = datetime.datetime.fromisoformat(permission["from"])
-                ending = datetime.datetime.fromisoformat(permission["until"])
-                if beginning.tzinfo is None or ending.tzinfo is None or not beginning.timestamp() <= now < ending.timestamp():
-                    continue
-                identifier = permission["id"]
-                if previous is not None and previous.status == "pending" and previous.permission_id != identifier:
-                    continue
-                retry = previous is not None and previous.status == "pending" and previous.permission_id == identifier
-                if retry or used_permissions.get(identifier, 0) < permission["count"]:
-                    permitted.append((ending.timestamp(), identifier))
-            if not permitted:
-                return AutoResetResult(
-                    rate_limits=raw, diagnostic="現在のアカウント・対象・期間・回数に対応するreset許可がない"
-                )
-            permission_end, permission_id = min(permitted)
-            retrying = previous is not None and previous.status == "pending"
-            if not retrying:
-                seconds = weekly.resetsAt - now
-                remaining = 100 - weekly.usedPercent
-                needed = remaining <= 0 or (pace is not None and remaining < pace * max(0, seconds))
-                if not active or seconds <= 300 or not needed or weekly.usedPercent < 90:
-                    return AutoResetResult(rate_limits=raw, diagnostic="稼働・自然回復・消費ペースからresetはまだ不要")
-        # 未確定の消費は、在庫や使用率が変わっていても同じキーで結果を回収する。
+        now = time.time()
+        permitted = []
+        for permission in permissions:
+            if permission.get("engine") != "codex" or permission.get("account") not in {
+                email,
+                identity,
+                raw.get("accountId"),
+            }:
+                continue
+            if permission.get("scope") != "codex":
+                continue
+            beginning = datetime.datetime.fromisoformat(permission["from"])
+            ending = datetime.datetime.fromisoformat(permission["until"])
+            if beginning.tzinfo is None or ending.tzinfo is None or not beginning.timestamp() <= now < ending.timestamp():
+                continue
+            identifier = permission["id"]
+            if previous is not None and previous.status == "pending" and previous.permission_id != identifier:
+                continue
+            retry = previous is not None and previous.status == "pending" and previous.permission_id == identifier
+            if retry or used_permissions.get(identifier, 0) < permission["count"]:
+                permitted.append((ending.timestamp(), identifier))
+        if not permitted:
+            return AutoResetResult(rate_limits=raw, diagnostic="現在のアカウント・対象・期間・回数に対応するreset許可がない")
+        permission_end, permission_id = min(permitted)
+        retrying = previous is not None and previous.status == "pending"
+        if not retrying:
+            seconds = weekly.resetsAt - now
+            remaining = 100 - weekly.usedPercent
+            needed = remaining <= 0 or (pace is not None and remaining < pace * max(0, seconds))
+            if not active or seconds <= 300 or not needed or weekly.usedPercent < 90:
+                return AutoResetResult(rate_limits=raw, diagnostic="稼働・自然回復・消費ペースからresetはまだ不要")
+
         if previous is not None and previous.status == "pending":
             attempt = previous
         else:
-            if permissions is None and weekly.usedPercent < 99:
-                return AutoResetResult(rate_limits=raw)
             reset_credits = selected.reset_credits
             if reset_credits is None or _Credits.model_validate(reset_credits).availableCount == 0:
                 return AutoResetResult(rate_limits=raw, diagnostic="利用可能なreset creditがない")
             credit = _available_credit(reset_credits)
-            if permission_id is not None:
-                used_permissions[permission_id] = used_permissions.get(permission_id, 0) + 1
+            used_permissions[permission_id] = used_permissions.get(permission_id, 0) + 1
             attempt = _Attempt(
                 resets_at=weekly.resetsAt,
                 idempotency_key=str(uuid.uuid4()),
@@ -246,7 +232,7 @@ async def check_auto_reset(
         params = {"idempotencyKey": attempt.idempotency_key}
         if attempt.credit_id is not None:
             params["creditId"] = attempt.credit_id
-        if permission_end is not None and time.time() >= permission_end:
+        if time.time() >= permission_end:
             return AutoResetResult(rate_limits=raw, diagnostic="送信前にreset許可期間が終了したため消費を保留した")
         outcome = _Consume.model_validate(
             await _rpc(request, "account/rateLimitResetCredit/consume", params, rpc_timeout)
@@ -264,7 +250,6 @@ async def check_auto_reset(
                 raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
                 _select_weekly(raw)
             except (session_errors.DelegateBackendError, OSError, TimeoutError, ValueError) as error:
-                # 消費は確定済みなので、利用枠の再取得だけを所有monitorへ引き継ぐ。
                 return AutoResetResult(
                     reset_confirmed=True,
                     outcome=outcome,
@@ -286,7 +271,7 @@ async def _rpc(request: Request, method: str, params: dict[str, Any], timeout: f
 
 @contextlib.asynccontextmanager
 async def _transaction_lock(root: Path) -> AsyncGenerator[bool]:
-    # worker完了時に所有権を反映するため、取得直後の取消でもfinallyで回収できる。
+
     stack = contextlib.ExitStack()
     try:
         locked = await run_file_operation(_acquire, root, stack)
@@ -320,5 +305,5 @@ def _read_attempt(path: Path) -> _Attempt | None:
 
 
 def _write_attempt(path: Path, attempt: _Attempt) -> None:
-    # RPC開始前のキー保存を耐障害境界にし、応答喪失後も論理試行を維持する。
+
     atomic_write(path, attempt.model_dump_json(), fsync=True)

@@ -56,7 +56,6 @@ async def test_status_file_writer_matches_state_fixture(tmp_path: pathlib.Path) 
 
 
 def test_state_directory_layout_matches_state_fixture() -> None:
-    """状態ディレクトリの`platformdirs`の配下の構成が、statuslineの解決する構成と一致する。"""
     contract = json.loads(_STATE_CONTRACT.read_text(encoding="utf-8"))
     directory = status_file.status_directory("root-1")
     expected = [("root-1" if part == "<root_session_id>" else part) for part in contract["state_directory"]]

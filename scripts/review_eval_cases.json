@@ -169,8 +169,7 @@
       "extra_params": {
         "確認段階": "方針",
         "方針": "{plan}",
-        "要求と出所": "{plan}",
-        "成立性の証拠": "{plan}",
+        "要求原本": "{plan}",
         "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
       },
       "expect": {
@@ -202,8 +201,7 @@
       "extra_params": {
         "確認段階": "方針",
         "方針": "{plan}",
-        "要求と出所": "{plan}",
-        "成立性の証拠": "{plan}",
+        "要求原本": "{plan}",
         "引き継ぎ記録先": "{case_dir}/handoff.md（新規）"
       },
       "expect": {

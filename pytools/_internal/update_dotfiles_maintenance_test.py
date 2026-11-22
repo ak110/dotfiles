@@ -51,7 +51,6 @@ def _mise(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[list[list[st
         elif args == ["--version"]:
             output = "2026.10.19 windows-x64 (2026-10-24)"
         elif command[:2] == ["winget", "show"]:
-            # show --versionsの版一覧。数値行だけを解析し、ローカライズされた見出しに依存しない。
             output = "見つかりました mise-en-place [jdx.mise]\nバージョン\n----------\n" + responses.get(
                 "candidate", "2026.10.12"
             )
@@ -203,7 +202,7 @@ def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> N
 
     async def check(command):
         startup.append(command)
-        # MCP接続のテストダブルも、本番が受け取る起動結果の型で返す。
+
         return warmup_agents_server._StartupOutcome(True, "ok")  # noqa: SLF001  # pylint: disable=protected-access
 
     monkeypatch.setattr(plugin_warmup, "check_command", dependency)
@@ -282,4 +281,4 @@ def test_untrusted_codex_hook_explains_user_operations(tmp_path: Path, monkeypat
     assert "Codexの入力欄" in notice.message
     assert "新しいセッション" in notice.message
     assert "エージェント" in notice.message
-    assert "稼働中のdaemonはplugin更新時に自動で再起動" in notice.message
+    assert "自動で再起動" not in notice.message

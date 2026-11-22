@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのuwi: answerのテスト。"""
 
 import contextlib
 import pathlib
@@ -28,7 +27,6 @@ from agent_toolkit.atk_test import (
 
 
 def test_answer_saves_operation_binding(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """共有回答保存を通して許可を保存し、回答変更で失効させる。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -66,15 +64,12 @@ def test_answer_saves_operation_binding(tmp_path: pathlib.Path, monkeypatch: pyt
 
 
 class TestUwiAnswer:
-    """answerサブコマンドの空集合・差分なし時の挙動検証。"""
-
     def test_no_unanswered_prints_message(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """未回答ゼロ時は案内のみでcommitしない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="ans\n")
         monkeypatch.setenv("EDITOR", "vi")
@@ -85,22 +80,19 @@ class TestUwiAnswer:
             atk.main(["wi", "answer"], home=tmp_path)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
-        # 対象0件も接頭辞付きの成功行で返し、受信側が接頭辞だけで成否を判定できるようにする。
+
         assert captured.out.startswith("成功: 未回答のUWIが無いため")
         commit_calls = [c for c in git_calls if c["cmd"][:2] == ["git", "commit"]]
         assert commit_calls == []
 
 
 class TestUwiAnswerEditorFailure:
-    """answerサブコマンド: エディター非ゼロ終了時にexit 0を返さないことを検証する。"""
-
     def test_nonzero_editor_exit_is_treated_as_failure(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """エディターが非ゼロ終了コードで終了した場合、中断してexit 1を返しcommitしない。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -126,18 +118,12 @@ class TestUwiAnswerEditorFailure:
 
 
 class TestUwiAnswerNonInteractive:
-    """answerサブコマンド: ファイル名と回答本文を引数で渡し、非対話で回答できることを検証する。
-
-    ユーザーが`$EDITOR`を介さずに回答を記録できることを担保する。
-    """
-
     def test_arguments_record_answer_without_editor(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """ファイル名と回答本文の指定で回答欄が更新され、`$EDITOR`未設定でも成功する。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
         path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
@@ -168,7 +154,6 @@ class TestUwiAnswerNonInteractive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """回答本文が回答欄マーカーを含む場合はexit 1となり、対象ファイルを変更しない。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
         path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
@@ -188,7 +173,6 @@ class TestUwiAnswerNonInteractive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """ファイル名のみの指定は対話モードへ移行せずexit 1で案内する。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
         _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
@@ -223,7 +207,6 @@ class TestUwiAnswerNonInteractive:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対象がUWIでない場合はexit 1となり、対象ファイルを変更しない。"""
         notes = _setup_notes(tmp_path)
         filename = f"{_FIXED_TIMESTAMP}-001.md"
         path = _write_awi_file(notes, filename)
@@ -245,7 +228,6 @@ def test_agent_environment_rejects_uwi_answer_before_writing(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """各エージェント環境ではCLIで受け取ったUWI回答を拒否する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
     path = _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
@@ -261,7 +243,7 @@ def test_agent_environment_rejects_uwi_answer_before_writing(
     assert path.read_bytes() == before
     failure, next_action = capsys.readouterr().err.splitlines()
     assert failure == "失敗: UWIの回答はユーザーだけが書き込む。エージェント環境から起動したatkでは回答できない"
-    # エージェントは回答できないため、ユーザーへの依頼を次の操作として返す。
+
     assert next_action == "次の操作: ユーザーへ回答を依頼する"
 
 
@@ -269,7 +251,6 @@ def test_answer_uwi_common_core_accepts_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """ブラウザーから呼ぶ共有の実装はエージェント環境でも回答を保存する。"""
     notes = _setup_notes(tmp_path)
     path = _write_uwi_file(notes, "uwi.md", question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -282,7 +263,6 @@ def test_answer_uwi_common_core_accepts_agent_environment(
 
 
 def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """回答欄マーカーが重複するエントリでも最後のマーカー基準で分割し、見出しと質問本文を保全する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -304,7 +284,6 @@ def test_answer_uwi_splits_at_last_marker(tmp_path: pathlib.Path, monkeypatch: p
 
 
 def test_answer_uwi_keeps_behavior_for_single_marker(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """マーカーが1個の通常データでは従来と同じ結果になる。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -330,7 +309,6 @@ def test_answer_uwi_auto_adopts_affirmative_post_approval(
     monkeypatch: pytest.MonkeyPatch,
     question_metadata: str,
 ) -> None:
-    """標準の事後承認UWIへ肯定回答した場合は回答保存と採用を同じ操作で完了する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -363,7 +341,6 @@ def test_answer_without_diff_reports_success_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """保存済みと同じ回答は、変更の無い成功行で報告する。"""
     notes = _setup_notes(tmp_path)
     filename = f"{_FIXED_TIMESTAMP}-001.md"
     _write_uwi_file(notes, filename, question="q?", answer=f"{uwi_module.ANSWER_MARKER}\n採用する\n")
@@ -380,7 +357,6 @@ def test_answer_uwi_auto_adopt_preserves_unrelated_terminal_entry(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """事後承認の採用は同じ保存パスで完結し、別の終了項目を保持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -411,7 +387,6 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """否定回答と標準外回答は従来どおり回答だけを保存する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -433,7 +408,6 @@ def test_answer_uwi_does_not_auto_adopt_other_answers(
 def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
     tmp_path: pathlib.Path,
 ) -> None:
-    """空回答は共有の実装で受け取る際に拒否し、既存回答を1バイトも変更しない。"""
     notes = _setup_notes(tmp_path)
     path = _fixed_path(notes, "20260101-000000-003.md")
     path.write_text(
@@ -452,7 +426,6 @@ def test_answer_uwi_rejects_empty_answer_without_changing_existing_answer(
 
 
 def test_answer_uwi_without_marker_asks_to_report_to_user(tmp_path: pathlib.Path) -> None:
-    """回答欄マーカーを失った保存済みUWIは、構造の破損としてユーザーへの報告を次の操作に返す。"""
     notes = _setup_notes(tmp_path)
     path = _fixed_path(notes, "20260101-000000-004.md")
     path.write_text(
@@ -473,7 +446,6 @@ def test_answer_uwi_targets_explicit_and_stored_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態指定と省略の両方で保存した状態のUWIへ回答する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -498,7 +470,6 @@ def test_answer_uwi_targets_explicit_and_stored_state(
 
 
 def test_answer_uwi_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """hold上のUWIへ明示状態指定で回答する。"""
     notes = _setup_notes(tmp_path)
     held = _write_uwi_file(notes, "held.md")
     held.write_text(held.read_text(encoding="utf-8") + f"{uwi_module.ANSWER_MARKER}\n", encoding="utf-8")
@@ -512,12 +483,10 @@ def test_answer_uwi_accepts_explicit_hold_state(tmp_path: pathlib.Path, monkeypa
 
 
 def test_reject_reserved_uwi_markup_allows_plain_body() -> None:
-    """予約書式を含まない本文は拒否しない。"""
     uwi_module.reject_reserved_uwi_markup("判定根拠を示したうえで、どちらの案を採用しますか？")
 
 
 def test_reject_reserved_uwi_markup_ignores_inline_heading_text() -> None:
-    """行頭以外に現れる見出し相当の文字列は拒否対象としない。"""
     uwi_module.reject_reserved_uwi_markup(f"本文中で`{uwi_module.ANSWER_HEADING}`という語に言及するだけの記述は許容しますか？")
 
 
@@ -534,7 +503,6 @@ def test_reject_reserved_uwi_markup_ignores_inline_heading_text() -> None:
     ],
 )
 def test_reject_reserved_uwi_markup_reports_every_violation(body: str, expected: list[str]) -> None:
-    """予約要素を最後まで走査し、検出順に同じ入力エラーへ列挙する。"""
     with pytest.raises(uwi_module.WebInputError) as exc_info:
         uwi_module.reject_reserved_uwi_markup(body)
     message = str(exc_info.value)

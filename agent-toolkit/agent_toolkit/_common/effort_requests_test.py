@@ -5,10 +5,10 @@ import time
 
 import pytest
 
-from agent_toolkit._common import atomic_file, effort_requests, session_registry
+from agent_toolkit._common import atomic_file, effort_requests, registry_requests, session_registry
 
 
-@pytest.mark.parametrize("condition", ["late", "expired", "answered", "unsupported", "deleted"])
+@pytest.mark.parametrize("condition", ["late", "expired", "answered", "legacy-answered", "unsupported", "deleted"])
 def test_pending_preserves_request_identity_during_transfer(tmp_path, monkeypatch, condition):
     owner = session_registry.owner_process()
     assert owner is not None
@@ -26,38 +26,45 @@ def test_pending_preserves_request_identity_during_transfer(tmp_path, monkeypatc
         "owner": previous,
     }
     path = directory / "same-id.effort-request"
-    path.write_text(json.dumps(packet), encoding="utf-8")
+    registry_requests.write_request(path, packet)
+    stored = {**packet, "request_id": path.stem}
     record = {"processes": [owner.payload()], "effort_receiver": {"version": 1, "process": owner.payload()}}
     if condition == "unsupported":
         record.pop("effort_receiver")
     (directory / "child.json").write_text(json.dumps(record), encoding="utf-8")
     if condition == "answered":
+        effort_requests.respond(path, {"session_id": "child", "effort": "medium"})
+    elif condition == "legacy-answered":
         path.with_suffix(".effort-response").write_text("{}", encoding="utf-8")
-    original_lock = session_registry.registry_lock
     if condition == "deleted":
+        original_read = type(path).read_text
 
-        def lock(*args, **kwargs):
-            path.unlink()
-            return original_lock(*args, **kwargs)
+        def read_text(target, *args, **kwargs):
+            if target == path:
+                path.unlink()
+            return original_read(target, *args, **kwargs)
 
-        monkeypatch.setattr(session_registry, "registry_lock", lock)
+        monkeypatch.setattr(type(path), "read_text", read_text)
     pending = effort_requests.pending(state_root=tmp_path)
     if condition == "late":
-        expected = {**packet, "owner": owner.payload()}
+        expected = {**stored, "owner": owner.payload()}
         assert pending == [(path, expected)]
-        assert json.loads(path.read_text(encoding="utf-8")) == expected
+        assert json.loads(path.read_text(encoding="utf-8")) == stored
         assert effort_requests.pending(state_root=tmp_path) == pending
     else:
         assert not pending
         if condition == "deleted":
             assert not path.exists()
+        elif condition == "answered":
+            assert not path.exists()
+            completed = json.loads(path.with_suffix(".effort-request-result").read_text(encoding="utf-8"))
+            assert completed == {**stored, "result": {"session_id": "child", "effort": "medium"}}
         else:
-            assert json.loads(path.read_text(encoding="utf-8")) == packet
+            assert json.loads(path.read_text(encoding="utf-8")) == stored
 
 
 @pytest.mark.parametrize("withdrawn", [False, True])
 def test_response_remains_only_while_request_is_held(tmp_path, monkeypatch, withdrawn):
-    """要求が残る間は応答を渡し、書込と重なって要求側が要求と応答を消した後には応答を残さない。"""
     directory = session_registry.registry_directory(tmp_path)
     directory.mkdir(parents=True, exist_ok=True)
     request = directory / "token.effort-request"

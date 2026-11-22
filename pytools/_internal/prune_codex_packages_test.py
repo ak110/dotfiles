@@ -33,7 +33,6 @@ def test_official_flock_blocks_pruning(monkeypatch: pytest.MonkeyPatch, tmp_path
 
 
 def test_unknown_incomplete_and_linked_releases_are_preserved(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """不完全な生成物と帰属不明・リンク実体へ削除を広げない。"""
     current = _release(tmp_path, "standalone", "0.162.1")
     root = current.parent.parent
     (root / "current").symlink_to(current, target_is_directory=True)
@@ -49,6 +48,22 @@ def test_unknown_incomplete_and_linked_releases_are_preserved(monkeypatch: pytes
     result = prune_codex_packages.prune(home=tmp_path)
     assert not result.removed
     assert all(path.exists() for path in (incomplete, unknown, outside, linked))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="同梱実行体による保持はPOSIXのみ")
+@pytest.mark.parametrize("inside", [False, True])
+def test_running_rg_retains_only_its_own_release(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, inside: bool) -> None:
+    current = _release(tmp_path, "standalone", "0.162.1")
+    old = _release(tmp_path, "standalone", "0.150.0")
+    (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
+    executable = (old if inside else tmp_path) / "codex-path" / "rg"
+    monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
+    monkeypatch.setattr(prune_codex_packages.psutil, "pids", lambda: [123])
+    monkeypatch.setattr(prune_codex_packages.psutil, "Process", lambda _pid: types.SimpleNamespace(exe=lambda: str(executable)))
+    result = prune_codex_packages.prune(home=tmp_path, dry_run=True)
+    assert not result.failures
+    assert (old in result.retained) is inside
+    assert (old in result.removed) is not inside
 
 
 def test_codex_home_alias_preserves_selected_release(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:

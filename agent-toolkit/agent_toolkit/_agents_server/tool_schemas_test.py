@@ -1,5 +1,3 @@
-"""agents_serverのMCPツールの公開schemaが、説明文の変更で変わらないことを確かめる。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -25,7 +23,7 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "compact_conversation": {
         "annotations": {"destructive_hint": False},
-        "input_schema": {"properties": {}, "type": "object"},
+        "input_schema": {"properties": {"resume": {"default": False, "type": "boolean"}}, "type": "object"},
         "output_schema": {"additionalProperties": True, "title": "compact_conversationDictOutput", "type": "object"},
     },
     "kill": {
@@ -94,6 +92,7 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "start": {
         "annotations": {"destructive_hint": False},
         "input_schema": {
+            "$defs": {"StartupProfile": {"enum": ["lightweight", "default", "full"], "type": "string"}},
             "properties": {
                 "command": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "cwd": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
@@ -110,6 +109,8 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "model_type": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "prompt": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "subagent_md_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "start_observation": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "startup_profile": {"anyOf": [{"$ref": "#/$defs/StartupProfile"}, {"type": "null"}], "default": None},
                 "summary_policy": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "whole_contract_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
             },
@@ -135,7 +136,6 @@ def _without_prose(value: Any) -> Any:
 
 @pytest.mark.asyncio
 async def test_tool_schemas_keep_names_types_defaults_and_return_shapes() -> None:
-    """全ツールの名前、入力schema、返却schemaと注釈が、説明文を除いて固定値と一致する。"""
     published = {
         tool.name: {
             "input_schema": _without_prose(tool.input_schema),

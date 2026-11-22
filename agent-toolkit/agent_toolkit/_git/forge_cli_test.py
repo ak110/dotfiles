@@ -18,7 +18,6 @@ def test_failure_commands_are_explicit_and_noninteractive(forge: str, job: bool)
         if job:
             assert commands == (tuple(part.format("24") for part in job_log),)
         else:
-            # 64KiB超の行で後続が欠落する`--log-failed`を避け、job IDを経由して全ログを取得させる。
             assert commands == (
                 ("gh", "run", "view", "24", "--repo", repository, "--json", "jobs", "--jq", forge_cli.GITHUB_JOB_LIST),
                 tuple(part.format("<job ID>") for part in job_log),
@@ -56,7 +55,6 @@ def test_failure_commands_are_explicit_and_noninteractive(forge: str, job: bool)
     "repository", ["group/sub/repo", "git.example.org/group/sub/repo", "ssh://git@git.example.org:2222/group/sub/repo.git"]
 )
 def test_repository_selector_preserves_api_environment(monkeypatch: pytest.MonkeyPatch, repository: str) -> None:
-    """識別用のrepositoryはAPI側のDNS・ポート・protocolの環境指定を継承する。"""
     monkeypatch.setenv("GITLAB_HOST", "git.example.org")
     monkeypatch.setenv("GITLAB_API_HOST", "api.example.org:8443")
     monkeypatch.setenv("GLAB_API_PROTOCOL", "http")
@@ -78,7 +76,6 @@ def test_repository_selector_preserves_api_environment(monkeypatch: pytest.Monke
     ],
 )
 def test_public_host_environment_priority(monkeypatch: pytest.MonkeyPatch, variables: dict[str, str], expected: str) -> None:
-    """glab config --helpのhost変数の優先順を、通知とログ案内で保持する。"""
     for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
         monkeypatch.delenv(name, raising=False)
     for name, value in variables.items():
@@ -104,7 +101,6 @@ def test_public_host_environment_priority(monkeypatch: pytest.MonkeyPatch, varia
 def test_api_endpoint_distinguishes_http_and_ssh_ports(
     monkeypatch: pytest.MonkeyPatch, repository: str, host: str, protocol: str | None
 ) -> None:
-    """HTTPのポートを保持し、SSH転送用のポートをAPIへ転用しない。"""
     for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST", "GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL"):
         monkeypatch.delenv(name, raising=False)
     environment = forge_cli.glab_environment(repository)

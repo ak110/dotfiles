@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのownershipの試験。"""
 
 # pylint: disable=protected-access
 
@@ -43,7 +42,6 @@ from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_ag
 
 
 def test_update_skips_when_git_process_scan_is_denied(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """対象の走査で照会を拒否されたgitプロセスがあれば、内容を変えずに更新を見送る。"""
     local, seed, _remote = _create_git_pair(tmp_path)
     (local / "tracked.txt").write_text("dirty\n", encoding="utf-8")
     (seed / "tracked.txt").write_text("upstream\n", encoding="utf-8")
@@ -65,7 +63,6 @@ def test_update_skips_when_git_process_scan_is_denied(monkeypatch: pytest.Monkey
 
 @pytest.mark.skipif(sys.platform == "win32", reason="使用中cwdの削除はPOSIX上で検証する")
 def test_update_ignores_unrelated_git_with_removed_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """別Gitのcwdが走査後に消えても、対象rootの所有取得を妨げない。"""
     local, _seed, _remote = _create_git_pair(tmp_path)
     directory = tmp_path / "unrelated-git-cwd"
     directory.mkdir()
@@ -94,7 +91,7 @@ def test_update_ignores_unrelated_git_with_removed_cwd(monkeypatch: pytest.Monke
             snapshot = next(candidate for candidate in psutil.process_iter(["name", "cmdline"]) if candidate.pid == process.pid)
             directory.rmdir()
             assert snapshot.cwd() == str(directory)
-            # 最初の走査後、index取得までの間に消えたcwdを2回目の検査へ渡す。
+
             scans = iter([[], [snapshot]])
             monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter(next(scans)))
 
@@ -115,7 +112,6 @@ def test_update_skips_while_git_commit_in_progress(
     host_environ: Callable[[], dict[str, str]],
     scope: str,
 ) -> None:
-    """実commitのhook・編集区間を保持し、最初の変更前の見送りを検査する。"""
     local, seed, _remote = _create_git_pair(tmp_path)
     target = local
     if scope == "other-worktree":
@@ -195,8 +191,7 @@ def test_update_holds_index_lock_against_later_git_operation(
     commit_all: bool,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """更新所有中の後発commitを実Gitが拒否し、別worktreeは独立して動く。"""
-    # 後発commitの拒否はindex.lockで確かめるため、標準テンプレートの配置は省く。
+
     template = tmp_path / "empty-template"
     template.mkdir()
     monkeypatch.setenv("GIT_TEMPLATE_DIR", str(template))
@@ -329,7 +324,7 @@ def test_update_preserves_index_when_ownership_is_not_ready(
             destination.write_bytes(b"partial index")
             raise KeyboardInterrupt
 
-        monkeypatch.setattr(update_dotfiles.shutil, "copyfile", interrupt_copy)
+        monkeypatch.setattr(update_dotfiles_git.shutil, "copyfile", interrupt_copy)
     if race == "copy-interrupt":
         with pytest.raises(KeyboardInterrupt):
             _REAL_UPDATE_GIT_WITH_RECOVERY(1, 4, timeout=5)
@@ -345,7 +340,6 @@ def test_update_preserves_index_when_ownership_is_not_ready(
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXの実SIGTERMによるプロセス中断を検証する")
 def test_update_recovers_index_after_sigterm(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) -> None:
-    """実プロセスへの停止通知後もGit作業を再開でき、完了済みstageを保持する。"""
     local, _seed, _remote = _create_git_pair(tmp_path)
     _prepare_dirty(local)
     ready = tmp_path / "ready"

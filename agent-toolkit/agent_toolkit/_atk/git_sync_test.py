@@ -37,7 +37,6 @@ _REAL_GIT_CPU = pytest.mark.cpu_limit(
 
 @pytest.fixture(autouse=True)
 def _agent_output(monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存の結果検証はエージェント向けの出力を使う。"""
     monkeypatch.setattr(_atk_git_sync, "is_human_terminal", lambda: False)
 
 
@@ -62,7 +61,7 @@ def test_sync_reports_progress_and_lock_wait(monkeypatch, tmp_path, capsys, agen
     observed: list[Any] = []
 
     def acquire(lock, *args, **kwargs):
-        # 待たずに取得を試す呼び出しは通し、待つ取得の直前で表示を読んでから保持側を解放する。
+
         if kwargs.get("blocking") is not False and not observed:
             observed.append(capsys.readouterr())
             release.set()
@@ -205,7 +204,6 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
                 )
             elapsed = time.monotonic() - started
         finally:
-            # 親子を一斉に停止すると孫がzombieになり、initの回収時機に検査が依存する。
             ready.with_suffix(".release").touch()
             try:
                 holder.wait(timeout=5)
@@ -227,7 +225,6 @@ def test_wi_add_stops_at_lock_wait_limit_and_names_holder(
 
 
 def test_lock_records_holder_while_held_and_bounds_git_operations(tmp_path: pathlib.Path) -> None:
-    """保持中は保持者の記録があり、保持区間のgit操作は区間の上限を受ける。解放すると両方が消える。"""
     holder_file = pathlib.Path(str(_atk_git_sync.repo_lock_path(tmp_path)) + ".holder")
     limits: list[float] = []
 
@@ -260,7 +257,7 @@ def test_pull_reports_git_timeout_as_single_sync_failure(
     def time_out(args: list[str], cwd: pathlib.Path, *, forward_error_output: bool = True) -> None:
         del forward_error_output
         error = subprocess.TimeoutExpired(_git_command.command_line(args), 120)
-        # `_git_command.run`が時間切れの例外へ付ける作業ディレクトリの記録を模す。
+
         setattr(error, "git_cwd", str(cwd))  # noqa: B010
         raise error
 
@@ -290,7 +287,6 @@ def _remote_sync(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _init_repo(root: pathlib.Path) -> None:
-    """commit検証用のGit repositoryを初期化する。"""
     root.mkdir()
     git_repository.init_repository(root, initial_branch="main")
     git_repository.run_git(root, "config", "user.name", "sync-test")
@@ -314,7 +310,6 @@ def test_run_git_suppresses_success_output(tmp_path: pathlib.Path, capsys: pytes
 def _init_diverged_mq_repos(
     tmp_path: pathlib.Path, *, filename: str = "20260831-101752-001.md"
 ) -> tuple[pathlib.Path, pathlib.Path]:
-    """同じMQ項目を別々に終了できる2つのcloneを作成する。"""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     local = tmp_path / "local"
@@ -342,7 +337,6 @@ def _init_diverged_mq_repos(
 def _finish_entry(
     repo: pathlib.Path, timestamp: str, *, note: str | None = None, filename: str = "20260831-101752-001.md"
 ) -> None:
-    """MQが生成する形式でprocessing項目をadoptedへ移してcommitする。"""
     source = entry_path(repo, filename)
     parsed = frontmatter.parse_frontmatter(source.read_text(encoding="utf-8"))
     assert parsed is not None
@@ -357,7 +351,6 @@ def _finish_entry(
 
 
 def _create_matching_tree_divergence(local: pathlib.Path, peer: pathlib.Path) -> str:
-    """異なるcommitで同じ木を持つ分岐を作成する。"""
     for repo, message in ((local, "local equivalent"), (peer, "peer equivalent")):
         (repo / "equivalent.txt").write_text("same\n", encoding="utf-8")
         git_repository.run_git(repo, "add", "equivalent.txt")
@@ -370,7 +363,6 @@ def _create_matching_tree_divergence(local: pathlib.Path, peer: pathlib.Path) ->
 def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """対象外のstage済み差分をindexへ残したまま、対象だけをcommitする。"""
     repo = tmp_path / "repo"
     _init_repo(repo)
     origin = tmp_path / "origin.git"
@@ -397,7 +389,6 @@ def test_commit_and_push_keeps_unrelated_staged_change_out_of_commit(
 
 @_REAL_GIT_CPU
 def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path) -> None:
-    """対象外の差分を無視し、指定したpathだけの変更を判定する。"""
     repo = tmp_path / "repo"
     _init_repo(repo)
     (repo / "unrelated.txt").write_text("changed\n", encoding="utf-8")
@@ -409,7 +400,6 @@ def test_worktree_dirty_can_limit_status_to_target_paths(tmp_path: pathlib.Path)
 
 @_REAL_GIT_CPU
 def test_pending_commit_count_distinguishes_remote_and_upstream_states(tmp_path: pathlib.Path) -> None:
-    """remoteなし、upstream不明および未push件数を別の結果で返す。"""
     local_only = tmp_path / "local-only"
     _init_repo(local_only)
     assert _atk_git_sync.pending_commit_count(local_only) == 0
@@ -671,7 +661,6 @@ def test_sync_recovers_matching_tree_divergence(
     monkeypatch: pytest.MonkeyPatch,
     agent_environment: bool,
 ) -> None:
-    """木が一致する分岐は未コミット差分を保ってpull・pushできる。"""
     if agent_environment:
         monkeypatch.setenv("AI_AGENT", "1")
     local, peer = _init_diverged_mq_repos(tmp_path)
@@ -740,7 +729,6 @@ def test_mq_sync_recovers_duplicate_terminal_commit(
 def test_mq_pull_rebases_clean_divergence(
     tmp_path: pathlib.Path,
 ) -> None:
-    """cleanな履歴分岐はローカルcommitを保持してupstreamへ載せ替える。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     (local / "local.txt").write_text("local\n", encoding="utf-8")
     git_repository.run_git(local, "add", "local.txt")
@@ -764,7 +752,6 @@ def test_mq_pull_reports_dirty_divergence_without_rewriting(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """dirtyな履歴分岐はrebaseせず、原因と手動回復手順を表示する。"""
     local, peer = _init_diverged_mq_repos(tmp_path)
     (local / "local.txt").write_text("local\n", encoding="utf-8")
     git_repository.run_git(local, "add", "local.txt")

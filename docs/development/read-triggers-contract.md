@@ -3,7 +3,7 @@
 エージェント向け文書の読込表と、委譲先の起動の本文へ資料の全文を入れる配送の契約をまとめる。
 読込表を書く人と、配送を実装する人が使う資料であり、エージェントが作業中に読む規範からは外している。
 読込表の書き方の基準は`agent-basics/skills/writing-standards/references/agent-documents-basics.md`「読込表」にある。
-読込表を解析して資料を案内し、資料の受信を追跡したhookは2026年11月20日に撤去した（理由と再導入の条件は[撤去した仕組み: hookと配送](removed-mechanisms-hooks.md)にある）。
+読込表を解析して資料を案内し、資料の受信を追跡したhookは2026年11月20日に撤去した（理由と再導入の条件は削除前の撤去台帳`docs/development/removed-mechanisms-hooks.md`にある）。
 
 ## 読込表
 

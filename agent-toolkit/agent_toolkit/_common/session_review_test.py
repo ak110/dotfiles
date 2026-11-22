@@ -1,5 +1,3 @@
-"""公開状態操作とprepareを使い、待ち登録・増分・成功確定の受渡しを検証する。"""
-
 from __future__ import annotations
 
 import datetime
@@ -18,7 +16,6 @@ from agent_toolkit._common import session_activity, session_review, session_stat
 
 
 def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
-    """生存APIの集合だけを使い、閉じた会話の履歴は起動を妨げない。"""
     for session in ("first", "second", "closed"):
         session_state.update_state(session, lambda state: {**state, "add_awi_skill_invoked": True})
     for living in ({"first", "second"}, {"second"}, set()):
@@ -27,7 +24,6 @@ def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
 
 
 def test_auto_start_reads_only_runs_updated_within_the_interval(monkeypatch):
-    """間隔より前に更新した実行記録は開始も間隔より前のため、開かずに起動の判定を進める。"""
     monkeypatch.setattr(session_activity, "living_root_session_ids", lambda **kwargs: frozenset())
     runs = session_review.directory() / "runs"
     runs.mkdir(parents=True, exist_ok=True)
@@ -42,9 +38,19 @@ def test_auto_start_reads_only_runs_updated_within_the_interval(monkeypatch):
     assert session_review.auto_start_due(now=now) is False
 
 
+def test_meta_interval_does_not_read_batch_start(monkeypatch):
+    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
+    now = 1793400000.0
+    assert session_review.meta_start_due(now=now)
+    start = session_review.directory() / "meta-start.json"
+    session_review.write(start, {"started_at": datetime.datetime.fromtimestamp(now, datetime.UTC).isoformat()})
+    assert not session_review.meta_start_due(now=now + 604799)
+    assert session_review.meta_start_due(now=now + 604800)
+    assert session_review.auto_start_due(now=now)
+
+
 @pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])
 def test_cleanup_prepared_preserves_scope_and_referenced_evidence(tmp_path, changed, unconfirmed) -> None:
-    """成功した世代の全量抽出物だけを回収し、後続の証拠と変更済み抽出物を保持する。"""
     bundle = tmp_path / "bundle"
     bundle.mkdir()
     disposable = bundle / "timeline.jsonl"
@@ -124,7 +130,6 @@ def test_legacy_bundle_cleanup_and_individual_failure(tmp_path, capsys, monkeypa
 
 
 def test_unconfirmed_legacy_bundle_retention_does_not_warn(tmp_path, capsys, caplog) -> None:
-    """成功範囲との一致を確定できない正常保持を、対処が必要な警告にしない。"""
     transcript = tmp_path / "session.jsonl"
     _transcript(transcript, "要求")
     prepared = _prepare(transcript, capsys)
@@ -196,7 +201,6 @@ def _transcript(path: pathlib.Path, text: str, *, append: bool = False) -> None:
 
 
 def _dispatch(script_name: str, arguments: list[str]) -> int:
-    """共通層から上位層をimportせず、公開CLIで状態操作と準備を実行する。"""
     result = subprocess.run(
         [sys.executable, str(pathlib.Path(__file__).parents[1] / "atk.py"), "run-script", script_name, "--", *arguments],
         capture_output=True,
@@ -379,7 +383,6 @@ def test_sweep_preserves_pending_and_unfinished_references(tmp_path) -> None:
 
 
 def test_complete_rejects_history_replaced_after_prepare(tmp_path, capsys) -> None:
-    """準備と成功確定の間の書換えを、行数が同じでも処理済みにしない。"""
     transcript = tmp_path / "session.jsonl"
     _transcript(transcript, "元の要求")
     session_review.record(

@@ -1,5 +1,3 @@
-"""実受理段に沿った相対操作と、対応不明・端の区別を検証する。"""
-
 import subprocess
 
 import pytest

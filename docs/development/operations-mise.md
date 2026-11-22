@@ -4,18 +4,13 @@
 
 ### process-loopの非ログイン再評価
 
-dotfilesリポジトリを対象とする`atk wi process-loop`はmiseの`latest`指定ツールを非ログインシェルから再評価する。
-手動起動時に`mise install --quiet`を一度実行し、その成否後から24時間ごとに待機ループの復帰時に再実行する。
-`update-dotfiles`が成功した場合は、その完了時から24時間を数え直す。
-更新成功直後の正常再起動では、1回限りの内部引数を次のプロセスへ渡して起動時の重複実行を省く。
-内部引数は次の再起動引数から除去するため、ランチャー間の受け渡し形式と永続ファイルを追加しない。
+巡回用CLIはmiseツールの導入や更新を実行しない。
+巡回中はセッションが `update-dotfiles` を実行し、成功を確かめてから更新を反映する。
 
-`--no-update`指定時、dotfiles以外を対象とする場合、または`~/dotfiles`を解決できない場合は再評価しない。
-`mise`の終了コードが0以外の場合と600秒でタイムアウトした場合は、結果を標準エラー出力へ警告して`atk wi process-loop`を続行する。
 ログイン時のシェル初期化処理は`mise install`を実行しない。
 対話シェルの初期化が起動する外部コマンドのうち、miseのshimとして解決され得るものは`MISE_AUTO_INSTALL=false`を与えて起動する。
 これにより、未導入ツールのshimを実行してもmiseは導入を始めない。
-導入は本節の非ログイン再評価と`chezmoi apply`の後処理だけが担う。
+配備時の導入は `chezmoi apply` の後処理が担う。
 配布するglobal設定は`gitlab.glab_cli_tokens`を無効にする。
 miseはglab CLIの設定ファイルから取得したトークンを公開APIの呼び出しへ付与するため、期限切れのトークンは401を返す。
 
@@ -39,7 +34,7 @@ mise 2026.9.17では、lockにURLがあってもlockedモードの`mise install 
 
 ### lockedモードの環境変数
 
-process-loopと後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
+chezmoiの後処理の`mise install`へは環境変数`MISE_LOCKED=1`と`MISE_LOCKED_SCOPES=project`を与える。
 これにより、プロジェクトの`mise.lock`に記録済みの解決結果から導入するlockedモードで動かす。
 `MISE_LOCKED`を与えない`mise install`は実行位置のlockfileを書き戻し、書き戻す内容は実行ホストのプラットフォームで変わる。
 このため`MISE_LOCKED`を与えない場合は、dotfilesの作業ツリーの`mise.lock`に差分が残る（Windowsで`mise.toml`がLinux x64だけに指定した配布物のエントリが消えた）。

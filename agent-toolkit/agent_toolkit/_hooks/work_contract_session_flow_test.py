@@ -28,10 +28,9 @@ def _publish_launch(session_id: str, whole: pathlib.Path, handoff: pathlib.Path 
 
 
 @pytest.mark.parametrize("codex", [False, True])
-def test_each_user_prompt_delivers_the_contract_body(
+def test_each_user_prompt_delivers_contract_metadata(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, codex: bool
 ) -> None:
-    """実入力のたびに、同じ契約本文と回答後の復帰基準を両ホストの公開UserPromptSubmitから届ける。"""
     path = tmp_path / "work-contract.md"
     path.write_text("目的: A全体の完了\n要件: Bを保持\n", encoding="utf-8")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -40,15 +39,16 @@ def test_each_user_prompt_delivers_the_contract_body(
     monkeypatch.setattr(user_prompt_submit.termination_evidence, "observe_user", lambda *_args: None)
     extra = {"turn_id": "turn"} if codex else {}
     session = "contract-body-" + ("codex" if codex else "claude")
-    for prompt in ("Xはどこから来たの？", "状況は？"):
+    for count, prompt in enumerate(("Xの出所を教えて。", "状況は？"), start=1):
         result = run_hook(
             "user_prompt_submit", {"session_id": session, "hook_event_name": "UserPromptSubmit", "prompt": prompt, **extra}
         )
         assert result.returncode == 0
-        assert "目的: A全体の完了" in result.stdout
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
-        assert "「更新する時点」" in context
-        assert "`agent-toolkit/skills/atk-mode/references/work-contract.md`「追加入力の統合」" in context
+        assert str(path) in context
+        assert "作業契約の最終更新:" in context
+        assert f"その後の実ユーザー発話: {count}件" in context
+        assert "目的: A全体の完了" not in context
     machine = run_hook(
         "user_prompt_submit",
         {
@@ -58,7 +58,9 @@ def test_each_user_prompt_delivers_the_contract_body(
             **extra,
         },
     )
-    assert "目的: A全体の完了" not in machine.stdout
+    if machine.stdout.strip():
+        machine_context = json.loads(machine.stdout).get("hookSpecificOutput", {}).get("additionalContext", "")
+        assert str(path) not in machine_context
 
 
 def test_compaction_delivers_the_contract_body(
@@ -86,7 +88,6 @@ def test_compaction_delivers_the_contract_body(
     ),
 )
 def test_missing_contract_public_hook_flow(tmp_path, monkeypatch, capsys, initial_prompt):
-    """初回、自動goal、追加入力、圧縮後の最初の操作だけで作成条件を届ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     path = tmp_path / "work-contract.md"
@@ -172,7 +173,7 @@ def test_delegate_outside_registry_gets_no_contract_notice(monkeypatch):
     assert "全体作業契約`" not in compact.stdout and "引き継ぎ記録`" not in compact.stdout
 
 
-@pytest.mark.parametrize("mode", ["oversized", "unreadable", "missing-delegate"])
+@pytest.mark.parametrize("mode", ["unreadable", "missing-delegate"])
 def test_contract_diagnostic_reaches_public_response(tmp_path, monkeypatch, capsys, mode):
     path = tmp_path / "work-contract.md"
     monkeypatch.setattr(work_contract, "record_path", lambda *_args: path)
@@ -185,11 +186,17 @@ def test_contract_diagnostic_reaches_public_response(tmp_path, monkeypatch, caps
     else:
         monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        path.write_bytes(b"\xff" if mode == "unreadable" else ("要件" * 3000).encode())
-        assert user_prompt_submit.main(json.dumps({"session_id": "diagnostic-" + mode, "prompt": "続けて"})) == 0
+        path.write_bytes(b"\xff")
+        monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args: tmp_path)
+        assert (
+            rules_context.main(
+                json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "unreadable-contract"})
+            )
+            == 0
+        )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert str(path) in context
-    assert {"oversized": "通知の上限", "unreadable": "UnicodeDecodeError", "missing-delegate": "委譲元"}[mode] in context
+    assert {"unreadable": "UnicodeDecodeError", "missing-delegate": "委譲元"}[mode] in context
     if mode == "missing-delegate":
         assert "原本の所在と読取可能性を確認せよ" in context
         assert "全文読み" not in context
@@ -208,3 +215,5 @@ def test_compaction_oversized_contract_delivers_location(tmp_path, monkeypatch, 
     )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert str(path) in context and "現在の目的・要件を確かめよ" in context
+    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直せ" in context
+    assert "要件" * 10 not in context

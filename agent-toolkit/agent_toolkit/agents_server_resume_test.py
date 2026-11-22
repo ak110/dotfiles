@@ -30,7 +30,6 @@ async def test_wait_defers_result_until_child_session_terminates(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """孫sessionが終了するまで初回結果を返さず、確認後の結果を返す。"""
     client = ControlledClaudeClient("claude-child-wait")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-wait"
@@ -42,7 +41,7 @@ async def test_wait_defers_result_until_child_session_terminates(
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert child_session_id in client.queries[1]
 
 
@@ -53,7 +52,6 @@ async def test_wait_keeps_child_until_registration_recovers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """観測不能な孫sessionの識別子を保ち、終了を確認した後の再開結果を返す。"""
     client = ControlledClaudeClient(f"claude-child-{registry_state}")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = f"child-{registry_state}"
@@ -75,7 +73,7 @@ async def test_wait_keeps_child_until_registration_recovers(
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert "error" not in result
         assert child_session_id in client.queries[1]
 
@@ -87,7 +85,6 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了済みと観測不能の孫が混在しても、全ての終了を確認してから1回継続する。"""
     client = ControlledClaudeClient(f"claude-child-mixed-{unobserved_state}")
     async with _manager(client, monkeypatch) as (manager, _backend):
         terminal_session_id = f"child-terminal-{unobserved_state}"
@@ -109,11 +106,11 @@ async def test_wait_preserves_unobserved_child_sessions_until_all_terminate(
         assert session.live_child_session_ids == {unobserved_session_id}
         session_registry.publish(unobserved_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 2)
-        client.emit(ResultMessage("孫session混在時の再開結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 孫session混在時の再開結果"))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "孫session混在時の再開結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session混在時の再開結果"
         assert "error" not in result
         assert terminal_session_id in client.queries[1]
         assert unobserved_session_id in client.queries[1]
@@ -124,7 +121,6 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開turnで起動した新しい孫も、観測不能な状態になっても実際の終了まで追跡する。"""
     client = ControlledClaudeClient("claude-child-repeated-mixed")
     async with _manager(client, monkeypatch) as (manager, _backend):
         first_terminal_session_id = "child-terminal-first"
@@ -157,11 +153,11 @@ async def test_wait_tracks_new_unobserved_children_across_auto_resumes(
         session_registry.publish(unreadable_session_id, state=session_registry.PublicationState.RESULT_COMPLETED)
         await _await_state(lambda: len(client.queries) == 3)
 
-        client.emit(ResultMessage("連続自動再開後の結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 連続自動再開後の結果"))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "連続自動再開後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 連続自動再開後の結果"
         assert "error" not in result
         assert first_terminal_session_id in client.queries[1]
         assert missing_session_id in client.queries[1]
@@ -174,7 +170,6 @@ async def test_wait_response_keys_are_unchanged_with_child_sessions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """孫session追跡用の内部状態をwait応答へ追加しない。"""
     client = ControlledClaudeClient("claude-child-keys")
     async with _manager(client, monkeypatch) as (manager, _backend):
         child_session_id = "child-keys"
@@ -217,7 +212,7 @@ async def test_live_claude_child_survives_notification_deadline(
         session.set_background_deadline(0.0)
         assert (await _wait_with_timeout(manager, 0))["status"] == "running"
         result = await _auto_resume_after_child_termination(manager, client, session, child_session_id)
-        assert result["agent_message"] == "孫session確認後の結果"
+        assert result["agent_message"] == "状態: completed\n結果: 孫session確認後の結果"
         assert "error" not in result
 
 
@@ -247,7 +242,6 @@ async def test_unobserved_child_sessions_merge_into_existing_error(
 
 @pytest.mark.asyncio
 async def test_unobserved_child_sessions_merge_with_existing_identifiers(tmp_path: pathlib.Path) -> None:
-    """既存の未観測session識別子を保ったまま新しい識別子を併合する。"""
     session = state.SessionState("existing-unobserved", str(tmp_path))
     session.error = {
         "message": "既存エラー",

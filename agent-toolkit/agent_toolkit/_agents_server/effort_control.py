@@ -1,5 +1,3 @@
-"""所有MCPの監視処理から、effort要求と自己変更後の1回の再開を処理する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -25,9 +23,21 @@ async def process_requests(
     state_root: pathlib.Path | None = None,
     requests: Sequence[tuple[pathlib.Path, dict[str, Any]]] | None = None,
 ) -> None:
-    """所有する通常sessionを更新し、登録を永続化してから応答する。"""
     pending = await run_file_operation(effort_requests.pending, state_root=state_root) if requests is None else requests
+    groups: dict[str, list[tuple[pathlib.Path, dict[str, Any]]]] = {}
     for path, payload in pending:
+        groups.setdefault(str(payload.get("session_id")), []).append((path, payload))
+    await asyncio.gather(*(_process_session(sessions, catalog, apply, group, state_root) for group in groups.values()))
+
+
+async def _process_session(
+    sessions: Mapping[str, SessionState],
+    catalog: Callable[[str], Awaitable[list[dict[str, Any]]]],
+    apply: Callable[[SessionState, str], Awaitable[None]],
+    requests: Sequence[tuple[pathlib.Path, dict[str, Any]]],
+    state_root: pathlib.Path | None,
+) -> None:
+    for path, payload in requests:
         session_id = payload.get("session_id")
         session = sessions.get(session_id) if isinstance(session_id, str) else None
         if session is not None and path.stem in session.effort_request_results:
@@ -72,7 +82,7 @@ async def process_requests(
                     session.effort = updated
                     session.effort_history += ((utc_now(), previous or "", updated, actor),)
                     if actor == session.session_id:
-                        session.effort_resume_turn = session.turn_seq
+                        session.reserve_effort_resume(session.turn_seq)
                     session.touch()
                 response.update(
                     previous_effort=previous,
@@ -100,19 +110,10 @@ async def process_requests(
 async def resume_changed(
     sessions: Mapping[str, SessionState], send: Callable[[SessionState, str], Awaitable[dict[str, Any]]]
 ) -> None:
-    """自己変更したturnの終了後だけ継続入力を1回送る。別経路が再開済みなら予約を除く。"""
     for session in tuple(sessions.values()):
-        requested_turn = session.effort_resume_turn
-        if requested_turn is None:
-            continue
-        if session.turn_seq != requested_turn or session.interrupt_requested:
-            session.effort_resume_turn = None
-            continue
-        if not session.terminal or not session.turn_completed:
+        if not session.begin_effort_resume():
             continue
         # 応答喪失時にも重複送信せず、失敗はsessionに残して親へ返す。
-        session.effort_resume_turn = None
-        session.effort_resuming = True
         body = message_format.auto_message(
             "自身が要求したeffort変更を次のturnへ適用して同じ会話を再開した。"
             "引き継ぎ記録と直前の成果を確認し、残る作業を続けよ。",
@@ -131,5 +132,5 @@ async def resume_changed(
             }
             session.touch()
         finally:
-            session.effort_resuming = False
+            session.finish_effort_resume()
             session.touch()

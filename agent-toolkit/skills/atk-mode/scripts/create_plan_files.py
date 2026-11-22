@@ -56,7 +56,7 @@ _SOURCE_NEXT_ACTION = "計画本文の入力ファイルを直し、同じ引数
 
 
 class PlanCreationError(_next_action.ActionableError):
-    """計画ファイルを確定できなかった場合のエラー。理由と次の操作を持つ。"""
+    pass
 
 
 class _CandidateCollision(Exception):
@@ -64,7 +64,6 @@ class _CandidateCollision(Exception):
 
 
 def _validate_plan_name(plan_name: str) -> str:
-    """計画ファイル名へ埋め込む名称を検証して返す。"""
     if not plan_name or plan_name in {".", ".."}:
         raise ValueError("計画名が空です")
     if any(character in _FORBIDDEN_NAME_CHARACTERS or ord(character) < 0x20 for character in plan_name):
@@ -75,7 +74,6 @@ def _validate_plan_name(plan_name: str) -> str:
 
 
 def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | None = None) -> str:
-    """`lane-NN`と実行環境のローカル時刻からprocess-wi用の正規stemを返す。"""
     match = _PROCESS_LANE_PATTERN.fullmatch(lane_identifier)
     if match is None:
         raise ValueError("レーン識別子は`lane-NN`の2桁形式で指定してください")
@@ -86,7 +84,6 @@ def process_lane_plan_name(lane_identifier: str, *, now: datetime.datetime | Non
 
 
 def named_plan_name(plan_name: str, *, now: datetime.datetime | None = None) -> str:
-    """名称または完全stemを受け取り、メインによる起動用の正規stemを返す。"""
     name = _validate_plan_name(plan_name)
     if _TIMESTAMPED_NAME_PATTERN.fullmatch(name) is not None:
         return name
@@ -107,7 +104,6 @@ def _resolved_plans_root(home: pathlib.Path | str | None) -> pathlib.Path:
 
 
 def _require_plans_root_path(path: pathlib.Path, plans_root: pathlib.Path) -> None:
-    """`path`の実体が解決済み計画root配下にあることを検証する。"""
     try:
         resolved = path.resolve(strict=False)
     except OSError as error:
@@ -125,12 +121,10 @@ def _read_source(path: pathlib.Path | str) -> bytes:
 
 
 def _replace_placeholder(content: bytes, stem: str) -> bytes:
-    """本文中の固定stemプレースホルダーを最終stemへ置換する。"""
     return content.replace(PLAN_STEM_PLACEHOLDER.encode("utf-8"), stem.encode("utf-8"))
 
 
 def _candidate_is_taken(directory: pathlib.Path, stem: str) -> bool:
-    """同一ディレクトリに候補stemと衝突する項目があるか判定する。"""
     prefix = f"{stem}."
     return any(entry.name.startswith(prefix) for entry in directory.iterdir())
 
@@ -156,13 +150,11 @@ def _write_temporary(directory: pathlib.Path, stem: str, suffix: str, content: b
 
 
 def _file_identity(path: pathlib.Path) -> tuple[int, int]:
-    """ファイルのdevice/inode識別子を返す。"""
     stat = path.stat()
     return stat.st_dev, stat.st_ino
 
 
 def _remove_owned(path: pathlib.Path, identity: tuple[int, int], content: bytes) -> bool:
-    """inodeと内容が一致する自作ファイルだけを回収する。"""
     try:
         if _file_identity(path) != identity or path.read_bytes() != content:
             return False
@@ -173,7 +165,6 @@ def _remove_owned(path: pathlib.Path, identity: tuple[int, int], content: bytes)
 
 
 def _portable_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
-    """Markdown本文の有効行から固定portable接頭辞を持つ参照値を抽出する。"""
     for lineno, source in lines:
         for match in _PORTABLE_REFERENCE_RE.finditer(source):
             value = match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
@@ -182,7 +173,6 @@ def _portable_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tup
 
 
 def _adjunct_reference_values(lines: Iterator[tuple[int, str]]) -> Iterator[tuple[int, str, str]]:
-    """Markdown本文の有効行から付属ファイル参照の固定接頭辞を持つ参照値を抽出する。"""
     for lineno, source in lines:
         for match in _ADJUNCT_REFERENCE_RE.finditer(source):
             yield lineno, source, match.group(0).rstrip(".,;:!?、。，；：！？)]}>")
@@ -234,7 +224,6 @@ def _check_structure(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> None:
-    """確定した計画ファイル群を、構造が基準を満たすかを判定する関数へ渡す。"""
     import check_plan_file  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     if check_plan_file.detect_plan_format(main_path, main_path.read_text(encoding="utf-8")) != check_plan_file.FORMAT_REQUEST:
@@ -393,7 +382,6 @@ def create_plan_files(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLIから内部の作成処理を開始する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     source_group = parser.add_mutually_exclusive_group(required=True)
     source_group.add_argument(

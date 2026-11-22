@@ -27,6 +27,9 @@ let selected = null;
 let queryText = "";
 let visibleLimit = 100;
 let filterTimer = null;
+let fullTextMatches = null;
+let fullTextRequest = null;
+let fullTextStatus = "";
 const expandedKeys = new Set();
 let visibleSessions = [];
 // サブエージェントの記録は左ペインの一覧に現れないため、委譲元の記録を古い順に保持して戻れるようにする。
@@ -36,7 +39,6 @@ let detailGeneration = 0;
 // 右ペインへ描画済みのイベント件数。描画済みの末尾まで読み進めると増え、追記の反映後も保つ。
 let renderedCount = 100;
 const DETAIL_PAGE_SIZE = 100;
-// 右ペインに表示中の記録。
 let currentDetail = null;
 // 末尾からこの距離以内を読んでいれば末尾を読んでいるとみなし、追記に合わせて末尾へ追従する。
 const FOLLOW_TAIL_PX = 48;
@@ -65,7 +67,12 @@ function sessionKey(entry) {
 
 function matchesFilter(entry) {
   if (!queryText) return true;
-  const haystack = [entry.host, entry.cwd, entry.first_user_message, entry.session_id, entry.path]
+  if (fullTextMatches) return fullTextMatches.has(sessionKey(entry));
+  return matchesMetadata(entry);
+}
+
+function matchesMetadata(entry) {
+  const haystack = [entry.host, entry.cwd, entry.first_user_message, entry.session_id, entry.path, entry.label]
     .filter((value) => typeof value === "string")
     .join(" ")
     .toLowerCase();
@@ -146,6 +153,12 @@ function renderSessions() {
     host.textContent = entry.host;
     const startedAt = document.createElement("span");
     startedAt.textContent = formatTime(entry.started_at);
+    if (queryText && entry.label?.toLowerCase().includes(queryText)) {
+      const label = document.createElement("span");
+      label.className = "pane-item-title";
+      label.textContent = entry.label;
+      meta.append(label);
+    }
     meta.append(host, startedAt);
     item.replaceChildren(cwd, meta);
 
@@ -188,6 +201,10 @@ function renderSessions() {
   });
   document.getElementById("sessions-empty").hidden = rows.length !== 0;
   const empty = document.getElementById("sessions-empty");
+  const searchStatus = document.getElementById("sessions-search-status");
+  searchStatus.textContent = fullTextStatus;
+  searchStatus.hidden = !fullTextStatus;
+  if (fullTextStatus) empty.hidden = true;
   empty.querySelector("p").textContent = sessions.length === 0
     ? `ユーザーの発話を含むセッション記録はまだありません。発話が保存された記録は自動で一覧へ加わります。対象root: ${sessionRoots.join("、")}`
     : "一致するセッションはありません。";
@@ -255,8 +272,12 @@ async function fetchList(timing = {}) {
     if (!response.ok) throw new Error(`一覧を取得できません (${response.status})`);
     const payload = await (response.json());
     const previousKeys = new Set(sessions.map(sessionKey));
+    const hadMetadataMatch = queryText && sessions.some(matchesMetadata);
     sessions = payload.sessions || [];
+    const hasMetadataMatch = queryText && sessions.some(matchesMetadata);
+    if (hasMetadataMatch) cancelFullTextSearch();
     const currentKeys = new Set(sessions.map(sessionKey));
+    const listChanged = currentKeys.size !== previousKeys.size || [...currentKeys].some(key => !previousKeys.has(key));
     for (const key of expandedKeys) if (!currentKeys.has(key)) expandedKeys.delete(key);
     if (selected && previousKeys.has(sessionKey(selected)) && !currentKeys.has(sessionKey(selected))) {
       const message = sessionDiagnostic(selected, "選択したセッション記録は見つかりません。");
@@ -271,7 +292,13 @@ async function fetchList(timing = {}) {
     renderWarnings(warningsEl, (payload.warnings || []).map((warning) =>
       diagnostic("セッション", warning.host, warning.path || warning.root || "記録一覧", warning.reason)));
     document.getElementById("sessions-list-error").hidden = true;
-    renderSessions();
+    const searched = fullTextMatches !== null || fullTextRequest !== null;
+    if (queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
+        && queryText === filterEl.value.trim().toLowerCase()) {
+      void applySessionFilter();
+    } else {
+      renderSessions();
+    }
   } catch (error) {
     const box = document.getElementById("sessions-list-error");
     box.replaceChildren();
@@ -738,6 +765,45 @@ const resyncFromServer = coalesced(async (timing) => {
   await refreshSelectedDetail(timing);
 }, "external-reload");
 
+function cancelFullTextSearch() {
+  fullTextRequest?.abort();
+  fullTextRequest = null;
+  fullTextMatches = null;
+  fullTextStatus = "";
+}
+
+async function applySessionFilter() {
+  cancelFullTextSearch();
+  queryText = filterEl.value.trim().toLowerCase();
+  visibleLimit = 100;
+  if (!queryText || sessions.some(matchesFilter)) {
+    renderSessions();
+    return;
+  }
+  const request = new AbortController();
+  fullTextRequest = request;
+  fullTextStatus = "セッション本文を検索しています。";
+  renderSessions();
+  try {
+    const response = await timedFetch("sessions", `${BASE_PATH}/api/sessions/search`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({query: queryText}),
+      signal: request.signal,
+    });
+    if (!response.ok) throw new Error(`全文検索に失敗しました (${response.status})`);
+    const payload = await response.json();
+    if (fullTextRequest !== request) return;
+    fullTextMatches = new Set(payload.matches.map(match => JSON.stringify(match)));
+    fullTextStatus = payload.incomplete ? "一部のセッション本文を検索できませんでした。" : "";
+  } catch {
+    if (fullTextRequest !== request) return;
+    fullTextStatus = "セッション本文を検索できませんでした。";
+  }
+  fullTextRequest = null;
+  renderSessions();
+}
+
 async function init() {
   setDrawerOpen("sessions", false);
   listEl = document.getElementById("sessions");
@@ -748,11 +814,8 @@ async function init() {
   filterEl = document.getElementById("sessions-filter");
   filterEl.addEventListener("input", () => {
     clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => {
-      queryText = filterEl.value.trim().toLowerCase();
-      visibleLimit = 100;
-      renderSessions();
-    }, 300);
+    cancelFullTextSearch();
+    filterTimer = setTimeout(() => void applySessionFilter(), 300);
   });
   listEl.addEventListener("click", (event) => {
     const item = event.target.closest(".session-item");
@@ -765,9 +828,8 @@ async function init() {
   document.getElementById("sessions-drawer-backdrop").addEventListener("click", () => setDrawerOpen("sessions", false));
   document.getElementById("sessions-clear-filter").addEventListener("click", () => {
     filterEl.value = "";
-    queryText = "";
-    visibleLimit = 100;
-    renderSessions();
+    clearTimeout(filterTimer);
+    void applySessionFilter();
     filterEl.focus();
   });
   new IntersectionObserver(entries => {

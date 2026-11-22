@@ -1,5 +1,3 @@
-"""計画バンドルの構成要素・保存元の列挙。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -86,7 +84,6 @@ def as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> s
 
 
 def tracked_deleted_paths(private_notes: pathlib.Path) -> set[pathlib.Path]:
-    """Gitが追跡している削除済みパスを返す。"""
     result = _git_command.run(
         ["ls-files", "--deleted", "-z"],
         cwd=private_notes,
@@ -102,7 +99,6 @@ def tracked_deleted_paths(private_notes: pathlib.Path) -> set[pathlib.Path]:
 
 
 def plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """指定メイン計画に属する実在・削除済みのbundleを返す。"""
     parent = (private_notes / _plan_file.NEW_PLANS_DIRECTORY / relative_main.parent).resolve(strict=False)
     main = parent / relative_main.name
     if not parent.is_relative_to((private_notes / _plan_file.NEW_PLANS_DIRECTORY).resolve(strict=False)):
@@ -155,14 +151,12 @@ def working_plan_bundle(home: pathlib.Path | str | None, relative_main: pathlib.
 
 
 def current_bundle_contents(contents: dict[str, bytes], main_name: str) -> dict[str, bytes]:
-    """保存済みbundleから現行形式の構成要素だけを返す。"""
     stem = pathlib.Path(main_name).stem
     names = {main_name, *(kind.name_for(stem) for kind in _bundle_kinds.STORED_ATTACHMENTS)}
     return {name: content for name, content in contents.items() if name in names}
 
 
 def saved_plan_bundle(private_notes: pathlib.Path, relative_main: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """`private-notes/plans/`に実在する指定stemの通常ファイルを返す。"""
     root = _plan_file.new_plans_root(private_notes).resolve(strict=False)
     parent = (root / relative_main.parent).resolve(strict=False)
     if not parent.is_relative_to(root):
@@ -190,7 +184,6 @@ def bundle_contents_at_ref(
     relative_main: pathlib.Path,
     ref: str,
 ) -> dict[str, bytes]:
-    """Git参照上の指定stemをworktreeへ反映せず読み取る。"""
     relative_parent = pathlib.Path(_plan_file.NEW_PLANS_DIRECTORY) / relative_main.parent
     result = _git_command.run(
         ["ls-tree", "-rz", "--name-only", ref, "--", relative_parent.as_posix()],

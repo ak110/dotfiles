@@ -1,6 +1,6 @@
 # ユーザーへの本文送達の設計記録
 
-[設計記録の索引](design.md)から参照する、ユーザーへの本文送達の記録である。
+[設計記録の索引](design.md)
 
 ## Code Mode対応の送達
 
@@ -49,7 +49,7 @@ transcriptから可視本文を読むStop判定、言語判定と振り返りの
 
 Claude Codeでは、同じ応答でツール呼び出しより前に置いた地の文の一部を、APIが要約（progress updateの要約）へ置き換えて返す。
 原文は画面にもtranscriptにも残らず、メインは届いたとみなして作業を続ける。
-事象は`incidents-reporting.md`の2026年10月6日の項にある。
+事象は削除前の障害事例集`docs/development/incidents-reporting.md`の2026年10月6日の項にある。
 
 ツールの入力は要約されないため、途中報告と最後の回答の両方をツールの入力で運ぶ。
 

@@ -83,7 +83,6 @@ _run_required_claude() {
     return "$status"
 }
 
-# agent-toolkit プラグインを user scope でインストール・更新する。
 # 併せて旧 edit-guardrails プラグインを除去する（現在は agent-toolkit に統合されている）。
 _install_agent_toolkit() {
     echo ""

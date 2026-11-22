@@ -1,5 +1,3 @@
-"""計画バンドルの公開CLIと一覧・進捗の取得。"""
-
 from __future__ import annotations
 
 import argparse
@@ -47,7 +45,6 @@ __all__ = [
 
 
 def build_parser(parser) -> None:
-    """`atk plans`配下のparserを構築する。"""
     sub = _atk_help.add_subcommands(
         parser,
         dest="plans_subcommand",
@@ -117,11 +114,6 @@ def plan_progress(
     *,
     home: pathlib.Path | str | None = None,
 ) -> tuple[dict[str, str], ...]:
-    """指定した計画ファイル（メイン）の進捗ログの行を出現順に返す。
-
-    対象ファイルを読み取りだけで解析する。進捗行が1件も無い計画では空のtupleを返す。
-    再開位置を確定する消費側が同じ入力から同じ値を得るため、行の並びを本文の出現順で保つ。
-    """
     main = _resolve_progress_source(private_notes, plan_file, home=home)
     try:
         rows = _plan_format.progress_log_rows(main.read_text(encoding="utf-8"))
@@ -179,7 +171,6 @@ def _remove_legacy_sidecar_locks(root: pathlib.Path) -> None:
 
 
 def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
-    """`atk plans`のサブコマンドを実行する。"""
     if args.plans_subcommand == "checkout":
         paths = _plans_checkout.checkout_plan(private_notes, args.plan_file, home=home)
         main = next(path for path in paths if path.name == pathlib.Path(args.plan_file).name)
@@ -201,7 +192,6 @@ def dispatch(args, private_notes: pathlib.Path, home: pathlib.Path) -> int:
     )
 
 
-# テスト・既存呼び出し向けの短い別名。
 commit = _plans_commit.commit_plan
 
 checkout = _plans_checkout.checkout_plan

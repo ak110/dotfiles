@@ -40,7 +40,6 @@ class ProviderSelection:
 
 
 def has_provider_configuration() -> bool:
-    """接続設定を明示した場合だけ、使用順と種別からproviderを選ぶ。"""
     return codex_connection.managed()
 
 
@@ -67,7 +66,6 @@ def independent_api_auth(provider: dict[str, Any]) -> bool:
 
 
 def _entry_kind(entry: tuple[str, str]) -> str:
-    """残高不足の並べ替えへ渡す候補の種別を返す。"""
     return entry[0]
 
 
@@ -140,8 +138,7 @@ async def select(
             usage = await request("account/rateLimits/read", {})
         except RuntimeError, OSError, TimeoutError:
             usage = {}
-        # ordinaryUsageAllowedはactive accountについて検証済みの欄である。accountIdが明示される場合は
-        # account/readのworkspaceRoutingと同じIDの結果だけを使い、IDが一致しない結果で補完しない。
+
         routing = auth.get("workspaceRouting")
         active_id = routing.get("chatgptAccountId") if isinstance(routing, dict) else None
         snapshot_id = usage.get("accountId")

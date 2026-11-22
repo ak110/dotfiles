@@ -69,7 +69,6 @@ async def test_retry_uses_changed_stage_model_before_waiting_or_connection_migra
 @pytest.mark.parametrize("kind", ["seven_day", "seven_day_overage_included"])
 @pytest.mark.asyncio
 async def test_changed_model_rejection_before_init_resolves_start(kind, tmp_path, monkeypatch):
-    """init前の通知を再生する途中で終了しても、起動待ちを未確定のまま残さない。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:before/medium")
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     cli = _RetryCLI("early-model-retry", initial=[_limit(kind), _retry()])
@@ -106,7 +105,7 @@ class _RetryCLI:
         self.messages.put_nowait(parse_message({"type": "system", "subtype": "init", "session_id": session_id}))
 
     async def connect(self) -> None:
-        """通信開始を模す。"""
+        pass
 
     async def query(self, prompt: str) -> None:
         self.queries.append(prompt)
@@ -176,7 +175,6 @@ async def _wait_reason(owner: manager.AgentsServerManager, session_id: str) -> d
 async def test_weekly_retry_continues_same_session_on_api(
     launch_kind: state.LaunchKind, source: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """途中通知だけの週間拒否から旧CLIを回収し、同じ会話のAPI応答を公開waitで受け取る。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
@@ -224,7 +222,7 @@ async def test_weekly_retry_continues_same_session_on_api(
                 await asyncio.sleep(0)
         assert cli.disconnected
         assert owner.sessions[session_id].claude_connection == "payg"
-        completed = "APIで残る作業を完了した" + ("\n状態: completed" if launch_kind == "explore" else "")
+        completed = "状態: completed\n結果: APIで残る作業を完了した"
         resumed.messages.put_nowait(ResultMessage(completed))
         owner._wait_timeouts["main"] = 5  # pylint: disable=protected-access
         result = await owner.wait()
@@ -235,7 +233,6 @@ async def test_weekly_retry_continues_same_session_on_api(
 async def test_weekly_api_resume_retains_request_followup_and_completed_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """拒否前の要求・追送・完了済み進捗を持つCLI履歴を同じ会話のAPI再開先へ渡し、残作業を回収する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
@@ -249,8 +246,6 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
     clients: list[Any] = []
 
     class HistoryCLI(_RetryCLI):
-        """CLIが所有する会話履歴を、実SDK optionsのresume識別子からだけ復元する。"""
-
         def __init__(self, options: Any) -> None:
             super().__init__("retry-flow")
             self.api_connection = bool(options.env.get("ANTHROPIC_API_KEY"))
@@ -265,7 +260,7 @@ async def test_weekly_api_resume_retains_request_followup_and_completed_work(
             await super().query(prompt)
             self.history.append(prompt)
             if self.api_connection:
-                body = "\n".join(self.restored_history) + "\n残作業の索引を作成した"
+                body = "状態: completed\n" + "\n".join(self.restored_history) + "\n残作業の索引を作成した"
                 self.messages.put_nowait(AssistantMessage(body))
                 self.messages.put_nowait(ResultMessage(body))
 
@@ -378,7 +373,6 @@ async def test_unclassified_retry_is_published_and_cleared_on_response(
 async def test_retry_kill_verifies_cli_process_exit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """SDKが切断後もCLIを残した場合も、公開killが所有CLIの終了を確認して停止結果を返す。"""
     monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
     monkeypatch.setattr(manager, "START_AVAILABILITY_TIMEOUT", 0.001)
     with late_descendant.held_process(tmp_path, env=host_environ()) as process:

@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks.background_tasks import is_pending_async_work, pending_async_task_ids
+from agent_toolkit._hooks.background_tasks import is_pending_async_work, pending_async_status, pending_async_task_ids
 from agent_toolkit._testing.background_tasks_support import (
     _assistant_entry,
     _bash_no_bg,
@@ -26,6 +26,21 @@ _QUOTED_NOTICE_PHRASES = (
 
 
 _TEXT = "作業途中です。"
+
+
+def test_waiting_tool_does_not_count_as_running_background_task(tmp_path: pathlib.Path) -> None:
+    """待機系ツールだけで定期確認を再装着しないが、実背景が残る時は装着する。"""
+    path = str(_write_transcript(tmp_path, [_assistant_entry([{"type": "tool_use", "id": "cron", "name": "CronCreate"}])]))
+    assert pending_async_status(path, "background-status", session_state=None) == "pending"
+    assert (
+        pending_async_status(
+            path,
+            "background-status",
+            background_tasks=[{"id": "bg", "type": "local_bash", "status": "running"}],
+            session_state=None,
+        )
+        == "pending-background"
+    )
 
 
 class TestIsPendingAsyncWork:
@@ -161,7 +176,6 @@ class TestIsPendingAsyncWork:
     def test_background_tasks_are_used_as_current_pending_state(
         self, tmp_path: pathlib.Path, background_tasks: object, expected: bool
     ) -> None:
-        """有効な非`teammate` taskだけをStop時点の未完了根拠として扱う。"""
         transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         assert is_pending_async_work(str(transcript), "", background_tasks=background_tasks, session_state=None) is expected
 
@@ -181,7 +195,6 @@ class TestIsPendingAsyncWork:
         owner_agent_id: str,
         expected: bool,
     ) -> None:
-        """呼出主体が未回収のagents_server結果だけを継続中と判定する。"""
         transcript = _write_transcript(tmp_path, [_user_entry("hello"), _assistant_entry([{"type": "text", "text": _TEXT}])])
         session_state = {"agents_server_sessions": {"remote-session": record}}
 
@@ -219,7 +232,6 @@ class TestIsPendingAsyncWork:
         transcript_pending: bool,
         last_tool_pending: bool,
     ) -> None:
-        """payloadの権威性と3つの未完了根拠を独立した軸として判定する。"""
         entries = [_user_entry("hello")]
         if transcript_pending:
             entries.extend([_user_async_launched_entry("toolu_bg1"), _user_entry("続き")])
@@ -254,7 +266,6 @@ class TestIsPendingAsyncWork:
         expected_authoritative: bool,
         expected_source: str,
     ) -> None:
-        """混在payloadと全要素有効payloadの権威性を判定源とともに出力する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_STOP_GATE_DEBUG", "1")
         transcript = _write_transcript(
             tmp_path,
@@ -271,7 +282,6 @@ class TestIsPendingAsyncWork:
         assert f"source={expected_source}" in captured.err
 
     def test_background_tasks_cover_auto_restart_after_completed_transcript(self, tmp_path: pathlib.Path) -> None:
-        """完了通知後に同じIDで再開したtaskをpayloadから未完了として扱う。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -295,7 +305,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", background_tasks=[], session_state=None) is False
 
     def test_empty_background_tasks_do_not_hide_mcp_background_remainder(self, tmp_path: pathlib.Path) -> None:
-        """申告対象外のMCPツールのバックグラウンドタスクへの移行は空の`background_tasks`でも未完了と判定する。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -350,7 +359,6 @@ class TestIsPendingAsyncWork:
         assert "task-1" not in pending_async_task_ids(str(transcript), "", background_tasks=[])
 
     def test_empty_background_tasks_hide_agent_remainder(self, tmp_path: pathlib.Path) -> None:
-        """空の`background_tasks`を優先し、記録に残る申告対象の背景Agentは実行中ではないと判定する。"""
         transcript = _write_transcript(
             tmp_path,
             [

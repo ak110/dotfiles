@@ -1,5 +1,3 @@
-"""exploreの完了状態行と、役割taskの固定行・続行不能返却を公開前に検査する。"""
-
 from __future__ import annotations
 
 import json
@@ -9,13 +7,14 @@ from typing import Any
 
 from agent_toolkit._agents_server.runtime_result_evidence import has_runtime_evidence
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._agents_server.tool_descriptions import FREEFORM_RESULT_CONTRACT_KINDS
 from agent_toolkit._agents_server.turn_state import ResultContractWait
 from agent_toolkit._common import task_documents
 from agent_toolkit._common.next_action import ActionableError
 
 _REASON_PREFIX = "続行できない理由:"
 _CLASSIFICATION_PREFIX = "続行できない区分:"
-# 「返却形式の受け渡し」が全役割に定める正常結果の状態行。役割固有の固定行は宣言の`result_heads`が加える。
+
 _STATE_HEAD = "状態: completed"
 
 
@@ -43,20 +42,39 @@ _VALID_CLASSIFICATIONS = frozenset(
 )
 
 
+def _visible_result_lines(message: str) -> list[str]:
+    lines: list[str] = []
+    fence = ""
+    for line in message.splitlines():
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line)
+        if fence:
+            if match and match[1].startswith(fence) and not match[2].strip():
+                fence = ""
+            lines.append("")
+        elif match:
+            fence = match[1]
+            lines.append("")
+        else:
+            lines.append(line)
+    return lines
+
+
 def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str | None:
-    """自由本文exploreの成功行と、役割taskの固定行、explore・taskの続行不能2行を検査する。"""
     if result.get("status") != "completed":
         return None
     message = result.get("agent_message")
-    if isinstance(message, str) and session.launch_kind in {"delegate", "explore"}:
+    if isinstance(message, str) and session.launch_kind in FREEFORM_RESULT_CONTRACT_KINDS:
         unavailable = re.finditer(
             r"(?m)^(?P<indent>[ \t]*)続行できない区分:[ \t]*runtime_unavailable[ \t]*\r?\n"
             r"(?P=indent)続行できない理由:[ \t]*(?P<reason>[^\r\n]*)",
             message,
         )
+        visible_lines = _visible_result_lines(message)
         for claim in unavailable:
+            if not visible_lines[len(message[: claim.start()].splitlines())]:
+                continue
             reason_parts = [claim["reason"]]
-            # reader-fitの欄値は次行の字下げや箇条書きも含む。同じ値から診断の引用を確認する。
+
             for line in message[claim.end() :].splitlines():
                 if not line.strip():
                     continue
@@ -71,19 +89,14 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
                     "予算・時間枠・ツール回数枠の自己推定は実行不能の証拠になりません"
                 )
     document = task_documents.launched_task_document(session.prompt)
-    freeform_explore = session.launch_kind == "explore" and document is None
-    if not freeform_explore and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
+    freeform_checked = session.launch_kind in FREEFORM_RESULT_CONTRACT_KINDS and document is None
+    if not freeform_checked and (document is None or not task_documents.is_agent_toolkit_task_document(document)):
         return None
-    message = result.get("agent_message")
     if not isinstance(message, str):
-        return (
-            "探索の返却本文が必要です"
-            if freeform_explore or document is not None and document.name == "reader-fit-review.subagent.md"
-            else None
-        )
+        return "委譲の返却本文が必要です"
     if is_wait_statement(message):
         return None
-    lines = message.splitlines()
+    lines = _visible_result_lines(message)
     has_reason = False
     for index, line in enumerate(lines):
         match = re.fullmatch(r"(?P<indent>\s*)" + re.escape(_REASON_PREFIX) + r".*", line)
@@ -103,10 +116,10 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
         classification = previous.removeprefix(expected).strip()
         if classification not in _VALID_CLASSIFICATIONS:
             return f"{index}行目の続行できない区分が閉集合外です: {classification}"
-    if freeform_explore and not has_reason:
-        lines = message.rstrip().splitlines()
+    if freeform_checked and not has_reason:
+        lines = "\n".join(lines).rstrip().splitlines()
         if not lines or _STATE_HEAD not in (lines[0].rstrip(" \t"), lines[-1]):
-            return "exploreの返却が完了を示しません。先頭または最終行に状態: completedが必要です"
+            return f"{session.launch_kind}の返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
         return _reader_fit_reason(session, document, message)
     if document is not None and not has_reason:
@@ -115,17 +128,12 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
 
 
 def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
-    """役割taskの返却が、状態行か役割文書の宣言する固定行を持つかを検査する。
-
-    担当が作業途中で状態行も区分も無い自由文を返すと、委譲元へ完了として届く。
-    固定行の一覧は返却形式を所有する役割文書の宣言から得て、検査と文書の食い違いを避ける。
-    """
     declaration = task_documents.read_declaration(document)
     heads = (
         _STATE_HEAD,
         *(declaration.result_heads if isinstance(declaration, task_documents.TaskDocumentDeclaration) else ()),
     )
-    for line in message.splitlines():
+    for line in _visible_result_lines(message):
         stripped = line.strip().removeprefix("- ")
         if any(_head_matches(stripped, head) for head in heads):
             return None
@@ -137,7 +145,6 @@ def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
 
 
 def _head_matches(line: str, head: str) -> bool:
-    """`:`で終わる固定行は前方一致、それ以外は行全体か直後の全角括弧の補足付きで一致させる。"""
     if head.endswith(":"):
         return line.startswith(head)
     if head.startswith("状態:"):
@@ -146,11 +153,6 @@ def _head_matches(line: str, head: str) -> bool:
 
 
 def _current_named_input(session: SessionState, document: pathlib.Path, name: str) -> str:
-    """名前付き入力の現在値を返す。
-
-    宣言された継続指示が同じsessionで値を更新していれば、最も新しい継続入力を使う。
-    役割別の返却検査が入力を参照するときは、継続による更新を見落とさないよう本関数を通す。
-    """
     declaration = task_documents.read_declaration(document)
     instructions = (
         {item.instruction for item in declaration.continuations if name in item.accepted}
@@ -159,7 +161,7 @@ def _current_named_input(session: SessionState, document: pathlib.Path, name: st
     )
     for followup in reversed(session.followup_prompts):
         lines = followup.strip().splitlines()
-        # 継続本文は`continuation_prompt`が指示の1行と名前付き入力へ正規化して保持している。
+
         if lines and lines[0] in instructions:
             params = task_documents.parse_named_inputs(lines[1:])
             if name in params:
@@ -173,12 +175,6 @@ _READER_FIT_FIELD = re.compile(r"^  ([^\s:-][^:\n]*):(?: (.*))?$")
 
 
 def _reader_fit_fields(item_lines: list[str]) -> list[tuple[str, str, str]]:
-    """対象別の欄を、欄名・同じ行の値・続く行を含む値の組で返す。
-
-    欄の行は2文字の字下げに続く`- `以外の文字で始まる。欄名の行の下で`  - `か3文字以上の字下げで続く行は、
-    直前の欄の値に含め、その中の`- 逐語引用1: …`のような行を別の欄として数えない。
-    雛形は値を1行に限らず、根拠には複数の事実と引用が入るためである。
-    """
     entries: list[tuple[str, str, str]] = []
     for line in item_lines:
         field = _READER_FIT_FIELD.match(line)
@@ -192,7 +188,6 @@ def _reader_fit_fields(item_lines: list[str]) -> list[tuple[str, str, str]]:
 
 
 def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: str) -> str | None:
-    """入力成果物と個別返却を同じ集合で検収する。集約記述を個別完了へ代用しない。"""
     try:
         value = _current_named_input(session, document, "成果物").strip()
         targets = json.loads(value) if value.startswith("[") else [value]
@@ -202,7 +197,7 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
         return "reader-fitの入力成果物が空でないパス配列ではありません"
     if len(set(targets)) != len(targets):
         return "reader-fitの入力成果物に重複があります"
-    # Markdownの改行用の行末空白は表記だけの差であり、パスや値の一部として比べない。
+
     message = "\n".join(line.rstrip() for line in message.splitlines())
     blocks = list(re.finditer(r"(?m)^- 成果物: (.+)$", message))
     paths = [match[1] for match in blocks]
@@ -215,7 +210,7 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
     blocked = False
     for index, match in enumerate(blocks):
         block = message[match.end() : blocks[index + 1].start() if index + 1 < len(blocks) else len(message)]
-        # 対象別の字下げ欄の後に続く、全体の指摘・新要件はこの対象の欄へ混ぜない。
+
         item_lines = []
         for line in block.splitlines():
             if line.strip() and not line.startswith("  "):
@@ -224,7 +219,7 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
         entries = _reader_fit_fields(item_lines)
         if len(entries) != len({key for key, _, _ in entries}):
             return f"{match[1]}: 対象別の項目に重複があります"
-        # 閉集合の欄は同じ行の1語で判定し、自由記述の欄は字下げして続く行も値に含める。
+
         inline = {key: value for key, value, _ in entries}
         values = {key: value for key, _, value in entries}
         state = inline.get("完了状態")
@@ -250,16 +245,16 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
 
 
 def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
-    """形式違反とexploreの不足申告を同じ1回の保留・継続へ渡す。"""
     reason = invalid_result_reason(session, result)
     if reason is None:
-        # 有効な不足申告の真偽は機械判定せず、exploreだけ同じ回復枠で一度再確認する。
         message = result.get("agent_message")
+        document = task_documents.launched_task_document(session.prompt)
+        role = document is not None and task_documents.is_agent_toolkit_task_document(document)
         if (
-            session.launch_kind != "explore"
+            (session.launch_kind != "explore" and not role)
             or result.get("status") != "completed"
             or not isinstance(message, str)
-            or not re.search(r"(?m)^\s*続行できない理由:", message)
+            or not any(line.lstrip().startswith(_REASON_PREFIX) for line in _visible_result_lines(message))
             or session.result_contract_recovery_consumed
         ):
             return False
@@ -270,8 +265,7 @@ def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
         details["resultContract"] = reason
         details["nextAction"] = RECOVERY_NEXT_ACTION
         result["error"] = details
-        if session.launch_kind == "explore":
-            result["status"] = "failed"
+        result["status"] = "failed"
         return False
     session.hold_result(ResultContractWait(result, reason))
     session.status = "running"

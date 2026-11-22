@@ -1,5 +1,3 @@
-"""リモートホスト側ヘルパーの起動bootstrapのテスト。"""
-
 import asyncio
 import base64
 import contextlib
@@ -27,7 +25,6 @@ from agent_toolkit._atk.serve import remote as serve_remote
 from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
-# 配送時に使うbootstrapと、それが読み込むヘルパー本体の対応。
 _HELPERS = (
     (plans.REMOTE_BOOTSTRAP, "atk_serve_plans_remote_helper.py"),
     (sessions.REMOTE_BOOTSTRAP, "atk_serve_sessions_remote_helper.py"),
@@ -42,7 +39,6 @@ def test_bootstrap_runs_helper_without_file_global(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`python -c`と同じ名前空間でbootstrapを実行し、ヘルパーが一覧を返すことを確認する。"""
     home = tmp_path / "home"
     installed = home / "dotfiles" / "agent-toolkit" / "scripts" / helper_name
     installed.parent.mkdir(parents=True)
@@ -54,7 +50,7 @@ def test_bootstrap_runs_helper_without_file_global(
     stdout = io.TextIOWrapper(stdout_buffer, encoding="ascii")
     monkeypatch.setattr(sys, "stdin", stdin)
     monkeypatch.setattr(sys, "stdout", stdout)
-    # `python -c`はモジュール`__main__`のグローバルを渡す。`__file__`は束縛されていない。
+
     namespace: dict[str, typing.Any] = {"__name__": "__main__"}
 
     with pytest.raises(SystemExit) as excinfo:
@@ -69,7 +65,6 @@ def test_bootstrap_runs_helper_without_file_global(
 def test_helper_imports_from_checkout_of_bound_file(
     helper_name: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`__file__`を束縛した名前空間では、ヘルパー自身の設置場所のcheckoutを`agent_toolkit`の探索先へ加える。"""
     home = tmp_path / "home"
     home.mkdir()
     installed = tmp_path / "opt" / "dotfiles" / "agent-toolkit" / "scripts" / helper_name
@@ -77,7 +72,7 @@ def test_helper_imports_from_checkout_of_bound_file(
     shutil.copy(_SCRIPTS_DIR / helper_name, installed)
     _isolate_environment(home, tmp_path, monkeypatch)
     monkeypatch.setattr(sys, "path", list(sys.path))
-    # `main`を実行させずに関数だけを得るため、`__name__`は`__main__`以外とする。
+
     namespace: dict[str, typing.Any] = {"__name__": "helper", "__file__": str(installed)}
 
     exec(compile(installed.read_text(encoding="utf-8"), str(installed), "exec"), namespace)  # pylint: disable=exec-used
@@ -135,9 +130,13 @@ class _RemoteHost:
         helper.parent.mkdir(parents=True)
         helper.write_text(
             "import sys\n"
-            "if sys.argv[1] == 'read':\n"
-            "    sys.exit('FileNotFoundError: ' + sys.argv[2])\n"
-            "sys.stdout.write('[]')\n",
+            "def main():\n"
+            "    if sys.argv[1] == 'read':\n"
+            "        sys.exit('FileNotFoundError: ' + sys.argv[2])\n"
+            "    sys.stdout.write('[]')\n"
+            "    return 0\n"
+            "if __name__ == '__main__':\n"
+            "    sys.exit(main())\n",
             encoding="utf-8",
         )
 
@@ -145,7 +144,7 @@ class _RemoteHost:
         self.attempts += 1
         if not self.reachable:
             return 255, b"", b"ssh: connect to host remote port 22: Connection refused"
-        # `["ssh", host, ...]`の3要素目以降が、接続先のシェルが実行するコマンドである。
+
         returncode, stdout, stderr = self._run(command[2:])
         trace = f"+ {' '.join(command[2:])}\n".encode() if self.trace else b""
         return returncode, stdout, (trace + stderr).replace(b"\n", self.newline)
@@ -180,10 +179,6 @@ class _RemoteHost:
 
 @pytest.fixture(name="add_remote_host")
 def _add_remote_host(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> typing.Callable[..., tuple[str, _RemoteHost]]:
-    """単発と常駐のSSHを模した接続先へ向け、接続先を名前とともに加える関数を返す。
-
-    `atk serve`のプロセスは接続先ごとにPythonの版を覚えるため、試験ごとに新しい名前の接続先を使う。
-    """
     hosts: dict[str, _RemoteHost] = {}
 
     async def fake_run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
@@ -249,10 +244,6 @@ async def test_helper_launch_names_newest_installed_python_patch(
 
 @pytest.mark.asyncio
 async def test_launches_reuse_python_resolved_for_each_host(add_remote_host: _AddRemoteHost) -> None:
-    """接続先ごとに一度選んだPythonの版で、単発と常駐のヘルパーを起動し、要求ごとに版を照会するSSHを増やさない。
-
-    覚えた版が起動できる間は、新しいパッチ版が導入されても覚えた版を使う。
-    """
     first_name, first = add_remote_host("3.15.2")
     second_name, second = add_remote_host("3.15.9", "3.15.10")
 
@@ -297,12 +288,6 @@ async def test_launch_after_warm_up_needs_no_package_index(add_remote_host: _Add
 async def test_launch_reresolves_when_remembered_python_is_gone(
     add_remote_host: _AddRemoteHost, launch: _Launch, index_reachable: bool, cached: bool, index_fetches: int
 ) -> None:
-    """覚えた版が接続先から消えていれば、同じ要求の中で版を選び直して起動し、以後は新しい版を使う。
-
-    依存が専用キャッシュに残っていれば、選び直した版も索引へ出ずに起動する。
-    接続先のPythonの更新と索引の不通が重なると、選び直した版を索引を使う形で起動して一覧を取得できなかった
-    （2026-11-19の検証で観測）。専用キャッシュが空なら、選び直した版で索引から依存を取得する。
-    """
     name, host = add_remote_host("3.15.2")
     await launch(name)
     host.installed = {"3.15.3"}
@@ -379,6 +364,25 @@ async def test_helper_operation_error_is_reported_without_relaunch(
     assert host.helpers[-1:] == ["3.15.2"]
     # 温まった接続先は覚えた版での起動だけ、初めての接続先は照会と、索引へ出ない起動の失敗と、索引を使う起動。
     assert (host.attempts - attempts, host.listings - listings) == ((1, 0) if cached else (3, 1))
+
+
+@pytest.mark.asyncio
+async def test_one_shot_does_not_accept_another_requests_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = "a" * 32
+    monkeypatch.setattr(serve_remote.secrets, "token_hex", lambda _size: request)
+    calls: list[list[str]] = []
+
+    async def run_ssh(command: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+        del timeout
+        if "list" in command and "run" not in command:
+            return 0, _INSTALLED_PYTHONS, b""
+        calls.append(command)
+        return 1, b"[]", (f"atk-remote-helper-started {request}\natk-remote-helper-finished {'b' * 32} 0\n").encode()
+
+    monkeypatch.setattr(serve_remote, "run_ssh", run_ssh)
+    with pytest.raises(serve_remote.RemoteHelperError, match="result unknown"):
+        await _run_one_shot("fixture-wrong-request")
+    assert len(calls) == 1
 
 
 @pytest.mark.asyncio
@@ -513,16 +517,20 @@ async def test_helper_launch_writes_only_its_own_uv_cache_and_starts_offline_onc
     (checkout / "scripts").mkdir(parents=True)
     signals = tmp_path / "signals"
     signals.mkdir()
-    # ヘルパーの代わりに、ヘルパーと同じくcheckoutのモジュールをimportし、解放されるまで動き続けてから一覧を出力する。
+
     (checkout / "scripts" / "atk_serve_sessions_remote_helper.py").write_text(
         "import os, pathlib, sys, time\n"
         "sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))\n"
         "import checkout_module\n"
-        "signals = pathlib.Path(os.environ['HELPER_SIGNALS'])\n"
-        "(signals / 'started').touch()\n"
-        "while not (signals / 'release').exists():\n"
-        "    time.sleep(0.05)\n"
-        "print('[]', flush=True)\n",
+        "def main():\n"
+        "    signals = pathlib.Path(os.environ['HELPER_SIGNALS'])\n"
+        "    (signals / 'started').touch()\n"
+        "    while not (signals / 'release').exists():\n"
+        "        time.sleep(0.05)\n"
+        "    print('[]', flush=True)\n"
+        "    return 0\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(main())\n",
         encoding="utf-8",
     )
     (checkout / "checkout_module.py").write_text("", encoding="utf-8")
@@ -570,7 +578,7 @@ async def test_helper_launch_writes_only_its_own_uv_cache_and_starts_offline_onc
     inside = {path for path in written if path == dedicated or path.startswith(f"{dedicated}/")}
     assert output.strip() == "[]"
     assert pruned.returncode == 0, pruned.stderr
-    # 専用キャッシュを作るときにできる親のディレクトリは、専用キャッシュの一部として扱う。
+
     assert {path for path in written - inside if not dedicated.startswith(f"{path}/")} == set()
     assert inside
 
@@ -598,7 +606,7 @@ async def test_one_shot_launches_when_python_listing_stalls(
     home = tmp_path / "home"
     helper = home / "dotfiles" / "agent-toolkit" / "scripts" / "atk_serve_sessions_remote_helper.py"
     helper.parent.mkdir(parents=True)
-    helper.write_text("print('[]')\n", encoding="utf-8")
+    helper.write_text("def main():\n    print('[]')\n    return 0\n", encoding="utf-8")
     wheels = tmp_path / "wheels"
     _write_dependency_wheels(wheels)
     environment = _remote_host_environment(home, tmp_path / "uv-cache", tmp_path)
@@ -607,8 +615,7 @@ async def test_one_shot_launches_when_python_listing_stalls(
     stalled.mkdir()
     release = tmp_path / "stalled.release"
     python = pathlib.Path(sys.base_prefix) / "bin" / f"python{sys.version_info.major}.{sys.version_info.minor}"
-    # 打ち切った照会のuvが終わった後もこのスクリプトは残る。
-    # 試験の一時ディレクトリが消えると解放の印を見られないため、そこで終える。
+
     (stalled / "python3.15").write_text(
         f"#!/bin/sh\nwhile [ ! -e '{release}' ]; do\n  [ -e '{stalled}' ] || exit 1\n  sleep 0.05\ndone\n"
         f"exec '{python}' \"$@\"\n",
@@ -735,7 +742,7 @@ def _remote_host_environment(home: pathlib.Path, cache: pathlib.Path, signals: p
         "all_proxy",
     ):
         environment.pop(name, None)
-    # ホームを差し替えるとuvが管理Pythonを探せないため、試験のPython本体をPATHから見つけさせる。
+
     python_directory = pathlib.Path(sys.base_prefix) / "bin" if os.name == "posix" else pathlib.Path(sys.base_prefix)
     environment.update(
         HOME=str(home),
@@ -750,7 +757,6 @@ def _remote_host_environment(home: pathlib.Path, cache: pathlib.Path, signals: p
 
 
 def _write_dependency_wheels(directory: pathlib.Path) -> None:
-    """ヘルパーの起動形が要求する2依存を満たす、モジュールを含まないwheelを置く。"""
     directory.mkdir()
     for name, version in (("watchdog", "6.0.0"), ("platformdirs", "4.0.0")):
         info = f"{name}-{version}.dist-info"
@@ -770,19 +776,17 @@ def _record_digest(text: str) -> str:
 
 
 def _host_state(home: pathlib.Path, cache: pathlib.Path) -> set[str]:
-    """接続先のホームとuvキャッシュに在る項目を返す。"""
     return {f"home/{path.relative_to(home).as_posix()}" for path in home.rglob("*")} | {
         f"uv-cache/{path.relative_to(cache).as_posix()}" for path in cache.rglob("*")
     }
 
 
 def _isolate_environment(home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ホームディレクトリ・キャッシュ・PATHを一時ディレクトリへ隔離する。"""
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.delenv("CODEX_HOME", raising=False)
-    # PATHを空にして`atk`を解決させない（対象ホストの実際の設定を読ませないため）。
+
     monkeypatch.setenv("PATH", "")
 
 
@@ -804,10 +808,6 @@ def _process_exists(pid: int) -> bool:
 
 @pytest.mark.asyncio
 async def test_run_ssh_terminates_child_when_cancelled(tmp_path: pathlib.Path) -> None:
-    """単発SSHの呼び出し元をキャンセルすると、子プロセスを終了させてから`CancelledError`を送出する。
-
-    子プロセスが残ると、停止処理がその終了（最長で単発SSHの時間上限）を待たされる。
-    """
     pid_file = tmp_path / "pid"
     script = f"import os,pathlib; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); " + late_descendant.held_source(
         tmp_path / "ssh.release"
@@ -824,11 +824,6 @@ async def test_run_ssh_terminates_child_when_cancelled(tmp_path: pathlib.Path) -
 
 @pytest.mark.asyncio
 async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """時間上限に達した単発SSHは子プロセスを終了させ、`subprocess.TimeoutExpired`を送出する。
-
-    時間上限の計測は子プロセスの生成後に始まる。子プロセスがPIDを書く前に上限へ達すると、
-    PIDを得られず終了を確かめられないため、PIDの書込を見届けてから生成を完了させる。
-    """
     pid_file = tmp_path / "pid"
     script = f"import os,pathlib; pathlib.Path({str(pid_file)!r}).write_text(str(os.getpid())); " + late_descendant.held_source(
         tmp_path / "ssh.release"
@@ -858,7 +853,6 @@ async def test_run_ssh_terminates_child_on_timeout(tmp_path: pathlib.Path, monke
 
 @pytest.mark.asyncio
 async def test_stop_resident_helper_reports_unconfirmed_stop(monkeypatch: pytest.MonkeyPatch) -> None:
-    """最終killの後も終了を確認できなければ偽を返し、呼び出し側が再接続を止められるようにする。"""
 
     class Stuck:
         returncode = None
@@ -878,3 +872,13 @@ async def test_stop_resident_helper_reports_unconfirmed_stop(monkeypatch: pytest
     stuck = typing.cast("asyncio.subprocess.Process", Stuck())
     assert await serve_remote.stop_resident_helper(stuck, None, grace_timeout=0) is False
     assert await serve_remote.stop_resident_helper(None, None) is True
+
+
+@pytest.mark.parametrize("prefix", ["", "x" * 600 + " "])
+def test_stderr_excerpt_redacts_credentials_before_taking_tail(prefix: str) -> None:
+    stderr = f"{prefix}fatal: https://user:synthetic-secret-0123@example.org/repo password=synthetic-secret-4567".encode()
+    excerpt = serve_remote.stderr_excerpt(stderr)
+    assert "synthetic-secret" not in excerpt
+    assert "[REDACTED]" in excerpt
+    assert excerpt.startswith("...") == bool(prefix)
+    assert len(excerpt) <= serve_remote.STDERR_EXCERPT_MAX_CHARS + len("...")

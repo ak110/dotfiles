@@ -39,7 +39,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_exec_review_condition_table_preflight(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str, input_kind: str
 ) -> None:
-    """公開された役割入力検査で新形式AWIの不足を拒否し、完全表と旧形式を受理する。"""
     name = "20261028-130047-001.md"
     notes = tmp_path / "notes"
     directory = notes / "2026" / "10"
@@ -129,7 +128,6 @@ async def test_exec_review_condition_table_preflight(
 @pytest.mark.parametrize("coverage", ["whole-section", "partial", "wrong-wi", "number-prefix", "complete", "reason"])
 @pytest.mark.asyncio
 async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypatch, form, coverage) -> None:
-    """公開startで反映内容7項目の各番号が条件表の出典にあるかを確かめ、背景の理由行も受理する。"""
     name = "20261028-130047-001.md"
     notes = tmp_path / "notes"
     directory = notes / "2026/10"
@@ -193,7 +191,6 @@ async def test_exec_review_reflection_item_coverage_preflight(tmp_path, monkeypa
 @pytest.mark.parametrize("defect", ["valid", "missing-wi", "unreadable", "malformed", "relative"])
 @pytest.mark.asyncio
 async def test_exec_review_saved_wi_originals_preflight(tmp_path, monkeypatch, defect) -> None:
-    """保存版指定の不足を現行キューで補わず、同じ保存本文を公開startが検査する。"""
     name = "20261028-130047-001.md"
     saved = tmp_path / name
     saved.write_text("---\ntype: awi\nsource: fix\n---\n# 保存要求\n## 完成条件\n- 保存条件\n", encoding="utf-8")
@@ -256,7 +253,6 @@ async def test_exec_review_saved_wi_originals_preflight(tmp_path, monkeypatch, d
 async def test_exec_review_basis_preflight_rejects_before_launch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str, expected: str
 ) -> None:
-    """公開`start`は基準名の不正と基準別の追加入力の欠落を、担当の起動前に修正案付きで拒否する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
     plan = tmp_path / "plan.md"
     plan.write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")
@@ -298,7 +294,6 @@ async def test_exec_review_basis_preflight_rejects_before_launch(
 async def test_exec_review_basis_preflight_accepts_contract_inputs(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, params: dict[str, str]
 ) -> None:
-    """基準名と基準別の追加入力が揃った起動は、公開`start`から担当の起動へ進む。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "notes"))
     plan = tmp_path / "plan.md"
     plan.write_text("# 計画\n## 概要\n### 計画メタ情報\n- 関連WI: なし\n", encoding="utf-8")

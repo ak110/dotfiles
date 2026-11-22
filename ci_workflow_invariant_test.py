@@ -22,7 +22,6 @@ def _workflow_fixture() -> dict[str, object]:
 
 
 def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
-    """workflowのpytestコマンドが直接指定するリポジトリ内の対象は実在する。"""
     targets = direct_pytest_targets(workflow_data)
     assert targets
     for target in targets:
@@ -41,8 +40,16 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
                 body = definitions[name].body
 
 
+def test_direct_pytest_targets_ignore_other_shell_statements() -> None:
+    script = """uv run pytest -v first_test.py
+export PYFLTR_GLOBAL_CONFIG="$RUNNER_TEMP/pytest-root-pyfltr.toml"
+NOTE="two words" uv run --frozen pytest -v "${targets[@]}" second_test.py; echo other/ignored.py && uv run pytest third_test.py
+"""
+    workflow: dict[str, object] = {"jobs": {"test": {"steps": [{"run": script}]}}}
+    assert direct_pytest_targets(workflow) == ["first_test.py", "second_test.py", "third_test.py"]
+
+
 def _pytest_arguments(command: str) -> list[str] | None:
-    """stepのコマンドがpytestを起動する場合は、pytestへ渡る引数を返す。"""
     tokens = shlex.split(command)
     if "pytest" in tokens:
         return tokens[tokens.index("pytest") + 1 :]

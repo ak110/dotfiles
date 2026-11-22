@@ -1,5 +1,3 @@
-"""serveのassetsに関するruntimeの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -20,7 +18,6 @@ from agent_toolkit._testing.serve_support import _three_screen_app
 
 @pytest.mark.asyncio
 async def test_navigation_serves_three_screens(tmp_path: pathlib.Path) -> None:
-    """3画面の公開URLがHTMLと画面のコンテナーを返す。"""
     client = _three_screen_app(tmp_path).test_client()
     for path, screen in (("/", "wi"), ("/plans", "plans"), ("/sessions", "sessions")):
         response = await client.get(path)
@@ -31,7 +28,6 @@ async def test_navigation_serves_three_screens(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Path) -> None:
-    """追加した2画面のAPIが既存と同じ応答分類（入力不正400・未検出404）を返す。"""
     app = _three_screen_app(tmp_path)
     client = app.test_client()
     assert (await client.get("/api/plans/file")).status_code == 400
@@ -43,7 +39,6 @@ async def test_plan_and_session_apis_classify_input_errors(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_session_cost_api_errors_tell_the_next_step(tmp_path: pathlib.Path) -> None:
-    """推定費用APIの入力不正と対象外の記録は、要求を直す手掛かりを応答に含める。"""
     app = _three_screen_app(tmp_path)
     client = app.test_client()
     unknown = await client.get("/api/sessions/cost?engine=claude&path=a.jsonl&extra=1")
@@ -139,7 +134,6 @@ async def test_api_rejects_invalid_inputs(
 
 @pytest.mark.asyncio
 async def test_index_and_js_without_prefix_use_empty_base(tmp_path: pathlib.Path) -> None:
-    """ヘッダー無しでは空文字列扱いとなり、直接アクセス時も従来どおり応答する。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
 
@@ -158,12 +152,6 @@ async def test_protocol_relative_prefix_logs_rejection_via_proxy_fix(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """スキーム相対形式のプレフィクスは`pytilpack.quart.ProxyFix`層が拒否しWARNINGを記録する。
-
-    404単独では既存のルート未マッチ応答と区別できないため、`pytilpack.web.validate_forwarded_prefix`が
-    記録する`X-Forwarded-Prefixに不正な値が含まれています`という警告ログの有無でProxyFix層の
-    拒否の処理が実際に実行されたことを検証する。
-    """
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     with caplog.at_level("WARNING"):
@@ -177,7 +165,6 @@ def test_run_initializes_logging_and_logs_startup(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """WARNINGと既存ハンドラーのある状態から実初期化で起動先を出力し、診断を重複させない。"""
     root = logging.getLogger()
     error_logger = logging.getLogger("hypercorn.error")
     with io.StringIO() as previous_output, monkeypatch.context() as patch:
@@ -191,7 +178,7 @@ def test_run_initializes_logging_and_logs_startup(
             patch.setattr(logger, "level", logging.NOTSET)
             patch.setattr(logger, "disabled", False)
             patch.setattr(logger, "propagate", True)
-            # 直前の試験のINFO有効判定を再利用せず、今回のWARNINGから有効レベルを解決する。
+
             patch.setattr(logger, "_cache", {})
         patch.setattr(serve.logger, "handlers", [])
         patch.setattr(error_logger, "handlers", [server_handler])

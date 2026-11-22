@@ -28,7 +28,6 @@ from agent_toolkit._testing.agents_server_support import (
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monkeypatch, duplicate):
-    """idle・過去の継続後でも未回収子を保留し、新しい完了ごとに1回だけ継続する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", "model", "high")])
     client = QueueClaudeClient(
@@ -37,7 +36,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
             [AssistantMessage("最初の子を確認した")],
             [
                 AssistantMessage("次の子も確認した"),
-                ResultMessage("全工程を確認した最終結果"),
+                ResultMessage("状態: completed\n結果: 全工程を確認した最終結果"),
                 SdkSystemMessage(subtype="session_state_changed", data={"state": "idle"}),
             ],
         ]
@@ -63,7 +62,6 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
                 owner._condition.wait_for(lambda: len(client.queries) == 2 and not parent.awaiting_auto_resume), 2
             )
 
-        # 回収済みの同じ終了応答は、新しい継続対象に戻さない。
         if duplicate:
             wait_output_tracking.consume_agents_server_tool_result(
                 parent, "kill", {"session_id": "first-child"}, {"status": "completed"}
@@ -88,7 +86,7 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
             async with owner._condition:
                 await asyncio.wait_for(owner._condition.wait_for(lambda: parent.result_available), 2)
             result = await owner.wait()
-        assert result["status"] == "completed" and result["agent_message"] == "全工程を確認した最終結果"
+        assert result["status"] == "completed" and result["agent_message"] == "状態: completed\n結果: 全工程を確認した最終結果"
         assert len(client.queries) == 3
         assert not parent.live_child_session_ids and not parent.terminal_child_session_ids
     assert client.disconnected and client.readers == 0

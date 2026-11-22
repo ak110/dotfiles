@@ -1,8 +1,3 @@
-"""`_hooks/pretooluse/`のテストが共有する、PreToolUse hookの起動とpayload・作業場所の組み立て。
-
-内容と状態遷移の試験は公開hookを同一プロセスで呼び、exit code・stderr・stdoutを検証する。
-"""
-
 import ast
 import contextlib
 import functools
@@ -54,7 +49,6 @@ def _run_hook_in_process(
     payload: object,
     env_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """公開hookを同一プロセスで呼び、終了状態と標準出力・標準エラーを返す。"""
     text = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     env = os.environ.copy()
     if env_overrides:
@@ -90,11 +84,6 @@ def _run(payload: object, env_overrides: dict[str, str] | None = None) -> subpro
 def run_hook_with_notice_details(
     subcommand: str, payload: object, env_overrides: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """通知本文の意味を検証する消費側として、短い参照が指す実ファイルを読む。
-
-    生JSON・容量・配送記録の検証には_run_hook_in_processを使う。
-    この読取では元の資料本文の取得記録を追加しない。
-    """
     result = _run_hook_in_process(subcommand, payload, env_overrides)
     if not result.stdout:
         return result
@@ -111,7 +100,6 @@ def run_hook_with_notice_details(
 
 
 def _run_posttooluse(payload: object, env_overrides: dict[str, str]) -> subprocess.CompletedProcess[str]:
-    """PostToolUse hookを同じ一時状態ディレクトリで実行する。"""
     return _run_hook_in_process("posttooluse", payload, env_overrides)
 
 
@@ -150,7 +138,6 @@ def codex_execution_payload(payload: dict, directory: pathlib.Path, *, exit_code
 
 
 def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
-    """stdoutのJSONから`hookSpecificOutput.additionalContext`を取り出す。"""
     stdout = result.stdout.strip()
     if not stdout:
         return ""
@@ -163,7 +150,6 @@ def _additional_context(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def denial_reason(result: subprocess.CompletedProcess[str]) -> str:
-    """公開hookの正常拒否と、主体へ届く理由を検証する。"""
     assert result.returncode == 0 and not result.stderr
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
@@ -173,7 +159,6 @@ def denial_reason(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _notice_body(context: str) -> str:
-    """標準XML境界を検証し、通知本文を返す。"""
     assert context.startswith(_NOTICE_PREFIX)
     assert context.endswith(_NOTICE_SUFFIX)
     opening_end = context.index(">\n") + 2
@@ -193,23 +178,12 @@ def _agent_messages(result: subprocess.CompletedProcess[str]) -> str:
 
 
 def _stderr_warn_offenders(source: str) -> list[int]:
-    """warn通知をstderrへ出力する箇所の行番号を返す。
-
-    検出するのは`print(..., file=sys.stderr)`の引数へwarn通知が現れる2形とする。
-    1つは`tag="warn"`の呼び出しを引数へ直接書く形、
-    もう1つはwarn通知を変数へ束縛してから引数へ渡す形である。
-    後者には束縛元がwarn通知を返す関数の呼び出しである場合も含め、
-    定義順によらず収集できるよう関数名と変数名の収集を不動点まで繰り返す。
-    warn通知を関数の引数として別のヘルパーへ渡し、渡された先のヘルパーがstderrへ出力する
-    間接的な受け渡しは検出しない。仮引数へ渡る値の由来を追跡しないためである。
-    """
     tree = ast.parse(source)
     nodes = tuple(ast.walk(tree))
     bindings = tuple(
         node for node in nodes if isinstance(node, ast.Assign | ast.AnnAssign | ast.FunctionDef | ast.AsyncFunctionDef)
     )
 
-    # ASTはこの解析中に変えない。値の伝播の各反復で同じ部分木を走査し直さない。
     @functools.cache
     def has_warn_tag(node: ast.AST) -> bool:
         return any(
@@ -217,7 +191,6 @@ def _stderr_warn_offenders(source: str) -> list[int]:
             for inner in ast.walk(node)
         )
 
-    # warn通知を保持する変数名と、warn通知を返す関数名。
     warn_names: set[str] = set()
     warn_functions: set[str] = set()
 
@@ -260,7 +233,6 @@ def _stderr_warn_offenders(source: str) -> list[int]:
 
 
 def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) -> None:
-    """隔離した実行環境が解決する固定保存先へ状態を準備する。"""
     del state_dir
     path = state_path(session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -268,7 +240,6 @@ def _write_session_state(state_dir: pathlib.Path, session_id: str, state: dict) 
 
 
 def _read_session_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    """hookと同じ固定保存先から状態を取得する。"""
     del state_dir
     path = state_path(session_id)
     return json.loads(path.read_text(encoding="utf-8"))
@@ -285,7 +256,6 @@ def _home_path() -> str:
 
 
 def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
-    """実行レビューが使うreview用途のengine順を隔離したXDG設定ディレクトリへ保存する。"""
     config_home = tmp_path / "config"
     config_dir = config_home / "agent-toolkit"
     config_dir.mkdir(parents=True)
@@ -297,7 +267,6 @@ def _stage_model_env(tmp_path: pathlib.Path, value: str) -> dict[str, str]:
 
 
 def _user_facing_payload(field: str, value: str) -> dict:
-    """指定したユーザー向け本文欄だけへ値を設定したpayloadを返す。"""
     if field == "plan":
         return {"tool_name": "ExitPlanMode", "tool_input": {"plan": value}}
     option = {"label": "選択肢", "description": "説明文"}
@@ -330,7 +299,6 @@ def _make_plan_file(home_dir: pathlib.Path, name: str = "test.md") -> pathlib.Pa
 
 
 def _make_private_notes_plan_file(private_notes: pathlib.Path, name: str = "test.md") -> pathlib.Path:
-    """新しいprivate-notes計画root配下の計画ファイルを作成する。"""
     plans = private_notes / "plans" / "2026" / "08"
     plans.mkdir(parents=True, exist_ok=True)
     plan = plans / name
@@ -356,10 +324,6 @@ _VALID_H2_PLAN_CONTENT = (
 
 
 def _make_repo_with_optional_remote(path: pathlib.Path, remote_url: str | None) -> str:
-    """判定を省略する条件の確認用に、remote設定の有無を選べるgit repoを作成する。
-
-    `remote_url`が`None`の場合は`git remote`が空リストを返すrepoになる。
-    """
     return str(git_repository.init_repository(path, origin=remote_url))
 
 
@@ -372,7 +336,6 @@ def _process_loop_log_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 def _path_section_build_content(recorded_path: str) -> str:
-    """撤去した末尾パス節の判定処理へ与える計画本文を組み立てる。"""
     return (
         "## 概要\n\nx\n\n"
         "## 実装資料\n\n### 変更説明\n\nREADMEを更新する。\n\n"
@@ -383,10 +346,10 @@ def _path_section_build_content(recorded_path: str) -> str:
     )
 
 
-_HANGUL_SAMPLE = "\uac00"  # ハングル音節1文字（エスケープ表記で構成する）
+_HANGUL_SAMPLE = "\uac00"
 
 
-_CYRILLIC_SAMPLE = "\u0430"  # キリル小文字1文字（同上）
+_CYRILLIC_SAMPLE = "\u0430"
 
 
 def _patch(*sections: str) -> str:

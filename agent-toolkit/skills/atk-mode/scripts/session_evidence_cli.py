@@ -1,5 +1,3 @@
-"""セッション証拠照会の公開引数とJSONL表示。"""
-
 from __future__ import annotations
 
 import argparse
@@ -30,10 +28,6 @@ _HOOK_RECORD_NOTE = (
 
 
 def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRecord] | None = None) -> None:
-    """イベント列を1イベント1 JSONのJSONLとして標準出力へ書く。
-
-    `collected`を渡すと、イベント列が参照する記録とその起動元の`record-provenance`を前置する。
-    """
     seen_gaps = set()
     for event in [*(_referenced_provenance_events(collected, events) if collected is not None else []), *events]:
         if event.get("kind") == "record-gap":
@@ -45,7 +39,6 @@ def _print_events(events: list[dict[str, Any]], *, collected: list[_CollectedRec
 
 
 def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """照会が生成した件数・判定・保存先と診断を保持して表示を選ぶ。"""
     omitted = {
         "match",
         "context-match",
@@ -67,7 +60,6 @@ def _summary_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return selected
 
 
-# 照会の公開指定と、併用できる表示・入力形式を同じ表で管理する。
 _QUERY_OPTIONS = {
     "warn": (True, False),
     "grep": (True, True),
@@ -87,17 +79,14 @@ _QUERY_OPTIONS = {
 
 
 def _active_queries(args: argparse.Namespace) -> list[str]:
-    """指定された照会名を、許可する組の表から取得する。"""
     return [name for name in _QUERY_OPTIONS if getattr(args, name) is not None and getattr(args, name) is not False]
 
 
 def _query_option_names(names: list[str]) -> str:
-    """照会名を修正操作へ渡す公開オプションの列へ変換する。"""
     return "・".join(f"`--{name.replace('_', '-')}`" for name in names)
 
 
 def _print_error(text: str, *, next_action: str) -> int:
-    """照会不能を示すエラーを出力し、終了コード2を返す。"""
     _print_events([_error_event(text, next_action=next_action)])
     return 2
 
@@ -116,7 +105,6 @@ def _codex_transcript(thread_id: str, codex_home: str | None) -> Path:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """オプションを指定しない場合の抽出と照会モードの引数を定義する。"""
     parser = argparse.ArgumentParser(
         description=(
             "transcriptから振り返り用の時系列証拠を抽出・照会する。--statsは経過時間、トークン消費、"
@@ -257,6 +245,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="RECORD:LINE",
         help="指定した<記録>:<行番号>（数値だけならメイン記録）のエントリの詳細（tool_useの入力全体・tool_result本文。"
         "本文が退避されている場合はツール実行結果側の本文）を照会する。ユーザーとアシスタントの発話本文は切り詰めずに返す。"
+        "Codexの管理用・未知のイベントは種類と元位置を示す。全フィールドは元記録を参照する。"
         "複数指定ではオプションを繰り返す。"
         "各イベントは元記録行の時刻`timestamp`（無ければnull）を持つ。"
         "出力量の上限で本文を省略したエントリのイベントには`omitted`を付ける。",
@@ -421,7 +410,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def _single_transcript_query_modes(args: argparse.Namespace) -> tuple[bool, ...]:
-    """単一transcriptの照会モードを返す。"""
     return (
         args.warn,
         args.grep is not None,
@@ -448,7 +436,6 @@ def _write_query_events(
     exit_code: int,
     unresolved: list[_UnresolvedRecord],
 ) -> int:
-    """照会の重複を除き、由来と部分取得の診断を保持して表示する。"""
     if any(query_modes):
         seen = set()
         unique = []

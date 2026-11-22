@@ -18,7 +18,6 @@ def _write_record(state_root: pathlib.Path, session_id: str, payload: Any) -> No
 
 
 def test_launcher_reader_returns_recorded_launcher(tmp_path: pathlib.Path) -> None:
-    """登録簿に記録された委譲元だけを返し、記録の無いsessionと不正な識別子には`None`を返す。"""
     _write_record(tmp_path, "child", {session_launchers.LAUNCHER_KEY: "parent"})
     _write_record(tmp_path, "invalid", {session_launchers.LAUNCHER_KEY: "../parent"})
 
@@ -31,14 +30,11 @@ def test_launcher_reader_returns_recorded_launcher(tmp_path: pathlib.Path) -> No
 
 
 def test_launcher_reader_without_registry_returns_none(tmp_path: pathlib.Path) -> None:
-    """状態ディレクトリを解決できない場合と登録簿が無い場合は、常に`None`を返す。"""
     assert session_launchers.launcher_reader(None)("child") is None
     assert session_launchers.launcher_reader(tmp_path)("child") is None
 
 
 class _FailingScandir:
-    """列挙の途中で`OSError`を送出し、閉じられたかを記録する`os.scandir`の代替。"""
-
     def __init__(self) -> None:
         self.closed = False
 

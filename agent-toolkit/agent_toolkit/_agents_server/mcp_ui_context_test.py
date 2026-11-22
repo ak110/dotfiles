@@ -1,5 +1,3 @@
-"""共有MCPのUI認可がプロセス環境ではなく要求元に従うことを検証する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -14,7 +12,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import CallToolRequestParams, CallToolResult
 
-from agent_toolkit._agents_server import mcp_tools
+from agent_toolkit._agents_server import mcp_tools, service_context
 from agent_toolkit._common import function_hook_requests, runtime_environment
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -58,7 +56,6 @@ async def test_ui_authorization_uses_bound_caller(monkeypatch: pytest.MonkeyPatc
 async def test_send_to_user_carries_tool_use_id_from_request_meta(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, meta: dict[str, str] | None
 ) -> None:
-    """MCP要求の`_meta`にある呼出しIDを表示要求へ添え、無い場合は本文だけを渡す。"""
     request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
@@ -87,10 +84,6 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
 async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, consulted: bool, shared: bool
 ) -> None:
-    """改善点の行を含む報告だけ送達前の案内を照会し、結果を`guidance`で返す。
-
-    逸脱の報告に欠けた記録の行は、送達後に`hooks/send_to_user.tsx`が案内する。
-    """
     request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
@@ -143,33 +136,87 @@ async def test_send_to_user_consults_report_guidance_for_improvement_lines(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("environment", "expected", "absent"),
+    ("operation", "inputs"),
     [
-        ({}, ("`/mcp`", "`/reload-plugins`"), "codex resume"),
-        ({"CODEX_THREAD_ID": "019a0000-0000-7000-8000-000000000001"}, ("`codex resume`",), "/reload-plugins"),
+        ("apply_runtime_changes", {"targets": ["agents_server", "plugins"]}),
+        ("compact_conversation", {}),
+        ("send_to_user", {"message": "本文"}),
     ],
-    ids=["claude", "codex"],
 )
-async def test_runtime_changes_without_conversation_mod_returns_host_recovery(
+@pytest.mark.parametrize("host", ["claude", "codex"])
+@pytest.mark.parametrize("bound", [False, True], ids=["stdio", "shared"])
+async def test_ui_timeout_returns_caller_host_recovery(
     monkeypatch: pytest.MonkeyPatch,
-    environment: dict[str, str],
-    expected: tuple[str, ...],
-    absent: str,
+    tmp_path: pathlib.Path,
+    operation: str,
+    inputs: dict[str, object],
+    host: str,
+    bound: bool,
 ) -> None:
-    """会話内modが応答しないホストでは、予約していないことと、ホストに応じた再接続の操作を返す。"""
     from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
 
+    codex_id = "019a0000-0000-7000-8000-000000000001"
+    claude_id = "launcher-main"
+    identifier = claude_id if host == "claude" else codex_id
+    environment = {"CODEX_THREAD_ID": codex_id, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}
     manager = AgentsServerManager(None, launcher_environment=environment)
-    if not environment:
-        monkeypatch.setattr(manager, "launcher_session_id", lambda: "launcher-main")
+    if host == "claude" or bound:
+        environment["CLAUDE_CODE_SESSION_ID"] = claude_id
+    if host == "claude":
+        monkeypatch.setattr(manager, "launcher_session_id", lambda: identifier)
     timeout = TimeoutError("会話内modの確認応答が期限内にない。表示・予約は成功として扱わない。")
-    monkeypatch.setattr(function_hook_requests, "request", AsyncMock(side_effect=timeout))
+    request = AsyncMock(side_effect=timeout)
+    monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
     monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
-    with pytest.raises(ToolError) as raised:
-        await mcp_tools.mcp.call_tool("apply_runtime_changes", {"targets": ["agents_server", "plugins"]})
+    caller = runtime_environment.CallerContext(environment, tmp_path)
+
+    @contextlib.asynccontextmanager
+    async def no_lifespan(*_args, **_kwargs):
+        yield
+
+    async with contextlib.AsyncExitStack() as stack:
+        if bound:
+            pool = service_context.ServiceManagers(state_root=tmp_path)
+            monkeypatch.setattr(service_context, "_manager_lifespan", no_lifespan)
+            monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", pool)
+            stack.enter_context(runtime_environment.bind(caller))
+            metadata = {"_meta": {"threadId": codex_id}} if host == "codex" else {}
+            params = CallToolRequestParams.model_validate({"name": operation, "arguments": inputs, **metadata})
+            await stack.enter_async_context(mcp_tools._request_scope(params))  # pylint: disable=protected-access
+        with pytest.raises(ToolError) as raised:
+            await mcp_tools.mcp.call_tool(operation, inputs)
+    request.assert_awaited_once_with(identifier, operation, inputs)
     message = str(raised.value)
-    assert "成功として扱わない" in message and "予約" in message
-    assert all(text in message for text in expected) and absent not in message
-    assert "`list`か`show`" not in message
+    assert "成功として扱わない" in message
+    assert ("Codexには会話内modが無く" in message) == (host == "codex")
+    assert mcp_tools._UI_UNAVAILABLE_NEXT_ACTIONS[operation][host] in message  # pylint: disable=protected-access
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "inputs", "expected"),
+    [
+        ("send_to_user", {"message": "本文"}, "同じ本文を最終応答に書く"),
+        ("apply_runtime_changes", {"targets": ["agents_server"]}, "現在のターンを終え、先行の予約の結果の通知を待つ"),
+    ],
+)
+async def test_conversation_mod_rejection_returns_operation_recovery(
+    monkeypatch: pytest.MonkeyPatch, operation: str, inputs: dict[str, object], expected: str
+) -> None:
+    from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
+
+    manager = AgentsServerManager(None, launcher_environment={})
+    monkeypatch.setattr(manager, "launcher_session_id", lambda: "launcher-main")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    monkeypatch.setattr(
+        function_hook_requests, "request", AsyncMock(side_effect=function_hook_requests.HookRequestRejected("modの拒否理由"))
+    )
+    with pytest.raises(ToolError) as raised:
+        await mcp_tools.mcp.call_tool(operation, inputs)
+    message = str(raised.value)
+    assert "modの拒否理由" in message and expected in message
+    assert "引数の受理形式" not in message

@@ -30,7 +30,7 @@ _SAVE_FAILURE = "session登録の保存完了前には移譲できません"
 
 
 def _stream_final_answer(client: harness._MemoryAppServer, session: state.SessionState) -> None:
-    # 最終回答のdeltaだけで、元I/O側の未確認イベント上限（256件）を超える。
+
     item = {"type": "agentMessage", "id": "final", "text": "", "phase": "final_answer"}
     client.emit("item/started", {"threadId": session.session_id, "turnId": session.turn_id, "item": item})
     for index in range(300):
@@ -40,7 +40,6 @@ def _stream_final_answer(client: harness._MemoryAppServer, session: state.Sessio
 
 @contextlib.contextmanager
 def _stopped_when_published(clients: list[harness._MemoryAppServer]) -> Generator[dict[str, bool]]:
-    """終了時の結果を公開した時点で、そのsessionのApp Serverが止まっていたかをsessionごとに記録する。"""
     stopped: dict[str, bool] = {}
 
     def record(session: state.SessionState) -> None:
@@ -55,7 +54,6 @@ def _stopped_when_published(clients: list[harness._MemoryAppServer]) -> Generato
 
 
 async def _start_other(backend: codex.AppServerManager, monkeypatch: pytest.MonkeyPatch, cwd: Path) -> state.SessionState:
-    """別のApp Serverを所有する2つ目の委譲先を起動する。"""
     create = codex_clients.JsonRpcProcess
 
     def factory(*args: Any, **kwargs: Any) -> harness._MemoryAppServer:
@@ -68,7 +66,6 @@ async def _start_other(backend: codex.AppServerManager, monkeypatch: pytest.Monk
 
 
 async def _until_idle(backend: codex.AppServerManager, *sessions: state.SessionState) -> None:
-    """turnの開始通知を解釈して保存し終え、受信処理が次のイベントを待つ状態まで待つ。"""
     clients = [backend._clients[session.session_id] for session in sessions]
     async with asyncio.timeout(5):
         while any(session.status != "running" for session in sessions) or any(
@@ -103,11 +100,12 @@ async def test_consumer_stop_stops_own_app_server_before_failure_is_published(
         response = await owner.kill(session.session_id, timeout=5)
         assert (response["status"], response["kill_requested"]) == ("failed", False)
 
-        answer = {"type": "agentMessage", "id": "answer", "text": "別の作業の成果"}
+        final_message = "状態: completed\n結果: 別の作業の成果"
+        answer = {"type": "agentMessage", "id": "answer", "text": final_message}
         turn = {"id": other.turn_id, "status": "completed", "error": None, "items": [answer]}
         clients[1].emit("turn/completed", {"threadId": other.session_id, "turn": turn})
         await harness._until(backend, lambda: other.result_available)
-        assert (other.status, other.agent_message) == ("completed", "別の作業の成果")
+        assert (other.status, other.agent_message) == ("completed", final_message)
         assert not clients[1].stopped
 
 
@@ -167,6 +165,17 @@ async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, mon
     assert "turn/interrupt" not in [method for method, _ in clients[0].requests]
 
 
+@pytest.mark.asyncio
+async def test_kill_reports_next_action_without_an_owned_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with harness._service_environment(tmp_path, monkeypatch, harness._no_save) as (owner, backend, _clients):
+        session = await backend.start("作業", str(tmp_path))
+        with monkeypatch.context() as patch:
+            patch.setattr(backend, "_owned_client", lambda _session: None)
+            with pytest.raises(ActionableError) as error:
+                await owner.kill(session.session_id, timeout=5)
+        assert error.value.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
+
+
 @pytest.mark.parametrize("service", [False, True])
 @pytest.mark.asyncio
 async def test_kill_awaiting_interrupt_response_survives_reader_failure(
@@ -216,7 +225,6 @@ async def test_kill_awaiting_interrupt_response_survives_reader_failure(
 async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer_fails: bool, expected: tuple[str, bool]
 ) -> None:
-    """受信処理が止まった委譲先は実行中のまま残らず、killは中断要求の配送を待たずに終了を返す。"""
     streaming = asyncio.Event()
 
     async def save() -> None:
@@ -236,13 +244,12 @@ async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
 
 @pytest.mark.parametrize(
     ("cause", "stage", "backlog"),
-    [("stalled_consumer", "送出確認待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
+    [("stalled_consumer", "応答待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
 )
 @pytest.mark.asyncio
 async def test_undetermined_kill_records_stage_and_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, cause: str, stage: str, backlog: str
 ) -> None:
-    """中断要求の配送を確定できないkillは、止まった段階と受信処理の状態を所有サーバーのログへ残す。"""
     hold = asyncio.Event()
     release = asyncio.Event()
 

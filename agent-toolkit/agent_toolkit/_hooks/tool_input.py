@@ -33,7 +33,7 @@ KIND_UPDATE = "update"
 KIND_DELETE = "delete"
 KIND_MOVE = "move"
 
-# 全文を書き込む操作種別。判定する条件によっては変更後全文を使う。
+
 _WHOLE_WRITE_KINDS: frozenset[str] = frozenset({KIND_WRITE, KIND_ADD})
 
 _PATCH_BEGIN = "*** Begin Patch"
@@ -77,25 +77,20 @@ class EditOperation:
 
     @property
     def is_whole_write(self) -> bool:
-        """変更後全文が入力だけで確定する操作であるかを返す。"""
         return self.kind in _WHOLE_WRITE_KINDS
 
     @property
     def exists_after_apply(self) -> bool:
-        """適用後に対象パスのファイルが存在する操作であるかを返す。"""
         return self.kind != KIND_DELETE
 
     @property
     def display_paths(self) -> list[str]:
-        """パス判定と状態記録の対象となる入力表記を返す。移動では移動先と移動元の双方を含む。"""
         paths = [self.display_path, self.source_display_path]
         return [path for path in paths if path]
 
 
 @dataclasses.dataclass(frozen=True)
 class MaterializedEdit:
-    """操作記録へ対象ファイルの現在内容を適用した変更前後の全文像。"""
-
     operation: EditOperation
     before_image: str
     after_image: str
@@ -121,10 +116,6 @@ def parse_operations(tool_name: str, tool_input: object, cwd: str) -> list[EditO
 
 
 def new_content_fields(tool_name: str, tool_input: object, cwd: str = "") -> list[tuple[str, str]] | None:
-    """編集ツール入力の変更後断片を（ラベル, 値）の一覧で返す。
-
-    新規に書き込まれる側だけを判定するhookが共通して使う。対象外のツールではNoneを返す。
-    """
     operations = parse_operations(tool_name, tool_input, cwd)
     if operations is None:
         return None
@@ -204,8 +195,7 @@ def _parse_claude_operations(tool_name: str, tool_input: dict, cwd: str) -> list
                 whole_after_text=content,
             )
         ]
-    # Edit・MultiEditは断片を解釈できない入力でも操作記録自体は返す
-    # （PostToolUseの編集ファイル記録が入力欄の有無に左右されないようにするため）。
+
     fragments: list[EditFragment] = []
     if tool_name == "Edit":
         new_string = tool_input.get("new_string")
@@ -268,10 +258,6 @@ class _PatchSection:
 
 
 def _parse_patch_sections(patch_text: str) -> list[_PatchSection] | None:
-    """`*** Begin Patch`〜`*** End Patch`をファイル単位の区間へ分解する。
-
-    開始標識・終了標識・ファイル標識のいずれかを認識できない場合はNoneを返す。
-    """
     lines = patch_text.splitlines()
     try:
         start = lines.index(_PATCH_BEGIN)
@@ -342,7 +328,7 @@ def _section_to_operations(section: _PatchSection, cwd: str) -> list[EditOperati
                 line_based=True,
             )
         ]
-    # 移動は移動先への変更と移動元の消滅の2操作として扱う。
+
     return [
         EditOperation(
             kind=KIND_MOVE,
@@ -405,11 +391,6 @@ def _split_hunks(body: list[str]) -> list[list[str]]:
 
 
 def _apply_fragments(before: str, fragments: tuple[EditFragment, ...], *, line_based: bool) -> str | None:
-    """順序付き編集断片を現在内容へ順に適用する。
-
-    行単位断片では変更前断片と同じ行の並びを探し、見つからない場合はNoneを返す。
-    文字列断片では先頭からの置換で適用する。
-    """
     if not fragments:
         return before
     if not line_based:
@@ -445,7 +426,6 @@ def _find_sublist(lines: list[str], target: list[str], start: int) -> int | None
 
 
 def _resolve(path: str, cwd: str) -> str:
-    """相対パスをpayloadの`cwd`起点で解決した表記を返す。"""
     if not path:
         return ""
     candidate = pathlib.PurePath(path)

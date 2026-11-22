@@ -1,5 +1,3 @@
-"""termination_evidence_testの共通試験準備。"""
-
 import argparse
 import contextlib
 import io
@@ -29,7 +27,6 @@ class _WindowsAccessDenied(PermissionError):
 
 @pytest.fixture(autouse=True)
 def isolated_session(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """実セッションの状態と委譲印を試験へ混ぜない。"""
     for key in (
         "AGENT_TOOLKIT_DELEGATED_SESSION",
         "AGENT_TOOLKIT_OWNER_SESSION",
@@ -59,7 +56,6 @@ def _tool(
     *,
     codex: bool,
 ) -> None:
-    """公開hookのPreToolUseとPostToolUseへ、同じ呼び出しの入力と応答を供給する。"""
     payload: dict[str, Any] = {
         "session_id": "evidence-test",
         "tool_name": tool_name,
@@ -78,13 +74,11 @@ def _tool(
 
 
 def supply_commit(directory: pathlib.Path, call_id: str = "commit", *, codex: bool = False) -> None:
-    """成果作業として成功したcommitの実行記録を供給する。"""
     response: object = "[develop 1234567] 変更" if codex else {"stdout": "[develop 1234567] 変更", "exit_code": 0}
     _tool(directory, call_id, "Bash", {"command": "git commit -m 変更"}, response, codex=codex)
 
 
 def completion_playbook(directory: pathlib.Path) -> pathlib.Path:
-    """配布物と同じ配置の完了報告の手順書を、試験ごとのplugin rootへ置いて返す。"""
     playbook = directory / "plugin" / "skills" / "atk-mode" / "playbooks" / "report-completion.md"
     playbook.parent.mkdir(parents=True, exist_ok=True)
     playbook.write_text(COMPLETION_PLAYBOOK_TEXT, encoding="utf-8")
@@ -154,7 +148,6 @@ def stop_payload(directory: pathlib.Path, visible: str, *, codex: bool = False) 
 
 
 def _missing_completion(directory: pathlib.Path) -> list[str]:
-    """Stopの配送可否と分けて、現在の作業の起動証拠の不足を返す。"""
     return [
         kind
         for _, work in termination_evidence.pending_work(json.loads(stop_payload(directory, "")))
@@ -163,7 +156,6 @@ def _missing_completion(directory: pathlib.Path) -> list[str]:
 
 
 def automated_input(directory: pathlib.Path, prompt_id: str, prompt: str) -> None:
-    """process-loopなどの自動起動が入力欄へ渡す生成入力を、公開hookのUserPromptSubmitへ供給する。"""
     with contextlib.redirect_stdout(io.StringIO()):
         user_prompt_submit.main(
             json.dumps(
@@ -178,7 +170,6 @@ def automated_input(directory: pathlib.Path, prompt_id: str, prompt: str) -> Non
 
 
 def automated_session(directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """人間入力を持たない自動起動の会話で、成果作業とStopの継続入力までを観測させる。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     automated_input(
@@ -191,12 +182,10 @@ def automated_session(directory: pathlib.Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 def recorded_works() -> list[tuple[str, dict[str, Any]]]:
-    """試験で観測した入力と判断から実保存された作業を、依存層の外側で読み取る。"""
     return termination_evidence.session_works({"session_id": "evidence-test"})
 
 
 def public_context(capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, Any] | None]:
-    """公開コマンド`atk run-script termination-evidence -- --context`の終了コードと出力のJSONを返す。"""
     capsys.readouterr()
     status = run_script.dispatch(argparse.Namespace(script_name="termination-evidence", script_args=["--", "--context"]))
     output = capsys.readouterr().out
@@ -204,7 +193,6 @@ def public_context(capsys: pytest.CaptureFixture[str]) -> tuple[int, dict[str, A
 
 
 def public_decision(directory: pathlib.Path, document: dict[str, Any]) -> tuple[int, str]:
-    """判断JSONをファイルへ保存し、公開コマンドの`--decision-file`で記録した終了コードと拒否理由の出力を返す。"""
     source = directory / "decision.json"
     source.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
     stderr = io.StringIO()
@@ -249,8 +237,6 @@ def _register_child(owner: str) -> None:
 
 
 class _RegisteredBackend(agents_server_support.FakeBackend):
-    """モデル出力を観測済みで、登録簿へ公開するsessionを返す。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> server_state.SessionState:
         session = await super().start(*args, **kwargs)
         session.model_output_observed = True

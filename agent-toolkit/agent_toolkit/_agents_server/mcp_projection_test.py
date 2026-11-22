@@ -1,5 +1,3 @@
-"""直接配送するMCPの起動引数を、保持した配布物のrootで確定する。"""
-
 # 試験ではbackendの直接MCP投影境界を呼び出す。
 # pylint: disable=protected-access
 
@@ -28,7 +26,6 @@ def test_direct_mcp_launch_uses_retained_source_root(
     backend: str,
     placeholder: bool,
 ) -> None:
-    """別cwdから新規・再開で起動し、空白入りrootと既存の具体化済み引数を保持する。"""
     root = tmp_path / "retained plugin"
     scripts = root / "scripts"
     scripts.mkdir(parents=True)

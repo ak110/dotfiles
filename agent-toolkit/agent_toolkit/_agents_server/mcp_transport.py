@@ -37,8 +37,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class _InitializationLogTracker:
-    """initialize要求と対応応答の節目だけを永続ログへ記録する。"""
-
     def __init__(self) -> None:
         self._pending_request_ids: set[str | int] = set()
 
@@ -93,15 +91,11 @@ class _InitializationLogTracker:
 
 
 class _ReceiveStream(typing.Protocol):
-    """SDKとanyioに共通する受信streamの公開操作。"""
-
     async def receive(self) -> SessionMessage | Exception: ...
     async def aclose(self) -> None: ...
 
 
 class _SendStream(typing.Protocol):
-    """SDKとanyioに共通する送信streamの公開操作。"""
-
     async def send(self, item: SessionMessage) -> None: ...
     async def aclose(self) -> None: ...
 
@@ -115,7 +109,6 @@ class _InitializationLoggingReceiveStream(ObjectReceiveStream[SessionMessage | E
         try:
             message = await self._stream.receive()
         except anyio.EndOfStream:
-            # 親が標準入力を閉じた接続終了を、起動単位の終了診断へ残す。
             logging_config.record_instance_event("stdin_closed")
             raise
         self._tracker.receive(message)
@@ -168,11 +161,6 @@ def _unexpected_error_next_action(error: Exception) -> str:
 
 
 def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
-    """ツール関数の例外を、理由と次の操作の2行を本文とするツールのエラーへ変える。
-
-    共通の例外型の`str()`は理由だけを返すため、ここで次の操作を加える。
-    入力スキーマはMCPServerが`__wrapped__`の署名から生成する。
-    """
 
     @functools.wraps(fn)
     async def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -191,8 +179,6 @@ def _actionable_tool(fn: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class AgentsServerMCP(MCPServer[None]):
-    """SDKに登録を任せ、共有管理サービスが呼び出すツール一覧とツール呼出しの処理を提供する。"""
-
     def __init__(
         self,
         name: str,
@@ -216,11 +202,6 @@ class AgentsServerMCP(MCPServer[None]):
         meta: dict[str, Any] | None = None,
         structured_output: bool | None = None,
     ) -> None:
-        """ツールの説明文へ境界を付け、例外を次の操作付きのエラー本文へ変えて登録する。
-
-        説明文は実行ホストがスキーマとしてsystem promptへ載せる。登録の1箇所で囲むことで、
-        ツールごとの書き分けを増やさずに全てのツールへ同じ境界と次の操作を付ける。
-        """
         resolved = description if description is not None else inspect.getdoc(fn) or ""
         super().add_tool(
             _actionable_tool(fn),

@@ -47,7 +47,7 @@ def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
     入れ子が極端に深い行では候補ごとの解析が重なって二乗の時間になるため、解析する文字数の合計が
     行の長さの`_SCAN_BUDGET_FACTOR`倍を超えたら連結とみなさない（欠落を受理しない側へ倒す）。
     """
-    # 断片の不正なバイトを1文字ずつに写し、文字位置とバイト位置の対応を保ったまま走査する。
+
     text = line.decode("utf-8", "surrogateescape")
     content_end = len(text.rstrip(_JSON_WHITESPACE))
     try:
@@ -80,7 +80,7 @@ def split_joined_line(line: bytes) -> tuple[int, dict[str, typing.Any]] | None:
 
 
 _DECODER = json.JSONDecoder()
-# 実際の記録の入れ子は数十段で、候補の解析の合計は行の長さの数倍にとどまる。
+
 _SCAN_BUDGET_FACTOR = 64
 _JSON_WHITESPACE = " \t\n\r"
 

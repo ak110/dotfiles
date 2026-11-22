@@ -1,5 +1,3 @@
-"""serveのapp試験が共有する入力と補助処理。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -18,7 +16,6 @@ from agent_toolkit._testing.serve_support import _patch_batch_repo_operations
 
 
 def _fixed_path(root: pathlib.Path, filename: str) -> pathlib.Path:
-    """任意名の試験入力を公開APIで年月へ解決し、親ディレクトリを用意する。"""
     path = entry_path(root, filename, fallback_date=datetime.date(2026, 10, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
@@ -38,7 +35,6 @@ _REBASE_AGENT_AWI = "---\nstate: inbox\ntype: awi\ntarget_repo: github.com/examp
 
 
 def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[..., pathlib.Path]) -> pathlib.Path:
-    """各状態の項目をcommitし、rebaseの中間状態が残るWI保存リポジトリを作成する。"""
     notes = make_clean_repo(tmp_path, "notes")
     for state_name, filename, text in (
         ("inbox", "entry.md", _REBASE_AWI),
@@ -63,7 +59,6 @@ def _rebasing_notes(tmp_path: pathlib.Path, make_clean_repo: typing.Callable[...
 
 
 def _notes_snapshot(notes: pathlib.Path) -> tuple[dict[str, bytes], str, str]:
-    """作業ツリーのファイル、HEADおよび作業ツリーの状態を返す。"""
     files = {
         str(path.relative_to(notes)): path.read_bytes()
         for path in notes.rglob("*")
@@ -112,11 +107,9 @@ def _patch_single_add_operations(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _serve_app(root: pathlib.Path) -> typing.Any:
-    """指定したキュー管理ディレクトリを使う`atk serve`のアプリを返す。"""
     root.mkdir(parents=True, exist_ok=True)
     return serve_app.create_app(root, config.ServeConfig("127.0.0.1", 28766), state.ServeState(root))
 
 
 def _saved_files(root: pathlib.Path) -> dict[str, str]:
-    """年月配置へ保存されたファイル名と内容を返す。"""
     return {path.name: path.read_text(encoding="utf-8") for path in sorted(root.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))}

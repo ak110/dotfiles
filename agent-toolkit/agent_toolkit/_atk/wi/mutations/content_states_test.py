@@ -1,5 +1,3 @@
-"""WIのmutations content: statesのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -165,14 +163,11 @@ class TestCooldownEdit:
 
 
 class TestEditBodyFile:
-    """本文ファイルによる編集の検証。"""
-
     def test_processing_awi_can_be_edited(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`processing`配下のAWIも非対話で編集する。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
@@ -196,7 +191,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """エージェント環境でもholdの本文置換を受理する。"""
         notes = _setup_notes(tmp_path)
         inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         path = inbox_path
@@ -216,7 +210,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """既存本文が旧書式でも、通常AWIの原因仮説を本文置換で保存する。"""
         notes = _setup_notes(tmp_path)
         inbox_path = _write_awi_file(notes, "fb-001.md", body="編集前", source="test")
         path = inbox_path
@@ -274,7 +267,6 @@ class TestEditBodyFile:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """エージェント環境からprocessingの本文を置換せず終了コード2で拒否する。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)
@@ -290,7 +282,7 @@ class TestEditBodyFile:
         assert exc_info.value.code == 2
         failure, next_action = capsys.readouterr().err.splitlines()
         assert failure.startswith("失敗: processingの項目はエージェント環境から編集できない: fb-001.md")
-        # 置換の代わりに使える投入と追記の2つの操作を、実在するコマンドで示すこと。
+
         assert next_action.startswith("次の操作: ")
         assert "atk wi add" in next_action
         assert "atk wi edit --append" in next_action
@@ -301,7 +293,6 @@ class TestEditBodyFile:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """エージェント環境でもprocessingへの追記を受理する。"""
         notes = _setup_notes(tmp_path)
         processing = notes / "2026" / "10"
         processing.mkdir(parents=True, exist_ok=True)

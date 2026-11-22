@@ -1,5 +1,3 @@
-"""API接続への移行と、接続設定を保持した同じ会話の再開を検証する。"""
-
 import asyncio
 import contextlib
 import json
@@ -67,7 +65,9 @@ async def test_subscription_launch_drops_parent_api_auth(
 
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
-        return FakeClaudeClient([[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("isolated-auth"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         await backend.start("作業", str(tmp_path))
@@ -83,7 +83,6 @@ async def test_subscription_launch_drops_parent_api_auth(
 async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_auth(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """API環境未設定でも、明示したサブスク固定を新規SDK起動の環境とsettingsへ適用する。"""
     configure_claude_payg(monkeypatch, "")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
@@ -100,7 +99,15 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
         environments.append({**os.environ, **options.env})
-        return FakeClaudeClient([[SystemMessage("subscription-orchestrator"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [
+                [
+                    SystemMessage("subscription-orchestrator"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ]
+            ]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         session = await backend.start("作業", str(tmp_path), model_type="orchestrate")
@@ -117,7 +124,6 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
 async def test_explicit_subscription_orchestrator_reselects_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str
 ) -> None:
-    """明示した固定を既存会話の次turnと冷再開へ適用し、同じSDK会話をサブスクで続ける。"""
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
     configure_claude_payg(monkeypatch, "")
@@ -133,7 +139,9 @@ async def test_explicit_subscription_orchestrator_reselects_same_conversation(
     def factory(options: Any) -> FakeClaudeClient:
         seen.append(options)
         environments.append({**os.environ, **options.env})
-        return FakeClaudeClient([[SystemMessage("fixed-conversation"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("fixed-conversation"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with claude.ClaudeServerManager(client_factory=factory) as backend:
         session = await backend.start("当初の要求", str(tmp_path), model_type="orchestrate")
@@ -190,7 +198,9 @@ async def test_unconfigured_start_and_cold_resume_preserve_parent_auth(
         settings = json.loads(options.settings)
         assert settings["apiKeyHelper"] == "parent-helper"
         assert settings["env"]["ANTHROPIC_AUTH_TOKEN"] == "settings-token"
-        return FakeClaudeClient([[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("inherited-auth"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with server_manager.AgentsServerManager() as manager:
         install_backend(
@@ -217,7 +227,6 @@ async def test_usage_limit_api_migration_and_cold_resume(
     launch_kind: Any,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """起動直後の上限から同じ会話を移し、追送・stop・再起動でも保持したファイルを読み直す。"""
     env_file = tmp_path / "api.env"
     env_file.write_text("# 接続\nexport ANTHROPIC_AUTH_TOKEN='dummy-secret'\nCUSTOM_API_NAME=\"one=two\"\n", encoding="utf-8")
     configure_claude_payg(monkeypatch, str(env_file))
@@ -375,7 +384,9 @@ async def test_api_migration_holds_result_until_old_connection_closes(
     def factory(options: Any) -> FakeClaudeClient:
         if options.resume is None:
             return Client([_rejected_stream("five_hour", None, before_init=False, session_id="migration")])
-        return FakeClaudeClient([[SystemMessage("migration"), AssistantMessage("再開"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("migration"), AssistantMessage("再開"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,
@@ -394,7 +405,7 @@ async def test_api_migration_holds_result_until_old_connection_closes(
             assert not waiting.done()
             release.set()
             result = await asyncio.wait_for(waiting, timeout=3)
-            assert result["status"] == "completed" and result["agent_message"] == "完了"
+            assert result["status"] == "completed" and result["agent_message"] == "状態: completed\n結果: 完了"
         finally:
             release.set()
             if waiting is not None and not waiting.done():
@@ -422,10 +433,6 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`pay-as-you-go`で上限によりAPIへ移した委譲先は、解除予定時刻の後に始まる最初のturnで同じ会話をサブスクリプションへ戻す。
-
-    解除予定時刻より前の追送はAPIのまま所有タスクへ送り、上限による即時切替は従来どおり行う。
-    """
     clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
     options_seen: list[Any] = []
 
@@ -435,8 +442,12 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
             streams = [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=True, session_id="return-session")]
         else:
             streams = [
-                [SystemMessage(options.resume or "fresh-session"), AssistantMessage("応答"), ResultMessage("完了")],
-                [AssistantMessage("追送の応答"), ResultMessage("追送完了")],
+                [
+                    SystemMessage(options.resume or "fresh-session"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ],
+                [AssistantMessage("追送の応答"), ResultMessage("状態: completed\n結果: 追送完了")],
             ]
         return FakeClaudeClient(streams)
 
@@ -491,19 +502,13 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
-    """孫sessionの終了による自動再開も、解除予定時刻の後なら同じ会話をサブスクリプションで再開する。
-
-    APIへ移した会話が孫sessionを待って結果を保留し、孫の終了で自動再開する。
-    解除予定時刻より前の自動再開はAPIの所有タスクへ送り、後の自動再開は通常の追送と同じくサブスクリプションへ戻す。
-    戻したturnがなお上限で拒否された場合は、既存の切替で同じ会話を再びAPIで続ける。
-    """
     after_reset = mode != "before-reset"
     clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
     options_seen: list[Any] = []
     api_client = QueueClaudeClient(
         [
             [SystemMessage("auto-session"), AssistantMessage("APIで作業を続ける")],
-            [AssistantMessage("子の結果を確認した"), ResultMessage("APIの最終結果")],
+            [AssistantMessage("子の結果を確認した"), ResultMessage("状態: completed\n結果: APIの最終結果")],
         ]
     )
 
@@ -519,7 +524,7 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
             return FakeClaudeClient(
                 [_rejected_stream("five_hour", int(clock["now"]) + 100, before_init=False, session_id="auto-session")]
             )
-        final = "再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果"
+        final = "状態: completed\n結果: " + ("再びAPIの最終結果" if mode == "still-limited" else "サブスクの最終結果")
         return FakeClaudeClient([[SystemMessage("auto-session"), AssistantMessage("子の結果を確認した"), ResultMessage(final)]])
 
     async with server_manager.AgentsServerManager() as manager:
@@ -565,20 +570,20 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
                     result = await asyncio.wait_for(manager.wait(), 3)
                 assert result["status"] == "completed"
                 if mode == "after-reset":
-                    assert result["agent_message"] == "サブスクの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: サブスクの最終結果"
                     assert len(options_seen) == 3
                     assert options_seen[2].resume == "auto-session"
                     assert not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
                     assert session.claude_connection == "subscription"
                 elif mode == "still-limited":
-                    assert result["agent_message"] == "再びAPIの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: 再びAPIの最終結果"
                     assert len(options_seen) == 4
                     assert options_seen[2].resume == "auto-session" and not options_seen[2].env.get("ANTHROPIC_AUTH_TOKEN")
                     assert options_seen[3].resume == "auto-session"
                     assert options_seen[3].env["ANTHROPIC_AUTH_TOKEN"] == "dummy-secret"
                     assert session.claude_connection == "payg"
                 else:
-                    assert result["agent_message"] == "APIの最終結果"
+                    assert result["agent_message"] == "状態: completed\n結果: APIの最終結果"
                     assert len(options_seen) == 2
                     assert session.claude_connection == "payg"
             finally:

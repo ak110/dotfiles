@@ -11,14 +11,12 @@ from agent_toolkit._common.task_stop_state import record_completion
 
 
 def _identifier(value: str) -> str:
-    """空白と制御文字を含まない識別子だけを受理する。"""
     if not value or not value.isprintable() or any(character.isspace() for character in value):
         raise argparse.ArgumentTypeError("識別子は空白と制御文字を含まない非空文字列にする")
     return value
 
 
 def main() -> int:
-    """引数を検証し、対象タスクの停滞検知完了を記録する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session-id", required=True, type=_identifier, help="停滞検知を記録するセッションのID")
     parser.add_argument(

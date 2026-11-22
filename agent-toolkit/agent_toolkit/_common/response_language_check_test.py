@@ -14,11 +14,6 @@ _SCRIPTS_DIR = pathlib.Path(__file__).resolve().parent
 
 
 def _make_mixed(japanese_count: int, english_word_count: int) -> str:
-    """指定数の日本語文字（ひらがな）とスペース区切りの英単語を結合した文字列を返す。
-
-    語数比が japanese_count / (japanese_count + english_word_count) となる文字列を生成する。
-    英単語は連続英字列1つを1語として数えるため、スペースで区切って独立させる。
-    """
     japanese = "あ" * japanese_count
     words = " ".join(["word"] * english_word_count)
     if japanese and words:
@@ -31,7 +26,6 @@ class TestCheckText:
 
     @pytest.mark.parametrize("fenced", [False, True])
     def test_review_return_explanation_is_not_hidden_by_json(self, fenced: bool):
-        """原記録363/364のretain欄を、JSON/フェンス越しにも判定する。"""
         text = json.dumps(
             [
                 {
@@ -60,29 +54,24 @@ class TestCheckText:
         ],
     )
     def test_foreign_material_is_preserved(self, text: str):
-        """原文・引用・素材・内部analysisを外部説明と混同しない。"""
         assert check_text(text)[0] is not CheckOutcome.WARN
 
     def test_warns_for_discourse_marker(self):
-        """先頭の英語談話標識を含む短い文字列はWARNを返す。"""
         outcome, body = check_text("Now、調査を続ける。")
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
     def test_warns_below_japanese_word_ratio(self):
-        """語数比が閾値未満の文字列はWARNを返す。"""
         outcome, body = check_text(_make_mixed(14, 35))
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
     def test_passes_japanese_text(self):
-        """日本語主体の十分な長さの文字列はPASSを返す。"""
         outcome, body = check_text("あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
     def test_skips_short_mixed_text(self):
-        """長さ下限未満の混在文字列はSKIPを返す。"""
         outcome, body = check_text("あ word")
         assert outcome is CheckOutcome.SKIP
         assert body is None
@@ -96,7 +85,6 @@ class TestCheckText:
         ],
     )
     def test_excludes_code_and_url_from_language_check(self, text: str):
-        """コードとURLは記述言語の判定対象から除外する。"""
         outcome, body = check_text(text)
         assert outcome is CheckOutcome.SKIP
         assert body is None
@@ -123,7 +111,6 @@ class TestCheckText:
         ],
     )
     def test_excludes_bare_machine_identifiers_from_word_ratio(self, identifier: str):
-        """日本語の説明に添えた裸の機械識別子は英単語数へ算入しない。"""
         outcome, body = check_text("確認: " + " ".join([identifier] * 8))
         assert outcome is not CheckOutcome.WARN
         assert body is None
@@ -142,16 +129,13 @@ class TestCheckText:
         ],
     )
     def test_fixed_return_values_are_not_english_prose(self, text: str):
-        """委譲の固定返却値の構造は、裸でも言語の書換えを要求しない。"""
         assert check_text(text)[0] is not CheckOutcome.WARN
 
     @pytest.mark.parametrize("text", ["The task completed successfully.", "Summary: done well"])
     def test_ordinary_english_prose_remains_detected(self, text: str):
-        """固定識別子の除外後も、英語の説明を検出する。"""
         assert check_text(text)[0] is CheckOutcome.WARN
 
     def test_machine_identifier_exclusion_does_not_hide_english_prose(self):
-        """機械識別子の前後にある英語の地の文は引き続きWARNを返す。"""
         outcome, body = check_text("/opt/project/hook.py was updated and all validation checks completed successfully.")
         assert outcome is CheckOutcome.WARN
         assert body is not None
@@ -183,43 +167,34 @@ class TestCheckText:
         ],
     )
     def test_allows_specified_return_formats(self, text: str):
-        """規範が固定書式として定める返却値はWARNにしない。"""
         outcome, body = check_text(text)
         assert outcome is not CheckOutcome.WARN
         assert body is None
 
     def test_warns_for_english_prose_after_machine_readable_lines(self):
-        """機械可読な返却行に続く英語の地の文はWARNを返す。"""
         outcome, body = check_text("status: checkpoint\ntype: review_round\nI reviewed the plan and found three issues to fix.")
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
     def test_warns_for_capitalized_label_line(self):
-        """大文字で始まるラベル行の英語の地の文はWARNを返す。"""
         outcome, body = check_text("Summary: I fixed the hook and verified the tests.")
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
 
 class TestEnglishOnlyShortText:
-    """日本語文字を含まない短文に対する判定の検証。"""
-
     def test_warn_english_only_below_length_threshold(self):
-        """日本語文字0・英単語2語の短文は長さ下限を適用せずWARNを返す。"""
         outcome, body = check_text("Done here.")
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
     def test_skip_english_single_word(self):
-        """日本語文字0でも英単語1語だけの短文は従来どおりSKIPを返す。"""
         outcome, body = check_text("Done.")
         assert outcome is CheckOutcome.SKIP
         assert body is None
 
 
 class TestDiscourseMarker:
-    """地の文の先頭に置かれた英語の談話標識に対する判定の検証。"""
-
     @pytest.mark.parametrize(
         "text",
         [
@@ -237,25 +212,21 @@ class TestDiscourseMarker:
         ],
     )
     def test_warn_when_plain_text_starts_with_marker(self, text: str):
-        """長さ下限未満でも先頭の談話標識でWARNを返す。"""
         outcome, body = check_text(text)
         assert outcome is CheckOutcome.WARN
         assert body is not None
 
     def test_pass_product_name_form(self):
-        """標識の直後が`.`と英字の並び（製品名形式）である場合は該当しない。"""
         outcome, body = check_text("Next.jsの構成を確認する。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
     def test_pass_marker_inside_inline_code(self):
-        """バッククォート内の標識は地の文の先頭判定へ現れない。"""
         outcome, body = check_text("`Now` は識別子である。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None
 
     def test_pass_marker_without_word_boundary(self):
-        """標識の直後に語境界が無い場合は該当しない。"""
         outcome, body = check_text("Nowここから確認する。" + "あ" * 50)
         assert outcome is CheckOutcome.PASS
         assert body is None

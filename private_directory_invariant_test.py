@@ -30,7 +30,7 @@ _PYTHON_SHEBANG = re.compile(rb"^#!\s*(?:(?:\S*/)?env\s+(?:-S\s+)?)?(?:\S*/)?pyt
 def _is_python_source(path: pathlib.Path) -> bool:
     if path.suffix:
         return path.suffix == ".py"
-    # atk-hookはshで起動し、自分自身をPythonに渡す。
+
     if path == _HOOK_SHIM:
         return True
     with path.open("rb") as stream:
@@ -51,7 +51,6 @@ def _production_sources(bases: tuple[pathlib.Path, ...]) -> list[pathlib.Path]:
 
 
 def _os_aliases(tree: ast.Module) -> set[str]:
-    """`import os`・`import os as _os`で`os`モジュールを指す名前を返す。"""
     return {
         alias.asname or alias.name
         for node in ast.walk(tree)
@@ -62,7 +61,6 @@ def _os_aliases(tree: ast.Module) -> set[str]:
 
 
 def _mode_position(function: ast.expr, os_names: set[str]) -> int:
-    """`os.mkdir(path, mode)`・`os.makedirs(name, mode)`は2番目、`Path.mkdir(mode)`は1番目にmodeを受け取る。"""
     if isinstance(function, ast.Name):
         return 1
     qualified_by_os = (
@@ -72,17 +70,12 @@ def _mode_position(function: ast.expr, os_names: set[str]) -> int:
 
 
 def _is_owner_only_mode(mode: ast.expr) -> bool:
-    """0o700（448）の定数と`stat.S_IRWXU`を所有者だけのmodeとみなす。"""
     if isinstance(mode, ast.Constant):
         return mode.value == _OWNER_ONLY_MODE
     return isinstance(mode, ast.Attribute) and mode.attr == "S_IRWXU"
 
 
 def _owner_only_creation_lines(source: str) -> list[int]:
-    """`mkdtemp`と`dir`を指定した`TemporaryDirectory`の呼び出し、modeに0o700を渡す`mkdir`・`makedirs`の呼び出しの行番号を返す。
-
-    `dir`を省いた`TemporaryDirectory`はプロセスごとの一時ディレクトリに作成し、状態ディレクトリとして共有しないため対象にしない。
-    """
     tree = ast.parse(source)
     os_names = _os_aliases(tree)
     lines: list[int] = []
@@ -105,11 +98,10 @@ def _owner_only_creation_lines(source: str) -> list[int]:
 
 
 def test_owner_only_directories_are_created_through_private_directory() -> None:
-    """配布するコードは0o700の`mkdir`と`mkdtemp`を直接呼ばない。"""
     violations: list[str] = []
     for path in _production_sources(_SCANNED):
         source = path.read_text(encoding="utf-8")
-        # 構文解析は該当し得る記述を含むファイルだけに限り、全ファイルの解析を避ける。
+
         if any(word in source for word in ("mkdtemp", "TemporaryDirectory", "0o700", "448", "S_IRWXU")):
             violations.extend(f"{path.relative_to(_ROOT)}:{line}" for line in _owner_only_creation_lines(source))
     assert not violations, (
@@ -119,7 +111,6 @@ def test_owner_only_directories_are_created_through_private_directory() -> None:
 
 
 def test_extensionless_scripts_are_selected_by_interpreter(tmp_path: pathlib.Path) -> None:
-    """拡張子が無い場合は、Pythonを直接起動する形式とenv経由の形式を検査する。"""
     for name, header in {
         "direct": "#!/usr/bin/python3",
         "env": "#!/usr/bin/env python3",
@@ -131,7 +122,6 @@ def test_extensionless_scripts_are_selected_by_interpreter(tmp_path: pathlib.Pat
 
 
 def test_detector_finds_each_owner_only_creation_form() -> None:
-    """既知の書き方をすべて拾い、`private_directory.MODE`とmode省略、`dir`を省いた`TemporaryDirectory`は拾わない。"""
     source = (
         "import os, pathlib, stat, tempfile\n"
         "import os as _os\n"

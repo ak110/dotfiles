@@ -92,10 +92,6 @@ def _finalize(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> list[dict[str, Any]]:
-    """transcript形式を判定し、セッション全体の対象イベントを順序どおり抽出する。
-
-    `lines`はエントリごとのtranscript行番号。省略時はエントリの並び順を行番号とみなす。
-    """
     if not entries:
         return []
     entries = _agy_records.normalize_entries(entries)
@@ -120,7 +116,6 @@ def extract(entries: list[dict[str, Any]], lines: list[int] | None = None) -> li
 
 
 def _turn_finished(entry: dict[str, Any], runtime: _Runtime) -> bool:
-    """既存のホストの終了記録を使い、後続turnの作業を先行返却の分類から切り離す。"""
     if runtime == "opencode":
         if entry.get("_opencode_sqlite") is True:
             message = entry.get("message")
@@ -148,7 +143,6 @@ def _extract_for_runtime(
     runtime: _Runtime,
     lines: list[int] | None = None,
 ) -> list[dict[str, Any]]:
-    """確定したruntimeに対応する共通イベントへ変換する。"""
     numbers = lines if lines is not None else list(range(1, len(entries) + 1))
     return RUNTIME_EXTRACTORS[runtime](entries, numbers)
 
@@ -158,7 +152,6 @@ def _fallback() -> list[dict[str, Any]]:
 
 
 def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
-    """絶対パスのJSONLを一度読み、抽出結果を返す。"""
     loaded = _load_records_checked(raw_path)
     if loaded.records is None:
         reason = f"（{loaded.failure.reason}）" if loaded.failure is not None else ""
@@ -167,12 +160,10 @@ def load_and_extract(raw_path: str) -> list[dict[str, Any]]:
 
 
 def _extract_records(records: list[_Record]) -> list[dict[str, Any]]:
-    """読み込み済みレコードから行番号付きの時系列イベントを取得する。"""
     return extract([record.entry for record in records], [record.line for record in records])
 
 
 def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, Any]]:
-    """解決できなかった委譲先を機械可読イベントへ変換する。"""
     return [
         {
             "kind": item.kind,
@@ -200,7 +191,6 @@ def _unresolved_events(unresolved: list[_UnresolvedRecord]) -> list[dict[str, An
 
 
 def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """JSONとして成立しない行の回復（後続の完全な行での置換、またはNUL断片の除外）を、記録と行番号で示す。"""
     return [
         {
             "kind": "recovered-record-line",
@@ -218,7 +208,6 @@ def _recovery_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
 
 
 def _role_document(item: _CollectedRecord) -> str | None:
-    """最初の配送本文の役割文書を読み、圧縮後の再掲で起動時の役割を上書きしない。"""
     for record in item.records:
         message = record.entry.get("message")
         payload = record.entry.get("payload")
@@ -239,7 +228,6 @@ def _role_document(item: _CollectedRecord) -> str | None:
 
 
 def _launch_mode(item: _CollectedRecord, collected: list[_CollectedRecord]) -> str | None:
-    """起動結果と対応する親の呼び出し入力からmodeを得る。"""
     if item.role == "subagent":
         return item.agent_type
     parent = next((source for source in collected if source.record_id == item.source_record), None)
@@ -277,11 +265,32 @@ def _launch_mode(item: _CollectedRecord, collected: list[_CollectedRecord]) -> s
     return None
 
 
+def _is_codex_call(row: _Record) -> bool:
+    payload = row.entry.get("payload")
+    return isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}
+
+
 def _collection_events(
     collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], *, recoveries: bool = True
 ) -> list[dict[str, Any]]:
-    """全収集照会が同じ記録由来と未解決の対象、回復した記録行を出力する。"""
+    fork_events = [
+        {
+            "kind": "record-gap",
+            "record": item.record_id,
+            "line": item.fork_context[0].line,
+            "reason": (
+                f"帰属不明: 親 codex:{item.fork_parent} の記録と比較できないため、"
+                f"{item.fork_context[0].line}〜{item.fork_context[-1].line} 行の "
+                f"{sum(_is_codex_call(row) for row in item.fork_context)} 操作は子の実行に数えない"
+            ),
+            "partial": True,
+            "next_action": "親会話の記録を取得して再照会する。取得できなければ、子会話の記録の該当行を詳細照会する。",
+        }
+        for item in collected
+        if item.fork_context and not item.fork_attribution_known
+    ]
     return [
+        *fork_events,
         *(
             {"kind": "record-gap", "record": item.record_id, "line": gap.line, "reason": gap.reason, "partial": True}
             for item in collected
@@ -296,6 +305,15 @@ def _collection_events(
                 "source_line": item.source_line,
                 "mode": _launch_mode(item, collected),
                 "role_document": _role_document(item),
+                **(
+                    {
+                        "fork_parent": f"codex:{item.fork_parent}",
+                        "fork_attribution_known": item.fork_attribution_known,
+                        "fork_lines": [item.fork_context[0].line, item.fork_context[-1].line],
+                    }
+                    if item.fork_context
+                    else {}
+                ),
             }
             for item in collected
         ),
@@ -305,12 +323,6 @@ def _collection_events(
 
 
 def _referenced_provenance_events(collected: list[_CollectedRecord], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """照会結果が参照する記録と、その`source_record`を根までたどった起動元の記録の`record-provenance`だけを返す。
-
-    参照は、イベントの`record`欄と、イベントが持つ配列（`locators`・`samples`など）の要素の`record`欄とする。
-    全収集記録の由来を前置すると、委譲先の多い記録では由来の行数が結果を大きく上回り、由来の行の中から結果を探しにくくなるためである。
-    全記録の由来は通常表示と`--bundle`が書くファイルが保つ。
-    """
     referenced: set[str] = set()
     for event in events:
         values: list[Any] = [event.get("record")]
@@ -357,14 +369,12 @@ _ELAPSED_UNTIL_NEXT_ACTION = (
 
 
 def _error_event(text: str, *, next_action: str) -> dict[str, Any]:
-    """照会不能を示すエラーイベントを、次の操作の項目`next_action`付きで返す。"""
     if not next_action.strip():
         raise ValueError("エラーイベントのnext_actionは空文字列以外で指定する必要がある")
     return {"kind": "error", "text": text, "next_action": next_action}
 
 
 def _events_with_record(events: list[dict[str, Any]], record_id: str) -> list[dict[str, Any]]:
-    """イベントを複製し、由来記録IDを付ける。"""
     return [{**event, "record": record_id} for event in events]
 
 

@@ -11,7 +11,6 @@ from agent_toolkit._hooks import background_tasks, posttooluse
 @pytest.mark.parametrize("event", ["PostToolUse", "PostToolUseFailure"])
 @pytest.mark.parametrize("background_requested", [True, False])
 def test_background_result_sends_original_command(monkeypatch, event, background_requested):
-    """背景識別子とcommand原文を設定hookで一度だけ配送する。"""
     observed = []
     monkeypatch.setattr(function_hook_requests, "enqueue", lambda *args, **kwargs: observed.append(args))
     posttooluse.main(
@@ -44,7 +43,6 @@ def _start_payload(status: str = "running", agent: str | None = None) -> dict:
 
 
 def _mod_marker(monkeypatch, tmp_path, content: str | None = "ready") -> None:
-    """modの読込目印を一時領域へ置き、Cron装着要求の宛先が読み込まれた状態を作る。"""
     marker = tmp_path / "marker-bridge.txt"
     if content is not None:
         marker.write_text(content, encoding="utf-8")
@@ -90,7 +88,6 @@ def test_start_result_carries_only_mount_failure(monkeypatch, tmp_path, capsys, 
 
 @pytest.mark.parametrize("marker", [None, "consumed"])
 def test_start_without_loaded_mod_does_not_wait(monkeypatch, tmp_path, marker):
-    """modの読込目印が無い会話では、応答の無い装着要求を待たない。"""
     _mod_marker(monkeypatch, tmp_path, marker)
 
     async def request(*_args, **_kwargs):

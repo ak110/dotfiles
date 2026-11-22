@@ -1,8 +1,8 @@
 """commitのhookで`pyfltr fast`を起動し、統合前のブランチか同じ内容で成功済みのpytestがあればpytestだけを外す。
 
 `develop`・`master`・`main`以外のブランチ（レーンや内部群の作業ブランチ）では、pytestを外す。
-これらのブランチの変更は、統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させ、統合する側が
-その成功を確かめてから取り込む。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
+これらのブランチの変更は、統合の前に利用側と影響する不変条件試験を含む変更範囲の`pyfltr run`を成功させる。
+不変条件試験全量は統合後のdevelop CIが実行する。commitごとに不変条件試験を実行すると共有の検証枠を占め、検証の待ちが
 巡回の所要の大半になったためである（2026年11月13日、同時数8の比較の集計）。
 統合先のブランチへのcommitと、ブランチを特定できない状態（detached HEADなど）では、従来どおりpytestを含める。
 
@@ -53,19 +53,20 @@ import subprocess
 import sys
 import typing
 
+from agent_toolkit._common.shell_segments import extract_execution_pipelines
+from agent_toolkit._common.shell_tokens import strip_redirections
 from agent_toolkit._git import command as git_command
 from verification_targets import consumer_tests, required_tests, uncovered_tests
 
 from pytools._internal.common import format_cli_error, run_subprocess
 
-# 他の作業ツリーの実行も同じ一覧に並ぶため、直近の実行から候補を探す件数。
 _LIST_LIMIT = 50
-# `show-run`は1件ごとに起動するため、照会する候補の上限を設けてhookの所要を抑える。
+
 _SHOW_LIMIT = 5
 _QUERY_TIMEOUT_SECONDS = 60
 _EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
 _REUSABLE_SUBCOMMANDS = frozenset({"run", "ci", "fast"})
-# 統合先のブランチ。これらへのcommitでは従来どおり不変条件試験を含めて実行する。
+
 _INTEGRATION_BRANCHES = frozenset({"develop", "master", "main"})
 # 試験の対象を変えない引数。これ以外の引数を含む実行は再利用しない。
 # 例: 範囲を変える`--pytest-args`、`--only-failed`、`--disable`。
@@ -91,7 +92,6 @@ _NEUTRAL_PYTEST_OPTIONS = frozenset({"-n", "--numprocesses", "--maxfail"})
 
 
 def _neutral_pytest_args(value: str) -> bool:
-    """`--pytest-args`の値が、並列数と打ち切り数の数値指定だけかを返す。"""
     try:
         tokens = iter(shlex.split(value))
     except ValueError:
@@ -108,14 +108,76 @@ def _neutral_pytest_args(value: str) -> bool:
 
 
 class Reuse(typing.NamedTuple):
-    """再利用の判定結果。"""
-
     run_id: str | None
     reason: str
 
 
+def _early_reader(tokens: tuple[str, ...]) -> str | None:
+    if not tokens:
+        return None
+    name = pathlib.PurePosixPath(tokens[0]).name
+    if name == "head":
+        return name
+    if name != "grep":
+        return None
+    args = iter(tokens[1:])
+    for token in args:
+        if token == "--":
+            break
+        if token in {"--quiet", "--silent", "--max-count"} or token.startswith("--max-count="):
+            return name
+        if token in {"--regexp", "--file", "--after-context", "--before-context", "--context", "--devices", "--directories"}:
+            next(args, None)
+        elif token.startswith("-") and not token.startswith("--"):
+            letters = token[1:]
+            for index, letter in enumerate(letters):
+                if letter in "qm":
+                    return name
+                if letter in "efABCDd":
+                    if index == len(letters) - 1:
+                        next(args, None)
+                    break
+    return None
+
+
+def _pipefail_candidate(source: str) -> str | None:
+    if "pipefail" not in source:
+        return None
+    enabled = False
+    for pipeline in extract_execution_pipelines(source, expand_shell=False):
+        segments = [strip_redirections(part.tokens) for part in pipeline]
+        if len(segments) == 1:
+            tokens = segments[0]
+            if len(tokens) == 3 and tokens[0] == "set" and tokens[1].endswith("o") and tokens[2] == "pipefail":
+                enabled = tokens[1].startswith("-")
+        elif enabled:
+            for tokens in segments[1:]:
+                if reader := _early_reader(tokens):
+                    return reader
+    return None
+
+
+def _observe_pipefail(files: list[str]) -> None:
+    root = pathlib.Path.cwd().resolve()
+    for name in files:
+        if not name.endswith((".sh", ".bash", ".sh.tmpl")):
+            continue
+        try:
+            path = (root / name).resolve()
+            if not path.is_relative_to(root):
+                continue
+            reader = _pipefail_candidate(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError:
+            continue
+        if reader is not None:
+            print(
+                f"{name}: pipefailと後段{reader}の早期終了が重なる候補。"
+                "前段の結果を確認し、必要なら全入力を読むか生成と検索を分ける。",
+                file=sys.stderr,
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
-    """prekが渡すファイルを`pyfltr fast`へ渡し、その終了コードを返す。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -129,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verify-run",
         metavar="RUN_ID",
-        help="commitせずに、指定した実行が現在のHEADの内容で不変条件試験を含むpytestに成功したかを確かめる。"
+        help="commitせずに、指定した実行が現在のHEADの内容で必要なpytestに成功したかを確かめる。"
         "統合する側が、統合入力の作業ツリーでff統合の前に使う。成立すれば終了0、しなければ終了1。",
     )
     args = parser.parse_args(argv)
@@ -182,11 +244,12 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容でpytestに成功している。")
         return 0
+    _observe_pipefail(args.files)
     branch = current_branch(pathlib.Path.cwd())
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
             f"pyfltr-precommit: 統合前のブランチ{branch}のためpytestを外して実行する。"
-            "統合の前に利用側と不変条件試験を含む変更範囲の`pyfltr run`を成功させる。",
+            "統合の前に変更箇所と利用側を含む変更範囲の`pyfltr run`を成功させる。",
             file=sys.stderr,
         )
         return subprocess.run([pyfltr, "fast", "--disable", "pytest", *args.files], check=False).returncode
@@ -211,7 +274,6 @@ def current_branch(directory: pathlib.Path) -> str | None:
     """現在のブランチ名を返す。detached HEADや取得の失敗ではNoneを返し、pytestを含める側へ倒す。"""
     try:
         result = git_command.run(
-            # `--short`は同名のタグがあると`heads/<名前>`を返すため、完全な参照名から接頭辞を除く。
             ["-C", str(directory), "symbolic-ref", "-q", "HEAD"],
             capture_output=True,
             text=True,
@@ -224,11 +286,6 @@ def current_branch(directory: pathlib.Path) -> str | None:
 
 
 def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | None = None, review: object = None) -> Reuse:
-    """`directory`の作業ツリーの現在の内容でpytestが成功した実行を探す。
-
-    `run_id`を指定した場合は、その実行だけを調べる。加えてindexとHEADの一致も求め、
-    HEADの内容で成功したことを確かめる（統合の前の確認に使う）。
-    """
     toplevel = git_command.run(
         ["-C", str(directory), "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=_QUERY_TIMEOUT_SECONDS
     )
@@ -247,8 +304,7 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
         )
         if cached.returncode:
             return Reuse(None, "indexにHEADと異なる変更がある")
-    # 指定runの確認はindexとHEADの一致を先に求めるため、indexの内容は検証済みのHEADに固定される。
-    # 整形が時刻だけを更新したファイルは次のGit操作がindexを書き直すので、indexの時刻は比べない。
+
     latest = _latest_change_ns(root, include_index=run_id is None)
     if isinstance(latest, str):
         return Reuse(None, latest)
@@ -282,25 +338,26 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
             return Reuse(None, shown)
         meta = shown.get("meta", {})
         cwd = meta.get("cwd")
+        argv_error = argv_problem(meta.get("argv", []), allow_no_always=run_id is not None)
         if run_id is not None:
             if not isinstance(cwd, str) or not cwd or pathlib.Path(cwd).resolve() != root:
                 return Reuse(None, "cwdが現在の作業ツリーと一致しない")
             if f"pyfltr {meta.get('version')}" != version.stdout.strip():
                 return Reuse(None, "pyfltrの版が現在と一致しない")
-            if problem := argv_problem(meta.get("argv", [])):
-                return Reuse(None, problem)
+            if argv_error:
+                return Reuse(None, argv_error)
             if not any(
                 command.get("command") == "pytest" and command.get("status") == "succeeded"
                 for command in shown.get("commands", [])
             ):
                 return Reuse(None, "指定runでpytestの成功を確認できない")
-        # 空のパスは現在のディレクトリへ解決され、別の作業ツリーの実行と区別できないため再利用しない。
+
         if (
             isinstance(cwd, str)
             and cwd
             and pathlib.Path(cwd).resolve() == root
             and f"pyfltr {meta.get('version')}" == version.stdout.strip()
-            and _neutral_argv(meta.get("argv", []))
+            and not argv_error
             and any(
                 command.get("command") == "pytest"
                 and command.get("status") == "succeeded"
@@ -315,13 +372,6 @@ def find_reusable_run(directory: pathlib.Path, pyfltr: str, *, run_id: str | Non
 
 
 def _latest_change_ns(root: pathlib.Path, *, include_index: bool = True) -> int | str:
-    """現存する対象ファイルとGit indexの更新時刻を比較する。
-
-    親ディレクトリは除外ファイルの生成・削除でも更新されるため比較しない。
-    追跡対象の削除・改名は先行するdiffとindexの更新で検出する。
-    未追跡ファイルの削除は検出しないが、commitする追跡内容は変わらない。
-    実行時の未追跡入力への依存は、従来の親時刻の比較でも保証できない。
-    """
     listed = git_command.run(
         ["-C", str(root), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
         capture_output=True,
@@ -352,24 +402,18 @@ def _latest_change_ns(root: pathlib.Path, *, include_index: bool = True) -> int 
             stat = path.lstat()
         except FileNotFoundError:
             return f"indexにあるファイルが作業ツリーに無い: {path.relative_to(root).as_posix()}"
-        # ctimeは改名や属性の変更でも進むため、mtimeを保つ移動も検出できる。
+
         latest = max(latest, _upper_bound_ns(stat.st_mtime_ns), _upper_bound_ns(stat.st_ctime_ns))
     return latest
 
 
 def _upper_bound_ns(timestamp_ns: int) -> int:
-    """記録された時刻から、実際に変更された可能性がある最も遅い時刻を返す。
-
-    秒未満が0の時刻は、秒単位で切り捨てて記録するファイルシステムの値とみなし、その秒の終わりを返す。
-    秒未満を記録するファイルシステムで偶然0になった時刻も同じ扱いになるが、再利用を控える側へ倒れるだけである。
-    """
     if timestamp_ns % 1_000_000_000:
         return timestamp_ns
     return timestamp_ns + 999_999_999
 
 
 def _query_json(pyfltr: str, root: pathlib.Path, arguments: list[str]) -> dict[str, typing.Any] | str:
-    """pyfltrの照会コマンドのJSON出力を返す。取得できない場合は理由を返す。"""
     result = run_subprocess([pyfltr, *arguments], timeout=_QUERY_TIMEOUT_SECONDS, cwd=root, tag="pyfltr")
     if result is None or result.returncode:
         return f"`pyfltr {arguments[0]}`が失敗した: {format_cli_error(result)}"
@@ -382,20 +426,14 @@ def _query_json(pyfltr: str, root: pathlib.Path, arguments: list[str]) -> dict[s
     return parsed
 
 
-def _neutral_argv(argv: list[str]) -> bool:
-    """実行の引数が、試験の対象を変えない形だけかを返す。"""
-    return not argv_problem(argv)
-
-
-def argv_problem(argv: object) -> str:
-    """予定argvと実runの中立性を同じ定義で判定する。"""
+def argv_problem(argv: object, *, allow_no_always: bool = False) -> str:
     if not isinstance(argv, list) or any(not isinstance(token, str) for token in argv):
         return "argvが文字列配列でない"
     if not argv or argv[0] not in _REUSABLE_SUBCOMMANDS:
         return "argvの先頭はrun、ci、fastのいずれかにする"
     tokens = iter(argv[1:])
     for token in tokens:
-        if token in _NEUTRAL_FLAGS:
+        if token in _NEUTRAL_FLAGS or (allow_no_always and token == "--no-always-targets"):
             continue
         if token in _NEUTRAL_VALUE_OPTIONS:
             if next(tokens, None) is None:
@@ -416,7 +454,6 @@ def argv_problem(argv: object) -> str:
 
 
 def _coverage_problem(root: pathlib.Path, argv: list[str], review: object) -> str:
-    """列挙の確度と意味判定を失わず、確定した必須試験の被覆を比較する。"""
     if argv[0] == "fast":
         return "実行範囲不足: fastのpytestは不変条件試験だけなので、最終検証にはrunまたはciを使う"
     tokens = iter(argv[1:])
@@ -438,12 +475,11 @@ def _coverage_problem(root: pathlib.Path, argv: list[str], review: object) -> st
 
 
 def _check_planned_argv(value: str, review: object) -> int:
-    """予定入力の適合と、実行後に残る未確認を分けて返す。"""
     try:
         planned = json.loads(value)
         if not isinstance(planned, list) or any(not isinstance(token, str) for token in planned):
             raise ValueError("argvは文字列のJSON配列で指定する")
-        reason = argv_problem(planned)
+        reason = argv_problem(planned, allow_no_always=True)
         if not reason:
             reason = _coverage_problem(pathlib.Path.cwd(), planned, review)
     except (ValueError, OSError, SyntaxError, subprocess.TimeoutExpired) as exc:
@@ -472,7 +508,6 @@ def _check_planned_argv(value: str, review: object) -> int:
 
 
 def _argv_targets(argv: list[str]) -> list[str]:
-    """中立性を確認済みのargvから、値付きオプションの値を除いて対象を返す。"""
     targets: list[str] = []
     tokens = iter(argv[1:])
     for token in tokens:
@@ -484,7 +519,6 @@ def _argv_targets(argv: list[str]) -> list[str]:
 
 
 def _to_ns(value: typing.Any) -> int:
-    """ISO 8601の時刻をエポックからのナノ秒へ変換する。読めない値は最小値とし、候補から外す。"""
     if not isinstance(value, str):
         return -1
     try:

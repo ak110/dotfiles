@@ -1,5 +1,3 @@
-"""install_libarchiveのパッケージ展開と、消費側と同じ解決条件による導入済み判定・再取得のテスト。"""
-
 import compression.zstd
 import hashlib
 import io
@@ -10,8 +8,6 @@ import tarfile
 import typing
 
 import httpx
-
-# 消費側の試験は実際のlibarchive-cでアーカイブを展開する。導入先の模擬DLLを`LIBARCHIVE`が指す前に読み込んでおく。
 import libarchive  # noqa: F401  # pylint: disable=unused-import
 import pytest
 
@@ -20,12 +16,10 @@ from pytools._internal import install_libarchive, libarchive_resolver
 
 
 def _compress(data: bytes) -> bytes:
-    """標準ライブラリでzstd圧縮する。"""
     return compression.zstd.compress(data)
 
 
 def _package(members: dict[str, bytes | str]) -> bytes:
-    """MSYS2のpkg.tar.zstと同じ形式のバイト列を生成する。"""
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:") as tar:
         for name, content in members.items():
@@ -41,7 +35,6 @@ def _package(members: dict[str, bytes | str]) -> bytes:
 
 
 def _database(packages: dict[str, tuple[str, bytes, tuple[str, ...]]]) -> bytes:
-    """2026年11月15日のMSYS2 mingw64.dbのdesc形式を、必要な4項目へ絞って生成する。"""
     members: dict[str, bytes | str] = {}
     for name, (filename, data, dependencies) in packages.items():
         fields = {
@@ -57,7 +50,6 @@ def _database(packages: dict[str, tuple[str, bytes, tuple[str, ...]]]) -> bytes:
 
 
 def test_extract_dlls_places_only_bin_dlls(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`bin/`配下のDLLだけを配置先へ保存する。"""
     monkeypatch.setattr(install_libarchive, "_INSTALL_DIR", tmp_path)
     package = _package(
         {
@@ -85,8 +77,6 @@ _REQUIRED = {"pkg-archive": "libarchive-13.dll", "pkg-zlib": "zlib1.dll"}
 
 
 class _Repository:
-    """MSYS2リポジトリの代わりにパッケージ一覧と各パッケージを返し、要求件数を数える。"""
-
     def __init__(self) -> None:
         self.requests: list[str] = []
         self.catalog: dict[str, tuple[str, bytes, tuple[str, ...]]] | None = None
@@ -159,8 +149,6 @@ def windows_env_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch)
 
 
 class _Records(logging.Handler):
-    """導入処理のログ本文を集める。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.messages: list[str] = []
@@ -183,7 +171,6 @@ def _run(monkeypatch: pytest.MonkeyPatch) -> tuple[bool, str]:
 
 
 def test_partial_placement_is_reinstalled(windows_env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧版が残した本体DLLだけの配置は利用可能と扱わず、依存の取得へ進んで導入を完了する。"""
     install_dir, repository, path_writes = windows_env
     install_dir.mkdir()
     (install_dir / "libarchive-13.dll").write_bytes(b"old")
@@ -221,7 +208,6 @@ def test_rerun_after_interrupted_download_completes(windows_env, monkeypatch: py
 
 
 def test_unloadable_after_download_is_not_reported_installed(windows_env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """取得したパッケージが依存DLLを欠く場合は導入完了と表示せず、ユーザーPATHも登録しない。"""
     _install_dir, repository, path_writes = windows_env
     repository.omitted_dlls.add("zlib1.dll")
 
@@ -234,7 +220,6 @@ def test_unloadable_after_download_is_not_reported_installed(windows_env, monkey
 
 
 def test_healthy_install_skips_download(windows_env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """本体と依存が揃った既導入先はHTTP取得を行わず利用可能とする。"""
     install_dir, repository, _path_writes = windows_env
     install_dir.mkdir()
     for dll in _REQUIRED.values():
@@ -250,7 +235,6 @@ def test_healthy_install_skips_download(windows_env, monkeypatch: pytest.MonkeyP
 def test_external_install_and_existing_libarchive_are_kept(
     windows_env, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """自動配置先が無くても、既存の`LIBARCHIVE`が指す外部導入先をロードできれば取得しない。"""
     _install_dir, repository, _path_writes = windows_env
     external = tmp_path / "external"
     external.mkdir()
@@ -271,7 +255,6 @@ def test_external_install_and_existing_libarchive_are_kept(
 
 
 def test_missing_dependency_after_install_is_detected_and_recovered(windows_env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """導入後に依存DLLが欠けた配置は未利用可能として再取得し、正常な依存を戻せば利用可能になる。"""
     install_dir, repository, _path_writes = windows_env
     assert _run(monkeypatch)[0]
     (install_dir / "zlib1.dll").unlink()
@@ -291,14 +274,13 @@ def test_missing_dependency_after_install_is_detected_and_recovered(windows_env,
 
 
 def _repack(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, name: str) -> tuple[int, pathlib.Path, bytes]:
-    """libarchive経路のアーカイブ（tar）を公開`repack_archive.main`で再パックし、終了コードと原本を返す。"""
     archive = tmp_path / f"{name}.tar"
     with tarfile.open(archive, "w") as tar:
         info = tarfile.TarInfo("page.txt")
         info.size = 4
         tar.addfile(info, io.BytesIO(b"page"))
     original = archive.read_bytes()
-    # 読み込みの成否は呼び出しごとに判定し直す（成功だけがキャッシュされる）。
+
     repack_archive._load_libarchive.cache_clear()  # pylint: disable=protected-access
     monkeypatch.setattr(sys, "argv", ["repack-archive", "--no-trash", str(archive)])
     with pytest.raises(SystemExit) as exc_info:
@@ -371,7 +353,6 @@ def test_database_uses_exact_name_and_current_filename_with_transitive_dependenc
 
 @pytest.mark.parametrize("filename", ["../escape.pkg.tar.zst", "x%2fy.pkg.tar.zst", "https://other/x.pkg.tar.zst"])
 def test_database_rejects_unsafe_download_filename(windows_env, monkeypatch, filename):
-    """DBのファイル名で取得元のURLやディレクトリを変更させない。"""
     install_dir, repository, path_writes = windows_env
     repository.catalog = {"pkg-archive": (filename, b"body", ())}
 
@@ -440,7 +421,6 @@ def test_dll_rejects_windows_reserved_filename(windows_env, monkeypatch, name):
 
 
 def test_valid_archive_with_wrong_checksum_is_not_installed(windows_env, monkeypatch):
-    """ロード可能な形式のtarでも、DBと内容が異なる取得物を配置しない。"""
     install_dir, repository, path_writes = windows_env
     repository.tampered.add("pkg-archive")
 

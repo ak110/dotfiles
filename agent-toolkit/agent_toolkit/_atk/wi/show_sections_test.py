@@ -1,5 +1,3 @@
-"""指定節の照会がWIの種別とコードフェンスを通して本文を保持することを検証する。"""
-
 import pathlib
 import subprocess
 
@@ -16,7 +14,6 @@ def test_show_sections_preserves_repeated_sections_and_fenced_headings(
     capsys: pytest.CaptureFixture[str],
     selection: list[str],
 ) -> None:
-    """単件・複数・全件の照会は同名節を全て表示し、引用内のH2を本文に保つ。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(
         notes,

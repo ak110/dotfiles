@@ -1,5 +1,3 @@
-"""serveのcliに関するui_detailの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui
@@ -55,7 +53,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_allow_terminal_entry_editing_and_keep_decision_closed() -> None:
-    """終了済みの本文編集と削除を許可し、採否を閉じたままkind/state識別子を表示する。"""
     result = _run_node_ui(
         """
 displayEntry({
@@ -91,10 +88,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_notify_only_new_active_unanswered_uwi_after_permission() -> None:
-    """初期集合と既知項目の属性変化を通知せず、新規の未回答UWIと要確認AWIだけを種別ごとの題で通知する。
-
-    確認済みへ切り替えた既知のAWIと、既知のAWIを要確認へ戻した変化は通知しない。
-    """
     result = _run_node_ui(
         """
 const notifications = [];
@@ -169,7 +162,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_sse_reconciles_owned_delete_dialog() -> None:
-    """SSEで対象の移動を受けた場合は削除確認を閉じ、消失を受けた場合は詳細と削除確認を閉じて一覧へ戻す。"""
     result = _run_node_ui(
         """
 const inbox = {

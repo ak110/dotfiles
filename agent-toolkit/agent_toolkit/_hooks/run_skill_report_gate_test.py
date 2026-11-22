@@ -30,7 +30,6 @@ def _payload(tmp_path: pathlib.Path, **extra: Any) -> str:
 
 @pytest.fixture(name="calls")
 def _calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """run-skillの起動環境を設定し、保存確認の呼び出しを記録する。"""
     monkeypatch.setenv(run_skill_report_gate.RUN_ID_ENV, _RUN_ID)
     monkeypatch.setenv(mcp_environment.SESSION_START_INPUT_ENV, json.dumps({"source": "run-skill", "skill": _SKILL}))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -108,10 +107,12 @@ def test_approves_without_checking_outside_target(
     [
         ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi single-lane", "approve"),
         ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi", "block"),
+        ("agent-toolkit:review-session", "batch", "agent-toolkit:review-session batch", "approve"),
+        ("agent-toolkit:review-session", "batch", "agent-toolkit:review-session", "block"),
         ("review-session", None, "review-session", "approve"),
         ("review-session", None, "agent-toolkit:review-session", "approve"),
     ],
-    ids=["mode", "other-mode", "unqualified-record", "qualified-report-for-unqualified-record"],
+    ids=["mode", "other-mode", "batch", "unsaved-batch", "unqualified-record", "qualified-report-for-unqualified-record"],
 )
 def test_judges_saved_report_by_scope_of_startup_input(
     tmp_path: pathlib.Path,
@@ -121,7 +122,6 @@ def test_judges_saved_report_by_scope_of_startup_input(
     report_scope: str,
     decision: str,
 ) -> None:
-    """`scope`が起動入力のスキルとモードから求めた起動単位と同じ報告だけを保存済みとし、作業名の修飾の有無は区別しない。"""
     report = (
         f"---\nstate: inbox\ntype: uwi\nsource: run-skill\nscope: {json.dumps(report_scope)}\n"
         f"run_skill_report: true\nrun_skill_run_id: {_RUN_ID}\n---\n報告\n"

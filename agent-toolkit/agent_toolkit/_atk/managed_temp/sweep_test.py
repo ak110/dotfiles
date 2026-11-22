@@ -28,7 +28,6 @@ _NOW = datetime.datetime(2026, 10, 25, 12, 0, tzinfo=datetime.UTC)
 
 @pytest.fixture(autouse=True)
 def _default_free_ratio(monkeypatch: pytest.MonkeyPatch) -> None:
-    """試験基盤が子プロセス向けに設定する下限の上書きを外し、容量の10%の下限で判定する。"""
     monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
 
 
@@ -101,7 +100,7 @@ def test_sweep_keeps_plugin_root_in_use(monkeypatch: pytest.MonkeyPatch) -> None
     assert area.exists()
     record = next((state_paths.state_dir() / "plugin-root-leases").glob("*.json"))
     raw = json.loads(record.read_text(encoding="utf-8"))
-    # 使用の終了は、記録した世代が生存プロセスと一致しなくなることとして模擬する。
+
     raw["created_at"] = 0
     if raw.get("start_id") is not None:
         raw["start_id"] += "-ended"
@@ -218,7 +217,6 @@ def test_legacy_state_is_collected_individually() -> None:
 
 
 def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
-    """配下の走査を受けた対象を記録するリストを返す。"""
     walks: list[pathlib.Path] = []
     original = sweep._inspect_tree  # pylint: disable=protected-access
 
@@ -231,7 +229,6 @@ def _count_walks(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
 
 
 def test_daily_sweep_skips_protected_area_but_still_checks_other_areas(monkeypatch: pytest.MonkeyPatch) -> None:
-    """保護集合の領域は配下を調べず残し、保護外は従来どおり更新時刻で判定する。"""
     protected = _area("session-keep", days=8, files={"nested/payload.txt": "keep"})
     expired = _area("expired-abc", days=8)
     fresh = _area("fresh-abc", days=1)
@@ -250,7 +247,6 @@ def test_daily_sweep_skips_protected_area_but_still_checks_other_areas(monkeypat
 
 
 def test_sweep_runs_once_per_day(monkeypatch: pytest.MonkeyPatch) -> None:
-    """前回の掃引から1日以内の起動は一覧を取らずに戻り、1日が過ぎた起動は全対象を調べ直す。"""
     fresh = _area("fresh-abc", days=1)
     managed_temp.sweep_managed_temp(now=_NOW)
     expired = _area("expired-abc", days=8)
@@ -275,7 +271,6 @@ def test_sweep_runs_once_per_day(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("record", ["missing", "broken", "future"])
 def test_sweep_runs_when_record_is_missing_broken_or_future(record: str) -> None:
-    """前回の掃引時刻の記録が欠落・破損している場合と、時刻が未来の場合は掃引する。"""
     area = _area("expired-abc", days=8)
     path = paths.state_root() / ".sweep/last-sweep"
     path.parent.mkdir(mode=0o700, exist_ok=True)
@@ -289,7 +284,6 @@ def test_sweep_runs_when_record_is_missing_broken_or_future(record: str) -> None
 
 
 def test_sweep_record_write_failure_does_not_stop_atk(monkeypatch: pytest.MonkeyPatch) -> None:
-    """掃引時刻を記録できなくても掃引の結果を返し、次回の起動が掃引し直す。"""
     area = _area("expired-abc", days=8)
 
     def fail(*_args: object, **_kwargs: object) -> None:
@@ -361,16 +355,15 @@ def test_sweep_preserves_foreign_owned_tree_and_reports_limited_failure(monkeypa
         and str(area) in reason
         and f"uid={owner}" in reason
         and "現在のOSアカウント" in reason
-        and "sudo -n" in reason
+        and "通常の掃引では可能な対象だけを回収する" in reason
         and "削除の認可" in reason
         and "現在の利用" in reason
-        and "実際に確認した場合だけ" in reason
+        and "残った理由をユーザーへ伝える" in reason
         for path, reason in result.failed
     )
 
 
 def test_cleanup_rejects_root_outside_and_links(tmp_path: pathlib.Path) -> None:
-    """内部回収はroot自身・root外・リンクとリンクを含むパスを削除せず、不在は成功とする。"""
     root = paths.temp_root()
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -414,11 +407,6 @@ def test_sweep_removes_expired_area_with_future_file(monkeypatch: pytest.MonkeyP
 def test_sweep_keeps_entries_changed_after_sweep_time(
     monkeypatch: pytest.MonkeyPatch, descriptor_walk: bool, layout: str
 ) -> None:
-    """判定基準時刻の取得後に作られた・変更された項目を、走査中に使われている領域として保持する。
-
-    `atk`の起動時掃引は走査の前に現在時刻を取得するため、並行する主体がその後に作った領域は
-    mtimeとctimeの両方が判定基準時刻より新しい。古い領域の配下へ新しい項目を作った場合も同じである。
-    """
     monkeypatch.setattr(
         sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
     )
@@ -446,7 +434,6 @@ def test_sweep_removes_expired_git_directory() -> None:
 def test_sweep_preserves_only_registered_external_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registered: bool, descriptor_walk: bool
 ) -> None:
-    """外部gitdirの逆参照が自身なら保持し、別のworktreeを指す複製なら回収する。"""
     monkeypatch.setattr(
         sweep, "_DESCRIPTOR_WALK", descriptor_walk and os.scandir in os.supports_fd and os.open in os.supports_dir_fd
     )
@@ -471,7 +458,6 @@ def test_sweep_preserves_only_registered_external_worktree(
 
 
 def test_sweep_discards_schedule_of_previous_version() -> None:
-    """対象ごとの予定表を持っていた版の記録は読まずに削除し、延期されていた領域も初回の掃引で調べる。"""
     area = _area("old-schedule-abc", days=8)
     schedule = paths.state_root() / ".sweep/schedule"
     schedule.parent.mkdir(exist_ok=True)
@@ -500,7 +486,6 @@ def test_sweep_recovers_unreadable_owned_tree_and_restores_retained_modes(
     restricted: str,
     protection: str,
 ) -> None:
-    """mode 000の領域自身・配下を掃引し、保持した木の元modeを復元する。"""
     name = "agents-server-plugin-root-locked" if protection == "plugin" else "locked-abc"
     area = _area(name, days=9, files={"d/payload": "x"})
     if protection == "worktree":
@@ -532,7 +517,6 @@ def test_sweep_recovers_unreadable_owned_tree_and_restores_retained_modes(
 @pytest.mark.skipif(not hasattr(os, "O_PATH"), reason="O_PATHによる所有木の権限回復を検証する")
 @pytest.mark.parametrize("restricted", [".", "d"])
 def test_cleanup_removes_unreadable_owned_tree(restricted: str) -> None:
-    """直接回収もmode 000の領域自身と配下を削除できる。"""
     area = _area("cleanup-locked", days=9, files={"d/payload": "x"})
     locked = area / restricted
     locked.chmod(0)
@@ -545,8 +529,6 @@ def test_cleanup_removes_unreadable_owned_tree(restricted: str) -> None:
 
 
 class _FakeDisk:
-    """`shutil.disk_usage`を差し替え、一時root配下の実使用量だけ空きへ反映する。"""
-
     def __init__(self, total: int, free_without_root: int, root: pathlib.Path) -> None:
         self.total, self.base, self.root = total, free_without_root, root
 
@@ -556,15 +538,14 @@ class _FakeDisk:
 
 
 def _first_sweep_done() -> None:
-    """間隔内の起動（全走査をしない通常の起動）にする。"""
     sweep._save_sweep_time(paths.state_root(), sweep._now_ns(_NOW))  # pylint: disable=protected-access
 
 
 def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
-    """空きが10%未満なら間隔内でも古い順に回収し、使用中・保護セッションは残し、上位名を記録する。"""
     _first_sweep_done()
-    old = _area("old-abc", days=3, files={"big": "x" * 400})
-    newer = _area("newer-abc", days=1, files={"big": "x" * 400})
+    tag = "Signature: 8a477f597d28d172789f06886806bc55"
+    old = _area("old-abc", days=3, files={"big": "x" * 400, "CACHEDIR.TAG": tag})
+    newer = _area("newer-abc", days=1, files={"big": "x" * 400, "CACHEDIR.TAG": tag})
     worktree = _area("wt-abc", days=5, files={"payload.txt": "x" * 400})
     session = _area("session-keep", days=6, files={"payload.txt": "x" * 400})
     registered = pathlib.Path(paths.temp_root().parent / "gitdir-wt")
@@ -573,7 +554,7 @@ def test_space_pressure_reclaims_oldest_unused_first_and_keeps_in_use(monkeypatc
     (worktree / ".git").write_text(f"gitdir: {registered}\n", encoding="utf-8")
     monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
     monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: session)
-    # 容量1000のうち使用1600B相当ではなく、空きが10%（100）を割るよう基準の空きを設定する。
+    monkeypatch.setattr(resources, "process_references", lambda: [])
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 1700, paths.temp_root()))
 
     tree_bytes = sweep._tree_bytes  # pylint: disable=protected-access
@@ -631,7 +612,7 @@ def test_cache_removal_does_not_renew_session(
     cache = session / "scratch/cache"
     (cache / "data").write_bytes(b"c" * mib)
     _age(session, 8)
-    # 最後の利用が回収される側にあっても、その時刻から7日間は再開できる。
+
     _age(cache / "data", age_days)
     disk = _FakeDisk(100 * mib, 13 * mib, paths.temp_root())
     monkeypatch.setattr(sweep, "_disk_usage", disk)
@@ -669,7 +650,6 @@ def test_overlapping_sweeps_do_not_renew_session(monkeypatch: pytest.MonkeyPatch
     def remove_with_competing_sweep(cache: pathlib.Path) -> None:
         remove(cache)
         if not overlapping:
-            # 親の更新時刻を記録する前に、別の起動が2個目を消せる順序を再現する。
             with monkeypatch.context() as inner:
                 inner.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
                 overlapping.append(managed_temp.sweep_managed_temp(now=_NOW, force=force))
@@ -688,7 +668,7 @@ def test_pressure_recognizes_legacy_session_marker_without_reference(monkeypatch
     marker = session / paths.LEGACY_MARKER_NAME
     marker.write_text(json.dumps({"path": str(session), "session_id": "old-session", "schema_version": 6}), encoding="utf-8")
     _age(session, 3)
-    # この領域を消せば空きの下限に戻る場合も、会話の記録を7日以内には消さない。
+
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 50 + marker.stat().st_size + 4, paths.temp_root()))
     assert not managed_temp.sweep_managed_temp(now=_NOW).deleted
     assert (session / "handoff").read_text(encoding="utf-8") == "keep"
@@ -792,12 +772,16 @@ def test_pressure_reclaims_tagged_root_before_unclassified(monkeypatch: pytest.M
 
 
 @pytest.mark.parametrize("references_known", [True, False], ids=["busy", "unknown"])
-def test_pressure_keeps_tagged_root_unless_unused(monkeypatch: pytest.MonkeyPatch, references_known: bool) -> None:
+@pytest.mark.parametrize("days", [2, 8])
+@pytest.mark.parametrize("force", [False, True])
+def test_pressure_keeps_tagged_root_unless_unused(
+    monkeypatch: pytest.MonkeyPatch, references_known: bool, days: int, force: bool
+) -> None:
     _first_sweep_done()
-    cache = _area("standalone", days=2, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
+    cache = _area("standalone", days=days, files={"CACHEDIR.TAG": "Signature: 8a477f597d28d172789f06886806bc55\n"})
     monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100, free=8))
     monkeypatch.setattr(resources, "process_references", lambda: [cache / "active"] if references_known else None)
-    result = managed_temp.sweep_managed_temp(now=_NOW)
+    result = managed_temp.sweep_managed_temp(now=_NOW, force=force)
     assert not result.deleted and not result.failed and cache.exists()
 
 
@@ -866,7 +850,6 @@ def test_pressure_reports_unremoved_cache_in_legacy_session(monkeypatch: pytest.
 
 
 def test_normal_free_space_does_not_reclaim_or_scan(monkeypatch: pytest.MonkeyPatch) -> None:
-    """空きが10%以上なら、間隔内の起動は何も回収せず走査もしない。"""
     _first_sweep_done()
     kept = _area("recent-abc", days=3)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 0, 500))  # pylint: disable=protected-access
@@ -880,7 +863,6 @@ def test_normal_free_space_does_not_reclaim_or_scan(monkeypatch: pytest.MonkeyPa
 
 
 def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch: pytest.MonkeyPatch) -> None:
-    """回収できる対象が無いまま空きが下限を割る場合は、下限割れの状態と一時rootの使用量を返す。"""
     _first_sweep_done()
     in_use = _area("session-keep", days=3, files={"payload.txt": "x" * 300})
     monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
@@ -895,10 +877,9 @@ def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch
 
 
 def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPatch) -> None:
-    """空きが不足していても、作成直後（最終更新から1時間以内）の領域は使用中の可能性があるため回収しない。"""
     _first_sweep_done()
     fresh = _area("fresh-abc", days=0, files={"big": "x" * 400})
-    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    old = _area("old-abc", days=8, files={"big": "x" * 400})
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 850, paths.temp_root()))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
@@ -908,9 +889,8 @@ def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPa
 
 
 def test_free_ratio_environment_disables_reclaim(monkeypatch: pytest.MonkeyPatch) -> None:
-    """下限を`0`へ上書きすると、空きが少なくても回収しない。不正な値は容量の10%の下限を使う。"""
     _first_sweep_done()
-    old = _area("old-abc", days=2, files={"big": "x" * 400})
+    old = _area("old-abc", days=8, files={"big": "x" * 400})
     monkeypatch.setattr(sweep, "_disk_usage", _FakeDisk(1000, 450, paths.temp_root()))
     monkeypatch.setenv(sweep.MIN_FREE_RATIO_ENV, "0")
 
@@ -923,7 +903,6 @@ def test_free_ratio_environment_disables_reclaim(monkeypatch: pytest.MonkeyPatch
 
 
 def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pytest.MonkeyPatch) -> None:
-    """作成プロセスが実行中の領域は、最終更新が古くても残す。直下の子が記録した場合と、終了したプロセスの領域を区別する。"""
     _first_sweep_done()
     with subprocess.Popen([sys.executable, "-c", "pass"]) as finished:
         finished.wait()
@@ -939,7 +918,7 @@ def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pyt
         },
     )
     monkeypatch.setattr(resources, "process_references", lambda: [])
-    dead = _area("dead-abc", days=3, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
+    dead = _area("dead-abc", days=8, files={"big": "x" * 300, sweep.OWNER_FILE: dead_token})
     monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=1000, free=50))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
@@ -949,7 +928,6 @@ def test_space_pressure_keeps_area_whose_owner_process_is_alive(monkeypatch: pyt
 
 
 def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPatch) -> None:
-    """不足が続いても全走査は5分に一度とし、空きの確認は各起動で行う。"""
     _first_sweep_done()
     _area("protected-recent", days=0)
     observed: list[object] = []
@@ -973,7 +951,6 @@ def test_pressure_retry_interval_keeps_free_checks(monkeypatch: pytest.MonkeyPat
 
 @pytest.mark.parametrize("record", ["broken", "99999999999999999999999999", "-1"])
 def test_pressure_invalid_record_retries(monkeypatch: pytest.MonkeyPatch, record: str) -> None:
-    """壊れた記録や未来・負の時刻を正常な抑制期間と誤認しない。"""
     _first_sweep_done()
     (paths.state_root() / ".sweep/last-pressure").write_text(record, encoding="ascii")
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 950, 50))  # pylint: disable=protected-access

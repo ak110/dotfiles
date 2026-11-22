@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""追加済みで未着手のWIを別レーンへ移す操作を検証する。"""
 
 import json
 import pathlib
@@ -82,7 +81,6 @@ def _share_readme(notes: pathlib.Path, data: dict[str, typing.Any], names: set[s
 def test_transfer_records_new_overlap_with_extend_write_targets(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """移管で移管元に残るWIと新たに重なる組は、同じ呼び出しの--extend-write-targetsで記録して保存できる。"""
     repo, notes = env
     path = _selection(tmp_path, repo, notes, edit=lambda data: _share_readme(notes, data, {"b.md", "c.md"}))
     before = path.read_bytes()
@@ -95,12 +93,11 @@ def test_transfer_records_new_overlap_with_extend_write_targets(
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
     after = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert next(item["レーン"] for item in after["選定"] if item["WI"] == "c.md") == "lane-03"
-    assert after["レーン間の重なり"] == [record]
+    assert after["レーン間の重なり"] == [{**record, "判定済みWIの組": [["b.md", "c.md"]]}]
 
 
 @pytest.mark.parametrize("case", ["emptied", "partner", "merged"])
 def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, case: str) -> None:
-    """移したWIの重なりの記録を移管先へ付け替え、同じレーン同士・重ならなくなった組の記録を除く。"""
     repo, notes = env
     sharing, existing, wi, lane, updated, expected = {
         "emptied": (
@@ -139,6 +136,8 @@ def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Pat
 
     path = _selection(tmp_path, repo, notes, edit=edit)
     assert _transfer(path, repo, tmp_path, wi, lane, dict.fromkeys(updated, _COST)) == 0
+    if expected:
+        expected[0]["判定済みWIの組"] = [["a.md", "c.md"]] + ([["a.md", "d.md"]] if case == "merged" else [])
     assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == expected
 
 
@@ -146,11 +145,6 @@ def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Pat
 def test_transfer_drops_records_whose_wi_pairs_change(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """移管で組が加わる・分かれる記録は残さず、全体検査の記録不足を--extend-write-targetsの再判定で解消させる。
-
-    移管元に残るbと移したcは移管前は同じレーンで直列に書くため、移管元・移管先の既存記録はこの組を判定していない。
-    移管元の定義もbとcのどちらの定義かを記録から区別できない。
-    """
     repo, notes = env
     sharing, existing, rejudged = {
         "new-pair-under-existing-record": (
@@ -190,11 +184,17 @@ def test_transfer_drops_records_whose_wi_pairs_change(
     addition = tmp_path / "overlaps.yaml"
     addition.write_text(yaml.safe_dump({"レーン間の重なり": rejudged}, allow_unicode=True), encoding="utf-8")
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == rejudged
+    pairs = (
+        [[["b.md", "c.md"], ["b.md", "d.md"]]]
+        if case == "new-pair-under-existing-record"
+        else [[["a.md", "b.md"]], [["a.md", "c.md"]], [["b.md", "c.md"]]]
+    )
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == [
+        {**row, "判定済みWIの組": judged} for row, judged in zip(rejudged, pairs, strict=True)
+    ]
 
 
 def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """追加済みで未着手のWIを移し、所要時間・未統合状態を更新し、初回配分を保つ。"""
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     before = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -215,7 +215,6 @@ def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, path
 def test_transfer_into_integrated_lane_keeps_existing_items_integrated(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """統合済みレーンへ移すと移管先の行は未統合へ戻り、既存項目は統合済みのまま残って移管できない。"""
     repo, notes = env
 
     def edit(data: dict[str, typing.Any]) -> None:
@@ -255,11 +254,29 @@ def test_transfer_into_integrated_lane_carries_record_beside_unrecorded_integrat
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", {"lane-02": _COST, "lane-03": _COST}) == 0
     after = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert after["レーン間の重なり"] == [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])]
+    assert after["レーン間の重なり"] == [
+        {**_overlap("lane-01", "lane-03", ["aの節"], ["cの節"]), "判定済みWIの組": [["a.md", "c.md"]]}
+    ]
+
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--work-dir", str(repo), "--reopen-wi", "d.md", "--output", str(path)) == 1
+    assert path.read_bytes() == before
+
+    record = after["レーン間の重なり"][0]
+    record["レーン2の定義"].append("dの節")
+    record["判定済みWIの組"].append(["a.md", "d.md"])
+    addition = tmp_path / "decide-before-reopen.yaml"
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": [record]}, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 0
+    decided = path.read_bytes()
+    del record["判定済みWIの組"]
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": [record]}, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 0
+    assert path.read_bytes() == decided
+    assert _dispatch(str(path), "--work-dir", str(repo), "--reopen-wi", "d.md", "--output", str(path)) == 0
 
 
 def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """移管元が空になるときはそのレーン行を除き、移管先の費用更新だけを求める。"""
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     assert _transfer(path, repo, tmp_path, "d.md", "lane-02", {"lane-03": _COST}) == 2
@@ -276,10 +293,6 @@ def test_emptied_source_lane_still_counts_toward_cumulative_bound(
     final_lane: str,
     code: int,
 ) -> None:
-    """移管で空にしたレーンも累計のレーン数に数え、後の追加で上限B=3を超える新設を拒否する。
-
-    空にしたレーン名を後の追加で再び使うのは同じレーン名の再利用であり、累計のレーン名数を増やさない。
-    """
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     assert _transfer(path, repo, tmp_path, "d.md", "lane-02", {"lane-02": _COST}) == 0
@@ -330,7 +343,6 @@ def test_emptied_source_lane_still_counts_toward_cumulative_bound(
 def test_transfer_rejects_ineligible_and_keeps_file(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, case: str
 ) -> None:
-    """対象外のWI・不正な移管先・費用更新の欠落は終了コード2で拒否し、保存済み選定を変えない。"""
     repo, notes = env
 
     def edit(data: dict[str, typing.Any]) -> None:
@@ -367,7 +379,6 @@ def test_transfer_keeps_whole_check(env: tuple[pathlib.Path, pathlib.Path], tmp_
 
 
 def test_merge_still_rejects_duplicate_wi(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
-    """再mergeでの二重追加の拒否は、移管操作の追加後も保たれる。"""
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     addition = tmp_path / "addition.yaml"
@@ -386,7 +397,6 @@ def test_merge_still_rejects_duplicate_wi(env: tuple[pathlib.Path, pathlib.Path]
 def test_transfer_rejects_combined_operations(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, extra: list[str]
 ) -> None:
-    """移管は他の更新操作・--body-wiと併用できない。"""
     repo, notes = env
     path = _selection(tmp_path, repo, notes)
     cost_file = tmp_path / "updates.json"

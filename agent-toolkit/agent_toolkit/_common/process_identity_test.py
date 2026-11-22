@@ -1,5 +1,3 @@
-"""時計補正後も同じ世代を保持し、別世代への作用を防ぐ。"""
-
 import dataclasses
 import json
 import os
@@ -17,7 +15,6 @@ from agent_toolkit._common import process_identity
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxのprocfs境界")
 def test_clock_correction_and_legacy_records(monkeypatch):
-    """壁時計だけが変わっても、新形式の識別と旧形式の資源保護を保つ。"""
     process = psutil.Process(os.getpid())
     saved = process_identity.ProcessIdentity.capture(process)
     legacy_payload = json.loads(json.dumps(saved.payload(legacy=True)))
@@ -45,7 +42,6 @@ def test_clock_correction_and_legacy_records(monkeypatch):
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxのprocfs境界")
 def test_ancestor_traversal_ignores_wall_clock_changes(monkeypatch):
-    """親の壁時計時刻が子より後に見えても、PPIDと不変な起動順序から祖先を返す。"""
     process = psutil.Process(os.getpid())
     expected = [item.pid for item in process_identity.parents(process)]
     assert expected and expected[0] == process.ppid()
@@ -62,7 +58,6 @@ def test_ancestor_traversal_ignores_wall_clock_changes(monkeypatch):
 @pytest.mark.parametrize("changed", ["boot", "start"])
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxのprocfs境界")
 def test_reused_pid_or_reboot_is_not_same_process(tmp_path, monkeypatch, changed):
-    """同じPIDでも起動ticksかboot IDが異なれば、保存した世代の生存を否定する。"""
     process = psutil.Process(os.getpid())
     saved = process_identity.ProcessIdentity.capture(process)
     assert saved.start_id is not None
@@ -84,7 +79,6 @@ def test_reused_pid_or_reboot_is_not_same_process(tmp_path, monkeypatch, changed
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linuxのprocfs境界")
 def test_process_reaped_while_reading_stat_is_missing(monkeypatch):
-    """statを開いた後に回収されたプロセスは、識別の取得で消滅として扱う。"""
     with subprocess.Popen([sys.executable, "-c", "pass"]) as child:
 
         class ReapedBeforeRead(pathlib.PosixPath):
@@ -98,7 +92,6 @@ def test_process_reaped_while_reading_stat_is_missing(monkeypatch):
 
 
 def test_current_process_and_missing_pid():
-    """実OSの同世代と消滅済みPIDを識別する。"""
     saved = process_identity.ProcessIdentity.of(os.getpid())
     assert saved is not None and saved.exists()
     assert not dataclasses.replace(saved, pid=2147483647).exists()

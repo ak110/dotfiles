@@ -37,7 +37,7 @@ NEW_PLANS_DIRECTORY = "plans"
 
 _UNRESOLVED_PRIVATE_NOTES_DIRNAME = ".plans-viewer-private-notes-unresolved"
 
-# 自身をメイン計画の候補とする種別。移行で生成した旧ファイル名の検証でも、付属ファイルの名前をメイン計画として受理しない。
+
 _MAIN_CANDIDATE_KINDS = (_bundle_kinds.MAIN, _bundle_kinds.HANDOFF)
 _FORBIDDEN_NAME_CHARACTERS = set('/\\:*?"<>|')
 PLAN_NAME_FORMAT = "dd-HHmm_<名称>.md（衝突時は名称の後に-<小文字16進数4桁>）"
@@ -77,11 +77,6 @@ def private_notes_root(
 
 
 def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
-    """private-notesのルート配下からWIファイルを探す。
-
-    年月固定配置を共通のパス境界から探索し、移行前の1階層配置も読み取る。
-    計画構造の自動チェックと選定結果の検証が同じ探索を使う。
-    """
     fixed = next((path for path in _wi_layout.iter_entry_paths(root) if path.name == name), None)
     if fixed is not None:
         return fixed
@@ -91,7 +86,6 @@ def find_wi_source(name: str, root: pathlib.Path) -> pathlib.Path | None:
 
 
 def new_plans_root(private_notes: pathlib.Path | str | None = None) -> pathlib.Path:
-    """保存済み計画rootの絶対パスを返す。"""
     return private_notes_root(private_notes) / NEW_PLANS_DIRECTORY
 
 
@@ -119,7 +113,6 @@ def unresolved_private_notes_plans_root(home: pathlib.Path | str | None = None) 
 
 
 def _resolve(path: pathlib.Path) -> pathlib.Path:
-    """存在しないパスも含めて実体基準の絶対パスへ変換する。"""
     return path.expanduser().resolve(strict=False)
 
 
@@ -146,7 +139,6 @@ def resolve_plan_input(
 
 
 def _lexically_under(path: pathlib.Path, root: pathlib.Path) -> bool:
-    """symlinkを解決せずにpathがroot配下にあるかを判定する。"""
     try:
         relative = path.absolute().relative_to(root.absolute())
     except ValueError:
@@ -155,7 +147,6 @@ def _lexically_under(path: pathlib.Path, root: pathlib.Path) -> bool:
 
 
 def _relative_to(path: pathlib.Path, root: pathlib.Path) -> pathlib.PurePath | None:
-    """pathがroot配下ならroot相対値を返す。"""
     try:
         return _resolve(path).relative_to(_resolve(root))
     except OSError, ValueError:
@@ -163,7 +154,6 @@ def _relative_to(path: pathlib.Path, root: pathlib.Path) -> pathlib.PurePath | N
 
 
 def _validate_portable_remainder(remainder: str) -> pathlib.PurePosixPath:
-    """portable接頭辞後の相対値を検証する。"""
     if not remainder or "$(" in remainder or "\x00" in remainder:
         raise ActionableError(
             "計画ファイルの可搬パスが空、または別のシェル式を含んでいます", next_action=_PLAN_FILE_VALUE_NEXT_ACTION
@@ -181,10 +171,6 @@ def _validate_portable_remainder(remainder: str) -> pathlib.PurePosixPath:
 
 
 def validate_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
-    """新plans rootからの相対メイン計画パスを検証して返す。
-
-    現行形式と旧正規形式について、年月日の実在日付、パス文字と名称を検証する。
-    """
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
         raise ActionableError("計画ファイルの相対パスが不正です", next_action=_SAVED_PLAN_PATH_NEXT_ACTION)
@@ -259,12 +245,10 @@ def validate_working_plan_relative_path(relative_path: pathlib.Path | str) -> pa
 
 
 def _creation_epoch(path: pathlib.Path) -> float | None:
-    """ファイルの作成日時を返し、取得できない環境ではNoneを返す。"""
     info = path.stat(follow_symlinks=False)
     value = getattr(info, "st_birthtime", None)
     if value is None:
         try:
-            # 時間上限なし: ローカルのファイル属性の取得であり、外部の応答を待たない。
             result = subprocess.run(
                 ["stat", "--format=%W", "--", str(path)],
                 capture_output=True,
@@ -302,7 +286,7 @@ def _birth_epoch(path: pathlib.Path) -> float:
     day = int(match.group("day"))
     modified = datetime.datetime.fromtimestamp(modified_epoch)
     month = modified.replace(day=1)
-    # 月を跨いだ編集でも、保存先の年月と名前の日が有効な日付を構成するようにする。
+
     while True:
         try:
             candidate = month.replace(day=day)
@@ -315,7 +299,6 @@ def _birth_epoch(path: pathlib.Path) -> float:
 
 
 def file_birth_date(path: pathlib.Path) -> datetime.date:
-    """保存日付を局所記録、作成時刻、更新時刻からの推定の順で解決する。"""
     record = path.with_name(_bundle_kinds.CREATED_RECORD.name_for(path.stem))
     next_action = f"{record}のdateを計画の作成日（YYYY-MM-DD）へ直し、同じ操作を再実行する"
     if record.is_symlink():
@@ -339,12 +322,6 @@ def file_birth_date(path: pathlib.Path) -> datetime.date:
 
 
 def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> pathlib.Path:
-    """移行で生成した旧ファイル名の新root相対パスを検証して返す。
-
-    移行先は旧ファイル名を維持するため、正規の新規作成形式にないパスも
-    `dd-{旧ファイル名}.md`として存在する。この形式は新規作成には用いず、
-    移行済み計画の判定とcommitだけで受理する。
-    """
     raw = os.fspath(relative_path)
     if not raw or "$(" in raw or "\x00" in raw or "\\" in raw:
         raise ActionableError("移行済み計画ファイルの相対パスが不正です", next_action=_MIGRATED_PLAN_PATH_NEXT_ACTION)
@@ -379,11 +356,6 @@ def validate_migrated_plan_relative_path(relative_path: pathlib.Path | str) -> p
 
 
 def main_candidate_path(path: pathlib.Path) -> pathlib.Path | None:
-    """計画root内のファイルから、保存形式の名前の検証に使うメイン計画の候補パスを返す。
-
-    詳細と計画ファイル（バグ）は同じstemのメイン計画を、メイン計画と引き継ぎ記録は自身を候補とする。
-    他の種別は計画ファイルとして扱わず`None`を返す。
-    """
     kind = _bundle_kinds.kind_of_name(path.name)
     if kind in (_bundle_kinds.DETAIL, _bundle_kinds.BUGS):
         main_name = _bundle_kinds.main_name_of(path.name)
@@ -484,8 +456,7 @@ def reject_saved_plans_root_write(
     if relative is None:
         return
     checkout = pathlib.PurePosixPath(*relative.parts)
-    # 付属ファイルは計画バンドルの単位で取得するため、同じstemのメイン計画を案内する。
-    # CI対応レビュー指摘管理表（`ci-*.exec-review.tsv`）はそれ自体を取得の単位とする。
+
     kind = _bundle_kinds.kind_of_name(checkout.name)
     main_name = _bundle_kinds.main_name_of(checkout.name)
     if (
@@ -503,12 +474,10 @@ def reject_saved_plans_root_write(
 
 
 def is_plan_adjunct_reference(value: pathlib.Path | str) -> bool:
-    """計画本文の付属ファイル参照の固定接頭辞を持つ値かを返す。"""
     return os.fspath(value).startswith(PLAN_ADJUNCT_REFERENCE_PREFIX)
 
 
 def validate_adjunct_reference_name(name: str) -> str:
-    """付属ファイル参照の接頭辞に続くファイル名を検証して返す。"""
     if not name or "$(" in name or "\x00" in name:
         raise ActionableError("計画本文の参照値が空、またはシェル式を含んでいます", next_action=_ADJUNCT_REFERENCE_NEXT_ACTION)
     if "\\" in name:
@@ -585,11 +554,9 @@ def stored_plan_file_path(
     *,
     private_notes: pathlib.Path | str | None = None,
 ) -> pathlib.Path:
-    """保存済みplan_fileを読み取り用実体へ解決する別名。"""
     return resolve_plan_file(value, private_notes=private_notes)
 
 
-# 実装側で読みやすい公開別名。既存hookの関数名は維持する。
 plan_root = new_plans_root
 work_plan_root = working_plans_root
 portable_path = to_portable_plan_file

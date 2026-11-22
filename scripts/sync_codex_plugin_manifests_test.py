@@ -46,7 +46,6 @@ def test_main_without_arguments_synchronizes_outputs(monkeypatch: pytest.MonkeyP
 
 
 def test_main_rejects_unknown_arguments() -> None:
-    """未知の引数は終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as error:
         entry.main(["--unknown"])
     assert error.value.code == 2

@@ -1,5 +1,3 @@
-"""serveのcliに関するsynchronizationの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -22,7 +20,6 @@ async def test_state_ignores_pending_timer_cancelled_by_deadline(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """取り消し済みタイマーが発火しても、再設定後の保留通知を重複発行しない。"""
     current = state.ServeState(
         tmp_path,
         debounce_seconds=10.0,
@@ -51,11 +48,6 @@ async def test_serve_stops_promptly_while_sse_client_is_connected(
     monkeypatch: pytest.MonkeyPatch,
     path: str,
 ) -> None:
-    """SSEの購読接続を開いたまま停止要求を受けても、実際のhypercornが短時間で停止する。
-
-    hypercornは停止時に全接続の切断を待つため、停止要求を参照しないSSE応答があると
-    クライアントが切断するまで`_serve`が戻らない（systemdの停止タイムアウトでSIGKILLされる）。
-    """
     handlers: dict[int, tuple[typing.Callable[[str], None], str]] = {}
     loop = asyncio.get_running_loop()
 
@@ -63,7 +55,6 @@ async def test_serve_stops_promptly_while_sse_client_is_connected(
         del kwargs
         handlers[sig] = (callback, signal_name)
 
-    # 実プロセスのシグナル処理を変えず、受信時の処理だけを取り出す。
     monkeypatch.setattr(loop, "add_signal_handler", add_signal_handler)
     port = _unused_local_port()
     server = asyncio.create_task(serve._serve(tmp_path, config.ServeConfig("127.0.0.1", port)))

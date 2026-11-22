@@ -1,5 +1,3 @@
-"""更新の検知からidle・次query・終了回収までの所有順序を検証する。"""
-
 import asyncio
 import contextlib
 import json
@@ -26,7 +24,6 @@ from agent_toolkit._testing.agents_server_support import AssistantMessage, Manua
 async def test_plugin_reload_waits_for_idle_and_precedes_reply(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, versioned_input: bool
 ) -> None:
-    """busyで検知した更新はidleへ進めた後、同じ接続の次queryより先に反映する。"""
     changed = asyncio.Event()
     observed = asyncio.Event()
     reloaded = asyncio.Event()
@@ -72,7 +69,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
                 claude_agent_sdk.SystemMessage("session_state_changed", {"state": "running"}),
                 AssistantMessage("作業中"),
             ],
-            [AssistantMessage("継続"), ResultMessage("完了")],
+            [AssistantMessage("継続"), ResultMessage("状態: completed\n結果: 完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -85,7 +82,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
         changed.set()
         await asyncio.wait_for(observed.wait(), timeout=2)
         assert order == ["query"]
-        client.messages.put_nowait(ResultMessage("初回完了"))
+        client.messages.put_nowait(ResultMessage("状態: completed\n結果: 初回完了"))
         client.messages.put_nowait(claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}))
         await asyncio.wait_for(reloaded.wait(), timeout=2)
         response = await backend.send_message(session, "後続")
@@ -148,8 +145,11 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
 
     client = Client(
         [
-            [claude_agent_sdk.SystemMessage("init", {"session_id": "reload-failure"}), ResultMessage("初回完了")],
-            [AssistantMessage("同じ接続の成果"), ResultMessage("完了")],
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "reload-failure"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ],
+            [AssistantMessage("同じ接続の成果"), ResultMessage("状態: completed\n結果: 完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -173,7 +173,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
         assert (await backend.send_message(session, "後続"))["delivery"] == "reply_started"
         async with backend._condition:
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
-        assert session.status == "completed" and session.agent_message == "完了"
+        assert session.status == "completed" and session.agent_message == "状態: completed\n結果: 完了"
         assert session.session_id == "reload-failure" and len(client.queries) == 2
     assert client.disconnected and client.readers == 0
 
@@ -183,7 +183,6 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
 async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, monitor_failure: bool
 ) -> None:
-    """一覧選別と任意監視の縮退を実helperに通し、同接続の後続作業と終了を検証する。"""
     source = tmp_path / "cache/mine/agent-toolkit/1.0.0"
     (source / ".claude-plugin").mkdir(parents=True)
     (source / ".claude-plugin/plugin.json").write_text(
@@ -242,8 +241,11 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
 
     client = Client(
         [
-            [claude_agent_sdk.SystemMessage("init", {"session_id": "inventory-boundary"}), ResultMessage("初回完了")],
-            [AssistantMessage("同じ接続の成果"), ResultMessage("後続完了")],
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "inventory-boundary"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ],
+            [AssistantMessage("同じ接続の成果"), ResultMessage("状態: completed\n結果: 後続完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -258,7 +260,6 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         mirror = pathlib.Path(reloader.options["plugins"][0]["path"])
         assert mirror.is_dir() and reloader._roots <= {source.resolve()}
         if monitor_failure:
-            # 開始できなかった監視threadは停止の対象が無い。
             assert reloader._watch_keys is None and not stopped
         else:
             reloader.mark_changed()
@@ -266,7 +267,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         assert (await backend.send_message(session, "後続"))["delivery"] == "reply_started"
         async with backend._condition:
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
-        assert session.session_id == "inventory-boundary" and session.agent_message == "後続完了"
+        assert session.session_id == "inventory-boundary" and session.agent_message == "状態: completed\n結果: 後続完了"
         assert len(client.queries) == 2
     assert len(inventory_calls) == (1 if monitor_failure else 2)
     assert len(control_calls) == (0 if monitor_failure else 1)
@@ -305,7 +306,6 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     failure: str,
     disconnect_timeout: bool,
 ) -> None:
-    """停止未確認の監視・一覧処理は次queryを止め、所有タスクの回収へ渡す。"""
     source = tmp_path / "checkout/agent-toolkit"
     for name in ("agent-toolkit", "agent-basics"):
         root = source.parent / name
@@ -316,7 +316,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
     closed = asyncio.Event()
     disconnect_cancelled = asyncio.Event()
     stops: list[bool] = []
-    # 実回収は残存プロセスの引継ぎだけで検証し、監視・未確認・wait状態の伝播はdoubleで分ける。
+
     survivor = None
     if failure == "inventory-unreclaimed":
         owned = contextlib.ExitStack()
@@ -330,7 +330,7 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
 
         request.addfinalizer(reap_survivor)
     else:
-        # 純粋な所有状態の伝播にOS一覧走査を含めない。実回収はunreclaimedの2入力が担う。
+
         def empty_tree(root: object, *, known: object = (), **_kwargs: object) -> claude_plugins.process_tree.TreeStopResult:
             assert root is None and not known
             return claude_plugins.process_tree.TreeStopResult([], [], [])
@@ -373,12 +373,11 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
             def inventory(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[str]:
                 if failure == "inventory-unreclaimed" and reloaders:
                     assert survivor is not None
-                    # 時間上限後に子孫を回収できない結果だけが所有タスクの回収へ渡る。回収済みの時間上限は縮退する。
+
                     raise claude_plugins.process_tree.ReclaimError(
                         [f"{survivor.pid}: claude"], [psutil.Process(survivor.pid)], context="run_with_timeout"
                     )
                 if failure == "inventory-unresolved" and reloaders:
-                    # 既知の子孫が無くても、生成の停止を確認できない結果は所有タスクの再開抑止まで届く。
                     raise claude_plugins.process_tree.ReclaimError(
                         ["生成の停止を確認できない: scan failure"], [], context="run_with_timeout", unresolved=["scan failure"]
                     )
@@ -417,7 +416,14 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
                     disconnect_cancelled.set()
                     raise
 
-    client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
+    client = Client(
+        [
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ]
+        ]
+    )
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:

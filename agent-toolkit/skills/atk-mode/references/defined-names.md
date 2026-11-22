@@ -51,8 +51,7 @@ agent-toolkitの用語の索引である。
 | 投稿前レビュー担当 | 外部投稿の委譲先 | `agent-toolkit:atk-mode/roles/external-write-review.subagent.md` |
 | 調査担当 | 原因調査の委譲先 | `agent-toolkit:atk-mode/roles/defect-investigation.subagent.md` |
 | 読者別探索担当 | 読者適合の委譲先 | `agent-toolkit:atk-mode/roles/reader-fit-review.subagent.md` |
-| 再発防止セルフチェック | 具体的な再発防止観点を差分へ当てはめる工程 | `agent-toolkit:atk-mode/roles/recurrence-self-check.parent.md` |
-| 再発防止セルフチェック担当 | 再発防止観点の判定の委譲先 | `agent-toolkit:atk-mode/roles/recurrence-self-check.subagent.md`冒頭 |
+| 再発防止観点の確認 | 実行レビューで具体的な再発防止観点を差分へ当てはめる確認 | `agent-toolkit:atk-mode/playbooks/exec-review.md`「再発防止観点の確認」 |
 | 再発防止セルフチェック観点 | レビュー時に差分へ当てはめる項目 | `agent-toolkit:atk-mode/references/recurrence-self-check-items.md`冒頭 |
 | プロンプト評価担当 | refine-promptの委譲先 | `agent-toolkit:atk-mode/roles/refine-prompt.subagent.md`冒頭 |
 | ユーザー確認 | ユーザーへの行為 | `agent-toolkit:atk-mode/playbooks/main-reporting.md`「ユーザー向け発話ルール」 |

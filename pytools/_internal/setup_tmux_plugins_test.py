@@ -1,5 +1,3 @@
-"""pytools._internal.setup_tmux_plugins のテスト。"""
-
 import logging
 import subprocess
 from pathlib import Path
@@ -54,7 +52,6 @@ def branch_env_fixture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Path, list[list[str]]]:
-    """`pin_is_tag=False`（TPM相当）の単独プラグインで`run_subprocess`を記録する環境を構築する。"""
     plugins_dir = tmp_path / "plugins"
     plugin = _make_plugin(plugins_dir, pin_is_tag=False)
     calls = _install_env(monkeypatch, plugins_dir, plugin)
@@ -65,7 +62,6 @@ def test_skips_when_origin_mismatched(
     branch_env: tuple[Path, list[list[str]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """配置先既存かつ`origin`不一致時は更新・clone コマンドを発行しない（`remote get-url`の発行はする）。"""
     plugins_dir, calls = branch_env
     (plugins_dir / "tpm" / ".git").mkdir(parents=True)
 
@@ -87,7 +83,6 @@ def test_skips_when_origin_mismatched(
 
 
 def test_skips_when_git_dir_missing(branch_env: tuple[Path, list[list[str]]]) -> None:
-    """配置先既存かつ`.git`不存在時は`git`コマンドを発行しない。"""
     plugins_dir, calls = branch_env
     (plugins_dir / "tpm").mkdir(parents=True)
     assert setup_tmux_plugins.run().changed is False
@@ -98,7 +93,6 @@ def test_returns_false_when_subprocess_fails(
     branch_env: tuple[Path, list[list[str]]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`git`未インストール等で`run_subprocess`が`None`を返した場合は`False`を返す。"""
     _, calls = branch_env
 
     def fake_run(cmd: list[str], **_kwargs: object) -> None:
@@ -173,7 +167,6 @@ def test_effective_origin_uses_override_when_set(
 
 @pytest.mark.parametrize("pin_is_tag", [False, True])
 def test_clone_and_update_preserve_git_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pin_is_tag: bool) -> None:
-    """実Gitのbranch/tagを取得し、更新HEAD・originと変更済み原本の保存を検査する。"""
     remote = init_repository(tmp_path / "remote", initial_branch="master", files={"plugin": "old\n"}, commit_message="初期状態")
     first = git_output(remote, "rev-parse", "HEAD")
     run_git(remote, "tag", "v1")
@@ -220,7 +213,6 @@ def test_clone_and_update_preserve_git_results(tmp_path: Path, monkeypatch: pyte
 
 
 def test_branch_divergence_preserves_local_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ff-onlyで統合できない履歴はローカルcommitとファイルを保持する。"""
     remote = init_repository(tmp_path / "remote", initial_branch="master", files={"base": "base"}, commit_message="初期状態")
     dest = tmp_path / "plugin"
     plugin = setup_tmux_plugins._Plugin(dest, remote.as_uri(), "master", False)  # pylint: disable=protected-access

@@ -46,5 +46,4 @@ def test_variable_write_matches_literal(
     ],
 )
 def test_unresolved_assignment_is_not_a_known_path(prefix: str) -> None:
-    """未代入・動的な値・外へ作用しない代入を解決済みにしない。"""
     assert not operation_skills.written_paths("Bash", {"command": prefix + "cat > $T/app.py <<'EOF'\nx\nEOF\n"}, "")

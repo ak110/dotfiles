@@ -1,5 +1,3 @@
-"""登録済みplugin内Pythonスクリプトを現在のagent-toolkit環境で実行する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -14,6 +12,7 @@ PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
     "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
     "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
+    "improvement-intake": pathlib.Path("skills/atk-mode/scripts/improvement_intake.py"),
     "review-adoption": pathlib.Path("skills/atk-mode/scripts/review_adoption.py"),
     "delegation-prompt": pathlib.Path("skills/atk-mode/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/atk-mode/scripts/compare_history.py"),
@@ -38,7 +37,6 @@ SCRIPT_PATHS = {
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """run-scriptの引数を登録する。"""
     parser.add_argument(
         "script_name",
         choices=sorted(SCRIPT_PATHS),
@@ -54,7 +52,6 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def registered_script_path(script_name: str) -> pathlib.Path:
-    """登録名に対応するplugin内スクリプトの検証済み絶対パスを返す。"""
     try:
         relative = SCRIPT_PATHS[script_name]
     except KeyError as exc:
@@ -72,7 +69,6 @@ def registered_script_path(script_name: str) -> pathlib.Path:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """登録済みスクリプトへ引数と終了コードを透過する。"""
     target = registered_script_path(args.script_name)
     script_args = list(args.script_args)
     if script_args[:1] == ["--"]:

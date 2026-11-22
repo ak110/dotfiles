@@ -32,7 +32,6 @@ def _cache() -> Path:
 
 
 def _version(name: str, installed_days_ago: float) -> Path:
-    """`installed_days_ago`日前に導入したversionを作る。"""
     root = _cache() / name
     (root / ".codex-plugin").mkdir(parents=True, exist_ok=True)
     manifest = root / ".codex-plugin/plugin.json"
@@ -44,7 +43,6 @@ def _version(name: str, installed_days_ago: float) -> Path:
 
 
 def _run_without_update(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """導入済みの1.2.3を目標とし、`plugin add`を伴わない更新を実行する。"""
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([]))
     install_codex_plugins.run()
@@ -55,18 +53,17 @@ def _remaining() -> set[str]:
 
 
 def test_removes_versions_retired_past_grace_period(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """後継の導入から7日を過ぎた版を消し、導入中の版と期間内の版を残す。"""
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     _version("1.0.0", 30)
-    # 導入中の1.2.3は後継（1.1.0）の導入から20日が過ぎても残る。
+
     _version("1.2.3", 25)
     _version("1.1.0", 20)
-    # 中断した`atk-hook`の復旧が残す一時ディレクトリは版でなく、1.1.0の後継として数えない。
+
     leftover = _cache() / ".1.2.0-restore-abcd1234"
     leftover.mkdir()
     eight_days_ago = time.time() - 8 * _DAY
     os.utime(leftover, (eight_days_ago, eight_days_ago))
-    # 1.1.0は後継（1.2.0）の導入から5日で、期間内のため残る。
+
     _version("1.2.0", 5)
 
     _run_without_update(plugin_env, monkeypatch)
@@ -76,7 +73,6 @@ def test_removes_versions_retired_past_grace_period(plugin_env: Path, monkeypatc
 
 
 def test_keeps_installed_version_while_updating_to_target(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """目標と異なる導入中の版は、後継の導入から期間を過ぎていても更新の前に消さない。"""
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     _version("1.0.0", 40)
     _version("1.2.2", 30)
@@ -138,7 +134,6 @@ def test_keeps_versions_that_running_codex_may_use(
 
 
 def test_keeps_version_in_use_and_finishes_interrupted_removal(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """移動できない使用中の版は欠けさせずに残し、削除の途中で止まった版は次回の実行が片付ける。"""
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: ())
     locked = _version("1.0.0", 40)
     _version("1.1.0", 30)

@@ -1,5 +1,3 @@
-"""`atk serve`の画面の配信、共通の例外応答、計画ファイル画面とセッション画面のルートの登録。"""
-
 import asyncio
 import dataclasses
 import functools
@@ -48,11 +46,10 @@ def safe_base_path(raw: str) -> str:
 
 
 def register_error_handlers(app: quart.Quart) -> None:
-    """Web API共通の例外応答を登録する。"""
 
     @app.errorhandler(wi_web_input.WebInputError)
     async def input_error(error: wi_web_input.WebInputError) -> tuple[quart.Response, int]:
-        # `error`は理由の文字列のまま保ち、次の操作を別項目で返す。画面は両方を合わせて表示する。
+
         return quart.jsonify(error=str(error), next_action=error.next_action), 400
 
     @app.errorhandler(_wi_operations.WebApiInputError)
@@ -74,9 +71,7 @@ def register_error_handlers(app: quart.Quart) -> None:
 
     @app.errorhandler(_atk_git_sync.RebaseInProgressError)
     async def rebase_in_progress(error: _atk_git_sync.RebaseInProgressError) -> tuple[quart.Response, int]:
-        # 解消操作を要する状態のため`edit_conflict`と別のcodeで返す。同じcodeにすると画面が
-        # 「外部で更新されました」の回復文を付け、詳細の開き直しを促す誤った案内になる。
-        # `RuntimeError`の派生であり、Quartは例外の型の継承順で最も近いハンドラを選ぶ。
+
         message = f"WIの保存リポジトリが{error}。次の操作: {error.next_action}"
         return quart.jsonify(error=message, code="rebase_in_progress"), 409
 
@@ -88,7 +83,7 @@ def register_error_handlers(app: quart.Quart) -> None:
 
     @app.errorhandler(_wi_operations.SyncIncompleteError)
     async def sync_incomplete(error: _wi_operations.SyncIncompleteError) -> tuple[quart.Response, int]:
-        # ローカルの保存は済んでいるため、画面は詳細の再取得を求める状態へ切り替える。
+
         return quart.jsonify(error=str(error), code="sync_incomplete"), 500
 
     @app.errorhandler(subprocess.CalledProcessError)
@@ -120,7 +115,6 @@ def render_index(
     base_path: str,
     initial_screen: str,
 ) -> str:
-    """3画面を含むHTMLへ初期表示とbootstrap値を埋め込む。"""
     local_root_info = plans_context.state.root_info[plans_context.hostname]
     if len(local_root_info) == 1 and "" in local_root_info:
         root_dirs: dict[str, typing.Any] = {plans_context.hostname: plans_context.state.host_info[plans_context.hostname]}
@@ -155,7 +149,6 @@ def render_index(
 
 
 def register_awi_asset_routes(app: quart.Quart, plans_context: serve_plans.PlansContext) -> None:
-    """WI画面のHTMLと静的資産のルートを登録する。"""
 
     @app.get("/")
     async def index() -> quart.Response:
@@ -170,7 +163,6 @@ def register_awi_asset_routes(app: quart.Quart, plans_context: serve_plans.Plans
 
 
 def register_shell_routes(app: quart.Quart) -> None:
-    """3画面が共有するナビゲーション資産とPWAメタデータのルートを登録する。"""
 
     @app.get("/static/<name>.js")
     async def javascript(name: str) -> quart.Response:
@@ -229,7 +221,6 @@ def register_shell_routes(app: quart.Quart) -> None:
 
 
 def no_store(body: str, content_type: str, *, status: int = 200) -> quart.Response:
-    """計画ファイル・セッションの応答を常に再取得させるヘッダーで返す。"""
     return quart.Response(body, status=status, content_type=content_type, headers={"Cache-Control": "no-store"})
 
 
@@ -251,12 +242,10 @@ def _with_assistant_html(detail: dict[str, typing.Any]) -> dict[str, typing.Any]
 
 
 def json_no_store(payload: typing.Any) -> quart.Response:
-    """JSON応答を常に再取得させるヘッダーで返す。"""
     return no_store(json.dumps(payload, ensure_ascii=False), "application/json; charset=utf-8")
 
 
 def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) -> None:
-    """計画ファイル画面のページ・資産・APIのルートを登録する。"""
 
     @app.get("/plans")
     async def plans_index() -> quart.Response:
@@ -311,7 +300,7 @@ def register_plan_routes(app: quart.Quart, context: serve_plans.PlansContext) ->
 
     @app.get("/api/plans/raw")
     async def plans_raw() -> quart.Response:
-        # クライアントのコピーボタン用に原文を返す。`/api/plans/file`はHTMLを返すため別のAPIとする。
+
         host, source_id, rel = await _plan_request_target(context)
         try:
             text = await serve_plans.resolve_text(context, host, source_id, rel)
@@ -332,15 +321,7 @@ def _subscription_stream(
     subscribe: typing.Callable[[], typing.Awaitable[asyncio.Queue[str]]],
     unsubscribe: typing.Callable[[asyncio.Queue[str]], typing.Awaitable[None]],
 ) -> quart.Response:
-    """購読キューの通知をSSEで配信し、通知の無い間は名前付きのheartbeatを送る応答を返す。
 
-    通知はクライアントの`onmessage`が受け取るよう、event名を付けずdataのみで配信する。
-    heartbeatは`event: heartbeat`とし、`onmessage`へ届かないため再取得を起こさない。
-    購読の登録直後に`event: subscribed`を1回送る。`EventSource`の`open`は応答ヘッダーの受信時点で登録より先に
-    届き得るため、画面はこの合図の後に初期取得して、最初の接続での一覧の取り直しを省ける。
-    `pytilpack.sse.generator`のコメント行のkeep-aliveは、内側の生成処理が間隔内にheartbeatを送るため発生しない。
-    """
-    # 停止要求は生成処理の外で取得する。生成処理はリクエストの文脈の外で実行されるため`current_app`を参照できない。
     current_state: serve_state.ServeState = quart.current_app.config["SERVE_STATE"]
     shutdown = current_state.shutdown_requested
 
@@ -368,11 +349,6 @@ def _subscription_stream(
 
 
 async def _plan_request_target(context: serve_plans.PlansContext) -> tuple[str, str, str]:
-    """`/api/plans/file`・`/api/plans/raw`共通でhost・source・pathを取り出して検証する。
-
-    `host`未指定時はローカルホストを採用する。許可リスト外のhostは入力エラーとして拒否する
-    （サーバーが外部へ公開された場合に、クライアントが任意のSSH先へ接続試行を誘発できないようにするため）。
-    """
     rel = quart.request.args.get("path")
     if not rel:
         raise _wi_operations.WebApiInputError("pathを指定してください")
@@ -393,7 +369,6 @@ def register_session_routes(
     context: serve_sessions.SessionsContext,
     plans_context: serve_plans.PlansContext,
 ) -> None:
-    """セッション画面のページ・資産・APIのルートを登録する。"""
 
     @app.get("/sessions")
     async def sessions_index() -> quart.Response:
@@ -407,8 +382,22 @@ def register_session_routes(
         roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
         return json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
+    @app.post("/api/sessions/search")
+    async def sessions_search() -> quart.Response:
+        payload = await quart.request.get_json(silent=True)
+        raw = payload.get("query") if isinstance(payload, dict) and set(payload) == {"query"} else None
+        query = raw.strip().casefold() if isinstance(raw, str) else ""
+        if not 0 < len(query) <= 1024:
+            raise _wi_operations.WebApiInputError("検索語はqueryに1〜1024文字で指定してください")
+        matches, incomplete = await serve_sessions.search_sessions(context, query)
+        return json_no_store(
+            {
+                "matches": [[entry.host, entry.engine, entry.path] for entry in matches],
+                "incomplete": incomplete,
+            }
+        )
+
     def session_target() -> tuple[str, str, str]:
-        """詳細と推定費用の要求から、対象の記録を示すhost・engine・pathを取り出す。"""
         unknown = set(quart.request.args) - {"host", "engine", "path"}
         if unknown:
             raise _wi_operations.WebApiInputError(

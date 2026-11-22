@@ -1,9 +1,3 @@
-"""`atk wi add --batch`の一括取り込み（`batch`）のテスト。
-
-解析（境界検出・構造見出し除去・不正形式の全件拒否）、取り込み（原文保持・ファイル名維持と再採番・
-`depends_on`読み替え・警告・commit）、`show --all`実出力とのラウンドトリップを検証する。
-"""
-
 # pylint: disable=protected-access
 
 import argparse
@@ -29,7 +23,6 @@ _EXISTING_TEXT = "---\nstate: adopted\ntarget_repo: github.com/example/foo\ntype
 
 
 def _setup_notes(tmp_path: pathlib.Path, name: str = "private-notes") -> pathlib.Path:
-    """年月固定配置の管理repoの一時ディレクトリを作成する。"""
     notes = tmp_path / name
     (notes / "2024" / "01").mkdir(parents=True)
     return notes
@@ -60,12 +53,10 @@ def _assume_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _entry_text(name: str, *, target_repo: str = "github.com/example/foo", body: str = "本文") -> str:
-    """`show`形式の1エントリ分（見出し＋全文＋区切り空行）を組み立てる。"""
     return f"### {name} [inbox]\n---\ntarget_repo: {target_repo}\ntype: awi\nstate: inbox\n---\n\n{body}\n\n"
 
 
 def _batch_args(tmp_path: pathlib.Path, text: str) -> argparse.Namespace:
-    """一括投入コマンドへ渡す最小引数を返す。"""
     body_path = tmp_path / "batch.md"
     body_path.write_text(text, encoding="utf-8")
     return argparse.Namespace(body_file=[str(body_path)])
@@ -78,7 +69,6 @@ def test_batch_cli_omits_queue_overview_in_both_environments(
     capsys: pytest.CaptureFixture[str],
     agent_environment: bool,
 ) -> None:
-    """一括投入も両環境で結果を先に示し、無関係なキュー件数を付けない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     existing = notes / "2024" / "01" / "existing.md"
@@ -103,7 +93,6 @@ def test_add_batch_rejects_reserved_user_comment_heading_in_agent_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境の一括投入は予約見出しを含む全入力を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -123,7 +112,6 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """エージェント環境でなければ一括投入で予約見出しを保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
@@ -136,7 +124,6 @@ def test_add_batch_accepts_reserved_user_comment_heading_outside_agent_environme
 
 
 def test_parse_collects_entries_and_ignores_structural_headings() -> None:
-    """種別・リポジトリ見出しと状態ラベルを無視し、エントリ全文だけを取り出す。"""
     text = "# awi\n## target_repo: github.com/example/foo\n" + _entry_text("a.md") + _entry_text("b.md", body="本文2")
 
     entries = batch.parse_show_batch(text)
@@ -147,7 +134,6 @@ def test_parse_collects_entries_and_ignores_structural_headings() -> None:
 
 
 def test_parse_ignores_answered_label_of_uwi() -> None:
-    """UWIの`[状態/回答状況]`ラベル付き見出しも境界として扱う。"""
     text = (
         "# uwi\n## target_repo: github.com/example/foo\n"
         "### q.md [inbox/unanswered]\n"
@@ -187,7 +173,7 @@ def test_batch_cli_bom_matches_plain_import(
     second = _entry_text("plan.md", body=body).replace("type: awi", f"type: {kind}\ndepends_on:\n- dep.md")
     plain = "# awi\n" + first + second
     changed = plain.replace("\n---\n", "\n\ufeff---\n") if body_bom else plain
-    # 閉じる区切りは構造の先頭ではない。
+
     changed = changed.replace(f"type: {kind}\n\ufeff---", f"type: {kind}\n---")
     changed = changed.replace("- dep.md\n\ufeff---", "- dep.md\n---")
     changed = changed.replace("state: inbox\n\ufeff---", "state: inbox\n---")
@@ -219,7 +205,6 @@ def test_batch_cli_bom_matches_plain_import(
     ],
 )
 def test_parse_rejects_non_show_format(text: str) -> None:
-    """show形式として解析できない入力を全件拒否し、期待する形式の最小例を次の操作として返す。"""
     with pytest.raises(WebInputError) as error_info:
         batch.parse_show_batch(text)
 
@@ -237,7 +222,6 @@ def test_parse_rejects_non_show_format(text: str) -> None:
     ],
 )
 def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
-    """typeとtarget_repoの必須・型・非空を解析時に検証する。"""
     text = f"### a.md [inbox]\n---\n{frontmatter}---\n\n本文\n\n"
 
     with pytest.raises(WebInputError):
@@ -245,7 +229,6 @@ def test_parse_rejects_invalid_frontmatter(frontmatter: str) -> None:
 
 
 def test_parse_rejects_effectively_empty_awi_body() -> None:
-    """実質空のAWI本文を拒否し、本文の記入を次の操作として返す。"""
     with pytest.raises(WebInputError) as error_info:
         batch.parse_show_batch(_entry_text("a.md", body="-"))
 
@@ -256,7 +239,6 @@ def test_import_keeps_original_names_and_raw_text(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """衝突しない元名を維持し、frontmatterと本文を字面ごと保存する。"""
     notes = _setup_notes(tmp_path)
     messages = _patch_repo_operations(monkeypatch)
     raw = (
@@ -307,7 +289,6 @@ def test_import_renumbers_only_colliding_names(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """年月配置の既存項目と同名のエントリだけを再採番し、他は元名を維持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -324,7 +305,6 @@ def test_import_avoids_renumbering_onto_kept_original_name(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """再採番候補がバッチ内で維持する元名と一致する場合は次の連番を割り当てる。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     kept = f"{_FIXED_TIMESTAMP}-001.md"
@@ -343,7 +323,6 @@ def test_import_skips_entry_matching_existing_name_and_body(
     tmp_path: pathlib.Path,
     includes_state: bool,
 ) -> None:
-    """新旧のshow出力で同じ項目を再投入すると、名前と本文の一致から追加保存を省く。"""
     notes = _setup_notes(tmp_path)
     commits = _patch_repo_operations(monkeypatch)
     text = _entry_text("same.md")
@@ -364,7 +343,6 @@ def test_import_renumbers_entry_matching_existing_name_with_different_body(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """ファイル名だけが既存項目と一致するエントリは取り込みを省かず再採番する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     batch.add_batch_entries(notes, texts=[_entry_text("same.md")], now=_FIXED_DT)
@@ -383,7 +361,6 @@ def test_import_keeps_names_differing_only_by_case_on_case_sensitive_filesystem(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """大文字小文字を区別するファイルシステムでは、大小差だけの名前を衝突と判定せず元名を維持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "Clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -402,7 +379,6 @@ def test_import_renumbers_name_colliding_only_by_case(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """大文字小文字だけが異なる既存ファイルとの衝突も再採番し、既存ファイルを上書きしない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
@@ -419,7 +395,6 @@ def test_import_rejects_original_names_duplicated_only_by_case(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """大文字小文字だけが異なる元名の組も、書き込みが互いを上書きし得るため全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
@@ -434,7 +409,6 @@ def test_import_rejects_duplicated_original_names_across_texts(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """複数textsの連結後に元名が重複する入力を全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
 
@@ -450,7 +424,6 @@ def test_import_rejects_invalid_original_name(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """基準ディレクトリ外を指す元ファイル名を拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
 
@@ -462,7 +435,6 @@ def test_import_rewrites_only_renamed_depends_on_element_lines(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """再採番された参照の要素行だけを差し替え、他の行の字面を保持する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -496,7 +468,6 @@ def test_import_keeps_trailing_comment_of_rewritten_depends_on_element(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """読み替えた要素行の値だけを差し替え、行末のコメントを字面ごと残す。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -545,7 +516,6 @@ def test_import_rejects_quoted_depends_on_element_needing_rewrite(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """値とコメントの境界を一意に特定できない引用符付き要素行の読み替えは全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -563,7 +533,6 @@ def test_import_rejects_non_canonical_depends_on_needing_rewrite(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """flow形式の`depends_on`を読み替える必要がある場合は全件拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "dep.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -585,7 +554,6 @@ def test_import_warns_for_missing_external_dependency(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """取り込み先に実在しないバッチ外の依存先を警告する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     dependent = (
@@ -601,7 +569,6 @@ def test_import_warns_for_missing_scalar_dependency(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """スカラー形式の`depends_on`でも取り込み先に実在しない依存先を警告する。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     dependent = (
@@ -617,7 +584,6 @@ def test_import_does_not_warn_for_dependency_differing_only_by_case(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """大文字小文字を区別しないファイルシステムでは、大小差だけの既存参照を不在と誤判定しない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     _assume_case_insensitive(monkeypatch)
@@ -636,7 +602,6 @@ def test_import_does_not_warn_for_dependency_on_renumbered_name(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """再採番で確定した保存名を直接参照する依存先を警告しない。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     (notes / "2024" / "01" / "clash.md").write_text(_EXISTING_TEXT, encoding="utf-8")
@@ -662,7 +627,6 @@ def test_import_keeps_unresolvable_legacy_target_repo(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """リポジトリ識別子として解決できない旧ローカルパス形式の保存値も原値で取り込む。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     text = _entry_text("legacy.md", target_repo="/home/other/absent-repo")
@@ -681,7 +645,6 @@ def test_import_keeps_plan_file_verbatim(
     monkeypatch: pytest.MonkeyPatch,
     plan_file: str,
 ) -> None:
-    """保存済み項目の`plan_file`は、指す計画ファイルの有無によらず原文のまま取り込む。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     text = (
@@ -699,7 +662,6 @@ def test_import_skips_entry_matching_existing_after_plan_file_normalization(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`plan_file`を持つ項目の同じ出力を再投入しても、取り込みを省く。"""
     notes = _setup_notes(tmp_path)
     _patch_repo_operations(monkeypatch)
     plan = notes / "plans/2026/08/30-計画保存先移行-d4f9.md"
@@ -719,7 +681,6 @@ def test_import_skips_entry_matching_existing_after_plan_file_normalization(
 
 
 def _show_all_output(notes: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> str:
-    """`atk wi show --all`と同じ出力を取得する。"""
     args = argparse.Namespace(
         filenames=[],
         all=True,
@@ -741,7 +702,6 @@ def test_show_all_output_round_trips_into_another_repository(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`add`→`show --all`→一括取り込みで、保存ファイルが元と全文一致する。"""
     source_notes = _setup_notes(tmp_path, "source-notes")
     target_notes = _setup_notes(tmp_path, "target-notes")
     _patch_repo_operations(monkeypatch)

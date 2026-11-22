@@ -35,7 +35,6 @@ def test_readlink_failure_does_not_scan_or_replace(monkeypatch, tmp_path: Path, 
 
 
 def test_stored_destination_is_kept_without_target_access(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """格納先が一致するリンクは、別名経由の走査が拒否されても保持する。"""
     dest = tmp_path / "alias"
     target = tmp_path / "target"
     dest.symlink_to("target", target_is_directory=True)
@@ -70,7 +69,6 @@ def test_creates_symlink_when_missing(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """配布先未作成時はシンボリックリンクが新規作成され`True`返却。"""
     dotfiles_root, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
@@ -87,7 +85,6 @@ def test_no_op_when_link_already_correct(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """既存リンクが期待ターゲットと一致するなら何もせず`False`返却。"""
     dotfiles_root, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
@@ -104,7 +101,6 @@ def test_recreates_link_when_target_mismatched(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """既存リンクが別ターゲットを指す場合は再生成し`True`返却。"""
     dotfiles_root, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
@@ -135,7 +131,6 @@ def test_sync_directory_link_uses_relative_target(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("entry_kind", ["file", "directory"])
 def test_sync_directory_link_rejects_regular_entry(tmp_path: Path, entry_kind: str) -> None:
-    """通常ファイルと通常ディレクトリは置換しない。"""
     target = tmp_path / "target"
     target.mkdir()
     dest = tmp_path / "dest"
@@ -154,7 +149,6 @@ def test_recreates_link_when_dangling(
     env: tuple[Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """既存リンクがリンク切れ（ターゲット不在）なら再生成し`True`返却。"""
     dotfiles_root, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
     src = dotfiles_root / "agent-toolkit" / "skills" / "foo"
@@ -195,7 +189,6 @@ def test_skips_when_src_missing(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """配布元が未存在なら警告ログ・該当件スキップ。"""
     _, codex_home = env
     _set_single_link(monkeypatch, "skills/foo", f"{_TOOLKIT_PREFIX}/skills/foo")
 
@@ -255,7 +248,6 @@ def test_returns_false_when_dotfiles_root_unresolved(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`find_dotfiles_root()`が`None`を返すなら何もせず`False`返却。"""
     monkeypatch.setattr(common, "find_dotfiles_root", lambda: None)
     monkeypatch.setattr(setup_codex_links, "CODEX_HOME", tmp_path / ".codex")
 
@@ -311,7 +303,7 @@ def test_windows_creates_junction(
 
     def fake_create_junction(source: str, destination: str) -> None:
         calls.append((source, destination))
-        # CreateJunctionは実体作成だがテストでは空ディレクトリで代替する。
+
         Path(destination).mkdir(parents=True, exist_ok=True)
 
     fake_winapi.CreateJunction = fake_create_junction  # type: ignore[attr-defined]  # ty: ignore[missing-attribute]

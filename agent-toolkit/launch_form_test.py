@@ -1,10 +1,9 @@
-"""agent-toolkitのuvプロジェクト指定が作業ディレクトリを保持することを検証する。"""
-
 # bootstrapの所有境界へ故障を注入し、解放状態も直接検証する。
 # pylint: disable=protected-access
 
 import contextlib
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -21,6 +20,7 @@ from typing import Any
 
 import psutil
 import pytest
+from agent_toolkit._agents_server import logging_config
 from agent_toolkit._common import plugin_environment, process_tree, windows_job
 from agent_toolkit._testing import late_descendant
 
@@ -41,7 +41,6 @@ def _prepared(environment: dict[str, str]) -> None:
 
 @pytest.fixture(name="launcher")
 def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    """公開bootstrapの実装を、sys.pathの変更も試験内へ分離して読み込む。"""
     monkeypatch.setattr(sys, "path", sys.path.copy())
     spec = importlib.util.spec_from_file_location("tested_launch", _PROJECT_ROOT / "scripts" / "launch.py")
     assert spec is not None and spec.loader is not None
@@ -52,7 +51,6 @@ def _launcher(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
 
 # test-copy-contract: 公開launcherの--helpを実起動し、準備前にサーバー診断依存をimportしない境界を観測する。
 def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[], dict[str, str]]) -> None:
-    """依存導入前の公開launcherは、通常のhelpでサーバー専用の診断依存を読み込まない。"""
     result = subprocess.run(
         [sys.executable, "-X", "importtime", str(_PROJECT_ROOT / "scripts" / "launch.py"), "--help"],
         env=host_environ(),
@@ -67,7 +65,6 @@ def test_launcher_help_does_not_import_server_logging(host_environ: Callable[[],
 
 
 def _plugin_root(root: pathlib.Path) -> pathlib.Path:
-    """依存の宣言と固定内容だけを持つ配布rootを作る。"""
     script = root / plugin_environment.DEPENDENCY_SCRIPT
     script.parent.mkdir(parents=True)
     script.write_text('# /// script\n# requires-python = ">=3.15"\n# dependencies = []\n# ///\n', encoding="utf-8")
@@ -78,7 +75,6 @@ def _plugin_root(root: pathlib.Path) -> pathlib.Path:
 def test_launcher_uses_same_environment_in_directory_with_virtualenv(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """公開のuv起動形は、コピー式の仮想環境があるcwdでも同じ共有環境を使う。"""
     root = _plugin_root(tmp_path / "plugin")
     (root / "probe.py").write_text("import sys; print(sys.prefix)\n", encoding="utf-8")
     environment = host_environ()
@@ -212,7 +208,6 @@ def test_agents_server_launcher_reclaims_resources_on_failure(
 def test_launcher_stops_stubborn_group_with_bounded_wait(
     orphaned: bool, launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """有限wait後の強制終了と、親終了後にstderrを保持する同じgroupの子孫回収を確かめる。"""
     marker = tmp_path / "ready"
     source = (
         "import os,pathlib,signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
@@ -225,10 +220,10 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
     acquired: list[subprocess.Popen] = []
     children: list[psutil.Process] = []
     with contextlib.ExitStack() as rescue:
-        with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
+        with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], None) as process:
             acquired.append(process)
             deadline = time.monotonic() + 5
-            # `write_text`はファイルの作成と書込が分かれるため、作成直後の空の印を読まないよう内容まで待つ。
+
             while not (marker.exists() and marker.read_text(encoding="utf-8")):
                 assert time.monotonic() < deadline, "子のsignal設定が完了しませんでした"
                 time.sleep(0.01)
@@ -256,7 +251,6 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
 def test_launcher_signal_reaches_bounded_reclaim(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], diagnostics: bool
 ) -> None:
-    """bootstrap子がsignalを無視しても、診断あり・なしの両起動形式で有限回収する。"""
     script = tmp_path / "launcher_probe.py"
     ready = tmp_path / "ready.json"
     script.write_text(
@@ -297,7 +291,6 @@ def test_launcher_signal_reaches_bounded_reclaim(
 def test_launcher_keeps_exit_diagnostics_when_stopped_while_writing(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """終了診断の書込中に届いた停止シグナルで診断を失わず、受けたシグナルと子の終了状態を残す。"""
     script = tmp_path / "launcher_probe.py"
     diagnostics = tmp_path / "instance.jsonl"
     script.write_text(
@@ -363,7 +356,6 @@ def test_windows_launcher_observes_parent_handle(
 def test_public_launcher_preserves_argument_error_exit_status(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実CLIのargparse終了2をlauncherの終了状態まで伝播する。"""
     env = host_environ()
     env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(tmp_path / "runtime")
     _prepared(env)
@@ -521,7 +513,6 @@ def test_prepare_syncs_dependencies_only_and_publishes_after_success(
 def test_prepare_timeout_reclaims_its_descendants(
     launcher: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, request: pytest.FixtureRequest
 ) -> None:
-    """prepareの上限超過で、準備環境を公開せず所有する子孫も終了させる。"""
     root = _plugin_root(tmp_path / "plugin")
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path / "runtime")}
     ready = tmp_path / "ready"
@@ -598,6 +589,8 @@ def test_launcher_windows_job_ownership(launcher: ModuleType, monkeypatch: pytes
     class Process:
         _handle = 123
         pid = 456
+        stdin = None
+        stdout = None
         stderr = SimpleNamespace(close=lambda: events.append("close-pipe"))
 
         def poll(self):
@@ -633,9 +626,20 @@ def test_launcher_windows_job_ownership(launcher: ModuleType, monkeypatch: pytes
         assert "kill" in events
 
 
+def test_signal_handler_uses_clock_bound_before_delivery(launcher: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    received: list[dict[str, str]] = []
+    process: Any = object()
+    handler = launcher._forwarding_handler(process, received)
+    monkeypatch.setattr(launcher, "datetime", None)
+    handler(signal.SIGTERM, None)
+    handler(signal.SIGTERM, None)
+    assert [event["signal"] for event in received] == ["SIGTERM", "SIGTERM"]
+    assert all(event["at"].endswith("+00:00") for event in received)
+
+
+@pytest.mark.windows
 @pytest.mark.skipif(os.name != "nt", reason="実Windows Jobの継承とbreakawayが必要")
 def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleType, tmp_path: pathlib.Path) -> None:
-    """起点終了後のstderr保持子を回収し、無関係・明示離脱の寿命を保つ。"""
     marker = tmp_path / "children.json"
     child_source = "import time; time.sleep(60)"
     source = (
@@ -654,8 +658,7 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
                 detached = psutil.Process(detached_pid)
                 child = psutil.Process(child_pid)
                 assert child.is_running()
-            # JobのActiveProcessesは終了の開始で0になり、プロセスobjectが終了の通知状態になるのは直後（実測1ms以内）である。
-            # PIDの列挙はhandleが残る間も成功するため、終了signalを有限時間で待って確かめる。
+
             child.wait(timeout=5)
             assert detached.is_running()
             assert unrelated.poll() is None
@@ -665,3 +668,49 @@ def test_launcher_job_reclaims_orphan_and_preserves_breakaway(launcher: ModuleTy
             if detached is not None:
                 detached.kill()
                 detached.wait(timeout=5)
+
+
+def _launcher_stderr_tail(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, independent: bool, data: bytes
+) -> str:
+    generation = "G1"
+    (tmp_path / f"{generation}.stderr.log").write_bytes(data)
+    events = tmp_path / "events.jsonl"
+
+    @contextlib.contextmanager
+    def lifetime(_arguments, _environment, _received, buffer, **_kwargs):
+        if not independent:
+            with monkeypatch.context() as patch:
+                patch.setattr(sys, "stderr", io.TextIOWrapper(io.BytesIO(), encoding="utf-8"))
+                launcher._tee_stderr(io.BytesIO(data), buffer)
+        yield object()
+
+    monkeypatch.setattr(launcher, "_server_lifetime", lifetime)
+    monkeypatch.setattr(launcher, "_wait_owned_server", lambda *_args: 1)
+    monkeypatch.setattr(launcher, "_wait_server", lambda *_args: 1)
+    monkeypatch.setattr(logging_config, "read_launch_record", lambda _path: events)
+
+    assert launcher._run_agents_server([str(tmp_path), generation], {}, independent=independent) == 1
+    return json.loads(events.read_text(encoding="utf-8"))["stderr_tail"]
+
+
+@pytest.mark.parametrize("independent", [True, False])
+def test_launcher_termination_diagnostic_redacts_stderr_tail(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, independent: bool
+) -> None:
+    token = "A" * 48
+    tail = "z" * 16350
+    data = f"https://{token}@example.org\n{tail}".encode()
+    saved = _launcher_stderr_tail(launcher, tmp_path, monkeypatch, independent=independent, data=data)
+    assert saved == f"https://[REDACTED]@example.org\n{tail}"
+
+
+@pytest.mark.parametrize("independent", [True, False])
+def test_launcher_termination_diagnostic_hides_key_started_before_window(
+    launcher: ModuleType, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, independent: bool
+) -> None:
+    secret = "synthetic-key-body-0123456789"
+    key_type = "PRIVATE" + " KEY"
+    data = f"-----BEGIN RSA {key_type}-----\n".encode() + f"{secret}\n".encode() * 3000
+    saved = _launcher_stderr_tail(launcher, tmp_path, monkeypatch, independent=independent, data=data)
+    assert secret not in saved

@@ -1,5 +1,3 @@
-"""通常TUIの寿命内で、daemon再起動後の公開RPC接続と同じ仕事を復旧する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -14,13 +12,13 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Self
 
+from agent_toolkit._common import startup_features
+
 from pytools._internal.codex_recovery import ConversationRecovery, RunningTurn
 from pytools._internal.codex_transport import RpcChannel, accept_tui, native_proxy
 
 
 class RecoveryPhase(enum.Enum):
-    """会話のturn状態と独立した、接続復旧の進行段階。"""
-
     RELAYING = enum.auto()
     DAEMON_CHANGED = enum.auto()
     RECONNECTING = enum.auto()
@@ -38,11 +36,12 @@ async def _send_to_tui(front: RpcChannel, message: dict[str, Any]) -> None:
 
 
 class RecoveryBridge:
-    """標準入出力を変更せず、起動したTUIだけのIPC接続を所有する。"""
-
-    def __init__(self, binary: str, environment: Mapping[str, str], home: pathlib.Path, *, timeout: float = 60.0) -> None:
+    def __init__(
+        self, binary: str, environment: Mapping[str, str], home: pathlib.Path, *, timeout: float = 60.0, full: bool = True
+    ) -> None:
         self.binary, self.environment, self.home = binary, dict(environment), home
         self.timeout = timeout
+        self.full = full
         self.state = ConversationRecovery()
         self.phase = RecoveryPhase.RELAYING
         self.token = secrets.token_hex(32)
@@ -62,7 +61,6 @@ class RecoveryBridge:
         self._bootstrap_thread: str | None = None
 
     def prepare_tui_resume(self) -> None:
-        """daemonの交代で終了した所有TUIを、同じ会話へ起動し直す準備をする。"""
         self._resuming_tui = copy.deepcopy(self.state)
         self.state = ConversationRecovery()
         self._server_requests.clear()
@@ -72,7 +70,6 @@ class RecoveryBridge:
         return self._generation()
 
     async def wait_tui_closed(self) -> None:
-        """終了したTUIの接続とcallbackを回収してから、次の起動へ所有を渡す。"""
         async with asyncio.timeout(self.timeout):
             await asyncio.gather(*tuple(self._authenticated), return_exceptions=True)
         assert self.failure is not None
@@ -149,6 +146,10 @@ class RecoveryBridge:
             self._connections.discard(task)
 
     def _from_client(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        if not self.full and message.get("method") in {"thread/start", "thread/resume", "thread/fork"}:
+            params = message.get("params")
+            if isinstance(params, dict):
+                message = {**message, "params": startup_features.codex_thread_config(params)}
         if message.get("method") == "turn/start":
             self._user_turn_revision += 1
         self.state.observe_client(message)
@@ -156,7 +157,6 @@ class RecoveryBridge:
         if "method" not in message and isinstance(identifier, str) and identifier.startswith("dotfiles-server-"):
             request = self._server_requests.pop(identifier, None)
             if request is None:
-                # 旧daemonの承認応答を、新しいdaemonの同じ数値IDへ誤適用しない。
                 return None
             return dict(message, id=request[0])
         return message
@@ -196,7 +196,7 @@ class RecoveryBridge:
         await _send_to_tui(front, message)
 
     async def _invalidate_server_requests(self, front: RpcChannel) -> None:
-        # 同じ公開通知で古い承認表示を終了させる。承認したという応答は生成しない。
+
         for identifier, (_native, thread) in tuple(self._server_requests.items()):
             if thread is not None:
                 await _send_to_tui(
@@ -285,7 +285,6 @@ class RecoveryBridge:
                     message = self._from_client(received)
                     if message is not None:
                         if response:
-                            # 復旧用RPCが対話要求を待つ間も応答を送る。旧daemonの要求は交代前に無効化する。
                             with contextlib.suppress(ConnectionError):
                                 await back.send(message)
                         else:
@@ -343,7 +342,6 @@ class RecoveryBridge:
                                 self._bootstrap_thread = None
                                 self.phase = RecoveryPhase.RELAYING
                             elif self._bootstrap_thread is not None:
-                                # 通常resumeも最初のモデル要求に依存せず、保存済みの子孫へ接続する。
                                 async with asyncio.timeout(self.timeout):
                                     await self._restore_delegations(front, back)
                                 self._bootstrap_thread = None

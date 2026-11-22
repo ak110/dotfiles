@@ -95,7 +95,6 @@ def test_existing_working_plans_notify_once_then_approve(tmp_path: pathlib.Path)
 
 
 def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch):
-    """同じ計画の反復を抑え、新しい対象と解消後の再発へ通知する。"""
     plans = tmp_path / "plans"
     plans.mkdir()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
@@ -134,7 +133,6 @@ def test_plan_notice_tracks_target_changes_and_resolution(tmp_path, monkeypatch)
 
 
 def test_nested_working_plans_are_reported(tmp_path: pathlib.Path) -> None:
-    """日付階層へ置かれた計画も通知の対象とする。"""
     home = tmp_path / "home"
     nested = home / ".claude" / "plans" / "2026" / "09"
     nested.mkdir(parents=True)
@@ -195,7 +193,6 @@ def test_suppression_conditions_approve(
 
 
 def test_nested_process_loop_session_is_not_suppressed(tmp_path: pathlib.Path) -> None:
-    """親会話の環境印を継承した別会話にも計画保存を通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -215,7 +212,6 @@ def test_nested_process_loop_session_is_not_suppressed(tmp_path: pathlib.Path) -
 
 
 def test_stop_hook_active_still_notifies(tmp_path: pathlib.Path) -> None:
-    """`stop_hook_active`が真でも未通知の所有計画があれば通知する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -273,7 +269,6 @@ def test_notified_plans_are_limited_to_the_current_session(
     owner_records: dict[str, str],
     expected_notified: tuple[str, ...],
 ) -> None:
-    """計画の所有記録が自セッションを示す計画だけを通知し、他は承認する。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)
@@ -323,7 +318,6 @@ def test_codex_top_level_plan_is_notified_to_the_creating_conversation(
 
 @pytest.mark.parametrize("record", ["{不正なJSON", '{"recorded_at": "2026-09-03T00:00:00+09:00"}'])
 def test_unreadable_owner_record_approves(tmp_path: pathlib.Path, record: str) -> None:
-    """計画の所有記録をJSONとして解釈できない場合と`session_id`が無い場合は通知しない。"""
     home = tmp_path / "home"
     plans = home / ".claude" / "plans"
     plans.mkdir(parents=True)

@@ -6,7 +6,7 @@ import shlex
 
 import pytest
 
-from agent_toolkit._hooks import pretooluse, work_contract
+from agent_toolkit._hooks import posttooluse, pretooluse, work_contract
 from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
@@ -43,7 +43,6 @@ _THRESHOLD = 48 * 1024
     ],
 )
 def test_original_record_search_output_mode(tmp_path, monkeypatch, capsys, codex, search, warned):
-    """公開hookで所在・件数検索を通し、本文表示とフラグに似た値には照会を案内する。"""
     home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(home))
     directory = home / "sessions"
@@ -97,7 +96,6 @@ def test_sed_read_range_accepts_only_static_line_ranges(command, expected):
 
 @pytest.mark.parametrize("separator", ["", "-- "])
 def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
-    """終了の有無によらず、行範囲の読取が同じ読取対象を返す。"""
     target = tmp_path / "note.md"
     command = f"sed -n '2,4p' {separator}{shlex.quote(str(target))}"
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(target,)]
@@ -115,7 +113,6 @@ def test_sed_range_read_paths_share_operand_contract(tmp_path, separator):
     ],
 )
 def test_conditional_display_candidates_do_not_prove_acquisition(tmp_path, template):
-    """表示案内の候補は条件付き抽出を含み、取得の被覆判定には流用しない。"""
     target = tmp_path / "note.md"
     target.write_text("# 表示対象\n## 入力\n本文\n", encoding="utf-8")
     command = (
@@ -148,7 +145,6 @@ def test_conditional_display_candidates_do_not_prove_acquisition(tmp_path, templ
     ],
 )
 def test_script_display_excludes_program_options_writes_and_execution(tmp_path, script):
-    """存在する式・オプション値を入力と誤認せず、書込と外部実行を除く。"""
     target = tmp_path / "note.md"
     target.write_text("本文\n", encoding="utf-8")
     command = script.format(path=shlex.quote(str(target)))
@@ -161,7 +157,6 @@ def test_script_display_excludes_program_options_writes_and_execution(tmp_path, 
     ["sed -n '/条件/p' {path}", "awk '/条件/{{print}}' {path}"],
 )
 def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, monkeypatch, capsys, codex, template):
-    """同じ表示候補を使う原記録参照の案内も、両ホストの公開hookへ通す。"""
     home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(home))
     target = home / "sessions/record.jsonl"
@@ -182,14 +177,12 @@ def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, m
 
 
 def _reads_commit_message_rules(command: str, cwd: str) -> bool:
-    """Bashの読取から帰属資料の読取を識別する配送側の判定へ、共通の読取パスの解析結果を渡す。"""
     paths = (path for group in bash_read_paths(command, cwd, include_partial=True) for path in group)
     return dispatch._reads_commit_message_rules(paths)  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize("separator", [[], ["--"]])
 def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: list[str]) -> None:
-    """同じ行範囲の読取入力を大量読取とcommit資料の消費側が認識する。"""
     root = pathlib.Path(large_reads.__file__).resolve().parents[3]
     targets = [
         root / "skills/atk-mode/playbooks/confirmation.md",
@@ -198,7 +191,7 @@ def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: lis
     ]
     command = "; ".join(shlex.join(["sed", "-n", "1,400p", *separator, str(path)]) for path in targets)
     assert list(bash_read_paths(command, str(tmp_path), include_partial=True)) == [(path,) for path in targets]
-    # この識別処理自体が指定された消費側であり、実在するcommit資料を渡して判定する。
+
     assert _reads_commit_message_rules(command, str(tmp_path))
 
 
@@ -214,7 +207,6 @@ def test_same_range_reads_reach_consumers(tmp_path: pathlib.Path, separator: lis
     ],
 )
 def test_read_and_write_consumers_share_cwd(tmp_path, prefix, moved):
-    """同じ作用範囲の移動を読取・書込の両方へ渡す。"""
     target = tmp_path / "next"
     prefix = prefix.format(next=shlex.quote(str(target)))
     expected = target if moved else tmp_path
@@ -225,7 +217,6 @@ def test_read_and_write_consumers_share_cwd(tmp_path, prefix, moved):
 
 
 def test_unknown_session_record_cwd_is_not_replaced():
-    """未知の移動先を元のcwdの原記録へ帰属させない。"""
     root = pathlib.Path.home() / ".claude/projects/project"
     root.mkdir(parents=True)
     (root / "record.jsonl").write_text("{}\n", encoding="utf-8")
@@ -238,7 +229,6 @@ def test_unknown_session_record_cwd_is_not_replaced():
 
 
 def test_python_heredoc_write_uses_invocation_cwd(tmp_path):
-    """同じ行で移動した後のPython本文の書込先も共通の実行位置から得る。"""
     target = tmp_path / "next"
     command = f"cd {shlex.quote(str(target))} && python3 - <<'PY'\nfrom pathlib import Path\nPath('file').write_text('x')\nPY\n"
     assert operation_skills.written_paths("Bash", {"command": command}, str(tmp_path)) == [str(target / "file")]
@@ -304,7 +294,6 @@ def test_commit_rule_delivery_uses_shared_option_parsing(tmp_path: pathlib.Path,
 def test_unavailable_content_does_not_create_a_block(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    """メタデータまたは本文を取得できない対象は判定不能として扱い、警告しない。"""
     target = _sized_file(tmp_path, _THRESHOLD + 1)
     original = getattr(pathlib.Path, operation)
 
@@ -320,7 +309,6 @@ def test_unavailable_content_does_not_create_a_block(
 
 
 def _sized_file(tmp_path: pathlib.Path, size: int, name: str = "large.txt", line_bytes: int = 100) -> pathlib.Path:
-    """1行`line_bytes`バイト（改行込み）で合計`size`バイトのファイルを作成する。"""
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)
     full, rest = divmod(size, line_bytes)
@@ -334,7 +322,6 @@ def _codex_read(command: str, cwd: pathlib.Path) -> str | None:
 
 
 def test_codex_unresolved_cwd_change_keeps_read_target_unknown(tmp_path: pathlib.Path) -> None:
-    """元のcwdの同名ファイルの容量で、解決不能な移動先の読取を警告しない。"""
     _sized_file(tmp_path, _THRESHOLD + 1)
 
     notice = _codex_read('cd "$DIR" && cat large.txt', tmp_path)
@@ -370,7 +357,6 @@ def test_large_original_record_is_guided_to_evidence_query(
     capsys: pytest.CaptureFixture[str],
     multiple: bool,
 ) -> None:
-    """原記録の大容量警告では専用照会を案内し、通常本文のページ分割へ誘導しない。"""
     codex = tmp_path / "codex-home"
     monkeypatch.setenv("CODEX_HOME", str(codex))
     record = codex / "sessions/2026/10/10/rollout-session.jsonl"
@@ -393,7 +379,6 @@ def test_large_original_record_is_guided_to_evidence_query(
 
 
 def test_known_read_operand_is_kept_as_a_candidate_with_unknown_arguments(tmp_path):
-    """無関係な引数が未知でも、既知のファイル引数を読取候補に残し、全文取得の証明には使わない。"""
     target = tmp_path / "input.md"
     target.write_text("本文\n", encoding="utf-8")
     command = f'cat -- {shlex.quote(str(target))} "$OTHER"'
@@ -402,7 +387,6 @@ def test_known_read_operand_is_kept_as_a_candidate_with_unknown_arguments(tmp_pa
 
 
 def test_static_session_record_with_unknown_search_term_keeps_the_reference_guidance(tmp_path):
-    """検索語が未知でも、静的な原記録の入力先には参照案内を届ける。"""
     root = pathlib.Path.home() / ".claude/projects/project"
     root.mkdir(parents=True)
     record = root / "record.jsonl"
@@ -411,8 +395,40 @@ def test_static_session_record_with_unknown_search_term_keeps_the_reference_guid
         "Bash", {"command": f'rg -e "$PATTERN" -- {shlex.quote(str(record))}'}, str(tmp_path)
     )
     assert notice is not None and str(record) in notice
-    # 入力先そのものが未知なら、cwdを入力先と推定しない。
+
     assert large_reads.session_record_reference_warning("Bash", {"command": 'rg needle "$DIR"'}, str(root)) is None
+
+
+@pytest.mark.parametrize("route", ["functions.exec", "functions.exec_command"])
+@pytest.mark.parametrize("kind", ["record", "ordinary", "metadata"])
+def test_codex_shell_results_guide_only_static_session_content_searches(tmp_path, capsys, route, kind):
+    codex_home = pathlib.Path.home() / ".codex/sessions/2026/11/19"
+    codex_home.mkdir(parents=True)
+    record = codex_home / "rollout-2026-11-19T03-33-00-01a1f1dd-db72-7143-bae6-845204964526.jsonl"
+    ordinary = tmp_path / "test.jsonl"
+    for target in (record, ordinary):
+        target.write_text("{}\n", encoding="utf-8")
+    command = {
+        "record": f"rg needle {shlex.quote(str(record))}",
+        "ordinary": f"rg needle {shlex.quote(str(ordinary))}",
+        "metadata": f"rg --files {shlex.quote(str(record.parent))}",
+    }[kind]
+    tool_input = (
+        f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}));" if route == "functions.exec" else {"cmd": command}
+    )
+    payload = {
+        "session_id": "codex-record-search",
+        "turn_id": "turn",
+        "tool_name": route,
+        "tool_input": tool_input,
+        "cwd": str(tmp_path),
+        "tool_response": "検索の結果",
+        "hook_event_name": "PostToolUse",
+    }
+    assert posttooluse.main(json.dumps(payload)) == 0
+    result = capsys.readouterr().out
+    notice = json.loads(result)["hookSpecificOutput"].get("additionalContext", "") if result else ""
+    assert ("session-review-evidence" in notice) is (kind == "record")
 
 
 @pytest.mark.parametrize("codex", [False, True])
@@ -453,7 +469,6 @@ def test_heading_extraction_warns_only_for_normative_files(tmp_path, capsys, cod
 
 @pytest.mark.parametrize("multiple", [False, True])
 def test_capacity_without_known_receiver_budget_does_not_warn(tmp_path, capsys, multiple):
-    """単一ファイルの大きい通常読取は警告せず、複数ファイルの合計は規約の予算と比べて分割を案内する。"""
     first = _sized_file(tmp_path, 85_000)
     second = _sized_file(tmp_path, 85_000, "second.txt")
     command = shlex.join(["cat", "--", str(first), *([str(second)] if multiple else [])])
@@ -481,14 +496,12 @@ def _bundle(tmp_path, sizes):
 
 @pytest.mark.parametrize(("limit", "warned"), [("59", True), ("60", False)])
 def test_bundled_read_over_claude_budget_is_split(tmp_path, limit, warned):
-    """合計の文字数が出力の上限を超える複数ファイルの全文表示だけに分割を案内する。"""
-    _paths, command = _bundle(tmp_path, (29, 29))  # 先頭の識別文字を含めて各30文字
+    _paths, command = _bundle(tmp_path, (29, 29))
     warning = large_reads.check_bundled_read(command, str(tmp_path), codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": limit})
     assert (warning is not None and "分けて取得" in warning) is warned
 
 
 def test_bundled_partial_reads_are_not_counted_as_full_text(tmp_path):
-    """範囲表示の分割取得は、ファイル全体の量が上限を超えても超過を案内しない。"""
     paths, _command = _bundle(tmp_path, (99, 99))
     command = "sed -n '1p' -- " + " ".join(str(path) for path in paths)
     warning = large_reads.check_bundled_read(command, str(tmp_path), codex=False, environment={"BASH_MAX_OUTPUT_LENGTH": "100"})
@@ -496,7 +509,6 @@ def test_bundled_partial_reads_are_not_counted_as_full_text(tmp_path):
 
 
 def test_bundled_read_codex_budget_includes_envelope(tmp_path):
-    """本文の見積りが予算内でも、外側のJSON包絡を含めて超える場合は分割を案内する。"""
     _paths, command = _bundle(tmp_path, (99, 99))  # UTF-8で各298バイト、見積り各100トークン
     budget = 200 + large_reads._CODEX_ENVELOPE_TOKENS  # pylint: disable=protected-access
     within = large_reads.check_bundled_read(command, str(tmp_path), codex=True, environment={}, max_output_tokens=budget)

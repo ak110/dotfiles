@@ -1,5 +1,3 @@
-"""pytools._internal.file_lock のテスト。"""
-
 import contextlib
 import os
 import subprocess
@@ -49,15 +47,13 @@ class TestExclusiveFileLock:
         with pytest.raises(RuntimeError, match="想定内の失敗"), file_lock.exclusive_file_lock(lock_path):
             raise RuntimeError("想定内の失敗")
 
-        # 解放済みでなければ以降の取得が返らないため、再取得の成立が解放の証拠となる。
         with file_lock.exclusive_file_lock(lock_path):
             assert lock_path.is_file()
 
     def test_blocks_other_process_until_released(self, tmp_path: Path):
-        """保持中は別プロセスが進入できず、解放後に進入できること。"""
         lock_path = tmp_path / "index.json.lock"
         marker = tmp_path / "marker.txt"
-        # 子プロセスから`pytools`をimportできるよう、現在の探索パスを引き継ぐ。
+
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(sys.path))
 
         with contextlib.ExitStack() as resources:

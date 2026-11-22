@@ -21,7 +21,6 @@ from agent_toolkit._common.session_family import _CollectedRecord, _Record, _Unr
 
 
 def database_path() -> Path:
-    """OpenCodeが両OSで使うXDG形式のデータ保存先を返す。"""
     return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "opencode" / "opencode.db"
 
 
@@ -101,7 +100,6 @@ def _message_records(connection: sqlite3.Connection, session: sqlite3.Row) -> li
             elif kind == "compaction":
                 entry.update(type="system", subtype="compact_boundary")
             else:
-                # step-finishの使用量はmessageの合計と重複するため、原文だけを保持する。
                 entry["type"] = "opencode-part"
             entry["message"] = {"role": entry["type"], "content": content, **identity}
             add(message_id, entry, source)
@@ -161,10 +159,6 @@ def collect_records(
     *,
     main_only: bool = False,
 ) -> tuple[list[_CollectedRecord], list[_UnresolvedRecord]]:
-    """指定セッションとparent_idでつながる子孫を、同じ読取transactionから取得する。
-
-    不在・未対応schema・破損JSONはValueErrorで返し、SQLite原本を作成・変更しない。
-    """
     if re.fullmatch(r"ses_[A-Za-z0-9]+", session_id) is None:
         raise ValueError(f"OpenCodeセッション識別子が不正: {session_id}")
     path = (database if database is not None else database_path()).expanduser().resolve()

@@ -13,7 +13,6 @@ from agent_toolkit._common import process_tree
 
 @pytest.fixture(autouse=True)
 def _isolate_branch_head(monkeypatch: pytest.MonkeyPatch) -> None:
-    """HEADの取得は本書の対象外のため外部通信を隔離し、診断の取得は実際の処理を通す。"""
     monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "current-head")
     monkeypatch.setattr(alerts, "_gitlab_head", lambda _repo, _branch: "current-head")
 
@@ -85,7 +84,6 @@ def test_alert_body_keeps_failure_diagnostics_and_trigger(monkeypatch: pytest.Mo
 
 
 def test_alert_is_saved_when_diagnostics_are_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
-    """診断を取得できなくても通知は作り、取得できなかった理由を本文へ残す。"""
 
     def run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
         return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"HTTP 404")
@@ -131,9 +129,50 @@ def test_known_failure_skips_diagnostic_fetch(monkeypatch: pytest.MonkeyPatch, t
     assert not calls
 
 
-def test_log_excerpt_redacts_before_truncating_lines(monkeypatch: pytest.MonkeyPatch) -> None:
-    """行を切り詰める位置が資格情報の途中にあっても、資格情報の先頭を本文へ残さない。"""
+def test_log_excerpt_redacts_before_truncating_lines() -> None:
     token = "ghp_" + "A" * 40
-    _record_commands(monkeypatch, "x" * 280 + f" https://{token}@github.com/owner/repo\n")
+    prefix = "x" * 280 + " https://"
+    # 過去版にも同じ入力を渡すため、通知の取得方式に依存しない抜粋関数を検査する。
+    # pylint: disable-next=protected-access
+    result = alerts._log_excerpt(f"{prefix}{token}@github.com/owner/repo\n正常な行\n")
+    assert result == f"        {prefix}[REDACTED]@\n        正常な行"
+
+
+def test_log_excerpt_redacts_multiline_key_outside_tail() -> None:
+    body = "secret-body\n" * 200
+    key_type = "PRIVATE KEY"
+    text = f"-----BEGIN {key_type}-----\n{body}-----END {key_type}-----\n正常な行"
+
+    # pylint: disable-next=protected-access
+    assert alerts._log_excerpt(text) == "        [REDACTED]\n        正常な行"
+
+
+def test_ci_diagnostics_keep_error_after_empty_secret_assignment(monkeypatch: pytest.MonkeyPatch) -> None:
+    line = "ERROR: 最初の検査が失敗した"
+    boundary = "x" * 280 + " https://" + "A" * 45 + "@example.org"
+    _record_commands(monkeypatch, f"EXAMPLE_TOKEN=\n{line}\n" + "後処理\n" * 20 + f"{boundary}\n")
     result = alerts.collect_github_ci_failures("github.com/owner/repo", "main", run_list_fn=lambda *_args: [_FAILED_RUN])
-    assert "ghp_" not in result[0].details()
+
+    assert line in result[0].details()
+    assert "[REDACTED]" in result[0].details()
+    assert "A" * 10 not in result[0].details()
+
+
+def test_malformed_response_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = ["x" * 170 + " https://" + "A" * 45 + "@example.org"]
+    monkeypatch.setattr(alerts._json_command, "run", lambda *_args, **_kwargs: payload)  # pylint: disable=protected-access
+
+    with pytest.raises(alerts.AlertCollectError) as caught:
+        # pylint: disable-next=protected-access
+        alerts._run_alert_json_command(["gh"], timeout=1, operation="gh run view 1", expected_type=dict)
+    assert "A" * 10 not in str(caught.value)
+    assert "[REDACTED]" in str(caught.value)
+
+
+def test_schedule_list_malformed_response_redacts_before_truncating() -> None:
+    payload = {"detail": "x" * 160 + " https://" + "A" * 45 + "@example.org"}
+
+    with pytest.raises(alerts.AlertCollectError) as caught:
+        alerts.collect_gitlab_schedule_failures("gitlab.example.org", "owner/repo", api_fn=lambda *_args: payload)
+    assert "A" * 10 not in str(caught.value)
+    assert "[REDACTED]" in str(caught.value)

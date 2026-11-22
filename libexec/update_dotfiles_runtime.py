@@ -1,5 +1,3 @@
-"""update_dotfilesの更新状態・環境とログ。"""
-
 # pylint: disable=global-statement
 
 import contextlib
@@ -81,7 +79,6 @@ class _ContinuedFailure:
     detail: str | None
 
 
-# ランチャーが渡す印のパス。本体が中断せず終えた場合だけ作成する。
 PRUNE_READY_ENV = "DOTFILES_PRUNE_READY_FILE"
 
 
@@ -92,16 +89,12 @@ def continue_after_failure(title: str, action: str, detail: str | None = None) -
 
 
 class _DiagnosticFormatter(logging.Formatter):
-    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
-
     def format(self, record: logging.LogRecord) -> str:
-        """永続ログ向けに資格情報を除いた本文を返す。"""
         return redact_secrets(super().format(record))
 
 
 @contextlib.contextmanager
 def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
-    """更新診断用のログを開き、終了時に登録を外して閉じる。構成不能時はNoneを渡す。"""
     global persistent_log  # noqa: PLW0603
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -137,14 +130,18 @@ def finish(returncode: int) -> int:
     """
     if current_run_id is not None:
         try:
-            for title, detail in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
-                continue_after_failure(title, "次回のupdate-dotfiles起動時に再試行します。", detail)
+            for failure in update_dotfiles_report.bootstrap_failures(LOG_PATH.parent):
+                action = "次回のupdate-dotfiles起動時に再試行します。"
+                if failure.saved and failure.title in {"uvの自己更新", "管理Pythonの更新"}:
+                    log = LOG_PATH.with_name(f"uv-{failure.title}-failed.log")
+                    if log.is_file():
+                        action += f"詳細: {log}"
+                continue_after_failure(failure.title, action, failure.detail)
             failures = [(failure.title, failure.detail or "失敗") for failure in continued_failures]
             if returncode != 0:
                 failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
             update_dotfiles_report.report(failures, LOG_PATH.with_name("update-failures.json"), DOTFILES_ROOT)
         except update_dotfiles_report.process_tree.ReclaimError:
-            # 所有した子孫を止められない状態では、新しい更新や起票を始めない。
             logger.exception("自動起票の子孫を回収できませんでした")
             raise
         except Exception as error:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
@@ -155,6 +152,11 @@ def finish(returncode: int) -> int:
     parent_log_saved = _record_parent_diagnostics(returncode)
     if continued_failures:
         returncode = _report_continued_failures(returncode)
+        if ack := os.environ.get("UPDATE_DOTFILES_BOOTSTRAP_ACK"):
+            try:
+                pathlib.Path(ack).touch(exist_ok=False)
+            except OSError:
+                logger.exception("起動準備の診断表示をランチャーへ通知できませんでした")
     logger.info("update-dotfiles終了: exit=%d", returncode)
     if current_run_id is not None:
         sync_report.write_finish(
@@ -212,7 +214,7 @@ def _report_continued_failures(returncode: int) -> int:
     """
     global current_stage_title, last_stderr_tail  # noqa: PLW0603
     lines = ["失敗しても後続の段を続けた段:"]
-    for failure in continued_failures:
+    for failure in dict.fromkeys(continued_failures):
         lines.append(f"- {failure.title}: {failure.action}")
     print("\n".join(lines), file=sys.stderr)
     logger.error("続行した失敗: %s", " / ".join(failure.title for failure in continued_failures))
@@ -250,12 +252,10 @@ def child_env() -> dict[str, str]:
 
 
 def git_env() -> dict[str, str]:
-    """更新区間のGitと退避子だけへ代替indexを渡す。"""
     env = child_env()
     if update_index is not None:
         env["GIT_INDEX_FILE"] = str(update_index)
     return env
 
 
-# 更新処理が差分を保持せずHEADへ戻すlockfile（作業ツリーのルートからの相対パス）。
 MISE_LOCK = "mise.lock"

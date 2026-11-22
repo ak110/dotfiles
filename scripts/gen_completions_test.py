@@ -15,8 +15,6 @@ import pytest
 
 @dataclasses.dataclass
 class _Env:
-    """テスト用の疑似リポジトリパス一式と対象モジュール。"""
-
     module: types.ModuleType
     repo_root: pathlib.Path
     pyproject: pathlib.Path
@@ -28,7 +26,6 @@ class _Env:
 
 @pytest.fixture
 def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
-    """疑似リポジトリ構造をtmp_path配下に用意し、モジュール定数を差し替えて返す。"""
     module = gen_completions
     pyproject = tmp_path / "pyproject.toml"
     pytools_output = tmp_path / "completions" / "_pytools.bash"
@@ -58,10 +55,7 @@ def _env(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Env:
 
 
 class TestMainFileScanConditions:
-    """`main()`経由での`agent-toolkit/agent_toolkit/*.py`走査条件を検証する。"""
-
     def test_marker_and_wrapper_present_is_included(self, _env: _Env) -> None:
-        """argcompleteマーカーを持ちbashラッパーが存在するスクリプトは補完対象へ含まれる。"""
         (_env.package_dir / "foo.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.scripts_dir / "foo").write_text("#!/bin/sh\n", encoding="utf-8")
         assert _env.module.main([]) == 0
@@ -69,7 +63,6 @@ class TestMainFileScanConditions:
         assert "complete -o nospace -o default -o bashdefault -F _python_argcomplete foo" in content
 
     def test_underscore_prefixed_script_is_excluded(self, _env: _Env) -> None:
-        """アンダースコア始まりのスクリプトはマーカー・ラッパーを持っていても走査対象から除外される。"""
         (_env.package_dir / "_internal.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         (_env.scripts_dir / "_internal").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
@@ -77,7 +70,6 @@ class TestMainFileScanConditions:
         assert "_internal" not in content
 
     def test_script_without_marker_is_excluded(self, _env: _Env) -> None:
-        """argcompleteマーカーを持たないスクリプトは補完対象から除外される。"""
         (_env.package_dir / "bar.py").write_text("print('no marker')\n", encoding="utf-8")
         (_env.scripts_dir / "bar").write_text("#!/bin/sh\n", encoding="utf-8")
         _env.module.main([])
@@ -85,7 +77,6 @@ class TestMainFileScanConditions:
         assert "bar" not in content
 
     def test_script_without_wrapper_is_excluded(self, _env: _Env) -> None:
-        """対応するbashラッパーが`agent-toolkit/scripts/`配下に存在しないスクリプトは補完対象から除外される。"""
         (_env.package_dir / "baz.py").write_text("# PYTHON_ARGCOMPLETE_OK\n", encoding="utf-8")
         _env.module.main([])
         content = _env.atk_output.read_text(encoding="utf-8")
@@ -93,10 +84,7 @@ class TestMainFileScanConditions:
 
 
 class TestMainOutputRouting:
-    """`main()`経由での2出力先への分岐書き込みと再書き込み抑制を検証する。"""
-
     def test_pytools_and_agent_toolkit_commands_route_to_separate_outputs(self, _env: _Env) -> None:
-        """`[project.scripts]`由来と`agent_toolkit/`由来のコマンドを別の補完ファイルへ書く。"""
         _env.pyproject.write_text(
             '[project]\nname = "x"\n\n[project.scripts]\nmytool = "mypkg.mytool:main"\n',
             encoding="utf-8",
@@ -117,7 +105,6 @@ class TestMainOutputRouting:
         assert "atktool" not in pytools_content
 
     def test_no_rewrite_when_content_unchanged(self, _env: _Env, capsys: pytest.CaptureFixture[str]) -> None:
-        """出力先の内容が変わらない再実行では書き換えず生成メッセージも出力しない。"""
         assert _env.module.main([]) == 0
         capsys.readouterr()
         mtime_before = _env.atk_output.stat().st_mtime_ns

@@ -1,5 +1,3 @@
-"""委譲先へ渡す依頼本文、作業ディレクトリ、コマンドの要約方針、モデルとeffortの入力検証。"""
-
 from __future__ import annotations
 
 import logging

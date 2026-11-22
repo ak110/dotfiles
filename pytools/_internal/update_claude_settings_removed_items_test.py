@@ -14,8 +14,6 @@ from pytools._internal.update_claude_settings_test_helpers import MANAGED_DENY, 
 
 
 class TestStripRemovedKeys:
-    """配布元から廃止した設定キーの自動除去テスト。"""
-
     @pytest.mark.parametrize(
         ("existing", "expected"),
         [
@@ -35,7 +33,6 @@ class TestStripRemovedKeys:
         existing: dict,
         expected: dict,
     ) -> None:
-        """登録キーを除去し、キーが存在しない場合は他の設定を変更しない。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -84,10 +81,7 @@ class TestStripRemovedKeys:
 
 
 class TestStripRemovedListItems:
-    """配布元から削除された配列項目の自動削除テスト。"""
-
     def test_strip_removed_list_items_removes_matching(self, tmp_path: Path):
-        """登録した部分文字列を含む配列要素が削除される。"""
         mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
@@ -106,7 +100,6 @@ class TestStripRemovedListItems:
         assert result["autoMode"]["allow"] == ["新ルール文面"]
 
     def test_strip_removed_list_items_preserves_others(self, tmp_path: Path):
-        """部分文字列を含まない要素（ユーザーの独自追加項目）は保持される。"""
         mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
@@ -125,7 +118,6 @@ class TestStripRemovedListItems:
         assert result["autoMode"]["allow"] == ["ユーザー独自ルール1", "ユーザー独自ルール2"]
 
     def test_strip_removed_list_items_missing_path(self, tmp_path: Path):
-        """対象パスが存在しない場合は例外を送出せず処理が継続する。"""
         mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
@@ -138,7 +130,6 @@ class TestStripRemovedListItems:
         assert result == {"language": "japanese"}
 
     def test_strip_removed_list_items_non_list_target(self, tmp_path: Path):
-        """パス先が list でない場合は何もしない。"""
         mappings = (("autoMode.allow", "OLD_RULE_MARKER"),)
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({}, ensure_ascii=False), encoding="utf-8")
@@ -190,10 +181,9 @@ class TestStripRemovedListItems:
 
         mod.run()
 
-        # settings 側は旧ルール文面が削除される
         settings_result = json.loads(settings_path.read_text(encoding="utf-8"))
         assert settings_result["autoMode"]["allow"] == ["新ルール文面"]
-        # config 側は削除されない（仮に同名構造があっても保持される）
+
         config_result = json.loads(config_path.read_text(encoding="utf-8"))
         assert config_result["autoMode"]["allow"] == [f"{old_rule_marker} を含む config 側項目"]
 
@@ -202,10 +192,6 @@ class TestStripRemovedListItems:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`run()`は旧管理denyだけを除去し、ユーザー独自denyと現行管理denyを保持する。
-
-        撤去した秘匿ファイルの読取禁止3件と、以前に撤去した`Read(./.env)`が除去対象である。
-        """
         settings_path = _setup_run_paths(
             tmp_path,
             monkeypatch,
@@ -239,7 +225,6 @@ class TestStripRemovedListItems:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """`run()`は移管前の個人リポジトリpushルールだけを除去する。"""
         settings_path = _setup_run_paths(tmp_path, monkeypatch, {})
         settings_path.write_text(
             json.dumps(
@@ -298,10 +283,7 @@ class TestStripRemovedListItems:
 
 
 class TestStripStaleLabeledListItems:
-    """ラベル単位の旧文面自動削除テスト（配布原本のラベル改訂時の重複蓄積を防ぐ）。"""
-
     def test_stale_label_variant_is_removed_on_managed_text_revision(self, tmp_path: Path):
-        """配布原本側でラベル本文を改訂すると、配布先の旧文面がラベル一致で除去される（再発防止テスト）。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps(
@@ -335,7 +317,6 @@ class TestStripStaleLabeledListItems:
         ]
 
     def test_unlabeled_user_entry_is_preserved(self, tmp_path: Path):
-        """ラベルを持たないユーザー独自エントリは除去対象にならない（再発防止テスト）。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"autoMode": {"allow": ["Some Label: 現行文面"]}}, ensure_ascii=False),
@@ -356,7 +337,6 @@ class TestStripStaleLabeledListItems:
         ]
 
     def test_empty_paths_is_noop(self, tmp_path: Path):
-        """`stale_labeled_list_paths`が空タプルの場合は何もしない（省略時の値で設定を変えないことを確かめる再発防止テスト）。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"autoMode": {"allow": ["Label: 現行文面"]}}, ensure_ascii=False),
@@ -374,11 +354,6 @@ class TestStripStaleLabeledListItems:
         assert result["autoMode"]["allow"] == ["Label: 旧文面", "Label: 現行文面"]
 
     def test_missing_managed_path_is_noop(self, tmp_path: Path):
-        """配布原本（managed）側に対象パスが存在しない場合は例外を送出せず処理が継続する（再発防止テスト）。
-
-        `_strip_stale_labeled_list_items`はmanaged側からラベル集合を抽出できず`labels`が
-        空集合になるため、早期returnでtarget側の経路解決には到達しない分岐を検証する。
-        """
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(json.dumps({"language": "japanese"}, ensure_ascii=False), encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -410,7 +385,6 @@ class TestStripStaleLabeledListItems:
         assert result == {"language": "japanese", "autoMode": {"allow": ["Label: 現行文面"]}}
 
     def test_run_reproduces_and_fixes_prod_duplicate(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """`run()`経由で実際の重複事象（旧文面atk fbと新文面atk wiの共存）が解消される（再現テスト）。"""
         managed_settings_path = tmp_path / "managed_settings.json"
         managed_settings_path.write_text(
             json.dumps(

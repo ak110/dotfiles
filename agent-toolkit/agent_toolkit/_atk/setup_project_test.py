@@ -1,5 +1,3 @@
-"""エンドユーザーが使うatk setup-projectコマンドを通して移行・削除を検証する。"""
-
 from __future__ import annotations
 
 import os
@@ -94,7 +92,6 @@ def test_windows_shares_skills_without_symlink_privilege(
     if existing != "missing":
         link.parent.mkdir()
         try:
-            # 以前の版は区切り`/`の相対リンクを作り、Gitは区切りを`\`へ展開して作る。
             link.symlink_to("../.claude/skills" if existing == "old-symlink" else "..\\.claude\\skills")
         except OSError as error:
             if getattr(error, "winerror", None) != 1314:
@@ -102,7 +99,7 @@ def test_windows_shares_skills_without_symlink_privilege(
             pytest.skip("既存のシンボリックリンクを用意する特権が無い")
 
     def deny_symlink(*_args: object, **_kwargs: object) -> None:
-        # 管理者として実行しても、開発者モードでも管理者でもないユーザーと同じ拒否を起こす。
+
         raise OSError(None, "クライアントは要求された特権を保有していません。", None, 1314)
 
     monkeypatch.setattr(os, "symlink", deny_symlink)

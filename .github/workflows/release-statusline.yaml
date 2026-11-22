@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - CI
+    branches:
+      - master
     types:
       - completed
 
@@ -12,7 +14,7 @@ permissions:
 
 concurrency:
   group: release-statusline
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   gate:
@@ -65,8 +67,8 @@ jobs:
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
           fetch-depth: 0
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: statusline差分と版数を検査
         id: inspect
         env:
@@ -92,7 +94,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.head_sha }}
-      - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: rust/claude-statusline
@@ -131,7 +133,7 @@ jobs:
         with:
           path: assets
           merge-multiple: true
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - name: 既存タグを検査
         id: tag-state
         env:
@@ -144,6 +146,30 @@ jobs:
           set -euo pipefail
 
           tag="$TAG"
+          release_exists=false
+          if gh release view "$tag" >/dev/null 2>&1; then
+            release_exists=true
+          else
+            latest=false
+            query="query(\$owner: String!, \$name: String!) { repository(owner: \$owner, name: \$name) { latestRelease { tagName } } }"
+            latest_response=$(gh api graphql \
+              -f query="$query" \
+              -f owner="$GITHUB_REPOSITORY_OWNER" -f name="${GITHUB_REPOSITORY#*/}")
+            latest_tag=$(jq -er '.data.repository | if . == null then error("repository missing") else .latestRelease.tagName // "" end' \
+              <<< "$latest_response")
+            stable_tag='^statusline-v[0-9]+\.[0-9]+\.[0-9]+$'
+            if [[ "$tag" =~ $stable_tag ]]; then
+              if [[ -z "$latest_tag" ]]; then
+                latest=true
+              elif [[ "$latest_tag" =~ $stable_tag && "$tag" != "$latest_tag" ]]; then
+                newest=$(printf '%s\n' "$latest_tag" "$tag" | LC_ALL=C sort -V | tail -n 1)
+                if [[ "$newest" == "$tag" ]]; then
+                  latest=true
+                fi
+              fi
+            fi
+          fi
+
           if [ "$TAG_EXISTS" != "true" ]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -151,7 +177,7 @@ jobs:
             git push origin "refs/tags/$tag"
           fi
 
-          if gh release view "$tag" >/dev/null 2>&1; then
+          if [ "$release_exists" = "true" ]; then
             gh release upload "$tag" \
               assets/claude-statusline-x86_64-unknown-linux-gnu \
               assets/claude-statusline-x86_64-pc-windows-msvc.exe \
@@ -160,6 +186,8 @@ jobs:
             gh release create "$tag" \
               assets/claude-statusline-x86_64-unknown-linux-gnu \
               assets/claude-statusline-x86_64-pc-windows-msvc.exe \
+              --verify-tag \
+              --latest="$latest" \
               --title="$tag" \
               --notes="claude-statusline v${tag#statusline-v}をリリースする"
           fi

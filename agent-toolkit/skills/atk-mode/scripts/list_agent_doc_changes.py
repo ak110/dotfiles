@@ -1,9 +1,3 @@
-"""2つのrevision間で変更したエージェント向け文書のパスをJSON配列で出力する。
-
-統合を行うレーン担当が統合結果の`変更したエージェント向け文書`を組み立てるときに使う。
-判定は計画構造の自動チェックと同じ`is_agent_doc_target_file()`に従う。
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -17,10 +11,6 @@ from agent_toolkit._plan.structure import is_agent_doc_target_file
 
 
 def _changed_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:
-    """`base`から`target`までの全変更パスを返す。
-
-    改名は削除と追加に分けて扱い、改名前と改名後の双方を対象へ含める。
-    """
     completed = _git_command.run(
         ["-C", str(repository), "diff", "--name-only", "--no-renames", "-z", base, target, "--"],
         capture_output=True,
@@ -35,12 +25,10 @@ def _changed_paths(repository: pathlib.Path, base: str, target: str) -> list[str
 
 
 def changed_agent_doc_paths(repository: pathlib.Path, base: str, target: str) -> list[str]:
-    """変更したエージェント向け文書のリポジトリ相対パスを返す。"""
     return [path for path in _changed_paths(repository, base, target) if is_agent_doc_target_file(path)]
 
 
 def main(argv: list[str] | None = None) -> int:
-    """引数を解釈し、変更パスのJSON配列を標準出力へ書く。"""
     parser = argparse.ArgumentParser(
         description=(
             "2つのrevision間で変更したエージェント向け文書のリポジトリ相対パスを、"

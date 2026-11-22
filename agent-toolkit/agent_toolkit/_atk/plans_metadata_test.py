@@ -30,7 +30,6 @@ def test_commit_rejects_invalid_creation_record_before_saving(
     tmp_path: pathlib.Path,
     record: str,
 ) -> None:
-    """記録が不正、または名前の日と保存年月が無効な場合は保存前に止める。"""
     home = tmp_path / "home"
     notes = tmp_path / "notes"
     _init_local_notes(notes)
@@ -49,7 +48,6 @@ def test_creation_record_precedes_available_creation_time(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """作成時刻を取得できる複製でも、局所記録が可搬参照と保存年月を決める。"""
     home = tmp_path / "home"
     notes = tmp_path / "notes"
     _init_local_notes(notes)
@@ -71,7 +69,6 @@ def test_creation_record_precedes_available_creation_time(
 
 
 def test_commit_plan_moves_direct_working_bundle_to_birth_month(tmp_path: pathlib.Path) -> None:
-    """直下の現行添付を作成月の保存先へ移し、旧添付を作業側へ残す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -110,7 +107,6 @@ def test_commit_plan_succeeds_without_creation_time(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """作成日時を取得できない場合は更新日時の年月へ保存する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -139,7 +135,6 @@ def test_commit_plan_prefers_creation_time_over_mtime(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """作成日時を取得できる場合は更新日時より作成日時の年月を優先する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -181,7 +176,6 @@ def test_checkout_records_owning_session_without_saving_it(tmp_path: pathlib.Pat
 
 
 def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: pathlib.Path) -> None:
-    """保存は所有記録をprivate-notesへ含めず、作業バンドルの回収時に記録も回収する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -203,7 +197,6 @@ def test_commit_excludes_owner_record_and_removes_it_after_collection(tmp_path: 
 
 
 def test_commit_removes_owner_record_of_direct_working_plan(tmp_path: pathlib.Path) -> None:
-    """取得を伴わない直下計画の保存でも所有記録を回収する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -292,11 +285,6 @@ def test_commit_removes_working_residue_of_checked_out_plan(tmp_path: pathlib.Pa
 
 
 def test_finalize_keeps_working_file_when_content_changed_after_check(tmp_path: pathlib.Path) -> None:
-    """確認後に作業ファイルの内容が変わった場合は、作業ファイルを移さず保存済みの旨と次の操作を返す。
-
-    回収前の確認と確定の間に書き換わった作業ファイルを`private-notes/plans/`へ移すと、commitしていない変更が
-    保存済みの計画として扱われる。
-    """
     source = tmp_path / "working" / "01-example-1a2b.md"
     source.parent.mkdir()
     source.write_text("書き換えた本文\n", encoding="utf-8")

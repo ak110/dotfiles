@@ -32,7 +32,7 @@ from agent_toolkit._atk.wi.constants import WI_STATES, WI_TYPE_AWI
 from agent_toolkit._atk.wi.formatters import parse_alert_keys
 from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import process_tree as _process_tree
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, diagnostic_line_excerpt, redact_secrets
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import forge_cli as _forge_cli
 from agent_toolkit._git import refs as _git_refs
@@ -91,23 +91,18 @@ class Alert:
 
 @dataclasses.dataclass(frozen=True)
 class AlertCheckResult:
-    """保存できたAWI件数と、収集できなかった種別の理由を分けて返す。"""
-
     submitted: int
     failures: tuple[str, ...]
 
 
 @dataclasses.dataclass(frozen=True)
 class RunContext:
-    """通知を組み立てるために必須となる実行とブランチHEADの観測。"""
-
     created_at: str
     sha: str
     head_sha: str | None
     head_error: str | None
 
     def description(self) -> str:
-        """観測した実行情報と比較結果を本文へ渡す。"""
         comparison = "一致" if self.sha == self.head_sha else "不一致"
         head = self.head_sha or f"取得不能（{self.head_error}）"
         if self.head_sha is None or not self.sha:
@@ -120,7 +115,6 @@ class RunContext:
         )
 
     def investigation(self) -> str:
-        """HEADとの差を踏まえて、後続実行の無い状態にも適用する調査条件を返す。"""
         if self.head_sha is not None and self.sha == self.head_sha:
             return ""
         return (
@@ -165,12 +159,10 @@ def _gitlab_head(repo: str, branch: str) -> str:
 
 
 def _now_iso() -> str:
-    """検知日時をローカルタイムゾーン付きISO8601秒精度で返す。"""
     return datetime.datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def _run_git_capture(local_path: pathlib.Path, args: list[str]) -> str | None:
-    """`git -C <local_path> <args>`を実行し、成功時はstdout（末尾改行除去）を返す。"""
     return _git_command.optional_output(args, local_path, timeout=_GIT_SUBPROCESS_TIMEOUT)
 
 
@@ -188,7 +180,6 @@ def _run_alert_json_command(
     expected_type: type | tuple[type, ...] = list,
     env: dict[str, str] | None = None,
 ) -> Any:
-    """外部CLIを実行し、`expected_type`（省略時はJSON配列）の応答を返す。"""
 
     def error_factory(failure: _json_command.Failure) -> Exception:
         if failure.kind == "timeout":
@@ -203,12 +194,12 @@ def _run_alert_json_command(
 
     payload = _json_command.run(command, timeout, error_factory=error_factory, strict_stderr=False, env=env)
     if not isinstance(payload, expected_type):
-        raise AlertCollectError(f"{operation}の応答形状が不正です: {json.dumps(payload, ensure_ascii=False)[:200]!r}")
+        excerpt = diagnostic_excerpt(json.dumps(payload, ensure_ascii=False), prefix_chars=200)
+        raise AlertCollectError(f"{operation}の応答形状が不正です: {excerpt!r}")
     return payload
 
 
 def _run_alert_text_command(command: list[str], *, timeout: float, operation: str, env: dict[str, str] | None = None) -> str:
-    """ログ本文など、JSONでない応答を返す外部CLIを実行する。"""
     try:
         result = _process_tree.run_with_timeout(command, capture_output=True, check=False, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as exc:
@@ -226,12 +217,14 @@ def _log_excerpt(text: str) -> str:
 
     末尾だけでは、後処理の出力が続いた回に失敗した検査の行が失われるため、失敗を示す行を別に残す。
     """
-    lines = [_ANSI_ESCAPE.sub("", line) for line in text.splitlines()]
-    tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
-    errors = [line for line in lines[:tail_start] if _ERROR_LINE.search(line)][-_DIAGNOSTIC_ERROR_LINES:]
-    excerpt = [*errors, *(["…"] if errors else []), *lines[tail_start:]]
-    # 切り詰めた後に伏せると、切り詰めた位置をまたぐ資格情報が規則に一致せず先頭が残るため、伏せてから切り詰める。
-    return "\n".join("        " + redact_secrets(line)[:_DIAGNOSTIC_LINE_CHARS] for line in excerpt)
+
+    def select(lines: list[str]) -> list[int | str]:
+        tail_start = max(0, len(lines) - _DIAGNOSTIC_TAIL_LINES)
+        errors = [index for index in range(tail_start) if _ERROR_LINE.search(lines[index])][-_DIAGNOSTIC_ERROR_LINES:]
+        return [*errors, *(["…"] if errors else []), *range(tail_start, len(lines))]
+
+    safe = diagnostic_line_excerpt(_ANSI_ESCAPE.sub("", text), line_chars=_DIAGNOSTIC_LINE_CHARS, select=select)
+    return "\n".join("        " + line for line in safe)
 
 
 def _diagnostics_section(jobs: list[tuple[str, str, Callable[[], str]]]) -> str:
@@ -313,7 +306,6 @@ def _gitlab_failure_diagnostics(repo: str, pipeline_id: str) -> str:
 
 
 def _run_gh_run_list(repo: str, branch: str) -> list[dict]:
-    """`gh run list`結果を返す。"""
     return _run_alert_json_command(
         [
             "gh",
@@ -389,7 +381,6 @@ def collect_github_ci_failures(
 
 
 def _run_glab_ci_list(repo: str, ref: str) -> list[dict]:
-    """`glab ci list`結果（created_at降順）を返す。"""
     return _run_alert_json_command(
         [
             "glab",
@@ -452,7 +443,6 @@ def _gitlab_pipeline_alert(pipeline: dict, repo: str, ref: str, *, context: RunC
 
 
 def _run_glab_api(host: str, endpoint: str) -> Any:
-    """`glab api`で対象ホストのREST APIを呼び、JSON応答（配列またはオブジェクト）を返す。"""
     target: str | _git_remote.RemoteLocation = host
     if "/" not in host:
         parsed = urllib.parse.urlsplit(f"//{host}")
@@ -480,7 +470,8 @@ def collect_gitlab_schedule_failures(
     schedules = api_fn(api_target, f"{project}?per_page=100")
     if not isinstance(schedules, list):
         raise AlertCollectError(
-            f"Pipeline Scheduleの一覧の応答形状が不正です: {json.dumps(schedules, ensure_ascii=False)[:200]!r}"
+            "Pipeline Scheduleの一覧の応答形状が不正です: "
+            f"{diagnostic_excerpt(json.dumps(schedules, ensure_ascii=False), prefix_chars=200)!r}"
         )
     alerts: list[Alert] = []
     heads: dict[str, tuple[str | None, str | None]] = {}
@@ -514,7 +505,6 @@ def collect_gitlab_schedule_failures(
 
 
 def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[str]:
-    """対象リポジトリに限定したAWI全状態の`alert_keys`を集合として返す。"""
     keys: set[str] = set()
     for _path, _entry_repo, text, _state, _entry_type in _wi_entries.iter_entries(
         private_notes, _ALL_AWI_STATES, target_repo, WI_TYPE_AWI
@@ -524,7 +514,6 @@ def existing_alert_keys(private_notes: pathlib.Path, target_repo: str) -> set[st
 
 
 def _build_alert_message(target_repo_id: str, alert: Alert, branch: str | None = None) -> str:
-    """`add_entries`へ渡すfrontmatter付きメッセージ文字列を組み立てる。系統の監視では宛先の系統を加える。"""
     body = (
         f"# {alert.title}\n\n"
         "自動監視が未解決の事象を検知した。この事象を解消し、継続して行う自動チェックを正常な状態へ戻す。\n\n"
@@ -653,7 +642,6 @@ def check_and_submit_alerts(
 
 
 def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now: datetime.datetime) -> int:
-    """ローカル対象のCI監視を1回実行して終了する。"""
     local_path = _wi_repo.resolve_local_worktree(args.target_repo)
     repo_id = _wi_repo.resolve_repo_id(None, cwd=local_path)
     next_action = (
@@ -661,7 +649,7 @@ def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now:
         "`atk wi check-alerts`を再実行せよ"
     )
     settings = _wi_branches.registry().get(repo_id)
-    # 系統を登録したrepositoryは系統ごとにブランチを照会し、repository単位の確認はdefault_branchの系統だけが行う。
+
     branches: tuple[str | None, ...] = (None,) if settings is None else settings.branches
     submitted = 0
     failures: list[str] = []

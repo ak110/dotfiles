@@ -1,8 +1,5 @@
-"""`atk wi process-loop`のプロンプトとオーケストレーターの選択と、1回のセッションの起動。"""
-
 import argparse
 import contextlib
-import dataclasses
 import json
 import os
 import pathlib
@@ -11,23 +8,18 @@ import sys
 import time
 import uuid
 from collections.abc import Callable
-from typing import Any
 
 import psutil
 
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
-from agent_toolkit._atk import lane as _lane
 from agent_toolkit._atk import managed_temp, usage_refresh
 from agent_toolkit._atk import orchestrator as _orchestrator
-from agent_toolkit._atk.wi import constants as _wi_constants
-from agent_toolkit._atk.wi import listing as _listing
 from agent_toolkit._atk.wi import process_loop_control as _control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_identity as startup_identity
 from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
-from agent_toolkit._atk.wi import process_loop_ownership as _ownership
 from agent_toolkit._common import antigravity_cli, process_tree, skill_modes
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_connection as _claude_settings
@@ -39,8 +31,6 @@ from agent_toolkit._common import process_loop_session as _coordinator_identity
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common import session_registry as _registry
 
-# モデル可用性だけを確認し、作業の副作用を生じさせない事前起動の固定プロンプト。
-# 受領した委譲先がユーザー自身の発話と区別できるよう、`atk-auto`要素で囲んで渡す。
 _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
     "応答できる場合はOKだけを返してください。",
     source=_automated_prompt.SOURCE_PROCESS_LOOP,
@@ -48,71 +38,25 @@ _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
 )
 
 
-class _ClaudeUsageLimit(Exception):
-    """旧CLIの終了後に同一会話の接続を選び直す要求。"""
-
+class ClaudeUsageLimit(Exception):
     def __init__(self, session_id: str) -> None:
         super().__init__(session_id)
         self.session_id = session_id
 
 
-def repository_input(
-    snapshot: _listing.RepositorySnapshot,
-    ownership: _ownership.Ownership,
-    *,
-    worktree: pathlib.Path,
-    reuse_candidates: bool = False,
-) -> dict[str, Any]:
-    """統括担当へ渡す、凍結した対象別の候補と所有・準備情報を返す。"""
-    previous_input: dict[str, Any] = {}
-    previous_manifest = (ownership.previous or {}).get("manifest")
-    if reuse_candidates and isinstance(previous_manifest, str):
-        data = json.loads(pathlib.Path(previous_manifest).read_text(encoding="utf-8"))
-        previous_input = next(
-            (item for item in data["repositories"] if item.get("target", item["target_repo"]) == snapshot.repository.key), {}
-        )
-    branch = snapshot.repository.branch
-    return {
-        **previous_input,
-        "target": snapshot.repository.key,
-        "target_repo": snapshot.repository.repo_id,
-        **({} if branch is None else {"target_branch": branch, "default_branch": snapshot.repository.default_branch}),
-        "registered_worktree": str(snapshot.repository.worktree),
-        "worktree": str(worktree),
-        "common_dir": str(snapshot.repository.common_dir),
-        "ownership_record": str(ownership.path),
-        "ownership_token": ownership.token,
-        "lane_session_id": ownership.lane_session_id,
-        "lane_limit": previous_input.get("lane_limit", snapshot.lane_limit),
-        "candidate_file": previous_input.get("candidate_file")
-        or str(_ownership.save_candidates(ownership, snapshot.candidate_records())),
-        "snapshot_file": str(_ownership.save_snapshot(ownership, snapshot.entries)),
-        "readiness": previous_input.get("readiness", dataclasses.asdict(snapshot.readiness)),
-        "previous": ownership.previous,
-    }
-
-
 def build_process_loop_prompt() -> str:
-    """統括セッション自身の担当範囲の完遂と、その始め方（入口`atk-mode`の作業`process-wi all-repos`の起動）を目的にする。
-
-    工程・終了条件は作業process-wiの手順書が所有する。目的文にも持つと定義が二重化するため、
-    可変入力はSessionStartへ分離する。完了まで続行させる働きはStop hook（autonomous_exit）が担い、
-    ホストの`/goal`は使わない。起動は全てのホストで目的文が示し、SessionStartは起動を差し込まない。
-    """
     return _automated_prompt.wrap(
-        f"{_wi_constants.PROCESS_LOOP_GOAL_BODY}。{skill_modes.entry_launch('process-wi all-repos', free_text=False)}",
+        skill_modes.entry_launch("process-loop", free_text=False),
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind=_automated_prompt.KIND_GOAL,
     )
 
 
 def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
-    """orchestrate用途のモデル設定を候補ごとの(orchestrator, model, effort)として返す。"""
     return _orchestrator.resolve_specs(rerun_action="process-loopを再起動する")
 
 
 def build_resume_prompt() -> str:
-    """元の目的と保存済み成果を保ち、同じ実行の残工程だけを続行させる。"""
     return _automated_prompt.wrap(
         "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行せよ。"
         "未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
@@ -122,7 +66,6 @@ def build_resume_prompt() -> str:
 
 
 def _record_usage_limit_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:
-    """利用上限の解除待ちをprocess-loopのログへ記録する。"""
     _process_loop_log.append(
         "usage_limit_wait",
         candidate=candidate,
@@ -207,9 +150,8 @@ def _build_session_argv(
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> tuple[list[str], pathlib.Path | None]:
-    """選択したオーケストレーターの対話セッション用argvを構築する。"""
     env.pop(_pl_env.PROCESS_LOOP_SESSION_ID_ENV, None)
-    # 会話IDを渡せない新規起動とpicker再開では、統括の最初のSessionStartが会話IDを確保する。
+
     env[_coordinator_identity.CLAIM_ENV] = uuid.uuid4().hex
     if orchestrator == "claude":
         info = _registry.resolve(args.resume).resume_info if resume_pending and args.resume else None
@@ -297,8 +239,7 @@ def _build_session_argv(
             argv.extend(("--conversation", args.resume))
             env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = args.resume
         elif resume_pending:
-            raise ValueError("このengineには会話pickerがないため、再開IDまたはautoを指定する")
-        # 再開時も今回のmanifest・結果保存先を配送する。
+            raise ValueError("このengineには会話pickerがないため、再開IDを指定する")
         argv.extend(("-i", prompt))
         return argv, None
 
@@ -322,7 +263,6 @@ _is_normal_session_exit = _orchestrator.is_normal_session_exit
 
 
 def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "") -> None:
-    """既存のセッション異常終了メッセージを出力し、同じ終了コードで終了する。"""
     suffix = f" 原因: {detail}" if detail else ""
     _next_action.report(
         f"{orchestrator}がexit code {returncode}で異常終了しました。{suffix}",
@@ -333,41 +273,6 @@ def _exit_abnormal_session(orchestrator: str, returncode: int, detail: str = "")
         ),
     )
     sys.exit(returncode)
-
-
-def cleanup_lane_session(
-    lane_session_id: str, *, target_repo: str | None = None, retire_integrated: bool = False
-) -> dict[str, Any]:
-    """担当の終了を確定した後に、終了sessionの解放応答を待たず同じ適格判定でレーン資源を回収する。
-
-    単一起動の子終了後と、all-reposで担当の所有を解放した後の両方でこの処理を実行する。
-    結果はprocess-loopログの`lane_cleanup`へ残し、保持した資源と回収の失敗には同じ所有sessionで
-    再回収する操作を示す。回収の失敗は戻り値へ記録して送出せず、呼び出し側の残りの終了処理
-    （他担当の終了と回収、再起動判断）を続けさせる。
-    """
-    retry_option = " --retire-integrated" if retire_integrated else ""
-    next_action = f"残存理由を解消し、atk lane delete --session-id {lane_session_id}{retry_option} を実行せよ"
-    scope = "" if target_repo is None else f"{target_repo}: "
-    fields: dict[str, Any] = {} if target_repo is None else {"target_repo": target_repo}
-    try:
-        if retire_integrated:
-            cleanup = _lane.cleanup_session(lane_session_id, wait_release=False, retire_integrated=True)
-        else:
-            cleanup = _lane.cleanup_session(lane_session_id, wait_release=False)
-    except Exception as error:
-        # 境界層で全例外を捕捉する。回収できなかった資源は登録とともに残り、同じ操作で再回収できる。
-        _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, error=str(error))
-        _next_action.report(f"{scope}担当の終了後にレーン資源を回収できなかった: {error}", next_action=next_action)
-        return {"lane_session_id": lane_session_id, "error": str(error)}
-    # 回収結果のsession_idはレーン所有sessionを指すため、担当sessionと区別できる名前で記録する。
-    result = {key: value for key, value in cleanup.items() if key != "session_id"}
-    _process_loop_log.append("lane_cleanup", **fields, lane_session_id=lane_session_id, **result)
-    if cleanup["retained"]:
-        _next_action.report(
-            f"{scope}担当の終了後に未回収のレーン資源を保持した: {cleanup.get('result_path')}",
-            next_action=next_action,
-        )
-    return {"lane_session_id": lane_session_id, **result}
 
 
 def _run_process_session(
@@ -387,14 +292,18 @@ def _run_process_session(
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
-    """起動引数が作成した設定の寿命を、準備・実行・終了処理の全体へ結び付ける。"""
     original_env = env.copy()
     while True:
         try:
             return _run_selected_process_session(
                 args,
                 session_path,
-                session_prompt,
+                session_prompt
+                + (
+                    "\n単回実行: 処理可能な候補が無いか、今回の検収を終えた時点で atk agents-exit-session で終了する。"
+                    if getattr(args, "once", False)
+                    else ""
+                ),
                 env,
                 orchestrator=orchestrator,
                 model=model,
@@ -407,7 +316,7 @@ def _run_process_session(
                 codex_provider=codex_provider,
                 claude_connection=claude_connection,
             )
-        except _ClaudeUsageLimit as limited:
+        except ClaudeUsageLimit as limited:
             _process_loop_log.append("session_usage_limit", session_id=limited.session_id)
             _, model, effort, _, claude_connection = select_available_orchestrator(
                 [("claude", model, effort)],
@@ -417,6 +326,7 @@ def _run_process_session(
             )
             args = argparse.Namespace(**vars(args))
             args.resume = limited.session_id
+            args.resume_request_id = None
             resume_pending = True
             env.clear()
             env.update(original_env)
@@ -444,7 +354,6 @@ def _run_selected_process_session(
     codex_provider: str | None,
     claude_connection: _connection.Connection | None,
 ) -> bool:
-    """選択済み接続の一実行が使う設定を、CLIの終了まで保持する。"""
     with (
         contextlib.ExitStack() as settings_owner,
         usage_refresh.cli_activity(
@@ -480,7 +389,6 @@ def _run_selected_process_session(
             on_residual=on_residual,
             codex_provider=codex_provider,
             resume_request_id=getattr(args, "resume_request_id", None),
-            instruction_manifest=getattr(args, "instruction_manifest", None),
             claude_connection=claude_connection,
         )
 
@@ -500,17 +408,12 @@ def _run_started_process_session(
     on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     resume_request_id: str | None = None,
-    instruction_manifest: pathlib.Path | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
-    """統括CLIを1回実行し、正常終了したかを返す。"""
     if hook_debug_log is not None:
         print(f"Claude hook診断ログ: {hook_debug_log}")
     _process_loop_log.append("session_start")
     session_started_at = time.monotonic()
-    # 対象別の指示とlane所有は外側の統括ループが管理する。
-    # 追加指示はセッションを実際に起動する反復でだけ消費する。
-    # AWIが0件で変更検知を待つ反復はここへ到達しないため、保持したまま次の起動へ残る。
     launch_env = _pl_env.session_env(env, orchestrator)
     if (
         on_session_started is not None
@@ -531,7 +434,6 @@ def _run_started_process_session(
             on_residual=on_residual,
             codex_provider=codex_provider,
             resume_request_id=resume_request_id,
-            instruction_manifest=instruction_manifest,
             claude_connection=claude_connection,
         )
         if identifier := launch_env.get(_pl_env.PROCESS_LOOP_SESSION_ID_ENV):
@@ -569,12 +471,10 @@ def _run_started_process_session(
     normal_exit = _is_normal_session_exit(orchestrator, result.returncode, platform=os.name)
     _process_loop_log.append("session_classified", normal=normal_exit, returncode=result.returncode)
     on_session_finished(normal_exit)
-    # 完遂判定・回収・中断要求・自己再起動は全対象を所有する呼出元が行う。
     return normal_exit
 
 
 def _attach_orchestrator_child(identifier: str, child: _registry.ProcessIdentity) -> None:
-    """起動時に公開したオーケストレーターの記録へ、turnを実行する子プロセスの識別を加えて公開し直す。"""
     resolution = _registry.resolve(identifier)
     info = resolution.resume_info
     owner = _registry.owner_process()
@@ -603,22 +503,14 @@ def _stop_orchestrator(
     on_residual: Callable[[process_tree.ReclaimError], None] | None,
     known: list[psutil.Process] | None = None,
     pins: process_tree.ProcessIdentityPins | None = None,
-    raise_on_residual: bool = False,
-) -> list[str]:
-    """統括CLIを子孫ごと停止し、回収できなかった対象を診断して呼び出し元へ渡し、その記述を返す。
-
-    回収できない子孫は所有資源の停止未完了であり、警告ログだけで次の処理へ進むと同じ対象の次の統括と資源を奪い合う。
-    呼び出し元（`process_loop.run_coordinator`）は識別を所有記録へ保存し、消滅を確かめるまで所有を保持する。
-    """
+) -> None:
     failure = process_tree.stop_owned_process(process, context=context, known=known or (), pins=pins)
     if failure is None:
-        return []
+        return
     process_tree.log_residual(failure.residual, context=context)
     if on_residual is not None:
         on_residual(failure)
-    if raise_on_residual:
-        raise failure
-    return failure.residual
+    raise failure
 
 
 def _raise_claude_usage_limit(
@@ -630,7 +522,6 @@ def _raise_claude_usage_limit(
     known: list[psutil.Process],
     pins: process_tree.ProcessIdentityPins,
 ) -> None:
-    """StopFailureの要求を読み、旧CLIの終了を確認して接続選択へ戻す。"""
     if identifier is None:
         return
     request = _host_homes.claude_config_dir(env) / "agent-toolkit-function-hooks" / f"rate-limit-{identifier}.txt"
@@ -640,16 +531,15 @@ def _raise_claude_usage_limit(
         return
     if not limited:
         return
-    residual = _stop_orchestrator(
-        process, context="process-loop usage-limit switch", on_residual=on_residual, known=known, pins=pins
+    _stop_orchestrator(
+        process,
+        context="process-loop usage-limit switch",
+        on_residual=on_residual,
+        known=known,
+        pins=pins,
     )
-    if residual:
-        raise _next_action.ActionableError(
-            f"接続切替前に旧Claude CLIの終了を確認できない: {residual}",
-            next_action="記録したPIDと起動時刻から旧CLIの終了を確認して同じ会話を再開する",
-        )
     request.unlink(missing_ok=True)
-    raise _ClaudeUsageLimit(identifier)
+    raise ClaudeUsageLimit(identifier)
 
 
 def _run_cli_session(
@@ -665,7 +555,6 @@ def _run_cli_session(
     on_residual: Callable[[process_tree.ReclaimError], None] | None = None,
     codex_provider: str | None = None,
     resume_request_id: str | None = None,
-    instruction_manifest: pathlib.Path | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """既存のCLI待機で実行主体を保持し、上限停止と無出力停止を監視する。
@@ -696,7 +585,7 @@ def _run_cli_session(
             stream_buffer += chunk
             lines = stream_buffer.split(b"\n")
             stream_buffer = lines.pop()
-            if not chunk and stream_buffer and process.poll() is not None:
+            if not chunk and stream_buffer and process is not None and process.poll() is not None:
                 lines.append(stream_buffer)
                 stream_buffer = b""
             for raw in lines:
@@ -715,14 +604,18 @@ def _run_cli_session(
                     env[_pl_env.PROCESS_LOOP_SESSION_ID_ENV] = identifier
             return bool(chunk)
 
-        with _control.resume_launch(resume_request_id), _process_loop_log.launch_instructions(instruction_manifest):
-            process = resources.enter_context(
-                subprocess.Popen(
-                    argv, env=env, cwd=cwd, stdout=stdout, creationflags=_pl_env.session_creation_flags(orchestrator)
-                )
-            )
-        known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
+        process: subprocess.Popen[bytes] | None = None
+        known: list[psutil.Process] = []
         try:
+            with _control.resume_launch(resume_request_id), _process_loop_log.launch_instructions() as instructions:
+                if instructions:
+                    argv = [*argv[:-1], f"{argv[-1]}\n\n追加指示:\n{instructions}"]
+                process = resources.enter_context(
+                    subprocess.Popen(
+                        argv, env=env, cwd=cwd, stdout=stdout, creationflags=_pl_env.session_creation_flags(orchestrator)
+                    )
+                )
+            known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
             identity = _registry.ProcessIdentity.of(process.pid)
             if identity is None:
                 raise _next_action.ActionableError(
@@ -811,24 +704,31 @@ def _run_cli_session(
                     if time.time() - updated > 9600:
                         _process_loop_log.append("session_stalled", session_id=identifier or "")
                         _stop_orchestrator(
-                            process, context="process-loop stalled", on_residual=on_residual, known=known, pins=pins
+                            process,
+                            context="process-loop stalled",
+                            on_residual=on_residual,
+                            known=known,
+                            pins=pins,
                         )
                         return subprocess.CompletedProcess(argv, 1)
                     if orchestrator == "codex" and rollout is not None and _codex_usage_limit.from_rollout(rollout) is not None:
                         _process_loop_log.append("session_usage_limit", rollout_path=str(rollout))
                         _stop_orchestrator(
-                            process, context="process-loop usage-limit", on_residual=on_residual, known=known, pins=pins
+                            process,
+                            context="process-loop usage-limit",
+                            on_residual=on_residual,
+                            known=known,
+                            pins=pins,
                         )
                         return subprocess.CompletedProcess(argv, 0)
         except BaseException as error:
-            if not isinstance(error, _ClaudeUsageLimit):
+            if process is not None and not isinstance(error, (ClaudeUsageLimit, process_tree.ReclaimError)):
                 _stop_orchestrator(
                     process,
                     context="process-loop exception",
                     on_residual=on_residual,
                     known=known,
                     pins=pins,
-                    raise_on_residual=True,
                 )
             raise
 
@@ -850,7 +750,6 @@ def run_process_session(
     codex_provider: str | None = None,
     claude_connection: _connection.Connection | None = None,
 ) -> bool:
-    """統括CLIの終了または例外を、呼出元へ一度だけ通知する。"""
     notified = False
 
     def finished(completed: bool) -> None:

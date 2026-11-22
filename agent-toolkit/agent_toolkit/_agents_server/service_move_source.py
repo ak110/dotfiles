@@ -14,8 +14,6 @@ from agent_toolkit._agents_server import service_io, service_state, service_turn
 
 @dataclasses.dataclass
 class MoveSource:
-    """切り離せなかったclientは置き換えず、配送中の要求と通知の既読位置を保持する。"""
-
     client: Any
     backend: Any
     session: Any
@@ -59,7 +57,6 @@ class MoveSource:
             if not await resource.operation("transfer", expected_owner=runtime.owner, new_owner=runtime.owner):
                 raise PermissionError("旧生I/Oの制御所有を確認できません")
         elif self.session.engine == "codex" and self.client is not None and self.client.transferred:
-            # resumeの既読確認は配送中の要求を待たない。所有の一致を確認してからだけdecodeを再開する。
             await self.client.resume()
 
     async def restore(self) -> None:
@@ -69,7 +66,6 @@ class MoveSource:
             self.backend._wait_compactors[self.session.session_id].resume(self.session, checkpoint)
 
     def forget(self, manager: Any) -> None:
-        """受入確定後にだけ、移譲元が持つ制御側の参照を外す。"""
         identifier = self.session.session_id
         manager._cancel_retention_timer(identifier)
         manager.sessions.pop(identifier, None)

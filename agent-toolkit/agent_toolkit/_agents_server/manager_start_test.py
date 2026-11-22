@@ -30,7 +30,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_resolves_codex_family_from_existing_backend_catalog(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """委譲起動へ系列名を渡さず、既存のbackendが持つモデル一覧から解決した完全IDを使う。"""
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -49,7 +48,6 @@ async def test_start_rejects_unknown_model_type_before_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """未知の工程別モデル設定をbackend開始前に拒否する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(
             _atk_config,
@@ -70,7 +68,6 @@ async def test_start_is_listed_as_starting_until_backend_initialization_finishes
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """session_id確定後はstartの応答前でもlistとshowがstartingを返す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:gpt-6-sol/medium")
     async with _manager_with_fake("codex") as (manager, backend):
         original_start = backend.start
@@ -104,7 +101,6 @@ async def test_start_does_not_advance_candidate_when_backend_start_raises(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """backend開始の例外では、資源の二重作成を避けて候補を進めない。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -174,7 +170,6 @@ async def test_start_rejects_unusable_model_type_with_accepted_format(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """解釈できない`model_type`は、受理する書式と`atk config get`での確認を次の操作で示す。"""
     if candidates is not None:
         monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -215,7 +210,6 @@ async def test_start_raises_when_every_initialization_attempt_times_out(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """全試行が初期化の上限へ達した起動を、対象を示す例外で確定する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_ATTEMPTS", 3)
@@ -249,7 +243,6 @@ async def test_start_returns_running_once_model_output_is_observed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了しないsessionでも、最初のモデル出力を観測した時点で上限を待たずに実行中として返す。"""
     monkeypatch.setattr(
         _atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: [("codex", "only", "high")]
     )
@@ -280,7 +273,6 @@ async def test_start_rejects_candidate_independent_input_before_any_backend(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補を変えても結果が変わらない入力の不備は、どの候補も起動せずに拒否する。"""
     candidates = [("codex", "first", "high"), ("codex", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -298,7 +290,6 @@ async def test_start_explore_selects_default_chores_fast_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索起動でモデルを指定しない場合はchores_fast設定を選ぶ。"""
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -331,7 +322,6 @@ async def test_start_shell_runs_command_on_the_chores_fast_route(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """シェル実行委譲は軽量な候補で開始し、依頼と要約方針を委譲先へ渡して結果を観測させる。"""
     monkeypatch.setattr(
         _atk_config,
         "parse_unresolved_model_candidates",
@@ -352,7 +342,6 @@ async def test_start_shell_runs_command_on_the_chores_fast_route(
 
 @pytest.mark.asyncio
 async def test_start_shell_rejects_empty_command_and_summary_policy(tmp_path: pathlib.Path) -> None:
-    """コマンドと要約方針のいずれかが空のシェル実行委譲は開始前に拒否する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         with pytest.raises(ValueError, match="command must be a non-empty string"):
             await manager.start_shell("   ", str(tmp_path), "終了状態だけ")

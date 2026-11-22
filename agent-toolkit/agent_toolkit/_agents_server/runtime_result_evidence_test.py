@@ -1,5 +1,3 @@
-"""続行不能の根拠を当turnの実記録へ対応付け、有限再提出を確認する。"""
-
 import json
 from pathlib import Path
 
@@ -51,7 +49,6 @@ def _result(reason: str) -> dict:
 def test_unobserved_budget_is_held_once(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, kind: state.LaunchKind, role_task: bool, reason: str
 ) -> None:
-    """予算という語に限らず、実記録の無い停止を既存の1回の再提出へ返す。"""
     session = state.SessionState("runtime-test", str(tmp_path), launch_kind=kind, started_at=_START)
     if role_task:
         role = Path(__file__).resolve().parents[2] / "skills" / "atk-mode" / "roles" / "exec.subagent.md"
@@ -72,7 +69,6 @@ def test_unobserved_budget_is_held_once(
 def test_tool_evidence_is_current_and_not_retried(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, timestamp: str, retry: bool, accepted: bool
 ) -> None:
-    """逐語診断の空白差を許容するが、前turnと回復した呼出しは根拠にしない。"""
     path = tmp_path / "record.jsonl"
     _records(path, timestamp=timestamp, retry=retry)
     monkeypatch.setattr(record_paths, "find_session_record", lambda _id: record_paths.SessionRecord("claude", (path,)))
@@ -85,7 +81,6 @@ def test_tool_evidence_is_current_and_not_retried(
 def test_api_error_must_belong_to_current_turn(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, timestamp: str, accepted: bool
 ) -> None:
-    """終了時の実API障害を保持し、前turnの残存情報だけでは受理しない。"""
     session = state.SessionState("runtime-test", str(tmp_path), started_at=_START)
     session.api_error = {"type": "unavailable", "first_at": timestamp}
     monkeypatch.setattr(record_paths, "find_session_record", lambda _id: None)
@@ -117,7 +112,6 @@ def test_codex_outer_exec_result_is_evidence(monkeypatch: pytest.MonkeyPatch, tm
 def test_reader_fit_multiline_reason_preserves_finite_recovery(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, diagnostic: bool
 ) -> None:
-    """正式な複数行理由も、実診断と自己推定を区別して1回の再提出へ渡す。"""
     path = tmp_path / "record.jsonl"
     _records(path)
     monkeypatch.setattr(record_paths, "find_session_record", lambda _id: record_paths.SessionRecord("claude", (path,)))

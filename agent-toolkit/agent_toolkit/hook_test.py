@@ -29,7 +29,6 @@ _HOOK_FAILURE_SUFFIX = " || exit 1"
 
 
 def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`hook.main`は開始時に、起動層が変えた値を呼出元の値へ戻し、hookが起動する子へ渡さない。"""
     monkeypatch.setenv("PYTHONPATH", "/plugin-root:/caller")
     monkeypatch.setenv(inherited_venv.LAUNCH_RESTORE_KEY, json.dumps({"PYTHONPATH": ["/caller", "/plugin-root:/caller"]}))
     monkeypatch.setattr(sys, "stdin", io.StringIO("{}"))
@@ -210,7 +209,6 @@ def test_discarded_codex_stop_notice_is_not_recorded(monkeypatch) -> None:
 
 
 def test_module_failure_never_records_previous_session(monkeypatch):
-    """handler読込前の障害も、現在のpayloadの会話だけへ記録する。"""
     original = importlib.import_module
 
     def fail(name, *args, **kwargs):

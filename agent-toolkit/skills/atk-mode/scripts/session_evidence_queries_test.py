@@ -31,7 +31,6 @@ _SUMMARY_KINDS = {
     ],
 )
 def test_compatible_queries_preserve_results(tmp_path: pathlib.Path, capsys, left, right) -> None:
-    """併用結果は各単独照会の全イベントを持ち、共通イベントを重複させない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -72,7 +71,6 @@ def test_compatible_queries_preserve_results(tmp_path: pathlib.Path, capsys, lef
 
 
 def test_combined_query_preserves_error(tmp_path: pathlib.Path, capsys) -> None:
-    """一方の照会不能を他方の成功で覆わない。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "条文"}}])
     assert evidence.main([str(transcript), "--context-at", "99", "--phrase=x", "--detail", "1"]) == 2
     events = read_jsonl(capsys)
@@ -81,7 +79,6 @@ def test_combined_query_preserves_error(tmp_path: pathlib.Path, capsys) -> None:
 
 @pytest.mark.parametrize("query", [["--grep", "x", "--user-events"], ["--hook-notices", "--user-events"]])
 def test_ambiguous_queries_explain_conflict(capsys, query) -> None:
-    """summaryを共有する照会には理由と分割操作を返す。"""
     assert evidence.main(["/unused", *query]) == 2
     (event,) = read_jsonl(capsys, raw=True)
     assert "summary" in event["text"]
@@ -89,7 +86,6 @@ def test_ambiguous_queries_explain_conflict(capsys, query) -> None:
 
 
 def test_stats_summary_preserves_complete_summary_events(tmp_path: pathlib.Path, capsys) -> None:
-    """統計の表示選択は由来と診断を保ち、要約の全フィールドと順序を保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -105,7 +101,6 @@ def test_stats_summary_preserves_complete_summary_events(tmp_path: pathlib.Path,
 
 
 def test_stats_summary_includes_claude_and_codex_delegates(tmp_path: pathlib.Path, capsys, monkeypatch) -> None:
-    """混在する実行系の担当要約も全量と同じ順序・値で返す。"""
     family = delegated_threads.write_delegated_threads(tmp_path)
     write_subagent(
         family.transcript.with_suffix("") / "subagents",
@@ -133,7 +128,6 @@ def test_stats_summary_includes_claude_and_codex_delegates(tmp_path: pathlib.Pat
 
 @pytest.mark.parametrize("query", [["--tool-calls"], ["--stats"], ["--detail", f"codex:{delegated_threads.CODEX_THREAD_ID}:3"]])
 def test_user_events_combination_keeps_delegate_queries(tmp_path: pathlib.Path, capsys, monkeypatch, query) -> None:
-    """親だけの発話選択が、併用した照会の委譲先と未解決診断を狭めない。"""
     family = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("HOME", str(family.home))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(family.home / ".claude"))
@@ -164,7 +158,6 @@ def test_user_events_combination_keeps_delegate_queries(tmp_path: pathlib.Path, 
 def test_stats_summary_input_routes_and_unresolved_diagnostics(
     tmp_path: pathlib.Path, capsys, monkeypatch, source, family_kind
 ) -> None:
-    """公開入力の各指定で担当要約を取得し、未解決を含む全量の順序・全欄を保つ。"""
     family = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("HOME", str(family.home))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(family.home / ".claude"))

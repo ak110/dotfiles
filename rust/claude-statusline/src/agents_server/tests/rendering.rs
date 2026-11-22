@@ -297,8 +297,8 @@ fn rendering_api_error_from_state_file_shows_retry_and_recovers() {
         .iter()
         .find(|line| line.contains("completed"))
         .unwrap();
-    assert!(terminal_line.contains("対応不要"));
-    assert!(terminal_line.contains("結果回収・子孫session終了後に非表示"));
+    assert!(terminal_line.contains("Bash"));
+    assert!(!terminal_line.contains("対応不要"));
 }
 
 #[test]
@@ -419,7 +419,9 @@ fn waiting_and_terminal_rows_keep_identity_elapsed_and_guidance_at_80_columns() 
         let terminal = matches!(state, "completed" | "failed" | "interrupted");
         let status = if terminal { state } else { "running" };
         let mut row = status_session("session-id", status, "2025-12-31T23:59:00+00:00");
-        if !terminal {
+        if terminal {
+            row["progress"] = Value::String("progress fallback".to_string());
+        } else {
             row["api_error"] = serde_json::json!({
                 "type": state, "http_status": 429,
                 "first_at": "2025-12-31T23:59:00+00:00", "count": 3,
@@ -433,10 +435,11 @@ fn waiting_and_terminal_rows_keep_identity_elapsed_and_guidance_at_80_columns() 
         )];
         let lines = render_state_files(&files, 80, now);
         assert!(lines[0].starts_with("session-id (claude)"), "{lines:?}");
-        assert!(lines[0].contains("対応不要"), "{lines:?}");
+        assert_eq!(lines[0].contains("対応不要"), !terminal, "{lines:?}");
         assert!(lines[0].contains("1m0s"), "{lines:?}");
         if terminal {
             assert!(lines[0].ends_with(status), "{lines:?}");
+            assert!(!lines[0].contains("progress fallback"), "{lines:?}");
         } else if state == "usage_limit" {
             assert!(lines[0].contains("解除まで1h0m"), "{lines:?}");
         } else {

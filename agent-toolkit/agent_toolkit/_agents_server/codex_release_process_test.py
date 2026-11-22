@@ -35,7 +35,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """readerが取消しを無視し、App ServerがTERMを無視しても所有MCPの回収まで終了する。"""
     wrapper = tmp_path / "stubborn_app_server.py"
     wrapper.write_text(
         "import runpy, signal, sys\n"
@@ -99,7 +98,6 @@ async def test_close_reclaims_app_server_and_mcp_when_reader_and_term_stall(
 async def test_stop_reclaims_late_descendant_with_short_lived_parent(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, snapshot_has_child: bool
 ) -> None:
-    """短命な親から生まれた子を、親の終了と列挙時機によらず回収する。"""
     work = tmp_path / "late"
     work.mkdir()
     async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, backend, fake):
@@ -112,8 +110,6 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
         await _wait_terminal(manager, session_id, fake)
         await asyncio.to_thread(late_descendant.wait_spawner, work)
         if sys.platform == "win32":
-            # 実snapshotへ親子を含めた後、handle保持より先に親を終了させる。
-            # 対照版の列挙だけへ同じsnapshotを渡し、Job版では列挙なしの所属回収を検収する。
             spawner = psutil.Process(int((work / "spawner.pid").read_text(encoding="utf-8")))
             client_process = backend._clients[session_id].process
             assert client_process is not None

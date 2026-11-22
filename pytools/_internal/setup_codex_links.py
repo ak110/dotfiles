@@ -19,6 +19,7 @@ CODEX_HOME = Path.home() / ".codex"
 # 配布先（`~/.codex/`起点）→配布元（dotfilesルート起点）のマップ。
 # 配布先は全てディレクトリで、Windowsではディレクトリジャンクションで実現する。
 _LINKS: dict[str, str] = {
+    "skills/apply-followup-ledger": ".chezmoi-source/dot_claude/skills/apply-followup-ledger",
     "skills/operate-ak110-projects": ".chezmoi-source/dot_claude/skills/operate-ak110-projects",
     "docs": ".chezmoi-source/dot_claude/docs",
 }
@@ -62,7 +63,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _process_link(dest: Path, target: Path) -> bool:
-    """単一のリンクを処理し、新規作成または更新したら`True`を返す。"""
     if not target.exists():
         logger.warning(
             log_format.format_status(
@@ -81,8 +81,7 @@ def _process_link(dest: Path, target: Path) -> bool:
 
 def sync_directory_link(dest: Path, target: Path) -> bool:
     """ディレクトリリンクを期待する参照先へ収束させる。"""
-    # is_symlink単独だとリンク切れも捕捉できるが、リンク切れのジャンクションは
-    # is_symlinkがFalseを返すため_is_link_likeも条件へ加え、CreateJunctionの衝突を避ける。
+
     if _is_link_like(dest):
         stored = dest.readlink()
         stored = stored if stored.is_absolute() else dest.parent / stored
@@ -112,23 +111,20 @@ def _normalized_link_path(path: Path) -> str:
 
 
 def _is_link_like(path: Path) -> bool:
-    """シンボリックリンクまたはディレクトリジャンクションかを判定する。"""
     if path.is_symlink():
         return True
     return path.is_junction()
 
 
 def _remove_link(path: Path) -> None:
-    """リンクまたはジャンクションを除去する。"""
     if path.is_symlink():
         path.unlink()
         return
-    # ジャンクションは通常ディレクトリと同じ `rmdir` で除去できる。
+
     path.rmdir()
 
 
 def _create_link(dest: Path, target: Path) -> None:
-    """シンボリックリンクまたはジャンクションを生成する。"""
     if sys.platform == "win32":
         # pylint: disable=import-outside-toplevel,import-error
         import _winapi  # noqa: PLC0415 -- Windows専用、Linux環境では import 不可

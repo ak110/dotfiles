@@ -83,7 +83,6 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def _history(repo: Path) -> list[tuple[str, str, datetime.datetime]]:
-    """主系列の各パスの追加・変更commitと日時を履歴順で返す。"""
     history: list[tuple[str, str, datetime.datetime]] = []
     commit = ""
     timestamp: datetime.datetime | None = None
@@ -110,8 +109,6 @@ def _history(repo: Path) -> list[tuple[str, str, datetime.datetime]]:
 
 @dataclasses.dataclass(frozen=True)
 class SavedReviewTable:
-    """保存済みの実行レビュー指摘管理表1件。`timestamp`は最初に追加したcommitの日時。"""
-
     path: Path
     timestamp: datetime.datetime
     rows: list[tuple[int, list[str]]]
@@ -120,8 +117,6 @@ class SavedReviewTable:
 
 @dataclasses.dataclass(frozen=True)
 class SavedReviewTables:
-    """期間内の保存済み管理表と、期間の判定や読込ができなかった件数。"""
-
     tables: list[SavedReviewTable]
     all_paths: list[Path]
     unreadable: int
@@ -131,12 +126,6 @@ class SavedReviewTables:
 def saved_review_tables(
     repo: Path, history: list[tuple[str, str, datetime.datetime]], since: datetime.datetime, until: datetime.datetime
 ) -> SavedReviewTables:
-    """private-notesの`plans`配下から、最初の追加commitが期間内にある実行レビューの管理表を読む。
-
-    週次指標と振り返りの採否集計が同じ読込・正規化と期間の割当を使うよう、両者から呼ぶ。
-    行は`track`が`exec-review`のものだけを残し、明示された実装中の判断記録と、担当が自分で足した行を分ける。
-    元の表の行番号とセルは、除外の追跡と応答の所在確認のため保持する。
-    """
     first_additions: dict[str, datetime.datetime] = {}
     for path, _commit, timestamp in history:
         first_additions.setdefault(path, timestamp)
@@ -158,7 +147,7 @@ def saved_review_tables(
                 if row[1] != "exec-review":
                     continue
                 int(row[0])
-                # 主体名や応答状態だけでは、実指摘への見送り・撤回と区別できない。
+
                 is_judgment = (
                     bool(_SELF_RECORD_LABEL.match(row[2].strip()))
                     or any(_JUDGMENT_LABEL.match(row[column].strip()) for column in (2, 3, 6))
@@ -278,7 +267,7 @@ def _scan_sessions(
                         else path.stem
                     )
                     paths[identity].append((path, "codex" if runtime == "codex" else "agy" if runtime == "agy" else "claude"))
-                    # 旧mtimeの親も参照索引に必要。候補・coverageの期間条件はそのまま保つ。
+
                     old_meta = _scan_record_metadata(path)
                     if old_meta.failure is None:
                         referenced.update(old_meta.child_ids)
@@ -301,7 +290,7 @@ def _scan_sessions(
             referenced.update(meta.child_ids)
             if meta.is_subagent:
                 referenced.add(session_id)
-            # 走査全体では本文を保持せず、各ルートの集計時だけ再帰収集する。
+
             sessions.append(_Session(item, start))
         runtime_coverage[runtime]["oldest_record_at"] = oldest.isoformat() if oldest else None
     candidates = {identity: items[0] for identity, items in paths.items() if len(items) == 1}
@@ -410,7 +399,6 @@ def _session_metrics(
 
 
 def _session_cwd(records: list[_Record]) -> str | None:
-    """開始記録のcwdを取得し、呼出側へ本文エントリの参照を残さない。"""
     for record in records:
         entry = record.entry
         if isinstance(entry.get("cwd"), str):
@@ -422,7 +410,6 @@ def _session_cwd(records: list[_Record]) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """公開CLIから期間と所在を受け取り、週ごとの指標と被覆範囲をJSON Linesで返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--since", required=True, metavar="DATE", help="開始日時（必須）。日付・ISO 8601、時差なしはローカル時刻。"

@@ -45,7 +45,6 @@ def _input_file(path: pathlib.Path) -> bool:
 
 
 def _regenerable(path: pathlib.Path) -> bool:
-    """名前だけで決めず、生成形式と再生成入力が対応する対象を選ぶ。"""
     project = path.parent
     venv_config = path / "pyvenv.cfg"
     if path.name == ".venv" or _input_file(venv_config):
@@ -64,7 +63,6 @@ def _regenerable(path: pathlib.Path) -> bool:
 
 
 def is_tagged_cache(path: pathlib.Path) -> bool:
-    """生成側が有効なCACHEDIR.TAGでキャッシュと明示したディレクトリかを返す。"""
     tag = path / "CACHEDIR.TAG"
     if tag.is_symlink() or not _input_file(tag):
         return False
@@ -73,7 +71,6 @@ def is_tagged_cache(path: pathlib.Path) -> bool:
 
 
 def process_references() -> list[pathlib.Path] | None:
-    """回収単位で1回だけ、同一アカウントの使用参照を観測する。確認不能は保持する。"""
     references = []
     try:
         username = psutil.Process().username()
@@ -109,7 +106,6 @@ def process_references() -> list[pathlib.Path] | None:
 
 
 def _git_protected(path: pathlib.Path, root: pathlib.Path) -> tuple[bool, pathlib.Path]:
-    """Git原本の保護と、環境を暗黙に使うプロジェクトの範囲を返す。"""
     project = path.parent
     while project.is_relative_to(root):
         if (project / ".git").exists():
@@ -202,7 +198,7 @@ def cleanup_regenerable(
                 else:
                     # 正常な所有・Git保護と、消費終了や確認・修復後に再試行できる保持を区別する。
                     retryable = True
-                    # 再生成物が無い起動・掃引ではプロセス一覧も取得しない。
+
                     observed = references()
                     if observed is None:
                         reason = "実行中の使用参照を確認できない"

@@ -1,12 +1,9 @@
-"""serveのstateに関するui_searchの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui
 
 
 def test_assets_preserve_selected_target_repo_when_absent_from_choices() -> None:
-    """候補から消えた対象リポジトリも選択肢と選択状態を保持する。"""
     result = _run_node_ui(
         """
 fetchHandler = async (url) => {
@@ -74,7 +71,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_user_filter_load_when_same_state_sse_supersedes_repo_request() -> None:
-    """エンドユーザーの候補要求中に届いたSSEを保留し、一覧通知を維持する。"""
     result = _run_node_ui(
         """
 const repoResolvers = [];

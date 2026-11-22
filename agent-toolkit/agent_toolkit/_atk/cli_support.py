@@ -11,7 +11,6 @@ from agent_toolkit._common import next_action as _next_action
 
 
 def argument_type_error(reason: str, next_action: str) -> argparse.ArgumentTypeError:
-    """理由と次の操作の行を持つargparse向けの型エラーを返す。"""
     return argparse.ArgumentTypeError(_next_action.with_next_action(reason, next_action))
 
 
@@ -26,7 +25,6 @@ _SUBCOMMAND_DESTS = (
 
 
 def command_label(args: argparse.Namespace) -> str:
-    """ヘルプを案内するリーフサブコマンドの表記（例: `atk wi add`）を返す。"""
     parts = ["atk", args.command]
     for dest in _SUBCOMMAND_DESTS:
         value = getattr(args, dest, None)

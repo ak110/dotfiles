@@ -1,5 +1,3 @@
-"""現在の受付と実行中turnの制御所有を分け、実終了後だけ状態と生I/Oを移す。"""
-
 from __future__ import annotations
 
 # 同じservice内のManager・writer・backendを、所有移譲の単一境界で協調させる。
@@ -14,15 +12,10 @@ import weakref
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent
-from pydantic import TypeAdapter
-
 from agent_toolkit._agents_server import (
-    mcp_tools,
     resume_waits,
     service_io,
     service_rpc,
-    service_state,
     service_transport,
     service_turns,
 )
@@ -32,40 +25,13 @@ from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_move_source import MoveSource
 from agent_toolkit._agents_server.service_projection import ProjectionHub, seed_from_previous
 from agent_toolkit._agents_server.service_registry import RegistryForwarder, restore_generation
-from agent_toolkit._common import file_lock, runtime_environment, session_registry
-from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._agents_server.service_session_control import ServiceSessionControl, _caller_payload
+from agent_toolkit._common import file_lock
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.service")
-_RESULT = TypeAdapter(CallToolResult | InputRequiredResult)
 
 
-def _caller_payload(caller: runtime_environment.CallerContext) -> dict:
-    return {
-        "environment": dict(caller.environment),
-        "cwd": str(caller.cwd),
-        "connection_id": caller.connection_id,
-        "parent_settings": caller.parent_settings,
-        "credit_shortages": dict(caller.credit_shortages),
-        "host_process": caller.host_process,
-    }
-
-
-def _restore_caller(value: dict) -> runtime_environment.CallerContext:
-    return runtime_environment.CallerContext(
-        value["environment"],
-        pathlib.Path(value["cwd"]),
-        dict(value["credit_shortages"]),
-        value["connection_id"],
-        value["parent_settings"],
-        value.get("host_process"),
-    )
-
-
-# 保存を静止させた公開元の生存を確かめる間隔。
 _PUBLISHER_PROBE_SECONDS = 1.0
-
-# 所有世代への所有照会の待機上限。生存する世代は即時に応答するため、停止した世代だけを短時間で判別する。
-_OWNER_PROBE_SECONDS = 10.0
 
 # 初回の確定からの期限と、確定が届かなかった旧世代への再送間隔。
 # 確認ごとに世代索引のロックを取るため、退役を記録する旧世代とロックを取り合わない程度に間隔を空ける。
@@ -75,22 +41,13 @@ _COMMIT_RETRY_SECONDS = 0.25
 
 @dataclasses.dataclass
 class _Update:
-    """公開元の世代が求めた1回の準備。静止を解くのは、この準備の監視task（`_supervise`）だけとする。
-
-    公開元は受付の公開後に確定（`commit_update`）を通知する。確定より先に受付先の前進を観測すれば確定と同じに扱い、
-    確定より先に公開元が終了すれば放棄として扱う。
-    どの場合も、準備が静止を掛け終えてから解く。先に解くと、後から掛かる静止を解く主体が残らない。
-    """
-
     publisher: dict
     frozen: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
     committed: asyncio.Future[dict] = dataclasses.field(default_factory=lambda: asyncio.get_running_loop().create_future())
     released: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
 
 
-class ServiceCoordinator:
-    """一度だけの移譲と未配送要求の振り分けを、同じsession単位で直列化する。"""
-
+class ServiceCoordinator(ServiceSessionControl):
     def __init__(
         self,
         target: dict,
@@ -125,16 +82,14 @@ class ServiceCoordinator:
         self.managers.foreign_sessions = self._foreign_sessions
 
     async def publish(self) -> dict:
-        """起動の重複は合流し、旧保存を静止してから現行受付を公開する。"""
         async with self._publish_lock:
             with (self.directory / "publish.lock").open("a+", encoding="utf-8") as handle:
                 await run_file_operation(file_lock.acquire_lock, handle)
                 previous = None
                 token = uuid.uuid4().hex
                 try:
-                    # 先に受付を生存する世代へ戻し、その世代の保存を静止してから公開する。
                     current = await restore_generation(self.registry)
-                    # 受付を戻すと、起動済みの未公開の世代のepochは戻した世代より新しい値へ振り直される。
+
                     entry = self.registry.generations().get(self.generation)
                     if entry is not None:
                         self.target["epoch"] = entry["epoch"]
@@ -168,14 +123,7 @@ class ServiceCoordinator:
                         file_lock.release_lock(handle)
 
     async def _commit(self, previous: dict, token: str) -> None:
-        """静止させた旧世代へ確定を届ける。届かなければ、旧世代が生存する間は同じ確定を送り直し、終了していれば退役の記録で成否を決める。
-
-        確定の受理は冪等で、解除済みの準備へ届いた確定は捨てられるため、送り直しても静止の解除は1回だけになる。
-        旧世代は受付先の前進を観測しても静止を解くため、会話を持つ旧世代は確定を失っても動き続け、退役するのはturnの終了後になる。
-        会話を持たない旧世代は確定の接続より先に退役して終了することがあり、この修正より前の版の旧世代は確定の到着を待たずに退役する。
-        旧世代は引き継ぐ会話・資源を残さずに終了した場合だけ退役を記録する（`service.run`）。
-        記録が無いまま終了した旧世代は、それらを持ったまま停止・例外・強制終了で終わったことがあり得るため、公開の失敗として返す。
-        """
+        """確定を再送し、応答を失った場合は今回の移転の確定記録で判断する。"""
         arguments = {"token": token, "current": self._current()}
         loop = asyncio.get_running_loop()
         deadline = loop.time() + _COMMIT_WAIT_SECONDS
@@ -189,19 +137,12 @@ class ServiceCoordinator:
                     except (OSError, EOFError) as error:
                         first_error = first_error or error
 
-                    # 旧世代の終了直前の退役も確認するため、生存を確かめてから記録を読む。
                     alive = service_transport.process_alive(previous["process"])
-                    if await run_file_operation(self.registry.retired, previous["generation"], previous["process"]):
-                        _LOG.info(
-                            "旧世代が確定前に退役しました: generation=%s error=%s: %s",
-                            previous["generation"],
-                            type(first_error).__name__,
-                            first_error,
-                        )
+                    if await run_file_operation(self.registry.handover_confirmed, self.target, previous):
                         return
                     if not alive:
                         raise RuntimeError(
-                            "旧世代が確定を受け取らずに終了し、正常な退役の記録がありません。"
+                            "旧世代が終了し、会話移転の確定記録がありません。"
                             "旧世代の会話は新世代へ移っていないことがあります: "
                             f"generation={previous['generation']} process={previous['process']} "
                             f"error={type(first_error).__name__}: {first_error}"
@@ -211,7 +152,6 @@ class ServiceCoordinator:
             raise first_error or timeout from None
 
     def bind_runtime(self, runtime: service_io.Runtime) -> service_io.Runtime:
-        """現在のbackendにだけ終了境界を知らせ、資源のoriginは変えない。"""
         self._runtime = dataclasses.replace(
             runtime,
             boundary=self.boundary,
@@ -222,13 +162,11 @@ class ServiceCoordinator:
         return self._runtime
 
     def started(self, session: Any) -> None:
-        """背景完了で自律開始したturnへ、前turnの終了境界を持ち越さない。"""
         self._ended.pop(session.session_id, None)
         self._ended_sdk_clients.pop(session.session_id, None)
 
     @contextlib.asynccontextmanager
     async def input_scope(self, session: Any) -> AsyncGenerator[bool]:
-        """子孫の終了後の本来入力で、旧世代の生I/Oを通常の解放処理へ返す。"""
         found = self._conversation(session.session_id)
         backend: Any = None if found is None else found[1].manager._backends.get(session.engine)
         client = self._client(backend, session.session_id)
@@ -261,20 +199,13 @@ class ServiceCoordinator:
     def _current(self) -> dict:
         current = self.registry.current()
         if current is not None and current["process"] == self.target["process"]:
-            # 受付を戻された世代は終了した受付先のepochを引き継ぐ。退出の判定が自身を旧世代と扱わないよう追従する。
             self.target["epoch"] = current["epoch"]
         return current or self.target
 
     def _superseded(self) -> bool:
-        """受付先が自世代より新しい世代へ進んだかを、世代索引から判定する。"""
         return self._current()["epoch"] > self.target["epoch"]
 
     def holds_handover(self) -> bool:
-        """受付先の世代へ引き継ぐ会話、raw資源、受入中の移譲、取り込み待ちが残るかを返す。
-
-        退出の判定と、終了時に退役を記録するかの判定（`service.run`）が共有する。
-        残したまま終了した世代は、その会話と実行資源を失わせている。
-        """
         return bool(
             self.managers.conversations
             or self._runtime is None
@@ -284,11 +215,6 @@ class ServiceCoordinator:
         )
 
     def can_retire(self) -> bool:
-        """接続数や経過時間で強制終了せず、受付先が進み、引き継ぐものがなくなったことだけで退出する。
-
-        準備した更新（`_updates`）も退出を止め、受付先の切替の直後に届く確定の接続を閉じないようにする。
-        監視taskは確定が届かなくても受付先の前進で更新を外すため、退出は確定の到着に依存しない。
-        """
         return self._superseded() and not self._updates and not self.holds_handover()
 
     def _conversation(self, identifier: str) -> tuple[str, Conversation] | None:
@@ -297,7 +223,6 @@ class ServiceCoordinator:
         )
 
     def boundary(self, session: Any, client: Any) -> None:
-        """backendの実終了だけを記録し、準備中または新受付公開後は次のdecodeを止める。"""
         self._ended[session.session_id] = session.turn_seq, session.turn_id
         # SDKは所有taskの終了時にbackendの参照が消える。Codexは解放までbackend自身が所有する。
         if session.engine == "claude" and client is not None:
@@ -320,7 +245,6 @@ class ServiceCoordinator:
         return session.turn_completed or self._ended.get(session.session_id) == (session.turn_seq, session.turn_id)
 
     def _schedule_move(self, identifier: str) -> None:
-        """終了境界の後始末を予約する。終わった予約は予約し直し、その時点の受付先で移すか取り込み直すかを決めさせる。"""
         task = self._moving.get(identifier)
         if task is not None and not task.done():
             return
@@ -329,7 +253,6 @@ class ServiceCoordinator:
         self._moving[identifier] = asyncio.create_task(self._move(identifier))
 
     async def prepare(self, token: str, target: dict) -> dict:
-        """新しいmodel実行だけを静止し、進行中turnや背景taskの終了は待たない。静止は準備の監視taskが解く。"""
         update = _Update(target)
         self._updates[token] = update
         supervisor = asyncio.create_task(self._supervise(token, update))
@@ -352,11 +275,6 @@ class ServiceCoordinator:
         return self.projections.inventory()
 
     async def commit_update(self, token: str, current: dict) -> None:
-        """公開元が通知した確定を準備の監視taskへ渡し、静止の解除を待つ。
-
-        解除済みの準備へ遅れて届いた確定は捨てる。解除済みなら、同じ受付先を世代索引から観測した後か、
-        公開元の終了を受けて受付を戻した後である。後者で確定の受付先を観測すると、終了した世代へ受付を向け直す。
-        """
         update = self._updates.get(token)
         if update is None:
             return
@@ -383,7 +301,6 @@ class ServiceCoordinator:
             if update.committed.done():
                 current = update.committed.result()
             else:
-                # 公開元が確定を通知せずに終了していれば、受付先は終了した世代を指すことがあるため生存する世代へ戻す。
                 await restore_generation(self.registry)
                 current = self._current()
             await self.gate.observe_current(current)
@@ -432,7 +349,6 @@ class ServiceCoordinator:
             if not service_transport.process_alive(packet["source"]["process"]):
                 self._incoming.pop(identifier, None)
         if self._current()["generation"] != self.generation:
-            # 受付先の世代が公開後に終了していれば、生存する世代へ受付を戻して既存の会話を続ける。
             await restore_generation(self.registry)
         current = self._current()
         await self.gate.observe_current(current)
@@ -474,7 +390,6 @@ class ServiceCoordinator:
                     await self._finish_adoption(identifier)
 
     async def _reclaim_unadopted(self, descriptor: dict) -> bool:
-        """本体を失った資源は元のbrokerで閉じ、未確認イベントも残っていないことを確かめる。"""
         assert self._runtime is not None
         resource = service_io.Resource.attach(self._runtime, descriptor)
         if not descriptor.get("closed"):
@@ -489,7 +404,6 @@ class ServiceCoordinator:
         try:
             await resource.operation("discard")
         except OSError, EOFError, RuntimeError:
-            # closeの応答後に元プロセスが終了すれば、メモリー上のイベントも残らない。
             if not descriptor.get("closed") or service_transport.process_alive(resource.origin["process"]):
                 _LOG.warning("未取り込み資源の回収を再試行します: %s", resource.identifier, exc_info=True)
                 return False
@@ -523,470 +437,8 @@ class ServiceCoordinator:
                 await backend.adopt_session(session, packet["resource"], packet["auxiliary"])
                 if packet["writer_session_id"] is not None:
                     backend._writer_session_ids[identifier] = packet["writer_session_id"]
-            # 本体が解放された後の待ちでも、取り込み済みを判別できるようにする。
+
             packet["resource"] = None
             await manager.save_control_state()
             manager._service_paused.discard(identifier)
             self._pending_adoptions.pop(identifier, None)
-
-    async def accept_context(self, packet: dict) -> None:
-        current = self._current()
-        if current["generation"] != self.generation:
-            await service_rpc.request(current, "move_context", packet)
-            return
-        key = packet["source"] + ":" + packet["parent"]
-        if key in self._contexts:
-            return
-        with runtime_environment.bind(_restore_caller(packet["caller"])):
-            async with self.managers.scope(
-                CallToolRequestParams(name="list", arguments={}),
-                identifier_override=packet["parent"],
-            ) as manager:
-                for attribute, field in (("expired_sessions", "expired"), ("stopped_sessions", "stopped")):
-                    for identifier, value in self.projections._codec.decode(packet[field]).items():
-                        getattr(manager, attribute).setdefault(identifier, value)
-                await manager.save_control_state()
-                self._contexts.add(key)
-
-    async def disconnect(self, identifier: str) -> None:
-        self.managers.disconnect(identifier)
-        current = self._current()
-        if current["generation"] != self.generation:
-            await service_rpc.request(current, "disconnect", {"connection_id": identifier})
-
-    def _client(self, backend: Any, identifier: str) -> Any:
-        if backend is None:
-            return None
-        return (
-            getattr(backend, "_sdk_clients", {}).get(identifier)
-            or getattr(backend, "_clients", {}).get(identifier)
-            or self._ended_sdk_clients.get(identifier)
-        )
-
-    async def parent_sessions(self, parent: str, include_terminated: bool) -> list:
-        """この世代が保持する、指定した親会話のsessionの一覧項目を返す（別世代からの照会用）。"""
-        conversation = self.managers.conversations.get(parent)
-        if conversation is None:
-            return []
-        with self.managers._bound(conversation):
-            response = await conversation.manager.list_sessions(include_terminated=include_terminated)
-        return list(response["sessions"])
-
-    async def _foreign_sessions(self, parent: str, include_terminated: bool) -> dict[str, list]:
-        """同じ親会話のsessionを別の生存世代から集める。ターンの途中の会話は終了境界まで旧世代に残るため。"""
-        sessions: list = []
-        unreachable: list = []
-        for generation, entry in self.registry.generations().items():
-            if generation == self.generation or not entry.get("ready") or entry.get("retired"):
-                continue
-            try:
-                target = service_rpc.discovery(self.directory, generation)
-            except OSError, ValueError:
-                continue
-            if not service_transport.process_alive(target["process"]):
-                continue
-            try:
-                sessions.extend(
-                    await service_rpc.request(
-                        target,
-                        "parent_sessions",
-                        {"parent": parent, "include_terminated": include_terminated},
-                        timeout=_OWNER_PROBE_SECONDS,
-                    )
-                )
-            except (OSError, EOFError, TimeoutError, RuntimeError) as error:
-                unreachable.append(
-                    {
-                        "generation": generation,
-                        "server_instance": target.get("server_instance"),
-                        "error": f"{type(error).__name__}: {error}",
-                        "next_action": (
-                            "この世代が所有するsessionは一覧に含まれていない。agents_serverの`list`が返す`server_generations`で"
-                            "当該世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行する。"
-                            "応答しないままなら当該プロセスを処置する（処置前に自身のMCP接続先でないことを確かめる）"
-                        ),
-                    }
-                )
-        return {"sessions": sessions, "unreachable": unreachable}
-
-    def owns(self, parent: str, identifier: str) -> bool:
-        conversation = self.managers.conversations.get(parent)
-        return conversation is not None and identifier in conversation.manager.sessions
-
-    async def owned_call(self, parent: str, caller: runtime_environment.CallerContext, params: CallToolRequestParams) -> dict:
-        """元の親会話の制御を受理し、未配送の次turnは現行側へ返す。"""
-        conversation = self.managers.conversations.get(parent)
-        identifier = (params.arguments or {}).get("session_id")
-        if conversation is None or identifier not in conversation.manager.sessions:
-            return {"move_required": True}
-        session = conversation.manager.sessions[identifier]
-        await self._finish_adoption(identifier)
-        next_turn = params.name == "send_message" and (session.terminal or self._ended_turn(session))
-        try:
-            async with self.gate.admit(new_turn=next_turn, session_id=identifier):
-                conversation.caller = dataclasses.replace(caller, credit_shortages=conversation.caller.credit_shortages)
-                conversation.manager._caller_context = conversation.caller
-                with self.managers._bound(conversation):
-                    selected = mcp_tools._SELECTED_MANAGER.set(conversation.manager)
-                    try:
-                        result = await mcp_tools.mcp._call_registered_tool(None, params)
-                    finally:
-                        mcp_tools._SELECTED_MANAGER.reset(selected)
-                return {"result": result.model_dump(by_alias=True, exclude_none=True)}
-        except service_turns.MoveRequired:
-            return {"move_required": True}
-
-    async def call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
-        try:
-            return await self._call_tool(context, params)
-        except ActionableError as error:
-            # 世代間の振り分けで生じた診断は登録ツールの外で送出されるため、ツールの例外と同じく
-            # 理由と次の操作の2行をツールのエラーとして返す。素通しするとMCPの汎用エラーとなり次の操作が落ちる。
-            return CallToolResult(content=[TextContent(type="text", text=error.message)], is_error=True)
-        except service_turns.MoveRequired as moved:
-            caller = runtime_environment.current()
-            assert caller is not None
-            value = await service_rpc.request(
-                moved.target,
-                "public_call",
-                {
-                    "caller": _caller_payload(caller),
-                    "params": params.model_dump(by_alias=True, exclude_none=True),
-                },
-            )
-            return _RESULT.validate_python(value)
-
-    async def _call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
-        """schema・説明・結果生成は既存MCP登録を使い、受付と所有の振り分けだけを行う。"""
-        caller = runtime_environment.current()
-        if caller is None:
-            raise RuntimeError("呼出元contextがありません")
-        current = self._current()
-        if current["generation"] != self.generation:
-            value = await service_rpc.request(
-                current,
-                "public_call",
-                {
-                    "caller": _caller_payload(caller),
-                    "params": params.model_dump(by_alias=True, exclude_none=True),
-                },
-            )
-            return _RESULT.validate_python(value)
-        async with self.managers.scope(params) as manager:
-            parent = next(key for key, item in self.managers.conversations.items() if item.manager is manager)
-            identifier = (params.arguments or {}).get("session_id")
-            if isinstance(identifier, str) and identifier not in manager.sessions:
-                owner = await self._owner(identifier)
-                if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
-                    value = await service_rpc.request(
-                        owner,
-                        "owned_call",
-                        {
-                            "parent": parent,
-                            "caller": _caller_payload(caller),
-                            "params": params.model_dump(by_alias=True, exclude_none=True),
-                        },
-                    )
-                    if not value.get("move_required"):
-                        return mcp_tools.relay_result(params.name, _RESULT.validate_python(value["result"]), owner, self.target)
-                    try:
-                        moved = await service_rpc.request(owner, "move", {"session_id": identifier})
-                    except (RuntimeError, OSError, EOFError, TimeoutError) as error:
-                        # 汎用の内部エラーで返すと、追送の配送と所有の状態を呼出元が判断できない。
-                        # 応答だけを失った場合は移譲が成立していることもあるが、入力はまだ渡していない。
-                        raise ActionableError(
-                            f"session {identifier}の所有世代からの移譲を確認できず、新しい入力は未配送: "
-                            f"owner_generation={owner['generation']}; error={type(error).__name__}: {error}",
-                            next_action=(
-                                "showで状態と所有世代を確認してから同じ入力を送り直す。"
-                                "同じ失敗が続く場合は、errorが示す所有世代での失敗の原因を解消してから送り直す"
-                            ),
-                        ) from error
-                    if not moved.get("moved"):
-                        raise ActionableError(
-                            "移譲可能な終了境界を待っています。新しい入力は未配送です",
-                            next_action="showで状態を確認し、現在の処理の終了後に同じ入力を送る",
-                        )
-                    return await self.call_tool(context, params)
-            if isinstance(identifier, str) and identifier in self._pending_restores and (task := self._moving.get(identifier)):
-                # 巡回が予約した所有確認に合流する。照会自身は再試行を増やさない。
-                await asyncio.wait((task,))
-            lock = (
-                self._locks.setdefault(identifier, asyncio.Lock()) if isinstance(identifier, str) else contextlib.nullcontext()
-            )
-            async with lock:
-                if isinstance(identifier, str):
-                    if identifier in self._pending_restores or identifier in self._uncertain:
-                        raise ActionableError(
-                            f"session {identifier}の所有を確認できず、要求は未配送です",
-                            next_action="管理サービスの登録簿で所有世代を確認し、通信の復旧後に再照会する",
-                        )
-                    await self._finish_adoption(identifier)
-                next_turn = (
-                    params.name == "start"
-                    or params.name == "send_message"
-                    and (
-                        identifier not in manager.sessions
-                        or manager.sessions[identifier].turn_completed
-                        or manager.sessions[identifier].terminal
-                    )
-                )
-                async with self.gate.admit(new_turn=next_turn, session_id=identifier):
-                    selected = mcp_tools._SELECTED_MANAGER.set(manager)
-                    try:
-                        return await mcp_tools.mcp._call_registered_tool(context, params)
-                    finally:
-                        mcp_tools._SELECTED_MANAGER.reset(selected)
-
-    async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:
-        """所有世代へ所有を照会する。応答しない世代を待ち続けず、終了済みの世代は登録簿による判定へ委ねる。
-
-        2026-11-17、所有世代が停止・終了した後の照会と停止が、内部の待機上限（270秒）まで戻らないか生の接続エラーで終わった。
-        """
-        try:
-            return bool(
-                await service_rpc.request(
-                    owner, "owns", {"parent": parent, "session_id": identifier}, timeout=_OWNER_PROBE_SECONDS
-                )
-            )
-        except (OSError, EOFError, TimeoutError) as error:
-            if not service_transport.process_alive(owner["process"]):
-                # 所有世代が終了している。登録簿の所有者喪失の判定（中断の公開・委譲先CLIの停止）を使う。
-                return False
-            raise ActionableError(
-                f"session {identifier}を所有する世代へ配送できない: owner_generation={owner['generation']}; "
-                f"owner_server_instance={owner.get('server_instance')}; owner_process={owner['process']}; "
-                f"queried_generation={self.generation}; error={type(error).__name__}: {error}",
-                next_action=(
-                    "配送は未確定であり、同じ前提で待機や再発行を繰り返さない。"
-                    "所有世代のプロセスが応答を再開するかをagents_serverの`list`が返す`server_generations`と`show`で確かめ、"
-                    "応答しないままなら所有世代のプロセスを処置する。処置の前に、そのプロセスが自身のMCP接続先"
-                    "（`queried_server_instance`）ではないことを確かめる"
-                ),
-            ) from error
-
-    async def _owner(self, identifier: str) -> dict | None:
-        resolution = await asyncio.to_thread(session_registry.resolve, identifier, state_root=self.directory.parent.parent)
-        if resolution.server_instance is None:
-            return None
-        for generation, entry in self.registry.generations().items():
-            if not entry.get("ready"):
-                continue
-            with contextlib.suppress(OSError, ValueError):
-                target = service_rpc.discovery(self.directory, generation)
-                if target.get("server_instance") == resolution.server_instance:
-                    return target
-        return None
-
-    async def move(self, identifier: str) -> dict:
-        self._schedule_move(identifier)
-        return await asyncio.shield(self._moving[identifier])
-
-    async def _move(self, identifier: str) -> dict:
-        """終了境界で止めた会話を受付先の世代へ移す。受付先が自世代なら、準備中でない限り止めたclientを取り込み直す。"""
-        async with self._locks.setdefault(identifier, asyncio.Lock()):
-            if identifier in self._uncertain:
-                raise ActionableError(
-                    "移譲先の所有を確定できないため、旧decoderとqueryを再開しません",
-                    next_action="showと既存登録簿・物理記録で現在の所有を確認して再開する",
-                )
-            found = self._conversation(identifier)
-            if found is None:
-                return {"moved": True}
-            parent, conversation = found
-            manager = conversation.manager
-            session = manager.sessions[identifier]
-            backend: Any = manager._backends.get(session.engine)
-            current = self._current()
-            source_is_current = current["generation"] == self.generation
-            if source_is_current and self._updates:
-                return {"moved": False}
-            with self.managers._bound(conversation):
-                if pending := self._pending_restores.get(identifier):
-                    await self._restore_source(manager, pending)
-                    return {"moved": False}
-                if not source_is_current and not self._ended_turn(session):
-                    return {"moved": False}
-                client = self._client(backend, identifier)
-                if source_is_current and (client is None or not client.transferred):
-                    return {"moved": False}
-                source = MoveSource(client, backend, session)
-                try:
-                    # 受付が戻った場合は、配送済みの要求を待たず同じclientの通知を復旧する。
-                    if not source_is_current:
-                        await self.gate.pause_session(identifier)
-                        source.client = self._client(backend, identifier)
-                    elif session.engine == "codex":
-                        await self.gate.pause_session(identifier, drain=False)
-                    await source.detach(self.gate, source_is_current=source_is_current)
-                except Exception, asyncio.CancelledError:
-                    if session.engine == "codex":
-                        await self._restore_source(manager, source)
-                    raise
-                if source_is_current:
-                    await self._restore_source(manager, source)
-                    return {"moved": False}
-                # 切り離した後、移譲先が受入を予約するまでに失敗したら所有を移さず、実行資源と制御の受付を旧側へ戻す。
-                try:
-                    await source.save_control_state(manager)
-                    packet = await source.packet(self.target, parent, _caller_payload(conversation.caller))
-                    prepared = await service_rpc.request(current, "prepare_move", packet)
-                except Exception, asyncio.CancelledError:
-                    await self._restore_source(manager, source)
-                    raise
-                if not prepared.get("prepared"):
-                    await self._restore_source(manager, source)
-                    return {"moved": False}
-                if (client := source.client) is not None and not await client.resource.operation(
-                    "transfer",
-                    expected_owner=client.resource.runtime.owner,
-                    new_owner=current.get("server_instance", current["generation"]),
-                ):
-                    raise ActionableError("生I/Oの所有が既に変更された", next_action="showで現在の所有を確認する")
-                try:
-                    accepted = await service_rpc.request(current, "accept", packet)
-                except Exception as error:
-                    try:
-                        accepted = await service_rpc.request(
-                            current,
-                            "move_status",
-                            {
-                                "session_id": identifier,
-                                "transfer_id": packet["transfer_id"],
-                            },
-                        )
-                    except Exception:
-                        self._uncertain[identifier] = str(error)
-                        raise ActionableError(
-                            f"会話の移譲結果を確定できません: {error}",
-                            next_action="queryは再送せず、showと既存登録簿・物理記録で状態を確認して再開する",
-                        ) from error
-                    if not accepted.get("owned"):
-                        if accepted.get("prepared"):
-                            accepted = await service_rpc.request(
-                                current,
-                                "abort_move",
-                                {
-                                    "session_id": identifier,
-                                    "transfer_id": packet["transfer_id"],
-                                },
-                            )
-                            if not accepted.get("owned"):
-                                if client is not None:
-                                    await client.resource.operation(
-                                        "transfer",
-                                        expected_owner=current.get("server_instance", current["generation"]),
-                                        new_owner=client.resource.runtime.owner,
-                                    )
-                                await self._restore_source(manager, source)
-                        if not accepted.get("owned"):
-                            raise
-                if not accepted.get("owned"):
-                    raise RuntimeError("移譲先が制御所有を確定しませんでした")
-                source.forget(manager)
-                self._ended.pop(identifier, None)
-                self._ended_sdk_clients.pop(identifier, None)
-                await manager.save_control_state()
-            return {"moved": True}
-
-    async def _restore_source(self, manager: Any, source: MoveSource) -> None:
-        identifier = source.session.session_id
-        if source.session.engine == "codex":
-            manager._service_paused.add(identifier)
-        try:
-            await source.confirm_owner(self._runtime)
-        except (PermissionError, RuntimeError, KeyError) as error:
-            self._pending_restores.pop(identifier, None)
-            self._uncertain[identifier] = str(error)
-            raise
-        except OSError, EOFError, asyncio.CancelledError:
-            if source.session.engine == "codex":
-                self._pending_restores[identifier] = source
-            raise
-        self._pending_restores.pop(identifier, None)
-        await source.restore()
-        await self.gate.resume_session(identifier)
-        if source.session.engine == "codex":
-            manager._service_paused.discard(identifier)
-
-    def prepare_move(self, packet: dict) -> dict:
-        """所有変更前の入力を検証し、モデルを実行しない非永続の受入予約を作る。"""
-        _restore_caller(packet["caller"])
-        session = service_state.restore(packet["session"])
-        transfer = packet["transfer_id"]
-        if not isinstance(transfer, str) or len(transfer) != 32:
-            raise ValueError("移譲の識別子が不正です")
-        received = self._received.get(session.session_id)
-        if self._conversation(session.session_id) is not None and (received is None or received[0] != transfer):
-            raise ValueError("移譲先が既に同じsessionを所有しています")
-        incoming = self._incoming.get(session.session_id)
-        lock = self._locks.get(session.session_id)
-        if incoming is not None and incoming["transfer_id"] != transfer and lock is not None and lock.locked():
-            raise ValueError("先行する所有移譲が処理中です")
-        self._incoming[session.session_id] = packet
-        return {"prepared": True, "session_id": session.session_id}
-
-    def move_status(self, identifier: str, transfer: str) -> dict:
-        incoming = self._incoming.get(identifier)
-        received = self._received.get(identifier)
-        return {
-            "owned": received is not None and received[0] == transfer,
-            "prepared": incoming is not None and incoming["transfer_id"] == transfer,
-        }
-
-    async def abort_move(self, identifier: str, transfer: str) -> dict:
-        # acceptの所有CASが未完了の間は、旧側へ巻き戻し可能と応答しない。
-        async with self._locks.setdefault(identifier, asyncio.Lock()):
-            received = self._received.get(identifier)
-            if received is not None and received[0] == transfer:
-                return {"owned": True}
-            incoming = self._incoming.get(identifier)
-            if incoming is not None and incoming["transfer_id"] == transfer:
-                self._incoming.pop(identifier, None)
-            return {"owned": False}
-
-    async def accept(self, packet: dict) -> dict:
-        """新世代で状態を保存し、次の本来入力を待つ。移譲時のqueryは送信対象から除く。"""
-        transfer = packet["transfer_id"]
-        identifier = service_state.restore(packet["session"]).session_id
-        received = self._received.get(identifier)
-        if received is not None and received[0] == transfer:
-            return {"owned": True}
-        if self._incoming.get(identifier) != packet:
-            raise ValueError("移譲の受入予約がありません")
-        async with self.gate.admit(new_turn=True, session_id=identifier):
-            return await self._accept(packet)
-
-    async def _accept(self, packet: dict) -> dict:
-        caller = _restore_caller(packet["caller"])
-        params = CallToolRequestParams(name="list", arguments={})
-        with runtime_environment.bind(caller):
-            async with self.managers.scope(params, identifier_override=packet["parent"]) as manager:
-                session = service_state.restore(packet["session"])
-                identifier = session.session_id
-                async with self._locks.setdefault(identifier, asyncio.Lock()):
-                    if self._incoming.get(identifier) != packet:
-                        raise ValueError("移譲の受入予約は解除されています")
-                    if identifier in manager.sessions:
-                        return {"owned": True}
-                    owner = session_registry.owner_process()
-                    if owner is None:
-                        raise RuntimeError("移譲先のプロセス識別を取得できません")
-                    transferred = await run_file_operation(
-                        session_registry.transfer_owner,
-                        identifier,
-                        (packet["source"]["server_instance"], session.turn_seq),
-                        owner,
-                        self.target["server_instance"],
-                    )
-                    if not transferred:
-                        raise RuntimeError("登録簿の所有が移譲元と一致しません。旧結果を保持します")
-                    manager.sessions[identifier] = session
-                    manager._service_paused.add(identifier)
-                    session.publish_registry = True
-                    self._received[identifier] = packet["transfer_id"], packet["source"]
-                    self._pending_adoptions[identifier] = packet
-                    self._incoming.pop(identifier, None)
-                    manager._schedule_session_expiry(session)
-                    await self._finish_adoption(identifier)
-                    return {"owned": True}

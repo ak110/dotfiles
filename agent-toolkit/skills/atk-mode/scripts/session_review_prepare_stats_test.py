@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_stats_test）。"""
 
 from __future__ import annotations
 
@@ -12,6 +11,8 @@ import session_review_prepare as prepare
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _bundle_rows, _work_dir
 from agent_toolkit._testing.session_review_prepare_support import _isolate_failure_ledger as _isolate_failure_ledger
+from session_evidence_extract import _collection_events, _load_records_checked
+from session_evidence_records import _collect_records
 from session_review_prepare_stats import _stats_document
 
 
@@ -355,7 +356,6 @@ def test_prepare_extracts_fixed_record_problems_without_naming_them(
 
 
 def test_first_pass_stats_keeps_missing_and_denominator() -> None:
-    """初回表示でも段階別の欠落と分母を保持する。"""
     row = {
         "kind": "cost-metrics-first-pass",
         "stage": "ci",
@@ -368,3 +368,51 @@ def test_first_pass_stats_keeps_missing_and_denominator() -> None:
     assert '"observed_count": 0' in text
     assert '"first_success_ratio": null' in text
     assert "初回成功率は不明" in _stats_document([])
+
+
+@pytest.mark.parametrize("parent_available", [False, True])
+def test_fork_inherited_calls_do_not_count_as_child_operations(tmp_path: pathlib.Path, parent_available: bool) -> None:
+
+    def call(identifier: str, kind: str = "function_call") -> dict:
+        return {
+            "type": "response_item",
+            "payload": {"type": kind, "name": "exec", "call_id": identifier, "arguments": "{}"},
+        }
+
+    copied = (call("parent-function"), call("parent-custom", "custom_tool_call"))
+    parent = tmp_path / "parent.jsonl"
+    child = tmp_path / "child.jsonl"
+    parent.write_text("\n".join(json.dumps(row) for row in copied) + "\n", encoding="utf-8")
+    child.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {"type": "session_meta", "payload": {"id": "child", "forked_from_id": "parent"}},
+                *copied,
+                call("child-call"),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    records = _load_records_checked(str(child)).records
+    assert records is not None
+    collected, unresolved = _collect_records(
+        str(child),
+        records,
+        main_only=True,
+        session_resolver=lambda _: (parent, "codex") if parent_available else None,
+    )
+    item = collected[0]
+    assert [row.line for row in item.records] == ([1, 4] if parent_available else [1])
+    assert [row.line for row in item.fork_context] == ([2, 3] if parent_available else [2, 3, 4])
+    events = _collection_events(collected, unresolved)
+    provenance = next(event for event in events if event["kind"] == "record-provenance")
+    assert provenance["fork_parent"] == "codex:parent"
+    assert provenance["fork_attribution_known"] is parent_available
+    gaps = [event for event in events if event["kind"] == "record-gap"]
+    if parent_available:
+        assert not gaps
+    else:
+        assert gaps[0]["line"] == 2
+        assert "3 操作" in gaps[0]["reason"]

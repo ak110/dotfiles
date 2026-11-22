@@ -1,5 +1,3 @@
-"""生SDK接続を保持する世代移譲の境界試験。"""
-
 # SDKの所有taskと制御要求の内部境界を、実CLIの代わりに検証する。
 # pylint: disable=protected-access
 
@@ -227,3 +225,20 @@ async def test_connect_failure_can_be_released():
         await client.connect()
     await client.disconnect()
     assert calls == ["disconnect"]
+
+
+@pytest.mark.asyncio
+async def test_disconnect_discards_unread_events():
+    broker = ResourceBroker("G1")
+
+    async def close():
+        pass
+
+    identifier = broker.register({"close": close})
+    await broker.emit(identifier, {"message": sdk_event_codec().encode(SystemMessage(subtype="init", data={}))})
+    runtime = Runtime("G1", {"generation": "G1"}, broker)
+    client = SdkResource.attach(runtime, {"identifier": identifier, "origin": runtime.target, "sequence": 0})
+
+    await client.disconnect()
+
+    assert identifier not in broker._resources

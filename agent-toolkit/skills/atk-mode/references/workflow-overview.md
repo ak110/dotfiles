@@ -49,7 +49,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 
 必要なユーザー確認は特定の工程の末まで延ばさず、回答の後は次節の担当と契機で再開する。
 
-`run-skill`に由来するUWIは、`source`が`run-skill`、`scope`がスキル名になる。
+`run-skill`に由来するUWIの`source`と`scope`は[由来と承認](origin-and-approval.md)で定め、報告用UWIだけに付ける属性は[完了報告](../playbooks/report-completion.md)で定める。
 `run_skill_report: true`を持つ報告用だけを、process-wiの選定対象とprocess-loopの起動件数の計算から外す。
 報告用を除く回答済みの承認用UWIは、由来によらず既存の着手条件で対象に含める。
 
@@ -68,7 +68,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 会話中に回答を得た事項はUWIとして重ねて登録せず、回答を得ないまま終わった確認事項はUWIへ引き継ぐ。
 保存の条件、自律モードでの確認の手段、UWIへの切り替えは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`か`atk serve`から回答する。
-回答済みのUWIのうち、`run_skill_report: true`の報告用は同じ対象リポジトリ・同じスキルの次回の`atk run-skill`で、報告用を除く承認用はprocess-wiの次回の実行でメインが取り込む。
+回答済みのUWIのうち、`run_skill_report: true`の報告用は同じ対象リポジトリ・同じ起動単位の次回の`atk run-skill`で、報告用を除く承認用は次回のprocess-wiでメインが取り込む。
 `source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を使い、解決できなければ続行できない理由を返す。
 処理中のprocess-wiセッションへユーザーから回答が伝えられた場合は、同じセッションの処理対象へ加える（`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」）。
 
@@ -77,7 +77,10 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告して終わる。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
 batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、エージェント由来の要求の採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
-手動の`/atk-mode review-session`は現在のセッション全体を対象とし、引数は追加の着眼点として扱う。
+全量を指定せずに手動で起動した`/atk-mode review-session`は、確定済みの範囲より後を対象とする。
+全量指定と引数は[単発の振り返り](../playbooks/review-session.md)を参照する。
+`review-session meta`は`agent-toolkit:atk-mode/playbooks/review-session.md`「週次のメタ分析」で、キューと既存報告から反復と対策の効果を比較する。
+metaは初回か前回の開始から7日以上経過後に最上位セッションの開始・終了で起動し、`add-awi-by-user`の相談中は見送る。
 自動起動は`session_review_auto_start`で切り替え、無効でも待ち記録を保持して手動のbatchで処理できる。
 
 ## 運用変更を検討する観点

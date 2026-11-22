@@ -18,8 +18,6 @@ from agent_toolkit._testing.agents_server_support import FakeCodexClient
 
 
 class ProviderClient(FakeCodexClient):
-    """0.162.0の応答形式で接続先・上限・確定終了を配送する。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.primary = "openai"
@@ -121,7 +119,6 @@ def clear_connections(monkeypatch) -> None:
 
 @contextlib.asynccontextmanager
 async def backend_with_client(monkeypatch, client, root=None):
-    """接続先のRPCと探索環境の事前実行を隔離し、実backendで接続先を選ぶ。"""
     async with codex.AppServerManager(
         root.sessions if root else {}, root._condition if root else asyncio.Condition()
     ) as backend:
@@ -131,12 +128,11 @@ async def backend_with_client(monkeypatch, client, root=None):
             return client
 
         monkeypatch.setattr(backend, "_ensure_client", ensure_client)
-        # ここでは接続先の選択だけを扱う。
+
         yield backend
 
 
 async def complete(backend, session, error=None):
-    """確定したturn/completedを実通知処理へ配送する。"""
     await backend._handle_notification(
         {
             "method": "turn/completed",
@@ -149,7 +145,6 @@ async def complete(backend, session, error=None):
 
 
 def publish_api_session(tmp_path):
-    """永続再開を検証するため、確定したAPI会話を登録する。"""
     session_registry.publish(
         "provider-thread",
         state=session_registry.PublicationState.RESULT_COMPLETED,
@@ -161,14 +156,12 @@ def publish_api_session(tmp_path):
 
 
 async def fail_subscription(backend, tmp_path):
-    """サブスクリプションで開始済みのturnに、確定した利用上限の拒否を配送する。"""
     session = await backend.start("元の作業", str(tmp_path), None, None)
     await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
     return session
 
 
 def write_resume_rollout(path: pathlib.Path, identifier: str, provider: str | None, item: dict[str, Any] | None) -> bytes:
-    """CLI 0.164.0のsession_metaとresponse_itemを、暗号化内容を模した値で保存する。"""
     records = [{"type": "session_meta", "payload": {"id": identifier, "model_provider": provider}}]
     if item is not None:
         records.append(item if item.get("type") == "compacted" else {"type": "response_item", "payload": item})

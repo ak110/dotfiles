@@ -1,5 +1,3 @@
-"""WIの着手可否の判定のテスト。"""
-
 import datetime
 import pathlib
 import subprocess
@@ -19,8 +17,6 @@ from agent_toolkit._testing.wi_entry_files import write_awi, write_uwi
 
 
 class TestReadiness:
-    """明示依存、UWI、修復診断から着手可否を算出する。"""
-
     def test_ready_awi_is_actionable(self, tmp_path: pathlib.Path) -> None:
         write_awi(tmp_path, "awi.md")
 
@@ -30,7 +26,6 @@ class TestReadiness:
         assert result.actionable_count == 1
 
     def test_legacy_local_path_matches_canonical_readiness_target(self, tmp_path: pathlib.Path) -> None:
-        """着手可否判定は旧パス形とURL形を同じ対象リポジトリへ分類する。"""
         local_repo = tmp_path / "repo"
         git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
         write_awi(tmp_path, "legacy.md", target_repo=str(local_repo))
@@ -185,7 +180,6 @@ class TestReadiness:
         assert expired.actionable_count == 4
 
     def test_legacy_confirmation_preserves_cooldown_and_dependency_checks(self, tmp_path: pathlib.Path) -> None:
-        """旧確認キーの値にかかわらず冷却と依存を判定し、専用属性を返さない。"""
         now = datetime.datetime(2026, 8, 12, tzinfo=datetime.UTC)
         _with_frontmatter(write_awi(tmp_path, "required.md"), "confirmation: required")
         _with_frontmatter(write_awi(tmp_path, "typo.md"), "confirmation: yes")
@@ -219,7 +213,6 @@ class TestReadiness:
         assert all("confirmation" not in entry for entry in entries)
 
     def test_broken_frontmatter_remains_actionable_with_target_repo_filter(self, tmp_path: pathlib.Path) -> None:
-        """対象repo指定時も破損項目を修復診断へ残し、正常な他repo項目は除外する。"""
         inbox = tmp_path / "inbox"
         inbox.mkdir()
         (inbox / "broken.md").write_text("---\ntarget_repo: [broken\n", encoding="utf-8")
@@ -243,7 +236,6 @@ class TestReadiness:
 
     @pytest.mark.parametrize("multiple", [False, True])
     def test_uwi_answer_releases_candidates_in_same_snapshot(self, tmp_path: pathlib.Path, multiple: bool) -> None:
-        """未回答中は依存元を候補から除き、回答後はUWIと依存元を同じ候補集合へ返す。"""
         write_uwi(tmp_path, "answer.md")
         dependencies = ("answer.md", "ordinary.md") if multiple else ("answer.md",)
         write_awi(tmp_path, "awi.md", depends_on=dependencies)
@@ -255,7 +247,7 @@ class TestReadiness:
         before = _wi_listing.configured_repo_snapshot(tmp_path, repositories)[0]
         assert "awi.md" not in before.readiness.internal_dependency_waits
         assert {entry[0].name for entry in before.candidates} == ({"ordinary.md"} if multiple else set())
-        # 編集目的のholdにある依存元は、回答の前後を通じて候補に入らない。
+
         assert "held.md" not in {entry[0].name for entry in before.candidates}
 
         write_uwi(tmp_path, "answer.md", answer="回答済み")
@@ -268,12 +260,6 @@ class TestReadiness:
         }
 
     def test_transitive_dependency_on_unanswered_uwi_stays_out_of_candidates(self, tmp_path: pathlib.Path) -> None:
-        """未回答UWIを待つ項目を依存先に持つ項目も、同じ実行の候補へ入れない。
-
-        依存先が候補外であることは推移的に伝わる。直接の依存先だけを見ると、AがB、Bが未回答UWIを待つ場合に
-        Bは候補外のままAだけが候補に入り、回答前の依存元が実装対象へ投入される。
-        通常のAWI同士の依存（CがDを待つ）は従来どおり同じ実行の候補に入る。
-        """
         write_uwi(tmp_path, "u.md")
         write_awi(tmp_path, "b.md", depends_on=("u.md",))
         write_awi(tmp_path, "a.md", depends_on=("b.md",))
@@ -292,7 +278,6 @@ class TestReadiness:
 
     @pytest.mark.parametrize("source", ["run-skill", "session-review", "process-wi", None])
     def test_answered_approval_is_ready_regardless_of_source(self, tmp_path: pathlib.Path, source: str | None) -> None:
-        """回答済み承認と依存元を同じ実行で扱い、報告・未回答・holdは候補にしない。"""
         for name, answer in (("approval.md", "はい"), ("report.md", "確認済み"), ("unanswered.md", "")):
             write_uwi(tmp_path, name, answer=answer, source=source)
         _with_frontmatter(tmp_path / "2026/10/report.md", "run_skill_report: true", marker="type: uwi\n")
@@ -355,7 +340,6 @@ class TestReadiness:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """同じ旧パス形の外部依存は着手可否計算全体で1回だけGit解決する。"""
         external_repo = tmp_path / "external-repo"
         git_repository.init_repository(external_repo, origin="git@github.com:example/external.git")
         legacy_dependency = f"    kind: external-repo-entry\n    filenames:\n      - done.md\n    target_repo: {external_repo}"
@@ -402,7 +386,6 @@ class TestReadiness:
         legacy_dependency: str,
         other_active: bool,
     ) -> None:
-        """legacyの時刻条件とinbox空条件を無条件readyへ変換しない。"""
         write_awi(tmp_path, "awi.md", legacy_dependency=legacy_dependency)
         if other_active:
             write_awi(tmp_path, "other.md")
@@ -413,7 +396,6 @@ class TestReadiness:
         assert "awi.md" not in result.ready
 
     def test_legacy_external_upstream_becomes_ready_after_recheck_time(self, tmp_path: pathlib.Path) -> None:
-        """legacy外部条件は再評価時刻の到来後だけreadyとなる。"""
         write_awi(
             tmp_path,
             "awi.md",
@@ -436,7 +418,6 @@ class TestReadiness:
         answer: str,
         expected_ready: bool,
     ) -> None:
-        """legacyのユーザー依存は参照UWIの回答後だけ成立する。"""
         write_uwi(tmp_path, "answer.md", answer=answer)
         write_awi(
             tmp_path,
@@ -451,7 +432,6 @@ class TestReadiness:
 
     @pytest.mark.parametrize("state", ["inbox", "adopted"])
     def test_legacy_external_user_rejects_non_uwi_target(self, tmp_path: pathlib.Path, state: str) -> None:
-        """旧形式のユーザー依存がAWIを参照した場合は修復対象として示す。"""
         write_awi(tmp_path, "answer.md", state=state)
         write_awi(
             tmp_path,
@@ -470,7 +450,6 @@ class TestReadiness:
         tmp_path: pathlib.Path,
         terminal_state: str,
     ) -> None:
-        """明示依存は回答済みUWIがactiveな間も成立せず、終了遷移後に成立する。"""
         write_uwi(tmp_path, "answer.md", answer="回答済み")
         write_awi(tmp_path, "awi.md", depends_on=("answer.md",))
 
@@ -505,7 +484,6 @@ class TestReadiness:
         assert retried.blocked == ("awi.md",)
 
     def test_explicit_dependency_ignores_legacy_external_user_target(self, tmp_path: pathlib.Path) -> None:
-        """トップレベル依存がある場合は併存する旧ユーザー依存を検証対象にしない。"""
         write_awi(tmp_path, "done.md", state="adopted")
         write_awi(tmp_path, "not-uwi.md")
         write_awi(
@@ -521,7 +499,6 @@ class TestReadiness:
         assert "awi.md" in result.ready
 
     def test_malformed_explicit_dependency_is_invalid_even_with_valid_legacy_value(self, tmp_path: pathlib.Path) -> None:
-        """トップレベルに保存した明示依存が不正な場合は旧依存へフォールバックせず修復対象にする。"""
         path = write_awi(
             tmp_path,
             "awi.md",
@@ -577,7 +554,6 @@ class TestReadiness:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """固定配置の各項目は状態と依存の判定を共有し、本文を1回だけ読む。"""
         active_path = write_awi(tmp_path, "awi.md", depends_on=("done.md",))
         referenced = write_awi(tmp_path, "done.md", state="adopted")
         unreferenced = write_awi(tmp_path, "unused.md", state="rejected")
@@ -617,7 +593,6 @@ def test_readiness_reuses_parsed_dependencies_and_terminal_metadata(tmp_path: pa
 
 
 def test_readiness_refreshes_changed_body_within_operation(tmp_path: pathlib.Path) -> None:
-    """同じ取得集合でも内容が変われば再解析し、変更後の依存を使う。"""
     path = write_awi(tmp_path, "awi.md")
     original = path.read_text(encoding="utf-8")
     texts = entry_text.EntryTexts()
@@ -636,7 +611,6 @@ def test_readiness_refreshes_changed_body_within_operation(tmp_path: pathlib.Pat
 def test_readiness_preserves_invalid_type_diagnostic(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], text: str
 ) -> None:
-    """解析可能な不正種別は終了コード2と対象名を含む診断で返す。"""
     path = tmp_path / "2026" / "10" / "invalid.md"
     path.parent.mkdir(parents=True)
     path.write_text(text, encoding="utf-8")
@@ -651,10 +625,7 @@ def test_readiness_preserves_invalid_type_diagnostic(
 
 
 class TestUpstreamCrossRepoDependency:
-    """着手できるかは、別の対象リポジトリにある依存先の状態でも決まる。"""
-
     def test_cross_repo_dependency_blocks_until_terminal(self, tmp_path: pathlib.Path) -> None:
-        """別target_repoの依存先がactiveの間はblockedで、終了でreadyへ戻る。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", target_repo="github.com/example/upstream")
         readiness = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/downstream")
@@ -681,7 +652,6 @@ class TestUpstreamCrossRepoDependency:
         assert not readiness.missing_dependencies
 
     def test_unreferenced_active_entry_in_other_repo_does_not_block_resolved_dependency(self, tmp_path: pathlib.Path) -> None:
-        """指定した依存先が終了していれば、別リポジトリの未参照項目が未終了でも着手できる。"""
         write_awi(tmp_path, "downstream.md", depends_on=("upstream.md",), target_repo="github.com/example/downstream")
         write_awi(tmp_path, "upstream.md", state="adopted", target_repo="github.com/example/downstream")
         write_awi(tmp_path, "other.md", target_repo="github.com/example/other")
@@ -693,5 +663,4 @@ class TestUpstreamCrossRepoDependency:
 
 
 def _with_frontmatter(path: pathlib.Path, line: str, *, marker: str = "type: awi\n") -> None:
-    """テスト用WIのfrontmatterへ1行を加える。"""
     path.write_text(path.read_text(encoding="utf-8").replace(marker, f"{marker}{line}\n", 1), encoding="utf-8")

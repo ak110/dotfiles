@@ -41,7 +41,12 @@ description: >
   書込ツールで編集する時は`agent-basics:writing-standards/references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCII文字だけの修正は`sed -i`で行う。
 - 非ASCII文字を標準出力・標準エラーへ書くPythonのCLIは、開始時に両ストリームを`io.TextIOWrapper`でUTF-8かつ`errors="replace"`に再構成する（英語版Windowsなどで既定の文字コードに依存すると、日本語の出力で停止するため）。
   再構成を通さずに出すログと標準出力の文面は、`str.encode("cp932")`が成功する文字に収める（U+20BB7などの一部の漢字、em dash、en dash、`✓`、`•`は使わない）。
-- `pytools/post_apply.py`の各ステップの`run`は`PostApplyOutcome`だけを返し、失敗をスキップと失敗のどちらで扱うかは`pytools/_internal/post_apply_outcome.py`の`PostApplyOutcome`のdocstringに従う。
+- `pytools/post_apply.py`の各ステップの`run`は`PostApplyOutcome`だけを返す。
+  外部ツールや依存を取得・導入できない場合は警告してスキップし、設定・リンク・配布ファイルの書換えや撤去ができない場合は失敗の理由と次の操作を返す。
+  先行工程で導入できなかったツールが必要な工程もスキップする。
+  予期しない例外は`post_apply`が失敗に数える。
+  使用中の環境を守るために延期する場合は、利用の終了後に再実行する手段を案内する。
+  結果の型は`pytools/_internal/post_apply_outcome.py`、分類の保護は`pytools/post_apply_failure_classification_test.py`にある。
   対象OSは`_StepSpec.platforms`だけで指定する。
 - 外部コマンドの失敗をエラーメッセージ、例外、警告へ変える時は、`format_cli_error()`の結果（標準エラーと標準出力の併記、両方が空なら終了コード、実行できなければその旨）を含める。
   終了コードだけでは原因と復旧の操作が伝わらないためである。

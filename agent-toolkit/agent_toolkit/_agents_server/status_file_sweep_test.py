@@ -18,7 +18,6 @@ def _aged_file(path: pathlib.Path, timestamp: float) -> None:
 
 
 def test_sweep_stale_shared_state_removes_expired_and_keeps_current(tmp_path: pathlib.Path) -> None:
-    """root・登録簿・計測記録を回収し、現行rootと新しい状態を残す。"""
     now = 1_000_000.0
     old = now - shared_sweep.STALE_SHARED_STATE_SECONDS - 1
     current = tmp_path / "agents-server" / "current"
@@ -73,7 +72,6 @@ def test_sweep_stale_shared_state_continues_after_root_removal_failure(
 
 @pytest.mark.asyncio
 async def test_activation_sweeps_once_per_interval_across_writers(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """起動ごとの全件掃引を避け、間隔内の後続の起動は掃引しない。間隔を過ぎた起動は再び掃引する。"""
     old = time.time() - shared_sweep.STALE_SHARED_STATE_SECONDS - 60
 
     def writer(root: str) -> status_file.StatusFileWriter:
@@ -102,7 +100,6 @@ async def test_activation_sweeps_once_per_interval_across_writers(tmp_path: path
 
 @pytest.mark.asyncio
 async def test_status_writer_activate_continues_when_sweep_fails(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """managerの起動処理は掃引APIのOSErrorを記録して書込を開始する。"""
     monkeypatch.setattr(status_file, "sweep_stale_shared_state", lambda **_kwargs: (_ for _ in ()).throw(OSError("x")))
     writer = status_file.StatusFileWriter(
         {},

@@ -1,5 +1,3 @@
-"""Bash複合文の実行位置と、囲む文から継承する出力接続を検証する。"""
-
 from __future__ import annotations
 
 import pytest
@@ -23,7 +21,6 @@ def test_execution_prefix_assignments_are_retained(command: str, expected: list[
 
 
 def test_assignment_only_effect_retains_environment_metadata() -> None:
-    """実行位置のない代入も、後続の保護判定へ値の実行なしで渡せる。"""
     effects = extract_bash_effects("GIT_DIR=/repo/.git; git status")
     assert not effects[0].execution_known
     assert effects[0].environment_assignments == ("GIT_DIR=/repo/.git",)
@@ -70,7 +67,6 @@ def test_compound_execution_positions(command: str, names: list[str]) -> None:
 
 @pytest.mark.parametrize("connection", ["| cat", "|& cat", "> output.log", "2> errors.log", "&"])
 def test_compound_inherits_output_connections(connection: str) -> None:
-    """文全体の接続は入れ子の条件と本体へ作用する。"""
     calls = extract_bash_invocations(f"if test -f marker; then for item in one; do atk wi list; done; fi {connection}")
     inner = [item for item in calls if item.segment.tokens[0] in {"test", "atk"}]
     assert len(inner) == 2
@@ -114,7 +110,6 @@ def test_compound_inherits_output_connections(connection: str) -> None:
     ],
 )
 def test_reserved_pipeline_prefix_preserves_execution_positions(prefix: str, body: str, names: list[str]) -> None:
-    """文種を前置語の有無で変えず、定義しただけの関数を実行扱いにしない。"""
     calls = extract_bash_invocations(f"{prefix} {body}")
     assert [item.segment.tokens[0] for item in calls] == names
     assert all(item.arguments_known for item in calls)
@@ -159,7 +154,6 @@ def test_prefix_names_and_non_prefix_inputs(command: str, names: list[str]) -> N
 
 @pytest.mark.parametrize("prefix", ["time --", "time -p --"])
 def test_time_option_terminator_preserves_arguments(prefix: str) -> None:
-    """オプション終端を前置へ収め、呼出名と静的引数を保持する。"""
     calls = extract_bash_invocations(f"{prefix} git status")
     assert len(calls) == 1
     assert calls[0].segment.tokens == ("git", "status")
@@ -181,11 +175,10 @@ def test_effects_keep_static_outputs_of_unknown_executions(command: str) -> None
 
 
 def test_static_shell_body_is_parsed_even_with_unknown_positional_arguments() -> None:
-    """`sh -c`の本文が静的なら、後続の位置引数が未知でも本文の入出力を解析する。"""
     invocations = extract_bash_invocations("sh -c 'printf x > /fixed/output.md; cat /fixed/input.md' name \"$ARG\"")
     assert [item.segment.tokens[0] for item in invocations] == ["printf", "cat"]
     assert invocations[0].static_outputs[0] == "/fixed/output.md"
-    # 本文自身が未知なら、本文を推定せず外側の呼出しとして残す。
+
     unknown = extract_bash_invocations('sh -c "$BODY"')
     assert [item.segment.tokens[0] for item in unknown] == ["sh"]
 
@@ -195,7 +188,6 @@ def test_static_shell_body_is_parsed_even_with_unknown_positional_arguments() ->
     ["bash -co pipefail", "bash -cO extglob", "bash -o pipefail -c", "bash -c -o pipefail", "bash --rcfile data -c"],
 )
 def test_shell_option_values_preserve_body_and_output_connections(prefix: str) -> None:
-    """助言の消費側へ本文の呼出しとパイプ接続を渡し、位置引数を解析しない。"""
     calls = extract_bash_invocations(f"{prefix} 'atk wi list | cat' session_review_evidence.py")
     assert [item.segment.tokens for item in calls] == [("atk", "wi", "list"), ("cat",)]
     assert calls[0].output_pipe

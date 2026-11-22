@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesの基本動作の試験。"""
 
 # pylint: disable=protected-access
 
@@ -33,7 +32,6 @@ from update_dotfiles_test_helpers import _skip_agent_toolkit_prepare as _skip_ag
 
 
 def test_plugin_pulls_precede_chezmoi(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """本体pull後・init前にGitプラグインだけを名前順に更新する。"""
     for name in ("20-last", "10-first", "plain"):
         plugin = tmp_path / "plugins" / name
         plugin.mkdir(parents=True)
@@ -104,7 +102,6 @@ def test_plugin_pull_failure_continues_update(
 def test_public_mode_argument_persists_and_reaches_every_update_stage(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str
 ) -> None:
-    """更新の公開入力から保存値を変え、Git・テンプレート・post-applyへ同じ実効値を渡す。"""
     configuration = tmp_path / "config.json"
     configuration.write_text(
         json.dumps({"dotfiles_mode": "minimal" if mode == "full" else "full", "other": 42}), encoding="utf-8"
@@ -164,7 +161,6 @@ def test_agent_toolkit_environment_is_prepared_right_after_git_update(
 
 
 def test_minimal_does_not_prepare_agent_toolkit_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """minimalでは、更新後の整理が削除する共有依存環境を準備しない。"""
     monkeypatch.setattr(update_dotfiles, "_prepare_agent_toolkit_environment", _REAL_PREPARE_AGENT_TOOLKIT_ENVIRONMENT)
     monkeypatch.setenv(update_dotfiles.dotfiles_mode.MODE_ENV, "minimal")
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
@@ -179,8 +175,6 @@ def test_minimal_does_not_prepare_agent_toolkit_environment(monkeypatch: pytest.
 
 
 class TestFiveStepsInOrder:
-    """diffを含む5処理が順に呼ばれ、成功時にexit code 0を返すことを検証する。"""
-
     def test_all_steps_succeed(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
@@ -299,7 +293,6 @@ def test_bootstrap_failure_is_reported_after_successful_apply(
 
 @pytest.mark.parametrize("argument", ["--force", "--unknown"])
 def test_removed_or_unknown_argument_exits_2(argument: str) -> None:
-    """廃止済みまたは未知の引数はargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         update_dotfiles.main([argument])
     assert exc_info.value.code == 2
@@ -371,7 +364,7 @@ def test_stage_heading_precedes_child_output_when_stdout_is_not_a_terminal() -> 
 
 @pytest.mark.parametrize(
     "operation",
-    ["init", "status", "diff", "apply", "prepare", "plugins", "log", "daemon", "report", "git", "validation", "lock"],
+    ["init", "status", "diff", "apply", "prepare", "plugins", "log", "report", "git", "validation", "lock"],
 )
 @pytest.mark.parametrize("timed_out", [False, True])
 def test_main_injected_production_boundary(
@@ -381,7 +374,6 @@ def test_main_injected_production_boundary(
     operation: str,
     timed_out: bool,
 ) -> None:
-    """公開mainから本番の段を通し、下位操作の未知例外と時間切れでも分類と最終結果を保つ。"""
     calls: list[list[str]] = []
     attempts: list[str] = []
     monkeypatch.setattr(update_dotfiles_runtime, "DOTFILES_ROOT", tmp_path)
@@ -419,8 +411,6 @@ def test_main_injected_production_boundary(
         monkeypatch.setattr(pathlib.Path, "iterdir", iterdir)
     elif operation == "log":
         monkeypatch.setattr(update_dotfiles_runtime, "configure_persistent_log", fail)
-    elif operation == "daemon":
-        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", fail)
     elif operation == "report":
         monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", fail)
     assert update_dotfiles.main([]) == (2 if operation == "validation" else 1)
@@ -451,6 +441,5 @@ def test_production_injection_covers_non_bootstrap_declarations() -> None:
         "chezmoi status (apply予定のファイル)",
         "chezmoi diff (上書き前の差分)",
         "chezmoi apply (post-apply実行)",
-        update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
         "更新失敗の起票",
     }
