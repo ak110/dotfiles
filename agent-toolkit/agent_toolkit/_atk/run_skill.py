@@ -463,6 +463,9 @@ def _wait_session(
             if output.usage_limit is not None:
                 return returncode
         if _orchestrator.is_normal_session_exit(orchestrator, returncode):
+            if scope == session_review.BATCH_SCOPE:
+                # batchの報告と分析の確定は、子の終了後に同じmanifestを検収する起動元が行う。
+                return 0
             try:
                 saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
             except (OSError, subprocess.SubprocessError) as error:

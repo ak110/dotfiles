@@ -88,6 +88,45 @@ def test_batch_uses_existing_runner_and_report_receipt(
     assert pathlib.Path(data["batch_manifest"]) == manifests[0]
 
 
+@pytest.mark.usefixtures("leaf_git_commands")
+def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, tmp_path, monkeypatch, capsys):
+    """子の終了0を分析・報告の成功と混同せず、実行を変えずに同じ準備範囲を確定する。"""
+    monkeypatch.setattr(session_activity, "host_processes", lambda: ())
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
+    transcript = tmp_path / "one.jsonl"
+    transcript.write_text(
+        json.dumps({"type": "user", "message": {"role": "user", "content": "振り返り対象"}}) + "\n", encoding="utf-8"
+    )
+    session_review.record(
+        {
+            "hook_event_name": "SessionStart",
+            "session_id": "one",
+            "transcript_path": str(transcript),
+            "cwd": str(engine_env.repo),
+        },
+        host="claude",
+        target_repo="https://example.com/team/repo",
+    )
+    code, out, err = _run(["--target-repo", str(engine_env.repo), "--args", "batch", "agent-toolkit:review-session"], capsys)
+    assert code == 1 and not out
+    assert "finish: report-unsynced" in err
+    (path,) = (session_review.directory() / "runs").glob("*.json")
+    failed = session_review.read(path)
+    assert failed["status"] == "failed" and failed["analysis_succeeded"]
+    assert "終了状態: exit code 0" in pathlib.Path(failed["log_path"]).read_text(encoding="utf-8")
+    assert session_review.previous_scope(failed["targets"][0]) is None
+
+    monkeypatch.setenv("FAKE_REPORT_MODE", "saved")
+    code, out, err = _run(["--resume", path.stem], capsys)
+    assert code == 0, err
+    assert "成功:" in out
+    completed = session_review.read(path)
+    assert completed["status"] == "completed" and completed["prepared"] == failed["prepared"]
+    assert session_review.previous_scope(failed["targets"][0]) is not None
+    assert not session_review.pending()
+
+
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("arguments", [None, "追加指示"])
 def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, engine, arguments):

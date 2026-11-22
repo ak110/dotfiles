@@ -24,7 +24,15 @@ from typing import Any
 import filelock
 import psutil
 
-from agent_toolkit._atk import config, config_settings, orchestrator, outcome, run_script, run_skill_batch_evidence
+from agent_toolkit._atk import (
+    config,
+    config_settings,
+    managed_temp,
+    orchestrator,
+    outcome,
+    run_script,
+    run_skill_batch_evidence,
+)
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
 from agent_toolkit._atk.wi.constants import (
     WI_STATE_ADOPTED,
@@ -43,6 +51,7 @@ from agent_toolkit._common import (
     plugin_environment,
     private_notes,
     session_activity,
+    session_record_paths,
     session_registry,
     session_review,
     skill_modes,
@@ -54,6 +63,7 @@ lazy from agent_toolkit._common import windows_job
 
 _LOG = logging.getLogger(__name__)
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_PREPARE_TEMP_PREFIX = "review-batch"
 
 
 def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
@@ -88,7 +98,11 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     now = time.time()
     if _meta_auto_start_due(now=now):
         mode = "meta"
-    elif count and session_review.auto_start_due(now=now) and any(not target.get("review_batch") for target in pending):
+    elif (
+        count
+        and session_review.auto_start_due(now=now)
+        and any(not target.get("review_batch") and not _waiting_for_rollout(target) for target in pending)
+    ):
         mode = "batch"
     else:
         return notice
@@ -237,6 +251,15 @@ def _lacks_record(target: dict[str, Any]) -> bool:
     return False
 
 
+def _waiting_for_rollout(target: dict[str, Any]) -> bool:
+    """開始記録だけのCodex会話は、rolloutが後から届くまで待ちに残す。"""
+    return (
+        target["host"] == "codex"
+        and not target.get("transcript_path")
+        and not session_record_paths.find_codex_records(target["session_id"])
+    )
+
+
 def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
     selected = []
     for target in session_review.pending():
@@ -253,6 +276,8 @@ def _targets(*, manual: bool, attempted: set[str]) -> list[dict[str, Any]]:
             continue
         blocked = _blocked(target)
         if not manual and (blocked or target.get("failure_unreported")):
+            continue
+        if _waiting_for_rollout(target):
             continue
         selected.append(target)
     return selected if any(not target.get("review_batch") for target in selected) else []
@@ -316,6 +341,12 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     previous = session_review.previous_scope(target)
     if previous is not None:
         arguments.extend(["--after", str(previous)])
+    try:
+        work_dir = managed_temp.create_managed_temp(_PREPARE_TEMP_PREFIX)
+        (work_dir / managed_temp.OWNER_FILE).write_text(managed_temp.owner_token(), encoding="ascii")
+    except managed_temp.ManagedTempError as error:
+        raise ValueError(str(error)) from error
+    arguments.extend(["--work-dir", str(work_dir)])
     # batchは欠測を結果へ明示した部分分析を行う。単発prepareは明示指定時だけ部分読込を選ぶ。
     arguments.append("--allow-partial-records")
     output = io.StringIO()
@@ -586,7 +617,38 @@ def record_executor(args: argparse.Namespace, pid: int) -> None:
     path = pathlib.Path(value)
     identity = session_registry.ProcessIdentity.of(pid)
     if identity is not None:
-        session_review.BatchWriter(path).attach(identity)
+        writer = session_review.BatchWriter(path)
+        _pin_prepared(writer.load().model_dump(mode="json", exclude_unset=True), executor=identity)
+        writer.attach(identity)
+
+
+def _pin_prepared(manifest: dict[str, Any], *, executor: session_registry.ProcessIdentity | None = None) -> None:
+    """この版で作成した準備資料だけを、実行主体が存命の間は既存の掃引から保護する。"""
+    token = managed_temp.owner_token(executor)
+    for prepared in manifest["prepared"]:
+        if not (value := prepared.get("work_dir")):
+            continue
+        path = pathlib.Path(value)
+        dedicated = path.parent == managed_temp.temp_root_path() and path.name.startswith(f"{_PREPARE_TEMP_PREFIX}-")
+        legacy = (
+            not dedicated
+            and path.name.startswith("session-review-")
+            and path.parent == managed_temp.find_session_temp(prepared["session_id"])
+        )
+        if not dedicated and not legacy:
+            continue
+        try:
+            scope = managed_temp.contained_target(path / "bundle/scope.json")
+            if not scope.is_file():
+                raise ValueError(f"準備資料が見つからない: {path}。元の記録を確かめ、新しいbatchとして準備し直してください")
+            # 旧領域はwork-dirの親が掃引単位なので、実行者の表示もその直下に置く。
+            directory = path
+            if executor is not None:
+                directory = managed_temp.create_session_temp("review-batch-owner", path.parent) if legacy else scope.parent
+            owner = managed_temp.contained_target(directory / managed_temp.OWNER_FILE)
+            owner.write_text(token, encoding="ascii")
+        except managed_temp.ManagedTempError as error:
+            raise ValueError(str(error)) from error
 
 
 def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
@@ -618,13 +680,25 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
         return 1
 
 
-def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> None:
+def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
-    report_synced = add.has_synced_run_report(
-        private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
-    )
-    session_review.BatchWriter(path).complete(report_synced=report_synced)
+    try:
+        report_synced = add.has_synced_run_report(
+            private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
+        )
+        session_review.BatchWriter(path).complete(report_synced=report_synced)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        reason = f"finish: {error}"
+        _failure(manifest, path, reason)
+        outcome.report_failure(
+            f"{reason}（実行記録: {path}）",
+            next_action=f"分析完了と報告用UWIの同期を確認し、必要なら atk run-skill --resume {manifest['run_id']} で再開する",
+        )
+        return 1
     run_skill_state.mark_completed(manifest["run_id"])
+    if log_path := manifest.get("log_path"):
+        outcome.report_success(f"スキルを実行した（ログ: {log_path}）")
+    return 0
 
 
 def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int]) -> int:
@@ -642,6 +716,7 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         if manifest["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
             args.resume_usage_limited = True
             session_review.BatchWriter(path).resume_usage_limited()
+        _pin_prepared(manifest)
         code = execute(args)
         manifest = session_review.read(path)
         if code:
@@ -654,11 +729,10 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
                 exit_code=code,
             )
             return code
-        _finish_batch(manifest, path)
+        return _finish_batch(manifest, path)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         _failure(manifest, path, f"prepare-or-state: {error}")
         return 1
-    return 0
 
 
 def _pause_for_usage_limit(args: argparse.Namespace, path: pathlib.Path, code: int) -> bool:
@@ -808,7 +882,8 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                     exit_code=code,
                 )
                 return code
-            _finish_batch(manifest, path)
+            if code := _finish_batch(manifest, path):
+                return code
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             _failure(manifest, path, f"prepare-or-state: {error}")
             return 1

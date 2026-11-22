@@ -450,9 +450,11 @@ def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_res
     return True
 
 
-def owner_token() -> str:
-    """作成プロセスの識別（PIDと起動世代）を返す。PID再利用で別のプロセスを作成者と誤認しないため、起動世代を含める。"""
-    return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
+def owner_token(identity: process_identity.ProcessIdentity | None = None) -> str:
+    """所有プロセスのPIDと世代を返す。識別を省いた時は呼び出したプロセスを使う。"""
+    if identity is None:
+        return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
+    return f"{identity.pid} {identity.start_id or ''}"
 
 
 def owner_alive(token: str) -> bool:

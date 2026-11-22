@@ -8,10 +8,12 @@ import hashlib
 import json
 import os
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 
-from agent_toolkit._atk import run_script, run_skill_batch
+from agent_toolkit._atk import managed_temp, run_script, run_skill_batch
+from agent_toolkit._atk.managed_temp import sweep
 from agent_toolkit._atk.wi import add, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
@@ -74,12 +76,28 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         _register(path)
     manifests = []
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
+    sweep_time = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
 
     def execute(args):
         # モデルだけを代用し、準備・報告保存・finish・同期検収・範囲確定は実装を通す。
         manifest = session_review.read(pathlib.Path(args.batch_manifest))
         manifests.append(manifest)
         assert len(manifest["prepared"]) == 2
+        work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
+        assert all(path.parent == managed_temp.temp_root_path() for path in work_dirs)
+        run_skill_batch.record_executor(args, os.getpid())
+        # 起動元が消えても、資料を読む実行者の所有で日次掃引から守る。
+        for work_dir in work_dirs:
+            (work_dir / managed_temp.OWNER_FILE).unlink()
+        with monkeypatch.context() as pressure:
+            pressure.setenv(sweep.MIN_FREE_RATIO_ENV, "0.1")
+            pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
+            swept = managed_temp.sweep_managed_temp(now=sweep_time, force=True)
+            assert not swept.failed and work_dirs.isdisjoint(swept.deleted)
+            pressure.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=0, used=10_000))
+            swept = managed_temp.sweep_managed_temp(now=sweep_time)
+        assert swept.pressure is not None and work_dirs.isdisjoint(swept.deleted)
+        assert all((work_dir / "conversation.md").is_file() for work_dir in work_dirs)
         partial = next(item for item in manifest["prepared"] if item["session_id"] == parent.stem)
         assert partial["partial_analysis"] is True
         gaps = partial["unconfirmed_scope"]
@@ -132,6 +150,37 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
     report = reports[0].read_text(encoding="utf-8")
     assert "部分分析" in report and all(item["record"] in report for item in reviewed["unconfirmed_scope"])
     assert all(path.read_bytes() == content for path, content in originals.items())
+    # 利用が終わった時の所有マーカーを除き、期限だけで回収されることを確かめる。
+    work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
+    for work_dir in work_dirs:
+        (work_dir / "bundle" / managed_temp.OWNER_FILE).unlink()
+    swept = managed_temp.sweep_managed_temp(now=sweep_time, force=True)
+    assert not swept.failed and work_dirs.issubset(swept.deleted)
+    assert all(pathlib.Path(item["scope_path"]).is_file() for item in manifest["prepared"])
+
+
+def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(monkeypatch):
+    session_id = "old-batch-target"
+    root = managed_temp.resolve_session_temp(session_id)
+    work_dir = managed_temp.create_session_temp("session-review", root)
+    bundle = work_dir / "bundle"
+    bundle.mkdir()
+    (bundle / "scope.json").write_text("{}\n", encoding="utf-8")
+    path = session_review.directory() / "runs" / ("b" * 32 + ".json")
+    session_review.BatchWriter(path).create(
+        {
+            "run_id": path.stem,
+            "manifest_path": str(path),
+            "status": "running",
+            "targets": [],
+            "prepared": [{"session_id": session_id, "work_dir": str(work_dir)}],
+        }
+    )
+    run_skill_batch.record_executor(argparse.Namespace(batch_manifest=str(path)), os.getpid())
+    now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
+    monkeypatch.setattr(sweep, "_disk_usage", lambda _path: SimpleNamespace(total=10_000, free=5000, used=5000))
+    assert root not in managed_temp.sweep_managed_temp(now=now, force=True).deleted
+    assert (bundle / "scope.json").is_file()
 
 
 @pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])

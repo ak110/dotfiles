@@ -908,6 +908,49 @@ def test_target_without_record_file_is_dropped_without_failure_report(tmp_path, 
     assert "記録ファイルの無い対象を振り返りの待ちから外した: gone" in capsys.readouterr().err
 
 
+@_REAL_REPORT_CPU
+def test_codex_target_without_rollout_waits_until_record_exists(tmp_path, monkeypatch) -> None:
+    notes = _notes()
+    thread_id = "01a1f1dd-db72-7143-bae6-845204964526"
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": thread_id, "cwd": str(tmp_path)},
+        host="codex",
+        target_repo="https://example.com/team/repo",
+    )
+    # 記録が来ない対象しかなければ、hookから空のbatchを繰り返し起動しない。
+    with monkeypatch.context() as hook:
+        hook.setattr(session_activity, "host_process", lambda: object())
+        hook.setattr(run_skill_batch, "_meta_auto_start_due", lambda **_: False)
+        hook.setattr(run_skill_batch.subprocess, "Popen", lambda *_args, **_kw: pytest.fail("batchを起動した"))
+        run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": thread_id}, host="codex")
+    _target(tmp_path, "one")
+    calls: list[dict] = []
+    execute = _report_and_finish(notes, monkeypatch, calls)
+
+    assert run_skill_batch.dispatch(_args("manual"), execute) == 0
+    assert [[item["session_id"] for item in manifest["prepared"]] for manifest in calls] == [["one"]]
+    assert [item["session_id"] for item in session_review.pending()] == [thread_id]
+    assert not _failure_awis(notes)
+
+    record = codex_home / "sessions/2026/11/19" / f"rollout-2026-11-19T03-33-37-{thread_id}.jsonl"
+    record.parent.mkdir(parents=True)
+    rows = (
+        {"timestamp": "2026-11-19T03:33:37Z", "type": "session_meta", "payload": {"id": thread_id}},
+        {
+            "timestamp": "2026-11-19T03:33:38Z",
+            "type": "event_msg",
+            "payload": {"type": "user_message", "message": "遅れて取得できた要求"},
+        },
+    )
+    record.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    assert run_skill_batch.dispatch(_args("manual"), execute) == 0
+    assert [item["session_id"] for item in calls[-1]["prepared"]] == [thread_id]
+    assert not session_review.pending()
+    assert not _failure_awis(notes)
+
+
 class _ProcessDied(BaseException):
     """実行プロセスの強制終了を模す。batchの失敗処理が捕捉しない例外で、実行記録を実行中のまま残す。"""
 
