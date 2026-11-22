@@ -65,7 +65,8 @@ async def test_turn_outside_overload_resume_is_published_as_failed(
     """起動確認前の過負荷、他の可用性失敗、上限到達後の過負荷は現行どおり失敗として公開する。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1", turn_seq=1)
     session.availability_checked = availability_checked
-    session.overload_resume_count = resume_count
+    for _ in range(resume_count):
+        session.advance_overload_retry()
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
         await manager.handle_notification(_overloaded_turn(session, error_info))
 
@@ -81,8 +82,8 @@ async def test_turn_outside_overload_resume_is_published_as_failed(
 async def test_non_overload_completion_ends_overload_chain(tmp_path: pathlib.Path) -> None:
     """継続したturnが過負荷以外で終われば結果を公開し、連鎖の回数を戻す。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-2", turn_seq=2)
-    session.overload_resume_count = 2
-    session.overload_first_at = "2026-10-04T00:00:00+00:00"
+    session.advance_overload_retry()
+    session.advance_overload_retry()
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
         await manager.handle_notification(_completed_turn(session))
 

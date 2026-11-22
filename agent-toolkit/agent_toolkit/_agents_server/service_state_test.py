@@ -80,3 +80,53 @@ def test_resume_display_action_does_not_change_projection_schema() -> None:
     assert stopped.last_action == "Read: 計画"
     assert "last_action" not in payload["fields"]
     assert codec.decode(payload).last_action == ""
+
+
+@pytest.mark.asyncio
+async def test_active_item_transfer_preserves_the_wire_pair() -> None:
+    """進行中のitemは、別世代が使う従来の2項目で渡して表示を保つ。"""
+    session = state.SessionState("child", "/project")
+    session.record_current_item_start({"type": "commandExecution", "command": "git status"})
+
+    wire = json.loads(json.dumps(await service_state.snapshot(session)))
+    assert "_active_item" not in wire
+    assert "current_item" in wire and "current_item_started_at" in wire
+    restored = service_state.restore(wire)
+    assert restored.active_tool_uses() == session.active_tool_uses()
+    assert restored.active_tool_uses()[0]["detail"] == "command=git status"
+
+    session.record_current_item_start(None)
+    wire["current_item_started_at"] = (await service_state.snapshot(session))["current_item_started_at"]
+    assert not service_state.restore(wire).active_tool_uses()
+
+
+@pytest.mark.asyncio
+async def test_effort_and_retry_states_transfer_with_legacy_fields() -> None:
+    """予約・再開中・再試行連鎖を、稼働中の別世代が読む形式で往復させる。"""
+    session = state.SessionState("child", "/project", turn_seq=3, status="completed", turn_end=turn_state.TurnEnd.COMPLETED)
+    session.reserve_effort_resume(3)
+    session.advance_overload_retry()
+    session.advance_usage_limit_retry()
+    first_at = session.usage_limit_first_at
+    session.advance_usage_limit_retry()
+
+    wire = json.loads(json.dumps(await service_state.snapshot(session)))
+    assert {
+        "effort_resume_turn",
+        "effort_resuming",
+        "overload_resume_count",
+        "overload_first_at",
+        "usage_limit_wait_count",
+        "usage_limit_first_at",
+    } <= wire.keys()
+    restored = service_state.restore(wire)
+    assert restored.effort_resume_turn == 3 and not restored.effort_resuming
+    assert restored.overload_resume_count == 1 and restored.overload_first_at == session.overload_first_at
+    assert restored.usage_limit_wait_count == 2 and restored.usage_limit_first_at == first_at
+
+    assert restored.begin_effort_resume()
+    running = service_state.restore(await service_state.snapshot(restored))
+    assert running.effort_resume_turn is None and running.effort_resuming
+    assert not running.result_available
+    running.finish_effort_resume()
+    assert running.result_available

@@ -257,7 +257,7 @@ async def test_apply_exception_is_request_error_and_does_not_change_effort():
 @pytest.mark.asyncio
 async def test_self_change_resumes_only_once_after_turn_end():
     session = _session()
-    session.effort_resume_turn = session.turn_seq
+    session.reserve_effort_resume(session.turn_seq)
     sent = []
 
     async def send(current, body):
@@ -279,13 +279,38 @@ async def test_self_change_resumes_only_once_after_turn_end():
 @pytest.mark.asyncio
 async def test_independent_next_turn_consumes_self_resume_reservation():
     session = _session()
-    session.effort_resume_turn = 0
+    session.reserve_effort_resume(0)
 
     async def unexpected(_session, _prompt):
         raise AssertionError("別経路で開始したturnへ重複送信した")
 
     await effort_control.resume_changed({"child": session}, unexpected)
     assert session.effort_resume_turn is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interrupted", [False, True])
+async def test_effort_resume_releases_result_after_interrupt_or_send_failure(interrupted):
+    session = _session()
+    session.reserve_effort_resume(session.turn_seq)
+    session.status = "completed"
+    session.record_turn_completed()
+    session.interrupt_requested = interrupted
+    sent = []
+
+    async def unavailable(current, _body):
+        assert not current.result_available
+        sent.append(current.session_id)
+        raise RuntimeError("再開の送信に失敗")
+
+    await effort_control.resume_changed({"child": session}, unavailable)
+    await effort_control.resume_changed({"child": session}, unavailable)
+
+    assert sent == ([] if interrupted else ["child"])
+    assert session.effort_resume_turn is None and not session.effort_resuming
+    assert session.result_available
+    if not interrupted:
+        assert session.error["message"] == "再開の送信に失敗"
 
 
 @pytest.mark.parametrize("fault", ["missing", "version", "owner", "generation"])

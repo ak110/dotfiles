@@ -72,7 +72,7 @@ async def process_requests(
                     session.effort = updated
                     session.effort_history += ((utc_now(), previous or "", updated, actor),)
                     if actor == session.session_id:
-                        session.effort_resume_turn = session.turn_seq
+                        session.reserve_effort_resume(session.turn_seq)
                     session.touch()
                 response.update(
                     previous_effort=previous,
@@ -102,17 +102,9 @@ async def resume_changed(
 ) -> None:
     """自己変更したturnの終了後だけ継続入力を1回送る。別経路が再開済みなら予約を除く。"""
     for session in tuple(sessions.values()):
-        requested_turn = session.effort_resume_turn
-        if requested_turn is None:
-            continue
-        if session.turn_seq != requested_turn or session.interrupt_requested:
-            session.effort_resume_turn = None
-            continue
-        if not session.terminal or not session.turn_completed:
+        if not session.begin_effort_resume():
             continue
         # 応答喪失時にも重複送信せず、失敗はsessionに残して親へ返す。
-        session.effort_resume_turn = None
-        session.effort_resuming = True
         body = message_format.auto_message(
             "自身が要求したeffort変更を次のturnへ適用して同じ会話を再開した。"
             "引き継ぎ記録と直前の成果を確認し、残る作業を続けよ。",
@@ -131,5 +123,5 @@ async def resume_changed(
             }
             session.touch()
         finally:
-            session.effort_resuming = False
+            session.finish_effort_resume()
             session.touch()

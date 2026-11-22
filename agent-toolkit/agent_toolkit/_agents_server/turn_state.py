@@ -11,6 +11,18 @@ HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
 """再開turnの結果ではなく、元の待機表明を確定したときに`error`へ付ける項目名。"""
 
 
+@dataclasses.dataclass(frozen=True)
+class EffortResumePending:
+    """effortの自己変更後に再開するturn。"""
+
+    turn_seq: int
+
+
+@dataclasses.dataclass(frozen=True)
+class EffortResumeRunning:
+    """予約を消費して次のturnを開始している間の状態。"""
+
+
 class TurnStart(enum.Enum):
     """開始要求の受理段階。結果の終了と中断要求は別の状態軸である。"""
 

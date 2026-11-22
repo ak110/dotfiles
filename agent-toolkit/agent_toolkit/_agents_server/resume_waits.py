@@ -234,10 +234,9 @@ def is_overload_failure(session: SessionState) -> bool:
 
 def clear_overload_resume(session: SessionState) -> None:
     """過負荷による自動継続の連鎖を終える。"""
-    session.overload_resume_count = 0
+    session.reset_overload_retry()
     if isinstance(session.hold, turn_state.OverloadWait):
         session.clear_hold()
-    session.overload_first_at = None
 
 
 def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) -> bool:
@@ -253,9 +252,7 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
     session.hold_result(
         turn_state.OverloadWait(result, asyncio.get_running_loop().time() + OVERLOAD_RESUME_DELAYS_SECONDS[count])
     )
-    session.overload_resume_count = count + 1
-    if session.overload_first_at is None:
-        session.overload_first_at = utc_now()
+    session.advance_overload_retry()
     session.api_error = {
         "type": OVERLOAD_ERROR_INFO,
         "http_status": None,
@@ -268,10 +265,9 @@ def begin_overload_resume_wait(session: SessionState, result: dict[str, Any]) ->
 
 def clear_usage_limit_wait(session: SessionState) -> None:
     """利用上限の解除待ちの連鎖を終える。"""
-    session.usage_limit_wait_count = 0
+    session.reset_usage_limit_retry()
     if isinstance(session.hold, turn_state.UsageLimitWait):
         session.clear_hold()
-    session.usage_limit_first_at = None
 
 
 def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> bool:
@@ -405,9 +401,7 @@ def begin_usage_limit_wait(session: SessionState, result: dict[str, Any]) -> boo
     error["usageLimit"] = {"type": limit.limit_type, "resetsAt": resets_at}
     result = {**result, "error": error}
     session.hold_result(turn_state.UsageLimitWait(result, asyncio.get_running_loop().time() + limit.delay_seconds(time.time())))
-    session.usage_limit_wait_count += 1
-    if session.usage_limit_first_at is None:
-        session.usage_limit_first_at = utc_now()
+    session.advance_usage_limit_retry()
     _record_usage_limit_error(session, limit, error)
     state.notify_touch_listeners(session)
     return True
