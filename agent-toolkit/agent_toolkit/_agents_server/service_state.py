@@ -40,6 +40,13 @@ class _StateCodec(DataclassCodec):
             "publication": session_registry.PublicationState,
         }
 
+    def _field_names(self, cls: type) -> tuple[str, ...]:
+        names = super()._field_names(cls)
+        if issubclass(cls, state.SessionResumeState):
+            # 別版の受信側も同じフィールド集合を使うため、表示用の値は送らない。
+            return tuple(name for name in names if name != "last_action")
+        return names
+
     def encode(self, value: Any) -> Any:
         if isinstance(value, enum.Enum):
             name = next((name for name, kind in self._enums.items() if type(value) is kind), None)

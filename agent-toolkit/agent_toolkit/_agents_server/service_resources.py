@@ -195,12 +195,15 @@ class DataclassCodec:
         self._types = dict(types)
         self._names = {cls: name for name, cls in types.items()}
 
+    def _field_names(self, cls: type) -> tuple[str, ...]:
+        return tuple(field.name for field in dataclasses.fields(cast(Any, cls)))
+
     def encode(self, value: Any) -> Any:
         if type(value) in self._names:
             return {
                 "kind": "dataclass",
                 "type": self._names[type(value)],
-                "fields": {field.name: self.encode(getattr(value, field.name)) for field in dataclasses.fields(value)},
+                "fields": {name: self.encode(getattr(value, name)) for name in self._field_names(type(value))},
             }
         if type(value) is dict:
             if not all(type(key) is str for key in value):
@@ -226,7 +229,7 @@ class DataclassCodec:
         if kind == "dataclass":
             cls = self._types[value["type"]]
             fields = value["fields"]
-            if set(fields) != {field.name for field in dataclasses.fields(cast(Any, cls))}:
+            if set(fields) != set(self._field_names(cls)):
                 raise ValueError("SDKイベントのフィールドが一致しません")
             return cls(**{key: self.decode(item) for key, item in fields.items()})
         raise ValueError("未対応のcodec種別です")

@@ -69,3 +69,14 @@ def test_codec_round_trips_registry_resume_state() -> None:
     assert copied == stopped
     # 基底の再開状態へ縮退すると照会時の鮮度確認が外れるため、厳密な型を確かめる。
     assert type(copied["child"]) is state.RegistryResumeState  # pylint: disable=unidiomatic-typecheck
+
+
+def test_resume_display_action_does_not_change_projection_schema() -> None:
+    """同じ終了状態の旧版と新版で世代間投影のフィールド集合を変えない。"""
+    codec = service_state._StateCodec()  # pylint: disable=protected-access
+    session = state.SessionState("child", "/project", last_action="Read: 計画")
+    stopped = state.SessionResumeState.from_session(session)
+    payload = codec.encode(stopped)
+    assert stopped.last_action == "Read: 計画"
+    assert "last_action" not in payload["fields"]
+    assert codec.decode(payload).last_action == ""

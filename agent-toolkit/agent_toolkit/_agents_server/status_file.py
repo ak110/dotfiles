@@ -840,7 +840,6 @@ def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tup
 
 def _serialize_session(session: SessionState | SessionResumeState) -> dict[str, Any]:
     if isinstance(session, SessionResumeState):
-        # 本体を解放したsessionは進捗を持たないため、起動情報と終了状態だけを表示する。
         return {**_serialize_retained_session(session), "progress": "", "last_action": session.last_action}
     serialized = {
         **_serialize_retained_session(session),
