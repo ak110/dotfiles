@@ -1,23 +1,23 @@
-"""エージェントへ届ける規範のMarkdownの合計サイズが、記録した上限を超えないことを確かめる。
+"""エージェントへ届ける規範のMarkdownの合計サイズが、上限を超えないことを確かめる。
 
 対象は`agent-toolkit/skills/`と`agent-basics/skills/`の追跡済みMarkdown（試験用の`fixtures/`を除く）で、
 両プラグインにまたがるためリポジトリ直下に置く。
 規範を足す前に引く原則（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）を文章だけで
-守れず合計が増え続けたため、増やす時に差分とレビューへ表れるようにする（2026年11月22日のユーザー判断）。
-規範を足す時は、ほかの記述を削って合計を上限以内に収める。
+守れず合計が増え続けたため、上限と整理後の目標の2段階で検査する（2026年11月22日のユーザー判断）。
+上限を超えたら、その変更の中で削って収めず、合計を整理後の目標以下へ下げる専用の整理を行う。
+整理は`.claude/skills/edit-dotfiles-norms/SKILL.md`「規範を削除・縮小するときの消失確認」に従う。
 上限を上げるのは、ユーザーが自分から明示的に上げてよいと指示した時に限る。
-エージェントは上限の引き上げを提案も確認もしない（2026年11月22日のユーザー指示）。
+エージェントは上限の引き上げを提案も確認もしない。
 """
 
 import pathlib
 import subprocess
-import warnings
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
 _BUDGET_BYTES = 2_681_044
-# 上限との差がこの比率を超えたら、上限を下げるよう警告する（減らした分を次の追加で使い切らないため）。
-_SLACK_RATIO = 0.05
+# 整理後の目標の上限に対する比率。整理の後に、目標と上限の差だけ足せる余裕を残す。
+_TARGET_RATIO = 0.85
 
 
 def _norm_markdown_bytes(root: pathlib.Path) -> int:
@@ -33,15 +33,12 @@ def _norm_markdown_bytes(root: pathlib.Path) -> int:
 
 def test_norm_markdown_within_budget() -> None:
     total = _norm_markdown_bytes(_REPO_ROOT)
+    target = int(_BUDGET_BYTES * _TARGET_RATIO)
     assert total <= _BUDGET_BYTES, (
         f"規範のMarkdownの合計が{total}バイトで、上限{_BUDGET_BYTES}バイトを{total - _BUDGET_BYTES}バイト超えた。"
-        "既存の記述の削除・統合・検査への置き換えで、超えた分を相殺する。"
+        "この変更の中で削って収めない。"
+        f"合計を整理後の目標{target}バイト以下へ下げる専用の整理を、"
+        ".claude/skills/edit-dotfiles-norms/SKILL.mdの「規範を削除・縮小するときの消失確認」に従って行い、その後にこの変更を入れる。"
         f"{pathlib.Path(__file__).name}の_BUDGET_BYTESを上げるのは、ユーザーが自分から明示的に指示した時に限り、"
         "エージェントは引き上げを提案も確認もしない。"
     )
-    if _BUDGET_BYTES - total > _BUDGET_BYTES * _SLACK_RATIO:
-        warnings.warn(
-            f"規範のMarkdownの合計（{total}バイト）が上限（{_BUDGET_BYTES}バイト）を大きく下回った。"
-            f"{pathlib.Path(__file__).name}の_BUDGET_BYTESを{total}へ下げる。",
-            stacklevel=1,
-        )

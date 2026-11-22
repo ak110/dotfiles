@@ -76,6 +76,7 @@ description: >
 ## 規範を削除・縮小するときの消失確認
 
 エージェント向け文書の削除・縮小では、編集目的によらず以下を実施する。
+規範量の上限を超えた時の整理（`norm_size_budget_invariant_test.py`）も、この手順で行う。
 経緯は`docs/development/concepts-document-writing.md`にある。
 変えてよいのは構成、置き場所、表現、量であり、各規範が守ろうとしている結果は保つ。
 
