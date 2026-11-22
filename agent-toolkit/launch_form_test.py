@@ -227,7 +227,7 @@ def test_launcher_stops_stubborn_group_with_bounded_wait(
     acquired: list[subprocess.Popen] = []
     children: list[psutil.Process] = []
     with contextlib.ExitStack() as rescue:
-        with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], bytearray()) as process:
+        with launcher._server_lifetime([sys.executable, "-c", source], dict(os.environ), [], None) as process:
             acquired.append(process)
             deadline = time.monotonic() + 5
             # `write_text`はファイルの作成と書込が分かれるため、作成直後の空の印を読まないよう内容まで待つ。
