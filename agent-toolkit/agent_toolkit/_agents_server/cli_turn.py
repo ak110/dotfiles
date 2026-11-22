@@ -471,6 +471,10 @@ class CliTurnManager:
                     await session.drain_registration()
                 finally:
                     self._processes.pop(session.session_id, None)
+                if initialized.cancelled() and shared_state.finish_unowned_start(
+                    initialized, turn_seq, asyncio.CancelledError(), session=session
+                ):
+                    await self._notify_waiters()
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
         """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""

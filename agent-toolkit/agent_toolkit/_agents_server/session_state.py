@@ -7,7 +7,9 @@ import dataclasses
 import json
 from typing import Any
 
-from agent_toolkit._agents_server import state as contracts
+# 同じ状態契約の遅延再公開から呼ばれ、既存の通知先とloggerを共有する。
+# pylint: disable=protected-access
+from agent_toolkit._agents_server import state as contracts  # pylint: disable=cyclic-import
 from agent_toolkit._agents_server import turn_state
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.logging_config import redact_diagnostic_values

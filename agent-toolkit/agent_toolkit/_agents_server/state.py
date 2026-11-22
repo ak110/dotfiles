@@ -14,11 +14,14 @@ from agent_toolkit._agents_server import turn_state
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.logging_config import redact_diagnostic_values
 from agent_toolkit._agents_server.result_projection import (
+    append_result_next_action,
     nonempty_error,
     with_result_next_action,
 )
 from agent_toolkit._common import session_registry, startup_features, task_documents
-lazy from agent_toolkit._agents_server.session_state import SessionState as SessionState
+
+# 型の再公開は遅延し、session_stateから既存の状態契約を参照できるようにする。
+lazy from agent_toolkit._agents_server.session_state import SessionState as SessionState  # pylint: disable=useless-import-alias,cyclic-import
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 
@@ -427,16 +430,24 @@ def begin_reply(session: SessionState, *, preserve_waits: bool = False) -> None:
     session.touch()
 
 
-def finish_unowned_start(initialized: asyncio.Future[SessionState], turn_seq: int, error: BaseException) -> bool:
-    """初期化待ちを中断して所有タスクを回収した後、そのturnだけを終了扱いにする。"""
-    if not initialized.done() or initialized.cancelled() or initialized.exception() is not None:
-        return False
-    session = initialized.result()
-    if session.turn_seq != turn_seq or session.turn_completed or session.terminal:
+def finish_unowned_start(
+    initialized: asyncio.Future[SessionState],
+    turn_seq: int,
+    error: BaseException,
+    *,
+    session: SessionState | None = None,
+) -> bool:
+    """初期化待ちの取消で所有タスクを回収した後、そのturnだけを終了扱いにする。"""
+    if initialized.done() and not initialized.cancelled() and initialized.exception() is None:
+        session = initialized.result()
+    if session is None or session.turn_seq != turn_seq or session.turn_completed or session.terminal:
         return False
     session.clear_hold()
     session.status = "failed"
-    session.error = {"message": f"初期化の受付確定前に所有タスクが終了した: {type(error).__name__}"}
+    session.error = append_result_next_action(
+        {"message": f"初期化の受付確定前に所有タスクが終了した: {type(error).__name__}"},
+        "showで元のturnの状態と結果を確認し、新しいturnが始まっていなければ同じ入力を送る",
+    )
     session.record_turn_completed()
     session.touch()
     return True
