@@ -599,7 +599,7 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
             "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
             "今回必要な照会条件は`agent-toolkit:atk-mode/references/session-records.md`「本文の検索」で選べ。"
             "失敗文言の横断照会は`--tool-calls --failure-fixed-string <文言>`と同資料の横断走査の指定を使え。"
-            "入力の選択も同資料に従え。"
+            "人の入力を横断で数える時は同資料の`--catalog-*`と`--user-events`を併せて使え。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
