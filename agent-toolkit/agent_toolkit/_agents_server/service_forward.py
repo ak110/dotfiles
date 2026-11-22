@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -560,9 +561,53 @@ class _Forwarder:
             self.reader.join(timeout=5)
 
 
+def _retained_distribution_source(root: pathlib.Path, caller: runtime_environment.CallerContext) -> pathlib.Path:
+    """管理領域の保持複製なら、完成マーカーに記録された導入元を返す。"""
+    environment = caller.environment
+    home = runtime_environment.home()
+    if os.name == "nt":
+        local = environment.get("LOCALAPPDATA")
+        if not local:
+            return root
+        cache = pathlib.Path(local)
+    elif sys.platform == "darwin":
+        cache = home / "Library" / "Caches"
+    else:
+        cache = pathlib.Path(environment.get("XDG_CACHE_HOME") or home / ".cache")
+    managed = cache / "agent-toolkit" / "managed-temp"
+    area = root.parent
+    if (
+        not area.name.startswith("agents-server-plugin-root-shared-")
+        or managed.is_symlink()
+        or managed.is_junction()
+        or area.parent != managed.resolve()
+    ):
+        return root
+    marker = area / ".agent-toolkit-plugin-root.json"
+    try:
+        if os.name == "posix":
+            for directory in (managed, area):
+                metadata = directory.stat()
+                if metadata.st_uid != os.geteuid() or stat.S_IMODE(metadata.st_mode) != 0o700:
+                    return root
+        if not stat.S_ISREG(marker.lstat().st_mode):
+            return root
+        record = json.loads(marker.read_text(encoding="utf-8"))
+    except OSError, ValueError:
+        return root
+    if not isinstance(record, dict) or record.get("root_name") != root.name or record.get("version") != root.name:
+        return root
+    source = record.get("source")
+    if not isinstance(source, str):
+        return root
+    origin = pathlib.Path(source)
+    return origin.resolve() if origin.is_absolute() and origin.name == root.name else root
+
+
 def _official_distribution(root: pathlib.Path, caller: runtime_environment.CallerContext) -> bool:
     """配布キャッシュまたは登録済みcheckoutのプラグインを通常の起動元とする。"""
     with runtime_environment.bind(caller):
+        root = _retained_distribution_source(root, caller)
         cache = pathlib.Path("plugins/cache/ak110-dotfiles/agent-toolkit")
         if any(root.parent == (home / cache).resolve() for home in (host_homes.claude_config_dir(), host_homes.codex_home())):
             return True
