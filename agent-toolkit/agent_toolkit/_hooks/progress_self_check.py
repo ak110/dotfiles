@@ -241,7 +241,7 @@ def _saturation_text(session_id: str) -> str:
     return working + hooks
 
 
-def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
+def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
     """点検の期日に達していれば通知本文を返し、配送時に通知時刻を確定する予約をする。達していなければ`None`を返す。
 
     状態の読み書きは`update_state`の排他区間で行い、同じ主体の並列なフックが同じ通知を重ねて返さないようにする。
@@ -275,7 +275,7 @@ def claim_notice(payload: dict, *, now: float | None = None) -> str | None:
             state[DELIVERED_KEY] = {key: value for key, value in delivered.items() if key != agent_id}
             entry[_LAST_NOTIFIED_AT_KEY] = confirmed
         reserved_at = _number(entry.get(_RESERVED_AT_KEY))
-        due = current_time - confirmed >= SELF_CHECK_INTERVAL_SECONDS
+        due = current_time - confirmed >= SELF_CHECK_INTERVAL_SECONDS - (60 if periodic_recheck else 0)
         reserved = reserved_at is not None and reserved_at > confirmed and current_time - reserved_at < RESERVATION_SECONDS
         if due and not reserved:
             elapsed = current_time - started_at

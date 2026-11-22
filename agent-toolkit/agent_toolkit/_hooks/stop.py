@@ -41,7 +41,7 @@ lazy from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.session_state import read_state, update_state  # noqa: E402  # pylint: disable=wrong-import-position
 lazy from agent_toolkit._hooks import busy_loop_guard as _busy_loop_guard
-lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, is_pending_async_work
+lazy from agent_toolkit._hooks.background_tasks import active_non_teammate_tasks, pending_async_status
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import append_stop_log
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
@@ -117,19 +117,19 @@ def _write_recheck_verdict(session_id: str, payload: dict, *, may_collect: bool)
         for line in lines:
             if line.strip() and not isinstance(json.loads(line), dict):
                 return
-        pending = is_pending_async_work(
+        status = pending_async_status(
             transcript,
             session_id,
             background_tasks=payload.get("background_tasks"),
             session_state=read_state(session_id),
         )
-        path.write_text("pending" if pending else "complete", encoding="utf-8")
+        path.write_text(status, encoding="utf-8")
     except FileNotFoundError:
         return
     except Exception as exc:  # noqa: BLE001 -- 回収判定の故障を他のStop判定から隔離する
         append_stop_log(session_id, "periodic_recheck_error", {"error": f"{type(exc).__name__}: {exc}"})
         return
-    if not pending and _holds_common_recheck_task(payload.get("session_crons")):
+    if status == "complete" and _holds_common_recheck_task(payload.get("session_crons")):
         _collect_recheck_before_idle(session_id)
 
 

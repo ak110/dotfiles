@@ -191,7 +191,12 @@ def main(payload_text: str) -> int:
             )
         )
 
-    self_check_notice = _progress_self_check.claim_notice(payload)
+    periodic_recheck = (
+        not is_codex_payload(payload)
+        and not payload.get("agent_id")
+        and prompt.split("\n", 1)[0].strip() == PERIODIC_RECHECK_MARKER
+    )
+    self_check_notice = _progress_self_check.claim_notice(payload, periodic_recheck=periodic_recheck)
 
     # 公式契約では`prompt`はユーザーの送信本文である。実装版2.1.221で観測した
     # `<task-notification>`通知がユーザー発話として届く場合だけを防御的に除外し、一般的な入力契約とは扱わない。

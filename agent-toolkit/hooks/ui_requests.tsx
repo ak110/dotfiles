@@ -3,7 +3,7 @@ import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
 import { deliverySucceeded, newReportRoute, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
-import { mountForStart } from "./periodic_recheck.ts";
+import { mountPeriodicRecheck } from "./periodic_recheck.ts";
 
 type Request = { id: string; operation: string; input: { message?: string; tool_use_id?: unknown; targets?: unknown; id?: unknown; command?: unknown; ids?: unknown; expires?: unknown }; expires: number; created?: string; detached?: boolean };
 import type { BackgroundWait, RuntimeChange } from "./state.d.ts";
@@ -126,7 +126,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {
-          reason = await mountForStart($);
+          reason = await mountPeriodicRecheck($);
           ok = true;
         } else if (request.operation === "periodic_recheck_collect") {
           // Stopが全待機の終了を判定した時点で回収し、ターンの終了直後のidleで実行中に発火時刻を迎えた発火分が届くのを防ぐ。

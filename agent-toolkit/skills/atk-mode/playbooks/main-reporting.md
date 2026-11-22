@@ -122,6 +122,7 @@
 ## 進捗点検
 
 通知（`source="progress-self-check"`）は、メインと委譲先の全セッションへ、呼出主体ごとに30分間隔で届く。
+Claude Codeのメインの定期再確認では、発火の揺れを吸収するため1分早く期日と判定できる。
 点検は、目標と比べて進め方を直す機会である（原則2の定期的な比較、`agent-basics:writing-standards/references/quality-principles-qcd.md`「QCD」）。
 配下がある場合は、活動と成果・所要を分け、成果物の側を`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「成果物側の観測」で観測する。
 

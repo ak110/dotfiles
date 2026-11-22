@@ -484,7 +484,7 @@ def _run_busy_loop_turns(
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "busy-loop")
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: False)
+    monkeypatch.setattr(_background_tasks, "pending_async_status", lambda *args, **kwargs: "complete")
     calls = {"terminate": 0}
 
     def terminate(*, session_id: str) -> tuple[str, object]:
@@ -614,7 +614,7 @@ def test_codex_process_loop_session_is_blocked_until_exit_even_while_waiting(
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_RUN_SKILL_ID", raising=False)
-    monkeypatch.setattr(_background_tasks, "is_pending_async_work", lambda *args, **kwargs: pending)
+    monkeypatch.setattr(_background_tasks, "pending_async_status", lambda *args, **kwargs: "pending" if pending else "complete")
     _replace_checks(monkeypatch, {"response_language_advisor": ("approve", ""), "submission_report_advisor": ("approve", "")})
     transcript = _write_transcript(tmp_path, [])
 

@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks.background_tasks import is_pending_async_work, pending_async_task_ids
+from agent_toolkit._hooks.background_tasks import is_pending_async_work, pending_async_status, pending_async_task_ids
 from agent_toolkit._testing.background_tasks_support import (
     _assistant_entry,
     _bash_no_bg,
@@ -26,6 +26,21 @@ _QUOTED_NOTICE_PHRASES = (
 
 
 _TEXT = "作業途中です。"
+
+
+def test_waiting_tool_does_not_count_as_running_background_task(tmp_path: pathlib.Path) -> None:
+    """待機系ツールだけで定期確認を再装着しないが、実背景が残る時は装着する。"""
+    path = str(_write_transcript(tmp_path, [_assistant_entry([{"type": "tool_use", "id": "cron", "name": "CronCreate"}])]))
+    assert pending_async_status(path, "background-status", session_state=None) == "pending"
+    assert (
+        pending_async_status(
+            path,
+            "background-status",
+            background_tasks=[{"id": "bg", "type": "local_bash", "status": "running"}],
+            session_state=None,
+        )
+        == "pending-background"
+    )
 
 
 class TestIsPendingAsyncWork:
