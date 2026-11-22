@@ -54,13 +54,11 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
         ファイル内容が変化したかどうか。
     """
     conf_d = ssh_dir / "conf.d"
-    parts: list[str] = []
-    for conf_file in sorted(conf_d.glob("*.conf")):
-        parts.append(_ensure_trailing_newline(conf_file.read_text(encoding="utf-8")))
+    fragments = [conf_file.read_text(encoding="utf-8") for conf_file in sorted(conf_d.glob("*.conf"))]
     localconfig = ssh_dir / "localconfig"
     if localconfig.exists():
-        parts.append(_ensure_trailing_newline(localconfig.read_text(encoding="utf-8")))
-    new_content = "".join(parts)
+        fragments.append(localconfig.read_text(encoding="utf-8"))
+    new_content = _build_ssh_config_content(fragments)
 
     config_path = ssh_dir / "config"
     short = log_format.home_short(config_path)
@@ -79,6 +77,10 @@ def _generate_ssh_config(ssh_dir: Path) -> bool:
     return True
 
 
+def _build_ssh_config_content(fragments: Sequence[str]) -> str:
+    return "".join(_ensure_trailing_newline(fragment) for fragment in fragments)
+
+
 def _generate_authorized_keys(ssh_dir: Path) -> bool:
     """conf.d/authorized_keys + local_authorized_keys -> authorized_keys (追加のみ)
 
@@ -86,38 +88,32 @@ def _generate_authorized_keys(ssh_dir: Path) -> bool:
         ファイル内容が変化したかどうか。
     """
     ak_path = ssh_dir / "authorized_keys"
-    existing_lines: list[str] = []
-    known_keys: set[str] = set()
-    if ak_path.exists():
-        for line in ak_path.read_text(encoding="utf-8").splitlines():
-            existing_lines.append(line)
-            key_data = _extract_key_data(line)
-            if key_data is not None:
-                known_keys.add(key_data)
-    original_lines = list(existing_lines)
-    # ソースファイルから未知の鍵を追加
-    sources = [ssh_dir / "conf.d" / "authorized_keys", ssh_dir / "local_authorized_keys"]
-    added = 0
-    for source in sources:
-        if not source.exists():
-            continue
-        for line in source.read_text(encoding="utf-8").splitlines():
-            key_data = _extract_key_data(line)
-            if key_data is None:
-                continue
-            if key_data not in known_keys:
-                existing_lines.append(line)
-                known_keys.add(key_data)
-                added += 1
+    existing_text = ak_path.read_text(encoding="utf-8") if ak_path.exists() else ""
+    sources = (ssh_dir / "conf.d" / "authorized_keys", ssh_dir / "local_authorized_keys")
+    source_texts = [source.read_text(encoding="utf-8") for source in sources if source.exists()]
+    content, added = _merge_authorized_keys(existing_text, source_texts)
     short = log_format.home_short(ak_path)
-    if added == 0 and existing_lines == original_lines:
+    if content is None:
         logger.info(log_format.format_status(short, "変更なし (追加鍵 0 件)"))
         return False
-    content = "\n".join(existing_lines) + "\n" if existing_lines else ""
     if not common.atomic_write_text(ak_path, content, mode=0o600):
         raise OSError(f"{short} の書き込みに失敗")
     logger.info(log_format.format_status(short, f"{added} 件の鍵を追加しました"))
     return True
+
+
+def _merge_authorized_keys(existing_text: str, source_texts: Sequence[str]) -> tuple[str | None, int]:
+    lines = existing_text.splitlines()
+    known_keys = {key_data for line in lines if (key_data := _extract_key_data(line)) is not None}
+    added = 0
+    for text in source_texts:
+        for line in text.splitlines():
+            key_data = _extract_key_data(line)
+            if key_data is not None and key_data not in known_keys:
+                lines.append(line)
+                known_keys.add(key_data)
+                added += 1
+    return ("\n".join(lines) + "\n", added) if added else (None, 0)
 
 
 def _extract_key_data(line: str) -> str | None:

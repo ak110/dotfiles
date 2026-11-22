@@ -39,6 +39,7 @@
 
 ## データと計算
 
+- 計算と外部入出力を分ける関数境界は、`agent-basics:writing-standards/references/design-heuristics.md`「責務帰属（SRP）分析の観点」に従う。
 - 状態の表現と所有者: 排他的な段階を型へまとめる条件は `agent-basics:writing-standards/references/design-data-interfaces.md`「状態と業務ルールの条件」に従う。
   型に閉じるデータと更新の契機を確かめ、他の段階からの参照や所有者以外からの直接の書き換えを除く。
   独立した軸は別の状態として保ち、OS、ファイル、外部サービスなど別の主体が一次の状態を持つ値は、その主体から読む。
