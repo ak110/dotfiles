@@ -13,6 +13,7 @@ using System.Collections.Generic;
 public sealed class UvOutputRecord : TextWriter {
     public readonly List<string> Saved = new List<string>(), Hidden = new List<string>();
     public string Summary, Cause, MatchText;
+    public bool SavedLog;
     public bool PrivateKey, Matched;
     readonly Regex sensitive, actionable, routine;
     bool continuation;
@@ -41,7 +42,14 @@ public sealed class UvOutputRecord : TextWriter {
                 }
             }
         }
-        if (visible) PrintError(line);
+        if (visible) PublishEvent("diagnostic", line, null);
+    }
+    public static void PublishEvent(string kind, string message, string location) {
+        switch (kind) {
+            case "failure": PrintError(message + " (詳細: " + location + ")"); break;
+            case "unsaved": PrintError("明細を保存できません: " + location + ": " + message + "。書込権限と空き容量を確認してください。"); break;
+            default: PrintError(message); break;
+        }
     }
     public static void PrintError(string message) {
         if (!Console.IsErrorRedirected) { Console.Error.WriteLine(message); return; }
@@ -63,7 +71,7 @@ function New-UvOutput {
     }
 }
 function Complete-UvOutput {
-    param([string]$Stage, [UvOutputRecord]$Record, [int]$Code)
+    param([string]$Stage, [UvOutputRecord]$Record, [int]$Code, [switch]$DeferSummary)
     if (-not $Record.Saved.Count -and $Code -eq 0) { return }
     $temp = $null
     $log = $null
@@ -79,15 +87,16 @@ function Complete-UvOutput {
         if ([IO.File]::Exists($log)) { [IO.File]::Replace($temp, $log, [NullString]::Value) }
         else { [IO.File]::Move($temp, $log) }
     } catch {
-        Write-UpdateError ("明細を保存できません: ${log}: $_。書込権限と空き容量を確認してください。")
+        [UvOutputRecord]::PublishEvent("unsaved", "$_", $log)
         foreach ($line in $Record.Hidden) { Write-UpdateError $line }
         return
     } finally {
         if ($temp) { Remove-Item -LiteralPath $temp -ErrorAction SilentlyContinue }
     }
-    if ($Code -ne 0) {
+    $Record.SavedLog = $true
+    if ($Code -ne 0 -and ($Code -eq 130 -or -not $DeferSummary)) {
         $summary = if ($Record.Cause) { $Record.Cause } elseif ($Record.Summary) { $Record.Summary } else { "exit=$Code" }
-        Write-UpdateError ("$summary (詳細: $log)")
+        [UvOutputRecord]::PublishEvent("failure", $summary, $log)
     }
 }
 function Write-UvOutput {

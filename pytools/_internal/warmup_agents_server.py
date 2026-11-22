@@ -132,8 +132,11 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 logger.info(log_format.format_status(_TAG, startup.message), extra=log_format.LOG_ONLY)
             else:
                 failures.append(startup.message)
-    if inherited_job_targets:
-        logger.warning("%s: %s", ", ".join(inherited_job_targets), service_forward.INHERITED_JOB_WARNING)
+    notices = (
+        (post_apply_outcome.PostApplyNotice(f"{', '.join(inherited_job_targets)}: {service_forward.INHERITED_JOB_WARNING}"),)
+        if inherited_job_targets
+        else ()
+    )
     if reclaim_errors:
         # 回収不能は他の確認失敗と分け、post-applyが後続工程を開始しないよう例外で伝える。
         raise reclaim_errors[0]
@@ -141,14 +144,15 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         return post_apply_outcome.PostApplyOutcome(
             failure="; ".join(failures),
             next_action=post_apply_outcome.CHECK_UPDATE_LOG,
+            notices=notices,
         )
     if dependencies_ready:
         if not elevated:
             post_apply_cache.save("agents-server-startup", key)
         plugin_warmup.cleanup_prepared(prepared)
     if elevated:
-        return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(_ELEVATED_NOTICE,))
-    return post_apply_outcome.PostApplyOutcome()
+        return post_apply_outcome.PostApplyOutcome(deferred=True, notices=(*notices, _ELEVATED_NOTICE))
+    return post_apply_outcome.PostApplyOutcome(notices=notices)
 
 
 @dataclass(frozen=True)

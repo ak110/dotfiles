@@ -537,6 +537,48 @@ def test_launcher_runs_cleanup_after_continued_failures_only(
 
 
 @_LINUX_ONLY
+@pytest.mark.skipif(os.name == "nt", reason="Bashランチャーの異常終了と診断受渡しを検査する")
+@pytest.mark.parametrize("acknowledged", [False, True])
+@pytest.mark.parametrize("job", [False, True])
+def test_launcher_bootstrap_diagnostic_survives_runtime_launch_failure(
+    tmp_path: pathlib.Path, acknowledged: bool, job: bool
+) -> None:
+    home = tmp_path / "home"
+    uv = home / ".local/bin/uv"
+    uv.parent.mkdir(parents=True)
+    uv.write_text("#!/bin/bash\nexit 19\n", encoding="utf-8")
+    uv.chmod(0o755)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    launcher = bin_dir / "update-dotfiles"
+    shutil.copy2(_LAUNCHER, launcher)
+    libexec = tmp_path / "libexec"
+    libexec.mkdir()
+    (libexec / "update_bootstrap.sh").write_text(
+        "export UPDATE_DOTFILES_BOOTSTRAP_FAILURES=$'管理Pythonの更新: exit=17\\tsaved\\n'\n"
+        "if [[ -n ${CODEX_THREAD_ID:-} ]]; then python_path=$1; fi\n"
+        "report_deferred_bootstrap() { echo '詳細: fixture.log' >&2; }\n",
+        encoding="utf-8",
+    )
+    if acknowledged:
+        uv.write_text(
+            '#!/bin/bash\nmkdir -p "${UPDATE_DOTFILES_BOOTSTRAP_ACK%/*}"\n'
+            'touch "$UPDATE_DOTFILES_BOOTSTRAP_ACK"\nprintf "%s\\n" "詳細: fixture.log" >&2\nexit 19\n',
+            encoding="utf-8",
+        )
+    result = subprocess.run(
+        [launcher],
+        env={"HOME": str(home), "PATH": os.environ["PATH"], **({"CODEX_THREAD_ID": "fixture"} if job else {})},
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 19
+    assert result.stderr.count("詳細: fixture.log") == 1
+    assert not list(home.rglob("*.bootstrap"))
+
+
 def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) -> None:
     """公式パスが存在しない場合はPATH上のuvを選ばず終了する。"""
     result, calls = _run_launcher(tmp_path, native_uv=False, path_uv=True)
