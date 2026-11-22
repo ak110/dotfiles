@@ -1,7 +1,7 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。
 
 `send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、そのターンに`Skill`による
+この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
 `agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
 遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
 
@@ -44,7 +44,8 @@ _BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
 # 欠陥の指摘を表す語。貼り付けた素材（コードブロック、インラインコード、引用行）は除いた本文へ適用する。
 _DEFECT_RE = re.compile(
     r"バグ|不具合|不良|欠陥|おかしい|おかしく|間違|誤り|誤っ|誤動作|壊れ|動かな|動いて(?:い)?ない|機能しな|"
-    r"できて(?:い)?ない|なって(?:い)?ない|ミス|\b(?:bug|broken|regression)\b",
+    r"できて(?:い)?ない|なって(?:い)?ない|ミス|\b(?:bug|broken|regression)\b|"
+    r"手戻り(?:が)?多すぎ|直すべき|になってなかったっけ|ユーザーの手を煩わせないで|また再発|反映されて(?:い)?ない",
     re.IGNORECASE,
 )
 
@@ -205,7 +206,7 @@ def _invokes_bugfix(entry: dict) -> bool:
 
 
 def bugfix_pending(lines: list[str]) -> bool:
-    """最後の人間の発話が欠陥指摘で、そのターンに`agent-basics:bugfix`の起動が無ければ真を返す。"""
+    """最後の人間の発話が欠陥指摘で、その発話の後に`agent-basics:bugfix`の起動が無ければ真を返す。"""
     turn = latest_human_turn(lines)
     if turn is None:
         return False
@@ -215,7 +216,7 @@ def bugfix_pending(lines: list[str]) -> bool:
 
 def _block_body(delivery: str) -> str:
     return _block_notice(
-        f"ユーザーの発話が欠陥の指摘を含み、このターンで`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
+        f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
         fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
         "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。",
     )
