@@ -156,6 +156,7 @@ function renderSessions() {
     startedAt.textContent = formatTime(entry.started_at);
     if (queryText && entry.label?.toLowerCase().includes(queryText)) {
       const label = document.createElement("span");
+      label.className = "pane-item-title";
       label.textContent = entry.label;
       meta.append(label);
     }
