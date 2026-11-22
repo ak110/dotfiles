@@ -295,3 +295,16 @@ def test_public_bundle_keeps_result_status_when_another_result_consumes_budget(t
     assert any(
         event.get("tool") == "normal" and event.get("is_error") is False and event.get("omitted") is True for event in events
     )
+
+
+@pytest.mark.parametrize("bad_type", [{"invalid": True}, ["invalid"]])
+def test_public_search_continues_after_nonstring_record_type(tmp_path, capsys, bad_type):
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "response_item", "payload": {"type": bad_type, "call_id": "bad", "output": "異常行"}},
+            {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "ok", "output": "検索対象"}},
+        ],
+    )
+    assert evidence.main([str(transcript), "--grep", "検索対象"]) == 0
+    assert any(event.get("kind") == "match" and event.get("line") == 2 for event in read_jsonl(capsys))

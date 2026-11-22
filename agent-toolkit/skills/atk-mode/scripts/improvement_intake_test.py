@@ -3,6 +3,7 @@
 import json
 
 import improvement_intake
+import pytest
 
 
 def test_capture_retry_and_explicit_decision(tmp_path, monkeypatch, capsys):
@@ -59,14 +60,15 @@ def test_capture_failed_write_is_not_reported_as_saved(tmp_path, monkeypatch, ca
     assert "完了できない" in captured.err
 
 
-def test_invalid_draft_and_saved_state_have_distinct_recovery(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("invalid", ["{ private fixture", "9" * 8000, "[" * 2000 + "]" * 2000])
+def test_invalid_draft_and_saved_state_have_distinct_recovery(tmp_path, monkeypatch, capsys, invalid):
     monkeypatch.setattr(improvement_intake, "state_dir", lambda: tmp_path)
     body = tmp_path / "input.json"
-    body.write_text("{ private fixture", encoding="utf-8")
+    body.write_text(invalid, encoding="utf-8")
     assert improvement_intake.main(["capture", "--body-file", str(body)]) == 2
     error = capsys.readouterr().err
-    assert "JSON原稿に直して受付を再実行" in error and "private fixture" not in error
+    assert "JSON原稿に直して受付を再実行" in error and invalid not in error
     (tmp_path / "improvement-intake.json").write_bytes(body.read_bytes())
     assert improvement_intake.main(["list", "--target-repo", "repo"]) == 2
     error = capsys.readouterr().err
-    assert "原本を保全し、正常な版から復元" in error and "private fixture" not in error
+    assert "原本を保全し、正常な版から復元" in error and invalid not in error
