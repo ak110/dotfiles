@@ -24,6 +24,7 @@ from typing import NoReturn
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wait_ci_forge import (
+    _INFERRED_GITLAB_HOST,
     _default_run_list_fn,
     _follow_shas,
     _gh_job_list,
@@ -34,7 +35,6 @@ from agent_toolkit._atk.wait_ci_forge import (
     _is_ancestor_of_ref,
     _matches_local_push_target,
     _normalize_gitlab_pipeline,
-    _parse_repository,
     _resolve_forge,
     _resolve_sha,
     _run_forge_json_command,
@@ -154,15 +154,6 @@ class _UsageErrorParser(argparse.ArgumentParser):
         sys.exit(_finish(EXIT_USAGE, _NEXT_ACTION_USAGE))
 
 
-def _matches_saved_short_repository(repository: str, saved_repository: str) -> bool:
-    try:
-        target = _parse_repository(repository)
-        saved = _parse_repository(saved_repository)
-    except RunListError:
-        return False
-    return target.hostname is None and saved.hostname is not None and target.project_path == saved.project_path
-
-
 def main(argv: list[str] | None = None) -> int:
     _outcome.force_utf8_stdio()
     _install_signal_handlers()
@@ -261,11 +252,16 @@ def main(argv: list[str] | None = None) -> int:
                 else "対象に一致する書込可能な`--failure-record`を指定して再実行する"
             )
             return _finish(EXIT_GH_ERROR, next_action)
+    inferred_from = None
     try:
         if baseline is None:
-            forge, args.repo = _resolve_forge(args.forge, args.repo)
+            original_repository = args.repo
+            forge, args.repo = _resolve_forge(args.forge, original_repository)
+            if args.repo != original_repository:
+                inferred_from = original_repository
         else:
-            if args.repo is None or _matches_saved_short_repository(args.repo, baseline.repository):
+            inferred_from = baseline.inferred_from
+            if args.repo is None or args.repo == inferred_from:
                 args.repo = baseline.repository
             forge = baseline.forge if args.forge == "auto" else args.forge
             args.ref = baseline.ref if args.ref is None else args.ref
@@ -275,6 +271,14 @@ def main(argv: list[str] | None = None) -> int:
         return _finish(
             EXIT_GH_ERROR, "ホストを含む `--repo` を指定し、必要なら `--forge github` または `--forge gitlab` を明示する"
         )
+    token = _INFERRED_GITLAB_HOST.set(forge == "gitlab" and inferred_from is not None)
+    try:
+        return _run_wait(args, forge, baseline, inferred_from)
+    finally:
+        _INFERRED_GITLAB_HOST.reset(token)
+
+
+def _run_wait(args: argparse.Namespace, forge: str, baseline: CiBaseline | None, inferred_from: str | None) -> int:
     explicit_sha = args.sha.lower() if args.sha is not None and re.fullmatch(r"[0-9a-fA-F]{40}", args.sha) else None
     if args.write_baseline is not None:
         if explicit_sha is None and not _matches_local_push_target(forge, args.repo, args.subprocess_timeout):
@@ -297,6 +301,7 @@ def main(argv: list[str] | None = None) -> int:
                 source_ref=args.source_ref,
                 sha=sha,
                 run_ids=frozenset(_run_ids(runs)),
+                inferred_from=inferred_from,
             )
             _write_baseline(args.write_baseline, baseline)
         except (OSError, RunListError) as exc:
@@ -317,7 +322,9 @@ def main(argv: list[str] | None = None) -> int:
                 if baseline.run_ids:
                     raise RunListError("--wait-shaの記録にbaselineの除外runが含まれている")
             else:
-                baseline = CiBaseline(forge, args.repo, args.ref, args.source_ref, args.wait_sha, frozenset())
+                baseline = CiBaseline(
+                    forge, args.repo, args.ref, args.source_ref, args.wait_sha, frozenset(), inferred_from=inferred_from
+                )
                 if record_path is not None:
                     _write_baseline(record_path, baseline)
         except (OSError, RunListError) as exc:

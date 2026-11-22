@@ -59,7 +59,9 @@ GitLabの設定は[Projects API](https://docs.gitlab.com/api/projects/)と[独�
 候補がない場合や複数ホストが一致する場合は、ホスト付きの `--repo` を指定する。
 ホスト名からforgeを判定できない場合は `--forge` も明示する。
 自動判定したホストは待機記録へ保存する。
+短縮形の再入力は、自動判定でその短縮形から作成した記録だけが受理する。
 GitLabでは、Gitの転送方式やポートではなくglabのホスト別API設定を使う。
+自動判定したGitLabホストが環境変数で指定したホストと異なる場合は、後者のAPI接続設定を引き継がない。
 
 `wait_ci.py`は`--ref`で指定した宛先のブランチかタグの短縮名を、GitHubでは`gh run list --branch`へ、GitLabでは`glab ci list --ref`へ渡す。
 `--baseline`での待機と再起動はbaselineの保存値を使うため、これらを省く。

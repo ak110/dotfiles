@@ -522,6 +522,7 @@ class TestResolveShaViaMain:
         ("github.com/group/project", "https://github.com/other/repo", [], "github.com/group/project"),
         (None, "git@github.com:group/project.git", [], "github.com/group/project"),
         (None, "https://github.com/other/repo", [], None),
+        (None, "ssh://git@github:2222/group/project", [], None),
         ("github.com/group/project", "https://github.example.com/group/project", [], None),
         ("github.com/group/project", "https://gitlab.example.com/group/project", [], None),
         ("github.com/group/project", "https://github.example.com/group/project", ["--forge", "github"], "group/project"),
@@ -556,22 +557,48 @@ def test_cli_resolves_short_repository(
 
 
 @pytest.mark.parametrize("record_kind", ["baseline", "failure-record"])
+@pytest.mark.parametrize("host_matches", [True, False])
 @pytest.mark.parametrize("legacy", [False, True])
 def test_cli_resumes_saved_gitlab_target(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_kind: str, legacy: bool
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_kind: str, legacy: bool, host_matches: bool
 ) -> None:
-    registry = mock.Mock(return_value={"gitlab.example.com/group/project": {}})
+    registry = mock.Mock(wraps=config_settings.repository_settings)
+    assert _config_main(tmp_path, "config", "repos", "add", "gitlab.example.com:2222/group/project", "--edit", "awi") == 0
     monkeypatch.setattr(config_settings, "repository_settings", registry)
     monkeypatch.setattr(
-        git_remote, "remote_urls", lambda *_args, **_kwargs: ["ssh://git@gitlab.example.com:2222/group/project"]
+        git_remote,
+        "remote_urls",
+        lambda *_args, **_kwargs: ["git@gitlab.example.com:group/project.git"] if host_matches else [],
     )
-    monkeypatch.setenv("GITLAB_HOST", "gitlab.example.com")
+    host = "gitlab.example.com" if legacy or host_matches else "gitlab.other.example"
+    monkeypatch.setenv("GITLAB_HOST", host)
     monkeypatch.setenv("GITLAB_API_HOST", "gitlab-api.example.com:8443")
-    monkeypatch.setenv("GLAB_API_PROTOCOL", "https")
+    monkeypatch.setenv("GLAB_API_PROTOCOL", "http")
+    monkeypatch.setenv("API_PROTOCOL", "http")
+    monkeypatch.setenv("GITLAB_TOKEN", "test-token")
     calls = mock.Mock(return_value=[])
     monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", calls)
-    wait = mock.Mock(return_value=wait_ci.EXIT_SUCCESS)
-    monkeypatch.setattr(wait_ci, "_wait_from_record", wait)
+
+    def wait_for_ci(*_args: object, repository: str, **_kwargs: object) -> int:
+        assert repository == ("group/project" if legacy else "gitlab.example.com/group/project")
+        _glab_pipeline_list(repository, "main", _FULL_SHA, 1)
+        return wait_ci.EXIT_SUCCESS
+
+    monkeypatch.setattr(wait_ci, "wait_for_ci", wait_for_ci)
+
+    def assert_endpoint() -> None:
+        command = calls.call_args.args[0]
+        environment = calls.call_args.kwargs["env"]
+        assert environment["GITLAB_HOST"] == "gitlab.example.com"
+        protocol = "http" if legacy or host_matches else "https"
+        assert command[:5] == ["glab", "ci", "list", "--repo", f"{protocol}://gitlab.example.com/group/project"]
+        if legacy or host_matches:
+            assert environment["GITLAB_API_HOST"] == "gitlab-api.example.com:8443"
+            assert environment["GLAB_API_PROTOCOL"] == "http"
+            assert environment["GITLAB_TOKEN"] == "test-token"
+        else:
+            assert not {"GITLAB_API_HOST", "GLAB_API_PROTOCOL", "API_PROTOCOL", "GITLAB_TOKEN"} & environment.keys()
+
     record = tmp_path / "record.json"
     args = ["--repo", "group/project", "--ref", "main", "--source-ref", "HEAD"]
     create = ["--write-baseline", str(record), "--sha", _FULL_SHA]
@@ -582,14 +609,31 @@ def test_cli_resumes_saved_gitlab_target(
         create = resume
     assert wait_ci.main([*args, *create, *(["--forge", "gitlab"] if legacy else [])]) == wait_ci.EXIT_SUCCESS
 
+    assert_endpoint()
     registry.reset_mock(side_effect=True)
     registry.side_effect = AssertionError("再開時に登録を読み直した")
     monkeypatch.setattr(git_remote, "remote_urls", mock.Mock(side_effect=AssertionError("再開時にremoteを読んだ")))
+    calls.reset_mock()
     assert wait_ci.main([*args, *resume]) == wait_ci.EXIT_SUCCESS
-    baseline = wait.call_args.args[1]
-    assert baseline.repository == ("group/project" if legacy else "gitlab.example.com/group/project")
-    _glab_pipeline_list(baseline.repository, "main", _FULL_SHA, 1)
-    command = calls.call_args.args[0]
-    assert command[:5] == ["glab", "ci", "list", "--repo", "https://gitlab.example.com/group/project"]
-    assert calls.call_args.kwargs["env"]["GITLAB_API_HOST"] == "gitlab-api.example.com:8443"
-    assert calls.call_args.kwargs["env"]["GLAB_API_PROTOCOL"] == "https"
+    assert_endpoint()
+
+
+@pytest.mark.parametrize("record_kind", ["baseline", "failure-record"])
+def test_cli_rejects_short_repository_for_explicit_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_kind: str
+) -> None:
+    monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", mock.Mock(return_value=[]))
+    wait = mock.Mock(return_value=wait_ci.EXIT_SUCCESS)
+    monkeypatch.setattr(wait_ci, "wait_for_ci", wait)
+    record = tmp_path / "record.json"
+    common = ["--forge", "gitlab", "--ref", "main", "--source-ref", "HEAD"]
+    sha_args = ["--wait-sha", _FULL_SHA, "--failure-record", str(record)]
+    if record_kind == "baseline":
+        create = ["--write-baseline", str(record), "--sha", _FULL_SHA]
+        resume = ["--baseline", str(record)]
+    else:
+        create = resume = sha_args
+    assert wait_ci.main([*common, "--repo", "gitlab.other.example/group/project", *create]) == wait_ci.EXIT_SUCCESS
+    wait.reset_mock()
+    assert wait_ci.main([*common, "--repo", "group/project", *resume]) == wait_ci.EXIT_GH_ERROR
+    wait.assert_not_called()

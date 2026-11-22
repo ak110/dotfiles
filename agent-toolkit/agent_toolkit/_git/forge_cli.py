@@ -2,15 +2,28 @@
 
 import os
 import shlex
+from urllib.parse import urlsplit
 
 from agent_toolkit._git import remote
 
 _GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GL_HOST")
 
+_GLAB_HOST_API_VARIABLES = (
+    "GITLAB_API_HOST",
+    "GLAB_API_PROTOCOL",
+    "API_PROTOCOL",
+    "GITLAB_SUBFOLDER",
+    "GITLAB_TOKEN",
+    "GITLAB_ACCESS_TOKEN",
+    "OAUTH_TOKEN",
+)
+
 GITHUB_JOB_LIST = ".jobs[] | [.databaseId, .name, .conclusion] | @tsv"
 
 
-def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environment: bool = False) -> dict[str, str]:
+def glab_environment(
+    repository: str | remote.RemoteLocation, *, prefer_environment: bool = False, inferred_host: bool = False
+) -> dict[str, str]:
     """glabの子環境へ、待機では明示指定、通知では公開環境指定を優先して反映する。"""
     target = remote.parse_remote_location(repository) if isinstance(repository, str) else repository
 
@@ -19,6 +32,15 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
     )
     env = os.environ.copy()
     inherited_host = next((env[name] for name in _GLAB_HOST_VARIABLES if env.get(name)), None)
+    if inferred_host and inherited_host:
+        try:
+            inherited_authority = urlsplit(inherited_host if "://" in inherited_host else f"//{inherited_host}").netloc
+        except ValueError:
+            inherited_authority = ""
+        if inherited_authority.lower() != authority:
+            for name in (*_GLAB_HOST_VARIABLES, *_GLAB_HOST_API_VARIABLES):
+                env.pop(name, None)
+            inherited_host = None
     if inherited_host and (prefer_environment or authority is None):
         env["GITLAB_HOST"] = inherited_host
     elif authority is not None:
@@ -32,9 +54,9 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
     return env
 
 
-def glab_repository(repository: str, *, prefer_environment: bool = False) -> str:
+def glab_repository(repository: str, *, prefer_environment: bool = False, environment: dict[str, str] | None = None) -> str:
     target = remote.parse_remote_location(repository)
-    env = glab_environment(repository, prefer_environment=prefer_environment)
+    env = environment if environment is not None else glab_environment(repository, prefer_environment=prefer_environment)
     host = env.get("GITLAB_HOST")
     if not host:
         return target.project_path

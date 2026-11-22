@@ -134,6 +134,7 @@ class CiBaseline:
     sha: str
     run_ids: frozenset[int]
     reported_failures: frozenset[str] = frozenset()
+    inferred_from: str | None = None
 
 
 RepositoryTarget = _git_remote.RemoteLocation
@@ -153,6 +154,8 @@ def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
         "run_ids": sorted(baseline.run_ids),
         "reported_failures": sorted(baseline.reported_failures),
     }
+    if baseline.inferred_from is not None:
+        payload["inferred_from"] = baseline.inferred_from
     path.write_text(f"{json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)}\n", encoding="utf-8")
 
 
@@ -179,6 +182,9 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         isinstance(item, str) and re.fullmatch(r"(?:run|job):[0-9]+", item) for item in reported
     ):
         raise RunListError(f"baselineのreported_failuresが不正: {path}")
+    inferred_from = payload.get("inferred_from")
+    if inferred_from is not None and (not isinstance(inferred_from, str) or not inferred_from):
+        raise RunListError(f"baselineのinferred_fromが不正: {path}")
     return CiBaseline(
         forge=payload["forge"],
         repository=payload["repository"],
@@ -187,6 +193,7 @@ def _load_baseline(path: pathlib.Path) -> CiBaseline:
         sha=payload["sha"],
         run_ids=frozenset(validated_run_ids),
         reported_failures=frozenset(reported),
+        inferred_from=inferred_from,
     )
 
 
