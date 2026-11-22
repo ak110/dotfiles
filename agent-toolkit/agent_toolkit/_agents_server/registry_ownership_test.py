@@ -110,9 +110,16 @@ async def test_child_collected_during_registry_lookup_is_not_reintroduced(
         manager.sessions[parent.session_id] = parent
         resolve = session_registry.resolve
 
+        collected = False
+
         def resolve_and_collect(identifier: str, **kwargs: Any) -> session_registry.SessionResolution:
+            nonlocal collected
             resolution = resolve(identifier, **kwargs)
-            wait_output_tracking.consume_agents_wait_output(parent, json.dumps({"session_id": "child", "status": "completed"}))
+            if not collected:
+                collected = True
+                wait_output_tracking.consume_agents_wait_output(
+                    parent, json.dumps({"session_id": "child", "status": "completed"})
+                )
             return resolution
 
         monkeypatch.setattr(session_registry, "resolve", resolve_and_collect)
