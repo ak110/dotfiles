@@ -8,6 +8,7 @@ import argparse
 import json
 import os
 import pathlib
+import sys
 from typing import Any
 
 import pytest
@@ -22,7 +23,7 @@ from agent_toolkit._agents_server import (
     wait_run,
     wait_summary,
 )
-from agent_toolkit._atk import managed_temp
+from agent_toolkit._atk import managed_temp, output_file
 from agent_toolkit._common import session_activity, session_registry, state_paths
 from agent_toolkit._testing.agents_server_commands_support import _write_root_sessions
 
@@ -221,6 +222,11 @@ def test_agents_wait_writes_notice_summary_and_running_line(
         atk.main(["agents", "wait"])
 
     output_lines = capsys.readouterr().out.splitlines()
+    notice_line = output_lines.pop(1)
+    assert notice_line.startswith("通知本文ファイル: ")
+    assert pathlib.Path(notice_line.removeprefix("通知本文ファイル: ")).read_text(encoding="utf-8") == (
+        "本文開始: session_id=session-1\n警告\n本文終了: session_id=session-1\n"
+    )
     assert output_lines[:4] == [
         "通知: 1件（session_id: session-1）",
         "本文開始: session_id=session-1",
@@ -256,9 +262,11 @@ def test_agents_wait_writes_notice_and_terminal_summary(
     with pytest.raises(SystemExit, match="0"):
         atk.main(["agents", "wait"])
 
-    body_path = managed_temp.session_temp_path("root-session") / "agents-wait" / "session-1.md"
+    body_directory = managed_temp.session_temp_path("root-session") / "agents-wait"
+    body_path = body_directory / "session-1.md"
     assert capsys.readouterr().out.splitlines() == [
         "通知: 2件（session_id: session-1）",
+        f"通知本文ファイル: {body_directory / 'notices.md'}",
         "本文開始: session_id=session-1",
         "通知1",
         "本文終了: session_id=session-1",
@@ -352,6 +360,162 @@ def test_wait_summary_budget_covers_whole_output(tmp_path: pathlib.Path, excess:
     assert output.splitlines()[:2] == ["終了: 1件", terminal_line]
     assert (body in output) is shown
     assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    assert wait_summary.BODY_BUDGET_BYTES == output_file.AUTO_SAVE_THRESHOLD_BYTES
+
+
+def test_wait_public_output_reserves_running_rows_within_limit(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
+    body_path = tmp_path / "body.md"
+    terminal_line = f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}"
+    rows: list[dict[str, Any]] = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)},
+        {"session_id": "session-2", "status": "running", "label": "別の担当", "notices": [{"body": "n"}]},
+    ]
+    body_path.write_text("", encoding="utf-8")
+    fixed_size = len(wait_summary.render(rows).encode("utf-8")) + 1
+    body_path.write_text("x" * (wait_summary.BODY_BUDGET_BYTES - fixed_size), encoding="utf-8")
+    assert len(wait_summary.render(rows).encode("utf-8")) == wait_summary.BODY_BUDGET_BYTES
+
+    commands.agents_wait._print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stdout")
+
+    output = capsys.readouterr().out
+    assert terminal_line in output.splitlines()
+    assert '"session_id":"session-2"' in output
+    assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+
+
+@pytest.mark.usefixtures("session_environment")
+def test_agents_wait_is_not_resaved_with_stderr(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    summary = "終了: 1件\n" + "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES - len("終了: 1件\n".encode()) - 1) + "\n"
+
+    def fake_wait(**_kwargs) -> int:
+        print(summary, end="")
+        print("警告", file=sys.stderr)
+        return 0
+
+    monkeypatch.setattr(commands.agents_wait, "wait_for_result", fake_wait)
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+
+    captured = capsys.readouterr()
+    assert captured.out == summary
+    assert "警告" not in captured.err
+    saved = pathlib.Path(captured.err.split("標準エラー保存先: ", 1)[1].split("\n", 1)[0])
+    assert saved.read_text(encoding="utf-8") == "警告\n"
+
+
+def test_wait_summary_shows_notice_file_and_bodies_within_limit(tmp_path: pathlib.Path) -> None:
+    notices_path = tmp_path / "notices.md"
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    rows: list[dict[str, Any]] = [
+        {
+            "session_id": "session-1",
+            "status": "running",
+            "notices": [{"body": long_body}, {"body": "短い通知"}],
+        },
+    ]
+
+    assert wait_summary.render(rows, notices_reference=f"通知本文ファイル: {notices_path}").splitlines() == [
+        "通知: 2件（session_id: session-1）",
+        f"通知本文ファイル: {notices_path}",
+        "本文開始: session_id=session-1",
+        "短い通知",
+        "本文終了: session_id=session-1",
+    ]
+    assert "短い通知" in wait_summary.notice_text(rows)
+    assert long_body in wait_summary.notice_text(rows)
+
+
+@pytest.mark.parametrize("count", [pytest.param(0, id="none"), pytest.param(1, id="one"), pytest.param(301, id="many")])
+def test_wait_summary_required_lines_do_not_grow_with_notices(tmp_path: pathlib.Path, count: int) -> None:
+    body_path = tmp_path / "body.md"
+    rows: list[dict[str, Any]] = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)},
+        {"session_id": "session-2", "status": "running", "notices": [{"body": f"通知{index}" * 40} for index in range(count)]},
+    ]
+    body_path.write_text("", encoding="utf-8")
+    without_body = len(
+        wait_summary.render(rows, notices_reference=f"通知本文ファイル: {tmp_path / 'notices.md'}").encode("utf-8")
+    )
+    body_path.write_text("x" * (wait_summary.BODY_BUDGET_BYTES - without_body - 1), encoding="utf-8")
+
+    output = wait_summary.render(rows, notices_reference=f"通知本文ファイル: {tmp_path / 'notices.md'}")
+
+    assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    assert f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}" in output
+    assert output.count("通知本文ファイル: ") == (1 if count else 0)
+
+
+@pytest.mark.parametrize(
+    ("with_run", "run_name"),
+    [
+        pytest.param(True, "run.json", id="run-record"),
+        pytest.param(True, "空白 と ' を含む run.json", id="run-record-with-quotes"),
+        pytest.param(False, "", id="no-run-record"),
+    ],
+)
+def test_wait_public_output_when_notice_file_cannot_be_written(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, with_run: bool, run_name: str
+) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    def fail_write(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise OSError("容量不足")
+
+    monkeypatch.setattr(commands.agents_wait._BodyFileWriter, "write", fail_write)
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    rows = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(tmp_path / "missing.md")},
+        {"session_id": "session-2", "status": "running", "notices": [{"body": long_body}]},
+    ]
+    run_path = tmp_path / run_name if with_run else None
+
+    commands.agents_wait._print_public(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stdout", run_path=run_path
+    )
+
+    captured = capsys.readouterr()
+    terminal_line = f"終了行: session_id=session-1 label=なし status=completed agent_message_path={tmp_path / 'missing.md'}"
+    assert terminal_line in captured.out.splitlines()
+    assert "次の操作:" in captured.err
+    if with_run:
+        assert f"通知本文のrun記録: {run_path}" in captured.out.splitlines()
+        assert long_body not in captured.out
+        assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    else:
+        assert long_body in captured.out
+
+
+def test_consumed_published_run_points_to_run_when_notice_file_cannot_be_written(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    def fail_write(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise OSError("容量不足")
+
+    monkeypatch.setattr(commands.agents_wait._BodyFileWriter, "write", fail_write)
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    row = {"session_id": "session-2", "status": "running", "notices": [{"body": long_body}]}
+    output = json.dumps(row, ensure_ascii=False)
+    run = wait_run.RunningRun(run_id="published-run", targets=["session-2"]).publish(output, 0, "stdout")
+    path = tmp_path / "published run.json"
+    path.write_text(run.model_dump_json(exclude_unset=True), encoding="utf-8")
+
+    commands.agents_wait._consume_wait_result(path)
+
+    captured = capsys.readouterr()
+    assert f"通知本文のrun記録: {path}" in captured.out.splitlines()
+    assert long_body not in captured.out
+    assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    saved_output = json.loads(path.read_text(encoding="utf-8"))["output"]
+    assert json.loads(saved_output)["notices"][0]["body"] == long_body
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

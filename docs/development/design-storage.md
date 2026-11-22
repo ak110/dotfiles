@@ -91,7 +91,7 @@ Windowsの既定のように一時rootと状態rootが同じ実体なら、`.swe
 WIの保存処理では表記診断を生成しない。
 過去の口語・ダッシュの診断行の識別は、保存済みの記録を読む処理に保持する。
 handoffの抽出は成功時に`conversation.md`だけを残し、失敗時だけ抽出の両出力を診断として残す。
-保持する保存物は、16KiBを超える`atk`の出力と診断、review-sessionの上限付き索引と全量bundle、会話不明時のhandoffである。
+保持する保存物は、`atk`が自動保存した出力（判定は[design-cli-auto-save.md](design-cli-auto-save.md)）、review-sessionの上限付き索引と全量bundle、会話不明時のhandoffである。
 レーンの回収結果とworktree-hookの診断、pytestの実行単位の隔離領域、稼働MCP向けの版固定plugin-rootの複製とleaseも保持する。
 `atk agents wait`の本文は`agents-wait/<session_id>.md`の1ファイルだけが持ち、耐久run記録は配送状態と本文のパスを持つ。
 索引と全量は用途が異なり、plugin-rootとレーンの診断は作業ツリーと寿命が異なる。

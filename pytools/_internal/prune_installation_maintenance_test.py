@@ -293,14 +293,15 @@ def test_unexpected_maintenance_exception_is_logged_and_reported(tmp_path, monke
     assert result.failure is not None and "fixture-unexpected" in result.failure
 
 
-def test_slow_verify_does_not_block_next_update_or_start_duplicate_cleanup(tmp_path, monkeypatch):
+def test_tool_cleanup_holds_update_lock_and_does_not_start_duplicate_cleanup(tmp_path, monkeypatch):
     _, calls = prepare(tmp_path, monkeypatch, "full")
     run = common.run_subprocess
 
     def check_while_verifying(command, **kwargs):
         if command[1:] == ["cache", "verify"]:
             update_lock = filelock.FileLock(str(state_path("locks/update-dotfiles.lock")), timeout=0, preserve_lock_file=True)
-            assert prune_installation.run(lock=update_lock).failure is None
+            with pytest.raises(filelock.Timeout):
+                update_lock.acquire()
             prune_installation.maintain_caches()
         return run(command, **kwargs)
 
@@ -309,6 +310,17 @@ def test_slow_verify_does_not_block_next_update_or_start_duplicate_cleanup(tmp_p
     assert calls.count(["/fixture/npm", "cache", "verify"]) == 1
     assert calls.count(["/fixture/mise", "cache", "prune"]) == 1
     assert json.loads(state_path("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "completed"
+
+
+def test_tool_cleanup_is_deferred_when_uv_cleanup_runs_long(tmp_path, monkeypatch):
+    _, calls = prepare(tmp_path, monkeypatch, "full")
+    monkeypatch.setattr(prune_installation, "_TOOLS_START_BUDGET_SECONDS", -1)
+    maintain(monkeypatch, tmp_path)
+    assert ["/fixture/npm", "cache", "verify"] not in calls
+    assert ["/fixture/mise", "cache", "prune"] not in calls
+    assert json.loads(state_path("tools-cache-maintenance.json").read_text(encoding="utf-8"))["result"] == "deferred"
+    notices = [notice.message for notice in prune_installation.run().notices]
+    assert any("mise・npm・pnpmの整理を保留しました" in message for message in notices)
 
 
 def test_maintenance_defers_while_update_is_running(tmp_path, monkeypatch):

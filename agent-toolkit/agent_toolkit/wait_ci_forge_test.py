@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from agent_toolkit import wait_ci
-from agent_toolkit._atk import wait_ci_forge
+from agent_toolkit._atk import config_settings, wait_ci_forge
 from agent_toolkit._testing import git_repository as _git_repository_support
 from agent_toolkit._testing.wait_ci_support import (
     _all_cancelled,
@@ -33,30 +33,36 @@ from agent_toolkit._testing.wait_ci_support import (
 
 
 class TestResolveForge:
+    @pytest.fixture(autouse=True)
+    def _empty_registry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(config_settings, "repository_settings", lambda **_: {})
+
     def test_explicit_value_is_returned_as_is(self) -> None:
-        assert _resolve_forge("gitlab", "owner/repository") == "gitlab"
-        assert _resolve_forge("github", "owner/repository") == "github"
+        assert _resolve_forge("gitlab", "owner/repository")[0] == "gitlab"
+        assert _resolve_forge("github", "owner/repository")[0] == "github"
 
     def test_auto_detects_github_from_repository_host(self) -> None:
         """ホスト名のラベルがgithubと一致する場合はgithubと判定する（SSH短縮形式）。"""
-        assert _resolve_forge("auto", "git@github.com:o/r.git") == "github"
+        assert _resolve_forge("auto", "git@github.com:o/r.git")[0] == "github"
 
     def test_auto_detects_github_enterprise_host(self) -> None:
         """GitHub Enterprise Serverの標準的なホスト名もgithubと判定する。"""
-        assert _resolve_forge("auto", "https://github.example.com/o/r.git") == "github"
+        assert _resolve_forge("auto", "https://github.example.com/o/r.git")[0] == "github"
 
     def test_auto_detects_gitlab_for_self_hosted_host(self) -> None:
-        assert _resolve_forge("auto", "https://gitlab.example.com/group/sub/repo.git") == "gitlab"
+        assert _resolve_forge("auto", "https://gitlab.example.com/group/sub/repo.git")[0] == "gitlab"
 
     def test_auto_detects_gitlab_from_ssh_uri(self) -> None:
-        assert _resolve_forge("auto", "ssh://git@gitlab.example.com:2222/group/repo.git") == "gitlab"
+        assert _resolve_forge("auto", "ssh://git@gitlab.example.com:2222/group/repo.git")[0] == "gitlab"
 
     def test_auto_does_not_match_host_label_by_substring(self) -> None:
-        assert _resolve_forge("auto", "https://notgithub.example.com/o/r.git") is None
+        with pytest.raises(wait_ci.RunListError):
+            _resolve_forge("auto", "https://notgithub.example.com/o/r.git")
 
     @pytest.mark.parametrize("repository", ["owner/repository", "git@git.example.com:o/r.git", "invalid"])
     def test_auto_returns_none_without_recognized_host(self, repository: str, tmp_path: pathlib.Path) -> None:
-        assert _resolve_forge("auto", repository, cwd=tmp_path) is None
+        with pytest.raises(wait_ci.RunListError):
+            _resolve_forge("auto", repository, cwd=tmp_path)
 
     @pytest.mark.parametrize(
         ("remotes", "expected"),
@@ -77,7 +83,14 @@ class TestResolveForge:
         _git_repository_support.init_repository(tmp_path)
         for name, url in remotes.items():
             _git_repository_support.run_git(tmp_path, "remote", "add", name, url)
-        assert _resolve_forge("auto", "owner/repo", cwd=tmp_path) == expected
+        if expected is None:
+            with pytest.raises(wait_ci.RunListError):
+                _resolve_forge("auto", "owner/repo", cwd=tmp_path)
+        else:
+            assert _resolve_forge("auto", "owner/repo", cwd=tmp_path) == (
+                expected,
+                f"{expected}.{'com' if expected == 'github' else 'example.com'}/owner/repo",
+            )
 
 
 class TestNormalizeGitlabPipeline:

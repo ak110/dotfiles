@@ -15,7 +15,7 @@ def test_wi_show_saved_output_reports_user_fields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     notes = _setup_notes(tmp_path)
-    _write_awi_file(notes, "comment.md", body="# 表題\n\n" + "長い本文\n" * 2000 + "\n## ユーザーコメント\n\n是正要求")
+    _write_awi_file(notes, "comment.md", body="# 表題\n\n" + "長い本文\n" * 4000 + "\n## ユーザーコメント\n\n是正要求")
     _write_awi_file(notes, "plain.md", body="# コメントなし\n\n本文")
     _write_awi_file(notes, "fenced.md", body="# 引用\n\n```text\n## ユーザーコメント\n### 引用.md [inbox]\n---\ntype: awi\n---")
     _write_uwi_file(notes, "answered.md", question="確認しますか？\n\n```text\n## 回答\n```", answer="はい")
@@ -38,13 +38,14 @@ def test_wi_show_saved_output_reports_user_fields(
     saved = pathlib.Path(report[0].removeprefix("保存先: "))
     assert saved.read_text(encoding="utf-8") == direct
     assert report[1] == f"行数: {len(direct.splitlines())}"
+    assert report[2].startswith("注意: ")
     lines = direct.splitlines()
     expected = [f"記入欄: comment.md ## ユーザーコメント あり 開始行: {lines.index('## ユーザーコメント') + 1}"]
     if selection != "single":
         expected.append(f"記入欄: answered.md ## 回答 あり 開始行: {len(lines) - lines[::-1].index('## 回答')}")
 
         expected.append("記入欄なし: 2件")
-    assert sorted(report[2:]) == sorted(expected)
+    assert sorted(report[3:]) == sorted(expected)
     assert report[-1] == expected[-1]
 
 

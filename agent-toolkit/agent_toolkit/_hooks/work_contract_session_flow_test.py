@@ -46,8 +46,7 @@ def test_each_user_prompt_delivers_contract_metadata(
         assert result.returncode == 0
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert str(path) in context
-        assert "作業契約の最終更新:" in context
-        assert f"その後の実ユーザー発話: {count}件" in context
+        assert f"作業契約の最終更新後の実ユーザー発話: {count}件" in context
         assert "目的: A全体の完了" not in context
     machine = run_hook(
         "user_prompt_submit",

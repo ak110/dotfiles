@@ -6,6 +6,10 @@ description: agent-toolkitの状態領域にある診断ログをartifactへ保�
 # Windowsではhome（C:）とrunner.temp（D:）のドライブが異なり、upload-artifactは1回の保存で複数ドライブの
 # パターンを扱えない（共通の親を求められず失敗する）ため、保存元ごとにstepを分ける。
 # pytestなどログを作る前の工程で失敗した場合は対象が無いため、警告を出さずに終える。
+inputs:
+  collect-windows-upgrade-logs:
+    description: Windowsの更新検証homeから既知の診断ファイルだけを集める
+    default: "false"
 runs:
   using: composite
   steps:
@@ -31,7 +35,53 @@ runs:
         include-hidden-files: true
         if-no-files-found: ignore
         retention-days: 7
+    - name: Windows更新検証homeの診断ログを収集
+      if: always() && inputs.collect-windows-upgrade-logs == 'true'
+      shell: pwsh
+      run: |
+        function Copy-DiagnosticFile($source, $target) {
+          try {
+            New-Item -ItemType Directory -Path $target -Force -ErrorAction Stop | Out-Null
+            Copy-Item -LiteralPath $source -Destination $target -ErrorAction Stop
+          } catch {
+            Write-Warning "診断ファイルを回収できませんでした: ${source}: $_"
+          }
+        }
+
+        $destination = Join-Path $env:RUNNER_TEMP 'windows-upgrade-diagnostics'
+        foreach ($root in Get-ChildItem -LiteralPath $env:RUNNER_TEMP -Directory -Filter 'update-dotfiles-upgrade-*') {
+          foreach ($relative in @('home/AppData/Local/agent-toolkit', 'home/.local/state/agent-toolkit')) {
+            $state = Join-Path $root.FullName $relative
+            if (-not (Test-Path -LiteralPath $state -PathType Container)) { continue }
+            $target = Join-Path $destination "$($root.Name)/$relative"
+            foreach ($file in Get-ChildItem -LiteralPath $state -File -Filter '*.log*' -Force) {
+              Copy-DiagnosticFile $file.FullName $target
+            }
+            $report = Join-Path $state 'sync-report.json'
+            if (Test-Path -LiteralPath $report -PathType Leaf) {
+              Copy-DiagnosticFile $report $target
+            }
+            $services = Join-Path $state 'services'
+            if (-not (Test-Path -LiteralPath $services -PathType Container)) { continue }
+            foreach ($service in Get-ChildItem -LiteralPath $services -Directory -Filter 'agents-server*' -Force) {
+              foreach ($file in Get-ChildItem -LiteralPath $service.FullName -File -Filter '*.log*' -Force) {
+                $serviceTarget = Join-Path $target "services/$($service.Name)"
+                Copy-DiagnosticFile $file.FullName $serviceTarget
+              }
+            }
+          }
+        }
+    - name: Windows更新検証homeの診断ログの保存
+      if: always() && inputs.collect-windows-upgrade-logs == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: diagnostic-logs-upgrade-home-${{ github.job }}-${{ github.run_attempt }}
+        path: ${{ runner.temp }}/windows-upgrade-diagnostics/
+        include-hidden-files: true
+        if-no-files-found: ignore
+        retention-days: 7
     - name: 更新検証homeの診断ログの保存
+      if: inputs.collect-windows-upgrade-logs != 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: diagnostic-logs-upgrade-home-${{ github.job }}-${{ github.run_attempt }}

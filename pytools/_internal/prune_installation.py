@@ -130,6 +130,11 @@ _UV_LOCK_TIMEOUT_SECONDS = "30"
 _UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
 
 
+# uvの整理が長引いたら他ツールは次回へ回し、更新のロック待ち上限に届く危険を下げる（保証はしない）。  # pyfltr: allow-comment
+_TOOLS_START_BUDGET_SECONDS = 300
+_TOOLS_DEFERRED_BY_BUDGET = "uvの整理が長引いたため次回へ回す"
+
+
 class _InUseError(Exception):
     pass
 
@@ -717,7 +722,12 @@ def maintain_caches() -> None:
             return
         try:
             with filelock.FileLock(str(update_path), timeout=0, preserve_lock_file=True):
+                started = time.monotonic()
                 _run_maintenance(_CacheGroup.UV, clean_uv_cache)
+                if time.monotonic() - started < _TOOLS_START_BUDGET_SECONDS:
+                    _run_maintenance(_CacheGroup.TOOLS, clean_caches)
+                else:
+                    _write_maintenance_record(_CacheGroup.TOOLS, MaintenanceResult.DEFERRED, _TOOLS_DEFERRED_BY_BUDGET)
         except filelock.Timeout:
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.DEFERRED, "他の更新が実行中")
@@ -725,9 +735,6 @@ def maintain_caches() -> None:
             logger.exception("prune: 更新ロックを取得・解放できない")
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.FAILED, str(error))
-        else:
-            # npmの全件検査が長引いても、次に起動した更新のロック取得を待たせない。
-            _run_maintenance(_CacheGroup.TOOLS, clean_caches)
         try:
             warmup_pyfltr_mcp.run()
         except Exception as error:  # noqa: BLE001 -- 事前構築の失敗も従来どおり次の更新へ届ける。
@@ -757,6 +764,16 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
                 notices=(
                     post_apply_outcome.PostApplyNotice(
                         f"prune: uvキャッシュが使用中のため整理を保留しました。{retry}",
+                        log=_record_path(group),
+                        warning=False,
+                    ),
+                )
+            )
+        if group is _CacheGroup.TOOLS and record.detail == _TOOLS_DEFERRED_BY_BUDGET:
+            return post_apply_outcome.PostApplyOutcome(
+                notices=(
+                    post_apply_outcome.PostApplyNotice(
+                        f"prune: uvの整理が長引いたため、mise・npm・pnpmの整理を保留しました。{retry}",
                         log=_record_path(group),
                         warning=False,
                     ),
