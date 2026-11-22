@@ -128,3 +128,16 @@ def test_sync_report_redacts_before_taking_tail() -> None:
     raw = f"https://{token}@example.org\n{tail}"
 
     assert runtime.sync_report.truncate_tail(raw) == f"https://[REDACTED]@example.org\n{tail}"
+
+
+def test_sync_report_finish_redacts_every_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """共通の抜粋を通さずに渡された終了時の標準エラーも、保存の直前で伏せて上限を守る。"""
+    monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
+    raw = "更新ロックの例外 password=synthetic-secret-0123456789\n" + "z" * 5000
+    runtime.sync_report.write_finish(
+        "run-1", status="failed", exit_code=1, failed_stage="更新ロックの取得", stderr_tail=raw, finished_at="now"
+    )
+
+    saved = runtime.sync_report.read()["stderr_tail"]
+    assert "synthetic-secret" not in saved
+    assert len(saved) <= runtime.sync_report.STDERR_TAIL_MAX_CHARS

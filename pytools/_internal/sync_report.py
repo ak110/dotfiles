@@ -99,7 +99,10 @@ def write_finish(
     stderr_tail: str | None,
     finished_at: str,
 ) -> None:
-    """実行の終了を記録する。同じ実行が記録したpost-apply段の結果は保持する。"""
+    """実行の終了を記録する。同じ実行が記録したpost-apply段の結果は保持する。
+
+    標準エラーの末尾は呼出側の経路によらず、保存の直前で共通の抜粋（秘匿→行→全体の上限）を通す。
+    """
     current = read()
     payload = current if current.get("run_id") == run_id else {"schema": SCHEMA, "run_id": run_id, "post_apply": None}
     payload.update(
@@ -107,7 +110,7 @@ def write_finish(
             "status": status,
             "exit_code": exit_code,
             "failed_stage": failed_stage,
-            "stderr_tail": stderr_tail,
+            "stderr_tail": truncate_tail(stderr_tail) if stderr_tail else None,
             "finished_at": finished_at,
         }
     )

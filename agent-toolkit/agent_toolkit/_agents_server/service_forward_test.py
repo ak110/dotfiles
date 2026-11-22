@@ -454,3 +454,24 @@ def test_service_diagnostic_redacts_before_taking_tail(tmp_path: pathlib.Path) -
     detail = getattr(error, "__notes__", [""])[0].split("\n", 1)[1]
     assert "先頭を省略" not in getattr(error, "__notes__", [""])[0]
     assert detail == f"https://[REDACTED]@example.org\n{tail}"
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("", "診断本文は空です。"),
+        ("z" * 140000, "ログ全体は上記のパスで確認してください。"),
+    ],
+)
+def test_service_diagnostic_distinguishes_empty_log_from_empty_excerpt(
+    tmp_path: pathlib.Path, content: str, expected: str
+) -> None:
+    """元のログが空の場合と、省略で抜粋だけが空になった場合を区別して案内する。"""
+    (tmp_path / "G1.stderr.log").write_text(content, encoding="utf-8")
+    error = RuntimeError("起動失敗")
+    service_forward._add_service_diagnostic(error, tmp_path, "G1")  # pylint: disable=protected-access
+
+    note = getattr(error, "__notes__", [""])[0]
+    assert expected in note
+    if content:
+        assert "診断本文は空です。" not in note

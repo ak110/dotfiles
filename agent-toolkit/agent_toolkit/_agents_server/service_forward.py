@@ -33,9 +33,17 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         return
     try:
         with path.open("rb") as stream:
-            detail, omitted = read_diagnostic_tail(stream, limit=65536)
-        limit = "（末尾65536バイト以内。先頭を省略）" if omitted else ""
-        error.add_note(f"{label}{limit}\n{detail if detail else '診断本文は空です。'}")
+            excerpt = read_diagnostic_tail(stream, limit=65536)
+        limit = "（末尾65536バイト以内。先頭を省略）" if excerpt.omitted else ""
+        if excerpt.text:
+            detail = excerpt.text
+        elif excerpt.source_bytes:
+            detail = (
+                "転載できる行がありません（途中から始まる行と秘匿値を除いたため）。ログ全体は上記のパスで確認してください。"
+            )
+        else:
+            detail = "診断本文は空です。"
+        error.add_note(f"{label}{limit}\n{detail}")
     except OSError as failure:
         error.add_note(f"{label}（取得失敗: {failure}）")
 

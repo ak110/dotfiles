@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 
@@ -59,12 +60,57 @@ def test_authorization_preserves_following_diagnostics(credential: str) -> None:
     assert suffix in saved
 
 
-def test_diagnostic_tail_discards_partial_line_with_bounded_read() -> None:
+def test_diagnostic_tail_discards_partial_line() -> None:
+    """窓が途中から始まる先頭行は、認証値の途中か判定できないため転載しない。"""
+    data = b"x" * 1000 + b"https://" + b"A" * 150 + b"@example.org\nOK\n"
+    with io.BytesIO(data) as stream:
+        assert diagnostic_redaction.read_diagnostic_tail(stream, limit=64) == ("OK\n", True, len(data))
 
-    class Stream(io.BytesIO):
-        def read(self, size: int | None = -1, /) -> bytes:
-            assert size == 129
-            return super().read(size)
 
-    with Stream(b"x" * 1000 + b"https://" + b"A" * 150 + b"@example.org\nOK\n") as stream:
-        assert diagnostic_redaction.read_diagnostic_tail(stream, limit=64) == ("OK\n", True)
+class _ChunkedStream(io.BytesIO):
+    """1回の読取で最大`chunk`バイトだけ返し、見出しが読取の境界をまたぐ場合を作る。"""
+
+    def __init__(self, data: bytes, chunk: int) -> None:
+        super().__init__(data)
+        self.chunk = chunk
+
+    def read(self, size: int | None = -1, /) -> bytes:
+        return super().read(self.chunk if size is None or size < 0 else min(size, self.chunk))
+
+
+def _unterminated_key(lines: int) -> bytes:
+    return f"-----BEGIN RSA {_KEY}-----\n".encode() + f"{_SECRET}\n".encode() * lines
+
+
+@pytest.mark.parametrize("chunk", [1, 7, 65536])
+def test_diagnostic_tail_keeps_key_state_from_before_window(chunk: int) -> None:
+    """末尾窓より前で始まった終端の無い秘密鍵は、窓に開始行が無くても本文を転載しない。"""
+    stream = _ChunkedStream(_unterminated_key(40), chunk)
+    result = diagnostic_redaction.read_diagnostic_tail(stream, limit=64)
+    assert _SECRET not in result[0]
+    assert result[1]
+
+
+@pytest.mark.parametrize("chunk", [1, 7, 65536])
+def test_diagnostic_tail_resumes_after_key_end_outside_window(chunk: int) -> None:
+    """窓より前で始まった鍵の終端より後ろの通常の行は転載する。"""
+    data = _unterminated_key(40) + f"-----END RSA {_KEY}-----\n通常の行\n".encode()
+    stream = _ChunkedStream(data, chunk)
+    result = diagnostic_redaction.read_diagnostic_tail(stream, limit=64)
+    assert _SECRET not in result[0]
+    assert result[0].endswith("通常の行\n")
+
+
+def test_formatted_json_value_on_next_line_is_redacted() -> None:
+    """区切りの後で改行した整形済みJSONの資格情報も伏せ、JSONとして読める形を保つ。"""
+    text = json.dumps({"password": _SECRET}, indent=2).replace('": "', '":\n    "')
+    redacted = diagnostic_redaction.redact_secrets(text)
+    assert _SECRET not in redacted
+    assert json.loads(redacted) == {"password": diagnostic_redaction.REDACTED}
+
+
+@pytest.mark.parametrize("separator", ["=", ":"])
+def test_empty_assignment_keeps_next_log_line(separator: str) -> None:
+    """値の無い代入の次の行は資格情報として扱わず、診断として残す。"""
+    line = "ERROR: 最初の検査が失敗した"
+    assert diagnostic_redaction.redact_secrets(f"EXAMPLE_TOKEN{separator}\n{line}") == f"EXAMPLE_TOKEN{separator}\n{line}"

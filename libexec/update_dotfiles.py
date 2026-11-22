@@ -546,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
             except process_tree.ReclaimError:
                 raise
             except Exception as error:  # noqa: BLE001 -- ロックの未知の失敗でも未確定の配備へ進まず結果を残す。
-                update_dotfiles_runtime.last_stderr_tail = str(error)
+                update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(str(error))
                 print(f"更新ロックを取得・解放できませんでした: {error}", file=sys.stderr)
                 return update_dotfiles_runtime.finish(1)
             return update_dotfiles_runtime.finish(0)

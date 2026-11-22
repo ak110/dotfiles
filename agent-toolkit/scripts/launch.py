@@ -217,7 +217,7 @@ def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tu
         received: list[dict[str, str]] = []
         try:
             with _server_lifetime(
-                arguments, environment, received, bytearray(), stdin=input_stream, cwd=Path(cwd), pass_fds=pass_fds
+                arguments, environment, received, None, stdin=input_stream, cwd=Path(cwd), pass_fds=pass_fds
             ) as process:
                 deadline = time.monotonic() + _HOOK_TIMEOUT
                 while True:
@@ -271,7 +271,7 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                 ],
                 environment=prepare_environment,
                 received=[],
-                tail=bytearray(),
+                tail=None,
                 cwd=root,
             ) as process:
                 returncode = process.wait(timeout=remaining)
@@ -304,7 +304,7 @@ def _run_agents_server(
     """
     if not record_diagnostics:
         received: list[dict[str, str]] = []
-        with _server_lifetime(arguments, environment, received, bytearray()) as process:
+        with _server_lifetime(arguments, environment, received, None) as process:
             returncode = _wait_server(process, received)
         return _relay_server_exit(returncode)
     with contextlib.ExitStack() as lifetime:
@@ -313,7 +313,7 @@ def _run_agents_server(
             lifetime.callback(record_path.unlink, missing_ok=True)
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
         received = []
-        tail = bytearray()
+        tail = diagnostic_redaction.DiagnosticTail(_STDERR_TAIL_BYTES)
         # 停止シグナルの記録handlerは終了診断を書き終えるまで保つ。
         # 先に戻すと、書き終える前に届いたシグナルで記録せずに終了する。
         with _server_lifetime(
@@ -324,9 +324,9 @@ def _run_agents_server(
             # 子が世代stderrへ直接flushしてからpeerを閉じる。tee threadの配送待ちを診断へ残さない。
             path = Path(arguments[-2]) / f"{arguments[-1]}.stderr.log"
             with path.open("rb") as stream:
-                stderr_tail, _ = diagnostic_redaction.read_diagnostic_tail(stream, limit=_STDERR_TAIL_BYTES)
+                stderr_tail = diagnostic_redaction.read_diagnostic_tail(stream, limit=_STDERR_TAIL_BYTES).text
         else:
-            stderr_tail, _ = diagnostic_redaction.diagnostic_tail(tail, limit=_STDERR_TAIL_BYTES)
+            stderr_tail = tail.excerpt().text
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
@@ -407,7 +407,7 @@ def _server_lifetime(
     arguments: list[str],
     environment: dict[str, str],
     received: list[dict[str, str]],
-    tail: bytearray,
+    tail: Any,
     *,
     stdin: BinaryIO | None = None,
     cwd: Path | None = None,
@@ -516,14 +516,13 @@ def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[s
     return handler
 
 
-def _tee_stderr(stream: Any, tail: bytearray) -> None:
-    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、診断抜粋の末尾窓を保持する。"""
-    window = diagnostic_redaction.diagnostic_tail_window(_STDERR_TAIL_BYTES) + 1
+def _tee_stderr(stream: Any, tail: Any) -> None:
+    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、診断抜粋の末尾（`DiagnosticTail`、不要なら`None`）へ渡す。"""
     while chunk := stream.read1(65536):
         sys.stderr.buffer.write(chunk)
         sys.stderr.buffer.flush()
-        tail.extend(chunk)
-        del tail[:-window]
+        if tail is not None:
+            tail.feed(chunk)
 
 
 if __name__ == "__main__":

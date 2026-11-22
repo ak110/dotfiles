@@ -9,19 +9,22 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, NamedTuple
 
 REDACTED = "[REDACTED]"
 
 _VALUE = r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]&]+)"""
+# 区切りの後の改行は、コロンの次の行に引用符で始まる値がある場合（整形済みのJSONなど）だけ値の前置きとして読む。
+# 値の無い代入（`TOKEN=`）の次の行は別のログ行であり、伏せると原因の行を失う。
+_SEPARATOR = r"""(?:[ \t]*:\s*(?=\\?["'])|[ \t]*[:=][ \t]*)"""
 _AUTHORIZATION = re.compile(
-    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?[ \t]*[:=][ \t]*)"""
+    r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?""" + _SEPARATOR + r""")"""
     r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|"""
     r"""(?:(?:Bearer|Basic|Digest|Negotiate)[ \t]+)?[^\s,;}\]&]+)""",
     re.IGNORECASE,
 )
 _NAMED_SECRET = re.compile(
-    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?[ \t]*[:=][ \t]*)""" + _VALUE,
+    r"""(\b[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*(?:\\?["'])?""" + _SEPARATOR + r""")""" + _VALUE,
     re.IGNORECASE,
 )
 _SECRET_NAME = re.compile(
@@ -103,6 +106,16 @@ def diagnostic_line_excerpt(text: str, *, line_chars: int, select: Callable[[lis
     return [clipped[item] if isinstance(item, int) else item[:line_chars] for item in select(lines)]
 
 
+def diagnostic_head(data: bytes, *, limit: int, complete: bool) -> str:
+    """先頭から有界に読んだ本文を伏せてから文字数を制限する。
+
+    読み残しがある時（`complete`が偽）は、末尾の行が認証値の途中で終わっているか判定できないため転載しない。
+    """
+    if not complete:
+        data = data.rpartition(b"\n")[0]
+    return diagnostic_excerpt(data.decode("utf-8", errors="replace").strip(), prefix_chars=limit)
+
+
 class ByteDiagnosticLine:
     """未切り詰めのログ行から、UTF-8バイト数を制限した診断行を作る。"""
 
@@ -122,32 +135,81 @@ def newest_diagnostic_lines(lines: Sequence[ByteDiagnosticLine], *, total_bytes:
     return kept[::-1]
 
 
-def diagnostic_tail_window(limit: int) -> int:
-    """出力上限の倍まで読み、先頭行を除外しても末尾を残せる余裕を持たせる。"""
-    return limit * 2
+_KEY_MARKER = re.compile(rb"-----(BEGIN|END) [A-Z0-9 ]*PRIVATE KEY-----")
+_KEY_END = re.compile(r"-----END [A-Z0-9 ]*PRIVATE KEY-----")
+_MARKER_CARRY = 1024
+"""捨てた範囲の末尾から次の走査へ持ち越す量。見出し行は改行を含まないため、最後の改行より後ろだけを持ち越す。"""
 
 
-def diagnostic_tail(data: bytes | bytearray, *, limit: int) -> tuple[str, bool]:
-    """有界な末尾窓を伏せてからUTF-8バイト数を制限し、省略の有無を返す。
+def _scan_key_markers(carry: bytes, data: bytes, inside: bool) -> tuple[bool, bytes]:
+    """`redact_secrets`の秘密鍵の規則と同じ順で見出しを数え、鍵の内側かと次の持ち越しを返す。"""
+    text = carry + data
+    for marker in _KEY_MARKER.finditer(text):
+        if marker.end() <= len(carry):
+            continue  # 持ち越し分だけで完結する見出しは前回数えた。
+        if marker.group(1) == b"BEGIN":
+            inside = True
+        elif inside:
+            inside = False
+    return inside, text[text.rfind(b"\n") + 1 :][-_MARKER_CARRY:]
 
-    窓より長い入力は1バイト余分に受け取り、窓が途中から始まることを識別する。
-    窓の先頭行は認証値の途中か判定できないため、行末まで転載しない。
+
+class DiagnosticExcerpt(NamedTuple):
+    """有界な末尾の抜粋。`source_bytes`は元の本文の量で、抜粋が空になった理由の判別に使う。"""
+
+    text: str
+    omitted: bool
+    source_bytes: int
+
+
+class DiagnosticTail:
+    """バイト列の末尾を上限の倍まで保持し、捨てた範囲が秘密鍵の途中で終わったかを持ち越す。
+
+    窓の外で始まり終端の無い秘密鍵は、窓の中だけでは通常の行と区別できないため、捨てる時点の状態を残す。
     """
-    window = diagnostic_tail_window(limit)
-    omitted = len(data) > window
-    if omitted:
-        _, _, data = data[-window:].partition(b"\n")
-        # 開始行が窓の外にある秘密鍵は、終了行までの全体を転載しない。
-        end = re.search(rb"-----END [A-Z0-9 ]*PRIVATE KEY-----", data)
-        if end and not re.search(rb"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", data[: end.start()]):
-            _, _, data = data[end.end() :].partition(b"\n")
-    safe = redact_secrets(data.decode("utf-8", errors="replace")).encode()
-    return safe[-limit:].decode(errors="ignore"), omitted or len(safe) > limit
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._window = limit * 2
+        self._buffer = bytearray()
+        self._carry = b""
+        self._inside_key = False
+        self._total = 0
+
+    def feed(self, chunk: bytes) -> None:
+        self._total += len(chunk)
+        self._buffer.extend(chunk)
+        excess = len(self._buffer) - self._window
+        if excess > 0:
+            dropped = bytes(self._buffer[:excess])
+            del self._buffer[:excess]
+            self._inside_key, self._carry = _scan_key_markers(self._carry, dropped, self._inside_key)
+
+    def excerpt(self) -> DiagnosticExcerpt:
+        """保持した窓を伏せてからUTF-8バイト数を制限する。
+
+        窓が途中から始まる時は、認証値の途中か判定できない先頭行を転載しない。
+        """
+        data = bytes(self._buffer)
+        omitted = self._total > len(data)
+        inside = False
+        if omitted:
+            head, _, data = data.partition(b"\n")
+            inside, _ = _scan_key_markers(self._carry, head, self._inside_key)
+        text = data.decode("utf-8", errors="replace")
+        if inside:
+            end = _KEY_END.search(text)
+            text = REDACTED + (text[end.end() :] if end else "")
+        safe = redact_secrets(text).encode()
+        return DiagnosticExcerpt(safe[-self.limit :].decode(errors="ignore"), omitted or len(safe) > self.limit, self._total)
 
 
-def read_diagnostic_tail(stream: BinaryIO, *, limit: int) -> tuple[str, bool]:
-    """ファイル全体を読まず、上限の倍と境界判定用の1バイトだけを読む。"""
-    window = diagnostic_tail_window(limit) + 1
-    size = stream.seek(0, 2)
-    stream.seek(max(0, size - window))
-    return diagnostic_tail(stream.read(window), limit=limit)
+def read_diagnostic_tail(stream: BinaryIO, *, limit: int) -> DiagnosticExcerpt:
+    """ファイルを先頭から順に読み、保持する量を上限の倍に抑えて末尾を抜粋する。
+
+    窓より前の秘密鍵の状態を判定するため全体を走査する。読んだ範囲は保持しない。
+    """
+    tail = DiagnosticTail(limit)
+    while chunk := stream.read(65536):
+        tail.feed(chunk)
+    return tail.excerpt()

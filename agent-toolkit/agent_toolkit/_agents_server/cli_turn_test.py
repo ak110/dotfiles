@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import sys
+import typing
 from asyncio.subprocess import Process
 from collections.abc import Callable
 
@@ -226,3 +227,42 @@ async def test_send_message_fails_when_next_turn_cannot_launch(tmp_path: pathlib
             await manager.send_message(session, "次の指示")
     assert session.turn_seq == 1
     assert (session.status, session.agent_message, session.error) == ("completed", "初回の結果", None)
+
+
+@pytest.mark.parametrize("eof", [True, False])
+def test_failure_stderr_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch, eof: bool) -> None:
+    """標準エラーの読取と記録の上限が資格情報の途中にあっても、保存する診断へ断片を残さない。"""
+    from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
+
+    from agent_toolkit._common.diagnostic_redaction import redact_diagnostic_values  # pylint: disable=import-outside-toplevel
+
+    async def read() -> str:
+        reader = asyncio.StreamReader()
+        reader.feed_data(b"x" * 3960 + b" https://" + b"A" * 45 + b"@example.org\n" + b"normal\n" * (1 if eof else 2000))
+        if eof:
+            reader.feed_eof()
+        process = typing.cast(Process, SimpleNamespace(stderr=reader))
+        return await cli_turn._read_stderr(process)  # pylint: disable=protected-access
+
+    captured: dict = {}
+    monkeypatch.setattr(cli_turn, "finalize_turn", lambda _session, result: captured.update(result))
+    session = typing.cast(
+        SessionState, SimpleNamespace(engine="claude", model="synthetic", session_id="S1", agent_message=None)
+    )
+    cli_turn._record_failure(session, RuntimeError("失敗"), asyncio.run(read()))  # pylint: disable=protected-access
+
+    saved = redact_diagnostic_values(captured["error"])["stderr"]
+    assert "A" * 10 not in saved
+    assert len(saved) <= cli_turn._STDERR_LIMIT_CHARS  # pylint: disable=protected-access
+
+
+def test_ignored_non_json_output_log_redacts_before_truncating(caplog: pytest.LogCaptureFixture) -> None:
+    """無視した非JSON出力のログも、伏せてから上限の文字数に抜粋する。"""
+    from agent_toolkit._common.diagnostic_redaction import redact_secrets  # pylint: disable=import-outside-toplevel
+
+    line = ("x" * 180 + " https://" + "A" * 45 + "@example.org").encode()
+    with caplog.at_level("DEBUG", logger=cli_turn._LOG.name):  # pylint: disable=protected-access
+        assert cli_turn.decode_event(line) is None
+    # 保存時の書式化と同じく、記録の本文を伏せた結果を確かめる。
+    assert all("A" * 10 not in redact_secrets(record.getMessage()) for record in caplog.records)
+    assert caplog.records
