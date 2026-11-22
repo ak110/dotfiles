@@ -1,5 +1,6 @@
 """CI待機と通知が共有するforge起動・ログ取得の契約を検証する。"""
 
+import base64
 import os
 import pathlib
 import platform
@@ -125,18 +126,18 @@ def test_inferred_gitlab_log_guidance_on_windows(monkeypatch: pytest.MonkeyPatch
     repository = "gitlab.example.org/group/repo"
     action = forge_cli.failure_next_action("gitlab", repository, "24", inferred_host=True)
     assert "`env " not in action
-    assert "PowerShell" in action
+    assert "待機を実行したシェル" in action
+    assert action.count('`powershell.exe -NoProfile -Command "') == 2
+    assert "pwsh" not in action
     assert "glab 'ci' 'get'" in action
     assert "glab 'ci' 'trace' '<job ID>'" in action
     if shell_host == "gitlab.example.org":
-        assert "`pwsh -NoProfile -Command" not in action
         assert "Remove-Item" not in action
         assert "$env:" not in action
         assert "'http://gitlab.example.org/group/repo'" in action
     else:
-        assert action.count("`pwsh -NoProfile -Command {") == 2
         assert "Remove-Item Env:GLAB_API_PROTOCOL -ErrorAction SilentlyContinue" in action
-        assert "$env:GITLAB_HOST = 'gitlab.example.org'" in action
+        assert "[Environment]::SetEnvironmentVariable('GITLAB_HOST','gitlab.example.org')" in action
         assert "'https://gitlab.example.org/group/repo'" in action
 
 
@@ -176,10 +177,12 @@ printf '%s\\n' 'mock glab ok'
     )
     glab.chmod(0o700)
     action = forge_cli.failure_next_action("gitlab", f"{hostname}/group/repo", "24", job=True, inferred_host=True)
-    assert "待機に使ったPowerShell" in action
+    assert "待機を実行したシェル" in action
     assert "custom-api.example:8443" not in action
     assert "test-token" not in action
-    command = next(part for part in action.split("`") if part.startswith("pwsh -NoProfile -Command {"))
+    prefix = 'powershell.exe -NoProfile -Command "'
+    command = next(part for part in action.split("`") if part.startswith(prefix))
+    command = "pwsh" + command.removeprefix("powershell.exe")
     assert "Remove-Item Env:GLAB_ENABLE_CI_AUTOLOGIN" in command
     result = subprocess.run(
         ["pwsh", "-NoProfile", "-NonInteractive", "-Command", f"{command}; exit $LASTEXITCODE"],
@@ -189,3 +192,16 @@ printf '%s\\n' 'mock glab ok'
         check=True,
     )
     assert result.stdout.splitlines() == ["mock glab ok"]
+
+
+def test_inferred_gitlab_windows_script_shields_arguments_from_parent_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("GITLAB_HOST", "gitlab.example.org")
+    monkeypatch.setenv("GLAB_API_PROTOCOL", "https")
+    monkeypatch.delenv("GLAB_ENABLE_CI_AUTOLOGIN", raising=False)
+    repository = 'gitlab.example.org/group/repo%PATH%!VAR!$HOME"`“”'
+    action = forge_cli.failure_next_action("gitlab", repository, "24", job=True, inferred_host=True)
+    script = action.split(' -Command "', 1)[1].split('"`', 1)[0]
+    assert not any(char in script for char in '"“”$`%!')
+    encoded = base64.b64encode(f"https://{repository}".encode()).decode("ascii")
+    assert f"FromBase64String('{encoded}')" in script

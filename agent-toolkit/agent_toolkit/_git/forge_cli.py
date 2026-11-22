@@ -1,5 +1,6 @@
 """forge CLIの接続先と、非対話の失敗ログ取得案内を共有する。"""
 
+import base64
 import os
 import platform
 import shlex
@@ -127,15 +128,16 @@ def failure_log_commands(
     )
 
 
-def _powershell_quote(value: str) -> str:
+def _powershell_literal(value: str) -> str:
+    if any(char in value for char in '"“”$`%!\r\n'):
+        encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+        return f"([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{encoded}')))"
     return "'" + value.translate({ord(char): char * 2 for char in "'‘’"}) + "'"
 
 
-def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> tuple[str, list[str]]:
-    prepare = "待機に使ったPowerShellで、"
+def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> list[str]:
     setup: list[str] = []
     if commands[0][0] == "env":
-        prepare = "待機に使ったPowerShellで（cmdから待機した場合は、そのcmdで先に `pwsh -NoProfile` を起動し）、"
         prefix = commands[0][1 : commands[0].index("glab")]
         remaining = iter(prefix)
         for argument in remaining:
@@ -143,16 +145,13 @@ def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> tuple[st
                 setup.append(f"Remove-Item Env:{next(remaining)} -ErrorAction SilentlyContinue")
             else:
                 name, _, value = argument.partition("=")
-                setup.append(f"$env:{name} = {_powershell_quote(value)}")
+                setup.append(f"[Environment]::SetEnvironmentVariable('{name}',{_powershell_literal(value)})")
     rendered = []
     for command in commands:
-        glab = "glab " + " ".join(_powershell_quote(arg) for arg in command[command.index("glab") + 1 :])
-        if setup:
-            script = "; ".join([*setup, glab])
-            rendered.append(f"`pwsh -NoProfile -Command {{ {script} }}`")
-        else:
-            rendered.append(f"`{glab}`")
-    return prepare, rendered
+        glab = "glab " + " ".join(_powershell_literal(arg) for arg in command[command.index("glab") + 1 :])
+        script = "; ".join([*setup, glab])
+        rendered.append(f'`powershell.exe -NoProfile -Command "{script}"`')
+    return rendered
 
 
 def failure_next_action(
@@ -175,7 +174,8 @@ def failure_next_action(
         return f"{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換して失敗jobごとに{save}"
     prepare = ""
     if inferred_host and platform.system() == "Windows":
-        prepare, rendered = _powershell_glab_commands(commands)
+        prepare = "待機を実行したシェルで、"
+        rendered = _powershell_glab_commands(commands)
     if len(rendered) == 2:
         return f"{prepare}{rendered[0]}で失敗jobのIDを取得し、{rendered[1]}の`<job ID>`を置換してログを取得し原因を調べる"
     return f"{prepare}{rendered[0]}で失敗ログを取得して原因を調べる"
