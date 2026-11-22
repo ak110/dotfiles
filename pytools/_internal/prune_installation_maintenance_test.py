@@ -293,14 +293,15 @@ def test_unexpected_maintenance_exception_is_logged_and_reported(tmp_path, monke
     assert result.failure is not None and "fixture-unexpected" in result.failure
 
 
-def test_slow_verify_does_not_block_next_update_or_start_duplicate_cleanup(tmp_path, monkeypatch):
+def test_tool_cleanup_holds_update_lock_and_does_not_start_duplicate_cleanup(tmp_path, monkeypatch):
     _, calls = prepare(tmp_path, monkeypatch, "full")
     run = common.run_subprocess
 
     def check_while_verifying(command, **kwargs):
         if command[1:] == ["cache", "verify"]:
             update_lock = filelock.FileLock(str(state_path("locks/update-dotfiles.lock")), timeout=0, preserve_lock_file=True)
-            assert prune_installation.run(lock=update_lock).failure is None
+            with pytest.raises(filelock.Timeout):
+                update_lock.acquire()
             prune_installation.maintain_caches()
         return run(command, **kwargs)
 

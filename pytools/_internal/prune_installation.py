@@ -718,6 +718,7 @@ def maintain_caches() -> None:
         try:
             with filelock.FileLock(str(update_path), timeout=0, preserve_lock_file=True):
                 _run_maintenance(_CacheGroup.UV, clean_uv_cache)
+                _run_maintenance(_CacheGroup.TOOLS, clean_caches)
         except filelock.Timeout:
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.DEFERRED, "他の更新が実行中")
@@ -725,9 +726,6 @@ def maintain_caches() -> None:
             logger.exception("prune: 更新ロックを取得・解放できない")
             for group in _CacheGroup:
                 _write_maintenance_record(group, MaintenanceResult.FAILED, str(error))
-        else:
-            # npmの全件検査が長引いても、次に起動した更新のロック取得を待たせない。
-            _run_maintenance(_CacheGroup.TOOLS, clean_caches)
         try:
             warmup_pyfltr_mcp.run()
         except Exception as error:  # noqa: BLE001 -- 事前構築の失敗も従来どおり次の更新へ届ける。
