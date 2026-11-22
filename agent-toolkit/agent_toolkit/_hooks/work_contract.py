@@ -210,7 +210,7 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     """既存の作業契約の本文を参照資料として返す。要求の統合と達成はエージェントが判定する。
 
     本文を毎回届けるのは、所在だけの通知では質問へ回答した後に契約を読み直さず、元の工程へ戻らない事例があったためである。
-    `budget`を超える本文と読取に失敗した本文は、所在と理由だけを示す非遮断の案内にする。
+    `budget`を超える場合と読取に失敗した場合は、本文の代わりに非遮断の案内を返す。
     """
     path = record_path(session_id)
     if path is None or not path.is_file():
@@ -226,5 +226,9 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
             f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
-        return f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。{RETURN_CRITERION}"
+        return (
+            f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。"
+            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直せ。"
+            f"{RETURN_CRITERION}"
+        )
     return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"

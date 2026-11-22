@@ -208,3 +208,5 @@ def test_compaction_oversized_contract_delivers_location(tmp_path, monkeypatch, 
     )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert str(path) in context and "現在の目的・要件を確かめよ" in context
+    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直せ" in context
+    assert "要件" * 6000 not in context
