@@ -379,3 +379,11 @@ def test_rust_audit_distinguishes_findings_and_tool_failure(
     assert message in result.stdout
     if report:
         assert report in result.stdout
+
+
+def test_statusline_release_keeps_both_waiting_runs() -> None:
+    workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/release-statusline.yaml").read_text(encoding="utf-8"))
+    concurrency = workflow["concurrency"]
+    assert concurrency["group"] == "release-statusline"
+    assert concurrency["queue"] == "max"
+    assert concurrency.get("cancel-in-progress", False) is False
