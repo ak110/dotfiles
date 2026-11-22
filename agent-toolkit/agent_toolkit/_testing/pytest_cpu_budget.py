@@ -151,7 +151,7 @@ def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
     if not math.isfinite(default_limit) or default_limit <= 0:
         raise pytest.UsageError("cpu_limit設定には正の有限秒数を指定してください")
     scale = config.getoption("cpu_limit_scale")
-    if not math.isfinite(scale) or scale <= 0:
+    if not isinstance(scale, float) or not math.isfinite(scale) or scale <= 0:
         raise pytest.UsageError("--cpu-limit-scaleには正の有限値を指定してください")
     record_only = bool(config.getoption("cpu_limit_record_only"))
     for item in items:

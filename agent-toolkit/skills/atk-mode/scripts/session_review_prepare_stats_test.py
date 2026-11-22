@@ -12,6 +12,8 @@ import session_review_prepare as prepare
 from agent_toolkit._testing import delegated_threads
 from agent_toolkit._testing.session_review_prepare_support import _FIXED_NOW, _bundle_rows, _work_dir
 from agent_toolkit._testing.session_review_prepare_support import _isolate_failure_ledger as _isolate_failure_ledger
+from session_evidence_extract import _collection_events, _load_records_checked
+from session_evidence_records import _collect_records
 from session_review_prepare_stats import _stats_document
 
 
@@ -373,8 +375,6 @@ def test_first_pass_stats_keeps_missing_and_denominator() -> None:
 @pytest.mark.parametrize("parent_available", [False, True])
 def test_fork_inherited_calls_do_not_count_as_child_operations(tmp_path: pathlib.Path, parent_available: bool) -> None:
     """親子で複製した操作は除き、親を取得できないときは帰属不明の範囲を示す。"""
-    from session_evidence_extract import _collection_events, _load_records_checked  # noqa: PLC0415, SLF001
-    from session_evidence_records import _collect_records  # noqa: PLC0415, SLF001
 
     def call(identifier: str, kind: str = "function_call") -> dict:
         return {
