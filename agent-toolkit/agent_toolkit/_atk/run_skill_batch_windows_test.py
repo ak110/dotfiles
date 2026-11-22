@@ -36,23 +36,40 @@ _CHILD_SETUP = """
 import ctypes
 import os
 from pathlib import Path
+import subprocess
 import sys
 import time
+
+
+def record_console(root, stage):
+    kernel = ctypes.windll.kernel32
+    kernel.GetConsoleWindow.restype = ctypes.c_void_p
+    window = kernel.GetConsoleWindow()
+    visible = bool(window and ctypes.windll.user32.IsWindowVisible(ctypes.c_void_p(window)))
+    (root / f"console-{stage}").write_text(str(visible), encoding="ascii")
+
 
 if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"):
     root = Path(os.environ["REVIEW_TEST_ROOT"])
     if sys.orig_argv[1] == "-c":
-        kernel = ctypes.windll.kernel32
-        kernel.GetConsoleWindow.restype = ctypes.c_void_p
-        window = kernel.GetConsoleWindow()
-        visible = bool(window and ctypes.windll.user32.IsWindowVisible(ctypes.c_void_p(window)))
-        (root / "console").write_text(str(visible), encoding="ascii")
+        record_console(root, "relay")
         deadline = time.monotonic() + 30
         while not (root / "parent-exited").exists():
             if time.monotonic() >= deadline:
                 os._exit(90)
             time.sleep(0.02)
+    elif sys.orig_argv[1:3] == ["-m", "agent_toolkit._atk.session_review_launch"]:
+        record_console(root, "launcher")
+        if os.environ["REVIEW_TEST_VISIBLE_CONSOLE"] == "1":
+            original_run = subprocess.run
+
+            def run_with_visible_console(*args, **kwargs):
+                kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+                return original_run(*args, **kwargs)
+
+            subprocess.run = run_with_visible_console
     elif Path(sys.orig_argv[1]).name == "atk.py":
+        record_console(root, "atk")
         if os.environ["REVIEW_TEST_OUTCOME"] == "failure":
             os._exit(17)
         from agent_toolkit._atk import run_skill_batch
@@ -63,11 +80,20 @@ if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"):
 """
 
 
-@pytest.mark.parametrize("outcome", ["settled", "accepted", "failure"])
-def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome):
+@pytest.mark.parametrize(
+    ("outcome", "visible_console"),
+    [
+        ("settled", False),
+        ("accepted", False),
+        ("failure", False),
+        pytest.param("accepted", True, id="visible-console-control"),
+    ],
+)
+def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome, visible_console):
     (tmp_path / "sitecustomize.py").write_text(_CHILD_SETUP, encoding="utf-8")
     monkeypatch.setenv("REVIEW_TEST_ROOT", str(tmp_path))
     monkeypatch.setenv("REVIEW_TEST_OUTCOME", outcome)
+    monkeypatch.setenv("REVIEW_TEST_VISIBLE_CONSOLE", "1" if visible_console else "0")
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(run_skill_batch.PLUGIN_ROOT), str(tmp_path))))
     monkeypatch.delenv(session_review.LAUNCH_ENV, raising=False)
     with windows_job.WindowsJob() as job:
@@ -91,7 +117,9 @@ def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome
 
     assert initial["status"] == "starting"
     result = session_review.read(launch)
-    assert (tmp_path / "console").read_text(encoding="ascii") == "False"
+    assert (tmp_path / "console-relay").read_text(encoding="ascii") == "False"
+    assert (tmp_path / "console-launcher").read_text(encoding="ascii") == "False"
+    assert (tmp_path / "console-atk").read_text(encoding="ascii") == str(visible_console)
     if outcome != "failure":
         assert result["status"] == outcome, launch.with_suffix(".log").read_text(encoding="utf-8")
         if outcome == "accepted":
