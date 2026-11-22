@@ -87,10 +87,10 @@ def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
                     inputs = block.get("input")
                     message_text = inputs.get("message") if isinstance(inputs, dict) else None
                     messages[identifier] = message_text if isinstance(message_text, str) else ""
-            elif block.get("type") == "tool_result" and (identifier := str(block.get("tool_use_id", ""))) in messages:
+            elif block.get("type") == "tool_result" and (result_id := str(block.get("tool_use_id", ""))) in messages:
                 completed, last = True, ""
                 if block.get("is_error") is not True:
-                    delivered.update(_sentences(messages[identifier]))
+                    delivered.update(_sentences(messages[result_id]))
         if delivered and texts:
             last = "".join(texts)
     return last, delivered, completed
