@@ -13,11 +13,16 @@ Windows用プロジェクト（gv・lc）をLinuxから扱う注意と、prek・
   `dotnet-test`はWindows CIで確かめる。
 - 両リポジトリとも、Linuxからは`LOCALAPPDATA`を与えずにmiseを起動できる。
   `~/gv`の`mise.toml`はこの値を参照せず、`~/lc`の`mise.toml`はWindows用タスクの内側でだけ参照するためである。
-- `mise.toml`のタスクを使い、prekは`uvx prek`で呼び出す。
+- `mise.toml`のタスクを使う。
 - cargo-denyは`taiki-e/install-action@v2`と`with: tool: cargo-deny`で導入し、actionをpinactのハッシュピンの対象にする。
   `taiki-e/install-action@cargo-deny`の短縮形を保つ場合だけ、そのactionを`.pinact.yaml`のハッシュ固定の対象から除く（ツール名タグのSHA固定は更新後に参照できなくなりうるため、公式が強く非推奨としている）。
 
 ## prek / pyfltr / ビルド関連
+
+- Gitフックはmise管理のprekで導入する。
+  `mise.toml`の`[tools]`にprekの版を指定し、`mise install`の後に`mise exec -- prek install -c .pre-commit-config.yaml`を実行する。
+  既存の導入タスクも同じ実行ファイルを使う。
+  フックに記録されるprekのパスをuvの取得キャッシュに依存させないためである。
 
 - 全プロジェクトでprekが`pyfltr fast`を実行し、Markdownの変更には`markdownlint-fast`と`textlint-fast`が軽量に働く。
 - `~/dotfiles`はdev依存へ固定した`uv run --frozen pyfltr fast`を、`~/pyfltr`は自身を`uv run`で呼び出し、その他のプロジェクトは`uvx --exclude-newer-package pyfltr=false pyfltr fast`を呼び出す。
