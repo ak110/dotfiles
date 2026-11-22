@@ -6,6 +6,7 @@ import pathlib
 import sys
 import typing
 
+import check_selection_loading
 import pytest
 import yaml
 from agent_toolkit import atk
@@ -449,9 +450,13 @@ def test_integrated_items_do_not_block_later_operations(
     assert "src/model.py" not in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("source", ["mark-integrated", "lane-row-only"])
+@pytest.mark.parametrize("source", ["mark-integrated", "lane-row-only", "concurrent"])
 def test_merged_lane_keeps_integrated_items_exempt(
-    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, source: str
+    env: tuple[pathlib.Path, pathlib.Path],
+    tmp_path: pathlib.Path,
+    source: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """統合済みレーンへ追加が合流してレーン行が未統合へ戻っても、既存項目は統合済みのまま判定から外れる。
 
@@ -461,7 +466,7 @@ def test_merged_lane_keeps_integrated_items_exempt(
     path = _integrated_lane_selection(tmp_path, notes)
     if source == "mark-integrated":
         assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) == 0
-    else:
+    elif source == "lane-row-only":
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         data["レーンの所要時間"][0]["統合状態"] = "統合済み"
         path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
@@ -498,6 +503,26 @@ def test_merged_lane_keeps_integrated_items_exempt(
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-09": "lane-01"}), encoding="utf-8")
     args = ("--merge", str(added), "--lane-map", str(mapping), "--output", str(path), "--work-dir", str(repo))
+    if source == "concurrent":
+        # mergeが読んだ後でmark-integratedを完了させ、実時間の待機なしで書込の順を固定する。
+        load = check_selection_loading.load_selection
+        saved = None
+
+        def load_and_mark(selection_file, **kwargs):
+            nonlocal saved
+            selection = load(selection_file, **kwargs)
+            if selection_file == path:
+                monkeypatch.setattr(check_selection_loading, "load_selection", load)
+                assert _dispatch(str(path), "--mark-integrated", "lane-01", "--output", str(path), "--work-dir", str(repo)) == 0
+                saved = path.read_bytes()
+            return selection
+
+        monkeypatch.setattr(check_selection_loading, "load_selection", load_and_mark)
+        assert _dispatch(str(path), *args) == 2
+        error = capsys.readouterr().err
+        assert "保存先を更新した" in error
+        assert "再実行" in error
+        assert saved is not None and path.read_bytes() == saved
     assert _dispatch(str(path), *args) == 0
     result = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert result["レーンの所要時間"][0]["統合状態"] == "未統合"
