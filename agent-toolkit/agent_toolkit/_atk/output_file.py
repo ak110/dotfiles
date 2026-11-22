@@ -12,8 +12,12 @@ from typing import TextIO
 
 from agent_toolkit._atk import outcome
 
-AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
-"""通常出力を自動保存するUTF-8バイト数の境界。短い出力は直接表示する。"""
+AUTO_SAVE_THRESHOLD_BYTES = 48 * 1024
+"""直接表示する標準出力と標準エラーの合計のUTF-8バイト数の上限。超える出力はファイルへ保存する。
+
+ホストが1回のツール出力を切り詰めない量（Claude Codeへ配布する`bashOutputMaxChars`の62,000バイトと、
+Codexへ配布する20,000トークン）から、実行環境が付け加える分の余裕を引いた値とする。
+"""
 
 
 def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filename: str) -> pathlib.Path:
@@ -24,15 +28,27 @@ def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filena
     return saved.resolve()
 
 
+def estimated_tokens(size_bytes: int) -> int:
+    """UTF-8バイト数から、文章主体の本文のトークン数を多めに見積もる（バイト数÷3の切上げ）。"""
+    return -(-size_bytes // 3)
+
+
 def saved_report_text(path: pathlib.Path, *, stderr: bool = False) -> str:
     """保存先と行数を返す。両ストリームは別の標識で示す。
 
-    読み手はハーネスの読取（Read）か`sed -n '<開始行>,<終了行>p' -- <保存先>`で行数の範囲を分割して読む。
-    保存先と行数の行を直接表示の上限から差し引く呼び出し元があるため、表示と同じ文字列をここだけで組み立てる。
+    直接表示の上限を超える量を保存した場合だけ、推定トークン数と、範囲を選んで読む注意の行を続ける。
+    量によらず保存する呼び出しの短い出力は、全文を読んでも文脈を大きく消費しないため注意を付けない。
     """
     with path.open(encoding="utf-8", newline="") as stream:
         lines = sum(1 for _line in stream)
-    return f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+    text = f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+    size = path.stat().st_size
+    if size > AUTO_SAVE_THRESHOLD_BYTES:
+        text += (
+            f"注意: 約{estimated_tokens(size)}トークン（{size}バイト）あり、全文の読取は文脈を大きく消費する。"
+            "全文を一度に読まず、rgやjqで必要な箇所を探してから、範囲を指定して読め\n"
+        )
+    return text
 
 
 def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:
@@ -40,10 +56,10 @@ def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:
     (sys.stderr if stderr else sys.stdout).write(saved_report_text(path, stderr=stderr))
 
 
-def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool) -> pathlib.Path | None:
-    """短い出力は保持したストリームへ、長い出力はファイルへ渡す。"""
+def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool, save: bool) -> pathlib.Path | None:
+    """`save`が偽なら保持したストリームへ、真ならファイルへ渡す。"""
     stream = sys.stderr if stderr else sys.stdout
-    if len(text.encode("utf-8")) <= AUTO_SAVE_THRESHOLD_BYTES:
+    if not save:
         stream.write(text)
         return None
     try:
@@ -58,6 +74,24 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
         _report_saved(saved, stderr=stderr)
         return saved
     return None
+
+
+def _utf8_size(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _streams_to_save(stdout_text: str, stderr_text: str) -> tuple[bool, bool]:
+    """標準出力と標準エラーのうち保存するものを返す。
+
+    ホストは両ストリームを1つのツール出力にまとめるため、合計で直接表示の上限と比べる。
+    合計が上限を超える場合は大きい方を保存し、残りも単独で上限を超えるなら保存する。
+    """
+    stdout_size, stderr_size = _utf8_size(stdout_text), _utf8_size(stderr_text)
+    if stdout_size + stderr_size <= AUTO_SAVE_THRESHOLD_BYTES:
+        return False, False
+    if stdout_size >= stderr_size:
+        return True, stderr_size > AUTO_SAVE_THRESHOLD_BYTES
+    return stdout_size > AUTO_SAVE_THRESHOLD_BYTES, True
 
 
 def _report_error_events(path: pathlib.Path) -> None:
@@ -142,8 +176,11 @@ def auto_save(
                     _report_error_events(saved)
                 elif after_save is not None:
                     after_save(saved)
+            stderr_text = stderr_buffer.getvalue()
+            _emit(stderr_text, create_directory, stderr=True, save=_utf8_size(stderr_text) > AUTO_SAVE_THRESHOLD_BYTES)
         else:
-            emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False)
+            save_stdout, save_stderr = _streams_to_save(stdout_buffer.getvalue(), stderr_buffer.getvalue())
+            emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False, save=save_stdout)
             if emitted is not None and after_save is not None:
                 after_save(emitted)
-        _emit(stderr_buffer.getvalue(), create_directory, stderr=True)
+            _emit(stderr_buffer.getvalue(), create_directory, stderr=True, save=save_stderr)

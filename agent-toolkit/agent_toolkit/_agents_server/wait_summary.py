@@ -15,16 +15,18 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import resume_waits, state, turn_state
+from agent_toolkit._atk import output_file
 
 TERMINAL_LINE_PREFIX = "終了行: "
 WAIT_BODY_START_PREFIX = "本文開始: session_id="
 """要約が委譲先の本文の前に置く行の先頭。この行から同じsession識別子の終了の行までは委譲先の本文である。"""
 WAIT_BODY_END_PREFIX = "本文終了: session_id="
 """要約が委譲先の本文の後に置く行の先頭。"""
-BODY_BUDGET_BYTES = 16 * 1024
+BODY_BUDGET_BYTES = output_file.AUTO_SAVE_THRESHOLD_BYTES
 """要約の標準出力全体の上限（UTF-8バイト数）。超える本文は表示せず、`agent_message_path`から読ませる。
 
-`atk`の共通の自動保存の境界と同じ値にし、要約自体が保存へ回らないようにする。
+`atk`の共通の直接表示の上限を参照し、要約自体が保存へ回らないようにする。
+委譲先の本文は全体を読む以外に使い道が無いため、上限まで直接表示する。
 """
 
 # 要約行の先頭に固定の順序で置く項目と、要約行から除く項目。
