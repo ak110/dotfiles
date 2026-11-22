@@ -82,7 +82,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
     実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
     パスの途中で終わった部分として採らない。
-    抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
+    抽出結果は、作業ツリーに実在するパスか、実在する祖先を持つ完全なファイル名の新設先に限る。
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
     それ以外は`_new_file_path`の新設先の条件で採る。
@@ -215,11 +215,22 @@ def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name
 
 
 def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
-    """拡張子までそろった完全なファイル名で親ディレクトリが実在する候補を、新設先として返す。"""
-    name = candidate.rsplit("/", 1)[-1]
-    if _COMPLETE_FILE_NAME_RE.fullmatch(name) and (work_dir / candidate).parent.is_dir():
-        return candidate
-    return None
+    """実在するリポジトリ内の祖先から始まる完全な新設名を返す。"""
+    if _normalize_candidate(candidate) != candidate or not _COMPLETE_FILE_NAME_RE.fullmatch(candidate.rsplit("/", 1)[-1]):
+        return None
+    target = work_dir / candidate
+    try:
+        root = work_dir.resolve()
+        if not target.resolve().is_relative_to(root):
+            return None
+        for parent in target.parents:
+            if parent == work_dir:
+                break
+            if parent.exists() or parent.is_symlink():
+                return candidate if parent.is_dir() else None
+    except OSError, RuntimeError:
+        return None
+    return candidate if target.parent == work_dir else None
 
 
 def clear_caches() -> None:

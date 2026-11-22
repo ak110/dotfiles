@@ -109,6 +109,12 @@ def _add_mq_read_sync_args(parser: argparse.ArgumentParser) -> None:
 def _add_draft_comparison_arg(parser: argparse.ArgumentParser) -> None:
     """新規・編集のdry-runと本保存へ同じ原稿冒頭の比較入力を登録する。"""
     parser.add_argument(
+        "--opening-output",
+        metavar="PATH",
+        action="append",
+        help="--dry-runの冒頭抜粋を指定先に保存する。複数原稿では--body-fileと同じ件数・順序で反復指定する。",
+    )
+    parser.add_argument(
         "--compare-opening-file",
         metavar="PATH",
         action="append",

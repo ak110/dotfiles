@@ -26,7 +26,7 @@ _NEXT_SECTION_OVERLAP = "区分間で重複するパスは、所有する1区分
 
 
 _NEXT_DERIVED = (
-    "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスは実在する親ディレクトリと拡張子を持つ完全な名前にし、"
+    "`導出した新設先`の記録を診断行が示す条件に合わせて直す。新設パスはリポジトリ内の実在する祖先と拡張子を持つ完全な名前にし、"
     "反映範囲を配置根拠のある実在ディレクトリへ対応させ、同じパスを1件だけ記録して書込区分へ個別に置く"
 )
 
@@ -133,7 +133,7 @@ def _derived_record_failures(path: str, scope: str, work_dir: pathlib.Path) -> l
     elif (work_dir / path).exists() and not (work_dir / path).is_file():
         failures.append("パスの実在先が通常ファイルではない")
     elif _new_file_path(path, work_dir) != path:
-        failures.append("パスが実在する親ディレクトリと拡張子を持つ完全な新設名ではない")
+        failures.append("パスがリポジトリ内の実在する祖先と拡張子を持つ完全な新設名ではない")
     if (
         _normalize_candidate(scope) != scope
         or not scope.endswith("/")

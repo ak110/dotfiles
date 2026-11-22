@@ -141,10 +141,11 @@ def main() -> int:
             return prepared
         python = plugin_environment.prepared_python(root, caller_environment)
     if python is None:
-        next_action.report(
-            f"共有依存環境が未準備のため、agent-toolkitを起動できません。Python: {plugin_environment.base_python()}",
-            next_action="`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。",
-        )
+        reason = f"共有依存環境が未準備のため、agent-toolkitを起動できません。Python: {plugin_environment.base_python()}"
+        action = "`update-dotfiles`またはagent-toolkitの公開インストーラーを再実行して依存環境を準備してください。"
+        next_action.report(reason, next_action=action)
+        if target == root / "agent_toolkit/hook.py":
+            _report_unprepared_hook(f"{reason}。共有環境の指定と準備状態、直近の環境変更を確認してください。{action}")
         return 1
     # 共有の管理サービスを持たない旧版のroot（update-dotfilesの起動確認が新しいlauncherで確かめる、
     # ホストがまだ参照している旧版のplugin cacheなど）は、旧版のlauncherが`--agents-service`を受け付けないため、
@@ -190,6 +191,17 @@ def main() -> int:
     except OSError as exc:
         next_action.report(str(exc), next_action="`update-dotfiles`を再実行して依存環境を準備してください。")
         return 1
+
+
+def _report_unprepared_hook(message: str) -> None:
+    """追加文脈を受理するhookへ、依存環境を必要としない診断を返す。"""
+    try:
+        payload = json.loads(sys.stdin.buffer.read())
+    except ValueError, UnicodeError:
+        return
+    event = payload.get("hook_event_name") if isinstance(payload, dict) else None
+    if event in ("PreToolUse", "PostToolUse", "UserPromptSubmit"):
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": message}}, ensure_ascii=False))
 
 
 def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tuple[int, ...]) -> int:

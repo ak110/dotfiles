@@ -108,10 +108,12 @@ def test_approves_without_checking_outside_target(
     [
         ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi single-lane", "approve"),
         ("agent-toolkit:process-wi", "single-lane 追加指示", "agent-toolkit:process-wi", "block"),
+        ("agent-toolkit:review-session", "batch", "agent-toolkit:review-session batch", "approve"),
+        ("agent-toolkit:review-session", "batch", "agent-toolkit:review-session", "block"),
         ("review-session", None, "review-session", "approve"),
         ("review-session", None, "agent-toolkit:review-session", "approve"),
     ],
-    ids=["mode", "other-mode", "unqualified-record", "qualified-report-for-unqualified-record"],
+    ids=["mode", "other-mode", "batch", "unsaved-batch", "unqualified-record", "qualified-report-for-unqualified-record"],
 )
 def test_judges_saved_report_by_scope_of_startup_input(
     tmp_path: pathlib.Path,

@@ -644,6 +644,7 @@ def _report_divergence(
             "`git -c submodule.recurse=false rebase @{u}`を実行する。"
             "競合したら解消して`git add <path>`、`git -c submodule.recurse=false rebase --continue`、"
             "`git push`の順に実行する。\n"
+            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
             "同じ変更がupstreamに存在する重複commitなら、内容を確認して"
             "`git -c submodule.recurse=false rebase --skip`を実行できる。"
             "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"
@@ -667,6 +668,7 @@ def _report_rebase_failure(private_notes: pathlib.Path, *, result_runner: _GitRe
         next_action=(
             "競合を解消した後、`git add <競合解消済みパス>`、"
             "`git -c submodule.recurse=false rebase --continue`、`git push`の順に実行する。\n"
+            "WIの回答・コメントが競合したら、現行の本文と状態・処理結果を一緒に確認し、適用できない旧結果は採らない。\n"
             "同じ変更がupstreamへ反映済みの重複commitなら、内容を確認して"
             "`git -c submodule.recurse=false rebase --skip`を実行できる。"
             "中止する場合は`git -c submodule.recurse=false rebase --abort`を実行する"

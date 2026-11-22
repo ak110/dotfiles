@@ -48,7 +48,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk config usage": {
         "summary": "利用枠・回復時刻と配分理由を確認する",
         "description": "利用枠・回復時刻と配分理由を確認する。\n\n目的: 残量、観測時刻、配分理由、通常設定・一時指定・継続中の会話を表示する。\n利用場面: 次に使うengineや利用上限の回復を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
-        "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh",
+        "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh\n  atk config usage --json",
     },
     "atk config temporary": {
         "summary": "通常設定に重ねる一時指定を操作する",
@@ -429,7 +429,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk agents-exit-session": {
         "summary": "現在の対話CLI本体を識別して終了を要求する",
-        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、ターンの完了を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止せず、対話CLIの終了操作を案内する。",
+        "description": "現在の対話CLI本体を識別して終了を要求する。\n\n目的: 現在の対話CLI本体だけへ安全に終了を要求する。\n利用場面: 完了報告後に現在のセッションを自律終了するとき、または未完了成果を保存して本人IDの再開を予約した後に再起動するとき。\n対象と出力: プロセス祖先、実行ファイルおよび開始情報が現在の対象と一致するかを再度確認する。本人IDの保存済み再開予約がある場合は、ターンの完了を待たず一致した単一PIDへ終了要求を送る。予約は消費せず、完了とも記録しない。それ以外のFunction hooksが読み込まれたClaude Codeでは`exit_requested`を返し、ターンの完了後に`/exit`を実行する。未読込のClaude CodeとCodexでは一致した単一PIDへ従来の停止方式で要求する。標準出力へ機械可読な実行記録を返す。\n前提: 呼び出し元の入力からPIDやsession識別子を受け取らず、現在の対話CLIを祖先から識別する。\n復元・後始末: 識別できない環境では停止しない。対話CLIでの終了操作だけを条件付きで案内する。",
         "epilog": "実行例:\n\n  atk agents-exit-session",
     },
     "atk lane": {

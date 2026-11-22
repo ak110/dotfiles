@@ -603,6 +603,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 [message],
                 [str(pathlib.Path(args.body_file).expanduser().resolve())],
                 compare_paths=args.compare_opening_file,
+                output_paths=args.opening_output,
             )
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)

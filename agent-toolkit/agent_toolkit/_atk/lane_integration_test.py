@@ -127,8 +127,9 @@ def test_cannot_amend_processed_wis_after_selection_write() -> None:
 
 
 @pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.parametrize("new_run", [False, True])
 def test_integration_and_reuse_protect_dirty_submodules(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], new_run: bool
 ) -> None:
     """子を無視する設定でも未保存の変更を残して停止し、cleanな同じ資源なら進む。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
@@ -143,6 +144,9 @@ def test_integration_and_reuse_protect_dirty_submodules(
     (worktree / "feature").write_text("成果\n", encoding="utf-8")
     head = git_repository.commit_all(worktree, "統合する成果")
     manifest = _cleanup_integration_manifest(tmp_path, handoff_text="検収済み")
+    old_start = "2026-10-22T00:00:00+09:00"
+    old_input = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps({**old_input, "lane_started_at": old_start}), encoding="utf-8")
     integrate_args = _integration_args(record, repo, manifest, head)
 
     lane_change = worktree / "sub" / "tracked"
@@ -166,6 +170,10 @@ def test_integration_and_reuse_protect_dirty_submodules(
     capsys.readouterr()
 
     lane_change.write_text("再開前の未保存\n", encoding="utf-8")
+    if new_run:
+        next_selection = selected.with_name("next-selection.yaml")
+        next_selection.write_bytes(selected.read_bytes())
+        selected = next_selection
     create_args = _create_args(repo, selected)
     code, _result, stderr = _invoke(capsys, *create_args)
     assert code == 2 and "未コミット変更" in stderr
@@ -182,6 +190,15 @@ def test_integration_and_reuse_protect_dirty_submodules(
     assert code == 0 and reused["reused"] and reused["worktree"] == str(worktree), stderr
     assert git_repository.git_output(worktree, "rev-parse", "HEAD") == advanced
     assert lane_change.read_text(encoding="utf-8") == "基準\n"
+
+    if new_run:
+        assert "integration" not in reused
+        assert reused["previous_integration"]["phase"] == "finalized"
+        assert "lane_started_at" not in reused
+        assert reused["initial_head"] == advanced
+    else:
+        assert reused["integration"]["phase"] == "finalized"
+        assert reused["lane_started_at"] == old_start
 
 
 @pytest.mark.usefixtures("leaf_git_commands")

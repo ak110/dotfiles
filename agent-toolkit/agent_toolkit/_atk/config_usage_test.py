@@ -70,7 +70,10 @@ def test_public_usage_matches_launch_candidates(tmp_path: pathlib.Path, capsys: 
     assert _main(tmp_path, "config", "usage") == 0
     lines = capsys.readouterr().out.splitlines()
     assert all(detail in lines[0] for detail in ("codex,claude", "Claude", "ひっ迫", "weekly", "97%"))
-    details = json.loads(lines[-1])
+    assert "自動配分: 有効" in lines
+    assert not any(line.startswith("{") for line in lines)
+    assert _main(tmp_path, "config", "usage", "--json") == 0
+    details = json.loads(capsys.readouterr().out)
     assert details["settings"]["execute_model"]["effective"] == "claude:original/high,codex:new-model/low"
     assert details["usage"]["windows"][0]["used_percent"] is not None
 

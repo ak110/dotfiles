@@ -144,6 +144,7 @@ def build_parser(sub: Any) -> None:
         "usage",
         **help_text.HELP["atk config usage"],
     )
+    usage.add_argument("--json", action="store_true", help="詳細をJSONで表示する")
     usage.add_argument("--refresh", action="store_true", help="両エンジンの利用枠を更新してから表示する")
     temporary = help_text.add_command(
         sub,
@@ -168,6 +169,24 @@ def build_parser(sub: Any) -> None:
         actions,
         "show",
         **help_text.HELP["atk config temporary show"],
+    )
+
+
+def _display_scope(scope: str) -> str:
+    if not scope or scope == "all":
+        return "全体"
+    if not scope.startswith("{"):
+        return scope
+    try:
+        details = json.loads(scope)
+    except ValueError:
+        return "対象の詳細は--jsonで確認"
+    if not isinstance(details, dict):
+        return "対象の詳細は--jsonで確認"
+    model = details.get("model")
+    model_name = model.get("display_name") if isinstance(model, dict) else model
+    return " / ".join(value for value in (model_name, details.get("surface")) if isinstance(value, str) and value) or (
+        "対象の詳細は--jsonで確認"
     )
 
 
@@ -196,40 +215,51 @@ def dispatch(
             raise ValueError("利用枠の更新機能が接続されていない")
         refresh(force=True)
     candidates = parse(resolve("execute_model"))
+    automatic = resolve("usage_auto_allocation") == "true"
     try:
         selected, reason = select_candidates(
             candidates,
             "execute",
-            automatic=resolve("usage_auto_allocation") == "true",
+            automatic=automatic,
             activity_mode=resolve("usage_activity_mode"),
         )
     except ValueError as error:
         selected, reason = [], f"候補不足: {error}。config set execute_modelで候補を確認する"
     engines = ",".join(dict.fromkeys(item[0] for item in selected)) or "なし"
-    print(f"優先順: {engines}。{reason}")
-    print("統括: 保存された候補を維持し、通常の利用上限では回復を待つ")
     observed = usage_observation.snapshot()
     visible_windows = _profile_windows(observed)
-    for engine in ("claude", "codex"):
-        if not any(window["engine"] == engine for window in visible_windows):
-            print(f"{engine}: 利用枠は取得不明。config usage --refreshで取得する")
-    effective_windows = set(
-        usage_allocation.current_windows([usage_observation.QuotaWindow(**row) for row in visible_windows], time.time())
-    )
-    for window in visible_windows:
-        quota = usage_observation.QuotaWindow(**window)
-        remaining = "不明" if window["used_percent"] is None else f"{100 - window['used_percent']:g}%"
-        resets = (
-            "不明"
-            if window["resets_at"] is None
-            else datetime.datetime.fromtimestamp(window["resets_at"], datetime.UTC).astimezone().isoformat()
+    settings = read_settings()
+    if not args.json:
+        print(f"優先順: {engines}。{reason}")
+        print("統括: 保存された候補を維持し、通常の利用上限では回復を待つ")
+        for engine in ("claude", "codex"):
+            if not any(window["engine"] == engine for window in visible_windows):
+                print(f"{engine}: 利用枠は取得不明。config usage --refreshで取得する")
+        effective_windows = set(
+            usage_allocation.current_windows([usage_observation.QuotaWindow(**row) for row in visible_windows], time.time())
         )
-        sampled = datetime.datetime.fromtimestamp(window["observed_at"], datetime.UTC).astimezone().isoformat()
-        label = json.dumps([window["engine"], window["window_id"], window["scope"]], ensure_ascii=False)
-        pace = observed.get("rates", {}).get(usage_observation.rate_key(quota))
-        pace_text = "不明" if pace is None else f"{pace:g}ポイント/稼働秒"
-        validity = "判定対象" if quota in effective_windows else "過去の観測（判定対象外）"
-        print(f"{label}: 観測残量={remaining}、回復={resets}、ペース={pace_text}、最終観測={sampled}、{validity}")
+        for window in visible_windows:
+            quota = usage_observation.QuotaWindow(**window)
+            remaining = "不明" if window["used_percent"] is None else f"{100 - window['used_percent']:g}%"
+            resets = (
+                "不明"
+                if window["resets_at"] is None
+                else datetime.datetime.fromtimestamp(window["resets_at"], datetime.UTC)
+                .astimezone()
+                .isoformat(timespec="seconds")
+            )
+            sampled = (
+                datetime.datetime.fromtimestamp(window["observed_at"], datetime.UTC).astimezone().isoformat(timespec="seconds")
+            )
+            label = f"{quota.engine} / {quota.window_id} / {_display_scope(quota.scope)}"
+            pace = observed.get("rates", {}).get(usage_observation.rate_key(quota))
+            pace_text = "不明" if pace is None else f"{pace:g}ポイント/稼働秒"
+            validity = "判定対象" if quota in effective_windows else "過去の観測（判定対象外）"
+            print(f"{label}: 観測残量={remaining}、回復={resets}、ペース={pace_text}、最終観測={sampled}、{validity}")
+        print(f"自動配分: {'有効' if automatic else '無効'}")
+        for failure in settings.get("refresh_failures", []):
+            print(f"取得失敗: {failure}")
+        return
     normal = config_settings.load_config()
     model_settings = {
         key: {
@@ -293,9 +323,10 @@ def dispatch(
             {
                 "usage": {**observed, "windows": visible_windows},
                 "settings": model_settings,
-                "temporary": {key: read_settings().get(key) for key in ("values", "until")},
+                "selection": {"engines": engines, "reason": reason, "automatic": automatic},
+                "temporary": {key: settings.get(key) for key in ("values", "until")},
                 "metadata": {engine: read_metadata(engine) for engine in ("claude", "codex")},
-                "refresh_failures": read_settings().get("refresh_failures", []),
+                "refresh_failures": settings.get("refresh_failures", []),
                 "running_sessions": running,
                 "application_boundary": "稼働中のturnは終了させず、次の新規起動・継続境界で実効候補を適用",
                 "claude_reset_advice": reset_advice,

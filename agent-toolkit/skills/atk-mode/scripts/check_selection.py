@@ -158,6 +158,7 @@ def check(
     *,
     selection: dict[str, object] | None = None,
     validate_execution: bool = True,
+    merged_wis: frozenset[str] = frozenset(),
 ) -> list[Violation]:
     """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
 
@@ -208,6 +209,15 @@ def check(
         except (OSError, UnicodeDecodeError) as error:
             raise InputError(f"WI本文を読み込めない: {source}: {error}", next_action=_FIX_PRIVATE_NOTES) from error
         parsed = _wi_frontmatter.parse_frontmatter(body)
+        state = parsed[0].get("state", source.parent.name) if parsed else source.parent.name
+        if awi in merged_wis and state == "inbox" and not _is_integrated(decision, integrated_lanes):
+            errors.append(
+                Violation(
+                    f"{awi}: 追加割当の処理開始が未完了（inbox）",
+                    next_action=f"`atk wi start-processing {awi}`で処理を開始して同じ追加選定を再実行する",
+                )
+            )
+            continue
         saved_repo = parsed[0].get("target_repo") if parsed else None
         if isinstance(saved_repo, str):
             if work_repo is None:
@@ -569,6 +579,7 @@ def main(argv: list[str] | None = None) -> int:
     body_wis = set(args.body_wi) if args.body_wi is not None else None
     # 合流・移管で記録不足になった鍵へ、記録し直す組と記録の書き先を添える案内。
     rerecord: tuple[dict[tuple[str, str, str], list[str]], str] | None = None
+    merged_wis: frozenset[str] = frozenset()
     try:
         work_dir = _resolve_work_dir(args.work_dir)
         selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
@@ -637,6 +648,11 @@ def main(argv: list[str] | None = None) -> int:
                     if estimate_errors:
                         raise ValueError("\n".join(error.reason for error in estimate_errors))
                 merged = merge_selection(selection, addition, mapping, updates)
+                added_items = typing.cast(list[dict[str, object]], _selection.decisions(addition) or [])
+                existing_items = typing.cast(list[dict[str, object]], _selection.decisions(selection) or [])
+                merged_wis = frozenset(str(item[_selection.WI_KEY]) for item in added_items) - {
+                    str(item[_selection.WI_KEY]) for item in existing_items
+                }
                 rerecord = merge_rerecord_pairs(selection, addition, merged), _NEXT_OVERLAP_MISSING_MERGE
                 selection = merged
             except TemporaryLaneCollisionError as error:
@@ -659,6 +675,7 @@ def main(argv: list[str] | None = None) -> int:
             body_wis,
             selection=selection,
             validate_execution=not args.history and args.mark_integrated is None,
+            merged_wis=merged_wis,
         )
     except InputError as error:
         _next_action.report(error.reason, next_action=error.next_action)

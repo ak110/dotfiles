@@ -262,6 +262,9 @@ def _validate_uwi_add_args(args: argparse.Namespace) -> None:
 def validate_args(args: argparse.Namespace) -> None:
     """一括指定の排他と`atk wi add`の引数の組み合わせを検証する。managed-tempの掃引の後に呼ぶ。"""
     _validate_bulk_transition_args(args)
+    if args.wi_subcommand in ("add", "edit") and args.opening_output is not None and not args.dry_run:
+        args.subparser.error("--opening-outputは--dry-runでのみ指定できます。")
+
     if args.wi_subcommand == "edit" and args.compare_opening_file is not None and (args.body_file is None or args.append):
         args.subparser.error(
             "--compare-opening-fileは本文を置き換える編集（FILENAMEと--body-file、--appendなし）で指定してください。"

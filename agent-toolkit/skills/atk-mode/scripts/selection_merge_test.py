@@ -140,6 +140,39 @@ def test_public_merge_correction_and_staged_comparison(
             assert merged.get("段階案の完了見込み秒数") == comparison
 
 
+def test_public_merge_requires_processing_for_new_assignment(inputs, tmp_path, capsys):
+    repo, existing, added = inputs
+    notes = tmp_path / "notes"
+    inbox = notes / "inbox"
+    inbox.mkdir()
+    processing = notes / "processing" / "c.md"
+    pending = inbox / processing.name
+    processing.rename(pending)
+    mapping = tmp_path / "map.json"
+    mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
+    before = existing.read_bytes()
+    args = (
+        str(existing),
+        "--merge",
+        str(added),
+        "--lane-map",
+        str(mapping),
+        "--output",
+        str(existing),
+        "--work-dir",
+        str(repo),
+    )
+
+    assert _dispatch(*args) == 1
+    diagnostic = capsys.readouterr().err
+    assert "c.md: 追加割当の処理開始が未完了" in diagnostic
+    assert "atk wi start-processing c.md" in diagnostic
+    assert existing.read_bytes() == before and pending.is_file()
+    pending.rename(processing)
+    assert _dispatch(*args) == 0
+    assert "c.md" in existing.read_text(encoding="utf-8")
+
+
 def _allocation(assignments: dict[str, str], candidate_count: int = 1) -> dict[str, object]:
     """初回集合と追加を区別する、通常上限内のテスト入力を返す。"""
     return {
