@@ -80,16 +80,10 @@ if os.environ.get("AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH"):
 """
 
 
-@pytest.mark.parametrize(
-    ("outcome", "visible_console"),
-    [
-        ("settled", False),
-        ("accepted", False),
-        ("failure", False),
-        pytest.param("accepted", True, id="visible-console-control"),
-    ],
-)
-def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome, visible_console):
+def _launch_review(tmp_path, monkeypatch, outcome, *, visible_console=False):
+    tmp_path.mkdir(exist_ok=True)
+    launches = session_review.directory() / "launches"
+    existing = set(launches.glob("*.json"))
     (tmp_path / "sitecustomize.py").write_text(_CHILD_SETUP, encoding="utf-8")
     monkeypatch.setenv("REVIEW_TEST_ROOT", str(tmp_path))
     monkeypatch.setenv("REVIEW_TEST_OUTCOME", outcome)
@@ -104,7 +98,7 @@ def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome
             if parent.poll() is None:
                 job.terminate()
                 parent.wait(timeout=5)
-    [launch] = (session_review.directory() / "launches").glob("*.json")
+    [launch] = set(launches.glob("*.json")) - existing
     initial = session_review.read(launch)
     (tmp_path / "parent-exited").touch()
 
@@ -116,10 +110,12 @@ def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome
         time.sleep(0.02)
 
     assert initial["status"] == "starting"
-    result = session_review.read(launch)
-    assert (tmp_path / "console-relay").read_text(encoding="ascii") == "False"
-    assert (tmp_path / "console-launcher").read_text(encoding="ascii") == "False"
-    assert (tmp_path / "console-atk").read_text(encoding="ascii") == str(visible_console)
+    return launch, session_review.read(launch)
+
+
+@pytest.mark.parametrize("outcome", ["settled", "accepted", "failure"])
+def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome):
+    launch, result = _launch_review(tmp_path, monkeypatch, outcome)
     if outcome != "failure":
         assert result["status"] == outcome, launch.with_suffix(".log").read_text(encoding="utf-8")
         if outcome == "accepted":
@@ -137,3 +133,20 @@ def test_session_start_survives_hook_process_exit(tmp_path, monkeypatch, outcome
     assert result["log_path"].replace("'", "''") in notice
     assert session_review.read(launch)["status"] == "notified"
     assert run_skill_batch.hook_request(payload, host="claude") is None
+
+
+def test_session_start_hides_console_windows(tmp_path, monkeypatch):
+    control = tmp_path / "control"
+    launch, result = _launch_review(control, monkeypatch, "settled", visible_console=True)
+    assert result["status"] == "settled", launch.with_suffix(".log").read_text(encoding="utf-8")
+    if (control / "console-atk").read_text(encoding="ascii") == "False":
+        reason = "CREATE_NEW_CONSOLE の対照で可視ウィンドウを観測できない（疑似コンソールなど）"
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail(f"Windows CIのConsole Hostで対照が成立しない: {reason}")
+        pytest.skip(reason)
+
+    normal = tmp_path / "normal"
+    launch, result = _launch_review(normal, monkeypatch, "accepted")
+    assert result["status"] == "accepted", launch.with_suffix(".log").read_text(encoding="utf-8")
+    for stage in ("relay", "launcher", "atk"):
+        assert (normal / f"console-{stage}").read_text(encoding="ascii") == "False", stage
