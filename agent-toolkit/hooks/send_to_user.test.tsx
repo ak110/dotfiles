@@ -52,6 +52,7 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
         const notice = context.at(-1) ?? "";
         expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
         expect(notice).toMatch(/質問.*AskUserQuestion/);
+        expect(notice).toContain(tool);
         if (registered) expect(notice).toContain(`await tools['${tool}']({message})`);
         expect(notice).toContain("呼出しに失敗した時だけ通常本文");
         expect(notice).toContain("searchTools");

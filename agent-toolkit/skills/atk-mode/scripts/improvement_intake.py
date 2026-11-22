@@ -29,7 +29,10 @@ def _read_report(path: Path) -> dict[str, str]:
         raw = stream.read(_MAX_BYTES + 1)
     if len(raw) > _MAX_BYTES:
         raise _IntakeError("受付入力が16 KiBを超える。必要な観測だけを残す。")
-    report = json.loads(raw.decode("utf-8"))
+    try:
+        report = json.loads(raw.decode("utf-8"))
+    except UnicodeError, json.JSONDecodeError:
+        raise _IntakeError("原稿の形式が不正。UTF-8のJSON原稿に直して受付を再実行する。") from None
     if (
         not isinstance(report, dict)
         or not _REQUIRED <= report.keys() <= _REQUIRED | _OPTIONAL
@@ -44,6 +47,8 @@ def _load(path: Path) -> dict[str, dict[str, Any]]:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
+    except UnicodeError, json.JSONDecodeError:
+        raise _IntakeError("保存済みの受付記録の形式が不正。原本を保全し、正常な版から復元する。") from None
     if not isinstance(value, dict) or any(not isinstance(row, dict) for row in value.values()):
         raise _IntakeError("受付記録の書式を確認できない。原本を保護して復元する。")
     return value
@@ -110,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"受付または処置を完了できない: {error}", file=sys.stderr)
         return 2
     except Timeout:
-        print("受付の保存先が使用中。即時通知を続け、後から同じ原稿で受付を試す。", file=sys.stderr)
+        print(f"受付の保存先が使用中。即時通知は継続し、解放後に {args.operation} を同じ引数で実行する。", file=sys.stderr)
         return 2
     except (OSError, ValueError, KeyError, TypeError) as error:
         print(f"受付または処置を完了できない: {type(error).__name__}。入力と状態ディレクトリを確かめる。", file=sys.stderr)

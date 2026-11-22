@@ -265,3 +265,33 @@ def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.
     hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
     assert [item["locators"] for item in hook_candidates] == [[{"record": "claude:transcript", "line": 4}]]
     assert candidates[-1]["excluded"]["hook-notice-context"] == 2
+
+
+def test_public_bundle_keeps_result_status_when_another_result_consumes_budget(tmp_path, capsys):
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "normal", "is_error": False, "content": "a" * 4000},
+                    {"type": "tool_result", "tool_use_id": "failed", "is_error": True, "content": ""},
+                ],
+            },
+            "attachment": hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "failed",
+                    "content": ["[auto-generated: agent-toolkit/pretooluse][warn] warn: 一時通知"],
+                }
+            )["attachment"],
+        },
+    ]
+    _, items = _bundle_candidates_and_evidence(tmp_path, capsys, entries)
+    events = [event for item in items.values() for event in item["events"]]
+    assert any(event.get("tool") == "failed" and event.get("is_error") is True and event.get("text") == "" for event in events)
+    assert any(
+        event.get("tool") == "normal" and event.get("is_error") is False and event.get("omitted") is True for event in events
+    )

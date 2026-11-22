@@ -178,16 +178,17 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
   });
   on("ui.render", { component: "Placed" }, async ($, e, next) => {
     if (e.props.plugin !== $.plugin.name) return next(e);
-    const delivery = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
-    if (delivery === undefined) return next(e);
+    const stored = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value?.[e.props.id];
+    if (stored === undefined) return next(e);
+    const delivery = placedMessage(stored);
     const { Markdown, Box } = $.ui.resolve(e);
     // 前後の会話行と区別しやすいよう、本文の上下に1行の余白を置く。
     return (
       <Box flexDirection="column" marginTop={1} marginBottom={1}>
-        <Markdown text={`送達時刻: ${new Intl.DateTimeFormat("ja-JP", {
+        {delivery.placedAt !== undefined && <Markdown text={`送達時刻: ${new Intl.DateTimeFormat("ja-JP", {
           year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
           hourCycle: "h23", timeZoneName: "shortOffset",
-        }).format(delivery.placedAt)}`} />
+        }).format(delivery.placedAt)}`} />}
         <Markdown text={delivery.message} />
       </Box>
     );
@@ -219,6 +220,10 @@ function isSendToUser(tool: string): boolean {
   return /agents_server__send_to_user$/.test(tool);
 }
 
+export function placedMessage(stored: string | { message: string; placedAt: number }): { message: string; placedAt?: number } {
+  return typeof stored === "string" ? { message: stored } : stored;
+}
+
 type SendCall = { tool_use_id?: string; input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean };
 
 // この会話の稼働中に行を置いた呼出しかを返す。会話状態は再開で初期化されるため、再開前の呼出しは偽になる。
@@ -229,7 +234,7 @@ async function placedLive($: EngineInterface, call: SendCall): Promise<boolean> 
   const calls = (await $.state.get({ plugin: "agent-toolkit", key: "uiCalls" })).value ?? {};
   if (call.tool_use_id !== undefined && Object.hasOwn(calls, call.tool_use_id)) return Object.hasOwn(messages, calls[call.tool_use_id] ?? "");
   const keyed = new Set(Object.values(calls));
-  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && message.message === deliveredMessage(call));
+  return Object.entries(messages).some(([id, message]) => !keyed.has(id) && placedMessage(message).message === deliveredMessage(call));
 }
 
 // 表示に成功した呼び出しの本文を返す。実行中・失敗・中断の呼び出しは本文を描かない。

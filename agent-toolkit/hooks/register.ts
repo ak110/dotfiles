@@ -47,7 +47,7 @@ export const register: Register = (on) => {
     const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
     const notice = automatedMessage("send-to-user-contract", "notice",
       "着手・進捗・完了報告は `send_to_user` で送る。" +
-      (listed ? `REPLでは \`await tools['${SEND_TO_USER}']({message})\` を呼ぶ。` : "") +
+      (listed ? `REPL: \`await tools['${SEND_TO_USER}']({message})\`。` : `検索対象: \`${SEND_TO_USER}\`。`) +
       "直接の一覧に無い時はREPLの `searchTools` または遅延公開ツールの検索で探す。質問は `AskUserQuestion`。呼出しに失敗した時だけ通常本文で伝え、送達後は `…` で閉じる。");
     return next({ ...e, context: [...(e.context ?? []), notice] });
   });
