@@ -225,6 +225,6 @@ def test_prepare_does_not_publish_changed_environment(monkeypatch, tmp_path, cap
         launch.plugin_environment, "publish_prepared_environment", lambda *_args, **_kwargs: pytest.fail("公開してはならない")
     )
 
-    assert launch._prepare(tmp_path, "uv", {}) == 1
+    assert launch._prepare(tmp_path, "uv", {}) == 1  # pylint: disable=protected-access
     assert syncs == ([] if changes_before_sync else [str(target)])
     assert "依存の固定内容が変更された" in capsys.readouterr().err
