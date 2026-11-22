@@ -60,11 +60,25 @@ def test_authorization_preserves_following_diagnostics(credential: str) -> None:
     assert suffix in saved
 
 
-def test_diagnostic_tail_discards_partial_line() -> None:
-    """窓が途中から始まる先頭行は、認証値の途中か判定できないため転載しない。"""
+def test_diagnostic_tail_redacts_whole_before_taking_tail() -> None:
+    """全体を伏せてから末尾を取るため、末尾の開始位置が認証値の途中でも断片を残さない。"""
     data = b"x" * 1000 + b"https://" + b"A" * 150 + b"@example.org\nOK\n"
     with io.BytesIO(data) as stream:
-        assert diagnostic_redaction.read_diagnostic_tail(stream, limit=64) == ("OK\n", True, len(data))
+        result = diagnostic_redaction.read_diagnostic_tail(stream, limit=64)
+    assert result == (diagnostic_redaction.redact_secrets(data.decode()).encode()[-64:].decode(), True, len(data))
+    assert "A" * 10 not in result.text
+
+
+def test_diagnostic_tail_omits_body_over_retained_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """保持の上限を超えた出力は、全体を伏せられないため本文を転載せず、その旨を示す。"""
+    monkeypatch.setattr(diagnostic_redaction, "RETAINED_BYTES", 100)
+    tail = diagnostic_redaction.DiagnosticTail(64)
+    for _ in range(10):
+        tail.feed(f"{_SECRET}\n")
+    result = tail.excerpt()
+    assert _SECRET not in result.text
+    assert result.omitted
+    assert "全文は元の出力先で確認してください" in result.text
 
 
 class _ChunkedStream(io.BytesIO):
@@ -85,10 +99,10 @@ def _unterminated_key(lines: int) -> bytes:
 @pytest.mark.parametrize("chunk", [1, 7, 65536])
 def test_diagnostic_tail_keeps_key_state_from_before_window(chunk: int) -> None:
     """末尾窓より前で始まった終端の無い秘密鍵は、窓に開始行が無くても本文を転載しない。"""
-    stream = _ChunkedStream(_unterminated_key(40), chunk)
-    result = diagnostic_redaction.read_diagnostic_tail(stream, limit=64)
+    data = _unterminated_key(40)
+    result = diagnostic_redaction.read_diagnostic_tail(_ChunkedStream(data, chunk), limit=64)
     assert _SECRET not in result[0]
-    assert result[1]
+    assert result[0] == diagnostic_redaction.redact_secrets(data.decode())
 
 
 @pytest.mark.parametrize("chunk", [1, 7, 65536])
@@ -114,3 +128,24 @@ def test_empty_assignment_keeps_next_log_line(separator: str) -> None:
     """値の無い代入の次の行は資格情報として扱わず、診断として残す。"""
     line = "ERROR: 最初の検査が失敗した"
     assert diagnostic_redaction.redact_secrets(f"EXAMPLE_TOKEN{separator}\n{line}") == f"EXAMPLE_TOKEN{separator}\n{line}"
+
+
+@pytest.mark.parametrize("limit", [16 * 1024, 64 * 1024])
+def test_diagnostic_tail_matches_whole_redaction_across_window(limit: int) -> None:
+    """資格情報名が末尾の範囲より前の行にあっても、全体を伏せた結果と同じく値を転載しない（運用の上限16 KiB・64 KiB）。"""
+    data = ('{"password":' + "\n" * (limit * 3) + f'"{_SECRET}"}}\n通常の行\n').encode()
+    assert _SECRET not in diagnostic_redaction.redact_secrets(data.decode())
+    with io.BytesIO(data) as stream:
+        result = diagnostic_redaction.read_diagnostic_tail(stream, limit=limit)
+    assert _SECRET not in result[0]
+    assert result[0].endswith("通常の行\n")
+
+
+@pytest.mark.parametrize("chunk", [1, 4096, 65536])
+def test_diagnostic_tail_hides_key_with_long_header(chunk: int) -> None:
+    """全体の秘匿が認識する長い見出しの鍵も、読取の境界によらず本文を転載しない。"""
+    header = f"-----BEGIN {'X' * 3000} {_KEY}-----\n".encode()
+    data = header + f"{_SECRET}\n".encode() * 40
+    assert _SECRET not in diagnostic_redaction.redact_secrets(data.decode())
+    result = diagnostic_redaction.read_diagnostic_tail(_ChunkedStream(data, chunk), limit=64)
+    assert _SECRET not in result[0]

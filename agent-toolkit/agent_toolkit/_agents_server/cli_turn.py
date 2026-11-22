@@ -573,15 +573,16 @@ def _record_failure(session: SessionState, error: BaseException, stderr_text: st
 
 
 async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-    """標準エラーの先頭を有界に読み、伏せてから`_STDERR_LIMIT_CHARS`文字に抜粋する。
+    """標準エラーの先頭を有界に読み、伏せてから従来の読取上限と同じ`_STDERR_LIMIT_CHARS`バイトに抜粋する。
 
-    伏せると短くなるため上限の倍まで読む。読み残しがあれば、読取の上限で途中までになった末尾の行を共通の抜粋が除く。
+    伏せると短くなるため上限の倍まで読む。倍の上限に達した時だけ、途中までになった末尾の行を共通の抜粋が除く。
     """
     if process.stderr is None:
         return ""
     with contextlib.suppress(Exception):
-        data = await process.stderr.read(_STDERR_LIMIT_CHARS * 2)
-        return diagnostic_head(data, limit=_STDERR_LIMIT_CHARS, complete=process.stderr.at_eof())
+        read_limit = _STDERR_LIMIT_CHARS * 2
+        data = await process.stderr.read(read_limit)
+        return diagnostic_head(data, limit_bytes=_STDERR_LIMIT_CHARS, reached_read_limit=len(data) >= read_limit)
     return ""
 
 

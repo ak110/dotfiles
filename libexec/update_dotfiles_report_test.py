@@ -133,11 +133,12 @@ def test_sync_report_redacts_before_taking_tail() -> None:
 def test_sync_report_finish_redacts_every_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """共通の抜粋を通さずに渡された終了時の標準エラーも、保存の直前で伏せて上限を守る。"""
     monkeypatch.setattr(runtime.sync_report, "REPORT_PATH", tmp_path / "sync-report.json")
-    raw = "更新ロックの例外 password=synthetic-secret-0123456789\n" + "z" * 5000
+    raw = "z" * 5000 + "\n更新ロックの例外 password=synthetic-secret-0123456789"
     runtime.sync_report.write_finish(
         "run-1", status="failed", exit_code=1, failed_stage="更新ロックの取得", stderr_tail=raw, finished_at="now"
     )
 
     saved = runtime.sync_report.read()["stderr_tail"]
-    assert "synthetic-secret" not in saved
+    # 合成値は保存する末尾の範囲にあるため、伏せる処理を外すと値がそのまま残る。
+    assert saved.endswith('更新ロックの例外 password="[REDACTED]"')
     assert len(saved) <= runtime.sync_report.STDERR_TAIL_MAX_CHARS

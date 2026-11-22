@@ -266,3 +266,26 @@ def test_ignored_non_json_output_log_redacts_before_truncating(caplog: pytest.Lo
     # 保存時の書式化と同じく、記録の本文を伏せた結果を確かめる。
     assert all("A" * 10 not in redact_secrets(record.getMessage()) for record in caplog.records)
     assert caplog.records
+
+
+@pytest.mark.parametrize(
+    ("data", "eof"),
+    [(b"backend initialization failed", False), (b"backend initialization failed", True), (("診" * 2500).encode(), True)],
+    ids=["short-open", "short-eof", "multibyte-eof"],
+)
+def test_read_stderr_keeps_short_output_and_byte_limit(data: bytes, eof: bool) -> None:
+    """一時的な短い読取の通常の診断は残し、抜粋は従来の読取上限と同じバイト数に収める。"""
+    from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
+
+    async def read() -> str:
+        reader = asyncio.StreamReader()
+        reader.feed_data(data)
+        if eof:
+            reader.feed_eof()
+        process = typing.cast(Process, SimpleNamespace(stderr=reader))
+        return await cli_turn._read_stderr(process)  # pylint: disable=protected-access
+
+    result = asyncio.run(read())
+    assert len(result.encode()) <= cli_turn._STDERR_LIMIT_CHARS  # pylint: disable=protected-access
+    if len(data) < cli_turn._STDERR_LIMIT_CHARS:  # pylint: disable=protected-access
+        assert result == data.decode()
