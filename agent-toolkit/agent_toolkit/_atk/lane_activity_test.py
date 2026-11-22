@@ -18,7 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry
+from agent_toolkit._common import session_registry, session_release
 from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
@@ -171,7 +171,17 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
         assert reason.index("自然終了") < reason.index("atk agents wait") < reason.index("stop") < reason.index("lane delete")
         assert session_registry.resolve("held-session").state is session_registry.Resolution.RUNNING
     assert pathlib.Path(record["worktree"]).is_dir()
-    assert not list(session_registry.registry_directory().glob("*.release-*"))
+    requests = list(session_registry.registry_directory().glob("*.release-*"))
+    if terminal:
+        (request,) = requests
+        assert request.suffix == ".release-request"
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert packet["session_id"] == "held-session"
+        assert "result" not in packet
+        assert not session_release.pending()
+    else:
+        assert not requests
 
 
 @pytest.mark.cpu_limit(
@@ -219,7 +229,17 @@ def test_automatic_exit_keeps_unreleased_terminal_sessions_without_waiting(
         assert pathlib.Path(record["worktree"]).is_dir()
         assert record["branch"] in git_repository.git_output(repo, "branch", "--format=%(refname:short)").splitlines()
     assert pathlib.Path(result["result_path"]).is_file()
-    assert not list(session_registry.registry_directory().glob("*.release-*"))
+    requests = list(session_registry.registry_directory().glob("*.release-*"))
+    assert len(requests) == 2
+    sessions = set()
+    for request in requests:
+        assert request.suffix == ".release-request"
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert "result" not in packet
+        sessions.add(packet["session_id"])
+    assert sessions == {"unresponsive-0", "unresponsive-1"}
+    assert not session_release.pending()
     assert lane.time.monotonic() - started < 10
 
 
@@ -543,7 +563,11 @@ async def test_lane_releases_retained_executor_through_owner_monitor(
         else:
             assert result["session_id"] == "next-session"
             assert result["worktree"] == record["worktree"]
-        assert not list(session_registry.registry_directory(retained.state_root).glob("*.release-*"))
+        (request,) = session_registry.registry_directory(retained.state_root).glob("*.release-*")
+        assert request.suffix in {".release-request", ".release-request-result"}
+        packet = json.loads(request.read_text(encoding="utf-8"))
+        assert packet["request_id"] == request.stem
+        assert packet["session_id"] == retained.session_id
         assert retained.wait_result() == 0
         assert json.loads(capsys.readouterr().out)["agent_message"] == "回収後も受領する結果"
         resumed = await retained.resume("再開")
