@@ -307,7 +307,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
     *,
-    start_observation: str | None = None,
+    start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
     startup_profile: Annotated[
         startup_features.StartupProfile | None,
         Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
