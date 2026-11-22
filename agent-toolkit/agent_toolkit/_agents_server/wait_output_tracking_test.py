@@ -358,8 +358,9 @@ def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> No
     assert not session.live_child_session_ids
 
 
+@pytest.mark.parametrize("registry_readable", [True, False])
 @pytest.mark.asyncio
-async def test_old_background_output_does_not_release_later_turn(tmp_path, monkeypatch):
+async def test_old_background_output_does_not_release_later_turn(tmp_path, monkeypatch, registry_readable):
     parent = state.SessionState("parent", str(tmp_path))
     parent.live_child_session_ids.add("child")
     output = tmp_path / "wait.out"
@@ -371,6 +372,8 @@ async def test_old_background_output_does_not_release_later_turn(tmp_path, monke
         session_registry.publish(
             "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=2
         )
+        if not registry_readable:
+            (session_registry.registry_directory() / "child.json").write_text("{", encoding="utf-8")
         return collected
 
     monkeypatch.setattr(wait_output_tracking, "run_file_operation", restart_after_read)

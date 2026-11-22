@@ -225,7 +225,11 @@ def _discard_initial_turn_collections(session: SessionState, children: set[str])
             continue
         # 出力を読んだ後、現在のturn番号を取得し、別の処理へ制御を渡す前に追跡を更新する。
         current = session_registry.resolve(child)
-        if not current.resume_pending and current.recorded_turn_seq in {None, 1}:
+        if (
+            current.state != session_registry.Resolution.UNREADABLE
+            and not current.resume_pending
+            and current.recorded_turn_seq in {None, 1}
+        ):
             _discard_collected(session, {child})
 
 
