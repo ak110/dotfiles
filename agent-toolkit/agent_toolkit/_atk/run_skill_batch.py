@@ -33,6 +33,8 @@ from agent_toolkit._atk import (
     run_script,
     run_skill_batch_evidence,
 )
+from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
+from agent_toolkit._atk.managed_temp.sweep_lock import sweep_access
 from agent_toolkit._atk.wi import add, frontmatter, layout, repo, sync
 from agent_toolkit._atk.wi.constants import (
     WI_STATE_ADOPTED,
@@ -710,10 +712,19 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
         outcome.report_success(f"既に完了したbatch: {path}")
         return 0
     try:
+        if any(prepared.get("work_dir") for prepared in manifest["prepared"]):
+            # 掃引の使用中判定から削除までの間に、期限超過の準備資料を再び使い始めない。
+            with sweep_access(managed_temp_paths.temp_root(), managed_temp_paths.state_root(create=False)) as locked:
+                if not locked:
+                    outcome.report_failure(
+                        "準備資料の領域を掃引中",
+                        next_action=f"掃引が終わってから atk run-skill --resume {manifest['run_id']} で再開する",
+                    )
+                    return 1
+                _pin_prepared(manifest)
         if manifest["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
             args.resume_usage_limited = True
             session_review.BatchWriter(path).resume_usage_limited()
-        _pin_prepared(manifest)
         code = execute(args)
         manifest = session_review.read(path)
         if code:

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent_toolkit._atk import managed_temp, run_script, run_skill_batch
-from agent_toolkit._atk.managed_temp import sweep
+from agent_toolkit._atk.managed_temp import paths, sweep, sweep_lock
 from agent_toolkit._atk.wi import add, layout
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, session_evidence_support
@@ -184,6 +184,39 @@ def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(m
     now = datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=8)
     _assert_sweeps_keep(monkeypatch, {root}, now)
     assert (bundle / "scope.json").is_file()
+
+
+def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
+    """掃引が保持を調べた後は、掃引終了まで資料の利用を再開しない。"""
+    work_dir = managed_temp.create_managed_temp("review-batch")
+    bundle = work_dir / "bundle"
+    bundle.mkdir()
+    scope = bundle / "scope.json"
+    scope.write_text("{}\n", encoding="utf-8")
+    path = session_review.directory() / "runs" / ("b" * 32 + ".json")
+    writer = session_review.BatchWriter(path)
+    writer.create(
+        {
+            "run_id": path.stem,
+            "manifest_path": str(path),
+            "status": "running",
+            "targets": [],
+            "prepared": [{"session_id": "source", "work_dir": str(work_dir)}],
+        }
+    )
+    args = argparse.Namespace(run_id=path.stem, batch_manifest=str(path))
+    monkeypatch.setattr(run_skill_batch, "_finish_batch", lambda _manifest, _path: 0)
+    calls = []
+
+    def execute(_args):
+        calls.append(scope.read_text(encoding="utf-8"))
+        return 0
+
+    with sweep_lock.sweep_access(paths.temp_root(), paths.state_root(create=False)) as locked:
+        assert locked and run_skill_batch._resume_batch(args, execute) == 1
+        assert not calls
+    assert run_skill_batch._resume_batch(args, execute) == 0
+    assert calls == ["{}\n"]
 
 
 @pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])
