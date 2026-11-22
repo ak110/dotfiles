@@ -426,12 +426,18 @@ class CodexResource:
         else:
             if residual:
                 return residual
-            await self.resource.operation("release")
             released = True
+        reader = self._task if self._task is not asyncio.current_task() else None
+        if reader is not None:
+            # broker登録を除いた後に、起こされた受信側が同じIDを読み直さない。
+            reader.cancel()
+        try:
+            if released:
+                await self.resource.operation("release")
+        finally:
+            if reader is not None:
+                await asyncio.gather(reader, return_exceptions=True)
         self._closed = True
-        if self._task is not None and self._task is not asyncio.current_task():
-            self._task.cancel()
-            await asyncio.gather(self._task, return_exceptions=True)
         if released:
             # 受信処理を止めた後の未確認イベントを読む主体は無い。残すとbrokerが資源を保持し続け、元世代が退出できない。
             await self.resource.operation("discard")

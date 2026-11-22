@@ -233,6 +233,42 @@ async def test_close_after_owner_generation_exited(monkeypatch, app_server_alive
 
 
 @pytest.mark.asyncio
+async def test_close_stops_consumer_before_releasing_broker_resource() -> None:
+    """解放応答が遅れても、意図した停止を受信障害として報告しない。"""
+    waiting = asyncio.Event()
+    reads: list[str] = []
+    failures: list[BaseException] = []
+
+    class _DelayedReply(ResourceBroker):
+        async def events(self, resource_id: str, owner_generation: str, after_sequence: int, wait: float = 0) -> list[dict]:
+            reads.append(resource_id)
+            waiting.set()
+            return await super().events(resource_id, owner_generation, after_sequence, wait)
+
+        async def release(self, resource_id: str, owner_generation: str) -> None:
+            await super().release(resource_id, owner_generation)
+            # 別世代へ解放結果が届く前に、待機していた受信側へ実行枠を渡す。
+            await asyncio.sleep(0)
+
+    async def unexpected(_event: Any) -> None:
+        pytest.fail("未発生のイベントを受信した")
+
+    async def failed(error: BaseException) -> None:
+        failures.append(error)
+
+    broker = _DelayedReply("G1")
+    runtime = service_io.Runtime("G1", {"generation": "G1"}, broker)
+    client = service_io.CodexResource.create(runtime, _RawCodex, unexpected, unexpected, failed)
+    await client.start()
+    async with asyncio.timeout(3):
+        await waiting.wait()
+        assert await client.close() == []
+    assert reads == [client.resource.identifier]
+    assert not failures
+    assert broker.backlog(client.resource.identifier) is None
+
+
+@pytest.mark.asyncio
 async def test_closing_after_reader_stopped_releases_resource_with_unread_events() -> None:
     """受信処理が止まった後に閉じた資源は、未確認のイベントを残してbrokerに留まらない。
 
