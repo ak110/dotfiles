@@ -71,7 +71,7 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
-lazy from agent_toolkit._hooks.delivered_repost_gate import before_next_response, is_send_to_user_tool
+lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._plan.path_kinds import is_plan_main_file
@@ -626,14 +626,6 @@ def main(payload_text: str) -> int:
         ):
             notices.append(_llm_notice(truncated))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
-        current_delivery = None
-        if is_send_to_user_tool(tool_name):
-            # pylint: disable-next=protected-access  # 進捗報告の消費と同じ成功判定を使う。
-            current_delivery = event_name == "PostToolUse" and _progress_self_check._delivery_succeeded(
-                payload.get("tool_response")
-            )
-        if (delivery_reminder := before_next_response(payload, current_delivery=current_delivery)) is not None:
-            notices.append(_llm_notice(delivery_reminder, tag="notice"))
         if event_name == "PostToolUse" and tool_name != "Skill":
             _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:

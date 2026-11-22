@@ -6,7 +6,6 @@ import pathlib
 import pytest
 
 from agent_toolkit._hooks import stop
-from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を教えて"}}
@@ -355,35 +354,3 @@ def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: p
     }
     result = _stop([_HUMAN, _SEND, _result(), command, _text("送達済みです。検証も通りました。")], tmp_path)
     assert result["decision"] == "block"
-
-
-@pytest.mark.parametrize(
-    ("entries", "tool", "event", "result", "expected"),
-    [
-        ([_HUMAN, _SEND], _SEND_TO_USER, "PostToolUse", {"ok": True}, True),
-        ([_HUMAN, _SEND, _result()], "Bash", "PostToolUse", {}, True),
-        ([_HUMAN, _SEND, _result()], "Bash", "PostToolUseFailure", {}, True),
-        ([_HUMAN, _SEND, _result(), _HUMAN], "Bash", "PostToolUse", {}, False),
-        ([_HUMAN, _SEND, _result(error=True)], _SEND_TO_USER, "PostToolUseFailure", {}, False),
-        ([_HUMAN, _SEND, _result(error=True)], "Bash", "PostToolUse", {}, False),
-    ],
-)
-def test_posttooluse_reminds_before_generation_only_after_success(tmp_path, entries, tool, event, result, expected):
-    path = tmp_path / "transcript.jsonl"
-    path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
-    outcome = _run_hook_in_process(
-        "posttooluse",
-        {
-            "session_id": "repost-reminder",
-            "transcript_path": str(path),
-            "hook_event_name": event,
-            "tool_name": tool,
-            "tool_input": {},
-            "tool_response": result,
-        },
-    )
-    assert outcome.returncode == 0
-    output = json.loads(outcome.stdout) if outcome.stdout else {}
-    context = output.get("hookSpecificOutput", {}).get("additionalContext", "")
-    assert ("このターンで報告は送信済みです" in context) is expected
-    assert ("終了の合図が必要なら `…` を使える" in context) is expected
