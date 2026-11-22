@@ -116,7 +116,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    再レビューの範囲は、前回指摘の修正、前回のレビューHEADから今回のHEADまでの修正差分、変えた識別子と契約の直接影響範囲である（定義元は`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」）。
 3. 本書「完成条件証拠の受領確認」の手順2で保った開始時点とHEADは、rebaseで開始時点が変わっても上書きせず、両方の差分の一致とファイル別の申告を同じ受領確認へ渡す。
    履歴を書き換えた後の開始時点には、書き換え後の対応するOIDを使う。
-4. 第3ラウンド以降も未解決の指摘が残る時は、修正に着手する前に`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」を適用させる。
+4. 修正に着手する前に、`agent-basics:review-standards/references/reviewee.md`「方式見直しと再レビュー」の手順11に該当するかを確かめる。
 
 ## ラウンド番号の保持先
 

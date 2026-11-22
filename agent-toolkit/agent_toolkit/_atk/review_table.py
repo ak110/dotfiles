@@ -215,7 +215,7 @@ def init(path: str | Path) -> int:
     return 0
 
 
-def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "詳細") -> int:
+def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "") -> int:
     """レビュー担当の指摘行を追加する。"""
     row = [round_value, _normalize_track(track), location, issue, level, "", ""]
     return _add_rows(_path(str(path)), [row])

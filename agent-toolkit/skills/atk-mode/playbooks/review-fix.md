@@ -27,7 +27,8 @@
 3. 提出前の記録との比較（`agent-basics:review-standards/references/reviewee.md`「指摘発生時の扱い」）では、提出前の主張と根拠を既存の進捗ログ、検証記録、引き継ぎ記録から読む。
    比べた結果は、専用の台帳を作らずに指摘管理表の応答へ書く。
 4. 再レビューでは、個別修正に着手する前に`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「反復原因の判定」を行う。
-   同じ指摘の反復と第3ラウンド以降の未解決の指摘には、`agent-basics:review-standards/references/reviewee.md`「同じ指摘の反復」「方式見直しと再レビュー」を適用し、理由と結論を各指摘の応答に書く。
+   同じ指摘の反復は `agent-basics:review-standards/references/reviewee.md` で扱い、方式見直しの契機は同資料の手順11で判定する。
+   理由と結論を各指摘の応答に書く。
 5. 広がりの検索と個別判定を専用の担当へ渡す時は`agent-toolkit:atk-mode/roles/similar-review.parent.md`で起動し、受け取った結果からの原因の判断と採否は自分が持つ。
 6. 採用した指摘とCI記録の失敗は`agent-toolkit:atk-mode/playbooks/implementation.md`「実装」の手順で直して試験し、返却は本書「完了報告」で行う。
    修正の方針で新しい操作・機構・副作用を採用する前に、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`「計画準備の受領」手順3の禁止条件と突き合わせる。

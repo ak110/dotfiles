@@ -470,7 +470,7 @@ HELP: dict[str, dict[str, str]] = {
     "atk review-table": {
         "summary": "レビュー指摘管理表（7列TSV）を操作する",
         "description": "レビュー指摘管理表（7列TSV）を操作する。\n\n目的: 実行レビューの指摘、指摘レベル、対応内容を7列のTSVへ排他的に記録し、保存済みの旧形式のレビュー指摘管理表を読み取る。\n利用場面: レビュー担当が指摘を追加するとき。レビューイーが応答を記録するとき。保存済みの旧レビュー結果を参照するとき。\n対象と出力: 現行のレビュー指摘管理表を読み書きし、保存済みの旧形式のレビュー指摘管理表は読み取り専用で扱う。保存済み計画の領域（private-notesの`plans`配下）にある表への`init`・`add`・`respond`は、表を変更せず非0で終了する。この領域の表へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから更新し、`atk plans commit`で保存する。サブコマンドを指定しない場合はサブコマンド一覧を標準出力へ書き、何も変更しない。\n前提: 表のパスは呼び出し元が指定する。同時更新は本コマンドが排他制御する。\n復元・後始末: 記録した行の取り消しは、表を保管するリポジトリのGit履歴から行う。",
-        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は`要件`、`仕様`、`詳細`、`実装`のいずれかを指定する。新しく記録する行では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
+        "epilog": "実行例:\n\n  atk review-table show <表のパス>\n\n列は`round`、`track`、`location`、`issue`、`level`、`response`、`no-response-reason`の順とする。対応要否は専用の列を持たず、`response`と`no-response-reason`のどちらが埋まっているかで表す。`level`は空か、`要件`、`仕様`、`詳細`、`実装`のいずれかとする。新しく記録する行では`track`に`exec-review`を指定する。`plan-review`、`implementation-review`、`plan-conformance`および`independent`は保存済みの表の読み取り互換として扱い、`implementation-review`は読み込み時に`exec-review`へ正規化する。保存済みの8列形式は`response-needed`を読み込みの対象から外す。保存済みの7列形式のうち5列目が`yes`・`no`の値域を持つ行は旧形式とみなし、`level`を空として`response-needed`を読み込みの対象から外す。",
     },
     "atk review-table init": {
         "summary": "空のレビュー指摘管理表を作成する",
@@ -490,9 +490,9 @@ HELP: dict[str, dict[str, str]] = {
         "指摘箇所と指摘内容を送信元本文と比較し、既存行も含む全行の一致を確かめる。"
         "保存本文そのものは書かない。不一致では非0で終了し、差異の特定に必要な内容を標準エラーへ書く。"
         "\n前提: `--round`と`--track`は全件共通。"
-        "`--round`は現在のround（同じtrackの指摘の行と有効な判定の最大のround）以上とする。単数形は`--level`・`--location-file`・`--issue-file`を使う。"
+        "`--round`は現在のround（同じtrackの指摘の行と有効な判定の最大のround）以上とする。単数形は`--location-file`・`--issue-file`を使い、`--level`の省略時は空で保存する。"
         "複数件は`--items-file`へUTF-8の非空JSON配列を渡す。"
-        "各要素は文字列location・issue・levelの3必須キーだけを持ち、levelは要件・仕様・詳細・実装から選ぶ。"
+        "各要素は文字列location・issueが必須で、levelを指定する時は要件・仕様・詳細・実装から選ぶ。"
         "次は--round=2で受け付ける例（round 1では区分の行を省ける）。\n"
         '  [{"location":"対象の位置","issue":"指摘本文\\n類似見直し完了件数: 2\\n区分: 新しい変更","level":"仕様"}]\n'
         "単数形の3オプションと配列入力は併用できない。"

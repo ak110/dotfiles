@@ -68,7 +68,7 @@ cleanなcommitどうしは`git diff <取得時のHEAD> <レビューHEAD> -- <�
 
 - 指摘本文には`類似見直し完了件数:`の行（`agent-toolkit:atk-mode/references/review-record-response.md`「レビュー指摘管理表への応答」の同じラベル）を置く。
   2以上のroundでは`区分:`の行（`agent-basics:review-standards/references/reviewer.md`「再レビューの場合」手順5の区分）も置く。
-- 指摘1件は`atk review-table add <表の絶対パス> --round <round> --track exec-review --level <指摘レベル> --location-file <指摘箇所PATH> --issue-file <指摘内容PATH>`で登録する。
+- 指摘1件は`atk review-table add <表の絶対パス> --round <round> --track exec-review --location-file <指摘箇所PATH> --issue-file <指摘内容PATH>`で登録する。
 - 同じラウンドで確定した複数の指摘は`atk review-table add <表の絶対パス> --round <round> --track exec-review --items-file <JSONの絶対パス>`で一括して登録する。
   JSONの形は`atk review-table add --help`にある。
 - 再レビューでは前の指摘ラウンドの各行を`atk review-table recheck <表の絶対パス> --row-id <ROW_ID> --round <round> --verdict <完了|対応不十分|未対応>`で判定する。

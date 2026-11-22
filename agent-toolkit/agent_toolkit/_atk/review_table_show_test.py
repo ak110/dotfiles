@@ -176,7 +176,7 @@ def test_show_jsonl_decodes_control_characters_and_quotes(
 
     assert table.show(path, output_format="jsonl") == 0
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-    expected = ["1", _TRACK, "module.py:10", issue, "詳細", "", ""]
+    expected = ["1", _TRACK, "module.py:10", issue, "", "", ""]
     assert rows == [{"row-id": 1, **dict(zip(table.COLUMNS, expected, strict=True))}]
 
 
@@ -408,3 +408,30 @@ def test_public_summary_omits_history_when_comparison_has_no_input(
     recheck = {"recheck_round", "recheck_pending_row_ids", "recheck_pending_count", "recheck_counts"}
     assert set(summary) == (counts | recheck if case == "no-current" else counts)
     assert summary["total_count"] == summary["unanswered_count"] == (0 if case == "no-current" else 1)
+
+
+def test_public_single_add_without_level_stores_an_empty_level(tmp_path: pathlib.Path) -> None:
+    """公開CLIの単件登録では、指摘レベルを省略した時は空欄を保存する。"""
+    path = tmp_path / "plan.exec-review.tsv"
+    location = tmp_path / "location.txt"
+    issue = tmp_path / "issue.txt"
+    location.write_text("module.py:10", encoding="utf-8")
+    issue.write_text("類似見直し完了件数: 0\n根拠を確かめる。", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as returned:
+        atk.main(
+            [
+                "review-table",
+                "add",
+                str(path),
+                "--round=1",
+                f"--track={_TRACK}",
+                "--location-file",
+                str(location),
+                "--issue-file",
+                str(issue),
+            ],
+            home=tmp_path,
+        )
+    assert returned.value.code == 0
+    assert table._read(path)[0][4] == ""  # pylint: disable=protected-access
