@@ -12,13 +12,72 @@ import pathlib
 import shutil
 import subprocess
 import sys
+import time
 
+import psutil
 import pytest
 
 from pytools.ssh_unelevated import _cli
 
 _RUN_ID = "0123456789abcdef"
 _requires_pwsh = pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh未導入")
+
+
+@pytest.mark.skipif(not hasattr(os, "WNOWAIT"), reason="waitidのWNOWAITが必要")
+@pytest.mark.parametrize(("exit_code", "inherit"), [(0, False), (23, False), (0, True)])
+def test_posix_reclaims_helpers_after_ssh_exits(exit_code: int, inherit: bool) -> None:
+    helper_stream = "None" if inherit else "subprocess.DEVNULL"
+    fake_ssh = (
+        "import subprocess, sys;"
+        f"p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+        f"stdout={helper_stream}, stderr={helper_stream});"
+        "print(p.pid, flush=True);"
+        f"sys.exit({exit_code})"
+    )
+    with _cli.process_scope(
+        [sys.executable, "-c", fake_ssh],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as process:
+        started = time.monotonic()
+        stdout, _ = _cli._communicate_posix(process, b"", 15)
+        assert time.monotonic() - started < 15
+        assert process.returncode == exit_code
+        pid = int(stdout)
+        deadline = time.monotonic() + 3
+        while psutil.pid_exists(pid):
+            try:
+                if psutil.Process(pid).status() == psutil.STATUS_ZOMBIE:
+                    break
+            except psutil.NoSuchProcess:
+                break
+            if time.monotonic() >= deadline:
+                pytest.fail("sshの補助プロセスが残った")
+            time.sleep(0.02)
+
+
+@pytest.mark.skipif(not hasattr(os, "WNOWAIT"), reason="waitidのWNOWAITが必要")
+def test_posix_drains_large_output_while_sending_input() -> None:
+    size = 1024 * 1024
+    fake_ssh = (
+        "import sys;"
+        f"sys.stdout.buffer.write(b'o' * {size});"
+        f"sys.stderr.buffer.write(b'e' * {size});"
+        "sys.stdout.buffer.write(sys.stdin.buffer.read())"
+    )
+    with _cli.process_scope(
+        [sys.executable, "-c", fake_ssh],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    ) as process:
+        stdout, stderr = _cli._communicate_posix(process, b"i" * size, 15)
+        assert process.returncode == 0
+    assert stdout == b"o" * size + b"i" * size
+    assert stderr == b"e" * size
 
 
 def _remote_stdout(output: bytes, result: dict[str, object], run_id: str = _RUN_ID) -> bytes:
