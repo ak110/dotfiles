@@ -570,6 +570,7 @@ def test_launcher_bootstrap_diagnostic_survives_runtime_launch_failure(
     assert not list(home.rglob("*.bootstrap"))
 
 
+@_LINUX_ONLY
 def test_path_uv_is_not_used_when_native_uv_is_absent(tmp_path: pathlib.Path) -> None:
     """公式パスが存在しない場合はPATH上のuvを選ばず終了する。"""
     result, calls = _run_launcher(tmp_path, native_uv=False, path_uv=True)
