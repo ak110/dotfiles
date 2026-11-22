@@ -336,7 +336,8 @@ def test_wrapped_uwi_preview_matches_saved_question(tmp_path, monkeypatch, capsy
     with pytest.raises(SystemExit) as save:
         atk.main([*argv, "--compare-opening-file", str(preview)], home=tmp_path)
     assert save.value.code == 0, capsys.readouterr().err
-    saved = [path for path in notes.rglob("*.md") if ("## 質問\n\n" + opening) in path.read_text(encoding="utf-8")]
+    expected_question = "## 質問\n\n" + opening
+    saved = [path for path in notes.rglob("*.md") if expected_question in path.read_text(encoding="utf-8")]
     assert len(saved) == 1
 
 
