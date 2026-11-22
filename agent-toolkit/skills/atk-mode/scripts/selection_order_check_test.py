@@ -1,4 +1,4 @@
-"""選定生成が、新しく着手するAWIを交互の選定順の先頭から選んだかと、urgentの根拠の欠落を検出することを確かめる。"""
+"""選定生成が処理可能な候補の脱落とurgentの根拠の欠落を検出することを確かめる。"""
 
 from __future__ import annotations
 
@@ -46,28 +46,28 @@ def _facts() -> dict[str, dict[str, Any]]:
     return {row["filename"]: row for row in rows}
 
 
-@pytest.mark.parametrize(
-    "selected",
-    [
-        {"05-answered.md", "04-processing.md", "01-old.md", "08-urgent.md"},
-        {"01-old.md", "08-urgent.md", "02-old.md", "09-urgent.md", "03-old.md"},
-        set(),
-    ],
-)
-def test_prefix_of_alternating_order_is_accepted(selected: set[str]) -> None:
-    """UWI・処理中は順序の対象外で、新規AWIは最古・urgent最古の交互の先頭から選ぶ。依存待ちは選ばれない。"""
-    selection_contract._check_selection_order(_facts(), selected, set())  # pylint: disable=protected-access
+def _required(facts: dict[str, dict[str, Any]]) -> set[str]:
+    return facts.keys() - {"00-wait.md"}
 
 
-def test_skipping_oldest_for_urgent_items_is_rejected() -> None:
-    """urgentだけを先に全件入れて古い項目を押し出す選定は拒否し、期待の先頭を示す。"""
-    with pytest.raises(ValueError, match="01-old.md, 08-urgent.md"):
-        selection_contract._check_selection_order(_facts(), {"08-urgent.md", "09-urgent.md"}, set())  # pylint: disable=protected-access
+def test_all_ready_and_processing_candidates_are_accepted() -> None:
+    facts = _facts()
+    selection_contract._check_ready_selection(facts, _required(facts), set())  # pylint: disable=protected-access
 
 
-def test_excluded_candidate_is_removed_from_order() -> None:
-    """除外候補として理由を記録した項目は順から除き、次の項目で埋める。"""
-    selection_contract._check_selection_order(_facts(), {"02-old.md", "08-urgent.md"}, {"01-old.md"})  # pylint: disable=protected-access
+def test_selecting_only_the_prefix_is_rejected() -> None:
+    """先頭の一部しか選ばなければ、後続の処理可能な候補を示す。"""
+    with pytest.raises(ValueError, match="02-old.md.*03-old.md"):
+        selection_contract._check_ready_selection(  # pylint: disable=protected-access
+            _facts(), {"05-answered.md", "04-processing.md", "01-old.md", "08-urgent.md"}, set()
+        )
+
+
+def test_excluded_candidate_is_not_required() -> None:
+    """既存の認可・処理可否で除外された候補は全件判定の対象外である。"""
+    facts = _facts()
+    excluded = {"01-old.md"}
+    selection_contract._check_ready_selection(facts, _required(facts) - excluded, excluded)  # pylint: disable=protected-access
 
 
 def test_urgent_without_reason_is_rejected() -> None:
@@ -75,4 +75,4 @@ def test_urgent_without_reason_is_rejected() -> None:
     facts = _facts()
     facts["08-urgent.md"]["priority_reason"] = {**_REASON, "priority_release": ""}
     with pytest.raises(ValueError, match="08-urgent.md"):
-        selection_contract._check_selection_order(facts, {"01-old.md"}, set())  # pylint: disable=protected-access
+        selection_contract._check_ready_selection(facts, {"01-old.md"}, set())  # pylint: disable=protected-access

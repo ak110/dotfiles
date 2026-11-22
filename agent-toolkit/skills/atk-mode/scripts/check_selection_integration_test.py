@@ -681,3 +681,47 @@ def test_changed_requirement_finalizes_new_plan_in_current_worktree(
     assert not plan.exists()
     assert list((notes / "plans").rglob(plan.name))
     assert "state: adopted" in source.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("old_overlap", [False, True])
+def test_merge_derives_order_after_applying_new_write_target(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, old_overlap: bool
+) -> None:
+    """追加先に新しい書込重複ができても、手で段階を書かずに1回の合流で反映する。"""
+    repo, notes = env
+    shared, old = "src/model.py", "src/independent.py"
+    for path in (shared, old):
+        (repo / path).write_text("x", encoding="utf-8")
+    chosen = shared if old_overlap else old
+    for name, target in (("a.md", shared), ("b.md", chosen), ("c.md", shared)):
+        _awi(notes, name, f"`{target}`を変更する。")
+    source = _write_selection(
+        tmp_path / "selection.yaml",
+        [
+            {"WI": "a.md", "レーン": "lane-01", "書込対象": [shared]},
+            {"WI": "b.md", "レーン": "lane-02", "書込対象": [chosen]},
+        ],
+        [{"レーン": "lane-01", "段階": 2, "先行レーン": ["lane-02"]}, {"レーン": "lane-02", "段階": 1}]
+        if old_overlap
+        else None,
+    )
+    extra = _write_selection(tmp_path / "addition.yaml", [{"WI": "c.md", "レーン": "lane-99", "書込対象": [shared]}])
+    raw = yaml.safe_load(extra.read_text(encoding="utf-8"))
+    del raw["初回配分"]
+    del raw["レーンの所要時間"][0]["根拠"]
+    raw["単一段階案の完了見込み秒数"] = 1320
+    extra.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"lane-99": "lane-02"}), encoding="utf-8")
+    assert (
+        _dispatch(
+            str(source), "--merge", str(extra), "--lane-map", str(mapping), "--output", str(source), "--work-dir", str(repo)
+        )
+        == 0
+    )
+    saved = yaml.safe_load(source.read_text(encoding="utf-8"))
+    predecessor, successor = ("lane-02", "lane-01") if old_overlap else ("lane-01", "lane-02")
+    assert {row["レーン"]: (row["段階"], row["先行レーン"]) for row in saved["レーンの所要時間"]} == {
+        predecessor: (1, []),
+        successor: (2, [predecessor]),
+    }

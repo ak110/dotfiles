@@ -89,7 +89,7 @@ def test_public_command_checks_spaced_path_coverage_and_overlap(
     assert _dispatch(str(path), "--work-dir", str(repo)) == expected
 
 
-@pytest.mark.parametrize("option", ["--merge", "--lane-map", "--output"])
+@pytest.mark.parametrize("option", ["--merge", "--lane-map"])
 def test_merge_options_must_be_provided_together(tmp_path: pathlib.Path, option: str) -> None:
     """統合モードの不完全な呼出は、ファイルを読む前に入力誤りとして拒否する。"""
     with pytest.raises(SystemExit) as error:
@@ -476,3 +476,53 @@ def test_write_order_does_not_imply_start_dependency(tmp_path: pathlib.Path) -> 
     assert pending["lane-02"]["先行レーン"] == pending["lane-03"]["先行レーン"] == ["lane-01"]
     assert pending["lane-02"]["着手前に必要なレーン"] == []
     assert pending["lane-03"]["着手前に必要なレーン"] == ["lane-01"]
+
+
+def test_public_command_derives_stages_from_reordered_rows(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
+) -> None:
+    """書込が交わる組の順を1回の保存で変え、成果依存と独立レーンは別に扱う。"""
+    repo, notes = env
+    targets = {"a": "src/model.py", "b": "src/model.py", "c": "src/independent.py", "d": "src/consumer.py"}
+    items = []
+    for lane, target in targets.items():
+        (repo / target).write_text("x", encoding="utf-8")
+        _awi(notes, f"{lane}.md", f"`{target}`を変更する。")
+        items.append({"WI": f"{lane}.md", "レーン": lane, "書込対象": [target]})
+    costs = [
+        {"レーン": "b", "段階": 2, "先行レーン": ["a"]},
+        {"レーン": "a", "段階": 1},
+        {"レーン": "c", "段階": 1},
+        {"レーン": "d", "段階": 1, "先行レーン": [], "着手前に必要なレーン": ["b"]},
+    ]
+    source = _write_selection(tmp_path / "selection.yaml", items, costs)
+    output = tmp_path / "reordered.yaml"
+    assert _dispatch(str(source), "--work-dir", str(repo), "--output", str(output)) == 0
+    saved = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert {row["レーン"]: (row["段階"], row["先行レーン"]) for row in saved["レーンの所要時間"]} == {
+        "a": (2, ["b"]),
+        "b": (1, []),
+        "c": (1, []),
+        "d": (2, ["b"]),
+    }
+
+
+def test_public_command_rejects_order_conflicting_with_required_output(
+    env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """同じ書込先の行順と逆方向の成果依存を循環として拒否し、結果を置換しない。"""
+    repo, notes = env
+    path_name = "src/model.py"
+    (repo / path_name).write_text("x", encoding="utf-8")
+    for name in ("a.md", "b.md"):
+        _awi(notes, name, f"`{path_name}`を変更する。")
+    source = _write_selection(
+        tmp_path / "selection.yaml",
+        [{"WI": f"{lane}.md", "レーン": lane, "書込対象": [path_name]} for lane in ("a", "b")],
+        [{"レーン": "a", "着手前に必要なレーン": ["b"]}, {"レーン": "b"}],
+    )
+    output = tmp_path / "reordered.yaml"
+    output.write_text("以前の選定", encoding="utf-8")
+    assert _dispatch(str(source), "--work-dir", str(repo), "--output", str(output)) == 2
+    assert "循環" in capsys.readouterr().err
+    assert output.read_text(encoding="utf-8") == "以前の選定"

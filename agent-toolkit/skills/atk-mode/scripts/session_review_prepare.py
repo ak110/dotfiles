@@ -407,15 +407,20 @@ def main(argv: list[str] | None = None, *, now: datetime.datetime | None = None)
         evidence_index = [] if lightweight else _read_jsonl(bundle_dir / "candidate-evidence.jsonl")
     except (OSError, ValueError, KeyError) as error:
         return _missing("bundle", str(error))
-    (bundle_dir / "unconfirmed.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
-    )
-    (bundle_dir / "recovered.jsonl").write_text(
-        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
-    )
-    source_path.write_text(
-        json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False), encoding="utf-8"
-    )
+    first_window = args.conversation_window and args.conversation_after is None
+    if first_window or (not lightweight and unresolved):
+        (bundle_dir / "unconfirmed.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in unresolved), encoding="utf-8"
+        )
+    if first_window or (not lightweight and recovered):
+        (bundle_dir / "recovered.jsonl").write_text(
+            "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in recovered), encoding="utf-8"
+        )
+    if first_window:
+        source_path.write_text(
+            json.dumps({"session_arguments": session_arguments, "observed_at": observed_at}, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     # 準備と証拠照会で同じ入力指定を使い、
     # 全文を照会するコマンドとして示す。

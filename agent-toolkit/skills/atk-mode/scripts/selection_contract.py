@@ -128,17 +128,8 @@ def require_shared_wait_basis(correction: object) -> None:
         )
 
 
-def _check_selection_order(facts: Mapping[str, Mapping[str, typing.Any]], selected: set[str], excluded: set[str]) -> None:
-    """新しく着手するAWIの選定が、最古枠とurgent枠の交互の順の先頭からの連続になっているかを確かめる。
-
-    処理中・再開位置の項目と回答済みUWIは順序の対象外とする。除外候補は意味判断で外した項目として順から除く。
-    意味（損失の根拠が妥当か）は起票・観測担当が判断し、ここでは順序と根拠の欠落だけを扱う。
-    """
-    new_awis = [
-        (name, str(fact.get("priority") or "normal"))
-        for name, fact in facts.items()
-        if fact.get("type") == "awi" and fact.get("state") == "inbox" and fact.get("ready") is True and name not in excluded
-    ]
+def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], selected: set[str], excluded: set[str]) -> None:
+    """処理できる候補の脱落と、urgentの根拠の欠落を検出する。"""
     for name, fact in facts.items():
         if fact.get("priority") == _wi_priority.URGENT:
             reason = fact.get("priority_reason")
@@ -147,15 +138,13 @@ def _check_selection_order(facts: Mapping[str, Mapping[str, typing.Any]], select
                     f"{name}: urgentに影響・根拠・解除条件のいずれかが無い。"
                     "`atk wi set-priority`で根拠を補うか、損失を示せなければnormalへ戻してから候補を取り直す"
                 )
-    order = _wi_priority.selection_order(new_awis)
-    chosen = [name for name in order if name in selected]
-    expected = order[: len(chosen)]
-    if set(chosen) != set(expected):
-        raise ValueError(
-            "新しく着手するAWIが選定順の先頭からの連続になっていない。"
-            f"先頭{len(chosen)}件の期待: {', '.join(expected)}。"
-            "最古の1件とurgentの最古の1件を交互に選ぶ順で選び直すか、外す項目を除外候補へ理由とともに記録する"
-        )
+    missing = sorted(
+        name
+        for name, fact in facts.items()
+        if (fact.get("ready") is True or fact.get("state") == "processing") and name not in selected and name not in excluded
+    )
+    if missing:
+        raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
 
 
 def generate_selection(
@@ -213,7 +202,7 @@ def generate_selection(
         or set(excluded) & seen
     ):
         raise ValueError("除外候補は候補にある未選定WIだけを重複なく指定する")
-    _check_selection_order(facts, seen, set(excluded))
+    _check_ready_selection(facts, seen, set(excluded))
     assignments = {item[_selection.WI_KEY]: item[_selection.LANE_KEY] for item in decisions if _selection.LANE_KEY in item}
     if len(assignments) != len(decisions):
         raise ValueError("レーン割当は意味判断として全WIへ明示する")
@@ -389,7 +378,7 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         start = row.get(_selection.START_DEPENDENCIES_KEY, [])
         if not isinstance(start, list) or any(not isinstance(item, str) for item in start) or len(set(start)) != len(start):
             errors.append(f"{label}: `{_selection.START_DEPENDENCIES_KEY}`が重複のない文字列の列ではない: {start!r}")
-        elif isinstance(prior, list) and any(item not in prior for item in start):
+        elif _selection.PRIOR_LANES_KEY in row and isinstance(prior, list) and any(item not in prior for item in start):
             errors.append(f"{label}: `{_selection.START_DEPENDENCIES_KEY}`は`{_selection.PRIOR_LANES_KEY}`の部分集合にする")
         for key in (_IMPLEMENTATION_SECONDS_KEY, _INTEGRATION_SECONDS_KEY):
             legacy = next(name for name, current in _LEGACY_SECONDS_KEYS.items() if current == key)
@@ -400,7 +389,7 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
         for key in (_selection.UNCORRECTED_IMPLEMENTATION_KEY, _selection.UNCORRECTED_INTEGRATION_KEY):
             if key in row and not is_non_negative_number(row[key]):
                 errors.append(f"{label}: `{key}`が0以上の数値ではない: {row[key]!r}")
-        if not isinstance(rationale, str) or not rationale.strip():
+        if _selection.RATIONALE_KEY in row and (not isinstance(rationale, str) or not rationale.strip()):
             errors.append(f"{label}: `{_selection.RATIONALE_KEY}`が空でない文字列ではない: {rationale!r}")
         state = row.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
         if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):

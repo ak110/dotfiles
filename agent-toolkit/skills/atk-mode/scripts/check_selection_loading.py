@@ -16,7 +16,7 @@ from agent_toolkit._git import remote as _git_remote
 from agent_toolkit._plan import locations as _plan_file
 from agent_toolkit._plan import selection as _selection
 from check_selection_common import _FIX_CONTENT, _FIX_PATHS, _FIX_PRIVATE_NOTES, InputError, Violation
-from check_selection_lanes import _resume_plan_id
+from check_selection_lanes import _resume_plan_id, derive_lane_order, derives_lane_order
 
 _FIX_YAML = (
     "選定結果のYAML構文を直す。文字列の値を単一引用符で囲み、値の中の`'`は`''`と重ねて書き直してから、同じコマンドを再実行する"
@@ -148,6 +148,7 @@ def load_selection(
     *,
     additional: bool = False,
     candidate_file: pathlib.Path | None = None,
+    reorder: bool = False,
 ) -> dict[str, object]:
     """選定結果を読み、YAML構文、欄名、必須の欄および値の型を確かめて返す。
 
@@ -170,7 +171,22 @@ def load_selection(
         selection = _generate_selection(selection, candidate_file, additional=additional)
     elif not additional:
         _drop_write_scope_reasons(selection)
+    if reorder and isinstance(selection, dict):
+        costs = _selection.lane_costs(selection)
+        if costs is not None:
+            integrated = _selection.integrated_lanes(selection)
+            for row in costs:
+                if isinstance(row, dict) and row.get(_selection.LANE_KEY) not in integrated:
+                    row.pop(_selection.STAGE_KEY, None)
+                    row.pop(_selection.PRIOR_LANES_KEY, None)
+            selection.pop("lane_costs", None)
+            selection[_selection.LANE_COSTS_KEY] = costs
     errors, model_errors = selection_contract.structure_errors(selection)
+    if candidate_file is not None and not additional and not (errors or model_errors) and derives_lane_order(selection):
+        try:
+            derive_lane_order(selection)
+        except (KeyError, ValueError) as error:
+            raise InputError(str(error), next_action=_FIX_CONTENT) from error
     if isinstance(selection, dict) and not additional and _selection.INITIAL_ALLOCATION_KEY not in selection:
         errors.append(
             "初回配分がない。初回候補WI・レーン割当・不可分成分の構成WIと結合条件を、"

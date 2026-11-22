@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections.abc
+import graphlib
 import itertools
 import pathlib
 import re
@@ -196,7 +197,7 @@ def _process_estimate_findings(
     if plan is None:
         if target_seconds is None:
             return [], []
-        return [], [f"全工程の見込みが無く、目標内の実行可能性は未確認。{_NEXT_PROCESS_ESTIMATE}。{_NEXT_TARGET_OVERRUN}"]
+        return [], [f"全工程の見込みが無く、目標との差は未計測。{_NEXT_PROCESS_ESTIMATE}"]
     assignments = {
         str(item[_selection.WI_KEY]): str(item[_selection.LANE_KEY])
         for item in typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -371,6 +372,63 @@ def overlapping_pairs(
             yield left, right, (low, high), overlaps
 
 
+def derives_lane_order(selection: dict[str, object]) -> bool:
+    """段階・先行を持たない意味判断入力を、保存済みの入力と区別する。"""
+    return all(
+        isinstance(row, dict) and _selection.STAGE_KEY not in row and _selection.PRIOR_LANES_KEY not in row
+        for row in _selection.lane_costs(selection) or []
+    )
+
+
+def _independent_overlaps(records: list[dict[str, object]]) -> set[tuple[str, str, str]]:
+    independent: set[tuple[str, str, str]] = set()
+    for row in records:
+        if row["判定"] != "交わらない":
+            continue
+        first = {part.strip() for part in _string_list(row, "レーン1の定義")}
+        second = {part.strip() for part in _string_list(row, "レーン2の定義")}
+        if first and second and not first & second:
+            left, right = sorted((str(row["レーン1"]), str(row["レーン2"])))
+            independent.add((left, right, str(row["共通パス"])))
+    return independent
+
+
+def derive_lane_order(selection: dict[str, object]) -> None:
+    """成果依存と、書込が交わる組の行順から、未統合レーンの段階と先行を保存する。"""
+    items = _selection.decisions(selection) or []
+    costs = typing.cast(list[dict[str, object]], _selection.lane_costs(selection) or [])
+    rows = {str(row[_selection.LANE_KEY]): row for row in costs}
+    order = {lane: index for index, lane in enumerate(rows)}
+    integrated = _selection.integrated_lanes(selection)
+    dependencies = {
+        lane: set(_string_list(row, _selection.START_DEPENDENCIES_KEY)) for lane, row in rows.items() if lane not in integrated
+    }
+    for lane, prior in dependencies.items():
+        if unknown := prior - rows.keys():
+            raise ValueError(f"{lane}: 開始依存が選定にない: {sorted(unknown)}")
+    records = typing.cast(list[dict[str, object]], selection.get(_selection.LANE_OVERLAPS_KEY, []))
+    independent = _independent_overlaps(records)
+    for left, right, lanes, paths in overlapping_pairs(items):
+        if _is_integrated(left, integrated) or _is_integrated(right, integrated):
+            continue
+        if all((*lanes, path) in independent for path in paths):
+            continue
+        earlier, later = sorted(lanes, key=order.__getitem__)
+        dependencies[later].add(earlier)
+    active = {lane: prior - integrated for lane, prior in dependencies.items()}
+    try:
+        sorted_lanes = list(graphlib.TopologicalSorter(active).static_order())
+    except graphlib.CycleError as error:
+        raise ValueError(f"開始依存と書込の統合順が循環する: {error.args[1]}") from error
+    stages: dict[str, int] = {}
+    for lane in sorted_lanes:
+        stages[lane] = 1 + max((stages[prior] for prior in active[lane]), default=0)
+        rows[lane][_selection.STAGE_KEY] = stages[lane]
+        rows[lane][_selection.PRIOR_LANES_KEY] = sorted(dependencies[lane], key=order.__getitem__)
+    selection.pop("lane_costs", None)
+    selection[_selection.LANE_COSTS_KEY] = costs
+
+
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object],
     costs: collections.abc.Sequence[object],
@@ -390,6 +448,7 @@ def _check_lane_overlaps(
     shared: set[tuple[str, str, str]] = set()
     dependencies: dict[str, set[str]] = {}
     historical: dict[str, set[str]] = {}
+    independent = _independent_overlaps(records)
     for left, right, lanes, overlaps in overlapping_pairs(items):
         shared.update((*lanes, path) for path in overlaps)
         left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
@@ -397,7 +456,7 @@ def _check_lane_overlaps(
         if left_stage == right_stage:
             if pending:
                 expected.update((lanes[0], lanes[1], path) for path in overlaps)
-        else:
+        elif any((*lanes, path) not in independent for path in overlaps):
             earlier, later = lanes if left_stage < right_stage else reversed(lanes)
             historical.setdefault(later, set()).add(earlier)
             if pending:

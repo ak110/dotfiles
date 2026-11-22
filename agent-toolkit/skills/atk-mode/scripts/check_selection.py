@@ -20,7 +20,8 @@ AWIの反映先は`## 反映内容と反映先`から、UWIは質問・判断材
 統合済み項目の選定時の前提は再検査しない。本文の特定、所属リポジトリ、レーン関係と初回配分は保持する。
 旧英字欄名の選定も読み、撤去済みの`書込範囲の理由`は読取時に除く。
 
-初回生成は意味判断YAMLと取得済み候補を`--candidate-file`で受け取り、鮮度と初回配分を生成する。
+初回生成は意味判断YAMLと取得済み候補を`--candidate-file`で受け取り、鮮度・初回配分・段階と先行を生成する。
+行順を組み替えた保存済み選定は`--output`だけを渡すと、段階と先行を求め直す。
 追加mergeは`--merge`・`--lane-map`・`--output`、書込予定の追加は`--extend-write-targets`・`--output`で受ける。
 書込予定の追加は新設先・重なりの記録と規範指定も更新でき、追加パスと同じか配下の非書込要素を除く。
 追加する列の省略は空列とし、記録だけの追記も受理する。既存の順序を保ち同じ値を重ねない。
@@ -100,6 +101,7 @@ from check_selection_lanes import (
     _check_lane_stages,
     _check_resume_plan_lanes,
     _completion_estimate,
+    derive_lane_order,
     missing_overlap_reason,
     process_estimate_warnings,
 )
@@ -576,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
         and args.reopen_wi is None
         and args.extend_write_targets is None
         and args.transfer_wi is None
-        and not (args.candidate_file is not None and args.merge is None and args.lane_map is None)
+        and not (args.output is not None and args.merge is None and args.lane_map is None)
         and any(value is not None for value in (args.merge, args.lane_map, args.output))
         and not all(value is not None for value in (args.merge, args.lane_map, args.output))
     ):
@@ -589,7 +591,22 @@ def main(argv: list[str] | None = None) -> int:
     merged_wis: frozenset[str] = frozenset()
     try:
         work_dir = _resolve_work_dir(args.work_dir)
-        selection = load_selection(args.selection_file, candidate_file=args.candidate_file if args.merge is None else None)
+        reorder = args.output is not None and all(
+            value is None
+            for value in (
+                args.candidate_file,
+                args.merge,
+                args.mark_integrated,
+                args.reopen_wi,
+                args.extend_write_targets,
+                args.transfer_wi,
+            )
+        )
+        selection = load_selection(
+            args.selection_file,
+            candidate_file=args.candidate_file if args.merge is None else None,
+            reorder=reorder,
+        )
         if args.reopen_wi is not None:
             try:
                 selection = reopen_wis(selection, args.reopen_wi, new_plan=args.new_plan)
@@ -675,6 +692,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise InputError("\n".join([*models, *structural]), next_action=_FIX_CONTENT)
         if args.mark_integrated is not None:
             _mark_integrated(selection, set(args.mark_integrated), processed_wis)
+        if reorder:
+            try:
+                derive_lane_order(selection)
+            except (KeyError, ValueError) as error:
+                raise InputError(str(error), next_action=_FIX_CONTENT) from error
         errors = check(
             args.selection_file,
             work_dir,

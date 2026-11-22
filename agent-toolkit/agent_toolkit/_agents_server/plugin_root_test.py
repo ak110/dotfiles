@@ -96,3 +96,14 @@ def test_independent_bootstrap_passes_held_cli_and_python_to_worker(tmp_path, mo
     assert captured["environment"]["PATH"].split(os.pathsep)[0] == str(held / "scripts")
     assert captured["environment"]["PYTHONPATH"] == str(held)
     assert captured["arguments"][0] == sys.executable
+
+
+def test_independent_versioned_source_reuses_the_held_copy(tmp_path):
+    """独立投入のstrict保持でも、同じ配布元と版の完成済み複製を共有する。"""
+    checkout = _source(tmp_path)
+    source = checkout.rename(checkout.parent / "1.0.0")
+    first = plugin_root.resolve_stable_plugin_root(source, independent=True)
+    second = plugin_root.resolve_stable_plugin_root(source, independent=True)
+    assert first == second and first != source
+    with plugin_root_leases.plugin_root_lock(first.parent):
+        assert plugin_root_leases.plugin_root_in_use(first.parent)

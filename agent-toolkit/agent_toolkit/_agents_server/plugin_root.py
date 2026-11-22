@@ -64,24 +64,25 @@ def resolve_stable_plugin_root(plugin_root: Path | None = None, *, independent: 
     使用する全プロセスの生存期間を回収側へ伝える。
     複製に失敗した場合は解決したrootをそのまま返し、複製の失敗を委譲の不成立へ変えない。
     `plugin_root`には解決済みrootを渡し、省略時は自身の位置から解決する。
-    `independent=True`ではcheckoutも新規に保持し、複製失敗を伝播させる。
+    `independent=True`では変更可能なcheckoutは新規に保持し、複製失敗を伝播させる。
     同じ保持rootからの子は完成マーカーを使い、自身のleaseを登録して同じ実体を使う。
     """
     root = Path(__file__).resolve().parents[2] if plugin_root is None else plugin_root
     cached = None if independent else _stable_plugin_roots.get(root)
     if cached is not None:
         return cached
-    if not independent and not _plugin_root_is_versioned(root):
+    versioned = _plugin_root_is_versioned(root)
+    if not independent and not versioned:
         _stable_plugin_roots[root] = root
         return root
     try:
-        destination = _resolve_shared_root(root, fresh_input=independent)
+        destination = _resolve_shared_root(root, fresh_input=independent and not versioned)
     except (OSError, ValueError, _managed_temp.ManagedTempError) as exc:
         if independent:
             raise
         _LOG.warning("配布物rootを複製できないため解決したrootを使います: root=%s error=%s", root, exc)
         return root
-    _LOG.info("版別ディレクトリの配布物rootを複製しました: source=%s destination=%s", root, destination)
+    _LOG.info("保持する配布物rootを解決しました: source=%s destination=%s", root, destination)
     if not independent:
         _stable_plugin_roots[root] = destination
     return destination

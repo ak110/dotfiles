@@ -22,8 +22,7 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 バグという分類や改善の期待は、損失の根拠から外す。
 起票時はWI投入担当が、処理中に新たな影響や解消を観測した時は処理担当が、`atk wi set-priority`で付与、更新、解除する。
 区分の無い項目は通常の扱いとする。
-巡回の選定量から外れた未着手の項目は、量の調整だけを理由に保留、本文の変更、依存の追加をせず、`inbox`のまま次回の候補に残す。
-選ぶ順序と件数の下限は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`に従う。
+処理可能な候補は全件を選び、処理可否と順序は`agent-toolkit:atk-mode/playbooks/process-wi-selection-allocation.md`に従う。
 
 ## 状態と一覧集合
 

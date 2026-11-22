@@ -291,6 +291,9 @@ def test_prepare_conversation_only_preserves_failure_ledger(
     assert not (work / "candidates.md").exists()
     assert not (work / "stats.md").exists()
     assert not (work / "comparison-materials.md").exists()
+    assert not (work / "bundle" / "conversation-source.json").exists()
+    assert not (work / "bundle" / "unconfirmed.jsonl").exists()
+    assert not (work / "bundle" / "recovered.jsonl").exists()
     assert ledger.exists() is existing_ledger
     if existing_ledger:
         assert ledger.read_text(encoding="utf-8") == original

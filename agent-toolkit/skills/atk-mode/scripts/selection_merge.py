@@ -8,7 +8,7 @@ import typing
 
 import selection_contract
 from agent_toolkit._plan import selection as _selection
-from check_selection_lanes import _resume_plan_id, overlapping_pairs
+from check_selection_lanes import _resume_plan_id, derive_lane_order, derives_lane_order, overlapping_pairs
 
 _Rows = list[dict[str, object]]
 # 重なりの記録の鍵（昇順のレーン名の組と共通パス）と、その鍵で重なるWIの組と共通パス。
@@ -361,6 +361,7 @@ def merge_selection(
 ) -> dict[str, object]:
     """合流結果を返す。変換不足や不整合は保存前に拒否し、元の入力を変更しない。"""
     existing, added = copy.deepcopy(existing), copy.deepcopy(added)
+    derive = derives_lane_order(added)
     correction_key = _selection.ESTIMATE_CORRECTION_KEY
     if correction_key not in existing or correction_key not in added:
         raise ValueError("既存と追加の両YAMLへ`見込みの補正`を記録する")
@@ -410,7 +411,10 @@ def merge_selection(
         item.pop(_selection.INTEGRATION_STATE_KEY, None)
     # 元の追加結果で所要時間とレーンの対応を確認する。
     added_costs = _costs(added)
-    costs = {str(row[_selection.LANE_KEY]): row for row in _costs(existing)}
+    existing_costs = _costs(existing)
+    if derive:
+        existing_costs.sort(key=lambda row: int(typing.cast(int, row.get(_selection.STAGE_KEY, 1))))
+    costs = {str(row[_selection.LANE_KEY]): row for row in existing_costs}
     for row in added_costs:
         row[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
         lane = destination(str(row[_selection.LANE_KEY]))
@@ -424,7 +428,7 @@ def merge_selection(
             costs[lane] = row
             continue
         prior[_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
-        if prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
+        if not derive and prior.get(_selection.STAGE_KEY, 1) != row.get(_selection.STAGE_KEY, 1):
             raise ValueError(f"{lane}: 合流するレーンの段階が異なる。最終割当に合う入力へ直す")
         for key, raw, coefficient in zip(
             _SECONDS.values(),
@@ -436,7 +440,11 @@ def merge_selection(
                 raise ValueError(f"{lane}: 合流する両行へ`{raw}`を記録する")
             prior[raw] = typing.cast(float, prior[raw]) + typing.cast(float, row[raw])
             prior[key] = typing.cast(float, prior[raw]) * coefficient
-        prior[_selection.RATIONALE_KEY] = f"{prior[_selection.RATIONALE_KEY]}\n{row[_selection.RATIONALE_KEY]}"
+        rationale = "\n".join(
+            dict.fromkeys(str(item[_selection.RATIONALE_KEY]) for item in (prior, row) if _selection.RATIONALE_KEY in item)
+        )
+        if rationale:
+            prior[_selection.RATIONALE_KEY] = rationale
         for key in (_selection.PRIOR_LANES_KEY, _selection.START_DEPENDENCIES_KEY):
             if key in row:
                 values = typing.cast(list[str], prior.get(key, [])) + typing.cast(list[str], row[key])
@@ -499,4 +507,6 @@ def merge_selection(
     excluded.extend(
         record for record in typing.cast(list[object], additional_correction["除外した記録"]) if record not in excluded
     )
+    if derive:
+        derive_lane_order(result)
     return result
