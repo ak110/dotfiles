@@ -22,8 +22,8 @@ WAIT_BODY_START_PREFIX = "本文開始: session_id="
 """要約が委譲先の本文の前に置く行の先頭。この行から同じsession識別子の終了の行までは委譲先の本文である。"""
 WAIT_BODY_END_PREFIX = "本文終了: session_id="
 """要約が委譲先の本文の後に置く行の先頭。"""
-NOTICE_LINE_PREFIX = "通知行: "
-"""本文ファイルを持つ通知ごとに、送信元と本文ファイルの所在を示す行の先頭。"""
+NOTICE_FILE_PREFIX = "通知本文ファイル: "
+"""全通知の本文を書いたファイルの所在を示す行の先頭。"""
 BODY_BUDGET_BYTES = output_file.AUTO_SAVE_THRESHOLD_BYTES
 """要約の標準出力全体の上限（UTF-8バイト数）。超える本文は表示せず、`agent_message_path`から読ませる。
 
@@ -38,7 +38,9 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str:
+def render(
+    rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0, notices_path: pathlib.Path | str | None = None
+) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
     待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
@@ -47,13 +49,14 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
     `reserved_bytes`は呼び出し元が要約の後へ続けて書く行（終了していない対象の行など）のUTF-8バイト数で、
     本文の予算から先に差し引き、標準出力全体を上限内に収める。
-    本文ファイルを持つ通知（`body_path`）は、終了行と同じく所在の`通知行:`を必ず示し、本文は上限内でだけ続ける。
-    必須の行（見出し、通知行、終了行、後続の行）を全て予算から先に差し引いてから任意の本文を選ぶ。
-    本文ファイルを持たない旧形式の保存runの通知は、他に読む手段が無いため本文を必須として示す。
+    `notices_path`は全通知の本文を`notice_text`の形で書いたファイルで、所在を`通知本文ファイル:`の1行で必ず示し、
+    個々の通知の本文は上限内でだけ続ける。通知の件数によらず必須の行は増えない。
+    必須の行（見出し、通知本文ファイルの行、終了行、後続の行）を予算から先に差し引いてから任意の本文を選ぶ。
+    ファイルが無い場合（書けなかった場合）の通知の本文は、他に読む手段が無いため必須として示す。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
-    notice_bodies: list[tuple[str, str, str | None]] = []
+    notice_bodies: list[tuple[str, str]] = []
     terminal_lines: list[tuple[str, tuple[str, str] | None]] = []
     for result in rows:
         notices = result.get("notices")
@@ -62,11 +65,7 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
             session_id = result.get("session_id")
             if isinstance(session_id, str):
                 notice_session_ids.add(session_id)
-                notice_bodies.extend(
-                    (session_id, notice["body"], path if isinstance(path := notice.get("body_path"), str) else None)
-                    for notice in notices
-                    if isinstance(notice, dict) and isinstance(notice.get("body"), str)
-                )
+                notice_bodies.extend(_notice_bodies(session_id, notices))
         if result.get("status") in state.TERMINAL_STATUSES:
             fields = [
                 f"session_id={result.get('session_id')}",
@@ -85,30 +84,20 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
             terminal_lines.append((f"{TERMINAL_LINE_PREFIX}{' '.join(fields)}", _terminal_body(result)))
     notice_line = f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）\n" if notice_count else ""
     terminal_header = f"終了: {len(terminal_lines)}件\n" if terminal_lines else ""
-    notice_rows = [
-        (f"{NOTICE_LINE_PREFIX}session_id={session_id} path={path}\n" if path is not None else "", session_id, body)
-        for session_id, body, path in notice_bodies
-    ]
-    # 本文ファイルを持たない通知の本文は必須として扱い、任意の本文より先に予算から差し引く。
-    legacy_blocks = {
-        index: _body_block(session_id, body) for index, (line, session_id, body) in enumerate(notice_rows) if not line
-    }
+    notice_file_line = f"{NOTICE_FILE_PREFIX}{notices_path}\n" if notice_bodies and notices_path is not None else ""
+    # 全文のファイルが無い通知の本文は、他に読む手段が無いため必須として扱う。
+    required_notices = "" if notice_file_line else "".join(_body_block(*entry) for entry in notice_bodies)
     remaining = (
         BODY_BUDGET_BYTES
         - reserved_bytes
-        - _utf8_size(notice_line + terminal_header)
-        - sum(_utf8_size(line) for line, _session_id, _body in notice_rows)
-        - sum(_utf8_size(block) for block in legacy_blocks.values())
+        - _utf8_size(notice_line + notice_file_line + required_notices + terminal_header)
         - sum(_utf8_size(f"{line}\n") for line, _body in terminal_lines)
     )
-    output = [notice_line]
-    for index, (line, session_id, body) in enumerate(notice_rows):
-        if index in legacy_blocks:
-            output.append(legacy_blocks[index])
-            continue
-        output.append(line)
-        block, remaining = _body_within(session_id, body, remaining)
-        output.append(block)
+    output = [notice_line, notice_file_line, required_notices]
+    if notice_file_line:
+        for session_id, body in notice_bodies:
+            block, remaining = _body_within(session_id, body, remaining)
+            output.append(block)
     output.append(terminal_header)
     for line, body_entry in terminal_lines:
         output.append(f"{line}\n")
@@ -116,6 +105,23 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
             block, remaining = _body_within(*body_entry, remaining)
             output.append(block)
     return "".join(output)
+
+
+def notice_text(rows: Iterable[Mapping[str, Any]]) -> str:
+    """全通知の本文を、要約と同じ`本文開始:`・`本文終了:`の行で囲んで連結した文字列を返す。通知が無ければ空文字列。"""
+    return "".join(
+        _body_block(sender, body)
+        for row in rows
+        if isinstance(session_id := row.get("session_id"), str) and isinstance(notices := row.get("notices"), list)
+        for sender, body in _notice_bodies(session_id, notices)
+    )
+
+
+def _notice_bodies(session_id: str, notices: list[Any]) -> list[tuple[str, str]]:
+    """通知の一覧から、送信元と本文の組を送信順に返す。"""
+    return [
+        (session_id, notice["body"]) for notice in notices if isinstance(notice, dict) and isinstance(notice.get("body"), str)
+    ]
 
 
 def terminal_session_ids(text: str) -> set[str]:

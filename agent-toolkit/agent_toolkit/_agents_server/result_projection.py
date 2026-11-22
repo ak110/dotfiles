@@ -334,9 +334,7 @@ def refresh_error_diagnostics(error: Any) -> Any:
 
 
 def public_notice(payload: Mapping[str, str]) -> dict[str, str]:
-    """整列後の通知本文と、書いた場合は本文ファイルの所在を返す。送信時刻は保存と整列に残す。"""
-    if isinstance(path := payload.get("body_path"), str):
-        return {"body": payload["body"], "body_path": path}
+    """整列後の通知本文を返す。送信時刻は保存と整列に残す。"""
     return {"body": payload["body"]}
 
 

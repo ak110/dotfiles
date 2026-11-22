@@ -132,16 +132,6 @@ class _BodyFileWriter:
         raise OSError(f"結果本文のファイル名を確保できない: {directory / session_id}")
 
 
-def _with_notice_body_paths(writer: _BodyFileWriter, session_id: str, notices: list[dict[str, str]]) -> list[dict[str, str]]:
-    """本文を持つ通知ごとに本文ファイルを書き、その所在を`body_path`へ加えた通知を返す。"""
-    return [
-        {**notice, "body_path": str(writer.write(f"{session_id}-notice", {"agent_message": notice["body"]}))}
-        if isinstance(notice.get("body"), str)
-        else notice
-        for notice in notices
-    ]
-
-
 def _wait_run_directory(root_session_id: str, owner: str, state_root: pathlib.Path | None) -> pathlib.Path:
     return shared_layout.status_directory(root_session_id, state_root) / "wait-results" / owner
 
@@ -728,19 +718,6 @@ def _wait_for_result(
                             roots=stranded_roots,
                         )
                     )
-                    # エージェント環境では通知の本文も終了結果と同じく1ファイルへ書き、要約は所在を必ず示して
-                    # 本文を上限内でだけ表示する。人の端末のJSON Linesは本文を持つため書かない。
-                    # 書込に失敗した場合は配送前に終え、run別の退避物から次の待機で再配送する。
-                    try:
-                        if is_agent_environment():
-                            notices = _with_notice_body_paths(body_writer, session_id, notices)
-                    except (_managed_temp.ManagedTempError, OSError) as error:
-                        return _fail(
-                            f"通知本文のファイルを書けません: session_id={session_id}: {error}",
-                            11,
-                            next_action=_BODY_FILE_NEXT_ACTION,
-                            session_id=session_id,
-                        )
                     if result is not None:
                         seq = retained_results.stashed_result_turn(run_path.with_suffix("") / "results" / f"{session_id}.json")
                         if seq is not None:
@@ -964,8 +941,22 @@ def _print_public(output: str, stream: str | None) -> None:
         for row in rows
         if row.get("status") not in state.TERMINAL_STATUSES
     )
+    # 通知の本文は全件を1つのファイルへ書き、要約はその所在を1行で示して本文を上限内でだけ続ける。
+    # 書けない場合は、通知を読む手段を失わないよう全文を表示する（保存の失敗で全量を表示する共通処理と同じ扱い）。
+    notices_path: pathlib.Path | None = None
+    if notice_text := wait_summary.notice_text(rows):
+        try:
+            notices_path = _BodyFileWriter().write("notices", {"agent_message": notice_text})
+        except (_managed_temp.ManagedTempError, OSError) as error:
+            print(
+                f"警告: 通知の本文をファイルへ書けないため全文を表示する: {error}\n"
+                "次の操作: managed-tempの権限・空き容量を確認する",
+                file=sys.stderr,
+                flush=True,
+            )
     # 要約の後に続ける行の量も本文の予算から差し引き、終了行と本文を直接表示できる量に収める。
-    sys.stdout.write(wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8"))) + others)
+    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), notices_path=notices_path)
+    sys.stdout.write(summary + others)
     sys.stdout.flush()
 
 

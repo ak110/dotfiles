@@ -227,8 +227,10 @@ def test_agents_wait_writes_notice_summary_and_running_line(
 
     output_lines = capsys.readouterr().out.splitlines()
     notice_line = output_lines.pop(1)
-    assert notice_line.startswith("通知行: session_id=session-1 path=")
-    assert pathlib.Path(notice_line.split(" path=", 1)[1]).read_text(encoding="utf-8") == "警告"
+    assert notice_line.startswith("通知本文ファイル: ")
+    assert pathlib.Path(notice_line.removeprefix("通知本文ファイル: ")).read_text(encoding="utf-8") == (
+        "本文開始: session_id=session-1\n警告\n本文終了: session_id=session-1\n"
+    )
     assert output_lines[:4] == [
         "通知: 1件（session_id: session-1）",
         "本文開始: session_id=session-1",
@@ -269,11 +271,10 @@ def test_agents_wait_writes_notice_and_terminal_summary(
     body_path = body_directory / "session-1.md"
     assert capsys.readouterr().out.splitlines() == [
         "通知: 2件（session_id: session-1）",
-        f"通知行: session_id=session-1 path={body_directory / 'session-1-notice.md'}",
+        f"通知本文ファイル: {body_directory / 'notices.md'}",
         "本文開始: session_id=session-1",
         "通知1",
         "本文終了: session_id=session-1",
-        f"通知行: session_id=session-1 path={body_directory / 'session-1-notice-2.md'}",
         "本文開始: session_id=session-1",
         "通知2",
         "本文終了: session_id=session-1",
@@ -428,50 +429,70 @@ def test_agents_wait_is_not_resaved_with_stderr(
     assert saved.read_text(encoding="utf-8") == "警告\n"
 
 
-def test_wait_summary_shows_notice_paths_and_bodies_within_limit(tmp_path: pathlib.Path) -> None:
-    """本文ファイルを持つ通知は所在の行を必ず示し、上限に収まらない本文だけを省く。"""
-    long_path, short_path = tmp_path / "session-1-notice.md", tmp_path / "session-1-notice-2.md"
+def test_wait_summary_shows_notice_file_and_bodies_within_limit(tmp_path: pathlib.Path) -> None:
+    """通知本文ファイルの所在を1行で必ず示し、個々の通知の本文は上限に収まるものだけを続ける。"""
+    notices_path = tmp_path / "notices.md"
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
     rows: list[dict[str, Any]] = [
         {
             "session_id": "session-1",
             "status": "running",
-            "notices": [
-                {"body": "通" * wait_summary.BODY_BUDGET_BYTES, "body_path": str(long_path)},
-                {"body": "短い通知", "body_path": str(short_path)},
-            ],
+            "notices": [{"body": long_body}, {"body": "短い通知"}],
         },
     ]
 
-    assert wait_summary.render(rows).splitlines() == [
+    assert wait_summary.render(rows, notices_path=notices_path).splitlines() == [
         "通知: 2件（session_id: session-1）",
-        f"通知行: session_id=session-1 path={long_path}",
-        f"通知行: session_id=session-1 path={short_path}",
+        f"通知本文ファイル: {notices_path}",
         "本文開始: session_id=session-1",
         "短い通知",
         "本文終了: session_id=session-1",
     ]
+    assert "短い通知" in wait_summary.notice_text(rows)
+    assert long_body in wait_summary.notice_text(rows)
 
 
-@pytest.mark.parametrize("later_notices", [pytest.param(1, id="one"), pytest.param(90, id="many")])
-def test_wait_summary_counts_every_notice_line_before_bodies(tmp_path: pathlib.Path, later_notices: int) -> None:
-    """先の通知の本文で上限が埋まる場合も、後続の通知行を先に予算へ入れ、標準出力全体を上限内に保つ。
+@pytest.mark.parametrize("count", [pytest.param(0, id="none"), pytest.param(1, id="one"), pytest.param(301, id="many")])
+def test_wait_summary_required_lines_do_not_grow_with_notices(tmp_path: pathlib.Path, count: int) -> None:
+    """通知の件数によらず必須の行は通知本文ファイルの1行だけで、終了行を保ったまま標準出力を上限内に保つ。
 
-    後から足す行を予算に入れないと、本文を選んだ後の行の分だけ上限を超える。
+    通知ごとに所在の行を出すと、本文を1件も表示しなくても通知の件数に比例して上限を超える。
     """
-    first = {"body": "", "body_path": str(tmp_path / "first.md")}
-    later = [{"body": "後続", "body_path": str(tmp_path / f"later-{index}.md")} for index in range(later_notices)]
-    rows: list[dict[str, Any]] = [{"session_id": "session-1", "status": "running", "notices": [first]}]
-    # 先の通知だけなら本文で上限ちょうどになる長さ。
-    # 末尾に改行の無い本文には表示時に改行を補うため、その1バイトも差し引く。
-    first["body"] = "x" * (wait_summary.BODY_BUDGET_BYTES - len(wait_summary.render(rows).encode("utf-8")) - 1)
-    assert len(wait_summary.render(rows).encode("utf-8")) == wait_summary.BODY_BUDGET_BYTES
-    rows[0]["notices"] = [first, *later]
+    body_path = tmp_path / "body.md"
+    rows: list[dict[str, Any]] = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(body_path)},
+        {"session_id": "session-2", "status": "running", "notices": [{"body": f"通知{index}" * 40} for index in range(count)]},
+    ]
+    body_path.write_text("", encoding="utf-8")
+    without_body = len(wait_summary.render(rows, notices_path=tmp_path / "notices.md").encode("utf-8"))
+    body_path.write_text("x" * (wait_summary.BODY_BUDGET_BYTES - without_body - 1), encoding="utf-8")
 
-    output = wait_summary.render(rows)
+    output = wait_summary.render(rows, notices_path=tmp_path / "notices.md")
 
     assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
-    assert output.count("通知行: ") == 1 + later_notices
-    assert first["body"] not in output
+    assert f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}" in output
+    assert output.count("通知本文ファイル: ") == (1 if count else 0)
+
+
+def test_wait_public_output_shows_all_notices_when_file_cannot_be_written(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """通知本文ファイルを書けない場合は、通知を読む手段を失わないよう全文を表示し、警告と次の操作を示す。"""
+    monkeypatch.setenv("CLAUDECODE", "1")
+
+    def fail_write(*_args: Any, **_kwargs: Any) -> pathlib.Path:
+        raise OSError("容量不足")
+
+    monkeypatch.setattr(commands.agents_wait._BodyFileWriter, "write", fail_write)
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    row = {"session_id": "session-1", "status": "running", "notices": [{"body": long_body}]}
+
+    commands.agents_wait._print_public(json.dumps(row, ensure_ascii=False), "stdout")
+
+    captured = capsys.readouterr()
+    assert long_body in captured.out
+    assert "通知の本文をファイルへ書けないため全文を表示する" in captured.err
+    assert "次の操作:" in captured.err
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

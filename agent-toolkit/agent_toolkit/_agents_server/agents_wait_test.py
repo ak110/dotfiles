@@ -380,7 +380,6 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     collected_terminal, running = [json.loads(line) for line in captured.out.splitlines()]
     assert collected_terminal == terminal
     assert "atk agents wait" in running.pop("next_action")
-    # 人の端末のJSON Linesは本文を持つため、通知の本文ファイルを書かない。
     assert running == {
         "session_id": "session-2",
         "status": "running",
@@ -388,51 +387,6 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     }
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
-
-
-def test_agents_wait_redelivers_notice_after_body_file_failure(
-    monkeypatch: pytest.MonkeyPatch,
-    wait_environment: pathlib.Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    """通知本文のファイルを書けない待機は非0で終わり、再発行した待機が同じ通知を本文ファイルとともに配送する。
-
-    書込の失敗を無視すると、上限を超える通知の本文へ到達する手段が残らない。
-    """
-    _write_own_status(wait_environment, [{"session_id": "session-2", "status": "running"}])
-    notices = wait_environment.parent / "notices"
-    notices.mkdir(parents=True)
-    (notices / "session-2.1.json").write_text(
-        json.dumps({"version": 1, "session_id": "session-2", "sent_at": "2026-09-15T00:00:01+00:00", "body": "通知本文"}),
-        encoding="utf-8",
-    )
-    original_resolve = managed_temp.resolve_session_temp
-    original_create = managed_temp.create_managed_temp
-    monkeypatch.setenv("CLAUDECODE", "1")
-
-    def fail_create(*_args: Any, **_kwargs: Any) -> pathlib.Path:
-        raise managed_temp.ManagedTempError("容量不足")
-
-    setattr_in_managed_temp_modules(monkeypatch, "resolve_session_temp", fail_create)
-    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", fail_create)
-    with pytest.raises(SystemExit) as failed:
-        atk.main(["agents", "wait"])
-    first = capsys.readouterr()
-    assert failed.value.code not in (0, 3)
-    assert not first.out
-    assert "通知本文のファイルを書けません" in first.err
-    assert NEXT_ACTION_PREFIX in first.err
-
-    setattr_in_managed_temp_modules(monkeypatch, "resolve_session_temp", original_resolve)
-    setattr_in_managed_temp_modules(monkeypatch, "create_managed_temp", original_create)
-    monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0.0)
-    with pytest.raises(SystemExit):
-        atk.main(["agents", "wait"])
-    lines = capsys.readouterr().out.splitlines()
-    assert lines[0] == "通知: 1件（session_id: session-2）"
-    assert lines[1].startswith("通知行: session_id=session-2 path=")
-    assert pathlib.Path(lines[1].split(" path=", 1)[1]).read_text(encoding="utf-8") == "通知本文"
-    assert lines[2:5] == ["本文開始: session_id=session-2", "通知本文", "本文終了: session_id=session-2"]
 
 
 @pytest.mark.parametrize("mode", ["reply_only", "completes", "disappears"])
