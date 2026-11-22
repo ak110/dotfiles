@@ -324,7 +324,6 @@ def config_environment_variable_names() -> tuple[str, ...]:
         *RETIRED_CONNECTION_KEYS,
         *sorted(RETIRED_MODEL_KEYS),
         "process_loop_repositories",
-        "codex_auto_reset",
     )
     return tuple(config_env_name(key) for key in keys)
 

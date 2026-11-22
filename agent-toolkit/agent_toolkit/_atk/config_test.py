@@ -97,13 +97,11 @@ class TestCodexFastMode:
 @pytest.mark.parametrize(
     "config", [{"codex_auto_reset": "true"}, {"codex_auto_reset": "true", "usage_auto_allocation": "true"}]
 )
-def test_codex_auto_reset_retires_key_without_creating_permissions(tmp_path, monkeypatch, capsys, config):
+def test_codex_auto_reset_retires_key_without_creating_permissions(tmp_path, capsys, config):
     _write_config(tmp_path, config)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true")
     assert _main(tmp_path, "config", "get", "usage_auto_allocation", "usage_reset_permissions") == 0
     output = capsys.readouterr()
     assert output.out.splitlines() == [config.get("usage_auto_allocation", "false"), "[]"]
-    assert "AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET" in output.err
     assert "消費許可は作成していない" in output.err
     assert "codex_auto_reset" not in _saved(tmp_path)
     for action in (["get", "codex_auto_reset"], ["set", "codex_auto_reset", "true"]):

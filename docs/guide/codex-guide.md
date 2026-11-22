@@ -150,7 +150,7 @@ ChatGPTのtokenをAPIキーとして使わない。
 
 `agents_server`のCodex委譲先では、`usage_auto_allocation`を有効にし、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
 初期状態では自動配分は無効で、消費許可は空である。
-条件と設定例は[利用枠の自動配分](claude-code-models.md#利用枠の自動配分)を参照する。
+条件と設定例は[利用枠の自動配分](claude-code-models.md#利用枠に応じた自動配分)を参照する。
 
 ```bash
 atk config get usage_auto_allocation usage_reset_permissions
