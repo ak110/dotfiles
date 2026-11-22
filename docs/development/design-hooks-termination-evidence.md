@@ -24,7 +24,7 @@ private-notesとGitリポジトリ外の書込は成果作業の編集へ含め�
 最後の会話圧縮以降の読込証拠も有効な省略判断も無ければ、Claude Codeでは非遮断通知で起動と残工程への続行を案内する。
 CodexはStopの非遮断通知を受け取れないため、関連操作の案内とreport-completionの文書に従う。
 適用するプロジェクト規範が起動を不要と定める場合は、メインが意味と優先順位を判断して`termination-evidence --decision-file`へ`omit-completion`を記録する。
-有効な判断は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。
+有効な判断（削除前の障害事例集`docs/development/incidents-reporting.md`「誤った完了報告と虚偽報告」）は対応する作業だけへ作用し、別作業の起動不足と、process-loopの会話が終了時に`atk agents-exit-session`を実行する義務は保つ。
 規範の変更、新しい人間入力後の作業、開始・再開後の次判断では適用を確かめ直し、古い省略を流用しない。
 Claude Codeの起動証拠は、スキル`atk-mode`を引数の先頭語`report-completion`で起動して成功した`Skill`呼び出しと、`Read`が手順書の現在の本文全体を1回の応答で返した読取である。
 `Read`は`offset`・`limit`の値ではなく、応答の`file.content`が現在の版の全文を含むかで判定し、範囲を限った読取とトークン上限で本文を省略した読取を受理しない。
@@ -131,7 +131,7 @@ Claude Codeが8回連続の遮断を無視してターンを終えるためで�
 変更の反映前に`/goal`付きで始まった統括とrun-skillの会話は、利用上限の解除後などに目標を保ったまま再開する。
 このため、担当工程完了の終了応答を完了の1文にする扱いと、最終ターン終了前に定期再確認taskを回収する手順は、統括とrun-skillのセッションを条件にして残す（[design-hooks-periodic-recheck.md](design-hooks-periodic-recheck.md)）。
 ホストが挿入した本文や環境変数を見分ける処理は残す。
-撤去の記録は撤去のcommit本文にある。
+撤去の記録は削除前の撤去台帳`docs/development/removed-mechanisms-workflows.md`にある。
 
 却下した案は2つある。
 hookから軽量モデルを呼んで目的の達成を評価する案は、Stopごとの費用と待ち時間、評価文の調整が残り、字義解釈による誤拒否を自前で再現するため採らない（ユーザーが確認回答で機械判定を選択）。

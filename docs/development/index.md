@@ -18,7 +18,10 @@
 - [docs/development/design.md](design.md): 機構の設計記録の索引。
   主題別の本文から目的・構造の理由・知識境界・却下案を読む
 - [docs/development/concepts.md](concepts.md): 過去のAWIから確定した方針・意向
-- 障害と撤去した仕組みの経緯は、是正・撤去のcommit本文に`再発:`・`撤去:`の行で残し、`git log --grep`で引く（2026年11月22日に障害事例集と撤去台帳を削除した。削除前の内容はGitの履歴にある）。
+- 障害と撤去した仕組みの経緯は、是正・撤去のcommit本文に`再発:`・`撤去:`の行で残し、`git log -i -E --grep=<働きを表す語>`で引く。
+  2026年11月22日に障害事例集（`incidents*.md`）と撤去台帳（`removed-mechanisms*.md`）を削除した。
+  本文中の「削除前の障害事例集」「削除前の撤去台帳」は、削除したcommitの親の版を指す。
+  そのcommitを`git log -1 --format=%H --diff-filter=D -- docs/development/incidents.md`で得て、`git show <commit>^:docs/development/<ファイル名>`で読む。
   新しい仕組みを加える前に照合する
 
 ## 検証と判定の記録

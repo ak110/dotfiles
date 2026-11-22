@@ -10,7 +10,7 @@ basics側は独立した品質スキル集で、実行基盤のhook・MCP・Pyth
 常時読み込ませる規則（`rules/`）は生成しない。
 agent-toolkitの規範は入口のスキル`agent-toolkit:atk-mode`と、その表から選ぶ手順書が持ち、SessionStartのhookが入口の起動を求める1行を出す。
 入口を届ける経路は`agent-toolkit/skills/atk-mode/references/agent-documents.md`「入口を届ける経路」にある。
-規則の生成とその容量予算を廃止した経緯は、撤去のcommit本文にある。
+規則の生成とその容量予算を廃止した経緯は、削除前の撤去台帳`docs/development/removed-mechanisms-hooks.md`「常時規範と委譲のスキル」にある（読み方は[索引](index.md)）。
 
 post-applyは`~/.gemini/config/plugins.json`の`entries`へ作業ツリーの絶対パスと`include_only`を追加し、他の登録と継承設定を保持する。
 プラグインの有効/無効を記録するユーザーの`config.json`は変更しない。

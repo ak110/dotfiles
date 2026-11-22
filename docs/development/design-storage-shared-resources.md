@@ -103,6 +103,6 @@ WorktreeCreate hookへ渡す名前も同じ名前とし、hookが名前から作
 統合済みレーンへの同じthreadの追加（処理中のWI追加）は同じ`atk lane create`で行う。
 資源が残っていれば、所有登録とGit登録の一致を確かめて再利用する。
 回収済みなら、保存したcommit・計画・引き継ぎから環境を再作成して同じthreadを再開する。
-追加に備えて消費済みworktreeまで保持する運用は採らない。
+追加に備えて消費済みworktreeまで保持する運用は採らない（削除前の撤去台帳`docs/development/removed-mechanisms-other.md`）。
 turnごとの一律回収は使用中の作業を失い、別の恒常監視と独自の結果保持期限は既存の登録・終了境界・managed-tempの寿命と重複するため採らない。
 主作業ツリー、セッションのmanaged-temp、証拠と他sessionの未登録資源は回収対象にしない。
