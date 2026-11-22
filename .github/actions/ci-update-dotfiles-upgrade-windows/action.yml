@@ -23,3 +23,5 @@ runs:
       # 時間上限で止まったjobはcancelledで終わるため、その場合も原因調査用のログを残す。
       if: ${{ failure() || cancelled() }}
       uses: ./dotfiles/.github/actions/upload-diagnostic-logs
+      with:
+        collect-windows-upgrade-logs: "true"

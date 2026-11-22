@@ -172,7 +172,12 @@ def test_diagnostic_logs_are_saved_when_job_times_out() -> None:
             if str(step.get("uses", "")).endswith("/upload-diagnostic-logs"):
                 saving.append(action.parent.name)
                 assert step.get("if") == "${{ failure() || cancelled() }}", action
-    assert saving
+                inputs = workflow_mapping(step.get("with", {}))
+                if action.parent.name == "ci-update-dotfiles-upgrade-windows":
+                    assert inputs["collect-windows-upgrade-logs"] == "true"
+                else:
+                    assert "collect-windows-upgrade-logs" not in inputs
+    assert "ci-update-dotfiles-upgrade-windows" in saving
 
 
 def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
@@ -184,11 +189,20 @@ def test_diagnostic_log_uploads_stay_on_one_drive() -> None:
     action = REPO_ROOT / ".github" / "actions" / "upload-diagnostic-logs" / "action.yml"
     runs = workflow_mapping(workflow_mapping(yaml.load(action.read_text(encoding="utf-8"), Loader=yaml.BaseLoader))["runs"])
     upgrade_patterns = []
+    staged_paths = []
     for step in workflow_steps(runs):
+        if not str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+            continue
         patterns = [line.strip() for line in str(workflow_mapping(step["with"])["path"]).splitlines() if line.strip()]
         roots = {pattern.split("/", 1)[0] for pattern in patterns}
         assert len(roots) == 1, patterns
-        upgrade_patterns += [pattern for pattern in patterns if "update-dotfiles-upgrade-" in pattern]
+        legacy = [pattern for pattern in patterns if "update-dotfiles-upgrade-" in pattern]
+        if legacy:
+            assert step["if"] == "inputs.collect-windows-upgrade-logs != 'true'"
+            upgrade_patterns.extend(legacy)
+        if step.get("if") == "inputs.collect-windows-upgrade-logs == 'true'":
+            staged_paths.extend(patterns)
+    assert staged_paths == ["${{ runner.temp }}/windows-upgrade-diagnostics/"]
     assert upgrade_patterns
     assert all(pattern.startswith("${{ runner.temp }}/") for pattern in upgrade_patterns), upgrade_patterns
 
