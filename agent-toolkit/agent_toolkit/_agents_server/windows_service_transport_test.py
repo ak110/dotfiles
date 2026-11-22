@@ -1,12 +1,15 @@
 """Windowsの実named pipeとOSが返す接続相手の世代を検証する。"""
 
 import os
+import subprocess
+import sys
 import threading
 import uuid
 from multiprocessing import connection
 
 import pytest
 
+from agent_toolkit._agents_server import service_transport
 from agent_toolkit._agents_server import windows_service_transport as transport
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="実Win32 APIが必要")
@@ -88,3 +91,15 @@ def test_listed_process_alive_matches_open_identity_of_running_process() -> None
     pid, created = identity.split(":")
     assert transport.listed_process_alive(identity)
     assert not transport.listed_process_alive(f"{pid}:{int(created) + 1}")
+
+
+def test_process_alive_rejects_exited_process_with_open_handle() -> None:
+    """終了後にPopenのhandleが残っても、生存する世代として扱わない。"""
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
+        try:
+            identity = transport.process_identity(child.pid)
+            assert service_transport.process_alive(identity)
+        finally:
+            child.terminate()
+            child.wait(timeout=10)
+        assert not service_transport.process_alive(identity)

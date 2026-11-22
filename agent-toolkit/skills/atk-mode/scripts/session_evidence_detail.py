@@ -473,7 +473,7 @@ def _detail_collection_events(collected: list[_CollectedRecord], locators: list[
         if error_events is not None:
             return error_events, 2
         assert selected is not None and line is not None
-        record_events, exit_code = _detail_events(selected.records, [line])
+        record_events, exit_code = _detail_events([*selected.records, *selected.fork_context], [line])
         if exit_code:
             return record_events, exit_code
         events.extend(_events_with_record(record_events, selected.record_id))

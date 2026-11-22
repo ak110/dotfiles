@@ -6,6 +6,7 @@ import contextlib
 import logging
 import os
 import pathlib
+import re
 import uuid
 from collections.abc import Mapping
 from typing import Any
@@ -39,6 +40,7 @@ from agent_toolkit._common import delegated_session, runtime_environment, sessio
 from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._git import remote
 
 __all__ = [
     "PREFLIGHT_COMMANDS",
@@ -207,6 +209,49 @@ def shell_default_label(command: str) -> str:
     return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
 
 
+_ADD_WI_DESTINATION = re.compile(
+    r"^(?:[ \t]*[-*][ \t]+)?(?:共通:[ \t]*)?投入先(?:の対象リポジトリ)?(?:[：:]|[ \t])"
+    r"[ \t]*(?P<destination>[^\r\n]*)$",
+    re.MULTILINE,
+)
+
+
+def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> None:
+    """明示した投入先を、要求ファイルと直接本文で同じように検査する。"""
+    request = extra_params.get("投入する要求")
+    if task_document.name != "add-wi.subagent.md" or request is None:
+        return
+    text = request.strip()
+    if "\n" not in text and pathlib.Path(text).is_absolute():
+        try:
+            path = pathlib.Path(text)
+            if not path.is_file():
+                raise OSError("要求ファイルは通常のファイルでなければなりません")
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise ActionableError(
+                "投入する要求のファイルを読み取れません。委譲先は起動していない。",
+                next_action="UTF-8の要求ファイルの絶対パスを確認して同じstartを再発行する",
+            ) from error
+    destinations = [line[1] for line in _ADD_WI_DESTINATION.finditer(text)]
+    if not destinations:
+        # 既存の簡略形: 識別子=対象リポジトリ=種別=趣旨
+        parts = text.split("=", maxsplit=3)
+        if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
+            destinations = [parts[1]]
+    for value in destinations:
+        location = re.split(r"[（、]", value, maxsplit=1)[0].strip().strip("`")
+        with contextlib.suppress(ValueError):
+            if pathlib.Path(location).is_absolute() or (
+                not any(character.isspace() for character in location) and remote.normalize_remote_url(location) == location
+            ):
+                continue
+        raise ActionableError(
+            "add-wiの投入先に絶対パスか正規化したリモートURLが必要です。委譲先は起動していない。",
+            next_action="委譲元が投入先を確定し、要求ファイルか直接本文を直して同じstartを再発行する",
+        )
+
+
 def _validate_required_prompt_inputs(
     task_document: pathlib.Path,
     extra_params: Mapping[str, str],
@@ -222,6 +267,7 @@ def _validate_required_prompt_inputs(
     if isinstance(declaration, str):
         return declaration
     check_declared_inputs(task_document, declaration, extra_params)
+    _check_add_wi_destinations(task_document, extra_params)
     return None
 
 
@@ -531,6 +577,7 @@ def task_document_request(
             if handoff_path is not None:
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         check_declared_inputs(task_document, declaration, extra_params)
+        _check_add_wi_destinations(task_document, extra_params)
     # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
     # 軽量起動のtaskは独自の記録を持たない。
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:

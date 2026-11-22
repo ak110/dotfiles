@@ -452,3 +452,32 @@ async def test_start_rejects_removed_last_pushed_commit_input(monkeypatch: pytes
         await mcp_tools.start(str(tmp_path), subagent_md_path=str(task_document), extra_params=extra_params)
 
     manager.start.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("file_input", [False, True])
+@pytest.mark.parametrize("normalized_remote", [False, True])
+async def test_add_wi_start_rejects_unsettled_destination_before_backend(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, file_input: bool, normalized_remote: bool
+) -> None:
+    """要求ファイル・直接本文とも未確定の投入先で起動せず、確定した値で再発行できる。"""
+    requirement = tmp_path / "request.md"
+
+    def request(destination: str) -> str:
+        text = f"# 要求\n\n- 投入先: {destination}\n- 種別: AWI\n"
+        if file_input:
+            requirement.write_text(text, encoding="utf-8")
+            return str(requirement)
+        return text
+
+    _recording_candidates(monkeypatch)
+    async with _manager_with_fake("codex") as (manager, backend):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        params = {"投入する要求": request("調査で確定"), "引き継ぎ記録先": str(tmp_path / "handoff.md")}
+        with pytest.raises(ActionableError, match="投入先に絶対パスか正規化したリモートURL"):
+            await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert not backend.start_calls
+        target = "github.com/example/repository" if normalized_remote else str(tmp_path)
+        params["投入する要求"] = request(target)
+        await mcp_tools.start(str(tmp_path), subagent_md_path="add-wi", extra_params=params)
+        assert len(backend.start_calls) == 1

@@ -193,8 +193,15 @@ def listen(address: str) -> Generator[Any]:
 def connect(address: str, expected_process: str) -> Generator[connection.Connection]:
     """同一アカウント・元世代と確かめた接続だけを操作へ渡す。"""
     family = "AF_PIPE" if os.name == "nt" else "AF_UNIX"
-    with connection.Client(address, family=family, authkey=None) as peer:
-        authenticate(peer, server=False, expected_process=expected_process)
+    with contextlib.ExitStack() as stack:
+        try:
+            peer = stack.enter_context(connection.Client(address, family=family, authkey=None))
+            authenticate(peer, server=False, expected_process=expected_process)
+        except PermissionError as error:
+            # 終了済みの世代への認証前の失敗だけを、操作未配送の接続失敗として扱う。
+            if process_alive(expected_process):
+                raise
+            raise FileNotFoundError("発見記録の管理サービス世代が終了しました") from error
         yield peer
 
 

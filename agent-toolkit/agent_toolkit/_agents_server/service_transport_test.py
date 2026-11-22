@@ -437,3 +437,14 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
             visitor.visit(ast.parse(path.read_text(encoding="utf-8")))
             found |= visitor.found
     assert found == set(_DENIED_GENERATION_SCENES)
+
+
+@pytest.mark.parametrize("alive", [False, True])
+def test_connect_only_converts_permission_error_for_exited_generation(monkeypatch: pytest.MonkeyPatch, alive: bool) -> None:
+    """接続時の拒否でも、世代の生存中は認証失敗のまま返す。"""
+    client = Mock(side_effect=PermissionError("接続拒否"))
+    monkeypatch.setattr(service_transport.connection, "Client", client)
+    monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)
+    expected = PermissionError if alive else FileNotFoundError
+    with pytest.raises(expected), service_transport.connect("endpoint", "42:1"):
+        pytest.fail("操作を実行してはならない")

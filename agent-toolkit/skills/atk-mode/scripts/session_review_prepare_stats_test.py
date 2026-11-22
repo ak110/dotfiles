@@ -368,3 +368,54 @@ def test_first_pass_stats_keeps_missing_and_denominator() -> None:
     assert '"observed_count": 0' in text
     assert '"first_success_ratio": null' in text
     assert "初回成功率は不明" in _stats_document([])
+
+
+@pytest.mark.parametrize("parent_available", [False, True])
+def test_fork_inherited_calls_do_not_count_as_child_operations(tmp_path: pathlib.Path, parent_available: bool) -> None:
+    """親子で複製した操作は除き、親を取得できないときは帰属不明の範囲を示す。"""
+    from session_evidence_extract import _collection_events, _load_records_checked  # noqa: PLC0415, SLF001
+    from session_evidence_records import _collect_records  # noqa: PLC0415, SLF001
+
+    def call(identifier: str, kind: str = "function_call") -> dict:
+        return {
+            "type": "response_item",
+            "payload": {"type": kind, "name": "exec", "call_id": identifier, "arguments": "{}"},
+        }
+
+    copied = (call("parent-function"), call("parent-custom", "custom_tool_call"))
+    parent = tmp_path / "parent.jsonl"
+    child = tmp_path / "child.jsonl"
+    parent.write_text("\n".join(json.dumps(row) for row in copied) + "\n", encoding="utf-8")
+    child.write_text(
+        "\n".join(
+            json.dumps(row)
+            for row in (
+                {"type": "session_meta", "payload": {"id": "child", "forked_from_id": "parent"}},
+                *copied,
+                call("child-call"),
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    records = _load_records_checked(str(child)).records
+    assert records is not None
+    collected, unresolved = _collect_records(
+        str(child),
+        records,
+        main_only=True,
+        session_resolver=lambda _: (parent, "codex") if parent_available else None,
+    )
+    item = collected[0]
+    assert [row.line for row in item.records] == ([1, 4] if parent_available else [1])
+    assert [row.line for row in item.fork_context] == ([2, 3] if parent_available else [2, 3, 4])
+    events = _collection_events(collected, unresolved)
+    provenance = next(event for event in events if event["kind"] == "record-provenance")
+    assert provenance["fork_parent"] == "codex:parent"
+    assert provenance["fork_attribution_known"] is parent_available
+    gaps = [event for event in events if event["kind"] == "record-gap"]
+    if parent_available:
+        assert not gaps
+    else:
+        assert gaps[0]["line"] == 2
+        assert "3 操作" in gaps[0]["reason"]
