@@ -590,24 +590,6 @@ def verify_upgrade_inputs(
     env["UV_PYTHON"] = str(_require_inside(install_dir, "Python", python))
 
 
-def windows_job_breakaway_denied(python: str, cwd: pathlib.Path, env: dict[str, str], *, runner: Runner) -> bool:
-    command = [python, "-I", "-S", "-c", "pass"]
-    options = {"cwd": cwd, "env": env, "check": False, "capture_output": True, "timeout": 10}
-    try:
-        runner(command, creationflags=0x01000000, **options)
-    except PermissionError as error:
-        if getattr(error, "winerror", None) != 5:
-            return False
-    except OSError, subprocess.TimeoutExpired:
-        return False
-    else:
-        return False
-    try:
-        return runner(command, **options).returncode == 0
-    except OSError, subprocess.TimeoutExpired:
-        return False
-
-
 def _run_isolated_upgrade(
     source_repo: pathlib.Path,
     platform_name: str,
@@ -671,13 +653,8 @@ def _run_isolated_upgrade(
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():
                 log.unlink()
-        breakaway_denied = (
-            sys.platform == "win32"
-            and platform_name == "windows"
-            and windows_job_breakaway_denied(env["UV_PYTHON"], checkout, env, runner=runner)
-        )
         updated = run_command(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
-        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr, breakaway_denied=breakaway_denied)
+        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr, platform_name=platform_name)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
         verify_updated_oid(actual_oid, current_oid)
         print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
@@ -706,9 +683,15 @@ _INHERITED_JOB_WARNING = (
 )
 
 
-def _installed_mcp_job_warning(message: str, continuation: list[str], home: pathlib.Path) -> bool:
+_MCP_WARMUP_SUCCESS = re.compile(
+    r" run=(?P<run>\S+) INFO +agent-toolkit warmup: "
+    r"MCPのinitialize・tools/list・終了・管理サービスの公開を確認 \(\d+\.\d秒\): (?P<target>.+)$"
+)
+
+
+def _installed_mcp_job_warning(message: str, continuation: list[str], home: pathlib.Path, successful_targets: set[str]) -> bool:
     target, separator, warning = message.strip().partition(": ")
-    if not separator or "\n".join((warning, *continuation)) != _INHERITED_JOB_WARNING:
+    if not separator or target not in successful_targets or "\n".join((warning, *continuation)) != _INHERITED_JOB_WARNING:
         return False
     path = pathlib.Path(target)
     cache = home / ".claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
@@ -759,18 +742,25 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     return False
 
 
-def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "", breakaway_denied: bool = False) -> None:
+def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "", platform_name: str = "") -> None:
     """隔離homeの永続ログから、更新が警告として継続した失敗も検出する。"""
     diagnostics: list[str] = []
-    logs = [path for path in sorted(home.rglob("update-dotfiles.log*")) if path.is_file()]
+    logs = {
+        path: path.read_text(encoding="utf-8").splitlines()
+        for path in sorted(home.rglob("update-dotfiles.log*"))
+        if path.is_file()
+    }
     if not logs:
         raise UpgradeCheckError("更新処理の永続ログが作成されず、警告以上の有無を確認できない")
-    for path in logs:
-        if not path.is_file():
-            continue
-        lines = path.read_text(encoding="utf-8").splitlines()
+    successful: dict[str, set[str]] = {}
+    if platform_name == "windows":
+        for lines in logs.values():
+            for line in lines:
+                if (match := _MCP_WARMUP_SUCCESS.search(line)) is not None:
+                    successful.setdefault(match["run"], set()).add(match["target"])
+    for path, lines in logs.items():
         for index, line in enumerate(lines):
-            if (match := re.search(r" run=\S+ (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
+            if (match := re.search(r" run=(?P<run>\S+) (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
                 continue
             if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
                 continue
@@ -781,12 +771,10 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
                     break
                 continuation.append(following)
             diagnostic = "\n".join([f"{path}: {line}", *continuation])
-            if (
-                match["level"] == "WARNING"
-                and breakaway_denied
-                and _installed_mcp_job_warning(match["message"], continuation, home)
+            if match["level"] == "WARNING" and _installed_mcp_job_warning(
+                match["message"], continuation, home, successful.get(match["run"], set())
             ):
-                print(f"検証runnerでJob離脱拒否を再現したため、更新自体の失敗と区別する: {diagnostic}", file=sys.stderr)
+                print(f"同じMCPの起動確認が完了しているため、Job制約を更新自体の失敗と区別する: {diagnostic}", file=sys.stderr)
                 continue
             diagnostics.append(diagnostic)
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。

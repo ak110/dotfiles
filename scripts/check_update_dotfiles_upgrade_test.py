@@ -12,7 +12,14 @@ import check_update_dotfiles_upgrade as upgrade
 import pytest
 from agent_toolkit._agents_server import service_forward
 
-from pytools._internal import antigravity_plugin, codex_runtime, install_codex_plugins, setup_herdr_cli, warmup_agents_server
+from pytools._internal import (
+    antigravity_plugin,
+    codex_runtime,
+    install_codex_plugins,
+    log_format,
+    setup_herdr_cli,
+    warmup_agents_server,
+)
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
@@ -222,42 +229,29 @@ def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path
         upgrade.verify_update_logs(tmp_path)
 
 
-@pytest.mark.parametrize(("mode", "denied"), [("rejected", True), ("allowed", False), ("broken", False), ("unrelated", False)])
-def test_windows_job_denial_requires_success_without_breakaway(tmp_path: pathlib.Path, mode: str, denied: bool) -> None:
-    calls: list[int | None] = []
-
-    def runner(arguments, **kwargs):
-        flag = kwargs.get("creationflags")
-        calls.append(flag)
-        if flag is not None and mode != "allowed":
-
-            class ProbePermissionError(PermissionError):
-                winerror = 87 if mode == "unrelated" else 5
-
-            raise ProbePermissionError
-        return subprocess.CompletedProcess(arguments, int(mode == "broken"))
-
-    assert upgrade.windows_job_breakaway_denied("python.exe", tmp_path, {}, runner=runner) is denied
-    assert calls == ([0x01000000, None] if mode in {"rejected", "broken"} else [0x01000000])
-
-
 @pytest.mark.parametrize(
-    ("rejected", "level", "source", "tail", "accepted"),
+    ("platform_name", "level", "source", "record", "tail", "accepted"),
     [
-        (True, "WARNING", "installed", "", True),
-        (False, "WARNING", "installed", "", False),
-        (True, "ERROR", "installed", "", False),
-        (True, "WARNING", "other", "", False),
-        (True, "WARNING", "missing", "", False),
-        (True, "WARNING", "installed", "\n別の未確認診断", False),
+        ("windows", "WARNING", "installed", "same", "", True),
+        ("windows", "WARNING", "installed", "separate-log", "", True),
+        ("windows", "WARNING", "installed", "absent", "", False),
+        ("windows", "WARNING", "installed", "other-run", "", False),
+        ("windows", "WARNING", "installed", "other-target", "", False),
+        ("windows", "WARNING", "installed", "without-publish", "", False),
+        ("linux", "WARNING", "installed", "same", "", False),
+        ("windows", "ERROR", "installed", "same", "", False),
+        ("windows", "WARNING", "other", "same", "", False),
+        ("windows", "WARNING", "missing", "same", "", False),
+        ("windows", "WARNING", "installed", "same", "\n別の未確認診断", False),
     ],
 )
-def test_windows_job_warning_requires_observed_denial_and_installed_source(
+def test_windows_job_warning_requires_published_mcp_from_same_run(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    rejected: bool,
+    platform_name: str,
     level: str,
     source: str,
+    record: str,
     tail: str,
     accepted: bool,
 ) -> None:
@@ -268,16 +262,26 @@ def test_windows_job_warning_requires_observed_denial_and_installed_source(
     script.parent.mkdir(parents=True, exist_ok=True)
     if source != "missing":
         script.touch()
+    target = script if record != "other-target" else script.with_name("other.py")
+    published = "" if record == "without-publish" else "・管理サービスの公開"
+    run = "other" if record == "other-run" else "check"
+    status = log_format.format_status(
+        "agent-toolkit warmup", f"MCPのinitialize・tools/list・終了{published}を確認 (0.2秒): {target}"
+    )
+    success = f"2026-10-28 12:00:00 run={run} INFO {status}\n" if record != "absent" else ""
+    if record == "separate-log":
+        (home / "update-dotfiles.log.1").write_text(success, encoding="utf-8")
+        success = ""
     (home / "update-dotfiles.log").write_text(
-        f"2026-10-28 12:00:00 run=check {level} {script}: {service_forward.INHERITED_JOB_WARNING}{tail}\n",
+        f"{success}2026-10-28 12:00:01 run=check {level} {script}: {service_forward.INHERITED_JOB_WARNING}{tail}\n",
         encoding="utf-8",
     )
     if accepted:
-        upgrade.verify_update_logs(home, breakaway_denied=rejected)
+        upgrade.verify_update_logs(home, platform_name=platform_name)
         assert service_forward.INHERITED_JOB_WARNING in capsys.readouterr().err
     else:
         with pytest.raises(upgrade.UpgradeCheckError, match="起動元のWindows Jobは離脱を許可していません"):
-            upgrade.verify_update_logs(home, breakaway_denied=rejected)
+            upgrade.verify_update_logs(home, platform_name=platform_name)
 
 
 def test_update_warning_includes_following_command_output(tmp_path: pathlib.Path) -> None:
