@@ -43,10 +43,10 @@ def test_direct_pytest_targets_exist(workflow_data: dict[str, object]) -> None:
 def test_direct_pytest_targets_ignore_other_shell_statements() -> None:
     script = """uv run pytest -v first_test.py
 export PYFLTR_GLOBAL_CONFIG="$RUNNER_TEMP/pytest-root-pyfltr.toml"
-NOTE="two words" uv run --frozen pytest -v "${targets[@]}" second_test.py; echo other/ignored.py
+NOTE="two words" uv run --frozen pytest -v "${targets[@]}" second_test.py; echo other/ignored.py && uv run pytest third_test.py
 """
     workflow: dict[str, object] = {"jobs": {"test": {"steps": [{"run": script}]}}}
-    assert direct_pytest_targets(workflow) == ["first_test.py", "second_test.py"]
+    assert direct_pytest_targets(workflow) == ["first_test.py", "second_test.py", "third_test.py"]
 
 
 def _pytest_arguments(command: str) -> list[str] | None:

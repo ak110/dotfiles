@@ -386,18 +386,21 @@ def direct_pytest_targets(workflow: dict[str, object]) -> list[str]:
                     continue
                 lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|<>")
                 lexer.whitespace_split = True
-                tokens = list(lexer)
-                if "pytest" not in tokens:
-                    continue
-                index = tokens.index("pytest")
-                launch = [token for token in tokens[:index] if "=" not in token]
-                if launch[:2] != ["uv", "run"]:
-                    continue
-                for token in tokens[index + 1 :]:
+                statement: list[str] = []
+                for token in [*lexer, ";"]:
                     if token and all(char in ";&|<>" for char in token):
-                        break
-                    if not token.startswith(("-", "$")) and ("/" in token or token.endswith(".py")):
-                        targets.append(token)
+                        if "pytest" in statement:
+                            index = statement.index("pytest")
+                            launch = [word for word in statement[:index] if "=" not in word]
+                            if launch[:2] == ["uv", "run"]:
+                                targets.extend(
+                                    arg
+                                    for arg in statement[index + 1 :]
+                                    if not arg.startswith(("-", "$")) and ("/" in arg or arg.endswith(".py"))
+                                )
+                        statement.clear()
+                    else:
+                        statement.append(token)
     return targets
 
 
