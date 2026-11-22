@@ -118,3 +118,23 @@ for (const [message, heads] of [
     }
   });
 }
+
+for (const [line, warns] of [
+  ["再発防止: 文章は足さない。私が書く完成条件を通常の運用の範囲で書く。", true],
+  ["再発防止: 私の手順の変更で、規範は増やさない。", true],
+  ["再発防止: agent-toolkit/skills/atk-mode/references/recurrence-self-check-items.md の観点を通常運用に限る。", false],
+  ["再発防止: 処置済み。同じ作業で原因の条件を消した。", false],
+  ["再発防止: 回帰試験を c5a338135 で追加した。", false],
+  ["再発防止: Makefile の検証対象を修正した。", false],
+  ["再発防止: 調査へ引き継ぐ。観測: 完了通知の直後に結果が欠落した。次に確かめる問い: 通知時点で出力は保存済みか。引継先: 実装担当。", false],
+  ["再発防止: 完了通知の直後に結果が欠落した。通知時点で出力が保存済みだったかを調べるため、実装担当に引き継ぐ。", false],
+  ["再発防止: 担当が注意するだけでは防げないため、Makefile に検査を追加した。", false],
+  ["再発防止: .pre-commit-config.yaml を変更して検査を追加した。", false],
+  ["再発防止: .gitignore に生成物を追加した。", false],
+  ["再発防止: 完了通知の直後に結果が欠落した。通知時点で出力が保存済みだったかの調査を実装担当に依頼する。", false],
+] as const) {
+  test(`再発防止の行が変える成果物か区分名を示す: ${line.slice(0, 20)}`, () => {
+    const message = "ユーザーの指摘を受けた不具合を直した。\n処置: 直した。\n" + line;
+    expect(reportWarnings(message).some((warning) => warning.includes("変える成果物"))).toBe(warns);
+  });
+}

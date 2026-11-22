@@ -136,6 +136,19 @@ function reportedLines(message: string): string[] {
 }
 
 // 区分名で始まらない値、未調査を理由にした`不要`、逸脱の報告に欠けた記録の行の警告を、重複を除いて返す。
+// `再発防止:`の行は、変える成果物（ファイル・commit）か、採用しない区分名（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）を示す。
+// 担当の心がけだけを書いた行は、規範を思い出して従うことに依存する対策であり、同書が再発防止として認めない。
+// 未解決の不具合を調査へ引き継ぐ行も通す。成果物の参照と変更の区別は自然文の解釈を要するため判定しない。
+const PREVENTION_CATEGORY = /^(?:非欠陥|処置済み|被覆|見送り)|引き?継|依頼/;
+const CHANGED_ARTIFACT = /[\w.-]+\/[\w./-]+|[\w-]\.[A-Za-z]{1,5}\b|(?<!\w)\.[A-Za-z][\w.-]*|\b[0-9a-f]{7,40}\b|\b[A-Z][a-z]*file\b/;
+const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
+  "send-to-user",
+  "warn",
+  "本文は表示済みである。`再発防止:`の行が、変える成果物（ファイル・commit）も採用しない区分名も示していない。" +
+    "担当の心がけは再発防止にならない（`agent-basics:bugfix/references/prevention.md`）。採る場合は誤りを誘った入力の除去・構造・検査のどれかで変えるファイルを、" +
+    "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
+);
+
 export function reportWarnings(message: string): string[] {
   const warnings = new Set<string>();
   for (const line of reportedLines(message)) {
@@ -164,6 +177,11 @@ export function reportWarnings(message: string): string[] {
   const heads = new Set(body.map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]));
   for (const check of RECORD_LINE_CHECKS) {
     if (check.cues.every((cue) => cues.has(cue)) && !heads.has(check.head)) warnings.add(check.warning);
+  }
+  for (const line of body.map((item) => item.replaceAll("：", ":"))) {
+    if (!line.startsWith("再発防止:")) continue;
+    const content = line.slice("再発防止:".length).trim();
+    if (!PREVENTION_CATEGORY.test(content) && !CHANGED_ARTIFACT.test(content)) warnings.add(PREVENTION_WITHOUT_CHANGE_WARNING);
   }
   return [...warnings];
 }
