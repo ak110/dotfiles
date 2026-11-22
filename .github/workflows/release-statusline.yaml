@@ -4,6 +4,8 @@ on:
   workflow_run:
     workflows:
       - CI
+    branches:
+      - master
     types:
       - completed
 
@@ -12,7 +14,7 @@ permissions:
 
 concurrency:
   group: release-statusline
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   gate:
