@@ -42,7 +42,7 @@ for (const placed of [true, false]) {
     const responses: string[] = [];
     on("session.id", () => ({ value: "ui-session" }));
     on("turn.start", (_$, e) => ({ turnId: e.turnId }));
-    on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "表示する本文" }, expires: 99999999999 }) }));
+    on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message: "`/reload-plugins` を実行してください。" }, expires: 99999999999 }) }));
     on("fs.write", (_$, e) => { responses.push(e.text); return { value: undefined }; });
     on("ui.place", () => {
       placements++;
@@ -58,6 +58,7 @@ for (const placed of [true, false]) {
     if (placed) {
       expect(response.reason.split("\n")[0]).toBe("このメッセージはユーザーに送信済みです。同じ内容を再送したり、通常の応答本文で再掲・送信確認・要約したりしてはいけません。");
       expect(response.reason).toContain("新しい報告はsend_to_userで送る");
+      expect(response.reason).toContain("`apply_runtime_changes`");
       expect(response.reason).toContain("Claude Codeが可視の本文を求める場合の最小の応答は「…」");
     } else {
       expect(response.reason).toContain("対応画面なし");

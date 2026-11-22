@@ -136,8 +136,12 @@ function reportedLines(message: string): string[] {
   return lines;
 }
 
+const RUNTIME_CHANGE_COMMAND = /(?:\/reload-plugins\b|\/mcp\b[^。！？!?\n]*(?:再接続|reconnect))/i;
+const RUNTIME_CHANGE_REQUEST = /(?:してください|して下さい|していただけ|してもらえ|お願いします|をお願い|please\b)/i;
+const RUNTIME_CHANGE_UNAVAILABLE = /(?:予約に失敗|予約でき(?:ない|なかった)|接続(?:を失|が切|できない)|自(?:力|分)では[^。！？!?\n]*(?:できない|行えない))/;
+
 // 区分名で始まらない値、未調査を理由にした`不要`、逸脱の報告に欠けた記録の行の警告を、重複を除いて返す。
-export function reportWarnings(message: string): string[] {
+export function reportWarnings(message: string, runtimeChangesAvailable = false): string[] {
   const warnings = new Set<string>();
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
   if (clockClaims.some((line) => /(?:^|[^0-9A-Za-z_])(?:(?:[01]?\d|2[0-3]):(?:[0-5][xX]|[xX][0-9xX])|(?:[012][xX]|[xX][0-9xX]):(?:[0-5][0-9xX]|[xX][0-9xX]))(?![0-9A-Za-z_])/.test(line))) {
@@ -165,6 +169,11 @@ export function reportWarnings(message: string): string[] {
     }
   }
   const body = reportBodyLines(message);
+  if (runtimeChangesAvailable && !body.some((line) => RUNTIME_CHANGE_UNAVAILABLE.test(line)) &&
+      body.some((line) => line.split(/[。！？!?]/).some((sentence) => RUNTIME_CHANGE_COMMAND.test(sentence) && RUNTIME_CHANGE_REQUEST.test(sentence)))) {
+    warnings.add(automatedMessage("send-to-user", "warn",
+      "本文は表示済みである。再読込や再接続はユーザーに頼まず、`apply_runtime_changes`で自分で予約せよ。"));
+  }
   const text = body.map((line) => line.replace(/`[^`\n]+`/g, "")).join("\n");
   const cues = new Set(CUE_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([cue]) => cue));
   const heads = new Set(body.map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]));

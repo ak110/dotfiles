@@ -120,3 +120,19 @@ for (const [message, heads] of [
     }
   });
 }
+
+test("自力で反映できる場面の再読込・再接続の依頼だけ警告する", () => {
+  const requests = ["`/reload-plugins` を実行してください。", "`/mcp` で再接続をお願いします。"];
+  for (const request of requests) {
+    expect(reportWarnings(request, true).join("\n")).toContain("apply_runtime_changes");
+    expect(reportWarnings(request)).toEqual([]);
+  }
+  for (const message of [
+    "`/reload-plugins` を実行しました。",
+    "`/mcp` は再接続に使うコマンドです。",
+    "予約に失敗したため、`/reload-plugins` を実行してください。",
+    "MCPの接続を失いました。`/mcp` で再接続してください。",
+  ]) {
+    expect(reportWarnings(message, true)).toEqual([]);
+  }
+});
