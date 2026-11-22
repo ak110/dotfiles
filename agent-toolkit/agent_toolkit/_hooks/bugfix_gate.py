@@ -1,8 +1,8 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。
 
 `send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
-`agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
+この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、その発話の後に
+`agent-basics:bugfix`の直接呼出しや、REPLで実行して成功結果が保存された個別の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
 遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
@@ -192,17 +192,38 @@ def is_defect_report(prompt: str) -> bool:
     return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
 
 
-def _invokes_bugfix(entry: dict) -> bool:
-    message = entry.get("message")
-    content = message.get("content") if entry.get("type") == "assistant" and isinstance(message, dict) else None
-    return isinstance(content, list) and any(
-        isinstance(block, dict)
-        and block.get("type") == "tool_use"
-        and block.get("name") == "Skill"
-        and isinstance(block.get("input"), dict)
-        and block["input"].get("skill") in _BUGFIX_SKILLS
-        for block in content
-    )
+def _started_bugfix(entries: list[dict]) -> bool:
+    """直接の呼出しと、ホストが個別結果を保存したREPLの起動を認める。"""
+    calls: dict[str, bool] = {}
+    for entry in entries:
+        message = entry.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        receipt = entry.get("toolUseResult")
+        for block in blocks if isinstance(blocks, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if entry.get("type") == "assistant" and block.get("type") == "tool_use" and block.get("name") == "Skill":
+                args, identifier = block.get("input"), block.get("id")
+                skill = args.get("skill") if isinstance(args, dict) else None
+                if isinstance(identifier, str) and identifier and isinstance(skill, str) and skill in _BUGFIX_SKILLS:
+                    calls[identifier] = entry.get("isVirtual") is not True
+            elif entry.get("type") == "user" and block.get("type") == "tool_result":
+                identifier = block.get("tool_use_id")
+                if not isinstance(identifier, str) or identifier not in calls:
+                    continue
+                success = receipt.get("success") if isinstance(receipt, dict) else None
+                name = receipt.get("commandName") if isinstance(receipt, dict) else None
+                if block.get("is_error") is True or success is False:
+                    calls[identifier] = False
+                elif (
+                    entry.get("isVirtual") is True
+                    and block.get("is_error") is False
+                    and success is True
+                    and isinstance(name, str)
+                    and name in _BUGFIX_SKILLS
+                ):
+                    calls[identifier] = True
+    return any(calls.values())
 
 
 def bugfix_pending(lines: list[str]) -> bool:
@@ -211,14 +232,15 @@ def bugfix_pending(lines: list[str]) -> bool:
     if turn is None:
         return False
     prompt, entries = turn
-    return is_defect_report(prompt) and not any(_invokes_bugfix(entry) for entry in entries)
+    return is_defect_report(prompt) and not _started_bugfix(entries)
 
 
 def _block_body(delivery: str) -> str:
     return _block_notice(
         f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
         fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
-        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。",
+        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。"
+        "REPLではSkillの実行結果を回収した後、別の評価で報告せよ。",
     )
 
 
