@@ -398,7 +398,10 @@ def test_wait_public_output_reserves_running_rows_within_limit(
 def test_agents_wait_is_not_resaved_with_stderr(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """上限ちょうどの要約に標準エラーが加わっても、要約を共通の保存へ回さず直接書く。"""
+    """上限近い要約に標準エラーが加わっても、要約は直接書き、合計の超過分は標準エラーだけを保存する。
+
+    要約ごと保存すると終了行を直接読めず、標準エラーを直接書くと長い診断がホストの上限を超える。
+    """
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     summary = "終了: 1件\n" + "x" * (output_file.AUTO_SAVE_THRESHOLD_BYTES - len("終了: 1件\n".encode()) - 1) + "\n"
@@ -414,8 +417,37 @@ def test_agents_wait_is_not_resaved_with_stderr(
 
     captured = capsys.readouterr()
     assert captured.out == summary
-    assert "警告" in captured.err
-    assert not managed_temp.list_managed_temp("atk-output")
+    assert "警告" not in captured.err
+    saved = pathlib.Path(captured.err.split("標準エラー保存先: ", 1)[1].split("\n", 1)[0])
+    assert saved.read_text(encoding="utf-8") == "警告\n"
+
+
+def test_wait_summary_saves_notice_body_over_limit(tmp_path: pathlib.Path) -> None:
+    """上限に収まらない通知の本文は保存先を示し、上限内の通知は本文を直接示す。
+
+    通知の本文は終了結果と違って本文ファイルを持たないため、省いた本文へ到達できる所在を返す。
+    """
+    saved: list[tuple[str, str]] = []
+
+    def save_notice(session_id: str, body: str) -> pathlib.Path:
+        saved.append((session_id, body))
+        return tmp_path / f"{session_id}-notice.md"
+
+    long_body = "通" * wait_summary.BODY_BUDGET_BYTES
+    rows: list[dict[str, Any]] = [
+        {"session_id": "session-1", "status": "running", "notices": [{"body": long_body}, {"body": "短い通知"}]},
+    ]
+
+    lines = wait_summary.render(rows, save_notice=save_notice).splitlines()
+
+    assert lines == [
+        "通知: 2件（session_id: session-1）",
+        f"通知本文保存先: session_id=session-1 path={tmp_path / 'session-1-notice.md'}",
+        "本文開始: session_id=session-1",
+        "短い通知",
+        "本文終了: session_id=session-1",
+    ]
+    assert saved == [("session-1", long_body)]
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

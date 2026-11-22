@@ -942,7 +942,16 @@ def _print_public(output: str, stream: str | None) -> None:
         if row.get("status") not in state.TERMINAL_STATUSES
     )
     # 要約の後に続ける行の量も本文の予算から差し引き、終了行と本文を直接表示できる量に収める。
-    sys.stdout.write(wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8"))) + others)
+    writer = _BodyFileWriter()
+
+    def save_notice(session_id: str, body: str) -> pathlib.Path | None:
+        try:
+            return writer.write(f"{session_id}-notice", {"agent_message": body})
+        except _managed_temp.ManagedTempError, OSError:
+            return None
+
+    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), save_notice=save_notice)
+    sys.stdout.write(summary + others)
     sys.stdout.flush()
 
 

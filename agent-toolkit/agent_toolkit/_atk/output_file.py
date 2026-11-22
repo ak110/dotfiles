@@ -128,6 +128,7 @@ def auto_save(
     *,
     after_save: Callable[[pathlib.Path], None] | None = None,
     force_stdout: bool = False,
+    direct_stdout: bool = False,
     discard_directory: Callable[[pathlib.Path], None] | None = None,
 ) -> Generator[None]:
     """有限で終了する呼び出しの標準出力と標準エラーを保持し、量によらず標準出力を保存する呼び出しでは実行前に保存先を開く。
@@ -138,6 +139,8 @@ def auto_save(
     生成領域を片付け、保存先と行数を表示しない。読む結果が無い保存先を受信側へ渡さないためである。
     実行前に開いた保存先へ出力を書いて非0で終わった場合は、`after_save`を呼ばず、保存した出力のうち
     エラーの本文と次の操作を表示する。受信側が保存先を開かずに失敗の理由を読めるようにするためである。
+    `direct_stdout`が真の呼び出しは、標準出力を自身で境界以内に収める前提で常に直接表示し、
+    合計が境界を超える場合は標準エラーだけを保存する。
     """
     stdout_buffer, stderr_buffer = io.StringIO(), io.StringIO()
     saved: pathlib.Path | None = None
@@ -180,6 +183,9 @@ def auto_save(
             _emit(stderr_text, create_directory, stderr=True, save=_utf8_size(stderr_text) > AUTO_SAVE_THRESHOLD_BYTES)
         else:
             save_stdout, save_stderr = _streams_to_save(stdout_buffer.getvalue(), stderr_buffer.getvalue())
+            if direct_stdout:
+                total = _utf8_size(stdout_buffer.getvalue()) + _utf8_size(stderr_buffer.getvalue())
+                save_stdout, save_stderr = False, bool(stderr_buffer.getvalue()) and total > AUTO_SAVE_THRESHOLD_BYTES
             emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False, save=save_stdout)
             if emitted is not None and after_save is not None:
                 after_save(emitted)

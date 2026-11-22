@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import resume_waits, state, turn_state
@@ -36,7 +36,12 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str:
+def render(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    reserved_bytes: int = 0,
+    save_notice: Callable[[str, str], pathlib.Path | None] | None = None,
+) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
     待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
@@ -45,6 +50,8 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
     `reserved_bytes`は呼び出し元が要約の後へ続けて書く行（終了していない対象の行など）のUTF-8バイト数で、
     本文の予算から先に差し引き、標準出力全体を上限内に収める。
+    上限に収まらない通知の本文は、`save_notice`が保存したファイルの所在を`通知本文保存先:`の行で示す。
+    通知の本文は終了結果と違って他に読む手段が無いため、表示しない本文を黙って落とさない。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
@@ -89,6 +96,14 @@ def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0) -> str
     output = [notice_line]
     for session_id, body in notice_bodies:
         block, remaining = _body_within(session_id, body, remaining)
+        if not block:
+            saved = save_notice(session_id, body) if save_notice is not None else None
+            block = (
+                f"通知本文保存先: session_id={session_id} path={saved}\n"
+                if saved is not None
+                else f"通知本文省略: session_id={session_id}（上限を超え、保存もできなかった）\n"
+            )
+            remaining -= _utf8_size(block)
         output.append(block)
     output.append(terminal_header)
     for line, body_entry in terminal_lines:
