@@ -197,8 +197,17 @@ test("再開後にまとめられた送達は展開して呼び出しごとに�
   expect(expanded).toEqual([true]);
 });
 
-test("配置状態からは本文だけを取り出し、送達時刻を描かない", () => {
-  expect(placedMessage("本文")).toBe("本文");
-  // 旧版が送達時刻とともに保存した状態からも本文だけを取り出す。
-  expect(placedMessage({ message: "旧版の本文", placedAt: 10 })).toBe("旧版の本文");
-});
+for (const [label, stored, text] of [
+  ["新形式", "本文", "本文"],
+  // 旧版が送達時刻とともに保存した状態からも本文だけを描く。
+  ["旧形式", { message: "旧版の本文", placedAt: 10 }, "旧版の本文"],
+] as const) {
+  test(`配置済みの行は${label}の保存状態から本文だけを描き、送達時刻を描かない`, async ($, on) => {
+    const id = "d".repeat(32);
+    on("state.get", () => ({ value: { value: { [id]: stored }, version: 1 } }));
+    expect(placedMessage(stored)).toBe(text);
+    const rendered = JSON.stringify(await $.ui.render({ surface: "terminal", component: "Placed", requestId: "stored-row", props: { plugin: "agent-toolkit", id } }));
+    expect(rendered).toContain(`"text":"${text}"`);
+    expect(rendered).not.toContain("送達時刻");
+  });
+}

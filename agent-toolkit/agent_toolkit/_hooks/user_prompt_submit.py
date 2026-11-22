@@ -150,9 +150,7 @@ def _utterance_notice(session_id: str) -> str:
     """
     resolve_notice(session_id, "user_prompt_submit", "_utterance_notice")
     # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
-    return informational(
-        _llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY)
-    )
+    return informational(_llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY))
 
 
 def main(payload_text: str) -> int:
