@@ -154,6 +154,11 @@ function renderSessions() {
     host.textContent = entry.host;
     const startedAt = document.createElement("span");
     startedAt.textContent = formatTime(entry.started_at);
+    if (queryText && entry.label?.toLowerCase().includes(queryText)) {
+      const label = document.createElement("span");
+      label.textContent = entry.label;
+      meta.append(label);
+    }
     meta.append(host, startedAt);
     item.replaceChildren(cwd, meta);
 

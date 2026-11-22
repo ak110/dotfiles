@@ -164,7 +164,8 @@ async def test_session_tree_places_children_of_every_launch_source_under_parents
         field = page.locator("#sessions-filter")
         await field.fill("exec-lane-search")
         await playwright.async_api.expect(rows).to_have_count(2)
-        await playwright.async_api.expect(page.locator(f'.session-item[data-path*="{delegated_child}"]')).to_be_visible()
+        child = page.locator(f'.session-item[data-path*="{delegated_child}"]')
+        await playwright.async_api.expect(child.get_by_text("exec-lane-search", exact=True)).to_be_visible()
 
         async def list_without_label(route: playwright.async_api.Route) -> None:
             response = await route.fetch()
