@@ -441,7 +441,7 @@ def test_wait_summary_shows_notice_file_and_bodies_within_limit(tmp_path: pathli
         },
     ]
 
-    assert wait_summary.render(rows, notices_path=notices_path).splitlines() == [
+    assert wait_summary.render(rows, notices_reference=f"通知本文ファイル: {notices_path}").splitlines() == [
         "通知: 2件（session_id: session-1）",
         f"通知本文ファイル: {notices_path}",
         "本文開始: session_id=session-1",
@@ -464,20 +464,26 @@ def test_wait_summary_required_lines_do_not_grow_with_notices(tmp_path: pathlib.
         {"session_id": "session-2", "status": "running", "notices": [{"body": f"通知{index}" * 40} for index in range(count)]},
     ]
     body_path.write_text("", encoding="utf-8")
-    without_body = len(wait_summary.render(rows, notices_path=tmp_path / "notices.md").encode("utf-8"))
+    without_body = len(
+        wait_summary.render(rows, notices_reference=f"通知本文ファイル: {tmp_path / 'notices.md'}").encode("utf-8")
+    )
     body_path.write_text("x" * (wait_summary.BODY_BUDGET_BYTES - without_body - 1), encoding="utf-8")
 
-    output = wait_summary.render(rows, notices_path=tmp_path / "notices.md")
+    output = wait_summary.render(rows, notices_reference=f"通知本文ファイル: {tmp_path / 'notices.md'}")
 
     assert len(output.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
     assert f"終了行: session_id=session-1 label=なし status=completed agent_message_path={body_path}" in output
     assert output.count("通知本文ファイル: ") == (1 if count else 0)
 
 
-def test_wait_public_output_shows_all_notices_when_file_cannot_be_written(
-    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("with_run", [pytest.param(True, id="run-record"), pytest.param(False, id="no-run-record")])
+def test_wait_public_output_when_notice_file_cannot_be_written(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, with_run: bool
 ) -> None:
-    """通知本文ファイルを書けない場合は、通知を読む手段を失わないよう全文を表示し、警告と次の操作を示す。"""
+    """通知本文ファイルを書けない場合は、公開済みのrun記録を読む操作を1行で示し、必須行を上限内で直接表示する。
+
+    run記録も無い場合だけ、通知を読む手段を失わないよう全文を表示する。どちらも警告と次の操作を標準エラーへ書く。
+    """
     monkeypatch.setenv("CLAUDECODE", "1")
 
     def fail_write(*_args: Any, **_kwargs: Any) -> pathlib.Path:
@@ -485,14 +491,26 @@ def test_wait_public_output_shows_all_notices_when_file_cannot_be_written(
 
     monkeypatch.setattr(commands.agents_wait._BodyFileWriter, "write", fail_write)
     long_body = "通" * wait_summary.BODY_BUDGET_BYTES
-    row = {"session_id": "session-1", "status": "running", "notices": [{"body": long_body}]}
+    rows = [
+        {"session_id": "session-1", "status": "completed", "agent_message_path": str(tmp_path / "missing.md")},
+        {"session_id": "session-2", "status": "running", "notices": [{"body": long_body}]},
+    ]
+    run_path = tmp_path / "run.json" if with_run else None
 
-    commands.agents_wait._print_public(json.dumps(row, ensure_ascii=False), "stdout")
+    commands.agents_wait._print_public(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows), "stdout", run_path=run_path
+    )
 
     captured = capsys.readouterr()
-    assert long_body in captured.out
-    assert "通知の本文をファイルへ書けないため全文を表示する" in captured.err
+    terminal_line = f"終了行: session_id=session-1 label=なし status=completed agent_message_path={tmp_path / 'missing.md'}"
+    assert terminal_line in captured.out.splitlines()
     assert "次の操作:" in captured.err
+    if with_run:
+        assert f"通知本文の取得: jq -r .output -- {run_path}" in captured.out.splitlines()
+        assert long_body not in captured.out
+        assert len(captured.out.encode("utf-8")) <= wait_summary.BODY_BUDGET_BYTES
+    else:
+        assert long_body in captured.out
 
 
 def test_wait_summary_keeps_earlier_bodies_and_skips_oversized_or_unreadable(tmp_path: pathlib.Path) -> None:

@@ -253,7 +253,7 @@ def _publish_wait_result(
         raise _WaitStateReadError(f"公開する待機runがrunningではありません: {run_path}")
     published = value.publish(_without_bodies(output, stream), code, stream, result_turns=result_turns)
     _write_json(run_path, published.model_dump(exclude_unset=True))
-    _print_public(output, stream)
+    _print_public(output, stream, run_path=run_path)
     _write_json(run_path, published.deliver(continuable=continuable).model_dump(exclude_unset=True))
     _remove_wait_stash(run_path)
     return code
@@ -921,7 +921,11 @@ def _with_body(row: dict[str, Any]) -> dict[str, Any]:
         return row
 
 
-def _print_public(output: str, stream: str | None) -> None:
+_NOTICE_RUN_PREFIX = "通知本文の取得: "
+"""通知本文ファイルを書けない時に、公開済みのrun記録から通知の本文を読む操作を示す行の先頭。"""
+
+
+def _print_public(output: str, stream: str | None, *, run_path: pathlib.Path | None = None) -> None:
     """待機結果を前景へ書く。エージェント環境では本文を重ねて保存しないよう、要約を標準出力へ直接書く。
 
     要約は通知・終了の内訳と上限内の本文を示し、本文ファイルを`agent_message_path`で後続へ渡せるようにする。
@@ -942,20 +946,29 @@ def _print_public(output: str, stream: str | None) -> None:
         if row.get("status") not in state.TERMINAL_STATUSES
     )
     # 通知の本文は全件を1つのファイルへ書き、要約はその所在を1行で示して本文を上限内でだけ続ける。
-    # 書けない場合は、通知を読む手段を失わないよう全文を表示する（保存の失敗で全量を表示する共通処理と同じ扱い）。
-    notices_path: pathlib.Path | None = None
+    # 書けない場合は、公開済みのrun記録（通知の本文を含む）を読む操作を示す。run記録も無い場合だけ全文を表示する。
+    notices_reference: str | None = None
     if notice_text := wait_summary.notice_text(rows):
         try:
-            notices_path = _BodyFileWriter().write("notices", {"agent_message": notice_text})
+            notices_reference = (
+                f"{wait_summary.NOTICE_FILE_PREFIX}{_BodyFileWriter().write('notices', {'agent_message': notice_text})}"
+            )
         except (_managed_temp.ManagedTempError, OSError) as error:
+            if run_path is not None:
+                notices_reference = f"{_NOTICE_RUN_PREFIX}jq -r .output -- {run_path}"
             print(
-                f"警告: 通知の本文をファイルへ書けないため全文を表示する: {error}\n"
-                "次の操作: managed-tempの権限・空き容量を確認する",
+                f"警告: 通知の本文をファイルへ書けない: {error}\n"
+                + (
+                    f"次の操作: 通知の本文は`jq -r .output -- {run_path}`の各行のnoticesから読む。"
+                    "managed-tempの権限・空き容量を確認する"
+                    if run_path is not None
+                    else "次の操作: 通知の本文は標準出力に全文を表示した。managed-tempの権限・空き容量を確認する"
+                ),
                 file=sys.stderr,
                 flush=True,
             )
     # 要約の後に続ける行の量も本文の予算から差し引き、終了行と本文を直接表示できる量に収める。
-    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), notices_path=notices_path)
+    summary = wait_summary.render(rows, reserved_bytes=len(others.encode("utf-8")), notices_reference=notices_reference)
     sys.stdout.write(summary + others)
     sys.stdout.flush()
 

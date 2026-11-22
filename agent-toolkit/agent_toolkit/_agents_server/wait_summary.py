@@ -38,9 +38,7 @@ _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
 
 
-def render(
-    rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0, notices_path: pathlib.Path | str | None = None
-) -> str:
+def render(rows: Iterable[Mapping[str, Any]], *, reserved_bytes: int = 0, notices_reference: str | None = None) -> str:
     """待機結果の行から、通知・終了の内訳と上限内の本文を持つ要約を返す。
 
     待機表明を確定した結果は、`unfinished_waits`へ残った待機対象の件数を加える。対象が残っていなければ0とする。
@@ -49,10 +47,10 @@ def render(
     要約全体が上限を超える本文と、読めない本文ファイルは表示せず、`agent_message_path`から読ませる。
     `reserved_bytes`は呼び出し元が要約の後へ続けて書く行（終了していない対象の行など）のUTF-8バイト数で、
     本文の予算から先に差し引き、標準出力全体を上限内に収める。
-    `notices_path`は全通知の本文を`notice_text`の形で書いたファイルで、所在を`通知本文ファイル:`の1行で必ず示し、
+    `notices_reference`は全通知の本文へ到達する手段を示す1行（`通知本文ファイル: <パス>`など）で、通知があれば必ず示し、
     個々の通知の本文は上限内でだけ続ける。通知の件数によらず必須の行は増えない。
-    必須の行（見出し、通知本文ファイルの行、終了行、後続の行）を予算から先に差し引いてから任意の本文を選ぶ。
-    ファイルが無い場合（書けなかった場合）の通知の本文は、他に読む手段が無いため必須として示す。
+    必須の行（見出し、通知本文の参照の行、終了行、後続の行）を予算から先に差し引いてから任意の本文を選ぶ。
+    参照が無い場合の通知の本文は、他に読む手段が無いため必須として示す。
     """
     notice_count = 0
     notice_session_ids: set[str] = set()
@@ -84,7 +82,7 @@ def render(
             terminal_lines.append((f"{TERMINAL_LINE_PREFIX}{' '.join(fields)}", _terminal_body(result)))
     notice_line = f"通知: {notice_count}件（session_id: {', '.join(sorted(notice_session_ids))}）\n" if notice_count else ""
     terminal_header = f"終了: {len(terminal_lines)}件\n" if terminal_lines else ""
-    notice_file_line = f"{NOTICE_FILE_PREFIX}{notices_path}\n" if notice_bodies and notices_path is not None else ""
+    notice_file_line = f"{notices_reference}\n" if notice_bodies and notices_reference is not None else ""
     # 全文のファイルが無い通知の本文は、他に読む手段が無いため必須として扱う。
     required_notices = "" if notice_file_line else "".join(_body_block(*entry) for entry in notice_bodies)
     remaining = (
