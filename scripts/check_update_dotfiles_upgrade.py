@@ -521,16 +521,81 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
     )
 
 
+def _upgrade_config_path(env: Mapping[str, str], platform_name: str) -> pathlib.Path:
+    name = "WIN_PD_OVERRIDE_LOCAL_APPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"
+    return pathlib.Path(env[name]) / "agent-toolkit" / "config.json"
+
+
 def _register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
     """合成remoteを使う検証checkoutを、検証homeだけで共有サービスの起動対象に登録する。"""
-    config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
-    config = config_base / "agent-toolkit" / "config.json"
+    config = _upgrade_config_path(env, platform_name)
     config.parent.mkdir(parents=True, exist_ok=True)
     settings = json.loads(config.read_text(encoding="utf-8")) if config.exists() else {}
     repositories = json.loads(settings.get("repositories", "{}"))
     repositories["github.com/ak110/dotfiles"] = {"path": str(checkout.resolve()), "edit": "allow"}
     settings["repositories"] = json.dumps(repositories)
     config.write_text(json.dumps(settings), encoding="utf-8")
+
+
+def _require_inside(root: pathlib.Path, label: str, value: str | pathlib.Path) -> pathlib.Path:
+    path = pathlib.Path(value)
+    if not path.is_absolute() or not (resolved := path.resolve()).is_relative_to(root):
+        raise UpgradeCheckError(f"検証領域外の{label}: {path}。更新を起動しない。")
+    return resolved
+
+
+def _verify_upgrade_environment(root: pathlib.Path, env: Mapping[str, str], platform_name: str) -> pathlib.Path:
+    names = ["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "UV_PYTHON_INSTALL_DIR", "UV_CACHE_DIR", "UV_TOOL_BIN_DIR"]
+    if platform_name == "windows":
+        names.extend(("LOCALAPPDATA", "APPDATA", "WIN_PD_OVERRIDE_LOCAL_APPDATA"))
+    for name in names:
+        _require_inside(root, name, env[name])
+    return _require_inside(root, "設定ファイル", _upgrade_config_path(env, platform_name))
+
+
+def _verify_upgrade_inputs(
+    root: pathlib.Path,
+    checkout: pathlib.Path,
+    bare_repo: pathlib.Path,
+    env: dict[str, str],
+    platform_name: str,
+    *,
+    runner: Runner,
+) -> None:
+    """製品の起動直前に、更新で使う解決先を検証領域に制限する。"""
+    checkout = _require_inside(root, "checkout", checkout)
+    bare_repo = _require_inside(root, "検証用の上流", bare_repo)
+    config = _verify_upgrade_environment(root, env, platform_name)
+    try:
+        settings = json.loads(config.read_text(encoding="utf-8"))
+        registered = json.loads(settings["repositories"])["github.com/ak110/dotfiles"]["path"]
+    except (KeyError, OSError, ValueError, TypeError) as error:
+        raise UpgradeCheckError(f"検証用のcheckout登録を確認できない: {config}。更新を起動しない。") from error
+    if _require_inside(root, "checkout登録", registered) != checkout:
+        raise UpgradeCheckError(f"検証用のcheckoutと登録が一致しない: {config}。更新を起動しない。")
+    branch = _run(("git", "symbolic-ref", "HEAD"), cwd=checkout, env=env, runner=runner).stdout.strip()
+    if branch != f"refs/heads/{_BRANCH}":
+        raise UpgradeCheckError(f"検証用でないGitのブランチ: {branch}。更新を起動しない。")
+    upstream = _run(
+        ("git", "for-each-ref", "--format=%(upstream:remotename) %(upstream:remoteref)", branch),
+        cwd=checkout,
+        env=env,
+        runner=runner,
+    ).stdout.strip()
+    if upstream != f"origin refs/heads/{_BRANCH}":
+        raise UpgradeCheckError(f"検証用でないGitの上流ブランチ: {branch} -> {upstream}。更新を起動しない。")
+    for command in (("remote", "get-url", "--all", "origin"), ("remote", "get-url", "--push", "--all", "origin")):
+        urls = _run(("git", *command), cwd=checkout, env=env, runner=runner).stdout.splitlines()
+        if len(urls) != 1 or _require_inside(root, "Gitの上流", urls[0]) != bare_repo:
+            raise UpgradeCheckError("Gitの上流が検証用の上流と一致しない。更新を起動しない。")
+    uv_name = "uv.exe" if platform_name == "windows" else "uv"
+    uv = _require_inside(root, "uv", pathlib.Path(env["UV_TOOL_BIN_DIR"]) / uv_name)
+    env["UV_MANAGED_PYTHON"] = "1"
+    script = _require_inside(root, "更新スクリプト", checkout / "libexec" / "update_dotfiles.py")
+    python = _run(
+        (uv, "python", "find", "--no-project", "--script", script), cwd=checkout, env=env, runner=runner
+    ).stdout.strip()
+    env["UV_PYTHON"] = str(_require_inside(root, "Python", python))
 
 
 def _run_isolated_upgrade(
@@ -555,6 +620,7 @@ def _run_isolated_upgrade(
         create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
         _run(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
         env = _isolated_env(home, pathlib.Path(uv_path), platform_name, temp_root)
+        _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
         # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
         # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
         # 旧版を構築してしまう。旧版を使っていた時点の状態を再現するため、初期適用だけ旧版の基準版へ固定する。
@@ -589,7 +655,9 @@ def _run_isolated_upgrade(
                     f"元の診断: {error}"
                 ) from error
         _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
+        _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
         _register_upgrade_checkout(checkout, env, platform_name)
+        _verify_upgrade_inputs(temp_root.resolve(), checkout, bare_repo, env, platform_name, runner=runner)
         # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():

@@ -2,6 +2,7 @@
 
 import contextlib
 import importlib
+import json
 import os
 import pathlib
 import shutil
@@ -311,6 +312,30 @@ def test_bootstrap_entry_prepares_python(
     else:
         assert result.returncode == 0, result.stdout + result.stderr
         assert result.stdout.strip() == "managed-python"
+
+
+@pytest.mark.skipif(_PS is None, reason="PowerShellがない")
+def test_report_only_recovers_diagnostic_when_runtime_did_not_start(tmp_path: pathlib.Path) -> None:
+    directory = tmp_path / "agent-toolkit"
+    directory.mkdir()
+    report = directory / "update-bootstrap-11-22.json"
+    log = directory / "uv-管理Pythonの更新-failed.log"
+    log.write_text("診断の本文", encoding="utf-8")
+    item = {"title": "管理Pythonの更新", "detail": "exit=17", "saved": True}
+    report.write_text(json.dumps([item, item]), encoding="utf-8")
+    assert _PS is not None
+    result = subprocess.run(
+        [_PS, "-NoProfile", "-File", str(_ROOT / "libexec/update_bootstrap.ps1"), "unused", "-ReportOnly"],
+        env={**os.environ, "LOCALAPPDATA": str(tmp_path), "UPDATE_DOTFILES_BOOTSTRAP_REPORT": str(report)},
+        capture_output=True,
+        encoding="utf-8",
+        check=False,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stderr.count(str(log)) == 1
+    assert log.read_text(encoding="utf-8") == "診断の本文"
+    assert not report.exists()
 
 
 def test_stage_continued_failure_reaches_update_result(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
