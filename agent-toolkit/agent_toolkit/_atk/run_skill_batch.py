@@ -427,7 +427,7 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
                 sync.commit_and_push(notes, "chore: 振り返りの失敗報告を同期", [str(report_path.relative_to(notes))])
             saved = True
         except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
-            _LOG.exception("既存の失敗報告を同期できない: %s", report_path)
+            _LOG.exception("既存の失敗報告を同期できない。Git同期の診断を直してから次回の起動で再同期する: %s", report_path)
     elif session_review.failure_reported(failure_key):
         saved = True
     else:
@@ -441,7 +441,7 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
             )
             saved = True
         except OSError, ValueError, subprocess.SubprocessError:
-            _LOG.exception("振り返りの失敗報告を保存できない: %s", failure_key)
+            _LOG.exception("振り返りの失敗報告を保存できない。WI保存先を直してから次回の起動で再試行する: %s", failure_key)
             saved = False
     if saved:
         session_review.failure_reported(failure_key, reported=True)
@@ -458,26 +458,39 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         if previous.get("report_synced") is False:
             session_review.launch_result()
             if not _save_meta_failure(start, previous):
+                outcome.report_failure(
+                    "前回のメタ分析の失敗報告を同期できないため、今回は起動していない",
+                    next_action="起票元のWI保存先とGit同期の診断を直し、同じメタ分析を再実行する",
+                )
                 return 1
             if not manual:
                 return 0
     if getattr(args, "resume_record", None) is not None:
         return execute(args)
+    work_dir = getattr(args, "work_dir", None)
+    if manual:
+        work_dir = (
+            pathlib.Path(os.path.expanduser(work_dir))
+            if work_dir is not None
+            else repo.resolve_local_worktree(args.target_repo)
+        )
+        if not work_dir.is_absolute() or not work_dir.is_dir():
+            outcome.report_failure(
+                "メタ分析の実行cwdには実在する絶対ディレクトリが必要",
+                next_action="--work-dirに実在する絶対ディレクトリを指定するか、Git作業ツリー内から起動する",
+            )
+            return 2
     now = datetime.datetime.now(datetime.UTC)
     record: dict[str, Any] = {"started_at": now.isoformat()}
     session_review.write(start, record)
     session_review.launch_result()
     stage = "worktree"
     try:
-        work_dir = getattr(args, "work_dir", None)
         if work_dir is None:
-            if manual:
-                work_dir = repo.resolve_local_worktree(args.target_repo)
-            else:
-                source = _plugin_repository()
-                registered = config_settings.repository_settings(check_paths=False).get(source)
-                if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
-                    raise ValueError(f"メタ分析のGit作業ツリーを `atk config repos` で登録する: {source}")
+            source = repo.resolve_repo_id_or_raise(_plugin_repository())
+            registered = config_settings.repository_settings(check_paths=False).get(source)
+            if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
+                raise ValueError(f"メタ分析のGit作業ツリーを `atk config repos` で登録する: {source}")
         stage = "queue"
         args.target_repo = _meta_report_target(now=now)
         args.work_dir = str(work_dir)

@@ -524,12 +524,11 @@ def launch_notice(host: str) -> str | None:
                 if os.name == "nt"
                 else "cat -- " + shlex.quote(log_path)
             )
-            retry = (
-                "atk run-skill --args meta review-session"
-                if value.get("mode") == "meta"
-                else skill_modes.entry_command(host, "review-session batch")
-            )
-            failures.append(f"{value['host']} {value['event']}: `{read_command}`（原因を是正してから`{retry}`を実行せよ）")
+            if value.get("mode") == "meta":
+                retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
+            else:
+                retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
+            failures.append(f"{value['host']} {value['event']}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
             attempt.notify().save(path)
     if not failures:
         return None

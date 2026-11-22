@@ -118,7 +118,10 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         "--args",
         metavar="TEXT",
         default=None,
-        help="スキルへ渡す任意の文字列。process-wiは先頭語single-lane/all-repos、review-sessionはbatchの完全一致でモードを選び、残りを自由記述として保持する。",
+        help=(
+            "スキルへ渡す任意の文字列。先頭語がprocess-wiのsingle-lane/all-reposかreview-sessionのbatch/metaに"
+            "完全一致する時はモードに使い、残りを自由記述として保持する。"
+        ),
     )
     parser.add_argument("--resume", metavar="RUN_ID", help="保存した実行識別子の会話を、元の入力・報告先と残時間で再開する。")
     parser.add_argument(
