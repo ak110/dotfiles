@@ -68,7 +68,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     delete_parser = help_text.add_command(children, "delete", **help_text.HELP["atk lane delete"])
     delete_parser.add_argument("--session-id", help="回収する所有session。省略すると実行環境から解決する。")
     delete_parser.add_argument("--list", action="store_true", help="全sessionの登録と前回結果を読み、削除しない。")
-    delete_parser.add_argument("--repo", type=pathlib.Path, help="--listと併用し、登録外の回収候補を調べる。")
+    delete_parser.add_argument("--repo", type=pathlib.Path, help="登録外資源を調べる対象。回収時は統合先worktreeを指定する。")
     delete_parser.add_argument(
         "--retire-integrated",
         action="store_true",
@@ -144,12 +144,28 @@ def dispatch(args: argparse.Namespace) -> int:
         elif args.lane_subcommand == "recover":
             result = _lane_cleanup.recover(session_id, args.lane)
         else:
-            if getattr(args, "repo", None):
-                raise ValueError("deleteの--repoは--listと併用する")
             retire = getattr(args, "retire_integrated", False)
             if retire and not args.session_id:
                 raise ValueError("--retire-integratedには終了確認済みの--session-idが必要")
+            caller = pathlib.Path.cwd()
+            repo = getattr(args, "repo", None)
+            base = None
+            if repo is None and not args.session_id:
+                for entry in _lane_records.list_resources(session_id)["records"]:
+                    record = entry["record"]
+                    target = pathlib.Path(record["repo"])
+                    if any(caller.is_relative_to(path) for path in _lane_records.worktrees(target)):
+                        repo = pathlib.Path(_lane_records.git(caller, "rev-parse", "--show-toplevel"))
+                        base = record["base_branch"]
+                        break
+            if repo is not None:
+                repo = repo.resolve()
+                base = base or _lane_records.git(repo, "symbolic-ref", "--short", "HEAD")
             result = _lane_cleanup.cleanup_session(session_id, retire_integrated=retire)
+            if repo is not None and base is not None:
+                result["orphans"] = _lane_cleanup.cleanup_orphans(repo, base, caller)
+                if result.get("result_path"):
+                    _lane_records.save(pathlib.Path(result["result_path"]), result)
         print(json.dumps(result, ensure_ascii=False))
         if result.get("target_advanced"):
             outcome.report_warning(

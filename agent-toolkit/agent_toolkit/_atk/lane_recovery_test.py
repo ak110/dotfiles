@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -107,8 +108,76 @@ def test_list_candidates_distinguishes_unregistered_resources(
         (None, "orch/unregistered"),
         (str(detached.resolve()), None),
     }
-    assert all("ユーザー確認なしに削除しない" in r["reason"] for r in candidates)
+    assert all(r["origin"] == "agent" and r["reason"] is None for r in candidates)
     assert pathlib.Path(record["worktree"]).is_dir() and detached.is_dir()
+
+
+@pytest.mark.cpu_limit(4.0, reason="実Gitの登録外資源を通常のlane deleteで分類し、回収を確かめる。")
+def test_delete_sweeps_orphans(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo, selected, record = _create(tmp_path, monkeypatch, capsys)
+    other_session = "lane-other-session"
+    other_path = tmp_path / "other-session"
+    code, _other, stderr = _create_in(
+        capsys,
+        monkeypatch,
+        other_session,
+        repo,
+        selected,
+        "--branch",
+        "orch/other-session",
+        "--worktree",
+        str(other_path),
+        lane_id="lane-02",
+    )
+    assert code == 0, stderr
+    monkeypatch.setenv(lane.SESSION_ENV, record["session_id"])
+    git_repository.run_git(repo, "branch", "orch/obsolete")
+    git_repository.run_git(repo, "branch", "user-owned")
+    git_repository.run_git(repo, "branch", "--track", "lead/upstream", "main")
+    git_repository.run_git(repo, "branch", "worktree-process-loop")
+    trees = {}
+    for name in ("clean", "dirty", "busy", "unique", "caller", "prepared"):
+        path = tmp_path / name
+        git_repository.run_git(repo, "worktree", "add", "-b", f"orch/{name}", str(path))
+        trees[name] = path
+    (trees["dirty"] / "local.txt").write_text("未保存", encoding="utf-8")
+    (trees["unique"] / "unique.txt").write_text("未取込み", encoding="utf-8")
+    git_repository.commit_all(trees["unique"], "固有の変更")
+    state = pathlib.Path(record["record_path"]).parents[2] / "process-loop-ownership"
+    state.mkdir()
+    (state / "ownership.json").write_text(
+        json.dumps({"common_dir": record["common_dir"], "prepared_worktree": str(trees["prepared"])}),
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(trees["caller"])
+    with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=trees["busy"]) as busy:
+        try:
+            code, result, stderr = _invoke(capsys, "delete", "--repo", str(repo))
+        finally:
+            busy.terminate()
+
+    assert code == 0, stderr
+    orphans = result["orphans"]
+    assert {(item["resource"], item["branch"]) for item in orphans["removed"]} == {
+        ("worktree", "orch/clean"),
+        ("branch", "orch/clean"),
+        ("branch", "orch/obsolete"),
+    }
+    assert [item["branch"] for item in orphans["user_confirmation"]] == ["user-owned"]
+    retained = {item["branch"]: item["reason"] for item in orphans["retained"]}
+    assert "未追跡" in retained["orch/dirty"]
+    assert "使用中" in retained["orch/busy"]
+    assert "含まれない" in retained["orch/unique"]
+    for name in ("caller", "prepared"):
+        assert "回収しない" in retained[f"orch/{name}"]
+    assert "upstream" in retained["lead/upstream"]
+    assert "回収しない" in retained["worktree-process-loop"]
+    assert other_path.is_dir() and repo.is_dir()
+    assert not pathlib.Path(record["worktree"]).exists()
+    assert not trees["clean"].exists()
+    assert all(path.is_dir() for name, path in trees.items() if name != "clean")
 
 
 @pytest.mark.cpu_limit(2.0, reason="gitlinkとGitのdiff設定がある実Gitで安全判定を検証する。")
