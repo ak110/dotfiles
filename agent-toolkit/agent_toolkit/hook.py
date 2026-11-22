@@ -131,6 +131,7 @@ def main(argv: list[str]) -> int:
             if isinstance(session_id, str) and isinstance(transcript_path, str):
                 session_state = importlib.import_module("agent_toolkit._common.session_state")
                 session_state.inherit_state_from_transcript(session_id, transcript_path)
+    warning_event = _warning_event(argv[0], payload)
     # Stopの処理中も活動中として扱い、正常な応答が決まった後だけ終了候補へ進める。
     if argv[0] != "session_activity":
         _record_activity(payload, returncode=2 if argv[0] in {"stop", "subagent_stop_advisor"} else 0)
@@ -138,7 +139,7 @@ def main(argv: list[str]) -> int:
         module = importlib.import_module(f"agent_toolkit._hooks.{argv[0]}")
     except Exception as exc:  # noqa: BLE001 -- 読込障害でも操作を継続する
         timing.record(payload, argv[0], started, "import-error")
-        _failure_response(argv[0], exc, payload=payload)
+        _failure_response(argv[0], exc, payload=payload, warning_event=warning_event)
         return 0
     cycle: contextlib.AbstractContextManager[None] = contextlib.nullcontext()
     if isinstance(payload, dict) and payload.get("session_id") and argv[0] != "pretooluse":
@@ -146,12 +147,12 @@ def main(argv: list[str]) -> int:
     try:
         with cycle:
             extra = {"input_warning": input_warning} if input_warning else {}
-            result = _invoke_module(module, payload_text, payload, argv, **extra)
+            result = _invoke_module(module, payload_text, payload, argv, warning_event=warning_event, **extra)
         timing.record(payload, argv[0], started, "returned-zero" if result == 0 else "nonzero")
         return result
     except Exception as exc:  # noqa: BLE001 -- フック障害でも操作を継続する
         timing.record(payload, argv[0], started, "error")
-        _failure_response(argv[0], exc, payload=payload)
+        _failure_response(argv[0], exc, payload=payload, warning_event=warning_event)
         return 0
 
 
@@ -169,9 +170,8 @@ def _warning_event(subcommand: str, payload: object) -> str | None:
     return event if event in _CONTEXT_EVENTS else None
 
 
-def _append_warning(result: dict, subcommand: str, warning: str, payload: object = None) -> None:
+def _append_warning(result: dict, event: str | None, warning: str) -> None:
     """通知を受理するイベントの応答へ、既存の追加文脈を保って警告を連結する。"""
-    event = _warning_event(subcommand, payload)
     if event is None:
         return
     specific = result.setdefault("hookSpecificOutput", {})
@@ -179,10 +179,17 @@ def _append_warning(result: dict, subcommand: str, warning: str, payload: object
     specific["additionalContext"] = "\n\n".join(filter(None, (specific.get("additionalContext"), warning)))
 
 
-def _failure_response(subcommand: str, error: Exception, response: dict | None = None, *, payload: object = None) -> dict:
+def _failure_response(
+    subcommand: str,
+    error: Exception,
+    response: dict | None = None,
+    *,
+    payload: object,
+    warning_event: str | None,
+) -> dict:
     """通知を受理するイベントだけへ、既存応答と単一JSONで障害を返す。"""
     result = response if response is not None else {}
-    if _warning_event(subcommand, payload) is not None:
+    if warning_event is not None:
         warning = _notice_formatter("hook")(
             f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: {type(error).__name__}: {error}。"
             "この診断は元の操作の成否を示さない。",
@@ -193,7 +200,7 @@ def _failure_response(subcommand: str, error: Exception, response: dict | None =
                 "原因と影響を調べよ。認可の範囲内で自ら是正し、担当外の是正だけを委譲元へ渡せ。"
             ),
         )
-        _append_warning(result, subcommand, warning, payload)
+        _append_warning(result, warning_event, warning)
     if response is None and result:
         _bound_pretooluse_context(result, payload, subcommand)
         _notice.emit_response(result)
@@ -259,7 +266,13 @@ def _add_user_copy(
 
 
 def _invoke_module(
-    module: types.ModuleType, payload_text: str, payload: object, argv: list[str], *, input_warning: str = ""
+    module: types.ModuleType,
+    payload_text: str,
+    payload: object,
+    argv: list[str],
+    *,
+    warning_event: str | None,
+    input_warning: str = "",
 ) -> int:
     """内部出力を捕捉し、ホストへ採用した本文の配送だけを確定する。
 
@@ -289,10 +302,10 @@ def _invoke_module(
             response = parsed
     if error is not None:
         with _common_message_format.record_generated() as failure_notices:
-            response = _failure_response(argv[0], error, response or {}, payload=payload)
+            response = _failure_response(argv[0], error, response or {}, payload=payload, warning_event=warning_event)
         generated.extend(failure_notices)
         raw = json.dumps(response, ensure_ascii=False) if response else ""
-    if input_warning and _warning_event(argv[0], payload) is not None:
+    if input_warning and warning_event is not None:
         with _common_message_format.record_generated() as input_notices:
             warning = _notice_formatter("hook")(
                 input_warning,
@@ -302,7 +315,7 @@ def _invoke_module(
             )
         generated.extend(input_notices)
         response = response if response is not None else {}
-        _append_warning(response, argv[0], warning, payload)
+        _append_warning(response, warning_event, warning)
         raw = json.dumps(response, ensure_ascii=False)
     if response is not None and _bound_pretooluse_context(response, payload, argv[0]):
         raw = (json.dumps(response, ensure_ascii=False) + ("\n" if raw.endswith("\n") else "")) if response else ""
