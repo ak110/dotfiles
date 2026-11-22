@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from typing import Literal
 
 import pytest
 
@@ -149,3 +150,17 @@ def test_diagnostic_tail_hides_key_with_long_header(chunk: int) -> None:
     assert _SECRET not in diagnostic_redaction.redact_secrets(data.decode())
     result = diagnostic_redaction.read_diagnostic_tail(_ChunkedStream(data, chunk), limit=64)
     assert _SECRET not in result[0]
+
+
+@pytest.mark.parametrize("unit", ["bytes", "chars"])
+def test_overflow_notice_respects_excerpt_limit(monkeypatch: pytest.MonkeyPatch, unit: Literal["bytes", "chars"]) -> None:
+    """保持の上限を超えた旨の案内も、抜粋と同じ上限の内側に収める。"""
+    monkeypatch.setattr(diagnostic_redaction, "RETAINED_BYTES", 100)
+    tail = diagnostic_redaction.DiagnosticTail(40, unit=unit)
+    tail.feed(f"{_SECRET}\n" * 10)
+    result = tail.excerpt()
+    assert _SECRET not in result.text
+    assert result.omitted
+    assert len(result.text.encode() if unit == "bytes" else result.text) <= 40
+    with io.BytesIO(f"{_SECRET}\n".encode() * 10) as stream:
+        assert len(diagnostic_redaction.read_diagnostic_tail(stream, limit=40).text.encode()) <= 40

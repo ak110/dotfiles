@@ -157,12 +157,20 @@ class DiagnosticExcerpt(NamedTuple):
     source_bytes: int
 
 
-def _overflow_excerpt(source_bytes: int) -> DiagnosticExcerpt:
-    note = (
-        f"（出力が{source_bytes}バイトで保持の上限{RETAINED_BYTES}バイトを超えたため、秘匿を確定できず本文を転載しない。"
-        "全文は元の出力先で確認してください）"
-    )
-    return DiagnosticExcerpt(note, True, source_bytes)
+def _excerpt(
+    safe: str, *, limit: int, unit: Literal["bytes", "chars"], source_bytes: int, overflowed: bool
+) -> DiagnosticExcerpt:
+    """伏せた本文（上限超過では案内）の末尾を、単位ごとの上限で取る。"""
+    if overflowed:
+        safe = (
+            f"（出力が{source_bytes}バイトで保持の上限{RETAINED_BYTES}バイトを超えたため、秘匿を確定できず本文を転載しない。"
+            "全文は元の出力先で確認してください）"
+        )
+    if unit == "chars":
+        return DiagnosticExcerpt(safe[-limit:] if limit else "", overflowed or len(safe) > limit, source_bytes)
+    encoded = safe.encode()
+    text = encoded[-limit:].decode(errors="ignore") if limit else ""
+    return DiagnosticExcerpt(text, overflowed or len(encoded) > limit, source_bytes)
 
 
 class DiagnosticTail:
@@ -174,7 +182,7 @@ class DiagnosticTail:
 
     def __init__(self, limit: int, *, unit: Literal["bytes", "chars"] = "bytes") -> None:
         self.limit = limit
-        self.unit = unit
+        self.unit: Literal["bytes", "chars"] = unit
         self._buffer = bytearray()
         self._total = 0
 
@@ -187,21 +195,16 @@ class DiagnosticTail:
             self._buffer.extend(data)
 
     def excerpt(self) -> DiagnosticExcerpt:
-        if self._total > RETAINED_BYTES:
-            return _overflow_excerpt(self._total)
-        safe = redact_secrets(self._buffer.decode("utf-8", errors="replace"))
-        if self.unit == "chars":
-            return DiagnosticExcerpt(safe[-self.limit :] if self.limit else "", len(safe) > self.limit, self._total)
-        encoded = safe.encode()
-        text = encoded[-self.limit :].decode(errors="ignore") if self.limit else ""
-        return DiagnosticExcerpt(text, len(encoded) > self.limit, self._total)
+        overflowed = self._total > RETAINED_BYTES
+        safe = "" if overflowed else redact_secrets(self._buffer.decode("utf-8", errors="replace"))
+        return _excerpt(safe, limit=self.limit, unit=self.unit, source_bytes=self._total, overflowed=overflowed)
 
 
 def read_diagnostic_tail(stream: BinaryIO, *, limit: int) -> DiagnosticExcerpt:
     """ファイル全体を伏せてから末尾をUTF-8バイト数で抜粋する。保持の上限を超えるファイルは読まない。"""
     size = stream.seek(0, 2)
     if size > RETAINED_BYTES:
-        return _overflow_excerpt(size)
+        return _excerpt("", limit=limit, unit="bytes", source_bytes=size, overflowed=True)
     stream.seek(0)
     tail = DiagnosticTail(limit)
     while chunk := stream.read(65536):

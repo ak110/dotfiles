@@ -289,3 +289,19 @@ def test_read_stderr_keeps_short_output_and_byte_limit(data: bytes, eof: bool) -
     assert len(result.encode()) <= cli_turn._STDERR_LIMIT_CHARS  # pylint: disable=protected-access
     if len(data) < cli_turn._STDERR_LIMIT_CHARS:  # pylint: disable=protected-access
         assert result == data.decode()
+
+
+def test_read_stderr_keeps_complete_line_at_read_limit() -> None:
+    """EOFまで読めた通常の1行は、読取の上限と同じ長さでも捨てずに上限のバイト数で抜粋する。"""
+    from types import SimpleNamespace  # pylint: disable=import-outside-toplevel
+
+    data = b"x" * (cli_turn._STDERR_LIMIT_CHARS * 2)  # pylint: disable=protected-access
+
+    async def read() -> str:
+        reader = asyncio.StreamReader()
+        reader.feed_data(data)
+        reader.feed_eof()
+        process = typing.cast(Process, SimpleNamespace(stderr=reader))
+        return await cli_turn._read_stderr(process)  # pylint: disable=protected-access
+
+    assert asyncio.run(read()) == "x" * cli_turn._STDERR_LIMIT_CHARS  # pylint: disable=protected-access
