@@ -6,7 +6,7 @@ $script:stageInterrupted = $false
 function Invoke-UpdateStage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Start、Wait、Stop、Output、Diagnostic、ExitCodeは段を実行する$attemptの内側から呼ぶ。')]
     param([string]$Name, [string]$Classification, [int]$Seconds, [string]$Program, [string[]]$Arguments, [switch]$Probe,
-        [scriptblock]$Start = { param($p,$a,$probe,$record) Start-UpdateStageProcess $p $a $probe $record },
+        [scriptblock]$Start = { param($p,$a,$probe,$record) Start-OwnedUpdateStageProcess $p $a $probe $record },
         [scriptblock]$Wait = { param($p,$ms)
             # 長いWin32待機中にもPowerShellがCtrl+Cを処理できるようにする。
             $watch = [Diagnostics.Stopwatch]::StartNew()

@@ -12,7 +12,7 @@ from typing import Any
 from agent_toolkit._agents_server import tool_names, wait_summary
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState
-from agent_toolkit._common import background_output
+from agent_toolkit._common import background_output, session_layout, session_registry
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.shell_segments import extract_execution_segments
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command
@@ -85,7 +85,7 @@ async def consume_agents_wait_output_async(session: SessionState, text: str) -> 
     """ファイル読取の後、回収した識別子だけをloopで反映する。"""
     collected = await run_file_operation(_collected_from_wait_output, text)
     session.agents_wait_background_outputs.update(background_output.output_paths(text))
-    _discard_collected(session, collected)
+    _discard_initial_turn_collections(session, collected)
 
 
 async def consume_agents_wait_background_outputs_async(session: SessionState) -> None:
@@ -94,7 +94,7 @@ async def consume_agents_wait_background_outputs_async(session: SessionState) ->
     if not paths:
         return
     collected = await run_file_operation(_read_background_outputs, paths)
-    _discard_collected(session, collected)
+    _discard_initial_turn_collections(session, collected)
 
 
 def _read_background_outputs(paths: tuple[str, ...]) -> set[str]:
@@ -201,7 +201,7 @@ def consume_agents_wait_output(session: SessionState, text: str) -> None:
     """
     collected = _collected_from_wait_output(text)
     session.agents_wait_background_outputs.update(background_output.output_paths(text))
-    _discard_collected(session, collected)
+    _discard_initial_turn_collections(session, collected)
 
 
 def consume_agents_wait_background_outputs(session: SessionState) -> None:
@@ -210,11 +210,27 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
     孫sessionの終了判定と未観測の記録の直前に呼ぶ。出力ファイルが無い、読めない、終了statusの行が無い
     （待機が未完了、または`status: running`だけ）場合は追跡に残す。
     """
-    collected: set[str] = set()
-    for path in session.agents_wait_background_outputs:
-        with contextlib.suppress(OSError, UnicodeError):
-            collected |= _collected_from_wait_output(pathlib.Path(path).read_text(encoding="utf-8"))
-    _discard_collected(session, collected)
+    collected = _read_background_outputs(tuple(session.agents_wait_background_outputs))
+    _discard_initial_turn_collections(session, collected)
+
+
+def _discard_initial_turn_collections(session: SessionState, children: set[str]) -> None:
+    """turnの無い旧出力を初回ターンに限って回収の証拠にする。
+
+    同じsessionの後続ターンでは旧出力と区別できないため、管理側が現在のturn番号と比べる配送記録に委ねる。
+    """
+    tracked = session.live_child_session_ids | session.terminal_child_session_ids
+    for child in children & tracked:
+        if not session_layout.valid_session_id(child):
+            continue
+        # 出力を読んだ後、現在のturn番号を取得し、別の処理へ制御を渡す前に追跡を更新する。
+        current = session_registry.resolve(child)
+        if (
+            current.state != session_registry.Resolution.UNREADABLE
+            and not current.resume_pending
+            and current.recorded_turn_seq in {None, 1}
+        ):
+            _discard_collected(session, {child})
 
 
 def _collected_from_wait_output(text: str) -> set[str]:

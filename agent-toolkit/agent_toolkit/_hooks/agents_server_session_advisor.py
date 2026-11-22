@@ -41,12 +41,18 @@ lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
-lazy from agent_toolkit._hooks.host import is_antigravity_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
 _WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+
+_CLAUDE_WARNING_FIX = (
+    "背景実行が使えるなら、実行ホストで引数なしの `atk agents wait` を単独で背景起動し、"
+    "起動を確認してからターンを終えよ。背景実行が使えないなら同じターンで前景回収せよ。"
+    "結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+)
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
@@ -165,5 +171,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     body = "\n".join(lines)
     fix = "役割が求める指示を`send_message`で返せ。" if awaiting else ""
     if pending_session_ids:
-        fix = f"{_WARNING_FIX}{fix}"
+        warning_fix = _WARNING_FIX if is_codex_payload(payload) or is_antigravity_payload(payload) else _CLAUDE_WARNING_FIX
+        fix = f"{warning_fix}{fix}"
     return "notify", _notice(body, fix=fix, removable_cause=True, summary=body)

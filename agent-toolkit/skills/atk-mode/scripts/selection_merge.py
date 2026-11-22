@@ -8,12 +8,13 @@ import typing
 
 import selection_contract
 from agent_toolkit._plan import selection as _selection
-from check_selection_lanes import _resume_plan_id, overlapping_pairs
+from check_selection_lanes import _resume_plan_id, overlap_wi_pair, overlapping_pairs
 
 _Rows = list[dict[str, object]]
 # 重なりの記録の鍵（昇順のレーン名の組と共通パス）と、その鍵で重なるWIの組と共通パス。
 _RecordKey = tuple[str, str, str]
-_Pair = tuple[frozenset[str], str]
+_Pair = tuple[tuple[str, ...], str]
+_PAIRS = selection_contract.JUDGED_PAIRS_KEY
 _SECONDS = {"implementation_seconds": "実装秒数", "integration_seconds": "統合秒数"}
 _NORM_SPEC_KEY = "プロジェクト規範の指定"
 # 追加入力の`選定`の各項目が持てる欄。追加操作は「自身の追記で成立し得る全体検査の違反を、同じ追加入力で解消できる」
@@ -75,10 +76,13 @@ def _retarget_overlaps(
                 "レーン1の定義": [],
                 "レーン2の定義": [],
                 "判定": record["判定"],
+                _PAIRS: [],
             }
         target = overlaps[key]
         if target["判定"] != record["判定"]:
             raise ValueError(f"{key}: 合わせる重なりの判定が異なる。メインの意味判断で入力をそろえる")
+        pairs = typing.cast(list[list[str]], target[_PAIRS]) + typing.cast(list[list[str]], record[_PAIRS])
+        target[_PAIRS] = [list(pair) for pair in sorted({tuple(pair) for pair in pairs})]
         for field, values in zip(("レーン1の定義", "レーン2の定義"), definitions, strict=True):
             target[field] = list(dict.fromkeys([*typing.cast(list[str], target[field]), *typing.cast(list[str], values)]))
     return list(overlaps.values())
@@ -92,7 +96,7 @@ def _record_key(record: dict[str, object]) -> _RecordKey:
 def _pair_keys(items: _Rows) -> dict[_Pair, _RecordKey]:
     """別レーンで書込対象を共有するWIの組と共通パスごとに、それを判定する重なりの記録の鍵を返す。"""
     return {
-        (frozenset((str(left[_selection.WI_KEY]), str(right[_selection.WI_KEY]))), path): (*lanes, path)
+        (overlap_wi_pair(left, right), path): (*lanes, path)
         for left, right, lanes, paths in overlapping_pairs(items)
         for path in paths
     }
@@ -102,10 +106,30 @@ def _lanes(items: _Rows) -> dict[str, str]:
     return {str(item[_selection.WI_KEY]): str(item[_selection.LANE_KEY]) for item in items}
 
 
+def _freeze_pairs(records: _Rows, items: _Rows) -> None:
+    """旧記録から確定できる未統合の組を、配置や統合状態を変える前に保存する。"""
+    settled = {
+        str(item[_selection.WI_KEY]) for item in items if item.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
+    }
+    groups: dict[_RecordKey, list[list[str]]] = collections.defaultdict(list)
+    for (pair, _), key in _pair_keys(items).items():
+        if not settled.intersection(pair):
+            groups[key].append(list(pair))
+    for record in records:
+        record.setdefault(_PAIRS, sorted(groups[_record_key(record)]))
+
+
+def freeze_overlap_pairs(selection: dict[str, object]) -> None:
+    """保存済み選定の旧記録を現在の配置で固定する。"""
+    items = _rows(selection)
+    _pin_integrated_items(items, _selection.integrated_lanes(selection))
+    _freeze_pairs(typing.cast(_Rows, selection.get(_selection.LANE_OVERLAPS_KEY, [])), items)
+
+
 def _carry_overlaps(sources: collections.abc.Sequence[tuple[_Rows, _Rows]], items: _Rows) -> _Rows:
     """記録時点に判定したWIの組が更新後の鍵の組を覆う重なりの記録だけを、更新後のレーン名で残す。
 
-    `sources`は記録の列と、それを記録した時点の項目の配置の組の列とし、記録はその配置で同じ鍵に重なる組を判定したものとみなす。
+    `sources`は記録と記録時点の配置を持つ。旧記録だけはその時点で両方が未統合の組へ展開する。
     更新後の鍵が判定していない組を含む記録（既存レーンへ合流・移管したWIと相手レーンのWIの組など）と、
     判定した組が分かれる・消える記録は、どのWIの定義かを区別できないため除き、全体検査の記録不足として再判定させる。
     統合済みの項目を含む組は全体検査が記録を求めないため、判定していなくても記録を残す妨げにしない。
@@ -118,10 +142,11 @@ def _carry_overlaps(sources: collections.abc.Sequence[tuple[_Rows, _Rows]], item
     judges: dict[_Pair, set[tuple[int, _RecordKey]]] = collections.defaultdict(set)
     renames: dict[tuple[int, _RecordKey], dict[str, str]] = collections.defaultdict(dict)
     for index, (records, placed) in enumerate(sources):
-        recorded = {_record_key(record) for record in records}
+        _freeze_pairs(records, placed)
+        recorded = {_record_key(record): record[_PAIRS] for record in records}
         before_lanes = _lanes(placed)
         for pair, key in _pair_keys(placed).items():
-            if key in recorded:
+            if list(pair[0]) in typing.cast(list[list[str]], recorded.get(key, [])):
                 judged[index, key].add(pair)
                 judges[pair].add((index, key))
                 renames[index, key].update((before_lanes[wi], after_lanes[wi]) for wi in pair[0])
@@ -132,7 +157,7 @@ def _carry_overlaps(sources: collections.abc.Sequence[tuple[_Rows, _Rows]], item
     for pairs in targets.values():
         origins = set().union(*(judges.get(pair, set()) for pair in pairs))
         covered = set().union(*(judged[origin] for origin in origins))
-        if covered <= pairs and all(pair in covered or pair[0] & settled for pair in pairs):
+        if covered <= pairs and all(pair in covered or settled.intersection(pair[0]) for pair in pairs):
             kept |= origins
     return _retarget_overlaps(
         (record, renames[origin].__getitem__)
@@ -149,7 +174,7 @@ def _rerecord_pairs(items: _Rows, judged: set[_Pair], labels: dict[str, str]) ->
     }
     pairs: dict[_RecordKey, list[str]] = collections.defaultdict(list)
     for pair, key in _pair_keys(items).items():
-        if pair not in judged and not pair[0] & settled:
+        if pair not in judged and not settled.intersection(pair[0]):
             pairs[key].append("と".join(f"{wi}（{labels[wi]}）" for wi in sorted(pair[0])))
     return {key: sorted(values) for key, values in pairs.items()}
 
@@ -161,14 +186,25 @@ def merge_rerecord_pairs(
 
     合流前の配置は`merge_selection`と同じく、追加分を仮名、既存分を既存レーンの名前に置く。
     """
-    placed = [*_rows(added), *_rows(existing)]
+    first = _rows(existing)
+    _pin_integrated_items(first, _selection.integrated_lanes(existing))
+    added_items = _rows(added)
+    for item in added_items:
+        item.pop(_selection.INTEGRATION_STATE_KEY, None)
+    placed = [*added_items, *first]
     judged: set[_Pair] = set()
     for records, items in (
-        (existing.get(_selection.LANE_OVERLAPS_KEY, []), _rows(existing)),
+        (existing.get(_selection.LANE_OVERLAPS_KEY, []), first),
         (added.get(_selection.LANE_OVERLAPS_KEY, []), placed),
     ):
-        recorded = {_record_key(record) for record in typing.cast(_Rows, records)}
-        judged.update(pair for pair, key in _pair_keys(items).items() if key in recorded)
+        rows = copy.deepcopy(typing.cast(_Rows, records))
+        _freeze_pairs(rows, items)
+        recorded = {_record_key(record): record[_PAIRS] for record in rows}
+        judged.update(
+            pair
+            for pair, key in _pair_keys(items).items()
+            if list(pair[0]) in typing.cast(list[list[str]], recorded.get(key, []))
+        )
     return _rerecord_pairs(_rows(merged), judged, _lanes(placed))
 
 
@@ -178,7 +214,12 @@ def transfer_rerecord_pairs(transferred: dict[str, object]) -> dict[_RecordKey, 
     記録不足の鍵は移管前の記録ごと除いているため、その鍵の全ての組を1件の記録で判定し直す。
     """
     items = _rows(transferred)
-    return _rerecord_pairs(items, set(), _lanes(items))
+    judged = {
+        (tuple(pair), str(record["共通パス"]))
+        for record in typing.cast(_Rows, transferred.get(_selection.LANE_OVERLAPS_KEY, []))
+        for pair in typing.cast(list[list[str]], record.get(_PAIRS, []))
+    }
+    return _rerecord_pairs(items, judged, _lanes(items))
 
 
 def _costs(data: dict[str, object]) -> _Rows:
@@ -212,6 +253,7 @@ def reopen_wis(existing: dict[str, object], names: list[str], *, new_plan: bool 
     targets = {lane_of(by_wi[name]) for name in names}
     if "なし" in targets:
         raise ValueError("レーンが`なし`のWIは元レーンで再開できない")
+    freeze_overlap_pairs(result)
     _pin_integrated_items(items, _selection.integrated_lanes(existing))
     for name in names:
         by_wi[name][_selection.INTEGRATION_STATE_KEY] = _selection.NOT_INTEGRATED
@@ -300,6 +342,7 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
     if not isinstance(updates, list) or not isinstance(overlaps, list):
         raise ValueError("追加入力の`選定`・`レーン間の重なり`は列とする")
     result = copy.deepcopy(existing)
+    freeze_overlap_pairs(result)
     # 保存済みの旧欄名と、更新しない項目の表記も保持する。
     items = typing.cast(_Rows, result.get(_selection.DECISIONS_KEY, result.get("decisions")))
     by_wi = {str(item.get(_selection.WI_KEY, item.get("awi"))): item for item in items}
@@ -349,7 +392,25 @@ def extend_write_targets(existing: dict[str, object], addition: object) -> dict[
             target.extend(copy.deepcopy(value) for value in values if value not in target)
     if overlaps:
         target = typing.cast(list[object], result.setdefault(_selection.LANE_OVERLAPS_KEY, []))
-        target.extend(copy.deepcopy(value) for value in overlaps if value not in target)
+        additions = copy.deepcopy(overlaps)
+        structural = selection_contract._overlap_structure_errors(additions)
+        if structural:
+            raise ValueError("\n".join(structural))
+        updated = _rows(result)
+        _pin_integrated_items(updated, _selection.integrated_lanes(result))
+        previous = {_record_key(value): value for value in typing.cast(_Rows, target)}
+        implicit = {_record_key(value) for value in additions if _PAIRS not in value}
+        _freeze_pairs(additions, updated)
+        for value in additions:
+            key = _record_key(value)
+            old = previous.get(key, {})
+            if key in implicit and {k: v for k, v in old.items() if k != _PAIRS} == {
+                k: v for k, v in value.items() if k != _PAIRS
+            }:
+                both = typing.cast(list[list[str]], old[_PAIRS]) + typing.cast(list[list[str]], value[_PAIRS])
+                value[_PAIRS] = [list(pair) for pair in sorted({tuple(pair) for pair in both})]
+        replaced = {_record_key(value) for value in additions}
+        target[:] = [value for value in typing.cast(_Rows, target) if _record_key(value) not in replaced] + additions
     errors, models = selection_contract.structure_errors(result)
     if errors or models:
         raise ValueError("\n".join([*models, *errors]))
@@ -404,10 +465,11 @@ def merge_selection(
     _pin_integrated_items(first, _selection.integrated_lanes(existing))
     # 追加側の記録は、追加分を仮名、既存分を既存レーンの名前に置いた合流前の配置で判定したものとする。
     # 仮名が同じ名前の既存レーンへ写る場合、その名前の記録は追加分と既存分の双方を判定する。
+    for item in second:
+        item.pop(_selection.INTEGRATION_STATE_KEY, None)
     added_placed = [*(dict(item) for item in second), *first]
     for item in second:
         item[_selection.LANE_KEY] = destination(str(item[_selection.LANE_KEY]))
-        item.pop(_selection.INTEGRATION_STATE_KEY, None)
     # 元の追加結果で所要時間とレーンの対応を確認する。
     added_costs = _costs(added)
     costs = {str(row[_selection.LANE_KEY]): row for row in _costs(existing)}
