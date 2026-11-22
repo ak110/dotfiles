@@ -82,6 +82,8 @@
    全体が段階2以上なら単一段階案の比較値を、単一段階で6000秒を超えるなら段階案の比較値を、共有待ちを1回含む全体の配分で確定し直して追加YAMLに記録する。
    統合結果には、追加YAMLで確定し直した比較値だけを使う。
 8. 保存には次のコマンドを単独で実行し、全ての追加WIに`--body-wi`を繰り返して指定する。
+   `--candidate-file`には、手順5で`--with-staleness`を指定して保存した鮮度付きJSONLを渡す。
+   明示したWIだけの鮮度を取得する場合は`--staleness-for <WI名>`を対象ごとに指定し、鮮度の無い一覧は合流に使わない。
 
    ```text
    atk run-script pick-wi-check -- <既存選定YAML> --merge <追加の意味判断YAML> --candidate-file <追加候補JSONLの絶対パス> --lane-map <対応JSON> --output <元の選定結果の出力先ファイル> --work-dir <対象リポジトリの絶対パス> --body-wi <追加WI名>...
