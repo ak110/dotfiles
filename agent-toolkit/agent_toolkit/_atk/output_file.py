@@ -10,8 +10,7 @@ from typing import TextIO
 
 from agent_toolkit._atk import outcome
 
-AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
-"""通常出力を自動保存するUTF-8バイト数の境界。短い出力は直接表示する。"""
+AUTO_SAVE_THRESHOLD_BYTES = 48 * 1024
 
 
 def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filename: str) -> pathlib.Path:
@@ -21,19 +20,30 @@ def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filena
     return saved.resolve()
 
 
+def estimated_tokens(size_bytes: int) -> int:
+    return -(-size_bytes // 3)
+
+
 def saved_report_text(path: pathlib.Path, *, stderr: bool = False) -> str:
     with path.open(encoding="utf-8", newline="") as stream:
         lines = sum(1 for _line in stream)
-    return f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+    text = f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
+    size = path.stat().st_size
+    if size > AUTO_SAVE_THRESHOLD_BYTES:
+        text += (
+            f"注意: 約{estimated_tokens(size)}トークン（{size}バイト）あり、全文の読取は文脈を大きく消費する。"
+            "全文を一度に読まず、rgやjqで必要な箇所を探してから、範囲を指定して読め\n"
+        )
+    return text
 
 
 def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:
     (sys.stderr if stderr else sys.stdout).write(saved_report_text(path, stderr=stderr))
 
 
-def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool) -> pathlib.Path | None:
+def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool, save: bool) -> pathlib.Path | None:
     stream = sys.stderr if stderr else sys.stdout
-    if len(text.encode("utf-8")) <= AUTO_SAVE_THRESHOLD_BYTES:
+    if not save:
         stream.write(text)
         return None
     try:
@@ -48,6 +58,19 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
         _report_saved(saved, stderr=stderr)
         return saved
     return None
+
+
+def _utf8_size(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def _streams_to_save(stdout_text: str, stderr_text: str) -> tuple[bool, bool]:
+    stdout_size, stderr_size = _utf8_size(stdout_text), _utf8_size(stderr_text)
+    if stdout_size + stderr_size <= AUTO_SAVE_THRESHOLD_BYTES:
+        return False, False
+    if stdout_size >= stderr_size:
+        return True, stderr_size > AUTO_SAVE_THRESHOLD_BYTES
+    return stdout_size > AUTO_SAVE_THRESHOLD_BYTES, True
 
 
 def _report_error_events(path: pathlib.Path) -> None:
@@ -83,17 +106,9 @@ def auto_save(
     *,
     after_save: Callable[[pathlib.Path], None] | None = None,
     force_stdout: bool = False,
+    direct_stdout: bool = False,
     discard_directory: Callable[[pathlib.Path], None] | None = None,
 ) -> Generator[None]:
-    """有限で終了する呼び出しの標準出力と標準エラーを保持し、量によらず標準出力を保存する呼び出しでは実行前に保存先を開く。
-
-    waitの結果を消費する前に保存を準備し、保存不能なら本体を開始しない。
-    例外とSystemExitでもそれまでの出力と元の終了状態を保持する。
-    実行前に開いた保存先へ何も書かずに非0で終わった場合は、空の保存先と`discard_directory`へ渡す
-    生成領域を片付け、保存先と行数を表示しない。読む結果が無い保存先を受信側へ渡さないためである。
-    実行前に開いた保存先へ出力を書いて非0で終わった場合は、`after_save`を呼ばず、保存した出力のうち
-    エラーの本文と次の操作を表示する。受信側が保存先を開かずに失敗の理由を読めるようにするためである。
-    """
     stdout_buffer, stderr_buffer = io.StringIO(), io.StringIO()
     saved: pathlib.Path | None = None
     stdout_stream: TextIO = stdout_buffer
@@ -131,8 +146,14 @@ def auto_save(
                     _report_error_events(saved)
                 elif after_save is not None:
                     after_save(saved)
+            stderr_text = stderr_buffer.getvalue()
+            _emit(stderr_text, create_directory, stderr=True, save=_utf8_size(stderr_text) > AUTO_SAVE_THRESHOLD_BYTES)
         else:
-            emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False)
+            save_stdout, save_stderr = _streams_to_save(stdout_buffer.getvalue(), stderr_buffer.getvalue())
+            if direct_stdout:
+                total = _utf8_size(stdout_buffer.getvalue()) + _utf8_size(stderr_buffer.getvalue())
+                save_stdout, save_stderr = False, bool(stderr_buffer.getvalue()) and total > AUTO_SAVE_THRESHOLD_BYTES
+            emitted = _emit(stdout_buffer.getvalue(), create_directory, stderr=False, save=save_stdout)
             if emitted is not None and after_save is not None:
                 after_save(emitted)
-        _emit(stderr_buffer.getvalue(), create_directory, stderr=True)
+            _emit(stderr_buffer.getvalue(), create_directory, stderr=True, save=save_stderr)
