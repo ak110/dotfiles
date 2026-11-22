@@ -132,10 +132,11 @@ def _powershell_quote(value: str) -> str:
 
 
 def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> tuple[str, list[str]]:
-    prepare = "PowerShellで、"
+    prepare = "待機に使ったPowerShellで、"
+    setup: list[str] = []
     if commands[0][0] == "env":
+        prepare = "待機に使ったPowerShellで（cmdから待機した場合は、そのcmdで先に `pwsh -NoProfile` を起動し）、"
         prefix = commands[0][1 : commands[0].index("glab")]
-        setup: list[str] = []
         remaining = iter(prefix)
         for argument in remaining:
             if argument == "-u":
@@ -143,11 +144,14 @@ def _powershell_glab_commands(commands: tuple[tuple[str, ...], ...]) -> tuple[st
             else:
                 name, _, value = argument.partition("=")
                 setup.append(f"$env:{name} = {_powershell_quote(value)}")
-        prepare = "専用のPowerShellを開き、`" + "; ".join(setup) + "` を実行してから、"
-    rendered = [
-        "`glab " + " ".join(_powershell_quote(arg) for arg in command[command.index("glab") + 1 :]) + "`"
-        for command in commands
-    ]
+    rendered = []
+    for command in commands:
+        glab = "glab " + " ".join(_powershell_quote(arg) for arg in command[command.index("glab") + 1 :])
+        if setup:
+            script = "; ".join([*setup, glab])
+            rendered.append(f"`pwsh -NoProfile -Command {{ {script} }}`")
+        else:
+            rendered.append(f"`{glab}`")
     return prepare, rendered
 
 

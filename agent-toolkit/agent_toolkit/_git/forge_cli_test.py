@@ -1,7 +1,12 @@
 """CI待機と通知が共有するforge起動・ログ取得の契約を検証する。"""
 
+import os
+import pathlib
 import platform
 import shlex
+import shutil
+import subprocess
+import sys
 
 import pytest
 
@@ -124,10 +129,63 @@ def test_inferred_gitlab_log_guidance_on_windows(monkeypatch: pytest.MonkeyPatch
     assert "glab 'ci' 'get'" in action
     assert "glab 'ci' 'trace' '<job ID>'" in action
     if shell_host == "gitlab.example.org":
+        assert "`pwsh -NoProfile -Command" not in action
         assert "Remove-Item" not in action
         assert "$env:" not in action
         assert "'http://gitlab.example.org/group/repo'" in action
     else:
+        assert action.count("`pwsh -NoProfile -Command {") == 2
         assert "Remove-Item Env:GLAB_API_PROTOCOL -ErrorAction SilentlyContinue" in action
         assert "$env:GITLAB_HOST = 'gitlab.example.org'" in action
         assert "'https://gitlab.example.org/group/repo'" in action
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="模擬glabはLinuxのshスクリプト")
+def test_inferred_gitlab_child_powershell_inherits_api_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    if shutil.which("pwsh") is None:
+        pytest.skip("pwshがインストールされていない")
+    hostname = "gitlab.example.org"
+    monkeypatch.setattr(platform, "system", lambda: "Windows")
+    monkeypatch.setenv("GITLAB_HOST", hostname)
+    monkeypatch.setenv("GITLAB_API_HOST", "custom-api.example:8443")
+    monkeypatch.setenv("GLAB_API_PROTOCOL", "http")
+    monkeypatch.setenv("GITLAB_TOKEN", "test-token")
+    monkeypatch.setenv("GLAB_ENABLE_CI_AUTOLOGIN", "true")
+    monkeypatch.setenv("GITLAB_CI", "true")
+    monkeypatch.setenv("CI_SERVER_FQDN", "gitlab.other.example")
+    monkeypatch.setenv("PATH", str(tmp_path), prepend=os.pathsep)
+    glab = tmp_path / "glab"
+    glab.write_text(
+        """#!/bin/sh
+set -eu
+test "$GITLAB_HOST" = gitlab.example.org
+test "$GITLAB_API_HOST" = custom-api.example:8443
+test "$GLAB_API_PROTOCOL" = http
+test "$GITLAB_TOKEN" = test-token
+test -z "${GLAB_ENABLE_CI_AUTOLOGIN+x}"
+test "$1" = ci
+test "$2" = trace
+test "$3" = 24
+test "$4" = --repo
+test "$5" = http://gitlab.example.org/group/repo
+printf '%s\\n' 'mock glab ok'
+""",
+        encoding="utf-8",
+    )
+    glab.chmod(0o700)
+    action = forge_cli.failure_next_action("gitlab", f"{hostname}/group/repo", "24", job=True, inferred_host=True)
+    assert "待機に使ったPowerShell" in action
+    assert "custom-api.example:8443" not in action
+    assert "test-token" not in action
+    command = next(part for part in action.split("`") if part.startswith("pwsh -NoProfile -Command {"))
+    assert "Remove-Item Env:GLAB_ENABLE_CI_AUTOLOGIN" in command
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", f"{command}; exit $LASTEXITCODE"],
+        timeout=15,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.splitlines() == ["mock glab ok"]
