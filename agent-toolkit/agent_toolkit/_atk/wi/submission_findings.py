@@ -24,6 +24,7 @@ from typing import Any
 from agent_toolkit._atk import run_script as _run_script
 from agent_toolkit._atk import session_records as _session_records
 from agent_toolkit._common import plugin_environment, process_tree, session_activity, skill_modes
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 from agent_toolkit._common.json_lines import split_lines
 
 CLASSIFICATIONS = ("考慮漏れ", "ユーザーだけが持つ新しい情報", "前提の誤り", "採用しない提案")
@@ -165,7 +166,8 @@ def _extracted_events(transcript: pathlib.Path, since: str | None) -> list[dict[
     except subprocess.TimeoutExpired as error:
         raise ValueError(f"実ユーザー発話の抽出が{_EVIDENCE_TIMEOUT_SECONDS}秒で終わらない") from error
     if completed.returncode != 0:
-        raise ValueError(f"実ユーザー発話を抽出できない（終了コード{completed.returncode}）: {completed.stderr.strip()[-500:]}")
+        stderr = diagnostic_excerpt(completed.stderr.strip(), tail_chars=500)
+        raise ValueError(f"実ユーザー発話を抽出できない（終了コード{completed.returncode}）: {stderr}")
     events = [json.loads(line) for line in split_lines(completed.stdout)]
     # 提示した選択肢をそのまま選んだ確認回答は通常の回答として除き、自由記述を含む回答は対象にする。
     return [

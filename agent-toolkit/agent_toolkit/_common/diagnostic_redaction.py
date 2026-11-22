@@ -80,15 +80,19 @@ def diagnostic_excerpt(
     tail_chars: int | None = None,
     tail_lines: int | None = None,
     collapse_whitespace: bool = False,
+    omission: str = "",
 ) -> str:
-    """未切り詰めの診断を伏せてから、指定の単位で切り取る。UTF-8の端で分断した文字は捨てる。"""
+    """未切り詰めの診断を伏せてから、指定の単位で切り取る。UTF-8の端で分断した文字は捨てる。
+
+    `omission`は、`tail_chars`で先頭を省いた時に抜粋の前へ付ける印である（印は上限に数えない）。
+    """
     safe = redact_secrets(text)
     if collapse_whitespace:
         safe = re.sub(r"\s+", " ", safe)
     if tail_lines is not None:
         safe = "\n".join(safe.strip().splitlines()[-tail_lines:]) if tail_lines else ""
     if tail_chars is not None:
-        safe = safe[-tail_chars:] if tail_chars else ""
+        safe = (omission + safe[-tail_chars:] if tail_chars else omission) if len(safe) > tail_chars else safe
     if prefix_chars is not None:
         safe = safe[:prefix_chars]
     if prefix_bytes is not None:
