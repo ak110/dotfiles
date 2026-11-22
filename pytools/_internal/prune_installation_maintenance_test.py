@@ -1,5 +1,3 @@
-"""取得キャッシュの整理の周期、結果の報告、独立プロセスの起動を確かめる。"""
-
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
 import json
@@ -37,7 +35,6 @@ _HOLDER_SCRIPT = "import sys; print('ready', flush=True); sys.stdin.read()"
 
 
 def test_full_cache_cleanup_tracks_success_per_root_and_30_day_boundary(tmp_path, monkeypatch):
-    """初回・30日境界だけ全消去し、同日と29日目はpruneする。"""
     _, calls = prepare(tmp_path, monkeypatch, "full")
     now = 10000000.0
     monkeypatch.setattr(prune_installation.time, "time", lambda: now)
@@ -79,7 +76,6 @@ def test_uv_cleanup_failure_preserves_success_time(tmp_path, monkeypatch, locked
 
 @pytest.mark.windows
 def test_update_does_not_wait_for_uv_cache_in_use(tmp_path, monkeypatch, host_environ, request):
-    """他のuvが使用中でも整理を待たずに戻り、使用の終了後にuvの全消去と成功記録を完了する。"""
     native_path = os.pathsep.join(part for part in host_environ()["PATH"].split(os.pathsep) if Path(part).name != "shims")
     uv = shutil.which("uv", path=native_path)
     if uv is None:
@@ -264,13 +260,21 @@ def test_deferred_maintenance_is_announced_with_log_path(tmp_path, monkeypatch, 
     _uv_clean_failure(monkeypatch, calls)["stderr"] = detail
     maintain(monkeypatch, tmp_path)
     capsys.readouterr()
-    with post_apply._configure_logging():
-        result = prune_installation.run()
-    assert result.failure is None
+    run_prune = prune_installation.run
+
+    def repeat_notice(*, lock):
+        result = run_prune(lock=lock)
+        assert result.failure is None
+        return post_apply_outcome.PostApplyOutcome(notices=(*result.notices, *result.notices))
+
+    monkeypatch.setattr(prune_installation, "run", repeat_notice)
+    post_apply.main(["--prune-only"], runner=lambda: pytest.fail("通常の更新工程へ到達した"))
     screen = capsys.readouterr()
     assert not screen.err
+    record = prune_installation._record_path(prune_installation._CacheGroup.UV)
+    assert record.is_file()
     assert screen.out.splitlines() == [
-        f"  prune: uvキャッシュが使用中のため整理を保留しました。整理は次回の更新時に再試行します。詳細: {update_log.LOG_PATH}"
+        f"  prune: uvキャッシュが使用中のため整理を保留しました。整理は次回の更新時に再試行します。詳細: {record}"
     ]
     assert detail in (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
 
@@ -343,7 +347,6 @@ def test_prune_after_update_starts_maintenance_after_releasing_update_lock(tmp_p
 
 @pytest.mark.parametrize("cause", ["installation", "start"])
 def test_mcp_environment_is_prepared_without_maintenance_process(tmp_path, monkeypatch, cause):
-    """独立プロセスを開始しない・できない場合も、キャッシュ内のMCP環境をこのプロセスで事前構築する。"""
     _, calls = prepare(tmp_path, monkeypatch, "full")
     warmups: list[str] = []
 
@@ -372,7 +375,6 @@ def test_mcp_environment_is_prepared_without_maintenance_process(tmp_path, monke
 
 
 def test_missing_uv_still_prepares_mcp_environment_in_maintenance_process(tmp_path, monkeypatch):
-    """uvを解決できない更新でも独立プロセスを開始し、独立プロセスは対象なしを記録してMCP環境を事前構築する。"""
     _, calls = prepare(tmp_path, monkeypatch, "full")
     monkeypatch.setattr(common, "resolve_executable", lambda name: None)
     assert prune_installation.run().failure is None
@@ -475,7 +477,7 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
                     assert not stopped.residual and not stopped.unresolved, stopped.descriptions()
 
                 request.addfinalizer(reap_maintenance)
-            # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
+
             unbroken.wait(timeout=30)
             assert maintenance.is_running(), "Jobの終了とともに独立プロセスが止まった"
             assert not record.exists(), "独立プロセスがJobの終了前に整理を終え、Jobの終了後の生存を確かめられない"
@@ -501,7 +503,6 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     ],
 )
 def test_clean_caches_removes_old_rustup_tmp_only_when_idle(tmp_path, monkeypatch, active, create_tmp, old_remains, status):
-    """古いもの、新しいもの、rustup稼働中、tmp不在の4条件を確かめる。"""
     home = tmp_path / "rustup"
     monkeypatch.setenv("RUSTUP_HOME", str(home))
     monkeypatch.setattr(prune_installation.setup_mise, "find_mise_binary", lambda: None)
@@ -521,7 +522,6 @@ def test_clean_caches_removes_old_rustup_tmp_only_when_idle(tmp_path, monkeypatc
 
 
 def test_clean_caches_keeps_unsafe_rustup_root(tmp_path, monkeypatch):
-    """既存の共有ルートの判定を通らない設定からは削除しない。"""
     monkeypatch.setenv("RUSTUP_HOME", str(tmp_path))
     monkeypatch.setattr(prune_installation.common, "find_dotfiles_root", lambda: tmp_path)
     monkeypatch.setattr(prune_installation.setup_mise, "find_mise_binary", lambda: None)

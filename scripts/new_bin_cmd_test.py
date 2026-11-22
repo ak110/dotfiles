@@ -10,7 +10,6 @@ import sys
 
 
 def test_generated_pair_passes_arguments_and_preserves_existing_files(tmp_path: pathlib.Path) -> None:
-    """再生成せず、両形式の行末と実行対象OSでの子の結果を保つ。"""
     script_dir = tmp_path / "scripts"
     script_dir.mkdir()
     bin_dir = tmp_path / "bin"

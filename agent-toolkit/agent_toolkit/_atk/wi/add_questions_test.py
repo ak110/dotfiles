@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: questionsのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -67,10 +66,6 @@ def test_run_report_sync_ignores_later_answer_and_state(tmp_path: pathlib.Path, 
 def test_uwi_requires_question_type_and_rejects_free_form(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], question_type: list[str], dry_run: list[str]
 ) -> None:
-    """UWIの新規作成は回答形式の省略とfree-formを保存前に拒否し、選択肢形式で投入する操作を示す。
-
-    回答形式の省略を受理すると、選択肢を1組しか持てない形式を避けて複数の問いを1件へ束ねる投入が受理される。
-    """
     notes = _setup_notes(tmp_path)
     body_path = tmp_path / "body.md"
     body_path.write_text("どちらの案を採用しますか？", encoding="utf-8")
@@ -101,7 +96,6 @@ def test_uwi_requires_question_type_and_rejects_free_form(
 
 @pytest.mark.parametrize("choice_args", [["A,B,C"], ["A", "B", "C"], ["A", "B,C"]])
 def test_public_add_choice_variants(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, choice_args: list[str]) -> None:
-    """公開CLIの反復・混在指定は前の値を失わず、同じ順で保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     argv = _choice_argv(tmp_path, choice_args)
@@ -123,7 +117,6 @@ def test_public_add_choice_requires_two_options(
     choices: str,
     dry_run: bool,
 ) -> None:
-    """通常投入とdry-runは非空2件未満を拒否し、キューを変更しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     argv = _choice_argv(tmp_path, [choices])
@@ -137,7 +130,6 @@ def test_public_add_choice_requires_two_options(
 
 
 def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """選択肢形式のUWIは回答形式と選択肢をfrontmatterへ保存する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
 
     generated = add_module.add_entries(
@@ -158,7 +150,6 @@ def test_uwi_choice_question_type_is_saved_with_choices(tmp_path: pathlib.Path, 
 
 
 def test_add_entries_rejects_answer_marker_in_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """UWI本文が回答欄マーカーを含む場合に投入を拒否する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     with pytest.raises(WebInputError):
         add_module.add_entries(
@@ -173,7 +164,6 @@ def test_add_entries_rejects_answer_marker_in_uwi_body(tmp_path: pathlib.Path, m
 
 
 def test_add_entries_rejects_answer_heading_in_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """UWI本文が回答見出しを行頭に含む場合に投入を拒否する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     with pytest.raises(WebInputError):
         add_module.add_entries(
@@ -194,7 +184,6 @@ def test_add_rejects_reserved_user_comment_heading_in_agent_environment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """エージェント環境では通常入力の全ての方法で予約見出しを拒否する。"""
     notes = _setup_notes(tmp_path)
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -217,7 +206,6 @@ def test_add_accepts_reserved_user_comment_heading_outside_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """エージェント環境でなければ通常入力の全ての方法で予約見出しを受理する。"""
     notes = _setup_notes(tmp_path)
     repo = tmp_path / "myrepo"
     repo.mkdir()
@@ -238,7 +226,6 @@ def test_add_accepts_fenced_user_comment_heading_in_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """エージェント環境でもコードフェンス内だけの予約見出しは受理する。"""
     notes = _setup_notes(tmp_path)
     repo = tmp_path / "myrepo"
     repo.mkdir()

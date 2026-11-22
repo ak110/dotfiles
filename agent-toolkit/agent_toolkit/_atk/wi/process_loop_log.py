@@ -35,7 +35,6 @@ INSTRUCTION_MAX_CHARS = 2000
 
 
 def log_path() -> Path:
-    """ログファイルのパスを返す。"""
     return _state_paths.state_dir() / "process-wi.log"
 
 
@@ -44,23 +43,14 @@ if __name__ == "__main__":
 
 
 def abort_path() -> Path:
-    """`atk wi process-loop`の中断要求を保持する状態ファイルのパスを返す。
-
-    明示停止の操作と常駐の消費処理が、同じ状態ファイルを参照する。
-    """
     return log_path().parent / _ABORT_FILENAME
 
 
 def instruction_path() -> Path:
-    """次の1セッションへ渡す追加指示を保持する状態ファイルのパスを返す。
-
-    `abort_path`と同じ状態ディレクトリ配下へ置き、process-loop本体とhookの双方から同じ解決処理を使う。
-    """
     return log_path().parent / _INSTRUCTION_FILENAME
 
 
 def read_instructions() -> list[str]:
-    """保持中の追加指示を投入順に返す。保持が無い場合は空リストを返す。"""
     path = instruction_path()
     try:
         body = path.read_text(encoding="utf-8")
@@ -93,7 +83,6 @@ def append_instruction(body: str) -> tuple[bool, str]:
 
 
 def discard_instructions() -> int:
-    """保持中の追加指示を全件破棄し、破棄した件数を返す。"""
     path = instruction_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with FileLock(path.with_suffix(".lock"), timeout=10):

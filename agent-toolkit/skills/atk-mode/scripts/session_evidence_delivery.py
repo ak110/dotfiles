@@ -1,5 +1,3 @@
-"""全文の送達本文と地の文を比較し、再掲の候補と期間・日別の集計を返す。"""
-
 from __future__ import annotations
 
 import datetime
@@ -20,10 +18,6 @@ from session_evidence_extract import (
 
 
 def post_delivery_events(timeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """既存時系列の由来と全文文字数から、送達後の長い終了本文だけを選ぶ。
-
-    本文は通常表示の長さのまま扱う。分析用の全文は既存の個別証拠保存が元記録から取得する。
-    """
     latest: dict[str, dict[str, Any]] = {}
     events: list[dict[str, Any]] = []
     for event in timeline:
@@ -56,18 +50,12 @@ def delivery_events(
     since: datetime.datetime | None = None,
     boundary: datetime.datetime | None = None,
 ) -> list[dict[str, Any]]:
-    """送達ごとの最初の類似本文と集計対象の送達を返す。
-
-    集計の送達は60文字以上、比較する地の文は30文字以上とする。
-    空白を除いた4-gramの少ない側が20要素以上で、共通部分が半分以上なら候補とする。
-    送達成功の確認は行わず、呼び出しを数える。候補は確認済みの再掲ではない。
-    """
     events: list[dict[str, Any]] = []
     for item in collected:
         if item.runtime != "claude":
             continue
         records = [row for row in item.records if row.entry.get("isSidechain") is not True]
-        # 通常表示の短縮本文では一致の割合が変わるため、同じ変換の文字数制限だけを外す。
+
         token = _TEXT_LIMIT.set(None)
         try:
             timeline = _extract_records(records)
@@ -154,7 +142,6 @@ def delivery_summary(
 def catalog_delivery_events(
     root: Path, runtime: _Runtime, since: datetime.datetime, boundary: datetime.datetime
 ) -> tuple[list[dict[str, Any]], int]:
-    """既存カタログのメイン記録だけを走査し、期間全体を同じ定義で集計する。"""
     if runtime != "claude":
         return [
             _error_event(

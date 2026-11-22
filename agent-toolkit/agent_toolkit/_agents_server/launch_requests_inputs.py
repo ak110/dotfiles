@@ -13,7 +13,6 @@ from agent_toolkit._common.markdown_headings import parse_headings
 from agent_toolkit._common.message_format import auto_message
 from agent_toolkit._common.next_action import ActionableError
 
-# 確認処理が受理する行の書式。拒否応答の本文へ添え、委譲元が同じ応答だけで書式を確定できる状態にする。
 _REQUIRED_INPUT_LINE_FORMAT = (
     "受理する書式: 必須入力の行は`<項目名>:`で始める。"
     "項目名へ別の語を連結した行はその項目として解決しないため、補足する語は別の行へ書く。"
@@ -34,13 +33,11 @@ def wrap_delivery_body(body: str) -> str:
 
 
 def with_launcher_record(body: str, context: Mapping[str, Any]) -> str:
-    """taskの起動本文へ、サーバーが解決した直接の委譲元情報を添える。"""
     notice = auto_message(json.dumps(dict(context), ensure_ascii=False), source="agents-server", kind="launcher-record")
     return _with_task_reference(body, notice)
 
 
 def with_startup_documents(body: str, documents: str) -> str:
-    """役割の作業指示と入力を先頭に保ち、配送資料を参照資料の冒頭へ挿入する。役割文書の無い依頼文では末尾へ加える。"""
     if not documents:
         return body
     if task_documents.TASK_PROMPT_REFERENCES not in body:
@@ -49,7 +46,6 @@ def with_startup_documents(body: str, documents: str) -> str:
 
 
 def _with_task_reference(body: str, reference: str) -> str:
-    """生成側が確定した区切りへ挿入し、入力値の本文から境界を推測しない。"""
     instructions, boundary, remainder = body.partition(task_documents.TASK_PROMPT_REFERENCES)
     assert boundary
     return instructions + boundary + reference + "\n\n" + remainder
@@ -60,7 +56,6 @@ def check_declared_inputs(
     declaration: task_documents.TaskDocumentDeclaration,
     extra_params: Mapping[str, str],
 ) -> None:
-    """必須入力（入力の値で成立した条件付きの必須入力を含む）の欠落と宣言外の入力名を拒否する。"""
     missing = [name for name in declaration.required_for(extra_params) if name not in extra_params]
     if missing:
         raise ActionableError(
@@ -126,7 +121,6 @@ def _input_section(contract: pathlib.Path) -> str:
 
 
 def _launch_section(contract: pathlib.Path, role: str) -> str:
-    """手順書のうち、役割を`起動対象:`に挙げる行の直前にある見出し（H2・H3）を返す。"""
     text = contract.read_text(encoding="utf-8")
     line = next(
         index
@@ -145,7 +139,6 @@ def _launch_section(contract: pathlib.Path, role: str) -> str:
 
 
 def named_input_lines(params: Mapping[str, str]) -> list[str]:
-    """値の改行を区別して、名前付き入力を最小本文へ直列化する。"""
     lines: list[str] = []
     for name, value in params.items():
         if "\n" in value:

@@ -1,5 +1,3 @@
-"""serveのappに関するentriesの試験。"""
-
 # pylint: disable=protected-access
 
 import datetime
@@ -17,7 +15,6 @@ from agent_toolkit._testing.serve_support import AWI_TEXT, _write_repo_entry
 
 
 def test_operations_read_legacy_type_values_as_current_kinds(tmp_path: pathlib.Path) -> None:
-    """旧形式で保存された`type`値を現行の種別として一覧へ返す。"""
     inbox = _fixed_path(tmp_path, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / "entry.md").write_text(
@@ -82,10 +79,6 @@ async def test_entries_cooldown_conditions(
 
 @pytest.mark.asyncio
 async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> None:
-    """`needs_verify`はprocess-wiのメインエージェントの選定と同じ読み方で、最後の再開記録が観測だけが残る区分のinboxのawiだけを真とする。
-
-    条件が広いと未着手や処理中の項目まで観測待ちとして示し、狭いと観測待ちの項目が未着手と区別できない。
-    """
     awi = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n# 件名\n\n本文\n\n"
     uwi = "---\nstate: inbox\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問？\n\n## 回答\n\n"
     other_record = _OBSERVATION_RECORD.replace("反映後の観測だけが残る", "実装から再開する")
@@ -116,7 +109,6 @@ async def test_entries_needs_verify_flag_conditions(tmp_path: pathlib.Path) -> N
 
 @pytest.mark.asyncio
 async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(tmp_path: pathlib.Path) -> None:
-    """一覧APIは読取り不能な1ファイルを警告へ分離し、残りの一覧を返す。"""
     inbox = _fixed_path(tmp_path, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / "readable.md").write_text(
@@ -148,10 +140,6 @@ async def test_entries_api_keeps_readable_entries_and_reports_unreadable_files(t
 async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """2回目以降の一覧は、変更のないファイルの実パス解決と表示用項目の組み立てを繰り返さずに同じ結果を返す。
-
-    再利用が値まで固定すると、更新したファイルの要約と更新日時が古いまま返る。
-    """
     inbox = _fixed_path(tmp_path, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
     for index in range(3):
@@ -194,7 +182,6 @@ async def test_entries_api_returns_identical_pages_while_reusing_unchanged_files
 
 
 def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> None:
-    """activeと直近7日以内に処理したエントリから候補を集める。"""
     now = datetime.datetime(2026, 9, 13, 12, tzinfo=datetime.UTC)
     _write_repo_entry(tmp_path, "inbox", "a.md", "github.com/x/beta")
     _write_repo_entry(tmp_path, "processing", "b.md", "github.com/x/alpha")
@@ -220,7 +207,6 @@ def test_target_repos_keeps_recent_terminal_values(tmp_path: pathlib.Path) -> No
 @pytest.mark.parametrize("entry_type", ["", "type: foo\n", "type: [awi]\n"])
 @pytest.mark.asyncio
 async def test_typeless_entries_keep_server_running(tmp_path: pathlib.Path, entry_type: str) -> None:
-    """不正typeの一覧・詳細・回答を処理した後も、同じアプリの正常要求が成立する。"""
     inbox = _fixed_path(tmp_path, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
     broken = f"---\nstate: inbox\ntarget_repo: example/repo\n{entry_type}---\n\n欠落の本文\n"

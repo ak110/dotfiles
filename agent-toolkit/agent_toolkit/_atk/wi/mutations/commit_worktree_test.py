@@ -1,5 +1,3 @@
-"""対象worktreeの外からcommit付きの採否を行う公開CLIの受入テスト。"""
-
 import pathlib
 
 import pytest
@@ -22,7 +20,6 @@ def test_commit_transition_from_outside_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示パスで実Gitのcommitを記録し、解決不能なら状態と本文を保持する。"""
     notes = tmp_path / "notes"
     target = tmp_path / "target"
     outside = tmp_path / "outside"

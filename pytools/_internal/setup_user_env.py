@@ -14,8 +14,8 @@ from pytools._internal import common, log_format, post_apply_outcome, winutils
 logger = logging.getLogger(__name__)
 
 USER_ENV_RELATIVE = Path("share") / "user.env"
-# bashの`set -a; . <ファイル>`とPythonの読み取りが同じ値を得る書式。
-# 引用符・`$`による展開・`export`・行末コメント・空白を含む値を受け付けない。
+
+
 _LINE_PATTERN = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>[^\s'\"`$\\#;&|<>()]*)$")
 # 過去に配布し、現在は配布をやめた変数と、その配布値。配布値のまま残るユーザー環境変数だけを削除する。
 # `PYTHONDONTWRITEBYTECODE`は、hookとCLIが起動のたびに全モジュールをコンパイルし直す原因になったため配布をやめた。
@@ -23,11 +23,6 @@ _FORMER_VALUES: dict[str, str] = {"DISABLE_TELEMETRY": "1", "PYTHONDONTWRITEBYTE
 
 
 def parse_user_env(text: str) -> list[tuple[str, str]]:
-    """`user.env`の本文から`(変数名, 値)`の列を返す。空行と`#`で始まる行は値として扱わない。
-
-    Raises:
-        ValueError: 書式に従わない行がある場合。
-    """
     entries: list[tuple[str, str]] = []
     for number, line in enumerate(text.splitlines(), start=1):
         if not line.strip() or line.startswith("#"):
@@ -71,7 +66,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         try:
             previous, _reg_type = winutils.read_user_env_var(name)
             if previous == former:
-                # 旧dotfilesの配布値だけを除き、他用途の値は保持する。
                 wr = winutils.import_winreg()
                 with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
                     try:

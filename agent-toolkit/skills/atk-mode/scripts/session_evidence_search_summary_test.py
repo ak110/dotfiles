@@ -44,7 +44,6 @@ def _record(tmp_path: pathlib.Path) -> pathlib.Path:
 
 @pytest.mark.parametrize("mode", ["grep", "fixed-string", "context-at", "tool-calls", "warn"])
 def test_summary_only_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], mode: str) -> None:
-    """詳細と要約の単位を保ち、0件も公開表示から取得する。"""
     transcript = _record(tmp_path)
     arguments = {
         "grep": ["--grep", "needle"],
@@ -83,7 +82,6 @@ def test_summary_only_query_modes(tmp_path: pathlib.Path, capsys: pytest.Capture
 
 
 def test_summary_only_bundle_keeps_saved_files(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """bundleの全量保存と無指定表示を保ちながら、位置と本文の表示だけを省く。"""
     transcript = _record(tmp_path)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
@@ -100,7 +98,6 @@ def test_summary_only_bundle_keeps_saved_files(tmp_path: pathlib.Path, capsys: p
 def test_bundle_scope_tracks_appended_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], summary_only: bool
 ) -> None:
-    """表示の要約指定によらず、元記録の追記を新しい完全行とdigestへ反映する。"""
     transcript = _record(tmp_path)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
@@ -119,7 +116,6 @@ def test_bundle_scope_tracks_appended_records(
 
 
 def test_summary_only_warning_deduplication(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """hookの成功記録と追加文脈にある同じ警告を1件と数える。"""
     path = tmp_path / "warnings.jsonl"
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 警告本文"
     write_jsonl(
@@ -154,7 +150,6 @@ def test_summary_only_warning_deduplication(tmp_path: pathlib.Path, capsys: pyte
 
 
 def test_user_events_search_invalid_catalog_options(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """発話の検索と親の表示項目の組、および対象外の要約を修正方法付きで拒否する。"""
     _path, catalog = _history(tmp_path, "claude")
     for arguments in (["--user-events", "--catalog-fields", "cwd"], ["--summary-only"]):
         event = _query(capsys, [*catalog, *arguments], 2)[0]
@@ -162,7 +157,6 @@ def test_user_events_search_invalid_catalog_options(tmp_path: pathlib.Path, caps
 
 
 def test_summary_only_keeps_diagnostics(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """未解決委譲と読取不能を要約時にも保持し、カタログの呼出し件数も保持する。"""
     transcript = _record(tmp_path)
     with transcript.open("a", encoding="utf-8") as stream:
         stream.write(
@@ -255,7 +249,6 @@ def _history(tmp_path: pathlib.Path, runtime: str) -> tuple[pathlib.Path, list[s
 def test_catalog_grep_counts_records_and_preserves_locations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """カタログで期間内の本文を検索し、詳細と件数だけの照会が同じ記録を数える。"""
     _path, catalog = _history(tmp_path, runtime)
     normal = _query(capsys, [*catalog, "--grep", "needle"])
     summary = _query(capsys, [*catalog, "--grep", "needle", "--summary-only"])

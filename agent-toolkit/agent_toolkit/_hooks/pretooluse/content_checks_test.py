@@ -21,7 +21,6 @@ from agent_toolkit._testing.pretooluse_support import (
 
 
 def _writing_ready_env(tmp_path: pathlib.Path, session_id: str) -> dict[str, str]:
-    """編集内容の判定を確かめる状態を用意する。"""
     _write_session_state(tmp_path, session_id, {})
     return _plan_file_state_env(tmp_path)
 
@@ -31,7 +30,6 @@ def test_trailing_tool_boundary_tags_warn(
     suffix: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """Pythonと計画Markdownの末尾へ混入したツール境界タグを警告する。"""
     if suffix == ".md":
         target = tmp_path / ".claude/plans/example.md"
         target.parent.mkdir(parents=True)
@@ -50,7 +48,6 @@ def test_trailing_tool_boundary_tags_warn(
 
 
 def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: pathlib.Path) -> None:
-    """計画以外のMarkdownではツール境界タグを判定しない。"""
     result = _run(
         {
             "tool_name": "Write",
@@ -63,8 +60,6 @@ def test_trailing_tool_boundary_tags_in_regular_markdown_are_allowed(tmp_path: p
 
 
 class TestLanguageRewrite:
-    """質問の直接入力を毎回判定し、旧transcript判定の状態で通過させない。"""
-
     @pytest.mark.parametrize("text,expected", [("Read the evidence.", 2), ("根拠を確認します。", 0), ("了解した。", 0)])
     def test_current_text_controls_decision_with_legacy_state(self, tmp_path: pathlib.Path, text: str, expected: int) -> None:
         sid = "language-current-text"
@@ -112,16 +107,11 @@ class TestLanguageRewrite:
 
 
 class TestGeneralBehavior:
-    """統合スクリプト共通の振る舞い。"""
-
     @pytest.mark.parametrize(
         "payload",
         [
-            # Write/Edit/MultiEdit以外は全て通す
             {"tool_name": "Bash", "tool_input": {"command": "echo \ufffd"}},
-            # tool_inputが欠落していても通す
             {"tool_name": "Write"},
-            # 正常な日本語は通す
             {"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "こんにちは世界"}},
         ],
     )
@@ -144,7 +134,6 @@ class TestGeneralBehavior:
     ],
 )
 def test_edit_warning_keeps_specific_recovery(tmp_path, name, body, required):
-    """警告は対象と具体的な修正方法を届ける。"""
     target = tmp_path / name
     result = _run(
         {"tool_name": "Write", "tool_input": {"file_path": str(target), "content": body}, "session_id": "restricted-" + name},

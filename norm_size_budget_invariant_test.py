@@ -11,13 +11,12 @@ import subprocess
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
-# 2026-11-22のユーザーの明示の指示で引き上げた。統合時点で既に上限を超えていたため、
-# 取り込みを優先し、整理は別AWIで行う。
+
+
 _BUDGET_BYTES = 2_800_000
 
 
 def _norm_markdown_bytes(root: pathlib.Path) -> int:
-    """対象の追跡済みMarkdownの合計バイト数を返す。"""
     listed = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z", "--", *(f"{prefix}/*.md" for prefix in _ROOTS)],
         capture_output=True,

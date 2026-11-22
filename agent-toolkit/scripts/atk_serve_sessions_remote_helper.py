@@ -39,9 +39,8 @@ from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-impor
     state_paths,
 )
 
-# 1件の記録から取得する最大バイト数。過大な記録の全文転送により接続が占有される事態を避ける上限とする。
 MAX_RECORD_BYTES = 64 * 1024 * 1024
-# 一覧が返す最大件数。古い記録は調査対象になりにくいため、開始日時の新しい順で打ち切る。
+
 MAX_LIST_ENTRIES = 2000
 
 
@@ -86,13 +85,6 @@ def _list_payload(
     tracker: session_watch.RecordChangeTracker | None = None,
     index: session_watch.RecordSummaryIndex | None = None,
 ) -> dict[str, typing.Any]:
-    """ローカルの保存済みセッション一覧を返す。
-
-    ユーザー発話の記録行を持たない記録は、件数上限による切り詰めより前に除外する。
-    `tracker`を渡した場合は、判定した発話の有無を変更監視の判定へ引き継ぐ。
-    `index`を渡した場合は記録単位の解析結果を再利用する。常駐モードが1プロセスに1つ持ち、
-    単発の`list`モードは保持先が無いため毎回新しい索引で走査する。
-    """
     if index is None:
         index = session_watch.RecordSummaryIndex()
     index.begin_scan()
@@ -110,7 +102,7 @@ def _list_payload(
         has_user = entry.pop("has_user_message")
         if tracker is not None and has_user is not None and isinstance(entry.get("path"), str):
             tracker.prime(entry["path"], has_user)
-        # 読めずに判定できなかった記録（`None`）は警告とともに一覧へ残す。
+
         if has_user is not False:
             kept.append(entry)
     entries = kept
@@ -152,10 +144,6 @@ def _list_payload(
 
 
 def _state_dir() -> pathlib.Path | None:
-    """agents_serverの状態ディレクトリを返す。解決に要る`platformdirs`が無い起動形では`None`を返す。
-
-    登録簿の委譲元は親子付けの情報源の1つであり、読めない場合も他の情報源で一覧を返す。
-    """
     try:
         return state_paths.state_dir()
     except ImportError:
@@ -163,10 +151,6 @@ def _state_dir() -> pathlib.Path | None:
 
 
 def _is_safe_record_path(raw: str) -> bool:
-    """読み取り要求のパスが保存先配下の記録を指すかを検証する。
-
-    上位ディレクトリへの参照と対象外の接尾辞を拒否し、いずれかの保存先の配下だけを受理する。
-    """
     if not raw:
         return False
     pure_path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
@@ -248,7 +232,6 @@ _STDOUT_LOCK = threading.Lock()
 
 
 def _emit(payload: dict[str, typing.Any]) -> None:
-    """1行JSONとして出力し、SSH切断時のSIGPIPEを即時に検出できるよう毎回フラッシュする。"""
     line = json.dumps(payload, ensure_ascii=False)
     with _STDOUT_LOCK:
         sys.stdout.write(line + "\n")
@@ -260,7 +243,6 @@ def _handle_request(
     tracker: session_watch.RecordChangeTracker | None = None,
     index: session_watch.RecordSummaryIndex | None = None,
 ) -> dict[str, typing.Any]:
-    """RPCリクエストを処理して応答辞書を返す。"""
     req_id = req.get("id")
     op = req.get("op")
     if not isinstance(req_id, int):
@@ -278,10 +260,9 @@ def _handle_request(
 
 
 def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.RecordChangeTracker]:
-    """記録のrootの変更監視を開始する。監視を開始できない場合もRPCは続ける。"""
 
     def on_flush(refresh: bool, records: list[tuple[str, str]]) -> None:
-        # SSH接続の切断後の通知は届け先が無いため破棄する。RPCの読み取り側が切断を検知して終了する。
+
         with contextlib.suppress(OSError):
             if refresh:
                 _emit({"type": session_watch.REFRESH_TYPE})
@@ -340,7 +321,6 @@ def _serve() -> int:
 
 
 def main() -> int:
-    """argvの操作種別に応じて一覧・読み取り・検索・常駐モードを実行する。"""
     if len(sys.argv) < 2:
         sys.stderr.write("missing operation\n")
         return 2

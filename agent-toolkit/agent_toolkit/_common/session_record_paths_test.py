@@ -79,7 +79,6 @@ def test_locator_finds_antigravity_record_without_rescanning_claude_and_codex(
 
 
 def _listed_directories(monkeypatch: pytest.MonkeyPatch, root: pathlib.Path) -> list[pathlib.Path]:
-    """`root`配下で一覧を読んだディレクトリを、呼び出しの順に記録する。"""
     listed: list[pathlib.Path] = []
     scandir = os.scandir
 
@@ -101,7 +100,6 @@ def _touch_other_days(sessions: pathlib.Path) -> None:
 def test_codex_records_list_only_thread_day_directories(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, day: str
 ) -> None:
-    """UUIDv7のthread IDは、保存済みの日数によらず作成日の前後1日の日付ディレクトリだけを列挙して記録を返す。"""
     sessions = tmp_path / "sessions"
     _touch_other_days(sessions)
     expected = _touch(sessions / day / f"rollout-2026-11-07T12-00-00-{_CODEX_V7_ID}.jsonl")
@@ -112,7 +110,6 @@ def test_codex_records_list_only_thread_day_directories(
 
 
 def test_codex_records_outside_thread_days_are_found_from_all_days(tmp_path: pathlib.Path) -> None:
-    """作成日の前後1日に無い記録も、全期間の日付ディレクトリから見つける。"""
     sessions = tmp_path / "sessions"
     _touch_other_days(sessions)
     expected = _touch(sessions / f"2026/09/30/rollout-2026-09-30T00-00-00-{_CODEX_V7_ID}.jsonl")

@@ -1,5 +1,3 @@
-"""両OSの初回導入入口とモード別mise設定を隔離ホームで確認する。"""
-
 import json
 import os
 import shutil
@@ -57,7 +55,6 @@ def test_install_entry_persists_and_transmits_mode(mode, shell, tmp_path, host_e
 
 
 def _render_global_mise_tools(mode, home, host_environ):
-    """グローバルのmise設定テンプレートを隔離ホームで描画し、`[tools]`を返す。"""
     chezmoi = shutil.which("chezmoi")
     if chezmoi is None:
         pytest.skip("chezmoiが未導入")
@@ -121,7 +118,6 @@ def test_global_mise_template_contains_mode_target_set(mode, config_exists, tmp_
 
 
 def test_minimal_prune_covers_every_full_only_global_tool(tmp_path, host_environ):
-    """fullだけが導入するツールは、minimalへ切り替えたときの整理対象に含まれ、shimを残さない。"""
     full = _render_global_mise_tools("full", tmp_path, host_environ)
     minimal = _render_global_mise_tools("minimal", tmp_path, host_environ)
     full_only = set(full) - set(minimal)

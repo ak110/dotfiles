@@ -11,10 +11,6 @@ def test_run_script_plan_create_records_current_plan_file_path(
     monkeypatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """`atk run-script plan-create`の標準出力から現在の計画パスを記録し、計画の工程の開始とする。
-
-    前の計画のパスは新しい計画のパスで置き換え、セッション名へ前の計画名を出し続けない。
-    """
     plan_path = tmp_path / ".claude" / "plans" / "15-0713_process-wi_レーン01.md"
     plan_path.parent.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(tmp_path))

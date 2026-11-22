@@ -1,5 +1,3 @@
-"""`python -m pytools.media_remote`実行用エントリポイント。"""
-
 import sys
 
 from pytools.media_remote import _cli

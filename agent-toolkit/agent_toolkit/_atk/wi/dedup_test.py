@@ -1,9 +1,3 @@
-"""`atk wi`の位置引数の重複除去のテスト。
-
-`dedup_positional_filenames`を経由するadopt・reject・rm・start-processingの4サブコマンドで、
-同一ファイル名の重複指定を初出の1件へ集約して処理することを検証する。
-"""
-
 import pathlib
 import subprocess
 

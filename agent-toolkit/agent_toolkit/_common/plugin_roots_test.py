@@ -1,5 +1,3 @@
-"""分離した品質プラグインの導入元と曖昧さを確かめる。"""
-
 import asyncio
 import json
 import os
@@ -17,7 +15,6 @@ from agent_toolkit._testing.codex_plugin_cli import codex_plugin_cli
 )
 @pytest.mark.parametrize("value", ["missing", None, "", "../other", "C:", 1])
 def test_codex_missing_required_field_has_an_actionable_host_diagnostic(tmp_path, monkeypatch, plugin, field, value):
-    """公開一覧の必須field欠落を、利用側が受理するhost診断へ変換する。"""
     installed = [
         {"name": name, "marketplaceName": "mine", "version": "1.0", "installed": True, "enabled": True}
         for name in ("agent-toolkit", "agent-basics")
@@ -36,7 +33,6 @@ def test_codex_missing_required_field_has_an_actionable_host_diagnostic(tmp_path
 
 @pytest.mark.parametrize("duplicated", [False, True])
 def test_codex_inventory_queries_each_configured_marketplace_and_keeps_uniqueness(tmp_path, monkeypatch, duplicated):
-    """リモートカタログへ接続する無指定の一覧を使わず、設定済みmarketplaceの全件から導入元の一意性を判定する。"""
     home = tmp_path / "codex"
     root = home / "plugins/cache/mine/agent-basics/1"
     (root / "skills").mkdir(parents=True)
@@ -129,7 +125,6 @@ def test_development_sibling_requires_manifest_and_skills(tmp_path):
 
 
 def test_agy_disabled_registration_does_not_use_other_hosts(tmp_path, monkeypatch):
-    """正式生成rootの登録があっても、agyの無効設定を維持する。"""
     monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
     config = tmp_path / ".gemini/config"
     config.mkdir(parents=True)
@@ -193,7 +188,7 @@ def test_claude_directory_marketplace_uses_folder_actually_read(tmp_path, monkey
         lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, json.dumps(data), ""),
     )
     assert plugin_roots.resolve_plugin_root("agent-basics", toolkit, "claude", project) == folder
-    # readFromFolderの無い登録（directory以外のmarketplace）は従来どおりinstallPathを使う。
+
     for item in data:
         item.pop("readFromFolder", None)
     assert plugin_roots.resolve_plugin_root("agent-basics", toolkit, "claude", project) == stale

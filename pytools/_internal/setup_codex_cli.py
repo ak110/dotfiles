@@ -14,8 +14,6 @@ import time
 from pathlib import Path
 
 from agent_toolkit._common import dotfiles_mode
-
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
 from pytools._internal import (
@@ -96,7 +94,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
     if not removed and not failures:
         orphan_failures, orphaned_shims = _find_orphaned_mise_shims()
         failures.extend(orphan_failures)
-    # 自身の除去履歴だけでなく、miseの申告と中継の実在が一致しない場合も再生成する。
+
     if removed or orphaned_shims:
         reshim_failures = _reshim_mise()
         failures.extend(reshim_failures)
@@ -249,7 +247,6 @@ def restore_native_launcher(native: Path, *, windows: bool) -> None:
 
 
 def _nvm_bin_directories() -> tuple[Path, ...]:
-    """nvmがバージョン別にnpmの実行ファイルを置く、実在するディレクトリを返す。"""
     nvm_dir = Path(os.environ.get("NVM_DIR", Path.home() / ".nvm"))
     versions = nvm_dir / "versions" / "node"
     if not versions.is_dir():
@@ -258,7 +255,6 @@ def _nvm_bin_directories() -> tuple[Path, ...]:
 
 
 def _find_mise() -> Path | None:
-    """PATH上のmiseの絶対パスを返す。"""
     mise_name = shutil.which("mise")
     return Path(mise_name).absolute() if mise_name is not None else None
 
@@ -283,8 +279,7 @@ def _remove_mise_versions(canonical: Path) -> tuple[list[str], bool]:
         return [f"{skipped}: 解析に失敗: {error}）"], False
     if not isinstance(listed, list):
         return [f"{skipped}: 配列ではない）"], False
-    # `mise ls`はmise.toml定義済みで未導入の版も列挙する。
-    # 未導入時に`uninstall`を呼ぶと警告が出るため、導入済みの要素だけを数える。
+
     installed = [entry for entry in listed if isinstance(entry, dict) and entry.get("installed")]
     if not installed:
         return [], False

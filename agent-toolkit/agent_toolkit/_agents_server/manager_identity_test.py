@@ -41,10 +41,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_parallel_claude_delegates_get_distinct_session_ids(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """remote会話contextを与えたMCPの整備後、並行会話と回収結果が独立する。
-
-    CLI代用のID決定は2026年10月18日の実MCP観測で確認したremote IDの継承を模す。
-    """
     parent = str(uuid.uuid4())
     for name, value in {
         "CLAUDE_CODE_SESSION_ID": parent,
@@ -161,7 +157,6 @@ async def test_start_projects_shared_state_without_internal_fields(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """両engineの開始応答が同じ公開射影を持つ。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -218,10 +213,6 @@ async def test_start_records_launcher_in_registry_and_keeps_it(
     host_alias: tuple[str, str, str] | None,
     expected: str,
 ) -> None:
-    """`start`は作成時点の委譲元を登録簿へ記録し、状態の更新と解放済みへの置き換えの後も保持する。
-
-    親のセッション記録に起動結果が残らない委譲先は、登録簿の委譲元が無いと`atk serve`の一覧で親を持たない。
-    """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     for name in _LAUNCHER_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)

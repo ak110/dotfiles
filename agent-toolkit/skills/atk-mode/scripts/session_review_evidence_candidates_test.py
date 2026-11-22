@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_candidates_test）。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -14,7 +12,6 @@ from agent_toolkit._testing.session_review_evidence_support import _bundle_candi
 
 
 def test_candidates_bound_hook_notice_variants_and_keep_each_emitter() -> None:
-    """block/warn通知は発生源ごとに上位5種類の代表位置へ限定し、発生総数を保持する。"""
     notices: list[dict] = []
     line = 1
     for variant, count in enumerate(range(7, 0, -1)):
@@ -58,7 +55,6 @@ def test_transcript_alias_selects_the_single_record_source(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--transcript`を位置引数と同じ単一記録を指定する手段として扱う。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "入力"}}])
 
     assert evidence.main(["--transcript", str(transcript)]) == 0
@@ -83,7 +79,6 @@ def test_candidates_exclude_runtime_inputs_before_selecting_initial_request() ->
 
 
 def test_candidates_exclude_boundary_marked_injections() -> None:
-    """属性を伴う境界の要素で囲んだ自動注入本文を、実行環境の挿入として除外する。"""
     normative = '<normative-context source="agent-toolkit" kind="rules-main">\n条文\n</normative-context>'
     hook_notice = (
         '<agent-toolkit-hook-message source="agent-toolkit/rules_context" kind="notice">\n注記\n</agent-toolkit-hook-message>'
@@ -104,7 +99,6 @@ def test_candidates_exclude_boundary_marked_injections() -> None:
 
 
 def test_candidates_exclude_initial_codex_skill_pair_without_hiding_later_intervention() -> None:
-    """先頭スキル要求と対応本文を別区分で除外し、後続のユーザー介入を保持する。"""
     timeline = [
         {"kind": "user", "record": "main", "line": 1, "text": "環境情報", "runtime_generated": True},
         {"kind": "user", "record": "main", "line": 2, "text": f"${skill_modes.PROCESS_WI}"},
@@ -150,7 +144,6 @@ def test_bundle_selects_initial_request_after_runtime_injections(
 def test_bundle_selects_initial_skill_after_runtime_injections(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], closing: str
 ) -> None:
-    """注入後の初期スキルと対応本文は元の区分で除き、後続の是正を保持する。"""
     texts = [
         "# AGENTS.md instructions\n規範",
         '<atk-auto source="runtime" kind="notice">注入</atk-auto>',
@@ -171,10 +164,6 @@ def test_bundle_selects_initial_skill_after_runtime_injections(
 
 
 def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """PreToolUseのwarn候補の個別証拠が、同じ呼び出し識別子のコマンドと記録位置を持つ。
-
-    hook実行記録だけでは警告の対象を特定できず、分析主体が元記録を検索し直すことになる。
-    """
     candidates, items = _bundle_candidates_and_evidence(
         tmp_path,
         capsys,
@@ -223,7 +212,6 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
 
 
 def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """blockまたはwarn以外の区分を持つhook出力は候補へ残らず、区分の種類によらず除外件数へ計上される。"""
     candidates, _ = _bundle_candidates_and_evidence(
         tmp_path,
         capsys,

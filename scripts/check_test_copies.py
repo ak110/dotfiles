@@ -249,7 +249,7 @@ class _PythonAnalysis:
                     if isinstance(item, (ast.Assign, ast.AnnAssign)):
                         self.assign(item, local, (*stack, name))
                 result = _combine([self.value(item, local, (*stack, name)) for item in returns])
-                # 補助の定数戻り値は計算結果なので、静的定数自体の比較として扱わない。
+
                 return result if result == "text" else "unknown"
             imported = self.imported_helper(name)
             if imported is not None and name not in stack:
@@ -277,7 +277,7 @@ class _PythonAnalysis:
             if isinstance(item, ast.Starred):
                 targets.append(item.value)
                 continue
-            # 部分更新は状態全体の固定出自を無効にし、添字の変数へ右辺を伝播させない。
+
             if isinstance(item, (ast.Subscript, ast.Attribute)):
                 owner = item.value
                 while isinstance(owner, (ast.Subscript, ast.Attribute)):
@@ -476,7 +476,7 @@ class _PythonAnalysis:
                             for child in ast.walk(item)
                         )
                     }
-                    # 更新callbackの成功確認だけを持つhelperは、関数の結果検査でなく状態準備として扱う。
+
                     if mutating_callbacks and all(
                         isinstance(item.test, ast.Call)
                         and any(isinstance(child, ast.Name) and child.id in mutating_callbacks for child in ast.walk(item.test))
@@ -563,7 +563,6 @@ class _Token:
 
 
 def _tokens(source: str, rust: bool) -> tuple[list[_Token], dict[int, str]]:
-    """文字列中の擬似宣言・括弧を構造から除き、位置を保つ。"""
     quoted = (
         r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])\'' if rust else r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\\n])*\'|`(?:\\.|[^`\\])*`'
     )
@@ -626,7 +625,7 @@ def _foreign_value(tokens: list[_Token], env: dict[str, str]) -> str:
     significant = [token for token in tokens if token.value not in {"(", ")", "[", "]", "{", "}", ",", ";", "&", "!"}]
     if not significant:
         return "unknown"
-    # 各要素が既知の値かを確認し、未知の関数呼出しを定数へ誤分類しない。
+
     kinds = []
     for index, token in enumerate(significant):
         if token.literal or token.value in {"true", "false", "null", "None", "vec"}:
@@ -891,7 +890,6 @@ def _language(path: pathlib.Path) -> str | None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Git追跡試験または明示された合成ファイルを静的に検査する。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

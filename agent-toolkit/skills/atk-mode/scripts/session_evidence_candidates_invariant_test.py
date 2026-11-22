@@ -9,7 +9,6 @@ from agent_toolkit._common import task_documents
 
 
 def test_subagent_outputs_have_recognized_first_lines() -> None:
-    """自由記述を返す担当を除き、全担当の先頭行を候補抽出が認識する。"""
     plugin_root = pathlib.Path(evidence.__file__).resolve().parents[3]
     exceptions = {
         "copilot-review-audit.subagent.md": "監査結果の本文自体が成果物",
@@ -23,8 +22,6 @@ def test_subagent_outputs_have_recognized_first_lines() -> None:
         output = body.split("\n## 出力\n", 1)[1].split("\n## ", 1)[0]
         match = re.search(r"```text\n([^\n]+)", output)
         if match is None:
-            # `## 出力`が続行不能の形式を委譲時の厳守事項へ委ね、返却値を工程の節で定める担当は、
-            # 入力の宣言を除く本文中の最初の返却値で判定する。
             match = re.search(r"```text\n((?!必須入力名:)[^\n]+)", body)
         assert match is not None, path
         first = match.group(1)

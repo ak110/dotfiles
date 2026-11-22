@@ -1,5 +1,3 @@
-"""pytools共通の汎用処理（実行ファイルの解決、サブプロセス実行、JSONの読み込みと原子的な書き込み、dotfilesルートの解決）。"""
-
 import codecs
 import contextlib
 import json
@@ -17,15 +15,13 @@ from pathlib import Path
 from typing import cast
 
 lazy import psutil
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
 
 from pytools._internal import log_format
 
 logger = logging.getLogger(__name__)
 
-# 短時間で終わる外部コマンドの呼び出しに使う既定のタイムアウト（秒）
+
 COMMAND_TIMEOUT = 30
 
 # 所有する子へ終了要求と強制終了を送った後に、それぞれ回収を待つ上限（秒）。
@@ -58,7 +54,6 @@ class ProcessReclaimError(RuntimeError):
         self.child = child
 
     def retry(self) -> list[str]:
-        """保持した所有対象を回収し直し、なお残る対象の記述を返す（空なら回収済み）。"""
         alive = _reclaim_targets(self.processes)
         remaining = {item.pid for item in alive}
         # zombie表示の直接の子は`_reclaim_targets`の生存判定から外れるため、回収の完了を直接の待機で確かめる。
@@ -73,7 +68,6 @@ class ProcessReclaimError(RuntimeError):
 
 
 def _reclaim_targets(targets: list[typing.Any]) -> list[typing.Any]:
-    """終了要求と強制終了を順に送り、資源を保持したまま残った対象を返す。"""
     for target in targets:
         with contextlib.suppress(psutil.Error, OSError):
             target.terminate()
@@ -124,10 +118,6 @@ def stop_owned_process(
 
 
 def _reap_owned_child(process: subprocess.Popen[typing.Any]) -> bool:
-    """所有する直接の子の回収を上限付きで待ち、終わらなければ強制終了を重ねて、回収できたかを返す。
-
-    スレッドグループのリーダーだけが先に終了した多スレッドの子はzombieと表示されるため、zombie判定に頼らない。
-    """
     # 待機の失敗（時間切れ・OSError）は回収を確認できない結果として返し、通常の例外へ置き換えない。
     try:
         process.wait(timeout=_REAP_TIMEOUT_SECONDS)
@@ -140,7 +130,6 @@ def _reap_owned_child(process: subprocess.Popen[typing.Any]) -> bool:
 
 
 def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Process]:
-    """親の回収待ちだけになったzombieを除き、資源の解放を上限付きで待つ。"""
     deadline = time.monotonic() + _REAP_TIMEOUT_SECONDS
     while targets:
         alive = []
@@ -156,7 +145,6 @@ def _wait_process_resources(targets: list[psutil.Process]) -> list[psutil.Proces
 
 
 def safe_resolve(path: Path) -> Path:
-    """パスを解決し、OSが解決を拒否した場合は絶対パスを返す。"""
     try:
         return path.resolve()
     except OSError:
@@ -167,11 +155,6 @@ def safe_resolve(path: Path) -> Path:
 def process_scope(
     *popenargs: typing.Any, close_streams: bool = True, **kwargs: typing.Any
 ) -> Generator[subprocess.Popen[typing.Any]]:
-    """PEP 723スクリプトでも使える、上限付き回収を伴う子プロセスの所有境界。
-
-    子を回収できない場合は`ProcessReclaimError`を送出する。警告だけで戻ると、呼出元は所有する資源の
-    停止を確認できないまま後続の工程へ進むためである。
-    """
     # Popen.__exit__の無期限waitを避け、既存の子孫回収と残存診断を保つ。
     process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
     try:
@@ -191,7 +174,6 @@ def process_scope(
 
 
 def mise_shim_directories() -> set[Path]:
-    """miseがshimを配置するディレクトリのうち、実在するものの解決済みパスを返す。"""
     data_dir = os.environ.get("MISE_DATA_DIR")
     candidates = [Path(data_dir) / "shims" if data_dir else Path.home() / ".local" / "share" / "mise" / "shims"]
     if sys.platform == "win32":
@@ -202,11 +184,6 @@ def mise_shim_directories() -> set[Path]:
 
 
 def resolve_executable(name: str, *, preferred_directories: Sequence[Path] = ()) -> Path | None:
-    """mise管理版ではない実行ファイルの実体を絶対パスで返す。
-
-    優先ディレクトリと`PATH`を順に走査し、mise shimのディレクトリは除外する。
-    miseが唯一の提供元であるツールへ適用すると、shimを除外した結果として`None`を返す。
-    """
     shim_directories = mise_shim_directories()
     path_directories = (Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen: set[Path] = set()
@@ -227,11 +204,6 @@ def resolve_uv_path() -> Path | None:
 
 
 def ensure_flag_file_present(flag_path: Path, *, tag: str) -> bool:
-    """フラグファイルを冪等に生成する。
-
-    Returns:
-        新規生成した場合True、既存のため生成不要の場合False。
-    """
     if flag_path.exists():
         return False
     flag_path.parent.mkdir(parents=True, exist_ok=True)
@@ -255,7 +227,6 @@ def find_dotfiles_root() -> Path | None:
 
 
 def strip_ansi(text: str) -> str:
-    """CLIの出力からANSIエスケープシーケンスを除く。"""
     return _ANSI_ESCAPE.sub("", text)
 
 
@@ -408,7 +379,13 @@ def load_json_dict(
 
 
 def _atomic_write(
-    path: Path, writer: Callable[[typing.IO[typing.Any]], object], *, binary: bool, mode: int | None, tag: str | None
+    path: Path,
+    writer: Callable[[typing.IO[typing.Any]], object],
+    *,
+    binary: bool,
+    mode: int | None,
+    tag: str | None,
+    before_replace: Callable[[], None] | None = None,
 ) -> bool:
     """同一ディレクトリのtempfile + `Path.replace` で原子的に保存する共通実装。
 
@@ -438,10 +415,12 @@ def _atomic_write(
             prefix=f"{path.name}.",
             suffix=".tmp",
         ) as tmp:
-            writer(tmp)
             tmp_path = Path(tmp.name)
+            writer(tmp)
         if mode is not None and sys.platform != "win32":
             tmp_path.chmod(mode)
+        if before_replace is not None:
+            before_replace()
         tmp_path.replace(path)
         return True
     except OSError as e:
@@ -482,7 +461,6 @@ def atomic_write_bytes(path: Path, content: bytes, *, mode: int | None = None, t
 
 
 def json_values_equal(left: object, right: object) -> bool:
-    """JSONの値を比較する。Pythonの等値比較と異なり、入れ子でも真偽と数値を区別する。"""
     if isinstance(left, dict) and isinstance(right, dict):
         return left.keys() == right.keys() and all(json_values_equal(value, right[key]) for key, value in left.items())
     if isinstance(left, list) and isinstance(right, list):
@@ -495,7 +473,6 @@ def _collect_value_only_updates(
     updated: object,
     path: tuple[str | int, ...] = (),
 ) -> dict[Sequence[str | int], object] | None:
-    """既存パスのスカラー置換を集める。構造変更が必要ならNoneを返す。"""
     if isinstance(original, dict) and isinstance(updated, dict):
         if original.keys() != updated.keys():
             return None
@@ -524,8 +501,7 @@ def _edit_jsonc_values(source: str, updates: Mapping[Sequence[str | int], object
 
 
 def _insert_root_settings(source: str, additions: dict, *, has_members: bool) -> str:
-    """jsonc.editでは追加できないルートキーを、既存のメンバーとコメントの前へ挿入する。"""
-    # ルートの前に置かれたコメント内の「{」は挿入位置ではない。
+
     tokens = re.finditer(r"//[^\r\n]*|/\*.*?\*/|\{", source, re.DOTALL)
     start = next(token.end() for token in tokens if token[0] == "{")
     rest = source[start:]
@@ -542,19 +518,37 @@ def write_settings_hybrid(
     tag: str | None = None,
     source: str | None = None,
     preserve_bom: bool = False,
+    check_source: bool = False,
 ) -> bool:
-    """既存のスカラー値はJSONC上で編集し、構造変更や編集できない場合はJSONで原子的に保存する。
+    expected = source.encode("utf-8") if source is not None else None
 
-    合成元の本文を渡した場合は、その本文へのルートキーの追加でもコメントと改行を保つ。
-    本文を渡さない呼び出し元では従来どおり、スカラーの編集時にファイルを読み直す。
-    """
+    def verify_source() -> None:
+        try:
+            current = path.read_bytes()
+        except FileNotFoundError:
+            current = None
+        if current != expected:
+            raise OSError("設定を読み取った後に別の処理が編集したため保存を中止しました")
+
+    def save(content: str) -> bool:
+        if not check_source:
+            return atomic_write_bytes(path, content.encode("utf-8"), tag=tag)
+        return _atomic_write(
+            path,
+            lambda tmp: tmp.write(content.encode("utf-8")),
+            binary=True,
+            mode=None,
+            tag=tag,
+            before_replace=verify_source,
+        )
+
     unedited = source
     if source is not None and isinstance(original, dict) and isinstance(data, dict):
         additions = {key: value for key, value in data.items() if key not in original}
         if additions:
             source = _insert_root_settings(source, additions, has_members=bool(original))
             original = original | additions
-    if source is not None or path.exists():
+    if source is not None or (not check_source and path.exists()):
         updates = _collect_value_only_updates(original, data)
         if updates is not None:
             with contextlib.suppress(KeyError, IndexError, TypeError, ValueError):
@@ -562,7 +556,10 @@ def write_settings_hybrid(
                     source = unedited = path.read_text(encoding="utf-8", newline="")
                 if updates:
                     source = _edit_jsonc_values(source, updates)
-                return source == unedited or atomic_write_bytes(path, source.encode("utf-8"), tag=tag)
+                return source == unedited or save(source)
+    if check_source:
+        bom = "\ufeff" if preserve_bom and expected is not None and expected.startswith(codecs.BOM_UTF8) else ""
+        return save(bom + json.dumps(data, ensure_ascii=False, indent=2) + "\n")
     return atomic_write_json(path, data, tag=tag, preserve_bom=preserve_bom)
 
 

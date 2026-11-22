@@ -55,7 +55,6 @@ def test_agents_wait_omits_unreadable_output_activity_on_timeout(
     sessions: list[object],
     expected: dict[str, str],
 ) -> None:
-    """解釈不能な共有状態では出力活動を省略してrunning応答を返す。"""
     _write_own_status(wait_environment, sessions)
 
     with pytest.raises(SystemExit, match="3"):
@@ -103,7 +102,6 @@ def test_agents_wait_notices_response_reports_seconds_since_output(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通知だけを回収する未終了応答にも活動時刻と最新テキスト出力時刻を付ける。"""
     output_updated_at = "2026-09-09T00:00:00+00:00"
     updated_at = "2099-01-01T00:00:00+00:00"
     _write_own_status(
@@ -129,7 +127,6 @@ def test_agents_wait_stall_uses_activity_not_text_output(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """テキスト出力が閾値を超えて止まっていても、活動が続く間は停滞の印を付けない。"""
     _write_own_status(
         wait_environment,
         [
@@ -154,7 +151,6 @@ def test_agents_wait_adds_notices_to_terminal_result(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じ周回の通知を終了時の結果へ加える。"""
     wait_environment.mkdir(parents=True)
     _write_own_status(wait_environment, [{"session_id": "session-1", "status": "completed"}])
     payload = {"session_id": "session-1", "status": "completed", "turn_seq": 2}

@@ -1,5 +1,3 @@
-"""テスト用の共通ヘルパー。"""
-
 import contextlib
 import json
 import ntpath
@@ -26,8 +24,6 @@ FakeRunFunc = Callable[..., subprocess.CompletedProcess[str] | None]
 
 
 class _FakeResult:
-    """subprocess.CompletedProcess の軽量な代替。"""
-
     def __init__(self, returncode: int = 0, stdout: str = "", stderr: str = "") -> None:
         self.returncode = returncode
         self.stdout = stdout
@@ -35,7 +31,6 @@ class _FakeResult:
 
 
 def command_matches(cmd: list[str], expected: list[str]) -> bool:
-    """実行ファイルの絶対パスを許容して、コマンド列の先頭部分を比較する。"""
     if len(cmd) < len(expected) or not cmd or not expected:
         return False
     return Path(cmd[0]).stem == expected[0] and cmd[1 : len(expected)] == expected[1:]
@@ -113,7 +108,6 @@ def make_installed_two_plugin_fake(
 
 
 def plugin_management_response(cmd: list[str], successful: tuple[tuple[str, ...], ...]) -> _FakeResult:
-    """登録済みmarketplaceの照会と、指定したplugin変更操作の成功を返す。"""
     if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
         return _FakeResult(stdout=json.dumps([{"name": _claude_common.MARKETPLACE_NAME}], ensure_ascii=False))
     if any(command_matches(cmd, ["claude", "plugin", *suffix]) for suffix in successful):
@@ -122,7 +116,6 @@ def plugin_management_response(cmd: list[str], successful: tuple[tuple[str, ...]
 
 
 def assert_scope_user_install_calls(calls: list[list[str]]) -> None:
-    """agent-toolkit / sample-plugin の両方が `--scope=user` で install されたことを検証する。"""
     assert any(
         command_matches(
             command,
@@ -156,7 +149,6 @@ def write_settings_entry(path: pathlib.Path, entry: dict[str, object]) -> None:
 
 
 def ok_result(stdout: str = "", returncode: int = 0) -> subprocess.CompletedProcess[str]:
-    """成功応答の `subprocess.CompletedProcess` を組み立てる。"""
     return subprocess.CompletedProcess([], returncode=returncode, stdout=stdout, stderr="")
 
 
@@ -164,7 +156,6 @@ def make_static_fake(
     calls: list[list[str]],
     response: subprocess.CompletedProcess[str] | None = None,
 ) -> FakeRunFunc:
-    """全呼び出しに同じレスポンスを返す run_subprocess の差し替え関数を返す。"""
     fixed = response if response is not None else ok_result()
 
     def fake(
@@ -187,7 +178,6 @@ def make_branching_fake(
     create_result: subprocess.CompletedProcess[str],
     read_result: subprocess.CompletedProcess[str],
 ) -> FakeRunFunc:
-    """Script 内容に応じて Save()（生成）と TargetPath 読み取りを切り替える差し替え関数を返す。"""
 
     def fake(
         cmd: list[str],
@@ -256,7 +246,6 @@ _NPM_CMD_SHIM_FORMS = Path(_setup_cli_common.__file__).with_name("npm_cmd_shim_f
 
 
 def npm_cmd_shim_kinds() -> list[tuple[str, str]]:
-    """データが持つ、cmd-shimの版とbinの実体の先頭行の種類の全ての組を返す。"""
     data = json.loads(_NPM_CMD_SHIM_FORMS.read_text(encoding="utf-8"))
     return [(version, program) for version in data["cmd_shim_versions"] for program in data["programs"]]
 
@@ -294,7 +283,6 @@ class FakeEnvironmentRegistry:
         self.writes: list[tuple[str, str, int]] = []
 
     def install(self, monkeypatch: typing.Any) -> None:
-        """`winutils`のレジストリ関数をこの記憶域へ向ける。"""
         from pytools._internal import winutils  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         monkeypatch.setattr(winutils, "import_winreg", lambda: self)
@@ -304,20 +292,16 @@ class FakeEnvironmentRegistry:
         monkeypatch.setattr(winutils, "broadcast_environment_change", lambda: None)
 
     def read_user(self, name: str) -> tuple[str | None, int]:
-        """ユーザー側の値と値型を返す。"""
         return self.user.get(name, (None, self.REG_SZ))
 
     def read_system(self, name: str) -> tuple[str | None, int]:
-        """システム側の値と値型を返す。"""
         return self.system.get(name, (None, self.REG_SZ))
 
     def write_user(self, name: str, value: str, reg_type: int) -> None:
-        """ユーザー側へ書き込み、記録する。"""
         self.user[name] = (value, reg_type)
         self.writes.append((name, value, reg_type))
 
     def user_path(self) -> str:
-        """ユーザー側の`Path`を返す。"""
         return self.user.get("Path", ("", self.REG_SZ))[0]
 
 
@@ -351,7 +335,6 @@ class ResidentProcesses:
         self.stop_all()
 
     def start(self, name: str, *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.Popen[bytes]:
-        """実行名`name`の常駐プロセスを起動する。"""
         link = self._bin / name
         if not link.exists():
             link.parent.mkdir(parents=True, exist_ok=True)
@@ -375,12 +358,10 @@ class ResidentProcesses:
         return process
 
     def stop(self, process: subprocess.Popen[bytes]) -> None:
-        """起動したプロセスを終了させて回収する。"""
         residual = _common.stop_process_tree(process)
         assert not residual, f"常駐プロセスを回収できない: {residual}"
 
     def stop_all(self) -> None:
-        """起動した全てのプロセスを終了させて回収する。"""
         self._resources.close()
 
 

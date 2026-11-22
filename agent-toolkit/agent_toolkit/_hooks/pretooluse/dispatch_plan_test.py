@@ -35,7 +35,6 @@ class TestAtkContractBeforeQuestion:
 
     @pytest.mark.parametrize("field", ["question", "header", "label", "description"])
     def test_unobserved_subcommand_is_not_blocked(self, tmp_path: pathlib.Path, field: str) -> None:
-        """未観測のサブコマンド名を含む確認も遮断しない。"""
         result = _run(self._payload(field, f"contract-{field}"), env_overrides=_plan_file_state_env(tmp_path))
 
         assert result.returncode == 0
@@ -44,7 +43,6 @@ class TestAtkContractBeforeQuestion:
         assert result.stderr == ""
 
     def test_question_without_subcommand_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
-        """サブコマンド名を含まない確認は遮断しない。"""
         payload = _user_facing_payload("question", "process-loopの扱いを選んでください。")
         payload["session_id"] = "contract-absent"
 
@@ -56,7 +54,6 @@ class TestAtkContractBeforeQuestion:
         assert result.stderr == ""
 
     def test_exit_plan_mode_is_not_blocked(self, tmp_path: pathlib.Path) -> None:
-        """計画本文も遮断しない。"""
         payload = {
             "tool_name": "ExitPlanMode",
             "tool_input": {"plan": f"`{self._SUBCOMMAND}`でprocess-loopを止める。"},
@@ -72,11 +69,6 @@ class TestAtkContractBeforeQuestion:
 
 
 class TestPlanModeSkillCallSites:
-    """write-planスキルを呼び出すときに遮断も警告も返さないことの確認。
-
-    write-plan起動時の計画単位リセット以外の委譲状態を参照せず、`returncode`は0を保つ。
-    """
-
     _state_env = staticmethod(_plan_file_state_env)
 
     @pytest.fixture(autouse=True)
@@ -149,7 +141,6 @@ class TestPlanFileDoesNotRequireTextlintRead:
         )
 
     def test_write_without_read_does_not_warn(self, tmp_path: pathlib.Path):
-        """資料未読のWriteを警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -170,7 +161,6 @@ class TestPlanFileDoesNotRequireTextlintRead:
         assert "textlint-violations.md" not in (result.stdout + result.stderr)
 
     def test_edit_without_read_does_not_warn(self, tmp_path: pathlib.Path):
-        """資料未読のEditを警告しない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home, "edit.md")
         env = self._state_env(tmp_path, home)
@@ -191,7 +181,6 @@ class TestPlanFileDoesNotRequireTextlintRead:
         assert "textlint-violations.md" not in (result.stdout + result.stderr)
 
     def test_legacy_read_flag_does_not_change_result(self, tmp_path: pathlib.Path):
-        """旧読了フラグが残るセッションでも計画編集を妨げない。"""
         home = tmp_path / "home"
         plan = self._make_plan(home)
         env = self._state_env(tmp_path, home)
@@ -216,7 +205,6 @@ class TestPlanFileDoesNotRequireTextlintRead:
         assert specific.get("permissionDecision") != "deny"
 
     def test_allows_non_plan_file_edit_without_read(self, tmp_path: pathlib.Path):
-        """plan file以外の編集はフラグ未設定でも通過する。"""
         home = tmp_path / "home"
         home.mkdir()
         env = self._state_env(tmp_path, home)

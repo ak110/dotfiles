@@ -435,7 +435,6 @@ def test_claude_pretooluse_retains_permission_decisions(decision: str) -> None:
 def test_pretooluse_public_entry_returns_host_output(
     tmp_path: pathlib.Path, host: str, scenario: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """登録された公開hookで通過・追加文脈・構造化denyの正常拒否を確認する。"""
     payload, environment = _build_fixture("PreToolUse", "pretooluse", tmp_path)
     environment = {**host_environ(), **environment}
     for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
@@ -449,7 +448,6 @@ def test_pretooluse_public_entry_returns_host_output(
         )
         payload["turn_id"] = "codex-turn"
     if scenario == "warning":
-        # 警告は再編集で是正できる入力として、計画本文の文字化けを使う。
         payload["tool_name"] = "ExitPlanMode"
         payload["tool_input"] = {"plan": "内容を確認" + chr(0xFFFD) + "してください。"}
     elif scenario == "block":

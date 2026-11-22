@@ -74,30 +74,23 @@ def _basename(value: str) -> str:
 
 
 def _stem(value: str) -> str:
-    """末尾の名前から最後の拡張子を除き、小文字にする。"""
     return _basename(value).rsplit(".", 1)[0].lower()
 
 
 @dataclasses.dataclass(frozen=True)
 class ProcessInfo:
-    """診断に示す候補プロセス。"""
-
     pid: int
     name: str
 
 
 @dataclasses.dataclass(frozen=True)
 class ProcessScan:
-    """プロセスの走査結果。`indeterminate`は一部を確認できなかったことを表す。"""
-
     processes: tuple[ProcessInfo, ...] = ()
     indeterminate: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
 class Target:
-    """Gitプロセスの対象管理ディレクトリ。`common_dir`を持つ場合は共通ディレクトリが同じものも対象とする。"""
-
     git_dir: pathlib.Path
     common_dir: pathlib.Path | None = None
 
@@ -115,7 +108,6 @@ class Record:
 
 
 def scan_update_dotfiles_processes() -> ProcessScan:
-    """自分自身と祖先・子孫を除く、update-dotfilesの更新主体のプロセスを探す。"""
     excluded: set[tuple[int, float]] = set()
     indeterminate = False
     try:
@@ -135,14 +127,12 @@ def scan_update_dotfiles_processes() -> ProcessScan:
             if (process.pid, info.get("create_time")) in excluded:
                 continue
             if not name:
-                # 名前を照会できないプロセスは、更新主体かどうかを判定できない。
                 indeterminate = True
                 continue
             if not name.lower().startswith(_UPDATER_EXECUTABLE_PREFIXES):
                 continue
             cmdline = info.get("cmdline")
             if cmdline is None:
-                # 照会を拒否されたpython・uvは、更新主体かどうかを判定できない。
                 indeterminate = True
                 continue
             if any(_stem(argument) in _UPDATER_STEMS for argument in cmdline):
@@ -190,8 +180,6 @@ _REASONS = {
 
 @dataclasses.dataclass(frozen=True)
 class Diagnosis:
-    """回収せずに終えた理由と、操作者が次の行動を決めるための手掛かり。"""
-
     lock: pathlib.Path
     modified_ns: int | None
     waited_seconds: float
@@ -200,7 +188,6 @@ class Diagnosis:
 
     @property
     def reason(self) -> str:
-        """回収しなかった理由の短い文言。"""
         return _REASONS.get(self.assessment.verdict, "ロックの状態を判定できない")
 
     def text(self, guidance: str) -> str:
@@ -243,7 +230,6 @@ def _stat_key(status: os.stat_result) -> _Key:
 
 
 def _process_state(pid: int, create_time: float) -> str:
-    """PIDと開始時刻から、プロセスの`alive`・`dead`・`unknown`を返す。"""
     try:
         actual = psutil.Process(pid).create_time()
     except psutil.ZombieProcess, psutil.AccessDenied:
@@ -252,7 +238,7 @@ def _process_state(pid: int, create_time: float) -> str:
         return "dead"
     except psutil.Error:
         return "unknown"
-    # 開始時刻が違えばPIDの再利用であり、記録した主体は終了している。
+
     return "alive" if math.isclose(actual, create_time, abs_tol=0.01) else "dead"
 
 
@@ -263,11 +249,10 @@ def _owner_state(record: Record) -> str:
 
 
 class RecordUnreadable(Exception):  # noqa: N818  # 所有記録の有無を判定できない状態を表す。
-    """所有記録が存在するのに読めない、または形式が不完全・未知である。回収しない側へ分類する。"""
+    pass
 
 
 def read_record(directory: pathlib.Path) -> Record | None:
-    """所有記録を読む。記録が無ければ`None`を返し、読めない・不完全・未知の形式なら`RecordUnreadable`を送出する。"""
     try:
         text = (directory / RECORD_NAME).read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -344,7 +329,6 @@ def release(lock: pathlib.Path, identity: os.stat_result) -> None:
 
 
 def _normalize_options(argv: Sequence[str]) -> list[str]:
-    """gitプロセスのコマンドラインから、サブコマンドより前の大域オプションを取り出す。"""
     options: list[str] = []
     position = 1
     while position < len(argv) and argv[position].startswith("-"):
@@ -360,14 +344,13 @@ def _normalize_options(argv: Sequence[str]) -> list[str]:
 def scan_git_processes(
     target: Target, *, probe_cwd: pathlib.Path, base_env: Callable[[], dict[str, str]] | None = None
 ) -> ProcessScan:
-    """`target`の管理ディレクトリを操作する生存中のgitプロセスを探す。"""
     found: list[ProcessInfo] = []
     for process in psutil.process_iter(["name", "cmdline"]):
         try:
             argv = process.info["cmdline"] or []
             if not argv or _basename(argv[0]).lower() not in _GIT_NAMES:
                 continue
-            # -C、--git-dir等の解釈とlinked worktreeの対応はGit自身へ委ねる。
+
             options = _normalize_options(argv)
             env = dict(base_env()) if base_env is not None else dict(os.environ)
             process_env = process.environ()
@@ -379,8 +362,7 @@ def scan_git_processes(
             query = ["--absolute-git-dir"]
             if target.common_dir is not None:
                 query += ["--path-format=absolute", "--git-common-dir"]
-            # 走査中に消える他プロセスのcwdはGit自身に検査させる。
-            # probeの起動cwdを固定し、消失をプロセス起動のOSErrorへ変換しない。
+
             result = command.run(
                 ["-C", process.cwd(), *options, "rev-parse", *query],
                 probe_cwd,
@@ -400,13 +382,11 @@ def scan_git_processes(
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied, OSError, IndexError, subprocess.SubprocessError:
-            # Gitを確認できない場合は内容変更を開始しない。
             return ProcessScan(tuple(found), True)
     return ProcessScan(tuple(found), False)
 
 
 def resolve_target(cwd: pathlib.Path | str | None) -> Target | None:
-    """`cwd`のGit管理ディレクトリと共通ディレクトリを返す。解決できなければ`None`を返す。"""
     try:
         result = command.run(
             ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir"],
@@ -454,7 +434,6 @@ def assess(lock: pathlib.Path, context: LockContext) -> Assessment:
     try:
         record = read_record(lock.parent)
     except RecordUnreadable:
-        # 所有者の記録があるはずなのに確認できないため、回収しない。
         return Assessment("owner-unknown", False, False, key)
     if record is not None and (record.lock_dev, record.lock_ino) == (status.st_dev, status.st_ino):
         if pathlib.Path(record.index).resolve() != lock.with_name(lock.name.removesuffix(".lock")).resolve():
@@ -531,7 +510,6 @@ def _remove_if_unchanged(lock: pathlib.Path, expected: _Key) -> bool:
 
 
 def _alternates(directory: pathlib.Path) -> tuple[str, ...]:
-    """強制停止で残った代替indexの名前。削除はしない。"""
     try:
         names = [path.name for path in directory.glob("update-dotfiles-index-*")]
         # 回収の途中で強制終了して残った別名のロック。
@@ -611,7 +589,6 @@ def lock_wait_seconds(*limits: float | None) -> float:
 
 
 def _inside(lock: pathlib.Path, target: Target) -> bool:
-    """`lock`がGitの管理ディレクトリまたは共通ディレクトリの中にあるか。"""
     resolved = lock.parent.resolve() / lock.name
     return any(resolved.is_relative_to(base) for base in (target.git_dir, target.common_dir) if base is not None)
 

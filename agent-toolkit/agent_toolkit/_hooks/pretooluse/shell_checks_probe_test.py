@@ -14,8 +14,6 @@ from agent_toolkit._testing.shell_checks_support import _run_in_ready_context
 
 
 class TestIssSidechainProbe:
-    """`_record_iss_sidechain_probe`によるisSidechain実値採取デバッグログ（FB7対応）。"""
-
     _state_env = staticmethod(_plan_file_state_env)
     _write_state = staticmethod(_write_session_state)
 
@@ -25,7 +23,6 @@ class TestIssSidechainProbe:
         return tmp_path / f"claude-agent-toolkit-issidechain-{safe}.log"
 
     def test_os_error_is_swallowed_and_execution_continues(self, tmp_path: pathlib.Path):
-        """ログ出力先をディレクトリにして`OSError`を起こしても処理を継続する。"""
         env = self._state_env(tmp_path)
         session_id = "probe-oserror"
         log_path = self._log_path(tmp_path, session_id)
@@ -46,7 +43,6 @@ class TestIssSidechainProbe:
         assert not list(log_path.iterdir())
 
     def test_rotates_when_log_exceeds_one_megabyte(self, tmp_path: pathlib.Path):
-        """ログファイルが1MB超過時に`_file_lock.rotate_if_needed`経由で`.1`世代ファイルへローテートされる。"""
         env = self._state_env(tmp_path)
         log_path = self._log_path(tmp_path, "probe-rotate")
         log_path.write_text("x" * (1_000_001), encoding="utf-8")
@@ -76,7 +72,6 @@ class TestIssSidechainProbe:
         ],
     )
     def test_public_operation_records_complete_probe(self, tmp_path: pathlib.Path, operation: str, sidechain: dict):
-        """公開起動・継続で1行を保存し、欠落・真偽・非booleanの値と全記録項目を保持する。"""
         env = self._state_env(tmp_path)
         session = "probe-fields"
         self._write_state(

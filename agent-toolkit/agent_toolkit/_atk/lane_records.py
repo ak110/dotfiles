@@ -1,5 +1,3 @@
-"""レーン資源の所有記録・選定状態と固有手順の実行。"""
-
 from __future__ import annotations
 
 import argparse
@@ -36,7 +34,6 @@ TIMEOUT = 120
 
 
 def record_errors() -> tuple[type[BaseException], ...]:
-    """所有登録の読取・判定・回収で保持対象へ変換する例外型を返す。"""
     return (
         OSError,
         ValueError,
@@ -49,7 +46,6 @@ def record_errors() -> tuple[type[BaseException], ...]:
 
 
 def current_session_id() -> str | None:
-    """同じ実行の作成と終了操作が使う識別子を解決する。"""
     for name in (SESSION_ENV, "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
         value = os.environ.get(name)
         if value and ID.fullmatch(value):
@@ -99,12 +95,6 @@ def lane_locked(record_path: pathlib.Path, *, blocking: bool = True) -> Generato
 
 @contextlib.contextmanager
 def target_locked(record: dict[str, typing.Any], branch: str) -> Generator[None]:
-    """統合先HEADの一致の確認と更新を、同じ統合先へ統合する全レーンで直列にする。
-
-    所有sessionに依存させないのは、別sessionの統合が同じ統合先を更新する場合も直列にするためである。
-    保持区間はGitの数操作に限り、検証と人の判断を含めない。
-    置き場所を`lanes/`の外にするのは、`lanes/`直下をsessionのディレクトリとして走査する処理があるためである。
-    """
     key = hashlib.sha256(f"{record['common_dir']}\0{branch}".encode()).hexdigest()[:32]
     directory = state_paths.state_dir() / "lane-targets"
     directory.mkdir(parents=True, exist_ok=True)
@@ -138,26 +128,21 @@ def branches(repo: pathlib.Path) -> list[str]:
 
 
 def worktrees(repo: pathlib.Path) -> dict[str, str]:
-    """登録済みworktreeの解決済みパスからbranch名（branchを持たない登録は空文字）への対応を返す。"""
     return {str(entry.path.resolve()): entry.branch or "" for entry in git_worktrees.list_worktrees(repo, timeout=TIMEOUT)}
 
 
 @dataclasses.dataclass(frozen=True)
 class ResourceState:
-    """存在する主repoから照会したレーン資源の状態。"""
-
     worktree_path: bool
     worktree_registered: bool
     branch: bool
 
     @property
     def absent(self) -> bool:
-        """回収で守る実体が全て無いと確定したかを返す。"""
         return not (self.worktree_path or self.worktree_registered or self.branch)
 
 
 def resource_state(record: dict[str, typing.Any]) -> ResourceState:
-    """消え得るworktreeを起点にせず、資源の有無を一度に照会する。"""
     repo = pathlib.Path(record["repo"])
     if common(repo) != record["common_dir"]:
         raise ValueError("repoのGit共通ディレクトリが所有記録と異なる")
@@ -167,7 +152,6 @@ def resource_state(record: dict[str, typing.Any]) -> ResourceState:
 
 
 def branch_is_integrated(record: dict[str, typing.Any], repo: pathlib.Path) -> bool:
-    """最終化時の入力HEADを保つbranchは、統合先の履歴書換え後も統合済みとして扱う。"""
     integration = record.get("integration")
     if isinstance(integration, dict) and integration.get("phase") == "finalized":
         new_head = integration.get("new_head")
@@ -189,7 +173,6 @@ def branch_is_integrated(record: dict[str, typing.Any], repo: pathlib.Path) -> b
 
 
 def main_worktree(repo: pathlib.Path) -> pathlib.Path:
-    """Linked worktreeから呼んでも、同じGitリポジトリの主作業ツリーへ解決する。"""
     main = git_worktrees.list_worktrees(repo, timeout=TIMEOUT)[0]
     if main.bare:
         raise ValueError("repoが主作業ツリーを持たない。--worktreeで作成先を指定する")
@@ -197,7 +180,6 @@ def main_worktree(repo: pathlib.Path) -> pathlib.Path:
 
 
 def exclude_placement(main: pathlib.Path) -> None:
-    """主作業ツリーの状態へ固定作成先が未追跡として現れないよう、info/excludeへ加える。"""
     try:
         worktree_exclude.ensure_excluded(main)
     except worktree_exclude.ExcludeError as error:
@@ -205,20 +187,15 @@ def exclude_placement(main: pathlib.Path) -> None:
 
 
 def resource_name(lane: str, scope: str | None = None) -> str:
-    """固定作成先とWorktreeCreate hookへ渡すレーン資源の名前を返す。
-
-    系統を登録したrepositoryでは系統（scope）ごとに分け、別の系統の処理と同じレーン名で衝突しないようにする。
-    """
     return f"process-wi-{lane}" if scope is None else f"process-wi-{scope}-{lane}"
 
 
 def fixed_worktree(repo: pathlib.Path, lane: str, scope: str | None = None) -> pathlib.Path:
-    # --worktreeを省略した作成先は主作業ツリーからの相対で固定し、session・日時・呼出し元を識別へ含めない。
+
     return main_worktree(repo).joinpath(*worktree_exclude.WORKTREE_PARENT.parts, resource_name(lane, scope))
 
 
 def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | None:
-    """選定原本からこのレーンのWI集合と統合状態を読む。原本が存在しなければNoneを返す。"""
     try:
         text = pathlib.Path(record["selection_file"]).read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -242,11 +219,6 @@ def read_selection(record: dict[str, typing.Any]) -> dict[str, typing.Any] | Non
 
 
 def selection_state(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """選定原本が読めれば所有登録の保持値を更新して返し、失効していれば保持値を返す。
-
-    選定原本はmanaged-tempの7日保持へ委ねられ、所有登録は資源の回収まで残る。
-    原本の消失後も再開と回収を判定できるようにするため、読めた時点の内容を所有登録へ写して保持する。
-    """
     current = read_selection(record)
     if current is not None:
         record["selection"] = current
@@ -262,7 +234,6 @@ def selection_state(record: dict[str, typing.Any]) -> dict[str, typing.Any]:
 
 
 def require_selection(record: dict[str, typing.Any]) -> None:
-    """今回渡された選定原本から保持値を再生成する。再利用でも前回の選定を引き継がない。"""
     current = read_selection(record)
     if current is None:
         raise ValueError(f"選定YAMLが存在しない: {record['selection_file']}。選定結果の出力先を指定する")
@@ -275,15 +246,10 @@ def recovered(record: dict[str, typing.Any]) -> bool:
 
 
 def integration_directory(record: dict[str, typing.Any]) -> pathlib.Path:
-    """統合の対応表と実行記録を、所有登録と同じ寿命の状態ディレクトリへ置く。"""
     return pathlib.Path(record["record_path"]).with_name(f"{record['lane']}-integration")
 
 
 def persist_observed(record: dict[str, typing.Any], key: str, observed: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    """実行記録と両出力を状態ディレクトリへ複製し、複製先を指す記録を返す。
-
-    run_commandの保存先はmanaged-tempの7日保持であり、検収待ちの間に失効し得る。
-    """
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", key) + "-" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
     directory = integration_directory(record) / name
     directory.mkdir(parents=True, exist_ok=True)
@@ -291,7 +257,6 @@ def persist_observed(record: dict[str, typing.Any], key: str, observed: dict[str
     for field in ("record_path", "stdout_path", "stderr_path"):
         source = observed.get(field)
         if isinstance(source, str) and pathlib.Path(source).is_file():
-            # 実行ごとの保存先の名前を保ち、再実行の記録を前回の記録と区別する。
             destination = directory / pathlib.Path(source).parent.name / pathlib.Path(source).name
             destination.parent.mkdir(parents=True, exist_ok=True)
             if pathlib.Path(source).resolve() != destination.resolve():
@@ -347,7 +312,6 @@ def positive_timeout(value: str) -> float:
 
 
 def list_resources(session_id: str | None = None) -> dict[str, typing.Any]:
-    """前回の残存資源と回収結果を読む。新しい所有登録や削除を行わない。"""
     root = state_paths.state_dir() / "lanes"
     directories = [session_directory(session_id)] if session_id else sorted(root.iterdir()) if root.exists() else []
     records: list[dict[str, typing.Any]] = []

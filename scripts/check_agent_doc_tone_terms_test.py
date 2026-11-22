@@ -73,7 +73,6 @@ def test_cli_rejects_terms_in_explanations(
 def test_cli_warns_caution_terms_without_failing(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str, term: str
 ) -> None:
-    """注意を促す語は活用形でも位置付きの警告を出力し、その語だけでは終了コードを0のまま保つ。"""
     path = _write(tmp_path, body)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
@@ -98,7 +97,6 @@ def test_cli_warns_caution_terms_without_failing(
 def test_cli_contrast_distinguishes_prose_from_preserved_data(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, body: str, warns: bool
 ) -> None:
-    """自作の本文と例を警告し、原文・識別子・検出入力を保持する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body, name=name))]) == 0
     assert ("警告: 「むしろ」" in capsys.readouterr().err) is warns
 
@@ -119,7 +117,6 @@ def test_cli_explains_representative_caution_categories(
     reason: str,
     direction: str,
 ) -> None:
-    """比喩・抽象語・対比の警告が、独立した期待の理由と修正方向を位置付きで伝える。"""
     path = _write(tmp_path, body)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
@@ -169,7 +166,6 @@ def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, ca
     ],
 )
 def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: str, body: str) -> None:
-    """文章ではない一致、他者の引用と検出用の入力を変更させない。"""
     path = _write(tmp_path, body, name=name)
 
     assert check_agent_doc_tone.main([str(path)]) == 0
@@ -180,7 +176,6 @@ def test_cli_preserves_data_and_structural_names(tmp_path: pathlib.Path, name: s
 def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], ending: str
 ) -> None:
-    """改行したキーとcolon、配列、エスケープを含むJSONでも説明値の開始行を返す。"""
     body = "\n".join(
         [
             "{",
@@ -214,13 +209,11 @@ def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
 def test_cli_warns_other_uses_of_doubt_beside_defined_viewpoint_name(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
 ) -> None:
-    """定義済みの名前だけを除き、同じ行と別の行にある同じ動詞の他の用法は警告する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
     assert "警告: 「疑う」" in capsys.readouterr().err
 
 
 def test_cli_does_not_warn_defined_viewpoint_name_alone(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """定義済みの名前「前提を疑う観点」だけの行は警告しない。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, "「前提を疑う観点」を使う。\n"))]) == 0
     assert capsys.readouterr().err == ""
 
@@ -228,13 +221,11 @@ def test_cli_does_not_warn_defined_viewpoint_name_alone(tmp_path: pathlib.Path, 
 def test_picker_result_label_preserves_checks_on_explanations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """返却欄の名前を保持し、同じ行の説明は警告対象として確認する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未確認の経路を返す。\n"))]) == 0
     assert "警告: 「経路」" in capsys.readouterr().err
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:
-    """例のファイルとテストのファイルでも、説明文への再使用を検出する。"""
     example = tmp_path / "agent-basics/skills/writing-standards/references/tone-examples.md"
     example.parent.mkdir(parents=True)
     example.write_text("```text\n例文: 正本を読む。\n説明: 「照合」を用いる。\n```\n", encoding="utf-8")
@@ -249,7 +240,6 @@ def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> N
     ["拾う", "引く", "通る", "効く", "響く", "足す", "入口", "受け口"],
 )
 def test_cli_warns_machine_processing_metaphors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], term: str) -> None:
-    """機械処理へ当てはめた動詞と場所の比喩名詞を警告する。"""
     examples = {
         "拾う": "夜間の処理が失敗を拾う。\n",
         "引く": "本番データを引く。\n",
@@ -266,12 +256,10 @@ def test_cli_warns_machine_processing_metaphors(tmp_path: pathlib.Path, capsys: 
 
 @pytest.mark.parametrize("term", ["足すものがない", "失効が効く"])
 def test_cli_rejects_literal_translation_phrases(tmp_path: pathlib.Path, term: str) -> None:
-    """英語の定型句を逐語訳した表現を拒否する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, f"この中継は{term}。\n"))]) == 1
 
 
 def test_cli_allows_dependency_terms(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """WIとパッケージのdependencyを示す用語は検出しない。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, "depends_onはWIの依存先を示す。\n"))]) == 0
     assert capsys.readouterr().err == ""
 
@@ -293,7 +281,6 @@ def test_cli_allows_dependency_terms(tmp_path: pathlib.Path, capsys: pytest.Capt
 def test_cli_warns_original_machine_metaphor_examples(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
 ) -> None:
-    """原要求の例と通常本文のコード表記も、警告の対象として保持する。"""
     assert check_agent_doc_tone.main([str(_write(tmp_path, body + "\n"))]) == 0
     assert "警告:" in capsys.readouterr().err
 
@@ -313,14 +300,12 @@ def test_cli_warns_original_machine_metaphor_examples(
 def test_cli_preserves_other_words_containing_verb_characters(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
 ) -> None:
-    """別の複合語や名詞に含まれる文字列を、禁止する動詞へ誤分類しない。"""
     path = _write(tmp_path, body + "\n")
     assert check_agent_doc_tone.main([str(path)]) == 0
     assert capsys.readouterr().err == ""
 
 
 def test_cli_masks_only_explicit_prohibited_examples(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """明示した禁止例だけを除外し、一般本文にある直訳句は検出する。"""
     masked = "<!-- agent-doc-tone: example-mask:start -->\n失効が効く。\n<!-- agent-doc-tone: example-mask:end -->\n"
     assert check_agent_doc_tone.main([str(_write(tmp_path, masked))]) == 0
     assert capsys.readouterr().err == ""
@@ -328,7 +313,6 @@ def test_cli_masks_only_explicit_prohibited_examples(tmp_path: pathlib.Path, cap
 
 
 def test_fixture_values_are_data_but_comments_are_explanations(tmp_path: pathlib.Path) -> None:
-    """共有するテスト入力を保持し、同じモジュールのコメントへの再使用は検出する。"""
     path = tmp_path / "sample_data.py"
     path.parent.mkdir(parents=True, exist_ok=True)
     body = '# agent-doc-tone: test-data\nsample = "既定の値を照合する。"\n'
@@ -343,7 +327,6 @@ def test_fixture_values_are_data_but_comments_are_explanations(tmp_path: pathlib
 
 @pytest.mark.parametrize("relative", ["helpers/helper.py", "_testing/helper.py", "helper_test.py"])
 def test_displayed_messages_are_checked_with_fixture_data(tmp_path: pathlib.Path, relative: str) -> None:
-    """保存場所を問わず、同じモジュールの入力と表示文を区別する。"""
     path = tmp_path / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     data = '# agent-doc-tone: test-data\nsample = "既定の値を照合する。"\n'
@@ -374,7 +357,6 @@ def test_path_inputs_are_preserved_but_explanations_are_checked(
     body: str,
     explanation: str,
 ) -> None:
-    """パスとして渡す値を変更させず、隣の説明文への再使用を検出する。"""
     path = _write(tmp_path, body, name=name)
     assert check_agent_doc_tone.main([str(path)]) == 0
     assert path.read_text(encoding="utf-8") == body

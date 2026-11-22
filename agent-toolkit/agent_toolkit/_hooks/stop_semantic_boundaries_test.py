@@ -10,7 +10,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 
 @pytest.mark.parametrize("text", ["### 機能が足りないのか？", "不明点があれば教えてください。", "次はどちらにするか？"])
 def test_stop_leaves_question_meaning_to_agent(tmp_path, monkeypatch, text):
-    """疑問符や定型表現を含む本文だけでは終了を差し戻さない。"""
     monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)

@@ -1,5 +1,3 @@
-"""record_pathsモジュールのテスト。"""
-
 import json
 import pathlib
 
@@ -30,12 +28,10 @@ from agent_toolkit._agents_server import backends, record_paths
     ],
 )
 def test_launch_identifier_formats(identifier: object, accepted: bool) -> None:
-    """受理形式は起動結果の種類に従い、観測例の長さに固定しない。"""
     assert record_paths.is_launch_identifier(identifier) is accepted
 
 
 def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """公開CLIへ渡すサブエージェント識別子で親の下の記録を解決する。"""
     claude_home = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     agent_id = "agent-a7157f79d55caab81"
@@ -49,7 +45,6 @@ def test_claude_subagent_record_is_found_by_its_agent_id(tmp_path: pathlib.Path,
 
 
 def test_claude_parent_record_precedes_same_named_subagent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同名記録がある場合は既存の親セッションの探索順を維持する。"""
     claude_home = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(claude_home))
     agent_id = "agent-a7157f79d55caab81"
@@ -70,7 +65,6 @@ def test_claude_parent_record_precedes_same_named_subagent(tmp_path: pathlib.Pat
 def test_every_start_engine_resolves_its_isolated_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
-    """起動可能な各engineの記録を実際に探索し、登録追加時の記録側の未対応も検出する。"""
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))

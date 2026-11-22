@@ -1,5 +1,3 @@
-"""agent-toolkit pluginの有効版選択とuv環境ウォームアップを共有する。"""
-
 import asyncio
 import datetime
 import json
@@ -29,7 +27,6 @@ _AGENT_TOOLKIT_ID = f"agent-toolkit@{claude_common.MARKETPLACE_NAME}"
 
 
 def enabled_version(installed: list[object], plugin_id: str) -> str | None:
-    """plugin一覧から指定したpluginの有効版を返す。"""
     for item in installed:
         if not isinstance(item, dict):
             continue
@@ -150,7 +147,6 @@ def run(
 
 
 def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[list[Path], Path] | None:
-    """有効な対象と全対象で共用するPythonを解決する。"""
     uv = common.resolve_executable("uv", preferred_directories=(Path.home() / ".local" / "bin",))
     if uv is None:
         logger.warning(
@@ -180,14 +176,11 @@ def resolve_targets(targets: Callable[[], list[Path]], *, tag: str) -> tuple[lis
 
 @dataclass(frozen=True)
 class PreparedTargets:
-    """準備できたrootの起動コマンドと、共有環境を特定できなかった登録済みの旧形式の対象。"""
-
     commands: list[list[str]]
     legacy: tuple[Path, ...] = ()
 
 
 def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedTargets:
-    """依存keyごとに一度準備し、成功したrootの起動コマンドを列挙順に、旧形式の対象とともに返す。"""
     resolved = resolve_targets(targets, tag=tag)
     if resolved is None:
         return PreparedTargets([])
@@ -214,9 +207,10 @@ def prepare_targets(targets: Callable[[], list[Path]], *, tag: str) -> PreparedT
     return PreparedTargets(commands, tuple(legacy))
 
 
-def cleanup_prepared(prepared: PreparedTargets) -> None:
+def cleanup_prepared(prepared: PreparedTargets, *, approved_commands: Sequence[Sequence[str]]) -> None:
     """実際に準備した全有効rootの依存環境を保持し、full更新後の旧資源を回収する。
 
+    準備に成功しても承認されなかったrootの環境は保持し、更新器の登録は行わない。
     旧形式の対象が登録されている間は、その版のhookとMCPが使う共有環境を特定できないため、共有環境を回収しない。
     """
     commands = prepared.commands
@@ -227,18 +221,21 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
             )
             for command in commands
         ]
-        # 同じ依存keyを使う全rootの版を、prepareを省略したrootも含めて記録する。
+
         for command, target in zip(commands, required, strict=True):
             if target.is_dir():
                 with plugin_environment.prepare_lock(target):
-                    plugin_environment.record_source(Path(command[command.index("--project") + 1]), target)
+                    root = Path(command[command.index("--project") + 1])
+                    plugin_environment.record_source(root, target)
+                    if command in approved_commands:
+                        plugin_environment.register_source(root, target, os.environ, python_executable=Path(command[0]))
         if prepared.legacy:
             logger.info(
                 "旧形式の版が登録されているため共有環境の回収を延期: %s。登録が新しい版へ移った後のupdate-dotfilesで回収します",
                 ", ".join(log_format.home_short(target) for target in prepared.legacy),
             )
-        else:
-            rows = plugin_environment_cleanup.cleanup(required, os.environ)
+        elif commands:
+            rows = plugin_environment_cleanup.cleanup(required, os.environ, python_executable=Path(commands[0][0]))
             for row in rows:
                 level = logging.WARNING if row["status"] == "deferred" else logging.INFO
                 logger.log(level, "共有依存環境: %s", json.dumps(row, ensure_ascii=False), extra=log_format.LOG_ONLY)
@@ -282,7 +279,6 @@ def cleanup_prepared(prepared: PreparedTargets) -> None:
 
 
 def existing_targets(candidates: Sequence[Path | None], *, tag: str) -> list[Path]:
-    """候補から実在する起動スクリプトのパスを重複なく列挙する。"""
     targets: list[Path] = []
     for candidate in candidates:
         if candidate is None or candidate in targets:
@@ -377,7 +373,6 @@ def warmup(
     arguments: Sequence[str] = (),
     prepared: set[Path] | None = None,
 ) -> bool:
-    """同じ依存環境は一度だけ準備し、各対象の実起動確認は必ず実行する。"""
     bootstrap = _bootstrap(path, python)
     key = _environment_key(Path(bootstrap[-1]), python, target=path, tag=tag)
     if key is None:
@@ -410,7 +405,6 @@ def _environment_key(root: Path, python: Path, *, target: Path, tag: str) -> Pat
 
 
 def _resolve_python(uv: Path, tag: str) -> Path | None:
-    """warmup全体で共有するPython実行ファイルを一度だけ解決する。"""
     result = common.run_subprocess(
         [str(uv), "python", "find", "--no-config", "--no-project", "3.15"],
         timeout=_PYTHON_FIND_TIMEOUT,
@@ -431,7 +425,6 @@ def _resolve_python(uv: Path, tag: str) -> Path | None:
 
 
 def _bootstrap(path: Path, python: Path) -> list[str]:
-    """解決済みPythonで依存準備と実起動が共用するlauncherを返す。"""
     root = next(parent.parent for parent in path.parents if parent.name == "agent_toolkit")
     launcher = Path(plugin_environment.__file__).resolve().parents[2] / "scripts" / "launch.py"
     return [
@@ -453,7 +446,6 @@ def run_command(cmd: Sequence[str], *, target: str, tag: str) -> bool:
 
 
 def output_summary(output: str) -> str:
-    """子の出力の末尾から理由を1行だけ取る。「次の操作」は別に案内し、元の本文は保存する。"""
     for line in reversed(common.strip_ansi(output).splitlines()):
         if line.strip() and not line.startswith(("次の操作:", "Traceback ", " ", "\t")):
             return line[:240]
@@ -462,8 +454,6 @@ def output_summary(output: str) -> str:
 
 @dataclass(frozen=True)
 class CommandOutcome:
-    """並列実行中の診断を保持し、親workerで対象順に表示する。"""
-
     command: list[str]
     result: subprocess.CompletedProcess[str] | None
     elapsed: float
@@ -471,7 +461,6 @@ class CommandOutcome:
 
     @property
     def ok(self) -> bool:
-        """コマンドが正常終了したかを返す。"""
         return self.result is not None and self.result.returncode == 0
 
     def report(self, *, target: str, tag: str) -> bool:

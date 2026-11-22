@@ -702,7 +702,6 @@ _BULK_TRANSITION_PRECONDITION = "個別指定ではFILENAMEを1個以上、一�
 
 
 def _with_result_line(description: str, result_line: str) -> str:
-    """`対象と出力`節の末尾へ結果行の接頭辞と出力先を加える。"""
     marker = "\n前提: "
     head, separator, tail = description.partition(marker)
     if not separator:
@@ -711,7 +710,6 @@ def _with_result_line(description: str, result_line: str) -> str:
 
 
 def _with_bulk_transition_help(description: str) -> str:
-    """`対象と出力`の末尾と`前提`の先頭へ一括操作の受理形式を加える。"""
     marker = "\n前提: "
     head, separator, tail = description.partition(marker)
     if not separator:
@@ -732,8 +730,6 @@ for _command, _result_line in (
 
 
 class JapaneseHelpFormatter(argparse.HelpFormatter):
-    """日本語の定型見出しを使い、識別子を途中で分割せずに折り返す。"""
-
     def _format_usage(self, *args: Any, **kwargs: Any) -> str:
         return super()._format_usage(*args, **kwargs).replace("usage: ", "使い方: ", 1)
 
@@ -748,15 +744,13 @@ class JapaneseHelpFormatter(argparse.HelpFormatter):
             break_long_words=False,
             break_on_hyphens=False,
         )
-        # 空白2つで始まる行は実行例・入力例であり、折り返すと貼り付けた入力が別の行や改行入りの文字列になるため、そのまま出す。
+
         return "\n".join(
             f"{indent}{line}" if line.startswith("  ") else wrapper.fill(line) if line else "" for line in text.splitlines()
         )
 
 
 class GuidedSubcommandParser(argparse.ArgumentParser):
-    """解釈できない引数を、サブコマンドの受理形式とともに拒否する。"""
-
     @typing.override
     def _check_value(self, action: argparse.Action, value: Any) -> None:
         if action.dest == "agents_subcommand" and value in ("start", "send_message", "kill", "stop"):
@@ -782,7 +776,7 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
             if "--" in supplied:
                 separator = supplied.index("--")
                 trailing = remaining[1:] if remaining[0] == "--" else remaining
-                # 位置引数が消費した値とREMAINDERはそのまま保ち、余った末尾だけを再解析する。
+
                 if (
                     trailing
                     and supplied[-len(trailing) :] == trailing
@@ -808,7 +802,6 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         return parsed, remaining
 
     def _is_option_sequence(self, arguments: list[str]) -> bool:
-        """登録済みオプションと、それらが取る値だけの列かをargparseの受理条件で判定する。"""
         index = 0
         while index < len(arguments):
             name, separator, _value = arguments[index].partition("=")
@@ -826,7 +819,6 @@ class GuidedSubcommandParser(argparse.ArgumentParser):
         return True
 
     def _accepted_form(self) -> str:
-        """サブコマンドが受理する長いオプションを説明する。"""
         options = sorted(option for option in self._option_string_actions if option.startswith("--") and option != "--help")
         accepted = "・".join(options) if options else "なし"
         return f"{self.prog}が受理するオプションは{accepted}"
@@ -840,7 +832,6 @@ def _configure_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParse
 
 
 def create_root_parser(prog: str, *, description: str, epilog: str) -> argparse.ArgumentParser:
-    """日本語のヘルプ書式を適用したルートparserを生成する。"""
     return _configure_parser(
         argparse.ArgumentParser(
             prog=prog,
@@ -859,7 +850,6 @@ def add_subcommands(
     required: bool = True,
     show_help_when_missing: bool = False,
 ) -> argparse._SubParsersAction:
-    """日本語の説明を持つサブparser群を追加する。"""
     if show_help_when_missing and required:
         raise ValueError("show_help_when_missingにはrequired=Falseが必要です。")
     kwargs: dict[str, Any] = {
@@ -883,7 +873,6 @@ def add_command(
     epilog: str | None = None,
     **kwargs: Any,
 ) -> Any:
-    """一覧用の要約と自身の説明を持つサブコマンドを登録する。"""
     parser = subparsers.add_parser(
         name,
         help=summary,

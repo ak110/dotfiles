@@ -1,5 +1,3 @@
-"""時間上限付きの実行が、出力の終端を観測したかに応じて子孫を回収し、通常の終了では全OSを再走査しないことを確かめる。"""
-
 import pathlib
 import subprocess
 import sys
@@ -20,18 +18,13 @@ pytestmark = pytest.mark.windows
     ),
 )
 def test_run_with_timeout_reclaims_output_holder_left_by_exited_root(tmp_path, monkeypatch):
-    """起点が出力を継承した子を残して先に終了すると、時間切れで子の自然終了を待たずに回収して戻る。
-
-    子は出力を閉じないため、時間切れの例外が戻ったことと終了の印が無いことで、子を回収したことを示す。
-    """
     pids = tmp_path / "pids"
     finished = tmp_path / "holder.finished"
-    # 回収できなかった場合も、子は20秒で自ら終了する。
+
     holder = f"import pathlib, time; time.sleep(20); pathlib.Path({str(finished)!r}).touch()"
     root = (
         "import os, pathlib, subprocess, sys; "
         f"holder = subprocess.Popen([sys.executable, '-c', {holder!r}]); "
-        # 書きかけを読まないよう、一時ファイルへ書いてから置き換える。
         f"pathlib.Path({str(pids)!r} + '.tmp').write_text(f'{{os.getpid()}} {{holder.pid}}'); "
         f"os.replace({str(pids)!r} + '.tmp', {str(pids)!r})"
     )
@@ -39,7 +32,6 @@ def test_run_with_timeout_reclaims_output_holder_left_by_exited_root(tmp_path, m
     class ExitedRootPopen(subprocess.Popen):
         def communicate(self, input=None, timeout=None):  # pylint: disable=redefined-builtin
             if timeout is not None:
-                # 起点が終了した後に時間切れを迎える順序を固定する。
                 self.wait(timeout=30)
             return super().communicate(input, timeout=timeout)
 
@@ -53,7 +45,6 @@ def test_run_with_timeout_reclaims_output_holder_left_by_exited_root(tmp_path, m
 
 @pytest.mark.cpu_limit(1.0, reason="出力を閉じて正常終了する実プロセス1つで、終了後の全OS走査を省くことを確かめる。")
 def test_run_with_timeout_skips_rescan_after_normal_exit(monkeypatch):
-    """出力を閉じて正常終了した起点は、psutilが終了直後を実行中と報告しても、全OSを走査せずに結果を返す。"""
     roots: list[int] = []
 
     class RecordingPopen(subprocess.Popen):

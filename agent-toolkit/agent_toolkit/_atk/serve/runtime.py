@@ -98,7 +98,6 @@ class BoundedWorkers:
             raise
 
 
-# 停止要求で打ち切った要求へ返す応答本文。WI・計画ファイル・セッションの各画面はAPIの`error`を表示する。
 _SHUTDOWN_RESPONSE_BODY = json.dumps(
     {"error": "atk serveが停止処理中のため要求を中断しました。再起動後に画面を再読み込みする"}, ensure_ascii=False
 ).encode("utf-8")
@@ -205,7 +204,7 @@ class ServeRuntime:
             )
             return
         _timings.record_event(self.timing_log, "index-warmup", total_ms=round((time.perf_counter() - started) * 1000, 1))
-        # 本文の先読みは数千件のファイルを読むため、一覧・詳細の要求が使う読取用の実行枠を占有しない別スレッドで行う。
+
         started = time.perf_counter()
         try:
             await asyncio.to_thread(self.operations.preload_entry_texts, self.state.stop_requested)
@@ -301,7 +300,7 @@ def register_lifecycle(
             await serve_sessions.start_local_watch_async(sessions)
             serve_sessions.start_remote_clients(sessions)
             runtime.background_task = asyncio.create_task(runtime.background_sync_loop())
-            # 起動直後の最初の一覧が全件の解析を待たないよう、索引の初回走査を参照の枠で先に始める。
+
             runtime.warmup_task = asyncio.create_task(runtime.warm_index())
             runtime.remote_stop_task = asyncio.create_task(stop_remote_connections_on_shutdown())
         except BaseException:

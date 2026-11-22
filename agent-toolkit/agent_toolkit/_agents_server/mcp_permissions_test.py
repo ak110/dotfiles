@@ -1,5 +1,3 @@
-"""公開permissionsは承認を書き込まず、所有する子の要求だけを引き継ぐ。"""
-
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -12,7 +10,6 @@ from agent_toolkit._atk.wi import operation_permissions
 
 @pytest.mark.asyncio
 async def test_adopt_rejects_unowned_source_before_storage(monkeypatch):
-    """他の会話の要求を指定しても保存関数へ到達しない。"""
     manager = SimpleNamespace(
         launcher_session_id=lambda: "parent",
         list_sessions=AsyncMock(return_value={"sessions": [{"session_id": "child"}]}),
@@ -27,6 +24,5 @@ async def test_adopt_rejects_unowned_source_before_storage(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_public_schema_rejects_approval_write_action():
-    """モデルがapproveやanswerを要求しても公開入力で拒否する。"""
     with pytest.raises(ToolError):
         await mcp_tools.mcp.call_tool("permissions", {"action": "approve", "request_id": "request"})

@@ -1,5 +1,3 @@
-"""statuslineの版数検査が、差分と版数とタグの組み合わせを正しく判定することを検証する。"""
-
 import pathlib
 import subprocess
 
@@ -21,7 +19,6 @@ def _write(repo: pathlib.Path, relative: str, text: str) -> None:
 
 @pytest.fixture(name="repo")
 def _repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """版数0.1.0をmasterへ公開済みのoriginと、そのcloneを用意する。"""
     origin = tmp_path / "origin.git"
     _git(tmp_path, "init", "--bare", "--initial-branch=master", str(origin))
     repo = tmp_path / "work"
@@ -46,14 +43,12 @@ def _check(repo: pathlib.Path, *, metadata_ok: bool = True) -> str | None:
 
 
 def test_passes_without_statusline_changes(repo: pathlib.Path) -> None:
-    """statusline配下に差分が無ければ版数を問わない。"""
     _write(repo, "README.md", "changed\n")
 
     assert _check(repo) is None
 
 
 def test_test_input_only_change_requires_version_bump_until_bumped(repo: pathlib.Path) -> None:
-    """テスト入力だけの未commitの変更でも版数更新を求め、更新すれば通す。"""
     _write(repo, "rust/claude-statusline/src/subagent.rs", 'const INPUT: &str = "after";\n')
 
     assert _check(repo) == "statuslineの変更にはCargo.tomlの版数更新が必要である。"
@@ -63,7 +58,6 @@ def test_test_input_only_change_requires_version_bump_until_bumped(repo: pathlib
 
 
 def test_untracked_file_counts_as_change(repo: pathlib.Path) -> None:
-    """statusline配下へ未追跡のファイルを加えた場合も差分として扱う。"""
     _write(repo, "rust/claude-statusline/src/new.rs", "// new\n")
 
     assert _check(repo) == "statuslineの変更にはCargo.tomlの版数更新が必要である。"
@@ -102,7 +96,6 @@ def test_cargo_metadata_failure_is_not_treated_as_success(repo: pathlib.Path) ->
 
 
 def test_unreachable_origin_is_not_treated_as_success(repo: pathlib.Path) -> None:
-    """originへ到達できない場合は検査を黙って通過させない。"""
     _git(repo, "remote", "set-url", "origin", str(repo.parent / "missing.git"))
     _write(repo, "rust/claude-statusline/src/subagent.rs", 'const INPUT: &str = "after";\n')
 
@@ -133,7 +126,6 @@ def _push_tag(repo: pathlib.Path, tag: str, revision: str) -> None:
     ],
 )
 def test_release_prepare_compares_with_first_parent(repo: pathlib.Path, change: str, expected: dict[str, str]) -> None:
-    """マージ済みcommitを第一親と比べ、版数の据え置きを問わずにリリースの要否と版数を返す。"""
     _write(repo, change, "changed\n")
     head = _commit(repo, "change")
 
@@ -170,7 +162,6 @@ def test_release_modes_accept_only_tag_on_current_commit(
 
 
 def test_release_tag_state_reports_missing_tag(repo: pathlib.Path) -> None:
-    """版数のタグがoriginに無ければ`tag_exists=false`を返す。"""
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
 
     assert check_statusline_version.release_tag_state(repo, head) == (None, {"tag_exists": "false"})
@@ -179,7 +170,6 @@ def test_release_tag_state_reports_missing_tag(repo: pathlib.Path) -> None:
 def test_release_tag_on_non_commit_object_is_a_precondition_failure(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """commit以外を指すタグを不在として扱わず、両方のリリース関数と`main`の終了2へ伝える。"""
     _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version="0.1.1"))
     head = _commit(repo, "bump")
     tree = subprocess.run(["git", "write-tree"], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()

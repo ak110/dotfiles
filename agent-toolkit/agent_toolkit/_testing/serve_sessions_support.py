@@ -1,5 +1,3 @@
-"""serveのsessions試験が共有する入力と補助処理。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -21,14 +19,12 @@ from agent_toolkit._common import process_tree
 
 
 def _write(path: pathlib.Path, records: typing.Iterable[typing.Any]) -> pathlib.Path:
-    """JSON Linesの記録を出力する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records), encoding="utf-8")
     return path
 
 
 def _context(tmp_path: pathlib.Path, **kwargs: typing.Any) -> sessions.SessionsContext:
-    """外部へ接続しないセッション画面のコンテキストを生成する。"""
     return sessions.create_context(
         hostname="local-host",
         claude_home=tmp_path / "claude",
@@ -116,19 +112,15 @@ def _codex_record(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 class _FakeRpcClient:
-    """常駐RPCの接続状態と応答を差し替えるスタブ。"""
-
     def __init__(self, *, connected: bool, response: typing.Any) -> None:
         self._connected = connected
         self._response = response
         self.calls: list[tuple[str, dict[str, typing.Any]]] = []
 
     def is_connected(self) -> bool:
-        """接続状態を返す。"""
         return self._connected
 
     async def request(self, op: str, args: dict[str, typing.Any]) -> dict[str, typing.Any]:
-        """RPC応答を返すか、設定された例外を送出する。"""
         self.calls.append((op, args))
         if isinstance(self._response, Exception):
             raise self._response
@@ -137,7 +129,6 @@ class _FakeRpcClient:
 
 
 def _runner_returning(payload: typing.Any) -> tuple[typing.Any, list[tuple[str, str, list[str]]]]:
-    """単発SSHの呼び出しを記録するrunnerと、その記録先を返す。"""
     calls: list[tuple[str, str, list[str]]] = []
 
     async def runner(host: str, op: str, args: list[str]) -> str:
@@ -150,7 +141,6 @@ def _runner_returning(payload: typing.Any) -> tuple[typing.Any, list[tuple[str, 
 
 
 def _load_remote_helper() -> typing.Any:
-    """リモート補助を同じプロセスへ読み込む。件数上限を差し替えて`_list_payload`を呼ぶテストが使う。"""
     helper_path = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "atk_serve_sessions_remote_helper.py"
     spec = importlib.util.spec_from_file_location("_atk_serve_sessions_remote_helper_tree", helper_path)
     assert spec is not None and spec.loader is not None
@@ -185,7 +175,6 @@ def _helper_runner(environment: dict[str, str], *, only_op: str | None = None) -
 
 
 def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., typing.Awaitable[tuple[int, bytes, bytes]]]:
-    """指定した終了コードと標準エラー出力を返す単発SSH（`remote.run_ssh`）の代用を組み立てる。"""
 
     async def run(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
         del cmd, timeout
@@ -195,25 +184,20 @@ def _failed_ssh(returncode: int, stderr: bytes) -> typing.Callable[..., typing.A
 
 
 class _RecordingStdin:
-    """常駐接続の標準入力を差し替え、送られた要求を記録する。"""
-
     def __init__(self) -> None:
         self.requests: list[dict[str, typing.Any]] = []
 
     def write(self, data: bytes) -> None:
-        """要求の行を記録する。"""
         self.requests.append(json.loads(data))
 
     async def drain(self) -> None:
-        """書き込みの完了を待つ。記録だけなので待たない。"""
+        pass
 
     def is_closing(self) -> bool:
-        """接続中として扱う。"""
         return False
 
 
 def _connected_client(context: sessions.SessionsContext, host: str) -> tuple[sessions.RemoteSessionClient, _RecordingStdin]:
-    """要求を記録する標準入力を持つ、接続済みの常駐接続を登録する。"""
     client = sessions.RemoteSessionClient(host, context.state)
     stdin = _RecordingStdin()
     client._proc = typing.cast(typing.Any, types.SimpleNamespace(stdin=stdin))
@@ -246,7 +230,6 @@ def _no_user_corpus(root: pathlib.Path) -> dict[str, pathlib.Path]:
 
 
 def _helper_list(root: pathlib.Path) -> list[dict[str, typing.Any]]:
-    """リモート補助の一覧を、`root`をホームディレクトリとして取得する。"""
     environment = os.environ.copy()
     environment.update({"HOME": str(root), "CODEX_HOME": str(root / "codex-home")})
     result = subprocess.run(
@@ -266,7 +249,6 @@ def _helper_list(root: pathlib.Path) -> list[dict[str, typing.Any]]:
 
 
 def _count_record_opens(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
-    """記録（`.jsonl`）を開いた回数を数えるため、開いたパスを順に記録する。"""
     opened: list[pathlib.Path] = []
     original_open = pathlib.Path.open
 
@@ -280,13 +262,11 @@ def _count_record_opens(monkeypatch: pytest.MonkeyPatch) -> list[pathlib.Path]:
 
 
 def _age(*paths: pathlib.Path) -> None:
-    """更新時刻を十分過去へ戻し、索引が解析結果を信用できる記録にする。"""
     for path in paths:
         os.utime(path, (1_700_000_000, 1_700_000_000))
 
 
 def _retained_characters(value: typing.Any) -> int:
-    """索引と全件結果の文字列長を、オブジェクトの共有にかかわらず項目ごとに合計する。"""
     if isinstance(value, str):
         return len(value)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):

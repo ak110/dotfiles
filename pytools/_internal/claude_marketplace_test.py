@@ -28,8 +28,6 @@ from pytools._internal import common as _common
 
 from ._test_helpers import _FakeResult, command_matches, write_known_entry, write_settings_entry
 
-# --- fixtures ---
-
 
 @pytest.fixture(autouse=True)
 def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,7 +37,6 @@ def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(name="dotfiles_root")
 def _dotfiles_root() -> pathlib.Path:
-    """本リポジトリの dotfiles ルート (directory 型 path のテスト期待値)。"""
     root = _common.find_dotfiles_root()
     assert root is not None, "dotfiles ルートが検出できない環境ではテストを実行できない"
     return root
@@ -58,31 +55,19 @@ def _marketplace_paths(
     return known, settings
 
 
-# --- TestMarketplaceAlreadyRegistered ---
-
-
 class TestMarketplaceAlreadyRegistered:
-    """marketplace list 出力の各パース形式が ensure_marketplace() の登録判定に正しく反映されること。
-
-    `marketplace list --json` の出力形式はバージョンによって異なるため、
-    複数の形式を許容していることを ensure_marketplace() の CLI 経路で確認する。
-    両ファイルが存在しない状態 (file_check が None) で CLI 経路のみを通す。
-    """
-
     @pytest.fixture(autouse=True)
     def _no_files(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ) -> None:
-        """両ファイルを存在しない状態にして file_check が None になるよう設定する。"""
-        del marketplace_paths  # ファイルを生成しない (存在しないパスが設定済み)
+        del marketplace_paths
 
     def _ensure_with_list_output(
         self,
         monkeypatch: pytest.MonkeyPatch,
         list_output: object,
     ) -> tuple[bool, list[list[str]]]:
-        """marketplace list に指定の出力を返す fake_run で ensure_marketplace を実行し結果を返す。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -98,48 +83,39 @@ class TestMarketplaceAlreadyRegistered:
         return result, calls
 
     def test_list_with_name_key_skips_add(self, monkeypatch: pytest.MonkeyPatch):
-        """リスト形式: name キーが一致すれば登録済みと判断して add を呼ばない。"""
         data = [{"name": _claude_common.MARKETPLACE_NAME}]
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_list_without_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
-        """リスト形式: 対象 name が含まれなければ未登録として add を呼ぶ。"""
         data = [{"name": "other-marketplace"}]
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
         assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_empty_list_calls_add(self, monkeypatch: pytest.MonkeyPatch):
-        """空リストは未登録として add を呼ぶ。"""
         result, calls = self._ensure_with_list_output(monkeypatch, [])
         assert result is True
         assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_dict_with_marketplaces_key_skips_add(self, monkeypatch: pytest.MonkeyPatch):
-        """{marketplaces: [...]} の入れ子形式は再帰的にパースし登録済みと判断する。"""
         data = {"marketplaces": [{"name": _claude_common.MARKETPLACE_NAME}]}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_flat_dict_contains_name_skips_add(self, monkeypatch: pytest.MonkeyPatch):
-        """フラット dict 形式: トップレベルのキーが name と一致すれば登録済みと判断する。"""
         data: dict[str, object] = {_claude_common.MARKETPLACE_NAME: {}}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
         assert not any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
 
     def test_flat_dict_no_target_calls_add(self, monkeypatch: pytest.MonkeyPatch):
-        """フラット dict 形式: 対象キーが無ければ未登録として add を呼ぶ。"""
         data: dict[str, object] = {"other": {}}
         result, calls = self._ensure_with_list_output(monkeypatch, data)
         assert result is True
         assert any(command_matches(c, ["claude", "plugin", "marketplace", "add"]) for c in calls)
-
-
-# --- TestRewriteKnownMarketplacesEntry ---
 
 
 class TestRewriteKnownMarketplacesEntry:
@@ -191,9 +167,6 @@ class TestRewriteKnownMarketplacesEntry:
         assert _claude_marketplace.repair_marketplace() is False
 
 
-# --- TestRewriteSettingsExtraKnownEntry ---
-
-
 class TestRewriteSettingsExtraKnownEntry:
     """settings.json 書き換えの境界条件を repair_marketplace 経由で確認する。
 
@@ -224,7 +197,6 @@ class TestRewriteSettingsExtraKnownEntry:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """既存の旧形式エントリを directory 型に上書きする。"""
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         write_settings_entry(settings, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
@@ -236,7 +208,7 @@ class TestRewriteSettingsExtraKnownEntry:
         data = json.loads(settings.read_text(encoding="utf-8"))
         entry = data["extraKnownMarketplaces"][_claude_common.MARKETPLACE_NAME]
         assert entry == {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        # settings 側は installLocation を持たない
+
         assert "installLocation" not in entry
 
     @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig"])
@@ -296,7 +268,6 @@ class TestRewriteSettingsExtraKnownEntry:
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces が dict でない場合は初期化して directory 型を書き込む。"""
         known, settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         settings.write_text(json.dumps({"extraKnownMarketplaces": []}, ensure_ascii=False), encoding="utf-8")
@@ -309,14 +280,10 @@ class TestRewriteSettingsExtraKnownEntry:
         assert data["extraKnownMarketplaces"][_claude_common.MARKETPLACE_NAME]["source"]["source"] == "directory"
 
 
-# --- TestRefreshMarketplace ---
-
-
 class TestRefreshMarketplace:
     """refresh_marketplace の成功・失敗経路テスト。"""
 
     def test_success(self, monkeypatch: pytest.MonkeyPatch):
-        """CLI が成功すれば True を返す。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -346,9 +313,6 @@ class TestRefreshMarketplace:
         assert _claude_marketplace.refresh_marketplace() is False
 
 
-# --- TestEnsureRepairRefreshFullCycle ---
-
-
 class TestEnsureRepairRefreshFullCycle:
     """旧GitHub型エントリの修復から更新までの一連の処理を検証する。"""
 
@@ -358,7 +322,6 @@ class TestEnsureRepairRefreshFullCycle:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """ensureで旧形式を修復した後にrefreshできることを確認する。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
         calls: list[list[str]] = []
@@ -405,9 +368,6 @@ class TestEnsureRepairRefreshFullCycle:
         ]
 
 
-# --- TestEnsureMarketplace ---
-
-
 class TestEnsureMarketplace:
     """ensure_marketplace の各 file_check 分岐テスト。
 
@@ -421,7 +381,6 @@ class TestEnsureMarketplace:
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """file_check == False なら repair_marketplace を呼び出す。"""
         known, _settings = marketplace_paths
         # 旧 GitHub 型 → file_check が False になる
         write_known_entry(known, {"source": {"source": "github", "repo": "ak110/dotfiles"}})
@@ -484,7 +443,6 @@ class TestEnsureMarketplace:
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """dotfiles ルートが検出できない場合は add を呼ばず False を返す。"""
         _known, _settings = marketplace_paths
         monkeypatch.setattr(_common, "find_dotfiles_root", lambda: None)
 
@@ -492,7 +450,7 @@ class TestEnsureMarketplace:
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
-            # marketplace list は成功 (空リスト) を返す
+
             if command_matches(cmd, ["claude", "plugin", "marketplace", "list"]):
                 return _FakeResult(returncode=0, stdout="[]")
             return _FakeResult(returncode=1)
@@ -505,9 +463,6 @@ class TestEnsureMarketplace:
         assert not add_calls, "dotfiles ルート不在なのに add が呼ばれた"
 
 
-# --- TestLoadKnownMarketplaceEntry ---
-
-
 class TestLoadKnownMarketplaceEntry:
     """known_marketplaces.json の読み込み分岐が is_directory_type_registered() に正しく反映されること。"""
 
@@ -515,15 +470,13 @@ class TestLoadKnownMarketplaceEntry:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """ファイルが存在しない場合は is_directory_type_registered が False。"""
-        del marketplace_paths  # 2 ファイルが存在しない状態のまま
+        del marketplace_paths
         assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_returns_false_when_key_missing(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """ファイルに対象キーが無い場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         known.write_text(json.dumps({"other": {}}, ensure_ascii=False), encoding="utf-8")
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -532,7 +485,6 @@ class TestLoadKnownMarketplaceEntry:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """エントリが dict でない場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         known.write_text(
             json.dumps({_claude_common.MARKETPLACE_NAME: "not-a-dict"}, ensure_ascii=False),
@@ -548,9 +500,6 @@ class TestLoadKnownMarketplaceEntry:
         known, _settings = marketplace_paths
         known.write_text("{broken", encoding="utf-8")
         assert _claude_marketplace.is_directory_type_registered() is False
-
-
-# --- TestLoadExtraKnownMarketplaceEntry ---
 
 
 class TestLoadExtraKnownMarketplaceEntry:
@@ -587,7 +536,6 @@ class TestLoadExtraKnownMarketplaceEntry:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces が dict 以外の場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(json.dumps({"extraKnownMarketplaces": "string"}, ensure_ascii=False), encoding="utf-8")
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -596,7 +544,6 @@ class TestLoadExtraKnownMarketplaceEntry:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces に対象キーが無い場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(
             json.dumps({"extraKnownMarketplaces": {"other": {}}}, ensure_ascii=False),
@@ -608,7 +555,6 @@ class TestLoadExtraKnownMarketplaceEntry:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """extraKnownMarketplaces[target] が dict でない場合は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         settings.write_text(
             json.dumps(

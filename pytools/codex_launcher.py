@@ -84,7 +84,6 @@ _TOKEN_ENV = "DOTFILES_CODEX_RECOVERY_TOKEN"
 
 
 def is_interactive(arguments: Sequence[str]) -> bool:
-    """所有する通常の対話セッションとして復旧を使うかを返す。"""
     options = arguments[: arguments.index("--")] if "--" in arguments else arguments
     if any(token.split("=", 1)[0] in {"--remote", "--no-daemon", "--help", "-h", "--version", "-V"} for token in options):
         return False
@@ -107,7 +106,6 @@ def is_interactive(arguments: Sequence[str]) -> bool:
 
 
 def uses_startup_features(arguments: Sequence[str]) -> bool:
-    """会話を開始する操作だけを選び、CLIの管理用操作を除く。"""
     tokens = iter(arguments)
     command = None
     for token in tokens:
@@ -126,8 +124,7 @@ def uses_startup_features(arguments: Sequence[str]) -> bool:
 
 
 def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
-    # --remote接続のTUIは自身のcwdを送らず、管理daemonのcwdで会話を始める。
-    # 通常起動と同じく起動したディレクトリを作業ルートにするため、指定が無ければ補う。
+
     options = arguments[: arguments.index("--")] if "--" in arguments else arguments
     if any(token in {"-C", "--cd"} or token.startswith(("-C", "--cd=")) for token in options):
         return list(arguments)
@@ -135,7 +132,7 @@ def _with_cwd(arguments: Sequence[str], cwd: str) -> list[str]:
 
 
 def _resume_arguments(arguments: Sequence[str], identifier: str, cwd: str) -> list[str]:
-    # 初期プロンプト・画像・worktree作成は元turnへ保存済み。再開時に再投入しない。
+
     result: list[str] = []
     index = 0
     while index < len(arguments):
@@ -160,7 +157,7 @@ def _resume_arguments(arguments: Sequence[str], identifier: str, cwd: str) -> li
 
 async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float, full: bool) -> int:
     environment = dict(os.environ)
-    # native自身が通常起動で行う起動処理を、IPC中継の接続より先に終える。
+
     started = await asyncio.to_thread(
         common.run_subprocess,
         [str(binary), "app-server", "daemon", "start"],
@@ -197,7 +194,6 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float, fu
                         raise bridge.failure.result()
                     code = waited.result()
                     if code == 0 or code in _INTERRUPTED:
-                        # 明示終了では対話待ちの復旧を中断し、context managerで所有資源を回収する。
                         return code if code >= 0 else 128 - code
                     await bridge.wait_tui_closed()
                 finally:
@@ -220,7 +216,6 @@ async def _run(binary: pathlib.Path, arguments: list[str], *, timeout: float, fu
 
 
 def main(argv: list[str] | None = None) -> int:
-    """通常TUIだけを管理し、その他の公開コマンドはnativeへそのまま渡す。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -255,7 +250,6 @@ def run_interactive(binary: pathlib.Path, arguments: list[str], *, full: bool = 
     except KeyboardInterrupt:
         return 130
     except Exception as error:  # pylint: disable=broad-exception-caught
-        # 外部RPCの検証例外は入力を含み得るため、本文を端末やログへ複製しない。
         diagnostic = _safe_error(error)
         print(f"Codexの自動復旧に失敗: {diagnostic}。codex doctorで確認し、元の会話をcodex resumeで再開する", file=sys.stderr)
         return 1

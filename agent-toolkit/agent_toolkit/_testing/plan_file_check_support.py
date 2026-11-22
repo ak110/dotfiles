@@ -1,5 +1,3 @@
-"""計画・選定・履歴比較の試験で共有する入力と補助処理。"""
-
 import contextlib
 import io
 import pathlib
@@ -15,7 +13,6 @@ from agent_toolkit._plan import structure as _plan_format
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import plan_fixture as _plan_fixture
 
-# 検査本体はスキルのscriptsにあり、パッケージの外のため検索パスへ加えてから取り込む。
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/scripts"))
 import check_plan_file  # noqa: E402  # pylint: disable=wrong-import-position,wrong-import-order,import-error
 
@@ -24,7 +21,6 @@ _TWO_FILE_MIGRATION = "旧二ファイル書式である。新規作成・改訂
 
 @pytest.fixture(name="repo")
 def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
-    """計画の確認に使うGitリポジトリを作成する。"""
     git_repository.init_repository(tmp_path)
     git_repository.git_output(tmp_path, "config", "user.email", "test@example.com")
     git_repository.git_output(tmp_path, "config", "user.name", "Test")
@@ -35,14 +31,12 @@ def fixture_repo(tmp_path: pathlib.Path) -> tuple[pathlib.Path, str]:
 
 
 def _plan(repo: pathlib.Path, base: str, *, bug: bool = False, exclusions: bool = True) -> str:
-    """旧単一ファイル形式の正規計画を組み立てる。"""
     return _plan_fixture.single_file_plan(repo=repo.resolve(), base=base, bug=bug, exclusions=exclusions)
 
 
 def _new_format_plan(
     repo: pathlib.Path, base: str, *, bug: bool = False, detail_name: str = "plan.detail.md"
 ) -> tuple[str, str]:
-    """旧二ファイル形式（計画ファイル（メイン）・計画ファイル（詳細））の正規計画を組み立てて返す。"""
     work_type = "バグ対応" if bug else "通常変更"
     main = _plan_fixture.two_file_main(
         repo=repo.resolve(),
@@ -58,7 +52,6 @@ def _new_format_plan(
 
 
 def human_new_format_plan(repo: pathlib.Path) -> tuple[str, str]:
-    """新規作成用の人間向け計画ファイル（メイン）・計画ファイル（詳細）fixtureを返す。"""
     return _plan_fixture.human_main(repo=repo.resolve()), _plan_fixture.human_detail()
 
 
@@ -73,7 +66,6 @@ def _check_new(
     reject_migration_warnings: bool = False,
     reject_progress_log_rows: bool = False,
 ) -> tuple[list[str], list[str]]:
-    """新書式の計画（計画ファイル（メイン）・計画ファイル（詳細））を一時ファイルへ保存し、基準を満たすか確かめる。"""
     path = repo / plan_name
     path.write_text(main_content, encoding="utf-8")
     detail_path = repo / f"{path.stem}.detail.md"
@@ -94,7 +86,6 @@ def _check_new(
 
 
 def _check(repo: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
-    """計画を一時ファイルへ保存し、基準を満たすか確かめる。"""
     path = repo / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, repo)

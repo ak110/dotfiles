@@ -128,7 +128,6 @@ def test_unrelated_or_invented_wait_target_does_not_clear_remaining_work(tmp_pat
 def test_waiting_uwi_rejects_invalid_membership_and_metadata(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, problem: str
 ) -> None:
-    """年月所属、処理可能状態、投入会話、未回答、全文引用の境界を公開判断CLIで検証する。"""
     supply_commit(tmp_path)
     queue = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(queue))
@@ -161,7 +160,6 @@ def test_waiting_uwi_rejects_invalid_membership_and_metadata(
 
 
 def test_corrupt_or_foreign_state_does_not_block(tmp_path: pathlib.Path) -> None:
-    """証拠の状態が別の版・形式で読み取れない場合は、呼び忘れと決め付けずに許可する。"""
     supply_commit(tmp_path)
 
     def corrupt(state: dict) -> dict:
@@ -238,7 +236,6 @@ def test_blocked_requires_actual_failure_of_same_work(tmp_path: pathlib.Path) ->
 
 @pytest.mark.parametrize("action", ["blocked", "wait"])
 def test_rejected_host_stop_guides_to_continue_or_confirmation(tmp_path: pathlib.Path, action: str) -> None:
-    """通知による停止は受理条件を保ち、拒否の後の実行可能な工程へ案内する。"""
     supply_commit(tmp_path)
     if action == "wait":
 

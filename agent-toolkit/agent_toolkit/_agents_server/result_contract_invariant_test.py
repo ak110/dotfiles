@@ -1,5 +1,3 @@
-"""読者別探索の役割文書の返却雛形と、返却検査の受理範囲の一致を確かめる。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -11,10 +9,6 @@ from agent_toolkit._agents_server.result_contract_test import _reader_fit_reason
 
 @pytest.mark.parametrize("multiline", [False, True])
 def test_reader_fit_accepts_both_layouts_of_role_template_fields(tmp_path: pathlib.Path, multiline: bool) -> None:
-    """役割文書の雛形の各欄を、同じ行に書く形と字下げして続ける形のどちらで書いても受理する。
-
-    雛形の欄を足すか値の書き方を変えたとき、検査とのずれをこの試験が検出する。
-    """
     session, target = _reader_fit_session(tmp_path)
     role = pathlib.Path(__file__).resolve().parents[2] / "skills/atk-mode/roles/reader-fit-review.subagent.md"
     template = role.read_text(encoding="utf-8").split("- 成果物: <絶対パス>\n", 1)[1]

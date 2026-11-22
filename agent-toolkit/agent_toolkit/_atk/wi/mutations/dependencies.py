@@ -24,7 +24,6 @@ _BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、�
 
 
 def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
-    """エントリの依存先を文字列列として検証して返す。"""
     raw_dependencies = data.get("depends_on", [])
     if not isinstance(raw_dependencies, list) or not all(isinstance(value, str) for value in raw_dependencies):
         raise WebInputError(
@@ -42,12 +41,6 @@ def set_entry_dependencies(
     target_repo: str | None = None,
     lock_timeout: float | None = None,
 ) -> dict[str, object | None]:
-    """既存AWIの明示依存だけを更新し、保存済みメタデータを返す。
-
-    対象は未終了の`inbox`、`processing`および`hold`とする。`hold`を含めるのは、投入済み項目を修正する手順が
-    `hold`中に本文と依存を確定するためであり、この状態でも依存を更新できる必要がある。
-    依存の更新は保存状態を変えないため、`hold`の項目は更新後も`hold`のまま残る。
-    """
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = private_notes / WI_STATE_PROCESSING
     hold_dir = private_notes / WI_STATE_HOLD
@@ -152,12 +145,10 @@ def _active_dependency_graph(
 
 
 def _dependency_reaches(graph: dict[str, set[str]], start: str, target: str) -> bool:
-    """startからtargetへ到達できる場合に真を返す。"""
     return _dependency_path(graph, start, target) is not None
 
 
 def _dependency_path(graph: dict[str, set[str]], start: str, target: str) -> tuple[str, ...] | None:
-    """startからtargetへ至る依存先を辿った並びを返す。到達できない場合は`None`を返す。"""
     pending: list[tuple[str, ...]] = [(start,)]
     visited: set[str] = set()
     while pending:
@@ -189,7 +180,6 @@ def _dependency_cycle(
 
 
 def cmd_set_dependencies(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """set-dependenciesサブコマンドを実行する。"""
     target_repo = args.target_repo
     if target_repo is None:
         target_repo, _local_worktree = _add.resolve_add_target(None)

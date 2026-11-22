@@ -1,5 +1,3 @@
-"""統括CLIの識別とAPI環境ファイルの診断を最終出力で検証する。"""
-
 import argparse
 import datetime
 import os

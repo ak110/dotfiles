@@ -110,7 +110,6 @@ def test_ci_review_table_round_trip_commits_pushes_and_cleans(tmp_path: pathlib.
     ],
 )
 def test_commit_ci_review_rejects_noncanonical_working_name(tmp_path: pathlib.Path, name: str) -> None:
-    """7〜64文字の一意な短縮OIDから決まらない独立表名を拒否する。"""
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
 
@@ -142,7 +141,6 @@ def test_ci_review_name_errors_guide_series_head_format(
 
 
 def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.Path) -> None:
-    """独立表の取得後に保存元が変わった場合は作業側を保持して拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -166,7 +164,6 @@ def test_commit_ci_review_rejects_saved_change_after_checkout(tmp_path: pathlib.
 
 
 def test_commit_ci_review_accepts_checked_out_saved_forty_character_name(tmp_path: pathlib.Path) -> None:
-    """保存済み40文字OID名はcheckout記録を条件に再commitできる。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

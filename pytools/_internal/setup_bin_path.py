@@ -40,7 +40,6 @@ def _bin_entries(dotfiles_root: Path | None, home: Path) -> tuple[str, ...]:
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    r"""`HKCU\Environment` の `Path` に dotfiles配下のbinディレクトリを冪等に追記する。"""
     any_appended = False
     failures: list[str] = []
     for entry in _bin_entries(common.find_dotfiles_root(), Path.home()):

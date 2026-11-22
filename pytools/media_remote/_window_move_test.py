@@ -13,7 +13,6 @@ from pytools.media_remote import _window_move
 
 @pytest.mark.asyncio
 async def test_async_monitor_preparation_and_join_keep_loop_running() -> None:
-    """UIAの開始と終了を待つ間もloopが進み、終了後に専用threadを残さない。"""
     loop = asyncio.get_running_loop()
     ready, finishing = asyncio.Event(), asyncio.Event()
     allow_start, allow_stop, hooks_stopped = threading.Event(), threading.Event(), threading.Event()

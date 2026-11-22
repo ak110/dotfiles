@@ -1,5 +1,3 @@
-"""Bashコマンドの`bash -c`・`sh -c`を含む呼び出しの抽出と、各呼び出しの出力の接続先の判定。"""
-
 from __future__ import annotations
 
 import contextvars
@@ -69,15 +67,10 @@ class BashInvocation:
 
     @property
     def output_pipe(self) -> bool:
-        """標準出力または標準エラーが後段のパイプへ渡るかを返す。"""
         return _BashOutput.PIPE in self.outputs
 
     @property
     def output_redirected(self) -> bool:
-        """標準出力か標準エラーの最終的な接続先が、呼び出し元から引き継いだ1と2からリダイレクトで変わったかを返す。
-
-        接続先がファイル（`/dev/null`を含む）、別のファイル記述子、未確定のパスのいずれでも真とする。
-        """
         return self.outputs != (1, 2)
 
 
@@ -105,12 +98,10 @@ STATIC_UNKNOWN = "\ue000"
 
 
 def is_unknown_word(token: str) -> bool:
-    """解析した語が、実行しないと値が決まらない部分（展開・置換）を含むかを返す。"""
     return _UNKNOWN_BASH_WORD in token
 
 
 def is_read_predicate(args: Sequence[str]) -> bool:
-    """引数列が、正常な否定結果を終了1で返す読取述語かを返す。"""
     if not args:
         return False
     executable = pathlib.Path(args[0]).name
@@ -145,22 +136,10 @@ _INCLUDE_UNKNOWN_EXECUTIONS: contextvars.ContextVar[bool] = contextvars.ContextV
 
 
 def extract_bash_effects(command: str) -> list[BashInvocation]:
-    """`extract_bash_invocations`の結果へ、実行するコマンドが未知の文も`execution_known=False`で加えて返す。
-
-    入出力先の確定度は実行位置の確定と独立している。未知の実行を空の結果にすると、構文から確定した出力先まで失うため、
-    書込先を求める消費側はこの関数を使う。未知の文のコマンド名や引数は推定しない。
-    """
     return list(_cached_bash_invocations(command, True, resolve_variables=True))
 
 
 def extract_bash_invocations(command: str) -> list[BashInvocation]:
-    """引用・置換・出力接続を保持し、判定できるBashの実行位置を返す。
-
-    heredoc本文とリテラル引数を実行位置にせず、置換の内側は別の呼び出しとして解析する。
-    区切り語を引用しないheredocの本文にある置換は本関数では解析せず、`heredoc_command_substitutions`が返す。
-    PreToolUseはその置換を含むコマンドを実行前に遮断するため、本文の置換の内側を個別の判定へ渡さない。
-    変数や別ファイルに隠れた起動、未対応の複合構文、閉じない構文から実行位置を推定しない。
-    """
     return list(_cached_bash_invocations(command, _INCLUDE_UNKNOWN_EXECUTIONS.get()))
 
 
@@ -168,11 +147,6 @@ def extract_bash_invocations(command: str) -> list[BashInvocation]:
 def _cached_bash_invocations(
     command: str, include_unknown: bool, *, resolve_variables: bool = False
 ) -> tuple[BashInvocation, ...]:
-    """同じコマンド文字列の解析結果を共有する。
-
-    1回のhookは同じコマンドを宣言の行ごとに何十回も判定するため、解析をやり直すと所要の大半を占める。
-    結果の要素は不変なので、呼び出し元には一覧の複製を返せる。
-    """
     token = _INCLUDE_UNKNOWN_EXECUTIONS.set(include_unknown)
     try:
         tokens = _bash_tokens(mask_heredoc_bodies(command))
@@ -217,7 +191,6 @@ def _resolve_path_word(word: str, values: dict[str, str], *, assignment: bool = 
 
 
 def _resolve_path_variables(invocations: Sequence[BashInvocation]) -> Iterator[BashInvocation]:
-    """読取と書込のパスに使う変数を、同じシェルの先行する単独代入だけから解決する。"""
     assignments: dict[tuple[object, ...], dict[str, str]] = {(): {}}
     for invocation in invocations:
         scope = invocation.cwd_scope
@@ -244,7 +217,6 @@ def _resolve_path_variables(invocations: Sequence[BashInvocation]) -> Iterator[B
 
 
 def _bash_tokens(command: str) -> list[_BashToken]:
-    """演算子とシェル語を区別し、置換内の語を外側のトークンへ混ぜない。"""
     tokens: list[_BashToken] = []
     index = 0
     while index < len(command):
@@ -262,7 +234,7 @@ def _bash_tokens(command: str) -> list[_BashToken]:
             _, index = _bash_substitution(command, index)
             tokens.append(_BashToken(_UNKNOWN_BASH_WORD, known=False))
             continue
-        # プロセス置換はリダイレクト演算子とは別のシェル語である。
+
         redirect = None if command[index : index + 2] in {"<(", ">("} else _BASH_REDIRECTION.match(command, index)
         operator = next((value for value in _BASH_OPERATORS if command.startswith(value, index)), None)
         if redirect is not None or operator is not None:
@@ -277,7 +249,6 @@ def _bash_tokens(command: str) -> list[_BashToken]:
 
 
 def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
-    """1つの語の引用と展開を区別し、静的な値と置換の本文を返す。"""
     pieces: list[str] = []
     static_pieces: list[str] = []
     variable_pieces: list[str] = []
@@ -386,7 +357,6 @@ def _bash_word(command: str, start: int) -> tuple[_BashToken, int]:
 
 
 def _bash_substitution(command: str, start: int) -> tuple[str | None, int]:
-    """置換の対応する終端を、内側の引用と入れ子を区別して求める。"""
     backtick = command[start] == "`"
     parameter = command.startswith("${", start)
     arithmetic = command.startswith("((", start)
@@ -423,7 +393,6 @@ def _bash_substitution(command: str, start: int) -> tuple[str | None, int]:
 def _bash_command_list(
     tokens: Sequence[_BashToken], start: int, closing: str | frozenset[str] | None = None
 ) -> tuple[list[BashInvocation], int]:
-    """単純なコマンドと括弧・波括弧のグループへ接続を対応付ける。"""
     result: list[BashInvocation] = []
     pipeline_start = 0
     conditional = False
@@ -529,7 +498,6 @@ def _bash_command_list(
 
 
 def _bash_pipeline_prefixes(tokens: Sequence[_BashToken], start: int) -> tuple[int, bool]:
-    """文種の分岐より前に予約語を消費し、coprocの名前を実行位置から除く。"""
     index = start
     coprocess = False
     while index < len(tokens) and tokens[index].reserved and tokens[index].value in {"time", "!", "coproc"}:
@@ -541,14 +509,13 @@ def _bash_pipeline_prefixes(tokens: Sequence[_BashToken], start: int) -> tuple[i
             index += 1
         if kind == "coproc":
             coprocess = True
-            # 単純コマンドの先頭語は名前ではない。名前を置ける複合文だけで1語を消費する。
+
             if index + 1 < len(tokens) and not tokens[index].operator and _bash_prefixed_compound(tokens, index + 1):
                 index += 1
     return index, coprocess
 
 
 def _bash_prefixed_compound(tokens: Sequence[_BashToken], start: int) -> bool:
-    """名前付きcoprocの後ろが、予約語前置を含む複合コマンドかを判定する。"""
     index = start
     while index < len(tokens) and tokens[index].reserved and tokens[index].value in {"time", "!"}:
         kind = tokens[index].value
@@ -567,13 +534,11 @@ def _bash_prefixed_compound(tokens: Sequence[_BashToken], start: int) -> bool:
 
 
 def _bash_closes(token: _BashToken, closing: str | frozenset[str] | None) -> bool:
-    """引用された引数を節の終端へ変えず、演算子と予約語の境界だけを判定する。"""
     values = frozenset({closing}) if isinstance(closing, str) else closing or frozenset()
     return (token.operator or token.reserved) and token.value in values
 
 
 def _bash_function_body(tokens: Sequence[_BashToken], start: int) -> int | None:
-    """未実行の関数定義を、本体の波括弧またはサブシェルまで識別する。"""
     keyword = tokens[start].reserved and tokens[start].value == "function"
     index = start + int(keyword)
     if index >= len(tokens) or tokens[index].operator:
@@ -590,12 +555,10 @@ def _bash_function_body(tokens: Sequence[_BashToken], start: int) -> int | None:
 
 
 def _bash_compound(tokens: Sequence[_BashToken], start: int) -> tuple[list[BashInvocation], int]:
-    """複合文の条件と本体の実行位置を再帰解析し、文全体の接続は呼出側へ戻す。"""
     kind = tokens[start].value
     index = start + 1
     result: list[BashInvocation] = []
     if kind in {"for", "select", "case"}:
-        # 名前・反復値・caseの比較する値はコマンドではないが、能動的な置換は実行される。
         boundary = "in" if kind == "case" else "do"
         while index < len(tokens) and not _bash_closes(tokens[index], boundary):
             for body in tokens[index].nested:
@@ -642,19 +605,15 @@ def _bash_compound(tokens: Sequence[_BashToken], start: int) -> tuple[list[BashI
 
 
 def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
-    """実行前置語を解決し、引用されたシェル本文と能動的な置換を解析する。"""
     result: list[BashInvocation] = []
-    # リダイレクトは字句解析で語から分けてあるため、語はリダイレクトを持たない`ShellWord`として渡す。
-    # 消費側が`strip_redirections`を通しても、引用済みの`'>'`などのデータを演算子として除かない。
-    # 元の語は`join_words`で同じ値へ戻るよう引用した表記を保ち、再解析で引用内の`;`などを区切りにしない。
-    # 引用除去後の値だけでは、リテラルの角括弧とファイル名展開を区別できない。
+
     values: list[str] = [
         ShellWord(word.value, expansion=not word.known, raw=shlex.quote(word.value), unquoted=word.unquoted) for word in words
     ]
     prefix = 0
     while prefix < len(words) and words[prefix].assignment:
         prefix += 1
-    # 引用された名前や`=`はシェルの前置代入にならず、その語自身が実行位置になる。
+
     quoted_assignment = prefix < len(words) and ENV_ASSIGN_PATTERN.match(values[prefix]) is not None
     segment = ExecutionSegment(tuple(values[prefix:]), True) if quoted_assignment else resolve_execution_segment(values)
     for position in range(prefix, len(values) - 1):
@@ -667,7 +626,7 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
     if segment.resolved and segment.tokens and _UNKNOWN_BASH_WORD not in segment.tokens[0]:
         assignments = tuple(value for value in values[: len(values) - len(segment.tokens)] if ENV_ASSIGN_PATTERN.match(value))
         shell = shell_c_argument(segment.tokens)
-        # 本文の確定は本文自身の語だけで決まる。後続の`$0`・位置引数が未知でも、静的な本文の入出力は失わない。
+
         if shell is not None and _UNKNOWN_BASH_WORD not in shell:
             nested = extract_bash_effects(shell) if _INCLUDE_UNKNOWN_EXECUTIONS.get() else extract_bash_invocations(shell)
             result.extend(
@@ -702,12 +661,11 @@ def _bash_word_invocations(words: Sequence[_BashToken]) -> list[BashInvocation]:
             substitutions.extend(
                 _isolated_cwd_scope([dataclasses.replace(item, captured=True) for item in extract_bash_invocations(body)])
             )
-    # 引数の置換は外側のコマンドより先に実行され、移動前のcwdを継承する。
+
     return [*substitutions, *result]
 
 
 def _isolated_cwd_scope(invocations: list[BashInvocation]) -> list[BashInvocation]:
-    """シェルの子環境へ一意な作用範囲を割り当てる。"""
     scope = object()
     return [dataclasses.replace(item, cwd_scope=(scope, *item.cwd_scope)) for item in invocations]
 
@@ -715,7 +673,6 @@ def _isolated_cwd_scope(invocations: list[BashInvocation]) -> list[BashInvocatio
 def _bash_output_targets(
     redirects: Sequence[tuple[str, _BashToken]], separator: str, *, coprocess: bool = False
 ) -> tuple[_OutputTarget, _OutputTarget]:
-    """リダイレクトを左から適用し、後段へ実際に渡る出力を求める。"""
     outputs: dict[int, _OutputTarget] = {1: _BashOutput.PIPE if coprocess or separator in PIPE_SEPARATORS else 1, 2: 2}
     for raw, operand in redirects:
         operator = raw.lstrip("0123456789")
@@ -742,7 +699,6 @@ def _inherit_bash_outputs(
     static_outputs: tuple[_OutputTarget, _OutputTarget],
     variable_outputs: tuple[_OutputTarget, _OutputTarget],
 ) -> BashInvocation:
-    """グループの出力先を、内側で上書きされていない接続へ渡す。"""
     inherited = tuple(
         outputs[value - 1] if isinstance(value, int) and not (invocation.captured and value == 1) else value
         for value in invocation.outputs
@@ -764,11 +720,6 @@ def _inherit_bash_outputs(
 
 
 def _active_substitutions(body: str) -> list[str]:
-    r"""展開されるheredoc本文から、エスケープされていないバッククォートと`$(`の置換を返す。
-
-    展開される本文では引用符は特別な意味を持たず、`\\`だけが次の1文字をリテラルにする。
-    `$((`は算術展開として扱い、コマンド置換に数えない。閉じない置換はその行の末尾までを返す。
-    """
     found: list[str] = []
     index = 0
     while index < len(body):
@@ -790,11 +741,6 @@ def _active_substitutions(body: str) -> list[str]:
 
 
 def heredoc_command_substitutions(command: str) -> list[str]:
-    """bashが本文を展開するheredocの本文にある、能動的なコマンド置換を出現順に返す。
-
-    外側のコマンドに加え、`sh -c`・`bash -c`の引数とコマンド置換の本文の中にあるheredocも対象にする。
-    引用付きの区切り語の本文と、`$VAR`・`${VAR}`・`$((...))`・エスケープ済みの表記は対象外とする。
-    """
     found: list[str] = []
     for body in heredoc_bodies(command):
         if body.expands:
@@ -809,7 +755,6 @@ def heredoc_command_substitutions(command: str) -> list[str]:
 
 
 def _nested_shell_texts(tokens: Sequence[_BashToken]) -> list[str]:
-    """トークン列から、置換の本文と静的に確定した`sh -c`・`bash -c`の引数を返す。"""
     texts: list[str] = []
     words: list[_BashToken] = []
     for token in [*tokens, _BashToken(";", operator=True)]:

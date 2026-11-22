@@ -1,5 +1,3 @@
-"""コマンドライン引数解析とエントリーポイント。"""
-
 import argparse
 import hashlib
 import logging
@@ -9,15 +7,12 @@ import tempfile
 import webbrowser
 
 from pytools._internal.cli import enable_completion, setup_logging
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy from pytools.markdown_viewer import _render
 
 logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """コマンドライン引数を解析する。"""
     parser = argparse.ArgumentParser(
         description="MarkdownファイルをOSの標準ブラウザで表示する。",
     )
@@ -31,10 +26,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _output_path(source: pathlib.Path) -> pathlib.Path:
-    """入力Markdownの絶対パスから一時HTMLの出力先を返す。
-
-    同じ入力ファイルは同じ出力先へ上書きし、一時ディレクトリの肥大を抑える。
-    """
     digest = hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:16]
     return pathlib.Path(tempfile.gettempdir()) / "markdown-viewer" / f"{digest}.html"
 
@@ -60,8 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     body_html = _render.render_body(text)
     css_path = _render.resolve_css_path()
     css_text = css_path.read_text(encoding="utf-8") if css_path is not None else ""
-    # `<base href>`にディレクトリのfile URIを渡し、画像など相対パス参照を入力ファイルの親基準で解決させる。
-    # `Path.as_uri()`はディレクトリでも末尾スラッシュを付けないため、ここで明示的に追加する。
+
     base_uri = source_abs.parent.as_uri() + "/"
     document = _render.build_html_document(
         body_html=body_html,

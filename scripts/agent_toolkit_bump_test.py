@@ -13,8 +13,6 @@ from agent_toolkit._plan import structure as _plan_format  # noqa: E402
 
 
 class TestParseVersion:
-    """parse_version / format_versionの基本動作。"""
-
     @pytest.mark.parametrize(
         ("text", "expected"),
         [
@@ -46,8 +44,6 @@ class TestParseVersion:
 
 
 class TestComputeNewVersion:
-    """compute_new_version が正しい bump を行う。"""
-
     @pytest.mark.parametrize(
         ("current", "kind", "expected"),
         [
@@ -64,8 +60,6 @@ class TestComputeNewVersion:
 
 
 class TestInferBumpKind:
-    """infer_bump_kind が base→current の差分から種別を正しく推定する。"""
-
     @pytest.mark.parametrize(
         ("base", "current", "expected"),
         [
@@ -84,12 +78,9 @@ class TestInferBumpKind:
     @pytest.mark.parametrize(
         ("base", "current"),
         [
-            # patch が残ったまま minor が上がっている: 不整合
             ("0.40.1", "0.41.1"),
-            # major が上がっているが minor/patch がリセットされていない。
             ("0.40.1", "1.0.1"),
             ("0.40.1", "1.1.0"),
-            # 後退（regression）。
             ("0.40.2", "0.40.1"),
             ("0.40.0", "0.39.9"),
         ],
@@ -116,7 +107,6 @@ def test_main_upgrades_bump_without_downgrade(
     requested: str,
     expected: str | None,
 ) -> None:
-    """公開済み基準からbumpを格上げし、同等以下の要求では据え置く。"""
     written: list[str] = []
 
     def _write(_target: bump.PluginTarget, new_version: str) -> None:
@@ -131,7 +121,6 @@ def test_main_upgrades_bump_without_downgrade(
 
 
 def _make_repo(root: pathlib.Path) -> dict[str, pathlib.Path]:
-    """2つのプラグインのmanifestとmarketplaceを持つ一時リポジトリを作り、manifestのパスを返す。"""
     manifests: dict[str, pathlib.Path] = {}
     entries = []
     for name, version in (("agent-basics", "1.6.0"), ("agent-toolkit", "2.231.0")):
@@ -147,15 +136,12 @@ def _make_repo(root: pathlib.Path) -> dict[str, pathlib.Path]:
 
 
 def _versions(root: pathlib.Path, manifests: dict[str, pathlib.Path]) -> dict[str, tuple[str, str]]:
-    """プラグインごとの(plugin.jsonの版, marketplaceエントリの版)を返す。"""
     marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
     listed = {entry["name"]: entry["version"] for entry in marketplace["plugins"]}
     return {name: (json.loads(path.read_text(encoding="utf-8"))["version"], listed[name]) for name, path in manifests.items()}
 
 
 class TestPluginSelection:
-    """`--plugin`による対象プラグインの選択。"""
-
     @pytest.fixture(name="repo")
     def _repo(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, pathlib.Path]:
         manifests = _make_repo(tmp_path)
@@ -163,14 +149,13 @@ class TestPluginSelection:
         monkeypatch.setattr(bump, "_MARKETPLACE_MANIFEST", tmp_path / ".claude-plugin" / "marketplace.json")
 
         def _base(target: bump.PluginTarget) -> tuple[str, str]:
-            # 公開済みの基準版は作業ツリーの現在版と同じとし、未プッシュbumpが無い状態を作る。
+
             return json.loads(target.manifest.read_text(encoding="utf-8"))["version"], "@{u}"
 
         monkeypatch.setattr(bump, "resolve_base_version", _base)
         return manifests
 
     def test_agent_basics_updates_only_its_two_definitions(self, tmp_path: pathlib.Path, repo: dict[str, pathlib.Path]) -> None:
-        """agent-basics指定はagent-basicsの2か所だけを同じ新版へ上げ、agent-toolkitの版を変えない。"""
         assert bump.main(["--plugin", "agent-basics", "minor"]) == 0
         assert _versions(tmp_path, repo) == {
             "agent-basics": ("1.7.0", "1.7.0"),
@@ -178,7 +163,6 @@ class TestPluginSelection:
         }
 
     def test_omitted_plugin_updates_agent_toolkit(self, tmp_path: pathlib.Path, repo: dict[str, pathlib.Path]) -> None:
-        """指定を省略した既存の呼び出しはagent-toolkitを更新する。"""
         assert bump.main(["patch"]) == 0
         assert _versions(tmp_path, repo) == {
             "agent-basics": ("1.6.0", "1.6.0"),
@@ -188,7 +172,6 @@ class TestPluginSelection:
     def test_unknown_plugin_is_rejected_with_accepted_names(
         self, tmp_path: pathlib.Path, repo: dict[str, pathlib.Path], capsys: pytest.CaptureFixture[str]
     ) -> None:
-        """marketplaceに無い名前は受理できる名前を示して非0で終了し、版数を変えない。"""
         with pytest.raises(SystemExit) as raised:
             bump.main(["--plugin", "unknown", "patch"])
         assert raised.value.code != 0
@@ -225,8 +208,6 @@ class TestWriteVersion:
 
 
 class TestResolveBaseVersion:
-    """基準版の解決順序と、解決できない場合の扱い。"""
-
     _TARGET = bump.PluginTarget("agent-toolkit", pathlib.Path("agent-toolkit/.claude-plugin/plugin.json"))
 
     @staticmethod
@@ -251,7 +232,6 @@ class TestResolveBaseVersion:
         assert bump.resolve_base_version(self._TARGET) == ("0.9.0", "origin/HEAD")
 
     def test_returns_none_when_no_ref_resolves(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """いずれの参照も解決できない場合はNoneを返す。"""
         monkeypatch.setattr(bump, "_read_version_at", self._fake_reader({}))
         assert bump.resolve_base_version(self._TARGET) is None
 
@@ -260,7 +240,6 @@ class TestResolveBaseVersion:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """基準版を確定できない場合は増分せず非ゼロ終了する。"""
         monkeypatch.setattr(bump, "_read_current_version", lambda _target: "1.0.0")
         monkeypatch.setattr(bump, "resolve_base_version", lambda _target: None)
 
@@ -286,7 +265,6 @@ class TestBumpManifestPathsSsot:
         assert bump_paths == set(_plan_format.BUMP_MANIFEST_PATHS)
 
     def test_every_marketplace_plugin_has_its_manifest(self) -> None:
-        """受理する全プラグインについて、更新するplugin.jsonが実在し、同じ名前を持つ。"""
         targets = bump.plugin_targets()
         assert {"agent-basics", "agent-toolkit"} <= set(targets)
         for name, target in targets.items():

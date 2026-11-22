@@ -1,5 +1,3 @@
-"""生SDK接続を保持する世代移譲の境界試験。"""
-
 # SDKの所有taskと制御要求の内部境界を、実CLIの代わりに検証する。
 # pylint: disable=protected-access
 

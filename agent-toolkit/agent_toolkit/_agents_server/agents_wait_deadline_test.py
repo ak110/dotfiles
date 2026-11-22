@@ -186,7 +186,7 @@ def test_cli_and_mcp_wait_limits_differ_only_by_delegation(
 ) -> None:
     """CLIとMCPの待機上限は同じ保持期間・ホストの判定を共有し、委譲先の短縮はMCPの待機だけに適用する。"""
     _set_ttl_environment(monkeypatch, environment)
-    # 導出値の保持だけを持つ最小のインスタンスで、MCPの`wait`が使う解決処理を呼ぶ。
+
     manager = server_manager.AgentsServerManager.__new__(server_manager.AgentsServerManager)
     manager._wait_timeouts = {}  # pylint: disable=protected-access
 

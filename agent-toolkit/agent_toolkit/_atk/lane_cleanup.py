@@ -82,7 +82,6 @@ def cleanup_session(
                     raise ValueError("登録の所有sessionまたはlaneが異なる")
                 state = _lane_records.resource_state(record)
                 if _lane_records.recovered(record) and not state.absent:
-                    # 回復で作業ツリーを解放し、成果のbranchを残した登録。所在を結果へ示し、回収しない。
                     result["recovered"].append({"record_path": str(path), **record["recovery"]})
                     continue
                 held = record.get("selection")
@@ -134,7 +133,6 @@ def cleanup_session(
         _lane_records.save(result_index, {"session_id": session_id, "result_path": str(result_path)})
         for path, record in records:
             try:
-                # 判定後に状態が変わった対象も、削除の直前に再判定する。
                 reason = eligible(record, wait_release=wait_release, retire_integrated=retire_integrated)
                 if reason:
                     raise ValueError(reason)
@@ -200,7 +198,6 @@ def cleanup_session(
 
 
 def recover_record(record: dict[str, typing.Any], path: pathlib.Path) -> None:
-    """成果のbranchを残して作業ツリーの占有を解放し、到達点を所有登録へ記録する。"""
     if record.get("recovery") is None and (
         _lane_records.read_selection(record) is not None or record.get("selection") is not None
     ):
@@ -244,18 +241,15 @@ def recover_record(record: dict[str, typing.Any], path: pathlib.Path) -> None:
             if remaining.worktree_path or remaining.worktree_registered:
                 raise ValueError("WorktreeRemove hookの後にworktreeが残っている。hookを直して同じ回復操作を再実行する")
         elif worktree.exists():
-            # Gitのclean判定後にだけ全木を準備し、残る別所有者の内容は保持する。
             temp_permissions.prepare_tree(worktree)
             _lane_records.git(repo, "worktree", "remove", str(worktree))
         else:
-            # 実体の無い登録は、その作業ツリーだけをGit登録から外す。
             _lane_records.git(repo, "worktree", "remove", "--force", str(worktree))
     recovery["phase"] = "done"
     _lane_records.save(path, record)
 
 
 def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing.Any]:
-    """選定情報を失った旧登録の作業ツリーを、成果のbranchを残して解放する。"""
     for lane_id in lanes or []:
         if not _lane_records.LANE.fullmatch(lane_id):
             raise ValueError("レーンはlane-NNで指定する")
@@ -271,7 +265,6 @@ def recover(session_id: str, lanes: list[str] | None = None) -> dict[str, typing
                 raise ValueError(f"指定したレーンの登録が無い: {', '.join(missing)}")
             paths = [path for path in paths if path.stem in lanes]
         for path in paths:
-            # 統合中のレーンは待たずに保持する（取得順の理由は`cleanup_session`と同じ）。
             try:
                 with _lane_records.lane_locked(path, blocking=False):
                     record = json.loads(path.read_text(encoding="utf-8"))

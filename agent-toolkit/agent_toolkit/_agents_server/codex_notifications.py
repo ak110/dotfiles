@@ -114,7 +114,6 @@ class CodexNotificationsMixin:
                     owner.codex_subagent_thread_ids.add(thread["id"])
         session = self._find_session(params)
         if session is None:
-            # 子孫threadの通知は子孫の追跡だけに使い、親のstatusや進捗へ混ぜない。
             owner = self._find_thread_owner(_thread_id_from(params))
             if owner is not None:
                 child_thread_id = _thread_id_from(params)
@@ -180,7 +179,6 @@ class CodexNotificationsMixin:
             if not session.failure_pending_completion:
                 session.status = "running"
         elif method == "turn/completed":
-            # 結果を公開可能にする前に保存出力の読取を完了し、終了状態と確定時刻を同じloop区間で反映する。
             if isinstance(turn, dict):
                 await self._consume_items(session, turn.get("items"))
             await wait_output_tracking.consume_agents_wait_background_outputs_async(session)
@@ -201,7 +199,7 @@ class CodexNotificationsMixin:
                 error = "turn/completed did not contain turn"
             if status not in TERMINAL_STATUSES:
                 status = "failed"
-            # 状態を終了へ進めた後にawaitすると、waitや状態保存が保留判定前の結果を回収できてしまう。
+
             changed = (
                 await configured_model.changed_model_error(session)
                 if status == "failed"
@@ -302,8 +300,6 @@ class CodexNotificationsMixin:
         if not isinstance(method, str):
             return
         if not isinstance(request_id, (int, str)) or isinstance(request_id, bool):
-            # IDなしの異常なserver requestへはJSON-RPC応答を返せないため、
-            # 接続上のactive turnをfailedへ遷移させ、turn完了通知を待つ。
             await self._fail_for_request(params, method, client)
             return
         if method == "mcpServer/elicitation/request":
@@ -348,8 +344,7 @@ class CodexNotificationsMixin:
             active.interrupt_requested = has_active_turn
             active.touch()
         await self._notify_waiters()
-        # reader task cannot await a request response for turn/interrupt: that would
-        # deadlock the same reader. Schedule it after publishing failed and waking waiters.
+
         for session_id, turn_id in interrupt_targets:
             self._schedule(self._interrupt(session_id, turn_id, client))
 
@@ -366,7 +361,6 @@ class CodexNotificationsMixin:
     async def _handle_interrupt_response_error(
         self: CodexManager, session_id: str, turn_id: str, error: JsonRpcResponseError
     ) -> None:
-        """turn/interruptのJSON-RPC errorを対象turnだけへ記録する。"""
         session = self._find_session({"threadId": session_id})
         if session is None or session.turn_completed or session.turn_id != turn_id:
             return
@@ -402,7 +396,6 @@ class CodexNotificationsMixin:
             await self._notify_waiters()
 
     def _codex_sessions(self: CodexManager) -> list[SessionState]:
-        """managerと共有する一覧から、このbackendが状態を更新できるsessionだけを返す。"""
         return [session for session in self.sessions.values() if session.engine == "codex"]
 
     def _client_sessions(self: CodexManager, client: Any) -> list[SessionState]:
@@ -442,7 +435,6 @@ class CodexNotificationsMixin:
         source_thread_id: str | None = None,
         source_turn_id: str | None = None,
     ) -> None:
-        """開始・再操作で観測したsubagentのthreadを記録し、そのthreadの通知を所有sessionへ対応付ける。"""
         if not isinstance(item, dict) or item.get("type") != "subAgentActivity":
             return
         thread_id = item.get("agentThreadId")
@@ -474,7 +466,6 @@ class CodexNotificationsMixin:
 
     @staticmethod
     def _notification_turn_id(params: dict[str, Any]) -> str | None:
-        """通知本文に含まれるturn IDを取得する。"""
         turn_id = _turn_id_from(params)
         if turn_id is not None:
             return turn_id

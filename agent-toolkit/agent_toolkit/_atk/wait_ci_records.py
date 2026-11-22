@@ -111,7 +111,6 @@ _NEXT_ACTION_SHA_RESOLUTION = (
 
 
 def _finish(code: int, next_action: str) -> int:
-    """非0の終了コードを返す前に、次の操作の行を標準エラーへ書く。"""
     print(_next_action.next_action_line(next_action), file=sys.stderr, flush=True)
     return code
 
@@ -128,8 +127,6 @@ class RunListError(RuntimeError):
 
 @dataclasses.dataclass(frozen=True)
 class CiBaseline:
-    """push前に観測したCI実行IDとその取得条件。"""
-
     forge: str
     repository: str
     ref: str
@@ -146,7 +143,6 @@ RepositoryTarget = _git_remote.RemoteLocation
 
 
 def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
-    """CI baselineを再利用可能なJSONとして保存する。"""
     payload = {
         "version": _BASELINE_VERSION,
         "forge": baseline.forge,
@@ -161,7 +157,6 @@ def _write_baseline(path: pathlib.Path, baseline: CiBaseline) -> None:
 
 
 def _load_baseline(path: pathlib.Path) -> CiBaseline:
-    """JSON baselineを読み、完全なスキーマ検証後に返す。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -249,7 +244,6 @@ def _failures(runs: list[RunRecord], jobs: list[JobRecord], forge: str) -> list[
 
 
 def _snapshot_completed(runs: list[RunRecord], jobs: list[JobRecord]) -> bool:
-    """全runが完了し、取得済みjobにも実行待ち・実行中が残っていないかを返す。"""
     pending = {"queued", "in_progress", "waiting", "pending", "running", "created", "preparing", "scheduled"}
     return _all_completed(runs) and not any(job.get("status") in pending for job in jobs)
 

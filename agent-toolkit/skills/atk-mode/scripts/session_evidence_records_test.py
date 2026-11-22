@@ -35,7 +35,6 @@ def test_main_resolves_codex_transcript_from_thread_id(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """thread IDだけで一意な親rolloutを解決して抽出する。"""
     thread_id = "11111111-1111-4111-8111-111111111111"
     codex_home = tmp_path / "codex"
     write_jsonl(
@@ -66,7 +65,6 @@ def test_main_rejects_ambiguous_or_missing_codex_thread_id(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """親rolloutが0件または複数件なら証拠不足として終了コード2を返す。"""
     thread_id = "22222222-2222-4222-8222-222222222222"
     codex_home = tmp_path / "codex"
 
@@ -103,7 +101,6 @@ def test_codex_home_resolution_order(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示引数、空でない環境変数、ホームから求めた値の順に保存先を解決する。"""
     thread_id = "33333333-3333-4333-8333-333333333333"
     home = tmp_path / "home"
     roots = {
@@ -174,7 +171,6 @@ def test_default_events_separate_main_user_message_from_subagent_task_prompt(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """人間の入力と委譲先のタスク入力を由来記録で区別する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "人間の入力")])
     write_subagent(
         transcript.with_suffix("") / "subagents",
@@ -195,7 +191,6 @@ def test_reconciliation_repeats_until_no_main_user_intervention_is_added(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """再取得中に届いた人間の入力も次の境界で追加し、新しい入力が0件になるまで比較する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -279,7 +274,6 @@ def test_user_events_resolves_claude_session_id(
         ("mcp__plugin_agent-toolkit_agents_server__start", {"mode": "shell", "command": "make test"}, True),
         ("mcp__agents_server__start", {"mode": "explore", "prompt": "調査"}, False),
         ("mcp__agents_server__start", {"subagent_md_path": "/plugin/share/exec.subagent.md"}, False),
-        # 統合前の記録はツール名でコマンド実行を表す。
         ("mcp__agents_server__start_shell", {"command": "make test"}, True),
         ("mcp__agents_server__start_explore", {"prompt": "調査"}, False),
     ],
@@ -293,7 +287,6 @@ def test_execution_tool_kind_follows_start_mode_and_legacy_name(name: str, argum
 def test_agy_delegate_without_log_is_unresolved_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """状態ディレクトリにログが無いagyの委譲先は、記録を解決できない委譲先として報告する。"""
     session_id = "b9244465-1577-44a9-a7b0-500b1f976b0e"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -319,7 +312,6 @@ def test_agy_delegate_without_log_is_unresolved_record(
 def test_agy_grandchild_launch_is_neither_detected_nor_collected(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """agyの委譲先が孫を起動しても、孫の記録を探さず、未解決の委譲としても報告しない。"""
     session_id = "c9244465-1577-44a9-a7b0-500b1f976b0e"
     grandchild = "d9244465-1577-44a9-a7b0-500b1f976b0e"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -363,7 +355,6 @@ def test_agy_grandchild_launch_is_neither_detected_nor_collected(
 
 # pylint: disable=protected-access
 def test_stats_reports_critical_path() -> None:
-    """並行threadの重複を二重計上せず、測定不能なthreadも分けて返す。"""
 
     def collected(
         record_id: str, timestamps: list[str], *, role: Literal["main", "subagent", "session"] = "session"
@@ -424,7 +415,6 @@ def test_claude_subagent_record_keeps_normal_entries(tmp_path: pathlib.Path) -> 
 
 # pylint: disable=protected-access
 def test_claude_child_keeps_same_canonical_id_when_opened_directly_or_from_parent(tmp_path: pathlib.Path) -> None:
-    """同じ物理記録は収集元の指定によらず同じ正規IDを持ち、収集元固有名は別名としてだけ残す。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "message": {"role": "user", "content": "親の依頼"}}],
@@ -452,7 +442,6 @@ def test_claude_child_keeps_same_canonical_id_when_opened_directly_or_from_paren
 
 
 def test_detail_rejects_ambiguous_legacy_record_alias(tmp_path: pathlib.Path) -> None:
-    """同名の旧サブエージェントIDが複数ある場合は誤った記録を選ばず拒否する。"""
     record = evidence_extract._Record(1, "", {"type": "user", "message": {"role": "user", "content": "依頼"}})
     collected = [
         evidence_extract._CollectedRecord(
@@ -476,7 +465,6 @@ def test_detail_rejects_ambiguous_legacy_record_alias(tmp_path: pathlib.Path) ->
 
 
 def test_claude_subagent_handback_message_becomes_final_result(tmp_path: pathlib.Path) -> None:
-    """`SubagentHandback`で渡した報告本文を最終結果とし、送信後の定型文を最終結果にしない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -517,7 +505,6 @@ def test_bundle_excludes_interim_text_of_running_delegate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """最後の行動がツール呼び出しである委譲先（抽出時点で稼働中）の途中発話を委譲返却の候補にしない。"""
     texts = _bundle_delegate_return_texts(
         tmp_path,
         [
@@ -541,7 +528,6 @@ def test_bundle_keeps_final_text_of_finished_delegate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """最後の本文の後にツール呼び出しが無い委譲先では、その本文を委譲返却の候補にし、途中発話は候補にしない。"""
     texts = _bundle_delegate_return_texts(
         tmp_path,
         [
@@ -584,7 +570,6 @@ def test_delegate_record_with_ambiguous_thread_id_is_unresolved(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """委譲先rolloutの複数一致では先頭を採用せず未解決として報告する。"""
     thread_id = "55555555-5555-4555-8555-555555555555"
     codex_home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -625,7 +610,6 @@ def test_explicit_codex_home_applies_to_parent_and_delegate_records(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示した保存先から親rolloutと委譲先rolloutを再帰収集する。"""
     parent_id = "77777777-7777-4777-8777-777777777777"
     child_id = "88888888-8888-4888-8888-888888888888"
     explicit_home = tmp_path / "explicit-codex"
@@ -669,7 +653,6 @@ def test_backup_only_thread_id_is_evidence_insufficient(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """backupに写しだけがあるthread IDは親・委譲先のどちらから解決しても証拠不足とする。"""
     thread_id = "66666666-6666-4666-8666-666666666666"
     codex_home = tmp_path / "codex"
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
@@ -716,7 +699,6 @@ def test_backup_only_thread_id_is_evidence_insufficient(
 def test_bundle_preserves_improvement_lines_of_every_runtime(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str, long_body: bool
 ) -> None:
-    """未転記の改善点を、各記録形式の短い返却と境界・末尾を含む長い返却から候補まで通す。"""
     notes = ["気付いた改善点: 同じ操作を繰り返した。", "  気付いた改善点: 手順に不要な回避があった。"]
     body = "状態: completed\n未解決の指摘数: 0\n"
     if long_body:

@@ -35,14 +35,13 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
     ],
 )
 def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch, case):
-    """公開省略CLIまで通し、単一の所属・複数所属・不明を区別する。"""
     policy = "完了報告は指示まで省く。\n"
     repo = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": policy})
     other = git_repository.init_repository(tmp_path / "other", files={"README.md": "別の成果"})
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     human_input(tmp_path, "request", "成果を作成する")
-    # 同一作業に別リポジトリへの書込を混ぜた場合も省略を拒否する。
+
     if case.startswith("other-"):
         _tool(repo, "initial-edit", "Edit", {"file_path": str(repo / "CLAUDE.md")}, {"exit_code": 0}, codex=False)
     commands = {
@@ -108,7 +107,6 @@ def test_chained_bash_work_is_attributed_to_cwd_repository(tmp_path, monkeypatch
     [("wi add --type awi --body-file note.md", "WIの保存"), ("run-script plan-create -- --title 計画", "計画の保存")],
 )
 def test_atk_launcher_deliverables_are_recorded_for_both_shell_tools(tmp_path, tool, launcher, arguments, label):
-    """配布するランチャーと両シェルツールの起動を同じ成果作業へ記録する。"""
     repo = git_repository.init_repository(tmp_path / "repo", files={"README.md": "成果"})
     prefix = "& " if tool == "PowerShell" else ""
     _tool(repo, "launcher", tool, {"command": prefix + launcher + " " + arguments}, {"exit_code": 0}, codex=False)

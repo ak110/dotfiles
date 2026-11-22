@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""現行の計画ファイル（要求を書く節を通常AWIの本文と同じ見出しで持つ形式）の検査を検証する。"""
 
 import pathlib
 
@@ -21,7 +20,6 @@ _SUMMARY = "対象の公開契約を更新する。\n\n"
 
 
 def _check(work_dir: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
-    """計画を保存し、新規作成と同じく移行警告と起草時の進捗行を拒否する条件で確かめる。"""
     path = work_dir / "plan.md"
     path.write_text(content, encoding="utf-8")
     return check_plan_file.check(path, work_dir, reject_migration_warnings=True, reject_progress_log_rows=True)
@@ -40,14 +38,12 @@ def _check(work_dir: pathlib.Path, content: str) -> tuple[list[str], list[str]]:
 def test_accepts_request_plan(
     repo: tuple[pathlib.Path, str], work_type: str, related_wi: tuple[tuple[str, str], ...], cause: bool
 ) -> None:
-    """WIの有無と作業種別ごとの正常系を受理する。関連WIがあるバグ対応は`## 原因分析`を省ける。"""
     work_dir, _base = repo
     content = _plan_fixture.request_plan(repo=work_dir.resolve(), work_type=work_type, related_wi=related_wi, cause=cause)
     assert _check(work_dir, content) == ([], [])
 
 
 def test_rejects_draft_without_required_request_section(repo: tuple[pathlib.Path, str]) -> None:
-    """`## 反映内容と反映先`を欠く原稿は、旧形式と誤認せず、欠けた見出し名を示して不合格にする。"""
     work_dir, _base = repo
     content = _plan_fixture.request_plan(repo=work_dir.resolve()).replace(_REQUEST, "", 1)
     errors, _warnings = _check(work_dir, content)
@@ -93,7 +89,6 @@ def _swap_order(content: str) -> str:
     ],
 )
 def test_rejects_invalid_layout(repo: tuple[pathlib.Path, str], edit, expected: str) -> None:
-    """置いた節の空、順序違い、未知のH2、行頭に空白を置いたH2、固定H2配下の見出し、要約の欠落、計画メタ情報の配置違いを拒否する。"""
     work_dir, _base = repo
     content = edit(_plan_fixture.request_plan(repo=work_dir.resolve()))
     errors, _warnings = _check(work_dir, content)
@@ -101,7 +96,6 @@ def test_rejects_invalid_layout(repo: tuple[pathlib.Path, str], edit, expected: 
 
 
 def test_bug_plan_without_related_wi_requires_cause_analysis(repo: tuple[pathlib.Path, str]) -> None:
-    """関連WIが無いバグ対応の計画は、`## 原因分析`が無ければ不合格にする。"""
     work_dir, _base = repo
     content = _plan_fixture.request_plan(repo=work_dir.resolve(), work_type="バグ対応")
     errors, _warnings = _check(work_dir, content)
@@ -109,7 +103,6 @@ def test_bug_plan_without_related_wi_requires_cause_analysis(repo: tuple[pathlib
 
 
 def test_normal_change_rejects_cause_analysis(repo: tuple[pathlib.Path, str]) -> None:
-    """作業種別が`通常変更`の計画に`## 原因分析`を置くと不合格にする。"""
     work_dir, _base = repo
     content = _plan_fixture.request_plan(repo=work_dir.resolve(), cause=True)
     errors, _warnings = _check(work_dir, content)
@@ -117,7 +110,6 @@ def test_normal_change_rejects_cause_analysis(repo: tuple[pathlib.Path, str]) ->
 
 
 def test_cause_analysis_reports_missing_label(repo: tuple[pathlib.Path, str]) -> None:
-    """`## 原因分析`の行頭語の欠落を、欠けた行頭語を示して不合格にする。"""
     work_dir, _base = repo
     expectation = _plan_fixture.cause_record_line("期待") + "\n"
     content = _plan_fixture.request_plan(repo=work_dir.resolve(), work_type="バグ対応", cause=True)
@@ -128,7 +120,6 @@ def test_cause_analysis_reports_missing_label(repo: tuple[pathlib.Path, str]) ->
 
 
 def test_adopted_user_instruction_requires_quotation(repo: tuple[pathlib.Path, str]) -> None:
-    """`ユーザー指示`の採用行を持つ計画は、`## ユーザー指摘の逐語引用`が無ければ不合格にする。"""
     work_dir, _base = repo
     content = _plan_fixture.request_plan(repo=work_dir.resolve()).replace(_QUOTATION, "", 1)
     errors, _warnings = _check(work_dir, content)
@@ -139,7 +130,6 @@ def test_adopted_user_instruction_requires_quotation(repo: tuple[pathlib.Path, s
 def test_awi_and_plan_report_same_request_section_problems(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じ要求を書く節を持つAWIと計画へ、`atk wi add`と計画の検査が同じ診断文を返す。"""
     work_dir, _base = repo
     defective = "## 完成条件\n\n" + _EVIDENCE + _QUOTATION
     problems = _plan_format.request_section_problems(_plan_format.request_sections(defective))
@@ -162,7 +152,6 @@ def test_awi_and_plan_report_same_request_section_problems(
 
 
 def test_request_sections_use_structure_check_directly() -> None:
-    """構造の検査関数も`check_plan_file.check`と同じく正常系を受理し、作業種別を返す。"""
     content = _plan_fixture.request_plan(work_type="バグ対応", cause=True)
     assert _plan_format.check_plan_request_structure(content) == ("バグ対応", [])
     missing = content.replace(_REQUEST, "", 1)
@@ -172,11 +161,10 @@ def test_request_sections_use_structure_check_directly() -> None:
 
 
 def test_detects_each_plan_format(tmp_path: pathlib.Path) -> None:
-    """現行の形式、8節形式、旧二ファイル形式、旧単一ファイル形式を判別する。"""
     path = tmp_path / "plan.md"
     request = _plan_fixture.request_plan()
     assert check_plan_file.detect_plan_format(path, request) == check_plan_file.FORMAT_REQUEST
-    # 必須節を欠いた現行の形式の原稿も、計画メタ情報の配置から現行の形式として扱う。
+
     assert check_plan_file.detect_plan_format(path, request.replace(_REQUEST, "", 1)) == check_plan_file.FORMAT_REQUEST
     assert check_plan_file.detect_plan_format(path, _plan_fixture.eight_section_plan()) == check_plan_file.FORMAT_EIGHT_SECTION
     assert check_plan_file.detect_plan_format(path, _plan_fixture.single_file_plan()) == check_plan_file.FORMAT_LEGACY
@@ -185,7 +173,6 @@ def test_detects_each_plan_format(tmp_path: pathlib.Path) -> None:
 
 
 def test_progress_and_verification_commands_read_request_plan(tmp_path: pathlib.Path) -> None:
-    """現行の形式の計画へ進捗を追記でき、`## 検証`の検証コマンドを取り出せる。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan_fixture.request_plan(), encoding="utf-8")
     assert append_progress_log.main([str(path), "--completed-step", "実装", "--result", "成功"]) == 0

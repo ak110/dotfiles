@@ -37,7 +37,6 @@ COMPLETION_PLAYBOOK_TEXT = "# 作業完了報告とセッションの完了処�
 
 
 def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: pathlib.Path) -> None:
-    """新しい依頼は別作業にし、本文が残る同じ文脈の起動証拠をStopが再利用する。"""
     supply_commit(tmp_path, "commit-1")
     supply_completion(tmp_path, "completion-1")
     human_input(tmp_path, "next", "次の作業を頼む")
@@ -50,7 +49,6 @@ def test_new_input_keeps_work_identity_and_reuses_context_completion(tmp_path: p
 
 
 def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathlib.Path) -> None:
-    """同じ作業の開始後に得た起動証拠は、その後の成果作業（振り返りの実装など）にも有効とする。"""
     human_input(tmp_path, "request", "作業を頼む")
     supply_completion(tmp_path)
     supply_commit(tmp_path)
@@ -62,7 +60,6 @@ def test_completion_before_deliverable_in_same_work_is_evidence(tmp_path: pathli
 
 @pytest.mark.parametrize("invoked,new_input,missing", [(False, False, True), (True, False, False), (True, True, False)])
 def test_batch_report_save_reuses_invocation_in_same_context(tmp_path, invoked, new_input, missing):
-    """batchの参照読取と起動を分け、次の作業も同じ文脈の起動証拠を再利用する。"""
 
     def observe(call_id, tool, inputs, response):
         payload = {
@@ -124,7 +121,6 @@ def test_generated_input_cannot_cancel_work(tmp_path: pathlib.Path) -> None:
 
 
 def test_plugin_origin_is_not_human_termination_input(tmp_path: pathlib.Path) -> None:
-    """同形のコマンドを生成元だけで分け、人間の入力と回答を判断の根拠へ残す。"""
     supply_commit(tmp_path)
     for identity, origin in (("plugin", {"kind": "plugin"}), ("human", {"kind": "human"})):
         termination_evidence.observe_user(
@@ -160,7 +156,6 @@ def test_cancel_and_new_start_do_not_share_same_path_results(tmp_path: pathlib.P
 
 
 def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path: pathlib.Path) -> None:
-    """後から始めた作業の中止は、先の作業に残る起動不足を判定の対象に残す。"""
     supply_commit(tmp_path)
     prompt = "別の作業を始めたが、それは中止する"
     human_input(tmp_path, "switch", prompt)

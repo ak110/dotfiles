@@ -91,7 +91,6 @@ def _user_rules_instructions() -> str:
 
 
 def _developer_instructions(launch_kind: LaunchKind) -> str:
-    """委譲先の役割、このprocessが起動時に確定した配布物root、ユーザーが置いた規範ファイルの本文を1つの指示として返す。"""
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     runtime = f"\n{python_runtime_instructions()}" if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS else ""
     web_tools = (
@@ -123,7 +122,6 @@ class CodexInstructionsMixin:
     def _thread_config(
         self: CodexManager, session_id: str | None = None, *, lightweight: bool, client: Any = None
     ) -> tuple[dict[str, Any], str | None, str | None]:
-        """thread開始・再開に必要な設定と書込主体を返す。"""
         config = self._base_thread_config(lightweight=lightweight)
         owner_session_id = self._root_session_id
         if owner_session_id is None:
@@ -187,7 +185,7 @@ class CodexInstructionsMixin:
         `bypass_hook_trust`は`codex app-server`のコマンドラインオプションとしても`-c`による設定上書きとしても受理されず、
         `thread/start`系リクエストの`config`だけが受理する。
         """
-        # 依頼の保持を通常の会話圧縮へ統一し、要約なし切替を提供するホーム設定を上書きする。
+
         features: dict[str, Any] = {"context_management": {"experimental_mode": False}}
         config: dict[str, Any] = {
             "bypass_hook_trust": True,
@@ -199,7 +197,6 @@ class CodexInstructionsMixin:
 
     @staticmethod
     def _explore_config(config: dict[str, Any], client: Any) -> dict[str, Any]:
-        """スキル非配送を保ち、読取MCPの定義を直接の設定として渡す。"""
         root = plugin_roots.SERVER_PLUGIN_ROOT
         pyfltr = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
         pyfltr["args"] = [arg.replace("${CLAUDE_PLUGIN_ROOT}", str(root)) for arg in pyfltr.get("args", [])]

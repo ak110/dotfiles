@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._hooks import rules_context
 
 

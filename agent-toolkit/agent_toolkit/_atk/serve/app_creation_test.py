@@ -1,5 +1,3 @@
-"""serveのappに関するcreationの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -26,7 +24,6 @@ from agent_toolkit._testing.serve_support import _BATCH_TEXT, _patch_batch_repo_
 
 @pytest.mark.asyncio
 async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
-    """`type`欠落は必須キー不足として400を返す。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -41,7 +38,6 @@ async def test_add_api_rejects_missing_type(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_add_choice_requires_two_options(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Webの通常投入は共通件数検証で拒否し、成功時は保存値を全件読み戻せる。"""
     monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
     client = _serve_app(tmp_path).test_client()
     payload = {
@@ -67,7 +63,6 @@ async def test_batch_api_input_error_returns_reason_and_next_action(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一括登録の形式エラーは、`error`へ理由だけを保ち、入力を直す操作を`next_action`で返す。"""
     _patch_single_add_operations(monkeypatch)
     invalid = "### broken.md [inbox]\n---\ntype: awi\n---\n\n対象リポジトリの無い本文\n"
 
@@ -97,7 +92,7 @@ async def test_entries_api_period_limits_by_filename_creation_time(tmp_path: pat
         _fixed_path(tmp_path, name).write_text(
             "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n", encoding="utf-8"
         )
-    # 更新時刻はすべて現在とし、更新時刻が期間の判定を変えないことを確かめる。
+
     client = _serve_app(tmp_path).test_client()
 
     async def filenames(query: str) -> list[str]:
@@ -131,7 +126,6 @@ async def test_web_add_mutations_require_target_repo(
     path: str,
     payload: dict[str, object],
 ) -> None:
-    """新規追加系APIは常駐プロセスのカレントディレクトリを参照しないためtarget_repoを必須とする。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -148,7 +142,6 @@ async def test_create_uwi_rejects_missing_or_free_form_question_type(
     tmp_path: pathlib.Path,
     question_type: str | None,
 ) -> None:
-    """新規追加APIは回答形式の省略とfree-formを入力エラーとし、UWIを保存しない。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -244,7 +237,6 @@ async def test_add_api_resolves_target_repo_into_frontmatter(
 
 @pytest.mark.asyncio
 async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """一括登録APIが保存名・対応・警告を返し、原文保持で保存する。"""
     _patch_batch_repo_operations(monkeypatch)
     app = serve_app.create_app(
         tmp_path,
@@ -267,7 +259,6 @@ async def test_batch_api_imports_entries(tmp_path: pathlib.Path, monkeypatch: py
 
 
 def test_normal_creation_omits_empty_target_repo_from_payload() -> None:
-    """対象リポジトリ欄が空の通常追加では、target_repoを送らずサーバー検証へ委ねる。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -297,7 +288,6 @@ process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
 
 
 def test_normal_creation_reports_auto_batch_import_and_ignored_fields() -> None:
-    """種別uwiのまま送った本文をサーバーが一括登録として取り込んだ場合、その旨と使わなかった入力欄を通知する。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -344,10 +334,6 @@ async def test_single_entry_api_switches_show_format_to_batch_import(
     entry_type: str,
     text: str,
 ) -> None:
-    """種別awi・uwiのままshow形式の本文を送ると、単件保存せず一括登録と同じ結果で取り込む。
-
-    ブラウザーは単件の本文をtrimして送るため、未trimの`raw_text`で取り込まないと最終行の末尾空白が失われる。
-    """
     _patch_single_add_operations(monkeypatch)
     batch_root = tmp_path / "batch"
     single_root = tmp_path / "single"
@@ -370,7 +356,6 @@ async def test_single_entry_api_reports_ignored_single_fields(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """自動切替した登録は、入力されていた単件用の項目を使わなかったことを応答で示す。"""
     _patch_single_add_operations(monkeypatch)
 
     response = (
@@ -415,7 +400,6 @@ async def test_single_entry_api_keeps_non_show_text_single(
     monkeypatch: pytest.MonkeyPatch,
     text: str,
 ) -> None:
-    """show形式の構造に該当しない本文は、`raw_text`があっても単件で保存する。"""
     _patch_single_add_operations(monkeypatch)
     payload: dict[str, object] = {"type": "awi", "messages": [text.strip()], "raw_text": text}
     if not text.startswith("---"):

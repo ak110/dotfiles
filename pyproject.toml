@@ -27,7 +27,7 @@ dependencies = [
     "platformdirs>=4.0",
     "psutil>=6",
     "pydantic>=2",
-    "pyfltr>=3.30.1",
+    "pyfltr>=3.33.1",
     "pygments",
     "pytilpack[quart]>=1.47.0",
     "pyyaml",
@@ -97,7 +97,7 @@ dev = [
     "hypothesis>=6.168.3",
     "jsonschema>=4.26",
     "playwright>=1.61.0",
-    "pyfltr[python]>=3.33.0",
+    "pyfltr[python]>=3.33.1",
     "pytest-asyncio>=1.0",
     "pytest-timeout>=2",
     "pytest-xdist>=3.8.0",
@@ -113,7 +113,6 @@ pytest-impact = ["testscope==0.4.2"]
 # 実測から選定量を決める目標。選定後の超過は警告として配分を比較し、着手済みの項目は外さない。
 target-seconds = 10800
 # 目標に収まる量が少なくても、候補がある限りこの件数まで先頭から選ぶ。
-minimum-items = 21
 
 [[tool.agent-toolkit.pick-wi-check.norm-spec]]
 # 規範を変更する項目には、変更の対象ファイルのリポジトリ相対パスを書く。
@@ -131,6 +130,8 @@ require-text = ["docs/development/concepts.md", "git log", "--grep"]
 [tool.pyfltr]
 preset = "latest"
 python = true
+comment-check = true
+comment-check-fast = true
 command-timeout = 900
 # 全通常pytestはCIの900秒時点で84%だったため、試験集合を保ってpytestだけに余裕を持たせる。
 pytest-timeout = 1500
@@ -490,11 +491,7 @@ baseline = "arid-baseline.json"
 line-length = 128
 
 [tool.ruff.lint]
-select = ["D", "E", "F", "UP", "B", "SIM", "ICN", "I", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-ignore = ["D107", "D415"]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+select = ["E", "F", "UP", "B", "SIM", "ICN", "I", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.ruff.lint.flake8-import-conventions]
 # 標準ライブラリはモジュール名で参照するため、datetimeも省略名へ置き換えない。
@@ -502,8 +499,7 @@ convention = "google"
 extend-aliases = { datetime = "datetime" }
 
 [tool.ruff.lint.per-file-ignores]
-"**_test.py" = ["D", "S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
-"**/__init__.py" = ["D104"]
+"**_test.py" = ["S102", "S301", "S306", "S307", "S602", "S604", "S605", "S608"]
 
 [tool.pyright]
 # agent-toolkitの計画補助・振り返りのスクリプトが同じscriptsディレクトリのモジュールを共有するため追加する。

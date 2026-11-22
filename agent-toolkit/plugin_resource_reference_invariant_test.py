@@ -15,7 +15,6 @@ _REFERENCE_PATTERN = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]*[A-Za
 
 
 def _collect_references(root: pathlib.Path) -> list[tuple[str, pathlib.Path]]:
-    """root配下からplugin root相対参照を出現順に収集する。"""
     references: list[tuple[str, pathlib.Path]] = []
     for path in sorted(root.rglob("*")):
         if not path.is_file() or path.suffix not in {".md", ".json", ".py"} or _is_test_code(path):
@@ -31,12 +30,10 @@ def _collect_references(root: pathlib.Path) -> list[tuple[str, pathlib.Path]]:
 
 
 def _is_test_code(path: pathlib.Path) -> bool:
-    """テストコードのファイルかを判定する。"""
     return path.name.endswith("_test.py") or path.name == "conftest.py"
 
 
 def _unresolved_references(root: pathlib.Path) -> list[tuple[str, pathlib.Path]]:
-    """配布物内の実体へ解決できない参照を返す。"""
     root = root.resolve()
     return [(relative, source) for relative, source in _collect_references(root) if _resource_problem(root, relative)]
 
@@ -51,7 +48,6 @@ def _resource_problem(root: pathlib.Path, relative: str) -> str:
 
 
 def _format_unresolved(root: pathlib.Path, entries: list[tuple[str, pathlib.Path]]) -> str:
-    """参照元、対象パスと解決しない理由を並べる。"""
     return "\n".join(f"{source}: {_PREFIX}{relative}: {_resource_problem(root, relative)}" for relative, source in entries)
 
 
@@ -60,7 +56,6 @@ def _format_unresolved(root: pathlib.Path, entries: list[tuple[str, pathlib.Path
     reason=("配布資源全体のmd/json/pyを2回走査し、実際の全参照と欠落を照合する（Linux CI CPU合計最大1.973秒）。"),
 )
 def test_plugin_root_references_resolve() -> None:
-    """配布物のplugin root参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
     assert _collect_references(root)
     unresolved = _unresolved_references(root)
@@ -68,7 +63,6 @@ def test_plugin_root_references_resolve() -> None:
 
 
 def test_unresolved_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """欠損参照を相対パスと参照元パスで報告する。"""
     present = tmp_path / "skills/atk-mode/roles/present.subagent.md"
     present.parent.mkdir(parents=True)
     present.write_text("存在する\n", encoding="utf-8")
@@ -102,7 +96,6 @@ def test_existing_resource_outside_plugin_is_rejected(tmp_path: pathlib.Path) ->
 
 
 def test_test_files_are_excluded_from_references(tmp_path: pathlib.Path) -> None:
-    """テストコードの参照は収集せず、同じ参照を持つ実行時資源の参照は収集する。"""
     missing = f"{_PREFIX}skills/atk-mode/roles/missing.subagent.md\n"
     (tmp_path / "hooks").mkdir()
     (tmp_path / "hooks" / "entry_test.py").write_text(f'PROMPT = "{missing.strip()}"\n', encoding="utf-8")

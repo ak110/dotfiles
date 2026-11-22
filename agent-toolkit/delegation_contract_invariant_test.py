@@ -88,7 +88,6 @@ def test_return_references_resolve_to_generated_contract(source: str, line_prefi
 
 
 def test_wi_draft_review_stage_and_continuation_contract() -> None:
-    """方針と本文が共通入力を再利用し、本文確認が資料の絶対パスを要求する。"""
     root = pathlib.Path(__file__).resolve().parent
     declaration = task_documents.read_declaration(root / "skills/atk-mode/roles/wi-draft-review.subagent.md")
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
@@ -106,7 +105,6 @@ def test_wi_draft_review_stage_and_continuation_contract() -> None:
 
 
 def test_distributed_roles_have_model_types() -> None:
-    """役割の追加時にテスト側の対象リストを更新せず、全配布役割の登録を検査する。"""
     _assert_role_models_registered(pathlib.Path(__file__).resolve().parent)
 
 
@@ -129,7 +127,6 @@ def test_unregistered_added_or_renamed_role_reports_filename(tmp_path: pathlib.P
 
 
 def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.Path) -> None:
-    """役割追加時の検査も宣言を読み、旧役割の対応表を新規登録の条件にしない。"""
     roles = task_documents.role_document_directory(tmp_path)
     roles.mkdir(parents=True)
     recipient = roles / "new-check.subagent.md"
@@ -142,7 +139,6 @@ def test_new_role_configuration_needs_no_python_registration(tmp_path: pathlib.P
 
 
 def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> None:
-    """検証結果の記録と、条件別判定行を返す実行レビュー担当の単一所有を固定する。"""
     root = pathlib.Path(__file__).resolve().parent
     review = (root / "skills/atk-mode/roles/exec-review.subagent.md").read_text(encoding="utf-8")
     receiving = read_contract_section(
@@ -167,7 +163,7 @@ def test_exec_review_returns_condition_verdicts_and_owns_final_evidence() -> Non
         content = path.read_text(encoding="utf-8")
         assert "検証結果" in content and "未判定検証記録" not in content, path
     assert "レビューHEAD: " in review
-    # 委譲元は返却の条件別判定行を受領確認し、JSON中のHEADの付替えを行わない。
+
     assert "agent_message_path" in receiving and "レビューHEAD" in receiving
     assert "判定結果と根拠を記述するのは実行レビュー担当のみ" in review
     assert "判定と根拠は実行レビュー担当だけが記入し" in recording
@@ -184,7 +180,7 @@ def test_handoff_path_mentions_match_delegation_document_set() -> None:
     entry = plugin_root / "skills" / "atk-mode"
     parents = task_documents.role_documents(plugin_root, ".parent.md")
     recipients = task_documents.role_documents(plugin_root)
-    # 委譲先と委譲元が共通に読む手順書は入口`atk-mode`へ置くため、役割文書と同じ集合で引き継ぎ記録の参照を比べる。
+
     shared = [
         entry / "playbooks" / name
         for name in ("subagent.md", "delegation.md", "delegation-recovery.md", "host-claude-code.md", "host-codex.md")
@@ -285,11 +281,6 @@ def test_fixed_reply_formats_limit_reply_to_declared_lines(tmp_path: pathlib.Pat
 
 
 def test_recurrence_viewpoint_heading_marks_only_viewpoint_files() -> None:
-    """観点専用のH1を持つ文書は、全ての項目に対象条件・確認内容・根拠規範を持つ観点ファイルに限る。
-
-    実行レビューは`^# 再発防止セルフチェック観点`に一致する行を持つMarkdownを観点として集める。
-    保守の資料がこのH1を持つと収集に選ばれ、実行レビュー担当が判定に使わない資料を読む（WI 20261115-145405-001）。
-    """
     root = pathlib.Path(__file__).resolve().parent.parent
     tracked = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z", "--", "*.md"], capture_output=True, check=True
@@ -310,7 +301,6 @@ def test_recurrence_viewpoint_heading_marks_only_viewpoint_files() -> None:
 
 
 def test_deferral_record_reaches_termination_classes_without_integration_documents() -> None:
-    """延期の記録を確定する実行レビュー担当は、統合操作の文書を読まずに終了区分の定義へ届く（WI 20261115-145405-001）。"""
     root = pathlib.Path(__file__).resolve().parent
     atk = root / "skills/atk-mode"
     definition = (atk / "playbooks/process-wi-lanes.md").resolve()

@@ -16,7 +16,6 @@ from agent_toolkit._testing.helpers import _write_transcript
 @pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
 @pytest.mark.parametrize("ending", ["\n", "\r\n"])
 def test_read_transcript_lines_preserves_json_strings(tmp_path: pathlib.Path, separator: str, ending: str) -> None:
-    """JSON文字列内のUnicode区切りを保持し、空行と破損行の物理位置を変えない。"""
     entries = [_user_entry(f"前{separator}後"), _assistant_entry([_text_block("回答")])]
     rows = [json.dumps(entries[0], ensure_ascii=False), "", "broken", json.dumps(entries[1], ensure_ascii=False)]
     path = tmp_path / "unicode.jsonl"
@@ -69,8 +68,6 @@ def _text_block(text: str) -> dict:
 
 
 class TestIterLatestAssistantMessages:
-    """直前ターン抽出の単体テスト。"""
-
     def test_extracts_single_assistant_turn(self, tmp_path: pathlib.Path):
         transcript = _write_transcript(
             tmp_path,
@@ -84,7 +81,6 @@ class TestIterLatestAssistantMessages:
         assert messages[0]["id"] == "m1"
 
     def test_merges_same_message_id(self, tmp_path: pathlib.Path):
-        """同一message.idの複数エントリは1ターンに統合する。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -98,7 +94,6 @@ class TestIterLatestAssistantMessages:
         assert all(m["id"] == "m1" for m in messages)
 
     def test_excludes_sidechain(self, tmp_path: pathlib.Path):
-        """isSidechain=trueのエントリは除外する。"""
         sidechain_entry = {
             "type": "assistant",
             "isSidechain": True,
@@ -117,7 +112,6 @@ class TestIterLatestAssistantMessages:
         assert messages[0]["id"] == "m1"
 
     def test_breaks_on_non_assistant_after_assistant(self, tmp_path: pathlib.Path):
-        """アシスタントエントリの間にuser等が介在するとターン境界とみなす。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -131,7 +125,6 @@ class TestIterLatestAssistantMessages:
         assert messages[0]["id"] == "m1"
 
     def test_caps_at_three_entries(self, tmp_path: pathlib.Path):
-        """同一ターンで4エントリ以上ある場合は最大3エントリで止まる。"""
         transcript = _write_transcript(
             tmp_path,
             [
@@ -146,19 +139,16 @@ class TestIterLatestAssistantMessages:
         assert len(messages) == 3
 
     def test_empty_transcript_path(self, tmp_path: pathlib.Path):
-        """空文字列パスは空のイテレータを返す。"""
-        del tmp_path  # 未使用
+        del tmp_path
         messages = list(iter_latest_assistant_messages(""))
         assert not messages
 
     def test_nonexistent_path(self, tmp_path: pathlib.Path):
-        """存在しないパスでも例外を送出せず空を返す。"""
         path = tmp_path / "missing.jsonl"
         messages = list(iter_latest_assistant_messages(str(path)))
         assert not messages
 
     def test_skips_invalid_json_lines(self, tmp_path: pathlib.Path):
-        """JSON破損行は無視して走査を継続する。"""
         transcript = tmp_path / "transcript.jsonl"
         transcript.write_text(
             "\n".join(
@@ -175,7 +165,6 @@ class TestIterLatestAssistantMessages:
         assert messages[0]["id"] == "m1"
 
     def test_api_error_ends_search_without_returning_earlier_assistant(self, tmp_path: pathlib.Path):
-        """APIエラーは過去のassistant本文へ遡らない終端境界となる。"""
         transcript = _write_transcript(
             tmp_path,
             [

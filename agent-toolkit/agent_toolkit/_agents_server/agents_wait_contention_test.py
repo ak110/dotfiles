@@ -35,7 +35,6 @@ from agent_toolkit._testing.agents_wait_support_contention import (
 
 
 def test_join_threads_waits_all_until_deadline() -> None:
-    """先にjoinするスレッドの終了後に後続を解放し、全ての終了を待つ。"""
     early_release = threading.Event()
     late_release = threading.Event()
     early_started = threading.Event()

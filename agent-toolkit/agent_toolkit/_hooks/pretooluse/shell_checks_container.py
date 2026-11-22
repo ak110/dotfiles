@@ -11,11 +11,6 @@ lazy from agent_toolkit._hooks.pretooluse.notices import _llm_notice
 
 
 def _warn_container_root_bind_mount(command: str) -> str | None:
-    """root所有の生成物をホストへ残し得る起動を警告し、正当なroot実行は継続する。
-
-    イメージのUSER属性は照会せず、起動時のユーザー未指定も警告する。composeの定義とイメージ以降の
-    コマンド引数は判定しない。変数を含むホストパスは、展開前の表記でbind mountと判定する。
-    """
     for invocation in extract_bash_invocations(command):
         tokens = invocation.static_tokens
         if not tokens or pathlib.PurePosixPath(tokens[0]).name not in {"docker", "podman"}:
@@ -53,7 +48,7 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
             index += 1
             if token == "--" or not token.startswith("-"):
                 break
-            # pflagの結合短形式は、値付きオプション以降をその値として消費する。
+
             short = re.fullmatch(r"-[ditPq]*([acehlmpuvw])(.*)", token)
             if short:
                 token = "-" + short[1] + short[2]
@@ -67,7 +62,6 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
             elif token.startswith(("-u", "-v")) and not token.startswith("--"):
                 option, value = token[:2], token[2:]
             else:
-                # オプションの値とコンテナー内の実行語は、起動オプションの解析から除く。
                 if not separator and option in {
                     "-e",
                     "--env",

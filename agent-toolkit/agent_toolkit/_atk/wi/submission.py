@@ -1,9 +1,3 @@
-"""`atk wi submission`: add-awi-by-userの投入先と作業期間を会話別に記録する。
-
-process-loopの開始前の活動猶予は、この記録を持つ会話とその子孫の活動だけを理由にする。
-投入先は保存時にoriginの正規化URLへ解決し、process-loopの対象リポジトリ集合と同じ規則で比べる。
-"""
-
 import argparse
 import json
 import os
@@ -29,7 +23,6 @@ def _session_id(args: argparse.Namespace) -> str | None:
 
 
 def cmd_submission(args: argparse.Namespace) -> int:
-    """`begin`で投入先を記録・置換し、`end`で記録を削除する。"""
     _outcome.force_utf8_stdio()
     session_id = _session_id(args)
     if session_id is None and args.submission_subcommand != "activity":
@@ -66,7 +59,6 @@ def cmd_submission(args: argparse.Namespace) -> int:
 
 
 def _end(args: argparse.Namespace, session_id: str) -> int:
-    """完了または中止した会話の投入属性を削除する。"""
     try:
         removed = _session_activity.clear_submission(session_id)
     except ValueError as error:

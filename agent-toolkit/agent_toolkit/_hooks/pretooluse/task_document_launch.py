@@ -31,8 +31,6 @@ import re
 import string
 
 lazy import markdown_it
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from markdown_it.token import Token
 
 from agent_toolkit._agents_server import tool_names as _tool_names
@@ -82,12 +80,10 @@ _CONTINUATION_PREFIX = "  "
 
 @functools.cache
 def _markdown() -> markdown_it.MarkdownIt:
-    """定数を参照するだけのBash判定では、Markdown解析を初期化しない。"""
     return markdown_it.MarkdownIt("commonmark")
 
 
 def check_task_document_launch(tool_name: str, tool_input: dict) -> Decision:
-    """起動形式の支援と、宣言済みの必須入力の不成立を分けて返す。"""
     prompt = tool_input.get("prompt")
     if not isinstance(prompt, str):
         return Decision()
@@ -182,19 +178,16 @@ def _check_agent_prompt(prompt: str) -> Decision:
 
 
 def _is_canonical_first_line(line: str, document: pathlib.Path) -> bool:
-    """1行目が定型の実行命令だけからなるかを返す。パスの前後の空白とパスを囲むバッククォートの有無は区別しない。"""
     pattern = rf"`?{re.escape(str(document))}`?\s*の手順を実行せよ。?"
     return re.fullmatch(pattern, line.strip()) is not None
 
 
 def _execution_document(prompt: str) -> pathlib.Path | None:
-    """引用とコードの外にある実行命令から、最初に命令の対象となった文書を求める。"""
     documents = task_documents.find_task_documents(prompt)
     if not documents:
         return None
     paths = {str(document): document for document in documents}
-    # パスはMarkdownの装飾ではない。別行のunderscoreとの対応で文字が失われないよう保護する。
-    # インラインコード内ではエスケープが展開されないため、その表記も同じ文書へ対応付ける。
+
     for path, document in tuple(paths.items()):
         escaped = "".join("\\" + char if char in string.punctuation else char for char in path)
         prompt = prompt.replace(path, escaped)
@@ -214,7 +207,6 @@ def _execution_document(prompt: str) -> pathlib.Path | None:
 
 
 def _plain_text(token: Token, paths: dict[str, pathlib.Path]) -> str:
-    """インライン要素の本文を、改行を保ち、文書パス以外のインラインコードを伏せて返す。"""
     parts: list[str] = []
     for child in token.children or []:
         if child.type == "text":
@@ -227,7 +219,6 @@ def _plain_text(token: Token, paths: dict[str, pathlib.Path]) -> str:
 
 
 def _commanded_document(line: str, paths: dict[str, pathlib.Path]) -> pathlib.Path | None:
-    """行の中で、引用符の外にあり直後に実行の述語が続く文書パスを返す。"""
     for text, document in paths.items():
         start = line.find(text)
         while start >= 0:

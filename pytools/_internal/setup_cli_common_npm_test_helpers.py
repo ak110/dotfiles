@@ -1,5 +1,3 @@
-"""pytools._internal.setup_cli_common_npm_test.pyとsetup_cli_common_npm_held_test.pyが共有する、npmの導入先のfixtureと補助関数。"""
-
 import shutil
 import subprocess
 from pathlib import Path
@@ -61,7 +59,6 @@ class _GlobalNpm:
         return subprocess.CompletedProcess(command, 0, "", "")
 
     def removal(self) -> str:
-        """警告が示す、旧npm版の削除コマンド。"""
         if self.windows:
             return f"PowerShellで`& '{self.npm}' uninstall --global @openai/codex`を実行"
         return f'`"{self.npm}" uninstall --global @openai/codex`を実行'
@@ -98,7 +95,6 @@ def _migrate(tmp_path: Path, *, windows: bool) -> None:
 
 
 def _shown(path: Path) -> Path:
-    """警告が示すパス。ディレクトリだけを実体のパスにし、シンボリックリンクはたどらない。"""
     return path.parent.resolve() / path.name
 
 

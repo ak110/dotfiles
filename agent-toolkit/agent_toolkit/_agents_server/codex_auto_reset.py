@@ -29,8 +29,6 @@ type Outcome = Literal["reset", "alreadyRedeemed", "nothingToReset", "noCredit"]
 
 @dataclass(frozen=True)
 class AutoResetResult:
-    """消費成功の確認と、確認時点の利用枠を分けて返す。"""
-
     reset_confirmed: bool = False
     rate_limits: dict[str, Any] | None = None
     diagnostic: str = ""
@@ -55,8 +53,6 @@ class _AccountResponse(_Boundary):
 
 
 class _AccountIdentity(_Boundary):
-    """ChatGPTアカウントだけで検証する、アカウント別の冪等記録に使う識別値。"""
-
     email: str | None = None
 
 
@@ -119,7 +115,6 @@ def _select_weekly(raw: dict[str, Any]) -> _Weekly:
 
 
 def _available_credit(reset_credits: dict[str, Any]) -> _Credit | None:
-    """消費対象の種類・状態のcreditだけを検証し、対象外creditの詳細は使わない。"""
     for item in _Credits.model_validate(reset_credits).credits or []:
         if isinstance(item, dict) and item.get("status") == "available" and item.get("resetType") == "codexRateLimits":
             return _Credit.model_validate(item)
@@ -216,7 +211,7 @@ async def check_auto_reset(
             needed = remaining <= 0 or (pace is not None and remaining < pace * max(0, seconds))
             if not active or seconds <= 300 or not needed or weekly.usedPercent < 90:
                 return AutoResetResult(rate_limits=raw, diagnostic="稼働・自然回復・消費ペースからresetはまだ不要")
-        # 未確定の消費は、在庫や使用率が変わっていても同じキーで結果を回収する。
+
         if previous is not None and previous.status == "pending":
             attempt = previous
         else:
@@ -255,7 +250,6 @@ async def check_auto_reset(
                 raw = await _rpc(request, "account/rateLimits/read", {}, rpc_timeout)
                 _select_weekly(raw)
             except (session_errors.DelegateBackendError, OSError, TimeoutError, ValueError) as error:
-                # 消費は確定済みなので、利用枠の再取得だけを所有monitorへ引き継ぐ。
                 return AutoResetResult(
                     reset_confirmed=True,
                     outcome=outcome,
@@ -277,7 +271,7 @@ async def _rpc(request: Request, method: str, params: dict[str, Any], timeout: f
 
 @contextlib.asynccontextmanager
 async def _transaction_lock(root: Path) -> AsyncGenerator[bool]:
-    # worker完了時に所有権を反映するため、取得直後の取消でもfinallyで回収できる。
+
     stack = contextlib.ExitStack()
     try:
         locked = await run_file_operation(_acquire, root, stack)
@@ -311,5 +305,5 @@ def _read_attempt(path: Path) -> _Attempt | None:
 
 
 def _write_attempt(path: Path, attempt: _Attempt) -> None:
-    # RPC開始前のキー保存を耐障害境界にし、応答喪失後も論理試行を維持する。
+
     atomic_write(path, attempt.model_dump_json(), fsync=True)

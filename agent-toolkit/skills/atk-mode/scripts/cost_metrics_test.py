@@ -1,5 +1,3 @@
-"""週次費用指標を登録済みCLIから検証する。記録の形はsession_evidence_supportと同じホスト形式。"""
-
 from __future__ import annotations
 
 import argparse
@@ -141,7 +139,6 @@ def _run(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], *
 
 
 def test_weekly_metrics(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
-    """任意の所在、週境界、開始だけの指定を登録済みCLIが受理する。"""
     events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-13")
     first, second = [event for event in events if event["kind"] == "cost-metrics-week"]
     coverage = events[-1]
@@ -169,7 +166,6 @@ def test_weekly_metrics(dataset: tuple[Path, Path, Path], capsys: pytest.Capture
 def test_tokens_match_stats_total(
     dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """委譲先と親を二重計上せず、既存stats-totalの4成分と一致する。"""
     claude, codex, _ = dataset
     events = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
     # 既存CLIは標準のsessions配置を使うため、同じrolloutをその配置へ移す。
@@ -189,7 +185,6 @@ def test_tokens_match_stats_total(
 def test_session_usd_rows_use_reported_parent_and_priced_delegate(
     dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開CLIで親cost-stateとの重複を除き、古いmtimeの委譲先も料金へ含める。"""
     claude, codex, _ = dataset
     parent = _claude("2026-10-06T12:00:00Z", child=_CHILD)
     parent[0]["cwd"] = "/work"
@@ -250,7 +245,6 @@ def test_review_metrics_exec_review_only(dataset: tuple[Path, Path, Path], capsy
 
 
 def _current_adoption(dataset, capsys) -> dict[str, Any]:
-    """同じ期間の採否集計を公開入口から取得し、今回の期間の行を返す。"""
     claude, codex, repo = dataset
     arguments = [
         "--",
@@ -271,7 +265,6 @@ def _current_adoption(dataset, capsys) -> dict[str, Any]:
 
 
 def test_review_metrics_exclude_judgments_from_both_public_metrics(dataset, capsys) -> None:
-    """同じ8判断・4実指摘から両CLIが同じ件数と元行番号を返す。"""
     _claude, _codex, repo = dataset
     table = repo / "plans/ci/check.exec-review.tsv"
     rows = [["9", "exec-review", "場所", f"実装時の判断: 記録{number}", "要件", "", "判断の引き継ぎ"] for number in range(8)]
@@ -339,7 +332,6 @@ def test_review_metrics_exclude_rows_written_with_the_documented_self_record_lab
 
 
 def test_review_metrics_share_transfer_and_legacy_interpretation(dataset, capsys) -> None:
-    """移管と旧自由文を両CLIが同じ状態で数え、表自体は変更しない。"""
     _claude, _codex, repo = dataset
     table = repo / "plans/ci/check.exec-review.tsv"
     rows = [
@@ -385,7 +377,6 @@ def test_review_metrics_share_transfer_and_legacy_interpretation(dataset, capsys
 
 
 def test_coverage_reports_missing_weeks(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
-    """欠けた週、読取不能記録と表、未保存表、未解決委譲を明示する。"""
     claude, _, repo = dataset
     write_jsonl(claude / "project-b/missing.jsonl", _claude("2026-10-06T13:00:00Z", child="missing-child"))
     (claude / "project-b/broken.jsonl").write_bytes(b"\xff")
@@ -442,7 +433,6 @@ def test_agy_delegate_keeps_runtime_coverage(
 
 
 def test_adoption_counts_rename_into_adopted(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
-    """Gitが改名と判定するキューからの移動も、その週の採用AWIへ数える。"""
     _, _, repo = dataset
     source = repo / "pending/moved.md"
     source.parent.mkdir(parents=True)
@@ -457,7 +447,6 @@ def test_adoption_counts_rename_into_adopted(dataset: tuple[Path, Path, Path], c
 def test_current_adoption_ignores_migration_and_body_edits(
     dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """年月配置の状態遷移を数え、採用済みの移設と本文更新を次週の採用へ加えない。"""
     _, _, repo = dataset
     path = repo / "2026/10/20261007-120000-001.md"
     path.parent.mkdir(parents=True)
@@ -494,7 +483,6 @@ def test_invalid_period_has_next_action(period: tuple[str, ...], capsys: pytest.
 
 
 def test_weekly_hook_notices_follow_root_week(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
-    """委譲先の期間後の遮断も親の開始週へ帰属する。"""
     claude, codex, _ = dataset
     body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
     child = codex / f"2026/10/06/rollout-child-{_CHILD}.jsonl"
@@ -544,7 +532,6 @@ def test_weekly_hook_notices_follow_root_week(dataset: tuple[Path, Path, Path], 
 def test_history_ignores_non_wi_yaml_and_keeps_prior_adoption(
     dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """旧feedbackの不正YAMLを除外し、期間前の採用を本文更新で再計上しない。"""
     _, _, repo = dataset
     legacy = repo / "feedback/inbox/20260616-212930-001.md"
     legacy.parent.mkdir(parents=True)
@@ -593,14 +580,13 @@ def test_history_invalid_wi_identifies_path_and_commit(
 def test_old_mtime_parent_reference_excludes_independent_child(
     dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], child_time: str
 ) -> None:
-    """自己判別情報の無い子も旧mtime親の参照へ帰属させ、旧親の開始・coverage条件を保つ。"""
     claude, codex, _ = dataset
     parent = claude / "project-a/parent.jsonl"
     write_jsonl(parent, _claude("2026-09-01T12:00:00Z", child=_CHILD))
     os.utime(parent, (0, 0))
     write_jsonl(codex / f"2026/10/06/rollout-child-{_CHILD}.jsonl", _codex(child_time, _CHILD))
     since = datetime.datetime(2026, 10, 5, tzinfo=datetime.UTC)
-    # 最終期間判定で除外される子も、索引の段階で独立rootでないことを検査する。
+
     sessions, candidates, coverage = _scan_sessions({"claude": claude, "codex": codex}, since)
     assert {session.item.record_id for session in sessions} == {"codex:other"}
     assert "parent" in candidates and _CHILD in candidates
@@ -621,13 +607,12 @@ def test_old_mtime_parent_reference_excludes_independent_child(
 
 
 class _TrackedEntry(dict[str, Any]):
-    """費用集計の家族本文を弱参照で観測する。"""
+    pass
 
 
 def test_cost_metrics_releases_family_before_next_root(
     dataset: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """費用の公開CLIでも索引に本文を保存せず、独立root間で前家族を解放する。"""
     original = _load_records_checked
     references: dict[str, list[weakref.ReferenceType[_TrackedEntry]]] = {}
 
@@ -676,7 +661,6 @@ def test_first_pass_preserves_failure_and_period() -> None:
 
 
 def test_first_pass_missing_is_not_success() -> None:
-    """未実施と欠落は観測分母から除き、率を0に補わない。"""
     now = datetime.datetime.fromisoformat("2026-10-01T00:00:00+00:00")
     events = [
         {"work": str(i), "stage": "review", "timestamp": now, "source": str(i), "workflow": "unknown", "outcome": outcome}
@@ -689,7 +673,6 @@ def test_first_pass_missing_is_not_success() -> None:
 
 
 def test_missing_results_flow_to_week_output(dataset: Any, capsys: pytest.CaptureFixture[str]) -> None:
-    """公開集計が正式結果を持たない作業を不明として週次出力へ渡す。"""
     rows = _run(dataset, capsys, "--since", "2026-10-05", "--until", "2026-10-12")
     quality = [item for row in rows if row.get("kind") == "cost-metrics-week" for item in row["first_pass"]]
     assert quality

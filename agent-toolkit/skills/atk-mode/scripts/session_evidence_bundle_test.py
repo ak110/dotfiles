@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_bundle_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -21,7 +19,6 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """集約実行が全走査と一次選別候補を保存し、標準出力へ要約だけを返す。"""
     missing_thread = "99999999-9999-4999-8999-999999999999"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -95,7 +92,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
         path = bundle_dir / filename
         stored[filename] = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
         assert evidence.main([str(transcript), *single_args]) == 0
-        # ファイルは全収集記録の由来を保ち、単独実行の標準出力は結果が参照する記録の由来だけを返すため、由来は別に比べる。
+
         single = [
             event for event in read_jsonl(capsys, raw=True) if event["kind"] not in {"unresolved-record", "record-provenance"}
         ]
@@ -177,7 +174,7 @@ def test_bundle_writes_every_scan_to_files_and_returns_summary_only(
             "text": "最終結果",
         },
     ]
-    # 区間の境界の時刻を`--detail`の追加照会なしで確定できるよう、全イベントが`timestamp`を持つ。
+
     assert all("timestamp" in event for event in locators)
     assert [event for event in bundle_events if event["kind"] == "bundle-warning-group"] == [
         {
@@ -206,7 +203,6 @@ def test_bundle_clips_locator_body_and_groups_warnings_by_leading_text(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """位置イベントの本文を冒頭200文字へ切り詰め、冒頭120文字が同じ警告を1分類へまとめる。"""
     body = "あ" * 300
     transcript = _write_transcript(
         tmp_path,
@@ -267,7 +263,6 @@ def test_bundle_writes_one_evidence_file_per_candidate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """候補数が多い場合も、全候補IDへ対応する個別ファイルを索引から解決できる。"""
     entries: list[dict[str, object]] = [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}]
     for index in range(12):
         entries.append(
@@ -302,7 +297,6 @@ def test_candidate_evidence_file_holds_only_its_own_candidate(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """1候補の証拠が大きい場合も、個別ファイルへ別候補の証拠を混ぜない。"""
     transcript = _write_transcript(
         tmp_path,
         [

@@ -27,7 +27,6 @@ _REAL_SCAN = claude_plugin_references.scan
 
 @pytest.fixture(autouse=True)
 def _no_running_processes(monkeypatch: pytest.MonkeyPatch) -> None:
-    """稼働中の参照を扱うテスト以外では、開発機のプロセスを判定へ混ぜない。"""
     monkeypatch.setattr(claude_plugin_references, "scan", lambda: ())
 
 
@@ -53,7 +52,6 @@ def _write_installed(plugins_root: Path, install_paths: dict[str, list[Path]]) -
 def _make_version(
     plugins_root: Path, marketplace: str, name: str, version: str, days_ago: float, *, manifest: bool = True
 ) -> Path:
-    """導入時刻が`days_ago`日前の版ディレクトリを作成する。版ディレクトリ自体のmtimeは現在時刻のまま残す。"""
     version_dir = plugins_root / "cache" / marketplace / name / version
     (version_dir / ".venv").mkdir(parents=True)
     installed_at = time.time() - days_ago * _DAY
@@ -76,10 +74,9 @@ def test_removes_only_versions_superseded_more_than_grace_days_ago(plugins_root:
 
     assert prune_claude_plugin_cache.run().changed is True
 
-    # 1.0.0と1.1.0は後継の導入（20日前・10日前）から7日を超えたため削除する。
     assert not old.exists()
     assert not superseded_long_ago.exists()
-    # 1.2.0の後継1.3.0は3日前の導入で猶予内のため残す。
+
     assert superseded_recently.is_dir()
     assert current.is_dir()
 
@@ -161,7 +158,6 @@ def test_repeated_runs_keep_current_and_recently_superseded_versions(plugins_roo
 
 
 def test_orders_versions_by_install_time_not_by_name(plugins_root: Path) -> None:
-    """commit hashなど自然順に並ばない版名でも導入時刻で後継を決める。"""
     older = _make_version(plugins_root, "official", "tool", "ffff000", 30)
     current = _make_version(plugins_root, "official", "tool", "0000aaa", 20)
     _write_installed(plugins_root, {"tool@official": [current]})
@@ -216,7 +212,7 @@ def test_keeps_expired_versions_while_claude_runs_despite_clock_correction(
     with ResidentProcesses(tmp_path, monkeypatch) as residents:
         resident = residents.start("claude", cwd=tmp_path)
         started_at = psutil.Process(resident.pid).create_time()
-        # 一覧のキャッシュに残る以前のPID世代を、現在の参照状態として採用しない。
+
         stale = psutil.Process(resident.pid)
         monkeypatch.setattr(stale, "_create_time", started_at - 10 * _DAY)
         monkeypatch.setattr(stale, "_ident", (resident.pid, started_at - 10 * _DAY))
@@ -251,7 +247,6 @@ def test_keeps_expired_versions_while_claude_runs_despite_clock_correction(
 
 @pytest.mark.skipif(sys.platform != "linux", reason="常駐Claudeのプロセス観測はLinuxで行う")
 def test_reactivated_version_gets_new_holders(plugins_root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧版が再度現行になれば、前回退役後のプロセスも次の保持候補として記録する。"""
     monkeypatch.setattr(claude_plugin_references, "scan", _REAL_SCAN)
     old = _make_version(plugins_root, "mkt", "tool", "1", 30)
     current = _make_version(plugins_root, "mkt", "tool", "2", 20)
@@ -275,7 +270,6 @@ def test_reactivated_version_gets_new_holders(plugins_root: Path, tmp_path: Path
 
 @pytest.mark.parametrize("damaged", [{"pid": None}, {"create_time": float("nan")}, {"start_id": "broken"}])
 def test_damaged_holder_keeps_old_version(plugins_root: Path, damaged: dict) -> None:
-    """PID・時刻・世代識別の破損を、保持者の終了と区別する。"""
     old = _make_version(plugins_root, "mkt", "tool", "1", 30)
     current = _make_version(plugins_root, "mkt", "tool", "2", 20)
     _write_installed(plugins_root, {"tool@mkt": [current]})
@@ -288,7 +282,6 @@ def test_damaged_holder_keeps_old_version(plugins_root: Path, damaged: dict) -> 
 
 
 def test_invalidation_cannot_be_overtaken_by_older_snapshot(plugins_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """初回保存前に現行化を試みても、失効後に古い集合が復活して新保持者の版を消さない。"""
     old = _make_version(plugins_root, "mkt", "tool", "1", 30)
     current = _make_version(plugins_root, "mkt", "tool", "2", 20)
     _write_installed(plugins_root, {"tool@mkt": [current]})
@@ -374,7 +367,6 @@ def test_invalidation_cannot_be_overtaken_by_older_snapshot(plugins_root: Path, 
 def test_kept_versions_have_one_screen_summary_and_detailed_saved_reasons(
     plugins_root: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """複数版・複数参照の保持を通常表示でまとめ、詳細はログへ残す。"""
     old = [_make_version(plugins_root, "mkt", "tool", str(index), 30 - index) for index in range(3)]
     current = _make_version(plugins_root, "mkt", "tool", "current", 20)
     _write_installed(plugins_root, {"tool@mkt": [current]})

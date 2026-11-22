@@ -18,8 +18,7 @@ _SKILLS = _BASICS / "skills"
 # 人間向けの導入案内はagent-toolkitとの併用手順を説明するため対象外とする（README.md）。
 _DISTRIBUTED_DOCUMENTS = sorted(_SKILLS.rglob("*.md"))
 
-# agent-toolkitを導入していないと解決・実行できない参照。
-# 条件付きの言及として許す形は設けず、agent-toolkitに固有の手順は該当工程のスキルへ置く。
+
 _TOOLKIT_DEPENDENCIES = {
     "agent-toolkitの名前空間": re.compile(r"agent-toolkit:"),
     "agent-toolkitの共有文書": re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/skills/atk-mode/"),
@@ -28,13 +27,12 @@ _TOOLKIT_DEPENDENCIES = {
     "agent-toolkitのMCPツール": re.compile(r"agents_server|mcp__plugin_agent-toolkit"),
 }
 
-# 対象プロジェクトのファイルとして一般的に指す名前（agent-basicsの資料ではない）。
+
 _PROJECT_FILES = frozenset({"AGENTS.md", "CLAUDE.md", "CLAUDE.local.md"})
 _PATH_SPAN = re.compile(r"`([^`\n]+?\.md)(?:#[^`\n]*)?`|\]\(([^)\s]+?\.md)(?:#[^)\s]*)?\)")
 
 
 def _toolkit_dependencies(path: pathlib.Path) -> list[str]:
-    """agent-toolkitを前提とする参照の行を返す。"""
     found: list[str] = []
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         found.extend(f"{path}:{number}: {name}" for name, pattern in _TOOLKIT_DEPENDENCIES.items() if pattern.search(line))
@@ -89,7 +87,6 @@ def _unresolved_references(path: pathlib.Path, skills: pathlib.Path) -> list[str
     ),
 )
 def test_agent_basics_does_not_depend_on_agent_toolkit() -> None:
-    """配布物の本文が、agent-toolkitの名前空間・共有文書・atkコマンド・標識・MCPツールを前提にしない。"""
     assert _DISTRIBUTED_DOCUMENTS
     found = [line for path in _DISTRIBUTED_DOCUMENTS for line in _toolkit_dependencies(path)]
     assert not found, "\n".join(found)
@@ -102,11 +99,6 @@ def test_agent_basics_does_not_depend_on_agent_toolkit() -> None:
     ),
 )
 def test_agent_basics_references_resolve_inside_distribution() -> None:
-    """配布物の本文が指す資料は、agent-basicsの中に実在する。
-
-    根拠の監査記録（`docs/development/audit-records*.md`）も配布物の外にあり、agent-basicsユーザーには辿れない。
-    記録は見出しのファイルパスと節名で条文から引くため、条文から記録を指さない。
-    """
     unresolved = [line for path in _DISTRIBUTED_DOCUMENTS for line in _unresolved_references(path, _SKILLS)]
     assert not unresolved, (
         "単体配布で開けない参照（監査記録は条文から指さず、記録の見出しのファイルパスと節名を索引にする）:\n"
@@ -122,11 +114,10 @@ def test_agent_basics_references_resolve_inside_distribution() -> None:
     ],
 )
 def test_technical_materials_keep_read_only_decision_triggers(reference: str, conditions: tuple[str, ...]) -> None:
-    """書込操作が無い確認・コード読取・API参照にも、判断行から技術資料へ届く。"""
     text = (_SKILLS / "writing-standards/SKILL.md").read_text(encoding="utf-8")
     rows = [line for line in text.splitlines() if line.startswith("|") and f"`references/{reference}`" in line]
     assert rows
-    # 契機を省いた行は判断の行である。操作・起動時を契機とする行だけが列を書く。
+
     judgments = [row for row in rows if "| 操作 |" not in row and "| 起動時 |" not in row]
     assert any(all(condition in row for condition in conditions) for row in judgments)
     description = text.split("---", 2)[1]
@@ -135,7 +126,6 @@ def test_technical_materials_keep_read_only_decision_triggers(reference: str, co
 
 @pytest.mark.parametrize("skill", ["search", "secret-files"])
 def test_search_skills_are_only_published_from_basics(skill: str) -> None:
-    """検索の2スキルはbasicsに実在し、toolkit側に旧公開スキルを残さない。"""
     assert (_SKILLS / skill / "SKILL.md").is_file()
     assert not (_REPO_ROOT / "agent-toolkit/skills" / skill / "SKILL.md").exists()
 
@@ -147,9 +137,8 @@ def test_search_skills_are_only_published_from_basics(skill: str) -> None:
     ),
 )
 def test_reading_tables_are_not_split_into_other_files() -> None:
-    """読込表を別ファイルへ分けた`*-delivery-*.md`と接続の標識が、配布物とプロジェクトスキルに無い。"""
     roots = ["agent-basics", "agent-toolkit", ".claude/skills"]
-    # 追跡済みと未追跡（ignore対象を除く）の両方を、作業ツリーに実在するものに限って調べる。
+
     listed = [
         name
         for name in subprocess.run(
@@ -184,7 +173,6 @@ def test_reading_tables_are_not_split_into_other_files() -> None:
     ],
 )
 def test_toolkit_dependency_is_detected(tmp_path: pathlib.Path, line: str, expected: str) -> None:
-    """持ち込まれたagent-toolkit前提の参照を種類ごとに検出する。"""
     path = tmp_path / "SKILL.md"
     path.write_text(f"# 例\n\n{line}\n", encoding="utf-8")
     assert _toolkit_dependencies(path) == [f"{path}:3: {expected}"]

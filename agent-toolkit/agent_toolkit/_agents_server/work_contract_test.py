@@ -1,8 +1,4 @@
 # pylint: disable=protected-access
-"""通常委譲の現行記録先の生成と軽量起動の除外を検証する。
-
-起動モデルの登録を模擬して、記録先の宣言の有無を同じ公開起動条件で比べる。
-"""
 
 from __future__ import annotations
 
@@ -26,7 +22,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_delegate_with_explicit_record_uses_single_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, newline: str
 ) -> None:
-    """明示記録先を、本文の改行形式によらず本文・応答・環境変数で共用する。"""
     path = tmp_path / "explicit.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_: pytest.fail("生成不要"))
     manager = SimpleNamespace(
@@ -49,7 +44,6 @@ async def test_delegate_with_explicit_record_uses_single_path(
 async def test_delegate_rejects_unreadable_record_line(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, value: str, newline: str
 ) -> None:
-    """不正な記録先では、本文の改行形式によらず起動しない。"""
     manager = SimpleNamespace(start=AsyncMock(), launcher_session_id=lambda: None)
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     with pytest.raises(ActionableError, match="絶対パス"):
@@ -63,7 +57,6 @@ async def test_delegate_rejects_unreadable_record_line(
 def test_record_path_is_consistent_across_launch_routes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, continued: bool
 ) -> None:
-    """自動生成と引き継ぎ起動で記録先の行を1つに保つ。"""
     path = tmp_path / "record.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda *_: path)
     prompt, returned = launch_requests.delegate_request("作業")
@@ -81,7 +74,6 @@ def test_normal_task_gets_one_record_path(
     monkeypatch: pytest.MonkeyPatch,
     handoff_input: str | None,
 ) -> None:
-    """別rootの資料を入力の宣言・指定方法によらず1回配送し、記録先と新規・継続を保つ。"""
     root = tmp_path / "retained-plugin"
     document = root / "skills/atk-mode/roles/task.subagent.md"
     document.parent.mkdir(parents=True)
@@ -123,7 +115,6 @@ async def test_delegate_preserves_original_and_returns_same_record(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """自由本文を原文のまま残し、配送と起動応答を同じ記録先へ接続する。"""
     path = tmp_path / "handoff.md"
     monkeypatch.setattr(launch_requests, "_default_handoff_path", lambda _launcher=None: path)
     manager = SimpleNamespace(
@@ -153,7 +144,6 @@ async def test_lightweight_start_does_not_allocate_record(
     monkeypatch: pytest.MonkeyPatch,
     mode: Literal["explore", "shell", "write"],
 ) -> None:
-    """軽量起動は専用記録の生成を経由しない。"""
     allocate = AsyncMock(side_effect=AssertionError("軽量起動で記録先を生成した"))
     monkeypatch.setattr(launch_requests, "delegate_request", allocate)
     result = {"session_id": "child", "status": "running", "label": "軽量"}
@@ -247,7 +237,6 @@ async def test_whole_contract_path_rejected_outside_normal_start(
 
 
 def test_successor_reads_same_record_after_followup(tmp_path: pathlib.Path) -> None:
-    """追送を持つ前任の記録先を後任へ継続として渡し、原文の追送を保持する。"""
     path = tmp_path / "handoff.md"
     session = SessionState(
         session_id="prior",

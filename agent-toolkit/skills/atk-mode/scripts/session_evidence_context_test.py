@@ -19,7 +19,6 @@ def test_record_schema_reports_paths_and_types_without_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """複数locatorのobject・arrayを再帰的にたどり、値を出力しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -113,7 +112,6 @@ def test_record_schema_rejects_out_of_range_and_invalid_locators(
     locator: str,
     message: str,
 ) -> None:
-    """範囲外の行と不正なlocatorを終了コード2で拒否する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
     assert evidence.main([str(transcript), "--record-schema", locator]) == 2
@@ -132,7 +130,6 @@ def test_new_query_modes_can_be_combined(tmp_path: pathlib.Path, capsys: pytest.
 
 
 def _context_verdicts(capsys: pytest.CaptureFixture[str]) -> dict[str, dict]:
-    """`--context-at`の出力をphraseごとの判定と一致の組へまとめる。"""
     events = read_jsonl(capsys)
     verdicts = {event["phrase"]: dict(event, matches=[]) for event in events if event["kind"] == "context-verdict"}
     for event in events:
@@ -142,13 +139,6 @@ def _context_verdicts(capsys: pytest.CaptureFixture[str]) -> dict[str, dict]:
 
 
 def test_context_at_judges_claude_context_across_compaction(tmp_path: pathlib.Path, capsys) -> None:
-    """条文が事象の時点でその記録の文脈にあったかを、圧縮境界との前後と文脈へ入る方法から判定する。
-
-    Skill本文は圧縮前なら`present`（`channel`は`meta`）、Readで読んだ参照資料は圧縮で`dropped-by-compaction`、
-    ルールファイルは境界後の再注入で`present`となる。起動済みスキル本文の末尾は再注入の切り詰めで
-    境界後に現れないため`dropped-by-compaction`、事象行より後にだけある文字列と
-    親セッションだけにある文字列は`absent`となる。判定を誤ると、振り返りが原因の区分を取り違える。
-    """
     skill_body = "スキル冒頭の条文\n" + "x" * 50 + "\nスキル末尾の条文"
     transcript = _write_transcript(
         tmp_path,
@@ -293,7 +283,6 @@ def test_context_at_keeps_codex_replacement_history(tmp_path: pathlib.Path, caps
     ],
 )
 def test_context_at_rejects_invalid_input(tmp_path: pathlib.Path, capsys, arguments: list[str], message: str) -> None:
-    """不正な記録位置、phraseの欠落、他の照会モードとの併用を、エラーイベントと終了コード2で拒否する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "本文"}}])
 
     assert evidence.main([str(transcript), *arguments]) == 2

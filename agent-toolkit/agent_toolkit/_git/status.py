@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from agent_toolkit._git import command as _git_command
 
-# `git status --porcelain`実行のタイムアウト秒数。
 _STATUS_TIMEOUT = 10
 
 

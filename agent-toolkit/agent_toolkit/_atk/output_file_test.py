@@ -1,5 +1,3 @@
-"""atkが標準出力と標準エラーを分けて保存することと、保存先を用意できないwaitが結果の回収を始めないことを検証する。"""
-
 from __future__ import annotations
 
 import io
@@ -14,7 +12,6 @@ from agent_toolkit._atk import output_file
 
 
 def test_saved_streams_report_path_and_line_count(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """標準出力と標準エラーの保存先と行数だけを示し、示した行数の範囲で保存した全文を読める。"""
     bodies = ("標準出力\r\n" * 3000, "標準エラー\n" * 3000)
     with output_file.auto_save(lambda: tmp_path):
         sys.stdout.write(bodies[0])
@@ -52,10 +49,6 @@ def test_each_stream_preserves_boundary_and_entire_output(
 def test_forced_save_is_open_before_result_and_keeps_exception(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """出力が小さいwaitでも結果の回収前に保存先を開き、例外で終わるまでの結果をファイルへ保持する。
-
-    非0で終わった本体の出力には成功時の要約を適用せず、保存先と行数だけを示す。
-    """
     summarized: list[pathlib.Path] = []
     with (
         pytest.raises(SystemExit) as raised,
@@ -113,7 +106,6 @@ def test_multibyte_output_uses_utf8_size_and_preserves_callback(
 
 
 def run_atk(argv: list[str], capsys: pytest.CaptureFixture[str]) -> tuple[object, str, str]:
-    """公開mainから実際の終了と両出力を取得する。"""
     try:
         atk.main(argv)
     except SystemExit as error:
@@ -199,11 +191,6 @@ def test_evidence_saves_only_output_passed_as_file(
     query: list[str],
     passes_file: bool,
 ) -> None:
-    """エージェントは逐語引用の出所として渡す`--user-events`だけを新規ファイルで受け取り、短い単発照会は直接読む。
-
-    単発照会まで保存すると短い結果を読むたびに往復が増え、`--user-events`を直接表示すると
-    WI投入担当へ渡す出所ファイルが無くなる。人の端末はどの照会も直接本文を読む。
-    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     if agent:
         monkeypatch.setenv("CLAUDECODE", "1")
@@ -219,7 +206,7 @@ def test_evidence_saves_only_output_passed_as_file(
         path = pathlib.Path(summary[0].removeprefix("保存先: "))
         assert path.is_absolute()
         output = path.read_text(encoding="utf-8")
-        # 保存後の表示は保存ファイルの発話行と同じ順・同じ記録位置を示し、呼び出し元は保存先を開かずに出所を選べる。
+
         users = [event for event in map(json.loads, output.splitlines()) if event["kind"] == "user"]
         assert summary[2:] == [f"発話: record={event['record']} line={event['line']} {event['text']}" for event in users]
     assert "検索語" in output
@@ -229,7 +216,6 @@ def test_evidence_saves_only_output_passed_as_file(
 def test_evidence_saved_matches_list_positions_and_heads(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
 ) -> None:
-    """公開照会の長い結果だけに位置と冒頭を付け、全量JSONLと元の順序を保つ。"""
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     trace = tmp_path / "trace.jsonl"
@@ -271,7 +257,6 @@ def test_evidence_saved_matches_list_positions_and_heads(
 def test_evidence_saved_many_matches_show_bounded_summary(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mode: str
 ) -> None:
-    """多数の一致を保存した後は件数の内訳と先頭20件だけを返し、全一致を保存ファイルへ残す。"""
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     trace = tmp_path / "trace.jsonl"
@@ -329,7 +314,6 @@ def test_evidence_saved_empty_and_summary_modes(
     query: list[str],
     expected: list[str],
 ) -> None:
-    """保存量の境界だけを下げて、空結果と詳細を持たない照会の表示を区別する。"""
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 1)
@@ -370,7 +354,6 @@ def test_evidence_failure_preserves_output_and_exit_when_saved(
 def test_forced_save_without_result_discards_only_failed_call(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """結果を書かずに非0で終わった強制保存は保存先を片付けて要約を出力せず、成功した空の結果は保存先を返す。"""
     discarded: list[pathlib.Path] = []
     failed_directory = tmp_path / "failed"
     failed_directory.mkdir()
@@ -396,7 +379,6 @@ def test_forced_save_without_result_discards_only_failed_call(
 def test_help_and_early_returns_use_same_capture(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], argv: list[str]
 ) -> None:
-    """有限で終了するヘルプ表示と、結果を表示して終わるサブコマンドの実出力も、小さい境界で同じく保存する。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     monkeypatch.setattr(output_file, "AUTO_SAVE_THRESHOLD_BYTES", 32)
@@ -420,7 +402,6 @@ def test_help_and_early_returns_use_same_capture(
     ],
 )
 def test_removed_output_option_is_rejected(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], argv: list[str]) -> None:
-    """全受理定義の撤去後は、操作を開始せず指定先へ書き込まない。"""
     destination = tmp_path / "old.txt"
     code, _output, error = run_atk([*argv, "--output-file", str(destination)], capsys)
     assert code == 2 and "--output-file" in error

@@ -12,7 +12,6 @@ from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 
 @pytest.fixture(autouse=True)
 def _redirect_state_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`platformdirs.user_state_dir`が`tmp_path`配下を返すようXDG系変数を差し替える。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "state"))
 
@@ -25,8 +24,6 @@ def _enable_autonomous_exit(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestAppend:
-    """`append`の基本動作。"""
-
     def test_append_writes_one_line(self) -> None:
         _process_loop_log.append("loop_iter_start", count=3)
         content = _process_loop_log.log_path().read_text(encoding="utf-8")
@@ -51,8 +48,6 @@ class TestAppend:
 
 
 class TestNoop:
-    """環境変数未設定時のno-op動作。"""
-
     def test_append_is_noop_without_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """`AGENT_TOOLKIT_PROCESS_LOOP_SESSION`未設定時はログファイルを作成しない。"""
         monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", raising=False)
@@ -77,10 +72,7 @@ class TestNoop:
 
 
 class TestRotation:
-    """サイズ超過時のローテーション動作。"""
-
     def test_rotates_when_max_bytes_exceeded(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """既存ログが閾値を超えている場合、追記前に`.log.1`へローテートされる。"""
         monkeypatch.setattr(_process_loop_log, "_MAX_BYTES", 10)
         _process_loop_log.append("first", count=1)
         _process_loop_log.append("second", count=2)

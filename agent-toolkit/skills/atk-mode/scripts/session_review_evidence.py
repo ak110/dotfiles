@@ -1,9 +1,3 @@
-"""セッション全体の時系列証拠と、記録位置を保持した照会をJSONLで返す。
-
-公開引数と表示はsession_evidence_cli、記録の読取と各照会は主題別モジュールが所有する。
-引数誤用と照会不能は終了2、取得結果と診断は標準出力へ返す。
-"""
-
 from __future__ import annotations
 
 import functools
@@ -104,8 +98,8 @@ def main(
     conversation_output: list[dict[str, Any]] | None = None,
     conversation_scope: Path | None = None,
     conversation_only: bool = False,
+    conversation_main_only: bool = False,
 ) -> int:
-    """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")
@@ -172,7 +166,7 @@ def main(
         _print_events(events)
         return 0
     query_modes = _single_transcript_query_modes(args)
-    main_only = (args.user_events or args.elapsed_until is not None) and sum(query_modes) == 1
+    main_only = conversation_main_only or ((args.user_events or args.elapsed_until is not None) and sum(query_modes) == 1)
     active_queries = _active_queries(args)
     if args.summary_only and (not active_queries or any(not _QUERY_OPTIONS[name][0] for name in active_queries)):
         supported = _query_option_names([name for name, (summary, _catalog) in _QUERY_OPTIONS.items() if summary])

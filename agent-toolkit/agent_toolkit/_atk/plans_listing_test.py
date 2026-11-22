@@ -26,7 +26,6 @@ __all__ = ["_isolate_state_directory"]
 
 
 def test_list_reports_every_working_plan_with_owner_and_update_time(tmp_path: pathlib.Path) -> None:
-    """一覧は所有記録の有無にかかわらず全ての計画ファイル（メイン）を出力する。"""
     home = tmp_path / "home"
     working_root = _plan_file.working_plans_root(home)
     working_root.mkdir(parents=True)
@@ -102,7 +101,6 @@ def test_dispatch_list_prints_owner_and_update_time_per_plan(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """一覧の各行はメイン計画の絶対パス、所有セッション、最終更新時刻をタブ区切りで並べる。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -131,7 +129,6 @@ def test_dispatch_list_shows_only_conversation_owner(
     owner: str,
     shown: str,
 ) -> None:
-    """`agents_server`のプロセス専用のrootの環境で作成した計画は所有者なしと表示し、実在する会話はその会話を表示する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", owner)
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
@@ -151,7 +148,6 @@ def test_dispatch_rejects_removed_progress_subcommand(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開parserを迂回した旧progress指定もdispatchで拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     args = types.SimpleNamespace(plans_subcommand="progress", plan_file="2026/09/09-計画.md")
@@ -164,7 +160,6 @@ def test_dispatch_rejects_removed_progress_subcommand(
 
 
 def test_progress_prefers_saved_plan_and_falls_back_to_working_copy(tmp_path: pathlib.Path) -> None:
-    """`private-notes/plans/`相対の指定では保存側を先に読み、保存側が無い場合だけ同名の作業側を読む。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -187,7 +182,6 @@ def test_progress_prefers_saved_plan_and_falls_back_to_working_copy(tmp_path: pa
 
 
 def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
-    """計画ファイルが実在しない指定を拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -207,7 +201,6 @@ def test_progress_rejects_missing_plan_file(tmp_path: pathlib.Path) -> None:
     ],
 )
 def test_progress_rejects_broken_progress_structure(tmp_path: pathlib.Path, content: str) -> None:
-    """節、固定表および列構成のいずれかが成立しない計画を拒否する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)

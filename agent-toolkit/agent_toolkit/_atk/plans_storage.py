@@ -1,5 +1,3 @@
-"""計画ファイルの内容・日時を保つ保存と作業側の回収。"""
-
 from __future__ import annotations
 
 import os
@@ -69,7 +67,6 @@ def remove_finalized_working_bundle(
     relative_main: pathlib.Path,
     home: pathlib.Path | str | None,
 ) -> None:
-    """保存成功後に変更されていない作業ファイルを日時ごと移す。"""
     for source in working_bundle:
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
@@ -95,7 +92,6 @@ def remove_finalized_working_bundle(
 def working_snapshots(
     working_bundle: tuple[pathlib.Path, ...],
 ) -> dict[pathlib.Path, tuple[tuple[int, int], bytes]]:
-    """回収前に作業バンドルが一致するかを確かめるためのsnapshotを返す。"""
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]] = {}
     for source in working_bundle:
         metadata = source.stat(follow_symlinks=False)
@@ -108,7 +104,6 @@ def remove_checked_out_working_bundle(
     snapshots: dict[pathlib.Path, tuple[tuple[int, int], bytes]],
     relative_main: pathlib.Path,
 ) -> None:
-    """保存成功後に変更されていないcheckout作業バンドルを回収する。"""
     for source in working_bundle:
         identity, content = snapshots[source]
         current = source.stat(follow_symlinks=False)
@@ -123,7 +118,6 @@ def remove_checked_out_working_bundle(
 
 
 def bundle_contents(bundle: Iterable[pathlib.Path]) -> dict[str, bytes]:
-    """計画バンドルをファイル名からbytesへの写像として返す。"""
     return {path.name: path.read_bytes() for path in bundle}
 
 
@@ -175,7 +169,6 @@ def finalize_plan_file(source: pathlib.Path, destination: pathlib.Path, content:
 
 
 def plan_display_name(relative_main: pathlib.Path) -> str:
-    """commitメッセージへ含める計画名を返す。"""
     filename = relative_main.name
     match = re.fullmatch(r"[0-9]{2}-(?P<label>.+)-[0-9a-f]{4}\.md", filename)
     if match is not None:
@@ -192,7 +185,6 @@ def checkout_conflict_differences(
     saved: dict[str, bytes],
     remote: dict[str, bytes],
 ) -> str:
-    """取得時点・作業側の双方と異なる保存元を、相違の種類とともに返す。"""
     differences: list[str] = []
     for name in sorted(recorded.keys() | working.keys() | saved.keys() | remote.keys()):
         if saved.get(name) not in (recorded.get(name), working.get(name)):
@@ -203,7 +195,6 @@ def checkout_conflict_differences(
 
 
 def birth_date(path: pathlib.Path) -> str:
-    """保存先の年月を決める日時を実行ホストのローカル日付へ変換する。"""
     try:
         return _plan_file.file_birth_date(path).strftime("%Y/%m/%d")
     except OSError as error:

@@ -91,7 +91,6 @@ def test_tool_calls_lists_main_and_delegate_calls_in_time_order(
 def test_tool_calls_select_by_tool_and_whole_input_regex(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--tool`は完全一致のいずれか、`--input-regex`は代表入力全体への検索とし、`^`はヒアドキュメントへ埋め込んだ文字列を除く。"""
     transcript = tool_call_session(tmp_path, monkeypatch, "echo done")
 
     assert (
@@ -117,7 +116,6 @@ def test_tool_calls_select_by_tool_and_whole_input_regex(
 def test_tool_call_locators_round_trip_to_detail(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`record`と`line`は呼び出しの入力全体、`record`と`result_line`は結果の本文を`--detail`で返す。"""
     transcript = tool_call_session(tmp_path, monkeypatch, "echo done")
     assert evidence.main([str(transcript), "--tool-calls", "--tool", "Bash", "--tool", "exec_command"]) == 0
     *calls, _ = [event for event in read_jsonl(capsys, raw=True) if event["kind"] != "record-provenance"]
@@ -137,7 +135,6 @@ def test_tool_call_locators_round_trip_to_detail(
 def test_tool_calls_since_filters_intersection_and_reports_unknown_times(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """開始境界を含めず、入力の条件と時刻を満たす呼び出しだけを数える。"""
     entries = []
     for identity, timestamp, tool, command in (
         ("before", "2026-11-01T00:00:00Z", "Bash", "wanted"),
@@ -191,7 +188,6 @@ def test_tool_calls_since_filters_intersection_and_reports_unknown_times(
 def test_tool_calls_reject_invalid_arguments(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], arguments: list[str]
 ) -> None:
-    """`--tool-calls`に関する引数の誤りは次の操作付きのエラーと終了コード2を返す。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-10-06T00:00:00Z", "記録")])
 
     assert evidence.main([str(transcript), *arguments]) == 2

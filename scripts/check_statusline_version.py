@@ -185,7 +185,6 @@ def release_tag_state(repo_root: pathlib.Path, current: str) -> tuple[str | None
 
 
 def main(argv: collections.abc.Sequence[str] | None = None) -> int:
-    """リポジトリルートで検査を実行し、終了コードを返す。"""
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if isinstance(sys.stderr, io.TextIOWrapper):
@@ -203,7 +202,7 @@ def main(argv: collections.abc.Sequence[str] | None = None) -> int:
     release = args.release_prepare or args.release_tag_state
     if release and args.github_output is None:
         parser.error("--release-prepareと--release-tag-stateには--github-outputが必要である")
-    # CIとpyfltrはいずれも対象リポジトリのルートで起動するため、作業ディレクトリのリポジトリを検査する。
+
     toplevel = _git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel")
     try:
         repo_root = pathlib.Path(_require(toplevel, "git rev-parse --show-toplevel"))

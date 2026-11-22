@@ -1,5 +1,3 @@
-"""公開CLIで固定素材の分離、機能未達と試行不成立を検証する。"""
-
 import json
 import os
 import pathlib
@@ -57,7 +55,6 @@ _FAILED_CHECKS: dict[str, dict[str, set[str]]] = {
         "description-only": {
             f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
         },
-        # 必要な集合は同じでも、本文を読む前の選択へ全て入れた提出は追加選択の検査で区別する。
         "all-initial": {
             f"{request}-additional" for request in ("article-eval", "paraphrase", "edit-and-check", "bug-explain", "boundary")
         },
@@ -149,7 +146,6 @@ def test_all_graders_start_without_site_packages(tmp_path: pathlib.Path, case: s
 
 @pytest.mark.parametrize("case", EXPECTED_CASES)
 def test_prepare_copies_only_public_material_and_refuses_overwrite(tmp_path: pathlib.Path, case: str) -> None:
-    """準備が公開素材だけを複製し、既存の提出物を上書きしないことを確かめる。"""
     output = tmp_path / "public"
     process = _run("prepare", "--case", case, "--output", str(output))
     assert process.returncode == 0, process.stderr
@@ -209,7 +205,6 @@ def test_goal_report_failure_includes_repair_and_regrade_action(tmp_path: pathli
 
 @pytest.mark.parametrize("violation", ["unknown", "unasked", "internal", "audit", "execution"])
 def test_disclosure_and_execution_failures_are_not_candidate_failures(tmp_path: pathlib.Path, violation: str) -> None:
-    """一覧外要求・先回り・内部情報・監査違反・障害を不成立として保存する。"""
     trial = json.loads((FIXTURES / "weekday_queries" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     dialogue = example["dialogue"]
@@ -233,7 +228,6 @@ def test_disclosure_and_execution_failures_are_not_candidate_failures(tmp_path: 
 
 
 def test_no_followup_disclosure_is_invalid_even_with_correct_artifact(tmp_path: pathlib.Path) -> None:
-    """追加回答を返さない条件で開示した対話は、成果物が正しくても試行不成立とする。"""
     trial = json.loads((FIXTURES / "display_spaces" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][2]
     example["condition"] = "no-followup"
@@ -244,7 +238,6 @@ def test_no_followup_disclosure_is_invalid_even_with_correct_artifact(tmp_path: 
 
 
 def test_behavior_quote_requires_real_turn_evidence(tmp_path: pathlib.Path) -> None:
-    """存在しない対話引用を根拠とする合格記録を拒否する。"""
     trial = json.loads((FIXTURES / "batch_conditions" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     example["dialogue"]["behavior"][0]["evidence"][0]["quote"] = "存在しない発話"
@@ -255,7 +248,6 @@ def test_behavior_quote_requires_real_turn_evidence(tmp_path: pathlib.Path) -> N
 
 
 def test_syntax_error_is_unmet_and_hang_is_inconclusive(tmp_path: pathlib.Path) -> None:
-    """提出コードの欠陥と、成果物テストの実行障害を分ける。"""
     trial = json.loads((FIXTURES / "display_spaces" / "private" / "trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     example["candidate"] = "def broken(:\n"
@@ -284,7 +276,6 @@ def test_syntax_error_is_unmet_and_hang_is_inconclusive(tmp_path: pathlib.Path) 
 
 
 def test_public_list_and_finite_termination(tmp_path: pathlib.Path) -> None:
-    """課題の公開一覧と、往復数の上限で終えた対話に残った未達の判定を検証する。"""
     process = _run("--list")
     assert process.returncode == 0, process.stderr
     rows = json.loads(process.stdout)
@@ -306,7 +297,6 @@ def test_public_list_and_finite_termination(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("field", ["document_version", "engine", "model", "settings", "sessions", "termination", "case"])
 def test_single_requires_execution_provenance(tmp_path: pathlib.Path, field: str) -> None:
-    """実施情報の不足は、単独課題の機能未達へ混入させない。"""
     trial = json.loads((FIXTURES / "verification_status/private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     del example["execution"][field]
@@ -318,7 +308,6 @@ def test_single_requires_execution_provenance(tmp_path: pathlib.Path, field: str
 
 @pytest.mark.parametrize("termination,errors", [("error", []), ("submitted", ["モデル起動失敗"])])
 def test_single_execution_failure_is_inconclusive(tmp_path: pathlib.Path, termination: str, errors: list[str]) -> None:
-    """成果物が正しくても起動・実行障害を試行不成立にする。"""
     trial = json.loads((FIXTURES / "verification_status/private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     example["execution"].update(termination=termination, execution_errors=errors)
@@ -331,7 +320,6 @@ def test_single_execution_failure_is_inconclusive(tmp_path: pathlib.Path, termin
 
 @pytest.mark.parametrize("field,value", [("settings", {}), ("sessions", {}), ("engine", 1), ("execution_errors", "障害")])
 def test_single_rejects_malformed_execution_metadata(tmp_path: pathlib.Path, field: str, value: object) -> None:
-    """起動情報の型や必須の内側項目が不正なら、採点を始めず入力の修正を求める。"""
     trial = json.loads((FIXTURES / "verification_status/private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     example["execution"][field] = value
@@ -343,7 +331,6 @@ def test_single_rejects_malformed_execution_metadata(tmp_path: pathlib.Path, fie
 
 @pytest.mark.parametrize("case,flag", [("weekday-queries", "--execution"), ("verification-status", "--dialogue")])
 def test_record_input_must_match_trial_kind(tmp_path: pathlib.Path, case: str, flag: str) -> None:
-    """課題種別に合う入力だけを受理し、誤った入力に必要な引数を案内する。"""
     process = _run(
         "grade", "--case", case, "--candidate", "unused.py", flag, "unused.json", "--output", str(tmp_path / "result.json")
     )
@@ -354,7 +341,6 @@ def test_record_input_must_match_trial_kind(tmp_path: pathlib.Path, case: str, f
 
 @pytest.mark.parametrize("kind", [None, "unknown"])
 def test_undeclared_trial_kind_is_rejected(tmp_path: pathlib.Path, kind: str | None) -> None:
-    """種別未宣言を対話課題へ暗黙変換せず、保存素材の修正を求める。"""
     script = tmp_path / "scripts/multi_turn_trials.py"
     script.parent.mkdir()
     script.write_bytes(SCRIPT.read_bytes())
@@ -369,7 +355,6 @@ def test_undeclared_trial_kind_is_rejected(tmp_path: pathlib.Path, kind: str | N
 
 @pytest.mark.parametrize("flags", [[], ["--dialogue", "unused.json", "--execution", "unused.json"]])
 def test_grade_requires_exactly_one_record(tmp_path: pathlib.Path, flags: list[str]) -> None:
-    """実施情報の欠落と対話入力との混在を公開CLIで拒否する。"""
     process = _run(
         "grade", "--case", "verification-status", "--candidate", "unused.py", "--output", str(tmp_path / "result.json"), *flags
     )
@@ -380,7 +365,6 @@ def test_grade_requires_exactly_one_record(tmp_path: pathlib.Path, flags: list[s
 
 @pytest.mark.parametrize("target", ["candidate.py", "execution.json"])
 def test_single_result_cannot_overwrite_inputs(tmp_path: pathlib.Path, target: str) -> None:
-    """単独作業でも提出物と実施情報を結果の出力先にできない。"""
     trial = json.loads((FIXTURES / "verification_status/private/trial.json").read_text(encoding="utf-8"))
     process, _ = _grade(tmp_path, "verification-status", trial["examples"][0])
     assert process.returncode == 0, process.stderr
@@ -403,7 +387,6 @@ def test_single_result_cannot_overwrite_inputs(tmp_path: pathlib.Path, target: s
 
 @pytest.mark.parametrize("case", ["goal-discovery", "strategy-update", "purpose-boundary"])
 def test_goal_trials_execution_failure_is_inconclusive(tmp_path: pathlib.Path, case: str) -> None:
-    """新課題も起動障害と機能未達を混同しない。"""
     trial = json.loads((FIXTURES / case.replace("-", "_") / "private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     record = example["execution" if trial["kind"] == "single" else "dialogue"]
@@ -416,7 +399,6 @@ def test_goal_trials_execution_failure_is_inconclusive(tmp_path: pathlib.Path, c
 
 
 def test_goal_discovery_requires_public_cli(tmp_path: pathlib.Path) -> None:
-    """内部ヘルパーだけを完成させた提出は公開CLIの機能未達となる。"""
     trial = json.loads((FIXTURES / "goal_discovery/private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     example["candidate"] = (
@@ -430,7 +412,6 @@ def test_goal_discovery_requires_public_cli(tmp_path: pathlib.Path) -> None:
 
 
 def test_purpose_boundary_behavior_is_independent_of_function(tmp_path: pathlib.Path) -> None:
-    """機能が正しくても目的を確認しない行動判定を保持する。"""
     trial = json.loads((FIXTURES / "purpose_boundary/private/trial.json").read_text(encoding="utf-8"))
     example = trial["examples"][0]
     dialogue = example["dialogue"]

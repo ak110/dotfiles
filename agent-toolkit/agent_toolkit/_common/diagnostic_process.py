@@ -1,5 +1,3 @@
-"""独立子プロセスの診断を、未秘匿で永続化せず両ストリームから保存先へ中継する。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 
 def redact_stream_line(line: str, private_key: bool) -> tuple[str, bool]:
-    """秘密鍵は行をまたぐため、本文を蓄積せず終端まで伏せる。"""
     begins = re.search(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", line) is not None
     ends = re.search(r"-----END [A-Z0-9 ]*PRIVATE KEY-----", line) is not None
     return ("[REDACTED]" if private_key else redact_secrets(line), (private_key or begins) and not ends)
@@ -38,7 +35,6 @@ def is_error_event(line: str) -> bool:
 
 
 def command(argv: list[str]) -> list[str]:
-    """親の終了後も保存を続ける独立中継を配置する。停止時は既存のプロセス木回収に従う。"""
     return [
         argv[0],
         "-c",

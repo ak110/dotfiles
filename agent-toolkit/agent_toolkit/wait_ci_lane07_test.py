@@ -13,7 +13,6 @@ from agent_toolkit._atk import wait_ci_forge
 
 
 def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> None:
-    """同一projectの子pipelineだけを実行集合へ展開する。"""
     responses = [
         [{"id": 10, "project_id": 20, "status": "success", "sha": "a" * 40}],
         [
@@ -52,7 +51,6 @@ def test_gitlab_pipeline_list_includes_same_project_downstream(monkeypatch) -> N
 
 
 def test_main_wait_sha_uses_all_runs(monkeypatch) -> None:
-    """完全長SHAモードは正規化したSHAの全runをbaseline無しで待つ。"""
     waited = mock.Mock(return_value=wait_ci.EXIT_SUCCESS)
     monkeypatch.setattr(wait_ci, "_install_signal_handlers", lambda: None)
     monkeypatch.setattr(wait_ci, "wait_for_ci", waited)

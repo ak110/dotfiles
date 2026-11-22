@@ -1,5 +1,3 @@
-"""送達後の再掲集計と既存候補バンドルの回帰試験。"""
-
 from __future__ import annotations
 
 import json
@@ -36,7 +34,6 @@ def _write(path: Path, entries: list[dict[str, Any]]) -> None:
 
 
 def test_delivery_origin_survives_default_clipping(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """通常表示も送達本文と地の文を識別でき、全文の文字数を保つ。"""
     path = tmp_path / "main.jsonl"
     body = "検証結果の説明をユーザーへ送る。" * 300
     _write(path, [_send(body), _text("…")])
@@ -49,7 +46,6 @@ def test_delivery_origin_survives_default_clipping(tmp_path: Path, capsys: pytes
 
 
 def test_delivery_reposts_period_days_and_human_boundary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """送達ごとの最初の一致、人間境界、自動挿入、複数送達、sidechainを一緒に確認する。"""
     body = "".join(chr(0x4E00 + i) for i in range(80))
     path = tmp_path / "main.jsonl"
     auto = {"type": "user", "isMeta": True, "message": {"role": "user", "content": "自動通知"}}
@@ -118,7 +114,6 @@ def test_delivery_repost_length_boundaries(
 
 
 def test_repost_similarity_uses_full_text_and_unique_grams(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """短縮部分だけの一致は候補にしない。"""
     path = tmp_path / "main.jsonl"
     prefix = "".join(chr(0x4E00 + i) for i in range(2100))
     _write(
@@ -137,7 +132,6 @@ def test_repost_similarity_uses_full_text_and_unique_grams(tmp_path: Path, capsy
 def test_long_post_delivery_text_enters_existing_bundle(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], length: int, end: bool, expected: int
 ) -> None:
-    """200文字超の終了本文だけを候補へ加え、送達位置と原文を根拠に残す。"""
     path = tmp_path / "main.jsonl"
     _write(path, [_send("送達した本文" * 20), _text("地" * length, end=end)])
     bundle = tmp_path / "bundle"
@@ -161,12 +155,11 @@ def test_long_post_delivery_text_enters_existing_bundle(
 def test_repost_gram_and_similarity_boundaries(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], size: int, common: int, expected: int
 ) -> None:
-    """繰返しを集合にまとめ、空白を除いた20要素と0.5の境界を通す。"""
     shared = "".join(chr(0x4E00 + i) for i in range(common + 3))
     body = shared + "".join(chr(0x6000 + i) for i in range(size - common))
     other = shared + "".join(chr(0x8000 + i) for i in range(size - common))
     path = tmp_path / "main.jsonl"
-    # 文字数の条件を満たすための空白は4-gramから除かれる。
+
     _write(path, [_send(" ".join(body) + "\n" * 30), _text(" ".join(other) + "\n" * 30)])
     assert evidence.main([str(path), "--delivery-reposts"]) == 0
     events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
@@ -195,7 +188,6 @@ def test_automatic_inputs_do_not_close_delivery_interval(
 
 
 def test_delivery_catalog_and_invalid_queries(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """既存カタログ入口を通し、不正期間とモードの組合せを診断する。"""
     body = "".join(chr(0x4E00 + i) for i in range(80))
     _write(tmp_path / "first.jsonl", [_send(body), _text(body)])
     _write(tmp_path / "second.jsonl", [_send(body), _text("…")])
@@ -235,7 +227,6 @@ def test_delivery_catalog_and_invalid_queries(tmp_path: Path, capsys: pytest.Cap
 def test_long_candidate_does_not_cross_human_or_turn_boundary(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], boundary: dict[str, Any]
 ) -> None:
-    """長文の候補は、送達のある同じターンだけに限る。"""
     path = tmp_path / "main.jsonl"
     _write(path, [_send("報告" * 40), boundary, _text("次の応答" * 60)])
     bundle = tmp_path / "bundle"
@@ -249,7 +240,6 @@ def test_long_candidate_does_not_cross_human_or_turn_boundary(
 def test_bundle_reuses_timeline_without_similarity_scan(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """長文候補は既存timelineで判定し、送達と地の文の原文を個別証拠へ残す。"""
 
     def reject_unused_scan(*_args: Any, **_kwargs: Any) -> Any:
         pytest.fail("通常bundleでは送達集計の再抽出・4-gram比較を実行しない")
@@ -273,7 +263,6 @@ def test_bundle_reuses_timeline_without_similarity_scan(
 
 
 def test_bundle_excludes_sidechain_long_candidate(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """サブエージェント自身の記録でもsidechain本文を長文候補へ加えない。"""
     path = tmp_path / "sidechain.jsonl"
     _write(path, [_send("報告" * 40, isSidechain=True), _text("終了本文" * 100, isSidechain=True)])
     bundle = tmp_path / "bundle"

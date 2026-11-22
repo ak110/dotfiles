@@ -47,12 +47,10 @@ STALE_STATE_MAX_AGE_SECONDS = 14 * 24 * 60 * 60
 
 
 def state_path(session_id: str) -> pathlib.Path:
-    """セッション状態ファイルのパスを返す。"""
     return state_paths.state_dir() / "hook-sessions" / f"{_FILENAME_PREFIX}{session_id}{_FILENAME_SUFFIX}"
 
 
 def _lock_path(path: pathlib.Path) -> pathlib.Path:
-    """状態rootで共有する固定lockのパスを返す。"""
     return path.parent / ".state.lock"
 
 
@@ -122,7 +120,6 @@ def _collect_stale_state(path: pathlib.Path, threshold: float) -> bool:
 
 
 def _is_stale(path: pathlib.Path, threshold: float) -> bool:
-    """更新時刻が閾値より古い場合に真を返す。取得できない場合は偽を返す。"""
     try:
         return path.stat().st_mtime < threshold
     except OSError:
@@ -139,7 +136,6 @@ def _unlink_quietly(path: pathlib.Path) -> bool:
 
 
 def read_state(session_id: str) -> dict:
-    """セッション状態を読む。session_idが無効・不在・破損時は空辞書を返す。"""
     if not isinstance(session_id, str) or not session_id:
         return {}
     path = state_path(session_id)
@@ -154,7 +150,6 @@ def read_state(session_id: str) -> dict:
 
 
 def inherit_state_from_transcript(session_id: str, transcript_path: str) -> bool:
-    """現行状態が無い場合に、transcript内の一意な前身状態を1回だけ継承する。"""
     if not isinstance(session_id, str) or not session_id or not isinstance(transcript_path, str) or not transcript_path:
         return False
     target = state_path(session_id)
@@ -251,7 +246,6 @@ PROCESS_WI_STATE_KEY = "process_wi_skill_invoked"
 
 
 def set_process_wi_invoked(state: dict) -> dict | None:
-    """自律モードの状態を立てる`update_state`の変更関数。既に立っていれば書き込まない。"""
     if state.get(PROCESS_WI_STATE_KEY, False):
         return None
     state[PROCESS_WI_STATE_KEY] = True

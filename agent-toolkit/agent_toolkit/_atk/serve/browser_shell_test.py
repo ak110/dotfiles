@@ -1,5 +1,3 @@
-"""serveのbrowser_shellに関するsynchronizationの試験。"""
-
 import asyncio
 import urllib.parse
 
@@ -40,7 +38,6 @@ async def test_initial_screen_acquisition_is_consumed_before_observation(
     screen_harness: _ScreenHarness,
     delayed_path: str,
 ) -> None:
-    """初期接続または初期取得を保留している間は測定へ進まず、解放後の可視化更新を検証できる。"""
     page = screen_harness.page
     started = asyncio.Event()
     release = asyncio.Event()
@@ -84,7 +81,6 @@ async def test_visibility_observation_rejects_a_disabled_update_path(
     screen_harness: _ScreenHarness,
     screen: str,
 ) -> None:
-    """対象画面の可視化経路を無効にすると、別画面や初期取得の成功だけでは更新を受理しない。"""
     page = screen_harness.page
 
     async def disable_visibility(route: playwright.async_api.Route) -> None:
@@ -106,8 +102,7 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
     harness = screen_harness
     page = harness.page
     await _open_all_screens(harness)
-    # 計画一覧は購読の登録の合図の後に1回だけ取得する。その前段のhost/root取得は一覧要求のpendingに数えないため、
-    # 一覧の本文消費と全画面の購読の確立を待って再訪前の基準を確定する。
+
     await page.wait_for_function("window.__screenRequests.completed['/api/plans/files'] >= 1")
     await _wait_screen_requests_consumed(page, tuple(events for events, _ in _SCREEN_STREAMS.values()))
     tracked_suffixes = ("/api/sync", "/api/plans/files", "/api/sessions/list")
@@ -125,7 +120,6 @@ async def test_revisiting_screens_does_not_repeat_initial_requests(screen_harnes
 async def test_initial_screen_request_does_not_block_other_screen_prefetch(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """初期画面の応答待ち中にも他画面の初回要求を開始する。"""
     harness = screen_harness
     sessions_release = asyncio.Event()
     sessions_handled = asyncio.Event()
@@ -170,7 +164,6 @@ async def test_silent_sse_is_reconnected_and_lists_are_refetched(
     screen_harness: _ScreenHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """通知もheartbeatも届かない時間が閾値を超えると、3画面とも再接続して一覧を取り直す。"""
     monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 3600.0)
     monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
     await _open_all_screens(screen_harness)
@@ -195,7 +188,6 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
     screen_harness: _ScreenHarness,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """heartbeatが届き続ける間は、閾値を超えて待っても再接続も一覧の再取得も起きない。"""
     monkeypatch.setattr(serve_runtime, "SSE_HEARTBEAT_SEC", 0.2)
     monkeypatch.setattr(serve_runtime, "SSE_STALL_SEC", 1.0)
     await _open_all_screens(screen_harness)
@@ -218,7 +210,6 @@ async def test_regular_heartbeat_keeps_sse_without_refetching(
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_visible_tab_and_bfcache_restore_resynchronize_screens(screen_harness: _ScreenHarness) -> None:
-    """タブが表示へ戻るとWI画面とセッション画面が一覧を取り直し、bfcacheからの復帰では再接続する。"""
     page = screen_harness.page
     await _open_all_screens(screen_harness)
     await _resynchronize_visible(page)

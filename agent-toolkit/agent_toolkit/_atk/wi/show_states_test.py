@@ -1,5 +1,3 @@
-"""WIのshow: statesのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -12,15 +10,12 @@ from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_a
 
 
 class TestShowProcessing:
-    """showサブコマンド: processing状態も探索・走査対象に含める。"""
-
     def test_single_file_finds_entry_in_processing_only(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時にinboxで見つからずprocessingで見つかる場合、その本文が表示される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -39,7 +34,6 @@ class TestShowProcessing:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """同じ年月パスのstateを書き換えた項目を、変更後の状態で表示する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_state_file(notes, "inbox", "fb-dup.md", body="保持する本文")
         path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
@@ -60,7 +54,6 @@ class TestShowProcessing:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all指定時にactiveの3状態を型によらず出力する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-inbox.md", body="inbox本文")
         _write_awi_processing_file(notes, "fb-processing.md", body="processing本文")
@@ -88,15 +81,12 @@ class TestShowProcessing:
 
 
 class TestShowProcessedStates:
-    """showサブコマンド: 処理済み状態の探索と、FILENAME単発指定時の`--status`迂回を検証する。"""
-
     def test_finds_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """adopted配下のFILENAMEを参照できる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_state_file(notes, "adopted", "fb-adopted.md", body="adopted本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -115,7 +105,6 @@ class TestShowProcessedStates:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """rejected配下のFILENAMEを参照できる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_state_file(notes, "rejected", "fb-rejected.md", body="rejected本文")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

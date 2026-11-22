@@ -1,5 +1,3 @@
-"""計画形式の共通解析を検証する。"""
-
 import pathlib
 
 import pytest
@@ -45,7 +43,6 @@ _MISSING_EXPANSION = f"`広がり:`の行が無い（書く内容: {_EXPANSION_C
     ],
 )
 def test_cause_record_accepts_line_forms(line: str) -> None:
-    """リスト記号・強調・全角の区切りの有無によらず、行頭語で始まる行を記録の行として受理する。"""
     assert not plan_sections.cause_record_errors(_RECORD.replace(_EXPANSION_LINE, line))
 
 
@@ -66,19 +63,16 @@ def test_cause_record_accepts_line_forms(line: str) -> None:
     ids=["missing", "empty", "empty-optional", "fenced-example"],
 )
 def test_cause_record_reports_missing_and_empty_lines(record: str, expected: str) -> None:
-    """欠けた行頭語と本文の無い行を、その行に書く内容とともに示す。コードフェンス内の例は記録に数えない。"""
     assert plan_sections.cause_record_errors(record) == [expected]
 
 
 def test_cause_record_accepts_optional_lines_with_text() -> None:
-    """条件付きの`再発:`・`再発防止:`の行は、本文があれば受理し、`再発防止:`を`再発:`と読み違えない。"""
     record = f"{_RECORD}\n- 再発防止: 検査を足し、同じ文章を消す。"
     assert not plan_sections.cause_record_errors(record)
     assert [line.label for line in plan_sections.cause_record_lines(record)][-1] == "再発防止"
 
 
 def test_cause_record_checks_each_h3_unit() -> None:
-    """H3ごとのバグ単位を個別に検査し、行頭語の行を持たない最初のH3より前の本文は単位として数えない。"""
     content = f"原因分析の対象を2件に分けた。\n\n### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_EXPANSION}\n"
     assert plan_sections.cause_record_errors(content) == [f"`### 事象B`: {_MISSING_EXPANSION}"]
     preamble = content.replace("原因分析の対象を2件に分けた。", "- 期待: 前置きに書いた。")
@@ -95,7 +89,6 @@ def test_cause_record_checks_each_h3_unit() -> None:
     ],
 )
 def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
-    """廃止した表と旧来の短い記録は、保存済みの読み取りでだけ受理し、新規の検査では行頭語の行を求めて拒否する。"""
     content = _plan_fixture.bug_file(variant=variant)
     assert not plan_sections.check_bug_file_structure(content)
     assert plan_sections.has_legacy_cause_record(content)
@@ -107,7 +100,6 @@ def test_saved_legacy_record_is_accepted_only_for_reading(variant: str) -> None:
 
 
 def test_incomplete_current_record_is_rejected_for_reading() -> None:
-    """現行だけが持つ行頭語を含む記録は旧形式として扱わず、読み取りでも欠けた行を診断する。"""
     content = _plan_fixture.bug_file().replace("広がり", "近傍")
     assert not plan_sections.has_legacy_cause_record(content)
     assert any("`広がり:`の行が無い" in error for error in plan_sections.check_bug_file_structure(content))
@@ -130,14 +122,12 @@ _TOOLKIT_PREFIX = "agent-" + "toolkit"
     ],
 )
 def test_optional_design_section_rejects_invalid_structure(section: str, target: str, expected: str) -> None:
-    """任意の設計節も空欄・配置違い・重複を拒否する。"""
     content = _plan_fixture.eight_section_plan().replace(f"## {target}\n", f"{section}## {target}\n", 1)
     errors = plan_sections.check_plan_eight_section_structure(content)[1]
     assert any(expected in error for error in errors), errors
 
 
 def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
-    """人間向け形式はWIファイル名と説明的な実装単位だけを解析する。"""
     metadata, metadata_errors = _plan_format.parse_plan_metadata(_HUMAN_MAIN_CONTENT)
     assert not metadata_errors, metadata_errors
     assert metadata is not None
@@ -152,7 +142,6 @@ def test_human_readable_wi_and_units_do_not_expose_internal_ids() -> None:
 
 
 def test_agent_wi_adopted_action_accepts_rederived_scope() -> None:
-    """エージェント由来のWIの採用行は再導出した適用範囲と根拠を受理する。"""
     row = (
         f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 採用 | "
         "入力経路全体へ適用する。誤りの機構が由来の種類に依存しないため。 |"
@@ -195,7 +184,6 @@ def test_user_origin_requires_requirement_decomposition(decision: str) -> None:
 
 
 def test_human_readable_history_rejects_internal_identifier() -> None:
-    """人間向け変更履歴は内部管理IDを含めず自然な記録を持つ。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.HISTORY_REVIEW_BODY, "P-001", 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert any("`## 変更履歴`へ履歴・要求・実装単位の合成ID" in error for error in errors), errors
@@ -209,14 +197,12 @@ def test_human_readable_main_accepts_ambiguous_external_identifier(external_id: 
 
 
 def test_human_readable_units_reject_ambiguous_exact_id() -> None:
-    """構造化された実装単位名では曖昧な完全トークンも旧IDとして拒否する。"""
     content = _HUMAN_DETAIL_CONTENT.replace("| 契約境界の更新 |", "| P-256 |", 1)
     errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("合成IDではない説明的な名前" in error for error in errors), errors
 
 
 def test_bug_file_structure_accepts_canonical_sidecar() -> None:
-    """H1直下のバグ単位と原因分析表・固定行の調査表を持つ付属ファイルを受理する。"""
     assert not plan_sections.check_bug_file_structure(_BUG_FILE_CONTENT)
 
 
@@ -231,13 +217,11 @@ def test_legacy_plan_accepts_legacy_history_review_identifier() -> None:
 
 
 def test_permanence_rejects_free_h3() -> None:
-    """恒久化領域では固定3見出し以外のH3を拒否する。"""
     content = _VALID_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
     assert any("固定見出し以外のH3" in error for error in plan_sections.check_plan_structure(content))
 
 
 def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
-    """進捗表に内容行がある場合は従来どおり全cellの値を要求する。"""
     marker = "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
     content = _VALID_CONTENT.replace(marker, marker + "| 2026-08-09 12:00 | 実装 |  |\n", 1)
     errors = plan_sections.check_plan_structure(content)
@@ -245,7 +229,6 @@ def test_progress_table_rejects_empty_cells_when_a_row_exists() -> None:
 
 
 def test_permanence_table_accepts_no_candidate_phrase_within_finding() -> None:
-    """予約値を含む通常の知見と別の知見を併記した表を受理する。"""
     row = _plan_fixture.PERMANENCE_ROW
     additional = "| 候補なし表記の検査を追加する | P-001 | 対象ファイル | 誤った記載を拒否するため。 |"
     assert not plan_sections.check_plan_structure(_VALID_CONTENT.replace(row, f"{row}\n{additional}"))
@@ -271,7 +254,6 @@ def test_permanence_table_rejects_empty_cells_and_column_mismatch(
     expected: str,
     unexpected: str,
 ) -> None:
-    """恒久化表の空セルと列数不一致を拒否する。"""
     original = _plan_fixture.PERMANENCE_ROW
     content = _VALID_CONTENT.replace(original, row)
     errors = plan_sections.check_plan_structure(content)
@@ -282,7 +264,6 @@ def test_permanence_table_rejects_empty_cells_and_column_mismatch(
 
 
 def test_refactoring_table_accepts_one_row_per_target() -> None:
-    """現行リファクタリング表は3列で複数の対象箇所を受理する。"""
     additional = "| 表示処理 | 判定が重複する。 | 共通化する。 |"
     content = _VALID_CONTENT.replace(
         _plan_fixture.REFACTORING_ROW,
@@ -301,7 +282,6 @@ def test_refactoring_table_accepts_one_row_per_target() -> None:
     ],
 )
 def test_refactoring_table_rejects_empty_cells_and_column_mismatch(row: str, expected: str) -> None:
-    """現行リファクタリング表の空cellと列数不一致を拒否する。"""
     content = _VALID_CONTENT.replace(_plan_fixture.REFACTORING_ROW, row, 1)
     errors = plan_sections.check_plan_structure(content)
 
@@ -323,7 +303,6 @@ def test_legacy_refactoring_table_remains_readable() -> None:
 
 
 def test_new_material_tables_take_priority_over_legacy_fence() -> None:
-    """新形式の表と旧形式の素材記法が混在する場合は新形式を解析する。"""
     legacy_tail = """
 P-999:
 
@@ -340,7 +319,6 @@ P-999:
 
 
 def test_action_decision_rejects_unknown_value() -> None:
-    """実施内容表の未定義な採否値を拒否する。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 未定義 | 指示どおり | R-P-001-001 |",
@@ -351,7 +329,6 @@ def test_action_decision_rejects_unknown_value() -> None:
 
 
 def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> None:
-    """非採用系の理由に存在する不採用要求IDを含めても拒否しない。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 | R-P-001-002を不採用とする理由を記載する。 |",
@@ -367,7 +344,6 @@ def test_non_adopted_action_may_reference_rejected_requirement_in_reason() -> No
 
 
 def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> None:
-    """異なる素材IDから同じフィードバックを重複参照できない。"""
     content = _VALID_CONTENT.replace(
         "| P-002 | 利用者合意 | 非該当 | 本セッション | 全文 |",
         "| P-002 | フィードバック | 20260817-223603-001.md | 値なし | 本文全文 |",
@@ -379,7 +355,6 @@ def test_structured_material_contract_rejects_duplicate_feedback_queue_id() -> N
 
 @pytest.mark.parametrize("material_type", ["参考素材", "処理対象資料", "起動事実"])
 def test_structured_material_types_may_be_unreferenced(material_type: str) -> None:
-    """参考素材、処理対象資料および起動事実は要求を直接持たなくても受理する。"""
     row = {
         "参考素材": "| P-002 | 参考素材 | 非該当 | docs/reference.md | 節1 |",
         "処理対象資料": "| P-002 | 処理対象資料 | 非該当 | input.json | $.items |",
@@ -402,7 +377,6 @@ def test_structured_material_types_may_be_unreferenced(material_type: str) -> No
 
 
 def test_metadata_prefers_canonical_placement() -> None:
-    """正規配置がある計画では旧配置を無視する。"""
     content = _VALID_CONTENT.replace(
         f"### {_plan_fixture.IMPLEMENTATION_H3}",
         f"### 計画メタ情報\n\n- ベースコミット: `{'b' * 40}`\n\n### ファイル群別の変更説明",
@@ -415,7 +389,6 @@ def test_metadata_prefers_canonical_placement() -> None:
 
 
 def test_markdown_body_lines_exclude_frontmatter_fences_and_comments() -> None:
-    """フロントマター、コードフェンス、複数行HTMLコメントの行は本文行に含めない。"""
     content = """---
 title: x
 ---
@@ -434,7 +407,6 @@ title: x
 
 
 def test_agent_document_target_paths() -> None:
-    """配布規範とagent定義をエージェント向け文書として判定する。"""
     assert _plan_format.is_agent_doc_target_file(f"{_TOOLKIT_PREFIX}/skills/example/SKILL.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/agents/example.md")
     assert _plan_format.is_agent_doc_target_file("agent-toolkit/skills/atk-mode/roles/exec.subagent.md")
@@ -461,12 +433,10 @@ def test_agent_document_target_covers_every_layer_and_kind(layer: str, kind_path
 
 @pytest.mark.parametrize("path", ("AGENTS.md", "CLAUDE.md", "project/AGENTS.md", "project/CLAUDE.md"))
 def test_agent_document_target_includes_project_instruction_files(path: str) -> None:
-    """プロジェクト規範のファイルは配置ディレクトリによらず判定する。"""
     assert _plan_format.is_agent_doc_target_file(path)
 
 
 def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
-    """提案行が無い判断節へ任意の説明文を置かない。"""
     judgment = f"## {_plan_format.PLAN_H2_AGENT_JUDGMENT}"
     content = _canonical_main_content().replace(f"{judgment}\n\nなし", f"{judgment}\n\n調査結果を記載する", 1)
     _work_type, errors = plan_sections.check_plan_main_structure(content)
@@ -474,7 +444,6 @@ def test_main_structure_requires_none_when_no_agent_proposal_exists() -> None:
 
 
 def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track() -> None:
-    """旧形式では旧trackを残せるが、正規値に無いハイフン付き系統名は拒否する。"""
     accepted = _VALID_CONTENT.replace(
         _plan_fixture.HISTORY_USER_ROW,
         "| R1-conformance | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
@@ -488,7 +457,6 @@ def test_legacy_history_keeps_old_track_compatibility_but_rejects_unknown_track(
 
 
 def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
-    """複数単位と先行依存を持つ正規形を受理する。"""
     second = "| U-002 | 回帰検証を追加する | U-001 | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
         f"{_plan_fixture.TWO_FILE_UNIT_ROW}\n",
@@ -498,7 +466,6 @@ def test_detail_structure_accepts_multiple_units_with_dependency() -> None:
 
 
 def test_detail_structure_rejects_dependency_not_preceding_integration_order() -> None:
-    """先行依存が依存元より前の統合順に無い場合を拒否する。"""
     first = "| U-001 | 診断件数を更新する | U-002 | 1 | `pytest _plan_format_test.py` |\n"
     second = "| U-002 | 回帰検証を追加する | なし | 2 | `pytest check_plan_file_test.py` |\n"
     content = _VALID_DETAIL_CONTENT.replace(
@@ -510,21 +477,18 @@ def test_detail_structure_rejects_dependency_not_preceding_integration_order() -
 
 
 def test_main_structure_accepts_termination_placeholder() -> None:
-    """`## 公開工程`は公開工程が無い場合`なし`の記載を受理する。"""
     assert "\n## 公開工程\n\nなし\n" in _VALID_MAIN_CONTENT
     _work_type, errors = plan_sections.check_plan_main_structure(_VALID_MAIN_CONTENT)
     assert not any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
 
 
 def test_detail_structure_rejects_bug_section_for_normal_work_type() -> None:
-    """detail側は作業種別が`通常変更`の場合`## バグ調査結果`を拒否する。"""
     content = "## バグ調査結果\n\n未使用。\n\n" + _VALID_DETAIL_CONTENT
     errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any(f"`## {_plan_format.PLAN_H2_BUG}`は置かない" in error for error in errors), errors
 
 
 def test_origin_check_needs_no_wi_body(tmp_path: pathlib.Path) -> None:
-    """由来の構文確認はWI本文の取得に依存しない。"""
     (tmp_path / "inbox").mkdir(parents=True)
     errors, notices, skips = _origin_check(tmp_path)
     assert not errors, errors
@@ -533,7 +497,6 @@ def test_origin_check_needs_no_wi_body(tmp_path: pathlib.Path) -> None:
 
 
 def test_progress_log_rows_returns_rows_in_document_order() -> None:
-    """進捗ログの固定表の内容行を本文の出現順に3列のまま返す。"""
     content = (
         "# plan\n\n"
         f"## {_plan_format.PLAN_H2_PROGRESS}\n\n"
@@ -549,7 +512,6 @@ def test_progress_log_rows_returns_rows_in_document_order() -> None:
 
 
 def test_progress_log_rows_returns_empty_list_for_row_less_table() -> None:
-    """内容行が無い固定表では空の一覧を返す。"""
     content = f"# plan\n\n## {_plan_format.PLAN_H2_PROGRESS}\n\n| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
 
     assert not _plan_format.progress_log_rows(content)
@@ -568,7 +530,6 @@ def test_progress_log_rows_returns_empty_list_for_row_less_table() -> None:
     ],
 )
 def test_progress_log_rows_rejects_broken_structure(content: str, expected: str) -> None:
-    """節、固定表および列構成のいずれかが成立しない本文を拒否する。"""
     with pytest.raises(ValueError, match=expected):
         _plan_format.progress_log_rows(content)
 
@@ -581,7 +542,6 @@ def test_progress_log_rows_rejects_broken_structure(content: str, expected: str)
     ],
 )
 def test_progress_log_rows_missing_table_states_next_action(content: str) -> None:
-    """節か固定表が無い場合は、置くべき見出しと表頭を次の操作として示す。"""
     with pytest.raises(_next_action.ActionableError) as raised:
         _plan_format.progress_log_rows(content)
     assert f"`## {_plan_format.PLAN_H2_PROGRESS}`見出しと、表頭" in raised.value.next_action
@@ -608,9 +568,8 @@ def test_transferred_action_requires_registered_wi(
     *,
     human_format: bool,
 ) -> None:
-    """移管にはWI名と実在が必要で、notes不在時は実在を確認できなかった旨を通知する。"""
     notes = tmp_path / "notes"
-    # この入力は登録ファイルの有無を扱い、Git履歴は持たない。
+
     monkeypatch.setattr(plan_references, "_deleted_registration", lambda *_args, **_kwargs: None)
     if notes_exist:
         notes.mkdir()

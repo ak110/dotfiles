@@ -1,5 +1,3 @@
-"""WIエントリの走査、対象リポジトリによる限定と種別の判定のテスト。"""
-
 import pathlib
 from unittest import mock
 
@@ -17,13 +15,10 @@ from agent_toolkit._testing.wi_entry_files import write_uwi
 
 
 class TestIterEntriesRepoFilter:
-    """保存済みのリポジトリ表記を正規化して同じ対象へ限定する。"""
-
     def test_local_path_filter_includes_legacy_and_current_repo_forms(
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """生のローカルパス指定でも旧パス形とURL形を含み、不在のパスは除く。"""
         local_repo = tmp_path / "repo"
         git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
         write_uwi(tmp_path, "legacy.md", target_repo=str(local_repo), question="旧形式")
@@ -38,7 +33,6 @@ class TestIterEntriesRepoFilter:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1回の反復では同じ保存値を複数項目が持っても解決を1回に限定する。"""
         write_uwi(tmp_path, "first.md", target_repo="/legacy/repo")
         write_uwi(tmp_path, "second.md", target_repo="/legacy/repo")
         calls: list[str] = []
@@ -59,21 +53,19 @@ _TYPELESS_ENTRY = "---\ntarget_repo: github.com/example/foo\n---\n\n# 本文\n"
 
 
 def _next_action_of(capsys: pytest.CaptureFixture[str]) -> str:
-    """標準エラーの次の操作の行の本文を返す。"""
     lines = [line for line in capsys.readouterr().err.splitlines() if line.startswith("次の操作: ")]
     assert len(lines) == 1
     return lines[0]
 
 
 def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """typeが欠落した項目は`atk wi edit`でも同じ理由で拒否されるため、確認と報告を案内する。"""
     path = tmp_path / "20260930-000000-001.md"
     path.write_text(_TYPELESS_ENTRY, encoding="utf-8")
 
     with pytest.raises(SystemExit):
         _wi_entries.entry_type_from_metadata(path, {"target_repo": "github.com/example/foo"})
     common_next_action = _next_action_of(capsys)
-    # 案内した`atk wi edit`に`--body-file`で本文を渡した場合は、同じ検証で拒否されることを確かめる。
+
     with pytest.raises(SystemExit):
         _mutations_content._build_noninteractive_edit_content(path, _TYPELESS_ENTRY, "# 新しい本文\n")  # pylint: disable=protected-access
     capsys.readouterr()
@@ -100,7 +92,6 @@ def test_broken_entry_next_action_can_show_saved_content(
     content: str,
     state: str,
 ) -> None:
-    """不正な管理情報の項目でも、公開showが同じ保存本文を表示する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path))
     directory = tmp_path / "2026" / "10"
     directory.mkdir(parents=True)
@@ -126,7 +117,6 @@ def test_broken_entry_next_action_can_show_saved_content(
 def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """frontmatterを解析できない項目は、確認と報告を案内する。"""
     path = tmp_path / "20260930-000000-002.md"
     broken = "---\ntarget_repo: [\n---\n\n# 本文\n"
     path.write_text(broken, encoding="utf-8")
@@ -140,7 +130,6 @@ def test_unparsable_frontmatter_guides_to_report_instead_of_edit(
 
 
 def test_named_read_preserves_request_order_filters_and_stored_state(tmp_path: pathlib.Path) -> None:
-    """明示名の共通読取は要求順と保存状態を保ち、条件外の項目を不在へ分ける。"""
     first, second, absent = (f"20261008-000000-00{index}.md" for index in (1, 2, 3))
     directory = tmp_path / "2026" / "10"
     directory.mkdir(parents=True)
@@ -170,7 +159,6 @@ def test_named_read_preserves_request_order_filters_and_stored_state(tmp_path: p
 
 @pytest.mark.parametrize("operation", ["select", "named"])
 def test_entry_metadata_is_parsed_once_per_acquisition(tmp_path: pathlib.Path, operation: str) -> None:
-    """属性の抽出と消費を共有し、別操作では本文を読み直す。"""
     path = tmp_path / "2026" / "10" / "20261018-000000-001.md"
     path.parent.mkdir(parents=True)
     text = "\ufeff---\nstate: inbox\ntarget_repo: github.com/example/repo\ntype: awi\nsource: 001\n---\n\n要約\n"
@@ -208,7 +196,6 @@ def test_entry_metadata_is_parsed_once_per_acquisition(tmp_path: pathlib.Path, o
     ],
 )
 def test_named_read_preserves_special_input_values(tmp_path: pathlib.Path, text: str, kind: str | None, repo: str) -> None:
-    """指定名読取は破損と不正種別を表示可能な値として保つ。"""
     path = tmp_path / "2026" / "10" / "20261018-000000-001.md"
     path.parent.mkdir(parents=True)
     path.write_text(text, encoding="utf-8")
@@ -220,7 +207,6 @@ def test_named_read_preserves_special_input_values(tmp_path: pathlib.Path, text:
 
 
 def test_acquired_text_preserves_literal_scalars_and_typed_schedule(tmp_path: pathlib.Path) -> None:
-    """解析結果を受け取る消費側で字面とqueue_scheduleの型を保持する。"""
     path = tmp_path / "2026" / "10" / "entry.md"
     path.parent.mkdir(parents=True)
     path.write_text(

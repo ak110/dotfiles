@@ -1,5 +1,3 @@
-"""`atk wi list`による一覧の表示（テキスト・JSON Lines・件数・要約）と着手可否の表示。"""
-
 import argparse
 import dataclasses
 import datetime
@@ -40,8 +38,6 @@ from agent_toolkit._git import command as _git_command
 
 @dataclasses.dataclass(frozen=True)
 class RepositorySnapshot:
-    """1回のキュー取得から得た登録先の候補・診断と処理上限。"""
-
     repository: _config.ConfiguredRepository
     entries: tuple[_wi_entries.EntryRecord, ...]
     readiness: ReadinessResult
@@ -49,7 +45,6 @@ class RepositorySnapshot:
 
     @property
     def candidates(self) -> tuple[_wi_entries.EntryRecord, ...]:
-        """processing全件と、readyまたは内部依存待ちのinboxを返す。未回答のUWIと報告用UWIは除く。"""
         names = {*self.readiness.ready, *self.readiness.internal_dependency_waits}
         return tuple(
             entry
@@ -67,16 +62,13 @@ class RepositorySnapshot:
 
     @property
     def has_work(self) -> bool:
-        """候補か対処を要する診断があり、担当の起動が必要かを返す。"""
         return bool(self.candidates or self.readiness.actionable_count)
 
     @property
     def lane_limit(self) -> int:
-        """候補数に対するリポジトリ別のレーン上限を返す。"""
         return (len(self.candidates) + 9) // 10
 
     def candidate_records(self) -> list[dict[str, object]]:
-        """担当へ渡す本文と鮮度を同じ取得済み候補から返す。"""
         now = datetime.datetime.now(datetime.UTC)
         branch = self.repository.branch
         base = "HEAD" if branch is None else f"refs/remotes/origin/{branch}"
@@ -104,12 +96,11 @@ def configured_repo_snapshot(
     private_notes: pathlib.Path,
     repositories: tuple[_config.ConfiguredRepository, ...] | None = None,
 ) -> tuple[RepositorySnapshot, ...]:
-    """登録集合を固定し、一括読込したキューを対象ごとの依存判定へ渡す。"""
     targets = _config.resolve_configured_repositories() if repositories is None else repositories
     if not targets:
         return ()
     snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None))
-    # 系統を登録した対象が無ければ空の対応で十分である（保存済みの系統を持つ項目は全て登録外として着手不能になる）。
+
     branch_settings = _wi_branches.registry() if any(repository.branch is not None for repository in targets) else {}
     return tuple(
         RepositorySnapshot(
@@ -140,7 +131,6 @@ def configured_repo_snapshot(
 
 
 def _state_readiness(state: str, filename: str, readiness: ReadinessResult) -> str:
-    """一覧表示用の状態別着手可否を返す。"""
     if state not in WI_PROCESSABLE_STATES:
         return "complete"
     return "ready" if filename in readiness.ready else "blocked"
@@ -177,7 +167,6 @@ def print_entries(
     readiness: ReadinessResult,
     branch_settings: _wi_branches.Registry | None = None,
 ) -> None:
-    """選択済みエントリを`atk wi list`の1件1行形式で出力する。系統を持つ項目は`target_branch=`を添える。"""
     for header_type in (*WI_TYPES, None):
         group = [entry for entry in selected if entry[4] == header_type]
         if not group:
@@ -200,7 +189,7 @@ def print_entries(
                     if answered
                     else f"{state}/unanswered"
                 )
-            # パイプ・リダイレクトでは後段が機械的に本文を取得できるよう短縮しない。
+
             if sys.stdout.isatty():
                 repo_budget = target_repo_budget(path.name, label)
                 display_repo = truncate_target_repo(target_repo, max_width=repo_budget)
@@ -274,11 +263,6 @@ def _print_json_entries(
     local_worktrees: Mapping[str, pathlib.Path] | None = None,
     branch_settings: _wi_branches.Registry | None = None,
 ) -> None:
-    """選択済みエントリを端末幅によらず同じ形のJSON Linesで出力する。
-
-    `local_worktrees`はリポジトリ識別子からローカル作業ツリーへの対応で、鮮度の判定に使う。
-    系統を持つ項目は`target_branch`を加え、鮮度をその系統のリモートブランチと比べる。
-    """
     now = staleness_now or datetime.datetime.now(datetime.UTC)
     for path, target_repo, text, state, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         state_readiness = _state_readiness(state, path.name, readiness)
@@ -318,18 +302,12 @@ def _print_json_entries(
 
 
 def _print_summary_entries(selected: list[_wi_entries.EntryRecord]) -> None:
-    """選択済みエントリのファイル名と要約をJSON Linesで出力する。"""
     for path, _, text, _, entry_type in sorted(selected, key=lambda entry: entry[0].name):
         summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
         print(json.dumps({"filename": path.name, "summary": summary}, ensure_ascii=False, separators=(",", ":")))
 
 
 def _local_worktrees(args: argparse.Namespace, target_values: list[str]) -> dict[str, pathlib.Path]:
-    """`--target-repo`の値のうちローカル作業ツリーを指すものを、リポジトリ識別子と対応付けて返す。
-
-    実在するローカルパスの指定はそのパスを、省略時に現在位置から補った識別子は現在位置の作業ツリーを使う。
-    正規化リモートURLでの指定と`all`は作業ツリーを持たないため対応に含めない。
-    """
     worktrees: dict[str, pathlib.Path] = {}
     if getattr(args, "target_repo_defaulted", False):
         for value in target_values:
@@ -342,7 +320,6 @@ def _local_worktrees(args: argparse.Namespace, target_values: list[str]) -> dict
 
 
 def _staleness_paths(private_notes: pathlib.Path, filenames: list[str]) -> list[pathlib.Path]:
-    """指定名の固定配置と旧状態配置だけを調べる。名前の不在から全件走査へ戻さない。"""
     paths = []
     for name in dict.fromkeys(filenames):
         if DATED_NAME.fullmatch(name) is None:
@@ -394,7 +371,6 @@ def _validate_named_staleness_options(args: argparse.Namespace) -> None:
 
 
 def _print_named_staleness(args: argparse.Namespace, private_notes: pathlib.Path, filenames: list[str]) -> None:
-    """指定名の鮮度を、依存・着手可否の計算をせずに返す。"""
     targets = args.target_repo or []
     matcher = _wi_filters.TargetRepoMatcher([resolve_repo_id(target) for target in targets] or None)
     worktrees = _local_worktrees(args, targets)
@@ -427,22 +403,6 @@ def _print_named_staleness(args: argparse.Namespace, private_notes: pathlib.Path
 
 
 def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """`list`サブコマンド: AWI/`uwi`を1件1行（ファイル名・`target_repo`・状態・要約）で出力する。
-
-    `--type`指定で出力対象種別（awi・uwi・all）を限定する（省略時はall）。
-    `--state`指定で表示範囲を限定する（省略時はactive）。
-    `active`は`inbox`・`processing`・`hold`、`processable`は`inbox`・`processing`を出力する。
-    個別状態は`inbox`・`processing`・`hold`・`adopted`・`rejected`を解釈し、`all`は5状態すべてを出力する。
-    `--answered`（`all`・`yes`・`no`）でUWIの回答状況を限定し、`yes`・`no`指定時はAWIを除外する。
-    `--source`指定時はAWI・`uwi`双方をfrontmatterの`source`一致（`!`接頭で否定、無指定エントリも対象に含む）へ限定する。
-    `--target-repo`指定時は、正規化リモートURLへ変換した値とfrontmatterの`target_repo`が
-    完全一致するエントリのみを出力する。
-    出力はAWI・`uwi`の種別でグループ化し、各グループ内を状態によらずファイル名の昇順で整列する。
-    該当エントリが1件以上ある種別だけ見出しを出力する。
-    `--count`指定時は、フィルター適用後のAWI件数とUWI件数の合計を整数のみで出力し、
-    種別見出し・エントリ行は出力しない。
-    `--summary-only`指定時は、ファイル名と要約だけをJSON Linesで出力する。
-    """
     filenames = getattr(args, "staleness_for", None)
     if filenames:
         _validate_named_staleness_options(args)

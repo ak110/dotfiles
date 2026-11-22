@@ -100,7 +100,6 @@ def test_cell_files_preserve_issue_and_supply_responses(
     ],
 )
 def test_cell_text_arguments_are_rejected(arguments: list[str]) -> None:
-    """セル本文をコマンドライン文字列で渡す旧受理形式を拒否する。"""
     with pytest.raises(SystemExit) as exc_info:
         _parser().parse_args(arguments)
     assert exc_info.value.code == 2
@@ -133,7 +132,6 @@ def test_unreadable_cell_file_does_not_update_table(tmp_path: pathlib.Path) -> N
 
 
 def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
-    """`round`・`track`だけの指定でも一意に定まれば応答を更新できる。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
@@ -146,7 +144,6 @@ def test_respond_resolves_by_partial_key(tmp_path: pathlib.Path) -> None:
 
 
 def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pathlib.Path) -> None:
-    """部分キーが複数行へ一致する場合は拒否し、表を変更しない。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
@@ -158,7 +155,6 @@ def test_respond_rejects_multiple_matches_and_keeps_table_unchanged(tmp_path: pa
 
 
 def test_respond_reports_decoded_candidates_when_no_partial_key_matches(tmp_path: pathlib.Path) -> None:
-    """一致しない部分キーへ、デコード済み候補行を示して再指定を可能にする。"""
     path = tmp_path / "review.tsv"
     issue = '本文に"引用"を含む指摘'
     table.init(path)
@@ -183,7 +179,6 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """row-idは保存順を表し、表示条件の適用後も番号を変えず対象行だけを更新する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘A")
@@ -205,7 +200,6 @@ def test_row_id_is_stable_across_filters_and_updates_only_selected_row(
 
 @pytest.mark.parametrize("row_id", (0, 2))
 def test_respond_rejects_invalid_row_id_without_changing_table(tmp_path: pathlib.Path, row_id: int) -> None:
-    """0以下または範囲外のrow-idは保存本文を変更せず拒否する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "指摘")
@@ -230,7 +224,6 @@ def test_respond_rejects_row_id_with_legacy_key(tmp_path: pathlib.Path) -> None:
 
 
 def test_concurrent_add_and_reordered_response_preserve_rows(tmp_path: pathlib.Path) -> None:
-    """並列追加と並べ替え後の複合キー更新で行の欠落・重複・破損を生じさせない。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     entries = [("1", _TRACK, f"module.py:{index}", f"指摘{index}") for index in range(8)]

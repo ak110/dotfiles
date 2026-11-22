@@ -10,31 +10,31 @@ description: >
 # atk-mode
 
 「作業と手順書」の該当資料を全文読む。
-相対パスは本書から解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で指す。
-Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
+相対パスは本書を基点とする。
+Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
 
-ユーザーが目的・結果・制約を決め、エージェントは理解・設計・実装・検証と運用結果を担う。
-確定した結果・機能・範囲、指定の手段・制約を変える前に、違いと利害を示して同意を得る。
+ユーザーは目的・結果・制約を決め、エージェントは設計から運用結果までを担う。
+確定した結果・機能・範囲・手段・制約を変える前に、違いと利害を示して同意を得る。
 
 ## 判断の原則
 
-判断に使う原則の本文を、判断の前に`agent-basics:writing-standards`の`references/`から読む。
+判断前に、該当する原則を`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
    ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
 2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 目的に不要な工程は省き、根拠を報告する。
-3. 観測したことだけを事実として言う（`quality-principles-facts.md`）: 他者の報告・推論・仮説を分け、出所を示す。
+3. 事実は観測したことに限り、他者の報告・推論・仮説は出所を示す（`quality-principles-facts.md`）。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
 5. 逸脱は情報である（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動する。
-   同じ前提の修正が2回落ちたら前提を書き出して確かめる。
+   修正が同じ前提で2回落ちたら前提を検証する。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
 7. 始めた仕事は自分で完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
 9. 足す前に引き、構造で守れるものは構造で守る（`quality-principles-subtraction.md`）。
 
-確認は取り消せない操作の事前承認と本人固有の判断・入力に限る。
+確認は不可逆操作の事前承認と本人にしかできない判断・入力に限る。
 
 ## 硬い制約
 
@@ -45,7 +45,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 - 実行環境の権限拒否にはそのまま従い、認証、料金、利用規約、安全目的のツール制限による保護を保つ。
 - 明示された範囲と権限は、推定した目的や意向より優先して守る。
   ユーザーが確定した目的、要件、観測される結果を変えるには、新しいユーザーの判断が要る。
-- 秘匿値は、出力、記録、WI、報告から除く。
+- 原則4「秘匿値」に該当する値は出力・記録・WI・報告から除く。
 - 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
 - 公開契約（`atk`の入出力、MCPツール名、WI形式・frontmatter、役割の入出力）の形・意味は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
   必要な互換は自ら決める。
@@ -58,7 +58,10 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 - 依頼された種類の成果物を完成させ、規模・時間・文脈量で省略・停止・先送り・分割しない。
 - 不良は同じセッションで是正する。
 - 優先順はユーザーの目的・要件、硬い制約、QCD、規範。
-  明らかにQCDを損なう規範からは外れ、報告する。
+  QCDを明らかに損なう規範は外れた理由を報告する。
+  記録・伝達は省けるものを省き、残りも短くする。
+  保存は差分編集できる一時ファイルを優先し、発話・委譲への直書きはそれでは届かない情報に限る。
+  高価で遅い出力を減らし、通知と品質確認は保つ。
 - ユーザー向け本文・成果物は日本語の常体で書く（識別子・コマンド・逐語引用は原表記）。
 - 成果物・行動・説明への指摘・訂正・是正・異議（疑問形も）では、作業前の応答冒頭に「指摘の理解」を置く。
   問題と要求を論点別に自分の言葉で箇条書きし、原文と補った前提を分ける。
@@ -66,16 +69,16 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 ## 作業と手順書
 
 `/atk-mode <作業> [入力]`で起動する。
-指定がなければ一般の対話作業を扱う。
+指定なしは対話。
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
-| `implement [入力]` | ユーザーの入力が名指しした時だけ | `playbooks/implement.md` |
+| `add-awi-by-user [入力]` | ユーザーの名指し時のみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
+| `implement [入力]` | ユーザーの名指し時のみ | `playbooks/implement.md` |
 | `process-wi [single-lane\|all-repos]` | ユーザーの入力か起動入力が名指しした時だけ | `playbooks/process-wi.md`（「モードの選択」から進む） |
-| `process-loop` | ユーザーかCLIが名指しした時だけ | `playbooks/process-loop.md` |
+| `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
-| `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
+| `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
 一般作業も操作・判断前に該当資料を通読し、スキルを起動する。
@@ -94,7 +97,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
 | 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
 | 委譲・実行のモデル選定 | `references/model-settings.md` |
-| ホスト別のコード実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
+| ホスト別の実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
 | 背景実行、待機、プロセスの終了、長い出力、一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
 | 検証の起動と記録 | `playbooks/verification.md` |
@@ -116,5 +119,5 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 会話の圧縮の後
 
-再開前に本スキルを起動し直し、目的・要求・直近の状態は復元通知の作業契約と要約から復元する（`references/work-contract.md`「圧縮と再開の後の復元」）。
-手順書は該当時に読み直す。
+再開前に本スキルを起動し直し、復元通知の作業契約と要約から目的・要求・状態を得る（`references/work-contract.md`「圧縮と再開の後の復元」）。
+該当する手順書は読み直す。

@@ -1,5 +1,3 @@
-"""serveのconfigに関するsynchronizationの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -20,7 +18,6 @@ async def test_state_publishes_only_markdown_change_events(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Markdownの変更イベントだけを購読者へ通知する。"""
     events = [
         ("on_opened", watchdog.events.FileOpenedEvent(str(tmp_path / "entry.md")), False),
         ("on_closed_no_write", watchdog.events.FileClosedNoWriteEvent(str(tmp_path / "entry.md")), False),
@@ -67,11 +64,10 @@ async def test_state_publishes_only_markdown_change_events(
 
 @pytest.mark.asyncio
 async def test_sse_multiple_subscribers_and_cleanup(tmp_path: pathlib.Path) -> None:
-    """複数購読者へ変更通知を配信し、切断後に購読を除去する。"""
     current = state.ServeState(tmp_path)
     first = current.events(heartbeat=1)
     second = current.events(heartbeat=1)
-    # 購読の登録直後に送る合図を受け取ってから、変更を通知する。
+
     assert "event: subscribed" in await anext(first)
     assert "event: subscribed" in await anext(second)
     first_next = asyncio.create_task(anext(first))
@@ -86,7 +82,6 @@ async def test_sse_multiple_subscribers_and_cleanup(tmp_path: pathlib.Path) -> N
 
 @pytest.mark.asyncio
 async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """定期更新タスクが起動時に開始し終了時に停止する。"""
     monkeypatch.setattr(serve_runtime, "_BACKGROUND_SYNC_INTERVAL_SECONDS", 0.001)
     calls: list[str] = []
     called = asyncio.Event()
@@ -106,11 +101,8 @@ async def test_background_sync_task_starts_and_stops(tmp_path: pathlib.Path, mon
         operations=_Operations(tmp_path),
     )
     async with app.test_app():  # ty: ignore[invalid-context-manager]
-        # 初回呼び出しの成立を待ち、起動を確認する。
         await asyncio.wait_for(called.wait(), timeout=5)
 
-    # 停止の成立は、`after_serving`の完了後に呼び出し回数が増えないことで確認する。
-    # 実行中の周期が残りうるため、基準を取る前に処理待ちのタスクを消化させる。
     await asyncio.sleep(0)
     before = len(calls)
     called.clear()

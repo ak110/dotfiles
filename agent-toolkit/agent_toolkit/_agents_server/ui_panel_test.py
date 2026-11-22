@@ -1,5 +1,3 @@
-"""費用接続は既存の原本ローダーと算出を通し、自己だけのCLI範囲を保つ。"""
-
 import pathlib
 from types import SimpleNamespace
 

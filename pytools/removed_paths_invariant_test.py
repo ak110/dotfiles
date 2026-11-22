@@ -10,7 +10,6 @@ from pytools._internal import removal_registry_report
 
 
 def test_all_entries_have_registration_date() -> None:
-    """7つの表の全項目が日付型の登録日を持つ。"""
     missing = [
         f"{name}: {entry!r}"
         for name, entries in removal_registry_report.tables().items()

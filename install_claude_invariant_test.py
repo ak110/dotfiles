@@ -18,13 +18,11 @@ from _test_helpers import (
 
 @pytest.fixture(name="raw_base_url", scope="module")
 def local_raw_base_url() -> typing.Iterator[str]:
-    """リポジトリのファイルを配るテスト用の取得元URLを返す。"""
     yield from serve_repository()
 
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_configures_both_agents_without_deploying_rules(kind: str, tmp_path: pathlib.Path, raw_base_url: str) -> None:
-    """常時規範を配置せずに起動スクリプトを導入し、両agentを順序どおり設定する。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)

@@ -31,7 +31,6 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
     tmp_path: pathlib.Path,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """実CLIはローカルパス指定時に旧パス形とURL形のUWIをともに数える。"""
     notes = _setup_notes(tmp_path)
     local_repo = tmp_path / "repo"
     git_repository.init_repository(local_repo, origin="git@github.com:example/repo.git")
@@ -63,8 +62,6 @@ def test_cli_local_path_filter_counts_legacy_and_current_uwis(
 
 
 class TestMutationTargetRepoParserOption:
-    """mutation系サブコマンドの`--target-repo`受理をargparseレベルで検証する。"""
-
     @pytest.mark.parametrize(
         ("top_command", "subcommand", "argv_tail"),
         [
@@ -84,14 +81,12 @@ class TestMutationTargetRepoParserOption:
         assert args.target_repo == expected
 
     def test_edit_rejects_message(self) -> None:
-        """`edit FILENAME MESSAGE`の旧受理形式を拒否する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["wi", "edit", "20260714-000001-001.md", "更新本文"])
         assert exc_info.value.code == 2
 
     def test_edit_accepts_append_option(self) -> None:
-        """`edit --append FILENAME --body-file PATH`を追記モードとして解析する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "edit", "--append", "20260714-000001-001.md", "--body-file", "body.md"])
         assert args.append is True
@@ -99,20 +94,17 @@ class TestMutationTargetRepoParserOption:
         assert args.body_file == "body.md"
 
     def test_edit_accepts_body_file(self) -> None:
-        """`edit --body-file`を単一の本文ファイルとして解析する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "edit", "entry.md", "--body-file", "body.md"])
         assert args.body_file == "body.md"
 
     @pytest.mark.parametrize("value", ["2", "3.5", "three"])
     def test_return_to_inbox_rejects_invalid_cooldown_days(self, value: str) -> None:
-        """再処理抑制日数は3以上の整数だけを受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit):
             parser.parse_args(["wi", "return-to-inbox", "entry.md", f"--cooldown-days={value}"])
 
     def test_return_to_inbox_accepts_minimum_cooldown_days(self) -> None:
-        """再処理抑制日数の下限3を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "return-to-inbox", "entry.md", "--cooldown-days=3"])
         assert args.cooldown_days == 3
@@ -141,14 +133,12 @@ class TestMutationTargetRepoParserOption:
         assert "cooldown_until: '2026-08-15T03:04:05+00:00'" in content
 
     def test_edit_without_message_remains_interactive(self) -> None:
-        """`edit FILENAME`では本文ファイルを未指定として扱う。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "edit", "20260714-000001-001.md"])
         assert args.filename == "20260714-000001-001.md"
         assert args.body_file is None
 
     def test_commit_has_no_target_repo_option(self) -> None:
-        """`commit`は引数を取らないシグネチャのため`--target-repo`を受理しない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["wi", "commit", "--target-repo", "github.com/foo/bar"])
@@ -156,7 +146,6 @@ class TestMutationTargetRepoParserOption:
 
 
 def test_repeatable_wi_filters_preserve_all_values() -> None:
-    """一覧系フィルターは同じオプションの全指定値を構文解析結果へ保持する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     args = parser.parse_args(
         [
@@ -194,7 +183,6 @@ def test_note_and_note_file_are_mutually_exclusive(subcommand: str) -> None:
 
 
 def test_note_file_preserves_utf8_text(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """ファイルメモは改行とシェル制御文字を変更せず既存の採用処理へ渡す。"""
     notes = _setup_notes(tmp_path)
     entry = _write_awi_file(notes, "entry.md")
     note_file = tmp_path / "note.txt"
@@ -256,7 +244,6 @@ def test_note_file_rejects_relative_path_before_environment_changes(
     ],
 )
 def test_removed_plan_mutation_commands_are_rejected(argv: list[str]) -> None:
-    """廃止された計画変換・更新コマンドを受理しない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(argv)
@@ -287,14 +274,12 @@ def test_removed_public_paths_are_rejected(argv: list[str]) -> None:
 
 
 def test_removed_mq_alias_is_rejected() -> None:
-    """廃止済みの`mq`は公開CLIの未知コマンドとして終了する。"""
     with pytest.raises(SystemExit) as raised:
         atk.main(["mq", "--help"])
     assert raised.value.code == 2
 
 
 def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
-    """`set-dependencies`が既存AWIと複数の依存先を受理する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     args = parser.parse_args(["wi", "set-dependencies", "awi.md", "--depends-on", "first", "--depends-on", "second.md"])
     assert args.filename == "awi.md"
@@ -302,33 +287,21 @@ def test_set_dependencies_parser_accepts_repeated_dependencies() -> None:
 
 
 class TestUwiAddSourceOptionParser:
-    """UWI投入時の`--source`受理をargparseレベルで検証する。"""
-
     def test_accepts_source(self) -> None:
-        """`mq add --type=uwi`が`--source`を受理しargs.sourceへ格納される。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "add", "--type=uwi", "--source", "session-hold"])
         assert args.source == "session-hold"
 
 
 class TestAddTargetRepoOptionParser:
-    """`mq add`の`--target-repo`受理をargparseレベルで検証する。"""
-
     @pytest.mark.parametrize("type_option", [[], ["--type=uwi"]])
     def test_add_accepts_target_repo(self, type_option: list[str]) -> None:
-        """`mq add`が種別にかかわらず`--target-repo`を受理する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["wi", "add", *type_option, "--target-repo", "github.com/foo/bar"])
         assert args.target_repo == "github.com/foo/bar"
 
 
 class TestSpaceSeparatedOptionWithoutWarning:
-    """受理に成功した空白区切りの値付きオプションへ形式の警告を出力しない。
-
-    空白区切りの値もargparseが正しく受理するため、警告は呼び出しの結果と後続の操作を変えない。
-    推奨形式の案内はヘルプだけが担う。
-    """
-
     @pytest.mark.parametrize("subcommand", ("adopt", "reject"))
     def test_successful_space_separated_call_emits_no_format_warning(
         self,

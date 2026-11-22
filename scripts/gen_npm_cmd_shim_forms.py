@@ -61,13 +61,12 @@ def _published_versions(npm: str, cache: Path) -> list[str]:
         check=True,
         timeout=120,
     )
-    # 正式版だけを対象とする。npmは正式版のcmd-shimを同梱する。
+
     released = [version for version in json.loads(result.stdout) if re.fullmatch(r"\d+\.\d+\.\d+", version)]
     return sorted((version for version in released if _version_key(version) >= _FIRST_VERSION), key=_version_key)
 
 
 def _install(npm: str, prefix: Path, cache: Path, versions: list[str]) -> None:
-    """各版を`cmd-shim-<版>`の別名で導入する。npmはレジストリの完全性の値で配布物を検証する。"""
     process_tree.run_with_timeout(
         [
             npm,
@@ -90,7 +89,6 @@ def _install(npm: str, prefix: Path, cache: Path, versions: list[str]) -> None:
 
 
 def _generate(node: str, runner: Path, module: Path, work: Path, program: str, target: str) -> dict[str, str]:
-    """`work`をprefixとして、`target`を実体とするbin`cli`の起動スクリプトを生成し、拡張子ごとの本文を返す。"""
     entry = work.joinpath(*target.split("/"))
     entry.parent.mkdir(parents=True)
     entry.write_text(_PROGRAMS[program][1], encoding="utf-8")
@@ -109,7 +107,6 @@ def _generate(node: str, runner: Path, module: Path, work: Path, program: str, t
 
 
 def _split(content: str, target: str) -> tuple[str, list[str]]:
-    """本文を実体の相対パスの位置で分割し、区切り文字と、パスの前後の文字列を返す。"""
     found = [separator for separator in ("/", "\\") if target.replace("/", separator) in content]
     if len(found) != 1:
         raise ValueError(f"実体のパスの表記を1つに決められない: {found}")
@@ -146,7 +143,6 @@ def _forms(node: str, runner: Path, modules: Path, work: Path, versions: list[st
 
 
 def build() -> str:
-    """cmd-shimの各公開版から既知の形を生成し、データのJSON本文を返す。"""
     node = _command("node")
     npm = _command("npm")
     with tempfile.TemporaryDirectory(prefix="cmd-shim-forms-") as directory:
@@ -167,7 +163,6 @@ def build() -> str:
 
 
 def main() -> int:
-    """生成したデータを書き出すか、`--check`ではデータとの一致を確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--check", action="store_true", help="書き出さず、再生成した結果がデータと一致するかを確かめる")
     arguments = parser.parse_args()

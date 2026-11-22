@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_warn_results_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +10,6 @@ from agent_toolkit._testing.session_evidence_support import execution_tool_use, 
 
 
 def _execution_result_transcript(tmp_path: pathlib.Path, *contents: str) -> pathlib.Path:
-    """実行ツールの呼び出しと結果を持つ記録を書く。"""
     return _write_transcript(
         tmp_path,
         [
@@ -32,11 +29,6 @@ def test_query_modes_search_hook_notice_stored_under_attachment(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """hook通知のようにattachment配下へ格納された警告行を`--warn`・`--grep`の双方で照会する。
-
-    走査対象はエントリ内の全本文であり、
-    hook通知の格納先（実行結果のJSON・追加コンテキストの配列）を問わず一致する。
-    """
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 検証コマンドの出力を切り詰めている"
     transcript = _write_transcript(
         tmp_path,
@@ -81,7 +73,6 @@ def test_warn_mode_keeps_hook_notices_with_distinct_or_missing_tool_use_ids(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """異なるツール呼び出しの通知と識別子を持たない通知は個別の警告として保持する。"""
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] 検証コマンドの出力を切り詰めている"
     transcript = _write_transcript(
         tmp_path,
@@ -134,7 +125,6 @@ def test_warn_mode_reports_matches_found_only_in_tool_use_result(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """本文が外部退避されたBash出力の警告を、ツール実行結果側から照会する。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -160,7 +150,6 @@ def test_warn_mode_ignores_read_result_body_and_keeps_hook_notice(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """読み取り結果の本文を除外し、同じレコードのフック通知だけを警告として返す。"""
     file_body = 'warning: 文書内の例示\n{"warning_message": "文書内の構造化警告"}'
     notice = "[auto-generated: agent-toolkit/posttooluse][warn] 読み取り後の通知"
     transcript = _write_transcript(
@@ -195,7 +184,6 @@ def test_warn_mode_does_not_duplicate_tool_use_result_already_visible(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """可視テキストと同一の実行結果を重ねて照会しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -225,7 +213,6 @@ def test_query_modes_normalize_line_number_prefix_across_body_fields(
     option: str,
     pattern: str | None,
 ) -> None:
-    """別本文間だけ行番号接頭辞を正規化し、最初に現れた原文を表示する。"""
     transcript = _execution_result_transcript(tmp_path, "12\twarning: 同じ本文", "warning: 同じ本文")
 
     arguments = [str(transcript), option]
@@ -262,7 +249,6 @@ def test_query_modes_keep_numbered_and_unnumbered_lines_in_one_body_distinct(
     option: str,
     pattern: str | None,
 ) -> None:
-    """同一本文内の行番号接頭辞は、別行を表すため重複として除かない。"""
     transcript = _execution_result_transcript(tmp_path, "12\twarning: 本文\nwarning: 本文")
 
     arguments = [str(transcript), option]
@@ -281,7 +267,6 @@ def test_grep_mode_searches_tool_use_result_output(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--grep`も`--warn`と同じくツール実行結果の生出力を走査対象に含める。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -355,7 +340,7 @@ def test_replaced_persisted_output_is_read_from_saved_file(
     assert evidence.main([str(transcript), "--fixed-string", "tail-only-marker"]) == 0
     assert read_jsonl(capsys)[0]["count"] == 1
     assert evidence.main([str(transcript), "--detail", "2"]) == 0
-    # 詳細は出力量の上限で末尾を省くため、保存先の内容を返したことを先頭で確かめる。
+
     assert read_jsonl(capsys)[0]["text"].startswith("先頭の行")
     assert evidence.main([str(transcript), "--warn"]) == 0
     assert "tail-only-marker" in capsys.readouterr().out
@@ -365,7 +350,6 @@ def test_query_modes_with_distinct_results_can_be_combined(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """警告と検索結果を同じ照会から取得する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
     assert evidence.main([str(transcript), "--warn", "--grep", "依頼"]) == 0
@@ -375,7 +359,6 @@ def test_query_modes_with_distinct_results_can_be_combined(
 
 
 def test_bundle_preserves_each_hook_warning_and_its_full_body(tmp_path, capsys):
-    """件数行・通常通知・重複を数えず、各警告の発生元と末尾を保存する。"""
     tail = "この対応指示を全文で取得する。"
     notices = (
         "警告: 3件\n"

@@ -1,5 +1,3 @@
-"""環境変数・一時指定・保存値から、実効設定と役割別の接続順を解決する。"""
-
 from __future__ import annotations
 
 from agent_toolkit._atk import config_migration, config_settings
@@ -9,7 +7,6 @@ from agent_toolkit._common.usage_settings import temporary_settings
 
 
 def connection_order(engine: str, role: str) -> tuple[str, ...]:
-    """エンジンと役割の使用順を、設定の解決結果から種別のタプルで返す。"""
     return config_settings.parse_connection_order(resolve_mutable_setting(config_settings.connection_order_key(engine, role)))
 
 
@@ -29,7 +26,6 @@ def connections_configured(engine: str) -> bool:
 
 
 def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
-    """変更可能な設定は環境変数を優先し、無ければ保存値、どちらも無ければ初期値を使う。"""
     if key not in config_settings.MUTABLE_KEY_DEFAULTS:
         raise KeyError(key)
     config_migration.check_legacy_environment()

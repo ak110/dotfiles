@@ -1,5 +1,3 @@
-"""`atk wi show`の保存後に、ユーザー専用の記入欄へ全件到達できることを検証する。"""
-
 import pathlib
 import subprocess
 
@@ -16,7 +14,6 @@ def test_wi_show_saved_output_reports_user_fields(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """長い単発と一括取得で、保存本文の形式を保ち、記入欄がある項目の行と、無い項目の件数を表示する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "comment.md", body="# 表題\n\n" + "長い本文\n" * 2000 + "\n## ユーザーコメント\n\n是正要求")
     _write_awi_file(notes, "plain.md", body="# コメントなし\n\n本文")
@@ -27,7 +24,7 @@ def test_wi_show_saved_output_reports_user_fields(
     arguments = ["--all"] if selection == "all" else selected
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     options = ["--target-repo=all", "--skip-pull"]
-    # 人間の直接表示を対照に、保存先の本文と行位置を独立に確定する。
+
     with pytest.raises(SystemExit, match="0"):
         atk.main(["wi", "show", *arguments, *options], home=tmp_path)
     direct = capsys.readouterr().out
@@ -45,7 +42,7 @@ def test_wi_show_saved_output_reports_user_fields(
     expected = [f"記入欄: comment.md ## ユーザーコメント あり 開始行: {lines.index('## ユーザーコメント') + 1}"]
     if selection != "single":
         expected.append(f"記入欄: answered.md ## 回答 あり 開始行: {len(lines) - lines[::-1].index('## 回答')}")
-        # 記入欄が無い2件（本文に欄が無い項目と、コードフェンス内にだけ見出しがある項目）は件数の1行にまとめる。
+
         expected.append("記入欄なし: 2件")
     assert sorted(report[2:]) == sorted(expected)
     assert report[-1] == expected[-1]
@@ -54,7 +51,6 @@ def test_wi_show_saved_output_reports_user_fields(
 def test_wi_show_saved_output_reports_all_user_fields(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記入欄を持つ項目が多くても省略せず、全項目を案内する。"""
     notes = _setup_notes(tmp_path)
     names = [f"comment-{index:03}.md" for index in range(80)]
     for name in names:
@@ -72,7 +68,6 @@ def test_wi_show_saved_output_reports_all_user_fields(
 def test_wi_show_saved_output_counts_items_without_user_field(
     selection: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記入欄が無い項目が多くても個別の行を出さず、保存後の行数を記入欄がある項目の数で決める。"""
     notes = _setup_notes(tmp_path)
     plain = [f"plain-{index:03}.md" for index in range(57)]
     commented = [f"comment-{index:03}.md" for index in range(3)]
@@ -89,7 +84,7 @@ def test_wi_show_saved_output_counts_items_without_user_field(
     assert report[0].startswith("保存先: ")
     assert report[1].startswith("行数: ")
     fields = report[2:]
-    # 保存先・行数の後は、記入欄がある3件の行と件数の1行だけになる。「あり」の行数と「なし」の件数の合計は項目の数に一致する。
+
     assert sorted(line.split()[1] for line in fields[:-1]) == commented
     assert all(" あり 開始行: " in line for line in fields[:-1])
     assert fields[-1] == f"記入欄なし: {len(plain)}件"

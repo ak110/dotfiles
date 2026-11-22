@@ -27,12 +27,10 @@ Where = Literal["executor", "main", "inline", "bootstrap"]
 
 @dataclasses.dataclass(frozen=True)
 class Stage:
-    """1段の宣言。"""
-
     name: str
     where: Where = "executor"
     abort: bool = False
-    # 中断段の理由。続けると不確定な内容を配備する根拠を書く。
+
     reason: str = ""
     # 段が起動する子プロセスの待機上限（秒）。`None`は段が別の上限（Gitの環境変数、定数）を持つことを表す。
     timeout_sec: int | None = None
@@ -42,7 +40,6 @@ class Stage:
     platforms: tuple[str, ...] = ("linux", "win32")
 
     def __post_init__(self) -> None:
-        """中断理由と回復の宣言を検証する。"""
         if self.abort and not self.reason:
             raise ValueError(f"中断段{self.name}には理由が必要です")
         if self.retries and not self.abort:
@@ -132,7 +129,6 @@ Runner = Callable[[Stage], int]
 
 
 def stage(name: str) -> Stage:
-    """名前から宣言を返す。宣言に無い名前はプログラムの誤りとして`KeyError`にする。"""
     return _BY_NAME[name]
 
 
@@ -156,7 +152,6 @@ def run_stages(
     def unregistered(item: Stage) -> int:
         raise LookupError(f"段の処理が未登録です: {item.name}")
 
-    # 拡張された処理が分類表にまだ無い場合にも、既定の続行を適用する。
     for item in [*declared, *(Stage(name) for name in runners if name not in expected)]:
         code = _run_stage(item, runners.get(item.name, unregistered), fatal=fatal, sleep=sleep)
         if code != 0 and item.abort:

@@ -11,7 +11,6 @@ from agent_toolkit._common.json_lines import split_lines
 
 
 def is_agy_entry(entry: dict[str, Any]) -> bool:
-    """対話ステップ、公開ストリーム、またはその正規化済みエントリを識別する。"""
     return (
         "_agy_original" in entry
         or isinstance(entry.get("step_index"), int)
@@ -43,7 +42,6 @@ def user_text(content: Any) -> str:
 
 
 def question_result(questions: Any, value: Any) -> dict[str, Any] | None:
-    """ask_questionの番号付き回答を、改行を保持して共通の回答構造へ写す。"""
     if not isinstance(questions, list) or not isinstance(value, str):
         return None
     markers = list(re.finditer(r"(?m)^A(\d+): ?", value))
@@ -59,12 +57,6 @@ def question_result(questions: Any, value: Any) -> dict[str, Any] | None:
 
 
 def normalize_entries(entries: list[dict[str, Any]], *, hook_view: bool = False) -> list[dict[str, Any]]:
-    """物理行と1対1の解析用写しを返す。原本・行番号・バイト位置は呼出側で保持する。
-
-    対話記録のGENERICは直前のtool_callsの順序で結果を持つ。対応する呼び出しをキューで保持し、
-    明示IDのない記録にstep_indexと配列位置から局所IDを与える。各レコードへ原本を残すため、
-    identityや構造照会は変換前のモデル・推論量・ツール名を参照できる。
-    """
     pending: deque[tuple[str, str, dict[str, Any]]] = deque()
     stream_tools: set[str] = set()
     result: list[dict[str, Any]] = []
@@ -223,7 +215,6 @@ def _hook_entry(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _result_mapping(value: Any) -> dict[str, Any] | None:
-    """MCPの結果にあるJSON本文を、呼び出しIDとの対応を保って取り出す。"""
     parsed = _decoded(value)
     if isinstance(parsed, dict):
         return parsed
@@ -243,7 +234,6 @@ def _result_mapping(value: Any) -> dict[str, Any] | None:
 
 
 def usage_tokens(entry: dict[str, Any]) -> dict[str, int] | None:
-    """応答ステップの増分トークンだけを共通4成分へ写す。"""
     entry = entry.get("_agy_original", entry)
     body = entry.get("step_update", entry)
     if not isinstance(body, dict) or body.get("type", body.get("step_type")) not in {"PLANNER_RESPONSE", "agent_response"}:

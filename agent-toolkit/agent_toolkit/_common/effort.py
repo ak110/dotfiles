@@ -1,5 +1,3 @@
-"""engine/modelが受理する推論量の順序と、相対操作の共通定義。"""
-
 from __future__ import annotations
 
 import json
@@ -13,13 +11,11 @@ ORDER = ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra")
 
 
 def ordered(values: Iterable[str]) -> tuple[str, ...]:
-    """受理値だけを共通順序へ並べる。未知の段は推測しない。"""
     supported = set(values)
     return tuple(value for value in ORDER if value in supported)
 
 
 def relative(current: str | None, direction: str, levels: tuple[str, ...]) -> str:
-    """現在値から1段動かし、端なら現在値を返す。対応不明は端と区別する。"""
     if direction not in {"up", "down"}:
         raise ValueError("effort操作はupかdownを指定する")
     if current is None or current not in levels:
@@ -63,7 +59,7 @@ def cli_levels(engine: str, model: str | None) -> tuple[str, ...]:
     if engine == "agy":
         slugs = {line.split()[0] for line in result.stdout.splitlines() if line.strip()}
         return ordered(value for value in ORDER if f"{model}-{value}" in slugs)
-    # --verboseはモデル名の行の後へJSON objectを返す。複数モデルのJSONを順に読む。
+
     decoder = json.JSONDecoder()
     for match in re.finditer(r"(?m)^\{", result.stdout):
         item, _end = decoder.raw_decode(result.stdout[match.start() :])

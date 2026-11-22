@@ -18,8 +18,6 @@ from agent_toolkit._testing.shell_checks_support import _existing_work_contract 
 
 
 class TestBashProcessKillByPattern:
-    """`Bash`経由のパターン一致プロセス終了（`pkill`・`killall`）検出（block）。"""
-
     @pytest.mark.parametrize("codex", [False, True])
     @pytest.mark.parametrize(
         "command",
@@ -30,11 +28,9 @@ class TestBashProcessKillByPattern:
             "printf '%s' /tmp/killall/output.log",
             "ls -- /tmp/pkill/output.log",
             "grep -n needle /tmp/pkill/output.log",
-            # 共通解析がデータ引数と確定する語は、パスの形をしていなくても実行位置にしない。
             "cat -- pkill.log",
             "wc -l killall.txt pkill-notes.md",
             'head -n 5 "/tmp/pkill dir/output.log"',
-            # 読取・検索の解析が引数をデータと確定する呼出しは、終了コマンド名そのものの引数もデータとして扱う。
             "cat -- /usr/bin/pkill",
             "grep -n pkill /tmp/worker.log",
             "rg -F killall -- /tmp/worker.log",
@@ -64,17 +60,14 @@ class TestBashProcessKillByPattern:
             "find . -exec /usr/bin/pkill -f worker \\;",
             "cat /tmp/pkill/output.log; killall worker",
             "cat /tmp/pkill/output.log $(pkill worker)",
-            # 引数を実行し得るコマンド（ラッパー・シェル・インタプリタ）の引数は、データ引数と確定できない。
             "sudo pkill worker",
             "timeout 5 killall worker",
             "sh -c 'pkill worker'",
             "python3 -c 'import os; os.system(\"pkill worker\")'",
             "cat pkill.log | xargs killall",
-            # 引数から実行するコマンドを列挙で網羅できない場合も、実行名の形の語は保護する。
             "docker exec worker pkill -f app",
             "mise exec -- pkill -f worker",
             "npm exec -- killall worker",
-            # 外部プログラムを起動する検索の指定と、引数を実行する読取の指定。
             "rg --pre pkill needle /tmp/worker.log",
             "sed -e '1e pkill worker' /tmp/worker.log",
             "awk 'BEGIN{system(\"pkill worker\")}'",
@@ -102,7 +95,7 @@ class TestBashProcessKillByPattern:
         result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
         reason = _denial_reason(result)
         assert auto_message_opening_attributes(reason)["source"] == "pretooluse"
-        # 遮断本文が示す書き方は、同じ判定条件を通過する形である
+
         assert "`kill <PID>`" in reason
         assert "`p[k]ill`" in reason
         assert not _check_bash_process_kill_by_pattern("echo p[k]ill")
@@ -150,7 +143,6 @@ class TestBashProcessKillByPattern:
         assert specific.get("permissionDecision") != "deny"
 
     def test_required_git_grep_options_match_help(self) -> None:
-        """Gitが値を要求する全オプションを判定側が扱い、検索語の誤遮断を防ぐ。"""
         result = subprocess.run(
             ["git", "grep", "-h"],
             capture_output=True,
@@ -214,7 +206,6 @@ class TestBashProcessKillByPattern:
     @pytest.mark.parametrize(
         "command",
         [
-            # 区切りの縦棒を含む正規表現と、語を含まない引数の変数展開
             "grep -n -E 'a|pkill|Stop' \"$f\" | head -30",
             'grep -e pkill "$f"',
             'grep -e pkill "$(pwd)/log"',
@@ -276,8 +267,6 @@ class TestBashProcessKillByPattern:
 
 
 class TestBashSelfMatchingPgrep:
-    """パターンが自身のコマンド行に一致する`pgrep -f`の検出（block）。"""
-
     @pytest.mark.parametrize(
         "command",
         [
@@ -297,15 +286,11 @@ class TestBashSelfMatchingPgrep:
     @pytest.mark.parametrize(
         "command",
         [
-            # 文字クラスで書いたパターンは本文に一致しない。
             "pgrep -f '[p]ytest -q'",
             "until ! pgrep -f '[r]etired_terms' > /dev/null; do sleep 10; done",
-            # `-f`の無い検索はプロセス名だけを比べ、ラッパーのシェルの名前（bash）とは別である。
             "pgrep pytest",
             "kill -0 12345",
-            # 検索語として現れるだけの語は実行位置ではない。
             "rg -n -F 'pgrep -f' -- notes.md",
-            # 完全一致（`-x`）と不一致の列挙（`-v`）は、ラッパーのシェルを結果に含めない。
             "pgrep -fx 'sleep 100'",
             "pgrep -x -f 'sleep 100'",
             "pgrep -fv worker",

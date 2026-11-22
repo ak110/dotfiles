@@ -1,5 +1,3 @@
-"""tmux設定原本のウィンドウ書式を検証する。"""
-
 import collections.abc
 import os
 import pathlib
@@ -58,7 +56,6 @@ def tmux_server_fixture(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> collections.abc.Iterator[tuple[str, str]]:
-    """ホーム設定を読まない隔離tmuxサーバーを用意する。"""
     if shutil.which("tmux") is None:
         pytest.skip("tmuxコマンドが存在しない")
 
@@ -103,7 +100,6 @@ def test_window_format_evaluates_running_panes(
     tmux_server: tuple[str, str],
     format_name: str,
 ) -> None:
-    """各ウィンドウ書式がペインの実行状態を描画へ反映する。"""
     socket_name, session_name = tmux_server
     format_value = _read_window_formats()[format_name]
     _run_tmux(socket_name, "set-option", "-g", "@thm_peach", "colour123")

@@ -70,14 +70,10 @@ class _Message(ctypes.Structure):
 
 
 class TitleBarInfo(ctypes.Structure):
-    """タイトルバー情報のWin32構造体TITLEBARINFO。"""
-
     _fields_ = [("cbSize", ctypes.c_uint32), ("rcTitleBar", Rect), ("rgstate", ctypes.c_uint32 * 6)]
 
 
 class WindowsAPI:
-    """フックの登録スレッドと位置計算ワーカーが使うAPI。"""
-
     def __init__(self, *, user32: Any = None, kernel32: Any = None, call_type: Any = None) -> None:
         self.user32 = user32 if user32 is not None else cast(Any, ctypes).WinDLL("user32", use_last_error=True)
         self.kernel32 = kernel32 if kernel32 is not None else cast(Any, ctypes).WinDLL("kernel32", use_last_error=True)
@@ -138,7 +134,6 @@ class WindowsAPI:
 
     @contextlib.contextmanager
     def physical_coordinates(self) -> Generator[None]:
-        """座標を扱うスレッドだけをPer Monitor V2へ切り替える。"""
         previous = self.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
         if not previous:
             raise OSError("SetThreadDpiAwarenessContext failed")
@@ -148,19 +143,16 @@ class WindowsAPI:
             self.user32.SetThreadDpiAwarenessContext(previous)
 
     def root_class(self, point: tuple[int, int]) -> str:
-        """クリック前の最上位HWNDのクラスを取得する。"""
         hwnd = self.user32.WindowFromPoint(_window_uia.Point(*point))
         root = self.user32.GetAncestor(hwnd, 2) if hwnd else None
         return self.class_name(root) if root else ""
 
     def class_name(self, hwnd: int | None) -> str:
-        """Windowクラス名を取得する。"""
         buffer = ctypes.create_unicode_buffer(256)
         self.user32.GetClassNameW(hwnd, buffer, len(buffer))
         return buffer.value
 
     def identity(self, hwnd: int) -> tuple[int, int] | None:
-        """Shell以外の最上位アプリウィンドウの所有者を取得する。"""
         if not self.user32.IsWindow(hwnd) or not self.user32.IsWindowVisible(hwnd):
             return None
         if self.user32.GetAncestor(hwnd, 2) != hwnd:
@@ -172,16 +164,14 @@ class WindowsAPI:
         return (process.value, thread) if thread and process.value else None
 
     def move(self, hwnd: int, identity: tuple[int, int], point: tuple[int, int]) -> None:
-        """復元後のタイトルバー中央を物理画面座標へ配置する。"""
         if self.identity(hwnd) != identity:
             raise OSError("selected window no longer exists")
         if self.user32.IsIconic(hwnd) or self.user32.IsZoomed(hwnd):
-            # ShowWindowの戻り値は変更前の可視状態を表す。成否の判定には使えない。
-            self.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            self.user32.ShowWindow(hwnd, 9)
             if self.user32.IsIconic(hwnd) or self.user32.IsZoomed(hwnd):
                 raise OSError("selected window could not be restored")
         self._position(hwnd, identity, point)
-        # 移動先のDPIによるWM_DPICHANGEDで寸法が変わる場合は、更新された矩形で補正する。
+
         self._position(hwnd, identity, point)
 
     def _position(self, hwnd: int, identity: tuple[int, int], point: tuple[int, int]) -> None:
@@ -201,7 +191,7 @@ class WindowsAPI:
         x, y = window.left + dx, window.top + dy
         if self.identity(hwnd) != identity:
             raise OSError("selected window changed during positioning")
-        # NOSIZE | NOZORDER | NOACTIVATE。入力先と前後関係を変えない。
+
         if not self.user32.SetWindowPos(hwnd, None, x, y, 0, 0, 0x0015):
             raise OSError("SetWindowPos failed")
 
@@ -212,7 +202,6 @@ class WindowsAPI:
         on_key: Callable[[], None],
         ready: Callable[[], None],
     ) -> None:
-        """同じスレッドでフックを登録・受信・解除する。"""
         mouse_hook = None
         keyboard_hook = None
         event_hooks: list[int] = []
@@ -229,7 +218,7 @@ class WindowsAPI:
                 WM_MOUSEHWHEEL,
             ):
                 event = ctypes.cast(data, ctypes.POINTER(MouseInput)).contents
-                # LLフックの注入入力を、dotfilesユーザーの選択操作と混ぜない。
+
                 if not event.flags & 1:
                     point = (event.pt.x, event.pt.y)
                     root = self.root_class(point) if message == WM_LBUTTONDOWN else ""
@@ -238,7 +227,7 @@ class WindowsAPI:
             return self.user32.CallNextHookEx(mouse_hook, code, message, data)
 
         def keyboard(code: int, message: int, data: int) -> int:
-            # KEYDOWN / SYSKEYDOWN。serveが送出するメディアキーなどの注入入力は、dotfilesユーザーの操作として扱わない。
+
             if (
                 code >= 0
                 and message in (0x0100, 0x0104)
@@ -257,7 +246,7 @@ class WindowsAPI:
         window_callback = self.event_type(window)
         with self.physical_coordinates():
             message = _Message()
-            # PostThreadMessage用のキューを作成してからreadyを通知する。
+
             self.user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 0)
             self.thread_id = self.kernel32.GetCurrentThreadId()
             try:
@@ -292,6 +281,5 @@ class WindowsAPI:
                 self.thread_id = 0
 
     def stop_hooks(self) -> None:
-        """登録スレッド自身にメッセージループの終了を依頼する。"""
         if self.thread_id and not self.user32.PostThreadMessageW(self.thread_id, 0x0012, 0, 0):
             raise OSError("PostThreadMessageW failed")

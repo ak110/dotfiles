@@ -67,8 +67,6 @@ _LEGACY_CLEANUP_LOCK_SUFFIX = ".json.cleanup.lock"
 
 
 class SweepResult(typing.NamedTuple):
-    """`sweep_managed_temp`の結果。"""
-
     deleted: list[pathlib.Path]
     """自動削除したパス。"""
     failed: tuple[tuple[pathlib.Path, str], ...]
@@ -80,8 +78,6 @@ class SweepResult(typing.NamedTuple):
 
 
 class SpacePressure(typing.NamedTuple):
-    """空きが下限（容量の10%）を割った起動の、回収前後の空きと回収量上位。"""
-
     total: int
     """一時rootを含むFSの容量（バイト）。"""
     free_before: int
@@ -100,7 +96,6 @@ class SpacePressure(typing.NamedTuple):
 def _sweep_due(
     state_root: pathlib.Path, now_ns: int, *, record_name: str = _RECORD_NAME, interval_ns: int = _SWEEP_INTERVAL_NS
 ) -> bool:
-    """前回の掃引から間隔が過ぎたかを返す。記録の欠落・破損と、未来の時刻では真を返す。"""
     try:
         last_ns = int((state_root / record_name).read_text(encoding="ascii"))
     except OSError, ValueError:
@@ -122,7 +117,6 @@ def _save_sweep_time(state_root: pathlib.Path, now_ns: int, *, record_name: str 
 
 
 def _disk_usage(path: pathlib.Path) -> typing.Any:
-    """空きの観測点。テストが実ディスクの空きから掃引を隔離できるよう、標準関数を1箇所で包む。"""
     return shutil.disk_usage(path)
 
 
@@ -132,7 +126,6 @@ def _allocated_bytes(metadata: os.stat_result) -> int:
 
 
 def _tree_bytes(path: pathlib.Path) -> int:
-    """対象の実使用量（バイト）を、リンクを辿らずに数える。数えられない項目は0として扱う。"""
     total = 0
     pending = [path]
     while pending:
@@ -154,7 +147,6 @@ def _now_ns(now: datetime.datetime) -> int:
 
 
 def _registered_worktree(git_file: pathlib.Path, area: pathlib.Path) -> bool:
-    """領域外のgitdirと逆参照が一致するworktreeだけを保護する。"""
     try:
         content = git_file.read_text(encoding="utf-8").strip()
         if not content.startswith("gitdir: "):
@@ -204,7 +196,6 @@ def _inspect_tree(path: pathlib.Path, now_ns: int, times: CleanupTimes) -> tuple
 def _inspect_under(
     directory: int, metadata: os.stat_result, current: pathlib.Path, area: pathlib.Path, now_ns: int, times: CleanupTimes
 ) -> tuple[int, bool, int]:
-    """記述子が指すディレクトリの配下を相対名で辿り、`_inspect_tree`と同じ値を返す。"""
     size = _allocated_bytes(metadata)
     registered = False
     with os.scandir(directory) as children:
@@ -350,7 +341,6 @@ def _sweep_legacy_state(state_root: pathlib.Path) -> None:
 
 
 def _legacy_session_references(state_root: pathlib.Path, *, skip_unreadable: bool) -> typing.Iterator[tuple[pathlib.Path, str]]:
-    """旧版で会話に割り当てた領域は任意のprefixを持つため、名前ではなく旧参照を読む。"""
     sessions = state_root / ".sessions"
     try:
         with os.scandir(sessions) as entries:
@@ -378,7 +368,6 @@ def _sweep_entries(temp_root: pathlib.Path, state_root: pathlib.Path) -> list[pa
     try:
         separate = not temp_root.samefile(state_root)
     except FileNotFoundError:
-        # 一度も状態を書けないまま満杯になった場合、一時rootには回収対象だけがある。
         return children
     if separate:
         return children
@@ -440,7 +429,6 @@ def _examine(
 
 
 def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result) -> bool:
-    """回収可と判定済みの1件を削除し、削除した場合は真を返す。"""
     if stat.S_ISDIR(metadata.st_mode):
         with permissions.directory(child, expected=metadata) if _DESCRIPTOR_WALK else contextlib.nullcontext():
             if resources.is_tagged_cache(child):
@@ -455,14 +443,12 @@ def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_res
 
 
 def owner_token(identity: process_identity.ProcessIdentity | None = None) -> str:
-    """所有プロセスのPIDと世代を返す。識別を省いた時は呼び出したプロセスを使う。"""
     if identity is None:
         return f"{os.getpid()} {process_identity.start_id(psutil.Process()) or ''}"
     return f"{identity.pid} {identity.start_id or ''}"
 
 
 def owner_alive(token: str) -> bool:
-    """記録した作成プロセスが同じ世代のまま実行中かを返す。判定できない場合は実行中として残す。"""
     pid_text, _, saved_id = token.strip().partition(" ")
     try:
         process = psutil.Process(int(pid_text))
@@ -474,10 +460,6 @@ def owner_alive(token: str) -> bool:
 
 
 def has_live_owner(area: pathlib.Path) -> bool:
-    """領域か直下の子が記録した作成プロセスが実行中、または記録を読めない場合に真を返す。
-
-    セッションの領域は`atk-command-*`などの子に記録を持つため、直下の子まで調べる。
-    """
     if not area.is_dir():
         return False
     # 期限走査と同じ所有・同一性検証付きの権限回復を使い、保持時は元modeへ戻す。
@@ -511,7 +493,6 @@ def _min_free_ratio() -> float:
 
 
 def _below_floor(temp_root: pathlib.Path) -> bool:
-    """一時rootを含むFSの空きが容量の10%を下回るかを返す。観測できない場合は偽を返す。"""
     try:
         usage = _disk_usage(temp_root)
     except OSError:
@@ -566,11 +547,6 @@ def _reclaim_space(
     caches_only: bool,
     times: CleanupTimes,
 ) -> SpacePressure | None:
-    """空きが下限を割った時、安全に回収できる対象を最終更新の古い順に回収する。
-
-    使用中・保護セッション・登録済みworktree・保持配布物・リンクは、期限の掃引と同じ判定で残す。
-    期限内の領域と永続ロックが作れない場合は、会話資料を残し、未使用の再生成物だけを回収する。
-    """
     try:
         usage = _disk_usage(temp_root)
     except OSError:
@@ -640,7 +616,7 @@ def _reclaim_space(
         try:
             if contents_only and (after_daily_sweep or not stat.S_ISDIR(metadata.st_mode)):
                 continue
-            # 順位と不足分は見積もりに過ぎない。消す対象だけ、先行する回収の間に利用や用途が変わっていないか調べる。
+
             current = candidate(child)
             if (
                 current is None

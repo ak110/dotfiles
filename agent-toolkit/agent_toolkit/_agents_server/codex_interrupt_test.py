@@ -30,7 +30,7 @@ _SAVE_FAILURE = "session登録の保存完了前には移譲できません"
 
 
 def _stream_final_answer(client: harness._MemoryAppServer, session: state.SessionState) -> None:
-    # 最終回答のdeltaだけで、元I/O側の未確認イベント上限（256件）を超える。
+
     item = {"type": "agentMessage", "id": "final", "text": "", "phase": "final_answer"}
     client.emit("item/started", {"threadId": session.session_id, "turnId": session.turn_id, "item": item})
     for index in range(300):
@@ -40,7 +40,6 @@ def _stream_final_answer(client: harness._MemoryAppServer, session: state.Sessio
 
 @contextlib.contextmanager
 def _stopped_when_published(clients: list[harness._MemoryAppServer]) -> Generator[dict[str, bool]]:
-    """終了時の結果を公開した時点で、そのsessionのApp Serverが止まっていたかをsessionごとに記録する。"""
     stopped: dict[str, bool] = {}
 
     def record(session: state.SessionState) -> None:
@@ -55,7 +54,6 @@ def _stopped_when_published(clients: list[harness._MemoryAppServer]) -> Generato
 
 
 async def _start_other(backend: codex.AppServerManager, monkeypatch: pytest.MonkeyPatch, cwd: Path) -> state.SessionState:
-    """別のApp Serverを所有する2つ目の委譲先を起動する。"""
     create = codex_clients.JsonRpcProcess
 
     def factory(*args: Any, **kwargs: Any) -> harness._MemoryAppServer:
@@ -68,7 +66,6 @@ async def _start_other(backend: codex.AppServerManager, monkeypatch: pytest.Monk
 
 
 async def _until_idle(backend: codex.AppServerManager, *sessions: state.SessionState) -> None:
-    """turnの開始通知を解釈して保存し終え、受信処理が次のイベントを待つ状態まで待つ。"""
     clients = [backend._clients[session.session_id] for session in sessions]
     async with asyncio.timeout(5):
         while any(session.status != "running" for session in sessions) or any(
@@ -170,7 +167,6 @@ async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, mon
 
 @pytest.mark.asyncio
 async def test_kill_reports_next_action_without_an_owned_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """中断要求を配送できなければ、導入の案内ではなく次の操作を返す。"""
     async with harness._service_environment(tmp_path, monkeypatch, harness._no_save) as (owner, backend, _clients):
         session = await backend.start("作業", str(tmp_path))
         with monkeypatch.context() as patch:
@@ -229,7 +225,6 @@ async def test_kill_awaiting_interrupt_response_survives_reader_failure(
 async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, consumer_fails: bool, expected: tuple[str, bool]
 ) -> None:
-    """受信処理が止まった委譲先は実行中のまま残らず、killは中断要求の配送を待たずに終了を返す。"""
     streaming = asyncio.Event()
 
     async def save() -> None:
@@ -255,7 +250,6 @@ async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
 async def test_undetermined_kill_records_stage_and_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, cause: str, stage: str, backlog: str
 ) -> None:
-    """中断要求の配送を確定できないkillは、止まった段階と受信処理の状態を所有サーバーのログへ残す。"""
     hold = asyncio.Event()
     release = asyncio.Event()
 

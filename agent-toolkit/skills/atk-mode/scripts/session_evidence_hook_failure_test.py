@@ -18,7 +18,6 @@ from agent_toolkit._testing.session_evidence_support import read_jsonl
 @pytest.mark.parametrize("prefix", ["PreToolUse:Write hook error: ", "PreToolUse:Write hook error: [hook.py]: "])
 @pytest.mark.parametrize("with_copies", [False, True])
 def test_hook_failures_count_only_actual_results(tmp_path: pathlib.Path, capsys, prefix: str, with_copies: bool) -> None:
-    """21回の遮断を数え、stdoutへの引用とAPIの控えを加えても件数を保つ。"""
     body = '<atk-auto source="pretooluse" kind="block">必須資料を取得せよ。\n取得後に再実行せよ。</atk-auto>'
     results = [
         {"type": "tool_result", "tool_use_id": f"blocked-{index}", "is_error": True, "content": prefix + body}
@@ -60,7 +59,7 @@ def test_hook_failures_count_only_actual_results(tmp_path: pathlib.Path, capsys,
     capsys.readouterr()
     candidates = [json.loads(line) for line in (bundle / "candidates.jsonl").read_text(encoding="utf-8").splitlines()]
     hook_candidates = [event for event in candidates if event.get("candidate_kind") == "hook-notice"]
-    # 候補は記録行を単位にまとめる。同じ行の21結果は1候補になる。
+
     assert len(hook_candidates) == 1
     assert all("hook error:" not in event["text"] for event in hook_candidates)
 

@@ -1,5 +1,3 @@
-"""電源操作の公開入力が副作用より前に処理されることを確かめる。"""
-
 import shutil
 import subprocess
 from pathlib import Path
@@ -36,7 +34,6 @@ def test_public_power_input(name: str, args: list[str], code: int) -> None:
     ],
 )
 def test_valid_power_input_reaches_body(tmp_path: Path, name: str, args: list[str], elevated: bool) -> None:
-    """入力処理を原本から取得し、最初の副作用以降をマーカーへ置き換えて本体到達を観測する。"""
     assert _POWERSHELL is not None
     source = Path(__file__).with_name(name).read_text(encoding="utf-8-sig")
     boundary = "Add-Type -TypeDefinition" if name == "keep-awake.ps1" else "function Invoke-Native"

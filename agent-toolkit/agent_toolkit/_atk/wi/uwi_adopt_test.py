@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのuwi: adoptのテスト。"""
 
 import pathlib
 import subprocess
@@ -14,14 +13,11 @@ from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _GitCall, _make_subprocess_
 
 
 class TestUwiAdopt:
-    """UWI採用: inboxからadopted/へ移動しコミットする。"""
-
     def test_single_file_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件の`atk wi adopt`実行でinboxから移動されadopted/に置かれコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
@@ -42,7 +38,6 @@ class TestUwiAdopt:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """対応commitを検証できない場合は、UWIを移動せず終了する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
@@ -71,7 +66,6 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """明示作業ツリーに対応するUWIではcommitの一意な長さの短縮OIDと件名を記録する。"""
         notes = _setup_notes(tmp_path)
         worktree = tmp_path / "worktree"
         worktree.mkdir()
@@ -131,7 +125,6 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """3件の`atk wi adopt`で全件がadopted/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-002.md", question="q2", answer="a2")
@@ -164,7 +157,6 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """UWI採用の実行後にgit pushが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q", answer="はい")
         git_calls: list[_GitCall] = []
@@ -182,7 +174,6 @@ class TestUwiAdopt:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """パストラバーサル系のファイル名でexit 2。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -199,7 +190,6 @@ class TestUwiAdopt:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """processing・inbox・holdのいずれにも存在しないファイル名指定でexit 2と案内が出力される。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -215,7 +205,6 @@ class TestUwiAdopt:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """複数ファイル指定時、一部が未存在ならどのファイルも移動されない（部分移動防止）。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="a1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -261,14 +250,11 @@ class TestUwiAdopt:
 
 
 class TestUwiRm:
-    """UWI削除の単体テスト。"""
-
     def test_single_file_removed(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """1件の`atk wi rm`実行でinbox配下ファイルが削除されコミットメッセージが正しいこと。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
@@ -285,7 +271,6 @@ class TestUwiRm:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """`--note`指定時にcommit messageへ`(理由: <note>)`形式で追記されること。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []
@@ -303,7 +288,6 @@ class TestUwiRm:
         self,
         tmp_path: pathlib.Path,
     ) -> None:
-        """パストラバーサル文字列は削除前検証で拒否されること。"""
         _setup_notes(tmp_path)
         with pytest.raises(SystemExit):
             atk.main(["wi", "rm", "../evil.md"], home=tmp_path)
@@ -313,7 +297,6 @@ class TestUwiRm:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """指定ファイルがinbox配下に存在しないときexit 2で終了すること。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         with pytest.raises(SystemExit):
@@ -327,7 +310,6 @@ class TestUwiRm:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """複数指定で一部欠損時に既存ファイルも削除されずcommitも発生しないこと。"""
         notes = _setup_notes(tmp_path)
         existing = _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md")
         git_calls: list[_GitCall] = []

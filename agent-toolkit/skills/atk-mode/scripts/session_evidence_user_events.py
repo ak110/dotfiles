@@ -1,5 +1,3 @@
-"""証拠抽出の`--user-events`照会と会話の流れ。人間の発話と確認回答を逐語引用の原文として返す。"""
-
 from __future__ import annotations
 
 import datetime
@@ -35,7 +33,6 @@ from session_evidence_tool_calls_records import _conversation_body
 
 
 def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:
-    """保存済みイベントを元記録の欄の組で選ぶ。一意性と由来の判断は消費側に残す。"""
     record, separator, raw_line = position.rpartition(":")
     if not separator or not record or not raw_line.isascii() or not raw_line.isdecimal() or int(raw_line) < 1:
         raise ValueError(f"記録位置が不正: {position}（record全体と正の整数lineをコロンで区切る）")
@@ -63,11 +60,6 @@ def _saved_user_events_at(path: Path, position: str) -> list[dict[str, Any]]:
 def _user_events_since(
     collected: list[_CollectedRecord], since: datetime.datetime | None, *, source_positions: bool = False
 ) -> list[dict[str, Any]]:
-    """メイン記録の状態を保ち、指定時刻より後に成立したユーザーイベントだけを返す。
-
-    `since`が`None`の場合はメイン記録の最初から返す。
-    出力は逐語引用と文字列比較する原文として使うため、本文を切り詰めない。
-    """
     token = _TEXT_LIMIT.set(None)
     try:
         return _collect_user_events_since(collected, since, source_positions=source_positions)
@@ -86,7 +78,6 @@ _CLAUDE_INTERRUPT_MARKERS = frozenset({"[Request interrupted by user]", "[Reques
 def _collect_user_events_since(
     collected: list[_CollectedRecord], since: datetime.datetime | None, *, source_positions: bool = False
 ) -> list[dict[str, Any]]:
-    """`_user_events_since`の抽出本体。"""
     events: list[dict[str, Any]] = []
     for item in collected:
         if item.role != "main":
@@ -133,7 +124,6 @@ def _query_user_events(
     *,
     preceding_assistant: bool = False,
 ) -> list[dict[str, Any]]:
-    """共有の人間入力抽出へ本文検索と元記録の時刻による期間選択を適用する。"""
     users = _user_events_since([item._replace(role="main")], None, source_positions=True)
     assistants = (
         [event for event in _record_conversation_events(item) if event.get("role") == "assistant"]
@@ -176,12 +166,10 @@ def _query_user_events(
 
 
 def _conversation_events(collected: list[_CollectedRecord], *, compact: bool = False) -> list[dict[str, Any]]:
-    """収集できた全担当の発話・操作・結果を、記録別の前後関係と全文を保って返す。"""
     return [event for item in collected for event in _record_conversation_events(item, compact=compact)]
 
 
 def last_compaction_line(records: list[_Record]) -> int:
-    """最後の圧縮境界の元記録行を返し、圧縮が無い場合は0を返す。"""
     return max(
         (
             record.line
@@ -194,11 +182,6 @@ def last_compaction_line(records: list[_Record]) -> int:
 
 
 def extract_session_context(path: Path) -> dict[str, Any]:
-    """実transcriptから人間の発話と、最後の圧縮以後の会話を全文・元記録位置付きで取得する。
-
-    圧縮再開の消費側はこの公開処理を使い、発話や生成本文の除外規則を共有する。
-    付随する記録は走査せず、指定された1記録だけを読む。
-    """
     records = _load_records(str(path))
     if records is None:
         raise ValueError(f"セッション記録を読み込めない: {path}。実在する絶対パスのUTF-8 JSONLを指定する")
@@ -214,7 +197,6 @@ def extract_session_context(path: Path) -> dict[str, Any]:
 
 
 def _record_conversation_events(main_record: _CollectedRecord, *, compact: bool = False) -> list[dict[str, Any]]:
-    """1記録の通読イベントを、元の行順で返す。"""
     token = _TEXT_LIMIT.set(None)
     try:
         events = _extract_records(main_record.records)

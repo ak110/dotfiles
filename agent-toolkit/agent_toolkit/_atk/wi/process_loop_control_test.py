@@ -1,5 +1,3 @@
-"""`atk wi process-loop`への追加指示の状態ファイルのテスト。"""
-
 import pathlib
 
 import pytest
@@ -19,7 +17,6 @@ _PROCESS_LOOP_INSTRUCTION_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_INSTRUCTION"
 
 
 def test_instruction_append_rejects_duplicate_and_over_limit(monkeypatch, tmp_path) -> None:
-    """完全一致の再投入は追記せず、上限超過の投入は拒否する。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
     assert process_loop_log.append_instruction("既存のテストコードを先に読む") == (
@@ -42,7 +39,6 @@ def test_instruction_append_rejects_duplicate_and_over_limit(monkeypatch, tmp_pa
         ("あ" * (process_loop_log.INSTRUCTION_MAX_CHARS + 1), "instruct-cancel"),
         ("   ", "本文を記入して再実行する"),
     ],
-    # 上限超過の本文が自動node IDへ展開されると、CIの詳細進捗の1行が本文長に比例して伸びる。
     ids=["over-limit", "blank"],
 )
 def test_instruct_rejection_reports_next_action(
@@ -52,7 +48,6 @@ def test_instruct_rejection_reports_next_action(
     body: str,
     expected: str,
 ) -> None:
-    """保持の上限超過と空の本文は、破棄か書き直しを次の操作として返して終了コード1で終わる。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
 
     with pytest.raises(SystemExit) as exc_info:
@@ -81,7 +76,6 @@ def test_instructions_are_consumed_once(monkeypatch, tmp_path) -> None:
 
 
 def test_discard_instructions_reports_count(monkeypatch, tmp_path) -> None:
-    """破棄は保持件数を返し、保持が無い場合は0を返す。"""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
     process_loop_log.append_instruction("1件目")
 

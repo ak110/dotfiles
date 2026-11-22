@@ -73,7 +73,6 @@ _NPM_PACKAGES = ("opencode-ai", "@google/gemini-cli", "aws-cdk")
 
 
 def excluded_tools(root: Path, *, minimal: bool) -> frozenset[str]:
-    """現行の作業ツリー定義を照合し、モードの導入対象外のツールを返す。"""
     configuration = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8"))
     project_tools = frozenset(configuration.get("tools", {}))
     return DEVELOPMENT_TOOLS | FULL_TOOLS | project_tools if minimal else DEVELOPMENT_TOOLS - project_tools
@@ -84,7 +83,6 @@ def _rustup_home() -> Path:
 
 
 def removal_paths() -> tuple[Path, ...]:
-    """minimalで除去する配布実体とキャッシュの絶対パスを返す。"""
     home = Path.home()
     local = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
     data = Path(os.environ.get("MISE_DATA_DIR", platformdirs.user_data_dir("mise", appauthor=False)))
@@ -93,7 +91,6 @@ def removal_paths() -> tuple[Path, ...]:
     rustup = _rustup_home()
     cargo = Path(os.environ.get("CARGO_HOME", home / ".cargo"))
     paths = [
-        # 共有ホームの設定・資格情報・ユーザー導入物は残し、再生成可能な実体だけを整理する。
         *(rustup / name for name in ("toolchains", "downloads", "tmp", "update-hashes")),
         *(cargo / name for name in ("registry", "git")),
         Path(os.environ.get("MISE_DOTNET_ROOT", data / "dotnet-root")),
@@ -117,7 +114,7 @@ def removal_paths() -> tuple[Path, ...]:
         local / "Programs/Herdr",
         home / ".gemini/config/skills/modern-web-guidance",
     ]
-    # 拡張子なし・.cmd・.ps1はnpmの起動ファイルやユーザーのラッパーと区別できない。
+
     paths.extend(home / ".local/bin" / name for name in ("claude.exe", "codex.exe"))
     for name in ("atk-hook", "agy", "herdr", "opencode", "claude-statusline"):
         for suffix in ("", ".exe", ".cmd", ".ps1"):
@@ -134,7 +131,7 @@ _UV_LOCK_TIMEOUT_MARKER = "when waiting for lock on"
 
 
 class _InUseError(Exception):
-    """他のプロセスが使用中のため、削除を保留した。"""
+    pass
 
 
 def _command(command: list[str], *, path: str | None = None) -> None:
@@ -160,7 +157,6 @@ def _command(command: list[str], *, path: str | None = None) -> None:
 
 
 def _active_users(paths: tuple[Path, ...]) -> list[str]:
-    """対象実体の参照またはAIの実行体を自ユーザーのプロセスから検出する。"""
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     attribute = "username" if windows else "uids"
@@ -192,14 +188,13 @@ def _active_users(paths: tuple[Path, ...]) -> list[str]:
         uses_pyfltr = any(
             Path(value.replace("\\", "/")).name.removesuffix(".exe") in {"pyfltr", "pyfltr-mcp"} for value in values if value
         )
-        # rustup本体はtoolchains外にあるが、列挙や導入中も同じ配置を使用する。
+
         if uses_path or uses_pyfltr or name in {"claude", "codex", "agy", "herdr", "opencode", "claude-statusline", "rustup"}:
             active.append(f"{name or 'process'} (pid {process.pid})")
     return active
 
 
 def _stop_daemon() -> None:
-    """利用セッションが無い管理daemonだけを公開CLIで停止する。"""
     processes = codex_processes.codex_processes()
     sessions = [process.label for process in processes if process.role == "session"]
     if sessions:
@@ -232,18 +227,11 @@ def _check_shared_runtime_root(path: Path, checkout: Path | None) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class _NpmRoot:
-    """npm rootの整理結果。
-
-    `modules`は照会できたnpm root（照会できなければNone）。`kept`は旧npm版か、その可能性を否定できない
-    パッケージを保持したか。
-    """
-
     modules: Path | None
     kept: bool = False
 
 
 def _prune_global_npm(command: list[str], root: Path, *, path: str | None = None) -> _NpmRoot:
-    """既知の不要パッケージを整理し、照会したnpm rootと旧CLIを保持したかを返す。"""
     overrides = {"MISE_AUTO_INSTALL": "0"}
     if path is not None:
         overrides["PATH"] = path
@@ -304,7 +292,6 @@ def _prune_global_npm(command: list[str], root: Path, *, path: str | None = None
 
 
 def _warn_unconfirmed_package(manifest: Path, reason: str) -> None:
-    """旧npm版かを確かめられず保持したパッケージと、確認方法・再確認の条件を案内する。"""
     logger.warning(
         "npmのパッケージ情報を確認できないため、旧npm版かを確かめずにパッケージと同じprefixの起動ファイルを保持: %s（%s）。"
         "このパッケージ配下の内容とpackage.jsonを確認し、同じ版のpackage.jsonを復元するか読取権限を%s",
@@ -332,7 +319,7 @@ _NODE_DISTRIBUTION = frozenset(
         *(f"{name}{suffix}" for name in ("npm", "npx", "corepack") for suffix in ("", ".cmd", ".ps1")),
     }
 )
-# 配布物のディレクトリのうち、中身も配布物だけであることを確かめるもの。`bin`と`node_modules`は別に確かめる。
+
 _NODE_DISTRIBUTION_CHILDREN = {"lib": frozenset({"node_modules"}), "include": frozenset({"node"}), "share": None}
 _MAX_LAUNCHER_BYTES = 64 * 1024
 """npmの起動スクリプト（数百バイト）より十分大きい上限。超えるファイルは実行ファイル本体などとみなして読まない。"""
@@ -581,7 +568,6 @@ def update_lock_path() -> Path:
 
 
 def _clean_uv_cache(uv: Path) -> None:
-    """実キャッシュルートごとの全消去成功から30日間は通常pruneを使う。"""
     resolved = common.run_subprocess([str(uv), "cache", "dir"], tag="prune", timeout=30)
     if resolved is None or resolved.returncode != 0:
         raise RuntimeError(common.format_cli_error(resolved))
@@ -638,8 +624,6 @@ class _CacheGroup(enum.StrEnum):
 
 
 class MaintenanceResult(enum.StrEnum):
-    """キャッシュ整理の独立プロセスが記録する結果の種別。"""
-
     NONE = "none"
     DEFERRED = "deferred"
     FAILED = "failed"
@@ -648,8 +632,6 @@ class MaintenanceResult(enum.StrEnum):
 
 @dataclasses.dataclass(frozen=True)
 class _MaintenanceRecord:
-    """キャッシュ整理の独立プロセスの最新の結果。次の更新が読んで表示する。"""
-
     result: MaintenanceResult
     finished_at: str
     detail: str
@@ -663,7 +645,6 @@ def _record_path(group: _CacheGroup) -> Path:
 
 
 def _read_maintenance_record(group: _CacheGroup) -> _MaintenanceRecord | None:
-    """独立プロセスの最新の結果を返す。記録が無ければ`None`、読めない記録は`OSError`か`ValueError`を送出する。"""
     try:
         data = json.loads(_record_path(group).read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -694,7 +675,6 @@ def _write_maintenance_record(group: _CacheGroup, result: MaintenanceResult, det
 
 
 def clean_uv_cache() -> tuple[MaintenanceResult, str]:
-    """uvのキャッシュ整理の結果と診断を返す。"""
     uv = common.resolve_executable("uv")
     if uv is None:
         logger.info("prune: uvは未導入のため対象なし")
@@ -721,7 +701,6 @@ def _run_maintenance(group: _CacheGroup, clean: Callable[[], tuple[MaintenanceRe
 
 
 def maintain_caches() -> None:
-    """整理の重複起動を避け、uvとそれ以外の結果を別々に次の更新へ引き継ぐ。"""
     update_path = update_lock_path()
     worker = filelock.FileLock(str(update_path.with_name("cache-maintenance.lock")), timeout=0, preserve_lock_file=True)
     with contextlib.ExitStack() as stack:
@@ -774,7 +753,15 @@ def _report_previous_maintenance(group: _CacheGroup) -> post_apply_outcome.PostA
             "prune: 前回の%sの整理は保留した（%s）: %s", group, record.finished_at, record.detail, extra=log_format.LOG_ONLY
         )
         if group is _CacheGroup.UV and _UV_LOCK_TIMEOUT_MARKER in record.detail:
-            logger.info("prune: uvキャッシュが使用中のため整理を保留しました。%s詳細: %s", retry, log, extra=log_format.SHOW)
+            return post_apply_outcome.PostApplyOutcome(
+                notices=(
+                    post_apply_outcome.PostApplyNotice(
+                        f"prune: uvキャッシュが使用中のため整理を保留しました。{retry}",
+                        log=_record_path(group),
+                        warning=False,
+                    ),
+                )
+            )
     elif record.result is MaintenanceResult.COMPLETED:
         logger.info("prune: 前回の%sのキャッシュ整理は完了（%s）", group, record.finished_at, extra=log_format.LOG_ONLY)
     elif record.result is MaintenanceResult.FAILED:
@@ -799,13 +786,11 @@ def start_cache_maintenance() -> int:
     command = [sys.executable, "-m", "pytools.post_apply", "--internal-uv-cache-maintenance"]
     attempts: list[dict[str, Any]] = [{"start_new_session": True}]
     if os.name == "nt":
-        # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動し直す。
         flags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
         attempts = [{"creationflags": flags | windows_job.CREATE_BREAKAWAY_FROM_JOB}, {"creationflags": flags}]
     refused = False
     for index, options in enumerate(attempts):
         try:
-            # 時間上限なし: 待たずに切り離す起動であり、uvの操作は`_command`の上限で終わる。
             process = subprocess.Popen(  # pylint: disable=consider-using-with
                 command,
                 stdin=subprocess.DEVNULL,
@@ -824,7 +809,7 @@ def start_cache_maintenance() -> int:
                 "prune: 起動元のWindows Jobが離脱を許可しないため、離脱せずにキャッシュ整理の独立プロセスを開始した。"
                 "起動元のJobが終了すると整理も止まり、次の更新で再試行する"
             )
-        # 起動元が存続する間に終えた子をzombieとして残さない。起動元が先に終えればOSが引き取る。
+
         threading.Thread(target=process.wait, daemon=True).start()
         return process.pid
     raise AssertionError("起動の試行が空です")
@@ -852,7 +837,6 @@ def _start_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
 
 
 def _clean_rustup_tmp() -> MaintenanceResult:
-    """rustupが以前に作った一時ディレクトリだけを整理する。"""
     home = _rustup_home()
     root = home / "tmp"
     if not root.is_absolute() or root.is_symlink() or root.is_junction():
@@ -877,7 +861,7 @@ def _clean_rustup_tmp() -> MaintenanceResult:
         for process in psutil.process_iter(["name"])
     ):
         return MaintenanceResult.DEFERRED
-    # 並行起動したrustupは、既存の領域でなく新しい一時ディレクトリを作る。
+
     for child in expired:
         with contextlib.suppress(FileNotFoundError):
             shutil.rmtree(child)
@@ -922,6 +906,7 @@ def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome
     next_actions = dict.fromkeys(outcome.next_action for outcome in outcomes if outcome.next_action is not None)
     return post_apply_outcome.PostApplyOutcome(
         changed=any(outcome.changed for outcome in outcomes),
+        notices=tuple(notice for outcome in outcomes for notice in outcome.notices),
         deferred=any(outcome.deferred for outcome in outcomes),
         failure=" / ".join(failures) or None,
         next_action=" ".join(next_actions) or None,

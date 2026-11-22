@@ -32,11 +32,6 @@ AUTO_RESET_RPC_TIMEOUT = 30.0
 
 @dataclasses.dataclass
 class _Progress:
-    """照会が時間内に終わらない時に、最後に到達した段階を示す。
-
-    送出の確認は、直接接続と同じ世代では書込みの完了、別世代からは元の要求への応答で届く。
-    """
-
     method: str = ""
     stage: typing.Literal["", "設定確認", "送出確認待ち", "応答待ち"] = ""
 
@@ -54,7 +49,6 @@ class CodexResetMixin:
     def _hold_usage_limit_failure(
         self: CodexManager, session: SessionState, limit: codex_usage_limit.UsageLimitState | None
     ) -> bool:
-        """読取済みの利用枠を使い、終了反映と同じloop区間で保留を確定する。"""
         if session.status != "failed" or limit is None:
             return False
         error = {
@@ -127,7 +121,7 @@ class CodexResetMixin:
         client = self._owned_client(session)
         if client is None:
             return
-        # 通知readerへ戻る前に保留を標示し、結果公開と起動可用性の確定を防ぐ。
+
         session.codex_auto_reset_pending = True
         task = asyncio.create_task(self._check_auto_reset(session, client, session.turn_seq))
         self._auto_reset_checks[session.session_id] = task
@@ -225,7 +219,6 @@ class CodexResetMixin:
 
     @staticmethod
     async def _read_usage_limit_failure(session: SessionState, error: Any) -> codex_usage_limit.UsageLimitState | None:
-        """終了を公開する前に、保留判定に必要な利用枠だけを読み取る。"""
         if not isinstance(error, dict) or error.get("codexErrorInfo") != "usageLimitExceeded":
             return None
         limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)

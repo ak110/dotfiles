@@ -1,5 +1,3 @@
-"""製品の会話・委譲入力と、テストの共通隔離の対応を確かめる。"""
-
 import ast
 import pathlib
 import re

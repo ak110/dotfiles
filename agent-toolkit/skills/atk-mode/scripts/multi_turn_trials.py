@@ -1,5 +1,3 @@
-"""固定した多ターン試行の公開素材を準備し、保存対話と成果物を採点する。"""
-
 import argparse
 import importlib.util
 import json
@@ -38,7 +36,6 @@ CASES = (
 
 
 def grade_fixture(candidate: str, specifications: list[tuple[str, Callable[[types.ModuleType], Any], Any]]) -> None:
-    """固定課題の公開操作を実行し、期待値との比較をJSONで返す。"""
     spec = importlib.util.spec_from_file_location("trial_candidate", pathlib.Path(candidate))
     assert spec is not None and spec.loader is not None
     task = importlib.util.module_from_spec(spec)
@@ -56,7 +53,7 @@ def grade_fixture(candidate: str, specifications: list[tuple[str, Callable[[type
         else:
             try:
                 actual = call(task)
-            except Exception as error:  # 提出物の公開操作が投げた例外を各固定テストへ帰属させる境界。
+            except Exception as error:
                 row.update(passed=False, error=repr(error))
             else:
                 row.update(passed=actual == expected, actual=actual)
@@ -228,7 +225,7 @@ def _grade(args: argparse.Namespace, trial: dict[str, Any]) -> tuple[dict[str, A
         result["provenance"]["engine"] = data["engine"]
     if errors:
         return result, 2
-    # 評価対象の提出物は専用複製で明示実行する。隔離ディレクトリはsandboxではない。
+
     with tempfile.TemporaryDirectory(prefix="grade-", dir=args.output.parent) as directory:
         candidate = pathlib.Path(directory) / "task.py"
         shutil.copyfile(args.candidate, candidate)
@@ -284,7 +281,6 @@ def _grade(args: argparse.Namespace, trial: dict[str, Any]) -> tuple[dict[str, A
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLIの準備または採点を実行し、終了状態を返す。"""
     parser = argparse.ArgumentParser(description="固定課題の準備と保存対話・成果物の採点")
     parser.add_argument("--list", action="store_true", help="課題名と開示条件をJSONで表示")
     commands = parser.add_subparsers(dest="command", help="公開素材を準備するprepare、提出物を採点するgrade")

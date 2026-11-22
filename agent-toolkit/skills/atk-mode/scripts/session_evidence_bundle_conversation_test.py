@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_bundle_conversation_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -28,7 +26,6 @@ def test_common_runtime_inserted_classifier(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """画面と共有する判定で新しい挿入本文を会話から除き、ユーザーの入力は残す。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -164,7 +161,6 @@ def test_bundle_rejects_output_that_is_not_an_existing_directory(
     capsys: pytest.CaptureFixture[str],
     existing: bool,
 ) -> None:
-    """出力先が実在しない場合とディレクトリでない場合は、ファイルを生成せず終了コード2で返す。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
     destination = tmp_path / ("regular.txt" if existing else "missing")
     if existing:
@@ -195,7 +191,6 @@ def test_bundle_is_exclusive_with_other_query_modes(
     capsys: pytest.CaptureFixture[str],
     conflicting: list[str],
 ) -> None:
-    """集約実行と他の照会モードの併用は引数誤用として終了コード2で返す。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
@@ -326,7 +321,6 @@ def test_observation_boundary_does_not_apply_to_delegate_records(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """境界前に始まった委譲先の終了記録を保持し、後発の委譲先を除く。"""
     transcript = _write_transcript(
         tmp_path,
         [timestamped_entry("2026-09-01T00:00:01Z", "メイン記録")],

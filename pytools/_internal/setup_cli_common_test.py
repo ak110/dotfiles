@@ -1,5 +1,3 @@
-"""pytools._internal.setup_cli_commonのテスト。"""
-
 import os
 import subprocess
 import sys
@@ -153,10 +151,8 @@ _CODEX_FILES: dict[str, tuple[Path, ...]] = {"native": (Path(_STANDALONE),), "pa
 @pytest.mark.parametrize(
     ("process", "expected"),
     [
-        # 導入が置き換えるスタンドアローン版から起動した会話と、会話が起動した同梱の実行体。
         pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\bin\codex.exe"), True, id="standalone-session"),
         pytest.param(windows_process(rf"{_STANDALONE_RELEASE}\codex-path\rg.exe"), True, id="standalone-helper"),
-        # 実行ファイルだけを読めない場合は、command lineの先頭の実行パスで所在を確かめる。
         pytest.param(
             windows_process(rf"{_STANDALONE_RELEASE}\codex-path\rg.exe", denied=["exe"]),
             True,
@@ -167,7 +163,6 @@ _CODEX_FILES: dict[str, tuple[Path, ...]] = {"native": (Path(_STANDALONE),), "pa
             True,
             id="standalone-helper-extended-path",
         ),
-        # 2026-11-19のsthenoで動いていた管理daemonと更新ループ。
         pytest.param(windows_process(_DAEMON_EXE, "app-server", "daemon", "pid-update-loop"), False, id="update-loop"),
         pytest.param(
             windows_process(_DAEMON_EXE, "app-server", "--managed-daemon", denied=["cmdline"]),
@@ -183,7 +178,6 @@ _CODEX_FILES: dict[str, tuple[Path, ...]] = {"native": (Path(_STANDALONE),), "pa
         ),
         pytest.param(windows_process("C:/node/codex.exe"), False, id="other-codex"),
         pytest.param(windows_process(r"C:\tools\codex.exe", denied=["exe"]), True, id="codex-exe-denied"),
-        # 移行が削除するnpm版と、移行が削除しないnpxのキャッシュ。
         pytest.param(windows_process(rf"{_NPM_CODEX}\{_NATIVE_IN_PACKAGE}"), True, id="npm-native"),
         pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js"), True, id="npm-node"),
         pytest.param(windows_process(_NODE, rf"{_NPM_CODEX}\bin\codex.js", denied=["exe"]), True, id="npm-node-exe-denied"),
@@ -196,7 +190,6 @@ _CODEX_FILES: dict[str, tuple[Path, ...]] = {"native": (Path(_STANDALONE),), "pa
         pytest.param(windows_process(_MISE, denied=["exe", "cmdline"]), True, id="mise-unreadable"),
         pytest.param(windows_process(rf"{_NPX_CODEX}\{_NATIVE_IN_PACKAGE}"), False, id="npx-native"),
         pytest.param(windows_process(_NODE, rf"{_NPX_CODEX}\bin\codex.js"), False, id="npx-node"),
-        # node・miseの引数のうち、起動するスクリプトの位置だけを見る。
         pytest.param(windows_process(_MISE, "exec", "codex"), False, id="mise-without-separator"),
         pytest.param(windows_process(_MISE, "exec", "--", "codex"), True, id="mise-launcher-name"),
         pytest.param(windows_process(_MISE, "exec", "--", "server", "codex"), False, id="mise-other-command"),
@@ -236,7 +229,6 @@ def test_windows_counts_processes_started_from_files_to_replace_or_remove(
     ],
 )
 def test_windows_node_is_not_counted_without_npm_or_mise_version_to_remove(monkeypatch, process: types.SimpleNamespace) -> None:
-    """導入が置き換える配置だけを調べる場合、起動したスクリプトを読めないものも含め、node・miseのプロセスは数えない。"""
     patch_windows_processes(monkeypatch, [process])
 
     assert not setup_cli_common.find_windows_cli_processes("codex", native=(Path(_STANDALONE),))
@@ -279,10 +271,6 @@ def test_windows_process_races_are_ignored(monkeypatch, error: Exception) -> Non
 
 
 def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, name: str, exe: str) -> None:
-    """列挙が再利用するProcessだけを以前の世代の実行名・実行ファイルにし、走査を対象のPIDへ限る。
-
-    PIDの自然な再利用や実行ファイルの置き換えを待たずに、列挙キャッシュへ以前の値が残った状態を作る。
-    """
     stale = psutil.Process(pid)
     monkeypatch.setattr(stale, "_name", name)
     monkeypatch.setattr(stale, "_exe", exe)
@@ -299,7 +287,6 @@ def _inject_previous_generation(monkeypatch: pytest.MonkeyPatch, pid: int, *, na
     os.name == "nt", reason="仮想環境のpython.exeは本体を子として起動するため、起動したPIDだけに走査を限定できない"
 )
 def test_windows_cli_running_reads_current_generation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """列挙キャッシュに以前の世代のCLIの実行名と実行ファイルが残っていても、現在の属性で実行中かを判定する。"""
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
         try:
             _inject_previous_generation(monkeypatch, child.pid, name="codex.exe", exe=rf"{_STANDALONE_RELEASE}\bin\codex.exe")

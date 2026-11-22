@@ -47,10 +47,6 @@ def test_usage_limit_resumes_work_conversation_outside_timeout(
     limit_type: str,
     progress: bool,
 ) -> None:
-    """公開CLIは表示設定によらず本作業の上限を待ち、同じ会話と実行時間予算を引き継ぐ。
-
-    CLIイベントとrolloutは20261014-210511-001/002の実現性で観測された形を使う。
-    """
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{engine.upper()}_USAGE_LIMIT_WAIT", "always")
     monkeypatch.setenv("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "0")
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/high")

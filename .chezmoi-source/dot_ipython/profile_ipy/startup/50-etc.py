@@ -1,5 +1,3 @@
-"""ipythonでコード片を軽く動作確認したりするため用の準備コード。"""
-
 import datetime  # noqa
 import functools  # noqa
 import hashlib  # noqa
@@ -51,7 +49,7 @@ del pytoolkit_home
 
 
 def softmax(x):
-    # np.exp(x) / np.sum(np.exp(x))
+
     e_x = np.exp(x - np.max(x))
     return e_x / e_x.sum()
 

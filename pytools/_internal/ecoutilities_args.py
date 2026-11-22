@@ -1,12 +1,9 @@
-"""EcoUtilitiesの引数を、ファイル処理やサイト設定モデルの読み込み前に解釈する。"""
-
 import argparse
 
 from pytools._internal.cli import enable_completion
 
 
 def parse_args() -> argparse.Namespace:
-    """既存のサブコマンドと引数を解釈する。"""
     parser = argparse.ArgumentParser(prog="EcoUtilities", description="ファイル整理・クロール用のユーティリティ集。")
     sub = parser.add_subparsers(dest="mode", metavar="mode")
 

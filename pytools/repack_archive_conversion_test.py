@@ -1,5 +1,3 @@
-"""repack_archiveのconversionの試験。"""
-
 # pylint: disable=protected-access
 
 import logging
@@ -34,7 +32,6 @@ class TestImageConversionBackupRetention:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """tEXt CRC 不整合 PNG は寛容モードで変換されつつバックアップが保持される。"""
         trashed: list[str] = []
         monkeypatch.setattr(
             "pytools.repack_archive.send2trash.send2trash",
@@ -43,14 +40,14 @@ class TestImageConversionBackupRetention:
         archive = tmp_path / "sample.zip"
         with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as zf:
             zf.writestr("img.png", _png_bytes_with_corrupt_text())
-            # 単一ルート平坦化に巻き込まれないよう別エントリも置く
+
             zf.writestr("readme.txt", b"hello")
         exit_code = _run_main(monkeypatch, [str(archive)])
         assert exit_code == 0
-        # 出力 ZIP には JPEG が含まれる
+
         entries = _zip_entries(tmp_path / "sample.zip")
         assert "img.jpg" in entries
-        # 警告があったためバックアップは保持され send2trash も呼ばれない
+
         assert (tmp_path / "bk" / "sample.zip").exists()
         assert not trashed
 
@@ -79,7 +76,7 @@ class TestImageConversionBackupRetention:
         # 失敗が無いためバックアップはゴミ箱送りされる
         assert len(trashed) == 1
         assert trashed[0].endswith("sample.zip")
-        # 非画像扱いで削除されないため、原本のバイト列がそのまま出力 ZIP に含まれる
+
         entries = _zip_entries(tmp_path / "sample.zip")
         assert "readme.txt" in entries
         assert "img.png" in entries
@@ -101,7 +98,7 @@ class TestImageConversionBackupRetention:
             zf.writestr("readme.txt", b"hello")
         exit_code = _run_main(monkeypatch, [str(archive)])
         assert exit_code == 0
-        # 通常の変換成功ではバックアップが send2trash 経由で送られる
+
         assert len(trashed) == 1
         assert trashed[0].endswith("sample.zip")
 
@@ -117,8 +114,7 @@ class TestMainFailureSummary:
     ) -> None:
         good = tmp_path / "good.zip"
         _make_zip(good, {"a.txt": b"a"})
-        # ZIP の体をなさないファイル。`_preflight_check` は存在チェックのみ通過し、
-        # libarchive がフォーマットエラーで例外を送出する。
+
         bad = tmp_path / "bad.zip"
         bad.write_bytes(b"not a zip file at all, totally garbage contents")
 
@@ -150,7 +146,6 @@ class TestZeroTargetAfterFilter:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``_extract_zip`` 経路: ZIP 内の全エントリが ignore_files に一致し 0 件になる。"""
         good = tmp_path / "good.zip"
         _make_zip(good, {"keep.txt": b"k"})
         empty = tmp_path / "empty.zip"
@@ -164,9 +159,9 @@ class TestZeroTargetAfterFilter:
             ["--no-trash", "--config", str(config_yaml), str(good), str(empty)],
         )
         assert exit_code == 1
-        # 良好な target は処理が継続され出力 ZIP が残る
+
         assert _zip_entries(tmp_path / "good.zip") == {"keep.txt"}
-        # 対象 0 件の target は failed_targets に集約される
+
         summary = "\n".join(r.getMessage() for r in caplog.records)
         assert "対象ファイルが0件のためスキップします" in summary
         assert str(empty) in summary
@@ -177,7 +172,6 @@ class TestZeroTargetAfterFilter:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``_extract_with_libarchive`` 経路: tar 内の全エントリが ignore_files に一致し 0 件になる。"""
         good = tmp_path / "good.zip"
         _make_zip(good, {"keep.txt": b"k"})
         empty = tmp_path / "empty.tar"
@@ -202,7 +196,6 @@ class TestZeroTargetAfterFilter:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """``_copy_filtered`` 経路: ディレクトリ内の全ファイルが ignore_files に一致し 0 件になる。"""
         good = tmp_path / "good.zip"
         _make_zip(good, {"keep.txt": b"k"})
         empty_dir = tmp_path / "empty_book"
@@ -228,7 +221,6 @@ class TestZeroTargetAfterFilter:
         caplog: pytest.LogCaptureFixture,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """ignore_dirs除去後に対象0件となるZIPでは原本を復元する。"""
         archive = tmp_path / "empty.zip"
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr("root/NoText/drop.txt", b"drop")
@@ -253,7 +245,6 @@ class TestZeroTargetAfterFilter:
         monkeypatch: pytest.MonkeyPatch,
         archive_kind: str,
     ) -> None:
-        """libarchive・ディレクトリ経路でもignore_dirs除去後の原本復元を行う。"""
         config_yaml = tmp_path / "repack-archive.yaml"
         config_yaml.write_text("ignore_dirs: ['No[-_ ]?Te?xt']\n", encoding="utf-8")
         if archive_kind == "tar":
@@ -296,15 +287,12 @@ class TestZeroTargetAfterFilter:
 
 @pytest.mark.skipif(shutil.which("pdftoppm") is None, reason="Poppler (pdftoppm) 未導入")
 class TestProcessPdf:
-    """PDF 直接入力をページ画像へ再パックする挙動の検証。"""
-
     @pytest.mark.cpu_limit(
         1.5, reason="実PDFの2ページで自然順と縮小有無の両境界を通し、実変換とZIP保存を確認する（Linux CI CPU0.526秒）"
     )
     def test_pdf_input_repacks_pages(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """複数ページ PDF が連番 JPEG として自然順で再パックされ、バックアップが残る。"""
         pdf = tmp_path / "book.pdf"
-        # 縦長 (幅が max_width 以内) と横長 (幅が max_width 超過で縮小経路) を混在させる
+
         _make_pdf(pdf, [((600, 800), "white"), ((1200, 400), "red")])
         exit_code = _run_main(monkeypatch, ["--no-trash", str(pdf)])
         assert exit_code == 0
@@ -312,9 +300,9 @@ class TestProcessPdf:
         assert output.exists()
         with zipfile.ZipFile(output) as zf:
             ordered = [info.filename for info in zf.infolist()]
-        # 出力形式を指定しない場合は jpeg。ページはゼロ埋め連番で自然順に並ぶ
+
         assert ordered == ["0001.jpg", "0002.jpg"]
-        # バックアップは元の PDF 名のまま保持される
+
         assert (tmp_path / "bk" / "book.pdf").exists()
 
 

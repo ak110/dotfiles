@@ -1,5 +1,3 @@
-"""`atk agents logs`の単一記録と一括変換の対象選択・出力。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -15,7 +13,6 @@ from agent_toolkit._atk import session_record_format
 from agent_toolkit._common import host_homes
 from agent_toolkit._common.next_action import report
 
-# 記録を特定できない場合の次の操作。`atk agents logs`の各処理と`atk agents logs <id>`の表示で共有する。
 MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行せよ"
 UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行せよ"
 BROKEN_LINES_NEXT_ACTION = "解析できなかった行が必要な場合は、元ログの該当行を確認し、形式の不整合をユーザーへ報告せよ"
@@ -24,8 +21,6 @@ _OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイル
 
 @dataclasses.dataclass(frozen=True)
 class RecordTarget:
-    """1件のローカルのセッション記録と開始時刻。"""
-
     engine: str
     path: pathlib.Path
     session_id: str
@@ -44,7 +39,6 @@ def export_logs(
     tool_details: bool,
     verbose: bool = False,
 ) -> int:
-    """公開CLIの選択条件で記録を読み、標準出力か1件1ファイルへ出力する。"""
     if session_id is not None:
         selected = record_paths.find_session_record(session_id)
         if selected is None:
@@ -133,7 +127,6 @@ def _bulk_targets(project_dir: pathlib.Path | None) -> list[RecordTarget]:
 
 
 def _target(engine: str, path: pathlib.Path, session_id: str) -> RecordTarget:
-    """先頭の有効な記録から開始日時を取得する。"""
     try:
         with path.open(encoding="utf-8", errors="replace") as stream:
             for line in stream:
@@ -168,7 +161,6 @@ def _first_codex_cwd(path: pathlib.Path) -> str | None:
 
 
 def _timestamp(value: str | None) -> datetime.datetime:
-    """欠けた開始時刻を末尾へ置く比較値を返す。"""
     if value is None:
         return datetime.datetime.min.replace(tzinfo=datetime.UTC)
     try:
@@ -179,7 +171,6 @@ def _timestamp(value: str | None) -> datetime.datetime:
 
 
 def _destinations(output_dir: pathlib.Path, targets: list[RecordTarget]) -> list[pathlib.Path]:
-    """日時から作るファイル名の衝突を識別子で解消し、既存ファイルを上書きしない。"""
     destinations: list[pathlib.Path] = []
     chosen: set[pathlib.Path] = set()
     for target in targets:
@@ -196,12 +187,10 @@ def _destinations(output_dir: pathlib.Path, targets: list[RecordTarget]) -> list
 
 
 def _safe_stem(value: str) -> str:
-    """記録識別子を、出力先ディレクトリの外を指さないファイル名の文字へ置き換える。"""
     return re.sub(r"[^0-9A-Za-z_-]", "-", value) or "session"
 
 
 def _render_text(target: RecordTarget, records: list[dict[str, typing.Any]], *, bulk: bool, verbose: bool) -> str:
-    """単一記録は形式指定がない場合と同じ書式で出力し、複数件には識別子の区切りを付ける。"""
     items = [f"### {target.session_id}"] if bulk else []
     items.extend(text_items(target.engine, records, verbose=verbose))
     return "".join(f"{item}\n\n" for item in items)
@@ -227,7 +216,6 @@ def text_items(engine: str, records: typing.Iterable[dict[str, typing.Any]], *, 
 
 
 def _clip(text: str) -> str:
-    """要約表示の上限を超える本文を切り詰め、省略の標識を付ける。"""
     normalized = text.strip()
     if len(normalized) <= session_record_format.SUMMARY_TEXT_LIMIT:
         return normalized

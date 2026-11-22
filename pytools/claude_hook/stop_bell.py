@@ -30,12 +30,10 @@ from agent_toolkit._hooks.background_tasks import is_pending_async_work
 from agent_toolkit._hooks.stop_session import append_stop_log
 from agent_toolkit._hooks.stop_session import parse_stop_session as _parse_stop_session
 
-# 端末ベル（BEL）の制御文字。
 _BELL = "\a"
 
 
 def _approve() -> None:
-    """ベルを鳴らさず空応答で終了する。共通のhook起動処理の例外フォールバックも本関数を呼ぶ。"""
     print(json.dumps({}, ensure_ascii=False))
 
 
@@ -45,14 +43,11 @@ def _ring() -> None:
 
 
 def main(payload_text: str) -> int:
-    """入力待ちになった場合だけベルを鳴らすエントリポイント。"""
     resolved = _parse_stop_session(payload_text, _approve)
     if resolved is None:
         return 0
     session_id, payload = resolved
 
-    # 他のStop hookがターン継続をblockした後の再呼び出し。応答は終了しておらず
-    # ユーザーの入力待ちでもないため、判定処理を行わずベルを鳴らさない。
     if payload.get("stop_hook_active") is True:
         append_stop_log(session_id, "silent_stop_hook_active", {"stop_hook_active": True})
         _approve()

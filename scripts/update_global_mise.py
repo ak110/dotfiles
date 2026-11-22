@@ -1,5 +1,3 @@
-"""配布用mise設定のfullを一時展開し、テンプレートとlockを更新する。"""
-
 import os
 import re
 import shutil
@@ -11,7 +9,6 @@ from agent_toolkit._common import process_tree
 
 
 def update(root: Path) -> None:
-    """ホストの導入モードを保持し、配布対象の両OSのlockを更新する。"""
     source = root / ".chezmoi-source/dot_config/mise"
     template = source / "config.toml.tmpl"
     environment = {**os.environ, "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE": "full"}
@@ -25,7 +22,7 @@ def update(root: Path) -> None:
     ).stdout
     with tempfile.TemporaryDirectory(prefix="dotfiles-mise-") as directory:
         temporary = Path(directory)
-        # `--global`はaubeを`locks/`へ置くため、配布元と同じ`.mise/locks/`を使うローカル設定として生成する。
+
         configuration = temporary / "mise.toml"
         configuration.write_text(rendered, encoding="utf-8")
         shutil.copy2(source / "mise.lock", temporary / "mise.lock")
@@ -35,7 +32,7 @@ def update(root: Path) -> None:
             for entry in existing_locks.iterdir():
                 if entry.is_dir():
                     shutil.copytree(entry, temporary / ".mise/locks" / entry.name.removeprefix("exact_"))
-        # 設定をglobal配置と判定させず、実ホームの設定も読ませない。
+
         isolated_config = temporary / "user-config"
         isolated_config.mkdir()
         environment["MISE_CONFIG_DIR"] = str(isolated_config)
@@ -50,7 +47,7 @@ def update(root: Path) -> None:
         replacement, count = re.subn(r'^dotnet = "[^"]+"$', f'dotnet = "{version}"', original, flags=re.MULTILINE)
         if count != 1:
             raise ValueError("配布テンプレート内のdotnet指定を一意に更新できません")
-        # 取得と解析に成功してから、配布元をまとめて更新する。
+
         staged_locks = temporary / ".mise/locks"
         if staged_locks.is_dir():
             if existing_locks.exists():
@@ -63,7 +60,6 @@ def update(root: Path) -> None:
 
 
 def main() -> int:
-    """リポジトリ用の更新処理を起動する。"""
     update(Path(__file__).resolve().parent.parent)
     return 0
 

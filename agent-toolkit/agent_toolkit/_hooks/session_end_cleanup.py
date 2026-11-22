@@ -29,7 +29,6 @@ import json
 import os
 import time
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server import shared_roots, shared_sweep
 lazy from agent_toolkit._atk.agents_exit_session import sweep_function_hook_files
 lazy from agent_toolkit._atk.managed_temp import creation, resources, sweep
@@ -85,7 +84,7 @@ def main(payload_text: str) -> int:
             sweep_function_hook_files(keep_session_id=session_id, clear=True)
     with contextlib.suppress(OSError, ValueError):
         area = creation.find_session_temp(session_id) if session_id is not None else None
-        # 登録簿の全件を解決する保留中の判定は、回収の候補になる領域がある場合だけ行う。
+
         if area is not None and not sweep.has_live_owner(area) and session_id not in registry_index.pending_session_ids():
             cleaned = resources.cleanup_regenerable(area, references=functools.cache(resources.process_references))
             resources.log_retained(cleaned["retained"])

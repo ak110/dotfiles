@@ -24,7 +24,6 @@ SESSION_TEMP_PREFIX = "session"
 
 
 def create_managed_temp(prefix: str) -> pathlib.Path:
-    """一時root直下へ所有者だけが読み書きできるディレクトリを作成し、絶対パスを返す。"""
     paths.require_valid_prefix(prefix)
     root = paths.temp_root()
     try:
@@ -34,16 +33,11 @@ def create_managed_temp(prefix: str) -> pathlib.Path:
 
 
 def session_temp_path(session_id: str) -> pathlib.Path:
-    """会話の識別子から決まるセッションのmanaged-tempの絶対パスを返す。
-
-    フック、agents_server、委譲起動と圧縮復元が同じ関数で解決し、登録簿を介さずに同じ領域へ収束させる。
-    """
     digest = hashlib.sha256(session_id.encode()).hexdigest()[:16]
     return paths.temp_root_path() / f"{SESSION_TEMP_PREFIX}-{digest}"
 
 
 def _usable_directory(path: pathlib.Path) -> bool:
-    """一時root直下に実在する、リンクでない自分所有のディレクトリかを返す。"""
     if path.parent != paths.temp_root_path():
         return False
     try:
@@ -56,11 +50,6 @@ def _usable_directory(path: pathlib.Path) -> bool:
 
 
 def _legacy_session_temp(session_id: str) -> pathlib.Path | None:
-    """旧版が会話へ割り当てた領域を、参照を読むだけで返す。成立しない参照は無視する。
-
-    旧版の会話を新版で再開しても同じ絶対パスとデータを使い続けるため、参照の指すpathが
-    一時root直下の実在する非リンクディレクトリである場合に限り再利用する。参照は書き換えない。
-    """
     reference = paths.state_root_path() / ".sessions" / hashlib.sha256(session_id.encode()).hexdigest()
     try:
         record = json.loads(reference.read_text(encoding="utf-8"))
@@ -73,7 +62,6 @@ def _legacy_session_temp(session_id: str) -> pathlib.Path | None:
 
 
 def find_session_temp(session_id: str) -> pathlib.Path | None:
-    """既存のセッションのmanaged-tempを、作成せずに返す。"""
     legacy = _legacy_session_temp(session_id)
     if legacy is not None:
         return legacy
@@ -82,7 +70,6 @@ def find_session_temp(session_id: str) -> pathlib.Path | None:
 
 
 def resolve_session_temp(session_id: str) -> pathlib.Path:
-    """セッションのmanaged-tempを返す。旧版の参照が無ければ決定的なパスを作成する。"""
     legacy = _legacy_session_temp(session_id)
     if legacy is not None:
         return legacy
@@ -101,7 +88,6 @@ def resolve_session_temp(session_id: str) -> pathlib.Path:
 
 
 def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathlib.Path:
-    """セッションのmanaged-tempの直下へ作業ディレクトリを作成し、絶対パスを返す。"""
     paths.require_valid_prefix(prefix)
     root = paths.contained_target(session_root)
     try:
@@ -111,7 +97,6 @@ def create_session_temp(prefix: str, session_root: pathlib.Path | str) -> pathli
 
 
 def create_output_temp(prefix: str) -> pathlib.Path:
-    """会話が分かる保存物をセッションのmanaged-tempの子へ、端末の保存物を独立領域へ作成する。"""
     session_id = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
     if session_id:
         return create_session_temp(prefix, resolve_session_temp(session_id))

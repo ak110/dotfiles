@@ -92,7 +92,6 @@ def test_unsupported_host_reports_invocation_without_stopping(
 def test_changed_target_names_rerun_and_exit_command(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
-    """識別後に終了対象が変化した場合は停止せず、再実行か/exitの入力を案内する。"""
     monkeypatch.setattr(agents_exit_session, "identify_current_host", lambda: _claude_target(tmp_path))
     monkeypatch.setattr(agents_exit_session, "_same_process", lambda _target: False)
     monkeypatch.setattr(agents_exit_session.os, "kill", lambda *_args: pytest.fail("停止してはならない"))
@@ -185,7 +184,6 @@ def test_missing_marker_or_session_id_keeps_signal_path(
 
 
 def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """再開前の目印だけが残るセッションではFunction hooksを有効と見なさない。"""
     target = _claude_target(tmp_path)
     directory = tmp_path / "agent-toolkit-function-hooks"
     directory.mkdir()
@@ -205,8 +203,6 @@ def test_old_marker_from_resume_keeps_signal_path(monkeypatch: pytest.MonkeyPatc
 
 
 class _FakeProcess:
-    """`_target`の判定に使うプロセスで、同関数が参照する属性だけを返す。"""
-
     def __init__(self, pid: int, argv: list[str], executable: pathlib.Path, terminal: str | None = None) -> None:
         self.pid = pid
         self._argv = argv
@@ -245,7 +241,6 @@ def test_versioned_executable_with_claude_argv_is_identified(tmp_path: pathlib.P
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Codexの終了対象はLinuxに限る")
 def test_codex_native_alias_requires_real_codex_and_terminal(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """配布の別名を認識しても、実行ファイル・端末・対話argvの条件を保つ。"""
     codex = tmp_path / "codex"
     other = tmp_path / "other"
     for executable in (codex, other):
@@ -265,7 +260,6 @@ def test_codex_native_alias_requires_real_codex_and_terminal(tmp_path: pathlib.P
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agyの終了対象はLinuxに限る")
 def test_interactive_agy_with_terminal_is_identified(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """端末を持つ対話のagyは終了対象とし、非対話実行と端末の無い起動は対象外とする。"""
     executable = tmp_path / "agy"
     executable.write_text("", encoding="utf-8")
     monkeypatch.setattr(agents_exit_session.process_identity, "start_id", lambda process, **kwargs: "test-generation")
@@ -280,7 +274,6 @@ def test_interactive_agy_with_terminal_is_identified(tmp_path: pathlib.Path, mon
 
 
 def test_unrelated_process_is_not_identified(tmp_path: pathlib.Path) -> None:
-    """対話CLIのいずれにも一致しないプロセスは識別しない。"""
     executable = tmp_path / "python3"
     executable.write_text("", encoding="utf-8")
 

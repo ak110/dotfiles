@@ -8,9 +8,12 @@ PIDの列挙・後からのhandle取得では、列挙から保持までに終�
 from __future__ import annotations
 
 import ctypes
+import subprocess
 import time
+from collections.abc import Mapping, Sequence
 from ctypes import wintypes
-from typing import Any
+from os import PathLike
+from typing import IO, Any
 
 CREATE_SUSPENDED = 0x00000004
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -23,6 +26,76 @@ CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 # その子が起動するコンソールアプリ（venvのpython.exeが中継する本体を含む）へWindowsが新しい可視コンソールを割り当てる。
 # CREATE_NO_WINDOWは非表示の新しいコンソールを持たせ、子孫も同じ非表示コンソールを継承する。
 HIDDEN_DETACHED_CREATIONFLAGS = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+
+
+def start_owned_process(
+    args: Sequence[str],
+    *,
+    job: WindowsJob | None,
+    cwd: str | PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    stdin: int | IO[bytes] | None = None,
+    stdout: int | IO[bytes] | None = None,
+    stderr: int | IO[bytes] | None = None,
+    pass_fds: Sequence[int] = (),
+) -> subprocess.Popen[bytes]:
+    """Windowsでは停止状態の子をJobへ所属させ、POSIXでは回収できる新しいプロセス群を起動する。"""
+    process = subprocess.Popen(  # pylint: disable=consider-using-with
+        args,
+        cwd=cwd,
+        env=env,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        pass_fds=pass_fds,
+        start_new_session=job is None,
+        creationflags=CREATE_SUSPENDED if job is not None else 0,
+    )
+    if job is None:
+        return process
+    try:
+        owned: Any = process
+        job.assign_suspended(int(owned._handle), process.pid)  # pylint: disable=no-member,protected-access
+    except BaseException:
+        try:
+            try:
+                job.terminate()
+            except BaseException:
+                job.close()
+                raise
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                process.wait(timeout=5)
+        finally:
+            for stream in (process.stdin, process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+        raise
+    return process
+
+
+def start_independent_process(
+    args: Sequence[str],
+    *,
+    windows: bool,
+    cwd: str | PathLike[str] | None = None,
+    env: Mapping[str, str] | None = None,
+    stdin: int | IO[bytes] | None = None,
+    stdout: int | IO[bytes] | None = None,
+    stderr: int | IO[bytes] | None = None,
+) -> subprocess.Popen[bytes]:
+    """所有元の終了から独立して起動し、離脱できなければJob所属を継承せず失敗を返す。"""
+    return subprocess.Popen(  # pylint: disable=consider-using-with
+        args,
+        cwd=cwd,
+        env=env,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        start_new_session=not windows,
+        creationflags=(HIDDEN_DETACHED_CREATIONFLAGS | CREATE_BREAKAWAY_FROM_JOB) if windows else 0,
+    )
 
 
 class _BasicLimits(ctypes.Structure):
@@ -73,8 +146,6 @@ class _ThreadEntry(ctypes.Structure):
 
 
 class WindowsJob:
-    """1つの所有rootと、明示離脱を除く全子孫の寿命を所有するJob。"""
-
     def __init__(self, *, kill_on_close: bool = True) -> None:
         # WinDLL等はWindows専用属性。DLLの公開関数signatureをここだけで定義する。
         self._ctypes: Any = ctypes
@@ -105,7 +176,7 @@ class WindowsJob:
             raise self._error()
         try:
             limits = _ExtendedLimits()
-            # 最後の所有handleを閉じた場合の回収と、明示的な独立workerへの離脱を両立する。
+
             limits.basic.flags = (0x00002000 if kill_on_close else 0) | 0x00000800
             if not self._kernel.SetInformationJobObject(self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
                 raise self._error()
@@ -120,14 +191,12 @@ class WindowsJob:
         self.close()
 
     def assign_suspended(self, process_handle: int, pid: int) -> None:
-        """元世代のhandleをJobへ登録してから、その世代だけを再開する。"""
         if self._kernel.GetProcessId(process_handle) != pid:
             raise OSError("開始したプロセスのhandleとPIDが一致しません")
         if not self._kernel.AssignProcessToJobObject(self._handle, process_handle):
             raise self._error()
-        # Popenがprimary threadのhandleを閉じるため、停止中の元世代のthreadを列挙する。
-        # process handleを保持している間はPIDが再利用されず、再開前には子も生成されない。
-        snapshot = self._kernel.CreateToolhelp32Snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+
+        snapshot = self._kernel.CreateToolhelp32Snapshot(0x00000004, 0)
         if snapshot == ctypes.c_void_p(-1).value:
             raise self._error()
         try:
@@ -141,7 +210,6 @@ class WindowsJob:
                     if not thread:
                         raise self._error()
                     try:
-                        # 外部からrootが終了されthread IDが再利用されても、別プロセスを再開しない。
                         if self._kernel.GetProcessIdOfThread(thread) != pid:
                             raise OSError("開始したプロセスとthreadの所属PIDが一致しません")
                         if self._kernel.ResumeThread(thread) == 0xFFFFFFFF:
@@ -161,7 +229,6 @@ class WindowsJob:
                 raise self._error()
 
     def terminate(self, *, timeout: float = 5.0) -> None:
-        """Jobの全所属を終了させ、OSのActiveProcessesが0になるまで確認する。"""
         if not self._kernel.TerminateJobObject(self._handle, 1):
             raise self._error()
         deadline = time.monotonic() + timeout
@@ -176,7 +243,6 @@ class WindowsJob:
             time.sleep(0.01)
 
     def close(self) -> None:
-        """所有するJob handleを1回だけ解放する。"""
         if self._handle:
             if not self._kernel.CloseHandle(self._handle):
                 raise self._error()

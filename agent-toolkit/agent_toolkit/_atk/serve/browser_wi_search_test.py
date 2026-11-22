@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するsearchの試験。"""
-
 import asyncio
 import datetime
 import re
@@ -27,7 +25,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harness: _BrowserHarness) -> None:
-    """回答・削除の操作のフォーカス、条件に応じた表示、警告と、エンドユーザーの操作による更新だけに出す件数通知を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -35,7 +32,6 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     assert await page.locator(".filters details").evaluate("element => element.open")
     await _open_filters(page)
 
-    # 警告は件数を示す見出しだけを常に表示し、全文は開いて読む。
     warning = page.get_by_role("alert").filter(has_text="一覧から除外したファイルの警告")
     await warning.wait_for(state="visible")
     await playwright.async_api.expect(warning.locator("summary")).to_contain_text("一覧から除外したファイルの警告: 1件")
@@ -43,7 +39,7 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await playwright.async_api.expect(page.locator("#list-warning")).to_be_visible()
     warning_text = await warning.inner_text()
     assert "UTF-8として読み取れません" in warning_text
-    # 状態を読めない項目も、年月の保存先と修正操作を警告から特定できる。
+
     assert str(_entry_path(harness.root, "invalid.md")) in warning_text
     assert "次の操作: " in warning_text
     assert "UTF-8として保存し直す" in warning_text
@@ -165,7 +161,6 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_search_modes_preserve_conditions_and_clear(browser_harness: _BrowserHarness) -> None:
-    """古い終了項目を検索し、手動条件を保持して通常表示と往復し、全消去できる。"""
     page = browser_harness.page
     old_name = f"{datetime.datetime.now() - datetime.timedelta(days=40):%Y%m%d-%H%M%S}-001.md"
     _entry_path(browser_harness.root, old_name).write_text(
@@ -220,7 +215,6 @@ async def test_work_item_search_modes_preserve_conditions_and_clear(browser_harn
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_search_ime_and_pending_input_return_to_normal(browser_harness: _BrowserHarness) -> None:
-    """IME未確定入力では取得せず、確定後の連続入力や保留中の応答を通常表示への復帰で無効化する。"""
     page = browser_harness.page
     await page.clock.install()
     await _observe_screen_requests(page)
@@ -272,10 +266,6 @@ async def test_work_item_search_ime_and_pending_input_return_to_normal(browser_h
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_period_filter_limits_work_items_to_recent_by_default(browser_harness: _BrowserHarness) -> None:
-    """期間の初期値は直近2週間で、期間を広げると古いWIが現れ、条件をクリアすると直近2週間へ戻る。
-
-    初期値で期間を限定しないと古いWIが一覧を埋め、期間を広げる操作が無いと古いWIへ到達できない。
-    """
     harness = browser_harness
     page = harness.page
     now = datetime.datetime.now()
@@ -301,7 +291,7 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
     await playwright.async_api.expect(rows.filter(has_text=names[40])).to_have_count(1)
     await period.select_option("all")
     await playwright.async_api.expect(rows.filter(has_text=names[40])).to_have_count(1)
-    # 作成日時を読めない名前の項目は期間で隠さない。
+
     await playwright.async_api.expect(rows.filter(has_text="awi.md")).to_have_count(1)
 
     await page.locator("#clear-filters-button").click()
@@ -314,10 +304,6 @@ async def test_period_filter_limits_work_items_to_recent_by_default(browser_harn
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("state", ["active", "processable", "all", "inbox", "processing", "hold", "adopted", "rejected"])
 async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: _BrowserHarness, state: str) -> None:
-    """期間の内側に対応中の項目が無い空状態から、全期間の一覧へ1操作で進め、狭い幅でも期間の限定を確認できる。
-
-    空状態に期間を広げる操作が無いと、古い対応中の項目を探すエンドユーザーがフィルター欄を探して開く必要がある。
-    """
     harness = browser_harness
     page = harness.page
     await page.set_viewport_size({"width": 320, "height": 800})
@@ -353,7 +339,6 @@ async def test_empty_list_limited_by_period_offers_all_periods(browser_harness: 
 async def test_detail_focus_falls_back_after_answer_filter_and_delete(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """回答後に詳細を閉じたときと削除・0件化の後は、フォーカスが操作できる一覧の要素へ戻る。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -388,7 +373,6 @@ async def test_detail_focus_falls_back_after_answer_filter_and_delete(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness: _BrowserHarness) -> None:
-    """標準幅でフィルター値が収まり、操作順と文字・入力境界のコントラストを保つ。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 1280, "height": 800})
     await page.goto(browser_harness.base_url + "/")
@@ -433,7 +417,6 @@ async def test_work_item_filter_fit_order_and_computed_contrast(browser_harness:
 async def test_work_item_important_toggle_badge_and_filter(
     browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch, filename: str
 ) -> None:
-    """AWI・UWI・終了項目の重要設定と解除が一覧と重要・非重要の条件指定へ反映される。"""
     _disable_wi_git(monkeypatch)
     page = browser_harness.page
     await page.set_viewport_size({"width": 320, "height": 800})

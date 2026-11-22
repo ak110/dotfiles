@@ -1,10 +1,3 @@
-"""`atk serve`の計画ファイル画面を責務別のサブモジュールに持つパッケージ。
-
-サブモジュールは設定値と更新通知、Markdownの描画、ローカルとSSH先の走査、HTTPの応答を分担する。
-計画rootの定義と対象判定、作成日時インデックスはSSH先のヘルパーと共有するため`_plan`配下に置く。
-パッケージ外の呼び出し元が使う名前だけを定義元から再exportする。
-"""
-
 from agent_toolkit._atk.serve.plans.local_scan import (
     REMOTE_BOOTSTRAP,
     read_pygments_css,

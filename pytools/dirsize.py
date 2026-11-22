@@ -1,9 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""ディレクトリサイズを集計表示する (C# dirsize の Python 移植)。
-
-再帰的に配下のファイルサイズを合計し、サブディレクトリごとに大きさを表示する。
-`-r DEPTH` で深度制限、`-a` で 1 MiB 未満も表示、`-e` で進捗を stderr に表示する。
-"""
 
 import argparse
 import io
@@ -20,7 +15,6 @@ _MIB = 1024 * 1024
 
 
 def main() -> None:
-    """ディレクトリサイズを集計表示するエントリポイント。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

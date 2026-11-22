@@ -66,7 +66,6 @@ def start_observer(
 
 
 def fallback_message(error: OSError, *, restart: str) -> str:
-    """切替の警告文を返す。`restart`は通常の監視へ戻すために再起動する対象の名前とする。"""
     return (
         f"ファイル変更の監視を開始できないため、{POLLING_INTERVAL_SECONDS:g}秒間隔のポーリング監視へ切り替えた: {error}。"
         f"同じOSアカウントのinotifyの使用（`/proc/sys/fs/inotify/max_user_instances`の上限）を減らした後に"

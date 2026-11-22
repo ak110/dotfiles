@@ -73,7 +73,6 @@ def prune(*, home: pathlib.Path | None = None, windows: bool | None = None, dry_
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """post_applyから独立した整理ステップとして起動する。"""
     result = prune()
     for path in result.removed:
         logger.info("Codex旧パッケージを削除: %s", path)
@@ -140,7 +139,6 @@ def _retain_running_bundled_executables(
         if not executable:
             continue
         try:
-            # OSから取得した実行パスを使い、無関係な実行体のファイルシステムをたどらない。
             relative = pathlib.Path(executable.removesuffix(" (deleted)")).relative_to(resolved_releases)
         except ValueError:
             continue
@@ -199,7 +197,7 @@ def _selected_releases(root: pathlib.Path) -> dict[pathlib.Path, list[str]]:
 
 
 def _complete_release(release: pathlib.Path, *, package: str) -> bool:
-    # install.shのpackage/legacy-platform-npm配置とprepare_install.rsのlocalコピーを扱う。
+
     if release.is_symlink() or release.is_junction() or not release.is_dir() or not _RELEASE_NAME.fullmatch(release.name):
         return False
     if release.name.startswith("local-") and package != "app-server-daemon":

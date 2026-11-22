@@ -1,6 +1,6 @@
 # 起動候補と観測identityの設計記録
 
-[設計記録の索引](design.md)から参照する、起動候補と観測identityの記録である。
+[設計記録の索引](design.md)
 
 ## 起動候補と観測identity
 

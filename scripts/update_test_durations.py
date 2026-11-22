@@ -8,7 +8,6 @@ from pathlib import Path
 
 
 def read_durations(paths: list[Path]) -> dict[str, float]:
-    """重複・不正な試験を拒否し、pytestのnode IDへ変換する。"""
     if len(paths) != 3 or len({path.resolve() for path in paths}) != 3:
         raise ValueError("異なる全3shardのJUnit XMLを指定してください")
     durations: dict[str, float] = {}
@@ -48,7 +47,6 @@ def read_durations(paths: list[Path]) -> dict[str, float]:
 
 
 def main() -> int:
-    """入力を全件検査してから指定先へ記録する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("junit", nargs=3, type=Path, help="成功runの全3shardのJUnit XML")
     parser.add_argument("--output", required=True, type=Path, help="所要記録JSONの保存先")

@@ -44,7 +44,6 @@ def _wait_only(tool_input: object, *, powershell: bool) -> bool:
 
 
 def _wait_program(tokens: tuple[str, ...]) -> bool:
-    """既知のコマンドのうち、外部の完了を待つ実行形だけを識別する。"""
     if not tokens or "-h" in tokens or "--help" in tokens:
         return False
     if is_agents_wait_command(tokens):
@@ -84,7 +83,6 @@ def _gh_wait(subcommands: tuple[str, ...]) -> bool:
 
 
 def start(payload: dict) -> None:
-    """実行前の時刻を同じ主体・tool_use_idへ一度だけ記録する。"""
     session = payload.get("session_id")
     identifier = payload.get("tool_use_id")
     if payload.get("tool_name") not in ATK_SHELL_TOOLS or not isinstance(session, str) or not session:
@@ -106,7 +104,6 @@ def start(payload: dict) -> None:
 
 
 def observe(payload: dict, *, background_task_id: str | None = None) -> list[str]:
-    """完了した元実行だけを集計し、通知本文を既存のイベント集約へ返す。"""
     if payload.get("tool_name") not in ATK_SHELL_TOOLS:
         return []
     identifier = payload.get("tool_use_id")
@@ -152,7 +149,7 @@ def observe_notifications(payload: dict) -> list[str]:
         task = re.search(r"<task-id>([^<]+)</task-id>", notification)
         if not status or status[1] not in {"completed", "failed", "cancelled", "killed"} or not task:
             continue
-        # task-idと元のtool_use_idの対応は起動応答からだけ得る。
+
         owned = [
             (actor, identifier)
             for actor, current in read_state(session).get(STATE_KEY, {}).items()
@@ -205,11 +202,10 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
     update_state(session, finish)
     notices: list[str] = []
     for kind, seconds, review in result:
-        # 1秒未満の測定値は判断に使えないため省く。未計測は短い実行と別の事象として常に示す。
         if seconds is None or seconds >= NOTICE_SECONDS:
             unmeasured = "コマンド時間: 未計測（開始時刻を対応付けられない）"
             measured = f"{kind}: {seconds:.1f}秒" if seconds is not None else unmeasured
-            # 実行ごとの測定値は操作を求めないため、ユーザーの画面へは写さない。
+
             notices.append(informational(_notice(measured, tag="notice", subject=f"{actor}:{identifier}")))
         if review:
             notices.append(

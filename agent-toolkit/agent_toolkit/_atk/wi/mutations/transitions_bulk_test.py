@@ -1,5 +1,3 @@
-"""WIのmutations transitions: bulkのテスト。"""
-
 import io
 import pathlib
 import sys
@@ -39,7 +37,6 @@ def test_bulk_transition_applies_to_filtered_candidates(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--all`は対象リポジトリの候補だけを1回のcommitで遷移させ、完了メッセージを書く。"""
     notes = _setup_notes(tmp_path)
     target = _write_bulk_entry(notes, source_state, "target.md")
     other = _write_bulk_entry(notes, source_state, "other.md", target_repo="github.com/example/bar")
@@ -72,7 +69,6 @@ def test_bulk_transition_excludes_entries_outside_source_states(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """遷移元状態集合に属さない項目は候補にせず、状態を変えずに終える。"""
     notes = _setup_notes(tmp_path)
     kept = _write_bulk_entry(notes, state, "kept.md")
     commits: list[str] = []
@@ -88,7 +84,7 @@ def test_bulk_transition_excludes_entries_outside_source_states(
     assert exc_info.value.code == 0
     assert kept.is_file()
     assert not commits
-    # 対象0件は接頭辞付きの成功行で、変更が無いことを示す。
+
     output = capsys.readouterr().out
     assert output.startswith("成功: 対象0件のため")
     assert "（変更は無い）" in output
@@ -99,7 +95,6 @@ def test_bulk_transition_requires_yes_in_non_interactive_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """非対話環境で`--yes`を省略した一括操作は終了コード2で拒否する。"""
     notes = _setup_notes(tmp_path)
     kept = _write_bulk_entry(notes, "inbox", "kept.md")
     commits: list[str] = []
@@ -120,7 +115,6 @@ def test_bulk_transition_keeps_entries_when_confirmation_is_declined(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """確認を否定した一括操作は状態を変えずに終える。"""
     notes = _setup_notes(tmp_path)
     kept = _write_bulk_entry(notes, "inbox", "kept.md")
     commits: list[str] = []
@@ -143,7 +137,6 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """確認後に本文が変わった項目は対象から外し、ファイル名を報告する。"""
     notes = _setup_notes(tmp_path)
     changed = _write_bulk_entry(notes, "inbox", "changed.md")
     commits: list[str] = []
@@ -165,7 +158,7 @@ def test_bulk_transition_skips_entries_changed_after_confirmation(
     assert changed.is_file()
     assert not commits
     captured = capsys.readouterr().out
-    # 確認後に変わった項目は警告行で名指し、確認と再実行の手段を次の操作で示す。
+
     assert "警告: 確認後に変更されたため保留しない: changed.md\n次の操作: " in captured
     assert "`atk wi show <ファイル名>`" in captured
 
@@ -204,11 +197,6 @@ def test_bulk_cooldown_rejects_non_awi_like_individual_route(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`--all`と`--cooldown-days`の組み合わせは、個別指定と同じ結果で非AWIを拒否する。
-
-    `--cooldown-days`はAWI専用であり、候補にUWIが含まれる実行では、どのファイルへも
-    `cooldown_until`を書き込まずに拒否する。個別指定した場合と同じ終了コードで終える。
-    """
     notes = _setup_notes(tmp_path)
     awi_entry = _write_bulk_entry(notes, "processing", "target.md")
     uwi_entry = _write_bulk_uwi(notes, "processing", "question.md")

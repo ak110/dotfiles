@@ -52,10 +52,6 @@ def test_wait_absent_reports_interrupted_diagnostics(
 async def test_wait_returns_stopped_interruption_diagnostics(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """停止で中断した結果を`atk agents wait`で回収すると、停止した起動単位の終了診断の参照を返す。
-
-    回収後の`atk agents show`も`interrupted_turns`で同じ参照を返す。
-    """
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     instance = logging_config.start_server_instance(environment={}, state_root=tmp_path)
@@ -80,7 +76,7 @@ async def test_wait_returns_stopped_interruption_diagnostics(
         assert row["status"] == "interrupted"
         assert row["error"]["interruptionReason"] == session_registry.OWNER_SERVER_STOPPED
         assert row["error"]["diagnostics"]["server_instance"] == instance.instance_id
-        # 停止の時点では終了の記録が無くても、表示時点の診断ファイルから状態を求め直す。
+
         assert row["error"]["diagnostics"]["status"] == "collected"
         events = [json.loads(line)["event"] for line in instance.path.read_text(encoding="utf-8").splitlines()]
         assert "sessions_interrupted" in events

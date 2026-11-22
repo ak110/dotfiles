@@ -25,12 +25,5 @@ __all__ = ["NOTICE_ELEMENT", "llm_notice", "xml_message"]
 
 
 def llm_notice(body: str, hook_id: str, *, tag: str = "") -> str:
-    """コーディングエージェント宛てメッセージをXML境界付きで整形する。
-
-    Args:
-        body: メッセージ本文。
-        hook_id: hook識別子（例: `agent-toolkit/pretooluse`）。
-        tag: `warn`等のメッセージ種別。空値は`notice`として出力する。
-    """
     kind = tag or "notice"
     return auto_message(body, source=hook_id, kind=kind)

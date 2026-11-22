@@ -1,5 +1,3 @@
-"""公開respondが判断主体と移管先を検証し、旧記録を維持することを確かめる。"""
-
 from __future__ import annotations
 
 import json
@@ -13,7 +11,6 @@ from agent_toolkit._atk import review_table, review_table_format
 
 @pytest.mark.parametrize("maker", ("メイン", "レーン担当", "統括", "ユーザー", "レビュー担当"))
 def test_respond_records_decision_and_transfer(tmp_path: Path, maker: str) -> None:
-    """各判断主体の移管を受理し、保存済みの旧本文を変えない。"""
     path = tmp_path / "current.exec-review.tsv"
     legacy = ["1", "exec-review", "file.py", "旧指摘", "詳細", "", "根拠の所在: メインの技術判断"]
     pending = ["1", "exec-review", "file.py", "新指摘", "仕様", "", ""]
@@ -48,7 +45,6 @@ def test_respond_records_decision_and_transfer(tmp_path: Path, maker: str) -> No
     ),
 )
 def test_respond_rejects_invalid_decision_metadata(tmp_path: Path, metadata: str) -> None:
-    """欠落・未知値・重複・パスを含む移管先は保存前に拒否する。"""
     path = tmp_path / "current.exec-review.tsv"
     review_table.add(path, "1", "exec-review", "file.py", "指摘")
     before = path.read_bytes()

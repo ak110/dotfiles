@@ -27,7 +27,6 @@ _PLUGIN = _DRIVER.parents[2]
 
 @pytest.mark.asyncio
 async def test_ready_is_published_after_complete_json(tmp_path, monkeypatch):
-    """置換直前までreadyは不在で、公開する一時ファイルは完全なJSONを保持する。"""
     replace = atomic_file._replace
     observed = []
 
@@ -139,7 +138,6 @@ def _environment(root: pathlib.Path) -> dict[str, str]:
 
 
 def test_pytest_collect_only_does_not_wait_for_execution_slot(tmp_path: pathlib.Path) -> None:
-    """収集だけのpytestは、別の検証が実行枠を保持していても待たずに終了する。"""
     environment = _environment(tmp_path)
     project = tmp_path / "project"
     project.mkdir()
@@ -161,7 +159,6 @@ def test_pytest_collect_only_does_not_wait_for_execution_slot(tmp_path: pathlib.
 
 
 def test_two_independent_verifications_run_together_and_third_waits(tmp_path: pathlib.Path) -> None:
-    """枠2つの構成では、独立した2件の検証は待たずに並行し、3件目は空きができるまで待つ。"""
     environment = {**_environment(tmp_path), "PYFLTR_EXECUTION_SLOTS": "2"}
     project = tmp_path / "project"
     project.mkdir()
@@ -222,7 +219,6 @@ def test_public_verification_entries_share_one_execution_interval(
     capsys: pytest.CaptureFixture[str],
     record_property: Callable[[str, object], None],
 ) -> None:
-    """laneの統合検証・pytest・pyfltrの3種類が保持者の解放を待ち、検証区間が重ならず全て終了する。"""
     probe = tmp_path / "probe.py"
     probe.write_text(_PROBE, encoding="utf-8")
     events = tmp_path / "events.jsonl"
@@ -285,7 +281,6 @@ def test_public_verification_entries_share_one_execution_interval(
 
 
 @pytest.mark.parametrize("failure", [False, True])
-# 実serveのObserverが停止・joinを終えてOSの監視資源を解放してから、次の独立検証へ進むことを確かめる。
 @pytest.mark.real_observer
 def test_real_serve_releases_observer_before_next_verification(
     tmp_path: pathlib.Path, failure: bool, record_property: Callable[[str, object], None]

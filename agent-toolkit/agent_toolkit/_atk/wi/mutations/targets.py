@@ -1,8 +1,3 @@
-"""WIの変更処理が共有する、操作対象のエントリと対象リポジトリの解決、private-notesへのcommit。
-
-`atk wi commit`の処理本体と、変更処理が対象のcommitを解決する手順も持つ。
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -36,9 +31,8 @@ _MISSING_TARGET_NEXT_ACTION = "`atk wi list`で実在するファイル名を確
 def _resolve_state_targets(
     filenames: list[str], private_notes: pathlib.Path, states: tuple[str, ...], *, missing_is_conflict: bool
 ) -> list[pathlib.Path]:
-    """共通の探索境界から指定状態の名前を解決する。"""
     names = [_wi_filenames.validate_filename(name, private_notes).name for name in filenames]
-    # 全件の状態を読む列挙は数千件で数秒かかるため、名前から保存先が一意に決まる場合はその1件だけを読む。
+
     dated = {name: unique_dated_entry_path(private_notes, name) for name in names}
     if all(path is not None for path in dated.values()):
         candidates = {name: path for name, path in dated.items() if path is not None and entry_state_of(path) in states}
@@ -57,7 +51,6 @@ def _resolve_state_targets(
 
 
 def entry_target_repo(path: pathlib.Path, text: str) -> str:
-    """エントリの`target_repo`を検証し、正規化した識別子を返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None:
         _outcome.report_failure(
@@ -76,7 +69,6 @@ def entry_target_repo(path: pathlib.Path, text: str) -> str:
 
 
 def candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
-    """実在パスの引数を優先し、それ以外は現在位置から対応候補の作業ツリーを返す。"""
     if target_repo is not None:
         path = pathlib.Path(target_repo).expanduser()
         if path.exists():
@@ -92,7 +84,6 @@ def candidate_local_worktree(target_repo: str | None) -> pathlib.Path | None:
 
 
 def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
-    """作業ツリーのoriginから対象リポジトリ識別子を返す。"""
     try:
         url = _git_remote.origin_url(local_worktree, timeout=_GIT_TIMEOUT_SECONDS)
     except OSError, subprocess.TimeoutExpired:
@@ -106,7 +97,6 @@ def _local_worktree_repo_id(local_worktree: pathlib.Path) -> str | None:
 
 
 def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
-    """作業ツリーでrevisionをcommitの40桁または64桁OIDへ解決する。"""
     try:
         result = _git_command.run(
             ["-C", str(local_worktree), "rev-parse", "--verify", "--end-of-options", f"{revision}^{{commit}}"],
@@ -128,7 +118,6 @@ def _resolve_commit_oid(local_worktree: pathlib.Path, revision: str) -> str:
 
 
 def resolve_commit(local_worktree: pathlib.Path, revision: str) -> CommitMetadata:
-    """作業ツリーでrevisionを解決し、永続記録用の一意な長さの短縮OIDと件名を返す。"""
     commit = _resolve_commit_oid(local_worktree, revision)
     try:
         result = _git_command.run(
@@ -156,7 +145,6 @@ def commit_values_by_path(
     revision: str | list[str] | None,
     local_worktree: pathlib.Path | None,
 ) -> dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None]:
-    """対象ごとに永続記録用のcommit情報を解決する。"""
     if revision is None:
         return {path: None for path in paths}
     target_repos = {path: entry_target_repo(path, path.read_text(encoding="utf-8")) for path in paths}
@@ -178,10 +166,6 @@ def commit_values_by_path(
 
 
 def invalidate_repo_bound_metadata(original: str, updated: str) -> str:
-    """target_repo・target_branchの変更時に旧宛先へ結び付くメタデータを削除し、宛先の系統を検証する。
-
-    target_repoだけを変えた編集は旧repositoryの系統を引き継がず、新しい宛先のdefault_branchの系統として扱う。
-    """
     original_parsed = _frontmatter.parse_frontmatter(original)
     updated_parsed = _frontmatter.parse_frontmatter(updated)
     if original_parsed is None or updated_parsed is None:
@@ -209,18 +193,12 @@ def invalidate_repo_bound_metadata(original: str, updated: str) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class CommitEntriesResult:
-    """外部編集のcommitと、その実行で送信したcommitの結果。"""
-
     changed: bool
     has_remote: bool
     pushed_commits: int | None
 
 
 def commit_entries(private_notes: pathlib.Path, *, lock_timeout: float | None = None) -> CommitEntriesResult:
-    """平引数でprivate-notesの作業ツリー全体の外部編集差分をcommit・pushする。
-
-    差分がない場合も滞留commitをpushし、外部編集とremoteの有無・送信件数を返す。
-    """
     with _wi_sync.repo_lock(private_notes, timeout=lock_timeout):
         has_remote = _atk_git_sync.has_remote(private_notes)
         initial_pushed = _wi_sync.push_pending_commits(private_notes)
@@ -242,11 +220,6 @@ def resolve_awi_targets(
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """`awi_dir`配下のファイル名群を検証・解決し、未存在があればexit 2する。
-
-    `awi_dir`には`start-processing`はinbox、`return-to-inbox`はprocessingが渡される。
-    エラーメッセージは`awi_dir.name`から動的に状態名を組み込み、呼び出し元の状態と一致させる。
-    """
     return _resolve_state_targets(filenames, awi_dir.parent, (awi_dir.name,), missing_is_conflict=missing_is_conflict)
 
 
@@ -257,11 +230,6 @@ def resolve_processable_targets(
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """inboxまたはprocessing配下のファイル名群を検証・解決し、未存在があればexit 2する。
-
-    同一ファイルがinbox・processingの双方に存在する場合はprocessingを優先する
-    （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
-    """
     del processing_dir
     return _resolve_state_targets(
         filenames, inbox_dir.parent, (WI_STATE_PROCESSING, WI_STATE_INBOX), missing_is_conflict=missing_is_conflict
@@ -274,7 +242,6 @@ def resolve_editable_targets(
     *,
     missing_is_conflict: bool = False,
 ) -> list[pathlib.Path]:
-    """編集対象を解決し、解決した保存状態のまま本文を書き戻す。"""
     return _resolve_state_targets(filenames, private_notes, WI_EDITABLE_STATES, missing_is_conflict=missing_is_conflict)
 
 
@@ -286,11 +253,6 @@ def resolve_active_targets(
     missing_is_conflict: bool = False,
     states: tuple[str, ...] | None = None,
 ) -> list[pathlib.Path]:
-    """対象を指定状態の優先順で解決する。
-
-    `rm`と`set-dependencies`のように、保存状態を変えずに未終了の項目へ作用する操作が使う。
-    `states`省略時は従来どおりprocessing、inbox、holdの順で解決する。
-    """
     state_names = states or (WI_STATE_PROCESSING, WI_STATE_INBOX, WI_STATE_HOLD)
     del processing_dir
     return _resolve_state_targets(filenames, inbox_dir.parent, state_names, missing_is_conflict=missing_is_conflict)
@@ -317,7 +279,6 @@ def atomic_write_text(path: pathlib.Path, content: str) -> None:
 
 
 def _git_head(private_notes: pathlib.Path) -> str:
-    """管理repoのHEADを40桁または64桁OIDで返す。"""
     result = _git_command.run(
         ["rev-parse", "--verify", "HEAD^{commit}"], private_notes, capture_output=True, text=True, check=True
     )
@@ -331,10 +292,6 @@ def _git_head(private_notes: pathlib.Path) -> str:
 
 
 def cmd_commit(private_notes: pathlib.Path) -> None:
-    """commitサブコマンド: 外部編集後のprivate-notesの未コミット変更をコミット・push。
-
-    未コミット変更がない場合も滞留commitをpushする。
-    """
     result = commit_entries(private_notes)
     edited = "外部編集分をcommitした" if result.changed else "外部編集の差分は無い"
     if not result.has_remote:

@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_user_events_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -17,7 +15,6 @@ def _assert_boundary_question_events(
     transcript: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """開始前の質問に対する区間内回答を回答時刻順で確認する。"""
     assert (
         evidence.main(
             [
@@ -135,7 +132,6 @@ def test_user_events_keeps_codex_question_state_across_start_boundary(
 
 
 def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """2000字を超えるユーザー発話も切り詰めずに返す。逐語引用と文字列比較する原文として使うためである。"""
     long_text = "長" * 2500 + "末尾"
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", long_text)])
 
@@ -148,7 +144,6 @@ def test_user_events_keeps_long_text(tmp_path: pathlib.Path, capsys: pytest.Capt
 def test_user_events_excludes_generated_inputs_without_losing_human_text(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
 ) -> None:
-    """原文と構造標識で生成本文を除き、人間の長文・手動起動・是正の位置を保持する。"""
     texts = [
         "<skill>" + "本文" * 1600 + "</skill>",
         "実行環境の挿入",
@@ -192,7 +187,6 @@ def test_user_events_excludes_generated_inputs_without_losing_human_text(
 def test_long_injection_is_classified_before_display_shortening(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], host: str
 ) -> None:
-    """2000文字より後の閉タグが表示から消えても、初期要求と介入候補を変えない。"""
     texts = ["<skill>" + "規範" * 1600 + "</skill>", "最初の依頼", "後続の訂正"]
     entries = [
         timestamped_entry("2026-09-01T00:00:01Z", text)
@@ -219,10 +213,6 @@ def test_long_injection_is_classified_before_display_shortening(
 
 
 def test_user_events_includes_offered_options_claude(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """AskUserQuestionの回答イベントは、提示した全選択肢のlabelとdescriptionを質問文の直後に持つ。
-
-    確認回答で決まる対象・除外・認可は、選ばれなかった選択肢との対比で決まるため、回答だけでは判定できない。
-    """
     question = "反映先をどうしますか"
     transcript = _write_transcript(
         tmp_path,

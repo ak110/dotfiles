@@ -16,8 +16,6 @@ from agent_toolkit._testing.posttooluse_support import (
 
 
 class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
-    """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
-
     @pytest.mark.parametrize(
         ("tool_name", "tool_input", "response"),
         (
@@ -49,7 +47,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         tool_input: dict[str, object],
         response: dict[str, object],
     ) -> None:
-        """8ツールが項目を減らした成功応答を返しても、欠落として報告しない。"""
         qualified_name = f"mcp__plugin_agent-toolkit_agents_server__{tool_name}"
         payload = {"tool_input": tool_input}
         assert not _agents_server_observations._agents_server_missing_response_fields(  # pylint: disable=protected-access
@@ -71,7 +68,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         response: dict[str, object],
         next_action_names: list[str],
     ) -> None:
-        """必須項目を欠く応答は、影響と実在する操作を次の操作とする警告として返す。"""
         result = _run(
             {
                 "session_id": f"missing-fields-{tool_name}",
@@ -88,7 +84,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         assert all(name in context for name in next_action_names)
 
     def test_reduced_terminal_start_status_is_recorded(self, tmp_path: pathlib.Path) -> None:
-        """全候補不可用のstartが返す終了statusをそのまま記録する。"""
         sid = "terminal-start"
         remote_session_id = "remote-terminal-start"
         result = _run(
@@ -115,7 +110,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
 
     @pytest.mark.parametrize("tool_name", ("start", "start_explore", "start_write", "send_message", "kill"))
     def test_json_response_records_session_state(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """JSON文字列形状の成功応答を状態記録へ反映する。"""
         sid = f"json-response-{tool_name}"
         remote_session_id = "thread-json"
         start_tools = ("start", "start_explore", "start_write")
@@ -167,7 +161,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
 
     @pytest.mark.parametrize("tool_name", ("start", "start_explore"))
     def test_start_stores_input_cwd_under_response_session_id(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """開始ツールの入力cwdを応答session_idへ保存し、session記録へ複製しない。"""
         sid = f"{tool_name}-cwd"
         result = _run(
             {
@@ -191,7 +184,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         assert state["agents_server_sessions"]["thread-start"]["owner_agent_id"] == "main"
 
     def test_show_records_live_child_session_cwds(self, tmp_path: pathlib.Path) -> None:
-        """`show`の応答が返す子sessionの識別子と`cwd`の対を、続行判定が読むキーへ記録する。"""
         sid = "show-child-cwd"
         record = self._publish_owned_child(sid, tmp_path)
         result = _run(

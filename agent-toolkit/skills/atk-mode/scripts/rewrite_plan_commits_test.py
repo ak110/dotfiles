@@ -34,7 +34,6 @@ WI_S = "20261007-040310-004.md"
 def test_public_discovery_visits_only_record_locations(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
 ) -> None:
-    """公開操作で未指定の実記録を検出し、成果物内の同名記録は探索しない。"""
     root = rebased.repo.parent
     config = root / "bounded-config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
@@ -51,7 +50,7 @@ def test_public_discovery_visits_only_record_locations(
     directory.mkdir(parents=True, exist_ok=True)
     omitted = _handoff(directory / "omitted.md") if location == "handoff" else _plan(directory / "07-omitted.md", [WI_A])
     commit_mapping.append_event(omitted, {"commit": rebased.old["a"], "awi": [WI_A]})
-    # 同じ有効OIDを持つ記録を配置し、単に不正記録として除外する実装との差を観測する。
+
     ignored = []
     for area in (session / "artifacts", session / "agents-server-plugin-root", working / ".venv", saved / "artifacts"):
         area.mkdir(parents=True, exist_ok=True)
@@ -79,7 +78,7 @@ def test_public_discovery_visits_only_record_locations(
     assert str(omitted) in error
     assert all(str(record) not in error for record in ignored)
     assert _snapshot([rebased.plan, rebased.handoff, omitted, *ignored]) == before
-    # 実記録を明示すれば探索による拒否が解除され、成果物内の候補へ入力追加を要求しない。
+
     flag = "--handoff" if location == "handoff" else "--plan"
     if location != "saved":
         with pytest.raises(SystemExit) as resumed:
@@ -101,7 +100,6 @@ def test_public_discovery_visits_only_record_locations(
 def test_public_split_assigns_each_awi_and_rejects_loss_before_writing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], missing: bool
 ) -> None:
-    """実Gitで1件のcommitを2件へ分けた対応表を`plan-rewrite`へ渡し、AWIの割当が欠ければ全記録のバイト列を保ち、欠けなければ`plan-commits`がAWIごとの新commitを返す。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -148,7 +146,6 @@ def test_public_split_assigns_each_awi_and_rejects_loss_before_writing(
 
 
 def _commit(repo: pathlib.Path, message: str) -> str:
-    """空のcommitを作成し、その完全OIDを返す。"""
     git_repository.git_output(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", message
     )
@@ -156,7 +153,6 @@ def _commit(repo: pathlib.Path, message: str) -> str:
 
 
 def _plan(path: pathlib.Path, wis: list[str]) -> pathlib.Path:
-    """関連WIと空の進捗ログを持つ計画を作成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     related = "".join(f"  - {wi}: 対応\n" for wi in wis)
     path.write_text(
@@ -169,13 +165,11 @@ def _plan(path: pathlib.Path, wis: list[str]) -> pathlib.Path:
 
 
 def _handoff(path: pathlib.Path) -> pathlib.Path:
-    """計画なしの引き継ぎ記録を作成する。"""
     path.write_text("# 引き継ぎ記録\n", encoding="utf-8")
     return path
 
 
 def _record(repo: pathlib.Path, record: pathlib.Path, previous: str, wis: list[str]) -> None:
-    """`plan-progress --commit`と同じ対応を対応記録ファイルへ追記する。"""
     commit_mapping.append_event(record, commit_mapping.commit_event(repo, "HEAD", previous, wis, set(wis)))
 
 
@@ -197,8 +191,6 @@ def _snapshot(records: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
 
 @dataclasses.dataclass(frozen=True)
 class _Rebased:
-    """rebaseで3件のcommitのOIDが変わった後の状態。"""
-
     repo: pathlib.Path
     plan: pathlib.Path
     handoff: pathlib.Path
@@ -209,13 +201,11 @@ class _Rebased:
     orphan: str
 
     def range_map(self, *names: str) -> pathlib.Path:
-        """指定したcommitだけを含む範囲全体の対応表を保存し、その絶対パスを返す。"""
         path = self.repo.parent / "rewrite.json"
         path.write_text(json.dumps({self.old[name]: self.new[name] for name in names}), encoding="utf-8")
         return path
 
     def argv(self, rewrite: pathlib.Path, *, extra: tuple[str, ...] = ()) -> list[str]:
-        """計画1件と引き継ぎ記録2件を渡す引数を返す。"""
         return [
             f"--worktree={self.repo}",
             f"--previous-head={self.previous_head}",
@@ -231,7 +221,6 @@ class _Rebased:
 
 @pytest.fixture(name="rebased")
 def _rebased_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> _Rebased:
-    """計画（WI_A）、引き継ぎ記録（WI_B）、書換え対象を持たない引き継ぎ記録（WI_S）と、WI対応の無いcommitを含むrebaseを用意する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -259,7 +248,6 @@ def _rebased_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 def _commits(rebased: _Rebased, record: pathlib.Path, wi: str, *, handoff: bool) -> list[str]:
-    """`plan-commits`の公開実装で記録から現在のcommitを取得する。"""
     argv = [str(record), f"--worktree={rebased.repo}", f"--awi={wi}"]
     if handoff:
         argv += ["--handoff", f"--allowed-awi={wi}"]
@@ -275,7 +263,6 @@ def _read_commits(capsys: pytest.CaptureFixture[str]) -> list[str]:
 def test_rewrite_keeps_cherry_pick_source_and_unmerged_commit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じAWIのcherry-pick元と別AWIの未統合commitを残し、取り込んだcommitだけを付け替える。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main")
     base = _commit(repo, "base")
     source = _commit(repo, "feature")
@@ -363,7 +350,6 @@ def test_retry_after_second_record_write_failure(
 def test_interrupted_rewrite_resumes_only_its_own_operation(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, boundary: str
 ) -> None:
-    """各置換の直後に中断しても、別の書換えは進めず、元の操作だけが残りを1回公開する。"""
     record = rebased.plan
     commit_mapping.append_event(record, {"commit": rebased.orphan, "awi": [WI_A]})
     table = rebased.range_map("a", "u", "b")
@@ -415,7 +401,6 @@ def test_interrupted_rewrite_resumes_only_its_own_operation(
 def test_distinct_operation_with_same_record_projection(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str], difference: str
 ) -> None:
-    """記録1件の旧新OIDと割当が一致しても、両端のHEAD・全対応・全割当の違う回は未追記として拒否する。"""
     commit_mapping.append_event(rebased.plan, {"commit": rebased.orphan, "awi": [WI_A]})
     table = rebased.range_map("a", "u", "b")
     pairs = json.loads(table.read_text(encoding="utf-8"))
@@ -449,7 +434,6 @@ def test_distinct_operation_with_same_record_projection(
 def test_rewrite_destination_is_not_proof_of_application(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str], history: str
 ) -> None:
-    """新OIDの存在や、宛先・AWI割当の異なる書換えは今回の適用を示さない。"""
     stale = _handoff(rebased.repo.parent / "stale.md")
     commit_mapping.append_event(stale, {"commit": rebased.orphan, "awi": [WI_S]})
     rewrite = rebased.range_map("a", "u", "b")
@@ -486,7 +470,6 @@ def test_rewrite_destination_is_not_proof_of_application(
     ),
 )
 def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
-    """WI対応の無いcommitを含む範囲全体の対応表で計画と引き継ぎ記録の両方へ追記し、`plan-commits`が新OIDを返す。"""
     rewrite = rebased.range_map("a", "u", "b")
 
     before = _snapshot([rebased.plan, rebased.handoff, rebased.unaffected])
@@ -537,7 +520,6 @@ def test_range_map_appends_to_all_records(rebased: _Rebased, capsys: pytest.Capt
     ),
 )
 def test_unaffected_record_is_unchanged(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
-    """書換え対象のcommitを持たない記録はバイト列を変えず、標準出力に変更なしと出る。"""
     before = _snapshot([rebased.unaffected])
 
     assert rewrite_plan_commits.main(rebased.argv(rebased.range_map("a", "u", "b"))) == 0
@@ -556,7 +538,6 @@ def test_unaffected_record_is_unchanged(rebased: _Rebased, capsys: pytest.Captur
     ),
 )
 def test_fixup_squash_inherits_union(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """記録済みのcommitとそのfixupを1件へ統合した対応表で、統合後のcommitが両方のAWI集合を継承する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(tmp_path / "private-notes"))
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -706,7 +687,6 @@ def test_saved_plan_is_rejected(rebased: _Rebased, capsys: pytest.CaptureFixture
     ),
 )
 def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
-    """`atk run-script plan-rewrite`の公開名から起動し、計画の対応が新OIDへ移る。"""
     args = argparse.Namespace(script_name="plan-rewrite", script_args=["--", *rebased.argv(rebased.range_map("a", "u", "b"))])
 
     assert run_script.dispatch(args) == 0
@@ -728,10 +708,6 @@ def test_run_script_entry_rewrites_records(rebased: _Rebased, capsys: pytest.Cap
 def test_run_script_entry_with_other_worktree_fails_without_writes(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録のcommitを持たない別の作業ツリーを`--worktree`へ渡すと、公開名の起動は全記録を変えずに終了1となる。
-
-    診断の`次の操作:`は`--worktree`が対象作業ツリーを指すかの確認を示す。
-    """
     other = rebased.repo.parent / "other"
     other.mkdir()
     git_repository.init_repository(other, initial_branch="main")
@@ -762,7 +738,6 @@ def test_run_script_entry_with_other_worktree_fails_without_writes(
 def test_omitted_record_is_detected_before_any_writes(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], location: str
 ) -> None:
-    """探索先ごとの未指定記録を公開コマンドで検出し、全入力の内容を保持する。"""
     root = rebased.repo.parent
     if location == "handoff":
         directory = managed_temp.create_managed_temp("rewrite-handoff-test")
@@ -813,7 +788,6 @@ def test_omitted_record_is_detected_before_any_writes(
     ),
 )
 def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pytest.CaptureFixture[str]) -> None:
-    """4回の書換えを順に渡し、中間OIDがHEADから消えても最終OIDへ継承できる。"""
     root = rebased.repo.parent
     stable = git_repository.git_output(rebased.repo, "rev-parse", "HEAD~4")
     previous = rebased.old
@@ -859,7 +833,6 @@ def test_four_maps_compose_before_head_validation(rebased: _Rebased, capsys: pyt
 def test_discovery_ignores_unrelated_and_unchanged_commits(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """他repo・過去の書換え・HEADに残るcommitの記録は入力の追加を要求しない。"""
     config = rebased.repo.parent / "config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     stable = git_repository.git_output(rebased.repo, "rev-parse", "HEAD~4")
@@ -884,7 +857,6 @@ def test_discovery_ignores_unrelated_and_unchanged_commits(
 )
 @pytest.mark.parametrize("source", ["file", "body"])
 def test_discovery_skips_candidate_with_invalid_events(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, source: str) -> None:
-    """探索中の不正な対応記録は、指定済み記録への継承を妨げない。"""
     config = rebased.repo.parent / "config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     malformed = _plan(config / "plans" / f"06-malformed-{source}.md", [WI_A])
@@ -943,11 +915,6 @@ def test_discovery_skips_unreadable_candidate(rebased: _Rebased, monkeypatch: py
 def test_discovery_excludes_failures_from_any_candidate_stage(
     rebased: _Rebased, monkeypatch: pytest.MonkeyPatch, error: Exception
 ) -> None:
-    """候補評価の最終段階から送出された候補不正も候補単位で除外し、指定済み記録の継承を完了する。
-
-    将来の検証段階が候補評価へ加わり、既存の除外例外以外を送出する形の持ち込み例を、
-    候補評価の最後の段階の差し替えで再現する。
-    """
     config = rebased.repo.parent / "config"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     candidate = _plan(config / "plans" / "06-candidate.md", [WI_A])

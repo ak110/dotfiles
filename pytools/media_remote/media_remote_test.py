@@ -1,5 +1,3 @@
-"""pytools.media_remoteのテスト。"""
-
 import asyncio
 import contextlib
 import ctypes
@@ -14,7 +12,6 @@ import pytest
 
 from pytools.media_remote import _app, _assets, _cli, _keys, _token, _window_api, _window_move
 
-# token_urlsafe(32)が生成する形式（43字、URL-safe base64）に合致する固定値。
 VALID_TOKEN = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ-_0123A"
 
 
@@ -88,7 +85,7 @@ async def test_api_key_unknown_returns_404(name: str):
     client, captured = _make_client()
     client.set_cookie("localhost", _app.COOKIE_NAME, VALID_TOKEN)
     resp = await client.post(f"/api/key/{name}")
-    # 空名はルーティング自体が404になる。既知名のみ204を返すという挙動の境界を担保する。
+
     assert resp.status_code == 404
     assert not captured
 
@@ -142,7 +139,6 @@ def test_send_key_unknown_name_raises():
 
 
 def test_send_key_raises_when_sendinput_returns_unexpected_count():
-    """`SendInput`が想定外件数を返したとき`OSError`を送出する。"""
     fake = _FakeUser32(return_count=1)
     with pytest.raises(OSError):
         _keys.send_key("play_pause", user32=fake)
@@ -158,10 +154,10 @@ def test_load_or_create_token_replaces_invalid(tmp_path: pathlib.Path):
     token_path = tmp_path / "token.txt"
     token_path.write_text("not-a-valid-token\n", encoding="utf-8")
     result = _token.load_or_create_token(token_path)
-    # 旧不正値が破棄され、新規生成値がディスク上に永続化されている。
+
     assert result != "not-a-valid-token"
     assert token_path.read_text(encoding="utf-8").strip() == result
-    # 再呼び出しで同値を返す（永続化された値が有効と判定される）ことを確認する。
+
     assert _token.load_or_create_token(token_path) == result
 
 
@@ -169,7 +165,7 @@ def test_load_or_create_token_creates_when_missing(tmp_path: pathlib.Path):
     token_path = tmp_path / "sub" / "token.txt"
     result = _token.load_or_create_token(token_path)
     assert token_path.read_text(encoding="utf-8").strip() == result
-    # 再呼び出しで同値を返す（永続化された値が有効と判定される）ことを確認する。
+
     assert _token.load_or_create_token(token_path) == result
 
 
@@ -317,9 +313,9 @@ def test_serve_tracks_selected_window_events(window_serve: Any, root: str, event
     async def scenario(backend: _WindowBackend, app: Any) -> None:
         del app
         backend.click(root)
-        backend.select(999)  # Shell側HWNDをアプリとして採らない。
+        backend.select(999)
         backend.select(100, event)
-        backend.select(200)  # 最小化後の別の前面を使わない。
+        backend.select(200)
         assert backend.middle() == (True, True)
         assert backend.moves == [(100, (-400, 250))]
 
@@ -383,7 +379,7 @@ def test_serve_keyboard_interrupt_cannot_select_another_window(window_serve: Any
     async def scenario(backend: _WindowBackend, app: Any) -> None:
         del app
         backend.click()
-        backend.key()  # Alt+Tab等の新しい操作。
+        backend.key()
         backend.select(200, time=51)
         assert backend.middle() == (False, False)
         assert not backend.moves
@@ -397,7 +393,7 @@ def test_serve_normal_operation_cancels_selection(window_serve: Any, operation: 
         del app
         backend.click()
         backend.select()
-        # 切り替え先での通常操作。前面の変化を伴わない入力も選択を解除する。
+
         if operation == "left":
             backend.click("Application", (300, 300), time=2000)
         elif operation == "key":
@@ -414,7 +410,7 @@ def test_serve_normal_operation_cancels_selection(window_serve: Any, operation: 
         backend.select(200, time=2000)
         assert backend.middle(time=2001) == (False, False)
         assert not backend.moves
-        # 改めてタスクバーで選んだ対象は呼び寄せられる。
+
         backend.click(time=3000)
         backend.select(200, time=3001)
         assert backend.middle(time=3002) == (True, True)
@@ -519,7 +515,7 @@ def test_doctor_subcommand_renders_all_sections(
 ):
     """Windowsモック実行でlisten・process・profile・firewall・url・recommendationsが揃って出力される。"""
     monkeypatch.setattr(_cli.sys, "platform", "win32")
-    # PIDファイルを事前配置（プロセスセクションで参照される）。
+
     pid_path = _cli.default_pid_path()
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text("4242", encoding="utf-8")
@@ -556,18 +552,18 @@ def test_doctor_subcommand_renders_all_sections(
     exit_code = _cli.main(["doctor", "--token-file", str(token_path), "--port", "29123"])
     out = capsys.readouterr().out
     assert exit_code == 0
-    # 全セクション見出しが含まれる。
+
     for header in ("== listen ==", "== process ==", "== profile ==", "== firewall ==", "== url ==", "== recommendations =="):
         assert header in out
-    # listenの実体・プロセス情報・FW規則なし表示・URL組み立て結果。
+
     assert "0.0.0.0:29123" in out
     assert "PID=4242" in out
     assert "該当するFW規則なし" in out
     assert f"http://192.168.1.10:29123/?t={VALID_TOKEN}" in out
-    # 推奨修復: FW規則未登録 + Publicプロファイル該当の2件が出る。
+
     assert "New-NetFirewallRule" in out
     assert "Set-NetConnectionProfile" in out
-    # listen中なのでサーバー起動コマンドは推奨されない。
+
     assert "Start-Process" not in out
 
 

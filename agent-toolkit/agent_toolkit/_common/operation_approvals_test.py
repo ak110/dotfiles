@@ -1,5 +1,3 @@
-"""承認の完全一致と消費の試験。"""
-
 from agent_toolkit._common import operation_approvals as approvals
 
 
@@ -16,7 +14,6 @@ def _request() -> dict:
 
 
 def test_exact_input_and_consumption() -> None:
-    """実入力の変更と消費後の再利用を拒否する。"""
     request = _request()
     metadata = {"permission_request": request, "choices": ["許可する", "拒否する"]}
     question = approvals.request_display(request)
@@ -29,7 +26,6 @@ def test_exact_input_and_consumption() -> None:
 
 
 def test_question_and_free_text_cannot_grant() -> None:
-    """質問の作成と曖昧な回答だけでは許可されない。"""
     request = _request()
     metadata = {"permission_request": request, "choices": ["許可する", "拒否する"]}
     question = approvals.request_display(request)
@@ -40,7 +36,6 @@ def test_question_and_free_text_cannot_grant() -> None:
 
 
 def test_bounded_repeat_and_public_choice_format() -> None:
-    """公開投入のカンマ区切り選択肢と、明示した試行回数の消費を確認する。"""
     request = {
         "request_id": "repeat",
         "tool_name": "REPL",
@@ -63,7 +58,6 @@ def test_bounded_repeat_and_public_choice_format() -> None:
 
 
 def test_legacy_approval_requires_one_verbatim_operation() -> None:
-    """旧質問の全入力と対象の一致を確かめ、明示回答を単発で消費する。"""
     request = {
         "request_id": "legacy",
         "tool_name": "Bash",

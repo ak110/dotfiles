@@ -1,5 +1,3 @@
-"""transportのbufferとrecord境界を分離したバイト行の復元を検証する。"""
-
 import asyncio
 
 import pytest

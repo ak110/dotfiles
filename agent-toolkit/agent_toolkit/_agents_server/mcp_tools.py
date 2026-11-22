@@ -61,6 +61,7 @@ from agent_toolkit._common import (
     response_language_check,
     runtime_environment,
     runtime_inserted,
+    session_launchers,
     session_registry,
     startup_features,
 )
@@ -289,7 +290,6 @@ mcp = AgentsServerMCP(
     name="start",
     title="委譲sessionの開始",
     description=START_DESCRIPTION,
-    # 新しいsessionを起動するだけで、既存のsessionと結果を変えない。
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
@@ -306,6 +306,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
     *,
+    start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
     startup_profile: Annotated[
         startup_features.StartupProfile | None,
         Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
@@ -348,7 +349,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         model_type=model_type,
         whole_contract_path=whole_contract_path,
     )
-    with startup_features.selection(startup_profile):
+    with (
+        startup_features.selection(startup_profile),
+        session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
+    ):
         if mode == "task":
             assert subagent_md_path is not None
             params = extra_params or {}
@@ -410,7 +414,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
 @mcp.tool(
     name="send_message",
     title="委譲sessionへの指示の追送",
-    # 指示を追加で配送して新しいturnを始めうるが、既存の結果や会話は消さない。
     annotations=ToolAnnotations(destructive_hint=False),
     structured_output=True,
 )
@@ -495,7 +498,6 @@ async def send_message(
 @mcp.tool(
     name="kill",
     title="実行中turnの中断",
-    # 実行中turnを中断し、`stop=true`ではsessionも破棄する。
     annotations=ToolAnnotations(destructive_hint=True),
     structured_output=True,
 )
@@ -592,14 +594,12 @@ async def list_sessions(
     response = await manager.list_sessions(include_terminated=include_terminated)
     response["queried_server_instance"] = session_registry.owner_server_instance()
     if _SERVICE_MANAGERS is not None:
-        # ターンの途中で更新を迎えた会話は終了境界まで旧世代が所有するため、同じ親会話の分を加える。
         foreign = await _SERVICE_MANAGERS.other_generation_sessions(manager, include_terminated=include_terminated)
         listed = {item["session_id"] for item in response["sessions"]}
         response["sessions"].extend(item for item in foreign["sessions"] if item["session_id"] not in listed)
         if foreign["unreachable"]:
             response["unreachable_generations"] = foreign["unreachable"]
     if _SERVICE_MANAGERS is not None and (generations := await _SERVICE_MANAGERS.generations()):
-        # 退出していない世代が複数あれば更新中か旧世代の残存であり、sessionの所有者を確かめる手掛かりにする。
         response["server_generations"] = generations
     return response
 
@@ -724,7 +724,7 @@ async def send_to_user(
             "報告の案内を取得できなかった。報告した改善点は原因と影響を確かめてその場で是正するか、是正しない理由と担当を報告へ書く。"
             "報告した逸脱は`agent-basics:bugfix`を起動して診断と是正を行う。"
         )
-    # 再開後の画面で、同じ本文を持つ別の呼出しの表示を取り違えないよう、呼出しの識別子を添える。
+
     tool_use_id = _TOOL_USE_ID.get()
     result = await _ui_request("send_to_user", {"message": message, **({"tool_use_id": tool_use_id} if tool_use_id else {})})
     result["guidance"] = guidance
@@ -814,7 +814,7 @@ def _prepare_child_environment() -> None:
     child_environment.prepare(os.environ)
     _inherited_venv.strip_inherited_venv(os.environ)
     mcp_environment.strip_conversation_context(os.environ)
-    # 起動ランチャーとの合流ファイルはこのプロセスだけが使い、委譲先の内側のagents_serverへ継承させない。
+
     os.environ.pop(logging_config.LAUNCH_RECORD_ENV, None)
 
 

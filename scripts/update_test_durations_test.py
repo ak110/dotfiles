@@ -22,7 +22,6 @@ def _inputs(tmp_path: Path) -> list[Path]:
 
 
 def test_generate_threshold_and_reproducibility(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """1秒境界と順序非依存を公開CLI入口から確認する。"""
     paths = _inputs(tmp_path)
     output = tmp_path / "durations.json"
     monkeypatch.setattr(sys, "argv", ["update_test_durations", *map(str, paths), "--output", str(output)])
@@ -41,7 +40,6 @@ def test_generate_threshold_and_reproducibility(tmp_path: Path, monkeypatch: pyt
 def test_invalid_duration_rejected(
     tmp_path: Path, value: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """有限の非負所要以外を記録へ混ぜない。"""
     paths = _inputs(tmp_path)
     paths[0].write_text(paths[0].read_text().replace('time="0.999"', f'time="{value}"'))
     monkeypatch.setattr(sys, "argv", ["update_test_durations", *map(str, paths), "--output", str(tmp_path / "out.json")])
@@ -60,7 +58,6 @@ def test_invalid_duration_rejected(
 def test_invalid_inputs_rejected(
     tmp_path: Path, mode: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """不完全・重複・破損・未成功の入力を診断する。"""
     paths = _inputs(tmp_path)
     output = tmp_path / "out.json"
     if mode == "duplicate-path":

@@ -17,7 +17,6 @@ lazy from agent_toolkit._hooks.transcript_scan import (
 
 
 def _collect_sendmessage_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
-    """走査範囲内のassistantエントリからSendMessage tool_use id集合を返す。"""
     ids: set[str] = set()
     for block in iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use" or block.get("name") != "SendMessage":
@@ -29,7 +28,6 @@ def _collect_sendmessage_tool_use_ids(entries: list[dict], *, include_sidechain:
 
 
 def _collect_agent_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
-    """走査範囲内のassistantエントリからAgent・Task tool_use id集合を返す。"""
     ids: set[str] = set()
     for block in iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use" or block.get("name") not in {"Agent", "Task"}:
@@ -41,7 +39,6 @@ def _collect_agent_tool_use_ids(entries: list[dict], *, include_sidechain: bool 
 
 
 def _collect_mcp_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> set[str]:
-    """走査範囲内のassistantエントリからMCP tool_use id集合を返す。"""
     ids: set[str] = set()
     for block in iter_assistant_blocks(entries, include_sidechain=include_sidechain):
         if block.get("type") != "tool_use":
@@ -59,7 +56,6 @@ def _collect_mcp_background_task_id_tool_use_ids(
     *,
     include_sidechain: bool = False,
 ) -> dict[str, set[str]]:
-    """MCPタイムアウト通知のバックグラウンドタスクIDと起動`tool_use` IDの対応を全`tool_result`から収集する。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or not entry_in_scan_scope(
@@ -87,10 +83,6 @@ def _collect_mcp_background_task_id_tool_use_ids(
 
 
 def async_agent_launch_id(tool_response: object) -> str | None:
-    """Agent・Task起動の応答が背景起動を示す場合に`agentId`を返す。
-
-    前景で完了した起動と`agentId`を欠く応答は、停止の対象が残らないため`None`を返す。
-    """
     if not isinstance(tool_response, dict) or tool_response.get("status") != _AGENT_ASYNC_LAUNCH_STATUS:
         return None
     agent_id = tool_response.get("agentId")
@@ -125,12 +117,6 @@ def background_task_id_from_notice(value: object) -> str | None:
 
 
 def _collect_task_id_tool_use_ids(entries: list[dict], *, include_sidechain: bool = False) -> dict[str, set[str]]:
-    """transcript全行のuserエントリから、agentId（task-id）→tool_use_id集合マップを構築する。
-
-    起動を記録した`toolUseResult`に`agentId`（バックグラウンドタスクの`task-id`）が含まれる場合、
-    task-notification本文の`<task-id>`要素経由での完了突合をフォールバックとして提供する。
-    `<tool-use-id>`要素が通知形式変動で欠落した場合に解決する手段として用いる。
-    """
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or not entry_in_scan_scope(
@@ -159,7 +145,6 @@ def collect_background_task_id_tool_use_ids(
     *,
     include_sidechain: bool = False,
 ) -> dict[str, set[str]]:
-    """背景Bashの`backgroundTaskId`から起動`tool_use_id`への対応を返す。"""
     result: dict[str, set[str]] = {}
     for entry in entries:
         if entry.get("type") != "user" or not entry_in_scan_scope(

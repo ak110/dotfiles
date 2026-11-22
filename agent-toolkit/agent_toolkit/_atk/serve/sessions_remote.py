@@ -1,5 +1,3 @@
-"""セッション画面のリモート接続と応答の正規化。"""
-
 import asyncio
 import asyncio.subprocess as _async_subprocess
 import json
@@ -49,12 +47,6 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
 
 
 class RemoteSessionClient:
-    """1ホスト分の常駐SSH接続とRPCを担う。
-
-    `run()`は接続を維持し、切断時はバックオフして再接続する。
-    RPCを送れない状態では呼び出し元が単発SSHへ切り替える。
-    """
-
     def __init__(self, host: str, state: SessionsState) -> None:
         self.host = host
         self.state = state
@@ -67,7 +59,6 @@ class RemoteSessionClient:
         self._stderr_task: asyncio.Task[None] | None = None
 
     def is_connected(self) -> bool:
-        """RPCを送信可能な状態かを返す。"""
         if not self._connected:
             return False
         proc = self._proc
@@ -97,7 +88,6 @@ class RemoteSessionClient:
             self._pending.pop(req_id, None)
 
     async def run(self) -> None:
-        """接続→応答処理→バックオフ→再接続を繰り返す。"""
         while True:
             await self._set_status("connecting")
             proc: _async_subprocess.Process | None = None
@@ -117,7 +107,7 @@ class RemoteSessionClient:
                 self._fail_pending(ConnectionError(f"session helper disconnected: host={self.host}"))
                 stderr_task, self._stderr_task = self._stderr_task, None
                 self._connected = False
-                # 停止を確認するまで参照を保持し、確認できない間は次の接続を起動しない。
+
                 await _atk_serve_remote.stop_resident_helper_until_confirmed(proc, stderr_task, backoff=self._backoff)
                 self._proc = None
             _atk_serve_remote.raise_if_cancelling()
@@ -136,7 +126,6 @@ class RemoteSessionClient:
         return proc
 
     async def _process_stream(self, stream: asyncio.StreamReader) -> None:
-        """行ストリームを読み、`ready`で接続確立、`response`でRPCを解決し、変更通知をSSEへ中継する。"""
         async for chunk in stream_lines.iter_lines(stream):
             line = chunk.decode("utf-8", errors="replace").strip()
             if not line:
@@ -182,11 +171,6 @@ class RemoteSessionClient:
 
 
 def is_safe_remote_record_path(raw: str) -> bool:
-    """リモートへ渡す前に記録のパスを検証する。
-
-    上位ディレクトリへの参照と対象外の接尾辞を拒否する。
-    リモート側でも同じ検証を行うが、サーバー側で先に拒否することで不要なSSH呼び出しを避ける。
-    """
     if not raw or not raw.endswith(session_record_format.RECORD_SUFFIX):
         return False
     path = pathlib.PureWindowsPath(raw) if "\\" in raw else pathlib.PurePosixPath(raw)
@@ -266,5 +250,5 @@ def _remote_subagents(engine: str, payload: dict[str, typing.Any]) -> tuple[list
     found = payload.get("subagents")
     if not isinstance(found, list):
         return None, True
-    # ローカルと同じく、0件は`None`で表して「サブエージェントが無い」ことを示す。
+
     return found or None, False

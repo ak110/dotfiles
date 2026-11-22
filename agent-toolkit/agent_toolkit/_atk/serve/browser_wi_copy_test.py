@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するcopyの試験。"""
-
 import asyncio
 import re
 import urllib.parse
@@ -54,7 +52,6 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
     width: int,
     list_width: int | None,
 ) -> None:
-    """狭幅・一覧自身の切替境界・広幅で、コピーの前後も題名を読めて横幅を超えない。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": width, "height": 800})
     await page.goto(screen_harness.base_url + "/")
@@ -108,7 +105,6 @@ async def test_entry_copy_button_copies_filename_and_summary_without_selecting(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_filename_link_supports_get_and_shift_click(screen_harness: _ScreenHarness) -> None:
-    """WI名は詳細を復元するGET URLを持ち、Shiftクリックをブラウザーへ委ねる。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -157,7 +153,6 @@ async def test_work_item_copy_failure_survives_screen_switch(screen_harness: _Sc
 @pytest.mark.parametrize("width", [320, 1920])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarness, width: int) -> None:
-    """全てコピーは要約ラベルの右側、個別コピーの上に表示される。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": width, "height": 900})
     await _observe_screen_requests(page)
@@ -190,7 +185,6 @@ async def test_copy_all_is_summary_column_header(browser_harness: _BrowserHarnes
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_copy_all_work_items_preserves_filters_across_pages(browser_harness: _BrowserHarness) -> None:
-    """重要・検索・対象条件に一致する全ページを取得し、個別コピー形式でコピーする。"""
     harness = browser_harness
     page = harness.page
     expected = set()

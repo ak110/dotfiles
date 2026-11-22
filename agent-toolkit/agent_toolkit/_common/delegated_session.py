@@ -53,12 +53,10 @@ def is_delegated(environ: Mapping[str, str]) -> bool:
 
 
 def is_lightweight_delegated(environ: Mapping[str, str]) -> bool:
-    """agents_serverの軽量起動（explore・shell・write）の委譲先かを判定する。"""
     return environ.get(LAUNCH_KIND_ENV) in LIGHTWEIGHT_LAUNCH_KINDS
 
 
 def owner_session_id(environ: Mapping[str, str]) -> str | None:
-    """委譲元（所有する）セッションの識別子を返す。設定されていないか空なら`None`を返す。"""
     return environ.get(OWNER_SESSION_ENV) or None
 
 
@@ -70,10 +68,6 @@ Codexはシェルへ`CODEX_THREAD_ID`を渡すが、Codex CLIが直接起動す�
 
 
 def current_conversation_session_id(environ: Mapping[str, str]) -> str | None:
-    """実行中の会話（委譲先なら委譲先自身）の識別子を返す。設定されていないか空なら`None`を返す。
-
-    委譲元を表す`owner_session_id`とは意味が異なる。所有者を優先する判定は呼び出し側が行う。
-    """
     for name in CURRENT_CONVERSATION_ENVS:
         value = environ.get(name)
         if value:
@@ -86,18 +80,15 @@ HANDOFF_PATH_ENV = "AGENT_TOOLKIT_HANDOFF_PATH"
 
 
 def handoff_path(environ: Mapping[str, str]) -> str | None:
-    """指定された絶対記録パスだけを返す。"""
     value = environ.get(HANDOFF_PATH_ENV, "")
     return value if value and pathlib.Path(value).is_absolute() else None
 
 
 def prompt_handoff_path(prompt: str) -> str | None:
-    """起動本文の記録先行から、新規・継続の標示を外す。"""
     return parse_prompt_handoff_path(prompt)[1]
 
 
 def parse_prompt_handoff_path(prompt: str) -> tuple[bool, str | None]:
-    """最初の記録先行の有無と、絶対パスとして解釈した値を返す。"""
     # `re.MULTILINE`の`$`はLFの直前だけに一致するため、CRLFの本文では行末のCRを消費してから`$`へ届かせる。
     match = re.search(r"^引き継ぎ記録先[:：]([^\r\n]*)\r?$", prompt, re.MULTILINE)
     if match is None:
@@ -107,7 +98,6 @@ def parse_prompt_handoff_path(prompt: str) -> tuple[bool, str | None]:
 
 
 def handoff_environment(prompt: str) -> dict[str, str]:
-    """起動本文が記録先を持つ場合だけ、子へ渡す変数を返す。"""
     path = prompt_handoff_path(prompt)
     return {HANDOFF_PATH_ENV: path} if path else {}
 

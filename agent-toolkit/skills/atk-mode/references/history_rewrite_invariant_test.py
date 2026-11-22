@@ -27,7 +27,6 @@ def _refs(repo: pathlib.Path) -> list[str]:
 
 
 def test_autosquash_procedure_keeps_other_local_branches(tmp_path: pathlib.Path) -> None:
-    """手順書のautosquashは、ref更新を有効にした設定でも作業branch以外のlocal branch refを動かさない。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="基準")
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     (repo / "first.txt").write_text("一", encoding="utf-8")
@@ -37,7 +36,7 @@ def test_autosquash_procedure_keeps_other_local_branches(tmp_path: pathlib.Path)
     git_repository.commit_all(repo, "二つ目")
     (repo / "first.txt").write_text("一修正", encoding="utf-8")
     git_repository.commit_all(repo, f"fixup! {first}")
-    # Git 2.38以降でref更新を有効にする設定を置き、手順書の抑止が設定より優先されることを確かめる。
+
     git_repository.run_git(repo, "config", "rebase.updateRefs", "true")
     before = [line for line in _refs(repo) if not line.startswith("refs/heads/main ")]
 

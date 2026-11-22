@@ -40,7 +40,6 @@ def test_preflight_covers_plugin_launch_commands() -> None:
         if isinstance(node, dict):
             command = node.get("command")
             if isinstance(command, str) and command.strip():
-                # cdはshellの組込みであり、外部起動の事前確認は後続のuvへ適用する。
                 launch_words.add(command.removeprefix("cd / && ").split()[0])
             for value in node.values():
                 collect(value)
@@ -107,7 +106,6 @@ async def test_start_reports_path_check_when_plugin_commands_are_missing(
 
 
 def test_preflight_passes_where_plugin_commands_succeed(tmp_path: pathlib.Path) -> None:
-    """起動コマンドが成功する作業ディレクトリでは事前確認を通過する。"""
     if shutil.which("uv") is None or shutil.which("uvx") is None:
         pytest.skip("uvまたはuvxが未導入")
     _REAL_PLUGIN_PREFLIGHT(str(tmp_path))

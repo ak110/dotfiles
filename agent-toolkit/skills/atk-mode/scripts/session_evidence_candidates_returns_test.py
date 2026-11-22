@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_candidates_returns_test）。"""
-
 from __future__ import annotations
 
 import pytest
@@ -48,12 +46,6 @@ def test_candidate_events_separates_escalations_from_unsuccessful_delegate_retur
 
 
 def test_candidate_events_excludes_delegate_returns_that_only_report_success() -> None:
-    """正常な完了だけを示す返却を除外し、想定外事象、未解決の指摘、不適合の判定および自由記述を持つ返却は残す。
-
-    前置きの文に続けて`status: completed`を返す形も、1回の配送で終えた委譲先では正常な完了として除く。
-    この形は恒久対策を要しないまま振り返りの候補の大半を占めていた。
-    再開された委譲先の前置き付きの返却は、受け取り済みの報告を返し直した異常を前置きで述べた実例があるため残す。
-    """
     excluded_texts = [
         "status: completed\noutput_file: /tmp/out.md",
         "受け取り済みの結果を返し直す。\nstatus: completed\nunresolved: 0",
@@ -164,14 +156,12 @@ def test_codex_project_instructions_do_not_change_delegation_kind_or_resume(inse
 
 
 def test_shell_delegation_marker_matches_agents_server_prompt() -> None:
-    """シェル実行の委譲の判定に使う冒頭の文が、agents_serverが委譲先へ渡す指示本文と一致する。"""
 
     prompt = tool_descriptions.shell_prompt("true", "終了コードを返す")
     assert prompt.startswith(evidence_candidates._SHELL_DELEGATION_MARKER)  # pylint: disable=protected-access
 
 
 def test_candidate_events_includes_delegate_returns_without_status_line() -> None:
-    """委譲先の`status`行を持たない自由記述の最終返却を候補へ含め、メイン記録の最終出力は候補にしない。"""
     timeline = [
         {"kind": "final-result", "record": "agent-1", "line": 30, "text": "調査結果を報告する。\n対象の関数は3件だった。"},
         {"kind": "final-result", "record": "main", "line": 40, "text": "対応を完了した。"},
@@ -184,7 +174,6 @@ def test_candidate_events_includes_delegate_returns_without_status_line() -> Non
 
 
 def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None:
-    """同じ理由の差し戻しを1候補へ集約し、理由が異なる差し戻しを別の候補へ分ける。"""
     shared_prefix = "確認に必要な条件 " * 15
     timeline = [
         {
@@ -227,7 +216,6 @@ def test_candidate_events_aggregates_delegate_returns_sharing_a_reason() -> None
     ],
 )
 def test_candidate_keeps_improvement_in_every_normal_return(body: str, shell: bool) -> None:
-    """完了・適合・成功したshellの返却でも、字下げ付き改善点を正常除外より先に保持する。"""
     note = "  気付いた改善点: CLIの回避操作を繰り返した。"
     text = body + "\n" + note
     timeline = [{"kind": "final-result", "record": "agent-case", "line": 2, "text": text}]

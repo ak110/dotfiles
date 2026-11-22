@@ -69,7 +69,7 @@ _INPUT_GUIDANCE = (
     f"CI対応の表を探す場合は`{_atk_help.CI_REVIEW_TABLE_NAME_FORMAT}`を確認する。"
     "標準入力、パイプおよびプロセス置換は受理しない"
 )
-# `add`の不一致はlocation列かissue列で生じ、`respond`は応答列だけを更新するため、案内を操作ごとに分ける。
+
 _SAVED_ADD_MISMATCH_NEXT_ACTION = (
     "保存は済んでいる。`atk review-table show <PATH>`で追加した行のlocation列とissue列を確認し、"
     "送信元本文と異なる場合は表ファイルの該当行を送信元本文へ直す"
@@ -85,15 +85,11 @@ _ActionableError = _next_action.ActionableError
 
 
 class _PreviousFindings(TypedDict):
-    """同じtrackの過去roundと保存順の行識別子。"""
-
     round: int
     row_ids: list[int]
 
 
 class _Summary(TypedDict):
-    """現在roundの応答件数と、比較できる過去指摘への到達情報。"""
-
     round: int
     track: str
     total_count: int
@@ -109,7 +105,6 @@ class _Summary(TypedDict):
 
 
 def _path(raw_path: str) -> Path:
-    """表ファイルパスを絶対パスへ解決する。"""
     return Path(raw_path).expanduser().resolve()
 
 
@@ -132,17 +127,14 @@ def _read_table_text(path: Path) -> str:
 
 
 def _read(path: Path) -> list[list[str]]:
-    """TSVを読み、JSONデコード済みの行一覧を返す。"""
     return [row for _, row in _parse_text(_read_table_text(path))]
 
 
 def read_rows(path: str | Path) -> list[list[str]]:
-    """レビュー指摘管理表の各行をデコード済みのセル列として返す。読み込めない場合は理由と次の操作を持つ例外を送出する。"""
     return _read(Path(path))
 
 
 def validate(path: str | Path, *, require_responses: bool = True) -> int:
-    """表全体を検証し、件数を標準出力へ表示する。"""
     target = _path(str(path))
     rows = _read(target)
     _validate_rows(rows, require_responses=require_responses)
@@ -152,7 +144,6 @@ def validate(path: str | Path, *, require_responses: bool = True) -> int:
 
 
 def _write_atomic(path: Path, rows: list[list[str]]) -> None:
-    """行を一時ファイルへ書き、同一ディレクトリ内で原子的に置換する。"""
     content = "".join("\t".join(_cell(value) for value in row) + "\n" for row in rows)
     atomic_write(path, content, fsync=True)
 
@@ -196,7 +187,6 @@ def _locked_update(
         _validate_rows(rows)
         updated = updater(rows)
         if path.exists() and updated == rows:
-            # 内容の変わらない更新（判定済みの行への同じ本文の再記録）では、表のファイルを置き換えない。
             return updated
         _validate_rows(updated)
         _write_atomic(path, updated)
@@ -206,7 +196,6 @@ def _locked_update(
 
 
 def init(path: str | Path) -> int:
-    """存在しない表を作成する。"""
     target = _path(str(path))
     target.parent.mkdir(parents=True, exist_ok=True)
     with _table_lock(target):
@@ -219,13 +208,11 @@ def init(path: str | Path) -> int:
 
 
 def add(path: str | Path, round_value: str, track: str, location: str, issue: str, level: str = "") -> int:
-    """レビュー担当の指摘行を追加する。"""
     row = [round_value, _normalize_track(track), location, issue, level, "", ""]
     return _add_rows(_path(str(path)), [row])
 
 
 def _current_round(rows: list[list[str]], track: str) -> int:
-    """同じtrackの指摘の行と有効な判定に使われた最大のround（現在のround）を返す。行が無ければ0を返す。"""
     rounds = [0]
     for row_id, row in enumerate(rows, start=1):
         if row[1] == track:
@@ -235,11 +222,6 @@ def _current_round(rows: list[list[str]], track: str) -> int:
 
 
 def _require_current_round(rows: list[list[str]], track: str, round_number: int) -> None:
-    """記録するroundが現在のround以上であることを確かめる。
-
-    前のroundへ書けると、残りの指摘や訂正した判定が現在のroundのsummaryが見ないroundへ入り、
-    未解決のまま収束と判定できるため（2026年11月18日の第12・第13ラウンドで観測）。
-    """
     current = _current_round(rows, track)
     if round_number < current:
         raise _ActionableError(
@@ -302,7 +284,6 @@ def _add_rows(target: Path, additions: list[list[str]]) -> int:
 
 
 def _row_index(row_id: int, row_count: int) -> int:
-    """表示と応答が共有する保存順の行識別子を添字へ変換する。"""
     if row_id < 1 or row_id > row_count:
         raise _ActionableError(
             f"row-idが範囲外である: {row_id}（行数: {row_count}）",
@@ -312,7 +293,6 @@ def _row_index(row_id: int, row_count: int) -> int:
 
 
 def _format_key_diagnostic(rows: list[list[str]], given: list[tuple[int, str]], matches: list[int]) -> str:
-    """一意に解決できない部分キーとデコード済み候補行を整形する。"""
     requested = ", ".join(f"{COLUMNS[index]}={value}" for index, value in given) or "なし"
     candidate_rows = [rows[index] for index in matches] if matches else rows
     candidate_lines = [
@@ -339,15 +319,6 @@ def respond(
     no_response_reason: str,
     row_id: int | None = None,
 ) -> int:
-    """レビューイーの応答欄だけを部分キーで更新する。
-
-    `round`・`track`・`location`・`issue`のうち非空で与えられた列だけを比較対象とし、
-    該当行を特定する。該当行が1件でない場合は複合キー解決不能として拒否する。
-    対応要否は対応内容と対応不要理由のどちらを渡したかで決まる。双方を渡した場合と
-    どちらも渡さなかった場合は`ValueError`で拒否する。
-    有効な判定（`_valid_verdicts`）がある行は、記録済みと同じ本文の場合だけ表を変えずに受け付け、それ以外は拒否する。
-    有効な判定でない`再確認:`の行は、新しい本文の末尾へ引き継ぐ。
-    """
     target = _path(str(path))
     replacement = response.strip()
     reason = no_response_reason.strip()
@@ -423,7 +394,6 @@ def respond(
             unchanged.append(True)
             expected.append(row[column])
             return rows
-        # 有効な判定でない`再確認:`の行は、応答を記録し直しても消さずに引き継ぐ。
         body = response_with_history(replacement or reason, row[5], row[6])
         expected.append(body)
         updated = [*rows]
@@ -465,16 +435,6 @@ def respond(
 
 
 def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remaining_issue: str = "") -> int:
-    """再レビューでレビュー担当が前回の指摘行の応答を確かめた判定を、応答のある列の末尾へ1行で追記する。
-
-    対応不十分・未対応は、残る問題の本文から`区分: 前回から残存`と`元の指摘: 行<row-id>`を持つ行を今回のroundへ
-    このコマンドが登録し、判定の行へその行の識別子を書く。登録先の行をレビュー担当に選ばせると、
-    別の指摘の行を指しても収束と判定できたためである。
-    判定の行は消さずに追記し、集計は最も新しいroundの最後の有効な行を使う。
-    記録できるroundは、現在のround（同じtrackの指摘の行と有効な判定の最大のround）以上に限る。
-    同じroundで記録し直すと、登録済みの未応答の行を書き換える（対応不十分・未対応）か、
-    レビュー担当の撤回として対応不要理由を書く（完了）。作業中の表はGit管理外に置かれるため、誤った判定の訂正手段を兼ねる。
-    """
     target = _path(str(path))
     normalized_round = _normalized(round_value)
     if _ROUND_RE.match(normalized_round) is None or int(normalized_round) < 2:
@@ -556,7 +516,6 @@ def recheck(path: str | Path, row_id: int, round_value: str, verdict: str, remai
 
 
 def _carried_row_id(rows: list[list[str]], origin_row_id: int, round_value: int, track: str) -> int | None:
-    """元の指摘について、recheckが指定roundへ登録した行の識別子を返す。"""
     return next(
         (
             candidate
@@ -568,11 +527,6 @@ def _carried_row_id(rows: list[list[str]], origin_row_id: int, round_value: int,
 
 
 def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple[int, list[int], dict[str, int]] | None:
-    """現在より前で指摘のある最新ラウンドについて、有効な判定の無い行と判定別の件数を返す。
-
-    有効な判定（`_valid_verdicts`）のうち、照会したround以前に記録したものを数える。
-    複数ある場合は最も新しいroundの、保存順で最後の判定を使う。
-    """
     candidates = [
         (row_id, row)
         for row_id, row in enumerate(rows, start=1)
@@ -596,7 +550,6 @@ def _recheck_state(rows: list[list[str]], round_value: int, track: str) -> tuple
 
 
 def summary(path: str | Path, round_value: int, *, track: str = "exec-review") -> _Summary:
-    """指定ラウンドに登録した指摘を用いて未応答件数を導き、過去の応答を混ぜない。"""
     if round_value < 1:
         raise _ActionableError("roundは1以上の整数で指定する", next_action="現在のレビューの--roundを指定して再実行する")
     rows = _read(_path(str(path)))
@@ -645,7 +598,6 @@ def show(
     row_id: int | None = None,
     field: str | None = None,
 ) -> int:
-    """表を保存順で表示し、指定時はtrackとラウンドで限定する。"""
     if field is not None and (row_id is None or output_format != "tsv"):
         raise _ActionableError(
             "本文の取得には--row-idとtsv出力形式が必要である",

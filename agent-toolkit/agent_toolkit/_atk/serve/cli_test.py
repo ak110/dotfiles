@@ -1,5 +1,3 @@
-"""serveのcliに関するruntimeの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -25,7 +23,6 @@ from agent_toolkit._testing.serve_cli_support import _unused_local_port
 
 
 def test_config_precedence_and_platform_ports(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """`atk config`の保存値をSERVE環境変数とCLIが順に上書きし、未保存の待受ポートはOS別の値になる。"""
     for name in ("AGENT_TOOLKIT_SERVE_HOST", "AGENT_TOOLKIT_SERVE_PORT", "AGENT_TOOLKIT_SERVE_CONFIG"):
         monkeypatch.delenv(name, raising=False)
     for key in ("SERVE_HOST", "SERVE_PORT"):
@@ -47,7 +44,6 @@ def test_config_precedence_and_platform_ports(monkeypatch: pytest.MonkeyPatch, c
 
 @pytest.mark.asyncio
 async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
-    """manifestのiconsがSVG1件を宣言し、従来のPNGも引き続き配信する。"""
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     manifest_response = await client.get("/manifest.webmanifest")
@@ -108,7 +104,6 @@ async def test_manifest_declares_svg_icon(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("follow", [False, True])
 def test_serve_logs_reads_atk_serve_journal(monkeypatch: pytest.MonkeyPatch, follow: bool) -> None:
-    """atk serveのuser serviceのjournalを読み、追従は指定時だけ行い、journalctlの終了状態を返す。"""
     commands: list[list[str]] = []
 
     def run(command: list[str], **_kwargs: typing.Any) -> subprocess.CompletedProcess[str]:
@@ -132,12 +127,6 @@ async def test_serve_stops_promptly_while_slow_request_is_in_progress(
     monkeypatch: pytest.MonkeyPatch,
     path: str,
 ) -> None:
-    """処理に時間のかかる一覧・検索の要求の処理中に停止要求を受けても、実際のhypercornが短時間で停止する。
-
-    hypercornは停止時に全接続の終了を待つため、要求の処理を停止要求で打ち切らないと、一覧の走査や
-    リモート取得が終わるまで`_serve`が戻らない（systemdの停止タイムアウトでSIGKILLされる）。
-    打ち切った要求は応答を開始していないため503で完了する。
-    """
 
     request_started = asyncio.Event()
     request_release = asyncio.Event()

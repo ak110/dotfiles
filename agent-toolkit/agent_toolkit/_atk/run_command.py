@@ -1,8 +1,3 @@
-"""laneの統合各段が記録と再開に使う、有限終了する外部コマンドの両ストリームと終了状態の保持。
-
-公開コマンドにはしない。一般の検証はハーネスの標準実行で行う。
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -28,7 +23,7 @@ from agent_toolkit._git import command as _git_command
 
 _EXIT_TIMEOUT = 124
 _EXIT_WRAPPER_FAILURE = 125
-# 子プロセスの起動前に作業ツリーの状態を取る`git`の時間上限。観測の前処理で実行を止めないよう短く保つ。
+
 _GIT_STATE_TIMEOUT_SECONDS = 30.0
 # 成功記録の再利用判定で値を比べない環境変数。エージェントの会話・ツール呼び出し・委譲・巡回の識別子と引き継ぎ記録の場所、
 # ホストとのメッセージング、端末・SSH・D-Busのセッション、シェルの作業ディレクトリと階層、
@@ -70,7 +65,6 @@ _VOLATILE_ENVIRONMENT_NAMES = frozenset(
 
 
 def _file_metrics(path: pathlib.Path) -> tuple[int, int]:
-    """ファイルの行数とバイト数を返す。"""
     with path.open("rb") as stream:
         lines = sum(1 for _line in stream)
     return lines, path.stat().st_size
@@ -131,7 +125,6 @@ def _metadata(
     stdout_path: pathlib.Path | None,
     stderr_path: pathlib.Path | None,
 ) -> dict[str, Any]:
-    """保存する完全な実行記録を構築する。"""
     result: dict[str, Any] = {
         "argv": argv,
         "cwd": str(cwd),
@@ -164,7 +157,6 @@ def execute(
     *,
     verification: bool = False,
 ) -> tuple[dict[str, Any], int, str | None]:
-    """検証用途では共有実行枠を取得し、子の終了と記録保存まで所有する。"""
     started = time.monotonic()
     timing: dict[str, Any] = {
         "started_at": datetime.datetime.now(datetime.UTC).isoformat(),
@@ -177,7 +169,7 @@ def execute(
     }
     try:
         directory = managed_temp.create_output_temp("atk-command")
-        # 出力の無い長時間のコマンドは最終更新で使用中と判定できない。作成プロセスを記録し、掃引が生存を確認できるようにする。
+
         (directory / managed_temp.OWNER_FILE).write_text(managed_temp.owner_token(), encoding="ascii")
     except (OSError, managed_temp.ManagedTempError) as error:
         failed = _metadata(
@@ -257,7 +249,6 @@ def execute(
 
 
 def execution_conditions(environment: dict[str, str] | None = None) -> dict[str, Any]:
-    """子へ渡す正規化後の条件を、値を記録せず項目別に比較する。"""
     environment = dict(os.environ if environment is None else environment)
     strip_inherited_venv(environment)
     # 起動層の復元情報とvenvは子にも渡らない。値を比べないのは`_VOLATILE_ENVIRONMENT_NAMES`だけとする。
@@ -279,7 +270,6 @@ def execution_conditions(environment: dict[str, str] | None = None) -> dict[str,
 
 
 def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> dict[str, Any] | None:
-    """同じcleanな版と実行条件の完了記録だけを返す。"""
     try:
         observed = json.loads(path.read_text(encoding="utf-8"))
         head, status = _git_state(cwd)
@@ -424,7 +414,7 @@ def _execute(
         wrapper_exit_code = _EXIT_WRAPPER_FAILURE
         failure = "\n".join([*([failure] if failure else []), *metric_errors])
     metadata["record_path"] = None
-    # 実行中に版や本文が変わった観測を、開始時のHEADの成功として再利用しない。
+
     metadata["execution_conditions"] = (
         conditions if git_head is not None and git_status == [] and _git_state(cwd) == (git_head, []) else None
     )

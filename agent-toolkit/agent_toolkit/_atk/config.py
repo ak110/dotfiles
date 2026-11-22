@@ -1,5 +1,3 @@
-"""設定の公開CLIと実効値・モデル候補の解決。"""
-
 from __future__ import annotations
 
 import argparse
@@ -87,7 +85,6 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
 
 
 def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
-    """XDG関連パスの導出値と変更可能設定をまとめて返す（表示・`get`共通の解決結果）。"""
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     _config_migration.migrate_serve_settings()
@@ -108,7 +105,6 @@ _UNKNOWN_CANDIDATE_NEXT_ACTION = "意図した名前か確認し、誤記なら�
 
 
 def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
-    """参考一覧外のモデル候補を警告の本文へ変換する。接頭辞は`report_warning`が付ける。"""
     warnings: list[str] = []
     if key not in _config_settings.MODEL_DEFAULTS:
         return warnings
@@ -128,21 +124,18 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 
 def _cmd_config_show(home: pathlib.Path) -> None:
-    """showサブコマンド: 設定値を1キー1行で表示する。"""
     settings = _resolved_settings(home)
     for key, value in settings.items():
         print(f"{key} {value}")
 
 
 def _report_candidate_warnings(warnings: list[str]) -> None:
-    """候補の警告を全件示し、共通の次の操作は1回だけ添える。"""
     if warnings:
         message = "\n".join([warnings[0], *(f"{_outcome.WARNING_PREFIX}{warning}" for warning in warnings[1:])])
         _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
 def _legacy_key_guidance(keys: list[str]) -> str:
-    """旧モデル設定キーと旧接続設定キーを指定した場合に、置き換える新キーを示す文を返す。"""
     guidance = ""
     if "process_loop_repositories" in keys:
         guidance += "。process_loop_repositoriesは廃止した。`atk config repos`でrepositoriesを変更する"
@@ -157,7 +150,6 @@ def _legacy_key_guidance(keys: list[str]) -> str:
 
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
-    """getサブコマンド: 1件以上の設定値を指定した順に表示する。未知キーはexit 2。"""
     requested_keys = cast(list[str], args.key)
     settings = _resolved_settings(home)
     unknown_keys = [key for key in requested_keys if key not in settings]
@@ -172,10 +164,6 @@ def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
 
 
 def _cmd_config_set(args: argparse.Namespace) -> None:
-    """setサブコマンド: 変更可能設定を更新する。対象外キーはexit 2。
-
-    旧モデルの候補未設定が残る場合も明示値を保存し、未設定の各工程をsetで順に修復できる。
-    """
     if args.key not in _config_settings.MUTABLE_KEY_DEFAULTS:
         _outcome.report_failure(
             f"変更できない設定キーを指定した: {args.key}{_legacy_key_guidance([args.key])}",
@@ -191,7 +179,7 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
         )
         sys.exit(2)
     _report_candidate_warnings(_stage_model_candidate_warnings(args.key, args.value))
-    # 旧serve.tomlの値を先に移行し、続く保存で明示値が移行値に上書きされないようにする。
+
     _config_migration.migrate_serve_settings()
     value = _config_settings.normalize_setting(args.key, args.value)
     config = _config_migration.plan_legacy_migration(_config_settings.load_config_strict(), updates={args.key: value})
@@ -208,10 +196,6 @@ def _cmd_config_set(args: argparse.Namespace) -> None:
 
 
 def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
-    """apply-presetサブコマンド: 工程別の6設定を一括保存し、write_modelを保持する。
-
-    `show`の指定時とプリセット名の省略時は、設定ファイルを読み書きせずに全プリセットの値を表示する。
-    """
     if args.preset in (None, _config_settings.APPLY_PRESET_SHOW):
         for preset, preset_settings in _config_settings.PRESET_MODELS.items():
             print(f"{preset}:")
@@ -227,7 +211,6 @@ def _cmd_config_apply_preset(args: argparse.Namespace) -> None:
 
 
 def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
-    """検証済み設定値をengine・model・effort（未指定はNone）へ分解する。"""
     engine, _, rest = value.partition(":")
     if engine == "opencode":
         model, explicit, effort = rest.rpartition("@")
@@ -239,7 +222,6 @@ def _parse_stage_model(value: str) -> tuple[str, str, str | None]:
 
 
 def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
-    """候補列をengine・model・effortの3つ組へ分解し、effort省略時は`medium`を補う。"""
     _config_settings.validate_stage_model_candidates(value)
     return [
         (engine, model, effort or "medium")
@@ -250,11 +232,9 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
 def parse_unresolved_model_candidates(
     model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None, exec_lane: bool = False
 ) -> list[tuple[str, str, str]]:
-    """工程名または直接候補列を解決する。excludedの指定時は、全滅時も起動側に除外理由を渡す。"""
     if model_type in _config_settings.MODEL_TYPES:
         key = f"{model_type}_model"
         if exec_lane and model_type == "execute":
-            # 長い実装と最終検収を担うレーン役は、設定が無い時だけCodexのeffortを上げる。
             fallback = _config_settings.MODEL_DEFAULTS[key].replace("codex:sol/low", "codex:sol/medium")
             value = resolve_mutable_setting(key, fallback=fallback)
         else:
@@ -296,7 +276,6 @@ def resolve_model_candidates(model_type: str, *, catalog: list[dict[str, Any]] |
 
 
 def build_parser(config: argparse.ArgumentParser) -> None:
-    """`config`サブパーサ配下にshow/get/set/apply-presetを登録する。"""
     sub = _atk_help.add_subcommands(config, dest="config_subcommand", required=False)
     config_usage.build_parser(sub)
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
@@ -321,7 +300,6 @@ def build_parser(config: argparse.ArgumentParser) -> None:
 
 
 def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[..., None] | None = None) -> int:
-    """`config`サブコマンドを実行し、終了コードを返す（サブコマンド省略時は`show`扱い）。"""
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub in {"usage", "temporary"}:
@@ -350,7 +328,6 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
 
 
 def _cmd_config_array(args: argparse.Namespace, *, remove: bool) -> None:
-    """配列要素を1件更新し、重複追加と不在削除を区別する。"""
     if args.key not in _config_settings.ARRAY_KEYS:
         raise ValueError(f"{args.key}は配列型の設定ではない。単一値の設定には`atk config set`を使う")
     _config_migration.migrate_legacy_settings()

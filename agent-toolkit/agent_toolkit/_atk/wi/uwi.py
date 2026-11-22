@@ -1,5 +1,3 @@
-"""UWIの回答（`atk wi answer`とWeb画面の回答）と、UWIの質問本文の検証。"""
-
 import argparse
 import datetime
 import os
@@ -70,15 +68,7 @@ def _looks_like_question(message: str) -> bool:
 
 
 def _detect_self_containment_deficiency(message: str) -> str | None:
-    """メッセージ本文が文脈の無い一時識別子だけで対象を指しているかを判定する。
 
-    一時識別子（`fb12345`・`Q12`等）を検出し、識別子の前後30文字以内に文脈語（「〜のため」
-    「〜という」「〜について」「背景」「経緯」「対象」「実装」「反映」「採否」「判定」等）が
-    無い場合に「一時識別子の単独使用」を返し、該当しなければ`None`を返す。
-    本文の文字数や特定の根拠語彙の有無は判定しない。短くても対象・問い・回答による結果が分かる本文は
-    必要な情報を満たしており、文字数や語彙の追加では情報の不足を判定できないためである。
-    """
-    # commit OIDなど英数字列の途中にある`fb67`等を一時識別子と誤認しないよう、前後を英数字以外に限る。
     identifier_pattern = re.compile(r"(?<![0-9A-Za-z])(?:fb|Q|FB)\s?\d{2,}(?![0-9A-Za-z])")
     context_words = (
         "のため",
@@ -103,7 +93,6 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
 
 
 def strip_unanswered_uwi_wrapper(body: str) -> str:
-    """保存形式の先頭質問見出しと、末尾の未回答欄だけを取り除く。"""
     leading = re.match(r"\A(?:[^\S\n]*\n)*" + re.escape(QUESTION_HEADING) + r"(?:\n|\Z)(?:[^\S\n]*\n)*", body)
     if leading is not None:
         body = body[leading.end() :]
@@ -118,13 +107,6 @@ def strip_unanswered_uwi_wrapper(body: str) -> str:
 
 
 def reject_reserved_uwi_markup(body: str) -> None:
-    """UWI本文がツール側で自動付与する要素を含む場合に`WebInputError`を送出する。
-
-    確認する対象は回答欄マーカーと、行頭に現れる質問見出し・回答見出しとする。
-    `parse_entry_message`が保存形式の未回答外枠を取り除いた後に適用する。
-    回答の記入がある欄、本文途中の予約見出し、外枠以外のマーカーは、
-    回答の混入と見出しの二重生成を防ぐため拒否する。
-    """
     violations: list[str] = []
     if ANSWER_MARKER in body:
         violations.append("回答欄マーカー")
@@ -139,12 +121,6 @@ def reject_reserved_uwi_markup(body: str) -> None:
 
 
 def warn_question_quality(filename: str, message: str, question_type: str | None) -> None:
-    """UWI投入時の質問本文の品質警告を標準エラーへ出力する。
-
-    書式上の予約要素（回答欄マーカー・自動付与の見出し）の混入は
-    `reject_reserved_uwi_markup`が拒否で扱い、本関数は内容面の品質のみを警告で扱う。
-    問いの有無は`question_type`によらず判定する（定義元と判定範囲は`_looks_like_question`を参照）。
-    """
     del question_type  # noqa
     if not _looks_like_question(message):
         _outcome.report_warning(
@@ -174,11 +150,6 @@ def _resolve_active_entry(
     filename: str,
     state: str | None = None,
 ) -> pathlib.Path:
-    """状態指定時は完全一致、省略時は既存の優先順で対象を解決する。
-
-    同名が複数の対象状態に存在する場合はprocessing、inbox、holdの順に優先する
-    （`start-processing`後の中断復帰時にprocessing側が最新状態のため）。
-    """
     if state is not None and state not in (*WI_PROCESSABLE_STATES, WI_STATE_HOLD):
         raise WebInputError(f"stateが不正です: {state}", next_action="stateはinbox、processingまたはholdで指定してください")
     normalized = _wi_filenames.validate_filename(filename, private_notes).name
@@ -192,11 +163,6 @@ def _resolve_active_entry(
 
 
 def require_uwi_entry(path: pathlib.Path, text: str) -> None:
-    """対象エントリの種別がUWIでない場合に`WebInputError`を送出する。
-
-    CLIとWeb APIの双方が呼び出す共通の検証とする。
-    frontmatterの`type`のみを根拠とし、所在ディレクトリーは根拠にしない。
-    """
     entry_type = _wi_entries.entry_type_of(path, text)
     if entry_type != WI_TYPE_UWI:
         raise WebInputError(
@@ -245,10 +211,6 @@ def answer_uwi(
     storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
     expected_content: str | None = None,
 ) -> bool:
-    """平引数でUWI回答欄を更新する。対象はinbox・processing・holdのUWIに限る。
-
-    呼び出し元を問わず、共有の実装で受け取る際に空回答を拒否する。
-    """
     if not answer.strip():
         raise WebInputError("回答本文が空です", next_action="回答を記入して再実行する")
     with storage.mutation(private_notes) as mutation:
@@ -267,8 +229,7 @@ def answer_uwi(
                 f"回答欄マーカーがありません: {path.name}",
                 next_action="保存済みUWIの構造が壊れているため回答を反映できない。ユーザーへ報告する",
             )
-        # 既存データにマーカーが重複するエントリが存在するため最後のマーカーを基準に分割する。
-        # 最初のマーカーで分割すると回答見出しが消失し質問本文が途中で切断される。
+
         content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"
         parsed_content = _frontmatter.parse_frontmatter(content)
         if parsed_content is not None:
@@ -299,7 +260,6 @@ def answer_uwi(
 
 
 def _is_affirmative_post_approval(text: str, answer: str) -> bool:
-    """標準の事後承認UWIに対する肯定回答であるかを返す。"""
     parsed = _frontmatter.parse_frontmatter(text)
     if parsed is None or answer.strip() != POST_APPROVAL_CHOICES[0]:
         return False

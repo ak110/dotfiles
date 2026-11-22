@@ -1,5 +1,3 @@
-"""dotfiles外の重複導入物の判定と削除を検証する。"""
-
 import json
 import os
 import subprocess
@@ -36,7 +34,6 @@ def _package(modules: Path, name: str, bins: dict[str, str] | str) -> None:
 
 
 def _shim(path: Path, key: str, entry: str) -> Path:
-    """npmが生成する起動スクリプトと同じく、パッケージ内のファイルを参照する起動ファイルを置く。"""
     _executable(path).write_text(f'"%dp0%\\node_modules\\{key}\\{entry}" %*\n', encoding="utf-8")
     return path
 
@@ -53,7 +50,7 @@ def test_classify_selects_removal_by_installer(tmp_path: Path, monkeypatch: pyte
     _package(posix_prefix / "lib" / "node_modules", "typescript", {"tsc": "bin/tsc"})
     posix_launcher = _shim(posix_prefix / "bin" / "tsc", "typescript", "bin\\tsc")
     machine = _executable(tmp_path / "Program Files" / "GitHub CLI" / "gh.exe")
-    # Node.js本体の導入先に同梱されたnpmは、グローバルprefixの導入物として扱わない。
+
     node_windows = tmp_path / "Program Files" / "nodejs"
     _executable(node_windows / "node.exe")
     _package(node_windows / "node_modules", "npm", {"npm": "bin/npm-cli.js"})
@@ -69,7 +66,7 @@ def test_classify_selects_removal_by_installer(tmp_path: Path, monkeypatch: pyte
     assert prune_foreign_tools.classify(standalone, "pnpm", layout) == prune_foreign_tools.Removal(
         "pnpm-standalone", str(layout.pnpm_home), layout.pnpm_home
     )
-    # npmのglobal rootはOSで決まるため、各配置はそのOSの規則で判定する。
+
     monkeypatch.setattr(prune_foreign_tools.sys, "platform", "win32")
     assert prune_foreign_tools.classify(windows_launcher, "pnpm", layout) == prune_foreign_tools.Removal(
         "npm", "pnpm", windows_prefix
@@ -95,7 +92,6 @@ def test_classify_selects_removal_by_installer(tmp_path: Path, monkeypatch: pyte
 def test_classify_excludes_legacy_cli_packages_and_launchers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, package: str, bins: dict[str, str]
 ) -> None:
-    """miseに同名のコマンドがあっても、旧npm版やその起動先は重複ツール削除へ渡さない。"""
     monkeypatch.setattr(prune_foreign_tools.sys, "platform", "win32")
     _package(tmp_path / "node_modules", package, bins)
     launcher = _executable(tmp_path / "legacy.cmd")

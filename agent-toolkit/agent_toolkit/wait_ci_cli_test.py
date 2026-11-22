@@ -30,8 +30,6 @@ __all__ = ["_git_repository"]
 
 
 class TestMainEntrypoint:
-    """公開エントリ`main`経由の引数解析・SHA解決・シナリオ確認。"""
-
     def test_sha_resolution_failure_returns_gh_error(self, tmp_path: pathlib.Path):
         baseline = tmp_path / "baseline.json"
         _write_test_baseline(baseline)
@@ -72,7 +70,6 @@ class TestMainEntrypoint:
         assert captured == [270.0, 900.0]
 
     def test_subprocess_timeout_surfaces_as_gh_error(self, tmp_path: pathlib.Path):
-        """内部subprocess呼び出しのタイムアウトが`main`経由でGH_ERRORに現れる。"""
         baseline = tmp_path / "baseline.json"
         _write_test_baseline(baseline)
         with mock.patch("subprocess.run", side_effect=subprocess.TimeoutExpired("gh", 10.0)):
@@ -384,7 +381,6 @@ class TestMainEntrypoint:
     @pytest.mark.parametrize("flag", ["--timeout", "--poll-interval", "--registration-grace", "--subprocess-timeout"])
     @pytest.mark.parametrize("bad_value", ["nan", "inf", "-inf"])
     def test_non_finite_numeric_args_rejected(self, flag, bad_value):
-        """`nan`/`inf`/`-inf`は境界比較をすり抜けるため明示的に拒否する。"""
         with pytest.raises(SystemExit) as exc_info:
             wait_ci.main([flag, bad_value])
         assert exc_info.value.code == wait_ci.EXIT_USAGE
@@ -402,8 +398,6 @@ class TestMainEntrypoint:
 
 
 class TestBaselineOnlyAndUsageErrors:
-    """手順書どおりの`--baseline`だけの監視と、引数の誤りの終了コードを確かめる。"""
-
     def test_baseline_only_waits_with_saved_context(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         """`--baseline`だけの起動が、baselineの保存値を渡して実行一覧の取得関数を作成し、待機を終える。"""
         baseline = tmp_path / "baseline.json"
@@ -426,7 +420,6 @@ class TestBaselineOnlyAndUsageErrors:
         assert [call[:3] for call in list_calls] == [("github", "owner/repository", "refs/heads/main")]
 
     def test_baseline_only_mismatch_of_explicit_value_still_fails(self, tmp_path: pathlib.Path) -> None:
-        """指定した値はbaselineの保存値と比べ、不一致は終了コード3で終わる。"""
         baseline = tmp_path / "baseline.json"
         _write_test_baseline(baseline)
         assert wait_ci.main(["--baseline", str(baseline), "--ref", "refs/heads/other"]) == wait_ci.EXIT_GH_ERROR
@@ -442,7 +435,6 @@ class TestBaselineOnlyAndUsageErrors:
         ],
     )
     def test_usage_error_returns_dedicated_exit_code(self, arguments: list[str], capsys: pytest.CaptureFixture[str]) -> None:
-        """引数の誤りはtimeoutの2と区別した終了コード7と次の操作で終わる。"""
         with pytest.raises(SystemExit) as exc_info:
             wait_ci.main(arguments)
         assert exc_info.value.code == wait_ci.EXIT_USAGE
@@ -451,8 +443,6 @@ class TestBaselineOnlyAndUsageErrors:
 
 
 class TestResolveShaViaMain:
-    """`--sha`明示指定時も完全形式へ解決してから`wait_for_ci`へ渡す。"""
-
     def test_explicit_short_sha_is_resolved_to_full_form(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
         captured: dict[str, object] = {}
         resolved_sha = "17561bd376c5fb8ace04153871b2a2d6993c380d"

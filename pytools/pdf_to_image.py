@@ -1,11 +1,9 @@
 # PYTHON_ARGCOMPLETE_OK
-"""PDFを画像に変換する。システムにPoppler (pdftoppm) のインストールが必要。"""
 
 import argparse
 import pathlib
 import sys
 
-# 変換経路だけで必要な依存を遅延する。
 lazy import tqdm.contrib
 lazy from pdf2image import convert_from_path
 
@@ -13,7 +11,6 @@ from pytools._internal.cli import enable_completion
 
 
 def main() -> None:
-    """PDFを画像に変換するエントリポイント。"""
     parser = argparse.ArgumentParser(description="PDFを画像に変換する")
     parser.add_argument("pdf_files", nargs="+", type=pathlib.Path, help="変換するPDFファイル")
     parser.add_argument("--format", default="png", choices=("png", "jpeg"), help="出力フォーマット")

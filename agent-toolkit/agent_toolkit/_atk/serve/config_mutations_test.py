@@ -1,5 +1,3 @@
-"""serveのconfigに関するmutationsの試験。"""
-
 # pylint: disable=protected-access
 
 import datetime
@@ -27,7 +25,6 @@ async def test_remove_api_rejects_changed_and_unreadable_expected_content(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """内容変更と読取り不能を409で保護し、空の確認時本文も受理する。"""
 
     _disable_wi_git(monkeypatch)
     original = "---\ntype: awi\nstate: inbox\n---\n\n確認時本文\n"
@@ -84,7 +81,6 @@ async def test_add_api_rejects_omitted_target_repo_without_frontmatter_value(
     tmp_path: pathlib.Path,
     message: str,
 ) -> None:
-    """frontmatterのtarget_repoが欠落・非文字列の場合は400で拒否する。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -163,7 +159,6 @@ def test_user_comment_pure_update_rejects_invalid_structure_without_mutation(
     comment: str,
     message: str,
 ) -> None:
-    """不正な節・コメントは判別可能なエラーとなり、保存対象を変更しない。"""
     original = _session_review_awi(body)
 
     if message:
@@ -180,7 +175,6 @@ async def test_user_comment_api_returns_edit_conflict_without_losing_latest_cont
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """期待本文と現行本文が異なる場合は409として最新本文を保持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     original = _session_review_awi("取得時本文\n").replace("---\n", "---\nstate: inbox\n", 1)
     latest = _session_review_awi("外部更新後の本文\n").replace("---\n", "---\nstate: inbox\n", 1)

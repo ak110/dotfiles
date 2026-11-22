@@ -44,12 +44,10 @@ def _latest_model(family: str, catalog: list[dict[str, Any]]) -> tuple[str, dict
 
 
 def latest_model(family: str, catalog: list[dict[str, Any]]) -> str:
-    """通常起動のeffortを上書きせず、表示可能な同系列の最新版を返す。"""
     return _latest_model(family, catalog)[0]
 
 
 def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dict[str, Any]]) -> list[tuple[str, str, str]]:
-    """表示可能なモデルの同系列最新版を選び、指定effortを検証する。"""
     resolved: list[tuple[str, str, str]] = []
     for engine, model, effort in candidates:
         if engine != "codex" or model not in FAMILIES:
@@ -73,7 +71,6 @@ def resolve_candidates(candidates: list[tuple[str, str, str]], catalog: list[dic
 
 
 async def fetch_catalog(request: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """`model/list`を最終ページまで取得し、応答形式を検証する。"""
     result: list[dict[str, Any]] = []
     cursor: str | None = None
     seen_cursors: set[str] = set()
@@ -101,10 +98,8 @@ async def with_app_server(
     command: tuple[str, ...] | None = None,
     cwd: str | None = None,
 ) -> Any:
-    """短命な読取接続の初期化・要求IDと応答IDの確認・子孫回収を共有する。"""
     with tempfile.TemporaryFile(mode="w+b") as diagnostics:
         try:
-            # 時間上限なし: 常駐の接続であり、応答待ちは呼び出し側が`asyncio.wait_for`で打ち切る。
             process = await asyncio.create_subprocess_exec(
                 *(command if command is not None else _APP_SERVER_COMMAND),
                 cwd=cwd,
@@ -159,7 +154,7 @@ async def with_app_server(
             return await operation(request)
         finally:
             stdin.close()
-            # App Serverと子孫の生成を止めてから終了させ、応答後に起動した補助プロセスも回収する。
+
             result = None
             if process.returncode is None:
                 result = await asyncio.to_thread(process_tree.stop_tree_by_pid, process.pid)
@@ -173,12 +168,10 @@ async def with_app_server(
 
 
 async def list_models_from_app_server() -> list[dict[str, Any]]:
-    """短命なApp Server接続で、他の接続と独立してモデル一覧を取得する。"""
     return await with_app_server(fetch_catalog)
 
 
 def list_models_at(command: tuple[str, ...], *, cwd: str | None = None) -> list[dict[str, Any]]:
-    """通常起動が選んだ実行体と設定で一覧を取得する。"""
     return asyncio.run(with_app_server(fetch_catalog, command=command, cwd=cwd))
 
 

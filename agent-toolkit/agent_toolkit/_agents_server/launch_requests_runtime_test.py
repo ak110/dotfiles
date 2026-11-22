@@ -37,7 +37,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def _declare_startup_document(document: pathlib.Path, reference: str) -> None:
-    """役割文書を、必須入力`対象`と起動時に全文を入れる資料1件をfrontmatterで宣言する形へ書き換える。"""
     document.write_text(
         "---\nmode: delegate\nmodel_type: execute\nrequired_inputs:\n- 対象\nwrites_worktree: true\n"
         f"startup_documents:\n- {reference}\n---\n# 担当\n\n## 入力\n\n対象を受け取る。\n\n## 出力\n\n結果を返す。\n",
@@ -111,7 +110,6 @@ async def test_public_start_native_recovery_uses_an_available_generator(tmp_path
 
 @pytest.mark.asyncio
 async def test_public_task_start_delivers_the_actual_child_host_and_project_materials(tmp_path, monkeypatch):
-    """同じサーバーからhost/projectを切り替えても、子が受け取る品質本文を混ぜない。"""
     document = _write_declared_task_document(tmp_path, "対象: 必須")
     _declare_startup_document(document, "agent-basics:writing-standards/references/writing.md")
     monkeypatch.setitem(launch_requests._TASK_MODEL_TYPES, document.name, "execute")
@@ -227,7 +225,7 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
                 **params,
                 "引き継ぎ記録先": response["handoff_record_path"] + "（新規）",
             }
-        # 正式登録を読めない候補は原因付きで除外し、別ホストの候補で配送を再構成する。
+
         registry.unlink()
         (opencode_config / "agent-toolkit.md").unlink()
         for engine in ("agy", "opencode"):
@@ -250,7 +248,7 @@ async def test_public_task_start_delivers_the_actual_child_host_and_project_mate
             await mcp_tools.start(str(project_b), subagent_md_path=str(document), extra_params={"対象": "内容"})
         assert "plugins.json" in str(observed_failure.value)
         assert "agent-toolkit.md" in str(observed_failure.value)
-    # 同じ要求の多段参照は一覧を共有し、次の要求では実host/projectで取り直す。
+
     assert observed == [("claude", str(project_a)), ("codex", str(project_a)), *[("claude", str(project_b))] * 3]
 
 
@@ -259,7 +257,6 @@ async def test_explore_role_and_free_text_share_investigation_capability(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """役割指定と自由本文の探索は成果保存を要求せず、Git識別子で同じ版を比較する。"""
     repository = init_repository(tmp_path / "repo", files={"文章 空白.md": "比較元\n"}, commit_message="比較元")
     base = git_output(repository, "rev-parse", "HEAD")
     artifact = repository / "文章 空白.md"
@@ -292,7 +289,6 @@ async def test_explore_role_and_free_text_share_investigation_capability(
 def test_imported_server_keeps_role_documents_after_distribution_removal(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, placement: str, form: str
 ) -> None:
-    """サーバーのモジュール読込時に保持し、元配布物の消失後も役割とplugin変数を同じ版へ解決する。"""
     roots = {
         "root-version": tmp_path / "cache" / "agent-toolkit" / "2.125.0",
         "ancestor-version": tmp_path / "cache" / "2.125.0" / "agent-toolkit",

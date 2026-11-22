@@ -16,7 +16,6 @@ MODE_ENV = "AGENT_TOOLKIT_CONFIG_DOTFILES_MODE"
 
 
 def configuration_path() -> Path:
-    """platformdirs.user_config_dirと同じOS別設定領域を返す。"""
     home = Path.home()
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
@@ -28,7 +27,6 @@ def configuration_path() -> Path:
 
 
 def validate(value: str) -> str:
-    """モードを検証し、不正値は導入前に停止する。"""
     if value not in MODES:
         raise ValueError(f"dotfiles_modeはfullまたはminimalで指定してください: {value!r}")
     return value
@@ -45,7 +43,6 @@ def _settings() -> dict[str, object]:
 
 
 def resolve() -> str:
-    """実行の環境変数、保存値、fullの順でモードを解決する。"""
     value = os.environ.get(MODE_ENV) or _settings().get("dotfiles_mode", "full")
     if not isinstance(value, str):
         raise ValueError("dotfiles_modeは文字列で保存してください")
@@ -53,7 +50,6 @@ def resolve() -> str:
 
 
 def select(value: str | None = None) -> str:
-    """指定モードを他の設定を保持して保存し、後続プロセスへ伝達する。"""
     if value is not None:
         validate(value)
         settings = _settings()
@@ -76,12 +72,10 @@ def select(value: str | None = None) -> str:
 
 
 def is_minimal() -> bool:
-    """現在の実行がminimalモードなら真を返す。"""
     return resolve() == "minimal"
 
 
 def dispatch_arguments(arguments: list[str]) -> int | None:
-    """依存環境が未準備でも基盤のモードget/setを公開CLIから使えるようにする。"""
     if arguments[:3] not in (["config", "get", "dotfiles_mode"], ["config", "set", "dotfiles_mode"]):
         return None
     try:
@@ -104,7 +98,6 @@ def dispatch_arguments(arguments: list[str]) -> int | None:
 
 
 def main() -> int:
-    """初回インストーラーから、依存導入前にモードを設定する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=MODES)
     arguments = parser.parse_args()

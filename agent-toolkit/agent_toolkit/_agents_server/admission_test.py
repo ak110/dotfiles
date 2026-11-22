@@ -25,7 +25,6 @@ def _write_status(
     sessions: dict[str, str],
     actions: dict[str, str] | None = None,
 ) -> pathlib.Path:
-    """1つの書込主体の状態ファイルを、heartbeatが有効な状態で書く。"""
     directory = state_root / "agents-server" / root
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{writer}.json"
@@ -64,28 +63,24 @@ def _write_status(
     ],
 )
 def test_limit_scales_with_cpu_count_and_settings(setting: str, cpus: int, expected: int | None) -> None:
-    """係数はCPU数に比例し、絶対値はCPU数によらず、offは制限しない。最小値は1。"""
     assert admission.resolve_limit(setting, cpu_count=cpus).value == expected
 
 
 @pytest.mark.parametrize("value", ["0", "-1x", "0x", "abc", "2.5", "nanx", ""])
 def test_invalid_settings_are_rejected(value: str) -> None:
-    """意味の定まらない値は初期値へ置き換えずに拒否する。"""
     with pytest.raises(ValueError):
         config_settings.parse_agents_concurrency(value)
 
 
 def test_default_setting_limits_by_cpu_count(monkeypatch: pytest.MonkeyPatch) -> None:
-    """設定が無い場合は論理CPU数×2.5で制限する。"""
     monkeypatch.setattr(admission.os, "cpu_count", lambda: 4)
     assert admission.configured_limit().value == 10
 
 
 def test_working_parents_are_counted_and_only_parents_waiting_for_admission_are_not(tmp_path: pathlib.Path) -> None:
-    """子を持つ委譲元も作業中なら数え、子の起動の許可を待っている委譲元だけを除く。"""
     _write_status(tmp_path, "root", "w1", None, {"parent": "running", "leaf": "running", "done": "completed"})
     _write_status(tmp_path, "root", "w2", "parent", {"child": "running"})
-    assert admission.observe(tmp_path).working == 3  # parent・leaf・child
+    assert admission.observe(tmp_path).working == 3
     tickets = admission.admission_directory(tmp_path)
     tickets.mkdir(parents=True)
     (tickets / "0001.json").write_text(
@@ -115,7 +110,6 @@ async def _until(condition, *, timeout: float = 10.0) -> None:
 
 
 def test_launches_beyond_limit_wait_and_proceed_in_request_order(tmp_path: pathlib.Path) -> None:
-    """上限を超えた起動は待たされ、空きが出た順に依頼順で進む。作業中は上限を超えない。"""
     limit = admission.Limit(2, "test")
     running: dict[str, str] = {}
     order: list[str] = []
@@ -138,7 +132,7 @@ def test_launches_beyond_limit_wait_and_proceed_in_request_order(tmp_path: pathl
             tasks.append(asyncio.create_task(launch(name)))
             # 依頼順を固定するため、前の依頼が許可されるか待機として登録されるまで次を依頼しない。
             await _until(lambda index=index: len(order) + admission.observe(tmp_path).waiting > index)
-        assert order == ["a", "b"]  # c・dは待っている
+        assert order == ["a", "b"]
         assert admission.observe(tmp_path).waiting == 2
         running["a"] = "completed"
         _write_status(tmp_path, "root", "w", None, running)
@@ -154,7 +148,6 @@ def test_launches_beyond_limit_wait_and_proceed_in_request_order(tmp_path: pathl
 
 
 def test_parent_waiting_for_child_does_not_deadlock_at_full_limit(tmp_path: pathlib.Path) -> None:
-    """上限いっぱいの親がそれぞれ子を起動しても、待つ親を数えないため子が起動して結果が戻る。"""
     limit = admission.Limit(2, "test")
     _write_status(tmp_path, "root", "w0", None, {"p1": "running", "p2": "running"})
 
@@ -162,7 +155,7 @@ def test_parent_waiting_for_child_does_not_deadlock_at_full_limit(tmp_path: path
         ticket = await admission.acquire(parent, limit=limit, state_root=tmp_path, sleep=lambda _s: asyncio.sleep(0.01))
         _write_status(tmp_path, "root", f"w-{parent}", parent, {f"{parent}-child": "running"})
         ticket.release()
-        # 子が終わり、親へ結果が戻る。
+
         _write_status(tmp_path, "root", f"w-{parent}", parent, {f"{parent}-child": "completed"})
         return f"{parent}-child"
 
@@ -176,7 +169,6 @@ def test_parent_waiting_for_child_does_not_deadlock_at_full_limit(tmp_path: path
 def test_one_poll_round_reads_all_roots_once_regardless_of_waiters(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, waiters: int
 ) -> None:
-    """上限で待つ起動の数を増やしても、1巡で全rootの状態ファイルを読むのは依頼順の先頭の1回だけである。"""
     limit = admission.Limit(1, "test")
     _write_status(tmp_path, "root", "w", None, {"busy": "running"})
     scans = 0
@@ -213,7 +205,6 @@ def test_one_poll_round_reads_all_roots_once_regardless_of_waiters(
 
 
 def test_disabled_limit_never_waits(tmp_path: pathlib.Path) -> None:
-    """無効化した設定では作業中の数によらず即座に許可し、待ちを応答へ加えない。"""
     _write_status(tmp_path, "root", "w", None, {f"s{index}": "running" for index in range(50)})
     ticket = asyncio.run(admission.acquire(None, limit=admission.Limit(None, "off"), state_root=tmp_path))
     assert ticket.response_fields() == {}
@@ -330,12 +321,11 @@ def test_grandchild_starts_while_grandparent_waits_and_unrelated_work_finishes(t
 
 
 def test_requester_is_not_counted_while_waiting_and_counts_again_after_admission(tmp_path: pathlib.Path) -> None:
-    """上限1でも依頼中の親は数えないため子を許可し、許可後に親が作業を続ける間は一時的に1件だけ上限を超える。"""
     limit = admission.Limit(1, "test")
     _write_status(tmp_path, "root", "w0", None, {"parent": "running"})
     ticket = asyncio.run(admission.acquire("parent", limit=limit, state_root=tmp_path))
     ticket.release()
     _write_status(tmp_path, "root", "w1", "parent", {"child": "running"})
-    assert admission.observe(tmp_path).working == 2  # 許可後に親が作業を続けた場合の一時超過（依頼元1件につき1）
+    assert admission.observe(tmp_path).working == 2
     _record_wait(tmp_path, "root", "w1")
     assert admission.observe(tmp_path).working == 1  # 親が待機へ入ると上限内へ戻る

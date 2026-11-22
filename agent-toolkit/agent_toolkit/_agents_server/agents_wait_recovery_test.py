@@ -53,7 +53,6 @@ def _saved_run(tmp_path: pathlib.Path, status: str, *, owner: str = "root.json")
 def test_empty_wait_points_to_delivered_run(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], status: str, body_exists: bool
 ) -> None:
-    """正常回収後の再waitは終了10を保ち、保存runから複数sessionの本文を全文復元できる。"""
     path, body_path = _saved_run(tmp_path, status)
     if not body_exists:
         body_path.unlink()
@@ -109,7 +108,6 @@ def test_consumed_wait_points_to_saved_result(
 
 @pytest.mark.parametrize("problem", ("missing", "broken", "empty", "other-owner"))
 def test_saved_wait_recovery_boundaries(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], problem: str) -> None:
-    """記録の不在・破損・結果なしを区別し、別所有者の記録を復旧先へ使わない。"""
     path, _body_path = _saved_run(
         tmp_path, "foreground-delivered", owner="other.json" if problem == "other-owner" else "root.json"
     )
@@ -142,7 +140,6 @@ def test_saved_wait_recovery_boundaries(tmp_path: pathlib.Path, capsys: pytest.C
 def test_incomplete_run_is_not_overwritten(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], status: str, field: str
 ) -> None:
-    """公開以後の必須項目欠落を読取異常とし、元runとcurrent参照を保持する。"""
     path, _body_path = _saved_run(tmp_path, status)
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload.pop(field)
@@ -185,7 +182,6 @@ def test_incomplete_run_is_not_overwritten(
     ),
 )
 def test_run_boundary_rejects_invalid_saved_fields(tmp_path: pathlib.Path, field: str, value: Any) -> None:
-    """保存境界で状態と各項目の型を検証し、型変換やパスの逸脱を許さない。"""
     path, _body_path = _saved_run(tmp_path, "published")
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload[field] = value
@@ -195,7 +191,6 @@ def test_run_boundary_rejects_invalid_saved_fields(tmp_path: pathlib.Path, field
 
 
 def test_run_transitions_preserve_saved_fields(tmp_path: pathlib.Path) -> None:
-    """対象追加と公開・配送の遷移で同じrunのデータとJSONの実生成項目を保つ。"""
     run = wait_run.RunningRun(run_id="run-1", status="running", targets=["session-b"], started_at="2026-09-21T00:00:00+00:00")
     updated = run.add_targets(["session-a", "session-b"])
     assert run.targets == ["session-b"]
@@ -219,7 +214,6 @@ def test_run_transitions_preserve_saved_fields(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("value", ({}, {"run_id": "../outside"}, {"run_id": 2}, {"run_id": "run-1", "status": "running"}))
 def test_current_reference_is_validated_separately(tmp_path: pathlib.Path, value: dict[str, Any]) -> None:
-    """current参照にはrun本体や不正な識別子を受理しない。"""
     path = tmp_path / "current.json"
     assert wait_run.read_current(path) is None
     path.write_text(json.dumps(value), encoding="utf-8")

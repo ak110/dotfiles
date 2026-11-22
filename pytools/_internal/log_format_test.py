@@ -1,35 +1,24 @@
-"""pytools._internal.log_format のテスト。"""
-
 from pathlib import Path
 
 from pytools._internal import log_format as _log_format
 
 
 class TestFormatStatus:
-    """`format_status()` のフォーマット検証。"""
-
     def test_basic(self):
-        """`    target: state` 形式 (列 4 + コロン)。"""
         assert _log_format.format_status("target", "state") == "    target: state"
 
     def test_empty_state(self):
-        """state が空でも例外を送出しない。"""
         assert _log_format.format_status("x", "") == "    x: "
 
 
 class TestHomeShort:
-    """`home_short()` のホームディレクトリ短縮処理。"""
-
     def test_inside_home(self, tmp_path: Path):
-        """ホームディレクトリ配下のパスは `~/...` に短縮される。"""
         assert _log_format.home_short(tmp_path / ".config" / "x.toml", home=tmp_path) == "~/.config/x.toml"
 
     def test_home_itself(self, tmp_path: Path):
-        """`Path.home()` 自身は `~` を返す。"""
         assert _log_format.home_short(tmp_path, home=tmp_path) == "~"
 
     def test_outside_home(self, tmp_path: Path):
-        """ホームディレクトリ配下でないパスはそのまま`str()`で文字列化する。"""
         outside = tmp_path / "etc" / "config"
         assert _log_format.home_short(outside, home=tmp_path / "user") == str(outside)
 

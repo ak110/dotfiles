@@ -1,5 +1,3 @@
-"""通常起動の実モデルと役割から、直上の委譲元への助言依頼の可否を決める。"""
-
 import pathlib
 
 from agent_toolkit._agents_server import launch_prompts
@@ -15,7 +13,6 @@ def advice_request_eligible(
     launch_kind: str,
     startup_document: pathlib.Path | None = None,
 ) -> bool:
-    """レビュー担当と軽量起動を除き、別エンジンまたは同じエンジンの上位モデルへの相談を認める。"""
     if parent is None or launch_kind != "delegate" or model_type in {"review", "review_fast"}:
         return False
     if startup_document is not None:

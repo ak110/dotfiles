@@ -10,12 +10,10 @@ import re
 
 
 def canonical_h2_name(text: str) -> str:
-    """固定H2の旧別名を新書式の正規名へ写す。未知の見出しはそのまま返す。"""
     return _PLAN_H2_CANONICAL_BY_ALIAS.get(text, text)
 
 
 def h2_aliases(text: str) -> tuple[str, ...]:
-    """固定H2の正規名に対応する受理名を返す。"""
     canonical = canonical_h2_name(text)
     return PLAN_H2_ALIASES.get(canonical, (canonical,))
 
@@ -168,7 +166,7 @@ PLAN_LEGACY_ACCEPTANCE_TABLE_HEADERS: tuple[tuple[str, ...], ...] = (
 )
 """改名前の受入シナリオ表の列構成。保存済み計画の読み取りでだけ受理し、新規作成・改訂では移行警告を拒否する。
 
-利用目的の列を持たない形式と、第3列の旧名「利用者と入口」、さらに古い最終列の旧名を持つ3形式を受理する。
+利用目的の列を持たない形式と、第3列の旧名、さらに古い最終列の旧名を持つ3形式を受理する。
 最終列の旧名は、作業ツリーから旧名を一掃した状態を文字列検索で確かめられるようにUnicodeエスケープで保持する。
 """
 
@@ -367,7 +365,7 @@ PLAN_IMPLEMENTATION_UNIT_ID_PATTERN = re.compile(r"^U-[0-9]{3}$")
 
 PLAN_VERIFICATION_TABLE_HEADER: tuple[str, ...] = ("区分", "検証コマンド")
 PLAN_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("レーン内検証", "統合後検証")
-"""`## 検証区分`が持つ固定2行2列表。行は`レーン内検証`・`統合後検証`の順で固定する。"""
+"""`## 検証区分`が持つ固定2行2列表。行はレーン内と統合後の順で固定する。"""
 
 PLAN_CURRENT_VERIFICATION_TABLE_ROWS: tuple[str, ...] = ("変更範囲の検証",)
 """現行の`## 検証`が持つ固定行。"""

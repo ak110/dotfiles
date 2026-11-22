@@ -8,7 +8,7 @@ description: >
   要求のWI作成、版数の提案・確認、リリース、lint設定・足回りファイルの変更時に使う。
   「他プロジェクトへの反映」「プロジェクト間の同期」などを受けたエージェントが起動する。
   判定済みの依存更新だけを受託するレーンはAWI着手の契機では起動せず、独立した足回り変更など他の契機は適用する。
-  一覧の外のプロジェクトで、個人プロジェクトの足回り改善の適用を検討するとき（追従台帳）にも使う。
+  個人プロジェクトで、他のプロジェクトでも個別の作業が要るコード整理やテスト・検証・CIの改善を確定したときにも使う。
   プロジェクト固有のアプリケーションロジック変更は対象外
 ---
 
@@ -19,19 +19,19 @@ description: >
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
-| 足回り（ツールチェイン、lint設定、CI、文書構成）の変更や推奨ガイドの改訂を姉妹プロジェクトへ広げる。波及先の判定、追従提案の投入、追従台帳への追記 | `references/project-synchronization.md` |
+| 足回り（ツールチェイン、lint設定、CI、文書構成）の変更や推奨ガイドの改訂を姉妹プロジェクトへ広げる。波及先の判定、追従提案の投入 | `references/project-synchronization.md` |
 | 足回りファイルを編集する。追従提案のAWIの実施、lint違反と設定の緩和 | `references/cross-project-followup.md` |
 | 依存を更新する。AWI処理での要否の判定、明示の更新要求 | `references/dependency-update.md` |
 | 個人プロジェクトやdotfiles配布プラグインの版数を提案・確認する。リリースworkflowの有無を問わない | `references/release-operations.md`「実施」2 |
 | 公開とリリース。公開範囲、リリースの要否と実施、GLATasksの配備 | `references/release-operations.md` |
 | `README.md`、`AGENTS.md`、`docs/development/`の章構成を変える、そろえる | `references/doc-structure.md` |
 | gv・lcをLinuxで編集・検証する。prek、pyfltr、文書lintの呼び出しやCI workflowを変える | `references/ci-and-tooling.md` |
-| 一覧の外のプロジェクトで足回り改善の適用を検討する | `references/followup-procedure.md` |
+| 他のプロジェクトでも個別の作業が要る改善を確定する。追従台帳への追記 | `references/project-synchronization.md`「台帳への追記」 |
 
 ## 前提
 
 対象はセッションの開始時に読み込まれるローカル指示のプロジェクト一覧に絶対パスが載るリポジトリである。
-一覧に無いリポジトリは、「足回り改善の適用検討と台帳への追記」の適用検討だけを扱う。
+台帳からの適用には、一覧内外を問わず手動スキル `apply-followup-ledger` を使う。
 他のプロジェクトの作業中に`~/.claude/rules/agent-toolkit/`や`agent-toolkit:*`スキルの問題を見つけたら、原本のdotfiles側を直す。
 
 | プロジェクト | 一括更新コマンド | リリース運用の対象 |
@@ -57,7 +57,6 @@ description: >
 
 協調モードの変更で公開範囲の指定が無ければユーザーの恒常的な認可で公開まで進め、明示の指定があればその指定を優先し、認可の範囲と実施は`references/release-operations.md`に従う。
 
-## 足回り改善の適用検討と台帳への追記
+## 台帳への追記
 
-他のプロジェクトでも作業が要る足回りの改善は、波及の判定と同じ時点で追従台帳へ記録する（`references/project-synchronization.md`「台帳への追記」）。
-一覧の外のプロジェクトへの適用は、ユーザーの依頼を受けて`references/followup-procedure.md`で検討する。
+足回り、コード整理、テスト・検証・CIの改善のうち、他のプロジェクトの既存成果物や設定に個別の作業が要るものは、改善を確定した時に追従台帳へ記録する（`references/project-synchronization.md`「台帳への追記」）。

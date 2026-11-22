@@ -20,13 +20,6 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True)
 class RemovedPath:
-    """撤去表の1項目。
-
-    `empty_dir_only`が真の項目は、空のディレクトリである場合だけ削除し、中身が残る場合は保持する。
-    偽の項目はファイル・ディレクトリ（配下ごと）・リンクを削除する。
-    `registered`は`removal_registry`が定める登録日。
-    """
-
     path: Path
     registered: datetime.date
     empty_dir_only: bool = False
@@ -34,13 +27,6 @@ class RemovedPath:
 
 @dataclasses.dataclass(frozen=True)
 class RemovedPathIfContent:
-    """内容が期待値と一致する場合だけ削除する撤去表の1項目。
-
-    `expected`はbytesなら内容そのもの、strなら内容のSHA-256の16進文字列（小文字）として比較する。
-    大きな撤去前の内容をソースへ直書きしないためにダイジェストを使う。
-    `registered`は`removal_registry`が定める登録日。
-    """
-
     path: Path
     registered: datetime.date
     expected: bytes | str
@@ -62,7 +48,6 @@ def _is_link_like(path: Path) -> bool:
 
 
 def _remove_link_like(path: Path) -> None:
-    """リンク先を辿らず、リンクまたはジャンクション自体を除去する。"""
     if path.is_symlink():
         path.unlink()
     else:
@@ -91,7 +76,6 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path], *, failures: l
                 logger.debug("%s は存在しないためスキップ", target)
                 continue
             if is_link_like:
-                # リンク自体の削除はリンク先を削除しないため、親ディレクトリだけを確認する。
                 target.parent.resolve().relative_to(base_resolved)
             else:
                 target.resolve().relative_to(base_resolved)
@@ -119,14 +103,6 @@ def cleanup_paths(base_dir: Path, relative_paths: Iterable[Path], *, failures: l
 
 
 def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path], *, failures: list[str] | None = None) -> int:
-    """`base_dir` 配下の`relative_dirs`を、空のディレクトリである場合だけ列挙順に削除する。
-
-    子を先に列挙すると、子の削除で空になった親も同じ呼び出しで削除できる。
-    シンボリックリンクを辿って`base_dir`外を削除しないよう、resolve後のパスが配下に収まることを確認する。
-
-    Returns:
-        実際に削除した件数。
-    """
     if not base_dir.exists():
         return 0
     try:
@@ -152,7 +128,6 @@ def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path], *, failure
         try:
             target.rmdir()
         except OSError:
-            # 中身が残るディレクトリは保持する。
             continue
         logger.info(log_format.format_status(log_format.home_short(target), "空の旧配布先を削除"))
         removed += 1
@@ -160,7 +135,6 @@ def cleanup_empty_dirs(base_dir: Path, relative_dirs: Iterable[Path], *, failure
 
 
 def _content_matches(actual: bytes, expected: bytes | str) -> bool:
-    """内容が期待値（bytesまたはSHA-256の16進文字列）と完全一致するかを返す。"""
     if isinstance(expected, bytes):
         return actual == expected
     return hashlib.sha256(actual).hexdigest() == expected
@@ -169,15 +143,6 @@ def _content_matches(actual: bytes, expected: bytes | str) -> bool:
 def cleanup_paths_if_content_matches(
     base_dir: Path, expected: dict[Path, bytes | str], *, failures: list[str] | None = None
 ) -> int:
-    """内容が期待値と完全一致する場合に限り、`base_dir` 配下のファイルを削除する。
-
-    `cleanup_paths` との違いは「ユーザーが独自に編集済みの可能性があるファイル」を保護するため、
-    完全一致のときのみ削除する点。期待値はbytesか、内容のSHA-256の16進文字列で与える。
-    テキスト正規化を介在させないのは改行差異で誤判定しないためである。
-
-    Returns:
-        実際に削除した件数。
-    """
     if not base_dir.exists():
         return 0
     base_resolved = base_dir.resolve()

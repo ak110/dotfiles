@@ -27,7 +27,6 @@ import time
 import typing
 import uuid
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import filelock
 
 from agent_toolkit._atk import orchestrator as _orchestrator
@@ -38,9 +37,6 @@ from agent_toolkit._atk.run_skill_execution import (
     USAGE_LIMIT_PAUSE_EXIT_CODE,
     _SessionOutput,
     run_locked,
-)
-from agent_toolkit._atk.run_skill_execution import (
-    build_goal as build_goal,
 )
 from agent_toolkit._atk.run_skill_execution import (
     log_line as _log_line,
@@ -87,7 +83,6 @@ _LOG_DIRNAME = "run-skill"
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk run-skill`の引数を登録する。"""
     parser.add_argument(
         "--target-repo",
         metavar="REPO",
@@ -127,7 +122,6 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """スキルを1回実行し、終了コードを返す。"""
     explicit_arguments = args.args is not None
     if args.skill is not None:
         # 無修飾の作業名（`review-session`など）と入口`atk-mode`への作業の名指しを、どちらも作業の修飾名へそろえる。
@@ -181,12 +175,10 @@ def dispatch(args: argparse.Namespace) -> int:
 
 
 def _is_entry_of(requested: str, saved: str) -> bool:
-    """作業を名指しせず入口`atk-mode`だけで指定した`--resume`が、保存済みの作業の実行を指すか。"""
     return requested.removeprefix("agent-toolkit:") == skill_modes.ENTRY_SKILL and skill_modes.entry_work(saved) is not None
 
 
 def _dispatch_once(args: argparse.Namespace) -> int:
-    """batchと通常起動で共有する既存の1回分を実行する。"""
     record = getattr(args, "resume_record", None)
     log_dir = _state_paths.state_dir() / _LOG_DIRNAME
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -354,7 +346,6 @@ def _session_readers(
             _drain_output([reader for reader in readers if reader.ident is not None], log, lock)
         raise
     finally:
-        # 起動した読取スレッドがパイプを閉じる。未起動の側だけを主スレッドが閉じる。
         with contextlib.ExitStack() as cleanup:
             for index, stream in enumerate(streams):
                 if stream is not None and (index >= len(readers) or readers[index].ident is None):
@@ -390,7 +381,6 @@ def _wait_session(
     executor: _registry.ProcessIdentity | None,
     allow_connection_switch: bool = False,
 ) -> int:
-    """子セッションの終了か時間上限を待ち、結果行を出力して終了コードを返す。"""
     with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output, executor=executor) as (
         lock,
         readers,
@@ -429,7 +419,6 @@ def _wait_session(
                 if residual:
                     _log_line(log, f"終了させられなかったプロセス: {residual}")
             if residual:
-                # 停止を確認できない時間上限は、次回の実行が同じ資源を奪い合わないよう通常の時間上限と分けて伝える。
                 _outcome.report_failure(
                     f"セッションが時間上限（{timeout:g}秒）を超え、子プロセスの停止を確認できない: {residual}"
                     f"（ログ: {log_path}）",
@@ -464,7 +453,6 @@ def _wait_session(
                 return returncode
         if _orchestrator.is_normal_session_exit(orchestrator, returncode):
             if scope == session_review.BATCH_SCOPE:
-                # batchの報告と分析の確定は、子の終了後に同じmanifestを検収する起動元が行う。
                 return 0
             try:
                 saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
@@ -494,7 +482,6 @@ def _wait_session(
 
 
 def _drain_output(readers: list[threading.Thread], log: typing.TextIO, lock: threading.Lock) -> None:
-    """子セッションの終了後、残りの出力の読み取りを上限付きで待つ。"""
     deadline = time.monotonic() + OUTPUT_DRAIN_SECONDS
     for reader in readers:
         reader.join(timeout=max(0.0, deadline - time.monotonic()))
@@ -527,7 +514,6 @@ def _copy_stream(
             line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
             with lock:
                 if log.closed:
-                    # 読み取りを打ち切った後に届いた出力は、閉じたログへ書けないため捨てる。
                     return
                 diagnostic = label == "stderr" or diagnostic_process.is_error_event(line)
                 saved = line
@@ -542,7 +528,6 @@ def _copy_stream(
 
 
 def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:
-    """指定パスが属する作業ツリーのrootを返す。Git管理外ならパスをそのまま使う。"""
     result = _git_command.run(["-C", str(path), "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         _outcome.report_failure(
@@ -565,14 +550,12 @@ def _lock_path(repo_root: pathlib.Path, skill: str, *, target_repo: str | None =
 
 
 def _new_log_path(log_dir: pathlib.Path, skill: str) -> pathlib.Path:
-    """実行ごとに重複しないログファイルのパスを返す。"""
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     safe_skill = re.sub(r"[^A-Za-z0-9._-]+", "_", skill)
     return log_dir / f"{stamp}-{safe_skill}-{uuid.uuid4().hex[:8]}.log"
 
 
 def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
-    """保持期間を超えたログを削除する。削除できないログは次回の実行で再び試す。"""
     protected = session_review.protected_logs() | _run_state.sweep_records(cutoff=now - LOG_RETENTION_SECONDS)
     for manifest_path in (_state_paths.state_dir() / "wi-submit" / "runs").glob("*/run.json"):
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -593,7 +576,6 @@ def _remove_expired_logs(log_dir: pathlib.Path, *, now: float) -> None:
 
 
 def _write_header(log: typing.TextIO, *, repo_root: pathlib.Path, args: argparse.Namespace) -> None:
-    """実行の条件をログの先頭へ書く。"""
     _log_line(log, f"開始時刻: {datetime.datetime.now().astimezone().isoformat(timespec='seconds')}")
     _log_line(log, f"対象リポジトリ: {repo_root}")
     _log_line(log, f"スキル: {args.skill}")

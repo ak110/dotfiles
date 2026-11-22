@@ -28,7 +28,6 @@ def request_sync(target: dict[str, Any], operation: str, arguments: dict[str, An
 
 
 async def request(target: dict[str, Any], operation: str, arguments: dict[str, Any], *, timeout: float = 270) -> Any:
-    """成否不明の操作を再送せず、取消時は所有接続を閉じて読取も回収する。"""
     with service_transport.connect(target["endpoint"], target["process"]) as peer:
         async with service_transport.AsyncPeer(peer) as owned:
             await owned.call(service_transport.send, {"kind": "rpc", "operation": operation, "arguments": arguments})

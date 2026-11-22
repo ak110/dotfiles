@@ -62,8 +62,6 @@ _TASK_MODEL_TYPES = launch_prompts.TASK_MODEL_TYPES
 _TASK_DOCUMENT_SUFFIX = task_documents.TASK_DOCUMENT_SUFFIX
 
 
-# 委譲元がツールのエラー本文や状態値だけで次の行動を決められるよう、応答へ載せる次の操作の文面。
-# 同じ状況を複数の処理が返すため、処理ごとに書き分けず1か所へ置く。
 _TASK_DOCUMENT_PATH_NEXT_ACTION = (
     "`subagent_md_path`へ役割名（`<役割名>.subagent.md`の`<役割名>`。例: `add-wi`）か、"
     "agent-toolkitの`<役割名>.subagent.md`の絶対パスを渡す。"
@@ -116,7 +114,6 @@ def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
             raise ActionableError(reason, next_action="プラグイン更新後は会話を再起動し、新しいスキル本文を読み直す")
         owner = task_documents.role_document_plugin_root(task_document)
         if owner is None:
-            # 置き場所の外の絶対パスは、そのまま後段の所在の検査へ渡す。
             return task_document
         return plugin_root.resolve_stable_plugin_root(owner) / task_document.relative_to(owner)
     is_role_name = not any(part in subagent_md_path for part in ("/", "\\", _TASK_DOCUMENT_SUFFIX))
@@ -135,7 +132,6 @@ def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
 
 
 def require_start_cwd() -> None:
-    """通常起動のcwdが欠けた場合に、受理する起動形を示す。"""
     raise ActionableError(
         "通常起動にはcwdが必要です。委譲先は起動していない。",
         next_action="`cwd`へ既存ディレクトリの絶対パスを渡す。引き継ぎ起動では`handoff_from`だけを指定する",
@@ -143,7 +139,6 @@ def require_start_cwd() -> None:
 
 
 def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
-    """引き継ぎで変更できるモデル候補以外の通常入力を拒否する。"""
     mixed = sorted(name for name, value in inputs.items() if value is not None and name != "model_type")
     if not handoff_from.strip() or mixed:
         raise ActionableError(
@@ -158,7 +153,6 @@ RESERVED_FREEFORM_MODEL_TYPES = frozenset({"execute", "orchestrate"})
 
 
 def _reject_reserved_freeform_model_type(mode: str, model_type: Any) -> None:
-    """自由本文の起動が役割文書専用の工程名を指定した場合に、起動前に拒否する。"""
     if mode == "task" or not isinstance(model_type, str) or model_type.strip() not in RESERVED_FREEFORM_MODEL_TYPES:
         return
     raise ActionableError(
@@ -172,7 +166,6 @@ def _reject_reserved_freeform_model_type(mode: str, model_type: Any) -> None:
 
 
 def validate_start_inputs(mode: str, **inputs: Any) -> None:
-    """modeが必要とする入力の欠落と、modeが受理しない入力の混在を、委譲先の起動前に拒否する。"""
     if mode not in START_MODE_INPUTS:
         raise ActionableError(
             f"未知のmodeです: {mode}; 受理する値: {', '.join(START_MODE_INPUTS)}。",
@@ -197,14 +190,12 @@ def validate_start_inputs(mode: str, **inputs: Any) -> None:
 
 
 def task_document_label(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
-    """`start`のlabel省略時の識別名を役割名とレーン識別子から組み立てる。"""
     name = pathlib.PurePath(subagent_md_path).name.removesuffix(_TASK_DOCUMENT_SUFFIX)
     lane = extra_params.get("レーン識別子", "").strip()
     return f"{lane}-{name}" if lane else name
 
 
 def shell_default_label(command: str) -> str:
-    """shellのlabel省略時の識別名を、コマンドの最初の語のbasenameから組み立てる。"""
     words = command.split()
     return f"shell-{pathlib.PurePath(words[0]).name}" if words else "shell"
 
@@ -222,7 +213,6 @@ _ADD_WI_REQUIREMENT = re.compile(r"^##[ \t]+要求(?:[ \t：:]|$)", re.MULTILINE
 
 
 def _read_add_wi_input(path: pathlib.Path) -> str:
-    """投入する要求か共通入力として指定された通常ファイルを読む。"""
     try:
         if not path.is_absolute() or not path.is_file():
             raise OSError("要求ファイルは通常のファイルの絶対パスでなければなりません")
@@ -239,7 +229,6 @@ def _add_wi_destination_fields(text: str) -> list[str]:
 
 
 def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mapping[str, str]) -> None:
-    """各要求か共通入力に確定した投入先があることを起動前に確かめる。"""
     request = extra_params.get("投入する要求")
     if task_document.name != "add-wi.subagent.md" or request is None:
         return
@@ -254,7 +243,6 @@ def _check_add_wi_destinations(task_document: pathlib.Path, extra_params: Mappin
         if reference_path.is_absolute():
             common.extend(_add_wi_destination_fields(without_literal_blocks(_read_add_wi_input(reference_path))))
     if not common and not requirements:
-        # 既存の簡略形が書かれた先頭行だけを読み、続く発話などの欄は対象にしない。
         parts = text.partition("\n")[0].split("=", maxsplit=3)
         if len(parts) == 4 and parts[2].casefold() in {"awi", "uwi"}:
             common = [parts[1]]
@@ -321,7 +309,6 @@ def _task_document_declaration(
 
 
 def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:
-    """組み込み委譲へ渡す、役割参照と宣言済み入力だけの本文を生成する。"""
     document = resolve_task_document_path(subagent_md_path)
     warning = _validate_required_prompt_inputs(document, extra_params)
     if warning is not None:
@@ -337,19 +324,12 @@ _HANDOFF_SESSION: tuple[str | None] | None = None
 
 
 def capture_handoff_session() -> None:
-    """会話contextの除去前に、引き継ぎ記録を置く委譲元sessionを確定する。"""
     global _HANDOFF_SESSION  # pylint: disable=global-statement
     if _HANDOFF_SESSION is None:
         _HANDOFF_SESSION = ((shared_roots.resolve_root_session_id(os.environ) or os.environ.get("CODEX_THREAD_ID")),)
 
 
 def _owner_conversation(launcher_session_id: str | None) -> str | None:
-    """全体記録と専用記録先を置く会話の識別子を返す。
-
-    起動時に保持した識別子が会話を表す場合はそれを使う。
-    プロセス専用ルート（`mcp-`形式）か識別子なしの場合は、Managerが解決した実際の委譲元会話を使う。
-    共有状態の名前空間は会話と一致しないことがあるため、名前空間の識別子を会話の代わりに使わない。
-    """
     environment = runtime_environment.environment()
     captured = (
         shared_roots.resolve_root_session_id(environment) or environment.get("CODEX_THREAD_ID")
@@ -363,20 +343,12 @@ def _owner_conversation(launcher_session_id: str | None) -> str | None:
 
 
 def _conversation_temp(session_id: str) -> pathlib.Path | None:
-    """会話の既存managed-tempを作成せずに返す。解決できなければ`None`を返す。"""
     with contextlib.suppress(_managed_temp.ManagedTempError, OSError):
         return _managed_temp.find_session_temp(session_id)
     return None
 
 
 def _default_handoff_path(launcher_session_id: str | None = None) -> pathlib.Path | None:
-    """`（新規）`の引き継ぎ記録先として、委譲元のセッションのmanaged-temp直下の未使用のファイルパスを返す。
-
-    所有会話（`_owner_conversation`）を特定できる場合はそのmanaged-tempを直接解決して再利用する。
-    会話を特定できない起動では、個別のhandoff領域を作成する。
-    どちらも得られない場合は`None`を返し、呼び出し元は従来どおり欠落として拒否する。
-    ファイル自体は作成しない。`（新規）`の記録先は委譲先が作成するためである。
-    """
     directory: pathlib.Path | None = None
     session_id = _owner_conversation(launcher_session_id)
     if session_id is not None:
@@ -517,7 +489,6 @@ def whole_contract_reference(
 
 
 def handoff_notice(path: pathlib.Path | None, root: pathlib.Path) -> str:
-    """サーバーが所有する共通入力を、役割文書の入力宣言から分離して加える。"""
     record_line = f"引き継ぎ記録先: {path}（新規）\n" if path is not None else ""
     return auto_message(
         record_line + "継続なら最初に自分の引き継ぎ記録を読む。新規で書く値が無ければ作成しない。"
@@ -590,7 +561,7 @@ def task_document_request(
             next_action="役割文書のfrontmatterへmodel_typeを宣言して同じstartを再発行する",
         )
     launch_kind: LaunchKind = declaration.launch_kind if not isinstance(declaration, str) else "delegate"
-    # 共通前提の不足は記録先の生成より先に起動元へ返す。
+
     whole_contract = (
         whole_contract_reference(whole_contract_path=whole_contract_path, launcher_session_id=launcher_session_id)
         if launch_kind == "delegate"
@@ -606,8 +577,7 @@ def task_document_request(
                 extra_params = {**extra_params, _HANDOFF_INPUT_NAME: f"{handoff_path}（新規）"}
         check_declared_inputs(task_document, declaration, extra_params)
         _check_add_wi_destinations(task_document, extra_params)
-    # 宣言された入力の検証を終えてから、サーバー所有の共通入力を加える。
-    # 軽量起動のtaskは独自の記録を持たない。
+
     if launch_kind == "delegate" and _HANDOFF_INPUT_NAME not in extra_params:
         handoff_path = _default_handoff_path(launcher_session_id)
         if handoff_path is None:
@@ -619,7 +589,7 @@ def task_document_request(
     if handoff_path is not None and _HANDOFF_INPUT_NAME not in inputs:
         inputs[_HANDOFF_INPUT_NAME] = f"{handoff_path}（新規）"
     role = task_document.name.removesuffix(_TASK_DOCUMENT_SUFFIX)
-    # 入力宣言内のYAMLコメントを役割の主題として扱わない。
+
     heading_body = document_text.partition("\n---\n")[2] if document_text.startswith("---\n") else document_text
     title = next((title for token, title in parse_headings(heading_body, 1) if token.level == 0), "")
     role_name = f"{' '.join(title.splitlines())}（{role}）" if title else role

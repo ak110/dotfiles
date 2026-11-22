@@ -1,5 +1,3 @@
-"""pytools._internal.setup_cli_commonのnpm版の移行（`warn_about_npm_launchers`）の検出と警告のテスト。"""
-
 import logging
 import os
 import subprocess
@@ -50,7 +48,6 @@ def test_migrate_preserves_npm_failure_diagnostic(monkeypatch, tmp_path, caplog,
 
 @pytest.mark.parametrize("scenario", ["posix", "windows", "windows-user-cmd"])
 def test_npm_warning_does_not_remove_package_or_launchers(monkeypatch, tmp_path: Path, caplog, scenario: str) -> None:
-    """検出だけでは、標準のnpm版も同じ配置のユーザーラッパーも削除しない。"""
     windows = scenario != "posix"
     npm = _install_global_npm(monkeypatch, tmp_path, windows=windows)
     if scenario == "windows-user-cmd":
@@ -70,7 +67,6 @@ def test_npm_warning_does_not_remove_package_or_launchers(monkeypatch, tmp_path:
 
 
 def test_warn_about_npm_launchers_searches_extra_directories_once(monkeypatch, tmp_path: Path) -> None:
-    """PATH外の明示した配置先を走査し、重複指定しても同じnpm版を一度だけ照会する。"""
     canonical_prefix = tmp_path / "canonical"
     canonical = canonical_prefix / "bin" / "codex"
     canonical.parent.mkdir(parents=True)
@@ -200,7 +196,6 @@ def test_known_npm_shim_forms_cover_npm_6_to_12() -> None:
 def test_windows_reports_unedited_shims_of_every_known_npm(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, cmd_shim: tuple[str, str]
 ) -> None:
-    """npm 6以降が同梱したcmd-shimの各版が生成した未編集の起動スクリプトは、npmの生成物として認識し、旧npm版を案内する。"""
     npm = _install_global_npm(monkeypatch, tmp_path, windows=True, cmd_shim=cmd_shim)
     launchers = [launcher for launcher in npm.launchers if launcher.exists()]
 
@@ -311,7 +306,6 @@ _USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
     },
     # ユーザーが正規のCodexを`--profile work`で起動するよう置いたラッパー。
     "windows-wrapper-cmd": (True, "codex.cmd", '@echo off\r\n"%USERPROFILE%\\.local\\bin\\codex.exe" --profile work %*\r\n'),
-    # npmが生成した起動スクリプトの起動行に、ユーザーが起動オプションを足したもの。
     "windows-edited-cmd": (True, "codex.cmd", _NPM_SHIMS[".cmd"].replace('codex.js" %*', 'codex.js" --profile work %*')),
     "windows-option-after-arguments": (True, "codex.cmd", _NPM_SHIMS[".cmd"].replace("%*", "%* --profile work")),
     # npmが生成した起動スクリプトに、ユーザーが環境変数の設定を1行足したもの。
@@ -329,7 +323,6 @@ _USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
         ),
     ),
     "windows-user-ps1": (True, "codex.ps1", "& codex.exe --profile work @args\n"),
-    # npmが生成したsh用の起動スクリプトの、片方の分岐だけを別のパッケージ向けにしたもの。
     "windows-sh-one-branch-other-package": (
         True,
         "codex",
@@ -338,10 +331,8 @@ _USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
             'exec node  "$basedir/node_modules/@other/cli/bin/cli.js"',
         ),
     ),
-    # 別のパッケージを起動するnpmの起動スクリプト。
     "windows-foreign-sh": (True, "codex", npm_windows_shims("node_modules/@other/cli/bin/cli.js")[""]),
     "windows-small-binary": (True, "codex", b"MZ\x90\x00" + bytes(60)),
-    # npmのシンボリックリンクを、同じ実体を起動オプション付きで起動するスクリプトへ置き換えたもの。
     "posix-script": (False, "codex", '#!/bin/sh\nexec node "<package>/bin/codex.js" --profile work "$@"\n'),
     "posix-small-binary": (False, "codex", b"\x7fELF\x02\x01\x01\x00" + bytes(56)),
 }
@@ -351,10 +342,6 @@ _USER_FILES: dict[str, tuple[bool, str, str | bytes]] = {
 def test_migrate_keeps_user_files_that_npm_uninstall_would_remove(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, scenario: str
 ) -> None:
-    """npmの`uninstall`がパッケージと一緒に消す同名のファイルにユーザーのファイルがあれば、旧npm版を自動では削除しない。
-
-    そのファイルと、旧npm版を削除する手順を、パッケージごとに1つの警告で示す。
-    """
     windows, name, content = _USER_FILES[scenario]
     npm = _install_global_npm(monkeypatch, tmp_path, windows=windows)
     user_file = npm.bin_dir / name
@@ -407,7 +394,6 @@ def test_migrate_windows_cmd_rejects_package_name_fragments(monkeypatch, tmp_pat
 def test_migrate_windows_cmd_uses_package_json_bin(
     monkeypatch, tmp_path: Path, caplog, bin_json: str, referenced_name: str, expected: bool
 ) -> None:
-    """npmの起動スクリプトは、package.jsonのbinの名前と実体に合う参照だけを生成物とする。"""
     monkeypatch.setattr(setup_cli_common.sys, "platform", "win32")
     prefix = tmp_path / "prefix"
     (prefix / "npm.cmd").parent.mkdir()

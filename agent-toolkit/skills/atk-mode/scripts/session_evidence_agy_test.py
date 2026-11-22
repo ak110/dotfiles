@@ -13,7 +13,6 @@ from cost_metrics import _scan_sessions
 
 
 def test_native_user_answers_tools_and_stats(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """質問側と回答側の由来を保ち、同じ原本をuser-events/tool-calls/statsが扱う。"""
     path = tmp_path / "brain/conversation/.system_generated/logs/transcript_full.jsonl"
     write_jsonl(
         path,
@@ -77,7 +76,6 @@ def test_native_user_answers_tools_and_stats(tmp_path: Path, capsys: pytest.Capt
 def test_native_delegates_cost_discovery_and_quote_import(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """native起動のpretty JSONから子会話を集め、原文抽出を引用CLIへ渡す。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     brain = tmp_path / ".gemini/antigravity-cli/brain"

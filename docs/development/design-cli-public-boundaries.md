@@ -1,6 +1,6 @@
 # commitと計画検証の公開境界の設計記録
 
-[設計記録の索引](design.md)から参照する、commitと計画検証の公開境界の記録である。
+[設計記録の索引](design.md)
 
 ## atk commitとsetup-projectの公開境界
 

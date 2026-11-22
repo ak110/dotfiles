@@ -30,7 +30,6 @@ def test_session_start_temp_notice_points_to_registered_directory(
     host: str,
     delegated: bool,
 ) -> None:
-    """両ホストのメイン・委譲先へ、実際に登録したセッションの領域を通知する。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     if delegated:
@@ -51,10 +50,6 @@ def test_subagent_start_notifies_existing_session_temp_without_creating(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """SubagentStartは親のSessionStartが作成した領域を新たに作成せずに解決し、SessionStartと同じ所在と行動を通知する。
-
-    Agentツールのサブエージェントへ所在が届かないと、委譲元が委譲プロンプトへ渡し忘れた場合に`/tmp`が選ばれる。
-    """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "session-3"}))
@@ -78,7 +73,6 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """親の領域が無い場合は領域の通知を加えない。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
 
@@ -90,7 +84,6 @@ def test_subagent_start_without_parent_session_temp_omits_notice(
 def test_subagent_start_separates_temp_files_and_reuses_agent_directory(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """異なるAgentが同じ用途名で書いても衝突せず、再開は同じ場所へ届く。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "session_id": "parent"}))
@@ -133,7 +126,6 @@ def test_session_start_resets_operation_skill_notice_for_main(
     delegated: bool,
     main_warns: bool,
 ) -> None:
-    """`clear`・`compact`の後はメインへ検索のスキルを再び案内し、サブエージェントの起動記録と`resume`の後の判定を保つ。"""
     acquired = "agent-basics:search"
     operation = {"tool_name": "Bash", "tool_input": {"command": "rg x"}}
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -241,7 +233,6 @@ def test_first_main_session_start_claims_process_loop_coordinator(
     tmp_path: pathlib.Path,
     host: str,
 ) -> None:
-    """会話IDを渡さずに起動した統括は最初のSessionStartで確定し、後から起動した入れ子の会話や委譲先は確定を変えない。"""
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: target_repoのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -26,8 +25,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
 class TestAddOrderEditorFirst:
-    """addサブコマンド: エディター起動を`pull`より前に呼ぶ順序保証。"""
-
     def test_message_preserved_when_remote_sync_fails(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -79,8 +76,7 @@ class TestAddRepoPathOverrideCli:
 
         assert exc_info.value.code == 0
         content = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")).read_text(encoding="utf-8")
-        # _fake_git_worktree_remote_responseは固定URL（example/myrepo.git）を返すため、
-        # 実際のディレクトリ名（cwdrepo）に関わらずtarget_repoはmyrepoで確定する
+
         assert "target_repo: github.com/example/myrepo" in content
         assert f"target_commit: {_FIXED_HEAD_COMMIT}" in content
 
@@ -91,7 +87,6 @@ class TestAddRepoPathOverrideCli:
         capsys: pytest.CaptureFixture[str],
         type_args: list[str],
     ) -> None:
-        """本文が続かないディレクトリのみの呼び出しは、AWIとUWIのどちらでもusage表示付きの平易なエラーでexit 2になる。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -170,7 +165,6 @@ class TestAddRepoPathOverrideCli:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """本文の位置引数を受理せずprivate-notesを変更しない。"""
         notes = _setup_notes(tmp_path)
         cwd_repo = tmp_path / "cwdrepo"
         cwd_repo.mkdir()
@@ -195,7 +189,6 @@ def test_cli_add_omits_target_commit_for_url_only_target(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """cloneなしの登録先へAWIを投入でき、ローカルworktreeを推測してOIDを付けない。"""
     notes = _setup_notes(tmp_path)
     with pytest.raises(SystemExit) as registered:
         atk.main(["config", "repos", "add", "github.com/example/remote", "--edit", "awi"], home=tmp_path)
@@ -231,7 +224,6 @@ def test_cli_add_rejects_existing_path_outside_worktree(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """実在してもworktreeではないパスをローカル投入先として拒否する。"""
     notes = _setup_notes(tmp_path)
     bare_repo = tmp_path / "bare.git"
     bare_repo.mkdir()
@@ -339,7 +331,6 @@ def test_editor_body_is_preserved_when_head_resolution_fails(
 
 
 def test_add_entries_accepts_plain_uwi_body(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """予約書式を含まないUWI本文は投入され、見出しと回答欄が1組だけ生成される。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
     generated = add_module.add_entries(
         notes,
@@ -360,7 +351,6 @@ def test_add_entries_uses_frontmatter_target_repo_when_omitted(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`target_repo`省略時はメッセージfrontmatterの値を解決して保存する。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
 
     generated = add_module.add_entries(
@@ -389,7 +379,6 @@ def test_add_entries_rejects_missing_or_invalid_frontmatter_target_repo(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`target_repo`省略時にfrontmatterの値が欠落・非文字列・空・解決不能なら投入しない。"""
     notes = _prepare_notes(tmp_path, monkeypatch)
 
     with pytest.raises(WebInputError):
@@ -405,7 +394,6 @@ def test_add_entries_rejects_missing_or_invalid_frontmatter_target_repo(
 
 
 def test_validate_rejects_unresolvable_frontmatter_target_repo_in_one_failure(tmp_path: pathlib.Path) -> None:
-    """frontmatterのtarget_repoを解決できない場合は、解決側の出力を重ねず1件の例外に次の操作を持たせる。"""
     _setup_notes(tmp_path)
     message = "---\ntarget_repo: not-a-repository\nsource: test\n---\n\n" + _AGENT_AWI_BODY
 
@@ -433,7 +421,6 @@ def test_validate_rejects_unresolvable_frontmatter_target_repo_in_one_failure(tm
 def test_validate_uwi_question_type_errors_name_accepted_values(
     tmp_path: pathlib.Path, question_type: str, choices: str | None, expected: str
 ) -> None:
-    """question_typeの不正とchoicesの欠落は、受理する値や指定するオプションを次の操作として返す。"""
     _setup_notes(tmp_path)
 
     with pytest.raises(WebInputError) as error_info:
@@ -450,7 +437,6 @@ def test_validate_uwi_question_type_errors_name_accepted_values(
 
 
 def test_read_saved_entry_details_mismatch_guides_show_and_edit(tmp_path: pathlib.Path) -> None:
-    """保存本文が送信した本文と異なる場合は、保存済みであることと確認・修正のコマンドを次の操作として返す。"""
     path = tmp_path / "20260101-000000-001.md"
     path.write_text("---\ntarget_repo: github.com/example/repo\ntype: awi\n---\n\n保存本文\n", encoding="utf-8")
 
@@ -468,7 +454,6 @@ def test_read_saved_entry_details_mismatch_guides_show_and_edit(tmp_path: pathli
 def test_editor_nonzero_exit_guides_body_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """エディターが非0で終了した場合は、本文を保存していないことと`--body-file`での再実行を次の操作として返す。"""
     del tmp_path
     monkeypatch.setenv("EDITOR", "false")
 

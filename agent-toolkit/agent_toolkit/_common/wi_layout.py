@@ -1,5 +1,3 @@
-"""WIの年月固定配置を読む共通のパス境界。"""
-
 import datetime
 import os
 import pathlib
@@ -13,7 +11,6 @@ DATED_NAME = re.compile(r"\d{8}-\d{6}-\d{3,}\.md")
 
 
 def entry_path(private_notes: pathlib.Path, filename: str, *, fallback_date: datetime.date | None = None) -> pathlib.Path:
-    """名前の日付、既存の保存先、指定された投入日の順で固定保存先を解決する。"""
     if DATED_NAME.fullmatch(filename) is None:
         if pathlib.Path(filename).name == filename and "/" not in filename and "\\" not in filename:
             existing = [path for path in iter_entry_paths(private_notes) if path.name == filename]
@@ -35,14 +32,11 @@ def entry_path(private_notes: pathlib.Path, filename: str, *, fallback_date: dat
 
 
 def iter_entry_paths(private_notes: pathlib.Path, *, legacy_states: tuple[str, ...] = ()) -> Iterator[pathlib.Path]:
-    """年月配置と、指定された移行前の状態配置の項目を列挙する。"""
     names: set[str] = set()
-    # `Path`同士の比較と`parent`の生成は1件ごとにオブジェクトの生成と正規化を伴い、数千件の列挙で所要の大半を占める。
-    # 並びと年月の判定は文字列で行う。比較キーは`Path`の比較と同じく`os.path.normcase`を通す。
+
     for path in sorted(
         private_notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"), key=lambda path: os.path.normcase(os.fspath(path))
     ):
-        # globの形から保存先はprivate_notes直下の年・月の2階層に限られるため、年月の一致はディレクトリ名だけで判定する。
         month_dir, name = os.path.split(os.fspath(path))
         year_dir, month = os.path.split(month_dir)
         if name in names or (

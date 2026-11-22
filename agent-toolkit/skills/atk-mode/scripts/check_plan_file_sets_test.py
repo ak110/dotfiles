@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""初回計画集合の検査を検証する。"""
 
 import collections.abc
 import pathlib
@@ -19,11 +18,6 @@ _SET_AWIS = ("20260831-000000-101.md", "20260831-000000-102.md", "20260831-00000
 
 
 def _write_set_plan(work_dir: pathlib.Path, name: str, awi: str, *, padding: int = 0) -> pathlib.Path:
-    """1件のAWIを担当する自己完結した現行形式の計画を書き、そのパスを返す。
-
-    実施内容の人間由来の行も担当AWIを指すように置き換え、計画ごとの関連WIと由来を一致させる。
-    `padding`行の本文を加えると、計画の行数の警告の境界を計画ごとに作成できる。
-    """
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((awi, "分割した要求"),)).replace(
         _plan_fixture.WI_FILES[0][0], awi
     )
@@ -41,7 +35,6 @@ def _run_set_cli(
     decisions: list[dict[str, str]],
     *extra: str,
 ) -> tuple[int, str]:
-    """計画の集合を公開CLIへ1回渡す。集合の各計画が由来に使うWI本文を一時のprivate-notesへ置く。"""
     wi_names = {*_SET_AWIS, _RESUMED_AWI, "20260831-000000-104.md"}
     return _run_plan_cli(work_dir, monkeypatch, plans, decisions, wi_names, *extra)
 
@@ -56,7 +49,6 @@ def _run_plan_launcher(
     host_environ: collections.abc.Callable[[], dict[str, str]],
     *extra: str,
 ) -> subprocess.CompletedProcess[str]:
-    """隔離したWI・計画を実ランチャーへ渡し、集合比較の結果を受け取る。"""
     queue = work_dir / "private-notes"
     inbox = queue / "inbox"
     inbox.mkdir(parents=True, exist_ok=True)
@@ -70,7 +62,7 @@ def _run_plan_launcher(
     env = host_environ()
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(queue)
     env["AGENT_TOOLKIT_RUNTIME_DATA"] = str(work_dir / "runtime")
-    # CI全体のfrozen指定は、公開ランチャーのno-project起動へ持ち込まない。
+
     env.pop("UV_FROZEN", None)
     root = pathlib.Path(check_plan_file.__file__).resolve().parents[3]
     prepare_plugin_environment(root, env)
@@ -97,7 +89,6 @@ def _run_plan_launcher(
 def test_cli_checks_expected_wi_set(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """全99件と比較し、5件だけの計画の欠落94件と余剰WIを実ランチャーから検出する。"""
     work_dir, _base = repo
     expected = tuple(f"20261018-000000-{index:03}.md" for index in range(1, 100))
     extra = "20261018-000000-100.md"
@@ -123,7 +114,6 @@ def test_cli_checks_expected_wi_set(
 def test_cli_expected_wi_tracks_explicit_addition(
     repo: tuple[pathlib.Path, str], host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """同じworktreeの計画対象だけを比較し、明示追加の前後で計画の不足と充足を判定する。"""
     work_dir, _base = repo
     first, second, added = _SET_AWIS
     plans = [_write_set_plan(work_dir, "first.md", first), _write_set_plan(work_dir, "second.md", second)]
@@ -149,7 +139,6 @@ def test_cli_expected_wi_tracks_explicit_addition(
 def test_cli_preserves_lane_selection_with_expected_wi_extension(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """実ランチャーでも既存選定YAMLの集合比較・再開・先行計画・複数計画を保つ。"""
     work_dir, _base = repo
     first, second, third = _SET_AWIS
     plan = _write_set_plan(work_dir, "first.md", first)
@@ -190,7 +179,6 @@ def test_cli_preserves_lane_selection_with_expected_wi_extension(
 def test_cli_expected_wi_reports_invalid_or_duplicate_input(
     repo: tuple[pathlib.Path, str], case: str, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """新入力の形式・併用誤りを終了2、重複を終了1として対象と原因を示す。"""
     work_dir, _base = repo
     name = _SET_AWIS[0]
     plan = _write_set_plan(work_dir, "first.md", name)
@@ -276,7 +264,6 @@ def test_cli_plan_set_reports_failing_plan_or_wi(
 def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """再開位置を持つ項目を集合から外し、凍結済み先行計画の関連WIを和集合へ含めて判定する。"""
     work_dir, _base = repo
     prior = _write_set_plan(work_dir, "prior.md", _SET_AWIS[0])
     plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[1:])]
@@ -291,7 +278,6 @@ def test_cli_plan_set_excludes_resumed_and_includes_prior_plan(
     reason=("実Gitの基準版と最小の2/3計画を公開検査へ渡し、集合と由来を確認す" + "る。同群Linux CI所有CPU最大0.442秒。"),
 )
 def test_cli_plan_set_rejects_duplicate_paths(repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
-    """確かめる計画どうし、確かめる計画と先行計画に同じファイルを指定した入力は入力誤り（終了コード2）にする。"""
     work_dir, _base = repo
     plans = [_write_set_plan(work_dir, f"plan-{index}.md", awi) for index, awi in enumerate(_SET_AWIS[:2])]
     code, stderr = _run_set_cli(work_dir, monkeypatch, [*plans, plans[0]], _set_decisions(*_SET_AWIS[:2]))
@@ -330,7 +316,6 @@ def test_cli_plan_set_accepts_agent_rule_path_in_any_plan(
 def test_cli_plan_set_keeps_line_warning_boundary_per_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch, total_lines: int, warned: bool
 ) -> None:
-    """集合の中でも行数の警告を計画ごとに判定し、1200行は警告せず1201行は対象の計画を示して警告する。"""
     work_dir, _base = repo
     base_lines = len(_write_set_plan(work_dir, "probe.md", _SET_AWIS[0]).read_text(encoding="utf-8").splitlines())
     (work_dir / "probe.md").unlink()

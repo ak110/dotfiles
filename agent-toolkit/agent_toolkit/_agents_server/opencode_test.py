@@ -56,7 +56,6 @@ emit("step_finish", part=dict(type="step-finish", reason="stop", cost=0.01, toke
 
 
 def _install_cli(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """ホストのPythonから起動する偽CLIと、その引数の保存先を用意する。"""
     restore_host_environment(monkeypatch)
     directory = tmp_path / "bin"
     directory.mkdir()
@@ -95,7 +94,6 @@ async def _finished(manager: opencode.OpenCodeManager, session: SessionState) ->
 async def test_cli_start_reply_and_raw_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, configured: str, model: str, effort: str
 ) -> None:
-    """同じIDで継続し、モデルとvariantを分離して渡し、元のイベントを両turnとも保存する。"""
     capture = _install_cli(tmp_path, monkeypatch)
     engine, selected_model, selected_effort = config.parse_stage_model_candidates(f"opencode:{configured}")[0]
     assert engine == "opencode"
@@ -155,7 +153,6 @@ async def test_missing_cli_and_missing_model_fail_start(tmp_path: pathlib.Path, 
 
 @pytest.mark.asyncio
 async def test_cli_receives_all_plugin_and_user_rules(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実行する子へ、起動の本文とユーザーの再帰的な規範集合を届け、agent-toolkitの旧い配布物は読まない。"""
     capture = _install_cli(tmp_path, monkeypatch)
     custom = tmp_path / "claude" / "rules" / "nested" / "custom.md"
     custom.parent.mkdir(parents=True)

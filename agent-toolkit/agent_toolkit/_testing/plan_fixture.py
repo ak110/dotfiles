@@ -1,11 +1,4 @@
 # agent-doc-tone: test-data
-"""計画本文のテスト入力を`_plan_format`の構造定数から組み立てる。
-
-現行の計画ファイルと、保存済みの各形式（8節形式、計画ファイル（メイン）・（詳細）・（バグ）など）の正常系本文を書式ごとに1箇所で組み立て、
-固定H2名、表の列名および表の行名を構造定数から導出する。
-書式の改訂で追随が必要な値を本ファイルへ集約し、各テストが同じ値を文字列リテラルとして個別に持たない状態を保つ。
-違反を含むテスト入力は、本ファイルが公開する行・表・見出しの定数を用いた置換で各テストが組み立てる。
-"""
 
 from __future__ import annotations
 
@@ -34,27 +27,22 @@ TABLE_FILLER: str = "検討結果を記載する。"
 
 
 def _header_row(header: tuple[str, ...]) -> str:
-    """列名行と区切り行を組み立てる。"""
     return f"| {' | '.join(header)} |\n| {' | '.join('---' for _column in header)} |"
 
 
 def item_row(name: str, filler: str = TABLE_FILLER) -> str:
-    """`項目`・`内容`の2列表の1行を組み立てる。"""
     return f"| {name} | {filler} |"
 
 
 def rows_table(rows: tuple[str, ...], filler: str = TABLE_FILLER) -> str:
-    """行名を固定した`項目`・`内容`の2列表を組み立てる。"""
     return "\n".join([_header_row(_plan_format.PLAN_BUG_TABLE_HEADER), *(item_row(row, filler) for row in rows)])
 
 
 def cause_record_line(label: str, text: str = BUG_FILLER) -> str:
-    """原因分析の記録の1行を組み立てる。"""
     return f"- {label}: {text}"
 
 
 def cause_record(text: str = BUG_FILLER) -> str:
-    """バグ単位1件分の原因分析の記録（必須の行頭語の行）を組み立てる。"""
     return "\n".join(cause_record_line(label, text) for label in _plan_format.CAUSE_RECORD_REQUIRED_LABELS)
 
 
@@ -94,7 +82,6 @@ LEGACY_STANDALONE_TABLE_ROWS: tuple[str, ...] = (
 
 
 def legacy_cause_tables(filler: str = BUG_FILLER) -> str:
-    """廃止直前の形式（原因分析表と調査表の2表）のバグ単位の本文を組み立てる。"""
     header = _plan_format.PLAN_LEGACY_BUG_TABLE_HEADERS[0]
     contents = " | ".join(filler for _column in header[1:])
     cause_table = "\n".join([_header_row(header), *(f"| {row} | {contents} |" for row in LEGACY_CAUSE_TABLE_ROWS)])
@@ -129,13 +116,11 @@ def bug_file(*, title: str = "計画の主題", variant: str = BUG_VARIANT_CURRE
 
 
 def inline_bug_section(*, variant: str = BUG_VARIANT_CURRENT) -> str:
-    """計画本文へ直接置く旧配置の`## バグ調査結果`節を返す。"""
     body = bug_file(variant=variant).split(f"### {BUG_UNIT_H3}\n\n", 1)[1]
     return f"## {_plan_format.PLAN_H2_BUG}\n\n### {BUG_UNIT_H3}\n\n{body}\n"
 
 
 def bug_reference_section(reference: str | pathlib.Path) -> str:
-    """計画ファイル（バグ）の分離先を参照する`## バグ調査結果`節を返す。"""
     return f"## {_plan_format.PLAN_H2_BUG}\n\n{_plan_format.PLAN_BUG_FILE_REFERENCE_PREFIX} {reference}\n\n"
 
 
@@ -163,7 +148,6 @@ LEGACY_SIMILAR_REVIEW_SECTION: str = (
 
 
 def _permanence_sections(*, refactoring: str = REFACTORING_TABLE, legacy_similar_review: bool = False) -> str:
-    """`## 恒久化・リファクタリング内容`の本文を組み立てる。"""
     return (
         f"## {_plan_format.PLAN_H2_PERMANENCE}\n\n"
         f"### {_plan_format.PLAN_PERMANENCE_H3[0]}\n\n{PERMANENCE_TABLE}\n\n"
@@ -171,8 +155,6 @@ def _permanence_sections(*, refactoring: str = REFACTORING_TABLE, legacy_similar
         + (LEGACY_SIMILAR_REVIEW_SECTION if legacy_similar_review else "")
     )
 
-
-# --- 新書式（人間向けの計画ファイル（メイン）・計画ファイル（詳細）） ---
 
 WI_FILES: tuple[tuple[str, str], ...] = (
     ("20260817-223603-001.md", "入力の境界を追加確認する"),
@@ -204,7 +186,6 @@ HUMAN_UNITS_TABLE: str = "\n".join([_header_row(_plan_format.PLAN_HUMAN_IMPLEMEN
 
 
 def human_action_table(*, wi: bool) -> str:
-    """新書式の実施内容4列表を組み立てる。"""
     rows = [USER_ACTION_ROW, PROPOSAL_ACTION_ROW]
     if wi:
         rows.append(WI_ACTION_ROW)
@@ -223,7 +204,6 @@ def request_plan(
     related_wi: tuple[tuple[str, str], ...] = (),
     cause: bool = False,
 ) -> str:
-    """現行の計画ファイルの正常系本文を返す。``cause``が真なら`## 原因分析`を置く。"""
     bodies = dict(
         zip(
             _plan_format.REQUEST_H2_ORDER,
@@ -324,7 +304,6 @@ def eight_section_plan(
 
 
 def _related_wi_block(entries: tuple[tuple[str, str], ...]) -> str:
-    """計画メタ情報の`関連WI`項目を組み立てる。"""
     field = _plan_format.PLAN_METADATA_RELATED_WI_FIELD
     if not entries:
         return f"- {field}: なし"
@@ -333,7 +312,6 @@ def _related_wi_block(entries: tuple[tuple[str, str], ...]) -> str:
 
 
 def legacy_wi_names(content: str) -> str:
-    """新書式の本文を、改名前の`関連WI`項目名と`由来`欄の区分へ差し戻す。"""
     return content.replace(
         f"- {_plan_format.PLAN_METADATA_RELATED_WI_FIELD}:",
         f"- {_plan_format.PLAN_METADATA_LEGACY_RELATED_FEEDBACK_FIELD}:",
@@ -347,7 +325,6 @@ def human_main(
     work_type: str = "通常変更",
     related_wi: tuple[tuple[str, str], ...] = (),
 ) -> str:
-    """新書式の人間向け計画ファイル（メイン）の正常系本文を返す。"""
     judgment_table = "\n".join([_header_row(_plan_format.PLAN_HUMAN_JUDGMENT_TABLE_HEADER), JUDGMENT_ROW])
     return f"""# 計画の主題
 
@@ -396,7 +373,6 @@ def human_main(
 
 
 def human_detail(*, bug_section: str = "", legacy_similar_review: bool = False) -> str:
-    """新書式の人間向け計画ファイル（詳細）の正常系本文を返す。"""
     permanence = _permanence_sections(legacy_similar_review=legacy_similar_review)
     return f"""{bug_section}{permanence}## {_plan_format.PLAN_H2_IMPLEMENTATION}
 
@@ -413,8 +389,6 @@ def human_detail(*, bug_section: str = "", legacy_similar_review: bool = False) 
 {COMPLETION_BODY}
 """
 
-
-# --- 旧二ファイル形式（ID表）のテスト入力 ---
 
 TWO_FILE_ACTION_ROW: str = "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-001 |"
 TWO_FILE_ACTION_TABLE: str = "\n".join([_header_row(_plan_format.PLAN_ACTION_TABLE_HEADER), TWO_FILE_ACTION_ROW])
@@ -447,7 +421,6 @@ P-001:
 
 
 def _materials_section(*, requirements: tuple[str, ...], materials: tuple[str, ...]) -> str:
-    """提示素材の素材表と要求表を組み立てる。"""
     material_table = "\n".join([_header_row(_plan_format.PLAN_MATERIAL_TABLE_HEADER), *materials])
     requirement_table = "\n".join([_header_row(_plan_format.PLAN_REQUIREMENT_TABLE_HEADER), *requirements])
     return f"## {_plan_format.PLAN_H2_MATERIALS}\n\n{material_table}\n\n{requirement_table}\n\n"
@@ -497,7 +470,6 @@ def two_file_main(
 
 
 def two_file_detail(*, bug_section: str = "", legacy_similar_review: bool = True) -> str:
-    """旧二ファイル形式の計画ファイル（詳細）を返す。"""
     permanence = _permanence_sections(legacy_similar_review=legacy_similar_review)
     return f"""{bug_section}{permanence}## {_plan_format.PLAN_H2_IMPLEMENTATION}
 
@@ -516,7 +488,6 @@ def two_file_detail(*, bug_section: str = "", legacy_similar_review: bool = True
 
 
 def to_canonical_main(content: str) -> str:
-    """旧見出しの計画ファイル（メイン）を新しい固定H2へ変換する。"""
     return (
         content.replace(
             f"\n## {_plan_format.PLAN_H2_MATERIALS}\n",
@@ -527,8 +498,6 @@ def to_canonical_main(content: str) -> str:
         .replace(f"## {_plan_format.PLAN_H2_LEGACY_PROGRESS}", f"## {_plan_format.PLAN_H2_PROGRESS}", 1)
     )
 
-
-# --- 旧単一ファイル形式のテスト入力 ---
 
 EXCLUSION_ROWS: tuple[str, ...] = (
     "| 公開契約を維持する | 対象の公開API | P-002, R-P-002-001 | 差分を確認する |",
@@ -552,7 +521,7 @@ def single_file_plan(
     work_type = "バグ対応" if bug else "通常変更"
     materials = _materials_section(materials=MATERIAL_ROWS, requirements=REQUIREMENT_ROWS)
     exclusion = EXCLUSION_SECTION if exclusions else ""
-    # 除外・保持表を含まない入力でも要求を被覆できるよう、採用要求IDを`根拠`列へ加える。
+
     action_table = (
         TWO_FILE_ACTION_TABLE
         if exclusions
@@ -597,7 +566,6 @@ def single_file_plan(
 
 
 def legacy_materials_single_file_plan(*, repo: str | pathlib.Path = REPOSITORY, base: str = BASE_COMMIT) -> str:
-    """旧素材記法と旧3列の実施内容表を持つ単一ファイル計画を返す。"""
     content = single_file_plan(repo=repo, base=base)
     start = content.index(f"## {_plan_format.PLAN_H2_MATERIALS}")
     end = content.index(f"## {_plan_format.PLAN_H2_LEGACY_HISTORY}")

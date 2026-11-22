@@ -9,11 +9,11 @@ import re
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 LIST_ITEM = re.compile(r"^(?:[-*+]|\d+[.)])\s+")
 FENCE = re.compile(r"^ {0,3}(?P<fence>`{3,}|~{3,})(?P<info>.*)$")
-# 全角の終止記号は位置によらず文末とする。ASCIIの終止記号は直後が空白か段落末の場合だけ文末とし、
-# ドメイン名・ファイル名・版番号など語の内部のピリオドで文を分けない。
+
+
 FULLWIDTH_TERMINATORS = "。．！？"
 ASCII_TERMINATORS = ".!?"
-# 文末記号の直後に続く閉じ括弧類は同じ文へ含め、閉じ括弧だけの単位が残る分割を避ける。
+
 CLOSING_BRACKETS = ")）」』]】"
 INLINE_CODE = re.compile(r"(`+)(?:(?!\1).)+?\1")
 
@@ -60,7 +60,6 @@ def without_fenced_blocks(lines: list[str]) -> list[str]:
 
 
 def sentences(text: str) -> list[str]:
-    """段落の文字列を文へ分ける。インラインコードの内側では分割しない。"""
     protected = [False] * len(text)
     for match in INLINE_CODE.finditer(text):
         protected[match.start() : match.end()] = [True] * (match.end() - match.start())

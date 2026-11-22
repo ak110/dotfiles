@@ -1,5 +1,3 @@
-"""serveのappに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import json
@@ -90,7 +88,6 @@ def test_operations_frontmatter_parser_handles_nested_dependencies_and_broken_ya
     expected_repo: str | None,
     expected_source: str | None,
 ) -> None:
-    """一覧表示は入れ子メタデータを読み、YAML破損時も一覧全体を継続する。"""
     inbox = _fixed_path(tmp_path, "entry.md").parent
     inbox.mkdir(parents=True, exist_ok=True)
     (inbox / "entry.md").write_text(f"---\nstate: inbox\n{frontmatter_source}---\n\n要約本文\n", encoding="utf-8")
@@ -104,10 +101,6 @@ def test_operations_frontmatter_parser_handles_nested_dependencies_and_broken_ya
 
 @pytest.mark.asyncio
 async def test_sessions_detail_html_only_for_assistant(tmp_path: pathlib.Path) -> None:
-    """セッション詳細APIは本文を持つアシスタントの発言だけへ整形したHTMLを加え、`text`を残し、生HTMLを文字にする。
-
-    HTMLが他の種別へ付くと、ツールの入出力や挿入本文の記号が整形で崩れる。生HTMLを通すと記録の本文のスクリプトが画面で動く。
-    """
     record = tmp_path / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
     record.parent.mkdir(parents=True)
     markdown = "## 見出し\n\n- 項目\n\n<script>alert(1)</script>\n"

@@ -1,5 +1,3 @@
-"""共通pytestの子pytest起動とConfigの試験補助を確認する。"""
-
 import os
 import pathlib
 import subprocess
@@ -19,14 +17,12 @@ class _Config:
 
 
 def _config(rootpath: pathlib.Path) -> pytest.Config:
-    """rootpathだけを使う読込元比較へ、公開Configと同じ静的型で渡す。"""
     return cast(pytest.Config, _Config(rootpath))
 
 
 def _run_child_pytest(
     tmp_path: pathlib.Path, *arguments: str, plugin: str = pytest_plugin.__name__
 ) -> subprocess.CompletedProcess[str]:
-    """起動時プラグインだけを読む子pytestを`tmp_path`で実行し、両出力と終了コードを返す。"""
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"

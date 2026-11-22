@@ -6,7 +6,6 @@ from agent_toolkit._common.session_record_paths import find_claude_records
 
 
 def main(payload_text: str) -> int:
-    """原本が一意に読める会話だけへ、要約生成時の指示を出す。"""
     payload = json.loads(payload_text)
     if not isinstance(payload, dict) or payload.get("agent_id") is not None:
         return 0

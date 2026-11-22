@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのadd: sourceのテスト。"""
 
 # pylint: disable=protected-access,subprocess-run-check
 
@@ -22,7 +21,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _make_subprocess_fake, _setup_note
 def test_edit_accepts_minimal_agent_awi(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """旧形式から任意節を省いた本文へ編集できる。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     monkeypatch.setenv("CLAUDECODE", "1")
@@ -30,7 +28,7 @@ def test_edit_accepts_minimal_agent_awi(
     monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
     body_path = tmp_path / "edit.md"
     body_path.write_text(_AGENT_AWI_BODY, encoding="utf-8")
-    # 実行元の作業ツリーを暗黙の対象にせず、試験が書いたWIの対象を明示する。
+
     argv = ["wi", "edit", "entry.md", "--body-file", str(body_path), "--target-repo", "github.com/example/foo"]
     with pytest.raises(SystemExit) as result:
         atk.main(argv, home=tmp_path)
@@ -42,7 +40,6 @@ def test_cmd_add_accepts_agent_awi_with_all_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sourceを持つ通常AWIは必須節を規定順序ですべて満たせば保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -61,7 +58,6 @@ def test_cmd_add_accepts_agent_awi_without_alignment_record(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """通常AWIを投入しても、本文の一致を記録するファイルは自動生成されない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -75,7 +71,6 @@ def test_cmd_add_preserves_explicit_alignment_frontmatter(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """明示された旧キーは通常の追加frontmatterとして保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     message = f"---\nscope_alignment: old-value\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
@@ -87,7 +82,6 @@ def test_cmd_add_preserves_explicit_alignment_frontmatter(
 
 
 def test_add_parser_rejects_removed_alignment_option(capsys: pytest.CaptureFixture[str]) -> None:
-    """撤去した申告オプションの指定は引数エラーにする。"""
     parser = atk._build_parser()  # noqa: SLF001
     with pytest.raises(SystemExit) as option_exit:
         parser.parse_args(["wi", "add", "--scope-aligned"])
@@ -99,7 +93,6 @@ def test_cmd_add_accepts_agent_awi_with_required_section_body_starting_with_quot
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """必須節の本文が引用の内側のH2から始まっても、その節を非空として数える。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -116,7 +109,6 @@ def test_cmd_add_accepts_human_awi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """sourceを持たない通常AWIは必須節が無くても保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 
@@ -129,7 +121,6 @@ def test_cmd_add_omits_origin_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`cmd_add`は由来メタデータを新規作成しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     _run_public_add(_cmd_add_args(tmp_path, "本文"), notes, _FIXED_DT, tmp_path)
@@ -195,7 +186,6 @@ def test_cmd_add_rejects_missing_source_in_agent_environment(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """source未指定のエージェント投入を保存前に拒否する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -231,7 +221,6 @@ def test_public_add_validates_effective_source(
     body_source: str | None,
     accepted: bool,
 ) -> None:
-    """frontmatterを優先した最終sourceでAWI・UWIの投入可否を決める。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -260,7 +249,6 @@ def test_public_add_validates_effective_source(
 def test_public_add_rejects_human_source_without_partial_save(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, entry_type: str
 ) -> None:
-    """複数本文の後続1件がhumanなら先行本文も保存しない。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -279,7 +267,6 @@ def test_public_add_rejects_human_source_without_partial_save(
 def test_public_add_preserves_human_environment_source(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None
 ) -> None:
-    """人間環境ではsourceの欠落と明示humanを従来どおり保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT"):
@@ -294,7 +281,6 @@ def test_public_add_preserves_human_environment_source(
 @pytest.mark.windows
 @pytest.mark.parametrize("source", [None, "human", "agent", "session-review", "unknown-skill"])
 def test_public_batch_preserves_source(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str | None) -> None:
-    """エージェント環境のbatchは明示sourceと欠落を原文どおり保持する。"""
     notes = _setup_notes(tmp_path)
     monkeypatch.setenv("AI_AGENT", "1")
     _patch_cmd_add_operations(monkeypatch)
@@ -312,7 +298,6 @@ def test_cmd_add_accepts_frontmatter_source_in_agent_environment(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文先頭のfrontmatterでsourceが確定すれば投入する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -327,7 +312,6 @@ def test_cmd_add_accepts_uwi_without_required_sections(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """UWIはsourceを持っても必須節が無い本文を保存する。"""
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
 

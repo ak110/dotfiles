@@ -1,5 +1,3 @@
-"""活動時間と重複観測の試験。"""
-
 from dataclasses import replace
 from typing import Any
 

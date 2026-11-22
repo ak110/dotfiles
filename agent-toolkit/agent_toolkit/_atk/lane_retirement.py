@@ -1,5 +1,3 @@
-"""古いレーンの確実に取込み済みの成果を判定する。"""
-
 import pathlib
 import typing
 
@@ -8,7 +6,6 @@ from agent_toolkit._git import command as git_command
 
 
 def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
-    """選定が残っていても、別の仕事を含まない古いbranchだけを認める。"""
     if _lane_records.common(repo) != record["common_dir"]:
         raise ValueError("repoのGit共通ディレクトリが所有記録と異なる")
     branch = f"refs/heads/{record['branch']}"
@@ -35,7 +32,7 @@ def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
         return {"head": head, "base_head": base_head, "basis": "ancestor"}
     if reached.returncode != 1:
         raise ValueError(f"git merge-baseが終了{reached.returncode}: {reached.stderr.strip()}")
-    # パッチIDには適用箇所が含まれないため、内容が完全に同じ場合だけ祖先関係の代替に使う。
+
     lane_tree = _lane_records.git(repo, "rev-parse", f"{head}^{{tree}}")
     base_tree = _lane_records.git(repo, "rev-parse", f"{base_head}^{{tree}}")
     if lane_tree != base_tree:
@@ -44,7 +41,6 @@ def prove(record: dict[str, typing.Any], repo: pathlib.Path) -> dict[str, str]:
 
 
 def orphan_candidates(repo: pathlib.Path, registered: list[dict[str, typing.Any]]) -> list[dict[str, str | None]]:
-    """同じリポジトリの登録外の候補を、由来確認が必要な保護対象として返す。"""
     common = _lane_records.common(repo)
     records = [item["record"] for item in registered if item["record"].get("common_dir") == common]
     owned_paths = {str(pathlib.Path(item["worktree"]).resolve()) for item in records}

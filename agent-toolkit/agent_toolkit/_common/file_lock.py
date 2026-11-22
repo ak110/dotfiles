@@ -72,12 +72,6 @@ def ensure_plan_lock_ignored(lock_path: Path) -> bool:
 
 
 def _git_common_directory(git_directory: Path) -> Path:
-    """worktreeのGitディレクトリから、同じリポジトリで共有されるGitディレクトリを返す。
-
-    Gitは`info/exclude`を共有側のGitディレクトリから読むため、worktreeでは
-    `commondir`が指す先へ書く必要がある。`commondir`を持たない通常のcloneでは
-    引数のGitディレクトリ自身が共有側となる。
-    """
     try:
         raw = (git_directory / "commondir").read_text(encoding="utf-8").strip()
     except OSError, UnicodeError:
@@ -104,7 +98,6 @@ def _repository_for_plan_lock(lock_path: Path) -> tuple[Path, Path] | None:
 
 
 def _resolve_git_directory(root: Path) -> Path | None:
-    """通常cloneとworktreeの`.git`から実体ディレクトリを解決する。"""
     dot_git = root / ".git"
     if dot_git.is_dir():
         return dot_git
@@ -191,13 +184,6 @@ def lock_target(fh: IO) -> str:
 
 
 def rotate_if_needed(path: Path, max_bytes: int, generations: int = 1) -> None:
-    """`path`のサイズが`max_bytes`を超えた場合に世代ローテーションする。
-
-    `generations=1`（現行唯一の対応値）は`path`のsuffixへ`.1`を付加したパスへリネームする
-    （既存の`.1`ファイルは上書き）。ファイルが存在しない、サイズが上限未満の場合は何もしない。
-    `generations`引数は将来の多世代対応に向けた拡張点として残すが、
-    1以外の値は現行呼び出し元に存在しないため`NotImplementedError`とする。
-    """
     if generations != 1:
         raise NotImplementedError("generations>1は未対応")
     try:

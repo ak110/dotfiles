@@ -10,7 +10,6 @@ from agent_toolkit._common import claude_connection
 
 @pytest.mark.parametrize("kind", ["payg", "subscription", "inherit"])
 def test_selected_connection_owns_every_injected_key(tmp_path: pathlib.Path, kind: str) -> None:
-    """任意の追加キーと親settings由来の値も、接続の選択に従って隔離する。"""
     api = tmp_path / "api.env"
     api.write_text(
         "ANTHROPIC_API_KEY=selected-key\nAWS_PROFILE=selected-profile\n"
@@ -55,7 +54,6 @@ def test_selected_connection_owns_every_injected_key(tmp_path: pathlib.Path, kin
 
 
 def test_restarted_api_reads_changed_file(tmp_path: pathlib.Path) -> None:
-    """同じ接続でも、再開の環境は保存したパスから最新値を読む。"""
     path = tmp_path / "api.env"
     path.write_text("CUSTOM_CONNECTION=first\n", encoding="utf-8")
     connection = claude_connection.Connection("payg", str(path))

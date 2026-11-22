@@ -37,7 +37,7 @@ def test_batch_uses_existing_runner_and_report_receipt(
     engine_env, tmp_path, monkeypatch, capsys, engine, arguments, skill
 ) -> None:
     """2会話の実prepareから偽ホスト・同期済み報告・範囲確定まで公開CLIで検証する。"""
-    # 対象は下で登録する2会話だけであり、実機の他の会話を探さない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     for name in ("one", "two"):
@@ -90,7 +90,6 @@ def test_batch_uses_existing_runner_and_report_receipt(
 
 @pytest.mark.usefixtures("leaf_git_commands")
 def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, tmp_path, monkeypatch, capsys):
-    """子の終了0を分析・報告の成功と混同せず、実行を変えずに同じ準備範囲を確定する。"""
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     set_orchestrate_environment(monkeypatch, "claude:test-model/low")
     monkeypatch.setenv("FAKE_REPORT_MODE", "missing")
@@ -130,7 +129,6 @@ def test_batch_normal_exit_without_report_can_resume_same_analysis(engine_env, t
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 @pytest.mark.parametrize("arguments", [None, "追加指示"])
 def test_final_goal_is_only_skill_completion(engine_env, monkeypatch, capsys, engine, arguments):
-    """公開起動の最終argvで、引数の有無によらず短い目的を保持する。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     options = ["--target-repo", str(engine_env.repo)]
     if arguments is not None:
@@ -165,7 +163,6 @@ def test_mode_lock_ignores_focus_and_keeps_other_modes_separate(tmp_path):
 def test_process_modes_reach_public_runner_with_original_arguments(
     engine_env, monkeypatch, capsys, engine, arguments, named_by_entry
 ):
-    """作業の修飾名と、入口`atk-mode`への作業の名指し（`--args 'process-wi ...'`）は同じ起動入力と目的文になる。"""
     set_orchestrate_environment(monkeypatch, f"{engine}:test-model/low")
     argv = ["--target-repo", str(engine_env.repo)]
     if named_by_entry:
@@ -200,7 +197,6 @@ def test_process_modes_reach_public_runner_with_original_arguments(
 
 @pytest.mark.parametrize("resume_form", ["entry", "entry-with-work", "qualified", "omitted"])
 def test_resume_accepts_entry_and_qualified_forms_of_the_same_work(engine_env, monkeypatch, capsys, resume_form):
-    """入口`atk-mode`で作業を名指しして起動した実行は、入口の形でも作業の修飾名でもスキル名の省略でも再開できる。"""
     set_orchestrate_environment(monkeypatch, "claude:test-model/low")
     monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
     code, _out, error = _run(
@@ -239,7 +235,6 @@ def test_resume_rejects_different_explicit_invocation(engine_env, monkeypatch, c
 
 
 def test_resume_rejects_entry_form_for_other_work(engine_env, monkeypatch, capsys):
-    """入口で名指しした別の作業や無関係なスキルは、元の実行と一致しないため再開しない。"""
     set_orchestrate_environment(monkeypatch, "claude:test-model/low")
     monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
     code, _out, error = _run(["--target-repo", str(engine_env.repo), skill_modes.PROCESS_WI], capsys)

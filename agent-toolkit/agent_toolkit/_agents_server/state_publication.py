@@ -1,5 +1,3 @@
-"""セッション状態の更新を登録簿と通知先へ公開する。"""
-
 from __future__ import annotations
 
 # SessionStateが所有する登録の差分と通知の状態を、このモジュールで更新する。
@@ -21,35 +19,29 @@ if TYPE_CHECKING:
 
 
 def add_lifecycle_listener(listener: Callable[[SessionState, str], None]) -> None:
-    """稼働の開始と結果確定の通知先を登録する。"""
     state._LIFECYCLE_LISTENERS.add(listener)
 
 
 def remove_lifecycle_listener(listener: Callable[[SessionState, str], None]) -> None:
-    """稼働の開始と結果確定の通知先を解除する。"""
     state._LIFECYCLE_LISTENERS.discard(listener)
 
 
 def add_touch_listener(listener: Callable[[], None], *, sessions: dict[str, SessionState] | None = None) -> None:
-    """session状態の更新通知先を登録する。"""
     state._TOUCH_LISTENERS.add(listener)
     if sessions is not None:
         state._TOUCH_OWNERS[listener] = sessions
 
 
 def remove_touch_listener(listener: Callable[[], None]) -> None:
-    """session状態の更新通知先を解除する。"""
     state._TOUCH_LISTENERS.discard(listener)
     state._TOUCH_OWNERS.pop(listener, None)
 
 
 def add_terminal_listener(listener: Callable[[SessionState], None]) -> None:
-    """turnの終了時の結果が確定したsessionの通知先を登録する。"""
     state._TERMINAL_LISTENERS.add(listener)
 
 
 def notify_touch_listeners(session: SessionState | None = None) -> None:
-    """登録された全ての通知先へ、session状態の更新を通知する。"""
     for listener in tuple(state._TOUCH_LISTENERS):
         owner = state._TOUCH_OWNERS.get(listener)
         if session is None or owner is None or owner.get(session.session_id) is session:
@@ -57,30 +49,22 @@ def notify_touch_listeners(session: SessionState | None = None) -> None:
 
 
 def remove_terminal_listener(listener: Callable[[SessionState], None]) -> None:
-    """turnの終了時の結果が確定したsessionの通知先を解除する。"""
     state._TERMINAL_LISTENERS.discard(listener)
 
 
 def attach_executor(self: SessionState, pid: int | None) -> None:
-    """turnを実行する委譲先CLIのプロセスを記録する。プロセスを起動し直した場合は次の`touch`で登録簿を更新する。"""
     if pid is None or (self.executor_process is not None and self.executor_process.pid == pid):
         return
     self.executor_process = session_registry.ProcessIdentity.of(pid)
 
 
 async def attach_executor_async(self: SessionState, pid: int | None) -> None:
-    """プロセスの起動時刻の照会をworkerで待ち、loop上で登録情報へ反映する。"""
     if pid is None or (self.executor_process is not None and self.executor_process.pid == pid):
         return
     self.executor_process = await run_file_operation(session_registry.ProcessIdentity.of, pid)
 
 
 def touch(self: SessionState) -> None:
-    """状態の更新時刻を現在時刻へ更新する。
-
-    turnの終了時の結果が確定した時点で、登録済みの終了通知先へこのsessionを1回だけ渡す。
-    turnを再開した後の終了では、同じ通知を改めて1回行う。
-    """
     self.updated_at = utc_now()
     usage_refresh.track_session(self)
     message = (
@@ -147,14 +131,12 @@ async def _publish_registration_until_current(self: SessionState) -> str | None:
 
 
 async def drain_registration(self: SessionState) -> None:
-    """通知から開始した登録公開を完了させる。"""
     task = self._registration_task
     if task is not None:
         await finish_task(task)
 
 
 async def publish_registration_async(self: SessionState) -> str | None:
-    """確定した登録情報だけをworkerへ渡し、成功したsnapshotをloopで覚える。"""
     async with self._registration_lock:
         return await _publish_registration_async(self)
 
@@ -200,7 +182,7 @@ def _registration_parameters(self: SessionState) -> dict[str, Any] | None:
     if not self.publish_registry or self.result_delivered:
         return None
     registry_state = session_registry.PublicationState.from_status(self.status, result_available=self.result_available)
-    # 再開ではbackendの初回公開の後に起動情報を写すため、その変化でも更新する。
+
     launch_info = session_registry.LaunchInfo.of(self)
     if not (
         registry_state != self._published_registry_state
@@ -243,6 +225,7 @@ def _registration_parameters(self: SessionState) -> dict[str, Any] | None:
         else tuple(process for process in (owner, self.executor_process) if process is not None),
         "owner_root_session_id": self.owner_root_session_id,
         "launcher_session_id": self.launcher_session_id,
+        "start_observation": self.start_observation,
     }
 
 

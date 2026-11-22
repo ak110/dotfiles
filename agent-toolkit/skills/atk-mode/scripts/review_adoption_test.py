@@ -1,5 +1,3 @@
-"""`atk run-script review-adoption`の公開入口を通した採否集計の試験。"""
-
 from __future__ import annotations
 
 import argparse
@@ -14,7 +12,7 @@ from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.session_evidence_support import write_jsonl
 
 _ROLE_PROMPT = "出所: /plugin/agent-toolkit/skills/atk-mode/roles/exec-review.subagent.md"
-# 役割文書を`share/`から配送していた移行前の記録の標識。
+
 _LEGACY_ROLE_PROMPT = "出所: /plugin/agent-toolkit/share/exec-review.subagent.md"
 
 
@@ -96,7 +94,7 @@ def _dataset(tmp_path: Path) -> tuple[Path, Path, Path]:
     _claude_review(
         claude / "p/judgments.jsonl", "03-0002_judgments.exec-review.tsv", "claude-opus-5-5", role_prompt=_LEGACY_ROLE_PROMPT
     )
-    # 委譲元の記録にも同じ表の名前が現れるが、役割文書の配送が無いため帰属させない。
+
     write_jsonl(
         claude / "p/main.jsonl",
         [
@@ -130,7 +128,6 @@ def _run(dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str]) -
 
 
 def test_review_adoption_counts_periods_levels_reasons_and_models(dataset, capsys) -> None:
-    """今回と直前の期間ごとに採否・level・不採用理由・モデル別の件数を返し、特定できない表はモデル不明に数える。"""
     events = _run(dataset, capsys)
     periods = {event["period"]: event for event in events if event["kind"] == "review-adoption-period"}
     current = periods["current"]
@@ -223,7 +220,7 @@ def test_review_adoption_finds_request_after_large_preamble_and_ignores_quotes(d
     """依頼文より前の内容が256KiBを超えるCodexの記録へ帰属させ、標識を引用しただけの記録へは帰属させない。"""
     _notes, claude, codex = dataset
     _codex_review(codex / "2026/11/03/rollout-review.jsonl", "03-0001_unknown.exec-review.tsv", preamble_bytes=300 * 1024)
-    # 振り返りの会話など、最初のモデル出力より後ろで標識と表の名前を引用した記録。
+
     write_jsonl(
         claude / "p/quote.jsonl",
         [
@@ -256,3 +253,53 @@ def test_one_review_record_attributes_every_matching_table(dataset, capsys):
     periods = {row["period"]: row for row in _run(dataset, capsys) if row["kind"] == "review-adoption-period"}
     assert not periods["current"]["unknown_model_tables"]
     assert periods["current"]["by_model"]["claude:claude-opus-5-5/high"]["tables"] == 3
+
+
+def test_codex_spawn_attributes_only_the_primary_reviewer(dataset, capsys) -> None:
+    _, _, codex = dataset
+    table = "03-0001_unknown.exec-review.tsv"
+    role_doc = "roles/exec-review.subagent.md"
+
+    def record(session: str, model: str, first_path: str, *, parent: str | None = None, marker: str = "") -> None:
+        source = {"subagent": {"thread_spawn": {"parent_thread_id": parent}}} if parent else "vscode"
+        table_ref = "" if marker else table
+        write_jsonl(
+            codex / f"rollout-{session}.jsonl",
+            [
+                {"type": "session_meta", "payload": {"id": session, "source": source}},
+                {"type": "turn_context", "payload": {"model": model, "effort": "low"}},
+                {
+                    "type": "response_item",
+                    "payload": {"type": "message", "role": "user", "content": marker},
+                },
+                {"type": "response_item", "payload": {"type": "reasoning"}},
+                {
+                    "type": "response_item",
+                    "payload": {"type": "custom_tool_call", "name": "exec", "input": f"cat {first_path}"},
+                },
+                {
+                    "type": "response_item",
+                    "payload": {"type": "function_call", "arguments": f"cat {role_doc}; echo {table_ref}"},
+                },
+            ],
+        )
+
+    record("parent", "codex-parent-model", role_doc)
+    record("review", "codex-primary-model", role_doc, parent="parent")
+    record("support", "codex-support-model", role_doc, parent="review")
+    record("other", "codex-other-model", "roles/exec.subagent.md", parent="parent")
+    record("other-path", "codex-other-path-model", "/plugin/notroles/exec-review.subagent.md", parent="parent")
+    record("orphan", "codex-orphan-model", role_doc, parent="missing")
+    record("explicit-review", "", role_doc, marker=_ROLE_PROMPT)
+    record("explicit-support", "codex-explicit-support-model", role_doc, parent="explicit-review")
+    current = next(
+        event for event in _run(dataset, capsys) if event["kind"] == "review-adoption-period" and event["period"] == "current"
+    )
+    models = current["by_model"]
+    assert table not in current["unknown_model_tables"]
+    assert models["codex:codex-primary-model/low"]["tables"] == 1
+    assert not any(
+        f"codex-{name}-model" in identity
+        for identity in models
+        for name in ("parent", "support", "other", "other-path", "orphan", "explicit-support")
+    )

@@ -108,7 +108,6 @@ def _get_claude_options(claude_bin: str, *, run_help: HelpRunner = _run_help) ->
 
 
 def _resolve_executable(name: str, preferred_directories: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
-    """Mise shimを避け、実行名のシンボリックリンクを保持して探索する。"""
     shim_directories = common.mise_shim_directories()
     path_directories = (pathlib.Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry)
     seen: set[pathlib.Path] = set()

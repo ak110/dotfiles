@@ -1,5 +1,3 @@
-"""直接importと探索候補を区別し、根拠付きの利用試験範囲を照合する。"""
-
 import ast
 import hashlib
 import json
@@ -41,7 +39,7 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
     for path in sorted(paths):
         if not (path.stem.endswith("_test") or path.name.startswith("test_")):
             continue
-        # 作業ツリーで削除しただけの試験は実行できず、削除をstageした場合はls-filesに現れないため、同じく候補にしない。
+
         if not path.is_file():
             continue
         body = path.read_text(encoding="utf-8")
@@ -91,7 +89,6 @@ def consumer_tests(root: pathlib.Path, files: list[str]) -> dict[str, Any]:
 
 
 def _module_name(path: pathlib.Path) -> str:
-    """連続するpackageの外側をimport rootとし、同名の別packageを区別する。"""
     parts = [] if path.stem == "__init__" else [path.stem]
     parent = path.parent
     while (parent / "__init__.py").is_file():
@@ -101,7 +98,6 @@ def _module_name(path: pathlib.Path) -> str:
 
 
 def _imported_modules(tree: ast.AST, path: pathlib.Path) -> set[str]:
-    """別名はimport対象を変えない。相対importは試験のpackageから解決する。"""
     modules: set[str] = set()
     package = _module_name(path).split(".")[:-1]
     for node in ast.walk(tree):
@@ -117,7 +113,6 @@ def _imported_modules(tree: ast.AST, path: pathlib.Path) -> set[str]:
 
 
 def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]:
-    """曖昧候補の判断を現行スナップショットへ照合し、確定必須範囲を返す。"""
     candidates = snapshot["candidates"]
     assert isinstance(candidates, list)
     ambiguous = {(item["source"], item["test"]) for item in candidates if not item["required"]}
@@ -147,7 +142,6 @@ def required_tests(snapshot: dict[str, Any], review: object = None) -> list[str]
 
 
 def uncovered_tests(root: pathlib.Path, tests: list[str], targets: list[str]) -> list[str]:
-    """対象省略は全体、ディレクトリ指定は配下を被覆する。"""
     if not targets:
         return []
     root = root.resolve()

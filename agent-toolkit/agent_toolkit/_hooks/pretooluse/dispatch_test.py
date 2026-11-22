@@ -59,7 +59,6 @@ def test_agents_server_pass_uses_host_output_contract(tmp_path: pathlib.Path, ho
     ids=["free-prompt", "save-start", "rereview"],
 )
 def test_continuation_inputs_pass_without_input_warning(tmp_path: pathlib.Path, host: str, tool_input: dict) -> None:
-    """保存済みcwdを持つ対象への自由本文と定型継続は、本文不足の警告を伴わずに通過する。"""
     _write_session_state(
         tmp_path,
         "host-continuation",
@@ -89,7 +88,6 @@ def test_continuation_inputs_pass_without_input_warning(tmp_path: pathlib.Path, 
     ],
 )
 def test_continuation_format_errors_pass_to_tool(tmp_path: pathlib.Path, host: str, operation: str, tool_input: dict) -> None:
-    """入力形式の不成立は追加文脈なしで通過し、原因と次の操作をツールの入力検証へ委ねる。"""
     _write_session_state(
         tmp_path,
         "host-format",
@@ -139,7 +137,6 @@ def test_original_record_access_is_guided_through_shared_pretooluse(
     codex: bool,
     operation: str,
 ) -> None:
-    """両ホストの各公開ツールから、設定ホームと静的な読取を既存の証拠照会へ接続する。"""
     path = _original_record(tmp_path, root_kind, monkeypatch)
     quoted = shlex.quote(str(path))
     commands = {
@@ -207,7 +204,6 @@ def test_non_original_body_access_does_not_receive_record_warning(
     codex: bool,
     operation: str,
 ) -> None:
-    """属性・言及・正式照会・派生物・一般JSONL・未知の入力を原記録参照へ推定しない。"""
     path = _original_record(tmp_path, "claude", monkeypatch)
     quoted = shlex.quote(str(path))
     commands = {

@@ -97,7 +97,6 @@ async def test_orphaned_codex_record_is_taken_over_when_turn_has_ended(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """所有者が不在で`thread/read`が元turnの終了を示す残存記録は、`show`と`send_message`で終了として復元する。"""
     session_id = "01a0f920-43f0-7cb3-b1e6-e06cd9bb7cad"
     _publish_orphaned_codex(monkeypatch, tmp_path, session_id, turn_id)
     async with server_manager.AgentsServerManager(None) as manager:
@@ -131,7 +130,6 @@ def _publish_record_with_processes(
     engine: str,
     processes: tuple[session_registry.ProcessIdentity, ...],
 ) -> None:
-    """所有するagents_serverと委譲先CLIの識別を持つ`running`の記録を、停止処理を経ずに残った形で保存する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         _ORPHANED_SESSION_ID,
@@ -148,11 +146,6 @@ def _publish_record_with_processes(
 async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_path(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有プロセスと委譲先CLIがともに終了した`running`の記録は、次の照会のいずれでも`interrupted`の終了として扱う。
-
-    `atk agents show`は中断を返し、自動再開は終了した子として扱う。
-    MCPの`show`は終了の理由を`error`で返し、`send_message`は拒否せず通常の復元へ進む。
-    """
     _publish_record_with_processes(monkeypatch, tmp_path, engine, (exited_process_identity(), exited_process_identity()))
     record = session_registry.registry_directory() / f"{_ORPHANED_SESSION_ID}.json"
     assert json.loads(record.read_text(encoding="utf-8"))["terminal"] is False
@@ -162,7 +155,7 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
     shown_by_cli = json.loads(capsys.readouterr().out)
     assert shown_by_cli["status"] == "interrupted"
     assert shown_by_cli["error"]["interruptionReason"] == session_registry.OWNER_PROCESSES_EXITED
-    # 照会側の解決は登録簿を書き換えない。
+
     assert json.loads(record.read_text(encoding="utf-8"))["terminal"] is False
 
     async with _manager_with_fake("claude") as (parent_manager, parent_backend):
@@ -200,10 +193,6 @@ async def test_record_whose_owner_and_executor_exited_is_interrupted_on_every_pa
 async def test_record_with_a_live_recorded_process_keeps_running_on_every_path(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """記録したプロセスが1つでも存在する記録は、同じ照会のいずれでも実行中として扱う。
-
-    所有サーバーが終了し委譲先CLIが生存する記録は、所有サーバーを失った実行中として案内を返し、追送は再開せずに拒否する。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     _publish_record_with_processes(monkeypatch, tmp_path, "claude", (exited_process_identity(), owner))
@@ -246,7 +235,6 @@ _NEXT_SERVER = "20261018T120000000000Z-4343-1a1b1c1d"
 
 
 def _record_dead_server_diagnostics(tmp_path: pathlib.Path) -> pathlib.Path:
-    """停止前にSIGTERMを受けた起動単位の終了診断を作成する。"""
     path = logging_config.instance_path(_DEAD_SERVER, tmp_path)
     logging_config.append_instance_event(path, writer="server", event="started", pid=4242)
     logging_config.append_instance_event(path, writer="server", event="signal_received", signal="SIGTERM")
@@ -254,7 +242,6 @@ def _record_dead_server_diagnostics(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _publish_dead_owner_record(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str) -> None:
-    """起動単位を持つ所有者が終了を公開せずに終わった`running`の記録を残し、照会側を別の起動単位にする。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", _DEAD_SERVER)
     session_registry.publish(
@@ -280,7 +267,6 @@ def _cli_show(capsys: pytest.CaptureFixture[str]) -> dict[str, Any]:
 async def test_interrupted_show_references_server_diagnostics(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有者消失の中断を返すMCPの`show`と`atk agents show`は、中断turnを所有した起動単位の終了診断を同じ参照で返す。"""
     diagnostics_path = _record_dead_server_diagnostics(tmp_path)
     _publish_dead_owner_record(monkeypatch, tmp_path, engine)
     expected = {
@@ -309,7 +295,6 @@ async def test_interrupted_show_references_server_diagnostics(
 async def test_interrupted_turn_reference_survives_resume_and_release(
     engine: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """別の起動単位が引き継ぎ・再開・解放した後も、`show`は元の中断turnと元の起動単位の参照を返す。"""
     diagnostics_path = _record_dead_server_diagnostics(tmp_path)
     _publish_dead_owner_record(monkeypatch, tmp_path, engine)
     expected = [{"turn_seq": 2, "interruptionReason": "owner_processes_exited", "server_instance": _DEAD_SERVER}]
@@ -361,7 +346,6 @@ async def test_interrupted_turn_reference_survives_resume_and_release(
 async def test_legacy_interruption_reports_not_collected(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """起動単位を持たない旧記録の中断は`not_collected`を返し、記録が残るが終了を示さない`incomplete`と区別する。"""
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
     _publish_record_with_processes(monkeypatch, tmp_path, "claude", (exited_process_identity(),))
     legacy = _cli_show(capsys)["error"]["diagnostics"]

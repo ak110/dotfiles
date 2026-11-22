@@ -37,7 +37,6 @@ from agent_toolkit._testing.lane_support import _create, _invoke
 def test_integrate_does_not_count_non_writers_or_caller_chain(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """書き込まない担当と呼出元の委譲元の連鎖は、--writer-sessionなしでも統合を止めない。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -68,7 +67,7 @@ def test_integrate_does_not_count_non_writers_or_caller_chain(
     )
 
     assert code == 0 and result["phase"] == "finalized", stderr
-    # 回収側は書込宣言と呼出元の除外を適用せず、レーンworktreeの使用者がいれば資源を保持する。
+
     code, deleted, stderr = _invoke(capsys, "delete")
     assert ("lane-01" in deleted.get("removed", [])) is (case in {"non-writer-role", "explore"}), stderr
 
@@ -85,7 +84,6 @@ def test_integrate_does_not_count_non_writers_or_caller_chain(
 def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """所有者・レーン担当・メインが別sessionでも、初回の全要素指定でGit統合と最終化を完了する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -138,7 +136,6 @@ def test_integrate_first_call_accepts_all_agreed_distinct_sessions(
 def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], spread: bool, no_merge: bool
 ) -> None:
-    """書き込む担当を両worktreeから全件診断し、合意した担当を指定した再実行で統合へ進む。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -151,7 +148,6 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
         "exec-writer": repo,
         "free-writer": worktree if spread else repo,
         "sibling": repo,
-        # 役割文書へ言及するだけの自由本文は、その役割の起動として扱わない。
         "mention": worktree if spread else repo,
     }
     _running("exec-writer", counted["exec-writer"], role="exec")
@@ -161,7 +157,7 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
     _running("agreed", repo, role="exec")
     _running("finished", repo, role="exec", terminal=True)
     _running("elsewhere", nested, role="exec")
-    # 読み取りだけの補助の担当は、役割文書が無くても作業ディレクトリが両worktreeの外なら数えない。
+
     outside = tmp_path / "managed-temp" / "reader"
     outside.mkdir(parents=True)
     _running("outside-reader", outside)
@@ -208,7 +204,6 @@ def test_integrate_reports_all_unowned_writers_then_resumes_with_agreement(
 def test_integrate_rejects_unresolvable_registration(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """解決できない担当登録は許可扱いにせず統合を拒否する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     _caller(monkeypatch)
@@ -236,7 +231,6 @@ def test_integrate_rejects_unresolvable_registration(
 def test_integrate_passes_confirmed_values_to_every_consumer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], no_merge: bool
 ) -> None:
-    """計画2件の保存とAWI本文の追記へ、同じ統合後HEAD・完了時刻・稼働秒数を渡す。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -281,7 +275,7 @@ def test_integrate_passes_confirmed_values_to_every_consumer(
     assert git_repository.git_output(repo, "rev-parse", short) == git_repository.git_output(repo, "rev-parse", "HEAD")
     completed = datetime.datetime.fromisoformat(values["completed_at"])
     assert completed.tzinfo is not None
-    # 完了時刻は秒精度で表示するため、開始時刻からの経過との差は1秒未満の切り捨て分に限る。
+
     assert abs(int(values["lane_seconds"]) - (completed - started).total_seconds()) <= 1
     assert int(values["lane_seconds"]) >= 100
     expected = f"{short} {values['completed_at']} {values['lane_seconds']}"

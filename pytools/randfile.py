@@ -12,18 +12,16 @@ import pathlib
 import secrets
 import sys
 
-# 生成経路だけで進捗表示を必要とする。
 lazy import tqdm
 
 from pytools._internal.cli import enable_completion
 
 logger = logging.getLogger(__name__)
 
-_CHUNK = 1 << 20  # 1 MiB
+_CHUNK = 1 << 20
 
 
 def main() -> None:
-    """ランダムバイト列のファイルを生成するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ランダムバイトのファイルを生成する")
     parser.add_argument("filename", nargs="?", type=pathlib.Path, default=pathlib.Path("randfile.dat"))
     parser.add_argument("size", nargs="?", type=int, default=1024, help="生成サイズ (バイト)")
@@ -35,7 +33,6 @@ def main() -> None:
 
 
 def create(path: pathlib.Path, size: int, *, force: bool = False) -> None:
-    """指定サイズのランダムバイト列ファイルを生成する。"""
     if path.exists() and not force:
         raise FileExistsError(
             f"出力先ファイルが既に存在します: {path}。"

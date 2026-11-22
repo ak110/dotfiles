@@ -1,5 +1,3 @@
-"""不足を申告した探索の一度の再確認と、正当な差し戻しの公開を確かめる。"""
-
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -34,7 +32,7 @@ async def test_explore_rechecks_preconditions_once(monkeypatch, tmp_path, classi
     async with manager.AgentsServerManager() as owner:
         monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
         monkeypatch.setattr(owner, "_apply_effort", apply)
-        # 所有監視の一度の遷移を、外部backendを代用した状態で観測する。
+
         await owner._advance_child_session_wait(session)  # noqa: SLF001  # pylint: disable=protected-access
     assert len(prompts) == 1
     assert "形式違反と判定したものではない" in prompts[0]

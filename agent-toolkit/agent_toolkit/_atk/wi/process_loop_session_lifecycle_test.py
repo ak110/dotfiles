@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""統括の利用上限からの継続と実子プロセスの回収を検証する。"""
 
 import argparse
 import contextlib
@@ -31,7 +30,6 @@ def test_process_loop_restarts_limited_claude_after_owned_exit(
     host_environ: Callable[[], dict[str, str]],
     hold: bool,
 ) -> None:
-    """StopFailureの公開要求から旧CLIを回収し、同じIDの実CLIで仕事を続行する。"""
     api = tmp_path / "payg.env"
     api.write_text("ANTHROPIC_API_KEY=test-key\nANTHROPIC_BASE_URL=https://payg.example.test\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
@@ -108,7 +106,6 @@ def test_codex_usage_limit_child_continues_next_iteration(
     resume: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """実子の上限停止だけを親が終了し、新turn開始後の子は自身の正常終了まで保持する。"""
     binary = tmp_path / "codex"
     marker = tmp_path / "completed"
     binary.write_text(
@@ -252,7 +249,6 @@ def test_cli_exception_reclaims_known_descendants(tmp_path, monkeypatch, host_en
 def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest, site: str
 ) -> None:
-    """統括CLIを止める4箇所のいずれでも、回収できなかった子孫を診断ログだけで済ませず呼び出し元へ渡す。"""
     owned = contextlib.ExitStack()
     request.addfinalizer(owned.close)
     survivor = owned.enter_context(late_descendant.held_process(tmp_path))

@@ -23,7 +23,6 @@ _block_notice = block_formatter("response-language")
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """本文を取得できる初回停止だけを判定し、再帰的な遮断を避ける。"""
     try:
         payload = json.loads(payload_text)
     except ValueError, TypeError:

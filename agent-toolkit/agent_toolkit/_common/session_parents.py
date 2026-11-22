@@ -26,8 +26,6 @@ import typing
 
 @dataclasses.dataclass(frozen=True)
 class ParentSource:
-    """親子付けに使う一覧の項目1件の値。"""
-
     path: str
     engine: str
     session_id: str
@@ -91,11 +89,6 @@ def limit_with_ancestors[T](
     path_of: typing.Callable[[T], str | None],
     parent_of: typing.Callable[[T], str | None],
 ) -> list[T]:
-    """並び順の先頭から`limit`件を残し、残した項目の祖先が外れていれば戻した一覧を返す。
-
-    件数上限で古い親が外れると、その子が親を持たない項目として第1階層へ並ぶ。
-    上限を超えるのは戻した祖先の件数に限り、戻した祖先は残した項目の後ろへ入力の順で並べる。
-    """
     kept = list(ordered[:limit])
     by_path = {path: item for item in ordered if (path := path_of(item)) is not None}
     kept_paths = {path for item in kept if (path := path_of(item)) is not None}

@@ -1,5 +1,3 @@
-"""解放要求の配送と所有・終了の再検収を確かめる。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -126,11 +124,6 @@ async def test_release_request_rechecks_owner_and_turn_and_preserves_failures(tm
 async def test_response_racing_legacy_requester_cleanup_is_not_left_behind(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧senderが応答の公開中に後始末を終えても、両者の終了後に応答だけが残らない。
-
-    2026-11-19のCI（run 44582845525）で、レーン再利用の解放後に応答だけが残った競合を固定する。
-    要求の削除は所有側が応答の公開に入るまで待ち、応答の公開は要求側が応答の削除を終えるまで待つ。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -192,10 +185,6 @@ async def test_response_racing_legacy_requester_cleanup_is_not_left_behind(
 async def test_transient_sharing_denial_does_not_override_release_result(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failing: bool
 ) -> None:
-    """確定結果の読取を一時的に拒否されても、所有側の成功または具体的な失敗理由を呼出側へ返す。
-
-    要求側を応答の最初の読取の直前で止め、所有側が解放と応答の公開を終えてから読ませる。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -254,10 +243,6 @@ async def test_transient_sharing_denial_does_not_override_release_result(
 async def test_persistent_read_denial_is_reported_with_path_and_error(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """読取拒否が期限まで続けば、確定とは扱わず、読めなかったパスとOSエラーを報告して結果を残す。
-
-    所有側は要求の公開の直後に応答を公開し終え、要求側の期限は模擬した時計で進めて実時間に依らせない。
-    """
     owner = session_registry.owner_process()
     assert owner is not None
     session_registry.publish(
@@ -367,7 +352,6 @@ async def test_response_during_registry_write_does_not_delay_release_of_other_se
 async def test_process_requests_rejects_nested_worktree_cwd(
     tmp_path: pathlib.Path, registered_paths: bool, nested: bool
 ) -> None:
-    """新要求は最内側の所属で判定し、登録集合を持たない旧要求も受理できる。"""
     owner = session_registry.owner_process()
     assert owner is not None
     cwd = tmp_path / "nested" if nested else tmp_path

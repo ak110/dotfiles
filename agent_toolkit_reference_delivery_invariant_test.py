@@ -1,5 +1,3 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
 import ast
@@ -10,7 +8,6 @@ from _test_helpers import _PLUGIN_PREFIX, _tracked_source_paths, resolve_plugin_
 
 
 def test_session_state_design_reference_reaches_local_development_rule() -> None:
-    """配布実装の開発用docstringから、実在するローカル規約の設計節に到達する。"""
     root = pathlib.Path(__file__).resolve().parent
     source = root / "agent-toolkit/agent_toolkit/_common/session_state.py"
     docstring = ast.get_docstring(ast.parse(source.read_text(encoding="utf-8")))
@@ -23,7 +20,6 @@ def test_session_state_design_reference_reaches_local_development_rule() -> None
 
 
 def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
-    """all-repos統括から候補を受け取るリポジトリ担当を、入口と役割文書の両方から受渡しの節へ接続する。"""
     root = pathlib.Path(__file__).resolve().parent
     atk_mode = root / "agent-toolkit/skills/atk-mode"
     handoff = atk_mode / "playbooks/process-wi-all-repos.md"
@@ -39,7 +35,6 @@ def test_all_repos_recipient_condition_reaches_candidate_handoff() -> None:
 
 
 def _plugin_documents(root: pathlib.Path) -> list[pathlib.Path]:
-    """配布する2つのプラグインの追跡中のMarkdownを返す。"""
     return [
         root / path
         for path in _tracked_source_paths(root, frozenset({".md"}))
@@ -52,7 +47,6 @@ _FENCE = re.compile(r"^\s*(`{3,}|~{3,})")
 
 
 def _escaping_relative_references(source: pathlib.Path) -> list[str]:
-    """`../`で始まる相対パスのうち、文書を所有するプラグインのrootの外を指すものを返す。コードフェンスの内側は例示として除く。"""
     owner = next((parent for parent in source.parents if (parent / ".claude-plugin/plugin.json").is_file()), None)
     if owner is None:
         return []
@@ -75,11 +69,6 @@ def _escaping_relative_references(source: pathlib.Path) -> list[str]:
 
 
 def test_plugin_relative_references_stay_inside_owner_plugin() -> None:
-    """プラグイン文書の相対パスは所有プラグインのrootの中を指す。
-
-    リポジトリではagent-toolkitとagent-basicsが隣り合うが、配布キャッシュでは版ごとの別ディレクトリに置かれるため、
-    rootの外を指す相対パスは配布物で届かない。別のプラグインの資料は`agent-basics:<スキル>/<パス>`の論理名で書く。
-    """
     root = pathlib.Path(__file__).resolve().parent
     documents = _plugin_documents(root)
     assert any(path.is_relative_to(root / "agent-basics") for path in documents)
@@ -88,7 +77,6 @@ def test_plugin_relative_references_stay_inside_owner_plugin() -> None:
 
 
 def test_escaping_relative_reference_is_reported(tmp_path: pathlib.Path) -> None:
-    """rootの外を指す相対パスだけを報告し、root内の相対パスとコードフェンス内の例示は報告しない。"""
     plugin = tmp_path / _PLUGIN_PREFIX
     (plugin / ".claude-plugin").mkdir(parents=True)
     (plugin / ".claude-plugin/plugin.json").write_text("{}", encoding="utf-8")

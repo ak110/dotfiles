@@ -18,7 +18,6 @@ from agent_toolkit._testing import cli_examples
 
 
 def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixture[str]) -> None:
-    """実際のMCP登録とCLI登録を公開ヘルプから見つけられる。"""
     source = pathlib.Path(__file__).parent / "_agents_server" / "mcp_tools.py"
     tree = ast.parse(source.read_text(encoding="utf-8"))
     registered = {
@@ -42,7 +41,6 @@ def test_agents_help_matches_mcp_and_cli_operations(capsys: pytest.CaptureFixtur
 def test_info_reports_current_environment_without_creating_config(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """診断値の出所と未作成の設定を表示し、状態を変更しない。"""
     monkeypatch.chdir(tmp_path)
     config = tmp_path / "config.json"
     monkeypatch.setattr(atk._config_cmd, "_config_file_path", lambda: config)  # pylint: disable=protected-access
@@ -104,7 +102,6 @@ def test_every_command_describes_purpose_scene_effect_precondition_and_recovery(
 
 
 def test_help_examples_match_real_command_parsers() -> None:
-    """ヘルプの実物に書かれた引数名・必須指定・選択肢を実parserへ渡す。"""
     parsers: dict[str, argparse.ArgumentParser] = {}
     for command, parser, _summary in _walk_commands():
         assert parser.epilog is not None
@@ -113,7 +110,6 @@ def test_help_examples_match_real_command_parsers() -> None:
 
 
 def test_help_example_invalid_inputs_are_detected(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ヘルプ実物の不正な選択肢・未知オプション・必須値の欠落を実parserで検出する。"""
     for epilog in (
         "実行例:\n\n  atk wi list --type unsupported-choice",
         "実行例:\n\n  atk agents show session-1 --unknown-option 16000",
@@ -135,7 +131,6 @@ def test_help_example_invalid_inputs_are_detected(monkeypatch: pytest.MonkeyPatc
 def test_extra_positionals_report_the_accepted_positionals(
     argv: list[str], expected: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """余剰位置引数の原因と受理形式を、配置修正と区別して返す。"""
     with pytest.raises(SystemExit) as rejected:
         atk._build_parser().parse_args(argv)  # pylint: disable=protected-access
     assert rejected.value.code == 2
@@ -204,7 +199,6 @@ def test_help_sections_and_builtin_help_are_japanese() -> None:
 
 
 def _sample_value(action: argparse.Action) -> str:
-    """引数が受理する値の例を返す。整数を返す独自の型変換（`review-table`の`--row-id`など）にも整数を渡す。"""
     if action.choices:
         return str(next(iter(action.choices)))
     returns_int = getattr(action.type, "__annotations__", {}).get("return") in (int, "int")
@@ -267,14 +261,12 @@ def test_every_subcommand_rejects_unsupported_argument_with_accepted_options(
 
 
 def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.CaptureFixture[str]) -> None:
-    """固定位置引数の後にある登録済みフラグをコマンド木全体で受理する。"""
     checked = 0
     for command, parser, _summary in _walk_commands():
         if command == "atk":
             continue
         arguments, target = _required_arguments(parser)
         if any(isinstance(action, argparse._SubParsersAction) for action in target._actions):  # pylint: disable=protected-access
-            # サブコマンド名の誤りで先に拒否される入力は、余剰引数の診断へ到達しない。
             continue
         flags = [
             name
@@ -290,7 +282,7 @@ def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.Captu
                 arguments.append(_sample_value(action))
         parsed = parser.parse_args([*arguments, "--", flags[0]])
         assert not capsys.readouterr().err
-        # 可変個の位置引数とREMAINDERが消費する文字列は従来の意味を保つ。
+
         if not any(action.nargs in ("*", "+", argparse.REMAINDER) for action in target._actions):  # pylint: disable=protected-access
             expected = parser.parse_args([*arguments, flags[0]])
             assert vars(parsed) == vars(expected), command
@@ -303,7 +295,6 @@ def test_subcommand_trailing_options_use_registered_actions(capsys: pytest.Captu
 
 
 def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.CaptureFixture[str]) -> None:
-    """位置引数と子へ渡す引数は、登録名と同じ綴りでも移動させない。"""
     parser = atk._build_parser()  # pylint: disable=protected-access
     assert parser.parse_args(["agents", "show", "--", "--max-bytes"]).session_id == "--max-bytes"
     parsed = parser.parse_args(["run-script", "writing-check-dash", "--", "--max-bytes", "100"])
@@ -320,7 +311,6 @@ def test_consumed_and_forwarded_options_keep_their_meaning(capsys: pytest.Captur
 
 # test-copy-contract: 実argvのinfo -- --helpをparserへ渡し、後置helpの受理・終了0・stdout表示・stderrなしを検査する。
 def test_separator_before_help_displays_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """位置引数を取らないコマンドは後置したhelpでも正常に案内する。"""
     with pytest.raises(SystemExit) as accepted:
         atk._build_parser().parse_args(["info", "--", "--help"])  # pylint: disable=protected-access
     assert accepted.value.code == 0
@@ -330,7 +320,6 @@ def test_separator_before_help_displays_help(capsys: pytest.CaptureFixture[str])
 
 
 def test_trailing_options_preserve_repeatable_arguments_and_supplied_namespace() -> None:
-    """再解析でも既に指定したappend値と呼び出し元のnamespaceを保つ。"""
     parser = _atk_help.GuidedSubcommandParser()
     parser.add_argument("path")
     parser.add_argument("--tag", action="append")
@@ -398,7 +387,6 @@ def test_agents_wait_help_states_own_limit_and_standalone_invocation(
     [(["fb-001.md"], False), (["fb-001.md", "fb-002.md"], True), (["--all"], True)],
 )
 def test_output_saving_preserves_cli_body(tmp_path, monkeypatch, capsys, filenames, saved) -> None:
-    """単発は直接表示し、一括取得は短い本文でも全量を保存して所在を表示する。"""
     output_directory = tmp_path / "output"
     output_directory.mkdir()
     body = "取得した本文\n日本語の次行\n"
@@ -430,11 +418,6 @@ def test_output_saving_preserves_cli_body(tmp_path, monkeypatch, capsys, filenam
 
 
 def _leaf_commands() -> set[str]:
-    """それ自体を実行できるコマンドを返す。
-
-    サブコマンドを持つ場合も、そのサブコマンドが必須でなければそのコマンド自体を実行できるため、
-    結果行の区分を要するコマンドとして数える。
-    """
     leaves: set[str] = set()
     for command, parser, _summary in _walk_commands():
         subparsers = [
@@ -442,8 +425,7 @@ def _leaf_commands() -> set[str]:
             for action in parser._actions  # pylint: disable=protected-access
             if isinstance(action, argparse._SubParsersAction)  # pylint: disable=protected-access
         ]
-        # サブコマンドを持つ場合でも、省略時に自身を実行するコマンドは結果行の区分を要する。
-        # サブコマンドが必須であるか、省略時に一覧を表示して終わるコマンドは自身を実行しない。
+
         shows_help_when_missing = parser.get_default("_help_parser") is not None
         requires_subcommand = any(action.required for action in subparsers)
         if subparsers and (requires_subcommand or shows_help_when_missing):
@@ -453,10 +435,6 @@ def _leaf_commands() -> set[str]:
 
 
 def test_every_leaf_command_belongs_to_one_result_kind() -> None:
-    """全リーフサブコマンドが結果行の区分のいずれか1つへ属する。
-
-    区分の対応が無いリーフを追加すると、そのコマンドの成否を結果行の先頭の語で確定できなくなる。
-    """
     classified = (
         _outcome.STATE_CHANGE_COMMANDS
         | _outcome.VALUE_OUTPUT_COMMANDS
@@ -470,7 +448,6 @@ def test_every_leaf_command_belongs_to_one_result_kind() -> None:
 
 
 def test_result_kinds_do_not_overlap() -> None:
-    """同じリーフサブコマンドが複数の区分へ属さない。"""
     groups = (
         _outcome.STATE_CHANGE_COMMANDS,
         _outcome.VALUE_OUTPUT_COMMANDS,
@@ -485,7 +462,6 @@ def test_result_kinds_do_not_overlap() -> None:
 def test_lane_integrate_help_has_no_resource_side_effects(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合操作のヘルプを所有登録やGit照会なしで利用できる。"""
     monkeypatch.chdir(tmp_path)
     before = set(tmp_path.rglob("*"))
     with pytest.raises(SystemExit) as ended:
@@ -498,7 +474,6 @@ def test_lane_integrate_help_has_no_resource_side_effects(
 def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """初回・再開の案内が所有sessionと現在の書込担当全件を区別し、複数IDを実parserへ渡せる。"""
     with pytest.raises(SystemExit, match="0"):
         atk.main(["lane", "integrate", "--help"])
     output = capsys.readouterr()
@@ -515,7 +490,6 @@ def test_lane_integrate_help_passes_complete_writer_set_initially_and_on_resume(
 
 
 def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
-    """一括操作を受理する状態遷移コマンドが`rm`と同じフィルター系引数を持つ。"""
     commands = {name: parser for name, parser, _summary in _walk_commands()}
     # `--state`は`return-to-inbox`が差し戻し元の指定に使う綴りと重なるため、このテストの期待集合から除く。
     # フィルターの綴りの別名は`listing_test.py`が検証する。
@@ -533,7 +507,6 @@ def test_bulk_transition_commands_accept_the_same_filter_options() -> None:
 def test_check_alerts_help_exposes_finite_operation_without_saving(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開ヘルプから単発形式へ到達でき、対象解決や保存は発生しない。"""
     monkeypatch.chdir(tmp_path)
     before = set(tmp_path.rglob("*"))
     with pytest.raises(SystemExit) as parent_exit:

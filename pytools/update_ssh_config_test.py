@@ -1,5 +1,3 @@
-"""update_ssh_configモジュールのテスト。"""
-
 import sys
 from pathlib import Path
 
@@ -14,7 +12,6 @@ from pytools._internal import post_apply_outcome
 def test_main_rejects_nondefault_arguments_before_ssh_update(
     argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    """確認引数と未知引数ではSSHファイルを更新しない。"""
     config = tmp_path / "config"
     config.write_text("before\n", encoding="utf-8")
 
@@ -38,7 +35,6 @@ def test_main_rejects_nondefault_arguments_before_ssh_update(
 
 
 def test_main_without_arguments_updates_ssh_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    """引数なしの公開された起動コマンドは既存の更新処理を実行する。"""
     called = False
 
     def run() -> post_apply_outcome.PostApplyOutcome:
@@ -97,7 +93,6 @@ def test_public_update_adds_only_key_lines(tmp_path: Path, monkeypatch: pytest.M
 
 @pytest.mark.parametrize("content", ["text", "text\n", "", "text\n\n"])
 def test_public_update_preserves_config_newline_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: str) -> None:
-    """公開コマンドはconf.d本文を末尾改行付きで結合する。"""
     ssh_dir = tmp_path / ".ssh"
     (ssh_dir / "conf.d").mkdir(parents=True)
     (ssh_dir / "conf.d" / "example.conf").write_text(content, encoding="utf-8")
@@ -173,8 +168,6 @@ def test_public_update_keeps_config_backup_and_does_not_rewrite_unchanged_keys(
 
 
 class TestAtomicWriteText:
-    """common.atomic_write_text のテスト (update_ssh_config で使う機能を中心に確認)。"""
-
     def test_creates_file(self, tmp_path):
         target = tmp_path / "test_file"
         assert _common.atomic_write_text(target, "hello\n") is True
@@ -195,25 +188,23 @@ class TestAtomicWriteText:
     def test_no_leftover_on_success(self, tmp_path):
         target = tmp_path / "test_file"
         _common.atomic_write_text(target, "content\n")
-        # 一時ファイルが残っていないことを確認
+
         files = list(tmp_path.iterdir())
         assert files == [target]
 
 
 class TestGenerateAuthorizedKeys:
-    """authorized_keys生成の結合テスト。"""
-
     def test_merges_keys(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         ssh_dir = tmp_path / ".ssh"
         ssh_dir.mkdir()
         conf_d = ssh_dir / "conf.d"
         conf_d.mkdir()
-        # 既存のauthorized_keys
+
         (ssh_dir / "authorized_keys").write_text(
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExistingKey1234567890abcdefghijklmn existing@host\n",
             encoding="utf-8",
         )
-        # conf.d/authorized_keysに新しい鍵を追加
+
         (conf_d / "authorized_keys").write_text(
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExistingKey1234567890abcdefghijklmn existing@host\n"
             "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINewKeyData9876543210zyxwvutsrqpon new@host\n",
@@ -221,8 +212,9 @@ class TestGenerateAuthorizedKeys:
         )
         _run_public_update(tmp_path, monkeypatch)
         target = ssh_dir / "authorized_keys"
-        lines = [line for line in target.read_text(encoding="utf-8").splitlines() if line.strip()]
-        # 既存1鍵 + 新規1鍵 = 2鍵
+        content = target.read_text(encoding="utf-8")
+        lines = [line for line in content.splitlines() if line.strip()]
+
         assert len(lines) == 2
         assert "existing@host" in lines[0]
         assert "new@host" in lines[1]

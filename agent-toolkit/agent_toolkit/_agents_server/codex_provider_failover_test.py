@@ -22,7 +22,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_turn_start_rejection_keeps_diagnostic_log_for_generic_error(monkeypatch, tmp_path, provider_environment, caplog):
-    """上限中のサブスクリプションを除いた従量課金の拒否は、公開errorへ接続先を出さず診断ログへ残す。"""
     del provider_environment
     caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.codex")
     async with manager.AgentsServerManager() as root:
@@ -60,7 +59,7 @@ async def test_turn_start_rejection_keeps_diagnostic_log_for_generic_error(monke
                     for r in caplog.records
                     if session.session_id in r.getMessage() and "汎用文言" in r.getMessage()
                 ]
-                # 従量課金の候補ごとの拒否が1行ずつ残る。
+
                 assert len(logged) == 2
                 assert "provider=paid-a" in logged[0] and "provider=paid-b" in logged[1]
                 assert all("payg provider refused the turn" in line and "code=-32600" in line for line in logged)

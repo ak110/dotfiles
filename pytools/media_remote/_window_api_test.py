@@ -20,8 +20,6 @@ class _Function:
 
 
 class _Desktop:
-    """API応答を所有し、ウィンドウ位置を実際に更新するテスト境界。"""
-
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.procedures: dict[str, _Function] = {}
@@ -77,7 +75,7 @@ class _Desktop:
                 self.restored = True
                 self.window = (-900, 200, -300, 700)
                 self.title = (-890, 200, -310, 240)
-                return 0  # 以前不可視でも復元の成功を0で返す。
+                return 0
             case "GetWindowRect":
                 for field, value in zip(("left", "top", "right", "bottom"), self.window, strict=True):
                     setattr(ctypes.cast(args[1], ctypes.POINTER(_window_api.Rect)).contents, field, value)
@@ -183,17 +181,17 @@ def test_registered_callbacks_keep_pointer_width_and_pass_unhandled_input(deskto
         data.flags = 1
         assert system.mouse(0, 0x207, address) == 0x123456789
         data.flags = 0
-        # 右押下、サイドボタン押下と縦横のホイールは、選択を解除する通常操作として配送する。
+
         for message in (0x204, 0x20B, 0x20A, 0x20E):
             assert system.mouse(0, message, address) == 0x123456789
-        assert system.mouse(0, 0x200, address) == 0x123456789  # カーソル移動は配送しない。
+        assert system.mouse(0, 0x200, address) == 0x123456789
         system.window_event(0x123456782, 3, 0x123456799, 0, 0, 1, 93)
         system.window_event(0x123456782, 3, 0x123456799, -4, 0, 1, 93)
         key = _window_api.KeyboardInput(vkCode=0x41)
         key_address = ctypes.addressof(key)
         assert system.key(0, 0x0104, key_address) == 0x123456789
         assert system.key(-1, 0x0104, key_address) == 0x123456789
-        key.flags = 0x10  # serveが送出するメディアキーなどの注入入力。
+        key.flags = 0x10
         assert system.key(0, 0x0100, key_address) == 0x123456789
 
     system.dispatch = dispatch

@@ -131,8 +131,6 @@ class FakeClaudeClient:
 
 
 class QueueClaudeClient(FakeClaudeClient):
-    """queryと背景イベントが同じ長命なSDK受信列へ入るクライアント。"""
-
     def __init__(self, streams: list[list[Any]]) -> None:
         super().__init__(streams)
         self.messages: asyncio.Queue[Any] = asyncio.Queue()
@@ -159,8 +157,6 @@ class QueueClaudeClient(FakeClaudeClient):
 
 
 class DelayedClaudeClient(FakeClaudeClient):
-    """init後の各メッセージを、試験側の観測と解放に合わせて供給する。"""
-
     def __init__(self, streams):
         super().__init__(streams)
         self.requested: asyncio.Queue[int] = asyncio.Queue()
@@ -185,8 +181,6 @@ class DelayedClaudeClient(FakeClaudeClient):
 
 
 class OpenStreamClaudeClient(FakeClaudeClient):
-    """指定したメッセージを返した後、結果を返さずにstreamを開いたまま保つ偽クライアント。"""
-
     def receive_messages(self):
         messages = self.streams.pop(0)
 
@@ -199,8 +193,6 @@ class OpenStreamClaudeClient(FakeClaudeClient):
 
 
 class InterruptAwareClaudeClient(FakeClaudeClient):
-    """interruptの受理後に中断結果を返す偽クライアント。"""
-
     def __init__(self) -> None:
         super().__init__([[SystemMessage("claude-interrupted")]])
         self.interrupt_event = asyncio.Event()
@@ -222,8 +214,6 @@ class InterruptAwareClaudeClient(FakeClaudeClient):
 
 
 class FailingClaudeClient(FakeClaudeClient):
-    """init後にmessage stream例外を発生させる偽クライアント。"""
-
     def receive_messages(self):
         async def stream():
             yield SystemMessage("claude-failed")
@@ -251,8 +241,6 @@ class SynchronizedFailingClaudeClient(FakeClaudeClient):
 
 
 class BlockingContinuationClaudeClient(FakeClaudeClient):
-    """継続入力のqueryを停止して所有タスクの取り消しを再現する偽クライアント。"""
-
     def __init__(self) -> None:
         super().__init__([[SystemMessage("claude-blocking")]])
         self.message_waiting = asyncio.Event()
@@ -278,8 +266,6 @@ class BlockingContinuationClaudeClient(FakeClaudeClient):
 
 
 class BlockingResumeClaudeClient(FakeClaudeClient):
-    """resumeの最初のqueryを記録前に保留する偽クライアント。"""
-
     def __init__(self) -> None:
         super().__init__([])
         self.query_started = asyncio.Event()
@@ -322,8 +308,6 @@ async def _blocking_resume_claude_manager(
 
 
 class BlockingResultClaudeClient(FakeClaudeClient):
-    """init後の結果を明示イベントまで保留する偽クライアント。"""
-
     def __init__(self, session_id: str) -> None:
         super().__init__([])
         self.session_id = session_id
@@ -370,7 +354,6 @@ def _rate_limit_event(status: str, limit_type: str | None, resets_at: int | None
 
 
 def _usage_limit_result(text: str = "You've hit your limit", api_error_status: int = 429) -> ResultMessage:
-    """利用上限で拒否されたturnの`ResultMessage`。"""
     return ResultMessage(text, is_error=True, api_error_status=api_error_status)
 
 

@@ -95,7 +95,6 @@ def test_windows_visible_native_survives_separate_config_home(monkeypatch, tmp_p
     ],
 )
 def test_windows_owned_path_namespace_comparison(monkeypatch, module, selected: str, root: str, owned: bool) -> None:
-    """公開選択・版確認で拡張パスとUNCを扱い、外向きの本体を実行しない。"""
     # Python3.15.2/Windowsのreadlinkが拡張パス、releases.resolveが通常パスを返した観測を再現する。
     # OSの字句・属性APIだけを代用し、製品の選択・境界比較とHerdrの版確認経路を通す。
     home = PureWindowsPath(root).parent
@@ -150,7 +149,6 @@ def test_windows_owned_path_namespace_comparison(monkeypatch, module, selected: 
 
 @pytest.mark.parametrize("layout", ["directory-bin", "directory-root", "link-bin"])
 def test_owned_current_layout_selects_native(monkeypatch, tmp_path: Path, layout: str) -> None:
-    """旧current実体と、別名参照を拒否されるcurrentリンクの両方から本体を選ぶ。"""
     _isolate(monkeypatch, tmp_path, "win32")
     root = tmp_path / ".codex/packages/standalone"
     current = root / "current"
@@ -563,7 +561,6 @@ def test_public_install_keeps_native_package_and_official_launcher(
             if not visible.exists():
                 visible.parent.mkdir(parents=True, exist_ok=True)
                 if windows:
-                    # install.ps1のEnsure-Junctionが公開する、package binと同じ実体を再現する。
                     visible.symlink_to(native.parent, target_is_directory=True)
                 else:
                     visible.mkdir()

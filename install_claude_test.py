@@ -15,7 +15,6 @@ from _test_helpers import raw_base_url_fixture as _raw_base_url_fixture  # noqa:
 
 @pytest.mark.parametrize("kind", installer_runners())
 def test_basics_only_preserves_rules_and_home_operations(kind: str, tmp_path: pathlib.Path) -> None:
-    """公開bootstrapの単独導入は既存規範とatkを保持し、uv・download・MCPを要求しない。"""
     home = tmp_path / "home[standalone]"
     home.mkdir()
     kept = {
@@ -95,7 +94,6 @@ def _run_powershell_function_probe(
     function_names: list[str],
     body: str,
 ) -> subprocess.CompletedProcess[str]:
-    """インストーラーから指定関数だけを読み込み、分離したprobeで実行する。"""
     source_path = str(INSTALL_PS1).replace("'", "''")
     names = json.dumps(function_names).replace("'", "''")
     probe = tmp_path / "probe.ps1"
@@ -174,7 +172,6 @@ def test_bash_atk_wrapper_selects_latest_natural_version(
     cached_versions: tuple[tuple[str, str], ...],
     expected_version: str,
 ) -> None:
-    """生成するBashラッパーは複数版から自然順で最新実体を選択する。"""
     source = INSTALL_SH.read_text(encoding="utf-8")
     match = re.search(r"cat >\"\$wrapper\" <<'EOF'\n(?P<body>.*?)\nEOF", source, re.DOTALL)
     assert match is not None

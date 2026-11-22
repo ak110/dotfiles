@@ -11,6 +11,7 @@ rem ----------------------------------------------------------------------------
 rem 123456789012345
 rem x
 call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"
+if defined UPDATE_DOTFILES_BOOTSTRAP_REPORT if exist "%UPDATE_DOTFILES_BOOTSTRAP_REPORT%" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -ReportOnly
 for %%A in (%*) do if "%%~A"=="--prune" set "PRUNE_REQUESTED=1"
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" set "PRUNE_REQUESTED=0"
 rem 引数とパス内の!を保つため、uv実行と引数走査の後で遅延展開を有効にする。
@@ -70,8 +71,13 @@ goto run
 for %%A in (%*) do for %%H in (-h --help) do if "%%~A"=="%%H" goto normal
 set "UPDATE_PYTHON="
 for /f "delims=" %%P in ('powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -PrepareOnly -PrintPython') do set "UPDATE_PYTHON=%%P"
-if not defined UPDATE_PYTHON exit /b 1
+if not defined UPDATE_PYTHON (
+    if defined UPDATE_DOTFILES_BOOTSTRAP_REPORT if exist "%UPDATE_DOTFILES_BOOTSTRAP_REPORT%" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -ReportOnly
+    exit /b 1
+)
 (
 "%UPDATE_PYTHON%" "%SCRIPT_DIR%\libexec\update_dotfiles_job.py" %*
-call exit /b %%ERRORLEVEL%%
+call set "UPDATE_DOTFILES_EXIT=%%ERRORLEVEL%%"
+if defined UPDATE_DOTFILES_BOOTSTRAP_REPORT if exist "%UPDATE_DOTFILES_BOOTSTRAP_REPORT%" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\libexec\update_bootstrap.ps1" "%UV%" -ReportOnly
+call exit /b %%UPDATE_DOTFILES_EXIT%%
 )

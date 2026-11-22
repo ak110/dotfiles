@@ -1,5 +1,3 @@
-"""計画の変更履歴と進捗ログの検査。"""
-
 from __future__ import annotations
 
 from agent_toolkit._common.next_action import ActionableError
@@ -44,11 +42,6 @@ def _check_history_section(
     allow_legacy_review_ids: bool = False,
     allow_legacy_review_tracks: bool = False,
 ) -> list[str]:
-    """`## 変更履歴`の表が固定された書式を満たすか確かめる。
-
-    ``allow_legacy_review_ids`` は旧単一ファイルの ``C-`` IDを許可し、
-    ``allow_legacy_review_tracks`` は旧二ファイル計画に残るIDと系統名を読み取り専用で受理する。
-    """
     if history_index is None:
         return []
     start, end = heading_subtree_range(headings, history_index)
@@ -70,7 +63,6 @@ def _check_history_section(
 def _check_human_history_section(
     headings: list[PlanHeading], history_index: int | None, content: str, *, require_user_event: bool = False
 ) -> list[str]:
-    """新規書式の変更履歴（自然な見出しと逐語入力）が基準を満たすか確かめる。"""
     if history_index is None:
         return []
     start, end = heading_subtree_range(headings, history_index)
@@ -138,7 +130,6 @@ def _check_human_history_section(
 
 
 def has_legacy_history_user_event(content: str) -> bool:
-    """`## 変更履歴`に要旨を書く旧書式のユーザー発言見出しがある場合に真を返す。"""
     headings = extract_headings(content)
     history_index = find_heading_index(headings, 2, PLAN_H2_HISTORY)
     if history_index is None:
@@ -150,7 +141,6 @@ def has_legacy_history_user_event(content: str) -> bool:
 
 
 def has_progress_log_rows(content: str) -> bool:
-    """`## 進捗ログ`の固定表に内容行がある場合に真を返す。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     progress_index = find_heading_index(headings, 2, PLAN_H2_PROGRESS)
@@ -198,7 +188,6 @@ def progress_log_rows(content: str) -> list[tuple[str, str, str]]:
 
 
 def _check_progress_section(body: list[tuple[int, str]], headings: list[PlanHeading], progress_index: int | None) -> list[str]:
-    """`## 進捗ログ`の表が固定された書式を満たすか確かめる。"""
     if progress_index is None:
         return []
     start, end = heading_subtree_range(headings, progress_index)

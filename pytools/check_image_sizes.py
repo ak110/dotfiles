@@ -1,12 +1,10 @@
 # PYTHON_ARGCOMPLETE_OK
-"""指定フォルダ内の画像ファイルのサイズの分布を調べるスクリプト。"""
 
 import argparse
 import logging
 import pathlib
 import sys
 
-# ヘルプ・補完では画像処理を行わない。
 lazy import numpy as np
 lazy import tqdm
 lazy from bashplotlib.histogram import plot_hist
@@ -18,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """フォルダ内画像ファイルのサイズ分布を調べるエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("target_dir", type=pathlib.Path)
     enable_completion(parser)

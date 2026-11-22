@@ -22,7 +22,6 @@ from agent_toolkit._common import (
 
 
 def _actor_session(environment: Mapping[str, str], state_root: pathlib.Path | None) -> str | None:
-    """会話IDを渡さないCLIでは、同じルート内の最も近い実行祖先から本人を確定する。"""
     actor = delegated_session.current_conversation_session_id(environment)
     if actor:
         return actor
@@ -54,7 +53,6 @@ def _actor_session(environment: Mapping[str, str], state_root: pathlib.Path | No
 
 
 def authorized(actor: str, target: str, payload: Mapping[str, Any]) -> bool:
-    """自身と、登録済みの直接親だけを許可する。"""
     return actor == target or actor == payload.get(session_registry.LAUNCHER_KEY)
 
 
@@ -132,7 +130,6 @@ def request(
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
-    """この所有プロセスへ宛てた未応答の要求だけを読む。"""
     owner = session_registry.owner_process()
     if owner is None:
         return []
@@ -148,7 +145,6 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
             if not isinstance(identifier, str) or not session_layout.valid_session_id(identifier):
                 continue
             session_registry.ProcessIdentity.parse(payload.get("owner"))
-            # 登録簿の置換は原子的。各要求の確認で別プロセスの書込終了を待たない。
             record = json.loads((path.parent / f"{identifier}.json").read_text(encoding="utf-8"))
             if not isinstance(record, dict):
                 continue
@@ -167,5 +163,4 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
 
 
 def respond(path: pathlib.Path, response: dict[str, Any]) -> None:
-    """同じ要求IDに対する結果を確定する。"""
     registry_requests.respond(path, path.with_suffix(".effort-response"), response)

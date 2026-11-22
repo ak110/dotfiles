@@ -1,5 +1,3 @@
-"""規範の自作の例と説明が、通常の語の判定へ渡せることを検証する。"""
-
 import pathlib
 
 import check_agent_doc_tone

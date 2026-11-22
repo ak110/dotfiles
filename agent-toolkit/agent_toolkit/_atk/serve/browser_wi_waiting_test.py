@@ -1,5 +1,3 @@
-"""判断待ちの連続確認を実ブラウザーとWI APIで検証する。"""
-
 import asyncio
 import pathlib
 
@@ -38,7 +36,6 @@ def _question(root: pathlib.Path, filename: str, *, important: bool = False, rep
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_harness: _BrowserHarness) -> None:
-    """重要順の確認からページ横断・明示保存・最後の見送りまで標準キーで操作できる。"""
     harness = browser_harness
     names = [f"20200101-000000-{index:03d}.md" for index in range(101)]
     for index, name in enumerate(names):
@@ -64,7 +61,7 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
     await page.get_by_role("button", name="保存せず次へ", exact=True).click()
     await playwright.async_api.expect(page.locator("#detail-filename")).to_have_text(names[100])
     await playwright.async_api.expect(page.locator("#waiting-progress")).to_contain_text("101 / 102")
-    # fixtureの既存UWIも判断待ち集合へ含まれるため、repo限定で最後の1件を観測する。
+
     await page.keyboard.press("Escape")
     await page.get_by_label("判断待ちのtarget-repo", exact=True).select_option("github.com/example/b")
     await playwright.async_api.expect(page.locator(".entry-select")).to_have_count(50)
@@ -79,7 +76,6 @@ async def test_waiting_keyboard_save_skip_page_boundary_and_last_item(browser_ha
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_waiting_save_failure_and_external_change_keep_current_input(browser_harness: _BrowserHarness) -> None:
-    """保存409・外部編集・消失後も回答を別項目へ送らず見送りで再開できる。"""
     harness = browser_harness
     first = _question(harness.root, "20200101-000000-001.md", important=True)
     second = _question(harness.root, "20200101-000000-002.md")
@@ -113,7 +109,6 @@ async def test_waiting_save_failure_and_external_change_keep_current_input(brows
 async def test_initial_loading_finishing_during_answer_keeps_waiting_navigation(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """初期取得中に開いた項目への回答保存を、初期化完了による再選択が中断しない。"""
     harness = browser_harness
     first = _question(harness.root, "20200101-000000-001.md", important=True)
     second = _question(harness.root, "20200101-000000-002.md")

@@ -1,5 +1,3 @@
-"""記録からの証拠イベント抽出（session_evidence_extract_questions）。"""
-
 from __future__ import annotations
 
 import json
@@ -13,8 +11,6 @@ _CodexPendingQuestions = dict[str, tuple[int, dict[str, tuple[str, list[_Offered
 
 
 class _AnsweredQuestion(NamedTuple):
-    """回答イベントへ書く1問分の質問文、提示した選択肢、回答および自由記述。"""
-
     question: str
     options: list[_OfferedOption]
     answers: list[str]
@@ -61,18 +57,11 @@ def _question_answers_event(pairs: list[_AnsweredQuestion]) -> dict[str, Any] | 
 
 
 class _PendingQuestion(NamedTuple):
-    """回答イベントの生成に要する、質問側の行番号と質問文ごとの提示した選択肢。"""
-
     line: int
     options: dict[str, list[_OfferedOption]]
 
 
 def _claude_question_options(content: Any) -> dict[str, dict[str, list[_OfferedOption]]]:
-    """AskUserQuestionのtool_use IDごとに、質問文と提示した選択肢の対応を取得する。
-
-    labelは`input.questions[].options[].label`に現れる。回答の文字列をこのlabelの集合と
-    比べて、選択肢をそのまま選んだ回答と方針を是正した回答を判別する。
-    """
     if not isinstance(content, list):
         return {}
     options: dict[str, dict[str, list[_OfferedOption]]] = {}
@@ -86,7 +75,6 @@ def _claude_question_options(content: Any) -> dict[str, dict[str, list[_OfferedO
 
 
 def _claude_offered_options(payload: Any) -> dict[str, list[_OfferedOption]]:
-    """AskUserQuestionの入力から、質問文ごとに提示した選択肢のlabelとdescriptionを取得する。"""
     if not isinstance(payload, dict):
         return {}
     questions = payload.get("questions")
@@ -118,12 +106,6 @@ def _offered_options(choices: Any) -> list[_OfferedOption]:
 
 
 def _is_offered_answer(answer: str, labels: list[str]) -> bool:
-    """回答の文字列が、提示した選択肢のlabelだけで構成されるかを返す。
-
-    複数選択の回答はlabelをカンマと空白で連結した1つの文字列として記録されるため、
-    区切った全ての要素がlabelに一致する場合だけ、選択肢をそのまま選んだ回答とする。
-    labelを取得できない記録ではこの判別が成り立たないため、選択肢をそのまま選んだ回答として扱う。
-    """
     if not labels:
         return True
     return all(part.strip() in labels for part in answer.split(",") if part.strip())
@@ -134,12 +116,6 @@ def _claude_answers_event(
     content: Any,
     pending_questions: dict[str, _PendingQuestion],
 ) -> dict[str, Any] | None:
-    """対応するAskUserQuestionの結果だけを回答イベントへ変換する。
-
-    質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
-    `annotations`の`notes`はユーザーが選択肢の外へ書いた自由記述であり、`preview`は取り込まない。
-    介入の標識は`_question_answers_event`が付ける。
-    """
     if not isinstance(content, list):
         return None
     result_ids = {
@@ -211,10 +187,6 @@ def _codex_question_output_event(
     payload: dict[str, Any],
     pending_questions: _CodexPendingQuestions,
 ) -> dict[str, Any] | None:
-    """対応する回答outputの位置で、call_id内の既知質問だけをuserイベントへ変換する。
-
-    質問と回答は別の行に由来するため、行番号には質問側（先頭行）の値を用いる。
-    """
     call_id = payload.get("call_id")
     if not isinstance(call_id, str):
         return None
@@ -245,7 +217,6 @@ def _codex_question_output_event(
 
 
 def _codex_async_reply_events(text: str, line: int, pending_questions: _CodexPendingQuestions) -> list[dict[str, Any]] | None:
-    """後続の回答を呼出しIDと質問番号へ結び付け、対応しない回答は原文として残す。"""
     opening = "<send_user_message_question_reply>"
     closing = "</send_user_message_question_reply>"
     stripped = text.strip()

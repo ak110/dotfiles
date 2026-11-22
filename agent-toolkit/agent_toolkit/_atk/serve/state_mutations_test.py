@@ -1,5 +1,3 @@
-"""serveのstateに関するmutationsの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -18,7 +16,6 @@ from agent_toolkit._testing.serve_support import _disable_wi_git, _patch_comment
 
 @pytest.mark.asyncio
 async def test_add_api_rejects_uwi_only_scope_on_awi(tmp_path: pathlib.Path) -> None:
-    """UWI専用の`scope`をAWIへ指定すると拒否する。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -36,7 +33,6 @@ async def test_edit_and_answer_apis_detect_external_changes(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """取得後の外部更新を409で保護し、最新値と従来形式の更新を許可する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -132,7 +128,6 @@ async def test_web_transition_mutations_allow_omitted_target_repo(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """状態遷移系APIはfilenameで対象を一意に特定できるためtarget_repo省略を許容する。"""
 
     _disable_wi_git(monkeypatch)
     path = wi_files.write_awi(tmp_path, "entry.md", target_repo="github.com/example/foo")
@@ -152,7 +147,6 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """本文frontmatterにtarget_repoがあれば対象リポジトリ指定を省略できる。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -184,7 +178,6 @@ async def test_add_api_accepts_omitted_target_repo_with_frontmatter(
 
 
 def test_batch_creation_sends_raw_text_and_hides_frontmatter_driven_fields() -> None:
-    """一括登録では生テキストを送り、対象リポジトリ欄と投入元欄を隠す。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -231,7 +224,6 @@ async def test_remove_api_accepts_terminal_states_and_preserves_protected_states
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """終了状態とholdは削除し、processingの保護を維持する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     contents: dict[str, str] = {}
     for state_name in ("adopted", "rejected", "hold", "processing"):

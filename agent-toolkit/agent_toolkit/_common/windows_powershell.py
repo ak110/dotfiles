@@ -40,7 +40,6 @@ def _execution_policy() -> str:
     shell = Path(system_root) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     result = process_tree.run_with_timeout(
         [str(shell), "-NoProfile", "-NonInteractive", "-Command", "Get-ExecutionPolicy"],
-        # Python経由ではpwshのモジュール探索先も継承するため、5.1同梱のコマンドを使う。
         env=os.environ | {"PSMODULEPATH": str(shell.parent / "Modules")},
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -51,7 +50,6 @@ def _execution_policy() -> str:
 
 
 def can_run_script(script: Path) -> bool:
-    """印の欠如と許可された実効ポリシーを確認できた場合だけ真を返す。"""
     if not script.is_file():
         return False
     try:

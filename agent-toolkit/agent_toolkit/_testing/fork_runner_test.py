@@ -118,7 +118,7 @@ def test_server_start_failure_falls_back_once(tmp_path: pathlib.Path, monkeypatc
 
 
 def test_large_io_exceeding_pipe_buffer_roundtrips(tmp_path: pathlib.Path) -> None:
-    # (a) パイプバッファ64KiBを超える大容量stdin/stdout/stderrの往復。一時ファイル経由のため上限の影響はない。
+
     payload = "x" * (128 * 1024)
     script = _write_script(
         tmp_path,
@@ -131,7 +131,7 @@ def test_large_io_exceeding_pipe_buffer_roundtrips(tmp_path: pathlib.Path) -> No
 
 
 def test_empty_input_reaches_eof(tmp_path: pathlib.Path) -> None:
-    # (b) 空入力のEOF。
+
     script = _write_script(tmp_path, "import sys\nsys.stdout.write(repr(sys.stdin.read()))\n")
     result = _fork_runner.run_script(script, input="")
     assert result.returncode == 0
@@ -140,7 +140,7 @@ def test_empty_input_reaches_eof(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="signal.SIGKILLがWindowsのsignalモジュールに存在しないため")
 def test_child_signal_death_returns_negative_returncode(tmp_path: pathlib.Path) -> None:
-    # (c) 子プロセスのシグナル死で負のreturncodeが返る。
+
     script = _write_script(tmp_path, "import os, signal\nos.kill(os.getpid(), signal.SIGKILL)\n")
     result = _fork_runner.run_script(script)
     assert result.returncode == -signal.SIGKILL
@@ -150,7 +150,7 @@ def test_child_signal_death_returns_negative_returncode(tmp_path: pathlib.Path) 
     "use_fork", [False, pytest.param(True, marks=pytest.mark.skipif(not hasattr(os, "fork"), reason="fork未対応"))]
 )
 def test_timeout_raises_and_server_survives(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, use_fork: bool) -> None:
-    # (d) timeout超過でsubprocess.TimeoutExpiredが送出され、後続リクエストが正常処理される。
+
     monkeypatch.setattr(_fork_runner, "_HAS_FORK", use_fork)
     release = tmp_path / "fork.release"
     slow_script = _write_script(tmp_path, late_descendant.held_source(release))
@@ -182,14 +182,14 @@ def test_concurrent_threads_return_correct_results(tmp_path: pathlib.Path) -> No
 def test_unspecified_env_reflects_current_environ(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # env未指定時は呼び出し時点のos.environが子へ渡る（サーバー起動時の環境を継承しない）。
     script = _write_script(tmp_path, "import os, sys\nsys.stdout.write(os.environ.get('FORK_RUNNER_TEST_VAR', ''))\n")
-    _fork_runner.run_script(script)  # サーバーを先に起動させる
+    _fork_runner.run_script(script)
     monkeypatch.setenv("FORK_RUNNER_TEST_VAR", "after-start")
     result = _fork_runner.run_script(script)
     assert result.stdout == "after-start"
 
 
 def test_unspecified_cwd_reflects_current_directory(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    # cwd未指定時は呼び出し時点の作業ディレクトリが子へ渡る。
+
     script = _write_script(tmp_path, "import os, sys\nsys.stdout.write(os.getcwd())\n")
     workdir = tmp_path / "moved"
     workdir.mkdir()
@@ -199,9 +199,9 @@ def test_unspecified_cwd_reflects_current_directory(tmp_path: pathlib.Path, monk
 
 
 def test_server_death_recovers_on_next_call(tmp_path: pathlib.Path) -> None:
-    # サーバー強制終了後の呼び出しが再起動し、旧サーバーのパイプを解放する。
+
     script = _write_script(tmp_path, "import sys\nsys.stdout.write(sys.stdin.read())\n")
-    _fork_runner.run_script(script, input="first")  # サーバーを起動させる
+    _fork_runner.run_script(script, input="first")
     server = _fork_runner._SERVER  # noqa: SLF001 -- 障害系再現のため内部状態へアクセスする  # pylint: disable=protected-access
     assert server is not None
     server.kill()
@@ -258,7 +258,6 @@ def test_terminate_server_waits_and_closes_pipes(tmp_path: pathlib.Path) -> None
 def test_interrupted_response_discards_server_before_the_next_request(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, interruption: type[BaseException]
 ) -> None:
-    """呼出元の中断後は子孫と旧応答を破棄し、次の要求を新しいserverで実行する。"""
     _fork_runner._terminate_server()  # noqa: SLF001  # pylint: disable=protected-access
     ready = tmp_path / "request.ready"
     release = tmp_path / "request.release"

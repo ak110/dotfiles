@@ -13,14 +13,12 @@ from markdown_it import MarkdownIt
 def required_counts(
     *, kind: str | None, source: object, sections: Set[str], supplements: int, reflections: int
 ) -> tuple[int, int] | None:
-    """呼出側が既存の節抽出で得た値から、自動条件表の対象と必要件数を返す。"""
     if kind != "awi" or not source or sections & {"適用範囲", "実現性"}:
         return None
     return supplements, reflections
 
 
 def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
-    """WI名から保存本文の絶対パスへのJSON辞書を読み、要求集合の全本文を返す。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
@@ -39,7 +37,6 @@ def read_wi_originals(path: pathlib.Path, names: Set[str]) -> dict[str, str]:
 
 
 def validate(text: str, required: Mapping[str, tuple[int, int]]) -> None:
-    """表が同じ原本の必要件数を満たすか確認する。意味の検収はレビュー担当が行う。"""
     tokens = MarkdownIt("commonmark").enable("table").parse(text)
     rows: list[list[str]] = []
     row: list[str] | None = None

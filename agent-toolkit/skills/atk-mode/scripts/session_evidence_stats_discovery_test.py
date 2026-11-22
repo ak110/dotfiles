@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_discovery_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -20,7 +18,6 @@ from agent_toolkit._testing.session_evidence_support import (
 
 
 def test_stats_collects_all_subagents_without_exclusion(tmp_path: pathlib.Path, capsys) -> None:
-    """全てのサブエージェント記録を主体別集計へ含め、種別による除外を行わない。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}}],
@@ -65,7 +62,6 @@ def test_stats_collects_all_subagents_without_exclusion(tmp_path: pathlib.Path, 
 
 
 def test_stats_omits_subagent_events_without_subagents_directory(tmp_path: pathlib.Path, capsys) -> None:
-    """`subagents/`が無い場合は主体別集計のイベントを出力しない。"""
     transcript = _write_transcript(
         tmp_path,
         [assistant_usage_entry("2026-08-19T00:00:00Z", "main", usage_record(2, 3))],
@@ -234,7 +230,6 @@ def test_stats_resolves_claude_session_from_codex_rollout_tool_result(
 def test_collect_includes_start_custom_and_start_write_delegates(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """統合前の記録の`start_custom`と`start_write`で起動した委譲先も収集し、記録の無い委譲先は`unresolved-record`にする。"""
     custom_session = "claude-session-custom-1111"
     write_session = "agy-session-write-2222"
     home = tmp_path / "home"

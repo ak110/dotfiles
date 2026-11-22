@@ -1,5 +1,3 @@
-"""run-skillのCLIイベントを既存の表示イベントへ変換し、端末へ進捗を届ける。"""
-
 from __future__ import annotations
 
 import json
@@ -21,14 +19,12 @@ class Progress:
         self._seen_tools: set[str] = set()
 
     def message(self, text: str) -> None:
-        """開始情報または正規化した進捗をログへ記録し、TTYへ直ちに表示する。"""
         self.log.write(f"{text}\n")
         self.log.flush()
         if self.enabled:
             print(text, file=self.stderr, flush=True)
 
     def receive(self, engine: str, line: str) -> None:
-        """1件のJSONイベントから発言とtool呼出だけを表示する。生診断は呼出元が保存する。"""
         if not self.enabled:
             return
         try:
@@ -55,7 +51,6 @@ class Progress:
 
 
 def _codex_events(record: dict[str, typing.Any]) -> list[SessionEvent]:
-    """execのitemイベントをlogsと同じ表示型へ変換する。reasoningとtool結果は表示しない。"""
     event_type = record.get("type")
     item = record.get("item")
     if event_type not in {"item.started", "item.completed"} or not isinstance(item, dict):

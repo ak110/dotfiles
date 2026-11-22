@@ -22,14 +22,11 @@ __all__ = ["_isolate_agent_and_managed_temp_environment"]
 
 
 class TestWorktreeStashDispatch:
-    """`worktree-stash`の公開dispatchを検証する。"""
-
     def test_worktree_stash_dispatch_receives_private_notes(
         self,
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """worktree-stash分岐は解決したprivate-notesをdispatchへ渡す。"""
         received: dict[str, object] = {}
 
         def fake_dispatch(
@@ -54,8 +51,6 @@ class TestWorktreeStashDispatch:
 
 
 class TestAgentsWaitParser:
-    """`agents wait`の公開parserを検証する。"""
-
     def test_accepts_no_arguments(self) -> None:
         """待機対象と待機上限の入力を持たない。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
@@ -102,8 +97,6 @@ class TestAgentsWaitParser:
 
 
 class TestAgentsExitSessionParser:
-    """`agents-exit-session`は外部から識別子を受け取らない。"""
-
     def test_accepts_no_arguments(self) -> None:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         args = parser.parse_args(["agents-exit-session"])
@@ -117,8 +110,6 @@ class TestAgentsExitSessionParser:
 
 
 class TestWaitScheduleParser:
-    """`wait-schedule`の公開parserとdispatchを検証する。"""
-
     def test_accepts_no_arguments(self) -> None:
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         assert parser.parse_args(["wait-schedule"]).command == "wait-schedule"
@@ -132,7 +123,6 @@ class TestWaitScheduleParser:
         ],
     )
     def test_rejects_removed_or_extra_arguments(self, argv: list[str]) -> None:
-        """廃止した`--request-bucket`・`--format`と余分な引数を拒否する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(argv)
@@ -144,7 +134,6 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """メインのcron式と、1行目がUserPromptSubmitの機械注入の標識であるpromptを1行のJSONで出力する。"""
         buckets: list[str] = []
 
         def fake_get_schedule(request_bucket: str) -> str:
@@ -167,7 +156,6 @@ class TestWaitScheduleParser:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """任意のサブコマンドに共通する実行処理でmanaged-tempを整理する。"""
         calls: list[datetime.datetime] = []
 
         def fake_sweep(*, now: datetime.datetime) -> _managed_temp.SweepResult:
@@ -192,7 +180,6 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """削除できなかった対象の警告は、回収を判断できない委譲先（値が1）だけで抑止する。"""
         monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
         monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
@@ -218,7 +205,6 @@ class TestWaitScheduleParser:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """環境変数値を公開出力へ混在させない。"""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "environment-secret")
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule"], home=tmp_path)

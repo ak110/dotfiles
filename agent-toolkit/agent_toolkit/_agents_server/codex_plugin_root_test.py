@@ -26,7 +26,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 @pytest.mark.skipif(os.name != "posix", reason="8.3別名の同一実体をPOSIXの祖先aliasで代用し、包含分岐だけ検証する")
 def test_retained_root_alias_keeps_containment_and_link_guards(tmp_path, monkeypatch):
-    """保持先の別名は再利用しても、境界外のmarkerとリンクを使用しない。"""
     parent = tmp_path / "long-parent"
     parent.mkdir()
     alias = tmp_path / "short-parent"
@@ -58,7 +57,6 @@ def test_retained_root_alias_keeps_containment_and_link_guards(tmp_path, monkeyp
 
 @pytest.mark.parametrize("root_is_version", [True, False])
 def test_versioned_plugin_root_is_copied_to_a_stable_location(tmp_path: pathlib.Path, root_is_version: bool) -> None:
-    """版別ディレクトリ配下の配布物rootは、複製元を失っても解決できる実体へ写す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=root_is_version)
 
     resolved = plugin_roots.resolve_stable_plugin_root(source)
@@ -70,7 +68,6 @@ def test_versioned_plugin_root_is_copied_to_a_stable_location(tmp_path: pathlib.
 
 
 def test_versioned_plugin_root_is_copied_once_per_source(tmp_path: pathlib.Path) -> None:
-    """同じ複製元への解決を繰り返しても複製先は変わらない。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True)
 
     first = plugin_roots.resolve_stable_plugin_root(source)
@@ -82,7 +79,6 @@ def test_versioned_plugin_root_is_copied_once_per_source(tmp_path: pathlib.Path)
 
 
 def test_plain_plugin_root_is_used_as_is(tmp_path: pathlib.Path) -> None:
-    """版別ディレクトリに当たらない配布物rootは複製せずそのまま使う。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=False)
 
     assert plugin_roots.resolve_stable_plugin_root(source) == source
@@ -114,8 +110,6 @@ def test_copy_failure_is_not_reused(
         real_cmdline = psutil.Process.cmdline
         real_open_files = psutil.Process.open_files
 
-        # 回収判定は列挙したPIDからProcessを新しく構築するため、インスタンスではなくクラスを差し替える。
-        # 他のPIDの観測を変えないよう、旧MCPとして扱う自プロセスのPIDだけに限定する。
         def legacy_cmdline(self: psutil.Process) -> list[str]:
             if self.pid == process.pid:
                 return ["python", "/old/agent_toolkit/agents_server_mcp.py"]
@@ -145,7 +139,6 @@ def test_copy_failure_is_not_reused(
 
 
 def test_distinct_sources_and_versions_have_separate_roots(tmp_path: pathlib.Path) -> None:
-    """配布元または版が異なる実体を、それぞれ独立に保持する。"""
     roots = [
         plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "first", "1.0.0")),
         plugin_roots.resolve_stable_plugin_root(_lease_plugin_source(tmp_path / "second", "1.0.0")),

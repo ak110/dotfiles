@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_hooks）。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -19,13 +17,6 @@ _HOOK_ORIGIN_MIN_MATCH_LENGTH = 20
 
 
 def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
-    """是正を求めない区分のhook通知を問題候補から除く場合に、除外の種別名を返す。
-
-    この判定は、是正を求める通知が`block`または`warn`の区分を必ず持つという前提に基づく。
-    残す区分を列挙するのは、規範の注入や配送の種別のように是正の要否と無関係な値を`kind`へ持つ出力が
-    今後追加されても、それを是正要求として扱わないためである。除く区分を列挙すると、列挙に無い新しい値が是正要求として残る。
-    区分を持たない通知は、区分を示す必要が無い通知として発行されるため情報提示と同じ扱いとする。
-    """
     if tag in _HOOK_NOTICE_CANDIDATE_TAGS:
         return None
     if tag in {"info", "notice"}:
@@ -36,13 +27,6 @@ def _hook_notice_candidate_exclusion(tag: Any) -> str | None:
 
 
 def _is_response_language_notice(event: dict[str, Any]) -> bool:
-    """応答言語hookの警告を表すhook通知かを返す。
-
-    応答言語hookは直前の応答を検出後に通知するだけの遮断後に対処する型であり、
-    振り返りのたびに同じ見送り判定になるため、問題候補から除いて件数だけを数える。
-    同じ`pretooluse`の`warn`通知には他の判定処理が返す通知も含まれるため、発生源と区分に加えて本文の先頭を
-    hook側の本文定数と比べる。定数を参照するのは、hook側の文言を変えたときに判定を追随させるためである。
-    """
     if event.get("hook") not in {"pretooluse", "response-language"} or event.get("tag") not in {"warn", "block"}:
         return False
     text = event.get("text")
@@ -102,13 +86,6 @@ def _hook_originated_event(
 
 
 def _bounded_hook_variant_indexes(ranked: list[tuple[tuple[str, ...], list[dict[str, Any]]]]) -> set[int]:
-    """発生源と区分が同じhook通知の種類のうち、候補に残す種類の順位を返す。
-
-    発生件数の多い順に上限数まで残す。同じ通知の2件目以降は1件目の本文の要約で届き、別の種類になるため、
-    残した種類と遮断理由が同じで本文が前方一致する種類は、同じ通知として上限を消費させずに省く。
-    加えて、フック名のツール部分ごとに最多の種類を1件ずつ残し、件数の少ないツールの通知も
-    他のツールの多数の通知とともに候補に残す。
-    """
     kept: set[int] = set()
     kept_keys: list[tuple[str, ...]] = []
     seen_tools: set[str] = set()
@@ -124,7 +101,6 @@ def _bounded_hook_variant_indexes(ranked: list[tuple[tuple[str, ...], list[dict[
 
 
 def _same_hook_notice_text(left: str, right: str) -> bool:
-    """正規化したhook通知本文の一方が他方の前方部分であるかを返す。"""
     length = min(len(left), len(right))
     return length >= _HOOK_ORIGIN_MIN_MATCH_LENGTH and left[:length] == right[:length]
 
@@ -138,7 +114,7 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
     if candidate_kind == "warning":
         if _same_hook_notice_text(_hook_notice_kind_text(text), notice_text):
             return True
-        # 前方一致の最小一致長に満たない短い警告は、通知の種類本文に含まれるかで代表を判定する。
+
         normalized = " ".join(text.split())
         return bool(normalized) and normalized in " ".join(notice_text.split())
     hook_name = notice.get("hook_name")
@@ -146,9 +122,4 @@ def _same_hook_event(candidate_kind: str, event: dict[str, Any], notice: dict[st
 
 
 def _is_bounded_hook_group(key: tuple[str, ...]) -> bool:
-    """発生源ごとに件数上位の種類だけへ限る処理を適用する候補キーかを返す。
-
-    対象はblockまたはwarnのhook通知とする。他の種別のキーは軸の数が異なるため、
-    タグの位置を参照する前に種別と軸の数を確認する。
-    """
     return len(key) > 3 and key[0] == "hook-notice" and key[3] in {"block", "warn"}

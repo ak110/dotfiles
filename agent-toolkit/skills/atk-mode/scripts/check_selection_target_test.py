@@ -1,5 +1,3 @@
-"""全工程の算定と目標の受理を、生成・検査・mergeの公開操作で検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -46,7 +44,7 @@ def _target(repo: pathlib.Path, seconds: object) -> None:
 
 
 def _node(name: str, phase: str, wis: list[str], prior: list[str], seconds: float, resource: str) -> dict[str, Any]:
-    # 合成した仕事量と速度から秒数を定義し、実機の測定済み性能と取り違えない。
+
     return {
         "ID": name,
         "工程": phase,
@@ -272,7 +270,7 @@ def test_estimate_with_broken_completion_path_is_rejected_with_exit_code_1(envir
     repo, _ = environment
     _target(repo, 10800)
     plan = _workflow()
-    # 工程の定義は形式として成立するが、選定が実装の先行工程に無く、完成経路が成立しない。入力を直せば解消できる。
+
     next(node for node in plan["工程"] if node["工程"] == "実装")["先行工程"] = []
     assert _generate(tmp_path, repo, plan=plan, comparison=True) == 1
     assert "全工程の見込みは未成立" in capsys.readouterr().err
@@ -293,8 +291,7 @@ def test_giant_approval_keeps_parallel_normal_work(environment, tmp_path, capsys
             "出所": "合成した今回の名指し回答",
         }
     plan["巨大WI"] = [giant]
-    # 承認の無い・拒否・未回答の巨大WIは通常対象のままで、目標超過は警告にとどまる。
-    # 拒否するのは、入力を直せば解消できる承認元の対象WIの不一致（other）だけである。
+
     expected = 1 if approval == "other" else 0
     assert _generate(tmp_path, repo, plan=plan, names=["first.md", "giant.md"]) == expected
     captured = capsys.readouterr()
@@ -395,7 +392,7 @@ def test_lane_limit_stays_rejected_alongside_estimate_warnings(environment, tmp_
     assert _generate(tmp_path, repo, include_plan=False) == 0
     capsys.readouterr()
     saved = yaml.safe_load((tmp_path / "selection.yaml").read_text(encoding="utf-8"))
-    # WI1件の上限は1レーンのため、別レーンのWIを足すとレーン数の上限だけが拒否の理由になる。
+
     _wi(notes, "second.md")
     (repo / "src/other.py").write_text("pass\n", encoding="utf-8")
     saved["選定"].append({**saved["選定"][0], "WI": "second.md", "レーン": "lane-02", "書込対象": ["src/other.py"]})

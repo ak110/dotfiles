@@ -1,9 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""画像変換。
-
-ディレクトリ・ファイル個別・ワイルドカードを指定して画像を一括変換し、最大辺サイズを超える場合は縮小する。
-CLIからは`py-imageconverter`コマンドとして、他モジュールからは`convert_directory`関数として呼び出せる。
-"""
 
 import argparse
 import contextlib
@@ -16,7 +11,6 @@ import sys
 import typing
 import warnings
 
-# 画像処理・進捗表示は引数解析の後だけで必要となる。
 lazy import natsort
 lazy import numpy as np
 lazy import PIL.Image
@@ -48,8 +42,6 @@ ConvertEvent = tuple[pathlib.Path, EventSeverity, str]
 
 @dataclasses.dataclass
 class ConvertSummary:
-    """画像変換の集計結果。"""
-
     events: list[ConvertEvent]
     success_count: int
 
@@ -107,8 +99,7 @@ def open_image_with_exif(path: pathlib.Path) -> tuple[PIL.Image.Image, bool]:
 def _truncated_images_enabled() -> typing.Generator[None]:
     """`PIL.ImageFile.LOAD_TRUNCATED_IMAGES` を True にして実行するコンテキスト。"""
     prev = PIL.ImageFile.LOAD_TRUNCATED_IMAGES
-    # ty は初期値 ``False`` をリテラル型として推論し、True 代入を拒否するが、
-    # Pillow 側はこのフラグを書き換え可能なグローバル変数として公開している。
+
     PIL.ImageFile.LOAD_TRUNCATED_IMAGES = True  # ty: ignore[invalid-assignment]
     try:
         yield
@@ -117,7 +108,6 @@ def _truncated_images_enabled() -> typing.Generator[None]:
 
 
 def main() -> None:
-    """画像を一括変換するエントリポイント。"""
     parser = argparse.ArgumentParser(description="画像変換")
     parser.add_argument("--output-type", default="jpeg", choices=("jpeg", "png", "webp"), nargs="?")
     parser.add_argument("--max-width", default=2048, type=int)
@@ -129,8 +119,6 @@ def main() -> None:
     enable_completion(parser)
     args = parser.parse_args()
 
-    # 明示ディレクトリ指定の再帰探索結果と他経路（ワイルドカード展開・別target指定）の
-    # 同一ファイルが結果集合に混在して二重処理されるのを防ぐため、Path.resolve()をキーに重複排除する。
     seen_keys: set[pathlib.Path] = set()
     files: list[pathlib.Path] = []
     for target in args.targets:
@@ -175,11 +163,6 @@ def main() -> None:
 
 
 def _expand_target(target: str) -> list[pathlib.Path]:
-    """target文字列をパス列へ展開する。
-
-    ワイルドカード（`*`・`?`・`[`）含有時は`glob.glob`で展開しファイルのみ採用する。
-    未含有時はそのままパス化し、ファイルなら単一、ディレクトリなら配下を再帰展開する。
-    """
     if any(c in target for c in _WILDCARD_CHARS):
         # Windowsの`cmd`は`*`を展開しないため、Linuxシェル相当の展開をPython側で行う。
         # `**`を書けば再帰、`*`なら非再帰の挙動になる。
@@ -262,14 +245,6 @@ def convert_paths(
     progress: tqdm.tqdm | None = None,
     log_root: pathlib.Path | None = None,
 ) -> ConvertSummary:
-    """ファイル列を順次変換する共通ループ。
-
-    無視対象拡張子のフィルタと重複排除は呼び出し側で済ませた前提で受け取り、
-    自然順ソート後にtqdmループで各ファイルを処理する。
-
-    Returns:
-        画像変換の集計結果（`ConvertSummary`）。
-    """
     suffix = _TYPE_SUFFIXES[output_type]
     sorted_paths = list(natsort.natsorted(paths))
     events: list[ConvertEvent] = []
@@ -349,8 +324,7 @@ def _convert_one(
             _repack_png(path, temp_png_path)
             path.unlink()
             temp_png_path.rename(path)
-        # Pillow自身がシグネチャ判定するため拡張子フィルタは設けない。
-        # 非画像と判定されたファイルは削除せずスキップする。
+
         try:
             img, used_fallback = open_image_with_exif(path)
         except PIL.UnidentifiedImageError:
@@ -365,7 +339,7 @@ def _convert_one(
                 r = min(max_width / img.width, max_height / img.height)
                 size = int(img.width * r), int(img.height * r)
                 img = images.enter_context(img.resize(size, resample=PIL.Image.Resampling.LANCZOS))
-            # メタデータを削除して保存する
+
             with PIL.Image.fromarray(np.asarray(img)) as img2:
                 temp_path = path.parent / f"{secrets.token_urlsafe(8)}{suffix}"
                 if output_type == "jpeg":
@@ -384,7 +358,7 @@ def _convert_one(
         if remove_failed:
             path.unlink()
         return (path, "error", message), False
-    # 元ファイルを削除し、リネームする（バックアップされている前提）
+
     path.unlink()
     save_path = path.with_suffix(suffix)
     temp_path.rename(save_path)
@@ -415,9 +389,7 @@ def _format_log_path(path: pathlib.Path, log_root: pathlib.Path | None) -> str:
 
 
 def _repack_png(input_path: pathlib.Path, output_path: pathlib.Path) -> None:
-    """PNGを再パックして不要なチャンクを削除する。wand（ImageMagick）が必要。"""
     try:
-        # 重量級optional依存のため遅延import。
         import wand.color  # pylint: disable=import-outside-toplevel
         import wand.image  # pylint: disable=import-outside-toplevel
     except ImportError:

@@ -46,7 +46,6 @@ def _tool_result(timestamp: str, call_id: str, structured: dict[str, str] | None
         "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "済"}]},
     }
     if structured is not None:
-        # agents_serverの`start`の結果は、起動した委譲先のエンジンと識別子を構造化された結果として持つ。
         record["mcpMeta"] = {"structuredContent": structured}
         record["toolUseResult"] = structured
     return record

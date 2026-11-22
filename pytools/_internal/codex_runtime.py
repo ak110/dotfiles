@@ -22,7 +22,6 @@ def codex_home() -> Path:
 
 
 def standalone_root() -> Path:
-    """スタンドアローン版のパッケージキャッシュのルートを返す。"""
     return codex_home() / "packages" / "standalone"
 
 
@@ -37,7 +36,6 @@ def visible_bin_dir() -> Path:
 
 
 def wrapper_launchers() -> set[Path]:
-    """移行前のdotfilesラッパーを実体の選択対象から外すためのパスを返す。"""
     root = common.find_dotfiles_root()
     return {root / "bin" / name for name in ("codex", "codex.cmd")} if root is not None else set()
 

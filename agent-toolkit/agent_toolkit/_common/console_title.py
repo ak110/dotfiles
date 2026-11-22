@@ -19,19 +19,9 @@ import contextlib
 import sys
 import typing
 
-# 配布物独立性（`agent-toolkit/`配下から`pytools/`を参照しない）を保つため、同等の機能を本モジュールで実装する。
-
 
 @contextlib.contextmanager
 def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.Generator[None]:
-    """ターミナルのウィンドウタイトルを`title`へ設定し、終了時に元へ戻す。
-
-    ターミナルへ接続されていないときは何もしない。
-
-    Args:
-        title: 設定するウィンドウタイトル。
-        stream: OSC制御文字を出力し、ターミナルとの接続を判定するストリーム。省略すると標準エラーへ出力する。
-    """
     out = sys.stderr if stream is None else stream
     if not _isatty(out):
         yield
@@ -50,15 +40,6 @@ def console_title(title: str, *, stream: typing.TextIO | None = None) -> typing.
 
 
 def set_console_title(title: str, *, stream: typing.TextIO | None = None) -> None:
-    """ターミナルのウィンドウタイトルを`title`へ設定する（復元は行わない）。
-
-    配下プロセスが書き換えたタイトルを呼び出し側の意図した値へ再設定する用途に使う。
-    ターミナルへ接続されていないときは何もしない。
-
-    Args:
-        title: 設定するウィンドウタイトル。
-        stream: OSC制御文字を出力し、ターミナルとの接続を判定するストリーム。省略すると標準エラーへ出力する。
-    """
     out = sys.stderr if stream is None else stream
     if not _isatty(out):
         return
@@ -70,7 +51,6 @@ def set_console_title(title: str, *, stream: typing.TextIO | None = None) -> Non
 
 
 def _isatty(stream: typing.TextIO) -> bool:
-    """`stream`がターミナルへ接続されているかを判定する。"""
     try:
         return stream.isatty()
     except AttributeError, ValueError:
@@ -78,14 +58,9 @@ def _isatty(stream: typing.TextIO) -> bool:
 
 
 def _osc_set_title(title: str) -> str:
-    """ウィンドウタイトルを設定するOSC制御シーケンスを組み立てる。
-
-    `ESC ] 2 ; <title> BEL`。`2`はアイコン名を変えずウィンドウタイトルのみ設定する。
-    """
     return f"\033]2;{title}\a"
 
 
-# GetConsoleTitleW用バッファ長。本ツールが表示するタイトルは短いため固定長とする。
 _WINDOWS_TITLE_BUFFER_LEN = 1024
 
 

@@ -37,7 +37,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if windows_security.is_elevated():
         next_action = "表示した項目の所有者とACLを確認する（昇格した実行でも継承するACLへ戻せなかった）"
     else:
-        # 修復は`update-dotfiles`の同じ工程に任せ、リンクをたどらない走査と変更の検証を通す。
         next_action = (
             "管理者として起動した端末で`update-dotfiles`を実行して戻し、その後に非昇格の端末で`update-dotfiles`を再実行する"
         )

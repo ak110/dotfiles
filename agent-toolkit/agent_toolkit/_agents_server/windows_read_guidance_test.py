@@ -58,7 +58,7 @@ def _powershells() -> list[str]:
 
 def test_powershell_get_content_reads_the_line_range(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`powershell.exe`（5.1）と`pwsh`の両方で、案内の`Get-Content`が指定行を返し、不在のパスでは失敗する。"""
-    # 案内が対象とするのはホストの実シェルなので、隔離したHOME・設定ディレクトリ・PATHをホストの値へ戻してから解決・起動する。
+
     restore_host_environment(monkeypatch)
     deadline = time.monotonic() + _TEST_BUDGET
     target = _target(tmp_path)

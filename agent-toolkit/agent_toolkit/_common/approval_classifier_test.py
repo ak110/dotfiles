@@ -1,5 +1,3 @@
-"""soft拒否の一意な特定と、未知のホスト入力で許可しないことを確かめる。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -109,7 +107,6 @@ def test_snapshot_failure_cannot_authorize(monkeypatch: pytest.MonkeyPatch, tmp_
     "case", ["match", "flag", "missing", "changed", "defaults", "duplicate", "implicit", "partial", "unproven"]
 )
 def test_native_settings_must_match_public_snapshot(case: str) -> None:
-    """flag、取得不能、hard/softの移動、未展開、重複を自動許可へ変換しない。"""
     config = _config()
     verdict = approval_classifier.classify("[Local Cleanup]", config, version="2.1.325")
     context: dict = {

@@ -1,5 +1,3 @@
-"""pytools._internal.restore_agent_toolkit_acl のテスト。"""
-
 import pathlib
 
 import pytest
@@ -21,14 +19,12 @@ def _repair(monkeypatch: pytest.MonkeyPatch, result: windows_security.Inheritanc
 
 
 def test_repairs_state_directory_and_reports_change(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """状態ディレクトリを対象に修復し、戻した項目があれば更新と数える。"""
     roots = _repair(monkeypatch, windows_security.InheritanceRepair(restored=(tmp_path / "services",)))
     assert _step.run() == post_apply_outcome.PostApplyOutcome(changed=True)
     assert roots == [state_paths.state_dir()]
 
 
 def test_nothing_to_repair_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """修復対象が無ければ変更なしで終える。"""
     _repair(monkeypatch, windows_security.InheritanceRepair())
     assert _step.run() == post_apply_outcome.PostApplyOutcome()
 

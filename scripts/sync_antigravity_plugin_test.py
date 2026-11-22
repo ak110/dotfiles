@@ -17,7 +17,6 @@ import sync_antigravity_plugin as subject
 def test_cli_selects_independent_plugins(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, arguments: list[str], expected: list[str]
 ) -> None:
-    """同じ公開CLIで通常の両方配送とbasics単独配送を選べる。"""
     calls: list[tuple[Path, str]] = []
 
     def sync(root: Path, name: str, **_kwargs: object) -> bool:
@@ -33,7 +32,6 @@ def test_cli_selects_independent_plugins(
 def test_check_collects_both_plugins(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """checkは全選択対象を検査し、生成物を書き換えない。"""
     calls: list[str] = []
 
     def diagnostics(root: Path, name: str, **_kwargs: object) -> tuple[str, ...]:

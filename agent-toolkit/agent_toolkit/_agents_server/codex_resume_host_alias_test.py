@@ -1,5 +1,3 @@
-"""保存済み会話の再開RPCより先に、子MCPが直接親を解決できることを検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -36,7 +34,6 @@ class _HostAliasClient(FakeCodexClient):
             if method == "thread/start":
                 self.started_writers.append(writer)
             else:
-                # 新しいbackendのwriterには開始時の索引が無い。後書込ではこの時点に間に合わない。
                 assert writer not in self.started_writers
                 path = shared_roots.hosts_directory(environment["AGENT_TOOLKIT_OWNER_SESSION"]) / f"{writer}.json"
                 assert path.is_file(), "thread/resume受信時点で直接親の索引が必要"
@@ -50,13 +47,11 @@ class _HostAliasClient(FakeCodexClient):
 async def test_start_release_and_cold_resume_publish_host_alias_before_resume_rpc(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開start・release_session・同IDresumeを通し、再開RPC受信時に新writerから親を解決する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "false")
     started_writers: list[str] = []
     resolved_parents: list[str] = []
     initial_client = _HostAliasClient(started_writers, resolved_parents)
     async with codex.AppServerManager(root_session_id="alias-root") as initial_backend:
-        # 外部process生成だけを置換し、公開backend操作と実際の索引保存はそのまま実行する。
         monkeypatch.setattr(initial_backend, "_ensure_client", AsyncMock(return_value=initial_client))
         original = await initial_backend.start("作業", str(tmp_path))
         assert original.turn_id
@@ -64,7 +59,6 @@ async def test_start_release_and_cold_resume_publish_host_alias_before_resume_rp
         assert initial_client.closed
     assert len(started_writers) == 1
 
-    # 保存済みsessionのcold resumeでは、前backendのwriter IDキャッシュを引き継がない。
     resumed_client = _HostAliasClient(started_writers, resolved_parents)
     async with codex.AppServerManager(root_session_id="alias-root") as resumed_backend:
         monkeypatch.setattr(resumed_backend, "_ensure_client", AsyncMock(return_value=resumed_client))

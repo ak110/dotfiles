@@ -25,7 +25,6 @@ pytestmark = pytest.mark.windows
     "condition", ["interactive", "noninteractive", "process-loop", "no-sudo", "no-candidate", "recovered-parent"]
 )
 def test_sweep_requests_at_most_one_elevation(monkeypatch, tmp_path, caplog, condition):
-    """複数候補を一度に渡す。禁止条件では通常回収だけか無操作とする。"""
     targets = [tmp_path / name for name in ("first", "second")]
     for target in targets:
         target.mkdir()

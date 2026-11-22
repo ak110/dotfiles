@@ -1,5 +1,3 @@
-"""計画形式の共通解析を検証する。"""
-
 import pathlib
 
 import pytest
@@ -31,7 +29,6 @@ pytestmark = pytest.mark.windows
 
 
 def test_markdown_table_keeps_first_and_last_row_locations() -> None:
-    """表の先頭行と末尾行について入力の行番号と原文を保持する。"""
     source = "| 項目 | 内容 |\n| --- | --- |\n| 先頭 | 一。 |\n| 末尾 | 二。 |"
     lines: list[tuple[int, str]] = list(enumerate(source.splitlines(), start=7))
 
@@ -64,7 +61,6 @@ def test_bom_structure_matches_plain_input(content: str) -> None:
 
 @pytest.mark.parametrize("index", [-1, 2])
 def test_markdown_table_returns_empty_location_for_out_of_range_index(index: int) -> None:
-    """表の本文行の範囲外にある索引へ位置を返さない。"""
     table = plan_markdown.MarkdownTable(1, ("項目",), (("値",),), (3,), ("| 値 |",))
 
     assert table.row_location(index) == ""
@@ -87,7 +83,6 @@ def test_human_readable_history_accepts_legacy_user_heading() -> None:
 
 
 def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
-    """ユーザー指示の部分採用も採用済みとして扱う。"""
     content = _HUMAN_MAIN_CONTENT.replace(
         _plan_fixture.USER_ACTION_ROW,
         "| 公開契約に必要な変更を実装する | ユーザー指示 | 部分採用 | - |",
@@ -98,7 +93,6 @@ def test_human_readable_partial_user_instruction_counts_as_adopted() -> None:
 
 @pytest.mark.parametrize("decision", plan_constants.PLAN_ACTION_DECISIONS)
 def test_human_readable_agent_proposal_requires_reason_for_every_decision(decision: str) -> None:
-    """エージェント提案は全採否で空でもハイフンでもない根拠を持つ。"""
     original = _plan_fixture.PROPOSAL_ACTION_ROW
     reason = "観測可能な根拠。"
     if decision == "移管":
@@ -116,7 +110,6 @@ def test_human_readable_agent_proposal_requires_reason_for_every_decision(decisi
 
 
 def test_human_readable_action_rejects_arbitrary_h3() -> None:
-    """実施内容直下へ置いた任意のH3を、拒否する対象をH3と述べるメッセージで拒否する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
         f"\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
         f"\n### 補足の観点\n\n対象範囲の補足を述べる。\n\n## {_plan_format.PLAN_H2_AGENT_JUDGMENT}\n",
@@ -127,14 +120,12 @@ def test_human_readable_action_rejects_arbitrary_h3() -> None:
 
 
 def test_related_wi_rejects_invalid_filename() -> None:
-    """関連WIはWIファイル名だけを受理する。"""
     content = _HUMAN_MAIN_CONTENT.replace("20260817-223603-001.md", "docs/notes.md", 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert any("ファイル名が不正" in error for error in errors), errors
 
 
 def test_human_readable_history_rejects_table() -> None:
-    """変更履歴配下へ置いた表を、拒否する対象を表と述べるメッセージで拒否する。"""
     table = "\n\n| 対象 | 内容 |\n| --- | --- |\n| 反映先 | 反映した。 |"
     content = _HUMAN_MAIN_CONTENT.replace(
         _plan_fixture.HISTORY_REVIEW_BODY,
@@ -146,7 +137,6 @@ def test_human_readable_history_rejects_table() -> None:
 
 
 def test_human_readable_units_reject_duplicate_descriptive_name() -> None:
-    """人間向けdetail側の実装単位名は重複させない。"""
     content = _HUMAN_DETAIL_CONTENT.replace(
         "| 回帰検証の追加 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
         "| 契約境界の更新 | 更新後の挙動を検証する | 契約境界の更新 | 2 | `pytest` |",
@@ -168,7 +158,6 @@ def test_cause_record_labels_pass_colloquial_check() -> None:
 
 @pytest.mark.parametrize("review_id", ["arbitrary", "R0-conformance", "R1-conformance-a"])
 def test_history_review_rows_reject_invalid_identifier(review_id: str) -> None:
-    """系統と正のラウンド番号を分離できないレビュー指摘IDを拒否する。"""
     review_row = f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |\n"
     content = _VALID_CONTENT.replace(
         f"{_plan_fixture.HISTORY_USER_ROW}\n",
@@ -180,7 +169,6 @@ def test_history_review_rows_reject_invalid_identifier(review_id: str) -> None:
 
 
 def test_implementation_materials_allows_free_h3_composition() -> None:
-    """実装資料配下では自由なH3構成を受理する。"""
     content = _VALID_CONTENT.replace(f"### {_plan_fixture.IMPLEMENTATION_H3}", "### 実行方法\n\n手順。\n\n### 変更説明")
     assert not plan_sections.check_plan_structure(content)
 
@@ -194,14 +182,12 @@ def test_implementation_materials_allows_free_h3_composition() -> None:
     ],
 )
 def test_progress_table_accepts_zero_one_or_multiple_rows(rows: str) -> None:
-    """進捗表だけは0件を許容し、1件以上の既存形式も受理する。"""
     marker = "| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n"
     content = _VALID_CONTENT.replace(marker, marker + rows, 1)
     assert not plan_sections.check_plan_structure(content)
 
 
 def test_permanence_sections_accept_and_omit_retired_similar_review_heading() -> None:
-    """廃止した`### 類似見直し`を持つ既存計画と、置かない計画のいずれも受理する。"""
     assert _plan_fixture.LEGACY_SIMILAR_REVIEW_SECTION in _VALID_CONTENT
     assert not plan_sections.check_plan_structure(_VALID_CONTENT)
     without = _VALID_CONTENT.replace(_plan_fixture.LEGACY_SIMILAR_REVIEW_SECTION, "", 1)
@@ -209,12 +195,10 @@ def test_permanence_sections_accept_and_omit_retired_similar_review_heading() ->
 
 
 def test_structure_check_accepts_short_delimiter_tables() -> None:
-    """区切り行が1ダッシュの固定表を受理する。"""
     assert not plan_sections.check_plan_structure(_VALID_CONTENT.replace(" --- ", " - "))
 
 
 def test_legacy_materials_require_verbatim_fence() -> None:
-    """旧形式では素材IDの直後に逐語fenceが無い提示素材を拒否する。"""
     content = _LEGACY_CONTENT.replace(
         "```text\n診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。\n```",
         "診断件数を2件から1件へ減らし、公開APIと対象外の挙動を変更しないでほしい。",
@@ -224,7 +208,6 @@ def test_legacy_materials_require_verbatim_fence() -> None:
 
 
 def test_action_references_rejected_requirement_are_rejected() -> None:
-    """採用系の実施内容の根拠に不採用要求を指定できない。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 指示どおり | R-P-001-002 |",
@@ -235,7 +218,6 @@ def test_action_references_rejected_requirement_are_rejected() -> None:
 
 
 def test_non_adopted_action_requires_free_text_reason() -> None:
-    """非採用系の実施内容は理由を根拠へ記載する。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 不採用 | 非該当 |  |",
@@ -246,7 +228,6 @@ def test_non_adopted_action_requires_free_text_reason() -> None:
 
 
 def test_adopted_action_rejects_non_queue_relation() -> None:
-    """採用系の実施内容に非該当の関係を指定できない。"""
     content = _VALID_CONTENT.replace(
         _plan_fixture.TWO_FILE_ACTION_ROW,
         "| 診断件数を2件から1件へ減らす | 採用 | 非該当 | R-P-001-001 |",
@@ -257,13 +238,11 @@ def test_adopted_action_rejects_non_queue_relation() -> None:
 
 
 def test_requirement_coverage_keeps_checking_adopted_requirement_outside_terminal_only() -> None:
-    """`公開工程のみ`で始まらない採用要求は除外の影響を受けず被覆の判定対象に残る。"""
     errors = plan_sections.check_plan_structure(_plan_with_uncovered_requirement("公開APIの維持"))
     assert any("採用要求を被覆しない: R-P-002-001" in error for error in errors), errors
 
 
 def test_structured_material_contract_rejects_requirement_table_order() -> None:
-    """要求表を要求IDの昇順以外で並べた場合に拒否する。"""
     first = (
         "| R-P-001-001 | P-001, P-002 | 診断件数を2件から1件へ減らす。 | 採用 | "
         "診断件数の更新 | 非該当 | 指示と合意を反映するため。 |"
@@ -276,7 +255,6 @@ def test_structured_material_contract_rejects_requirement_table_order() -> None:
 
 
 def test_structured_material_types_reject_unreferenced_user_agreement() -> None:
-    """利用者指示または利用者合意を要求表から未参照にしない。"""
     content = _VALID_CONTENT.replace("P-001, P-002", "P-001", 1).replace(
         "| R-P-002-001 | P-002 | 公開契約を維持する。 | 採用 | 公開APIの維持 | 非該当 | 利用者合意を反映するため。 |\n",
         "",
@@ -289,7 +267,7 @@ def test_structured_material_types_reject_unreferenced_user_agreement() -> None:
 def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> None:
     """素材ID行の前の注記・`Source:`行と、コードブロック内の素材ID形式の行を素材IDへ誤認しない。"""
     material_start = "P-001:\n\n```text\n"
-    # fixtureの本文に依存しない素材IDの直前と素材本文の先頭を起点にし、置換の空振りを検出する。
+
     assert _LEGACY_CONTENT.count(material_start) == 1
     content = _LEGACY_CONTENT.replace(
         material_start,
@@ -313,7 +291,6 @@ def test_material_id_candidate_check_ignores_normal_notes_and_fenced_text() -> N
     ],
 )
 def test_metadata_reads_base_commit_with_legacy_notations(line: str, expected: str) -> None:
-    """注記付き、字下げ、旧別名のベースコミット記法からもOIDを読み取る。"""
     content = f"## 背景\n\n### 計画メタ情報\n\n{line}\n"
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert not errors
@@ -322,7 +299,6 @@ def test_metadata_reads_base_commit_with_legacy_notations(line: str, expected: s
 
 
 def test_markdown_body_text_excludes_code_fence() -> None:
-    """本文テキストにはコードフェンス内の行を含めない。"""
     content = "# 計画\n\n参照は`~/.claude/plans/01-計画-1a2b.bugs.md`。\n\n```text\n~/.claude/plans/ のパスで書く\n```\n"
 
     body = plan_markdown.markdown_body_text(content)
@@ -332,7 +308,6 @@ def test_markdown_body_text_excludes_code_fence() -> None:
 
 
 def test_main_and_detail_canonical_pass_structure_check() -> None:
-    """新書式のメイン側・detail側の正規形はいずれも計画の構造に関する基準を満たす。"""
     work_type, main_errors = plan_sections.check_plan_main_structure(_canonical_main_content())
     assert work_type == "通常変更"
     assert not main_errors
@@ -355,14 +330,12 @@ def test_main_and_detail_canonical_pass_structure_check() -> None:
 def test_human_main_structure_rejects_judgment_table_shape_or_empty_cells(
     mutation: tuple[str, str],
 ) -> None:
-    """判断表の列不足と空cellを拒否する。"""
     content = _canonical_human_main_content().replace(*mutation, 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert any(f"`## {_plan_format.PLAN_H2_AGENT_JUDGMENT}`" in error for error in errors), errors
 
 
 def test_human_detail_structure_rejects_non_ascii_dependency_separator() -> None:
-    """先行依存の全角読点を区切りとして扱わず、未解決の依存として拒否する。"""
     content = _HUMAN_DETAIL_CONTENT.replace("契約境界の更新 | 2 |", "契約境界の更新、回帰検証の追加 | 2 |", 1)
     errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("先行依存`が実装単位表に無い" in error for error in errors), errors
@@ -380,7 +353,6 @@ def test_detail_structure_accepts_legacy_implementation_unit_column() -> None:
 
 
 def test_main_structure_rejects_bug_section() -> None:
-    """メイン側に`## バグ調査結果`は置かない（detail側専用）。"""
     content = _VALID_MAIN_CONTENT.replace(
         "## 検証区分",
         "## バグ調査結果\n\n未使用。\n\n## 検証区分",
@@ -390,7 +362,6 @@ def test_main_structure_rejects_bug_section() -> None:
 
 
 def test_origin_check_skips_conversational_note(tmp_path: pathlib.Path) -> None:
-    """`[対話由来]`注記のある行は書式として受理し、WI本文との比較は行わない。"""
     _write_wi(tmp_path, _wi_source(source=True))
     content = _HUMAN_MAIN_CONTENT.replace(
         f"({_plan_fixture.WI_FILES[0][0]})",

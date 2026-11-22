@@ -34,19 +34,23 @@ import re
 
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._agents_server.continuation_wait import continuation_wait_seconds
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
 lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
-lazy from agent_toolkit._hooks.host import is_antigravity_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
 _WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+
+_CLAUDE_WARNING_FIX = (
+    "背景実行が使えるなら、実行ホストで引数なしの `atk agents wait` を単独で背景起動し、"
+    "起動を確認してからターンを終えよ。背景実行が使えないなら同じターンで前景回収せよ。"
+    "結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+)
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
@@ -77,8 +81,52 @@ def _continuation_owned(payload: dict) -> bool:
     return _delegated_session.is_delegated(os.environ) and not is_antigravity_payload(payload)
 
 
+def _observation_status(state: dict, owner_agent_id: str) -> tuple[list[str], list[str], dict[str, int]]:
+    pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
+    continued = _observations.retained_running_session_ids(state, owner_agent_id)
+    pending_session_ids = sorted(set(pending_session_ids) | set(continued))
+    sessions = state.get("agents_server_sessions")
+    awaiting = {
+        identifier: seconds
+        for identifier, record in (sessions.items() if isinstance(sessions, dict) else ())
+        if isinstance(identifier, str)
+        and isinstance(record, dict)
+        and record.get("owner_agent_id") == owner_agent_id
+        and not record.get("kill_requested")
+        and (seconds := continuation_wait_seconds(identifier)) is not None
+    }
+    return pending_session_ids, continued, awaiting
+
+
+def _awaiting_summary(awaiting: dict[str, int]) -> str:
+    return ", ".join(f"{identifier}（返却から {seconds} 秒）" for identifier, seconds in awaiting.items())
+
+
+def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
+    """圧縮後に、自分の待機と他の主体の待機を取り違えないようにする。"""
+    pending, _, awaiting = _observation_status(read_state(session_id), owner_agent_id)
+    if not pending and not awaiting:
+        return ""
+    wait_targets = [identifier for identifier in pending if identifier not in awaiting]
+    own_wait = _observations.own_waited_session_ids(wait_targets)
+    missing = [identifier for identifier in wait_targets if identifier not in own_wait]
+    lines = []
+    if pending:
+        lines.append(f"未回収: {', '.join(pending)}")
+        if own_wait:
+            lines.append(f"自セッションが待機中: {', '.join(sorted(own_wait))}。")
+        else:
+            lines.append("自セッションに有効な待機なし。別セッションの待機は自分の待機に数えない。")
+        if missing:
+            lines.append(f"待機の再開が必要: {', '.join(missing)}。自セッションから atk agents wait で回収せよ。")
+    if not missing:
+        lines.append("待機の再開は不要。")
+    if awaiting:
+        lines.append(f"応答待ち: {_awaiting_summary(awaiting)}。役割が求める指示を send_message で返せ。")
+    return "\n".join(lines)
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """未観測作業の判定結果と、警告する場合の本文を返す。"""
     resolved = parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -89,19 +137,8 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     owner_agent_id = resolve_hook_agent_id(payload)
     state = read_state(session_id)
-    pending_session_ids = _observations.pending_session_ids(state, owner_agent_id)
-    continued = _observations.retained_running_session_ids(state, owner_agent_id)
-    pending_session_ids = sorted(set(pending_session_ids) | set(continued))
+    pending_session_ids, continued, awaiting = _observation_status(state, owner_agent_id)
     sessions = state.get("agents_server_sessions")
-    awaiting = [
-        f"{identifier}（返却から {seconds} 秒）"
-        for identifier, record in (sessions.items() if isinstance(sessions, dict) else ())
-        if isinstance(identifier, str)
-        and isinstance(record, dict)
-        and record.get("owner_agent_id") == owner_agent_id
-        and not record.get("kill_requested")
-        and (seconds := continuation_wait_seconds(identifier)) is not None
-    ]
     if not pending_session_ids and not awaiting:
         if isinstance(sessions, dict) and any(
             isinstance(record, dict)
@@ -126,9 +163,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     )
     lines = [f"{description}\n対象session: {', '.join(pending_session_ids)}"] if pending_session_ids else []
     if awaiting:
-        lines.append(f"応答待ち: {', '.join(awaiting)}")
+        lines.append(f"応答待ち: {_awaiting_summary(awaiting)}")
     body = "\n".join(lines)
     fix = "役割が求める指示を`send_message`で返せ。" if awaiting else ""
     if pending_session_ids:
-        fix = f"{_WARNING_FIX}{fix}"
+        warning_fix = _WARNING_FIX if is_codex_payload(payload) or is_antigravity_payload(payload) else _CLAUDE_WARNING_FIX
+        fix = f"{warning_fix}{fix}"
     return "notify", _notice(body, fix=fix, removable_cause=True, summary=body)

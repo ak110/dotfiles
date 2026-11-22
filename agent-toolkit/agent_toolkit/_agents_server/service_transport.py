@@ -1,5 +1,3 @@
-"""同じOSアカウントだけが使う管理サービスのローカル通信。"""
-
 from __future__ import annotations
 
 # 同期転送側は軽量に保ち、asyncio・worker・Win32は使う分岐だけで読み込む。
@@ -26,8 +24,6 @@ _DISCONNECT_LOCK = threading.Lock()
 
 
 class AsyncPeer:
-    """長命な読取でファイル操作のexecutorを占有せず、取消時に所有I/Oを回収する。"""
-
     def __init__(self, peer: connection.Connection) -> None:
         from concurrent.futures import ThreadPoolExecutor
 
@@ -44,7 +40,6 @@ class AsyncPeer:
         await self.close()
 
     async def call(self, function: Callable[..., Any], *arguments: Any) -> Any:
-        """JSON frameとOS接続の処理は既存のConnectionへ任せる。"""
         import asyncio
 
         if self._closing is not None:
@@ -61,7 +56,6 @@ class AsyncPeer:
             self._pending.discard(future)
 
     async def close(self) -> None:
-        """handleを閉じて読取を解除し、workerの終了まで回収する。"""
         import asyncio
 
         if self._closing is None:
@@ -100,7 +94,6 @@ def _state_directory(caller: runtime_environment.CallerContext) -> pathlib.Path:
 
 
 def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
-    """CLIと同じ状態領域を選び、明示的に分離した管理領域を混ぜない。"""
     base = _state_directory(caller) / "services" / "agents-server"
     if os.name == "nt":
         from agent_toolkit._agents_server.windows_service_transport import current_process_elevated
@@ -112,7 +105,6 @@ def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
 
 
 def isolated_state(caller: runtime_environment.CallerContext) -> bool:
-    """呼出元の状態保存先を、指定がない場合の保存先と比べる。"""
     key = "LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"
     default = runtime_environment.CallerContext(
         {name: value for name, value in caller.environment.items() if name != key},
@@ -122,7 +114,6 @@ def isolated_state(caller: runtime_environment.CallerContext) -> bool:
 
 
 def endpoint(directory: pathlib.Path, generation: str) -> str:
-    """長い状態パスも、OSのsocket名上限より短いローカル名へ対応付ける。"""
     identity = json.dumps([str(directory.resolve()), generation], ensure_ascii=False).encode("utf-8")
     suffix = hashlib.sha256(identity).hexdigest()
     if os.name == "nt":
@@ -131,18 +122,16 @@ def endpoint(directory: pathlib.Path, generation: str) -> str:
 
 
 def process_identity(pid: int) -> str:
-    """PID再利用後の別プロセスを、発見記録のサービスと取り違えない。"""
     if os.name == "nt":
         from agent_toolkit._agents_server import windows_service_transport
 
         return windows_service_transport.process_identity(pid)
-    # commには空白と丸括弧を含められるので、最後の閉じ括弧から固定欄を読む。
+
     record = pathlib.Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
     return f"{pid}:{record.rsplit(')', 1)[1].split()[19]}"
 
 
 def process_alive(identity: object) -> bool:
-    """発見記録の起動単位（`pid:開始時刻`）のプロセスがまだ生存しているかを返す。"""
     try:
         pid = int(str(identity).split(":", 1)[0])
         try:
@@ -160,7 +149,6 @@ def process_alive(identity: object) -> bool:
 
 
 def authenticate(peer: connection.Connection, *, server: bool, expected_process: str | None = None) -> int:
-    """環境・操作本文の送受信前に、OSが与える相手のアカウントが自身と一致するか確かめる。"""
     if os.name == "nt":
         from agent_toolkit._agents_server import windows_service_transport
 
@@ -176,7 +164,6 @@ def authenticate(peer: connection.Connection, *, server: bool, expected_process:
 
 @contextlib.contextmanager
 def listen(address: str) -> Generator[Any]:
-    """受理した接続の寿命を呼出側へ渡し、listener自身は確実に閉じる。"""
     if os.name == "nt":
         from agent_toolkit._agents_server import windows_service_transport
 
@@ -192,14 +179,12 @@ def listen(address: str) -> Generator[Any]:
 
 @contextlib.contextmanager
 def connect(address: str, expected_process: str) -> Generator[connection.Connection]:
-    """同一アカウント・元世代と確かめた接続だけを操作へ渡す。"""
     family = "AF_PIPE" if os.name == "nt" else "AF_UNIX"
     with contextlib.ExitStack() as stack:
         try:
             peer = stack.enter_context(connection.Client(address, family=family, authkey=None))
             authenticate(peer, server=False, expected_process=expected_process)
         except ProcessIdentityMismatch as error:
-            # アカウント確認後の起動単位違いだけを扱い、アクセスや本人性の拒否は隠さない。
             if process_alive(expected_process):
                 raise
             raise FileNotFoundError("発見記録の管理サービス世代が終了しました") from error
@@ -207,7 +192,6 @@ def connect(address: str, expected_process: str) -> Generator[connection.Connect
 
 
 def send(peer: connection.Connection, payload: dict[str, Any]) -> None:
-    """実行可能なpickleを使わず、JSONだけを送信する。"""
     peer.send_bytes(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
@@ -220,7 +204,6 @@ def receive(peer: connection.Connection) -> dict[str, Any]:
 
 
 def disconnect(peer: connection.Connection) -> None:
-    """終了処理で別threadの読取を解除してから、接続handleを閉じる。"""
     # Connection.closeのclosed判定とCloseHandleは別操作なので、複数threadのcloseを原子的にする。
     # 送信側の状態ロックとは分け、待機中の送信をshutdown/closeで解除できるようにする。
     with _DISCONNECT_LOCK:

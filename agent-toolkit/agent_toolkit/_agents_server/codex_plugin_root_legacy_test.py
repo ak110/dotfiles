@@ -50,7 +50,6 @@ async def test_legacy_plugin_root_real_mcp_lifecycle(
     host_environ: Callable[[], dict[str, str]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """旧形式の生成fixtureを使う実MCPをOS越しに保護し、全終了後の同じ公開cleanupで回収する。"""
     plugin = pathlib.Path(__file__).resolve().parents[2]
     version = json.loads((plugin / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["version"]
     source = tmp_path / "legacy-distribution" / version
@@ -111,7 +110,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
     )
 
     def cleanup(target: pathlib.Path, processes: dict[int, psutil.Process] | None = None) -> subprocess.CompletedProcess[str]:
-        # 列挙集合だけをfixtureのidentityへ限定する。argv・実行中のOSアカウント・open_filesと公開cleanupは実物を使う。
+
         identities = [
             process_identity.ProcessIdentity.capture(process).payload()
             for process in (owned if processes is None else processes).values()
@@ -162,7 +161,6 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                         try:
                             arguments = process.cmdline()
                         except psutil.NoSuchProcess:
-                            # 列挙後に終了した補助プロセスは、稼働中のMCPの候補から外す。
                             continue
                         if len(arguments) > 1 and pathlib.Path(arguments[1]) == entrypoint:
                             servers.append(process)
@@ -229,8 +227,7 @@ runpy.run_path(sys.argv[0], run_name="__main__")
                     except psutil.Error as error:
                         opened = []
                         open_files_error = type(error).__name__
-                    # 実MCPを1台に限定したOS観測でも共通判定へ届くことを確認する。
-                    # インベントリーの対象だけを限定し、PID/argv/username/open_filesは実OSから得る。
+
                     with monkeypatch.context() as probe:
                         probe.setattr(psutil, "process_iter", lambda: [server])
                         probe.setattr(state_paths, "state_dir", lambda: leases.parent)

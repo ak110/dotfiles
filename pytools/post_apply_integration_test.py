@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのintegrationの試験。"""
 
 # pylint: disable=protected-access
 
@@ -196,7 +195,6 @@ def test_normal_main_applies_host_settings_and_preserves_user_values(
 
 
 def test_external_prune_is_not_repeated_inside_update_post_apply(monkeypatch: pytest.MonkeyPatch) -> None:
-    """外側ランチャーがpruneを担当する実行ではuv配下へpruneを追加しない。"""
     monkeypatch.setenv("DOTFILES_PRUNE", "1")
     monkeypatch.setenv("DOTFILES_PRUNE_OUTSIDE_UV", "1")
     monkeypatch.setattr(post_apply, "DEFAULT_STEPS", [])
@@ -207,7 +205,6 @@ def test_external_prune_is_not_repeated_inside_update_post_apply(monkeypatch: py
 
 @pytest.mark.parametrize("platform", ["posix", "nt"])
 def test_standalone_prune_entry_runs_on_both_platforms(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str) -> None:
-    """単独の公開--pruneは両OSで通常工程の後に削除を1回行う。"""
     monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
@@ -264,7 +261,6 @@ def test_prune_only_invalid_arguments_preserve_mode(
 def test_prune_only_entry_runs_only_prune_and_propagates_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str], failure: str | None
 ) -> None:
-    """正規rootのprune-onlyは通常の更新工程を起動せず削除結果を返す。"""
     monkeypatch.setattr(post_apply.warmup_pyfltr_mcp, "run", post_apply_outcome.PostApplyOutcome)
     calls: list[str] = []
 
@@ -305,7 +301,6 @@ def test_prune_only_entry_runs_only_prune_and_propagates_failure(
 def test_prune_only_if_minimal_uses_effective_mode(  # noqa: PLR0913 -- 保存mode・明示指定・pruneの組合せを検証する
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, saved: str, explicit: str | None, prune: bool, expected: bool
 ) -> None:
-    """更新後整理は保存modeと明示指定から実効modeを解決し、モードによらずpruneを実行する。"""
     configuration = tmp_path / "config.json"
     configuration.write_text(json.dumps({"dotfiles_mode": saved}), encoding="utf-8")
     monkeypatch.setattr(post_apply.dotfiles_mode, "configuration_path", lambda: configuration)

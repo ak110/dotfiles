@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するtimingsの試験。"""
-
 import json
 
 import playwright.async_api
@@ -22,14 +20,10 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_answer_save_records_whole_operation_linked_to_requests(browser_harness: _BrowserHarness) -> None:
-    """回答の保存は、押下から詳細を閉じた後の一覧の再描画までを1件の操作として記録し、操作内の取得と識別子で対応付ける。
-
-    取得単位の記録だけでは、保存後の表示更新までに掛かった時間を追跡できない。
-    """
     harness = browser_harness
     page = harness.page
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
-    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+
     sent: list[dict] = []
     page.on(
         "request",
@@ -68,13 +62,11 @@ async def test_answer_save_records_whole_operation_linked_to_requests(browser_ha
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_wi_screen_sends_operation_timings_with_request_ids(browser_harness: _BrowserHarness) -> None:
-    """一覧の取得と描画の所要を、サーバーの記録と同じ要求IDで送る。URLのqueryは送らない。"""
     page = browser_harness.page
-    # `sendBeacon`のBlob本文はPlaywrightの要求から読めないため、同じ本文を`fetch`で送らせて検査する。
+
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
     await page.goto(browser_harness.base_url + "/")
-    # 一覧の記録は描画完了の次のフレームで積まれ、`pagehide`の送信に間に合わない場合は定期送信で届く。
-    # 一覧の記録を含む送信を待ち、`pagehide`と定期送信のどちらで届いても同じ内容を検査する。
+
     async with page.expect_request(
         lambda request: request.url.endswith("/api/timings") and '"/api/entries"' in (request.post_data or ""),
         timeout=30000,
@@ -92,14 +84,13 @@ async def test_wi_screen_sends_operation_timings_with_request_ids(browser_harnes
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_initial_load_fetches_list_once_after_subscription(browser_harness: _BrowserHarness) -> None:
-    """購読の登録後に初期取得するため、最初の接続では一覧を読み直さず、登録後の変更は通知で反映する。"""
     harness = browser_harness
     page = harness.page
     await _observe_screen_requests(page)
     await page.goto(harness.base_url + "/")
     await playwright.async_api.expect(page.locator("#connection-status")).to_have_attribute("data-connected", "true")
     await _wait_screen_requests_consumed(page, ("/api/events",))
-    # 新着通知の基準を取る`refreshKnownEntries`の取得（page指定なし）は数えず、一覧の取得だけを数える。
+
     list_fetches = await page.evaluate(
         "Object.entries(window.__screenRequests.completedByUrl)"
         ".filter(([url]) => new URL(url).pathname === '/api/entries' && new URL(url).searchParams.has('page'))"

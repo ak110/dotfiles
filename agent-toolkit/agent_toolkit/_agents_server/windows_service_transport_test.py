@@ -49,7 +49,6 @@ def test_pipe_authentication_and_bytes() -> None:
 
 
 def test_listener_close_releases_pending_accept() -> None:
-    """未接続のacceptもclose要求後に有限時間で解除する。"""
     address = rf"\\.\pipe\agent-toolkit-test-{uuid.uuid4()}"
     with transport.listen(address) as listener:
         finished = threading.Event()
@@ -87,7 +86,6 @@ def test_accept_timeout_keeps_listening_instance() -> None:
 
 
 def test_listed_process_alive_matches_open_identity_of_running_process() -> None:
-    """開けるプロセスの起動単位は、開かずにプロセス一覧で判定しても一致し、作成時刻が1つ違えば別の世代とする。"""
     identity = transport.process_identity(os.getpid())
     pid, created = identity.split(":")
     assert transport.listed_process_alive(identity)
@@ -95,7 +93,6 @@ def test_listed_process_alive_matches_open_identity_of_running_process() -> None
 
 
 def test_process_alive_rejects_exited_process_with_open_handle() -> None:
-    """終了後にPopenのhandleが残っても、生存する世代として扱わない。"""
     with subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"]) as child:
         try:
             identity = transport.process_identity(child.pid)

@@ -1,5 +1,3 @@
-"""委譲先sessionの開始、継続、中断と停止を受け付け、engine別のbackendと共有のsession状態を管理する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -55,8 +53,6 @@ START_AVAILABILITY_TIMEOUT = state.START_AVAILABILITY_TIMEOUT
 
 
 class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-many-ancestors  # 責務別のmixinへ分割したため。
-    """エンジン別バックエンドと共有session状態を管理する。"""
-
     _close_task: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> Self:
@@ -66,7 +62,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         await self.close()
 
     def activate(self) -> None:
-        """状態ファイル出力を有効化する。"""
         session_registry.declare_effort_receiver()
         self._auto_resume_task = asyncio.create_task(self._monitor_auto_resume())
         if self._status_writer is not None:
@@ -74,7 +69,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             self._heartbeat_task = asyncio.create_task(self._refresh_heartbeat())
 
     async def activate_async(self, *, shared_monitor: bool = False) -> None:
-        """初回保存を待ってから常駐監視を開始する。"""
         session_registry.declare_effort_receiver()
         if self._status_writer is not None:
             await self._status_writer.activate_async()
@@ -92,7 +86,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             await asyncio.sleep(0.1 if awaiting else 1.0)
 
     async def _process_auto_resume(self, *, process_controls: bool = True) -> bool:
-        """監視の1巡を行い、共有サービスでも同じ再開条件を使う。"""
         if process_controls:
             await effort_control.process_requests(
                 self.sessions,
@@ -126,11 +119,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         instruction: str | None = None,
         extra_params: Mapping[str, str] | None = None,
     ) -> dict[str, Any]:
-        """実行中turnを継続し、終了済みなら同じsessionでreplyを開始する。
-
-        状態ファイルの書込主体を持つ場合は、`start`・`list`と同じく`root_session_id`を応答へ加える。
-        再起動した会話が既存sessionへの`send_message`から再開しても、PostToolUseがこの値で別名索引を書けるようにするためである。
-        """
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
             raise ActionableError(
                 "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
@@ -191,7 +179,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         return self._deliver_notices(response, notices)
 
     async def _deliver_message(self, session_id: str, prompt: str) -> dict[str, Any]:
-        """`send_message`の配送本体。応答の`root_session_id`は呼び出し元が加える。"""
         validate_prompt(prompt)
         await self._wait_for_resource_release(session_id)
         if self._status_writer is not None:
@@ -269,12 +256,11 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             return response
 
     async def _kill_result_response_async(self, session: SessionState, *, kill_requested: bool, stop: bool) -> dict[str, Any]:
-        """中断の成否を返し、回収できた本文と通知だけを添える。"""
         notices = await self._read_notices(session.session_id)
         response: dict[str, Any] = await self._result_response_async(session, include_progress=False)
         if "agent_message" in response and session.finalized_at is not None:
             end = session.turn_seq, session.finalized_at
-            # stop=Trueでは結果をwaitに残し、中断の応答に同じ本文を載せない。
+
             claimed = not stop and not session.result_delivered
             if claimed and self._status_writer is not None:
                 try:
@@ -283,7 +269,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                         is not None
                     )
                 except retained_results.ResultBeingCollected:
-                    # 中断は既に決着した。回収中の本文には触れず、通知はこの応答で渡す。
                     return self._deliver_notices({"status": response["status"], "kill_requested": kill_requested}, notices)
             if not stop and not session.result_delivered and end == (session.turn_seq, session.finalized_at):
                 session.result_delivered = True
@@ -302,9 +287,8 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         timeout: float = DEFAULT_KILL_TIMEOUT,
         stop: bool = False,
     ) -> dict[str, Any]:
-        """実行中turnへ中断を要求し、指定時間まで終了を待つ。"""
         await self._drain_diagnostics()
-        # 不正な入力のkillは、自動復旧の取消などの副作用を起こす前に拒否する。
+
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ActionableError(
                 "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
@@ -459,7 +443,6 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         return await self._kill_result_response_async(session, kill_requested=True, stop=stop)
 
     async def close(self) -> None:
-        """初期化済みバックエンドを停止する。"""
         task = self._close_task
         if task is None or task.done() and (task.cancelled() or task.exception() is not None):
             task = self._close_task = asyncio.create_task(self._close())

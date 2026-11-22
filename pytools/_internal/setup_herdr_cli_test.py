@@ -1,5 +1,3 @@
-"""pytools._internal.setup_herdr_cliのテスト。"""
-
 import errno
 import os
 import subprocess
@@ -48,7 +46,6 @@ def test_windows_io_failure_never_reinstalls(monkeypatch, tmp_path: Path, operat
 
 @pytest.mark.parametrize("kind", ["missing", "outside", "cycle", "npm"])
 def test_windows_unowned_launcher_is_not_executed(monkeypatch, tmp_path: Path, kind: str) -> None:
-    """未導入と不正なリンク、旧ランチャーだけの状態から未知の本体を起動しない。"""
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "win32")
     home = tmp_path / "home"
     visible = tmp_path / "bin"
@@ -189,11 +186,6 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
     stderr: str,
     inside_session: bool,
 ) -> None:
-    """セッション内の拒否と、稼働サーバーの再起動を要するため導入しなかった更新は、既存版を確認して延期を返す。
-
-    手動でHerdr外から更新するよう案内する。
-    非対話の`herdr update`は導入しなかった場合も終了0で返すため、診断を確認して延期を判定する。
-    """
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_herdr_cli.sys, "platform", "linux")
     launcher = tmp_path / ".local" / "bin" / "herdr"

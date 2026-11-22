@@ -98,7 +98,6 @@ def clone(
             if not dry_run:
                 shutil.copy2(sub, target)
 
-    # 不要ファイル・ディレクトリ削除 (ミラーモード以外でもコピー先だけにあるものは除去するのが元実装)
     dst_dirs = [] if top_only else [d for d in dst.rglob("*") if d.is_dir() and not _is_excluded(d, excludes)]
     dst_files = list(dst.iterdir()) if top_only else list(dst.rglob("*"))
     for sub in dst_files:

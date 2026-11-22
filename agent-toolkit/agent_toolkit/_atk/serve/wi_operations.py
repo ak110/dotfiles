@@ -69,7 +69,6 @@ _RECENT_REPO_RETENTION = datetime.timedelta(days=7)
 """状態を省略した対象リポジトリの候補へ、処理済みの終了エントリを含める期間。"""
 
 
-# 別のホストで記録した処理日時と、このホストのファイル更新時刻の時計のずれを吸収する余裕。
 _PROCESSED_TIME_CLOCK_MARGIN = datetime.timedelta(days=1)
 
 
@@ -82,7 +81,6 @@ _LIST_ENTRY_KEY = "list_entry"
 EDIT_CONFLICT_MESSAGE = "編集中に他プロセスが対象を変更しました"
 
 
-# エンドユーザーが記述する注記記法を注記として描画する。
 MARKDOWN = markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False}).use(mdit_py_plugins.footnote.footnote_plugin)
 
 
@@ -91,19 +89,12 @@ _WINDOWS = os.name == "nt"
 
 
 def _git_status_command(repository: pathlib.Path) -> str:
-    """保存先を引数1個として渡せる`git -C <保存先> status`を返す。
-
-    保存先に空白や引用符が含まれても、案内した文字列をそのままシェルへ貼り付けて実行できるようにする。
-    """
     argv = ["git", "-C", str(repository), "status"]
     return subprocess.list2cmdline(argv) if _WINDOWS else shlex.join(argv)
 
 
 class SyncIncompleteError(Exception):
-    """画面の変更をローカルへ保存した後、commitまたはpushが完了しなかったことを示す。
-
-    応答本文には、ローカルの保存状態と他ホストへの反映状態、および画面から実行できる復旧操作を含める。
-    """
+    pass
 
 
 def saved_commit_failure_message(root: pathlib.Path, operation: str) -> str:
@@ -135,16 +126,10 @@ def git_failure_next_action(root: pathlib.Path) -> str:
 
 
 class WebApiInputError(ValueError):
-    """`atk serve`のWeb APIだけが送出する入力エラー。
-
-    受信側はブラウザー画面であり、HTTP 400の応答本文は理由の文字列だけとする。
-    CLIとWeb APIが共有する処理の入力エラー（`web_input.WebInputError`）は次の操作を持ち、
-    Web APIの応答本文は`error`へ`str()`の理由、`next_action`へ次の操作を分けて返す。
-    """
+    pass
 
 
 def _terminal_processing_time(text: str) -> datetime.datetime | None:
-    """最後の処理結果に保存された処理日時をUTCで返す。"""
     lines = normalize_newlines(text).split("\n")
     headings = top_level_atx_headings(text, 2)
     matching = [index for index, (_, title) in enumerate(headings) if title == "処理結果"]
@@ -170,7 +155,6 @@ def _terminal_processing_time(text: str) -> datetime.datetime | None:
 
 
 def _without_source_frontmatter(message: str) -> str:
-    """通常Web登録の本文から投入元を除いて返す。"""
     parsed = frontmatter.parse_frontmatter(message)
     if parsed is None:
         return message
@@ -244,11 +228,6 @@ def _entry(
 
 
 def _target_branch(metadata: dict[str, typing.Any], repo_id: object, registry: wi_branches.Registry) -> str | None:
-    """項目の実効の系統を返す。系統を登録していないrepository宛てで保存値も無ければ`None`を返す。
-
-    `wi_branches.effective`と同じ規則を、本文を読まずに解析済みのfrontmatterから求める。
-    保存値は系統の登録に無い名前でも、そのまま返して一覧と詳細に示す。
-    """
     stored = metadata.get(wi_branches.KEY)
     if isinstance(stored, str) and stored:
         return stored
@@ -257,12 +236,10 @@ def _target_branch(metadata: dict[str, typing.Any], repo_id: object, registry: w
 
 
 def _branch_field(branch: str | None) -> dict[str, str]:
-    """実効の系統がある項目だけに`target_branch`を加える。系統未登録のrepository宛ての項目の形は変えない。"""
     return {} if branch is None else {wi_branches.KEY: branch}
 
 
 def _unanswered_uwi_dependents(active: list[entry_index.IndexedEntry]) -> frozenset[pathlib.Path]:
-    """未回答UWIの回答を待つAWIのパスを、未終了の全項目の解析済みの値から求める。"""
     return wi_readiness.unanswered_uwi_dependents(
         (
             indexed.path,
@@ -276,13 +253,6 @@ def _unanswered_uwi_dependents(active: list[entry_index.IndexedEntry]) -> frozen
 
 
 def _needs_verify(kind: str, state: str, text: str) -> bool:
-    """反映後の観測だけが残るため`inbox`へ戻されたawiかを返す。
-
-    process-wiは観測できる時刻より前の項目を`inbox`へ戻すため、保存状態だけでは未着手の項目と区別できない。
-    process-wiのメインエージェントと同じく、コードフェンス外のトップレベルH2のうち最後の再開記録の節が、
-    観測だけが残る再開区分を持つかで判定する。
-    `processing`と`hold`は状態バッジが別の意味を示すため対象から外す。
-    """
     if kind != wi_constants.WI_TYPE_AWI or state != wi_constants.WI_STATE_INBOX:
         return False
     lines = wi_headings.last_h2_section_lines(text, wi_constants.OBSERVATION_RESUME_HEADING)
@@ -290,12 +260,10 @@ def _needs_verify(kind: str, state: str, text: str) -> bool:
 
 
 def _json_sort_key(value: typing.Any) -> str:
-    """正規化済み値をJSON表現の辞書順で並べるためのキーを返す。"""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
 
 def _json_compatible(value: typing.Any, active_ids: set[int] | None = None) -> typing.Any:
-    """YAML値を厳格なJSONが受理する表示用の値へ再帰的に変換する。"""
     active = set() if active_ids is None else active_ids
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -374,11 +342,6 @@ def _json_compatible_mapping_entries(
 
 
 def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
-    """解析済みfrontmatterをキーと値の2列表のHTMLへ整形する。
-
-    Markdownとして整形すると区切り行が水平線と見出しへ解釈され、インデントも失われるため、
-    本文と分離して表として描画する。解析は既存の`parse_frontmatter()`へ一元化する。
-    """
     if not metadata:
         return ""
     rows: list[str] = []
@@ -395,11 +358,6 @@ def _render_frontmatter_table(metadata: dict[str, typing.Any]) -> str:
 
 @functools.lru_cache(maxsize=128)
 def _render_content(text: str) -> str:
-    """frontmatterを表として、本文をMarkdownとして整形したHTMLを保持する。
-
-    整形結果は本文だけで一意に定まるため、更新時刻はキーに含めない。
-    含めると同一本文の再保存でヒットしなくなるだけで、無効化には寄与しない。
-    """
     parsed = frontmatter.parse_frontmatter(text)
     if parsed is None:
         return MARKDOWN.render(text)
@@ -410,13 +368,11 @@ def _render_content(text: str) -> str:
 
 @functools.lru_cache(maxsize=128)
 def _render_body(text: str) -> str:
-    """frontmatterを除いた本文だけをMarkdownとして整形する。"""
     parsed = frontmatter.parse_frontmatter(text)
     return MARKDOWN.render(text if parsed is None else parsed[1])
 
 
 def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str, list[str]]:
-    """UWIの回答形式と選択肢をWeb UI用の安定した形へ正規化する。"""
     if kind != wi_constants.WI_TYPE_UWI:
         return wi_constants.QUESTION_TYPE_FREE_FORM, []
     raw_type = metadata.get("question_type")
@@ -438,7 +394,6 @@ def _question_metadata(metadata: dict[str, typing.Any], kind: str) -> tuple[str,
 
 
 def _uwi_answer(text: str, kind: str) -> str | None:
-    """UWI回答欄の既存回答を編集用文字列として返す。"""
     if kind != wi_constants.WI_TYPE_UWI or uwi_mutations.ANSWER_MARKER not in text:
         return None
     return text.rsplit(uwi_mutations.ANSWER_MARKER, maxsplit=1)[1].strip() or None
@@ -453,10 +408,6 @@ class Operations:
         self._entry_index = entry_index.EntryIndex(private_notes, cache_path=index_cache_path)
 
     def _entries(self, filters: dict[str, str]) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
-        """条件に一致する一覧と、走査中に発生した読取り警告を返す。
-
-        種別と回答状況を混在させてファイル名の降順とする。
-        """
         result: list[dict[str, object]] = []
         waiting = filters.get("view") == "waiting"
         if waiting:
@@ -474,8 +425,7 @@ class Operations:
         states = wi_filters.resolve_states(status_filter)
         target_repo_matcher = wi_filters.TargetRepoMatcher(target_repo_filter)
         needs_blocked = kind_filter in ("all", wi_constants.WI_TYPE_AWI)
-        # 索引の走査は状態によらず全ファイルを解析して警告を返すため、blockedの導出に要る未終了の項目も
-        # 同じ1回の走査で取得し、1操作で本文の解析を繰り返さない。
+
         selected_states = set(states)
         scanned, warnings = self._entry_index.scan(
             selected_states | set(wi_constants.WI_ACTIVE_STATES) if needs_blocked else selected_states
@@ -492,7 +442,7 @@ class Operations:
                 continue
             if created_after is not None:
                 created_at = _created_at(indexed.path.name)
-                # 作成日時を読めない名前の項目は、期間を判定できないため期間の指定にかかわらず返す。
+
                 if created_at is not None and created_at < created_after:
                     continue
             metadata = indexed.metadata
@@ -527,8 +477,7 @@ class Operations:
                 )
                 if not all(any(term in value for value in search_values) for term in query_terms):
                     continue
-            # 表示用項目は本文、状態、ファイル名および更新時刻だけで決まるため、解析結果とともに保持して
-            # 変更のないファイルでは組み立て直さない。
+
             entry_key = (indexed.state, indexed.path.name, indexed.updated_at)
             cached_entry = indexed.derived.get(_LIST_ENTRY_KEY)
             if cached_entry is None or cached_entry[0] != entry_key:
@@ -545,8 +494,7 @@ class Operations:
                     ),
                 )
                 indexed.derived[_LIST_ENTRY_KEY] = cached_entry
-            # 依存先の回答で変わる導出値は、項目自身のキーで保持する表示キャッシュへ入れない。
-            # 実効の系統は系統の登録で変わるため、項目自身のキーで保持する表示キャッシュへ入れない。
+
             result.append({**cached_entry[1], "blocked": indexed.path in blocked_paths, **_branch_field(item_branch)})
         if waiting:
             return sorted(result, key=lambda item: (item["important"] is not True, str(item["filename"]))), warnings
@@ -556,7 +504,6 @@ class Operations:
         self,
         filters: dict[str, str],
     ) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
-        """一覧API向けにエントリと読取り警告を返す。"""
         return self._entries(filters)
 
     def detail(self, state: str, filename: str) -> dict[str, object]:
@@ -583,7 +530,6 @@ class Operations:
             }
             display_text = text
             if kind == wi_constants.WI_TYPE_UWI and uwi_mutations.ANSWER_MARKER in text:
-                # 保存・回答抽出と同じ最後の区切りだけを、表示用本文から除く。
                 before_answer, answer = text.rsplit(uwi_mutations.ANSWER_MARKER, 1)
                 display_text = before_answer + answer
             try:
@@ -615,27 +561,19 @@ class Operations:
             raise FileNotFoundError(filename) from error
 
     def _entry_file(self, filename: str) -> pathlib.Path | None:
-        """WIファイル名から保存先を返す。存在しなければ`None`を返す。"""
         dated = unique_dated_entry_path(self.private_notes, filename)
         if dated is not None:
             return dated
         return next((candidate for candidate in iter_entry_paths(self.private_notes) if candidate.name == filename), None)
 
     def track_index_changes(self) -> collections.abc.Callable[[], None]:
-        """一覧の索引を変更通知で無効化する方式へ切り替え、通知先として呼ぶ関数を返す。"""
         self._entry_index.enable_change_tracking()
         return self._entry_index.mark_changed
 
     def warm_index(self, stop: threading.Event | None = None) -> None:
-        """一覧の索引へ全状態の解析結果を読み込む。起動直後の最初の一覧が全件の解析を待たないようにする。"""
         self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
 
     def preload_entry_texts(self, stop: threading.Event | None = None) -> None:
-        """索引の全項目の本文と検索用の本文を読み込む。
-
-        保存した解析結果から作った項目は本文を必要時に読むため、先に読まないと再起動後の最初の検索が
-        全項目の本文の読込を待つ。
-        """
         entries, _warnings = self._entry_index.scan(wi_constants.WI_STATES, stop=stop)
         for entry in entries:
             if stop is not None and stop.is_set():
@@ -661,23 +599,12 @@ class Operations:
             return None
 
     def branch_registry(self) -> dict[str, JsonObject]:
-        """系統を登録したrepositoryの識別子から、系統の名前と`default_branch`への対応を返す。
-
-        新規登録フォームの系統の選択肢と一覧の限定の選択肢に用いる。系統を登録したrepositoryが無ければ空を返す。
-        """
         return {
             repo_id: {"branches": list(settings.branches), "default_branch": settings.default_branch}
             for repo_id, settings in wi_branches.registry().items()
         }
 
     def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
-        """指定状態のエントリに現れる対象リポジトリを昇順で返す。
-
-        新規登録フォームの補完候補とフィルターの選択肢に用いる。
-        状態を省略した場合に使う`active`ではactiveエントリに加え、直近7日以内に処理した終了エントリを含める。
-        他の状態を明示した場合はその状態の全エントリを返す。
-        `git pull`は行わず、ローカルの保存済みエントリだけを走査する。
-        """
         found: set[str] = set()
         resolver_cache: dict[str, str | None] = {}
         indexed_entries, _warnings = self._entry_index.scan(
@@ -687,8 +614,6 @@ class Operations:
         cutoff = current_time - _RECENT_REPO_RETENTION
         for indexed in indexed_entries:
             if status == "active" and indexed.state not in wi_constants.WI_ACTIVE_STATES:
-                # 処理日時は書込時に記録されるため、ファイルの更新時刻より後にならない。
-                # 更新時刻が境界より十分前の終了項目は本文を解析せずに除く。
                 if datetime.datetime.fromisoformat(indexed.updated_at) < cutoff - _PROCESSED_TIME_CLOCK_MARGIN:
                     continue
                 if _PROCESSED_AT_KEY not in indexed.derived:
@@ -699,7 +624,7 @@ class Operations:
             target_repo = indexed.metadata.get("target_repo")
             if isinstance(target_repo, str) and target_repo:
                 canonical_target_repo = _git_remote.canonical_repo(target_repo, resolver_cache)
-                # 正規化は同一リポジトリの候補統合にだけ用い、解決不能な保存値は原値を保持する。
+
                 found.add(canonical_target_repo if canonical_target_repo is not None else target_repo)
         return sorted(found)
 
@@ -724,7 +649,6 @@ class Operations:
             raise WebApiInputError("指定したエントリを操作できません") from error
 
     def important(self, filename: str, important: bool, expected_content: str | None = None) -> bool:
-        """保存状態を保って重要フラグだけを設定または解除する。"""
         return awi_mutations.set_entry_importance(
             self.private_notes,
             filename=filename,
@@ -734,10 +658,6 @@ class Operations:
         )
 
     def user_comment(self, state: str, filename: str, comment: str, expected_content: str) -> bool:
-        """エージェント由来のinboxまたはhold項目へユーザーコメントを追記、置換または削除する。
-
-        空白だけのコメントはユーザーコメント節の削除として扱う。
-        """
         if state not in {wi_constants.WI_STATE_INBOX, wi_constants.WI_STATE_HOLD}:
             raise WebApiInputError("ユーザーコメントを編集できる状態はinboxまたはholdだけです")
         if not isinstance(comment, str):
@@ -782,11 +702,6 @@ class Operations:
         choices: list[str] | None = None,
         target_branch: str | None = None,
     ) -> list[str]:
-        """エントリを原子的に追加する。
-
-        `target_repo`が`None`の場合は各メッセージのfrontmatterの`target_repo`を必須とし、
-        入力の検証は、各呼び出し元が使う`add_entries`でまとめて行う。
-        """
         if entry_type not in wi_constants.WI_TYPES:
             raise WebApiInputError("typeが不正です")
         if entry_type == wi_constants.WI_TYPE_AWI and (scope or question_type or choices):
@@ -845,7 +760,6 @@ class Operations:
         expected_content: str | None = None,
         state: str | None = None,
     ) -> bool:
-        """UWI回答欄を置換する。"""
         return uwi_mutations.answer_uwi(
             self.private_notes,
             filename=filename,
@@ -867,11 +781,6 @@ class Operations:
         state: str | None = None,
         expected_content: str | None = None,
     ) -> list[str]:
-        """複数エントリを全件検証後に移動または削除する。
-
-        `force`は`action="remove"`の場合のみ意味を持ち、
-        processing状態のファイルを通常の削除から守る処理（`atk wi rm`の`--force`と同義）を解除する。
-        """
         try:
             return awi_mutations.transition_entries(
                 self.private_notes,
@@ -890,5 +799,4 @@ class Operations:
             raise WebApiInputError("指定したエントリを操作できません") from error
 
     def commit(self) -> bool:
-        """外部編集差分をcommitしてpushする。"""
         return awi_mutations.commit_entries(self.private_notes, lock_timeout=_WEB_LOCK_TIMEOUT).changed

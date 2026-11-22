@@ -12,7 +12,6 @@ from agent_toolkit._testing.helpers import auto_message_opening_attributes
 
 
 def _minimal_report() -> str:
-    """委譲調整役の構造化された最小完了報告を返す。"""
     return """status: completed
 要約: 完了
 コミット一覧:
@@ -49,19 +48,16 @@ def test_nonempty_report_does_not_require_legacy_labels(capsys: pytest.CaptureFi
 
 
 def test_english_internal_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
-    """委譲元へ返す非空の内部返却は言語だけで書き直させない。"""
     assert advisor.main(json.dumps(_payload("Done here."))) == 0
     assert capsys.readouterr().out == ""
 
 
 def test_japanese_completion_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
-    """日本語の完了報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps(_payload("完了報告を確認した。"))) == 0
     assert capsys.readouterr().out == ""
 
 
 def test_non_string_report_is_allowed(capsys: pytest.CaptureFixture[str]) -> None:
-    """非文字列の完了報告は空stdoutで許可する。"""
     assert advisor.main(json.dumps({**_payload(), "last_assistant_message": {"status": "completed"}})) == 0
     assert capsys.readouterr().out == ""
 
@@ -85,7 +81,6 @@ def test_pending_child_with_nonempty_report_is_approved(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """未消化の子起動があっても非空の完了報告だけでSubagentStopを許可する。"""
     transcript = tmp_path / "agent.jsonl"
     entries = [
         {
@@ -121,7 +116,6 @@ def test_pending_child_with_nonempty_report_is_approved(
 
 
 def test_recursive_hook_is_approved_with_empty_output(capsys: pytest.CaptureFixture[str]) -> None:
-    """再帰呼び出し時の許可は両ホスト共通で空stdoutとする。"""
     assert advisor.main(json.dumps({"stop_hook_active": True})) == 0
     assert capsys.readouterr().out == ""
 

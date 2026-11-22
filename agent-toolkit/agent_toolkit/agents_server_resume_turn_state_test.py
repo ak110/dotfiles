@@ -79,7 +79,6 @@ async def test_result_without_background_task_is_published_on_idle(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """バックグラウンドタスクの無いturnは、結果の直後に届く`idle`で従来どおり公開する。"""
     client = ControlledClaudeClient("claude-idle", report_state=True)
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -95,7 +94,6 @@ async def test_idle_with_live_shell_task_keeps_result_pending(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """シェルのバックグラウンドタスクが動いている間に届く`idle`では確定せず、そのタスクの再開turnの結果を返す。"""
     client = ControlledClaudeClient("claude-idle-live-task", report_state=True)
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
@@ -122,7 +120,6 @@ async def test_unreported_turn_state_falls_back_with_single_warning(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """CLIがturn状態を報告しない場合は追跡集合だけの従来判定で公開し、警告を1回だけ記録する。"""
     client = ControlledClaudeClient("claude-unreported")
     async with _manager(client, monkeypatch) as (manager, _backend):
         caplog.set_level("WARNING", logger="agent-toolkit.agents-server.claude")
@@ -251,7 +248,6 @@ async def test_all_tasks_done_running_then_stream_end_is_distinguishable(
 async def test_child_then_stream_end_then_child_done(
     extra: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """孫sessionが残る間に受信列が終わり、その後に孫sessionが終わった場合に、保留が解消されるか。"""
     client = ControlledClaudeClient(f"claude-child-end-{extra}", report_state=True)
     async with _manager(client, monkeypatch) as (manager, _backend):
         child = f"child-{extra}"

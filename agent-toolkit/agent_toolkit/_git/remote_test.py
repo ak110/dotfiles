@@ -1,5 +1,3 @@
-"""`_git_remote`のリモートURLの正規化と取得の動作を確かめる。"""
-
 import pathlib
 
 import pytest
@@ -25,13 +23,11 @@ from agent_toolkit._testing import git_repository
     ],
 )
 def test_normalize_remote_url(remote_url: str, expected: str) -> None:
-    """URL形式ごとに`host/owner/repository`形式へ正規化されること。"""
     assert _git_remote.normalize_remote_url(remote_url) == expected
 
 
 @pytest.mark.parametrize("remote_url", ["", "not-a-url", "/home/user/dotfiles", "https://github.com/ak110"])
 def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
-    """解析できない値は、originの値を確かめる次の操作を持つ例外を送出すること。"""
     with pytest.raises(ActionableError, match="リモートURLとして解析できません") as error_info:
         _git_remote.normalize_remote_url(remote_url)
 
@@ -39,7 +35,6 @@ def test_normalize_remote_url_rejects_invalid_value(remote_url: str) -> None:
 
 
 def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path) -> None:
-    """旧ローカルパス形はoriginを介して正規なURL形へ解決する。"""
     git_repository.init_repository(tmp_path, origin="git@github.com:Example/Repo.git")
 
     assert _git_remote.resolve_repo_identifier(str(tmp_path)) == "github.com/example/repo"
@@ -47,7 +42,6 @@ def test_resolve_repo_identifier_reads_legacy_local_path(tmp_path: pathlib.Path)
 
 @pytest.mark.parametrize("kind", ["missing", "no-remote"])
 def test_resolve_repo_identifier_returns_none_for_unresolvable_path(tmp_path: pathlib.Path, kind: str) -> None:
-    """存在しないパスとorigin未設定リポジトリは解決不能として扱う。"""
     target = tmp_path / kind
     if kind == "no-remote":
         git_repository.init_repository(target)
@@ -70,19 +64,16 @@ def test_resolve_repo_identifier_returns_none_for_unresolvable_path(tmp_path: pa
 def test_parse_remote_location(
     value: str, hostname: str | None, project_path: str, port: int | None, protocol: str | None
 ) -> None:
-    """URL・SCP形式・`[host/]owner/repository`からホスト名とプロジェクトのパスを取り出すこと。"""
     assert _git_remote.parse_remote_location(value) == _git_remote.RemoteLocation(hostname, project_path, port, protocol)
 
 
 @pytest.mark.parametrize("value", ["", "dotfiles", "https://github.com/ak110"])
 def test_parse_remote_location_rejects_value_without_project_path(value: str) -> None:
-    """`owner/repository`の形のプロジェクトのパスを持たない値は`ValueError`を送出すること。"""
     with pytest.raises(ValueError, match="リモートのプロジェクトのパスを取り出せない"):
         _git_remote.parse_remote_location(value)
 
 
 def test_origin_url_and_remote_urls_read_configured_remotes(tmp_path: pathlib.Path) -> None:
-    """`origin`のURLと全リモートのURLを返し、Git管理外では`None`と空のリストを返すこと。"""
     repository = git_repository.init_repository(tmp_path / "repository", origin="https://github.com/ak110/dotfiles.git")
     git_repository.run_git(repository, "remote", "add", "fork", "git@github.com:other/dotfiles.git")
     outside = tmp_path / "outside"

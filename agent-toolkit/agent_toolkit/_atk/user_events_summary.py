@@ -1,9 +1,3 @@
-"""`atk run-script session-review-evidence`の保存後に、発話・一致ごとの記録位置と冒頭を表示する。
-
-逐語引用の出所として保存ファイルをWI投入担当へ渡す呼び出し元は、引用する発話を選ぶために記録位置と本文の冒頭だけを要する。
-保存先を開いて長いJSON行の末尾から`record`と`line`を取り出す追加の呼び出しを不要にするため、保存後の表示でこれらを返す。
-"""
-
 import collections
 import json
 import pathlib
@@ -52,7 +46,6 @@ _RECORD_COUNT_LIMIT = 10
 
 
 def summarize_saved_matches(path: pathlib.Path) -> None:
-    """検索一致とツール呼び出しの件数と内訳、保存順の先頭の一致を、保存ファイルから選べる要約にする。"""
     count = 0
     empty = False
     shown: list[str] = []
@@ -102,7 +95,6 @@ def summarize_saved_matches(path: pathlib.Path) -> None:
 
 
 def _head(text: str, *, length: int = _HEAD_LENGTH) -> str:
-    """改行を空白へ置き換えた先頭の文字列を返し、切り詰めた場合は末尾へ`…`を付ける。"""
     flattened = " ".join(text.splitlines())
     if len(flattened) <= length:
         return flattened

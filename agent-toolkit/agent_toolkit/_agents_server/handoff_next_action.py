@@ -1,5 +1,3 @@
-"""終了時の結果の値だけから、引き継ぎ起動の次操作を組み立てる。"""
-
 from __future__ import annotations
 
 import json
@@ -11,7 +9,6 @@ from agent_toolkit._agents_server.state import SessionState
 
 
 def _availability_failure(engine: str, status: str, error: Any) -> bool:
-    """backendと共通の可用性判定から、結果に引き継ぎ案内を付ける対象を求める。"""
     session = SessionState(session_id="handoff", cwd="", engine=engine, status=status, error=error)
     if engine in {"agy", "opencode"}:
         return engine_availability.failure_error(session) is not None

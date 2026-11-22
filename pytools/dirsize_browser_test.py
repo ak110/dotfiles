@@ -1,5 +1,3 @@
-"""CLIの実HTMLを使い、検索・範囲変更・候補選択からダウンロードまで検証する。"""
-
 import json
 import os
 import pathlib
@@ -70,7 +68,7 @@ def test_cli_html_candidate_selection_download_and_search(
         assert len(areas) == 125
         assert sum(tile["area"] for tile in areas) == pytest.approx(10000)
         wheel = next(tile for tile in areas if tile["title"].startswith(str(root / "archive" / "wheel") + " "))
-        # CSSの割合文字列はブラウザーが有効桁を丸めるため、直列化精度を許容する。
+
         assert wheel["area"] == pytest.approx(10000 * 41 / 7674, rel=1e-5)
         expect(page.get_by_role("status").first).to_contain_text("件")
         expect(page.get_by_role("button", name="Shellをダウンロード", exact=True)).to_be_disabled()

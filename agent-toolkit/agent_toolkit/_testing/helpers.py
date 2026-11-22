@@ -61,7 +61,6 @@ def link_directory(link: pathlib.Path, target: pathlib.Path) -> None:
 
 
 def auto_message_opening_attributes(text: str) -> dict[str, str]:
-    """自動挿入本文の開始タグから属性を名前で取得する。"""
     opening = _AUTO_OPENING_PATTERN.search(text)
     assert opening is not None, text
     pairs = _AUTO_ATTRIBUTE_PATTERN.findall(opening["attributes"])
@@ -71,7 +70,6 @@ def auto_message_opening_attributes(text: str) -> dict[str, str]:
 
 
 def delivery_payload(delivered: str) -> str:
-    """agents_serverが配送した本文の出所標識を検証し、囲まれた逐語の本文を返す。"""
     if resources := _RESOURCE_PREFIX_PATTERN.fullmatch(delivered):
         delivered = resources["delivery"]
     matched = _DELIVERY_TAG_PATTERN.fullmatch(delivered)
@@ -80,7 +78,6 @@ def delivery_payload(delivered: str) -> str:
 
 
 def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
-    """テスト用一時ディレクトリからセッション状態を読み込む。"""
     del state_dir
     path = state_path(session_id)
     if not path.exists():
@@ -89,7 +86,6 @@ def _read_state(state_dir: pathlib.Path, session_id: str) -> dict:
 
 
 def _write_transcript(directory: pathlib.Path, entries: list[dict]) -> pathlib.Path:
-    """エントリ列をJSONL形式のtranscriptへ書き込む。"""
     transcript = directory / "transcript.jsonl"
     transcript.write_text(
         "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",

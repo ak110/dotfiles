@@ -83,7 +83,6 @@ def test_codex_projection_limits_matchers_and_timeout(manifest_root: Path) -> No
     assert {"exec_command", r"functions\.exec_command", r"functions\.exec"} <= set(
         generated["PostToolUse"][0]["matcher"].split("|")
     )
-    # PostToolUseは資料本文を返さないため、追加コンテキストの退避上限を外さない。
     assert all("additionalContextLimit" not in handler for handler in generated["PostToolUse"][0]["hooks"])
     assert all("timeout" not in handler for handler in generated["PreToolUse"][0]["hooks"])
 

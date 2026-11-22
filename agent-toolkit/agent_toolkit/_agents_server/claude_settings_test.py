@@ -1,5 +1,3 @@
-"""API接続への移行と、接続設定を保持した同じ会話の再開を検証する。"""
-
 import asyncio
 import contextlib
 import json
@@ -85,7 +83,6 @@ async def test_subscription_launch_drops_parent_api_auth(
 async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_auth(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """API環境未設定でも、明示したサブスク固定を新規SDK起動の環境とsettingsへ適用する。"""
     configure_claude_payg(monkeypatch, "")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
@@ -127,7 +124,6 @@ async def test_explicit_subscription_orchestrator_without_api_file_isolates_sdk_
 async def test_explicit_subscription_orchestrator_reselects_same_conversation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, initial: str
 ) -> None:
-    """明示した固定を既存会話の次turnと冷再開へ適用し、同じSDK会話をサブスクで続ける。"""
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     monkeypatch.setenv("ANTHROPIC_API_KEY", "parent-api")
     configure_claude_payg(monkeypatch, "")
@@ -231,7 +227,6 @@ async def test_usage_limit_api_migration_and_cold_resume(
     launch_kind: Any,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """起動直後の上限から同じ会話を移し、追送・stop・再起動でも保持したファイルを読み直す。"""
     env_file = tmp_path / "api.env"
     env_file.write_text("# 接続\nexport ANTHROPIC_AUTH_TOKEN='dummy-secret'\nCUSTOM_API_NAME=\"one=two\"\n", encoding="utf-8")
     configure_claude_payg(monkeypatch, str(env_file))
@@ -438,10 +433,6 @@ async def test_api_switched_delegate_returns_to_subscription_after_reset(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`pay-as-you-go`で上限によりAPIへ移した委譲先は、解除予定時刻の後に始まる最初のturnで同じ会話をサブスクリプションへ戻す。
-
-    解除予定時刻より前の追送はAPIのまま所有タスクへ送り、上限による即時切替は従来どおり行う。
-    """
     clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
     options_seen: list[Any] = []
 
@@ -511,12 +502,6 @@ async def test_api_switched_delegate_auto_resume_returns_to_subscription_after_r
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
 ) -> None:
-    """孫sessionの終了による自動再開も、解除予定時刻の後なら同じ会話をサブスクリプションで再開する。
-
-    APIへ移した会話が孫sessionを待って結果を保留し、孫の終了で自動再開する。
-    解除予定時刻より前の自動再開はAPIの所有タスクへ送り、後の自動再開は通常の追送と同じくサブスクリプションへ戻す。
-    戻したturnがなお上限で拒否された場合は、既存の切替で同じ会話を再びAPIで続ける。
-    """
     after_reset = mode != "before-reset"
     clock = _pay_as_you_go_with_clock(tmp_path, monkeypatch)
     options_seen: list[Any] = []

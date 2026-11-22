@@ -1,9 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""C#製EcoUtilities.exeの移植。
-
-ファイル整理・gvbパス修正・ランダム抽出・サイトクロールのサブコマンドを提供する。
-C#版のサブコマンド名・引数・出力を維持し、`EcoUtilities`コマンドの差し替えで流用できるようにする。
-"""
 
 import argparse
 import datetime
@@ -20,8 +15,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pydantic
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
 from pytools._internal import ecoutilities_args
@@ -34,7 +27,6 @@ _HTTP_TIMEOUT = 30.0
 
 
 def main(args: argparse.Namespace | None = None) -> None:
-    """サブコマンドを解釈して各処理へ委譲するエントリポイント。"""
     if args is None:
         args = ecoutilities_args.parse_args()
 
@@ -60,7 +52,6 @@ def main(args: argparse.Namespace | None = None) -> None:
 
 
 def year_month_folder_256(dirs: list[str]) -> None:
-    """各ディレクトリ配下の全ファイルを更新日時順に256件ずつ年月フォルダーへ移動する。"""
     for dir_str in dirs:
         base = Path(dir_str)
         files = sorted(
@@ -90,7 +81,6 @@ def year_month_folder_256(dirs: list[str]) -> None:
 
 
 def delete_empty_folders(dirs: list[str]) -> int:
-    """各ディレクトリ配下の空サブディレクトリを削除し、空でないこと以外の理由で削除できなかった件数を返す。"""
     failures = 0
     for dir_str in dirs:
         base = Path(dir_str)
@@ -101,7 +91,6 @@ def delete_empty_folders(dirs: list[str]) -> int:
                 d.rmdir()
                 print(d)
             except OSError as e:
-                # 非空ディレクトリ（ENOTEMPTY）は想定内のため無視し、それ以外は標準エラーへ出力する（C#の二段catch相当）。
                 if e.errno != errno.ENOTEMPTY:
                     failures += 1
                     print(e, file=sys.stderr)
@@ -109,10 +98,6 @@ def delete_empty_folders(dirs: list[str]) -> int:
 
 
 def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> int:
-    """データフォルダーのファイル名一致で、gvb内の絶対パス行を実在パスへ付け替える。
-
-    ディレクトリ指定が不正な場合は1、それ以外は0を返す。
-    """
     gvb_base = Path(gvb_dir)
     data_base = Path(data_dir)
     if not (gvb_base.is_dir() and data_base.is_dir()):
@@ -150,7 +135,6 @@ def fix_gvb_by_file_name(gvb_dir: str, data_dir: str) -> int:
 
 
 def dispose_tc_bookmarks(path_str: str) -> None:
-    """gvbを接頭辞3文字ごとにまとめ、連番のサブフォルダー階層へ移動する。"""
     base = Path(path_str)
     files = sorted(
         base.rglob("*.gvb"),
@@ -172,15 +156,12 @@ def dispose_tc_bookmarks(path_str: str) -> None:
 
 
 def random_list(dir_str: str, list_path: str, encoding: str) -> None:
-    """ディレクトリ配下から最大64件をランダム抽出し、改行区切りで出力する。"""
     files = [str(p) for p in Path(dir_str).rglob("*") if p.is_file()]
     selected = random.sample(files, min(_RANDOM_TAKE, len(files)))
     Path(list_path).write_text(os.linesep.join(selected), encoding=encoding, newline="")
 
 
 class Site(pydantic.BaseModel):
-    """DownloadCustomのサイト設定。C#のDownloadCustom.Site構造体に対応する。"""
-
     download_folder_path: str
     first_url: str
     base_url: str
@@ -353,7 +334,6 @@ def _write_sample_sites(path: Path) -> None:
 
 
 def _strings(parent: ET.Element, container: str) -> list[str]:
-    """配列要素（`<container><string>...</string></container>`）の文字列リストを返す。"""
     node = parent.find(container)
     if node is None:
         return []
@@ -361,12 +341,10 @@ def _strings(parent: ET.Element, container: str) -> list[str]:
 
 
 def _mtime(path: Path) -> datetime.datetime:
-    """ファイルの最終更新時刻をローカル時刻で返す。"""
     return datetime.datetime.fromtimestamp(path.stat().st_mtime)
 
 
 def _prefix(path: Path) -> str:
-    """ファイル名（拡張子込み）の先頭3文字を返す。"""
     return path.name[:3]
 
 

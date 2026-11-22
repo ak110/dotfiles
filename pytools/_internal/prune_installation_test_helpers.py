@@ -16,15 +16,13 @@ UV_CACHE_MAINTENANCE = ["uv-cache-maintenance"]
 
 
 def state_path(name: str) -> Path:
-    """更新・整理・独立プロセスが共有する状態領域のパスを、公開の配置規則（platformdirs）で求める。"""
     return Path(platformdirs.user_state_dir("agent-toolkit", appauthor=False)) / name
 
 
 def prepare(tmp_path, monkeypatch, mode, installed=None):
-    """隔離したホームとdotfilesの作業ツリーを用意し、整理の外部コマンドを記録する代替へ差し替える。"""
     home = tmp_path / "isolated-home"
     home.mkdir()
-    # HOMEだけでは、ホストから継承した共有ランタイムの明示配置が残る。
+
     for name, path in {
         "HOME": home,
         "USERPROFILE": home,
@@ -95,7 +93,6 @@ def prepare(tmp_path, monkeypatch, mode, installed=None):
 
 
 def maintain(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> str:
-    """独立プロセスの公開入口を実行し、永続ログの本文を返す。"""
     log = tmp_path / "update-dotfiles.log"
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", log)
     post_apply.main(["--internal-uv-cache-maintenance"])

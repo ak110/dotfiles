@@ -22,7 +22,6 @@ _LOW_TRAILER = "Co-Authored-By: Claude Opus 5.5 / Low <noreply@anthropic.com>"
 
 @pytest.fixture(autouse=True)
 def _without_unrelated_document_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
-    """帰属の判定と公開応答を通し、対象外の規範配送を隔離する。"""
     monkeypatch.setattr(operation_skills, "notices", lambda *_args, **_kwargs: [])
 
 
@@ -77,10 +76,6 @@ def test_claude_commit_accepts_matching_or_unjudged_messages(
 def test_claude_commit_uses_last_observed_model_after_switching_back(
     capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
 ) -> None:
-    """turnの途中でモデルを切り替えて戻した記録では、最後に観測したモデルで期待値を求める。
-
-    初出順に重複を除いた一覧の末尾を使うと、戻す前のモデルを期待値にして正しい帰属行を遮断する。
-    """
     command = f"git commit -m 'fix: 変更' -m '{_LOW_TRAILER}'"
     payload = _claude_commit_hook_payload(tmp_path, command)
     _write_claude_transcript(
@@ -112,7 +107,6 @@ def test_subagent_commit_uses_the_subagent_record_model(capsys: pytest.CaptureFi
 
 
 def test_commit_without_observed_identity_remains_unblocked(capsys: pytest.CaptureFixture[str]) -> None:
-    """観測identityが無い入力の帰属を推測せず、repository対象の解決と分ける。"""
     payload = {"tool_name": "Bash", "tool_input": {"command": "git commit -m '変更'"}}
 
     assert pretooluse.main(json.dumps(payload)) == 0
@@ -126,7 +120,6 @@ def test_claude_commit_respects_explicit_empty_attribution_setting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """最上位の観測可能な`attribution.commit`が空文字なら、通常commitを誤遮断しない。"""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "settings.json").write_text(
@@ -148,7 +141,6 @@ def test_project_attribution_setting_overrides_user_disable(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """project設定が帰属を再指定した場合は、低優先度のuser空文字を無効化として扱わない。"""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "settings.json").write_text(

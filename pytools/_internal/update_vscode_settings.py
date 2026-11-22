@@ -15,7 +15,6 @@ import platform
 import socket
 from pathlib import Path
 
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import pytilpack.jsonc
 
 from pytools._internal import common, log_format, post_apply_outcome
@@ -107,7 +106,6 @@ def _settings_path(
 # (#afd19e vs #c6cba1、距離 23.96) を 74% 上回る。
 # 参照: https://personal.sron.nl/~pault/#sec:qualitative
 _HOST_COLORS: tuple[str, ...] = (
-    # Tol light (grey 除く 8 色)
     "#77AADD",
     "#99DDFF",
     "#44BB99",
@@ -116,7 +114,6 @@ _HOST_COLORS: tuple[str, ...] = (
     "#EEDD88",
     "#EE8866",
     "#FFAABB",
-    # Tol pale (grey と pale red 除く 4 色)
     "#BBCCEE",
     "#CCEEFF",
     "#CCDDAA",
@@ -139,16 +136,6 @@ def _hostname_color(*, hostname: str | None = None) -> str:
 
 
 def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool) -> dict:
-    """dotfilesが管理する設定項目のdictを構築する。
-
-    Args:
-        hostname: Activity Bar色生成に使うホスト名。
-        is_user_scope: TrueならUser scope（全マシン共通）、
-            FalseならMachine scope（マシン固有）。`markdown.styles` は
-            User scopeでのみ管理する。
-
-    dotfilesの作業ツリーを解決できない場合は、作業ツリー内のCSSを指す`markdown-pdf.styles`を管理対象から外す。
-    """
     settings: dict = {
         "workbench.colorCustomizations": {
             "activityBar.background": _hostname_color(hostname=hostname),
@@ -171,9 +158,6 @@ def _build_managed_settings(*, hostname: str | None = None, is_user_scope: bool)
             )
         ]
     if is_user_scope:
-        # markdown.styles は jsDelivr URL で全マシン共通。User scope 側に一度
-        # 書けば Settings Sync や Machine scope への波及でカバーされる。
-        # Machine scope 側には書かない (同じ値を重複して持たないため)。
         settings["markdown.styles"] = [_MARKDOWN_STYLE_URL]
     return settings
 

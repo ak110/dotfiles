@@ -36,8 +36,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
 
 class ClaudeTurns(ClaudeRuntime):
-    """受信結果の公開と所有キューのコマンドを処理する。"""
-
     @staticmethod
     async def _watch_plugin_changes(reloader: ClaudePluginReloader, channel: _CommandChannel) -> None:
         while True:
@@ -73,7 +71,6 @@ class ClaudeTurns(ClaudeRuntime):
         )
 
     async def _consume_result_message(self, session: SessionState, message: Any) -> None:
-        """未回収対象の寿命に従ってturnの結果を保留または確定する。"""
         if is_model_less_task_notification(message):
             if resume_waits.is_background_completion_wait(session) and not resume_waits.has_pending_auto_resume_targets(
                 session
@@ -106,7 +103,7 @@ class ClaudeTurns(ClaudeRuntime):
             resume_waits.clear_usage_limit_wait(session)
             session.api_error = None
             session.usage_limit = None
-        # 対象の利用上限では結果を保留し、MCP層の常駐監視がAPI移行または解除後の継続を進める。
+
         if session.effort_resume_turn != session.turn_seq and result_contract.hold_invalid_result(session, result):
             return
         if resume_waits.begin_usage_limit_wait(session, result):
@@ -240,7 +237,7 @@ class ClaudeTurns(ClaudeRuntime):
         session.retention_deadline = None
         session.touch()
         await self._notify_waiters()
-        # 保留中は同じ受信を続ける。追送中に到着した完了通知を読取taskの取消で失わない。
+
         return aiter(client.receive_messages()) if kind == "reply" and iterator is None else iterator
 
     @staticmethod
@@ -284,11 +281,6 @@ class ClaudeTurns(ClaudeRuntime):
 
     @staticmethod
     def _log_turn_state_fallback(session: SessionState) -> None:
-        """CLIのturn状態の報告を受けないまま結果を判定したことを、sessionごとに1回だけ警告する。
-
-        報告が無い場合は追跡集合だけで判定する従来の方法へ戻り、`ResultMessage`より前に終わったバックグラウンドタスクの
-        再開turnを判別できない。CLIが報告をやめて判定の精度が下がったことを検出できるようにログへ残す。
-        """
         if session.cli_turn_state is not None or session.cli_turn_state_fallback_logged:
             return
         session.cli_turn_state_fallback_logged = True

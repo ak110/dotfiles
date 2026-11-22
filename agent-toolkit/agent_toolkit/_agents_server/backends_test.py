@@ -20,7 +20,6 @@ def _failed(engine: str, error: dict[str, object]) -> state.SessionState:
 
 @pytest.mark.asyncio
 async def test_backends_satisfy_protocol(tmp_path: pathlib.Path) -> None:
-    """全engineのbackendを生成関数から`Backend`として得て、engine差の判定をbackendの中で行う。"""
     sessions: dict[str, state.SessionState] = {}
     condition = asyncio.Condition()
     created: dict[str, backends.Backend] = {
@@ -59,7 +58,6 @@ async def test_backends_satisfy_protocol(tmp_path: pathlib.Path) -> None:
 
 
 def test_unsupported_engine_has_no_backend() -> None:
-    """backendを持たないengine名は生成を拒否し、記録済みの除外理由を常に根拠とする。"""
     assert backends.backend_class("other") is None
     assert backends.excludes_with_recorded_reason("other", "429")
     with pytest.raises(ValueError, match="unsupported engine: other"):
@@ -109,7 +107,6 @@ async def test_start_exception_only_advances_cli_candidates(
 async def test_orphan_takeover_only_publishes_confirmed_codex_turn(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, engine: str
 ) -> None:
-    """所有者不在の旧記録は、対応backendが元turnの終了を確認した場合だけ終了へ遷移する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     identifier = "a0278936-c56f-4a22-9f34-2a5683019a57"
     session_registry.publish(

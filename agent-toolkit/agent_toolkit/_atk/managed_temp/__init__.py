@@ -29,7 +29,9 @@ from agent_toolkit._atk.managed_temp.removal import (
     top_level_area,
     validate_managed_temp,
 )
-from agent_toolkit._atk.managed_temp.sweep import (
+
+# 期限掃引は登録簿の読込を伴い、通常のhookは使わないため、名前を使う時まで読み込まない。
+lazy from agent_toolkit._atk.managed_temp.sweep import (
     OWNER_FILE,
     SpacePressure,
     SweepResult,

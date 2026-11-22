@@ -34,10 +34,6 @@ from agent_toolkit._atk.serve.plans.remote import (
     search_remote_files,
 )
 from agent_toolkit._atk.serve.plans.rendering import MarkdownCache, MarkdownCacheKey, make_md_renderer, markdown_to_html
-
-# --------------------------------------------------------------------------------------
-# 画面が消費する処理
-# --------------------------------------------------------------------------------------
 from agent_toolkit._atk.serve.plans.roots import (
     DEFAULT_REMOTE_SEARCH_LIMIT,
     BroadcastState,
@@ -67,8 +63,6 @@ from agent_toolkit._plan.viewer_files import (
 
 @dataclasses.dataclass(frozen=True)
 class PlansContext:
-    """計画ファイル画面のルートが共有するアプリ単位の依存。"""
-
     root: pathlib.Path
     roots: tuple[RootSpec, ...]
     hostname: str
@@ -96,7 +90,7 @@ def create_context(
     いずれも渡さない場合はprivate-notesと`~/.claude/plans`の2rootを解決する。
     `hostname`はローカル分のファイルエントリに`host`ラベルとして付与し、リモートホストと重複しないことの確認にも使う。
     """
-    # 前回の異常終了で残った作成日時インデックスの一時ファイルを起動時に除去する。
+
     cleanup_creation_time_temporaries()
     renderer = make_md_renderer()
     markdown_cache = MarkdownCache()
@@ -113,16 +107,13 @@ def create_context(
     resolved_hostname = hostname if hostname is not None else socket.gethostname()
     remote_host_list = list(remote_hosts) if remote_hosts else []
     if resolved_hostname in remote_host_list:
-        # `remote_files`のキーが衝突しローカル/リモートが上書きし合うため、起動時に拒絶する。
         raise ValueError("ローカルホスト名がリモートホストの指定と重複しています")
     runner: SshRunner = ssh_runner if ssh_runner is not None else default_ssh_runner
 
-    # 初期接続状態を設定する。ローカルは常にconnected、リモートはconnecting開始。
     state.host_status[resolved_hostname] = "connected"
     for host in remote_host_list:
         state.host_status[host] = "connecting"
-    # ローカルホスト分の`host_info`は起動時に即座にセットする。
-    # リモート分は接続確立時（初回snapshot受信）に`RemoteWatcher`側で追加する。
+
     state.host_info[resolved_hostname] = host_info(resolved_root)
     state.root_info[resolved_hostname] = {spec.source_id: root_info(spec) for spec in root_specs}
     state.root_status[resolved_hostname] = {
@@ -144,14 +135,12 @@ def create_context(
 
 
 def _scan_local_root(spec: RootSpec, host: str, stop: threading.Event | None = None) -> tuple[list[FileEntry], str | None]:
-    """root解決時の警告を保ったまま、利用可能なローカルrootだけを走査する。"""
     if spec.warning is not None:
         return [], spec.warning
     return scan_files(spec.path, host, spec.source_id, migrate_legacy_ctime=spec.migrate_legacy_ctime, stop=stop)
 
 
 async def create_context_async(**kwargs: typing.Any) -> PlansContext:
-    """root解決と一時索引の回収をworkerで完了し、初期状態を返す。"""
     return await run_sync_operation(create_context, **kwargs)
 
 
@@ -180,7 +169,7 @@ def _oldest_host_per_file(entries: list[FileEntry]) -> list[FileEntry]:
 
 async def all_entries(context: PlansContext) -> list[FileEntry]:
     """ローカルとリモートの一覧を、同期で重複した分を1件へ絞ってから作成日時の降順で返す。"""
-    # ローカル一覧はリモート集約と並列実行できるよう`asyncio.to_thread`経由で取得する。
+
     local_results = await asyncio.gather(
         *(asyncio.to_thread(_scan_local_root, spec, context.hostname, context.state.stop_requested) for spec in context.roots)
     )
@@ -203,14 +192,12 @@ async def all_entries(context: PlansContext) -> list[FileEntry]:
 
 
 def listed_plan_path(rel: str) -> str:
-    """付属ファイルの相対パスを、一覧で選択できるメインの計画ファイルの相対パスへ置き換えて返す。付属ファイル以外はそのまま返す。"""
     path = pathlib.PurePosixPath(rel)
     main_name = _bundle_kinds.main_name_of(path.name)
     return rel if main_name is None else str(path.with_name(main_name))
 
 
 async def search_entries(context: PlansContext, query: str) -> list[FileEntry] | None:
-    """本文検索に一致する一覧を返す。後続要求に置き換えられた場合は`None`を返す。"""
     entries = await all_entries(context)
     if not query:
         return entries
@@ -226,7 +213,7 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
         for path in paths
         for candidate in ((spec.source_id, path), (spec.source_id, listed_plan_path(path)))
     }
-    # 1ホストの打ち切りで他ホストの結果が未回収の例外にならないよう、全件を回収してから判定する。
+
     results = await asyncio.gather(
         *(_search_remote(context, host, query) for host in context.remote_hosts),
         return_exceptions=True,
@@ -236,7 +223,6 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
         if isinstance(result, RemoteSearchSuperseded):
             return None
         if isinstance(result, BaseException):
-            # `_search_remote`は`Exception`のみを捕捉するため、この分岐はキャンセル等に限られる。
             raise result
         matched_host, matched_paths = result
         remote_matches[matched_host] = {
@@ -253,7 +239,6 @@ async def search_entries(context: PlansContext, query: str) -> list[FileEntry] |
 
 
 async def _search_remote(context: PlansContext, host: str, query: str) -> tuple[str, set[tuple[str, str]]]:
-    """1台のリモートホストを本文検索する。"""
     try:
         raw_paths = await search_remote_files(
             host,
@@ -281,7 +266,6 @@ async def _search_remote(context: PlansContext, host: str, query: str) -> tuple[
 
 
 async def resolve_source_id(context: PlansContext, host: str, source_id: str, rel: str) -> str | None:
-    """要求のsource IDを検証・補完する。確定できない場合は`None`を返す。"""
     if host == context.hostname:
         known = {spec.source_id for spec in context.roots}
         if source_id:
@@ -303,17 +287,11 @@ async def resolve_source_id(context: PlansContext, host: str, source_id: str, re
         return unique[0]
     if len(unique) > 1:
         return None
-    # 単一rootを明示した構成ではsource IDが存在しない。
+
     return ""
 
 
 def review_table_html(text: str) -> str:
-    """JSON文字列7列または保存済みの旧形式のレビュー指摘管理表をHTML表へ変換する。
-
-    旧8列形式は指摘レベルと対応要否の双方を持つため、対応要否の列を除く。
-    旧7列形式は指摘レベルを持たず5列目が対応要否であるため、5列目の値域で現行形式と判別し、
-    指摘レベルを空として対応要否の列を除く。
-    """
     try:
         rows = _review_table_format.display_rows(text)
     except ValueError:
@@ -325,12 +303,10 @@ def review_table_html(text: str) -> str:
 
 
 def is_review_table_path(rel: str) -> bool:
-    """相対パスがレビュー指摘管理表かを判定する。"""
     return _bundle_kinds.is_review_table_name(pathlib.PurePosixPath(rel).name)
 
 
 def _plan_paths(rel: str, source_id: str = "") -> tuple[tuple[str, str], ...]:
-    """同じstemに属する計画ファイルの相対パスと表示名を返す。"""
     attachments = tuple(kind for kind in _bundle_kinds.LINKED_ATTACHMENTS if kind.current or source_id != LEGACY_SOURCE_ID)
     kind = next((kind for kind in attachments if kind.matches(rel)), None)
     if kind is None:
@@ -342,7 +318,6 @@ def _plan_paths(rel: str, source_id: str = "") -> tuple[tuple[str, str], ...]:
 
 
 async def plan_links_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
-    """同じstemで実在する他の計画だけを、表示応答の先頭へリンクとして付ける。"""
     plan_paths = _plan_paths(rel, source_id)
     if not plan_paths:
         return ""
@@ -366,11 +341,6 @@ async def plan_links_html(context: PlansContext, host: str, source_id: str, rel:
 
 
 async def _plan_exists(context: PlansContext, host: str, source_id: str, plan_rel: str) -> bool:
-    """付属計画の実在を判定する。
-
-    ローカルはファイルシステムの存在確認、リモートはヘルパーのファイル取得の成否で判定する
-    （付属計画は一覧から除外されるため、リモートでは一覧応答から実在を判定できない）。
-    """
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
         return (
@@ -382,7 +352,6 @@ async def _plan_exists(context: PlansContext, host: str, source_id: str, plan_re
     try:
         await fetch_remote_file(host, plan_rel, context.runner, watcher, source_id=source_id)
     except Exception as error:  # noqa: BLE001
-        # 取得の共通処理は不在と障害を区別する。存在確認では未作成をdebugログに留め、リンクを省く。
         logger.debug("付属計画の取得不可 host=%s path=%s: %s", host, plan_rel, error)
         return False
     return True
@@ -403,7 +372,6 @@ async def resolve_text(
     source_id: str,
     rel: str,
 ) -> str:
-    """ファイル本文を取得する。取得できない場合は`PlanFileError`を送出する。"""
     if host == context.hostname:
         spec = next((item for item in context.roots if item.source_id == source_id), None)
         target = await run_sync_operation(resolve_under_root, spec.path, rel, spec.source_id) if spec is not None else None
@@ -421,23 +389,19 @@ async def resolve_text(
 
 
 def _read_text(path: pathlib.Path) -> str:
-    """ファイル本文を取得する。"""
     return path.read_text(encoding="utf-8", errors="replace")
 
 
 async def render_file_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
-    """計画ファイルの表示用HTMLを、付属計画リンクを先頭へ付けて返す。"""
     text = await resolve_text(context, host, source_id, rel)
-    # 本文の同一性は取得した本文のダイジェストで判定する。更新時刻は同じ時刻刻み内の
-    # 連続した書き換えで変わらないため、キーへ使うと古い描画結果を返す。
+
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     cache_key: MarkdownCacheKey = (host, source_id, rel, digest)
     rendered = context.markdown_cache.get(cache_key)
     if rendered is None:
         rendered = review_table_html(text) if is_review_table_path(rel) else markdown_to_html(text, context.renderer)
         context.markdown_cache.put(cache_key, rendered)
-    # 付属計画リンクは応答組み立て層で付与する。本文変換とそのキャッシュへ混ぜると、
-    # 付属計画の出現・消失のたびに本文HTMLキャッシュを無効化する必要が生じるため。
+
     return await plan_links_html(context, host, source_id, rel) + rendered
 
 
@@ -469,7 +433,6 @@ def _start_local_observer(context: PlansContext) -> watchdog.observers.api.BaseO
 
 
 async def start_local_watchers_async(context: PlansContext) -> None:
-    """loopの参照を保持し、ローカル監視の登録と準備完了を待つ。"""
     context.state.loop = asyncio.get_running_loop()
     await run_sync_operation(
         _start_local_observer, context, on_success=lambda observer: setattr(context.state, "local_observer", observer)
@@ -477,7 +440,6 @@ async def start_local_watchers_async(context: PlansContext) -> None:
 
 
 async def stop_local_watchers_async(context: PlansContext) -> None:
-    """ローカル監視の終了をworkerで待ち、保持欄をloopで空へ戻す。"""
     observer = context.state.local_observer
     if observer is None:
         return
@@ -504,10 +466,6 @@ def _stop_local_observer(observer: watchdog.observers.api.BaseObserver) -> None:
 
 
 def stop_local_watchers(context: PlansContext) -> None:
-    """ローカルrootの監視スレッドを終了させ、observerの保持欄を空へ戻す。
-
-    監視スレッドが残ると`after_serving`が完了しないため、`join`まで待って終了を確認する。
-    """
     observer = context.state.local_observer
     if observer is None:
         return
@@ -516,17 +474,15 @@ def stop_local_watchers(context: PlansContext) -> None:
 
 
 def start_remote_watchers(context: PlansContext) -> None:
-    """設定済みリモートホストのwatchタスクを起動する。"""
     context.state.loop = asyncio.get_running_loop()
     for host in context.remote_hosts:
         watcher = RemoteWatcher(host, context.state)
-        # 本文の取得処理が常駐watch接続のRPCを使えるよう、同じ参照を共有する。
+
         context.state.remote_watchers[host] = watcher
         context.state.remote_tasks.append(asyncio.create_task(watcher.run()))
 
 
 async def stop_remote_watchers(context: PlansContext) -> None:
-    """起動済みのwatchタスクをまとめて終了させる。"""
     for task in context.state.remote_tasks:
         task.cancel()
     results = await asyncio.gather(*context.state.remote_tasks, return_exceptions=True)

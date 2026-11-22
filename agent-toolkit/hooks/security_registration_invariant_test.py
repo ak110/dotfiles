@@ -1,5 +1,3 @@
-"""組織ガードがイベント単位で通知する登録を、理由付きの許可と区別する。"""
-
 import pathlib
 import re
 
@@ -15,7 +13,6 @@ _ALLOWED = {
 
 
 def test_registered_events_survive_organization_security_defaults() -> None:
-    """保護イベントの直接登録を検出する。実matcherの一致判定はTS側の全機能登録試験で検証する。"""
     skipped = {
         "prompt.section",
         "prompt.context",

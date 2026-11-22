@@ -1,11 +1,8 @@
-"""責務別jobのneeds結果を必須checkへ集約する。標準Pythonだけで動く。"""
-
 import json
 import os
 
 
 def main() -> int:
-    """非所有の省略と、必要なjobの未成功を区別する。"""
     if os.environ["OWNS"] == "false":
         print(os.environ["OWNER_REASON"])
         return 0

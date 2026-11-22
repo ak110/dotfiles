@@ -1,5 +1,3 @@
-"""コマンドライン引数解析とエントリポイント。"""
-
 import argparse
 import asyncio
 import contextlib
@@ -11,7 +9,6 @@ import socket
 import sys
 from urllib.parse import quote
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import hypercorn.asyncio
 lazy import hypercorn.config
 lazy import qrcode
@@ -27,7 +24,6 @@ DEFAULT_PORT = 29123
 
 
 def default_pid_path() -> pathlib.Path:
-    r"""serveが書き込み、doctorが読むPIDファイルの保存先（`%LOCALAPPDATA%\\dotfiles\\media-remote\\pid`）。"""
     local = os.environ.get("LOCALAPPDATA")
     base = pathlib.Path(local) if local else pathlib.Path.home() / "AppData" / "Local"
     return base / "dotfiles" / "media-remote" / "pid"
@@ -48,7 +44,6 @@ def detect_local_ip() -> str:
 
 
 def build_access_url(host: str, port: int, token: str) -> str:
-    """スマホでアクセスするURLを組み立てる。"""
     return f"http://{host}:{port}/?t={quote(token, safe='')}"
 
 
@@ -160,7 +155,6 @@ def _section(title: str) -> str:
 
 
 def _doctor_listen() -> tuple[str, bool]:
-    """listen状態セクションを描画し、listen中か否かを返す。"""
     script = (
         f"$c = Get-NetTCPConnection -State Listen -LocalPort {DEFAULT_PORT} -ErrorAction SilentlyContinue; "
         "if ($c) { "
@@ -176,7 +170,6 @@ def _doctor_listen() -> tuple[str, bool]:
 
 
 def _doctor_process() -> str:
-    """PIDファイル経由でプロセス情報を取得するセクションを描画する。"""
     pid_path = default_pid_path()
     if not pid_path.is_file():
         return (
@@ -197,7 +190,6 @@ def _doctor_process() -> str:
 
 
 def _doctor_profile() -> tuple[str, bool]:
-    """ネットワークプロファイルセクションを描画し、Publicプロファイルがあるか返す。"""
     script = (
         'Get-NetConnectionProfile | ForEach-Object { [Console]::Out.WriteLine("$($_.InterfaceAlias): $($_.NetworkCategory)") }'
     )
@@ -208,7 +200,6 @@ def _doctor_profile() -> tuple[str, bool]:
 
 
 def _doctor_firewall() -> tuple[str, bool]:
-    """FW規則セクションを描画し、規則の有無を返す。"""
     script = (
         "$r = Get-NetFirewallRule -DisplayName '*media-remote*' -ErrorAction SilentlyContinue; "
         "if ($r) { "
@@ -225,7 +216,6 @@ def _doctor_firewall() -> tuple[str, bool]:
 
 
 def _doctor_url(args: argparse.Namespace) -> str:
-    """アクセスURLセクションを描画する。"""
     token_path = args.token_file if args.token_file is not None else _token.default_token_path()
     token = _token.load_or_create_token(token_path)
     host = args.host if args.host else detect_local_ip()
@@ -234,7 +224,6 @@ def _doctor_url(args: argparse.Namespace) -> str:
 
 
 def _doctor_recommendations(listening: bool, has_rule: bool, has_public: bool) -> str:
-    """推奨修復コマンドセクションを描画する。"""
     lines: list[str] = []
     if not listening:
         lines.append(
@@ -301,7 +290,6 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
-        # サブコマンド省略時はserveを各引数の省略時の値で起動する（スタートアップ自動起動経路と整合させる）。
         args = argparse.Namespace(command="serve", host=DEFAULT_HOST, port=DEFAULT_PORT, token_file=None)
     if args.command == "serve":
         return _serve_command(args)

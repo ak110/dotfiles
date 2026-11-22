@@ -29,23 +29,17 @@ GENERATED_MARKER = (
     "dotfilesリポジトリのscripts/sync_generated_files.pyで再生成し、手動編集しない。"
     "本文は全リポジトリへ適用する個人用の規範である。 -->"
 )
-# 常時読み込まれる規範の配布物へ付ける境界。
+
 NORMATIVE_ELEMENT = "atk-auto"
 NORMATIVE_SOURCE = "dotfiles"
 NORMATIVE_KIND = "rules"
 
 
 def render(root: Path = REPO_ROOT) -> str:
-    """生成内容を決定的に組み立てる。"""
     return "\n".join([GENERATED_MARKER, *_embedded_section(root, PERSONAL_SOURCE)]) + "\n"
 
 
 def _has_normative_boundary(body: str) -> bool:
-    """本文の先頭が境界の開始タグかを、要素名の完全一致で判定する。
-
-    接頭辞の一致だけでは`<atk-auto-extra ...>`のような別要素も境界と判定し、
-    境界を持たない本文がそのまま埋め込まれる。
-    """
     prefix = f"<{NORMATIVE_ELEMENT}"
     if not body.startswith(prefix):
         return False
@@ -54,14 +48,9 @@ def _has_normative_boundary(body: str) -> bool:
 
 
 def _embedded_section(root: Path, relative: Path) -> list[str]:
-    """生成主体、種別および埋め込み元のパスを示す境界の間に本文を配置する。
-
-    境界は要素名と属性で判別し、埋め込み元のパスがその配送単位を示す。
-    """
     marker = relative.as_posix()
     body = (root / relative).read_text(encoding="utf-8").rstrip("\n")
     if _has_normative_boundary(body):
-        # 配布元が既に境界を持つ本文は、重ねて囲まずそのまま埋め込む。
         return ["", body]
     opening = f'<{NORMATIVE_ELEMENT} source="{NORMATIVE_SOURCE}" kind="{NORMATIVE_KIND}" path="{marker}">'
     return ["", opening, body, f"</{NORMATIVE_ELEMENT}>"]

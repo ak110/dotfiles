@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_stats_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -16,7 +14,6 @@ def test_elapsed_until_combines_with_other_query_options(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """経過時間と統計を区別して同じ照会から取得する。"""
     transcript = _write_transcript(tmp_path, [timestamped_entry("2026-09-01T00:00:01Z", "記録")])
 
     assert evidence.main([str(transcript), "--elapsed-until", "2026-09-01T00:00:02Z", "--stats"]) == 0
@@ -145,8 +142,7 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
         {"kind": "stats-slow-call", "tool": "Bash", "seconds": 3.0, "line": 2, "hint": "make test"},
     ]
     assert events_by_kind(events, "stats-token-peak")[0]["line"] == 5
-    # 1手あたりの費用: 呼び出し3秒・10秒の中央値6.5秒。
-    # 応答1回の所要は直前のツール結果（00:00:11）から応答（00:01:10）までの59秒。
+
     unit = events_by_kind(events, "stats-unit-costs")[0]
     assert unit["tool_calls"] == 2 and unit["tool_call_median_seconds"] == 6.5
     assert unit["responses"] == 1 and unit["response_mean_seconds"] == 59.0
@@ -155,7 +151,6 @@ def test_stats_deduplicates_claude_usage_and_reports_tool_breakdown(tmp_path: pa
 
 
 def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, capsys) -> None:
-    """空白区間、同一入力の反復と、全成分合計の順位だけでは上位に入らないトークン消費の極値を出力する。"""
     entries: list[dict] = [
         {"type": "user", "timestamp": "2026-08-19T00:00:00Z", "message": {"role": "user", "content": "依頼"}},
     ]
@@ -168,8 +163,6 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
                 "message": {
                     "role": "assistant",
                     "id": f"message-{index}",
-                    # 先行10件はキャッシュ読取が大半を占め、全成分合計が大きい。
-                    # 末尾1件は出力とキャッシュ作成が大半を占め、全成分合計では11位となる。
                     "usage": {
                         "input_tokens": 0,
                         "output_tokens": 1 if index < 10 else 100,
@@ -197,7 +190,7 @@ def test_stats_reports_gap_repeat_and_token_peak_union(tmp_path: pathlib.Path, c
     assert evidence.main([str(transcript), "--stats"]) == 0
     events = read_jsonl(capsys)
     gaps = events_by_kind(events, "stats-gap")
-    # 60秒以上の空白は先頭の依頼から最初のassistantまでの1件だけで、59秒の空白は出力されない。
+
     assert gaps == [{"kind": "stats-gap", "seconds": 120.0, "before_line": 1, "after_line": 2}]
     assert all(event["seconds"] >= 60 for event in gaps)
     repeats = events_by_kind(events, "stats-repeat")
@@ -333,11 +326,6 @@ def test_stats_skips_codex_duplicate_token_count_records(tmp_path: pathlib.Path,
 
 
 def test_stats_skips_codex_zero_usage_record_after_compact(tmp_path: pathlib.Path, capsys) -> None:
-    """compact直後の実消費0のレコードは合計へ影響しない。
-
-    このレコードは`last_token_usage`の6成分が全て0でありながら`total_token_usage`は直前と同一のため、
-    加算対象へ含めると`api_messages`が実際のリクエスト数を上回る。
-    """
     cumulative = _codex_usage(100, 80, 5, 20, 10)
     transcript = _write_transcript(
         tmp_path,
@@ -370,7 +358,6 @@ def test_stats_token_peak_normalizes_codex_cache_components(tmp_path: pathlib.Pa
 
 
 def test_stats_reports_no_target_without_timestamp_and_tokens(tmp_path: pathlib.Path, capsys) -> None:
-    """timestampもトークン情報も無い入力では集計対象なしを返し、終了コード0で終わる。"""
     transcript = _write_transcript(
         tmp_path,
         [{"type": "user", "message": {"role": "user", "content": "依頼"}}],
@@ -382,7 +369,6 @@ def test_stats_reports_no_target_without_timestamp_and_tokens(tmp_path: pathlib.
 
 
 def test_stats_repeat_limits_to_ten_groups_and_requires_hint(tmp_path: pathlib.Path, capsys) -> None:
-    """反復呼び出しは入力ヒントを持つ組だけを回数降順で最大10件出力する。"""
     entries: list[dict] = []
     for index in range(12):
         for repetition in range(2):
@@ -436,7 +422,6 @@ def test_stats_repeat_limits_to_ten_groups_and_requires_hint(tmp_path: pathlib.P
 
 
 def test_stats_repeat_uses_target_input_keys_of_tools_without_command(tmp_path: pathlib.Path, capsys) -> None:
-    """`command`を持たないツールでも対象を表す入力キーをヒントとし、反復を集計する。"""
     entries: list[dict] = []
     inputs = [{"file_path": "/tmp/same.py"}] * 3 + [{"pattern": "同じ検索語"}] * 2 + [{"file_path": "/tmp/other.py"}]
     names = ["Read"] * 3 + ["Grep"] * 2 + ["Read"]
@@ -497,7 +482,6 @@ def _bash_call_entries(commands: list[str]) -> list[dict]:
 
 
 def test_stats_repeat_distinguishes_multiline_commands_sharing_first_line(tmp_path: pathlib.Path, capsys) -> None:
-    """先頭行が同一の複数行コマンドは、本体が異なれば同じ反復組へ集約しない。"""
     commands = ["cd /repo\nmake test", "cd /repo\nmake lint", "cd /repo\nmake test"]
     transcript = _write_transcript(tmp_path, _bash_call_entries(commands))
 
@@ -509,7 +493,6 @@ def test_stats_repeat_distinguishes_multiline_commands_sharing_first_line(tmp_pa
 
 
 def test_stats_repeat_distinguishes_long_commands_sharing_clipped_prefix(tmp_path: pathlib.Path, capsys) -> None:
-    """表示上の切り詰め長を超えて前方一致するだけの呼び出しは、同じ反復組へ集約しない。"""
     shared_prefix = "echo " + "a" * 2100
     commands = [f"{shared_prefix} first", f"{shared_prefix} second", f"{shared_prefix} first"]
     transcript = _write_transcript(tmp_path, _bash_call_entries(commands))
@@ -579,7 +562,6 @@ def test_unit_costs_exclude_human_wait_and_count_codex_reports(tmp_path: pathlib
                 "timestamp": "2026-08-19T00:00:05Z",
                 "message": {"role": "assistant", "id": "m1", "usage": {"input_tokens": 1, "output_tokens": 2}, "content": []},
             },
-            # 1時間後の人の発話。応答の後から次の依頼までの待ちは応答の所要に入らない。
             {"type": "user", "timestamp": "2026-08-19T01:00:05Z", "message": {"role": "user", "content": "続き"}},
             {
                 "type": "assistant",

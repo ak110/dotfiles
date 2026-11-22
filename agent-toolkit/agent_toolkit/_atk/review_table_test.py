@@ -51,7 +51,6 @@ def test_lock_path_is_stable_for_same_target(tmp_path: pathlib.Path) -> None:
 
 
 def test_empty_review_table_strictly_validates_after_exclusive_initialization(tmp_path: pathlib.Path) -> None:
-    """指摘が無い初回ラウンドでも、初期化・strict検証・完了検収を成立させる。"""
     path = tmp_path / "review.tsv"
     assert table.init(path) == 0
     assert table.validate(path) == 0
@@ -60,7 +59,6 @@ def test_empty_review_table_strictly_validates_after_exclusive_initialization(tm
 
 
 def test_same_composite_key_can_be_represented_again_in_a_later_round(tmp_path: pathlib.Path) -> None:
-    """未解消指摘を同じ表の別ラウンドへ再提示しても、先頭4列の複合キー検証を壊さない。"""
     key = ("module.py:10", "同じ契約違反")
     path = tmp_path / "review.tsv"
     table.init(path)
@@ -74,7 +72,6 @@ def test_same_composite_key_can_be_represented_again_in_a_later_round(tmp_path: 
 
 
 def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_path: pathlib.Path) -> None:
-    """同じラウンド・指摘でもtrackが異なれば別行として応答を分離する。"""
     key = ("module.py:10", "同じ事象")
     path = tmp_path / "review.tsv"
     table.init(path)
@@ -102,7 +99,6 @@ def test_same_issue_can_be_separated_by_track_and_responded_individually(tmp_pat
 def test_initial_review_can_validate_structure_before_response_and_strict_after_response(
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回レビューと応答中は構造を、全件応答後は厳格な検証を使う。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "module.py:10", "修正が必要")
@@ -158,7 +154,6 @@ def test_respond_no_requires_reason_and_clears_response(tmp_path: pathlib.Path) 
 
 
 def test_respond_rejects_empty_response_and_reason(tmp_path: pathlib.Path) -> None:
-    """対応内容と対応不要理由のいずれも渡さない応答を拒否する。"""
     path = tmp_path / "review.tsv"
     table.init(path)
     table.add(path, "1", _TRACK, "hook", "対象外")
@@ -180,7 +175,6 @@ def test_duplicate_key_and_existing_init_are_rejected(tmp_path: pathlib.Path) ->
 
 
 def test_start_gate_preserves_existing_table_and_initializes_only_missing_table(tmp_path: pathlib.Path) -> None:
-    """開始前の確認は既存表を初期化せず構造を検証し、表を作成していない場合だけ初期化する。"""
     existing = tmp_path / "existing-review.tsv"
     table.init(existing)
     table.add(existing, "1", _TRACK, "module.py:10", "既存の指摘")

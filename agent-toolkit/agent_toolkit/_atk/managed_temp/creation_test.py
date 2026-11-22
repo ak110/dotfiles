@@ -1,5 +1,3 @@
-"""セッションのmanaged-tempの決定的な解決、旧参照の再利用と、新規作成が旧状態を作成しないことを検証する。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -44,7 +42,6 @@ def test_new_session_resolves_deterministic_area_without_legacy_state() -> None:
 
 
 def test_legacy_reference_is_reused_read_only() -> None:
-    """旧参照が一時root直下の実在ディレクトリを指す会話は、旧パスを参照を変えずに使う。"""
     legacy = managed_temp.temp_root_path() / "session-legacyab"
     paths.temp_root()
     legacy.mkdir(mode=0o700)
@@ -58,7 +55,6 @@ def test_legacy_reference_is_reused_read_only() -> None:
 
 @pytest.mark.parametrize("kind", ["missing", "outside", "nested", "link"])
 def test_unusable_legacy_reference_falls_back_to_deterministic_area(kind: str, tmp_path: pathlib.Path) -> None:
-    """旧参照の指す先が不在・root外・root直下以外・リンクなら、決定的パスを使う。"""
     root = paths.temp_root()
     target = {
         "missing": root / "session-missing1",
@@ -78,7 +74,6 @@ def test_unusable_legacy_reference_falls_back_to_deterministic_area(kind: str, t
 
 
 def test_output_temp_is_child_of_session_area(monkeypatch: pytest.MonkeyPatch) -> None:
-    """会話が分かる保存物はセッションのmanaged-tempの子へ、分からない保存物は一時root直下へ作成する。"""
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "output-session")
     child = managed_temp.create_output_temp("atk-output")

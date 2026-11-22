@@ -7,6 +7,7 @@
 import argparse
 import base64
 import codecs
+import contextlib
 import dataclasses
 import io
 import json
@@ -26,10 +27,11 @@ import psutil
 from pytools._internal.cli import enable_completion
 from pytools._internal.common import process_scope
 
+_START_PREFIX = b"SSH_UNELEVATED_STARTED:"
 _RESULT_PREFIX = b"\nSSH_UNELEVATED_RESULT:"
-# 接続先の起動部が標準入力から本文を読み終えるまでの上限。
+
 _STDIN_TIMEOUT_SECONDS = 60
-# 接続、タスクの登録、後始末に要する時間の見込み。上限にこれを足しても終わらないsshは打ち切る。
+
 _SSH_MARGIN_SECONDS = 120
 _DEFAULT_TIMEOUT_SECONDS = 1800
 _EXIT_TIMEOUT = 124
@@ -97,7 +99,6 @@ def _communicate_posix(process: subprocess.Popen[bytes], payload: bytes, timeout
             selector.register(stderr, selectors.EVENT_READ)
             while not stop_attempted or selector.get_map():
                 if not stop_attempted and exited():
-                    # 回収前のPIDを保持し、別のグループへのシグナル送信を防ぐ。
                     stop_group()
                     close_input(selector)
                 delay = deadline - time.monotonic()
@@ -132,7 +133,6 @@ def _communicate_posix(process: subprocess.Popen[bytes], payload: bytes, timeout
     return bytes(output[stdout_fd]), bytes(output[stderr_fd])
 
 
-# 接続先が返す状態のうちスクリプトの終了コードを持たないものの、このコマンドの終了コードと診断。
 _FAILURES: dict[str, tuple[int, str]] = {
     "timeout": (
         _EXIT_TIMEOUT,
@@ -170,8 +170,6 @@ class RemoteResult:
 
 @dataclasses.dataclass(frozen=True)
 class Outcome:
-    """このコマンドの終了コード、標準出力へ書くスクリプトの出力、標準エラーへ書く診断。"""
-
     exit_code: int
     output: str
     diagnostic: str | None = None
@@ -241,8 +239,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         stderr = e.stderr or b""
         outcome = Outcome(
             _EXIT_TIMEOUT,
-            _decode(e.stdout or b""),
-            f"sshが{limit}秒以内に終わらなかったため打ち切った。{args.host}に残った予定タスクと一時ファイルは次回の実行が片付ける。",
+            _decode(_split_start(e.stdout or b"", run_id)[1]),
+            f"sshが{limit}秒以内に終わらず打ち切った。{args.host}での実行結果は不明。再実行する前に接続先の結果を確かめる。",
         )
     else:
         outcome = interpret(stdout, returncode, run_id=run_id, host=args.host, timeout=args.timeout)
@@ -297,11 +295,42 @@ def build_payload(script: str, run_id: str, timeout: int) -> bytes:
     return base64.b64encode(invocation.encode("utf-8"))
 
 
+def _split_start(stdout: bytes, run_id: str) -> tuple[bool, bytes]:
+    marker = _START_PREFIX + run_id.encode("ascii") + b"\n"
+    if stdout.startswith(marker):
+        return True, stdout[len(marker) :]
+    return False, stdout
+
+
+def _is_integer(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
 def interpret(stdout: bytes, returncode: int, *, run_id: str, host: str, timeout: int) -> Outcome:
-    """sshの標準出力と終了コードから、このコマンドの結果を決める。"""
+    started, stdout = _split_start(stdout, run_id)
     marker = _RESULT_PREFIX + run_id.encode("ascii") + b" "
     index = stdout.rfind(marker)
-    if index < 0:
+    result = None
+    if index >= 0:
+        payload = stdout[index + len(marker) :]
+        line, separator, remainder = payload.partition(b"\n")
+        if separator and not remainder:
+            with contextlib.suppress(TypeError, ValueError):
+                result = RemoteResult(**json.loads(line))
+    output = _decode(stdout if index < 0 else stdout[:index])
+    if (
+        result is None
+        or not isinstance(result.status, str)
+        or (result.status == "completed" and not _is_integer(result.exit_code))
+        or (result.status in {"not_started", "no_result"} and not _is_integer(result.task_result))
+        or (result.status != "completed" and result.status not in _FAILURES)
+    ):
+        if started:
+            return Outcome(
+                _EXIT_FAILURE,
+                output,
+                f"{host}で開始を確認したが、実行結果は不明。再実行する前に接続先の結果を確かめる。",
+            )
         if returncode == _EXIT_SSH_FAILURE:
             return Outcome(
                 _EXIT_SSH_FAILURE,
@@ -309,8 +338,6 @@ def interpret(stdout: bytes, returncode: int, *, run_id: str, host: str, timeout
                 f"sshで{host}へ接続できなかった（終了コード255）。sshの設定と{host}の起動状態を確かめる。",
             )
         return Outcome(_EXIT_FAILURE, _decode(stdout), f"{host}から結果が返らなかった（sshの終了コード{returncode}）。")
-    output = _decode(stdout[:index])
-    result = RemoteResult(**json.loads(stdout[index + len(marker) :].split(b"\n", 1)[0]))
     if result.status == "completed":
         assert result.exit_code is not None
         if 0 <= result.exit_code <= 255:

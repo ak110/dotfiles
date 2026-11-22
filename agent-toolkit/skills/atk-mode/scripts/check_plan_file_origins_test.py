@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WI由来と原文の参照を検証する。"""
 
 import pathlib
 import typing
@@ -13,7 +12,6 @@ from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixtu
 
 
 def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: bool) -> pathlib.Path:
-    """由来の構文確認に使う現行計画とWIファイルを配置する。"""
     main_content = _plan_fixture.eight_section_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_path = repo / "plan.md"
     main_path.write_text(main_content, encoding="utf-8")
@@ -30,7 +28,6 @@ def _origin_plan(repo: pathlib.Path, private_notes: pathlib.Path, *, source: boo
 
 
 def test_source_does_not_imply_origin_mismatch_on_read(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """WIのsourceから要求単位の由来を推定せず読み取る。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     main_path = _origin_plan(work_dir, private_notes, source=True)
@@ -40,7 +37,6 @@ def test_source_does_not_imply_origin_mismatch_on_read(repo: tuple[pathlib.Path,
 
 
 def test_source_does_not_imply_origin_mismatch_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """新規作成もsourceから由来の意味を判定しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     main_path = _origin_plan(work_dir, private_notes, source=True)
@@ -57,7 +53,6 @@ def test_source_does_not_imply_origin_mismatch_on_creation(repo: tuple[pathlib.P
 def _assert_creation_check_passes_silently(
     work_dir: pathlib.Path, path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開CLIで新規作成の基準を満たすか確かめた結果が終了コード0で、警告を出力しないことを確かめる。"""
     result = check_plan_file.main(["--reject-migration-warnings", "--work-dir", str(work_dir), str(path)])
     captured = capsys.readouterr()
     assert result == 0, captured.err
@@ -68,10 +63,6 @@ _AGENT_WI_ADOPTED_ROW = f"| 入力の境界を追加確認する | エージェ�
 
 
 def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections: str | None) -> pathlib.Path:
-    """根拠が`-`の`エージェント由来のWI`採用行を持つ計画と、指定した節を持つWIファイルを配置する。
-
-    `wi_sections`が`None`の場合はWIファイルを置かない。
-    """
     main_content = _plan_fixture.eight_section_plan(repo=repo.resolve(), related_wi=_plan_fixture.WI_FILES)
     main_content = main_content.replace(_plan_fixture.WI_ACTION_ROW, _AGENT_WI_ADOPTED_ROW, 1)
     path = repo / "agent-wi.md"
@@ -87,7 +78,6 @@ def _agent_wi_plan(repo: pathlib.Path, private_notes: pathlib.Path, wi_sections:
 def test_agent_wi_adopted_action_without_reason_accepts_new_format(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """新書式の反映内容を登録済みの調査として参照する。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, "## 反映内容と反映先\n\n対象。\n")
@@ -117,7 +107,6 @@ def test_agent_wi_adopted_action_without_reason_accepts_new_format(
 def test_agent_wi_adopted_action_without_reason_rejected_when_wi_scope_empty(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path, scope: str
 ) -> None:
-    """WI本文の`## 適用範囲`が空かコードフェンス内にしか無い場合は、参照だけで根拠を省略できるとみなさない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, f"{scope}\n## 実現性\n\n確認済み。\n")
@@ -136,7 +125,6 @@ def test_agent_wi_adopted_action_without_reason_accepted_when_wi_has_scope(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """WI本文が非空の`## 適用範囲`を持つエージェント由来のWIの採用行は、根拠`-`のまま新規作成で受理する。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
@@ -147,7 +135,6 @@ def test_agent_wi_adopted_action_without_reason_accepted_when_wi_has_scope(
 def test_agent_wi_adopted_action_without_reason_skips_when_wi_unresolvable(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """WIファイルを特定できない場合もWI本文との比較を省略した事実は助言に留め、新規作成を遮断しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _agent_wi_plan(work_dir, private_notes, None)
@@ -162,7 +149,6 @@ def test_agent_wi_adopted_action_without_reason_skips_when_wi_unresolvable(
 
 
 def _bug_plan_without_bug_file(repo: pathlib.Path, private_notes: pathlib.Path, *, related_wi: bool) -> pathlib.Path:
-    """`計画ファイル（バグ）`行を持たないバグ対応計画と、人間由来のWIファイルを配置する。"""
     related = _plan_fixture.WI_FILES if related_wi else ()
     path = repo / "bug-plan.md"
     content = _plan_fixture.eight_section_plan(repo=repo.resolve(), work_type="バグ対応", related_wi=related)
@@ -180,7 +166,6 @@ def test_bug_plan_without_bug_file_reference_accepted_with_related_wi(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """関連WIの原因分析に従うバグ対応計画は、計画ファイル（バグ）行なしで新規作成の基準を満たす。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(private_notes))
@@ -191,7 +176,6 @@ def test_bug_plan_without_bug_file_reference_accepted_with_related_wi(
 def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
     repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path
 ) -> None:
-    """関連WIが無いバグ対応計画は計画ファイル（バグ）行を必須とする。"""
     work_dir, _base = repo
     private_notes = tmp_path / "private-notes"
     path = _bug_plan_without_bug_file(work_dir, private_notes, related_wi=False)
@@ -205,7 +189,6 @@ def test_bug_plan_without_bug_file_reference_rejected_without_related_wi(
 
 
 def test_origin_skip_stays_advisory_on_creation(repo: tuple[pathlib.Path, str], tmp_path: pathlib.Path) -> None:
-    """根拠が記入済みなら由来の構文確認はWI本文を参照しない。"""
     work_dir, _base = repo
     private_notes = tmp_path / "absent"
     main_content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=_plan_fixture.WI_FILES)
@@ -229,7 +212,6 @@ def test_cli_origin_skip_reports_one_next_action(
     *,
     missing_queue: bool,
 ) -> None:
-    """根拠を省略した行の適用範囲を取得できない場合は回復手順を示す。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
     if not missing_queue:
@@ -256,7 +238,6 @@ def test_cli_transfer_skip_reports_recovery(
     *,
     read_failure: bool,
 ) -> None:
-    """移管先だけをWI本文と比べられない場合にも、原因の解消と解消不能時の報告を案内する。"""
     work_dir, _base = repo
     queue = work_dir / "queue"
     if read_failure:
@@ -300,7 +281,6 @@ def test_cli_transfer_accepts_wi_deleted_after_registration(
     tmp_path_factory: pytest.TempPathFactory,
     history: str,
 ) -> None:
-    """配置から消えた移管先は公開plan-checkが履歴の登録記録で受理し、削除commitと後続操作を示す。未登録の名前は拒否する。"""
     work_dir, _base = repo
     name = "20261027-162634-999.md"
     files = {f"2026/10/{name}": "# 後続要求\n"} if history == "deleted" else {"2026/10/20261027-162634-998.md": "# 別\n"}

@@ -17,14 +17,12 @@ logger = logging.getLogger(__name__)
 
 
 def import_winreg() -> typing.Any:
-    """winregモジュールをAny型で読み込む。詳細はモジュールdocstring参照。"""
     import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     return importlib.import_module("winreg")
 
 
 def import_msvcrt() -> typing.Any:
-    """msvcrtモジュールをAny型で読み込む。詳細はモジュールdocstring参照。"""
     import importlib  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     return importlib.import_module("msvcrt")
@@ -64,7 +62,6 @@ def read_system_env_var(name: str) -> tuple[str | None, int]:
 
 
 def write_user_env_var(name: str, value: str, reg_type: int) -> None:
-    r"""`HKCU\\Environment` へユーザー環境変数を書き込む。"""
     wr = import_winreg()
     with wr.OpenKey(wr.HKEY_CURRENT_USER, "Environment", 0, wr.KEY_SET_VALUE) as key:
         wr.SetValueEx(key, name, 0, reg_type, value)
@@ -110,7 +107,6 @@ def broadcast_environment_change() -> None:
 
 
 def _load_kernel32(ctypes_module: typing.Any) -> typing.Any:
-    """Win32 APIを最後のエラーコードを保持する設定で取得する。"""
     return ctypes_module.WinDLL("kernel32", use_last_error=True)
 
 

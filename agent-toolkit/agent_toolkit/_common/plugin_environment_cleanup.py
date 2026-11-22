@@ -1,5 +1,3 @@
-"""更新後に必要な共有環境と使用中の環境を残し、旧世代を回収する。"""
-
 import json
 import os
 import shutil
@@ -12,7 +10,6 @@ from agent_toolkit._common import environment_usage, file_lock, plugin_environme
 
 
 def _process_references() -> tuple[list[str], bool]:
-    """旧launcherを含め同じOSアカウントの参照を1回取得する。"""
     references: list[str] = []
     uncertain = False
     username = psutil.Process().username()
@@ -28,8 +25,15 @@ def _process_references() -> tuple[list[str], bool]:
                 continue
             command = process.cmdline()
             references.extend(command)
+            # 名前で起動したPythonではargvと実体のどちらにも有効化した仮想環境が出ない。
+            if (
+                command
+                and (name := Path(command[0]).name) == command[0]
+                and name.lower().startswith(("python", "pypy"))
+                and (active := process.environ().get("VIRTUAL_ENV"))
+            ):
+                references.append(active)
             # 公開launcherは環境内Pythonの絶対パスをargv[0]へ渡す。
-            # 継承されたenvironは、Python依存を使用しないアプリにも残るため参照根拠にしない。
             try:
                 references.append(process.exe())
             except psutil.AccessDenied:
@@ -42,7 +46,38 @@ def _process_references() -> tuple[list[str], bool]:
     return [os.path.normcase(value) for value in references], uncertain
 
 
-def cleanup(required: Sequence[Path], environment: Mapping[str, str]) -> list[dict[str, object]]:
+def _release_reason(target: Path, sources: object, environment: Mapping[str, str], *, python_executable: Path) -> str | None:
+    roots = plugin_environment.registered_roots(target)
+    if roots:
+        for root, digest in roots.items():
+            try:
+                root.stat()
+            except FileNotFoundError:
+                continue
+            try:
+                current = plugin_environment.dependency_digest(root)
+            except FileNotFoundError:
+                return "登録した配布元の現在の依存環境を確認できない"
+            if current == digest:
+                return "登録した配布元がまだ同じ依存環境を使う"
+        return None
+    if isinstance(sources, dict):
+        for value in sources:
+            root = Path(value)
+            if not root.is_absolute():
+                continue
+            try:
+                if (
+                    plugin_environment.legacy_project_environment(root, environment, python_executable=python_executable)
+                    == target
+                ):
+                    return None
+            except FileNotFoundError:
+                continue
+    return "更新器の登録と旧キーのどちらも確認できない"
+
+
+def cleanup(required: Sequence[Path], environment: Mapping[str, str], *, python_executable: Path) -> list[dict[str, object]]:
     """環境ごとの保持・回収理由を返す。個別失敗は他の対象の回収を妨げない。"""
     directory = plugin_environment.runtime_data(environment) / "environments"
     required_set = {path.absolute() for path in required}
@@ -73,8 +108,16 @@ def cleanup(required: Sequence[Path], environment: Mapping[str, str]) -> list[di
                 file_lock.acquire_lock(preparation, blocking=False)
                 try:
                     with environment_usage.lock(target, exclusive=True):
+                        reason = _release_reason(target, row["sources"], environment, python_executable=python_executable)
+                        if reason is not None:
+                            row["reason"] = reason
+                            continue
+                        final_references, final_uncertain = _process_references()
+                        if final_uncertain or any(prefix in value for value in final_references):
+                            row.update(status="deferred", reason="排他取得後に使用の解放を確認できない")
+                            continue
                         shutil.rmtree(target)
-                    row.update(status="deleted", reason="必要版・使用プロセス・構築がない旧環境")
+                    row.update(status="deleted", reason="登録済みで解放された環境、または未使用と確認した旧キーの環境")
                 finally:
                     file_lock.release_lock(preparation)
         except (OSError, ValueError, psutil.Error) as error:

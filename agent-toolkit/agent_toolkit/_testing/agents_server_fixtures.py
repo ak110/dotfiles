@@ -1,5 +1,3 @@
-"""agents_serverの分割試験で共有する明示fixture。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界、配布物cacheも直接検証する。
@@ -19,7 +17,6 @@ from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_
 
 @pytest.fixture
 def session_environment(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """1件の実行中sessionを持つ共有状態を準備する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
@@ -66,7 +63,6 @@ def _diagnostic_log(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 @pytest.fixture(name="codex_stable_plugin_roots")
 def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """複製先の記録とmanaged-tempの作成先をテストごとに分離する。"""
     monkeypatch.setattr(plugin_roots, "_stable_plugin_roots", {})
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "managed-temp-state")
     monkeypatch.setenv("TMPDIR", str(tmp_path / "managed-temp"))
@@ -75,7 +71,6 @@ def _isolate_stable_plugin_roots(monkeypatch: pytest.MonkeyPatch, tmp_path: path
 
 @pytest.fixture(name="provider_environment")
 def _configure_provider_environment(monkeypatch):
-    """資格情報は架空のAPI値だけとし、開発機の設定を使わない。"""
     # 本モジュールはpytestプラグインの読込時にimportされる。codex_provider_supportは
     # mcp_toolsを経てMCPライブラリの`logging.basicConfig`を呼ぶため、pytestのログ機能が
     # ルートロガーを準備する前に読むと、全試験の出力へDEBUGログが混ざる。使う時点で読む。

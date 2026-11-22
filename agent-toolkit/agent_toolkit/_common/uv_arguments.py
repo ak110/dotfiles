@@ -1,5 +1,3 @@
-"""`uv`と`python`の起動の引数を解析し、実際に実行される位置とagent-toolkitのスクリプトの起動かを判定する処理。"""
-
 from __future__ import annotations
 
 import re
@@ -161,7 +159,6 @@ _UV_RUN_OPTIONS_WITHOUT_VALUE: frozenset[str] = frozenset(
 """`uv run --help`の出力から機械抽出した、値を取らない`run`オプション。取得元は`_UV_GLOBAL_OPTIONS_WITH_VALUE`参照。"""
 
 
-# uv 0.13.1の`uvx --help`。globalの定義を共有し、tool runの引数の個数を保持する。
 _UV_TOOL_OPTIONS_WITH_VALUE = _UV_GLOBAL_OPTIONS_WITH_VALUE | {
     "--from",
     "--with",
@@ -228,20 +225,16 @@ _UV_TOOL_OPTIONS_WITHOUT_VALUE = _UV_GLOBAL_OPTIONS_WITHOUT_VALUE | {
 
 @dataclass(frozen=True)
 class RuntimeInvocation:
-    """argvから確定した実行位置・起動方式と、uvによるcwd変更。"""
-
     tokens: tuple[str, ...]
     kind: Literal["command", "module", "script", "code", "terminal", "unresolved"] = "command"
     directories: tuple[str, ...] = ()
 
 
 def executable_name(token: str) -> str:
-    """実行位置の名前から、実行ファイル用の拡張子だけを除く。"""
     return PurePath(token).name.removesuffix(".exe").removesuffix(".cmd")
 
 
 def _python_invocation(tokens: list[str], directories: tuple[str, ...]) -> RuntimeInvocation:
-    """Pythonのオプション値を消費し、module・script・非実行を区別する。"""
     index = 1
     while index < len(tokens):
         word = tokens[index]
@@ -283,7 +276,6 @@ def _python_invocation(tokens: list[str], directories: tuple[str, ...]) -> Runti
 
 
 def _uv_option_values(tokens: list[str], start: int, end: int, values: frozenset[str]) -> list[tuple[str, str | None]]:
-    """検証済みのオプション区間から、値と結合短縮形を区別して返す。"""
     options: list[tuple[str, str | None]] = []
     index = start
     while index < end:
@@ -313,11 +305,6 @@ def _uv_option_values(tokens: list[str], start: int, end: int, values: frozenset
 
 
 def resolve_runtime_invocation(tokens: Sequence[str]) -> RuntimeInvocation:
-    """shellへ再評価せず、uv・uvx・Pythonを通した実行位置と起動方式を返す。
-
-    値付きオプションは実行名にせず、未知構文はunresolved、非対象の起動はその実行名で返す。
-    従来の助言用解析とは別に、起動方式の確定を要する消費側が明示して使う。
-    """
     argv = list(tokens)
     directories: tuple[str, ...] = ()
     while argv:
@@ -374,7 +361,6 @@ def is_python_token(token: str) -> bool:
 
 
 def has_uv_terminal_option(tokens: Sequence[str]) -> bool:
-    """トークン列に`uv`の終端オプションが含まれる場合に真を返す。"""
     return any(token in _UV_TERMINAL_OPTIONS for token in tokens)
 
 
@@ -401,7 +387,6 @@ def resolve_uv_execution_index(tokens: list[str], uv_index: int) -> int | None:
 
 
 def is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, execution_index: int) -> bool:
-    """pluginプロジェクト配下のスクリプトの起動と、独立したリモート補助スクリプトの起動を識別する。"""
     index, state = _scan_uv_options(list(tokens), uv_index + 1, _UV_GLOBAL_OPTIONS_WITH_VALUE, _UV_GLOBAL_OPTIONS_WITHOUT_VALUE)
     if state != "reached" or index >= len(tokens) or tokens[index] != "run":
         return False
@@ -430,7 +415,6 @@ def is_agent_toolkit_script_invocation(tokens: Sequence[str], uv_index: int, exe
 
 
 def _uv_project_option(options: Sequence[str]) -> str | None:
-    """`uv run`のオプション列から明示されたproject rootを返す。"""
     for index, option in enumerate(options):
         if option in ("--project", "-p") and index + 1 < len(options):
             return options[index + 1]

@@ -1,5 +1,3 @@
-"""serveのbrowser_sessionsに関するupdatesの試験。"""
-
 import asyncio
 import json
 import re
@@ -34,7 +32,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_updates_when_records_are_added(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
-    """画面を開いたまま保存された新しい記録が、再読み込みせずに左ペインへ現れる。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     items = page.locator("#sessions .session-item")
@@ -60,10 +57,9 @@ async def test_session_list_updates_when_records_are_added(screen_harness: _Scre
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_operations_record_open_and_notified_reload(screen_harness: _ScreenHarness, tmp_path: Path) -> None:
-    """記録の選択から詳細の描画まで、`refresh`通知から一覧と詳細の再描画までを、それぞれ1件の操作として記録する。"""
     page = screen_harness.page
     await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
-    # 記録は件数・定期送信・`pagehide`のいずれかで分割して送られるため、全ての送信を集めて検査する。
+
     sent: list[dict] = []
     page.on(
         "request",
@@ -150,12 +146,12 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
                 tmp_path / "claude" / "projects" / "-home-aki-burst" / f"burst-{index}.jsonl",
                 [{"type": "user", "timestamp": f"2026-09-05T00:00:0{index}Z", "message": {"content": f"通知{index}"}}],
             )
-            # 各作成の通知をブラウザーで受信してから次を作り、変更監視の時間窓によるまとめを避ける。
+
             await page.wait_for_function("count => window.testSessionRefreshCount > count", arg=received)
             if index == 0:
                 await asyncio.wait_for(entered.wait(), timeout=5)
         received = await page.evaluate("window.testSessionRefreshCount")
-        # 画面の取得要求を保留したまま一覧APIを直接呼び、再走査の完了と通知の受信を両方待つ。
+
         response = await page.request.get(screen_harness.base_url + "/api/sessions/list")
         assert response.ok
         async with asyncio.timeout(10):
@@ -169,7 +165,7 @@ async def test_session_list_refreshes_are_not_issued_concurrently(screen_harness
         release.set()
         await page.unroute("**/api/sessions/list", hold_list)
     assert concurrency["max"] == 1
-    # 作成と走査完了の通知は全て保留中に届いており、取り直し1回へまとまる。
+
     assert concurrency["total"] <= 2
 
 
@@ -187,12 +183,6 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     tmp_path: Path,
     opened_from: str,
 ) -> None:
-    """右ペインは末尾まで読み進めるたびに続きを自動で描画して記録の最後まで到達し、追記で表示状態を保つ。
-
-    末尾より上を読んでいる間の追記では、開閉とスクロール位置を保ち、通知を表示せず、一覧も再取得しない。
-    その後に末尾まで読み進めると追記したイベントへ到達する。サブエージェントの記録も同じ右ペインの描画で開く。
-    続きの描画に操作が要ると、記録の後半と追記へ到達するたびにボタンを探す手間が生じる。
-    """
     queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await _observe_screen_requests(page)
@@ -222,7 +212,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
         )
         path = subagents / "agent-long.jsonl"
         _append_jsonl(path, records)
-    # 記録の作成による一覧の再取得の通知は、画面を開く前に配信を終えさせ、追記の検証へ混ぜない。
+
     await _wait_record_notification(screen_harness, queue, path)
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator("#sessions .session-item", has_text="/home/aki/long").click()
@@ -234,7 +224,7 @@ async def test_session_detail_follows_appended_events_and_keeps_view_state(
     for expected in (200, 231):
         await page.evaluate(_SCROLL_DETAIL_TO_END_JS)
         await playwright.async_api.expect(events).to_have_count(expected)
-    # 最初から展開されるユーザー発話と、本文があるため展開される思考を1件閉じる。
+
     await events.nth(0).locator("summary").click()
     await events.nth(120).locator("summary").click()
     await playwright.async_api.expect(events.nth(120)).not_to_have_attribute("open", "")
@@ -272,7 +262,6 @@ async def test_session_detail_follows_the_tail_while_reading_the_latest_events(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """末尾を読んでいる間の追記では通知を表示せず、追記した末尾へ追従する。"""
     queue = await serve_sessions.subscribe(screen_harness.sessions_context.state)
     page = screen_harness.page
     await page.set_viewport_size({"width": 1280, "height": 600})
@@ -306,7 +295,6 @@ async def test_session_empty_state_distinguishes_records_without_user_messages(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """発話を含む記録が1件も無いときは、発話を含む記録が無いことと、自動で加わることを示す。"""
     shutil.rmtree(tmp_path / "claude")
     shutil.rmtree(tmp_path / "codex")
     _append_jsonl(tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl", [{"type": "permission-mode"}])
@@ -324,7 +312,6 @@ async def test_session_without_user_message_appears_after_first_message(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """ユーザー発話を持たない記録は一覧に現れず、発話が追記されると再読み込みせずに現れる。"""
     silent_claude = tmp_path / "claude" / "projects" / "-home-aki-silent" / "silent.jsonl"
     _append_jsonl(silent_claude, [{"type": "permission-mode", "cwd": "/home/aki/silent-claude"}])
     silent_codex = tmp_path / "codex" / "sessions" / "2026" / "09" / "05" / "rollout-2026-09-05T00-00-00-silent.jsonl"

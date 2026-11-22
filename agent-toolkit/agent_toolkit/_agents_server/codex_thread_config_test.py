@@ -33,7 +33,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """内側MCPサーバーへルートと書込主体を完全な定義で配送する。"""
     client = _ThreadStartClient()
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
@@ -74,7 +73,6 @@ async def test_thread_start_overrides_agents_server_with_owner_and_writer_env(
 async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
     operation: str, configured: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """開始・追送・保存会話の再開で親の任意名を配送し、起動contextは明示値を優先する。"""
     runtime_data = tmp_path / "plugin data"
     monkeypatch.setenv(plugin_environment.RUNTIME_DATA_ENV, str(runtime_data))
     names = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
@@ -155,7 +153,6 @@ async def test_mcp_mise_namespace_names_and_explicit_owner_are_separate(
 async def test_inner_mcp_uses_actual_app_server_parent_environment(
     operation: str, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """内側MCPはApp Serverへ渡した環境の名前を使い、stdio子で値・空値・未設定を保持する。"""
     supplied = {
         "UNREGISTERED_VENDOR_API_KEY": "synthetic-api-value",
         "LC_ALL": "C",
@@ -215,7 +212,6 @@ async def test_inner_mcp_uses_actual_app_server_parent_environment(
 
 @pytest.mark.asyncio
 async def test_agents_server_config_uses_the_stable_plugin_root() -> None:
-    """内側MCPサーバーの起動コマンドは、安定した配布物rootの実体だけを指す。"""
     async with subject.AppServerManager() as manager:
         config = manager._agents_server_config("owner", "writer")
 
@@ -244,7 +240,6 @@ async def test_agents_server_config_uses_the_stable_plugin_root() -> None:
 async def test_all_start_and_resume_requests_disable_experimental_context_management(
     launch_kind: state.LaunchKind, owner: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """初回依頼と追送変更を保持するため、全起動・再開リクエストで実験方式の継承を止める。"""
     client = _TierClient()
     async with subject.AppServerManager(root_session_id=owner) as manager:
         monkeypatch.setattr(manager, "_ensure_client", AsyncMock(return_value=client))
@@ -268,7 +263,6 @@ async def test_all_start_and_resume_requests_disable_experimental_context_manage
 async def test_start_and_resume_pass_the_same_stable_plugin_root_to_all_launch_kinds(
     launch_kind: state.LaunchKind, windows: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """開始と再開の全役割へ、実在する同じplugin rootと、plugin rootの再解決を禁じる指示を渡す。"""
     source = _make_plugin_root(tmp_path / "cache", "2.125.0", versioned=True, root_is_version=True)
     (source / ".mcp.json").write_text(
         (plugin_roots.SERVER_PLUGIN_ROOT / ".mcp.json").read_text(encoding="utf-8"), encoding="utf-8"
@@ -405,7 +399,6 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """探索の開始・再開・追送で通常のコマンドとMCP設定を保持する。"""
     async with subject.AppServerManager() as normal_manager:
         normal_client = FakeCodexClient()
 
@@ -444,7 +437,7 @@ async def test_codex_explore_commands_reach_start_resume_and_followup(
                 "context_management": {"experimental_mode": False},
                 **dict.fromkeys(startup_features.CODEX_DISABLED, False),
             }
-            # 軽量起動にも出力省略の回収案内を届けるためPost hookを接続し、本文配送用の退避上限の解除は渡さない。
+
             configured = explore_thread["config"]["hooks"]["PostToolUse"][0]
             assert configured["matcher"] == "Bash"
             assert all("additionalContextLimit" not in handler for handler in configured["hooks"])
@@ -487,7 +480,7 @@ async def test_codex_shell_start_shares_explore_thread_conditions(
         thread_params = client.requests[0][1]
         assert thread_params["config"]["bypass_hook_trust"] is True
         assert thread_params["config"]["project_doc_max_bytes"] == 0
-        # shellはpluginのhookをそのまま受けるため、thread設定でPost hookを重ねない。
+
         assert thread_params["config"]["features"] == {
             "context_management": {"experimental_mode": False},
             **dict.fromkeys(startup_features.CODEX_DISABLED, False),

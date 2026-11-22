@@ -1,5 +1,3 @@
-"""登録された公開スクリプトと配布原本の整合を検証する。"""
-
 import argparse
 import pathlib
 
@@ -17,13 +15,11 @@ def test_registry_stays_inside_plugin_root() -> None:
 
 
 def _registered_parser(monkeypatch: pytest.MonkeyPatch, script_name: str) -> argparse.ArgumentParser:
-    """`atk run-script`と同じ起動経路でスクリプトを実行し、最初に解析を始めた解析器を返す。"""
     del monkeypatch
     return cli_examples.registered_parser(script_name)
 
 
 def test_public_documents_examples_use_real_parsers() -> None:
-    """配布原本と利用ガイドの完全な実行例を、登録先の実parserが受理するか確かめる。"""
     roots = [run_script.PLUGIN_ROOT / "skills"]
     guide = run_script.PLUGIN_ROOT.parent / "docs" / "guide"
     if guide.is_dir():
@@ -37,11 +33,6 @@ def test_public_documents_examples_use_real_parsers() -> None:
 
 
 def test_every_registered_script_argument_states_its_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全登録スクリプトの全引数が説明を持ち、パスを受け取る引数は使い方の行でパスと分かる。
-
-    説明の無い引数や、使い方の行が引数名の大文字だけを示すパス型の引数は、値がファイルのパスか内容かを
-    ヘルプから判断できず、JSON文字列をそのまま渡すなどの誤った呼び出しを招く。
-    """
     checked: list[str] = []
     for script_name in sorted(run_script.SCRIPT_PATHS):
         parser = _registered_parser(monkeypatch, script_name)
@@ -52,5 +43,5 @@ def test_every_registered_script_argument_states_its_value(monkeypatch: pytest.M
             if action.type is pathlib.Path:
                 assert action.metavar in {"PATH", "DIR"}, (script_name, action.dest, action.metavar)
         checked.append(script_name)
-    # 解析器を取り出せないスクリプトが残ったまま成功しないよう、確かめたスクリプトを登録の全件と比べる。
+
     assert checked == sorted(run_script.SCRIPT_PATHS)

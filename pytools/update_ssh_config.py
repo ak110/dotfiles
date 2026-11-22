@@ -1,10 +1,3 @@
-"""SSH の config および authorized_keys を生成・更新する。
-
-- ~/.ssh/config: conf.d/*.conf + localconfig を結合して上書き生成する
-- ~/.ssh/authorized_keys: conf.d/authorized_keys + local_authorized_keys から
-  既存にない鍵のみ追加する (既存の鍵は削除しない)
-"""
-
 import argparse
 import logging
 import re
@@ -18,13 +11,11 @@ from pytools._internal.cli import setup_logging
 
 logger = logging.getLogger(__name__)
 
-# options内のクォート文字列に鍵タイプが含まれる場合でも、
-# base64データの長さ(32文字以上)で誤認を防ぐ
+
 _KEY_PATTERN = re.compile(r"(?:ssh-\S+|ecdsa-\S+|sk-\S+)\s+([A-Za-z0-9+/=]{32,})")
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """SSHのconfigとauthorized_keysを生成・更新するエントリポイント。"""
     parser = argparse.ArgumentParser(description="SSHのconfigとauthorized_keysを更新する。")
     parser.parse_args(argv)
     setup_logging()
@@ -48,11 +39,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _generate_ssh_config(ssh_dir: Path) -> bool:
-    """conf.d/*.conf + localconfig -> config (上書き)
-
-    Returns:
-        ファイル内容が変化したかどうか。
-    """
     conf_d = ssh_dir / "conf.d"
     fragments = [conf_file.read_text(encoding="utf-8") for conf_file in sorted(conf_d.glob("*.conf"))]
     localconfig = ssh_dir / "localconfig"
@@ -82,11 +68,6 @@ def _build_ssh_config_content(fragments: Sequence[str]) -> str:
 
 
 def _generate_authorized_keys(ssh_dir: Path) -> bool:
-    """conf.d/authorized_keys + local_authorized_keys -> authorized_keys (追加のみ)
-
-    Returns:
-        ファイル内容が変化したかどうか。
-    """
     ak_path = ssh_dir / "authorized_keys"
     existing_text = ak_path.read_text(encoding="utf-8") if ak_path.exists() else ""
     sources = (ssh_dir / "conf.d" / "authorized_keys", ssh_dir / "local_authorized_keys")
@@ -117,14 +98,13 @@ def _merge_authorized_keys(existing_text: str, source_texts: Sequence[str]) -> t
 
 
 def _extract_key_data(line: str) -> str | None:
-    """authorized_keys行からbase64鍵データを抽出する。空行・コメント行はNone。"""
     stripped = line.strip()
     if not stripped or stripped.startswith("#"):
         return None
     m = _KEY_PATTERN.search(stripped)
     if m:
         return m.group(1)
-    # フォールバック: 行全体
+
     return stripped
 
 

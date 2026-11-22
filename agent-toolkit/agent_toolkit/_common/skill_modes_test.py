@@ -1,5 +1,3 @@
-"""起動モードの完全一致と自由記述の保持を検査する。"""
-
 import pytest
 
 from agent_toolkit._common import skill_modes

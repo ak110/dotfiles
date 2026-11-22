@@ -1,15 +1,3 @@
-"""委譲先sessionの記録を識別子から探す処理をまとめる。
-
-`atk agents logs`とreview-sessionの`atk run-script session-review-evidence`は、
-同じ委譲先の記録を実行系ごとに異なる保存先から探す。
-探索を呼び出し側ごとに実装すると、`agents_server`へ実行系を追加したときに一部の呼び出し側だけが
-新しい保存先を探さないまま残る。探索は本モジュールへ集約し、解決できる実行系の集合と
-`agents_server`の実行系集合と一致することをテストで確かめる。
-
-session識別子は実行系をまたいで一意であるため、探索は識別子だけで行う。同じ実行系で複数の記録が
-一致した場合の扱い（先頭を表示する、別の記録の混入を避けて未解決とするなど）は呼び出し側の方針が決める。
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -61,8 +49,6 @@ def is_launch_identifier(value: object) -> bool:
 
 @dataclasses.dataclass(frozen=True)
 class SessionRecord:
-    """識別子が一致した実行系と、その実行系で一致した記録の絶対パス（安定順）。"""
-
     engine: str
     paths: tuple[pathlib.Path, ...]
 
@@ -159,7 +145,6 @@ class RecordLocator:
         self._codex: dict[str, list[pathlib.Path]] | None = None
 
     def find(self, session_id: str) -> SessionRecord | None:
-        """`find_session_record`と同じ規則で記録を返す。"""
         if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
             return None
         if self._claude is None:
@@ -179,7 +164,7 @@ class RecordLocator:
         found: dict[str, list[pathlib.Path]] = {}
         if not projects.is_dir():
             return found
-        # `find_session_record`と同じくproject名の順に並べ、同じ識別子の全候補を保持する。
+
         for project in sorted(projects.iterdir()):
             if not project.is_dir():
                 continue
@@ -210,12 +195,10 @@ class RecordLocator:
 
 
 def agy_session_id(path: pathlib.Path) -> str:
-    """対話記録のbrain祖先か、委譲先ログのstemから会話IDを返す。"""
     return path.parents[2].name if path.name in {"transcript.jsonl", "transcript_full.jsonl"} else path.stem
 
 
 def agy_session_records(gemini_home: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """会話ごとに切り詰めのない記録を優先し、各会話を1回だけ列挙する。"""
     brain = gemini_home / "antigravity-cli" / "brain"
     if not brain.is_dir():
         return ()
@@ -246,7 +229,7 @@ def find_codex_records(session_id: str, *, codex_home: pathlib.Path | None = Non
         return ()
     name = _codex_rollout_name(session_id)
     nearby = _codex_matches(session_id, codex_thread_directories(sessions, session_id) or (), name)
-    # 作成日の日付ディレクトリに無い記録とUUIDv7でないthread IDは、全期間の日付ディレクトリから探す。
+
     return nearby or _codex_matches(session_id, (sessions,), f"*/*/*/{name}")
 
 
@@ -280,10 +263,6 @@ def _codex_matches(session_id: str, directories: Iterable[pathlib.Path], pattern
 
 
 def codex_session_id(path: pathlib.Path) -> str:
-    """ロールアウトのファイル名からthread IDを取り出す。
-
-    ファイル名は`rollout-<日時>-<thread-id>`の形であり、thread IDはUUIDの5区画で末尾に置かれる。
-    """
     stem = path.name[len(CODEX_ROLLOUT_PREFIX) : -len(RECORD_SUFFIX)]
     parts = stem.split("-")
     return "-".join(parts[-5:]) if len(parts) >= 5 else stem

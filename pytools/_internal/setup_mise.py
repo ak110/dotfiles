@@ -87,7 +87,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _maintenance_key(mise_bin: Path) -> str | None:
-    """mise自身が列挙する設定と導入状態を、成功済みの整理結果と比較する。"""
     cwd = setup_mise_tools.working_tree_with_config()
     configs = setup_mise_common.run_mise(mise_bin, ["config", "ls", "--json", "--tracked-configs"], cwd=cwd)
     installed = setup_mise_common.run_mise(mise_bin, ["ls", "--json"], cwd=cwd)
@@ -121,7 +120,7 @@ def _maintenance_key(mise_bin: Path) -> str | None:
         paths.extend((config, config.with_suffix(".lock"), config.parent / "mise.lock"))
     data = Path(os.environ.get("MISE_DATA_DIR") or platformdirs.user_data_dir("mise", appauthor=False))
     paths.append(data / "shims")
-    # bin-path欠落は毎回別途検査し、ツールの削除・追加はmise lsの実状態から検出する。
+
     return post_apply_cache.fingerprint(
         paths,
         values=[

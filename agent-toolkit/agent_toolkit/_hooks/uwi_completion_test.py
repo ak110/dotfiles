@@ -13,7 +13,6 @@ _SESSION = "self-session"
 
 
 def _name(index: int) -> str:
-    """テスト用UWIのファイル名を返す。"""
     return f"20261101-000000-{index:03d}.md"
 
 
@@ -26,7 +25,6 @@ def _put(
     target_repo: str = _REPO,
     submitter: str = _SESSION,
 ) -> str:
-    """年月の固定保存先へUWIを1件置き、ファイル名を返す。"""
     name = _name(index)
     path = root / "2026" / "11" / name
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,13 +45,11 @@ def _put(
 
 
 def _awaiting() -> list[str]:
-    """テスト対象の会話が回答を待つUWIの記録を返す。"""
     return uwi_watch.awaiting(session_state.read_state(_SESSION))
 
 
 @pytest.fixture(name="root", autouse=True)
 def _root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """WIの保存先をテスト用の一時ディレクトリへ向ける。"""
     root = tmp_path / "private-notes"
     root.mkdir()
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(root))
@@ -61,8 +57,6 @@ def _root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pa
 
 
 class TestBuildNotice:
-    """投入時に記録したUWIだけを確かめ、回答を1回だけ通知する。"""
-
     def test_session_without_record_does_not_read_private_notes(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def _fail(*_args: object, **_kwargs: object) -> None:
             pytest.fail("記録の無い会話がWIの保存先を参照した")
@@ -73,7 +67,7 @@ class TestBuildNotice:
     def test_notifies_answered_uwi_once_and_keeps_unanswered(self, root: pathlib.Path) -> None:
         answered = _put(root, 1, answer="回答\n", state="processing")
         unanswered = _put(root, 2)
-        # 共有キューには他の会話が投入したUWIも並ぶ。記録していないUWIは回答済みでも通知しない。
+
         foreign = _put(root, 3, answer="回答\n", submitter="other-session")
         assert uwi_watch.add(_SESSION, [answered, unanswered])
 
@@ -84,7 +78,7 @@ class TestBuildNotice:
         assert answered in notice
         assert unanswered not in notice
         assert foreign not in notice
-        # hookはprocess-wiの実行中かを判定しないため、実行中かどうかの条件分岐は規範の節へ置き、通知は節を参照する。
+
         assert "`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」" in notice
         assert _awaiting() == [unanswered]
         assert _uwi_completion.build_notice(_SESSION) is None
@@ -124,7 +118,6 @@ class TestBuildNotice:
         assert _awaiting() == [name]
 
     def test_does_not_notify_when_record_cannot_be_updated(self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """記録から外せないまま通知すると同じ回答を次回以降も繰り返し通知するため、通知しない。"""
         assert uwi_watch.add(_SESSION, [_put(root, 1, answer="回答\n")])
 
         def _update_state(*_args: object, **_kwargs: object) -> bool:
@@ -135,15 +128,13 @@ class TestBuildNotice:
 
 
 class TestAdoptScanState:
-    """全WIを走査する版の基準値を持つ会話は、投入済みのUWIを1回だけ記録へ引き継ぐ。"""
-
     @pytest.mark.parametrize("key", ["uwi_answered_by_repo", "tbd_answered_by_repo"])
     def test_adopts_own_pending_uwis_and_notifies_unnotified_answer(self, root: pathlib.Path, key: str) -> None:
         waiting = _put(root, 1)
         unnotified = _put(root, 2, answer="回答\n")
         notified = _put(root, 3, answer="回答\n")
         foreign = _put(root, 4, submitter="other-session")
-        # 基準値に無い対象リポジトリのUWIは、走査する版でも通知の対象外だった。
+
         unobserved = _put(root, 5, target_repo="example.com/x/y")
         recorded = _put(root, 6)
         fingerprint_key = key.replace("answered", "fingerprint")
@@ -166,7 +157,6 @@ class TestAdoptScanState:
     def test_keeps_scan_state_until_scan_completes(
         self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
     ) -> None:
-        """保存先を解決できない間と走査が不完全な間は基準値を保ち、回復後に未通知の回答を通知する。"""
         unnotified = _put(root, 1, answer="回答\n")
         broken = root / "2026" / "11" / _name(9)
         legacy: dict[str, object] = {"uwi_answered_by_repo": {"main": {_REPO: []}}}
@@ -193,7 +183,6 @@ class TestAdoptScanState:
     def test_does_not_renotify_answer_notified_while_adoption_is_pending(
         self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """引き継ぎを保留している間に通知した回答は、走査の回復後の引き継ぎで再び通知しない。"""
         recorded = _put(root, 1, answer="回答\n")
         broken = root / "2026" / "11" / _name(9)
         broken.write_text("frontmatterの無い本文\n", encoding="utf-8")
@@ -213,7 +202,6 @@ class TestAdoptScanState:
     def test_waits_before_scanning_again_after_incomplete_scan(
         self, root: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """引き継ぎを終えられなかった直後は全WIを走査し直さず、投入時に記録したUWIの確認は続ける。"""
         (root / "2026" / "11").mkdir(parents=True)
         (root / "2026" / "11" / _name(9)).write_text("frontmatterの無い本文\n", encoding="utf-8")
         recorded = _put(root, 1, answer="回答\n")

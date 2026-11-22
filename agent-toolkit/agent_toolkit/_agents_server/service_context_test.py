@@ -1,5 +1,3 @@
-"""共有PID宛ての制御要求を、別会話で消費しない境界を検証する。"""
-
 # 保存完了と受付予約の内部境界を代用I/Oで検証する。
 # pylint: disable=protected-access
 
@@ -209,10 +207,6 @@ async def test_accepted_effort_is_drained_through_control_save(monkeypatch, tmp_
 
 @pytest.mark.asyncio
 async def test_generations_distinguish_current_queried_and_retired(tmp_path):
-    """照会した世代・受付中の世代を区別し、退出済みの世代と強制終了した世代を除いて返す。
-
-    強制終了した世代は退出を記録できない。一覧から消えることを処置後の終了観測に使うため、プロセスの生死で判定する。
-    """
     from agent_toolkit._agents_server.service_projection import ProjectionHub  # pylint: disable=import-outside-toplevel
 
     directory = tmp_path / "services/agents-server"

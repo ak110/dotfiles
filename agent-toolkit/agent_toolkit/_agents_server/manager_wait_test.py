@@ -62,7 +62,6 @@ async def test_wait_does_not_redeliver_only_terminal_result_at_timeout(tmp_path:
 @pytest.mark.parametrize("previous_consumed", [False, True])
 @pytest.mark.asyncio
 async def test_reply_cleanup_preserves_a_result_published_before_delivery_returns(tmp_path, monkeypatch, previous_consumed):
-    """追送が戻る前に次turnが完了しても、旧turnの回収で新しい本文を消さない。"""
     async with _writer_backed_manager(tmp_path) as (manager, writer):
         session = state.SessionState("reply-generation", str(tmp_path), engine="codex", announced=True, turn_seq=1)
         manager.sessions[session.session_id] = session
@@ -221,7 +220,6 @@ async def test_result_survives_deadline_at_response_save_or_notices(tmp_path, mo
 
 @pytest.mark.asyncio
 async def test_wait_returns_first_available_session_and_retains_others(tmp_path: pathlib.Path) -> None:
-    """waitは確定時刻が早い結果だけを選び、残る結果を保持する。"""
     async with _manager_with_fake("codex") as (manager, _):
         later = state.SessionState("later", str(tmp_path), engine="codex")
         earlier = state.SessionState("earlier", str(tmp_path), engine="codex")
@@ -254,7 +252,6 @@ async def test_wait_delivers_each_terminal_result_to_single_waiter(tmp_path: pat
 
 @pytest.mark.asyncio
 async def test_wait_does_not_redeliver_selected_terminal_result(tmp_path: pathlib.Path) -> None:
-    """配送済みの終了時の結果を避け、残る未終了sessionの状態を返す。"""
     async with _manager_with_fake("codex") as (manager, _):
         completed = state.SessionState("thread-completed", str(tmp_path), engine="codex")
         running = state.SessionState("thread-running", str(tmp_path), engine="codex")
@@ -287,7 +284,6 @@ async def test_wait_does_not_return_unfinished_result(tmp_path: pathlib.Path) ->
 
 @pytest.mark.asyncio
 async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) -> None:
-    """waitは実行中の通知を検出して復帰し、同じ通知を再配送しない。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -320,7 +316,6 @@ async def test_wait_returns_running_notification_once(tmp_path: pathlib.Path) ->
 
 @pytest.mark.asyncio
 async def test_wait_returns_terminal_result_with_pending_notification(tmp_path: pathlib.Path) -> None:
-    """終了時に残る通知を結果本文と同じ応答へ載せる。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -373,7 +368,6 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """前turnの結果を保持したまま、指定した次turnの終了だけを待つ。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -421,7 +415,6 @@ async def test_agents_wait_ignores_previous_turn_result_until_next_turn_finishes
 
 @pytest.mark.asyncio
 async def test_wait_returns_current_registry_state_after_replacement(tmp_path: pathlib.Path) -> None:
-    """wait開始後に登録簿が更新された場合は新しい終了状態を返す。"""
     async with _manager_with_fake("claude") as (manager, _):
         original = state.SessionState("claude-replaced", str(tmp_path), engine="claude")
         manager.sessions[original.session_id] = original
@@ -578,7 +571,6 @@ async def test_mcp_wait_skips_result_already_collected_by_cli(tmp_path: pathlib.
 @pytest.mark.parametrize("retained_state", ["expired", "stopped"])
 @pytest.mark.asyncio
 async def test_retained_wait_claims_result_after_another_collector_wins(tmp_path, monkeypatch, retained_state):
-    """退避結果の存在確認後に別の親が回収した場合も、本文を一度だけ配送する。"""
     async with _writer_backed_manager(tmp_path) as (manager, writer):
         session = state.SessionState("retained-race", str(tmp_path), engine="codex", turn_seq=1)
         _complete(session, message="一度だけの退避本文")
@@ -619,7 +611,7 @@ async def test_mcp_wait_drains_finished_flush_before_its_done_callback(tmp_path:
         writer._flush_scheduled()
         tasks = tuple(writer._flush_tasks)
         assert tasks
-        # worker完了と集合更新callbackの間を確定し、drain自身による終了回収を検証する。
+
         for task in tasks:
             assert task.remove_done_callback(writer._flush_tasks.discard) == 1
         await asyncio.gather(*tasks)
@@ -642,7 +634,6 @@ async def test_mcp_wait_drains_finished_flush_before_its_done_callback(tmp_path:
 
 @pytest.mark.asyncio
 async def test_take_result_rejects_collection_by_another_writer(tmp_path: pathlib.Path) -> None:
-    """公開した書込主体と異なる所有者の回収は、結果を返さず結果ファイルも削除しない。"""
     async with _writer_backed_manager(tmp_path) as (manager, writer):
         session = state.SessionState("terminal", str(tmp_path), engine="codex")
         _complete(session, message="所有者本文")
@@ -704,7 +695,6 @@ async def test_wait_keeps_the_session_after_returning_the_terminal_result(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """waitは破棄の指定を受け取らず、終了時の結果を返した後もsessionを保持する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("wait-keep", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session

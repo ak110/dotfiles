@@ -41,12 +41,10 @@ _RELEASE_PULL_REQUEST_CONDITIONS = (
 
 
 def _common_job_names(workflow: dict[str, object]) -> list[str]:
-    """release pull requestで非所有の表示名を持つ共通jobの名前を返す。"""
     return [name for name, job in workflow_jobs(workflow).items() if "(non-owner)" in str(workflow_mapping(job)["name"])]
 
 
 def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> None:
-    """共通jobの全実処理が先行jobの所有出力を参照する。"""
     common_jobs = _common_job_names(workflow_data)
     assert set(common_jobs) == {
         "test-linux",
@@ -99,7 +97,10 @@ def test_common_jobs_share_owner_output(workflow_data: dict[str, object]) -> Non
         "(github.event_name == 'push' && github.ref == 'refs/heads/develop')"
     )
     assert workflow_data["concurrency"] == {
-        "group": "ci-${{ github.event_name }}-${{ github.ref }}",
+        "group": (
+            "ci-${{ github.event_name }}-"
+            "${{ github.ref == 'refs/heads/master' && github.event_name == 'push' && github.sha || github.ref }}"
+        ),
         "cancel-in-progress": "true",
     }
 
@@ -191,7 +192,7 @@ def test_common_ci_owner_runs_workflow_judgment(
     runpy.run_path(str(script_path), run_name="__main__")
     if run_state == "api-error":
         diagnostic = capsys.readouterr().out
-        assert "このrunで共通検証を実行します" in diagnostic
+        assert "他のCIの成功を確認できないため、このrunで共通検証を実行する: URLError" in diagnostic
         assert "::warning::" not in diagnostic
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
     assert values["owns"] == str(expected_owns).lower()
@@ -219,7 +220,6 @@ def test_common_ci_release_boundary(
     *,
     eligible: bool,
 ) -> None:
-    """Releaseの実gateは同一repositoryのmaster push成功だけを受理する。"""
     release = workflow_mapping(
         yaml.load(
             (REPO_ROOT / ".github/workflows/release-statusline.yaml").read_text(encoding="utf-8"),
@@ -292,7 +292,6 @@ def test_ci_scope_runs_real_workflow_selection(
     mode: str,
     expected: tuple[bool, bool],
 ) -> None:
-    """実Gitの共通祖先と実workflowの判定から、検査領域と省略理由を取得する。"""
     repository = tmp_path / "repository"
     repository.mkdir()
     _run_git(repository, "init", "--initial-branch=develop")

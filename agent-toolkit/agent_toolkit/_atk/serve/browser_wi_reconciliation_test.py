@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するreconciliationの試験。"""
-
 import asyncio
 
 import playwright.async_api
@@ -22,7 +20,6 @@ pytestmark = [
 async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entry(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """SSE更新時の詳細再取得、入力保持、消失時の閉鎖と復帰先を検証する。"""
     harness = browser_harness
     page = harness.page
     awi_path = _entry_path(harness.root, "awi.md")
@@ -61,7 +58,6 @@ async def test_sse_refreshes_open_detail_preserves_input_and_closes_missing_entr
 async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """状態が異なる項目の識別、状態変更、削除確認中の対象消失を実ブラウザーで扱う。"""
     harness = browser_harness
     page = harness.page
     inbox_same = _entry_path(harness.root, "same.md")
@@ -124,11 +120,6 @@ async def test_sse_reconciliation_preserves_identity_and_owned_dialogs(
 async def test_delete_and_sse_completion_orders_close_owned_dialogs_once(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """削除応答とSSEの到着順にかかわらず、詳細と削除確認のダイアログを閉じて一覧へ戻す。
-
-    応答より先に届いた更新通知は自分の削除によるものを含むため、応答まで詳細の再読込を保留し、
-    応答の後に両方のダイアログを閉じて削除の成功を通知する。
-    """
     harness = browser_harness
     page = harness.page
     for filename in ("sse-first.md", "response-first.md"):
@@ -212,7 +203,7 @@ async def test_external_update_recovery_survives_save_and_answer_failures(
         await detail.get_by_role("button", name=submit_name, exact=True).click()
         await asyncio.wait_for(started.wait(), timeout=5)
         (_entry_path(harness.root, filename)).write_text(updated_content, encoding="utf-8")
-        # 更新通知による一覧の再取得が終わり、詳細の再読込が保留へ回るまで応答を返さない。
+
         try:
             async with page.expect_response(lambda response: "/api/entries?type=" in response.url):
                 harness.current_state.publish()
@@ -306,7 +297,6 @@ async def test_selecting_deleted_entry_refreshes_list_without_error(
     browser_harness: _BrowserHarness,
     external_change: str,
 ) -> None:
-    """一覧表示後に外部で削除・移動された行を選んでも、エラーを表示せず最新状態を示して一覧を更新する。"""
     harness = browser_harness
     page = harness.page
     path = _entry_path(harness.root, "stale.md")
@@ -316,7 +306,6 @@ async def test_selecting_deleted_entry_refreshes_list_without_error(
     stale_row = page.locator('.entry-select[data-key="stale.md"]')
     await stale_row.wait_for(state="visible")
 
-    # SSEの変更通知を発行せず、一覧が古いままの状態で行を選ぶ。
     if external_change == "delete":
         path.unlink()
     else:
@@ -343,7 +332,6 @@ async def test_selecting_deleted_entry_refreshes_list_without_error(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_focus_recovers_change_without_sse_event(browser_harness: _BrowserHarness) -> None:
-    """SSE通知を受信できなかった場合も、フォーカス復帰時に一覧を再取得する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")

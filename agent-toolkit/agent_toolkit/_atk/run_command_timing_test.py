@@ -63,7 +63,6 @@ def test_journal_keeps_initial_wait_once(monkeypatch: pytest.MonkeyPatch, tmp_pa
 def test_slot_wait_journal_survives_completion_and_interruption(
     tmp_path: pathlib.Path, interrupt: bool, host_environ: collections.abc.Callable[[], dict[str, str]]
 ) -> None:
-    """開始・終了通知を同じ区間へまとめ、起動前の中断を本体0秒へ読み替えない。"""
     driver = tmp_path / "driver.py"
     driver.write_text(
         "import functools,json,pathlib,sys,time\n"

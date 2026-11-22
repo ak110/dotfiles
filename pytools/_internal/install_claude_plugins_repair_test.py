@@ -26,7 +26,6 @@ def _resolve_claude(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(name="dotfiles_root")
 def _dotfiles_root() -> pathlib.Path:
-    """本リポジトリの dotfiles ルート (directory 型 path のテスト期待値)。"""
     root = _common.find_dotfiles_root()
     assert root is not None, "dotfiles ルートが検出できない環境ではテストを実行できない"
     return root
@@ -60,7 +59,6 @@ class TestIsEntryHealthy:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """別 path の directory 型は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "directory", "path": "/somewhere/else"}})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -69,7 +67,6 @@ class TestIsEntryHealthy:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """相対パスの directory 型は is_directory_type_registered が False (dotfiles 絶対パスと不一致)。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "directory", "path": "dotfiles"}})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -78,7 +75,6 @@ class TestIsEntryHealthy:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """source フィールドが無いエントリは is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -87,7 +83,6 @@ class TestIsEntryHealthy:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """source が文字列など非 dict の場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": "directory"})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -96,7 +91,6 @@ class TestIsEntryHealthy:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """source.path が無い場合は is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "directory"}})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -121,7 +115,6 @@ class TestCheckMarketplaceFromFile:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """相対パスを含む directory 型は is_directory_type_registered が False。"""
         _known, settings = marketplace_paths
         write_settings_entry(settings, {"source": {"source": "directory", "path": "home/aki/dotfiles"}})
         assert _claude_marketplace.is_directory_type_registered() is False
@@ -131,7 +124,6 @@ class TestCheckMarketplaceFromFile:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """片方のみ登録で残りが健全なら True (settings 未初期化の正常環境)。"""
         known, _settings = marketplace_paths
         write_known_entry(
             known,
@@ -147,7 +139,6 @@ class TestCheckMarketplaceFromFile:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """known 未登録でも settings 側が健全なら True。"""
         _known, settings = marketplace_paths
         write_settings_entry(settings, {"source": {"source": "directory", "path": str(dotfiles_root)}})
         assert _claude_marketplace.is_directory_type_registered() is True
@@ -156,22 +147,18 @@ class TestCheckMarketplaceFromFile:
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
     ):
-        """directory 型でも別 path を指していれば is_directory_type_registered が False。"""
         known, _settings = marketplace_paths
         write_known_entry(known, {"source": {"source": "directory", "path": "/elsewhere"}})
         assert _claude_marketplace.is_directory_type_registered() is False
 
 
 class TestRepairMarketplace:
-    """repair_marketplace のテスト。CLI remove+add → 再検証 → 直接書き換え + refresh の多段修復。"""
-
     def test_cli_success_updates_both_files(
         self,
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """CLI add が両ファイルを directory 型に正常化すれば、直接書き換えには進まず True を返す。"""
         known, settings = marketplace_paths
         healthy_entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
 
@@ -196,7 +183,6 @@ class TestRepairMarketplace:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """CLI add には dotfiles の絶対パスと ``--scope=user`` が渡される。``remove`` には ``--scope`` は付かない。"""
         _known, _settings = marketplace_paths
         calls: list[list[str]] = []
 
@@ -219,7 +205,7 @@ class TestRepairMarketplace:
         ]
         remove_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "remove"])]
         assert remove_calls, f"marketplace remove が呼ばれていない: {calls}"
-        # remove には --scope オプションは存在しない
+
         assert not any(c.startswith("--scope") for c in remove_calls[0])
 
     def test_cli_noop_triggers_direct_write(
@@ -228,7 +214,6 @@ class TestRepairMarketplace:
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """CLI が settings を更新しないケースでも直接書き換えで修復し、直後に refresh を呼ぶ。"""
         known, settings = marketplace_paths
 
         # 初期状態: settings 側が旧 GitHub 型で破損
@@ -244,19 +229,19 @@ class TestRepairMarketplace:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         assert _claude_marketplace.repair_marketplace() is True
-        # 両ファイルとも directory 型 + dotfiles 絶対パスへ更新されている
+
         known_data = json.loads(known.read_text(encoding="utf-8"))
         entry = known_data[_claude_common.MARKETPLACE_NAME]
         assert entry["source"] == {"source": "directory", "path": str(dotfiles_root)}
         assert entry["installLocation"] == str(dotfiles_root)
-        # lastUpdated は ISO 8601 の Z 形式
+
         assert isinstance(entry["lastUpdated"], str)
         assert entry["lastUpdated"].endswith("Z")
         settings_data = json.loads(settings.read_text(encoding="utf-8"))
         settings_entry = settings_data["extraKnownMarketplaces"][_claude_common.MARKETPLACE_NAME]
-        # settings 側は installLocation を持たない
+
         assert settings_entry == {"source": {"source": "directory", "path": str(dotfiles_root)}}
-        # メタデータ整合確認のため marketplace update が呼ばれる
+
         refresh_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "marketplace", "update"])]
         assert refresh_calls, f"marketplace update が呼ばれていない: {calls}"
 
@@ -268,7 +253,7 @@ class TestRepairMarketplace:
     ):
         """原子的置換で known_marketplaces.json の他キーが保持される。"""
         known, _settings = marketplace_paths
-        # 破損したエントリ + 無関係な他キー (他キーは触らない)
+
         known.write_text(
             json.dumps(
                 {
@@ -294,13 +279,13 @@ class TestRepairMarketplace:
         assert _claude_marketplace.repair_marketplace() is True
         data = json.loads(known.read_text(encoding="utf-8"))
         assert data["claude-plugins-official"] == original_other
-        # 他キーは保持
+
         assert data["claude-plugins-official"]["source"]["repo"] == "anthropics/claude-plugins-official"
         assert (
             data["claude-plugins-official"]["installLocation"]
             == "/home/aki/.claude/plugins/marketplaces/claude-plugins-official"
         )
-        # 対象キーは directory 型エントリへ差し替わる
+
         assert data[_claude_common.MARKETPLACE_NAME]["source"] == {
             "source": "directory",
             "path": str(dotfiles_root),
@@ -331,15 +316,12 @@ class TestRepairMarketplace:
 
 
 class TestEnsureMarketplaceHealthy:
-    """ensure_marketplace の健全状態時の挙動を検証する (回帰防止)。"""
-
     def test_healthy_state_no_repair_calls(
         self,
         monkeypatch: pytest.MonkeyPatch,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """両ファイル directory 型で正常なら subprocess も os.replace も呼ばれない。"""
         known, settings = marketplace_paths
         entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
         write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
@@ -359,14 +341,11 @@ class TestEnsureMarketplaceHealthy:
 
 
 class TestIsDirectoryTypeRegistered:
-    """``is_directory_type_registered`` 公開 API のテスト。"""
-
     def test_healthy_directory_type(
         self,
         marketplace_paths: tuple[pathlib.Path, pathlib.Path],
         dotfiles_root: pathlib.Path,
     ):
-        """両ファイル directory 型で健全なら True。"""
         known, settings = marketplace_paths
         entry: dict[str, object] = {"source": {"source": "directory", "path": str(dotfiles_root)}}
         write_known_entry(known, {**entry, "installLocation": str(dotfiles_root)})
@@ -380,6 +359,5 @@ class TestIsDirectoryTypeRegistered:
         assert _claude_marketplace.is_directory_type_registered() is False
 
     def test_unregistered(self, marketplace_paths: tuple[pathlib.Path, pathlib.Path]):
-        """未登録なら False。"""
-        del marketplace_paths  # 2 ファイルが存在しない状態のまま
+        del marketplace_paths
         assert _claude_marketplace.is_directory_type_registered() is False

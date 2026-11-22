@@ -1,5 +1,3 @@
-"""serveのassetsに関するmutationsの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -28,7 +26,6 @@ def test_web_transition_rejects_commit_without_resolvable_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Web採否はcommitを検証できる作業ツリーが無ければ状態変更しない。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "awi.md").write_text(
@@ -50,7 +47,6 @@ def test_web_transition_rejects_commit_without_resolvable_worktree(
 
 @pytest.mark.asyncio
 async def test_answer_api_rejects_awi_entry(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """AWIエントリへの回答送信は拒否する。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -181,7 +177,6 @@ async def test_edit_and_answer_apis_reject_invalid_specified_expected_content(
     filename: str,
     initial_content: str,
 ) -> None:
-    """明示した`expected_content`のnull・空値を400で拒否し、対象を変更しない。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     entry = inbox / filename
@@ -200,7 +195,6 @@ def test_add_omits_frontmatter_when_source_is_the_only_metadata(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """投入元だけのfrontmatterを除いて本文を保存し、空の区切りを残さない。"""
     _disable_wi_git(monkeypatch)
     filenames = wi_operations.Operations(tmp_path).add(
         ["---\nsource: add-awi\n---\n\n本文"],
@@ -228,7 +222,6 @@ async def test_batch_api_rejects_invalid_inputs(
     monkeypatch: pytest.MonkeyPatch,
     payload: dict[str, object],
 ) -> None:
-    """必須キー・型・空文字・未知キー・show形式外の入力を400で拒否する。"""
     _patch_batch_repo_operations(monkeypatch)
     app = serve_app.create_app(
         tmp_path,
@@ -243,7 +236,6 @@ async def test_batch_api_rejects_invalid_inputs(
 
 
 def test_user_comment_pure_update_ignores_fenced_heading_and_appends_once() -> None:
-    """コードフェンス内の同名文字列を見出しと誤認せず、予約節を1件だけ追記する。"""
     original = _session_review_awi("```markdown\n## ユーザーコメント\n```\n\n通常本文\n")
 
     updated = user_comment.update_user_comment(original, "コメント")
@@ -264,7 +256,6 @@ async def test_user_comment_api_matches_agent_source_classification(
     source: str | None,
     editable: bool,
 ) -> None:
-    """詳細表示と保存APIが同じエージェント由来判定を使う。"""
     _patch_comment_edit_dependencies(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()
@@ -301,7 +292,6 @@ async def test_user_comment_api_requires_expected_content_and_rejects_comment_h2
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """expected_contentの省略・空値とコメント内H2を保存前に拒否する。"""
     _patch_comment_edit_dependencies(monkeypatch)
     inbox = tmp_path / "inbox"
     inbox.mkdir()

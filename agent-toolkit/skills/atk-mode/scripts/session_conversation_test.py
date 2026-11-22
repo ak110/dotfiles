@@ -1,5 +1,3 @@
-"""発話だけの要約文書の試験（session_conversation_test）。"""
-
 from __future__ import annotations
 
 import re
@@ -13,7 +11,6 @@ def _utterance(role: str, text: str, record: str = "claude:main") -> dict[str, o
 
 
 def test_digest_keeps_user_text_and_shortens_older_assistant_text() -> None:
-    """ユーザー発話は全文、エージェント発話は直近だけを長く示し、操作・他担当・時刻を含めない。"""
     events = [
         _utterance("user", "最初の  依頼\n2行目"),
         {"kind": "tool-call", "tool": "Read", "record": "claude:main", "line": 2, "text": "{}"},
@@ -43,7 +40,6 @@ def test_digest_keeps_user_text_and_shortens_older_assistant_text() -> None:
 
 
 def test_digest_drops_oldest_assistant_text_within_budget() -> None:
-    """予算を超える分は古いエージェント発話から省いて件数を示し、ユーザー発話と直近の発話を残す。"""
     events = [_utterance("user", "依頼")]
     events += [_utterance("assistant", f"{index}番目の" + "経過" * 40) for index in range(40)]
 
@@ -75,7 +71,6 @@ def test_digest_keeps_long_user_text_while_document_fits() -> None:
 
 
 def test_digest_elides_middle_of_longest_user_text_over_budget() -> None:
-    """発話の累積が予算を超える場合は、最長のユーザー発話の中ほどだけを省き、先頭・末尾と省いた字数を示す。"""
     long_text = "冒頭の依頼。" + "経緯の説明。" * 1500 + "最後の制約: 本番へは反映しない。"
     events = [_utterance("user", "短い依頼その1"), _utterance("user", long_text), _utterance("user", "短い依頼その2")]
     events += [_utterance("assistant", f"{index}番目の報告") for index in range(3)]
@@ -101,7 +96,6 @@ def test_digest_elides_middle_of_longest_user_text_over_budget() -> None:
 
 @pytest.mark.parametrize("kind", ["utterance", "delegation-request"])
 def test_digest_elides_only_when_full_text_exceeds_limit(kind: str) -> None:
-    """全文の文書が上限に収まる間はユーザー発話と委譲元の依頼を省かず、1バイト超える場合だけ中ほどを省く。"""
     text = "前提の説明。" * 200 + "最後の制約: 本番へは反映しない。"
     event = {
         "kind": kind,
@@ -126,7 +120,6 @@ def test_digest_elides_only_when_full_text_exceeds_limit(kind: str) -> None:
 
 
 def test_digest_reserves_bytes_only_for_emitted_omission_note() -> None:
-    """省いた件数の行は出す場合だけ上限に含め、省かない場合は上限いっぱいまで全行を保つ。"""
     events = [_utterance("user", "依頼")]
     events += [_utterance("assistant", f"{index}番目の" + "経過" * 40) for index in range(12)]
 
@@ -145,7 +138,6 @@ def test_digest_reserves_bytes_only_for_emitted_omission_note() -> None:
 
 
 def test_digest_keeps_delegation_request_of_delegated_session() -> None:
-    """委譲先の会話では、委譲元から受けた依頼を発話と同じ並びへ全文で残す。"""
     request = "実行レビューせよ。計画: /plans/a.md 引き継ぎ記録先: /temp/handoff.md"
     events = [
         {

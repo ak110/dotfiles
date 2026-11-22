@@ -1,5 +1,3 @@
-"""代理保存の所有者識別と、通常の登録・再開予約の非退行を確認する。"""
-
 import contextlib
 import json
 import os

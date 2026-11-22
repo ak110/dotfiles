@@ -33,7 +33,6 @@ async def test_send_message_continues_when_selected_candidate_remains(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """候補の順序が変わっても採用済み候補が残るsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: current)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -50,7 +49,6 @@ async def test_send_message_continues_when_selected_candidate_remains(
 
 @pytest.mark.asyncio
 async def test_send_message_continues_without_model_type(tmp_path: pathlib.Path) -> None:
-    """候補列を直接指定したsessionは工程別モデル設定を比較せず継続する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = await backend.start("調査", str(tmp_path), "direct", "high")
 
@@ -67,7 +65,6 @@ async def test_send_message_continues_after_candidates_change(
     tmp_path: pathlib.Path,
     updated: list[tuple[str, str, str]],
 ) -> None:
-    """起動後に候補列が別engineへ置換された場合と、候補が残らない場合のいずれでもsessionを継続する。"""
     current = [("codex", "first", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: current)
     async with _manager_with_fake("codex") as (manager, backend):
@@ -84,7 +81,6 @@ async def test_send_message_continues_after_candidates_change(
 
 @pytest.mark.asyncio
 async def test_send_message_rejects_active_interrupt_without_backend_call(tmp_path: pathlib.Path) -> None:
-    """中断要求が有効な未終了turnへ継続入力を送らない。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         session.interrupt_requested = True
@@ -106,7 +102,6 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
     delivery: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """終了後の継続入力は回収済みフラグを要求せず、直前本文を退避する。"""
     async with _manager_with_fake(engine, delivery) as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine=engine)
         _complete(session, message="直前の結果")
@@ -129,7 +124,6 @@ async def test_send_message_terminal_session_returns_previous_result_without_int
 async def test_send_message_previous_result_guides_review_findings(
     engine: str, label: str, expected: str | None, tmp_path: pathlib.Path
 ) -> None:
-    """レビューを目的とするsessionの未回収の完了結果を`previous_result`で返す場合も、採否確定の次の操作を加える。"""
     async with _manager_with_fake(engine, "reply_started") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine=engine, label=label)
         _complete(session, message="指摘1件")
@@ -156,7 +150,6 @@ async def test_send_message_previous_result_guides_review_findings(
 async def test_stopped_review_session_previous_result_guides_review_findings(
     label: str, expected: str, tmp_path: pathlib.Path
 ) -> None:
-    """破棄済みのレビューsessionの未回収結果を再開時に返す場合も、同じ次の操作を加える。"""
     resume_state = state.SessionResumeState(
         session_id="stopped-review",
         cwd=str(tmp_path),
@@ -186,7 +179,6 @@ async def test_stopped_review_session_previous_result_guides_review_findings(
 async def test_send_message_previous_and_stopped_results_relay_improvements(
     engine: str, label: str, status: str, tmp_path: pathlib.Path
 ) -> None:
-    """継続入力と破棄済みsessionの未回収結果が、同じ改善点の案内と本文を返す。"""
     async with _manager_with_fake(engine, "reply_started") as (manager, _):
         message = "完了\n  気付いた改善点: 再読した\n気付いた改善点: 反復した"
         session = state.SessionState("thread-1", str(tmp_path), engine=engine, label=label)
@@ -213,7 +205,6 @@ async def test_send_message_previous_and_stopped_results_relay_improvements(
 
 @pytest.mark.asyncio
 async def test_send_message_omits_previous_result_after_wait_returned_result(tmp_path: pathlib.Path) -> None:
-    """waitで回収した結果本文を継続入力の応答へ再送しない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="回収済み結果")
@@ -227,7 +218,6 @@ async def test_send_message_omits_previous_result_after_wait_returned_result(tmp
 
 @pytest.mark.asyncio
 async def test_send_message_omits_previous_result_after_kill_returned_result(tmp_path: pathlib.Path) -> None:
-    """killで回収した結果本文を継続入力の応答へ再送しない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="回収済み結果")
@@ -245,7 +235,6 @@ async def test_send_message_keeps_previous_result_for_unwaited_second_turn(
     engine: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """前turnの回収状態を次turnへ持ち越さず、未回収結果を返す。"""
     async with _manager_with_fake(engine) as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine=engine)
         _complete(session, message="結果A")
@@ -262,7 +251,6 @@ async def test_send_message_keeps_previous_result_for_unwaited_second_turn(
 
 @pytest.mark.asyncio
 async def test_send_message_keeps_previous_result_after_wait_without_result(tmp_path: pathlib.Path) -> None:
-    """結果本文を含まないwaitは後続の終了時の結果を回収済みにしない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         manager.sessions[session.session_id] = session
@@ -323,7 +311,6 @@ async def test_reply_resets_progress_only_after_delivery_is_accepted(
 
 @pytest.mark.asyncio
 async def test_send_message_steered_response_has_no_previous_result(tmp_path: pathlib.Path) -> None:
-    """実行中turnへの追加指示はsteeredとして本文を退避しない。"""
     async with _manager_with_fake("codex") as (manager, _):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         session.turn_id = "turn-1"
@@ -337,7 +324,6 @@ async def test_send_message_timeout_reports_undetermined_delivery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """継続要求の配送結果が確定しない場合に指定上限で打ち切る。"""
     client = BlockingContinuationClaudeClient()
     async with claude_manager(monkeypatch, client) as (manager, backend):
         session = await backend.start("調査", str(tmp_path))

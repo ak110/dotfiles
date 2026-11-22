@@ -1,6 +1,6 @@
 *___*
 
-# Windows: Linux専用ファイルをスキップ
+# OSに合わない設定と後処理をスキップ（run scriptはプレフィックス除去後の名前）
 {{ if eq .chezmoi.os "windows" }}
 .bash_profile
 .bashrc
@@ -8,17 +8,8 @@
 .tmux.conf
 .config/user-tmpfiles.d
 .config/herdr
-{{ end }}
-
-# Windows以外: Windowsの%APPDATA%向け配置をスキップ
-{{ if ne .chezmoi.os "windows" }}
-AppData
-{{ end }}
-
-# run scripts: OS別に除外（ターゲットパスはプレフィックス除去後の名前）
-{{ if eq .chezmoi.os "windows" }}
 post-apply.sh
-{{ end }}
-{{ if ne .chezmoi.os "windows" }}
+{{ else }}
+AppData
 post-apply-windows.ps1
 {{ end }}

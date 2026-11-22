@@ -25,4 +25,4 @@ class ManagedTempError(Exception):
 
 
 class ManagedTempPermissionError(ManagedTempError):
-    """対象の同一性違反とは区別できる、所有権またはアクセス権の不足。"""
+    pass

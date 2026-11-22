@@ -17,7 +17,7 @@ from ._test_helpers import _FakeResult, command_matches
 
 _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 _CODEX_ROOT = pathlib.Path("codex") / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
-# 配布するMCP定義の実物。warm-upが両ホストの定義から同じ要求指定を解決することを確かめるために読む。
+
 _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2] / "agent-toolkit"
 _REAL_CLAUDE_DEFINITION = _PLUGIN_ROOT / ".mcp.json"
 _REAL_CODEX_DEFINITION = _PLUGIN_ROOT / ".mcp.codex.json"
@@ -93,14 +93,12 @@ def test_same_launch_from_both_hosts_runs_once(env: _Env, caplog: pytest.LogCapt
 
 
 def test_minimal_mode_skips_before_uvx_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    """minimalモードはpyfltrの対象照会とuvx起動を行わない。"""
     monkeypatch.setattr(_warmup.dotfiles_mode, "is_minimal", lambda: True)
     monkeypatch.setattr(_common, "resolve_executable", lambda *_args, **_kwargs: pytest.fail("uvxを解決しない"))
     assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
 
 
 def test_changed_requirement_is_used_for_each_definition(env: _Env) -> None:
-    """定義の要求指定を変えた版では、変更後の要求指定で起動する。定義ごとに異なれば両方を起動する。"""
     _write(env.codex_definition, _definition(["--from", "pyfltr>=9.9.9", "pyfltr", "mcp"], stdio=True))
 
     _warmup.run()
@@ -112,7 +110,6 @@ def test_changed_requirement_is_used_for_each_definition(env: _Env) -> None:
 def test_missing_uvx_skips_without_running(
     env: _Env, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """uvx不在は外部コマンドを実行せず、警告してスキップと数える。"""
     monkeypatch.setattr(
         _common,
         "resolve_executable",
@@ -126,7 +123,6 @@ def test_missing_uvx_skips_without_running(
 
 
 def test_missing_definitions_skip(env: _Env, caplog: pytest.LogCaptureFixture) -> None:
-    """両ホストのMCP定義が不在なら、警告してスキップと数える。"""
     env.claude_definition.unlink()
     env.codex_definition.unlink()
 
@@ -138,7 +134,6 @@ def test_missing_definitions_skip(env: _Env, caplog: pytest.LogCaptureFixture) -
 
 @pytest.mark.parametrize("host", ["claude", "codex"])
 def test_shared_launcher_command_starts_with_python(env: _Env, monkeypatch: pytest.MonkeyPatch, host: str) -> None:
-    """両ホストの公開定義から実際に生成するlauncher引数の先頭を検証する。"""
     definition = env.claude_definition if host == "claude" else env.codex_definition
     source = _REAL_CLAUDE_DEFINITION if host == "claude" else _REAL_CODEX_DEFINITION
     definition.write_bytes(source.read_bytes())
@@ -194,7 +189,6 @@ def test_invalid_definition_is_skipped(
 def test_launch_failure_is_skipped(
     env: _Env, result: _FakeResult | None, message: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """非0終了と、上限到達・起動不能で結果が無い場合は、警告してスキップと数える。"""
     env.uvx_result = result
 
     with caplog.at_level("WARNING"):
@@ -203,7 +197,6 @@ def test_launch_failure_is_skipped(
 
 
 def test_shared_pyfltr_uses_selected_root_and_lock_environment(env: _Env, monkeypatch: pytest.MonkeyPatch) -> None:
-    """新しい両ホストの定義は共有launcherへ接続し、独立したuvx環境を作らない。"""
     calls = []
     for source, target in (
         (_REAL_CLAUDE_DEFINITION, env.claude_definition),

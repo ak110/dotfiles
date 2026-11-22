@@ -29,8 +29,6 @@ from agent_toolkit._testing.agents_server_support import FakeCodexClient, instal
 
 
 class _ThreadStartClient:
-    """thread/startの入力を保持して固定threadを返すスタブ。"""
-
     def __init__(self) -> None:
         self.params: dict[str, Any] | None = None
 
@@ -44,8 +42,6 @@ class _ThreadStartClient:
 
 
 class _TierClient(FakeCodexClient):
-    """実際のbackendが送る要求と送信通知を再現し、モデルの実行を伴わずtierを確かめる。"""
-
     closed = False
     reader_failure = None
 
@@ -72,16 +68,12 @@ class _TierClient(FakeCodexClient):
 
 
 class _ProcessTierClient(_TierClient):
-    """App Serverの子プロセスを持つ偽クライアント。"""
-
     def __init__(self, pid: int) -> None:
         super().__init__()
         self.process = SimpleNamespace(pid=pid)
 
 
 class _ResumeRejectionClient(FakeCodexClient):
-    """再開の拒否を外部RPC境界で返し、他の要求は既存fakeで処理する。"""
-
     def __init__(self, method: str = "thread/resume", message: str | None = None) -> None:
         super().__init__()
         self.error_method = method
@@ -114,8 +106,6 @@ def _assert_writer_conflict_action(action: str) -> None:
 
 
 class _SilentClient:
-    """要求を受理したまま応答を返さないApp Serverクライアントのスタブ。"""
-
     closed = False
 
     async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -142,8 +132,6 @@ class _HangingStream:
 
 
 class _AcceptingStdin:
-    """書き込みを受理するだけのstdinのスタブ。"""
-
     def write(self, data: bytes) -> None:
         del data  # noqa
 
@@ -152,8 +140,6 @@ class _AcceptingStdin:
 
 
 class _DisconnectedStdin:
-    """書込時に接続断を返すstdinのスタブ。"""
-
     def write(self, data: bytes) -> None:
         del data  # noqa
         raise BrokenPipeError("peer disconnected")
@@ -163,14 +149,12 @@ class _DisconnectedStdin:
 
 
 class _SilentProcess:
-    """起動後にJSON-RPC応答を返さない子プロセスのスタブ。"""
-
     def __init__(self) -> None:
         self.stdin = _AcceptingStdin()
         self.stdout: Any = _HangingStream()
         self.stderr = _HangingStream()
         self.returncode: int | None = None
-        # 終了処理は実PIDの子孫を一時停止・終了させるため、実在しないPIDを使い、無関係なプロセスへ作用させない。
+
         self.pid = next(pid for pid in range(2**22 - 1, 2**21, -1) if not psutil.pid_exists(pid))
 
     def terminate(self) -> None:
@@ -184,8 +168,6 @@ class _SilentProcess:
 
 
 class _ChunkStream:
-    """有限byte列を指定長以下のchunkで返し、返却後は接続を保つ。"""
-
     def __init__(self, content: bytes) -> None:
         self.content = content
         self.offset = 0
@@ -202,8 +184,6 @@ class _ChunkStream:
 
 
 class _ChunkProcess(_SilentProcess):
-    """stdoutだけをchunk readerへ渡す子プロセスのスタブ。"""
-
     def __init__(self, content: bytes) -> None:
         super().__init__()
         self.stdout = _ChunkStream(content)
@@ -214,8 +194,6 @@ async def _ignore_message(message: dict[str, Any]) -> None:
 
 
 class _InspectableAppServerManager(subject.AppServerManager):  # pylint: disable=too-many-ancestors  # 責務別のmixinを合成した本体を継承するため。
-    """通知入力をテストへ公開する。"""
-
     async def handle_notification(self, message: dict[str, Any]) -> None:
         await self._handle_notification(message)
 
@@ -265,7 +243,6 @@ def _overloaded_turn(session: state.SessionState, error_info: str = "serverOverl
 
 
 def _invoke_lane(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, dict[str, Any], str]:
-    """公開の`atk lane`を同じプロセスで実行し、終了コード・JSON出力・標準エラーを返す。"""
     with pytest.raises(SystemExit) as ended:
         atk.main(["lane", *args])
     output = capsys.readouterr()
@@ -276,7 +253,6 @@ def _invoke_lane(capsys: pytest.CaptureFixture[str], *args: str) -> tuple[int, d
 def _create_integrated_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> pathlib.Path:
-    """統合済みとして選定したcleanなレーンを公開の`atk lane create`で作成し、専用worktreeを返す。"""
     monkeypatch.setenv(lane.SESSION_ENV, "lane-test-session")
     monkeypatch.setattr(lane, "get_wait_timeout", lambda _bucket: 5.0)
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="初期状態")
@@ -336,7 +312,6 @@ async def _fake_app_server_manager(
 async def _wait_terminal(
     manager: server_manager.AgentsServerManager, session_id: str, fake: codex_app_server_support.FakeAppServer
 ) -> state.SessionState:
-    """開始を観測したturnだけを解放し、最終結果を待つ。"""
     assert session_id in manager.sessions and not manager.sessions[session_id].terminal
     await fake.complete_turn(session_id)
     async with asyncio.timeout(10):

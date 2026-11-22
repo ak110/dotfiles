@@ -24,17 +24,12 @@ def test_hooks_json_routes_tool_specific_processing_to_posttooluse() -> None:
 
 
 def test_posttooluse_registration_rejects_missing_webfetch() -> None:
-    """外部取得の観測を公開matcherから欠落させる持込負例を検出する。"""
     with pytest.raises(AssertionError):
         _assert_tool_specific_posttooluse_registration(_registered_posttooluse_names() - {"WebFetch", "*"})
 
 
 @pytest.mark.parametrize("tool_name", ["Bash", "PowerShell"])
 def test_persisted_shell_output_excerpt_is_replaced_by_unread_notice(tmp_path: pathlib.Path, tool_name: str) -> None:
-    """退避したシェル出力の抜粋を、保存先・バイト数・次の操作だけを示す本文へ置き換え、他の項目は保つ。
-
-    抜粋が残ると、実行主体は保存先を読まずに先頭約2KBを取得結果の全体として扱える。
-    """
     excerpt = "元の出力の先頭" * 100
     saved = str(tmp_path / "tool-results" / "b1.txt")
     payload = _shell_payload(
@@ -99,7 +94,6 @@ def test_registered_task_stop_consumes_only_successful_target(tmp_path: pathlib.
 
 @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
 def test_agent_async_launch_records_agent_id(tmp_path: pathlib.Path, tool_name: str) -> None:
-    """背景起動の応答が返した`agentId`を、自セッションの停止用の識別子として記録する。"""
     session_id = f"agent-async-{tool_name.lower()}"
     result = _run(
         {
@@ -115,7 +109,6 @@ def test_agent_async_launch_records_agent_id(tmp_path: pathlib.Path, tool_name: 
 
 
 def test_agent_foreground_completion_records_nothing(tmp_path: pathlib.Path) -> None:
-    """前景で完了した起動は停止の対象が残らないため記録しない。"""
     session_id = "agent-foreground"
     result = _run(
         {
@@ -132,7 +125,6 @@ def test_agent_foreground_completion_records_nothing(tmp_path: pathlib.Path) -> 
 
 @pytest.mark.parametrize("agent_id", [None, ""], ids=["missing", "empty"])
 def test_agent_launch_without_agent_id_records_nothing(tmp_path: pathlib.Path, agent_id: str | None) -> None:
-    """`agentId`を欠く背景起動の応答は停止対象を特定できないため記録しない。"""
     session_id = f"agent-no-id-{agent_id is None}"
     response: dict[str, object] = {"isAsync": True, "status": "async_launched"}
     if agent_id is not None:

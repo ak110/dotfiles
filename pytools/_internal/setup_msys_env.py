@@ -21,7 +21,6 @@ _MSYS_VAR_VALUE = "winsymlinks:nativestrict"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    r"""`HKCU\Environment`の`MSYS`を`winsymlinks:nativestrict`に冪等設定する。"""
     try:
         current, _reg_type = winutils.read_user_env_var(_MSYS_VAR_NAME)
     except OSError as e:

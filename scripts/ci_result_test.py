@@ -22,7 +22,6 @@ def test_required_check_result(
     owns: str,
     result: str,
 ) -> None:
-    """所有時は必要なjobが成功した場合だけ成功し、非所有は理由を表示する。"""
     environment = {
         **host_environ(),
         "OWNS": owns,
@@ -64,7 +63,6 @@ def _workflow_job_names() -> set[str]:
 
 @pytest.mark.parametrize("evidence", ["complete", "missing", "skipped", "neutral", "non-owner", "step-skipped"])
 def test_master_reuses_only_a_complete_owner_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, evidence: str) -> None:
-    """runの成功に加え、実際のCI定義で要求されるjob・分割・領域の検査の成功を確かめる。"""
     project, second = "example/dotfiles", "develop-sha"
     run = {
         "id": 21,

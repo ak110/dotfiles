@@ -1,9 +1,3 @@
-"""複数turnの返却を公開bundleから検証する。
-
-終了の形は2026年10月10日のWIの実記録のtask_complete・end_turn・resultを使う。
-同じ先行返却へ後続の作業を加えたときの候補欠落と、正常返却の混入を検出する。
-"""
-
 from __future__ import annotations
 
 import json
@@ -72,7 +66,6 @@ def _turn(runtime: str, body: str) -> list[dict]:
 def test_public_bundle_preserves_each_completed_turn(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """後続turnを足しても先行の返却本文と由来行を失わず、正常返却を候補から除く。"""
     parent = tmp_path / "parent.jsonl"
     support.write_jsonl(parent, [{"type": "user", "message": {"role": "user", "content": "最初の依頼"}}])
     first_body = "実装完了\n検証結果: 成功\n画面差分: なし\n" + "長文" * 1500 + "\n気付いた改善点: 回収をまとめる。"

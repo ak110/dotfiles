@@ -1,5 +1,3 @@
-"""共通回収の状態分類と、所有Popenのwait回収を実OSから隔離して検証する。"""
-
 import subprocess
 import typing
 

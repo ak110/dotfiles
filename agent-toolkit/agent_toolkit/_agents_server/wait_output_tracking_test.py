@@ -8,6 +8,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import responses, resume_waits, state, turn_state, wait_output_tracking
+from agent_toolkit._common import session_registry
 
 
 @pytest.mark.parametrize("namespace", ["mcp__plugin_agent-toolkit_agents_server__", "mcp__agents_server__", ""])
@@ -76,7 +77,6 @@ def _start_child(session: state.SessionState, tool_use_id: str, child_id: str) -
 @pytest.mark.parametrize("delivery", ["reply_started", "reply_ambiguous", "steered", "reply_failed"])
 @pytest.mark.parametrize("result_form", ["structured", "text"])
 def test_send_message_reactivates_terminal_child_until_observed(namespace: str, delivery: str, result_form: str) -> None:
-    """追送の配送結果で終了済みの子を再追跡し、曖昧な開始も終了観測まで保持する。"""
     session = state.SessionState("parent-1", "/work")
     session.terminal_child_session_ids.add("child-1")
     wait_output_tracking.consume_claude_agents_server_message(
@@ -103,7 +103,7 @@ def test_send_message_reactivates_terminal_child_until_observed(namespace: str, 
         return
     assert session.live_child_session_ids == {"child-1"}
     assert not session.terminal_child_session_ids
-    # 同じ配送結果の再掲は同じ観測対象を保つ。
+
     wait_output_tracking.consume_agents_server_tool_result(session, "send_message", {"session_id": "child-1"}, result)
     assert session.live_child_session_ids == {"child-1"}
     assert not session.terminal_child_session_ids
@@ -203,7 +203,6 @@ async def test_child_session_collected_by_agents_wait_leaves_auto_resume_targets
         },
     )
 
-    # 実行中通知だけを返したsessionは回収済みではないため、追跡を続ける。
     assert session.live_child_session_ids == {"child-2"}
     assert resume_waits.has_pending_auto_resume_targets(session)
 
@@ -262,7 +261,6 @@ def test_agents_wait_body_lines_are_not_collection_evidence(tmp_path: pathlib.Pa
 
 
 def _background_agents_wait(session: state.SessionState, tool_use_id: str, output: pathlib.Path) -> None:
-    """委譲先が`atk agents wait`を背景実行し、ホストが起動の通知だけを返した状態を再現する。"""
     wait_output_tracking.consume_claude_agents_server_message(
         session,
         {"content": [{"id": tool_use_id, "name": "Bash", "input": {"command": "atk agents wait"}}]},
@@ -308,10 +306,9 @@ async def test_background_agents_wait_output_releases_collected_child_before_uno
     _start_child(session, "toolu_1", "child-1")
     output = tmp_path / "tasks" / "bqwu17av0.output"
     _background_agents_wait(session, "toolu_2", output)
-    # ツール結果の時点では出力ファイルが未完成のため、追跡を続ける。
+
     assert session.live_child_session_ids == {"child-1"}
     if output_text == "saved-terminal":
-        # 長い結果は`atk`が別ファイルへ自動保存し、標準出力（出力ファイル）には保存先の行だけが残る。
         saved = tmp_path / "saved" / "output.txt"
         saved.parent.mkdir()
         saved.write_text('{"session_id": "child-1", "status": "completed", "agent_message": "長い本文"}\n', encoding="utf-8")
@@ -346,7 +343,6 @@ def test_unrelated_bash_output_does_not_release_child_session(command: str) -> N
 
 
 def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> None:
-    """stderrの保存先が終了JSONを含んでも、stdoutの回収結果へ混ぜない。"""
     session = state.SessionState("parent-1", str(tmp_path))
     session.live_child_session_ids.add("child-1")
     output = tmp_path / "stderr.jsonl"
@@ -355,3 +351,27 @@ def test_stderr_saved_jsonl_is_not_wait_collection(tmp_path: pathlib.Path) -> No
     assert session.live_child_session_ids == {"child-1"}
     wait_output_tracking.consume_agents_wait_output(session, f"保存先: {output}\n行数: 1\n")
     assert not session.live_child_session_ids
+
+
+@pytest.mark.parametrize("registry_readable", [True, False])
+@pytest.mark.asyncio
+async def test_old_background_output_does_not_release_later_turn(tmp_path, monkeypatch, registry_readable):
+    parent = state.SessionState("parent", str(tmp_path))
+    parent.live_child_session_ids.add("child")
+    output = tmp_path / "wait.out"
+    output.write_text(json.dumps({"session_id": "child", "status": "completed"}), encoding="utf-8")
+    parent.agents_wait_background_outputs.add(str(output))
+
+    async def restart_after_read(function, *args):
+        collected = function(*args)
+        session_registry.publish(
+            "child", state=session_registry.PublicationState.PENDING_RUNNING, cwd=str(tmp_path), turn_seq=2
+        )
+        if not registry_readable:
+            (session_registry.registry_directory() / "child.json").write_text("{", encoding="utf-8")
+        return collected
+
+    monkeypatch.setattr(wait_output_tracking, "run_file_operation", restart_after_read)
+    await wait_output_tracking.consume_agents_wait_background_outputs_async(parent)
+
+    assert parent.live_child_session_ids == {"child"}

@@ -35,7 +35,6 @@ def _patch(*sections: str) -> str:
 
 
 def _codex_payload(patch_text: str, cwd: pathlib.Path, session_id: str) -> dict:
-    """成功した`apply_patch`のPostToolUse payloadを組み立てる。"""
     return {
         "session_id": session_id,
         "tool_name": "apply_patch",
@@ -54,7 +53,6 @@ class TestCodexApplyPatchPlanFile:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """追加した計画ファイルだけが構造を確かめるコマンドの案内を返し、更新は返さない。"""
         home = tmp_path / "home"
         monkeypatch.setenv("HOME", str(home))
         monkeypatch.setenv("USERPROFILE", str(home))

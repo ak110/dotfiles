@@ -1,17 +1,3 @@
-"""agents_serverが起動したsessionの終了状態をプロセス間で共有する。
-
-所有側のagents_serverがsessionを解放した場合は、レコードを削除せず解放済みレコードへ置き換える。
-照会した別プロセスが「所有側が正常に解放した」と「どのagents_serverにも記録が無い」を区別できるようにするためである。
-
-実行中のレコードは、所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別（記録プロセス）を持つ。
-所有側が終了を公開せずに終了した場合、照会側は記録された全プロセスの不在から終了（`interrupted`）と解決する。
-この判定はレコードを書き換えず解決の結果として返し、書込は所有側と引き継ぎの処理に残す。
-
-終了と所有の判定は記録プロセスの実在を一次の根拠とし、本モジュールの`resolve`と`running_ownership`へ集約する。
-所有サーバーの起動単位が替わった後も、応答しない旧起動単位や委譲先CLIが生存し続ける場合があるためである。
-状態ファイルの生存の印や委譲先CLIへの外部照会だけで終了・所有不在を決めると、作業中の委譲先を中断と公開する。
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -55,13 +41,11 @@ _EFFORT_RECEIVER: ProcessIdentity | None = None
 
 
 def declare_effort_receiver() -> None:
-    """監視を開始する稼働コードだけが、そのプロセス世代の対応を宣言する。"""
     global _EFFORT_RECEIVER  # pylint: disable=global-statement
     _EFFORT_RECEIVER = owner_process()
 
 
 def owner_process() -> ProcessIdentity | None:
-    """登録簿を書くagents_server自身のプロセスの識別を返す。fork後は取得し直す。"""
     global _OWNER_PROCESS  # pylint: disable=global-statement
     if selected := registry_forwarding.identity():
         return selected.owner
@@ -74,45 +58,33 @@ _OWNER_SERVER_INSTANCE: str | None = None
 
 
 def set_owner_server_instance(instance_id: str | None) -> None:
-    """登録簿を書くagents_serverの起動単位を設定する。`publish`は以降の記録へこの値を書く。"""
     global _OWNER_SERVER_INSTANCE  # pylint: disable=global-statement
     _OWNER_SERVER_INSTANCE = instance_id
 
 
 def owner_server_instance() -> str | None:
-    """登録簿を書くagents_serverの起動単位を返す。起動単位を設定していないプロセスでは`None`を返す。"""
     selected = registry_forwarding.identity()
     return _OWNER_SERVER_INSTANCE if selected is None else selected.server_instance
 
 
 def effort_receiver() -> ProcessIdentity | None:
-    """監視の宣言を持つ所有者を返し、代理保存では元世代の宣言を保つ。"""
     selected = registry_forwarding.identity()
     return _EFFORT_RECEIVER if selected is None else selected.effort_receiver
 
 
 def owner_process_is_cached() -> bool:
-    """現在のプロセスの識別をI/Oなしで返せるかを示す。"""
     return registry_forwarding.identity() is not None or _OWNER_PROCESS is not None and _OWNER_PROCESS.pid == os.getpid()
 
 
 def interruption_error(reason: InterruptionReason) -> dict[str, str]:
-    """解決が示す中断の理由を、公開応答の`error`の形で返す。"""
     return {"message": _INTERRUPTION_MESSAGES[reason], "interruptionReason": reason}
 
 
 @dataclasses.dataclass(frozen=True)
 class LaunchInfo:
-    """同じsessionの再開と引き継ぎに使う起動情報、追送と各turnの終了応答。
-
-    再開で`SessionState`を再生成する処理と、session登録簿の書込・復元は、この定義の項目を走査して値を写す。
-    項目を個別に列挙すると、項目を追加したときに一部の処理が値を写さなくなり、型やテストでは検出されないためである。
-    `SessionState`と`SessionResumeState`は同名の属性を持つ。
-    """
-
     label: str = ""
     prompt: str = ""
-    # 項目を持たない旧形式の登録簿から復元したsessionでは開始時刻が不明なため`None`とする。
+
     created_at: str | None = None
     followup_prompts: tuple[str, ...] = ()
     final_responses: tuple[tuple[int, str], ...] = ()
@@ -122,12 +94,10 @@ class LaunchInfo:
 
     @classmethod
     def of(cls, source: object) -> LaunchInfo:
-        """同名の属性を持つsessionの状態から起動情報を取り出す。"""
         return cls(**{field.name: getattr(source, field.name) for field in dataclasses.fields(cls)})
 
     @classmethod
     def from_record(cls, payload: dict[str, Any]) -> LaunchInfo:
-        """登録簿の任意項目を型ごとに復元し、欠けた値はフィールドの初期値とする。"""
         values = {
             field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)
         }
@@ -162,11 +132,9 @@ class LaunchInfo:
         )
 
     def as_kwargs(self) -> dict[str, Any]:
-        """同名の引数を持つ生成処理へ渡す項目を返す。"""
         return {field.name: getattr(self, field.name) for field in dataclasses.fields(self)}
 
     def apply_to(self, target: object) -> None:
-        """再開で再生成したsessionへ値を写す。`None`の項目は写さず、生成時の値を残す。"""
         for name, value in self.as_kwargs().items():
             if value is not None:
                 setattr(target, name, value)
@@ -174,8 +142,6 @@ class LaunchInfo:
 
 @dataclasses.dataclass(frozen=True)
 class ResumeInfo:
-    """再起動後のsession再開へ必要な実行条件。"""
-
     engine: str
     cwd: str
     model: str | None
@@ -185,7 +151,7 @@ class ResumeInfo:
     turn_seq: int
     status: Literal["starting", "running", "completed", "failed", "interrupted"]
     launch_info: LaunchInfo = LaunchInfo()
-    # 項目を持たない旧形式のレコードでは`None`とする。
+
     started_at: str | None = None
     session_updated_at: str | None = None
     # 最後に公開した時点のturnを表すengine固有の識別子（Codexのturn id）。
@@ -204,8 +170,6 @@ class ResumeInfo:
 
 @dataclasses.dataclass(frozen=True)
 class InterruptedTurn:
-    """中断で終わったturnと、そのturnを所有していた起動単位。`server_instance`が`None`なら旧記録を表す。"""
-
     turn_seq: int
     reason: InterruptionReason
     server_instance: str | None
@@ -214,43 +178,33 @@ class InterruptedTurn:
 
 @dataclasses.dataclass(frozen=True)
 class SessionResolution:
-    """登録簿の解決結果と、利用可能な再開情報を保持する。"""
-
     state: Resolution
     resume_info: ResumeInfo | None = None
-    # `RELEASED`の場合だけ、解放の理由と時刻（UTCのISO 8601）を保持する。
+
     released_reason: ReleaseReason | None = None
     released_at: str | None = None
-    # 終了の理由が中断の判別値を持つ場合だけ保持する。記録上は`running`のまま実行プロセスの不在から
-    # 終了と解決した場合と、その終了を引き継いで公開した記録の両方で設定する。
+
     interruption: InterruptionReason | None = None
-    # 記録上は`running`で、記録された全プロセスの不在から終了と解決した場合に真とする。登録簿へ未公開であることを示す。
+
     inferred_terminal: bool = False
     handoff_info: ResumeInfo | None = None
-    # 記録を最後に書いた所有サーバーの起動単位。項目を持たない旧記録では`None`とする。
+
     server_instance: str | None = None
-    # 解放済み記録にも残る世代。世代を持たない旧記録との比較更新に用いる。
+
     recorded_turn_seq: int | None = None
-    # 中断で終わったturnの履歴（新しい順）。再開・所有者の交代・解放の後も引き継ぐ。
+
     interrupted_turns: tuple[InterruptedTurn, ...] = ()
     # 記録プロセス。`processes`の先頭が所有サーバー、以降が委譲先CLIである。項目を持たない記録では空とする。
     owner_process: ProcessIdentity | None = None
     executor_processes: tuple[ProcessIdentity, ...] = ()
     # `running`の記録で、解決の時点で実在した委譲先CLI。終了の記録では照会しないため空とする。
     live_executors: tuple[ProcessIdentity, ...] = ()
-    # 記録を書いた所有サーバーの状態ディレクトリのルート。項目を持たない旧記録では`None`とする。
+
     owner_root_session_id: str | None = None
     resume_pending: bool = False
 
 
 def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> RunningOwnership | None:
-    """`running`と解決した記録の所有状態を返す。`running`以外の解決には`None`を返す。
-
-    `writer_alive`は、生存の印が有効な状態ファイルがそのsessionを載せているかを呼び出し側が照会した値である。
-    状態ファイルを読む処理は`_agents_server`に属するため、層の順序に従い呼び出し側から受け取る。
-    所有サーバーのプロセスが実在しても、生存の印を更新しない起動単位は所有者として扱わない。
-    委譲先CLIが実在する限りturnが進んでいる可能性を排除できないため、終了と推定する処理は`ORPHANED`に限る。
-    """
     if resolution.state is not Resolution.RUNNING:
         return None
     if writer_alive:
@@ -259,12 +213,10 @@ def running_ownership(resolution: SessionResolution, *, writer_alive: bool) -> R
 
 
 def process_payload(process: ProcessIdentity) -> dict[str, Any]:
-    """公開応答と診断へ載せる記録プロセスの識別を返す。"""
     return process.payload()
 
 
 def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """session登録簿のディレクトリを返す。"""
     return _session_launchers.registry_directory(_state_paths.state_dir() if state_root is None else state_root)
 
 
@@ -321,25 +273,12 @@ def publish(
     processes: Sequence[ProcessIdentity] = (),
     interruption: InterruptionReason | None = None,
     launcher_session_id: str | None = None,
+    start_observation: str | None = None,
     preserve_server_instance: bool = False,
     owner_root_session_id: str | None = None,
     result_contract_recovery_consumed: bool = False,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """sessionの終了可否と再開条件を原子的に公開する。
-
-    `processes`は所有するagents_serverとturnを実行する委譲先CLIのプロセスの識別で、`resolve`が実行中の記録の
-    終了を判定する入力になる。先頭を所有サーバー、以降を委譲先CLIとする（`resolve`と`session_release`がこの順序で読む）。
-    `interruption`は実行プロセスの不在から引き継いだ終了の理由を残す。
-    `owner_root_session_id`は所有サーバーの状態ディレクトリのルートで、所有サーバーを失った実行中の案内に使う。
-    省略した場合は既存のレコードが持つ値を引き継ぐ。
-    `launcher_session_id`はsessionを作成した時点の委譲元sessionの識別子である。
-    省略した場合は既存のレコードが持つ値を引き継ぐ。`atk serve`の一覧が、親のセッション記録に
-    起動結果が残らない委譲先の親を結ぶために読むため、状態の更新で失わないようにする。
-    `server_instance`は所有サーバーの起動単位（`set_owner_server_instance`の値）を書く。
-    `preserve_server_instance`が真の場合は既存の記録の値を保つ（所有者のいない記録の引き継ぎで使う）。
-    既存の記録の`interrupted_turns`は引き継ぎ、`interruption`を渡した場合は現在のturnを履歴へ加える。
-    """
     forwarded, _result = registry_forwarding.forward("publish", locals())
     if forwarded:
         return
@@ -363,7 +302,6 @@ def publish(
         "updated_at": updated_at,
     }
     if launch_info is not None:
-        # 版数2の任意項目として加え、項目を持たない旧形式のレコードは`LaunchInfo.from_record`が空文字列か`None`として読む。
         payload.update((name, value) for name, value in launch_info.as_kwargs().items() if value is not None)
     if started_at is not None:
         payload["started_at"] = started_at
@@ -373,7 +311,7 @@ def publish(
         payload["turn_id"] = turn_id
     if processes:
         payload["processes"] = [process_payload(process) for process in processes]
-        # forkで継承した宣言や、他の所有者を公開する処理へ対応情報を流用しない。
+
         receiver = effort_receiver()
         if (
             receiver is not None
@@ -414,10 +352,9 @@ def publish(
         if launch_info is not None:
             source = prior.get("handoff_info", prior.get("codex_resume_info", prior.get("claude_resume_info", prior)))
             if isinstance(source, dict):
-                # backendはManagerが起動情報を写す前にも新turnを公開する。途中で終了しても原要求を失わない。
                 merged = _preserve_launch_info(launch_info, LaunchInfo.from_record(source))
                 payload.update((name, value) for name, value in merged.as_kwargs().items() if value is not None)
-        # session単位の回復上限は、別所有者の状態更新でも未消費へ戻さない。
+
         if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
             payload["result_contract_recovery_consumed"] = True
         owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
@@ -435,11 +372,14 @@ def publish(
         launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
         if launcher is not None:
             payload[LAUNCHER_KEY] = launcher
+        key = _session_launchers.START_OBSERVATION_KEY
+        observation = prior.get(key) or _session_launchers.valid_start_observation(start_observation)
+        if observation is not None:
+            payload[key] = observation
         atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _preserve_launch_info(current: LaunchInfo, previous: LaunchInfo) -> LaunchInfo:
-    """初回の入力と既に配送した履歴を、再生成直後の空・短い状態で上書きしない。"""
     followups = current.followup_prompts
     saved = previous.followup_prompts
     if saved[: len(followups)] == followups:
@@ -502,7 +442,6 @@ def transfer_owner(
     *,
     state_root: pathlib.Path | None = None,
 ) -> bool:
-    """終了済みturnの制御所有だけをCASで移し、再開予約・turn・結果・実行資源を変更しない。"""
     forwarded, result = registry_forwarding.forward("transfer_owner", locals())
     if forwarded:
         return bool(result)
@@ -528,7 +467,6 @@ def transfer_owner(
 
 
 def release_resume_claim(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> None:
-    """次turnの公開前に開始が終わった場合、同じプロセスと元turnの予約だけを解放する。"""
     forwarded, _result = registry_forwarding.forward("release_resume_claim", locals())
     if forwarded:
         return
@@ -543,12 +481,6 @@ def release_resume_claim(session_id: str, turn_seq: int, *, state_root: pathlib.
 
 
 def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> SessionResolution:
-    """登録済みsessionを終了・実行中・解放済み・不在・読取不能へ区分して返す。
-
-    `running`の記録がプロセスの識別を持ち、記録された全プロセスが存在しない場合は、所有側が終了を公開せずに
-    終了したものとして`interrupted`の終了と解決する。1つでも存在する記録と識別を持たない記録は実行中とする。
-    実行中の解決は、実在した委譲先CLIを`live_executors`へ返す。所有状態の判定は`running_ownership`が行う。
-    """
     _validate_session_id(session_id)
     path = registry_directory(state_root) / f"{session_id}.json"
     try:
@@ -561,7 +493,6 @@ def resolve(session_id: str, *, state_root: pathlib.Path | None = None) -> Sessi
 
 
 def resolve_payload(session_id: str, payload: Any) -> SessionResolution:
-    """読み込み済みのレコードを`resolve`と同じ規則で解決する。"""
     if (
         not isinstance(payload, dict)
         or payload.get("session_id") != session_id
@@ -664,7 +595,6 @@ def resolve_payload(session_id: str, payload: Any) -> SessionResolution:
 
 
 def _with_resume_claim(payload: dict[str, Any], resolution: SessionResolution) -> SessionResolution:
-    """生存する再開予約は次turnの開始待ちとして解決し、元の終了結果と区別する。"""
     claim = payload.get("resume_claim")
     info = resolution.resume_info or resolution.handoff_info
     if not isinstance(claim, dict) or info is None or _recorded_turn(claim) != info.turn_seq:
@@ -684,7 +614,6 @@ def _with_resume_claim(payload: dict[str, Any], resolution: SessionResolution) -
 
 
 def _recorded_processes(payload: dict[str, Any]) -> tuple[ProcessIdentity, ...]:
-    """記録されたプロセスの識別を返す。項目が無いか形式が不正な記録は識別を持たないものとして空を返す。"""
     entries = payload.get("processes")
     if not isinstance(entries, list) or not entries:
         return ()
@@ -710,11 +639,6 @@ def release(
     state_root: pathlib.Path | None = None,
     expected_owner: tuple[str | None, int | None] | None = None,
 ) -> bool:
-    """所有側の解放を記録し、APIを使う会話の内部再開条件を保つ。
-
-    解放済みの公開区分は保持し、7日超の掃引で他のレコードと同じく回収する。
-    `expected_owner`を渡した場合は起動単位とturn番号が一致する記録だけを置換し、変更済みなら偽を返す。
-    """
     forwarded, result = registry_forwarding.forward("release", locals())
     if forwarded:
         return bool(result)
@@ -756,7 +680,6 @@ def release(
                 and info.codex_model_provider != info.codex_subscription_provider
             )
         ):
-            # 初回解放のv2と、既に解放したv3の両方で同じ内部再開条件を引き継ぐ。
             payload["codex_resume_info"] = prior_payload.get("codex_resume_info", prior_payload)
         if info is not None and info.engine == "claude" and (info.claude_api_env_file or info.claude_connection):
             payload["claude_resume_info"] = prior_payload.get("claude_resume_info", prior_payload)
@@ -775,10 +698,6 @@ def release(
 def record_interrupted_turn(
     session_id: str, *, turn_seq: int, reason: InterruptionReason, state_root: pathlib.Path | None = None
 ) -> None:
-    """所有側が中断として公開した終了の記録へ、中断の理由と中断turnの履歴を加える。
-
-    記録が無いか、同じturnの終了を示さない場合は書き換えない。
-    """
     forwarded, _result = registry_forwarding.forward("record_interrupted_turn", locals())
     if forwarded:
         return
@@ -817,7 +736,6 @@ def _proxy_owner_matches(payload: dict[str, Any], *, allow_claim: bool = False) 
 
 
 def payload_server_instances(payload: dict[str, Any]) -> set[str]:
-    """レコードが参照する所有サーバーの起動単位を、中断turnの履歴を含めて返す。"""
     instances = {turn.server_instance for turn in _recorded_interrupted_turns(payload) if turn.server_instance}
     if (instance := _recorded_server_instance(payload)) is not None:
         instances.add(instance)

@@ -10,7 +10,6 @@ import pytest
 
 @pytest.mark.parametrize("cli", [False, True])
 def test_explicit_types_priority(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, cli: bool) -> None:
-    """CLI、環境変数の順に採用し、自動探索を呼び出さない。"""
     environment = tmp_path / "environment.d.ts"
     argument = tmp_path / "argument.d.ts"
     for path in (environment, argument):
@@ -63,7 +62,6 @@ def test_bundled_types_match_version_and_deduplicate(
     host_directory: str,
     status: int,
 ) -> None:
-    """公開呼出しから対象版の型を一度だけコンパイラーへ渡す。"""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("FUNCTION_HOOKS_TYPES", raising=False)
     monkeypatch.setattr("sys.argv", ["check"])

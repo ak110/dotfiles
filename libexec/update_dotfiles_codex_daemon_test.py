@@ -34,7 +34,6 @@ from pytools._internal import codex_processes  # noqa: E402  # pylint: disable=w
 def test_chezmoi_apply_does_not_control_running_daemon(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, apply_code: int
 ) -> None:
-    """配備結果によらず、稼働daemonと既存セッションに停止・再起動を送らない。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_DAEMON, _DAEMON_HELPER, _UPDATE_LOOP))
     monkeypatch.setattr(update_dotfiles_runtime, "LOCK_PATH", tmp_path / "locks" / "update-dotfiles.lock")

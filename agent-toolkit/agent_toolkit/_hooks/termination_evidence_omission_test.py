@@ -48,7 +48,6 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
     ],
 )
 def test_omission_cli_rejects_unrelated_evidence(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, invalid: str) -> None:
-    """省略の引用・対象・会話・担当・入力が実体と異なる場合は、CLIから不足を免除できない。"""
     repository = git_repository.init_repository(tmp_path / "repo", files={"CLAUDE.md": "完了報告は指示まで省く。\n"})
     trace = tmp_path / "transcript.jsonl"
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "evidence-test")

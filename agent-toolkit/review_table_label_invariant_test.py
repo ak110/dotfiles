@@ -11,14 +11,13 @@ import pathlib
 import sys
 
 _ROOT = pathlib.Path(__file__).resolve().parent
-# スキルのスクリプトはパッケージ外にあり、同じディレクトリのモジュールを裸の名前で読み込む。
-# 静的解析はこの検索パスを解決できないため、実行時に名前で読み込む。
+
+
 sys.path.insert(0, str(_ROOT / "skills/atk-mode/scripts"))
 cost_metrics = importlib.import_module("cost_metrics")
 
 
 def test_documented_self_record_label_is_recognized_by_review_metrics() -> None:
-    """規範が定める書き出しは1つで、その書き出しで始まる指摘箇所を集計が担当の記録として判定する。"""
     norm = (_ROOT / "skills/atk-mode/references/review-record-table.md").read_text(encoding="utf-8")
     labels = [span for span in norm.split("`")[1::2] if span.endswith("の記録:")]
     assert labels == ["担当の記録:"]

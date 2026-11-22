@@ -1,5 +1,3 @@
-"""利用枠の一時指定・許可の保存形式を、設定CLIと観測処理で共有する。"""
-
 from __future__ import annotations
 
 import datetime

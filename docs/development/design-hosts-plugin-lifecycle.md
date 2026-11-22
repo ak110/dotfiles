@@ -1,6 +1,6 @@
 # plugin導入と実体の回収の設計記録
 
-[設計記録の索引](design.md)から参照する、plugin導入と実体の回収の記録である。
+[設計記録の索引](design.md)
 
 ## Codexのlocal plugin導入
 

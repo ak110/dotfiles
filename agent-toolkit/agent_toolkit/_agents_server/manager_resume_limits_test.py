@@ -131,7 +131,6 @@ async def test_overload_within_availability_check_switches_candidate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動の可用性確認の間に過負荷で終了した候補は、自動継続せず次の候補への切替で扱う。"""
     candidates = [("codex", "gpt-6.1-sol", "high"), ("codex", "gpt-6-sol", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _m, **_kwargs: candidates)
     async with server_manager.AgentsServerManager() as manager:
@@ -209,7 +208,6 @@ async def test_claude_usage_limit_wait_is_visible_and_kill_returns_held_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """解除待ちの種類と解除予定時刻を公開し、`kill`は保留した診断を持つ停止結果を返す。"""
     resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
     streams = [_rejected_stream("seven_day_opus", resets_at, before_init=False, session_id="claude-visible")]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
@@ -246,7 +244,6 @@ async def test_claude_usage_limit_wait_accepts_send_message_as_reply(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """解除待ちの間に委譲元が`send_message`を送ると、保留を確定してreplyとして配送する。"""
     resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
     streams = [
         _rejected_stream("five_hour", resets_at, before_init=False, session_id="claude-reply"),

@@ -1,9 +1,3 @@
-"""Bashコマンドを区間とパイプラインへ分け、実行前置語を解決した実行位置のトークン列を返す処理。
-
-`;`・`&&`・`||`・`|`・`&`で区切られた区間へ分割し、`sudo`・`env`・`timeout`・`uv run`などの実行前置語を除いた実行位置を求める。
-実行位置を静的に確定できない区間は未確定として返す。
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -57,16 +51,6 @@ PIPE_SEPARATORS: frozenset[str] = frozenset({"|", "|&"})
 
 @dataclasses.dataclass(frozen=True)
 class ExecutionSegment:
-    """Bashコマンドの1区間について、実行位置以降のトークン列と実行位置の確定可否を表す。
-
-    `resolved`が偽の区間では`tokens`を空とし、助言するかを判定する処理は、その区間では検出しない。
-    `is_agent_toolkit_script`はagent-toolkit配下から配布する自動チェックスクリプトを表す。
-    `raw_tokens`は、実行位置が未確定の区間でリダイレクト先を解析するため、元のトークン列を保持する。
-    `tokens`はリダイレクトの演算子と対象（`>`・`/tmp/x`・`2>&1`など）も含む。区間の解析から得た要素は`ShellWord`であり、
-    引用した`'>'`と実際の演算子を区別できる。位置引数を数える消費側と、引数列全体を比べる消費側は、
-    `agent_toolkit._common.shell_tokens.strip_redirections`でリダイレクトを除いた引数列を使う。
-    """
-
     tokens: tuple[str, ...]
     resolved: bool
     is_agent_toolkit_script: bool = False
@@ -76,13 +60,6 @@ class ExecutionSegment:
 
 
 def split_bash_commands(command: str) -> list[tuple[str, str]]:
-    """Bashコマンドを区間へ分け、各区間とその直前の区切り演算子の組を実行順で返す。
-
-    区切りは`;`・`&&`・`||`・`|`・`|&`・`&`・改行のいずれかであり、先頭の区間は空文字列とする。
-    `2>&1`・`&>log`などのリダイレクトに含まれる`&`は区切りとせず、前の区間へ連結する。
-    区間の分割は`split_bash_segments`が行い、本関数は区間の間に残る文字列から区切りを求める。
-    位置を求められない区間の区切りは空文字列とする。
-    """
     commands: list[tuple[str, str]] = []
     segments = split_bash_segments(command)
     position = 0
@@ -101,7 +78,6 @@ def split_bash_commands(command: str) -> list[tuple[str, str]]:
 
 
 def _split_bash_pipelines(command: str) -> list[list[str]]:
-    """`split_bash_commands`の結果を、パイプラインごとの区間列へまとめて返す。"""
     pipelines: list[list[str]] = []
     previous = ""
     for index, (separator, segment) in enumerate(split_bash_commands(command)):
@@ -113,16 +89,13 @@ def _split_bash_pipelines(command: str) -> list[list[str]]:
 
 
 def _is_pipeline_continuation(previous: str, separator: str, following: str) -> bool:
-    """区間の境界が同一パイプラインの継続であるかを、前後の区間と区切り文字列から判定する。"""
     if separator in PIPE_SEPARATORS:
         return True
-    # `2>&1`・`&>log`等のリダイレクトに含まれる`&`は、`split_bash_segments`が区切りとして分割するが
-    # コマンドの終端ではないため継続として扱う（前段の出力は後段のパイプへ渡る）。
+
     return separator == "&" and (previous.endswith((">", "<")) or following.startswith(">"))
 
 
 def _is_redirection_continuation(previous: str, separator: str, following: str) -> bool:
-    """`split_bash_segments`が分割したリダイレクト断片の続きであるかを返す。"""
     if separator.strip() != "&":
         return False
     if previous.endswith((">", "<")):
@@ -160,11 +133,6 @@ def extract_execution_pipelines(command: str, *, expand_shell: bool = True) -> l
 
 
 def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> list[list[ExecutionSegment]]:
-    """1つのパイプラインの区間列を解決する。
-
-    戻り値の先頭は対象のパイプライン自身であり、2件目以降は`sh -c`展開により生じた独立したパイプラインとする。
-    展開の接続規則は`extract_execution_pipelines`のdocstringが定める。
-    """
     current: list[ExecutionSegment] = []
     for index, raw_segment in enumerate(raw_segments):
         try:
@@ -194,29 +162,15 @@ def _resolve_pipeline(raw_segments: Sequence[str], *, expand_shell: bool) -> lis
 
 
 def extract_execution_segments(command: str) -> list[ExecutionSegment]:
-    """Bashコマンドの全区間を実行順の一次元列で返す。
-
-    パイプラインの区切りを条件に含めず、実行位置の一致だけを判定する処理が使う。
-    """
     return [segment for pipeline in extract_execution_pipelines(command) for segment in pipeline]
 
 
 def shell_c_argument(tokens: Sequence[str]) -> str | None:
-    """実行位置以降のトークン列が`sh -c`・`bash -c`形式であれば、実行するコマンド文字列を返す。
-
-    該当しない場合はNoneを返す。判定対象は実行前置語を解決した後のトークン列であり、
-    `sudo sh -c '...'`のように前置語と組み合わせた形も展開対象となる。
-    """
     target = shell_execution_target(tokens)
     return target[1] if target is not None and target[0] == "command" else None
 
 
 def shell_execution_target(tokens: Sequence[str]) -> tuple[str, str] | None:
-    """シェル起動の本文かスクリプトを返し、オプション値と位置引数を実行対象にしない。
-
-    未知の起動形式と標準入力の実行は確定しない。Bashの`-co`・`-cO`も値を消費してから
-    本文を選ぶ。本文以降は`$0`と位置引数であり、起動オプションとして再走査しない。
-    """
     if not tokens or (name := tokens[0].rsplit("/", 1)[-1]) not in _SHELL_TOKENS:
         return None
     command = False
@@ -314,12 +268,6 @@ def resolve_execution_segment(tokens: list[str], *, runtime_options: bool = Fals
 
 
 def nested_shell_positions(command: str) -> frozenset[int]:
-    """置換構文、サブシェルおよびバッククォートの内側にある文字位置を返す。
-
-    対応が閉じない構文は開始位置から末尾までを内側として扱う。補正位置を外側と
-    誤認するより、補正を見送って元の入力をBashへ渡す方が入力を壊さないためである。
-    heredoc本文は同じ長さの空白へ置換してから走査する。
-    """
     masked = mask_heredoc_bodies(command)
     protected: set[int] = set()
     stack: list[int] = []
@@ -377,14 +325,6 @@ def nested_shell_positions(command: str) -> frozenset[int]:
 
 
 def split_bash_segments(command: str) -> list[str]:
-    """Bashコマンドを`;`・`&&`・`||`・`|`・`&`・改行で分割する。
-
-    クォート（`'`・`"`）内のメタ文字は分割対象外とする。
-    heredoc本文は同じ長さの空白へ置換してから分割し、本文外の位置を保つ。
-    行継続と置換構文、サブシェルおよびバッククォート内の演算子・改行も分割しない。
-    `for`・`while`・`until`・`if`・`case`から対応する終端までの改行は、制御構造を
-    外側の独立呼び出しへ分けないため保持する。内部の`;`では従来どおり判定する区間を分ける。
-    """
     original = command
     command = mask_heredoc_bodies(command)
     nested = nested_shell_positions(original)
@@ -443,7 +383,6 @@ def split_bash_segments(command: str) -> list[str]:
             i += 1
             continue
         if c == "\\" and i + 1 < len(command):
-            # 行継続は語を連結し、それ以外の引用は次の文字を構文判定から除く。
             if command[i + 1] != "\n":
                 finish_word()
                 command_start = False
@@ -484,7 +423,6 @@ def split_bash_segments(command: str) -> list[str]:
 
 
 def skip_env_assignments(tokens: list[str], start: int) -> int:
-    """先頭の`KEY=VALUE`形式の環境変数代入をスキップした次の位置を返す。"""
     i = start
     while i < len(tokens) and ENV_ASSIGN_PATTERN.match(tokens[i]):
         i += 1

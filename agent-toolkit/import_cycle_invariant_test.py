@@ -15,8 +15,7 @@ _IMPORT_END = re.compile(rb"(?m)^[ \t]*\)[ \t]*(?:#.*)?$")
 
 
 def _source_tree(source: bytes, filename: str) -> ast.Module:
-    # 最後の import キーワード以降の関数本体などを解析しない。
-    # 改行までの切り出しで複数行文や文字列が途中になる場合は、閉じ括弧または全文まで読む。
+
     last_import = source.rfind(b"import")
     if last_import < 0:
         return ast.Module(body=[], type_ignores=[])
@@ -47,9 +46,7 @@ def _is_type_guard(node: ast.expr, bindings: dict[str, str]) -> bool:
 
 
 def _rebound_names(node: ast.AST) -> set[str]:
-    # モジュールの初期化で名前を束縛する構文（代入、for・with・exceptの名前、代入式、matchの捕捉）を集める。
-    # def・class見出し（デコレーター、引数の省略時の値、基底クラス）内の代入式、global宣言を介した束縛、import * は扱わない。
-    # 関数・ラムダの本体とクラス本体の束縛はモジュールの名前を変えないため除く。
+
     names: set[str] = set()
     pending = [node]
     while pending:
@@ -107,7 +104,7 @@ def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Impo
     # 型検査ガードの名前を別の値へ束縛し直しうる文は、その名前をガードとみなさない（安全側に倒す）。
     for name in _rebound_names(node) & bindings.keys():
         del bindings[name]
-    # 実行する分岐が分からない場合、分岐内の束縛を外側に持ち出さない。
+
     invalidated: set[str] = set()
     previous_bindings = bindings.copy()
     for field in ("body", "orelse", "finalbody", "handlers", "cases"):
@@ -139,12 +136,12 @@ def _dependencies(root: Path) -> dict[str, set[str]]:
                 targets.update(alias.name for alias in node.names)
             else:
                 base = resolve_name("." * node.level + (node.module or ""), package)
-                # サブモジュールの読込と、パッケージ自身が公開する属性の読込を区別する。
+
                 for alias in node.names:
                     submodule = f"{base}.{alias.name}"
                     targets.add(submodule if submodule in modules else base)
         targets.intersection_update(modules)
-        # 呼び出し元自身とその親は既に初期化を開始している。再公開だけでは暗黙の逆辺を作らない。
+
         for target in tuple(targets):
             parent = target.rpartition(".")[0]
             while parent:

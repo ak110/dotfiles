@@ -1,5 +1,3 @@
-"""本番Pythonコードがsubprocessでテキストを送受信する際の文字コード指定を確かめる。"""
-
 import ast
 import os
 import subprocess

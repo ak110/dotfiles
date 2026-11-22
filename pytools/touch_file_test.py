@@ -1,5 +1,3 @@
-"""touch_file モジュールのテスト。"""
-
 import ctypes
 import datetime
 import os
@@ -30,8 +28,6 @@ def _read_link_mtime(path: pathlib.Path) -> datetime.datetime:
 
 
 class TestTouchPath:
-    """touch_path のロジック単体テスト。"""
-
     def test_single_file_updates_mtime(self, tmp_path: pathlib.Path) -> None:
         target = tmp_path / "f.txt"
         target.touch()
@@ -63,7 +59,6 @@ class TestTouchPath:
         new_time = datetime.datetime(2024, 6, 15, 12, 30, 45)
         touch_file.touch_path(link, new_time)
 
-        # リンク自身を touch してもリンク先のファイルは変更されない
         assert _read_mtime(real_file) == old_real
         assert _read_link_mtime(link) == new_time
 
@@ -115,8 +110,6 @@ class TestTouchPath:
 
 
 class _FakeWin32Function:
-    """Win32関数の呼出しとctypes属性設定を再現する。"""
-
     def __init__(self, result: object) -> None:
         self.result = result
         self.calls: list[tuple[object, ...]] = []
@@ -129,8 +122,6 @@ class _FakeWin32Function:
 
 
 class _FakeKernel32:
-    """`set_link_times`が使うWin32 APIだけを再現する。"""
-
     def __init__(self, create_result: object, set_result: object) -> None:
         self.CreateFileW = _FakeWin32Function(create_result)
         self.SetFileTime = _FakeWin32Function(set_result)
@@ -174,8 +165,6 @@ class TestSetLinkTimes:
 
 
 class TestCli:
-    """CLI 経由の動作テスト。"""
-
     def _run(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [sys.executable, "-m", "pytools.touch_file", *args],
@@ -267,7 +256,6 @@ class TestCli:
 
         self._run("-t", "2024-06-15T12:30:45", str(missing), str(existing))
 
-        # 存在しないパスがあっても後続の対象は更新される
         assert _read_mtime(existing) == datetime.datetime(2024, 6, 15, 12, 30, 45)
 
     def test_cli_interactive_empty_input_uses_now(self, tmp_path: pathlib.Path) -> None:
@@ -287,7 +275,6 @@ class TestCli:
         target.touch()
         _set_mtime(target, datetime.datetime(2000, 1, 1))
 
-        # 空白区切りの旧形式 (YYYY-MM-DD HH:MM:SS) も fromisoformat が受け付ける
         self._run(str(target), stdin="2024-06-15 12:30:45\n")
 
         assert _read_mtime(target) == datetime.datetime(2024, 6, 15, 12, 30, 45)

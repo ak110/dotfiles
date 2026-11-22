@@ -22,8 +22,6 @@ import shlex
 
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common.process_loop_session import is_process_loop_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
@@ -55,7 +53,6 @@ def _owned_working_plan_paths(session_id: str) -> list[pathlib.Path]:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """計画バンドルの保存判定結果と、通知する場合の本文を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         append_stop_log("", "approve_invalid_payload", {})

@@ -45,18 +45,12 @@ CLI_CREDITS_EXCLUDED = (
 
 @dataclasses.dataclass(frozen=True)
 class Candidates:
-    """利用できる順序と、選択できなかった候補の復旧案内。
-
-    `warnings`は起動を続ける場合にも明示する設定不良で、`diagnostics`にも含める。
-    """
-
     connections: tuple[Connection, ...]
     diagnostics: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
     role: str = "delegate"
 
     def require_first(self) -> Connection:
-        """最初の候補を返し、全候補不成立なら原因と設定方法を示して終了する。"""
         if not self.connections:
             key = connection_order_key("claude", self.role)
             reasons = "; ".join(self.diagnostics) or "使用順の種別に認証が設定されていない"
@@ -73,7 +67,6 @@ def managed() -> bool:
 
 
 def _api_env_file(kind: str) -> tuple[str | None, str | None]:
-    """API種別のenvファイルの絶対パスと、設定したのに使えない場合の診断を返す。未設定は両方`None`とする。"""
     key = _ENV_FILE_KEYS[kind]
     raw = resolve_mutable_setting(key)
     if not raw:
@@ -96,7 +89,6 @@ def _api_env_file(kind: str) -> tuple[str | None, str | None]:
 
 
 def _isolation_env_files() -> tuple[str, ...]:
-    """候補として使えるかと独立に、親から隔離すべき設定済みファイルを返す。"""
     return tuple(str(pathlib.Path(raw).absolute()) for key in _ENV_FILE_KEYS.values() if (raw := resolve_mutable_setting(key)))
 
 
@@ -142,10 +134,6 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
 
 
 def _normalize_legacy(connection: Connection) -> Connection:
-    """種別を区別する前に保存したAPI接続を、保存済みのenvファイルが一致する種別へ読み替える。
-
-    クレジットのenvファイルと一致すれば`credits`、それ以外は従量課金として`payg`とし、保存済みのパスはそのまま使う。
-    """
     if connection.kind != settings.LEGACY_API_KIND:
         return connection
     credits_path = resolve_mutable_setting("claude_credits_env_file")
@@ -169,7 +157,6 @@ def outside_order(kind: str | None, role: str) -> bool:
 
 
 def order_includes(kind: str, role: str) -> bool:
-    """接続を管理していない環境、または管理中の使用順が種別を含む場合に真を返す。"""
     return not managed() or kind in connection_order("claude", role)
 
 

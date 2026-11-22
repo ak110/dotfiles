@@ -149,14 +149,6 @@ def check_plan_set(
     agent_rule_paths: tuple[str, ...] = (),
     warning_details: list[_ClassifiedWarning] | None = None,
 ) -> tuple[list[str], list[str]]:
-    """初回に分割した複数の計画を1回で確かめ、診断の先頭へ対象の計画のパスを付けて返す。
-
-    各計画の構造・行数・移行警告は`check`と同じ規則で個別に判定する。
-    選定レーンのWI集合は、全ての計画と先行計画の`関連WI`の和集合と1回で比べる。
-    1計画ずつ先行計画を指定して確かめると、まだ確かめていない後続計画のWIが集合に入らず途中の計画で不一致になるためである。
-    返却予定のエージェント向け文書のパスは、いずれかの計画の本文にあれば受理する。
-    文書を変更する計画だけがそのパスを持つため、全計画へ一律には求めない。
-    """
     resolved = [path.resolve() for path in (*plan_paths, *prior_plans)]
     if len(resolved) != len(set(resolved)):
         raise ValueError("確かめる計画と先行計画に同じファイルを重複指定できない")
@@ -198,7 +190,6 @@ def check_plan_set(
 
 
 def _wi_comparison_skip_next_action(warnings: list[_ClassifiedWarning]) -> str | None:
-    """由来や移管先をWI本文と比べられなかった場合と、削除済みの移管先を履歴で受理した場合の後続操作を一度ずつ案内する。"""
     skips = [
         message
         for kind, message in warnings
@@ -240,7 +231,6 @@ def _wi_comparison_skip_next_action(warnings: list[_ClassifiedWarning]) -> str |
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析し、計画が基準を満たすか確かめる。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "plan_file",

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定の対象リポジトリの規範指定を検証する。"""
 
 import pathlib
 import re
@@ -36,11 +35,6 @@ def test_public_command_requires_project_norm_spec(
     spec: str | None,
     expected: int,
 ) -> None:
-    """本リポジトリの設定で、規範ファイルを変える項目の指定の欠落を報告し、補った指定を受理する。
-
-    指定が省略・`なし`・空欄・一部欠落のまま受理されると、レーン担当へ変更後の規範の適用と方針記録の
-    読込の要求が届かない。コードだけを変える項目は省略しても受理する。
-    """
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
     _write_files(repo, "agent-toolkit/skills/atk-mode/roles/exec.parent.md", ".claude/skills/edit/SKILL.md", "scripts/tool.py")
@@ -55,7 +49,7 @@ def test_public_command_requires_project_norm_spec(
         {"WI": "code.md", "レーン": "lane-02", "書込対象": ["scripts/tool.py"]},
     ]
     selection = _norm_spec_selection(tmp_path, decisions, {"norm.md": spec})
-    # 保存後の検査と追加統合は同じ入力の構造へ同じ判定を適用する。
+
     for _ in range(2):
         assert _dispatch("--work-dir", str(repo), str(selection)) == expected
         lines = [
@@ -75,7 +69,6 @@ def test_public_command_requires_project_norm_spec(
 def test_agent_doc_reflection_requires_read_request(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """配布原本など規範変更の範囲外のエージェント向け文書でも、方針と障害記録を読む要求の欠落を報告する。"""
     repo, notes = env
     (repo / "pyproject.toml").write_text(_DOTFILES_PYPROJECT.read_text(encoding="utf-8"), encoding="utf-8")
     original = ".chezmoi-source/dot_claude/rules/personal.md"
@@ -95,7 +88,6 @@ def test_agent_doc_reflection_requires_read_request(
 def test_project_norm_spec_follows_repository_config(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], config: str
 ) -> None:
-    """設定の無いリポジトリでは指定の省略を受理し、独自の条件を設定したリポジトリではその条件で欠落を報告する。"""
     repo, notes = env
     if config == "custom":
         (repo / "pyproject.toml").write_text(
@@ -135,7 +127,6 @@ def test_project_norm_spec_follows_repository_config(
 def test_invalid_project_norm_config_is_input_error(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], content: str
 ) -> None:
-    """不正な条件の設定は、条件なしとして受理せず、設定の場所と修正の操作を示して終了コード2を返す。"""
     repo, notes = env
     (repo / "pyproject.toml").write_text(content, encoding="utf-8")
     _awi(notes, "a.md", "`src/model.py`を変える。")

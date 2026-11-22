@@ -22,7 +22,6 @@ def _failure_and_next_action(stderr: str) -> tuple[str, str]:
 
 
 def test_resolve_repo_id_or_raise_guides_target_repo_option() -> None:
-    """パスでもURLでもない値は、出力せずに`--target-repo`の指定方法を次の操作とする例外を送出する。"""
     with pytest.raises(WebInputError, match="パスが存在せずリモートURLとしても解析できない") as error_info:
         repo_module.resolve_repo_id_or_raise("not-a-repository")
 
@@ -43,7 +42,6 @@ def test_resolve_repo_id_reports_one_failure_line(capsys: pytest.CaptureFixture[
 def test_resolve_head_commit_without_commit_asks_to_check_history(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """コミットが無い作業ツリーでは、コミットの有無を確かめる操作を次の操作として返す。"""
     git_repository.init_repository(tmp_path)
 
     with pytest.raises(SystemExit) as exc_info:
@@ -84,7 +82,6 @@ def test_edit_without_target_repo_guides_to_executable_show(
         argv = shlex.split(next_action.split("`")[1])
         assert argv == ["atk", "wi", "show", path.name]
     else:
-        # 破損したYAMLは保存状態も読み取れず、編集対象の解決時点でstateの修復を案内する。
         assert str(path) in next_action and "state" in next_action
         argv = ["atk", "wi", "show", path.name]
     with pytest.raises(SystemExit) as shown:
@@ -98,7 +95,6 @@ def test_edit_without_target_repo_guides_to_executable_show(
 def test_verify_target_repo_content_mismatch_guides_actual_value(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """target_repoの不一致は、実際の値での`--target-repo`の指定し直しを次の操作として返す。"""
     path = tmp_path / "20260101-000000-001.md"
 
     with pytest.raises(SystemExit) as exc_info:

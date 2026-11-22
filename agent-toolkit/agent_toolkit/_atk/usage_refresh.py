@@ -1,5 +1,3 @@
-"""公開された利用枠の読取とSDK通知を、同じ観測形式へ変換する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -95,7 +93,6 @@ def session_signature(session: Any) -> str:
 
 @contextlib.contextmanager
 def cli_activity(engine: str, model: str | None, effort: str | None, connection: str | None = None) -> Generator[None]:
-    """CLIの実行区間だけを計測し、解除待ちや停止中の時間と区別する。"""
     if engine not in {"claude", "codex"} or not enabled():
         yield
         return
@@ -149,7 +146,7 @@ def _store(windows: list[usage_observation.QuotaWindow], signature: str = "unatt
         signature = next(iter(signatures))
     elif not signatures:
         signature = _CLOCK.finishing.get(engine, signature)
-    # アカウントの枠は別端末・製品でも消費されるため、設定の因果効果とは扱わない。
+
     try:
         usage_observation.observe(windows, setting_signature=signature, active_seconds=seconds, mixed=True)
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -202,7 +199,6 @@ def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str
 
 
 def record_claude_report(report: dict[str, Any], *, account: str | None = None, contract: str | None = None) -> None:
-    """SDKUsageReportのpercent（0–100）を扱い、API費用のsession欄は残量へ換算しない。"""
     limits = report.get("rate_limits")
     rows = limits.get("limits") if isinstance(limits, dict) else None
     if not isinstance(rows, list):

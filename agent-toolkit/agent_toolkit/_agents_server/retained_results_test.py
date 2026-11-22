@@ -17,7 +17,6 @@ from agent_toolkit._agents_server import status_file as subject
 
 
 def test_unreadable_legacy_slot_does_not_hide_a_later_end(tmp_path: pathlib.Path) -> None:
-    """古い原本の破損を保持し、別の終了結果は通常どおり公開・照会・回収する。"""
     path = shared_layout.results_directory("root", tmp_path) / "child.json"
     path.parent.mkdir(parents=True)
     path.write_text("{", encoding="utf-8")
@@ -51,7 +50,6 @@ def test_invalid_status_shape_does_not_hide_usable_result(tmp_path: pathlib.Path
 
 
 def test_take_reports_path_of_unreadable_separate_result(tmp_path: pathlib.Path) -> None:
-    """旧名がない場合でも、読めなかった別名の原本を診断し保持する。"""
     directory = shared_layout.results_directory("root", tmp_path)
     directory.mkdir(parents=True)
     bad = directory / "child.2-bad.json"
@@ -63,7 +61,6 @@ def test_take_reports_path_of_unreadable_separate_result(tmp_path: pathlib.Path)
 
 
 def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> None:
-    """異なる書込主体は結果を取得できず、正しい主体への配送は1回だけ成立する。"""
     directory = shared_layout.results_directory("root-session", tmp_path)
     directory.mkdir(parents=True)
     result_path = directory / "child-session.json"
@@ -106,7 +103,6 @@ def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> N
 
 
 def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:
-    """CLI用退避先を指定しても別の書込主体の結果は移動しない。"""
     result_path = shared_layout.results_directory("root-session", tmp_path) / "child-session.json"
     result_path.parent.mkdir(parents=True)
     result_path.write_text(json.dumps({"status": "completed", "owner_status_file": "delegate.json"}), encoding="utf-8")

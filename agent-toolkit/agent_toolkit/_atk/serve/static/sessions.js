@@ -39,7 +39,6 @@ let detailGeneration = 0;
 // 右ペインへ描画済みのイベント件数。描画済みの末尾まで読み進めると増え、追記の反映後も保つ。
 let renderedCount = 100;
 const DETAIL_PAGE_SIZE = 100;
-// 右ペインに表示中の記録。
 let currentDetail = null;
 // 末尾からこの距離以内を読んでいれば末尾を読んでいるとみなし、追記に合わせて末尾へ追従する。
 const FOLLOW_TAIL_PX = 48;

@@ -1,5 +1,3 @@
-"""導入モードの消費側を公開コマンドとpost-applyの実ステップで検証する。"""
-
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
 import importlib
@@ -79,7 +77,6 @@ def test_minimal_mise_install_ignores_working_tree(monkeypatch, tmp_path):
 
 
 def test_minimal_mise_install_explicitly_selects_only_lightweight_tools(monkeypatch):
-    """古いfull用グローバル設定が残る単独実行でも大型ツールを取得しない。"""
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "minimal")
     calls = []
 
@@ -93,7 +90,6 @@ def test_minimal_mise_install_explicitly_selects_only_lightweight_tools(monkeypa
 
 
 def test_post_apply_mode_and_prune_flags_are_transmitted(monkeypatch, tmp_path):
-    """公開post-applyの引数を保存値と後処理の環境へ反映する。"""
     path = tmp_path / "config.json"
     monkeypatch.setattr(dotfiles_mode, "configuration_path", lambda: path)
     monkeypatch.setenv(dotfiles_mode.MODE_ENV, "full")
@@ -107,7 +103,6 @@ def test_post_apply_mode_and_prune_flags_are_transmitted(monkeypatch, tmp_path):
 
 
 def test_prune_runs_after_all_post_apply_steps(monkeypatch):
-    """削除対象を使うセットアップが完了してからpruneへ進む。"""
     calls = []
 
     def setup():

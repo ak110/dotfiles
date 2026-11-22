@@ -43,12 +43,10 @@ class ProgressLogError(_next_action.ActionableError):
 
 
 def _local_now() -> datetime.datetime:
-    """実行ホストのタイムゾーンを持つ現在時刻を返す。"""
     return datetime.datetime.now().astimezone()
 
 
 def _escape_cell(value: str) -> str:
-    """GFM表の1セルとして復元できる文字列へ変換する。"""
     normalized = value.replace("\r\n", "\n").replace("\r", "\n")
     return normalized.replace("\\", "\\\\").replace("|", "\\|").replace("\n", "<br>")
 
@@ -72,7 +70,6 @@ def append_progress_log(
     clock: Clock = _local_now,
     writer: Callable[[pathlib.Path, str], None] = atomic_write,
 ) -> None:
-    """計画の固定3列表へ現在時刻を含む1行だけを原子的に追加する。"""
     path = pathlib.Path(plan_file)
     _plan_locations.reject_saved_plans_root_write(path)
     original = path.read_bytes()
@@ -141,7 +138,6 @@ def append_handoff_log(
     *,
     writer: Callable[[pathlib.Path, str], None] = atomic_write,
 ) -> None:
-    """計画なしの引き継ぎ記録の末尾へ`<完了した工程>: <結果>`の1行を追記する。"""
     _plan_locations.reject_saved_plans_root_write(handoff)
     content = handoff.read_text(encoding="utf-8")
     separator = "\n" if content.endswith("\n") else "\n\n"
@@ -149,7 +145,6 @@ def append_handoff_log(
 
 
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
-    """対応の記録・取得を処理し、取得だけで終了する場合は真を返す。"""
     if not (
         args.commit
         or args.previous_head
@@ -232,7 +227,6 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
 
 
 def _validate_required_inputs(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
-    """操作に必要な入力をまとめて診断し、1回の修正で再実行できる形を示す。"""
     required: list[str] = []
     if not args.get_commits:
         required.extend(("completed_step", "result"))
@@ -260,7 +254,6 @@ def _validate_required_inputs(args: argparse.Namespace, parser: argparse.Argumen
 
 
 def main(argv: list[str] | None = None, *, description: str | None = None, retrieval: bool = False) -> int:
-    """CLIから進捗ログの追記を開始する。`description`は別名の公開コマンドのヘルプ説明。"""
     parser = argparse.ArgumentParser(
         description=description or __doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -306,7 +299,6 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
             return 0
         append_progress_log(args.plan_file, args.completed_step, args.result)
     except _next_action.ActionableError as error:
-        # 保存済み計画の直接更新（`_plan.locations`）もこの型で次の操作を持って届く。
         action = error.next_action
         if isinstance(error, commit_mapping.CommitGitError):
             action += "。--worktreeが対象作業ツリーを指すか確かめ、同じ引数で再実行する"
@@ -324,7 +316,6 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
 
 
 def _add_record_arguments(parser: argparse.ArgumentParser) -> None:
-    """取得専用のparserへ記録操作の入力を公開しないよう、記録側の引数をまとめる。"""
     parser.add_argument("--completed-step", help="完了した工程（記録時は必須）")
     parser.add_argument("--result", help="結果・特記事項（記録時は必須）")
     operation = parser.add_mutually_exclusive_group()

@@ -1,5 +1,3 @@
-"""CLI要求から所有MCPへの適用、認可、1回の自己再開を検証する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +23,6 @@ from agent_toolkit._testing.agents_server_support import FakeBackend, install_ba
 @pytest.mark.parametrize("initially_visible", [True, False])
 @pytest.mark.asyncio
 async def test_cli_without_conversation_environment_resolves_only_own_executor(engine, initially_visible, monkeypatch):
-    """同じルートでも実行プロセスの世代が一致する会話だけを本人として選ぶ。"""
     session = _session()
     session.engine = engine
     session.attach_executor(os.getpid())
@@ -123,10 +120,6 @@ async def test_cli_request_applies_one_step_and_persists_history(actor):
 
 @pytest.mark.asyncio
 async def test_cli_request_survives_transient_sharing_denial(monkeypatch):
-    """Windowsの一時的な共有拒否が起きても、確定したeffortを読み直して一件の結果を残す。
-
-    要求側を応答の最初の読取の直前で止め、所有側が適用と応答の公開を終えてから読ませる。
-    """
     session = _session()
     attempts: list[pathlib.Path] = []
     polling, answered = threading.Event(), threading.Event()
@@ -314,7 +307,6 @@ async def test_effort_resume_releases_result_after_interrupt_or_send_failure(int
 
 @pytest.mark.parametrize("fault", ["missing", "version", "owner", "generation"])
 def test_cli_refuses_unverified_receiver_without_saving(fault):
-    """未宣言・別世代では会話を保持し、要求を送らない。"""
     _session()
     path = session_registry.registry_directory() / "child.json"
     payload = json.loads(path.read_text(encoding="utf-8"))

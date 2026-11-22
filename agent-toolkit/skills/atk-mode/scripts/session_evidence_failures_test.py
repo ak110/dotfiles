@@ -64,7 +64,6 @@ def test_scan_failure_window(tmp_path: pathlib.Path, capsys):
 
 
 def test_partial_main_and_prepare(tmp_path: pathlib.Path, capsys):
-    """strictは拒否し、部分取得の全欠測位置はbundleとprepareにも残る。"""
     path = tmp_path / "broken.jsonl"
     rows = _entries()
     original = json.dumps(rows[0]).encode() + b"\n{broken\n\xff\n[]\n\x00\n" + json.dumps(rows[1]).encode() + b"\n"
@@ -147,7 +146,6 @@ def test_failure_query_invalid_combinations(tmp_path: pathlib.Path, capsys):
 
 
 def test_partial_elapsed_keeps_gaps(tmp_path: pathlib.Path, capsys):
-    """単独の経過時間照会でも欠測の場所と部分性を表示する。"""
     path = tmp_path / "elapsed.jsonl"
     path.write_bytes(
         b'{"type":"user","timestamp":"2026-11-01T00:00:00Z","message":{"role":"user","content":"a"}}\n'

@@ -1,5 +1,3 @@
-"""受付予約の回収、3世代の逆行防止、重なった更新の取り消しを固定する。"""
-
 import asyncio
 
 import pytest
@@ -34,7 +32,7 @@ async def test_freeze_drains_control_but_not_model_execution() -> None:
     assert moved.value.target["generation"] == "G3"
     await gate.observe_current({"generation": "G2", "epoch": 2})
     assert gate.current["generation"] == "G3"
-    # 旧資源の観測と終了操作は、移譲後も新turnを生成せずに完走できる。
+
     async with gate.admit(new_turn=False, session_id="parent"):
         assert gate.capture() is not None
 

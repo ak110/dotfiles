@@ -34,7 +34,6 @@ _REAL_SCAN = _claude_plugin_references.scan
 
 
 def test_plugin_mutations_use_management_commands_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """更新の管理操作は会話開始やモデルへの問い合わせを含まない引数で起動する。"""
     calls: list[list[str]] = []
 
     def run(arguments: list[str], **_kwargs: object) -> _FakeResult:
@@ -54,7 +53,6 @@ def test_plugin_mutations_use_management_commands_only(monkeypatch: pytest.Monke
 
 @pytest.fixture(autouse=True)
 def _isolate_plugin_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
-    """旧pluginの削除は専用テストへ分け、開発機のプロセスを参照判定へ混ぜない。"""
     monkeypatch.setattr(_install_claude_plugins.external_web_guidance, "run", lambda _host: False)
     monkeypatch.setattr(_install_claude_plugins.external_pstack, "run", lambda: False)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
@@ -66,7 +64,6 @@ def test_installed_plugins_are_read_after_marketplace_is_ensured(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """marketplace修復前の導入一覧を後続判定へ再利用しない。"""
     events: list[str] = []
     monkeypatch.setattr(_install_claude_plugins, "_prerequisites_ok", lambda: True)
     monkeypatch.setattr(_install_claude_plugins, "_remove_unused_plugins", lambda: False)
@@ -120,7 +117,6 @@ class TestExtractPluginVersionMap:
 
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """共通の前提設定: which は通し、ファイル読み取りは無効化し、自動管理は no-op にする。"""
         monkeypatch.setattr(_common, "resolve_executable", lambda name, **_kwargs: pathlib.Path(name))
         monkeypatch.setattr(_install_claude_plugins, "_read_installed_plugins_from_file", lambda: None)
         monkeypatch.setattr(_claude_marketplace, "_check_marketplace_from_file", lambda: None)  # noqa: SLF001  # pylint: disable=protected-access  # 引数注入では到達不能（グローバル状態の差し替え）
@@ -135,7 +131,6 @@ class TestExtractPluginVersionMap:
         )
 
     def test_user_scope_entry_is_installed(self, monkeypatch: pytest.MonkeyPatch):
-        """user scope のエントリが installed として認識され、version 一致で update されない。"""
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             if command_matches(cmd, ["claude", "plugin", "list"]):
@@ -156,11 +151,10 @@ class TestExtractPluginVersionMap:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
-        # version 一致のため changed は False
+
         assert changed is False
 
     def test_project_scope_entry_is_ignored(self, monkeypatch: pytest.MonkeyPatch):
-        """project scope のエントリは user scope 管理の installed として扱われず install される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
@@ -178,18 +172,16 @@ class TestExtractPluginVersionMap:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
-        # project scope は user scope 用のインストール判定から外れるため install が発行される
+
         assert changed is True
         assert any("agent-toolkit@ak110-dotfiles" in c for c in calls if command_matches(c, ["claude", "plugin", "install"]))
 
     def test_plugins_key_format_is_parsed(self, monkeypatch: pytest.MonkeyPatch):
-        """{plugins: [...]} の入れ子形式は name で agent-toolkit を認識し install しない。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                # {"plugins": [{"name": ..., "version": ..., "scope": "user"}]} 形式
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps(
@@ -207,18 +199,16 @@ class TestExtractPluginVersionMap:
         monkeypatch.setattr(_common, "run_subprocess", fake_run)
 
         changed = _install_claude_plugins.run().changed
-        # version 一致のため install は発行されない
+
         assert changed is False
         assert not any(command_matches(c, ["claude", "plugin", "install"]) for c in calls)
 
     def test_version_missing_treated_as_outdated(self, monkeypatch: pytest.MonkeyPatch):
-        """version フィールドが無いエントリは空文字列扱いとなり target と不一致で update される。"""
         calls: list[list[str]] = []
 
         def fake_run(cmd, **_kwargs):  # noqa: ANN001
             calls.append(cmd)
             if command_matches(cmd, ["claude", "plugin", "list"]):
-                # version なし (空文字列扱い) で scope=user
                 return _FakeResult(
                     returncode=0,
                     stdout=json.dumps(
@@ -235,7 +225,6 @@ class TestExtractPluginVersionMap:
         assert any(command_matches(c, ["claude", "plugin", "update"]) for c in calls)
 
     def test_empty_list_results_in_full_install(self, monkeypatch: pytest.MonkeyPatch):
-        """空リストは全プラグイン未インストール扱いとなり install が発行される。"""
         calls: list[list[str]] = []
         fake_run = make_fresh_install_fake(calls)
 
@@ -248,18 +237,12 @@ class TestExtractPluginVersionMap:
 
 @pytest.mark.usefixtures("fake_which_present")
 class TestEnsureMarketplaceCliPath:
-    """ensure_marketplace の CLI フォールバックパス (ファイル検査が None の場合)。
-
-    両ファイルが存在しない状態で CLI 経由の marketplace 登録フローを検証する。
-    """
-
     def test_already_registered_by_name_skips_add(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
-        """marketplace list で name が検出できれば CLI add を呼ばない。"""
-        # 両ファイルが存在しない → _check_marketplace_from_file が None を返す
+
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "known.json")
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         calls: list[list[str]] = []
@@ -284,8 +267,7 @@ class TestEnsureMarketplaceCliPath:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
-        """marketplace list が空なら dotfiles 絶対パス + --scope=user で add を呼ぶ。"""
-        # 両ファイルが存在しない → _check_marketplace_from_file が None を返す
+
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", tmp_path / "known.json")
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", tmp_path / "settings.json")
         calls: list[list[str]] = []
@@ -356,7 +338,6 @@ class TestLegacyGithubTypeMigration:
         monkeypatch.setattr(_claude_marketplace, "_KNOWN_MARKETPLACES_PATH", known)
         monkeypatch.setattr(_claude_marketplace, "_SETTINGS_JSON_PATH", settings)
 
-        # 検査は旧形式として破損判定されるはず (is_directory_type_registered は False を返す)
         assert _claude_marketplace.is_directory_type_registered() is False
 
         # CLI remove+add は settings 側を更新しない再現環境として成功のみ返す
@@ -390,10 +371,6 @@ class TestReadTargetInfo:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ):
-        """隔離したmarketplace実ファイルから導入対象を選び、CLIのinstallへ渡す。
-
-        配布中の版・プラグイン構成と、開発機の無効化設定・cacheの状態から独立して検証する。
-        """
         marketplace = tmp_path / ".claude-plugin/marketplace.json"
         marketplace.parent.mkdir()
         marketplace.write_text(json.dumps({"plugins": [{"name": "agent-toolkit", "version": "0.2.0"}]}), encoding="utf-8")
@@ -422,7 +399,7 @@ class TestReadTargetInfo:
         changed = _install_claude_plugins.run().changed
         assert changed is True
         install_calls = [c for c in calls if command_matches(c, ["claude", "plugin", "install"])]
-        # 読み込んだmarketplaceのプラグインだけが導入対象になる。
+
         assert any("agent-toolkit@ak110-dotfiles" in c for c in install_calls)
         assert len(install_calls) == 1
 
@@ -450,8 +427,6 @@ class TestReadTargetInfo:
 
 
 class TestUninstallDeprecated:
-    """deprecated プラグインの除去が稼働中のセッションが使う実体を削除しないことを検証する。"""
-
     _NAME = "old-plugin"
 
     def test_uninstall_keeps_plugin_data(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -474,8 +449,6 @@ class TestUninstallDeprecated:
 
 
 class TestEnsurePluginCacheComplete:
-    """plugin cache の必須ファイルの欠落を検出し、1 回だけ再インストールで修復する。"""
-
     _NAME = "agent-toolkit"
 
     def _prepare(
@@ -513,7 +486,6 @@ class TestEnsurePluginCacheComplete:
         return tmp_path / "plugins" / "cache" / "ak110-dotfiles" / self._NAME / "1.0.0"
 
     def test_complete_cache_does_not_reinstall(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """必須ファイルが揃っている場合は再インストールを起動しない。"""
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
         self._write_cache(cache_dir)
@@ -528,7 +500,6 @@ class TestEnsurePluginCacheComplete:
     def test_skill_only_cache_does_not_require_python_project(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """スキル専用pluginはmanifestだけで完全なcacheとして扱う。"""
         name = "agent-basics"
         cache_dir = tmp_path / "plugins" / "cache" / "ak110-dotfiles" / name / "1.0.0"
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir, name=name)
@@ -542,7 +513,6 @@ class TestEnsurePluginCacheComplete:
         assert _install_claude_plugins._ensure_plugin_cache_complete(name) == "unchanged"
 
     def test_missing_file_triggers_repair_install(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """欠落を検出したらキャッシュを削除して再インストールし、欠落を解消する。"""
         cache_dir = self._cache_dir(tmp_path)
         self._prepare(monkeypatch, tmp_path, install_path=cache_dir)
         self._write_cache(cache_dir, missing=("scripts/launch.py.lock",))
@@ -638,7 +608,6 @@ class TestEnsurePluginCacheComplete:
     def test_unresolvable_install_path_skips_check(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """導入先を解決できない場合は、探索先を警告して検査を省略する。"""
         installed = tmp_path / "plugins" / "installed_plugins.json"
         installed.parent.mkdir(parents=True, exist_ok=True)
         installed.write_text(json.dumps({"version": 2, "plugins": {}}), encoding="utf-8")
@@ -657,7 +626,6 @@ class TestEnsurePluginCacheComplete:
     def test_install_path_outside_cache_is_not_deleted(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """plugin cache の外にある導入先は削除も再インストールもせず、警告して検査を省略する。"""
         caplog.set_level("INFO")
         outside = tmp_path / "elsewhere" / "1.0.0"
         self._prepare(monkeypatch, tmp_path, install_path=outside)

@@ -1,5 +1,3 @@
-"""`atk review-table respond`の必須ラベルと、ラベルを定義するエージェント向け文書の一致を検証する。"""
-
 import argparse
 import pathlib
 import re
@@ -18,7 +16,6 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def test_required_labels_match_reviewee_definition_and_respond_help(capsys: pytest.CaptureFixture[str]) -> None:
-    """レビューイーの手順が読む応答本文の定義と`respond`の案内文が、`respond`が記録の前に確かめるラベル集合と一致する。"""
     plugin_root = pathlib.Path(__file__).parents[2]
     reviewee = plugin_root / "skills/atk-mode/playbooks/review-fix.md"
     text = "\n" + named_document(reviewee, plugin_root, "../references/review-record-response.md")
@@ -37,10 +34,6 @@ def test_required_labels_match_reviewee_definition_and_respond_help(capsys: pyte
 
 
 def test_delegation_receiving_refers_to_reviewee_response_section() -> None:
-    """委譲の受領の手順書は、ラベルを転記せず応答欄の定義元の節へ接続する。
-
-    ラベルの定義を転記すると改訂に追随しない複製が残るため、定義元の節への参照だけを持たせる。
-    """
     plugin = pathlib.Path(__file__).parents[2]
     receiving = (plugin / "skills/atk-mode/playbooks/delegation-receiving.md").read_text(encoding="utf-8")
     assert "\n## 受領後の扱い\n" in receiving

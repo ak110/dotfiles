@@ -49,8 +49,6 @@ _PAST_OMISSION_ACTION = (
 
 @dataclasses.dataclass(frozen=True)
 class _Record:
-    """追記の対象とする1件の記録。"""
-
     path: pathlib.Path
     handoff: bool
 
@@ -67,7 +65,6 @@ class _Record:
 
 
 def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: commit_mapping.RewriteOperation) -> list[str]:
-    """既存の対応記録から書換え対象を導き、入力に指定されていない記録を返す。"""
     working = locations.working_plans_root()
     saved = locations.new_plans_root()
     roots = [working, saved, *managed_temp.list_managed_temp()]
@@ -78,8 +75,7 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: 
     for root in roots:
         if not root.is_dir():
             continue
-        # 記録は計画root直下・旧年月階層・保存済み年月階層と、一時領域直下に置かれる。
-        # 成果物や保持配布物の任意階層は記録探索の対象にしない。
+
         patterns = ("*.wi-commits.jsonl",)
         if root in (working, saved):
             patterns += ("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.wi-commits.jsonl",)
@@ -108,10 +104,6 @@ def _missing_records(worktree: pathlib.Path, records: list[_Record], operation: 
 def _candidate_affected(
     worktree: pathlib.Path, mapping_file: pathlib.Path, record: pathlib.Path, operation: commit_mapping.RewriteOperation
 ) -> list[str]:
-    """探索で見つけた候補1件を評価し、今回の書換えで現在のHEADから外れた記録済みcommitを返す。
-
-    候補の評価に加える検証段階は本関数の中へ置き、呼出元の除外方針が全段階へ作用するようにする。
-    """
     events = commit_mapping.file_events(mapping_file)
     if record.is_file():
         events = commit_mapping.body_events(record.read_text(encoding="utf-8")) + events
@@ -121,7 +113,6 @@ def _candidate_affected(
 
 
 def _allowed_wis(record: _Record, content: str, events: list[dict[str, object]]) -> set[str]:
-    """計画は`関連WI`、引き継ぎ記録は記録に現れるAWI集合を対象集合として返す。"""
     if record.handoff:
         wis: set[str] = set()
         for event in events:
@@ -142,8 +133,6 @@ def _events_digest(events: list[dict[str, object]]) -> str:
 
 @dataclasses.dataclass(frozen=True)
 class _Receipt:
-    """書換えの識別値と、本文・対応履歴それぞれの書込み前後のハッシュ。"""
-
     operation: str
     old_body: str
     new_body: str
@@ -173,7 +162,6 @@ class _Receipt:
         self.write(record.operation_receipt(self.operation))
 
     def applied_count(self, events: list[dict[str, object]], record: pathlib.Path) -> int:
-        """既存の証拠と同じJSON配列のハッシュを、各書換えイベントまで計算し、一致した位置を返す。"""
         history = hashlib.sha256(b"[")
         for count, event in enumerate(events, 1):
             if count > 1:
@@ -292,7 +280,6 @@ def _plan_events(
 
 
 def _append_record(update: _Update) -> None:
-    """本文、対応、証拠の順に公開する。中断した場合は、まだ置き換えていないファイルから再開する。"""
     record = update.record.path
     staging = update.record.staging
     mapping = commit_mapping.mapping_path(record)
@@ -331,7 +318,6 @@ def _append_record(update: _Update) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLIから範囲全体の対応表を全記録へ追記する。"""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--worktree", type=pathlib.Path, metavar="DIR", required=True, help="書換え後のHEADを持つ対象worktreeの絶対パス"

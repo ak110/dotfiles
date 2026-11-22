@@ -1,5 +1,3 @@
-"""証拠抽出のツール呼び出し（session_evidence_tool_calls_definitions）。"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +13,6 @@ from session_evidence_tool_calls_records import _record_tool_calls, _recorded_in
 
 
 def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> list[str]:
-    """静的に読取操作へ対応付けられた定義の対象だけを返す。"""
     reads, _unresolved = _definition_read_operations(tool, inputs, text)
     return list(dict.fromkeys(target for row in reads for target in row["targets"]))
 
@@ -23,7 +20,6 @@ def _definition_read_targets(tool: str, inputs: dict[str, Any], text: str) -> li
 def _definition_read_operations(
     tool: str, inputs: dict[str, Any], text: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """共通の実行入力・区間境界から、明示読取と取得未確定の材料を分ける。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
     if name in {"Read", "read_file", "read"}:
         path = inputs.get("file_path", inputs.get("filePath", inputs.get("path", inputs.get("Path"))))
@@ -109,7 +105,6 @@ def _may_name_definition(target: str) -> bool:
             tail_start = index
             continue
         if char == "$":
-            # 変数名（`$NAME`）か特殊変数（`$?`・`$1`など）までを展開とみなす。
             match = re.match(r"\$(?:[A-Za-z_]\w*|.)?", target[index:])
             assert match is not None
             index += len(match[0])
@@ -123,7 +118,6 @@ def _may_name_definition(target: str) -> bool:
 
 
 def _xargs_only_other_suffixes(value: str) -> bool:
-    """Gitの固定拡張子の列挙をNULのままcatへ渡す場合だけ、役割文書候補から外す。"""
     pipelines = shell_segments.extract_execution_pipelines(value, expand_shell=False)
     if len(pipelines) != 1 or len(pipelines[0]) != 2:
         return False
@@ -147,7 +141,6 @@ def _xargs_only_other_suffixes(value: str) -> bool:
 
 
 def _strip_env_prefix(words: list[str]) -> list[str] | None:
-    """`env`の値の境界が既知のオプション（`-i`、`-u NAME`）と代入を除いた後続の語を返す。未知のオプションでは`None`を返す。"""
     index = 1
     while index < len(words):
         word = words[index]
@@ -167,11 +160,6 @@ def _strip_env_prefix(words: list[str]) -> list[str] | None:
 def _simple_command_reads(
     words: list[str], value: str, original: dict[str, Any]
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """単純コマンド1件の手順書の読取と、読んだか静的に決められない材料を返す。
-
-    実行コマンドを持たない区間（代入だけ、引数の無い`env`、`command -v`）、`for`・`select`の見出し、
-    条件判定（`[`・`[[`）は本文を読まないため判定しない。
-    """
     index = 0
     while index < len(words) and shell_segments.ENV_ASSIGN_PATTERN.match(words[index]):
         index += 1
@@ -273,12 +261,6 @@ def _launched_roles(call: _ToolCall, inputs: dict[str, Any], definitions: set[st
 def _launch_check(
     call: _ToolCall, targets: list[str], role_document: str | None, launches: list[tuple[_ToolCall, set[str]]]
 ) -> dict[str, Any]:
-    """手順書の読取が、起動準備の読込（別の担当を起動する前にその手順書を読むこと）に当たり得るかを判定する。
-
-    同じ記録で読取より後に同じ役割を起動した読取だけを疑いあり（`suspected`）とし、後続の起動が無い読取と、
-    読む主体の役割文書と同じ手順書の読取は判定済み（`cleared`）とする。起動の無い読取は禁止事項の対象外であり、
-    自身の役割文書は受領した定義だからである。同じセル内の`start(`は前後を決められないため後続として扱う。
-    """
     roles = {_role_name(target) for target in targets}
     if role_document is not None and roles <= {role_document}:
         return {"status": "cleared", "reason": "読む主体の役割文書と同じ手順書（自身が受領した定義）", "launch_lines": []}
@@ -293,7 +275,6 @@ def _launch_check(
 
 
 def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """正常終了も含む定義本文の取得を、目的未判定の材料と前後の起動・編集の位置付きで返す。"""
     events: list[dict[str, Any]] = []
     for item in collected:
         entries = {record.line: record.entry for record in item.records}
@@ -318,7 +299,7 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
         ]
         for call in calls:
             inputs = _recorded_input(entries[call.line], call.call_id)
-            # 同じターン・前後関係だけではセルへの帰属を確定できない。個別の記録から判定する。
+
             reads, unresolved = _definition_read_operations(call.tool, inputs, call.text)
             if not reads and not unresolved:
                 continue
@@ -365,7 +346,6 @@ def definition_body_read_events(collected: list[_CollectedRecord]) -> list[dict[
 
 
 def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
-    """本文取得と明示された単独操作だけを、大出力の点検上位から除く。"""
     name = tool.rsplit("__", 1)[-1].rsplit(".", 1)[-1]
     if name in {"Read", "read_file", "Skill", "read", "skill"}:
         return True
@@ -381,7 +361,7 @@ def _expected_body_read(tool: str, inputs: dict[str, Any]) -> bool:
         words = shell_tokens.split_words(commands[0][1])
     except ValueError:
         return False
-    # 単独操作だけを除外する。引用の外側のリダイレクトやサブシェルを含む入力は除外しない。
+
     if any(word.redirection or set("()<>") & set(word.unquoted) for word in words):
         return False
     argv = list(words)

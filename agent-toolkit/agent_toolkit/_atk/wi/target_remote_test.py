@@ -25,7 +25,6 @@ def _invoke(
     argv: list[str],
     host_environ: collections.abc.Callable[[], dict[str, str]],
 ) -> subprocess.CompletedProcess[str]:
-    """隔離を維持した実Pythonプロセスでcwdを固定して公開CLIを実行する。"""
     env = dict(os.environ)
     env["PATH"] = host_environ()["PATH"]
     env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
@@ -42,7 +41,6 @@ def _invoke(
 
 
 def _setup(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """実リモートへ接続しないテスト用のworktreeと保存先を準備する。"""
     repo = tmp_path / "project"
     git_repository.init_repository(
         repo, origin=f"https://{_ORIGIN}.git", files={"README.md": "テスト\n"}, commit_message="初期状態"
@@ -71,7 +69,6 @@ def test_non_origin_target_is_saved_with_warning(
     mode: str,
     dry_run: bool,
 ) -> None:
-    """引数・frontmatter・一括投入・編集でupstreamを受理し、指定識別子と警告を保持する。"""
     repo, notes = _setup(tmp_path)
     body = tmp_path / "body.md"
     before_head = git_repository.git_output(notes, "rev-parse", "HEAD")
@@ -120,7 +117,6 @@ def test_target_url_guard_keeps_supported_inputs(
     host_environ: collections.abc.Callable[[], dict[str, str]],
     target: str,
 ) -> None:
-    """origin・ローカルパス・未登録URLと検査対象外cwdを受理する。"""
     repo, notes = _setup(tmp_path)
     value = _ORIGIN
     if target == "path":

@@ -24,8 +24,6 @@ pytestmark = pytest.mark.usefixtures("_forbid_backend_process")
 
 
 class _ObservedBackend(agents_server_support.FakeBackend):
-    """モデルを呼ばず、taskの生成本文を受け取るbackend。"""
-
     async def start(self, *args: Any, **kwargs: Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.model_output_observed = True
@@ -34,7 +32,7 @@ class _ObservedBackend(agents_server_support.FakeBackend):
 
 @pytest.fixture(autouse=True)
 def _without_engine_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    # この試験はbackendを起動しない。外部uv/miseの事前確認も同じ境界で除く。
+
     async def accepted(_cwd: str, **_kwargs: Any) -> None:
         pass
 
@@ -106,7 +104,6 @@ async def _start_task(directory: pathlib.Path, request: str) -> dict[str, Any]:
 async def test_task_record_reaches_public_evidence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str, source: str
 ) -> None:
-    """入れ子の委譲で直接の委譲元を配送し、固定した各出所から原文と元のrecord・lineを取得できる。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path / "state")
     records = {name: _write_record(tmp_path, engine, name) for name in ("direct-parent", "ancestor", "other", "self")}
@@ -145,7 +142,6 @@ async def test_task_record_reaches_public_evidence(
         assert delivered_inputs["投入する要求"] == request
         (tmp_path / "delivered-inputs.json").write_text(json.dumps(delivered_inputs, ensure_ascii=False), encoding="utf-8")
         if source == "delivered":
-            # この引数だけは生成本文から取得し、要求入力にはID・記録パスを含めない。
             arguments = ["--transcript", context["record_path"], "--user-events"]
         elif saved_input is not None:
             reference = delivered_inputs["投入する要求"].split("\n発話: ", 1)[1]
@@ -221,7 +217,6 @@ def _write_observation_record(directory: pathlib.Path, engine: str) -> pathlib.P
 async def test_task_record_reaches_public_observation_evidence(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], engine: str
 ) -> None:
-    """引用を持たない観測要求から、自動配送された記録のtool入力と結果の全文へ到達する。"""
     monkeypatch.setenv("CLAUDECODE", "1")
     monkeypatch.setenv("CODEX_THREAD_ID", "observation-parent")
     transcript = _write_observation_record(tmp_path, engine)
@@ -303,7 +298,6 @@ async def test_task_record_reaches_public_observation_evidence(
 async def test_task_starts_with_record_shortage_without_substitute(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, availability: str
 ) -> None:
-    """不足した情報を起動本文へ残し、記録を要しないtaskも開始し、祖先や別の記録のパスで補わない。"""
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     if availability != "unresolved":
         monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")

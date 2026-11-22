@@ -1,5 +1,3 @@
-"""serveのbrowser_shellに関するnavigationの試験。"""
-
 import asyncio
 import functools
 import json
@@ -27,7 +25,6 @@ pytestmark = [
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_switches_three_screens_in_declared_order(screen_harness: _ScreenHarness) -> None:
-    """同一のベースパスから3画面へ遷移でき、ナビゲーションの表示順と表記が指定どおりである。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/")
 
@@ -53,13 +50,12 @@ async def test_navigation_switches_three_screens_in_declared_order(screen_harnes
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_navigation_does_not_reload_document(screen_harness: _ScreenHarness) -> None:
-    """3画面を順に移動してもドキュメントを再読み込みせず、URLだけが切り替わる。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
     await page.locator("#entry-list").wait_for(state="visible")
     screen_urls = [harness.base_url + path for path in ("/", "/plans", "/sessions")]
-    # 再読み込みが起きると失われる値を置き、遷移後も同じドキュメントが生きていることを判定する。
+
     await page.evaluate("() => { window.__atkReloadMarker = 'kept'; }")
 
     await page.locator("nav.app-nav").get_by_role("link", name="計画ファイル").click()
@@ -129,7 +125,6 @@ async def test_navigation_ignores_delayed_detail_and_search_results(
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenHarness) -> None:
-    """ブラウザーの戻る操作で直前の画面が再び描画される。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -149,7 +144,6 @@ async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenH
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
-    """3画面のURLへ直接アクセスしても各画面が描画される。"""
     harness = screen_harness
     for path, selector in (
         ("/", "#entry-list .entry-select"),
@@ -170,7 +164,6 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_detail_loading_keeps_list_and_navigation_positions(browser_harness: _BrowserHarness) -> None:
-    """詳細取得中のアイコンをナビゲーション内の左右列境界へ置き、リンクと一覧を動かさない。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 1440, "height": 1000})
     await page.goto(browser_harness.base_url + "/")
@@ -197,7 +190,7 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
         assert spinner is not None and filters is not None and pane is not None
         spinner_center = spinner["x"] + spinner["width"] / 2
         assert filters["x"] + filters["width"] <= spinner_center <= pane["x"]
-        # 未定義の色変数を参照すると枠線を描画しないため、位置に加えて描画される状態も確認する。
+
         spinner_visible = await page.locator("#loading-indicator").evaluate(
             "element => { const style = getComputedStyle(element, '::before'); "
             "return style.borderRightStyle !== 'none' && parseFloat(style.borderRightWidth) > 0 "
@@ -224,7 +217,6 @@ async def test_detail_loading_keeps_list_and_navigation_positions(browser_harnes
 async def test_slow_work_item_filter_and_plan_preview_show_loading(
     screen_harness: _ScreenHarness,
 ) -> None:
-    """WI一覧と計画プレビューの処理中表示を確認する。"""
     harness = screen_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -294,11 +286,6 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
 async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
-    """3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさおよび算出スタイルが一致する。
-
-    navの箱の中心だけを比べると、画面固有の要素がnavの内側でリンク群をずらしても検出できないため、
-    リンク単位で比べる。現在の画面の強調が字幅を変える場合もここで検出する。
-    """
     page = screen_harness.page
     await page.set_viewport_size({"width": width, "height": 800})
     links = page.locator(".screen:not([hidden]) nav.app-nav a")
@@ -331,7 +318,6 @@ async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHa
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_attached_plan_navigation_is_symmetric(screen_harness: _ScreenHarness) -> None:
-    """左一覧に付属ファイルを表示せず、右ペインから同じstemの5ファイルを相互に開ける。"""
     harness = screen_harness
     (harness.root / "plan.detail.md").write_text("# 詳細ページ\n", encoding="utf-8")
     (harness.root / "plan.bugs.md").write_text("# バグページ\n", encoding="utf-8")
@@ -383,7 +369,6 @@ async def test_plan_and_session_lists_expand_after_hundred_items(
     screen_harness: _ScreenHarness,
     tmp_path: Path,
 ) -> None:
-    """50件は全件表示し、100件を超えた一覧だけスクロールに応じて追加描画する。"""
     page = screen_harness.page
     for index in range(49):
         (screen_harness.root / f"bulk-{index:03d}.md").write_text(f"# 計画 {index}\n", encoding="utf-8")

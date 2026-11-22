@@ -1,5 +1,3 @@
-"""mod応答との相関と一時リクエスト回収。"""
-
 import asyncio
 import json
 
@@ -23,7 +21,6 @@ from agent_toolkit._common import function_hook_requests as requests
 )
 @pytest.mark.parametrize("context_ok", [False, True])
 async def test_interactive_requires_actual_mod_response(interactive, expected_version, actual_version, expected, context_ok):
-    """古いready印を使わず、画面の実取得を返した同じ要求だけを採用する。"""
     task = asyncio.create_task(
         asyncio.to_thread(
             requests.interactive_available,
@@ -58,7 +55,6 @@ async def test_interactive_requires_actual_mod_response(interactive, expected_ve
 
 @pytest.mark.asyncio
 async def test_concurrent_requests_do_not_overwrite_each_other():
-    """異なる生成主体の要求を固有ファイルに置き、全件の応答と回収を分離する。"""
     tasks = [asyncio.create_task(requests.request("parallel", "send_to_user", {"message": str(index)})) for index in range(2)]
     base = requests.state_path("parallel", "ui-request")
     try:
@@ -80,7 +76,6 @@ async def test_concurrent_requests_do_not_overwrite_each_other():
 
 @pytest.mark.asyncio
 async def test_missing_acknowledgement_is_not_success():
-    """modが応答しない場合は成功を返さず回収する。"""
     with pytest.raises(TimeoutError, match="期限内"):
         await requests.request("conversation", "send_to_user", {}, timeout=0)
     assert not requests.state_path("conversation", "ui-request").exists()
@@ -88,7 +83,6 @@ async def test_missing_acknowledgement_is_not_success():
 
 @pytest.mark.parametrize("session_id", ["../outside", "with space", "quoted'identifier"])
 def test_session_path_validation(session_id, monkeypatch):
-    """会話IDによるディレクトリ外への書込みを拒否する。"""
     monkeypatch.setattr(requests.host_homes, "claude_config_dir", lambda: pytest.fail("不正IDで保存領域を参照した"))
     with pytest.raises(ValueError, match="会話ID"):
         requests.state_path(session_id, "ui-request")
@@ -96,7 +90,6 @@ def test_session_path_validation(session_id, monkeypatch):
 
 
 def test_interactive_missing_reply_is_false_even_with_ready_marker(monkeypatch):
-    """古いready印と要求の受付だけでは対話画面の証拠にしない。"""
     base = requests.state_path("missing-ui", "ui-request")
     base.parent.mkdir(parents=True, exist_ok=True)
     (base.parent / "marker-missing-ui.txt").write_text("ready", encoding="utf-8")
@@ -111,8 +104,7 @@ def test_interactive_missing_reply_is_false_even_with_ready_marker(monkeypatch):
 
 
 def test_cleanup_does_not_collect_session_with_common_prefix():
-    """会話IDが前方一致する別会話の要求・応答を回収しない。"""
-    # -SのASCII和は128で、prefixと同じ分割先になる。
+
     identifier, _ = requests.enqueue("prefix-S", "periodic_recheck", {}, timeout=0)
     source = requests.request_path("prefix-S", "ui-request", identifier)
     response = requests.request_path("prefix-S", "ui-response", identifier)

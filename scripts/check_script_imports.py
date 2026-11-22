@@ -84,15 +84,12 @@ _PEP723_BLOCK_RE = re.compile(r"(?m)^# /// (?P<type>[A-Za-z0-9-]+)$\s(?P<content
 
 @dataclasses.dataclass(frozen=True)
 class _ImportReference:
-    """importが参照するモジュールと、`from`輸入名向けのfallback。"""
-
     name: str
     fallback: str | None = None
     lineno: int = 0
 
 
 def _script_directories() -> tuple[pathlib.Path, ...]:
-    """PEP 723スクリプトの走査対象ディレクトリをパス昇順で返す。"""
     directories = [
         _REPO_ROOT / "libexec",
         _REPO_ROOT / "scripts",
@@ -102,19 +99,16 @@ def _script_directories() -> tuple[pathlib.Path, ...]:
 
 
 def _is_pep723_script(text: str) -> bool:
-    """本文の先頭行がPEP 723単独実行スクリプトのshebangかを判定する。"""
     first_line = text.splitlines()[0] if text else ""
     return first_line.startswith(_SHEBANG)
 
 
 def _dependency_import_name(requirement: str) -> str:
-    """依存指定文字列（`requests>=2`等）からトップレベルimport名を抽出する。"""
     distribution = re.split(r"[<>=!~\[; ]", requirement, maxsplit=1)[0].strip().lower()
     return _DEPENDENCY_IMPORT_NAMES.get(distribution, distribution.replace("-", "_"))
 
 
 def _read_pep723_dependencies(text: str) -> set[str]:
-    """PEP 723インラインメタデータの`dependencies`が示すimport名集合を返す。"""
     for match in _PEP723_BLOCK_RE.finditer(text):
         if match.group("type") != "script":
             continue
@@ -128,7 +122,6 @@ def _read_pep723_dependencies(text: str) -> set[str]:
 
 
 def _catches_optional_import(handler: ast.ExceptHandler) -> bool:
-    """例外ハンドラーが任意import用の例外を捕捉するかを返す。"""
     exception = handler.type
     if isinstance(exception, ast.Tuple):
         names = tuple(exception.elts)
@@ -140,8 +133,6 @@ def _catches_optional_import(handler: ast.ExceptHandler) -> bool:
 
 
 class _ImportVisitor(ast.NodeVisitor):
-    """保護されたimportを除き、ドット付きモジュール参照を収集する。"""
-
     def __init__(self) -> None:
         self.references: list[_ImportReference] = []
 
@@ -168,14 +159,12 @@ class _ImportVisitor(ast.NodeVisitor):
 
 
 def _extract_imports(tree: ast.Module) -> tuple[_ImportReference, ...]:
-    """構文木から判定対象のimport参照を抽出する。"""
     visitor = _ImportVisitor()
     visitor.visit(tree)
     return tuple(visitor.references)
 
 
 def _top_level_assignments(tree: ast.Module) -> dict[str, ast.expr]:
-    """モジュール直下の単純名への代入式を返す。"""
     assignments: dict[str, ast.expr] = {}
     for node in tree.body:
         if isinstance(node, ast.Assign):
@@ -194,7 +183,6 @@ def _evaluate_path(
     assignments: dict[str, ast.expr],
     evaluating: frozenset[str] = frozenset(),
 ) -> pathlib.Path | None:
-    """許可された静的なPath式を評価する。"""
     if isinstance(expression, ast.Name) and expression.id in assignments and expression.id not in evaluating:
         return _evaluate_path(
             assignments[expression.id],
@@ -252,7 +240,6 @@ def _evaluate_path(
 
 
 def _inserted_search_paths(tree: ast.Module, source_path: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """静的に評価できる`sys.path.insert`の追加先を返す。"""
     assignments = _top_level_assignments(tree)
     paths: list[pathlib.Path] = []
     for node in ast.walk(tree):
@@ -292,7 +279,6 @@ def _resolve_internal_module(name: str, search_paths: list[pathlib.Path]) -> tup
 
 
 def _resolved_files(reference: _ImportReference, search_paths: list[pathlib.Path]) -> tuple[pathlib.Path, ...] | None:
-    """import参照を内部ファイルへ解決し、`from`輸入名では親モジュールへfallbackする。"""
     resolved = _resolve_internal_module(reference.name, search_paths)
     if resolved is None and reference.fallback is not None:
         resolved = _resolve_internal_module(reference.fallback, search_paths)
@@ -300,7 +286,6 @@ def _resolved_files(reference: _ImportReference, search_paths: list[pathlib.Path
 
 
 def _display_path(path: pathlib.Path) -> pathlib.Path:
-    """リポジトリ配下なら相対パス、それ以外なら絶対パスを返す。"""
     try:
         return path.relative_to(_REPO_ROOT)
     except ValueError:
@@ -308,7 +293,6 @@ def _display_path(path: pathlib.Path) -> pathlib.Path:
 
 
 def _problem(entry_path: pathlib.Path, source_path: pathlib.Path, detail: str) -> str:
-    """起点と検出元を含む問題文を組み立てる。"""
     entry = _display_path(entry_path)
     if source_path == entry_path:
         return f"{entry}: {detail}"
@@ -316,7 +300,6 @@ def _problem(entry_path: pathlib.Path, source_path: pathlib.Path, detail: str) -
 
 
 def _check_entry_script(entry_path: pathlib.Path, text: str, scripts_root: pathlib.Path | None = None) -> list[str]:
-    """1つの起点スクリプトから到達するimportを推移的に検査する。"""
     dependencies = _read_pep723_dependencies(text)
     search_paths = list(dict.fromkeys((entry_path.parent, scripts_root))) if scripts_root is not None else [entry_path.parent]
     sources = {entry_path: text}
@@ -382,7 +365,6 @@ def _check_entry_script(entry_path: pathlib.Path, text: str, scripts_root: pathl
 
 
 def _check_script_directories() -> list[str]:
-    """全対象ディレクトリのPEP 723スクリプトを検査する。"""
     problems: list[str] = []
     for directory in _script_directories():
         for script_path in sorted(directory.rglob("*.py")):
@@ -397,7 +379,6 @@ def _check_script_directories() -> list[str]:
 
 
 def _check_agent_toolkit_layers() -> list[str]:
-    """agent-toolkitの責務層に反するimportを返す。"""
     scripts_root = _REPO_ROOT / "agent-toolkit/agent_toolkit"
     order = {name: index for index, name in enumerate(_LAYER_ORDER)}
     problems: list[str] = []
@@ -444,8 +425,6 @@ _NAMESPACE_WRITE_METHODS = frozenset({"setdefault", "update", "__setitem__"})
 
 @dataclasses.dataclass(frozen=True)
 class _AgentToolkitSource:
-    """書き方の規則を検査する非テストのPythonファイルと、その構文木。"""
-
     path: pathlib.Path
     text: str
     tree: ast.Module
@@ -479,7 +458,6 @@ def _agent_toolkit_sources() -> tuple[list[_AgentToolkitSource], list[str]]:
 
 
 def _file_level_f821_noqa_problems(source: _AgentToolkitSource) -> list[str]:
-    """ファイル単位の`# ruff: noqa`が`F821`を抑止している行を返す。コードを列挙しない形も全規則の抑止として扱う。"""
     problems: list[str] = []
     for lineno, line in enumerate(source.text.splitlines(), start=1):
         match = _RUFF_FILE_NOQA_RE.match(line)
@@ -495,12 +473,10 @@ def _file_level_f821_noqa_problems(source: _AgentToolkitSource) -> list[str]:
 
 
 def _is_namespace_call(node: ast.expr) -> bool:
-    """`vars(...)`または`globals()`の呼び出し式かを返す。"""
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"vars", "globals"}
 
 
 def _is_sys_modules_subscript(node: ast.expr) -> bool:
-    """`sys.modules[...]`の添字式かを返す。"""
     return (
         isinstance(node, ast.Subscript)
         and isinstance(node.value, ast.Attribute)
@@ -511,7 +487,6 @@ def _is_sys_modules_subscript(node: ast.expr) -> bool:
 
 
 def _namespace_write_description(node: ast.AST) -> str | None:
-    """1つの文の中で名前空間へ書き込む式を探し、見つかれば書き込みの形を返す。"""
     for inner in ast.walk(node):
         if isinstance(inner, ast.Assign | ast.AugAssign | ast.AnnAssign):
             targets = inner.targets if isinstance(inner, ast.Assign) else [inner.target]
@@ -531,7 +506,6 @@ def _namespace_write_description(node: ast.AST) -> str | None:
 
 
 def _top_level_statements(body: list[ast.stmt]) -> list[ast.stmt]:
-    """関数とクラスの本体を除き、モジュールの読み込み時に実行される文を返す。"""
     statements: list[ast.stmt] = []
     for node in body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
@@ -548,7 +522,6 @@ def _top_level_statements(body: list[ast.stmt]) -> list[ast.stmt]:
 
 
 def _namespace_write_problems(source: _AgentToolkitSource) -> list[str]:
-    """モジュールのトップレベルで名前空間へ書き込む文を返す。読み取り（`vars(...)[...]`の参照）は対象外とする。"""
     problems: list[str] = []
     for statement in _top_level_statements(source.tree.body):
         description = _namespace_write_description(statement)
@@ -562,7 +535,6 @@ def _namespace_write_problems(source: _AgentToolkitSource) -> list[str]:
 
 
 def _is_entry_source(path: pathlib.Path) -> bool:
-    """層の外から起動され全ての層を使うスクリプト（`agent_toolkit/`直下の公開スクリプトと`skills/*/scripts/`配下）かを返す。"""
     if path.parent == _REPO_ROOT / "agent-toolkit/agent_toolkit":
         return path.name in _AGENT_TOOLKIT_ROOT_MODULES
     return path.is_relative_to(_REPO_ROOT / "agent-toolkit/skills")
@@ -595,7 +567,6 @@ _SUBPROCESS_LAUNCHERS = frozenset({"run", "Popen", "call", "check_call", "check_
 
 
 def _git_subprocess_problems(source: _AgentToolkitSource) -> list[str]:
-    """`_git/`と`_testing/`の外で`subprocess`へ`["git", ...]`を渡して起動している箇所を返す。"""
     relative = source.path.relative_to(_REPO_ROOT / "agent-toolkit").parts
     if relative[:2] in {("agent_toolkit", "_git"), ("agent_toolkit", "_testing")}:
         return []
@@ -641,7 +612,6 @@ def _agent_toolkit_unavailable_imports() -> frozenset[str]:
 
 
 def _dev_dependency_import_problems(source: _AgentToolkitSource, unavailable: frozenset[str]) -> list[str]:
-    """`_testing`配下以外の非テストのPythonが配布先の環境に無いパッケージをimportしている箇所を返す。"""
     if source.path.is_relative_to(_REPO_ROOT / "agent-toolkit/agent_toolkit/_testing"):
         return []
     problems: list[str] = []
@@ -659,7 +629,6 @@ def _dev_dependency_import_problems(source: _AgentToolkitSource, unavailable: fr
 
 
 def _check_agent_toolkit_sources() -> list[str]:
-    """`agent_toolkit/`と`skills/*/scripts/`の非テストのPythonを1回ずつ走査し、書き方の規則に反する箇所を返す。"""
     sources, problems = _agent_toolkit_sources()
     unavailable = _agent_toolkit_unavailable_imports()
     for source in sources:
@@ -672,7 +641,6 @@ def _check_agent_toolkit_sources() -> list[str]:
 
 
 def _check_agent_toolkit_root_modules() -> list[str]:
-    """`agent-toolkit/agent_toolkit/`直下に置かれた公開スクリプト以外のモジュールを返す。"""
     scripts_root = _REPO_ROOT / "agent-toolkit/agent_toolkit"
     return [
         f"{_display_path(path)}: 公開スクリプト以外のモジュールが直下にある（責務別サブパッケージへ置く）"
@@ -682,7 +650,6 @@ def _check_agent_toolkit_root_modules() -> list[str]:
 
 
 def _check_project_modules_have_no_pep723() -> list[str]:
-    """uvプロジェクトで動くPythonモジュールにPEP 723宣言が残っていないことを検査する。"""
     roots = (
         _REPO_ROOT / "agent-toolkit/agent_toolkit",
         *sorted((_REPO_ROOT / "agent-toolkit/skills").glob("*/scripts")),
@@ -703,7 +670,6 @@ def _check_project_modules_have_no_pep723() -> list[str]:
 
 
 def _resolve_module_file(module: str) -> pathlib.Path | None:
-    """`pytools.foo`形式のモジュール名から実体ファイルを返す（単一ファイル・サブパッケージ双方に対応）。"""
     base = _REPO_ROOT / pathlib.Path(*module.split("."))
     for candidate in (base.with_suffix(".py"), base / "__init__.py"):
         if candidate.is_file():
@@ -712,7 +678,6 @@ def _resolve_module_file(module: str) -> pathlib.Path | None:
 
 
 def _top_level_bound_names(tree: ast.Module) -> set[str]:
-    """モジュールのトップレベルで束縛される名前一覧を返す（定義・代入・importの再エクスポートを含む）。"""
     names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
@@ -764,7 +729,6 @@ def _check_project_scripts() -> list[str]:
 
 
 def main() -> int:
-    """PEP 723スクリプトと`[project.scripts]`のimport解決可能性を検査する。"""
     problems = (
         _check_script_directories()
         + _check_project_scripts()

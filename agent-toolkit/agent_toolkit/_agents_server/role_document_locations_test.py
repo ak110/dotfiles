@@ -1,5 +1,4 @@
 # pylint: disable=protected-access
-"""役割文書を置き場所（`skills/atk-mode/roles/`）から解決し、古い置き場所`share/`の文書を役割文書として扱わないことを確かめる。"""
 
 from __future__ import annotations
 
@@ -23,7 +22,6 @@ _DOCUMENT = (
 
 @pytest.fixture(name="plugin")
 def _plugin(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """サーバー自身のplugin rootを、役割文書を持たない一時のagent-toolkitへ向ける。"""
     root = tmp_path / "plugin"
     (root / ".claude-plugin").mkdir(parents=True)
     (root / ".claude-plugin" / "plugin.json").write_text('{"name":"agent-toolkit"}', encoding="utf-8")
@@ -65,7 +63,6 @@ def _contract(tmp_path: pathlib.Path) -> pathlib.Path:
 async def test_start_launches_role_from_role_directory(
     form: str, plugin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """役割名と絶対パスのどちらでも、置き場所の文書を出所にして起動する。"""
     document = _place(plugin)
     prompts = _manager(monkeypatch)
 
@@ -87,7 +84,6 @@ async def test_start_launches_role_from_role_directory(
 async def test_start_rejects_role_left_in_share(
     form: str, expected: str, plugin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """古い置き場所`share/`に残った文書は、役割名でも絶対パスでも起動しない。"""
     document = _place(plugin, "share")
     prompts = _manager(monkeypatch)
 
@@ -139,7 +135,6 @@ async def test_declared_input_check_rejects_before_launch(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """必須入力の欠けと宣言外の入力は、起動前に拒否する。"""
     _place(plugin)
     prompts = _manager(monkeypatch)
 
@@ -150,7 +145,6 @@ async def test_declared_input_check_rejects_before_launch(
 
 
 def test_result_form_check_uses_declared_heads(plugin: pathlib.Path) -> None:
-    """返却形式の検査は、宣言した先頭行を受理し、形式外の返却を拒否する。"""
     document = _place(plugin)
     declaration = task_documents.read_declaration(document)
     assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
@@ -166,7 +160,6 @@ def test_result_form_check_uses_declared_heads(plugin: pathlib.Path) -> None:
 
 
 def test_unknown_role_lists_only_roles_in_role_directory(plugin: pathlib.Path) -> None:
-    """解決できない役割名の診断は、置き場所の役割名だけを示し、`share/`に残った文書を含めない。"""
     _place(plugin)
     _place(plugin, name="other.subagent.md")
     _place(plugin, "share", "stale.subagent.md")
@@ -190,7 +183,6 @@ def test_parent_contract_resolves_in_role_directory(plugin: pathlib.Path) -> Non
 
 @pytest.mark.parametrize("outside", ["share", "skills/other"])
 def test_documents_outside_role_directory_are_rejected(outside: str, plugin: pathlib.Path) -> None:
-    """置き場所の外の文書と、agent-toolkit以外のpluginの文書は役割文書として扱わない。"""
     assert task_documents.is_agent_toolkit_task_document(_place(plugin))
     assert not task_documents.is_agent_toolkit_task_document(_place(plugin, outside))
     (plugin / ".claude-plugin" / "plugin.json").write_text('{"name":"other"}', encoding="utf-8")

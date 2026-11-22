@@ -111,7 +111,6 @@ class AppServerManager(
 
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
-        """sandboxの旧記録と、API設定済みの利用上限の旧記録は現在の利用可否で判定し直す。"""
         if reason.partition(":")[0] in {
             "exploreSandboxNamespaceDenied",
             "exploreSandboxRpcError",

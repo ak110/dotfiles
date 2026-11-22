@@ -22,18 +22,16 @@ from agent_toolkit._common.atomic_file import atomic_write
 
 
 def state_path(session_id: str, kind: str) -> pathlib.Path:
-    """既存exitStatePathと同じ会話別ディレクトリを使う。"""
     if re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
         raise ValueError("会話IDが不正")
     if kind not in {"ui-request", "ui-response"}:
         raise ValueError("リクエスト種別が不正")
-    # modと同じASCII和で固定64分割し、他会話の終了目印まで毎回列挙する処理を避ける。
+
     shard = f"{sum(map(ord, session_id)) % 64:02x}"
     return host_homes.claude_config_dir() / "agent-toolkit-function-hooks" / "ui-requests" / shard / f"{kind}-{session_id}.txt"
 
 
 def request_path(session_id: str, kind: str, identifier: str) -> pathlib.Path:
-    """各生成主体が固有のファイルを所有し、プロセスを越えた上書きをなくす。"""
     if re.fullmatch(r"[a-f0-9]{32}", identifier) is None:
         raise ValueError("要求IDが不正")
     base = state_path(session_id, kind)
@@ -42,7 +40,7 @@ def request_path(session_id: str, kind: str, identifier: str) -> pathlib.Path:
 
 def cleanup(session_id: str) -> None:
     """期限切れと、応答済みの非同期観測だけを回収する。"""
-    # UI要求を作れない識別子には回収対象も無い。通常hookの後続観測は維持する。
+
     if re.fullmatch(r"[A-Za-z0-9_-]+", session_id) is None:
         return
     base = state_path(session_id, "ui-request")
@@ -82,7 +80,6 @@ def enqueue(
     timeout: float = 120,
     detached: bool = True,
 ) -> tuple[str, float]:
-    """確認を要するMCP呼出しと、設定hookの観測を同じ要求形式で配送する。"""
     cleanup(session_id)
     identifier = uuid.uuid4().hex
     expires = time.time() + timeout
@@ -103,11 +100,10 @@ def enqueue(
 
 
 class HookRequestRejected(ValueError):
-    """会話内modが要求の実行を拒否した。"""
+    pass
 
 
 async def request(session_id: str, operation: str, inputs: dict[str, Any], *, timeout: float = 10) -> dict[str, Any]:
-    """modの確認応答を待つ。未応答や不一致を成功へ変換しない。"""
     identifier, expires = enqueue(session_id, operation, inputs, timeout=timeout, detached=False)
     source = request_path(session_id, "ui-request", identifier)
     response = request_path(session_id, "ui-response", identifier)
@@ -135,7 +131,6 @@ def interactive_available(
     expected_version: str | None = None,
     context_check: Callable[[dict], bool] | None = None,
 ) -> bool:
-    """実画面を確認し、要求された場合は稼働中の版の完全一致も必須にする。"""
     try:
         identifier, expires = enqueue(session_id, "interactive_available", {}, timeout=3, detached=False)
         source = request_path(session_id, "ui-request", identifier)

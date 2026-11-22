@@ -1,5 +1,3 @@
-"""セッション記録へ実行環境が挿入した本文と構造標識を共通判定する。"""
-
 from __future__ import annotations
 
 import re
@@ -48,7 +46,6 @@ _RUNTIME_INSERTED_PREFIXES = (
 
 
 def is_runtime_inserted_text(text: str) -> bool:
-    """本文の先頭が実行環境、hookまたは委譲の配送に当たる場合に真を返す。"""
     stripped = text.lstrip()
     if stripped.startswith("<skill>") and "</skill>" in stripped:
         return True
@@ -73,7 +70,6 @@ _LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])[ \t]")
 
 
 def report_line(line: str) -> str | None:
-    """1行が報告の本文なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
     if line.startswith("\t") or line.lstrip().startswith(">"):
         return None
     if not _LIST_ITEM.match(line) and line.startswith("    "):
@@ -83,13 +79,11 @@ def report_line(line: str) -> str | None:
 
 
 def improvement_line(line: str) -> str | None:
-    """1行が改善点の報告行なら項目記号と字下げを除いた本文を返し、引用・コード例の行は報告として扱わない。"""
     body = report_line(line)
     return body if body is not None and body.startswith(IMPROVEMENT_MARKER) else None
 
 
 def report_lines(text: str) -> list[str]:
-    """自動挿入の要素、フェンス内、引用、字下げのコード例を除いた報告の本文行を、項目記号を外して返す。"""
     text = re.sub(rf"<({_message_format.AUTO_ELEMENT_NAME_PATTERN})(?:\s[^>]*)?>.*?</\1>", "", text, flags=re.DOTALL)
     found: list[str] = []
     fence: str | None = None
@@ -109,6 +103,5 @@ def report_lines(text: str) -> list[str]:
 
 
 def reported_improvement_lines(text: str, *, deduplicate: bool = True) -> list[str]:
-    """実際に報告した行を例から区別し、出所の行順が必要な照会では同文行も保持する。"""
     found = [line for line in report_lines(text) if line.startswith(IMPROVEMENT_MARKER)]
     return list(dict.fromkeys(found)) if deduplicate else found

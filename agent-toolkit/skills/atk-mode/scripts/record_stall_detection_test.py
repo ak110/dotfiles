@@ -1,5 +1,3 @@
-"""停滞検知完了記録CLIのテスト。"""
-
 from __future__ import annotations
 
 import importlib.util
@@ -15,7 +13,6 @@ _SCRIPT = pathlib.Path(__file__).with_name("record_stall_detection.py")
 
 
 def test_records_task_id_in_session_state(tmp_path: pathlib.Path) -> None:
-    """正しい入力を対象別の時刻記録として保存する。"""
     result = _fork_runner.run_script(
         _SCRIPT,
         argv=("--session-id", "session-1", "--task-id", "task-1"),
@@ -28,7 +25,6 @@ def test_records_task_id_in_session_state(tmp_path: pathlib.Path) -> None:
 
 
 def test_rejects_whitespace_in_identifier(tmp_path: pathlib.Path) -> None:
-    """空白を含む対象識別子を受理しない。"""
     result = _fork_runner.run_script(
         _SCRIPT,
         argv=("--session-id", "session-1", "--task-id", "bad task"),

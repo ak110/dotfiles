@@ -1,5 +1,3 @@
-"""MCPツールの応答へ載せるsessionの公開表現と、応答の次の操作の文面。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -38,7 +36,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 def observed_session_identity(session_id: str) -> dict[str, str] | None:
-    """一意に解決した物理記録の最後の観測identityを返す。"""
     found = record_paths.find_session_record(session_id)
     if found is None or len(found.paths) != 1:
         return None
@@ -88,20 +85,11 @@ EXPIRED_KILL_NEXT_ACTION = "中断対象は無い。未回収の結果は`atk ag
 
 
 def resolve_display_label(label: str | None, fallback: str) -> str:
-    """委譲元が指定した識別名を正規化し、空になる指定では代替の本文から導く。
-
-    未指定と、空白だけで構成された指定を含む空になる指定を同じ扱いとする。
-    識別名の列が空のまま表示されると、そのsessionを名前で見分けられないためである。
-    """
     normalized = status_file.normalize_label(label) if label else ""
     return normalized or status_file.normalize_label(fallback)
 
 
 def listed_public_session(session: dict[str, Any]) -> dict[str, Any]:
-    """一覧の公開応答へ返す項目だけを取り出す。
-
-    停滞の判定は`seconds_since_activity`と閾値の比較で委譲元が行うため、判定済みの印を返さない。
-    """
     public = {"session_id": session["session_id"], "status": session["status"]}
     for key in ("engine", "model", "effort"):
         if key in session:
@@ -160,7 +148,6 @@ def public_start_response(response: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
-    """追送の配送結果を公開項目へ射影する。"""
     public: dict[str, Any] = {"delivery": response["delivery"], "label": response["label"]}
     if "root_session_id" in response:
         public["root_session_id"] = response["root_session_id"]
@@ -189,7 +176,6 @@ def public_send_message_response(response: Mapping[str, Any]) -> dict[str, Any]:
 def excluded_candidate_payload(
     excluded: Mapping[ModelCandidate, str], session_ids: Mapping[ModelCandidate, str] | None = None
 ) -> list[dict[str, Any]]:
-    """除外した候補の理由と、作成済み試行の識別子を公開する。"""
     payload: list[dict[str, Any]] = []
     for (engine, model, effort), reason in sorted(excluded.items()):
         item = {"engine": engine, "model": model, "effort": effort, "reason": reason}
@@ -201,7 +187,6 @@ def excluded_candidate_payload(
 
 
 def turn_elapsed_seconds(started_at_value: str | None) -> int | None:
-    """開始時刻から現在までの経過秒を返す。"""
     if started_at_value is None:
         return None
     try:
@@ -212,11 +197,8 @@ def turn_elapsed_seconds(started_at_value: str | None) -> int | None:
 
 
 class ManagerResponses(manager_base.ManagerBase):
-    """sessionの状態と結果をMCPの応答の形へ整える。"""
-
     @staticmethod
     def _stopped_result_response(resume_state: SessionResumeState) -> dict[str, Any] | None:
-        """破棄済みsessionの未回収結果を返す。"""
         if resume_state.result_delivered or resume_state.status not in TERMINAL_STATUSES or resume_state.finalized_at is None:
             return None
         response: dict[str, Any] = {
@@ -234,7 +216,6 @@ class ManagerResponses(manager_base.ManagerBase):
 
     @staticmethod
     def _recovered_result_response(resume_state: SessionResumeState) -> dict[str, Any]:
-        """再起動前の終了種別と結果本文を回収できない事実を返す。"""
         return {"status": resume_state.status, "recovery": "result_unavailable"}
 
     @staticmethod
@@ -245,11 +226,6 @@ class ManagerResponses(manager_base.ManagerBase):
         progress: str,
         result_available: bool,
     ) -> dict[str, Any]:
-        """sessionを一覧向けの公開項目へ射影する。
-
-        最終活動時刻からの経過秒数を返し、停滞かどうかの判定は委譲元へ委ねる。
-        判定済みの印は同じ応答の値と閾値から再現できるため、公開項目へ加えない。
-        """
         label = session.label
         if len(label) > 100:
             label = f"{label[:100]}…"
@@ -284,15 +260,6 @@ class ManagerResponses(manager_base.ManagerBase):
         label: str,
         resolution: session_registry.SessionResolution | None = None,
     ) -> ActionableError:
-        """未解決の識別子を体系相違、所有側による解放済み、または記録無しとして診断する。
-
-        保持状態の照会後だけ呼び、登録済みの非UUID識別子は拒否しない。
-        体系相違の本文には、継続不能の判定に使う`unknown session`を含めない。
-        UUIDの識別子は、登録簿の解放済みレコードの有無で文面を分け、いずれも`unknown <label>: <id>`で始める。
-        登録簿のレコードは再起動では削除されないため、不在の原因として再起動を案内しない。
-        記録が無い原因は照会側から確定できないため、理由には原因を書かず、次の操作で確認の手順を示す。
-        `resolution`は、呼び出し元が同じ識別子を既に解決している場合に渡す。
-        """
         try:
             parsed = UUID(session_id)
         except ValueError:
@@ -310,7 +277,6 @@ class ManagerResponses(manager_base.ManagerBase):
                 "its result is no longer retained"
             )
             if resolution.interrupted_turns:
-                # 解放後も、過去に中断したturnの終了診断へ到達できるようにする。
                 turns = result_projection.interrupted_turns_projection(resolution.interrupted_turns)
                 message += "; interrupted_turns=" + json.dumps(turns, ensure_ascii=False)
             return ActionableError(message, next_action=UNKNOWN_SESSION_NEXT_ACTION)
@@ -327,7 +293,6 @@ class ManagerResponses(manager_base.ManagerBase):
     async def _result_response_async(
         self, session: SessionState, *, include_progress: bool = True, include_result: bool = True
     ) -> dict[str, Any]:
-        """記録の読取をworkerで待ち、結果を消費せずに応答を組み立てる。"""
         identity = (
             await run_file_operation(observed_session_identity, session.session_id)
             if include_result and session.terminal
@@ -343,7 +308,6 @@ class ManagerResponses(manager_base.ManagerBase):
 
     @staticmethod
     def _deliver_notices(response: dict[str, Any], pending: list[notice_inbox.PendingNotice]) -> dict[str, Any]:
-        """応答が確定してから通知を回収し、取得できた本文だけを加える。"""
         if notices := notice_inbox.consume_notices(pending):
             response["notices"] = notices
         return response
@@ -357,11 +321,6 @@ class ManagerResponses(manager_base.ManagerBase):
         observed_identity: dict[str, str] | None = None,
         identity_read: bool = False,
     ) -> dict[str, Any]:
-        """waitまたはkillの応答を組み立てる。原本の回収は呼び出し元が応答の最後で確定する。
-
-        `elapsed_seconds`はturnの`started_at`起点である。
-        最終活動時刻と停滞の印は`list`が返すため、本応答へは載せない。
-        """
         response: dict[str, Any] = session.public_status(include_result=include_result and session.result_available)
         if not include_result and session.result_available:
             response = {"status": "expired"} if session.result_delivered else {"status": "running", "progress": ""}
@@ -427,7 +386,6 @@ class ManagerResponses(manager_base.ManagerBase):
         return response
 
     async def _resume_response(self, pending: PendingResume, ticket: int) -> dict[str, Any]:
-        """同じ再開taskの配送結果を返し、呼び出し取消時は対応promptだけを外す。"""
         try:
             session = await asyncio.shield(pending.task)
         except asyncio.CancelledError:

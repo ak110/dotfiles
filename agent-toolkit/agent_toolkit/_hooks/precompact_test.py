@@ -10,7 +10,6 @@ from agent_toolkit._hooks import precompact
 
 @pytest.mark.parametrize("resolved", [True, False])
 def test_compaction_guidance_requires_record(monkeypatch, tmp_path, capsys, resolved):
-    """確認できた原本に限って短い要約を依頼する。"""
     record = tmp_path / "conversation.jsonl"
     record.write_text("{}\n", encoding="utf-8")
     monkeypatch.setattr(precompact, "find_claude_records", lambda _session: (record,) if resolved else ())

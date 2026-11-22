@@ -310,7 +310,6 @@ async def test_multi_bucket_selects_codex_and_passes_available_credit(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_unused_formats_do_not_block_selection_or_refresh(tmp_path: Path) -> None:
-    """未利用bucket・非週次window・対象外creditの形式差では、初回確認と成功後の再取得を止めない。"""
     rpc = _RPC()
     codex = copy.deepcopy(rpc.limits["rateLimits"])
     codex["primary"] = {"usedPercent": "unknown", "windowDurationMins": 300, "resetsAt": None}

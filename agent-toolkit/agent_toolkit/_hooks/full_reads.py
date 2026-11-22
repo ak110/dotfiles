@@ -19,7 +19,6 @@ lazy from agent_toolkit._hooks.pretooluse.large_reads import invocation_read_pat
 
 
 def response_text(response: object) -> str:
-    """シェルの`tool_response`から、ホストがモデルへ返した本文を取り出す。"""
     if isinstance(response, dict):
         response = next((response[key] for key in ("stdout", "output", "text") if isinstance(response.get(key), str)), "")
     return response if isinstance(response, str) else ""
@@ -51,7 +50,6 @@ def read_tool_full_read(
 
 
 def shell_full_reads(command: str, cwd: str, text: str, wanted: Callable[[pathlib.Path], bool]) -> Iterator[pathlib.Path]:
-    """シェルのコマンドが全文を表示し、結果`text`が現在の全文を含む、`wanted`が真のファイルを返す。"""
     if not text:
         return
     for invocation, current in shell_cwd.bash_invocation_cwds(command, cwd, effects=True):
@@ -61,7 +59,6 @@ def shell_full_reads(command: str, cwd: str, text: str, wanted: Callable[[pathli
 def invocation_full_reads(
     invocation: shell_cwd.BashInvocation, cwd: shell_cwd.CwdResolution, text: str, wanted: Callable[[pathlib.Path], bool]
 ) -> Iterator[pathlib.Path]:
-    """現在の全文を出力した読取を、その呼出しの行範囲と出力先を保って判定する。"""
     for path in invocation_read_paths(invocation, cwd, include_partial=True, first_line_only=True):
         if not wanted(path):
             continue
@@ -77,7 +74,6 @@ def invocation_full_reads(
 def full_reads(
     tool_name: str, tool_input: Mapping[str, object], response: object, cwd: str, wanted: Callable[[pathlib.Path], bool]
 ) -> list[pathlib.Path]:
-    """`Read`とシェルの呼び出しが現在の全文を返した、`wanted`が真のファイルを返す。"""
     if tool_name == "Read":
         path = read_tool_full_read(tool_input, response, wanted)
         return [path] if path is not None else []
@@ -88,7 +84,6 @@ def full_reads(
 
 
 def is_skill_entry_name(path: pathlib.Path) -> bool:
-    """ファイル名がスキルの入口の名前か（所有pluginを確かめる前の判定）を返す。"""
     return path.name in {"SKILL.md", "antigravity-full-instructions.md"}
 
 

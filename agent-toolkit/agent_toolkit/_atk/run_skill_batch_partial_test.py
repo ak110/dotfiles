@@ -1,5 +1,3 @@
-"""欠測のあるbatchの準備から報告・世代確定までの境界を検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -51,8 +49,7 @@ def _assert_sweeps_keep(monkeypatch, work_dirs: set[pathlib.Path], now: datetime
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.505秒。"),
 )
 def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path, monkeypatch):
-    """実ログで観測したNUL335/2157バイトと不成立な末尾を最小化し、健全対象も同じ回で処理する。"""
-    # 活動は合成した記録から判定し、実機のプロセスは入力に含めない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -76,7 +73,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         original = b"".join(json.dumps(row).encode() + b"\n" for row in valid) + b"\0" * padding + b"1suffix\n"
         if index == 1:
             original += json.dumps(valid[-1]).encode() + b"\n"
-            # NUL境界の後ろの完全JSONだけを採用し、途切れた前側は失われた断片として残す。
+
             original += b'{"type":"event_msg","payload":{"message":"cut\0\0' + json.dumps(valid[-1]).encode() + b"\n"
         path.write_bytes(original)
         originals[path] = original
@@ -97,7 +94,6 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
         assert all(path.parent == managed_temp.temp_root_path() for path in work_dirs)
         run_skill_batch.record_executor(args, os.getpid())
-        # 起動元が消えても、資料を読む実行者の所有で日次掃引から守る。
         for work_dir in work_dirs:
             (work_dir / managed_temp.OWNER_FILE).unlink()
         _assert_sweeps_keep(monkeypatch, work_dirs, sweep_time)
@@ -142,7 +138,8 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         assert not (bundle / "timeline.jsonl").exists()
         assert pathlib.Path(prepared["scope_path"]).exists()
         assert (bundle / "candidate-evidence.jsonl").exists()
-        assert (bundle / "unconfirmed.jsonl").exists() and (bundle / "recovered.jsonl").exists()
+        assert (bundle / "unconfirmed.jsonl").exists() == bool(prepared["unconfirmed_scope"])
+        assert (bundle / "recovered.jsonl").exists() == bool(prepared["recovered_record_lines"])
     reviewed_path = session_review.previous_scope({"host": "claude", "session_id": parent.stem})
     assert reviewed_path is not None
     reviewed = session_review.read(reviewed_path)
@@ -154,7 +151,6 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
     report = reports[0].read_text(encoding="utf-8")
     assert "部分分析" in report and all(item["record"] in report for item in reviewed["unconfirmed_scope"])
     assert all(path.read_bytes() == content for path, content in originals.items())
-    # 利用が終わった時の所有マーカーを除き、期限だけで回収されることを確かめる。
     work_dirs = {pathlib.Path(item["work_dir"]) for item in manifest["prepared"]}
     for work_dir in work_dirs:
         (work_dir / "bundle" / managed_temp.OWNER_FILE).unlink()
@@ -187,7 +183,6 @@ def test_resumed_legacy_work_dir_remains_visible_to_sweep_while_executor_lives(m
 
 
 def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
-    """掃引が保持を調べた後は、掃引終了まで資料の利用を再開しない。"""
     work_dir = managed_temp.create_managed_temp("review-batch")
     bundle = work_dir / "bundle"
     bundle.mkdir()
@@ -221,7 +216,6 @@ def test_resume_does_not_consume_prepared_files_during_sweep(monkeypatch):
 
 @pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])
 def test_partial_completion_preserves_new_input(tmp_path, change):
-    """モデル/実Gitなしで、末尾欠測の消費と新入力・接頭辞変更の保護を区別する。"""
     path = tmp_path / "partial.jsonl"
     row = json.dumps({"type": "user", "message": {"role": "user", "content": "要求"}}, ensure_ascii=False)
     path.write_text(row + "\n\0\0broken\n", encoding="utf-8")

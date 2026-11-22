@@ -29,7 +29,6 @@ def test_session_start_delivers_current_conversation_identity(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話切替と一時領域の成否を変えても、現在の入力のIDと絶対パスが対応して届く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
 
@@ -94,7 +93,6 @@ def test_conversation_identity_notice_is_limited_to_claude_main(
 
 
 def _document_references(output: str) -> set[str]:
-    """通知が名指しするMarkdownの資料を返す。規範のファイルへの案内が混入していないかの判定に使う。"""
     return set(re.findall(r"[^\s`「」（）]+\.md", output))
 
 
@@ -104,7 +102,6 @@ def _document_references(output: str) -> set[str]:
 def test_session_start_carries_no_rule_bodies_or_rule_file_pointers(
     source: str, host: str, delegated: bool, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """SessionStartは規範の本文も規範のファイルへの案内も載せず、CLIの起動部分は届ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
@@ -160,7 +157,6 @@ def test_session_start_delegated_requests_reread_only_after_compaction(
 def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """組み込みの子の圧縮は、親と同じsession_idでもメインの記録と会話の要約に触れず、子の記録と一時領域だけを扱う。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
@@ -168,7 +164,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     def unexpected(*_args, **_kwargs):
         pytest.fail("子の圧縮でメインの会話の要約を作った")
 
-    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
+    monkeypatch.setattr(rules_context, "_compaction_notice", unexpected)
     session_id = "builtin-child-compact"
     main_notice, child_notice = "pretooluse|main|notice", "pretooluse|child-1|notice"
     update_state(
@@ -193,7 +189,7 @@ def test_builtin_child_compaction_keeps_main_records_and_points_to_its_own_temp(
     assert state[operation_skills.NOTIFIED_KEY] == {"main": ["agent-basics:search"]}
     assert state["notice_fingerprints"] == {main_notice: ["main"]}
     assert f"このサブエージェント専用の一時領域: {tmp_path / 'agent-child-1'}" in output
-    assert "compaction-digest" not in output
+    assert "--conversation-digest" not in output
     assert not (tmp_path / "compaction-digest").exists()
     assert rules_context.DELEGATED_COMPACT_NOTICE in output
 
@@ -239,7 +235,6 @@ def test_session_start_context_fits_claude_code_cap(
 
 
 def _notice_lines(output: str, notice: str) -> list[str]:
-    """`notice`を含む自動挿入の区分の本文を行で返す。"""
     block = next(block for block in output.split("<atk-auto ")[1:] if notice in block)
     return block.split(">\n", 1)[1].split("\n</atk-auto>", 1)[0].split("\n")
 
@@ -250,10 +245,6 @@ def _notice_lines(output: str, notice: str) -> list[str]:
 def test_session_start_guides_main_to_entry_with_one_line(
     host: str, source: str, delegated: bool, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """文脈を失って始まる会話のメインへ、入口の起動を1行で案内する。入口の本文は通知へ載せない。
-
-    委譲先へは起動の本文が入口を届けるため、案内しない。
-    """
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
@@ -274,7 +265,7 @@ def test_session_start_guides_main_to_entry_with_one_line(
     if expected is None:
         return
     assert "\n" not in expected and "agent-toolkit:atk-mode" in expected
-    # 同じ区分に並ぶのは1行の案内だけであり、入口の本文の行は通知のどこにも無い。
+
     one_line_notices = {rules_context.ENTRY_START_NOTICE, rules_context.ENTRY_COMPACT_NOTICE}
     assert set(_notice_lines(output, expected)) <= one_line_notices
     entry = (rules_context.PLUGIN_ROOT / "skills" / "atk-mode" / "SKILL.md").read_text(encoding="utf-8")

@@ -1,5 +1,3 @@
-"""`atk agents wait`が待つ対象として書込主体ごとに登録したsession（`wait-targets/`）の読み書き。"""
-
 from __future__ import annotations
 
 import contextlib

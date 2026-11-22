@@ -103,7 +103,6 @@ def test_public_add_items_preserves_bodies_and_uses_one_locked_save_and_readback
 def test_public_add_items_rejects_invalid_later_item_without_partial_write(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], suffix: dict[str, str | int]
 ) -> None:
-    """後半の不正や重複、必須ラベルの欠落がある配列では、先頭の正常な指摘も保存しない。"""
     path = tmp_path / "plan.exec-review.tsv"
     table.add(path, "2", _TRACK, "既存", _LABELS + "保存済み")
     before = path.read_bytes()
@@ -127,7 +126,6 @@ def test_public_add_items_rejects_invalid_later_item_without_partial_write(
 
 @pytest.mark.parametrize("option", ["--level=詳細", "--location-file=location.txt", "--issue-file=issue.txt"])
 def test_public_add_items_rejects_single_options(tmp_path: pathlib.Path, option: str) -> None:
-    """配列入力と単数形のオプションを併用した場合は書き込まない。"""
     path = tmp_path / "plan.exec-review.tsv"
     with pytest.raises(SystemExit) as returned:
         atk.main(

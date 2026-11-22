@@ -11,12 +11,12 @@ import os
 import pathlib
 import re
 
-from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
 from agent_toolkit._hooks.notice import resolve_notice
+lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common import session_registry, startup_documents
 
 RECORD_NAME = "work-contract.md"
@@ -54,7 +54,6 @@ _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 
 def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
-    """既存の決定の引用や対象名が本文にあれば、その送達より前に原文を返す。"""
     path = record_path(session_id)
     if path is None or not message.strip() or not isinstance(raw_transcript, str) or not raw_transcript:
         return None
@@ -65,7 +64,7 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
         for decision in path.read_text(encoding="utf-8").splitlines():
             for loc in _RECORD_REFERENCE.finditer(decision):
                 name, number = loc.groups()
-                # 現ホストが渡す当該会話の記録だけを読む。契約に書かれた任意のpathは開かない。
+                # 現ホストが渡す当該会話の記録だけを読む。契約に書かれた任意のpathは開かない。  # pyfltr: allow-comment
                 if name not in names:
                     continue
                 terms = {
@@ -126,7 +125,6 @@ def scope_review_before_send(session_id: str, raw_transcript: object, message: s
 
 
 def _applies_decision(message: str, decision: str, terms: set[str]) -> bool:
-    """対象名だけの報告は除き、決定の引用か除外操作との組合せを候補にする。"""
     excluded = _EXCLUDED_ACTION.findall(decision)
     return any(
         any(term in part for term in terms)
@@ -139,7 +137,6 @@ def _applies_decision(message: str, decision: str, terms: set[str]) -> bool:
 
 
 def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
-    """短い関連箇所か、判断語が原文にない場合は短い発話全体を引用する。"""
     parts = [part for part in re.split(r"(?<=。)|\n", utterance) if any(term in part for term in terms)]
     excerpt = "".join(parts) or utterance
     original = (
@@ -151,7 +148,6 @@ def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
 
 
 def _original_user_text(raw: str) -> str | None:
-    """ClaudeとCodexの記録から、実在するユーザー発話の本文だけを取り出す。"""
     try:
         entry = json.loads(raw)
     except ValueError:
@@ -164,7 +160,7 @@ def _original_user_text(raw: str) -> str | None:
     if entry.get("type") != "user" or entry.get("isMeta") or not isinstance(message := entry.get("message"), dict):
         return None
     if isinstance(result := entry.get("toolUseResult"), dict) and isinstance(result.get("answers"), dict):
-        # 質問への回答も原本だが、選択肢以外の私的な自由記述を再配送しない。
+        # 質問への回答も原本だが、選択肢以外の私的な自由記述を再配送しない。  # pyfltr: allow-comment
         return ""
     content = message.get("content")
     if isinstance(content, str):
@@ -190,13 +186,11 @@ def exists(session_id: str) -> bool:
 
 
 def record_path(session_id: str) -> pathlib.Path | None:
-    """既存のセッションのmanaged-tempから、メインが所有する記録先を解決する。"""
     directory = managed_temp.find_session_temp(session_id)
     return directory / RECORD_NAME if directory is not None else None
 
 
 def local_time(timestamp: float | None = None) -> str:
-    """通知に添える時刻を、タイムゾーン付きの壁時計の日時で返す。"""
     moment = (
         datetime.datetime.now().astimezone() if timestamp is None else datetime.datetime.fromtimestamp(timestamp).astimezone()
     )
@@ -222,7 +216,6 @@ def observe_input(session_id: str) -> str | None:
             return state
         previous = state.get("work_contract_observed_mtime")
         if previous is None:
-            # 初回観測より前の入力は復元できないため、件数を下限として扱う。
             inputs, partial = 1, True
         elif previous != updated:
             inputs, partial = 1, False
@@ -254,7 +247,6 @@ def observe_input(session_id: str) -> str | None:
 
 
 def reset_notice(session_id: str) -> None:
-    """圧縮で失われた未作成通知を、次の操作で再配送可能にする。"""
     update_state(
         session_id,
         lambda state: {

@@ -1,5 +1,3 @@
-"""WIのprocess-loop・投入セッションの引数登録。"""
-
 import pathlib
 from typing import Any
 
@@ -7,7 +5,6 @@ lazy from agent_toolkit._atk import help_text as _atk_help
 
 
 def _add_mq_process_loop_parser(sub: Any) -> None:
-    """`atk wi process-loop`サブコマンドを登録する。"""
     check_alerts = _atk_help.add_command(sub, "check-alerts", **_atk_help.HELP["atk wi check-alerts"])
     check_alerts.add_argument(
         "--target-repo",
@@ -38,7 +35,6 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
 
 
 def _add_mq_submission_parser(sub: Any) -> None:
-    """`atk wi submission`サブコマンドを登録する。"""
     submission = _atk_help.add_command(sub, "submission", **_atk_help.HELP["atk wi submission"])
     submission_sub = _atk_help.add_subcommands(submission, dest="submission_subcommand")
     begin = _atk_help.add_command(submission_sub, "begin", **_atk_help.HELP["atk wi submission begin"])

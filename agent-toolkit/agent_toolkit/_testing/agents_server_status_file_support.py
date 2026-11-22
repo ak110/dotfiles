@@ -1,5 +1,3 @@
-"""status_fileの分割試験が共有する準備処理。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -45,7 +43,6 @@ def _completed_with_retention_deadline(session_id: str, tmp_path: pathlib.Path, 
 
 
 def _root_writer(sessions: dict[str, state.SessionState], tmp_path: pathlib.Path) -> subject.StatusFileWriter:
-    """ルート`root`の状態ファイルを`tmp_path`配下へ即時に書くwriterを返す。"""
     return subject.StatusFileWriter(
         sessions,
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -62,7 +59,6 @@ def _write_descendant_file(
     *,
     heartbeat_age: float = 0,
 ) -> pathlib.Path:
-    """別の書込主体が書いた子孫の状態ファイルを置く。"""
     path = shared_layout.status_directory("root", tmp_path) / file_name
     path.parent.mkdir(parents=True, exist_ok=True)
     heartbeat = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=heartbeat_age)
@@ -82,7 +78,6 @@ def _write_descendant_file(
 
 
 def _terminal_parent(tmp_path: pathlib.Path, status: str) -> state.SessionState:
-    """turnが終了した親sessionを返す。"""
     session = state.SessionState("parent", str(tmp_path), announced=True, turn_seq=1, label="lane-01-exec")
     session.status = status
     session.agent_message = "待機中: grandchild"
@@ -92,18 +87,15 @@ def _terminal_parent(tmp_path: pathlib.Path, status: str) -> state.SessionState:
 
 
 def _shown_sessions(writer: subject.StatusFileWriter) -> dict[str, str]:
-    """状態ファイルへ書かれたsessionの識別子と状態を返す。"""
     payload = json.loads(writer.path.read_text(encoding="utf-8"))
     return {item["session_id"]: item["status"] for item in payload["sessions"]}
 
 
 def _use_candidates(monkeypatch: pytest.MonkeyPatch, *candidates: tuple[str, str, str]) -> None:
-    """session開始時に解決するモデル候補列を固定する。"""
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: list(candidates))
 
 
 def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:
-    """公開managerを通した操作に使うルートwriterを返す。"""
     return subject.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root", "root.json", None),
@@ -113,8 +105,6 @@ def _status_writer(tmp_path: pathlib.Path) -> subject.StatusFileWriter:
 
 
 class _FakeStatusBackend:
-    """状態ファイルの公開フローだけを通す偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState]) -> None:
         self.sessions = sessions
         self.count = 0
@@ -149,22 +139,18 @@ class _FakeStatusBackend:
         return session
 
     async def close(self) -> None:
-        """外部資源を持たないため何もしない。"""
+        pass
 
     async def release_session(self, session: state.SessionState) -> None:
-        """解放対象を検証用に記録する。"""
         self.release_calls.append(session.session_id)
 
     async def send_message(self, session: state.SessionState, _prompt: str) -> dict[str, object]:
-        """新しいreply turnを開始する。"""
         previous = session.previous_result()
         state.begin_reply(session)
         return {"delivery": "reply_started", "previous_result": previous}
 
 
 class _UnavailableStatusBackend(_FakeStatusBackend):
-    """指定モデルをengine利用不能として終了させる偽バックエンド。"""
-
     def __init__(self, sessions: dict[str, state.SessionState], *, unavailable_models: set[str]) -> None:
         super().__init__(sessions)
         self._unavailable_models = unavailable_models
@@ -180,8 +166,6 @@ class _UnavailableStatusBackend(_FakeStatusBackend):
 
 
 class _DelayedUnavailableStatusBackend(_FakeStatusBackend):
-    """起動応答後に指定モデルを利用不能として終了させる偽バックエンド。"""
-
     def __init__(
         self,
         sessions: dict[str, state.SessionState],
@@ -231,7 +215,6 @@ class _ReplaceRefusal:
 
 
 async def _until(condition: typing.Callable[[], bool], *, limit: float = 5.0) -> None:
-    """Event loopを進めながら条件の成立を上限付きで待つ。"""
     deadline = asyncio.get_running_loop().time() + limit
     while not condition():
         assert asyncio.get_running_loop().time() < deadline
@@ -245,8 +228,6 @@ def _replace_failure_logged(log_text: str, destination: pathlib.Path) -> bool:
 
 
 class _TerminalBeforeResponseBackend(FakeBackend):
-    """起動応答を返す前にturnが終了し、登録簿へ公開するsessionを返す。"""
-
     async def start(self, *args: typing.Any, **kwargs: typing.Any) -> state.SessionState:
         session = await super().start(*args, **kwargs)
         session.publish_registry = True

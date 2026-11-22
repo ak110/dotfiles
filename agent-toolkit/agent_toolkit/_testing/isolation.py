@@ -49,7 +49,7 @@ import platformdirs
 import pytest
 
 AGENT_CLI_NAMES = ("codex", "claude", "agy", "opencode")
-# 実Gitを起動するテストが使うGitの実行ファイル。未設定ならPATH上のGitを使う。
+
 TEST_GIT_ENVIRONMENT_NAME = "AGENT_TOOLKIT_TEST_GIT"
 HOME_ENVIRONMENT_NAMES = ("HOME", "USERPROFILE")
 CONFIG_DIRECTORY_ENVIRONMENT_NAMES = (
@@ -90,8 +90,6 @@ DEVELOPMENT_SESSION_ENVIRONMENT_NAMES = (
     # `atk run-skill`がClaudeの子へ渡す背景実行の無効化。継承されると、SessionStartの待機案内とCLIの待機期限が
     # 非対話起動の値へ変わる。値ごとの分岐を検証するテストは自身で設定する。
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS",
-    # process-loop起動セッションの標識。UserPromptSubmitの固定sessionTitleを決める入力であり、
-    # 標識の有無で分岐する動作を検証するテストは自身で設定する。
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID",
     "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM",
@@ -143,8 +141,8 @@ _HOST_VENV_BINARIES = tuple(
     if root
     for path in (pathlib.Path(root) / "bin", pathlib.Path(root) / "Scripts")
 )
-# 隔離する前の値。fixture適用後の`os.environ`からは取得できないため、conftestが本モジュールを
-# 読み込む時点（どのfixtureよりも先）で控える。`host_environ`と`restore_host_environment`が復元に使う。
+
+
 _HOST_ENVIRON = {
     name: host_value for name in _HOST_RESTORED_ENVIRONMENT_NAMES if (host_value := os.environ.get(name)) is not None
 }
@@ -164,7 +162,6 @@ _HOST_PACKAGE_CACHE_ENVIRON = {
 
 
 def without_parent_venv_path(path_value: str) -> str:
-    """親venvの実行ディレクトリを、復元用PATHから除く。"""
     return os.pathsep.join(entry for entry in path_value.split(os.pathsep) if entry not in _HOST_VENV_BINARIES)
 
 
@@ -223,7 +220,6 @@ def build_test_git_directory(git: str, link_root: pathlib.Path) -> pathlib.Path:
 
 @pytest.fixture(name="_isolated_path_value", scope="session")
 def isolated_path_value(tmp_path_factory: pytest.TempPathFactory) -> str:
-    """テストへ渡すPATHの値をセッションで1回だけ組み立てる。"""
     path_value = build_isolated_path(
         without_parent_venv_path(_HOST_ENVIRON.get("PATH", "")), tmp_path_factory.mktemp("isolated-path")
     )
@@ -235,7 +231,6 @@ def isolated_path_value(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 @pytest.fixture(name="_isolate_development_state", autouse=True)
 def isolate_development_state(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, _isolated_path_value: str) -> None:
-    """各テストへ6つの次元の隔離を適用する。"""
     apply_development_state_isolation(tmp_path, monkeypatch, _isolated_path_value)
 
 
@@ -288,12 +283,6 @@ def apply_development_state_isolation(tmp_path: pathlib.Path, monkeypatch: pytes
 
 @contextlib.contextmanager
 def isolated_development_state(root: pathlib.Path) -> Generator[None]:
-    """pytestの外の単発スクリプトへ、各テストと同じ6つの次元の隔離を区間の間だけ適用する。
-
-    ホーム・設定・状態の保存先と一時ディレクトリを`root`配下へ向け、区間の終了時に元の値へ戻す。
-    hook入力の再生などで製品の公開コマンドを呼ぶ検証が作る振り返り待ちなどの状態を、`root`配下へ書き込ませる。
-    保存先を呼出しごとに解決するモジュールは、区間に入る前にimportしたものも隔離先を使う。
-    """
     root.mkdir(parents=True, exist_ok=True)
     # 同じrootへ入り直すと既存のリンクの作成が失敗し、CLIと同じディレクトリのツールがPATHから外れるため、区間ごとに作る。
     links = pathlib.Path(tempfile.mkdtemp(prefix="isolated-path-", dir=root))
@@ -304,7 +293,6 @@ def isolated_development_state(root: pathlib.Path) -> Generator[None]:
 
 
 def build_host_environ() -> dict[str, str]:
-    """ホーム、設定、PATHとmiseの探索範囲だけを隔離前の値へ戻す。"""
     environ = dict(os.environ)
     for name in (*_HOST_RESTORED_ENVIRONMENT_NAMES, *_VENV_ENVIRONMENT_NAMES):
         environ.pop(name, None)
@@ -315,7 +303,6 @@ def build_host_environ() -> dict[str, str]:
 
 @pytest.fixture(name="host_environ")
 def host_environ() -> Callable[[], dict[str, str]]:
-    """隔離を保ったままホストのNode実行環境を組み立てるfactory。"""
     return build_host_environ
 
 
@@ -357,7 +344,6 @@ def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str
     derived = {
         "npm_config_cache_dir": environ.get("pnpm_config_cache_dir") or cache_dir,
         "npm_config_store_dir": environ.get("pnpm_config_store_dir") or store_dir,
-        # pnpm 11はnpm_config_*を読まない。開発機の10系とCIの11系で同じ取得物を共有する。
         "pnpm_config_cache_dir": environ.get("npm_config_cache_dir") or cache_dir,
         "pnpm_config_store_dir": environ.get("npm_config_store_dir") or store_dir,
         "COREPACK_HOME": path.join(corepack_base, "node", "corepack"),
@@ -367,11 +353,6 @@ def package_cache_environ(environ: Mapping[str, str], platform: str) -> dict[str
 
 @functools.cache
 def host_package_cache_environ() -> dict[str, str]:
-    """隔離前に解決した取得物の保存先を、明示利用する試験だけへ渡す。
-
-    uvのOS別の規則はuv自身へ委ねる。解決は利用時にプロセスで1回だけ行い、
-    キャッシュを使わない試験の収集へ外部コマンドの費用を加えない。
-    """
     environ = dict(os.environ)
     for name in (*_HOST_RESTORED_ENVIRONMENT_NAMES, "UV_CACHE_DIR"):
         environ.pop(name, None)
@@ -407,16 +388,12 @@ def import_time_home(home: pathlib.Path) -> Generator[None]:
         for name in CONFIG_DIRECTORY_ENVIRONMENT_NAMES:
             if name != "AGENT_TOOLKIT_RUNTIME_DATA":
                 patch.setenv(name, str(home / name.lower()))
-        # 資料rootをimport時に確定するモジュールにも、試験対象の配布物を使わせる。
+
         patch.delenv("AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT", raising=False)
         yield
 
 
 def restore_host_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """テストのプロセス自身でホームディレクトリ、設定ディレクトリおよびPATHを隔離前の値へ戻す。
-
-    実際のCLIを同じプロセスから起動するテスト（`asyncio.create_subprocess_exec`を使うbackendなど）が使う。
-    """
     for name in _VENV_ENVIRONMENT_NAMES:
         monkeypatch.delenv(name, raising=False)
     for name in _HOST_RESTORED_ENVIRONMENT_NAMES:

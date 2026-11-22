@@ -106,7 +106,6 @@ def test_codex_record_observations_keep_all_pairs_and_latest_before_line() -> No
 
 @pytest.mark.parametrize("variant", ["high", None, ""])
 def test_opencode_sqlite_identity_uses_only_assistant_observations(variant: str | None) -> None:
-    """OpenCode v1.19.3のAssistant保存JSONから組を得て、推論量の欠落を補完しない。"""
     records = [
         {"type": "agent_toolkit_input", "model": "requested/model", "variant": "high"},
         {

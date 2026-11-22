@@ -138,10 +138,6 @@ class CodexRepliesMixin:
         session.codex_subagent_thread_ids.clear()
 
     async def interrupt(self: CodexManager, session: SessionState) -> None:
-        """公開killから対象turnへ中断要求を送り、受理を待つ。
-
-        結果を保留している間はモデルのturnが終わっているため、中断要求を送らずに保留した結果を確定する。
-        """
         await self._cancel_auto_reset_check(session.session_id)
         if session.awaiting_auto_resume and session.pending_result is not None:
             resume_waits.finalize_pending_result(session)
@@ -224,7 +220,7 @@ class CodexRepliesMixin:
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         """lock取得済みのsessionへreplyを開始し、公開状態と失敗分類を返す。"""
         held = resume_waits.HeldTurn.capture(session)
-        # 解除待ちの連鎖では、獲得resetによるweekly解除も同じ接続へ継続する。
+
         switch_needed = self._provider_failure(session) and session.usage_limit_wait_count == 0
         previous_error = session.pending_result["error"] if session.pending_result is not None else session.error
         if (
@@ -233,11 +229,9 @@ class CodexRepliesMixin:
             and previous_error.get("codexErrorInfo") == "usageLimitExceeded"
             and not isinstance(previous_error.get("usageLimit"), dict)
         ):
-            # 子session待ちが上限の通知より先に結果を保留した場合も、同じ解除待ち方針を使う。
             limit = await run_file_operation(codex_usage_limit.from_thread, session.session_id)
             switch_needed = not should_wait("codex", limit.limit_type if limit else None)
         if session.codex_provider_resume_pending:
-            # 選定には保留理由が必要。選定条件を確定してから今回の切替待ちを消費する。
             resume_waits.finalize_pending_result(session, touch=False)
         previous_status = session.status
         switched = False
@@ -344,7 +338,6 @@ class CodexRepliesMixin:
 
     @staticmethod
     def _capture_result(session: SessionState) -> dict[str, Any]:
-        """継続入力へ直前turnの結果を退避する。"""
         return session.previous_result()
 
     @staticmethod

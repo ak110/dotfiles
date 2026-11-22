@@ -23,7 +23,6 @@ import os
 import pathlib
 import uuid
 
-# 他の処理で使わない依存は、使用時まで読み込まない。
 lazy import psutil
 
 from pytools._internal import common, host_roles, log_format, post_apply_outcome
@@ -32,10 +31,10 @@ logger = logging.getLogger(__name__)
 
 LNK_NAME = "dotfiles-media-remote.lnk"
 WSCRIPT_PATH = r"C:\Windows\System32\wscript.exe"
-# post-applyテンプレートが渡す、再導入のために停止したか（`1`）と再導入の要否（`1`）。
+
 STOPPED_ENV = "DOTFILES_MEDIA_REMOTE_STOPPED"
 REINSTALL_ENV = "DOTFILES_PYTOOLS_REINSTALL"
-# 停止からファイルハンドル解放までを待つ上限秒数。
+
 _STOP_TIMEOUT_SEC = 5.0
 
 
@@ -83,11 +82,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _restart(vbs: pathlib.Path, exe: pathlib.Path) -> None:
-    """テンプレートが渡した状態に応じてmedia-remoteを起動する。
-
-    再導入のために停止した場合は起動だけを行い、再導入を試みた回（延期を含む）で停止していない場合は何もしない。
-    再導入しない回は、稼働中のmedia-remoteを停止してから起動する。
-    """
     if os.environ.get(STOPPED_ENV) == "1":
         _start(vbs, exe)
         return
@@ -98,10 +92,8 @@ def _restart(vbs: pathlib.Path, exe: pathlib.Path) -> None:
 
 
 def _stop_running(exe: pathlib.Path) -> None:
-    """実行ファイルのパスかコマンドラインからmedia-remoteと判定したプロセスを停止する。"""
     targets: list[psutil.Process] = []
-    # process_iterはPID単位でProcessを再利用し、実行ファイルを以前の世代のまま保持する。
-    # 以前の世代のProcessは停止を拒否するため、現在のPIDから新しく構築したProcessで対象を選び、同じProcessで停止する。
+
     for listed in psutil.process_iter():
         try:
             process = psutil.Process(listed.pid)
@@ -125,11 +117,6 @@ def _stop_running(exe: pathlib.Path) -> None:
 
 
 def _is_media_remote(info: dict[str, object], exe: pathlib.Path) -> bool:
-    """プロセス情報がmedia-remoteを指すかを返す。
-
-    配布した実行ファイルの直接起動に加え、uvのランチャーやPythonの経由で起動した場合も含めるため、
-    コマンドラインに実行ファイルのパスかモジュール名`pytools.media_remote`を含むものも対象にする。
-    """
     exe_text = str(exe).casefold()
     process_exe = info.get("exe")
     if isinstance(process_exe, str) and process_exe.casefold() == exe_text:
@@ -142,7 +129,6 @@ def _is_media_remote(info: dict[str, object], exe: pathlib.Path) -> bool:
 
 
 def _start(vbs: pathlib.Path, exe: pathlib.Path) -> None:
-    """同じユーザーの対話トークンで起動し、SSHの終了後も操作対象のデスクトップで常駐させる。"""
     if not vbs.is_file():
         raise OSError(f"常駐の起動に必要なVBSがありません: {vbs}")
     arguments = _shortcut_arguments(vbs)
@@ -205,25 +191,18 @@ try {{
 
 
 def _startup_dir() -> pathlib.Path:
-    """スタートアップフォルダーのパスを返す。"""
     appdata = os.environ.get("APPDATA")
     base = pathlib.Path(appdata) if appdata else pathlib.Path.home() / "AppData" / "Roaming"
     return base / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
 
 
 def _vbs_path() -> pathlib.Path:
-    r"""VBSラッパー配置先（`%LOCALAPPDATA%\dotfiles\media-remote\launch.vbs`）。"""
     local = os.environ.get("LOCALAPPDATA")
     base = pathlib.Path(local) if local else pathlib.Path.home() / "AppData" / "Local"
     return base / "dotfiles" / "media-remote" / "launch.vbs"
 
 
 def _find_media_remote_exe() -> pathlib.Path | None:
-    r"""`uv tool install`が生成する`dotfiles-media-remote.exe`の絶対パスを返す。
-
-    `~\.local\bin\dotfiles-media-remote.exe`のみを参照し、`shutil.which`系の
-    フォールバックは設けない（誤ったPythonを掴む事故の再発防止）。
-    """
     candidate = pathlib.Path.home() / ".local" / "bin" / "dotfiles-media-remote.exe"
     if candidate.is_file():
         return candidate
@@ -231,7 +210,6 @@ def _find_media_remote_exe() -> pathlib.Path | None:
 
 
 def _ensure_absent(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
-    """対象外ホストでは既存のショートカットとVBSラッパーを削除する。"""
     changed = False
     for path in (lnk, vbs):
         if not path.is_file():
@@ -257,7 +235,6 @@ def _build_vbs_content(exe: pathlib.Path) -> str:
 
 
 def _ensure_vbs(vbs: pathlib.Path, exe: pathlib.Path) -> bool:
-    """VBSラッパーを冪等配置する。既存内容が一致する場合は書き換えない。"""
     desired = _build_vbs_content(exe)
     if vbs.is_file() and vbs.read_text(encoding="utf-8") == desired:
         return False
@@ -268,7 +245,6 @@ def _ensure_vbs(vbs: pathlib.Path, exe: pathlib.Path) -> bool:
 
 
 def _ensure_shortcut(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
-    """ショートカットを冪等配置する。"""
     if _is_up_to_date(lnk, vbs):
         return False
     if not _create_shortcut(lnk, vbs):
@@ -278,12 +254,10 @@ def _ensure_shortcut(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
 
 
 def _shortcut_arguments(vbs: pathlib.Path) -> str:
-    """`.lnk`のArguments文字列（VBSパスをダブルクオートで囲んだ単一引数）を返す。"""
     return f'"{vbs}"'
 
 
 def _is_up_to_date(lnk: pathlib.Path, vbs: pathlib.Path) -> bool:
-    """既存`.lnk`のTargetPath/Argumentsが期待値と一致するか判定する。"""
     if not lnk.is_file():
         return False
     actual = _read_shortcut(lnk)

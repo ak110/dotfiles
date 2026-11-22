@@ -1,15 +1,3 @@
-"""session登録簿の直下に置かれる要求ファイルを、ディレクトリが変わった時だけ列挙し直し、所有MCPの応答を書く。
-
-登録簿は会話ごとの`<id>.json`を7日分保持し（2026-11-19の実測で1,605件）、effort要求と解放要求はまれにしか置かれない。
-agents_serverの監視は1秒（自動再開待ちは0.1秒）ごとに要求を探すため、毎回の列挙は登録簿の件数に比例する仕事を常時生んでいた。
-要求の置き場所と名前は、版の異なる書き手（CLI）と読み手（所有MCP）が共有する契約なので変えない。
-要求の作成・改名・削除は直下の項目を変えてディレクトリの更新時刻を進めるため、更新時刻が前回と同じなら前回の一覧を使う。
-
-新しい要求はファイル名に結び付けたIDを持ち、所有MCPが同じファイルに結果を記録する。
-待機終了時に要求は消さず、既存の期限切れ掃引に回収を任せる。
-旧版との組合せでは、従来の別ファイルの結果も読み書きする。
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -33,7 +21,6 @@ _LISTINGS: dict[str, tuple[tuple[int, int], tuple[str, ...]]] = {}
 
 
 def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
-    """`directory`直下の`suffix`で終わる要求ファイルを名前順に返す。ディレクトリが無い・読めない場合は空を返す。"""
     started = time.time_ns()
     try:
         status = os.stat(directory)
@@ -58,7 +45,6 @@ def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
 
 
 def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[str, Any]) -> None:
-    """新しい要求では同じIDへ結果を保存し、旧要求にだけ従来の応答ファイルを使う。"""
     try:
         packet = json.loads(request.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -72,14 +58,13 @@ def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[s
             request.replace(_result_path(request))
         return
 
-    # 旧要求側は待機終了で要求を先に消す。遅れて書いた応答だけを残さない。
+    # 旧要求側は待機終了で要求を先に消す。遅れて書いた応答だけを残さない。  # pyfltr: allow-comment
     atomic_file.atomic_write(response_path, json.dumps(response, ensure_ascii=False) + "\n")
     if not request.exists():
         response_path.unlink(missing_ok=True)
 
 
 def write_request(path: pathlib.Path, packet: dict[str, Any]) -> None:
-    """旧版も解釈できる入力に、結果との対応に使う要求IDを付ける。"""
     atomic_file.atomic_write(path, json.dumps({**packet, "request_id": path.stem}, ensure_ascii=False) + "\n")
 
 
@@ -88,7 +73,6 @@ def _result_path(request: pathlib.Path) -> pathlib.Path:
 
 
 def pending_payload(path: pathlib.Path, response: pathlib.Path) -> dict[str, Any] | None:
-    """結果済み・期限切れを除き、そのIDでまだ受け付ける要求だけを返す。"""
     if response.exists():
         return None
     packet = json.loads(path.read_text(encoding="utf-8"))
@@ -97,7 +81,7 @@ def pending_payload(path: pathlib.Path, response: pathlib.Path) -> dict[str, Any
     if packet.get("request_id", path.stem) != path.stem:
         return None
     if "result" in packet:
-        # 一時共有拒否の後は操作を繰り返さず、名前の更新だけを試す。
+        # 一時共有拒否の後は操作を繰り返さず、名前の更新だけを試す。  # pyfltr: allow-comment
         if packet.get("request_id") == path.stem:
             with contextlib.suppress(OSError):
                 path.replace(_result_path(path))
@@ -109,7 +93,6 @@ def pending_payload(path: pathlib.Path, response: pathlib.Path) -> dict[str, Any
 
 
 def read_result(request: pathlib.Path, legacy_response: pathlib.Path) -> tuple[str | None, PermissionError | None]:
-    """同じ要求の結果を読み、旧所有者の応答も受け取る。共有拒否と未応答は区別する。"""
     denial = None
     for path in (request, _result_path(request)):
         text, current_denial = read_response(path)

@@ -39,5 +39,4 @@ rg -o -N --no-filename '<パターン>' <パス> | while IFS= read -r v; do prin
 
 ## 値を見つけた時の報告
 
-資格情報として報告するのは、Git管理外で見つけた、第三者が使うと実害が生じうる値に限る。
-リポジトリ管理下やローカル開発用の値は報告しない。
+`agent-basics:writing-standards/references/quality-principles-constraints.md`「秘匿値」に該当する値をGit管理外で見つけた場合だけ、所在を報告する。

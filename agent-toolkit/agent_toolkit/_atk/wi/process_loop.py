@@ -1,5 +1,3 @@
-"""巡回を始める対話CLIを起動し、終了結果に応じて再起動する。"""
-
 import argparse
 import os
 import pathlib
@@ -24,7 +22,7 @@ class _StopRequested(BaseException):
 
 
 def _stop(signum: int, _frame: FrameType | None) -> None:
-    # 子の回収中に同じシグナルを再度受けても、回収を中断しない。
+
     for candidate in (signal.SIGINT, signal.SIGTERM):
         signal.signal(candidate, signal.SIG_IGN)
     raise _StopRequested(signum)
@@ -85,7 +83,6 @@ def _run_loop(*, once: bool) -> int:
 
 
 def cmd_process_loop(args: argparse.Namespace) -> int:
-    """起動元の作業ディレクトリで対話CLIを実行する。"""
     previous = {key: os.environ.get(key) for key in (env.PROCESS_LOOP_SESSION_ENV, env.PROCESS_LOOP_SESSION_ID_ENV)}
     os.environ[env.PROCESS_LOOP_SESSION_ENV] = "1"
     os.environ.pop(env.PROCESS_LOOP_SESSION_ID_ENV, None)

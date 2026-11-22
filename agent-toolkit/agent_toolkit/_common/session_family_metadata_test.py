@@ -1,5 +1,3 @@
-"""通常読込と本文なし索引のJSONL回復・参照抽出の境界を比較する。"""
-
 import datetime
 import json
 from pathlib import Path
@@ -67,7 +65,6 @@ def test_metadata_matches_checked_jsonl_boundary(tmp_path: Path, ending: bytes, 
 def test_metadata_extracts_references_without_body_loader(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runtime: str
 ) -> None:
-    """結果が呼出より前でも対応させ、本文ローダー・全量バイト読込へ依存しない。"""
     path = tmp_path / "record.jsonl"
     timestamp = "2026-10-01T00:00:00Z"
     if runtime == "claude":
@@ -129,7 +126,6 @@ _FRAGMENTS = [b"\0" * 2153 + b"RWQYfwj4lFRS", b"\0" * 1313 + b"AUKfgHHqcc88"]
 
 
 def test_zero_filled_fragments_are_excluded_between_consecutive_ordinals(tmp_path: Path) -> None:
-    """異常終了でNULと断片が残った行は、前後の`ordinal`が連続すれば解析対象から除く。"""
     path = tmp_path / "rollout-zero.jsonl"
     path.write_bytes(b"\n".join([_codex_line(3), *_FRAGMENTS, _codex_line(4)]) + b"\n")
     loaded = _load_records_checked(str(path))
@@ -165,7 +161,6 @@ def test_zero_filled_fragments_fail_when_gap_cannot_be_ruled_out(tmp_path: Path,
 
 
 def test_metadata_discards_ids_before_late_failure(tmp_path: Path) -> None:
-    """正常なIDと子参照の後で破損したファイルを、部分的な関係索引として採用しない。"""
     path = tmp_path / "rollout-broken.jsonl"
     write_jsonl(
         path,

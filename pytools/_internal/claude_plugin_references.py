@@ -18,7 +18,7 @@ import psutil
 from agent_toolkit._common import atomic_file, process_identity
 
 _ACCESS_DENIED = object()
-# 終了済みで、plugin実体を参照し得ないプロセスの状態。
+
 _TERMINATED_STATUSES = frozenset({psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD})
 # `node <package entry point>`形式でClaude Codeを起動する実行体の名前。
 _NODE_EXECUTABLE_NAMES = frozenset({"node", "nodejs"})
@@ -28,7 +28,6 @@ _RETIRED_HOLDERS = ".dotfiles-retired-holders.json"
 
 
 def cache_lock(plugin_directory: pathlib.Path) -> filelock.FileLock:
-    """同じpluginの現行化・保持者記録・回収を、プロセスとスレッド間で直列化する。"""
     # Windowsの表記の大小差でも、入れ子が同じ再入可能なインスタンスを取得する。
     directory = pathlib.Path(os.path.normcase(str(plugin_directory.resolve())))
     directory.parent.mkdir(parents=True, exist_ok=True)
@@ -58,14 +57,12 @@ class ReferencingProcess:
 
 
 def scan() -> tuple[ReferencingProcess, ...]:
-    """自ユーザー所有で終了済みでないプロセスを走査順に返す。"""
     windows = os.name == "nt"
     owner = psutil.Process().username() if windows else os.getuid()
     owner_attribute = "username" if windows else "uids"
     attributes = ["name", "exe", "cmdline", "cwd", "environ", "status", owner_attribute]
     result: list[ReferencingProcess] = []
-    # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
-    # 列挙は現在のPIDの取得だけに使い、属性は新しく構築したProcessから読む。
+
     for listed in psutil.process_iter():
         try:
             info = psutil.Process(listed.pid).as_dict(attributes, ad_value=_ACCESS_DENIED)
@@ -151,7 +148,6 @@ def direct_references(processes: tuple[ReferencingProcess, ...], directory: path
 
 
 def mark_current(directory: pathlib.Path) -> None:
-    """再び現行になった版の退役時観測を失効させ、次の退役で保持者を取り直す。"""
     with cache_lock(directory.parent):
         (directory / _RETIRED_HOLDERS).unlink(missing_ok=True)
 
@@ -196,7 +192,6 @@ def _retired_holders(
 
 
 def _path_strings(directory: pathlib.Path) -> tuple[str, ...]:
-    """比較に使う`directory`の表記（入力どおりと実体パス）を返す。"""
     candidates = [str(directory)]
     with contextlib.suppress(OSError):
         candidates.append(str(directory.resolve()))
@@ -204,7 +199,6 @@ def _path_strings(directory: pathlib.Path) -> tuple[str, ...]:
 
 
 def _refers(value: str, target: str) -> bool:
-    """`value`が`target`自身か配下のパスを含むかを返す（`--project=<パス>`のような引数も対象にする）。"""
     start = value.find(target)
     while start >= 0:
         end = start + len(target)
@@ -226,7 +220,6 @@ def _is_claude(name: str, exe: str, cmdline: list[str]) -> bool:
 
 
 def _executable_name(value: str) -> str:
-    """パス表記を含み得る値から、拡張子を除いた実行ファイル名を取り出す。"""
     if not value:
         return ""
     return pathlib.PurePosixPath(value.replace("\\", "/")).name.removesuffix(".exe")

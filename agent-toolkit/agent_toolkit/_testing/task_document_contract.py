@@ -1,5 +1,3 @@
-"""配布する役割定義の静的検査。実行時の読取処理へ依存させない。"""
-
 import dataclasses
 import pathlib
 
@@ -16,7 +14,6 @@ from agent_toolkit._common.task_documents import (
 
 
 def validate_frontmatter(task_document: pathlib.Path, document_text: str) -> TaskDocumentDeclaration | str:
-    """配布する定義の静的整合性を試験で検査する。"""
     try:
         lines = document_text.splitlines()
         try:

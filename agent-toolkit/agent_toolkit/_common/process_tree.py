@@ -37,7 +37,6 @@ import time
 from collections.abc import Callable, Generator, Iterable
 from typing import Any, Self
 
-# 回収しない呼出し元では、プロセス管理の依存を読み込まない。
 lazy import psutil
 
 lazy from agent_toolkit._common import process_identity
@@ -65,11 +64,6 @@ _FREEZE_MAX_ROUNDS = 10
 
 @dataclasses.dataclass
 class TreeStopResult:
-    """`stop_tree`の結果。
-
-    `residual`が空でも`unresolved`が空でなければ、生成を止められなかった子孫が残っている可能性がある。
-    """
-
     targets: list[psutil.Process]
     """終了させた所有対象（起点を含む場合は起点を含む）。"""
     residual: list[psutil.Process]
@@ -79,16 +73,13 @@ class TreeStopResult:
     _descriptions: dict[int, str] = dataclasses.field(default_factory=dict)
 
     def describe_residual(self, process: psutil.Process) -> str:
-        """終了要求の前に取得した記述で対象を示す（終了後は起動コマンドを取得できないため）。"""
         return self._descriptions.get(process.pid) or describe(process)
 
     def descriptions(self, *, exclude_pid: int | None = None) -> list[str]:
-        """残存の記述と未確定の理由を、呼び出し元の残存診断へ渡す形式で返す。"""
         residual = [self.describe_residual(process) for process in self.residual if process.pid != exclude_pid]
         return residual + self.unresolved_descriptions()
 
     def unresolved_descriptions(self) -> list[str]:
-        """未確定の理由を、残存診断へ渡す形式で返す。"""
         return [f"生成の停止を確認できない: {reason}" for reason in self.unresolved]
 
 
@@ -120,7 +111,6 @@ class ReclaimError(RuntimeError):
         self.child = child
 
     def absorb(self, other: ReclaimError) -> None:
-        """同じ所有境界で後から確定した回収不能を合流させ、先に送出した例外の原因を保つ。"""
         self.residual.extend(entry for entry in other.residual if entry not in self.residual)
         self.processes.extend(item for item in other.processes if item not in self.processes)
         self.unresolved.extend(reason for reason in other.unresolved if reason not in self.unresolved)
@@ -128,10 +118,6 @@ class ReclaimError(RuntimeError):
             self.child = other.child
 
     def retry(self, *, timeout: float = RECLAIM_TIMEOUT_SECONDS) -> list[str]:
-        """保持した所有対象とその子孫を回収し直し、なお残る対象の記述を返す（空なら回収済み）。
-
-        生成の停止を一度でも確認できなかった場合は、その理由を返し続ける。
-        """
         result = stop_tree(None, known=self.processes, timeout=timeout)
         self.unresolved.extend(reason for reason in result.unresolved if reason not in self.unresolved)
         # 生成停止を確認できない間は、残存一覧に無い子孫も次の再試行で辿れるよう所有対象全体を保持する。
@@ -201,7 +187,7 @@ def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
             tree.freeze()
             tree.kill_all()
         residual = wait_until_released(tree.targets(), timeout=timeout)
-        # 一時停止できなかった対象が終了までに子を起動していないかを確かめ、見つかれば同じく終了させる。
+
         if late := tree.scan():
             tree.kill_all()
             residual = wait_until_released(tree.targets(), timeout=timeout)
@@ -232,13 +218,11 @@ class ProcessIdentityPins:
         self.close()
 
     def close(self) -> None:
-        """全観測・回収が終わった所有者が、保持したkernel handleを解放する。"""
         with self._lock:
             self._closed = True
             self._handles.close()
 
     def retain(self, process: psutil.Process) -> bool:
-        """観測した同じ世代を保持する。終了後も既に保持済みならTrueを返す。"""
         with self._lock:
             if self._closed or (key := _key(process)) is None:
                 return False
@@ -250,8 +234,6 @@ class ProcessIdentityPins:
 
 
 class _OwnedTree:
-    """`stop_tree`が所有する終了対象と、子孫を辿る起点の集合。"""
-
     def __init__(
         self,
         root: psutil.Process | None,
@@ -264,7 +246,7 @@ class _OwnedTree:
         self._owned: dict[tuple[int, str | float], psutil.Process] = {}
         self.suspended: set[tuple[int, str | float]] = set()
         self.unresolved: list[str] = []
-        # 一時停止できなかった対象と理由。終了処理の後も資源を保持していれば未確定として報告する。
+
         self._suspend_failures: dict[tuple[int, str | float], tuple[psutil.Process, str]] = {}
         self._pins = ProcessIdentityPins() if pins is None else pins
         self._owns_pins = pins is None
@@ -297,7 +279,6 @@ class _OwnedTree:
         return list(self._owned.values())
 
     def add(self, processes: Iterable[psutil.Process]) -> list[psutil.Process]:
-        """自プロセス以外の未所有の対象を所有に加え、加えた対象を返す。"""
         added = []
         for process in processes:
             key = _key(process)
@@ -308,7 +289,6 @@ class _OwnedTree:
         return added
 
     def freeze(self) -> None:
-        """所有対象を一時停止しながら子孫を列挙し、増えなくなるまで所有に加える。"""
         for _ in range(_FREEZE_MAX_ROUNDS):
             for key, process in list(self._owned.items()):
                 if key in self.suspended:
@@ -317,9 +297,8 @@ class _OwnedTree:
                 try:
                     process.suspend()
                 except psutil.NoSuchProcess:
-                    pass  # 既に終了した対象は子を起動しない。
+                    pass
                 except (psutil.Error, OSError) as error:
-                    # 未確定とするかは、終了処理の後に`resolve_suspend_failures`で判定する。
                     reason = f"pid {process.pid} を一時停止できない: {type(error).__name__}: {error}"
                     self._suspend_failures[key] = (process, reason)
             if not self.scan():
@@ -338,7 +317,6 @@ class _OwnedTree:
                 self._unresolve(reason)
 
     def unresolve_late(self, late: list[psutil.Process]) -> None:
-        """終了処理の後の列挙で新しい子孫が見つかったことを、生成を止められなかった証拠として報告する。"""
         self._unresolve(f"終了処理の後に子孫が見つかった: {[process.pid for process in late]}")
 
     def _unresolve(self, reason: str) -> None:
@@ -356,7 +334,6 @@ class _OwnedTree:
         return self.add(found)
 
     def terminate_gracefully(self, timeout: float) -> None:
-        """SIGTERMを送ってから再開し、猶予中に増えた子孫にもSIGTERMを送りながら終了を待つ。"""
         targets = self.targets()
         for process in targets:
             with contextlib.suppress(psutil.Error, OSError):
@@ -372,7 +349,6 @@ class _OwnedTree:
                     process.terminate()
 
     def kill_all(self) -> None:
-        """所有対象を強制終了し、強制終了の間に増えた子孫も強制終了する。"""
         killed: set[int] = set()
         for _ in range(_FREEZE_MAX_ROUNDS):
             for process in self.targets():
@@ -386,7 +362,6 @@ class _OwnedTree:
 
 
 def _key(process: psutil.Process) -> tuple[int, str | float] | None:
-    """PIDの再利用と区別するため、PIDと起動時刻の組で対象を識別する。消滅済みならNoneを返す。"""
     try:
         return process_identity.key(process)
     except psutil.Error, OSError:
@@ -461,7 +436,6 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
     Linuxの照会は辿る親とその子だけを読み、ホストの総プロセス数に比例しない（`_parent_pids`）。
     """
     if not parents:
-        # 親が無ければ子孫も無いため、全プロセスの一覧と親PIDの照会を省く。
         return []
     parent_pids = _parent_pids({parent.pid for parent in parents})
 
@@ -499,9 +473,7 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                     candidates.append((psutil.Process(pid), ppid))
         if not candidates:
             break
-        # 一覧の取得後に子が終了してPIDが再利用されると、作った`Process`は一覧の子と別の世代になる。
-        # 作った後の一覧でも同じ親PIDを持つ候補だけを子とする（別世代が同じ親PIDを持てば、それも同じ親の子である）。
-        # 候補も照会に含め、次の回で辿る子の一覧を同じ照会で得る。
+
         parent_pids = _parent_pids(pending | {process.pid for process, _ppid in candidates})
         next_pending: set[int] = set()
         for process, ppid in candidates:
@@ -514,14 +486,14 @@ def _scan_descendants(parents: list[psutil.Process], *, retain: Callable[[psutil
                 if ppid not in holders:
                     holders[ppid] = psutil.Process(ppid) if ppid in parent_pids else None
                 holder = holders[ppid]
-                # 親PIDを別の新しいプロセスが再利用していれば、その後に起動した子は再利用側の子である。
+
                 if holder is not None and created[ppid] != process_identity.start_order(holder) <= child_created:
                     continue
             except psutil.Error, OSError:
                 continue
             created[process.pid] = child_created
             found.append(process)
-            # 今はleafでも、次の列挙までに子を起動して終了し得るため、発見時から世代を保持する。
+
             if retain_parent(process, "discovered"):
                 next_pending.add(process.pid)
         pending = next_pending
@@ -551,7 +523,7 @@ def descendants_of(root: psutil.Process) -> list[psutil.Process]:
         for child_pid in child_pids:
             try:
                 child = psutil.Process(child_pid)
-                # psutilと同じく、起点より前に起動した子は再利用されたPIDの別プロセスとして除く。
+
                 if created <= child.create_time():
                     found.append(child)
                     stack.append(child_pid)
@@ -605,7 +577,6 @@ def _kernel_lists_children() -> bool:
 
 
 def _proc_children(pid: int) -> list[int]:
-    """`pid`の全スレッドが起動した直接の子のPIDを返す。`pid`が存在しなければ空を返す。"""
     try:
         tasks = os.listdir(f"/proc/{pid}/task")
     except FileNotFoundError, ProcessLookupError:
@@ -616,23 +587,21 @@ def _proc_children(pid: int) -> list[int]:
             with open(f"/proc/{pid}/task/{tid}/children", encoding="ascii") as file:
                 children.extend(int(value) for value in file.read().split())
         except FileNotFoundError, ProcessLookupError:
-            continue  # 読む間に終了したスレッドの子は、残るスレッドかinitへ付け替わる。
+            continue
     return children
 
 
 def _proc_ppid(pid: int) -> int | None:
-    """`pid`の親PIDを`/proc/<pid>/stat`から返す。存在しなければNoneを返す。"""
     try:
         with open(f"/proc/{pid}/stat", "rb") as file:
             stat = file.read()
     except FileNotFoundError, ProcessLookupError:
         return None
-    # 2番目の項目（実行名）は空白と括弧を含み得るため、最後の`)`より後ろを分割する。
+
     return int(stat.rpartition(b")")[2].split()[1])
 
 
 def stop_process_tree(process: subprocess.Popen[Any]) -> list[str]:
-    """所有する子を子孫ごと停止し、回収できなかったPIDと起動コマンドを返す。"""
     failure = stop_owned_process(process, context="stop_process_tree")
     return [] if failure is None else failure.residual
 
@@ -664,7 +633,7 @@ def stop_owned_process(
                 return None
         except psutil.Error, OSError:
             pass
-    # wait済みのPIDは再利用され得るため、数値PIDから別の起点を解決し直さない。
+
     result = stop_tree_by_pid(process.pid, known=known, pins=pins) if returncode is None else None
     if result is None:
         result = stop_tree(None, known=known, pins=pins)
@@ -693,11 +662,6 @@ def stop_owned_process(
 
 
 def _reap_owned_child(process: subprocess.Popen[Any]) -> bool:
-    """所有する直接の子の回収を上限付きで待ち、終わらなければ強制終了を重ねて、回収できたかを返す。
-
-    スレッドグループのリーダーだけが先に終了し他のスレッドが生存する多スレッドの子はzombieと表示され、
-    `reclaim_processes`の強制終了の対象から外れるため、zombie判定に頼らない。
-    """
     # 待機の失敗（時間切れ・OSError）は回収を確認できない結果として返し、通常の例外へ置き換えない。
     try:
         process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
@@ -717,7 +681,6 @@ def process_scope(
     pins: ProcessIdentityPins | None = None,
     **kwargs: Any,
 ) -> Generator[subprocess.Popen[Any]]:
-    """獲得直後から子プロセスの停止とパイプの解放を所有する。"""
     # Popen.__exit__の無期限waitを避け、停止できない子も上限付きで診断する。
     process = subprocess.Popen(*popenargs, **kwargs)  # pylint: disable=consider-using-with
     owns_pins = pins is None
@@ -742,7 +705,6 @@ def process_scope(
                         with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                             process.wait(timeout=RECLAIM_TIMEOUT_SECONDS)
                 if failure is not None and isinstance(in_flight, ReclaimError):
-                    # 本体が既に回収不能を送出している場合は、同じ例外へ対象を合流させて元の原因を保つ。
                     in_flight.absorb(failure)
                 elif failure is not None:
                     raise failure
@@ -757,11 +719,6 @@ def process_scope(
 
 
 def _retained_root(pid: int, pins: ProcessIdentityPins) -> list[psutil.Process]:
-    """起動直後の子の世代を、子を生成する前から保持して所有に加える。
-
-    起動直後の子孫は列挙しない。列挙は全プロセスの照会を伴うのに、起動の直後には子孫がまだ無く、
-    回収の範囲を広げないためである。起点が終了前なら、終了時の`stop_tree`が起点から子孫を辿る。
-    """
     try:
         root = psutil.Process(pid)
         return [root] if pins.retain(root) else []
@@ -777,7 +734,6 @@ def run_with_timeout(
     check: bool = False,
     **kwargs: Any,
 ) -> subprocess.CompletedProcess[Any]:
-    """subprocess.runと同じ入力で実行し、時間上限では子孫の停止後に例外を送出する。"""
     if input is not None:
         if kwargs.get("stdin") is not None:
             raise ValueError("stdinとinputは同時に指定できない")
@@ -793,7 +749,6 @@ def run_with_timeout(
         except subprocess.TimeoutExpired as error:
             failure = stop_owned_process(process, context="run_with_timeout", known=known, pins=pins, output_open=True)
             if failure is not None:
-                # 残存がパイプを保持していても待たずに戻り、通常の時間上限と区別して回収不能を伝える。
                 raise failure from error
             stdout, stderr = process.communicate()
             encoding = kwargs.get("encoding") or "utf-8"
@@ -884,7 +839,6 @@ def reclaim_unreaped(targets: list[psutil.Process], *, timeout: float = RECLAIM_
 
 
 def wait_until_released(targets: list[psutil.Process], *, timeout: float) -> list[psutil.Process]:
-    """対象が資源を解放するまで待ち、上限までに解放しなかった対象を返す。"""
     remaining = list(targets)
     deadline = time.monotonic() + timeout
     while remaining:
@@ -903,14 +857,12 @@ def _holds_resources(process: psutil.Process) -> bool:
     起点プロセスの終了により親を失った子孫は、initが回収するまでの間だけこの状態になる。
     """
     try:
-        # 列挙時と起動時刻が異なる同じPIDのプロセスは別の主体であり、対象の資源保持に数えない。
         return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.Error, OSError:
         return False
 
 
 def describe(process: psutil.Process) -> str:
-    """PIDと起動コマンドで子孫プロセスを識別できる記述を返す。"""
     try:
         command = " ".join(process.cmdline())
     except psutil.Error, OSError:
@@ -919,7 +871,6 @@ def describe(process: psutil.Process) -> str:
 
 
 def identity(pid: int) -> dict[str, int | float | str]:
-    """引数や環境を含めず、PID再利用と親子関係を判別する識別情報を返す。"""
     result: dict[str, int | float | str] = {"pid": pid}
     try:
         process = psutil.Process(pid)
@@ -942,7 +893,6 @@ def log_residual(residual: list[str], *, context: str, retryable: bool = True) -
 
 
 def residual_message(residual: list[str], *, context: str, retryable: bool = True) -> str:
-    """回収できなかった対象と、診断を読む主体が次に取る操作を示す診断文を返す。"""
     if retryable:
         unresolved = (
             "「生成の停止を確認できない」がある場合は、一覧に無い子孫が残っている可能性があるため、"

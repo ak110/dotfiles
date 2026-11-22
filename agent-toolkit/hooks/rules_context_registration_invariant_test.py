@@ -1,5 +1,3 @@
-"""SessionStartとSubagentStartの登録を確かめる。"""
-
 from __future__ import annotations
 
 import json

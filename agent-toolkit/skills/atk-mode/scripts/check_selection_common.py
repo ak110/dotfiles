@@ -1,5 +1,3 @@
-"""選定検査で共有する入力エラーと診断定数。"""
-
 from __future__ import annotations
 
 import typing
@@ -32,16 +30,13 @@ _FIX_CONTENT = (
 
 
 class InputError(_next_action.ActionableError):
-    """チェックを開始できない入力の問題。送出側が原因に合う次の操作を持つ。"""
+    pass
 
 
-# 終了コード1の違反は理由と次の操作の組で生成し、`main`は出力に現れた違反の次の操作だけを1回ずつ出力する。
-# 次の操作を違反の生成箇所に持たせると、違反の種類を加えたときも次の操作を欠いた違反を生成できない。
 Violation = _next_action.ActionableError
 
 
 def _is_integrated(decision: dict[str, object], integrated_lanes: set[str]) -> bool:
-    """項目の`統合状態`か所属レーンの統合状態から、作業を統合済みの項目かを返す。"""
     return (
         decision.get(_selection.INTEGRATION_STATE_KEY) == _selection.INTEGRATED
         or decision[_selection.LANE_KEY] in integrated_lanes
@@ -49,5 +44,4 @@ def _is_integrated(decision: dict[str, object], integrated_lanes: set[str]) -> b
 
 
 def _string_list(decision: dict[str, object], key: str) -> list[str]:
-    """`load_selection`で型を確かめた項目の列の欄を返す。行の不在は空列として扱う。"""
     return typing.cast(list[str], decision.get(key, []))

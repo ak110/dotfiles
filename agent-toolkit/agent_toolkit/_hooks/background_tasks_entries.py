@@ -32,7 +32,6 @@ lazy from agent_toolkit._hooks.transcript_scan import entry_in_scan_scope, extra
 
 
 def _read_child_transcript_entries(transcript_path: str) -> list[dict] | None:
-    """子transcriptを全行検証し、破損があれば子全体を無効として返す。"""
     lines = _transcript.read_transcript_lines(transcript_path)
     if lines is None:
         return None
@@ -253,7 +252,6 @@ def _collect_nested_agent_launches(
     for child_path in child_paths:
         metadata_path = child_path.with_name(f"{child_path.stem}.meta.json")
         try:
-            # 解析より前に取得し、解析中の追記は次回の鍵の不一致で読み直す。
             stamp = [*_file_stamp(child_path), *_file_stamp(metadata_path)]
         except OSError:
             continue
@@ -275,7 +273,6 @@ def _collect_nested_agent_launches(
 
 
 def nested_launch_cache_directory() -> pathlib.Path:
-    """子transcriptの解析結果を会話ごとに保存するディレクトリを返す。"""
     return state_paths.state_dir() / "nested-agent-launches"
 
 
@@ -303,7 +300,6 @@ class _ChildLaunches(typing.TypedDict):
 
 
 def _cached_result(value: object, stamp: list[int]) -> _ChildLaunches | None:
-    """同じ鍵で記録され、起動IDの一覧と対応表の形を保つ保存結果だけを返す。"""
     if not isinstance(value, dict) or value.get("stamp") != stamp:
         return None
     launched, task_ids = value.get("launched"), value.get("task_ids")
@@ -359,7 +355,6 @@ def _child_agent_launches(
 
 
 def _is_direct_subagent_metadata(metadata: object) -> bool:
-    """metadataが最上位セッションの直接の子を示す場合に真を返す。"""
     if not isinstance(metadata, dict):
         return False
     parent_agent_id = metadata.get("parentAgentId")

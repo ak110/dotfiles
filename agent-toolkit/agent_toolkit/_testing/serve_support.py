@@ -1,5 +1,3 @@
-"""`_atk/serve/`のテストが共有する、WI画面のUI実行、3画面のアプリの組み立てと擬似の状態・操作。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -30,15 +28,12 @@ _MODULE_EXPORT_RE = re.compile(r"^export (?=(?:async )?function |const |let |cla
 
 
 def _module_body(source: str) -> str:
-    """ESモジュールの本文から`import`文と`export`の修飾を除き、同じスコープで評価できる本文にする。"""
     body = _MODULE_IMPORT_RE.sub("", source)
     assert not re.search(r"^import ", body, re.MULTILINE), "解釈できないimport文が残っている"
     return _MODULE_EXPORT_RE.sub("", body)
 
 
 class _HtmlDom(html.parser.HTMLParser):
-    """本番HTMLの要素、属性、親子関係をNodeの擬似DOMへ渡す。"""
-
     def __init__(self) -> None:
         super().__init__()
         self.nodes: list[dict[str, typing.Any]] = []
@@ -109,7 +104,6 @@ def _run_node_ui(scenario: str, *, environment: typing.Mapping[str, str] | None 
                 "wi.js",
             )
         )
-        # 既存シナリオの状態変数への参照を、移動先の共有状態へ結び付ける。
         + "\nwith (wiState) {\n"
         + "\n(async () => {\n"
         + scenario
@@ -304,17 +298,14 @@ eval({json.dumps(executable)});
 
 
 class _FakeTimer(threading.Timer):
-    """`threading.Timer`の代替。実時間で発火せず、テストが明示的に発火させる。"""
-
     def __init__(self, interval: float, function: typing.Callable[..., None], args: tuple[typing.Any, ...] = ()) -> None:
         super().__init__(interval, function, args)
         self.cancelled = False
 
     def start(self) -> None:
-        """発火予約の代わりに何もしない。"""
+        pass
 
     def cancel(self) -> None:
-        """発火予約を取り消したものとして記録する。"""
         self.cancelled = True
 
 
@@ -345,11 +336,6 @@ await newRequest;
 
 
 def stale_search_script(declaration: str, pending_promise: str) -> str:
-    """古い検索語の応答を保留させたまま、新しい検索語の一覧要求を完了させるNodeの画面スクリプトを返す。
-
-    `declaration`は保留を解く関数を受ける変数の宣言、`pending_promise`は検索が返す保留中のPromiseの式とする。
-    呼び出し側は、返したスクリプトの後ろへ保留の解き方と検証を続ける。
-    """
     return _STALE_SEARCH_SCRIPT.replace("@DECLARATION@", declaration).replace("@PENDING@", pending_promise)
 
 
@@ -364,17 +350,12 @@ AWI_TEXT = "---\nstate: inbox\ntype: awi\ntarget_repo: example/repo\n---\n\n本�
 
 
 def make_inbox_and_processing(private_notes: pathlib.Path, *, legacy_layout: bool = False) -> tuple[pathlib.Path, pathlib.Path]:
-    """固定配置の共有ディレクトリを返す。各本文のstateでinboxとprocessingを指定する。
-
-    移行だけを検証する場合はlegacy_layoutを指定し、旧状態ディレクトリを生成する。
-    """
     inbox = wi_entry_files.entry_path(private_notes, "entry.md", legacy_layout=legacy_layout).parent
     processing = wi_entry_files.entry_path(private_notes, "entry.md", state="processing", legacy_layout=legacy_layout).parent
     return inbox, processing
 
 
 def _three_screen_app(tmp_path: pathlib.Path) -> typing.Any:
-    """3画面を登録したアプリを、外部へ接続しない依存で生成する。"""
     return serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -414,7 +395,6 @@ def _sync_app(tmp_path: pathlib.Path, operations: wi_operations.Operations) -> t
 
 
 def _write_detail_entry(tmp_path: pathlib.Path, text: str, *, legacy_layout: bool = False) -> None:
-    """詳細表示テスト用の入力ファイルを作成する。"""
     path = wi_entry_files.entry_path(tmp_path, "entry.md", legacy_layout=legacy_layout)
     path.write_text(text, encoding="utf-8")
 
@@ -424,7 +404,6 @@ def _stub_state(
     tmp_path: pathlib.Path,
     stopped: list[str],
 ) -> None:
-    """監視スレッドを起動しないServeStateへ差し替える。"""
     current = state.ServeState(tmp_path)
     monkeypatch.setattr(current, "start", lambda loop: None)
     monkeypatch.setattr(current, "stop", lambda: stopped.append("stop"))
@@ -432,7 +411,6 @@ def _stub_state(
 
 
 def _recorder(calls: list[str], label: str, *, result: object) -> typing.Callable[[pathlib.Path], typing.Any]:
-    """呼び出しを記録して固定値を返す差し替え関数を返す。"""
 
     def record(_path: pathlib.Path) -> typing.Any:
         calls.append(label)
@@ -444,7 +422,6 @@ def _recorder(calls: list[str], label: str, *, result: object) -> typing.Callabl
 def _write_repo_entry(
     root: pathlib.Path, state_name: str, filename: str, target_repo: str, *, legacy_layout: bool = False
 ) -> None:
-    """対象リポジトリを持つエントリを配置する。"""
     path = wi_entry_files.entry_path(root, filename, state=state_name, legacy_layout=legacy_layout)
     state_line = "" if legacy_layout else f"state: {state_name}\n"
     path.write_text(
@@ -477,7 +454,6 @@ def _session_review_awi(
     entry_type: str = "awi",
     source: str | None = "session-review",
 ) -> str:
-    """ユーザーコメント操作テスト用のawi本文を組み立てる。"""
     source_line = f"source: {source}\n" if source is not None else ""
     return f"---\nstate: inbox\ntype: {entry_type}\ntarget_repo: example/repo\n{source_line}---\n\n{body}"
 

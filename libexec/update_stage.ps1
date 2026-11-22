@@ -6,7 +6,7 @@ $script:stageInterrupted = $false
 function Invoke-UpdateStage {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Start、Wait、Stop、Output、Diagnostic、ExitCodeは段を実行する$attemptの内側から呼ぶ。')]
     param([string]$Name, [string]$Classification, [int]$Seconds, [string]$Program, [string[]]$Arguments, [switch]$Probe,
-        [scriptblock]$Start = { param($p,$a,$probe,$record) Start-UpdateStageProcess $p $a $probe $record },
+        [scriptblock]$Start = { param($p,$a,$probe,$record) Start-OwnedUpdateStageProcess $p $a $probe $record },
         [scriptblock]$Wait = { param($p,$ms)
             # 長いWin32待機中にもPowerShellがCtrl+Cを処理できるようにする。
             $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -73,12 +73,12 @@ function Invoke-UpdateStage {
     catch { $code = 1; throw }
     finally {
         $script:stageInterrupted = $code -eq 130
-        Complete-UvOutput $Name $record $code
+        Complete-UvOutput $Name $record $code -DeferSummary:($Classification -eq 'continue' -and $Name -ne 'uvの自己更新' -and [bool]$env:UPDATE_DOTFILES_BOOTSTRAP_REPORT)
         if ($script:stageInterrupted) { exit 130 }
     }
     if ($Classification -eq 'return') { return $code }
     if ($code -ne 0) {
-        $script:bootstrapFailures += @{title=$Name; detail="exit=$code"}
+        $script:bootstrapFailures += @{title=$Name; detail="exit=$code"; saved=($record.SavedLog -and $Classification -eq 'continue' -and $Name -ne 'uvの自己更新')}
         Write-UpdateError ("${Name}に失敗しました（exit=$code）。既存版で更新を続け、次回起動時に再試行します。")
     }
     if ($Classification -eq 'abort' -and $code -ne 0 -and -not $Probe) { throw "${Name}を完了できません。通信の問題を解消してupdate-dotfilesを再実行してください。" }

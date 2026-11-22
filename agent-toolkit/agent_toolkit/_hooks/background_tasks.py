@@ -128,7 +128,6 @@ def _pending_cache_key(
     background_tasks: object,
     session_state: object,
 ) -> tuple[object, ...]:
-    """入力とtranscriptの現行状態を表すキャッシュキーを返す。"""
     try:
         stat = pathlib.Path(transcript_path).stat()
         transcript_state: tuple[int, int] | None = (stat.st_mtime_ns, stat.st_size)
@@ -146,19 +145,16 @@ def _pending_cache_key(
 
 
 def _valid_background_tasks(background_tasks: object) -> list[dict]:
-    """Stop入力の`background_tasks`から、空でない文字列の`type`を持つ有効なtaskを返す。"""
     if not isinstance(background_tasks, list):
         return []
     return [task for task in background_tasks if isinstance(task, dict) and isinstance(task.get("type"), str) and task["type"]]
 
 
 def active_non_teammate_tasks(background_tasks: object) -> list[dict]:
-    """Stop入力の有効taskのうち`teammate`以外を返す。"""
     return [task for task in _valid_background_tasks(background_tasks) if task["type"] != "teammate"]
 
 
 def _describe_background_tasks(background_tasks: object) -> tuple[int, int, bool]:
-    """Stop入力の有効task件数、非`teammate`件数および一覧の権威性を返す。"""
     if not isinstance(background_tasks, list):
         return 0, 0, False
     valid_tasks = _valid_background_tasks(background_tasks)
@@ -191,7 +187,6 @@ def is_pending_async_work(
     session_state: object,
     owner_agent_id: str = "main",
 ) -> bool:
-    """セッションが構造的に継続中の場合に真を返す。"""
     return (
         pending_async_status(
             transcript_path,
@@ -475,11 +470,6 @@ def _last_tool_use_is_async_wait(last_tool_use: dict | None) -> bool:
 
 
 def _describe_last_tool_use(last_tool_use: dict | None) -> str:
-    """最新assistantターン末尾のtool_use名をデバッグ出力向けに整形して返す。
-
-    Bashの場合は`Bash(bg=True)`または`Bash(bg=False)`形式で返す。
-    tool_useが存在しない場合は`-`を返す。
-    """
     if last_tool_use is None:
         return "-"
     name = last_tool_use.get("name", "")

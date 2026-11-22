@@ -1,5 +1,3 @@
-"""公開起動でのfrontmatterと旧宣言の読取を検証する。"""
-
 import json
 from pathlib import Path
 
@@ -12,7 +10,6 @@ from agent_toolkit._testing.task_document_contract import validate_frontmatter
 
 
 def _document(tmp_path: Path, name: str, settings: dict) -> Path:
-    """独立したpluginの役割文書の置き場所へ、公開起動が受理する役割文書を置く。"""
     manifest = tmp_path / ".claude-plugin/plugin.json"
     manifest.parent.mkdir(exist_ok=True)
     manifest.write_text(json.dumps({"name": "agent-toolkit"}), encoding="utf-8")
@@ -40,7 +37,6 @@ def _settings() -> dict:
 
 
 def test_new_role_launches_without_role_name_mapping(tmp_path: Path) -> None:
-    """役割名の対応表を使わずに起動本文を生成し、継続指示の必須入力を確かめる。"""
     path = _document(tmp_path, "new-lightweight-check", _settings())
     model, prompt, mode, handoff = launch_requests.task_document_request(
         str(path), {"対象": "今回の成果物", "観点": "参照の到達性"}
@@ -64,7 +60,6 @@ def test_frontmatter_inputs_are_checked_before_launch(tmp_path: Path, inputs: di
 
 
 def _conditional_settings() -> dict:
-    """`担当種別`が`統合あり`の時だけ`記録`を必須にする役割の設定。"""
     return {
         **_settings(),
         "required_inputs": ["担当種別"],
@@ -84,7 +79,6 @@ def _conditional_settings() -> dict:
     ],
 )
 def test_conditional_required_inputs_are_checked_before_launch(tmp_path: Path, inputs: dict, missing: str | None) -> None:
-    """条件の入力の値が完全に一致した時だけ、条件付きの入力の欠落を通常の必須入力と同じ形で拒否する。"""
     path = _document(tmp_path, "conditional-check", _conditional_settings())
     if missing is None:
         _model, prompt, _mode, _handoff = launch_requests.task_document_request(str(path), inputs)
@@ -119,7 +113,6 @@ def test_conditional_required_inputs_reach_generated_input_contract(tmp_path: Pa
     ],
 )
 def test_invalid_conditional_required_inputs_are_rejected(tmp_path: Path, value: object) -> None:
-    """未宣言の入力名と形式違反を、配布前の静的検査と起動時の解析の両方で拒否する。"""
     settings = _conditional_settings()
     settings["required_inputs_when"] = value
     path = _document(tmp_path, "conditional-check", settings)

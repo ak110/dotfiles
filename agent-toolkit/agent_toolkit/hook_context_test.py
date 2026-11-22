@@ -20,7 +20,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
 
 @pytest.mark.parametrize("failure", ["session", "write", "length"])
 def test_codex_final_notice_reports_unreceived_details(monkeypatch, failure):
-    """詳細を配送できない障害を、公開hookの最終応答で案内する。"""
     module = importlib.import_module("agent_toolkit._hooks.pretooluse")
 
     def handler(_payload, **_kwargs):
@@ -48,7 +47,6 @@ def test_codex_final_notice_reports_unreceived_details(monkeypatch, failure):
 
 @pytest.mark.parametrize("additional", [False, True])
 def test_codex_final_context_includes_long_decision_reason_in_budget(monkeypatch, additional):
-    """判定理由だけが長い応答も、拒否と詳細を保持した短い最終通知へ変換する。"""
     module = importlib.import_module("agent_toolkit._hooks.pretooluse")
     reason = "拒否した境界の詳細: " + "\n".join(f"/owned-resource-{number:04d}/ requires ownership" for number in range(600))
 
@@ -76,7 +74,6 @@ def test_codex_final_context_includes_long_decision_reason_in_budget(monkeypatch
 
 @pytest.mark.parametrize("failure", [False, True])
 def test_codex_final_context_spills_whole_notices_and_carries_receipts(monkeypatch, failure):
-    """追加入力の障害通知も全文へ保存し、案内の配送の記録は保存先の参照の配送へ引き継ぐ。"""
     module = importlib.import_module("agent_toolkit._hooks.pretooluse")
     identifier = "bounded-final"
     original = "\n\n".join(f"通知{index}: /資料/" + "長いパスと取得例" * 80 for index in range(5))

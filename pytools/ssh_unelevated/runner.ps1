@@ -2,7 +2,8 @@
 # 同じディレクトリのscript.ps1を実行し、出力をoutput.txtへ、終了コードをexit.txtへ残す。
 param(
     # 予定タスクから起動されたことを示す。タスクのジョブの外で自身を起動し直し、その終了を待つ。
-    [switch] $LeaveTaskJob
+    [switch] $LeaveTaskJob,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{16}$')][string] $RunId
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -16,7 +17,7 @@ if ($LeaveTaskJob) {
     try {
         $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ CreateFlags = [uint32] 0x01000000 }
         $created = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
-            CommandLine = "conhost.exe --headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+            CommandLine = "conhost.exe --headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`" -RunId $RunId"
             CurrentDirectory = [Environment]::CurrentDirectory
             ProcessStartupInformation = $startup
         }
@@ -35,6 +36,9 @@ if ($LeaveTaskJob) {
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $OutputEncoding = [Text.Encoding]::UTF8
 $scriptPath = Join-Path $PSScriptRoot 'script.ps1'
+$startFile = Join-Path $PSScriptRoot 'started.txt'
+Set-Content -LiteralPath "$startFile.tmp" -Value $RunId -Encoding ascii
+Move-Item -LiteralPath "$startFile.tmp" -Destination $startFile
 try {
     # スクリプトはPowerShellの既定（strict modeなし、エラーで止めない）で動かす。
     # スクリプトファイルとして呼ぶと、exitはスクリプトだけを終えて$LASTEXITCODEへ値を残す。
@@ -50,5 +54,5 @@ try {
 }
 # 待っている側が書きかけの値を読まないよう、書き終えてから名前を付ける。
 $exitFile = Join-Path $PSScriptRoot 'exit.txt'
-Set-Content -LiteralPath "$exitFile.tmp" -Value $code -Encoding ascii
+Set-Content -LiteralPath "$exitFile.tmp" -Value "$RunId $code" -Encoding ascii
 Move-Item -LiteralPath "$exitFile.tmp" -Destination $exitFile

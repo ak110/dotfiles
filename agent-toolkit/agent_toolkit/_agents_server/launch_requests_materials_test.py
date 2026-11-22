@@ -28,7 +28,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 async def test_start_accepts_saved_reader_materials(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, review_kind: str, external: bool
 ) -> None:
-    """管理内外の本文・差分・前回指摘を、同じ起動境界で受理する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     current = tmp_path / ("回答 下書き.md" if external else "guide.md")
     findings = tmp_path / "findings.md"
@@ -57,7 +56,6 @@ async def test_start_accepts_saved_reader_materials(
 async def test_public_start_reader_material_collection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str | None
 ) -> None:
-    """複数成果物の1対1の資料対応を公開startで確認し、不備を起動前に拒否する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     paths = [tmp_path / "guide.md", tmp_path / "second.md"]
     materials = [_saved_reader_materials(tmp_path, path) for path in paths]
@@ -97,7 +95,6 @@ async def test_public_start_reader_material_collection(
 async def test_start_accepts_new_reader_artifact_full_text(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, legacy: bool
 ) -> None:
-    """初回の新規成果物は全文差分を明示すれば旧本文を要しない。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     params["修正範囲"] = "新規文書。全文が差分"
     if not legacy:
@@ -115,7 +112,6 @@ async def test_start_accepts_new_reader_artifact_full_text(
 def _saved_reader_materials(
     root: pathlib.Path, current: pathlib.Path, *, before_text: str = "旧本文\n", current_text: str = "現行本文\n"
 ) -> dict[str, str]:
-    """比較元本文・現行本文と、両者の本文間の完全な統一差分を保存し、比較資料の3項目を返す。"""
     current.write_text(current_text, encoding="utf-8")
     before = root / f"{current.stem}-before.md"
     before.write_text(before_text, encoding="utf-8")
@@ -139,7 +135,6 @@ def _saved_reader_materials(
 async def test_reader_fit_start_rejects_mismatched_materials(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str
 ) -> None:
-    """別成果物の差分、全差分として渡した判定範囲差分、異なる版の現行本文、説明の混在した未解決事項を起動前に拒否する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     current = tmp_path / "guide.md"
     materials = _saved_reader_materials(tmp_path, current, before_text="一\n二\n三\n", current_text="一\n改\n三\n")
@@ -153,7 +148,6 @@ async def test_reader_fit_start_rejects_mismatched_materials(
         current.write_text("一\n改\n三\n", encoding="utf-8")
         materials["今回差分"] = other["今回差分"]
     elif defect == "scope-as-full":
-        # 計画別に帰属を限定した差分の形（行位置を持たない@@）を全差分として渡す。
         pathlib.Path(materials["今回差分"]).write_text("--- a/guide.md\n+++ b/guide.md\n@@\n-二\n+改\n", encoding="utf-8")
     elif defect == "stale-current":
         current.write_text("一\n未commitの別の版\n三\n", encoding="utf-8")
@@ -178,7 +172,6 @@ async def test_reader_fit_start_rejects_mismatched_materials(
 async def test_reader_fit_start_rejects_git_scope_not_matching_paths(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, defect: str
 ) -> None:
-    """Git識別子の形式の判定範囲差分が、pathsに無い成果物や別の成果物の差分を指す場合は起動前に拒否する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     repository = init_repository(tmp_path / "repo", files={"guide.md": "旧本文\n"}, commit_message="比較元")
     base = git_output(repository, "rev-parse", "HEAD")
@@ -211,7 +204,6 @@ async def test_reader_fit_start_rejects_git_scope_not_matching_paths(
 async def test_reader_fit_start_accepts_consistent_material_forms(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, form: str
 ) -> None:
-    """本文・差分・現行本文が対応する単一・判定範囲付き・集約・旧形式・Git管理外・Git識別子の比較を受理する。"""
     params = _observed_input_params("reader-fit-review.subagent.md", tmp_path)
     cwd = tmp_path
     if form in {"git", "git-scope"}:
@@ -231,7 +223,6 @@ async def test_reader_fit_start_accepts_consistent_material_forms(
         comparison = [_saved_reader_materials(tmp_path, path) for path in paths]
         params["成果物"] = json.dumps([str(path) for path in paths])
     elif form == "external":
-        # Git管理外の回答下書きは、managed-tempの旧本文とdiff -uの絶対パスの見出しで比べる。
         current = tmp_path / "回答 下書き.md"
         comparison = _saved_reader_materials(tmp_path, current)
         patch = pathlib.Path(comparison["今回差分"])
@@ -336,7 +327,6 @@ async def test_start_rejects_reader_material_defects_before_launch(
 async def test_start_rejects_missing_explore_materials_and_accepts_repair(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, role: str, field: str
 ) -> None:
-    """他の探索役割も保存物を欠く起動を拒否し、補完後の再発行を受理する。"""
     params = _observed_input_params(f"{role}.subagent.md", tmp_path)
     params[field] = str(tmp_path / "saved material.md")
     manager = TaskManager(start=AsyncMock(return_value={"session_id": "explorer", "status": "running", "label": "explorer"}))
@@ -357,7 +347,6 @@ async def test_start_rejects_missing_explore_materials_and_accepts_repair(
 async def test_start_checks_all_external_evidence_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, json_array: bool
 ) -> None:
-    """複数の根拠は全ファイルを確認し、識別子の注記を保存物と取り違えない。"""
     params = _observed_input_params("external-write-review.subagent.md", tmp_path)
     first = tmp_path / "diff.patch"
     second = tmp_path / "CI result.txt"

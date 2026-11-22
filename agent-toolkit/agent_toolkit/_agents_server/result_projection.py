@@ -1,11 +1,10 @@
-"""sessionの進捗・活動・終了時の結果と上り通知を、MCPとCLIの公開応答の形へ射影する。"""
-
 from __future__ import annotations
 
 import datetime
 import json
 import logging
 import pathlib
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -20,7 +19,6 @@ RESEND_AFTER_WAIT_NEXT_ACTION = "`atk agents wait`で終了を観測してから
 REVIEW_LABEL_SUFFIX = "-review"
 
 
-# レビューを目的とするsessionの完了結果を受け取った主体へ示す次の操作。
 REVIEW_RESULT_NEXT_ACTION = (
     "レビューの指摘を受領した。採否を確定する前に`agent-basics:review-standards`を起動し、"
     "同スキルの`references/reviewee.md`に従って採否と修正を確定する。"
@@ -38,9 +36,12 @@ _REVIEW_STANDARDS_DOCUMENT = "agent-basics:review-standards/SKILL.md"
 _REVIEWEE_DOCUMENT = "agent-basics:review-standards/references/reviewee.md"
 _READER_FIT_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/roles/reader-fit-review.parent.md#「受領」"
 _REVIEW_RECEIPT_DOCUMENTS = frozenset((_REVIEW_STANDARDS_DOCUMENT, _REVIEWEE_DOCUMENT, _READER_FIT_RECEIPT_DOCUMENT))
+_LANE_RECEIPT_DOCUMENT = "agent-toolkit:atk-mode/playbooks/lane-receipt.md#「実測と判断の検収」"
+_LANE_RECEIPT_ACTION = (
+    "`lane-receipt.md`「実測と判断の検収」を読み、担当の結論が原要求・証拠・現行の方針に合うか確かめてから受理・報告する。"
+)
 
 
-# 結果はメインと委譲先の双方が受け取るため、両者が実行できる操作を受け取った主体の役割ごとに示す。
 IMPROVEMENT_RESULT_NEXT_ACTION = (
     "`agent_message`の`気付いた改善点:`で始まる全行（箇条書きの項目記号の後に標識がある行を含む）を既存の送達成功記録と比べる。"
     "メインエージェントは未送達または新しい観測だけを次のユーザーへの発話へ転記する。"
@@ -53,7 +54,6 @@ IMPROVEMENT_RESULT_NEXT_ACTION = (
 
 
 def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[str, Any]:
-    """既存の案内を保持して次の操作を併記し、複数の返却処理で同じ案内を重ねない。"""
     result = dict(result)
     existing = result.get("next_action")
     if isinstance(existing, str) and existing:
@@ -65,7 +65,6 @@ def append_result_next_action(result: dict[str, Any], next_action: str) -> dict[
 
 
 def with_result_next_action(result: dict[str, Any], label: str | None) -> dict[str, Any]:
-    """受領時に必要なレビューの採否確定と改善点の転記を、既存の次の操作に併記する。"""
     if is_finalized_wait_statement(result):
         result = _without_review_receipt(result)
     guidance = result_guidance(result, label)
@@ -109,7 +108,6 @@ def is_finalized_wait_statement(result: Mapping[str, Any]) -> bool:
 
 
 def has_unobserved_children(result: Mapping[str, Any]) -> bool:
-    """通常の完了結果に、受領後も回収を要する子が残っているか返す。"""
     error = result.get("error")
     return (
         result.get("status") == "completed"
@@ -121,7 +119,6 @@ def has_unobserved_children(result: Mapping[str, Any]) -> bool:
 
 
 def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[str, tuple[str, ...]]]:
-    """受領結果の種類に対する次操作と判断資料を、公開案内と読込選択で共有する。"""
     guidance: list[tuple[str, tuple[str, ...]]] = []
     if is_finalized_wait_statement(result):
         guidance.append(("これは再開したturnの結果ではなく待機表明。`show`で現在のturnと待機対象の状態を確かめる", ()))
@@ -136,6 +133,8 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
                 ),
             )
         )
+    elif result.get("status") == "completed" and isinstance(label, str) and re.fullmatch(r"lane-[0-9]+-exec", label):
+        guidance.append((_LANE_RECEIPT_ACTION, (_LANE_RECEIPT_DOCUMENT,)))
     message = result.get("agent_message")
     if has_unobserved_children(result):
         guidance.append(
@@ -153,27 +152,16 @@ def result_guidance(result: Mapping[str, Any], label: str | None) -> list[tuple[
 
 
 def progress_excerpt(text: str) -> str:
-    """テキストを改行なしの末尾80文字へ正規化する。"""
     normalized = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", " ")
     if len(normalized) <= 80:
         return normalized
     return f"…{normalized[-80:]}"
 
 
-# ツール呼び出しの入力を1行へ要約するときの上限文字数。
-# statuslineは受け取った説明を表示幅で切り詰めるため、上限は`show`の応答が
-# 停滞の原因を判別できる長さとして定める。
 _ACTION_DETAIL_LIMIT = 200
 
 
 def action_detail(payload: Any, exclude: tuple[str, ...] = ()) -> str:
-    """ツール呼び出しの入力を、keyの受信順を保った1行の要約へ変換する。
-
-    各項目を`<key>=<値>`の形で並べ、文字列以外の値は区切りに空白を含めないJSONへ直列化する。
-    `exclude`には、呼び出し元が別の項目として既に公開しているkeyを渡す。
-    引数、コマンド文字列およびパッチ内容を含めるのは、同じツール名を繰り返す区間では
-    ツール名だけの表示が変化せず、稼働中と停止中を区別できないためである。
-    """
     if not isinstance(payload, Mapping):
         return ""
     parts: list[str] = []
@@ -189,10 +177,6 @@ def action_detail(payload: Any, exclude: tuple[str, ...] = ()) -> str:
 
 
 def elapsed_seconds(value: str | None) -> int | None:
-    """ISO 8601のタイムゾーン付き時刻から現在までの経過秒を返す。
-
-    解釈できない値とタイムゾーンを持たない値では`None`を返す。
-    """
     if not isinstance(value, str):
         return None
     try:
@@ -204,7 +188,6 @@ def elapsed_seconds(value: str | None) -> int | None:
     return max(0, int((datetime.datetime.now(datetime.UTC) - timestamp).total_seconds()))
 
 
-# `api_error`の公開項目。利用上限の解除待ちだけが後半の2項目を持つ。
 API_ERROR_USAGE_LIMIT_KEYS = ("limit_type", "resets_at")
 
 
@@ -248,12 +231,10 @@ def activity_projection(
 
 
 def nonempty_error(error: Any) -> bool:
-    """`error`が公開応答へ含める内容を持つかを返す（`None`、空文字列、空の辞書は持たない）。"""
     return error is not None and error != "" and error != {}
 
 
 def public_result(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """内部の結果保存項目を含めず、回収と継続に使う結果だけを返す。"""
     result = {
         key: payload[key]
         for key in (
@@ -285,7 +266,6 @@ def interruption_error(
     turn_seq: int,
     state_root: pathlib.Path | None = None,
 ) -> dict[str, Any]:
-    """中断の理由と、中断したturnの起動単位の終了診断への参照を、公開応答の`error`の形で返す。"""
     return {
         **session_registry.interruption_error(reason),
         "diagnostics": logging_config.diagnostics_reference(
@@ -297,7 +277,6 @@ def interruption_error(
 def resolution_interruption_error(
     resolution: session_registry.SessionResolution, *, state_root: pathlib.Path | None = None
 ) -> dict[str, Any] | None:
-    """登録簿の解決が中断を示す場合に、中断したturnの診断参照を含む`error`を返す。"""
     info = resolution.resume_info
     if resolution.interruption is None or info is None:
         return None
@@ -313,7 +292,6 @@ def resolution_interruption_error(
 def interrupted_turns_projection(
     turns: tuple[session_registry.InterruptedTurn, ...], *, state_root: pathlib.Path | None = None
 ) -> list[dict[str, Any]]:
-    """登録簿の中断turnの履歴を、turn番号・理由・診断参照の組の配列へ射影する。"""
     return [
         {
             "turn_seq": turn.turn_seq,
@@ -327,14 +305,12 @@ def interrupted_turns_projection(
 
 
 def refresh_error_diagnostics(error: Any) -> Any:
-    """保存済みの`error`が診断参照を持つ場合、参照の状態を表示時点の診断ファイルから求め直す。"""
     if not isinstance(error, Mapping) or not isinstance(error.get("diagnostics"), Mapping):
         return error
     return {**error, "diagnostics": logging_config.refresh_diagnostics_reference(error["diagnostics"])}
 
 
 def public_notice(payload: Mapping[str, str]) -> dict[str, str]:
-    """整列後の通知本文を返す。送信時刻は保存と整列に残す。"""
     return {"body": payload["body"]}
 
 

@@ -25,10 +25,6 @@ from agent_toolkit._testing.hook_support import _call_hook_in_process
 def test_repeated_calls_in_one_process_follow_input_and_session_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, codex: bool
 ) -> None:
-    """依存を読み込んだ後の反復呼び出しでも、スキルの案内と未配送通知の判定が入力と状態に従う。
-
-    公開hookの起動、入力、配送記録、session間の分離、Stopの判定は呼び出しごとに実行する。
-    """
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
     monkeypatch.setenv("TMPDIR", str(tmp_path))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -54,7 +50,6 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             expected_code=expected_code,
         )
 
-    # 検索の初回にスキルの起動の案内を届け、通常の操作を継続する。案内は主体と文脈ごとに1回だけ届く。
     context = pretooluse("repeat-session", "grep -rn needle .")
     message = json.loads(context)["hookSpecificOutput"]["additionalContext"]
     assert 'kind="block"' not in message
@@ -71,7 +66,6 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
             result["hookSpecificOutput"]["additionalContext"] = path.read_text(encoding="utf-8")
         return result
 
-    # 保存先はsessionごとに異なるため、保存した通知本文と他の応答項目を比較する。
     assert response_context(pretooluse("other-session", "grep -rn needle ."), "other-session") == response_context(
         context, "repeat-session"
     )
@@ -98,7 +92,6 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
 
 
 def test_activity_lifecycle(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """公開hookの通常応答を保持しつつ、Stop継続とターン終了を活動取得へ渡す。"""
     identity = session_registry.ProcessIdentity.of(os.getpid())
     assert identity is not None
     host = session_activity.HostProcess("codex", identity)

@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_candidates_failures_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -34,7 +32,6 @@ from agent_toolkit._testing.helpers import _write_transcript
     ],
 )
 def test_env_failures_keep_execution_identity(tmp_path, capsys, prefix, mode) -> None:
-    """既知の包装差を同じ署名へまとめ、同じ診断でも別の実行を別候補へ保つ。"""
     commands = ["git status", f"{prefix} git status", f"{prefix} pytest"]
     entries = []
     for index, command in enumerate(commands):
@@ -70,7 +67,6 @@ def test_env_failures_keep_execution_identity(tmp_path, capsys, prefix, mode) ->
 
 @pytest.mark.parametrize("prefix", ["env -S", "env --split-string", "env --unknown", "env -u", "env -C"])
 def test_unresolved_env_failures_preserve_original_input(prefix: str) -> None:
-    """未知・引数不足のenvをオプション名の共通署名へ縮めない。"""
     commands = [prefix, f"{prefix} git status", f"{prefix} pytest", "env", "env A=1"]
     signatures = []
     for command in commands:
@@ -78,7 +74,7 @@ def test_unresolved_env_failures_preserve_original_input(prefix: str) -> None:
         signature, summary = evidence_candidates.failure_signature("tool-failure", event)
         signatures.append(signature)
         assert command in summary
-    # -u/-Cに後続値がある場合は既知の文法として解釈する。未知包装だけは全文を識別軸へ保持する。
+
     if prefix not in {"env -u", "env -C"}:
         assert len(set(signatures[:3])) == 3
 
@@ -275,7 +271,6 @@ def test_public_bundle_excludes_claude_wait_continuations(tmp_path: pathlib.Path
         ("sh -c 'atk agents wait'", 3),
         ("atk agents wait && false", 3),
         ("atk agents wait", 2),
-        # 起動名は共通の起動判定と同じ集合で認識する。
         ("/opt/plugin/agent_toolkit/atk.py agents wait", 3),
     ]
     for index, (command, code) in enumerate(cases):

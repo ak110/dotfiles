@@ -75,7 +75,6 @@ def _process(pid: int, *, require_running: bool = False):
         raise error
     try:
         if require_running:
-            # 他のhandleが残ると、終了済みのプロセスも開けて作成時刻を読める。
             status = kernel.WaitForSingleObject(handle, 0)
             _check(status != 0xFFFFFFFF)  # WAIT_FAILED
             if status == 0:  # WAIT_OBJECT_0: プロセスが終了した。
@@ -86,7 +85,6 @@ def _process(pid: int, *, require_running: bool = False):
 
 
 def current_process_elevated() -> bool:
-    """状態領域の選択に、自分の実トークンの昇格状態を使う。"""
     kernel, security = _api()
     token = w.HANDLE()
     with _process(os.getpid()) as handle:
@@ -95,7 +93,7 @@ def current_process_elevated() -> bool:
         value = w.DWORD(0)
         used = w.DWORD(0)
         _check(security.GetTokenInformation(token, 20, ctypes.byref(value), ctypes.sizeof(value), ctypes.byref(used)))
-        return bool(value.value)  # TokenElevation
+        return bool(value.value)
     finally:
         _check(kernel.CloseHandle(token))
 
@@ -110,7 +108,6 @@ def _identity(handle: int, pid: int) -> str:
 
 
 def process_identity(pid: int) -> str:
-    """同じhandleで生存を確認し、作成時刻でPID再利用を区別する。"""
     with _process(pid, require_running=True) as handle:
         return _identity(handle, pid)
 
@@ -120,8 +117,6 @@ class _UnicodeString(ctypes.Structure):
 
 
 class _SystemProcessInformation(ctypes.Structure):
-    """`NtQuerySystemInformation(SystemProcessInformation)`が返すプロセス1件の先頭部分。"""
-
     _fields_ = [
         ("NextEntryOffset", w.ULONG),
         ("NumberOfThreads", w.ULONG),
@@ -144,7 +139,6 @@ _STATUS_BUFFER_TOO_SMALL = 0xC0000023
 
 
 def _find_create_time(snapshot: Any, pid: int) -> int | None:
-    """プロセス一覧のバッファから、指定PIDの作成時刻（FILETIME）を返す。一覧に無ければ`None`を返す。"""
     offset = 0
     while True:
         entry = _SystemProcessInformation.from_buffer(snapshot, offset)
@@ -166,8 +160,6 @@ def _listed_create_time(pid: int) -> int | None:
         needed = w.ULONG(0)
         status = query(_SYSTEM_PROCESS_INFORMATION, snapshot, size, ctypes.byref(needed))
         if status & 0xFFFFFFFF in (_STATUS_INFO_LENGTH_MISMATCH, _STATUS_BUFFER_TOO_SMALL):
-            # 一覧は照会ごとに変わるため、返された必要量に余裕を持たせて取り直す。
-            # 必要量が返らない（0）場合も取り直しが終わるよう、少なくとも倍へ広げる。
             size = max(needed.value + (1 << 16), size * 2)
             continue
         if status < 0:
@@ -176,12 +168,6 @@ def _listed_create_time(pid: int) -> int | None:
 
 
 def listed_process_alive(identity: str) -> bool:
-    """開けないプロセスが記録した起動単位のプロセスかを、システムのプロセス一覧の作成時刻で判定する。
-
-    転送側は標準ライブラリだけで動くため、psutilは使わずntdllから一覧を得る。
-    一覧の作成時刻は`GetProcessTimes`と同じFILETIMEで、記録した起動単位と一致を比べる。
-    PIDが再利用されていれば作成時刻が異なり、一覧に無ければ終了した世代として扱う。
-    """
     pid, created = (int(part) for part in identity.split(":", 1))
     return _listed_create_time(pid) == created
 
@@ -212,7 +198,6 @@ def _sid(handle: int) -> str:
 
 
 def authenticate(peer: Any, *, server: bool, expected_process: str | None = None) -> int:
-    """本文受信前に、pipeが報告したPIDのtoken SIDと元世代が自身の期待値と一致するか確かめる。"""
     kernel, _ = _api()
     pid = w.ULONG(0)
     function = kernel.GetNamedPipeClientProcessId if server else kernel.GetNamedPipeServerProcessId
@@ -253,7 +238,7 @@ class _Listener:
         )
         try:
             attributes = _Attributes(ctypes.sizeof(_Attributes), descriptor, False)
-            # Overlapped duplex message pipe。リモート接続をOSで拒否する。
+
             flags = 3 | 0x40000000 | (0x00080000 if not hasattr(self, "created") else 0)
             handle = kernel.CreateNamedPipeW(self.address, flags, 4 | 2 | 8, 255, 65536, 65536, 0, ctypes.byref(attributes))
             if handle == ctypes.c_void_p(-1).value:
@@ -335,7 +320,6 @@ class _Listener:
 
 @contextlib.contextmanager
 def listen(address: str):
-    """listener所有handleを例外時も解放し、受理済み接続は呼出側へ渡す。"""
     listener = _Listener(address)
     try:
         yield listener

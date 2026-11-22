@@ -1,5 +1,3 @@
-"""UI AutomationのCOM境界を通したタスクバー選択の判別。"""
-
 import ctypes
 from typing import Any
 from unittest import mock
@@ -14,8 +12,6 @@ class _Interface(ctypes.Structure):
 
 
 class _COMEnvironment:
-    """SDKのABIで応答するCOMオブジェクトを保持する。"""
-
     def __init__(self, nodes: list[tuple[int, str, str]]) -> None:
         self.owned: list[Any] = []
         self.released: list[int] = []
