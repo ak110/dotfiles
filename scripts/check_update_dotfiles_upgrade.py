@@ -590,6 +590,24 @@ def verify_upgrade_inputs(
     env["UV_PYTHON"] = str(_require_inside(install_dir, "Python", python))
 
 
+def windows_job_breakaway_denied(python: str, cwd: pathlib.Path, env: dict[str, str], *, runner: Runner) -> bool:
+    command = [python, "-I", "-S", "-c", "pass"]
+    options = {"cwd": cwd, "env": env, "check": False, "capture_output": True, "timeout": 10}
+    try:
+        runner(command, creationflags=0x01000000, **options)
+    except PermissionError as error:
+        if getattr(error, "winerror", None) != 5:
+            return False
+    except OSError, subprocess.TimeoutExpired:
+        return False
+    else:
+        return False
+    try:
+        return runner(command, **options).returncode == 0
+    except OSError, subprocess.TimeoutExpired:
+        return False
+
+
 def _run_isolated_upgrade(
     source_repo: pathlib.Path,
     platform_name: str,
@@ -653,8 +671,13 @@ def _run_isolated_upgrade(
         for log in home.rglob("update-dotfiles.log*"):
             if log.is_file():
                 log.unlink()
+        breakaway_denied = (
+            sys.platform == "win32"
+            and platform_name == "windows"
+            and windows_job_breakaway_denied(env["UV_PYTHON"], checkout, env, runner=runner)
+        )
         updated = run_command(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
-        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr)
+        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr, breakaway_denied=breakaway_denied)
         actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
         verify_updated_oid(actual_oid, current_oid)
         print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
@@ -674,6 +697,33 @@ _CODEX_HOOK_TRUST_NOTICE = (
     "フックの永続的な信頼登録は手動です。"
 )
 """`install_codex_plugins.py`の同名案内の本文。上記と同じ制約により一致を試験する。"""
+
+_INHERITED_JOB_WARNING = (
+    "起動元のWindows Jobは離脱を許可していません。起動元のJobの制限を継承して管理サービスを起動しました。"
+    "そのJob終了後のサービス生存は保証しません。\n"
+    "次の操作: Claude/Codexを起動した端末・IDE・サービスのJob離脱可否を、その起動元の管理者へ確認してください。"
+    "確認できない場合は、起動元とこの診断を添えてagent-toolkitの管理者へ問い合わせてください。"
+)
+
+
+def _installed_mcp_job_warning(message: str, continuation: list[str], home: pathlib.Path) -> bool:
+    target, separator, warning = message.strip().partition(": ")
+    if not separator or "\n".join((warning, *continuation)) != _INHERITED_JOB_WARNING:
+        return False
+    path = pathlib.Path(target)
+    cache = home / ".claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
+    try:
+        parts = path.resolve().relative_to(cache.resolve()).parts
+    except OSError, ValueError:
+        return False
+    return (
+        path.is_absolute()
+        and path.is_file()
+        and path.resolve().is_relative_to(home.resolve())
+        and len(parts) == 3
+        and parts[1:] == ("agent_toolkit", "agents_server_mcp.py")
+    )
+
 
 _UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."
 """uvがhardlinkできず複製へ切り替えたときの診断。導入は完了しており、更新の失敗ではない。"""
@@ -709,7 +759,7 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     return False
 
 
-def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "") -> None:
+def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = "", breakaway_denied: bool = False) -> None:
     """隔離homeの永続ログから、更新が警告として継続した失敗も検出する。"""
     diagnostics: list[str] = []
     logs = [path for path in sorted(home.rglob("update-dotfiles.log*")) if path.is_file()]
@@ -730,7 +780,15 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
                 if re.search(r" run=\S+ [A-Z]+ ", following):
                     break
                 continuation.append(following)
-            diagnostics.append("\n".join([f"{path}: {line}", *continuation]))
+            diagnostic = "\n".join([f"{path}: {line}", *continuation])
+            if (
+                match["level"] == "WARNING"
+                and breakaway_denied
+                and _installed_mcp_job_warning(match["message"], continuation, home)
+            ):
+                print(f"検証runnerでJob離脱拒否を再現したため、更新自体の失敗と区別する: {diagnostic}", file=sys.stderr)
+                continue
+            diagnostics.append(diagnostic)
     # severityを明示するCLIの診断だけを拾い、進捗や説明中の単語を誤検出しない。
     for stream, output in (("stdout", stdout), ("stderr", stderr)):
         for line in output.splitlines():
