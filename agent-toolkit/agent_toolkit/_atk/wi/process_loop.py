@@ -38,6 +38,7 @@ def _run_loop(*, once: bool) -> int:
             raise ValueError("旧方式のauto再開予約が残っている。resume-cancelで取り消し、必要なら会話IDを指定する")
         resume_id = request.session_id if request is not None else None
         launch = argparse.Namespace(
+            once=once,
             resume=resume_id,
             resume_request_id=request.request_id if request is not None else None,
         )
@@ -47,8 +48,6 @@ def _run_loop(*, once: bool) -> int:
                 session.resolve_orchestrator_specs(), child_env, cwd, resume_session_id=resume_id
             )
             prompt = session.build_resume_prompt() if request is not None else session.build_process_loop_prompt()
-            if once:
-                prompt += "\n単回実行: 今回の候補の検収を終えたら、次の巡回を待たずに atk agents-exit-session で終了する。"
             normal = session.run_process_session(
                 launch,
                 cwd,

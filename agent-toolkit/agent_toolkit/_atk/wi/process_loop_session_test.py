@@ -17,6 +17,40 @@ from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._testing.process_loop_session_support import _isolate_process_loop_commands as _isolate_process_loop_commands
 
 
+@pytest.mark.parametrize("once", [True, False])
+def test_single_run_instruction_survives_usage_limit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, once: bool
+) -> None:
+    """接続の切替で起動文を作り直しても単回か常駐かを保つ。"""
+    prompts = []
+
+    def run(args, _cwd, prompt, _env, **_kwargs):
+        prompts.append(prompt)
+        if len(prompts) == 1:
+            raise _pl_session._ClaudeUsageLimit("retained-session")
+        assert args.resume == "retained-session"
+        return True
+
+    monkeypatch.setattr(_pl_session, "_run_selected_process_session", run)
+    monkeypatch.setattr(
+        _pl_session, "select_available_orchestrator", lambda *_args, **_kwargs: ("claude", "test", "low", None, None)
+    )
+    monkeypatch.setattr(_pl_session._process_loop_log, "append", lambda *_args, **_kwargs: None)
+
+    assert _pl_session.run_process_session(
+        argparse.Namespace(once=once),
+        tmp_path,
+        "巡回",
+        {},
+        orchestrator="claude",
+        model="test",
+        effort="low",
+        resume_pending=False,
+    )
+    assert len(prompts) == 2
+    assert all(("処理可能な候補が無い" in prompt) is once for prompt in prompts)
+
+
 class TestProcessLoopPromptAndEnv:
     """process-loopサブコマンド: claudeへ渡す最初のプロンプトと環境変数、正常終了時の反復継続を検証する。"""
 

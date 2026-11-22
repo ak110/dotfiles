@@ -311,7 +311,12 @@ def _run_process_session(
             return _run_selected_process_session(
                 args,
                 session_path,
-                session_prompt,
+                session_prompt
+                + (
+                    "\n単回実行: 処理可能な候補が無いか、今回の検収を終えた時点で atk agents-exit-session で終了する。"
+                    if getattr(args, "once", False)
+                    else ""
+                ),
                 env,
                 orchestrator=orchestrator,
                 model=model,
