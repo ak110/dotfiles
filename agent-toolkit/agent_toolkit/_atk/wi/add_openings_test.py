@@ -309,3 +309,70 @@ def test_dry_run_opening_save_failure_has_no_valid_result(
     assert "一時保存に失敗" in output.err
     _run_public_add(args, notes, _FIXED_DT, tmp_path)
     assert "冒頭保存先:" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("operation", ["add", "edit"])
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_wrapped_uwi_preview_matches_saved_question(tmp_path, monkeypatch, capsys, operation, newline):
+    """保存形式の質問見出しを持つ原稿を、表示・比較・本保存で同じ質問として扱う。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setattr(_wi_sync, "push_pending_commits", lambda _root: None)
+    opening = "反映してよいですか。\n\n変更の内容を説明します。\n"
+    body = tmp_path / "draft.md"
+    body.write_bytes(("## 質問\n\n" + opening).replace("\n", newline).encode())
+    preview = tmp_path / "opening.md"
+    argv = ["wi", operation, "--target-repo", "github.com/example/repo", "--body-file", str(body)]
+    if operation == "edit":
+        _write_uwi_file(notes, "draft.md", target_repo="github.com/example/repo", answer=uwi_module.ANSWER_MARKER)
+        argv.insert(2, "draft.md")
+        monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    else:
+        argv.extend(["--type=uwi", "--question-type=post-approval"])
+    with pytest.raises(SystemExit) as dry_run:
+        atk.main([*argv, "--dry-run", "--opening-output", str(preview)], home=tmp_path)
+    assert dry_run.value.code == 0, capsys.readouterr().err
+    assert preview.read_bytes() == opening.replace("\n", newline).encode()
+    with pytest.raises(SystemExit) as save:
+        atk.main([*argv, "--compare-opening-file", str(preview)], home=tmp_path)
+    assert save.value.code == 0, capsys.readouterr().err
+    saved = [path for path in notes.rglob("*.md") if ("## 質問\n\n" + opening) in path.read_text(encoding="utf-8")]
+    assert len(saved) == 1
+
+
+@pytest.mark.parametrize("mode", ["dry-run", "save-compare", "save"])
+def test_uwi_with_empty_opening_is_rejected_before_save(tmp_path, monkeypatch, capsys, mode):
+    """どの投入方法でも、詳細節だけを持つ原稿を空の質問として拒否する。"""
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    body = tmp_path / "draft.md"
+    body.write_text("## 質問\n\n## 詳細\n根拠だけがある。\n", encoding="utf-8")
+    argv = [
+        "wi",
+        "add",
+        "--type=uwi",
+        "--question-type=post-approval",
+        "--target-repo",
+        "github.com/example/repo",
+        "--body-file",
+        str(body),
+    ]
+    if mode == "dry-run":
+        argv.append("--dry-run")
+    elif mode == "save-compare":
+        # 比較ファイルが読めない場合にも、空の原稿を先に指摘する。
+        argv.extend(["--compare-opening-file", str(tmp_path / "missing.md")])
+    with pytest.raises(SystemExit) as result:
+        atk.main(argv, home=tmp_path)
+    assert result.value.code != 0
+    error = capsys.readouterr().err
+    assert "UWIの質問の冒頭が空です" in error
+    assert "最初のH2見出しより前" in error and "は`atk`が付ける" in error
+    assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
+
+
+def test_wrapped_uwi_does_not_discard_answer_after_crlf_blank_lines():
+    """未回答の外枠と違い、本文のある回答欄は長くてもそのまま残す。"""
+    question = "反映してよいですか。\r\n\r\n"
+    answered = "## 回答" + "\r\n" * 100 + "回答済み。"
+    assert uwi_module.strip_unanswered_uwi_wrapper("## 質問\r\n\r\n" + question + answered) == question + answered

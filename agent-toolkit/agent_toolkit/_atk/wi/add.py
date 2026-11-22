@@ -574,12 +574,21 @@ def cmd_add(
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
             _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
-            print_draft_openings(messages, sources, compare_paths=args.compare_opening_file, output_paths=args.opening_output)
+            print_draft_openings(
+                messages,
+                sources,
+                compare_paths=args.compare_opening_file,
+                output_paths=args.opening_output,
+                is_uwi=args.type == WI_TYPE_UWI,
+            )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         if args.compare_opening_file is not None:
             # 保存より前に全原稿の冒頭を比較し、不一致なら1件も保存しない。
-            compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
+            if args.type == WI_TYPE_UWI:
+                for message in messages:
+                    parse_entry_message(message, entry_type=WI_TYPE_UWI)
+            compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file, is_uwi=args.type == WI_TYPE_UWI)
         generated = add_entries(
             private_notes,
             messages=messages,

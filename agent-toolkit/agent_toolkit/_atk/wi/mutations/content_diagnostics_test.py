@@ -101,13 +101,13 @@ class TestEditBodyFile:
         assert "Traceback" not in captured.err
         assert path.read_text(encoding="utf-8").endswith("\n編集前\n")
 
-    def test_empty_uwi_add_is_allowed_but_empty_edit_is_rejected(
+    def test_empty_uwi_question_is_rejected_on_add_and_edit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """空のUWI質問はaddで許容し、既存質問を削除するeditでは拒否する。"""
+        """空のUWI質問はaddでもeditでも拒否し、状態を変更しない。"""
         notes = _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
         add_body = tmp_path / "add-body.md"
@@ -128,17 +128,21 @@ class TestEditBodyFile:
                 home=tmp_path,
                 now=_FIXED_DT,
             )
-        assert add_exit.value.code == 0
+        assert add_exit.value.code == 1
         filename = f"{_FIXED_DT:%Y%m%d-%H%M%S}-001.md"
-        assert _fixed_path(notes, filename).is_file()
+        assert not list(notes.rglob("*.md"))
+        assert "UWIの質問の冒頭が空です" in capsys.readouterr().err
 
+        path = _write_uwi_entry(notes, filename)
+        original = path.read_bytes()
         with pytest.raises(SystemExit) as edit_exit:
             atk.main(_edit_body_args(tmp_path, filename, ""), home=tmp_path)
 
         assert edit_exit.value.code == 1
         captured = capsys.readouterr()
-        assert "質問本文は空にできません" in captured.err
+        assert "UWIの質問の冒頭が空です" in captured.err
         assert "Traceback" not in captured.err
+        assert path.read_bytes() == original
 
 
 @pytest.mark.parametrize(

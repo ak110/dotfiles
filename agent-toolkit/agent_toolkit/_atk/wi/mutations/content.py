@@ -320,8 +320,6 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
     if entry_type != WI_TYPE_UWI:
         return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
 
-    if not normalized_message_body.strip():
-        raise WebInputError("UWIの質問本文は空にできません", next_action="質問本文を記入して再実行する")
     question_type = updated_data.get("question_type")
     # 保存済みのfree-formは読取互換として本文編集を受理し、他の形式からfree-formへ変える編集だけを拒否する。
     accepted_question_types = (
@@ -526,6 +524,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
+    is_uwi = _wi_entries.entry_type_of(path, original) == WI_TYPE_UWI
     if args.compare_opening_file is not None and not args.dry_run:
         # 保存より前に冒頭を比較し、不一致なら対象WIを書き換えない。
         # 本文が保存済みと同じでも比較の失敗を成功扱いしないよう、差分なしの判定より先に比較する。
@@ -536,6 +535,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 [message],
                 [str(pathlib.Path(args.body_file).expanduser().resolve())],
                 compare_paths=args.compare_opening_file,
+                is_uwi=is_uwi,
             )
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
@@ -603,6 +603,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 [message],
                 [str(pathlib.Path(args.body_file).expanduser().resolve())],
                 compare_paths=args.compare_opening_file,
+                is_uwi=is_uwi,
                 output_paths=args.opening_output,
             )
         except WebInputError as error:

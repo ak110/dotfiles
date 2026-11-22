@@ -125,7 +125,7 @@ def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:
 
 
 def compare_draft_openings(
-    messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None
+    messages: list[str], sources: list[str], *, compare_paths: list[str] | None = None, is_uwi: bool = False
 ) -> list[tuple[str, str]]:
     """原稿ごとの冒頭を抽出し、比較入力があれば全件の一致を確かめて`(原稿, 冒頭)`を返す。
 
@@ -146,17 +146,20 @@ def compare_draft_openings(
             prefix = normalized[: len(normalized) - len(parsed[1])]
             lines = lines[prefix.count("\n") :]
         body = "".join(lines)
-        headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
-        start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
-        end = next(
-            (
-                token.map[0]
-                for token, _name in _markdown_headings.parse_headings(body, 2)
-                if token.level == 0 and token.map is not None and token.map[0] > start
-            ),
-            len(lines),
-        )
-        opening = "".join(lines[start:end])
+        if is_uwi:
+            opening = _uwi.question_opening(body)
+        else:
+            headings = [(token, name) for token, name in _markdown_headings.parse_headings(body, 1) if token.level == 0]
+            start = headings[0][0].map[0] if headings and headings[0][0].map is not None else 0
+            end = next(
+                (
+                    token.map[0]
+                    for token, _name in _markdown_headings.parse_headings(body, 2)
+                    if token.level == 0 and token.map is not None and token.map[0] > start
+                ),
+                len(lines),
+            )
+            opening = "".join(lines[start:end])
         if compare_paths is not None:
             comparison = pathlib.Path(compare_paths[index]).expanduser()
             try:
@@ -184,11 +187,12 @@ def print_draft_openings(
     *,
     compare_paths: list[str] | None = None,
     output_paths: list[str] | None = None,
+    is_uwi: bool = False,
 ) -> None:
     """検証済み原稿の冒頭を比較・保存し、入力との対応と原文を表示する。"""
     saved: list[tuple[str, pathlib.Path, str]] = []
     try:
-        openings = compare_draft_openings(messages, sources, compare_paths=compare_paths)
+        openings = compare_draft_openings(messages, sources, compare_paths=compare_paths, is_uwi=is_uwi)
         targets = [pathlib.Path(path).expanduser().resolve() for path in output_paths or ()]
         if output_paths is not None:
             if len(targets) != len(openings) or len(set(targets)) != len(targets):

@@ -29,6 +29,7 @@ from agent_toolkit._atk.wi.constants import (
 from agent_toolkit._atk.wi.layout import iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import operation_approvals
 
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
@@ -103,18 +104,43 @@ def _detect_self_containment_deficiency(message: str) -> str | None:
 
 
 def strip_unanswered_uwi_wrapper(body: str) -> str:
-    """保存形式の先頭質問見出しと、末尾の未回答欄だけを取り除く。"""
-    leading = re.match(r"\A(?:[^\S\n]*\n)*" + re.escape(QUESTION_HEADING) + r"(?:\n|\Z)(?:[^\S\n]*\n)*", body)
+    """保存形式の先頭質問見出しと末尾の未回答欄だけを除き、本文の改行を保つ。"""
+    # CRLFを2つの改行へ再分割しない。未回答の外枠に一致しない長い回答欄でも探索が増えない。
+    newline = r"(?:\r\n|\r(?!\n)|\n)"
+    blank = rf"(?:{newline}[^\S\r\n]*)"
+    leading = re.match(
+        rf"\A(?:[^\S\r\n]*{newline})*{re.escape(QUESTION_HEADING)}(?:{newline}|\Z)"
+        rf"(?:[^\S\r\n]*{newline})*",
+        body,
+    )
     if leading is not None:
         body = body[leading.end() :]
     trailing = re.search(
-        r"^" + re.escape(ANSWER_HEADING) + r"(?:\n[^\S\n]*)*(?:\n" + re.escape(ANSWER_MARKER) + r"(?:\n[^\S\n]*)*)?\Z",
+        rf"(?:\A|(?<=[\r\n])){re.escape(ANSWER_HEADING)}{blank}*"
+        rf"(?:{newline}{re.escape(ANSWER_MARKER)}{blank}*)?\Z",
         body,
-        flags=re.MULTILINE,
     )
     if trailing is not None:
-        body = body[: trailing.start()].rstrip("\n")
+        body = body[: trailing.start()].rstrip("\r\n")
     return body
+
+
+def question_opening(body: str) -> str:
+    """保存用の外枠を除き、最初のトップレベルH2より前の質問本文を返す。"""
+    body = strip_unanswered_uwi_wrapper(body)
+    end = next(
+        (token.map[0] for token, _name in _markdown_headings.parse_headings(body, 2) if token.level == 0 and token.map),
+        None,
+    )
+    lines = re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", body)
+    start = next(
+        (token.map[0] for token, _name in _markdown_headings.parse_headings(body, 1) if token.level == 0 and token.map),
+        0,
+    )
+    # 従来と同じく空行の後の表題を含める。表題より前に質問の本文がある場合は、その本文も含める。
+    if (end is not None and start >= end) or any(line.strip() for line in lines[:start]):
+        start = 0
+    return "".join(lines[start:end])
 
 
 def reject_reserved_uwi_markup(body: str) -> None:

@@ -63,6 +63,13 @@ def parse_entry_message(message: str, *, entry_type: str) -> tuple[dict[str, obj
     if entry_type != WI_TYPE_AWI:
         body = _uwi.strip_unanswered_uwi_wrapper(body)
         _uwi.reject_reserved_uwi_markup(body)
+        if not _uwi.question_opening(body).strip():
+            raise WebInputError(
+                "UWIの質問の冒頭が空です",
+                next_action=(
+                    "本文の先頭（最初のH2見出しより前）に質問の内容を書く。保存形式の`## 質問`・`## 回答`は`atk`が付ける"
+                ),
+            )
     return frontmatter, body
 
 
