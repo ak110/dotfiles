@@ -177,7 +177,7 @@ fn build_prompt_cache_segment(cache: &Value, now_seconds: Option<f64>) -> Option
         let tokens = cache
             .get("recache_tokens_if_cold")
             .filter(|v| v.as_u64().is_some());
-        if let Some(count) = crate::subagent::format_tokens(tokens, None) {
+        if let Some(count) = crate::render::format_tokens(tokens, None) {
             parts.push(color(&format!("次回{count}再作成"), YELLOW));
         }
     } else {

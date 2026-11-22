@@ -22,7 +22,6 @@ from agent_toolkit._agents_server import (
     resume_waits,
     shared_sweep,
     state,
-    wait_output_tracking,
     wait_targets,
 )
 from agent_toolkit._agents_server import manager as server_manager
@@ -112,7 +111,9 @@ async def test_child_collected_during_registry_lookup_is_not_reintroduced(
 
         def resolve_and_collect(identifier: str, **kwargs: Any) -> session_registry.SessionResolution:
             resolution = resolve(identifier, **kwargs)
-            wait_output_tracking.consume_agents_wait_output(parent, json.dumps({"session_id": "child", "status": "completed"}))
+            # 回収済みの別操作を模し、照会前の写しで追跡を戻さないことを調べる。
+            parent.live_child_session_ids.discard(identifier)
+            parent.terminal_child_session_ids.discard(identifier)
             return resolution
 
         monkeypatch.setattr(session_registry, "resolve", resolve_and_collect)

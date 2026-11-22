@@ -1,7 +1,7 @@
 """claude-statuslineバイナリ（Rust製）のダウンロード・配置。
 
 `chezmoi apply`後処理（`pytools.post_apply`）から呼ばれる。GitHub ReleaseのCI成果物を
-`~/.local/bin/`配下へ配置し、statusLine/subagentStatusLineをPython(uv run)起動から
+`~/.local/bin/`配下へ配置し、statusLineをPython(uv run)起動から
 Rustバイナリ直接起動へ置き換える。
 """
 
