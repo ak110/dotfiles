@@ -122,4 +122,4 @@ def test_fixup_ambiguous_subject_is_blocked_in_the_actual_repository(tmp_path, l
     for _ in range(2):
         git_repository.run_git(tmp_path, "commit", "--allow-empty", "-m", "同じ件名")
     result = _run({"tool_name": "Bash", "cwd": str(tmp_path), "tool_input": {"command": f"{launcher} --fixup=HEAD"}})
-    assert "autosquashの統合先を一意に決められない" in result.stdout
+    assert "`autosquash`の統合先を一意に決められない" in result.stdout
