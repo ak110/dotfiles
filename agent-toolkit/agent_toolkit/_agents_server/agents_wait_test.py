@@ -387,3 +387,31 @@ def test_agents_wait_outputs_terminal_result_with_notice_only_session(
     }
     assert not (wait_environment / "session-1.json").exists()
     assert not any(notices.iterdir())
+
+
+def test_wait_displays_recovered_continuation_without_redelivering_result(
+    wait_environment: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """一件への返答後も、もう一件の応答待ちを新しい結果とは区別して表示する。"""
+    _write_own_status(wait_environment, [])
+    monkeypatch.setattr(
+        agents_wait.continuation_wait.session_state,
+        "read_state",
+        lambda _: {
+            "agents_server_sessions": {
+                identifier: {"owner_agent_id": "main", "pending_observation": False}
+                for identifier in ("session-1", "session-2")
+            }
+        },
+    )
+    monkeypatch.setattr(
+        agents_wait.continuation_wait,
+        "continuation_wait_seconds",
+        lambda identifier, **_: 42 if identifier == "session-2" else None,
+    )
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "wait"])
+    row = json.loads(capsys.readouterr().out)
+    assert row["session_id"] == "session-2" and row["status"] == "awaiting_reply"
+    assert "応答待ち（返却から 42 秒）" in row["next_action"]
+    assert "agent_message" not in row

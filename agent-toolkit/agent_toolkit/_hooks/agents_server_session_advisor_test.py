@@ -7,7 +7,7 @@ import re
 
 import pytest
 
-from agent_toolkit._agents_server import agents_wait
+from agent_toolkit._agents_server import continuation_wait
 from agent_toolkit._common import session_registry, session_state, state_paths, task_documents
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._hooks import agents_server_observations, stop
@@ -705,7 +705,7 @@ def test_recovered_results_only_warn_for_child_still_awaiting_reply(monkeypatch:
         )
 
     monkeypatch.setattr(session_registry, "resolve", resolve)
-    monkeypatch.setattr(agents_wait.result_projection, "elapsed_seconds", lambda _: 42)
+    monkeypatch.setattr(continuation_wait.result_projection, "elapsed_seconds", lambda _: 42)
     monkeypatch.setattr(
         advisor,
         "read_state",
@@ -719,9 +719,9 @@ def test_recovered_results_only_warn_for_child_still_awaiting_reply(monkeypatch:
     monkeypatch.setattr(agents_server_observations, "retained_running_session_ids", lambda *_: [])
     monkeypatch.setattr(advisor, "_notice", lambda body, **_kwargs: body)
 
-    assert agents_wait.continuation_wait_seconds("answered") is None
-    assert agents_wait.continuation_wait_seconds("awaiting") == 42
-    assert agents_wait.continuation_wait_seconds("finished") is None
+    assert continuation_wait.continuation_wait_seconds("answered") is None
+    assert continuation_wait.continuation_wait_seconds("awaiting") == 42
+    assert continuation_wait.continuation_wait_seconds("finished") is None
     decision, body = advisor.evaluate(json.dumps({"session_id": "owner"}))
     assert decision == "notify"
     assert body == "応答待ち: awaiting（返却から 42 秒）"

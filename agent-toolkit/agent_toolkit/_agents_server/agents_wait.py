@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from typing import Any, Literal
 
 from agent_toolkit._agents_server import (
+    continuation_wait,
     logging_config,
     notice_inbox,
     owner_lost,
@@ -31,7 +32,7 @@ from agent_toolkit._agents_server import (
 )
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
-from agent_toolkit._common import delegated_session, private_directory, session_registry, task_documents
+from agent_toolkit._common import delegated_session, private_directory, session_registry
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.json_lines import split_lines
@@ -291,47 +292,6 @@ def _fail(message: str, code: int, *, next_action: str, session_id: str | None =
     return code
 
 
-def continuation_wait_seconds(session_id: str, *, state_root: pathlib.Path | None = None) -> int | None:
-    """既存の登録簿で、次の配送が始まっていない最新の定型返却だけを調べる。"""
-    resolved = session_registry.resolve(session_id, state_root=state_root)
-    info = resolved.resume_info
-    if (
-        resolved.state != session_registry.Resolution.TERMINAL
-        or resolved.resume_pending
-        or info is None
-        or info.status != "completed"
-    ):
-        return None
-    task = task_documents.launched_task_document(info.launch_info.prompt)
-    if task is None:
-        return None
-    responses = info.launch_info.final_responses
-    if not responses or responses[-1][0] != info.turn_seq:
-        return None
-    lines = responses[-1][1].strip().splitlines()
-    if not lines:
-        return None
-    declaration = task_documents.read_declaration(task)
-    if isinstance(declaration, str) or not declaration.continuations:
-        return None
-    instructions = {entry.instruction for entry in declaration.continuations}
-    head = lines[0]
-    match head:
-        case "計画作成完了" | "計画なし準備完了":
-            waiting = head in declaration.result_heads and "実装開始" in instructions
-        case "計画検査完了":
-            # 通常は途中通知であり、マージなしの終了だけが次の指示を待つ。
-            sections = [line for line in lines if line.startswith("統合区分:")]
-            waiting = bool(sections) and all(line == "統合区分: マージなし" for line in sections) and "統合許可" in instructions
-        case "統合準備完了":
-            waiting = head in declaration.result_heads and "統合許可" in instructions
-        case "続行できない区分: user_decision" | "続行できない区分: owner_input" | "続行できない区分: authorization":
-            waiting = len(lines) > 1 and lines[1].startswith("続行できない理由: ")
-        case _:
-            waiting = False
-    return result_projection.elapsed_seconds(info.session_updated_at) if waiting else None
-
-
 def _with_result_next_action(result: dict[str, Any]) -> dict[str, Any]:
     """委譲先が失敗または中断で終了した結果へ、受領した主体の次の操作を加える。"""
     result = result_projection.with_result_next_action(result, result.get("label"))
@@ -525,6 +485,10 @@ def _wait_for_result(
                 origins.setdefault(session_id, set()).add("run")
     ordered_ids = sorted(origins)
     own_sessions = _read_sessions(own_status_path)
+    awaiting = continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root)
+    if awaiting and not ordered_ids:
+        _print_public("\n".join(json.dumps(row, ensure_ascii=False) for row in awaiting), None)
+        return 0
     if not ordered_ids and (not own_status_path.exists() or own_sessions is not None):
         if root_resolution is not None and not root_resolution.mapping_confirmed:
             reason, next_action = shared_roots.unconfirmed_root_recovery(root_resolution, "atk agents wait")
@@ -752,10 +716,10 @@ def _wait_for_result(
                         if notices:
                             result["notices"] = notices
                         result = _with_result_next_action(result)
-                        seconds = continuation_wait_seconds(session_id, state_root=state_root)
+                        seconds = continuation_wait.continuation_wait_seconds(session_id, state_root=state_root)
                         if seconds is not None:
                             result = result_projection.append_result_next_action(
-                                result, f"応答待ち（返却から {seconds} 秒）。役割の条件に従い `send_message` で返答する"
+                                result, continuation_wait.continuation_action(seconds)
                             )
                         collected.append(result)
                         wait_targets.release_wait_target(root_session_id, identity.file_name, session_id, state_root)
@@ -766,6 +730,8 @@ def _wait_for_result(
                         response["notices"] = notices
                         response["next_action"] = _NOTICE_NEXT_ACTION
                         collected.append(response)
+                if awaiting and (collected or read_failure is None):
+                    collected.extend(awaiting)
                 if collected:
                     output = "\n".join(json.dumps(item, ensure_ascii=False, separators=(",", ":")) for item in collected)
                     _LOG.info(

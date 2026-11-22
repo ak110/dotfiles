@@ -36,7 +36,7 @@ from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_s
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
 
 # 関数の実行時にだけ使う依存は、使用時まで読み込まない。
-lazy from agent_toolkit._agents_server.agents_wait import continuation_wait_seconds
+lazy from agent_toolkit._agents_server.continuation_wait import continuation_wait_seconds
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agents_server_observations as _observations
