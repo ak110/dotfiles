@@ -95,7 +95,7 @@ def test_transfer_records_new_overlap_with_extend_write_targets(
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
     after = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert next(item["レーン"] for item in after["選定"] if item["WI"] == "c.md") == "lane-03"
-    assert after["レーン間の重なり"] == [record]
+    assert after["レーン間の重なり"] == [{**record, "判定済みWIの組": [["b.md", "c.md"]]}]
 
 
 @pytest.mark.parametrize("case", ["emptied", "partner", "merged"])
@@ -139,6 +139,8 @@ def test_transfer_retargets_overlap_records(env: tuple[pathlib.Path, pathlib.Pat
 
     path = _selection(tmp_path, repo, notes, edit=edit)
     assert _transfer(path, repo, tmp_path, wi, lane, dict.fromkeys(updated, _COST)) == 0
+    if expected:
+        expected[0]["判定済みWIの組"] = [["a.md", "c.md"]] + ([["a.md", "d.md"]] if case == "merged" else [])
     assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == expected
 
 
@@ -190,7 +192,14 @@ def test_transfer_drops_records_whose_wi_pairs_change(
     addition = tmp_path / "overlaps.yaml"
     addition.write_text(yaml.safe_dump({"レーン間の重なり": rejudged}, allow_unicode=True), encoding="utf-8")
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", updates, "--extend-write-targets", str(addition)) == 0
-    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == rejudged
+    pairs = (
+        [[["b.md", "c.md"], ["b.md", "d.md"]]]
+        if case == "new-pair-under-existing-record"
+        else [[["a.md", "b.md"]], [["a.md", "c.md"]], [["b.md", "c.md"]]]
+    )
+    assert yaml.safe_load(path.read_text(encoding="utf-8"))["レーン間の重なり"] == [
+        {**row, "判定済みWIの組": judged} for row, judged in zip(rejudged, pairs, strict=True)
+    ]
 
 
 def test_transfer_moves_added_wi_and_updates_costs(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
@@ -255,7 +264,28 @@ def test_transfer_into_integrated_lane_carries_record_beside_unrecorded_integrat
     assert _dispatch(str(path), "--work-dir", str(repo)) == 0
     assert _transfer(path, repo, tmp_path, "c.md", "lane-03", {"lane-02": _COST, "lane-03": _COST}) == 0
     after = yaml.safe_load(path.read_text(encoding="utf-8"))
-    assert after["レーン間の重なり"] == [_overlap("lane-01", "lane-03", ["aの節"], ["cの節"])]
+    assert after["レーン間の重なり"] == [
+        {**_overlap("lane-01", "lane-03", ["aの節"], ["cの節"]), "判定済みWIの組": [["a.md", "c.md"]]}
+    ]
+
+    # 同じキーの未判定の組 a–d は、d の再開で必要になっても a–c の判定を継承しない。
+    before = path.read_bytes()
+    assert _dispatch(str(path), "--work-dir", str(repo), "--reopen-wi", "d.md", "--output", str(path)) == 1
+    assert path.read_bytes() == before
+
+    # 再開前に a–d を判定して追記すると、同じ公開操作が成功する。
+    record = after["レーン間の重なり"][0]
+    record["レーン2の定義"].append("dの節")
+    record["判定済みWIの組"].append(["a.md", "d.md"])
+    addition = tmp_path / "decide-before-reopen.yaml"
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": [record]}, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 0
+    decided = path.read_bytes()
+    del record["判定済みWIの組"]
+    addition.write_text(yaml.safe_dump({"レーン間の重なり": [record]}, allow_unicode=True), encoding="utf-8")
+    assert _dispatch(str(path), "--work-dir", str(repo), "--extend-write-targets", str(addition), "--output", str(path)) == 0
+    assert path.read_bytes() == decided
+    assert _dispatch(str(path), "--work-dir", str(repo), "--reopen-wi", "d.md", "--output", str(path)) == 0
 
 
 def test_transfer_drops_emptied_source_lane(env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path) -> None:
