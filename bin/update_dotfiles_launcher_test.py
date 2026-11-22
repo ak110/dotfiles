@@ -737,7 +737,7 @@ def test_public_launcher_prune_boundary_with_real_uv(
     )
     command.extend(arguments)
 
-    result = subprocess.run(command, env=environment, capture_output=True, encoding="utf-8", timeout=45, check=False)
+    result = subprocess.run(command, env=environment, capture_output=True, timeout=45, check=False)
 
     help_requested = "--help" in arguments or "-h" in arguments
     prune = ("--prune" in arguments or "minimal" in arguments) and not help_requested
@@ -749,7 +749,11 @@ def test_public_launcher_prune_boundary_with_real_uv(
         if prune:
             expected.append("prune")
     assert observed == expected
-    assert ("Installed 29 packages in 123ms" in result.stderr) is not help_requested
+    assert (b"Installed 29 packages in 123ms" in result.stderr) is not help_requested
+    notice = "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。"
+    # cmd経由ではPowerShellがコンソールの出力方式を選ぶ場合がある。
+    encodings = ("utf-8", "cp932") if os.name == "nt" else ("utf-8",)
+    assert any(notice.encode(encoding) in result.stderr for encoding in encodings) is not help_requested
 
 
 @pytest.mark.parametrize("run_exit", [0, 23])
