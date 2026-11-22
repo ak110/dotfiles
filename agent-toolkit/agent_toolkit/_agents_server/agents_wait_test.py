@@ -399,7 +399,7 @@ def test_agents_wait_adds_review_receipt_to_review_session_notice(
     label: str,
     expected: str | None,
 ) -> None:
-    """レビューのsessionが実行中に届けた通知には、完了結果と同じ採否の案内を併記する。"""
+    """レビューのsessionが実行中に届けた通知には、指摘を含む場合に限る採否の案内を併記する。"""
     wait_environment.mkdir(parents=True)
     _write_own_status(wait_environment, [{"session_id": "session-2", "label": label}])
     notices = wait_environment.parent / "notices"
@@ -420,3 +420,6 @@ def test_agents_wait_adds_review_receipt_to_review_session_notice(
     else:
         assert "agent-basics:review-standards" in action
         assert expected in action
+        # 通知は助言依頼なども運ぶため、指摘の受領を断定しない。
+        assert "通知が指摘を含む場合" in action
+        assert "指摘を受領した" not in action

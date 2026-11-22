@@ -46,15 +46,16 @@ _NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終了を待つ
 
 
 def _notice_next_action(label: object) -> str:
-    """実行中の通知への次の操作。レビューのsessionは指摘を通知で届けるため、完了結果と同じ採否の案内を併記する。"""
+    """実行中の通知への次の操作。レビューのsessionは指摘を通知でも届けるため、指摘を含む場合の採否の案内を併記する。"""
     if not isinstance(label, str) or not label.endswith(result_projection.REVIEW_LABEL_SUFFIX):
         return _NOTICE_NEXT_ACTION
-    review_action = (
-        result_projection.READER_FIT_REVIEW_RESULT_NEXT_ACTION
-        if label.endswith("reader-fit-review")
-        else result_projection.REVIEW_RESULT_NEXT_ACTION
+    receipt = (
+        "`reader-fit-review.parent.md`「受領」" if label.endswith("reader-fit-review") else "同スキルの`references/reviewee.md`"
     )
-    return f"{_NOTICE_NEXT_ACTION}\n{review_action}"
+    return (
+        f"{_NOTICE_NEXT_ACTION}\n通知が指摘を含む場合は、採否を確定する前に`agent-basics:review-standards`を起動し、"
+        f"{receipt}に従って採否と修正を確定する"
+    )
 
 
 _CONSUMED_NEXT_ACTION = (
