@@ -294,17 +294,22 @@ def _raw_hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
 
 
 def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
-    """外側の通知境界ごとに発動元、重要度および本文を返す。"""
+    """外側の通知境界ごとに集計用の分類を返す。"""
+    return [key for key, _, _ in _hook_notice_parts(body, hook_name)]
+
+
+def _hook_notice_parts(body: str, hook_name: str | None) -> list[tuple[_HookNoticeKey, str, str]]:
+    """同じ境界から、集計用の分類・全文・一覧の表示を返す。"""
     if not body.strip():
         return []
     openings = list(_HOOK_NOTICE_MARKER.finditer(body))
     if not openings:
-        return [_HookNoticeKey(None, hook_name, None, _hook_notice_kind_text(body))]
+        return [(_HookNoticeKey(None, hook_name, None, _hook_notice_kind_text(body)), body.strip(), body.strip())]
     boundaries = sorted(
         [*openings, *_HOOK_XML_END_MARKER.finditer(body)],
         key=lambda marker: marker.start(),
     )
-    keys: list[_HookNoticeKey] = []
+    parts: list[tuple[_HookNoticeKey, str, str]] = []
     outer: re.Match[str] | None = None
     depth = 0
 
@@ -313,7 +318,10 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         if source is not None:
             source = source.removeprefix("agent-toolkit/")
         tag = marker.group("tag_xml") or marker.group("tag_legacy")
-        keys.append(_HookNoticeKey(source or None, hook_name, tag or None, _hook_notice_kind_text(body[marker.end() : end])))
+        text = body[marker.end() : end].strip()
+        key = _HookNoticeKey(source or None, hook_name, tag or None, _hook_notice_kind_text(text))
+        display = " ".join(text.split()) if marker.group("hook_xml") else body[marker.start() : end].splitlines()[0].strip()
+        parts.append((key, text, display))
 
     for marker in boundaries:
         if marker.re is _HOOK_XML_END_MARKER:
@@ -333,7 +341,7 @@ def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
         depth = 1 if marker.group("hook_xml") is not None else 0
     if outer is not None:
         append_notice(outer, len(body))
-    return keys
+    return parts
 
 
 def _hook_notice_kind_text(text: str) -> str:
