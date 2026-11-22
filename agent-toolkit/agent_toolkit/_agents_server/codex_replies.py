@@ -182,7 +182,7 @@ class CodexRepliesMixin:
             # killの配送期限による取消。止まった段階と接続の状態が無いと、配送未確定の原因を切り分けられない。
             _LOG.warning(
                 "Codexのturn/interruptを完了前に取り消しました: session_id=%s turn_id=%s stage=%s connection=%s。"
-                "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞で止まっている",
+                "backlogが上限なら受信処理が停滞している。送出確認待ちだけでは配送の有無は分からない",
                 session.session_id,
                 turn_id,
                 stage,
