@@ -6,7 +6,6 @@ import pathlib
 import re
 import shlex
 import subprocess
-from typing import Any
 
 import pytest
 
@@ -55,12 +54,25 @@ def test_session_start_resolves_exact_record(
         assert all(str(path) not in output for path in found)
 
 
+def _prepare_from_notice(context: str, destination: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> pathlib.Path:
+    command = re.search(r"`(run-script session-review-prepare -- [^`]+)`", context)
+    assert command is not None
+    argv = shlex.split(command[1])
+    destination.mkdir()
+    assert (
+        run_script.dispatch(argparse.Namespace(script_name=argv[1], script_args=[*argv[3:], "--work-dir", str(destination)]))
+        == 0
+    )
+    return pathlib.Path(json.loads(capsys.readouterr().out)["conversation_path"])
+
+
 @pytest.mark.parametrize("delegated", [False, True])
 def test_compact_extracts_original_user_events(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], delegated: bool
 ) -> None:
     """複数の圧縮をまたぐ要求の原文を要約へ保持し、生成入力を除く。"""
-    path = tmp_path / "transcript.jsonl"
+    path = tmp_path / "directory with spaces" / "transcript.jsonl"
+    path.parent.mkdir()
     entries = [
         {"type": "user", "sessionId": "compact-test", "message": {"role": "user", "content": "最初の要求を全部保持する"}},
         {"type": "system", "subtype": "compact_boundary"},
@@ -68,6 +80,9 @@ def test_compact_extracts_original_user_events(
         {"type": "user", "message": {"role": "user", "content": "範囲を狭めず例も確認する"}},
     ]
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries), encoding="utf-8")
+    child = path.with_suffix("") / "subagents" / "agent-broken.jsonl"
+    child.parent.mkdir(parents=True)
+    child.write_text("{broken child record", encoding="utf-8")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
@@ -80,11 +95,9 @@ def test_compact_extracts_original_user_events(
         )
     )
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    saved = tmp_path / "compaction-digest" / "conversation.md"
-    assert "圧縮後に読むのは、作業契約と" in output and str(saved) in output
-    assert "ユーザー発話2件" in output and "条件に該当した時に読め" in output
-    assert "compaction-recovery.md" not in output and "--conversation-recent" not in output
-    body = saved.read_text(encoding="utf-8")
+    assert output.count("session-review-prepare") == 1 and "conversation_path" in output
+    assert not (tmp_path / "compaction-digest").exists()
+    body = _prepare_from_notice(output, tmp_path / "manual", capsys).read_text(encoding="utf-8")
     assert "- ユーザー: 最初の要求を全部保持する\n- ユーザー: 範囲を狭めず例も確認する\n" in body
     assert "atk-auto" not in body
 
@@ -96,7 +109,7 @@ def test_compact_extracts_original_user_events(
         (["計画だけを返して", "計画だけという指示を取り下げる。検証まで進めて"], "検証まで実装する"),
     ],
 )
-def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, instructions, retained):
+def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, capsys, instructions, retained):
     """圧縮後の通知が示す要約の所在と本文から、契約への統合と再開までを接続する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -128,12 +141,10 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
         "rules_context",
         {"session_id": session, "hook_event_name": "SessionStart", "source": "compact", "transcript_path": str(transcript)},
     )
-    original = tmp_path / "compaction-digest" / "conversation.md"
-    # hookの標準出力はJSONなので、Windowsのパス区切りはエスケープされた形で現れる。
-    shown = json.dumps(str(original), ensure_ascii=False)[1:-1]
-    assert compact.returncode == 0 and shown in compact.stdout
-    assert "目的: 作業を完了する" in compact.stdout
-    body = original.read_text(encoding="utf-8")
+    assert compact.returncode == 0
+    context = json.loads(compact.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert "目的: 作業を完了する" in context
+    body = _prepare_from_notice(context, tmp_path / "manual", capsys).read_text(encoding="utf-8")
     assert all(f"- ユーザー: {prompt}\n" in body for prompt in instructions)
     # 自然文の採否はエージェントの責務であり、この試験では判定済みの契約を消費側へ渡す。
     contract.write_text(f"目的: 作業を完了する\n現在の指示: {retained}\n", encoding="utf-8")
@@ -142,51 +153,29 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
     assert work_contract.short_notice(contract) in json.loads(restart.stdout)["hookSpecificOutput"]["additionalContext"]
 
 
-@pytest.mark.parametrize("cleanup_fails", [False, True])
-def test_failed_extraction_keeps_resume_and_removes_stale_file(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cleanup_fails: bool
-) -> None:
-    """抽出の時間上限でも他の規範と手動の再取得コマンドを届ける。"""
+def test_compact_does_not_start_process_or_reuse_previous_digest(tmp_path, monkeypatch, capsys):
     path = tmp_path / "transcript.jsonl"
     path.write_text("", encoding="utf-8")
     saved = tmp_path / "compaction-digest" / "conversation.md"
     saved.parent.mkdir()
     saved.write_text("前の要約", encoding="utf-8")
-    original_unlink = pathlib.Path.unlink
 
-    def unlink(path: pathlib.Path, *args: Any, **kwargs: Any) -> None:
-        if cleanup_fails and path == saved:
-            raise PermissionError("前回の抽出を削除できない")
-        original_unlink(path, *args, **kwargs)
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("圧縮後の通知がプロセスを起動した")
 
-    monkeypatch.setattr(pathlib.Path, "unlink", unlink)
-
-    def fail(*args: Any, **kwargs: Any) -> Any:
-        raise subprocess.TimeoutExpired("extract", 15)
-
-    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", fail)
-    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    assert (
-        rules_context.main(
-            json.dumps(
-                {
-                    "hook_event_name": "SessionStart",
-                    "source": "compact",
-                    "session_id": "compact-test",
-                    "transcript_path": str(path),
-                }
-            )
-        )
-        == 0
-    )
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    monkeypatch.setattr(subprocess, "Popen", unexpected)
+    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
+    payload = {
+        "hook_event_name": "SessionStart",
+        "source": "compact",
+        "session_id": "compact-test",
+        "transcript_path": str(path),
+    }
+    assert rules_context.main(json.dumps(payload)) == 0
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "TimeoutExpired" in output and "--conversation-digest" in output
-    assert rules_context.ENTRY_COMPACT_NOTICE in output
-    assert saved.exists() is cleanup_fails
-    if cleanup_fails:
-        assert "前回の要約ファイル" in output and "使用するな" in output
+    assert "--conversation-digest" in output and str(saved) not in output
+    assert saved.read_text(encoding="utf-8") == "前の要約"
 
 
 @pytest.mark.parametrize("source", ["startup", "resume", "clear"])
@@ -197,10 +186,11 @@ def test_noncompact_session_start_does_not_extract(
     path = tmp_path / "transcript.jsonl"
     path.write_text("{}\n", encoding="utf-8")
 
-    def unexpected(*_args: Any, **_kwargs: Any) -> Any:
+    def unexpected(*_args, **_kwargs):
         pytest.fail("圧縮以外の開始で抽出を起動した")
 
-    monkeypatch.setattr(rules_context.process_tree, "run_with_timeout", unexpected)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    monkeypatch.setattr(subprocess, "Popen", unexpected)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *args, **kwargs: tmp_path)
     assert (
         rules_context.main(
@@ -268,32 +258,6 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
     assert "この会話の原文を保持する" in conversation
 
 
-@pytest.mark.parametrize("delegated", [False, True])
-def test_compact_recovery_digest_is_delivered_once(tmp_path, monkeypatch, capsys, delegated):
-    """圧縮時の置換本文が参照する通知は、両主体へ要約の所在を1回届け、取得コマンドと手順資料を案内しない。"""
-    path = tmp_path / "record.jsonl"
-    entry = {"type": "user", "sessionId": "recover", "message": {"role": "user", "content": "継続する要求"}}
-    path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    if delegated:
-        monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    else:
-        monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-    monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)
-    rules_context.main(
-        json.dumps(
-            {"hook_event_name": "SessionStart", "source": "compact", "session_id": "recover", "transcript_path": str(path)}
-        )
-    )
-    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    saved = tmp_path / "compaction-digest" / "conversation.md"
-    assert output.count(str(saved)) == 1
-    assert "- ユーザー: 継続する要求\n" in saved.read_text(encoding="utf-8")
-    # 成功時は要約の所在だけを示し、取得コマンドと手順資料への案内を重ねない。
-    assert "session-review-prepare" not in output and "session-records.md" not in output
-    assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
-
-
 # test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。
 def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):
     """パスを取得できない場合も、同じ圧縮後通知で実IDを渡す照会を案内する。"""
@@ -303,3 +267,5 @@ def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkey
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "unresolved"}))
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "run-script session-review-evidence -- --claude-session-id unresolved --user-events`" in output
+    assert "作業契約と取得したユーザー発話の原文を読め" in output
+    assert "conversation_path" not in output

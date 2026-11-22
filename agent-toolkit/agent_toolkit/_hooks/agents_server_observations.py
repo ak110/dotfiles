@@ -659,6 +659,16 @@ def retained_running_session_ids(state: dict, owner_agent_id: str) -> list[str]:
     )
 
 
+def own_waited_session_ids(session_ids: list[str]) -> set[str]:
+    """現在の待機主体がロックを保持している場合だけ、その登録対象を返す。"""
+    if not session_ids:
+        return set()
+    identity = shared_roots.resolve_wait_identity(os.environ, None)
+    if identity is None or identity.file_name not in _held_wait_lock_owners(identity.root_session_id):
+        return set()
+    return set(session_ids) & _registered_wait_targets(identity.root_session_id, identity.file_name)
+
+
 def actively_waited_session_ids(session_ids: list[str]) -> set[str]:
     """待機中の主体が待機対象としているsession識別子を返す。
 
