@@ -4,7 +4,8 @@
 //! 1行目はモデル名・effort・cwdを半角スペース区切りで
 //! 結合したのち、コンテキスト・コスト・経過時間・消費量とパイプ区切りで連結する。
 //! 2行目はセッションID・セッション名を半角スペース区切りで結合したのち、worktree情報（存在時のみ）
-//! とパイプ区切りで連結する。数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
+//! とプロンプトキャッシュ（観測時のみ）をパイプ区切りで連結する。
+//! 数値項目には日本語ラベルを付与し、欠落・null・空文字列の要素は省略する。
 
 use serde_json::Value;
 
@@ -141,7 +142,58 @@ fn render_session_line(data: &Value) -> String {
     {
         segments.push(seg);
     }
+    let now_seconds = std::time::UNIX_EPOCH
+        .elapsed()
+        .ok()
+        .map(|d| d.as_secs_f64());
+    if let Some(seg) = build_prompt_cache_segment(&data["prompt_cache"], now_seconds) {
+        segments.push(seg);
+    }
     segments.join(" | ")
+}
+
+fn build_prompt_cache_segment(cache: &Value, now_seconds: Option<f64>) -> Option<String> {
+    if cache["caching_observed"].as_bool() != Some(true) {
+        return None;
+    }
+    let expires_at = cache["expires_at"].as_f64();
+    let mut parts = vec!["キャッシュ:".to_string()];
+    if let Some(ratio) = cache["hit_ratio"]
+        .as_f64()
+        .filter(|r| (0.0..=1.0).contains(r))
+    {
+        parts.push(format!("{:.0}%", ratio * 100.0));
+    }
+    if cache["warm"].as_bool() == Some(true) {
+        parts.push("有効".into());
+        if let (Some(expiration), Some(now)) = (expires_at, now_seconds) {
+            parts.push(format!(
+                "残り{}",
+                format_duration((expiration - now).max(0.0) * 1000.0)
+            ));
+        }
+    } else if expires_at.is_some() {
+        parts.push(color("期限切れ", YELLOW));
+        let tokens = cache
+            .get("recache_tokens_if_cold")
+            .filter(|v| v.as_u64().is_some());
+        if let Some(count) = crate::subagent::format_tokens(tokens, None) {
+            parts.push(color(&format!("次回{count}再作成"), YELLOW));
+        }
+    } else {
+        parts.push("直近未使用".into());
+    }
+    if let Some(causes) = cache["last_miss_cause"]["causes"].as_array() {
+        let names: Vec<_> = causes
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|name| !name.is_empty() && !name.chars().any(char::is_control))
+            .collect();
+        if !names.is_empty() {
+            parts.push(format!("前回ミス: {}", names.join(", ")));
+        }
+    }
+    Some(parts.join(" "))
 }
 
 fn build_worktree_segment(name: Option<&str>, branch: Option<&str>) -> Option<String> {
@@ -298,6 +350,59 @@ mod tests {
     #[test]
     fn empty_input_produces_no_lines() {
         assert!(render_lines(&serde_json::json!({}), Some("/home/test")).is_empty());
+    }
+
+    #[test]
+    fn prompt_cache_distinguishes_expiration_from_an_uncached_reply() {
+        let mut cache = serde_json::json!({
+            "caching_observed": true,
+            "warm": true,
+            "expires_at": 125.0,
+            "hit_ratio": 0.906,
+            "recache_tokens_if_cold": 45000,
+            "last_miss_cause": {"causes": ["tools_changed", "likely_server_side"]}
+        });
+        let warm = build_prompt_cache_segment(&cache, Some(100.0)).unwrap();
+        assert!(warm.contains("91%"));
+        assert!(warm.contains("残り0分25秒"));
+        assert!(warm.contains("tools_changed, likely_server_side"));
+        assert!(!warm.contains("再作成"));
+        cache["warm"] = false.into();
+        let expired = build_prompt_cache_segment(&cache, Some(130.0)).unwrap();
+        assert!(expired.contains("期限切れ"));
+        assert!(expired.contains("45.0k"));
+        cache["hit_ratio"] = Value::Null;
+        cache["recache_tokens_if_cold"] = Value::Null;
+        cache["last_miss_cause"] = Value::Null;
+        let expired_without_details = build_prompt_cache_segment(&cache, Some(130.0)).unwrap();
+        assert!(expired_without_details.contains("期限切れ"));
+        assert!(!expired_without_details.contains('%'));
+        assert!(!expired_without_details.contains("再作成"));
+        assert!(!expired_without_details.contains("前回ミス"));
+        cache["expires_at"] = Value::Null;
+        let unreported = build_prompt_cache_segment(&cache, Some(130.0)).unwrap();
+        assert!(unreported.contains("直近未使用"));
+        assert!(!unreported.contains("期限切れ"));
+    }
+
+    #[test]
+    fn prompt_cache_appends_only_to_the_session_line_and_omits_invalid_fields() {
+        let mut data = serde_json::json!({
+            "model": {"display_name": "opus"},
+            "session_name": "test session",
+            "prompt_cache": {"caching_observed": false, "hit_ratio": "0.9"}
+        });
+        let without_cache = render_lines(&data, None);
+        let mut absent = data.clone();
+        absent.as_object_mut().unwrap().remove("prompt_cache");
+        assert_eq!(without_cache, render_lines(&absent, None));
+        data["prompt_cache"]["caching_observed"] = true.into();
+        let with_cache = render_lines(&data, None);
+        assert_eq!(with_cache[0], without_cache[0]);
+        assert_eq!(
+            with_cache[1],
+            format!("{} | キャッシュ: 直近未使用", without_cache[1])
+        );
     }
 
     #[test]

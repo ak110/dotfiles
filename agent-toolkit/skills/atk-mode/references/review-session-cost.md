@@ -218,6 +218,12 @@ atk run-script session-review-evidence -- --stats --saved-plan "$plan" --saved-r
 セッション全体の経過秒数には並行処理、ツールの実行、人の入力待ち、サービスの利用上限による待機が含まれるため、総経過時間を総トークン数で割った値をモデルの処理速度に使わない。
 校正に要る対応のログが無ければ数値の予測は未確定とし、既存の証拠から再読込、重複調査、入力の再生成などの具体的な削減対象を比べる。
 処理時間の超過時も、推定式の残差だけでモデルの過負荷を原因とせず、工程と待機の内訳を確かめ、品質を保てるトークンの削減や既存の機構への集約を比べる。
+入力キャッシュの不調が疑われる時は、Codexの `last_token_usage` を同一会話・同一モデルの継続応答で比べ、初回、モデル切替直後、圧縮直後を別に扱う。
+生の `input_tokens - cached_input_tokens` が未キャッシュ入力で、集計済みの未キャッシュ入力はそのまま使う。
+この差から指示欄別の原因、実請求、契約枠の消費は確定できないため、[報告 #62312](https://github.com/openai/codex/issues/62312) の診断表示とusageの差も区別する。
+Responses APIを直接送る場合は、同じ指示を先頭の `developer` メッセージへ置く対照を試せるが、OpenCodeでは版と接続先を先に確かめる（[v2.3.2の変更と圧縮時の例外](https://github.com/anomalyco/opencode/pull/64542)）。
+OpenCode 1.19.5のOpenAI OAuthで疑わしい時は、設定を自動移行する代わりに同じモデルのCodexでも比べる。
+Codex 0.171.0の通常要求は既にbase指示を `input` に含めるため、`baseInstructions` や `AGENTS.md` は維持する。
 
 ## hookの所要時間
 

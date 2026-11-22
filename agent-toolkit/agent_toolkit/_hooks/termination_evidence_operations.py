@@ -8,6 +8,7 @@ lazy import subprocess
 lazy from typing import Any
 
 lazy from agent_toolkit._agents_server import tool_names
+lazy from agent_toolkit._atk.managed_temp import temp_root_path
 lazy from agent_toolkit._atk.wi import uwi_scan
 lazy from agent_toolkit._common import session_state, shell_cwd, skill_modes
 lazy from agent_toolkit._common.bash_invocations import extract_bash_invocations
@@ -175,7 +176,7 @@ def _invocations(payload: dict[str, Any], *, after: bool, failed: bool) -> list[
             if not path.is_absolute() or private is not None and path.is_relative_to(private):
                 continue
             repository = _git_root(str(path.parent))
-            if repository is not None:
+            if repository is not None and not _temporary_git_repository(repository):
                 grouped.setdefault(repository, []).append(path.relative_to(repository).as_posix())
         for repository, relative in grouped.items():
             if relative:
@@ -238,6 +239,21 @@ def _git_root(cwd: str, *, options: tuple[str, ...] = ()) -> pathlib.Path | None
     except OSError, subprocess.TimeoutExpired:
         return None
     return pathlib.Path(result.stdout.strip()).resolve() if result.returncode == 0 and result.stdout.strip() else None
+
+
+def _temporary_git_repository(root: pathlib.Path) -> bool:
+    """共通Gitディレクトリも一時領域内の独立した複製だけを除外する。"""
+    try:
+        temporary = temp_root_path()
+        if not root.is_relative_to(temporary):
+            return False
+        result = git_command.run(
+            ["rev-parse", "--git-common-dir"], cwd=root, capture_output=True, text=True, check=False, timeout=5
+        )
+        common = result.stdout.strip()
+        return result.returncode == 0 and bool(common) and (root / common).resolve().is_relative_to(temporary)
+    except OSError, subprocess.TimeoutExpired:
+        return False
 
 
 def _uncommitted_paths(repository: str, paths: list[str]) -> list[str] | None:

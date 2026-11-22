@@ -315,6 +315,52 @@ def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list
     return [override] if override.exists() else []
 
 
+def effective_managed_settings(base: dict, overrides: list[dict]) -> dict:
+    """配布対象の共通設定とOS別設定を重ねた値を返す。"""
+    managed = copy.deepcopy(base)
+    for override in overrides:
+        _merge(managed, override)
+    return typing.cast("dict[str, typing.Any]", _substitute_home_placeholder(managed))
+
+
+def _updated_settings_data(
+    original: dict,
+    managed: dict,
+    removed_hook_substrings: tuple[str, ...],
+    removed_env_keys: tuple[str, ...],
+    removed_keys: tuple[str, ...],
+    removed_list_item_substrings: tuple[tuple[str, str], ...],
+    stale_labeled_list_paths: tuple[str, ...],
+    *,
+    strip_legacy_codex_timeout: bool,
+) -> dict:
+    data = copy.deepcopy(original)
+    if strip_legacy_codex_timeout:
+        _strip_legacy_codex_timeout(data)
+    _strip_removed_hooks(data, removed_hook_substrings)
+    _strip_managed_hooks(data, managed)
+    _strip_removed_env_keys(data, removed_env_keys)
+    _strip_removed_keys(data, removed_keys)
+    _strip_removed_list_items(data, removed_list_item_substrings)
+    _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
+    _merge(data, managed)
+    return data
+
+
+def preview_managed_settings_update(original: dict, managed: dict) -> dict:
+    """通常の settings.json と同じ除去指定を使い、ファイルを書かずに結果を得る。"""
+    return _updated_settings_data(
+        original,
+        managed,
+        removal_registry.values(_REMOVED_HOOK_COMMAND_SUBSTRINGS),
+        removal_registry.values(_REMOVED_ENV_KEYS),
+        removal_registry.values(_REMOVED_KEYS),
+        removal_registry.values(_REMOVED_LIST_ITEM_SUBSTRINGS),
+        _STALE_LABELED_LIST_PATHS,
+        strip_legacy_codex_timeout=False,
+    )
+
+
 def update_claude_settings(
     managed_path: Path,
     settings_path: Path,
@@ -350,10 +396,10 @@ def update_claude_settings(
     Returns:
         実際にファイルを書き換えた場合は `True`、変更が無い場合は `False`、書き込みに失敗した場合は `None`。
     """
-    managed = json.loads(managed_path.read_text(encoding="utf-8"))
-    for override_path in overrides or []:
-        _merge(managed, json.loads(override_path.read_text(encoding="utf-8")))
-    managed = typing.cast("dict[str, typing.Any]", _substitute_home_placeholder(managed))
+    managed = effective_managed_settings(
+        json.loads(managed_path.read_text(encoding="utf-8")),
+        [json.loads(path.read_text(encoding="utf-8")) for path in overrides or []],
+    )
 
     def read_and_merge() -> tuple[str | None, dict, dict]:
         try:
@@ -365,16 +411,16 @@ def update_claude_settings(
             if source is not None
             else {}
         )
-        data = copy.deepcopy(original)
-        if strip_legacy_codex_timeout:
-            _strip_legacy_codex_timeout(data)
-        _strip_removed_hooks(data, removed_hook_substrings)
-        _strip_managed_hooks(data, managed)
-        _strip_removed_env_keys(data, removed_env_keys)
-        _strip_removed_keys(data, removed_keys)
-        _strip_removed_list_items(data, removed_list_item_substrings)
-        _strip_stale_labeled_list_items(data, managed, stale_labeled_list_paths)
-        _merge(data, managed)
+        data = _updated_settings_data(
+            original,
+            managed,
+            removed_hook_substrings,
+            removed_env_keys,
+            removed_keys,
+            removed_list_item_substrings,
+            stale_labeled_list_paths,
+            strip_legacy_codex_timeout=strip_legacy_codex_timeout,
+        )
         return source, original, data
 
     short = log_format.home_short(settings_path)

@@ -105,6 +105,7 @@ def _entry_detail_events(
                         "line": line,
                         "timestamp": timestamp,
                         "tool": str(block.get("tool_use_id", "")),
+                        **({"is_error": block["is_error"]} if isinstance(block.get("is_error"), bool) else {}),
                         "text": budget.clip(_tool_result_body(block, entry)),
                     }
                 )
@@ -135,6 +136,8 @@ def _codex_detail_events(line: int, entry: dict[str, Any], budget: _DetailBudget
     if not isinstance(payload, dict):
         return []
     kind = payload.get("type")
+    if not isinstance(kind, str):
+        return []
     common = {"kind": "detail", "line": line, "timestamp": _entry_timestamp(entry)}
     if entry.get("type") == "response_item":
         if kind == "message":
@@ -274,6 +277,18 @@ def _clip_structure(value: Any, budget: _DetailBudget) -> Any:
     if isinstance(value, list):
         return [_clip_structure(item, budget) for item in value]
     return value
+
+
+def _clip_event_body(event: dict[str, Any], budget: _DetailBudget) -> dict[str, Any]:
+    """本文の予算から追跡・分類に必要なフィールドを除外する。"""
+    local_budget = _DetailBudget(budget.remaining)
+    body_fields = {"text", "input", "command", "stderr", "error"}
+    result = {key: _clip_structure(value, local_budget) if key in body_fields else value for key, value in event.items()}
+    budget.remaining = local_budget.remaining
+    if local_budget.omitted:
+        result["omitted"] = True
+        budget.omitted = True
+    return result
 
 
 def _entry_texts(entry: dict[str, Any]) -> list[str]:

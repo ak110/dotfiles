@@ -57,7 +57,14 @@ lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_e
 lazy from agent_toolkit._common.task_stop_state import consume_completion, target_ids
 lazy from agent_toolkit._hooks import agents_server_observations as _agents_server_observations
 lazy from agent_toolkit._hooks import background_tasks as _background_tasks
-lazy from agent_toolkit._hooks import codex_truncation, command_timing, full_reads, session_title, termination_evidence
+lazy from agent_toolkit._hooks import (
+    clock_claims,
+    codex_truncation,
+    command_timing,
+    full_reads,
+    session_title,
+    termination_evidence,
+)
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
@@ -610,6 +617,8 @@ def main(payload_text: str) -> int:
             else _structured_background_task_id(payload.get("tool_response"))
         )
         notices.extend(command_timing.observe(payload, background_task_id=background_task_id))
+        if tool_name in {"Bash", "exec_command", "functions.exec"}:
+            clock_claims.observe(payload, tool_input.get("command"), session_id)
         if (
             is_codex_payload(payload)
             and tool_name == "Bash"

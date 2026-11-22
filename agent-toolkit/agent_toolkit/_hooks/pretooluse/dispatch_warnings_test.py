@@ -126,7 +126,7 @@ def test_irremovable_warning_does_not_advance_removable_repeat_count(
     """除去可能性の区分が変わっても同じ原因・本文・対処の反復を抑止する。"""
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
 
-    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str) -> Decision:
+    def emit_controlled_warning(_tool_name: str, tool_input: dict, _cwd: str, _payload: dict) -> Decision:
         notice = pretooluse._llm_notice(  # noqa: SLF001  # pylint: disable=protected-access
             "controlled warning",
             tag=pretooluse._WARN_TAG,  # noqa: SLF001  # pylint: disable=protected-access

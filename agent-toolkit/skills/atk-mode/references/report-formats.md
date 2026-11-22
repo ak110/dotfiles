@@ -152,7 +152,7 @@
    sourceは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、原稿のfrontmatterで指定済みなら`--source`を省ける。
    入力の原稿、抽出の保存先、終了状態、両出力を対応付け、検証か抽出の保存に失敗した結果は使わない。
 3. dry-runの抽出を先に読み、問い、成果の要点、確かめてほしい項目が冒頭だけで分かるかを、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」で判定する。
-   次に全文を読み、本文単独で読めるか、節の間の重複、原稿と抽出の一致を確かめる。
+   次に全文を読み、`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の自己完結、節の間の重複、原稿と抽出の一致を確かめる。
    一致は同じdry-runに`--compare-opening-file <抽出の絶対パス>`を付けて、改行、前後の空白、末尾の空行を含む完全一致で判定する。
    原稿を変えたら手順2へ戻り、新しい抽出で確かめる。
    本保存へ同じ指定を付けると、一致した時だけ保存する。

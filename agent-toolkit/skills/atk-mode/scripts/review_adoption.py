@@ -106,6 +106,9 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
     if not names:
         return {}
     models: dict[str, set[str]] = collections.defaultdict(set)
+    names_set = set(names)
+    lengths = {len(name) for name in names_set}
+    table_suffix = re.compile(r"\.exec-review\.tsv")
     for root in roots:
         if not root.is_dir():
             continue
@@ -116,7 +119,14 @@ def _table_models(names: list[str], roots: list[Path]) -> dict[str, str]:
                 text = record.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            matched = [name for name in names if name in text]
+            # 表はこの接尾辞で列挙される。位置から候補長ごとの文字列を表の名前と比べ、部分文字列の一致も保つ。
+            matched = {
+                text[end - length : end]
+                for suffix in table_suffix.finditer(text)
+                for end in (suffix.end(),)
+                for length in lengths
+                if length <= end and text[end - length : end] in names_set
+            }
             if not matched:
                 continue
             identity = _record_identity(record, text)
@@ -140,6 +150,7 @@ def _period_events(
         "table_count": len(tables),
         "excluded_judgment_count": 0,
         "excluded_judgments": [],
+        "unknown_model_tables": [],
         **_empty_counts(),
         "by_level": collections.defaultdict(_empty_counts),
         "by_model": collections.defaultdict(lambda: {**_empty_counts(), "tables": 0}),
@@ -149,6 +160,8 @@ def _period_events(
     for table in tables:
         model = models.get(table.path.name, _MODEL_UNKNOWN)
         summary["by_model"][model]["tables"] += 1
+        if model == _MODEL_UNKNOWN:
+            summary["unknown_model_tables"].append(str(table.path.absolute()))
         summary["excluded_judgment_count"] += len(table.judgment_rows)
         summary["excluded_judgments"].extend({"table": str(table.path), "row": number} for number, _ in table.judgment_rows)
         for number, row in table.rows:

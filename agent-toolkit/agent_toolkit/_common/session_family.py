@@ -161,9 +161,12 @@ def _detect_runtime(entries: list[dict[str, Any]]) -> _Runtime | None:
 
 
 def _analysis_entry(entry: dict[str, Any]) -> dict[str, Any]:
-    """記録原本を保持し、会話以外のmessageの写しを解析から外す。"""
+    """記録原本を保持し、解析対象外のフィールドを読み込み時に除く。"""
     if entry.get("type") not in {"user", "assistant"} and "message" in entry:
-        return {key: value for key, value in entry.items() if key != "message"}
+        entry = {key: value for key, value in entry.items() if key != "message"}
+    payload = entry.get("payload")
+    if isinstance(payload, dict) and "type" in payload and not isinstance(payload["type"], str):
+        entry = {**entry, "payload": {key: value for key, value in payload.items() if key != "type"}}
     return entry
 
 
@@ -600,7 +603,7 @@ def _agents_server_call_ids(records: list[_Record]) -> set[str]:
                     call_ids.add(call_id)
 
         payload = record.entry.get("payload")
-        if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call", "function_call"}:
+        if not isinstance(payload, dict) or payload.get("type") not in ("custom_tool_call", "function_call"):
             continue
         call_id = payload.get("call_id")
         if not isinstance(call_id, str):
@@ -701,7 +704,7 @@ def _thread_ids_from_record(
 def _delegation_output_call_id(record: _Record, agents_server_call_ids: set[str]) -> str | None:
     """agents_server起動に対応するCodexの出力レコードから呼び出しIDを返す。"""
     payload = record.entry.get("payload")
-    if not isinstance(payload, dict) or payload.get("type") not in {"custom_tool_call_output", "function_call_output"}:
+    if not isinstance(payload, dict) or payload.get("type") not in ("custom_tool_call_output", "function_call_output"):
         return None
     call_id = payload.get("call_id")
     return call_id if isinstance(call_id, str) and call_id in agents_server_call_ids else None

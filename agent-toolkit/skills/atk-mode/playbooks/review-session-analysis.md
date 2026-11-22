@@ -7,6 +7,9 @@
 事実は観測した範囲で言い、省略された表示と未確認の範囲を不在や確認済みの根拠にしない（原則3、`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出典を保つ。
 
+改善点の受付IDが証拠に含まれる場合は、`agent-toolkit:atk-mode/playbooks/main-reporting.md` の受付手順で観測と確定済みの処置を確認する。
+同じ事象を再調査・再投入せず、受付外の新しい証拠や別の問題は通常どおり扱う。
+
 ## 分析と投入
 
 工程2〜5は、メインが作る1つの分析の記録を引き継ぐ。

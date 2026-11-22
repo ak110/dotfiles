@@ -14,6 +14,7 @@ PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
     "wait-ci": pathlib.Path("agent_toolkit/wait_ci.py"),
     "cost-metrics": pathlib.Path("skills/atk-mode/scripts/cost_metrics.py"),
+    "improvement-intake": pathlib.Path("skills/atk-mode/scripts/improvement_intake.py"),
     "review-adoption": pathlib.Path("skills/atk-mode/scripts/review_adoption.py"),
     "delegation-prompt": pathlib.Path("skills/atk-mode/scripts/delegation_prompt.py"),
     "history-compare": pathlib.Path("skills/atk-mode/scripts/compare_history.py"),

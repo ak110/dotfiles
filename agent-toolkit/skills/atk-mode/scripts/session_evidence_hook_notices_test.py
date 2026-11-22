@@ -899,6 +899,14 @@ def test_parallel_rejected_notices_keep_occurrences(tmp_path: pathlib.Path, caps
         [
             {
                 "type": "response_item",
+                "payload": {"type": "custom_tool_call", "name": "parallel", "call_id": "parallel", "input": "並列入力"},
+            },
+            {
+                "type": "response_item",
+                "payload": {"type": "custom_tool_call", "name": "unrelated", "call_id": "other", "input": "別の入力"},
+            },
+            {
+                "type": "response_item",
                 "payload": {
                     "type": "custom_tool_call_output",
                     "call_id": "parallel",
@@ -906,11 +914,17 @@ def test_parallel_rejected_notices_keep_occurrences(tmp_path: pathlib.Path, caps
                         {"type": "input_text", "text": json.dumps(results)},
                     ],
                 },
-            }
+            },
         ],
     )
     assert evidence.main([str(transcript), "--hook-notices"]) == 0
     assert read_jsonl(capsys)[-1] == {"kind": "summary", "count": 2}
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    evidence_rows = [json.loads(path.read_text(encoding="utf-8")) for path in (bundle / "candidate-evidence").glob("*.json")]
+    related = [event["call_id"] for row in evidence_rows for event in row["events"] if event["kind"] == "tool-use"]
+    assert related and set(related) == {"parallel"}
 
 
 def test_result_and_hook_record_are_one_notice(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

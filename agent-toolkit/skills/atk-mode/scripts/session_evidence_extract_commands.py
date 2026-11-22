@@ -181,7 +181,11 @@ def _result_call_ids(entry: dict[str, Any]) -> set[str]:
         }
 
     payload = entry.get("payload")
-    if isinstance(payload, dict) and payload.get("type") == "function_call_output" and isinstance(payload.get("call_id"), str):
+    if (
+        isinstance(payload, dict)
+        and payload.get("type") in ("function_call_output", "custom_tool_call_output")
+        and isinstance(payload.get("call_id"), str)
+    ):
         call_ids.add(payload["call_id"])
     return call_ids
 

@@ -10,9 +10,16 @@ import pathlib
 import pytest
 
 from agent_toolkit._common import session_state
-from agent_toolkit._hooks import termination_evidence, termination_order_advisor, user_prompt_submit
+from agent_toolkit._hooks import (
+    termination_evidence,
+    termination_evidence_operations,
+    termination_order_advisor,
+    user_prompt_submit,
+)
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.termination_evidence_support import (
     _missing_completion,
+    _tool,
     human_input,
     stop_payload,
     supply_commit,
@@ -164,3 +171,27 @@ def test_cancelling_current_work_keeps_missing_completion_of_other_work(tmp_path
     assert decision == "notify"
     assert "作業 work-1: commit" in reason
     assert later_id not in reason
+
+
+@pytest.mark.parametrize("kind", ["isolated", "linked", "external"])
+def test_managed_temp_exemption_preserves_linked_external_repository(tmp_path, monkeypatch, kind):
+    temporary = tmp_path / "managed"
+    temporary.mkdir()
+    monkeypatch.setattr(termination_evidence_operations, "temp_root_path", lambda: temporary)
+    if kind == "isolated":
+        target = git_repository.init_repository(temporary / "clone")
+    else:
+        target = git_repository.init_repository(tmp_path / "normal")
+        if kind == "linked":
+            git_repository.run_git(target, "commit", "--allow-empty", "-m", "初期")
+            linked = temporary / "linked"
+            git_repository.run_git(target, "worktree", "add", "--detach", str(linked))
+            target = linked
+    human_input(tmp_path, "request", "作業を頼む")
+    _tool(tmp_path, "edit", "Write", {"file_path": str(target / "file.txt")}, {"success": True}, codex=False)
+    decision, reason = termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))
+    if kind == "isolated":
+        assert decision == "approve"
+    else:
+        assert decision == "notify"
+        assert "リポジトリの編集" in reason

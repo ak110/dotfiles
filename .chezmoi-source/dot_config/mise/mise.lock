@@ -3,20 +3,20 @@
 lockfile_version = 3
 
 [[tools.chezmoi]]
-version = "2.74.0"
+version = "2.74.1"
 backend = "aqua:twpayne/chezmoi"
 specifiers = ["latest"]
 
 [tools.chezmoi."platforms.linux-x64"]
-checksum = "sha256:1b98a567f726f41540414aea4caf912699d53e248b29ccf8369cf553657b2374"
-url = "https://github.com/twpayne/chezmoi/releases/download/v2.74.0/chezmoi_2.74.0_linux-glibc_amd64.tar.gz"
-url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/698495837"
+checksum = "sha256:ae01c66b1a6dbf563667c63fbbd9986b3cfa3c98dd266ddee732f63e8af2e9d1"
+url = "https://github.com/twpayne/chezmoi/releases/download/v2.74.1/chezmoi_2.74.1_linux-glibc_amd64.tar.gz"
+url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/733055497"
 provenance = "cosign"
 
 [tools.chezmoi."platforms.windows-x64"]
-checksum = "sha256:13dee2831d371c6ce2ac30fc9ae1aad4f70c68e7d44700f6129fe4b244ee7a95"
-url = "https://github.com/twpayne/chezmoi/releases/download/v2.74.0/chezmoi_2.74.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/698495241"
+checksum = "sha256:208b393f9ad266fc10aab514a8adf87ac4dc5bdd968a54b7eb5b2764ca41eda4"
+url = "https://github.com/twpayne/chezmoi/releases/download/v2.74.1/chezmoi_2.74.1_windows_amd64.zip"
+url_api = "https://api.github.com/repos/twpayne/chezmoi/releases/assets/733055254"
 provenance = "cosign"
 
 [[tools.dotnet]]
@@ -42,49 +42,49 @@ url = "https://github.com/junegunn/fzf/releases/download/v0.75.0/fzf-0.75.0-wind
 url_api = "https://api.github.com/repos/junegunn/fzf/releases/assets/720590885"
 
 [[tools.gcloud]]
-version = "592.0.0"
+version = "593.0.0"
 backend = "vfox:jdx/vfox-gcloud"
 specifiers = ["latest"]
 
 [tools.gcloud."platforms.linux-x64"]
-checksum = "sha256:317a3a1c072b9a25199b5fc7cc95f3abf739b354d2bc7d19775e02c200ee070c"
-url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-592.0.0-linux-x86_64.tar.gz"
+checksum = "sha256:e36f240c5d6ddeaec2d0fb348c2d3b0f98a849dd74be59ff6e0f2f534c506a58"
+url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-593.0.0-linux-x86_64.tar.gz"
 
 [tools.gcloud."platforms.windows-x64"]
-checksum = "sha256:65002e0d679fc2ade00163b97637f45656d6fd5250d6f5962e4a1a555f2628ea"
-url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-592.0.0-windows-x86_64-bundled-python.zip"
+checksum = "sha256:8fbdc9d644ffdd25a7f515c2643edc87100d3d48be9d3aa635454f6d7fb6a53c"
+url = "https://storage.googleapis.com/cloud-sdk-release/google-cloud-sdk-593.0.0-windows-x86_64-bundled-python.zip"
 
 [[tools.gh]]
-version = "2.103.3"
+version = "2.104.0"
 backend = "aqua:cli/cli"
 specifiers = ["latest"]
 
 [tools.gh."platforms.linux-x64"]
-checksum = "sha256:4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
-url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195621"
+checksum = "sha256:98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e"
+url = "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/740718892"
 provenance = "github-attestations"
 
 [tools.gh."platforms.windows-x64"]
-checksum = "sha256:98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
-url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip"
-url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
+checksum = "sha256:08c06d10482f12c478018cd259f64acbd5f625712cadf331aad19ba973c879e5"
+url = "https://github.com/cli/cli/releases/download/v2.104.0/gh_2.104.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/740719168"
 provenance = "github-attestations"
 
 [[tools.glab]]
-version = "1.128.0"
+version = "1.130.0"
 backend = "gitlab:gitlab-org/cli"
 specifiers = ["latest"]
 
 [tools.glab."platforms.linux-x64"]
-checksum = "sha256:bc024819e7598b19429a199cd87f640d98b2b67416d8ad796f19e4260b57a7c7"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.128.0/downloads/glab_1.128.0_linux_amd64.tar.gz"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E128%2E0/glab_1%2E128%2E0_linux_amd64%2Etar%2Egz"
+checksum = "sha256:ce06313b2075af25180cd195ab3496d42bc5857c85a1c12ba996838dfe9d822c"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.130.0/downloads/glab_1.130.0_linux_amd64.tar.gz"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E130%2E0/glab_1%2E130%2E0_linux_amd64%2Etar%2Egz"
 
 [tools.glab."platforms.windows-x64"]
-checksum = "sha256:641d86af5d72c17a7d79154a6436e9c68a54c69db2172020cc4036e0776a4832"
-url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.128.0/downloads/glab_1.128.0_windows_amd64.zip"
-url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E128%2E0/glab_1%2E128%2E0_windows_amd64%2Ezip"
+checksum = "sha256:583e51e052d09960b8f1b33a787c50dab8498fb0529d22046c4a2fd94c22e4c8"
+url = "https://gitlab.com/gitlab-org/cli/-/releases/v1.130.0/downloads/glab_1.130.0_windows_amd64.zip"
+url_api = "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/1%2E130%2E0/glab_1%2E130%2E0_windows_amd64%2Ezip"
 
 [[tools.glow]]
 version = "3.0.0"
@@ -134,14 +134,14 @@ checksum = "sha256:e2edda75bfb089654705cf65a13b58933bfd5f57148e8ebda916f58a2474f
 url = "https://nodejs.org/dist/v26.13.1/node-v26.13.1-win-x64.zip"
 
 [[tools."npm:@google/gemini-cli"]]
-version = "0.67.0"
-aube = { path = ".mise/locks/npm-google-gemini-cli/0.67.0", digest = "sha256:fff97dd958bcd19ea9abede70a54b4f2b66746256a23aa036733555e9ed8177c" }
+version = "0.68.0"
+aube = { path = ".mise/locks/npm-google-gemini-cli/0.68.0", digest = "sha256:92d1d6eee4ddb18e2a651ddf578065dd34b670225d412209194668fa801ea0f3" }
 backend = "npm:@google/gemini-cli"
 specifiers = ["latest"]
 
 [[tools."npm:aws-cdk"]]
-version = "2.1148.0"
-aube = { path = ".mise/locks/npm-aws-cdk/2.1148.0", digest = "sha256:2b333b6ab8771564d29bb3df95c93fd9435376e49ca675c8aca0096ee8bfda81" }
+version = "2.1148.1"
+aube = { path = ".mise/locks/npm-aws-cdk/2.1148.1", digest = "sha256:35062eabe6d72434d84895b93d2dc7852f49ad247b30be661cee7ad2b8f3dcec" }
 backend = "npm:aws-cdk"
 specifiers = ["latest"]
 
@@ -158,26 +158,26 @@ backend = "npm:typescript"
 specifiers = ["6"]
 
 [[tools."npm:typescript-language-server"]]
-version = "6.0.3"
-aube = { path = ".mise/locks/npm-typescript-language-server/6.0.3", digest = "sha256:e4cdcc07515542ffa6a9a4f6a23faa66433e1c1b54b110d71fc149e9894775c9" }
+version = "6.1.0"
+aube = { path = ".mise/locks/npm-typescript-language-server/6.1.0", digest = "sha256:f86c7cfd9fe629ca833f239e754750b6d0cf1dd9524941638366bcaca28b85fe" }
 backend = "npm:typescript-language-server"
 specifiers = ["latest"]
 
 [[tools.pnpm]]
-version = "12.19.0"
+version = "12.21.0"
 backend = "aqua:pnpm/pnpm"
 specifiers = ["latest"]
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:bf37edf4e26c3b31c1cac42c769ffabcb9231e9bc728762aeb1ee86bc711684a"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.19.0/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/729563509"
+checksum = "sha256:84c4773bcf4a217f4083cd7b2a91e4cee6103cf42426c1282ef37d308f55a410"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.21.0/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/744357264"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.windows-x64"]
-checksum = "sha256:1fa21198d4b9dfebabac985b6ab863bd4138d83ad07457d4eb0910cc2b3286c5"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.19.0/pnpm-win32-x64.zip"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/729563500"
+checksum = "sha256:4fb64bb37e46c788309e0fd4ea93beb512546fdc7348121194fb704fbb72c09c"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.21.0/pnpm-win32-x64.zip"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/744357265"
 provenance = "github-attestations"
 
 [[tools.ripgrep]]

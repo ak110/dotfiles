@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from session_evidence_detail import _clip_structure, _entry_detail_events, _entry_timestamp
+from session_evidence_detail import _clip_event_body, _entry_detail_events, _entry_timestamp
 from session_evidence_extract import _CollectedRecord, _DetailBudget, _result_call_ids
 from session_evidence_hook_notices import _hook_records
 
@@ -104,14 +104,14 @@ def _candidate_evidence_events(
             if raw_entry is not None:
                 source_chars += len(json.dumps(raw_entry, ensure_ascii=False))
                 details.extend(
-                    _clip_structure({"record": key[0], **event}, budget)
-                    for event in _entry_detail_events(key[1], raw_entry, limit=text_limit)
+                    _clip_event_body({"record": key[0], **event}, budget)
+                    for event in _entry_detail_events(key[1], raw_entry, limit=sys.maxsize)
                 )
                 if candidate["candidate_kind"] in _TOOL_USE_EVIDENCE_KINDS:
                     for call_id in _evidence_call_ids(raw_entry):
                         tool_use = tool_uses.get((key[0], call_id))
                         if tool_use is not None:
-                            details.append(_clip_structure({"record": key[0], **tool_use}, budget))
+                            details.append(_clip_event_body({"record": key[0], **tool_use}, budget))
             else:
                 for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
                     detail = {"kind": str(event.get("kind", "")), "record": key[0], "line": key[1]}
@@ -120,7 +120,7 @@ def _candidate_evidence_events(
                             detail[field] = event[field]
                     if isinstance(event.get("text"), str):
                         source_chars += len(event["text"])
-                        detail["text"] = budget.clip(event["text"])
+                        detail = _clip_event_body({**detail, "text": event["text"]}, budget)
                     details.append(detail)
         if not details:
             details.append(
@@ -167,6 +167,7 @@ def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], 
                             "line": record.line,
                             "timestamp": _entry_timestamp(record.entry),
                             "name": str(block.get("name", "")),
+                            "call_id": block["id"],
                             "input": block.get("input"),
                         }
             payload = record.entry.get("payload")
@@ -180,6 +181,7 @@ def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], 
                     "line": record.line,
                     "timestamp": _entry_timestamp(record.entry),
                     "name": str(payload.get("name", "")),
+                    "call_id": payload["call_id"],
                     "input": payload.get("arguments", payload.get("input")),
                 }
     return index

@@ -216,6 +216,7 @@ def test_hook_notice_evidence_includes_tool_use_input(tmp_path: pathlib.Path, ca
             "line": 2,
             "timestamp": "2026-09-25T00:00:01Z",
             "name": "Bash",
+            "call_id": "toolu_target",
             "input": {"command": "find . -name '*.md'", "description": "Markdownを探す"},
         }
     ]
@@ -264,3 +265,57 @@ def test_context_hook_output_is_excluded(tmp_path: pathlib.Path, capsys: pytest.
     hook_candidates = [item for item in candidates if item.get("candidate_kind") == "hook-notice"]
     assert [item["locators"] for item in hook_candidates] == [[{"record": "claude:transcript", "line": 4}]]
     assert candidates[-1]["excluded"]["hook-notice-context"] == 2
+
+
+def test_public_bundle_keeps_result_status_when_another_result_consumes_budget(tmp_path, capsys):
+    entries = [
+        {"type": "user", "message": {"role": "user", "content": "初期要求"}},
+        {
+            "type": "user",
+            "message": {
+                "role": "user",
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "normal", "is_error": False, "content": "a" * 4000},
+                    {"type": "tool_result", "tool_use_id": "failed", "is_error": True, "content": ""},
+                ],
+            },
+            "attachment": hook_attachment(
+                {
+                    "type": "hook_additional_context",
+                    "hookName": "PreToolUse:Bash",
+                    "toolUseID": "failed",
+                    "content": ["[auto-generated: agent-toolkit/pretooluse][warn] warn: 一時通知"],
+                }
+            )["attachment"],
+        },
+    ]
+    _, items = _bundle_candidates_and_evidence(tmp_path, capsys, entries)
+    events = [event for item in items.values() for event in item["events"]]
+    assert any(event.get("tool") == "failed" and event.get("is_error") is True and event.get("text") == "" for event in events)
+    assert any(
+        event.get("tool") == "normal" and event.get("is_error") is False and event.get("omitted") is True for event in events
+    )
+
+
+@pytest.mark.parametrize("bad_type", [{"invalid": True}, ["invalid"]])
+def test_public_search_continues_after_nonstring_record_type(tmp_path, capsys, bad_type):
+    transcript = _write_transcript(
+        tmp_path,
+        [
+            {"type": "response_item", "payload": {"type": bad_type, "call_id": "bad", "output": "異常行"}},
+            {"type": "response_item", "payload": {"type": "custom_tool_call_output", "call_id": "ok", "output": "検索対象"}},
+        ],
+    )
+    assert evidence.main([str(transcript), "--grep", "検索対象"]) == 0
+    assert any(event.get("kind") == "match" and event.get("line") == 2 for event in read_jsonl(capsys))
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    assert evidence.main([str(transcript), "--bundle", str(bundle)]) == 0
+    capsys.readouterr()
+    for flag in ("--warn", "--hook-notices", "--stats", "--tool-calls"):
+        assert evidence.main([str(transcript), flag]) == 0
+        capsys.readouterr()
+    assert evidence.main([str(transcript), "--context-at", "2", "--phrase=異常行"]) == 0
+    capsys.readouterr()
+    assert evidence.main([str(transcript), "--detail", "1"]) == 0
+    assert "異常行" in capsys.readouterr().out

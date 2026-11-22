@@ -209,7 +209,8 @@ def compose_session_start(
             _llm_notice(
                 "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使え。"
                 "現在の入力に端末`mod`が添えた指定か、この会話のツール説明の指定がある時だけ、発話本文を`send_to_user`で送れ。"
-                "どちらも無い時は通常の応答本文で伝えよ。"
+                "指定があり直接の一覧に無い時は、`REPL`の`searchTools`か遅延公開ツールの検索で完全名"
+                "`mcp__plugin_agent-toolkit_agents_server__send_to_user`を探せ。指定が無いか呼び出せない時は通常の応答本文で伝えよ。"
             )
         )
     if host == "claude" and wait_schedule.background_tasks_disabled():
