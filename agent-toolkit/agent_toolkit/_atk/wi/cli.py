@@ -166,6 +166,11 @@ def _validate_add_args(args: argparse.Namespace) -> None:
     """
     if args.batch and args.dry_run:
         args.subparser.error("--dry-runは--batchと併用できません。")
+    if args.batch and args.hold:
+        args.subparser.error(
+            "--holdは--batchと併用できません。--batchは保存状態をinboxへ揃えて取り込むため、--holdを外すとinboxに入ります。"
+            "保留のまま保存する新規AWIは、巡回（process-wi）の外で、--batchを使わずに通常の投入へ--holdを付けてください。"
+        )
     if args.batch:
         conflicting = [
             name
@@ -190,6 +195,13 @@ def _validate_add_args(args: argparse.Namespace) -> None:
             args.subparser.error(f"{'・'.join(conflicting)}は--batchと併用できません。")
     if args.type is None:
         args.type = _wi_constants.WI_TYPE_AWI
+    if args.hold and args.type != _wi_constants.WI_TYPE_AWI:
+        args.subparser.error("--holdは--type=awiでのみ指定できます。UWIは--holdを外して投入してください。")
+    if args.hold and args.process_wi_timing is not None:
+        args.subparser.error(
+            "--holdは--process-wi-timingと併用できません。"
+            "巡回の時機を指定する項目は--holdを外して投入し、保留が要る項目は巡回の外で--holdを付けて投入してください。"
+        )
 
 
 def _pull_command(private_notes: pathlib.Path) -> None:

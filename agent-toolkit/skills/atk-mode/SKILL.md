@@ -47,7 +47,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
   ユーザーが確定した目的、要件、観測される結果を変えるには、新しいユーザーの判断が要る。
 - 秘匿値は、出力、記録、WI、報告から除く。
 - 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
-- 公開契約（`atk`コマンド・出力、MCPツール名、WI形式・frontmatter、役割文書の入出力）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
+- 公開契約（`atk`コマンド・出力、MCPツール名、WI形式・frontmatter、役割文書の入出力）の既存の形・意味は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる（要件に要る互換の追加は自ら決める）。
 - 認可を伴う作業（`add-awi-by-user`、`implement`、`process-wi`）は、ユーザーか`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選ぶ。
   自己起動の引数は手順書選びに限る。
 - `process-wi`の起動中か、`atk run-skill`起動（最初の入力の`atk-auto`の`source`が`run-skill`）なら自律モード、それ以外は協調モードとする。
@@ -88,6 +88,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
 | 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
+| 委譲・実行のモデル選定 | `references/model-settings.md` |
 | ホスト固有の操作（送達、質問、ターンの終え方） | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
 | 背景実行、待機、プロセスの終了、長い出力、一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
@@ -100,10 +101,6 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | 定義済みの名前 | `references/defined-names.md` |
 | 文章、設計、実装、テストの品質 | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー、実行での確認、検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
-
-## 委譲
-
-委譲・実行時は`references/model-settings.md`を全文読み、「モデル選定と判断の偏り」に従う。
 
 ## 報告に含める項目
 

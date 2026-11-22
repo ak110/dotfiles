@@ -125,7 +125,7 @@ require-paths = true
 # 反映先にエージェント向け文書を含む項目には、計画の採否確定前に方針と障害の記録を読む要求を書く。
 name = "方針と障害記録を読む要求"
 agent-doc = true
-require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
+require-text = ["docs/development/concepts.md", "git log", "--grep"]
 
 [tool.pyfltr]
 preset = "latest"

@@ -19,7 +19,7 @@ agent-toolkitの規範は、全エージェントへ常に読み込ませるフ�
 Claude Codeの`additionalContext`文字列は10,000文字の上限へ合わせ、最大構成の追加文脈を同上限内に保つテストを`agent-toolkit/agent_toolkit/_hooks/rules_context_startup_test.py`へ置く。
 ファイル保存と2,000文字のプレビューは別の出力契約として扱い、それぞれの観測条件と保証範囲を監査記録へ残す。
 Codex backendの子のApp Serverへ`AGENT_TOOLKIT_DELEGATED_SESSION`を渡す案はClaude委譲先の中で起動したCodex委譲先がstatusline表示でClaude委譲先と誤判定されるため採らない。
-全エージェントへ常に読み込ませる規範ファイルを廃止した経緯は[撤去した仕組み: hookと配送](removed-mechanisms-hooks.md#常時規範と委譲のスキル)にある。
+全エージェントへ常に読み込ませる規範ファイルを廃止した経緯は、削除前の撤去台帳`docs/development/removed-mechanisms-hooks.md`「常時規範と委譲のスキル」にある。
 
 Claude Codeが自動で読み込むユーザーとプロジェクトの規範は、Codexでは次のいずれかの手段で届けるか、対象外とする理由を記録する。
 Codexへの配送手段を追加・変更する主体は、この対応で届かない規範が無いかを確かめる。

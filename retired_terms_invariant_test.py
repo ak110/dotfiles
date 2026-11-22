@@ -242,8 +242,6 @@ _RETIRED_TERMS = (
             term=term,
             replacement="なし（2026年9月13日に廃止）",
             allowed=(
-                # 日付の付いた過去の障害記録
-                _AllowedLocation("docs/development/incidents-*.md"),
                 # 廃止を決めたユーザーの方針記録
                 _AllowedLocation("docs/development/concepts*.md"),
                 # 廃止を記す方針記録の行
@@ -314,7 +312,6 @@ _RETIRED_TERMS = (
             allowed=(
                 # 日付付きの経緯記録
                 _AllowedLocation("docs/development/concepts*.md"),
-                _AllowedLocation("docs/development/incidents*.md"),
                 _AllowedLocation("docs/development/audit-records*.md"),
                 # 登録した語の不在を確かめる本テスト
                 _AllowedLocation("retired_terms_invariant_test.py"),
@@ -547,8 +544,6 @@ _RETIRED_TERMS = (
             _AllowedLocation(
                 "agent-toolkit/skills/atk-mode/scripts/session_evidence_candidates_returns_test.py", "needs_escalation"
             ),
-            # 日付の付いた過去の障害記録
-            _AllowedLocation("docs/development/incidents*.md"),
             # 登録した語の不在を確かめる本テスト
             _AllowedLocation("retired_terms_invariant_test.py"),
         ),
@@ -559,8 +554,7 @@ _RETIRED_TERMS = (
         term="拡張原因分析",
         replacement="`agent-basics:bugfix`の入口の「書き出す場面」と確認観点の条件",
         allowed=(
-            # 廃止前の条文・観測の保存記録と、日付の付いた過去の障害記録・監査記録
-            _AllowedLocation("docs/development/incidents*.md"),
+            # 廃止前の条文・観測の保存記録と、日付の付いた過去の監査記録
             _AllowedLocation("docs/development/audit-*.json"),
             # 廃止を記す方針記録
             _AllowedLocation("docs/development/concepts*.md"),
@@ -582,28 +576,15 @@ _RETIRED_TERMS = (
 )
 
 
-_VERBATIM_RECORD_LOCATIONS = (
-    # 撤去した仕組みの台帳（索引と主題別の分割先）は、撤去した仕組みと役割を当時の名称で記録して照合に使う。
-    _AllowedLocation("docs/development/removed-mechanisms*.md"),
-)
-
-
 def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = _RETIRED_TERMS) -> list[str]:
     """許容箇所の外に現れた撤去語を`<パス>:<行番号>`付きのメッセージで返す。"""
     violations: list[str] = []
-    # 全語・全行で許容する固定引用はGit側で除き、巨大な台帳の一致本文を語ごとに転送し直さない。
-    excluded_paths = [
-        f":(glob,exclude){location.path_pattern}"
-        for location in _VERBATIM_RECORD_LOCATIONS
-        if location.line_substring is None and location.line_exact is None
-    ]
     # 全語を1回の`git grep`で走査し、行ごとに含む語を判定する。
     # 語ごとに起動すると、1回の呼び出しで200件超のサブプロセスを起動し、
     # 本関数を呼ぶ試験ケースの数だけ繰り返して、不変条件試験の所要の大半を占めていた。
     patterns = [argument for retired in terms for argument in ("-e", retired.term)]
     proc = subprocess.run(
-        ["git", "-C", str(repo_root), "grep", "-n", "-I", "-F", "-z", "--no-color", "--full-name", *patterns]
-        + ["--", ".", *excluded_paths],
+        ["git", "-C", str(repo_root), "grep", "-n", "-I", "-F", "-z", "--no-color", "--full-name", *patterns] + ["--", "."],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -618,7 +599,7 @@ def _find_violations(repo_root: pathlib.Path, terms: tuple[_RetiredTerm, ...] = 
         for retired in terms:
             if retired.term not in line:
                 continue
-            if any(location.allows(path, line) for location in (*retired.allowed, *_VERBATIM_RECORD_LOCATIONS)):
+            if any(location.allows(path, line) for location in retired.allowed):
                 continue
             violations.append(
                 f"{path}:{line_number}: 撤去した名称「{retired.term}」が残っている。正式名「{retired.replacement}」へ置き換える"
