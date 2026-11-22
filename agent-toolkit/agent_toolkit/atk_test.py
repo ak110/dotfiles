@@ -440,6 +440,19 @@ def test_wi_preview_keeps_pressure_cleanup_for_the_next_write(
     assert preview_result.value.code == 0 and idle.is_dir()
     assert _DRY_RUN_SUCCESS in capsys.readouterr().out
 
+    table = tmp_path / "review.tsv"
+    table.touch()
+    for query in (
+        ["plans", "list"],
+        ["review-table", "show", str(table)],
+        ["review-table", "validate", str(table), "--allow-unanswered"],
+        ["config", "repos", "list"],
+    ):
+        with pytest.raises(SystemExit) as observed:
+            atk.main(query, home=tmp_path, now=now)
+        assert observed.value.code == 0 and idle.is_dir(), query
+    capsys.readouterr()
+
     def ensure_after_cleanup(_home: pathlib.Path) -> pathlib.Path:
         assert not idle.exists()
         return notes

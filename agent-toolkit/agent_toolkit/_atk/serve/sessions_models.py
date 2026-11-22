@@ -1,7 +1,6 @@
 """セッション画面の表示モデルと共有設定。"""
 
 import asyncio
-import contextlib
 import dataclasses
 import datetime
 import json
@@ -107,7 +106,7 @@ class SessionSummary:
         return dataclasses.asdict(self)
 
 
-def record_matches(path: pathlib.Path, query: str, *, deadline: float) -> bool:
+def record_matches(path: pathlib.Path, engine: str, query: str, *, deadline: float) -> bool:
     """1件の許可済み記録を、詳細表示と同じ上限内で検索する。"""
     if path.stat().st_size > MAX_RECORD_BYTES:
         raise ValueError("記録が大きすぎます")
@@ -122,13 +121,11 @@ def record_matches(path: pathlib.Path, query: str, *, deadline: float) -> bool:
             remaining -= len(raw)
             if remaining < 0:
                 break
-            line = raw.decode("utf-8", errors="replace")
-            if query in line.casefold():
-                return True
-            if "\\u" in line:
-                with contextlib.suppress(ValueError, RecursionError):
-                    if query in json.dumps(json.loads(line), ensure_ascii=False).casefold():
-                        return True
+            records, _ = session_record_format.parse_records(raw.decode("utf-8", errors="replace"))
+            for event in session_record_format.record_events(engine, records):
+                body = event.text or (json.dumps(event.detail, ensure_ascii=False, indent=2) if event.detail else "")
+                if query in body.casefold():
+                    return True
         if remaining < 0 or stream.read(1):
             raise ValueError("記録が大きすぎます")
     return False

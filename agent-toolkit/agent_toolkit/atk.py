@@ -417,9 +417,7 @@ def main(
         _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
-    # WIの照会と原稿表示では、期限・容量による全領域の走査をコマンド開始の前提にしない。
-    # 更新操作と、掃引を担ってきた他のサブコマンドは従来どおり先に回収する。
-    if not (args.command == "wi" and (args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args))):
+    if not _is_query_without_sweep(args):
         _sweep_before_command(now)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
@@ -441,6 +439,27 @@ def main(
             _outcome.report_failure(_git_sync.git_timeout_reason(error), next_action=_git_sync.GIT_TIMEOUT_NEXT_ACTION)
         exit_code = 1
     sys.exit(exit_code)
+
+
+def _is_query_without_sweep(args: argparse.Namespace) -> bool:
+    """照会は全領域の掃引を待たず、未分類の操作と更新側は従来どおり回収を先に行う。"""
+    match args.command:
+        case "wi":
+            return args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args)
+        case "plans":
+            return args.plans_subcommand == "list"
+        case "review-table":
+            return args.review_table_subcommand in {"show", "validate"}
+        case "review-audit":
+            return args.review_audit_subcommand in {"list", "pending"}
+        case "config":
+            return args.config_subcommand in {None, "show", "list", "get"} or (
+                args.config_subcommand == "repos" and args.repos_subcommand == "list"
+            )
+        case "agents":
+            return args.agents_subcommand in {"list", "show", "logs"}
+        case _:
+            return False
 
 
 def _sweep_before_command(now: datetime.datetime) -> None:

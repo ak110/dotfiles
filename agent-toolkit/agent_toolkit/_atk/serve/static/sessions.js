@@ -278,6 +278,7 @@ async function fetchList(timing = {}) {
     const hasMetadataMatch = queryText && sessions.some(matchesMetadata);
     if (hasMetadataMatch) cancelFullTextSearch();
     const currentKeys = new Set(sessions.map(sessionKey));
+    const listChanged = currentKeys.size !== previousKeys.size || [...currentKeys].some(key => !previousKeys.has(key));
     for (const key of expandedKeys) if (!currentKeys.has(key)) expandedKeys.delete(key);
     if (selected && previousKeys.has(sessionKey(selected)) && !currentKeys.has(sessionKey(selected))) {
       const message = sessionDiagnostic(selected, "選択したセッション記録は見つかりません。");
@@ -292,7 +293,9 @@ async function fetchList(timing = {}) {
     renderWarnings(warningsEl, (payload.warnings || []).map((warning) =>
       diagnostic("セッション", warning.host, warning.path || warning.root || "記録一覧", warning.reason)));
     document.getElementById("sessions-list-error").hidden = true;
-    if (hadMetadataMatch && !hasMetadataMatch && queryText === filterEl.value.trim().toLowerCase()) {
+    const searched = fullTextMatches !== null || fullTextRequest !== null;
+    if (queryText && !hasMetadataMatch && (hadMetadataMatch || (searched && listChanged))
+        && queryText === filterEl.value.trim().toLowerCase()) {
       void applySessionFilter();
     } else {
       renderSessions();

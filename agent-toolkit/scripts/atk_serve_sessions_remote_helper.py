@@ -204,7 +204,7 @@ def _search_payload(
             incomplete = True
             continue
         try:
-            if sessions_models.record_matches(pathlib.Path(raw), query, deadline=deadline):
+            if sessions_models.record_matches(pathlib.Path(raw), entry["engine"], query, deadline=deadline):
                 paths.append(raw)
         except OSError, ValueError:
             incomplete = True

@@ -165,7 +165,7 @@ def _search_local(context: SessionsContext, entries: list[SessionSummary], query
             incomplete = True
             continue
         try:
-            if record_matches(pathlib.Path(entry.path), query, deadline=deadline):
+            if record_matches(pathlib.Path(entry.path), entry.engine, query, deadline=deadline):
                 found.add(entry.path)
         except OSError, ValueError:
             incomplete = True
