@@ -327,14 +327,16 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
     if decision.block is not None:
         hook_output["permissionDecision"] = "deny"
         hook_output["permissionDecisionReason"] = decision.block
-    elif force_allow:
+    elif force_allow or decision.updated_input is not None:
         hook_output["permissionDecision"] = "allow"
+        if decision.updated_input is not None:
+            hook_output["updatedInput"] = decision.updated_input
     contexts = [decision.context] if decision.context else []
     contexts.extend(notice for notice in pending_notices if notice)
     pending_notices.clear()
     if contexts:
         hook_output["additionalContext"] = format_warning_context(contexts)
-    if decision.block is not None or force_allow or contexts:
+    if decision.block is not None or force_allow or decision.updated_input is not None or contexts:
         emit_response({"hookSpecificOutput": hook_output})
     return 0
 
@@ -346,7 +348,14 @@ def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, 
     if launch.block is not None:
         return launch
     if tool_name in _AGENTS_SERVER_SEND_TOOLS | _AGENTS_SERVER_KILL_TOOLS:
-        return _check_agents_server_continuation_target(session_id, tool_input, tool_name)
+        return _check_agents_server_continuation_target(
+            session_id, tool_input, tool_name, actor=_agent_id.resolve_hook_agent_id(payload)
+        )
+    if tool_name.endswith("__start") and not is_codex_payload(payload):
+        from agent_toolkit._hooks.agents_server_observations import start_observation_input
+
+        updated = start_observation_input(session_id, tool_input, _agent_id.resolve_hook_agent_id(payload))
+        return dataclasses.replace(launch, allow=True, updated_input=updated)
     return dataclasses.replace(launch, allow=True)
 
 

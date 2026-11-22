@@ -1,5 +1,6 @@
 """agent-toolkit/agent_toolkit/_hooks/agents_server_observations.py のテスト。"""
 
+import asyncio
 import contextlib
 import copy
 import io
@@ -634,6 +635,79 @@ def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, opera
     assert record is not None and record["launcher_agent_id"] == actor
     after = agent_checks._check_agents_server_continuation_target("local", inputs, namespace + operation)  # pylint: disable=protected-access
     assert after.allow and after.block is None
+
+
+@pytest.mark.asyncio
+async def test_start_timeout_recovers_only_the_registered_launch_actor(tmp_path, monkeypatch):
+    """公開startの起動後に応答を止め、同じ呼出主体だけがshowで回復することを確かめる。"""
+    for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "local")
+    monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+    cwd = str(tmp_path)
+    payload = {"session_id": "local", "agent_id": "agent-a", "cwd": cwd}
+    start = {
+        **payload,
+        "tool_name": "mcp__agents_server__start",
+        "tool_input": {"cwd": cwd, "mode": "delegate", "prompt": "処理", "model_type": "claude:test/medium"},
+    }
+    _acquire_delegation(start)
+    with contextlib.redirect_stdout(io.StringIO()) as output:
+        assert pretooluse.main(json.dumps(start, ensure_ascii=False)) == 0
+    launch = json.loads(output.getvalue())["hookSpecificOutput"]["updatedInput"]
+    writer = status_file.StatusFileWriter(
+        {}, status_file.StatusFileIdentity("local", "root.json", None), state_root=tmp_path, aggregate_seconds=0
+    )
+    async with manager.AgentsServerManager(writer) as current:
+        agents_server_support.install_backend(current, "claude", _RegisteredBackend(current.sessions, "claude"))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", current)
+        writer.activate()
+        started = asyncio.Event()
+
+        async def drop_response():
+            result = await mcp_tools.start(**launch)
+            started.set()
+            await asyncio.Future()
+            return result
+
+        request = asyncio.create_task(drop_response())
+        try:
+            await asyncio.wait_for(started.wait(), timeout=10)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(request, timeout=0)
+        finally:
+            if not request.done():
+                request.cancel()
+                await asyncio.gather(request, return_exceptions=True)
+        child = next(iter(current.sessions))
+        shown = await current.show_session(child)
+    error = {"isError": True, "content": [{"type": "text", "text": "tools/callの応答が時間切れ"}]}
+    assert (
+        _hook(
+            posttooluse.main,
+            {**payload, "tool_name": "mcp__agents_server__start", "tool_input": launch, "tool_response": error},
+        )
+        == 0
+    )
+    show = {
+        **payload,
+        "tool_name": "mcp__agents_server__show",
+        "tool_input": {"session_id": child},
+        "tool_response": shown,
+    }
+    assert _hook(posttooluse.main, {**show, "agent_id": "agent-b"}) == 0
+    assert agents_server_observations.session_cwd(session_state.read_state("local"), child) is None
+    assert _hook(posttooluse.main, show) == 0
+    assert agents_server_observations.session_cwd(session_state.read_state("local"), child) == cwd
+    for operation in ("send_message", "kill"):
+        decision = agent_checks._check_agents_server_continuation_target(  # pylint: disable=protected-access
+            "local", {"session_id": child}, "mcp__agents_server__" + operation, actor="agent-a"
+        )
+        assert decision.allow and decision.block is None
+        other = agent_checks._check_agents_server_continuation_target(  # pylint: disable=protected-access
+            "local", {"session_id": child}, "mcp__agents_server__" + operation, actor="agent-b"
+        )
+        assert other.block is not None
 
 
 @pytest.mark.parametrize(

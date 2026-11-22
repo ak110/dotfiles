@@ -136,6 +136,7 @@ class SessionState:
     publish_registry: bool = dataclasses.field(default=False, repr=False)
     # sessionを作成した時点の委譲元sessionの識別子。登録簿へ公開し、`atk serve`の一覧が親子付けに使う。
     launcher_session_id: str | None = dataclasses.field(default=None, repr=False)
+    start_observation: str | None = dataclasses.field(default=None, repr=False)
     # turnを実行する委譲先CLIのプロセスの識別。所有するagents_serverの識別とともに登録簿へ公開し、
     # 所有側が終了を公開せずに終了した記録を、照会側が全プロセスの不在から終了と判定する入力にする。
     executor_process: session_registry.ProcessIdentity | None = dataclasses.field(default=None, repr=False)

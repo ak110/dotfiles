@@ -321,6 +321,7 @@ def publish(
     processes: Sequence[ProcessIdentity] = (),
     interruption: InterruptionReason | None = None,
     launcher_session_id: str | None = None,
+    start_observation: str | None = None,
     preserve_server_instance: bool = False,
     owner_root_session_id: str | None = None,
     result_contract_recovery_consumed: bool = False,
@@ -435,6 +436,10 @@ def publish(
         launcher = launcher_session_id if launcher_session_id is not None else _recorded_launcher(path)
         if launcher is not None:
             payload[LAUNCHER_KEY] = launcher
+        key = _session_launchers.START_OBSERVATION_KEY
+        observation = prior.get(key) or _session_launchers.valid_start_observation(start_observation)
+        if observation is not None:
+            payload[key] = observation
         atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
 
 

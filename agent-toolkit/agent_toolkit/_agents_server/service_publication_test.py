@@ -392,12 +392,12 @@ async def test_idle_previous_generation_retires_even_if_commit_is_lost_or_late(
             resident.kill()
 
 
-@pytest.mark.parametrize("ending", ["confirmed", "collected", "retired", "killed", "alive"])
+@pytest.mark.parametrize("ending", ["confirmed", "collected", "legacy_retired", "killed", "alive"])
 @pytest.mark.asyncio
 async def test_publication_without_commit_requires_handover_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, ending: str
 ) -> None:
-    """旧世代の退役や回収だけでは引継ぎを成功とせず、受付先に残った確定記録で判定する。"""
+    """旧版の退役記録だけでは成功とせず、受付先に残った移転記録で判定する。"""
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
     # 同じ配置の新しい世代があると、退役した世代は索引から回収される。
@@ -416,7 +416,7 @@ async def test_publication_without_commit_requires_handover_record(
                 if ending != "alive" and process.poll() is None:
                     if ending in {"confirmed", "collected"}:
                         registry.confirm_handover("old", old["process"])
-                    if ending in {"confirmed", "retired", "collected"}:
+                    if ending in {"confirmed", "legacy_retired", "collected"}:
                         registry.retire("old", old["process"])
                     process.kill()
                     process.wait()
@@ -427,7 +427,7 @@ async def test_publication_without_commit_requires_handover_record(
         if ending in {"confirmed", "collected"}:
             accepted = await coordinator.publish()
             assert accepted["generation"] == "new"
-        elif ending in {"retired", "killed"}:
+        elif ending in {"legacy_retired", "killed"}:
             with pytest.raises(RuntimeError, match="会話移転の確定記録"):
                 await coordinator.publish()
         else:
@@ -436,7 +436,7 @@ async def test_publication_without_commit_requires_handover_record(
                 await coordinator.publish()
         current = registry.current()
         assert current is not None and current["generation"] == "new"
-        assert registry.retired("old", old["process"]) == (ending in {"confirmed", "retired", "collected"})
+        assert registry.retired("old", old["process"]) == (ending in {"confirmed", "legacy_retired", "collected"})
 
 
 def test_handover_record_does_not_survive_destination_process_replacement(tmp_path: pathlib.Path) -> None:
