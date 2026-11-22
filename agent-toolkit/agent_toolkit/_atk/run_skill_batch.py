@@ -271,6 +271,7 @@ def _meta_report_target(*, now: datetime.datetime) -> str:
     """比較期間や前回からの繰越を除き、今回の入力WIの投入先で報告先を決める。"""
     first = (now - datetime.timedelta(days=7)).strftime("%Y%m%d-%H%M%S")
     last = now.strftime("%Y%m%d-%H%M%S")
+    batch_scopes = skill_modes.accepted_scopes("review-session", "batch")
     targets = []
     for path in layout.iter_entry_paths(private_notes.default_private_notes()):
         if DATED_NAME.fullmatch(path.name) is None or not first <= path.name[:15] <= last:
@@ -284,12 +285,7 @@ def _meta_report_target(*, now: datetime.datetime) -> str:
         if (
             (
                 (kind == WI_TYPE_AWI and data.get("source") in (None, "add-awi-by-user", _FAILURE_SOURCE))
-                or (kind == WI_TYPE_UWI and data.get("run_skill_report") != "true")
-                or (
-                    kind == WI_TYPE_UWI
-                    and isinstance(scope, str)
-                    and skill_modes.canonical_scope(scope) == session_review.BATCH_SCOPE
-                )
+                or (kind == WI_TYPE_UWI and (data.get("run_skill_report") != "true" or scope in batch_scopes))
                 or any(
                     name in {"ユーザーコメント", "回答", "ユーザー指摘の逐語引用"} and nonempty
                     for name, nonempty in markdown_headings.h2_sections(body)
@@ -457,11 +453,14 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         session_review.launch_result()
         return 0
     start = session_review.directory() / "meta-start.json"
-    if not manual and start.is_file():
+    if start.is_file():
         previous = session_review.read(start)
         if previous.get("report_synced") is False:
             session_review.launch_result()
-            return 0 if _save_meta_failure(start, previous) else 1
+            if not _save_meta_failure(start, previous):
+                return 1
+            if not manual:
+                return 0
     if getattr(args, "resume_record", None) is not None:
         return execute(args)
     now = datetime.datetime.now(datetime.UTC)
@@ -490,11 +489,13 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         return code
     stage = (getattr(args, "batch_failure", None) or "").partition(":")[0] or f"{stage}-{code}"
     failure_key = hashlib.sha256(f"meta:{stage}".encode()).hexdigest()
+    log_path = getattr(args, "log_path", None)
     record.update(
         failure_key=failure_key,
         failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
         failure_stage=stage,
         exit_code=code,
+        log_name=log_path.name if isinstance(log_path, pathlib.Path) else None,
         report_synced=False,
     )
     session_review.write(start, record)
@@ -504,6 +505,11 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
 
 def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
     failure_key = record["failure_key"]
+    locate = (
+        f"起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログ `{log_name}` で原因を確かめる。"
+        if (log_name := record.get("log_name"))
+        else "run-skillのログが未作成なら、メタ分析を起票元で手動実行し、リポジトリ登録とWI読み取りの診断を確かめる。"
+    )
     saved = _save_failure_report(
         failure_key,
         lambda: (
@@ -512,7 +518,7 @@ def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
             f"週次メタ分析が終了{record['exit_code']}となり、報告を完了できなかった"
             f"（段階: {record['failure_stage']}、開始: {record['started_at']}）。\n\n"
             "## 反映内容と反映先\n\n"
-            "起票元のrun-skillの実行ログで原因を特定し、配布元で是正する。\n\n"
+            f"{locate}配布元で失敗原因を是正する。\n\n"
             "## 完成条件\n\n"
             "原因を再現する入力で失敗と是正後の報告の保存を確かめる。"
             "手動での確認には `atk run-skill --args meta review-session` を使う。\n"

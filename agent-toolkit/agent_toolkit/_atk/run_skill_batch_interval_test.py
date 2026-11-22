@@ -10,6 +10,7 @@ import subprocess
 import sys
 import types
 
+import filelock
 import pytest
 
 from agent_toolkit import atk, hook
@@ -55,23 +56,29 @@ def _capture_batch_launches(monkeypatch, *, mode="batch"):
 
 
 @pytest.mark.parametrize("event", ["SessionStart", "SessionEnd"])
-@pytest.mark.parametrize("meta_child", [False, True])
-def test_public_hook_launches_initial_meta_only_for_other_sessions(monkeypatch, event, meta_child):
+@pytest.mark.parametrize("reason", [None, "meta-child", "consultation", "disabled"])
+def test_public_hook_launches_initial_meta_only_when_allowed(monkeypatch, event, reason):
     """待ちがなくても開始・終了で初回metaを起動し、meta自身は追加起動しない。"""
     monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
     monkeypatch.setattr(session_activity, "host_process", object)
-    if meta_child:
+    if reason == "meta-child":
         monkeypatch.setenv(
             mcp_environment.SESSION_START_INPUT_ENV, json.dumps({"skill": "agent-toolkit:review-session", "arguments": "meta"})
         )
+    elif reason == "disabled":
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "false")
+    elif reason == "consultation":
+        session_state.update_state("open", lambda state: {**state, "add_awi_skill_invoked": True})
+        monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset({"open"}))
     calls = _capture_batch_launches(monkeypatch, mode="meta")
     payload = {"hook_event_name": event, "source": "startup", "session_id": "meta-case"}
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode())))
     assert hook.main(["rules_context" if event == "SessionStart" else "session_end_cleanup"]) == 0
-    assert len(calls) == int(not meta_child)
+    assert len(calls) == int(reason is None)
 
 
-def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_path):
+@pytest.mark.parametrize("with_legacy_reports", [False, True])
+def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_path, with_legacy_reports):
     """対象期間の入力だけで報告先を決め、実行cwdは元の指定を保つ。"""
     notes = private_notes.default_private_notes()
     now = datetime.datetime.now(datetime.UTC)
@@ -88,6 +95,15 @@ def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_p
         path = notes / inserted.strftime("%Y/%m/%Y%m%d-%H%M%S-001.md")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"---\ntype: awi\nsource: {source}\ntarget_repo: {target}\n---\n{body}", encoding="utf-8")
+    if with_legacy_reports:
+        inserted = now - datetime.timedelta(days=1)
+        for index in range(2, 4):
+            path = notes / inserted.strftime(f"%Y/%m/%Y%m%d-%H%M%S-{index:03d}.md")
+            path.write_text(
+                f"---\ntype: uwi\nrun_skill_report: true\nscope: {session_review.LEGACY_BATCH_SCOPE}\n"
+                "target_repo: github.com/test/other\n---\n",
+                encoding="utf-8",
+            )
     calls = []
 
     def execute(args):
@@ -95,10 +111,18 @@ def test_public_meta_cli_selects_report_target_before_running(monkeypatch, tmp_p
         return 0
 
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
+    argv = ["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"]
+    batch_lock = session_review.directory() / "batch.lock"
+    batch_lock.parent.mkdir(parents=True, exist_ok=True)
+    with filelock.FileLock(str(batch_lock)), pytest.raises(SystemExit) as result:
+        atk.main(argv)
+    assert result.value.code == 1
+    assert not calls
     with pytest.raises(SystemExit) as result:
-        atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
+        atk.main(argv)
     assert result.value.code == 0
-    assert calls == [("github.com/test/current", tmp_path.resolve())]
+    expected = "other" if with_legacy_reports else "current"
+    assert calls == [(f"github.com/test/{expected}", tmp_path.resolve())]
 
 
 def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path):
@@ -111,12 +135,18 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
         return True
 
     monkeypatch.setattr(run_skill_batch, "_save_failure_report", save_failure)
-    monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: 3)
+
+    def execute(args):
+        args.log_path = tmp_path / "meta-run.log"
+        return 3
+
+    monkeypatch.setattr(run_skill, "_dispatch_once", execute)
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 3
     [(key, report)] = saved
     assert "review-session meta" in report
+    assert "meta-run.log" in report
     assert str(tmp_path) not in report
     record = session_review.read(session_review.directory() / "meta-start.json")
     assert record["failure_key"] == key
@@ -132,7 +162,8 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     assert session_review.auto_start_due(now=now)
 
 
-def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch):
+@pytest.mark.parametrize("manual", [False, True])
+def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, manual):
     """是正報告を保存できなかった回は、次の実行機会に保存だけを再試行する。"""
     start = session_review.directory() / "meta-start.json"
     elapsed = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)
@@ -147,15 +178,21 @@ def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch):
         },
     )
     monkeypatch.setattr(session_activity, "living_root_session_ids", lambda: frozenset())
-    _automatic_launch(monkeypatch, "a" * 32)
+    if not manual:
+        _automatic_launch(monkeypatch, "a" * 32)
     saved = []
-    monkeypatch.setattr(run_skill_batch, "_save_failure_report", lambda key, _message: saved.append(key) is None)
+
+    def save_failure(key, _message):
+        saved.append(key)
+        return not manual
+
+    monkeypatch.setattr(run_skill_batch, "_save_failure_report", save_failure)
     monkeypatch.setattr(run_skill, "_dispatch_once", lambda _args: pytest.fail("起動してはならない"))
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--args", "meta", "agent-toolkit:review-session"])
-    assert result.value.code == 0
+    assert result.value.code == int(manual)
     assert saved == ["previous"]
-    assert session_review.read(start)["report_synced"] is True
+    assert session_review.read(start)["report_synced"] is not manual
 
 
 def _pending(name, *, batch=False):
