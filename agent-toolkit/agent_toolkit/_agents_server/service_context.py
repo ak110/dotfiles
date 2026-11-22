@@ -117,14 +117,37 @@ class ServiceManagers:
         for item in self.conversations.values():
             item.connections.discard(connection_id)
 
-    async def close_conversation(self, key: str) -> None:
+    async def close_conversation(self, key: str, *, disconnected_only: bool = False) -> None:
         async with self._locks.setdefault(key, asyncio.Lock()):
             item = self.conversations.get(key)
-            if item is None:
+            if item is None or (disconnected_only and not self._retirable(item)):
                 return
+            if disconnected_only:
+                _LOG.info("接続と実行中のturnがない会話を回収します: parent=%s", key)
             with self._bound(item):
                 await item.stack.aclose()
             self.conversations.pop(key, None)
+
+    async def _collect_disconnected_conversations(self) -> None:
+        """短命なMCP接続とは独立に、未完了のturnを所有する会話を保持する。"""
+        for key, conversation in tuple(self.conversations.items()):
+            if self._retirable(conversation):
+                await self.close_conversation(key, disconnected_only=True)
+
+    @staticmethod
+    def _retirable(conversation: Conversation) -> bool:
+        if conversation.active or conversation.connections:
+            return False
+        manager = conversation.manager
+        if (
+            manager._pending_resumes
+            or manager._recovery_attempts
+            or any(not session.terminal or session.awaiting_auto_resume for session in manager.sessions.values())
+        ):
+            # 祖先として観測したCLIの終了だけでは、再接続先や進行中の子の終了を確認できない。
+            return False
+        dead = bool(conversation.hosts) and not any(host.exists() for host in conversation.hosts.values())
+        return dead or not (manager.sessions or manager.expired_sessions)
 
     async def _monitor(self) -> None:
         """PID宛ての要求を一度だけ読み、対象会話の環境で操作する。"""
@@ -206,17 +229,7 @@ class ServiceManagers:
                             await conversation.manager.save_control_state()
                 if heartbeat:
                     next_heartbeat = asyncio.get_running_loop().time() + status_file.HEARTBEAT_INTERVAL_SECONDS
-                for key, conversation in tuple(self.conversations.items()):
-                    if conversation.active:
-                        continue
-                    dead = bool(conversation.hosts) and not any(host.exists() for host in conversation.hosts.values())
-                    empty = (
-                        not conversation.connections
-                        and not conversation.manager.sessions
-                        and not conversation.manager.expired_sessions
-                    )
-                    if dead or empty:
-                        await self.close_conversation(key)
+                await self._collect_disconnected_conversations()
             except Exception:
                 _LOG.exception("共有監視の1巡が失敗しました。所有状態を保持して次の巡回で再確認します")
                 awaiting = False

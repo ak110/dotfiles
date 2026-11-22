@@ -182,6 +182,7 @@ def test_every_backend_delivers_the_same_launch_body(
     for engine, prompt in delivered.items():
         assert isinstance(prompt, str)
         assert prompt.count(body) == 1, engine
+        assert ("WebFetch・WebSearch" in prompt) is (engine == "codex" and kind == "explore")
     assert launch_prompts.base_instructions() == _MARKERS["notice"]
 
 

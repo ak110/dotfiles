@@ -214,6 +214,7 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
    停滞を確定して止める時は、対象ごとに根拠を記録してから止める。
    Claude Codeでは`atk run-script record-stall-detection -- --session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`が記録を作り、終了コード0を返した対象だけを止められる。
 8. `kill`か`send_message`の配送が再発行しても確定しない時は、同じ前提で再発行を重ねず、`show`の`owner_server_instance`と`queried_server_instance`を比べる。
+   `show`や`list`も応答しなければ、照会を待つ代わりに`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「管理サービスへの操作が応答しない場合」へ進む。
    - 別の世代かプロセスが所有していれば、その世代の退出か移譲を待つか、所有プロセスを処置する。
      処置の前に、委譲先が保存した成果（引き継ぎ記録、結果ファイル、作業ツリーの差分）の所在を確かめて保全する。
    - 止めるプロセスが自身のMCPの接続先でないことを、`list`の`queried_server_instance`と`server_generations`の`queried: true`の世代で確かめる。
@@ -222,7 +223,9 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
      `show`では処置したturnの終了を確認する。
      新世代が自動再開した場合は、`interrupted_turns`のturn番号と診断のサーバー識別子が処置した対象と一致することを確かめる。
    - MCPの再接続が要る時は、接続が健全な間に`apply_runtime_changes`の`targets`へ`agents_server`を指定して予約し、受付と反映の結果を分けて確かめる。
+     管理サービスが応答しない時は、予約の受付を未確認として扱い、待機に入る前に接続の復旧へ進む。
      予約が失敗するホスト（Codex、ホストのUIの無い実行）と接続を失った後は、ホストの再接続の手段（Claude Codeでは`/mcp`）をユーザーへ依頼する。
+     停止・再起動を伴う場合の担当の記録と引き継ぎは、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「管理サービスへの操作が応答しない場合」に従う。
 
 ## 返す報告に含める項目
 

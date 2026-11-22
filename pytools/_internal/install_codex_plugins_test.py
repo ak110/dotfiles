@@ -68,7 +68,7 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
     outcome = install_codex_plugins.run()
 
     assert outcome.changed is True
-    assert [notice.command for notice in outcome.notices] == ["/hooks"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
     assert ["plugin", "marketplace", "add", str(plugin_env)] in calls
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert not destination.exists()
@@ -147,8 +147,6 @@ def test_running_codex_updates_and_preserves_previous_caches(
         return True
 
     def run_subprocess(args: list[str], **_kwargs: object) -> _FakeResult:
-        if args[1:] == ["app-server", "daemon", "restart"]:
-            return _FakeResult(stdout="")
         assert args[1:] == ["plugin", "list", "--json", "--marketplace", "ak110-dotfiles"]
         if current["version"] == "1.2.3":
             shutil.rmtree(older, ignore_errors=True)
@@ -350,7 +348,7 @@ def test_reinstalls_when_state_requires_it(
     assert outcome.changed is True
     assert ["plugin", "add", "agent-toolkit@ak110-dotfiles"] in calls
     assert calls.count(["plugin", "add", "agent-toolkit@ak110-dotfiles"]) == 1
-    assert [notice.command for notice in outcome.notices] == ["/hooks"]
+    assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
 
 
 @pytest.mark.parametrize("version", ["1.2.2", "1.2.3"])

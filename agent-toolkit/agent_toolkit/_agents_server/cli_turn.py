@@ -65,6 +65,18 @@ class CliTurnManager:
         """CLI固有の起動引数を組み立てる。"""
         raise NotImplementedError
 
+    async def prepare_command(
+        self,
+        prompt: str,
+        model: str | None,
+        effort: str | None,
+        conversation_id: str | None,
+        environment: dict[str, str],
+    ) -> list[str]:
+        """子へ実際に渡す環境で、起動条件を確かめてから引数を組み立てる。"""
+        del environment
+        return self.build_command(prompt, model, effort, conversation_id)
+
     @staticmethod
     def system_prompt(launch_kind: LaunchKind) -> str:
         """CLI固有の配送手段に合わせた規範本文を返す。"""
@@ -331,12 +343,16 @@ class CliTurnManager:
             return initialized_session
         except TimeoutError as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise SessionInitializationTimeoutError(
                 f"{self.NAME} did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
                 f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
             ) from exc
-        except BaseException:
+        except BaseException as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
@@ -369,12 +385,13 @@ class CliTurnManager:
         input_recorded = False
         try:
             async with contextlib.AsyncExitStack() as resources, asyncio.timeout(self.RUN_TIMEOUT):
-                command = self.build_command(prompt, model, effort, conversation_id)
+                environment = _child_env(self._root_session_id)
+                command = await self.prepare_command(prompt, model, effort, conversation_id, environment)
                 try:
                     process = await asyncio.create_subprocess_exec(
                         *command,
                         cwd=cwd,
-                        env=_child_env(self._root_session_id),
+                        env=environment,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
@@ -454,6 +471,10 @@ class CliTurnManager:
                     await session.drain_registration()
                 finally:
                     self._processes.pop(session.session_id, None)
+                if initialized.cancelled() and shared_state.finish_unowned_start(
+                    initialized, turn_seq, asyncio.CancelledError(), session=session
+                ):
+                    await self._notify_waiters()
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
         """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""

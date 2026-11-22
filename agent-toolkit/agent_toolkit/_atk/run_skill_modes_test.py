@@ -178,7 +178,25 @@ def test_resume_accepts_entry_and_qualified_forms_of_the_same_work(engine_env, m
     }[resume_form]
     code, _out, error = _run(["--resume", run_id, *skill], capsys)
     assert code == 0, error
-    assert len(_records(engine_env, "session")) == 2
+    records = _records(engine_env, "session")
+    assert len(records) == 2
+    initial, resumed = (_startup_input(record, monkeypatch, capsys) for record in records)
+    assert resumed["skill"] == skill_modes.PROCESS_WI
+    for field in ("skill", "mode", "free_text"):
+        assert resumed[field] == initial[field]
+
+
+@pytest.mark.parametrize("arguments", ["process-wi", "single-lane X", "process-wi all-repos X"])
+def test_resume_rejects_different_explicit_invocation(engine_env, monkeypatch, capsys, arguments):
+    set_orchestrate_environment(monkeypatch, "claude:test-model/low")
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "1")
+    code, _out, error = _run(["--target-repo", str(engine_env.repo), "--args", "single-lane X", skill_modes.PROCESS_WI], capsys)
+    assert code != 0, error
+    run_id = _records(engine_env, "session")[0]["env"]["AGENT_TOOLKIT_RUN_SKILL_ID"]
+    monkeypatch.setenv("FAKE_SESSION_EXIT", "0")
+    code, _out, error = _run(["--resume", run_id, "--args", arguments, "agent-toolkit:atk-mode"], capsys)
+    assert code == 2, error
+    assert len(_records(engine_env, "session")) == 1
 
 
 def test_resume_rejects_entry_form_for_other_work(engine_env, monkeypatch, capsys):

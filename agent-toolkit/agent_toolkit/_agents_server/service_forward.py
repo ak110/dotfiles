@@ -19,7 +19,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
-from agent_toolkit._common import file_lock, plugin_environment, runtime_environment, windows_job
+from agent_toolkit._common import file_lock, host_homes, plugin_environment, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.next_action import report, with_next_action
@@ -556,6 +556,41 @@ class _Forwarder:
             self.reader.join(timeout=5)
 
 
+def _official_distribution(root: pathlib.Path, caller: runtime_environment.CallerContext) -> bool:
+    """配布キャッシュまたは登録済みcheckoutのプラグインを通常の起動元とする。"""
+    with runtime_environment.bind(caller):
+        cache = pathlib.Path("plugins/cache/ak110-dotfiles/agent-toolkit")
+        if any(root.parent == (home / cache).resolve() for home in (host_homes.claude_config_dir(), host_homes.codex_home())):
+            return True
+        home = runtime_environment.home()
+        if root.name == "agent-toolkit-agy":
+            try:
+                registry = json.loads((home / ".gemini/config/plugins.json").read_text(encoding="utf-8"))
+                return any(
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("path"), str)
+                    and pathlib.Path(entry["path"]).is_absolute()
+                    and isinstance(entry.get("include_only"), list)
+                    and root.name in entry["include_only"]
+                    and root == (pathlib.Path(entry["path"]) / root.name).resolve()
+                    for entry in registry["entries"]
+                )
+            except OSError, ValueError, TypeError, KeyError:
+                return False
+        environment = caller.environment
+        base = (
+            pathlib.Path(environment.get("LOCALAPPDATA") or home / "AppData/Local")
+            if os.name == "nt"
+            else pathlib.Path(environment.get("XDG_CONFIG_HOME") or home / ".config")
+        )
+        try:
+            saved = json.loads((base / "agent-toolkit/config.json").read_text(encoding="utf-8"))
+            repo = json.loads(saved["repositories"])["github.com/ak110/dotfiles"]["path"]
+        except OSError, ValueError, TypeError, KeyError:
+            return False
+        return isinstance(repo, str) and root == (pathlib.Path(repo) / "agent-toolkit").resolve()
+
+
 def forward(
     *,
     root: pathlib.Path | None = None,
@@ -570,6 +605,16 @@ def forward(
         parent_settings=_parent_settings(),
     )
     root = root or pathlib.Path(__file__).resolve().parents[2]
+    try:
+        if not service_transport.isolated_state(caller) and not _official_distribution(root.resolve(), caller):
+            report(
+                "開発worktreeのプラグインを共有管理サービスへ接続できません",
+                next_action="状態ディレクトリを明示的に分離し、同じプラグインを読み込み直してください。",
+            )
+            return 1
+    except (OSError, ValueError) as error:
+        report(str(error), next_action="プラグインの配布元と状態ディレクトリを確認してください。")
+        return 1
     bridge = _Forwarder(caller)
     registry = GenerationRegistry(service_transport.namespace(caller))
     previous_reconnect = None

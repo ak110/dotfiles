@@ -93,9 +93,9 @@ for (const path of report.excluded) { const li = document.createElement("li"); l
 let page = 0;
 const pageSize = 100;
 function renderRows() {
-  const search = byId("search").value.toLocaleLowerCase();
+  const search = byId("search").value.toLowerCase();
   const scope = byId("scope").value;
-  const nodes = report.nodes.filter(n => n.path.toLocaleLowerCase().includes(search) && (scope === "all" || (scope === "issues" ? n.status !== "success" : n.kind === scope)));
+  const nodes = report.nodes.filter(n => n.path.toLowerCase().includes(search) && (scope === "all" || (scope === "issues" ? n.status !== "success" : n.kind === scope)));
   const maxPage = Math.max(0, Math.ceil(nodes.length / pageSize) - 1);
   page = Math.min(page, maxPage);
   byId("rows").replaceChildren();

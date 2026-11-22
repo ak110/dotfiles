@@ -70,6 +70,10 @@ def excluded_tools(root: Path, *, minimal: bool) -> frozenset[str]:
     return DEVELOPMENT_TOOLS | FULL_TOOLS | project_tools if minimal else DEVELOPMENT_TOOLS - project_tools
 
 
+def _rustup_home() -> Path:
+    return Path(os.environ.get("RUSTUP_HOME", Path.home() / ".rustup"))
+
+
 def removal_paths() -> tuple[Path, ...]:
     """minimalで除去する配布実体とキャッシュの絶対パスを返す。"""
     home = Path.home()
@@ -77,7 +81,7 @@ def removal_paths() -> tuple[Path, ...]:
     data = Path(os.environ.get("MISE_DATA_DIR", platformdirs.user_data_dir("mise", appauthor=False)))
     codex_home = Path(os.environ.get("CODEX_HOME", home / ".codex"))
     claude_home = Path(os.environ.get("CLAUDE_CONFIG_DIR", home / ".claude"))
-    rustup = Path(os.environ.get("RUSTUP_HOME", home / ".rustup"))
+    rustup = _rustup_home()
     cargo = Path(os.environ.get("CARGO_HOME", home / ".cargo"))
     paths = [
         # 共有ホームの設定・資格情報・ユーザー導入物は残し、再生成可能な実体だけを整理する。
@@ -209,6 +213,12 @@ def _remove(path: Path) -> bool:
     return True
 
 
+def _check_shared_runtime_root(path: Path, checkout: Path | None) -> None:
+    resolved = path.resolve()
+    if Path.home().resolve().is_relative_to(resolved) or (checkout is not None and checkout.resolve().is_relative_to(resolved)):
+        raise ValueError(f"共有ランタイム設定がホームまたは作業ツリー全体を含むため削除しません: {path}")
+
+
 def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
     """実体を保護判定してから削除し、撤去失敗をpost-applyの失敗として返す。"""
     root = common.find_dotfiles_root()
@@ -223,9 +233,7 @@ def _remove_installation() -> post_apply_outcome.PostApplyOutcome:
         paths = (*removal_paths(), root / "agent-toolkit-codex", root / "agent-toolkit/.venv") if minimal else ()
         roots = tuple(Path(os.environ[name]) for name in ("RUSTUP_HOME", "CARGO_HOME") if name in os.environ) if minimal else ()
         for path in (*paths, *roots):
-            resolved = path.resolve()
-            if Path.home().resolve().is_relative_to(resolved) or root.resolve().is_relative_to(resolved):
-                raise ValueError(f"共有ランタイム設定がホームまたは作業ツリー全体を含むため削除しません: {path}")
+            _check_shared_runtime_root(path, root)
         if minimal:
             _stop_daemon()
             active = _active_users(paths)
@@ -557,8 +565,41 @@ def _start_maintenance(*, clean: bool) -> post_apply_outcome.PostApplyOutcome:
     )
 
 
+def _clean_rustup_tmp() -> MaintenanceResult:
+    """rustupが以前に作った一時ディレクトリだけを整理する。"""
+    home = _rustup_home()
+    root = home / "tmp"
+    if not root.is_absolute() or root.is_symlink() or root.is_junction():
+        return MaintenanceResult.NONE
+    try:
+        _check_shared_runtime_root(home, common.find_dotfiles_root())
+    except ValueError:
+        return MaintenanceResult.NONE
+    cutoff = time.time() - 86_400
+    expired: list[Path] = []
+    try:
+        for child in root.iterdir():
+            with contextlib.suppress(FileNotFoundError):
+                if child.is_dir(follow_symlinks=False) and not child.is_junction() and child.stat().st_mtime < cutoff:
+                    expired.append(child)
+    except FileNotFoundError:
+        return MaintenanceResult.NONE
+    if not expired:
+        return MaintenanceResult.NONE
+    if any(
+        str(process.info.get("name") or "").lower().removesuffix(".exe") == "rustup"
+        for process in psutil.process_iter(["name"])
+    ):
+        return MaintenanceResult.DEFERRED
+    # 並行起動したrustupは、既存の領域でなく新しい一時ディレクトリを作る。
+    for child in expired:
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(child)
+    return MaintenanceResult.COMPLETED
+
+
 def clean_caches() -> tuple[MaintenanceResult, str]:
-    """uv以外の取得キャッシュを公式操作で整理し、1対象の失敗でも残りを続ける。"""
+    """uv以外の取得キャッシュとrustupの一時領域を整理し、1対象の失敗でも残りを続ける。"""
     failures: list[str] = []
     commands: list[tuple[str, list[str]]] = []
     mise = setup_mise.find_mise_binary()
@@ -576,11 +617,18 @@ def clean_caches() -> tuple[MaintenanceResult, str]:
             logger.info("prune: %sのキャッシュ整理を完了", name)
         except (OSError, ValueError, RuntimeError) as error:
             failures.append(f"{name}: {error}")
+    rustup = MaintenanceResult.NONE
+    try:
+        rustup = _clean_rustup_tmp()
+    except (OSError, ValueError) as error:
+        failures.append(f"rustup/tmp: {error}")
     if failures:
         detail = " / ".join(failures)
         logger.error("prune: キャッシュ整理に失敗: %s", detail)
         return MaintenanceResult.FAILED, detail
-    return (MaintenanceResult.COMPLETED if commands else MaintenanceResult.NONE), ""
+    if rustup is MaintenanceResult.DEFERRED:
+        return rustup, "rustupが使用中のため一時ディレクトリを保持"
+    return (MaintenanceResult.COMPLETED if commands else rustup), ""
 
 
 def _merge(*outcomes: post_apply_outcome.PostApplyOutcome) -> post_apply_outcome.PostApplyOutcome:

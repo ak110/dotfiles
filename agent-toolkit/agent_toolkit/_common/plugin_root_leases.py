@@ -7,6 +7,7 @@ import contextvars
 import hashlib
 import json
 import os
+import sys
 import typing
 from collections.abc import Generator
 from pathlib import Path
@@ -289,6 +290,20 @@ def _observed_processes() -> dict[int, psutil.Process]:
     return snapshot["processes"]
 
 
+def _windows_secure_system(process: psutil.Process) -> bool:
+    """通常のWindowsプロセスと区別できた場合だけ、組み込みのSecure Systemとみなす。"""
+    if sys.platform != "win32":
+        return False
+    try:
+        if process.name() != "Secure System" or process.ppid() != 4:
+            return False
+        system = psutil.Process(4)
+        # 名前だけを根拠にせず、カーネルが作ったSystemとの親子関係を確認する。
+        return system.name() == "System" and system.ppid() == 0
+    except OSError, psutil.Error:
+        return False
+
+
 def _server_may_use_root(area: Path) -> bool:
     """同じOSアカウントのMCPによる絶対パス引数の直接参照を探す。"""
     try:
@@ -299,6 +314,10 @@ def _server_may_use_root(area: Path) -> bool:
                     arguments = process.cmdline()
                 except psutil.NoSuchProcess:
                     continue
+                except psutil.AccessDenied:
+                    if _windows_secure_system(process):
+                        continue
+                    arguments = None
                 except OSError, ValueError, psutil.Error:
                     arguments = None
                 if arguments is not None and not any(

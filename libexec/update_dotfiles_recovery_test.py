@@ -280,7 +280,6 @@ class TestStashLifecycle:
         monkeypatch.setattr(update_dotfiles_git, "update_git_with_recovery", _REAL_UPDATE_GIT_WITH_RECOVERY)
         monkeypatch.setattr(update_dotfiles_process, "run_git_pull", lambda *_args, **_kwargs: pull_code)
         monkeypatch.setattr(update_dotfiles, "_run_step", lambda *_args, **_kwargs: (0, ""))
-        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", lambda: None)
         run_stash = update_dotfiles_stashing._run_worktree_stash
 
         def fail_drop(*arguments: str) -> subprocess.CompletedProcess[str] | None:

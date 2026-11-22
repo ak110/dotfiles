@@ -20,13 +20,13 @@ from agent_toolkit._agents_server.codex_protocol import (
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.input_validation import validate_cwd, validate_model_effort, validate_prompt
-from agent_toolkit._agents_server.launch_prompts import LIGHTWEIGHT_LAUNCH_KINDS, base_instructions
+from agent_toolkit._agents_server.launch_prompts import base_instructions
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState, initialize_turn
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import codex_usage_limit
+from agent_toolkit._common import codex_usage_limit, startup_features
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -133,12 +133,13 @@ class CodexStartMixin:
         }
         if model is not None:
             params["model"] = model
-        config, owner_session_id, writer_session_id = self._thread_config(
-            lightweight=launch_kind in LIGHTWEIGHT_LAUNCH_KINDS, client=client
-        )
-        if launch_kind == "explore":
+        profile = startup_features.effective(launch_kind)
+        config, owner_session_id, writer_session_id = self._thread_config(lightweight=profile == "lightweight", client=client)
+        if launch_kind == "explore" and profile == "lightweight":
             config = await run_file_operation(self._explore_config, config, client)
         params["config"] = config
+        if profile != "full":
+            params = startup_features.codex_thread_config(params)
         params["developerInstructions"] = await run_file_operation(_developer_instructions, launch_kind)
         attempted: set[str] = set()
         try:

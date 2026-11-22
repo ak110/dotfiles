@@ -361,6 +361,7 @@ def main(
     )
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="互換入力。不要ツールとキャッシュは通常更新でも整理する")
+    parser.add_argument("--no-sudo", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--prune-only", action="store_true", help="更新後に不要な導入済みツールとキャッシュだけを削除する")
     parser.add_argument("--prune-only-if-minimal", action="store_true", help="互換入力。モードによらず更新後の整理を実行する")
     parser.add_argument("--internal-uv-cache-maintenance", action="store_true", help=argparse.SUPPRESS)

@@ -14,6 +14,7 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import shared_roots, state, status_file
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     BlockingResultClaudeClient,
     BlockingResumeBackend,
@@ -75,10 +76,10 @@ async def test_kill_cancels_pending_resume_without_followup_message(
         with pytest.raises(TimeoutError, match=f"send_message timed out: {session_id}"):
             await manager.send_message(session.session_id, "追加指示", timeout=0.01)
 
-        response = await manager.kill(session.session_id, timeout=1)
+        with pytest.raises(ActionableError, match="中断要求は未配送"):
+            await manager.kill(session.session_id, timeout=1)
 
-        assert response["status"] == "interrupted"
-        assert response["kill_requested"] is False
+        assert session.status == "completed"
         assert not manager._pending_resumes
         assert backend.resume_finished.is_set()
         assert backend.interrupt_calls == 0
@@ -218,10 +219,9 @@ async def test_claude_kill_cleans_owned_pending_resume(
             await manager.send_message(session_id, "再開指示", timeout=0.01)
 
         assert backend._tasks
-        response = await manager.kill(session_id, timeout=1)
+        with pytest.raises(ActionableError, match="中断要求は未配送"):
+            await manager.kill(session_id, timeout=1)
 
-        assert response["status"] == "interrupted"
-        assert response["kill_requested"] is False
         assert not manager._pending_resumes
         assert not backend._tasks
         assert client.disconnected is True

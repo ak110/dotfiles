@@ -102,6 +102,11 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         attempts = [{"start_new_session": True}]
     launch_id = uuid.uuid4().hex
     env[session_review.LAUNCH_ENV] = launch_id
+    program = (
+        ["-m", "agent_toolkit._atk.session_review_launch"]
+        if sys.platform == "win32"
+        else [str(PLUGIN_ROOT / "agent_toolkit" / "atk.py")]
+    )
     launch_path = session_review.directory() / "launches" / f"{launch_id}.json"
     log_path = launch_path.with_suffix(".log")
     with session_review.locked():
@@ -126,7 +131,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
                         diagnostic_process.command(
                             [
                                 sys.executable,
-                                str(PLUGIN_ROOT / "agent_toolkit" / "atk.py"),
+                                *program,
                                 "run-skill",
                                 "--args",
                                 "batch",
@@ -286,8 +291,8 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
                 # 末尾欠測も観測済み範囲に含め、次回の新規追記と区別する。digestは読めた完全行だけを表す。
                 entry["observed_through_line"] = max(entry.get("observed_through_line", entry["through_line"]), event["line"])
         session_review.write(pathlib.Path(prepared["scope_path"]), scope)
-    # 選定後に再登録された世代を成功処理で消さない。
-    prepared["generation"] = target["generation"]
+    # 待ち記録を作った識別子と世代で確定する。元ファイル名から作った識別子は使わない。
+    prepared.update(host=target["host"], session_id=target["session_id"], generation=target["generation"])
     return prepared
 
 
@@ -468,14 +473,20 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
     if str(path) != args.batch_manifest or manifest.get("run_id") != args.run_id:
         outcome.report_failure("再開するbatchの実行識別子と保存先が一致しない", next_action="元のbatch実行記録を確認する")
         return 2
+    session_review.launch_result(manifest=path)
     if manifest["status"] in {"completed", "resolved"}:
         run_skill_state.mark_completed(args.run_id)
         outcome.report_success(f"既に完了したbatch: {path}")
         return 0
     try:
+        if manifest["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
+            args.resume_usage_limited = True
+            session_review.BatchWriter(path).resume_usage_limited()
         code = execute(args)
         manifest = session_review.read(path)
         if code:
+            if _pause_for_usage_limit(args, path, code):
+                return code
             _failure(
                 manifest,
                 path,
@@ -487,8 +498,14 @@ def _resume_batch(args: argparse.Namespace, execute: Callable[[argparse.Namespac
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         _failure(manifest, path, f"prepare-or-state: {error}")
         return 1
-    session_review.launch_result(manifest=path)
     return 0
+
+
+def _pause_for_usage_limit(args: argparse.Namespace, path: pathlib.Path, code: int) -> bool:
+    if (resume_at := getattr(args, "batch_usage_resume_at", None)) is None:
+        return False
+    session_review.BatchWriter(path).pause_for_usage_limit(resume_at, code)
+    return True
 
 
 _INTERRUPTED_REASON = "interrupted: 実行プロセスが終了し成功を確認できない"
@@ -516,6 +533,27 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
         old = session_review.BatchWriter(path).load().model_dump(mode="json", exclude_unset=True)
         if old["status"] in {"completed", "resolved"}:
             continue
+        if old["status"] == session_review.BatchStatus.USAGE_LIMIT_PAUSED:
+            if time.time() < old["usage_resume_at"]:
+                session_review.launch_result()
+                if manual:
+                    resume_at = datetime.datetime.fromtimestamp(old["usage_resume_at"], datetime.UTC).isoformat(
+                        timespec="seconds"
+                    )
+                    print(
+                        f"利用上限の解除待ち: {resume_at}。"
+                        f"明示的に試す場合は `atk run-skill --resume {old['run_id']}` を実行してください。",
+                        file=sys.stderr,
+                    )
+                return 0
+            record = run_skill_state.load(old["run_id"])
+            resumed = argparse.Namespace(**vars(args))
+            resumed.skill, resumed.args = record.input.skill, record.input.arguments
+            resumed.target_repo = record.input.target_repo or str(record.work_dir)
+            resumed.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
+            resumed.timeout, resumed.run_id = record.remaining, record.input.run_id
+            resumed.batch_manifest, resumed.resume_record = str(path), record
+            return _resume_batch(resumed, execute)
         if old["status"] == "running" and _live(old):
             session_review.launch_result()
             return 1
@@ -600,6 +638,8 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
             code = execute(run_args)
             manifest = session_review.read(path)
             if code:
+                if _pause_for_usage_limit(run_args, path, code):
+                    return code
                 _failure(
                     manifest,
                     path,

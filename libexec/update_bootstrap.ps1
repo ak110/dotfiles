@@ -23,9 +23,7 @@ try {
         $env:UV_NO_MODIFY_PATH = '1'
         # 自己更新補助と同じ公式の導入経路を使う。
         $installer = 'Invoke-RestMethod -Uri https://astral.sh/uv/install.ps1 -TimeoutSec 120 | Invoke-Expression'
-        try { [void](Invoke-UpdateStage 'uvの導入' abort 300 'powershell.exe' @('-NoProfile', '-Command', $installer)) }
-        catch [System.TimeoutException] { throw }
-        catch { [void](Invoke-UpdateStage 'uvの導入' abort 300 'powershell.exe' @('-NoProfile', '-Command', $installer)) }
+        [void](Invoke-UpdateInstallStage 'uvの導入' 300 'powershell.exe' @('-NoProfile', '-Command', $installer))
     }
     try {
     if (-not $PrepareOnly -and $env:AGENT_TOOLKIT_PROCESS_LOOP_SESSION -ne '1') {
@@ -99,9 +97,7 @@ try {
     $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
     if ($findCode -ne 0) {
         Write-UpdateError '管理Pythonの導入: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。'
-        try { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
-        catch [System.TimeoutException] { throw }
-        catch { [void](Invoke-UpdateStage '管理Pythonの導入' abort 900 $UvPath @('python', 'install', '3.15')) }
+        [void](Invoke-UpdateInstallStage '管理Pythonの導入' 900 $UvPath @('python', 'install', '3.15'))
         Write-UpdateError '管理Pythonの検索: Ctrl+Cで中断できます。'
         $findCode = Invoke-UpdateStage '管理Pythonの導入' abort 60 $UvPath @('python', 'find', '--no-cache', '3.15') -Probe
         if ($findCode -ne 0) { throw '使える3.15がありません。uv python install 3.15を実行してください。' }

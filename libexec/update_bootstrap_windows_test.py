@@ -217,6 +217,39 @@ def test_stage_timeout_and_unknown_ownership(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_install_stage_retries_once_only_after_recoverable_failure(tmp_path: pathlib.Path) -> None:
+    """両方の導入段で使う再試行が、回収不能を再起動に変えないことを確かめる。"""
+    result = _run_stage(
+        tmp_path,
+        "$script:calls=0; "
+        "$code=Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; if ($script:calls -eq 1) { throw 'exit 17' }; return 0 }; "
+        "if ($code -ne 0 -or $script:calls -ne 2) { throw 'retry' }; "
+        "$script:calls=0; $caught=$false; "
+        "try { Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; throw [System.TimeoutException]::new('Job') } } "
+        "catch [System.TimeoutException] { $caught=$true }; "
+        "if (-not $caught -or $script:calls -ne 1) { throw 'ownership' }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_install_stage_does_not_retry_if_stop_and_dispose_fail(tmp_path: pathlib.Path) -> None:
+    """回収と終了処理の両方が例外でも、再試行せず両方の理由を返す。"""
+    result = _run_stage(
+        tmp_path,
+        "$script:calls=0; $p=New-Object PSObject; "
+        "$p | Add-Member ScriptMethod Dispose { throw 'dispose-failure' }; "
+        "try { Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; Invoke-UpdateStage test abort 1 unused @() "
+        "-Start { $p } -Wait { $true } -ExitCode {0} -Stop {throw 'stop-failure'} }; "
+        "throw 'not propagated' } catch [System.TimeoutException] { "
+        "if ($_.Exception.Message -notmatch 'stop-failure' -or "
+        "$_.Exception.Message -notmatch 'dispose-failure' -or $script:calls -ne 1) { throw } }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("mode", ["timeout", "orphan", "unlinked"])
 def test_stage_native_job_reaps_tree(
     tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str, monkeypatch: pytest.MonkeyPatch

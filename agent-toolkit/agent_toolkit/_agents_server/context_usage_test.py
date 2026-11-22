@@ -185,9 +185,12 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
         + "for event in events:\n    print(json.dumps(event), flush=True)\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(script)])
-    )
+
+    async def fake_command(*_args, **_kwargs):
+        return [sys.executable, str(script)]
+
+    monkeypatch.setattr(antigravity.AntigravityManager, "prepare_command", fake_command)
+    # APIキー方式の受理は専用試験で確認し、ここでは同じPythonから合成の出力を返す。
     monkeypatch.setattr(cli_turn, "_child_env", lambda _root: host_environ())
     async with antigravity.AntigravityManager() as backend:
         terminal = asyncio.Event()

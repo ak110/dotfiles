@@ -869,3 +869,46 @@ def test_maintenance_outlives_killing_job_of_its_launcher(tmp_path, monkeypatch,
     assert record.exists(), "独立プロセスが60秒以内に結果を記録しなかった"
     assert json.loads(record.read_text(encoding="utf-8"))["result"] == "completed"
     assert not marker.exists()
+
+
+@pytest.mark.parametrize(
+    ("active", "create_tmp", "old_remains", "status"),
+    [
+        (False, True, False, prune_installation.MaintenanceResult.COMPLETED),
+        (True, True, True, prune_installation.MaintenanceResult.DEFERRED),
+        (False, False, False, prune_installation.MaintenanceResult.NONE),
+    ],
+)
+def test_clean_caches_removes_old_rustup_tmp_only_when_idle(tmp_path, monkeypatch, active, create_tmp, old_remains, status):
+    """古いもの、新しいもの、rustup稼働中、tmp不在の4条件を確かめる。"""
+    home = tmp_path / "rustup"
+    monkeypatch.setenv("RUSTUP_HOME", str(home))
+    monkeypatch.setattr(prune_installation.setup_mise, "find_mise_binary", lambda: None)
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda _name: None)
+    running = {"name": "rustup.exe" if active else "cargo.exe"}
+    monkeypatch.setattr(prune_installation.psutil, "process_iter", lambda _attrs: [types.SimpleNamespace(info=running)])
+    old, fresh = home / "tmp/old_dir", home / "tmp/fresh_dir"
+    if create_tmp:
+        old.mkdir(parents=True)
+        fresh.mkdir()
+        stamp = time.time() - 2 * 86_400
+        os.utime(old, (stamp, stamp))
+
+    assert prune_installation.clean_caches()[0] is status
+    assert old.exists() is old_remains
+    assert fresh.exists() is create_tmp
+
+
+def test_clean_caches_keeps_unsafe_rustup_root(tmp_path, monkeypatch):
+    """既存の共有ルートの判定を通らない設定からは削除しない。"""
+    monkeypatch.setenv("RUSTUP_HOME", str(tmp_path))
+    monkeypatch.setattr(prune_installation.common, "find_dotfiles_root", lambda: tmp_path)
+    monkeypatch.setattr(prune_installation.setup_mise, "find_mise_binary", lambda: None)
+    monkeypatch.setattr(prune_installation.shutil, "which", lambda _name: None)
+    old = tmp_path / "tmp/unrelated"
+    old.mkdir(parents=True)
+    stamp = time.time() - 2 * 86_400
+    os.utime(old, (stamp, stamp))
+
+    assert prune_installation.clean_caches() == (prune_installation.MaintenanceResult.NONE, "")
+    assert old.is_dir()

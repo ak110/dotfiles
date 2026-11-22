@@ -146,6 +146,8 @@ def _legacy_key_guidance(keys: list[str]) -> str:
     guidance = ""
     if "process_loop_repositories" in keys:
         guidance += "。process_loop_repositoriesは廃止した。`atk config repos`でrepositoriesを変更する"
+    if "codex_auto_reset" in keys:
+        guidance += "。codex_auto_resetは廃止した。自動配分と明示許可はusage_auto_allocationとusage_reset_permissionsで確認する"
     if any(key in _config_settings.RETIRED_MODEL_KEYS for key in keys):
         guidance += "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
     for key in keys:

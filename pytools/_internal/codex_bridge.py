@@ -14,6 +14,8 @@ import uuid
 from collections.abc import Mapping
 from typing import Any, Self
 
+from agent_toolkit._common import startup_features
+
 from pytools._internal.codex_recovery import ConversationRecovery, RunningTurn
 from pytools._internal.codex_transport import RpcChannel, accept_tui, native_proxy
 
@@ -40,9 +42,12 @@ async def _send_to_tui(front: RpcChannel, message: dict[str, Any]) -> None:
 class RecoveryBridge:
     """標準入出力を変更せず、起動したTUIだけのIPC接続を所有する。"""
 
-    def __init__(self, binary: str, environment: Mapping[str, str], home: pathlib.Path, *, timeout: float = 60.0) -> None:
+    def __init__(
+        self, binary: str, environment: Mapping[str, str], home: pathlib.Path, *, timeout: float = 60.0, full: bool = True
+    ) -> None:
         self.binary, self.environment, self.home = binary, dict(environment), home
         self.timeout = timeout
+        self.full = full
         self.state = ConversationRecovery()
         self.phase = RecoveryPhase.RELAYING
         self.token = secrets.token_hex(32)
@@ -149,6 +154,10 @@ class RecoveryBridge:
             self._connections.discard(task)
 
     def _from_client(self, message: dict[str, Any]) -> dict[str, Any] | None:
+        if not self.full and message.get("method") in {"thread/start", "thread/resume", "thread/fork"}:
+            params = message.get("params")
+            if isinstance(params, dict):
+                message = {**message, "params": startup_features.codex_thread_config(params)}
         if message.get("method") == "turn/start":
             self._user_turn_revision += 1
         self.state.observe_client(message)

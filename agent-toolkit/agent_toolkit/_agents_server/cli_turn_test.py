@@ -18,6 +18,12 @@ from agent_toolkit._common import process_tree
 from agent_toolkit._testing import late_descendant
 
 
+@pytest.fixture(autouse=True)
+def _use_stub_command_without_credential_check(monkeypatch):
+    """共通のturnの試験では製品の認証ゲートでなく、各試験の子コマンドを使う。"""
+    monkeypatch.setattr(antigravity.AntigravityManager, "prepare_command", CliTurnManager.prepare_command)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("manager_type", [antigravity.AntigravityManager, opencode.OpenCodeManager], ids=["agy", "opencode"])
 @pytest.mark.parametrize("final_lf", [True, False], ids=["lf", "eof"])
@@ -171,8 +177,9 @@ async def test_close_reclaims_descendant_started_after_first_listing(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True], ids=["bookkeeping-error", "cancelled"])
 async def test_start_returns_failed_session_when_bookkeeping_after_init_fails(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, cancel: bool
 ) -> None:
     """initの後の記録処理が失敗しても、開始は初期化の上限まで待たずに原因を持つ失敗のsessionを返す。"""
     emitter = tmp_path / "emit.py"
@@ -184,15 +191,29 @@ async def test_start_returns_failed_session_when_bookkeeping_after_init_fails(
     )
     monkeypatch.setattr(antigravity.AntigravityManager, "system_prompt", staticmethod(lambda _kind: "開始試験"))
 
+    entered = asyncio.Event()
+
     async def failing_attach(_session: SessionState, _pid: int | None) -> None:
+        if cancel:
+            entered.set()
+            await asyncio.Future()
         raise OSError("実行プロセスを記録できない")
 
     monkeypatch.setattr(SessionState, "attach_executor_async", failing_attach)
     async with antigravity.AntigravityManager() as manager, asyncio.timeout(10):
-        session = await manager.start("開始試験", str(tmp_path), "test-model", "low")
+        if cancel:
+            request = asyncio.create_task(manager.start("開始試験", str(tmp_path), "test-model", "low"))
+            await entered.wait()
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+            session = manager.sessions["after-init"]
+        else:
+            session = await manager.start("開始試験", str(tmp_path), "test-model", "low")
     assert session.session_id == "after-init"
     assert session.status == "failed"
-    assert session.error is not None and "実行プロセスを記録できない" in session.error["message"]
+    expected = "初期化の受付確定前" if cancel else "実行プロセスを記録できない"
+    assert session.error is not None and expected in session.error["message"]
 
 
 @pytest.mark.asyncio

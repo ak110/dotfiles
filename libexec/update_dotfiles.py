@@ -34,7 +34,7 @@ exit code 1で終了し、他プロセスの完了を待って再実行するよ
 `mise.lock`の差分の破棄（破棄できなかった差分は未コミット内容として退避・復元される）、
 `plugins/`配下の各リポジトリのpull、agent-toolkitの共有依存環境の準備（後段のpost-applyのウォームアップが再試行する）、
 `chezmoi status`（表示専用）、`chezmoi diff`（表示と記録専用）、
-Codex管理daemonの一時停止と再起動、永続ログの開始（開始できない場合は標準出力・標準エラーだけで続ける）である。
+永続ログの開始（開始できない場合は標準出力・標準エラーだけで続ける）である。
 段を追加するときは、失敗した状態で後続の段へ進むと不確定な内容を配備するかで分類する。
 Gitが進捗を標準エラー出力へ書く場合も、Git更新段が正常終了した場合は
 `update-dotfiles`の標準出力へ転送する。失敗時はGitの標準エラー出力を維持する。
@@ -55,12 +55,7 @@ agent-toolkitの共有依存環境は、dotfiles自身のGit更新の直後に�
 `chezmoi init`と`chezmoi apply`の段は、子が標準出力と標準エラーを継承する。
 この2段の同期結果には終了コードを残し、post-applyの詳細はpost-apply自身の記録と永続ログで確認する。
 
-Linuxでは適用差分があり、Codexの管理daemonだけが稼働し、利用セッションが無い場合に限り、`chezmoi apply`の直前に
-公開CLI`codex app-server daemon stop`で管理daemonを一時停止する。
-post-applyの診断ログ復元と不要pluginの除去が、利用セッションの無い管理daemonを理由に延期されないためである。
-停止を試みた場合は`chezmoi apply`の成否にかかわらず`codex app-server daemon start`で起動状態を戻し、
-停止または再起動の失敗を終了コードと同期結果へ反映する。利用セッションが残る場合は停止せず、
-復帰直前にセッションが開始していた場合もdaemonの起動を見送る。
+共有Codex daemonは稼働したままにし、更新に再起動が要る場合は後処理で案内する。
 """
 
 import argparse
@@ -70,7 +65,6 @@ import io
 import os
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -95,7 +89,7 @@ from agent_toolkit._common import dotfiles_mode, process_tree  # noqa: E402  # p
 from update_dotfiles_process import run_git_pull  # noqa: E402  # pylint: disable=wrong-import-position
 from update_dotfiles_runtime import child_env  # noqa: E402  # pylint: disable=wrong-import-position
 
-from pytools._internal import codex_processes, sync_report, update_log  # noqa: E402  # pylint: disable=wrong-import-position
+from pytools._internal import sync_report, update_log  # noqa: E402  # pylint: disable=wrong-import-position
 
 
 def _run_step(
@@ -188,89 +182,6 @@ def _run_step(
     return returncode, stdout
 
 
-@dataclasses.dataclass(frozen=True)
-class _CodexDaemonPause:
-    """`chezmoi apply`の前に停止を試みた管理daemonと、停止の失敗内容。"""
-
-    codex: str
-    stop_error: str | None
-
-
-def _pause_codex_daemon() -> _CodexDaemonPause | None:
-    """利用セッションが無く管理daemonだけが稼働する場合に停止し、再起動に必要な情報を返す。
-
-    停止しない場合は`None`を返す。管理daemonが稼働していない場合（更新ループだけが残る場合を含む）は
-    停止も再起動も要らない。実際の延期の案内は処置の要否を判定するpost-applyへ委ねる。
-    """
-    if sys.platform != "linux":
-        return None
-    processes = codex_processes.codex_processes()
-    if not any(process.role == "managed-daemon" for process in processes):
-        return None
-    sessions = tuple(process.label for process in processes if process.role == "session")
-    codex = shutil.which("codex", path=update_dotfiles_runtime.child_env()["PATH"])
-    if sessions or codex is None:
-        return None
-    update_dotfiles_runtime.logger.info("Codex管理daemonを一時停止: %s", codex)
-    print("Codex管理daemonを一時停止します（更新後に再起動します）。", flush=True)
-    stop_error = _run_codex_daemon_command(codex, "stop", update_dotfiles_runtime.CODEX_DAEMON_STOP_TIMEOUT_SEC)
-    if stop_error is not None:
-        stop_error = (
-            f"Codex管理daemonを停止できませんでした（{stop_error}）。"
-            "診断ログ復元または不要pluginの除去が延期された場合は、update-dotfilesを再実行してください。"
-        )
-        update_dotfiles_runtime.logger.error(stop_error)
-        print(stop_error, file=sys.stderr)
-    return _CodexDaemonPause(codex=codex, stop_error=stop_error)
-
-
-def _resume_codex_daemon(pause: _CodexDaemonPause) -> str | None:
-    """停止を試みた管理daemonを起動し、失敗時は手動の復帰操作を含む文面を返す。"""
-    if any(process.role == "session" for process in codex_processes.codex_processes()):
-        update_dotfiles_runtime.logger.info("Codexセッションが開始したため管理daemonの起動を見送り")
-        return None
-    error = _run_codex_daemon_command(pause.codex, "start", update_dotfiles_runtime.CODEX_DAEMON_COMMAND_TIMEOUT_SEC)
-    if error is None:
-        update_dotfiles_runtime.logger.info("Codex管理daemonを再起動")
-        print("Codex管理daemonを再起動しました。", flush=True)
-        return None
-    message = (
-        f"Codex管理daemonを再起動できませんでした（{error}）。次のコマンドで起動してください: "
-        f"{update_dotfiles_runtime.CODEX_DAEMON_START_COMMAND}"
-    )
-    update_dotfiles_runtime.logger.error(message)
-    print(message, file=sys.stderr)
-    return message
-
-
-def _run_codex_daemon_command(codex: str, action: str, timeout: int) -> str | None:
-    """`codex app-server daemon <action>`を実行し、失敗時だけ理由を返す。"""
-    try:
-        result = subprocess.run(
-            [codex, "app-server", "daemon", action],
-            cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            env=update_dotfiles_runtime.child_env(),
-            timeout=timeout,
-        )
-    except subprocess.TimeoutExpired:
-        return f"{timeout}秒以内に完了しなかった"
-    except OSError as error:
-        return f"起動できない: {error}"
-    update_dotfiles_runtime.logger.info(
-        "codex app-server daemon %s: exit=%d stdout=%s", action, result.returncode, result.stdout.strip()
-    )
-    if result.stderr:
-        update_dotfiles_runtime.logger.info("codex app-server daemon %sの標準エラー:\n%s", action, result.stderr)
-    if result.returncode != 0:
-        detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else ""
-        return f"exit {result.returncode}" + (f": {detail}" if detail else "")
-    return None
-
-
 def _prepare_agent_toolkit_environment(total: int, *, timeout: float | None = None) -> None:
     """主checkoutのatkが使う共有依存環境を、Git更新の直後に準備する。失敗は記録して後続の段を続ける。
 
@@ -317,6 +228,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("command", nargs="?", choices=["logs"], help="logs: 直近1回の更新実行の保存ログを表示する")
     parser.add_argument("--mode", choices=dotfiles_mode.MODES, help="導入モードを保存して適用する")
     parser.add_argument("--prune", action="store_true", help="現在のモードで不要なツールとキャッシュを削除する")
+    parser.add_argument("--no-sudo", action="store_true", help="管理一時資源の回収でsudoやUACを使わない")
     return parser.parse_args([] if argv is None else argv)
 
 
@@ -433,37 +345,14 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
         return 0
 
     def chezmoi_apply(stage: update_dotfiles_stages.Stage) -> int:
-        daemon_pause = None
-        daemon_errors: list[str] = []
-        try:
-            if context.diff_output.strip() and not dotfiles_mode.is_minimal():
-                daemon_pause = _pause_codex_daemon()
-            if daemon_pause is not None and daemon_pause.stop_error is not None:
-                daemon_errors.append(daemon_pause.stop_error)
-        except Exception as error:  # noqa: BLE001 -- 任意のdaemon操作は配備の前提を壊さない。
-            daemon_errors.append(str(error))
-        try:
-            returncode, _ = _run_step(
-                context.total,
-                context.total,
-                stage.name,
-                ["chezmoi", "apply", "--force"],
-                log_step_no=update_dotfiles_runtime.LOG_STAGE_TOTAL,
-                timeout=stage.timeout_sec,
-            )
-        finally:
-            try:
-                resume_error = None if daemon_pause is None else _resume_codex_daemon(daemon_pause)
-                if resume_error is not None:
-                    daemon_errors.append(resume_error)
-            except Exception as error:  # noqa: BLE001 -- 復帰失敗も記録し、applyの終了値を保つ。
-                daemon_errors.append(str(error))
-            if daemon_errors:
-                update_dotfiles_runtime.continue_after_failure(
-                    update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
-                    "Codex管理daemonの状態を確認し、停止していれば codex app-server daemon start を実行してください。",
-                    "\n".join(daemon_errors),
-                )
+        returncode, _ = _run_step(
+            context.total,
+            context.total,
+            stage.name,
+            ["chezmoi", "apply", "--force"],
+            log_step_no=update_dotfiles_runtime.LOG_STAGE_TOTAL,
+            timeout=stage.timeout_sec,
+        )
         return returncode
 
     runners = {
@@ -529,6 +418,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if returncode != 0:
                         return update_dotfiles_runtime.finish(returncode)
+                    from agent_toolkit._atk.managed_temp.elevation import (  # pylint: disable=import-outside-toplevel
+                        sweep_for_update,
+                    )
+
+                    sweep_for_update(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
             except update_dotfiles_process.GitReclaimError as error:
                 update_dotfiles_runtime.logger.exception("Git子プロセスの回収失敗")
                 print(str(error), file=sys.stderr)
