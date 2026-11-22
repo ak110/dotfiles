@@ -108,6 +108,28 @@ def test_sdk_codec_preserves_types_and_all_fields() -> None:
         codec.decode({"kind": "dataclass", "type": "untrusted", "fields": {}})
 
 
+def test_sdk_codec_reads_events_saved_before_defaulted_fields_were_added() -> None:
+    """SDKの更新前に保存したイベントには、後から増えた省略できるフィールドが無い。"""
+    codec = sdk_event_codec()
+    original = AssistantMessage(content=[TextBlock(text="旧版")], model="model", parent_tool_use_id=None)
+    encoded = codec.encode(original)
+    defaulted = next(
+        field.name
+        for field in dataclasses.fields(original)
+        if field.default is not dataclasses.MISSING or field.default_factory is not dataclasses.MISSING
+    )
+    del encoded["fields"][defaulted]
+    assert codec.decode(encoded) == original
+    unknown = codec.encode(original)
+    unknown["fields"]["unknown_field"] = {"kind": "value", "value": None}
+    with pytest.raises(ValueError):
+        codec.decode(unknown)
+    missing_required = codec.encode(original)
+    del missing_required["fields"]["model"]
+    with pytest.raises(ValueError):
+        codec.decode(missing_required)
+
+
 @pytest.mark.asyncio
 async def test_read_does_not_block_write_or_ack() -> None:
     """raw readの待機中にもwriteを実行でき、移譲は両方の完了を待つ。"""
