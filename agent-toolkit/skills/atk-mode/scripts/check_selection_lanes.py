@@ -371,6 +371,11 @@ def overlapping_pairs(
             yield left, right, (low, high), overlaps
 
 
+def overlap_wi_pair(left: dict[str, object], right: dict[str, object]) -> tuple[str, ...]:
+    """レーンの向きによらないWI名の組を返す。"""
+    return tuple(sorted((str(left[_selection.WI_KEY]), str(right[_selection.WI_KEY]))))
+
+
 def _check_lane_overlaps(
     items: collections.abc.Sequence[object],
     costs: collections.abc.Sequence[object],
@@ -386,17 +391,20 @@ def _check_lane_overlaps(
         and isinstance(row.get(_selection.STAGE_KEY, 1), int)
         and isinstance(row.get(_selection.PRIOR_LANES_KEY, []), list)
     }
-    expected: set[tuple[str, str, str]] = set()
-    shared: set[tuple[str, str, str]] = set()
+    expected: dict[tuple[str, str, str], set[tuple[str, ...]]] = {}
+    shared: dict[tuple[str, str, str], set[tuple[str, ...]]] = {}
     dependencies: dict[str, set[str]] = {}
     historical: dict[str, set[str]] = {}
     for left, right, lanes, overlaps in overlapping_pairs(items):
-        shared.update((*lanes, path) for path in overlaps)
+        pair = overlap_wi_pair(left, right)
+        for path in overlaps:
+            shared.setdefault((*lanes, path), set()).add(pair)
         left_stage, right_stage = (stages.get(lane, (1, []))[0] for lane in lanes)
         pending = not (_is_integrated(left, integrated) or _is_integrated(right, integrated))
         if left_stage == right_stage:
             if pending:
-                expected.update((lanes[0], lanes[1], path) for path in overlaps)
+                for path in overlaps:
+                    expected.setdefault((*lanes, path), set()).add(pair)
         else:
             earlier, later = lanes if left_stage < right_stage else reversed(lanes)
             historical.setdefault(later, set()).add(earlier)
@@ -415,6 +423,17 @@ def _check_lane_overlaps(
         if key not in shared:
             errors.append(Violation(f"{label}: 余剰の重なりの記録", next_action=_NEXT_OVERLAP_SURPLUS))
             continue
+        if selection_contract.JUDGED_PAIRS_KEY in record:
+            pairs = {tuple(pair) for pair in typing.cast(list[list[str]], record[selection_contract.JUDGED_PAIRS_KEY])}
+            if pairs - shared[key]:
+                errors.append(Violation(f"{label}: 判定済みWIの組が現在の重なりに無い", next_action=_NEXT_OVERLAP_SURPLUS))
+            if missing := expected.get(key, set()) - pairs:
+                names = "、".join("と".join(pair) for pair in sorted(missing))
+                errors.append(
+                    Violation(
+                        f"{missing_overlap_reason(left, right, path)}（未判定の組: {names}）", next_action=_NEXT_OVERLAP_MISSING
+                    )
+                )
         if key not in expected:
             # 保存済みの詳細記録は履歴として読めるが、直列化の根拠は現在の書込予定から導く。
             continue
@@ -425,7 +444,7 @@ def _check_lane_overlaps(
                 errors.append(Violation(f"{label}: 交わらない判定の定義が同一", next_action=_NEXT_OVERLAP_SAME_DEFINITION))
             continue
         errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
-    for left, right, path in sorted(expected - seen):
+    for left, right, path in sorted(expected.keys() - seen):
         errors.append(Violation(missing_overlap_reason(left, right, path), next_action=_NEXT_OVERLAP_MISSING))
     starts = {
         str(row[_selection.LANE_KEY]): start
