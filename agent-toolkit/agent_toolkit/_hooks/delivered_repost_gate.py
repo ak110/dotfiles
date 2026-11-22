@@ -38,6 +38,12 @@ _SEND_FOR_CURRENT_INPUT = '<atk-auto source="send-to-user-contract" kind="notice
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
 _block_notice = notice.block_formatter("delivered_repost_gate")
+_AFTER_DELIVERY = (
+    "このターンで報告は送信済みです。同じ内容・送信の確認・要約を通常の応答本文へ書いてはいけません。"
+    "新しい報告はsend_to_userで送り、質問は既存の質問手段を使う。"
+    "次の操作がなければ本文を加えずにターンを終え、終了の合図が必要なら `…` を使える。"
+)
+_REMINDER_TAIL_BYTES = 262_144
 
 
 def is_send_to_user_tool(name: object) -> bool:
@@ -65,7 +71,7 @@ def _send_required(entries: list[dict]) -> bool:
     return False
 
 
-def _delivery_report(entries: list[dict]) -> tuple[str, bool]:
+def _delivery_report(entries: list[dict]) -> tuple[str, bool, bool]:
     """送達成功後の最後の本文と、成功または失敗の結果が記録されたかを返す。"""
     sent_ids: set[str] = set()
     completed = False
@@ -96,7 +102,31 @@ def _delivery_report(entries: list[dict]) -> tuple[str, bool]:
                 delivered, last = block.get("is_error") is not True, ""
         if delivered and texts:
             last = "".join(texts)
-    return last, completed
+    return last, completed, delivered
+
+
+def before_next_response(payload: dict, *, current_delivery: bool | None) -> str | None:
+    """成功した現在の送達、または同じターンの後続ツールにだけ再提示する。"""
+    if is_codex_payload(payload) or is_antigravity_payload(payload) or not agent_id.is_main_agent_context(payload):
+        return None
+    if current_delivery is not None:
+        return _AFTER_DELIVERY if current_delivery else None
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return None
+    try:
+        size = os.stat(path).st_size
+    except OSError, ValueError:
+        return None
+    offset = max(0, size - _REMINDER_TAIL_BYTES)
+    tail = transcript.read_transcript_bytes(path, offset=offset)
+    if not tail or b"__send_to_user" not in tail:
+        return None
+    if offset:
+        # 先頭は途中の行かもしれない。人間入力が末尾範囲に無ければ古い送達を推定しない。
+        tail = tail.partition(b"\n")[2]
+    turn = latest_human_turn(tail.decode("utf-8", errors="replace").split("\n"))
+    return _AFTER_DELIVERY if turn and _delivery_report(turn[1])[2] else None
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -116,7 +146,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
     turn = latest_human_turn(lines) if lines is not None else None
-    body, completed = _delivery_report(turn[1]) if turn else ("", False)
+    body, completed, _ = _delivery_report(turn[1]) if turn else ("", False, False)
     if (
         turn
         and not completed

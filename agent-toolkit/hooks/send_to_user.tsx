@@ -2,7 +2,7 @@ import { automatedMessage } from "./automated_message.ts";
 
 export const questionRoute = "回答を求める質問・選択は、ツール一覧に`AskUserQuestion`があればそれで尋ね、なければmessageで送る。";
 export const deliverySucceeded = "このメッセージはユーザーに送信済みです。同じ内容を通常の応答本文で発話し直してはいけません。";
-export const afterDelivery = "送信の確認や要約を通常の応答本文へ書かない。続いて新しい報告があればsend_to_userで送る。次の操作や質問がなければ、ここでターンを終える。";
+export const afterDelivery = "送信の確認や要約を通常の応答本文へ書かない。続いて新しい報告があればsend_to_userで送る。次の操作や質問がなければ本文を加えずにターンを終え、終了の合図が必要なら `…` を使える。";
 
 // `AWI化ステータス`の値ごとに、理由の先頭に置く区分名と、区分名で始まらない場合の警告を対応付ける。
 // 書式と区分の定義元は`skills/atk-mode/playbooks/main-reporting.md`「進捗報告」にある。警告は区分を本文に挙げ、定義元を読まずに直せるようにする。
