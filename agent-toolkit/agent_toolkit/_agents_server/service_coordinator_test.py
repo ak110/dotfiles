@@ -850,14 +850,19 @@ async def test_update_left_by_exited_generation_is_released_while_monitor_waits_
         _process_auto_resume=AsyncMock(return_value=False),
     )
     managers.conversations["parent"] = Conversation(manager, CallerContext({}, tmp_path))
-    requested = {session.session_id} if waiting_save == "release_request" else set()
+    requested = [(tmp_path / "fixture.release-request", {"session_id": session.session_id})]
+    if waiting_save == "heartbeat":
+        requested.clear()
 
-    async def process_release_requests(sessions: dict, stop_session: Any, *, state_root: pathlib.Path) -> None:
-        del state_root
-        for identifier in tuple(requested & set(sessions)):
-            requested.discard(identifier)
-            await stop_session(identifier)
+    async def process_release_requests(sessions: dict, stop_session: Any, *, state_root: pathlib.Path, requests: list) -> None:
+        assert state_root == tmp_path and requests == requested
+        path, payload = requests[0]
+        identifier = payload["session_id"]
+        assert identifier in sessions
+        requested.remove((path, payload))
+        await stop_session(identifier, retain_result=True)
 
+    monkeypatch.setattr(service_context.session_release, "pending", lambda _state_root: list(requested))
     monkeypatch.setattr(service_context.session_release, "process_requests", process_release_requests)
     await coordinator.prepare("token", {"generation": "G2", "epoch": 2, "process": "2:new"})
     async with managers:
