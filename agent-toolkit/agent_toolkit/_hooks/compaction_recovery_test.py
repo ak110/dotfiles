@@ -20,7 +20,6 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process as ru
 def test_session_start_resolves_exact_record(
     candidates: int, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再開時の不存在入力は同一IDの実記録だけで解決し、曖昧さを通知する。"""
     config = tmp_path / "claude"
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config))
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
@@ -59,7 +58,6 @@ def test_session_start_resolves_exact_record(
 def test_compact_extracts_original_user_events(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], delegated: bool
 ) -> None:
-    """複数の圧縮をまたぐ要求の原文を要約へ保持し、生成入力を除く。"""
     path = tmp_path / "transcript.jsonl"
     entries = [
         {"type": "user", "sessionId": "compact-test", "message": {"role": "user", "content": "最初の要求を全部保持する"}},
@@ -146,7 +144,6 @@ def test_compact_original_read_to_same_session_resume(tmp_path, monkeypatch, ins
 def test_failed_extraction_keeps_resume_and_removes_stale_file(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], cleanup_fails: bool
 ) -> None:
-    """抽出の時間上限でも他の規範と手動の再取得コマンドを届ける。"""
     path = tmp_path / "transcript.jsonl"
     path.write_text("", encoding="utf-8")
     saved = tmp_path / "compaction-digest" / "conversation.md"
@@ -193,7 +190,6 @@ def test_failed_extraction_keeps_resume_and_removes_stale_file(
 def test_noncompact_session_start_does_not_extract(
     source: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """圧縮以外の開始では、原文抽出の起動と保存を追加しない。"""
     path = tmp_path / "transcript.jsonl"
     path.write_text("{}\n", encoding="utf-8")
 
@@ -217,7 +213,6 @@ def test_noncompact_session_start_does_not_extract(
 def test_resolved_resume_notice_path_is_accepted_by_prepare(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """再開通知が解決した実パスだけを、公開prepareへ渡して会話を取得する。"""
     config = tmp_path / "claude"
     path = config / "projects/old-directory/resume-test.jsonl"
     path.parent.mkdir(parents=True)
@@ -270,7 +265,6 @@ def test_resolved_resume_notice_path_is_accepted_by_prepare(
 
 @pytest.mark.parametrize("delegated", [False, True])
 def test_compact_recovery_digest_is_delivered_once(tmp_path, monkeypatch, capsys, delegated):
-    """圧縮時の置換本文が参照する通知は、両主体へ要約の所在を1回届け、取得コマンドと手順資料を案内しない。"""
     path = tmp_path / "record.jsonl"
     entry = {"type": "user", "sessionId": "recover", "message": {"role": "user", "content": "継続する要求"}}
     path.write_text(json.dumps(entry, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -289,14 +283,13 @@ def test_compact_recovery_digest_is_delivered_once(tmp_path, monkeypatch, capsys
     saved = tmp_path / "compaction-digest" / "conversation.md"
     assert output.count(str(saved)) == 1
     assert "- ユーザー: 継続する要求\n" in saved.read_text(encoding="utf-8")
-    # 成功時は要約の所在だけを示し、取得コマンドと手順資料への案内を重ねない。
+
     assert "session-review-prepare" not in output and "session-records.md" not in output
     assert not any(line.startswith(("会話ID:", "原本ログ:", "この会話のtranscript:")) for line in output.splitlines())
 
 
 # test-copy-contract: 原本パス不明のcompact入力から会話IDを照会CLIへ渡し、別会話の原文を取得しない回復契約。
 def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkeypatch, capsys):
-    """パスを取得できない場合も、同じ圧縮後通知で実IDを渡す照会を案内する。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.setattr(rules_context.managed_temp, "resolve_session_temp", lambda *_args, **_kwargs: tmp_path)

@@ -25,8 +25,6 @@ import os
 import subprocess
 
 from agent_toolkit._hooks.notice import block_formatter as _block_notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import add as _wi_add
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import mcp_environment as _mcp_environment
@@ -52,7 +50,6 @@ _block_notice = _block_notice_formatter(_HOOK_ID)
 
 
 def _run_target(environ: dict[str, str] | os._Environ[str]) -> tuple[str, str] | None:
-    """run-skillの実行識別子と起動単位（起動元の検収と同じくモード語を含む）を返す。対象外ならNoneを返す。"""
     run_id = environ.get(RUN_ID_ENV)
     if not run_id:
         return None
@@ -68,7 +65,6 @@ def _run_target(environ: dict[str, str] | os._Environ[str]) -> tuple[str, str] |
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """報告保存の判定結果と、遮断する場合の理由を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -90,7 +86,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     try:
         saved = _wi_add.has_synced_run_report(_private_notes.default_private_notes(), run_id=run_id, scope=scope)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
-        # 起動元の検収と同じく、確認できない場合は未保存として扱う。
         append_stop_log(session_id, "run_skill_report_check_error", {"error": f"{type(error).__name__}: {error}"})
         saved = False
     if saved:

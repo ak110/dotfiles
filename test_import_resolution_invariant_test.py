@@ -1,12 +1,3 @@
-"""テストが裸の名前でimportするモジュールを、実行に含めるファイルの組合せによらず解決できることを検査する。
-
-pytestのprepend import modeとpylintは、同じ実行に含めたファイルのディレクトリを探索パスへ加える。
-このため別ディレクトリのスクリプトを裸の名前でimportするテストは、全体の実行では成功し、
-対象を限定したpytest・pylintでだけ`ModuleNotFoundError`やE0401で止まる。
-テストの依存は、同じディレクトリのファイル、導入済みのパッケージと標準ライブラリ、
-またはそのテスト自身が`sys.path`へ明示的に加えるディレクトリのいずれかで解決する。
-"""
-
 from __future__ import annotations
 
 import ast
@@ -24,7 +15,6 @@ _ROOT = pathlib.Path(__file__).resolve().parent
 
 @functools.cache
 def _installed_search_path() -> tuple[str, ...]:
-    """作業ディレクトリと`PYTHONPATH`を除いた、導入済みのパッケージと標準ライブラリの探索パスを返す。"""
     result = subprocess.run(
         [sys.executable, "-I", "-c", "import json, sys; print(json.dumps(sys.path))"],
         cwd=_ROOT.anchor,
@@ -37,7 +27,6 @@ def _installed_search_path() -> tuple[str, ...]:
 
 
 def _imported_top_level_names(tree: ast.Module) -> set[str]:
-    """絶対importの先頭の名前を返す。"""
     names: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -48,7 +37,6 @@ def _imported_top_level_names(tree: ast.Module) -> set[str]:
 
 
 def _extends_sys_path(tree: ast.Module) -> bool:
-    """`sys.path.insert`か`sys.path.append`で探索パスを明示的に加えるかを返す。"""
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -64,7 +52,6 @@ def _extends_sys_path(tree: ast.Module) -> bool:
 
 
 def _unresolved_imports(path: pathlib.Path, search_path: tuple[str, ...]) -> list[str]:
-    """同じディレクトリと導入済みの探索パスのどちらでも解決できない名前を返す。"""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     if _extends_sys_path(tree):
         return []
@@ -103,7 +90,6 @@ def _violations(root: pathlib.Path, tests: list[pathlib.Path], search_path: tupl
     9.5, reason="全追跡試験のASTと導入済み検索パスを照合し、実行組合せ依存のimportを検出する（Linux CI CPU4.422秒）"
 )
 def test_tracked_tests_resolve_imports_without_run_state() -> None:
-    """追跡中のテストの裸の名前のimportが、実行の組合せによらず解決できる。"""
     violations = _violations(_ROOT, _tracked_tests(_ROOT), _installed_search_path())
     assert not violations, (
         "別ディレクトリのモジュールを裸の名前でimportしている。"
@@ -113,7 +99,6 @@ def test_tracked_tests_resolve_imports_without_run_state() -> None:
 
 
 def test_cross_directory_import_is_reported(tmp_path: pathlib.Path) -> None:
-    """別ディレクトリのモジュールを裸の名前でimportするテストを違反として報告する。"""
     (tmp_path / "scripts_a").mkdir()
     (tmp_path / "scripts_a" / "helper_only_here.py").write_text("VALUE = 1\n", encoding="utf-8")
     test = tmp_path / "scripts_b" / "sample_test.py"
@@ -124,7 +109,6 @@ def test_cross_directory_import_is_reported(tmp_path: pathlib.Path) -> None:
 
 
 def test_same_directory_and_explicit_path_are_accepted(tmp_path: pathlib.Path) -> None:
-    """同じディレクトリのモジュールと、`sys.path`へ明示的に加えた別ディレクトリのモジュールは受理する。"""
     (tmp_path / "helper_same.py").write_text("VALUE = 1\n", encoding="utf-8")
     same = tmp_path / "same_test.py"
     same.write_text("import json\nimport pytest\nimport helper_same\n", encoding="utf-8")

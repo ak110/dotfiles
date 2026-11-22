@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_candidates）。"""
-
 from __future__ import annotations
 
 import collections
@@ -39,12 +37,6 @@ MANDATORY_KINDS = frozenset(
 
 
 def is_mandatory(candidate: dict[str, Any]) -> bool:
-    """候補の評価が必須かを返す。候補一覧、保存索引、1行JSONはいずれも本関数で判定する。
-
-    `definition-body-read`の候補は、後続に同じ役割の起動が無い読取と、読む主体の役割文書の読取を準備で判定済みにするため、
-    起動準備の疑いがある読取を含む候補だけを必須とする。禁止事項（別の担当を起動する前にその手順書を読むこと）は
-    読んだ主体がその役割を起動して初めて成立するためである。
-    """
     kind = candidate["candidate_kind"]
     if kind not in MANDATORY_KINDS:
         return False
@@ -88,10 +80,6 @@ _FAILURE_LEDGER_DAYS = 30
 
 
 def _readable_entry_text(text: str) -> str:
-    """`atk run-script session-review-evidence`がエントリ全体をJSONで返した詳細から、人が読む本文を取り出す。
-
-    本文を取り出せないJSONと、切り詰めでJSONとして解釈できない文字列はそのまま返す。
-    """
     try:
         entry = json.loads(text)
     except json.JSONDecodeError:
@@ -128,7 +116,6 @@ def _text_parts(value: Any) -> list[str]:
 
 
 def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tuple[list[str], str]:
-    """候補の証拠から人が読む本文の一覧と、その先頭（無ければ候補の本文）を返す。"""
     bodies: list[str] = []
     for event in evidence.get("events", []):
         if event.get("kind") != "detail":
@@ -143,11 +130,6 @@ def _candidate_bodies(candidate: dict[str, Any], evidence: dict[str, Any]) -> tu
 
 
 def _provenance_text(records: list[str], timeline: list[dict[str, Any]]) -> str:
-    """記録ごとの由来（役割文書、起動mode、起動元の記録とその役割文書）を、同じbundleの`record-provenance`から示す。
-
-    候補の要約の文言（引数のパスやコマンド）からは実行主体を推せないため、記録位置へ由来を添えて
-    読み手が別の照会をせずに実行主体を確かめられるようにする。由来の無い記録は取得できなかったことを示す。
-    """
     provenance = {
         str(event["record"]): event
         for event in timeline
@@ -186,13 +168,11 @@ def _ngrams(text: str) -> set[str]:
 
 
 def _sentences(text: str) -> list[set[str]]:
-    """発話を文へ分け、一致の判定に使う長さの文の5-gram集合を返す。"""
     pieces = re.split(r"[。！？!?\n]", text)
     return [_ngrams(piece) for piece in map(_normalize_for_similarity, pieces) if len(piece) >= _SIMILAR_MIN_SENTENCE]
 
 
 def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
-    """private-notesの全状態のWIから、ファイル名、状態、タイトルと、ユーザーの発話を持つ節ごとの5-gram集合を返す。"""
     root = _uwi_scan.private_notes_root()
     if root is None:
         return []
@@ -213,7 +193,6 @@ def _past_wi_sections() -> list[tuple[str, str, str, list[set[str]]]]:
 def _similar_records(
     text: str, past: list[tuple[str, str, str, list[set[str]]]], *, exclude: str | None
 ) -> list[tuple[str, str, str]]:
-    """発話のいずれかの文の5-gramの8割以上を1つの節が含むWIを、ファイル名、状態、タイトルで返す。"""
     sentences = _sentences(text)
     matched: list[tuple[str, str, str]] = []
     for filename, state, title, sections in past:
@@ -236,7 +215,6 @@ def _candidates_document(
     detail_command: str,
     single_failures: list[dict[str, Any]],
 ) -> str:
-    """候補の全量を保存索引へ委ね、初回には種別・必須性・代表位置と短い概要を示す。"""
     counts = collections.Counter(str(item["candidate_kind"]) for item in candidates)
     mandatory = [item for item in candidates if is_mandatory(item)]
     lines = [
@@ -265,7 +243,7 @@ def _candidates_document(
     if len(records) > _SUMMARY_TOP_COUNT:
         lines.append(f"他{len(records) - _SUMMARY_TOP_COUNT}記録の由来はbundle/timeline.jsonlのrecord-provenanceを参照する。")
     lines.extend(["", "## 候補索引", ""])
-    # 件数に応じて概要を短くする。位置や識別子だけでも収まらない範囲は保存索引で全件を識別する。
+
     per_candidate = min(400, max(70, 55_000 // max(1, len(candidates))))
     omitted: collections.Counter[str] = collections.Counter()
     budget = 58_000

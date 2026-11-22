@@ -105,7 +105,7 @@ class TestIsPendingAsyncWork:
         monkeypatch.setattr(background_tasks_entries, "_read_child_transcript_entries", reads)
 
         def stop_hook() -> bool:
-            # Stop hookは呼び出しごとに別プロセスで動くため、プロセス内の判定結果を持ち越さない。
+
             _background_tasks._PENDING_ASYNC_WORK_CACHE.clear()  # pylint: disable=protected-access
             return is_pending_async_work(str(transcript), "", session_state=None)
 
@@ -163,7 +163,6 @@ class TestIsPendingAsyncWork:
     def test_queue_operation_completion_completes_grandchild(
         self, tmp_path: pathlib.Path, operation: str, pending: bool
     ) -> None:
-        """完了突合後も投入だけの通知は配送待ちとして保つ。"""
         entries = [
             _user_entry("hello"),
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
@@ -199,7 +198,6 @@ class TestIsPendingAsyncWork:
         operations: tuple[str, ...],
         pending: bool,
     ) -> None:
-        """投入・先頭配送・同じ本文の除去から未配送の通知を判定する。"""
         entries = [_user_entry("続き")]
         for operation in operations:
             if operation == "dequeue":
@@ -212,7 +210,6 @@ class TestIsPendingAsyncWork:
 
     @pytest.mark.parametrize("operation", ["popAll", "popOne"])
     def test_editable_pop_before_notification_delivery(self, tmp_path: pathlib.Path, operation: str) -> None:
-        """編集用に取り出した入力を1件ずつ除き、後続の先頭配送で通知を配送済みにする。"""
         queue = [
             {"type": "queue-operation", "operation": "enqueue", "content": "編集1"},
             {"type": "queue-operation", "operation": "enqueue", "content": "編集1"},
@@ -224,7 +221,7 @@ class TestIsPendingAsyncWork:
         ]
         dequeue = {"type": "queue-operation", "operation": "dequeue"}
         tail = [_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()])]
-        # 取り出し直後と1回目の配送後は、同じ本文の残り1件が通知より先にあるため未配送として残る。
+
         for name, dequeues, pending in (("popped", 0, True), ("first", 1, True), ("delivered", 2, False)):
             directory = tmp_path / name
             directory.mkdir()
@@ -234,7 +231,6 @@ class TestIsPendingAsyncWork:
     def test_non_notification_enqueue_still_occupies_fifo(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """通知以外の先行項目を配送しても、後ろの完了通知はキューへ残る。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             {"type": "queue-operation", "operation": "enqueue", "content": {"kind": "other"}},
@@ -286,14 +282,12 @@ class TestIsPendingAsyncWork:
     def test_dequeue_removes_element_matching_delivered_user_message(
         self, contents: list[str], delivered: list[dict], expected: list[str]
     ) -> None:
-        """`dequeue`はその後に配送されたユーザーメッセージの本文に該当する1件を除き、該当が無ければ先頭を除く。"""
         entries = [{"type": "queue-operation", "operation": "enqueue", "content": content} for content in contents]
         entries.append({"type": "queue-operation", "operation": "dequeue"})
         entries.extend(delivered)
         assert _background_tasks.queued_task_notification_contents(entries) == expected
 
     def test_missing_child_transcript_preserves_top_level_decision(self, tmp_path: pathlib.Path) -> None:
-        """サブエージェント記録ディレクトリが無い場合も、最上位の起動・完了判定を維持する。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -303,7 +297,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_malformed_or_unrelated_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """破損記録と親子関係の無い孫記録を無視し、最上位判定を例外化しない。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -333,7 +326,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_empty_child_metadata_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """直接の子を示すmetadataが空の場合はサブエージェント記録を走査しない。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -347,7 +339,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_partially_corrupt_child_transcript_is_ignored(self, tmp_path: pathlib.Path) -> None:
-        """子transcriptに破損行が1行でもあれば有効行を部分採用しない。"""
         entries = [
             _user_async_launched_entry("toolu_child", agent_id="child-id"),
             _user_task_notification_entry("toolu_child", task_id="child-id"),
@@ -364,7 +355,6 @@ class TestIsPendingAsyncWork:
         assert is_pending_async_work(str(transcript), "", session_state=None) is False
 
     def test_multiple_children_and_mixed_grandchildren_are_completed(self, tmp_path: pathlib.Path) -> None:
-        """複数の直接の子から収集したAgent・Taskの孫を個別識別子で完了扱いする。"""
         entries = [
             _user_async_launched_entry("toolu_child_a", agent_id="child-a"),
             _user_task_notification_entry("toolu_child_a", task_id="child-a"),

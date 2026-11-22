@@ -1,5 +1,3 @@
-"""WIのshow: syncのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -17,7 +15,6 @@ class TestShowSkipPull:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []
@@ -86,8 +83,6 @@ class TestShowSkipPull:
 
 
 class TestShowStatePrefixedFilename:
-    """showサブコマンド: 状態名付きファイル名は再実行方法を案内して終了する。"""
-
     @pytest.mark.parametrize("state", ["inbox", "processing", "hold", "adopted", "rejected"])
     def test_state_prefix_reports_hint(
         self,
@@ -96,12 +91,10 @@ class TestShowStatePrefixedFilename:
         capsys: pytest.CaptureFixture[str],
         state: str,
     ) -> None:
-        """既知の状態名で始まる入力は、状態名を除いた再実行方法を案内する。"""
         _setup_notes(tmp_path)
         git_calls: list[_GitCall] = []
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake(git_calls))
 
-        # 対象リポジトリを明示し、`--target-repo`省略時の解決によるgit呼び出しを検証対象から外す。
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wi", "show", f"{state}/fb-001.md", "--target-repo=all"], home=tmp_path)
 
@@ -116,7 +109,6 @@ class TestShowStatePrefixedFilename:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """状態名でない接頭辞は共通のファイル名検証で拒否する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -133,7 +125,6 @@ class TestShowStatePrefixedFilename:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """状態名の後にカレント参照が続く入力は共通のファイル名検証で拒否する。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 

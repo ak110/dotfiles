@@ -1,5 +1,3 @@
-"""minimalの整理で、npmのglobal導入物と旧npm版、mise管理のNodeを扱う判定を確かめる。"""
-
 # pylint: disable=protected-access  # 対象分類・削除境界の内部関数を隔離環境で検証する。
 
 import json
@@ -48,7 +46,6 @@ def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monk
             calls.append(command)
             return subprocess.CompletedProcess(command, 3, "", "npm uninstall failed")
         if command[1:] == ["reshim", "--force"] and node_removal in calls:
-            # miseはNodeを削除した後のreshimでnpmのshimを除く。
             npm.unlink()
         return original_run(command, **kwargs)
 
@@ -72,7 +69,6 @@ def test_npm_prune_uses_installed_node_without_configured_version(tmp_path, monk
 
 
 def test_minimal_prunes_npm_of_every_installed_node_version(tmp_path, monkeypatch):
-    """miseに複数の版のNodeが残っていれば、どの版のnpmからもNode削除前に外す。"""
     versions = ["20.19.5", "22.21.1", "24.11.1"]
     installed = {"node": [{"version": version, "install_path": str(tmp_path / version)} for version in versions]}
     _, calls = prepare(tmp_path, monkeypatch, "minimal", installed=installed)
@@ -89,7 +85,6 @@ def test_minimal_prunes_npm_of_every_installed_node_version(tmp_path, monkeypatc
 
 
 def test_minimal_without_node_skips_npm_prune(tmp_path, monkeypatch):
-    """miseにもPATHにもNodeが無いminimalでは、npmの整理を行わずに成功する。"""
     _, calls = prepare(tmp_path, monkeypatch, "minimal", installed={"actionlint": [{"version": "1"}]})
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
     monkeypatch.setattr(prune_installation, "removal_paths", lambda: ())
@@ -111,7 +106,7 @@ def test_minimal_prunes_npm_outside_mise_without_shims(tmp_path, monkeypatch, np
         npm = directory / ("npm.cmd" if os.name == "nt" else "npm")
         npm.write_text("npm", encoding="utf-8")
         npm.chmod(npm.stat().st_mode | stat.S_IXUSR)
-    # miseのshimがOSのNodeより前にある（aws.tqzh.tkのPATHと同じ順序）。
+
     monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(system)]))
     monkeypatch.setenv("MISE_DATA_DIR", str(shims.parent))
     monkeypatch.setattr(prune_installation.shutil, "which", normal_lookup)
@@ -152,7 +147,6 @@ def test_minimal_prunes_npm_outside_mise_without_shims(tmp_path, monkeypatch, np
 
 @pytest.mark.parametrize("provider", ["mise", "external"])
 def test_minimal_retains_old_npm_launchers(tmp_path, monkeypatch, caplog, provider):
-    """minimalでも旧版と同名binを持つ別パッケージをnpm uninstallに渡さない。"""
     node_path = tmp_path / "mise-node"
     installed = {"node": [{"version": "24", "install_path": str(node_path)}]} if provider == "mise" else {}
     _, calls = prepare(tmp_path, monkeypatch, "minimal", installed=installed)
@@ -224,11 +218,6 @@ def _answer_npm_root(monkeypatch, calls, answer: Callable[[list[str]], subproces
     ["alias", "previous-prefix", "missing-manifest", "launcher-only", "unreadable", "nested-prefix", "absent", "user-global"],
 )
 def test_minimal_removes_node_only_when_old_npm_cli_is_absent(tmp_path, monkeypatch, caplog, layout):
-    """Node本体の配下に旧npm版が無いと確かめられた場合だけ、mise uninstallとmise pruneへ進む。
-
-    照会時点のnpm rootと既知のパッケージキーだけでは、以前のprefixに残った導入、別名導入、
-    package.jsonの欠けた導入を見落とす。
-    """
     node = tmp_path / "mise-node"
     _, calls = prepare(tmp_path, monkeypatch, "minimal", {"node": [{"version": "24", "install_path": str(node)}]})
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
@@ -248,7 +237,6 @@ def test_minimal_removes_node_only_when_old_npm_cli_is_absent(tmp_path, monkeypa
     elif layout == "unreadable":
         (_write_npm_package(modules, "codex-legacy", None) / "package.json").write_text("{", encoding="utf-8")
     elif layout == "nested-prefix":
-        # Node実体の中に以前のnpm prefixを置いた配置。固定の場所だけを調べると見落とす。
         nested = node / "previous-prefix"
         _write_npm_package(
             nested / "lib" / "node_modules", "@openai/codex", {"name": "@openai/codex", "bin": {"codex": "cli.js"}}
@@ -256,7 +244,6 @@ def test_minimal_removes_node_only_when_old_npm_cli_is_absent(tmp_path, monkeypa
         (nested / "bin").mkdir()
         (nested / "bin" / "codex").write_text("launcher", encoding="utf-8")
     elif layout == "user-global":
-        # 旧npm版でないと確認できたglobalパッケージと、そのパッケージを指す起動ファイルは削除してよい。
         package = _write_npm_package(modules, "typescript", {"name": "typescript", "bin": {"tsc": "bin/tsc"}})
         (package / "bin").mkdir()
         (package / "bin" / "tsc").write_text("#!/usr/bin/env node\n", encoding="utf-8")
@@ -267,7 +254,7 @@ def test_minimal_removes_node_only_when_old_npm_cli_is_absent(tmp_path, monkeypa
             pytest.skip("symlinkを作成できない環境")
     elif layout not in ("absent",):
         raise AssertionError(layout)
-    # 以前のprefixに残った導入では、照会時点のnpm rootはNodeの外を指す。
+
     queried = tmp_path / "npm-prefix" / "lib" / "node_modules" if layout == "previous-prefix" else modules
     _answer_npm_root(monkeypatch, calls, lambda command: subprocess.CompletedProcess(command, 0, str(queried), ""))
 
@@ -279,16 +266,12 @@ def test_minimal_removes_node_only_when_old_npm_cli_is_absent(tmp_path, monkeypa
     if layout not in ("absent", "user-global"):
         retention = next(message for message in caplog.messages if "mise管理のNodeを保持" in message)
         assert "`update-dotfiles`を再実行" in retention
-        # 他の警告が出ない配置（起動ファイルだけなど）でも、この警告だけで次の操作を選べる。
+
         assert "上の警告" not in retention
 
 
 @pytest.mark.parametrize("manifest", ["readable", "unreadable"])
 def test_minimal_keeps_every_launcher_of_retained_package(tmp_path, monkeypatch, manifest):
-    """npmのprefixが`~/.local`のときは、`~/.local/bin`の起動ファイルを削除しない。
-
-    旧npm版のパッケージが`opencode`のbinも持つ配置や、パッケージ情報を読めない配置を含む。
-    """
     _, calls = prepare(tmp_path, monkeypatch, "minimal", {})
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: str(tmp_path / "npm"))
     home = Path.home()
@@ -318,7 +301,6 @@ def test_minimal_keeps_every_launcher_of_retained_package(tmp_path, monkeypatch,
 
 
 def test_minimal_unconfirmed_npm_warns_how_to_recheck_without_removal_command(tmp_path, monkeypatch, caplog):
-    """導入先やpackage.jsonを確認できない警告は、削除を案内せず確認方法と再実行の条件を示す。"""
     node = tmp_path / "mise-node"
     _, calls = prepare(tmp_path, monkeypatch, "minimal", {"node": [{"version": "24", "install_path": str(node)}]})
     external = tmp_path / "external-npm"
@@ -346,10 +328,6 @@ def test_minimal_unconfirmed_npm_warns_how_to_recheck_without_removal_command(tm
 
 
 def test_minimal_keeps_user_launchers_when_local_is_npm_prefix_without_npm(tmp_path, monkeypatch):
-    """npmを見つけられなくても、`~/.local`がnpmの導入先なら`~/.local/bin`の起動ファイルを削除しない。
-
-    旧npm版の別名導入（キーとnameが既知の名前と異なる）が持つ追加の起動ファイル`opencode`を含む。
-    """
     _, calls = prepare(tmp_path, monkeypatch, "minimal", {})
     monkeypatch.setattr(prune_installation.shutil, "which", lambda name, path=None: None)
     home = Path.home()

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのlisting: syncのテスト。"""
 
 import pathlib
 import subprocess
@@ -19,7 +18,6 @@ class TestListSkipPull:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--skip-pull指定時はfetch・merge・rebaseが実行されない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         git_calls: list[_GitCall] = []

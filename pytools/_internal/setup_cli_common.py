@@ -22,7 +22,6 @@ import threading
 from collections.abc import Callable, Iterable
 from pathlib import Path, PureWindowsPath
 
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 lazy import psutil
 
@@ -112,7 +111,6 @@ def run_official_installer(
 
 
 def prepend_path(path: Path) -> None:
-    """ディレクトリを現プロセスのPATH先頭へ重複なく追加する。"""
     value = str(path)
     normalized = os.path.normcase(os.path.abspath(value))
     with PROCESS_PATH_LOCK:
@@ -128,7 +126,6 @@ def format_user_command(executable: Path, arguments: str) -> str:
     引用した実行パスの前に呼び出し演算子`&`を付ける。
     """
     if sys.platform == "win32":
-        # 二重引用符の中ではパスの`$`と`` ` ``を展開するため、単一引用符で囲み、引用符そのものは重ねる。
         quoted = "'" + str(executable).replace("'", "''") + "'"
         return f"PowerShellで`& {quoted} {arguments}`"
     quoted = "".join("\\" + char if char in '\\"$`' else char for char in str(executable))
@@ -145,8 +142,7 @@ RERUN_AFTER_REPAIR = "直した後に`update-dotfiles`を再実行すると旧np
 
 
 def format_command(command: list[str]) -> str:
-    """引数を含むコマンドを、ユーザーがそのまま実行できる表記で返す。"""
-    # 引数も引用し、npmの実行経路にmiseのNode版などの外部入力が入っても展開させない。
+
     if sys.platform == "win32":
         arguments = " ".join(
             part if re.fullmatch(r"[A-Za-z0-9_@./:+-]+", part) else "'" + part.replace("'", "''") + "'" for part in command[1:]
@@ -157,7 +153,6 @@ def format_command(command: list[str]) -> str:
 
 
 def protected_npm_package(installed_name: str, metadata: dict[object, object]) -> bool:
-    """旧npm版か、同名の起動ファイルをnpmが削除するパッケージを判定する。"""
     return (
         installed_name in LEGACY_NPM_CLIS
         or any(metadata.get("name") == name for name in LEGACY_NPM_CLIS)
@@ -168,7 +163,6 @@ def protected_npm_package(installed_name: str, metadata: dict[object, object]) -
 def warn_about_retained_npm_package(
     package: Path, command: list[str], canonical: Path, *, minimal: bool = False, unconfirmed: str = ""
 ) -> None:
-    """旧npm版の保持と、ユーザーが選べる対処を案内する。"""
     removal = format_command(command)
     availability = "正規版はfullモードで導入する。" if minimal else ""
     logger.warning(
@@ -191,11 +185,6 @@ def warn_about_npm_launchers(
     extra_search_directories: Iterable[Path] = (),
     excluded_launchers: Iterable[Path] = (),
 ) -> None:
-    """非正規の起動先を調べ、PATHの影響と手動での対処を案内する。
-
-    正規の起動先と呼出側が配置した起動管理は検出対象から除く。
-    npmが手動削除時に巻き込む可能性のある起動ファイルは、退避の案内に使う。
-    """
     left = _find_npm_launchers_left_without_package(cli_name, package_name, extra_search_directories)
     for directory, launchers in left.items():
         logger.warning(
@@ -289,11 +278,6 @@ def warn_about_npm_launchers(
 
 
 class Evidence(enum.Enum):
-    """プロセスを書き換える配置からの起動と判定した根拠。
-
-    値は判定をユーザーへ示す文の書式で、PID（`pid`）、読めたパス（`path`）、書き換える版の名前（`target`）を埋める。
-    """
-
     STARTED = "PID {pid}（{path}）で{target}を実行中"
     EXE_UNREADABLE = "PID {pid}（{path}）は実行ファイルの所在を読めず、{target}の実行を否定できない"
     CMDLINE_UNREADABLE = "PID {pid}（{path}）は起動引数を読めず、{target}の実行を否定できない"
@@ -302,8 +286,6 @@ class Evidence(enum.Enum):
 
 @dataclasses.dataclass(frozen=True)
 class CliProcess:
-    """書き換える配置から起動したプロセスか、その可能性を否定できないプロセス。"""
-
     pid: int
     evidence: Evidence
     path: str
@@ -311,7 +293,6 @@ class CliProcess:
 
 
 def describe_processes(processes: Iterable[CliProcess], target: str) -> str:
-    """延期の理由として、プロセスごとに判定の根拠、PID、読めたパスを述べる文を返す。"""
     return "。".join(process.evidence.value.format(pid=process.pid, path=process.path, target=target) for process in processes)
 
 
@@ -330,12 +311,11 @@ def find_windows_cli_processes(
     native_paths = _windows_paths(native)
     package_paths = _windows_paths(packages)
     found: list[CliProcess] = []
-    # process_iterはPID単位でProcessを再利用し、実行名と実行ファイルを以前の世代のまま保持する。
-    # 同じ後処理の中の先行する列挙が残した値を使わないよう、現在のPIDから新しく構築したProcessで判定する。
+
     for listed in psutil.process_iter():
         try:
             process = psutil.Process(listed.pid)
-            # 1つの属性を読めなくても、読めたほかの属性で判定するため、属性ごとに読む。
+
             name = _readable(process.name)
             exe = _readable(process.exe)
             cmdline = _readable(process.cmdline)
@@ -370,8 +350,6 @@ class _NpmPackage:
 
 @dataclasses.dataclass(frozen=True)
 class _UnreadableNpmPackage:
-    """package.jsonを読めず、npmの`uninstall`がパッケージと一緒に削除するファイルを確定できないパッケージ。"""
-
     directory: Path
     manifest: Path
     reason: str
@@ -379,16 +357,10 @@ class _UnreadableNpmPackage:
 
 @dataclasses.dataclass(frozen=True)
 class _NpmShimForm:
-    """npm（cmd-shim）の版が生成する起動スクリプトの1つの形。
-
-    本文は`parts`の間へ、起動スクリプトから見たbinの実体の相対パスを`separator`区切りで差し込んだものである。
-    """
-
     parts: tuple[str, ...]
     separator: str
 
     def target(self, content: str) -> str | None:
-        """本文がファイル全体でこの形と一致する場合に、差し込まれた相対パスを`/`区切りで返す。"""
         slots = len(self.parts) - 1
         size, remainder = divmod(len(content) - sum(map(len, self.parts)), slots)
         if size <= 0 or remainder:
@@ -402,7 +374,6 @@ class _NpmShimForm:
 
 @functools.cache
 def _npm_shim_forms() -> dict[str, tuple[_NpmShimForm, ...]]:
-    """拡張子ごとの、npmが生成する起動スクリプトの既知の形を返す。"""
     data = json.loads(_NPM_SHIM_FORMS_FILE.read_text(encoding="utf-8"))
     forms: dict[str, list[_NpmShimForm]] = {}
     for form in data["forms"]:
@@ -411,10 +382,6 @@ def _npm_shim_forms() -> dict[str, tuple[_NpmShimForm, ...]]:
 
 
 def _npm_shim_targets(launcher: Path) -> set[str]:
-    """起動スクリプトがファイル全体でnpmの既知の生成形式と一致する場合の、binの実体の相対パス（`/`区切り）を返す。
-
-    読めないファイル、テキストでないファイル、どの形とも一致しないファイルでは空集合を返す。読み取りの`OSError`は送出する。
-    """
     content = _read_npm_launcher(launcher)
     if content is None:
         return set()
@@ -498,7 +465,6 @@ def _link_target(link: Path) -> Path:
 
 
 def _is_link(path: Path) -> bool:
-    """シンボリックリンクか、junctionなどの再解析点かを返す。"""
     try:
         attributes = getattr(path.lstat(), "st_file_attributes", 0)
     except OSError:
@@ -507,7 +473,6 @@ def _is_link(path: Path) -> bool:
 
 
 def _relative_reference(launcher: Path, entry: Path) -> str | None:
-    """起動スクリプトのディレクトリから`entry`への相対パスを`/`区切りで返す。別のドライブにあれば`None`を返す。"""
     try:
         return Path(os.path.relpath(entry, common.safe_resolve(launcher.parent))).as_posix()
     except ValueError:
@@ -515,12 +480,10 @@ def _relative_reference(launcher: Path, entry: Path) -> str | None:
 
 
 def _unconfirmed_launcher_message(launcher: Path, reason: str, canonical_launcher: Path) -> str:
-    """帰属を確認できず保持した対象と、確認が成立しなかった理由と、保持した起動先への対処を述べる警告文を返す。"""
     return f"npm packageへの帰属を確認できないため保持: {launcher}（{reason}）。{_held_launcher_guidance(canonical_launcher)}"
 
 
 def _held_launcher_guidance(canonical_launcher: Path) -> str:
-    """自動では削除せず保持した起動先が、PATHで正規の起動先より先に見つかる場合の影響と対処を述べる文を返す。"""
     return (
         "PATHで先に解決される間は、正規の起動先ではなく保持した起動先（旧npm版など）が起動する。"
         f"不要と確認できた場合だけ別の場所へ退避し、正規の起動先`{canonical_launcher}`で起動する"
@@ -528,7 +491,6 @@ def _held_launcher_guidance(canonical_launcher: Path) -> str:
 
 
 def _launcher_kind(launcher: Path) -> str:
-    """帰属判定に用いたランチャーの実体の種別を返す。"""
     if launcher.is_symlink():
         return f"symlink（参照先: {common.safe_resolve(launcher)}）"
     if launcher.is_dir():
@@ -662,7 +624,6 @@ def _npm_global_root(npm: Path) -> Path | str:
 
 
 def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
-    """npmの出力を、実行できなかった場合と非ゼロ終了の場合も含めて1つの文字列で表す。"""
     if result is None:
         return "実行できない"
     if result.returncode != 0:
@@ -671,10 +632,9 @@ def _command_output(result: subprocess.CompletedProcess[str] | None) -> str:
 
 
 def _launcher_belongs_to_package(launcher: Path, package: _NpmPackage, package_name: str) -> bool:
-    """`uninstall`が一緒に削除するファイルの外にある起動先が、パッケージから導入したものかを返す。"""
     if launcher.suffix.lower() != ".exe" or launcher.is_symlink():
         return _npm_bin_unconfirmed(launcher, package.directory, package.bins.get(launcher.stem)) is None
-    # mise shimはmiseの解決情報が対象packageを指す場合だけ対象とする。
+
     mise_name = shutil.which("mise")
     if mise_name is None:
         return False
@@ -700,10 +660,6 @@ def _readable[T](read: Callable[[], T]) -> T | None:
 
 
 def _windows_paths(paths: Iterable[Path]) -> tuple[PureWindowsPath, ...]:
-    """配置を、指定どおりのパスと実体のパスの両方で比較できる形にする。
-
-    psutilの`exe()`はjunctionとsymlinkを解決した実体のパスを返すため、配置も実体のパスで比較する。
-    """
     return tuple(PureWindowsPath(str(candidate)) for path in paths for candidate in (path, common.safe_resolve(path)))
 
 
@@ -729,20 +685,18 @@ def _process_conflicts(
     数える場合は根拠と判定に使ったパスを返す。
     `name`・`exe`・`cmdline`の`None`は、権限が無く読めなかったことを表す。
     """
-    # 実行ファイルを読めない場合も、command lineの先頭の実行パスが書き換える配置にあれば数える。
+
     executable = exe or (cmdline[0] if cmdline else "")
     if executable and _located_in(executable, (*native, *packages)):
         return Evidence.STARTED, executable
     program_path = exe or name or (cmdline[0] if cmdline else "")
     program = PureWindowsPath(program_path).name.lower()
     if program in {cli_name, f"{cli_name}.exe"}:
-        # 実行ファイルの所在を読めない同名の実行体は、書き換える配置から起動した可能性を除けない。
         return None if exe else (Evidence.EXE_UNREADABLE, executable or program_path)
-    # node・miseが起動するスクリプトはパッケージにだけあり、置き換える実行ファイルの配置には無い。
+
     if not packages or program not in {"node", "node.exe", "mise", "mise.exe"}:
         return None
     if cmdline is None:
-        # 起動したスクリプトを読めないnode・miseは、削除するnpm版・mise版を実行している可能性を除けない。
         return Evidence.CMDLINE_UNREADABLE, program_path
     entry = _script_entry(program, cmdline)
     if entry is None:
@@ -756,10 +710,8 @@ def _process_conflicts(
 
 
 def _script_entry(program: str, cmdline: list[str]) -> str | None:
-    """nodeが実行するスクリプトか`mise exec`が起動するコマンドを返し、コードを直接評価する起動では`None`を返す。"""
     command = cmdline[1:]
     if program in {"mise", "mise.exe"}:
-        # miseの--より前は導入するtool指定であり、起動するコマンドではない。
         if not command or command[0] not in {"exec", "x"} or "--" not in command:
             return None
         command = command[command.index("--") + 1 :]
@@ -782,11 +734,6 @@ def _script_entry(program: str, cmdline: list[str]) -> str | None:
 
 
 def _package_bins(manifest: Path) -> dict[str, str] | str:
-    """package.jsonのbinの名前と、パッケージから見た実体の相対パス（`/`区切り）を返す。読めない場合はその理由を返す。
-
-    名前と実体はnpm（npm-normalize-package-bin）と同じく正規化する。npmの`uninstall`はこの名前の起動スクリプトを削除し、
-    npmが生成する起動スクリプトはこの実体を参照する。
-    """
     try:
         metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
     except FileNotFoundError:
@@ -819,7 +766,6 @@ def normalize_npm_package_bins(metadata: dict[object, object]) -> dict[str, str]
 
 
 def _npm_normalized_path(value: str) -> str:
-    """npmと同じく、`/`へ連結して正規化した表記から先頭の`/`を除く。`..`はパッケージの外へ出ない。"""
     return posixpath.normpath("/" + value.lstrip("/"))[1:]
 
 

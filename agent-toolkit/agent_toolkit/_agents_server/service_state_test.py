@@ -1,5 +1,3 @@
-"""通常の再開記録に含まれない保留・通知・生存資源の情報も世代間で保つ。"""
-
 import dataclasses
 import json
 
@@ -50,7 +48,6 @@ async def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_s
 
 @pytest.mark.asyncio
 async def test_restore_accepts_payload_from_generation_without_new_optional_fields() -> None:
-    """旧世代の写しには、新しい版で増えた省略できるフィールドが無い。"""
     payload = json.loads(json.dumps(await service_state.snapshot(state.SessionState("parent", "/project"))))
     optional = next(
         field.name
@@ -69,10 +66,6 @@ async def test_restore_accepts_payload_from_generation_without_new_optional_fiel
 
 
 def test_codec_round_trips_registry_resume_state() -> None:
-    """世代移行の`move_context`は登録簿由来の停止済みsessionも符号化できる。
-
-    未登録だと旧世代の共有監視が毎巡TypeErrorで中断し、自動再開と状態保存が止まった（2026-11-17の巡回で観測）。
-    """
     codec = service_state._StateCodec()  # pylint: disable=protected-access
     stopped = {
         "child": state.RegistryResumeState(
@@ -87,12 +80,11 @@ def test_codec_round_trips_registry_resume_state() -> None:
     }
     copied = codec.decode(json.loads(json.dumps(codec.encode(stopped))))
     assert copied == stopped
-    # 基底の再開状態へ縮退すると照会時の鮮度確認が外れるため、厳密な型を確かめる。
+
     assert type(copied["child"]) is state.RegistryResumeState  # pylint: disable=unidiomatic-typecheck
 
 
 def test_resume_display_action_does_not_change_projection_schema() -> None:
-    """同じ終了状態の旧版と新版で世代間投影のフィールド集合を変えない。"""
     codec = service_state._StateCodec()  # pylint: disable=protected-access
     session = state.SessionState("child", "/project", last_action="Read: 計画")
     stopped = state.SessionResumeState.from_session(session)
@@ -104,7 +96,6 @@ def test_resume_display_action_does_not_change_projection_schema() -> None:
 
 @pytest.mark.asyncio
 async def test_active_item_transfer_preserves_the_wire_pair() -> None:
-    """進行中のitemは、別世代が使う従来の2項目で渡して表示を保つ。"""
     session = state.SessionState("child", "/project")
     session.record_current_item_start({"type": "commandExecution", "command": "git status"})
 
@@ -153,9 +144,7 @@ async def test_effort_and_retry_states_transfer_with_legacy_fields() -> None:
 
 
 def test_restore_reads_previous_public_release_snapshot() -> None:
-    """旧公開版の状態を読み戻し、新規の任意フィールドの値を補う。"""
-    # 再生成: 2.287.0 の
-    # asyncio.run(service_state.snapshot(state.SessionState("old-session", "/project")))
+
     raw = """{
   "session_id": {"kind":"value","value":"old-session"},
   "cwd": {"kind":"value","value":"/project"},

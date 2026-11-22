@@ -20,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("without_skill_notices")
 
 _WARNING = "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。"
 
-# 形式名 → (`toolUseResult`の追加項目, `tool_result`本文の書式, 読取コマンド)
+
 _BACKGROUND_FORMS: dict[str, tuple[dict, str, str]] = {
     "run_in_background": (
         {},
@@ -65,7 +65,6 @@ def _tool_result(tool_use_id: str, text: str, tool_use_result: object) -> dict:
 
 
 def _background_launch(form: str, task_id: str, tool_use_id: str, path: str) -> tuple[list[dict], dict]:
-    """起動のtranscript記録と、同じ起動でPostToolUseが受け取る構造化応答を返す。"""
     extra, text_format, _read_command = _BACKGROUND_FORMS[form]
     response = {
         "stdout": "",
@@ -100,7 +99,6 @@ def _write_transcript(path: pathlib.Path, entries: list[dict]) -> str:
 
 
 def _record_launch(session_id: str, response: dict, command: str = "make test") -> None:
-    """PostToolUseのhookの`main`へ起動の応答を渡し、バックグラウンドタスクの所有記録を書かせる。"""
     payload = {
         "session_id": session_id,
         "hook_event_name": "PostToolUse",
@@ -114,7 +112,6 @@ def _record_launch(session_id: str, response: dict, command: str = "make test") 
 def _pretooluse_bash_context(
     capsys: pytest.CaptureFixture[str], session_id: str, transcript_path: str, command: str, cwd: pathlib.Path
 ) -> str:
-    """PreToolUse(Bash)のhookの`main`を実行し、`additionalContext`を返す。"""
     capsys.readouterr()
     payload = {
         "session_id": session_id,
@@ -137,7 +134,6 @@ def _pretooluse_bash_context(
 def test_pretooluse_warns_reading_pending_output_of_each_background_form(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], form: str
 ) -> None:
-    """3形式の背景移行とも、未完了の間に出力ファイルを読むと完了後の読み直しを示して警告する。"""
     session_id = f"pending-{form}"
     output_path = str(tmp_path / "tasks" / "bg-1.output")
     entries, response = _background_launch(form, "bg-1", "toolu_launch", output_path)
@@ -170,10 +166,9 @@ def test_pretooluse_warns_reading_pending_output_of_each_background_form(
 def test_pretooluse_does_not_warn_after_completion_notice(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], form: str, delivery: str
 ) -> None:
-    """完了通知がキュー取り込みとユーザー発話のいずれで記録された後も、同じ読取を警告しない。"""
     output_path = str(tmp_path / "tasks" / "bg-1.output")
     entries, response = _background_launch(form, "bg-1", "toolu_launch", output_path)
-    # 完了通知の前は同じ読取を警告し、通知の記録が警告の有無を分けることを示す。
+
     before = _write_transcript(tmp_path / "before.jsonl", entries)
     _record_launch(f"before-{form}-{delivery}", response)
     assert _WARNING in _pretooluse_bash_context(capsys, f"before-{form}-{delivery}", before, f"cat {output_path}", tmp_path)
@@ -191,7 +186,6 @@ def test_pretooluse_does_not_warn_after_completion_notice(
 def test_pretooluse_ignores_output_path_in_foreground_result(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """前景Bashと他ツールの結果本文に現れた出力パスの文言は、未完了の出力として扱わない。"""
     pending_path = str(tmp_path / "tasks" / "bg-1.output")
     foreground_path = str(tmp_path / "quoted.output")
     mcp_path = str(tmp_path / "mcp.output")
@@ -220,7 +214,7 @@ def test_pretooluse_ignores_output_path_in_foreground_result(
         session_id = f"foreground-{index}"
         _record_launch(session_id, response)
         assert _WARNING not in _pretooluse_bash_context(capsys, session_id, transcript, f"cat {path}", tmp_path)
-    # 同じtranscriptで起動記録の出力パスは警告対象になり、前景出力の非対象が判定の空振りでないことを示す。
+
     _record_launch("foreground-pending", response)
     assert _WARNING in _pretooluse_bash_context(capsys, "foreground-pending", transcript, f"cat {pending_path}", tmp_path)
 
@@ -237,7 +231,6 @@ def test_pretooluse_ignores_output_path_in_foreground_result(
 def test_pretooluse_quoted_read_command_is_data(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], template: str, *, warned: bool
 ) -> None:
-    """引用した読取コマンドは出力するデータであり、実際の連結の後ろにある読取だけを警告する。"""
     output_path = str(tmp_path / "tasks" / "bg-1.output")
     entries, response = _background_launch("run_in_background", "bg-1", "toolu_launch", output_path)
     transcript = _write_transcript(tmp_path / "transcript.jsonl", entries)
@@ -248,7 +241,6 @@ def test_pretooluse_quoted_read_command_is_data(
 
 
 def test_command_reads_path_only_for_read_command_operand() -> None:
-    """同じパス文字列でも読取コマンドのオペランドだけを検出する。"""
     paths = {"/tmp/bg-1.output"}
 
     assert subject.command_reads_path("tail -n 20 /tmp/bg-1.output", paths)
@@ -258,7 +250,6 @@ def test_command_reads_path_only_for_read_command_operand() -> None:
 
 
 def test_pretooluse_warns_only_for_pending_output_in_mixed_tasks(tmp_path, capsys) -> None:
-    """同じ記録に未完了と完了が混在しても、未完了側だけを警告する。"""
     sid = "mixed-tasks"
     pending = str(tmp_path / "pending.output")
     done = str(tmp_path / "done.output")

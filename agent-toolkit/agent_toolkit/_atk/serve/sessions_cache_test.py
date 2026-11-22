@@ -1,5 +1,3 @@
-"""serveのsessionsに関するcacheの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -31,7 +29,6 @@ from agent_toolkit._testing.serve_sessions_support import (
 def test_listing_retains_messages_only_for_current_display(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, remote: bool
 ) -> None:
-    """64件の選外本文長を変えても索引・全件結果は増えず、祖先と先頭行全体を返す。"""
     helper = _load_remote_helper()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -128,11 +125,6 @@ def test_listing_retains_messages_only_for_current_display(
     ),
 )
 def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """記録が2,049件以上でも、2回目の一覧は変更のない記録を開き直さず、変更は次の一覧へ反映する。
-
-    固定上限のキャッシュは巡回する記録数が上限を超えると全件を順に破棄し、毎回の全件読み直しへ戻る。
-    再利用が値まで固定すると、追記・新規作成の後も古い`updated_at`・`size`・親子関係が返る。
-    """
     project = tmp_path / "claude" / "projects" / "proj"
     records = [
         _write(
@@ -147,7 +139,7 @@ def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.
         )
         for index in range(2049)
     ]
-    # 件数上限による切り詰めで外れないよう、親子関係を確かめる記録は開始日時を新しくする。
+
     parent = _write(
         project / "parent.jsonl", [{"type": "user", "timestamp": "2026-09-02T00:00:00Z", "message": {"content": "親"}}]
     )
@@ -197,7 +189,6 @@ def test_listing_reuses_unchanged_records_beyond_two_thousand(tmp_path: pathlib.
 def test_initial_list_scans_metadata_then_reads_displayed_messages(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """初回は全件のメタ情報を1回走査し、表示対象だけ本文を読み直す。"""
     claude = _claude_record(tmp_path)
     child = _codex_record(tmp_path)
     parent = _write(
@@ -270,11 +261,6 @@ async def test_concurrent_list_requests_share_one_listing(tmp_path: pathlib.Path
 def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """変更監視が一覧の集合の変化を観測するまで前回の一覧を再利用し、追記した記録の大きさだけを取り直す。
-
-    全件の走査は記録数千件で1秒前後かかり、一覧の要求ごとに走査すると表示が遅れる。
-    監視の取りこぼしに備え、再利用の上限時間を過ぎると全件を背景で走査し直し、要求には前回の一覧を返す。
-    """
     context = _context(tmp_path)
     record = _claude_record(tmp_path)
     tracker = sessions.session_watch.RecordChangeTracker(
@@ -313,7 +299,7 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
         rescan_release = threading.Event()
 
         def held(claude_home: pathlib.Path) -> typing.Any:
-            # 背景の走査を止めたまま、要求が走査を待たずに前回の一覧を返すことを確かめる。
+
             rescan_started.set()
             assert rescan_release.wait(10)
             return counting(claude_home)
@@ -323,7 +309,7 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
         assert [entry.path for entry in expired] == [str(record)]
         assert rescan_started.wait(10)
         assert len(scans) == 2
-        # 背景の走査中に届いた要求は、2つ目の走査を始めずに前回の一覧を返す。
+
         sessions.list_local_sessions(context)
         rescan_release.set()
         for thread in threading.enumerate():
@@ -339,7 +325,6 @@ def test_local_listing_reuses_previous_result_until_the_listed_set_may_change(
 async def test_listed_set_change_returns_previous_list_and_refreshes_after_background_scan(
     tmp_path: pathlib.Path,
 ) -> None:
-    """他プロセスが新しい記録を作っても要求の中で全件を走査せず、背景の走査の後に`refresh`で取り直させる。"""
     context = _context(tmp_path)
     record = _claude_record(tmp_path)
     tracker = sessions.session_watch.RecordChangeTracker(
@@ -368,11 +353,6 @@ async def test_listed_set_change_returns_previous_list_and_refreshes_after_backg
 def test_first_list_after_restart_reuses_saved_display_messages(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """最初の全件の走査で求めた表示用の本文まで保存し、再起動後の最初の一覧は本文を読み直さない。
-
-    表示用の本文を求める前に索引を保存すると、全件を読み直した直後にserveを止めた場合、次の起動の
-    最初の一覧が表示件数分の本文を読み直し、記録数千件で数十秒かかる。
-    """
     monkeypatch.setattr(sessions.session_watch.RecordSummaryIndex, "_SAVE_INTERVAL_SEC", 0.0)
     record = _claude_record(tmp_path)
     old_ns = time.time_ns() - 10_000_000_000
@@ -396,10 +376,6 @@ def test_first_list_after_restart_reuses_saved_display_messages(
 async def test_first_list_after_restart_returns_saved_list_and_refreshes_after_background_scan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """再起動後の最初の一覧は前回の一覧を要求の中で走査せずに返し、背景の走査の後に`refresh`で取り直させる。
-
-    記録数千件の全件の走査は起動直後の負荷の下で数秒かかり、最初のセッション一覧の表示を待たせるためである。
-    """
     record = _claude_record(tmp_path)
     first = _context(tmp_path, state_dir=tmp_path / "state")
     assert [entry.path for entry in sessions.list_local_sessions(first)] == [str(record)]

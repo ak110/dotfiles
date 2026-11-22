@@ -56,7 +56,6 @@ def test_invalid_before_state_stops_before_plugin_add(
     monkeypatch: pytest.MonkeyPatch,
     plugin_state: dict[str, Any] | None,
 ) -> None:
-    """更新前状態を取得できない場合はpluginを変更しない。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), plugin_state])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
@@ -148,11 +147,10 @@ def test_cache_restore_failure_is_reported_and_recovered_by_next_run(
 
 
 class _Killed(BaseException):
-    """更新処理の強制終了を模す。"""
+    pass
 
 
 def test_interrupted_update_is_recovered_by_next_run(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """退避中に強制終了した更新が残した旧versionを、更新の無い次回の実行が同じパスへ戻す。"""
     for version in ("1.2.1", "1.2.2"):
         (_cache() / version).mkdir(parents=True)
         (_cache() / version / "marker").write_text(version, encoding="utf-8")
@@ -169,7 +167,6 @@ def test_interrupted_update_is_recovered_by_next_run(plugin_env: Path, monkeypat
         install_codex_plugins.run()
     assert not (_cache() / "1.2.1").exists()
 
-    # 強制終了の後に、atk-hookなどが同じ版を作り直した場合はその内容を残す。
     (_cache() / "1.2.2").mkdir(parents=True)
     (_cache() / "1.2.2/marker").write_text("recreated", encoding="utf-8")
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
@@ -184,7 +181,6 @@ def test_interrupted_update_is_recovered_by_next_run(plugin_env: Path, monkeypat
 def _update_with_locked_version(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, calls: list[list[str]], *, copy_fails: bool
 ) -> None:
-    """1.2.1を移動できない状態で1.2.2から1.2.3へ更新する。CLIは`plugin add`で全旧版を削除する。"""
     for version in ("1.2.1", "1.2.2"):
         (_cache() / version).mkdir(parents=True)
         (_cache() / version / "marker").write_text(version, encoding="utf-8")
@@ -246,7 +242,6 @@ def test_snapshot_failure_returns_moved_versions(plugin_env: Path, monkeypatch: 
 
 
 def test_cache_on_other_volume_is_copied_back(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """cacheと退避先が別ボリュームで名前の変更ができない場合も、複製で退避して同じパスへ戻す。"""
     for version in ("1.2.1", "1.2.2"):
         (_cache() / version).mkdir(parents=True)
         (_cache() / version / "marker").write_text(version, encoding="utf-8")
@@ -296,7 +291,6 @@ def test_interrupted_rollback_keeps_saved_version_for_next_run(
 
     def rmtree(path: Any, ignore_errors: bool = False) -> None:
         if Path(path) == previous:
-            # 削除は開かれていないファイルだけを消して止まる。
             (previous / "partial").unlink(missing_ok=True)
             raise PermissionError("in use")
         original_rmtree(path, ignore_errors=ignore_errors)
@@ -367,7 +361,7 @@ def _update_with_partially_removed_copy(plugin_env: Path, monkeypatch: pytest.Mo
             if path.name != "1.2.3":
                 with contextlib.suppress(OSError):
                     shutil.rmtree(path)
-        # 使用中のファイルは退避した後も使用者が書き換え得るため、元のパスの内容を退避した内容で上書きしない。
+
         (locked / "in-use.pyd").write_text("still loaded", encoding="utf-8")
         if add_succeeds:
             current.update(version="1.2.3")
@@ -397,7 +391,6 @@ def _assert_completed(locked: Path) -> None:
 def test_copied_version_partially_removed_by_cli_is_completed(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, add_succeeds: bool
 ) -> None:
-    """複製で退避した使用中の版をCLIが途中まで消しても、同じ実行のうちに元のパスで完全な内容へ戻す。"""
     _assert_completed(_update_with_partially_removed_copy(plugin_env, monkeypatch, add_succeeds=add_succeeds))
 
 
@@ -427,7 +420,6 @@ def test_interrupted_completion_is_finished_by_next_run(
 
 
 def test_disabled_plugin_still_recovers_saved_versions(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """無効化したpluginの版更新は保留しても、前回の実行が残した退避は戻す。"""
     saved = _saved_root() / "ak110-dotfiles/agent-toolkit/1.2.1"
     saved.mkdir(parents=True)
     (saved / "marker").write_text("1.2.1", encoding="utf-8")
@@ -443,11 +435,6 @@ def test_disabled_plugin_still_recovers_saved_versions(plugin_env: Path, monkeyp
 
 
 def test_interrupted_restore_leftovers_are_cleaned_by_next_run(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """復元の途中で中断した実行が残した印と複製は、次回の実行が片付けて退避先を空にする。
-
-    版を元のパスへ戻した直後の中断では退避の無い`~replace`の印だけが残り、
-    複製の途中の中断後に元のパスが再作成されると`~restoring`の複製が残る。
-    """
     saved = _saved_root() / "ak110-dotfiles/agent-toolkit"
     saved.mkdir(parents=True)
     (saved / "1.2.0~replace").touch()
@@ -675,7 +662,6 @@ def test_running_codex_session_defers_unused_plugin_removal(plugin_env: Path, mo
 
 
 def test_skips_uninstalled_unused_plugin(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """未導入の不要pluginは除去せず、ローカルpluginも変更しない。"""
     calls: list[list[str]] = []
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
     _set_json_responses(monkeypatch, [{"installed": []}, _local_marketplace(plugin_env), _installed_state()])

@@ -1,5 +1,3 @@
-"""選定への合流で費用・書込予定・重なりの記録を更新する試験。"""
-
 import json
 import pathlib
 import typing
@@ -14,7 +12,6 @@ def test_public_merge_transforms_existing_predecessor(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """後段と先行参照を既存レーンへ変換して保存する。"""
     repo, existing, added = inputs
     existing.write_text(
         yaml.safe_dump(
@@ -70,7 +67,6 @@ def test_public_merge_transforms_existing_predecessor(
 def test_public_merge_applies_final_cost_updates_and_preserves_metadata(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """確定した再見積りを合流後へ反映し、元項目と任意メタ情報を構造上の値で保持する。"""
     repo, existing, added = inputs
     metadata = {
         "プロジェクト規範の指定": "対象規範の指定",
@@ -157,7 +153,6 @@ def test_public_merge_rejects_invalid_cost_updates(
     updates: object,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """対象外・型・必須欄の不正は、入力と保存先を変更せず次の操作を返す。"""
     repo, existing, added = inputs
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
@@ -176,7 +171,6 @@ def test_public_merge_requires_whole_selection_comparison(
     capsys: pytest.CaptureFixture[str],
     existing_comparison: int | None,
 ) -> None:
-    """旧比較値は流用せず、追加時に確定した全体値だけを保存する。本文限定でも拒否する。"""
     repo, existing, added = inputs
     original: dict[str, object] = {
         "選定": [_item("a.md", "lane-01"), _item("b.md", "lane-02")],
@@ -242,7 +236,6 @@ def test_public_merge_preserves_created_derived_paths(
     limited_body: bool,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """作成済みの旧判断を追加後も保持し、合流先だけを未統合へ戻して再統合できる。"""
     repo, existing, added = inputs
     (repo / "src").mkdir()
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
@@ -288,7 +281,7 @@ def test_public_merge_preserves_created_derived_paths(
     assert _dispatch(str(existing), "--mark-integrated", target, "--output", str(existing), "--work-dir", str(repo)) == 0
     final = yaml.safe_load(existing.read_text(encoding="utf-8"))
     assert next(cost for cost in final["レーンの所要時間"] if cost["レーン"] == target)["統合状態"] == "統合済み"
-    # 統合状態の記録は対象レーンの項目の`統合状態`だけを変え、他の欄を保持する。
+
     assert all(item["統合状態"] == "統合済み" for item in final["選定"] if item["レーン"] == target)
     assert [{key: value for key, value in item.items() if key != "統合状態"} for item in final["選定"]] == [
         {key: value for key, value in item.items() if key != "統合状態"} for item in result["選定"]
@@ -301,7 +294,6 @@ def test_public_merge_rejects_derived_directory_without_saving(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """導出先を通常ファイルでない実在先へ変えた場合も、旧選定と保存先を保持する。"""
     repo, existing, added = inputs
     (repo / "src/save.py").mkdir(parents=True)
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
@@ -326,7 +318,6 @@ def test_public_merge_rejects_derived_directory_without_saving(
 def test_public_merge_preserves_derived_new_paths(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """新設先の要求・配置根拠を保持し、再取得した出力でも同じ書込予定の妥当性を確かめる。"""
     repo, existing, added = inputs
     data = yaml.safe_load(added.read_text(encoding="utf-8"))
     (repo / "src").mkdir()
@@ -361,10 +352,6 @@ def test_public_merge_preserves_derived_new_paths(
 def test_merge_rejudges_new_pair_under_existing_record(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """既存レーンへ合流した追加WIと相手レーンのWIの組は、既存の記録で通さず追加側の記録で判定させる。
-
-    既存のlane-01（a）とlane-02（b）の記録はa-bの組だけを判定しており、lane-01へ合流するcとbの組を判定していない。
-    """
     repo, existing, added = inputs
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))
     addition["選定"] = [_item("c.md", "lane-03")]
@@ -395,7 +382,6 @@ def test_merge_rejudges_new_pair_under_existing_record(
 def test_merge_with_same_name_temporary_lane_judges_existing_members(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """仮名が同じ名前の既存レーンへ写る合流では、その名前の追加側の記録が既存分と追加分の組を判定する。"""
     repo, existing, added = inputs
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))
     addition["選定"] = [_item("c.md", "lane-01"), _item("d.md", "lane-02")]
@@ -417,7 +403,6 @@ def test_merge_preserves_item_integration_state(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """合流先のレーン行を未統合へ戻しても、統合済みレーンの既存項目は統合済みとして残り、追加項目は未統合となる。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     original["レーンの所要時間"][0]["統合状態"] = "統合済み"

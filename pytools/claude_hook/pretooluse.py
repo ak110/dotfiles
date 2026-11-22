@@ -35,7 +35,6 @@ from agent_toolkit._hooks.tool_input import new_content_fields
 
 from pytools._internal import common
 
-# このスクリプトのhook識別子。`atk-auto`要素の`source`属性に展開される。
 _HOOK_ID = "dotfiles/claude_hook_pretooluse"
 
 
@@ -43,7 +42,6 @@ _llm_notice = _notice_formatter(_HOOK_ID)
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。exit code を返す（常に0）。"""
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -127,7 +125,6 @@ _PS1_DIRECTIVES_FIX = (
 
 
 def _is_ps1(file_path: str) -> bool:
-    """対象拡張子か判定する（`.ps1` / `.ps1.tmpl`）。"""
     lowered = file_path.lower()
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
@@ -150,12 +147,6 @@ def _check_ps1_directives(tool_name: str, fields: list[tuple[str, str]], file_pa
     return None
 
 
-# --- agent-toolkit 配布物への dotfiles 固有名混入 check（いずれも警告） ---
-
-# 個人プロジェクト名の固定リスト。
-# ファイルシステムから機械的に取得できないため明示的に持つ。
-# 個人非公開・特定プラットフォーム専用のものは一般化した表現への置き換えを求め、
-# OSS として紹介する想定がある pyfltr / pytilpack は意図した参照かの確認を求める。
 _PERSONAL_PROJECTS_PRIVATE: frozenset[str] = frozenset({"glatasks", "gv", "lc", "smpr"})
 _PERSONAL_PROJECTS_OSS: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 配布物文面で参照する外部 CLI 名の許容リスト。
@@ -174,14 +165,6 @@ _POSSIBLY_DOTFILES_NAMES_FIX = (
 def _check_dotfiles_specific_names(
     tool_name: str, fields: list[tuple[str, str]], file_path: str
 ) -> tuple[str | None, str | None]:
-    """agent-toolkit 配布物への dotfiles 固有名混入を検出する。
-
-    対象範囲は `agent-toolkit/` 配下。いずれも警告であり、書き込みは止めない。
-    dotfiles 固有名は配布先のエンドユーザーにとって意味不明な参照となるため、一般化した表現への置き換えを求める。
-    OSS 名 (`pyfltr` / `pytilpack`) は OSS として正規参照される場合があるため、意図した参照かの確認を求める。
-
-    `(specific_message, oss_message)` を返す。該当なしの側は None。
-    """
     if not file_path:
         return None, None
     dotfiles_root = common.find_dotfiles_root()
@@ -204,10 +187,6 @@ def _check_dotfiles_specific_names(
 
 
 def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Path) -> bool:
-    """対象ファイルが agent-toolkit 配布範囲のいずれかに含まれるかを判定する。
-
-    相対パスでは判定不能なためスキップする（resolve は CWD 基準で解決され誤検出になり得る）。
-    """
     try:
         target = pathlib.Path(file_path).expanduser()
         if not target.is_absolute():
@@ -225,16 +204,10 @@ def _is_in_agent_toolkit_distribution(file_path: str, dotfiles_root: pathlib.Pat
 
 
 def _agent_toolkit_distribution_roots(dotfiles_root: pathlib.Path) -> tuple[pathlib.Path, ...]:
-    """マーケットプレイス経由で配布されるディレクトリの一覧を返す。"""
     return (dotfiles_root / "agent-toolkit",)
 
 
 def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozenset[str], frozenset[str]]:
-    """Dotfiles 固有名と OSS 名を `(固有名, OSS 名)` の組で返す。
-
-    固有名は次の 6 カテゴリの動的取得結果と固定の個人プロジェクト名の和集合。
-    各カテゴリは対象ディレクトリ未存在時に空集合を返す。
-    """
     specific: set[str] = set()
     specific |= _list_subdirs(dotfiles_root / ".chezmoi-source" / "dot_claude" / "skills")
     specific |= _list_subdirs(dotfiles_root / ".claude" / "skills")
@@ -245,7 +218,7 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
     )
     specific |= _list_script_names(dotfiles_root / "scripts", dotfiles_root / "libexec")
     specific |= _PERSONAL_PROJECTS_PRIVATE
-    # OSS 名が誤って固有名に混入した場合は OSS 名として扱う（確認だけを求める保守的措置）。
+
     specific -= _PERSONAL_PROJECTS_OSS
     # 存在検査付きで参照することを許容する外部 CLI 名は固有名・OSS 名のいずれからも除外する。
     specific -= _EXTERNAL_CLI_ALLOWED
@@ -253,7 +226,6 @@ def _build_dotfiles_specific_names(dotfiles_root: pathlib.Path) -> tuple[frozens
 
 
 def _list_subdirs(path: pathlib.Path) -> set[str]:
-    """ディレクトリ直下のサブディレクトリ名を返す。未存在なら空集合。"""
     if not path.is_dir():
         return set()
     return {child.name for child in path.iterdir() if child.is_dir()}
@@ -284,12 +256,6 @@ def _list_pytools_modules(path: pathlib.Path) -> set[str]:
 
 
 def _list_internal_modules(path: pathlib.Path, agent_toolkit_package: pathlib.Path) -> set[str]:
-    """`pytools/_internal/` 直下のモジュール名のうち、dotfiles 固有と判定できるものを返す。
-
-    `scripts/` から移した処理（`sync_report` など）を移動前と同じく固有名として扱うため、
-    `_` を含む複合名だけを対象にし、`common` のような一般語の単語名は除く。
-    agent-toolkit のパッケージにも同名のモジュールがある名前は配布物の正規の参照になり得るため除く。
-    """
     if not path.is_dir():
         return set()
     names = {
@@ -318,10 +284,6 @@ def _list_script_names(*directories: pathlib.Path) -> set[str]:
 
 
 def _collect_word_hits(tool_name: str, fields: list[tuple[str, str]], names: frozenset[str]) -> list[str]:
-    """単語境界マッチで各フィールドから検出された名前を `'name' in field` 形式で列挙する。
-
-    同名が複数フィールドで出ても 1 件だけ記録する。
-    """
     hits: list[str] = []
     seen: set[str] = set()
     for field, value in fields:

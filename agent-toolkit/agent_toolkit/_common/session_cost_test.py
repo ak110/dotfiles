@@ -16,7 +16,6 @@ def _state(amount: float, timestamp: str = "2026-10-20T02:00:00Z") -> dict[str, 
 
 
 def test_latest_claude_cost_state_covers_native_children_and_keeps_other_processes() -> None:
-    """最新累積額へ、後発応答と委譲先の累積額だけを加え、含まれるサブ分を重ねない。"""
     root = session_cost.CostRecord(
         "root",
         "claude",
@@ -57,7 +56,6 @@ def test_latest_claude_cost_state_covers_native_children_and_keeps_other_process
 
 
 def test_cost_state_only_parent_equals_reported_amount() -> None:
-    """後続応答・委譲先の無い親の合計は、サブ記録があってもtotalCostUSDに一致する。"""
     root = session_cost.CostRecord("root", "claude", [_state(1), _state(9.125)])
     child = session_cost.CostRecord(
         "sub",
@@ -74,7 +72,6 @@ def test_cost_state_only_parent_equals_reported_amount() -> None:
 
 
 def test_claude_latest_message_usage_and_cache_ttl() -> None:
-    """同一応答を最後のusageへ畳み、明記された5分と残りの1時間書込単価を使う。"""
     entries = [
         _claude("m", "claude-opus-5-5[1m]", {"input_tokens": 100, "output_tokens": 10}),
         _claude(
@@ -97,7 +94,6 @@ def test_claude_latest_message_usage_and_cache_ttl() -> None:
 
 
 def test_codex_response_model_and_duplicate_token_notifications() -> None:
-    """入力に内包されたcache読取と思考出力を重ねず、同じ累計の通知も重ねない。"""
     sample = {
         "type": "event_msg",
         "payload": {
@@ -147,7 +143,6 @@ def test_codex_response_model_and_duplicate_token_notifications() -> None:
     ],
 )
 def test_price_brackets_follow_each_response_input(model: str, count: int, expected: float) -> None:
-    """境界ちょうどと1トークン超を、各モデルの公開区分に対応付ける。"""
     assert model_pricing.response_price(model, {"input_tokens": count}) == pytest.approx(expected)
 
 
@@ -156,7 +151,6 @@ def test_price_brackets_follow_each_response_input(model: str, count: int, expec
     [(200_000, (400_000 + 50_000 + 5200 + 1000) / 1e6), (200_001, (800_004 + 100_000 + 10_400 + 1500) / 1e6)],
 )
 def test_sol_62_prices_full_request_at_context_boundary(uncached: int, expected: float) -> None:
-    """書込と読取を含む入力が272Kを1超えると、出力を含む応答全体が長文単価に変わる。"""
     tokens = {
         "input_tokens": uncached,
         "cache_creation_input_tokens": 20_000,
@@ -169,13 +163,10 @@ def test_sol_62_prices_full_request_at_context_boundary(uncached: int, expected:
 @pytest.mark.parametrize(
     ("model", "count", "short_write", "expected"),
     [
-        # 入力8・1時間書込16・読取0.20・出力40。5分書込は10。
         ("claude-fable-5-2", 1_000_000, 0, 8 + 16 + 0.20 + 40),
         ("claude-fable-5-2", 1_000_000, 1_000_000, 8 + 10 + 0.20 + 40),
         ("claude-mythos-5-2", 1_000_000, 0, 8 + 16 + 0.20 + 40),
-        # 入力1・書込1.25・読取0.05・出力5。入力側の合計が272K以下。
         ("gpt-6.1-terra", 50_000, 0, (1 + 1.25 + 0.05 + 5) * 0.05),
-        # 272K超は入力2・書込2.5・読取0.10・出力7.50。
         ("gpt-6.1-terra", 1_000_000, 0, 2 + 2.5 + 0.10 + 7.50),
     ],
 )
@@ -206,7 +197,6 @@ def test_added_models_use_published_rates(model: str, count: int, short_write: i
 def test_unknown_model_is_not_zero_cost(
     engine: str, entries: list[dict[str, Any]], input_tokens: int, output_tokens: int
 ) -> None:
-    """単価不明の応答は合計未確定とし、件数とトークンを別に残す。"""
     result = session_cost.estimate_family([session_cost.CostRecord("root", engine, entries)])
     assert result["estimated_usd"] is None
     assert result["unknown_responses"] == 1
@@ -217,7 +207,6 @@ def test_unknown_model_is_not_zero_cost(
 
 
 def test_unknown_model_counts_include_children_once() -> None:
-    """同じ未知名は親子で合算し、各内訳は自身の応答だけを数える。"""
     root = session_cost.CostRecord("root", "claude", [_claude("1", "future-sol", {"input_tokens": 1})])
     child = session_cost.CostRecord(
         "child",
@@ -234,7 +223,6 @@ def test_unknown_model_counts_include_children_once() -> None:
 
 
 def test_incomplete_family_keeps_known_subtotal() -> None:
-    """記録不足があっても既知の額を保持し、完全な合計と区別する。"""
     result = session_cost.estimate_family([session_cost.CostRecord("root", "claude", [_state(4.5)])], incomplete=True)
     assert result["estimated_usd"] is None
     assert result["known_usd"] == 4.5

@@ -22,12 +22,9 @@ _QUOTED_NOTICE_PHRASES = (
 
 
 class TestMonitorTaskNotificationSuppression:
-    """Monitor由来の`task_notification_unresolved`過検出が抑止されることを検証する。"""
-
     def test_monitor_notification_does_not_log_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Monitorのtool_useと突合できる通知はtask_notification_unresolvedをログしない。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "monitor-a"),
@@ -42,7 +39,6 @@ class TestMonitorTaskNotificationSuppression:
     def test_non_monitor_task_id_collision_still_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Monitor以外の`taskId`値では未解決通知をログする。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_non_monitor_task_id_entry("toolu_taskupdate1", "1"),
@@ -56,7 +52,6 @@ class TestMonitorTaskNotificationSuppression:
     def test_same_value_shared_by_monitor_and_non_monitor_still_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Monitor由来か一意に決まらない`taskId`値では未解決通知をログする。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "shared-id"),
@@ -69,7 +64,6 @@ class TestMonitorTaskNotificationSuppression:
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
     def test_unknown_notification_still_logs_unresolved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Monitor由来と識別できない未知の通知は引き続きtask_notification_unresolvedをログする。"""
         monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
         entries = [_user_task_notification_entry(None, task_id="unknown-task")]
         t = _write_transcript(tmp_path, entries)
@@ -79,8 +73,6 @@ class TestMonitorTaskNotificationSuppression:
 
 
 class TestBackgroundTaskIdFromNotice:
-    """ホストのMCP移行通知から抽出する識別子の境界を固定する。"""
-
     _PREFIX = 'MCP tool "mcp__agents_server__wait" is still running after 120s. It was moved to the background as task '
 
     @pytest.mark.parametrize(
@@ -107,7 +99,6 @@ class TestBackgroundTaskIdFromNotice:
         ],
     )
     def test_extracts_identifier_from_host_notice(self, suffix: str, expected: str) -> None:
-        """通知の形で始まる本文から、文末の句読点を除いた識別子を途中で打ち切らずに返す。"""
         assert _background_tasks.background_task_id_from_notice(self._PREFIX + suffix) == expected
         assert (
             _background_tasks.background_task_id_from_notice({"content": [{"type": "text", "text": self._PREFIX + suffix}]})
@@ -125,5 +116,4 @@ class TestBackgroundTaskIdFromNotice:
         ],
     )
     def test_returns_none_for_text_not_starting_with_host_notice(self, text: str) -> None:
-        """通知の形で始まらない本文と識別子を伴わない通知では`None`を返す。"""
         assert _background_tasks.background_task_id_from_notice(text) is None

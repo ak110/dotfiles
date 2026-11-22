@@ -46,7 +46,6 @@ def test_wait_recovers_contended_running_run(
     prepare: Callable[[pathlib.Path, pathlib.Path], None],
     expected: dict[str, object],
 ) -> None:
-    """lock待ち中の未公開runから原本または退避済みの本文を配送する。"""
     assert _run_contended_wait(tmp_path, monkeypatch, prepare) == 0
 
     captured = capsys.readouterr()
@@ -153,7 +152,6 @@ def test_later_wait_uses_matching_current_run(
 
 
 def test_wait_recovers_abandoned_run(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """先行プロセスがいない未公開runから終了時の結果を回収する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
@@ -179,7 +177,6 @@ def test_wait_preserves_unreadable_recovery_record(
     record: str,
     failure: str,
 ) -> None:
-    """回復用記録の異常では既存runを保持し、読取回復後に同じ保存結果を受け取る。"""
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     directory, run_path = _write_current_wait_run(tmp_path, target="session-1", status="published")
     target = directory / "current.json" if record == "current" else run_path
@@ -211,7 +208,6 @@ def test_wait_recovers_claimed_result_once(
     capsys: pytest.CaptureFixture[str],
     original_exists: bool,
 ) -> None:
-    """退避済み結果を原本の有無によらず1回だけ公開する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     status_path = _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
@@ -244,7 +240,6 @@ def test_wait_recovers_claimed_notice_once(
     capsys: pytest.CaptureFixture[str],
     original_exists: bool,
 ) -> None:
-    """退避済み通知を原本の有無によらず1回だけ公開する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     _, run_path = _write_current_wait_run(tmp_path, target="session-1", status="running")
@@ -282,7 +277,6 @@ def test_wait_replays_published_run_after_publication_interrupt(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """run記録の確定後、標準出力への配送前に中断しても本文を再取得する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True)
@@ -298,7 +292,6 @@ def test_wait_replays_published_notice_after_publication_interrupt(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """通知だけを持つ公開済みrunも前景配送前の中断から再演する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     notices = shared_layout.notices_directory("root-session", tmp_path)
@@ -322,7 +315,6 @@ def test_wait_replays_flushed_result_after_interrupt(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """flush後の中断では結果と通知を次の発行で1回再出力する。"""
     results = shared_layout.results_directory("root-session", tmp_path)
     _write_own_status(results, [{"session_id": "session-1"}])
     results.mkdir(parents=True)
@@ -370,7 +362,6 @@ def test_later_wait_starts_new_run_for_consumed_current_run(
     status: str,
     continuable: bool,
 ) -> None:
-    """回収済みまたは前景配送済みの現行runと対象が一致しても新規runを開始する。"""
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-1"}])
     run_directory, _ = _write_current_wait_run(
         tmp_path,
@@ -397,7 +388,6 @@ def test_later_wait_starts_new_run_for_changed_targets(
     capsys: pytest.CaptureFixture[str],
     status: str,
 ) -> None:
-    """対象が変わった後続waitは新規runを開始する。"""
     _write_own_status(shared_layout.results_directory("root-session", tmp_path), [{"session_id": "session-2"}])
     run_directory, _ = _write_current_wait_run(tmp_path, target="session-1", status=status)
 

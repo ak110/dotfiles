@@ -1,5 +1,3 @@
-"""WIのshow: filtersのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -10,15 +8,12 @@ from agent_toolkit.atk_test import _FIXED_TIMESTAMP, _make_subprocess_fake, _set
 
 
 class TestShowRequiresFilenameOrAll:
-    """showサブコマンド: FILENAME・--allのいずれも未指定の場合はエラー終了する。"""
-
     def test_neither_specified_exits(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME・--allともに未指定の場合はexit 2で案内が出力される。"""
         _setup_notes(tmp_path)
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
 
@@ -35,15 +30,12 @@ class TestShowRequiresFilenameOrAll:
 
 
 class TestShowTypeFilter:
-    """showサブコマンド: --typeでFILENAME探索対象種別を限定する（探索範囲は5状態フォルダ全体）。"""
-
     def test_type_uwi_finds_uwi_entry(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=uwi指定時はinboxのみを探索しstatusラベル付きで出力する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -61,7 +53,6 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--type=awi指定時はuwiエントリを種別不一致として除外し該当なしでexit 2になる。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -79,7 +70,6 @@ class TestShowTypeFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--typeを省略してallを使う場合は種別を問わず探索し該当エントリを表示する。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -93,15 +83,12 @@ class TestShowTypeFilter:
 
 
 class TestShowSourceFilter:
-    """showサブコマンド: --source指定でfrontmatterのsourceが一致するエントリのみ出力する。"""
-
     def test_all_filter_matches_exact_source(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --source=NAME指定時、同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1", source="session-review")
         _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/foo", body="本文2", source=None)
@@ -120,7 +107,6 @@ class TestShowSourceFilter:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """FILENAME指定＋--source=!NAME指定時、一致するsourceのファイルは未検出扱いになる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", source="session-review")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -136,7 +122,6 @@ class TestShowSourceFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --source=NAME指定時、uwi側も同一sourceのエントリのみ出力される。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, "uwi-001.md", question="質問1", source="session-review")
         _write_uwi_file(notes, "uwi-002.md", question="質問2", source=None)
@@ -162,7 +147,6 @@ def test_show_filters_important_entries(
     important: str,
     expected: set[str],
 ) -> None:
-    """年月配置の重要項目と通常項目を公開フィルターで選択する。"""
     notes = _setup_notes(tmp_path)
     marked = _write_awi_file(notes, "important.md")
     marked.write_text(marked.read_text(encoding="utf-8").replace("type: awi", "important: true\ntype: awi"), encoding="utf-8")
@@ -176,15 +160,12 @@ def test_show_filters_important_entries(
 
 
 class TestShowStatusFilter:
-    """showサブコマンド: --answeredでUWIの回答状況を限定する（--all分岐のみ有効）。"""
-
     def test_all_answered_excludes_unanswered_uwi_and_awi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """--all --answered=yesは回答済みUWIだけを表示する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo", body="本文1")
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
@@ -206,7 +187,6 @@ class TestShowStatusFilter:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """FILENAME指定時は--answeredを迂回し、未回答uwiでも--answered=yesと無関係に表示される。"""
         notes = _setup_notes(tmp_path)
         _write_uwi_file(notes, f"{_FIXED_TIMESTAMP}-001.md", question="q1", answer="")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))

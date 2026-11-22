@@ -1,5 +1,3 @@
-"""`source: session-review`のAWIのユーザーコメント節を抽出・更新する。"""
-
 import re
 
 from markdown_it.token import Token
@@ -24,7 +22,6 @@ class UserCommentError(ValueError):
 
 
 def _body_parts(text: str) -> tuple[str, str]:
-    """本文の前置き（frontmatter）とMarkdown本文を返す。"""
     normalized = frontmatter.normalize_newlines(text)
     parsed = frontmatter.parse_frontmatter(normalized)
     if parsed is None:
@@ -52,17 +49,14 @@ def _line_segments(text: str) -> list[str]:
 
 
 def _lines(text: str) -> list[str]:
-    """行末を保持した行列を返す。"""
     return _line_segments(text)
 
 
 def _is_blank_line(line: str) -> bool:
-    """空行（空白だけの行を含む）か判定する。"""
     return not line.strip()
 
 
 def _normalize_comment(text: str) -> str:
-    """コメントの前後にある空行だけを除去し、本文を返す。"""
     lines = _lines(text)
     start = 0
     end = len(lines)
@@ -74,17 +68,14 @@ def _normalize_comment(text: str) -> str:
 
 
 def _heading_tokens(text: str) -> list[tuple[Token, str]]:
-    """H2の開きtokenと見出し本文tokenを対応付けて返す。"""
     return _headings.parse_h2_headings(text)
 
 
 def _reserved_heading(token: Token, content: str) -> bool:
-    """予約見出しのtokenか判定する。"""
     return token.level == 0 and token.markup == "##" and content == _COMMENT_HEADING
 
 
 def _find_reserved_heading(body: str) -> Token | None:
-    """予約見出しを検証し、置換対象のtokenを返す。"""
     headings = _heading_tokens(body)
     reserved = [token for token, content in headings if _reserved_heading(token, content)]
     if len(reserved) > 1:
@@ -100,7 +91,6 @@ def _find_reserved_heading(body: str) -> Token | None:
 
 
 def extract_user_comment(text: str) -> str | None:
-    """本文末尾の予約節からユーザーコメントを抽出する。"""
     _prefix, body = _body_parts(text)
     heading = _find_reserved_heading(body)
     if heading is None:
@@ -128,13 +118,11 @@ def split_before_user_comment(text: str) -> tuple[str, str]:
 
 
 def has_reserved_heading(text: str) -> bool:
-    """本文がコードフェンス外の予約見出しを含むか返す。"""
     _prefix, body = _body_parts(text)
     return any(_reserved_heading(token, content) for token, content in _heading_tokens(body))
 
 
 def _validate_comment(text: str) -> str:
-    """入力コメントを検証し、前後の空行を正規化する。空白だけの入力は空文字列を返す。"""
     normalized = _normalize_comment(frontmatter.normalize_newlines(text))
     if normalized and _headings.contains_h2(text):
         raise UserCommentError("ユーザーコメントにコードフェンス外のH2見出しを含められません")

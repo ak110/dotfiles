@@ -19,7 +19,6 @@ def test_agents_wait_does_not_consume_another_writer_result(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """同じroot配下でも別の状態書込主体が公開した結果は回収しない。"""
     root = shared_layout.status_directory("root-session", tmp_path)
     root.mkdir(parents=True)
     (root / "delegate-session.json").write_text(
@@ -176,7 +175,6 @@ def test_agents_wait_rejects_unusable_explicit_root_with_next_action(
     capsys: pytest.CaptureFixture[str],
     root_session_id: str,
 ) -> None:
-    """使えない明示ルートは終了コード4で拒否し、`list`の値を渡すか指定を外す操作を示す。"""
     assert agents_wait.wait_for_result(environment={}, state_root=tmp_path, root_session_id=root_session_id) == 4
 
     captured = capsys.readouterr()
@@ -216,7 +214,6 @@ def test_agents_wait_resolves_changed_conversation_session(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """会話のsession識別子が変わった後も索引先の終了時の結果を回収する。"""
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "current-session")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)

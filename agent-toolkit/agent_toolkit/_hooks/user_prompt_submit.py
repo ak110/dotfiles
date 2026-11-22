@@ -71,9 +71,6 @@ lazy from agent_toolkit._hooks import command_timing, session_title, termination
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
 lazy from agent_toolkit._hooks.host import is_codex_payload  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
-# ホスト判定後の手動コマンドから<name>を抽出する。
-# 先頭記号の直後に`agent-toolkit:`prefixがある場合と無い場合の両方を許容する。
-# スキル名として妥当な文字（英数・ハイフン・アンダースコア）のみを対象とする。
 _SKILL_COMMAND_PATTERN = re.compile(r"\A(?:agent-toolkit:)?([A-Za-z0-9][A-Za-z0-9_-]*)\b")
 _HARNESS_MESSAGE_RE = re.compile(r"^\s*(?:\[SYSTEM NOTIFICATION - NOT USER INPUT\]\s*)?<task-notification\b")
 _USER_PROMPT_SOURCE_KEY = "source"
@@ -82,10 +79,6 @@ _llm_notice = _notice_formatter("user_prompt_submit")
 
 
 def _is_harness_message(prompt: str) -> bool:
-    """ハーネスが挿入したメッセージかを判定する。
-
-    ハーネス通知をユーザーのスラッシュコマンドとして扱わないために用いる。
-    """
     return _HARNESS_MESSAGE_RE.search(prompt) is not None
 
 
@@ -121,7 +114,6 @@ def _is_machine_injected(payload: dict, prompt: str) -> bool:
 
 
 def _emit_hook_output(*, additional_context: str | None, title: str | None = None) -> None:
-    """UserPromptSubmitの値を持つ応答欄を1つのJSONとして出力する。"""
     hook_specific_output: dict[str, str] = {"hookEventName": "UserPromptSubmit"}
     if additional_context is not None:
         hook_specific_output["additionalContext"] = additional_context
@@ -137,18 +129,13 @@ def _work_contract_notice(session_id: str, body: str) -> str:
     記録はこの原因の1件だけを保つため、入力が続いても状態は増えない。
     """
     resolve_notice(session_id, "user_prompt_submit", "_work_contract_notice")
-    # 入力ごとに同じ本文を届ける配送であり、ユーザーの画面へは写さない。
+
     return informational(_llm_notice(body))
 
 
 def _clock_notice(session_id: str) -> str:
-    """実ユーザー入力ごとに、受付時刻と指摘への初動を届ける。
-
-    時刻を推測で記録しないためで、点検通知の生成時刻とは区別する。
-    入力ごとに本文が変わるため、前回の重複抑止の記録を同じ原因だけ解除して状態の増加を防ぐ。
-    """
     resolve_notice(session_id, "user_prompt_submit", "_clock_notice")
-    # 入力ごとに出る定型の情報であり、ユーザーの画面へは写さない。
+
     return informational(
         _llm_notice(
             f"ユーザー入力の受付時刻: `{work_contract.local_time()}`\n"
@@ -159,7 +146,6 @@ def _clock_notice(session_id: str) -> str:
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。終了コードは常に0（fail-open原則）。"""
     begin_delivery()
     try:
         payload = json.loads(payload_text)
@@ -204,7 +190,6 @@ def main(payload_text: str) -> int:
         harness_notices: list[str] = list(initial_notices)
         harness_notices.extend(command_timing.observe_notifications(payload))
         if not is_codex_payload(payload):
-            # 完了通知のたびに同じ文面が出る定型の案内であり、ユーザーの画面へは写さない。
             harness_notices.append(
                 informational(
                     _llm_notice(
@@ -226,10 +211,9 @@ def main(payload_text: str) -> int:
     is_codex = is_codex_payload(payload)
     first_line = prompt.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
-    # スラッシュコマンドで始まる発話もユーザー自身の入力であり、注記の対象に含める。
-    # 除外するのは機械が生成してユーザー入力欄へ入る本文だけとする。
+
     is_normal_prompt = not machine_injected
-    # 発火条件は受領側が除去できないため、いずれも情報提示の区分で配送する。
+
     notices: list[str] = list(initial_notices)
     if is_normal_prompt:
         try:
@@ -257,19 +241,17 @@ def main(payload_text: str) -> int:
         if match is not None:
             full_name = f"agent-toolkit:{match.group(1)}"
             arguments = prompt[len(command_prefix) + match.end() :]
-            # 入口`atk-mode <作業>`は作業の名前へ読み替える。委譲先の最初の入力は委譲元のエージェントが書くため、
-            # 読み替えない（エージェントが自分の判断でAWI投入と自律モードの状態を立てられなくする）。
+
             typed_name = full_name
             if not is_delegated(os.environ):
                 full_name, arguments = skill_modes.resolve_work(full_name, arguments)
-            # AWI投入はスキルを持たない作業であり、入口の名指しだけで始まる。
+
             named_by_entry = full_name != typed_name
             if named_by_entry:
                 session_title.observe_add_awi(session_id, full_name)
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
-            # 自律モードは入口`atk-mode`への作業`process-wi`の名指しだけで立てる（スキル`process-wi`は廃止した）。
             if named_by_entry and full_name == skill_modes.PROCESS_WI:
                 update_state(session_id, set_process_wi_invoked)
 

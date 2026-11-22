@@ -5,7 +5,6 @@ from __future__ import annotations
 import pathlib
 import re
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._hooks import (
     tool_input as _hook_tool_input,
 )
@@ -18,7 +17,6 @@ _REPLACEMENT_CHAR = "\ufffd"
 
 
 def _is_plan_file_or_adjunct(file_path: str) -> bool:
-    """計画ファイル（メイン）・計画ファイル（バグ）の場合に真を返す。"""
     return is_plan_main_file(file_path) or is_plan_adjunct_file(file_path)
 
 
@@ -27,7 +25,6 @@ def _materialize_cached(
     index: int,
     images: dict[int, _hook_tool_input.MaterializedEdit | None],
 ) -> _hook_tool_input.MaterializedEdit | None:
-    """編集操作ごとの変更前後の本文を、必要になった時点で1回だけ組み立てる。"""
     if index not in images:
         images[index] = _hook_tool_input.materialize(operation)
     return images[index]
@@ -37,7 +34,6 @@ _TRAILING_TOOL_BOUNDARY_RE = re.compile(r"</content>\s*</invoke>\s*\Z")
 
 
 def _is_trailing_tool_boundary_target(file_path: str) -> bool:
-    """Pythonまたは計画Markdownであればツール境界タグを判定する対象に含める。"""
     suffix = pathlib.PurePath(file_path).suffix.lower()
     return suffix == ".py" or (suffix == ".md" and _is_plan_file_or_adjunct(file_path))
 
@@ -77,7 +73,6 @@ def _collect_edit_operation_warnings(
 
 
 def _detect_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str, str] | None:
-    """U+FFFD（mojibake）を検出して本文と解消手段を返す。"""
     for field, value in fields:
         position = value.find(_REPLACEMENT_CHAR)
         if position == -1:
@@ -93,11 +88,6 @@ def _detect_mojibake(tool_name: str, fields: list[tuple[str, str]]) -> tuple[str
 
 
 def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]], *, subject: str = "") -> str | None:
-    """文字化けを警告する。
-
-    第1段の判定では、編集対象もユーザーへ提示する本文も再編集で是正できるため復元可能として扱う。
-    ユーザーへ提示する本文はユーザー自身が誤りを読み取れるため、遮断せず警告で返す。
-    """
     detected = _detect_mojibake(tool_name, fields)
     if detected is None:
         return None
@@ -106,7 +96,6 @@ def _warn_mojibake(tool_name: str, fields: list[tuple[str, str]], *, subject: st
 
 
 def _is_ps1(file_path: str) -> bool:
-    """`.ps1` / `.ps1.tmpl`の場合に真を返す。"""
     lowered = file_path.lower()
     return lowered.endswith(".ps1") or lowered.endswith(".ps1.tmpl")
 
@@ -136,9 +125,6 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
     return None
 
 
-# --- lockfile / 生成物ディレクトリcheck ---
-
-# （label, regex, hint）のタプル。regexはfile_path全体に対するマッチ。
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使え。"),
     (
@@ -164,10 +150,6 @@ _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 
 
 def _check_lockfiles(tool_name: str, file_paths: list[str]) -> list[str]:
-    """lockfileや生成物ディレクトリへの直接編集を検出して警告本文を返す。
-
-    手編集した内容はパッケージ管理ツールの再生成で復元できるため、警告で返す。
-    """
     targets: dict[str, list[str]] = {}
     for file_path in dict.fromkeys(file_paths):
         normalized = file_path.replace("\\", "/")
@@ -190,8 +172,6 @@ def _check_lockfiles(tool_name: str, file_paths: list[str]) -> list[str]:
         for fix, paths in targets.items()
     ]
 
-
-# --- manifest手編集check (warn) ---
 
 _MANIFEST_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (

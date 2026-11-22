@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_evidence）。"""
-
 from __future__ import annotations
 
 import json
@@ -42,14 +40,6 @@ _CANDIDATE_EVIDENCE_DIRNAME = "candidate-evidence"
 
 
 def _write_candidate_evidence_files(directory: Path, evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """候補ごとの証拠を個別ファイルへ保存し、索引の行を返す。
-
-    完全分析は候補単位で行うため、証拠の保存単位も候補単位とする。
-    1ファイルへ集約すると、消費側は全候補の長文証拠を読み込むか、
-    出力上限に達した後で範囲を指定して取得し直すことになる。
-    索引は候補ID、証拠件数、個別ファイルの相対パスおよび総文字数を持ち、
-    一次選別で除外した候補の本文を読まずに完全分析の対象を選べるようにする。
-    """
     evidence_dir = directory / _CANDIDATE_EVIDENCE_DIRNAME
     evidence_dir.mkdir(exist_ok=True)
     index: list[dict[str, Any]] = []
@@ -78,7 +68,6 @@ def _candidate_evidence_events(
     warnings: list[dict[str, Any]],
     hook_notices: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """候補ごとに完全分析へ必要な位置付き証拠を、上限で切り詰めた本文とともにまとめる。"""
     raw_entries = {(record.record_id, entry.line): entry.entry for record in collected for entry in record.records}
     indexed: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for event in (*timeline, *warnings, *hook_notices):
@@ -113,7 +102,7 @@ def _candidate_evidence_events(
                         if tool_use is not None:
                             details.append(_clip_event_body({"record": key[0], **tool_use}, budget))
             else:
-                for event in indexed.get(key, ()):  # 同一位置の別走査結果も保持する。
+                for event in indexed.get(key, ()):
                     detail = {"kind": str(event.get("kind", "")), "record": key[0], "line": key[1]}
                     for field in ("tool", "hook", "hook_name", "tag"):
                         if field in event:
@@ -188,7 +177,6 @@ def _tool_use_index(collected: list[_CollectedRecord]) -> dict[tuple[str, str], 
 
 
 def _evidence_call_ids(entry: dict[str, Any]) -> list[str]:
-    """候補の記録行が参照する呼び出し識別子を出現順に重複なく返す。"""
     call_ids: list[str] = []
     for hook_record in _hook_records(entry):
         tool_use_id = hook_record.get("toolUseID")

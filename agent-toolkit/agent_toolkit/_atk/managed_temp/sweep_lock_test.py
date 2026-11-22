@@ -195,7 +195,7 @@ def test_pressure_inspects_mode_zero_area_before_removing_it(monkeypatch: pytest
     if kind == "expired":
         (area / "payload").write_bytes(b"x" * (7 * mib))
     _age(area, 3 if kind == "legacy-weekend" else 9)
-    # mode 000の木を空き容量の模擬値の計算のために開かない。
+
     monkeypatch.setattr(
         sweep, "_disk_usage", lambda _root: SimpleNamespace(total=100 * mib, free=(6 if area.exists() else 13) * mib)
     )
@@ -269,7 +269,7 @@ def test_cache_recovery_does_not_require_writable_state(monkeypatch: pytest.Monk
     elif os.name == "posix":
         assert stat.S_IMODE(root.stat().st_mode) == 0o700
     assert (area / "handoff").read_text(encoding="utf-8") == "keep"
-    # 書けた場合は回収前の利用から、書けなかった場合は回収後の親のmtimeから7日を数える。
+
     after_cleanup = datetime.datetime.fromtimestamp(area.stat().st_mtime, datetime.UTC)
     retained_since = after_cleanup if still_full else last_use
     assert not managed_temp.sweep_managed_temp(now=retained_since + datetime.timedelta(days=6), force=True).deleted

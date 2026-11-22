@@ -1,5 +1,3 @@
-"""前任の保持情報と既存の記録抽出から、後任へ配送する引き継ぎ本文を組み立てる。"""
-
 from __future__ import annotations
 
 import json
@@ -29,7 +27,6 @@ def availability_reason(engine: str, status: str, error: Any) -> str | None:
 
 
 def predecessor_error(session: SessionState | SessionResumeState) -> Any:
-    """結果回収後と再起動後も、保持した終了理由を使う。"""
     if session.error is not None:
         return session.error
     return json.loads(session.terminal_error) if session.terminal_error is not None else None
@@ -116,12 +113,6 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
 
 
 def _record_instruction(path: pathlib.Path) -> str:
-    """記録を読めるか・不在か・それ以外で読めないかに分けて、後任が引き継ぎ記録をどう扱うかを示す。
-
-    前任は書く値が無ければ記録を作らないため、不在は資料からの復元へ進ませる。
-    それ以外で読めない場合は、前任が書いた値を失った可能性を後任が区別できるようにする。
-    通常ファイル以外を開くと名前付きパイプなどで止まるため、種類を確かめてから開く。
-    """
     try:
         if not stat.S_ISREG(path.stat().st_mode):
             reason = "記録先が通常ファイルではない"
@@ -148,7 +139,6 @@ def compose_prompt(
     conversation: pathlib.Path,
     records: tuple[pathlib.Path, ...],
 ) -> str:
-    """抽出した資料と保持する全文から、全mode共通の引き継ぎ節を組み立てる。"""
     path = delegated_session.prompt_handoff_path(session.prompt)
     original = session.prompt
     if path is not None:

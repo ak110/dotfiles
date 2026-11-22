@@ -1,5 +1,3 @@
-"""起動単位で止める追加機能を、CLIとSDK・App Serverで共有する。"""
-
 import contextlib
 import contextvars
 from collections.abc import Generator
@@ -26,12 +24,10 @@ CLAUDE_SETTINGS = {
 
 
 def codex_arguments() -> list[str]:
-    """CLIからApp Serverへ渡さずに起動する場合の上書き。"""
     return [argument for feature in CODEX_DISABLED for argument in ("--disable", feature)]
 
 
 def codex_thread_config(params: dict[str, Any]) -> dict[str, Any]:
-    """他のfeaturesと接続・承認設定を保持して、追加機能だけを無効にする。"""
     config = params.get("config") or {}
     return {
         **params,
@@ -50,12 +46,10 @@ def selection(profile: StartupProfile | None) -> Generator[None]:
 
 
 def requested() -> StartupProfile | None:
-    """起動要求で指定された値だけを返す。"""
     return _REQUESTED.get()
 
 
 def effective(launch_kind: str, requested_profile: StartupProfile | None = None) -> StartupProfile:
-    """作業の種別は変えず、独立した起動プロファイルを決める。"""
     profile = requested_profile or requested()
     lightweight_allowed = launch_kind in {"explore", "shell", "write"}
     if profile == "lightweight" and not lightweight_allowed:

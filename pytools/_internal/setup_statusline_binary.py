@@ -13,8 +13,6 @@ import subprocess
 import sys
 
 from agent_toolkit._common import dotfiles_mode
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_mise
@@ -76,7 +74,6 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
 
 
 def _find_development_tree() -> tuple[pathlib.Path, pathlib.Path] | None:
-    """ローカルstatuslineを使うGit作業ツリーとmiseを返す。"""
     # `find_dotfiles_root()`を使わず`CHEZMOI_WORKING_TREE`を読む。
     # 値が作業ツリーの位置に加えて「chezmoiから起動された」ことの判定を兼ね、
     # `dotfiles-post-apply`の単独実行ではローカルビルドを判定せずGitHub Releaseから取得するためである。
@@ -125,7 +122,6 @@ def _run_git(
     working_tree: pathlib.Path,
     args: list[str],
 ) -> subprocess.CompletedProcess[str] | None:
-    """指定したGit作業ツリーでGitコマンドを実行する。"""
     return common.run_subprocess(
         ["git", *args],
         timeout=_GIT_TIMEOUT,
@@ -135,7 +131,6 @@ def _run_git(
 
 
 def _install_development_binary(working_tree: pathlib.Path, mise_bin: pathlib.Path) -> bool:
-    """miseからビルドしたstatuslineを原子的に配置する。"""
     build = common.run_subprocess(
         [
             str(mise_bin),

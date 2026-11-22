@@ -1,5 +1,3 @@
-"""serveのconfigに関するruntimeの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -22,14 +20,12 @@ from agent_toolkit._testing.wi_entry_files import entry_path
 
 @pytest.mark.parametrize("host", ["", "  ", 1])
 def test_invalid_host(host: object) -> None:
-    """空または非文字列hostを拒否する。"""
     with pytest.raises(ValueError):
         config.resolve_config(host=host)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
 
 @pytest.mark.asyncio
 async def test_plan_and_session_pages_apply_base_path(tmp_path: pathlib.Path) -> None:
-    """追加した2画面のページがベースパスを反映する。"""
     app = _three_screen_app(tmp_path)
     client = app.test_client()
     for path in ("/atk/plans", "/atk/sessions"):
@@ -44,7 +40,6 @@ async def test_plan_and_session_pages_apply_base_path(tmp_path: pathlib.Path) ->
 @pytest.mark.asyncio
 @pytest.mark.parametrize("route", ["file", "raw"])
 async def test_plan_file_apis_return_plan_file_error_status(tmp_path: pathlib.Path, route: str) -> None:
-    """計画ファイル取得APIは取得層が分類した未検出と入力不正の状態コードを返す。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -138,7 +133,6 @@ async def test_unrelated_runtime_error_is_not_classified_as_edit_conflict(
 
 @pytest.mark.asyncio
 async def test_invalid_json_returns_json_error(tmp_path: pathlib.Path) -> None:
-    """構文エラーのJSON本文を一貫したJSON 400応答へ変換する。"""
     app = serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
@@ -188,13 +182,6 @@ async def test_lock_timeout_returns_conflict(tmp_path: pathlib.Path, monkeypatch
 
 @pytest.mark.asyncio
 async def test_safe_base_path_rejects_value_that_proxy_fix_accepts(tmp_path: pathlib.Path) -> None:
-    """`ProxyFix`が受理する文字集合でも`_safe_base_path`固有の文字種制限に反する値は空文字列へ縮退する。
-
-    `pytilpack.web.validate_forwarded_prefix`は`:`・`@`等RFC3986のpchar相当を広く許可するのに対し、
-    `_safe_base_path`は英数字と`._~/-`のみへ限定しており両者の許容範囲は完全には一致しない。
-    `:`を含む値は`ProxyFix`層を通過するため、この値で`_safe_base_path`固有の拒否分岐が
-    実際に機能していることを検証する。
-    """
     app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
     client = app.test_client()
     headers = {"X-Forwarded-Prefix": "/atk:1"}
@@ -217,7 +204,6 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
     monkeypatch: pytest.MonkeyPatch,
     received_signal: signal.Signals,
 ) -> None:
-    """シグナル集約でshutdown_triggerが解除され、停止時にstateを止める。"""
     stopped: list[str] = []
     _stub_state(monkeypatch, tmp_path, stopped)
     handlers: dict[int, tuple[typing.Callable[[str], None], str]] = {}
@@ -233,7 +219,7 @@ async def test_serve_shuts_down_on_signal_and_stops_state(
     async def fake_serve(app: object, hypercorn_config: typing.Any, *, shutdown_trigger: typing.Any) -> None:
         del app
         observed["bind"] = hypercorn_config.bind[0]
-        # シグナル受信を模擬してshutdown_triggerを解除する。
+
         callback, signal_name = handlers[received_signal]
         callback(signal_name)
         await shutdown_trigger()

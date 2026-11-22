@@ -16,10 +16,7 @@ __all__ = ["_isolate_agent_and_managed_temp_environment"]
 
 
 class TestServeParser:
-    """serveトップレベルサブコマンドの引数境界を検証する。"""
-
     def test_defaults_and_explicit_values(self) -> None:
-        """host/portの省略値と明示値を保持する。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         defaults = parser.parse_args(["serve"])
         explicit = parser.parse_args(["serve", "--host", "0.0.0.0", "--port", "65535"])
@@ -28,14 +25,12 @@ class TestServeParser:
 
     @pytest.mark.parametrize("port", ["0", "65536"])
     def test_rejects_out_of_range_port(self, port: str) -> None:
-        """port範囲外をargparseエラーにする。"""
         parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
         with pytest.raises(SystemExit) as error:
             parser.parse_args(["serve", "--port", port])
         assert error.value.code == 2
 
     def test_dispatches_resolved_arguments(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """mainがhost・port・homeをserve起動層へ渡して正常終了する。"""
         calls: list[dict[str, object]] = []
 
         def run(*, host: str | None, port: int | None, home: pathlib.Path) -> None:
@@ -50,7 +45,6 @@ class TestServeParser:
         assert calls == [{"host": "127.0.0.2", "port": 28766, "home": tmp_path}]
 
     def test_non_serve_import_does_not_load_serve_dependencies(self) -> None:
-        """fresh processでatkを読み込んでもserve実装を解決しない。"""
         script_dir = pathlib.Path(atk.__file__).resolve().parent
         code = (
             "import sys; "

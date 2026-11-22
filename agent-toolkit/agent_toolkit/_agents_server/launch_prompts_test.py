@@ -29,7 +29,6 @@ from agent_toolkit._testing.agents_server_claude_support import _capture_options
 def test_python_runtime_information_runs_json_without_python_on_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """配送された起動部分から空白・引用符を含むパスのPythonでJSONを照会する。"""
     executable = tmp_path / "Python's runtime with spaces"
     executable.symlink_to(sys.executable)
     monkeypatch.setattr(sys, "executable", str(executable))
@@ -51,7 +50,6 @@ def test_python_runtime_information_runs_json_without_python_on_path(
 
 @pytest.mark.parametrize("existing", [False, True])
 def test_plugin_resource_instructions_reject_invalid_toolkit_root(tmp_path: pathlib.Path, existing: bool) -> None:
-    """所在案内は、実在するskillsを持たないtoolkitを配送しない。"""
     root = tmp_path / "toolkit"
     if existing:
         root.mkdir()
@@ -130,7 +128,6 @@ def _playbook_fixture(markers: dict[str, str]) -> str:
 
 @pytest.fixture(name="playbook")
 def _playbook(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
-    """起動の本文の原本を試験用のファイルへ差し替え、読込の記憶を前後で消す。"""
     path = tmp_path / "subagent.md"
     path.write_text(_playbook_fixture(_MARKERS), encoding="utf-8")
     monkeypatch.setattr(launch_prompts, "SUBAGENT_PLAYBOOK", path)
@@ -205,7 +202,6 @@ def test_missing_heading_or_marker_fails_with_source_and_heading(playbook: pathl
 
 @pytest.mark.parametrize("kind", _KINDS)
 def test_distributed_playbook_assembles_every_launch_kind(kind: LaunchKind) -> None:
-    """配布する原本から全modeの起動の本文と自動再開を組み立てられる。本文の文言には依存しない。"""
     launch_prompts._playbook_lines.cache_clear()
     body = launch_prompts.launch_prompt(kind)
     assert body.count(launch_prompts.base_instructions()) == 1
@@ -218,5 +214,4 @@ def test_distributed_playbook_assembles_every_launch_kind(kind: LaunchKind) -> N
 
 # test-copy-contract: 起動側とhook側の区分を比べ、スキルを使わない軽量の委譲先へスキルの起動を案内する不整合を防ぐ。
 def test_lightweight_launch_kinds_match_hook_copy() -> None:
-    """hookが読む軽量起動の写しは、agents_serverが軽量起動として扱う区分と一致する。"""
     assert delegated_session.LIGHTWEIGHT_LAUNCH_KINDS == launch_prompts.LIGHTWEIGHT_LAUNCH_KINDS

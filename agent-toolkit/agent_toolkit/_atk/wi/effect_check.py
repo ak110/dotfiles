@@ -1,5 +1,3 @@
-"""採用済みAWIのファイル別効果記録と限定保存操作。"""
-
 import argparse
 import datetime
 import json
@@ -13,8 +11,6 @@ from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import entries, frontmatter, headings, repo, sync
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._git import command
-
-# 一覧の理由取得から、listingへ依存する変更処理の初期化を起動しない。
 lazy from agent_toolkit._atk.wi.mutations import targets
 
 RECORD_PREFIX = "- 効果確認: "
@@ -23,10 +19,9 @@ VERDICTS = ("pending", "confirmed", "insufficient", "not_required")
 
 
 def result_values(text: str, label: str) -> list[str]:
-    """最後の処理結果節から指定ラベルの値を返す。"""
     prefix = f"- {label}: "
     lines = headings.last_h2_section_lines(text, "処理結果") or []
-    # 処理結果に掲載されたコード例を、採用時のcommitや効果の実記録に数えない。
+
     excluded = {
         line
         for token in markdown_it.MarkdownIt().parse("\n".join(lines))
@@ -39,7 +34,6 @@ def result_values(text: str, label: str) -> list[str]:
 
 
 def checked_files(text: str) -> dict[str, dict[str, str]]:
-    """構造化した効果記録を読み、同じファイルの最後の判定を返す。"""
     records: dict[str, dict[str, str]] = {}
     for value in result_values(text, "効果確認"):
         record = json.loads(value)
@@ -52,7 +46,6 @@ def checked_files(text: str) -> dict[str, dict[str, str]]:
 
 
 def pending_reason(text: str) -> str | None:
-    """全体確認の最新理由を一覧へ渡す。"""
     parsed = parse_frontmatter(text)
     current = parsed[0].get("effect_check") if parsed is not None else None
     if current not in ("pending", "not_required"):
@@ -69,7 +62,6 @@ def pending_reason(text: str) -> str | None:
 
 
 def changed_files(text: str, worktree: pathlib.Path) -> set[str]:
-    """実在する対応commitの変更パスを取得する。欠落・解決不能は拒否する。"""
     revisions = result_values(text, "対応commit")
     if not revisions:
         raise ValueError("対応commitがありません。採用済みAWIの処理結果へ対応commitを記録してください")
@@ -109,7 +101,6 @@ def changed_files(text: str, worktree: pathlib.Path) -> set[str]:
 
 
 def _append_result(text: str, record: dict[str, str], *, prefix: str = RECORD_PREFIX) -> str:
-    """既存行を保持して最後の処理結果節の末尾へ記録を追加する。"""
     tokens = headings.parse_h2_headings(text)
     selected = [i for i, (_token, title) in enumerate(tokens) if title == "処理結果"]
     if not selected:
@@ -139,7 +130,6 @@ def _append_result(text: str, record: dict[str, str], *, prefix: str = RECORD_PR
 
 
 def _set_overall(text: str, verdict: str) -> str:
-    """YAMLの値の位置を使い、他のmetadataと本文の字面を保持する。"""
     boundary = text.index("\n---", 3)
     start = 5 if text.startswith("\ufeff") else 4
     header = text[start:boundary]
@@ -170,7 +160,6 @@ def save_effect_check(
     corrective_awi: str | None = None,
     reason: str | None = None,
 ) -> list[pathlib.Path]:
-    """全対象の効果記録を検証してから保存し、commitとpushを一回にまとめる。"""
     if file is not None:
         relative = pathlib.PurePosixPath(file)
         if not file or relative.is_absolute() or ".." in relative.parts or "\\" in file or relative.as_posix() != file:
@@ -241,7 +230,6 @@ def save_effect_check(
 
 
 def _updated_effect_check(text: str, worktree: pathlib.Path, record: dict[str, str]) -> str:
-    """1対象の入力を検証し、副作用なしで保存する本文を確定する。"""
     file = record.get("file")
     verdict = record["verdict"]
     files = changed_files(text, worktree) if file is not None else set()
@@ -279,7 +267,6 @@ def _updated_effect_check(text: str, worktree: pathlib.Path, record: dict[str, s
 
 
 def cmd_effect_check(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """公開CLIの入力を限定保存操作へ渡す。"""
     paths = save_effect_check(
         private_notes,
         filenames=args.filenames,

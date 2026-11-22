@@ -14,7 +14,7 @@ import typing
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _SKILL = _ROOT / ".claude" / "skills" / "edit-dotfiles-norms" / "SKILL.md"
-# スキルの「変更した規範の自セッション適用」が規範の範囲を列挙する文。
+
 _TARGET_SENTENCE = re.compile(r"対象となる規範は、(?P<targets>.+?)である。")
 
 
@@ -26,7 +26,6 @@ def _conditions() -> list[dict[str, typing.Any]]:
 
 
 def test_norm_target_condition_matches_skill_scope() -> None:
-    """対象ファイルのパスを求める条件の範囲が、スキルの列挙する規範の範囲と一致する。"""
     text = _SKILL.read_text(encoding="utf-8")
     matched = _TARGET_SENTENCE.search(text)
     assert matched is not None, f"{_SKILL}に規範の範囲を列挙する文がありません"
@@ -36,7 +35,6 @@ def test_norm_target_condition_matches_skill_scope() -> None:
 
 
 def test_read_request_condition_matches_skill_request() -> None:
-    """エージェント向け文書の条件が、スキルの求める読む要求の文字列を本文に持つ。"""
     text = _SKILL.read_text(encoding="utf-8")
     requests = [condition for condition in _conditions() if condition.get("agent-doc") is True]
     assert len(requests) == 1

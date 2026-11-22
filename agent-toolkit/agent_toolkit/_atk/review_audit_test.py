@@ -1,5 +1,3 @@
-"""自動コードレビュー監査の判定済み記録を検証する。"""
-
 import json
 import pathlib
 import subprocess
@@ -61,7 +59,6 @@ def test_mark_outputs_only_requested_ids_and_keeps_existing_records(
     record_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """既存の識別子を保持し、今回の指定分だけを重複なく昇順で表示する。"""
     assert _dispatch("mark", "owner/repo", "9") == 0
     before = json.loads(record_path.read_text(encoding="utf-8"))["owner/repo"]["9"]
     capsys.readouterr()
@@ -119,7 +116,6 @@ def test_broken_record_file_is_treated_as_empty(
 def test_pending_reports_zero_without_confusing_it_with_fetch_failure(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """PRが無い正常応答は構造化した0件を返す。"""
 
     def run(command: list[str], _timeout: float, **_kwargs: object) -> Any:
         if "graphql" not in command:
@@ -140,7 +136,6 @@ def test_pending_reports_zero_without_confusing_it_with_fetch_failure(
 def test_agent_pending_keeps_small_json_for_direct_handoff(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """0件の短い結果も生成元が保存し、受領側へ同じファイルを渡せる。"""
 
     def run(command: list[str], _timeout: float, **_kwargs: object) -> Any:
         if "graphql" not in command:
@@ -169,7 +164,6 @@ def test_agent_pending_keeps_small_json_for_direct_handoff(
 def test_pending_rejects_boolean_identifiers(
     invalid_field: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """GraphQLの真偽値を整数のPR番号やreview識別子として受理しない。"""
     pull_request = {
         "number": True if invalid_field == "number" else 1,
         "reviews": {
@@ -200,7 +194,6 @@ def test_pending_rejects_boolean_identifiers(
 def test_pending_paginates_and_excludes_recorded_reviews(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """PRとreviewのページを終端まで読み、Copilot由来と記録済みを区別する。"""
     assert _dispatch("mark", "owner/repo", "11") == 0
     capsys.readouterr()
     copilot = {"__typename": "Bot", "login": "GitHub-Copilot[bot]"}
@@ -259,7 +252,6 @@ def test_pending_paginates_and_excludes_recorded_reviews(
 
 
 def test_pending_rejects_incomplete_pagination(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    """次ページのcursorを欠く応答を0件として報告しない。"""
 
     def run(command: list[str], _timeout: float, **_kwargs: object) -> Any:
         if "graphql" not in command:
@@ -277,7 +269,6 @@ def test_pending_rejects_incomplete_pagination(monkeypatch: pytest.MonkeyPatch, 
 def test_pending_refetches_truncated_review_threads(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """PR単位で打ち切られたthreadは先頭から取り直して終端を確認する。"""
     copilot = {"__typename": "Bot", "login": "copilot-bot"}
     responses: list[dict] = [
         {
@@ -368,7 +359,6 @@ def _alert(number: int, manifest_path: str, patched: str | None) -> dict:
 
 
 def _fake_gh(monkeypatch: pytest.MonkeyPatch, responses: dict[str, tuple[int, str]]) -> list[list[str]]:
-    """`gh`の呼び出しを、引数の最後の要素（APIパス）に対応する終了コードと標準出力で置き換える。"""
     calls: list[list[str]] = []
     responses.setdefault("repos/owner/repo/commits/main", (0, json.dumps({"sha": _REVISION})))
 
@@ -451,7 +441,6 @@ def test_pending_classifies_dependabot_alerts_by_default_branch_manifest(
 def test_marked_dependabot_alerts_leave_pending_without_mixing_with_reviews(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """確認版を記録したアラートは同版のpendingから除かれ、reviewの識別子と区別して列挙される。"""
     pages = [[_alert(40, "old/uv.lock", "2.14.0"), _alert(41, "old/uv.lock", "2.14.0")]]
     _fake_gh(
         monkeypatch,
@@ -508,7 +497,6 @@ def test_pending_reports_forbidden_dependabot_as_zero_alerts(
 def test_pending_fails_when_dependabot_state_cannot_be_determined(
     failure: str, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """アラートの取得や実在確認が確定しない場合は0件と区別して非0で終了し、JSONを出力しない。"""
     pages = json.dumps([[_alert(40, "old/uv.lock", "2.14.0")]])
     responses = {
         _ALERTS_PATH: (0, pages),
@@ -566,7 +554,6 @@ def test_record_lock_is_created_under_state_lock_dir(capsys: pytest.CaptureFixtu
 def test_public_revision_records_recheck_legacy_and_default_branch_updates(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開CLIで旧記録、同版の抑止、同じ番号の版更新、無版追記の順を検証する。"""
     revision_b = "b" * 40
     responses = {
         _ALERTS_PATH: (0, json.dumps([[_alert(40, "uv.lock", "2.14.0")]])),

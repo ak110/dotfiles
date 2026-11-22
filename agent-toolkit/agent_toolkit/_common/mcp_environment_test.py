@@ -1,12 +1,9 @@
-"""MCPサーバーへ引き継ぐ環境変数名の一覧は、呼出元が渡した名前だけを加え、環境変数の値を取り込まない。"""
-
 import pytest
 
 from agent_toolkit._common import mcp_environment, proxy_environment
 
 
 def test_environment_names_preserve_supplied_names_and_proxy_identity() -> None:
-    """将来の設定名も呼出元が渡した列から許可リストへ加え、重複した名前を含めない。"""
     setting_names = ("AGENT_TOOLKIT_CONFIG_BASE_ENGINE", "http_proxy", "AGENT_TOOLKIT_CONFIG_NEW_SETTING")
     names = mcp_environment.environment_variable_names(setting_names)
     assert set(setting_names) <= set(names)
@@ -30,7 +27,6 @@ def test_environment_names_do_not_capture_values(monkeypatch: pytest.MonkeyPatch
 
 @pytest.mark.parametrize("explicit_override", [False, True])
 def test_mise_directory_names_preserve_resolver_locations(monkeypatch: pytest.MonkeyPatch, explicit_override: bool) -> None:
-    """miseの設定・信頼状態・導入先・cacheのディレクトリを指す変数名を許可リストへ含め、明示した所在を子へ引き継ぐ。"""
     directories = ("MISE_STATE_DIR", "MISE_CACHE_DIR", "MISE_DATA_DIR", "MISE_CONFIG_DIR")
     values = {}
     for index, name in enumerate(directories):
@@ -136,7 +132,6 @@ def test_runtime_names_preserve_open_environment_and_exclude_parent_context(lowe
 
 @pytest.mark.parametrize("lowercase", [False, True])
 def test_strip_conversation_context_preserves_connection_environment(lowercase: bool) -> None:
-    """会話contextの共通集合だけを除き、inherit接続とproxy・保存先を維持する。"""
     excluded = {name if lowercase else name.upper(): "parent" for name in mcp_environment._NON_INHERITABLE_NAMES}  # pylint: disable=protected-access
     retained = {
         "ANTHROPIC_AUTH_TOKEN": "test-token",

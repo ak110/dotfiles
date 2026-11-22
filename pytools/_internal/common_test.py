@@ -1,5 +1,3 @@
-"""pytools._internal.common のテスト。"""
-
 # pylint: disable=protected-access  # 内部ヘルパー関数の単体テスト目的で `_` プレフィックス関数へアクセスする
 
 import io
@@ -20,7 +18,6 @@ from pytools._internal import common
 
 
 def _holds_resources(process: psutil.Process) -> bool:
-    """対象が資源を保持しているかを返す。生存確認と状態取得の間に終了した対象は解放済みとして扱う。"""
     try:
         return process.is_running() and process.status() not in (psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD)
     except psutil.NoSuchProcess:
@@ -28,7 +25,6 @@ def _holds_resources(process: psutil.Process) -> bool:
 
 
 def test_process_scope_reports_residual_identifier_and_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
-    """停止不能な子は警告だけで戻らず、識別子と次操作・報告先を持つ回収不能として送出する。"""
     process = types.SimpleNamespace(stdin=None, stdout=io.BytesIO(), stderr=io.BytesIO(), poll=lambda: None)
     monkeypatch.setattr(subprocess, "Popen", lambda *_args, **_kwargs: process)
     monkeypatch.setattr(common, "stop_owned_process", lambda _process: (["12345: fixture-command --child"], []))
@@ -70,8 +66,6 @@ class TestResolveUvPath:
 
 
 class TestResolveExecutable:
-    """mise shimを除外した実行ファイル解決を検証する。"""
-
     @staticmethod
     def _fake_which(name: str, *, path: str | None = None) -> str | None:
         assert path is not None
@@ -162,8 +156,6 @@ class TestResolveExecutable:
 
 
 class TestEnsureFlagFilePresent:
-    """``ensure_flag_file_present``の冪等生成挙動を検証する。"""
-
     def test_creates_file_and_returns_true_when_absent(self, tmp_path: Path):
         flag = tmp_path / "sub" / "flag"
         assert common.ensure_flag_file_present(flag, tag="test-tag") is True
@@ -176,8 +168,6 @@ class TestEnsureFlagFilePresent:
 
 
 class TestRunSubprocess:
-    """``run_subprocess``の文字コード・標準入力・環境継承を検証する。"""
-
     def test_explicit_code_page_preserves_powershell_diagnostic(self) -> None:
         """PowerShell 5.1相当のCP932診断を文字化けさせずに受け取る。"""
         message = "失効の関数は証明書の失効を確認できませんでした。"
@@ -221,7 +211,7 @@ class TestRunSubprocess:
         env = json.loads(result.stdout)
         for key, value in expected_subset.items():
             assert env[key] == value
-        # os.environ をベースとしているため、上書きしていない他のキーも残る
+
         for key, value in os.environ.items():
             if key in overrides:
                 continue
@@ -286,8 +276,6 @@ def test_run_subprocess_timeout_reports_limit_and_network_check(
     assert "アクセス権" not in caplog.text
 
 
-# 主スレッドだけを`pthread_exit`で終了し、作業スレッドを残す子。SIGTERMを無視するため、
-# スレッドグループのリーダーはzombieと表示されたまま、強制終了するまで回収できない。
 _LEADER_EXITED_CHILD = """
 import ctypes, pathlib, signal, sys, threading, time
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -304,7 +292,6 @@ ctypes.CDLL(None).pthread_exit(None)
 
 @pytest.mark.skipif(sys.platform != "linux", reason="pthread_exitで主スレッドだけを終了させる再現はLinux限定")
 def test_stop_process_tree_reaps_child_whose_leader_is_zombie(tmp_path: Path) -> None:
-    """リーダーがzombie表示でも作業スレッドが残る子を、強制終了して回収し、残存を報告しない。"""
     ready = tmp_path / "ready"
     with subprocess.Popen([sys.executable, "-c", _LEADER_EXITED_CHILD, str(ready)]) as process:
         try:
@@ -324,19 +311,14 @@ def test_stop_process_tree_reaps_child_whose_leader_is_zombie(tmp_path: Path) ->
 
 
 class TestCollectValueOnlyUpdates:
-    """`_collect_value_only_updates` の分岐テスト。"""
-
     def test_identical_returns_empty(self):
-        """同一値なら空dictを返す。"""
         assert common._collect_value_only_updates({"a": 1}, {"a": 1}) == {}  # noqa: SLF001
 
     def test_scalar_change_returns_path_mapping(self):
-        """スカラー値の書き換えはpath→新値のマッピングを返す。"""
         result = common._collect_value_only_updates({"a": 1}, {"a": 2})  # noqa: SLF001
         assert result == {("a",): 2}
 
     def test_nested_scalar_change(self):
-        """ネスト先のスカラー変更もpathで表現される。"""
         result = common._collect_value_only_updates(  # noqa: SLF001
             {"outer": {"inner": 1}},
             {"outer": {"inner": 2}},
@@ -344,23 +326,18 @@ class TestCollectValueOnlyUpdates:
         assert result == {("outer", "inner"): 2}
 
     def test_key_addition_returns_none(self):
-        """キー追加を含む差分はNoneを返す（構造変化）。"""
         assert common._collect_value_only_updates({"a": 1}, {"a": 1, "b": 2}) is None  # noqa: SLF001
 
     def test_key_deletion_returns_none(self):
-        """キー削除を含む差分はNoneを返す。"""
         assert common._collect_value_only_updates({"a": 1, "b": 2}, {"a": 1}) is None  # noqa: SLF001
 
     def test_list_change_returns_none(self):
-        """list全体の差し替えはNoneを返す。"""
         assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2, 3]}) is None  # noqa: SLF001
 
     def test_list_same_returns_empty(self):
-        """list同一なら空dictを返す。"""
         assert common._collect_value_only_updates({"a": [1, 2]}, {"a": [1, 2]}) == {}  # noqa: SLF001
 
     def test_type_change_returns_none(self):
-        """型変化（dict→scalarなど）はNoneを返す。"""
         assert common._collect_value_only_updates({"a": {"b": 1}}, {"a": "string"}) is None  # noqa: SLF001
 
     def test_multiple_scalar_changes(self):
@@ -395,8 +372,6 @@ class TestAtomicWriteBytes:
 
 
 class TestEditJsoncValues:
-    """スカラー置換は元のテキストのうち、指定したパスの値だけを変える。"""
-
     def test_preserves_mixed_line_endings_and_comments(self):
         source = '\ufeff{\r  // コメント\r\n  "a": 1\n}\r'
         assert common._edit_jsonc_values(source, {("a",): 2}) == source.replace("1", "2")  # noqa: SLF001
@@ -413,7 +388,6 @@ class TestWriteSettingsHybrid:
         assert path.read_bytes() == prepared.encode()
 
     def test_scalar_change_uses_jsonc_edit(self, tmp_path: Path):
-        """スカラー変更のみならJSONC編集経路でコメントを維持する。"""
         path = tmp_path / "settings.json"
         path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
         assert common.write_settings_hybrid(path, {"a": 1}, {"a": 2}) is True
@@ -422,7 +396,6 @@ class TestWriteSettingsHybrid:
         assert '"a": 2' in text
 
     def test_key_addition_falls_back_to_full_rewrite(self, tmp_path: Path):
-        """キー追加はJSONCで扱えないため全書き換え経路へ倒す。"""
         path = tmp_path / "settings.json"
         path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
         assert common.write_settings_hybrid(path, {"a": 1}, {"a": 1, "b": 2}) is True
@@ -431,16 +404,11 @@ class TestWriteSettingsHybrid:
         assert json.loads(text) == {"a": 1, "b": 2}
 
     def test_new_file_uses_full_write(self, tmp_path: Path):
-        """既存ファイル無しなら全書き換え経路で新規作成する。"""
         path = tmp_path / "settings.json"
         assert common.write_settings_hybrid(path, {}, {"a": 1}) is True
         assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
 
     def test_falls_back_when_jsonc_edit_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """jsonc.editが例外を送出した場合は全書き換え経路へフォールバックする。
-
-        コンカレントな他プロセス書き込みでパス構造が変化した場合を想定する。
-        """
         path = tmp_path / "settings.json"
         path.write_text('{\n  // コメント\n  "a": 1\n}\n', encoding="utf-8")
 
@@ -450,7 +418,7 @@ class TestWriteSettingsHybrid:
         monkeypatch.setattr(common.pytilpack.jsonc, "edit", _raise)
         assert common.write_settings_hybrid(path, {"a": 1}, {"a": 2}) is True
         text = path.read_text(encoding="utf-8")
-        # フォールバック経路のため、コメントは失われるが値は書き込まれる
+
         assert "// コメント" not in text
         assert json.loads(text) == {"a": 2}
 
@@ -463,7 +431,7 @@ def test_process_scope_reclaim_failure_is_not_absorbed_by_run_subprocess(monkeyp
             owned = psutil.Process(survivor.pid)
 
             def stop_root_only(process: subprocess.Popen[str], **_kwargs: object) -> tuple[list[str], list[object]]:
-                # 実際の停止と同じく所有する子は終了させ、子孫だけが残った結果を返す。
+
                 process.kill()
                 process.wait()
                 return [f"{owned.pid}: survivor"], [owned]

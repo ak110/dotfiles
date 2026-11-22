@@ -57,7 +57,6 @@ def wait_context(session_id: str, command: str, environment: Mapping[str, str] |
 
 
 def main() -> None:
-    """公開引数を検証し、自動圧縮の成立条件をJSONで返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session-id", required=True, help="Claudeメインのsession ID")
     parser.add_argument("--command", required=True, help="背景起動したBashのcommand原文")

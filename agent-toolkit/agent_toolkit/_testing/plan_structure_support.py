@@ -1,5 +1,3 @@
-"""`_plan/structure/`のテストが共有する、計画ファイルとWIの本文の組み立て。"""
-
 import pathlib
 
 from agent_toolkit._atk.wi import frontmatter as wi_frontmatter
@@ -35,28 +33,20 @@ _UNCOVERED_REQUIREMENT_ROW = (
 
 
 def _plan_with_uncovered_requirement(adopted_scope: str) -> str:
-    """採用要求R-P-002-001を被覆しない計画本文を、指定した`採用範囲`で返す。
-
-    合意表の`素材・要求参照`を別要求へ差し替えることで、R-P-002-001は`根拠`と
-    `素材・要求参照`のいずれからも参照されない状態になる。
-    """
     content = _VALID_CONTENT.replace("P-002, R-P-002-001", "P-001, R-P-001-002", 1)
     replaced = _UNCOVERED_REQUIREMENT_ROW.replace("| 公開APIの維持 |", f"| {adopted_scope} |")
     return content.replace(_UNCOVERED_REQUIREMENT_ROW, replaced, 1)
 
 
 def _canonical_main_content() -> str:
-    """新しい固定H2と、エージェント提案が無い場合の提案詳細節を持つメイン本文を返す。"""
     return _plan_fixture.to_canonical_main(_VALID_MAIN_CONTENT)
 
 
 def _canonical_human_main_content() -> str:
-    """新しい固定H2とエージェント提案の判断表を持つ人間向けメイン本文を返す。"""
     return _HUMAN_MAIN_CONTENT
 
 
 def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: bool = False) -> str:
-    """WIファイルへ保存する本文を組み立てる。"""
     frontmatter = ["---", "state: inbox"]
     if source:
         frontmatter.append(f"{_plan_format.PLAN_WI_SOURCE_KEY}: agent-toolkit:review-session")
@@ -70,7 +60,6 @@ def _wi_source(*, source: bool, trailing_user_comment: bool = False, answer: boo
 
 
 def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTENT) -> tuple[list[str], list[str], list[str]]:
-    """由来をWI本文と比べて確かめ、(違反, 移行の指摘, 省略の事実)を返す。"""
     notices: list[str] = []
     skips: list[str] = []
     _work_type, errors = plan_sections.check_plan_main_structure(
@@ -82,7 +71,6 @@ def _origin_check(private_notes: pathlib.Path, content: str = _HUMAN_MAIN_CONTEN
 def _write_wi(
     private_notes: pathlib.Path, body: str, name: str = _plan_fixture.WI_FILES[0][0], *, legacy_layout: bool = False
 ) -> None:
-    """private-notesへWIを作成し、移行専用の検証では旧配置を明示する。"""
     path = wi_entry_files.entry_path(private_notes, name, legacy_layout=legacy_layout)
     if not legacy_layout:
         parsed = wi_frontmatter.parse_frontmatter(body)

@@ -19,8 +19,6 @@ import json
 import re
 
 from agent_toolkit._hooks import notice
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import stop_session as _stop_session
@@ -30,19 +28,19 @@ lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
 _SUBJECT = r"(?:既存|現行|既に?ある|今ある)の?(?:規範|基準|規定|条文|対策|手順|仕組み|ルール)"
-# 「足りない」「防げていない」「防げず」などの否定の形は見送りの言い回しから除く。
+
 _NOT_NEGATED = r"(?!(?:で(?:は)?|て(?:い)?)?な[いかく]|ず|ません|ていません)"
-# 既存の規範・基準を理由に、追加の対処を見送る言い回し。
+
 EXCUSE_RE = re.compile(
     _SUBJECT
     + r"(?:で|が|により|によって|だけで)?(?:十分|足り|足る|被覆|カバー|対応済み|防げ)"
     + _NOT_NEGATED
     + r"|規範(?:は|を|の追加は)(?:足さない|追加しない|不要)"
 )
-# かぎ括弧の中は他者の発言や検出対象の言い回しの引用として扱う。
+
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
 _RETRY_STATE_KEY = "norm_excuse_retry_by_actor"
-# 途中の発話は書き直せないため、検出を一度だけ知らせた本文の指紋を残し、以後のStopでは止めない。
+
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
 
@@ -50,13 +48,11 @@ _block_notice = notice.block_formatter("norm_excuse_gate")
 
 
 def find_excuse(text: str) -> str | None:
-    """引用を除いた本文から、既存の規範を理由に対処を見送る言い回しを返す。"""
     match = EXCUSE_RE.search(_KAGI_QUOTE_RE.sub("", QUOTED_MATERIAL_RE.sub("", text)))
     return match.group(0) if match else None
 
 
 def _consume_retry(payload: dict, text: str) -> bool:
-    """同じ主体の同じ本文の2回目なら真を返して記録を消し、初回は記録して偽を返す。"""
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return False
@@ -93,7 +89,6 @@ def _block_body(phrase: str, delivery: str) -> str:
 
 
 def text_block(payload: dict, text: object, delivery: str) -> str | None:
-    """ユーザーへ届く本文の判定。遮断する場合は通知本文を返す。"""
     if not isinstance(text, str) or (phrase := find_excuse(text)) is None:
         return None
     if _consume_retry(payload, text):
@@ -115,7 +110,6 @@ def _codex_turn_texts(lines: list[str]) -> list[str]:
         if entry.get("type") == "event_msg" and item.get("type") == "task_started":
             texts = []
         elif entry.get("type") == "response_item":
-            # 発話は`message`の`output_text`、画面に出る思考の要約は`reasoning`の`summary`にある。
             if item.get("type") == "message" and item.get("role") == "assistant":
                 blocks, kind = item.get("content"), "output_text"
             elif item.get("type") == "reasoning":
@@ -132,7 +126,6 @@ def _codex_turn_texts(lines: list[str]) -> list[str]:
 
 
 def _intermediate_texts(payload: dict) -> list[str]:
-    """現在のターンでツール呼出しの合間に出した発話の本文を返す。最後の応答は別に判定する。"""
     path = payload.get("transcript_path")
     lines = _transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
     if not lines:
@@ -149,7 +142,6 @@ def _intermediate_texts(payload: dict) -> list[str]:
         message = entry.get("message")
         content = message.get("content") if entry.get("type") == "assistant" and isinstance(message, dict) else None
         if isinstance(content, list):
-            # 画面に「summary」として出る要約済みの思考（`thinking`）も、ユーザーが読む本文として判定する。
             texts.extend(
                 text
                 for block in content
@@ -161,7 +153,6 @@ def _intermediate_texts(payload: dict) -> list[str]:
 
 
 def _first_flag(session_id: str, text: str) -> bool:
-    """途中の発話の検出を初めて知らせる場合だけ真を返し、指紋を記録する。"""
     fingerprint = hashlib.sha256(text.encode()).hexdigest()
     first = False
 
@@ -178,7 +169,6 @@ def _first_flag(session_id: str, text: str) -> bool:
 
 
 def intermediate_block(session_id: str, payload: dict) -> str | None:
-    """send_to_userの遮断を通常の発話で迂回した場合も、ターンの終了で一度だけ止める。"""
     for text in _intermediate_texts(payload):
         if (phrase := find_excuse(text)) is not None and _first_flag(session_id, text):
             return _block_body(phrase, "ターンの終了（途中の発話）")
@@ -186,7 +176,6 @@ def intermediate_block(session_id: str, payload: dict) -> str | None:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """応答本文で終えるターンを同じ判定で止める。途中の発話も同じ言い回しを判定する。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -201,7 +190,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def main(payload_text: str) -> int:
-    """Stop判定の結果を標準出力へ返す。"""
     decision, body = evaluate(payload_text)
     print(json.dumps({"decision": decision, "reason": body} if decision == "block" else {}, ensure_ascii=False))
     return 0

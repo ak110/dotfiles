@@ -9,14 +9,13 @@ from agent_toolkit._agents_server import codex_rpc
 
 
 async def _ignore_message(_message: dict[str, object]) -> None:
-    """テスト中に到達しない通知を受理する。"""
+    pass
 
 
 @pytest.mark.asyncio
 async def test_start_failure_reports_command_returncode_and_stderr(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """初期化前に子が終了した場合も終了理由を委譲元へ返す。"""
     command = (
         sys.executable,
         "-c",
@@ -35,7 +34,6 @@ async def test_start_failure_reports_command_returncode_and_stderr(
 
 @pytest.mark.asyncio
 async def test_start_failure_bounds_reported_stderr(monkeypatch: pytest.MonkeyPatch) -> None:
-    """大量の標準エラーは上限内の末尾だけを委譲元へ返す。"""
     command = (
         sys.executable,
         "-c",
@@ -54,7 +52,6 @@ async def test_start_failure_bounds_reported_stderr(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.asyncio
 async def test_app_server_stderr_redacts_before_taking_tail(monkeypatch: pytest.MonkeyPatch) -> None:
-    """末尾の上限の開始位置が資格情報の途中にあっても、子プロセスの診断へ断片を残さない。"""
     command = (
         sys.executable,
         "-c",

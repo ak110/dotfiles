@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""計画の関連WIと選定WIの一致の判定を検証する。"""
 
 import pathlib
 
@@ -22,7 +21,6 @@ from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixtu
 def test_lane_selection_checks_related_wi_set(
     repo: tuple[pathlib.Path, str], selection: str, expected_fragment: str | None
 ) -> None:
-    """選定レーンのWI集合を計画メタ情報と比べ、欠落と余剰を示す。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     other = "20260831-000000-002.md"
@@ -58,7 +56,6 @@ def test_lane_selection_checks_related_wi_set(
 def test_lane_selection_combines_prior_plans(
     repo: tuple[pathlib.Path, str], prior_count: int, selected_extra: tuple[str, ...], expected_fragment: str | None
 ) -> None:
-    """凍結済み計画を再び判定せず、追加計画と先行計画の和集合が基準を満たすか確かめる。"""
     work_dir, _base = repo
     names = ("20260831-000000-001.md", "20260831-000000-002.md")
     current_name = _plan_fixture.WI_FILES[0][0]
@@ -90,7 +87,6 @@ def test_lane_selection_combines_prior_plans(
 
 
 def test_lane_selection_reads_current_field_names(repo: tuple[pathlib.Path, str]) -> None:
-    """日本語の欄名（`選定`、`WI`、`レーン`、`再開位置`）で書いた選定結果からも、旧欄名と同じくレーンの割当を読み取る。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     other = "20260831-000000-002.md"
@@ -124,7 +120,6 @@ def _run_lane_check_with_resumed(
     related: tuple[str, ...],
     decisions: list[dict[str, str]],
 ) -> tuple[int, str]:
-    """再開位置を含む選定結果をそのまま`plan-check`のCLIに渡し、終了コードと標準エラーを返す。"""
     plan_path = work_dir / "plan.md"
     plan_path.write_text(
         _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=tuple((name, "要求") for name in related)),
@@ -147,11 +142,6 @@ def test_lane_selection_excludes_resumed_decisions(
     new_resume_value: str | None,
     resumed: dict[str, str],
 ) -> None:
-    """観測のみの再開位置を持つ項目は、計画の有無によらず新しい計画の対象から外れる。
-
-    再開位置なしの集合と一致する新規計画を受理する。再開項目を新しい計画の対象に含めると、
-    実装済みの項目を新しい計画で再実装することになる。
-    """
     work_dir, _base = repo
     new_decision = {"awi": _NEW_AWI, "lane": "lane-01"}
     if new_resume_value is not None:
@@ -164,7 +154,6 @@ def test_lane_selection_excludes_resumed_decisions(
 def test_lane_selection_rejects_resumed_awi_in_new_plan(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """再開位置が指す既存計画で続ける項目を新規計画へ重ねると`余剰`で拒否する。"""
     work_dir, _base = repo
     code, stderr = _run_lane_check_with_resumed(
         work_dir, monkeypatch, (_NEW_AWI, _RESUMED_AWI), [{"awi": _NEW_AWI, "lane": "lane-01"}, _RESUMED_DECISION]
@@ -176,7 +165,6 @@ def test_lane_selection_rejects_resumed_awi_in_new_plan(
 def test_lane_selection_rejects_lane_with_only_resumed_decisions(
     repo: tuple[pathlib.Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """全件が再開位置を持つレーンは、新しい計画の対象が無いことを示して拒否する。"""
     work_dir, _base = repo
     code, stderr = _run_lane_check_with_resumed(work_dir, monkeypatch, (_RESUMED_AWI,), [_RESUMED_DECISION])
     assert code == 1
@@ -184,7 +172,6 @@ def test_lane_selection_rejects_lane_with_only_resumed_decisions(
 
 
 def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Path, str]) -> None:
-    """先行計画と追加計画の重複は、和集合が一致しても拒否する。"""
     work_dir, _base = repo
     filename = _plan_fixture.WI_FILES[0][0]
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve(), related_wi=((filename, "要求"),))
@@ -203,7 +190,6 @@ def test_lane_selection_rejects_duplicate_wi_across_plans(repo: tuple[pathlib.Pa
 
 
 def test_cli_accepts_prior_plan_for_added_lane_wi(repo: tuple[pathlib.Path, str]) -> None:
-    """公開CLIから先行計画を併記して追加レーンの全WIを確認できる。"""
     work_dir, _base = repo
     prior_name = "20260831-000000-002.md"
     current_name = _plan_fixture.WI_FILES[0][0]

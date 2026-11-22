@@ -12,7 +12,6 @@ import pytest
 
 
 def test_heading_and_python_observations_do_not_block(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """候補は実際の見出しとBash例だけから拾い、既存の構造エラーと混同しない。"""
     selected = tmp_path / "AGENTS.md"
     source = (
         "# 起動、終了の順\n"

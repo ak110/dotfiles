@@ -12,7 +12,6 @@ from agent_toolkit._atk import cli_support as _cli_support
 
 
 def _port_type(value: str) -> int:
-    """`--port`の値を1から65535までの整数として検証する。"""
     try:
         port = int(value)
     except ValueError as error:
@@ -25,7 +24,6 @@ def _port_type(value: str) -> int:
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk serve`の引数を登録する。"""
     parser.add_argument("serve_action", nargs="?", choices=("logs",), help="user serviceのjournalを表示")
     parser.add_argument("-f", "--follow", action="store_true", help="直近100行を表示して追従")
     parser.set_defaults(serve_parser=parser)
@@ -43,7 +41,6 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
 
 
 def dispatch(args: argparse.Namespace, *, home: pathlib.Path) -> int:
-    """`atk serve`を実行し、終了コードを返す。"""
     serve_cli = importlib.import_module("agent_toolkit._atk.serve.cli")
     if args.serve_action == "logs":
         return serve_cli.show_logs(follow=args.follow)

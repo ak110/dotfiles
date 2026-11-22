@@ -138,10 +138,6 @@ _NEXT_RERUN = "直した後に同じコマンドで確かめる"
 
 
 def _guide_rerecord(errors: list[Violation], pairs: dict[tuple[str, str, str], list[str]], action: str) -> list[Violation]:
-    """記録不足の違反へ、記録し直す組と合流・移管に合う記録の書き先を添える。
-
-    汎用の案内どおり最終レーン名で追加YAMLへ記録すると、既存の組の判定と解釈されて同じ拒否が返るため置き換える。
-    """
     reasons = {missing_overlap_reason(*key): values for key, values in pairs.items()}
     guided: list[Violation] = []
     for error in errors:
@@ -163,10 +159,6 @@ def check(
     validate_execution: bool = True,
     merged_wis: frozenset[str] = frozenset(),
 ) -> list[Violation]:
-    """指定した集合の本文と選定全体の関係を確かめ、違反を返す。省略時は全本文を対象とする。
-
-    統合済みの項目には、作業ツリーの状態を前提とする項目ごとの判定を適用しない。
-    """
     if selection is None:
         selection = load_selection(selection_file)
     items = typing.cast(list[dict[str, object]], _selection.decisions(selection))
@@ -180,8 +172,7 @@ def check(
     if items and not private_notes.is_dir():
         raise InputError(f"private-notesが実在しない: {private_notes}", next_action=_FIX_PRIVATE_NOTES)
     integrated_lanes = _selection.integrated_lanes(selection)
-    # 選定時の前提は作業前の作業ツリーで成り立つ条件であり、作業を統合した項目は履歴として扱う。
-    # 統合後の作業ツリーで判定し直すと、レーンの作業による改名・削除・追加で統合済みの項目を拒否する。
+
     pending = [item for item in items if not _is_integrated(item, integrated_lanes)]
     conditions = load_norm_conditions(work_dir) if any(_needs_body_check(item, body_wis) for item in pending) else []
     errors: list[Violation] = []
@@ -295,7 +286,6 @@ def check(
 
 
 def _needs_body_check(decision: dict[str, object], body_wis: set[str] | None) -> bool:
-    """レーンを持ち、本文検査の対象集合に含まれる項目かを返す。"""
     return decision[_selection.LANE_KEY] != _LANE_NONE and (body_wis is None or decision[_selection.WI_KEY] in body_wis)
 
 
@@ -381,7 +371,6 @@ def summary_lines(
 
 
 def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
-    """`--work-dir`の値か、現在のディレクトリが属するGitルートを返す。"""
     if value is not None:
         if not value.is_dir():
             raise InputError(f"`--work-dir`がディレクトリではない: {value}", next_action=_FIX_PATHS)
@@ -393,7 +382,6 @@ def _resolve_work_dir(value: pathlib.Path | None) -> pathlib.Path:
 
 
 def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wis: set[str] | None) -> None:
-    """今回の処置済みの印をメモリ上で付け、書き込む内容そのものを検査に渡せるようにする。"""
     items = typing.cast(list[dict[str, object]], selection.get(_selection.DECISIONS_KEY, selection.get("decisions")))
     for item in items:
         if item.get(_selection.LANE_KEY, item.get("lane")) in lanes and (
@@ -412,8 +400,7 @@ def _mark_integrated(selection: dict[str, object], lanes: set[str], processed_wi
 
 
 def main(argv: list[str] | None = None) -> int:
-    """コマンドライン引数を解析し、選定結果を確かめる。"""
-    # 分割したモジュールはスクリプト本体を読み直しても残るため、前回の起動で読んだ作業ツリーの状態を使わない。
+
     clear_caches()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("selection_file", type=pathlib.Path, metavar="PATH", help="メインが保存した選定結果の絶対パス")
@@ -566,7 +553,6 @@ def main(argv: list[str] | None = None) -> int:
                 args.body_wi,
             )
         )
-        # 移管の--lane-cost-updatesは移管操作の入力であり、書込対象の追加と併用できる。
         or (args.lane_cost_updates is not None and args.transfer_wi is None)
     ):
         parser.error("--extend-write-targetsは--outputと組で指定し、--transfer-wi以外の更新操作・--body-wiと併用しない")
@@ -587,7 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.lane_cost_updates is not None and args.merge is None and args.transfer_wi is None:
         parser.error("--lane-cost-updatesは--merge・--lane-map・--outputまたは--transfer-wiとともに指定する")
     body_wis = set(args.body_wi) if args.body_wi is not None else None
-    # 合流・移管で記録不足になった鍵へ、記録し直す組と記録の書き先を添える案内。
+
     rerecord: tuple[dict[tuple[str, str, str], list[str]], str] | None = None
     merged_wis: frozenset[str] = frozenset()
     try:
@@ -716,7 +702,6 @@ def main(argv: list[str] | None = None) -> int:
     for error in errors:
         print(error.reason, file=sys.stderr)
     if errors:
-        # 同じ次の操作を持つ違反が複数あっても、その次の操作は最初に現れた位置で1回だけ出力する。
         actions = list(dict.fromkeys(error.next_action for error in errors))
         print(_next_action.next_action_line("。".join([*actions, _NEXT_RERUN])), file=sys.stderr)
         return 1

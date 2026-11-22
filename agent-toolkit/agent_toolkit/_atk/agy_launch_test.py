@@ -17,7 +17,6 @@ from agent_toolkit._atk.wi import process_loop_env, process_loop_log, process_lo
 
 
 def test_agy_probe_works_without_tier_settings(tmp_path: pathlib.Path) -> None:
-    """工程別のagy候補は、agyの段位設定を作らずに可用性を判定できる。"""
     binary = tmp_path / "agy"
     captured = tmp_path / "probe.json"
     binary.write_text(
@@ -43,7 +42,6 @@ def test_agy_probe_works_without_tier_settings(tmp_path: pathlib.Path) -> None:
 def test_process_loop_agy_interactive_and_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resume: str | None
 ) -> None:
-    """process-loopは新規目的文、直近継続、ID付き再開をagyの対話CLIへ渡す。"""
     calls: list[list[str]] = []
 
     def execute(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
@@ -98,7 +96,6 @@ def test_process_loop_agy_interactive_and_resume(
 
 
 def test_run_skill_agy_noninteractive(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """定期起動はagy -pで目的文を送り、成功時は報告保存の既存検収まで通す。"""
     binary = tmp_path / "agy"
     captured = tmp_path / "session.json"
     binary.write_text(

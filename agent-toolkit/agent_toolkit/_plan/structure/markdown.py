@@ -1,18 +1,3 @@
-"""計画ファイルのMarkdownの構造（本文の範囲、見出し、節の範囲、表）の認識と、固定表の列数と空cellの判定。
-
-構造の認識と原文の記法の判定は別々に行う。
-見出し、コードフェンス、表の範囲、節の親子関係は、標準準拠のパーサーが1回生成した
-トークン列と位置情報から認識する。解析結果を各判定関数へ渡し、同じ構造を再び解析することを避ける。
-パーサーが補完、除去、段落へ変換する可能性がある原記法は、表トークンと段落トークンの
-位置情報から取得した原文の記法を別関数で判定する。
-
-- 表の列数、外側パイプ、セル数の一致を原文から判定する
-- 表に変換されなかった段落では、パイプ区切りのヘッダー候補と直後の区切り行候補について
-  セル数の不一致を検出する
-- 原文の記法を判定する範囲は、パーサーが表または段落として分類した箇所に限定する
-- 正規表現は原文が指定の内容に一致するかの判定に限定し、列数は区切り記号で分割した要素数から計算する
-"""
-
 from __future__ import annotations
 
 import functools
@@ -31,7 +16,6 @@ _EMPTY_CELL_FIX = "空のセルへ内容を記載し、列数を表頭へそろ�
 
 
 def _column_count_error(label: str, expected: int, row: tuple[str, ...], location: str) -> str:
-    """固定表の列数不一致を、代表的な原因と修正方法を含めて返す。"""
     return (
         f"{label}の列数が一致しない（期待={expected}列、実際={len(row)}列）: {location}。"
         "セル内のリテラルな半角縦線は`\\|`へエスケープするか、半角縦線を使わない"
@@ -44,7 +28,6 @@ def _check_fixed_table(
     label: str,
     minimum_rows: int = 1,
 ) -> tuple[MarkdownTable | None, list[str]]:
-    """列名が一致する表が件数と最低行数を満たし、空cellを含まないか判定し、(表, エラー)を返す。"""
     tables = extract_tables(lines)
     matching = [candidate for candidate in tables if candidate.header == header]
     if not matching:
@@ -62,7 +45,6 @@ def _check_fixed_table(
 
 
 def _comma_separated_values(value: str) -> tuple[str, ...]:
-    """ASCIIカンマ区切りの値を前後の空白を除いて返す。"""
     return tuple(part.strip() for part in value.split(","))
 
 
@@ -70,7 +52,6 @@ _HEADING_PATTERN = re.compile(r"^(#{1,6}) +(.*?)\s*$")
 
 
 def markdown_body_start_index(content: str) -> int:
-    """先頭フロントマターの直後にあるMarkdown本文の0始まり行番号を返す。"""
     lines = content.removeprefix("\ufeff").splitlines()
     if not lines or lines[0].rstrip() != "---":
         return 0
@@ -81,7 +62,6 @@ def markdown_body_start_index(content: str) -> int:
 
 
 def _is_escaped(text: str, index: int) -> bool:
-    """指定位置の文字が直前のバックスラッシュでエスケープされているかを返す。"""
     backslashes = 0
     while index > backslashes and text[index - backslashes - 1] == "\\":
         backslashes += 1
@@ -89,7 +69,6 @@ def _is_escaped(text: str, index: int) -> bool:
 
 
 def _code_span_comment_starts(content: str, inline_tokens: list[markdown_it.token.Token]) -> set[int]:
-    """各inline blockのコードスパン内にあるHTMLコメント開始位置を返す。"""
     parser = markdown_it.MarkdownIt("commonmark")
     spans: list[tuple[int, int]] = []
 
@@ -146,7 +125,6 @@ def _code_span_comment_starts(content: str, inline_tokens: list[markdown_it.toke
 
 
 def _markdown_excluded_line_indices(content: str) -> set[int]:
-    """CommonMarkのフェンスと複数行HTMLコメントに属する0始まり行番号を返す。"""
     excluded: set[int] = set()
     inline_tokens: list[markdown_it.token.Token] = []
     parser = markdown_it.MarkdownIt("commonmark").enable("table")
@@ -181,18 +159,6 @@ def _markdown_excluded_line_indices(content: str) -> set[int]:
 
 
 def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
-    """Markdown本文の有効行を、ファイル先頭基準1始まりの行番号付きで順に生成する。
-
-    以下の領域内の行は生成対象外とする（行番号もスキップされる）。
-
-    - ファイル先頭のYAMLフロントマター（`---`または`...`で閉じる）
-    - コードフェンス（開きフェンスと同字種・同長以上の閉じフェンスで抜ける）。
-      開始・終了行自体も生成対象外
-    - 複数行にまたがるHTMLコメント（`<!--`から`-->`まで）
-
-    H2見出し・H3見出し・箇条書き行を含む全ての非除外行を生成する。
-    見出し抽出や本文収集など、上記領域を共通除外する各種スキャン処理の基盤として使う。
-    """
     content = content.removeprefix("\ufeff")
     lines = content.splitlines()
     body_start = markdown_body_start_index(content)
@@ -204,29 +170,17 @@ def iter_markdown_body_lines(content: str) -> Iterator[tuple[int, str]]:
 
 
 def markdown_body_text(content: str) -> str:
-    """Markdown本文の有効行だけを連結したテキストを返す。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    本文を文字列パターンで走査する処理は、除外領域内の記述を対象にしないため、
-    本関数または`iter_markdown_body_lines`を経由して入力を得る。
-    """
     return "\n".join(line for _lineno, line in iter_markdown_body_lines(content))
 
 
 @dataclass(frozen=True)
 class PlanHeading:
-    """Markdown本文で有効な見出し1件を表す。"""
-
     lineno: int
     level: int
     text: str
 
 
 def extract_headings(content: str) -> list[PlanHeading]:
-    """本文の有効行から全階層の見出しを出現順に抽出する。
-
-    除外領域の定義は`iter_markdown_body_lines`に従う。
-    """
     headings: list[PlanHeading] = []
     for lineno, line in iter_markdown_body_lines(content):
         match = _HEADING_PATTERN.match(line)
@@ -264,10 +218,6 @@ def check_duplicate_headings(content: str) -> list[str]:
 
 
 def heading_subtree_range(headings: list[PlanHeading], index: int) -> tuple[int, int | None]:
-    """指定見出しの本文範囲を(見出し行番号, 次の同位以上の見出し行番号)で返す。
-
-    末尾まで続く場合は第2要素を`None`とする。
-    """
     level = headings[index].level
     for following in headings[index + 1 :]:
         if following.level <= level:
@@ -276,12 +226,10 @@ def heading_subtree_range(headings: list[PlanHeading], index: int) -> tuple[int,
 
 
 def lines_within(lines: list[tuple[int, str]], start: int, end: int | None) -> list[tuple[int, str]]:
-    """行番号付き行列から`start`超過かつ`end`未満の範囲を切り出す。"""
     return [(lineno, line) for lineno, line in lines if lineno > start and (end is None or lineno < end)]
 
 
 def child_headings(headings: list[PlanHeading], index: int, level: int) -> list[tuple[int, PlanHeading]]:
-    """指定見出しの本文範囲にある指定階層の見出しを(索引, 見出し)で返す。"""
     start, end = heading_subtree_range(headings, index)
     return [
         (position, heading)
@@ -291,7 +239,6 @@ def child_headings(headings: list[PlanHeading], index: int, level: int) -> list[
 
 
 def find_heading_index(headings: list[PlanHeading], level: int, text: str) -> int | None:
-    """指定階層・指定見出し文（旧別名を含む）の最初の索引を返す。"""
     accepted = h2_aliases(text) if level == 2 else (text,)
     return next(
         (index for index, heading in enumerate(headings) if heading.level == level and heading.text in accepted),
@@ -301,8 +248,6 @@ def find_heading_index(headings: list[PlanHeading], level: int, text: str) -> in
 
 @dataclass(frozen=True)
 class MarkdownTable:
-    """パイプ表1件の見出し行と本文行を表す。"""
-
     lineno: int
     header: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
@@ -310,11 +255,9 @@ class MarkdownTable:
     row_sources: tuple[str, ...]
 
     def row_labels(self) -> tuple[str, ...]:
-        """各行の第1列を返す。"""
         return tuple(row[0] if row else "" for row in self.rows)
 
     def row_location(self, index: int) -> str:
-        """指定した本文行の行番号と原文を返す。"""
         if index < 0 or index >= len(self.rows):
             return ""
         return f"{self.row_linenos[index]}行目: {self.row_sources[index]}"
@@ -322,21 +265,10 @@ class MarkdownTable:
 
 @functools.cache
 def _table_parser() -> markdown_it.MarkdownIt:
-    """GFM表を解釈するMarkdownパーサーを返す。
-
-    パーサーは解析ごとの状態を持たないため、生成コストを避けて使い回す。
-    """
     return markdown_it.MarkdownIt("commonmark").enable("table")
 
 
 def _table_row_cells(line: str) -> tuple[str, ...]:
-    """表の1行を、その行が実際に持つ列数のままセルへ分割する。
-
-    GFMのbody行はheaderの列数へ切り詰められて解釈されるため、
-    行単体をheader行として解析し直し、列数不一致を後段で検出できるようにする。
-    区切り行の列数はheader行の列数と一致した場合だけ表として解釈される性質を使い、
-    パイプの数から上限を定めて一致する列数を探す。
-    """
     parser = _table_parser()
     for count in range(1, line.count("|") + 2):
         delimiter = "|" + "|".join(["---"] * count) + "|"
@@ -348,12 +280,6 @@ def _table_row_cells(line: str) -> tuple[str, ...]:
 
 
 def extract_tables(lines: list[tuple[int, str]]) -> list[MarkdownTable]:
-    """行番号付き本文行からGFMの表を出現順に抽出する。
-
-    表の境界判定とセル分割はmarkdown-it-pyのtable拡張へ委ね、
-    区切り行のダッシュ数、整列コロン、行頭パイプの省略といった記法差を吸収する。
-    行番号は入力行の並びから復元し、ファイル先頭基準1始まりで返す。
-    """
     source_lines = [line for _lineno, line in lines]
     tables: list[MarkdownTable] = []
     lineno = 0

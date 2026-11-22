@@ -70,8 +70,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import dataclasses
 lazy import hashlib
 lazy from collections.abc import Iterable
@@ -147,7 +145,6 @@ lazy from agent_toolkit._hooks.pretooluse.warning_context import (
 
 
 def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
-    """設定ファイルが`attribution.commit`を文字列として定義するかと、その値を返す。"""
     try:
         settings = json.loads(path.read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError, ValueError:
@@ -161,7 +158,6 @@ def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
 
 
 def _claude_commit_attribution_disabled(cwd: str) -> bool:
-    """フックから観測できる設定範囲で、最上位の明示的な空文字設定を判定する。"""
     config_dir = _host_homes.claude_config_dir()
     project_raw = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     paths = [config_dir / "settings.json"]
@@ -212,7 +208,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
     session_id_raw = payload.get("session_id", "")
     session_id = session_id_raw if isinstance(session_id_raw, str) else ""
     set_warning_session_id(session_id)
-    # ホスト判定はpayload読込直後に一度だけ行い、以降の判定処理の選択と入力アダプターへ同じ値を渡す。
+
     is_codex = is_codex_payload(payload)
 
     with notice_cycle(session_id, "pretooluse:" + str(tool_name), _agent_id.resolve_hook_agent_id(payload)):
@@ -254,7 +250,6 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
-    """ツールの種類ごとの判定を実行し、その結果を返す。"""
     # Code Modeも個々のMCP呼出しをこの設定hookへ通す。MCP起動環境には無い組込みagent_idもここで判定する。
     if tool_name in _MAIN_ONLY_MCP_TOOLS and (
         payload.get("agent_id") is not None or delegated_session.is_delegated(os.environ)
@@ -319,7 +314,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
 
 def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> int:
-    """判定の結果と保留の通知を標準出力・標準エラーへ書き、終了コードを返す。"""
     pending_notices.extend(decision.notices)
     hook_output: dict[str, object] = {"hookEventName": "PreToolUse"}
     # Codexは入力書換えを伴うallowだけを受理する。通常通過の権限判定はホストへ委ねる。
@@ -340,7 +334,6 @@ def _emit(decision: Decision, pending_notices: list[str], *, is_codex: bool) -> 
 
 
 def _decide_agents_server_tool(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> Decision:
-    """agents_serverの開始点と観測点の条件をそれぞれ判定する。"""
     _record_iss_sidechain_probe(session_id, tool_name, payload)
     launch = check_task_document_launch(tool_name, tool_input)
     if launch.block is not None:
@@ -410,7 +403,7 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
     if drive_letter_path_warning is not None:
         warnings.append(drive_letter_path_warning)
     transcript_path = payload.get("transcript_path")
-    # 出力パスはtranscriptの起動記録だけが持つ。所有記録が空のセッションではtranscriptを読まない。
+
     if isinstance(transcript_path, str) and transcript_path and read_state(session_id).get("background_task_ids"):
         pending_paths = _background_task_outputs.pending_task_output_paths(transcript_path, session_id)
         if _background_task_outputs.command_reads_path(command, pending_paths):
@@ -424,7 +417,6 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     ),
                     removable_cause=True,
                     subject=command,
-                    # 途中経過の読取は進捗確認にも使う。反復だけでは結果の欠落を確定できない。
                     escalate_on_repeat=False,
                 )
             )
@@ -440,12 +432,10 @@ _COMMIT_MESSAGE_RULES = "/skills/atk-mode/references/commit-message.md"
 
 
 def _reads_commit_message_rules(paths: Iterable[pathlib.Path]) -> bool:
-    """静的に解決できる読取のファイル引数だけで帰属資料を識別する。"""
     return any(path.as_posix().endswith(_COMMIT_MESSAGE_RULES) and path.is_file() for path in paths)
 
 
 def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    """帰属資料の読取に添える、検査が期待する帰属行の通知を返す。観測できない場合と無効化した設定では返さない。"""
     trailer = observed_commit_trailer(payload, cwd, is_codex=is_codex)
     if trailer is None:
         return None
@@ -458,10 +448,6 @@ def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | 
 
 
 def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    """commitの帰属行の検査が期待する行を返す。観測できない場合と、帰属行を無効にした設定では`None`を返す。
-
-    事前に示す値と遮断の検査が期待する値を同じ生成元から作るために公開する。推測では補わない。
-    """
     if not is_codex and _claude_commit_attribution_disabled(cwd):
         return None
     identity = _hook_observed_identity(payload, is_codex=is_codex)
@@ -512,7 +498,6 @@ def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity
 
 
 def _hook_record_path(payload: dict) -> str | None:
-    """hook入力を発した実行主体の記録のパスを返す。subagentの記録を一意に解決できない場合は`None`を返す。"""
     transcript_path = payload.get("transcript_path")
     if not isinstance(transcript_path, str) or not transcript_path:
         return None
@@ -527,7 +512,6 @@ def _hook_record_path(payload: dict) -> str | None:
 
 
 def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
-    """ユーザーが直接読むツール入力から文字列フィールドを順序どおり抽出する。"""
     if tool_name == "ExitPlanMode":
         plan = tool_input.get("plan")
         return [("plan", plan)] if isinstance(plan, str) else []

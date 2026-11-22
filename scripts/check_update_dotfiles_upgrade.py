@@ -28,7 +28,7 @@ _AGE_HOURS = 72
 
 
 class UpgradeCheckError(RuntimeError):
-    """更新経路の検証が成立しなかった場合の例外。"""
+    pass
 
 
 class UnsafeWindowsUpgradeEnvironment(UpgradeCheckError):
@@ -45,17 +45,11 @@ ProfileSnapshot = dict[pathlib.Path, frozenset[str] | None]
 class UserEnvironmentRegistry(typing.Protocol):
     """ユーザー環境変数を保持するレジストリキーの読み書き。テストは偽の実装を渡す。"""
 
-    def read(self) -> RegistryValues:
-        """全ての値を返す。"""
-        ...
+    def read(self) -> RegistryValues: ...
 
-    def write(self, name: str, value: object, kind: int) -> None:
-        """値を値型とともに書き込む。"""
-        ...
+    def write(self, name: str, value: object, kind: int) -> None: ...
 
-    def delete(self, name: str) -> None:
-        """値を削除する。"""
-        ...
+    def delete(self, name: str) -> None: ...
 
 
 def _import_winreg() -> typing.Any:
@@ -76,7 +70,6 @@ class WindowsUserEnvironment:
     _KEY = "Environment"
 
     def read(self) -> RegistryValues:
-        """全ての値を返す。"""
         winreg = _import_winreg()
         values: RegistryValues = {}
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._KEY, 0, winreg.KEY_READ) as key:
@@ -91,13 +84,11 @@ class WindowsUserEnvironment:
         return values
 
     def write(self, name: str, value: object, kind: int) -> None:
-        """値を値型とともに書き込む。"""
         winreg = _import_winreg()
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._KEY, 0, winreg.KEY_SET_VALUE) as key:
             winreg.SetValueEx(key, name, 0, kind, value)
 
     def delete(self, name: str) -> None:
-        """値を削除する。"""
         winreg = _import_winreg()
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self._KEY, 0, winreg.KEY_SET_VALUE) as key:
             winreg.DeleteValue(key, name)
@@ -148,7 +139,6 @@ def _run(
 
 
 def _git_value(repo: pathlib.Path, *arguments: str, runner: Runner = subprocess.run) -> str:
-    """Gitの標準出力を取得し、空値を拒否する。"""
     value = _run(("git", "-C", repo, *arguments), runner=runner).stdout.strip()
     if not value:
         raise UpgradeCheckError(
@@ -159,14 +149,12 @@ def _git_value(repo: pathlib.Path, *arguments: str, runner: Runner = subprocess.
 
 
 def resolve_old_commit(repo: pathlib.Path, current_oid: str, *, runner: Runner = subprocess.run) -> str:
-    """現行commitの時刻から72時間前以前で最も新しい祖先を返す。"""
     timestamp = int(_git_value(repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
     cutoff = timestamp - (_AGE_HOURS * 60 * 60)
     return _git_value(repo, "rev-list", "-1", f"--before=@{cutoff}", current_oid, runner=runner)
 
 
 def old_python_pin(repo: pathlib.Path, old_oid: str, *, runner: Runner = subprocess.run) -> str | None:
-    """旧commitの`.python-version`が指定するPythonを返す。旧commitが持たない場合は`None`を返す。"""
     listed = _run(("git", "-C", repo, "ls-tree", "--name-only", old_oid, "--", ".python-version"), runner=runner)
     if not listed.stdout.strip():
         return None
@@ -174,7 +162,6 @@ def old_python_pin(repo: pathlib.Path, old_oid: str, *, runner: Runner = subproc
 
 
 def platform_entrypoint(repo: pathlib.Path, platform_name: str) -> list[str]:
-    """旧checkout内で起動するプラットフォーム別の公開ランチャーを返す。"""
     if platform_name == "windows":
         return ["cmd.exe", "/d", "/c", str(repo / "bin" / "update-dotfiles.cmd")]
     if platform_name == "linux":
@@ -199,7 +186,6 @@ def _parent_mise_data_dirs(environ: Mapping[str, str], platform_name: str) -> li
 
 
 def _without_mise_entries(path_value: str, mise_dirs: Sequence[pathlib.Path]) -> str:
-    """`PATH`の値から、miseのデータディレクトリの`shims`と`installs`配下の要素を除く。"""
     excluded = [
         os.path.normcase(os.path.abspath(directory / name)) for directory in mise_dirs for name in ("shims", "installs")
     ]
@@ -212,13 +198,11 @@ def _without_mise_entries(path_value: str, mise_dirs: Sequence[pathlib.Path]) ->
 
 
 def _parent_home(environ: Mapping[str, str], platform_name: str) -> pathlib.Path:
-    """差し替える前の親プロセスの実ホームを返す。"""
     home_value = environ.get("USERPROFILE" if platform_name == "windows" else "HOME")
     return pathlib.Path(home_value) if home_value else pathlib.Path.home()
 
 
 def _without_entries_under(path_value: str, base: pathlib.Path, kept: Sequence[pathlib.Path] = ()) -> str:
-    """`PATH`の値から、`base`配下（`base`自身を含む）の要素を除く。`kept`と一致する要素は残す。"""
     excluded = os.path.normcase(os.path.abspath(base))
     kept_entries = {os.path.normcase(os.path.abspath(path)) for path in kept}
 
@@ -248,7 +232,7 @@ def _isolated_env(
     uv_target = home / ".local" / "bin" / uv_name
     uv_target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(uv_executable, uv_target)
-    # 更新処理は`uvx`も名前で起動する。実ホーム配下を`PATH`から外すと見つからなくなるため、uv本体と同じ配布物の`uvx`も複製する。
+
     uvx_name = "uvx.exe" if platform_name == "windows" else "uvx"
     if (uvx_source := uv_executable.with_name(uvx_name)).is_file():
         shutil.copy2(uvx_source, uv_target.parent / uvx_name)
@@ -269,12 +253,11 @@ def _isolated_env(
         if platform_name == "windows" and (parent_local_app_data := env.get("LOCALAPPDATA"))
         else []
     )
-    # 可視binの上書きを継承すると、installerが検証home外のjunctionを作成・更新する。
+
     env.pop("HERDR_INSTALL_DIR", None)
-    # 親の値（実ホームの`~/.nvm`）を継承すると、更新処理のランチャー整理が実ホームのnvmのbinを走査し、
-    # 条件次第では実ホームのnpmでグローバルパッケージを削除する。外すと消費側は検証homeの`~/.nvm`を見る。
+
     env.pop("NVM_DIR", None)
-    # 親が全体導入先を指定していると、検証homeのnpmも実ホーム配下へ導入する。
+
     for name in ("NPM_CONFIG_PREFIX", "npm_config_prefix"):
         env.pop(name, None)
     visible_bins = [str(codex_bin), str(uv_target.parent)]
@@ -312,7 +295,6 @@ def _isolated_env(
             "XDG_STATE_HOME": str(home / ".local" / "state"),
             "UV_TOOL_BIN_DIR": str(uv_target.parent),
             "UV_TOOL_DIR": str(home / ".local" / "share" / "uv" / "tools"),
-            # 親が設定していると、更新処理のuvキャッシュ整理とPython導入が親のキャッシュ・導入先へ作用する。
             "UV_CACHE_DIR": str(home / ".cache" / "uv"),
             "UV_PYTHON_BIN_DIR": str(uv_target.parent),
             "UV_PYTHON_INSTALL_DIR": str(home / ".local" / "share" / "uv" / "python"),
@@ -340,14 +322,13 @@ def _isolated_env(
             "CIでは`.github/actions/install-chezmoi`の導入ステップが成功し、導入先が`PATH`にあることを確かめる。"
         )
     shutil.copy2(chezmoi, uv_target.parent / pathlib.Path(chezmoi).name)
-    # 実ホームの`~/.local/bin`や`~/.nvm/...`を残すと、更新処理が実ホームのツール配置を走査する。
+
     parent_path = _without_entries_under(parent_path, parent_home, kept_path_entries)
     env["PATH"] = os.pathsep.join((*dict.fromkeys(visible_bins), parent_path))
     return env
 
 
 def verify_updated_oid(actual_oid: str, expected_oid: str) -> None:
-    """更新後の完全OIDが検証開始時の現行OIDと一致することを確認する。"""
     if actual_oid != expected_oid:
         raise UpgradeCheckError(
             f"更新後HEADが現行HEADと一致しない: expected={expected_oid} actual={actual_oid}。"
@@ -362,7 +343,6 @@ def create_local_remote(
     *,
     runner: Runner = subprocess.run,
 ) -> None:
-    """検証対象のobjectと旧commitを指す初期branchをbare remoteへ構成する。"""
     _run(("git", "clone", "--bare", source_repo, bare_repo), runner=runner)
     _run(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", old_oid), runner=runner)
 
@@ -397,7 +377,6 @@ def snapshot_profile(dirs: Sequence[pathlib.Path]) -> ProfileSnapshot:
 
 
 def profile_changes(before: ProfileSnapshot, after: ProfileSnapshot) -> list[pathlib.Path]:
-    """検証の前後で追加または削除された項目と、作成または削除された監視ディレクトリのパスを返す。"""
     changes: list[pathlib.Path] = []
     for directory, names_before in before.items():
         names_after = after.get(directory)
@@ -409,10 +388,6 @@ def profile_changes(before: ProfileSnapshot, after: ProfileSnapshot) -> list[pat
 
 
 def restore_registry(registry: UserEnvironmentRegistry, saved: RegistryValues) -> list[str]:
-    """レジストリの値を退避した状態へ戻し、戻した値の名前を返す。
-
-    検証中に追加された値は削除し、変更または削除された値は退避した値と値型で書き戻す。
-    """
     current = registry.read()
     restored: list[str] = []
     for name in sorted(current.keys() - saved.keys()):
@@ -501,7 +476,6 @@ def _restore_and_compare(
     watch_dirs: Sequence[pathlib.Path],
     profile_before: ProfileSnapshot,
 ) -> list[pathlib.Path]:
-    """レジストリを復元して戻した名前を出力し、通常profileの差分を返す。"""
     if registry is not None and saved_registry is not None:
         for name in restore_registry(registry, saved_registry):
             print(f"検証前の値へ戻したユーザー環境変数: {name}")
@@ -509,7 +483,6 @@ def _restore_and_compare(
 
 
 def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
-    """通常profileの差分を報告する文を返す。"""
     paths = "\n".join(f"  {path}" for path in leaks)
     return (
         "通常profile側の次の項目が検証の前後で追加または削除された:\n"
@@ -522,7 +495,6 @@ def _leak_message(leaks: Sequence[pathlib.Path]) -> str:
 
 
 def _register_upgrade_checkout(checkout: pathlib.Path, env: Mapping[str, str], platform_name: str) -> None:
-    """合成remoteを使う検証checkoutを、検証homeだけで共有サービスの起動対象に登録する。"""
     config_base = pathlib.Path(env["LOCALAPPDATA" if platform_name == "windows" else "XDG_CONFIG_HOME"])
     config = config_base / "agent-toolkit" / "config.json"
     config.parent.mkdir(parents=True, exist_ok=True)
@@ -543,7 +515,6 @@ def _run_isolated_upgrade(
     runner: Runner,
     keep_verification_root: bool,
 ) -> None:
-    """検証homeで旧版を初期適用し、現行版への更新を実行して更新後HEADを確かめる。"""
     with tempfile.TemporaryDirectory(prefix="update-dotfiles-upgrade-", delete=not keep_verification_root) as temp_name:
         if keep_verification_root:
             print(f"検証rootを削除せずに残す: {temp_name}")
@@ -684,7 +655,6 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
 
 
 def main() -> int:
-    """コマンドライン引数を解析して検証する。"""
     _configure_standard_streams()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux", "windows"), required=True)

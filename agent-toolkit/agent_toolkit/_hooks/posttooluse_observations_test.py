@@ -18,8 +18,6 @@ from agent_toolkit._testing.posttooluse_support import (
 
 
 class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
-    """agents_serverのツール応答とsessionごとのcwd状態記録を検証する。"""
-
     @pytest.mark.parametrize(
         "phrase",
         [
@@ -29,7 +27,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         ],
     )
     def test_agents_server_response_quoting_notice_is_not_backgrounded(self, tmp_path: pathlib.Path, phrase: str) -> None:
-        """委譲先の返却本文が移行通知の文言を引用しても、背景へ移ったとみなさず通常の応答と同じ記録を行う。"""
         sid = f"show-quoting-notice-{phrase.split()[0].lower()}-{len(phrase)}"
         record = self._publish_owned_child(sid, tmp_path)
         quoted = f"委譲先の返却: background_tasks_test.py:1: {phrase.format(task_id='quoted-task-1')}"
@@ -58,10 +55,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
 
     @pytest.mark.parametrize("tool_name", ("send_message", "kill", "stop"))
     def test_continuation_uses_cwd_map_without_mutating_it(self, tmp_path: pathlib.Path, tool_name: str) -> None:
-        """継続・観測・中断ツールはcwd mapを参照し、session記録へcwdを保存しない。
-
-        破棄ツールはsession記録を除去し、cwd mapは変更しない。
-        """
         sid = f"continuation-cwd-{tool_name}"
         remote_session_id = "thread-continuation"
         state: dict[str, object] = {"agents_server_cwd_by_session": {remote_session_id: str(tmp_path)}}
@@ -101,7 +94,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
             assert "cwd" not in current["agents_server_sessions"][remote_session_id]
 
     def test_stop_removes_session_record(self, tmp_path: pathlib.Path) -> None:
-        """stop成功応答で対象sessionのエントリーを状態キーから除去する。"""
         sid = "pending-stop"
         remote_session_id = "remote-stop"
         state = {
@@ -132,7 +124,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         assert current["agents_server_cwd_by_session"] == {remote_session_id: str(tmp_path)}
 
     def test_pending_observation_transitions(self, tmp_path: pathlib.Path) -> None:
-        """公開操作の応答だけから未観測作業の発生と解消を記録する。"""
 
         def run_operation(
             sid: str,
@@ -299,7 +290,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
             assert record["pending_observation"] is False
 
     def test_start_shell_records_pending_observation(self, tmp_path: pathlib.Path) -> None:
-        """シェル実行委譲も観測を試みていない作業として記録する。"""
         sid = "pending-shell"
         remote_session_id = "remote-shell"
         _run(
@@ -316,7 +306,6 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
         assert record["owner_agent_id"] == "main"
 
     def test_pending_work_records_the_agent_that_triggered_it(self, tmp_path: pathlib.Path) -> None:
-        """startと配送成立send_messageは、各作業を発生させた主体を観測責任者として記録する。"""
         sid = "pending-owner"
         remote_session_id = "remote-owner"
         _run(

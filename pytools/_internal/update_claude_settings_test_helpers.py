@@ -74,7 +74,6 @@ def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
 def _use_managed_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, managed_settings_path: Path, managed_config_path: Path
 ) -> None:
-    """管理設定2件を一時的な作業ツリーの`share/`へ複製し、`find_dotfiles_root()`をその作業ツリーへ向ける。"""
     root = tmp_path / "dotfiles-root"
     for source, relative in (
         (managed_settings_path, mod._MANAGED_SETTINGS_RELATIVE),  # pylint: disable=protected-access

@@ -147,7 +147,6 @@ def _uncollected_run(path: pathlib.Path) -> bool:
 
 
 def _result_server_instances(base: pathlib.Path) -> set[str]:
-    """各rootの終了時の結果ファイルが中断の診断参照で指す起動単位を返す。読めないファイルは除く。"""
     instances: set[str] = set()
     try:
         paths = tuple(base.glob("*/results/*.json"))

@@ -1,5 +1,3 @@
-"""保持した起動記録と役割宣言に基づく継続入力の検査。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -13,7 +11,6 @@ from agent_toolkit._common.next_action import ActionableError
 
 
 def _continuation_recovery(declaration: task_documents.TaskDocumentDeclaration | str | None) -> str:
-    """保持する役割宣言から、同じsessionへ送れる再実行形を示す。"""
     freeform = json.dumps({"prompt": "<今回の指示と新しい入力>"}, ensure_ascii=False)
     guidance = "同じsession_idのsend_messageへ渡す自由文の再実行形: " + freeform
     if isinstance(declaration, str):
@@ -37,7 +34,6 @@ def continuation_prompt(
     instruction: str | None = None,
     extra_params: Mapping[str, str] | None = None,
 ) -> str:
-    """既存の起動記録と役割宣言から、継続本文を検査・生成する。"""
     first_line = launch_prompt.split("\n", 1)[0]
     documents = task_documents.find_task_documents(first_line)
     declaration = task_documents.read_declaration(documents[0]) if documents else None
@@ -77,7 +73,7 @@ def continuation_prompt(
                         f"保持済みの初回入力が再掲されています: {name}",
                         next_action="新しい要求と変更した入力だけをpromptへ渡す。参照先の更新は定型継続の名前付き入力で指定する",
                     )
-        # 同文の自由な指示も新しい操作になり得る。意味上の必要性は送信側へ残す。
+
         if documents and text.lstrip().startswith(("#", "---")):
             with contextlib.suppress(OSError, UnicodeError):
                 root = str(task_documents.document_plugin_root(documents[0]))

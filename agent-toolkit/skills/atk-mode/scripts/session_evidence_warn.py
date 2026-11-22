@@ -1,5 +1,3 @@
-"""証拠抽出の`--warn`照会。ツールの結果とhookの記録から警告の行を抽出する。"""
-
 from __future__ import annotations
 
 import json
@@ -70,17 +68,14 @@ _STRUCTURED_WARNING_STREAM_KEYS = ("stdout", "stderr")
 
 
 def _is_schema_definition(value: dict[str, Any]) -> bool:
-    """構造定義そのものを実行値と区別する。"""
     return isinstance(value.get("properties"), dict) and value.get("type") == "object"
 
 
 def _runtime_children(value: dict[str, Any]) -> list[Any]:
-    """定義の境界を除いた兄弟値を返す。実行時の警告キーは保持する。"""
     return [item for key, item in value.items() if key not in {"inputSchema", "outputSchema", "$schema"}]
 
 
 def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
-    """辞書から警告キーの値と直接警告を表す標識を取り出す。"""
     warning_values: list[Any] = []
     direct_warning = False
     for key, item in value.items():
@@ -105,13 +100,11 @@ def _structured_warning_fields(value: dict[str, Any]) -> tuple[list[Any], bool]:
 
 
 def _has_structured_warning_body(value: dict[str, Any]) -> bool:
-    """警告本文として扱える明示フィールドが辞書に存在するかを返す。"""
     normalized_keys = {key.casefold() for key in value if isinstance(key, str)}
     return bool(normalized_keys.intersection(_STRUCTURED_WARNING_BODY_KEYS))
 
 
 def _structured_warning_value_texts(value: Any) -> list[str]:
-    """構造化警告の値または直接警告辞書から本文だけを取り出す。"""
     if isinstance(value, str):
         try:
             parsed = json.loads(value)
@@ -146,7 +139,6 @@ def _structured_warning_value_texts(value: Any) -> list[str]:
 
 
 def _is_execution_tool_name(name: str | None) -> bool:
-    """非構造化の実行時警告を返し得るツール名かを判定する。"""
     if not isinstance(name, str):
         return False
     leaf = name.casefold().rsplit("__", maxsplit=1)[-1].rsplit(".", maxsplit=1)[-1]
@@ -165,7 +157,6 @@ def _execution_kind_name(name: str, arguments: Any) -> str:
 
 
 def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
-    """ツール結果の識別子を、先行する呼び出しのツール名へ対応付ける。"""
     names: dict[str, str] = {}
     for record in records:
         entry = record.entry
@@ -190,7 +181,6 @@ def _warning_tool_names(records: list[_Record]) -> dict[str, str]:
 
 
 def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) -> list[tuple[Any, bool, bool]]:
-    """警告を抽出できる結果値、hook由来および非構造化本文の走査可否を返す。"""
     values: list[tuple[Any, bool, bool]] = []
     tool_use_result = _persisted_result(entry.get("toolUseResult"))
     is_read_result = isinstance(tool_use_result, dict) and "file" in tool_use_result
@@ -237,11 +227,6 @@ def _warning_result_values(entry: dict[str, Any], tool_names: dict[str, str]) ->
 
 
 def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = None) -> list[str]:
-    """本文の由来に基づき、実行結果領域から実行時警告の本文行を返す。
-
-    フック通知標識はhook実行の記録に由来する場合だけ採用する。コマンド出力に由来する通常の
-    実行時警告は検出対象として維持し、問題の不在を述べる本文は除外する。
-    """
     bodies: list[tuple[str, bool, bool]] = []
 
     def collect_markers(value: Any, from_hook_record: bool) -> None:
@@ -302,8 +287,7 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
     for body_index, (text, marker_only, from_hook_record) in enumerate(bodies):
         if from_hook_record and marker_only and _HOOK_NOTICE_MARKER.search(text):
             continue
-        # コマンドが表示した文書のコードフェンス内は過去の出力の引用であり、実行時の警告ではない。
-        # hook記録と構造化された警告値は文書の表示を含まないため、この判定の対象から外す。
+
         skip_fenced = marker_only and not from_hook_record
         in_fence = False
         for line in text.splitlines():
@@ -344,7 +328,6 @@ def _warning_texts(entry: dict[str, Any], tool_names: dict[str, str] | None = No
 
 
 def _warning_hook_identities(entry: dict[str, Any], line: int) -> dict[str, list[str]]:
-    """hook記録の警告本文ごとに発生識別子を出現順で返す。"""
     identities: dict[str, list[str]] = {}
     for hook_record in _hook_records(entry):
         occurrence = _hook_occurrence(hook_record, line)
@@ -358,7 +341,6 @@ def _warning_hook_identities(entry: dict[str, Any], line: int) -> dict[str, list
 def _marked_hook_warnings(
     entry: dict[str, Any], line: int, seen: set[tuple[str, str | None, str, str]]
 ) -> list[dict[str, Any]]:
-    """通知の正規化前の本文を、発生元・行と共に保存する。"""
     events = []
     for hook_record in _hook_records(entry):
         hook_name = hook_record.get("hookName")
@@ -387,13 +369,6 @@ def _marked_hook_warnings(
 
 
 def _warning_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """セッション全体の実行時警告を行番号付きで返す。
-
-    同じhook通知は成功記録と追加コンテキストへ重複して格納されるため、
-    ツール呼び出し識別子と本文の組で1件として扱う。
-    識別子を持たない警告はコマンド出力由来の検出を失わないように個別に保持する。
-    一致しない場合はその事実を返す。
-    """
     events: list[dict[str, Any]] = []
     seen_hook_warnings: set[tuple[str, str]] = set()
     seen_marked: set[tuple[str, str | None, str, str]] = set()

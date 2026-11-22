@@ -42,7 +42,6 @@ def _write_child(root: pathlib.Path, name: str, status: int) -> None:
 
 @pytest.fixture(name="repositories")
 def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, pathlib.Path]]:
-    """同一リポジトリと別リポジトリを実際のGitで構成し、テストの資源を回収する。"""
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
@@ -99,7 +98,6 @@ def _run(main: pathlib.Path, cwd: pathlib.Path, arguments: list[str]) -> subproc
 def test_worktree_and_subdirectory_use_changed_version_and_preserve_results(
     repositories: dict[str, pathlib.Path], arguments: list[str]
 ) -> None:
-    """旧版の成功へ戻らず、同一リポジトリの改修版の拒否と引数を返す。"""
     worktree = repositories["worktree"]
     subdirectory = worktree / "nested"
     subdirectory.mkdir()
@@ -112,7 +110,6 @@ def test_worktree_and_subdirectory_use_changed_version_and_preserve_results(
 
 @pytest.mark.parametrize("location", ["main", "other", "outside"])
 def test_main_and_unrelated_cwd_use_installed_entry(repositories: dict[str, pathlib.Path], location: str) -> None:
-    """主作業ツリーとGit外・別Gitの呼び出しは、起動スクリプトが属する従来版へ到達する。"""
     cwd = repositories[location]
     result = _run(repositories["main"], cwd, ["agents", "list"])
     assert result.returncode == 0
@@ -121,7 +118,6 @@ def test_main_and_unrelated_cwd_use_installed_entry(repositories: dict[str, path
 
 
 def test_missing_worktree_entry_fails_without_using_installed_success(repositories: dict[str, pathlib.Path]) -> None:
-    """同一リポジトリの起動スクリプトの不足を、別版の成功で隠さず対処とともに返す。"""
     worktree = repositories["worktree"]
     (worktree / "agent-toolkit" / "scripts" / ("atk.cmd" if os.name == "nt" else "atk")).unlink()
     result = _run(repositories["main"], worktree, ["agents", "list"])
@@ -140,7 +136,6 @@ def test_windows_entry_preserves_batch_encoding() -> None:
 
 
 def test_path_lookup_reaches_worktree_version_before_plugin_entry(repositories: dict[str, pathlib.Path]) -> None:
-    """dotfilesの登録順（`bin`の後に`agent-toolkit/scripts`）のPATHで、名前だけで起動した`atk`も改修版へ到達する。"""
     main = repositories["main"]
     worktree = repositories["worktree"]
     environment = dict(os.environ)

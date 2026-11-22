@@ -1,5 +1,3 @@
-"""委譲先が実行した`atk agents wait`とagents_serverのツールの結果から、回収済みと未観測の子sessionを追跡する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -82,14 +80,12 @@ async def consume_claude_agents_server_message_async(session: SessionState, mess
 
 
 async def consume_agents_wait_output_async(session: SessionState, text: str) -> None:
-    """ファイル読取の後、回収した識別子だけをloopで反映する。"""
     collected = await run_file_operation(_collected_from_wait_output, text)
     session.agents_wait_background_outputs.update(background_output.output_paths(text))
     _discard_initial_turn_collections(session, collected)
 
 
 async def consume_agents_wait_background_outputs_async(session: SessionState) -> None:
-    """背景出力のsnapshotを読み、sessionの追跡集合をloopで更新する。"""
     paths = tuple(session.agents_wait_background_outputs)
     if not paths:
         return
@@ -111,7 +107,6 @@ def consume_agents_server_tool_result(
     arguments: Mapping[str, Any],
     result: Mapping[str, Any],
 ) -> None:
-    """agents_serverツールの結果を孫session集合へ反映する。"""
     parsed = _structured_tool_result(result)
     if parsed is None:
         return
@@ -128,8 +123,7 @@ def consume_agents_server_tool_result(
         return
     if operation == "release":
         session_id = arguments.get("session_id")
-        # stopは終了済みsessionの解放を完了した場合だけ空JSONを返す。
-        # 登録簿の不在ではなく、この成功観測を回収の根拠にする。
+
         if not result and isinstance(session_id, str) and session_id:
             _discard_collected(session, {session_id})
         return
@@ -139,12 +133,10 @@ def consume_agents_server_tool_result(
     if not isinstance(session_id, str) or not session_id:
         return
     if result.get("status") in TERMINAL_STATUSES | {"expired"} and session_id in session.live_child_session_ids:
-        # このレコードは孫sessionを所有する別プロセスが持つため、観測側は削除しない。
         session.live_child_session_ids.discard(session_id)
         session.terminal_child_session_ids.add(session_id)
 
 
-# `atk`の共通の自動保存が、要約が長い場合に標準出力へ書く保存先の行。
 _AGENTS_WAIT_SAVED_PREFIX = "保存先: "
 WAIT_BODY_START_PREFIX = wait_summary.WAIT_BODY_START_PREFIX
 WAIT_BODY_END_PREFIX = wait_summary.WAIT_BODY_END_PREFIX
@@ -158,7 +150,6 @@ def _is_agents_wait_command(tool_input: Any) -> bool:
 
 
 def _tool_result_text(value: Any) -> str:
-    """ツール結果の本文を文字列として連結する。"""
     if isinstance(value, str):
         return value
     if isinstance(value, Mapping):
@@ -172,7 +163,6 @@ def _tool_result_text(value: Any) -> str:
 
 
 def _collected_session_ids(text: str) -> set[str]:
-    """`atk agents wait`のJSON Lines出力とエージェント環境の要約の`終了行:`から、終了時の結果を回収したsession識別子を返す。"""
     collected = wait_summary.terminal_session_ids(text)
     for line in split_lines(text):
         try:
@@ -215,15 +205,11 @@ def consume_agents_wait_background_outputs(session: SessionState) -> None:
 
 
 def _discard_initial_turn_collections(session: SessionState, children: set[str]) -> None:
-    """turnの無い旧出力を初回ターンに限って回収の証拠にする。
-
-    同じsessionの後続ターンでは旧出力と区別できないため、管理側が現在のturn番号と比べる配送記録に委ねる。
-    """
     tracked = session.live_child_session_ids | session.terminal_child_session_ids
     for child in children & tracked:
         if not session_layout.valid_session_id(child):
             continue
-        # 出力を読んだ後、現在のturn番号を取得し、別の処理へ制御を渡す前に追跡を更新する。
+
         current = session_registry.resolve(child)
         if (
             current.state != session_registry.Resolution.UNREADABLE
@@ -254,10 +240,6 @@ def _collected_from_wait_output(text: str) -> set[str]:
 
 
 def _lines_outside_wait_bodies(text: str) -> list[str]:
-    """`本文開始:`の行から同じsession識別子の`本文終了:`の行までを除いた行を返す。
-
-    終了の行が無い範囲は末尾まで本文として扱い、本文の行を回収の根拠へ混ぜない。
-    """
     lines: list[str] = []
     end_line: str | None = None
     for line in split_lines(text):

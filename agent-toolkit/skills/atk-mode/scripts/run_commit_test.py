@@ -1,5 +1,3 @@
-"""公開コミット起動から、実hookの中断と所有する資源の回収を確認する。"""
-
 import argparse
 import os
 import pathlib
@@ -20,7 +18,6 @@ from agent_toolkit._testing import git_repository
 
 @pytest.mark.skipif(os.name != "posix", reason="commit入口はPOSIX専用")
 def test_public_commit_forwards_git_exit_code(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """実hookで拒否されたGitの終了コードを返し、HEADとstage済み変更を保持する。"""
     repo = git_repository.init_repository(tmp_path / "repo", files={"tracked": "base"}, commit_message="基点")
     base = git_repository.git_output(repo, "rev-parse", "HEAD")
     hooks = tmp_path / "hooks"
@@ -36,7 +33,7 @@ def test_public_commit_forwards_git_exit_code(tmp_path: pathlib.Path, monkeypatc
     result = run_script.dispatch(
         argparse.Namespace(script_name="commit-with-timeout", script_args=["--timeout", "10", "--", "-m", "終了コードの確認"])
     )
-    # Gitはpre-commitの非0終了をcommitの終了コード1へ変換する。
+
     assert result == 1
     assert marker.read_text(encoding="utf-8") == "rejected"
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == base
@@ -128,10 +125,6 @@ def test_public_commit_finishes_hook_with_a_waiting_verification(
 def test_public_commit_counts_slot_wait_in_timeout_and_does_not_start_commit(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実行枠を待ったまま上限に達すると、commitを起動せず終了コード124で終わる。
-
-    枠待ちを上限から除くと、枠が空くまで終わらず、呼び出し側がホストへ指定した時間上限に先に達する。
-    """
     environment = dict(os.environ)
     environment["PATH"] = host_environ().get("PATH", "")
     environment.update(PYTHONPATH=str(run_script.PLUGIN_ROOT), PYFLTR_CACHE_DIR=str(tmp_path / "cache"))
@@ -170,7 +163,6 @@ def test_public_commit_counts_slot_wait_in_timeout_and_does_not_start_commit(
 def test_public_commit_reclaims_detached_verifier_and_restores_unstaged_changes(
     tmp_path: pathlib.Path, termination: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """Git親だけの終了を成功とせず、所有子孫・退避・無関係な実行を公開操作から確かめる。"""
     environment = dict(os.environ)
     environment["PATH"] = host_environ().get("PATH", "")
     prek = shutil.which("prek", path=environment["PATH"])

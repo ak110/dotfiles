@@ -33,10 +33,7 @@ from agent_toolkit._testing.wait_ci_support import (
 
 
 class TestResolveForge:
-    """forge判別の分岐を検証する。"""
-
     def test_explicit_value_is_returned_as_is(self) -> None:
-        """明示指定時はリモート照会をしない。"""
         assert _resolve_forge("gitlab", "owner/repository") == "gitlab"
         assert _resolve_forge("github", "owner/repository") == "github"
 
@@ -49,15 +46,12 @@ class TestResolveForge:
         assert _resolve_forge("auto", "https://github.example.com/o/r.git") == "github"
 
     def test_auto_detects_gitlab_for_self_hosted_host(self) -> None:
-        """ホスト名のラベルがgitlabと一致する私設ホストはgitlabと判定する（サブグループ付きHTTPS形式）。"""
         assert _resolve_forge("auto", "https://gitlab.example.com/group/sub/repo.git") == "gitlab"
 
     def test_auto_detects_gitlab_from_ssh_uri(self) -> None:
-        """ポート付きSSH URI形式からもホスト名を抽出する。"""
         assert _resolve_forge("auto", "ssh://git@gitlab.example.com:2222/group/repo.git") == "gitlab"
 
     def test_auto_does_not_match_host_label_by_substring(self) -> None:
-        """ラベルの部分一致では判定せず、無関係なホストを誤分類しない。"""
         assert _resolve_forge("auto", "https://notgithub.example.com/o/r.git") is None
 
     @pytest.mark.parametrize("repository", ["owner/repository", "git@git.example.com:o/r.git", "invalid"])
@@ -80,11 +74,6 @@ class TestResolveForge:
     def test_auto_resolves_short_repository_from_matching_remote(
         self, tmp_path: pathlib.Path, remotes: dict[str, str], expected: str | None
     ) -> None:
-        """`--repo`の`owner/repo`形式は、作業ディレクトリのGit remoteのうちpathが一致するもののホストで判別する。
-
-        手順書どおりの`owner/repo`で`--forge`を省くと必ず終了コード3になる不整合を検出する。
-        一致するremoteが無い場合と、一致したremoteのforgeが分かれる場合は推測せず判別不能とする。
-        """
         _git_repository_support.init_repository(tmp_path)
         for name, url in remotes.items():
             _git_repository_support.run_git(tmp_path, "remote", "add", name, url)
@@ -92,10 +81,7 @@ class TestResolveForge:
 
 
 class TestNormalizeGitlabPipeline:
-    """GitLabパイプラインの正規化を検証する。"""
-
     def test_success_maps_to_completed_success(self) -> None:
-        """successは完了かつconclusion=successへ写像される。"""
         record = _normalize_gitlab_pipeline({"id": 7, "status": "success", "name": "build", "sha": "abc"})
         assert record["status"] == "completed"
         assert record["conclusion"] == "success"
@@ -109,24 +95,20 @@ class TestNormalizeGitlabPipeline:
         assert _all_cancelled([record]) is True
 
     def test_manual_is_completed_and_not_success(self) -> None:
-        """manualは完了かつ非成功として扱う。"""
         record = _normalize_gitlab_pipeline({"id": 9, "status": "manual"})
         assert record["status"] == "completed"
         assert _all_success([record]) is False
 
     def test_pending_statuses_are_incomplete(self) -> None:
-        """進行中系ステータスは未完了として扱う。"""
         for status in ("created", "pending", "running", "canceling", "preparing", "scheduled"):
             record = _normalize_gitlab_pipeline({"id": 1, "status": status})
             assert record["status"] != "completed", status
 
     def test_empty_name_falls_back_to_identifier(self) -> None:
-        """nameが空の場合は識別子を含む代替表示にする。"""
         record = _normalize_gitlab_pipeline({"id": 42, "status": "success", "name": ""})
         assert "42" in str(record["name"])
 
     def test_unknown_status_is_completed_and_not_success(self) -> None:
-        """未知のステータスは完了かつ非成功として扱う。"""
         record = _normalize_gitlab_pipeline({"id": 5, "status": "unknown_future_state"})
         assert record["status"] == "completed"
         assert _all_success([record]) is False
@@ -211,10 +193,7 @@ class TestGhRunList:
 
 
 class TestGlabPipelineList:
-    """glab呼び出しと応答検証を確認する。"""
-
     def test_command_uses_sha_and_json_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """glab ci listへSHAとJSON出力指定を渡す。"""
         calls: list[tuple[list[str], float, str]] = []
 
         def fake_run_json(command: list[str], timeout: float, description: str, **_kwargs: object) -> list[dict[str, object]]:
@@ -234,7 +213,6 @@ class TestGlabPipelineList:
         assert records[0]["conclusion"] == "success"
 
     def test_non_zero_exit_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """非ゼロ終了はRunListErrorとして扱う。"""
         monkeypatch.setattr(
             subprocess,
             "run",
@@ -244,7 +222,6 @@ class TestGlabPipelineList:
             _glab_pipeline_list("group/repository", "refs/heads/main", "deadbeef", 1.0)
 
     def test_unexpected_shape_raises_run_list_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """配列以外の応答はRunListErrorとして扱う。"""
         monkeypatch.setattr(
             subprocess,
             "run",

@@ -18,7 +18,6 @@ AGENT_ENVIRONMENT_VARIABLES = ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGE
 
 
 def is_agent_environment(environment: Mapping[str, str] | None = None) -> bool:
-    """コーディングエージェントの実行環境から起動されたかを返す。"""
     values = os.environ if environment is None else environment
     return any(name in values for name in AGENT_ENVIRONMENT_VARIABLES)
 

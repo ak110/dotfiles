@@ -1,11 +1,3 @@
-"""シェルの語の共通表現と、語の列から引数列を得る処理、それを使うコマンド起動の判定。
-
-`split_words`は1つの単純コマンドの文字列を、引用除去後の値に引用・展開・リダイレクトの構文情報を添えた
-`ShellWord`の列へ分ける。区間分割（`shell_segments`）と各消費側はこの表現を共有し、
-引用を外した後の文字列から演算子を推測し直さない。
-位置引数を数える判定と引数列全体を比べる判定は、`_atk`と`_hooks`の双方から本モジュールを使う。
-"""
-
 from __future__ import annotations
 
 import pathlib
@@ -23,22 +15,6 @@ _DOUBLE_QUOTE_ESCAPABLE = frozenset('$`"\\\n')
 
 
 class ShellWord(str):
-    """引用を除いた語の値に、元の入力上の構文情報を添えた文字列。
-
-    値は引用除去後の語であり、文字列として比べる既存の消費側はそのまま使える。
-    構文情報は次のとおりである。
-
-    - `quoted`: 引用符かエスケープを含む。
-    - `expansion`: 単一引用とエスケープの外側に`$`かバッククォートを含み、実行しないと値が決まらない。
-    - `redirection`: 語の先頭が引用の外側のリダイレクト演算子である場合に、演算子だけの語なら`"separate"`、
-      演算子へ対象が密着した語なら`"attached"`、それ以外は`None`。
-    - `unquoted`: 引用とエスケープの外側にあった文字だけを連結した文字列。
-    - `raw`: 引用とエスケープを残した元の入力上の語。
-    - `start`・`end`: 元の入力上の語の範囲。
-
-    構文情報を持たない文字列（記録から得たargvなど）を受け取る関数は、従来どおり値だけで判定する。
-    """
-
     quoted: bool
     expansion: bool
     redirection: str | None
@@ -71,12 +47,6 @@ class ShellWord(str):
 
 
 def split_words(text: str) -> list[ShellWord]:
-    """単純コマンドの文字列を、空白区切りの`ShellWord`の列へ分ける。
-
-    語の境界と値はBashの引用除去に合わせる（二重引用の内側でドル記号とバッククォートのエスケープも外す点だけ`shlex.split`と異なる）。
-    閉じない引用と末尾のエスケープは`ValueError`とする。
-    `;`・`|`などの区切り演算子は区間分割が担うため、本関数は語の一部として扱う。
-    """
     words: list[ShellWord] = []
     index = 0
     length = len(text)
@@ -159,25 +129,14 @@ ATK_SHELL_TOOLS = frozenset({"Bash", "PowerShell"})
 
 
 def is_atk_command(tokens: Sequence[str]) -> bool:
-    """実行位置のトークンが配布するatkランチャーかを返す。"""
     return bool(tokens) and pathlib.PurePosixPath(tokens[0].replace("\\", "/")).name in ATK_LAUNCHER_NAMES
 
 
 def join_words(tokens: Sequence[str]) -> str:
-    """語の列を、同じ構文として再び解析できる1つのコマンド文字列へ戻す。
-
-    `ShellWord`は元の入力上の語をそのまま使い、リダイレクトや引用の区別を保つ。
-    構文情報を持たない文字列は`shlex.quote`で引用する。
-    """
     return " ".join(token.raw if isinstance(token, ShellWord) else shlex.quote(token) for token in tokens)
 
 
 def redirection_kind(token: str) -> str | None:
-    """語がリダイレクトであれば`"separate"`か`"attached"`、それ以外は`None`を返す。
-
-    `ShellWord`は分割時に引用の外側の演算子だけを記録した値を使い、引用した`'>'`をデータとして扱う。
-    構文情報を持たない文字列は、値の先頭の演算子から判定する。
-    """
     if isinstance(token, ShellWord):
         return token.redirection
     match = _REDIRECTION_OPERATOR_PATTERN.match(token)
@@ -187,12 +146,6 @@ def redirection_kind(token: str) -> str | None:
 
 
 def strip_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
-    """トークン列からリダイレクトの演算子と対象を除いた引数列を返す。
-
-    演算子に対象を密着させたトークン（`2>/dev/null`・`2>&1`）はそれだけを除き、
-    演算子だけのトークン（`>`・`2>`・`<<<`）は直後の対象の1トークンと合わせて除く。
-    判定は`redirection_kind`に従い、`split_words`が返した引用済みの`'>'`は引数として残す。
-    """
     arguments: list[str] = []
     skip_target = False
     for token in tokens:
@@ -208,14 +161,9 @@ def strip_redirections(tokens: Sequence[str]) -> tuple[str, ...]:
 
 
 def is_agents_wait_command(tokens: Sequence[str]) -> bool:
-    """トークン列が`atk agents wait`の起動であるかを返す。"""
     return is_atk_command(tokens) and tuple(tokens[1:3]) == ("agents", "wait")
 
 
 def is_agents_exit_session_command(tokens: Sequence[str]) -> bool:
-    """トークン列が引数を伴わない`atk agents-exit-session`の起動であるかを返す。
-
-    リダイレクトは`atk`へ渡らないため除いてから比べる。位置引数やオプションを伴う起動は認めない。
-    """
     arguments = strip_redirections(tokens)
     return len(arguments) == 2 and is_atk_command(arguments) and arguments[1] == "agents-exit-session"

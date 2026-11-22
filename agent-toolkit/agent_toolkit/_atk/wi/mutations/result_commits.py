@@ -1,5 +1,3 @@
-"""終了したAWIの対応commitを、状態と処理日時を保持して公開保存処理へ反映する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -20,7 +18,6 @@ _RETRY = (
 
 
 def _rewritten_result(text: str, filename: str, worktree: pathlib.Path, rewrite: commit_mapping.RewriteMap) -> str:
-    """最後の処理結果の対応commitと件名を更新し、他の本文を保持する。"""
     before, heading, result = text.rpartition("\n## 処理結果\n")
     if not heading:
         return text

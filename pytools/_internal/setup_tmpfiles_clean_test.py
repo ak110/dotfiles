@@ -1,5 +1,3 @@
-"""post-apply経由で旧自動更新の撤去と一時ファイル経過削除を検証する。"""
-
 import logging
 import pathlib
 import subprocess
@@ -17,7 +15,7 @@ from pytools._internal import common, host_roles, setup_tmpfiles_clean, systemd_
 @pytest.fixture(autouse=True)
 def _isolate(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
     monkeypatch.setattr(pathlib.Path, "home", lambda: tmp_path)
-    # osはpost_applyとも共有されるため、UIDの模擬は対象モジュールの参照だけに限る。
+
     monkeypatch.setattr(setup_tmpfiles_clean, "os", types.SimpleNamespace(getuid=lambda: 1234))
     monkeypatch.setattr(setup_tmpfiles_clean.platformdirs, "user_state_dir", lambda *_args, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_PATH", tmp_path / "update.log")
@@ -48,7 +46,6 @@ def _stub_systemctl(
 def test_post_apply_removes_old_units_and_state_before_enabling_tmpfiles(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, linux_server: bool
 ) -> None:
-    """配置済み旧unitを停止して撤去し、役割によらずtmpfilesを有効化する。再実行は変更しない。"""
     monkeypatch.setattr(host_roles, "is_linux_server", lambda: linux_server)
     unit_dir = tmp_path / ".config/systemd/user"
     unit_dir.mkdir(parents=True)

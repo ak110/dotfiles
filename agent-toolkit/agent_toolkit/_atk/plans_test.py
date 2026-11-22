@@ -30,7 +30,6 @@ __all__ = ["_isolate_state_directory"]
 
 
 def test_commit_updates_checked_out_plan_and_preserves_saved_creation_time(tmp_path: pathlib.Path) -> None:
-    """取得済み計画を同じinodeへ更新し、保存側の作成日時を維持する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -62,7 +61,6 @@ def test_commit_uses_recorded_relative_main_instead_of_birth_month(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """取得済み計画は記録した取得元へ戻す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -131,7 +129,6 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """remote分岐と無関係なdirty差分でpushを保留した場合は取得状態を保持する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
@@ -161,7 +158,6 @@ def test_commit_keeps_checkout_when_diverged_push_is_deferred(
     with pytest.raises(_wi_web_input.WebInputError, match="remote branch") as error_info:
         _atk_plans.commit_plan(notes, saved_main.name, home=home)
 
-    # 到達を確認できない場合は、ローカルに残ったcommitをpushする手段を案内する。
     assert "atk wi commit" in error_info.value.next_action
 
     assert working_main.read_text(encoding="utf-8") == "# working\n"
@@ -177,7 +173,6 @@ def test_commit_recovers_checkout_record_without_working_bundle(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """公開CLIは作業バンドルが無い取得記録だけを回収する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -199,7 +194,6 @@ def test_commit_recovers_checkout_record_without_working_bundle(
 
 
 def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> None:
-    """指定mainと同stemの付属だけをcommitし、別stemと除外拡張子を残す。"""
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
     relative = pathlib.Path("2026/08/30-計画保存先移行-d4f9.md")
@@ -234,7 +228,6 @@ def test_commit_plan_only_commits_selected_bundle(tmp_path: pathlib.Path) -> Non
 
 
 def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_path: pathlib.Path) -> None:
-    """現行作業バンドルを`private-notes/plans/`へ移し、旧添付は作業側へ残す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -266,7 +259,6 @@ def test_commit_plan_moves_working_bundle_and_removes_source_after_commit(tmp_pa
 
 
 def test_commit_and_checkout_carry_wi_commit_mapping(tmp_path: pathlib.Path) -> None:
-    """WI実装commitの対応記録ファイルを計画と同じstemの付属ファイルとして保存し、取得で作業側へ戻す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -296,7 +288,6 @@ def test_commit_and_checkout_carry_wi_commit_mapping(tmp_path: pathlib.Path) -> 
 
 
 def test_commit_preserves_source_creation_and_modification_time(tmp_path: pathlib.Path) -> None:
-    """保存確定は作業側の作成日時と更新日時を移動先へ維持する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -381,7 +372,6 @@ def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """直下計画のcommit出力は作成月を付けた保存先相対パスを示す。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -401,7 +391,6 @@ def test_dispatch_reports_saved_relative_path_for_direct_working_plan(
 
 
 def test_commit_plan_skip_push_commits_locally_without_changing_remote(tmp_path: pathlib.Path) -> None:
-    """push省略時も保存とcommitを完了し、remote branchは変更しない。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     remote = tmp_path / "origin.git"
@@ -454,7 +443,6 @@ def test_commit_plan_retries_identical_destination_after_commit_failure(
 
 
 def test_commit_plan_rejects_different_saved_content_without_removing_source(tmp_path: pathlib.Path) -> None:
-    """同じ相対パスの保存済み内容が異なる場合は双方を保持し、回復手順を案内して停止する。"""
     home = tmp_path / "home"
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
@@ -495,7 +483,6 @@ def test_commit_saved_bundle_rejects_working_root_residue(tmp_path: pathlib.Path
 
 
 def test_commit_plan_includes_deleted_bundle_when_parent_directory_is_gone(tmp_path: pathlib.Path) -> None:
-    """親ディレクトリが消えた削除済み計画もGitの追跡情報からcommitする。"""
     notes = tmp_path / "private-notes"
     _init_local_notes(notes)
     relative = pathlib.Path("2026/08/30-削除計画-d4f9.md")

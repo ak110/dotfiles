@@ -1,5 +1,3 @@
-"""WIのmutations transitions: start_processingのテスト。"""
-
 import pathlib
 import subprocess
 
@@ -16,14 +14,11 @@ from agent_toolkit.atk_test import _FIXED_DT, _GitCall, _make_subprocess_fake, _
 
 
 class TestStartProcessingMultiple:
-    """start-processingサブコマンド: 複数件指定で単一コミットへまとめる。"""
-
     def test_uwi_moves_to_processing_and_can_be_adopted(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """UWIをprocessingへ移し、続けてadoptで終了できること。"""
         notes = _setup_notes(tmp_path)
         filename = "uwi-001.md"
         _test_entry_path(notes, filename).write_text(
@@ -51,7 +46,6 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """2件のstart-processingで両方がprocessing/へ移動し単一コミットが行われること。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         _write_awi_file(notes, "fb-002.md")
@@ -76,7 +70,6 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """集合内の1件でも`target_repo`が異なる場合は一括移動を開始しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _write_awi_file(notes, "fb-002.md", target_repo="github.com/example/bar")
@@ -106,7 +99,6 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """個別削除は各項目がいずれかの指定リポジトリに属する場合に一括実行する。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "foo.md", target_repo="github.com/example/foo")
         _write_awi_file(notes, "bar.md", target_repo="github.com/example/bar")
@@ -134,7 +126,6 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """集合内の1件でもinboxに存在しない場合は適合項目も移動しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md")
         monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
@@ -175,7 +166,6 @@ class TestStartProcessingMultiple:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """集合内の1件で必須frontmatterが不正な場合は適合項目も移動しない。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", target_repo="github.com/example/foo")
         _test_entry_path(notes, "fb-002.md").write_text(
@@ -238,7 +228,6 @@ def test_agent_hold_moves_processing_entry_with_explicit_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """自セッションの処理中の項目は、エージェント環境でも`--state=processing`で保留できる。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _write_awi_file(notes, "inbox.md")
@@ -263,7 +252,6 @@ def test_user_hold_keeps_implicit_processing_resolution(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境以外の`atk wi hold`は、従来どおり`processing`の項目を`--state`なしで保留する。"""
     notes = _setup_notes(tmp_path)
     _write_awi_file(notes, "processing.md")
     _disable_transition_git(monkeypatch)
@@ -282,7 +270,6 @@ def test_agent_bulk_hold_excludes_processing_entries(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """エージェント環境の`atk wi hold --all`は`processing`の項目を候補に含めず移さない。"""
     notes = _setup_notes(tmp_path)
     inbox_entry = _write_bulk_entry(notes, "inbox", "inbox.md")
     processing_entry = _write_bulk_entry(notes, "processing", "processing.md")

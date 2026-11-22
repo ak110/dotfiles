@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
 lazy import hashlib
 lazy import re
@@ -48,9 +46,6 @@ _AGENTS_SERVER_TOOL_NAMES = (
 # 集合の一致を確かめるテスト（pretooluse/dispatch_test.py）が実装側の集合として参照するため、下線接頭辞を付けない。
 AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 
-# --- 計画単位の状態管理 ---
-
-# --- Agent・Task: 組み込みの汎用定義の起動 ---
 
 # Claude Codeの組み込みの汎用定義。agents_serverのmodeで同等の作業を行えるため、
 # `agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」は専用定義の例外に含めない。
@@ -58,25 +53,14 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 # `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は対象外とする。
 # `web-fetch`は、直接の`WebFetch`を持たない会話でClaude CodeがWebページを読む標準の手段のため対象外とする。
 _GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "claude"})
-# 複数の並行依頼を再発行できる余裕を持たせつつ、入力本文を保存せず状態の増加を抑える。
+
 _GENERIC_AGENT_RETRY_LIMIT = 32
 
 
 def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict) -> tuple[str | None, str | None]:
-    """汎用定義の起動を遮断し、同じ主体による同一入力の再発行だけを一度通す。
-
-    戻り値は（遮断の通知, 非遮断の警告）で、どちらも無ければ対象外か再発行の通過である。
-
-    通常の遮断基準の4条件には該当しないが、web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
-    同じ依頼を対応するmodeへ渡せるため、損失は起動の再発行に限られる。
-    例外の成否は入力から判定できず受信側へ委ねる。別操作による例外の確認と複数依頼を支えるため、
-    主体別に直近32件の指紋を保持し、通過時に消費する。寿命はセッション状態の回収に従う。
-    軽量起動の委譲先は再委譲が禁止され、委譲のスキルも配送されないため対象外とする。
-    再発行の記録を保存できない場合は、案内した再発行も通せず遮断が続くため、警告だけを返して起動を通す。
-    """
     if payload.get("runtime") == "agy" or _delegated_session.is_lightweight_delegated(os.environ):
         return None, None
-    # ホストが`general-purpose`で起動するのはキーの省略と空文字だけで、明示の`null`などの文字列以外は判定できないため通す。
+
     agent_type = tool_input.get("subagent_type", "")
     if agent_type == "":
         agent_type = "general-purpose"
@@ -141,9 +125,6 @@ def _generic_agent_retry(payload: dict, tool_name: str, tool_input: dict) -> boo
 
     # 更新関数は常に辞書を返すため、偽は保存の失敗だけを表す。
     return repeated if update_state(session_id, update) else None
-
-
-# --- TaskStop: 初回遮断と再実行窓 ---
 
 
 def _check_task_stop(session_id: str, tool_input: dict) -> str | None:

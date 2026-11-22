@@ -17,8 +17,6 @@ from agent_toolkit._common.session_family import _RecordLoadFailure, _Runtime, _
 
 
 class RecordSummary(NamedTuple):
-    """`session_family._scan_record_metadata`の値のうち、カタログ走査が使うもの。"""
-
     runtime: _Runtime | None
     record_id: str
     thread_id: str | None
@@ -29,10 +27,6 @@ class RecordSummary(NamedTuple):
 
 
 def summaries(root: Path, runtime: str, paths: list[Path]) -> dict[Path, RecordSummary]:
-    """`root`配下を`runtime`の記録として走査する`paths`の値を返す。
-
-    識別（inode・更新時刻・大きさ）と値を計算するコードの版が保存時と同じ記録は解析しない。
-    """
     name = hashlib.sha256(str(root).encode("utf-8")).hexdigest()[:32]
     index = _state_paths.state_dir() / "session-review" / "record-index" / f"{runtime}-{name}.json"
     listed = []

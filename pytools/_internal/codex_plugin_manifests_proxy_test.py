@@ -120,7 +120,6 @@ async def test_codex_0154_registers_all_hooks_independent_of_project_trust(
 
 @pytest.mark.asyncio
 async def test_proxy_contract_is_shared_with_codex_backend(manifest_root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """静的な共通名の追加と動的な親環境の配送を分け、環境によらず共通の生成物を保つ。"""
     names = (*mcp_environment.PROXY_ENVIRONMENT_VARIABLES, "TEST_PROXY")
     monkeypatch.setattr(mcp_environment, "PROXY_ENVIRONMENT_VARIABLES", names)
     monkeypatch.setitem(toolkit_config._MUTABLE_KEY_DEFAULTS, "future_engine", "codex")  # pylint: disable=protected-access
@@ -275,7 +274,7 @@ async def test_codex_stdio_inherits_proxy_environment(
             )
             observation = json.loads(output.read_text(encoding="utf-8"))
             assert observation == {"env": inherited, "namespace": expected_namespace, "response": "proxy-observed"}
-            # モデルを呼ばず履歴を保存する0.162.1の公開実験APIで、cold resumeの入力を準備する。
+
             await client.request(
                 "thread/inject_items",
                 {

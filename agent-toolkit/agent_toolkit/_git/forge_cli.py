@@ -6,14 +6,14 @@ import shlex
 from agent_toolkit._git import remote
 
 _GLAB_HOST_VARIABLES = ("GITLAB_HOST", "GITLAB_URI", "GL_HOST")
-# run内の全jobのID・名前・結論を1行ずつ表示する`gh run view --jq`の式。
+
 GITHUB_JOB_LIST = ".jobs[] | [.databaseId, .name, .conclusion] | @tsv"
 
 
 def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environment: bool = False) -> dict[str, str]:
     """glabの子環境へ、待機では明示指定、通知では公開環境指定を優先して反映する。"""
     target = remote.parse_remote_location(repository) if isinstance(repository, str) else repository
-    # SSHのポートはGit転送用であり、HTTP APIの接続先へ引き継がない。
+
     authority = (
         remote.RemoteLocation(target.hostname, target.project_path).authority if target.protocol == "ssh" else target.authority
     )
@@ -23,8 +23,7 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
         env["GITLAB_HOST"] = inherited_host
     elif authority is not None:
         env["GITLAB_HOST"] = authority
-    # 識別用ホストのapi_host・api_protocol・tokenはglabのホスト別設定で解決する。
-    # HTTP(S) URLだけは呼び出し元が指定したAPI接続先として扱う。
+
     explicit_endpoint = target.protocol in {"http", "https"} and not (prefer_environment and inherited_host)
     if authority is not None and explicit_endpoint:
         env["GITLAB_API_HOST"] = authority
@@ -34,7 +33,6 @@ def glab_environment(repository: str | remote.RemoteLocation, *, prefer_environm
 
 
 def glab_repository(repository: str, *, prefer_environment: bool = False) -> str:
-    """ciサブコマンドにもAPIと同じ接続先を明示する。"""
     target = remote.parse_remote_location(repository)
     env = glab_environment(repository, prefer_environment=prefer_environment)
     host = env.get("GITLAB_HOST")
@@ -57,8 +55,6 @@ def failure_log_commands(
     """リポジトリを指定したログ取得argvを返す。job未確定なら取得とtraceを順に返す。"""
     target = remote.parse_remote_location(repository)
     if forge == "github":
-        # `gh run view --log-failed`は64KiBを超える行で後続を欠落させても成功終了するため、
-        # run単位でもjob IDを確定してから全jobログのAPIで取得する。
         command = ["gh", "api", f"repos/{target.project_path}/actions/jobs/{identifier if job else '<job ID>'}/logs"]
         command.append("--allow-escape-sequences")
         if target.hostname:
@@ -91,7 +87,6 @@ def failure_log_commands(
 def failure_next_action(
     forge: str, repository: str, identifier: str, *, job: bool = False, prefer_environment: bool = False
 ) -> str:
-    """共通argvを引用可能な案内へ変換する。"""
     commands = failure_log_commands(forge, repository, identifier, job=job, prefer_environment=prefer_environment)
     rendered = [f"`{shlex.join(command)}`" for command in commands]
     if forge == "github":

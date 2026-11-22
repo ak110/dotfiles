@@ -49,7 +49,6 @@ def plugin_targets() -> dict[str, PluginTarget]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """指定プラグインのバージョンをbumpする。"""
     targets = plugin_targets()
     parser = argparse.ArgumentParser(description="配布プラグインのバージョンbumpツール。")
     parser.add_argument(
@@ -110,7 +109,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def parse_version(s: str) -> tuple[int, int, int]:
-    """`major.minor.patch`形式の文字列をタプルへ分解する。"""
     parts = s.split(".")
     if len(parts) != 3:
         raise ValueError(f"バージョン文字列は'major.minor.patch'形式である必要がある: {s!r}")
@@ -124,12 +122,10 @@ def parse_version(s: str) -> tuple[int, int, int]:
 
 
 def format_version(t: tuple[int, int, int]) -> str:
-    """バージョンタプルを`major.minor.patch`形式の文字列へ整形する。"""
     return f"{t[0]}.{t[1]}.{t[2]}"
 
 
 def compute_new_version(current: str, kind: BumpKind) -> str:
-    """`current`から`kind`に従って次のバージョン文字列を算出する。"""
     major, minor, patch = parse_version(current)
     match kind:
         case "patch":
@@ -141,10 +137,6 @@ def compute_new_version(current: str, kind: BumpKind) -> str:
 
 
 def infer_bump_kind(base: str, current: str) -> BumpKind | None:
-    """`base`から`current`への差分が表すbump種別を推定する。
-
-    同一なら`None`を返す。差分がbumpの規則（PATCH/MINOR/MAJOR）に当てはまらなければ`ValueError`を送出する。
-    """
     bm, bn, bp = parse_version(base)
     cm, cn, cp = parse_version(current)
     if (bm, bn, bp) == (cm, cn, cp):
@@ -188,7 +180,6 @@ def resolve_base_version(target: PluginTarget) -> tuple[str, str] | None:
 
 
 def _read_version_at(ref: str, target: PluginTarget) -> str | None:
-    """指定参照上の対象plugin.jsonから`version`を取得する。解決できない場合は`None`を返す。"""
     rel = target.manifest.relative_to(_REPO_ROOT)
     result = subprocess.run(
         ["git", "show", f"{ref}:{rel.as_posix()}"],

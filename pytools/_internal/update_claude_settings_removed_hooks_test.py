@@ -17,10 +17,7 @@ from pytools._internal.update_claude_settings_test_helpers import (
 
 
 class TestStripRemovedHooks:
-    """配布元から削除された hook エントリの自動除去テスト。"""
-
     def test_removed_hook_is_dropped_from_existing(self, tmp_path: Path):
-        """既存の hooks に旧 command 部分文字列が残っている場合、マージ前に除去される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps(
@@ -52,9 +49,9 @@ class TestStripRemovedHooks:
         update_claude_settings(managed_path, target_path, removed_hook_substrings=("old_hook.py",))
 
         result = json.loads(target_path.read_text(encoding="utf-8"))
-        # 旧エントリは PostToolUse ごと消える (空になったため)
+
         assert "PostToolUse" not in result["hooks"]
-        # 新エントリはマージされて残る
+
         assert result["hooks"]["PreToolUse"][0]["matcher"] == "Write"
 
     def test_legacy_windows_common_entry_is_dropped_from_existing(self, tmp_path: Path):
@@ -186,7 +183,6 @@ class TestStripRemovedHooks:
         ]
 
     def test_removed_hook_keeps_sibling_in_same_matcher(self, tmp_path: Path):
-        """同じ matcher 内の他の hook は残す。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -220,7 +216,6 @@ class TestStripRemovedHooks:
     @pytest.mark.parametrize(
         ("command", "should_be_removed"),
         [
-            # 廃止済みの直接起動形式 (`uv run --no-project --script <旧スクリプト>`): 除去対象
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_pretooluse.py; exit 0'",
                 True,
@@ -237,7 +232,6 @@ class TestStripRemovedHooks:
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook_autonomous_exit.py; exit 0'",
                 True,
             ),
-            # 共通エントリポイント形式でも、スクリプト実在検査を持たない旧pretooluseコマンドは除去する
             (
                 "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; exit 0'",
                 True,
@@ -257,7 +251,6 @@ class TestStripRemovedHooks:
                 'if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"',
                 True,
             ),
-            # 実体をlibexec/へ移す前のscripts/を指す`-File`の起動設定は除去し、現行の起動設定は保持する
             (
                 "powershell -NoProfile -ExecutionPolicy Bypass -File "
                 '"C:/Users/Aki User\\dotfiles\\scripts\\claude-hook-pretooluse.ps1"',
@@ -311,28 +304,23 @@ class TestStripRemovedHooks:
 
 
 class TestStripRemovedEnvKeys:
-    """配布元から削除された env キーの自動除去テスト。"""
-
     @pytest.mark.parametrize(
         ("existing_env", "removed_keys", "expected_env"),
         [
-            # 削除対象キーあり → 除去される
             (
                 {"OLD_KEY": "1", "KEEP_KEY": "keep"},
                 ("OLD_KEY",),
                 {"KEEP_KEY": "keep"},
             ),
-            # 削除対象キーなし（別の env キーのみ） → 無変更
             (
                 {"OTHER_KEY": "value"},
                 ("OLD_KEY",),
                 {"OTHER_KEY": "value"},
             ),
-            # 削除後 env が空 dict → env キーごと除去される
             (
                 {"OLD_KEY": "1"},
                 ("OLD_KEY",),
-                None,  # env キーごと消える
+                None,
             ),
         ],
     )
@@ -343,7 +331,6 @@ class TestStripRemovedEnvKeys:
         removed_keys: tuple[str, ...],
         expected_env: dict | None,
     ):
-        """env キーの除去・無変更・空後のキー消去を検証する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -361,7 +348,6 @@ class TestStripRemovedEnvKeys:
             assert result["env"] == expected_env
 
     def test_no_env_key_is_noop(self, tmp_path: Path):
-        """env キー自体なし → 無変更。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -377,7 +363,6 @@ class TestStripRemovedEnvKeys:
         assert result["language"] == "japanese"
 
     def test_non_dict_env_is_untouched(self, tmp_path: Path):
-        """env が dict でない場合、削除対象キーを渡しても env は無変更のまま保持される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -392,7 +377,6 @@ class TestStripRemovedEnvKeys:
         assert result["env"] == "invalid"
 
     def test_empty_removed_env_keys_is_noop(self, tmp_path: Path):
-        """removed_env_keys が空タプルの場合、既存の env は無変更のまま保持される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -407,7 +391,6 @@ class TestStripRemovedEnvKeys:
         assert result["env"] == {"FOO": "bar", "BAZ": "qux"}
 
     def test_specified_env_key_removed_and_managed_env_preserved(self, tmp_path: Path):
-        """removed_env_keys で指定したキーが除去され、managed の env は保持される。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),
@@ -429,7 +412,6 @@ class TestStripRemovedEnvKeys:
         assert result["env"]["CLAUDE_CODE_NO_FLICKER"] == "1"
 
     def test_default_removed_env_key_is_removed(self, tmp_path: Path):
-        """`removed_env_keys`を省略した場合の廃止キー一覧に含まれる環境変数を既存設定から除去する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text(
             json.dumps({"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}, ensure_ascii=False),

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""統括セッションのプロンプト、環境、終了コードとコンソール制御を検証する。"""
 
 import argparse
 import io
@@ -21,7 +20,6 @@ from agent_toolkit._testing.process_loop_session_support import _isolate_process
 def test_single_run_instruction_survives_usage_limit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, once: bool
 ) -> None:
-    """接続の切替でプロンプトを作り直しても単回か常駐かを保つ。"""
     prompts = []
 
     def run(args, _cwd, prompt, _env, **_kwargs):
@@ -72,7 +70,6 @@ class TestProcessLoopPromptAndEnv:
     def test_process_loop_prompt_uses_host_specific_argv(
         self, tmp_path: pathlib.Path, orchestrator: str, resume: str | None
     ) -> None:
-        """目的文は新規・再開とも全engineへホストの/goalを付けずに配送する。"""
         prompt = _pl_session.build_process_loop_prompt()
         argv, _ = _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
             argparse.Namespace(resume=resume),
@@ -90,7 +87,6 @@ class TestProcessLoopPromptAndEnv:
         assert ("--no-daemon" in argv) == (orchestrator == "codex")
 
     def test_prompt_does_not_inject_publish_destination(self) -> None:
-        """対象リポジトリ固有の公開先をprocess-loopが目的文へ注入しない。"""
         prompt = _pl_session.build_process_loop_prompt()  # pylint: disable=protected-access  # noqa: SLF001
 
         assert "refs/remotes/origin/master" not in prompt
@@ -104,7 +100,6 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """候補の実行ファイルを起動できない場合も残る候補を判定する。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
@@ -131,7 +126,6 @@ class TestProcessLoopPromptAndEnv:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """全候補の実行機能を起動できない場合は既存の異常終了へ戻る。"""
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", "codex:gpt-6-luna/medium,claude:haiku/medium")
         calls: list[list[str]] = []
 
@@ -227,8 +221,6 @@ class TestCodexWindowsSessionConfiguration:
 
 
 class TestProcessLoopReturncode:
-    """process-loopサブコマンドのオーケストレーター・OS別returncode判定を検証する。"""
-
     @pytest.mark.parametrize(
         ("orchestrator", "platform", "returncode", "expected"),
         [
@@ -255,7 +247,6 @@ class TestProcessLoopReturncode:
         returncode: int,
         expected: bool,
     ) -> None:
-        """オーケストレーターとOSごとの正常終了コードだけを受け入れること。"""
         assert (
             _pl_session._is_normal_session_exit(  # pylint: disable=protected-access  # noqa: SLF001
                 orchestrator,
@@ -267,8 +258,6 @@ class TestProcessLoopReturncode:
 
 
 class TestConsoleTitleReset:
-    """常駐区間のコンソールタイトル制御を検証する（再起動先は`TestProcessLoopUpdateAndRestart`の既存argv検証が担う）。"""
-
     @pytest.mark.parametrize(
         ("platform", "tty_result", "reset_path", "expected"),
         [
@@ -319,7 +308,6 @@ class TestConsoleTitleReset:
 def test_session_env_lets_coordinator_be_identified_by_id(
     tmp_path: pathlib.Path, orchestrator: str, resume: str | None
 ) -> None:
-    """統括の環境は、起動ごとに新しいSessionStartの確保用の目印と、渡せる場合の会話IDを持つ。"""
     env = {**os.environ, "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM": "previous-launch"}
     _pl_session._build_session_argv(  # pylint: disable=protected-access  # noqa: SLF001
         argparse.Namespace(resume=resume),

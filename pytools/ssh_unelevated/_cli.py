@@ -29,9 +29,9 @@ from pytools._internal.common import process_scope
 
 _START_PREFIX = b"SSH_UNELEVATED_STARTED:"
 _RESULT_PREFIX = b"\nSSH_UNELEVATED_RESULT:"
-# 接続先の起動部が標準入力から本文を読み終えるまでの上限。
+
 _STDIN_TIMEOUT_SECONDS = 60
-# 接続、タスクの登録、後始末に要する時間の見込み。上限にこれを足しても終わらないsshは打ち切る。
+
 _SSH_MARGIN_SECONDS = 120
 _DEFAULT_TIMEOUT_SECONDS = 1800
 _EXIT_TIMEOUT = 124
@@ -99,7 +99,6 @@ def _communicate_posix(process: subprocess.Popen[bytes], payload: bytes, timeout
             selector.register(stderr, selectors.EVENT_READ)
             while not stop_attempted or selector.get_map():
                 if not stop_attempted and exited():
-                    # 回収前のPIDを保持し、別のグループへのシグナル送信を防ぐ。
                     stop_group()
                     close_input(selector)
                 delay = deadline - time.monotonic()
@@ -134,7 +133,6 @@ def _communicate_posix(process: subprocess.Popen[bytes], payload: bytes, timeout
     return bytes(output[stdout_fd]), bytes(output[stderr_fd])
 
 
-# 接続先が返す状態のうちスクリプトの終了コードを持たないものの、このコマンドの終了コードと診断。
 _FAILURES: dict[str, tuple[int, str]] = {
     "timeout": (
         _EXIT_TIMEOUT,
@@ -172,8 +170,6 @@ class RemoteResult:
 
 @dataclasses.dataclass(frozen=True)
 class Outcome:
-    """このコマンドの終了コード、標準出力へ書くスクリプトの出力、標準エラーへ書く診断。"""
-
     exit_code: int
     output: str
     diagnostic: str | None = None
@@ -311,7 +307,6 @@ def _is_integer(value: object) -> bool:
 
 
 def interpret(stdout: bytes, returncode: int, *, run_id: str, host: str, timeout: int) -> Outcome:
-    """sshの標準出力と終了コードから、このコマンドの結果を決める。"""
     started, stdout = _split_start(stdout, run_id)
     marker = _RESULT_PREFIX + run_id.encode("ascii") + b" "
     index = stdout.rfind(marker)

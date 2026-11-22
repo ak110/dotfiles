@@ -28,7 +28,7 @@ def test_exits_before_writing_when_required_command_is_missing(
     result = run_installer(kind, home, raw_base_url, stub_bin=stub_bin, stub_log=stub_log, check=False)
 
     assert result.returncode != 0
-    # 前提の確認より前には何も変更しない。
+
     assert retired.read_text(encoding="utf-8") == "# 旧い常時規範\n"
 
 
@@ -242,7 +242,6 @@ def test_bash_json_check_uses_explicit_python_with_real_uv(tmp_path: pathlib.Pat
 def test_successful_install_removes_retired_rules_and_keeps_user_rules(
     kind: str, tmp_path: pathlib.Path, raw_base_url: str
 ) -> None:
-    """旧版が配置した常時規範と退避先を削除し、ユーザーの規範とリンク先の実体を残す。"""
     home = tmp_path / "home"
     home.mkdir()
     stub_bin, stub_log = make_command_stubs(tmp_path)

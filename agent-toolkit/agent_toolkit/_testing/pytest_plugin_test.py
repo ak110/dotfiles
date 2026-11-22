@@ -1,5 +1,3 @@
-"""共通pytestの収集と隔離を確認する。"""
-
 import asyncio
 import contextlib
 import json
@@ -28,7 +26,6 @@ from agent_toolkit._testing.pytest_plugin_support import _config
 async def test_forbid_backend_process_rejects_every_supported_backend(
     tmp_path: pathlib.Path, _forbid_backend_process: None, engine: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """全engineのbackendを生成して、実CLIへ届く前に起動が遮断されることを確かめる。"""
 
     def unexpected_client(*_args: Any, **_kwargs: Any) -> Any:
         raise RuntimeError("遮断fixtureがSDKへ到達した")
@@ -58,7 +55,6 @@ async def test_forbid_backend_process_rejects_every_supported_backend(
 
 
 def test_target_plugin_root_limits_import_check_to_public_target(tmp_path: pathlib.Path) -> None:
-    """外部fixtureのrootは比較せず、dotfilesとplugin rootは対象を一意にする。"""
     plugin = tmp_path / "dotfiles" / "agent-toolkit"
     (plugin / "agent_toolkit").mkdir(parents=True)
     (plugin / "agent_toolkit" / "__init__.py").touch()
@@ -68,7 +64,6 @@ def test_target_plugin_root_limits_import_check_to_public_target(tmp_path: pathl
 
 
 def test_target_plugin_root_accepts_renamed_standalone_package(tmp_path: pathlib.Path) -> None:
-    """standalone checkoutはディレクトリ名に関係なく実在するパッケージで判定する。"""
     standalone = tmp_path / "cached-agent-toolkit-vnext"
     (standalone / "agent_toolkit").mkdir(parents=True)
     (standalone / "agent_toolkit" / "__init__.py").touch()
@@ -79,7 +74,6 @@ def test_target_plugin_root_accepts_renamed_standalone_package(tmp_path: pathlib
 def test_validate_import_root_accepts_public_target_root(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target_kind: str
 ) -> None:
-    """plugin rootとdotfiles rootのどちらからも、対象内の読込を受理する。"""
     plugin = tmp_path / "dotfiles" / "agent-toolkit"
     loaded = plugin / "agent_toolkit" / "__init__.py"
     loaded.parent.mkdir(parents=True)
@@ -92,7 +86,6 @@ def test_validate_import_root_accepts_public_target_root(
 def test_validate_import_root_rejects_other_plugin(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target_kind: str
 ) -> None:
-    """公開対象とは異なる配布rootの読込を、双方のパスを含む診断で拒否する。"""
     target = tmp_path / "dotfiles" / "agent-toolkit"
     foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
     (target / "agent_toolkit").mkdir(parents=True)
@@ -111,7 +104,6 @@ def test_validate_import_root_rejects_other_plugin(
 
 
 def test_validate_import_root_skips_external_fixture_root(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部fixtureのpytestはagent-toolkit読込元の比較対象にしない。"""
     foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
     foreign.parent.mkdir(parents=True)
     foreign.touch()
@@ -120,7 +112,6 @@ def test_validate_import_root_skips_external_fixture_root(tmp_path: pathlib.Path
 
 
 def test_validate_import_root_skips_name_only_external_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """名前だけがagent-toolkitの外部fixtureはパッケージ実体がなければ対象外にする。"""
     external = tmp_path / "agent-toolkit"
     external.mkdir()
     foreign = tmp_path / "foreign" / "agent_toolkit" / "__init__.py"
@@ -209,7 +200,7 @@ def test_concurrent_controllers_keep_other_fixtures_and_saved_outputs(tmp_path: 
     environment = dict(os.environ)
     environment.pop("PYTEST_ADDOPTS", None)
     environment["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"
-    # この検証は所有領域の独立性を対象とするため、検証枠だけをcontrollerごとに分離する。
+
     environment["PYFLTR_CACHE_DIR"] = str(tmp_path / "second-slot")
     argv = [sys.executable, "-m", "pytest", "-q", "-s", "-o", "addopts=", "-p", pytest_plugin.__name__]
     if workers:
@@ -283,7 +274,7 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
         directory = package / suffix
         directory.mkdir(parents=True, exist_ok=True)
         (directory / "__init__.py").touch()
-    # 明示要求型fixtureも起動時プラグインから使い、自動fixtureの適用先だけを試験用パッケージへ向ける。
+
     (tmp_path / "conftest.py").write_text(
         textwrap.dedent("""\
             import os
@@ -351,7 +342,7 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
         """),
         encoding="utf-8",
     )
-    # probeを収集時に読み込んで差し替え前の関数を保持する。
+
     common = "import probe\n\ndef test_common():\n    probe.common()\n    probe.unchanged_subdirectories()\n"
     managed = "import probe\n\ndef test_managed(tmp_path):\n    probe.managed(tmp_path)\n"
     mutations = "import probe\n\ndef test_mutations(tmp_path):\n    probe.mutations(tmp_path)\n"
@@ -423,7 +414,6 @@ def test_collection_order_preserves_isolation_and_overrides(tmp_path: pathlib.Pa
     ],
 )
 def test_tracker_guard_classifies_generation_boundary(monkeypatch: pytest.MonkeyPatch, before, after, failed) -> None:
-    """実プロセスを停止せず、世代交代・死亡・既存の死亡の帰属を判定する。"""
     snapshots = iter([before, after])
     monkeypatch.setattr(pytest_plugin, "_tracker_state", lambda: next(snapshots))
     reports = []

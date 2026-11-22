@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_stats）。"""
-
 from __future__ import annotations
 
 import collections
@@ -13,7 +11,6 @@ _SLOW_CALL_LIMIT = 10
 
 
 def _stats_document(stats: list[dict[str, Any]]) -> str:
-    """総量と上位だけを初回表示し、全担当・全対象の原始集計への参照を保つ。"""
     by_kind: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for item in stats:
         by_kind[str(item.get("kind"))].append(item)
@@ -22,7 +19,7 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
         tokens = item.get("tokens")
         if not isinstance(tokens, dict):
             return 0
-        # reasoningとcache readは実行系によって総成分に含まれるため、順位にも重ねて足さない。
+
         keys = ["input_tokens", "output_tokens", "cache_creation_input_tokens"]
         if item.get("engine") != "codex":
             keys.append("cache_read_input_tokens")
@@ -163,7 +160,6 @@ def _stats_document(stats: list[dict[str, Any]]) -> str:
 
 
 def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
-    """セッション統計を組み立てる。"""
     by_kind: dict[str, list[dict[str, Any]]] = collections.defaultdict(list)
     for event in stats:
         by_kind[str(event.get("kind"))].append(event)
@@ -347,7 +343,6 @@ def _stats_detail_document(stats: list[dict[str, Any]]) -> str:
 
 
 def _resource_summary_lines(summary: dict[str, Any]) -> list[str]:
-    """担当横断の明示対象別集計と、読了を表さないシェル文字列の出現集計を描画する。"""
     lines = [
         "",
         "## 対象別の担当横断集計",

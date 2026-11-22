@@ -22,14 +22,11 @@ RuleTarget = typing.Literal["both", "file", "dir"]
 
 @dataclasses.dataclass(frozen=True)
 class RenameRule:
-    """リネームルール 1 件。`pattern` を `replacement` に置換する。"""
-
     pattern: re.Pattern[str]
     replacement: str
     target: RuleTarget = "both"
 
     def applies_to(self, is_dir: bool) -> bool:
-        """対象種別 (ファイル/ディレクトリ) に適用すべきかを判定する。"""
         if self.target == "both":
             return True
         if self.target == "file":
@@ -38,7 +35,6 @@ class RenameRule:
 
 
 def main() -> None:
-    """正規表現でファイル・ディレクトリをリネームするエントリポイント。"""
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--ignore-case", action="store_true")
     parser.add_argument("-d", "--dry-run", action="store_true")
@@ -196,11 +192,6 @@ _DOLLAR_TOKEN_RE = re.compile(r"\$(\$|\d{1,2})")
 
 
 def _convert_dollar_replacement(replacement: str) -> str:
-    r"""Rgrename 流 ``$N`` / ``$$`` 記法を Python の ``re.sub`` 記法に変換する。
-
-    既存の ``\`` は ``\\`` にエスケープしたうえで、``$N`` を ``\N``・``$$`` を
-    ``$`` に置換する。``$`` 直後が数字でも ``$`` でもない場合はリテラルの ``$`` を保つ。
-    """
     escaped = replacement.replace("\\", "\\\\")
 
     def repl(m: re.Match[str]) -> str:
@@ -213,7 +204,6 @@ def _convert_dollar_replacement(replacement: str) -> str:
 
 
 def apply_rules_to_name(name: str, rules: typing.Iterable[RenameRule], *, is_dir: bool) -> str:
-    """対象名に全ルールを順次適用し、最終結果を返す。"""
     result = name
     for rule in rules:
         if rule.applies_to(is_dir):
@@ -242,7 +232,7 @@ def rename_tree(
 
     entries: list[pathlib.Path]
     entries = list(root.rglob("*")) if recursive else list(root.iterdir())
-    # 改名順: まずディレクトリを深い方から、続いてファイル
+
     entries.sort(key=lambda p: (not p.is_dir(), -len(p.parts)))
 
     failures = 0

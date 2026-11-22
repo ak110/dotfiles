@@ -1,5 +1,3 @@
-"""登録簿と状態ファイルを使う共有補助。"""
-
 from __future__ import annotations
 
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
@@ -24,7 +22,6 @@ from agent_toolkit._testing.agents_server_support_common import FakeBackend, _in
 async def _resume_test_manager(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]]:
-    """状態ファイルと登録簿を`tmp_path`へ置き、再開後の状態を観測できるmanagerを返す。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},
@@ -47,8 +44,7 @@ def _expire_launched_session(manager: server_manager.AgentsServerManager, sessio
 
 
 def _restart_with_registry_record(manager: server_manager.AgentsServerManager, session: state.SessionState) -> None:
-    """登録簿のレコードだけを残し、再起動したmanagerが登録簿から復元して再開させる。"""
-    del manager, session  # 再起動したmanagerは元のsessionを保持せず、登録簿は終了の公開で書かれている
+    del manager, session
 
 
 def _publish_recovered_session(
@@ -57,7 +53,6 @@ def _publish_recovered_session(
     session_id: str,
     status: str,
 ) -> None:
-    """再起動後の解決に用いるversion 2登録簿を保存する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session_registry.publish(
         session_id,
@@ -75,7 +70,6 @@ def _publish_recovered_session(
 async def _writer_backed_manager(
     tmp_path: pathlib.Path,
 ) -> AsyncGenerator[tuple[server_manager.AgentsServerManager, status_file.StatusFileWriter]]:
-    """共有結果ファイルを公開するMCPマネージャーを既存のfake backendで組む。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -91,7 +85,6 @@ async def _writer_backed_manager(
 async def _show_through_tool(
     monkeypatch: pytest.MonkeyPatch, manager: server_manager.AgentsServerManager, session_id: str
 ) -> dict[str, Any]:
-    """MCPの`show`ツールの関数を、指定したマネージャーで呼ぶ。"""
     monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
     return await mcp_tools.show_session(session_id)
 
@@ -112,7 +105,6 @@ def _publish_orphaned_codex(
 
 
 def exited_process_identity() -> session_registry.ProcessIdentity:
-    """識別を取得した後に終了させた実プロセスの識別を返す。所有側と委譲先CLIがともに終了した記録を作成するテストで使う。"""
     with subprocess.Popen([sys.executable, "-c", "pass"]) as process:
         identity = session_registry.ProcessIdentity.of(process.pid)
         process.wait()

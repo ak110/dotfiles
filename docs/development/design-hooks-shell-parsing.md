@@ -1,6 +1,6 @@
 # Bashコマンドの解析とheredoc遮断の設計記録
 
-[設計記録の索引](design.md)から参照する、Bashコマンドの解析とheredoc遮断の記録である。
+[設計記録の索引](design.md)
 
 ## Bashコマンドの解析とheredoc遮断
 

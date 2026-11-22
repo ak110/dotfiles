@@ -60,7 +60,6 @@ else:
 
 @pytest.fixture(name="codex_fixture")
 def _codex_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Path:
-    """source・marketplace・cache・CLIを1件の隔離領域に用意する。"""
     monkeypatch.setattr(install_codex_plugins.external_web_guidance, "run", lambda _host: False)
     root = tmp_path / "source"
     marketplace = root / ".agents/plugins/marketplace.json"
@@ -101,7 +100,6 @@ def _codex_fixture(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
 def test_run_registers_before_install_and_preserves_both_caches(
     codex_fixture: pathlib.Path, monkeypatch: pytest.MonkeyPatch, basics_only: bool
 ) -> None:
-    """新規marketplaceから順に導入し、skills実体と利用中の旧版を保持する。"""
     if basics_only:
         monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-basics",))
     outcome = install_codex_plugins.run()
@@ -120,12 +118,11 @@ def test_run_registers_before_install_and_preserves_both_caches(
         assert (codex_fixture / "codex/plugins/cache/ak110-dotfiles" / name / "0.9.0/marker").read_text() == "利用中の旧版"
     if basics_only:
         assert not (codex_fixture / "bin").exists()
-        # plugin更新後のdaemon反映はplugin種別を問わず稼働確認から始まる。fixtureではdaemonが稼働していないため再起動しない。
+
         assert [args for args in calls if args[0] == "app-server"] == [["app-server", "daemon", "version"]]
 
 
 def test_plugin_list_queries_are_limited_to_marketplace(codex_fixture: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """全てのplugin一覧の照会を対象marketplaceに限定し、リモートカタログへ依存せず導入を完了する。"""
     monkeypatch.setattr(install_codex_plugins, "_UNUSED_PLUGINS", ("compact-plus@compact-plus",))
     outcome = install_codex_plugins.run()
     assert outcome.changed

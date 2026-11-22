@@ -2,7 +2,6 @@
 # requires-python = ">=3.15"
 # dependencies = []
 # ///
-"""uvの依存準備だけを記録し、本体には元の標準入出力を渡す。"""
 
 import contextlib
 import os
@@ -45,7 +44,6 @@ def _forward(line: bytes) -> None:
 
 
 def restore_stderr() -> None:
-    """uv自身のstderrから本体を分離する。直接起動した本体のストリームは変更しない。"""
     value = os.environ.pop(_STDERR, None)
     if value is None:
         return
@@ -69,7 +67,6 @@ def restore_stderr() -> None:
     finally:
         os.close(fd)
     if sys.platform == "win32":
-        # CRTのfd 2だけでなく、ネイティブの子が継承する標準ハンドルも元の出力先にする。
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         if not kernel.SetStdHandle(-12, ctypes.c_void_p(msvcrt.get_osfhandle(2))):
             raise ctypes.WinError(ctypes.get_last_error())
@@ -86,7 +83,7 @@ def _run(arguments: list[str]) -> int:
         pass_fds = ()
         if sys.platform == "win32":
             handle = msvcrt.get_osfhandle(2)
-            # NULもCRTのisattyでは真になる。実際のコンソールだけをCONOUT$で開き直す。
+
             is_console = ctypes.windll.kernel32.GetConsoleMode(ctypes.c_void_p(handle), ctypes.byref(ctypes.c_ulong(0)))
             value = "console" if is_console else f"{os.getpid()}:{handle}"
             if os.environ.pop("DOTFILES_SHOW_CACHE_WAIT", "") == "1":
@@ -109,7 +106,7 @@ def _run(arguments: list[str]) -> int:
                 pass_fds=pass_fds,
             )
         )
-        # 前景のuvと本体もCtrl+Cを受ける。本体が終了処理を終えるまでは中継を閉じない。
+
         previous = signal.signal(signal.SIGINT, lambda _signal, _frame: None)
         stack.callback(signal.signal, signal.SIGINT, previous)
         assert process.stderr

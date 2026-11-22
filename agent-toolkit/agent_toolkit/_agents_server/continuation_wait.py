@@ -1,5 +1,3 @@
-"""委譲先の定型返却から委譲元の応答待ちを判定する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -10,7 +8,6 @@ from agent_toolkit._common import session_registry, session_state, task_document
 
 
 def continuation_wait_seconds(session_id: str, *, state_root: pathlib.Path | None = None) -> int | None:
-    """既存の登録簿で、次の配送が始まっていない最新の定型返却だけを調べる。"""
     resolved = session_registry.resolve(session_id, state_root=state_root)
     info = resolved.resume_info
     if (
@@ -38,7 +35,6 @@ def continuation_wait_seconds(session_id: str, *, state_root: pathlib.Path | Non
         case "計画作成完了" | "計画なし準備完了":
             waiting = head in declaration.result_heads and "実装開始" in instructions
         case "計画検査完了":
-            # 通常は途中通知であり、マージなしの終了だけが次の指示を待つ。
             sections = [line for line in lines if line.startswith("統合区分:")]
             waiting = bool(sections) and all(line == "統合区分: マージなし" for line in sections) and "統合許可" in instructions
         case "統合準備完了":
@@ -53,7 +49,6 @@ def continuation_wait_seconds(session_id: str, *, state_root: pathlib.Path | Non
 def continuation_notices(
     host_session_id: str | None, targets: set[str], state_root: pathlib.Path | None
 ) -> list[dict[str, Any]]:
-    """回収済みの定型返却の応答待ちを、再配送せずに返す。"""
     if host_session_id is None:
         return []
     tracked = session_state.read_state(host_session_id).get("agents_server_sessions")

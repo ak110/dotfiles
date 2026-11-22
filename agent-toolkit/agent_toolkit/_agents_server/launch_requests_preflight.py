@@ -1,5 +1,3 @@
-"""委譲先で使うプラグイン起動コマンドの事前確認。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -16,8 +14,6 @@ from agent_toolkit._common.next_action import ActionableError
 # 同じ設定のサーバーへの接続を15分間試みない。
 PREFLIGHT_COMMANDS: tuple[tuple[str, ...], ...] = (("uv", "--version"), ("uvx", "--version"))
 
-
-# 事前確認の1コマンドあたりの上限秒数。成功した2コマンドの連続実行に約0.14秒かかることを確認した。
 
 PREFLIGHT_TIMEOUT = 20.0
 
@@ -56,7 +52,6 @@ def _run_preflight_command(command: tuple[str, ...], cwd: str) -> tuple[str, str
 
 
 def require_working_directory(cwd: str) -> None:
-    """委譲先のCLIを起動できない、作業ディレクトリの不在を拒否する。"""
     if not pathlib.Path(cwd).is_dir():
         raise ActionableError(
             f"委譲先の作業ディレクトリが存在しないため委譲先を起動しない: cwd={cwd}",
@@ -65,8 +60,7 @@ def require_working_directory(cwd: str) -> None:
 
 
 def _check_plugin_commands_sync(cwd: str) -> None:
-    """委譲先の作業ディレクトリでプラグインの起動コマンドが動くことを確かめる。"""
-    # 作業ディレクトリが無いと`subprocess.run`は実行ファイルの不在と同じ例外を送出し、PATHの確認を誤って案内する。
+
     require_working_directory(cwd)
     for command in PREFLIGHT_COMMANDS:
         failure = _run_preflight_command(command, cwd)
@@ -80,5 +74,4 @@ def _check_plugin_commands_sync(cwd: str) -> None:
 
 
 async def check_plugin_commands(cwd: str) -> None:
-    """事前確認をイベントループの外で実行する。"""
     await asyncio.to_thread(_check_plugin_commands_sync, cwd)

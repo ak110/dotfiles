@@ -36,11 +36,10 @@ def _repositories(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tu
 
 
 def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """設定CLIのJSON登録を読み、同originをまとめ、空・不正登録を区別する。"""
     one = git.init_repository(tmp_path / "one", origin="https://example.test/team/one.git")
     clone = git.init_repository(tmp_path / "clone", origin="git@example.test:team/one.git")
     two = git.init_repository(tmp_path / "two", origin="https://example.test/team/two.git")
-    # 旧パス配列の初回移行でも、同originのcloneは最初のworktreeだけを残す。
+
     path = config._config_file_path()  # noqa: SLF001  # pylint: disable=protected-access
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"process_loop_repositories": json.dumps([str(one), str(clone), str(two)])}), encoding="utf-8")
@@ -61,7 +60,6 @@ def test_configured_scope(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
 def test_configured_repo_snapshot(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """キューを1回だけ取得し、リポジトリ別の依存・候補上限・登録外の除外を反映した一覧を渡す。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one, two, _empty = (repository.repo_id for repository in repositories)
@@ -106,7 +104,6 @@ def test_configured_repo_snapshot(
 
 
 def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """外部依存を待つprocessingの項目を候補に保ち、通常の除外を適用した後の件数からレーン上限を算出する。"""
     repositories = _repositories(tmp_path, monkeypatch)
     notes = tmp_path / "notes"
     one = repositories[0]

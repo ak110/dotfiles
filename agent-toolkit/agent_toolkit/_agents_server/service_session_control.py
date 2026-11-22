@@ -1,5 +1,3 @@
-"""単一sessionの制御要求、世代間の照会と所有移譲。"""
-
 from __future__ import annotations
 
 # 分割前と同じサービス内の所有状態を、このmixinと実体の間で共有する。
@@ -54,8 +52,6 @@ def _restore_caller(value: dict) -> runtime_environment.CallerContext:
 
 
 class ServiceSessionControl:
-    """サービスの公開と状態の維持は呼出元へ任せ、session単位の操作を所有する。"""
-
     if TYPE_CHECKING:  # pylint: disable=unused-argument
         target: dict[str, Any]
         generation: str
@@ -118,7 +114,6 @@ class ServiceSessionControl:
         )
 
     async def parent_sessions(self, parent: str, include_terminated: bool) -> list:
-        """この世代が保持する、指定した親会話のsessionの一覧項目を返す（別世代からの照会用）。"""
         conversation = self.managers.conversations.get(parent)
         if conversation is None:
             return []
@@ -127,7 +122,6 @@ class ServiceSessionControl:
         return list(response["sessions"])
 
     async def _foreign_sessions(self, parent: str, include_terminated: bool) -> dict[str, list]:
-        """同じ親会話のsessionを別の生存世代から集める。ターンの途中の会話は終了境界まで旧世代に残るため。"""
         sessions: list = []
         unreachable: list = []
         for generation, entry in self.registry.generations().items():
@@ -168,7 +162,6 @@ class ServiceSessionControl:
         return conversation is not None and identifier in conversation.manager.sessions
 
     async def owned_call(self, parent: str, caller: runtime_environment.CallerContext, params: CallToolRequestParams) -> dict:
-        """元の親会話の制御を受理し、未配送の次turnは現行側へ返す。"""
         conversation = self.managers.conversations.get(parent)
         identifier = (params.arguments or {}).get("session_id")
         if conversation is None or identifier not in conversation.manager.sessions:
@@ -194,8 +187,6 @@ class ServiceSessionControl:
         try:
             return await self._call_tool(context, params)
         except ActionableError as error:
-            # 世代間の振り分けで生じた診断は登録ツールの外で送出されるため、ツールの例外と同じく
-            # 理由と次の操作の2行をツールのエラーとして返す。素通しするとMCPの汎用エラーとなり次の操作が落ちる。
             return CallToolResult(content=[TextContent(type="text", text=error.message)], is_error=True)
         except service_turns.MoveRequired as moved:
             caller = runtime_environment.current()
@@ -211,7 +202,6 @@ class ServiceSessionControl:
             return _RESULT.validate_python(value)
 
     async def _call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
-        """schema・説明・結果生成は既存MCP登録を使い、受付と所有の振り分けだけを行う。"""
         caller = runtime_environment.current()
         if caller is None:
             raise RuntimeError("呼出元contextがありません")
@@ -246,8 +236,6 @@ class ServiceSessionControl:
                     try:
                         moved = await service_rpc.request(owner, "move", {"session_id": identifier})
                     except (RuntimeError, OSError, EOFError, TimeoutError) as error:
-                        # 汎用の内部エラーで返すと、追送の配送と所有の状態を呼出元が判断できない。
-                        # 応答だけを失った場合は移譲が成立していることもあるが、入力はまだ渡していない。
                         raise ActionableError(
                             f"session {identifier}の所有世代からの移譲を確認できず、新しい入力は未配送: "
                             f"owner_generation={owner['generation']}; error={type(error).__name__}: {error}",
@@ -282,7 +270,6 @@ class ServiceSessionControl:
                     next_action="showで状態を確認し、先行要求の受付が終わった後に停止を再試行する",
                 )
             if show_local:
-                # 自世代の保持状態は読取だけで照会し、追送の初期化待ちに合流しない。
                 selected = mcp_tools._SELECTED_MANAGER.set(manager)
                 try:
                     return await mcp_tools.mcp._call_registered_tool(context, params)
@@ -366,7 +353,6 @@ class ServiceSessionControl:
         return await asyncio.shield(self._moving[identifier])
 
     async def _move(self, identifier: str) -> dict:
-        """終了境界で止めた会話を受付先の世代へ移す。受付先が自世代なら、準備中でない限り止めたclientを取り込み直す。"""
         async with self._locks.setdefault(identifier, asyncio.Lock()):
             if identifier in self._uncertain:
                 raise ActionableError(
@@ -395,7 +381,6 @@ class ServiceSessionControl:
                     return {"moved": False}
                 source = MoveSource(client, backend, session)
                 try:
-                    # 受付が戻った場合は、配送済みの要求を待たず同じclientの通知を復旧する。
                     if not source_is_current:
                         await self.gate.pause_session(identifier)
                         source.client = self._client(backend, identifier)
@@ -493,7 +478,6 @@ class ServiceSessionControl:
             manager._service_paused.discard(identifier)
 
     def prepare_move(self, packet: dict) -> dict:
-        """所有変更前の入力を検証し、モデルを実行しない非永続の受入予約を作る。"""
         _restore_caller(packet["caller"])
         session = service_state.restore(packet["session"])
         transfer = packet["transfer_id"]
@@ -518,7 +502,7 @@ class ServiceSessionControl:
         }
 
     async def abort_move(self, identifier: str, transfer: str) -> dict:
-        # acceptの所有CASが未完了の間は、旧側へ巻き戻し可能と応答しない。
+
         async with self._locks.setdefault(identifier, asyncio.Lock()):
             received = self._received.get(identifier)
             if received is not None and received[0] == transfer:
@@ -529,7 +513,6 @@ class ServiceSessionControl:
             return {"owned": False}
 
     async def accept(self, packet: dict) -> dict:
-        """新世代で状態を保存し、次の本来入力を待つ。移譲時のqueryは送信対象から除く。"""
         transfer = packet["transfer_id"]
         identifier = service_state.restore(packet["session"]).session_id
         received = self._received.get(identifier)

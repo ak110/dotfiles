@@ -26,7 +26,6 @@ _usage_basis: contextvars.ContextVar[dict[str, typing.Any] | None] = contextvars
 
 @contextlib.contextmanager
 def reuse_process_observation() -> Generator[None]:
-    """同じ掃引内のMCP列挙を共有し、終了後に観測を解放する。"""
     token = _process_snapshot.set({})
     try:
         yield
@@ -35,12 +34,10 @@ def reuse_process_observation() -> Generator[None]:
 
 
 def usage_details() -> str:
-    """直前の保持判定のprocess identityまたは取得不能の理由を返す。"""
     return _usage_details.get()
 
 
 def usage_basis() -> dict[str, typing.Any] | None:
-    """生存再確認で再利用できる保持根拠を返し、判定不能ではNoneを返す。"""
     return _usage_basis.get()
 
 
@@ -50,7 +47,6 @@ def _metadata_signature(path: Path) -> list[int]:
 
 
 def usage_basis_is_current(basis: dict[str, typing.Any]) -> bool:
-    """同じprocess identityと使用記録が保たれる間だけ、保持の判定を再利用する。"""
     try:
         if basis["leases"] != _metadata_signature(_directory()):
             return False
@@ -97,11 +93,6 @@ def _directory() -> Path:
 
 @contextlib.contextmanager
 def plugin_root_lock(path: Path, *, blocking: bool = True) -> Generator[None]:
-    """同じ保持領域の使用登録と回収を直列にする。
-
-    `blocking=False`では即時取得できない場合に`OSError`を送出する。任意保守の自動掃引が、
-    使用登録や明示回収の保持者を待たずに対象を保持して本来の操作へ進むために使う。
-    """
     with _lock(_directory() / f"{_key(path)}.lock", blocking=blocking):
         yield
 
@@ -143,7 +134,6 @@ def register_plugin_root_use(area: Path) -> None:
 
 
 def _record_is_live(record: typing.Any) -> bool:
-    """不正な記録は例外にし、確認できた終了・PID再利用だけを失効させる。"""
     if (
         not isinstance(record, dict)
         or not isinstance(record.get("pid"), int)
@@ -194,7 +184,6 @@ def sweep_plugin_root_records() -> None:
                 if not _record_is_live(json.loads(path.read_text(encoding="utf-8"))):
                     path.unlink(missing_ok=True)
         except OSError, ValueError, psutil.Error:
-            # 読めない対応能力の記録は、生存を否定できないため変更前の版の生存として扱う。
             if path.name.startswith("capability-"):
                 legacy_holder = True
             continue
@@ -266,11 +255,6 @@ def plugin_root_in_use(area: Path) -> bool:
 
 
 def _current_processes() -> list[psutil.Process]:
-    """現在のPIDごとに新しいProcessを構築して返す。
-
-    process_iterはPID単位でProcessを再利用し、起動時刻を以前の世代のまま保持する。
-    使用記録と保持根拠を現在の起動時刻で比べるため、列挙は現在のPIDの取得だけに使う。
-    """
     processes: list[psutil.Process] = []
     for listed in psutil.process_iter():
         try:
@@ -281,7 +265,6 @@ def _current_processes() -> list[psutil.Process]:
 
 
 def _observed_processes() -> dict[int, psutil.Process]:
-    """掃引内では現在の世代のプロセス列挙を1回だけ共有する。"""
     snapshot = _process_snapshot.get()
     if snapshot is None:
         return {process.pid: process for process in _current_processes()}
@@ -298,14 +281,13 @@ def _windows_secure_system(process: psutil.Process) -> bool:
         if process.name() != "Secure System" or process.ppid() != 4:
             return False
         system = psutil.Process(4)
-        # 名前だけを根拠にせず、カーネルが作ったSystemとの親子関係を確認する。
+
         return system.name() == "System" and system.ppid() == 0
     except OSError, psutil.Error:
         return False
 
 
 def _server_may_use_root(area: Path) -> bool:
-    """同じOSアカウントのMCPによる絶対パス引数の直接参照を探す。"""
     try:
         username = psutil.Process().username()
         for process in _observed_processes().values():
@@ -329,8 +311,7 @@ def _server_may_use_root(area: Path) -> bool:
                 if arguments is None:
                     _usage_details.set(f"起動引数を取得できない: pid={process.pid}")
                     return True
-                # 内側MCPのlease登録前も、公開launcherが直接参照する保持先を保護する。
-                # cleanupの--pathは、MCP targetを持たないためこの候補集合へ入らない。
+
                 if any(Path(argument).is_absolute() and Path(argument).is_relative_to(area) for argument in arguments):
                     return _record_process_use(process, "領域の直接参照")
             except psutil.NoSuchProcess:

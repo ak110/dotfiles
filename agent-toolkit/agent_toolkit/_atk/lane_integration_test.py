@@ -36,7 +36,6 @@ def test_integrate_public_lifecycle(
     planned: bool,
     mixed: bool,
 ) -> None:
-    """レビュー済み成果を公開操作で統合し、計画あり・なしの最終化後だけ回収できる。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     done = "20261023-000000-001.md"
@@ -104,7 +103,6 @@ def test_integrate_public_lifecycle(
 
 
 def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
-    """明示があればargvにかかわらずその一覧を使い、省略時は旧入力の全件を扱う。"""
     rows: list[dict[str, Any]] = [
         {"name": "done.md", "commands": [["atk", "wi", "adopt", "--note=確認済み", "done"]]},
         {"name": "rejected.md", "commands": [["echo", "wi", "reject", "--if-inbox", "rejected"]]},
@@ -117,7 +115,6 @@ def test_processed_wis_uses_explicit_names_without_interpreting_argv() -> None:
 
 
 def test_cannot_amend_processed_wis_after_selection_write() -> None:
-    """選定への追記後に応答が途切れても、再開時に既に保存したWI集合を変えない。"""
     rows = [{"name": "done.md", "commands": []}, {"name": "pending.md", "commands": []}]
     base = {"reviewed_head": "a" * 40, "target": "repo", "branch": "main", "no_merge": False}
     old = {**base, "manifest": {"plans": [], "wis": rows, "processed_wis": ["done.md"]}}
@@ -132,7 +129,6 @@ def test_cannot_amend_processed_wis_after_selection_write() -> None:
 def test_integration_and_reuse_protect_dirty_submodules(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], new_run: bool
 ) -> None:
-    """子を無視する設定でも未保存の変更を残して停止し、cleanな同じ資源なら進む。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -226,7 +222,6 @@ def test_integration_distinguishes_own_gitlink_update_from_child_edit(
     capsys: pytest.CaptureFixture[str],
     scenario: str,
 ) -> None:
-    """非再帰mergeが残す子HEADは保持し、検証中に生じた未保存変更は拒否する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -275,7 +270,7 @@ def test_integration_distinguishes_own_gitlink_update_from_child_edit(
             assert code == 2 and "終了42" in stderr
             current = git_repository.git_output(worktree, "rev-parse", "HEAD")
             args = (*_integration_args(record, repo, manifest, current), "--restart-review")
-            # ファイル自体がcleanなら、子のcommitだけが変わっても再開始を拒まない。
+
             git_repository.run_git(worktree / name, "commit", "--allow-empty", "-m", "別の子HEAD")
             alternate = git_repository.git_output(worktree / name, "rev-parse", "HEAD")
             git_repository.run_git(worktree, "add", "--", name)
@@ -349,7 +344,6 @@ def test_integrate_resume_and_preservation(
 def test_integrate_rejects_unreviewed_or_unowned_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
 ) -> None:
-    """検収不能な作業を統合せず、成果と所有記録を保持する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _selection(selected, integrated=False)
     worktree = pathlib.Path(record["worktree"])
@@ -380,7 +374,6 @@ def test_integrate_rejects_unreviewed_or_unowned_work(
 def test_integrate_observation_and_saved_plan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """観測のみの再開はGitを変更せず、保存済み計画と延期WIを検収して最終化する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     saved = tmp_path / "plan.md"
@@ -409,7 +402,6 @@ def test_integrate_observation_and_saved_plan(
 def test_integrate_additional_wi_uses_current_review_and_collection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じ資源への追加WIは今回のレビューHEADと全WI集合で再統合する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])
@@ -446,7 +438,6 @@ def test_integrate_additional_wi_uses_current_review_and_collection(
 def test_integrate_refreshes_publication_before_rewriting(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """古いremote追跡refが無くても、公開済みcommitをfetchして書換えを拒否する。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     remote = git_repository.init_bare_repository(tmp_path / "origin.git")
@@ -495,7 +486,6 @@ def test_integrate_restarts_after_reviewed_correction(
 def test_integrate_uses_reviewed_oid_when_branch_advances_before_merge(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """最後の検収後にbranchが進んでも、未レビューcommitをffへ混入しない。"""
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
     _integration_selection(selected, monkeypatch, repo)
     worktree = pathlib.Path(record["worktree"])

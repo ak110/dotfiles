@@ -42,7 +42,6 @@ _COLLECTION_USAGE_ERRORS = pytest.StashKey[list[str]]()
 
 @pytest.hookimpl(wrapper=True)
 def pytest_collection(session: pytest.Session) -> Generator[None, object, object]:
-    """xdistが文面を中継しない収集時のUsageErrorを、終了時に転送するworkeroutputへ残す。"""
     try:
         return (yield)
     except pytest.UsageError as error:
@@ -53,7 +52,6 @@ def pytest_collection(session: pytest.Session) -> Generator[None, object, object
 
 @pytest.hookimpl(optionalhook=True)
 def pytest_testnodedown(node: Any, error: object) -> None:
-    """workerの収集時の使用法エラーをcontrollerの最終結果へ引き継ぐ。"""
     del error  # noqa
     messages = getattr(node, "workeroutput", {}).get("collection_usage_errors", [])
     errors = node.config.stash.setdefault(_COLLECTION_USAGE_ERRORS, [])
@@ -61,7 +59,6 @@ def pytest_testnodedown(node: Any, error: object) -> None:
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    """同じ引数を収集したworkerの診断を1回だけ報告し、pytest本来の使用法エラーとして終了する。"""
     errors = session.config.stash.get(_COLLECTION_USAGE_ERRORS, [])
     if errors:
         for message in errors:
@@ -118,12 +115,10 @@ def _patch_worker(worker: Any, patch: pytest.MonkeyPatch) -> None:
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionstart(session: pytest.Session) -> None:
-    """controllerとexecnetが実際に登録したworkerだけを、同じpytestの寿命で補う。"""
     patch = pytest.MonkeyPatch()
     session.config.add_cleanup(patch.undo)
     patch.setattr(WorkerController, "shutdown", _shutdown)
     patch.setattr(DSession, "triggershutdown", _trigger_shutdown)
     for plugin in session.config.pluginmanager.get_plugins():
-        # execnetはremote.pyを__channelexec__として実行するため、通常importの同名クラスとは実体が異なる。
         if type(plugin).__name__ == "WorkerInteractor" and hasattr(session.config, "workerinput"):
             _patch_worker(plugin, patch)

@@ -1,5 +1,3 @@
-"""agents_serverのバックエンドが共有するsession状態と検証を定義する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +11,6 @@ from agent_toolkit._agents_server import state_publication, state_resume
 from agent_toolkit._agents_server.result_projection import append_result_next_action
 from agent_toolkit._common import task_documents
 
-# 既存の利用側にはstateから同じ型・操作を返す。
 PreviousResult = state_resume.PreviousResult
 RegistryResumeState = state_resume.RegistryResumeState
 ResumeDelivery = state_resume.ResumeDelivery
@@ -133,7 +130,6 @@ def finish_unowned_start(
     *,
     session: SessionState | None = None,
 ) -> bool:
-    """初期化待ちの取消で所有タスクを回収した後、そのturnだけを終了扱いにする。"""
     if initialized.done() and not initialized.cancelled() and initialized.exception() is None:
         session = initialized.result()
     if session is None or session.turn_seq != turn_seq or session.turn_completed or session.terminal:

@@ -1,5 +1,3 @@
-"""共有依存環境のpyfltrを、その公開console entry pointから起動する。"""
-
 import importlib.metadata
 import os
 import sys
@@ -10,7 +8,6 @@ from agent_toolkit._common import inherited_venv
 
 
 def main() -> int | None:
-    """lockfileで準備したpyfltrへ、CLIとMCPの引数をそのまま渡す。"""
     # pyfltrが対象リポジトリのuvを起動するときは、そのリポジトリの環境を使う。
     inherited_venv.strip_inherited_venv(os.environ)
     # 同一プロセスのpyfltrは同梱ツールを使い、uv runnerは対象projectの環境を選ぶ。

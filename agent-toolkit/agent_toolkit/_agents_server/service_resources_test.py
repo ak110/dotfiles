@@ -1,5 +1,3 @@
-"""資源の世代移譲と、保存確認前の生イベント保持を検証する。"""
-
 # 所有制御とcodecの厳密な型、ACK後の内部保持を検証する。
 # pylint: disable=protected-access,unidiomatic-typecheck
 
@@ -110,7 +108,6 @@ def test_sdk_codec_preserves_types_and_all_fields() -> None:
 
 
 def test_sdk_codec_reads_events_saved_before_defaulted_fields_were_added() -> None:
-    """SDKの更新前に保存したイベントには、後から増えた省略できるフィールドが無い。"""
     codec = sdk_event_codec()
     original = AssistantMessage(content=[TextBlock(text="旧版")], model="model", parent_tool_use_id=None)
     encoded = codec.encode(original)
@@ -183,7 +180,6 @@ async def test_release_ends_call_waiting_for_event_space_without_consumer() -> N
 
 
 def test_sdk_codec_reads_previous_public_release_events() -> None:
-    """旧公開版のイベントを復号し、保持した値と現行版で補う値を確認する。"""
     # 再生成: 2.287.0 を展開し、claude-agent-sdk==0.2.182で次の値を作る。
     # sdk_event_codec().encode() の結果をそのまま保存する。
     raw = [

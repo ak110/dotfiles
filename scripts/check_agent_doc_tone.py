@@ -3,27 +3,6 @@
 # requires-python = ">=3.15"
 # dependencies = ["markdown-it-py>=4"]
 # ///
-r"""文体の密度と、説明に使用しない語の再使用を確認する。
-
-読み手は文脈にある文体を再生産するため、否定形の宣言や法令調の語が多い文書は、
-それを読んだ主体の成果物へ同じ文体と範囲外の追加要素を持ち込む。
-本スクリプトはこの密度をファイル単位で数える。閾値を超えた指標は、ファイルの1行目へ比率、件数と
-上限以下へ戻すのに必要な最少の書き換え件数を報告し、数えた文と「当該」を物理行の位置付きで全件列挙する。
-
-指標は次の3つとする。
-
-- 文数
-- 否定形で終わる文の数
-- 「当該」の出現数
-
-閾値は、Codexを使う前のClaude由来commitが追加した文の水準に置く。
-否定形終端率は8%、「当該」の出現率（出現数÷文数）は3%とし、文数が20以上のファイルへ適用する。
-
-説明文の語は文数によらず判定する。既存の失敗対象は`_DENIED_PATTERNS`が保持し、
-説明文へ再使用された場合は要求を満たしていないため終了コード1を返す。文脈によって対象と動作が伝わりにくい語は
-位置付きの警告として報告し、その語だけでは終了コードを変えない。
-密度の判定はMarkdownだけに適用する。原文の引用・検出データと構造名は文章と区別する。
-"""
 
 from __future__ import annotations
 
@@ -67,7 +46,7 @@ _DENIED_PATTERNS = {
     "足すものがない": r"足すものがない",
     "失効が効く": r"失効が効く",
 }
-# 文脈によって対象と動作が伝わりにくい語。正確な専門語や承認済みの呼称として使う場合もあるため警告に留める。
+
 _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
 _CONTRAST = "contrast"
@@ -130,7 +109,6 @@ _CAUTION_TERM_PATTERNS = tuple((name, re.compile(pattern)) for name, (pattern, _
 # 名前の一部ではない同じ動詞の用法は引き続き検出する。
 _STRUCTURAL_LABELS = (
     "消費主体と入口",
-    # 改名前の受入シナリオ表の列名。保存済み計画の読み取りと同じく構造の名前として除く。
     "利用者と入口",
     "起動経路",
     "計画検査完了",
@@ -138,7 +116,7 @@ _STRUCTURAL_LABELS = (
     "選択肢と帰結",
     "前提を疑う観点",
 )
-# 選定結果の欄`プロジェクト固有の公開後の操作の順序`（旧欄名`terminal_order`）の値`既定`は保存形式の値として扱う。
+
 _TERMINAL_ORDER_VALUE_PATTERN = re.compile(
     r'((?:プロジェクト固有の公開後の操作の順序|terminal_order)[^\n]*?)(?:`既定`|「既定」|"既定")'
 )
@@ -188,7 +166,6 @@ def _markdown_fragments(text: str) -> Iterator[tuple[int, str]]:
                 try:
                     fragments = list(_python_fragments(token.content))
                 except SyntaxError, tokenize.TokenError:
-                    # 部分的なコード例は単独のPythonとして成立しないため、記載された文を確認する。
                     fragments = list(_example_lines(token.content, 1))
                 yield from ((start + line - 1, fragment) for line, fragment in fragments)
             else:
@@ -322,7 +299,6 @@ def _python_fragments(text: str, *, detector_data: bool = False) -> Iterator[tup
             and node.func.attr == "compile"
             and node.args
         ):
-            # 一致させる語を定めるパターンは、説明文とは別の検出用データである。
             consumed.update(id(child) for child in ast.walk(node.args[0]))
     if detector_data:
         for node in tree.body:
@@ -544,7 +520,7 @@ def sentences_with_positions(text: str) -> list[Sentence]:
 def _block_sentences(prose: list[_ProseLine]) -> list[Sentence]:
     """1ブロックの折返しを連結し、各文末の文字の由来から位置と抜粋を返す。"""
     joined = "".join(item.text for item in prose)
-    # 連結した本文の各文字が由来する行の添字と、その行の中の位置。
+
     origins = [(row, column) for row, item in enumerate(prose) for column in range(len(item.text))]
     sentences: list[Sentence] = []
     position = 0

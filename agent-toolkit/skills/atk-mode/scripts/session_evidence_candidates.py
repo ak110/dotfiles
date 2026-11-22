@@ -241,7 +241,7 @@ def _candidate_events(
                 continue
             representative = min(events, key=lambda event: (str(event["record"]), int(event["line"])))
             omitted_count = len(events) - 1
-            # Counterは0の加算でもキーを生成するため、省略が無い種類では加算せず、値0の区分を除外件数へ残さない。
+
             if omitted_count:
                 excluded["hook-notice-detail-budget"] += omitted_count
             selected_groups.append((key, [representative], len(events), omitted_count))
@@ -319,7 +319,6 @@ def _candidate_events(
                     "launch_check",
                 )
                 for row, event in zip(candidate["calls"], ordered, strict=True):
-                    # `launch_check`は読込と確定した読取（definition-body-read）だけが持つ。
                     row.update({field: event[field] for field in fields if field in event})
         candidates.append(candidate)
     included_locators.sort(key=lambda locator: (locator["record"], locator["line"]))
@@ -336,7 +335,6 @@ def _candidate_events(
 
 
 def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
-    """定型接頭辞の後にある原因を候補キーの追加軸として返す。"""
     raw = event.get("text")
     if not isinstance(raw, str):
         return ""
@@ -354,11 +352,6 @@ def _candidate_mechanism(candidate_kind: str, event: dict[str, Any]) -> str:
 
 
 def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: str) -> tuple[str, ...]:
-    """候補種別ごとの正規化軸を、並べ替え可能な文字列tupleで返す。
-
-    軸には原則として正規化した本文だけを置く。診断を欠くCommandExecutionでは本文による原因の
-    区別が成立しないため、構造化コマンド、さらにコマンドも無い場合は記録位置を用いる。
-    """
     if candidate_kind == "hook-notice":
         tag = str(event.get("tag", ""))
         return (
@@ -374,10 +367,8 @@ def _candidate_key(candidate_kind: str, event: dict[str, Any], normalized_text: 
     if candidate_kind == "escalation":
         return candidate_kind, _normalize_candidate_kind_text(normalized_text), _candidate_mechanism(candidate_kind, event)
     if candidate_kind in {"adhoc-processing", "definition-body-read", "definition-read-unresolved"}:
-        # 記録（thread）ごとに1件へまとめ、委譲先が多い実行でも候補の件数が呼び出しの件数に比例しないようにする。
         return candidate_kind, str(event["record"])
     if candidate_kind in {"confirmation-request", "wi-user-response", "post-delivery-long-text"}:
-        # 確認ごとに要否を判定するため、同じ回答の文字列（選択肢のlabelなど）でも別の確認をまとめない。
         return candidate_kind, str(event["record"]), f"{int(event['line']):010d}", str(event.get("tag", ""))
     return candidate_kind, _normalize_candidate_kind_text(normalized_text)
 

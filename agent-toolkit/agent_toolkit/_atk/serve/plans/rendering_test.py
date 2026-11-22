@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -19,7 +17,6 @@ from agent_toolkit._testing.serve_plans_support import _context, _failed_ssh, _p
 
 
 def test_symlinked_root_is_deduplicated_by_identity(tmp_path: pathlib.Path) -> None:
-    """別名でも同一実体を指すrootは1件へまとめる。"""
     root = tmp_path / "plans"
     root.mkdir()
     link = tmp_path / "link"
@@ -36,7 +33,6 @@ def test_symlinked_root_is_deduplicated_by_identity(tmp_path: pathlib.Path) -> N
 
 
 def test_cleanup_removes_only_temporaries(index_path: pathlib.Path) -> None:
-    """残存した一時ファイルだけを除去し、インデックスと旧形式は残す。"""
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text("{}", encoding="utf-8")
     digest = "0" * 64
@@ -60,7 +56,6 @@ async def test_attached_links_are_omitted_when_other_pages_are_absent(
     tmp_path: pathlib.Path,
     index_path: pathlib.Path,
 ) -> None:
-    """付属計画が無い計画ではリンク行を付けない。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -71,7 +66,6 @@ async def test_attached_links_are_omitted_when_other_pages_are_absent(
 
 
 def test_non_directory_root_is_reported_as_a_warning(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """rootが通常ファイルの場合は、利用できない理由を警告として返す。"""
     del index_path
     root = tmp_path / "plans"
     root.write_text("x", encoding="utf-8")
@@ -87,12 +81,11 @@ async def test_local_watcher_broadcasts_on_local_change(
     tmp_path: pathlib.Path,
     index_path: pathlib.Path,
 ) -> None:
-    """ローカルrootへ計画ファイルを追加すると、購読中のSSEへ更新を通知する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
     context = _context(root)
-    # debounce窓の実時間待ちを避けるため短縮する。
+
     context.state.debounce_sec = 0.01
     queue = await plans.subscribe(context.state)
 

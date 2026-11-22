@@ -74,7 +74,6 @@ class TestUnifiedCompletionLoop:
 
 class TestFollowCancelled:
     def _run_list_dispatch(self, cancelled_runs, follow_map):
-        """sha別にrun一覧を返すスタブ。cancelled_runs=元sha, follow_map={後続sha: [run]}。"""
 
         def _fn(sha):
             if sha == "sha1":
@@ -223,7 +222,6 @@ class TestFollowCancelled:
         def job_list_fn(run):
             run_id = run["databaseId"]
             if run_id not in (2, 3):
-                # 元shaのcancelled run（db_id=1）に対する呼び出しはカウント対象外とする
                 return []
             total_calls["n"] += 1
             if total_calls["n"] <= 2:
@@ -286,7 +284,6 @@ class TestFollowCancelled:
         )
 
     def test_no_follow_commit_generated_times_out(self):
-        """後続コミットが生成されないまま`remaining_timeout`が経過した場合。"""
         cancelled = [_run(conclusion="cancelled")]
         assert (
             _run_wait(
@@ -300,7 +297,6 @@ class TestFollowCancelled:
         )
 
     def test_follow_commit_exists_but_no_run_registered_times_out(self):
-        """後続コミットは検出済みだが後続run自体が未登録のまま経過した場合。"""
         cancelled = [_run(conclusion="cancelled")]
         assert (
             _run_wait(
@@ -314,7 +310,6 @@ class TestFollowCancelled:
         )
 
     def test_delayed_follow_commit_registration_still_succeeds(self):
-        """後続コミットの検出が数回遅延しても、検出後は正常に追跡へ移行する。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow = [_run(conclusion="success", db_id=2, head_sha="sha2")]
         calls = {"n": 0}
@@ -334,7 +329,6 @@ class TestFollowCancelled:
         )
 
     def test_staged_follow_sha_registration_waits_for_grace(self):
-        """複数の後続SHAが登録猶予期間内に段階的に出現しても全件を追跡対象へ含める。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow_sha2 = [_run(name="wf2", conclusion="success", db_id=2, head_sha="sha2")]
         follow_sha3 = [_run(name="wf3", conclusion="success", db_id=3, head_sha="sha3")]
@@ -355,7 +349,6 @@ class TestFollowCancelled:
         )
 
     def test_multiple_workflows_register_progressively_on_same_follow_sha(self):
-        """同一後続SHA上で複数workflowのrunが段階的に登録されても全件完了まで待つ。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         calls = {"n": 0}
 
@@ -367,9 +360,9 @@ class TestFollowCancelled:
             wf2_pending = _run(name="wf2", conclusion=None, status="in_progress", db_id=3, head_sha="sha2")
             wf2_done = _run(name="wf2", conclusion="success", db_id=3, head_sha="sha2")
             if calls["n"] == 1:
-                return [wf1]  # wf2はまだ登録前
+                return [wf1]
             if calls["n"] == 2:
-                return [wf1, wf2_pending]  # wf2が新規登録され未完了
+                return [wf1, wf2_pending]
             return [wf1, wf2_done]
 
         assert (
@@ -384,7 +377,6 @@ class TestFollowCancelled:
         assert calls["n"] >= 3
 
     def test_follow_phase_incomplete_run_times_out(self):
-        """後続runが未完了のまま`remaining_timeout`が経過した場合。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow = [_run(conclusion=None, status="in_progress", db_id=2, head_sha="sha2")]
         assert (
@@ -434,8 +426,6 @@ class TestFollowCancelled:
 
 
 class TestExplicitFollowSourceRef:
-    """cancelled後のローカル探索がsource refを使うことを確認する。"""
-
     def test_ancestor_check_uses_explicit_source_ref(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
 

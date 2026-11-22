@@ -1,5 +1,3 @@
-"""背景waitの保留中だけ、所有タスクの入力キューへ圧縮を1回予約する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -70,7 +68,6 @@ class WaitCompaction:
         }
 
     def restore(self, checkpoint: Mapping[str, object]) -> None:
-        """休止中の新所有者へ状態だけを復元し、observeまで予約を開始しない。"""
         if self._tasks:
             raise RuntimeError("予約の実行中には復元できません")
         used = checkpoint.get("used")
@@ -95,7 +92,6 @@ class WaitCompaction:
         self._deadline = float(deadline) if deadline is not None else None
 
     def resume(self, session: SessionState, checkpoint: Mapping[str, object]) -> None:
-        """移譲を中止した元の所有者で予約を再開する。後着の通知で動き始めた予約は巻き戻さない。"""
         key = checkpoint.get("reservation_key")
         deadline = checkpoint.get("deadline")
         if self._reservation_key is None and isinstance(key, str) and isinstance(deadline, (int, float)):
@@ -109,7 +105,6 @@ class WaitCompaction:
         await self.close()
 
     def observe(self, session: SessionState) -> None:
-        """受信済みの状態から予約し、SDKの読取ループを占有しない。"""
         tokens = context_usage.valid_number(session.context_tokens)
         window = context_usage.valid_number(session.context_window)
         if tokens is not None and window is not None and window > 0 and tokens < max(400_000, window * 0.4):
@@ -163,7 +158,6 @@ class WaitCompaction:
                 self._deadline = None
 
     async def close(self) -> None:
-        """SDKを切断する前に、照会・配送を含めて予約タスクを回収する。"""
         tasks = tuple(self._tasks)
         for task in tasks:
             task.cancel()

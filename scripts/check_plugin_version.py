@@ -55,7 +55,6 @@ def _require(result: subprocess.CompletedProcess[str], operation: str) -> str:
 
 
 def _plugins(repo_root: pathlib.Path) -> list[tuple[str, str]]:
-    """marketplaceに載るプラグインの名前とリポジトリ相対のrootを返す。"""
     try:
         data = json.loads((repo_root / _MARKETPLACE).read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
@@ -173,12 +172,11 @@ def check(repo_root: pathlib.Path) -> list[str]:
 
 
 def main() -> int:
-    """リポジトリルートで検査を実行し、終了コードを返す。"""
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if isinstance(sys.stderr, io.TextIOWrapper):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    # CIとpyfltrはいずれも対象リポジトリのルートで起動するため、作業ディレクトリのリポジトリを検査する。
+
     try:
         repo_root = pathlib.Path(
             _require(_git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel"), "git rev-parse --show-toplevel")

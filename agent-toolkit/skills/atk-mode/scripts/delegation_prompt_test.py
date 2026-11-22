@@ -1,5 +1,3 @@
-"""公開された生成処理とサーバーで同じ役割入力・継続入力を使えることを検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -23,7 +21,6 @@ def _generate(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], reques
 
 
 def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """初回生成は必須値と役割参照を保ち、サーバーと同じ欠落・宣言外を拒否する。"""
     assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
     help_text = capsys.readouterr().out
     assert all(field in help_text for field in ("initial", "subagent_md_path", "extra_params", "--input"))
@@ -60,7 +57,6 @@ def test_start_and_builtin_prompt_share_input_contract(tmp_path: pathlib.Path, c
 
 
 def test_continuation_uses_existing_launch_record(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """既存の起動記録JSONを参照し、必須のroundだけで継続本文を生成する。"""
     assert run_script.dispatch(argparse.Namespace(script_name="delegation-prompt", script_args=["--help"])) == 0
     help_text = capsys.readouterr().out
     assert all(field in help_text for field in ("continuation", "history_file", "instruction", "extra_params", "prompt"))
@@ -99,7 +95,6 @@ def test_continuation_uses_existing_launch_record(tmp_path: pathlib.Path, capsys
 def test_continuation_accepts_all_plan_tables(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], multiple: bool
 ) -> None:
-    """公開生成コマンドで単一表と全計画の配列を受理し、不正要素と旧roundを拒否する。"""
     document = _ROLES_DIR / "exec.subagent.md"
     tables = [tmp_path / "計画1.tsv", tmp_path / "計画2 の表.tsv"]
     for table in tables:

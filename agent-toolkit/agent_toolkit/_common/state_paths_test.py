@@ -1,5 +1,3 @@
-"""`agent_toolkit._common.state_paths`の状態ディレクトリの解決を検証する。"""
-
 import os
 import pathlib
 

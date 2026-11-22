@@ -76,7 +76,6 @@ def test_registers_and_installs_with_official_cli(plugin_env: Path, monkeypatch:
 
 
 def test_first_hook_transition_preserves_previous_cache(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """初回切替ではhook起動コマンドを先に配置し、CLIが除去した旧hook実体を復元する。"""
     wrapper = install_codex_plugins._hook_bin() / "atk-hook"  # pylint: disable=protected-access
     wrapper.unlink()
     previous = install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.2"
@@ -235,7 +234,6 @@ def test_plugin_update_does_not_query_running_codex(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """旧cacheの復旧でセッションを守るため、更新可否の判定にプロセス一覧を使わない。"""
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: pytest.fail("更新時にプロセス一覧を参照しない"))
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     calls: list[list[str]] = []
@@ -251,7 +249,6 @@ def test_plugin_update_does_not_query_running_codex(
 def test_post_apply_update_continues_with_new_warmup_version(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, enabled: bool
 ) -> None:
-    """既定の工程順で有効版だけを更新してwarmupへ渡し、無効状態を保持する。"""
     monkeypatch.setattr(post_apply.sys, "platform", "linux")
     current: dict[str, Any] = {"version": "1.2.2", "enabled": enabled}
     monkeypatch.setattr(codex_processes, "codex_processes", lambda: (_SESSION,))
@@ -399,7 +396,6 @@ def test_disabled_plugin_keeps_state_and_cache(
 
 
 def test_enabled_companion_update_preserves_disabled_plugin(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じmarketplaceの有効pluginを更新しても、無効pluginの状態と実体を保つ。"""
     monkeypatch.setattr(install_codex_plugins, "_MANAGED_PLUGINS", ("agent-basics", "agent-toolkit"))
     marketplace = plugin_env / ".agents/plugins/marketplace.json"
     data = json.loads(marketplace.read_text(encoding="utf-8"))
@@ -444,7 +440,6 @@ def test_enabled_companion_update_preserves_disabled_plugin(plugin_env: Path, mo
 
 
 def test_same_version_enabled_is_unchanged(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """版数一致かつ有効なpluginは導入せず変更しない。"""
     calls: list[list[str]] = []
     state = _installed_state()
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), state])

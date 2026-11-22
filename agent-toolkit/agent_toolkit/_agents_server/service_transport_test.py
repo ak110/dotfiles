@@ -1,5 +1,3 @@
-"""OS由来の接続相手を、環境や操作本文の配送前に検収する。"""
-
 # 生存判定の呼び出し元を網羅するため、各呼び出し元の内部状態を直接組み立てる。
 # pylint: disable=protected-access
 
@@ -54,7 +52,6 @@ def test_windows_owner_token_selects_distinct_registry_and_pipe(monkeypatch, tmp
 
 @pytest.mark.parametrize("pid,code,missing", [(123, 87, True), (123, 5, False), (0, 87, False)])
 def test_windows_process_identity_distinguishes_missing_process_from_api_failure(monkeypatch, pid, code, missing):
-    """消滅PIDだけを再起動可能とし、拒否と不正PIDを消滅へ変換しない。"""
     error = OSError("injected OpenProcess failure")
     monkeypatch.setattr(windows_service_transport, "_api", lambda: (SimpleNamespace(OpenProcess=lambda *_: None), None))
     monkeypatch.setattr(
@@ -120,7 +117,6 @@ def test_windows_process_alive_matches_unopenable_process_by_process_list(
 
 
 def test_windows_process_list_entries_are_read_by_pid() -> None:
-    """プロセス一覧のバッファを、可変長の各項目を辿って対象PIDの作成時刻まで読む。"""
     entry_size = ctypes.sizeof(windows_service_transport._SystemProcessInformation)
     entries = [(4, 111), (4242, 222), (99, 333)]
     snapshot = ctypes.create_string_buffer(entry_size * len(entries) + 7)
@@ -138,7 +134,6 @@ def test_windows_process_list_entries_are_read_by_pid() -> None:
 def test_windows_process_list_grows_buffer_until_listing_fits(
     monkeypatch: pytest.MonkeyPatch, status: int, reports_needed: bool
 ) -> None:
-    """一覧が最初に確保したバッファに収まらない場合、不足の通知の種類と必要量の返却の有無によらず、広げて取り直して読む。"""
     required = 3 << 20
     sizes: list[int] = []
 
@@ -191,7 +186,6 @@ def _deny_reused_pid(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def _publish(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """現行受付の世代が終了していれば、その世代へ引継ぎを要求せずに受付を公開する。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
     coordinator.target.update(endpoint="G3", server_instance="instance-G3")
     monkeypatch.setattr(coordinator.registry, "current", lambda: {"generation": "G0", "epoch": 1, "process": _REUSED})
@@ -222,7 +216,6 @@ def _freezable(coordinator: Any) -> None:
 
 
 async def _tick(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """終了した世代から受け取った移譲の記録を、周期処理で回収する。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
     coordinator._received["received"] = ("transfer", {"process": _REUSED})
     coordinator._incoming["incoming"] = {"source": {"process": _REUSED}}
@@ -232,7 +225,6 @@ async def _tick(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None
 
 
 async def _reclaim_unadopted(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """元世代が終了してPIDが再利用されても、closeの応答を受け取った資源だけ回収済みとする。"""
     for acknowledged in (True, False):
         coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
         coordinator.managers.conversations.clear()
@@ -310,7 +302,6 @@ async def _close(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """同じ世代の発見記録のプロセスが終了していれば、その記録へ接続せず新しいプロセスを起動する。"""
     directory = tmp_path / "services/agents-server"
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
     monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
@@ -320,7 +311,7 @@ async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(service_rpc, "request_sync", request)
 
     class _Launch(Exception):
-        """新しいプロセスの起動準備へ進んだ。"""
+        pass
 
     def launch(*_args: Any) -> None:
         raise _Launch
@@ -332,7 +323,6 @@ async def _ensure_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
 
 
 async def _supervise(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存を静止させた公開元の世代が終了していれば、確定の通知を待たずに静止を解く。"""
     coordinator, _session, _backend = _coordinator(tmp_path, monkeypatch)
     _freezable(coordinator)
     coordinator.managers.conversations.clear()
@@ -343,7 +333,6 @@ async def _supervise(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) ->
 
 
 async def _restore(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """受付先の世代が終了していれば、生存する世代へ受付を戻す。"""
     del monkeypatch
     registry = GenerationRegistry(tmp_path)
     for name, process in (("live", service_transport.process_identity(os.getpid())), ("reused", _REUSED)):
@@ -354,7 +343,6 @@ async def _restore(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> N
 
 
 async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """候補の世代が終了していれば、その世代へ公開を要求しない。"""
     directory = tmp_path / "services/agents-server"
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
     monkeypatch.setattr(service_forward, "code_identity", lambda _root, _directory: ("G1", "1.0.0"))
@@ -367,7 +355,6 @@ async def _publish_service(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPat
     request.assert_not_called()
 
 
-# 起動単位の生存判定を呼ぶ箇所ごとの、照会を拒否された終了済み世代の場面。
 _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch], Awaitable[None]]] = {
     "service_coordinator.ServiceCoordinator.publish": _publish,
     "service_coordinator.ServiceCoordinator._commit": _commit,
@@ -389,17 +376,11 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
 async def test_callers_treat_denied_query_of_reused_pid_as_exited_generation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caller: str
 ) -> None:
-    """終了した世代のPIDを別アカウントのプロセスが再利用し照会が拒否されても、各呼び出し元は終了した世代として扱う。
-
-    2026-11-18、拒否の例外が生存判定から素通しし、list・show・kill・send_messageが「Access is denied」で終わった。
-    """
     _deny_reused_pid(monkeypatch)
     await _DENIED_GENERATION_SCENES[caller](tmp_path, monkeypatch)
 
 
 class _LivenessCalls(ast.NodeVisitor):
-    """管理サービスのモジュールから、他プロセスの起動単位を照会する呼び出しの所在を集める。"""
-
     def __init__(self, module: str) -> None:
         self.scope = [module]
         self.found: set[str] = set()
@@ -418,7 +399,6 @@ class _LivenessCalls(ast.NodeVisitor):
             and isinstance(function.value, ast.Name)
             and function.value.id == "service_transport"
             and function.attr in {"process_alive", "process_identity"}
-            # 自身の起動単位の取得は生存判定ではない。
             and not (function.attr == "process_identity" and ast.unparse(node.args[0]) == "os.getpid()")
         ):
             self.found.add(".".join(self.scope))
@@ -430,7 +410,6 @@ class _LivenessCalls(ast.NodeVisitor):
     reason="同じパッケージの全モジュールを構文解析して呼び出し元を集める（ローカル実測0.70秒、CI実測0.58秒）。",
 )
 def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
-    """他世代の生存を判定する呼び出し元を追加したら、照会を拒否された場面も上の表へ加える。"""
     found: set[str] = set()
     for path in sorted(pathlib.Path(service_transport.__file__).parent.glob("*.py")):
         if not path.name.endswith("_test.py"):
@@ -451,7 +430,6 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
 def test_connect_distinguishes_expired_generation_from_account_denial(
     monkeypatch: pytest.MonkeyPatch, rejected: type[PermissionError], alive: bool, expected: type[OSError]
 ) -> None:
-    """終了した世代の不一致だけ変換し、アカウントの拒否は終了状態にかかわらず保持する。"""
     monkeypatch.setattr(service_transport.connection, "Client", lambda *args, **kw: contextlib.nullcontext(Mock()))
     monkeypatch.setattr(service_transport, "authenticate", Mock(side_effect=rejected("接続拒否")))
     monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)

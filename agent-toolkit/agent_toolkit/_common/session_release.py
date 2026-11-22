@@ -16,17 +16,11 @@ from agent_toolkit._common import atomic_file, path_ownership, registry_requests
 
 
 class OwnedSession(Protocol):
-    """所有側で解放前に再検収するsessionの属性。"""
+    @property
+    def terminal(self) -> bool: ...
 
     @property
-    def terminal(self) -> bool:
-        """所有側の現在の終了状態。"""
-        ...
-
-    @property
-    def cwd(self) -> str:
-        """所有側が保持する作業ディレクトリ。"""
-        ...
+    def cwd(self) -> str: ...
 
 
 def _record(session_id: str, state_root: pathlib.Path | None) -> tuple[str, tuple[session_registry.ProcessIdentity, ...]]:
@@ -121,8 +115,6 @@ def request_release(
                 next_progress = now + 5.0
             time.sleep(min(0.05, remaining))
     finally:
-        # JSON登録簿と拡張子を分け、異常終了時も既存のsessionファイルの7日掃引へ渡す。
-        # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
         registry_requests.remove_requester_files(request, response_path)
 
 
@@ -132,7 +124,6 @@ async def process_requests(
     *,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """自プロセスが所有する終了sessionの要求だけを検収し、結果を保持してstopする。"""
     owner = session_registry.owner_process()
     if owner is None:
         return

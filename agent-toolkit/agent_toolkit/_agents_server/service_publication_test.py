@@ -1,5 +1,3 @@
-"""公開した世代が終了しても、生存する世代が既存の会話の保存と受付を続ける。"""
-
 # 世代間の受付と静止の内部状態を直接組み立てて検証する。
 # pylint: disable=protected-access
 
@@ -41,7 +39,6 @@ pytestmark = pytest.mark.windows
 
 
 def _exited_process() -> str:
-    """起動単位を記録した後で終了したプロセスの識別を返す。"""
     with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as process:
         identity = service_transport.process_identity(process.pid)
     # Windowsは終了したプロセスもhandleが残る間は開けるため、起動した側のhandleを手放し、他のhandle保持者が手放すまで待つ。
@@ -64,7 +61,6 @@ def _target(directory: pathlib.Path, generation: str, epoch: int, process: str) 
 
 
 def _superseded(tmp_path: pathlib.Path, *, publish_new: bool = True) -> tuple[pathlib.Path, dict[str, Any], dict[str, Any]]:
-    """このプロセスを生存する旧世代とし、終了した新世代を受付先として公開した管理領域を作る。"""
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
     old = _target(directory, "old", 1, service_transport.process_identity(os.getpid()))
@@ -124,7 +120,6 @@ async def test_projection_is_saved_by_surviving_generation_after_published_one_e
 
 @pytest.mark.asyncio
 async def test_surviving_generation_resumes_acceptance_after_published_one_exited(tmp_path: pathlib.Path) -> None:
-    """公開が確定した後で新世代が終了した場合、旧世代は周期処理で受付を戻し、新しいturnを受け付けて退出しない。"""
     directory, old, new = _superseded(tmp_path)
     coordinator = _coordinator(directory, old)
     await coordinator.gate.observe_current(new)
@@ -137,7 +132,6 @@ async def test_surviving_generation_resumes_acceptance_after_published_one_exite
 
 @pytest.mark.asyncio
 async def test_surviving_generation_releases_update_abandoned_by_exited_publisher(tmp_path: pathlib.Path) -> None:
-    """新世代が公開の途中（旧世代の静止後、確定の通知前）で終了しても、旧世代は静止を解除して保存と新しいturnを再開する。"""
     directory, old, new = _superseded(tmp_path, publish_new=False)
     coordinator = _coordinator(directory, old)
     await coordinator.prepare("token", new)
@@ -189,7 +183,6 @@ async def test_supervisor_restores_acceptance_with_all_workers_waiting_on_regist
             path = shared_roots.aliases_directory(registrations.state_root) / f"{alias}.json"
             assert json.loads(path.read_text(encoding="utf-8"))["root_session_id"] == "root"
     finally:
-        # 修正前の待ち合わせでも、workerを残さず試験を終了する。
         exited = True
         registrations.thaw("token")
         await asyncio.gather(*saves, *coordinator._supervisors)
@@ -236,7 +229,6 @@ async def test_release_runs_every_stage_and_wakes_commit_even_if_one_stage_fails
 
 @pytest.mark.asyncio
 async def test_surviving_generation_returns_acceptance_left_by_publisher_exited_before_commit(tmp_path: pathlib.Path) -> None:
-    """公開元が受付を公開した後、確定の通知前に終了したら、旧世代は受付を自身へ戻して新しいturnを受け付ける。"""
     directory, old, new = _superseded(tmp_path)
     coordinator = _coordinator(directory, old)
     await coordinator.prepare("token", new)
@@ -248,7 +240,6 @@ async def test_surviving_generation_returns_acceptance_left_by_publisher_exited_
 
 @pytest.mark.asyncio
 async def test_late_commit_from_exited_publisher_keeps_acceptance_on_survivor(tmp_path: pathlib.Path) -> None:
-    """公開元が確定を送った直後に終了し、旧世代が受付を戻した後に確定が届いても、終了した世代へ受付を向け直さない。"""
     directory, old, new = _superseded(tmp_path)
     coordinator = _coordinator(directory, old)
     await coordinator.prepare("token", new)
@@ -290,7 +281,7 @@ async def test_update_settled_while_preparing_resumes_saving_after_preparation(
     if outcome == "commit_after_prepare_gave_up":
         await asyncio.sleep(0)
         committing = asyncio.create_task(coordinator.commit_update("token", old))
-    # 公開元の終了の観測か確定の処理が、準備が静止を掛け終える前に進む時間を置く。
+
     await asyncio.sleep(0.3)
     release.set()
     async with asyncio.timeout(5):
@@ -316,10 +307,6 @@ async def test_update_settled_while_preparing_resumes_saving_after_preparation(
 async def test_relaunched_generation_takes_over_from_survivor_after_acceptance_returned(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """終了した世代を起動し直すと、生存する旧世代の保存を静止して引き継いでから受付先になる。
-
-    起動し直した世代は受付を戻す前のepochで起動していても、戻した世代より新しい候補として公開できる。
-    """
     directory, _old, new = _superseded(tmp_path)
     relaunched = dict(new, process=service_transport.process_identity(os.getpid()))
     coordinator = _coordinator(directory, relaunched)
@@ -355,7 +342,7 @@ async def test_idle_previous_generation_retires_even_if_commit_is_lost_or_late(
     registry.reserve("old", tmp_path / "old", "1.0.0")
     stop = asyncio.Event()
     serving = asyncio.create_task(service.run(directory, "old", stop=stop))
-    # 受付先のプロセスが自身と同じなら旧世代は自身を受付先と扱うため、常駐する公開元は別の生存するプロセスとする。
+
     with subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE) as resident:
         try:
             async with asyncio.timeout(10):
@@ -404,7 +391,7 @@ async def test_publication_without_commit_succeeds_only_if_previous_generation_r
     """
     directory = tmp_path / "agent-toolkit" / "services" / "agents-server"
     registry = GenerationRegistry(directory)
-    # 同じ配置の新しい世代があると、退役した世代は索引から回収される。
+
     roots = {"old": tmp_path / "old", "new": tmp_path / ("old" if ending == "collected" else "new")}
     for generation, version in (("old", "1.0.0"), ("new", "1.0.1")):
         roots[generation].mkdir(exist_ok=True)
@@ -597,10 +584,6 @@ async def _wait_for_discovery(directory: pathlib.Path, generation: str, process:
 async def _launch_previous_generation(
     tmp_path: pathlib.Path, directory: pathlib.Path, turn: str, processes: list[subprocess.Popen], *, mode: str = "normal"
 ) -> dict[str, Any]:
-    """会話を1件持つ旧世代`old`を別プロセスで起動して受付先に公開し、その会話を所有するまで待つ。
-
-    `tmp_path/inject-failure`を作ると旧世代の受付が例外で終わり、`tmp_path/finish-turn`を作ると会話のturnが終わる。
-    """
     registry = GenerationRegistry(directory)
     registry.reserve("old", tmp_path / "old", "1.0.0")
     script = tmp_path / "previous" / "previous_generation.py"
@@ -835,7 +818,6 @@ async def test_generation_whose_adopted_conversation_expired_while_saving_retire
 async def test_unadopted_raw_resource_is_closed_before_generations_retire(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """取り込み用の設定を作る間に本体を解放しても、資源が閉じるまで両世代は退出しない。"""
     await _publish_across_expiry(tmp_path, monkeypatch, failure="options")
 
 
@@ -898,7 +880,6 @@ async def _publish_across_expiry(tmp_path: pathlib.Path, monkeypatch: pytest.Mon
 
 
 def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """起動確認の終了後に生存していない候補の世代は公開せず、生存する世代を受付先に保つ。"""
     directory, _old, new = _superseded(tmp_path, publish_new=False)
     (directory / "new.json").write_text(json.dumps(new), encoding="utf-8")
     monkeypatch.setattr(service_transport, "namespace", lambda _caller: directory)
@@ -916,7 +897,6 @@ def test_exited_candidate_is_not_published(tmp_path: pathlib.Path, monkeypatch: 
 def test_publication_fails_and_restores_live_generation_when_published_one_exits(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開の直後に終了した世代を公開成功として扱わず、生存する世代へ受付を戻す。"""
     directory, _old, new = _superseded(tmp_path, publish_new=False)
     live = dict(new, process=service_transport.process_identity(os.getpid()))
     (directory / "new.json").write_text(json.dumps(live), encoding="utf-8")

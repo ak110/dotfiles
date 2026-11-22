@@ -1,5 +1,3 @@
-"""同名のtagとローカルbranchを持つリポジトリで、CI収集先を検証する。"""
-
 import pathlib
 
 import pytest
@@ -10,7 +8,6 @@ from agent_toolkit._testing import git_repository as git
 
 @pytest.mark.parametrize("collision", ["none", "tag", "branch"])
 def test_alerts_tracking_branch_ignores_ref_collisions(tmp_path: pathlib.Path, collision: str) -> None:
-    """追跡先がorigin/HEADと異なる場合も、完全名から追跡branchを収集する。"""
     repo = git.init_repository(tmp_path / "repo", initial_branch="feature", commit_message="base")
     git.run_git(repo, "branch", "main")
     git.run_git(repo, "remote", "add", "origin", str(repo))

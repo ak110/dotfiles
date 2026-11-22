@@ -13,14 +13,12 @@ TWO_LAYER_WAIT_HEADING = "## agents_serverの二層待機"
 
 
 def markdown_section(text: str, heading: str) -> str:
-    """Markdown本文から見出し`heading`の直後から次のH1〜H3見出しまでを返す。"""
     match = re.search(rf"^{re.escape(heading)}\n(?P<body>.*?)(?=^#{{1,3}} |\Z)", text, re.MULTILINE | re.DOTALL)
     assert match is not None
     return match.group("body")
 
 
 def _write(tmp_path: pathlib.Path, body: str, *, name: str = "doc.md") -> pathlib.Path:
-    """確認するファイルを作成し、そのパスを返す。"""
     path = tmp_path / name
     path.write_text(body, encoding="utf-8")
     return path

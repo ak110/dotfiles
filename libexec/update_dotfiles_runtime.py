@@ -1,5 +1,3 @@
-"""update_dotfilesの更新状態・環境とログ。"""
-
 # pylint: disable=global-statement
 
 import contextlib
@@ -81,7 +79,6 @@ class _ContinuedFailure:
     detail: str | None
 
 
-# ランチャーが渡す印のパス。本体が中断せず終えた場合だけ作成する。
 PRUNE_READY_ENV = "DOTFILES_PRUNE_READY_FILE"
 
 
@@ -92,16 +89,12 @@ def continue_after_failure(title: str, action: str, detail: str | None = None) -
 
 
 class _DiagnosticFormatter(logging.Formatter):
-    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
-
     def format(self, record: logging.LogRecord) -> str:
-        """永続ログ向けに資格情報を除いた本文を返す。"""
         return redact_secrets(super().format(record))
 
 
 @contextlib.contextmanager
 def configure_persistent_log(run_id: str) -> Generator[logging.Handler | None]:
-    """更新診断用のログを開き、終了時に登録を外して閉じる。構成不能時はNoneを渡す。"""
     global persistent_log  # noqa: PLW0603
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +137,6 @@ def finish(returncode: int) -> int:
                 failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
             update_dotfiles_report.report(failures, LOG_PATH.with_name("update-failures.json"), DOTFILES_ROOT)
         except update_dotfiles_report.process_tree.ReclaimError:
-            # 所有した子孫を止められない状態では、新しい更新や起票を始めない。
             logger.exception("自動起票の子孫を回収できませんでした")
             raise
         except Exception as error:  # noqa: BLE001 -- 起票の未知の障害でも更新と結果の記録を妨げない境界。
@@ -250,12 +242,10 @@ def child_env() -> dict[str, str]:
 
 
 def git_env() -> dict[str, str]:
-    """更新区間のGitと退避子だけへ代替indexを渡す。"""
     env = child_env()
     if update_index is not None:
         env["GIT_INDEX_FILE"] = str(update_index)
     return env
 
 
-# 更新処理が差分を保持せずHEADへ戻すlockfile（作業ツリーのルートからの相対パス）。
 MISE_LOCK = "mise.lock"

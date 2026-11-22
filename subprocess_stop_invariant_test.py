@@ -1,12 +1,9 @@
-"""複数領域の子プロセス停止を検査するため、リポジトリrootへ配置する。"""
-
 import ast
 import pathlib
 import subprocess
 
 import pytest
 
-# キーは追跡ファイルと関数。停止・時間上限を許可する理由を箇所ごとに残す。
 _ALLOWED: dict[tuple[str, str], str] = {
     (
         "agent-toolkit/agent_toolkit/_agents_server/service_forward.py",
@@ -131,7 +128,6 @@ def _violations(path: pathlib.Path, source: str) -> list[str]:
     8.0, reason="全追跡製品PythonのASTで子孫回収を迂回する停止処理を検出する全量走査が必要（Linux CI CPU3.606秒）"
 )
 def test_timeouts_and_kills_use_process_tree_helpers():
-    """追跡済み製品Pythonの停止処理が共通関数または理由付き許可箇所へ収まる。"""
     root = pathlib.Path(__file__).resolve().parent
     result = subprocess.run(
         ["git", "-C", str(root), "ls-files", "-z", "--", "agent-toolkit", "pytools", "libexec", "scripts"],
@@ -150,7 +146,6 @@ def test_timeouts_and_kills_use_process_tree_helpers():
 
 
 def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
-    """bootstrap固有の許可は同じファイルの一般呼出側や別ファイルへ広がらない。"""
     source = "def _stop_server_process(process):\n    process.kill()\n"
     assert not _violations(pathlib.Path("agent-toolkit/scripts/launch.py"), source)
     assert _violations(pathlib.Path("agent-toolkit/agent_toolkit/atk.py"), source)
@@ -158,7 +153,6 @@ def test_bootstrap_stop_exception_is_limited_to_its_owned_helper():
 
 
 def test_native_update_stop_exception_is_limited_to_tree_owner():
-    """依存環境から独立した回収の許可を、workerの停止所有関数に限定する。"""
     source = "def _stop_tree(process):\n    process.kill()\n"
     assert not _violations(pathlib.Path("libexec/update_dotfiles_job.py"), source)
     assert _violations(pathlib.Path("libexec/update_dotfiles.py"), source)
@@ -166,7 +160,6 @@ def test_native_update_stop_exception_is_limited_to_tree_owner():
 
 
 def test_goal_grader_exception_is_limited_to_report():
-    """隔離採点の許可を、固定課題のreport呼出箇所だけに限定する。"""
     path = pathlib.Path("agent-toolkit/skills/atk-mode/fixtures/multi-turn/goal_discovery/private/grade.py")
     source = "def _report(task):\n    subprocess.run([task], timeout=3)\n"
     assert not _violations(path, source)

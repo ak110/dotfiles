@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのloggingの試験。"""
 
 # pylint: disable=protected-access
 
@@ -23,7 +22,6 @@ from pytools._internal.post_apply_test_helpers import _isolate_update_log as _is
 
 
 def test_persistent_log_redacts_plugin_output_only(capsys: pytest.CaptureFixture[str]) -> None:
-    """プラグインの出力と例外を保存時だけ伏せ、画面には元の診断を保つ。"""
     output = "api_key=fake-plugin-key\n-----BEGIN " + "PRIVATE KEY-----\nfake-private-body\n-----END PRIVATE KEY-----"
 
     def runner():
@@ -77,7 +75,7 @@ def test_warmup_pressure_keeps_weekend_contract(monkeypatch):
     monkeypatch.delenv(sweep.MIN_FREE_RATIO_ENV, raising=False)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _root: SimpleNamespace(total=237 * 1024**3, free=19 * 1024**3))
 
-    plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+    plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]), approved_commands=[])
 
     assert standalone.read_text(encoding="utf-8") == "引き継ぎ"
     assert creation.find_session_temp("weekend") == session
@@ -94,6 +92,9 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     (broken / ".agent-toolkit-sources.json").write_text("{", encoding="utf-8")
     monkeypatch.setattr(plugin_environment, "project_environment", lambda *args, **kwargs: current)
     monkeypatch.setattr(plugin_environment, "record_source", lambda *args: None)
+    monkeypatch.setattr(
+        plugin_environment, "registered_roots", lambda target: {tmp_path / "retired": "0" * 64} if target == old else {}
+    )
     monkeypatch.setattr(plugin_warmup.session_review, "sweep", lambda **kwargs: None)
 
     area = paths.temp_root() / "cleanup-test"
@@ -115,7 +116,7 @@ def test_warmup_summarizes_cleanup_and_keeps_details_in_log(tmp_path, monkeypatc
     monkeypatch.setattr(resources, "shutil", SimpleNamespace(rmtree=remove))
 
     with post_apply._configure_logging():
-        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([["python", "--project", "root"]]))
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([["python", "--project", "root"]]), approved_commands=[])
     captured = capsys.readouterr()
     screen = captured.out + captured.err
     assert "保持1件、削除1件、保留1件" in screen
@@ -160,7 +161,7 @@ def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, r
     restricted.chmod(mode)
     try:
         with post_apply._configure_logging():
-            plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+            plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]), approved_commands=[])
         screen = capsys.readouterr()
         assert not screen.out and len(screen.err.splitlines()) == 1
         assert "一時資源1件" in screen.err and "update-dotfiles logs" not in screen.err
@@ -172,7 +173,7 @@ def test_update_reports_unresolved_permission_error_and_retries(blocked, mode, r
         restricted.chmod(original)
     assert cache.is_dir()
     with post_apply._configure_logging():
-        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]), approved_commands=[])
     assert capsys.readouterr() == ("", "")
     assert not cache.exists()
 
@@ -184,7 +185,7 @@ def test_update_cleanup_io_error_points_to_log_and_retry(monkeypatch, capsys):
     monkeypatch.setattr(sweep, "sweep_managed_temp", lambda **_kwargs: sweep.SweepResult([], ((target, reason),)))
 
     with post_apply._configure_logging():
-        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]))
+        plugin_warmup.cleanup_prepared(plugin_warmup.PreparedTargets([]), approved_commands=[])
 
     screen = capsys.readouterr()
     assert "更新ログで対象と理由を確認" in screen.err
@@ -247,7 +248,6 @@ def test_sync_report_records_failed_step_reason_and_detail(sync_report_path: Pat
 
 
 def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.MonkeyPatch, sync_report_path: Path) -> None:
-    """同じ実行の記録がある場合は、その記録へpost-apply段の結果を追加する。"""
     monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "run-1")
     post_apply.sync_report.write_start("run-1", "2026-09-22T00:00:00+00:00")
 
@@ -265,7 +265,6 @@ def test_sync_report_preserves_report_of_the_same_run(monkeypatch: pytest.Monkey
 def test_configure_logging_preserves_cp932_record_with_unencodable_character(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CP932で表現できない文字を代替表現へ変換し、ログレコードを保持する。"""
     stdout_buffer = io.BytesIO()
     stderr_buffer = io.BytesIO()
     stdout = io.TextIOWrapper(stdout_buffer, encoding="cp932")
@@ -304,7 +303,6 @@ def test_main_records_steps_and_failure_in_persistent_log() -> None:
 
 
 def test_persistent_log_uses_size_limited_rotation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """永続ログの総容量を固定世代数で制限する。"""
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_MAX_BYTES", 512)
     monkeypatch.setattr(post_apply, "_UPDATE_LOG_BACKUP_COUNT", 2)
     with post_apply._configure_logging() as persistent_log_ready:  # noqa: SLF001

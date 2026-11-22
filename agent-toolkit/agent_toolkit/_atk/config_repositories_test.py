@@ -1,5 +1,3 @@
-"""repository設定の公開操作と旧登録からの対象集合維持を確かめる。"""
-
 import json
 import pathlib
 
@@ -14,7 +12,6 @@ __all__ = ["_isolate_platformdirs"]
 
 
 def test_repository_cli_round_trip(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """cloneなしの登録・指定属性だけの変更・全体set・削除を公開CLIから検証する。"""
     repo_id = "example.test/team/repo"
     assert _main(tmp_path, "config", "repos", "add", "git@example.test:team/repo.git", "--edit", "awi") == 0
     assert _main(tmp_path, "config", "repos", "add", repo_id, "--edit", "allow") == 2
@@ -32,7 +29,6 @@ def test_repository_cli_round_trip(tmp_path: pathlib.Path, capsys: pytest.Captur
 
 
 def test_local_and_worktree_identity(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """originあり・なしのworktreeが元repositoryと同じ登録へ解決する。"""
     repository = git.init_repository(tmp_path / "repo", commit_message="初期履歴")
     linked = tmp_path / "linked"
     git.run_git(repository, "worktree", "add", "-b", "linked", str(linked))
@@ -46,7 +42,6 @@ def test_local_and_worktree_identity(tmp_path: pathlib.Path, monkeypatch: pytest
 
 
 def test_migration_preserves_scope_and_conflict(tmp_path: pathlib.Path) -> None:
-    """旧配列を重複originごとにまとめ、不整合の新登録は上書きしない。"""
     one = git.init_repository(tmp_path / "one", origin="https://example.test/team/one.git")
     clone = git.init_repository(tmp_path / "clone", origin="git@example.test:team/one.git")
     two = git.init_repository(tmp_path / "two")
@@ -64,7 +59,6 @@ def test_migration_preserves_scope_and_conflict(tmp_path: pathlib.Path) -> None:
 
 
 def test_repair_missing_process_loop_path(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """失われたworktreeの登録を専用setで修復し、空パスは未指定として保持する。"""
     repository = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
     _write_config(
         tmp_path,
@@ -89,7 +83,6 @@ def test_repair_missing_process_loop_path(tmp_path: pathlib.Path, capsys: pytest
 
 
 def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.Path) -> None:
-    """repository単独の初回読取と、configの全設定移行を両方保つ。"""
     repository = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
     _write_config(
         tmp_path,
@@ -164,7 +157,6 @@ def test_array_update_and_path_normalization(
 def test_branch_registration_round_trip(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """系統・default_branchの系統・取り込み元を登録・表示・解除し、originに無い名前と不整合な組は保存しない。"""
     origin = git.init_bare_repository(tmp_path / "origin.git")
     repository = git.init_repository(tmp_path / "repo", initial_branch="main", origin=str(origin), commit_message="base")
     git.run_git(repository, "push", "--quiet", "origin", "main", "main:release")

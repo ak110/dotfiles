@@ -237,8 +237,6 @@ def test_update_keeps_lock_and_explains_when_owner_is_not_gone(
 
 
 class _FakeUpdater:
-    """他のupdate-dotfilesの更新主体として走査される偽のプロセス。"""
-
     pid = 999_999
 
     def __init__(self, name: str | None, cmdline: list[str] | None) -> None:
@@ -323,7 +321,6 @@ def test_update_reruns_after_real_forced_stop(
     host_environ: Callable[[], dict[str, str]],
     stop: str,
 ) -> None:
-    """公開入口の実行を指定地点でSIGKILLし、再実行で回復して、stage済み・未stage・未追跡の変更と代替indexを保持する。"""
     local, _seed, _remote = _create_git_pair(tmp_path)
     _prepare_dirty(local)
     before = _dirty_snapshot(local)
@@ -474,7 +471,6 @@ def test_plugin_pull_does_not_retry_when_lock_is_live(
 def test_update_waits_for_real_git_holding_index_lock(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実gitが`index.lock`を保持している間は待ち、解放後に同じ呼び出しで更新を進める。"""
     local, _seed, _remote = _create_git_pair(tmp_path)
     _prepare_dirty(local)
     before = _dirty_snapshot(local)
@@ -505,7 +501,7 @@ def test_update_waits_for_real_git_holding_index_lock(
     ) as process:
         try:
             _wait_process_ready(process, ready)
-            # `commit -a`はhookの実行中も`index.lock`を保持する。
+
             assert (local / ".git" / "index.lock").exists()
             timer = threading.Timer(0.5, release.touch)
             timer.start()
@@ -584,7 +580,6 @@ def test_plugin_pull_shares_deadline_with_retry(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_reclaim_restores_or_discards_interrupted_reclaim(tmp_path: pathlib.Path) -> None:
-    """回収が別名へ移した後で中断して残したファイルを、次の回収で片付け、診断にも示す。"""
     lock = tmp_path / "index.lock"
     leftover = tmp_path / "index.lock.reclaim-1-2"
     leftover.write_bytes(b"")
@@ -637,7 +632,6 @@ def test_updater_scan_understands_windows_command_lines(
 
 
 def test_git_scan_understands_windows_command_line(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`git.exe`とバックスラッシュのパスのgitプロセスを検出し、大域オプションを維持して照会する。"""
     fake = _FakeProcess(4321, "git.exe", ["C:\\Program Files\\Git\\cmd\\git.exe", "-C", "C:\\repo", "-c", "a=b", "commit"])
     monkeypatch.setattr(stale_lock.psutil, "process_iter", lambda *_args, **_kwargs: iter([fake]))
     queries: list[list[str]] = []

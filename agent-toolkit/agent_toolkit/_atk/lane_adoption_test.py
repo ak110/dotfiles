@@ -40,7 +40,6 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
     expanded_note: bool,
     record_property: Callable[[str, object], None],
 ) -> None:
-    """commitとnote-fileの参照を組み合わせ、実adoptへ渡すcommitと採用本文を確かめる。"""
     monkeypatch.setenv("GIT_AUTHOR_DATE", "2026-11-09T00:00:00+00:00")
     monkeypatch.setenv("GIT_COMMITTER_DATE", "2026-11-09T00:00:00+00:00")
     repo, selected, record = _create(tmp_path, monkeypatch, capsys)
@@ -96,7 +95,6 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
 
     def check_before_ff(arguments: list[str], cwd: pathlib.Path, *extra: Any, **kwargs: Any) -> Any:
         if arguments[:2] == ["merge", "--ff-only"] and cwd == repo:
-            # 実Gitへ処理を渡す直前に、複製や最終化で確定する値を事前解析が生成していないことを確かめる。
             before_ff["note_files"] = sorted(str(path) for path in tmp_path.rglob("*adopt-note.md"))
             stored = json.loads(pathlib.Path(record["record_path"]).read_text(encoding="utf-8"))
             before_ff["finalization_values"] = stored["integration"].get("finalization_values")
@@ -171,7 +169,6 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
 def test_integrate_validates_adopt_commits_before_git_and_finalization(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
-    """adoptのcommitが統合HEADの祖先で、対応記録の集合と一致することを確かめ、不一致ならGit統合と終了argvを実行しない。"""
     repo, record, manifest, value, original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
     value["verification"] = [[sys.executable, "-c", "pass"]]
     worktree = pathlib.Path(record["worktree"])
@@ -228,7 +225,7 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     execute = lane.run_command.execute
 
     def finalization(*args: Any, **kwargs: Any) -> Any:
-        # WI管理repoへの状態遷移だけを隔離し、実Git統合と対応記録・公開adoptの引数解析は実物を使う。
+
         if args[0] == argv:
             return execute(
                 [sys.executable, "-c", "import pathlib,sys;pathlib.Path(sys.argv[1]).touch()", str(marker)],

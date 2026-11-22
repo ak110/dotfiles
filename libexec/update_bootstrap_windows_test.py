@@ -186,7 +186,6 @@ def test_stage_timeout_diagnostic_preserves_outputs_and_owned_targets(tmp_path, 
 
 
 def test_stage_classification(tmp_path: pathlib.Path) -> None:
-    """同じPS起動内で、製品判定のcontinue・abort・Probeの消費結果を確認する。"""
     result = _run_stage(
         tmp_path,
         "$p=New-Object PSObject; $p | Add-Member ScriptMethod Dispose {}; "
@@ -256,7 +255,6 @@ def test_install_stage_does_not_retry_if_stop_and_dispose_fail(tmp_path: pathlib
 def test_stage_native_job_reaps_tree(
     tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """停止状態生成した実Jobは短命中間親の末端も回収し、stdioを閉じる。"""
     pids = tmp_path / "pids"
     pids.mkdir()
     for key, value in {
@@ -271,7 +269,6 @@ def test_stage_native_job_reaps_tree(
     with _owned_native_pids(pids, native_program):
         result = _run_stage(
             tmp_path,
-            # 変数名は大文字小文字を区別しないため、`$clock`だと関数内の`$Clock`引数（scriptblock自身）を返す。
             "$fixedNow=[DateTime]::UtcNow; "
             f"$code=Invoke-UpdateStage test continue 2 '{native}' @('-NoProfile') -Probe -Clock {{$fixedNow}} "
             "-Wait { param($p,$ms) $readyDeadline=[DateTime]::UtcNow.AddSeconds(20); "

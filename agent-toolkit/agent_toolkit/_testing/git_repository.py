@@ -13,7 +13,6 @@ import pytest
 
 from agent_toolkit._git import command as git_command
 
-# 一時ディレクトリの小さなリポジトリへの操作は数秒で終わる。停止した場合にテスト全体の上限より先に原因を報告させる。
 _TIMEOUT_SECONDS = 60
 
 
@@ -38,7 +37,6 @@ def run_git(
     check: bool = True,
     env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    """`repository`を作業ディレクトリとしてGitを実行し、標準出力と標準エラーを文字列で返す。"""
     return subprocess.run(
         ["git", "-C", str(repository), *arguments],
         check=check,
@@ -52,7 +50,6 @@ def run_git(
 
 
 def git_output(repository: pathlib.Path, *arguments: str, env: Mapping[str, str] | None = None) -> str:
-    """Gitを実行し、前後の空白を除いた標準出力を返す。"""
     return run_git(repository, *arguments, env=env).stdout.strip()
 
 
@@ -86,14 +83,12 @@ def init_repository(
 
 
 def init_bare_repository(path: pathlib.Path, *, initial_branch: str = "main") -> pathlib.Path:
-    """remoteとして使うbareリポジトリを作成して`path`を返す。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     run_git(path.parent, "init", "--quiet", "--bare", f"--initial-branch={initial_branch}", str(path))
     return path
 
 
 def commit_all(repository: pathlib.Path, message: str, *, env: Mapping[str, str] | None = None) -> str:
-    """作業ツリーの全ての変更を1つのcommitへ記録し、そのcommitのOIDを返す。変更が無い場合は空のcommitを作成する。"""
     run_git(repository, "add", "-A", env=env)
     run_git(repository, "commit", "--quiet", "--allow-empty", "-m", message, env=env)
     return git_output(repository, "rev-parse", "HEAD")

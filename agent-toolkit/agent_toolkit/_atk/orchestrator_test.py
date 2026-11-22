@@ -1,5 +1,3 @@
-"""候補選択を偽のCLIと保存ロールアウトで検証する。"""
-
 import json
 import os
 import pathlib
@@ -16,7 +14,6 @@ from agent_toolkit._common import claude_usage_limit, codex_usage_limit, mcp_env
 
 @pytest.mark.parametrize("engine", ["claude", "codex"])
 def test_probe_usage_limit_preserves_unicode_json(monkeypatch: pytest.MonkeyPatch, engine: str) -> None:
-    """実際の間接decoderへ、Unicode区切りを含むJSONイベントを物理行のまま渡す。"""
     thread_id = "01234567-89ab-cdef-0123-456789abcdef"
     event = (
         {"type": "thread.started", "thread_id": thread_id}
@@ -44,7 +41,6 @@ def test_probe_usage_limit_preserves_unicode_json(monkeypatch: pytest.MonkeyPatc
 
 
 def test_child_env_strips_conversation_context_and_preserves_explicit_session_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    """全起動で親contextを除き、接続設定と除去後に指定する委譲印を維持する。"""
     for name in mcp_environment._NON_INHERITABLE_NAMES:  # pylint: disable=protected-access
         monkeypatch.setenv(name.upper(), "parent")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-token")

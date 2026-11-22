@@ -1,11 +1,3 @@
-"""UWIエントリの回答状態を走査する共有モジュール。
-
-frontmatterはCLIと同じ`frontmatter.parse_frontmatter`で解析し、
-YAML表現の違いによってCLIとフックの判定が分岐しないようにする。
-
-`is_uwi_answered`はUWI回答判定のSSOTとし、CLI・Web画面・フックはいずれも本モジュールの判定を使う。
-"""
-
 import pathlib
 import typing
 
@@ -21,8 +13,6 @@ _ANSWER_HEADING = "\n## 回答\n"
 
 
 class ActiveUwi(typing.NamedTuple):
-    """走査で見つかったactive状態のUWI1件。"""
-
     filename: str
     answered: bool
     submitter_session: str | None = None
@@ -30,14 +20,11 @@ class ActiveUwi(typing.NamedTuple):
 
 
 class ActiveUwiScan(typing.NamedTuple):
-    """active状態のUWI走査結果。"""
-
     entries: list[ActiveUwi]
     complete: bool
 
 
 def is_uwi_answered(text: str) -> bool:
-    """UWI本文の`## 回答`節にHTMLコメント以外の非空内容があれば真。"""
     idx = text.find(_ANSWER_HEADING)
     if idx < 0:
         return False

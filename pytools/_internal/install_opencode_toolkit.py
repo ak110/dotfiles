@@ -59,8 +59,6 @@ def _rules_body(root: Path) -> str:
         _BEGIN,
         "# OpenCodeでのagent-toolkit",
         "",
-        # OpenCodeはhookを登録しないため、入口の起動を求める案内を設定の`instructions`で届ける。
-        # 規範の本文は入口のスキルと手順書だけが持ち、ここへは載せない。
         "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。",
         "",
         f"agent-toolkit plugin root: `{toolkit.as_posix()}`。agent-basics plugin root: `{basics.as_posix()}`。",

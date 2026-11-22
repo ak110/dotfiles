@@ -39,7 +39,7 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
         return
     first_msg_id: str | None = None
     checked_count = 0
-    saw_non_assistant = False  # 最初のアシスタントエントリ発見後に非アシスタントエントリが出た場合に真
+    saw_non_assistant = False
     for line in reversed(lines):
         try:
             entry = json.loads(line)
@@ -49,11 +49,9 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
             return
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
             if first_msg_id is not None:
-                # 別エントリが間に介在 → 同一ターンの探索終了。
                 saw_non_assistant = True
             continue
         if saw_non_assistant:
-            # 直前のアシスタントエントリとの間に別エントリが介在 → 別ターン。
             return
         message = entry.get("message")
         if not isinstance(message, dict):
@@ -62,7 +60,6 @@ def iter_latest_assistant_messages(transcript_path: str) -> collections.abc.Iter
         if first_msg_id is None:
             first_msg_id = msg_id
         elif msg_id and first_msg_id and msg_id != first_msg_id:
-            # message.idが両方設定されており異なる → 別ターン。
             return
         checked_count += 1
         if checked_count > _MAX_ENTRIES:
@@ -187,7 +184,6 @@ def read_transcript_lines(transcript_path: str) -> list[str] | None:
 
 
 def read_transcript_entries(transcript_path: str) -> list[dict]:
-    """記録を読み込み、JSONオブジェクトの行を時系列で返す。読み取れない場合と解釈できない行は除く。"""
     entries: list[dict] = []
     for line in read_transcript_lines(transcript_path) or []:
         try:
@@ -223,7 +219,6 @@ def visible_text_blocks(content: typing.Any) -> list[str]:
 
 
 def visible_assistant_text(message: typing.Any) -> str:
-    """Assistant message dictのうちユーザーへ届いた本文（`text`と`send_to_user`の`message`）を連結して返す。"""
     if not isinstance(message, dict):
         return ""
     content = message.get("content")

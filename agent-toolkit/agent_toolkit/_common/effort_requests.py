@@ -23,7 +23,6 @@ from agent_toolkit._common import (
 
 
 def _actor_session(environment: Mapping[str, str], state_root: pathlib.Path | None) -> str | None:
-    """会話IDを渡さないCLIでは、同じルート内の最も近い実行祖先から本人を確定する。"""
     actor = delegated_session.current_conversation_session_id(environment)
     if actor:
         return actor
@@ -55,7 +54,6 @@ def _actor_session(environment: Mapping[str, str], state_root: pathlib.Path | No
 
 
 def authorized(actor: str, target: str, payload: Mapping[str, Any]) -> bool:
-    """自身と、登録済みの直接親だけを許可する。"""
     return actor == target or actor == payload.get(session_registry.LAUNCHER_KEY)
 
 
@@ -133,13 +131,11 @@ def request(
         detail = registry_requests.denial_detail(response_path, denial)
         raise TimeoutError(f"effort変更の応答を確認できない{detail}。atk agents showで現在値を確認し、自動で再送しない")
     finally:
-        # 所有側は応答を書いた後に要求の有無で自分の応答を消すかを決めるため、要求を先に消す。
         with session_registry.registry_lock(target, state_root=state_root):
             registry_requests.remove_requester_files(request_path, response_path)
 
 
 def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Path, dict[str, Any]]]:
-    """この所有プロセスへ宛てた未応答の要求だけを読む。"""
     owner = session_registry.owner_process()
     if owner is None:
         return []
@@ -195,5 +191,4 @@ def pending(*, state_root: pathlib.Path | None = None) -> list[tuple[pathlib.Pat
 
 
 def respond(path: pathlib.Path, response: dict[str, Any]) -> None:
-    """同名の応答を原子的に書く。要求側が要求を消した後なら、書いた応答も消して残さない。"""
     registry_requests.respond(path, path.with_suffix(".effort-response"), response)

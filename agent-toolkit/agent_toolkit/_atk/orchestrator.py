@@ -72,8 +72,6 @@ _PROBE_TIMEOUT_SECONDS = 180.0
 
 @dataclasses.dataclass(frozen=True)
 class ProbeContext:
-    """可用性判定のうちコマンドごとに異なる値。"""
-
     title: str
     """判定のたびに戻す端末タイトル。子プロセスが書き換えたタイトルを起動元の表示へ戻す。"""
 
@@ -118,7 +116,6 @@ class NoAvailableCandidateError(Exception):
 
 
 def child_env(*, drop: Iterable[str] = ()) -> dict[str, str]:
-    """起動元の仮想環境・会話contextと`drop`の環境変数を除いた新しい会話の環境を返す。"""
     env = os.environ.copy()
     _inherited_venv.strip_inherited_venv(env)
     _mcp_environment.strip_conversation_context(env)
@@ -168,14 +165,12 @@ def resolve_specs(*, rerun_action: str, raise_error: bool = False) -> list[tuple
 
 
 def _format_candidates(candidates: list[tuple[str, str, str]]) -> str:
-    """候補の3つ組を`<engine>:<model>/<effort>`のカンマ区切りで返す。"""
     return ",".join(f"{engine}:{model}/{effort}" for engine, model, effort in candidates)
 
 
 def select_available(
     candidates: list[tuple[str, str, str]], env: dict[str, str], cwd: pathlib.Path, context: ProbeContext
 ) -> tuple[str, str, str]:
-    """候補を先頭から事前に試し、最初に可用な3つ組を返す。詳細は`select_available_with_provider`に従う。"""
     orchestrator, model, effort, _, _ = select_available_with_provider(candidates, env, cwd, context)
     return orchestrator, model, effort
 
@@ -251,7 +246,6 @@ def select_available_with_provider(
 
 
 def is_normal_session_exit(orchestrator: str, returncode: int, *, platform: str = os.name) -> bool:
-    """オーケストレーターとOS別の正常終了コードを判定する。"""
     if orchestrator == "claude":
         return returncode in _CLAUDE_NORMAL_EXIT_CODES
     if orchestrator == "agy":
@@ -267,7 +261,6 @@ def _launch(command: list[str], **kwargs: typing.Any) -> subprocess.CompletedPro
 
 
 def _probe_model(orchestrator: str) -> str:
-    """軽量工程の同engine候補を可用性確認に使い、候補が無いengineは組込みモデルを使う。"""
     for key in ("chores_fast_model", "review_fast_model"):
         for engine, model, _effort in _config.parse_stage_model_candidates(_config.resolve_mutable_setting(key)):
             if engine == orchestrator:
@@ -343,7 +336,6 @@ def _probe_argv(orchestrator: str, model: str, prompt: str, *, codex_provider_ar
 
 
 def _probe_env(env: dict[str, str], orchestrator: str) -> dict[str, str]:
-    """可用性判定を最上位セッションの終了強制から除外した子環境を返す。"""
     probe_env = session_env(env, orchestrator)
     probe_env.pop(PROCESS_LOOP_SESSION_ENV, None)
     probe_env.pop(PROCESS_LOOP_SESSION_ID_ENV, None)
@@ -384,7 +376,6 @@ def _probe_candidate(
     *,
     codex_provider: str | None = None,
 ) -> tuple[UsageLimitState | None, tuple[str, int, str] | None] | None:
-    """可用性確認で作成する設定を、確認と診断が終わるまで所有する。"""
     with contextlib.ExitStack() as settings_owner:
         return _probe_candidate_owned(
             orchestrator, probe_models, env, cwd, candidate, context, settings_owner, codex_provider=codex_provider

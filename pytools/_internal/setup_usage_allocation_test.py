@@ -1,5 +1,3 @@
-"""利用枠自動配分の補完による明示設定と既存ファイルの保護を検証する。"""
-
 import json
 from pathlib import Path
 
@@ -11,7 +9,6 @@ from pytools._internal import setup_usage_allocation
 
 
 def test_defaults_preserve_explicit_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """補完後に無効化した設定は、次の適用でも保持される。"""
     path = tmp_path / "config.json"
     monkeypatch.setattr(config_settings, "config_file_path", lambda: path)
     config_settings.save_config({"custom": {"preserved": True}})
@@ -31,7 +28,6 @@ def test_defaults_preserve_explicit_settings(monkeypatch: pytest.MonkeyPatch, tm
 
 @pytest.mark.parametrize("content", ["{broken", "[]"])
 def test_invalid_config_is_not_overwritten(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str) -> None:
-    """読取不能の既存設定を、既定値だけのファイルへ置き換えない。"""
     path = tmp_path / "config.json"
     monkeypatch.setattr(config_settings, "config_file_path", lambda: path)
     path.write_text(content, encoding="utf-8")
@@ -41,7 +37,6 @@ def test_invalid_config_is_not_overwritten(monkeypatch: pytest.MonkeyPatch, tmp_
 
 
 def test_missing_config_is_created(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """新しい環境では個別設定なしで有効化する。"""
     path = tmp_path / "new" / "config.json"
     monkeypatch.setattr(config_settings, "config_file_path", lambda: path)
     assert setup_usage_allocation.run().changed

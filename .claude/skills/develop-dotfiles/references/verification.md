@@ -12,7 +12,7 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 
 - 試験は対象の近くに置く。
   Pythonモジュールの単体試験は同じディレクトリの`<name>_test.py`とし、文書・設定・スクリプトの実物を読む試験は、そのファイルと同じディレクトリか、対象群を包含する最も近い上位ディレクトリに置く。
-  fixtureで入力を組み立てて実装を呼ぶ試験も実装の近くに置き、離れた場所に置く場合は置ける最も近い場所を選んで理由をモジュールのdocstringに書く。
+  fixtureで入力を組み立てて実装を呼ぶ試験も実装の近くに置き、離れた場所に置く場合は置ける最も近い場所を選んで理由が配置から分からない場合はcommit本文に残す。
 - 複数の領域にまたがる既存成果物の不変条件を検証する試験（横断テスト）は`*_invariant_test.py`と名付け、通常の動作試験と別のファイルにする。
   リポジトリ直下の`pyproject.toml`はこの名前を`pytest-fast-targets`（`pyfltr fast`の対象）と`pytest-always-targets`（pytestを含む全ての`pyfltr`の実行へ加える対象）に指定している。
 - 共通ヘルパーは、`pytools/`配下では`pytools/_internal/_test_helpers.py`、リポジトリ直下では`_test_helpers.py`、`scripts/`配下では`scripts/_scripts_test_helpers.py`に置く。

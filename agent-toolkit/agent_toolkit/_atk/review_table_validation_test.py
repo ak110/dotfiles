@@ -59,7 +59,6 @@ def test_validate_rejects_unanswered_response(tmp_path: pathlib.Path) -> None:
 
 
 def test_row_id_diagnostic_guides_response(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """空行と応答済み行の後の指摘へ、診断とshowの同じ識別子で応答できる。"""
     path = tmp_path / "positions.exec-review.tsv"
     rows = [
         ["1", _TRACK, "first", "対応済み", "詳細", "修正した", ""],
@@ -97,7 +96,6 @@ def test_row_id_diagnostic_guides_response(tmp_path: pathlib.Path, capsys: pytes
 def test_syntax_diagnostic_identifies_physical_line(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], cells: list[object], reason: str
 ) -> None:
-    """構文不正は空行を数える物理位置を示し、行識別子として案内しない。"""
     path = tmp_path / "syntax.exec-review.tsv"
     line = "\t".join("broken" if cell is None else json.dumps(cell) for cell in cells)
     path.write_text("\n\n" + line + "\n", encoding="utf-8")
@@ -115,7 +113,6 @@ def test_syntax_diagnostic_identifies_physical_line(
     [(0, "", "先頭4列"), (0, "R2", "ラウンド"), (1, "invalid", "track"), (4, "重大", "level")],
 )
 def test_invalid_row_diagnostic_uses_show_identifier(tmp_path: pathlib.Path, column: int, value: str, reason: str) -> None:
-    """未応答以外の行内容の診断も空行を除く識別子へ対応する。"""
     path = tmp_path / "invalid.exec-review.tsv"
     row = ["1", _TRACK, "位置", "指摘", "詳細", "対応済み", ""]
     row[column] = value
@@ -127,7 +124,6 @@ def test_invalid_row_diagnostic_uses_show_identifier(tmp_path: pathlib.Path, col
 
 
 def test_invalid_column_count_has_recovery_guidance_for_all_mutations(tmp_path: pathlib.Path) -> None:
-    """不正な列数の表を検出したとき、修復に必要な列構造と正規値を全操作で示す。"""
     path = tmp_path / "review.tsv"
     cells = ("1", _TRACK, "旧重大度", "位置", "指摘", "詳細", "", "", "")
     path.write_text(
@@ -204,7 +200,6 @@ def test_respond_rejects_body_without_required_labels_and_keeps_table(
 def test_respond_records_body_with_required_labels(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str, body: str, column: int
 ) -> None:
-    """必須ラベルを全て持つ本文は従来どおり記録し、渡したファイルの種類が対応要否を決める。"""
     path = tmp_path / "review.tsv"
     table.add(path, "1", _TRACK, "位置", "指摘")
     body_file = tmp_path / "body.md"

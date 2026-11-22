@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_evidence_candidates_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -12,7 +10,6 @@ import session_review_evidence as evidence
 
 
 def test_candidate_events_excludes_hook_notices_without_tag() -> None:
-    """区分を持たないhook通知を候補から除き、区分を持つ通知の扱いを変えない。"""
     hook_notices = [
         {
             "kind": "hook-notice",
@@ -94,7 +91,6 @@ def test_candidate_events_assigns_shared_locator_to_hook_notice() -> None:
 
 
 def test_candidate_events_separates_block_reasons_after_shared_long_prefix() -> None:
-    """定型接頭辞が同じblock通知も、理由が異なれば別候補へ分ける。"""
     prefix = "処理対象の検査 " * 15
     notices = [
         {
@@ -185,7 +181,6 @@ def test_candidate_events_aggregates_each_kind_and_preserves_all_locators() -> N
 
 
 def test_candidate_events_keeps_distinct_kinds_at_the_same_locator() -> None:
-    """同じ記録位置でも候補種別が異なる事象は別候補として保持する。"""
     timeline = [{"kind": "failed-tool", "record": "main", "line": 4, "text": "実行失敗"}]
     warnings = [{"kind": "warning", "record": "main", "line": 4, "text": "実行時警告"}]
 
@@ -225,7 +220,6 @@ def test_candidate_events_keeps_hook_failure_bodies_distinct_after_long_shared_p
 
 
 def test_candidate_events_counts_only_identical_candidate_identity_as_duplicate() -> None:
-    """位置・種別・タグが同じ重複だけを機械除外件数へ加える。"""
     event = {"kind": "warning", "record": "main", "line": 8, "text": "同じ警告"}
 
     candidates = evidence_candidates._candidate_events([], [event, dict(event)], [])  # pylint: disable=protected-access
@@ -331,7 +325,6 @@ def test_candidate_events_bounds_hook_failures_with_hook_notices_and_keeps_rare_
 
 
 def test_candidate_events_merges_warnings_and_repeats_into_the_originating_hook_notice() -> None:
-    """hook通知と同じ本文の警告、反復注記付きの通知、UUIDだけが異なる通知を、同じhook通知の候補へまとめる。"""
     session_ids = ["83adb05b-c346-4d6a-9bf7-0dd7016c18ec", "67b0dc56-6a64-4606-8a3b-229829a56427"]
     notices = [
         {
@@ -366,7 +359,6 @@ def test_candidate_events_merges_warnings_and_repeats_into_the_originating_hook_
 
 
 def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
-    """2件目以降の通知に付く反復注記を種類の本文から除き、1件目と同じ種類として数える。"""
     opening = '<agent-toolkit-auto-inserted source="agent-toolkit/pretooluse" kind="warn">'
     first = f"{opening}対象の検査に該当した。</agent-toolkit-auto-inserted>"
     repeated = (
@@ -392,11 +384,6 @@ def test_hook_repeat_annotation_does_not_split_notice_kinds() -> None:
     ids=["longer-than-kind-length", "with-path", "with-repeat-annotation"],
 )
 def test_candidate_events_counts_a_hook_notice_and_its_warning_line_once(body: str) -> None:
-    """1回のhook通知は、同じ位置に同じ本文の警告行を伴っても候補の発生1件として数える。
-
-    通知は切り詰め・可変部の置換・反復注記の除去を経た種類本文だけを保持するため、
-    警告本文を同じ正規化で比べないと代表判定が外れ、同じ通知が警告からもう1件数えられる。
-    """
     key = evidence_hook_notices._hook_notice_keys(  # pylint: disable=protected-access
         f'<atk-auto source="pretooluse" kind="warn">{body}</atk-auto>', "PreToolUse:Bash"
     )[0]
@@ -420,7 +407,6 @@ def test_candidate_events_counts_a_hook_notice_and_its_warning_line_once(body: s
 
 
 def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> None:
-    """1件目の本文の要約で届く2件目以降の通知を同じ通知として扱い、上限の枠を別の通知へ残す。"""
     variants = [
         ("対象のファイルの全文取得を先頭の範囲へ補正した。範囲は次の組で取得する", 6),
         ("対象のファイルの全文取得を先頭の範囲へ補正した。", 5),
@@ -451,10 +437,6 @@ def test_candidate_events_does_not_spend_hook_budget_on_repeat_summaries() -> No
 
 
 def test_candidate_events_excludes_wi_body_style_diagnostics() -> None:
-    """`atk wi add`・`edit`の本文表記診断の警告を除き、同じ語を含む別の警告は残す。
-
-    表記診断は起草者が保存前に処置する警告で、振り返りで判定すべき事象を持たない。
-    """
     warnings = [
         {
             "kind": "warning",

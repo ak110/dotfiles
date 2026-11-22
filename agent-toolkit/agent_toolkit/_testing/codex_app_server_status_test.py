@@ -1,5 +1,3 @@
-"""記録済み模擬App Serverの状態とPID再利用を、照会と回収の双方から確認する。"""
-
 import json
 
 import psutil

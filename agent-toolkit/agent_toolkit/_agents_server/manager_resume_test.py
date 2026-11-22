@@ -58,11 +58,10 @@ async def test_cold_reply_publishes_wait_target_before_returning(
     monkeypatch.setattr(agents_wait, "is_human_terminal", lambda: False)
 
     async def ready_commands(_cwd: str) -> None:
-        """バックエンドを代用する試験ではホストCLIの準備を行わない。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready_commands)
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, writer):
-        # 定期保存の時機に依存せず、公開応答自身が状態公開を完了することを確かめる。
         monkeypatch.setattr(writer, "_aggregate_seconds", 600)
         identifier = "cold-public-wait-session"
         previous = state.SessionState(identifier, str(tmp_path), engine="codex", turn_seq=1)
@@ -225,7 +224,6 @@ async def test_expired_multi_turn_session_resumes_and_agents_wait_observes_resul
 
 @pytest.mark.asyncio
 async def test_resumed_session_keeps_created_at_in_status_file(tmp_path: pathlib.Path) -> None:
-    """再開したsessionは最初の開始時刻を保ち、状態ファイルへturnの開始時刻と別に書く。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -272,12 +270,6 @@ async def test_resumed_session_keeps_every_launch_info_item(
     label: str,
     prepare_resume: Callable[[server_manager.AgentsServerManager, state.SessionState], None],
 ) -> None:
-    """再開の処理によらず、起動情報の定義の全項目を`start`時の値のまま保つ。
-
-    再開時に写されなかった項目は、`atk agents list`・`show`の状態と`atk agents wait`の終了行で空になり、
-    labelで自sessionを探す手順と、`-review`の完了結果に付く採否確定の案内が成立しなくなる。
-    再開後の登録簿にも同じ値を書き、もう一度再起動しても保たれることを確かめる。
-    """
     expected_launch = {**_LAUNCH_VALUES, "label": label}
     launch_values: dict[str, Any] = {
         **expected_launch,
@@ -294,7 +286,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
         )
         _complete(session, message="前のturn")
         expected_info = dataclasses.replace(session_registry.LaunchInfo.of(session), followup_prompts=("先行追送", "続行"))
-        # 再起動を模す前に、旧所有者が作成する登録の保存を完了する。
+
         await session.drain_registration()
         prepare_resume(manager, session)
 
@@ -341,7 +333,6 @@ async def test_resumed_session_keeps_every_launch_info_item(
 async def test_resume_from_legacy_registry_record_without_launch_info(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """起動情報の項目を持たない版数2の登録簿レコードからも再開でき、labelとpromptは空文字列になる。"""
     async with _resume_test_manager(monkeypatch, tmp_path) as (manager, _):
         session_registry.publish(
             "legacy-session",
@@ -360,7 +351,6 @@ async def test_resume_from_legacy_registry_record_without_launch_info(
 
 @pytest.mark.asyncio
 async def test_owner_gone_resume_removes_previous_result_file(tmp_path: pathlib.Path) -> None:
-    """所有主体終了による再開は新しいturnの開始時に旧結果を削除する。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),

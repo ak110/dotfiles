@@ -1,5 +1,3 @@
-"""`atk wi`の一覧と表示が使う、frontmatterの値の抽出と要約・表示幅の整形。"""
-
 import pathlib
 import shutil
 import unicodedata
@@ -14,11 +12,6 @@ _ELLIPSIS = "..."
 
 
 def display_width(text: str) -> int:
-    """文字列の表示幅を算出する。
-
-    `unicodedata.east_asian_width`の判定結果が`W`/`F`/`A`の文字は幅2、
-    `Na`/`N`/`H`の文字は幅1として合算する。
-    """
     width = 0
     for ch in text:
         width += 2 if unicodedata.east_asian_width(ch) in ("W", "F", "A") else 1
@@ -50,11 +43,6 @@ def target_repo_budget(path_name: str, bracket_label: str) -> int:
 
 
 def truncate_target_repo(target_repo: str, max_width: int = _TARGET_REPO_MAX_WIDTH) -> str:
-    """`target_repo`表示を最大幅で中央省略する。
-
-    表示幅が`max_width`以下ならそのまま返す。超過時は先頭・末尾の残幅を等分し、
-    中央に`...`を挿入する形で切り詰める。東アジア文字幅(幅2)は`display_width`を用いる。
-    """
     if display_width(target_repo) <= max_width:
         return target_repo
     ellipsis_width = display_width(_ELLIPSIS)
@@ -84,7 +72,6 @@ def truncate_target_repo(target_repo: str, max_width: int = _TARGET_REPO_MAX_WID
 
 
 def parse_target_repo(text: str) -> str:
-    """AWIファイル本文先頭のfrontmatterからtarget_repoを抽出する。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return "(unknown)"
@@ -93,7 +80,6 @@ def parse_target_repo(text: str) -> str:
 
 
 def parse_type(text: str) -> str | None:
-    """本文先頭のfrontmatterから`type`を抽出する。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
@@ -101,7 +87,6 @@ def parse_type(text: str) -> str | None:
 
 
 def parse_source(text: str) -> str | None:
-    """AWI/UWIファイル本文先頭のfrontmatterからsourceを抽出する。未指定時はNoneを返す。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
@@ -110,10 +95,6 @@ def parse_source(text: str) -> str | None:
 
 
 def parse_alert_keys(text: str) -> list[str]:
-    """AWIファイル本文先頭のfrontmatterからalert_keys（カンマ区切り）を抽出する。
-
-    未指定・空文字列時は空リストを返す。各要素の前後空白は除去する。
-    """
     parsed = parse_frontmatter(text)
     if parsed is None:
         return []
@@ -122,11 +103,6 @@ def parse_alert_keys(text: str) -> list[str]:
 
 
 def _truncate_summary(line: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
-    """要約1行を表示幅`available_width`で切り詰め、超過時は`...`を付与する。
-
-    `available_width`が0以下の場合は表示余地が無いため空文字列を返す。
-    切り詰め後の残幅が`...`の表示幅未満の場合は`...`自体を`available_width`まで切り詰める。
-    """
     if available_width <= 0:
         return ""
     if display_width(line) <= available_width:
@@ -146,10 +122,6 @@ def _truncate_summary(line: str, available_width: int = _SUMMARY_MAX_LEN) -> str
 
 
 def body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
-    """AWI本文からfrontmatterを除いた先頭要約を1行で返す。
-
-    本文先頭行の表示幅が`available_width`を超える場合は切り詰めて`...`を付与する。
-    """
     parsed = parse_frontmatter(text)
     body = text.removeprefix("\ufeff") if parsed is None else parsed[1]
     stripped = body.strip()
@@ -158,11 +130,6 @@ def body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
 
 
 def uwi_body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
-    r"""UWI本文（`## 質問\n\n{message}\n\n## 回答\n\n`形式）から質問本文の先頭要約を1行で返す。
-
-    frontmatterと`## 質問`見出し行をスキップし、質問本文の先頭行を`body_summary`と同じ
-    切り詰めルールで返す。
-    """
     parsed = parse_frontmatter(text)
     body = text.removeprefix("\ufeff") if parsed is None else parsed[1]
     for line in body.splitlines():
@@ -174,7 +141,6 @@ def uwi_body_summary(text: str, available_width: int = _SUMMARY_MAX_LEN) -> str:
 
 
 def shorten_home(path: pathlib.Path, home: pathlib.Path) -> str:
-    """$HOME配下のパスを`~/...`へ短縮する。外なら絶対パスのまま返す。"""
     try:
         rel = path.relative_to(home)
     except ValueError:

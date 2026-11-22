@@ -1,5 +1,3 @@
-"""取得済み候補と選定YAMLを読み込み、初回配分との一致を確かめる。"""
-
 from __future__ import annotations
 
 import functools
@@ -33,7 +31,6 @@ _NEXT_SOURCE_MISMATCH = "一致しない欄を、元のWIのfrontmatterの`depen
 
 
 def _check_allocation_sources(selection: dict[str, object], private_notes: pathlib.Path) -> list[Violation]:
-    """依存の型付き根拠を元のWIのfrontmatterと対応付け、一致しない欄と両方の値を示す。"""
     data = typing.cast(dict[str, typing.Any], selection[_selection.INITIAL_ALLOCATION_KEY])
     items = {
         item[_selection.WI_KEY]: item for item in typing.cast(list[dict[str, typing.Any]], _selection.decisions(selection))
@@ -44,7 +41,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
     for group in data["不可分成分"]:
         for edge in group["結合条件"]:
             first, second, kind, evidence = (edge[key] for key in ("WI1", "WI2", "種別", "根拠"))
-            # 書込重複は成立の判定が選定の現在値を使うため、比べる元入力を持たない。
+
             if (
                 kind == "書込重複"
                 or first not in items
@@ -70,7 +67,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                             sources[name]["state"] = source.parent.name
                 source_name = evidence["依存元"]
                 header = sources[source_name]
-                # 終了した項目は初回配分の履歴だけを残し、終了時に解除した依存を戻させない。
+
                 if header.get("state") not in (WI_STATE_ADOPTED, WI_STATE_REJECTED):
                     actual = header.get("depends_on", [])
                     if actual != evidence["depends_on"]:
@@ -82,8 +79,7 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
                         mismatches.append(
                             f"リポジトリ{index}: 根拠={evidence[f'リポジトリ{index}']}、{name}のtarget_repo={resolved}"
                         )
-            # 再開計画の根拠は初回の結合履歴であり、要求変更後の現在の再開位置とは比較しない。
-            # 根拠自身の整合性と元レーンの保持は初回配分検査、現在の共有計画はレーン検査が担う。
+
             if mismatches:
                 errors.append(
                     Violation(
@@ -95,7 +91,6 @@ def _check_allocation_sources(selection: dict[str, object], private_notes: pathl
 
 
 def _candidate_records(path: pathlib.Path) -> list[dict[str, typing.Any]]:
-    """取得済みwi listのJSON LinesまたはJSON配列を読む。新しい候補照会は行わない。"""
     try:
         text = path.read_text(encoding="utf-8")
         if not text.strip():
@@ -202,11 +197,6 @@ def load_selection(
 
 
 def _drop_write_scope_reasons(selection: object) -> None:
-    """旧版が保存した選定結果の`書込範囲の理由`を捨てる。
-
-    同欄は重なりの判定と配分に寄与しないため撤去した。保存済みの選定結果をそのまま読めるよう、
-    読取時に除いて保存時にも出力しない。新しく書く入力（生成入力・追加入力）の同欄は未知の欄として拒否する。
-    """
     if not isinstance(selection, dict):
         return
     items = selection.get(_selection.DECISIONS_KEY, selection.get("decisions"))

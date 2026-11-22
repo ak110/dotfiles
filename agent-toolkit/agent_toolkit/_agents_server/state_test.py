@@ -10,7 +10,6 @@ from agent_toolkit._agents_server import state, turn_state, wait_output_tracking
 
 
 def test_turn_start_observation_survives_late_send_and_response_loss() -> None:
-    """先着した開始通知の識別子を、後着の送信記録や応答喪失で失わない。"""
     session = state.SessionState("thread-1", "/work")
     session.record_turn_started("turn-1")
     session.record_turn_sent()
@@ -41,7 +40,6 @@ def test_turn_end_transitions_keep_start_observation_and_exclusive_projections()
 
 
 def test_result_contract_recovery_consumption_survives_turn_and_resume_state() -> None:
-    """返却形式の回復は新turnと保存復元をまたいで1回に制限する。"""
     session = state.SessionState(
         "parent-1",
         "/tmp",
@@ -59,7 +57,6 @@ def test_result_contract_recovery_consumption_survives_turn_and_resume_state() -
 
 
 def test_pending_tool_uses_track_tools_outside_agents_server() -> None:
-    """`agents_server`以外のツール呼び出しも未完了として記録し、結果の到着で除く。"""
     session = state.SessionState("parent-1", "/tmp")
 
     wait_output_tracking.consume_claude_agents_server_message(
@@ -78,7 +75,6 @@ def test_pending_tool_uses_track_tools_outside_agents_server() -> None:
 
 
 def test_active_tool_uses_include_input_detail_and_sort_by_start() -> None:
-    """未完了のツール呼び出しは開始時刻の昇順で返し、入力の1行要約を`detail`として載せる。"""
     session = state.SessionState("parent-1", "/tmp")
     session.pending_tool_uses.update(
         {
@@ -106,7 +102,7 @@ def test_current_item_is_projected_as_active_tool_use() -> None:
     assert entries[0]["type"] == "commandExecution"
     assert "id" not in entries[0]
     assert session.current_item is not None and session.current_item["id"] == "item-1"
-    # 種別は別の項目で返し、内部IDは入力の要約へ含めない。
+
     assert entries[0]["detail"] == "command=rg -n foo"
     assert entries[0]["started_at"]
     assert session.last_action == "commandExecution: command=rg -n foo"
@@ -123,7 +119,6 @@ def test_current_item_is_projected_as_active_tool_use() -> None:
 
 
 def test_last_action_prefers_tool_use_issued_after_text() -> None:
-    """同じメッセージがテキストとツール呼び出しを持つ場合は、後のツール呼び出しを最後の行動とする。"""
     session = state.SessionState("parent-1", "/tmp")
 
     session.set_progress("調査を続ける")
@@ -136,7 +131,6 @@ def test_last_action_prefers_tool_use_issued_after_text() -> None:
 
 
 def test_last_action_changes_between_repeated_calls_of_the_same_tool() -> None:
-    """同じツール名を繰り返す区間でも、入力が異なれば最後の行動の値が変わる。"""
     session = state.SessionState("parent-1", "/tmp")
 
     wait_output_tracking.consume_claude_agents_server_message(
@@ -154,7 +148,6 @@ def test_last_action_changes_between_repeated_calls_of_the_same_tool() -> None:
 
 
 def test_action_detail_collapses_whitespace_and_truncates_at_limit() -> None:
-    """入力の要約は改行と連続空白を1個へ畳み、上限を超えた分を省略記号で切り詰める。"""
     session = state.SessionState("parent-1", "/tmp")
 
     session.record_tool_use_start("toolu_1", "Write", {"path": "a.py", "content": "x\r\ny  z", "line": 12})
@@ -169,7 +162,6 @@ def test_action_detail_collapses_whitespace_and_truncates_at_limit() -> None:
 
 @pytest.mark.asyncio
 async def test_terminal_transition_logs_safe_fields_once(caplog: pytest.LogCaptureFixture) -> None:
-    """turn終了を一度だけ記録し、結果本文を含めない。"""
     session = state.SessionState("session-1", "/tmp")
     session.status = "completed"
     session.agent_message = "秘密の結果本文"
@@ -241,7 +233,6 @@ def _observed_axes(session: state.SessionState) -> dict[str, str | int | bool]:
 
 @given(st.lists(st.sampled_from(tuple(_ALLOWED_CHANGED_AXES)), min_size=1, max_size=35))
 def test_generated_turn_operations_preserve_state_edges(operations: list[str]) -> None:
-    """応答の遅延・重複を含む操作列で、別の状態軸や未公開結果を巻き込まない。"""
     session = state.SessionState("thread", "/project")
     actions = {
         "send": session.record_turn_sent,

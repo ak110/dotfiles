@@ -1,5 +1,3 @@
-"""`atk wi grep`による本文全体の正規表現・固定文字列検索。"""
-
 import argparse
 import datetime
 import json
@@ -44,12 +42,11 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
     branch_settings = _wi_branches.registry()
     target_branch = _wi_branches.requested_filter(args, (filter_repo,) if filter_repo else (), branch_settings)
     flags = re.IGNORECASE if args.ignore_case else 0
-    # 固定文字列は正規表現へエスケープし、`--ignore-case`と行単位の一致判定を`-F`を指定しない場合と同じ処理で使う。
+
     patterns = args.regexp if args.regexp is not None else [args.pattern]
     try:
         compiled = [re.compile(re.escape(pattern) if args.fixed_strings else pattern, flags) for pattern in patterns]
     except re.error as error:
-        # argparseの使い方の表示と終了コード2は保ち、直し方を1行に続ける。
         args.subparser.error(
             f"正規表現が不正です: {error}\n"
             + _next_action.next_action_line(
@@ -95,7 +92,6 @@ def cmd_grep(args: argparse.Namespace, private_notes: pathlib.Path) -> int:
         elif args.files_with_matches:
             print(path.name)
         elif args.summary_only:
-            # `atk wi list --summary-only`と同じ要約の生成元を使い、同じ項目で同じ値にする。
             summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
             record: dict[str, object] = {"filename": path.name, "summary": summary, "match_count": match_count}
             branch = _wi_branches.effective(text, entry_repo, branch_settings)

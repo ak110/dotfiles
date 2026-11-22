@@ -1,5 +1,3 @@
-"""共有MCPのUI認可がプロセス環境ではなく要求元に従うことを検証する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -58,7 +56,6 @@ async def test_ui_authorization_uses_bound_caller(monkeypatch: pytest.MonkeyPatc
 async def test_send_to_user_carries_tool_use_id_from_request_meta(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, meta: dict[str, str] | None
 ) -> None:
-    """MCP要求の`_meta`にある呼出しIDを表示要求へ添え、無い場合は本文だけを渡す。"""
     request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
@@ -87,10 +84,6 @@ async def test_send_to_user_carries_tool_use_id_from_request_meta(
 async def test_send_to_user_consults_report_guidance_for_improvement_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, message: str, consulted: bool, shared: bool
 ) -> None:
-    """改善点の行を含む報告だけ送達前の案内を照会し、結果を`guidance`で返す。
-
-    逸脱の報告に欠けた記録の行は、送達後に`hooks/send_to_user.tsx`が案内する。
-    """
     request = AsyncMock(side_effect=lambda *_args: {"status": "confirmed"})
     monkeypatch.setattr(function_hook_requests, "request", request)
     monkeypatch.setattr(mcp_tools, "_MANAGER", SimpleNamespace(launcher_session_id=lambda: "launcher-main"))
@@ -156,7 +149,6 @@ async def test_runtime_changes_without_conversation_mod_returns_host_recovery(
     expected: tuple[str, ...],
     absent: str,
 ) -> None:
-    """会話内modが応答しないホストでは、予約していないことと、ホストに応じた再接続の操作を返す。"""
     from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
 
     manager = AgentsServerManager(None, launcher_environment=environment)
@@ -186,7 +178,6 @@ async def test_runtime_changes_without_conversation_mod_returns_host_recovery(
 async def test_conversation_mod_rejection_returns_operation_recovery(
     monkeypatch: pytest.MonkeyPatch, operation: str, inputs: dict[str, object], expected: str
 ) -> None:
-    """会話内modが拒否した理由と、引数の修正ではない回復操作を返す。"""
     from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
 
     manager = AgentsServerManager(None, launcher_environment={})

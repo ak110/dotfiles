@@ -1,5 +1,3 @@
-"""独立中継の実保存境界で大量出力と終了状態を検証する。"""
-
 from __future__ import annotations
 
 import os
@@ -23,7 +21,6 @@ def test_relay_spawn_failure_offers_recovery(tmp_path: pathlib.Path, capsys) -> 
 
 
 def test_relay_saves_redacted_both_streams_and_exit_code(tmp_path: pathlib.Path, host_environ) -> None:
-    """PIPE容量を超える両ストリームと複数行秘密鍵を、中継の保存先で確認する。"""
     script = tmp_path / "child.py"
     script.write_text(
         "import sys\n"
@@ -52,7 +49,6 @@ def test_relay_saves_redacted_both_streams_and_exit_code(tmp_path: pathlib.Path,
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIXのsignal終了コード契約")
 def test_relay_preserves_signal_exit(host_environ) -> None:
-    """子のsignal終了を通常の終了コードへ変換しない。"""
     result = subprocess.run(
         diagnostic_process.command([sys.executable, "-c", "import os,signal; os.kill(os.getpid(),signal.SIGTERM)"]),
         capture_output=True,

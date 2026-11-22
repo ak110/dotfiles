@@ -1,5 +1,3 @@
-"""Makefileの初期導入targetと検査targetを無害なスタブで検証する。"""
-
 import os
 import pathlib
 import shutil
@@ -12,12 +10,11 @@ import yaml
 
 _REPOSITORY_ROOT = pathlib.Path(__file__).resolve().parent
 _STUB_COMMANDS = ("uv", "sudo", "apt-get", "dpkg", "wget", "pwsh", "rm")
-# 検査targetのレシピが使う実コマンド。隔離PATHへ実体へのリンクを置く。
+
 _LINKED_COMMANDS = ("env", "cat")
 
 
 def _venv_executable(environment: pathlib.Path, name: str) -> pathlib.Path:
-    """OSごとのvenv実行ファイルの配置を隠す。"""
     return environment / ("Scripts" if os.name == "nt" else "bin") / f"{name}{'.exe' if os.name == 'nt' else ''}"
 
 
@@ -81,11 +78,10 @@ def _make_stubbed_setup(
 @pytest.mark.skipif(shutil.which("make") is None, reason="make未インストール")
 @pytest.mark.parametrize(("distribution", "version"), (("ubuntu", "24.04"), ("debian", "12"), ("debian", "13")))
 def test_setup_pwsh_selects_distribution_repository(tmp_path: pathlib.Path, distribution: str, version: str) -> None:
-    """OSごとのMicrosoftリポジトリ設定を、ホストを変更せずに選ぶ。"""
     result, calls = _make_stubbed_setup(tmp_path, "setup-pwsh", os_release=(distribution, version))
     assert result.returncode == 0, result.stderr
     assert f"wget --quiet https://packages.microsoft.com/config/{distribution}/{version}/packages-microsoft-prod.deb" in calls
-    # Debian 13のリポジトリに存在しないパッケージと移行用のダミーパッケージを導入対象へ含めない
+
     install_calls = [call for call in calls if "apt-get install" in call]
     assert install_calls
     for call in install_calls:
@@ -116,7 +112,6 @@ def test_check_entry_does_not_pass_parent_uv_python(tmp_path: pathlib.Path, targ
 @pytest.mark.skipif(shutil.which("make") is None, reason="make未インストール")
 @pytest.mark.parametrize("target", ("sync", "format", "test", "test-browser", "test-agents-live"))
 def test_check_entries_override_parent_project_environment(tmp_path: pathlib.Path, target: str) -> None:
-    """検査入口は継承した外部venvでなく、各作業ツリーのvenvをuvへ渡す。"""
     result, calls = _make_stubbed_setup(
         tmp_path, target, environment_overrides={"UV_PROJECT_ENVIRONMENT": str(tmp_path / "parent-venv")}
     )
@@ -129,14 +124,10 @@ def test_check_entries_override_parent_project_environment(tmp_path: pathlib.Pat
 
 @pytest.mark.parametrize("staged", ((), ("staged.txt",)))
 def test_precommit_pyfltr_hook_follows_staged_files(tmp_path: pathlib.Path, staged: tuple[str, ...]) -> None:
-    """本番のpyfltr hook定義が、空のstaged集合では起動せず、非空ではファイルと作業ツリーのvenvを渡す。
-
-    引数なしのpyfltrはリポジトリ全体を検査するため、空集合での起動は対象集合を全体へ変えてしまう。
-    """
     config = yaml.safe_load((_REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
     hooks = [hook for repository in config["repos"] if repository["repo"] == "local" for hook in repository["hooks"]]
     (pyfltr_hook,) = (hook for hook in hooks if hook["id"] == "pyfltr")
-    # 設定と一時リポジトリを分け、staged集合を試験が追加したファイルだけにする。
+
     hook_config = tmp_path / "hook-config.yaml"
     hook_config.write_text(
         yaml.safe_dump({"repos": [{"repo": "local", "hooks": [pyfltr_hook]}]}, allow_unicode=True), encoding="utf-8"
@@ -162,7 +153,7 @@ def test_precommit_pyfltr_hook_follows_staged_files(tmp_path: pathlib.Path, stag
         (repository / name).write_text("内容\n", encoding="utf-8")
         added = subprocess.run([git, "add", "--", name], cwd=repository, capture_output=True, text=True, check=False)
         assert added.returncode == 0, added.stderr
-    # ファイル指定を省いたprekは、コミット前検査と同じくstaged集合を対象にする。
+
     result = subprocess.run(
         [str(prek), "run", "--config", str(hook_config), "pyfltr"],
         cwd=repository,

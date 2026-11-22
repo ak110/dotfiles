@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""検証コマンドと受入シナリオを検証する。"""
 
 import pathlib
 
@@ -14,7 +13,6 @@ from agent_toolkit._testing.plan_file_check_support import fixture_repo as fixtu
 
 
 def test_rejects_missing_acceptance_scenario_for_adopted_plan(repo: tuple[pathlib.Path, str]) -> None:
-    """採用行がある新書式計画は受入表を必須とする。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     start = content.index("### 受入シナリオ\n")
@@ -26,7 +24,6 @@ def test_rejects_missing_acceptance_scenario_for_adopted_plan(repo: tuple[pathli
 
 
 def test_accepts_none_acceptance_scenario_without_adopted_action(repo: tuple[pathlib.Path, str]) -> None:
-    """採用行が無い計画は受入シナリオを`なし`として受理する。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     content = content.replace(_plan_fixture.USER_ACTION_ROW, _plan_fixture.USER_ACTION_ROW.replace("| 採用 |", "| 不採用 |"))
@@ -41,7 +38,6 @@ def test_accepts_none_acceptance_scenario_without_adopted_action(repo: tuple[pat
 
 
 def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pathlib.Path, str]) -> None:
-    """進行中の旧2行計画は受入表なしでも読み取れる。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     start = content.index("### 受入シナリオ\n")
@@ -61,7 +57,6 @@ def test_accepts_legacy_verification_without_acceptance_scenario(repo: tuple[pat
 def test_public_plan_check_rejects_ambiguous_verification_cell(
     repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], cell: str, expected: int
 ) -> None:
-    """CLIの`main`も、現行書式の検証表のセルに付いた説明・shell構文と空欄を拒否する。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(
         "| 変更範囲の検証 | `pytest` |", f"| 変更範囲の検証 | {cell} |", 1
@@ -71,7 +66,7 @@ def test_public_plan_check_rejects_ambiguous_verification_cell(
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == expected
     if expected:
         assert "次の操作:" in capsys.readouterr().err
-    # 旧名「近接検証」の行を持つ進行中の計画はセルの説明とshell構文を拒否せず、従来どおり空欄だけを構造の違反とする。
+
     legacy = content.replace("| 変更範囲の検証 |", "| 近接検証 |", 1)
     path.write_text(legacy, encoding="utf-8")
     assert check_plan_file.main(["--work-dir", str(work_dir), str(path)]) == (1 if not cell else 0)
@@ -81,10 +76,6 @@ def test_public_plan_check_rejects_ambiguous_verification_cell(
 def test_cd_verification_is_rejected_alike_at_drafting_and_integration(
     repo: tuple[pathlib.Path, str], capsys: pytest.CaptureFixture[str], strict: bool
 ) -> None:
-    """`cd <dir> && <command>`の検証行は、起草時の計画検査と統合時の検証行取得が同じく拒否し、書き換え先を示す。
-
-    統合時の検査（`--reject-migration-warnings`）でだけ拒否されると、統合の直列区間で計画の書換えが必要になる。
-    """
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(
         "| 変更範囲の検証 | `pytest` |", "| 変更範囲の検証 | `cd agent-toolkit && uv run --frozen pytest -v` |", 1
@@ -102,7 +93,6 @@ def test_cd_verification_is_rejected_alike_at_drafting_and_integration(
 
 
 def test_legacy_verification_name_is_readable_but_rejected_for_revision(repo: tuple[pathlib.Path, str]) -> None:
-    """進行中の旧名は読めるが、新規作成・改訂では移行を求める。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).replace(
         "| 変更範囲の検証 | `pytest` |", "| 近接検証 | `pytest` |", 1
@@ -119,7 +109,6 @@ def test_legacy_verification_name_is_readable_but_rejected_for_revision(repo: tu
 
 
 def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pathlib.Path, str]) -> None:
-    """旧リファクタリング表は読取時に警告し、新規作成・改訂では拒否する。"""
     work_dir, _base = repo
     legacy = """| 項目 | 内容 |
 | --- | --- |
@@ -146,12 +135,10 @@ def test_current_plan_legacy_refactoring_table_is_migration_only(repo: tuple[pat
 
 
 def _acceptance_header_row(header: tuple[str, ...]) -> str:
-    """受入シナリオ表の見出し行を返す。"""
     return f"| {' | '.join(header)} |"
 
 
 def _legacy_acceptance_plan(work_dir: pathlib.Path, legacy: tuple[str, ...]) -> str:
-    """利用目的の列が無い保存済み計画を作成する。"""
     lines = _plan_fixture.eight_section_plan(repo=work_dir.resolve()).splitlines()
     index = lines.index(_acceptance_header_row(_plan_format.PLAN_ACCEPTANCE_TABLE_HEADER))
     lines[index] = _acceptance_header_row(legacy)
@@ -163,7 +150,6 @@ def _legacy_acceptance_plan(work_dir: pathlib.Path, legacy: tuple[str, ...]) -> 
 
 
 def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Path, str]) -> None:
-    """現行の列名を持つ受入シナリオ表は新規作成・改訂として判定しても移行警告の対象にならない。"""
     work_dir, _base = repo
     content = _plan_fixture.eight_section_plan(repo=work_dir.resolve())
     path = work_dir / "acceptance.md"
@@ -181,7 +167,6 @@ def test_current_plan_acceptance_table_accepts_new_header(repo: tuple[pathlib.Pa
 def test_current_plan_legacy_acceptance_header_is_migration_only(
     repo: tuple[pathlib.Path, str], legacy: tuple[str, ...]
 ) -> None:
-    """改名前の列名を持つ受入シナリオ表は読取時に警告して受理し、新規作成・改訂では拒否する。"""
     work_dir, _base = repo
     legacy_header = _acceptance_header_row(legacy)
     content = _legacy_acceptance_plan(work_dir, legacy)
@@ -201,7 +186,6 @@ def test_current_plan_legacy_acceptance_header_is_migration_only(
 def test_current_plan_legacy_acceptance_table_still_requires_filled_cells(
     repo: tuple[pathlib.Path, str], legacy: tuple[str, ...]
 ) -> None:
-    """改名前の列名の表も現行の表と同じく空セルを拒否する。"""
     work_dir, _base = repo
     legacy_header = _acceptance_header_row(legacy)
     content = _legacy_acceptance_plan(work_dir, legacy)

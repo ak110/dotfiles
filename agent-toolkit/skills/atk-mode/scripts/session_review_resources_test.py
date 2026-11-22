@@ -1,5 +1,3 @@
-"""公開prepareで対象別の担当横断費用と候補への非昇格を検証する。"""
-
 from __future__ import annotations
 
 import json
@@ -14,7 +12,6 @@ from agent_toolkit._testing import session_evidence_support as support
 def test_prepare_mode_costs_keep_observed_usage_and_unmeasured_records_separate(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """mode別の量に実usageを使い、未計測担当と記録されたモデルを別々に残す。"""
     parent = tmp_path / "parent.jsonl"
     call = support.claude_call("2026-10-10T00:00:01Z", "read", "Read", {"file_path": "/repo/note.md"})
     call["effort"] = "medium"
@@ -43,7 +40,6 @@ def test_prepare_mode_costs_keep_observed_usage_and_unmeasured_records_separate(
 def test_prepare_exposes_generated_work_and_partial_repetition_without_replaying_body(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """正常なJSON転記を生成量・出所・部分一致から比較でき、数値の異なる文を混同しない。"""
     source = tmp_path / "parent.jsonl"
     shared = "確定した監査JSONを生成元で保存し、その絶対パスを受領担当へ渡す。"
     notice = '<atk-auto source="read-delivery" kind="warn">必要な資料を確認する。</atk-auto>'
@@ -107,7 +103,6 @@ def _read_entries(identity: str, body: str, *, offset: int) -> list[dict[str, An
 def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_candidates(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同一ファイル・Skillの担当横断量と省略数を返し、反復の追加で問題候補を増やさない。"""
     parent = tmp_path / "parent.jsonl"
     initial = [support.timestamped_entry("2026-10-10T00:00:00Z", "依頼の本文")]
     child = [*_read_entries("child-read", "子供", offset=2)]
@@ -193,8 +188,6 @@ def test_prepare_aggregates_targets_across_owners_without_promoting_cost_to_cand
     "owners, targets",
     [
         (2, 3),
-        # 基準版でも60秒に達するため、20261108-212235-001.mdの重複解析削減まで
-        # 停止上限だけを暫定で延ばす。
         pytest.param(
             64,
             40,

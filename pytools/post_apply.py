@@ -82,58 +82,46 @@ _UPDATE_LOG_PATH = update_log.LOG_PATH
 _UPDATE_RUN_ID_ENV = "UPDATE_DOTFILES_RUN_ID"
 _UPDATE_LOG_MAX_BYTES = 2 * 1024 * 1024
 _UPDATE_LOG_BACKUP_COUNT = 3
-# 端末でない出力で、実行中の工程を記録する間隔（秒）。CIの時間上限（数分）の中で数回記録される長さにする。
+
 _RUNNING_NOTICE_SECONDS = 60.0
 
 
 def _run_id() -> str:
-    """`update-dotfiles`が渡した実行識別子を返す。単独実行では自プロセスから組み立てる。"""
     return os.environ.get(_UPDATE_RUN_ID_ENV, f"post-apply-{os.getpid()}")
 
 
 class _DiagnosticFormatter(logging.Formatter):
-    """画面や診断元は変えず、例外を含む整形後の保存本文だけを伏せる。"""
-
     def formatMessage(self, record: logging.LogRecord) -> str:  # noqa: N802 -- logging.Formatterの契約
-        """実際に保存する診断に種別を付け、更新親が同じ実行の診断だけを案内できるようにする。"""
         if update_log.is_step_diagnostic(record):
             record.message = update_log.STEP_DIAGNOSTIC + record.message
         return super().formatMessage(record)
 
     def format(self, record: logging.LogRecord) -> str:
-        """永続ログ向けに資格情報を除いた本文を返す。"""
         return redact_secrets(super().format(record))
 
 
 class _BelowWarningFilter(logging.Filter):
-    """WARNING未満のレコードだけを通す。"""
-
     def filter(self, record: logging.LogRecord) -> bool:
-        """レコードがstdout側のレベル範囲なら真を返す。"""
         return record.levelno < logging.WARNING
 
 
 class _ScreenFilter(logging.Filter):
-    """ユーザーの判断に使わない行を画面から外す。永続ログのハンドラーには付けない。"""
-
     def __init__(self, *, updating: bool, persistent_log_ready: bool) -> None:
         super().__init__()
         self.updating = updating
         self.persistent_log_ready = persistent_log_ready
 
     def filter(self, record: logging.LogRecord) -> bool:
-        """画面へ出力するレコードなら真を返す。"""
         if log_format.is_log_only(record):
             return not self.persistent_log_ready and record.levelno >= logging.WARNING
         if self.updating and record.levelno < logging.WARNING:
             return getattr(record, log_format.LOG_ONLY_ATTR, None) is False
-        # 依存ライブラリhttpxのリクエスト記録。WARNING以上は標準エラー側で表示する。
+
         return not (record.levelno < logging.WARNING and (record.name == "httpx" or record.name.startswith("httpx.")))
 
 
 @contextlib.contextmanager
 def _configure_logging() -> Generator[update_log.ProcessSafeRotatingFileHandler | None]:
-    """ログを出力先で分離し、符号化不能文字でレコードを欠落させない。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(errors="backslashreplace")
@@ -196,7 +184,7 @@ class _StepResult:
     reason: str | None = None
     detail: str | None = None
     deferred: bool = False
-    # 工程が起動した子プロセスを回収できなかったこと。残った子と後続工程が同じ資源を奪い合わないよう、新しい工程を開始しない。
+
     reclaim_failed: bool = False
 
 
@@ -272,14 +260,11 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_NPM_SUPPLY_CHAIN, update_npmrc.run),
     # Windowsでは bin PATH 登録と同じユーザーPATHを読んで書き戻す。
     _StepSpec(_MISE, setup_mise.run, after=(_NPM_SUPPLY_CHAIN, _BIN_PATH)),
-    # mise管理版を確かめてから削除する。npmのグローバル領域とユーザーPATHを書き換える。
     _StepSpec(_FOREIGN_TOOLS, prune_foreign_tools.run, after=(_MISE, _BIN_PATH)),
-    # 削除後に残るmise管理版のpnpmを設定する。
     _StepSpec("pnpm サプライチェーン対策", update_npmrc.configure_pnpm, after=(_MISE, _FOREIGN_TOOLS)),
     # miseのinstalls・shimsを操作し、codexを起動するため診断ログの復元後に実行する。
     _StepSpec(_CODEX_CLI, setup_codex_cli.run, after=(_MISE, _CODEX_LOGS), full_only=True),
     _StepSpec(_CODEX_CLAUDE_MCP, remove_codex_claude_mcp.run, after=(_CODEX_CLI,), full_only=True),
-    # 旧npm版の導入先の照会がmise管理のNode配下のnpmを使う。
     _StepSpec(_CLAUDE_CLI, setup_claude_cli.run, after=(_MISE,), full_only=True),
     _StepSpec(_AGY_CLI, setup_agy_cli.run, full_only=True),
     _StepSpec(_OPENCODE_CLI, setup_opencode_cli.run, after=(_MISE, _CODEX_CLI, _CLAUDE_CLI), full_only=True),
@@ -293,7 +278,6 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec(_CLAUDE_PLUGIN, install_claude_plugins.run, after=(_CLAUDE_CLI,), full_only=True),
     # installed_plugins.json が更新後の版を指してから現行版を判定する。
     _StepSpec("Claude Code plugin cache の旧版削除", prune_claude_plugin_cache.run, after=(_CLAUDE_PLUGIN,), full_only=True),
-    # plugin導入が`agent-toolkit/`を複製する間に同じ配下の派生ファイルを書き換えない。
     _StepSpec(_CODEX_SNAPSHOT, _sync_codex_plugin_manifests, after=(_CLAUDE_PLUGIN,), full_only=True),
     # 稼働判定の前にCodex CLI工程とMCP照会を終え、後続のwarmupのCodex照会と重ねない。
     # 診断ログの稼働判定もCodex CLI工程より先に終わるため、この順序を共有する。
@@ -330,7 +314,6 @@ DEFAULT_STEPS: list[_StepSpec] = [
         host_resources=True,
         full_only=True,
     ),
-    # 両ステップがsystemdのユーザーマネージャーを操作する。
     _StepSpec(
         "一時ファイルの経過削除タイマー セットアップ (Linux)",
         setup_tmpfiles_clean.run,
@@ -342,7 +325,6 @@ DEFAULT_STEPS: list[_StepSpec] = [
     _StepSpec("SendTo ショートカット (Windows)", setup_sendto_shortcuts.run, platforms=_WINDOWS),
     _StepSpec("メディアリモコン自動起動 (Windows/media_remote)", setup_media_remote.run, platforms=_WINDOWS),
     _StepSpec("dotfilesプラグインの反映", apply_dotfiles_plugins.run, after_all_preceding=True),
-    # 他ステップが PATH 追加を行うため、それらの後に整理を実行する。
     _StepSpec("ユーザー PATH 整理 (Windows)", cleanup_user_path.run, after_all_preceding=True, platforms=_WINDOWS),
 ]
 
@@ -352,7 +334,6 @@ def main(
     *,
     runner: Callable[[], tuple[list[_StepResult], list[str]]] | None = None,
 ) -> None:
-    """エントリポイント。"""
     parser = argparse.ArgumentParser(description="chezmoi apply後のdotfiles設定を更新する。")
     parser.add_argument(
         "--allow-non-canonical-root",
@@ -405,7 +386,6 @@ def main(
             )
             sys.exit(2)
     if args.prune_only or args.prune_only_if_minimal:
-        # ランチャーが進行可否の判定に使った印を回収する。ランチャーは外部コマンドに依存せず削除できない。
         if ready := os.environ.get("DOTFILES_PRUNE_READY_FILE"):
             Path(ready).unlink(missing_ok=True)
         lock = prune_installation.update_lock_path()
@@ -420,7 +400,7 @@ def main(
                 logger.error("%s。次の操作: %s", result.failure, result.next_action)
                 sys.exit(1)
         return
-    # update-dotfiles 配下の出力であることを示すため、全ログ行を 2 スペース下げる。
+
     with _configure_logging():
         logger.info("post-apply開始", extra=log_format.LOG_ONLY)
         results, recommendations = (runner or run)()
@@ -471,8 +451,7 @@ def _record_sync_report(
 
 
 def _print_plugin_recommendations(recommendations: list[str]) -> None:
-    """各ステップが返した推奨コマンドを案内表示する。"""
-    # エンドユーザー向け案内のため敬体。
+
     if not recommendations:
         return
     print(flush=True)
@@ -483,8 +462,7 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
     if len(recommendations) == 1:
         print(recommendations[0], flush=True)
         return
-    # ユーザーがコピペ1回で全件実行できるよう && で連結し、可読性のため行末継続記号で改行する。
-    # 継続記号はシェル別に切り替える (bash: \, cmd: ^)。
+
     continuation = "^" if sys.platform == "win32" else "\\"
     last_index = len(recommendations) - 1
     for index, cmd in enumerate(recommendations):
@@ -495,7 +473,6 @@ def _print_plugin_recommendations(recommendations: list[str]) -> None:
 
 
 def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice]) -> None:
-    """post-apply完了時の案内をstderrへ表示する。"""
     unique_notices = tuple(dict.fromkeys(notices))
     if not unique_notices:
         return
@@ -505,7 +482,6 @@ def _print_post_apply_notices(notices: list[post_apply_outcome.PostApplyNotice])
 
 
 def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
-    """テンプレートから渡されたpytools再導入状態を最終案内へ変換する。"""
     state = os.environ.get("DOTFILES_PYTOOLS_INSTALL_STATE", "")
     if not state:
         return []
@@ -527,16 +503,12 @@ _step_log_state = threading.local()
 
 
 class _StepLogFilter(logging.Filter):
-    """実行中のステップが出力したレコードを通常handlerから除外する。"""
-
     def filter(self, record: logging.LogRecord) -> bool:
         del record
         return not getattr(_step_log_state, "active", False)
 
 
 class _StepLogCapture(logging.Handler):
-    """実行中のステップが出力したレコードをステップごとに投入順で保持する。"""
-
     def emit(self, record: logging.LogRecord) -> None:
         if getattr(_step_log_state, "active", False):
             _step_log_state.records.append(record)
@@ -548,7 +520,7 @@ class _StepOutcome:
     recommendations: list[str]
     duration: float
     records: list[logging.LogRecord]
-    # 実行しなかったステップの理由。`None`は実行したことを表す。
+
     skip_reason: str | None = None
 
 
@@ -603,12 +575,10 @@ def _execute_step(step: _StepSpec) -> tuple[_StepResult, list[str], float]:
 
 
 def _execute_captured_step(label: str, step: _StepSpec) -> _StepOutcome:
-    """ワーカースレッドで1ステップを実行し、そのステップのログレコードを捕捉する。"""
     records: list[logging.LogRecord] = []
     _step_log_state.active = True
     _step_log_state.records = records
     try:
-        # 開始行は開始時刻の記録として永続ログにだけ残す。
         logger.info("%s", label, extra=log_format.LOG_ONLY)
         result, recommendations, duration = _execute_step(step)
         return _StepOutcome(result, recommendations, duration, records)
@@ -664,7 +634,6 @@ def _home_is_substituted() -> bool:
 
 
 def _skip_reason(step: _StepSpec, *, home_substituted: bool) -> str | None:
-    """ステップを実行しない理由を返す。実行する場合は`None`を返す。"""
     if step.full_only and dotfiles_mode.is_minimal():
         return "minimalモードのため導入対象外"
     if step.platforms and sys.platform not in step.platforms:
@@ -677,13 +646,11 @@ def _skip_reason(step: _StepSpec, *, home_substituted: bool) -> str | None:
 
 
 def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
-    """1ステップの出力を、所要時間付きの見出しを先頭にまとめて各handlerへ送る。"""
     root_logger = logging.getLogger()
     if outcome.skip_reason == _SKIP_OTHER_PLATFORM:
         logger.info("%s: %s", label, outcome.skip_reason, extra=log_format.LOG_ONLY)
         return
     if outcome.skip_reason is not None:
-        # HOMEの差し替えによる省略は、手動観測の実行者が画面で確認できるよう表示する。
         logger.info(
             "%s: %s",
             label,
@@ -709,7 +676,6 @@ class _ProgressLine:
         self._width = 0
 
     def show(self, text: str) -> None:
-        """進捗の行を書き換える。"""
         limit = max(shutil.get_terminal_size().columns - 1, 1)
         text = _truncate_display(text, limit)
         padding = " " * max(self._width - _display_width(text), 0)
@@ -717,19 +683,16 @@ class _ProgressLine:
         self._width = _display_width(text)
 
     def clear(self) -> None:
-        """進捗の行を消去し、後続の出力と混ざらないようにする。"""
         if self._width:
             print(f"\r{' ' * self._width}\r", end="", file=sys.stderr, flush=True)
             self._width = 0
 
 
 def _display_width(text: str) -> int:
-    """端末で占める桁数を返す。全角文字は2桁として数える。"""
     return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
 
 
 def _truncate_display(text: str, limit: int) -> str:
-    """端末の桁数が`limit`以下になるよう末尾を省略する。"""
     if _display_width(text) <= limit:
         return text
     result = ""
@@ -793,7 +756,7 @@ def run(
                             running[executor.submit(_execute_captured_step, labels[index], step)] = index
                             started_at[index] = time.monotonic()
                             continue
-                        # 実行しないステップは`run`を呼ばず、成功かつ変更なしとして扱う。
+
                         result = _StepResult(name=step.name, ok=True, changed=False)
                         outcomes[index] = _StepOutcome(result, [], 0.0, [], skip_reason=reason)
                         progressed = True
@@ -811,8 +774,6 @@ def run(
                         f"実行中 {len(running)}件（最長: {effective_steps[longest].name}）"
                     )
                 elif time.monotonic() - last_notice >= _RUNNING_NOTICE_SECONDS:
-                    # 端末でない出力（CI・ログ）は結果を列挙順にしか出さず、止まった工程を判別できないため、
-                    # 実行中の工程を一定間隔で記録する。
                     last_notice = time.monotonic()
                     names = "、".join(
                         f"{effective_steps[index].name}（{last_notice - started_at[index]:.0f}秒）"

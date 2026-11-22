@@ -27,7 +27,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("output_type", ["reasoning", "agentMessage"])
 async def test_model_output_is_observed_only_after_non_input_item(tmp_path: pathlib.Path, output_type: str) -> None:
-    """入力の記録である`userMessage`ではモデル出力を観測済みにせず、モデル由来のitemで観測済みにする。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
         await manager.handle_notification(_item_started(session, "userMessage"))
@@ -91,7 +90,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
             await backend._handle_notification(
                 {"method": "item/completed", "params": {"threadId": session.session_id, "item": item}}
             )
-            # ツール結果は実行中turnで観測する。前turnの保留へ架空の出力を注入しない。
+
             if release:
                 stop_result: dict[str, Any] = {"structuredContent": {}}
                 stopped: dict[str, Any] = {
@@ -113,7 +112,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
                 await backend._handle_notification(
                     {"method": "item/completed", "params": {"threadId": session.session_id, "item": stopped}}
                 )
-                # 解放で登録が消えた後も、明示的な成功から親の最終結果を公開できる。
+
                 session_registry.release("child", reason="stopped")
                 final_item = {"type": "agentMessage", "id": "parent-final", "text": "状態: completed\n結果: 親の最終結果"}
                 await backend._handle_notification(
@@ -134,7 +133,6 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
                 {
                     "status": turn_status,
                     "error": {"codexErrorInfo": "usageLimitExceeded"} if turn_status == "failed" else None,
-                    # turn/completedが同じtool結果を再掲するApp Serverの形式も通す。
                     "items": [item],
                 }
             )
@@ -216,7 +214,6 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
         )
         await manager.handle_notification(_completed_turn(session))
 
-        # 回収できなかった子は追跡に残り、自動再開まで結果を保留する。回収済みなら保留せず直ちに公開する。
         unobserved = delivery in {"failure", "unrelated", "shell-unrelated", "quoted-data"}
         assert session.awaiting_auto_resume is unobserved
         assert session.result_available is not unobserved
@@ -228,7 +225,6 @@ async def test_cli_wait_updates_observed_child_sessions(tmp_path: pathlib.Path, 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_server_request_marks_target_failed_and_replies(tmp_path: pathlib.Path) -> None:
-    """非対話server requestへerror応答し、対象sessionをfailedへ遷移する。"""
     async with subject.AppServerManager() as manager:
         client = ServerRequestClient()
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
@@ -358,7 +354,6 @@ async def test_codex_progress_notification_is_shared(tmp_path: pathlib.Path) -> 
 
 @pytest.mark.asyncio
 async def test_context_usage_notification_is_session_scoped(tmp_path: pathlib.Path) -> None:
-    """0.162.1の通知が持つ`last`だけを同じthread・turnへ配送し、累計と活動を混ぜない。"""
     # codex-cli 0.162.1 generate-json-schemaのThreadTokenUsageUpdatedNotification。
     session = state.SessionState("usage-thread", str(tmp_path), engine="codex", turn_id="usage-turn")
     other = state.SessionState("other-thread", str(tmp_path), engine="codex", turn_id="other-turn")

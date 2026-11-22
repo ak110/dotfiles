@@ -1,5 +1,3 @@
-"""世代間で保留理由と追跡集合を保ち、実行中taskの所有は移さない。"""
-
 from __future__ import annotations
 
 # 明示した状態型だけを往復し、SessionStateの保存taskを含む内部状態も検収する。
@@ -61,7 +59,6 @@ class _StateCodec(DataclassCodec):
     def _field_names(self, cls: type) -> tuple[str, ...]:
         names = super()._field_names(cls)
         if issubclass(cls, state.SessionResumeState):
-            # 別版の受信側も同じフィールド集合を使うため、表示用の値は送らない。
             return tuple(name for name in names if name != "last_action")
         return names
 
@@ -100,14 +97,14 @@ async def snapshot(session: state.SessionState) -> dict[str, Any]:
         await session.drain_registration()
     codec = _StateCodec()
     fields = [field.name for field in dataclasses.fields(session) if field.name not in _NON_WIRE_FIELDS]
-    # 稼働中の旧世代も厳密に同じキーを要求する。
+
     return {name: codec.encode(getattr(session, name)) for name in (*fields, *_STATE_PROJECTIONS)}
 
 
 def restore(payload: dict[str, Any]) -> state.SessionState:
     """受信側の既知schemaだけを復元し、同期資源と公開差分cacheは受信側で作る。"""
     declared = [field for field in dataclasses.fields(state.SessionState) if field.name not in _NON_WIRE_FIELDS]
-    # 旧世代から移譲を受ける時は、新しい版で増えた省略できるフィールドが無い。
+
     required = {
         field.name
         for field in declared
@@ -135,7 +132,7 @@ def restore(payload: dict[str, Any]) -> state.SessionState:
     session = state.SessionState(
         _active_item=active_item, _effort_resume=effort_resume, _overload_retry=overload, _usage_limit_retry=usage, **values
     )
-    # 新しいwriterが既存登録簿へ所有を公開する。内容のcacheだけで保存を省略しない。
+
     for field in dataclasses.fields(session):
         if field.name.startswith("_published_registry_"):
             default = field.default

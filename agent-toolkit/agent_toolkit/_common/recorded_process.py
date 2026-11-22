@@ -1,5 +1,3 @@
-"""保存されたPID世代の実行プロセスを、再開前に子孫ごと停止する。"""
-
 import contextlib
 import logging
 import os
@@ -54,7 +52,7 @@ def stop_recorded_executor(identity: session_registry.ProcessIdentity) -> str | 
             return _unconfirmed_reason(identity, [], unresolved)
         reclaim_records.delete(identity.pid, identity.create_time)
         return None
-    # 列挙後に生成される子孫も回収するため、生成の停止と終了確認を共通処理へ委ねる。
+
     result = process_tree.stop_tree(root, known=known)
     unresolved.extend(reason for reason in result.unresolved if reason not in unresolved)
     unreaped = process_tree.reclaim_unreaped(unreaped)

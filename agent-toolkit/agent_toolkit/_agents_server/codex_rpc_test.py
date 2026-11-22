@@ -25,11 +25,10 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 @pytest.mark.asyncio
 async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
-    """接続断は到達段階、子PIDおよび直前stderrを例外とログへ残す。"""
     async with subject.JsonRpcProcess(_ignore_message, _ignore_message) as client:
         process = _SilentProcess()
         process.__dict__["stdin"] = _DisconnectedStdin()
-        # 実プロセスの代わりにテスト用の代替オブジェクトを割り当てるため、静的な型判定の対象から外す。
+
         client.process = process  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         client._initialization_stage = "initialized_sent"
         client._stderr.feed("network unavailable")
@@ -46,7 +45,6 @@ async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
 
 @pytest.mark.asyncio
 async def test_stdout_reader_frames_response_larger_than_stream_limit_and_following_notification() -> None:
-    """transportのchunk長を超える1 recordと直後のrecordを、ともに既存の通知処理へ渡す。"""
     oversized = "x" * (subject.APP_SERVER_STREAM_LIMIT_BYTES + 1)
     response = json.dumps({"id": 7, "result": {"value": oversized}}, separators=(",", ":"))
     notification = json.dumps({"method": "test/notification", "params": {"value": "received"}}, separators=(",", ":"))
@@ -117,7 +115,6 @@ async def test_close_racing_reader_failure_returns_promptly() -> None:
 @pytest.mark.parametrize("cancelled", [False, True])
 @pytest.mark.asyncio
 async def test_client_start_aborts_when_initialize_never_answers(monkeypatch: pytest.MonkeyPatch, cancelled: bool) -> None:
-    """initialize待ちの時間切れと取り消しの両方で、起動済み子プロセスを終了する。"""
     monkeypatch.setattr(state, "SESSION_INITIALIZATION_TIMEOUT", 0.05)
     process = _SilentProcess()
 
@@ -179,7 +176,6 @@ async def test_client_logs_process_start_initialize_and_close(monkeypatch: pytes
 async def test_codex_json_rpc_process_passes_stable_cwd(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, user_project_environment: bool
 ) -> None:
-    """App ServerへCLIとdataを渡し、plugin依存環境だけを除き、呼び出し元の設定と所有者を保つ。"""
     observed: dict[str, Any] = {}
     plugin_venv = tmp_path / "plugin venv"
     user_bin = tmp_path / "user-bin"
@@ -228,7 +224,6 @@ async def test_codex_json_rpc_process_passes_stable_cwd(
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_app_server_inherits_prepared_conversation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """MCPの共通整備後に起動するApp Serverへ起動元contextが届かず、明示ownerだけが届く。"""
     monkeypatch.setattr(subject.child_environment, "_INHERITED", {})
     for name in subject.mcp_environment._NON_INHERITABLE_NAMES:
         monkeypatch.setenv(name.upper(), "source-context")
@@ -257,7 +252,6 @@ async def test_app_server_inherits_prepared_conversation_environment(monkeypatch
 async def test_codex_json_rpc_request_marks_sent_before_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """JSON-RPC送信完了を応答待ちより先に呼出側へ通知する。"""
     async with subject.JsonRpcProcess(lambda _message: asyncio.sleep(0), lambda _message: asyncio.sleep(0)) as client:
         client.process = cast(Any, _SilentProcess())
         sent = asyncio.Event()

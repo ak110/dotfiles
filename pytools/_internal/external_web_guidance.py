@@ -20,7 +20,6 @@ SOURCE = "GoogleChrome/modern-web-guidance"
 
 
 def _restore_claude_registration(path: Path, previous: dict) -> None:
-    """他pluginと他scopeの現在値を残し、対象user登録だけを元へ戻す。"""
     try:
         current = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError, json.JSONDecodeError:
@@ -92,8 +91,7 @@ def _preserve_cache(host: str, operation: Callable[[], bool]) -> bool:
         if saved is not None:
 
             def remove_readonly_backup(function, path, error):
-                # Gitのreadonly属性はcopy2で自分の複製にも引き継がれる。
-                # 生きたcacheやACLには触れず、自分のbackup内の通常ファイルだけを回収する。
+
                 target = Path(path)
                 metadata = target.lstat()
                 if (
@@ -161,7 +159,6 @@ def _run_agy(executable: Path) -> bool:
 
 
 def _verify_plugin(host: str, execute: Callable[[list[str]], subprocess.CompletedProcess[str] | None]) -> bool:
-    """公開一覧の有効状態・版と2スキルの実体を確認する。"""
     result = execute(["plugin", "list", "--json", *(["--marketplace", "googlechrome"] if host == "codex" else [])])
     if result is None or result.returncode:
         raise ValueError(f"導入後の状態を取得できません: {common.format_cli_error(result)}")

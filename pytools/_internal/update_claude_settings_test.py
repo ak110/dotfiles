@@ -27,7 +27,6 @@ from pytools._internal.update_claude_settings_test_helpers import (
 
 
 def _save_after_read(monkeypatch: pytest.MonkeyPatch, path: Path, latest: str) -> None:
-    """設定を読み終えた時点で、ユーザーの保存を再現する。"""
     read = Path.read_text
 
     def read_then_save(file: Path, *args, **kwargs) -> str:
@@ -52,7 +51,6 @@ class TestUpdateClaudeSettings:
         assert result["permissions"]["deny"] == MANAGED_DENY
 
     def test_managed_plugin_disable_is_applied(self, tmp_path: Path):
-        """配布原本のプラグイン無効化は既存設定へマージされる。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"enabledPlugins": {"hookify@claude-plugins-official": True}})
         assert result["enabledPlugins"]["hookify@claude-plugins-official"] is False
@@ -72,7 +70,6 @@ class TestUpdateClaudeSettings:
         assert {key: result["enabledPlugins"][key] for key in others} == others
 
     def test_managed_dialog_expiry_overwrites_existing(self, tmp_path: Path):
-        """配布原本の dialogExpiry は既存設定の値を上書きする。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"dialogExpiry": "5m"})
         assert result["dialogExpiry"] == "never"
@@ -86,7 +83,6 @@ class TestUpdateClaudeSettings:
         platform: str,
         existing: bool,
     ) -> None:
-        """通常の更新で補助生成を止めて手動スキルを残し、既存値の保持と再適用を両OSで確認する。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         managed_config = json.loads(_PROD_MANAGED_CONFIG.read_text(encoding="utf-8"))
         settings_path = _setup_run_paths(tmp_path, monkeypatch, managed, managed_config)
@@ -166,7 +162,6 @@ class TestUpdateClaudeSettings:
         assert json.loads(config_path.read_text(encoding="utf-8")) == config
 
     def test_managed_commit_attribution_uses_host_identity_without_enabling_other_attribution(self, tmp_path: Path):
-        """commit帰属だけを配布し、session URLとPRの既定動作は変更しない。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"attribution": {"sessionUrl": True}})
 
@@ -176,7 +171,6 @@ class TestUpdateClaudeSettings:
         assert "pr" not in managed["attribution"]
 
     def test_managed_env_keeps_bash_working_dir_at_project(self, tmp_path: Path):
-        """配布原本はBash呼び出し間の作業ディレクトリ持ち越しを止める環境変数を既存のenvへ加える。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
         assert result["env"]["CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"] == "1"
@@ -186,7 +180,6 @@ class TestUpdateClaudeSettings:
     def test_managed_env_removes_obsolete_function_hooks_flag(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, old_value: str | None
     ):
-        """廃止した有効化キーを再注入せず、他のenvを保つ。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         env = {"FOO": "bar"}
         if old_value is not None:
@@ -203,21 +196,18 @@ class TestUpdateClaudeSettings:
         assert not mod.run().changed
 
     def test_managed_env_directs_playwright_mcp_output_under_home(self, tmp_path: Path):
-        """配布原本はPlaywright MCPの自動命名の出力先を作業ツリーの外（ホーム配下のキャッシュ）へ向ける。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
         assert result["env"]["PLAYWRIGHT_MCP_OUTPUT_DIR"] == f"{Path.home().as_posix()}/.cache/playwright-mcp"
         assert result["env"]["FOO"] == "bar"
 
     def test_managed_env_extends_mcp_connect_timeout(self, tmp_path: Path):
-        """配布原本はMCPサーバーの接続上限を、再起動直後の遅い起動も待てる120秒へ延ばす。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         result = _run(tmp_path, managed, {"env": {"FOO": "bar"}})
         assert result["env"]["MCP_TIMEOUT"] == "120000"
         assert result["env"]["FOO"] == "bar"
 
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
-        """既存キーが保持され、permissions が正しく union マージされる。"""
         existing = {
             "enabledPlugins": {"foo@bar": True},
             "remote": {"enabled": True},
@@ -228,11 +218,9 @@ class TestUpdateClaudeSettings:
         }
         result = _run(tmp_path, MANAGED, existing)
 
-        # 既存キーが保持されている
         assert result["enabledPlugins"] == {"foo@bar": True}
         assert result["remote"] == {"enabled": True}
 
-        # allow: 既存順維持 + managed の新規追加、重複排除
         allow: list[str] = result["permissions"]["allow"]
         assert allow[0] == "CustomTool"
         assert allow[1] == "Bash"
@@ -240,17 +228,14 @@ class TestUpdateClaudeSettings:
         for item in MANAGED_ALLOW:
             assert item in allow
 
-        # deny: union マージ
         deny: list[str] = result["permissions"]["deny"]
         assert "Read(./.secret)" in deny
         for item in MANAGED_DENY:
             assert item in deny
 
-        # defaultMode が追加される
         assert result["permissions"]["defaultMode"] == "plan"
 
     def test_env_merge_preserves_existing(self, tmp_path: Path):
-        """env は dict として再帰マージされ、既存キーを壊さない。"""
         managed = {"env": {"CLAUDE_CODE_NO_FLICKER": "1"}}
         existing = {"env": {"FOO": "bar"}}
         result = _run(tmp_path, managed, existing)
@@ -305,14 +290,11 @@ class TestHomePlaceholder:
 
 
 class TestJsoncCommentPreservation:
-    """既存のJSONCに対する設定更新と文字コードの維持を検証する。"""
-
     @pytest.mark.parametrize("platform", ["linux", "win32"])
     @pytest.mark.parametrize("previous", [None, 30], ids=["missing", "30-days"])
     def test_run_updates_history_retention(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, pytestconfig: pytest.Config, platform: str, previous: int | None
     ) -> None:
-        """配布原本を新規適用し、旧設定への再適用ではコメントと独自設定を保って180日にする。"""
         path = tmp_path / "settings.json"
         monkeypatch.setattr(mod, "_SETTINGS_PATH", path)
         monkeypatch.setattr(mod, "_CONFIG_PATH", tmp_path / "claude.json")
@@ -512,7 +494,6 @@ class TestUpdateClaudeConfig:
         assert result == {"verbose": True}
 
     def test_merge_preserves_existing_keys(self, tmp_path: Path):
-        """既存キーが保持され、managed キーで上書きされる。"""
         existing = {"numStartups": 100, "verbose": False, "theme": "light"}
         result = _run(tmp_path, {"verbose": True}, existing)
         assert result["numStartups"] == 100
@@ -521,22 +502,17 @@ class TestUpdateClaudeConfig:
 
 
 class TestMergeRecursive:
-    """_merge の再帰マージロジックテスト。"""
-
     def test_nested_dict_merge(self, tmp_path: Path):
-        """ネストした dict が再帰的にマージされる。"""
         existing = {"outer": {"keep": 1, "override": "old"}}
         result = _run(tmp_path, {"outer": {"override": "new", "add": 2}}, existing)
         assert result["outer"] == {"keep": 1, "override": "new", "add": 2}
 
     def test_list_union_dedup(self, tmp_path: Path):
-        """list が union マージされ、重複排除・順序維持される。"""
         existing = {"items": ["a", "b", "c"]}
         result = _run(tmp_path, {"items": ["b", "d"]}, existing)
         assert result["items"] == ["a", "b", "c", "d"]
 
     def test_schema_key_is_ignored(self, tmp_path: Path):
-        """`$schema` はマージ対象外で、ユーザー設定に伝播しない。"""
         existing = {"language": "english"}
         managed = {"$schema": "https://example.com/schema.json", "language": "japanese"}
         result = _run(tmp_path, managed, existing)
@@ -544,17 +520,12 @@ class TestMergeRecursive:
         assert result["language"] == "japanese"
 
     def test_schema_key_does_not_overwrite_existing(self, tmp_path: Path):
-        """既存の `$schema` があっても managed 側の `$schema` で上書きされない。"""
         existing = {"$schema": "user-defined"}
         managed = {"$schema": "managed-defined", "language": "japanese"}
         result = _run(tmp_path, managed, existing)
         assert result["$schema"] == "user-defined"
 
     def test_dict_list_union_dedup(self, tmp_path: Path):
-        """dict を要素に持つ list もマージ可能で、同一内容の重複は排除される。
-
-        hooks 配列のように非 hashable な要素を含む list をマージする際の回帰テスト。
-        """
         hook_entry = {
             "matcher": "Write|Edit|MultiEdit",
             "hooks": [{"type": "command", "command": "claude-hook-check-mojibake"}],
@@ -563,7 +534,7 @@ class TestMergeRecursive:
         managed = {
             "hooks": {
                 "PreToolUse": [
-                    dict(hook_entry),  # 同一内容 → 重複排除される
+                    dict(hook_entry),
                     {"matcher": "Bash", "hooks": []},
                 ]
             }

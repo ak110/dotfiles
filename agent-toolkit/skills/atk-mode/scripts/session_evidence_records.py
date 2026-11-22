@@ -1,5 +1,3 @@
-"""パッケージへ移した記録収集を、既存の証拠抽出スクリプト群へ公開する。"""
-
 from agent_toolkit._common.session_family import (
     _agents_server_call_ids,
     _codex_mcp_start_item,
@@ -48,7 +46,6 @@ def _fork_parent(records: list[_Record]) -> str | None:
 
 
 def _fork_context(records: list[_Record], parent: list[_Record] | None) -> tuple[tuple[_Record, ...], bool]:
-    """メタデータを除き、親と構造が同じ連続した接頭辞だけを引継ぎとする。"""
     child_rows = [row for row in records if row.entry.get("type") != "session_meta"]
     if parent is None:
         return tuple(child_rows), False
@@ -58,12 +55,11 @@ def _fork_context(records: list[_Record], parent: list[_Record] | None) -> tuple
         if (child.entry.get("type"), child.entry.get("payload")) != (original.entry.get("type"), original.entry.get("payload")):
             break
         matched.append(child)
-    # 一致する接頭辞すら取得できない場合は、任意のcall IDで境界を推測しない。
+
     return (tuple(matched), True) if matched else (tuple(child_rows), False)
 
 
 def _collect_records(transcript_path, main_records, codex_home=None, boundary=None, **options):
-    """証拠の各照会が同じ子会話の帰属を使う。"""
     collected, unresolved = _collect_family_records(transcript_path, main_records, codex_home, boundary, **options)
     by_id = {item.record_id: item.records for item in collected}
     loader = options.get("record_loader", _load_records_checked)

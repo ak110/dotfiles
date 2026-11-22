@@ -53,13 +53,11 @@ def exists(session_id: str) -> bool:
 
 
 def record_path(session_id: str) -> pathlib.Path | None:
-    """既存のセッションのmanaged-tempから、メインが所有する記録先を解決する。"""
     directory = managed_temp.find_session_temp(session_id)
     return directory / RECORD_NAME if directory is not None else None
 
 
 def local_time(timestamp: float | None = None) -> str:
-    """通知に添える時刻を、タイムゾーン付きの壁時計の日時で返す。"""
     moment = (
         datetime.datetime.now().astimezone() if timestamp is None else datetime.datetime.fromtimestamp(timestamp).astimezone()
     )
@@ -85,7 +83,6 @@ def observe_input(session_id: str) -> str | None:
             return state
         previous = state.get("work_contract_observed_mtime")
         if previous is None:
-            # 初回観測より前の入力は復元できないため、件数を下限として扱う。
             inputs, partial = 1, True
         elif previous != updated:
             inputs, partial = 1, False
@@ -117,7 +114,6 @@ def observe_input(session_id: str) -> str | None:
 
 
 def reset_notice(session_id: str) -> None:
-    """圧縮で失われた未作成通知を、次の操作で再配送可能にする。"""
     update_state(
         session_id,
         lambda state: {

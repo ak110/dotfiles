@@ -26,7 +26,6 @@ def _replace(source: str, destination: Path) -> None:
             return
         except OSError as error:
             if getattr(error, "winerror", None) not in (5, 32) or attempt == len(_REPLACE_RETRY_DELAYS):
-                # 呼出側の既存診断ログにも、一時ファイルを回収する前の置換元・先を残す。
                 error.add_note(f"atomic replace source={source} destination={destination}")
                 _LOGGER.exception("原子的な置換に失敗: source=%s destination=%s", source, destination)
                 raise

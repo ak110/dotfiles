@@ -1,5 +1,3 @@
-"""WIのmutations transitions: user_fieldsのテスト。"""
-
 import pathlib
 import shlex
 import subprocess
@@ -43,7 +41,6 @@ def test_public_transitions_locate_user_fields(
     source: str,
     destination: str,
 ) -> None:
-    """6操作の個別・一括で保存行と読取方法を示し、欄無しと偽見出しには通知しない。"""
     notes = _setup_notes(tmp_path)
     _patch_bulk_git(monkeypatch, [])
     monkeypatch.setenv("AI_AGENT", "1")
@@ -75,7 +72,7 @@ def test_public_transitions_locate_user_fields(
             assert not any(line.startswith(f"記入欄: {name} ") for line in fields)
             continue
         section = "ユーザーコメント" if kind == "awi" else "回答"
-        # frontmatter 6行に、入力本文中の正式見出しの行位置を加える。
+
         expected_line = 13 if kind == "awi" else 11
         field = next(line for line in fields if line.startswith(f"記入欄: {name} "))
         assert f"## {section} あり 開始行: {expected_line}（保存本文上の1始まり）" in field
@@ -91,7 +88,6 @@ def test_public_transitions_locate_user_fields(
 def test_plain_transition_api_does_not_print_user_fields(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], agent: bool
 ) -> None:
-    """Web APIも使う平引数処理には、エージェント環境でもCLIの通知を混ぜない。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "comment.md", body="要求\n\n## ユーザーコメント\n\n指示")
     _disable_transition_git(monkeypatch)
@@ -106,7 +102,6 @@ def test_plain_transition_api_does_not_print_user_fields(
 def test_failed_transition_does_not_report_user_fields(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """遷移前の状態が不正なら、成功や記入欄を通知せず本文も保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "comment.md", body="要求\n\n## ユーザーコメント\n\n指示")
     original = path.read_bytes()
@@ -129,7 +124,6 @@ def test_transition_notice_does_not_add_type_validation(
     capsys: pytest.CaptureFixture[str],
     type_line: str,
 ) -> None:
-    """記入欄の通知は、holdが従来受け付ける種別不明の保存項目を拒否しない。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "legacy.md", body="要求\n\n## ユーザーコメント\n\n指示")
     path.write_text(path.read_text(encoding="utf-8").replace("type: awi\n", type_line), encoding="utf-8")
@@ -156,7 +150,6 @@ def test_public_append_return_preserves_unfinished_record(
     cooldown: bool,
     state: str,
 ) -> None:
-    """公開追記した再開記録を差戻し後の公開取得で確認し、終了済みの旧結果だけを除く。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "record.md", body="元の要求")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -196,7 +189,6 @@ def test_serve_return_preserves_public_append(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Serveの共有更新処理も公開追記した未終了記録を保持する。"""
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "record.md", body="元の要求")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -218,7 +210,6 @@ def test_agent_environment_rejects_removed_plan_edit_without_changes(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """削除済み計画型編集を拒否し、ユーザーコメント節を含む項目を保持する。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     path = _write_awi_file(notes, filename, body="編集前\n\n## ユーザーコメント\n\n保持する")
@@ -238,15 +229,12 @@ def test_agent_environment_rejects_removed_plan_edit_without_changes(
 
 
 class TestEditNoChanges:
-    """editサブコマンド: 差分なしでcommitせず終了。"""
-
     def test_edit_no_changes_skips_commit(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """編集後にファイル差分がなければコミットされず案内のみ出力される。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "fb-001.md", body="本文")
         monkeypatch.setenv("EDITOR", "fake-editor")
@@ -321,7 +309,6 @@ class TestAppendEdit:
         capsys: pytest.CaptureFixture[str],
         answer: str,
     ) -> None:
-        """未回答・回答済みを問わずUWIへの追記を拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_uwi_entry(notes, "uwi-001.md", answer=answer)
         original = path.read_bytes()
@@ -392,7 +379,6 @@ def test_cli_edit_reports_body_mismatch_when_saved_body_is_altered(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """編集した本文を保存する処理中に本文が改変された場合、一致判定は不一致と最初の差異位置を示す。"""
     notes = _setup_notes(tmp_path)
     filename = "20260827-000000-001.md"
     _write_awi_file(notes, filename, body="編集前")

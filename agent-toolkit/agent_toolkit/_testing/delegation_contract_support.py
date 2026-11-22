@@ -72,7 +72,6 @@ def _text_blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
 
 
 def _marker_values(path: _Contract, prefix: str, *, recipient: bool) -> tuple[list[str], bool]:
-    """正規位置にある一意な標識行の値と、構造が正しいかを返す。"""
     lines = path.read_text(encoding="utf-8").splitlines()
     if recipient and lines and lines[0] == "---":
         assert isinstance(path, pathlib.Path)
@@ -108,13 +107,11 @@ def _marker_values(path: _Contract, prefix: str, *, recipient: bool) -> tuple[li
 
 
 def _contains_exact_name(content: str, name: str) -> bool:
-    """項目名が前後に名前の続きを伴わない逐語の単位として現れる場合に真を返す。"""
     pattern = rf"(?<![{_NAME_CONTINUATION}]){re.escape(name)}(?![{_NAME_CONTINUATION}])"
     return re.search(pattern, content) is not None
 
 
 def _bullet_label(line: str) -> str | None:
-    """箇条書きの本文の先頭から最初の区切り文字の直前までをラベルとして返す。"""
     stripped = line.lstrip()
     if not stripped.startswith(_BULLET_PREFIX):
         return None
@@ -214,7 +211,6 @@ def _pair_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
 
 
 def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
-    """全起動対象の生成境界、区分・順序・所有説明の手修正を検出する。"""
     errors = []
     for path, role in task_documents.launch_contract_documents(plugin_root):
         text = path.read_text(encoding="utf-8")
@@ -275,7 +271,6 @@ def _read_table_subagents(recipient: pathlib.Path, launched: set[str] | None = N
 
 
 def _instructed_errors(parent: _Contract, recipient: pathlib.Path) -> list[str]:
-    """起動した委譲先が読込表で読む文書の必須入力名を、委譲元の本文が指示として持つか確かめる。"""
     required_names, valid_structure = _marker_values(recipient, _REQUIRED_INPUT_PREFIX, recipient=True)
     if not valid_structure:
         return [f"必須入力名の構造が不正: {recipient.name}"]
@@ -309,7 +304,7 @@ def _embedded_contracts(plugin_root: pathlib.Path) -> list[_EmbeddedContract]:
             next_token = headings[index + 1][0] if index + 1 < len(headings) else None
             end = next_token.map[0] if next_token is not None and next_token.map else len(lines)
             section_lines = lines[token.map[0] : end]
-            # 元の節をH1とする検査用の像。ファイルを書き換えず、同じ入力検査を再利用する。
+
             body = "\n".join(line[1:] if re.match(r"^#{2,6} ", line) else line for line in section_lines)
             if not any(item.source.resolve() == path.resolve() and item.section == title for item in contracts):
                 contracts.append(_EmbeddedContract(path, title, body))
@@ -353,7 +348,6 @@ def _contract_errors(plugin_root: pathlib.Path) -> list[str]:
             if target not in recipients:
                 errors.append(f"委譲先の文書が実在しない: {parent.name} -> {target}")
 
-    # 起動対象に挙がる文書を読込表で読む場合は参照として読むだけであり、指示として届く文書から外す。
     launched = {target for _, target in pairs}
     instructed: list[tuple[_Contract, str]] = []
     for parent, target in pairs:
@@ -389,7 +383,7 @@ def _contract_errors(plugin_root: pathlib.Path) -> list[str]:
         if not valid_structure:
             continue
         parent_populations[parent].update(required_names)
-        # 確認対象のplugin rootは引数で固定済みであり、隔離したテスト入力にも同じ宣言解析を使う。
+
         declaration = task_documents.read_declaration_unchecked(recipient)
         if isinstance(declaration, str):
             errors.append(declaration)
@@ -401,7 +395,6 @@ def _contract_errors(plugin_root: pathlib.Path) -> list[str]:
 
 
 def _write_pair(plugin_root: pathlib.Path, *, parent_body: str, required_name: str = "対象リポジトリ") -> pathlib.Path:
-    """`plugin_root`の役割文書の置き場所へ、単一の委譲関係を持つテスト入力を書き、置き場所を返す。"""
     roles = task_documents.role_document_directory(plugin_root)
     roles.mkdir(parents=True, exist_ok=True)
     (roles / "task.parent.md").write_text(parent_body, encoding="utf-8")
@@ -421,7 +414,6 @@ def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker
 
 
 def _format_contract_error(error: str) -> str:
-    """入力専用節の新しい検出範囲へ案内を付け、他の既存診断は保つ。"""
     if "\n次の操作:" in error:
         return error if "\n修正できない場合" in error else error + "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
     if error.startswith(("任意入力名の一覧が不正:", "宣言外の任意入力名:", "任意入力名が欠けている:")):
@@ -474,7 +466,6 @@ def _fixed_reply_errors(plugin_root: pathlib.Path) -> list[str]:
 
 
 def _h2_section(content: str, heading: str) -> str:
-    """指定したH2見出しの本文を次のH2見出しの直前まで返す。"""
     return content.split(f"\n## {heading}\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
 
 
@@ -511,14 +502,12 @@ def _launch_role_errors(plugin_root: pathlib.Path) -> list[str]:
 
 
 def _selection_procedure(plugin_root: pathlib.Path) -> str:
-    """選定と検収の同じ所有者が読む手順（選定、レーン分け、処理中の追加）を取得する。"""
     playbooks = plugin_root / "skills/atk-mode/playbooks"
     names = ("process-wi-selection.md", "process-wi-selection-allocation.md", "process-wi-additions.md")
     return "\n".join((playbooks / name).read_text(encoding="utf-8") for name in names)
 
 
 def _selection_format(plugin_root: pathlib.Path) -> str:
-    """生成・消費が共有する選定の書式、欄の意味、生成入力を取得する。"""
     references = plugin_root / "skills/atk-mode/references"
     names = ("process-wi-selection-format.md", "process-wi-selection-fields.md")
     return "\n".join((references / name).read_text(encoding="utf-8") for name in names)

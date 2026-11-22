@@ -47,7 +47,6 @@ class TestStripInheritedVenv:
 
     @pytest.mark.parametrize("caller", [None, ""])
     def test_restores_added_key_to_absent_or_empty_caller_value(self, caller: str | None) -> None:
-        """起動層が後から加えるキーも、呼出元の不在と空値を区別して復元する。"""
         env = {} if caller is None else {"FUTURE_KEY": caller}
         baseline = dict(env)
         env["FUTURE_KEY"] = "launch-value"
@@ -56,7 +55,6 @@ class TestStripInheritedVenv:
         assert env.get("FUTURE_KEY") == caller
 
     def test_keeps_value_changed_after_launch(self) -> None:
-        """起動後に別の主体が変更した値は復元で上書きしない。"""
         env = {"FUTURE_KEY": "caller"}
         baseline = dict(env)
         env["FUTURE_KEY"] = "launch-value"
@@ -67,7 +65,6 @@ class TestStripInheritedVenv:
 
     @pytest.mark.parametrize("project_environment", ["/plugin/environment", "/user/environment"])
     def test_removes_only_the_plugin_project_override(self, project_environment: str) -> None:
-        """対象リポジトリのuvにはplugin専用の保存先を引き継がず、呼び出し元が別に指定した値は保つ。"""
         env = {
             "AGENT_TOOLKIT_RUNTIME_ENVIRONMENT": "/plugin/environment",
             "UV_PROJECT_ENVIRONMENT": project_environment,

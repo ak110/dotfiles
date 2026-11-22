@@ -12,7 +12,6 @@ from pytools._internal import warmup_agents_server_test as harness
 
 
 def test_startup_cache_ignores_install_detail(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """PIDの変化だけで起動確認を繰り返さず、実際の起動条件が変われば確認する。"""
     harness._setup(monkeypatch, tmp_path)
     monkeypatch.setattr(warmup.post_apply_cache, "record_path", lambda name: tmp_path / f"{name}.json")
     monkeypatch.setattr(warmup.plugin_warmup, "cleanup_prepared", lambda _prepared, **_kwargs: None)

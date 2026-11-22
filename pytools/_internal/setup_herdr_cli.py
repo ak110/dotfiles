@@ -12,8 +12,6 @@ import tempfile
 from pathlib import Path, PureWindowsPath
 
 from agent_toolkit._common import dotfiles_mode
-
-# ヘルプや他の処理で使わない依存は、使用時まで読み込まない。
 lazy import httpx
 
 from pytools._internal import common, log_format, post_apply_outcome, setup_cli_common
@@ -25,7 +23,7 @@ _TAG = "herdr"
 _POSIX_INSTALLER_URL = "https://herdr.dev/install.sh"
 _WINDOWS_INSTALLER_URL = "https://herdr.dev/install.ps1"
 _DETACHED_UPDATE_MARKER = "outside herdr after detaching from the session"
-# 稼働中のサーバーの再起動を要する更新で、非対話の`herdr update`が導入せずに終了0で返すときの診断。
+
 _NOT_UPDATED_MARKER = "Herdr was not updated."
 
 
@@ -51,7 +49,6 @@ def _comparison_path(path: Path) -> PureWindowsPath:
 
 
 def _find_launcher() -> Path | None:
-    """所有する版実体をリンクの格納情報から選ぶ。"""
     visible = _launcher_path()
     if sys.platform != "win32":
         return visible if visible.is_file() else None
@@ -174,7 +171,6 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
 
 
 def _deferred_notice(*, inside_session: bool) -> post_apply_outcome.PostApplyNotice:
-    """保留した更新の理由と手動の操作を案内する。"""
     if inside_session:
         reason = "Herdrセッション内では自己更新できないため、更新を保留しました。"
         manual = "セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。"

@@ -1,5 +1,3 @@
-"""実pytestのworkstealキューで、停止理由の伝達と正常時の対象集合を比較する。"""
-
 import json
 import os
 import pathlib
@@ -90,14 +88,12 @@ def _run_probe(root: pathlib.Path, *, fail: bool) -> dict:
 
 
 def test_maxfail_stops_queued_tests_after_teardown(tmp_path: pathlib.Path) -> None:
-    """同じ80試験・4workerで、上限後の未実行分とfixture teardownを比較する。"""
     result = _run_probe(tmp_path / "stopped", fail=True)
     print(json.dumps(result))
     assert result["executed"] < 40
 
 
 def test_normal_shutdown_keeps_all_tests(tmp_path: pathlib.Path) -> None:
-    """正常完了のshutdownでは、全対象とteardownを維持する。"""
     result = _run_probe(tmp_path / "normal", fail=False)
     print(json.dumps(result))
     assert result["executed"] == 80

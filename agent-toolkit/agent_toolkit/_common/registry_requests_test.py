@@ -1,5 +1,3 @@
-"""登録簿の要求の列挙が、登録簿の件数に比例する仕事を監視の毎巡で繰り返さないことを確かめる。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -15,8 +13,6 @@ from agent_toolkit._common import effort_requests, registry_requests, session_re
 
 
 class _CountingScandir:
-    """列挙で読んだディレクトリ項目の数を数える。"""
-
     def __init__(self) -> None:
         self.entries = 0
 
@@ -40,13 +36,11 @@ def _registry(tmp_path: pathlib.Path, count: int) -> pathlib.Path:
 
 
 def _settle(directory: pathlib.Path, seconds_ago: int) -> None:
-    """登録簿の最後の変更から時刻の刻み（ext3は1秒）より十分に時間が過ぎた状態にする。"""
     settled = (time.time_ns() // 1_000_000_000 - seconds_ago) * 1_000_000_000
     os.utime(directory, ns=(settled, settled))
 
 
 def _monitor_cycle(tmp_path: pathlib.Path) -> None:
-    """agents_serverの監視の1巡と同じく、effort要求と解放要求を探す。"""
     assert not effort_requests.pending(state_root=tmp_path)
     asyncio.run(session_release.process_requests({}, _unexpected_stop, state_root=tmp_path))
 
@@ -56,7 +50,6 @@ async def _unexpected_stop(*_args, **_kwargs) -> dict:
 
 
 def test_monitor_cycles_read_no_entries_while_registry_is_unchanged(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """登録簿の件数を倍にしても、変化の無い間の監視の1巡で読む項目数は0のままで、新しい要求は次の巡で見つかる。"""
     scandir = _CountingScandir()
     monkeypatch.setattr(registry_requests, "os", types.SimpleNamespace(stat=os.stat, fspath=os.fspath, scandir=scandir))
     directory = _registry(tmp_path, 300)
@@ -86,7 +79,6 @@ def test_monitor_cycles_read_no_entries_while_registry_is_unchanged(tmp_path: pa
 
 
 def test_request_written_within_the_same_timestamp_tick_is_found(tmp_path: pathlib.Path, monkeypatch) -> None:
-    """更新時刻の刻みが粗いファイルシステムで、列挙と同じ刻みの中に置かれた要求を次の巡で見つける。"""
     directory = _registry(tmp_path, 3)
     tick = time.time_ns() // 1_000_000_000 * 1_000_000_000
 

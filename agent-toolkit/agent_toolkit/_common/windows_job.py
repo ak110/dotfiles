@@ -146,8 +146,6 @@ class _ThreadEntry(ctypes.Structure):
 
 
 class WindowsJob:
-    """1つの所有rootと、明示離脱を除く全子孫の寿命を所有するJob。"""
-
     def __init__(self, *, kill_on_close: bool = True) -> None:
         # WinDLL等はWindows専用属性。DLLの公開関数signatureをここだけで定義する。
         self._ctypes: Any = ctypes
@@ -178,7 +176,7 @@ class WindowsJob:
             raise self._error()
         try:
             limits = _ExtendedLimits()
-            # 最後の所有handleを閉じた場合の回収と、明示的な独立workerへの離脱を両立する。
+
             limits.basic.flags = (0x00002000 if kill_on_close else 0) | 0x00000800
             if not self._kernel.SetInformationJobObject(self._handle, 9, ctypes.byref(limits), ctypes.sizeof(limits)):
                 raise self._error()
@@ -193,14 +191,12 @@ class WindowsJob:
         self.close()
 
     def assign_suspended(self, process_handle: int, pid: int) -> None:
-        """元世代のhandleをJobへ登録してから、その世代だけを再開する。"""
         if self._kernel.GetProcessId(process_handle) != pid:
             raise OSError("開始したプロセスのhandleとPIDが一致しません")
         if not self._kernel.AssignProcessToJobObject(self._handle, process_handle):
             raise self._error()
-        # Popenがprimary threadのhandleを閉じるため、停止中の元世代のthreadを列挙する。
-        # process handleを保持している間はPIDが再利用されず、再開前には子も生成されない。
-        snapshot = self._kernel.CreateToolhelp32Snapshot(0x00000004, 0)  # TH32CS_SNAPTHREAD
+
+        snapshot = self._kernel.CreateToolhelp32Snapshot(0x00000004, 0)
         if snapshot == ctypes.c_void_p(-1).value:
             raise self._error()
         try:
@@ -214,7 +210,6 @@ class WindowsJob:
                     if not thread:
                         raise self._error()
                     try:
-                        # 外部からrootが終了されthread IDが再利用されても、別プロセスを再開しない。
                         if self._kernel.GetProcessIdOfThread(thread) != pid:
                             raise OSError("開始したプロセスとthreadの所属PIDが一致しません")
                         if self._kernel.ResumeThread(thread) == 0xFFFFFFFF:
@@ -234,7 +229,6 @@ class WindowsJob:
                 raise self._error()
 
     def terminate(self, *, timeout: float = 5.0) -> None:
-        """Jobの全所属を終了させ、OSのActiveProcessesが0になるまで確認する。"""
         if not self._kernel.TerminateJobObject(self._handle, 1):
             raise self._error()
         deadline = time.monotonic() + timeout
@@ -249,7 +243,6 @@ class WindowsJob:
             time.sleep(0.01)
 
     def close(self) -> None:
-        """所有するJob handleを1回だけ解放する。"""
         if self._handle:
             if not self._kernel.CloseHandle(self._handle):
                 raise self._error()

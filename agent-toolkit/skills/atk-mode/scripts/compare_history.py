@@ -69,23 +69,12 @@ def _series(work_dir: pathlib.Path, base: str, head: str, *, allow_empty: bool =
 
 
 def _without(excluded: frozenset[str]) -> list[str]:
-    """除外パスを差分の対象から外すpathspecを返す。
-
-    パスはリポジトリのルートを基準にした文字列として一致させ、Gitのパターンとして展開させない。
-    """
     if not excluded:
         return []
     return ["--", ":(top)", *(f":(top,exclude,literal){path}" for path in sorted(excluded))]
 
 
 def _content_id(work_dir: pathlib.Path, oid: str, excluded: frozenset[str] = frozenset()) -> str:
-    """commitの変更内容を、周辺行・hunk位置・commitメッセージから切り離して識別する値を返す。
-
-    Git 2.34.1は`patch-id --verbatim`を受理せず、`--stable`は空白差を区別しない。そこで文脈0行の差分から
-    hunk見出し（位置）とblobの識別子を除き、変更行（空白を含む）、パス、種類、モードを残したバイト列を比べる。
-    バイナリーは差分本文を持たないため、変更前後のblobの完全な識別子で内容を区別する。
-    `excluded`のパスの変更は識別の対象から外す。
-    """
     result = git_command.run(
         [
             "--no-pager",
@@ -120,17 +109,12 @@ def _content_id(work_dir: pathlib.Path, oid: str, excluded: frozenset[str] = fro
             if index >= header_end and line.startswith(b"@@"):
                 continue
             if index < header_end and line.startswith(b"index ") and not binary:
-                # blobの識別子は周辺行の変化でも変わる。変更のないモードだけを残す。
                 line = b"index " + b" ".join(line.split(b" ")[2:])
             digest.update(line + b"\n")
     return digest.hexdigest()
 
 
 def _same_content(work_dir: pathlib.Path, old_oid: str, new_oid: str, excluded: frozenset[str] = frozenset()) -> bool:
-    """旧commitの変更を新しい親へ適用した結果を含め、変更内容の同一性を判定する。
-
-    `excluded`は旧commitの変更から外すパスであり、残る変更だけを新commitと比べる。
-    """
     if _content_id(work_dir, old_oid, excluded) == _content_id(work_dir, new_oid):
         return True
     patch = _git(
@@ -238,13 +222,6 @@ def _upstream_mapping(
 
 
 def _retention_at(work_dir: pathlib.Path, oid: str, base: str) -> str:
-    """`oid`の変更が`base`でどう扱われているかを返す。作業ツリーと実indexは変えない。
-
-    `retained`は変更がそのまま残る（逆適用でき、順適用できない）。
-    `rewritten`は後続編集が変更箇所か前後の文脈を書き換えた（逆適用も順適用もできない）。
-    `lost`は取消し・不採用で変更が無い（順適用できる）。
-    差分は接頭辞を明示し（`diff.noprefix`の設定によらず`-p1`で適用できるように）、バイナリーとモード変更も含める。
-    """
     patch = _git(
         work_dir,
         "diff-tree",
@@ -356,7 +333,6 @@ def _check_exclusion(work_dir: pathlib.Path, oid: str, target: str, excluded: fr
 
 
 def _exclusions(work_dir: pathlib.Path, old: list[str], pairs: list[list[str]]) -> dict[str, frozenset[str]]:
-    """`--exclude-path`の指定を旧commitの完全OIDごとの除外パスへまとめ、旧系列と旧commitの変更パスに照らして検収する。"""
     collected: dict[str, set[str]] = {}
     for value, path in pairs:
         oid = _git(work_dir, "rev-parse", "--verify", "--end-of-options", f"{value}^{{commit}}").strip()
@@ -375,7 +351,6 @@ def _exclusions(work_dir: pathlib.Path, old: list[str], pairs: list[list[str]]) 
 
 
 def _exists_in_parent(work_dir: pathlib.Path, target: str, path: str) -> bool:
-    """`target`の親commitのtreeに`path`があるかを返す。"""
     result = git_command.run(
         ["--no-pager", "-C", str(work_dir), "cat-file", "-e", f"{target}^:{path}"],
         capture_output=True,
@@ -416,7 +391,6 @@ def _rebase(
             continue
         mapping[oid] = destinations[patch]
         if oid in exclusions:
-            # 内容の識別値で対応が決まった組も、件名と除外パスの扱いは識別値に現れないため別に検収する。
             _check_exclusion(work_dir, oid, mapping[oid], exclusions[oid])
     remaining_old = [oid for oid in old if oid not in mapping]
     remaining_new = [oid for oid in new if oid not in mapping.values()]
@@ -490,7 +464,6 @@ def _amend(old_base: str, new_base: str, old: list[str], new: list[str]) -> dict
 
 
 def main(argv: list[str] | None = None) -> int:
-    """操作別の履歴不変条件を検収し、完全OID対応を原子的に保存する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--operation", choices=("rebase", "autosquash", "amend"), required=True, help="検収する履歴操作")
     parser.add_argument(

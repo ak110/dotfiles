@@ -1,5 +1,3 @@
-"""計画ファイル（メイン・詳細・バグ）の固定H2と各節の構造の判定、旧形式の判別と`由来`の判定。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -125,7 +123,6 @@ _NO_FIXED_H2_ERROR = (
 def _check_materials_and_identifiers(
     content: str, headings: list[PlanHeading]
 ) -> tuple[set[str], set[str], set[str], PlanMaterials | None, list[str]]:
-    """`## 提示素材`を解析し、(素材ID集合, 要求ID集合, 採用要求ID集合, 解析結果, エラー)を返す。"""
     materials_index = find_heading_index(headings, 2, PLAN_H2_MATERIALS)
     identifiers: set[str] = set()
     requirement_ids: set[str] = set()
@@ -143,7 +140,6 @@ def _check_materials_and_identifiers(
 
 
 def is_canonical_main_format(content_or_headings: str | list[PlanHeading]) -> bool:
-    """新しいメイン計画書式（`エージェント提案詳細`を含む）かを返す。"""
     headings = extract_headings(content_or_headings) if isinstance(content_or_headings, str) else content_or_headings
     h2_names = {heading.text for heading in headings if heading.level == 2}
     return bool(h2_names & {PLAN_H2_AGENT_JUDGMENT, PLAN_H2_LEGACY_AGENT_JUDGMENT, PLAN_H2_HISTORY, PLAN_H2_PROGRESS})
@@ -324,7 +320,6 @@ def _check_human_action(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> list[str]:
-    """1ファイルの計画の`## 実施内容`が、由来・採否・根拠を持つ4列表の基準を満たすか確かめる。"""
     errors = _check_action_section(
         body,
         headings,
@@ -352,7 +347,6 @@ def check_plan_eight_section_structure(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """8節形式の1ファイル計画が基準を満たすか判定し、(作業種別, 違反一覧)を返す。保存済みの計画の読み取り専用である。"""
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -361,8 +355,7 @@ def check_plan_eight_section_structure(
     parsed, _parse_errors = parse_plan_metadata(content)
     parsed_work_type = parsed.values.get("作業種別") if parsed is not None else None
     expected_metadata = PLAN_METADATA_CURRENT_FIELDS
-    # 関連WIの`## 原因分析`が原因分析の記録先となるバグ対応計画は計画ファイル（バグ）を持たない。
-    # 入力WIが無い計画は原因分析の記録先が他に無いため、計画内の同行を必須とする。
+
     if (
         parsed is not None
         and parsed_work_type == "バグ対応"
@@ -506,10 +499,6 @@ def check_plan_eight_section_structure(
 
 
 def _check_changed_scope_verification(tables: list[MarkdownTable], accepted_rows: tuple[tuple[str, ...], ...]) -> list[str]:
-    """`## 検証`の固定表の行名、列数、検証コマンドの形を確かめる。
-
-    `accepted_rows`は受け付ける行名の組を優先順に渡す。先頭の組が現行の行名である。
-    """
     errors: list[str] = []
     table = next(
         (found for rows in accepted_rows if (found := _find_table_with_rows(tables, rows)) is not None),
@@ -544,7 +533,6 @@ def _check_changed_scope_verification(tables: list[MarkdownTable], accepted_rows
 
 
 def _check_request_plan_layout(headings: list[PlanHeading]) -> list[str]:
-    """現行の計画の見出しの配置（H1直下、固定H2と要求を書く節の並び、固定H2の配下）を確かめる。"""
     errors: list[str] = []
     first_h2 = next((index for index, heading in enumerate(headings) if heading.level == 2), len(headings))
     if [(heading.level, heading.text) for heading in headings[1:first_h2]] != [(3, PLAN_METADATA_H3)]:
@@ -585,12 +573,6 @@ def check_plan_request_structure(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[str | None, list[str]]:
-    """現行の計画ファイルが基準を満たすか判定し、(作業種別, 違反一覧)を返す。
-
-    H1と要約、計画メタ情報、`## 実施内容`、要求を書く節、`## 検証`、`## 進捗ログ`をこの順に持つ。
-    要求を書く節の必須節、空の節、順序は、通常AWIの本文と同じ`request_section_problems`で判定する。
-    `## 原因分析`は`cause_record_errors`で判定し、関連WIが無いバグ対応の計画では必須とする。
-    """
     body = list(iter_markdown_body_lines(content))
     headings = extract_headings(content)
     errors = _check_h1(headings)
@@ -608,8 +590,7 @@ def check_plan_request_structure(
         if not any(line.strip() for _lineno, line in lines_within(body, headings[0].lineno, summary_end)):
             errors.append("H1直下に要約（全体像、目的、対象範囲）を書く")
     errors.extend(_check_request_plan_layout(headings))
-    # 要求を書く節はMarkdown構文の見出しで切り出すため、`extract_headings`が見ない字下げ付きのH2も節になる。
-    # 見出しの配置の検査を抜けないよう、そのH2を拒否する。
+
     body_linenos = {lineno for lineno, _line in body}
     h2_linenos = {heading.lineno for heading in headings if heading.level == 2}
     errors.extend(

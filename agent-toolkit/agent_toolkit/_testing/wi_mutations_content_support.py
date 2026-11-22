@@ -1,5 +1,3 @@
-"""WIのmutations content試験で共有する準備処理。"""
-
 import pathlib
 import subprocess
 
@@ -18,7 +16,6 @@ _USER_COMMENT_ERROR = "失敗: " + user_comment.AGENT_USER_COMMENT_EDIT_ERROR
 
 
 def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, append: bool = False) -> list[str]:
-    """本文をファイルへ保存し、`atk wi edit`の引数列を返す。"""
     body_path = tmp_path / f"{filename}.body.md"
     body_path.write_text(message, encoding="utf-8")
     args = ["wi", "edit", filename]
@@ -28,7 +25,6 @@ def _edit_body_args(tmp_path: pathlib.Path, filename: str, message: str, *, appe
 
 
 def _next_action_lines(err: str) -> list[str]:
-    """標準エラーから次の操作の行だけを返す。"""
     return [line for line in err.splitlines() if line.startswith("次の操作: ")]
 
 
@@ -36,7 +32,6 @@ _DRY_RUN_SUCCESS = "成功: 編集前の検証が成立した（--dry-runのた�
 
 
 def _git_output(directory: pathlib.Path, *args: str) -> str:
-    """隔離したprivate-notesまたはremoteでGitを実行して標準出力を返す。"""
     return subprocess.run(
         ["git", "-C", str(directory), *args],
         check=True,

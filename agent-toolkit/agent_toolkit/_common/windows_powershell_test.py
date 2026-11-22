@@ -13,7 +13,6 @@ from agent_toolkit._testing.isolation import build_host_environ
 
 
 def _native_uv(environ: dict[str, str]) -> Path | None:
-    """uv.exeという別名でも起動できる実体を探す。"""
     path = environ["PATH"]
     mise = shutil.which("mise", path=path)
     shim_target = Path(mise).resolve() if mise else None
@@ -87,7 +86,7 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
     if restrict_process:
         monkeypatch.setenv("PSEXECUTIONPOLICYPREFERENCE", "AllSigned")
     shell = Path(os.environ["SYSTEMROOT"]) / "System32/WindowsPowerShell/v1.0/powershell.exe"
-    # 比較元には5.1自身が起動時に組み立てるモジュール探索先を使わせる。
+
     reference_env = os.environ.copy()
     reference_env.pop("PSMODULEPATH", None)
     expected = subprocess.run(
@@ -122,7 +121,6 @@ def test_policy_matches_windows_powershell(monkeypatch: pytest.MonkeyPatch, rest
 def test_notified_launcher_delivers_argv(
     tmp_path: Path, command_tail: str, argv: list[str], exit_code: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """配布スクリプトとネイティブuvを通り、atk.pyで観測したargvと終了値を比べる。"""
     source = Path(plugin_environment.__file__).resolve().parents[2] / "scripts"
     root = tmp_path / "plugin root"
     scripts = root / "scripts"
@@ -131,7 +129,7 @@ def test_notified_launcher_delivers_argv(
     shell = "powershell.exe" if os.name == "nt" else "pwsh"
     if os.name != "nt":
         monkeypatch.setattr(windows_powershell, "_execution_policy", lambda: "RemoteSigned")
-        # miseのshimは実行名でツールを引くので、uv.exeに改名するとuvを起動できない。
+
         uv = _native_uv(build_host_environ())
         if uv is None:
             pytest.skip("uv.exeとして起動できるネイティブのuvが見つからない。実体をPATHに加えて試験を再実行する。")
@@ -153,7 +151,7 @@ def test_notified_launcher_delivers_argv(
     monkeypatch.setenv("UV_PYTHON_DOWNLOADS", "never")
     monkeypatch.setenv("PATH", str(plugin_environment.base_python().parent) + os.pathsep + os.environ["PATH"])
     command = plugin_environment.cli_instructions(root, windows=True).splitlines()[0].removeprefix("起動部分: ")
-    # 記号を含む試験値は、バッチでないことを確かめてから渡す。
+
     expected = scripts / "atk.ps1"
     assert command == "& '" + str(expected).replace("'", "''") + "'"
     invoke = f"{command} {command_tail}; exit $LASTEXITCODE"

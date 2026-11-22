@@ -1,5 +1,3 @@
-"""旧エクスポーターから移したMarkdownの会話境界を検証する。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -9,7 +7,6 @@ from agent_toolkit._agents_server import logs_markdown
 
 
 def test_parent_filters_sidechain_and_meta_but_keeps_queued_user(tmp_path: pathlib.Path) -> None:
-    """メイン記録から割り込み中の応答と実行環境の挿入を除き、後着の人間の指示を残す。"""
     records: list[dict[str, typing.Any]] = [
         {"type": "user", "timestamp": "2026-01-01T00:00:01Z", "message": {"content": "最初の質問"}},
         {
@@ -43,7 +40,6 @@ def test_parent_filters_sidechain_and_meta_but_keeps_queued_user(tmp_path: pathl
 
 
 def test_separate_assistant_messages_keep_turn_boundary_and_string_result(tmp_path: pathlib.Path) -> None:
-    """別のmessage.idは別ターンとし、文字列のツール結果を呼出しへ結び付ける。"""
     records = [
         {"type": "user", "timestamp": "2026-01-01T00:00:01Z", "message": {"content": "ファイルを読んで"}},
         {

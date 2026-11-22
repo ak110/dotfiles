@@ -77,7 +77,6 @@ _HOOK_TIMEOUT = 60.0
 
 
 def main() -> int:
-    """CLI・hook・MCP・スキルスクリプトのargvと終了状態をuvへそのまま渡す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parents[1], help="配布rootの絶対パス")
     parser.add_argument("--persist-claude-env", action="store_true", help="SessionStartのBash環境ファイルへCLIのPATHを追記する")
@@ -180,7 +179,7 @@ def main() -> int:
                     stable = plugin_root.resolve_stable_plugin_root(root, independent=True)
                 arguments = [str(python), str(stable / _AGENTS_SERVICE_TARGET), *options.arguments]
                 environment["PYTHONPATH"] = str(stable)
-                # 委譲先へ渡す前の復元で、管理サービスのコード配置を指すPYTHONPATHも外せるよう記録する。
+
                 inherited_venv.record_launch_value(environment, "PYTHONPATH", caller_environment.get("PYTHONPATH"))
                 return _run_agents_server(arguments, environment, independent=True)
             if target == root / _AGENTS_SERVER_TARGET:
@@ -198,7 +197,6 @@ def main() -> int:
 
 
 def _report_unprepared_hook(message: str) -> None:
-    """追加文脈を受理するhookへ、依存環境を必要としない診断を返す。"""
     try:
         payload = json.loads(sys.stdin.buffer.read())
     except ValueError, UnicodeError:
@@ -209,7 +207,6 @@ def _report_unprepared_hook(message: str) -> None:
 
 
 def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tuple[int, ...]) -> int:
-    """ホストの入力を保持し、hook本体を所有groupで監視する。"""
     payload = sys.stdin.buffer.read()
     try:
         decoded = json.loads(payload)
@@ -226,7 +223,7 @@ def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tu
             next_action="ホスト入力のcwdまたはworkspacePathsの実在する絶対パスを確認してください。",
         )
         return 1
-    # 元のバイト列を再シリアライズせず渡す。pipeへの書込待ちを監視側へ持ち込まない。
+
     with tempfile.TemporaryFile() as input_stream:
         input_stream.write(payload)
         input_stream.seek(0)
@@ -238,7 +235,6 @@ def _run_hook(arguments: list[str], environment: dict[str, str], *, pass_fds: tu
                 deadline = time.monotonic() + _HOOK_TIMEOUT
                 while True:
                     if received and os.name != "nt":
-                        # ホストの短い取消猶予の内側で回収する。async hookは親の終了だけでは取り消さない。
                         _stop_server_process(process, signum=signal.SIGKILL, graceful_timeout=0)
                         return 128 + getattr(signal, received[0]["signal"])
                     remaining = deadline - time.monotonic()
@@ -274,8 +270,7 @@ def _prepare(root: Path, uv: str, environment: dict[str, str]) -> int:
                 raise TimeoutError(f"共有依存環境のprepareが{_PREPARE_TIMEOUT:.0f}秒以内に完了しませんでした: {target}")
             # `--active`で同期先を`VIRTUAL_ENV`の共有環境にし、スクリプト用の環境をuvのキャッシュへ作らない。
             prepare_environment = {**environment, "VIRTUAL_ENV": str(target)}
-            # prepareもbootstrapが所有する子として扱い、時間切れではuvの子孫まで回収する。
-            # uvは`--script`の設定ファイルを作業ディレクトリから探すため、配布rootで起動して呼出元の設定を読まない。
+
             with _server_lifetime(
                 [
                     uv,
@@ -318,10 +313,6 @@ def _run_agents_server(
     record_diagnostics: bool = True,
     independent: bool = False,
 ) -> int:
-    """MCPサーバーを子として起動し、終了状態・受信シグナル・標準エラー末尾を終了診断へ追記する。
-
-    標準入力と標準出力は継承してMCPのstdio通信を中継しない。呼出元へは従来のuv起動と同じ終了コードを返す。
-    """
     if not record_diagnostics:
         received: list[dict[str, str]] = []
         with _server_lifetime(arguments, environment, received, None) as process:
@@ -334,14 +325,12 @@ def _run_agents_server(
         environment = {**environment, logging_config.LAUNCH_RECORD_ENV: str(record_path)}
         received = []
         tail = diagnostic_redaction.DiagnosticTail(_STDERR_TAIL_BYTES)
-        # 停止シグナルの記録handlerは終了診断を書き終えるまで保つ。
-        # 先に戻すと、書き終える前に届いたシグナルで記録せずに終了する。
+
         with _server_lifetime(
             arguments, environment, received, tail, inherit_stderr=independent, signal_scope=lifetime
         ) as process:
             returncode = _wait_owned_server(process, received, lambda: True) if independent else _wait_server(process, received)
         if independent:
-            # 子が世代stderrへ直接flushしてからpeerを閉じる。tee threadの配送待ちを診断へ残さない。
             path = Path(arguments[-2]) / f"{arguments[-1]}.stderr.log"
             with path.open("rb") as stream:
                 stderr_tail = diagnostic_redaction.read_diagnostic_tail(stream, limit=_STDERR_TAIL_BYTES).text
@@ -350,7 +339,6 @@ def _run_agents_server(
         diagnostics = logging_config.read_launch_record(record_path)
         terminated_by = signal.Signals(-returncode).name if returncode < 0 else None
         if diagnostics is None:
-            # 起動単位を持たない正常終了（--check-dependenciesなど）は所在が無いのが通常であり、何も出力しない。
             if returncode != 0:
                 next_action.report(
                     "診断ファイルの所在を受け取る前にagents_serverが異常終了したため、終了診断ファイルは未作成である:"
@@ -378,7 +366,6 @@ def _relay_server_exit(returncode: int) -> int:
 
 
 def _wait_server(process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> int:
-    """親消滅と停止要求を監視し、自発終了しない子も有限な回収へ進める。"""
     with _parent_monitor() as parent_alive:
         return _wait_owned_server(process, received, parent_alive)
 
@@ -388,7 +375,6 @@ def _wait_owned_server(
 ) -> int:
     while process.poll() is None:
         if received or not parent_alive():
-            # サーバー自身の独立した子孫handle回収（猶予15秒とTERM/KILL各5秒）を先に完走させる。
             _stop_server_process(
                 process,
                 signum=getattr(signal, received[0]["signal"]) if received else signal.SIGTERM,
@@ -435,10 +421,6 @@ def _server_lifetime(
     signal_scope: contextlib.ExitStack | None = None,
     pass_fds: tuple[int, ...] = (),
 ) -> Generator[subprocess.Popen[bytes]]:
-    """stdlibだけでbootstrapの子・reader・pipe・signal handlerを所有する。
-
-    `signal_scope`を渡すと、signal handlerの復元をこの関数の終了ではなく`signal_scope`の終了まで延ばす。
-    """
     # Popen.__exit__の無期限waitを避け、bootstrap自身の有限なprocess group回収を使う。
     # 時間上限なし: 起動元（hook、MCP、CLI）へ終了状態を渡す中継であり、上限は起動元が持つ。
     with contextlib.ExitStack() as cleanup:
@@ -485,7 +467,6 @@ def _join_reader(reader: threading.Thread) -> None:
 def _stop_server_process(
     process: subprocess.Popen[bytes], *, signum: int | None = None, graceful_timeout: float | None = None
 ) -> None:
-    """自ら起動したbootstrap子のprocess groupを有限時間で回収する。"""
     if signum is not None and process.poll() is None:
         with contextlib.suppress(ProcessLookupError):
             process.send_signal(signum)
@@ -514,7 +495,6 @@ def _stop_server_process(
     except subprocess.TimeoutExpired:
         pass
     finally:
-        # 親が先に終了しても同じ所有groupに残る子孫と、そのstderr writerを回収する。
         with contextlib.suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
         if process.poll() is None:
@@ -522,7 +502,7 @@ def _stop_server_process(
 
 
 def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[str, str]]) -> Any:
-    # シグナルが続けて届いても、ハンドラー内でlazy importを再入させない。
+
     clock, utc = datetime.datetime.now, datetime.UTC
 
     def handler(signum: int, _frame: Any) -> None:
@@ -532,7 +512,6 @@ def _forwarding_handler(_process: subprocess.Popen[bytes], received: list[dict[s
 
 
 def _tee_stderr(stream: Any, tail: Any) -> None:
-    """子の標準エラーを受け取った順に自身の標準エラーへ出力し、診断抜粋の末尾（`DiagnosticTail`、不要なら`None`）へ渡す。"""
     while chunk := stream.read1(65536):
         sys.stderr.buffer.write(chunk)
         sys.stderr.buffer.flush()

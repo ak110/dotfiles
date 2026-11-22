@@ -1,5 +1,3 @@
-"""`agent_toolkit/`配下のテストへ開発機の状態からの隔離が自動で適用されることを確かめる。"""
-
 import inspect
 import json
 import os
@@ -58,12 +56,10 @@ def _assert_sentinel_preserved(python: pathlib.Path, marker: pathlib.Path) -> No
 
 
 def test_development_state_isolated_by_default(tmp_path: pathlib.Path) -> None:
-    """この起動範囲のテストは、何も設定しなくても開発機の状態から隔離される。"""
     isolation.assert_development_state_isolated(tmp_path)
 
 
 def test_import_time_home_omits_delegated_plugin_root_and_restores_it(tmp_path, monkeypatch):
-    """収集時に製品定数へ委譲元の資料rootを混ぜず、区間を抜けたら起動環境へ戻す。"""
     name = "AGENT_TOOLKIT_DELEGATED_PLUGIN_ROOT"
     value = str(tmp_path / "parent-plugin")
     monkeypatch.setenv(name, value)
@@ -75,7 +71,6 @@ def test_import_time_home_omits_delegated_plugin_root_and_restores_it(tmp_path, 
 
 @pytest.mark.parametrize("scope", [None, "session"])
 def test_function_loop_scope_prevents_environment_leak_between_tests(tmp_path: pathlib.Path, scope: str | None) -> None:
-    """直下の設定の実値で成功し、sessionへ戻す対照でテスト間の環境波及を検出する。"""
     root = pathlib.Path(__file__).resolve().parents[3]
     assert_loop_scope_isolation(tmp_path, configuration=root / "pyproject.toml", scope=scope)
 
@@ -100,7 +95,6 @@ def test_windows_known_folders_use_isolated_overrides(monkeypatch: pytest.Monkey
 
 
 def test_commit_hook_context_does_not_escape_nested_test_repository(tmp_path: pathlib.Path) -> None:
-    """実際のlinked worktreeのhookからpytestを起動しても、模擬repoのinit・addが元repoへ作用しない。"""
     environment = dict(os.environ)
     names = subprocess.run(
         ["git", "rev-parse", "--local-env-vars"],
@@ -288,7 +282,6 @@ def test_package_cache_environ_follows_tool_rules(platform: str, environ: dict[s
 def test_uv_cache_is_resolved_before_state_isolation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, host_environ, explicit: bool
 ) -> None:
-    """uv自身の解決結果を使い、隔離したXDGキャッシュ先へ取得物を向けない。"""
     captured = {name: value for name, value in host_environ().items() if name in isolation.PACKAGE_CACHE_ENVIRONMENT_NAMES}
     captured.pop("UV_CACHE_DIR", None)
     if explicit:
@@ -309,7 +302,6 @@ def test_uv_cache_is_resolved_before_state_isolation(
 
 @pytest.mark.usefixtures("share_package_caches")
 def test_shared_cache_child_keeps_development_state_isolated(tmp_path: pathlib.Path) -> None:
-    """実子プロセスへ取得物だけが渡り、設定・private-notes・出力状態は隔離される。"""
     result = subprocess.run(
         [sys.executable, "-c", "import json, os; print(json.dumps(dict(os.environ)))"],
         capture_output=True,
@@ -329,7 +321,6 @@ def test_shared_cache_child_keeps_development_state_isolated(tmp_path: pathlib.P
 
 
 def test_child_platformdirs_resolves_inside_isolation(tmp_path: pathlib.Path) -> None:
-    """子プロセスの実platformdirs解決先が、書込前から全て専用領域内にある。"""
     result = subprocess.run(
         [
             sys.executable,
@@ -348,7 +339,6 @@ def test_child_platformdirs_resolves_inside_isolation(tmp_path: pathlib.Path) ->
 
 @pytest.mark.skipif(sys.platform == "win32", reason="最低版Gitの差し替えはPOSIXのCIで使う")
 def test_test_git_directory_resolves_specified_executable(tmp_path: pathlib.Path) -> None:
-    """指定したGitの実行ファイルを`git`の名前で解決させ、起動できない指定はテストの開始前に拒否する。"""
     fake = tmp_path / "bin" / "git-2.34.1"
     fake.parent.mkdir()
     fake.write_text('#!/bin/sh\necho "git version 2.34.1"\n', encoding="utf-8")
@@ -440,14 +430,12 @@ def test_host_environ_excludes_parent_venv_operation_environment(monkeypatch: py
 
 
 def test_host_environ_excludes_parent_venv_bin_from_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    """host復元でも親venvのbin/ScriptsをPATHへ戻さない。"""
     monkeypatch.setattr(isolation, "_HOST_VENV_BINARIES", ("/parent/bin", "C:/parent/Scripts"))
     monkeypatch.setitem(isolation._HOST_ENVIRON, "PATH", "/keep:/parent/bin:/other")  # pylint: disable=protected-access
     assert "/parent/bin" not in isolation.build_host_environ()["PATH"].split(os.pathsep)
 
 
 def test_restore_host_environment_excludes_parent_venv_operation_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """ホスト復元は親の仮想環境指定と実行ディレクトリを再導入しない。"""
     monkeypatch.setattr(isolation, "_HOST_VENV_BINARIES", ("/parent/bin",))
     monkeypatch.setitem(isolation._HOST_ENVIRON, "PATH", "/keep:/parent/bin:/other")  # pylint: disable=protected-access
     for name in isolation._VENV_ENVIRONMENT_NAMES:  # pylint: disable=protected-access
@@ -470,7 +458,6 @@ def test_restore_host_environment_excludes_parent_venv_operation_environment(mon
 def test_child_uv_uses_test_project_after_fixture_and_host_restoration(
     tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], route: str
 ) -> None:
-    """親の指定を継承した子pytestでも、3つの復元経路から実行するuvは外部venvを変更しない。"""
     external = tmp_path / "external"
     sentinel_python, marker = _external_venv_sentinel(external)
     executable = "uv.exe" if os.name == "nt" else "uv"

@@ -1,5 +1,3 @@
-"""通常CLIから外部peerを起動し、同じ仕事と子の復旧・明示中止・承認を検証する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -104,7 +102,6 @@ sys.exit(codex_launcher.main())
 def test_public_wrapper_uses_installed_runtime_without_environment_setup(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """設定取得の標準入出力と終了状態を保ち、起動時のuv依存導入を行わない。"""
     runtime = tmp_path / "runtime.py"
     runtime.write_text(
         "import json,sys; print(json.dumps({'args':sys.argv[1:],'stdin':sys.stdin.read()})); sys.exit(7)",
@@ -163,7 +160,6 @@ class _Peer:
         environment["CODEX_PEER_LINGER_PIPES"] = "1" if linger_pipes else "0"
         process = await asyncio.create_subprocess_exec(
             sys.executable,
-            # 未解放のtransportをGC時の警告として標準エラーへ出し、全ケースで検出する。
             "-W",
             "always::ResourceWarning",
             str(self.runner),
@@ -186,7 +182,7 @@ class _Peer:
         finally:
             if process.returncode is None:
                 await asyncio.to_thread(process_tree.stop_tree, identity)
-                # wait()は終了の時点で戻る。pipeを読み終えて閉じ、試験のイベントループへtransportを残さない。
+
                 await asyncio.wait_for(process.communicate(), process_tree.RECLAIM_TIMEOUT_SECONDS)
 
     def records(self) -> list[dict[str, Any]]:
@@ -251,7 +247,6 @@ def _peer(tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]) ->
 )
 @pytest.mark.asyncio
 async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mode: str, effort: str, expected: int) -> None:
-    """CLI→実peerプロセス→世代交代→自動再開→所有する成果物の確認までを接続する。"""
     arguments = ["--no-alt-screen", "--cd", str(peer.work), "--config", f'model_reasoning_effort="{effort}"']
     if mode == "dead":
         arguments.append("--worktree")
@@ -265,7 +260,7 @@ async def test_public_launcher_preserves_work_and_stop_contract(peer: _Peer, mod
         1 if mode in {"completed", "cancel", "error", "corrupt", "mcp-error", "elicitation-cancel"} else 2
     )
     assert record["effort"] == effort
-    # 会話の開始・resume・復旧で子孫を確かめるたびに、MCPを新しく起動しない。
+
     launches = peer.root / "discovery-launches"
     assert not launches.exists(), launches.read_text(encoding="utf-8")
     if mode == "elicitation-cancel":
@@ -332,7 +327,6 @@ async def test_windows_daemon_record_without_process_identity_keeps_recovery(pee
 )
 @pytest.mark.asyncio
 async def test_launcher_closes_proxy_pipes_after_proxy_exit(peer: _Peer) -> None:
-    """proxyの終了後もpipeが開いている間に終了しても、pipeのtransportを閉じてから終える。"""
     code, stdout, stderr = await peer.run(
         ["--cd", str(peer.work), "--config", 'model_reasoning_effort="medium"', "owned work"],
         mode="active",
@@ -370,7 +364,6 @@ async def test_tui_connection_reset_on_exit_keeps_exit_status(peer: _Peer) -> No
 )
 @pytest.mark.asyncio
 async def test_public_launcher_passes_launch_directory_without_cd(peer: _Peer) -> None:
-    """--cdを省いた起動でも、管理daemonのcwdではなく起動したディレクトリで会話を始める。"""
     code, stdout, stderr = await peer.run(
         ["--config", 'model_reasoning_effort="medium"', "owned work"],
         mode="completed",
@@ -432,7 +425,6 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
 def test_noninteractive_commands_skip_recovery_dependencies(
     tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]], arguments: list[str]
 ) -> None:
-    """反復利用される非対話コマンドは、復旧用の依存を読み込まずに同じ実行体へ引き渡す。"""
     probe = tmp_path / "probe.py"
     probe.write_text(_NONINTERACTIVE_PROBE, encoding="utf-8")
     environment = host_environ()
@@ -508,7 +500,6 @@ sys.exit(codex_launcher.main(sys.argv[1:]))
 )
 @pytest.mark.asyncio
 async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer) -> None:
-    """専用App Serverを使う既存CLIの引数・標準出力・終了状態を保持する。"""
     arguments = ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"]
     code, stdout, stderr = await peer.run(arguments, mode="active", windows=sys.platform == "win32")
     assert code == 7, stderr
@@ -526,7 +517,6 @@ async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer
 )
 @pytest.mark.asyncio
 async def test_unrelated_failure_after_completed_recovery_is_not_restarted(peer: _Peer) -> None:
-    """復旧済みの古い世代交代を、その後の別の仕事の異常終了へ転用しない。"""
     code, _stdout, _stderr = await peer.run(
         ["--cd", str(peer.work), "--config", 'model_reasoning_effort="medium"', "owned work"], mode="late-error"
     )

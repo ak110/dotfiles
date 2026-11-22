@@ -37,23 +37,18 @@ from agent_toolkit._common.json_lines import split_lines
 
 @dataclasses.dataclass(frozen=True)
 class HostProcess:
-    """生存ホストの実行系とPID・起動時刻。"""
-
     engine: str
     identity: session_registry.ProcessIdentity
 
 
 @dataclasses.dataclass(frozen=True)
 class ActivitySnapshot:
-    """活動候補と、その判断を端末・ログへ渡すための根拠。"""
-
     active_session_ids: frozenset[str] = frozenset()
     reasons: tuple[str, ...] = ()
     uncertain: bool = False
 
     @property
     def has_activity(self) -> bool:
-        """確定した活動または判定不能の活動候補があれば真を返す。"""
         return bool(self.active_session_ids or self.reasons or self.uncertain)
 
 
@@ -62,15 +57,10 @@ SUBMISSION_KIND = "add-awi-by-user"
 
 
 def activity_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """活動JSONを置く監視先を返す。"""
     return (state_paths.state_dir() if state_root is None else state_root) / "session-activity"
 
 
 def submission_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """会話ごとのWI投入作業の属性を置く監視先を返す。
-
-    hookが会話の終了で削除する活動JSONと分け、会話の再開後も属性を保つ。
-    """
     return activity_directory(state_root) / "submissions"
 
 
@@ -82,7 +72,6 @@ def _valid_session(session_id: str) -> str:
 
 
 def submission_started_at(session_id: str, *, state_root: pathlib.Path | None = None) -> str | None:
-    """会話のWI投入作業を始めた時刻（時差付きISO 8601）を返す。記録が無いか読めなければNoneを返す。"""
     path = submission_directory(state_root) / f"{_valid_session(session_id)}.json"
     try:
         started = _read(path).get("started_at")
@@ -92,11 +81,6 @@ def submission_started_at(session_id: str, *, state_root: pathlib.Path | None = 
 
 
 def record_submission(session_id: str, targets: Collection[str], *, state_root: pathlib.Path | None = None) -> str:
-    """会話が実行中のWI投入作業と、その正規化済みの投入先を保存し、作業開始時刻を返す。
-
-    再度の保存は投入先を置き換え、作業開始時刻は保つ。完了後に再び始めた投入と同じ会話の再開を
-    区別するため、開始時刻は記録が無い場合（`end`の後と旧形式の記録）にだけ現在時刻で新しく付ける。
-    """
     valid = _valid_session(session_id)
     if not targets or not all(isinstance(target, str) and target for target in targets):
         raise ValueError("投入先を1件以上指定してください")
@@ -116,7 +100,6 @@ def record_submission(session_id: str, targets: Collection[str], *, state_root: 
 
 
 def clear_submission(session_id: str, *, state_root: pathlib.Path | None = None) -> bool:
-    """会話のWI投入作業の属性を削除する。削除した属性があれば真を返す。"""
     path = submission_directory(state_root) / f"{_valid_session(session_id)}.json"
     existed = path.exists()
     path.unlink(missing_ok=True)
@@ -124,7 +107,6 @@ def clear_submission(session_id: str, *, state_root: pathlib.Path | None = None)
 
 
 def _submissions(root: pathlib.Path) -> dict[str, frozenset[str]]:
-    """作業種別と投入先を読み取れる属性だけを返す。読めない属性は開始猶予の根拠にしない。"""
     found: dict[str, frozenset[str]] = {}
     try:
         paths = [entry for entry in submission_directory(root).iterdir() if entry.suffix == ".json"]
@@ -159,7 +141,6 @@ def _engine(process: psutil.Process) -> str | None:
 
 
 def host_process() -> HostProcess | None:
-    """hookを起動した最も近いホスト祖先を返す。hook自身のPythonを記録しない。"""
     try:
         for process in process_identity.parents(psutil.Process()):
             if (engine := _engine(process)) is not None:
@@ -170,11 +151,9 @@ def host_process() -> HostProcess | None:
 
 
 def host_processes() -> tuple[HostProcess, ...]:
-    """現在のOSアカウントが動かす対応ホストを、名前の完全一致で列挙する。"""
     found: list[HostProcess] = []
     username = psutil.Process().username()
-    # process_iterはPID単位でProcessを再利用し、実行ファイルと起動時刻を以前の世代のまま保持する。
-    # 列挙は現在のPIDの取得だけに使い、分類と識別は新しく構築したProcessから読む。
+
     for listed in psutil.process_iter():
         try:
             process = psutil.Process(listed.pid)
@@ -188,7 +167,6 @@ def host_processes() -> tuple[HostProcess, ...]:
         except psutil.NoSuchProcess, psutil.ZombieProcess:
             continue
         except psutil.AccessDenied:
-            # 名前まで取得できるホストは、実行ファイルを読めなくても未登録候補へ残す。
             with contextlib.suppress(psutil.Error):
                 name = process.name().lower().removesuffix(".exe")
                 if name in {"claude", "codex", "agy"}:
@@ -348,7 +326,6 @@ def record_activity(
 
 
 def main(payload_text: str) -> int:
-    """記録だけを行うhookの入力を受理し、ホストへ判定を返さず終了する。"""
     payload = json.loads(payload_text)
     if isinstance(payload, dict):
         record_activity(payload)
@@ -417,7 +394,6 @@ def _sources(records: Mapping[str, Mapping[str, Any]]) -> list[session_parents.P
 
 
 def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], str | None]:
-    """hook未登録ホストの会話IDと状態を読む。ホスト固有の記録形式は本関数の中だけで解釈する。"""
     found: dict[str, dict[str, Any]] = {}
     try:
         if process.engine == "claude":
@@ -464,7 +440,6 @@ def _native_sessions(process: HostProcess) -> tuple[dict[str, dict[str, Any]], s
 
 
 def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str | None:
-    """セッション記録の末尾から実ターンの終了を読む。見つからない場合は未判定にする。"""
     if record.get("engine") == "agy":
         state = record.get("agy_turn_state")
         return state if isinstance(state, str) and state in {"active", "waiting"} else None
@@ -513,8 +488,6 @@ def _turn_state(record: Mapping[str, Any], *, since: float | None = None) -> str
 
 @dataclasses.dataclass(frozen=True)
 class _Scan:
-    """会話ごとの活動判定と、親子の対応。"""
-
     active: dict[str, str]
     """活動中または活動候補の会話IDから理由への対応。"""
     uncertain_ids: frozenset[str]
@@ -566,8 +539,7 @@ def _scan(
         if (parent := session_launchers.read_launcher(path)) is not None:
             records[session_id].setdefault("parent_session_id", parent)
     excluded_processes = _excluded_processes(excluded_pids or set())
-    # hookを持たないホストの会話は、開いている記録から会話IDと状態を得る。
-    # 会話を解決できない実プロセスは、どの作業にも属さないため活動へ加えない。
+
     for host in host_processes() if processes is None else processes:
         if host.identity.pid in excluded_processes or not host.identity.exists():
             continue
@@ -604,7 +576,7 @@ def _scan(
         elif isinstance(actors, dict) and any(value == "active" for value in actors.values()):
             updated = record.get("updated_at")
             main_only = not any(actor != "main" and state == "active" for actor, state in actors.items())
-            # Stop hookが欠けても、最後の入力より後の実ターン終了があれば活動から外せる。
+
             if main_only and isinstance(updated, (int, float)):
                 native_updated = record.get("native_updated_at", 0)
                 native_idle = (
@@ -616,7 +588,6 @@ def _scan(
                     continue
             active[session_id] = f"活動中: {session_id}のターンまたは子エージェントが稼働しています"
         else:
-            # Stop自身の発火を終了証拠にせず、実ターンかホストのidle状態を確かめる。
             state = record.get("native_status") or _turn_state(record)
             if state not in {"idle", "waiting"}:
                 if state is None:
@@ -632,11 +603,6 @@ def scan_activity(
     state_root: pathlib.Path | None = None,
     processes: Sequence[HostProcess] | None = None,
 ) -> ActivitySnapshot:
-    """作業種別を問わず、別会話の活動と未判定の根拠を返す。除外は指定した会話・PIDの子孫だけに作用する。
-
-    `state_root`と`processes`は隔離した記録と実プロセスを組み合わせる呼び出しにも使える。
-    読取は状態を変更せず、死亡・PID再利用の記録は活動から失効させる。
-    """
     scan = _scan(
         excluded_session_ids=excluded_session_ids,
         excluded_pids=excluded_pids,
@@ -651,12 +617,6 @@ def scan_activity(
 
 
 def living_root_session_ids(*, state_root: pathlib.Path | None = None) -> frozenset[str]:
-    """活動記録のPIDと作成時刻が生存を示す、親を持たない会話IDを読取専用で返す。
-
-    一覧表示用の生存判定であり、応答待ちや利用上限待ちも含める。
-    活動の有無を調べる`scan_activity`の判定や保存記録は変更しない。
-    読取不能・不正な記録は生存の根拠にしない。
-    """
     found: set[str] = set()
     for path in _paths(activity_directory(state_root), []):
         try:
@@ -715,11 +675,6 @@ def submission_activity(
     state_root: pathlib.Path | None = None,
     processes: Sequence[HostProcess] | None = None,
 ) -> ActivitySnapshot:
-    """投入先が`target_repo_ids`と交わるWI投入作業の会話と、その子孫の活動だけを返す。
-
-    `target_repo_ids`と保存済みの投入先は、呼び出し元が同じ規則で正規化した値として比べる。
-    属性を持たない会話、属性を読めない会話、会話へ対応付かない実プロセスは理由にしない。
-    """
     root = state_paths.state_dir() if state_root is None else state_root
     targets = frozenset(target_repo_ids)
     submissions = {session_id: owned & targets for session_id, owned in _submissions(root).items() if owned & targets}
@@ -741,7 +696,6 @@ def submission_activity(
 
 
 def review_activity(session_ids: Collection[str], *, state_root: pathlib.Path | None = None) -> ActivitySnapshot:
-    """振り返り対象とその子孫の活動だけを、既存の走査結果から返す。"""
     scan = _scan(
         excluded_session_ids=None,
         excluded_pids=None,

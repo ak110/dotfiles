@@ -26,8 +26,6 @@ import pathlib
 
 from agent_toolkit._hooks.notice import _WARN_TAG, resolve_notice, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
@@ -45,7 +43,6 @@ _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
 
 
 def _resident_bash_ids(transcript_path: str) -> set[str]:
-    """終了通知を待てないサーバー・watchの起動IDと、その応答のタスクIDを返す。"""
     identifiers: set[str] = set()
     for line in transcript.read_transcript_lines(transcript_path) or []:
         try:
@@ -74,7 +71,6 @@ def _resident_bash_ids(transcript_path: str) -> set[str]:
 
 
 def _is_resident_command(command: str) -> bool:
-    """実行位置にある既知の常駐コマンドを判別し、引用や有限のtimeoutを除く。"""
     for segment in extract_execution_segments(command):
         if not segment.resolved or not segment.tokens:
             continue
@@ -105,7 +101,6 @@ def _is_resident_command(command: str) -> bool:
 
 
 def _work_order(work_id: str, work: dict) -> tuple[int, int]:
-    """作業を開始位置と記録順で並べる鍵を返す。"""
     offset = work.get("offset")
     sequence = work_id.removeprefix("work-")
     return (
@@ -145,7 +140,6 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """完了報告の手順書の読込証拠が不足する場合に支援通知を返す。"""
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -162,7 +156,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
 
     pending = dict(termination_evidence.pending_work(payload))
-    # 手順書の現在の版がメインの文脈にあれば、新しい作業でも読み直しを求めない。
+
     loaded = completion_in_context(session_id)
     missing = {
         work_id: kinds

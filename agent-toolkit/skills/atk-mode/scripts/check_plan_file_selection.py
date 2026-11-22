@@ -1,5 +1,3 @@
-"""計画集合と選定済みWIの対応の検査。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -68,7 +66,6 @@ def _check_wi_selection(
     prior_plans: tuple[pathlib.Path, ...],
     work_dir: pathlib.Path,
 ) -> list[str]:
-    """期待集合と計画の関連WIを比べ、人間由来行の根拠を確かめる。"""
     errors: list[str] = []
     duplicate_expected = sorted({name for name in expected if expected.count(name) > 1})
     if duplicate_expected:
@@ -92,7 +89,7 @@ def _check_wi_selection(
             errors.extend(f"先行計画{prior_plan}: {error}" for error in prior_errors or ["計画メタ情報がない"])
             continue
         declared = prior_metadata.values.get("対象リポジトリ")
-        # 区切り文字や末尾の区切りだけが違う宣言を、同じ場所として扱う。
+
         if declared is None or pathlib.Path(declared).expanduser().resolve() != work_dir.resolve():
             errors.append(
                 f"先行計画の対象リポジトリが異なる: {prior_plan}。"
@@ -121,12 +118,10 @@ def _check_wi_selection(
 
 
 def _labeled(label: pathlib.Path | None, message: str) -> str:
-    """計画の集合を確かめる場合に、診断の先頭へ対象の計画のパスを付ける。"""
     return message if label is None else f"{label}: {message}"
 
 
 def _validate_expected_wi(expected_wi: tuple[str, ...], selection_file: pathlib.Path | None, lane: str | None) -> None:
-    """期待WI入力の形式と、選定YAML入力との併用条件を確かめる。"""
     if expected_wi and (selection_file is not None or lane is not None):
         raise ValueError("--expected-wiは--selection-file・--laneと同時指定できない。比較元を1方式で指定する")
     invalid = [name for name in expected_wi if re.fullmatch(r"[0-9]{8}-[0-9]{6}-[0-9]{3}\.md", name) is None]
@@ -135,7 +130,6 @@ def _validate_expected_wi(expected_wi: tuple[str, ...], selection_file: pathlib.
 
 
 def _missing_human_reasons(text: str) -> list[str]:
-    """`## 実施内容`の人間由来の行のうち、`根拠`が空か`-`の行を診断として返す。"""
     headings = structure.extract_headings(text)
     section_index = structure.find_heading_index(headings, 2, structure.PLAN_H2_ACTION)
     if section_index is None:

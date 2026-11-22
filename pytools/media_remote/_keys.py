@@ -64,8 +64,6 @@ class _INPUT_UNION(ctypes.Union):
 
 
 class INPUT(ctypes.Structure):
-    """`user32.SendInput`の入力配列要素。"""
-
     _anonymous_ = ("u",)
     _fields_ = [
         ("type", wintypes.DWORD),
@@ -74,10 +72,6 @@ class INPUT(ctypes.Structure):
 
 
 def _build_input(vk: int, flags: int) -> INPUT:
-    """`INPUT`構造体を1件構築する（unionフィールド`ki`を初期化する）。
-
-    `INPUT._anonymous_ = ("u",)`によりunion`u`のサブ`ki`を直接キーワード引数で渡せる。
-    """
     return INPUT(
         type=INPUT_KEYBOARD,
         ki=_KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=None),
@@ -110,8 +104,7 @@ def send_key(name: str, *, user32: Any | None = None) -> None:
     down = _build_input(vk, KEYEVENTF_EXTENDEDKEY)
     up = _build_input(vk, KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP)
     inputs = (INPUT * 2)(down, up)
-    # ctypesは配列実引数を自動でポインタへ変換するため`byref`不要。
-    # テスト用モック側ではPython配列としてそのまま受け取れる利点もある。
+
     sent = user32.SendInput(2, inputs, ctypes.sizeof(INPUT))
     if sent != 2:
         raise OSError(f"SendInput sent {sent} of 2 events")

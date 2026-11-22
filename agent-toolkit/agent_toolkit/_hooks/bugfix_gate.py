@@ -20,8 +20,6 @@ import re
 lazy import os
 
 from agent_toolkit._hooks import notice
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.json_lines import split_lines
 lazy from agent_toolkit._common.session_state import read_state, update_state
@@ -156,7 +154,6 @@ def observe_verification(payload: dict) -> None:
 
 
 def verification_notice(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str:
-    """未起動の主体が修正や検証の再実行へ進む場合だけ、非遮断の起動案内を返す。"""
     current = read_state(session_id).get(FAILURE_STATE_KEY, {}).get(resolve_hook_agent_id(payload), {})
     if not isinstance(current, dict) or not current.get("pending"):
         return ""
@@ -188,7 +185,6 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
 
 
 def is_defect_report(prompt: str) -> bool:
-    """人間の発話が欠陥の指摘を含むかを、語の一致だけで返す。"""
     return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
 
 
@@ -206,7 +202,6 @@ def _invokes_bugfix(entry: dict) -> bool:
 
 
 def bugfix_pending(lines: list[str]) -> bool:
-    """最後の人間の発話が欠陥指摘で、その発話の後に`agent-basics:bugfix`の起動が無ければ真を返す。"""
     turn = latest_human_turn(lines)
     if turn is None:
         return False
@@ -233,12 +228,10 @@ def _pending_for_main(payload: dict) -> bool:
 
 
 def send_block(payload: dict) -> str | None:
-    """`send_to_user`の呼出し前の判定。遮断する場合は通知本文を返す。"""
     return _block_body("ユーザーへの送達") if _pending_for_main(payload) else None
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """応答本文だけでターンを終える場合も、同じ判定で終了を遮断する。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -250,7 +243,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def main(payload_text: str) -> int:
-    """Stop判定の結果を標準出力へ返す。"""
     decision, body = evaluate(payload_text)
     print(json.dumps({"decision": decision, "reason": body} if decision == "block" else {}, ensure_ascii=False))
     return 0

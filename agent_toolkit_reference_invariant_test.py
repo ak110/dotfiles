@@ -1,5 +1,3 @@
-"""agent-toolkit参照の主題別不変条件を検証する。"""
-
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +27,6 @@ _PYTHON_PATH_PATTERN = re.compile(
 )
 
 
-# 内容を入口`atk-mode`の手順書へ移して廃止したスキル。過去の記録と保存値は当時の名前と配置を保持する。
 _ATK_MODE_RETIRED_SKILLS = (
     "add-awi-by-user",
     "wi-standards",
@@ -48,7 +45,6 @@ _ATK_MODE_RETIRED_SKILLS = (
 )
 
 
-# 履歴のないcheckoutでも監査時点の実在を検査する。更新時は全パスを `git ls-tree -rt --name-only <対象版>` と照合する。
 _FIXED_AUDIT_PATH_DIGESTS = {
     pathlib.Path(
         "docs/development/audit-opus55-hosts-2026-11-15.json"
@@ -63,17 +59,10 @@ _FIXED_AUDIT_PATH_DIGESTS = {
 
 
 def _is_historical_record(source: pathlib.Path) -> bool:
-    """当時の配置を残す記録（対象版を固定した監査記録）かを返す。"""
     return source in _FIXED_AUDIT_PATH_DIGESTS
 
 
 def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
-    """コードと設定の中の、入口`atk-mode`の作業名の修飾名（`agent-toolkit:review-session`など）かを返す。
-
-    作業名は`atk run-skill`の位置引数、報告用UWIの`scope`、起動入力の値として保存され、同名のスキルが無くても実在の名前である。
-    文書（Markdown）の修飾名と、コード中の起動の形（`/`か`$`を前置した修飾名）は起動の案内になりうるため、
-    新しい起動の形へ直すか個別に許可する。起動の形が1つでもあるファイルでは、そのファイルの同じ修飾名を全て未解決とする。
-    """
     if source.suffix == ".md" or reference.removeprefix(f"{_PLUGIN_PREFIX}:") not in skill_modes.ENTRY_WORKS:
         return False
     content = (root / source).read_text(encoding="utf-8")
@@ -81,7 +70,6 @@ def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) 
 
 
 def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
-    """参照が`skills`のいずれかのスキル名か、その配下のパスを指す場合に真を返す。"""
     return any(
         reference in (f"{_PLUGIN_PREFIX}:{skill}", f"{_PLUGIN_PREFIX}/skills/{skill}")
         or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
@@ -102,7 +90,6 @@ _SESSION_RECORDS_TEST = pathlib.Path("agent-toolkit/agent_toolkit/_atk/session_r
 
 
 _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
-    # 保存済みの起動標識とscopeを読むための旧名。現行入口としては提供しない。
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS): 2,
     (f"{_PLUGIN_PREFIX}:process-wi-all-repos", _SESSION_RECORDS_TEST): 1,
     (
@@ -131,19 +118,15 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
-    # 作業`process-wi`の修飾名と、それを含む子セッションの目的文の本体。保存値と起動入力の値であり、同名のスキルは無い。
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_common/skill_modes.py")): 1,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/constants.py")): 2,
     (f"{_PLUGIN_PREFIX}:process-wi", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 6,
-    # 作業`review-session`の保存値（報告用UWIの`scope`、起動入力の`skill`）と、変えない公開コマンド`atk run-skill`の位置引数。
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/origin-and-approval.md")): 4,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/report-completion.md")): 1,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/playbooks/review-session-batch.md")): 2,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("agent-toolkit/skills/atk-mode/references/review-session-cost.md")): 1,
     (f"{_PLUGIN_PREFIX}:review-session", pathlib.Path("docs/guide/claude-code-guide.md")): 1,
-    # 報告用UWIの`scope`として保存済みの起動単位の名前。同名のスキルは起動しない。
     (f"{_PLUGIN_PREFIX}:wi-standards", pathlib.Path("agent-toolkit/agent_toolkit/_atk/wi/submit.py")): 1,
-    # 移行前の起動コマンドを含むセッション記録を読む試験の入力
     (f"{_PLUGIN_PREFIX}:add-awi-by-user", pathlib.Path("agent-toolkit/skills/atk-mode/scripts/wi_quote_check_test.py")): 2,
     (
         f"{_PLUGIN_PREFIX}:add-awi-by-user",
@@ -153,10 +136,8 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:write-plan",
         pathlib.Path("agent-toolkit/skills/atk-mode/scripts/session_review_evidence_user_events_test.py"),
     ): 2,
-    # 保存済みの計画が計画メタ情報の`起動経路`に持つ値。値は自由記述で、計画の検査は起動先の実在を求めない。
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_testing/plan_fixture.py")): 5,
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_plan/structure/constants_test.py")): 1,
-    # 廃止したスキル名の起動と発話が、計画の工程の開始・帰属行の配送・完了報告の起動証拠にならないことを確かめる試験の入力
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
     (f"{_PLUGIN_PREFIX}:commit", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/posttooluse_skills_test.py")): 1,
     (f"{_PLUGIN_PREFIX}:write-plan", pathlib.Path("agent-toolkit/agent_toolkit/_hooks/user_prompt_submit_test.py")): 2,
@@ -164,7 +145,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:report-completion",
         pathlib.Path("agent-toolkit/agent_toolkit/_hooks/termination_evidence_completion_test.py"),
     ): 1,
-    # 廃止したスキルの経緯を記す方針・設計の記録
     (f"{_PLUGIN_PREFIX}:realign-with-user", _CONCEPTS_CONFIRMATION_DECISIONS): 1,
     (f"{_PLUGIN_PREFIX}:realign-with-user", _DESIGN_HOSTS_AUTHORIZATION): 2,
 }
@@ -192,7 +172,6 @@ def _allowed_unresolved_reference_counts(
 
 
 def _reference_exists(root: pathlib.Path, reference: str) -> bool:
-    """起動名またはリポジトリ相対パスが実体へ解決する場合に真を返す。"""
     invocation_prefix = f"{_PLUGIN_PREFIX}:"
     if reference.startswith(invocation_prefix):
         skill_name = reference.removeprefix(invocation_prefix)
@@ -201,7 +180,6 @@ def _reference_exists(root: pathlib.Path, reference: str) -> bool:
 
 
 def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """実体へ解決できない参照と不足した既知の事故記録参照を返す。"""
     allowed_counts = _allowed_unresolved_reference_counts(sources)
     unresolved: list[tuple[str, pathlib.Path]] = []
     for reference, source in _collect_references(root, sources):
@@ -225,7 +203,6 @@ def _unresolved_references(root: pathlib.Path, sources: list[pathlib.Path]) -> l
     4.5, reason="配布規範の全参照を実ファイルへ解決し、欠落と曖昧さを検出する全量検査が必要（Linux CI CPU2.004秒）"
 )
 def test_agent_toolkit_references_resolve() -> None:
-    """追跡中の`.json`・`.md`・`.py`にあるスキルとPython参照が全て実体へ解決する。"""
     root = pathlib.Path(__file__).resolve().parent
     sources = _tracked_source_paths(root)
     assert any(path.parts[0] == ".claude" for path in sources)
@@ -234,7 +211,6 @@ def test_agent_toolkit_references_resolve() -> None:
 
 
 def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
-    """実在する起動名と相対パスを受理する。"""
     skill = tmp_path / _PLUGIN_PREFIX / "skills" / "present"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_text("---\nname: present\n---\n", encoding="utf-8")
@@ -253,7 +229,6 @@ def test_existing_references_resolve(tmp_path: pathlib.Path) -> None:
 
 
 def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path) -> None:
-    """入口の作業名はコードの保存値として受理し、文書とコード中の起動の形は同名のスキルが無ければ未解決とする。"""
     reference = f"{_PLUGIN_PREFIX}:review-session"
     code = pathlib.Path("scope.py")
     document = pathlib.Path("guide.md")
@@ -272,7 +247,6 @@ def test_entry_work_names_resolve_only_outside_documents(tmp_path: pathlib.Path)
 
 
 def test_duration_node_ids_are_not_current_skill_invocations(tmp_path: pathlib.Path) -> None:
-    """所要記録の架空入力は案内と区別し、同じ文字列の現行文書は検査する。"""
     reference = f"{_PLUGIN_PREFIX}:fixture-only"
     record = pathlib.Path("agent-toolkit/agent_toolkit/_testing/test_durations.json")
     (tmp_path / record).parent.mkdir(parents=True)
@@ -300,7 +274,6 @@ def test_codex_snapshot_requires_exact_known_legacy_references(tmp_path: pathlib
 
 
 def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path) -> None:
-    """Python参照の雛形とグロブを未解決の実体参照として扱わない。"""
     source = pathlib.Path("source.md")
     (tmp_path / source).write_text(
         "\n".join(
@@ -317,7 +290,6 @@ def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path
 
 
 def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
-    """保存済みの起動標識を読むために保持する既知の失効参照を、許可の件数どおりに返す。"""
     sources = (_SESSION_RECORDS, _SESSION_RECORDS_TEST)
     by_source: dict[pathlib.Path, list[str]] = {source: [] for source in sources}
     for (reference, source), count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items():
@@ -327,7 +299,6 @@ def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
 
 
 def test_known_legacy_references_require_exact_counts(tmp_path: pathlib.Path) -> None:
-    """既知の失効参照を過不足なく保持し、各参照の不足と超過を報告する。"""
     by_source = _known_legacy_references()
     for source, references in by_source.items():
         target = tmp_path / source
@@ -351,7 +322,6 @@ def test_known_legacy_references_require_exact_counts(tmp_path: pathlib.Path) ->
 
 
 def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:
-    """固定版の監査パスを検証し、現在のツリーで解決する起動名とパスを返す。"""
     references: list[tuple[str, pathlib.Path]] = []
     for relative in sources:
         # キーは実行案内ではなく、旧入力や架空の起動名も含むpytest node IDである。

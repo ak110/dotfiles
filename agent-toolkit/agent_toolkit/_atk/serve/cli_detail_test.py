@@ -1,5 +1,3 @@
-"""serveのcliに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -66,7 +64,6 @@ def test_detail_preserves_frontmatter_as_strict_json_values(tmp_path: pathlib.Pa
 
 
 def test_detail_with_frontmatter_only_returns_empty_body_html(tmp_path: pathlib.Path) -> None:
-    """frontmatterだけの詳細は本文用HTMLを空文字列として返す。"""
     _write_detail_entry(tmp_path, "---\ntype: awi\ntarget_repo: example/repo\n---\n")
 
     detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
@@ -92,7 +89,6 @@ def test_detail_returns_body_only_and_normalized_question_metadata(
     expected_type: str,
     expected_choices: list[str],
 ) -> None:
-    """詳細API用データはfrontmatterを除いた本文と正規化済みの回答形式を返す。"""
     _write_detail_entry(
         tmp_path,
         f"---\ntype: uwi\ntarget_repo: example/repo\n{question_source}---\n\n## 質問\n\n質問本文\n",
@@ -112,7 +108,6 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`source_empty=true`は空の投入元だけを返し、値あり・非文字列の項目を除外する。"""
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     inbox = tmp_path / "inbox"
@@ -147,7 +142,6 @@ def test_operations_source_empty_filter_returns_items_with_missing_or_empty_sour
 @pytest.mark.asyncio
 @pytest.mark.parametrize("count", [0, 1, 100, 101])
 async def test_entries_api_paginates_at_one_hundred_entries(tmp_path: pathlib.Path, count: int) -> None:
-    """一覧APIは明示ページだけを100件単位で返し、総数境界と空一覧を正規化する。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     for index in range(count):
@@ -182,7 +176,6 @@ async def test_entries_api_paginates_at_one_hundred_entries(tmp_path: pathlib.Pa
 
 @pytest.mark.asyncio
 async def test_entries_api_filters_awi_plan_type_and_keeps_warnings_full_scan(tmp_path: pathlib.Path) -> None:
-    """awiの通常型・計画型を独立条件で限定し、ページ警告は全走査分を返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
     (inbox / "normal.md").write_text(
@@ -217,7 +210,6 @@ def test_repository_readers_canonicalize_legacy_paths_once_per_operation(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """一覧フィルターと候補収集は旧パス形を統合し、解決不能値の原値を保持する。"""
     local_repo = tmp_path / "target-repo"
     local_repo.mkdir()
     _write_repo_entry(tmp_path, "inbox", "current.md", "github.com/example/repo")

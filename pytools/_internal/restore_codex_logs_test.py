@@ -37,7 +37,6 @@ def _prepare(
 def _write_targets(
     pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...],
 ) -> dict[pathlib.Path, bytes]:
-    """識別可能な内容を持つ共有メモリー側の3ファイルを作成する。"""
     contents = {target_path: f"target-{index}".encode() for index, (_, target_path) in enumerate(pairs)}
     for target_path, content in contents.items():
         target_path.write_bytes(content)
@@ -45,7 +44,6 @@ def _write_targets(
 
 
 def _link_all(pairs: tuple[tuple[pathlib.Path, pathlib.Path], ...]) -> None:
-    """ホームディレクトリ側の3つのパスを、対応する管理対象`target`へのsymlinkにする。"""
     for home_path, target_path in pairs:
         home_path.symlink_to(target_path)
 
@@ -108,7 +106,6 @@ def test_no_legacy_layout_is_quiet(
     running: bool,
     regular_count: int,
 ) -> None:
-    """旧配置が無ければDB未作成・部分作成・復元済みのいずれも変更と案内を省く。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     if regular_count == 0:
         (home / ".codex").rmdir()
@@ -131,7 +128,6 @@ def test_running_after_copy_discards_only_temporary_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """コピー後の再確認で起動を検知したら未配置一時ファイルだけを除く。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
@@ -152,7 +148,6 @@ def test_write_after_second_check_is_detected_as_conflict_on_retry(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """2回目確認直後のtarget更新は次回に不一致として保存し、自動削除しない。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     original = _write_targets(pairs)
     _link_all(pairs)
@@ -178,7 +173,6 @@ def test_unrelated_symlink_defers_entire_set(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """1件でも管理対象外symlinkがあれば他の管理linkも変更しない。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
@@ -217,7 +211,6 @@ def test_unrelated_directory_warning_includes_entry_kind(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """通常ファイルでもsymlinkでもないパスが見つかった場合、延期の警告にその種別を示す。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
@@ -236,7 +229,6 @@ def test_insufficient_capacity_preserves_links_and_targets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """通常ストレージの空き容量不足時はコピーを開始しない。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     _link_all(pairs)
@@ -251,7 +243,6 @@ def test_restore_keeps_targets_until_later_matching_run(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回はホームディレクトリへ復元して`target`を保持し、次回に一致を検証して回収する。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     _link_all(pairs)
@@ -286,7 +277,6 @@ def test_partial_restore_is_retryable_and_later_cleans_targets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """regular・missing・管理linkの混在を復元し、次回に全targetを回収する。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     contents = _write_targets(pairs)
     pairs[0][0].write_bytes(contents[pairs[0][1]])
@@ -354,7 +344,6 @@ def test_mismatch_creates_owner_only_content_addressed_snapshot_and_warning(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """不一致時は3集合を保持したsnapshotと手動復旧手順を警告する。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     target_contents = _write_targets(pairs)
     for index, (home_path, _target_path) in enumerate(pairs):
@@ -433,7 +422,6 @@ def test_existing_different_snapshot_is_not_overwritten(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """同じdigest名に異なる内容があれば既存物を上書きせず新規一時名で保存する。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path)
     _write_targets(pairs)
     for home_path, _ in pairs:
@@ -453,8 +441,6 @@ def test_existing_different_snapshot_is_not_overwritten(
 
 
 class _FakeProcess:
-    """psutil.Process.infoとpidだけを提供するテスト用process。"""
-
     def __init__(self, info: dict[str, object], pid: int = 1000) -> None:
         self.info = info
         self.pid = pid
@@ -468,15 +454,10 @@ _DAEMON_INFO: dict[str, object] = {"name": "codex", "exe": _DAEMON_EXE, "uids": 
 
 
 def _uids(uid: int) -> SimpleNamespace:
-    """psutilの戻り値と同じく`.real`で参照できるuid情報を生成する。"""
     return SimpleNamespace(real=uid, effective=uid, saved=uid)
 
 
 def _patch_process_iter(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProcess]) -> None:
-    """列挙と、列挙した直後のPIDからのProcess構築を、固定のプロセス集合へ差し替える。
-
-    製品は列挙したPIDから新しいProcessを構築して属性を読むため、偽の`info`をその構築結果から返す。
-    """
     current: list[_FakeProcess] = []
 
     def process_iter(*_args: object, **_kwargs: object) -> typing.Iterator[_FakeProcess]:
@@ -622,7 +603,6 @@ def test_running_warning_aggregates_labels_without_argument_values(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """延期の警告はラベルごとの件数を示し、実行ファイルパスとオプション値を含めない。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
     _write_targets(pairs)
     _link_all(pairs)
@@ -655,7 +635,6 @@ def test_normal_launch_label_excludes_user_prompt(
     tmp_path: pathlib.Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """通常起動の第2要素はプロンプトになり得るため、ラベルを実行名だけにする。"""
     home, shm_root, pairs = _prepare(monkeypatch, tmp_path, stop_codex=False)
     _write_targets(pairs)
     _link_all(pairs)

@@ -33,7 +33,7 @@ _UPDATE_WARNING = (
     "対応不要（dotfilesの更新処理は継続しました）。"
 )
 
-# 実更新中にcmd.exeが読み直す位置を再現する、block化前の公開ランチャー。
+
 _LEGACY_WINDOWS_PREFIX = """@echo off
 setlocal
 for /f "delims=" %%A in ('cd /d "%~dp0.." ^& cd') do set SCRIPT_DIR=%%A
@@ -58,7 +58,6 @@ _LOGS_WINDOWS_PREFIX = _LEGACY_WINDOWS_PREFIX.replace(
 # test-copy-contract: 公開済み旧batchのbyte読取位置で、更新後も終了値取得から再開する互換契約を保つ。
 @pytest.mark.parametrize("prefix", [_LEGACY_WINDOWS_PREFIX, _LOGS_WINDOWS_PREFIX], ids=["legacy", "logs"])
 def test_windows_replacement_resumes_at_exit_capture(prefix: str) -> None:
-    """公開済みbatchの再開位置から更新を重複実行せず終了状態を取得する。"""
     resume = len(prefix.replace("\n", "\r\n").encode("cp932"))
     remainder = _WINDOWS_LAUNCHER.read_bytes()[resume:].decode("cp932")
     commands = [line for line in remainder.splitlines() if line.strip() and not line.startswith("rem ")]
@@ -67,7 +66,6 @@ def test_windows_replacement_resumes_at_exit_capture(prefix: str) -> None:
 
 
 def _write_fake_uv(path: pathlib.Path, name: str) -> None:
-    """呼び出しをNUL区切りで記録するfake uvを作成する。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""#!/usr/bin/env bash
@@ -103,7 +101,6 @@ fi
 
 
 def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
-    """ランチャーが必要とするコマンドだけを持つPATHを作成する。"""
     path_dir = tmp_path / "path"
     path_dir.mkdir()
     for command in ("bash", "sh", "dirname", "readlink", "timeout", "sleep", "mkdir", "mktemp", "mv", "rm"):
@@ -117,7 +114,6 @@ def _make_path(tmp_path: pathlib.Path, *, with_uv: bool) -> pathlib.Path:
 
 @pytest.fixture(name="real_uv")
 def _real_uv(host_environ: Callable[[], dict[str, str]]) -> str:
-    """隔離前のPATHからmise shimを除いて実uvを返す。"""
     environment = host_environ()
     native_path = os.pathsep.join(part for part in environment["PATH"].split(os.pathsep) if pathlib.Path(part).name != "shims")
     uv = shutil.which("uv", path=native_path)
@@ -323,7 +319,6 @@ def test_native_uv_update_failure_runs_and_preserves_run_exit(tmp_path: pathlib.
 
 @_LINUX_ONLY
 def test_python_upgrade_failure_continues_with_existing_python(tmp_path: pathlib.Path) -> None:
-    """更新本体まで進み、本体の代用品が返す集約済みの1を伝播する。"""
     result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, python_upgrade_exit=17, run_exit=1)
     assert result.returncode == 1, result.stderr
     assert any(call[1:3] == ["python", "find"] for call in calls)
@@ -334,7 +329,6 @@ def test_python_upgrade_failure_continues_with_existing_python(tmp_path: pathlib
 @pytest.mark.parametrize("run_exit", [0, 23])
 @_LINUX_ONLY
 def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib.Path, run_exit: int) -> None:
-    """process-loop起動ではuvとPythonの更新を省き、runの終了コードを保持する。"""
     result, calls = _run_launcher(
         tmp_path,
         native_uv=True,
@@ -357,7 +351,6 @@ def test_process_loop_skips_self_update_and_preserves_run_exit(tmp_path: pathlib
 @pytest.mark.parametrize("run_exit", [0, 23])
 @_LINUX_ONLY
 def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int, arguments: list[str]) -> None:
-    """logsとhelpはuv・Pythonの更新と整理を省き、引数と終了コードを共通実装へ渡す。"""
     result, calls = _run_launcher(
         tmp_path, native_uv=True, path_uv=True, arguments=arguments, self_update_exit=9, run_exit=run_exit
     )
@@ -372,7 +365,6 @@ def test_logs_launcher_skips_self_update(tmp_path: pathlib.Path, run_exit: int, 
 def test_logs_public_launcher_reads_saved_log_without_writing_state(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, real_uv: str
 ) -> None:
-    """両OSの公開ランチャーから実Pythonへ到達し、保存ログだけを読む。"""
     home = tmp_path / "home"
     native_uv = home / ".local" / "bin" / ("uv.exe" if os.name == "nt" else "uv")
     native_uv.parent.mkdir(parents=True)
@@ -421,7 +413,6 @@ def test_logs_public_launcher_reads_saved_log_without_writing_state(
 def test_launcher_replacement_preserves_update_exit(
     tmp_path: pathlib.Path, version: str, run_exit: int, real_uv: str, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """更新中の自身の書換え後も、新旧ランチャーが更新処理の終了コードを返す。"""
     environment = host_environ()
     environment.pop("CODEX_THREAD_ID", None)
     home = tmp_path / "home"
@@ -607,7 +598,6 @@ def test_windows_warning_redirects_as_utf8_without_bom() -> None:
 @pytest.mark.parametrize("run_exit,prune_exit", [(0, 0), (23, 0), (0, 9)])
 @_LINUX_ONLY
 def test_prune_invokes_post_apply_after_successful_update(tmp_path: pathlib.Path, run_exit: int, prune_exit: int) -> None:
-    """--pruneはuv更新の成功後にだけ独立したpost-apply CLIへ渡す。"""
     home = tmp_path / "home"
     _write_fake_uv(home / ".local" / "bin" / "uv", "native")
     post_apply = home / ".local" / "bin" / "dotfiles-post-apply"
@@ -761,7 +751,6 @@ def test_public_codex_launcher_uses_native_worker_and_saved_job(
     host_environ: Callable[[], dict[str, str]],
     run_exit: int,
 ) -> None:
-    """両OSの公開ランチャーからnative workerへ接続し、同一jobの結果だけを再取得する。"""
     environment = host_environ()
     environment.pop("UV_LOCK_TIMEOUT", None)
     home = tmp_path / "home with spaces"
@@ -859,7 +848,6 @@ def test_missing_python_aborts_after_install_recovery(tmp_path: pathlib.Path) ->
 
 @_LINUX_ONLY
 def test_missing_timeout_never_starts_unbounded_update(tmp_path: pathlib.Path) -> None:
-    """時間上限を保証できなければ、外部の更新操作を始めない。"""
     result, calls = _run_launcher(tmp_path, native_uv=True, path_uv=False, timeout_available=False)
     assert result.returncode == 127
     assert not calls

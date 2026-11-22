@@ -1,5 +1,3 @@
-"""WIキューの旧レイアウト・旧予約形式を一方向に移行する。"""
-
 # 旧レイアウトの読取互換では、現行状態名を独立した定数として固定する。
 
 import datetime
@@ -37,7 +35,6 @@ _LEGACY_RESERVATION_TYPES = ("feedback", WI_TYPE_AWI)
 
 
 def _with_type_frontmatter(text: str, entry_type: str) -> str | None:
-    """先頭frontmatterへ`type`キーを補った本文を返す。"""
     parsed = parse_frontmatter(text)
     if parsed is None:
         return None
@@ -53,12 +50,6 @@ def _with_type_frontmatter(text: str, entry_type: str) -> str | None:
 def _plan_legacy_migration(
     private_notes: pathlib.Path, legacy_dirs: list[pathlib.Path]
 ) -> list[tuple[pathlib.Path, pathlib.Path, str]]:
-    """旧レイアウト配下の移行計画を`(移行元, 移行先, 移行後本文)`の一覧として返す。
-
-    移行を妨げる要素（未知のディレクトリ・エントリ以外のファイル・移行先の衝突・
-    frontmatterの破損）を検出した場合は、全件を列挙してからexit 2で終了する。
-    ファイルへ触れる前に全件を検証し、中断時に移行途中の状態を残さない。
-    """
     planned: list[tuple[pathlib.Path, pathlib.Path, str]] = []
     destinations: set[pathlib.Path] = set()
     destination_names: set[str] = set()
@@ -144,7 +135,7 @@ def migrate_legacy_layout(
         versioned = (private_notes / ".git").exists()
         if versioned:
             pull_fn(private_notes)
-        # 他プロセス・他端末が先に移行済みの場合があるため、pull後の状態で再判定する。
+
         legacy_dirs = [private_notes / name for name in legacy_names if (private_notes / name).is_dir()]
         if not legacy_dirs:
             return
@@ -180,10 +171,6 @@ _LEGACY_RESERVATION_KEY = re.compile(r"""^["']?reservation(?:_companion)?["']?[ 
 
 
 def _frontmatter_source(text: str) -> str:
-    """先頭のfrontmatterの区切りの内側を返す。区切りが無ければ空文字列を返す。
-
-    区切りの判定は`frontmatter.parse_frontmatter`と同じ規則とし、YAMLは解析しない。
-    """
     text = text.removeprefix("\ufeff")
     if not text.startswith("---\n"):
         return ""
@@ -192,12 +179,10 @@ def _frontmatter_source(text: str) -> str:
 
 
 def _is_legacy_token_hash(value: object) -> bool:
-    """2.34.0の予約が記録したSHA-256値かを返す。"""
     return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 def _legacy_reservation_companion(data: dict[str, object]) -> dict[str, str] | None:
-    """2.34.0が生成した内部用の`reservation_companion`を検証して返す。不正な場合は`None`を返す。"""
     raw = data.get("reservation_companion")
     if (
         data.get("target_repo") != _LEGACY_RESERVATION_INTERNAL_REPO
@@ -229,7 +214,6 @@ def _is_legacy_reservation(
     state: str,
     companions: tuple[tuple[str, dict[str, str]], ...],
 ) -> bool:
-    """対応する`reservation_companion`を持つ2.34.0形式の予約かを返す。"""
     raw = data.get("reservation")
     target_repo = data.get("target_repo")
     if state != WI_STATE_PROCESSING or data.get("type") not in _LEGACY_RESERVATION_TYPES or raw is None:
@@ -260,7 +244,6 @@ def migrate_legacy_reservations(
     assert_lock_fn: Callable[[pathlib.Path], None],
     commit_fn: Callable[[pathlib.Path, str, Iterable[str]], object],
 ) -> int:
-    """2.34.0形式の予約を通常のinbox項目へ一方向に移行する。"""
     assert_lock_fn(private_notes)
     inbox_dir = private_notes / WI_STATE_INBOX
     processing_dir = private_notes / WI_STATE_PROCESSING

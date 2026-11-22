@@ -1,5 +1,3 @@
-"""serveのsessionsに関するremoteの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -26,7 +24,6 @@ from agent_toolkit._testing.serve_sessions_support import (
 
 @pytest.mark.asyncio
 async def test_session_stream_restores_long_rpc_response_and_notifications(tmp_path: pathlib.Path) -> None:
-    """長い応答の前後のreadyと更新通知も保持し、改行なしの最終応答を解決する。"""
     context = _context(tmp_path, remote_hosts=["remote-host"])
     client = sessions.RemoteSessionClient("remote-host", context.state)
     queue = await sessions.subscribe(context.state)
@@ -56,7 +53,6 @@ async def test_session_stream_restores_long_rpc_response_and_notifications(tmp_p
 async def test_unconfirmed_helper_stop_blocks_reconnect_until_same_process_stops(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """常駐ヘルパーの停止を確認できない間は参照を保持し、同じプロセスの停止を確認するまで再接続しない。"""
     context = _context(tmp_path, remote_hosts=["remote-host"])
     client = sessions.RemoteSessionClient("remote-host", context.state)
     client._backoff = 0
@@ -80,7 +76,6 @@ async def test_unconfirmed_helper_stop_blocks_reconnect_until_same_process_stops
     with pytest.raises(asyncio.CancelledError):
         await client.run()
 
-    # 最後の停止は、取消された接続試行の後始末（起動前のためプロセスは無い）である。
     assert events == [
         ("connect", None),
         ("stop", helper),
@@ -105,13 +100,11 @@ async def test_unconfirmed_helper_stop_blocks_reconnect_until_same_process_stops
     ],
 )
 def test_remote_record_path_is_validated_before_ssh(raw: str, expected: bool) -> None:
-    """上位ディレクトリ参照と対象外の接尾辞は、SSH呼び出しの前に拒否する。"""
     assert sessions.is_safe_remote_record_path(raw) is expected
 
 
 @pytest.mark.asyncio
 async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path) -> None:
-    """設定済みリモートホストの記録を一覧へ含める。"""
     _claude_record(tmp_path)
     runner, calls = _runner_returning(
         {
@@ -152,7 +145,6 @@ async def test_remote_entries_are_merged_into_the_listing(tmp_path: pathlib.Path
 
 @pytest.mark.asyncio
 async def test_unreachable_host_is_reported_and_others_are_returned(tmp_path: pathlib.Path) -> None:
-    """1台へ到達できなくても、他のホストとローカルの一覧は返す。"""
     _claude_record(tmp_path)
 
     async def runner(host: str, op: str, args: list[str]) -> str:
@@ -217,7 +209,6 @@ async def test_long_stderr_keeps_the_tail_in_the_warning(tmp_path: pathlib.Path,
 
 @pytest.mark.asyncio
 async def test_host_status_reports_connection_state(tmp_path: pathlib.Path) -> None:
-    """ホストごとの接続状態を返す。ローカルは常に接続済みとする。"""
     context = _context(tmp_path, remote_hosts=["remote-host"])
 
     assert await sessions.host_status(context) == {"local-host": "connected", "remote-host": "connecting"}
@@ -233,7 +224,6 @@ async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> N
     runner, calls = _runner_returning({"ok": True, "entries": []})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
-    # 未接続。
     disconnected = _FakeRpcClient(connected=False, response={"ok": True, "entries": []})
     context.state.clients["remote-host"] = typing.cast(typing.Any, disconnected)
     assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
@@ -242,7 +232,7 @@ async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> N
         typing.Any, _FakeRpcClient(connected=True, response=RuntimeError("切断"))
     )
     assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
-    # RPCがエラー応答を返した。
+
     failing = _FakeRpcClient(connected=True, response={"ok": False, "error": "no such file"})
     context.state.clients["remote-host"] = typing.cast(typing.Any, failing)
     assert await sessions._remote_call(context, "remote-host", "list", {}) == {"ok": True, "entries": []}
@@ -255,11 +245,6 @@ async def test_remote_call_falls_back_to_single_ssh(tmp_path: pathlib.Path) -> N
 async def test_remote_list_accepts_response_slower_than_read_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`list`の上限は`read`と別に定め、`read`の上限を超えて遅れる一覧の応答も受け取って単発SSHを起動しない。
-
-    一覧の初回走査は記録量に比例して長くなるため、1件の読み取りと同じ上限で打ち切ると、
-    記録の多いホストの一覧が常に取得できなくなる。
-    """
     monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "read", 0.05)
     monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "list", 5.0)
     runner, calls = _runner_returning({"ok": True, "entries": []})
@@ -299,10 +284,6 @@ async def test_remote_list_accepts_response_slower_than_read_timeout(
 
 @pytest.mark.asyncio
 async def test_remote_list_rpc_timeout_does_not_fall_back(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """`list`のRPCが上限を超えた場合は単発SSHを起動せず、上限超過と秒数を理由に持つ警告を返す。
-
-    単発SSHは同じ走査を索引の無い新しいプロセスで最初からやり直すため、走査を続ける常駐ヘルパーより先に終わらない。
-    """
     monkeypatch.setitem(sessions.OPERATION_TIMEOUT_SEC, "list", 0.05)
     runner, calls = _runner_returning({"ok": True, "entries": []})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
@@ -319,7 +300,6 @@ async def test_remote_list_rpc_timeout_does_not_fall_back(tmp_path: pathlib.Path
 
 @pytest.mark.asyncio
 async def test_remote_call_uses_rpc_when_connected(tmp_path: pathlib.Path) -> None:
-    """常駐RPCが応答する場合は単発SSHを起動しない。"""
     runner, calls = _runner_returning({"ok": True, "entries": []})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
     client = _FakeRpcClient(connected=True, response={"ok": True, "entries": [{"path": "/x.jsonl"}]})
@@ -337,7 +317,6 @@ async def test_remote_call_uses_rpc_when_connected(tmp_path: pathlib.Path) -> No
     "record_path", ["/home/aki/.claude/projects/p/abc.jsonl", "C:\\Users\\aki\\.claude\\projects\\p\\abc.jsonl"]
 )
 async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path, record_path: str) -> None:
-    """リモートの記録も同じ表示モデルへ正規化する。"""
     text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
     runner, calls = _runner_returning({"ok": True, "data": base64.b64encode(text.encode("utf-8")).decode("ascii")})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
@@ -353,7 +332,6 @@ async def test_remote_detail_is_normalized_like_local(tmp_path: pathlib.Path, re
 
 @pytest.mark.asyncio
 async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: pathlib.Path) -> None:
-    """リモートの記録もサブエージェント一覧を返し、一覧欄がない応答は判定不能として区別する。"""
     text = json.dumps({"type": "user", "timestamp": "2026-09-01T00:00:00Z", "message": {"content": "やあ"}}) + "\n"
     data = base64.b64encode(text.encode("utf-8")).decode("ascii")
     subagent = {
@@ -375,12 +353,10 @@ async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: 
     assert listed["subagents"] == [subagent]
     assert listed["subagents_unavailable"] is False
 
-    # サブエージェント一覧を返さない版のヘルパーが動くホストでは、読み取り自体は成功するため欄の欠落で判別する。
     legacy = await detail_for({"ok": True, "data": data})
     assert legacy["subagents"] is None
     assert legacy["subagents_unavailable"] is True
 
-    # 空配列を返すホストはサブエージェントが無いことを示すため、判定不能としない。
     empty = await detail_for({"ok": True, "data": data, "subagents": []})
     assert empty["subagents"] is None
     assert empty["subagents_unavailable"] is False
@@ -388,7 +364,6 @@ async def test_remote_subagents_are_listed_or_reported_as_unavailable(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_unknown_engine_or_host_is_not_found(tmp_path: pathlib.Path) -> None:
-    """未知の実行系・ホスト・危険なパスは詳細を返さない。"""
     runner, _ = _runner_returning({"ok": True, "data": ""})
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
 
@@ -402,14 +377,12 @@ async def test_unknown_engine_or_host_is_not_found(tmp_path: pathlib.Path) -> No
 
 
 def test_local_hostname_must_not_collide_with_remote_hosts(tmp_path: pathlib.Path) -> None:
-    """ローカルホスト名とリモートホスト名の重複は起動時に拒絶する。"""
     with pytest.raises(ValueError):
         _context(tmp_path, remote_hosts=["local-host"])
 
 
 @pytest.mark.asyncio
 async def test_remote_change_notifications_are_relayed_to_subscribers(tmp_path: pathlib.Path) -> None:
-    """リモート補助の変更通知を、ホスト名を付けてSSE購読者へ中継する。"""
     context = _context(tmp_path, remote_hosts=["remote-host"])
     client = sessions.RemoteSessionClient("remote-host", context.state)
     queue = await sessions.subscribe(context.state)
@@ -466,7 +439,6 @@ async def test_run_does_not_reconnect_when_cancelled_during_cleanup(
 
 @pytest.mark.asyncio
 async def test_remote_failure_warning_names_next_action(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """リモートの一覧を取得できない警告は、ユーザーが実行できる次の操作を添える。"""
     monkeypatch.setattr(_atk_serve_remote, "run_ssh", _failed_ssh(2, b"helper not found\n"))
     context = _context(tmp_path, remote_hosts=["down-host"])
 

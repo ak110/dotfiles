@@ -26,7 +26,6 @@ def _write_current_wait_run(
     status: str,
     continuable: bool = False,
 ) -> tuple[pathlib.Path, pathlib.Path]:
-    """指定したrunをcurrentとして保存し、runディレクトリと記録ファイルのパスを返す。"""
     run_directory = shared_layout.status_directory("root-session", tmp_path) / "wait-results" / "root.json"
     run_path = run_directory / "run-1.json"
     value: dict[str, Any] = {

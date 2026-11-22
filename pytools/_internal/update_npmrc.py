@@ -21,7 +21,7 @@ _NPM_LINE = f"{_NPM_KEY}={_NPM_VALUE}"
 _NPM_PATTERN = re.compile(rf"^{re.escape(_NPM_KEY)}=.*$", re.MULTILINE)
 _PNPM_KEY = "minimum-release-age"
 _PNPM_VALUE = "1440"
-# 以前`~/.npmrc`へ書いていたpnpmのキー。npmの警告を止めるため行ごと除く。
+
 _LEGACY_NPMRC_PATTERN = re.compile(rf"^{re.escape(_PNPM_KEY)}=.*(?:\n|$)", re.MULTILINE)
 _PNPM_TIMEOUT = 60.0
 
@@ -54,7 +54,6 @@ class _PnpmConfigError(Exception):
 
 
 def _update_npmrc(path: Path) -> bool:
-    """`~/.npmrc`へnpmのキーを設定し、pnpmのキーの行を除く。"""
     short = log_format.home_short(path)
     existed = path.exists()
     content = path.read_text(encoding="utf-8") if existed else ""
@@ -101,7 +100,7 @@ def _update_pnpm_global() -> bool:
             )
             return False
         raise _PnpmConfigError(f"pnpmの{_PNPM_KEY} の取得に失敗しました" + (f": {detail}" if detail else ""))
-    # 更新通知などが先に出る場合があるため、最後の行を値として読む。
+
     lines = current.stdout.strip().splitlines()
     if lines and lines[-1].strip() == _PNPM_VALUE:
         logger.info(log_format.format_status("pnpm", f"{_PNPM_KEY}={_PNPM_VALUE} は既に設定済み"))

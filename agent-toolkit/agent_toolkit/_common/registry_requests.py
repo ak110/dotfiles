@@ -34,7 +34,6 @@ _LISTINGS: dict[str, tuple[tuple[int, int], tuple[str, ...]]] = {}
 
 
 def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
-    """`directory`直下の`suffix`で終わる要求ファイルを名前順に返す。ディレクトリが無い・読めない場合は空を返す。"""
     started = time.time_ns()
     try:
         status = os.stat(directory)
@@ -59,11 +58,6 @@ def request_paths(directory: pathlib.Path, suffix: str) -> list[pathlib.Path]:
 
 
 def respond(request: pathlib.Path, response_path: pathlib.Path, response: dict[str, Any]) -> None:
-    """要求への応答を原子的に書き、書いた時点で要求が消えていれば自分の応答も消す。
-
-    要求が残っていれば、要求側は後で応答を消す。要求が消えていれば、要求側は応答の削除を終えたか、その途中にある。
-    どちらの順で重なっても、両者の終了後に応答は残らない。
-    """
     atomic_file.atomic_write(response_path, json.dumps(response, ensure_ascii=False) + "\n")
     if not request.exists():
         response_path.unlink(missing_ok=True)

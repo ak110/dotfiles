@@ -1,5 +1,3 @@
-"""条件別規範の読取ヘルパーが欠落や別条件を受理しないことを確かめる。"""
-
 import pytest
 
 from agent_toolkit._testing.normative_contract import read_contract

@@ -96,7 +96,6 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
     capsys: pytest.CaptureFixture[str],
     record_property: Callable[[str, object], None],
 ) -> None:
-    """manifest是正だけの再開が、検収へ戻る操作を拒否文から選べる。"""
     repo, record, manifest, value, original = _merged_integration(tmp_path, monkeypatch, capsys, failed=True)
     value["verification"] = [[sys.executable, "-c", "assert True"]]
     manifest.write_text(json.dumps(value), encoding="utf-8")
@@ -116,9 +115,8 @@ def test_integrate_rejects_changed_input_with_restart_guidance(
 def test_integrate_verification_is_not_limited_by_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], rebased: bool
 ) -> None:
-    """検証argvは自身の上限で終わり、固有手順向けのprocedure_timeoutで打ち切られずに統合が進む。"""
     repo, record, handoff, head, argv = _timed_integration(tmp_path, monkeypatch, capsys, rebased=rebased)
-    # 選定更新の実境界はlifecycle試験が扱う。この試験の短いprocedure上限を、その起動費用へ適用しない。
+
     script = lane_integration_input.atk_script
 
     def verification_only(*arguments: str) -> list[str]:
@@ -153,7 +151,6 @@ def test_integrate_verification_is_not_limited_by_procedure_timeout(
 def test_integrate_finalization_keeps_procedure_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """自身の上限を持たない最終化argvは、従来どおりprocedure_timeoutで打ち切られる。"""
     repo, record, handoff, head, argv = _timed_integration(tmp_path, monkeypatch, capsys, rebased=False)
     manifest = tmp_path / "integration.json"
     manifest.write_text(

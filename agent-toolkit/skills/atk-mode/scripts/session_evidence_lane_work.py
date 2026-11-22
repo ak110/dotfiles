@@ -1,5 +1,3 @@
-"""計画の進捗表から、明示した工程の実働と旧書式の推定を別々に集計する。"""
-
 from __future__ import annotations
 
 import datetime
@@ -106,7 +104,6 @@ class _Work:
 
 
 def plan_costs(paths: list[Path]) -> tuple[dict[str, Any], list[SavedPlan]]:
-    """各計画は一方の書式だけで数え、不完全な新書式を旧推定で埋めない。"""
     recorded, legacy = _Work(), _Work()
     between = 0.0
     capped = excluded = sidecars = undated_rows = incomplete = 0

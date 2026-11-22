@@ -1,5 +1,3 @@
-"""一覧の子セッション抽出で、要求の写しと実際の起動結果を分ける。"""
-
 import json
 from typing import Any
 
@@ -25,7 +23,6 @@ def _result(identity: str, child: str, kind: str = "user") -> dict[str, Any]:
 
 
 def test_request_copy_neither_starts_nor_consumes_delegation() -> None:
-    """写しの結果で実呼出しを消費せず、写しだけの起動も子として数えない。"""
     collector = DelegationCollector("claude")
     for record in [
         _call("real"),

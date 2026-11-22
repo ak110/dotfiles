@@ -27,7 +27,7 @@ from pytools._internal import (
 logger = logging.getLogger(__name__)
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
-# dotfilesの作業ツリーからの相対パス
+
 _MANAGED_SETTINGS_RELATIVE = Path("share") / "claude_settings_json_managed.json"
 _SETTINGS_PATH = Path.home() / ".claude" / "settings.json"
 _MANAGED_CONFIG_RELATIVE = Path("share") / "claude_json_managed.json"
@@ -72,7 +72,6 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
         "uv run --no-project --script $env:USERPROFILE\\dotfiles\\scripts\\claude_hook_autonomous_exit.py",
         datetime.date(2026, 7, 27),
     ),
-    # 2026-08: 自律終了Stop hookをagent-toolkitプラグイン側へ移動したため個人用common hookを除去
     removal_registry.Registered(_REMOVED_POSIX_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
     removal_registry.Registered(_REMOVED_WINDOWS_AUTONOMOUS_EXIT_COMMAND, datetime.date(2026, 8, 27)),
     removal_registry.Registered(
@@ -81,24 +80,17 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
     removal_registry.Registered(
         'pretooluse; if ($LASTEXITCODE -eq 2) { exit 2 } else { exit 0 } }"', datetime.date(2026, 8, 23)
     ),
-    # 2026-08: 振り返りの起動処理をagent-toolkit側へ統合したため個人Stop hookを除去
     removal_registry.Registered("claude_hook.py stop;", datetime.date(2026, 8, 7)),
-    # 2026-09: pretooluseフックへスクリプト実在検査を追加したため、検査を持たない旧形式エントリを除去
     removal_registry.Registered(
         "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse;", datetime.date(2026, 9, 2)
     ),
-    # 2026-09: dotfiles固有hookをpytoolsのconsole scriptへ移したため旧共通hookを除去
     removal_registry.Registered("dotfiles/scripts/claude_hook.py", datetime.date(2026, 8, 27)),
     removal_registry.Registered("dotfiles\\scripts\\claude_hook.py", datetime.date(2026, 9, 9)),
-    # 2026-09: console scriptの不在時に通過させる`command -v`前置を持たない旧形式を除去する。
-    # 管理対象の除去は現行コマンド文字列との完全一致で行うため、旧形式が現行形式と並んで二重に実行されていた。
     removal_registry.Registered("sh -c 'dotfiles-claude-hook ", datetime.date(2026, 9, 26)),
-    # 2026-09: 参照文書の読取とスキル起動の記録を読む検査を撤去したため、個人用PostToolUseを除去する
     removal_registry.Registered("dotfiles-claude-hook posttooluse", datetime.date(2026, 9, 26)),
     removal_registry.Registered("claude-hook-posttooluse.ps1", datetime.date(2026, 9, 26)),
     # 2026-10: Windowsの個人用PreToolUseの実体をlibexec/へ移したため、scripts/を指す旧登録を除去する
     removal_registry.Registered("\\dotfiles\\scripts\\claude-hook-pretooluse.ps1", datetime.date(2026, 10, 7)),
-    # 2026-10: 個人用PreToolUseは警告だけを返し終了コード2を返さないため、終了コード2を引き継ぐ旧形式を除去する
     removal_registry.Registered(
         "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2", datetime.date(2026, 10, 7)
     ),
@@ -108,17 +100,14 @@ _REMOVED_HOOK_COMMAND_SUBSTRINGS: tuple[removal_registry.Registered[str], ...] =
 # share/claude_settings_json_managed.* から廃止した env キーを列挙する。
 # dict は再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
 _REMOVED_ENV_KEYS: tuple[removal_registry.Registered[str], ...] = (
-    # 2026-11: 自動圧縮の上書き。2026年9月13日に配布元から削除した時の登録漏れで、配布先に残っていた
     removal_registry.Registered("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", datetime.date(2026, 11, 18)),
     removal_registry.Registered("CLAUDE_CODE_AUTO_COMPACT_WINDOW", datetime.date(2026, 11, 18)),
     removal_registry.Registered("CLAUDE_CODE_ENABLE_FUNCTION_HOOKS", datetime.date(2026, 11, 15)),
     removal_registry.Registered("AGENT_TOOLKIT_SESSION_REVIEW_EXTENSION", datetime.date(2026, 8, 7)),
-    # 2026-05-30に登録した後、2026-07-02に配布へ戻して表から外し、2026-08-24に再び配布から外して登録した
     removal_registry.Registered("CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS", datetime.date(2026, 8, 24)),
 )
 
-# 配布元から廃止した設定キーのドット区切りパス。
-# dictは再帰マージのため、配布元から削除してもユーザー設定に残り続ける。ここで明示的に除去する。
+
 _REMOVED_KEYS: tuple[removal_registry.Registered[str], ...] = (
     removal_registry.Registered("autoMode.allowMode", datetime.date(2026, 8, 16)),
     removal_registry.Registered("subagentStatusLine", datetime.date(2026, 11, 23)),
@@ -137,13 +126,11 @@ _REMOVED_CONFIG_KEYS: tuple[removal_registry.Registered[str], ...] = (
 # share/claude_settings_json_managed.* から廃止した配列項目を列挙する。
 # union マージは削除を反映しないため、ここで明示的に除去する。
 _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]], ...] = (
-    # 拒否後の承認前再発行を廃止したため、配布先に残る旧許可も除去する。
     removal_registry.Registered(("autoMode.allow", "Reconsidered Retry Approval: "), datetime.date(2026, 10, 8)),
     # 2026-08: agents_serverへ移行したため旧Codex App Serverの許可項目を除去
     removal_registry.Registered(
         ("permissions.allow", "mcp__plugin_agent-toolkit_codex_app_server__"), datetime.date(2026, 8, 24)
     ),
-    # 2026-06: Session-Owned Amend ルールに置き換えたため旧文面を除去
     removal_registry.Registered(
         (
             "autoMode.allow",
@@ -175,7 +162,6 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]
         ),
         datetime.date(2026, 7, 16),
     ),
-    # 2026-08: ラベル付きの Personal Repo Default-Branch Push へ移管したためユーザー記入の旧文面を除去
     removal_registry.Registered(
         (
             "autoMode.allow",
@@ -183,7 +169,6 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]
         ),
         datetime.date(2026, 8, 16),
     ),
-    # 2026-08: ユーザースコープの読取禁止を廃止したため旧管理項目を除去
     removal_registry.Registered(
         (
             "permissions.deny",
@@ -199,7 +184,6 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]
         ),
         datetime.date(2026, 8, 23),
     ),
-    # 2026-09: 秘匿ファイルの読取禁止をプロジェクト側リポジトリ設定へ移したため配布原本の3件を除去
     removal_registry.Registered(
         (
             "permissions.deny",
@@ -242,10 +226,7 @@ _REMOVED_LIST_ITEM_SUBSTRINGS: tuple[removal_registry.Registered[tuple[str, str]
     removal_registry.Registered(("autoMode.allow", "Feedback Queue State Transition: "), datetime.date(2026, 9, 17)),
 )
 
-# ラベル付き配列要素（`^<ラベル>: `形式の接頭辞を持つ要素）の先頭ラベルを抽出する正規表現。
-# `_strip_stale_labeled_list_items`が使う。ラベルは先頭文字がアルファベット、
-# 以降がアルファベット・数字・空白・ハイフンのみで構成される
-# （日本語で始まるユーザー独自エントリを誤検出しないため）。
+
 _LABELED_LIST_ITEM_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9 -]*): ")
 
 # `_strip_stale_labeled_list_items`の対象パス一覧（ドット区切り）。
@@ -256,8 +237,7 @@ _STALE_LABELED_LIST_PATHS: tuple[str, ...] = ("autoMode.allow",)
 _MAX_VALUE_LEN = 60
 _MAX_INLINE_DIFF = 3
 
-#: マージ時に無視するトップレベルキー。
-#: `$schema` は配布元 JSON の IDE 補完用メタ情報であり、ユーザー設定に伝播させない。
+
 _IGNORED_KEYS: frozenset[str] = frozenset({"$schema"})
 
 # 設定コマンド文字列内でホームディレクトリ絶対パスへ置換するプレースホルダー。
@@ -306,10 +286,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list[Path]:
-    """現プラットフォームに対応するオーバーライド JSON のパス一覧を返す。
-
-    実在するファイルのみを返す。未対応 OS では空リスト。
-    """
     plat = platform or sys.platform
     suffix = "win32" if plat == "win32" else "posix"
     override = base_path.with_suffix(f".{suffix}.json")
@@ -317,7 +293,6 @@ def _platform_overrides(base_path: Path, *, platform: str | None = None) -> list
 
 
 def effective_managed_settings(base: dict, overrides: list[dict]) -> dict:
-    """配布対象の共通設定とOS別設定を重ねた値を返す。"""
     managed = copy.deepcopy(base)
     for override in overrides:
         _merge(managed, override)
@@ -427,7 +402,6 @@ def update_claude_settings(
     short = log_format.home_short(settings_path)
     source, original, data = read_and_merge()
     if not common.json_values_equal(original, data):
-        # 初読は更新要否の判定だけに使い、保存する値とコメントは同じ最新の本文から得る。
         try:
             source, original, data = read_and_merge()
         except OSError, ValueError:
@@ -477,11 +451,6 @@ def _substitute_home_placeholder(value: object) -> object:
 
 
 def _diff_lines(before: dict, after: dict, path: str = "") -> list[str]:
-    """2つのdictの差分を行リストで返す。
-
-    dictは再帰的に差分を取り、listは件数差のサマリーを表示する。
-    差分行は6スペースのインデントを持ち、`basicConfig`の2スペースと合わせて合計8スペースになる。
-    """
     lines = []
     for key in sorted(set(before) | set(after)):
         full_path = f"{path}.{key}" if path else key
@@ -524,7 +493,6 @@ def _list_diff_summary(before: list, after: list) -> str:
 
 
 def _value_summary(value: object) -> str:
-    """値を短い文字列に変換する。dict/listはサマリー、その他はJSON文字列（60文字上限）。"""
     if isinstance(value, dict):
         return f"{{...}} ({len(value)} keys)"
     if isinstance(value, list):
@@ -534,11 +502,6 @@ def _value_summary(value: object) -> str:
 
 
 def _strip_removed_hooks(data: dict, substrings: tuple[str, ...]) -> None:
-    """`data["hooks"][event][*]["hooks"]` から `substrings` を含む `command` を除去する。
-
-    エントリが空になったらmatcherエントリ自体も除去する。さらにevent配列ごと空に
-    なったらeventキーごと除去する。
-    """
     if not substrings:
         return
     windows_autonomous_exit_pattern = _windows_autonomous_exit_pattern(substrings)
@@ -568,11 +531,6 @@ def _windows_autonomous_exit_pattern(substrings: tuple[str, ...]) -> re.Pattern[
 
 
 def _strip_managed_hooks(data: dict, managed: dict) -> None:
-    """現行の管理対象フックを同じイベントの既存設定から除去する。
-
-    管理対象フックを通常のunionマージ前に除去し、管理対象側の現在のグループ構造だけを
-    再追加できる状態にする。これにより、構造変更前の個別要素と現在の結合要素が併存しない。
-    """
     managed_hooks = managed.get("hooks")
     if not isinstance(managed_hooks, dict):
         return
@@ -603,7 +561,6 @@ def _strip_managed_hooks(data: dict, managed: dict) -> None:
 
 
 def _strip_hooks(data: dict, should_remove: typing.Callable[[str, str], bool]) -> None:
-    """条件に一致する内部フックを除去し、空になった要素とイベントを整理する。"""
     hooks_root = data.get("hooks")
     if not isinstance(hooks_root, dict):
         return
@@ -639,11 +596,6 @@ def _strip_hooks(data: dict, should_remove: typing.Callable[[str, str], bool]) -
 
 
 def _strip_removed_env_keys(data: dict, keys: tuple[str, ...]) -> None:
-    """`data["env"]` から `keys` に含まれるキーを除去する。
-
-    除去後に `env` が空 dict になった場合は `env` キー自体も除去する。
-    `data` に `env` キーが無い、または `env` が dict でない場合は何もしない。
-    """
     if not keys:
         return
     env = data.get("env")
@@ -656,12 +608,6 @@ def _strip_removed_env_keys(data: dict, keys: tuple[str, ...]) -> None:
 
 
 def _resolve_dict_container(value: dict, keys: list[str]) -> tuple[dict, str] | None:
-    """ドット区切りパスのキー列を辿り、末端キーを含む親dictと末端キー名を返す。
-
-    途中のキーが存在しないか対象がdictでなくなった時点で`None`を返す。
-    `_strip_removed_list_items`・`_strip_stale_labeled_list_items`・`_get_list_at_path`が
-    共通で使う経路解決処理であり、重複する手書きループを避けるために切り出す。
-    """
     target: object = value
     for key in keys[:-1]:
         if not isinstance(target, dict):
@@ -673,10 +619,6 @@ def _resolve_dict_container(value: dict, keys: list[str]) -> tuple[dict, str] | 
 
 
 def _strip_removed_keys(data: dict, paths: tuple[str, ...]) -> None:
-    """ドット区切りパスで辿った設定キーを除去する。
-
-    パス途中のキーが存在しない場合や、途中の値がdictでない場合は何もしない。
-    """
     for path in paths:
         resolved = _resolve_dict_container(data, path.split("."))
         if resolved is None:
@@ -686,11 +628,6 @@ def _strip_removed_keys(data: dict, paths: tuple[str, ...]) -> None:
 
 
 def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...]) -> None:
-    """ドット区切りパスで辿った配列から部分文字列マッチで要素を除去する。
-
-    パス途中のキーが存在しない場合や、対象が list でない場合は何もしない。
-    除去後に配列が空になっても配列キー自体は保持する（managed 側で再追加される想定）。
-    """
     if not mappings:
         return
     for path, substring in mappings:
@@ -705,7 +642,6 @@ def _strip_removed_list_items(data: dict, mappings: tuple[tuple[str, str], ...])
 
 
 def _get_list_at_path(value: dict, keys: list[str]) -> list:
-    """ドット区切りパスのキー列で辿った位置のlistを返す。無ければ空listを返す。"""
     resolved = _resolve_dict_container(value, keys)
     if resolved is None:
         return []
@@ -764,10 +700,9 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
     `_platform_overrides`は`sys.platform`により片方の原本しか返さないため、
     本検査では`.posix.json`・`.win32.json`の両方とbase JSONを明示的に読む。
     """
-    # 配布原本から全フックコマンドを集約
+
     managed_commands: set[str] = set()
 
-    # base JSON を読む
     base_json = json.loads(managed_path.read_text(encoding="utf-8"))
     _collect_hook_commands(base_json, managed_commands)
 
@@ -805,7 +740,7 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
                     continue
                 if "dotfiles/scripts/" not in command:
                     continue
-                # 配布原本に存在しないか確認
+
                 if command not in managed_commands:
                     logger.warning(
                         "配布原本に存在しないフックコマンド（settings.json）: "
@@ -816,7 +751,6 @@ def _warn_orphan_dotfiles_hook_commands(settings: dict, managed_path: Path) -> N
 
 
 def _collect_hook_commands(data: dict, commands: set[str]) -> None:
-    """dictから全フックコマンドを再帰的に集約する。"""
     hooks_root = data.get("hooks")
     if not isinstance(hooks_root, dict):
         return
@@ -855,11 +789,6 @@ def _merge(data: dict, managed: dict) -> None:
 
 
 def _union_list(existing: list, managed: list) -> list:
-    """順序維持・重複排除で2つのlistを結合する。
-
-    hashableな要素はそのまま集合判定に使い、dict/listなどの非hashable要素は
-    JSON正規化文字列をキーにして重複判定する（hooks配列のマージで必要）。
-    """
     result: list = []
     seen: set = set()
     for item in existing + managed:

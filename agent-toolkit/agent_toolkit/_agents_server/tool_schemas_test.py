@@ -1,5 +1,3 @@
-"""agents_serverのMCPツールの公開schemaが、説明文の変更で変わらないことを確かめる。"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -137,7 +135,6 @@ def _without_prose(value: Any) -> Any:
 
 @pytest.mark.asyncio
 async def test_tool_schemas_keep_names_types_defaults_and_return_shapes() -> None:
-    """全ツールの名前、入力schema、返却schemaと注釈が、説明文を除いて固定値と一致する。"""
     published = {
         tool.name: {
             "input_schema": _without_prose(tool.input_schema),

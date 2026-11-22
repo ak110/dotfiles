@@ -65,11 +65,6 @@ def _sweep_shared_state(keep_root_session_id: str, state_root: pathlib.Path | No
 
 
 def live_writer_holds_session(session_id: str, state_root: pathlib.Path | None = None) -> bool:
-    """生存の印が失効していないいずれかのrootの状態ファイルが、指定sessionを載せているかを返す。
-
-    再起動前の登録簿の記録を別のMCPサーバーが引き継ぐ前に、その記録を書ける所有者の不在を確かめるために使う。
-    生存の印を持たない状態ファイルは、失効を判定できないため生存しているものとして扱う。
-    """
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
     for root_session_id in list_root_session_ids(state_root):
         for path in list_status_files(root_session_id, state_root):
@@ -80,18 +75,15 @@ def live_writer_holds_session(session_id: str, state_root: pathlib.Path | None =
 
 
 def normalize_label(value: str) -> str:
-    """依頼本文またはコマンドの最初の空でない行を表示用に正規化する。"""
     line = next((line for line in value.splitlines() if line.strip()), "")
     return " ".join(line.split())[:200]
 
 
 class ProjectionWriteError(OSError):
-    """終了時の結果の保存と区別する、表示用状態ファイルの置換不成立。"""
+    pass
 
 
 class StatusFileWriter:
-    """共有session辞書をstatusline向け状態ファイルへ集約して書く。"""
-
     def __init__(
         self,
         sessions: dict[str, SessionState],
@@ -109,12 +101,12 @@ class StatusFileWriter:
         self._state_root = state_root
         self._directory = status_directory(identity.root_session_id, state_root)
         self._path = self._directory / identity.file_name
-        # 実際に射影を書くファイル。起動時に同名のファイルを生存中の別プロセスが書いていれば別名へ移す。
+
         self._projection_path = self._path
         self._aggregate_seconds = aggregate_seconds
         self._flush_handle: asyncio.TimerHandle | None = None
         self._retention_handle: asyncio.TimerHandle | None = None
-        # 旧世代へ渡すsession単位の索引。受領判定にはディスク上の終了結果別の公開記録を使う。
+
         self._published_results: set[str] = set()
         self._projected_host_session_id: str | None = None
         self._active = False
@@ -123,25 +115,17 @@ class StatusFileWriter:
 
     @property
     def state_root(self) -> pathlib.Path | None:
-        """同じ共有状態を診断するときに使う状態ディレクトリを返す。"""
         return self._state_root
 
     @property
     def path(self) -> pathlib.Path:
-        """自身が所有する状態ファイルのパスを返す。"""
         return self._path
 
     @property
     def root_session_id(self) -> str:
-        """自身が状態ファイルを書き込むルートsession識別子を返す。"""
         return self._identity.root_session_id
 
     def launcher_session_id(self) -> str | None:
-        """このMCPサーバーが作成するsessionの委譲元sessionの識別子を返す。
-
-        状態ファイルの`host_session_id`として射影する委譲元を優先し、無ければ所有ルートを返す。
-        プロセス専用ルートは会話を指さないため返さない。
-        """
         host_session_id = self._resolve_host_session_id()
         if host_session_id is not None:
             return host_session_id
@@ -149,7 +133,6 @@ class StatusFileWriter:
         return None if root_session_id.startswith(PROCESS_ROOT_PREFIX) else root_session_id
 
     async def launcher_session_id_async(self) -> str | None:
-        """親の索引の読取を待ち、解決した値をloopで保持する。"""
         host = await self._host_session_id_async()
         if host is not None:
             return host
@@ -163,7 +146,6 @@ class StatusFileWriter:
 
     @property
     def sessions(self) -> dict[str, SessionState]:
-        """射影元の共有session辞書を返す。"""
         return self._sessions
 
     @property
@@ -172,7 +154,6 @@ class StatusFileWriter:
         return self._expired_sessions
 
     def activate(self) -> None:
-        """書込を有効化し、前回プロセスの残存状態を初期化する。"""
         try:
             _sweep_shared_state(self.root_session_id, self._state_root)
         except OSError as exc:
@@ -183,7 +164,6 @@ class StatusFileWriter:
         self.flush()
 
     def schedule(self) -> None:
-        """実行中のloopで、集約時間の経過後に状態ファイル全体を置き換える保存を予約する。"""
         if not self._active or self._flush_handle is not None:
             return
         loop = asyncio.get_running_loop()
@@ -210,7 +190,6 @@ class StatusFileWriter:
             )
 
     def flush(self) -> None:
-        """表示対象sessionをJSONへ射影し、状態ファイル全体を原子的に置き換える。"""
         if not self._active:
             return
         self._flush_handle = None
@@ -224,7 +203,6 @@ class StatusFileWriter:
         self._schedule_retention(visible, now)
 
     async def activate_async(self) -> None:
-        """初期化後の初回保存が完了してから書込を開始する。"""
         try:
             await run_file_operation(_sweep_shared_state, self.root_session_id, self._state_root)
         except OSError as exc:
@@ -234,7 +212,6 @@ class StatusFileWriter:
         await self.flush_async()
 
     async def flush_async(self) -> None:
-        """登録・結果・表示を順に保存し、状態とタイマーの反映はloopで行う。"""
         async with self._write_lock:
             if not self._active:
                 return
@@ -271,7 +248,6 @@ class StatusFileWriter:
             self._schedule_retention(visible, now)
 
     async def drain(self, *, cancel_scheduled: bool = False) -> None:
-        """予約した保存と、通知から開始した登録公開のtaskを回収する。"""
         await finish_task(asyncio.create_task(self._drain(cancel_scheduled=cancel_scheduled)))
 
     async def _drain(self, *, cancel_scheduled: bool) -> None:
@@ -285,7 +261,7 @@ class StatusFileWriter:
         while self._flush_tasks:
             tasks = tuple(self._flush_tasks)
             results = await asyncio.gather(*tasks, return_exceptions=True)
-            # 完了callbackがまだ実行されていなくても、回収したtaskを再び待たない。
+
             self._flush_tasks.difference_update(tasks)
             for result in results:
                 if error is None and isinstance(result, BaseException):
@@ -301,7 +277,6 @@ class StatusFileWriter:
             raise error
 
     def show_recovery_wait(self, previous: SessionResumeState) -> None:
-        """旧結果の回収待ちを開始待ちの行として表示し、実行所有と旧結果の原本は変えない。"""
         if (waiting := self._recovering.get(previous.session_id)) is not None and waiting.turn_seq == previous.turn_seq:
             return
         waiting = SessionState(
@@ -325,7 +300,6 @@ class StatusFileWriter:
         self.schedule()
 
     def clear_recovery_wait(self, identifier: str) -> None:
-        """復旧の決着、取消、別の所有者への移転を次の表示へ反映する。"""
         if self._recovering.pop(identifier, None) is not None:
             self.schedule()
 
@@ -386,7 +360,6 @@ class StatusFileWriter:
             raise ProjectionWriteError(str(error)) from error
 
     def deactivate(self) -> None:
-        """予約を解除し、自身が所有する状態ファイルを削除する。"""
         self._active = False
         for handle in (self._flush_handle, self._retention_handle):
             if handle is not None:
@@ -399,7 +372,6 @@ class StatusFileWriter:
             self._directory.rmdir()
 
     def retain_result(self, session: SessionState | SessionResumeState) -> None:
-        """保持中または退避済みsessionの未回収終了時の結果を残す。"""
         if (
             session.finalized_at is not None
             and session.status in {"completed", "failed", "interrupted"}
@@ -408,7 +380,6 @@ class StatusFileWriter:
             self._write_terminal_result(session)
 
     async def retain_result_async(self, session: SessionState | SessionResumeState) -> None:
-        """登録解放後も未回収の終了時の結果を、他の保存と直列に残す。"""
         async with self._write_lock:
             turn = session.turn_seq, session.finalized_at
             if (
@@ -441,12 +412,10 @@ class StatusFileWriter:
     async def delete_result_async(
         self, session_id: str, *, collector: str, expected_end: retained_results.ResultEnd | None = None
     ) -> bool:
-        """進行中の結果保存を待ち、指定した終了結果だけを回収する。"""
         async with self._write_lock:
             return await run_file_operation(self.delete_result, session_id, collector=collector, expected_end=expected_end)
 
     def stopped_result_writer(self, session_id: str, root: str) -> StatusFileIdentity:
-        """登録簿のルートと委譲元を使い、最新原本の回収後も同じ親の旧turnを破棄する。"""
         path = session_registry.registry_directory(self._state_root) / f"{session_id}.json"
         launcher = session_launchers.read_launcher(path)
         if launcher is None and root == self.root_session_id:
@@ -458,7 +427,6 @@ class StatusFileWriter:
     async def discard_stopped_session_async(
         self, session: SessionResumeState, *, expected_owner: tuple[str | None, int | None]
     ) -> None:
-        """停止したsessionの原本を、登録簿から復元した場合も元の書込主体で破棄する。"""
         root = self.root_session_id
         owner = self._identity.file_name
         if isinstance(session, RegistryResumeState) and session.result_root_session_id is not None:
@@ -479,7 +447,6 @@ class StatusFileWriter:
                 self._published_results.discard(session.session_id)
 
     async def result_state_async(self, session_id: str, *, session: SessionState | SessionResumeState | None = None) -> str:
-        """照会を始めた時点の終了結果の公開状態を返す。"""
         session = session or self._sessions.get(session_id) or self._expired_sessions.get(session_id)
         if session is not None and session.finalized_at is not None:
             end = session.turn_seq, session.finalized_at
@@ -509,15 +476,12 @@ class StatusFileWriter:
             return result
 
     async def read_notices_async(self, session_id: str) -> list[PendingNotice]:
-        """取消可能な読取では通知の原本を残す。"""
         return await run_file_operation(self.read_notices, session_id)
 
     async def take_notices_async(self, session_id: str) -> list[dict[str, str]]:
-        """旧転送元の回収要求にも、読取が完了してから本文を返す。"""
         return consume_notices(await self.read_notices_async(session_id))
 
     async def deactivate_async(self) -> None:
-        """保存taskの終了後に予約を解除して所有ファイルを回収する。"""
         self._active = False
         for handle in (self._flush_handle, self._retention_handle):
             if handle is not None:
@@ -528,7 +492,6 @@ class StatusFileWriter:
         self._published_results.clear()
 
     def delete_result(self, session_id: str, *, collector: str, expected_end: retained_results.ResultEnd | None = None) -> bool:
-        """指定した終了結果を回収する。引数を省略した従来の呼び出しでは旧名の結果を消す。"""
         path = self._result_path(session_id)
         if expected_end is None:
             payload, error = self.take_result(session_id, collector=collector)
@@ -546,12 +509,10 @@ class StatusFileWriter:
         release_wait_target(self.root_session_id, self._identity.file_name, session_id, self._state_root)
 
     def result_exists(self, session_id: str) -> bool:
-        """指定sessionの終了時の結果ファイルが存在するかを返す。"""
         path = self._result_path(session_id)
         return path.is_file() or any(path.parent.glob(f"{session_id}.*.json"))
 
     def read_result(self, session_id: str, *, expected_turn_seq: int | None = None) -> dict[str, Any] | None:
-        """指定したturnの保存済み終了結果を検証して返す。"""
         self._result_path(session_id)
         payload = read_retained_result(self.root_session_id, session_id, self._state_root, expected_turn_seq=expected_turn_seq)
         if (
@@ -566,7 +527,6 @@ class StatusFileWriter:
         return payload
 
     def take_result(self, session_id: str, *, collector: str) -> tuple[dict[str, Any] | None, str | None]:
-        """自身が公開した終了時の結果を一度だけ回収する。"""
         result = take_result(
             self.root_session_id,
             session_id,
@@ -579,7 +539,6 @@ class StatusFileWriter:
         return result
 
     def result_state(self, session_id: str) -> str:
-        """自プロセスが公開した終了時の結果の公開状態を返す。"""
         session = self.sessions.get(session_id) or self.expired_sessions.get(session_id)
         if session is None:
             return "published" if self.result_exists(session_id) else "unpublished"
@@ -592,7 +551,6 @@ class StatusFileWriter:
         return consume_notices(self.read_notices(session_id))
 
     def read_notices(self, session_id: str) -> list[PendingNotice]:
-        """自身の投影に宛てた通知を回収せずに読む。"""
         return read_notices(
             self._identity.root_session_id,
             session_id,
@@ -697,7 +655,6 @@ class StatusFileWriter:
                 hosts.rmdir()
 
     def _resolve_host_session_id(self) -> str | None:
-        """書込主体に対応する委譲元threadを一度だけ状態ファイルへ射影する。"""
         if self._projected_host_session_id is not None:
             return self._projected_host_session_id
         writer_session_id = self._identity.host_session_id
@@ -719,7 +676,6 @@ class StatusFileWriter:
         return writer_session_id
 
     def _remove_stale_status_files(self) -> None:
-        """生存の印が失効した他の書込主体の状態ファイルを削除する。"""
         cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
         for path in self._directory.glob("*.json"):
             if path == self._projection_path:
@@ -747,16 +703,11 @@ class StatusFileWriter:
 
 
 def _writer_process_payload() -> dict[str, Any] | None:
-    """状態ファイルを書くプロセスの識別を返す。同名ファイルの書込主体が生存しているかの判定に使う。"""
     process = session_registry.owner_process()
     return None if process is None else session_registry.process_payload(process)
 
 
 def _held_by_other_live_writer(path: pathlib.Path) -> bool:
-    """状態ファイルの生存の印が有効で、書いたプロセスが自プロセス以外として実在するかを返す。
-
-    書いたプロセスの識別を持たない旧形式のファイルは判定できないため、従来どおり自身のファイルとして扱う。
-    """
     try:
         payload = status_reader.read_payload(path)
     except OSError, UnicodeError, ValueError:
@@ -779,12 +730,6 @@ def _held_by_other_live_writer(path: pathlib.Path) -> bool:
 
 
 def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> set[str]:
-    """他の書込主体の状態ファイルから、稼働中の子孫を持つsession識別子を集める。
-
-    状態ファイルの`host_session_id`は、そのファイルのsessionを起動した親sessionを指す。
-    直下の子が終了していても、さらに先の子孫が稼働していれば祖先として数える。
-    生存の印が失効したファイルは稼働の根拠にしない。
-    """
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=HEARTBEAT_EXPIRY_SECONDS)
     children: dict[str, list[tuple[str, str]]] = {}
     for path in sorted(directory.glob("*.json")):
@@ -805,7 +750,6 @@ def _live_descendant_hosts(directory: pathlib.Path, own_path: pathlib.Path) -> s
 
 
 def _read_child_statuses(path: pathlib.Path, cutoff: datetime.datetime) -> tuple[str, list[tuple[str, str]]] | None:
-    """状態ファイルから親session識別子と、各sessionの識別子・状態を読む。"""
     entry = _read_live_status_file(path, cutoff)
     if entry is None or entry[0] is None:
         return None
@@ -813,10 +757,6 @@ def _read_child_statuses(path: pathlib.Path, cutoff: datetime.datetime) -> tuple
 
 
 def _read_live_status_file(path: pathlib.Path, cutoff: datetime.datetime) -> tuple[str | None, list[tuple[str, str]]] | None:
-    """生存の印が失効していない状態ファイルから、親session識別子（root直下の書込主体では`None`）と各sessionの状態を読む。
-
-    読めないファイルと失効したファイルは`None`を返す。生存の印を持たないファイルは失効を判定できないため読む。
-    """
     try:
         payload = status_reader.read_payload(path)
     except OSError, UnicodeError, ValueError:

@@ -34,10 +34,8 @@ _UNNEEDED_STATUS = re.compile(r"AWI化ステータス:\s*不要[ \t]*")
 _CATEGORY_STATUS = re.compile(r"AWI化ステータス:\s*(不要|予定)[ \t]*")
 _DEFERRAL_FIELDS = ("作り込み側の候補", "見逃し側の候補", "比較結論")
 _DEFERRAL_FIELD = re.compile(r"(作り込み側の候補|見逃し側の候補|比較結論)\s*[:：]\s*([^;；\n]*)")
-# 原因を調べていないことを見送りの理由にした冒頭。
-# 処置・担当を定めた理由や「未調査を理由に見送らない」の説明は冒頭が一致しない。
-# 「原因は未確定だが、既存AWIへ引き継ぎ済み」のように逆接が続く形は、
-# 未確定を認めたうえで後段の処置・担当を理由にしているため除く。
+
+
 UNINVESTIGATED_REASON = re.compile(
     r"^(?:原因(?:が|は)?(?:まだ)?(?:未調査|未確定|未特定|不明)|原因を(?:まだ)?(?:調べて|調査して|特定して)いない|未調査(?![をにと]))"
     r"(?!(?:だ|です)?(?:が|けれど|けど)|ながら|ものの|でも)"
@@ -45,7 +43,6 @@ UNINVESTIGATED_REASON = re.compile(
 
 
 def uninvestigated_unneeded_reasons(text: str) -> list[str]:
-    """報告行のうち、`不要`の理由が原因の未調査を根拠にしている行を返す。"""
     found: list[str] = []
     for line in runtime_inserted.reported_improvement_lines(text):
         for matched in _UNNEEDED_STATUS.finditer(line):
@@ -59,7 +56,6 @@ def uninvestigated_unneeded_reasons(text: str) -> list[str]:
 
 
 def _format_notice(lines: list[str]) -> str:
-    """改善点の報告行の区分名と見送りの比較項目の書式の誤りを、最初の1件だけ返す。"""
     categories = {"不要": _UNNEEDED_CATEGORIES, "予定": ("判断待ち", "認可待ち", "入力待ち", "書込競合")}
     for line in lines:
         for matched in _CATEGORY_STATUS.finditer(line):
@@ -90,7 +86,6 @@ def _format_notice(lines: list[str]) -> str:
 
 
 def format_guidance_notice(payload: object) -> str:
-    """最上位メインの報告へ、同じターンで直せる改善点の報告の書式の誤りを返す。"""
     if not isinstance(payload, dict) or not is_main_agent_context(payload):
         return ""
     text = payload.get("last_assistant_message")
@@ -132,7 +127,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def main(payload_text: str) -> int:
-    """`send_to_user`の送達前照会へ、改善点の報告の書式の案内を返す。"""
     payload = json.loads(payload_text)
     notice = format_guidance_notice(payload)
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}}, ensure_ascii=False))

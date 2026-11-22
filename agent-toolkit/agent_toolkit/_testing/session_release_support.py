@@ -1,5 +1,3 @@
-"""レーン回収試験の実cwd保持子と所有managerの寿命、結果の受領と再開、別プロセスによる登録簿の書込の滞りを扱う。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +21,6 @@ from agent_toolkit._testing.agents_server_support import FakeBackend, _complete,
 
 @dataclasses.dataclass
 class RetainedExecutor:
-    """回収試験が検収する識別・実プロセス・解放記録と、公開結果操作をまとめる。"""
-
     session_id: str
     state_root: pathlib.Path
     executor: subprocess.Popen[str]
@@ -39,7 +35,6 @@ class RetainedExecutor:
         )
 
     async def resume(self, prompt: str) -> dict[str, Any]:
-        """同じsessionへの公開send_messageで会話を再開する。"""
         return await self._manager.send_message(self.session_id, prompt)
 
 
@@ -51,7 +46,6 @@ async def retained_executor(
     *,
     keep_executor: bool = False,
 ) -> AsyncGenerator[RetainedExecutor]:
-    """終了時の結果を持つ実cwd保持子を準備し、所有監視と全資源の終了まで引き受ける。"""
     root = state_paths.state_dir()
     writer = status_file.StatusFileWriter(
         {},

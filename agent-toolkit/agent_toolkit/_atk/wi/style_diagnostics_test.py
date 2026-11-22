@@ -1,5 +1,3 @@
-"""過去の記録を読むための表記警告の識別を検証する。"""
-
 import pytest
 
 from agent_toolkit._atk.wi import style_diagnostics
@@ -18,5 +16,4 @@ from agent_toolkit._atk.wi import style_diagnostics
     ],
 )
 def test_identifies_historical_body_style_warnings(line: str, expected: bool) -> None:
-    """過去の座標・文脈・件数の形式だけを、WI本文の表記診断として識別する。"""
     assert style_diagnostics.is_body_style_diagnostic_warning(line) is expected

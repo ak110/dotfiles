@@ -19,7 +19,6 @@ import markdown_it
 
 from agent_toolkit._common import next_action as _next_action
 
-# 抜粋の最大文字数。違反行を見やすく示す切り詰め幅。
 _EXCERPT_LIMIT = 80
 
 # ディレクトリ展開時に走査する拡張子。`.md.tmpl`はchezmoi由来の二重拡張子。
@@ -44,13 +43,13 @@ _EXCLUDED_DIRS = frozenset(
     }
 )
 
-# 検出対象の文字パターン。U+2500は2連続のみを対象とする。
+
 _DASH_PATTERN = re.compile(r"—|―|──")
 
-# URL内の文字は判定せず除外するためのパターン。
+
 _URL_RE = re.compile(r"(?:[a-zA-Z][a-zA-Z0-9+.\-]*://|www\.)[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+")
 
-# 違反種別の表示名。
+
 _KIND_MAP = {
     "—": "em-dash(U+2014)",
     "―": "horizontal-bar(U+2015)",
@@ -61,7 +60,6 @@ _COMMONMARK = markdown_it.MarkdownIt("commonmark")
 
 
 def main() -> int:
-    """禁止されたダッシュ文字があるか判定するエントリポイント。"""
     parser = argparse.ArgumentParser(
         description="Markdownの地の文・見出しに禁止されたダッシュ文字があるか確かめる。",
     )
@@ -115,9 +113,7 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
             for sub in sorted(p.rglob("*")):
                 if not sub.is_file():
                     continue
-                # 除外判定は引数ディレクトリ`p`からの相対パス成分のみで行う。
-                # 絶対パス全体（`sub.parts`）で判定すると、引数ディレクトリ自身が`site`・`dist`等の
-                # 汎用名を含む場合に配下全体が誤って除外される。
+
                 if any(part in _EXCLUDED_DIRS for part in sub.relative_to(p).parts):
                     continue
                 name_lower = sub.name.lower()
@@ -130,7 +126,6 @@ def _expand_paths(paths: list[pathlib.Path]) -> list[pathlib.Path]:
 
 
 def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -> None:
-    """重複を除き出力リストへ追加する。"""
     resolved = path.resolve()
     if resolved in seen:
         return
@@ -139,7 +134,6 @@ def _add(out: list[pathlib.Path], seen: set[pathlib.Path], path: pathlib.Path) -
 
 
 def _check_file(path: pathlib.Path) -> list[str]:
-    """1ファイルに禁止されたダッシュ文字があるか判定し、違反行のメッセージ一覧を返す。"""
     try:
         text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
@@ -150,12 +144,11 @@ def _check_file(path: pathlib.Path) -> list[str]:
     inline_spans = _inline_code_spans(text, inline_blocks)
     searchable_text = _strip_inline_code(_mask_non_inline_blocks(text, inline_blocks), inline_spans)
     for lineno, (raw, searchable) in enumerate(zip(text.splitlines(), searchable_text.splitlines(), strict=False), start=1):
-        # フェンス、コードスパン、URLを除去してからダッシュを検索する。
         searchable = _strip_urls(searchable)
         for match in _DASH_PATTERN.finditer(searchable):
             matched = match.group(0)
             kind = _KIND_MAP[matched]
-            # インラインコードは同一文字数の空白で置換済みのため、除去後オフセット＝元行オフセット。
+
             col = match.start() + 1
             excerpt = raw if len(raw) <= _EXCERPT_LIMIT else raw[:_EXCERPT_LIMIT] + "…"
             violations.append(f'{path}:{lineno}:{col}: error: {kind} "{excerpt}"')
@@ -164,7 +157,6 @@ def _check_file(path: pathlib.Path) -> list[str]:
 
 
 def _inline_block_ranges(text: str) -> list[tuple[int, int]]:
-    """CommonMarkのinline tokenが占める半開区間の一覧を返す。"""
     line_offsets = [0]
     for line in text.splitlines(keepends=True):
         line_offsets.append(line_offsets[-1] + len(line))
@@ -233,7 +225,6 @@ def _strip_inline_code(text: str, spans: list[tuple[int, int]]) -> str:
 
 
 def _is_escaped(text: str, index: int) -> bool:
-    """対象位置の文字が奇数個のバックスラッシュでエスケープされているかを返す。"""
     backslashes = 0
     cursor = index - 1
     while cursor >= 0 and text[cursor] == "\\":
@@ -243,10 +234,6 @@ def _is_escaped(text: str, index: int) -> bool:
 
 
 def _strip_urls(line: str) -> str:
-    """行中のURL内のダッシュ文字は判定せず除外するため、同じ長さの空白に置換する。
-
-    スキームまたは`www.`を持たない相対リンクはURLとして除外しない。
-    """
     return _URL_RE.sub(lambda m: " " * len(m.group(0)), line)
 
 

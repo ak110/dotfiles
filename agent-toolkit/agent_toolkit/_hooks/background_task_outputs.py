@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pathlib
 
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import background_output
 lazy from agent_toolkit._common.shell_segments import split_bash_segments
 lazy from agent_toolkit._common.shell_tokens import split_words
@@ -15,7 +14,6 @@ _READ_COMMANDS = frozenset({"cat", "head", "less", "more", "sed", "tail", "wc", 
 
 
 def command_reads_path(command: str, paths: set[str]) -> bool:
-    """既知の読取コマンドが対象パスをオペランドとして持つ場合に真を返す。"""
     if not paths:
         return False
     for segment in split_bash_segments(command):
@@ -31,7 +29,6 @@ def command_reads_path(command: str, paths: set[str]) -> bool:
 
 
 def pending_bash_task_ids(transcript_path: str, session_id: str) -> set[str]:
-    """Stopの継続判定と同じ起動・完了解析（`background_tasks`）から未完了の背景BashタスクIDを返す。"""
     entries = _transcript_scan.read_transcript_entries_cached(transcript_path)
     launched, completed, _host_reported = _background_tasks.describe_pending_background_entries(
         entries,
@@ -45,12 +42,6 @@ def pending_bash_task_ids(transcript_path: str, session_id: str) -> set[str]:
 
 
 def pending_task_output_paths(transcript_path: str, session_id: str) -> set[str]:
-    """未完了の背景Bashが書き込む出力ファイルの絶対パスを返す。
-
-    出力パスは、タスクIDを返した起動の`tool_result`本文（`Output is being written to: <パス>`）から得る。
-    PostToolUseの`tool_response`は構造化した`backgroundTaskId`だけを持ち出力パスを含まないため、入力に使えない。
-    起動の`tool_use_id`に対応する`tool_result`だけを読み、前景Bashや他ツールの結果本文に同じ文言が現れても対象にしない。
-    """
     pending_ids = pending_bash_task_ids(transcript_path, session_id)
     if not pending_ids:
         return set()

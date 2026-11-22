@@ -27,8 +27,7 @@ BODY_BUDGET_BYTES = 16 * 1024
 `atk`の共通の自動保存の境界と同じ値にし、要約自体が保存へ回らないようにする。
 """
 
-# 要約行の先頭に固定の順序で置く項目と、要約行から除く項目。
-# `agent_message`は`agent_message_path`の本文として、`notices`は`通知:`の行として別に示す。
+
 _SUMMARY_LEADING_KEYS = ("session_id", "label", "status", "agent_message_path")
 _SUMMARY_EXCLUDED_KEYS = frozenset({"agent_message", "notices"})
 _TERMINAL_STATUS_RE = re.compile(r"\sstatus=([a-z_]+)(?:\s|$)")
@@ -95,7 +94,6 @@ def render(rows: Iterable[Mapping[str, Any]]) -> str:
 
 
 def terminal_session_ids(text: str) -> set[str]:
-    """要約の`終了行:`から、終了を回収したsession識別子を返す。"""
     collected: set[str] = set()
     for line in text.splitlines():
         if not line.startswith(f"{TERMINAL_LINE_PREFIX}session_id="):
@@ -108,21 +106,12 @@ def terminal_session_ids(text: str) -> set[str]:
 
 
 def _summary_value(value: object) -> str:
-    """要約行の項目の値を、空白で区切った他の項目と区別できる1行の表記へ変換する。
-
-    空白を含まない空でない文字列はそのまま示し、それ以外（空白や改行を含む文字列、辞書、数値など）は
-    改行を含まないJSONで示す。
-    """
     if isinstance(value, str) and value and not value.startswith('"') and not any(char.isspace() for char in value):
         return value
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
 def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
-    """終了行の直後に表示する本文を`agent_message_path`のファイルから読み、session識別子と組にして返す。
-
-    本文ファイルが無いか読めない場合は`None`を返し、終了行は`agent_message_path`だけを示す。
-    """
     session_id = result.get("session_id")
     body_path = result.get("agent_message_path")
     if not isinstance(session_id, str) or not isinstance(body_path, str):
@@ -135,7 +124,6 @@ def _terminal_body(result: Mapping[str, Any]) -> tuple[str, str] | None:
 
 
 def _body_within(session_id: str, body: str, remaining: int) -> tuple[str, int]:
-    """本文を区切りの行で囲んで表示できる場合だけ本文の塊を返し、残りのバイト数とともに返す。"""
     block = f"{WAIT_BODY_START_PREFIX}{session_id}\n{body}"
     if body and not body.endswith("\n"):
         block += "\n"
@@ -151,11 +139,6 @@ def _utf8_size(text: str) -> int:
 
 
 def _unfinished_wait_count(error: object) -> int | None:
-    """保留した結果の確定時に残ったバックグラウンドタスクと子sessionの件数を返す。
-
-    `unobservedSessions`は再開したturnの終了など保留と無関係な処理でも記録されるため、
-    保留の確定が付ける`heldResultFinalized`を持つ結果だけを数える。
-    """
     if not isinstance(error, dict) or error.get(turn_state.HELD_RESULT_FINALIZED_KEY) is not True:
         return None
     return sum(

@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_failures）。"""
-
 from __future__ import annotations
 
 import collections

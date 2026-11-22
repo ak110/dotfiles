@@ -34,7 +34,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_send_message_timeout_covers_resume(tmp_path: pathlib.Path) -> None:
-    """継続要求のtimeoutは保存済みsessionの再開待ちにも適用する。"""
     async with server_manager.AgentsServerManager() as manager:
         backend = BlockingResumeBackend(manager.sessions, "claude")
         install_backend(manager, "claude", backend)
@@ -62,7 +61,6 @@ async def test_kill_cancels_pending_resume_without_followup_message(
     session_id: str,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開入力のtimeout後は追加送信なしのkillで保留作業を回収する。"""
     async with server_manager.AgentsServerManager() as manager:
         backend = BlockingResumeBackend(manager.sessions, "claude")
         install_backend(manager, "claude", backend)
@@ -298,7 +296,6 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """resumeは登録簿に残る前turnの終了状態を新しいturnへ引き継がない。"""
     session_id = "claude-retained"
     client = BlockingResultClaudeClient(session_id)
     async with claude_backend.ClaudeServerManager(client_factory=lambda _options: client) as manager:

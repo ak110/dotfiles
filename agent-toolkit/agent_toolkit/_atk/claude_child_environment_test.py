@@ -1,5 +1,3 @@
-"""process-loopと可用性確認がCLIへ渡す環境とsettingsを合わせて検証する。"""
-
 import argparse
 import json
 import pathlib
@@ -13,7 +11,6 @@ from agent_toolkit._atk.wi import process_loop_env, process_loop_session
 
 
 def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, environment: dict[str, str]) -> None:
-    """同じ入力環境をプローブまたはprocess-loopの本起動へ渡す。"""
     if route == "probe":
         orchestrator.select_available(
             [("claude", "model", "low")], environment, tmp_path, orchestrator.ProbeContext("test", "確認")
@@ -45,7 +42,6 @@ def _run_cli_route(route: str, tmp_path: pathlib.Path, monkeypatch: pytest.Monke
 def test_cli_descendants_receive_only_configured_empty_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str, kind: str, source: str
 ) -> None:
-    """CLIとsettingsの合成後、設定が定義する変数だけが空の値で残る。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=key\nAWS_PROFILE=profile\nCUSTOM_CONNECTION=api\n")
     user = tmp_path / "user"
@@ -123,7 +119,6 @@ def test_api_only_has_no_implicit_authentication(
 def test_explicit_subscription_without_api_file_reaches_cli_isolated(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, route: str
 ) -> None:
-    """明示したサブスク固定はAPI環境未設定でも、プローブと本起動の実候補選択へ届く。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription")
     monkeypatch.setattr(orchestrator, "_probe_model", lambda *_args, **_kwargs: "model")
     observed: list[dict[str, str]] = []

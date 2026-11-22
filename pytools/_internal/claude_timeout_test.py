@@ -27,7 +27,6 @@ def test_run_claude_uses_short_timeout_by_default(monkeypatch) -> None:
 
 
 def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
-    """pluginのinstallとupdateを300秒へ延長し、disableは30秒のまま保つ。"""
     observed: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run_claude(args, **kwargs):
@@ -45,7 +44,6 @@ def test_plugin_install_and_update_use_extended_timeout(monkeypatch) -> None:
 
 
 def test_marketplace_write_operations_use_extended_timeout(monkeypatch, tmp_path) -> None:
-    """marketplaceのadd/updateだけを300秒へ延長し、list/removeは30秒のまま保つ。"""
     observed: list[tuple[list[str], dict[str, object]]] = []
 
     def fake_run_claude(args, **kwargs):

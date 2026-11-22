@@ -142,7 +142,6 @@ def test_two_worktrees_can_save_concurrently_and_restore_three_states(
 
 
 def test_existing_stash_is_preserved(tmp_path: pathlib.Path) -> None:
-    """既存の共有stashは新規退避分のdropで変化しない。"""
     repo, first, _second = _make_worktrees(tmp_path)
     (repo / "existing.txt").write_text("existing\n", encoding="utf-8")
     git_repository.run_git(repo, "stash", "push", "--include-untracked", "-m", "existing")
@@ -158,7 +157,6 @@ def test_existing_stash_is_preserved(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("label", ["../bad", "", "-leading"])
 def test_invalid_label_is_rejected_before_changes(tmp_path: pathlib.Path, label: str) -> None:
-    """不正ラベルではstashもrefも変更しない。"""
     _repo, first, _second = _make_worktrees(tmp_path)
     _make_changes(first, "first")
     before = git_repository.run_git(first, "status", "--short").stdout
@@ -173,7 +171,6 @@ def test_invalid_label_is_rejected_before_changes(tmp_path: pathlib.Path, label:
 
 
 def test_duplicate_label_and_no_changes_are_rejected(tmp_path: pathlib.Path) -> None:
-    """同名refと退避対象なしは作業状態を変えずに終了コード2となる。"""
     _repo, first, _second = _make_worktrees(tmp_path)
     assert _save(first, "empty").returncode == 2
     _make_changes(first, "first")
@@ -193,7 +190,6 @@ def test_save_refuses_queue_repository_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """saveはprivate-notesを拒否し、別リポジトリでは成功する。"""
     queue_repository = _make_repository(tmp_path, "private-notes")
     target_repository = _make_repository(tmp_path, "target")
     _make_changes(queue_repository, "queue")
@@ -225,7 +221,6 @@ def test_drop_refuses_queue_repository_worktree(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """dropはprivate-notesを拒否し、別リポジトリでは成功する。"""
     queue_repository = _make_repository(tmp_path, "private-notes")
     target_repository = _make_repository(tmp_path, "target")
     ref = "refs/worktree/drop-target"
@@ -368,7 +363,6 @@ def _assert_restored(worktree: pathlib.Path, source: str, marker: str) -> None:
 
 
 def test_same_label_main_and_linked_survive_gc_fetch_and_restore(tmp_path: pathlib.Path) -> None:
-    """他worktreeのGC・fetch・pull後も、同labelの双方を3状態へ復元できる。"""
     repo, first, second = _make_worktrees(tmp_path)
     remote = tmp_path / "remote.git"
     git_repository.run_git(repo, "clone", "--bare", str(repo), str(remote))

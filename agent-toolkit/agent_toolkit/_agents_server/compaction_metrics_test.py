@@ -20,7 +20,6 @@ def test_append_records_duration_once_per_item(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """開始・完了時刻を秒へ換算し、同じitemの再通知は重複記録しない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
     subject.append_compaction_record("thread-1", "item-1", 1000, 2234)
@@ -44,7 +43,6 @@ async def test_notifications_record_only_completed_compaction(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """開始と完了の両通知が有効な場合だけ記録し、片側だけの保持はturn終了で破棄する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
     async with codex.AppServerManager({session.session_id: session}) as manager:

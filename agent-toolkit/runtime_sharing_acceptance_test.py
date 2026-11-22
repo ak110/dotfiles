@@ -1,5 +1,3 @@
-"""実uvで準備した共有環境から、複数配布版の公開コマンドをオフライン起動する。"""
-
 import asyncio
 import json
 import os
@@ -17,7 +15,6 @@ ROOT = Path(__file__).resolve().parent
 
 
 async def _pyfltr_tools(root: Path, environment: dict[str, str], cwd: Path) -> None:
-    """共有環境のpyfltr MCPへ実際に接続し、初期化とツール一覧を確認する。"""
     parameters = StdioServerParameters(
         command=sys.executable,
         args=[str(root / "scripts/launch.py"), "agent_toolkit/_common/pyfltr_entry.py", "mcp"],
@@ -31,7 +28,6 @@ async def _pyfltr_tools(root: Path, environment: dict[str, str], cwd: Path) -> N
 
 
 def _copy(root: Path, label: str) -> None:
-    """依存環境を含めず、配布物のコードと資源だけを複製する。"""
 
     def ignore(_directory: str, names: list[str]) -> list[str]:
         return [name for name in names if name in {".venv", ".git", "__pycache__", "node_modules"} or name.endswith("_test.py")]
@@ -74,7 +70,6 @@ def _run(arguments: list[str] | str, environment: dict[str, str], cwd: Path, *, 
     ),
 )
 def test_real_shared_environment_offline_public_entries_and_current_code(tmp_path_factory, host_environ):
-    """同じ依存を共有し、更新版と旧版のコードをそれぞれのrootから起動する。"""
     # Windowsの共有環境のhashとDLL名を含むパスも通常のロード上限内に保つ。
     tmp_path = tmp_path_factory.mktemp("r")
     first = tmp_path / "old-plugin"
@@ -91,11 +86,11 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
     value = json.loads(manifest.read_text())
     value["version"] = "999.1.0"
     manifest.write_text(json.dumps(value))
-    # 依存の宣言を持つ起動部分の本文の違いも、共有を妨げない。
+
     launcher = second / plugin_environment.DEPENDENCY_SCRIPT
     launcher.write_text(launcher.read_text(encoding="utf-8") + "# 別の配布版\n", encoding="utf-8")
     environment = host_environ()
-    # ホストの実uvを一時HOMEからも使う。mise shimの信頼登録は隔離した状態領域へ引き継がれない。
+
     host_home = environment["USERPROFILE" if os.name == "nt" else "HOME"]
     environment["PATH"] = str(Path(host_home) / ".local/bin") + os.pathsep + environment.get("PATH", "")
     home = tmp_path / "home"
@@ -141,7 +136,6 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         tmp_path,
     )
     for root, label in ((first, "old"), (second, "new")):
-        # 品質プラグイン分離後の実導入と同じregistryを、一時HOMEへ用意する。
         registry.write_text(
             json.dumps(
                 {
@@ -163,7 +157,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         command = command.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
         shell = shutil.which("cmd" if os.name == "nt" else "sh", path=environment["PATH"])
         assert shell is not None
-        # cmdの本文はargv用のlist2cmdlineへ渡さず、登録済みの引用符をそのまま解釈させる。
+
         arguments = f'{subprocess.list2cmdline([shell])} /d /s /c "{command}"' if os.name == "nt" else [shell, "-c", command]
         _run(
             arguments,
@@ -215,7 +209,7 @@ def test_real_shared_environment_offline_public_entries_and_current_code(tmp_pat
         json.loads(_run([sys.executable, str(first / "scripts/launch.py"), "probe.py"], environment, tmp_path).stdout)["label"]
         == "old"
     )
-    # 実launcherを置換した子の寿命を保護し、終了後だけ旧依存を回収する。
+
     (first / "live_probe.py").write_text("import sys\nprint('ready', flush=True)\nsys.stdin.readline()\n", encoding="utf-8")
     current = plugin_environment.project_environment(second, environment)
     with plugin_environment.prepare_lock(selected):

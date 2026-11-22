@@ -17,7 +17,6 @@ __all__ = ["_engine_env", "_skill_invocation"]
 
 @pytest.mark.parametrize("mode", [None, "batch"])
 def test_goal_separates_child_completion_from_launcher_verification(mode, skill_invocation, monkeypatch, capsys):
-    """短い最終目的と起動入力から、親子の終了責務を所有する文書へ到達する。"""
     scope = "agent-toolkit:review-session" + (" batch" if mode else "")
     data = skill_invocation("agent-toolkit:review-session", mode, scope)
     assert data["mode"] == mode

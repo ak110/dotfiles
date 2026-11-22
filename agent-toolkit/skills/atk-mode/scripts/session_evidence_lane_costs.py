@@ -186,7 +186,6 @@ class _LaneCalls:
 
 
 def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[str, Any]:
-    """指定した担当記録の実数と、その記録に明示された担当WIあたりの値を返す。"""
     plans, missing_plans = _files(plan_patterns)
     rollouts, missing_rollouts = _files(rollout_patterns)
     work, saved_plans = plan_costs(plans)
@@ -229,7 +228,6 @@ def lane_costs(plan_patterns: list[str], rollout_patterns: list[str]) -> dict[st
         "read_outputs": calls.read_outputs,
         "read_output_chars": calls.read_chars if complete_output else None,
         "read_output_utf8_bytes": calls.read_bytes if complete_output else None,
-        # 担当WIが全件現れても、保存されなかった担当記録の有無はこの入力から分からない。
         "plan_wide_rates": None,
         "assigned_record_rates": {
             "wi_count": denominator,

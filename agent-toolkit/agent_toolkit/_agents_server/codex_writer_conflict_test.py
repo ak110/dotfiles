@@ -177,7 +177,7 @@ async def test_send_message_preserves_incompatible_resume_guidance(
         backend = manager._backend("codex")
         client = FakeCodexClient()
         record = tmp_path / "opaque.jsonl"
-        # 生成先の検証が読む既存のrollout形式。暗号化値自体は架空の入力である。
+
         record.write_text(
             json.dumps({"type": "session_meta", "payload": {"id": "opaque-thread", "model_provider": "other"}})
             + "\n"

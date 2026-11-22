@@ -19,7 +19,6 @@ RETRY_DELAY = "sleep 2"
 
 
 def _action_script() -> str:
-    """CIが使うcomposite actionの導入スクリプトを返す。"""
     action = yaml.safe_load(INSTALL_ACTION.read_text(encoding="utf-8"))
     (step,) = action["runs"]["steps"]
     return step["run"]
@@ -96,7 +95,6 @@ fi
 
 
 def _single_install_function(content: str) -> str:
-    """導入関数がちょうど1つあることを確かめて返す。"""
     functions = _extract_install_functions(content)
     assert len(functions) == 1
     return functions[0]

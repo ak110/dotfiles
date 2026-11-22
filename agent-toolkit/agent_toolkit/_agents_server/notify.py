@@ -25,7 +25,6 @@ def send_notification(
     environment: Mapping[str, str] | None = None,
     state_root: pathlib.Path | None = None,
 ) -> int:
-    """共有状態ディレクトリへ通知を1件保存する。"""
     if not body.strip():
         report(
             "通知本文は空文字列または空白だけにできません",
@@ -56,10 +55,9 @@ def save_notification(
     state_root: pathlib.Path | None = None,
     actor: Literal["delegate", "server"] = "delegate",
 ) -> None:
-    """CLIと自動復旧が作成した通知を、作成主体を区別して同じ受信形式へ保存する。"""
     directory = shared_layout.notices_directory(identity.root_session_id, state_root)
     directory.mkdir(parents=True, exist_ok=True)
-    # 本文は委譲元の会話文脈へ入るため、配送元と作成主体を示す境界で囲む。
+
     delivery_body = auto_message(
         body,
         source="agents-notify",

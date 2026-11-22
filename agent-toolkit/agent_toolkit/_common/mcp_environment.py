@@ -43,7 +43,6 @@ NAMESPACE_ENVIRONMENT_VARIABLES = (
 )
 
 
-# 静的な配布設定は生成ホストによらない具体名だけを持つ。
 _PUBLIC_ENVIRONMENT_VARIABLES = (
     "AGY_CLI_DISABLE_AUTO_UPDATE",
     "ALL_PROXY",
@@ -673,7 +672,7 @@ _PUBLIC_ENVIRONMENT_VARIABLES = (
     "no_proxy",
 )
 
-# 会話・プロセス・端末のcontextは各起動が生成する。
+
 _NON_INHERITABLE_NAMES = frozenset(
     name.casefold()
     for name in (
@@ -759,7 +758,6 @@ def runtime_environment_variable_names(parent_environment: Mapping[str, str]) ->
 
 
 def strip_conversation_context(environment: MutableMapping[str, str]) -> None:
-    """新しい会話の継承元から、起動元の会話・プロセス・端末contextを取り除く。"""
     for name in tuple(environment):
         if name.casefold() in _NON_INHERITABLE_NAMES:
             del environment[name]

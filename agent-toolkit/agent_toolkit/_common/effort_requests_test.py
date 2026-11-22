@@ -57,7 +57,6 @@ def test_pending_preserves_request_identity_during_transfer(tmp_path, monkeypatc
 
 @pytest.mark.parametrize("withdrawn", [False, True])
 def test_response_remains_only_while_request_is_held(tmp_path, monkeypatch, withdrawn):
-    """要求が残る間は応答を渡し、書込と重なって要求側が要求と応答を消した後には応答を残さない。"""
     directory = session_registry.registry_directory(tmp_path)
     directory.mkdir(parents=True, exist_ok=True)
     request = directory / "token.effort-request"

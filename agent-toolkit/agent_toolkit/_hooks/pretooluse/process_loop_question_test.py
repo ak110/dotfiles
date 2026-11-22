@@ -36,7 +36,6 @@ def _payload(session_id: str, **extra: str) -> dict[str, object]:
 def test_question_is_not_denied_because_of_process_loop(
     session_id: str, extra: dict[str, str], environment: dict[str, str]
 ) -> None:
-    """統括・入れ子・サブエージェント・委譲先・対話の質問を、process-loopという起動環境だけで拒否しない。"""
     result = _run(
         _payload(session_id, **extra),
         {"AGENT_TOOLKIT_OWNER_SESSION": "", "AGENT_TOOLKIT_DELEGATED_SESSION": "0", **environment},

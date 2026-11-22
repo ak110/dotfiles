@@ -41,7 +41,6 @@ def test_invalid_path_preserves_input_and_explains_accepted_value(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """誤入力による中断前に元ファイルを保持し、有効な入力を案内する。"""
     monkeypatch.chdir(tmp_path)
     existing = tmp_path / "existing"
     existing.write_bytes(b"keep")
@@ -59,7 +58,6 @@ def test_markdown_browser_failure_keeps_html_for_manual_open(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """ブラウザ故障後にも生成済みHTMLを手動で開ける。"""
     source = tmp_path / "source.md"
     source.write_text("# recoverable", encoding="utf-8")
     monkeypatch.setattr(markdown_cli.tempfile, "gettempdir", lambda: str(tmp_path))
@@ -87,7 +85,6 @@ def test_image_failure_reports_actual_removal_and_safe_retry(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """読込故障時の原本の処置と次回の保持オプションをCLIから観測する。"""
     source = tmp_path / "image.png"
     source.write_bytes(b"input")
 
@@ -160,7 +157,6 @@ def test_media_windows_only_rejection_does_not_create_token(
 def test_rename_empty_rules_rejects_without_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """空の設定は改名前に拒否し、受理するTAB書式を返す。"""
     rules = tmp_path / "rules"
     rules.write_text("# empty\n", encoding="utf-8")
     target = tmp_path / "original"
@@ -203,7 +199,6 @@ def test_media_doctor_explains_missing_process_even_when_listener_exists(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """別listenerが起動勧告を削除してもprocess欄に復旧操作が残る。"""
     monkeypatch.setattr(media_cli.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     pid = media_cli.default_pid_path()
@@ -229,7 +224,6 @@ def test_media_doctor_explains_missing_process_even_when_listener_exists(
 def test_date_relocator_skips_invalid_target_and_continues(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """誤入力の後の有効ディレクトリを処理し、誤入力だけの再指定へ案内する。"""
     source = tmp_path / "directory"
     source.mkdir()
     (source / "item").write_bytes(b"keep")
@@ -245,7 +239,6 @@ def test_date_relocator_skips_invalid_target_and_continues(
 def test_homonym_collision_keeps_both_files_and_explains_comparison(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """サイズ不一致のハッシュ名は両方保持し、手動比較を案内する。"""
     files = [tmp_path / name / ("a" * 32 + ".bin") for name in ("first", "second")]
     for index, file in enumerate(files):
         file.parent.mkdir()
@@ -261,7 +254,6 @@ def test_homonym_collision_keeps_both_files_and_explains_comparison(
 def test_ecoutilities_writes_editable_sample_before_retry(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """未作成の設定は生成後に編集対象と同じ起動コマンドを表示する。"""
     config = tmp_path / "sites.xml"
     monkeypatch.setattr(sys, "argv", ["EcoUtilities", "DownloadCustom", str(config)])
     with pytest.raises(SystemExit) as exit_info:

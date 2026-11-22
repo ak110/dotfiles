@@ -1,5 +1,3 @@
-"""公開コマンド`atk run-script wi-quote-check`で、逐語引用の一致判定と引用位置の出力を検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -15,7 +13,6 @@ _POSITION = re.compile(r"^逐語引用 text\[(\d+)\] 文字(\d+)-(\d+): (.+)$")
 
 
 def _body(*fences: str) -> str:
-    """逐語引用の節に`text`フェンスを並べたAWI本文を返す。"""
     blocks = "\n\n".join(f"```text\n{fence}\n```" for fence in fences)
     return (
         "---\ntype: awi\nsource: agent\n---\n\n# 題\n\n## 完成条件\n\n- 条件\n\n"
@@ -24,7 +21,6 @@ def _body(*fences: str) -> str:
 
 
 def _user_events(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *texts: str) -> pathlib.Path:
-    """生成側`session-review-evidence --user-events`を実行して、発話ごとの行を持つ出力を保存する。"""
     transcript = tmp_path / "transcript.jsonl"
     transcript.write_text(
         "".join(
@@ -70,7 +66,6 @@ def _spec(tmp_path: pathlib.Path, *selections: dict[str, object]) -> pathlib.Pat
 def test_normal_success_reports_locations_without_reprinting_quote(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """正常時は原文を重ねず、詳細表示と不一致検出への到達を保つ。"""
     quote = "同じ逐語引用を毎回再出力する工程を整理して。"
     source = tmp_path / "source.txt"
     source.write_text(quote, encoding="utf-8")
@@ -91,7 +86,6 @@ def test_normal_success_reports_locations_without_reprinting_quote(
 
 
 def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """生成側が保存した出所を`--import-spec`で取り込み、原稿の更新、一致判定と単位の位置を同じ実行で得る。"""
     events = _user_events(tmp_path, capsys, _UTTERANCE)
     event = json.loads(events.read_text(encoding="utf-8").splitlines()[0])
     body = tmp_path / "body.md"
@@ -118,7 +112,6 @@ def test_public_import_uses_saved_source_and_checks_result(tmp_path: pathlib.Pat
 def test_duplicate_quote_reports_all_sources_but_import_uses_selected_event(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """引用と一致する全位置を示し、選択importは同じ引用でもフェンスごとの元イベントを保つ。"""
     events = tmp_path / "events.jsonl"
     values = [
         {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
@@ -138,7 +131,6 @@ def test_duplicate_quote_reports_all_sources_but_import_uses_selected_event(
 
 
 def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """複数出所・同位置の選択を配列順で取り込み、確認の文脈とユーザー値を保つ。"""
     events = _user_events(tmp_path, capsys, "前置き。指定部分。後置き。", "全体を残して。\n```text\n## 内側の見出し\n```")
     user = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines() if line.strip()]
     extra = tmp_path / "answers.jsonl"
@@ -191,7 +183,6 @@ def test_import_preserves_source_modes_and_answer_context(tmp_path: pathlib.Path
 def test_two_imported_fences_keep_selected_locations_and_source_lists_candidates(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], same_line: bool
 ) -> None:
-    """2引用の選択位置を保ち、保存後の比較ではフェンスごとに一致する全候補を示す。"""
     events = tmp_path / "events.jsonl"
     values: list[dict[str, object]] = [
         {"kind": "user", "text": text, "record": "claude:example", "line": line, "sequence": sequence}
@@ -228,7 +219,6 @@ def test_two_imported_fences_keep_selected_locations_and_source_lists_candidates
 
 @pytest.mark.parametrize("failure", ["missing", "ambiguous", "range", "invalid-json", "invalid-answer", "invalid-sequence"])
 def test_import_failure_keeps_draft_unchanged(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], failure: str) -> None:
-    """後続の選択が不成立でも先行分を書かず、非0と入力の修正案内を返す。"""
     events = tmp_path / "events.jsonl"
     event = {"kind": "user", "text": "残す原文。", "record": "claude:example", "line": 9, "sequence": 1}
     records = [event, {**event, "sequence": 2}]
@@ -263,7 +253,7 @@ def test_import_preserves_verbatim_line_endings_and_draft_bytes(
 ) -> None:
     """CRLFの原稿の節外をバイト列で保ち、原文の改行を原稿への取り込みと原文の比較で維持する。"""
     content = "一行目を残して。\r\n二行目も残して。\n"
-    # 保存済みJSONLを入力にする。抽出前のtranscriptでは抽出側が末尾改行を除くため、末尾の保全を検証できない。
+
     event = {"kind": "user", "text": content, "record": "claude:example", "line": 9}
     events = tmp_path / "events.jsonl"
     events.write_text(json.dumps(event, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -289,10 +279,6 @@ def _positions(output: str) -> list[tuple[int, int, int, str]]:
 
 
 def test_matching_quote_reports_record_and_unit_positions(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """原文と一致する本文は終了コード0で、一致した`record`・`line`と、各単位の本文を指す位置を出力する。
-
-    位置がずれると、起草者が要求単位と反映先の対応へ写した範囲が別の文を指し、読み手が原文の該当箇所を誤る。
-    """
     events = _user_events(tmp_path, capsys, "前置きの発話", _UTTERANCE)
     body = tmp_path / "body.md"
     body.write_text(_body(_UTTERANCE), encoding="utf-8")
@@ -316,7 +302,6 @@ def test_matching_quote_reports_record_and_unit_positions(tmp_path: pathlib.Path
 def test_stale_reference_after_adding_option_reports_line_and_new_positions(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """位置を写してから確認回答へ選択肢を追加すると、古い位置を拒否して同じ実行で修正値を示す。"""
     source = tmp_path / "source.txt"
     source.write_text(_UTTERANCE, encoding="utf-8")
     before = "質問: 対象は？\n回答: " + _UTTERANCE
@@ -351,7 +336,6 @@ def test_stale_reference_after_adding_option_reports_line_and_new_positions(
 def test_invalid_reference_is_rejected(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], fences: tuple[str, ...], reference: str
 ) -> None:
-    """フェンスの番号と要求単位の境界のずれを、引用節の後ろにある参照でも検出する。"""
     source = tmp_path / "source.txt"
     source.write_text("\n".join(fences), encoding="utf-8")
     body = tmp_path / "body.md"
@@ -366,7 +350,6 @@ def test_invalid_reference_is_rejected(
 
 
 def test_valid_references_preserve_output(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """単位どおりと連続単位の参照は、語間の空白にかかわらず参照が無い本文と同じ出力を返す。"""
     source = tmp_path / "source.txt"
     source.write_text(_UTTERANCE, encoding="utf-8")
     body = tmp_path / "body.md"
@@ -381,7 +364,6 @@ def test_valid_references_preserve_output(tmp_path: pathlib.Path, capsys: pytest
 
 
 def test_reference_scan_excludes_only_quote_text_fences(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引用中の参照文字列はユーザーの原文として保ち、引用節の地の文と別節のフェンスは検査する。"""
     content = "逐語引用 text[99] 文字1-2を使って。"
     source = tmp_path / "source.txt"
     source.write_text(content, encoding="utf-8")
@@ -403,7 +385,6 @@ def test_reference_scan_excludes_only_quote_text_fences(tmp_path: pathlib.Path, 
 def test_one_character_difference_is_reported_with_fence_number(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """1文字でも原文と異なるフェンスは終了コード1とし、そのフェンスの番号と直し方を標準エラーへ示す。"""
     events = _user_events(tmp_path, capsys, _UTTERANCE, "二つ目の発話です。")
     body = tmp_path / "body.md"
     body.write_text(_body("二つ目の発話です。", _UTTERANCE.replace("最近の", "最新の")), encoding="utf-8")
@@ -415,8 +396,6 @@ def test_one_character_difference_is_reported_with_fence_number(
     assert "逐語引用 text[" not in captured.out
 
 
-# 確認回答の行は、2026年10月6日の`session-review-evidence --user-events`の実際の出力（`kind`、`text`、
-# `assistant_context`、`user_response`を持つ行）から形を写した。`text`は回答と自由記述を改行で連結した値である。
 _ANSWER_EVENT = {
     "kind": "user",
     "text": "失敗扱い\n確認を省く\n夜間だけ止めて。",
@@ -445,10 +424,6 @@ _ANSWER_RECORD = (
 def test_answer_record_compares_only_answers_and_free_text(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], record: str, expected: int
 ) -> None:
-    """確認回答の記録は、質問と選択肢が原文に無くても回答と自由記述の値が一致すれば一致とし、回答が異なれば不一致とする。
-
-    質問と選択肢まで原文と比べると、エージェントの文を持たない現行の出力に対して正しい引用が常に不一致になる。
-    """
     events = tmp_path / "user-events.txt"
     events.write_text(json.dumps(_ANSWER_EVENT, ensure_ascii=False) + "\n", encoding="utf-8")
     body = tmp_path / "body.md"
@@ -469,9 +444,8 @@ def test_answer_record_compares_only_answers_and_free_text(
 def test_slash_command_arguments_match_text_with_command_elements(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """スラッシュコマンドの引数だけを引用したフェンスは、`text`が`<command-message>`などの要素を含んでいても一致とする。"""
     arguments = "AWIの逐語引用の確認をスクリプトにまとめて。"
-    # 2026年10月6日の`--user-events`の出力の7行目が持つ、スラッシュコマンドの要素付きの`text`の形を写した。
+
     text = (
         "<command-message>agent-toolkit:add-awi-by-user</command-message>\n"
         "<command-name>/agent-toolkit:add-awi-by-user</command-name>\n"
@@ -490,11 +464,6 @@ def test_slash_command_arguments_match_text_with_command_elements(
 def test_multiline_unit_position_covers_first_to_last_character(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """複数行にまたがる要求単位の位置も、その単位の最初の文字から最後の文字までを含む。
-
-    要求単位は行を空白で連結してから文に分けるため、単位の本文はフェンスの連続した部分文字列にならない。
-    改行を数えずに位置を求めると、範囲が単位の末尾を欠くか次の文へ広がる。
-    """
     content = "設定画面の保存を\n直して。一覧から\n開けるようにして。\n\n- 再読込後も維持して。"
     source = tmp_path / "conversation.md"
     source.write_text(f"会話の記録\n{content}\n以上\n", encoding="utf-8")
@@ -533,7 +502,6 @@ def test_unusable_input_exits_with_two(
     relative: bool,
     missing_source: bool,
 ) -> None:
-    """逐語引用の節が無い本文、相対パス、読めない出所は原文との比較を始めず終了コード2とする。"""
     body = tmp_path / "body.md"
     body.write_text(body_text, encoding="utf-8")
     source = tmp_path / ("absent.txt" if missing_source else "source.txt")

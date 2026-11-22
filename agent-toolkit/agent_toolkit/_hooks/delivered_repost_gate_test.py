@@ -19,7 +19,7 @@ _SEND_NOTICE = {
     },
 }
 _TASK_NOTIFICATION = {"type": "user", "isMeta": True, "message": {"content": "<task-notification>完了</task-notification>"}}
-# 標準の圧縮が同じ記録へ追記する境界と要約。
+
 _COMPACT = [
     {"type": "system", "subtype": "compact_boundary", "content": "Conversation compacted"},
     {
@@ -128,7 +128,6 @@ def test_subagent_is_not_required_to_send_to_user(tmp_path: pathlib.Path) -> Non
     ],
 )
 def test_literal_repost_after_delivery_is_blocked(body: str, tmp_path: pathlib.Path) -> None:
-    """引用や文末記号の違いがあっても、送達済みの同じ文は差し戻す。"""
     result = _stop([_HUMAN, _SEND, _result(), _text(body)], tmp_path)
     assert result["decision"] == "block"
     assert "再掲した文を除き" in str(result["reason"])
@@ -219,7 +218,6 @@ def test_question_does_not_cover_unanswered_prompt(after_question: list[dict], t
     "body", ["", "送信しました。", "受付番号S-38", "予算優先で進めます。", "担当の工程は完了しました。次に検証します。"]
 )
 def test_non_repost_is_not_blocked_after_delivery(body: str, tmp_path: pathlib.Path) -> None:
-    """送達確認や質問に対する新しい文を再掲と取り違えない。"""
     entries = [_HUMAN, _SEND, _result(), _QUESTION, _ANSWER, _text(body)]
     assert _stop(entries, tmp_path, last_assistant_message=body).get("decision") != "block"
 
@@ -233,7 +231,6 @@ def test_without_successful_delivery_the_body_is_not_judged(tmp_path: pathlib.Pa
 
 
 def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pathlib.Path) -> None:
-    """進捗は表示できても完了報告を表示できなければ、その本文を再掲扱いしない。"""
     report = "検証が終わりました。失敗はありません。"
     send = _call(_SEND_TO_USER, "s2", {"message": report})
     failed = [_HUMAN, _SEND, _result(), send, _result("s2", error=True)]
@@ -315,11 +312,8 @@ def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: p
 @pytest.mark.parametrize(
     ("entries", "blocked"),
     [
-        # 前のターンで送達の指定を受け取り、完了通知で始まるターンを本文で終える。
         ([_HUMAN, _SEND_NOTICE, _text("…"), _TASK_NOTIFICATION], True),
-        # 圧縮の境界の後でも記録全体の判定は続く。
         ([_HUMAN, _SEND_NOTICE, _SEND, _result(), _text("…"), *_COMPACT], True),
-        # 指定の添付が一度も無い会話（端末modの無い会話）は本文で終えてよい。
         ([_HUMAN, _text("回答です。"), *_COMPACT, _TASK_NOTIFICATION], False),
         # 前のターンの送達の成功・失敗は、完了通知で始まる現ターンの送達に数えない。
         ([_HUMAN, _SEND_NOTICE, _SEND, _result(), _text("…"), _TASK_NOTIFICATION], True),
@@ -328,7 +322,6 @@ def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: p
     ids=["task-notification", "after-compaction", "no-notice", "earlier-turn-delivered", "earlier-turn-failed"],
 )
 def test_send_route_spans_turns_and_compaction(entries: list[dict], blocked: bool, tmp_path: pathlib.Path) -> None:
-    """`send_to_user`を使える会話では、指定を添えない入力で始まるターンでも本文での終了を止める。"""
     body = "完了した処理を報告する。"
     result = _stop([*entries, _text(body)], tmp_path, last_assistant_message=body)
     assert (result.get("decision") == "block") is blocked
@@ -337,7 +330,6 @@ def test_send_route_spans_turns_and_compaction(entries: list[dict], blocked: boo
 
 
 def test_repost_after_delivery_in_a_later_turn_is_blocked(tmp_path: pathlib.Path) -> None:
-    """完了通知のターンで送達に成功した後の再掲は、従来どおり止める。"""
     body = "進捗は順調です。"
     entries = [_HUMAN, _SEND_NOTICE, _text("…"), _TASK_NOTIFICATION, _SEND, _result(), _text(body)]
     result = _stop(entries, tmp_path, last_assistant_message=body)

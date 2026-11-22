@@ -32,7 +32,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_kill_timeout_zero_returns_request_state(tmp_path: pathlib.Path) -> None:
-    """killのtimeout=0は中断要求の受理後に現在状態を返す。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -52,7 +51,6 @@ async def test_kill_includes_notices_only_when_available(
     with_notice: bool,
     tmp_path: pathlib.Path,
 ) -> None:
-    """killは回収した通知がある場合だけnoticesを返す。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -79,7 +77,6 @@ async def test_kill_includes_notices_only_when_available(
 
 @pytest.mark.asyncio
 async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_path: pathlib.Path) -> None:
-    """正のtimeoutを指定したkillは終了時の結果と要求済み状態を返す。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -100,7 +97,6 @@ async def test_kill_waits_for_terminal_result_and_preserves_request_marker(tmp_p
 
 @pytest.mark.asyncio
 async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_path: pathlib.Path) -> None:
-    """終了済みsessionへのkillは要求を送らず結果を返す。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex")
         _complete(session, message="既存結果")
@@ -119,7 +115,6 @@ async def test_kill_terminal_session_is_idempotent_without_backend_request(tmp_p
 
 @pytest.mark.asyncio
 async def test_concurrent_kill_requests_share_one_backend_request(tmp_path: pathlib.Path) -> None:
-    """同一turnへの並行killは中断要求を1回だけ送る。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -154,7 +149,6 @@ async def test_kill_lock_wait_respects_positive_timeout(tmp_path: pathlib.Path) 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("timeout", [0, -0.1])
 async def test_send_message_rejects_non_positive_timeout(timeout: float, tmp_path: pathlib.Path) -> None:
-    """継続要求のtimeoutは正の値だけを受理し、backendへ配送しない。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -200,7 +194,6 @@ async def test_kill_timeout_zero_bounds_turn_control_lock_wait(
 
 @pytest.fixture(name="kill_deadline_clock")
 def _kill_deadline_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
-    """managerの残量計算だけを固定し、実際のwait_forタイマーは維持する。"""
     clock = SimpleNamespace(value=0.0)
     loop = SimpleNamespace(time=lambda: clock.value)
     proxy = SimpleNamespace(**{**vars(asyncio), "get_running_loop": lambda: loop})
@@ -214,7 +207,6 @@ async def test_kill_timeout_zero_bounds_interrupt_delivery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """killのtimeout=0でも中断要求の配送待ちを有限時間で打ち切る。"""
     monkeypatch.setattr(server_manager, "DEFAULT_SEND_MESSAGE_TIMEOUT", 0.01, raising=False)
     async with server_manager.AgentsServerManager() as manager:
         backend = BlockingInterruptBackend(manager.sessions, "codex")
@@ -258,7 +250,6 @@ async def test_send_message_timeout_covers_turn_control_lock(tmp_path: pathlib.P
 async def test_kill_timeout_after_delivery_distinguishes_terminal_wait(
     tmp_path: pathlib.Path,
 ) -> None:
-    """中断要求の配送後に終了待ちが上限を超えた場合を、未配送と区別する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
         manager.sessions[session.session_id] = session
@@ -317,7 +308,6 @@ async def test_kill_timeout_before_codex_turn_id_reports_not_delivered(tmp_path:
 
 @pytest.mark.asyncio
 async def test_kill_stop_discards_only_after_terminal_result(tmp_path: pathlib.Path) -> None:
-    """stop=trueのkillがrunningを返す間はsessionを保持し、終了済みの応答を返した後だけ破棄する。"""
     async with _manager_with_fake("codex") as (manager, backend):
         session = state.SessionState("kill-stop", str(tmp_path), engine="codex")
         session.turn_id = "turn"
@@ -345,7 +335,6 @@ async def test_kill_stop_retains_result_for_agents_wait(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """stop=trueの終了応答には本文を含めず、atk agents waitだけが未受領の結果を返す。"""
     writer = status_file.StatusFileWriter(
         {},
         shared_roots.StatusFileIdentity("root-session", "root.json", None),
@@ -402,7 +391,6 @@ async def test_expired_session_kill_returns_success_response(
 
 @pytest.mark.asyncio
 async def test_rejected_kill_keeps_session_in_owner_loss_recovery() -> None:
-    """入力を拒否したkillは、所有者の喪失から復旧する対象を取り消さない。"""
     async with _manager_with_fake("codex") as (manager, _backend):
         manager._recovery_targets.add("thread-1")  # pylint: disable=protected-access
 
@@ -414,10 +402,6 @@ async def test_rejected_kill_keeps_session_in_owner_loss_recovery() -> None:
 
 @pytest.mark.asyncio
 async def test_kill_during_recovery_interrupts_resumed_turn(tmp_path: pathlib.Path) -> None:
-    """自動復旧の途中に届いたkillは、復旧したturnの開始を待ってから中断を届ける。
-
-    2026-11-17、復旧の途中のkillが記録無しの`unknown session`を返した。
-    """
     async with _manager_with_fake("codex") as (manager, backend):
 
         async def recover() -> state.SessionState:

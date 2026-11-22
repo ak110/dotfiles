@@ -20,10 +20,7 @@ from agent_toolkit.atk_test import _setup_notes, _write_awi_file  # noqa: E402  
 
 
 class _TtyInput(io.StringIO):
-    """対話端末として応答するテスト用標準入力。"""
-
     def isatty(self) -> bool:
-        """対話端末であることを返す。"""
         return True
 
 
@@ -38,7 +35,6 @@ def _write_entry(
     source: str | None = None,
     legacy_layout: bool = False,
 ) -> pathlib.Path:
-    """指定状態へテスト用エントリを書き込む。"""
     path = _test_entry_path(notes, filename, state=state, legacy_layout=legacy_layout)
     source_line = f"source: {source}\n" if source is not None else ""
     state_line = "" if legacy_layout else f"state: {state}\n"
@@ -50,22 +46,18 @@ def _write_entry(
 
 
 class _PullTracker:
-    """`pull`の呼び出し回数を数え、指定回目の呼び出しで並行変更を起こす。"""
-
     def __init__(self, action: Callable[[], None] | None = None, *, at_call: int = 1) -> None:
         self.count = 0
         self._action = action
         self._at_call = at_call
 
     def __call__(self) -> None:
-        """呼び出し回数を進め、指定回目でだけ変更操作を実行する。"""
         self.count += 1
         if self._action is not None and self.count == self._at_call:
             self._action()
 
 
 def _change_action(change: str, path: pathlib.Path) -> Callable[[], None]:
-    """並行変更の種別（状態移動・本文変更・消失）に対応する変更操作を返す。"""
 
     def move() -> None:
         path.write_text(path.read_text(encoding="utf-8").replace("state: inbox", "state: processing"), encoding="utf-8")
@@ -82,7 +74,6 @@ def _patch_storage(
     *,
     on_pull: Callable[[], None] | None = None,
 ) -> None:
-    """外部git操作を抑止し、commit要求を記録する。"""
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
 
     def fake_pull(_private_notes: pathlib.Path) -> None:
@@ -98,7 +89,6 @@ def _patch_storage(
 
 
 def _run_main(argv: list[str], home: pathlib.Path) -> int:
-    """`atk.main`の終了コードを返す。"""
     with pytest.raises(SystemExit) as exc_info:
         atk.main(argv, home=home)
     assert isinstance(exc_info.value.code, int)
@@ -109,7 +99,6 @@ def test_remove_all_accepts_multiple_target_repositories(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """複数リポジトリの候補を単一の確認記録とcommitで削除する。"""
     notes = _setup_notes(tmp_path)
     _write_entry(notes, "inbox", "foo.md", target_repo="github.com/example/foo")
     _write_entry(notes, "hold", "bar.md", target_repo="github.com/example/bar")
@@ -168,7 +157,6 @@ class TestRemoveAllArguments:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """カレントディレクトリから対象リポジトリを確定できない場合は一括削除を拒否する。"""
         monkeypatch.setattr(subprocess, "run", _make_outside_worktree_fake())
 
         assert _run_main(["wi", "rm", "--all"], tmp_path) == 2
@@ -176,15 +164,12 @@ class TestRemoveAllArguments:
 
 
 class TestRemoveAllConfirmation:
-    """一覧表示と1回確認の挙動を検証する。"""
-
     def test_confirms_once_and_removes_awi_and_uwi(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """AWIとUWIを一覧表示し、1回の承認で単一commitへまとめる。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "awi.md")
         _write_entry(notes, "inbox", "question.md", entry_type="uwi", body="## 質問\n\n確認事項\n\n## 回答\n")
@@ -213,7 +198,6 @@ class TestRemoveAllConfirmation:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """ユーザー環境ではactiveに含まれるholdを削除する。"""
         notes = _setup_notes(tmp_path)
         held = _write_entry(notes, "hold", "held.md")
         commits: list[tuple[str, list[str]]] = []
@@ -238,7 +222,6 @@ class TestRemoveAllConfirmation:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """一括削除は削除済みの固定パスだけをcommit対象にする。"""
         notes = _setup_notes(tmp_path)
         _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
@@ -259,7 +242,6 @@ class TestRemoveAllConfirmation:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """空入力は表示どおり承認とみなして候補を削除する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
@@ -279,7 +261,6 @@ class TestRemoveAllConfirmation:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """承認以外の入力では候補を保持し、commitしない。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
@@ -298,7 +279,6 @@ class TestRemoveAllConfirmation:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """非対話入力では`--yes`を案内して削除を拒否する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
@@ -319,7 +299,6 @@ class TestRemoveAllConfirmation:
         capsys: pytest.CaptureFixture[str],
         agent_environment: bool,
     ) -> None:
-        """`--yes`は両環境で候補一覧と標準入力を省き、適用結果を先に表示する。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []
@@ -350,14 +329,11 @@ class TestRemoveAllConfirmation:
 
 
 class TestRemoveAllScope:
-    """状態・リポジトリ・種別による削除範囲を検証する。"""
-
     def test_removes_only_matching_active_entries(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """一致するinbox・processingだけを種別横断で削除し、履歴と他リポジトリを保持する。"""
         notes = _setup_notes(tmp_path)
         matching_inbox = _write_entry(notes, "inbox", "awi.md")
         matching_processing = _write_entry(notes, "processing", "question.md", entry_type="uwi")
@@ -386,7 +362,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """ユーザー環境ではstatus=allで終了状態も削除する。"""
         notes = _setup_notes(tmp_path)
         adopted = _write_entry(notes, "adopted", "adopted.md")
         rejected = _write_entry(notes, "rejected", "rejected.md")
@@ -409,7 +384,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """状態・種別・回答・由来の全条件に一致する項目だけを削除する。"""
         notes = _setup_notes(tmp_path)
         matching = _write_entry(
             notes,
@@ -468,7 +442,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """エージェント環境ではstatus=allでもinboxとholdだけを削除する。"""
         notes = _setup_notes(tmp_path)
         paths = {
             state: _write_entry(notes, state, f"{state}.md") for state in ("inbox", "processing", "hold", "adopted", "rejected")
@@ -494,7 +467,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """一括削除は旧パス形とURL形のactive項目を同じ対象として削除する。"""
         notes = _setup_notes(tmp_path)
         local_repo = tmp_path / "myrepo"
         git_repository.init_repository(local_repo, origin="git@github.com:example/myrepo.git")
@@ -521,7 +493,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """frontmatter破損または対象不明の項目を候補から除外する。"""
         notes = _setup_notes(tmp_path)
         broken = _test_entry_path(notes, "broken.md")
         broken.write_text("---\ntarget_repo: github.com/example/foo\n", encoding="utf-8")
@@ -551,7 +522,6 @@ class TestRemoveAllScope:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """候補0件では確認せず正常終了する。"""
         _setup_notes(tmp_path)
         commits: list[tuple[str, list[str]]] = []
         _patch_storage(monkeypatch, commits)
@@ -560,7 +530,7 @@ class TestRemoveAllScope:
         assert _run_main(["wi", "rm", "--all", "--target-repo", "github.com/example/foo"], tmp_path) == 0
 
         assert not commits
-        # 対象0件は成功行で報告する。
+
         assert "成功: 対象0件のため削除しなかった（変更は無い）: github.com/example/foo" in capsys.readouterr().out
 
     def test_legacy_duplicate_names_stop_before_removal(
@@ -568,7 +538,6 @@ class TestRemoveAllScope:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """旧配置の同名項目が移行先へ衝突すると削除を開始せず両方を保持する。"""
         notes = _setup_notes(tmp_path)
         inbox = _write_entry(notes, "inbox", "same.md", legacy_layout=True)
         processing = _write_entry(notes, "processing", "same.md", legacy_layout=True)
@@ -589,8 +558,6 @@ class TestRemoveAllScope:
 
 
 class TestRemoveAllProcessingProtection:
-    """processing項目の明示的な保護解除を検証する。"""
-
     @pytest.mark.parametrize("assume_yes", [False, True])
     def test_force_is_required_independently_from_yes(
         self,
@@ -599,7 +566,6 @@ class TestRemoveAllProcessingProtection:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """`--yes`の有無によらずprocessing候補には`--force`を要求する。"""
         notes = _setup_notes(tmp_path)
         inbox = _write_entry(notes, "inbox", "inbox.md")
         processing = _write_entry(notes, "processing", "processing.md")
@@ -619,8 +585,6 @@ class TestRemoveAllProcessingProtection:
 
 
 class TestRemoveAllConcurrentChanges:
-    """確認後の並行変更時に、確認済みで内容が変わらない項目だけを削除する挙動を検証する。"""
-
     @pytest.mark.parametrize("change", ["move", "edit", "remove"])
     def test_keeps_changed_entries_and_reports_them(
         self,
@@ -629,7 +593,6 @@ class TestRemoveAllConcurrentChanges:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """確認後に状態移動・本文変更・消失した項目は削除せず報告し、commitしない。"""
         notes = _setup_notes(tmp_path)
         original = _write_entry(notes, "inbox", "original.md")
         commits: list[tuple[str, list[str]]] = []
@@ -650,7 +613,6 @@ class TestRemoveAllConcurrentChanges:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """確認後に追加された項目は削除対象へ加えず、確認済み項目だけを削除する。"""
         notes = _setup_notes(tmp_path)
         original = _write_entry(notes, "inbox", "original.md")
         added = _test_entry_path(notes, "added.md")
@@ -675,7 +637,6 @@ class TestRemoveAllConcurrentChanges:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """確認済み2件のうち1件だけ変化した場合、内容不変の1件だけを削除する。"""
         notes = _setup_notes(tmp_path)
         unchanged = _write_entry(notes, "inbox", "unchanged.md")
         changed = _write_entry(notes, "inbox", "changed.md")
@@ -700,7 +661,6 @@ class TestRemoveAllSkipPull:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """対話フローで`pull`が削除フェーズの1回だけになる。"""
         notes = _setup_notes(tmp_path)
         path = _write_awi_file(notes, "awi.md")
         commits: list[tuple[str, list[str]]] = []

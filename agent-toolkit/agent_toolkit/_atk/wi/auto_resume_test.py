@@ -66,7 +66,6 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """候補が1件も存在しない場合は診断を表示して非0で終了する。"""
         repository = _repository(tmp_path, "target")
         _prepare_homes(monkeypatch, tmp_path)
 
@@ -76,7 +75,7 @@ class TestSelectSession:
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
         assert f"見つからない: {repository}" in err
-        # 再開先の指定か新規起動を次の操作として続ける。
+
         next_action = err.split("\n次の操作: ", 1)[1]
         assert "`--auto-resume`を外して`--resume <session_id>`" in next_action
         assert "どちらも付けずに新規に起動する" in next_action
@@ -87,7 +86,6 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """候補情報を表示し、y応答でsession_idを確定して返す。"""
         repository = _repository(tmp_path, "target")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
         project = claude_home / "projects" / "-target"
@@ -109,7 +107,6 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """n応答でこの候補を選ばず、次に古い候補を提示する。"""
         repository = _repository(tmp_path, "target")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
         project = claude_home / "projects" / "-target"
@@ -131,7 +128,6 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """標準入力が閉じている場合は、候補IDを含む明示再開手順を示して終了する。"""
         repository = _repository(tmp_path, "target")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
         project = claude_home / "projects" / "-target"
@@ -154,7 +150,6 @@ class TestSelectSession:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """全候補を拒否した場合は診断を表示して非0で終了する。"""
         repository = _repository(tmp_path, "target")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
         project = claude_home / "projects" / "-target"
@@ -167,7 +162,7 @@ class TestSelectSession:
         assert exc_info.value.code == 1
         err = capsys.readouterr().err
         assert "すべての候補が拒否された: 1件" in err
-        # 再開先の指定か新規起動を次の操作として続ける。
+
         assert "`--auto-resume`を外して`--resume <session_id>`" in err.split("\n次の操作: ", 1)[1]
 
     def test_excludes_candidates_of_other_repository(
@@ -175,7 +170,6 @@ class TestSelectSession:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """対象と異なるリポジトリの候補は除外する。"""
         repository = _repository(tmp_path, "target")
         other_repository = _repository(tmp_path, "other")
         claude_home, _codex_home = _prepare_homes(monkeypatch, tmp_path)
@@ -191,7 +185,6 @@ class TestSelectSession:
 
 @pytest.mark.parametrize("obsolete", [["--resume", "session-a"], ["--auto-resume"]])
 def test_removed_resume_options_are_rejected(obsolete: list[str]) -> None:
-    """予約への移行後は、旧起動オプションを入力エラーにする。"""
     parser = atk._build_parser()  # pylint: disable=protected-access
     with pytest.raises(SystemExit):
         parser.parse_args(["wi", "process-loop", *obsolete])

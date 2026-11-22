@@ -28,17 +28,11 @@ from agent_toolkit._common.next_action import ActionableError
 CODEX_ENGINE = "codex"
 """Codexのengine名。モデルの一覧と`thread/read`はCodexのbackendだけが持つ。"""
 
-# backendからregistryへ逆依存させず、候補選択側へ同じ例外型を公開する。
+
 StartCandidateUnavailable = codex_backend.StartCandidateUnavailable
 
 
 class Backend(typing.Protocol):
-    """engine別のbackendが満たす操作と性質。
-
-    session一覧はmanagerと全backendが共有する。backendが検索・状態遷移の対象にできるのは
-    自身のengineのsessionだけであり、接続全体の障害処理でも他engineの状態を更新しない。
-    """
-
     START_FAILURE_EXCLUDES_CANDIDATE: typing.ClassVar[bool]
     """起動の例外をその候補の可用性の失敗として扱い、次の候補へ進むか。"""
     INTERRUPT_REQUIRES_TURN_ID: typing.ClassVar[bool]
@@ -52,9 +46,7 @@ class Backend(typing.Protocol):
         ...
 
     @staticmethod
-    def excludes_with_recorded_reason(reason: str) -> bool:
-        """記録済みの除外理由が、候補を除外する根拠になるかを返す。"""
-        ...
+    def excludes_with_recorded_reason(reason: str) -> bool: ...
 
     async def start(
         self,
@@ -91,23 +83,11 @@ class Backend(typing.Protocol):
         result_contract_recovery_consumed: bool = False,
         turn_seq: int = 0,
         fast_mode: bool | None = None,
-    ) -> SessionState:
-        """保存済みsessionへ新turnを開始し、要求の配送結果をpromptへ確定する。
+    ) -> SessionState: ...
 
-        成功した`prompt.deliver`が開始済みを保持する。backendが開始不能または開始不確定を
-        捕捉して状態を返す場合は`prompt.record_delivery`でその結果を保持する。
-        戻り値のsessionは応答前に終了へ進み得るため、配送の判定には使用しない。
-        元の起動本文と形式回復の消費履歴も、最初の結果を処理する前に状態へ復元する。
-        """
-        ...
+    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]: ...
 
-    async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        """実行中のturnへ追加の指示を配送する。"""
-        ...
-
-    async def interrupt(self, session: SessionState) -> None:
-        """実行中のturnへ中断を要求する。"""
-        ...
+    async def interrupt(self, session: SessionState) -> None: ...
 
     async def release_session(self, session: SessionState) -> None:
         """保持期限到達時とstopでmanagerが呼び、終了後に残るsession単位の全資源を解放する。
@@ -118,25 +98,19 @@ class Backend(typing.Protocol):
         """
         ...
 
-    async def close(self) -> None:
-        """backendが保持する全ての資源を解放する。"""
-        ...
+    async def close(self) -> None: ...
 
 
 class TurnHistory(typing.Protocol):
     """委譲先CLIの記録からturnの一覧を読めるbackend。`ORPHAN_TAKEOVER`が真のbackendが満たす。"""
 
-    async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]:
-        """sessionのturnの識別子と状態を古い順に返す。"""
-        ...
+    async def read_thread_turns(self, session_id: str) -> list[tuple[str, str]]: ...
 
 
 class ModelCatalog(typing.Protocol):
     """接続先が受け付けるモデルの一覧を返せるbackend。Codexのbackendが満たす。"""
 
-    async def list_models(self) -> list[dict[str, Any]]:
-        """接続先が受け付けるモデルの一覧を返す。"""
-        ...
+    async def list_models(self) -> list[dict[str, Any]]: ...
 
 
 _BACKEND_CLASSES: dict[str, type[Backend]] = {
@@ -151,7 +125,6 @@ SUPPORTED_ENGINES = frozenset(_BACKEND_CLASSES)
 
 
 def backend_class(engine: str) -> type[Backend] | None:
-    """engine名に対応するbackendのクラスを返す。対応するbackendが無いengine名は`None`を返す。"""
     return _BACKEND_CLASSES.get(engine)
 
 
@@ -208,7 +181,6 @@ def create_backend(
 
 
 def excludes_with_recorded_reason(engine: str, reason: str) -> bool:
-    """記録済みの除外理由が、engineの候補を除外する根拠になるかを返す。backendを持たないengineは常に除外する。"""
     backend_type = backend_class(engine)
     return backend_type is None or backend_type.excludes_with_recorded_reason(reason)
 
@@ -239,7 +211,6 @@ def start_dependency_failure(engine: str, error: ImportError) -> str | None:
 
 
 def interrupt_requires_turn_id(engine: str) -> bool:
-    """engineへの中断の要求にturnの識別子を要するかを返す。"""
     backend_type = backend_class(engine)
     return backend_type is not None and backend_type.INTERRUPT_REQUIRES_TURN_ID
 

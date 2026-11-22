@@ -9,7 +9,6 @@ from agent_toolkit._agents_server import resume_waits, state, turn_state
 
 @pytest.mark.parametrize("finished", [False, True])
 def test_finalize_normal_body_keeps_unobserved_child_at_idle_or_eof(finished: bool) -> None:
-    """直接確定でも通常本文を保ち、終了通知の順序によらず子の識別子を返す。"""
     parent = state.SessionState("parent-1", "/fixture")
     children = parent.terminal_child_session_ids if finished else parent.live_child_session_ids
     children.add("child-1")
@@ -74,7 +73,6 @@ def test_finalize_pending_result_records_remaining_wait_targets_and_keeps_error(
 @pytest.mark.parametrize("clear_overload", [True, False])
 @pytest.mark.parametrize("hold_kind", ["overload", "usage_limit", "background"])
 def test_clearing_wait_only_removes_the_matching_reason(clear_overload: bool, hold_kind: str) -> None:
-    """一方の解除処理が別理由の保留結果を失わせず、対応する履歴だけを初期化する。"""
     result = {"status": "failed", "agent_message": "待機", "error": None}
     holds: dict[str, turn_state.ResultHold] = {
         "overload": turn_state.OverloadWait(result, 10.0),

@@ -1,9 +1,3 @@
-"""計画rootの配下にあるパスが、計画バンドルのどの種別のファイルかを判定する。
-
-判定はhookが計画ファイルの書込みを識別するために使う。種別と接尾辞の定義は`_plan.bundle_kinds`が持ち、
-本モジュールは計画rootの内外と保存形式の名前の検証を加えてパスを判定する。
-"""
-
 from __future__ import annotations
 
 import os
@@ -14,7 +8,6 @@ from agent_toolkit._plan import locations as _locations
 
 
 def _resolve(path: pathlib.Path) -> pathlib.Path:
-    """存在しないパスも含めて実体基準の絶対パスへ変換する。"""
     return path.expanduser().resolve(strict=False)
 
 
@@ -57,7 +50,6 @@ def _new_plan_kind(file_path: str | os.PathLike[str]) -> _bundle_kinds.BundleKin
 
 
 def _kind_of_file(file_path: str) -> _bundle_kinds.BundleKind | None:
-    """計画rootの配下にあるパスの種別を返す。計画ファイルとして扱えないパスは`None`を返す。"""
     name = _legacy_direct_name(file_path)
     if name is not None:
         return _bundle_kinds.kind_of_name(name)
@@ -69,19 +61,12 @@ def _kind_of_file(file_path: str) -> _bundle_kinds.BundleKind | None:
 
 
 def is_plan_main_file(file_path: str) -> bool:
-    """計画ファイル（メイン）か判定する。"""
     return _kind_of_file(file_path) is _bundle_kinds.MAIN
 
 
 def is_plan_adjunct_file(file_path: str) -> bool:
-    """計画付属のbugsファイルか判定する。"""
     return _kind_of_file(file_path) is _bundle_kinds.BUGS
 
 
 def is_plan_handoff_file(file_path: str) -> bool:
-    """計画root配下の引き継ぎ記録か判定する。
-
-    引き継ぎ記録は計画本体ではないため、計画の工程の開始を前提とする判定の対象から外す。
-    起草中の素材を含むため、口語表現があるか確かめる対象からは外さない。
-    """
     return _kind_of_file(file_path) is _bundle_kinds.HANDOFF

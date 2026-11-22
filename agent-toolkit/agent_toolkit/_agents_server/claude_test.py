@@ -44,7 +44,6 @@ from agent_toolkit._testing.agents_server_support import (
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
 @pytest.mark.usefixtures("agents_server_isolation")
 def test_explore_mcp_uses_plugin_definition_on_start_and_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
-    """pyfltrの既存起動定義を使い、個別MCPツールの用途は探索プロンプトへ委ねる。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore")
     root = claude.plugin_roots.SERVER_PLUGIN_ROOT
     definition = json.loads((root / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
@@ -118,7 +117,6 @@ async def test_claude_resources_remain_identical_when_init_is_resent_per_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """initの再送時も所有タスクのキューと状態を再生成しない。"""
     client = FakeClaudeClient(
         [
             [SystemMessage("claude-stable"), ResultMessage("状態: completed\n結果: 初回結果")],
@@ -269,7 +267,6 @@ async def test_claude_task_exception_disconnects_and_retains_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """message taskの例外時に切断し、failedの結果を共有sessionへ保持する。"""
     client = FailingClaudeClient([])
     sessions: dict[str, state.SessionState] = {}
     async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as manager:
@@ -316,7 +313,6 @@ async def test_claude_empty_result_is_not_completed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """非空assistant本文を伴わないResultMessageは正常完了にしない。"""
     client = FakeClaudeClient([[SystemMessage("claude-empty"), AssistantMessage(""), ResultMessage("")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         monkeypatch.setattr(claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace())
@@ -393,7 +389,6 @@ async def test_claude_server_close_disconnects_and_retains_result(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """サーバー終了時にSDKを切断し、取得済みの結果recordは保持する。"""
     client = FakeClaudeClient([[SystemMessage("claude-close"), ResultMessage("状態: completed\n結果: 完了")]])
     sessions: dict[str, state.SessionState] = {}
     async with claude.ClaudeServerManager(sessions, client_factory=lambda _options: client) as backend:
@@ -413,7 +408,6 @@ async def test_claude_server_close_disconnects_and_retains_result(
 async def test_close_reclaims_cli_when_sdk_disconnect_never_returns(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """SDK切断が返らない場合も、切断前に確保した実CLIと子孫を回収する。"""
     script = tmp_path / "runtime.py"
     script.write_text(
         "import pathlib, subprocess, sys, time\n"

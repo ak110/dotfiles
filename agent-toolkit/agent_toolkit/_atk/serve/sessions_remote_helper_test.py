@@ -1,5 +1,3 @@
-"""serveのsessionsに関するremote_helperの試験。"""
-
 # pylint: disable=protected-access
 
 import base64
@@ -31,7 +29,6 @@ from agent_toolkit._testing.serve_sessions_support import (
 
 
 def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: pathlib.Path) -> None:
-    """リモート補助の一覧もローカル側と同じ識別項目を返す。"""
     claude = _write(
         tmp_path / ".claude" / "projects" / "encoded-path" / "remote-claude.jsonl",
         [
@@ -83,7 +80,6 @@ def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: path
 
 
 def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path) -> None:
-    """リモート補助も起動結果に現れる実在する子を親へ結ぶ。"""
     project = tmp_path / ".claude" / "projects" / "repo"
     parent = _write(
         project / "parent.jsonl",
@@ -139,7 +135,6 @@ def test_remote_helper_listing_links_recorded_delegation(tmp_path: pathlib.Path)
 async def test_local_and_remote_detail_use_same_family_cost(
     tmp_path: pathlib.Path, host_environ: typing.Callable[[], dict[str, str]], unknown: bool
 ) -> None:
-    """実際のremote helperのreadを経由し、親算出額・native子・委譲先・未知単価を同じ式で返す。"""
     parent = tmp_path / ".claude/projects/proj/parent.jsonl"
     identity = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
     records = [
@@ -283,7 +278,6 @@ def test_local_and_remote_listing_link_children_from_every_launch_source(
 
 
 def test_remote_helper_applies_the_same_exclusion_as_the_local_listing(tmp_path: pathlib.Path) -> None:
-    """リモート補助の一覧も同じ基準で除外し、ローカルの一覧と同じ記録の集合を返す。"""
     corpus = _no_user_corpus(tmp_path)
     context = sessions.create_context(
         hostname="local-host", claude_home=tmp_path / ".claude", codex_home=tmp_path / "codex-home"
@@ -298,7 +292,6 @@ def test_remote_helper_applies_the_same_exclusion_as_the_local_listing(tmp_path:
 
 @pytest.mark.asyncio
 async def test_entries_from_an_old_remote_helper_are_not_excluded(tmp_path: pathlib.Path) -> None:
-    """判定材料を返さない旧版のリモート補助の項目は、最初の発話がnullでも除外しない。"""
     runner, _ = _runner_returning(
         {"ok": True, "entries": [{"engine": "codex", "path": "/r/rollout-x.jsonl", "first_user_message": None}]}
     )
@@ -310,7 +303,6 @@ async def test_entries_from_an_old_remote_helper_are_not_excluded(tmp_path: path
 
 
 def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
-    """リモート補助は変更監視に使うwatchdogと、登録簿の状態ディレクトリの解決に使うplatformdirsを伴って起動する。"""
     argv = _atk_serve_remote.remote_command_argv(sessions.REMOTE_BOOTSTRAP, "serve", [], python="3.15.2", offline=True)
 
     with_values = [argv[index + 1] for index, value in enumerate(argv) if value == "--with"]
@@ -318,7 +310,6 @@ def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
 
 
 def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """リモートヘルパーの常駐モードは、同じプロセスの2回目の`list`要求で変更のない記録を開き直さない。"""
     home = tmp_path / "home"
     record = _write(
         home / ".claude" / "projects" / "proj" / "session.jsonl",
@@ -348,7 +339,7 @@ def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Pat
     assert [response["id"] for response in responses] == [1, 2]
     assert responses[0]["entries"] == responses[1]["entries"]
     assert [entry["path"] for entry in responses[1]["entries"]] == [str(record)]
-    # 初回のメタ情報走査と表示本文取得だけが開き、2回目の要求は開かない。
+
     assert opened == [record, record]
 
 

@@ -17,7 +17,6 @@ def test_process_loop_abort_commands_report_and_transition_state(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """中断要求の設定・解除・参照コマンドが状態と標準出力を一致させる。"""
     state_file = tmp_path / "state" / "agent-toolkit" / "process-wi-abort"
 
     for command, expected in (
@@ -41,7 +40,6 @@ def test_process_loop_instruction_commands_complete_storage_cycle(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIで次回指示を保持し、状態を確認して破棄する。"""
     for argv, expected in (
         (["instruct", "次の起動で確認する"], "成功: 次のセッションへ渡す追加指示を保持した。"),
         (["status"], "保持中の追加指示: 1件"),
@@ -55,7 +53,6 @@ def test_process_loop_instruction_commands_complete_storage_cycle(
 
 
 def test_review_table_subcommands_are_public() -> None:
-    """レビュー指摘管理表の5操作がトップレベルCLIへ登録されている。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     for subcommand in ("init", "add", "respond", "show", "validate"):
         argv = ["review-table", subcommand, "review.tsv"]
@@ -87,7 +84,6 @@ def test_public_review_table_validate_rejects_unanswered_rows(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIは構造検証の明示指定を許容し、指定しない場合は未応答行を拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(
@@ -114,7 +110,6 @@ def test_public_review_table_show_accepts_compat_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIのshowは保存済み旧trackを受理してraw TSVを表示する。"""
     path = tmp_path / "review.tsv"
     raw = (
         "\t".join(
@@ -136,7 +131,6 @@ def test_public_review_table_validate_rejects_whitespace_around_stored_track(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIは表示時に選択不能となる空白付きtrackを構造検証で拒否する。"""
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(
@@ -156,7 +150,6 @@ def test_public_review_table_validate_rejects_whitespace_around_stored_track(
 def test_public_review_table_add_requires_track_and_shows_choices(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIは追加時のtrack省略をusageと正規値集合付きで拒否する。"""
     parser = atk._build_parser()  # pylint: disable=protected-access  # noqa: SLF001
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["review-table", "add", "review.tsv", "--round=1", "--level=詳細", "位置", "指摘"])
@@ -174,7 +167,6 @@ def test_public_review_table_invalid_column_count_error_explains_recovery(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """公開CLIが旧列数を検出したとき、列位置とtrack値を修復案内へ含める。"""
     path = tmp_path / "review.tsv"
     path.write_text(
         "\t".join(

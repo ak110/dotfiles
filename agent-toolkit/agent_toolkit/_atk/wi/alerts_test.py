@@ -1,5 +1,3 @@
-"""`alerts`モジュールのテスト。公開APIへ外部コマンドの代用を注入して検証する。"""
-
 import argparse
 import contextlib
 import datetime
@@ -35,14 +33,12 @@ _gitlab_head = alerts._gitlab_head  # pylint: disable=protected-access
 
 @pytest.fixture(name="api_branch_heads")
 def _api_branch_heads(monkeypatch: pytest.MonkeyPatch) -> None:
-    """API境界の結合試験では実際のHEAD取得処理を使う。"""
     monkeypatch.setattr(alerts, "_github_head", _github_head)
     monkeypatch.setattr(alerts, "_gitlab_head", _gitlab_head)
 
 
 @pytest.fixture(autouse=True)
 def _isolate_branch_head(monkeypatch: pytest.MonkeyPatch) -> None:
-    """一覧を注入する既存試験ではHEADの外部通信も隔離する。"""
     monkeypatch.setattr(alerts, "_github_head", lambda _repo, _branch: "current-head")
     monkeypatch.setattr(alerts, "_gitlab_head", lambda _repo, _branch: "current-head")
     monkeypatch.setattr(alerts, "_github_failure_diagnostics", lambda _repo, _run_id: "")
@@ -61,7 +57,6 @@ def test_collect_github_ci_failures_latest_completed_only() -> None:
 
 
 def test_collect_github_ci_failures_skips_in_progress_latest() -> None:
-    """進行中runを除外し、直近の完了runを判定する。"""
     runs = [
         {"workflowName": "CI", "status": "in_progress", "databaseId": 3},
         {"workflowName": "CI", "status": "completed", "conclusion": "failure", "databaseId": 2},
@@ -85,11 +80,6 @@ def test_collect_github_ci_failures_keeps_schedule_failure_after_push_success() 
 
 
 def _gitlab_schedule_api(endpoints: list[str]) -> alerts.GlabApiFn:
-    """Pipeline Scheduleの一覧と個別の取得へ応答する`glab api`の代用を返す。
-
-    応答の形は2026年10月6日の`glab api 'projects/:id/pipeline_schedules'`（一覧は`active`・`ref`・`cron`を持ち
-    `last_pipeline`を持たない）と`pipeline_schedules/<ID>`（`last_pipeline`の`id`・`status`・`web_url`）の観測から写した。
-    """
     project = "projects/group%2Fsub%2Frepo/pipeline_schedules"
     responses: dict[str, object] = {
         f"{project}?per_page=100": [
@@ -137,7 +127,6 @@ def test_collect_new_alerts_reports_schedule_failure_hidden_by_later_pipeline(tm
 
 
 def test_check_and_submit_alerts_submits_one_awi_per_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """ブランチの確認と定期実行の確認が同じパイプラインを返しても1件だけ投入し、次の確認では投入しない。"""
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
 
@@ -170,7 +159,6 @@ def test_collect_gitlab_ci_failures_only_when_latest_failed() -> None:
 
 
 def test_resolve_target_branch_paths() -> None:
-    """追跡先を優先し、追跡先が無ければ`origin/HEAD`が指すbranchを使い、どちらも無ければNoneを返す。"""
 
     def upstream_git(_path: pathlib.Path, args: list[str]) -> str | None:
         if args[0] == "rev-parse":
@@ -193,7 +181,6 @@ def test_resolve_target_branch_paths() -> None:
 
 
 def test_collect_new_alerts_filters_keys_per_repository(tmp_path: pathlib.Path) -> None:
-    """同一リポジトリの既出キーだけを重複除外する。"""
     notes = tmp_path / "private-notes"
     adopted = notes / "adopted"
     adopted.mkdir(parents=True)
@@ -249,7 +236,6 @@ def test_existing_alert_keys_parses_absent_multiple_and_empty(tmp_path: pathlib.
 
 
 def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Path) -> None:
-    """外部更新を無効化し、保存した本文を確認できるAWI領域を準備する。"""
     (notes / "inbox").mkdir(parents=True)
 
     def no_repo_lock(*_args: object, **_kwargs: object) -> contextlib.AbstractContextManager[None]:
@@ -264,7 +250,6 @@ def _prepare_alert_submission(monkeypatch: pytest.MonkeyPatch, notes: pathlib.Pa
 
 
 def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:
-    """保存された通常AWIをH1ごとに返す。"""
     awis: dict[str, str] = {}
     for _path, _repo, content, _state, _kind in _wi_entries.iter_entries(notes, ("inbox",), None, "awi"):
         heading = next(line for line in content.splitlines() if line.startswith("# "))
@@ -273,7 +258,6 @@ def _saved_awis_by_heading(notes: pathlib.Path) -> dict[str, str]:
 
 
 def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """新規アラートをAWIへ投入し、件数とfrontmatterを返す。"""
     monkeypatch.setenv("AI_AGENT", "1")
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
@@ -310,7 +294,6 @@ def test_check_and_submit_alerts_invokes_add_entries(monkeypatch: pytest.MonkeyP
 def test_check_and_submit_alerts_writes_kind_specific_completion(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開された収集コマンドがアラート種別ごとに外部から観測できる完成条件を保存する。"""
     notes = tmp_path / "private-notes"
     _prepare_alert_submission(monkeypatch, notes)
 
@@ -360,7 +343,6 @@ def test_check_and_submit_alerts_writes_kind_specific_completion(
 
 
 def test_check_and_submit_alerts_returns_zero_when_empty(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """新規アラートが無い場合は投入しない。"""
     notes = tmp_path / "private-notes"
     (notes / "inbox").mkdir(parents=True)
     calls: list[int] = []
@@ -464,7 +446,6 @@ def _prepare_alert_cli(
 
 
 def _forge_responses(monkeypatch: pytest.MonkeyPatch, response: Callable[[list[str]], object], calls: list[list[str]]) -> None:
-    """forgeの公開コマンドだけを差し替え、対象解決のGit操作は実行する。"""
     real_run = subprocess.run
 
     def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess:
@@ -480,7 +461,6 @@ def _forge_responses(monkeypatch: pytest.MonkeyPatch, response: Callable[[list[s
 
 
 def _invoke_alert_cli(repo: pathlib.Path | None = None, *, forge: str = "auto") -> int:
-    """公開CLIを呼び、プロセスの終了値を検収する。"""
     argv = ["wi", "check-alerts", "--forge", forge]
     if repo is not None:
         argv.extend(("--target-repo", str(repo)))
@@ -491,7 +471,6 @@ def _invoke_alert_cli(repo: pathlib.Path | None = None, *, forge: str = "auto") 
 
 
 def _invoke_loop_alerts(repo: pathlib.Path, notes: pathlib.Path, forge: str) -> int:
-    """常駐側の公開監視処理を呼び、process-wiの1回の実行とDependabot監査を起動しない。"""
     args = argparse.Namespace(no_alerts=False, alert_interval=0, alert_forge=forge)
     host = "github.com" if forge == "github" else "gitlab.example.com"
     return process_loop_alerts.check_process_loop_alerts(args, notes, f"{host}/owner/repo", repo, None, count_dependabot=False)[
@@ -504,7 +483,6 @@ def _invoke_loop_alerts(repo: pathlib.Path, notes: pathlib.Path, forge: str) -> 
 def test_local_origin_preserves_monitor_api_endpoint(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: str, authority: str
 ) -> None:
-    """単発・常駐監視の一覧と詳細が、ポートを含むoriginのHTTP接続先を使う。"""
     repo, notes = _prepare_alert_cli(monkeypatch, tmp_path, forge="gitlab")
     origin = f"http://{authority}/owner/repo.git"
     git_repository.run_git(repo, "remote", "set-url", "origin", origin)
@@ -572,7 +550,6 @@ def test_check_alerts_cli_submits_and_exits(
 def test_check_alerts_cli_and_loop_deduplicate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """全保存状態を除外し、別対象のキーを残して、単発と常駐の反復で二重保存しない。"""
     repo, notes = _prepare_alert_cli(monkeypatch, tmp_path)
     runs = []
     for number, state in enumerate(WI_STATES, start=1):
@@ -601,7 +578,6 @@ def test_check_alerts_cli_and_loop_deduplicate(
 
 @pytest.mark.parametrize("case", ["github-push", "github-schedule", "gitlab-normal", "gitlab-schedule", "gitlab-disabled"])
 def test_check_alerts_cli_matches_loop_by_forge(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, case: str) -> None:
-    """各収集種別で、単発と常駐が同じ本文・出所・キーを保存する。"""
     forge = "github" if case.startswith("github") else "gitlab"
 
     def response(command: list[str]) -> object:
@@ -625,12 +601,11 @@ def test_check_alerts_cli_matches_loop_by_forge(monkeypatch: pytest.MonkeyPatch,
     _forge_responses(monkeypatch, response, [])
     assert _invoke_alert_cli(repo) == 0
     single = _saved_awis_by_heading(notes)
-    # 同じ入力を別保存領域へ渡し、重複除外で本文比較が省かれないようにする。
+
     repo, notes = _prepare_alert_cli(monkeypatch, tmp_path / "loop", forge=forge)
     assert _invoke_loop_alerts(repo, notes, forge) == (0 if case == "gitlab-disabled" else 1)
     loop = _saved_awis_by_heading(notes)
 
-    # 保存日時は呼び出しごとに異なるため除いて比べ、要求本文・source・keysが単発と常駐で一致することを確かめる。
     def normalize(text):
         return "\n".join(line for line in text.splitlines() if not line.startswith("created_at:"))
 
@@ -687,7 +662,6 @@ def test_check_alerts_cli_reports_collection_failures(
 def test_check_alerts_cli_rejects_invalid_target(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], target: str
 ) -> None:
-    """ローカル対象の不正は収集せず終了コード2となる。"""
     _repo, notes = _prepare_alert_cli(monkeypatch, tmp_path)
     if target == "not-a-repo":
         (tmp_path / target).mkdir()
@@ -700,7 +674,6 @@ def test_check_alerts_cli_rejects_invalid_target(
 @pytest.mark.parametrize("collector", ["github", "gitlab", "schedule"])
 @pytest.mark.parametrize("head", ["new", "old", None])
 def test_collectors_report_stale_run_context(collector: str, head: str | None) -> None:
-    """3収集とも実行事実とHEAD比較を渡し、後続実行が無い場合も完成を判断できる。"""
     # GitLab Pipelines API / GitHub branches APIの公開フィールドを使い、古い失敗実行だけが残る応答を検証する。
     created = "2019-01-01T21:37:15+09:00"
     pipeline = {"id": 24, "status": "failed", "ref": "topic/ref", "sha": "old", "created_at": created}
@@ -772,7 +745,6 @@ def test_successful_collection_does_not_fetch_head() -> None:
 def test_alerts_preserve_public_endpoint_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, variable: str
 ) -> None:
-    """通知のブランチ・スケジュール・HEAD取得は公開環境指定を優先し、親環境を保つ。"""
     for name in ("GITLAB_HOST", "GITLAB_URI", "GL_HOST"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv(variable, "api.example.net:9443")
@@ -814,7 +786,6 @@ def test_alerts_preserve_public_endpoint_override(
 @pytest.mark.usefixtures("api_branch_heads")
 @pytest.mark.parametrize("forge", ["github", "gitlab-branch", "gitlab-schedule"])
 def test_collectors_report_branch_head_context(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, forge: str) -> None:
-    """公開収集関数collect_new_alertsが実行日時・SHA・リモートHEADを本文と完成条件へ反映する。"""
     created = "2019-01-01T21:37:15+09:00"
     pipeline = {"id": 24, "status": "failed", "ref": "main", "sha": "old", "created_at": created}
     calls: list[list[str]] = []
@@ -858,7 +829,6 @@ def test_collectors_report_branch_head_context(monkeypatch: pytest.MonkeyPatch, 
 @pytest.mark.usefixtures("api_branch_heads")
 @pytest.mark.parametrize("forge", ["github", "gitlab"])
 def test_alert_log_guidance_uses_shared_commands(monkeypatch: pytest.MonkeyPatch, forge: str) -> None:
-    """通知のログ案内はwait_ciと同じ生成元を通り、Git外で対象を一意に指定できる。"""
     pipeline = {"id": 24, "status": "failed"}
     run_record = {"databaseId": 24, "workflowName": "CI", "status": "completed", "conclusion": "failure"}
 

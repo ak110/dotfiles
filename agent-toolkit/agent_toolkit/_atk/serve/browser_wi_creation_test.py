@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するcreationの試験。"""
-
 import re
 
 import playwright.async_api
@@ -23,7 +21,6 @@ pytestmark = [
 async def test_work_item_hostile_html_keeps_text_without_execution_or_external_requests(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """WIの悪意ある本文は文字として保持し、能動的なHTMLと外部通信を発生させない。"""
     harness = browser_harness
     hostile = (
         "安全な本文\n\n<script>window.__wiXss = 1</script>\n\n"
@@ -56,7 +53,6 @@ async def test_work_item_hostile_html_keeps_text_without_execution_or_external_r
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_batch_input_error_shows_reason_and_fix_action(browser_harness: _BrowserHarness) -> None:
-    """一括登録の形式エラーは、理由と入力を直す操作を登録ダイアログへ表示し、入力を保持する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -84,7 +80,6 @@ async def test_batch_input_error_shows_reason_and_fix_action(browser_harness: _B
 async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """一括登録種別の入力切替と取り込み、frontmatter指定による対象リポジトリ省略投入を検証する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -135,7 +130,6 @@ async def test_create_dialog_supports_batch_import_and_omitted_target_repo(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness: _BrowserHarness) -> None:
-    """種別uwiのままshow形式の本文を送ると一括登録として取り込み、使わなかった入力欄を通知する。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -145,7 +139,7 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     create_dialog = page.get_by_role("dialog", name="新規追加")
     await create_dialog.wait_for(state="visible")
     await create_dialog.locator("#create-kind").select_option("uwi")
-    # 初期値は選択肢の入力が要らないはい／いいえとする。
+
     question_type = create_dialog.locator("#create-question-type")
     await playwright.async_api.expect(question_type).to_have_value("yes-no")
     assert await question_type.locator("option").evaluate_all("options => options.map(option => option.value)") == [
@@ -175,8 +169,7 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
     await create_dialog.wait_for(state="hidden")
     notice = page.get_by_role("status").filter(has_text="一括登録として取り込みました")
     await notice.wait_for(state="visible")
-    # 使わなかった入力欄はユーザーが入力したtarget-repoだけであり、初期値へ戻した回答形式は数えない。
-    # 列挙の末尾まで一致を求め、回答形式などの余分な入力欄が後ろへ連結された通知を検出する。
+
     await playwright.async_api.expect(page.locator("#operation-notice-message")).to_have_text(
         re.compile(r"1件を取り込みました。.*使わなかった入力欄: target-repo$")
     )
@@ -189,7 +182,6 @@ async def test_create_dialog_auto_switches_show_format_to_batch(browser_harness:
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_create_dialog_choice_validation_precedes_only_single_entry(browser_harness: _BrowserHarness) -> None:
-    """単件の選択肢は検証し、show形式ではサーバーの形式判定へ原文を渡す。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -267,7 +259,6 @@ async def test_create_dialog_choice_validation_precedes_only_single_entry(browse
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_harness: _BrowserHarness) -> None:
-    """先頭エントリより前に説明文がある本文はサーバーと同じく単件として扱い、単件の入力欄と検証を保つ。"""
     harness = browser_harness
     page = harness.page
     await page.goto(harness.base_url + "/")
@@ -304,10 +295,6 @@ async def test_create_dialog_show_text_after_preface_stays_single_entry(browser_
 async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
     browser_harness: _BrowserHarness, width: int, height: int, input_height: int | None
 ) -> None:
-    """不正な入力欄へフォーカスが戻った直後に対応するエラーの全文が見え、本文をスクロールしてもヘッダーとフッターの位置は変わらない。
-
-    回答欄の入力エラーはフッター内に表示されるため、フッターの可視範囲で判定する。
-    """
     harness = browser_harness
     page = harness.page
     (_entry_path(harness.root, "long-entry.md")).write_text(
@@ -348,7 +335,7 @@ async def test_invalid_input_focus_keeps_whole_error_in_dialog_body(
         await playwright.async_api.expect(field).to_be_focused()
         error = dialog.locator(f"#{input_id}-error")
         await playwright.async_api.expect(error).to_be_visible()
-        # 回答欄はフッターに常設され、その入力エラーもフッター内へ表示する。所属する領域の可視範囲で判定する。
+
         metrics = await error.evaluate("""error => {
           const body = error.closest('.dialog-body') || error.closest('.dialog-footer');
           const bounds = body.getBoundingClientRect();

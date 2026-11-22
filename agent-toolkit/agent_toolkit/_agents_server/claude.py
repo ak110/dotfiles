@@ -120,11 +120,6 @@ class ClaudeServerManager(ClaudeStream):
 
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
-        """記録済みの除外理由が、候補を除外する根拠になるかを返す。
-
-        旧版が429へ記録した`429`はWeekly limitと5時間の利用上限による拒否も含むため、根拠にせず、
-        その候補で起動して利用枠の報告から判定し直す。
-        """
         return reason != engine_availability.LEGACY_CLAUDE_RATE_LIMIT_REASON
 
     async def start(
@@ -293,7 +288,6 @@ class ClaudeServerManager(ClaudeStream):
         adopted_client: SdkResource | None = None,
         auxiliary: dict | None = None,
     ) -> SessionState:
-        """新規または保存済みsessionを所有する長命タスクを開始する。"""
         diagnostic = _InitializationDiagnostic()
         if connection_kind == "subscription" and not isolation_env_files:
             isolation_env_files = claude_connection.apply_current_settings(
@@ -357,7 +351,6 @@ class ClaudeServerManager(ClaudeStream):
         try:
             session = await asyncio.wait_for(initialized, timeout=shared_state.SESSION_INITIALIZATION_TIMEOUT)
             if diagnostic.mcp_recovery_task is not None:
-                # 起動の全試行と可用性確認を予約し、残予算を回復待ちと応答確定へ半分ずつ割り当てる。
                 recovery_budget = (
                     max(
                         0.0,
@@ -408,7 +401,6 @@ class ClaudeServerManager(ClaudeStream):
         return {"wait_compaction": checkpoint}
 
     async def adopt_session(self, session: SessionState, descriptor: dict, auxiliary: dict) -> None:
-        """既存SDKの生受信列へ新コードの制御だけを接続し、queryを送らない。"""
         runtime = service_io.current()
         if runtime is None:
             raise RuntimeError("サービス実行contextがありません")
@@ -433,8 +425,7 @@ class ClaudeServerManager(ClaudeStream):
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        # 接続先の候補変更では、旧所有者の終了から新所有者のinitまでchannelが無い。
-        # 同じsessionの自動再開・追送はこの区間を共有し、停止や照会は待たせない。
+
         lock = self._reply_locks.get(session.session_id)
         if lock is None:
             lock = self._reply_locks[session.session_id] = asyncio.Lock()
@@ -457,7 +448,7 @@ class ClaudeServerManager(ClaudeStream):
             await self._resume_next_turn(session, prompt)
             return {"delivery": "reply_started", "previous_result": previous}
         role = session.claude_role or ("orchestrator" if session.model_type == "orchestrate" else "delegate")
-        # 保持した接続の種別を使用順から外した会話は、次のturnで使用順の先頭の利用可能な候補へ移す。
+
         if (session.terminal or held_without_pending) and claude_connection.outside_order(session.claude_connection, role):
             previous = session.previous_result() if session.terminal and not session.awaiting_auto_resume else None
             await self._resume_next_turn(session, prompt)
@@ -477,7 +468,6 @@ class ClaudeServerManager(ClaudeStream):
         return result
 
     async def set_effort(self, session: SessionState, value: str) -> None:
-        """CLIの次turn設定を、SDK接続を所有するタスクへ渡す。"""
         channel = self._channels.get(session.session_id)
         if channel is None:
             raise SessionOwnerGoneError("the Claude session owner task has ended")
@@ -507,7 +497,6 @@ class ClaudeServerManager(ClaudeStream):
         return {"delivery": "reply_started", "previous_result": previous_result}
 
     async def _resume_next_turn(self, session: SessionState, prompt: str) -> None:
-        """同じ会話IDの所有タスクへ、次のturnの入力を渡す。"""
         resume_prompt = ResumePrompt(prompt)
         try:
             await self.resume(
@@ -526,7 +515,6 @@ class ClaudeServerManager(ClaudeStream):
             resume_prompt.close()
 
     async def interrupt(self, session: SessionState) -> None:
-        """公開killから所有タスクへ中断要求を送り、受理を待つ。"""
         channel = self._channels.get(session.session_id)
         if channel is None and session.session_id not in self._residual_processes:
             raise SessionOwnerGoneError("the Claude session owner task has ended")

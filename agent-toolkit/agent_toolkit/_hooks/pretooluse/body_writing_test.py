@@ -47,7 +47,6 @@ def test_output_saving_and_copying_are_not_body_writing(command: str) -> None:
 
 
 def test_owned_handoff_exemption_is_shared_by_both_tools(monkeypatch: pytest.MonkeyPatch) -> None:
-    """本人の引き継ぎ記録1件への既存の除外を、Bashの本文書込でも保つ。"""
     path = "/tmp/owned-handoff.md"
     monkeypatch.setenv("AGENT_TOOLKIT_HANDOFF_PATH", path)
     assert not operation_skills.is_body_writing("Write", {"file_path": path, "content": "状態"})

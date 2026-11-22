@@ -1,5 +1,3 @@
-"""エージェント宛ての通知をユーザーの画面へ写す条件と文面を、hookの入口から確かめるテスト。"""
-
 import importlib
 import json
 from collections.abc import Callable
@@ -17,7 +15,6 @@ _WARNING_COPY = f'<atk-auto source="pretooluse" kind="warn">\n{_WARNING_BODY}\n<
 
 @pytest.fixture(autouse=True)
 def _main_session(monkeypatch):
-    """委譲先の環境変数を外し、最上位メインのセッションとして呼ぶ。"""
     for name in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION"):
         monkeypatch.delenv(name, raising=False)
 
@@ -27,7 +24,6 @@ def _warning() -> str:
 
 
 def _timing() -> str:
-    """実際のhookと同じく、実行時間の通知へ写さない印を付けて返す。"""
     return notice.informational(message_format.llm_notice(_TIMING_BODY, "command-timing"))
 
 
@@ -36,10 +32,6 @@ def _response(*notices: str, event: str = "PreToolUse") -> dict:
 
 
 def _deliver(monkeypatch, subcommand: str, build: Callable[[], dict], payload: dict | None = None) -> tuple[dict, dict]:
-    """イベントの処理が`build`で通知を生成して応答を返す状態で公開hookを呼び、処理の応答とホストへ渡る応答を返す。
-
-    通知は実際のhookと同じく、hookの呼出しの中で生成する。
-    """
     built: dict = {}
 
     def main(_payload, **_kwargs) -> int:
@@ -77,10 +69,6 @@ def test_corrective_notice_is_copied_in_full_with_wrapper(monkeypatch, subcomman
     ],
 )
 def test_notice_quoting_a_wrapper_keeps_each_notice_and_exclusion(monkeypatch, quoted):
-    """本文が包装と同じ字面を引用しても、各通知の全文と生成元を保ち、後続の非表示の通知を写しへ混ぜない。
-
-    引用の後に是正の通知と実行時間の通知が続く応答で、写しが是正の2通知の全文だけから成ることを確かめる。
-    """
     bodies: list[str] = []
 
     def build() -> dict:
@@ -95,7 +83,6 @@ def test_notice_quoting_a_wrapper_keeps_each_notice_and_exclusion(monkeypatch, q
 
 
 def test_denial_reason_and_multiple_notices_are_merged_into_one_message(monkeypatch):
-    """拒否の理由も写し、同じ応答の複数の通知を1つへまとめ、既存のユーザー宛ての本文を保つ。"""
 
     def build() -> dict:
         return {
@@ -119,7 +106,6 @@ def test_denial_reason_and_multiple_notices_are_merged_into_one_message(monkeypa
 
 
 def test_informational_notices_are_not_copied(monkeypatch):
-    """実行時間のように印の付いた通知だけの応答には写しを付けず、混在する応答では是正の通知だけを写す。"""
     built, only = _deliver(monkeypatch, "posttooluse", lambda: _response(_timing(), event="PostToolUse"))
     assert "systemMessage" not in only and only["hookSpecificOutput"] == built["hookSpecificOutput"]
     mixed = _deliver(monkeypatch, "posttooluse", lambda: _response(_timing(), _warning(), event="PostToolUse"))[1]
@@ -127,7 +113,6 @@ def test_informational_notices_are_not_copied(monkeypatch):
 
 
 def test_notice_text_not_generated_in_this_call_is_not_copied(monkeypatch):
-    """呼出しの外で作られた包装の字面（受け取った入力の引用など）は、通知として写さない。"""
     foreign = message_format.llm_notice("前回の通知の引用", "sample")
     message = _deliver(monkeypatch, "pretooluse", lambda: _response(foreign, _warning()))[1]["systemMessage"]
     assert message == _WARNING_COPY

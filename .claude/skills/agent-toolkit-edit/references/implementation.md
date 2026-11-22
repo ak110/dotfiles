@@ -18,7 +18,8 @@
 - モジュール名は、所属を表す接頭辞を除いて、組み込みの名前と標準ライブラリのトップレベル名に重ねない。
 - テストの配置は`.claude/skills/develop-dotfiles/references/verification.md`「テスト配置」に従う。
 - agent-toolkitの中でGitを起動する時は`agent_toolkit._git.command.run`を使う（`text=True`で渡した文字列の`input`も、UTF-8のバイト列として子プロセスへ渡る）。
-- 構造化文書の解析の設計は、`agent-toolkit/agent_toolkit/_plan/structure/__init__.py`のモジュールのdocstringにある。
+- 構造化文書の共通判定は`agent-toolkit/agent_toolkit/_plan/structure/`にあり、成果物契約は`agent-toolkit/skills/atk-mode/references/plan-format.md`が定める。
+  判定の追加では、見出しの親子と重複、コードブロック、段落と表の構文境界を共通の試験入力へ加える。
 
 ## 起動と依存の準備
 

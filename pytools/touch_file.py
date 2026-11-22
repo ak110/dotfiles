@@ -1,9 +1,4 @@
 # PYTHON_ARGCOMPLETE_OK
-"""ファイル・ディレクトリの更新日時を変更するCLI。
-
-複数の対象を引数で受け取り、指定日時または現在日時に mtime/atime を一括設定する。
-ディレクトリ指定時は自身を更新し、-r指定時は配下も再帰的に処理する。
-"""
 
 import argparse
 import datetime
@@ -19,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """ファイル・ディレクトリの更新日時を変更するエントリポイント。"""
     parser = argparse.ArgumentParser(description="ファイル・ディレクトリの更新日時を変更する。")
     parser.add_argument("targets", nargs="+", type=pathlib.Path, help="対象ファイルまたはディレクトリ")
     parser.add_argument(
@@ -78,12 +72,6 @@ def _print_targets(targets: list[pathlib.Path]) -> None:
 
 
 def touch_path(path: pathlib.Path, time: datetime.datetime, *, recursive: bool = False) -> None:
-    """対象パスの mtime/atime を `time` に設定する。
-
-    `recursive=True`の場合はディレクトリ配下も更新する。シンボリックリンクとジャンクションは
-    追跡せず、どのOSでもリンク自身の時刻を更新する。存在しないパスは警告ログのみで継続する。
-    `pathlib` には任意時刻を指定する API が無いため `os.utime` を使う。
-    """
     print(f"{path} . . .")
     timestamp = time.timestamp()
     if _is_link(path):
@@ -107,7 +95,6 @@ def _is_link(path: pathlib.Path) -> bool:
 
 
 def _touch_link(path: pathlib.Path, timestamp: float) -> None:
-    """リンク自身の atime/mtime を設定する。"""
     if os.utime in os.supports_follow_symlinks:
         os.utime(path, (timestamp, timestamp), follow_symlinks=False)
     else:

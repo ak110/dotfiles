@@ -21,8 +21,6 @@ from agent_toolkit._atk.wi.repo import resolve_repo_id
 
 
 class CandidateKey(typing.NamedTuple):
-    """候補の同一性を判定する組。"""
-
     state: str
     name: str
     target_repo: str
@@ -44,7 +42,6 @@ def _select_candidates(
     source: Iterable[str] | None,
     source_states: tuple[str, ...],
 ) -> list[_wi_entries.EntryRecord]:
-    """一覧条件とその操作の遷移元状態集合がともに一致する項目を選択する。"""
     return [
         entry
         for entry in _wi_entries.select_entries(
@@ -60,14 +57,12 @@ def _select_candidates(
 
 
 def _candidate_key(entry: _wi_entries.EntryRecord) -> CandidateKey:
-    """候補1件を状態・名前・対象リポジトリ・本文・種別の比較可能な組へ変換する。"""
     path, target_repo, text, state, entry_type = entry
-    assert entry_type is not None  # `_select_candidates`が有効な種別だけを返す。
+    assert entry_type is not None
     return CandidateKey(state, path.name, target_repo, text, entry_type)
 
 
 def _snapshot(candidates: list[_wi_entries.EntryRecord]) -> CandidateSnapshot:
-    """候補一覧を確認時点の記録へ変換する。"""
     return tuple(_candidate_key(entry) for entry in candidates)
 
 
@@ -76,7 +71,6 @@ def _ensure_processing_is_explicit(
     *,
     force: bool,
 ) -> None:
-    """processing候補がある場合に明示的な保護解除を要求する。"""
     protected = [path.name for path, _repo, _text, state, _type in candidates if state == WI_STATE_PROCESSING]
     if protected and not force:
         _outcome.report_failure(
@@ -87,7 +81,6 @@ def _ensure_processing_is_explicit(
 
 
 def _confirm(count: int, label: str) -> bool:
-    """対話端末で一括操作を1回確認する。"""
     if not sys.stdin.isatty():
         _outcome.report_failure(
             f"非対話環境では一括{label}の確認を受け取れない", next_action=f"非対話環境で一括{label}するには--yesを指定する"
@@ -242,7 +235,6 @@ def remove_all_entries(
     source: Iterable[str] | None,
     actor_is_agent: bool,
 ) -> list[str]:
-    """対象リポジトリの候補を一覧表示し、確認後に一括削除する。"""
 
     def apply_fn(notes: pathlib.Path, candidates: list[_wi_entries.EntryRecord]) -> list[str]:
         return _remove_candidates(notes, candidates, note=note)

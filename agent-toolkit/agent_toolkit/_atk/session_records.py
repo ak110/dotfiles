@@ -32,9 +32,7 @@ _CLAUDE_PROCESS_WI_MARKERS = (
 )
 _CLAUDE_EXIT_SESSION_MARKER = "Launching skill: agent-toolkit:exit-session"
 
-# 記録にはホストの前置きや/goalの境界が含まれるため、目的文本体の包含で判定する。
-# 登録全体の統括へ移行した後も、手動process-wiと過去の記録を検出対象に残す。
-# 入口`atk-mode`へ移した後の目的文（process-loopと`atk run-skill`）は、作業の起動の文で判別する。
+
 _PROCESS_WI_GOAL_BODIES = (
     skill_modes.entry_launch("process-loop", free_text=False),
     skill_modes.PROCESS_WI_LAUNCH_MARKER,
@@ -48,7 +46,6 @@ _TEXT_EXCERPT_LIMIT = 200
 
 
 def candidate_paths() -> Iterator[tuple[pathlib.Path, str, str]]:
-    """対応ホストの本体セッション候補を列挙する。"""
     for path in session_record_format.claude_session_records(host_homes.claude_config_dir()):
         yield path, "claude", path.stem
     for path in session_record_format.codex_session_records(host_homes.codex_home()):
@@ -58,7 +55,6 @@ def candidate_paths() -> Iterator[tuple[pathlib.Path, str, str]]:
 
 
 def session_cwd(path: pathlib.Path, engine: str) -> str | None:
-    """本体セッションなら判定に用いるcwdを返す。"""
     if engine == "agy":
         try:
             for record in session_record_format.parsed_records(path):
@@ -87,7 +83,6 @@ def session_cwd(path: pathlib.Path, engine: str) -> str | None:
 
 
 def resolved_repo(cwd: str, cache: dict[str, str | None]) -> str | None:
-    """cwdごとにリポジトリ識別子を1回だけ解決する。"""
     if cwd not in cache:
         with contextlib.redirect_stderr(io.StringIO()):
             try:
@@ -161,7 +156,6 @@ def _claude_process_wi_marker(record: dict[str, Any]) -> bool:
 
 
 def invoked_process_wi(path: pathlib.Path, engine: str) -> bool:
-    """保存済み記録にprocess-wiの起動標識があれば真を返す。"""
     try:
         return any(_contains_process_wi_marker(record, engine) for record in session_record_format.parsed_records(path))
     except OSError:
@@ -252,7 +246,6 @@ def exit_session_reached(path: pathlib.Path, engine: str) -> bool | None:
 
 
 def _excerpt(text: str) -> str:
-    """改行を半角空白へ置換し、先頭200文字までへ切り詰める。"""
     return text.replace("\n", " ")[:_TEXT_EXCERPT_LIMIT]
 
 
@@ -291,7 +284,6 @@ def _codex_text(record: dict[str, Any], *, role: str, item_type: str) -> str | N
 
 
 def first_user_input(path: pathlib.Path, engine: str) -> str:
-    """最初のユーザー入力テキストの抜粋を返す。取得できない場合は空文字列。"""
     try:
         if engine == "agy":
             return next(
@@ -316,7 +308,6 @@ def first_user_input(path: pathlib.Path, engine: str) -> str:
 
 
 def last_agent_message(path: pathlib.Path, engine: str) -> str:
-    """最後のエージェント発言テキストの抜粋を返す。取得できない場合は空文字列。"""
     result = ""
     try:
         if engine == "agy":
@@ -340,5 +331,4 @@ def last_agent_message(path: pathlib.Path, engine: str) -> str:
 
 
 def format_modified_at(path: pathlib.Path) -> str:
-    """`path`のmtimeをローカル時刻のISO 8601表記へ整形する。"""
     return datetime.datetime.fromtimestamp(path.stat().st_mtime).isoformat(timespec="seconds")

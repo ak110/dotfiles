@@ -52,7 +52,6 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
-    """導入済みの版を解決し、起動時のデータ領域へuv環境を構築する。"""
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     checkout = common.find_dotfiles_root()
@@ -92,7 +91,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     for command in commands:
         paths.extend((Path(command[0]), Path(command[1])))
         paths.append(Path(command[command.index("--project") + 1]) if "--project" in command else Path(command[-1]))
-    # 更新のログ、診断、後続の整理に使う値は、管理サービスの起動条件に含めない。
+
     update_markers = {
         "DOTFILES_PYTOOLS_INSTALL_DETAIL",
         "UPDATE_DOTFILES_RUN_ID",
@@ -159,7 +158,6 @@ class _StartupOutcome:
 
 
 def _exception_summary(error: BaseException) -> str:
-    """MCPのタスク群の外側の例外ではなく、原因の例外を1行で返す。"""
     while isinstance(error, BaseExceptionGroup):
         error = error.exceptions[0]
     reason = str(error).partition("\n")[0][:240]
@@ -224,8 +222,6 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
             parameters = StdioServerParameters(command=command[0], args=list(command[1:]), env=environment)
             remaining = _STARTUP_TIMEOUT
             if root is not None:
-                # 入力の無い転送側は、管理サービスをreadyにした後で接続せずに終了する。
-                # 常駐サービス自身のstderrは世代別ログへ向く。起動元だけのパイプを終了まで読む。
                 service = await plugin_warmup.check_command(command, environment=environment, timeout=remaining)
                 service_output = (service.result.stderr if service.result is not None else service.error).replace("\r\n", "\n")
                 if service.result is None:
@@ -285,7 +281,6 @@ async def _check_startup(command: Sequence[str]) -> _StartupOutcome:
 
 
 def _service_root(command: Sequence[str]) -> Path | None:
-    """起動コマンドが共有の管理サービスへ転送する配布rootを返す。管理サービスを持たない旧版のrootはNone。"""
     if "--project" not in command:
         return None
     root = Path(command[command.index("--project") + 1])
@@ -293,7 +288,6 @@ def _service_root(command: Sequence[str]) -> Path | None:
 
 
 def _registered_checkout() -> Path | None:
-    """登録ファイルを読み取るだけにし、更新試験で移行や保存を起こさない。"""
     raw = config_settings.load_config_strict().get("repositories", "{}")
     if not isinstance(raw, str):
         raise ValueError("repositoriesの値がJSON文字列ではありません")
@@ -302,7 +296,6 @@ def _registered_checkout() -> Path | None:
 
 
 def _checkout_skip(checkout: Path | None, registered: Path | None) -> str | None:
-    """登録を優先し、登録がない時だけ既存のGit判定で主checkoutかを確かめる。"""
     if checkout is None:
         return "起動元のcheckoutを確認できません"
     if registered is not None:
@@ -328,7 +321,6 @@ def _warn_skip(reason: str, registered: Path | None, checkout: Path | None) -> N
 
 
 def _approved_scripts(registered: Path | None, installed: Sequence[Path]) -> set[Path]:
-    """登録先と、導入一覧に載るバージョン別キャッシュの実体だけを許可する。"""
     marketplace = Path("plugins", "cache", claude_common.MARKETPLACE_NAME, "agent-toolkit")
     homes = (claude_common.CLAUDE_HOME, Path(os.environ.get("CODEX_HOME", install_codex_plugins.CODEX_HOME)))
     caches = {(home / marketplace).resolve() for home in homes}
@@ -340,7 +332,6 @@ def _approved_scripts(registered: Path | None, installed: Sequence[Path]) -> set
             if project.parent in caches and physical == project / _SCRIPT_RELATIVE:
                 approved.add(physical)
         except OSError:
-            # 起動コマンドと許可集合が一致しない理由は起動直前に表示する。
             continue
     return approved
 

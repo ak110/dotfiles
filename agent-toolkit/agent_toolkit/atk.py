@@ -132,7 +132,6 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
 
 
 def _build_parser(command: str | None = None) -> argparse.ArgumentParser:
-    """全コマンドを列挙し、指定時はそのコマンドだけの引数を登録する。"""
     parser = _atk_help.create_root_parser(
         "atk",
         description=_atk_help.ROOT_DESCRIPTION,
@@ -160,7 +159,6 @@ def _build_parser(command: str | None = None) -> argparse.ArgumentParser:
 
 
 def format_command_help(command_path: tuple[str, ...]) -> str | None:
-    """指定した公開サブコマンドに対応するヘルプをCLI定義から生成する。"""
     parser = _build_parser()
     for name in command_path:
         choices = next(
@@ -174,7 +172,6 @@ def format_command_help(command_path: tuple[str, ...]) -> str | None:
 
 
 def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str], tuple[str, ...]] | None:
-    """公開サブコマンドのargparse定義から値なし・値付きオプションと位置引数名を返す。"""
     parser = _build_parser()
     for name in command_path:
         choices = next(
@@ -198,7 +195,6 @@ def command_option_contract(command_path: tuple[str, ...]) -> tuple[frozenset[st
 
 
 def format_command_contract(command_path: tuple[str, ...]) -> str | None:
-    """実行前案内用に最下層サブコマンドの簡潔な受理形式を返す。"""
     contract = command_option_contract(command_path)
     if contract is None:
         return None
@@ -212,7 +208,6 @@ def format_command_contract(command_path: tuple[str, ...]) -> str | None:
 
 
 def _is_wi_draft_preview(args: argparse.Namespace) -> bool:
-    """原稿冒頭の直接表示と原文改行の保持を要求する起動かを返す。"""
     return args.command == "wi" and args.wi_subcommand in ("add", "edit") and args.dry_run
 
 
@@ -238,12 +233,6 @@ def _auto_saves_output(args: argparse.Namespace) -> bool:
 
 @dataclasses.dataclass(frozen=True)
 class _OutputAsFile:
-    """量によらず標準出力を保存する呼び出しと、保存後に表示する内容の対応。
-
-    保存する呼び出しを加えるときに、呼び出し元が保存先を開かずに次の判断へ使う値を同じ箇所で決めるため、
-    判定と保存後の表示関数（表示を持たない場合はその理由）を1つの定義に持つ。
-    """
-
     applies: Callable[[argparse.Namespace], bool]
     after_save: Callable[[pathlib.Path], None] | None
     reason: str
@@ -281,7 +270,6 @@ _OUTPUT_AS_FILE_CALLS = (
 
 
 def _output_as_file_call(args: argparse.Namespace) -> _OutputAsFile | None:
-    """量によらず標準出力を保存する呼び出しであれば、その対応を返す。`--help`の表示は保存しない。"""
     if args._help_parser is not None:
         return None
     return next((call for call in _OUTPUT_AS_FILE_CALLS if call.applies(args)), None)
@@ -289,8 +277,6 @@ def _output_as_file_call(args: argparse.Namespace) -> _OutputAsFile | None:
 
 @dataclasses.dataclass(frozen=True)
 class _Invocation:
-    """共通の前処理を終えた1回の起動の文脈。"""
-
     args: argparse.Namespace
     home: pathlib.Path
     now: datetime.datetime
@@ -341,12 +327,11 @@ def main(
     _output_capture_active: bool = False,
     _saved_show_fields: list[str] | None = None,
 ) -> None:
-    """エントリポイント。"""
     _inherited_venv.strip_inherited_venv(os.environ)
     # Windowsのcp932環境で日本語出力が文字化けする事象を根本回避するためUTF-8を強制する。
     _outcome.force_utf8_stdio()
     raw_argv = argv if argv is not None else sys.argv[1:]
-    # 明示操作と同じ子parserを通し、cwd解決や一覧の初期フィルターも継承する。
+
     default_operations = {
         ("config", "repos"): "list",
         ("wi",): "list",
@@ -361,7 +346,7 @@ def main(
     if default_operation := default_operations.get(tuple(raw_argv)):
         raw_argv = [*raw_argv, default_operation]
     parser = _build_parser(None if "_ARGCOMPLETE" in os.environ else (raw_argv[0] if raw_argv else ""))
-    # argcomplete自身と同じ起動条件で読み込み、プラグイン単独で補完を実行する。
+
     if "_ARGCOMPLETE" in os.environ:
         import argcomplete  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
@@ -384,7 +369,6 @@ def main(
         if args.command == "run-script" and args.script_name == "session-review-evidence":
             flags = {argument.split("=", 1)[0] for argument in args.script_args}
             if flags & {"--grep", "--tool-calls"} and not flags & {"--summary-only", "--fixed-string"}:
-                # 一覧を付ける照会でも、保存する量の境界は通常の判定を使う。
                 after_save = _user_events_summary.summarize_saved_matches
         show_fields: list[str] | None = None
         if args.command == "wi" and args.wi_subcommand == "show" and not args.summary_only and args.section is None:
@@ -442,7 +426,6 @@ def main(
 
 
 def _is_query_without_sweep(args: argparse.Namespace) -> bool:
-    """照会は全領域の掃引を待たず、未分類の操作と更新側は従来どおり回収を先に行う。"""
     match args.command:
         case "wi":
             return args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args)
@@ -463,28 +446,23 @@ def _is_query_without_sweep(args: argparse.Namespace) -> bool:
 
 
 def _sweep_before_command(now: datetime.datetime) -> None:
-    """回収結果をコマンド本体の前に報告する。"""
     try:
         sweep_result = _managed_temp.sweep_managed_temp(now=now)
     except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
         sweep_result = _managed_temp.SweepResult([], ((_managed_temp.temp_root_path(), str(error)),))
-    # 回収を判断できない委譲先には、所有しない領域の警告を出力しない。
+
     if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
         for path, reason in sweep_result.failed:
             _outcome.report_persistent_warning(
                 f"managed-tempの対象を自動削除できなかった: {path}: {reason}",
                 next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
             )
-    # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。
+
     if sweep_result.pressure is not None:
         _report_space_pressure(sweep_result.pressure)
 
 
 def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
-    """空きが下限を割った起動の回収結果を標準エラーへ記録し、回収できず下限を割ったままなら原因を判断できる警告にする。
-
-    回収量上位の対象名を残すのは、参照を終えた作成者が回収しなかった大きな領域を振り返りで見つけるためである。
-    """
     gib = 1024**3
     if pressure.reclaimed_bytes:
         top = ", ".join(f"{name}={size / gib:.2f}GiB" for name, size in pressure.top_reclaimed)
@@ -504,7 +482,6 @@ def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
 
 
 def _run_cli() -> None:
-    """実プロセスの終了コードとstdoutの寿命を所有する。"""
     try:
         try:
             main()

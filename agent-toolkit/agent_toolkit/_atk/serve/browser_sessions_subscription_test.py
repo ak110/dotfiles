@@ -1,5 +1,3 @@
-"""セッション一覧の初期取得とSSE購読の前後関係を確かめる実ブラウザー試験。"""
-
 import asyncio
 import functools
 
@@ -21,7 +19,6 @@ pytestmark = [pytest.mark.browser]
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_initial_resync_preserves_earlier_selection_and_scroll(screen_harness: _ScreenHarness) -> None:
-    """購読登録で初期一覧を再取得する間の先行選択と閲覧位置を、初期URL復元で上書きしない。"""
     page = screen_harness.page
     await _observe_screen_requests(page)
     subscription_started = asyncio.Event()
@@ -59,7 +56,7 @@ async def test_initial_resync_preserves_earlier_selection_and_scroll(screen_harn
         await page.locator("#sessions .session-item").last.click()
         await page.locator("#detail .event").first.wait_for(state="visible")
         selected_url = page.url
-        # 閲覧位置を機械や文字列の折り返しに依存させず、スクロール可能な本文を用意する。
+
         await page.add_style_tag(content="#detail .event { min-height: 1000px; }")
         main = page.locator("#screen-sessions main")
         await main.evaluate("element => { element.scrollTop = 240; }")
@@ -77,7 +74,6 @@ async def test_initial_resync_preserves_earlier_selection_and_scroll(screen_harn
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_late_subscription_resynchronizes_the_initial_session_list(screen_harness: _ScreenHarness) -> None:
-    """初期取得後に購読が登録されても、未購読中の一覧更新を取り込む。"""
     page = screen_harness.page
     started = asyncio.Event()
     release = asyncio.Event()
@@ -89,7 +85,7 @@ async def test_late_subscription_resynchronizes_the_initial_session_list(screen_
         payload = await (await initial.value).json()
         await asyncio.wait_for(started.wait(), timeout=10)
         await playwright.async_api.expect(page.locator("#sessions .session-item")).to_have_count(2)
-        # 未購読中の変更は通知を受け取れない。一覧APIだけが更新済みの状態を制御する。
+
         additional = {**payload["sessions"][0], "session_id": "late-session", "path": "late-session.jsonl"}
         latest = {**payload, "sessions": [*payload["sessions"], additional]}
 
@@ -107,7 +103,6 @@ async def test_late_subscription_resynchronizes_the_initial_session_list(screen_
 async def test_observation_waits_for_registered_subscription(
     screen_harness: _ScreenHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """HTTP接続後も購読が未登録なら、更新通知を送る前の準備完了にしない。"""
     started = asyncio.Event()
     release = asyncio.Event()
     subscribe = serve_sessions.subscribe

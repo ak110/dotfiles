@@ -22,7 +22,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def test_main_strips_conversation_context_before_backend_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    """MCP起動は全backendの継承元を整え、接続設定と引き継ぎ元snapshotを保持する。"""
     monkeypatch.setattr(launch_requests, "_HANDOFF_SESSION", None, raising=False)
     monkeypatch.setattr(child_environment, "_INHERITED", {})
     for name in mcp_environment._NON_INHERITABLE_NAMES:
@@ -61,7 +60,6 @@ def test_main_strips_launcher_venv_from_child_environment(monkeypatch: pytest.Mo
 
 
 def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存の確認を指定した場合はMCP stdioを起動しない。"""
     calls: list[bool] = []
     monkeypatch.setattr(claude_backend, "check_dependencies", lambda: calls.append(True))
     monkeypatch.setattr(mcp_tools.mcp, "run", lambda **_kwargs: pytest.fail("MCPを起動してはいけない"))
@@ -71,7 +69,6 @@ def test_dependency_check_cli_does_not_start_mcp(monkeypatch: pytest.MonkeyPatch
 
 
 def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    """依存の確認処理で発生した例外を捕捉せず呼び出し元へ伝える。"""
 
     def fail_check() -> None:
         raise ImportError("claude-agent-sdk is unavailable")
@@ -82,7 +79,6 @@ def test_dependency_check_cli_propagates_failure(monkeypatch: pytest.MonkeyPatch
 
 
 def test_main_persists_startup_and_exit_diagnostics(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """依存の確認を含む起動初期の診断を状態ディレクトリへ永続化する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(claude_backend, "check_dependencies", lambda: None)
 
@@ -101,7 +97,6 @@ async def test_mcp_lifespan_persists_activate_and_close_milestones(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """managerのactivate前後とclose前後を永続化する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     mcp_tools._configure_logging()
     monkeypatch.setattr(mcp_tools._MANAGER, "activate_async", AsyncMock())
@@ -146,7 +141,6 @@ async def test_mcp_lifespan_persists_activate_failure(
 async def test_service_records_exception_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, secret_message: bool
 ) -> None:
-    """共有管理サービスが例外で終わると、起動単位の終了診断へ例外型と秘匿済みメッセージを記録し、例外を呼出元へ伝える。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(logging_config, "_CURRENT_INSTANCE", None)
     monkeypatch.setattr(session_registry, "_OWNER_SERVER_INSTANCE", None)
@@ -179,6 +173,6 @@ async def test_service_records_exception_exit(
         "exception_type": "RuntimeError",
         "message": 'token="[REDACTED]" stage=start' if secret_message else "transport broke",
     }
-    # 終えた起動単位は同じプロセスの後続の記録へ書かない。
+
     assert logging_config.current_server_instance() is None
     assert session_registry.owner_server_instance() is None

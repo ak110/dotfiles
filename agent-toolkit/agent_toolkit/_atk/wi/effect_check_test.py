@@ -15,7 +15,6 @@ from agent_toolkit._testing.wi_entry_files import entry_path, write_awi, write_u
 
 
 def test_legacy_confirmation_does_not_defer_processing(tmp_path: pathlib.Path) -> None:
-    """保存済み確認キーは通常の未知キーとして着手可否に影響しない。"""
     path = write_awi(tmp_path, "legacy.md")
     path.write_text(
         path.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\nconfirmation: required\n"), encoding="utf-8"
@@ -27,7 +26,6 @@ def test_legacy_confirmation_does_not_defer_processing(tmp_path: pathlib.Path) -
 def _effect_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-    """実commitとローカルremoteを持つWI保存先を用意する。"""
     worktree = git_repository.init_repository(
         tmp_path / "repo",
         origin="https://github.com/example/repo.git",
@@ -85,7 +83,6 @@ def _invoke(
 def test_public_effect_check_partial_then_complete_preserves_original(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """公開保存操作の部分確認・全確認とshow・一覧JSON、remoteへの反映を確認する。"""
     notes, worktree, path = effect_repository
     original = path.read_text(encoding="utf-8")
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
@@ -122,7 +119,6 @@ def test_public_effect_check_partial_then_complete_preserves_original(
 def test_public_effect_insufficient_requires_saved_corrective_awi(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
-    """不足判定は是正先保存を要し、成功時にinsufficientを記録する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "insufficient") != 0
@@ -163,7 +159,6 @@ def test_public_effect_insufficient_requires_saved_corrective_awi(
 def test_public_effect_rejects_invalid_file_without_writing(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], file: str
 ) -> None:
-    """逸脱・正規化の差・対応commitに無い対象を拒否する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
     assert _invoke(notes, worktree, path.name, file, "confirmed") != 0
@@ -183,7 +178,6 @@ def test_public_effect_rejects_invalid_file_without_writing(
 def test_public_effect_rejects_invalid_values(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], extra: tuple[str, str]
 ) -> None:
-    """不正な日付・判定・記録位置を保存前に拒否する。"""
     notes, worktree, path = effect_repository
     original = path.read_bytes()
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed", *extra) != 0
@@ -192,7 +186,6 @@ def test_public_effect_rejects_invalid_values(
 
 @pytest.mark.cpu_limit(1.5, reason="実Gitに部分確認を保存した後の重複拒否で、元記録の非上書きを確かめる。所有CPU最大0.672秒。")
 def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path]) -> None:
-    """部分確認済みのファイルを上書きしない。"""
     notes, worktree, path = effect_repository
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
     original = path.read_bytes()
@@ -212,7 +205,6 @@ def test_public_effect_rejects_duplicate_file(effect_repository: tuple[pathlib.P
 
 
 def test_result_values_ignore_fenced_examples() -> None:
-    """処理結果のコード例を実際の対応commitとして読み取らない。"""
     text = "## 処理結果\n\n```text\n- 対応commit: example\n```\n\n- 対応commit: abcdef0\n"
     assert effect_check.result_values(text, "対応commit") == ["abcdef0"]
 
@@ -220,7 +212,6 @@ def test_result_values_ignore_fenced_examples() -> None:
 def test_public_effect_rejects_unadopted_and_ordinary_edit(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """未採用の効果記録と通常editによる採用済み本文の変更を拒否する。"""
     notes, worktree, path = effect_repository
     assert _invoke(notes, worktree, "corrective.md", "agent-toolkit/skills/a/playbooks/a.md", "confirmed") != 0
     body = tmp_path / "body.md"
@@ -238,7 +229,6 @@ def test_public_effect_rejects_unadopted_and_ordinary_edit(
 def test_public_effect_overall_reason_and_listing_without_commit(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """日時・commit不明でも理由を保存でき、一覧の各出力形式で確認待ちを限定できる。"""
     notes, worktree, path = effect_repository
     text = path.read_text(encoding="utf-8")
     original = "\n".join(line for line in text.split("\n") if not line.startswith(("- 処理日時:", "- 対応commit:")))
@@ -317,7 +307,6 @@ def test_public_effect_retry_after_commit_failure_is_idempotent(
 def test_public_transition_only_implemented_awi_adoption_starts_pending(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
-    """差分なしAWI・回答UWI・却下項目は自動の効果確認待ちへ入れない。"""
     notes, worktree, _path = effect_repository
     write_awi(notes, "nochange.md", state="processing")
     write_awi(notes, "rejected.md", state="processing")
@@ -350,7 +339,6 @@ def _adopt(notes: pathlib.Path, worktree: pathlib.Path, filename: str, *commits:
 def test_adopt_warns_when_inbox_entry_has_commit(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """作業を示すcommitを持つ項目をinboxから直接採用すると、成功させたうえで処理中の抜けを警告する。"""
     notes, worktree, _path = effect_repository
     write_awi(notes, "skipped.md", state="inbox")
     oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
@@ -467,13 +455,9 @@ def test_public_effect_batch_validates_all_and_resumes_partial_save(
 def test_public_effect_whole_item_verdicts_without_file(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--file`を省くと、目的を達したかの判定（確認済み・効果不足）を作業項目の全体へ保存でき、一覧と本文から読める。
-
-    ファイルごとの判定を先に持つ項目でも、その行を保ったまま全体の判定を保存する。
-    """
     notes, worktree, path = effect_repository
     assert _invoke(notes, worktree, path.name, "agent-toolkit/skills/a/playbooks/a.md", "confirmed") == 0
-    assert _invoke(notes, worktree, path.name, None, "insufficient") != 0  # 是正先の指定が無い効果不足は保存しない
+    assert _invoke(notes, worktree, path.name, None, "insufficient") != 0
     assert (
         _invoke(
             notes,
@@ -526,7 +510,6 @@ def test_public_effect_whole_item_verdicts_without_file(
 def test_public_effect_whole_item_confirmed_without_file(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
-    """`--file`を省いた確認済みは、変更ファイルごとの判定がそろっていなくても全体を確認済みにする。"""
     notes, worktree, path = effect_repository
     assert _invoke(notes, worktree, path.name, None, "confirmed") == 0
     parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))

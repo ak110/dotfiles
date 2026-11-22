@@ -1,5 +1,3 @@
-"""実行終了の状態とPID同一性を、登録・保持・活動・回収の公開操作で比較する。"""
-
 import json
 import typing
 
@@ -26,8 +24,6 @@ def test_process_state_consumers_preserve_identity_and_end_states(tmp_path, monk
     value = {"state": "running"}
 
     class ObservedProcess:
-        """PIDを再利用した場合と、一時的な終了状態を決定論的に供給する。"""
-
         pid = 2147483000
 
         def create_time(self):

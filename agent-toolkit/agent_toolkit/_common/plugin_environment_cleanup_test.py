@@ -1,5 +1,3 @@
-"""更新が共有環境を回収しても、実行中・構築中の利用を壊さないことを確かめる。"""
-
 import json
 import os
 import sys
@@ -25,7 +23,6 @@ def test_cleanup_uses_launch_arguments_when_optional_process_fields_are_unreadab
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """exeの読取拒否で全回収を止めず、実launcherの絶対パスを保持する。"""
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
     live, unused = [tmp_path / "environments" / name for name in ("live", "unused")]
     for path in (live, unused):
@@ -51,7 +48,6 @@ def test_cleanup_retains_required_and_live_then_collects_released_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """更新を反復し、共有する現行版と利用終了後の旧版の寿命を区別する。"""
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
     current, old, legacy = [tmp_path / "environments" / name for name in ("current", "old", "legacy")]
     for path in (current, old, legacy):
@@ -142,7 +138,6 @@ def test_cleanup_skips_processes_whose_owner_is_unreadable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """他アカウント・システムのプロセスがあっても、使用中と必要版を残して未使用の旧環境を回収する。"""
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
     required, live, unused = [tmp_path / "environments" / name for name in ("required", "live", "unused")]
     for path in (required, live, unused):
@@ -221,7 +216,6 @@ def test_cleanup_checks_registration_and_usage_at_removal(tmp_path: Path, monkey
 def test_cleanup_keeps_active_virtualenv_and_collects_proven_legacy_key(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧キーの未登録環境は、名前で起動したPythonが有効化を解放した後に回収する。"""
     environment = {plugin_environment.RUNTIME_DATA_ENV: str(tmp_path)}
     root = tmp_path / "old-install"
     root.mkdir()

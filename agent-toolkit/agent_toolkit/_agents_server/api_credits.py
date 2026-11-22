@@ -39,14 +39,12 @@ def is_credit_shortage(text: str) -> bool:
 
 
 def record_shortage(engine: str, *, now: float | None = None) -> None:
-    """エンジンの`credits`接続で残高不足を観測した時刻を記録する。"""
     caller = runtime_environment.current()
     observations = _observations if caller is None else caller.credit_shortages
     observations[engine] = time.monotonic() if now is None else now
 
 
 def clear() -> None:
-    """記録した全エンジンの観測を削除する。"""
     caller = runtime_environment.current()
     (_observations if caller is None else caller.credit_shortages).clear()
 
@@ -64,7 +62,6 @@ def shortage_active(engine: str, *, now: float | None = None) -> bool:
 def order[Item](
     items: Sequence[Item], kind_of: Callable[[Item], str], *, engine: str, now: float | None = None
 ) -> tuple[Item, ...]:
-    """観測が有効な間は、種別が`credits`の候補を他の候補の後ろへ回した順序を返す。"""
     if not shortage_active(engine, now=now):
         return tuple(items)
     return tuple(item for item in items if kind_of(item) != "credits") + tuple(

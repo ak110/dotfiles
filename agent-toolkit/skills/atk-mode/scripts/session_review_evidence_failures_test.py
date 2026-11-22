@@ -1,5 +1,3 @@
-"""セッション振り返りの試験（session_review_evidence_failures_test）。"""
-
 from __future__ import annotations
 
 import json
@@ -17,7 +15,6 @@ from agent_toolkit._testing.session_review_evidence_support import (
 
 
 def test_codex_failed_command_without_output_keeps_failure_event(tmp_path: pathlib.Path) -> None:
-    """出力が空でも非0終了のCommandExecutionを証拠から欠落させない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -79,7 +76,6 @@ def test_codex_failed_command_keeps_structured_command_and_exit_code(tmp_path: p
 def test_bundle_groups_wrapped_commands_by_failure_signature(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """包装とスクリプト名が異なる同じ原因を1署名へまとめ、別の終了理由は分ける。"""
     cases = [
         (["/bin/bash", "-lc", "timeout 900s uv run --frozen python a.py"], 127, "python: command not found"),
         (["python", "b.py"], 127, "python: command not found"),
@@ -99,7 +95,6 @@ def test_bundle_groups_wrapped_commands_by_failure_signature(
 def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_error(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """正常な否定結果と自動チェックによる検出を除外し、終了コード2の入力誤りは候補へ残す。"""
     cases = [
         (["/bin/bash", "-lc", "git -c color.ui=false grep -n -F needle -- docs"], 1, ""),
         (["git", "config", "--get", "unset.key"], 1, ""),
@@ -120,7 +115,6 @@ def test_bundle_excludes_negative_results_and_checks_without_hiding_argument_err
 def test_bundle_treats_quoted_operator_shaped_search_terms_as_data(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """演算子形の検索語と保存先で一致0件の分類を変えず、帰属不能な連結・診断・異常終了を残す。"""
     cases = [
         (["/bin/bash", "-lc", "rg -n -F '<<<<<<<' docs"], 1, ""),
         (["/bin/bash", "-lc", "rg -n -F ';' docs"], 1, ""),
@@ -171,7 +165,6 @@ def test_bundle_excludes_wait_continuations_but_keeps_real_failures(
 
 
 def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> None:
-    """明示helpのusageだけを除外し、通常操作とhelp以外の診断は候補へ残す。"""
     timeline = [
         {
             "kind": "failed-tool",
@@ -210,7 +203,6 @@ def test_candidates_exclude_explicit_help_failure_but_keep_usage_errors() -> Non
 
 
 def test_candidates_exclude_normal_negative_results_but_keep_diagnostics() -> None:
-    """述語の偽を件数へ分け、受理形式や対象の異常は候補へ残す。"""
     commands = [
         (["git", "grep", "missing"], ""),
         (["rg", "missing", "."], ""),
@@ -241,7 +233,6 @@ def test_candidates_exclude_normal_negative_results_but_keep_diagnostics() -> No
 
 
 def test_codex_failed_command_clips_only_long_structured_command(tmp_path: pathlib.Path) -> None:
-    """長大commandは既存の証拠上限と省略標識に従う。"""
     command = ["x" * 2100]
     transcript = _write_transcript(
         tmp_path,
@@ -298,7 +289,6 @@ def test_bundle_excludes_atk_no_match_without_hiding_real_failures(
 
 
 def test_bundle_excludes_atk_no_match_of_claude_bash(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """引用した検索語と包装を保ち、Bashの終了1と結果行を公開bundleで同じ区分へ数える。"""
     no_match = outcome.NO_MATCH_PREFIX + "検索は正常に完了した"
     commands = [
         "atk wi grep 'a|b'",

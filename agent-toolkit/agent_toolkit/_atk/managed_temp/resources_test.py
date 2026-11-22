@@ -1,5 +1,3 @@
-"""再生成指定と使用参照の境界を確認する。回収の副作用と実Git・子プロセスは実行しない。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -13,7 +11,6 @@ from agent_toolkit._atk.managed_temp import resources
 @pytest.mark.parametrize("kind", ["venv", "node", "rust", "cache"])
 @pytest.mark.parametrize("state", ["unused", "missing-source", "busy", "unknown", "tracked", "link"])
 def test_cleanup_selection_preserves_sources_and_live_resources(tmp_path, monkeypatch, kind, state):
-    """生成指定の欠落、使用中・不明・Git原本・リンクを、未使用の再生成物から区別する。"""
     project = tmp_path / "owned"
     project.mkdir()
     name, source, marker = {
@@ -57,4 +54,4 @@ def test_cleanup_selection_preserves_sources_and_live_resources(tmp_path, monkey
         assert result["retained"] and all(not item["retryable"] for item in result["retained"])
     elif state in {"busy", "unknown"}:
         assert result["retained"] and all(item["retryable"] for item in result["retained"])
-    assert target.exists()  # 副作用を実行せず、判定対象を原本のまま保つ。
+    assert target.exists()

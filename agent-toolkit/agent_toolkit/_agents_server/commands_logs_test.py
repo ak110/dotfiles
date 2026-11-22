@@ -161,7 +161,6 @@ def test_agents_logs_markdown_renders_codex_record(
 def test_agents_logs_reads_subagent_and_appends_it_to_parent_markdown(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """サブエージェントのIDからも親の記録からも同じ保存記録へ到達する。"""
     parent = tmp_path / "projects" / "sample" / "parent.jsonl"
     _write_jsonl(parent, [{"type": "user", "timestamp": "2026-09-24T00:00:00Z", "message": {"content": "親の依頼"}}])
     child_id = "agent-a7157f79d55caab81"
@@ -257,7 +256,6 @@ def test_agents_logs_bulk_export_filters_projects_and_preserves_existing_files(
 def test_agents_logs_reports_missing_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """存在しない記録は識別子を添えて報告し、一覧で識別子を確かめる操作を示す。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
@@ -391,7 +389,6 @@ def test_logs_text_default_follows_conversation_with_blank_lines(
 def test_logs_verbose_keeps_current_events_with_blank_lines(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--verbose`は全イベントを全文で表示し、付けない場合と同じく項目の間に空行を1行置く。"""
     _write_mixed_claude_record(tmp_path)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
@@ -413,7 +410,6 @@ def test_logs_verbose_keeps_current_events_with_blank_lines(
 def test_logs_follow_uses_conversation_summary(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`--follow`も`--verbose`を付けない場合は要約で表示し、項目の間に空行を1行置く。"""
     _write_mixed_claude_record(tmp_path)
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
@@ -432,7 +428,6 @@ def test_logs_follow_uses_conversation_summary(
 
 
 def test_logs_verbose_rejects_markdown(capsys: pytest.CaptureFixture[str]) -> None:
-    """内容の制御オプションと同じく、`--verbose`とmarkdownの併用は次の操作付きの引数エラーにする。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "logs", "session-1", "--format", "markdown", "--verbose"])
     error = capsys.readouterr().err

@@ -126,13 +126,11 @@ class TestGithubCiConfiguration:
         monkeypatch.setattr(wait_ci_polling, "_github_ci_configured", lambda *_args: False)
         result = _wait_for_ci_without_runs("owner/repository")
         assert result == wait_ci.EXIT_NO_CI_CONFIG
-        # CI定義が無い場合は、CI検収を不要として進めてよいことを次の操作で示す。
+
         assert "次の操作: CI定義なしとして、ローカル全体検証の成功と組にして次の工程へ進む" in capsys.readouterr().err
 
 
 class TestGitlabCiExclusion:
-    """公開CLIからCI Lintの確定的非生成と判定不能を区別する。"""
-
     @pytest.mark.parametrize("ref", ["refs/heads/release/v2", "refs/tags/v2"])
     def test_lint_exclusion_exits_before_listing(self, monkeypatch, capsys, ref):
         """確定的なworkflow除外は登録待機せず、対象と理由を証拠として返す。"""
@@ -260,7 +258,6 @@ class TestGitlabCiExclusion:
         ["jobs", "missing-jobs", "null-jobs", "object-jobs", "mixed-errors", "missing-valid", "string-valid", "zero-valid"],
     )
     def test_incomplete_or_conflicting_exclusion_is_not_accepted(self, monkeypatch, mutation):
-        """既知の非生成文言があっても、必須条件の欠落と他のエラーを受理しない。"""
         error = "The pipeline did not run. Review the workflow:rules configuration for the pipeline."
         payload: dict[str, Any] = {"valid": False, "jobs": [], "errors": [error]}
         if mutation == "jobs":
@@ -289,7 +286,6 @@ class TestGitlabCiExclusion:
 
     @pytest.mark.parametrize("custom_fetcher", ["run", "job", "both"])
     def test_custom_fetchers_do_not_query_lint(self, monkeypatch, custom_fetcher):
-        """取得関数を注入した呼び出しへ外部Lint照会を追加しない。"""
         calls = []
 
         def run(command, **_kwargs):

@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
-
 # pylint: disable=protected-access
 
 import pathlib
@@ -24,7 +22,6 @@ from agent_toolkit._testing.serve_plans_support import (
 
 
 def test_same_root_specified_twice_is_listed_once(tmp_path: pathlib.Path) -> None:
-    """同一のcanonical pathを指すroot定義は1件へまとめる。"""
     root = tmp_path / "plans"
     root.mkdir()
 
@@ -36,12 +33,11 @@ def test_same_root_specified_twice_is_listed_once(tmp_path: pathlib.Path) -> Non
     )
 
     assert [spec.source_id for spec in normalized] == [plans.NEW_SOURCE_ID]
-    # 旧rootとして重複したため、旧形式の作成日時を取り込む資格を論理和で引き継ぐ。
+
     assert normalized[0].migrate_legacy_ctime is True
 
 
 def test_only_legacy_root_migrates_matching_legacy_entry(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """旧形式はrootを持たないため、旧rootだけが取り込む。"""
     new_root = tmp_path / "new"
     legacy_root = tmp_path / "legacy"
     new_root.mkdir()
@@ -64,7 +60,6 @@ def test_only_legacy_root_migrates_matching_legacy_entry(tmp_path: pathlib.Path,
 
 @pytest.mark.asyncio
 async def test_attached_plan_path_is_escaped(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """リンクへ埋め込む相対パスをエスケープする。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -78,7 +73,6 @@ async def test_attached_plan_path_is_escaped(tmp_path: pathlib.Path, index_path:
 
 
 def test_dotdir_entries_are_excluded(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """ドットディレクトリ配下は一覧にも検索にも含めない。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -91,7 +85,6 @@ def test_dotdir_entries_are_excluded(tmp_path: pathlib.Path, index_path: pathlib
 
 @pytest.mark.asyncio
 async def test_stop_local_watchers_releases_observer(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """監視を停止するとobserverの保持欄が空へ戻り、監視スレッドが終了する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -108,7 +101,6 @@ async def test_stop_local_watchers_releases_observer(tmp_path: pathlib.Path, ind
 
 @pytest.mark.asyncio
 async def test_remote_file_is_read_through_rpc_when_connected() -> None:
-    """常駐RPCを利用できる場合は単発SSHを起動しない。"""
     runner, calls = _runner_returning(_read_payload("fallback"))
     watcher = _FakeWatcher(connected=True, response=_read_payload("rpc"))
 
@@ -121,7 +113,6 @@ async def test_remote_file_is_read_through_rpc_when_connected() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_local_file_is_reported_as_not_found(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """ローカルの不在ファイルは未検出として扱う。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()

@@ -112,7 +112,6 @@ def test_interpret_maps_remote_status(result: dict[str, object], exit_code: int,
 
 
 def test_interpret_keeps_result_lines_of_other_runs_in_output() -> None:
-    """スクリプトの中で入れ子に実行した別の実行の結果の行は、出力として残す。"""
     nested = _remote_stdout(b"inner", {"status": "completed", "exit_code": 5}, run_id="ffffffffffffffff")
     outcome = _cli.interpret(
         _remote_stdout(nested, {"status": "completed", "exit_code": 0}), 0, run_id=_RUN_ID, host="stheno", timeout=60
@@ -215,7 +214,6 @@ def test_main_reports_stdin_not_arriving(
 
 
 def _run_runner(tmp_path: pathlib.Path, script: str) -> tuple[str, str]:
-    """remote.ps1が置く形でrunner.ps1とscript.ps1を置いて実行し、残った出力と終了コードを返す。"""
     runner = tmp_path / "runner.ps1"
     runner.write_bytes(pathlib.Path(_cli.__file__).with_name("runner.ps1").read_bytes())
     (tmp_path / "script.ps1").write_bytes(codecs.BOM_UTF8 + script.encode("utf-8"))

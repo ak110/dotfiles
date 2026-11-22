@@ -40,7 +40,6 @@ _CONTRACT = pathlib.Path(__file__).resolve().parents[3] / "rust/claude-statuslin
 async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """共有fixtureの親IDを生成側からCLIへ渡し、書込主体名と異なる多段の枝を表示する。"""
     contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(commands, "is_agent_environment", lambda _env: False)
@@ -83,7 +82,7 @@ async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
             assert diagnostic in output
             assert "53.5k/5%" in output
         sessions[1].api_error = None
-        # 同じ公開一覧が終了と再描画後の新観測値を扱う。
+
         sessions[0].status = "completed"
         sessions[0].record_turn_completed()
         sessions[0].touch()
@@ -127,7 +126,6 @@ async def test_public_cli_connects_shared_fixture_parent_ids_and_formats_usage(
 
 
 def test_shared_usage_examples_match_python_format() -> None:
-    """Rust側も読む共通の数値例で、丸め、0、未知の値、不正な分母と分子の書式がPythonと一致することを確かめる。"""
     contract = json.loads(_CONTRACT.read_text(encoding="utf-8"))
     for case in contract["context_usage_cases"]:
         assert context_usage.format_tokens(case["tokens"], case["window"]) == case["formatted"]
@@ -190,7 +188,7 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
         return [sys.executable, str(script)]
 
     monkeypatch.setattr(antigravity.AntigravityManager, "prepare_command", fake_command)
-    # APIキー方式の受理は専用試験で確認し、ここでは同じPythonから合成の出力を返す。
+
     monkeypatch.setattr(cli_turn, "_child_env", lambda _root: host_environ())
     async with antigravity.AntigravityManager() as backend:
         terminal = asyncio.Event()
@@ -216,7 +214,6 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
 async def test_context_usage_reaches_human_show_without_activity(
     tokens: object, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """人間の端末の`show`では数値が未知の場合、0の場合と不正値を区別し、表示の更新では活動時刻を進めない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     for name in ("AI_AGENT", "CODEX_CI", "CLAUDECODE", "CURSOR_AGENT", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
@@ -249,7 +246,7 @@ async def test_context_usage_reaches_human_show_without_activity(
         retained = state.SessionResumeState.from_session(session)
         assert retained.context_tokens == 1000
         writer.flush()
-        # 状態ファイル消失後も、終了時の結果に保存した詳細へ同じ観測値を届ける。
+
         writer.path.unlink()
         with pytest.raises(SystemExit, match="0"):
             atk.main(["agents", "show", session.session_id])
@@ -288,7 +285,7 @@ async def test_agent_list_and_show_omit_context_usage(
     try:
         context_usage.record_context_usage(session, 53500, 1000000)
         writer.flush()
-        # 状態の記録側へ将来加わりうる別形態の値を、公開の読出し境界の入力として持ち込む。
+
         stored = json.loads(writer.path.read_text(encoding="utf-8"))
         assert stored["sessions"][0]["context_tokens"] == 53500
         stored["sessions"][0].update(_UNCLASSIFIED_STATE_VALUES)
@@ -300,7 +297,6 @@ async def test_agent_list_and_show_omit_context_usage(
             for key in _UNCLASSIFIED_STATE_VALUES:
                 assert key not in output
             if human and argv[1] == "list":
-                # 人の端末の一覧は表形式で、分類済みの文脈量だけを短縮表記で示す。
                 assert "session-1" in output and "worker" in output and "53.5k" in output
                 continue
             payload = json.loads(output)
@@ -320,7 +316,6 @@ async def test_agent_list_and_show_omit_context_usage(
 async def test_agent_wait_result_and_retained_show_omit_context_usage(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終了結果の保存に文脈量が含まれても、エージェント環境の`wait`の最終出力・本文ファイルと保持後の`show`へ出さない。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "root-session")
     for name in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CODEX_THREAD_ID"):
@@ -340,7 +335,7 @@ async def test_agent_wait_result_and_retained_show_omit_context_usage(
         session.touch()
         writer.flush()
         saved = shared_layout.results_directory("root-session", tmp_path) / "session-1.json"
-        # 保存側は人の端末の詳細表示のために文脈量を保持する。公開の読出し境界で除くことを確かめる前提とする。
+
         assert json.loads(saved.read_text(encoding="utf-8"))["session"]["context_tokens"] == 53500
         with pytest.raises(SystemExit, match="0"):
             atk.main(["agents", "show", session.session_id])
@@ -364,7 +359,6 @@ async def test_agent_wait_result_and_retained_show_omit_context_usage(
 
 @pytest.mark.asyncio
 async def test_claude_context_usage_updates_init_response_compaction_and_terminal(tmp_path: pathlib.Path) -> None:
-    """SDK 0.2.165のコンテキスト使用量の応答を使い、各更新の直近値とrawMaxTokensを分子と分母にする。"""
 
     class Client(QueueClaudeClient):
         usage: object = {"totalTokens": 53500, "rawMaxTokens": 1000000, "maxTokens": 800000}
@@ -428,7 +422,6 @@ async def test_claude_context_usage_updates_init_response_compaction_and_termina
 
 @pytest.mark.asyncio
 async def test_claude_slow_context_request_keeps_receiver_and_closes_owned_task(tmp_path: pathlib.Path) -> None:
-    """照会が未完了でも起動・応答が進み、closeで照会taskを回収する。"""
 
     class Client(QueueClaudeClient):
         started = asyncio.Event()

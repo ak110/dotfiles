@@ -1,5 +1,3 @@
-"""一時Gitリポジトリで行数検査の境界と対象外の種類を確かめる。"""
-
 import pathlib
 import subprocess
 import sys
@@ -31,7 +29,6 @@ from agent_toolkit._testing.git_repository import init_repository, run_git
 def test_line_boundaries(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, content: bytes, expected: int
 ) -> None:
-    """改行だけを数え、超過診断は整理に必要な全要素を持つ。"""
     repository = init_repository(tmp_path)
     (repository / name).write_bytes(content)
     run_git(repository, "add", "--", name)
@@ -42,7 +39,7 @@ def test_line_boundaries(
     if expected == 0:
         assert not output.out
         return
-    # 文言の言い換えで壊れないよう、整理に必要な要素（位置・行数・上限・整理後・次の操作）だけを確かめる。
+
     limit, after = (250, 150) if name.endswith((".md", ".md.tmpl")) else (1000, 600)
     assert output.out.count("\n") == 1
     assert output.out.startswith(f"{name}:1: ")
@@ -61,7 +58,6 @@ def test_line_boundaries(
     ],
 )
 def test_attributes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], attribute: str, expected: int) -> None:
-    """生成物・機械記録・第三者文面の属性で除外し、明示的な解除は除外しない。"""
     repository = init_repository(
         tmp_path,
         files={
@@ -82,7 +78,6 @@ def test_attributes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], 
 
 
 def test_symlink_and_untracked_files(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """長い対象へのsymlinkと追跡外ファイルは検査しない。"""
     repository = init_repository(tmp_path)
     (repository / "untracked.md").write_bytes(b"x\n" * 251)
     (repository / "link.md").symlink_to("untracked.md")
@@ -115,7 +110,6 @@ def test_git_query_failure(
 
 
 def test_cli_from_subdirectory(tmp_path: pathlib.Path, host_environ) -> None:
-    """公開入口は引数なしで起動し、cwdの親も含めた全追跡ファイルを検査する。"""
     repository = init_repository(tmp_path, files={"root.md": "x\n" * 251})
     run_git(repository, "add", ".")
     directory = repository / "nested"

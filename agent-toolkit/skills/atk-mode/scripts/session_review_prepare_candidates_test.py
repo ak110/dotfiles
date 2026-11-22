@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_candidates_test）。"""
 
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ from agent_toolkit._testing.session_review_prepare_support import _isolate_failu
 
 
 def _write_wi(root: pathlib.Path, state: str, name: str, frontmatter: dict[str, str], body: str) -> None:
-    """private-notesへWIを1件書く。frontmatterの形は`atk wi add`が保存する形に合わせる。"""
     directory = root / state
     directory.mkdir(parents=True, exist_ok=True)
     head = "".join(f"{key}: {value}\n" for key, value in frontmatter.items())
@@ -50,11 +48,6 @@ def _bash_entry(timestamp: str, call_id: str, command: str) -> dict[str, object]
 def test_prepare_marks_wi_candidates_and_similar_past_records(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, dated: bool, past_state: str
 ) -> None:
-    """投入したUWIを確認の候補、WIの記入欄の是正を是正の候補として載せ、ユーザーの是正へ過去の同種記録を添える。
-
-    報告用UWI、選択肢と一致する回答、読んだだけのWI、引用の中のコマンド名は候補にしない。
-    過去の同種記録はユーザーの発話を保持する節だけと比べ、記入元のWI自身と短い文の一致を含めない。
-    """
     session_id = "11111111-2222-3333-4444-555555555555"
     root = tmp_path / "private-notes"
     correction = "エージェントが判断すべきことをユーザーに委ねないで、判断できないことだけを聞いてほしい"
@@ -149,8 +142,7 @@ def test_prepare_marks_wi_candidates_and_similar_past_records(
         candidate_id for candidate_id, line in by_text.items() if "wi-user-response" in line and "委ねないで" in line
     )
     reset_id = next(candidate_id for candidate_id, line in by_text.items() if "上限をリセットした" in line)
-    # ユーザーの発話を保持する節（逐語引用、回答）に同じ文を持つWIだけを添え、本文だけに同じ文を持つ項目は含めない。
-    # 回答欄の是正では、記入元のUWI自身を過去の同種記録から除く。
+
     assert record["similar_records"][intervention_id] == ["20261001-163353-001.md", "20261006-100000-002.md"]
     assert record["similar_records"][response_id] == ["20261001-163353-001.md"]
     assert record["similar_records"][reset_id] == []
@@ -236,7 +228,6 @@ def test_prepare_keeps_first_human_intervention_after_process_loop_start(
 
 
 def test_prepare_keeps_improvement_lines_in_omitted_middle(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """予算内の長い発話を1行で通読し、改善点は全件の保存結果から取得できる。"""
     first_note = "気付いた改善点: atk agents waitの出力をjqで加工するスクリプトを3回作った（ツールの出力形式）"
     second_note = "  気付いた改善点: 全件そろうまで戻らない回収ループで先に届いた結果を待たせた（待ち方の手順）"
     filler = "作業の経過を説明する。" * 60
@@ -327,7 +318,6 @@ def test_prepare_adds_record_provenance_to_candidate_locations(
 def test_prepare_marks_candidate_locations_without_provenance(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """由来を持たない証拠bundle（`record-provenance`を出力する前の版で作成した記録など）では、取得できなかったことを示す。"""
     parent = _delegate_adhoc_session(tmp_path, monkeypatch)
     original = prepare._read_jsonl  # pylint: disable=protected-access
 
@@ -345,6 +335,5 @@ def test_prepare_marks_candidate_locations_without_provenance(
 
 
 def test_escalation_candidate_requires_evaluation() -> None:
-    """続行不能の返却は担当の作業遂行不能を示すため、後続で回復しても評価必須の候補にする。"""
     assert prepare.is_mandatory({"candidate_kind": "escalation"})
     assert not prepare.is_mandatory({"candidate_kind": "delegate-return"})

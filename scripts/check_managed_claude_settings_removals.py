@@ -15,7 +15,7 @@ _SETTINGS = pathlib.Path("share/claude_settings_json_managed.json")
 
 
 class _GitUnavailable(RuntimeError):
-    """差分の取得に必要なGitを起動できない。"""
+    pass
 
 
 def _git(*args: str) -> str:
@@ -81,7 +81,7 @@ def _remaining_hooks(expected: dict, actual: dict) -> Iterator[tuple[str, str]]:
     actual_groups = list(_hook_groups(actual))
     extra = Counter(_hook_identity(event, group, hook) for event, group, _ in actual_groups for hook in group["hooks"])
     extra.subtract(_hook_identity(event, group, hook) for event, group, _ in expected_groups for hook in group["hooks"])
-    # 更新後に同じグループが2つある場合も、新規配布に含まれる個数だけを先に保護する。
+
     unchanged = Counter((event, json.dumps(group, sort_keys=True)) for event, group, _ in expected_groups)
     for event, group, path in actual_groups:
         group_key = (event, json.dumps(group, sort_keys=True))
@@ -113,11 +113,10 @@ def _residue(before: object, intended: object, actual: object, path: str = "$") 
 
 
 def removals_left_after_update(before: dict, after: dict) -> list[tuple[str, str]]:
-    """旧版を配布した入力に新版を適用し、除去指定が不足する項目を返す。"""
     original = preview_managed_settings_update({}, before)
     expected = preview_managed_settings_update({}, after)
     actual = preview_managed_settings_update(original, after)
-    # hookグループは配布中に組み替わるため、完全一致する配列要素ではなく個々のhookで比較する。
+
     old_values, new_values, updated_values = [
         {key: value for key, value in settings.items() if key != "hooks"} for settings in (original, expected, actual)
     ]
@@ -125,7 +124,6 @@ def removals_left_after_update(before: dict, after: dict) -> list[tuple[str, str
 
 
 def main() -> int:
-    """変更前のGitツリーと現在の管理設定を比較する。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base",

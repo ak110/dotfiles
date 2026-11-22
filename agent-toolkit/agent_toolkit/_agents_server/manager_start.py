@@ -1,5 +1,3 @@
-"""起動候補の選定、初期化と開始済みsessionの公開。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -57,7 +55,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 def model_override_warnings(
     model_type: str | None, *, default_type: str | None = None, inherited: bool = False
 ) -> list[dict[str, str]]:
-    """起動前の入力差分を示す。認可の真偽は呼出し元が判断する。"""
     if model_type is None or (model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)):
         return []
     restore = (
@@ -80,8 +77,6 @@ def model_override_warnings(
 
 
 class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancestors  # 責務別のmixinへ分割したため。
-    """モデル候補を順に評価し、起動したsessionを公開する。"""
-
     async def _resolve_start_candidates(
         self,
         model_type: str,
@@ -89,11 +84,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         launch_kind: LaunchKind,
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
-        """起動条件を検証し、除外後の候補列を設定順で返す。
-
-        除外中の候補は状態ディレクトリに保存した記録を読む。
-        保存した記録だけで残りの候補が尽きた場合は、その記録を無視する。現在の利用上限による除外は取り消さない。
-        """
         await self._drain_candidate_records()
         await run_file_operation(usage_refresh.ensure_fresh, environment=child_environment.inherited())
         quota_excluded: dict[ModelCandidate, str] = {}
@@ -239,7 +229,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             if backend_type is None:
                 raise ActionableError(f"unsupported engine: {engine}", next_action=MODEL_TYPE_NEXT_ACTION)
             validate_model_effort(model, effort)
-            # 候補ごとに子のhost/cwdで資料を解決する。前候補の資料を別engineへ再利用しない。
+
             try:
                 resource_instructions = await run_file_operation(
                     launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, engine, cwd
@@ -312,8 +302,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 _LOG.warning("cli_start_failed engine=%s model_type=%s model=%s reason=%s", engine, model_type, model, reason)
                 continue
             session.engine = engine
-            # テストや独自のMCPクライアントから起動して親のセッション記録に起動結果が残らない委譲先も、
-            # `atk serve`の一覧が親の下へ置けるよう、作成時点の委譲元を登録簿へ記録する。
+
             if self._status_writer is not None:
                 await self._status_writer.launcher_session_id_async()
             session.launcher_session_id = self.launcher_session_id()
@@ -321,7 +310,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 session.status = "running"
             await self._save_started_session(session)
             await self._await_start_outcome(session)
-            # 以後に過負荷で終了したturnは同じsessionの自動継続で扱う。
+
             session.availability_checked = True
             response: dict[str, Any] = {
                 "session_id": session.session_id,
@@ -341,7 +330,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 response["root_session_id"] = self._status_writer.root_session_id
             unavailable_reason = self._unavailable_reason(session)
             if isinstance(session.error, dict) and session.error.get("configuredModelChanged") is True:
-                # 起動中に設定が変わった場合も、起動開始時の古い候補列へ進めず現在設定への引き継ぎを返す。
                 session.label = display_label
                 session.prompt = prompt
                 session.announced = True
@@ -413,7 +401,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         )
 
     async def start_handoff(self, session_id: str, *, model_type: str | None = None) -> dict[str, Any]:
-        """終了した前任の起動条件と進捗を使い、明示操作1回で後任を開始する。"""
         current = await self.resolve_handoff_predecessor(session_id)
         if isinstance(current, SessionState):
             # 終了通知がCLIの後始末より先に届いても、後任と前任が同じworktreeへ同時に作用しない。
@@ -449,7 +436,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         """開始済みの情報を公開し、共有状態などの補助的な保存に失敗してもsessionが存在しないとは扱わない。"""
         warnings: list[dict[str, str]] = []
         if self._status_writer is not None:
-            # 委譲先の通知と結果が届くルートを登録簿へ残し、所有サーバーを失った後の案内に使う。
             session.owner_root_session_id = self._status_writer.root_session_id
         try:
             session.touch()
@@ -601,10 +587,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
 
     @staticmethod
     def _start_outcome_observed(session: SessionState) -> bool:
-        """起動直後の可用性を確定できたかを返す。
-
-        利用上限の解除待ちへ入ったsessionは、別の候補へ切り替えず同じsessionで待つため、`running`として確定する。
-        """
         if session.codex_auto_reset_pending:
             return False
         return session.result_available or session.model_output_observed or session.usage_limit_resume_at is not None
@@ -617,7 +599,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         label: str | None = None,
         model_type: str | None = None,
     ) -> dict[str, Any]:
-        """探索専用の軽量な起動条件でturnを開始する。"""
         resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["explore"]
         return await self.start(
             resolved_type,
@@ -636,7 +617,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         label: str | None = None,
         model_type: str | None = None,
     ) -> dict[str, Any]:
-        """コマンド実行専用の軽量な起動条件でturnを開始する。"""
         validate_shell_request(command, summary_policy)
         resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["shell"]
         return await self.start(
@@ -655,7 +635,6 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         label: str | None = None,
         model_type: str | None = None,
     ) -> dict[str, Any]:
-        """対象、読者、事実と根拠が確定済みの文章起草・書込turnを開始する。"""
         resolved_type = model_type or tool_names.START_MODE_MODEL_TYPES["write"]
         return await self.start(
             resolved_type,

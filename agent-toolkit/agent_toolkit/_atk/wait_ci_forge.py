@@ -17,7 +17,6 @@ from agent_toolkit._git import remote as _git_remote
 
 
 def _parse_repository(repository: str) -> RepositoryTarget:
-    """URL・SCP形式・`[host/]owner/repo`をrepository対象へ正規化する。"""
     try:
         return _git_remote.parse_remote_location(repository)
     except ValueError as error:
@@ -32,7 +31,6 @@ def _http_port(target: RepositoryTarget) -> int | None:
 
 
 def _matches_local_push_target(forge: str, repository: str, timeout: float) -> bool:
-    """作業ツリーの有効なpush URLが一覧の照会先と一致するかを確かめる。"""
     try:
         target = _parse_repository(repository if forge != "gitlab" else _forge_cli.glab_repository(repository))
         if forge == "gitlab":
@@ -76,7 +74,6 @@ def _matches_local_push_target(forge: str, repository: str, timeout: float) -> b
 
 
 def _short_ref(ref: str) -> str:
-    """`refs/heads/`または`refs/tags/`をforge CLI用の短縮refへ変換する。"""
     for prefix in ("refs/heads/", "refs/tags/"):
         if ref.startswith(prefix):
             return ref.removeprefix(prefix)
@@ -84,7 +81,6 @@ def _short_ref(ref: str) -> str:
 
 
 def _gh_run_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
-    """repository・ref・SHAを明示した`gh run list`結果を返す。"""
     payload = _run_forge_json_command(
         [
             "gh",
@@ -189,12 +185,6 @@ _GITLAB_STATUS_TO_CONCLUSION = {
 
 
 def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
-    """GitLabパイプライン1件を`gh run list`と同一スキーマの`RunRecord`へ正規化する。
-
-    未知のステータスは完了かつ`conclusion`をステータス名のまま扱い、成功以外として判定させる
-    （`conclusion`は`success`のみ通過とする厳格判定のため、未知値の混入で誤って通過することはない）。
-    `name`は空の場合があるため、空のときはパイプライン識別子を含む代替表示へ置き換える。
-    """
     status = str(pipeline.get("status", ""))
     pipeline_id = pipeline.get("id")
     completed = status not in _GITLAB_PENDING_STATUSES
@@ -210,11 +200,6 @@ def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
 
 
 def _glab_pipeline_list(repository: str, ref: str, sha: str, subprocess_timeout: float) -> list[RunRecord]:
-    """repository・ref・SHAを明示した`glab ci list`結果を正規化して返す。
-
-    `glab`はJSON出力でGitLab APIの応答オブジェクトを加工せず出力する。
-    SHA指定で対象を限定できるサブコマンドは`ci list`のみのため、`ci status`・`ci get`は使わない。
-    """
     payload = _run_forge_json_command(
         [
             "glab",
@@ -260,7 +245,6 @@ def _glab_downstream_pipelines(
     parent_project_id: int,
     subprocess_timeout: float,
 ) -> list[dict[str, Any]]:
-    """同一projectのbridgeが再帰的に指すdownstream pipeline詳細を返す。"""
     target = _parse_repository(repository)
     encoded_project = quote(target.project_path, safe="")
     children: list[dict[str, Any]] = []
@@ -313,7 +297,6 @@ def _glab_downstream_pipelines(
 
 
 def _glab_job_list(repository: str, run: RunRecord, subprocess_timeout: float) -> list[JobRecord]:
-    """GitLab pipelineの置換済み試行を除くジョブを全ページ取得して正規化する。"""
     pipeline_id = run.get("databaseId")
     if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):
         raise RunListError(f"GitLab pipeline databaseId is invalid: {pipeline_id!r}")
@@ -482,7 +465,6 @@ def _forge_from_hostname(hostname: str) -> str | None:
 
 
 def _remote_hostnames(project_path: str, cwd: pathlib.Path | None) -> list[str]:
-    """`cwd`のGit remoteのうち、project pathが一致するURLのホスト名を返す。取得できない場合は空とする。"""
     hostnames: list[str] = []
     for url in _git_remote.remote_urls(cwd, timeout=30):
         try:
@@ -500,7 +482,6 @@ def _default_run_list_fn(
     ref: str,
     subprocess_timeout: float,
 ) -> RunListFn:
-    """forgeに対応し、repository・ref・タイムアウトを固定した一覧取得関数を返す。"""
     fetcher = _glab_pipeline_list if forge == "gitlab" else _gh_run_list
     return functools.partial(fetcher, repository, ref, subprocess_timeout=subprocess_timeout)
 
@@ -528,7 +509,6 @@ def _resolve_sha(revision: str, subprocess_timeout: float) -> str | None:
 
 
 def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) -> bool:
-    """`git merge-base --is-ancestor <sha> <ref>`で祖先関係を確認する。"""
     try:
         result = _git_command.run(
             ["merge-base", "--is-ancestor", ancestor_sha, ref],
@@ -543,7 +523,6 @@ def _is_ancestor_of_ref(ancestor_sha: str, ref: str, subprocess_timeout: float) 
 
 
 def _follow_shas(base_sha: str, ref: str, subprocess_timeout: float) -> list[str]:
-    """`git log <base_sha>..<ref> --format=%H`で後続SHA集合を新しい順で返す。"""
     try:
         result = _git_command.run(
             ["log", f"{base_sha}..{ref}", "--format=%H"],

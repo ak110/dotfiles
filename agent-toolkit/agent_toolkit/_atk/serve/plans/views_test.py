@@ -1,5 +1,3 @@
-"""`atk serve`の計画ファイル画面の処理のテスト。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -27,7 +25,6 @@ from agent_toolkit._testing.serve_plans_support import _context, _plan, _read_pa
 async def test_remote_missing_attachments_do_not_warn_or_fallback_but_explicit_read_does(
     tmp_path: pathlib.Path, index_path: pathlib.Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """HTTP表示の関連リンク探索は正常な不在を無警告で省き、同じ不在の明示取得だけ404と警告にする。"""
     del index_path
     runner, calls = _runner_returning(_read_payload("代替取得"))
     context = _context(tmp_path, remote_hosts=["remote-host"], ssh_runner=runner)
@@ -62,7 +59,6 @@ async def test_remote_missing_attachments_do_not_warn_or_fallback_but_explicit_r
     assert "リモートファイル取得失敗" in caplog.records[0].message
     assert not calls
 
-    # 付属側から消えたメインを探す場合も同じ分類を使う。
     existing.pop("p.md")
     caplog.clear()
     response = await client.get("/api/plans/file", query_string={"host": "remote-host", "path": "p.bugs.md"})
@@ -73,7 +69,6 @@ async def test_remote_missing_attachments_do_not_warn_or_fallback_but_explicit_r
 
 
 def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """rootへ一時的に到達できない間は、記録済みの作成日時を回収しない。"""
     root = tmp_path / "plans"
     root.mkdir()
     _plan(root, "plan.md", mtime=1_000.0)
@@ -92,7 +87,6 @@ def test_absent_root_keeps_the_recorded_creation_times(tmp_path: pathlib.Path, i
 def test_unchanged_rescan_does_not_rewrite_creation_time_index(
     tmp_path: pathlib.Path, index_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """一覧の取得ごとの走査で作成日時が変わらなければ、索引全体を書き直さない。"""
     root = tmp_path / "plans"
     root.mkdir()
     _plan(root, "plan.md", mtime=1_000.0)
@@ -117,7 +111,6 @@ def test_unchanged_rescan_does_not_rewrite_creation_time_index(
 
 
 def test_scan_follows_only_file_links_that_stay_inside_root(tmp_path: pathlib.Path, index_path: pathlib.Path) -> None:
-    """走査はドット配下を除き、`root`内を指すファイルのリンクだけを載せ、ディレクトリのリンクはたどらない。"""
     del index_path
     root = tmp_path / "plans"
     (root / "sub").mkdir(parents=True)
@@ -138,7 +131,6 @@ def test_scan_follows_only_file_links_that_stay_inside_root(tmp_path: pathlib.Pa
 
 
 def test_mermaid_fence_is_rendered_as_escaped_diagram() -> None:
-    """Mermaidのフェンスは原文をエスケープした描画枠と原文表示へ変換する。"""
     html = plans_rendering.markdown_to_html("```mermaid\ngraph TD;\n  A[<b>x</b>] --> B;\n```\n")
 
     assert 'class="diagram diagram-mermaid"' in html
@@ -148,7 +140,6 @@ def test_mermaid_fence_is_rendered_as_escaped_diagram() -> None:
 
 
 def test_pygments_css_keeps_token_rules_without_base_rule() -> None:
-    """Pygmentsのスタイルは基底ルールを除き、トークン別ルールだけを返す。"""
     css = plans.read_pygments_css()
 
     assert ".codehilite .k" in css
@@ -191,7 +182,6 @@ async def test_plan_links_checks_independent_attachments_concurrently(
 
 @pytest.mark.parametrize("rel", ["../outside.md", "a/../../outside.md", "/etc/passwd.md"])
 def test_resolve_under_root_rejects_traversal(tmp_path: pathlib.Path, rel: str) -> None:
-    """root外を指す相対パスは解決しない。"""
     root = tmp_path / "plans"
     root.mkdir()
     _plan(tmp_path, "outside.md")
@@ -236,7 +226,6 @@ async def test_remote_path_outside_the_root_is_rejected_before_ssh(
     tmp_path: pathlib.Path,
     index_path: pathlib.Path,
 ) -> None:
-    """危険な相対パスはリモートへ送らず、入力不正として拒否する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -256,7 +245,6 @@ async def test_render_file_html_keys_cache_by_text_digest(
     index_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """同じ更新時刻の書き換えでも新しい本文を描画し、同じ本文では描画結果を再利用する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
@@ -289,12 +277,11 @@ async def test_render_file_html_keys_cache_by_text_digest(
 async def test_local_watch_acquisition_and_release_are_owned(
     tmp_path: pathlib.Path, index_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    """登録途中・開始途中・正常終了で所有した監視だけを停止する。"""
     del index_path
     root = tmp_path / "plans"
     root.mkdir()
     context = _context(root)
-    # 属性を差し替えた代替オブジェクトを監視として渡すため、型検査の対象から外す。
+
     observer: typing.Any = types.SimpleNamespace(ident=None, stopped=0, joined=0)
 
     def schedule(*_args: typing.Any, **_kwargs: typing.Any) -> None:
@@ -316,7 +303,7 @@ async def test_local_watch_acquisition_and_release_are_owned(
     observer.schedule, observer.start, observer.stop, observer.join = schedule, start, stop, join
     monkeypatch.setattr(views.watchdog.observers, "Observer", lambda: observer)
     await views.start_local_watchers_async(context)
-    # 通常の監視を開始できなければ、開始途中の監視を停止してポーリング監視へ切り替える。
+
     assert (context.state.local_observer is observer) is (failure == "none")
     await views.stop_local_watchers_async(context)
     assert context.state.local_observer is None

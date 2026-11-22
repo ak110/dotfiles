@@ -1,5 +1,3 @@
-"""エージェント環境の出力保存を生成側で判断し、両ストリームを分けて保持する。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -17,7 +15,6 @@ AUTO_SAVE_THRESHOLD_BYTES = 16 * 1024
 
 
 def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filename: str) -> pathlib.Path:
-    """生成側が選んだ新規ファイルへ全量を保存し、その絶対パスを返す。"""
     saved = create_directory() / filename
     with saved.open("x", encoding="utf-8", newline="") as stream:
         stream.write(text)
@@ -25,23 +22,16 @@ def save_text(text: str, create_directory: Callable[[], pathlib.Path], *, filena
 
 
 def saved_report_text(path: pathlib.Path, *, stderr: bool = False) -> str:
-    """保存先と行数を返す。両ストリームは別の標識で示す。
-
-    読み手はハーネスの読取（Read）か`sed -n '<開始行>,<終了行>p' -- <保存先>`で行数の範囲を分割して読む。
-    保存先と行数の行を直接表示の上限から差し引く呼び出し元があるため、表示と同じ文字列をここだけで組み立てる。
-    """
     with path.open(encoding="utf-8", newline="") as stream:
         lines = sum(1 for _line in stream)
     return f"{'標準エラー保存先' if stderr else '保存先'}: {path}\n{'標準エラー行数' if stderr else '行数'}: {lines}\n"
 
 
 def _report_saved(path: pathlib.Path, *, stderr: bool = False) -> None:
-    """標準出力と標準エラーの保存先・行数を別の標識で表示する。"""
     (sys.stderr if stderr else sys.stdout).write(saved_report_text(path, stderr=stderr))
 
 
 def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bool) -> pathlib.Path | None:
-    """短い出力は保持したストリームへ、長い出力はファイルへ渡す。"""
     stream = sys.stderr if stderr else sys.stdout
     if len(text.encode("utf-8")) <= AUTO_SAVE_THRESHOLD_BYTES:
         stream.write(text)
@@ -61,7 +51,6 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
 
 
 def _report_error_events(path: pathlib.Path) -> None:
-    """保存した出力のJSON Linesから、`kind`が`error`の行の本文と次の操作を表示する。"""
     with path.open(encoding="utf-8", newline="") as stream:
         for raw in stream:
             try:

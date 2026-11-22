@@ -33,7 +33,6 @@ from agent_toolkit._testing.session_evidence_support import (
 def _operation_catalog(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], entries: list[dict[str, Any]], *, runtime: str = "codex"
 ) -> list[dict[str, Any]]:
-    """ホスト記録を公開カタログCLIへ渡し、エンドユーザーが受け取る成功操作を返す。"""
     root = tmp_path / "records"
     timestamp = "2026-09-10T00:00:00Z"
     if runtime == "codex":
@@ -63,7 +62,6 @@ def _operation_catalog(
 def test_wi_operation_requires_terminal_success(
     output: object, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """終了0を欠く応答を成功操作へ含めない。"""
     entries: list[dict[str, Any]] = [
         {"payload": {"type": "function_call", "call_id": "a", "arguments": json.dumps({"cmd": "atk wi get"})}},
         {"payload": {"type": "function_call_output", "call_id": "a", "output": output}},
@@ -72,7 +70,6 @@ def test_wi_operation_requires_terminal_success(
 
 
 def test_wi_operation_recognizes_launcher_by_common_names(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """起動名を共通の起動判定と同じ集合で認識し、絶対パスのatk.pyによる操作も成功操作へ含める。"""
     entries: list[dict[str, Any]] = [
         {
             "payload": {
@@ -89,7 +86,6 @@ def test_wi_operation_recognizes_launcher_by_common_names(tmp_path: pathlib.Path
 def test_wi_operation_tracks_shell_wrapped_command_until_poll_completion(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """shell・exec包みの実行中応答を保持し、後続pollの終了0を元の操作へ対応させる。"""
     entries: list[dict[str, Any]] = [
         {
             "payload": {
@@ -116,7 +112,6 @@ def test_wi_operation_tracks_shell_wrapped_command_until_poll_completion(
 def test_completed_item_requires_exit_zero(
     result: dict, expected: int, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """完了というstatusだけで成功とせず、終了状態も検収する。"""
     entry = {
         "type": "event_msg",
         "payload": {
@@ -207,7 +202,7 @@ def _catalog_fixture(tmp_path: pathlib.Path, runtime: str) -> list[str]:
     ):
         session_id = f"{prefix * 8}-{prefix * 4}-4{prefix * 3}-8{prefix * 3}-{prefix * 12}"
         timestamp = f"2026-09-10T00:00:0{second}Z"
-        # 入口の作業の手動起動と、スキルを廃止する前の起動の記録を、どちらもprocess-wiとして判別する。
+
         launch = "/atk-mode process-wi all-repos" if prefix == "a" else f"{skill_modes.PROCESS_WI}を実行する"
         text = launch if workflow else "通常の依頼"
         if runtime == "claude":
@@ -234,7 +229,6 @@ def test_catalog_selects_rows_and_fields(
     capsys: pytest.CaptureFixture[str],
     runtime: str,
 ) -> None:
-    """公開指定だけで5項目・6項目・全項目と、workflow・cwdの積集合を取得する。"""
     argv = _catalog_fixture(tmp_path, runtime)
     fields = ["session_id", "workflow", "workflow_locator", "started_at", "tokens"]
     assert evidence.main([*argv, "--catalog-known-workflow", "--catalog-fields", ",".join(fields)]) == 0
@@ -261,7 +255,6 @@ def test_catalog_empty_selection_preserves_scan_summary(
     capsys: pytest.CaptureFixture[str],
     runtime: str,
 ) -> None:
-    """親行0件でも、選択件数と走査・期間・未解決件数を区別できる。"""
     argv = _catalog_fixture(tmp_path, runtime)
     assert evidence.main([*argv, "--catalog-workflow", "absent", "--catalog-fields", "tokens,session_id"]) == 0
     (summary,) = read_jsonl(capsys, raw=True)
@@ -279,7 +272,6 @@ def test_catalog_selection_validation_and_defaults(
     capsys: pytest.CaptureFixture[str],
     runtime: str,
 ) -> None:
-    """無指定の全項目とunknownを保持し、不正な項目・非catalog・tool照会との併用を拒否する。"""
     argv = _catalog_fixture(tmp_path, runtime)
     assert evidence.main(argv) == 0
     *parents, summary = read_jsonl(capsys, raw=True)
@@ -299,7 +291,6 @@ def test_observation_boundary_without_timezone_is_local_time(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """タイムゾーンを省いた`--observation-boundary`は、単一transcriptとカタログ走査の双方でローカル時刻として扱う。"""
     transcript = local_time_transcript(tmp_path)
 
     assert evidence.main([str(transcript), "--observation-boundary", "2026-10-07T00:00:00"]) == 0
@@ -415,7 +406,6 @@ def test_catalog_claude_project_aggregates_traceable_descendants_without_leaving
 def test_catalog_counts_agy_children(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """走査rootの外にあるagyの委譲先ログを親の子孫数とトークンへ含め、未解決の参照に数えない。"""
     child_id = "e9244465-1577-44a9-a7b0-500b1f976b0e"
     root = tmp_path / "project"
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -524,7 +514,6 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """記録を判別できないrootと開始後に終わる観測期間を終了コード2で拒否する。"""
     root = tmp_path / "empty"
     root.mkdir()
     base = ["--catalog-claude-project", str(root), "--since", "2026-09-10T00:00:00Z"]
@@ -539,7 +528,6 @@ def test_catalog_rejects_an_unclassifiable_root_and_reversed_period(
 def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """カタログ併用では窓の中の呼び出しを、走査rootの外の委譲先も含めて親セッションの`session_id`付きで返す。"""
     transcript = tool_call_session(tmp_path, monkeypatch, "echo done")
     root = transcript.parent
     write_jsonl(
@@ -588,7 +576,6 @@ def test_tool_calls_with_catalog_include_delegates_outside_root_within_window(
 
 
 def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """カタログと単一entryの詳細指定の併用を拒否し、利用できる照会を案内する。"""
     root = tmp_path / "project"
     write_jsonl(root / "session.jsonl", [timestamped_entry("2026-10-06T00:00:00Z", "記録")])
 
@@ -613,7 +600,7 @@ def test_catalog_still_rejects_other_query_modes(tmp_path: pathlib.Path, capsys:
 
 
 class _TrackedEntry(dict[str, Any]):
-    """本文の生存を弱参照だけで観測する。"""
+    pass
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex"])
@@ -625,7 +612,6 @@ def test_catalog_releases_previous_family_before_next_load(
     runtime: str,
     query: list[str],
 ) -> None:
-    """公開3照会が選外本文を読まず、次家族の読込時に処理済み本文を保持しない。"""
     argv = _catalog_fixture(tmp_path, runtime)
     old = pathlib.Path(argv[1]) / ("rollout-old.jsonl" if runtime == "codex" else "old.jsonl")
     entry = timestamped_entry("2026-08-01T00:00:00Z", "期間外本文" * 1000)
@@ -658,7 +644,6 @@ def test_catalog_releases_previous_family_before_next_load(
 
 
 def _period_record(root: pathlib.Path, runtime: str, identity: str, timestamp: str, child: str | None = None) -> pathlib.Path:
-    """既存ホストfixtureと同じ構造で、親自身と子の時刻を独立に設定する。"""
     if runtime == "claude":
         path = root / f"{identity}.jsonl"
         entries = [timestamped_entry(timestamp, identity), assistant_usage_entry(timestamp, identity, {"input_tokens": 7})]
@@ -706,7 +691,6 @@ def _period_record(root: pathlib.Path, runtime: str, identity: str, timestamp: s
 def _period_catalog(
     root: pathlib.Path, runtime: str, query: list[str], capsys: pytest.CaptureFixture[str]
 ) -> list[dict[str, Any]]:
-    """期間参照テストで共通する観測窓の公開照会を実行する。"""
     option = "--catalog-claude-project" if runtime == "claude" else "--catalog-codex-history"
     assert (
         evidence.main(
@@ -734,7 +718,6 @@ def test_catalog_keeps_cross_period_parent_child_relations(
     runtime: str,
     query: list[str],
 ) -> None:
-    """期間外親の子を独立させず、期間内親の期間外子を家族に残し、mtimeで選別しない。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     root = tmp_path / "home/.claude/projects/project" if runtime == "claude" else tmp_path / "codex/sessions/2026/10/06"
@@ -906,7 +889,6 @@ def test_catalog_duplicate_ids_and_cycles_keep_first_record(tmp_path: pathlib.Pa
 def test_catalog_grep_selection_keeps_diagnostic_scopes_and_match_units(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], runtime: str
 ) -> None:
-    """親条件の検索で統計を作らず、root外解決・未解決・破損・時刻不明と期間端を区別する。"""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     base = tmp_path / "home/.claude/projects" if runtime == "claude" else tmp_path / "codex/sessions"

@@ -19,34 +19,25 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 
-# プレーンテキストがこの文字数に満たない場合は語数比の判定をスキップする。
-# 「OK」「了解」程度の短文応答で英語化検出を行わないようにするための下限。
-# 日本語文字数0かつ英単語2語以上の地の文へは適用しない。その入力には日本語が1文字も無く、
-# 下限が防ごうとしている誤発火（日本語の短文が英語判定される事態）が原理的に生じないため。
 _MIN_PLAIN_TEXT_LENGTH = 50
 
-# 語数比の閾値。地の文の日本語文字数を、日本語文字数と英単語数の和で割った値が
-# この比率未満なら警告する。連続する英字列を1英単語として数えることで、
-# 裸の英識別子・コマンド名・ファイルパスが分母を文字数分押し上げる水増しを抑え、
-# 日本語主体の応答に英語専門用語が多数混在する場合の誤発火を防ぐ。
+
 _MIN_JAPANESE_WORD_RATIO = 0.3
 
 # フェンス付きコードブロック（言語指定の有無を問わない、複数行対応）。
 _FENCED_CODE_PATTERN = re.compile(r"```[\s\S]*?```")
 
-# レビュー返却の説明欄だけを読む。素材・入力・analysisなど任意のJSON値は対象にしない。
+
 _EXPLANATION_FIELDS = frozenset({"group", "excess", "retain", "basis"})
 _QUOTED_MATERIAL_PATTERN = re.compile(r"「[^」]*」|『[^』]*』|^[ \t]*>[^\n]*", re.MULTILINE)
 
-# インラインコード（バッククォート間、改行を含まない）。
+
 _INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 
-# HTTP/HTTPS URL。
+
 _URL_PATTERN = re.compile(r"https?://\S+")
 
-# 裸の機械識別子。パス、UUID、Git commit ID、区切り文字で連結した字句と英大文字・数字だけの字句は、
-# 日本語の地の文へ値として埋め込まれても英語の散文量を表さないため、語数比の計数から除外する。
-# 通常の英単語まで除外しないよう、パスは区切り文字、commit IDは数字を必須とする。
+
 _MACHINE_IDENTIFIER_PATTERN = re.compile(
     r"(?:"
     r"(?<![\w.])(?:[A-Za-z]:[\\/]|\.{0,2}/|/)[^\s`、。]+"
@@ -68,25 +59,16 @@ _MACHINE_IDENTIFIER_PATTERN = re.compile(
 # 除外対象にせず、人間向け本文が英語で返ることの検出を維持するためである。
 _MACHINE_READABLE_LINE_PATTERN = re.compile(r"^[ \t]*[a-z][a-z0-9_]*(?::[^\n]*)?[ \t]*$", re.MULTILINE)
 
-# 日本語文字。CJK記号（U+3000-U+303F）・ひらがな（U+3040-U+309F）・カタカナ（U+30A0-U+30FF）・
-# CJK統合漢字（U+4E00-U+9FFF）・全角英数記号（U+FF00-U+FF60）・半角カナ（U+FF61-U+FF9F）を対象とする。
-# 非ASCII全域を対象にすると、ハングル・キリルのみで構成された応答も日本語と判定する。
-# 半角ハングル（U+FFA0-U+FFDC）を含めないため、全角英数記号の上限をU+FF60、半角カナの上限をU+FF9Fとする。
+
 _JAPANESE_CHAR_PATTERN = re.compile("[\u3000-\u303f\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff\uff00-\uff60\uff61-\uff9f]")
 
-# 英単語（連続するASCII英字列）。連続1列を1語として数える。
+
 _ENGLISH_WORD_PATTERN = re.compile(r"[A-Za-z]+")
 
-# 日本語文字を含まない地の文を英語応答と判定するための英単語数の下限。
-# 1語だけの地の文は識別子・コマンド名の単独提示と区別できないため対象外とする。
+
 _MIN_ENGLISH_WORD_COUNT = 2
 
-# 地の文の先頭に置かれたら英語応答と判定する談話標識。
-# 閉集合とする理由は、英単語一般を対象とする開いた集合にすると、
-# 正当な日本語応答の冒頭へ置かれた製品名・識別子で誤発火するため。
-# 直後が`.`と英字の並び（`Next.js`等の製品名形式）である場合と、
-# 直後に語境界（空白・改行・読点・句点・コロン）が無い場合は標識と見なさない。
-# インラインコードは地の文の収集時に空白へ置換済みのため、バッククォート内の語は先頭判定へ現れない。
+
 _DISCOURSE_MARKERS = ("finally", "first", "let's", "okay", "next", "then", "also", "let", "now", "ok", "so")
 _DISCOURSE_MARKER_PATTERN = re.compile(
     r"^(?:" + "|".join(_DISCOURSE_MARKERS) + r")(?![.．][A-Za-z])(?=[\s、，。．.:：])",
@@ -95,8 +77,6 @@ _DISCOURSE_MARKER_PATTERN = re.compile(
 
 
 class CheckOutcome(enum.Enum):
-    """記述言語の判定結果。"""
-
     WARN = "warn"
     PASS = "pass"
     SKIP = "skip"
@@ -118,7 +98,6 @@ WARNING_FIX = (
 
 
 def explanation_is_japanese(text: str) -> bool:
-    """再発行時に引用素材を除いた説明が適合するかを返す。"""
     material = re.sub(r'"[^"\n]*"|“[^”\n]*”|(?<!\w)\x27[^\x27\n]*\x27(?!\w)', " ", text)
     return check_text(material)[0] is not CheckOutcome.WARN
 
@@ -155,11 +134,6 @@ def check_text(text: str) -> tuple[CheckOutcome, str | None]:
 
 
 def _has_foreign_word(text: str) -> bool:
-    """日本語・Latin以外の連続文字を読む。単独の数式文字は語と扱わない。
-
-    語彙の禁止リストは持たず、引用・素材・識別子を除いた説明へ適用する。
-    漢字を共有する言語の識別や、原文であるかの意味判定は、本文を読む担当に委ねる。
-    """
     run = 0
     for char in text:
         name = unicodedata.name(char, "")
@@ -173,7 +147,6 @@ def _has_foreign_word(text: str) -> bool:
 
 
 def _plain_text(text: str) -> str:
-    """言語判定と警告引用に共通する地の文を返す。"""
 
     def explanations(value: object) -> list[str]:
         if isinstance(value, list):
@@ -213,25 +186,18 @@ def _plain_text(text: str) -> str:
 
 
 def _is_english_only(japanese_count: int, english_word_count: int) -> bool:
-    """日本語文字を含まず英単語が下限以上の地の文かを返す。"""
     return japanese_count == 0 and english_word_count >= _MIN_ENGLISH_WORD_COUNT
 
 
 def _starts_with_discourse_marker(plain_text: str) -> bool:
-    """地の文の先頭が英語の談話標識かを返す。"""
     return _DISCOURSE_MARKER_PATTERN.match(plain_text.lstrip()) is not None
 
 
 def _is_below_word_ratio(japanese_count: int, english_word_count: int) -> bool:
-    """語数比が閾値未満かを返す。
-
-    語数比は日本語文字数 ÷（日本語文字数 ＋ 英単語数）で求める。
-    """
     return japanese_count / (japanese_count + english_word_count) < _MIN_JAPANESE_WORD_RATIO
 
 
 def main(argv: list[str] | None = None) -> int:
-    """共通判定の結果をFunction hooks向けのJSONとして返す。"""
     parser = argparse.ArgumentParser(description="記述言語を共通基準で判定する。")
     parser.add_argument("--text", required=True, help="判定する本文")
     args = parser.parse_args(argv)

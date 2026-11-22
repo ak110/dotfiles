@@ -1,5 +1,3 @@
-"""共通のセッション配置を、従来のimport先で再公開する。"""
-
 from agent_toolkit._common.session_layout import (
     RESERVED_DIRECTORY_NAMES,
     aliases_directory,

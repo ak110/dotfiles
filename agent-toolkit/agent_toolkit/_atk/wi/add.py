@@ -1,5 +1,3 @@
-"""WI投入のCLI入口と保存処理。"""
-
 import argparse
 import datetime
 import json
@@ -45,23 +43,16 @@ from agent_toolkit._plan import owner_records as _owner_records
 
 
 def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
-    """報告区分を明示したUWIへ、起動元が発行した実行対応を設定する。"""
     if data.get("run_skill_report") == "true" and (run_id := os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")):
         return {**data, "run_skill_run_id": run_id}
     return data
 
 
 def _saved_mismatch_next_action(filename: str) -> str:
-    """保存後の読み戻しが送信した本文と一致しないときの次の操作を返す。"""
     return f"保存は済んでいる。`atk wi show {filename}`で確認し、`atk wi edit {filename} --body-file <本文ファイル>`で直す"
 
 
 def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[str, object | None]:
-    """保存済みエントリを再読込し、本文の一致を検証したうえで一致確認の対象を示すメタデータを返す。
-
-    `expected_body`には書き込み処理が組み立てた確定本文を渡す。保存の処理中に本文が欠落または改変されて
-    いないことを、呼び出し元が終了状態で確定できるようにする。
-    """
     saved_body = _frontmatter.decode_entry_text(path.read_bytes())
     parsed = _frontmatter.parse_frontmatter(saved_body)
     if parsed is None:
@@ -92,7 +83,6 @@ def read_saved_entry_details(path: pathlib.Path, *, expected_body: str) -> dict[
 
 
 def print_entry_details(details: dict[str, object | None]) -> None:
-    """一致を確認したエントリの項目を決まった順で表示する。"""
     for key in ("target_repo", "target_branch", "target_commit"):
         value = details.get(key)
         if key == "target_branch" and value is None:
@@ -117,7 +107,6 @@ def print_entry_details(details: dict[str, object | None]) -> None:
 
 
 def _normalize_dependencies(values: list[str] | None, inbox_dir: pathlib.Path) -> tuple[str, ...]:
-    """CLIの依存ファイル名を検証し、`.md`付きの初出順へ正規化する。"""
     return tuple(dict.fromkeys(_wi_filenames.validate_filename(value, inbox_dir).name for value in (values or ())))
 
 
@@ -127,12 +116,6 @@ def _missing_dependency_warnings(
     generated: list[str],
     dependencies: tuple[str, ...],
 ) -> list[str]:
-    """投入したエントリの依存先のうち、取り込み先に実在しないものを警告文へ列挙する。
-
-    依存先が実在しないことを理由に投入を拒否せず、警告を返して登録を続ける。
-    `--depends-on`はその呼び出しの全エントリへ共通に付くため、エントリと依存先の組ごとに1件返す。
-    判定と文面は`--batch`指定時と共有し、どちらの場合も同じ条件の参照へ同じ警告が出る状態を保つ。
-    """
     if not dependencies:
         return []
     return _wi_filenames.missing_dependency_warnings(
@@ -347,7 +330,6 @@ def _resolve_item_branches(
     target_repo: str | None,
     target_branch: str | None,
 ) -> tuple[list[str | None], str | None]:
-    """各メッセージの宛先の系統を保存前に検証し、`target_commit`を記録する系統と合わせて返す。"""
     branch_settings = _wi_branches.registry()
     resolved: list[str | None] = []
     for frontmatter, _body in parsed_messages:
@@ -394,7 +376,6 @@ def read_body_files(paths: list[str]) -> list[str]:
 
 
 def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
-    """巡回中の新規AWIの時機と種別を検査し、確定欠陥の調査は次回へ送らない。"""
     timing = getattr(args, "process_wi_timing", None)
     kind = getattr(args, "process_wi_kind", None)
     category = getattr(args, "defer_category", None)
@@ -517,7 +498,6 @@ def cmd_add(
             else:
                 validation_errors.append(error)
     if validation_errors:
-        # 全メッセージの違反を1回で返し、次の操作は重複を除いて同じ順に並べる。
         next_actions = dict.fromkeys(error.next_action for error in validation_errors)
         _outcome.report_failure(
             "投入を拒否した: " + "\n".join(error.reason for error in validation_errors),
@@ -578,7 +558,6 @@ def cmd_add(
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
             return
         if args.compare_opening_file is not None:
-            # 保存より前に全原稿の冒頭を比較し、不一致なら1件も保存しない。
             compare_draft_openings(messages, sources, compare_paths=args.compare_opening_file)
         generated = add_entries(
             private_notes,

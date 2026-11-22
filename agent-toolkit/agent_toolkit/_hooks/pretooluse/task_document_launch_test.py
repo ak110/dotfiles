@@ -23,7 +23,6 @@ _READER_FIT_DOCUMENT = _ROLES_DIR / "reader-fit-review.subagent.md"
 
 
 def _lane_inputs(tmp_path: pathlib.Path) -> str:
-    """`担当種別: レーン担当`の起動で必須になる入力の行。所有登録のファイルも作る。"""
     (tmp_path / "lane-01.json").write_text('{"lane": "lane-01", "base_branch": "develop"}\n', encoding="utf-8")
     return (
         f"所有登録: {tmp_path / 'lane-01.json'}\n統合先worktree: {tmp_path}\n"
@@ -33,7 +32,6 @@ def _lane_inputs(tmp_path: pathlib.Path) -> str:
 
 @pytest.fixture(name="task_documents", params=["checkout", "__w"])
 def _task_documents(request: pytest.FixtureRequest, tmp_path: pathlib.Path) -> dict[str, pathlib.Path]:
-    """役割文書の名前から、配布物と同じ相対位置に置いた文書のパスを返す。"""
     sources = {path.name: path for path in (_EXEC_DOCUMENT, _READER_FIT_DOCUMENT)}
     if request.param == "checkout":
         return sources
@@ -50,7 +48,6 @@ def _task_documents(request: pytest.FixtureRequest, tmp_path: pathlib.Path) -> d
 
 @pytest.mark.parametrize("tool_name", ["Agent", "Task"])
 def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: pathlib.Path) -> None:
-    """既存fixtureを変えず、欠けた必須入力が初回hookでも拒否される。"""
     prompt = f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
     result = _invoke(tool_name, prompt, tmp_path)
     assert result.returncode == 0
@@ -69,7 +66,6 @@ def test_role_launch_hook_requires_same_named_inputs(tool_name: str, tmp_path: p
 def _invoke_after_generic_reissue(
     tool_name: str, prompt: str, tmp_path: pathlib.Path, mode: str | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """汎用Agent/Taskでは初回拒否後の同一入力、MCPでは初回の結果を検査する。"""
     return _invoke(tool_name, prompt, tmp_path, mode, reissue_generic=tool_name in {"Agent", "Task"})
 
 
@@ -81,7 +77,7 @@ def _invoke(
         tool_input["mode"] = mode
     session_id = f"task-document-launch-{tool_name.rsplit('__', 1)[-1].lower()}-{mode}"
     env = _plan_file_state_env(tmp_path)
-    # 資料取得は対象外の境界へ分離し、役割文書の入力判定だけを検証する。
+
     payload = {
         "tool_name": tool_name,
         "tool_input": tool_input,
@@ -107,7 +103,6 @@ def _invoke(
     ],
 )
 def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: str, tmp_path: pathlib.Path) -> None:
-    """自由本文の起動を通し、重複起動せず次回から構造化入力を使うよう案内する。"""
     result = _invoke(tool_name, f"{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n", tmp_path, mode)
 
     assert result.returncode == 0
@@ -120,7 +115,6 @@ def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: 
 
 @pytest.mark.parametrize("mode", [None, "shell"])
 def test_task_and_shell_modes_are_not_free_text_starts(mode: str | None, tmp_path: pathlib.Path) -> None:
-    """taskとshellは`prompt`を受理しないmodeであり、本文の遮断対象にしない。入力の拒否はサーバーが行う。"""
     result = _invoke_after_generic_reissue(
         "mcp__plugin_agent-toolkit_agents_server__start", f"{_EXEC_DOCUMENT}の手順を実行せよ。\n", tmp_path, mode
     )
@@ -153,7 +147,6 @@ def test_free_text_start_without_task_document_passes(tmp_path: pathlib.Path) ->
 )
 @pytest.mark.parametrize("operation", ["本文を読んで返す。", "入力欄を引用して返す。", "別文書と比較して返す。"])
 def test_task_document_reading_passes(tool_name: str, mode: str | None, operation: str, tmp_path: pathlib.Path) -> None:
-    """役割の実行と同じ実在文書を読解・引用・比較の対象にしても、委譲を通す。"""
     result = _invoke_after_generic_reissue(tool_name, f"{_EXEC_DOCUMENT}と{_READER_FIT_DOCUMENT}の{operation}", tmp_path, mode)
     assert result.returncode == 0
     specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
@@ -188,7 +181,6 @@ def test_quoted_execution_command_passes(tool_name: str, mode: str | None, quote
 def test_execution_uses_its_document_after_other_reference(
     tool_name: str, mode: str | None, tmp_path: pathlib.Path, task_documents: dict[str, pathlib.Path], path_markup: str
 ) -> None:
-    """先に読解対象が出ていても、引用の外の実行命令の対象について是正を案内する。"""
     task = task_documents["reader-fit-review.subagent.md"]
     reference = task_documents["exec.subagent.md"]
     prompt = (
@@ -201,10 +193,6 @@ def test_execution_uses_its_document_after_other_reference(
 
 
 def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib.Path) -> None:
-    """`Agent`の本文は1行目の命令と宣言済み入力の行だけで通り、役割宣言などの行を含むと遮断する。
-
-    宣言済みの入力には、字下げした続きの行を持つ値を含める。
-    """
     minimal = "\n".join(
         [
             f"{_EXEC_DOCUMENT}の手順を実行せよ。",
@@ -229,7 +217,6 @@ def test_agent_task_document_prompt_allows_only_declared_lines(tmp_path: pathlib
 def test_reader_fit_review_inputs_pass_task_document_hook(
     tmp_path: pathlib.Path, task_documents: dict[str, pathlib.Path]
 ) -> None:
-    """差分を持つ初回と再レビュー入力を通し、宣言外補足の拒否を維持する。"""
     task = task_documents["reader-fit-review.subagent.md"]
     (tmp_path / "artifact_").mkdir()
     current = tmp_path / "artifact_" / "guide.md"
@@ -262,7 +249,6 @@ def test_reader_fit_review_inputs_pass_task_document_hook(
 
 
 def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathlib.Path) -> None:
-    """引き継ぎで前回確認版を渡しても宣言外入力として遮断しない。"""
     task = _ROLES_DIR / "exec-review.subagent.md"
     for name in ("plan.md", "handoff.md", "previous.md"):
         (tmp_path / name).write_text("# レビュー資料\n", encoding="utf-8")
@@ -279,7 +265,6 @@ def test_exec_review_previous_revision_passes_task_document_hook(tmp_path: pathl
 
 
 def test_agent_prompt_with_role_preface_before_command_is_warned(tmp_path: pathlib.Path) -> None:
-    """1行目が命令でない本文は、命令の前に置いた前置きを宣言外の行として遮断する。"""
     prompt = f"あなたは実装担当である。\n{_EXEC_DOCUMENT}の手順を実行せよ。\n担当種別: レーン担当\n"
 
     result = _run(
@@ -357,7 +342,6 @@ def test_rephrased_execution_command_is_warned(tool_name: str, mode: str | None,
     ],
 )
 def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, prompt: str, tmp_path: pathlib.Path) -> None:
-    """役割文書の読解・比較・適合確認と、括弧やコードに載せた命令例は実行の命令として扱わない。"""
     result = _invoke_after_generic_reissue(tool_name, prompt.format(document=_EXEC_DOCUMENT), tmp_path, mode)
 
     assert result.returncode == 0
@@ -366,7 +350,6 @@ def test_reading_and_command_examples_pass(tool_name: str, mode: str | None, pro
 
 
 def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathlib.Path) -> None:
-    """パスの後に空白を置いた定型の命令と宣言済みの入力だけの本文は、宣言外の指示を持たないため通す。"""
     prompt = (
         f"{_EXEC_DOCUMENT} の手順を実行せよ。\n担当種別: レーン担当\n"
         f'引き継ぎ記録先: {tmp_path / "handoff.md"}\n書込担当一覧: ["session-main"]\n' + _lane_inputs(tmp_path)
@@ -379,7 +362,6 @@ def test_agent_accepts_spacing_variant_with_declared_inputs_only(tmp_path: pathl
 
 
 def test_versioned_distribution_document_is_checked_in_place(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """版別ディレクトリの役割文書も、配布物を一時rootへ複製せず、本文が指した文書の宣言で入力を検査する。"""
     cache_home = tmp_path / "cache-home"
     monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
     monkeypatch.setenv("LOCALAPPDATA", str(cache_home))

@@ -1,5 +1,3 @@
-"""自動再開試験の制御可能クライアントと状態遷移の補助。"""
-
 # テストでは共有状態とバックエンドの内部境界も直接検証する。
 # pylint: disable=protected-access
 
@@ -52,13 +50,10 @@ class SystemMessage:
 
 
 def _session_state(value: str) -> SystemMessage:
-    """CLIのturn状態の報告（`session_state_changed`）を再現する。"""
     return SystemMessage(subtype="session_state_changed", data={"state": value})
 
 
 class TaskStartedMessage:
-    """バックグラウンドタスクの開始を再現する。"""
-
     def __init__(self, task_id: str, task_type: str = "local_bash", description: str = "") -> None:
         self.task_id = task_id
         self.task_type = task_type
@@ -66,15 +61,13 @@ class TaskStartedMessage:
 
 
 class TaskUpdatedMessage:
-    """バックグラウンドタスクの状態更新を再現する。"""
-
     def __init__(self, task_id: str, status: str) -> None:
         self.task_id = task_id
         self.status = status
 
 
 class TaskNotificationMessage(TaskUpdatedMessage):
-    """バックグラウンドタスクの完了通知を再現する。"""
+    pass
 
 
 class ResultMessage:
@@ -114,8 +107,6 @@ class UserMessage(AssistantMessage):
 
 
 class ControlledClaudeClient:
-    """メッセージの到着時機をテストから制御するSDKクライアント。"""
-
     def __init__(self, session_id: str = "claude-auto", *, report_state: bool = False, state_before_init: bool = False) -> None:
         self.messages: asyncio.Queue[Any] = asyncio.Queue()
         # 真の場合は実CLIと同じ順序でturn状態を報告する。turnの開始で`running`、
@@ -130,11 +121,11 @@ class ControlledClaudeClient:
         self.queries: list[str] = []
         self.interrupts = 0
         self.disconnected = False
-        # 直前のturnの`ResultMessage`を発行済みで次の`query`を受けていない間は偽とする。
+
         self.turn_active = False
 
     async def connect(self) -> None:
-        """接続のダミー。"""
+        pass
 
     async def query(self, prompt: str) -> None:
         self.queries.append(prompt)
@@ -226,7 +217,6 @@ async def _await_state(predicate: Any, timeout: float = _STATE_TIMEOUT) -> None:
 
 @pytest.fixture(autouse=True)
 def _isolate_session_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """各テストのsession登録簿を一時ディレクトリへ隔離する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
 
 
@@ -261,7 +251,6 @@ async def _auto_resume_after_child_termination(
     session: state.SessionState,
     child_session_id: str,
 ) -> dict[str, Any]:
-    """孫sessionを終了させ、継続指示後の結果を返す。"""
     wait_task = asyncio.create_task(_wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT))
     await _await_state(lambda: session.awaiting_auto_resume)
     assert wait_task.done() is False

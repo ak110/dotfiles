@@ -1,5 +1,3 @@
-"""計画の新旧書式と付属ファイルの検査。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -22,15 +20,10 @@ from check_plan_file_references import _check_references, _check_target_repo
 _FENCE_RE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$", re.MULTILINE)
 
 
-# 計画の分量を警告する行数の閾値。
-# 既存計画380件を集計した分布（中央値443行、第75百分位732行、第90百分位1312行、最大3476行）の
-# 第75百分位と第90百分位の間から選び、通常規模の計画を警告せず肥大した計画だけを検出する。
-# 閾値を超えても計画として成立し得るため、警告に留める。
 _PLAN_LINE_WARNING_THRESHOLD = 1200
 
 
 def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
-    """Markdownフェンス外の行と未閉鎖フェンスのエラーを返す。"""
     outside: list[bool] = []
     marker: str | None = None
     for line in lines:
@@ -48,7 +41,6 @@ def _outside_fences(lines: list[str]) -> tuple[list[bool], list[str]]:
 
 
 def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
-    """計画の行数が閾値を超える場合に警告を返す。"""
     if len(lines) <= _PLAN_LINE_WARNING_THRESHOLD:
         return []
     return [
@@ -61,12 +53,10 @@ def _check_plan_size(lines: list[str]) -> list[_ClassifiedWarning]:
 
 
 def _detail_path_for(plan_path: pathlib.Path) -> pathlib.Path:
-    """計画ファイル（メイン）のパスから対応する計画ファイル（詳細）の絶対パスを返す（stem導出）。"""
     return plan_path.with_name(bundle_kinds.DETAIL.name_for(plan_path.stem))
 
 
 def _main_path_for_detail(detail_path: pathlib.Path) -> pathlib.Path:
-    """計画ファイル（詳細）のパスからstem対応する計画ファイル（メイン）のパスを返す。"""
     if bundle_kinds.DETAIL.matches(detail_path.name):
         return detail_path.with_name(bundle_kinds.MAIN.name_for(detail_path.name.removesuffix(bundle_kinds.DETAIL.suffix)))
     return detail_path.with_suffix(".md")
@@ -143,11 +133,6 @@ def _check_new_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """二ファイル形式の計画が基準を満たすか判定し、エラーと警告を返す。
-
-    呼び出し元の`check`は`detail_path.is_file()`が真の場合だけ本関数を呼ぶため、
-    計画ファイル（詳細）の実在は呼び出し前提として扱う。
-    """
     errors: list[str] = []
     warnings: list[_ClassifiedWarning] = []
     origin_notices: list[str] = []
@@ -215,7 +200,6 @@ def _check_one_file_structure(
     private_notes: pathlib.Path | str | None,
     home: pathlib.Path | str | None,
 ) -> tuple[str | None, list[str], list[_ClassifiedWarning]]:
-    """1ファイルの計画の構造と対象リポジトリを確かめ、(作業種別, エラー, 警告)を返す。"""
     origin_notices: list[str] = []
     origin_skips: list[str] = []
     work_type, errors = check_structure(
@@ -240,7 +224,6 @@ def _check_eight_section_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """8節形式の1ファイル計画が基準を満たすか判定し、エラーと警告を返す。保存済みの計画の読み取り専用である。"""
     work_type, errors, warnings = _check_one_file_structure(
         structure.check_plan_eight_section_structure, text, work_dir, private_notes, home
     )
@@ -261,7 +244,6 @@ def _check_request_format(
     private_notes: pathlib.Path | str | None = None,
     home: pathlib.Path | str | None = None,
 ) -> tuple[list[str], list[_ClassifiedWarning]]:
-    """現行の計画（要求を書く節を通常AWIの本文と同じ見出しで持つ形式）が基準を満たすか判定し、エラーと警告を返す。"""
     _work_type, errors, warnings = _check_one_file_structure(
         structure.check_plan_request_structure, text, work_dir, private_notes, home
     )

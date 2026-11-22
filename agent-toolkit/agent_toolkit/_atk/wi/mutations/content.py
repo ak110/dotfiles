@@ -1,5 +1,3 @@
-"""WIエントリの本文の編集と追記（`atk wi edit`・`atk wi append`）と、エージェントによる`## ユーザーコメント`の変更の拒否。"""
-
 from __future__ import annotations
 
 import argparse
@@ -68,7 +66,6 @@ def set_entry_importance(
     expected_content: str | None = None,
     storage: _wi_sync.Storage = _wi_sync.DEFAULT_STORAGE,
 ) -> bool:
-    """保存状態を保って重要フラグだけを設定または解除する。"""
     with storage.mutation(private_notes) as mutation:
         records, missing = _wi_entries.read_named_entries(
             private_notes, _wi_entries.validate_named_filenames(private_notes, [filename]), target_repo=None
@@ -97,7 +94,6 @@ def set_entry_importance(
 
 
 def _outside_fence_heading_offset(content: str, heading: str) -> int | None:
-    """コードフェンス外にある最初の厳密な見出しのバイト位置を返す。"""
     offset = 0
     fence: str | None = None
     for line in content.splitlines(keepends=True):
@@ -116,12 +112,10 @@ def _outside_fence_heading_offset(content: str, heading: str) -> int | None:
 
 
 def _message_starts_result_heading(message: str) -> bool:
-    """追記本文の最初の非空行が処理結果見出しかを返す。"""
     return next((line for line in message.splitlines() if line.strip()), "") == "## 処理結果"
 
 
 def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
-    """$EDITORでユーザーコメントを変更し、保存を拒否した場合に真を返す。"""
     if not is_agent_environment():
         return False
     try:
@@ -135,7 +129,6 @@ def _reject_agent_user_comment_change(original: str, updated: str) -> bool:
 
 
 def _reject_agent_user_comment_message(message: str) -> bool:
-    """エージェント環境の本文が予約見出しを含む場合に真を返す。"""
     if not is_agent_environment() or not _user_comment.has_reserved_heading(message):
         return False
     _outcome.report_failure(_user_comment.AGENT_USER_COMMENT_EDIT_ERROR, next_action=_USER_COMMENT_EDIT_NEXT_ACTION)
@@ -143,7 +136,6 @@ def _reject_agent_user_comment_message(message: str) -> bool:
 
 
 def _preserve_agent_user_comment(original: str, updated: str) -> str:
-    """エージェント環境では保存済みユーザーコメント節を編集結果へ連結する。"""
     if not is_agent_environment():
         return updated
     try:
@@ -160,7 +152,6 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
 
 
 def _require_agent_edit_source(original: str, content: str) -> None:
-    """保存済みのsource欠落を保持する編集を受理し、明示sourceは非空文字列として検証する。"""
     if not is_agent_environment():
         return
     stored = _frontmatter.parse_frontmatter(original)
@@ -196,10 +187,6 @@ def edit_entry_content(
     finalized_content: dict[str, str] | None = None,
     allow_terminal: bool = False,
 ) -> bool:
-    """平引数でAWI本文を更新する。
-
-    `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
-    """
     editable_states = (
         (*WI_EDITABLE_STATES, _constants.WI_STATE_ADOPTED, _constants.WI_STATE_REJECTED)
         if allow_terminal
@@ -234,10 +221,6 @@ def append_entry_content(
     expected_content: bytes | None = None,
     finalized_content: dict[str, str] | None = None,
 ) -> bool:
-    """AWI本文をraw bytesのまま追記する。UWIは拒否する。
-
-    `finalized_content`を渡した場合は、保存本文との一致判定に用いる確定本文を格納する。
-    """
     if state not in WI_EDITABLE_STATES:
         raise WebInputError("追記可能状態はinbox、processingまたはholdです", next_action=_EDITABLE_STATE_NEXT_ACTION)
 
@@ -267,7 +250,6 @@ def append_entry_content(
 
 
 def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
-    """本文ファイルの内容を既存メタデータへ重ね、種別別の保存内容を返す。"""
     parsed = _frontmatter.parse_frontmatter(original)
     if parsed is None:
         raise WebInputError(
@@ -367,7 +349,6 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
 
 
 def _resolve_edit_message(args: argparse.Namespace) -> str | None:
-    """本文ファイルを単一の編集本文へ解決する。"""
     if args.body_file is None:
         return None
     try:
@@ -407,12 +388,6 @@ def _apply_cooldown_edit(content: str, value: str, filename: str) -> str:
 
 
 def _reject_agent_processing_edit(path: pathlib.Path) -> None:
-    """処理中のWIの本文置換をエージェントには許さない。
-
-    拒否はprocessingの項目だけに限る。holdの項目は保留前の状態によらずinboxと同じ条件で編集を許す。
-    holdは自動処理からの除外だけを意味し、状態による編集の制限を増やすと、保留、本文置換、解除の順で
-    投入済み項目を更新する手順を実行できなくなるためである。
-    """
     if not is_agent_environment() or _wi_entries.entry_state_of(path) != WI_STATE_PROCESSING:
         return
     _outcome.report_failure(
@@ -431,11 +406,6 @@ def _print_cooldown_result(content: str) -> None:
 
 
 def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
-    """editサブコマンド: `--body-file`または$EDITORで対象を編集しcommit・pushする。
-
-    無引数時は_pull実行後にinbox配下でファイル名順の最大値（最終追加分）を選択する。
-    `--dry-run`では保存と同じ取り込みと検証を同じ順で通し、保存の直前で止める。
-    """
     if args.dry_run:
         if args.append or args.cooldown_until is not None:
             args.subparser.error("--dry-runは--appendおよび--cooldown-untilと併用できません。")
@@ -555,7 +525,6 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _require_agent_edit_source(original, edited)
         invalidate_repo_bound_metadata(original, edited)
         if message is not None or tmp_path is not None:
-            # 既存本文が旧書式でも、置換後のUWIの`直接的原因`行は判定する。
             parsed_edited = _frontmatter.parse_frontmatter(edited)
             entry_type = parsed_edited[0].get("type") if parsed_edited is not None else None
             _add.require_confirmed_cause(edited, entry_type=entry_type if isinstance(entry_type, str) else WI_TYPE_AWI)
@@ -582,7 +551,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         source=None,
                     )
                 except WebInputError:
-                    pass  # 既存の旧書式には必須節の新規追加を求めない。
+                    pass
                 else:
                     try:
                         _add.require_agent_awi_sections(
@@ -595,7 +564,6 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                         _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
                         sys.exit(1)
     if args.dry_run:
-        # 未pushのcommitの送信、対象ファイルの書き換え、commitとpushは保存の処理（edit_entry_content）だけが行う。
         assert message is not None
         assert args.body_file is not None
         try:
@@ -647,7 +615,6 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
 
 
 def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
-    """Edit --appendサブコマンド: 既存raw bytesを保って`--body-file`の本文を末尾へ追記する。"""
     assert args.filename is not None
     if _reject_agent_user_comment_message(message):
         sys.exit(1)

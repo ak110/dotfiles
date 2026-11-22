@@ -39,7 +39,6 @@ class TestProductionManagedSettings:
         assert ("Stop" in data["hooks"]) is (suffix == "posix")
 
     def test_managed_settings_declares_no_deny_rules(self):
-        """配布設定は秘匿ファイルの読取禁止を持たず、プロジェクト側設定へ委ねる。"""
         data = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         assert "deny" not in data["permissions"]
 
@@ -279,7 +278,6 @@ sys.exit(int(os.environ["HOOK_EXIT_CODE"]))
         assert '-File "C:/Users/Aki User\\dotfiles\\libexec\\claude-hook-pretooluse.ps1"' in commands[0]
 
     def test_posix_personal_hooks_converge_to_single_current_registration(self, tmp_path: Path) -> None:
-        """旧形式と現行形式が併存する設定へ適用すると、個人hookは現行形式1件ずつになりPostToolUseは残らない。"""
         current = json.loads(_PROD_MANAGED_SETTINGS.with_suffix(".posix.json").read_text(encoding="utf-8"))["hooks"]
         current_commands = {
             event: next(
@@ -365,7 +363,6 @@ class TestManagedAutoModeAllowLabelFormat:
     """
 
     def test_all_entries_match_labeled_format(self) -> None:
-        """配布原本`autoMode.allow`は`"$defaults"`以外の全要素がラベル形式。"""
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         allow = managed["autoMode"]["allow"]
         unlabeled = [
@@ -376,12 +373,6 @@ class TestManagedAutoModeAllowLabelFormat:
         assert unlabeled == []
 
     def test_labels_are_unique(self) -> None:
-        """配布原本`autoMode.allow`のラベルは重複しない。
-
-        `_strip_stale_labeled_list_items`はラベル単位で配布先の旧文面を除去するため、
-        配布原本側に同一ラベルの項目が複数あると正規化の基準が曖昧になる。
-        コピー&ペーストの誤りによる重複を機械的に検出する。
-        """
         managed = json.loads(_PROD_MANAGED_SETTINGS.read_text(encoding="utf-8"))
         allow = managed["autoMode"]["allow"]
         labels = [
@@ -418,7 +409,6 @@ class TestRetiredAutoModeAllowLabels:
     )
 
     def test_retired_labels_are_stripped_from_user_settings(self, tmp_path: Path) -> None:
-        """配布反映で、配布先に残る旧ラベルが除去され現行ルールとユーザー独自エントリが残る。"""
         target_path = tmp_path / "settings.json"
         target_path.write_text(
             json.dumps(

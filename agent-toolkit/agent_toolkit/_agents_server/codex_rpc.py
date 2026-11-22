@@ -44,16 +44,12 @@ APP_SERVER_COMMAND = ("codex", "app-server", "--stdio", "-c", "thread_unload_del
 APP_SERVER_WORKING_DIRECTORY = str(Path.home())
 
 
-# App Serverのstdio用StreamReaderのbuffer上限と、stdoutを1回に読み取るchunk長を兼ねる値（バイト）。
-# JSON-RPC recordの最大値には使わず、この長さを超える行もchunkを結合して復元する。
 APP_SERVER_STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 APP_SERVER_STDERR_LIMIT_CHARS = 4000
 APP_SERVER_EXIT_DIAGNOSTIC_TIMEOUT = 1.0
 
 
 class JsonRpcProcess:
-    """stdio App Serverとの要求・応答を多重化するクライアント。"""
-
     _close_task: asyncio.Task[list[str]] | None = None
 
     async def __aenter__(self) -> typing.Self:
@@ -102,7 +98,6 @@ class JsonRpcProcess:
         self._job: windows_job.WindowsJob | None = None
 
     def initialization_diagnostic(self) -> dict[str, Any]:
-        """初期化の到達段階と、長さに上限を設けた子プロセスの診断値を返す。"""
         process = self.process
         return {
             "stage": self._initialization_stage,
@@ -112,21 +107,19 @@ class JsonRpcProcess:
         }
 
     def diagnostic(self) -> dict[str, Any]:
-        """要求が進まない時に、読取の停止と受信済みの種別ごとの件数を返す。"""
         return {
             "reader_failure": None if self._reader_failure is None else str(self._reader_failure),
             "received_message_types": dict(sorted(self._received_message_types.items())),
         }
 
     async def start(self) -> None:
-        """子プロセスを起動し、initialize/initializedを完了する。"""
         if self.process is not None:
             return
         self._initialization_stage = "starting_process"
         try:
             environment = plugin_environment.cli_environment(plugin_roots.SERVER_PLUGIN_ROOT, child_environment.inherited())
             environment.pop(_delegated_session.DELEGATED_SESSION_ENV, None)
-            # 委譲先のhookが軽量起動を判別する。turnを実行しない照会用の接続は起動区分を持たない。
+
             environment.pop(_delegated_session.LAUNCH_KIND_ENV, None)
             environment[_delegated_session.PLUGIN_ROOT_ENV] = str(plugin_roots.SERVER_PLUGIN_ROOT)
             if self._launch_kind is not None:
@@ -141,7 +134,7 @@ class JsonRpcProcess:
             if sys.platform == "win32":
                 self._job = windows_job.WindowsJob()
                 creation_options["creationflags"] = windows_job.CREATE_SUSPENDED
-            # 時間上限なし: 常駐の接続であり、要求ごとの応答待ちの上限は呼び出し側が持つ。
+
             self.process = await asyncio.create_subprocess_exec(
                 *APP_SERVER_COMMAND,
                 stdin=asyncio.subprocess.PIPE,
@@ -153,8 +146,6 @@ class JsonRpcProcess:
                 **creation_options,
             )
             if self._job is not None:
-                # asyncioの公開ProcessはOS handleを公開しない。CPython transportが保持する
-                # 元世代のPopen handleを使い、PIDの再解決を経ずJob所属を確定する。
                 transport = typing.cast(Any, self.process)._transport  # noqa: SLF001  # pylint: disable=protected-access
                 owned_process = transport.get_extra_info("subprocess")
                 handle = int(owned_process._handle)  # noqa: SLF001  # pylint: disable=protected-access
@@ -218,7 +209,6 @@ class JsonRpcProcess:
         on_sent: Callable[[], None] | None = None,
         on_sent_async: Callable[[], Awaitable[None]] | None = None,
     ) -> dict[str, Any]:
-        """JSON-RPC requestを送り、対応するIDの応答を返す。"""
         if self.process is None or self.process.stdin is None:
             raise AppServerError("Codex App Server is not running")
         if self._closed or self._reader_failure is not None:
@@ -248,7 +238,6 @@ class JsonRpcProcess:
         return result if isinstance(result, dict) else {}
 
     async def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
-        """JSON-RPC notificationを送る。"""
         await self._send({"method": method, "params": params or {}})
 
     async def _send(self, message: dict[str, Any]) -> None:
@@ -271,7 +260,6 @@ class JsonRpcProcess:
 
     @property
     def closed(self) -> bool:
-        """子プロセスとの接続が終了処理済みであるかを返す。"""
         return self._closed
 
     @property
@@ -280,7 +268,6 @@ class JsonRpcProcess:
         return self._reader_failure
 
     async def send(self, message: dict[str, Any]) -> None:
-        """JSON-RPC応答を接続へ送る。"""
         await self._send(message)
 
     async def _read_stdout(self) -> None:
@@ -321,7 +308,6 @@ class JsonRpcProcess:
                     await self._on_failure(reported)
 
     async def _dispatch_stdout_line(self, raw_line: bytes) -> None:
-        """復元済みの1 JSON-RPC recordを既存の応答・要求・通知処理へ渡す。"""
         try:
             message = json.loads(raw_line.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -366,7 +352,6 @@ class JsonRpcProcess:
             _LOG.debug("Codex App Server stderrの読取を終了しました: %s", exc)
 
     async def _stdout_closed_error(self) -> AppServerError:
-        """子プロセス終了時の診断情報を、待ち時間と長さに上限を設けて収集する。"""
         assert self.process is not None
         with contextlib.suppress(asyncio.TimeoutError):
             await asyncio.wait_for(
@@ -455,7 +440,6 @@ class JsonRpcProcess:
                 self._unresolved = []
             reclaimed = True
         if process is not None:
-            # 停止処理が終了させた後も、asyncioが終了状態を回収するまでreturncodeは未確定のまま残る。
             with contextlib.suppress(OSError, ProcessLookupError):
                 if process.returncode is None:
                     process.terminate()
@@ -472,7 +456,6 @@ class JsonRpcProcess:
         if process is not None:
             _LOG.info("Codex App Serverを終了しました: returncode=%s", process.returncode)
         if not job_reclamation and not reclaimed and self._unresolved:
-            # 前回の停止で生成の停止を確認できなかった。所有した対象を起点に、残る子孫を改めて回収する。
             retry = await asyncio.to_thread(process_tree.stop_tree, None, known=[*self._owned, *self._residual])
             self._residual = retry.residual
             if sys.platform != "win32" and not retry.unresolved:

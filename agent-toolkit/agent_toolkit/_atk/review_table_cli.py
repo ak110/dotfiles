@@ -1,5 +1,3 @@
-"""`atk review-table`の引数を解析し、レビュー指摘管理表の操作へ振り分ける。"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,7 +36,6 @@ _ActionableError = _next_action.ActionableError
 
 
 def _row_id(raw: str) -> int:
-    """1始まりの行識別子を検証する。"""
     try:
         value = int(raw)
     except ValueError as error:
@@ -53,11 +50,6 @@ def _row_id(raw: str) -> int:
 
 
 def _add_cell_options(parser: argparse.ArgumentParser, option: str, description: str) -> None:
-    """セル本文をファイルから読むオプションを登録する。
-
-    `atk wi add --body-file`と同じ利用形とし、引用符・改行・バッククォートを含む本文を
-    シェルの引用規則を経由せずに渡せるようにする。
-    """
     parser.add_argument(
         f"--{option}-file",
         metavar="PATH",
@@ -83,7 +75,6 @@ def _read_cell_file(option: str, raw_path: str) -> str:
 
 
 def _cell_value(args: argparse.Namespace, dest: str) -> str:
-    """`--<名前>-file`からセル本文を返す。"""
     raw_path = getattr(args, f"{dest}_file", None)
     if raw_path is not None:
         return _read_cell_file(f"--{dest.replace('_', '-')}-file", raw_path)
@@ -127,7 +118,6 @@ def _read_add_items(raw_path: str, round_value: str, track: str) -> list[list[st
 
 
 def build_parser(parent: argparse._SubParsersAction) -> None:
-    """`review-table`配下のサブコマンドを登録する。"""
     review = _atk_help.add_command(parent, "review-table", **_atk_help.HELP["atk review-table"])
     sub = _atk_help.add_subcommands(
         review,
@@ -268,7 +258,6 @@ def build_parser(parent: argparse._SubParsersAction) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """argparse結果をレビュー指摘管理表の操作へ振り分ける。"""
     command = args.review_table_subcommand
     if command == "init":
         _require_writable_exec_review(args.path)
@@ -324,7 +313,6 @@ def dispatch(args: argparse.Namespace) -> int:
 
 
 def _require_writable_exec_review(raw_path: str) -> None:
-    """保存済み計画の領域の表と、保存済みの旧計画レビュー表を更新対象から除外する。"""
     target = _path(raw_path)
     _plan_locations.reject_saved_plans_root_write(target)
     name = target.name

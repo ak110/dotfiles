@@ -14,10 +14,6 @@ _FIXED_HEAD_COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
 def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """`git -C <myrepo>`のリモートURLとHEAD取得へ固定値を返すfakeを返す。
-
-    それ以外のgit呼び出しは`text`指定に応じた空stdout/stderrで成功扱いにする。
-    """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         if cmd == ["git", "-C", str(myrepo), "remote", "get-url", "origin"]:
@@ -38,10 +34,6 @@ def make_git_remote_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.Compl
 
 
 def make_current_worktree_fake(myrepo: pathlib.Path) -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """カレント作業ツリーを`myrepo`として応答するfakeを返す。
-
-    `--target-repo`を省略したときにカレントディレクトリから対象リポジトリを確定する処理を検証するために使う。
-    """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         response = fake_git_worktree_remote_response(cmd, myrepo, kwargs)
@@ -54,10 +46,6 @@ def make_current_worktree_fake(myrepo: pathlib.Path) -> Callable[..., subprocess
 
 
 def make_outside_worktree_fake() -> Callable[..., subprocess.CompletedProcess[Any]]:
-    """カレントディレクトリがGitの作業ツリー外であるとして応答するfakeを返す。
-
-    `--target-repo`を省略したときに対象を限定しない処理を検証するために使う。
-    """
 
     def fake_run(cmd: list[str], *_args: object, **kwargs: object) -> subprocess.CompletedProcess[Any]:
         empty: Any = "" if kwargs.get("text") else b""
@@ -70,11 +58,6 @@ def make_outside_worktree_fake() -> Callable[..., subprocess.CompletedProcess[An
 def fake_git_worktree_remote_response(
     cmd: list[str], myrepo: pathlib.Path, kwargs: dict[str, object]
 ) -> subprocess.CompletedProcess[Any] | None:
-    """`git rev-parse --show-toplevel`・`git -C <myrepo> remote get-url origin`のfake応答を返す。
-
-    該当しない`cmd`は`None`を返す。呼び出し側は`None`時にfake-editor・pull追跡等の
-    固有分岐へフォールバックする。
-    """
     empty: Any = "" if kwargs.get("text") else b""
     if cmd == ["git", "rev-parse", "--show-toplevel"]:
         stdout: Any = f"{myrepo}\n" if kwargs.get("text") else f"{myrepo}\n".encode()

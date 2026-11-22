@@ -57,7 +57,6 @@ PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
-    """開始時に登録し、設定に従い既存CLIへ起動要求だけを渡す。"""
     if delegated_session.is_delegated(os.environ) or payload.get("agent_id"):
         return None
     event = payload.get("hook_event_name")
@@ -83,7 +82,6 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
             return "\n".join(part for part in (notice, waiting) if part)
         return notice
     if session_activity.host_process() is None:
-        # ホスト外で再生したhook入力は記録だけにとどめ、実在するホストの開始・終了から起動する。
         return notice
     now = time.time()
     if _meta_auto_start_due(now=now):
@@ -93,7 +91,7 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     else:
         return notice
     env = plugin_environment.direct_environment(PLUGIN_ROOT, orchestrator.child_env(drop=(session_review.BATCH_ENV,)))
-    # セッションのstdin/stdoutを保持せず、受付前の試行と受付後の実行記録で責任を分ける。
+
     launch_id = uuid.uuid4().hex
     env[session_review.LAUNCH_ENV] = launch_id
     program = (
@@ -117,8 +115,6 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         )
         value.save(launch_path)
         with log_path.open("ab") as log:
-            # hook終了後も生存確認できるようPIDを保存し、親が存続する間はスレッドで回収する。
-            # 時間上限なし: 長時間の子セッションの実行そのものであり、終了は監督の仕組みが扱う。
             try:
                 process = windows_job.start_independent_process(
                     diagnostic_process.command(
@@ -257,7 +253,6 @@ def _report_target(targets: list[dict[str, Any]]) -> tuple[str, pathlib.Path]:
 
 
 def _meta_report_target(*, now: datetime.datetime) -> str:
-    """比較期間や前回からの繰越を除き、今回の入力WIの投入先で報告先を決める。"""
     first = (now - datetime.timedelta(days=7)).strftime("%Y%m%d-%H%M%S")
     last = now.strftime("%Y%m%d-%H%M%S")
     batch_scopes = skill_modes.accepted_scopes("review-session", "batch")
@@ -300,7 +295,7 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
     previous = session_review.previous_scope(target)
     if previous is not None:
         arguments.extend(["--after", str(previous)])
-    # batchは欠測を結果へ明示した部分分析を行う。単発prepareは明示指定時だけ部分読込を選ぶ。
+
     arguments.append("--allow-partial-records")
     output = io.StringIO()
     diagnostics = io.StringIO()
@@ -311,7 +306,6 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
         detail = "\n".join(part for part in (diagnostics.getvalue().strip(), output.getvalue().strip()) if part)
         raise ValueError(f"prepareが終了{code}: {detail}")
     if diagnostics.getvalue():
-        # 成功時の警告は捕捉前と同じく呼び出し元のstderrへ残す。
         print(diagnostics.getvalue(), end="", file=sys.stderr)
     prepared = json.loads(output.getvalue())
     prepared["partial_analysis"] = bool(prepared.get("unconfirmed_scope")) or any(
@@ -327,16 +321,15 @@ def _prepare(target: dict[str, Any]) -> dict[str, Any] | None:
         for event in prepared.get("unconfirmed_scope", []):
             if event.get("kind") == "record-gap" and event.get("record") in scope["records"]:
                 entry = scope["records"][event["record"]]
-                # 末尾欠測も観測済み範囲に含め、次回の新規追記と区別する。digestは読めた完全行だけを表す。
+
                 entry["observed_through_line"] = max(entry.get("observed_through_line", entry["through_line"]), event["line"])
         session_review.write(pathlib.Path(prepared["scope_path"]), scope)
-    # 待ち記録を作った識別子と世代で確定する。元ファイル名から作った識別子は使わない。
+
     prepared.update(host=target["host"], session_id=target["session_id"], generation=target["generation"])
     return prepared
 
 
 def _plugin_repository() -> str:
-    """実行中の配布物のリポジトリ識別子を返す。振り返りの仕組みの不具合はこの配布元で直す。"""
     return json.loads((PLUGIN_ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))["repository"]
 
 
@@ -389,7 +382,6 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
 def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_code: int | None = None) -> None:
     signature: list[Any] = [reason.split(":", 1)[0]]
     if signature[0].startswith("run-skill-exit-"):
-        # 終了コードだけから別の対象で同じ原因が生じたとは推定しない。
         signature.append(sorted(item["key"] for item in manifest["targets"]))
     else:
         normalized = re.sub(r"[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", "<run-id>", reason)
@@ -539,7 +531,6 @@ def _live(manifest: dict[str, Any]) -> bool:
     stable = manifest.get("process_identities", [])
     processes = manifest.get("processes", [])
     if processes:
-        # 保存済みの実行プロセスの世代だけで判定し、ホストの全プロセスの起動argvは読まない。
         return any(
             session_registry.ProcessIdentity.from_payload(raw, stable=stable[index] if index < len(stable) else None).exists()
             for index, raw in enumerate(processes)
@@ -578,7 +569,7 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
     if args.timeout <= 0 and getattr(args, "resume_record", None) is None:
         outcome.report_failure("--timeoutは正の秒数で指定する", next_action="--timeoutを省略するか正の秒数で再実行する")
         return 2
-    # hookが発行する起動識別子で区別し、着眼点のauto/manualを制御情報として消費しない。
+
     manual = not bool(os.environ.get(session_review.LAUNCH_ENV))
     if not manual and config.resolve_mutable_setting("session_review_auto_start") == "false":
         session_review.launch_result()
@@ -757,7 +748,7 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                     # 選定後の活動再開は正常な延期であり、失敗抑止せず次の機会へ残す。
                     deferred.add(target["key"])
                     continue
-                # 処理範囲と欠測の診断は、抽出物を回収した後もmanifestと同じ寿命で保持する。
+
                 scope_path = runs / f"{run_id}-{target['key']}.scope"
                 session_review.write(scope_path, session_review.read(pathlib.Path(prepared["scope_path"])))
                 prepared["bundle_scope_path"] = prepared["scope_path"]
@@ -770,10 +761,9 @@ def _run_batches(args: argparse.Namespace, execute: Callable[[argparse.Namespace
                 omitted = deferred | {target["key"] for target, _ in failed}
                 manifest = writer.select([target for target in targets if target["key"] not in omitted], target_repo)
                 if not any(not target.get("review_batch") for target in manifest["targets"]):
-                    # 通常対象を準備できない回も、batch自身だけの分析を起動しない。
                     writer.resolve()
                     continue
-                # 報告先は実際にモデルへ渡す対象から決め直す。
+
                 target_repo, cwd = _report_target(manifest["targets"])
                 manifest = writer.select(manifest["targets"], target_repo)
             run_args = argparse.Namespace(**vars(args))

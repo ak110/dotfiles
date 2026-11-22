@@ -1,5 +1,3 @@
-"""組み込みの子と自分宛て送信の保留・再開を公開結果まで検証する。"""
-
 # 通知入力と監視の境界を決定論的に駆動する。
 # pylint: disable=protected-access
 import pathlib
@@ -51,7 +49,6 @@ async def _complete(backend, session, items=()):
 @pytest.mark.parametrize("terminal", ["completed", "interrupted", "child-turn"])
 @pytest.mark.asyncio
 async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, terminal: str):
-    """子が全て終了した後の同一sessionの継続結果を公開し、再掲と次世代の子も扱う。"""
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         client = FakeCodexClient()
@@ -84,7 +81,7 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
         assert session.turn_seq == 2
         prompts = [r[1]["input"] for r in client.requests if r[0] == "turn/start"]
         assert len(prompts) == 2 and "child-1" in str(prompts[-1]) and "child-2" in str(prompts[-1])
-        # 終了後に元turnの項目が再掲されても子を再稼働へ戻さない。
+
         await backend._handle_notification(
             {
                 "method": "item/completed",
@@ -100,7 +97,7 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
         await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": final_message})
         await _complete(backend, session)
         assert (await owner.wait())["agent_message"] == final_message
-        # 再開したturnが新しい子を起動すると、新たな保留を一度行える。
+
         state.initialize_turn(session)
         await _item(backend, session, _activity("child-3", "started", "start-3"))
         await _complete(backend, session)
@@ -109,7 +106,6 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
 
 @pytest.mark.asyncio
 async def test_all_children_terminal_before_parent_returns_result(tmp_path: pathlib.Path):
-    """親turnの完了より前に子が終了していれば、そのturnの結果を返す。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="turn")
     async with codex.AppServerManager({session.session_id: session}) as backend:
         await _item(backend, session, _activity("child", "started", "start"))
@@ -120,7 +116,6 @@ async def test_all_children_terminal_before_parent_returns_result(tmp_path: path
 
 @pytest.mark.asyncio
 async def test_child_message_to_parent_is_not_parent_self_message(tmp_path):
-    """子から親への通常の配送は自分宛ての修復から分離し、item IDの名前空間も保つ。"""
     session = state.SessionState("parent", str(tmp_path), engine="codex", turn_id="turn")
     async with codex.AppServerManager({session.session_id: session}) as backend:
         await _item(backend, session, _activity("child", "started", "start"))
@@ -154,12 +149,11 @@ async def test_child_message_to_parent_is_not_parent_self_message(tmp_path):
 @pytest.mark.parametrize("launch_kind", ["explore", "shell", "write", "delegate", "task"])
 @pytest.mark.asyncio
 async def test_self_message_repairs_final_response_once(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, launch_kind):
-    """全modeで自分宛て送信を一度修復し、子への送信を通常の結果として返す。"""
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         client = FakeCodexClient()
         monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
-        # 公開taskは役割のfrontmatterを解決した後にbackendのdelegateへ入る。
+
         session = await backend.start("作業", str(tmp_path), launch_kind="delegate" if launch_kind == "task" else launch_kind)
         await _item(backend, session, _activity("child", "interacted", "child-message"))
         await _complete(backend, session)
@@ -201,7 +195,6 @@ async def test_deadline_and_lost_connection_report_unfinished_threads(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_self_message_and_child_share_resume_and_restore_rejected_delivery(tmp_path, monkeypatch):
-    """子の終了を待つ修復指示を一度にまとめ、配送拒否でも保留理由を保持する。"""
     async with manager.AgentsServerManager(None) as owner, codex.AppServerManager(owner.sessions, owner._condition) as backend:
         install_backend(owner, "codex", backend)
         client = FakeCodexClient()

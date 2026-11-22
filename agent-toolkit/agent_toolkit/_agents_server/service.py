@@ -1,5 +1,3 @@
-"""軽量なMCP転送接続から独立して、同じ管理領域の会話を保持する。"""
-
 from __future__ import annotations
 
 # service内の協調役として、既存MCP定義とManagerの内部状態を一体で管理する。
@@ -153,7 +151,6 @@ def _host(peer_pid: int) -> tuple[dict | None, str | None]:
                 settings = str((pathlib.Path(process.cwd()) / settings).resolve())
             return process_identity.ProcessIdentity.capture(process).payload(), settings
     except psutil.Error:
-        # 確認不能を親終了に置き換えず、接続切断でも配下を回収しない。
         return None, None
     return None, None
 
@@ -167,7 +164,6 @@ async def serve_peer(
     coordinator: ServiceCoordinator,
     peer_state: _PeerState,
 ) -> None:
-    """MCP SDKの登録と公開protocolをそのまま使い、接続ごとに環境を束縛する。"""
     owned = service_transport.AsyncPeer(peer)
     connection_id = None
     try:
@@ -215,7 +211,6 @@ async def serve_peer(
             finally:
                 tracker.transport_closed()
     except Exception:
-        # 相手がEOFを受けて診断を読む前に、元の例外を既存の世代stderrへ確定する。
         _LOG.exception("管理サービスの接続が失敗しました")
         raise
     finally:
@@ -281,7 +276,6 @@ async def _rpc(
         elif operation == "parent_sessions" and isinstance(arguments, dict):
             result = await coordinator.parent_sessions(arguments["parent"], bool(arguments["include_terminated"]))
         elif operation == "ping":
-            # 中継側の生存確認。管理の処理を伴わず、イベントループが応答できるかだけを返す。
             result = {"generation": coordinator.generation}
         elif operation == "owns" and isinstance(arguments, dict):
             result = coordinator.owns(arguments["parent"], arguments["session_id"])
@@ -316,7 +310,6 @@ async def _rpc(
 async def run(
     directory: pathlib.Path, generation: str, *, stop: asyncio.Event | None = None, resources: ResourceBroker | None = None
 ) -> None:
-    """起動readyの公開後も接続の有無によらず管理を続ける。"""
     address = service_transport.endpoint(directory, generation)
     directory.mkdir(parents=True, exist_ok=True, mode=private_directory.MODE)
     # 共有起動の診断をsupervisorへ結び付ける。会話や認証の環境は診断へ渡さない。
@@ -330,7 +323,7 @@ async def run(
     resources = resources or ResourceBroker(generation, owner_identity=instance.instance_id)
     registry = RegistryForwarder(generation, directory)
     projections = ProjectionHub(generation, directory)
-    # 公開元は退役の記録で引継ぎの成否を判定するため、会話・資源を持ったまま終わる世代は停止や例外でも記録しない。
+
     handed_over = True
     try:
         with registry_forwarding.bind(registry.forward):
@@ -404,7 +397,6 @@ async def run(
 
                             task.add_done_callback(completed)
                 finally:
-                    # 会話を回収する前に判定する。回収の後では、終了の時点で持っていた会話を観測できない。
                     handed_over = coordinator is None or not coordinator.holds_handover()
                     mcp_tools._SERVICE_MANAGERS = None
                     for peer in peers:

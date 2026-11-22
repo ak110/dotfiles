@@ -1,5 +1,3 @@
-"""serveのconfigに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import contextlib
@@ -18,7 +16,6 @@ from agent_toolkit._testing.wi_entry_files import entry_path
 
 
 def test_detail_returns_empty_frontmatter_when_unavailable(tmp_path: pathlib.Path) -> None:
-    """frontmatterが無い詳細は空の表示用一覧を返す。"""
     _write_detail_entry(tmp_path, "本文のみ\n")
     detail = wi_operations.Operations(tmp_path).detail("inbox", "entry.md")
     assert not detail["frontmatter_entries"]
@@ -29,7 +26,6 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """詳細HTTP APIは整数形式キーを含むトップレベル項目の型と挿入順を保持する。"""
     _write_detail_entry(
         tmp_path,
         "---\ntype: awi\nz_key: z\na_key: a\n---\n\n本文\n",
@@ -71,7 +67,6 @@ async def test_detail_api_preserves_top_level_key_types_and_order(
 
 
 def test_render_body_renders_footnote_with_document_anchor() -> None:
-    """注記記法は本文と同一文書内の参照リンクとして描画する。"""
     rendered = wi_operations._render_body("本文です[^1]。\n\n[^1]: 注記の本文\n")
 
     assert "注記の本文" in rendered
@@ -83,7 +78,6 @@ def test_operations_answered_filter_returns_only_answered_uwis(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`answered=yes`は回答済みUWIのみを返し、未回答UWI・AWIを除外する。"""
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_a, **_k: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
     entry_path(tmp_path, "answered.md").write_text(
@@ -106,7 +100,6 @@ def test_operations_answered_filter_returns_only_answered_uwis(
 
 @pytest.mark.asyncio
 async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(tmp_path: pathlib.Path) -> None:
-    """一覧APIは投入元分類を適用し、既存のraw投入元フィルターを維持する。"""
     for filename, source in [
         ("agent.md", "agent"),
         ("alert-monitor.md", "alert-monitor"),
@@ -149,7 +142,6 @@ async def test_entries_api_filters_source_kind_and_preserves_raw_source_filters(
 async def test_entries_api_omits_pagination_without_explicit_page_and_clamps_final_page(
     tmp_path: pathlib.Path,
 ) -> None:
-    """ページ省略時の既存payloadを維持し、最終ページを超える指定を末尾へ正規化する。"""
     for index in range(101):
         entry_path(tmp_path, f"entry-{index:03d}.md").write_text(
             "---\ntype: awi\nstate: inbox\ntarget_repo: example/repo\n---\n\n本文\n",

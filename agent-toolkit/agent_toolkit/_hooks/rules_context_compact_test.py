@@ -45,7 +45,6 @@ def test_compact_public_notice_uses_current_stage(tmp_path, monkeypatch, capsys,
 def test_context_boundary_restores_skill_notice(
     boundary: str, codex: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """操作の直前のスキルの案内は文脈ごとに1回届き、clear・会話圧縮の後の同じ操作で再び届く。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")
@@ -69,7 +68,6 @@ def test_context_boundary_restores_skill_notice(
 def test_context_boundary_forgets_completion_playbook_only_for_main(
     boundary: str, agent_id: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """メインのclear・会話圧縮の後は完了報告の手順書を文脈に無いものとし、組み込みの子の圧縮では保つ。"""
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     setattr_in_managed_temp_modules(monkeypatch, "_state_root_path", lambda: tmp_path / "external-state")

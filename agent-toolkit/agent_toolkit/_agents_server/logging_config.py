@@ -53,15 +53,10 @@ def _warning_text(reason: str, impact: str, action: str) -> str:
 
 
 class _StderrHandler(logging.StreamHandler):  # type: ignore[type-arg]
-    """agents_serverが追加した標準エラー向けhandler。
-
-    同じloggerへ二重に追加しないための識別を型で表す。
-    """
+    pass
 
 
 class _RedactingFileHandler(logging.handlers.RotatingFileHandler):
-    """書式引数・例外チェーンを含む整形済み本文を保存境界で伏せる。"""
-
     def format(self, record: logging.LogRecord) -> str:
         return redact_secrets(super().format(record))
 
@@ -85,11 +80,6 @@ class _RedactingFileHandler(logging.handlers.RotatingFileHandler):
 
 
 class _LogFileHandler(logging.Handler):
-    """agents_serverが追加した永続ファイル向けhandler。
-
-    出力先の比較で`baseFilename`を読むため、その属性を持つ型として扱えるようにする。
-    """
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__()
         kwargs["delay"] = True
@@ -109,7 +99,6 @@ class _LogFileHandler(logging.Handler):
         self._records.task_done()
 
     def emit(self, record: logging.LogRecord) -> None:
-        """ログの順序を保つ専用workerへ記録を渡す。"""
         if not self._accepting:
             return
         try:
@@ -121,17 +110,14 @@ class _LogFileHandler(logging.Handler):
             self._records.put(record)
 
     def setFormatter(self, fmt: logging.Formatter | None) -> None:
-        """出力を所有するhandlerへ書式を渡す。"""
         super().setFormatter(fmt)
         self._sink.setFormatter(fmt)
 
     def flush(self) -> None:
-        """受理済みの全記録を保存する。"""
         self._records.join()
         self._sink.flush()
 
     def close(self) -> None:
-        """受理した全記録の出力とworkerの終了を待つ。"""
         self.acquire()
         try:
             if self._accepting:
@@ -145,7 +131,6 @@ class _LogFileHandler(logging.Handler):
 
 
 def close_logging() -> None:
-    """所有するログworkerを全て終了し、保存を完了する。"""
     logger = logging.getLogger("agent-toolkit.agents-server")
     for handler in tuple(logger.handlers):
         if isinstance(handler, _LogFileHandler):
@@ -154,14 +139,12 @@ def close_logging() -> None:
 
 
 def flush_logging() -> None:
-    """所有するログworkerの受理済み出力を完了させる。"""
     for handler in logging.getLogger("agent-toolkit.agents-server").handlers:
         if isinstance(handler, _LogFileHandler):
             handler.flush()
 
 
 def configure_logging() -> pathlib.Path:
-    """標準エラーと永続ファイルへagents_serverの診断ログを出力する。"""
     log_level = os.environ.get("AGENT_TOOLKIT_AGENTS_LOG_LEVEL", "WARNING")
     server_logger = logging.getLogger("agent-toolkit.agents-server")
     server_logger.setLevel(logging.INFO)
@@ -196,8 +179,6 @@ def configure_logging() -> pathlib.Path:
 
 @dataclasses.dataclass(frozen=True)
 class ServerInstance:
-    """MCPサーバーの起動単位の識別子と、その終了診断ファイルの絶対パス。"""
-
     instance_id: str
     path: pathlib.Path
 
@@ -206,23 +187,19 @@ _CURRENT_INSTANCE: ServerInstance | None = None
 
 
 def instance_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """起動単位の終了診断を置くディレクトリを返す。"""
     return (_state_paths.state_dir() if state_root is None else state_root) / INSTANCE_DIRECTORY_NAME
 
 
 def instance_path(instance_id: str, state_root: pathlib.Path | None = None) -> pathlib.Path:
-    """起動単位の終了診断ファイルのパスを返す。"""
     return instance_directory(state_root) / f"{instance_id}.jsonl"
 
 
 def end_server_instance() -> None:
-    """このプロセスの起動単位を終える。以降の`record_instance_event`は何も書かない。"""
     global _CURRENT_INSTANCE  # pylint: disable=global-statement
     _CURRENT_INSTANCE = None
 
 
 def current_server_instance() -> ServerInstance | None:
-    """このプロセスが開始した起動単位を返す。起動単位を開始していなければ`None`を返す。"""
     return _CURRENT_INSTANCE
 
 
@@ -277,7 +254,6 @@ def _ends_with_truncated(path: pathlib.Path) -> bool:
 
 
 def record_instance_event(event: str, **fields: Any) -> None:
-    """現在の起動単位の診断ファイルへサーバー自身のイベントを追記する。起動単位が無ければ何もしない。"""
     instance = _CURRENT_INSTANCE
     if instance is not None:
         append_instance_event(instance.path, writer="server", event=event, **fields)
@@ -289,7 +265,6 @@ def start_server_instance(
     state_root: pathlib.Path | None = None,
     cwd: pathlib.Path | None = None,
 ) -> ServerInstance:
-    """起動単位を生成して`started`を記録し、ランチャーの合流ファイルへ所在を書く。"""
     global _CURRENT_INSTANCE  # pylint: disable=global-statement
     env = os.environ if environment is None else environment
     stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
@@ -343,7 +318,6 @@ def _write_launch_record(path: pathlib.Path, instance: ServerInstance) -> None:
 
 
 def read_launch_record(path: pathlib.Path) -> pathlib.Path | None:
-    """ランチャーの合流ファイルからサーバーが報告した診断ファイルの所在を返す。未報告なら`None`を返す。"""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except OSError, UnicodeError, json.JSONDecodeError:
@@ -373,7 +347,6 @@ def parent_connection_log(
     os_name: str | None = None,
     now: datetime.datetime | None = None,
 ) -> dict[str, str]:
-    """親CLIがこの起動について残す接続記録の候補を返す。取得できなければ理由を返す。"""
     if environment.get("CLAUDECODE") != "1":
         return {"reason": "unsupported_parent"}
     root = claude_cache_root(environment, os_name=os_name)
@@ -389,7 +362,7 @@ def parent_connection_log(
         candidates = []
     if not candidates:
         return {"reason": "not_found"}
-    # 記録の名前は起動時刻であり、名前の順が起動の順になる。
+
     latest = max(candidates, key=_record_name)
     return {"path": str(latest)}
 
@@ -448,14 +421,11 @@ def _recording_handler(
 
 @dataclasses.dataclass(frozen=True)
 class InstanceReference:
-    """中断turnが参照する起動単位。`server_instance`が`None`の参照は起動単位を記録していない旧記録を表す。"""
-
     server_instance: str | None
     turn_seq: int
 
 
 def diagnostics_reference(reference: InstanceReference, *, state_root: pathlib.Path | None = None) -> dict[str, Any]:
-    """中断応答へ添える診断の参照を、診断ファイルを読んだ時点の状態で返す。"""
     result: dict[str, Any] = {"server_instance": reference.server_instance, "turn_seq": reference.turn_seq}
     if reference.server_instance is None:
         return {
@@ -468,7 +438,6 @@ def diagnostics_reference(reference: InstanceReference, *, state_root: pathlib.P
 
 
 def refresh_diagnostics_reference(value: Mapping[str, Any]) -> dict[str, Any]:
-    """保存済みの参照の`status`と`next_action`を、診断ファイルを読み直した結果へ更新する。"""
     path = value.get("path")
     if not isinstance(path, str) or not pathlib.Path(path).is_absolute():
         return dict(value)

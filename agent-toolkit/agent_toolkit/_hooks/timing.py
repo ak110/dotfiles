@@ -10,7 +10,6 @@ _MAX_BYTES = 64 * 1024
 
 
 def record(payload: object, operation: str, started: float, status: str, *, stage: str = "total") -> None:
-    """同じセッションの並行hookを直列化し、直近の有限な計測だけを保持する。"""
     if not isinstance(payload, dict) or not isinstance(payload.get("session_id"), str):
         return
     directory = managed_temp.find_session_temp(payload["session_id"])
@@ -29,7 +28,7 @@ def record(payload: object, operation: str, started: float, status: str, *, stag
         ).encode("utf-8")
         + b"\n"
     )
-    # 計測の書込障害はhookの本来の結果を変えない。本文や例外メッセージは保存しない。
+
     try:
         with (directory / "hook-timings.lock").open("a+b") as lock:
             acquire_lock(lock)

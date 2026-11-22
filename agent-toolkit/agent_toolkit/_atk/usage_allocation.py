@@ -1,5 +1,3 @@
-"""観測した自然回復までの余裕に応じて候補のengine順を選ぶ。"""
-
 from __future__ import annotations
 
 import json

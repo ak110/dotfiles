@@ -38,17 +38,14 @@ TARGET_ENTRY_WORKS = ("add-awi-by-user", "implement", "process-wi")
 
 
 def completion_playbook_path() -> pathlib.Path:
-    """完了報告の手順書の、稼働版のplugin rootから解決した絶対パスを返す。"""
     return plugin_resources.skill_document_path(skill_modes.ENTRY_SKILL, COMPLETION_PLAYBOOK)
 
 
 def termination_evidence_reference() -> str:
-    """終了工程の判断の記録を定める資料を、通知から読める絶対パスで返す。"""
     return f"`{plugin_resources.skill_document_path(skill_modes.ENTRY_SKILL, 'references/termination-evidence.md')}`"
 
 
 def unresolved_repository_fix() -> str:
-    """所属不明の作業に、省略の再申請と異なる終了操作を案内する。"""
     return (
         f"この作業では省略を記録できない。完了報告の手順書`{completion_playbook_path()}`を全文読んで終了工程を進めよ。"
         f"規範がその読取を禁じる場合は、{termination_evidence_reference()}「終了方法の分岐」に従い、その旨をユーザーへ報告せよ。"
@@ -56,7 +53,7 @@ def unresolved_repository_fix() -> str:
 
 
 class _UnresolvedRepositoryError(ValueError):
-    """所属不明の作業には、省略の再申請と異なる終了操作を案内する。"""
+    pass
 
 
 class _FailureEvidenceError(ValueError):
@@ -68,7 +65,6 @@ class _InactiveWaitError(ValueError):
 
 
 def host_stop_fix() -> str:
-    """技術的不成立の判定と確認手段の所在を返す。"""
     return f"技術的不成立の判定と確認手段は{termination_evidence_reference()}「技術的不成立の判定」に従え。"
 
 
@@ -113,7 +109,6 @@ def _data(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 
 
 def _compact(data: dict[str, Any]) -> None:
-    """現在の証拠と遅延応答に必要な参照だけを保持する。"""
     referenced: set[str] = {data.get("last_input", ""), data.get("last_human_input", "")}
     for work in data["works"].values():
         if work.get("publish_scope") or work.get("completion_report"):
@@ -130,7 +125,7 @@ def _compact(data: dict[str, Any]) -> None:
         retained.add(work.get("failure_call", ""))
         for call_id in list(work["calls"]):
             records = data["calls"].get(call_id, [])
-            # 所属不明の操作の種類を省略拒否へ示すため、起動証拠を得るまで既存の呼出し記録を保つ。
+
             unresolved = any(record.get("kind") == "deliverable" and record.get("repository") is None for record in records)
             if unresolved and not work.get("completion_report"):
                 continue
@@ -169,7 +164,6 @@ def _last_decision(work: dict[str, Any]) -> str:
 
 
 def _finished(data: dict[str, Any], work: dict[str, Any]) -> bool:
-    """起動・省略の証拠を得た作業の後に新しい入力が届いたかを返す。"""
     return bool(work.get("completion_report") or work.get("omit_completion")) and data.get(
         "last_human_input", data.get("last_input")
     ) != work.get("input_at_last_call")
@@ -180,7 +174,6 @@ CONTEXT_KEY = "completion_context"
 
 
 def playbook_digest() -> str | None:
-    """完了報告の手順書の現在の版のSHA-256を返す。読めなければ`None`を返す。"""
     try:
         return hashlib.sha256(completion_playbook_path().read_bytes()).hexdigest()
     except OSError:
@@ -188,14 +181,12 @@ def playbook_digest() -> str | None:
 
 
 def completion_in_context(session_id: str) -> bool:
-    """メインの文脈に完了報告の手順書の現在の版があるか（最後の会話圧縮の後に起動・全文読込をしたか）を返す。"""
     data = session_state.read_state(session_id).get(STATE_KEY)
     recorded = data.get(CONTEXT_KEY) if isinstance(data, dict) else None
     return recorded is not None and recorded == playbook_digest()
 
 
 def forget_completion_context(session_id: str) -> None:
-    """会話圧縮・clearで手順書の本文が文脈から外れたため、文脈の読込の記録を消す。"""
 
     def forget(state: dict[str, Any]) -> dict[str, Any] | None:
         data = state.get(STATE_KEY)
@@ -239,7 +230,6 @@ def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
     人間の入力は記録の`origin.kind=human`で判定し、通知や他エージェントの配送は非人間入力として保存する。
     """
     if isinstance(transcript_path, str) and transcript_path and transcript_path != data.get("transcript_path"):
-        # 読取位置は記録ファイルごとの値のため、別の記録へ移ったら先頭から読む。
         data["transcript_path"] = transcript_path
         data["queued_offset"] = 0
     path = data.get("transcript_path")
@@ -253,7 +243,6 @@ def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
         with pathlib.Path(path).open("rb") as stream:
             stream.seek(start)
             for raw in stream:
-                # 書込途中の最終行は次回に読む。
                 if not raw.endswith(b"\n"):
                     break
                 position += len(raw)
@@ -286,7 +275,6 @@ def _sync_queued_inputs(data: dict[str, Any], transcript_path: object) -> None:
 
 
 def evidence_available(payload: dict[str, Any]) -> bool:
-    """現在の会話の証拠を読み取れるかを返す。別会話の継承値と旧版の状態は読み取れないとして記録する。"""
     data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
     if data is None:
         return True
@@ -297,7 +285,6 @@ def evidence_available(payload: dict[str, Any]) -> bool:
 
 
 def _session_works(state: dict[str, Any], session_id: str) -> dict[str, Any]:
-    """現在の会話が記録した作業を返し、別会話の継承値と旧版の状態は空とする。"""
     data = state.get(STATE_KEY)
     if not isinstance(data, dict) or data.get("session_id") != session_id or data.get("version") != 1:
         return {}
@@ -306,7 +293,6 @@ def _session_works(state: dict[str, Any], session_id: str) -> dict[str, Any]:
 
 
 def _async_target_alive(state: dict[str, Any], work: dict[str, Any], target: object) -> bool:
-    """作業が起動して所有する委譲先が、実行中か未回収の結果を持つ場合に真を返す。"""
     child = agents_server_observations.session_record(state, target)
     return (
         isinstance(target, str)
@@ -321,13 +307,11 @@ def _async_target_alive(state: dict[str, Any], work: dict[str, Any], target: obj
 
 
 def session_works(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-    """現在の会話の全作業を、中止・置換した作業も含めて記録順に返す。"""
     works = _session_works(session_state.read_state(payload["session_id"]), payload["session_id"])
     return [(work_id, work) for work_id, work in works.items() if isinstance(work, dict)]
 
 
 def waits_on_delegated_session(payload: dict[str, Any], work: dict[str, Any]) -> bool:
-    """作業が起動したagents_serverのsessionのうち、実行中か未回収の結果を持つものがあれば真を返す。"""
     state = session_state.read_state(payload["session_id"])
     return any(_async_target_alive(state, work, target) for target in work.get("async_targets", {}))
 
@@ -358,7 +342,6 @@ def pending_work(payload: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
 
 
 def decision_hint(payload: dict[str, Any]) -> str:
-    """判断記録に必要な会話と直近のユーザー入力の識別子を、不足の通知へ添える本文として返す。"""
     data = session_state.read_state(payload["session_id"]).get(STATE_KEY)
     last = data.get("last_human_input", data.get("last_input")) if isinstance(data, dict) else None
     entry = data.get("inputs", {}).get(last) if isinstance(data, dict) else None

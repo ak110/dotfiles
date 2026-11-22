@@ -11,7 +11,6 @@ BASH_PROFILE = REPO_ROOT / ".chezmoi-source" / "dot_bash_profile"
 
 
 def test_claude_snapshot_defers_bashrc_to_its_explicit_source(tmp_path: pathlib.Path) -> None:
-    """スナップショットは1回だけ読み、通常の非対話ログインは従来どおり読む。"""
     bashrc = tmp_path / ".bashrc"
     bashrc.write_text("printf '%s\\n' bashrc-loaded\n", encoding="utf-8")
     snapshot = f'SNAPSHOT_FILE=synthetic\n\n      source "{bashrc}" < /dev/null\n      :'
@@ -28,7 +27,6 @@ def test_claude_snapshot_defers_bashrc_to_its_explicit_source(tmp_path: pathlib.
 
 
 def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
-    """補完定義と実行時の環境を記録するスタブを作成する。"""
     exit_code = 1 if fails else 0
     path.write_text(
         "#!/bin/sh\n"
@@ -41,7 +39,6 @@ def _write_completion_stub(path: pathlib.Path, *, fails: bool = False) -> None:
 
 
 def test_interactive_startup_does_not_list_work_items(tmp_path: pathlib.Path) -> None:
-    """対話シェルの起動時にWI一覧を取得しない。"""
     home = tmp_path / "home"
     bin_dir = home / ".local/bin"
     bin_dir.mkdir(parents=True)
@@ -88,7 +85,6 @@ def test_claude_wrapper_preserves_exit_without_screen_commands(tmp_path: pathlib
 
 
 def test_completion_generation_is_cached_and_disables_mise_auto_install(tmp_path: pathlib.Path) -> None:
-    """補完生成を必要時だけ実行し、miseの暗黙導入を開始しない。"""
     home = tmp_path / "home"
     fake_bin = home / "fake-bin"
     fake_bin.mkdir(parents=True)
@@ -169,7 +165,6 @@ def test_failed_completion_generation_leaves_no_cache_and_continues(tmp_path: pa
 
 
 def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
-    """固定PATH要素の順序を保ち、2回読み込んでも重複させない。"""
     home = tmp_path / "home"
     fixed_home_paths = [
         home / ".cargo" / "bin",
@@ -224,7 +219,6 @@ def test_fixed_paths_are_ordered_and_idempotent(tmp_path: pathlib.Path) -> None:
 
 
 def test_noninteractive_mise_uses_normal_activation(tmp_path: pathlib.Path) -> None:
-    """非対話シェルでもshim専用モードを使わず、通常のactivateを評価する。"""
     home = tmp_path / "home"
     fake_bin = home / "fake-bin"
     fake_bin.mkdir(parents=True)
@@ -263,7 +257,6 @@ def test_noninteractive_mise_uses_normal_activation(tmp_path: pathlib.Path) -> N
 
 
 def test_enable_pyenv_keeps_existing_path_position(tmp_path: pathlib.Path) -> None:
-    """pyenv有効化を2回実行しても既存PATHの位置と件数を保つ。"""
     home = tmp_path / "home"
     pyenv_bin = home / ".pyenv" / "bin"
     pyenv_bin.mkdir(parents=True)
@@ -319,7 +312,6 @@ def test_enable_pyenv_keeps_existing_path_position(tmp_path: pathlib.Path) -> No
 def test_tmux_command_state_uses_calling_pane_and_tracks_commands(
     tmp_path: pathlib.Path,
 ) -> None:
-    """tmux内ではコマンド開始とプロンプト復帰を呼び出し元ペインへ通知する。"""
     home = tmp_path / "home"
     fake_bin = home / "fake-bin"
     fake_bin.mkdir(parents=True)
@@ -455,7 +447,6 @@ printf 'DEBUG:%s\\n' "$(trap -p DEBUG)"
 
 
 def test_tmux_command_state_discards_stale_command_hash(tmp_path: pathlib.Path) -> None:
-    """削除済みtmuxのhashを破棄し、現在のPATHにある実体を起動する。"""
     home = tmp_path / "home"
     old_bin = home / "old-bin"
     new_bin = home / "new-bin"
@@ -497,7 +488,6 @@ tmux_executable=$(_dotfiles_tmux_executable)
 
 
 def test_non_interactive_shell_points_tmpdir_to_cache(tmp_path: pathlib.Path) -> None:
-    """非対話シェルでも`TMPDIR`がディスク上のキャッシュ配下を指し、Pythonの一時ディレクトリが同じ場所になる。"""
     home = tmp_path / "home"
     home.mkdir()
     for cache_home, expected in (
@@ -531,7 +521,6 @@ def test_non_interactive_shell_points_tmpdir_to_cache(tmp_path: pathlib.Path) ->
 
 
 def test_tmpdir_is_not_set_when_directory_cannot_be_created(tmp_path: pathlib.Path) -> None:
-    """ディレクトリを作成できない場合は`TMPDIR`を設定せず、存在しない場所を指さない。"""
     home = tmp_path / "home"
     home.mkdir()
     (home / ".cache").write_text("file", encoding="utf-8")

@@ -1,9 +1,3 @@
-"""全ツール呼び出しで動くhookが読み込むモジュール数を、登録した予算で守る。
-
-モジュールの読込はhook 1回の所要の大きな部分を占める（2026-11-17の計測ではpydanticだけで約0.2秒）。
-判定に使わない重い依存の追加を、実時間ではなく決定的に数えられる読込数で検出する。
-"""
-
 import json
 import os
 import pathlib
@@ -21,7 +15,6 @@ _MODULE_BUDGETS = {"pretooluse": 280, "posttooluse": 280}
 @pytest.mark.skipif(os.name == "nt", reason="読込数の予算はLinuxの実測で定める")
 @pytest.mark.parametrize("event", ["PreToolUse", "PostToolUse"])
 def test_plain_command_hook_stays_within_module_budget(tmp_path: pathlib.Path, event: str) -> None:
-    """通常のBashコマンドのPre・PostToolUseは予算内のモジュールだけを読み込み、承認判定器や委譲観測の依存を読まない。"""
     subcommand = event.lower()
     payload = {
         "session_id": "00000000-0000-4000-8000-000000000001",

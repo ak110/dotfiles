@@ -56,7 +56,7 @@ def _configured(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> list
     )
 
     async def ready(_cwd: str) -> None:
-        """外部ホストの準備だけを代用する。"""
+        pass
 
     monkeypatch.setattr(launch_requests, "check_plugin_commands", ready)
     created: list[tuple[AgentsServerManager, _Backend]] = []
@@ -86,7 +86,6 @@ async def _call(parent: Any, name: str, arguments: dict[str, Any]) -> CallToolRe
 async def test_native_thread_metadata_separates_parallel_parents(
     configured: list[tuple[AgentsServerManager, _Backend]], tmp_path: pathlib.Path
 ) -> None:
-    """同じMCP接続の2会話が起動した子を、それぞれの親とルートへ保存する。"""
     parents = [str(uuid.uuid4()), str(uuid.uuid4())]
     async with mcp_tools._mcp_lifespan(mcp_tools.mcp):
         responses = await asyncio.gather(
@@ -120,7 +119,6 @@ async def test_native_thread_metadata_recovers_same_child_and_cli_wait(
     capsys: pytest.CaptureFixture[str],
     hold_connection: bool,
 ) -> None:
-    """環境に親IDの無いMCPを閉じ、新しい接続の最初の公開要求から子を復旧してCLIへ配送する。"""
     parent = str(uuid.uuid4())
     async with mcp_tools._mcp_lifespan(mcp_tools.mcp):
         response = await _call(
@@ -173,7 +171,6 @@ async def test_native_thread_metadata_recovers_same_child_and_cli_wait(
 async def test_native_thread_metadata_rejects_invalid_identity(
     configured: list[tuple[AgentsServerManager, _Backend]], parent: Any
 ) -> None:
-    """パスとして使えない会話IDでは子も状態のルートも作成しない。"""
     async with mcp_tools._mcp_lifespan(mcp_tools.mcp):
         response = await _call(parent, "list", {})
         assert response.is_error

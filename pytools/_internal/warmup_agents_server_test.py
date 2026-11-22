@@ -42,7 +42,6 @@ _PLUGIN_ID = "agent-toolkit@ak110-dotfiles"
 
 
 def _write_script(path: pathlib.Path) -> pathlib.Path:
-    """起動スクリプトのダミーを作成してパスを返す。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
     if path.name == "agents_server_mcp.py":
@@ -145,20 +144,15 @@ def _codex_script(codex_home: pathlib.Path, version: str) -> pathlib.Path:
 
 
 def _warmed(calls: list[list[str]]) -> list[str]:
-    """記録済みコマンドから依存検査付きで起動したスクリプトのパスを取り出す。"""
     return [cmd[-2] for cmd in calls if cmd[-1:] == ["--check-dependencies"]]
 
 
 def _prepared(calls: list[list[str]]) -> list[str]:
-    """記録済みコマンドから依存準備を試行したスクリプトのパスを取り出す。"""
     return [cmd[-1] for cmd in calls if "--prepare" in cmd]
 
 
 class TestPrerequisites:
-    """uv不在時の挙動。"""
-
     def test_missing_uv_skips(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """uvが無い環境では外部コマンドを実行しない。"""
         calls = _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(
             _common,
@@ -170,7 +164,6 @@ class TestPrerequisites:
         assert not calls
 
     def test_minimal_mode_skips_before_target_resolution(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """minimalモードは有効版の照会も依存準備も行わない。"""
         monkeypatch.setattr(_warmup.dotfiles_mode, "is_minimal", lambda: True)
         monkeypatch.setattr(_warmup, "_targets", lambda: pytest.fail("対象を解決しない"))
         assert _warmup.run() == post_apply_outcome.PostApplyOutcome()
@@ -182,11 +175,6 @@ class TestElevated:
     def test_elevated_run_defers_service_publication_to_next_unelevated_run(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """依存の準備は行い、管理サービスの起動と公開は行わず、次の非昇格の実行で起動確認する。
-
-        2026-11-19、SSHで昇格して実行した`update-dotfiles`が管理サービスを起動して受付先として公開し、
-        非昇格の旧世代と会話の転送側が新しい受付先を使えなくなった。
-        """
         calls = _setup(monkeypatch, tmp_path)
         started: list[list[str]] = []
 
@@ -209,12 +197,9 @@ class TestElevated:
 
 
 class TestTargets:
-    """ウォームアップ対象の列挙。"""
-
     def test_update_marker_is_not_a_service_startup_input(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """再実行の整理用の印だけが変わっても、同じサービスの起動確認を繰り返さない。"""
         _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(_warmup.post_apply_cache, "record_path", lambda name: tmp_path / f"{name}.json")
         monkeypatch.setattr(_warmup.plugin_warmup, "cleanup_prepared", lambda _prepared, **_kwargs: None)
@@ -243,7 +228,6 @@ class TestTargets:
     def test_cached_full_update_reclaims_completed_bundle(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """MCPの起動確認を省略する更新も、成功確定済みの抽出物を回収する。"""
         _setup(monkeypatch, tmp_path)
         monkeypatch.setattr(_warmup.post_apply_cache, "matches", lambda *_args, **_kwargs: True)
         bundle = tmp_path / "bundle"
@@ -276,7 +260,6 @@ class TestTargets:
         assert not raw.exists() and scope.is_file()
 
     def test_warms_all_existing_targets_once(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """実在する2系統のpluginパスへ解決済みPythonで依存検査付きの起動確認を実行する。"""
         calls = _setup(monkeypatch, tmp_path)
         codex_script = _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
@@ -304,7 +287,6 @@ class TestTargets:
         assert _prepared(calls)[0] in warmed
 
     def test_resolves_python_once_before_warmup(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """対象ごとのprepareと起動確認は、1回だけ解決したPythonを共用する。"""
         calls = _setup(monkeypatch, tmp_path)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
@@ -317,7 +299,6 @@ class TestTargets:
         assert {call[0] for call in launcher_calls} == {str(tmp_path / "python")}
 
     def test_missing_paths_are_excluded(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """存在しない対象パスは除外し、残る対象は実行する。"""
         calls = _setup(
             monkeypatch,
             tmp_path,
@@ -345,7 +326,6 @@ class TestTargets:
     def test_registered_legacy_version_keeps_shared_environments_until_registration_moves(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
     ) -> None:
-        """2026-11-19の回帰: 旧形式の登録が解除されるまでhookとMCPが使う環境を回収しない。"""
         _setup(monkeypatch, tmp_path)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
         claude_cache = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
@@ -378,7 +358,6 @@ class TestCodexResolution:
     """Codexプラグインキャッシュの版解決。"""
 
     def test_uses_enabled_version_from_cli(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """配布元と異なる旧版が有効な場合、その版のパスを対象にする。"""
         calls = _setup(
             monkeypatch,
             tmp_path,
@@ -453,7 +432,6 @@ class TestFailureHandling:
     """構築の失敗はスキップと数え、残る対象の構築を続ける。"""
 
     def test_continues_after_nonzero_exit(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """非0終了でも残る対象を実行し、スキップを返す。"""
         calls = _setup(monkeypatch, tmp_path, warmup_returncode=1)
         _write_script(_codex_script(tmp_path / "codex", "1.0.0"))
 
@@ -490,7 +468,6 @@ class TestFailureHandling:
 def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, behavior: str, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """公開MCPのinitializeとtools/listを使い、0件・停止・異常終了を起動成功へ混ぜない。"""
     server = _probe_server(tmp_path, behavior)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 0.5)
     tasks: list[asyncio.Task[None]] = []
@@ -532,7 +509,6 @@ def test_public_stdio_startup_checks_protocol_and_closes_owned_process(
 
 
 def _stop_services(directory: pathlib.Path) -> None:
-    """公開前の候補を含め、隔離した管理領域に残る管理サービスを専用の起動元とともに止める。"""
     for path in directory.glob("*.json"):
         if path.name == "generations.json":
             continue
@@ -548,7 +524,6 @@ def _stop_services(directory: pathlib.Path) -> None:
 
 
 def _probe_server(tmp_path: pathlib.Path, behavior: str, *, stderr: str = "") -> pathlib.Path:
-    """initializeとtools/listへ`behavior`どおりに応答するMCPサーバーのスクリプトを作る。"""
     server = tmp_path / "server.py"
     server.write_text(
         "import json, pathlib, sys, time\n"
@@ -575,7 +550,6 @@ def _probe_server(tmp_path: pathlib.Path, behavior: str, *, stderr: str = "") ->
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIXのファイルサイズ制限を使う")
 def test_service_start_keeps_stderr_when_child_cannot_write_files(tmp_path, caplog):
-    """子が通常ファイルに追記できないときも、起動前に出た原因と終了値を回収する。"""
     service = tmp_path / "agent_toolkit" / "_agents_server" / "service.py"
     service.parent.mkdir(parents=True)
     service.touch()
@@ -602,7 +576,6 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
     inherited_job: bool,
     newline: str,
 ) -> None:
-    """常駐起動と確認用接続の両方から診断が出ても、確認用接続だけのJob警告は画面に出さない。"""
     root = tmp_path / "root"
     service = root / "agent_toolkit" / "_agents_server" / "service.py"
     service.parent.mkdir(parents=True)
@@ -639,7 +612,7 @@ def test_startup_reports_only_persistent_job_warning_and_preserves_failed_child_
         assert ("短命な確認の診断" in caplog.text) is (failed == "publish")
     if failed == "service-start":
         assert "子の出力: 常駐起動の標準エラー" in outcome.message
-    # 確認用の接続より先に、公開を保留して起動する。
+
     assert deferred == ["1"]
 
 
@@ -661,7 +634,6 @@ def _service_environment(tmp_path_factory: pytest.TempPathFactory) -> dict[str, 
 
 
 def _serves(process: psutil.Process, directory: pathlib.Path) -> bool:
-    """`process`が`directory`の管理サービスか、その専用の起動元かを返す。"""
     with contextlib.suppress(psutil.Error):
         return str(directory) in process.cmdline()
     return False
@@ -695,7 +667,7 @@ def test_published_service_outlives_startup_check(
     # 起動確認は自身の環境を、起動する子プロセスと公開先の管理領域の解決に使う。
     monkeypatch.setattr(os, "environ", environment)
     monkeypatch.setattr(_warmup, "_STARTUP_TIMEOUT", 120.0)
-    # 開発worktreeを公開せず、通常の配布先として検証する。
+
     previous_root = tmp_path / "previous" / "agent-toolkit"
     updated = tmp_path / "updated" / "agent-toolkit"
     ignore = shutil.ignore_patterns(".venv", "__pycache__", "node_modules", "*_test.py")
@@ -716,7 +688,7 @@ def test_published_service_outlives_startup_check(
     try:
         previous = published(previous_root)
         published(updated)
-        # 会話を持たない旧世代は、次の世代の公開後に退出する。
+
         deadline = time.monotonic() + 30
         while service_transport.process_alive(previous["process"]):
             assert time.monotonic() < deadline, "旧世代が退出しない"
@@ -748,17 +720,16 @@ def test_service_outlives_killing_job_of_its_launcher(tmp_path: pathlib.Path, se
                 job.assign_suspended(int(cast(Any, process)._handle), process.pid)  # pylint: disable=protected-access,no-member
                 return process
 
-            # 入力の無い転送側は、管理サービスをreadyにして公開した後で終了する。
             launcher = member(_launch_command(_PLUGIN_ROOT))
             unbroken = member([sys.executable, "-c", "import time; time.sleep(600)"])
             assert launcher.wait(timeout=120) == 0
             current = registry.current()
             assert current is not None and service_transport.process_alive(current["process"])
-            # 管理サービスは専用の起動元が寿命を所有するため、起動元がJobに残ると、Jobの終了に遅れて管理サービスも止まる。
+
             service = psutil.Process(int(current["process"].split(":", 1)[0]))
             owners = [process for process in service.parents() if _serves(process, registry.directory)]
             assert owners
-        # Jobの終了が所属プロセスへ届いたことを、離脱していない所属プロセスの終了で確かめる。
+
         unbroken.wait(timeout=30)
         exited, _running = psutil.wait_procs([service, *owners], timeout=3)
         assert not exited
@@ -815,7 +786,7 @@ def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed)
             observed.append((command[-1], "startup"))
             active_startups[0] += 1
             max_active_startups[0] = max(max_active_startups[0], active_startups[0])
-            # 並列に起動していれば、ここで他の起動確認が開始する。
+
             await asyncio.sleep(0.01)
             active_startups[0] -= 1
             return _STARTUP_OUTCOME(not (command[-1] == "second" and failed == "startup"), command[-1])
@@ -845,10 +816,7 @@ def test_parallel_checks_keep_order_and_collect_other_roots(monkeypatch, failed)
 
 
 class TestCoverage:
-    """統合したウォームアップが温める環境の範囲。"""
-
     def test_worktree_script_is_target(self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-        """作業ツリーの基盤CLIとserveが使う起動スクリプトもfull warmupで準備する。"""
         calls = _setup(monkeypatch, tmp_path)
         repository = tmp_path / "dotfiles"
         _write_script(repository / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py")

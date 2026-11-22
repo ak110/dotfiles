@@ -1,5 +1,3 @@
-"""証拠抽出で共有する、同一シェル入力の固定値の静的解決。シェルとファイルシステムは実行しない。"""
-
 import itertools
 import re
 import shlex
@@ -25,7 +23,6 @@ class _Expansion(typing.NamedTuple):
 
 
 def _word_expansions(source: str) -> dict[str, _Expansion]:
-    """引用とエスケープの状態から各語で可能な展開を求める。"""
     scanner = shell_quoting.QuotingScanner(source)
     masked = list(source)
     while scanner.index < len(source):
@@ -53,8 +50,7 @@ def _word_expansions(source: str) -> dict[str, _Expansion]:
     for word in words:
         key = word.translate(_RESTORE_CHARACTERS)
         previous = expansions.get(key, _Expansion(variables=True, braces=True))
-        # 語分割後は元の位置を確定できないため、引用条件が異なる同一語は共通部分だけを解決する。
-        # 引用と非引用の混在を部分ごとに再現できない展開は、元の語のまま保持する。
+
         expansions[key] = _Expansion(
             previous.variables and "$" in word and _LITERAL_CHARACTERS["$"] not in word,
             previous.braces and "{" in word and _QUOTED_MARK not in word,
@@ -63,8 +59,6 @@ def _word_expansions(source: str) -> dict[str, _Expansion]:
 
 
 class StaticValues:
-    """代入とfor見出しだけから供給された値の和集合を保持する。"""
-
     def __init__(self, commands: Sequence[tuple[str, ...]], source: str) -> None:
         self._expansions = _word_expansions(source)
         self._supplies: dict[str, list[str]] = {}
@@ -100,14 +94,13 @@ class StaticValues:
         for name, supply in first_supply.items():
             if supply >= first_reference.get(name, position + 1):
                 self._invalid.add(name)
-        # 関数本体の実行順は単純コマンドの並びから決められない。
+
         if re.search(r"(?:\bfunction\s+\w+|\b\w+\s*\(\s*\))\s*\{", source):
             self._invalid.update(self._supplies)
 
     def expand(
         self, word: str, visiting: frozenset[str] = frozenset(), *, expansion: _Expansion | None = None
     ) -> tuple[str, ...]:
-        """解決できる変数と固定波括弧を展開し、未知の語は元の形で返す。"""
         if expansion is None:
             expansion = self._expansions.get(word, _Expansion(False, False))
         match = _VARIABLE.search(word) if expansion.variables else None
@@ -129,7 +122,7 @@ class StaticValues:
             )
         if "$" in word or SUBSTITUTION_MARK in word or "`" in word:
             return (word,)
-        # 語分割後の文字種では引用を判定できない。元入力で展開可能だった語だけを列挙する。
+
         if not expansion.braces:
             return (word,)
         match = _BRACE.search(word)
@@ -155,5 +148,4 @@ class StaticValues:
         )
 
     def variants(self, words: Sequence[str]) -> list[tuple[str, ...]]:
-        """語の候補ごとに引数境界を維持したコマンドを返す。"""
         return list(itertools.product(*(self.expand(word) for word in words)))

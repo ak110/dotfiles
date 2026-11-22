@@ -1,5 +1,3 @@
-"""更新後に必要な共有環境と使用中の環境を残し、旧世代を回収する。"""
-
 import json
 import os
 import shutil
@@ -12,7 +10,6 @@ from agent_toolkit._common import environment_usage, file_lock, plugin_environme
 
 
 def _process_references() -> tuple[list[str], bool]:
-    """旧launcherを含め同じOSアカウントの参照を1回取得する。"""
     references: list[str] = []
     uncertain = False
     username = psutil.Process().username()

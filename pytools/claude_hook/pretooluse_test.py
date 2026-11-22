@@ -22,8 +22,7 @@ _DOTFILES_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _AT_DIR = _DOTFILES_ROOT / "agent-toolkit"
 _TOOLKIT_PREFIX = "agent-" + "toolkit"
 
-# 文字列リテラルで直接書くと本ファイル自身が警告を発する原因になるため、
-# テスト対象の「言及される名前」はプログラム的に組み立てる。
+
 _LOCAL_MD = "CLAUDE" + ".local.md"
 
 # `uv tool run` / `uvx` に続くコマンド名の並びも、本ファイル自身がブロックされないよう分割して組み立てる。
@@ -38,7 +37,6 @@ def _run(payload: object, env: dict[str, str] | None = None) -> subprocess.Compl
 
 
 def _get_additional_context(result: subprocess.CompletedProcess[str]) -> str:
-    """stdout の JSON から hookSpecificOutput.additionalContext を取得する。"""
     if not result.stdout.strip():
         return ""
     try:
@@ -96,14 +94,13 @@ class TestPs1DirectivesBlock:
         """chezmoi テンプレートで使われる先頭 BOM は除去してから判定する。"""
         content = "\ufeff" + self._OK_HEADER + "{{ .chezmoi.homeDir }}\r\n"
         result = _run({"tool_name": "Edit", "tool_input": {"file_path": "a.ps1.tmpl", "old_string": "x", "new_string": "y"}})
-        # Edit/MultiEdit は対象外なので無条件に許可される
+
         assert result.returncode == 0
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1.tmpl", "content": content}})
         assert result.returncode == 0
 
     # test-copy-contract: 有効ディレクティブが検査範囲外にある入力を作り、警告される境界を観測する。
     def test_directives_after_50_lines_warns(self):
-        """先頭 50 行を超えた位置にしかディレクティブが無ければ警告する。"""
         padding = "\r\n".join(f"# pad {i}" for i in range(60)) + "\r\n"
         content = padding + self._OK_HEADER
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
@@ -111,7 +108,6 @@ class TestPs1DirectivesBlock:
         assert "Set-StrictMode" in _get_additional_context(result)
 
     def test_edit_skipped(self):
-        """Edit はファイル先頭を含まないことが多いため対象外として通す。"""
         result = _run(
             {
                 "tool_name": "Edit",
@@ -138,7 +134,6 @@ class TestPs1DirectivesBlock:
 
     # test-copy-contract: コメント内にだけディレクティブ名がある入力を与え、実設定と誤認しない警告を観測する。
     def test_directive_in_comment_warns(self):
-        """コメント行内に文字列だけ含まれる PS1 は検出されること (I-2)。"""
         content = "# TODO: add Set-StrictMode -Version Latest and $ErrorActionPreference = 'Stop'\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
@@ -158,30 +153,23 @@ class TestPs1DirectivesBlock:
         assert "Set-StrictMode" in _get_additional_context(result)
 
     def test_directive_with_extra_spaces_allowed(self):
-        """`Set-StrictMode  -Version  Latest` のように空白が複数でも許可されること (`\\s+` パターン確認)。"""
         content = "Set-StrictMode  -Version  Latest\r\n$ErrorActionPreference  =  'Stop'\r\nWrite-Host 'x'\r\n"
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.ps1", "content": content}})
         assert result.returncode == 0
 
 
 class TestAgentToolkitDotfilesNamesCheck:
-    """agent-toolkit 配布物への dotfiles 固有名混入検出（いずれも警告）。
-
-    対象は `agent-toolkit/` 配下。いずれも警告であり、終了コードは0のまま書き込みを止めない。
-    dotfiles 固有名は一般化した表現への置き換えを、OSS 名 (pyfltr / pytilpack) は意図した参照かの確認を求める。
-    """
-
     # test-copy-contract: 配布対象のWriteに個人固有名を入力し、その対象語・命令形・通知sourceを含む警告を観測する。
     @pytest.mark.parametrize(
         "name",
         [
             "operate-ak110-projects",  # 個人スキル名 (.chezmoi-source/dot_claude/skills/)
             "sync-platform-pair",  # dotfiles スキル名 (.claude/skills/)
-            "psgrep",  # pytools コマンド名
-            "agent_toolkit_bump",  # scripts 名
-            "update_dotfiles",  # libexec 名
-            "sync_report",  # scripts/ から pytools/_internal/ へ移したモジュール名
-            "glatasks",  # 固定プロジェクト名
+            "psgrep",
+            "agent_toolkit_bump",
+            "update_dotfiles",
+            "sync_report",
+            "glatasks",
             "gv",
             "lc",
             "smpr",
@@ -236,7 +224,6 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "smpr" in _get_additional_context(result)
 
     def test_non_plan_file_still_uses_distribution_check(self) -> None:
-        """計画ファイル以外の実ファイル編集には固有名の確認を適用する（応答水準は警告）。"""
         name = "agent" + "_toolkit_bump"
         target = str(_DOTFILES_ROOT / "agent-toolkit" / "skills" / "example" / "SKILL.md")
         result = _run({"tool_name": "Write", "tool_input": {"file_path": target, "content": name}})
@@ -260,7 +247,6 @@ class TestAgentToolkitDotfilesNamesCheck:
 
     # test-copy-contract: 個人固有名とOSS名を同じ入力に混在させ、両方が警告本文へ届くことを観測する。
     def test_specific_and_oss_names_are_reported_together(self):
-        """固有名とOSS名の双方が成立する場合は、いずれも同じ警告本文へ載せる。"""
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
@@ -277,7 +263,6 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert "pyfltr" in message
 
     def test_outside_distribution_silently_allowed(self):
-        """配布範囲外のファイル (例: scripts/) では混入しても通す。"""
         target = str(_DOTFILES_ROOT / "scripts" / "fictional.py")
         result = _run(
             {
@@ -289,7 +274,6 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.stdout == ""
 
     def test_relative_path_silently_allowed(self):
-        """相対パスは判定不能なため通す (誤検出を避ける)。"""
         result = _run(
             {
                 "tool_name": "Write",
@@ -332,7 +316,6 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.stdout == ""
 
     def test_old_string_not_inspected(self):
-        """new_string のみが対象。old_string に違反語があっても通す。"""
         target = str(_AT_DIR / "skills" / "example" / "SKILL.md")
         result = _run(
             {
@@ -349,16 +332,11 @@ class TestAgentToolkitDotfilesNamesCheck:
 
 
 class TestGeneralBehavior:
-    """共通の振る舞い。"""
-
     @pytest.mark.parametrize(
         "payload",
         [
-            # Write/Edit/MultiEdit 以外は全て通す
             {"tool_name": "Bash", "tool_input": {"command": "echo test"}},
-            # tool_input が欠落していても通す
             {"tool_name": "Write"},
-            # 通常の日本語は通す
             {"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "こんにちは世界"}},
         ],
     )
@@ -372,7 +350,6 @@ class TestGeneralBehavior:
         assert result.returncode == 0
 
     def test_mojibake_no_longer_blocks(self):
-        """mojibake チェックは plugin 側に移管されたため dotfiles 側では通す。"""
         result = _run({"tool_name": "Write", "tool_input": {"file_path": "a.txt", "content": "hello \ufffd world"}})
         assert result.returncode == 0
 
@@ -387,7 +364,6 @@ class TestGeneralBehavior:
 
 
 def test_internal_module_names_exclude_single_words_and_distributed_modules(tmp_path: pathlib.Path) -> None:
-    """`pytools/_internal/`の複合名だけを固有名とし、単語名とagent-toolkitに同名がある名前は除く。"""
     internal = tmp_path / "pytools" / "_internal"
     internal.mkdir(parents=True)
     for name in ("sync_report.py", "common.py", "file_lock.py", "_test_helpers.py", "sync_report_test.py"):

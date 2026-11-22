@@ -1,5 +1,3 @@
-"""証拠抽出の`--record-schema`・`--context-at`照会。記録の形の一覧と、指定した行の時点の文脈を返す。"""
-
 from __future__ import annotations
 
 import re
@@ -28,7 +26,6 @@ from session_evidence_stats import (
 
 
 def _json_type(value: Any) -> str:
-    """JSON値の型名を値そのものを含めずに返す。"""
     if value is None:
         return "null"
     if isinstance(value, bool):
@@ -43,7 +40,6 @@ def _json_type(value: Any) -> str:
 
 
 def _schema_paths(value: Any, path: str, paths: dict[str, set[str]]) -> None:
-    """値を含めず、JSON pathごとの観測型を集約する。"""
     paths.setdefault(path, set()).add(_json_type(value))
     if isinstance(value, dict):
         for key in sorted(value):
@@ -56,7 +52,6 @@ def _schema_paths(value: Any, path: str, paths: dict[str, set[str]]) -> None:
 def _record_schema_collection_events(
     collected: list[_CollectedRecord], locators: list[str]
 ) -> tuple[list[dict[str, Any]], int]:
-    """locator先の元JSON entryからkey pathとJSON型だけを返す。"""
     events: list[dict[str, Any]] = []
     for locator in locators:
         selected, line, error_events = _resolve_record_locator(collected, locator, label="構造照会")
@@ -165,12 +160,6 @@ def _context_at_events(collected: list[_CollectedRecord], locator: str, phrases:
 
 
 def _context_channels(records: list[_Record]) -> dict[int, dict[str, Any]]:
-    """各レコードの本文が文脈へどのように入ったかを表す`channel`を、レコードの構造から行番号ごとに返す。
-
-    ツール結果には対応する呼び出しのツール名と入力の要点を添える。条文の本文が
-    ルールファイル、Skill起動、Readの結果、hook通知のどれで入ったかによって、
-    圧縮後の再注入の有無と原因の区分が変わるためである。
-    """
     calls: dict[str, tuple[str, str | None]] = {}
     channels: dict[int, dict[str, Any]] = {}
     for record in records:
@@ -226,7 +215,6 @@ _CONTEXT_TOOL_INPUT_LENGTH = 200
 
 
 def _tool_result_channel(call: tuple[str, str | None] | None) -> dict[str, Any]:
-    """ツール結果の`channel`へ、対応する呼び出しのツール名と入力の要点を添える。"""
     channel: dict[str, Any] = {"channel": "tool-result"}
     if call is not None:
         name, hint = call

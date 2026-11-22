@@ -29,17 +29,14 @@ STDERR_TAIL_MAX_CHARS = 2000
 
 
 def now_text() -> str:
-    """記録用の現在時刻をISO 8601形式で返す。"""
     return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 def truncate_tail(text: str) -> str | None:
-    """子の出力（標準エラーを含む）の末尾を上限付きで返す。空文字列は`None`として扱う。"""
     return diagnostic_excerpt(text, tail_lines=STDERR_TAIL_MAX_LINES, tail_chars=STDERR_TAIL_MAX_CHARS) or None
 
 
 def read() -> dict[str, Any]:
-    """保存済みの記録を返す。不在と破損はいずれも空のdictとして扱う。"""
     try:
         loaded = json.loads(REPORT_PATH.read_text(encoding="utf-8"))
     except OSError, ValueError:
@@ -74,7 +71,6 @@ def _write(payload: dict[str, Any]) -> None:
 
 
 def write_start(run_id: str, started_at: str) -> None:
-    """実行の開始を記録し、前回の実行の内容を残さない。"""
     _write(
         {
             "schema": SCHEMA,
@@ -99,10 +95,6 @@ def write_finish(
     stderr_tail: str | None,
     finished_at: str,
 ) -> None:
-    """実行の終了を記録する。同じ実行が記録したpost-apply段の結果は保持する。
-
-    標準エラーの末尾は呼出側の経路によらず、保存の直前で共通の抜粋（秘匿→行→全体の上限）を通す。
-    """
     current = read()
     payload = current if current.get("run_id") == run_id else {"schema": SCHEMA, "run_id": run_id, "post_apply": None}
     payload.update(

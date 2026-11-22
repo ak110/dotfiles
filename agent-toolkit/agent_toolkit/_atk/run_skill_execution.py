@@ -1,5 +1,3 @@
-"""定期スキルの実行、モデルの再開と実行記録を扱う。"""
-
 from __future__ import annotations
 
 import argparse
@@ -141,7 +139,6 @@ def run_locked(
         claude_connection=record.connection if record is not None else None,
     )
     if record is not None and record.engine == "claude" and getattr(args, "resume_usage_limited", False):
-        # 保留した会話へ既存の接続で戻る。可用性プローブで別の会話を先に起動しない。
         orchestrator, model, effort, provider, connection = record.engine, record.model, record.effort, None, record.connection
     else:
         try:
@@ -183,7 +180,6 @@ def run_locked(
     session_id: str | None = record.session_id if record is not None else None
     if orchestrator == "claude":
         if getattr(args, "batch_manifest", None):
-            # 一括振り返りでは対象全件を同じ実行で検収するため、子の結果を前景で回収する。
             env["CLAUDE_CODE_DISABLE_BACKGROUND_TASKS"] = "1"
         session_id = session_id or str(uuid.uuid4())
         progress.message(f"Claudeのセッション識別子: {session_id}")
@@ -274,7 +270,6 @@ def run_locked(
                 launch_argv = [*argv[:-1], "--settings", settings, argv[-1]]
             try:
                 process = resources.enter_context(
-                    # 時間上限なし: 長時間の子セッションの実行そのものであり、上限と無出力の監視は監督の仕組みが扱う。
                     _process_tree.process_scope(
                         launch_argv,
                         cwd=repo_root,
@@ -311,7 +306,7 @@ def run_locked(
             allow_connection_switch = (
                 orchestrator == "claude" and len(_connection.candidates("orchestrator", env=env, cli=True).connections) > 1
             )
-            # ここからは_session_readersが所有する。読取中のcloseはEOF待ちの上限を壊すため解除する。
+
             unread_streams.pop_all()
             output.exit_code = wait_session(
                 process,
@@ -381,7 +376,6 @@ def run_locked(
             record_wait(candidate, usage_limit, delay)
             clock.sleep(delay)
         if orchestrator == "claude":
-            # 初回の明示IDを再開にも使い、同じ会話の履歴を引き継ぐ。
             assert session_id is not None
             argv = [
                 "claude",
@@ -424,8 +418,6 @@ def run_locked(
 
 @dataclasses.dataclass
 class _SessionOutput:
-    """表示設定から独立して、継続に要る構造化出力だけを保持する。"""
-
     thread_id: str | None = None
     usage_limit: _orchestrator.UsageLimitState | None = None
     on_thread_id: typing.Callable[[str], None] | None = None
@@ -433,7 +425,6 @@ class _SessionOutput:
     paused_for_usage_limit: _claude_usage_limit.UsageLimitState | None = None
 
     def receive(self, line: str) -> None:
-        """stdoutのイベントを取り込む。"""
         thread_id = _codex_usage_limit.thread_id_from_stream_lines((line,))
         if thread_id is not None and thread_id != self.thread_id:
             self.thread_id = thread_id
@@ -460,6 +451,5 @@ class _SessionOutput:
 
 
 def log_line(log: typing.TextIO, text: str) -> None:
-    """ログへ1行書いて直ちに反映する。"""
     log.write(f"{redact_secrets(text)}\n")
     log.flush()

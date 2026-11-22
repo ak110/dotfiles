@@ -1,5 +1,3 @@
-"""MarkdownレンダリングとHTMLドキュメント組み立て用の純粋関数群。"""
-
 import html
 import pathlib
 
@@ -9,14 +7,11 @@ from pytools._internal import common
 
 
 def make_renderer() -> markdown_it.MarkdownIt:
-    """Raw HTMLを無効化したGFM相当のMarkdownレンダラを返す。"""
-    # GFM相当プリセットの表・取り消し線は維持し、誤リンクを防ぐため裸URLの自動リンクだけを無効化する。
-    # `html`も明示的に`False`へ上書きしてXSS経路を塞ぐ。
+
     return markdown_it.MarkdownIt("gfm-like", {"html": False, "linkify": False})
 
 
 def render_body(text: str, renderer: markdown_it.MarkdownIt | None = None) -> str:
-    """Markdown文字列をHTML本文へ変換する。"""
     md = renderer if renderer is not None else make_renderer()
     return md.render(text)
 
@@ -37,14 +32,6 @@ def resolve_css_path() -> pathlib.Path | None:
 
 
 def build_html_document(*, body_html: str, title: str, base_uri: str, css_text: str) -> str:
-    """HTML文書全体を組み立てる。
-
-    Args:
-        body_html: Markdownから変換済みのHTML本文。
-        title: `<title>`へ埋め込むテキスト。
-        base_uri: 相対パス解決用の`<base href>`。末尾`/`付きの`file:///...`形式を想定する。
-        css_text: `<style>`タグへインライン埋め込むCSS。
-    """
     return (
         "<!DOCTYPE html>\n"
         '<html lang="ja">\n'

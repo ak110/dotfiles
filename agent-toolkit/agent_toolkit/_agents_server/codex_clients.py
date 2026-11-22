@@ -25,7 +25,6 @@ class CodexClientsMixin:
     AppServerManagerへ合成して使うため、各メソッドでは合成後の共有状態と他の責務を参照する。
     """
 
-    # closeが代入する属性の型を、mixinの代入からの推論（Task[None]）ではなく未起動を含む型として宣言する。
     _close_task: asyncio.Task[None] | None = None
 
     async def export_service_state(self: CodexManager, session_id: str) -> dict:
@@ -86,7 +85,6 @@ class CodexClientsMixin:
         await self._notify_waiters()
 
     def _schedule(self: CodexManager, awaitable: Coroutine[Any, Any, None]) -> None:
-        """同じイベントループで回収する管理対象taskを登録する。"""
         task: asyncio.Task[None] = asyncio.create_task(awaitable)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
@@ -168,7 +166,6 @@ class CodexClientsMixin:
         return client
 
     async def _discard_client(self: CodexManager, client: Any) -> None:
-        """sessionへ登録しなかった接続を終了し、全て回収できた場合に保持を外す。"""
         residual = await client.close()
         if residual:
             raise session_errors.ActionableRuntimeError(
@@ -178,7 +175,6 @@ class CodexClientsMixin:
         self._unassigned_clients.pop(id(client), None)
 
     def _owned_client(self: CodexManager, session: SessionState) -> Any:
-        """sessionが所有する生存中の接続を返す。無い場合は`None`を返す。"""
         client = self._clients.get(session.session_id)
         if client is None or getattr(client, "closed", False) or getattr(client, "reader_failure", None) is not None:
             return None
@@ -187,11 +183,6 @@ class CodexClientsMixin:
     async def _acquire_owned_client(
         self: CodexManager, session_id: str, launch_kind: LaunchKind, handoff_prompt: str = ""
     ) -> JsonRpcProcess:
-        """sessionが所有する生存中の接続を返し、無ければ新しいApp Serverを起動して所有させる。
-
-        接続が失われていた場合は、その接続の残りの資源を回収してから起動し直す。回収できなければ
-        `ResourceReleaseError`を送出し、古い接続を所有させたまま残す。
-        """
         client = self._clients.get(session_id)
         if client is not None and not getattr(client, "closed", False) and getattr(client, "reader_failure", None) is None:
             return client
@@ -204,7 +195,6 @@ class CodexClientsMixin:
         return client
 
     async def _release_owned_client(self: CodexManager, session_id: str) -> None:
-        """sessionが所有するApp Serverと子孫を終了させ、全ての終了を確認してから所有を外す。"""
         await self._stop_auto_reset(session_id)
         compactor = self._wait_compactors.pop(session_id, None)
         if compactor is not None:
@@ -223,12 +213,6 @@ class CodexClientsMixin:
             compacting.done.set()
 
     async def read_thread_turns(self: CodexManager, session_id: str) -> list[tuple[str, str]]:
-        """保存済みthreadの全turnを、識別子と状態（`inProgress`・`completed`・`failed`・`interrupted`）の組で時系列順に返す。
-
-        再起動前のプロセスが終了を公開できなかった記録について、turnが終わったかを委譲先CLIの記録で確かめるために使う。
-        応答がthreadとturnの一覧を持たない場合は`AppServerError`を送出する。
-        照会には専用のApp Serverを起動し、応答を得た後に終了させる。
-        """
         async with contextlib.AsyncExitStack() as resources:
             client = await self._ensure_client()
             resources.push_async_callback(self._discard_client, client)
@@ -245,17 +229,12 @@ class CodexClientsMixin:
         return result
 
     async def list_models(self: CodexManager) -> list[dict[str, Any]]:
-        """専用のApp Server接続から表示対象の全モデルページを取得し、接続を終了させる。"""
         async with contextlib.AsyncExitStack() as resources:
             client = await self._ensure_client()
             resources.push_async_callback(self._discard_client, client)
             return await codex_models.fetch_catalog(client.request)
 
     async def close(self: CodexManager) -> None:
-        """自身が起動した全てのApp Server接続と子孫を終了させる。
-
-        全接続の終了を試みた後、終了を確認できない対象が残れば`ResourceReleaseError`を送出する。
-        """
         task = self._close_task
         if task is None or task.done() and (task.cancelled() or task.exception() is not None):
             task = self._close_task = asyncio.create_task(self._close())

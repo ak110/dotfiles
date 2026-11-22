@@ -1,12 +1,9 @@
-"""serveのappに関するui_searchの試験。"""
-
 # pylint: disable=protected-access
 
 from agent_toolkit._testing.serve_support import _run_node_ui, stale_search_script
 
 
 def test_create_success_resets_filters_and_keeps_list() -> None:
-    """追加成功後は初期状態の条件へ戻し、返却されたファイルを一覧へ残して詳細を開かない。"""
     result = _run_node_ui(
         """
 elements['create-dialog'].open = true;
@@ -79,7 +76,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_keep_latest_list_when_entry_requests_finish_out_of_order() -> None:
-    """一覧要求が逆順に完了しても後発要求の行だけを維持する。"""
     result = _run_node_ui(
         """
 const resolvers = [];
@@ -118,7 +114,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_discard_stale_search_error_without_overwriting_global_error() -> None:
-    """失効した検索のエラーが後発要求の操作通知を上書きしない。"""
     result = _run_node_ui(
         stale_search_script(
             "let rejectFallback;",

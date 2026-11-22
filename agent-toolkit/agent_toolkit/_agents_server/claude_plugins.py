@@ -49,11 +49,11 @@ class PluginReloadError(RuntimeError):
 
 
 class _InventoryUnavailable(PluginReloadError):
-    """外部一覧を取得・解釈できず、導入対象の判定へ進めない。"""
+    pass
 
 
 class _PluginCleanupError(PluginReloadError):
-    """入力・監視の所有資源の停止を確認できず、所有タスクの回収が必要。"""
+    pass
 
 
 class _InstalledPlugin(BaseModel):
@@ -71,15 +71,11 @@ class _InstalledPlugin(BaseModel):
 
 
 class _Changes(FileSystemEventHandler):
-    """1つの監視先の変更を、その監視先を参照する接続へ配る。"""
-
     def __init__(self) -> None:
-        # 監視threadは配送先の集合を読むだけにし、差し替えは共有監視のlock下で丸ごと置き換える。
-        # 監視threadがlockを取らないため、共有監視がlock下で監視threadの終了を待っても停止しない。
+
         self.owners: frozenset[ClaudePluginReloader] = frozenset()
 
     def on_any_event(self, event: FileSystemEvent) -> None:
-        """変更通知を各接続のイベントループへ配送する。"""
         if event.event_type not in {"created", "modified", "deleted", "moved"}:
             return
         if event.is_directory and event.event_type == "modified":
@@ -108,7 +104,6 @@ class _SharedWatch:
 
     @property
     def observer(self) -> Any:
-        """稼働中のObserverを返す。参照が無ければNone。"""
         return self._observer
 
     def acquire(self, owner: ClaudePluginReloader, keys: set[_WatchKey]) -> None:
@@ -190,8 +185,6 @@ class _ReloadResponse(BaseModel):
 
 
 class ClaudePluginReloader:
-    """SDK接続ごとの入力と、共有監視への参照を所有する。SDK操作は呼出元が直列化する。"""
-
     def __init__(self, options: dict[str, Any], loop: asyncio.AbstractEventLoop) -> None:
         self.options = options
         self.loop = loop
@@ -199,7 +192,7 @@ class ClaudePluginReloader:
         self._generation = 0
         self._applied_generation = 0
         self._closed = False
-        # 共有監視へ登録している監視先。Noneは監視を無効にした状態（未開始・縮退・終了）を表す。
+
         self._watch_keys: set[_WatchKey] | None = None
         self._roots: set[Path] = set()
         self._files: set[Path] = set()
@@ -216,7 +209,6 @@ class ClaudePluginReloader:
 
     @property
     def dirty(self) -> bool:
-        """未反映の変更通知を保持しているかを返す。"""
         return self._generation != self._applied_generation
 
     async def __aenter__(self) -> ClaudePluginReloader:
@@ -229,11 +221,9 @@ class ClaudePluginReloader:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
-        """所有している監視と入力を終了させる。"""
         await self.close()
 
     async def prepare(self) -> None:
-        """初期入力と監視を用意し、必要なtoolkit pathだけを置換する。"""
         await run_file_operation(self._prepare)
         if self._watch_keys is None:
             self._changed.clear()
@@ -247,11 +237,10 @@ class ClaudePluginReloader:
                     raise PluginReloadError("明示toolkitが複数ある。SDK options.pluginsを確認する")
                 self._toolkit_index = index
                 self._source = plugin_root.plugin_source_root(root).resolve()
-                # 元の版が既に消えていても、保持複製のmanifestで版付き配置を判定する。
+
                 version = manifest.get("version")
                 self._versioned = isinstance(version, str) and self._source.name == version
-        # 一覧は版付き入力の導入先の選択と変更監視の補助に使う。取得できない場合（子孫は回収済み）の縮退をここへ集約する。
-        # 子孫の停止を確認できない`_PluginCleanupError`は、所有対象の回収へ渡すため送出する。
+
         try:
             installed = self._inventory()
         except _InventoryUnavailable as error:
@@ -279,7 +268,6 @@ class ClaudePluginReloader:
             self._watch_keys = keys
 
     async def wait_for_change(self) -> None:
-        """連続した書換えを短い時間窓で集約し、所有タスクを起こす。"""
         await self._changed.wait()
         while True:
             self._changed.clear()
@@ -289,17 +277,14 @@ class ClaudePluginReloader:
                 return
 
     def mark_changed(self) -> None:
-        """Observer threadから配送された変更をloop上で記録する。"""
         if not self._closed and self._watch_keys is not None:
             self._generation += 1
             self._changed.set()
 
     def request_reload(self) -> None:
-        """debounceを終えた変更を、次のidleまで保持する。"""
         self._reload_pending = True
 
     async def reload_if_idle(self, client: Any, session: SessionState | None) -> None:
-        """接続の所有タスクから呼び、進行中turnの終了後にだけ再読み込みする。"""
         if (
             not self._reload_pending
             or session is None
@@ -325,7 +310,6 @@ class ClaudePluginReloader:
             _LOG.info("claude_plugins_reloaded session_id=%s", session.session_id)
 
     def matches(self, path: Path) -> bool:
-        """入力に関係するイベントだけを通知対象にする。"""
         if any(part in plugin_root.STABLE_PLUGIN_ROOT_EXCLUDED or part == _IN_USE_DIRECTORY for part in path.parts):
             return False
         if self._area is not None and path.is_relative_to(self._area):
@@ -486,7 +470,6 @@ class ClaudePluginReloader:
         return set(watches.items())
 
     async def reload(self, client: Any) -> dict[str, Any]:
-        """完成した入力へ切替え、SDKのreload応答を検証して変更を確定する。"""
         generation = self._generation
         installed = await run_file_operation(self._inventory)
         source = self._select_source(installed)
@@ -526,7 +509,6 @@ class ClaudePluginReloader:
     def _expected_plugins(
         self, installed: list[_InstalledPlugin]
     ) -> tuple[dict[Path, tuple[str, str | None] | None], set[Path]]:
-        """応答で確かめる名前・版をpathごとに返す。Noneのpathは応答に現れることだけを許し、名前・版を比べない。"""
         explicit = {Path(item["path"]).resolve() for item in self.options.get("plugins", [])}
         # 明示toolkitは固定入力で検証する。導入版との同名重複を残すかはCLIが判断する。
         required = set(explicit) | {
@@ -589,7 +571,7 @@ class ClaudePluginReloader:
             )
 
     def _reschedule(self) -> None:
-        # 新しい監視先を先に加えてから外れた監視先を解除し、他の接続が参照する監視先は共有監視が保持する。
+
         assert self._watch_keys is not None
         keys = self._watch_targets()
         _shared_watch.acquire(self, keys - self._watch_keys)
@@ -608,7 +590,6 @@ class ClaudePluginReloader:
         )
 
     async def close(self, *, retain_input: bool = False) -> None:
-        """共有監視への参照を外し、所有している入力複製を回収する。"""
         self._closed = True
         try:
             # 縮退時の停止失敗で残ったObserverも、ほかの参照が無ければここで停止を再試行する。

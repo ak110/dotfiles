@@ -1,5 +1,3 @@
-"""serveのcli試験が共有する入力と補助処理。"""
-
 # pylint: disable=protected-access
 
 

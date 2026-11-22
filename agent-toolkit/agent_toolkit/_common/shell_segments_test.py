@@ -44,7 +44,6 @@ def test_shell_execution_target_separates_option_values_and_positional_data(
 
 
 def test_shell_specific_options_are_not_assumed_for_posix_shells() -> None:
-    """Bash固有の起動形をsh・dashの本文位置として確定しない。"""
     for name in ("sh", "dash"):
         assert shell_execution_target([name, "-co", "pipefail", "printf marker"]) == ("command", "printf marker")
         assert shell_execution_target([name, "-cO", "extglob", "printf marker"]) is None
@@ -77,7 +76,6 @@ def test_runtime_resolution_preserves_mode_and_argument_boundaries(
 
 
 def test_runtime_resolution_keeps_advice_unknown_policy() -> None:
-    """助言側の未確定扱いを保ち、明示した消費側だけが起動オプションを解析する。"""
     argv = ["uvx", "--from", "pyfltr", "pyfltr", "run"]
     assert resolve_execution_segment(argv) == ExecutionSegment((), False)
     assert resolve_execution_segment(argv, runtime_options=True).tokens == ("pyfltr", "run")
@@ -86,8 +84,6 @@ def test_runtime_resolution_keeps_advice_unknown_policy() -> None:
 
 
 class TestExtractExecutionSegments:
-    """助言・状態記録が共有するBash実行位置の抽出。"""
-
     @pytest.mark.parametrize(
         ("command", "expected", "raw"),
         [
@@ -158,8 +154,6 @@ class TestExtractExecutionSegments:
 
 
 class TestSplitBashSegments:
-    """`split_bash_segments`によるセグメント分割。"""
-
     @pytest.mark.parametrize(
         ("command", "expected"),
         [
@@ -223,10 +217,6 @@ class TestSplitBashSegments:
         ["`pkill -f a`", "$(pkill -f a)", "\\`pkill\\` \\$(pkill)", "$HOME ${HOME}", "$((1 + 2))"],
     )
     def test_heredoc_delimiter_quoting_matrix(self, operator: str, terminator: str, body: str) -> None:
-        """bashは区切り語の引用を除いた語で終端行を比べるため、区切り語の形と本文によらずheredoc以降が区間になる。
-
-        本文はheredocの範囲として区間へ現れず、終端行の後ろのコマンドは独立した区間として返る。
-        """
         indent = "\t" if operator.startswith("<<-") else ""
         command = f"cat {operator}\n{indent}{body}\n{terminator}\npkill -f worker"
         assert split_bash_segments(command) == [f"cat {operator}", "pkill -f worker"]

@@ -92,7 +92,6 @@ def test_rollout_waits_until_all_exhausted_windows_reset(tmp_path: pathlib.Path)
 
 
 def test_rollout_skips_line_cut_inside_multibyte_character(tmp_path: pathlib.Path) -> None:
-    """マルチバイト文字の途中で終わる行を解析の対象から除き、後続の上限停止を読む。"""
     # 2026年10月22日・23日のCodexの実記録に、マルチバイト文字の途中で終わる行があった。
     cut = json.dumps({"type": "event_msg", "payload": {"message": "時間上限"}}, ensure_ascii=False).encode("utf-8")
     events = [
@@ -122,7 +121,6 @@ def _write_rollout(path: pathlib.Path, events: list[dict[str, Any]], *, mtime: f
 def test_session_rollout_opens_only_records_written_since_start(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, stale_count: int
 ) -> None:
-    """起動後に再開した記録を返し、起動前から書き込みの無い記録は保存済みの件数によらず開かない。"""
     started_at = datetime.datetime(2026, 11, 19, 12, tzinfo=datetime.UTC).timestamp()
     cwd = tmp_path / "work"
     sessions = tmp_path / "sessions"
@@ -159,7 +157,6 @@ def test_session_rollout_opens_only_records_written_since_start(
     ],
 )
 def test_usage_limit_is_read_from_thread_record(tmp_path: pathlib.Path, thread_id: str, day: str) -> None:
-    """thread IDの記録を、作成日の日付ディレクトリの内外とUUIDv7でない識別子のいずれでも読む。"""
     _write_rollout(tmp_path / "sessions/2026/11/07/rollout-2026-11-07T12-00-00-other.jsonl", [])
     _write_rollout(
         tmp_path / f"sessions/{day}/rollout-2026-11-07T12-00-00-{thread_id}.jsonl",

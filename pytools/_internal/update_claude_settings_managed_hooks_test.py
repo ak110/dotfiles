@@ -24,14 +24,12 @@ def _run(tmp_path: Path, managed: dict, existing: dict | None = None) -> dict:
 
 
 class TestRemovedHookCommands:
-    """配布原本から削除したフックコマンドの除去を検証する。"""
-
     _POSIX_MANAGED_SETTINGS = _REPO_ROOT / "share" / "claude_settings_json_managed.posix.json"
     _LEGACY_PRETOOLUSE_COMMAND = (
         "sh -c 'uv run --no-project --script ~/dotfiles/scripts/claude_hook.py pretooluse; "
         "code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
     )
-    # 終了コード2を引き継いでいた2026-10-07より前の配布原本のコマンド
+
     _EXIT_CODE_PRETOOLUSE_COMMAND = (
         "sh -c 'command -v dotfiles-claude-hook >/dev/null 2>&1 || exit 0; "
         "dotfiles-claude-hook pretooluse; code=$?; [ $code -eq 2 ] && exit 2 || exit 0'"
@@ -39,7 +37,6 @@ class TestRemovedHookCommands:
 
     @staticmethod
     def _pretooluse_commands(data: dict) -> list[str]:
-        """`PreToolUse`のフックコマンドを列挙する。"""
         entries = data.get("hooks", {}).get("PreToolUse", [])
         return [hook["command"] for entry in entries for hook in entry.get("hooks", [])]
 
@@ -80,10 +77,7 @@ class TestRemovedHookCommands:
 
 
 class TestWarnOrphanDotfilesHookCommands:
-    """`_warn_orphan_dotfiles_hook_commands`の警告機能テスト。"""
-
     def test_warns_orphan_dotfiles_hook_command(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """配布原本に存在しない`dotfiles/scripts/`参照のフックコマンドを確定文面で警告する。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         orphan_command = "sh -c 'uv run --script ~/dotfiles/scripts/orphan_hook.py'"
@@ -175,7 +169,6 @@ class TestWarnOrphanDotfilesHookCommands:
         assert not any("exist_hook.py" in message for message in caplog.messages)
 
     def test_does_not_warn_for_non_dotfiles_hook_command(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
-        """`dotfiles/scripts/`を参照しないコマンド（プラグイン由来・ユーザー追加）は警告しない。"""
         managed_path = tmp_path / "managed.json"
         managed_path.write_text("{}", encoding="utf-8")
         target_path = tmp_path / "target.json"
@@ -203,8 +196,6 @@ class TestWarnOrphanDotfilesHookCommands:
 
 
 class TestNormalizeManagedHooks:
-    """管理対象フックを現在の構造へ正規化する回帰テスト。"""
-
     @pytest.mark.parametrize(
         "override_path",
         [
@@ -260,7 +251,6 @@ class TestNormalizeManagedHooks:
         assert not changed_again
 
     def test_custom_command_in_same_entry_is_preserved(self, tmp_path: Path):
-        """管理対象コマンドと同居するユーザー独自コマンドを保持する。"""
         managed_command = "managed-stop"
         custom_hook = {"type": "command", "command": "custom-stop"}
         managed_entry = {"hooks": [{"type": "command", "command": managed_command}]}
@@ -275,7 +265,6 @@ class TestNormalizeManagedHooks:
         assert result["hooks"]["Stop"] == [{"hooks": [custom_hook]}, managed_entry]
 
     def test_unmanaged_event_is_preserved(self, tmp_path: Path):
-        """同じコマンド文字列でも管理対象外イベントのフックは保持する。"""
         managed_hook = {"type": "command", "command": "managed-command"}
         unmanaged_entry = {"hooks": [managed_hook]}
 

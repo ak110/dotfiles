@@ -10,7 +10,6 @@ from agent_toolkit._agents_server import configured_model, state
 
 @pytest.mark.asyncio
 async def test_config_resolution_failure_keeps_limit_path_and_reports_next_action(monkeypatch, tmp_path):
-    """不正設定をモデル変更へ変換せず、対象キーの公開照会を警告で案内する。"""
 
     def fail(_model_type, **_kwargs):
         raise ValueError("候補の書式が不正")

@@ -1,5 +1,3 @@
-"""観測済みホストの公開設定から、承認の適用候補となるsoft拒否だけを特定する。"""
-
 from __future__ import annotations
 
 import collections
@@ -15,7 +13,6 @@ import pydantic
 from agent_toolkit._common import process_tree
 from agent_toolkit._common.operation_approvals import fingerprint
 
-# PermissionDeniedのreasonは構造化された区分を持たない。観測していない版の書式を推測して許可しない。
 OBSERVED_CLAUDE_VERSION = "2.1.325"
 _LABELS = re.compile(r"\[[^\[\]\r\n]+\](?:[ \t]*,?[ \t]*\[[^\[\]\r\n]+\])*")
 _VERSION = re.compile(r"(\d+\.\d+\.\d+) \(Claude Code\)")
@@ -32,8 +29,6 @@ class _EffectiveConfig(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True)
 class Classification:
-    """実行の承認と区別し、許可候補の可否と版・ラベルの一致根拠を保持する。"""
-
     eligible: bool
     diagnostic: str
     labels: tuple[str, ...] = ()
@@ -47,7 +42,6 @@ class Classification:
 def _rule_labels(rules: list[str]) -> list[str] | None:
     labels: list[str] = []
     for rule in rules:
-        # 公開configの規則は「Label [条件]: 本文」の形も持つ。拒否ラベルは条件注記より前の名前を使う。
         matched = re.match(r"([^\[\]:\r\n]+)(?:\[[^\r\n]*\])?:\s*\S", rule)
         if matched is None:
             return None
@@ -59,7 +53,6 @@ def _rule_labels(rules: list[str]) -> list[str] | None:
 
 
 def classify(reason: str, config: object, *, version: str) -> Classification:
-    """拒否の全ラベルがsoft側へ一意に対応するかを確かめる。"""
     if version != OBSERVED_CLAUDE_VERSION:
         return Classification(False, "拒否書式を観測したClaude Codeの版と一致しない", version=version)
     if _LABELS.fullmatch(reason) is None:
@@ -88,7 +81,6 @@ def classify(reason: str, config: object, *, version: str) -> Classification:
 
 
 def native_settings_match(classified: Classification, context: dict) -> bool:
-    """稼働会話のhard/soft名が公開CLIの名前と一致する場合だけ自動承認の候補にする。"""
     if not classified.eligible or context.get("flag_auto_mode_present") is not False:
         return False
     mode = context.get("auto_mode")
@@ -159,7 +151,7 @@ def inspect(reason: str, *, cwd: str) -> Classification:
         if defaults.returncode != 0 or "\ufffd" in defaults.stdout:
             return Classification(False, "公開CLIからデフォルトの拒否規則を取得できない", version=version)
         baseline = _EffectiveConfig.model_validate(json.loads(defaults.stdout))
-        # merged readは未指定の規則を展開しない。同じ実行版の公開defaultsと実効configが等しい項目だけ補える。
+
         fields = tuple(field for field in ("soft_deny", "hard_deny") if config[field] == getattr(baseline, field))
         return dataclasses.replace(classified, default_fields=fields)
     except OSError, UnicodeError, subprocess.TimeoutExpired, ValueError, process_tree.ReclaimError:

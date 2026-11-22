@@ -21,7 +21,7 @@ _DOCUMENT = pathlib.Path(__file__).resolve().parents[1] / "skills/atk-mode/refer
 
 
 class _ParsedExample(Exception):
-    """引数解析の成功後に起動例の処理を止めるための例外。"""
+    pass
 
 
 def _documented_wait_ci_examples() -> list[str]:
@@ -33,7 +33,6 @@ def _documented_wait_ci_examples() -> list[str]:
 
 
 def _parse_documented_example(example: str, tmp_path: pathlib.Path) -> argparse.Namespace:
-    """起動例の`<…>`を実在する形の値へ置き換え、wait_ciの引数解析と引数の組合せの判定だけを通す。"""
     replacements = {
         "<owner/repo>": "owner/repository",
         "<destination-ref>": "refs/heads/main",

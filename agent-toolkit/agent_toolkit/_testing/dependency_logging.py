@@ -22,11 +22,9 @@ import pytest
 
 
 def raise_dependency_logger_levels() -> None:
-    """大量のDEBUG出力を観測したMarkdown解析のロガーをINFOへ上げる。"""
     logging.getLogger("markdown_it").setLevel(logging.INFO)
 
 
 @pytest.fixture(name="_quiet_dependency_loggers", scope="session", autouse=True)
 def quiet_dependency_loggers() -> None:
-    """テストの開始時に、Markdown解析の大量のDEBUGログを取り込みから外す。"""
     raise_dependency_logger_levels()

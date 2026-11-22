@@ -1,5 +1,3 @@
-"""turnごとにCLIを起動するbackendの、プロセス所有・継続・記録・終了処理。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -42,7 +40,6 @@ _STOP_TIMEOUT = 5.0
 
 
 def _child_env(root_session_id: str | None) -> dict[str, str]:
-    """委譲先の印とManagerが所有するrootを配送する。"""
     env = dict(runtime_environment.environment())
     inherited_venv.strip_inherited_venv(env)
     mcp_environment.strip_conversation_context(env)
@@ -53,8 +50,6 @@ def _child_env(root_session_id: str | None) -> dict[str, str]:
 
 
 class CliTurnManager:
-    """wire形式ごとの解釈を各backendへ渡し、turnの実行資源を所有する。"""
-
     ENGINE: typing.ClassVar[str]
     NAME: typing.ClassVar[str]
     LOG: typing.ClassVar[logging.Logger]
@@ -63,7 +58,6 @@ class CliTurnManager:
 
     @staticmethod
     def build_command(prompt: str, model: str | None, effort: str | None, conversation_id: str | None) -> list[str]:
-        """CLI固有の起動引数を組み立てる。"""
         raise NotImplementedError
 
     async def prepare_command(
@@ -74,22 +68,18 @@ class CliTurnManager:
         conversation_id: str | None,
         environment: dict[str, str],
     ) -> list[str]:
-        """子へ実際に渡す環境で、起動条件を確かめてから引数を組み立てる。"""
         del environment
         return self.build_command(prompt, model, effort, conversation_id)
 
     @staticmethod
     def system_prompt(launch_kind: LaunchKind) -> str:
-        """CLI固有の配送手段に合わせた規範本文を返す。"""
         raise NotImplementedError
 
     @staticmethod
     def event_session_id(payload: dict[str, Any]) -> str | None:
-        """最初のイベントからセッション識別子を取得する。"""
         raise NotImplementedError
 
     async def process_event(self, session: SessionState, payload: dict[str, Any]) -> bool:
-        """イベントを反映し、イベント自身で終了した場合に真を返す。"""
         raise NotImplementedError
 
     def finish_process(self, session: SessionState, returncode: int | None, stderr: str, finalized: bool) -> None:
@@ -121,7 +111,6 @@ class CliTurnManager:
 
     @staticmethod
     def excludes_with_recorded_reason(reason: str) -> bool:
-        """記録済みの除外理由は全て候補を除外する根拠になる。"""
         del reason
         return True
 
@@ -158,7 +147,6 @@ class CliTurnManager:
         request_prompt: str | None = None,
         result_contract_recovery_consumed: bool = False,
     ) -> SessionState:
-        """新しい会話を開始し、`init`イベントで会話識別子を確定したsessionを返す。"""
         return await self._start_turn(
             prompt,
             cwd,
@@ -213,7 +201,6 @@ class CliTurnManager:
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
-        """終了済みturnの後続として、同じ会話識別子で新しいturnを開始する。"""
         validate_prompt(prompt)
         async with session.turn_control_lock:
             if not session.terminal:
@@ -237,7 +224,6 @@ class CliTurnManager:
         return {"delivery": "reply_started", "previous_result": previous_result}
 
     async def interrupt(self, session: SessionState) -> None:
-        """実行中のturnのプロセスを終了して中断を確定する。"""
         if session.terminal:
             return
         session.interrupt_requested = True
@@ -249,12 +235,10 @@ class CliTurnManager:
         await self._notify_waiters()
 
     async def release_session(self, session: SessionState) -> None:
-        """対象のsessionを所有するタスクとプロセスを終了する。"""
         await self._stop_owned_task(session.session_id)
         await session.drain_registration()
 
     async def close(self) -> None:
-        """所有中の全turnを終了する。"""
         await finish_task(asyncio.create_task(self._close()))
 
     async def _close(self) -> None:
@@ -478,7 +462,6 @@ class CliTurnManager:
                     await self._notify_waiters()
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
-        """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
         if self._log_directory is None:
             return
         if not shared_layout.valid_session_id(session_id):
@@ -557,7 +540,6 @@ async def _resume_text(prompt: ResumePrompt | str) -> str:
 
 
 def decode_event(line: bytes) -> dict[str, Any] | None:
-    """`stream-json`の1行をイベントへ変換する。解釈できない行は無視する。"""
     text = line.decode("utf-8", errors="replace").strip()
     if not text:
         return None
@@ -570,7 +552,6 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
 
 
 def finalize_turn(session: SessionState, result: dict[str, Any]) -> None:
-    """最新turnの終了時の結果を確定する。"""
     if session.effort_resume_turn != session.turn_seq and result_contract.hold_invalid_result(session, result):
         return
     session.clear_hold()
@@ -609,7 +590,6 @@ async def _read_stderr(process: asyncio.subprocess.Process) -> str:
 
 
 async def _terminate(process: asyncio.subprocess.Process) -> None:
-    """委譲先プロセスとその子孫を終了する。"""
     await finish_task(asyncio.create_task(_terminate_process(process)))
 
 

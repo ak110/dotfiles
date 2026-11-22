@@ -1,5 +1,3 @@
-"""TaskStopの前に停滞検知を完了したことを示す記録を、タスクごとに管理する。"""
-
 from __future__ import annotations
 
 import time
@@ -17,7 +15,6 @@ def target_ids(tool_input: dict) -> set[str]:
 
 
 def record_completion(session_id: str, task_id: str, *, now: float | None = None) -> bool:
-    """停滞検知を完了した`task_id`と時刻を記録する。"""
     recorded_at = time.time() if now is None else now
 
     def _record(state: dict) -> dict:
@@ -71,7 +68,6 @@ def has_recent_completion(
 
 
 def consume_completion(session_id: str, task_ids: Iterable[str]) -> bool:
-    """TaskStopに成功した入力IDについて、停滞検知の完了記録を削除する。"""
     targets = set(task_ids)
 
     def _consume(state: dict) -> dict | None:

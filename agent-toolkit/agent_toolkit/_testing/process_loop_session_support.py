@@ -1,5 +1,3 @@
-"""process_loop_sessionの試験で共有する準備処理と隔離fixture。"""
-
 import argparse
 import json
 import os
@@ -46,7 +44,6 @@ def _connection_launch(
     monkeypatch: pytest.MonkeyPatch,
     order: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """本起動境界へ渡されたargv・環境と、起動時に読めるsettingsを取得する。"""
     api = tmp_path / "api.env"
     api.write_text("ANTHROPIC_API_KEY=selected-test-key\nANTHROPIC_BASE_URL=https://api.example.test\n", encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(api))
@@ -84,7 +81,6 @@ def _configure_codex_orchestrator(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
 
 
 def _codex_probes(monkeypatch: pytest.MonkeyPatch, *, chatgpt: bool) -> list[list[str]]:
-    """有効なアカウントがChatGPTログインかどうかを与え、可用性判定のargvを記録する。"""
     probes: list[list[str]] = []
 
     def run(argv: list[str], *_args: Any, **_kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -100,7 +96,6 @@ def _codex_probes(monkeypatch: pytest.MonkeyPatch, *, chatgpt: bool) -> list[lis
 
 
 def _provider_option(argv: list[str]) -> str | None:
-    """argvの`-c model_provider=<ID>`の値を返す。"""
     values = [argv[index + 1] for index, item in enumerate(argv[:-1]) if item == "-c"]
     return next((json.loads(value.partition("=")[2]) for value in values if value.startswith("model_provider=")), None)
 

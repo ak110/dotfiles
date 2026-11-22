@@ -47,7 +47,6 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 async def test_manager_root_connects_codex_start_resume_and_notification(
     environment_owner: str | None, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """環境ownerの有無にかかわらず、Managerのrootで起動・再開・通知回収を接続する。"""
     for name in (
         "AGENT_TOOLKIT_OWNER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
@@ -145,7 +144,6 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """初回のturn/startの応答が失われた後もsessionを保持し、完了通知から結果を取得できるようにする。"""
     async with subject.AppServerManager() as manager:
         client = LostTurnStartClient()
 
@@ -175,7 +173,6 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """steer拒否後は同一turnの終了を待ってからreplyへ切り替える。"""
     async with subject.AppServerManager() as manager:
         client = SteerRaceClient()
 
@@ -208,7 +205,6 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
 async def test_resume_waits_for_thread_close_after_unsubscribe(
     monkeypatch: pytest.MonkeyPatch, notification_first: bool
 ) -> None:
-    """閉鎖中の再開拒否は対象threadの閉鎖通知で解消し、閉鎖通知が先に届いても取りこぼさない。"""
     async with subject.AppServerManager() as backend:
         client = FakeCodexClient()
         closed_notice = {"method": "thread/closed", "params": {"threadId": "thread-1"}}
@@ -269,7 +265,6 @@ async def test_resume_close_wait_preserves_initialization_timeout(monkeypatch: p
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 async def test_codex_interrupt_response_error_is_recorded_on_target_turn(tmp_path: pathlib.Path) -> None:
-    """turn/interruptの応答エラーを対象turnの状態へ記録する。"""
     async with subject.AppServerManager() as manager:
         client = InterruptErrorClient()
         session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1")
@@ -516,7 +511,6 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """再開turnの応答待ちでもkillだけでApp Server側作業を終える。"""
     async with _pending_codex_manager(monkeypatch, HoldingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,
@@ -555,7 +549,6 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """保留中のresumeを取り消す間に自然に終了したturnを、中断要求済みと報告しない。"""
     async with _pending_codex_manager(monkeypatch, NaturallyCompletingTurnStartClient) as (manager, backend, client):
         manager.expired_sessions[session_id] = state.SessionResumeState(
             session_id=session_id,

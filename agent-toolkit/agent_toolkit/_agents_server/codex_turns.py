@@ -28,7 +28,7 @@ if typing.TYPE_CHECKING:
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
-# 公開エラーの先頭に置く汎用文言。引き継ぎ判定は接頭辞で一致させる。
+
 CONNECTION_REJECTED_MESSAGE = "Codex connection rejected the request"
 
 
@@ -50,14 +50,13 @@ class CodexTurnsMixin:
             public_error["codexErrorInfo"] = codex_resume_state.WRITER_CONFLICT
         failure = public_error.copy()
         if isinstance(error, JsonRpcResponseError) and isinstance(error.data, dict):
-            # RPCの追加dataは内部の切替判定だけへ渡し、公開結果へ保存しない。
             failure.update(error.data)
         changed = (
             await configured_model.changed_model_error(session)
             if failure.get("codexErrorInfo") == "usageLimitExceeded"
             else None
         )
-        # 読取中に届いた中断要求は、続く保留判定でも維持する。
+
         session.interrupt_requested = False
         limit = (
             None
@@ -78,7 +77,6 @@ class CodexTurnsMixin:
             and not writer_conflict
             and changed is None
         ):
-            # 接続先と元のエラーは公開せず、資格情報を含まない診断だけをsession_id付きで残す。
             logged = (
                 error.diagnostic()[1]
                 if isinstance(error, JsonRpcResponseError)
@@ -110,7 +108,6 @@ class CodexTurnsMixin:
         await self._notify_waiters()
 
     async def _mark_turn_start_ambiguous(self: CodexManager, session: SessionState, error: BaseException) -> None:
-        """turn/startの応答が失われたことを未終了状態へ反映する。"""
         if session.terminal:
             return
         session.status = "running"
@@ -125,7 +122,7 @@ class CodexTurnsMixin:
         if client is None:
             client = await self._acquire_owned_client(session.session_id, session.launch_kind)
         self._start_auto_reset_monitor(session, client)
-        # 再起動したApp Serverでturnを始める場合も、実行するプロセスの識別を登録簿へ反映する。
+
         await session.attach_executor_async(_client_pid(client))
         params: dict[str, Any] = {
             "threadId": session.session_id,
@@ -201,7 +198,6 @@ class CodexTurnsMixin:
             compacting.done.set()
             raise
         finally:
-            # 時間上限だけでは実行終了としない。後着の完了を観測するまで通常追送も待つ。
             if compacting.done.is_set():
                 self._wait_compaction_turns.pop(session.session_id, None)
 
@@ -217,7 +213,6 @@ class CodexTurnsMixin:
 
     @staticmethod
     def _mark_turn_start_sent(session: SessionState, *, fast_mode: bool) -> None:
-        """turn/startの送信完了を応答待ちより先に記録する。"""
         session.record_turn_sent()
         session.fast_mode = fast_mode
         session.touch()

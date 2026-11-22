@@ -1,20 +1,18 @@
 # 実装配置と共有状態の非同期境界の設計記録
 
-[設計記録の索引](design.md)から参照する、実装配置と共有状態の非同期境界の記録である。
+[設計記録の索引](design.md)
 
 ## agents_serverの実装の配置
 
 目的はMCPツールの公開面、sessionの管理、engine別のbackendおよび共有状態の読み書きを責務ごとのモジュールへ分けることである。
 変更が1つの責務の範囲で完結するようにする。
 
-`AgentsServerManager`（`manager.py`）は責務ごとのクラスを順に継承し、起動・追送・中断・終了を加える。
+責務の分け方は[manager.py](../../agent-toolkit/agent_toolkit/_agents_server/manager.py)にある。
 各責務が同じsession集合と条件変数を共有するため、状態を持つ1つのインスタンスの中でモジュールだけを分ける。
 責務ごとに別のオブジェクトへ分け、状態を引数で渡し合う案は採らない。
 session集合・待機中の再開・条件変数を全てのオブジェクトが参照するため、受け渡しの箇所が増えるだけで依存は減らない。
 
-engine別のbackendは`backends.py`の`Backend`（`typing.Protocol`）を満たす。
-engineごとの性質は各backendのクラスが属性と静的メソッドで持ち、manager系のモジュールはengine名を比べずに問い合わせる。
-engine名とbackendのクラスの対応と、engineごとに異なる生成時の引数を持つのは`backends.py`だけである。
+engineごとの差は[backends.py](../../agent-toolkit/agent_toolkit/_agents_server/backends.py)に閉じ、manager側にengine名の判定を重ねない。
 
 ## 共有状態の非同期境界
 

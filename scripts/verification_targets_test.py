@@ -1,5 +1,3 @@
-"""候補探索と実行対象の被覆を確かめる。"""
-
 import pathlib
 import subprocess
 
@@ -10,7 +8,6 @@ from verification_targets import consumer_tests, required_tests, uncovered_tests
 
 
 def test_direct_and_named_consumers(tmp_path: pathlib.Path) -> None:
-    """別名の直接importと命名候補を保持し、中間importと名前の部分一致は候補にしない。"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     for name, body in {
         "source.py": "",
@@ -72,7 +69,6 @@ def test_empty_result_and_failed_listing_are_distinct(tmp_path: pathlib.Path, mo
 
 
 def test_invalid_source_and_unreadable_tracked_source(tmp_path: pathlib.Path) -> None:
-    """対象なしでは構文を要しないが、不在入力と解析できない追跡試験は拒否する。"""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "keep.txt").write_text("", encoding="utf-8")
     commit_all(tmp_path, "init")
@@ -91,7 +87,6 @@ def test_invalid_source_and_unreadable_tracked_source(tmp_path: pathlib.Path) ->
 
 
 def test_tracked_test_deleted_in_worktree_matches_staged_deletion(tmp_path: pathlib.Path) -> None:
-    """作業ツリーで削除しただけの追跡試験も、削除をstageした場合と同じく候補から外し、列挙を続ける。"""
     root = init_repository(
         tmp_path / "repo",
         files={"source.py": "", "kept_test.py": "import source\n", "deleted_test.py": "import source\n"},
@@ -105,7 +100,6 @@ def test_tracked_test_deleted_in_worktree_matches_staged_deletion(tmp_path: path
 
 
 def test_package_imports_and_ambiguous_references(tmp_path: pathlib.Path) -> None:
-    """別package、別名、CLI、動的/中間利用の根拠を消費側判定まで保つ。"""
     root = init_repository(
         tmp_path / "repo",
         files={
@@ -156,7 +150,6 @@ def test_package_imports_and_ambiguous_references(tmp_path: pathlib.Path) -> Non
     ],
 )
 def test_incomplete_decisions_are_not_confirmation(decisions: list[dict[str, object]]) -> None:
-    """欠落・空理由・数値の真偽値を確認済みへ変換しない。"""
     snapshot = {
         "head": "a",
         "sources": ["x.py"],

@@ -1,5 +1,3 @@
-"""WIのshow試験で共有する準備処理。"""
-
 import datetime
 import pathlib
 
@@ -21,7 +19,6 @@ def _write_awi_state_file(
     target_repo: str = "github.com/example/foo",
     body: str = "state本文",
 ) -> pathlib.Path:
-    """年月配置へ指定stateのAWIを書き込み、絶対パスを返す。"""
     path = entry_path(notes, filename, fallback_date=datetime.date(2026, 1, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -37,5 +34,4 @@ def _write_awi_processing_file(
     target_repo: str = "github.com/example/foo",
     body: str = "processing本文",
 ) -> pathlib.Path:
-    """processing配下に1ファイルを書き込み、絶対パスを返す（`_write_awi_state_file`の薄いラッパー）。"""
     return _write_awi_state_file(notes, "processing", filename, target_repo=target_repo, body=body)

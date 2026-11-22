@@ -1,5 +1,3 @@
-"""加工候補の公開bundleで、実行位置・文字列データ・保存出力の渡し方を対照する。"""
-
 import json
 import pathlib
 
@@ -112,7 +110,6 @@ def test_bundle_classifies_executed_processing_only(tmp_path: pathlib.Path, caps
     ],
 )
 def test_dynamic_command_is_retained_without_evaluation(argument: str) -> None:
-    """式と上書きのある入力を、静的な文字列の先頭へ切り詰めない。"""
     cell = f"await tools.exec_command({argument});"
     assert not execution.command_inputs("functions.exec", cell)
     observations = execution.command_input_observations("functions.exec", cell)
@@ -124,7 +121,6 @@ def test_dynamic_command_is_retained_without_evaluation(argument: str) -> None:
 
 
 def test_shell_parse_scope_reuses_bounded_immutable_syntax(monkeypatch: pytest.MonkeyPatch) -> None:
-    """再入・別処理・例外終了でも寿命を保ち、呼出側の変更と未知構文を混同しない。"""
     parsed: list[str] = []
     original = execution.shell_segments.extract_execution_segments
 
@@ -177,7 +173,6 @@ def test_shell_parse_scope_reuses_bounded_immutable_syntax(monkeypatch: pytest.M
     ],
 )
 def test_shell_execution_roles_reach_public_queries(tmp_path, capsys, argv, visible) -> None:
-    """本文だけを照会し、位置引数・rcfile名で実際の警告を除外しない。"""
     transcript = _write_transcript(
         tmp_path,
         [
@@ -200,7 +195,7 @@ def test_shell_execution_roles_reach_public_queries(tmp_path, capsys, argv, visi
     assert evidence.main([str(transcript), "--tool-calls", "--input-regex", "marker"]) == 0
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     calls = [row for row in rows if row.get("kind") == "tool-call"]
-    # --tool-callsは自己呼出しも監査できる。警告・本文走査だけが自己生成出力を除く。
+
     assert len(calls) == 1
     if visible:
         assert calls[0]["text"] == "printf marker"

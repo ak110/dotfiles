@@ -20,7 +20,6 @@ _SOURCE_PATH_PATTERN = re.compile(r"`([^`]+)`")
 
 
 def _rows(text: str) -> list[tuple[str, str, str]]:
-    """一覧の節の表から、名前・指示対象・定義元の3列の行を返す。"""
     section = text.split(f"\n{_LIST_HEADING}\n", maxsplit=1)[1].split("\n## ", maxsplit=1)[0]
     rows: list[tuple[str, str, str]] = []
     for line in section.splitlines():
@@ -35,7 +34,6 @@ def _rows(text: str) -> list[tuple[str, str, str]]:
 
 
 def _find_violations(repo_root: pathlib.Path) -> list[str]:
-    """定義元が無い行と、定義元に名前が現れない行を返す。"""
     text = (repo_root / _LIST_PATH).read_text(encoding="utf-8")
     violations: list[str] = []
     rows = _rows(text)
@@ -61,13 +59,11 @@ def _find_violations(repo_root: pathlib.Path) -> list[str]:
 
 
 def test_defined_names_appear_in_their_sources() -> None:
-    """一覧の各行の名前が、その行が示す定義元のファイルに現れる。"""
     violations = _find_violations(_ROOT)
     assert not violations, "\n".join(violations)
 
 
 def test_reports_missing_source_and_absent_name(tmp_path: pathlib.Path) -> None:
-    """定義元のファイルが無い行と、定義元に名前が現れない行を名前つきで報告する。"""
     (tmp_path / _LIST_PATH).parent.mkdir(parents=True)
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs/source.md").write_text("計画担当は計画工程を担う主体を指す。\n", encoding="utf-8")

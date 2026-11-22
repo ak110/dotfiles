@@ -1,5 +1,3 @@
-"""配布物の実行コードが旧`uv run --project`形式へ戻らないことを検証する。"""
-
 import ast
 import pathlib
 import re
@@ -18,7 +16,7 @@ def _runtime_source(path: pathlib.Path) -> str:
     if path.suffix != ".py" and path.name != "atk-hook":
         return source
     tree = ast.parse(source)
-    # 説明用docstringに記された旧コマンドは実行されない。引数の文字列は走査に残す。
+
     excluded: list[ast.stmt] = [
         node
         for node in ast.walk(tree)
@@ -39,7 +37,6 @@ def _runtime_source(path: pathlib.Path) -> str:
 
 
 def test_python_docstrings_keep_executable_arguments_in_scope(tmp_path: pathlib.Path) -> None:
-    """説明文の旧例を除き、関数内の実行引数は検出する。"""
     path = tmp_path / "runtime.py"
     description = '"""旧uv run --project形式の説明。"""\n'
     path.write_text(description, encoding="utf-8")
@@ -49,7 +46,6 @@ def test_python_docstrings_keep_executable_arguments_in_scope(tmp_path: pathlib.
 
 
 def test_legacy_shim_exception_keeps_other_calls_in_scope(tmp_path: pathlib.Path) -> None:
-    """旧配布物向け分岐の例外が新しい通常起動の回帰を隠さない。"""
     path = tmp_path / "atk-hook"
     legacy = (
         "if not bundled and not launcher.is_file() and (root / 'agent_toolkit/hook.py').is_file():\n"
@@ -68,7 +64,6 @@ def test_legacy_shim_exception_keeps_other_calls_in_scope(tmp_path: pathlib.Path
     ),
 )
 def test_runtime_sources_do_not_launch_plugin_scripts_with_project_uv() -> None:
-    """配列形を含む旧起動を実行コードと配布手順から検出する。"""
     plugin_root = pathlib.Path(__file__).parents[1]
     repository_root = plugin_root.parent
     paths = [

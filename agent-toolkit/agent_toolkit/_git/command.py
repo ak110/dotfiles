@@ -105,12 +105,10 @@ def timeout_scope(seconds: float) -> Generator[None]:
 
 
 def command_line(args: Sequence[str]) -> list[str]:
-    """`git`へ渡す引数列から、例外と記録へ載せるコマンドの全体を返す。"""
     return ["git", *args]
 
 
 def default_timeout(args: Sequence[str]) -> float:
-    """引数列のサブコマンドの区分から、デフォルトの時間上限の秒数を返す。区分と根拠はモジュールdocstringにある。"""
     words = iter(args)
     for word in words:
         if word in _GLOBAL_OPTIONS_WITH_VALUE:
@@ -131,7 +129,6 @@ def default_timeout(args: Sequence[str]) -> float:
 
 
 def timeout_cwd(error: subprocess.TimeoutExpired) -> str | None:
-    """`run`が送出した時間切れの例外から、打ち切ったgitの作業ディレクトリを返す。記録が無ければ`None`を返す。"""
     return getattr(error, _CWD_ATTRIBUTE, None)
 
 
@@ -351,7 +348,6 @@ def optional_output(args: Sequence[str], cwd: _Cwd, *, timeout: float) -> str | 
 
 
 def lines(args: Sequence[str], cwd: _Cwd = None) -> list[str] | None:
-    """git標準出力を行配列で返し、実行不能または非0終了時は`None`を返す。"""
     try:
         result = run(args, cwd, capture_output=True, text=True)
     except OSError, subprocess.SubprocessError:

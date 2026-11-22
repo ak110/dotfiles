@@ -1,10 +1,3 @@
-"""serveの背景で家族の推定費用を算出する別プロセス（`session_costs.FamilyCostWarmer`が起動する）。
-
-標準入力から1行1件のJSON（engine、記録のパス、各保存先）を受け取り、標準出力へ1行1件の結果を返す。
-記録を読めない場合と記録が大きすぎる場合は`error`を返して次の要求を待つ。
-serveの要求処理を妨げないよう、起動時に自身の優先度を下げる。
-"""
-
 import json
 import pathlib
 import sys
@@ -24,7 +17,6 @@ def _lower_priority() -> None:
 
 
 def main() -> int:
-    """標準入力が閉じるまで1件ずつ算出する。縮約記録はserveと同じ保存先を使い、プロセス内にも保持する。"""
     _lower_priority()
     stores: dict[str | None, session_cost_slim.SlimRecordStore] = {}
     for line in sys.stdin:

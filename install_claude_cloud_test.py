@@ -14,7 +14,6 @@ _SCRIPT = pathlib.Path(__file__).resolve().parent / "install-claude-cloud.sh"
 
 
 def _origin(tmp_path: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
-    """配布物を1commit持つbareリポジトリと、その更新に使う作業ツリーを用意する。"""
     bare = init_bare_repository(tmp_path / "origin.git", initial_branch="master")
     work = init_repository(
         tmp_path / "work",
@@ -56,7 +55,6 @@ def _run(
 
 
 def test_first_run_clones_and_prepares(tmp_path: pathlib.Path) -> None:
-    """初回は配布物を取得先へ取得し、依存領域を指定して依存準備を呼び、環境変数へ保存する2行を表示する。"""
     bare, _work = _origin(tmp_path)
     result = _run(tmp_path, bare, _uv_stub(tmp_path))
 
@@ -76,7 +74,6 @@ def test_first_run_clones_and_prepares(tmp_path: pathlib.Path) -> None:
 
 
 def test_rerun_updates_existing_checkout(tmp_path: pathlib.Path) -> None:
-    """取得済みの取得先で再実行すると、取得元の最新の版へ更新して依存準備を再び行う。"""
     bare, work = _origin(tmp_path)
     bin_dir = _uv_stub(tmp_path)
     assert _run(tmp_path, bare, bin_dir).returncode == 0
@@ -113,10 +110,6 @@ def test_failures_report_stage(tmp_path: pathlib.Path) -> None:
 
 
 def test_guide_pipe_form_passes_custom_locations_to_script(tmp_path: pathlib.Path) -> None:
-    """ガイドが案内するパイプの形（変数を右側の`bash`の直前へ置く）で、既定と異なる取得先と依存領域へ取得する。
-
-    変数を行頭へ置くと左側のコマンドだけに渡り、スクリプトは省略時の取得先を使う。
-    """
     bare, _work = _origin(tmp_path)
     bin_dir = _uv_stub(tmp_path)
     source = tmp_path / "custom-src"

@@ -31,10 +31,6 @@ _GIT_GREP_SHORT_FLAGS = frozenset("EFGPivwahnHIlLczonqrsuVpWN")
 
 
 def _bundled_search_value_option(token: str, *, command: str) -> tuple[str, str] | None:
-    """既知の短形式だけの束から最初の値付きオプションと密着値を返す。
-
-    未知の文字やpager指定の後ろを検索語と認定すると、プロセス終了保護の免除を広げるため走査を止める。
-    """
     if not token.startswith("-") or token.startswith("--"):
         return None
     valued = "efABCm" if command == "git" else "efmABCdgtMTrjE" if command == "rg" else "efmABCDd"
@@ -48,17 +44,6 @@ def _bundled_search_value_option(token: str, *, command: str) -> tuple[str, str]
 
 
 def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int | None, int | None]:
-    """検索パターンの位置、revision・パスの区切り、実際のオプション終端の位置を返す。
-
-    gitの受理形式（git 2.47.3の実行で確認）は、最初の`--`より前に`-e`・`-f`か位置引数の検索パターンがあるかで分かれる。
-
-    - ある場合: 最初の`--`がrevision・パスの区切りであり、その後ろは全てrevisionとパスとして読まれる
-    - 無い場合: 最初の`--`はオプションの終端であり、直後の1トークンが検索パターンになる。
-      その後ろに現れる最初の`--`がrevision・パスの区切りになる
-
-    パターンの位置には`-e`の値と位置引数の検索パターンを含め、`-f`が読むファイル名は含めない。
-    束ねた短形式は最初の値付きオプションで値の消費を止める。
-    """
     indices: set[int] = set()
     pattern_seen = False
     index = 0
@@ -110,12 +95,10 @@ def _git_grep_argument_layout(arguments: Sequence[str]) -> tuple[set[int], int |
 
 
 def _git_grep_literal_pattern_indices(arguments: Sequence[str]) -> set[int]:
-    """`git grep`がリテラル検索パターンとして読む引数位置を返す。"""
     return _git_grep_argument_layout(arguments)[0]
 
 
 def _git_log_literal_search_indices(arguments: Sequence[str]) -> set[int]:
-    """`git log`が検索語として読む引数位置を返す。"""
     indices: set[int] = set()
     index = 0
     while index < len(arguments):
@@ -154,11 +137,6 @@ _OPTION_TERMINATOR_GIT_SUBCOMMANDS = frozenset({"log", "diff", "show", "grep"})
 
 
 def _options_after_terminator(arguments: Sequence[str], *, excluded: Iterable[int] = ()) -> list[str]:
-    """引数列の最初の`--`より後ろにある、`-`で始まるトークンを返す。
-
-    `excluded`の位置（検索パターンや区切りの`--`）は判定から除く。
-    `-`単独は標準入力を表すデータであり、オプションに数えない。
-    """
     if "--" not in arguments:
         return []
     skip = set(excluded)
@@ -171,18 +149,11 @@ def _options_after_terminator(arguments: Sequence[str], *, excluded: Iterable[in
 
 
 def _pattern_command_slot(arguments: Sequence[str], *, command: str) -> set[int]:
-    """`rg`・`grep`系で、終端後のパスとして警告しない引数位置を返す。
-
-    `-e`・`--regexp`・`-f`・`--file`（`=`や`-eX`の連結形を含む）を`--`より前に置く場合は、
-    `--`の後ろが全てパスとして読まれる（ripgrep 15.2.0とGNU grepの実行で確認）。
-    実際の終端以前を除外し、明示パターンの無い入力では終端直後の検索語も除外する。
-    """
     pattern_seen = False
     index = 0
     while index < len(arguments):
         token = arguments[index]
         if token == "--":
-            # 値として消費した`--`を、後段の単純な終端検索で再分類しない。
             return set(range(index + 1 if pattern_seen else index + 2))
         option, separator, _value = token.partition("=")
         short = _bundled_search_value_option(token, command=command)

@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""セッション振り返りの試験（session_review_prepare_conversation_test）。"""
 
 from __future__ import annotations
 
@@ -27,7 +26,6 @@ from agent_toolkit._testing.session_review_prepare_support import _isolate_failu
 def test_delegate_improvements_reach_prepare(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], delivery: str
 ) -> None:
-    """正常返却の省略区間も、元の全文から抽出した行と記録位置で準備へ含める。"""
     threads = delegated_threads.write_delegated_threads(tmp_path)
     monkeypatch.setenv("HOME", str(threads.home))
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(threads.home / ".claude"))
@@ -98,7 +96,7 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
     assert len(index) == 3 and sum(item["mandatory"] for item in index) == 1
     details = [json.loads((work_dir / "bundle" / item["evidence_path"]).read_text(encoding="utf-8")) for item in index]
     assert any("make lint" in json.dumps(item, ensure_ascii=False) for item in details)
-    # 是正の全文と判定の前後関係は保存証拠から取得し、初回表示へ展開しない。
+
     assert _LONG_INTERVENTION not in candidates
     assert any(_LONG_INTERVENTION in json.dumps(item, ensure_ascii=False) for item in details)
     assert "直前と直後のユーザー発話" not in candidates
@@ -111,11 +109,6 @@ def test_prepare_writes_conversation_candidates_and_stats_without_queue_changes(
 def test_prepare_lists_offered_answer_as_mandatory_confirmation(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """選択肢のlabelをそのまま選び自由記述の無い確認回答を、確認の候補として載せる。
-
-    介入として数えると是正を含まない回答まで介入として分析する。除外すると不要だった確認が件数だけになり、
-    確認の要否を振り返る入力から消える。確認の候補は評価が必須の候補として1行JSONにも示し、深さと再発防止策の要否は重大度判断へ渡す。
-    """
     monkeypatch.setenv("PATH", str(tmp_path / "no-atk"))
     work_dir = _work_dir(tmp_path)
     entries = [
@@ -300,7 +293,6 @@ def test_prepare_conversation_only_preserves_failure_ledger(
 
 
 def _file_body(name: str) -> str:
-    """末尾の行で結果の本文の有無を確かめられる本文を返す。"""
     return "\n".join(f"{name}-line-{index}" for index in range(20))
 
 
@@ -425,7 +417,6 @@ def test_prepare_summarizes_codex_tool_activity(
 def test_prepare_keeps_reference_to_fork_context(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """公開prepareの会話に帰属不明の文脈を示し、子自身の操作とは数えない。"""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-codex"))
     child = tmp_path / "rollout-child.jsonl"
     rows = [

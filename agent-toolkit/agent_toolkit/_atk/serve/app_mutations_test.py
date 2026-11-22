@@ -1,5 +1,3 @@
-"""serveのappに関するmutationsの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -40,7 +38,6 @@ from agent_toolkit._testing.serve_support import (
 async def test_wi_mutation_logs_operation_without_body(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """成功と入力エラーを記録し、編集本文がログに含まれないことを検証する。"""
     operations = wi_operations.Operations(tmp_path)
     monkeypatch.setattr(operations, "edit", lambda *_args: True)
     monkeypatch.setattr(operations, "transition", lambda _action, filenames, **_kwargs: filenames)
@@ -99,11 +96,6 @@ async def test_mutations_reject_rebase_in_progress_with_409(
     path: str,
     payload: dict[str, object] | None,
 ) -> None:
-    """rebaseの中間状態が残る間、Webの全更新操作は変更前に拒否し、理由と解消操作を409で返す。
-
-    確認がcommit時だけだと、WIを書き換えた後に拒否して作業ツリーへ変更が残り、未処理の例外が500になる。
-    `edit_conflict`と同じcodeにすると、画面が詳細の開き直しを促す誤った回復文を付ける。
-    """
     notes = _rebasing_notes(tmp_path, make_clean_repo)
     before = _notes_snapshot(notes)
     client = _serve_app(notes).test_client()
@@ -180,7 +172,6 @@ async def test_commit_api_keeps_changed_boolean(
     tmp_path: pathlib.Path,
     make_clean_repo: typing.Callable[..., pathlib.Path],
 ) -> None:
-    """commit結果が詳細を持っても、Web APIは外部編集をcommitした真偽だけを返す。"""
     notes = make_clean_repo(tmp_path, "notes")
     setup = notes / "setup.txt"
     setup.write_text("初期状態\n", encoding="utf-8")
@@ -246,7 +237,6 @@ async def test_web_edits_commit_locally_before_remote_sync(tmp_path: pathlib.Pat
 
 @pytest.mark.asyncio
 async def test_uwi_reject_transition_succeeds(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """UWIエントリも他種別と同様に不採用遷移が成功する。"""
 
     _disable_wi_git(monkeypatch)
     inbox = _fixed_path(tmp_path, "entry.md").parent
@@ -286,7 +276,6 @@ async def test_answer_api_returns_saved_post_approval_state(
     answer: str,
     saved_state: str,
 ) -> None:
-    """回答APIは肯定だけを採用し、是正・追記を残した実際の保存先を返す。"""
 
     @contextlib.contextmanager
     def lock(_path: pathlib.Path, **_kwargs: object) -> typing.Generator[None]:
@@ -416,7 +405,6 @@ async def test_remove_api_uses_user_permissions_for_terminal_state(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Web APIは実行環境変数にかかわらず人間主体として終了状態を削除する。"""
 
     _disable_wi_git(monkeypatch)
     monkeypatch.setenv("AI_AGENT", "1")
@@ -538,7 +526,6 @@ async def test_answer_and_remove_apis_return_edit_conflict_when_concurrent_chang
 
 @pytest.mark.asyncio
 async def test_web_input_error_response_keeps_next_action_from_any_validation(tmp_path: pathlib.Path) -> None:
-    """共通の例外応答は、どの入力検証が送出した`WebInputError`でも理由と次の操作の組を保つ。"""
     app = _serve_app(tmp_path)
 
     @app.get("/test-only/web-input-error")

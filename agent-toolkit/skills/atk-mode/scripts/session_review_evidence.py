@@ -1,9 +1,3 @@
-"""セッション全体の時系列証拠と、記録位置を保持した照会をJSONLで返す。
-
-公開引数と表示はsession_evidence_cli、記録の読取と各照会は主題別モジュールが所有する。
-引数誤用と照会不能は終了2、取得結果と診断は標準出力へ返す。
-"""
-
 from __future__ import annotations
 
 import functools
@@ -105,7 +99,6 @@ def main(
     conversation_scope: Path | None = None,
     conversation_only: bool = False,
 ) -> int:
-    """証拠または照会結果を1イベント1 JSONのJSONLとして標準出力へ書く。"""
     reconfigure = getattr(sys.stdout, "reconfigure", None)
     if callable(reconfigure):
         reconfigure(encoding="utf-8", errors="replace")

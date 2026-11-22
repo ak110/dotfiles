@@ -1,5 +1,3 @@
-"""repository登録を操作するconfig reposの公開CLI。"""
-
 from __future__ import annotations
 
 import argparse
@@ -11,7 +9,6 @@ from agent_toolkit._git import command as git
 
 
 def build_parser(sub: argparse._SubParsersAction) -> None:
-    """repository専用の属性操作を登録する。"""
     parser = help_text.add_command(sub, "repos", **help_text.HELP["atk config repos"])
     commands = help_text.add_subcommands(parser, dest="repos_subcommand", required=True)
     for name in ("add", "set", "remove", "list"):
@@ -42,14 +39,13 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
 
 
 def dispatch(args: argparse.Namespace) -> None:
-    """登録を厳密に読み、操作後のmapを全体検証して原子的に保存する。"""
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
     stored = config_settings.load_config_strict()
     raw = stored.get("repositories", "{}")
     if not isinstance(raw, str):
         raise ValueError("repositoriesの保存値はJSON文字列で指定する")
-    # 以前は存在したworktreeが失われていても、listとset/removeで診断・修復できるようにする。
+
     repositories = config_repositories.parse(raw, check_paths=False)
     if args.repos_subcommand == "list":
         print(json.dumps(repositories, ensure_ascii=False, indent=2))
@@ -84,7 +80,6 @@ def dispatch(args: argparse.Namespace) -> None:
 
 
 def _apply_branch_arguments(args: argparse.Namespace, item: dict[str, Any]) -> None:
-    """系統の指定を登録属性へ重ねる。系統を外す指定はdefault_branchの系統と取り込み元も外す。"""
     if args.branches is not None:
         names = [name.strip() for name in args.branches.split(",") if name.strip()]
         if names:
@@ -109,7 +104,6 @@ def _apply_branch_arguments(args: argparse.Namespace, item: dict[str, Any]) -> N
 
 
 def _require_remote_branches(repo_id: str, item: dict[str, Any]) -> None:
-    """登録する系統がoriginに実在することを、登録pathのGit作業ツリーから確かめる。"""
     settings = config_repositories.branch_settings(item)
     if settings is None:
         return

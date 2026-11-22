@@ -1,5 +1,3 @@
-"""巡回ランチャーの公開CLIから再起動と中断を検証する。"""
-
 from __future__ import annotations
 
 import pathlib

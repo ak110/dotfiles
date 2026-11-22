@@ -39,7 +39,7 @@ def test_jsonrpc_diagnostic_redacts_encoded_credentials(info):
 async def test_rejection_diagnostics_redact_credentials(monkeypatch, tmp_path, provider_environment, caplog, stage, rpc):
     """合成した拒否のcode・原因を保ち、全記録経路から認証値を取り除く。"""
     del provider_environment
-    # 実際の資格情報は使わず、短い値・引用符内の空白・無名の長い鍵状文字列も含める。
+
     secrets = [
         "synthetic-bearer-value",
         "synthetic-basic-value",
@@ -69,7 +69,6 @@ async def test_rejection_diagnostics_redact_credentials(monkeypatch, tmp_path, p
             async def request(method, params=None, **kwargs):
                 if method == stage:
                     if not rpc:
-                        # 接続喪失が確定した一般例外は、受理状態が曖昧なturnとして保留しない。
                         client.reader_failure = OSError("connection closed")
                         raise OSError(reason)
                     raise codex.JsonRpcResponseError(
@@ -79,7 +78,6 @@ async def test_rejection_diagnostics_redact_credentials(monkeypatch, tmp_path, p
                         {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401, "token": secrets[8]}}},
                     )
                 if stage == "thread/resume" and method == "turn/start":
-                    # 初回のAPI拒否から接続切替を開始し、再開の拒否も公開waitまで通す。
                     raise codex.JsonRpcResponseError(
                         method, -32600, "initial refusal", {"codexErrorInfo": {"httpConnectionFailed": {"httpStatusCode": 401}}}
                     )

@@ -12,12 +12,6 @@ from agent_toolkit._testing.posttooluse_support import _run
 
 
 class TestCurrentPlanFilePathTracking:
-    """plan file編集時の`current_plan_file_path`記録。
-
-    pretooluse.py側の遡及スキャンの記録とprocess7の完了を確かめる処理が
-    計画ファイル本文を再読み込みする際に使う。
-    """
-
     def test_write_records_current_plan_file_path(self, tmp_path: pathlib.Path):
         home = tmp_path / "home"
         plans_dir = home / ".claude" / "plans"
@@ -81,7 +75,6 @@ class TestCurrentPlanFilePathTracking:
         assert "current_plan_file_path" not in state
 
     def test_private_notes_write_records_current_plan_file_path(self, tmp_path: pathlib.Path) -> None:
-        """新しいprivate-notes計画rootのWriteも現在の計画パスとして記録する。"""
         private_notes = tmp_path / "private-notes"
         plans_dir = private_notes / "plans" / "2026" / "08"
         plans_dir.mkdir(parents=True)
@@ -117,7 +110,6 @@ class TestDetailCurrentPlanPathTracking:
     """詳細計画の編集が既存の現在計画パス契約を変えないことを検証する。"""
 
     def test_detail_file_write_does_not_record_current_plan_file_path(self, tmp_path: pathlib.Path):
-        """計画ファイル（詳細）は計画ファイル（メイン）を判定する述語が偽を返すため、現在値を記録しない。"""
         home = tmp_path / "home"
         plans_dir = home / ".claude" / "plans"
         plans_dir.mkdir(parents=True)
@@ -137,8 +129,6 @@ class TestDetailCurrentPlanPathTracking:
 
 
 class TestEdgeCases:
-    """エッジケース。"""
-
     def test_invalid_json_exits_zero(self, tmp_path: pathlib.Path):
         result = _run("not json", state_dir=tmp_path)
         assert result.returncode == 0
@@ -152,14 +142,11 @@ class TestEdgeCases:
         assert result.returncode == 0
 
     def test_silent_output(self, tmp_path: pathlib.Path):
-        """PostToolUse は stdout に何も書き込まない。"""
         result = _run({"session_id": "silent", "tool_input": {"command": "pytest"}}, state_dir=tmp_path)
         assert result.stdout == ""
 
 
 class TestPlanFilePostWriteNotice:
-    """計画ファイルのWrite成功時に書き込み後チェック案内をhookSpecificOutput経由で返す挙動。"""
-
     def _make_plan_path(self, tmp_path: pathlib.Path) -> pathlib.Path:
         home = tmp_path / "home"
         plans = home / ".claude" / "plans"
@@ -187,12 +174,6 @@ class TestPlanFilePostWriteNotice:
         assert auto_message_opening_attributes(message)["source"] == "posttooluse"
 
     def test_plan_file_write_notice_is_executable_as_written(self, tmp_path: pathlib.Path) -> None:
-        """案内文がそのまま実行できる形であること。
-
-        案内文を受け取った側は配送済みの起動部分へサブコマンドと固有引数を続ける。
-        照会先を指定しない場合は実行時の作業ディレクトリを使い、対象リポジトリと一致する保証がないため、
-        payloadの`cwd`を`--work-dir`へ明示する。
-        """
         plan_path = self._make_plan_path(tmp_path)
         work_dir = tmp_path / "target repo"
         work_dir.mkdir()
@@ -212,7 +193,7 @@ class TestPlanFilePostWriteNotice:
         assert "CLAUDE_PLUGIN_ROOT" not in message
         command = next(part for part in message.split("`") if part.startswith("run-script plan-check --"))
         assert shlex.split(command) == ["run-script", "plan-check", "--", str(plan_path), "--work-dir", str(work_dir)]
-        # 空白を含むパスは引用しないと単語分割され、意図しない引数として渡る。
+
         assert f"--work-dir {shlex.quote(str(work_dir))}" in message
 
     def test_notice_on_removed_detail_file_write_is_skipped(self, tmp_path: pathlib.Path) -> None:

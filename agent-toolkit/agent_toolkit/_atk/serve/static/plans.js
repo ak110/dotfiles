@@ -279,7 +279,6 @@ function renderRootWarnings() {
 }
 
 function setupSentinelObserver() {
-  // 末尾の番兵が可視範囲に入ったら表示上限を1ステップ拡張する。
   // `root`をaside（一覧をスクロールするコンテナー）に指定して、
   // スクロールコンテナー内での可視性を判定する。
   // `rootMargin`で末尾到達前に先読みし、スクロール停止前に拡張が完了するようにする。
@@ -572,8 +571,7 @@ function showCopyError(message) {
   alert.textContent = message;
 }
 
-// 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象を再試行しても到達しないため、
-// 選択を解除して移動または削除済みを伝え、一覧を取り直す。
+// 一覧の項目は外部操作（計画の保存による別rootへの移動や削除）で消え得る。同じ対象へは再試行しない。
 function showMissingSelection() {
   const message = planDiagnostic(MISSING_SELECTION_MESSAGE);
   selectedHost = null;

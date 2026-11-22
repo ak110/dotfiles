@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""post_applyのstepsの試験。"""
 
 # pylint: disable=protected-access
 
@@ -82,13 +81,11 @@ class TestDefaultSteps:
         post_apply._resolve_predecessors(steps)  # noqa: SLF001
 
     def test_predecessor_declarations(self) -> None:
-        """共有資源を扱うステップの組へ先行工程を宣言する。"""
         declared = {step.name: set(step.after) for step in post_apply.DEFAULT_STEPS if step.after}  # noqa: SLF001
         assert declared == self._EXPECTED_PREDECESSORS
 
     # test-copy-contract: schedulerが全先行工程へ展開する宣言を保ち、PATH整理を他工程のPATH追加後へ限定する。
     def test_user_path_cleanup_follows_all_other_steps(self) -> None:
-        """ユーザーPATHの整理は他の全ステップの後に実行する。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
         assert steps[-1].name == "ユーザー PATH 整理 (Windows)"
         assert [step.name for step in steps if step.after_all_preceding] == [
@@ -102,7 +99,6 @@ class TestDefaultSteps:
         monkeypatch: pytest.MonkeyPatch,
         platform: str,
     ) -> None:
-        """通常の工程表で本体後処理を終えてからプラグインを反映し、最後にPATHを整理する。"""
         registered = post_apply.DEFAULT_STEPS
         plugin_steps = [step for step in registered if step.run is apply_dotfiles_plugins.run]
         assert len(plugin_steps) == 1
@@ -143,7 +139,6 @@ class TestDefaultSteps:
             assert calls[-1] == plugin.name
 
     def test_platform_declarations(self) -> None:
-        """実行中のOSでは何もしないステップへ対象OSを宣言する。"""
         steps = post_apply.DEFAULT_STEPS  # noqa: SLF001
         assert {step.name for step in steps if step.platforms == ("win32",)} == self._WINDOWS_STEPS
         assert {step.name for step in steps if step.platforms == ("linux",)} == self._LINUX_STEPS
@@ -157,7 +152,6 @@ class TestPluginRecommendations:
         self,
         capsys: pytest.CaptureFixture[str],
     ):
-        """推奨コマンドが 1 件のみなら && も継続記号も付けず単一行で出力する。"""
         fake_recommendations = ["claude plugin install a --scope=user"]
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("plugins", _make_plugin_step(fake_recommendations)),
@@ -176,7 +170,6 @@ class TestPluginRecommendations:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ):
-        """bash 系では && \\ で連結し、最終行のみ継続記号なしで出力する。"""
         monkeypatch.setattr(post_apply.sys, "platform", "linux")
         fake_recommendations = [
             "claude plugin install a --scope=user",
@@ -216,7 +209,7 @@ class TestPluginRecommendations:
         stdout_lines = capsys.readouterr().out.splitlines()
         assert "claude plugin install a --scope=user && ^" in stdout_lines
         assert "claude plugin disable b --scope=user" in stdout_lines
-        # cmd.exe では `^` 継続後の行頭空白が解析エラーを起こすため、コマンド行は無インデントとする。
+
         assert not any(line.startswith(" ") for line in stdout_lines if "claude plugin" in line)
 
     def test_no_output_when_no_recommendations(
@@ -224,7 +217,6 @@ class TestPluginRecommendations:
         caplog: pytest.LogCaptureFixture,
         capsys: pytest.CaptureFixture[str],
     ):
-        """推奨コマンドが空なら案内を出力しない。"""
         steps: list[tuple[str, post_apply.Callable[[], post_apply_outcome.PostApplyOutcome]]] = [
             ("ok", _make_step("ok", [], changed=False)),
         ]
@@ -237,7 +229,6 @@ class TestPluginRecommendations:
 
 
 def test_platform_steps_have_no_module_os_guard() -> None:
-    """`platforms`を宣言した工程のモジュールは、対象OSを自ら判定しない。"""
     guards = re.compile(r"\bsys\.platform\b|\bos\.name\b|\bplatform\.system\(")
     offenders = []
     for step in post_apply.DEFAULT_STEPS:

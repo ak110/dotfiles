@@ -1,9 +1,3 @@
-"""タスクバー上のアプリ選択をUI Automationで判別する。
-
-COMオブジェクトは作成した監視ワーカーだけで使用し、クリックのHWNDを
-アプリのHWNDとして使わない。対象アプリは別途WinEventから取得する。
-"""
-
 import ctypes
 import uuid
 from typing import Any, cast
@@ -20,8 +14,6 @@ class _Guid(ctypes.Structure):
 
 
 class _Com:
-    """SDKのvtable順序に沿う、所有権付きCOM参照。"""
-
     def __init__(self, pointer: ctypes.c_void_p, call_type: Any) -> None:
         self.pointer = pointer
         self.call_type = call_type
@@ -62,8 +54,6 @@ def _check(hresult: int) -> None:
 
 
 class UIAutomation:
-    """ElementFromPointと祖先からアプリボタン・サムネイルを識別する。"""
-
     def __init__(self, *, ole32: Any = None, oleaut: Any = None, call_type: Any = None) -> None:
         self.ole32 = ole32 if ole32 is not None else cast(Any, ctypes).WinDLL("ole32")
         self.oleaut = oleaut if oleaut is not None else cast(Any, ctypes).WinDLL("oleaut32")
@@ -112,7 +102,6 @@ class UIAutomation:
             self.initialized = False
 
     def is_task_selection(self, point: tuple[int, int], root_class: str) -> bool:
-        """通常のボタンや通知領域をアプリ選択として扱わない。"""
         if root_class not in ("Shell_TrayWnd", "Shell_SecondaryTrayWnd", "TaskListThumbnailWnd"):
             return False
         assert self.automation is not None and self.walker is not None
@@ -121,13 +110,12 @@ class UIAutomation:
         task_list = False
         try:
             while element.pointer.value:
-                # IUIAutomationElementのCurrentControlType、AutomationId、ClassName。
                 control_type = element.number(21)
                 automation_id = element.text(29, self.oleaut)
                 class_name = element.text(30, self.oleaut)
                 if automation_id.lower() in ("close", "closebutton"):
                     return False
-                clickable |= control_type in (50000, 50007, 50019)  # Button/ListItem/TabItem
+                clickable |= control_type in (50000, 50007, 50019)
                 task_list |= class_name in ("MSTaskListWClass", "MSTaskSwWClass")
                 task_list |= automation_id.startswith("Appid:")
                 task_list |= class_name in ("Taskbar.TaskListButtonAutomationPeer", "TaskListButton")

@@ -1,5 +1,3 @@
-"""OpenCodeへの後処理導入を、設定保持・更新・撤去まで通して検証する。"""
-
 from pathlib import Path
 
 import pytest
@@ -29,7 +27,7 @@ def _source(root: Path) -> None:
     (entry / "roles").mkdir(parents=True)
     (entry / "SKILL.md").write_text("---\nname: atk-mode\ndescription: 入口\n---\n入口の本文\n", encoding="utf-8")
     (entry / "roles" / "worker.subagent.md").write_text("役割の原文\n", encoding="utf-8")
-    # 廃止した常時規範が配布元に残っていても、案内のファイルへ本文を連結しない。
+
     rules = root / "agent-toolkit" / "share" / "rules" / "common"
     rules.mkdir(parents=True)
     (rules / "01-agent.md").write_text("# 共通常時規範\n\n原文を保持する。\n", encoding="utf-8")
@@ -92,10 +90,10 @@ def test_post_apply_sync_preserves_settings_and_updates_owned_skills(
     assert metadata == {"opencode/autoinvoke": "false", "opencode/slash": "true"}
     rules = (destination / "agent-toolkit.md").read_text(encoding="utf-8")
     assert (root / "agent-toolkit").as_posix() in rules and (root / "agent-basics").as_posix() in rules
-    # hookを持たないホストへは入口の起動を案内するだけとし、入口と常時規範の本文は載せない。
+
     assert "作業の前と会話の圧縮の後に、`agent-toolkit-atk-mode`のスキルを読む。\n" in rules
     assert "入口の本文" not in rules and "共通常時規範" not in rules
-    # 役割文書は入口のスキルの配下にあるため、スキルだけを配置するホストへも届く。
+
     entry = destination / "skills" / "agent-toolkit-atk-mode"
     assert (entry / "roles" / "worker.subagent.md").read_text(encoding="utf-8") == "役割の原文\n"
     assert not install_opencode_toolkit.run().changed
@@ -157,7 +155,7 @@ def test_resync_replaces_legacy_rules_body_and_requires_entry_skill(tmp_path: Pa
     body = legacy.read_text(encoding="utf-8")
     assert 'kind="rules"' not in body and "01-agent.md" not in body
     assert "`agent-toolkit-atk-mode`のスキルを読む" in body
-    # 登録は1件のまま保つ。
+
     assert pytilpack.jsonc.loads(config.read_text(encoding="utf-8"))["instructions"] == [legacy.as_posix()]
 
     (root / "agent-toolkit" / "skills" / "atk-mode" / "SKILL.md").unlink()

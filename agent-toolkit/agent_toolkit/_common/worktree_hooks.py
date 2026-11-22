@@ -70,7 +70,6 @@ def _execute(
         record: dict[str, typing.Any] = {"input": payload, "type": hook["type"]}
         path = diagnostics_directory / f"{event}-{index}.json"
         try:
-            # hook定義のtimeoutはhook自身の上限であり、呼出側の値は定義が無いhookだけに使う。
             seconds = float(hook["timeout"]) if "timeout" in hook else timeout
             if not math.isfinite(seconds) or seconds <= 0:
                 raise ValueError("hookのtimeoutは有限の正の値で指定する")
@@ -155,7 +154,6 @@ def remove(
     *,
     diagnostics_directory: pathlib.Path,
 ) -> None:
-    """WorktreeRemove hookによる撤去の完了を確認する。hookが非0で終了しても作成先が無ければ成功とし、診断は保存する。"""
     if not path.exists():
         return
     try:

@@ -13,8 +13,6 @@ from agent_toolkit._testing.shell_checks_support import _run_in_ready_context
 
 
 class TestAgentsServerInputChecks:
-    """基準の取得後に、agents_serverの入力の妥当性を判定する。"""
-
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
@@ -42,7 +40,6 @@ class TestAgentsServerInputChecks:
         remote_session_id: str | None,
         host: str,
     ) -> None:
-        """基準の取得後は、入力の妥当性の判定を通過すれば許可する。"""
         session_id = f"without-skill-{tool_suffix}"
         if remote_session_id is not None:
             _write_session_state(
@@ -67,7 +64,6 @@ class TestAgentsServerInputChecks:
             assert out["hookSpecificOutput"]["permissionDecision"] == "allow"
 
     def test_allowed_when_sidechain_with_skill_ready(self, state_dir: dict[str, str]) -> None:
-        """サイドチェーンでは明示Skill起動記録を要求しない。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -90,7 +86,6 @@ class TestCodexMcpExecution:
         return _plan_file_state_env(tmp_path)
 
     def test_sandbox_unspecified_blocked(self, state_dir: dict[str, str]):
-        """sandbox未指定の開始ツール呼び出しは入力を補正せずに通過させる。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -106,7 +101,6 @@ class TestCodexMcpExecution:
 
     @pytest.mark.parametrize("sandbox", ["network-only", "read-only", "workspace-write"])
     def test_sandbox_other_values_blocked(self, sandbox: str, state_dir: dict[str, str]):
-        """`danger-full-access`以外のsandbox指定も入力を補正せずに通過させる。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -121,7 +115,6 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     def test_sandbox_blocked_in_sidechain(self, state_dir: dict[str, str]):
-        """サブエージェント内部からの呼び出しでもsandbox指定を補正せずに通過させる。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -137,7 +130,6 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     def test_sandbox_correct_no_message(self, state_dir: dict[str, str]):
-        """sandbox・approval-policyが共に省略時の値と一致する場合、updatedInputは返すがsystemMessageを含めない。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -158,7 +150,6 @@ class TestCodexMcpExecution:
         assert "systemMessage" not in out
 
     def test_approval_policy_wrong_value_auto_fix_with_correct_sandbox(self, state_dir: dict[str, str]):
-        """sandboxが正しい値でもapproval-policyのみ誤りなら単独でneverへ強制修正する。"""
         result = _run_in_ready_context(
             {
                 "tool_name": "mcp__plugin_agent-toolkit_agents_server__start",
@@ -179,15 +170,12 @@ class TestCodexMcpExecution:
 
 
 class TestCheckCodexMcpCwd:
-    """開始時`cwd`は入力の妥当性を判定する実行基盤へ委ねる。"""
-
     @pytest.fixture(name="state_dir")
     def _state_dir(self, tmp_path: pathlib.Path) -> dict[str, str]:
         return _plan_file_state_env(tmp_path)
 
     @pytest.mark.parametrize("cwd", [None, "", "   ", "relative/path", "/tmp/worktree"])
     def test_start_input_is_allowed(self, state_dir: dict[str, str], cwd: str | None) -> None:
-        """開始入力は`cwd`の値にかかわらずフックを通過する。"""
         tool_input = {"prompt": "hello", "sandbox": "danger-full-access"}
         if cwd is not None:
             tool_input["cwd"] = cwd
@@ -239,8 +227,6 @@ class TestCodexMcpReply:
 
 
 class TestMcpLanguageBoundary:
-    """MCPの承認は保存済みtranscriptの言語を問わず、現在の応答はmodが判定する。"""
-
     _state_env = staticmethod(_plan_file_state_env)
     _write_state = staticmethod(_write_session_state)
 
@@ -299,7 +285,6 @@ class TestMcpLanguageBoundary:
 
     @pytest.mark.parametrize("codex", [False, True])
     def test_continuation_permission_follows_host_language_boundary(self, tmp_path: pathlib.Path, codex: bool):
-        """所有記録のある継続操作でも保存済みの言語を判定せず、ホスト別の承認を保つ。"""
         env = self._state_env(tmp_path)
         _write_session_state(
             tmp_path,

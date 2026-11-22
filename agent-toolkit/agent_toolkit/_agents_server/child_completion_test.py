@@ -28,7 +28,6 @@ from agent_toolkit._testing.agents_server_support import (
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
 async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monkeypatch, duplicate):
-    """idle・過去の継続後でも未回収子を保留し、新しい完了ごとに1回だけ継続する。"""
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("claude", "model", "high")])
     client = QueueClaudeClient(
@@ -63,7 +62,6 @@ async def test_consumed_resume_waits_for_uncollected_child_result(tmp_path, monk
                 owner._condition.wait_for(lambda: len(client.queries) == 2 and not parent.awaiting_auto_resume), 2
             )
 
-        # 回収済みの同じ終了応答は、新しい継続対象に戻さない。
         if duplicate:
             wait_output_tracking.consume_agents_server_tool_result(
                 parent, "kill", {"session_id": "first-child"}, {"status": "completed"}

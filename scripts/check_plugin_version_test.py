@@ -1,5 +1,3 @@
-"""配布プラグインの版数据置き検査を、一時Gitリポジトリと公開CLIの起動で確かめる。"""
-
 import json
 import os
 import subprocess
@@ -28,7 +26,6 @@ def _set_version(checkout: Path, plugin: str, version: str) -> None:
 
 
 def _repository(tmp_path: Path) -> tuple[Path, str]:
-    """公開済みのdevelopを持つoriginと、upstreamを設定したcloneを作り、cloneと公開済みcommitを返す。"""
     origin = tmp_path / "origin"
     origin.mkdir()
     _git(origin, "init", "--initial-branch=develop")
@@ -82,7 +79,6 @@ def _commit(checkout: Path) -> str:
     ],
 )
 def test_held_version_with_distributed_change_fails_in_ci(tmp_path: Path, path: str, text: str, plugin: str) -> None:
-    """本体・コメント・文書の差分を版数据置きでpushすると、CIの比較で終了1と更新の案内を返す。"""
     checkout, published = _repository(tmp_path)
     _write(checkout / path, text)
     current = _commit(checkout)
@@ -130,7 +126,6 @@ def test_local_check_compares_upstream_tip_with_worktree(tmp_path: Path) -> None
     ],
 )
 def test_unresolvable_base_is_not_success(tmp_path: Path, base_sha: str, upstream: bool, message: str) -> None:
-    """比較基点を確定できない場合は成功扱いにせず、終了2と次の操作を返す。"""
     checkout, _published = _repository(tmp_path)
     if not upstream:
         _git(checkout, "branch", "--unset-upstream")
@@ -144,7 +139,6 @@ def test_unresolvable_base_is_not_success(tmp_path: Path, base_sha: str, upstrea
     "broken", ["source", "plugins", "version", "marketplace-json", "entry-shape", "worktree-manifest", "worktree-encoding"]
 )
 def test_broken_manifest_reports_next_action(tmp_path: Path, broken: str) -> None:
-    """定義元の不備は成功扱いにせず、終了2で直す対象と再実行を案内する。"""
     checkout, published = _repository(tmp_path)
     marketplace = checkout / ".claude-plugin/marketplace.json"
     if broken == "source":

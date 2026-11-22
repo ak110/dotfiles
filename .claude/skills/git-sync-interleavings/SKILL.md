@@ -83,14 +83,14 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
    送るcommitが無い操作が、別ホストのpushとの競合だけで失敗する（修正するかは未決定。例えば未pushが0件なら送信を省く）。
 2. 受理後の未push（68通り）: Bのcommitの`git push`がAのpushで拒否され、`git fetch`と`rebase @{u}`の後、再送の直前にCがpushする。
    再送も拒否され、Bのcommitは`y`のmainに残り、次の同期で送られる。
-   `wi/sync.py`の`commit_and_push`のdocstring（再試行は1回、再試行後の失敗は例外のまま送出）どおりの挙動である。
+   `wi/sync.py`の`commit_and_push`は再試行を1回とし、再試行後の失敗を例外のまま送出する。
 
 ## 欠陥と検証の誤りの区別
 
 反例の各行は、主体と、その主体が実行したGitのコマンドである。
 各行を実際のコードの分岐で起こりうるかを確かめ、起こらない行があれば検査の枠組み（`_git_op`の分類、`_atk_update`の流れ、前提）の誤りとして直す。
 全て起こりうれば欠陥として`agent-basics:bugfix`を起動する。
-性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（docstring、試験、commitの説明）がある場合だけにする。
+性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（試験またはcommitの説明）がある場合だけにする。
 
 ## 追従
 

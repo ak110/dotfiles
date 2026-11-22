@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""選定のレーンの段階・モデル・要約を検証する。"""
 
 import json
 import pathlib
@@ -28,7 +27,6 @@ def test_public_command_spaced_paths_lane_overlap(
     tmp_path: pathlib.Path,
     same: bool,
 ) -> None:
-    """空白入りの共有ファイルだけに双方の定義記録を要求する。"""
     repo, notes = env
     decisions = []
     for index, name in enumerate(("a.md", "b.md")):
@@ -50,7 +48,6 @@ def test_public_command_accepts_spaced_paths(
     quote: str,
     field: str,
 ) -> None:
-    """明示文字列の境界を維持し、YAMLの表記と書込区分によらず個別パスを受理する。"""
     repo, notes = env
     (repo / target).parent.mkdir(parents=True, exist_ok=True)
     (repo / target).write_text("x", encoding="utf-8")
@@ -73,7 +70,6 @@ def test_public_command_checks_spaced_path_coverage_and_overlap(
     case: str,
     expected: int,
 ) -> None:
-    """空白入りの新設・範囲・分類にも同じ実在・書込予定・過大範囲・重複条件を使う。"""
     repo, notes = env
     directory = "docs dir/"
     (repo / directory).mkdir()
@@ -91,21 +87,18 @@ def test_public_command_checks_spaced_path_coverage_and_overlap(
 
 @pytest.mark.parametrize("option", ["--merge", "--lane-map"])
 def test_merge_options_must_be_provided_together(tmp_path: pathlib.Path, option: str) -> None:
-    """統合モードの不完全な呼出は、ファイルを読む前に入力誤りとして拒否する。"""
     with pytest.raises(SystemExit) as error:
         check_selection.main([str(tmp_path / "selection.yaml"), option, str(tmp_path / "other")])
     assert error.value.code == 2
 
 
 def test_cost_updates_require_merge(tmp_path: pathlib.Path) -> None:
-    """費用更新単独の呼出を、ファイル読込前に拒否する。"""
     assert _dispatch(str(tmp_path / "selection.yaml"), "--lane-cost-updates", str(tmp_path / "updates.json")) == 2
 
 
 def test_public_check_requires_single_stage_estimate(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """同じ段階案の比較値だけを変え、欠落拒否・0の受理・成功要約を観測する。"""
     repo, notes = env
     for wi in ("a.md", "b.md"):
         _awi(notes, wi, "`src/model.py`を変える。")
@@ -138,7 +131,6 @@ def test_public_check_requires_single_stage_estimate(
 def test_public_check_rejects_invalid_single_stage_estimate(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], value: object
 ) -> None:
-    """比較値の不正型は段階の有無を問わず入力違反とする。"""
     repo, _notes = env
     path = _write_selection(tmp_path / "selection.yaml", [])
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -173,7 +165,6 @@ def test_public_check_rejects_rationale_only_overlaps(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """新旧欄名とも自由文だけでは共有を受理せず、似た名前と同じレーンは共有から外す。"""
     repo, notes = env
     (repo / "src/models").mkdir()
     for name, path in zip(("a.md", "b.md"), paths, strict=True):
@@ -241,7 +232,6 @@ def test_overlap_rejects_rationale_missing_on_either_side(
     env: tuple[pathlib.Path, pathlib.Path],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """片方の自由文だけが共通パスを持っても、構造化記録の不足を示す。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`src/model.py`を書き込む。")
@@ -264,10 +254,6 @@ def test_overlap_rejects_rationale_missing_on_either_side(
 def test_public_check_accepts_zero_candidate_selection(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """候補0件の選定結果は空の初回配分で受理する。
-
-    候補0件のprocess-wiの1回の実行はアラート監査だけを行うため、受領側が選定結果を拒否すると監査へ進めない。
-    """
     notes = tmp_path / "notes"
     (notes / "processing").mkdir(parents=True)
     path = tmp_path / "selection.yaml"
@@ -279,7 +265,6 @@ def test_public_check_accepts_zero_candidate_selection(
 def test_public_check_model_and_stage_selection_contract(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """担当別モデルと後段の先行統合条件を、公開コマンドから同じ選定で確かめる。"""
     repo, notes = env
     for name in ("a.md", "b.md"):
         _awi(notes, name, "`src/model.py`を書き込む。")
@@ -321,7 +306,6 @@ def test_public_check_model_and_stage_selection_contract(
 
 
 def _parse_summary(output: str) -> dict[str, object]:
-    """成功時の要約行を、WI総数・通常レーン数・レーンごとの値・`レーン: なし`の一覧へ読み直す。"""
     parsed: dict[str, object] = {"lanes": {}}
     lanes = typing.cast(dict[str, dict[str, object]], parsed["lanes"])
     for line in output.splitlines():
@@ -381,11 +365,6 @@ def _expected_summary(selection: dict[str, typing.Any]) -> dict[str, object]:
 def test_public_command_prints_lane_summary_on_success(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], layout: str
 ) -> None:
-    """成功時の標準出力だけから、WI総数・通常レーン数・各レーンの件数・全WI名・段階・先行レーン・秒数を読める。
-
-    旧欄名の秒数を読まない、`レーン: なし`の項目が欠ける、WI名を切り詰めるのいずれかがあると、受領側はレーン構成を
-    出力ファイルから読み直す必要が残る。期待値は入力のYAMLから求める。
-    """
     repo, notes = env
     for name in ("a.md", "b.md", "c.md"):
         _awi(notes, name, "`src/model.py`を変える。")
@@ -439,7 +418,6 @@ def test_public_command_prints_lane_summary_on_success(
 def test_public_command_prints_no_summary_on_failure(
     tmp_path: pathlib.Path, env: tuple[pathlib.Path, pathlib.Path], capsys: pytest.CaptureFixture[str], failure: str
 ) -> None:
-    """内容違反（規範指定の不足を含む）と入力不備では、終了コード1・2と次の操作を示し、標準出力へ要約を書かない。"""
     repo, notes = env
     _awi(notes, "a.md", "`src/model.py`と`AGENTS.md`を変える。")
     _write_files(repo, "AGENTS.md")
@@ -481,7 +459,6 @@ def test_write_order_does_not_imply_start_dependency(tmp_path: pathlib.Path) -> 
 def test_public_command_derives_stages_from_reordered_rows(
     env: tuple[pathlib.Path, pathlib.Path], tmp_path: pathlib.Path
 ) -> None:
-    """書込が交わる組の順を1回の保存で変え、成果依存と独立レーンは別に扱う。"""
     repo, notes = env
     targets = {"a": "src/model.py", "b": "src/model.py", "c": "src/independent.py", "d": "src/consumer.py"}
     items = []

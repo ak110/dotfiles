@@ -1,5 +1,3 @@
-"""pytools._internal.setup_media_remote のテスト。"""
-
 import base64
 import os
 import pathlib
@@ -18,7 +16,6 @@ from pytools._internal._test_helpers import ok_result as _ok
 
 
 def _expected_vbs(exe: pathlib.Path) -> str:
-    """テスト用VBS本文（本体の生成ロジックと一致する形式）。"""
     return f'CreateObject("WScript.Shell").Run """{exe}"" serve", 0, False\n'
 
 
@@ -27,7 +24,7 @@ _REAL_RESTART = setup_media_remote._restart  # pylint: disable=protected-access
 
 @pytest.fixture(name="windows_stheno")
 def _windows_stheno(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    # 配置のテストでは実際のプロセスを停止・起動しない。再起動は専用のテストで確かめる。
+
     monkeypatch.setattr(setup_media_remote, "_restart", lambda _vbs, _exe: None)
     monkeypatch.setattr(setup_media_remote.pathlib.Path, "home", lambda: tmp_path)
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData" / "Roaming"))
@@ -70,7 +67,7 @@ def test_startup_dir_missing_returns_false(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.mark.usefixtures("startup_dir")
 def test_exe_missing_skips(exe_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch):
-    # uv tool install経由のexeを削除する。フォールバックは存在しないためスキップされる。
+
     exe_path.unlink()
     calls: list[list[str]] = []
     monkeypatch.setattr(
@@ -97,7 +94,6 @@ def test_creates_shortcut_and_vbs_when_missing(
 
     assert setup_media_remote.run().changed is True
 
-    # VBSが配置され、内容は期待形式と一致する。
     assert vbs_path.is_file()
     assert vbs_path.read_text(encoding="utf-8") == _expected_vbs(exe_path)
 
@@ -163,7 +159,7 @@ def test_existing_pythonw_lnk_is_overwritten(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """旧仕様（TargetPathが`pythonw.exe`）の`.lnk`は新仕様で上書きされる。"""
-    del exe_path  # 既存exe検出のため間接参照
+    del exe_path
     lnk = startup_dir / setup_media_remote.LNK_NAME
     lnk.touch()
     calls: list[list[str]] = []
@@ -221,8 +217,6 @@ def test_non_stheno_without_existing_assets_is_noop(monkeypatch: pytest.MonkeyPa
 
 
 class _FakeProcess:
-    """`psutil.Process`の代わり。停止の呼び出しを記録する。"""
-
     def __init__(self, pid: int, exe: str | None, cmdline: list[str], killed: list[int]) -> None:
         self.pid = pid
         self._info: dict[str, object] = {"exe": exe, "cmdline": cmdline}
@@ -236,7 +230,6 @@ class _FakeProcess:
 
 
 def _patch_processes(monkeypatch: pytest.MonkeyPatch, processes: list[_FakeProcess]) -> None:
-    """列挙と、列挙したPIDからのProcess構築を、同じ偽のプロセス集合へ差し替える。"""
     by_pid = {process.pid: process for process in processes}
 
     def listed(*_args: object, **_kwargs: object) -> list[_FakeProcess]:
@@ -267,7 +260,6 @@ def test_restart_after_reinstall_and_symptomatic_restart(
     expected_kill: bool,
     expected_start: bool,
 ) -> None:
-    """再導入で停止した回は起動だけ、再導入しない回は停止して対話トークンで起動する。"""
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, stopped)
     monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, reinstall)
@@ -303,7 +295,6 @@ def test_restart_after_reinstall_and_symptomatic_restart(
 
 @pytest.mark.usefixtures("startup_dir")
 def test_restart_does_nothing_on_other_hosts(monkeypatch: pytest.MonkeyPatch) -> None:
-    """stheno以外では停止も起動もしない。"""
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setattr(setup_media_remote.host_roles.socket, "gethostname", lambda: "euryale")
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "1")
@@ -345,11 +336,6 @@ def test_interactive_restart_failure_is_not_reported_as_restored(monkeypatch: py
 def test_symptomatic_restart_selects_and_stops_current_generation(
     monkeypatch: pytest.MonkeyPatch, exe_path: pathlib.Path, current_target: bool
 ) -> None:
-    """列挙キャッシュに以前の世代の実行ファイルが残っていても、現在の属性で対象を選び、その世代を停止する。
-
-    現在のコマンドラインがmedia-remoteを指す実プロセスは停止し、
-    以前の世代の実行ファイルだけがmedia-remoteを指す実プロセスは停止しない。
-    """
     monkeypatch.setattr(setup_media_remote, "_restart", _REAL_RESTART)
     monkeypatch.setenv(setup_media_remote.STOPPED_ENV, "")
     monkeypatch.setenv(setup_media_remote.REINSTALL_ENV, "")
@@ -358,7 +344,6 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
     child_command = [sys.executable, "-c", "import time; time.sleep(60)"] + ([str(exe_path)] if current_target else [])
     with subprocess.Popen(child_command) as child:
         try:
-            # Popen直後は親の引数や空のcmdlineを取得することがあるため、対象判定の入力の公開を待つ。
             deadline = time.monotonic() + 5
             while True:
                 observed = psutil.Process(child.pid)
@@ -369,7 +354,7 @@ def test_symptomatic_restart_selects_and_stops_current_generation(
                     "child_commandと比較して、子の早期終了と実行体・引数の不一致を切り分ける。"
                 )
                 time.sleep(0.01)
-            # PIDの自然な再利用を待たず、process_iterが再利用するProcessだけを以前の世代にする。
+
             stale = psutil.Process(child.pid)
             monkeypatch.setattr(stale, "_create_time", 0.0)
             monkeypatch.setattr(stale, "_ident", (child.pid, 0.0))

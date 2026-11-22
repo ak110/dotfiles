@@ -34,7 +34,6 @@ def test_build_options_inherits_parent_settings(
     settings_kind: str,
     launch_kind: claude.LaunchKind,
 ) -> None:
-    """全起動区分で親のsettingsのenv以外の項目を保ち、SDKへ付与する全envを親のenvより優先する値としてsettingsにも書く。"""
     captured: dict[str, object] = {}
 
     class Options:
@@ -109,7 +108,6 @@ def test_build_options_keeps_every_launch_out_of_bypass_modes(monkeypatch: pytes
     """
     captured = _capture_options(monkeypatch)
 
-    # 受理しない値を意図的に渡すテストのため、静的な型判定の対象から外す。
     claude._build_options("/tmp", "model", "medium", launch_kind="delegate")  # pylint: disable=protected-access
 
     assert captured["permission_mode"] == "auto"
@@ -138,7 +136,6 @@ def test_build_options_loads_user_hooks_for_every_launch(
 
 
 def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """診断ログの保存先を委譲先CLIの引数として渡す。"""
     captured = _capture_options(monkeypatch)
     debug_file = tmp_path / "delegate.log"
 
@@ -149,7 +146,6 @@ def test_build_options_passes_debug_file_to_cli(monkeypatch: pytest.MonkeyPatch,
 
 @pytest.mark.parametrize("cli_path", ["/opt/claude/bin/claude", None])
 def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, cli_path: str | None) -> None:
-    """PATHで見つかったCLIだけをSDKへ渡す。"""
     captured = _capture_options(monkeypatch)
     monkeypatch.setattr(claude.shutil, "which", lambda _name, **_kwargs: cli_path)
 
@@ -160,7 +156,6 @@ def test_build_options_resolves_cli_from_path(monkeypatch: pytest.MonkeyPatch, c
 
 
 def test_build_options_omits_debug_file_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """保存先を指定しない起動では診断ログの引数を渡さない。"""
     captured = _capture_options(monkeypatch)
 
     claude._build_options("/tmp", "model", "medium")  # pylint: disable=protected-access
@@ -299,7 +294,6 @@ async def test_sdk_start_and_resume_deliver_executable_cli_without_old_path(
 @pytest.mark.parametrize("session_id", [None, "saved-session"])
 @pytest.mark.usefixtures("agents_server_isolation")
 def test_explore_options_keep_search_tools_and_mcp_on_resume(tmp_path: pathlib.Path, session_id: str | None) -> None:
-    """新規・再接続の両方でコマンド検索とpyfltrへ到達し、診断ログの指定を保つ。"""
     options = claude._build_options(str(tmp_path), "model", "high", session_id, "explore", debug_file=tmp_path / "debug.log")
     assert options.tools == {"type": "preset", "preset": "claude_code"}
     assert set(options.allowed_tools) == {"Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__pyfltr__*"}

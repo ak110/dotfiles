@@ -1,19 +1,3 @@
-"""セッション詳細の推定費用を、記録の家族ごとに保持して再利用する。
-
-子孫の多い記録の推定費用は、家族の全記録の全行を読み直して求めるため、数秒から十数秒かかる。
-家族の記録が変わらない間は前回の結果を返し、serveの再起動後も使えるよう状態ディレクトリへ保存する。
-家族が増えるのは、起点か家族の記録への追記（委譲の起動行、サブエージェントの起動）を伴うため、
-保存した家族の各記録とサブエージェントの置き場所の更新時刻とサイズが一致する間は、同じ家族と同じ結果になる。
-更新時刻の精度が1秒のファイルシステムでは同じ秒の同じサイズの書き換えを区別できないため、
-算出を始めた時点が全記録の更新時刻より2秒以上後の結果だけを保持する（`RecordSummaryIndex`と同じ条件）。
-
-家族の記録が変わった場合は、記録ごとの縮約記録（`session_cost_slim`）から求め、変わった記録の追記分だけを解析する。
-縮約記録が無い記録の最初の解析は、家族76件（88記録・294MB）で全行のJSON解析だけに負荷下で1.7秒かかり、
-要求を受けてから解析する方式では1秒以内に返せない。このためserveは一覧の記録の家族を背景で先に算出し、
-縮約記録と推定費用を作っておく（`FamilyCostWarmer`）。解析はCPUを長く占有するため、優先度を下げた別プロセス
-（`session_cost_worker`）で行い、serveの要求処理とGILを奪い合わない。
-"""
-
 from __future__ import annotations
 
 import collections
@@ -88,7 +72,6 @@ class FamilyCostCache:
         except FileNotFoundError:
             return
         except ValueError as error:
-            # 壊れた保存結果は次の保存が置き換えるため、運用者の対処を要しない。
             logger.info("推定費用の保存結果が壊れているため、算出し直して次の保存で置き換えます: %s: %s", path, error)
             return
         except OSError as error:
@@ -108,7 +91,6 @@ class FamilyCostCache:
                     self._families[key] = value
 
     def get(self, root: pathlib.Path) -> dict[str, typing.Any] | None:
-        """家族の記録が保存時から変わっていなければ、保存した推定費用を返す。"""
         key = str(root)
         with self._lock:
             entry = self._families.get(key)
@@ -127,10 +109,6 @@ class FamilyCostCache:
         *,
         save: bool = True,
     ) -> None:
-        """算出開始時刻が全記録の更新時刻より十分後なら、家族の状態とともに保持する。
-
-        `save`が偽なら保存しない。背景の算出は多数の家族を続けて保持するため、`flush`でまとめて保存する。
-        """
         stamps = family_stamps(members)
         if any(mtime is not None and started_ns - mtime < _TRUSTED_AGE_NS for _, mtime, _ in stamps):
             return
@@ -144,7 +122,6 @@ class FamilyCostCache:
             self.flush()
 
     def flush(self) -> None:
-        """保持の変更があれば保存する。"""
         with self._lock:
             if not self._dirty:
                 return
@@ -167,18 +144,10 @@ class FamilyCostCache:
 
 
 def now_ns() -> int:
-    """算出開始時刻を返す。"""
     return time.time_ns()
 
 
 class FamilyCostWarmer:
-    """一覧の記録の家族の推定費用を、画面で開かれる前に背景で算出して`FamilyCostCache`へ保持する。
-
-    算出は1件ずつ別プロセス（`session_cost_worker`）へ渡す。`request`は算出する記録の並びを置き換え、
-    保持済みで家族の記録が変わっていない記録は算出しない。補助機能のため、別プロセスを起動できない場合と異常終了した場合は
-    警告して背景の算出を止め、画面の要求は従来どおり要求の中で算出する。次の`request`で再び起動する。
-    """
-
     def __init__(
         self,
         cache: FamilyCostCache,
@@ -204,7 +173,6 @@ class FamilyCostWarmer:
         self._worker_failure: _process_tree.ReclaimError | None = None
 
     def request(self, targets: typing.Sequence[tuple[str, str]]) -> None:
-        """算出する記録（engine, パス）を優先順に受け取り、未処理の並びを置き換える。"""
         with self._condition:
             if self._stopping:
                 return
@@ -215,7 +183,6 @@ class FamilyCostWarmer:
             self._condition.notify()
 
     def stop(self) -> None:
-        """背景の算出を止め、別プロセスの終了を確認してから保持の変更を保存する。"""
         with self._condition:
             self._stopping = True
             self._pending = []
@@ -234,7 +201,6 @@ class FamilyCostWarmer:
             thread.join()
         self._cache.flush()
         if self._worker_failure is not None:
-            # 呼出元が停止完了として所有欄を消さないよう、未確認の同じ回収対象を渡す。
             raise self._worker_failure
 
     def _run(self) -> None:
@@ -243,7 +209,6 @@ class FamilyCostWarmer:
             with self._condition:
                 idle = not self._pending and not self._stopping
             if idle or time.monotonic() - flushed_at >= _FLUSH_INTERVAL_SEC:
-                # 保存は数MBの書き込みになるため、`request`を待たせないよう条件変数の外で行う。
                 self._cache.flush()
                 flushed_at = time.monotonic()
             with self._condition:
@@ -267,7 +232,6 @@ class FamilyCostWarmer:
                 )
 
     def _compute(self, engine: str, raw_path: str) -> dict[str, typing.Any] | None:
-        """別プロセスへ1件を渡して結果を返す。別プロセスが異常終了した場合は背景の算出を止めて`None`を返す。"""
         with self._condition:
             if self._stopping:
                 return None
@@ -304,7 +268,6 @@ class FamilyCostWarmer:
             process.stdin.flush()
             line = process.stdout.readline()
         except OSError, ValueError:
-            # `stop`が別プロセスを終了させてパイプを閉じた場合も、異常終了と同じく結果なしとして扱う。
             line = ""
         if line:
             result = json.loads(line)
@@ -344,11 +307,6 @@ _WORKER_START_CHECK = (
 
 @contextlib.contextmanager
 def _start_worker() -> typing.Generator[subprocess.Popen[str]]:
-    """推定費用を算出する別プロセスを起動する。標準エラーはserveの出力へ引き継ぎ、例外を診断できるようにする。
-
-    serveは公開launcherが`agent_toolkit`の配置元を`sys.path`へ加えて起動し、子プロセスへは引き継がれないため、
-    同じ配置元を`PYTHONPATH`の先頭へ渡す（`wi.submit`の独立投入の起動と同じ方式）。
-    """
     env = dict(os.environ)
     source = str(pathlib.Path(__file__).resolve().parents[3])
     env["PYTHONPATH"] = source + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
@@ -376,7 +334,6 @@ def _start_worker() -> typing.Generator[subprocess.Popen[str]]:
 
 
 def _stop_worker(cleanup: contextlib.ExitStack) -> _process_tree.ReclaimError | None:
-    """別プロセスを終了させて回収する。算出の途中でも結果は捨ててよいため、完了を待たずに終了させる。"""
     try:
         cleanup.close()
     except _process_tree.ReclaimError as error:

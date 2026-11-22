@@ -1,5 +1,3 @@
-"""記録からの証拠イベント抽出（session_evidence_extract_runtimes）。"""
-
 from __future__ import annotations
 
 import json
@@ -41,7 +39,6 @@ def _agy_entry_events(entry: dict[str, Any]) -> list[dict[str, Any]]:
     if event_type == "step_update":
         step_type = body.get("step_type")
         if step_type == "error_message":
-            # agyはエラー報告のステップへ本文を持たせないため、ステップの位置だけを示す。
             event = _event(
                 "failed-tool", f"agyの委譲先がエラーを報告した（step_index: {body.get('step_index')}）", tool="error_message"
             )
@@ -127,6 +124,5 @@ def _opencode_records(records: list[_Record]) -> list[_Record]:
 
 
 def _extract_opencode(entries: list[dict[str, Any]], lines: list[int]) -> list[dict[str, Any]]:
-    """元の行番号を保持して、OpenCodeへ既存の証拠抽出を適用する。"""
     records = _opencode_records([_Record(line, "", entry) for line, entry in zip(lines, entries, strict=True)])
     return _extract_claude([record.entry for record in records], [record.line for record in records])

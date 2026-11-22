@@ -1,5 +1,3 @@
-"""自己完結したWI要求を永続受付し、親から独立した監督へ渡す。"""
-
 from __future__ import annotations
 
 import argparse
@@ -68,15 +66,11 @@ class _Input(pydantic.BaseModel):
 
 
 class Origin(_Input):
-    """投入元が確定した由来と逐語原文。"""
-
     kind: Literal["human", "agent"]
     text: Text
 
 
 class Request(_Input):
-    """親のファイルへ依存しない永続受付入力。"""
-
     request_id: Identifier
     target_repo: Text
     source: Text
@@ -96,8 +90,6 @@ class Request(_Input):
 
 
 class Disposition(_Input):
-    """要求ごとの処置。未完了のfilesには確認UWIを指定できる。"""
-
     request_id: Identifier
     status: Literal["registered", "reused", "unnecessary", "incomplete"]
     files: list[Text]
@@ -105,15 +97,11 @@ class Disposition(_Input):
 
 
 class Result(_Input):
-    """投入セッションから受け取る実行と受付集合の対応。"""
-
     run_id: RunId
     results: Annotated[list[Disposition], pydantic.Field(min_length=1)]
 
 
 class Owner(_Input):
-    """監督のPID再利用を区別する世代。"""
-
     pid: Annotated[int, pydantic.Field(gt=0)]
     create_time: Annotated[float, pydantic.Field(gt=0)]
 
@@ -128,7 +116,6 @@ class Ticket(_Input):
 
 
 def validate_ticket(value: object) -> Ticket:
-    """同じホストの永続入力と所有移管を照会し、成立済み受付だけを受理する。"""
     ticket = Ticket.model_validate(value)
     receipt = _read(_receipt_path(ticket.request_id))
     request = Request.model_validate(receipt["request"])
@@ -247,7 +234,6 @@ def _launch_worker(target: str) -> subprocess.Popen[bytes]:
     if sys.platform == "win32":
         creationflags = windows_job.HIDDEN_DETACHED_CREATIONFLAGS
     with (cwd / "supervisor.stdout.log").open("ab") as stdout, (cwd / "supervisor.stderr.log").open("ab") as stderr:
-        # 時間上限なし: 投入作業を監督する常駐の起動であり、作業の上限は監督自身が持つ。
         return subprocess.Popen(  # noqa: SIM115 -- 所有権は永続受付と独立監督へ移す
             diagnostic_process.command(
                 [str(executable), "-m", "agent_toolkit._agents_server.plugin_root", "--wi-submit-worker", target]
@@ -263,7 +249,6 @@ def _launch_worker(target: str) -> subprocess.Popen[bytes]:
 
 
 def accept_many(requests: list[Request]) -> list[dict[str, Any]]:
-    """確定済みの同一対象の要求をまとめて保存し、全件の所有移管を確認する。"""
     if not requests:
         raise ValueError("同時受付には1件以上の要求が必要です")
     if len({request.request_id for request in requests}) != len(requests):
@@ -306,7 +291,6 @@ def accept_many(requests: list[Request]) -> list[dict[str, Any]]:
         deadline = time.monotonic() + HANDOFF_SECONDS
         while time.monotonic() < deadline:
             if all(_read(path).get("accepted_at") is not None for path in paths):
-                # 子が既に完了した場合も、保存した所有移管の事実は維持する。
                 return [show(request.request_id) for request in requests]
             code = child.poll()
             if code is not None:
@@ -340,7 +324,7 @@ def accept_many(requests: list[Request]) -> list[dict[str, Any]]:
                 for path, receipt in unaccepted:
                     receipt["handoff_error"], receipt["run_id"] = str(error), run_id
                     _write(path, receipt)
-        # 起動済みならその世代を止め、後のhookで同じ受付を再観測する。
+
         if child is not None and child.poll() is None:
             process_tree.log_residual(process_tree.stop_process_tree(child), context="wi submit handoff")
             child.wait(timeout=10)
@@ -348,12 +332,10 @@ def accept_many(requests: list[Request]) -> list[dict[str, Any]]:
 
 
 def accept(request: Request) -> dict[str, Any]:
-    """単一入力の受付票・照会結果を返す。"""
     return accept_many([request])[0]
 
 
 def show(identifier: str) -> dict[str, Any]:
-    """受付票と、同じ実行の結果・ログ・未報告の所在を返す。"""
     receipt = _read(_receipt_path(identifier))
     run = _read(_run_path(receipt["run_id"])) if receipt.get("run_id") else None
     ticket = None
@@ -400,7 +382,6 @@ def show(identifier: str) -> dict[str, Any]:
 
 
 def resume(identifier: str) -> dict[str, Any]:
-    """同じ受付・実行の未完了工程を、実行済みと未実行を区別して再移管する。"""
     receipt = _read(_receipt_path(identifier))
     if receipt["run_id"] is None:
         return accept(Request.model_validate(receipt["request"]))
@@ -461,7 +442,6 @@ def resume(identifier: str) -> dict[str, Any]:
 
 
 def finish(result: Result) -> None:
-    """起動元run ID・受付集合と実在WIを照会し、処置だけを保存する。"""
     if os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID") != result.run_id:
         raise ValueError("finishは対応するrun-skill実行から行う")
     path = _run_path(result.run_id)
@@ -515,7 +495,7 @@ def _sync_report(run: dict[str, Any], path: pathlib.Path) -> None:
     """保存済み報告を先に照会し、同期不能時は同じ報告の同期だけを再開する。"""
     notes = private_notes.default_private_notes()
     previous_run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
-    # 自動取得される予約メタデータを、専用監督が所有する同じ実行へ結び付ける。
+
     os.environ["AGENT_TOOLKIT_RUN_SKILL_ID"] = run["run_id"]
     try:
         if not add.has_synced_run_report(notes, run_id=run["run_id"], scope=SKILL):
@@ -762,7 +742,6 @@ def _register_runtime_use() -> None:
 
 
 def worker(target: str) -> int:
-    """対象の受付をまとめて実行し、受付元が終了しても保存・報告まで所有する。"""
     if re.fullmatch(r"[0-9a-f]{64}", target) is None:
         raise ValueError("監督の対象識別子が不正")
     _register_runtime_use()
@@ -844,7 +823,6 @@ def worker(target: str) -> int:
 
 
 def reobserve() -> None:
-    """既存SessionStart/SessionEndから未完了・未報告と監督消失を再観測する。"""
     if os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID"):
         return
     root = state_paths.state_dir() / "wi-submit"
@@ -865,7 +843,7 @@ def reobserve() -> None:
             if run["status"] == "completed" and run["report_synced"]:
                 if time.time() - run["updated_at"] > run_skill.LOG_RETENTION_SECONDS:
                     path.unlink()
-                    # 同じrunの受付を全て回収した後にログも回収する。
+
                     if not any(_read(p).get("run_id") == run["run_id"] for p in (root / "requests").glob("*.json")):
                         shutil.rmtree(run_path.parent)
                     target = _target(receipt["request"])
@@ -893,7 +871,6 @@ def reobserve() -> None:
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """公開CLIの信頼境界でJSONと識別子を検証する。"""
     value: dict[str, Any] | list[dict[str, Any]]
     try:
         if args.finish:

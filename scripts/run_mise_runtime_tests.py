@@ -23,7 +23,6 @@ from pytools._internal.common import format_cli_error
 
 
 def main(argv: collections.abc.Sequence[str] | None = None) -> int:
-    """shimの所在とruntimeを照合し、引数を保持してpytestへ渡す。"""
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8", errors="replace")

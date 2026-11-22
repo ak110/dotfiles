@@ -15,8 +15,6 @@ from agent_toolkit._common.next_action import ActionableError
 
 
 class PromptRequest(pydantic.BaseModel):
-    """生成だけを行う要求。history_fileは既存記録のJSONへの参照。"""
-
     model_config = pydantic.ConfigDict(extra="forbid", strict=True)
     kind: Literal["initial", "continuation"]
     subagent_md_path: str | None = None
@@ -28,7 +26,6 @@ class PromptRequest(pydantic.BaseModel):
 
 
 def generate(request: PromptRequest) -> dict[str, str]:
-    """サーバーと同じ検査を通した本文を返す。委譲の起動・配送は行わない。"""
     if request.kind == "initial":
         if not request.subagent_md_path or any((request.session_id, request.history_file, request.instruction, request.prompt)):
             raise ValueError("初回はsubagent_md_pathとextra_paramsだけを指定する")
@@ -67,7 +64,6 @@ def generate(request: PromptRequest) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """要求JSONの絶対パスから生成結果JSONを返す。"""
     parser = argparse.ArgumentParser(
         description=(
             (__doc__ or "")

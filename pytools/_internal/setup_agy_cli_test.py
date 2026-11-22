@@ -1,5 +1,3 @@
-"""pytools._internal.setup_agy_cliのテスト。"""
-
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -98,7 +96,6 @@ def test_run_installs_with_powershell_file_on_windows(monkeypatch, tmp_path: Pat
 def test_run_warns_instead_of_raising_when_the_installer_is_unreachable(
     monkeypatch, tmp_path: Path, caplog: pytest.LogCaptureFixture, status: int
 ) -> None:
-    """バイナリの取得先へ到達できない環境でも例外を送出せず、警告1行の記録だけで`False`を返す。"""
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(setup_agy_cli.sys, "platform", "linux")
 

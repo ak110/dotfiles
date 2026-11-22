@@ -31,7 +31,6 @@ def _publish_launch(session_id: str, whole: pathlib.Path, handoff: pathlib.Path 
 def test_each_user_prompt_delivers_contract_metadata(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, codex: bool
 ) -> None:
-    """両ホストの実入力へ所在と更新状況を届け、本文は配送しない。"""
     path = tmp_path / "work-contract.md"
     path.write_text("目的: A全体の完了\n要件: Bを保持\n", encoding="utf-8")
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
@@ -89,7 +88,6 @@ def test_compaction_delivers_the_contract_body(
     ),
 )
 def test_missing_contract_public_hook_flow(tmp_path, monkeypatch, capsys, initial_prompt):
-    """初回、自動goal、追加入力、圧縮後の最初の操作だけで作成条件を届ける。"""
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
     monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     path = tmp_path / "work-contract.md"

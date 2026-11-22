@@ -1,5 +1,3 @@
-"""agent-toolkit直下の実行スクリプト名が公開配置の接頭辞規約に従うことを検証する。"""
-
 from __future__ import annotations
 
 import ast
@@ -9,7 +7,6 @@ _EXEMPT_ENTRIES: frozenset[str] = frozenset()
 
 
 def _has_main_guard(path: pathlib.Path) -> bool:
-    """モジュールが`__main__`ガードを持つかを返す。"""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     return any(
         isinstance(node, ast.If)
@@ -22,7 +19,6 @@ def _has_main_guard(path: pathlib.Path) -> bool:
 
 
 def _imported_module_names(paths: list[pathlib.Path]) -> set[str]:
-    """対象スクリプト群がimportするモジュール名を返す。"""
     imported: set[str] = set()
     for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -35,7 +31,6 @@ def _imported_module_names(paths: list[pathlib.Path]) -> set[str]:
 
 
 def _standalone_private_prefixed_scripts(paths: list[pathlib.Path]) -> list[str]:
-    """対応テスト以外から読み込まれない接頭辞付きの実行ファイルを返す。"""
     imports_by_path = {path: _imported_module_names([path]) for path in paths}
     return [
         path.name
@@ -51,7 +46,6 @@ def _standalone_private_prefixed_scripts(paths: list[pathlib.Path]) -> list[str]
 
 
 def test_standalone_scripts_do_not_use_private_prefix() -> None:
-    """単独実行される非テストスクリプトには非公開接頭辞を許さない。"""
     scripts_dir = pathlib.Path(__file__).resolve().parent
     paths = sorted(scripts_dir.glob("*.py"))
 

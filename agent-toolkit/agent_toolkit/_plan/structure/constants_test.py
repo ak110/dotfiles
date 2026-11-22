@@ -1,5 +1,3 @@
-"""計画形式の共通解析を検証する。"""
-
 import pathlib
 
 import pytest
@@ -44,20 +42,17 @@ def test_plan_human_review_path_is_absolute(path: str, expected: bool) -> None:
 
 
 def test_canonical_plan_passes_structure_check() -> None:
-    """通常変更とバグ対応の正規形はいずれも計画の構造に関する基準を満たす。"""
     assert not plan_sections.check_plan_structure(_VALID_CONTENT)
     assert not plan_sections.check_plan_structure(_BUG_CONTENT)
 
 
 def test_human_readable_history_requires_canonical_user_heading() -> None:
-    """新規書式の直接入力は連番のユーザー発言見出しと空でない逐語本文を持つ。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_EVENT_HEADING, "### ユーザーからの確認", 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert any(f"`### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}1`見出し" in error for error in errors), errors
 
 
 def test_human_readable_history_accepts_sequential_user_events() -> None:
-    """連番のユーザー発言見出しを複数置いた変更履歴を受理する。"""
     second = f"### {_plan_format.PLAN_HISTORY_USER_EVENT_PREFIX}2\n\n```text\n追加の指示。\n```\n\n"
     content = _HUMAN_MAIN_CONTENT.replace(
         f"{_plan_fixture.HISTORY_REVIEW_HEADING}\n", f"{second}{_plan_fixture.HISTORY_REVIEW_HEADING}\n", 1
@@ -67,7 +62,6 @@ def test_human_readable_history_accepts_sequential_user_events() -> None:
 
 @pytest.mark.parametrize("decision", [value for value in plan_constants.PLAN_ACTION_DECISIONS if value != "採用"])
 def test_human_readable_review_origin_rejects_missing_non_adopted_reason(tmp_path: pathlib.Path, decision: str) -> None:
-    """計画レビュー由来の採用以外はTSV参照だけの根拠を拒否する。"""
     review_path = tmp_path / "review.tsv"
     review_path.write_text("2\tplan-review\t指摘\n", encoding="utf-8")
     content = _HUMAN_MAIN_CONTENT.replace(
@@ -80,7 +74,6 @@ def test_human_readable_review_origin_rejects_missing_non_adopted_reason(tmp_pat
 
 
 def test_agent_wi_non_adopted_action_requires_reason() -> None:
-    """エージェント由来のWIの採用以外は自足した根拠を必要とする。"""
     row = f"| 入力の境界を追加確認する | エージェント由来のWI ({_plan_fixture.WI_FILES[0][0]}) | 部分採用 | - |"
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.WI_ACTION_ROW, row, 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
@@ -88,14 +81,12 @@ def test_agent_wi_non_adopted_action_requires_reason() -> None:
 
 
 def test_human_readable_action_rejects_wi_missing_from_metadata() -> None:
-    """`関連WI`から由来となるWIファイルを特定できる。"""
     content = _HUMAN_MAIN_CONTENT.replace("(20260817-223603-001.md)", "(20260817-223603-999.md)", 1)
     errors = plan_sections.check_plan_main_structure(content)[1]
     assert any("WI由来が`関連WI`に無い" in error for error in errors), errors
 
 
 def test_human_readable_main_accepts_legacy_wi_names() -> None:
-    """改名前の項目名と`由来`欄を持つ計画を読み取る場合は受理する。"""
     content = _plan_fixture.legacy_wi_names(_HUMAN_MAIN_CONTENT)
     work_type, errors = plan_sections.check_plan_main_structure(content)
     assert work_type == "通常変更"
@@ -110,7 +101,6 @@ def test_human_readable_main_accepts_legacy_wi_names() -> None:
 
 
 def test_human_readable_main_accepts_external_identifiers_and_verbatim_ids() -> None:
-    """通常の外部識別子とユーザー発言の逐語文は合成IDとして誤拒否しない。"""
     content = _HUMAN_MAIN_CONTENT.replace(_plan_fixture.USER_ACTION_SUBJECT, "MCP-toolとTLSのP-256を維持する", 1)
     content = content.replace(_plan_fixture.USER_EVENT_TEXT, "P-001という入力を変更しない。", 1)
     assert not plan_sections.check_plan_main_structure(content)[1]
@@ -121,7 +111,6 @@ def test_human_readable_main_accepts_external_identifiers_and_verbatim_ids() -> 
     ["P-001", "P-100", "P-999", "P-1000", "U-001", "R-P-001-001", "H-001", "C-001", "R1-plan"],
 )
 def test_human_readable_main_rejects_internal_identifiers_before_japanese(internal_id: str) -> None:
-    """日本語の助詞が続く場合も既存の合成IDを検出する。"""
     content = _HUMAN_MAIN_CONTENT.replace(
         _plan_fixture.USER_ACTION_SUBJECT,
         f"{internal_id}を実装する",
@@ -140,13 +129,11 @@ def test_human_readable_main_rejects_internal_identifiers_before_japanese(intern
     ],
 )
 def test_history_origin_and_user_material_reference_are_checked(mutation: tuple[str, str], message: str) -> None:
-    """変更履歴の起点固定値とユーザー発言の素材ID参照が基準を満たすか確かめる。"""
     errors = plan_sections.check_plan_structure(_VALID_CONTENT.replace(*mutation, 1))
     assert any(message in error for error in errors), errors
 
 
 def test_legacy_bug_table_predicate_requires_valid_record() -> None:
-    """本文内に置いたバグ単位は、原因分析の記録が基準を満たす場合だけ旧配置として検出する。"""
     content = _BUG_CONTENT
     assert plan_sections.has_legacy_bug_table(content)
     invalid = content.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
@@ -220,21 +207,18 @@ def test_legacy_bug_table_predicate_requires_valid_record() -> None:
     ],
 )
 def test_structure_violations_are_rejected(mutation: tuple[str, str], message: str) -> None:
-    """固定領域の欠落、順序違反、追加H2、表違反を個別に拒否する。"""
     content = _VALID_CONTENT.replace(*mutation, 1)
     errors = plan_sections.check_plan_structure(content)
     assert any(message in error for error in errors), errors
 
 
 def test_structured_material_contract_rejects_requirement_order_and_gap() -> None:
-    """要求表のID順序と素材内連番の欠落を拒否する。"""
     content = _VALID_CONTENT.replace("R-P-002-001 | P-002 |", "R-P-002-003 | P-002 |", 1)
     _materials, errors = plan_materials.parse_plan_materials(content)
     assert any("末尾連番が001から欠番なく続かない" in error for error in errors), errors
 
 
 def test_structured_material_contract_requires_adjacent_tables() -> None:
-    """素材表と要求表の間に説明文または別表を置かない。"""
     content = _VALID_CONTENT.replace(
         "\n| 要求ID | 素材参照 |",
         "\n説明文を配置する。\n\n| 要求ID | 素材参照 |",
@@ -254,14 +238,12 @@ def test_material_id_annotation_is_rejected_near_the_invalid_line(material_id: s
 
 
 def test_bug_section_rejects_missing_record_line() -> None:
-    """本文内のバグ単位から`広がり:`の行を除いた計画を、欠けた行頭語を示して拒否する。"""
     content = _BUG_CONTENT.replace(f"{_plan_fixture.cause_record_line('広がり')}\n", "")
     errors = plan_sections.check_plan_structure(content)
     assert any("`広がり:`の行が無い" in error for error in errors), errors
 
 
 def test_bug_section_is_required_only_for_bug_work_type() -> None:
-    """バグ対応でのみバグ調査結果を要求し、通常変更では置かせない。"""
     missing = _BUG_CONTENT.replace(_BUG_SECTION, "\n")
     assert any("固定H2" in error for error in plan_sections.check_plan_structure(missing))
     extra = _VALID_CONTENT.replace("\n## 恒久化・リファクタリング内容", f"{_BUG_SECTION}\n## 恒久化・リファクタリング内容")
@@ -278,14 +260,12 @@ def test_bug_section_is_required_only_for_bug_work_type() -> None:
     ],
 )
 def test_metadata_rejects_ambiguous_placement(content: str) -> None:
-    """旧配置の候補が複数ある計画は曖昧として解析結果を返さない。"""
     metadata, errors = _plan_format.parse_plan_metadata(content)
     assert metadata is None
     assert errors
 
 
 def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
-    """異なる親の下にある同じ文言の見出しは受理する。"""
     content = "# 計画\n\n## 親A\n\n### 子\n\n## 親B\n\n### 子\n"
 
     assert not plan_markdown.check_duplicate_headings(content)
@@ -293,7 +273,6 @@ def test_duplicate_headings_accepts_same_text_under_different_parents() -> None:
 
 @pytest.mark.parametrize("track", plan_constants.PLAN_HISTORY_TRACK_VALUES)
 def test_main_history_accepts_review_table_track_values(track: str) -> None:
-    """新形式の変更履歴はレビュー指摘管理表の正規trackを受理する。"""
     content = _canonical_main_content().replace(
         _plan_fixture.HISTORY_USER_ROW,
         f"| R1-{track} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
@@ -305,7 +284,6 @@ def test_main_history_accepts_review_table_track_values(track: str) -> None:
 
 @pytest.mark.parametrize("review_id", ["C-002", "R1-planreview", "R2-planconformance"])
 def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> None:
-    """新書式のメイン側では旧形式のレビュー指摘IDを拒否する。"""
     content = _canonical_main_content().replace(
         _plan_fixture.HISTORY_USER_ROW,
         f"| {review_id} | レビュー指摘 | 主要な指摘。 | 1件を採用した。 | `## 実施内容` |",
@@ -316,35 +294,30 @@ def test_new_main_rejects_legacy_history_review_identifier(review_id: str) -> No
 
 
 def test_human_detail_structure_rejects_ascii_comma_in_unit_name() -> None:
-    """説明的な実装単位名へASCIIカンマを含めない。"""
     content = _HUMAN_DETAIL_CONTENT.replace("| 契約境界の更新 |", "| 契約境界,更新 |", 1)
     errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("実装単位名へASCIIカンマを含めない" in error for error in errors), errors
 
 
 def test_main_structure_requires_detail_metadata_field() -> None:
-    """計画ファイル（メイン）の計画メタ情報は詳細参照を末尾へ含む5項目にする。"""
     content = _VALID_MAIN_CONTENT.replace(f"- {_plan_format.PLAN_METADATA_DETAIL_FIELD}: `sample.detail.md`\n", "")
     _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any("この順序で1行ずつ置く" in error for error in errors), errors
 
 
 def test_main_structure_rejects_empty_termination_section() -> None:
-    """`## 公開工程`は空欄を拒否する（無い場合は`なし`と書く）。"""
     content = _VALID_MAIN_CONTENT.replace("## 公開工程\n\nなし\n", "## 公開工程\n\n")
     _work_type, errors = plan_sections.check_plan_main_structure(content)
     assert any(f"`## {_plan_format.PLAN_H2_TERMINATION}`は" in error for error in errors), errors
 
 
 def test_detail_structure_permanence_rejects_free_h3() -> None:
-    """detail側の恒久化領域でも固定3見出し以外のH3を拒否する。"""
     content = _VALID_DETAIL_CONTENT.replace("\n## 実装資料", "\n### 任意の補足\n\n補足する。\n\n## 実装資料")
     errors = plan_sections.check_plan_detail_structure(content, "通常変更")
     assert any("固定見出し以外のH3" in error for error in errors), errors
 
 
 def test_origin_check_needs_no_queue_repository(tmp_path: pathlib.Path) -> None:
-    """由来の構文確認はprivate-notesの実在に依存しない。"""
     absent = tmp_path / "absent"
     errors, notices, skips = _origin_check(absent)
     assert not errors, errors

@@ -1,5 +1,3 @@
-"""実モデルの系列と段の比較を検証する。"""
-
 import pytest
 
 from agent_toolkit._common import model_tiers

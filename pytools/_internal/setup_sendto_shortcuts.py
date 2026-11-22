@@ -17,10 +17,8 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen=True)
 class _Shortcut:
-    """SendTo 配置するショートカット 1 件の定義。"""
-
     lnk_name: str
-    # %USERPROFILE% からの相対パス
+
     target_relative: pathlib.PurePath
 
 
@@ -74,14 +72,12 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _sendto_dir() -> pathlib.Path:
-    """SendTo 配置先ディレクトリを返す。"""
     appdata = os.environ.get("APPDATA")
     base = pathlib.Path(appdata) if appdata else pathlib.Path.home() / "AppData" / "Roaming"
     return base / "Microsoft" / "Windows" / "SendTo"
 
 
 def _is_up_to_date(lnk: pathlib.Path, target: pathlib.Path) -> bool:
-    """既存 .lnk のターゲットが期待値と一致するか判定する。"""
     if not lnk.is_file():
         return False
     actual = _read_shortcut_target(lnk)

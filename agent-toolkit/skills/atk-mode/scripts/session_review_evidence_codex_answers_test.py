@@ -138,7 +138,6 @@ def test_codex_question_output_becomes_user_event_at_output_position(tmp_path: p
 
 
 def test_codex_question_call_ids_keep_local_question_identity(tmp_path: pathlib.Path) -> None:
-    """同じ質問IDを持つ複数callを、各call_idの質問文へ対応付ける。"""
     entries: list[dict] = []
     for call_id, question in (("call-one", "一つ目"), ("call-two", "二つ目")):
         entries.append(
@@ -221,7 +220,6 @@ def test_codex_ignores_malformed_or_unmatched_question_payloads(
     tmp_path: pathlib.Path,
     entries: list[dict],
 ) -> None:
-    """不正なJSON、未対応call、未知の質問IDから証拠を捏造しない。"""
     transcript = _write_transcript(tmp_path, entries)
 
     assert not evidence_extract.load_and_extract(str(transcript))
@@ -267,7 +265,6 @@ def test_codex_agent_message_block_array_extracts_only_final_answer(tmp_path: pa
 
 @pytest.mark.parametrize("key", ["message", "text", "content"])
 def test_codex_agent_message_keeps_string_container_compatibility(tmp_path: pathlib.Path, key: str) -> None:
-    """agent_messageの既存文字列containerを完了報告として保持する。"""
     transcript = _write_transcript(
         tmp_path,
         [

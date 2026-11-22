@@ -23,7 +23,6 @@ from pytools._internal.install_codex_plugins_test_helpers import plugin_env_fixt
 
 
 def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """daemon再起動が不要でもHook再信頼と新規SessionStartの検収を案内する。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
@@ -36,7 +35,6 @@ def test_plugin_update_keeps_hook_notice_when_daemon_is_stopped(plugin_env: Path
 
 
 def test_plugin_update_leaves_running_daemon_and_reports_restart(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """共有daemonが稼働中なら、更新は完了して明示的な再起動を案内する。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls))
@@ -57,7 +55,6 @@ def test_plugin_update_does_not_restart_stopped_daemon(
     plugin_env: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """daemonが停止中なら再起動コマンドを発行しない。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
@@ -76,7 +73,6 @@ def test_plugin_update_does_not_restart_stopped_daemon(
 def test_plugin_update_omits_trust_notice_when_hooks_are_not_registered(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """登録0件を信頼不足として案内しない。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
@@ -117,7 +113,6 @@ def test_plugin_update_omits_trust_notice_when_hooks_are_not_registered(
 def test_plugin_hook_trust_notice_filters_registered_hooks(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, hooks: list[dict[str, Any]], expected: bool
 ) -> None:
-    """対象pluginの有効な未信頼・変更済みhookが1件でもあれば正規承認を案内する。"""
     calls: list[list[str]] = []
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_command", _recording_success(calls, daemon_running=False))
@@ -137,7 +132,6 @@ def test_plugin_hook_trust_notice_filters_registered_hooks(
 def test_hook_trust_notice_for_each_install_state(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, version: str | None
 ) -> None:
-    """初回・更新・同版起動で、承認済みと変更済みの混在を同じ案内へ接続する。"""
     before = {"installed": []} if version is None else _installed_state(version=version)
     responses: list[dict[str, Any] | None] = [_local_marketplace(plugin_env), before]
     if version != "1.2.3":
@@ -196,7 +190,6 @@ def test_hook_trust_notice_for_each_install_state(
 def test_hook_trust_notice_handles_response_entries(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, result: dict[str, Any] | None, expected: bool
 ) -> None:
-    """取得不能を未承認扱いせず、登録診断と同居する対象の案内は維持する。"""
     _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_hooks_list", lambda: result)
 

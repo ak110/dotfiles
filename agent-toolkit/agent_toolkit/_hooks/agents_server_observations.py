@@ -18,8 +18,6 @@ from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
 # 委譲の観測でだけ使う依存（設定・利用枠・pydanticまで読み込む）は、通常のBashのPostToolUseで毎回読み込まない。
 lazy from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
 lazy from agent_toolkit._agents_server import state as _agents_server_state
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import session_launchers, session_registry, state_paths, task_documents
@@ -34,8 +32,6 @@ lazy from agent_toolkit._hooks.tracked_model_types import TRACKED_MODEL_TYPES as
 
 @dataclasses.dataclass(frozen=True)
 class ObservationWarning:
-    """記録できなかった項目の警告。PostToolUseが通知へ整形する。"""
-
     body: str
     fix: str
 
@@ -73,7 +69,6 @@ _AGENTS_SERVER_TOOL_NAMES = (
 _AGENTS_SERVER_DIAGNOSTIC_TOOLS = _AGENTS_SERVER_TOOL_NAMES | _AGENTS_SERVER_LIST_TOOLS
 
 
-# `show`は所有する対象と稼働中の子sessionの`cwd`回復にも使う。
 _AGENTS_SERVER_SHOW_TOOLS = frozenset(f"{namespace}show" for namespace in _AGENTS_SERVER_NAMESPACES)
 
 
@@ -95,7 +90,6 @@ _UNREGISTERED_WAIT_TARGET_FIX = (
 
 
 def _extract_agents_server_structured_response(tool_response: object) -> dict:
-    """agents_server応答のdictまたはJSON文字列を状態記録用へ正規化する。"""
     if isinstance(tool_response, dict):
         structured = tool_response.get("structuredContent")
         return structured if isinstance(structured, dict) else tool_response
@@ -140,19 +134,16 @@ def _agents_server_response_failed(response: object, *, moved_to_background: boo
 
 
 def _is_nonempty_absolute_cwd(value: object) -> bool:
-    """cwdが空白でない絶対パスであることを判定する。"""
     return isinstance(value, str) and bool(value.strip()) and pathlib.PurePath(value).is_absolute()
 
 
 def _agents_server_remote_session_id(tool_input: object, structured: dict, tool_name: str) -> str | None:
-    """操作ごとに識別子を保持するフィールドから委譲先session識別子を返す。"""
     source = structured if tool_name in _AGENTS_SERVER_START_TOOLS else tool_input
     value = source.get("session_id") if isinstance(source, dict) else None
     return value if isinstance(value, str) and value else None
 
 
 def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict, tool_name: str) -> object:
-    """通常startの入力、引き継ぎ応答、継続先の記録からcwd候補を取得する。"""
     tool_input = payload.get("tool_input")
     if tool_name in _AGENTS_SERVER_START_TOOLS:
         handoff_from = tool_input.get("handoff_from") if isinstance(tool_input, dict) else None
@@ -168,10 +159,6 @@ def _agents_server_recorded_cwd(session_id: str, payload: dict, structured: dict
 
 
 def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
-    """開始操作の入力から工程別モデル設定の種別を返す。
-
-    種別は`start`の`mode`から決める。統合前の起動ツール名で記録された呼び出しも同じmodeとして扱う。
-    """
     model_type = tool_input.get("model_type")
     if isinstance(model_type, str):
         return model_type
@@ -183,12 +170,12 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
         path = pathlib.Path(task_path)
         if not path.is_absolute():
             name = f"{task_path}{task_documents.TASK_DOCUMENT_SUFFIX}"
-            # 文書が無い役割名も、旧文書の記録のファイル名の対応へ渡す。
+
             path = task_documents.role_document_directory(launch_prompts.PLUGIN_ROOT) / name
         declaration = task_documents.read_declaration(path)
         if isinstance(declaration, task_documents.TaskDocumentDeclaration) and declaration.model_type is not None:
             return declaration.model_type
-        # 現行設定は役割文書が所有し、ファイル名の対応は旧文書の記録だけへ使う。
+
         return launch_prompts.TASK_MODEL_TYPES.get(path.name)
     if mode is None:
         return None
@@ -196,7 +183,6 @@ def _agents_server_model_type(tool_input: dict, operation: str) -> str | None:
 
 
 def _agents_server_missing_response_fields(session_id: str, payload: dict, structured: dict, tool_name: str) -> list[str]:
-    """成功した応答から状態記録に必要な欠落項目を列挙する。"""
     operation = tool_name.rsplit("__", 1)[-1]
     if operation == "stop":
         return []
@@ -230,7 +216,6 @@ def _agents_server_missing_response_fields(session_id: str, payload: dict, struc
 
 
 def _live_child_session_cwds(structured: dict) -> list[tuple[str, str]]:
-    """agents_serverの応答が返す稼働中の子sessionの識別子と`cwd`の対を取り出す。"""
     entries = structured.get("live_child_sessions")
     if not isinstance(entries, list):
         return []
@@ -246,7 +231,6 @@ def _live_child_session_cwds(structured: dict) -> list[tuple[str, str]]:
 
 
 def _record_child_session_cwds(session_id: str, structured: dict, tool_input: dict, owner_agent_id: str) -> None:
-    """起動元の永続登録と起動時主体が一致する対象だけのcwdを回復する。"""
     remote_session_id = tool_input.get("session_id")
     if not isinstance(remote_session_id, str) or structured.get("session_id") != remote_session_id:
         return
@@ -281,7 +265,6 @@ def _record_child_session_cwds(session_id: str, structured: dict, tool_input: di
 
 
 def _record_agents_server_root_alias(session_id: str, structured: dict) -> None:
-    """MCP応答が明示した所有rootを現行会話の別名索引へ記録する。"""
     if _delegated_session.owner_session_id(os.environ) is not None:
         return
     root_session_id = structured.get("root_session_id")
@@ -303,7 +286,6 @@ def _record_agents_server_session_state(
     remote_session_id: str | None = None,
     fallback_status_host_session: str | None = None,
 ) -> str | None:
-    """agents_serverの公開応答をhook側の状態へ記録する。"""
     if remote_session_id is None:
         value = structured.get("session_id")
         remote_session_id = value if isinstance(value, str) and value else None
@@ -332,7 +314,7 @@ def _record_agents_server_session_state(
             record.setdefault("launcher_agent_id", owner_agent_id)
         elif operation == "send_message":
             delivery = structured.get("delivery")
-            # steerはturn_seqを変えず、そのturnの終了を既存の観測が待つ。
+
             if delivery in {"reply_started", "reply_ambiguous"}:
                 record["pending_observation"] = True
                 record["owner_agent_id"] = owner_agent_id
@@ -358,15 +340,13 @@ def _record_agents_server_session_state(
                 and record.get("pending_observation") is True
                 and record.get("owner_agent_id") == owner_agent_id
             ):
-                # 観測と再依頼の間にStopがなくても、新作業の保存と通知解除を同じ更新で確定する。
                 resolve_notice_in_state(state, "agents_server_session_advisor", "evaluate", subject=owner_agent_id)
             sessions[remote_session_id] = record
         cwd_map = state.setdefault(_AGENTS_SERVER_SESSION_CWD_KEY, {})
         if isinstance(cwd, str) and cwd and cwd_map.get(remote_session_id) != cwd:
             cwd_map[remote_session_id] = cwd
             changed = True
-        # 応答が返した稼働中の子sessionも、識別子を記録する処理で`cwd`も記録する。
-        # 返却する識別子の集合と、追送・打ち切りの許可判定の入力の集合を一致させるためである。
+
         for child_session_id, child_cwd in _live_child_session_cwds(structured):
             if cwd_map.get(child_session_id) != child_cwd:
                 cwd_map[child_session_id] = child_cwd
@@ -376,7 +356,6 @@ def _record_agents_server_session_state(
     update_state(session_id, _mutator)
     starts_reply = operation == "send_message" and structured.get("delivery") in {"reply_started", "reply_ambiguous"}
     if operation in _AGENTS_SERVER_START_OPERATIONS or starts_reply:
-        # `atk agents wait`と同じ解決（別名索引を経たルート）で登録し、登録と読み取りの名前空間を一致させる。
         try:
             identity = shared_roots.resolve_wait_identity(os.environ, None)
             if (
@@ -419,10 +398,6 @@ def _remove_agents_server_session_record(session_id: str, remote_session_id: str
 
 
 def _log_tracked_session_end(session_id: str, structured: dict, remote_session_id: str | None = None) -> None:
-    """終了した計画実行系sessionの終了時刻をprocess-loopの観測ログへ記録する。
-
-    `model_type`は`start`応答にだけ現れるため、起動時に保持した記録から取得する。
-    """
     if structured.get("status") not in _agents_server_state.TERMINAL_STATUSES:
         return
     if remote_session_id is None:
@@ -495,7 +470,6 @@ def _record_agents_server_observation_attempt(
 
 
 def record_wait_observation_attempt(session_id: str, command: str, owner_agent_id: str) -> None:
-    """成功したBash入力内の`atk agents wait`を観測の試みとして記録する。"""
     if not any(segment.resolved and is_agents_wait_command(segment.tokens) for segment in extract_execution_segments(command)):
         return
     _clear_agents_server_pending_observation(session_id, owner_agent_id)
@@ -521,12 +495,10 @@ def observe_tool(
     # 登録と`atk agents wait`が同じルートを使えるようにする。
     _record_agents_server_root_alias(session_id, structured)
 
-    # owner_agent_idは追送で変わるため、回復時は起動時主体と呼出主体、登録簿の起動元と呼出会話がそれぞれ一致するか確認する。
     if tool_name in _AGENTS_SERVER_SHOW_TOOLS:
         _record_child_session_cwds(session_id, structured, tool_input, resolve_hook_agent_id(payload))
         return []
 
-    # listはsession状態を変更しない。応答が明示した所有rootの別名索引への記録は前段が行う。
     if tool_name in _AGENTS_SERVER_LIST_TOOLS:
         missing = _agents_server_missing_response_fields(session_id, payload, structured, tool_name)
         if not missing:
@@ -540,7 +512,6 @@ def observe_tool(
             )
         ]
 
-    # agents_server応答からsession_id→cwdを保存し、session状態を更新する。
     warnings: list[ObservationWarning] = []
     operation = tool_name.rsplit("__", 1)[-1]
     owner_agent_id = resolve_hook_agent_id(payload)
@@ -598,7 +569,6 @@ def observe_tool(
 
 
 def session_record(state: dict, remote_session_id: object) -> dict | None:
-    """観測の記録から委譲先sessionの記録を返す。記録が無ければ`None`を返す。"""
     sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
     if not isinstance(sessions, dict) or not isinstance(remote_session_id, str):
         return None
@@ -607,14 +577,12 @@ def session_record(state: dict, remote_session_id: object) -> dict | None:
 
 
 def session_cwd(state: dict, remote_session_id: str) -> str | None:
-    """観測の記録から委譲先sessionの`cwd`を返す。記録が無ければ`None`を返す。"""
     cwd_map = state.get(_AGENTS_SERVER_SESSION_CWD_KEY)
     cwd = cwd_map.get(remote_session_id) if isinstance(cwd_map, dict) else None
     return cwd if isinstance(cwd, str) and _is_nonempty_absolute_cwd(cwd) else None
 
 
 def has_pending_owned_observation(state: object, owner_agent_id: str) -> bool:
-    """呼出主体がまだ回収していないagents_server結果があれば真を返す。"""
     if not isinstance(state, dict):
         return False
     sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
@@ -629,7 +597,6 @@ def has_pending_owned_observation(state: object, owner_agent_id: str) -> bool:
 
 
 def pending_session_ids(state: dict, owner_agent_id: str) -> list[str]:
-    """呼出主体が観測すべき作業の残るsession識別子を返す。"""
     sessions = state.get(_AGENTS_SERVER_SESSION_STATE_KEY)
     if not isinstance(sessions, dict):
         return []

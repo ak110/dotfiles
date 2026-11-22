@@ -1,5 +1,3 @@
-"""WIの一覧・表示・検索・回答の引数登録。"""
-
 import datetime
 import pathlib
 from typing import Any
@@ -17,9 +15,7 @@ lazy from agent_toolkit._atk.wi import constants as _wi_constants
 
 
 def _add_mq_read_parsers(sub: Any) -> None:
-    """一覧・表示サブコマンドを登録する。"""
-    # 旧名`--json`・`--no-json`が改名後の`--jsonl`・`--no-jsonl`の省略形として受理され続けないよう、
-    # 省略したオプション名では一致と判定しない。
+
     list_ = _atk_help.add_command(sub, "list", allow_abbrev=False, **_atk_help.HELP["atk wi list"])
     _arguments.add_target_repo_arg(list_, multiple=True, allow_all=True)
     list_.add_argument(
@@ -181,7 +177,6 @@ def _add_mq_read_parsers(sub: Any) -> None:
 
 
 def _add_mq_search_and_answer_parsers(sub: Any) -> None:
-    """検索・回答・外部差分コミットサブコマンドを登録する。"""
     grep = _atk_help.add_command(sub, "grep", **_atk_help.HELP["atk wi grep"])
     grep.add_argument(
         "pattern",

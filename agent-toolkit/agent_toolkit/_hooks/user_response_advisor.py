@@ -32,8 +32,6 @@ import unicodedata
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
 from agent_toolkit._hooks.notice import _WARN_TAG
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
@@ -42,9 +40,7 @@ lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_i
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
 
-# 了承の構成規則。NFKC正規化と`casefold`の後の入力へ適用する。
-# 了承を表す語に丁寧語・終助詞が続く形を1単位とし、読点で単位を連結した入力の全体だけを了承とする。
-# 語の集合は概念の代表であり、単純な了承に当たる言い回しを受理できない場合はここへ加える。
+
 _ACKNOWLEDGEMENT_WORD = (
     r"(?:ok(?:ay|ey)?|oke|おk|おけ|おっけ|おーけ|オーケ|オッケ|オケ|りょ(?:う(?:かい)?)?|了解|了承|承知|把握|"
     r"わか(?:った|りました|り)|分か(?:った|りました|り)|はい|うん|ええ|いいよ|いいです|いいね|"
@@ -54,7 +50,7 @@ _ACKNOWLEDGEMENT_SUFFIX = r"(?:いたしました|しました|でした|です|
 _ACKNOWLEDGEMENT = re.compile(
     rf"{_ACKNOWLEDGEMENT_WORD}{_ACKNOWLEDGEMENT_SUFFIX}(?:[、,]\s*{_ACKNOWLEDGEMENT_WORD}{_ACKNOWLEDGEMENT_SUFFIX})*"
 )
-# 了承の末尾に付く記号。問いを表す`?`は含めない。
+
 _TRAILING_MARKS = frozenset("!。.・…~〜ー♪")
 _TRAILING_CATEGORIES = frozenset({"So", "Sk", "Mn", "Me", "Cf"})
 # Claude Codeの組み込みコマンドはoriginを持たない。包装は区間の切断にだけ使い、内容の判定へは引数を渡す。
@@ -65,7 +61,6 @@ _COMMAND_INPUT = re.compile(
 
 
 def _is_acknowledgement(prompt: str) -> bool:
-    """入力の全体が単純な了承だけを伝えるかを構成規則で判定する。"""
     text = unicodedata.normalize("NFKC", prompt).strip().casefold()
     end = len(text)
     while end and (
@@ -78,7 +73,6 @@ def _is_acknowledgement(prompt: str) -> bool:
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
-    """最新の人間の発話に本文が無い場合だけ、本文の出力を求める。"""
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
@@ -95,7 +89,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
     needs_response = False
     input_subject = ""
-    # 最後の可視本文より後の人間の入力が全て了承か、`…`だけの本文を出力したかを記録する。
+
     acknowledged_only = False
     ellipsis_only = False
     # 最後の人間入力以降の記録と、最後の本文が`…`だけかを、背景待機の免除判定のために保つ。
@@ -170,7 +164,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
 
 
 def _question_update(entry: dict, question_id: str | None) -> tuple[str | None, bool]:
-    """直近の未回答の質問IDと、この記録でその回答を受け取ったかを返す。"""
     message = entry.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, list) or entry.get("isApiErrorMessage"):
@@ -182,7 +175,7 @@ def _question_update(entry: dict, question_id: str | None) -> tuple[str | None, 
             case "user", {"type": "tool_result", "tool_use_id": str() as identifier} if identifier == question_id:
                 if block.get("is_error") is not True:
                     return None, True
-                # ユーザーが閉じた質問と、hookの遮断などで表示されなかった質問を区別する。
+
                 denial = entry.get("toolDenialKind")
                 if denial in ("user-rejected", "interrupted") or (
                     denial is None and entry.get("toolUseResult") == "User rejected tool use"
@@ -205,10 +198,6 @@ def _awaits_background(entries: list[dict], session_id: str, transcript_path: st
 
 
 def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
-    """最後の人間の発話の本文と、その後に続くsidechainを除いた記録の列を返す。人間の発話が無ければ`None`を返す。
-
-    Stopの判定が「今のターン」の操作と応答を数える入口である。人間の入力の判定は本モジュールの`evaluate`と同じにする。
-    """
     prompt: str | None = None
     entries: list[dict] = []
     for line in lines:
@@ -228,7 +217,6 @@ def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
 
 
 def _input_text(entry: dict) -> str | None:
-    """人間の発話とtask-notificationを識別する文字列入力を返す。"""
     if entry.get("type") == "user":
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
@@ -242,19 +230,16 @@ def _input_text(entry: dict) -> str | None:
 
 
 def _is_hook_input(prompt: str) -> bool:
-    """機械生成の境界を持つ入力を人間の発話から除く。"""
     return _message_format.starts_with_auto_element(prompt)
 
 
 def _is_human_input(entry: dict) -> bool:
-    """ホストが人間の入力として記録した要素だけを応答の契機にする。"""
     source = entry.get("attachment") if entry.get("type") == "attachment" else entry
     origin = source.get("origin") if isinstance(source, dict) else None
     return isinstance(origin, dict) and origin.get("kind") == "human"
 
 
 def _human_prompt(entry: dict, text: str) -> str | None:
-    """通常発話と組み込みコマンドを同じターン境界へ正規化し、機械入力を除く。"""
     if entry.get("isMeta") or _is_hook_input(text):
         return None
     human = _is_human_input(entry)

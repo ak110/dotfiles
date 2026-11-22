@@ -1,5 +1,3 @@
-"""launcherによるMCPの転送と、hook本体の直接起動を検証する。"""
-
 import contextlib
 import importlib.util
 import io

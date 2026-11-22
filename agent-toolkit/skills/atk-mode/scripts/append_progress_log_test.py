@@ -1,5 +1,3 @@
-"""計画の進捗ログ追記処理を検証する。"""
-
 import argparse
 import datetime
 import json
@@ -12,7 +10,6 @@ from agent_toolkit._testing import git_repository
 
 
 def _plan(heading: str = "進捗ログ", *, newline: str = "\n", final_newline: bool = True) -> str:
-    """進捗ログの固定表を持つ最小本文を返す。"""
     content = newline.join(
         [
             "# 計画",
@@ -28,7 +25,6 @@ def _plan(heading: str = "進捗ログ", *, newline: str = "\n", final_newline: 
 
 @pytest.mark.parametrize("heading", ["進捗ログ", "進捗ログ（実行時）"])
 def test_appends_local_clock_row_for_current_and_legacy_heading(tmp_path: pathlib.Path, heading: str) -> None:
-    """現行・旧見出しの固定3列表へ注入時計の1行だけを追加する。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan(heading), encoding="utf-8")
     now = datetime.datetime(2026, 9, 20, 12, 34, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
@@ -53,7 +49,6 @@ def test_preserves_crlf_and_missing_final_newline(tmp_path: pathlib.Path) -> Non
 
 
 def test_escapes_table_cells(tmp_path: pathlib.Path) -> None:
-    """改行、バックスラッシュおよびパイプを1つのGFM表セルへ収める。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan(), encoding="utf-8")
     now = datetime.datetime(2026, 9, 20, 3, 34, tzinfo=datetime.UTC)
@@ -83,7 +78,6 @@ def test_ignores_progress_heading_inside_code_fence(tmp_path: pathlib.Path) -> N
     ],
 )
 def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, content: str) -> None:
-    """見出しまたは固定表が不正なら元のバイト列を変更しない。"""
     path = tmp_path / "plan.md"
     original = content.encode()
     path.write_bytes(original)
@@ -92,7 +86,7 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
         append_progress_log.append_progress_log(path, "工程", "結果")
 
     assert path.read_bytes() == original
-    # 構造の不正は、置くべき見出しと固定表か、構造を確かめるコマンドを次の操作として示す。
+
     next_action = raised.value.next_action
     assert "`atk run-script plan-check --" in next_action or "の列）だけの固定表を置いてから再実行する" in next_action
 
@@ -101,7 +95,6 @@ def test_rejects_invalid_structure_without_changes(tmp_path: pathlib.Path, conte
 def test_public_cli_records_and_reads_commit_mapping(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """計画と引き継ぎ記録のそれぞれで、同じ公開CLIによるcommit対応の記録と取得を確かめ、既存本文を保持する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     for args in [
@@ -182,8 +175,7 @@ def test_public_cli_records_and_reads_commit_mapping(
         repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--amend", "--allow-empty", "-m", "new"
     )
     new_oid = git_repository.run_git(repo, "rev-parse", "HEAD").stdout.strip()
-    # JSON文字列そのもの、存在しないパス、JSONとして読めないファイルは、
-    # `--rewrite-map`の値の誤りとして返し、記録を変えない。
+
     malformed = tmp_path / "malformed.json"
     malformed.write_text("{", encoding="utf-8")
     saved = path.read_bytes()
@@ -259,7 +251,6 @@ def test_one_commit_records_multiple_awi(tmp_path: pathlib.Path, capsys: pytest.
 
 
 def test_cli_structure_error_reports_next_action(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """CLIは理由の行に続けて次の操作の行を書く。"""
     path = tmp_path / "plan.md"
     path.write_text("# 計画\n", encoding="utf-8")
 
@@ -298,7 +289,6 @@ def test_writer_failure_keeps_original_file(tmp_path: pathlib.Path) -> None:
 
 
 def test_cli_rejects_removed_start_head_option(tmp_path: pathlib.Path) -> None:
-    """撤去した`--start-head`を渡すと引数エラーで終わり進捗ログを保つ。"""
     path = tmp_path / "plan.md"
     path.write_text(_plan(), encoding="utf-8")
     saved = path.read_bytes()
@@ -331,7 +321,6 @@ def test_main_rejects_saved_plan_root(
 def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """旧作業パスから一意な保存先を読み、曖昧な保存先は選ばない。"""
     monkeypatch.setenv("HOME", str(tmp_path))
     notes = tmp_path / "private-notes"
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
@@ -373,7 +362,7 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
     assert append_progress_log.main([str(working), *record_args]) == 0
     saved.write_bytes(working.read_bytes())
     working.unlink()
-    # `atk plans commit`と同じく対応記録ファイルも保存先へ移し、保存済み計画と同じstemの記録を読む。
+
     attachment = working.with_name(working.stem + ".wi-commits.jsonl")
     attachment.rename(saved.with_name(attachment.name))
     assert append_progress_log.main([str(working), "--worktree", str(repo), "--awi", wi], retrieval=True) == 0
@@ -391,7 +380,6 @@ def test_get_commits_reads_unique_saved_plan_from_removed_working_path(
 
 
 def _related_plan(*wis: str) -> str:
-    """関連WIと進捗ログの固定表を持つ計画本文を返す。"""
     related = "".join(f"  - {wi}: 対応\n" for wi in wis)
     return "# 計画\n\n## 概要\n\n### 計画メタ情報\n\n- 関連WI:\n" + related + "\n" + _plan().removeprefix("# 計画\n\n")
 
@@ -405,7 +393,6 @@ def _related_plan(*wis: str) -> str:
 def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """取り込み前後のHEADで1回記録すると1レコードになり、取り込んだ全commitを短縮OIDで取得する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo, initial_branch="main")
@@ -486,7 +473,6 @@ def test_records_range_from_cherry_pick_and_fast_forward_in_one_call(
 
 
 def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """本文に旧形式のコメントを持つ計画へ追記すると、本文の記録と付属ファイルの記録を合わせて取得する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo, initial_branch="main")
@@ -530,7 +516,6 @@ def test_legacy_body_comment_and_attachment_are_combined(tmp_path: pathlib.Path,
 def test_public_progress_split_preserves_assignment_and_rejects_loss(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """旧commitを複数commitへ分けた対応表を`plan-progress`へ渡し、AWIの割当が欠けた表では何も書き込まず、全AWIを割り当てた表ではWI別に対応を継承することを確かめる。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)
@@ -580,10 +565,6 @@ def test_public_progress_split_preserves_assignment_and_rejects_loss(
 def test_public_progress_same_oid_split_adds_awi_or_rejects_outside(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool
 ) -> None:
-    """旧OIDを同じOIDへ写し旧集合に無いAWIを加えた指定は、許可集合内なら記録し、集合外なら記録を変えずに拒否する。
-
-    成功表示のまま追加したAWIが記録されない事象（実装時の対応付け漏れを公開手段で補正できない）の再現である。
-    """
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)
@@ -623,7 +604,6 @@ def test_public_progress_same_oid_split_adds_awi_or_rejects_outside(
 
 @pytest.mark.parametrize("handoff", [False, True])
 def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool) -> None:
-    """HEADを先へ進めた後、公開コマンドから各区間を別AWIへ記録し、両取得コマンドで対応を得る。"""
     assert run_script.dispatch(argparse.Namespace(script_name="plan-progress", script_args=["--help"])) == 0
     help_text = capsys.readouterr().out
     assert all(option in help_text for option in ("--commit", "--previous-head", "--awi", "--worktree"))
@@ -669,7 +649,7 @@ def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.Captu
     assert run_script.dispatch(argparse.Namespace(script_name="plan-commits", script_args=common)) == 0
     rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert {row["awi"]: row["commits"] for row in rows} == expected
-    # 取得はplan-commitsへ一本化し、plan-progressは取得の指定を受理しない。
+
     assert run_script.dispatch(argparse.Namespace(script_name="plan-progress", script_args=[*common, "--get-commits"])) == 2
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == commits[-1]
     assert len(path.with_suffix(".wi-commits.jsonl").read_text(encoding="utf-8").splitlines()) == 3
@@ -680,7 +660,6 @@ def test_record_past_ranges_per_awi(tmp_path: pathlib.Path, capsys: pytest.Captu
 def test_record_range_rejections_keep_files(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], handoff: bool, case: str
 ) -> None:
-    """各不正区間を公開コマンドで拒否し、条件・次の操作と計画・対応記録のバイト列保持を確かめる。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo, initial_branch="main")
@@ -736,7 +715,6 @@ def test_record_range_rejections_keep_files(
 def test_record_range_checks_legacy_and_rewritten_mapping(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], rewritten: bool
 ) -> None:
-    """旧本文と継承後の対応で重複を拒否し、解決できない旧OIDがあっても別区間は記録する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     git_repository.init_repository(repo)

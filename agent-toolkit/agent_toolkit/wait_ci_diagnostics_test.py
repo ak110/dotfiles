@@ -30,8 +30,6 @@ __all__ = ["_git_repository"]
 
 
 class TestSignalHandling:
-    """実プロセスへシグナルを送信し、`_install_signal_handlers`の実挙動を確認する。"""
-
     @pytest.mark.skipif(sys.platform == "win32", reason="WindowsのSIGTERMはPythonハンドラを呼び出さない")
     def test_sigterm_exits_with_interrupted_code(self, tmp_path: pathlib.Path, git_repository: tuple[pathlib.Path, str]):
         """SIGTERM受信時に`EXIT_INTERRUPTED`を返すことを実プロセスで確認する。

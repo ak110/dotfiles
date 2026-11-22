@@ -102,14 +102,12 @@ def _security_attributes(sddl: str) -> Generator[Any]:
 
 
 def create_directory(path: pathlib.Path, sddl: str) -> None:
-    """SDDLで指定したセキュリティ記述子を付けてディレクトリを作成する。"""
     _, kernel = _api()
     with _security_attributes(sddl) as attributes:
         _check(kernel.CreateDirectoryW(str(path), attributes))
 
 
 def create_file(path: pathlib.Path, sddl: str) -> None:
-    """SDDLで指定したセキュリティ記述子を付けて空のファイルを作成する。DACLを省いたSDDLでは親から継承する。"""
     _, kernel = _api()
     with _security_attributes(sddl) as attributes:
         handle = kernel.CreateFileW(str(path), _GENERIC_WRITE, 0, attributes, _CREATE_NEW, _FILE_ATTRIBUTE_NORMAL, None)
@@ -119,13 +117,11 @@ def create_file(path: pathlib.Path, sddl: str) -> None:
 
 
 def create_profile_directory(path: pathlib.Path) -> None:
-    r"""`%LOCALAPPDATA%`と同じく、SYSTEM・Administrators・ユーザーへ継承するACLのディレクトリを作成する。"""
     create_directory(path, f"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;{windows_security.user_sid()})")
 
 
 @contextlib.contextmanager
 def without_administrators() -> Generator[None]:
-    """実行中のスレッドを、Administratorsを拒否専用にした同じユーザーのtokenで偽装する。"""
     advapi, kernel = _api()
     administrators = ctypes.c_void_p()
     _check(advapi.ConvertStringSidToSidW(_ADMINISTRATORS, ctypes.byref(administrators)))
@@ -147,7 +143,6 @@ def without_administrators() -> Generator[None]:
 
 
 def readable_without_administrators(path: pathlib.Path) -> bool:
-    """同じユーザーの非昇格のプロセスがファイルを読めるかを返す。"""
     with without_administrators():
         try:
             path.read_bytes()

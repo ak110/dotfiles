@@ -1,5 +1,3 @@
-"""原因分析の記録の行頭語と書く内容が、定義元の`agent-basics:bugfix`の文書の文言と一致することを確かめる。"""
-
 import pathlib
 import re
 
@@ -16,7 +14,6 @@ def _documented_required_lines() -> list[tuple[str, str]]:
 
 
 def _documented_optional_lines() -> list[tuple[str, str]]:
-    """確認観点の資料が定める「`<行頭語>:`の行には、<書く内容>を書く。」を読む。"""
     found: list[tuple[str, str]] = []
     for name in ("recurrence.md", "prevention.md"):
         text = (_BUGFIX / "references" / name).read_text(encoding="utf-8")

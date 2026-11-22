@@ -38,7 +38,6 @@ def _overlap(left: str, right: str, judgment: str = "交わらない") -> dict[s
 
 @pytest.fixture(name="inputs")
 def fixture_inputs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-    """本文と反映先を実在させ、2レーンずつの選定を保存する。"""
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "README.md").write_text("# 共有文書\n", encoding="utf-8")
@@ -100,7 +99,6 @@ def test_public_merge_correction_and_staged_comparison(
     existing_coefficient: int,
     coefficient: int,
 ) -> None:
-    """追加の係数違いを保存前に拒否し、同じ係数の補正前の値と再確定した比較だけを合流する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     original["段階案の完了見込み秒数"] = 999
@@ -176,7 +174,6 @@ def test_public_merge_requires_processing_for_new_assignment(inputs, tmp_path, c
 
 
 def _allocation(assignments: dict[str, str], candidate_count: int = 1) -> dict[str, object]:
-    """初回集合と追加を区別する、通常上限内のテスト入力を返す。"""
     return {
         "候補WI": [*assignments, *(f"unselected-{index}.md" for index in range(candidate_count - len(assignments)))],
         "レーン割当": assignments,
@@ -191,7 +188,6 @@ def test_public_merge_accepts_new_final_lane_with_room(
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    """上限内の新規受入先を公開mergeで保存し、上限0の原本は保持する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     original["初回配分"] = _allocation({"a.md": "lane-01", "b.md": "lane-02"}, 21)
@@ -253,7 +249,6 @@ def test_new_final_lane_keeps_whole_selection_constraints(
     capsys: pytest.CaptureFixture[str],
     case: str,
 ) -> None:
-    """新規レーンでも累計上限・同じ再開計画・同一定義の並行書込を拒否して原本を保つ。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     addition = yaml.safe_load(added.read_text(encoding="utf-8"))
@@ -283,7 +278,6 @@ def test_merge_resets_reassigned_lane_state(
     tmp_path: pathlib.Path,
     reassign: bool,
 ) -> None:
-    """既存名への合流で状態を戻し、未統合同士の同定義の交差を拒否する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     for row in original["レーンの所要時間"]:
@@ -302,7 +296,7 @@ def test_merge_resets_reassigned_lane_state(
     mapping = tmp_path / "map.json"
     mapping.write_text(json.dumps({"lane-03": "lane-01", "lane-04": "lane-02"}), encoding="utf-8")
     output = tmp_path / "whole.yaml"
-    # 合流した両レーンは未統合となり、同段階で同一定義の交差を拒否する。
+
     before = existing.read_bytes()
     expected = 1 if reassign else 0
     assert (
@@ -323,7 +317,6 @@ def test_merge_preserves_initial_allocation_and_resets_only_destination(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """完了状態の合流先だけを戻し、完了した他レーンと初回の候補・割当・成分を保持する。"""
     repo, existing, added = inputs
     original = yaml.safe_load(existing.read_text(encoding="utf-8"))
     for row in original["レーンの所要時間"]:
@@ -373,7 +366,6 @@ def _merge_with_costs(
     costs: pathlib.Path,
     output: pathlib.Path,
 ) -> int:
-    """確定費用を渡す公開統合を実行し、保存対象は呼び出し側で選ぶ。"""
     return _dispatch(
         str(existing),
         "--merge",
@@ -393,7 +385,6 @@ def test_public_merge_combines_costs_and_both_definitions_once(
     inputs: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
     tmp_path: pathlib.Path,
 ) -> None:
-    """同じ公開操作で、返却前や受領時は一時ファイルへ全体を保存し、最終割当後は原本へ保存できる。一時ファイルへの保存では原本を変えない。"""
     repo, existing, added = inputs
     original = existing.read_bytes()
     mapping = tmp_path / "map.json"
@@ -451,7 +442,6 @@ def test_public_merge_failure_preserves_all_files(
     case: str,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """入力誤りと全体不整合では保存先を含む全ての原本を保持する。"""
     repo, existing, added = inputs
     value = yaml.safe_load(added.read_text(encoding="utf-8"))
     lane_map: object = {"lane-03": "lane-01", "lane-04": "lane-02"}
@@ -495,7 +485,6 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
     marker_side: str,
     new_lanes: bool,
 ) -> None:
-    """完了の書式をどちらの側に置いても合流でき、新規レーンの累計上限超過は原本を保持する。"""
     repo, existing, added = inputs
     for side, path in (("existing", existing), ("added", added)):
         if marker_side in (side, "both", "empty"):
@@ -563,7 +552,6 @@ def test_public_merge_accepts_completion_marker_and_reuses_result(
 def _merge_into_existing(
     repo: pathlib.Path, existing: pathlib.Path, added: pathlib.Path, mapping: pathlib.Path, *extra: str
 ) -> int:
-    """公開追加統合の保存先を既存入力にし、本文限定の有無も同じ操作へ渡す。"""
     return _dispatch(
         str(existing),
         "--merge",

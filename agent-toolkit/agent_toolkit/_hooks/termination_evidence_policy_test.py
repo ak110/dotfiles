@@ -17,7 +17,6 @@ pytestmark = pytest.mark.windows
 def test_omission_policy_accepts_main_root_policy_and_rejects_nested_worktree_policy(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """主作業ツリー直下の規範を所属内として受理し、入れ子worktreeの規範は拒否する。"""
     repository = tmp_path / "主 repo"
     nested = repository / ".claude/worktrees/nested"
     nested.mkdir(parents=True)

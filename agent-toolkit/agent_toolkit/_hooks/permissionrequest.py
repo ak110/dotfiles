@@ -17,26 +17,22 @@ deny規則またはask規則に一致する要求の確認は、本フックで�
 import contextlib
 import json
 import os
-
-# 関数の実行時にだけ使う依存は、使用時まで読み込まない。
 lazy import datetime
 
 lazy from agent_toolkit._common import state_paths as _state_paths
 lazy from agent_toolkit._plan import owner_records as _owner_records
 
-# 記録ファイル名と、退避先の1世代分のファイル名。
 _LOG_NAME = "permissionrequest.log"
 _ROTATED_LOG_NAME = "permissionrequest.log.1"
 
-# 追記前に退避へ切り替えるファイルサイズの下限（バイト）。
+
 _LOG_SIZE_LIMIT = 1048576
 
-# 記録するpayload由来のキー。payloadに無いキーはnullとして残す。
+
 _RECORD_KEYS = ("session_id", "cwd", "tool_name", "tool_input")
 
 
 def main(payload_text: str) -> int:
-    """エントリポイント。許可の応答を1件出力しexit code 0を返す。"""
     _record(payload_text)
     print(
         json.dumps(
@@ -62,10 +58,6 @@ def _record(payload_text: str) -> None:
 
 
 def _build_record(payload_text: str) -> dict[str, object]:
-    """payloadから記録用のレコードを組み立てる。
-
-    解釈できないpayloadでは、payload由来のキーをすべてnullとする。
-    """
     try:
         payload = json.loads(payload_text)
     except json.JSONDecodeError, ValueError:
@@ -79,10 +71,6 @@ def _build_record(payload_text: str) -> dict[str, object]:
 
 
 def _append_record(record: dict[str, object]) -> None:
-    """レコードを1行のJSONとして記録先へ追記する。
-
-    追記前に記録先が上限へ達している場合は、1世代だけの退避先へ移してから新しいファイルへ書く。
-    """
     log_path = _state_paths.state_dir() / _LOG_NAME
     log_path.parent.mkdir(parents=True, exist_ok=True)
     if log_path.exists() and log_path.stat().st_size >= _LOG_SIZE_LIMIT:

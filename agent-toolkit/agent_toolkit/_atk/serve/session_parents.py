@@ -1,5 +1,3 @@
-"""セッション一覧とリモートヘルパーへ共通の親子解決を公開する。"""
-
 from agent_toolkit._common.session_parents import (
     ParentSource,
     limit_with_ancestors,

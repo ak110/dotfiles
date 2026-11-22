@@ -37,7 +37,7 @@ SID = "claude-replaced"
 def _replacement(*, idle_after_empty: bool) -> ControlledClaudeClient:
     client = ControlledClaudeClient(SID)
     client.messages = asyncio.Queue()
-    # observe1.jsonl 29〜33行目の順序
+
     client.emit(TaskNotificationMessage("task-1", "stopped"))
     client.emit(_session_state("running"))
     client.emit(SystemMessage(SID))

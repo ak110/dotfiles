@@ -1,5 +1,3 @@
-"""SDK接続のtask寿命と制御世代の寿命を分離する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -12,8 +10,6 @@ from agent_toolkit._agents_server.session_errors import DelegateBackendError
 
 
 class SdkResource:
-    """元接続を保持し、未保存イベントを次の制御世代へ渡す。"""
-
     def __init__(self, resource: Resource) -> None:
         self.resource = resource
         self.decode_lock = asyncio.Lock()
@@ -29,7 +25,6 @@ class SdkResource:
         return self._detached
 
     def pause(self) -> None:
-        """進行中の保存を完走させ、次のdecodeだけを禁止する。"""
         self._detached = True
 
     @classmethod
@@ -64,7 +59,6 @@ class SdkResource:
                     name, arguments, result = await commands.get()
                     try:
                         if name == "shutdown":
-                            # connectのcancel scopeを退出するtaskは接続したtaskに固定する。
                             if reader is not None:
                                 reader.cancel()
                                 await asyncio.gather(reader, return_exceptions=True)
@@ -148,7 +142,6 @@ class SdkResource:
         return await self._call("_send_control_request", request=request, timeout=timeout)
 
     async def finish_message(self) -> None:
-        """適用済みの1件を保存し、pause後もACKを完走させる。"""
         async with self._finish_lock:
             if self._pending is None:
                 return
@@ -171,7 +164,6 @@ class SdkResource:
                         return
                     payload = event["payload"]
                     if "error" in payload or "end" in payload:
-                        # 終了イベントも保存確認後にACKする。consumer終了後には再びACKする主体が残らない。
                         await self.resource.runtime.save()
                         await self.resource.operation("acknowledge", sequence=event["sequence"])
                         self._sequence = event["sequence"]
@@ -190,7 +182,6 @@ class SdkResource:
                     yield message
                     await self.finish_message()
                 finally:
-                    # aclose/cancelは処理完了の証拠にならないのでACKしない。
                     async with self._finish_lock:
                         if self._pending is not None:
                             self._pending = None

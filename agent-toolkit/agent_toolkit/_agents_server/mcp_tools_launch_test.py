@@ -27,7 +27,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.mark.asyncio
 async def test_start_tools_accept_model_type_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`model_type`を渡した起動は工程別設定の代わりにその値を使い、各ツール固有の起動区分を保つ。"""
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -58,7 +57,6 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
 
 @pytest.mark.asyncio
 async def test_start_tools_use_task_settings_without_override(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """`model_type`を省略した起動は各ツールの工程別設定を使う。"""
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -79,7 +77,6 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
 async def test_role_override_warning_keeps_requested_candidate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, role: str, override: str | None
 ) -> None:
-    """役割文書の工程との差だけを警告し、個別に認可された上書きも受理する。"""
     requested = _recording_candidates(monkeypatch)
     document = launch_requests.resolve_task_document_path(role)
     async with _manager_with_fake("codex") as (manager, _):
@@ -104,7 +101,6 @@ async def test_role_override_warning_keeps_requested_candidate(
 async def test_free_prompt_direct_candidates_warn_without_rejection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """自由本文でも候補直接指定は設定を参照しない旨を公開する。"""
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -115,7 +111,6 @@ async def test_free_prompt_direct_candidates_warn_without_rejection(
 
 @pytest.mark.asyncio
 async def test_start_label_defaults(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """label省略時は凡例どおりの識別名を生成し、明示したlabelはその値を使う。"""
     _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
@@ -165,7 +160,6 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
     inputs: dict[str, Any],
     named: str,
 ) -> None:
-    """modeが必要とする入力の欠落と受理しない入力の混在を、委譲先の起動前に修正可能な診断で拒否する。"""
     manager = SimpleNamespace(
         start=AsyncMock(),
         start_explore=AsyncMock(),
@@ -192,7 +186,6 @@ async def test_start_rejects_missing_and_mixed_mode_inputs_before_creating_sessi
 async def test_start_rejects_role_only_model_types_for_freeform_modes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, model_type: str, mode: str
 ) -> None:
-    """自由本文4modeの上位工程指定を、起動前に代わりの工程とtaskを案内して拒否する。"""
     response = {"session_id": "unexpected", "status": "running", "label": "担当"}
     manager = SimpleNamespace(
         start=AsyncMock(return_value=response),
@@ -221,7 +214,6 @@ async def test_start_rejects_role_only_model_types_for_freeform_modes(
 async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candidates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, mode: tool_descriptions.StartMode
 ) -> None:
-    """自由本文は5工程とユーザー明示の候補列を受理し、指定値を起動へ渡す。"""
     requested = _recording_candidates(monkeypatch)
     models = ["review", "review_fast", "chores", "chores_fast", "write", "codex:model/high"]
     async with _manager_with_fake("codex") as (manager, _backend):
@@ -241,7 +233,6 @@ async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candida
 async def test_start_launches_repository_process_task_with_orchestrate(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """all-reposの統括がtaskで起動するリポジトリ担当は、役割文書が定めるorchestrateで起動条件の検査を通過する。"""
     manager = SimpleNamespace(
         start=AsyncMock(return_value={"session_id": "repo", "status": "running", "label": "repository-process"}),
         launcher_session_id=lambda: None,
@@ -267,7 +258,6 @@ async def test_start_launches_repository_process_task_with_orchestrate(
 async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """公開境界から各modeの`launch_kind`、省略時のmodel_type、用途およびlabelがManagerへ届く。"""
     requested: list[str] = []
 
     def candidates(model_type: str, **_kwargs: Any) -> list[tuple[str, str, str]]:

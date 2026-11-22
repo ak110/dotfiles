@@ -1,5 +1,3 @@
-"""`atk run-script agent-doc-changes`の結合テスト。"""
-
 import argparse
 import json
 import pathlib
@@ -39,7 +37,6 @@ def _repository(tmp_path: pathlib.Path) -> pathlib.Path:
 def test_lists_only_agent_documents_changed_between_revisions(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """エージェント向け文書の追加・変更・削除・改名だけを重複なしの昇順で返し、通常コードとエンドユーザー向け文書を含めない。"""
     base = _commit_all(repository, "base")
     _write(repository / "AGENTS.md", "規範\n")
     _write(repository / "agent-basics" / "skills" / "search" / "SKILL.md", "検索\n")
@@ -62,7 +59,6 @@ def test_lists_only_agent_documents_changed_between_revisions(
 
 
 def test_lists_project_subagent_definition(repository: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """プロジェクト直下のサブエージェント定義の変更を規範変更として返す。"""
     base = _commit_all(repository, "base")
     _write(repository / ".claude" / "agents" / "reviewer.md", "レビュー担当\n")
     target = _commit_all(repository, "change")
@@ -76,7 +72,6 @@ def test_lists_project_subagent_definition(repository: pathlib.Path, capsys: pyt
 def test_prints_empty_array_without_agent_document_changes(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """該当が無い場合は空配列を返す。"""
     base = _commit_all(repository, "base")
     _write(repository / "README.md", "改訂\n")
     target = _commit_all(repository, "change")
@@ -85,7 +80,6 @@ def test_prints_empty_array_without_agent_document_changes(
 
 
 def test_unknown_revision_fails_with_reason(repository: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """解決できないrevisionは標準エラーへ理由を書いて非0で終了する。"""
     base = _commit_all(repository, "base")
 
     code, out, err = _run(capsys, "--repo", str(repository), base, "no-such-revision")
@@ -121,7 +115,6 @@ def test_unknown_revision_fails_with_reason(repository: pathlib.Path, capsys: py
 def test_public_review_risk_uses_all_changed_paths(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str], path: str, risk: str
 ) -> None:
-    """人間向けMarkdownに各種の変更を混ぜ、1件の通常要素も検出する。"""
     base = _commit_all(repository, "base")
     _write(repository / "README.md", "改訂\n")
     _write(repository / path, "変更\n")
@@ -134,7 +127,6 @@ def test_public_review_risk_uses_all_changed_paths(
 def test_public_review_risk_includes_deleted_and_renamed_source(
     repository: pathlib.Path, capsys: pytest.CaptureFixture[str], rename: bool
 ) -> None:
-    """通常要素の削除と人間向けMarkdownへの改名でも旧パスを判定する。"""
     base = _commit_all(repository, "base")
     source = repository / "agent-toolkit" / "skills" / "atk-mode" / "roles" / "old.subagent.md"
     if rename:

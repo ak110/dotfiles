@@ -140,7 +140,6 @@ def test_optional_output_without_source_is_stale_and_sync_removes_it(
 
 @pytest.mark.parametrize("kind", ["欠落", "余剰", "内容差"])
 def test_check_reports_normal_output_difference_without_repairing(manifest_root: Path, kind: str) -> None:
-    """通常派生物の差を相対パスと種類で返し、検査で修復しない。"""
     subject.sync(manifest_root)
     target = manifest_root / (subject.HOOKS_TARGET if kind == "余剰" else subject.PLUGIN_TARGET)
     if kind == "欠落":

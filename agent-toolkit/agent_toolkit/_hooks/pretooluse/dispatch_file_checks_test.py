@@ -13,11 +13,6 @@ from agent_toolkit._testing.pretooluse_support import run_without_skill_notices 
 
 
 class TestMojibakeCheck:
-    """文字化け（U+FFFD）検出。
-
-    編集対象もユーザーが直接読む本文も再編集で是正できるため、いずれも警告で返す。
-    """
-
     def test_user_facing_text_with_mojibake_is_warned(self):
         result = _run({"tool_name": "ExitPlanMode", "tool_input": {"plan": "内容を確認" + chr(0xFFFD) + "してください。"}})
         assert result.returncode == 0
@@ -30,7 +25,7 @@ class TestMojibakeCheck:
         assert result.returncode == 0
         context = _additional_context(result)
         assert "U+FFFD" in context
-        # エージェント宛てメッセージの規約: XMLの開始境界と終了境界が付与されていること。
+
         assert auto_message_opening_attributes(context) == {"source": "pretooluse", "kind": "warn"}
         assert "U+FFFDを意図した文字へ置き換えて再実行" in context
         assert context.endswith("</atk-auto>")
@@ -62,7 +57,6 @@ class TestMojibakeCheck:
         assert "U+FFFD" in _additional_context(result)
 
     def test_old_string_mojibake_is_allowed(self):
-        """old_string 内の文字化けは既存修復を妨げないため通過する。"""
         result = _run(
             {
                 "tool_name": "Edit",
@@ -122,7 +116,6 @@ class TestPs1EolCheck:
         assert specific.get("permissionDecision") != "deny"
 
     def test_ps1_single_line_edit_allowed(self, tmp_path):
-        """改行を含まない 1 行の Edit は誤検出を避けて通過する。"""
         result = _run(
             {
                 "cwd": str(tmp_path),
@@ -136,11 +129,6 @@ class TestPs1EolCheck:
 
 
 class TestLockfilesCheck:
-    """lockfile / 生成物ディレクトリの直接編集警告。
-
-    手編集した内容はパッケージ管理ツールの再生成で復元できるため遮断しない。
-    """
-
     @pytest.mark.parametrize(
         "file_path",
         [
@@ -175,7 +163,6 @@ class TestLockfilesCheck:
         assert "cargo add" in context
 
     def test_normal_file_allowed(self, tmp_path):
-        """lockfile 名を部分的に含むだけのパスは通過する (例: uv.lock.bak)。"""
         result = _run({"cwd": str(tmp_path), "tool_name": "Write", "tool_input": {"file_path": "uv.lock.bak", "content": "x"}})
         assert result.returncode == 0
         specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
@@ -203,11 +190,10 @@ class TestManifestCheck:
         assert result.returncode == 0
         assert "pyproject.toml" in _additional_context(result)
         assert "uv add" in _additional_context(result)
-        # 編集警告はadditionalContextへ集約し、stderrは空のままとする。
+
         assert result.stderr == ""
 
     def test_pyproject_toml_tool_section_edit_is_silent(self):
-        """`[tool.*]`と版数だけを変える編集では通知しない。"""
         result = _run(
             {
                 "tool_name": "Edit",
@@ -239,8 +225,6 @@ class TestManifestCheck:
 
 
 class TestUserFacingTextChecks:
-    """ユーザーが直接読む質問・計画本文に文字化けがあるか確かめ、警告で返す。"""
-
     @pytest.mark.parametrize(
         ("field", "text", "denied"),
         [
@@ -256,7 +240,6 @@ class TestUserFacingTextChecks:
         ],
     )
     def test_recommended_suffix_is_excluded_only_from_label(self, field, text, denied):
-        """規範の固定推奨印をlabel末尾だけから除き、英語本文の拒否を維持する。"""
         result = _run(_user_facing_payload(field, text))
         assert result.returncode == 0
         assert not result.stderr
@@ -264,18 +247,12 @@ class TestUserFacingTextChecks:
         assert (specific.get("permissionDecision") == "deny") is denied
 
     def test_recommended_label_keeps_mojibake_warning(self):
-        """末尾の推奨印を除いてもlabelの文字化けを通知する。"""
         result = _run(_user_facing_payload("label", "日本語の�本文 (Recommended)"))
         assert result.returncode == 0
         assert "U+FFFD" in _additional_context(result)
 
     @pytest.mark.parametrize("tool_name", ["AskUserQuestion", "ExitPlanMode"])
     def test_user_facing_tools_are_never_blocked(self, tool_name: str) -> None:
-        """ユーザーへ提示する本文を入力とする判定は、そのツールの実行を遮断しない。
-
-        遮断はそのターンの入力と作業を失わせ、同じ確認の再発行を要する。
-        ユーザーが本文を読んで誤りを指摘できるため、検出は警告で返す。
-        """
         body = "日本語の�本文に가が混入し、atk wi addの契約へ触れる。"
         tool_input = (
             {"plan": body}

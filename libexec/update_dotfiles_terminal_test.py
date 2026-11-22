@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""update_dotfilesのterminalの試験。"""
 
 # pylint: disable=protected-access
 
@@ -59,7 +58,6 @@ def test_git_pull_timeout_terminates_stream_holding_descendant(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """標準ストリームを継承する孫も終了し、回収上限の内側で復帰する。"""
     started = time.monotonic()
     returncode, output, pid_path, elapsed = _run_git_pull_in_pty(
         tmp_path,

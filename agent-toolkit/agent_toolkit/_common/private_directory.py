@@ -29,7 +29,6 @@ MODE = 0o777 if os.name == "nt" else 0o700
 
 
 def make_temporary(parent: pathlib.Path | str, prefix: str) -> pathlib.Path:
-    """`parent`直下へ`prefix`で始まる一意な名前のディレクトリを作成し、絶対パスを返す。"""
     if os.name != "nt":
         return pathlib.Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
     directory = pathlib.Path(os.path.abspath(parent))
@@ -45,7 +44,6 @@ def make_temporary(parent: pathlib.Path | str, prefix: str) -> pathlib.Path:
 
 @contextlib.contextmanager
 def temporary(parent: pathlib.Path | str, prefix: str) -> Generator[pathlib.Path]:
-    """`make_temporary`で作成したディレクトリを、読取専用属性の付いた中身ごと終了時に削除する。"""
     if os.name != "nt":
         with tempfile.TemporaryDirectory(prefix=prefix, dir=parent) as name:
             yield pathlib.Path(name)
@@ -58,7 +56,7 @@ def temporary(parent: pathlib.Path | str, prefix: str) -> Generator[pathlib.Path
 
 
 def _remove_readonly(function, path: str, error: BaseException) -> None:
-    # `tempfile.TemporaryDirectory`と同じく、本体が先に削除した項目は削除済みとして扱う。
+
     if isinstance(error, FileNotFoundError):
         return
     if not isinstance(error, PermissionError):

@@ -37,7 +37,6 @@ def timestamped_entry(timestamp: str | None, text: str) -> dict:
 
 
 def local_time_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
-    """JSTの10月7日0時をまたぐ発話を持つ記録を書く。"""
     return _write_transcript(
         tmp_path,
         [
@@ -48,11 +47,6 @@ def local_time_transcript(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def read_jsonl(capsys: pytest.CaptureFixture[str], *, raw: bool = False) -> list[dict]:
-    """標準出力のJSONLを読み、既存の単一記録テストでは由来欄を除く。
-
-    エラーイベントは実在する引数やコマンドを名指す次の操作`next_action`を持つことを確かめてから、
-    本文の比較を変えないよう`raw`でない場合はその項目を除く。
-    """
     captured = capsys.readouterr()
     assert captured.err == ""
     events = [json.loads(line) for line in captured.out.splitlines()]
@@ -101,7 +95,6 @@ def agy_delegation_transcript(tmp_path: pathlib.Path, session_id: str) -> pathli
 
 
 def write_agy_log(state_home: pathlib.Path, session_id: str, events: list[dict]) -> None:
-    """agents_serverが保存する位置へagyの委譲先ログを書く。"""
     write_jsonl(state_home / "agent-toolkit" / "agents-server" / AGY_ROOT_SESSION / "logs" / f"{session_id}.jsonl", events)
 
 
@@ -129,7 +122,6 @@ def usage_record(input_tokens: int, output_tokens: int = 0) -> dict[str, int]:
 
 
 def assistant_usage_entry(timestamp: str, message_id: str, usage: dict[str, int]) -> dict:
-    """usageだけを持つassistantエントリを作成する。"""
     return {
         "type": "assistant",
         "timestamp": timestamp,
@@ -138,7 +130,6 @@ def assistant_usage_entry(timestamp: str, message_id: str, usage: dict[str, int]
 
 
 def write_subagent(directory: pathlib.Path, agent_id: str, entries: list[dict], meta: dict | None = None) -> None:
-    """`subagents/`配下へサブエージェント記録と付随metaを書き込む。"""
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{agent_id}.jsonl").write_text(
         "\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n",
@@ -205,7 +196,6 @@ def compaction_entry(timestamp: str, metadata: dict | None = None) -> dict:
 
 
 def hook_attachment(attachment: dict) -> dict:
-    """hook実行の記録をtranscriptのエントリ形式へ包む。"""
     return {"type": "attachment", "attachment": attachment}
 
 
@@ -214,7 +204,6 @@ def assistant_text(text: str) -> dict[str, object]:
 
 
 def write_jsonl(path: pathlib.Path, entries: list[dict]) -> None:
-    """任意の記録ファイルをテスト用の絶対パスへ書く。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(json.dumps(entry, ensure_ascii=False) for entry in entries) + "\n", encoding="utf-8")
 

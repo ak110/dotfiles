@@ -19,25 +19,15 @@ import platformdirs
 
 from agent_toolkit._common import file_lock as _file_lock
 
-# 作成日時の永続インデックス。ホスト・root・相対パスの3項をキーとする単一JSONへ集約する。
-# ディレクトリ名は計画ファイル閲覧機能が`atk serve`へ統合される前から蓄積した索引をそのまま使うため維持する。
-# 名前を変えると初回観測時刻が失われ、一覧の並び順が変わる。
 _CREATION_TIME_INDEX_PATH = (
     pathlib.Path(platformdirs.user_cache_dir("claude-plans-viewer", appauthor=False)) / "creation-times" / "index.json"
 )
 
 
-# 旧形式（1エントリ1ファイル）のキャッシュ名。sha256 hexdigestと`.json`から成る。
 _LEGACY_CACHE_NAME_RE = re.compile(r"^[0-9a-f]{64}\.json$")
 
 
-# 旧実装が生成した一時ファイル名。`.<sha256 hexdigest>.json.<pid>.<スレッドID>.tmp`。
 _LEGACY_TEMPORARY_NAME_RE = re.compile(r"^\.[0-9a-f]{64}\.json\.\d+\.\d+\.tmp$")
-
-
-# --------------------------------------------------------------------------------------
-# 作成日時インデックス
-# --------------------------------------------------------------------------------------
 
 
 @contextlib.contextmanager
@@ -71,17 +61,14 @@ def _enter_index_lock(stack: contextlib.ExitStack) -> bool:
 
 
 def _index_key(host: str, root_key: str, rel: str) -> str:
-    r"""インデックスのキー。`(host, root, rel)`を`\0`で連結した文字列のsha256 hexdigest。"""
     return hashlib.sha256(f"{host}\0{root_key}\0{rel}".encode()).hexdigest()
 
 
 def _root_key(root: pathlib.Path) -> str:
-    """インデックスのキーと値へ用いる`root`の正規化表記。"""
     return str(root.resolve()).replace("\\", "/")
 
 
 def _entry_ctime(entry: typing.Any) -> float | None:
-    """インデックスまたは旧形式のエントリから作成日時を取り出す。取得できない場合はNone。"""
     value = entry.get("ctime_epoch")
     return float(value) if isinstance(value, (int, float)) else None
 
@@ -98,10 +85,6 @@ def _load_index() -> dict[str, typing.Any]:
 
 
 def _load_legacy_entries() -> dict[tuple[str, str], tuple[float, pathlib.Path]]:
-    """旧形式のキャッシュを`(host, 相対パス)`から作成日時と実ファイルへの対応として読み込む。
-
-    旧形式は`root`を保持しないため、現在の走査対象と一致するものだけを移行対象にできる。
-    """
     entries: dict[tuple[str, str], tuple[float, pathlib.Path]] = {}
     try:
         candidates = [path for path in _CREATION_TIME_INDEX_PATH.parent.iterdir() if _LEGACY_CACHE_NAME_RE.match(path.name)]
@@ -200,7 +183,7 @@ def update_creation_time_index(
                     del index[key]
                     changed = True
         index.update(updated)
-        # 一覧の取得ごとに走査するため、変化の無い走査では全件の書き直しを省く（数千件で走査時間の約3割）。
+
         if changed and _write_index(index):
             for legacy_path in migrated:
                 with contextlib.suppress(OSError):

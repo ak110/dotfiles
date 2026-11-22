@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するlayoutの試験。"""
-
 import datetime
 import socket
 
@@ -26,7 +24,6 @@ pytestmark = [
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [320, 1280])
 async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness: _BrowserHarness, width: int) -> None:
-    """同じ長い要約を持つ項目でも、カード内のファイル名と対象を省略せず読んで選択できる。"""
     page = browser_harness.page
     names = [f"same-prefix-unique-00{index}.md" for index in (1, 2)]
     for index, name in enumerate(names):
@@ -57,7 +54,6 @@ async def test_narrow_work_items_keep_unique_identifiers_visible(browser_harness
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _BrowserHarness) -> None:
-    """カード・列表示の画面幅で横overflow、固定領域、タッチ寸法、Markdown表示を検証する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     await page.locator("#entry-list .entry-select").first.wait_for(state="visible")
@@ -118,7 +114,6 @@ async def test_responsive_layout_dialog_scroll_and_markdown(browser_harness: _Br
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: _BrowserHarness) -> None:
-    """390px幅では一覧を先に示し、要約・状態・識別情報を順に読める。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
@@ -146,7 +141,6 @@ async def test_mobile_wi_list_starts_with_identifiable_entries(browser_harness: 
     assert row_box["y"] >= 0
     assert row_box["y"] + row_box["height"] <= 844
 
-    # 除外警告は折り畳んだ見出しだけで一覧の前に収まり、開くと保存先・理由・次の操作の全文を読める。
     summary = page.get_by_role("alert").locator("summary")
     await playwright.async_api.expect(summary).to_be_visible()
     await playwright.async_api.expect(summary).to_contain_text("一覧から除外したファイルの警告: 1件")
@@ -240,7 +234,6 @@ async def test_global_error_can_be_closed_and_redisplayed_on_narrow_screen(
 async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """狭幅画面で500文字の未知キーを折り返し、横overflowを生じさせない。"""
     page = browser_harness.page
     await page.set_viewport_size({"width": 390, "height": 844})
     await page.goto(browser_harness.base_url + "/")
@@ -250,7 +243,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
     dialog = page.get_by_role("dialog", name="詳細")
     long_key_term = dialog.locator("#detail-metadata dt").filter(has_text=_LONG_UNKNOWN_FRONTMATTER_KEY)
     await playwright.async_api.expect(long_key_term).to_have_count(1)
-    # 詳細の再読込でdtが置換されるため、表示済み要素の解決と寸法取得を同じ描画状態で行う。
+
     metrics_handle = await page.wait_for_function(
         """key => {
           const metadata = document.querySelector('#detail-metadata');
@@ -286,8 +279,7 @@ async def test_long_unknown_metadata_key_wraps_at_narrow_viewport(
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_work_item_rows_keep_fixed_columns_and_equal_heights(screen_harness: _ScreenHarness) -> None:
-    """最長の状態表示を含む一覧でも固定列を折り返さず、全行を同じ高さで描画する。"""
-    # 期間の初期値（直近2週間）の内側に入るよう、作成日時を現在に近づける。
+
     _entry_path(screen_harness.plan_path.parent.parent, f"{datetime.datetime.now():%Y%m%d}-123456-001.md").write_text(
         "---\ntype: uwi\nstate: processing\ntarget_repo: example/long-repository\nsource: human\n"
         "plan_file: /tmp/plan.md\n---\n\n長い要約を持つ確認事項 "

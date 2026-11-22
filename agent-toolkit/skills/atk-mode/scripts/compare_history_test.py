@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""履歴比較のパッチ対応を検証する。"""
 
 import json
 import pathlib
@@ -55,7 +54,6 @@ def test_conflict_resolution_requires_explicit_and_unique_mapping(
 def test_rebase_cli_accepts_only_equal_complete_series(
     repo: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], no_prefix: bool
 ) -> None:
-    """接頭辞設定によらず全一致を受理し、変更・追加・欠落を保存せず拒否する。"""
     base = _git(repo, "rev-parse", "HEAD")
     first = _commit(repo, "first.txt", "一", "一つ目")
     old_head = _commit(repo, "second.txt", "二", "二つ目")
@@ -97,8 +95,7 @@ def test_rebase_accepts_changed_context_and_hunk_position(repo: pathlib.Path, tm
 
 @pytest.mark.parametrize("order", ["same", "swapped"])
 def test_rebase_maps_repeated_patch_only_in_same_order(repo: pathlib.Path, tmp_path: pathlib.Path, order: str) -> None:
-    """導入・復元・再導入で同一変更が繰り返す系列は、並びが同じときだけ位置で対応付ける。"""
-    # 基準にファイルを置き、導入と再導入を同じ変更内容（内容IDの重複）にする。
+
     base = _commit(repo, "content.txt", "基準\n", "基準の内容")
     first = _commit(repo, "content.txt", "導入\n", "導入")
     restored = _commit(repo, "content.txt", "基準\n", "対照へ復元")
@@ -185,7 +182,7 @@ def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
     repo: pathlib.Path, tmp_path: pathlib.Path, variant: str
 ) -> None:
     """繰り返し系列は競合解消を含めて位置で検収し、並びの崩れと曖昧な省略は既存の出力を変えずに拒否する。"""
-    # 基準にファイルを置き、導入と再導入を同じ変更内容（内容IDの重複）にする。
+
     base = _commit(repo, "content.txt", "基準\n", "基準の内容")
     first = _commit(repo, "content.txt", "導入\n", "導入")
     restored = _commit(repo, "content.txt", "基準\n", "対照へ復元")
@@ -198,10 +195,8 @@ def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
         _commit(repo, "content.txt", "導入（解消）\n", "再導入")
         _git(repo, "cherry-pick", old_head)
     elif variant == "reordered":
-        # 内容の集合は同じで、別の変更と再導入の順序だけを入れ替えた系列。
         _git(repo, "cherry-pick", first, restored, old_head, again)
     else:
-        # 再導入が統合先へ省略された系列。どちらの導入が省略されたかを決められない。
         _git(repo, "cherry-pick", first, restored, old_head)
     new_head = _git(repo, "rev-parse", "HEAD")
     output = tmp_path / "repeated.json"
@@ -221,7 +216,6 @@ def test_rebase_repeated_patch_boundaries_and_rejection_keeps_output(
 def test_rebase_rejects_content_and_ambiguous_correspondence(
     repo: pathlib.Path, tmp_path: pathlib.Path, violation: str
 ) -> None:
-    """表示が似ていても、変更内容の差や曖昧なcommit対応を受理しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     old_head = _commit(repo, "content.txt", "value\n", "元")
     if violation == "ambiguous":
@@ -251,7 +245,6 @@ def test_rebase_rejects_content_and_ambiguous_correspondence(
 def test_history_compare_accepts_same_content_after_parent_change(
     repo: pathlib.Path, tmp_path: pathlib.Path, operation: str
 ) -> None:
-    """親の変更を含む3-way適用結果が一致する履歴書換えを両操作で受理する。"""
     base = _git(repo, "rev-parse", "HEAD")
     (repo / "content.txt").write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
     _git(repo, "add", "--", "content.txt")
@@ -285,7 +278,6 @@ def test_history_compare_accepts_same_content_after_parent_change(
 def test_history_compare_rejects_whitespace_only_content_change(
     repo: pathlib.Path, tmp_path: pathlib.Path, operation: str
 ) -> None:
-    """最終treeが一致しても、空白だけ異なる変更内容は両操作で拒否する。"""
     base = _git(repo, "rev-parse", "HEAD")
     if operation == "rebase":
         old_head = _commit(repo, "content.txt", "  value\n", "変更")
@@ -326,7 +318,6 @@ def test_rebase_rejects_resolved_conflict_with_same_content_after_parent_change(
 
 @pytest.mark.parametrize("operation", ["rebase", "autosquash"])
 def test_history_compare_accepts_blank_line_layout_change(repo: pathlib.Path, tmp_path: pathlib.Path, operation: str) -> None:
-    """親による空行配置の差を含んでも、3-way適用後のtreeが同じなら受理する。"""
     base = _commit(repo, "content.txt", "first\nsecond\nthird\n", "準備")
     old_layout = "first\n\nsecond\n\nthird\n"
     parent_layout = "first\n\nsecond\nthird\n"
@@ -355,7 +346,6 @@ def test_history_compare_accepts_blank_line_layout_change(repo: pathlib.Path, tm
 
 @pytest.mark.parametrize("changed", [False, True])
 def test_rebase_compares_binary_payload(repo: pathlib.Path, tmp_path: pathlib.Path, changed: bool) -> None:
-    """バイナリー同士の比較でも同じ内容だけを受理し、内容が異なれば対応表を保存しない。"""
     base = _git(repo, "rev-parse", "HEAD")
     path = repo / "image.bin"
     path.write_bytes(b"original\x00payload")

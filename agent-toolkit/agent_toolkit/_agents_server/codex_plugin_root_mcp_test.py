@@ -43,7 +43,7 @@ def test_wait_mcp_processes_ignores_stale_alive(
         process = psutil.Process(held.pid)
 
         def _stale_wait(processes: list[psutil.Process], timeout: float) -> tuple[list[psutil.Process], list[psutil.Process]]:
-            # 最終pollの後、返却より前に終了した状態を、所有する実プロセスの終了とreapで作る。
+
             assert timeout == 3
             held.kill()
             held.wait(timeout=10)
@@ -83,7 +83,6 @@ async def test_stable_plugin_root_shared_across_processes(
     tmp_path_factory: pytest.TempPathFactory,
     host_environ: Callable[[], dict[str, str]],
 ) -> None:
-    """外側2台と保持先起動の実MCPが配布物を共有し、元版の更新・削除後も応答して終了後に回収できる。"""
     plugin = pathlib.Path(__file__).resolve().parents[2]
     manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     version = manifest["version"]

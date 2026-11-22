@@ -1,5 +1,3 @@
-"""過去の記録に含まれるWI本文の表記警告を識別する。"""
-
 import re
 
 _DETAIL_PREFIX = "本文:"
@@ -13,5 +11,4 @@ _BODY_WARNING_SUMMARY = re.compile(r"^警告: " + re.escape(_SUMMARY_PREFIX) + r
 
 
 def is_body_style_diagnostic_warning(text: str) -> bool:
-    """WI本文の表記診断だった行かを過去の表示文言から判定する。"""
     return bool(_BODY_WARNING.match(text) or _BODY_WARNING_CONTEXT.match(text) or _BODY_WARNING_SUMMARY.match(text))

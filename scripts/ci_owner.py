@@ -1,5 +1,3 @@
-"""共通CIを所有するrunを判定する。依存導入前に標準Pythonだけで動く。"""
-
 import json
 import os
 import subprocess

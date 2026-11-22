@@ -22,7 +22,6 @@ pytestmark = pytest.mark.windows
 
 
 def _hold_posix_prepare_lock(path: str, entered: Any, release: Any) -> None:
-    """別プロセスでprepare lockを保有してから正常終了する。"""
     import fcntl  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     with Path(path).open("a+b") as stream:
@@ -67,7 +66,6 @@ def _prepared(root: Path, environment: dict[str, str]) -> None:
 
 
 def test_dependency_environments_share_roots_and_ignore_non_dependency_metadata(tmp_path: Path) -> None:
-    """root・配布版・起動部分の本文は共有を妨げず、lockfileの更新は分離する。"""
     root = _root(tmp_path / "first")
     other = _root(tmp_path / "second")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
@@ -87,7 +85,6 @@ def test_dependency_environments_share_roots_and_ignore_non_dependency_metadata(
 
 
 def test_prepared_environment_is_published_only_after_completion(tmp_path: Path) -> None:
-    """ready markerを持つ原子的に公開済み環境だけが通常起動で選ばれる。"""
     root = _root(tmp_path / "plugin")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
     temporary = subject.project_environment(root, environment)
@@ -106,7 +103,6 @@ def test_prepared_environment_is_published_only_after_completion(tmp_path: Path)
 
 @pytest.mark.parametrize("corrupt", ["{broken", "[]"])
 def test_source_metadata_warning_preserves_corruption_until_repaired(tmp_path: Path, caplog, corrupt: str) -> None:
-    """破損情報を警告で特定し、退避後の同じ準備操作で版対応を復元できる。"""
     root = _root(tmp_path / "plugin")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
     target = subject.project_environment(root, environment)
@@ -126,7 +122,6 @@ def test_source_metadata_warning_preserves_corruption_until_repaired(tmp_path: P
 
 
 def test_direct_environment_puts_current_root_before_existing_pythonpath(tmp_path: Path) -> None:
-    """共有依存環境でも各配布rootのコードを先に解決する。"""
     root = _root(tmp_path / "plugin")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data"), "PYTHONPATH": "existing"}
     direct = subject.direct_environment(root, environment)
@@ -136,7 +131,6 @@ def test_direct_environment_puts_current_root_before_existing_pythonpath(tmp_pat
 
 @pytest.mark.parametrize("caller_pythonpath", [None, "existing"])
 def test_direct_environment_restores_callers_pythonpath_for_child(tmp_path: Path, caller_pythonpath: str | None) -> None:
-    """直接起動の子は起動層が前置した読込先を継承しない。"""
     root = _root(tmp_path / "plugin")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data")}
     if caller_pythonpath is not None:
@@ -147,7 +141,6 @@ def test_direct_environment_restores_callers_pythonpath_for_child(tmp_path: Path
 
 
 def test_nested_direct_environment_keeps_only_inner_root(tmp_path: Path) -> None:
-    """入れ子の直接起動は外側の読込先と復元記録を残さない。"""
     outer = _root(tmp_path / "outer")
     inner = _root(tmp_path / "inner")
     environment = {subject.RUNTIME_DATA_ENV: str(tmp_path / "data"), "PYTHONPATH": "existing"}
@@ -159,10 +152,6 @@ def test_nested_direct_environment_keeps_only_inner_root(tmp_path: Path) -> None
 def test_key_added_to_launch_layer_returns_to_caller_value_without_restore_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caller_has_value: bool
 ) -> None:
-    """起動層が記録の前に新しいキーを設定しても、復元側を書き足さずに子では呼出元の値へ戻る。
-
-    将来の起動層が`UV_PYTHON`などを設定する変更を、記録処理の直前にキーを加えて模す。
-    """
     original = inherited_venv.record_launch_changes
 
     def record_with_new_key(env: MutableMapping[str, str], caller: MutableMapping[str, str], **kwargs: Any) -> None:
@@ -181,7 +170,6 @@ def test_key_added_to_launch_layer_returns_to_caller_value_without_restore_chang
 
 
 def _copy_plugin_code(root: Path) -> None:
-    """依存環境を共有する配布rootとして、試験対象のコードと依存の宣言・固定内容だけを複製する。"""
     source = Path(subject.__file__).resolve().parents[2]
     root.mkdir()
     shutil.copytree(source / "agent_toolkit", root / "agent_toolkit", ignore=shutil.ignore_patterns("__pycache__", "*_test.py"))
@@ -312,7 +300,6 @@ def test_public_launcher_child_receives_caller_environment_and_internal_restarts
 
 
 def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: Path) -> None:
-    """呼出元の環境を変更せず、uvの子プロセスへ専用の保存先を渡し、CLIのPATHには既存の要素を保つ。"""
     root = _root(tmp_path / "plugin")
     incoming = {
         **_user_data(tmp_path / "user-data"),
@@ -337,7 +324,6 @@ def test_launch_preserves_callers_environment_and_cli_preserves_path(tmp_path: P
 def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """uvが無い条件でも先にPATHを保存し、Bashで別hookと既存PATHの保持を観測する。"""
     root = _root(tmp_path / "plugin with 'quote'")
     (root / "probe.py").write_text("", encoding="utf-8")
     env_file = tmp_path / "session-env"
@@ -403,7 +389,6 @@ def test_session_start_persists_before_uv_and_keeps_other_hooks_and_user_path(
 def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
     tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実際のuvから起動し、root外の環境、argv、cwd、stdin、標準出力と標準エラー、子プロセスの終了コード7が保たれることを確認する。"""
     root = _root(tmp_path / "readonly-plugin")
     environment = host_environ()
     uv = shutil.which("uv", path=environment["PATH"])
@@ -468,7 +453,6 @@ def test_bootstrap_executes_from_readonly_root_and_preserves_process_contract(
 
 
 def _relock_offline(uv: str, root: Path, environment: dict[str, str]) -> None:
-    """配布rootへ依存の無い宣言を加えて固定内容をオフラインで作り直し、固定内容が変わった未準備の状態にする。"""
     subject.dependency_lock(root).unlink()
     script = str(root / subject.DEPENDENCY_SCRIPT)
     for arguments in (
@@ -479,7 +463,6 @@ def _relock_offline(uv: str, root: Path, environment: dict[str, str]) -> None:
             [uv, *arguments],
             # uvは`--script`の設定を作業ディレクトリから探すため、bootstrapの同期と同じく配布rootで固定する。
             cwd=root,
-            # fixtureの新規生成だけ許可し、bootstrapには呼出元の凍結条件を保つ。
             env={**environment, "UV_FROZEN": "0"},
             capture_output=True,
             text=True,
@@ -543,7 +526,6 @@ def test_cli_launcher_prepares_missing_environment_and_hooks_fail_fast(
 
 
 def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: Path) -> None:
-    """ホストが異なってもユーザーデータ領域を共用し、書き込めない場合だけホストのplugin dataを使う。"""
     shared = _user_data(tmp_path / "user-data")
     claude = subject.runtime_data({**shared, "CLAUDE_PLUGIN_DATA": str(tmp_path / "claude-data")})
     codex = subject.runtime_data({**shared, "PLUGIN_DATA": str(tmp_path / "codex-data")})
@@ -561,7 +543,6 @@ def test_runtime_data_is_shared_by_hosts_and_falls_back_to_host_data(tmp_path: P
 def test_session_start_hook_separates_real_uv_and_restores_child_environment(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], caller_setting: str
 ) -> None:
-    """実uvのhook起動で、呼出元の仮想環境の指定によらない専用環境と、子への元設定の復元を両立する。"""
     root = _root(tmp_path / "hook-plugin")
     environment = host_environ()
     uv = shutil.which("uv", path=environment["PATH"])
@@ -759,7 +740,6 @@ def test_prepare_lock_propagates_noncontention_error_without_waiting(
 
 
 def test_project_environment_uses_selected_python_for_warmup_key(tmp_path: Path) -> None:
-    """warmupの親Pythonではなくlauncherに渡すPythonで共有環境を識別する。"""
     root = _root(tmp_path / "plugin")
     selected_python = tmp_path / "python"
     selected_python.write_text("", encoding="utf-8")
@@ -772,7 +752,6 @@ def test_project_environment_uses_selected_python_for_warmup_key(tmp_path: Path)
 def test_prepared_python_is_found_from_inside_shared_environment(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]]
 ) -> None:
-    """実行ファイルを複製した共有環境のPythonからも、同じ準備済み環境を見つける。"""
     root = _root(tmp_path / "plugin")
     environment = host_environ()
     environment[subject.RUNTIME_DATA_ENV] = str(tmp_path / "runtime")
@@ -839,14 +818,11 @@ def test_shared_environment_resolves_venv_creator_to_base_python(tmp_path: Path)
         # 複製で作られた環境は、`home`の同名ファイルより版を含む名前を選ぶ。
         (False, "version_info = 3.15", "python3.15"),
         (False, "version = 3.15.0", "python3.15"),
-        # 標準の`venv`が書く`executable`は`home`より先に使う。
         (False, "version = 3.14.0\nexecutable = {home}/python3.15", "python3.15"),
-        # 版を読めない場合は同名ファイルを使う。
         (False, "", "python"),
     ],
 )
 def test_base_python_selects_creating_interpreter(tmp_path: Path, linked: bool, settings: str, expected: str) -> None:
-    """`home`に別の版を指す同名の実行ファイルがあっても、環境を作ったPython本体へ正規化する。"""
     home = tmp_path / "home"
     home.mkdir()
     for name in ("python", "python3.15"):

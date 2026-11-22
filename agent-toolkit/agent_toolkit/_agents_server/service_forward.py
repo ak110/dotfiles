@@ -1,5 +1,3 @@
-"""MCPのstdioを同一アカウントの管理サービスへ中継する軽量な起動側。"""
-
 from __future__ import annotations
 
 import contextlib
@@ -47,8 +45,6 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         error.add_note(f"{label}（取得失敗: {failure}）")
 
 
-# 起動した世代を受付先として公開せず、候補のまま接続する指定。update-dotfilesの起動確認が、
-# 確認の終了後も候補が生存することを確かめてから`publish_service`で公開するために使う。
 DEFER_PUBLISH_ENV = "AGENT_TOOLKIT_DEFER_SERVICE_PUBLISH"
 
 INHERITED_JOB_WARNING = with_next_action(
@@ -60,13 +56,11 @@ INHERITED_JOB_WARNING = with_next_action(
     ),
 )
 
-# 応答の無い要求がこの秒数を超えたら、接続先世代の生存を短い照会で確かめる。
-# 正当に長いtool処理は照会に応答するため打ち切らず、停止・凍結した世代だけを配送未確定として返す。
+
 _STALL_SECONDS = 10.0
 _PROBE_SECONDS = 10.0
 
 
-# 管理領域の直下の`*.json`は世代ごとのready記録と世代の索引に限り、識別の索引は下位のディレクトリへ置く。
 _IDENTITY_INDEX = pathlib.PurePath("code-identity", "index.json")
 _IDENTITY_INDEX_VERSION = 1
 _IDENTITY_INDEX_ENTRIES = 32
@@ -75,13 +69,6 @@ _RECENT_NS = 2_000_000_000
 
 
 def code_identity(root: pathlib.Path, directory: pathlib.Path) -> tuple[str, str]:
-    """同じ配布版を合流し、開発checkoutの同版編集も別世代として識別する。
-
-    世代は版と、試験を除く全モジュールの相対パス・内容から決める。旧版の転送側も受付先のrootへ同じ計算をするため、
-    この定義は変えない。全モジュール（約600件・約7MB）の読込とハッシュは、各モジュールの識別（inode・更新時刻・大きさ）が
-    前回と同じ間、`directory`の索引に保存した世代で省く。書き換えから間もないモジュールは、更新時刻の刻みの中で
-    識別が変わらずに内容だけ変わり得るため、その間は保存しない。
-    """
     version = json.loads((root / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))["version"]
     modules = sorted(_modules(str(root / "agent_toolkit")))
     fingerprint = hashlib.sha256(json.dumps([str(root), version, modules]).encode("utf-8")).hexdigest()
@@ -89,21 +76,20 @@ def code_identity(root: pathlib.Path, directory: pathlib.Path) -> tuple[str, str
     saved = _saved_identities(index)
     if (generation := saved.get(fingerprint)) is not None:
         return generation, version
-    # 定義の連結順はPathの順序であり、文字列の順序と異なり得る（区切り文字の前後で順序が変わる）。
+
     generation = _code_digest(root, version, sorted(pathlib.Path(path) for path, _identity in modules))
     recent = time.time_ns() - _RECENT_NS
     if all(identity[1] < recent for _path, identity in modules):
         saved.pop(fingerprint, None)
         saved[fingerprint] = generation
         entries = dict(list(saved.items())[-_IDENTITY_INDEX_ENTRIES:])
-        # 索引は再計算できる値であり、書けない場合も世代は変わらない。
+
         with contextlib.suppress(OSError):
             atomic_write(index, json.dumps({"version": _IDENTITY_INDEX_VERSION, "entries": entries}))
     return generation, version
 
 
 def _modules(directory: str) -> Iterator[tuple[str, list[int]]]:
-    """`Path(directory).rglob("*.py")`と同じ範囲の試験以外のモジュールを、識別（inode・更新時刻・大きさ）とともに返す。"""
     with os.scandir(directory) as listed:
         entries = list(listed)
     for entry in entries:
@@ -125,7 +111,6 @@ def _code_digest(root: pathlib.Path, version: str, paths: list[pathlib.Path]) ->
 
 
 def _saved_identities(path: pathlib.Path) -> dict[str, str]:
-    """保存した世代を識別の指紋ごとに返す。読めない索引と形の合わない索引は、保存されていなかったものとして扱う。"""
     try:
         payload = json.loads(path.read_bytes())
     except OSError, ValueError:
@@ -237,15 +222,13 @@ def ensure_service(
                     # 成功後のserviceは転送側から独立する。準備失敗時だけ全所属を回収する。
                     job = startup.enter_context(windows_job.WindowsJob(kill_on_close=False))
                     detached = windows_job.HIDDEN_DETACHED_CREATIONFLAGS | windows_job.CREATE_SUSPENDED
-                    # 起動元のJobからの離脱を指定する。子を自動で離脱させるJob（venvのpython.exeが作るJobなど）の中でも、
-                    # 指定の無い子は外側のJob（SSHのセッションなど）に残り、そのJobの終了とともに止まる。
-                    # 離脱を許さないJobの中では離脱を指定した起動が拒否されるため、所属を継承して起動する。
+
                     attempts = [
                         {"creationflags": detached | windows_job.CREATE_BREAKAWAY_FROM_JOB},
                         {"creationflags": detached},
                     ]
                 stderr = startup.enter_context((directory / f"{generation}.stderr.log").open("wb"))
-                # サービスの寿命を転送側へ結び付けない。終了診断はサービスの起動単位が保存する。
+
                 process = _launch_service(command, attempts, stderr=stderr, cwd=root, env=env)
                 try:
                     if job is not None:
@@ -276,7 +259,7 @@ def ensure_service(
                                 pass
                             else:
                                 published = service_rpc.request_sync(record, "publish", {}) if publish else record
-                                # stdio終了から独立した子を保持し、退出した旧supervisorは親の生存中にもreapする。
+
                                 threading.Thread(target=process.wait, name="agents-service-reaper", daemon=True).start()
                                 return published
                         if process.poll() is not None:
@@ -333,7 +316,6 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
         try:
             accepted = service_rpc.request_sync(record, "publish", {}, timeout=timeout)
         except Exception:
-            # 候補が受付先を公開した後、応答を返す前に終了すると、受付先は終了した世代を指す。生存する世代へ戻す。
             registry.restore()
             raise
         if not service_transport.process_alive(accepted["process"]):
@@ -349,21 +331,18 @@ def publish_service(caller: runtime_environment.CallerContext, root: pathlib.Pat
 
 
 def _probe(target: dict) -> str | None:
-    """接続先世代が短時間で応答するかを別接続で確かめ、応答しなければ理由を返す。"""
     outcome: list[str | None] = []
 
     def run() -> None:
         try:
             service_rpc.request_sync(target, "ping", {}, timeout=_PROBE_SECONDS)
         except RuntimeError, ValueError:
-            # 応答は届いた（pingを持たない旧世代のエラー応答を含む）。生存している。
             outcome.append(None)
         except Exception as error:
             outcome.append(f"{type(error).__name__}: {error}")
         else:
             outcome.append(None)
 
-    # 接続の確立自体が止まるホストでも監視を止めないよう、別threadで上限付きに待つ。
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     thread.join(_PROBE_SECONDS + 5)
@@ -391,8 +370,6 @@ def _stalled_response(identifier: str | int, method: str, target: dict, error: s
 
 
 class _Forwarder:
-    """送信を静止してから接続を移し、未確定の要求は再送しない。"""
-
     def __init__(self, caller: runtime_environment.CallerContext) -> None:
         self.caller = caller
         self.condition = threading.Condition()
@@ -413,7 +390,7 @@ class _Forwarder:
         self.watchdog = threading.Thread(target=self._watch, daemon=True)
 
     def output(self, message: dict) -> None:
-        # 受信threadと監視threadが同じstdoutへ書くため、1行単位で直列化する。
+
         with self._output_lock:
             sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False, separators=(",", ":")).encode("utf-8") + b"\n")
             sys.stdout.buffer.flush()
@@ -467,12 +444,10 @@ class _Forwarder:
                             self.pending[message["id"]] = method
                             self.sent_at[message["id"]] = time.monotonic()
                         peer = self.peer
-                        assert peer is not None  # wait_forで接続済みを確かめた
+                        assert peer is not None
                         try:
                             service_transport.send(peer, message)
                         except OSError:
-                            # 接続先の世代が終了した。入力の終了とは扱わず、送れなかった要求は未確定として
-                            # 接続の切替後に応答し、以後の入力は切替先へ送る。
                             self.peer = None
             if buffered.strip():
                 raise ValueError("MCPの最終メッセージが改行で終了していません")
@@ -502,7 +477,6 @@ class _Forwarder:
             raise RuntimeError("管理サービスの接続準備が不正です")
         reinitialized = self.initialize is not None
         if self.initialize is not None:
-            # initializeだけを新しいwireへ再構成する。tools/callやqueryは再送しない。
             message = {**self.initialize, "id": "reconnect-" + uuid.uuid4().hex}
             service_transport.send(peer, message)
             if not peer.poll(30):
@@ -526,7 +500,6 @@ class _Forwarder:
             message = service_transport.receive(peer)
             if message.get("kind") == "redirect":
                 with self.condition:
-                    # ACKより後の入力は新しいwireがreadyになるまで未送信のまま保持する。
                     self.peer = None
                     service_transport.send(peer, {"kind": "redirect_ack"})
                 continue
@@ -536,7 +509,6 @@ class _Forwarder:
                     self.sent_at.pop(message["id"], None)
                     self.progress += 1
                     if message["id"] in self.abandoned:
-                        # 配送未確定として応答済みの要求。同じidへ2つ目の応答を返さない。
                         self.abandoned.discard(message["id"])
                         continue
             self.output(message)
@@ -562,7 +534,6 @@ class _Forwarder:
 
 
 def _retained_distribution_source(root: pathlib.Path, caller: runtime_environment.CallerContext) -> pathlib.Path:
-    """管理領域の保持複製なら、完成マーカーに記録された導入元を返す。"""
     environment = caller.environment
     home = runtime_environment.home()
     if os.name == "nt":
@@ -605,7 +576,6 @@ def _retained_distribution_source(root: pathlib.Path, caller: runtime_environmen
 
 
 def _official_distribution(root: pathlib.Path, caller: runtime_environment.CallerContext) -> bool:
-    """配布キャッシュまたは登録済みcheckoutのプラグインを通常の起動元とする。"""
     with runtime_environment.bind(caller):
         root = _retained_distribution_source(root, caller)
         cache = pathlib.Path("plugins/cache/ak110-dotfiles/agent-toolkit")
@@ -695,7 +665,6 @@ def forward(
                     finally:
                         bridge.detach(peer)
             except (EOFError, ConnectionError, FileNotFoundError) as error:
-                # publishと初回readyの間にも旧世代は正常退出する。送信済み操作の判定は共通処理へ渡す。
                 current = registry.current()
                 if current is None or current["process"] == target["process"]:
                     error.add_note(
@@ -713,8 +682,7 @@ def forward(
                 bridge.pending.clear()
                 bridge.sent_at.clear()
                 bridge.abandoned.clear()
-            # 未確定の要求は再送せずエラーで返し、接続自体は現行世代へ切り替えて続ける。
-            # ここで終了するとMCP接続が失われ、委譲元が以後の照会・回収をできなくなる（2026-11-17）。
+
             if unresolved:
                 for identifier, method in unresolved:
                     bridge.output(
@@ -753,7 +721,6 @@ def forward(
 
 
 def _parent_settings() -> str | None:
-    """転送側の親CLIのsettings層だけを取得し、共有serviceの親から継承しない。"""
     try:
         arguments = pathlib.Path(f"/proc/{os.getppid()}/cmdline").read_bytes().split(b"\0")
     except OSError:

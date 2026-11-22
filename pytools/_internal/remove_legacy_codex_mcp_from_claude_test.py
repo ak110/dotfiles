@@ -23,7 +23,6 @@ def _legacy_codex_mcp_cases() -> list[object]:
 
 @pytest.mark.parametrize(("value", "legacy"), _legacy_codex_mcp_cases())
 def test_is_legacy_definition_matches_case_table(value: dict[str, object], legacy: bool) -> None:
-    """旧installerが生成した定義だけを旧定義と判定し、ユーザーが変えた定義を保持対象にする。"""
     assert subject.is_legacy_definition(value) is legacy
 
 

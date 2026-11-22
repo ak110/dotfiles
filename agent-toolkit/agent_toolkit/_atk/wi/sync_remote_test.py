@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのsync: remoteのテスト。"""
 
 import os
 import pathlib
@@ -24,7 +23,6 @@ class TestCommitAndPushRetry:
         monkeypatch.setattr(platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
 
     def test_rebases_divergent_commits_and_pushes_both_results(self, tmp_path: pathlib.Path) -> None:
-        """non-fast-forwardから復旧し、local/remoteの双方の本文をremoteへ送信する。"""
         remote, local, _other = TestExplicitUpstreamIntegration()._make_remote_and_clones(tmp_path)  # pylint: disable=protected-access
         (local / "local.md").write_text("ローカル成果\n", encoding="utf-8")
         with _wi_sync.repo_lock(local):
@@ -96,7 +94,6 @@ class TestExplicitUpstreamIntegration:
         self,
         tmp_path: pathlib.Path,
     ) -> tuple[pathlib.Path, pathlib.Path, pathlib.Path]:
-        """mainとsideを持つbare remoteおよび同じmainを追跡する2作業コピーを作成する。"""
         remote = tmp_path / "remote.git"
         seed = tmp_path / "seed"
         old_copy = tmp_path / "old-copy"
@@ -223,8 +220,6 @@ class TestExplicitUpstreamIntegration:
 
 
 class TestHasRemote:
-    """upstreamの有無を使い、既存のマーカーに判定を左右されない。"""
-
     def test_legacy_marker_does_not_override_upstream(self, tmp_path: pathlib.Path) -> None:
         """マーカーが残る既存リポジトリも、upstreamの設定で同期対象になる。"""
         notes, remote = tmp_path / "notes", tmp_path / "remote.git"
@@ -239,8 +234,6 @@ class TestHasRemote:
 
 
 class TestPullAndCommitPushSkipWithoutRemote:
-    """remote未設定のローカル限定リポジトリではpull・pushをスキップすることを検証する。"""
-
     def test_pull_is_noop_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """upstreamの無いディレクトリでは`pull`がremote同期を実行しない。"""
         calls: list[list[str]] = []
@@ -250,7 +243,6 @@ class TestPullAndCommitPushSkipWithoutRemote:
         assert not any(call[0] in ("fetch", "merge") for call in calls)
 
     def test_commit_and_push_skips_push_without_remote(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """upstreamの無いディレクトリでは`commit_and_push`がadd・commitのみ実行しpushしない。"""
         calls: list[list[str]] = []
         monkeypatch.setattr(_wi_sync, "run_git", lambda args, cwd, **_kwargs: calls.append(args))  # noqa: ARG005
         with _wi_sync.repo_lock(tmp_path):  # pylint: disable=protected-access  # noqa: SLF001
@@ -260,10 +252,7 @@ class TestPullAndCommitPushSkipWithoutRemote:
 
 @pytest.mark.usefixtures("remote_sync")
 class TestPullIfStale:
-    """定期バックグラウンド更新のレート制限を検証する。"""
-
     def test_skips_recent_pull(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """直近pull後の定期更新を省略することを確認する。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"
@@ -299,7 +288,6 @@ class TestPullIfStale:
         assert calls == [["fetch"], ["merge", "--ff-only", "@{u}"]]
 
     def test_public_pull_ignores_rate_limit(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ユーザーの操作に対応する`pull`は直近pullの有無によらず毎回実行する。"""
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         fetch_head = git_dir / "FETCH_HEAD"

@@ -1,5 +1,3 @@
-"""managerが保持するsessionと、保持しないsessionのsession登録簿からの解決、一覧・表示・停止の応答。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,8 +17,6 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
 class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
-    """終了済みsessionの資源を解放し、終了・停止の状態を公開する。"""
-
     async def stop(self, session_id: str, *, retain_result: bool = False) -> dict[str, Any]:
         """終了済みsessionを破棄し、会話再開用の最小状態だけを保持する。
 
@@ -50,7 +46,6 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
         if session is None and isinstance(stopped_state, RegistryResumeState):
             live = await run_file_operation(_foreign_live_processes, session_id)
             if live:
-                # 所有側が生存する記録を解放済みへ置き換えると、所有側の再開と終了の公開が別の記録を上書きする。
                 raise ActionableError(
                     f"session {session_id} is recorded by processes still alive outside this agents_server: "
                     + ",".join(str(process.pid) for process in live),
@@ -159,18 +154,11 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
         response: dict[str, Any],
         stop: bool,
     ) -> dict[str, Any]:
-        """要求された終了応答に限りsessionを破棄し、元の応答を維持する。"""
         if stop and response.get("status") in {*TERMINAL_STATUSES, "expired"} and session_id not in self.stopped_sessions:
             await self.stop(session_id, retain_result=True)
         return response
 
     async def _publish_closed_sessions(self) -> None:
-        """backendの停止で終わった未終了のturnを`interrupted`へ遷移させ、登録簿と結果ファイルへ公開する。
-
-        停止では所有側が自らturnを終了するため、ここで公開しないと登録簿が`running`のまま残る。
-        登録簿が終了を示さない記録は、再起動後のプロセスが別プロセスの実行中と区別できず回収できなくなる。
-        遷移はbackendごとに書かず、全engineに共通の停止処理として本関数へ集約する。
-        """
         interrupted: list[SessionState] = []
         for session in tuple(self.sessions.values()):
             if not session.publish_registry or session.result_available or session.result_delivered:
@@ -198,7 +186,6 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
             session.interrupt_requested = False
             session.touch()
         if self._status_writer is not None:
-            # 集約予約を待たずに結果ファイルを書き、状態ファイルの無効化より前に終了時の結果を残す。
             await self._status_writer.flush_async()
         for session in tuple(self.sessions.values()):
             await session.drain_registration()
@@ -225,7 +212,6 @@ class ManagerRegistry(manager_registry_display.ManagerRegistryDisplay):
 
 
 def _foreign_live_processes(session_id: str) -> list[session_registry.ProcessIdentity]:
-    """登録簿の記録プロセスのうち、自プロセス以外で実在するものを返す。"""
     if not shared_layout.valid_session_id(session_id):
         return []
     resolution = session_registry.resolve(session_id)

@@ -17,12 +17,10 @@ _ALLOWED = {"conftest.py", "agent-toolkit/conftest.py"}
 
 
 def _fixture_names(path: pathlib.Path) -> set[str]:
-    """pytestが登録するfixtureの公開名を、定義と別名登録の双方から得る。"""
     return {value.name for value in runpy.run_path(str(path)).values() if isinstance(value, FixtureFunctionDefinition)}
 
 
 def test_conftest_registration_is_independent_of_collection_order() -> None:
-    """下位のconftestを許さず、subprojectの登録を直下からも解決できる。"""
     result = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "*conftest.py"],
         cwd=_ROOT,

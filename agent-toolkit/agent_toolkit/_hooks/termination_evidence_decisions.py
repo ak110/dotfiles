@@ -27,11 +27,6 @@ lazy from agent_toolkit._hooks.termination_evidence_state import (
 
 
 def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = None) -> list[str]:
-    """文脈の読込証拠と有効な省略を欠く成果作業を返す。
-
-    `context_loaded`はメインの文脈に手順書の現在の版があるか（`completion_in_context`）を渡す。
-    `None`は作業別の起動証拠を使う。偽を明示した場合は、圧縮前に得た作業別の起動証拠を再利用しない。
-    """
     if context_loaded is True or (context_loaded is None and work.get("completion_report")):
         return []
     omission = work.get("omit_completion")
@@ -45,7 +40,6 @@ def missing_completion(work: dict[str, Any], *, context_loaded: bool | None = No
 
 
 def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolved_labels: list[str] | None = None) -> str:
-    """観測した作業の単一リポジトリ内の規範を読み、対象への適用範囲を確かめる。"""
     target = document.get("target_repo")
     policy = document.get("policy_file")
     if not isinstance(target, str) or not pathlib.Path(target).is_absolute():
@@ -68,7 +62,6 @@ def _omission_policy(document: dict[str, Any], work: dict[str, Any], *, unresolv
 
 
 def _waiting_uwi(document: dict[str, Any], session_id: str) -> pathlib.Path:
-    """現在の会話が投入した実在の未回答UWIを確かめる。"""
     path_text = document.get("uwi_file")
     root = uwi_scan.private_notes_root()
     if root is None or not isinstance(path_text, str):
@@ -90,7 +83,6 @@ def _waiting_uwi(document: dict[str, Any], session_id: str) -> pathlib.Path:
 
 
 def record_decision(document: dict[str, Any]) -> str:
-    """実在する原入力と作用対象を持つ判断を記録し、対象作業の識別子を返す。"""
     session_id = document.get("session_id")
     action = document.get("action")
     if (

@@ -1,5 +1,3 @@
-"""証拠抽出の`--hook-notices`照会。hookが挿入した通知を種類ごとにまとめて返す。"""
-
 from __future__ import annotations
 
 import collections
@@ -31,8 +29,6 @@ _EXIT_CODE_PREFIX = re.compile(r"^Exit code\s+\d+\s*(?:\r?\n)+", re.IGNORECASE)
 
 
 class _HookNoticeKey(NamedTuple):
-    """通知の分類軸。標識を持たない通知では`hook`と`tag`が`None`になる。"""
-
     hook: str | None
     hook_name: str | None
     tag: str | None
@@ -40,13 +36,6 @@ class _HookNoticeKey(NamedTuple):
 
 
 def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
-    """hook実行の記録から通知本文だけを集計し、分類軸ごとの件数を件数降順で返す。
-
-    母集団はhook実行記録、ホストの遮断結果、および由来付きの追加コンテキストである。
-    hookの発動を伴わない本文（ソースの引用、会話中の言及）は記録の種別で除かれる。
-    同一ツール呼び出しの通知は実行成功記録の標準出力と追加コンテキストの双方へ格納されるため、
-    分類軸とツール呼び出し識別子の組で重複を除いてから数える。
-    """
     seen: set[tuple[str | None, _HookNoticeKey]] = set()
     counts: collections.Counter[_HookNoticeKey] = collections.Counter()
     hook_names = {
@@ -85,7 +74,6 @@ def _hook_notice_events(records: list[_Record]) -> list[dict[str, Any]]:
 
 
 def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dict[str, Any]]:
-    """通知の集計前の位置を、一次選別候補として重複なく返す。"""
     events: list[dict[str, Any]] = []
     seen: set[tuple[str, str | None, _HookNoticeKey]] = set()
     for item in collected:
@@ -114,7 +102,6 @@ def _hook_notice_candidate_events(collected: list[_CollectedRecord]) -> list[dic
 
 
 def _hook_occurrence(hook_record: dict[str, Any], line: int) -> str:
-    """メッセージの発生識別とツール呼び出しの関連付けを分ける。"""
     tool_use_id = hook_record.get("toolUseID")
     if isinstance(tool_use_id, str):
         return f"call:{tool_use_id}"
@@ -123,10 +110,6 @@ def _hook_occurrence(hook_record: dict[str, Any], line: int) -> str:
 
 
 def _hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    """エントリを再帰的にたどり、hook実行の記録を出現順に集める。
-
-    記録の格納先は`attachment`配下などruntimeの版で変わるため、`type`で判定する。
-    """
     found: list[dict[str, Any]] = []
     _collect_hook_records(entry, found)
     found.extend(_result_hook_records(entry))
@@ -220,7 +203,7 @@ def _result_hook_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
         except ValueError, TypeError:
             continue
         items = parsed if isinstance(parsed, list) else [parsed]
-        # 並列結果の外側には結果配列を持つオブジェクトもある。
+
         if isinstance(parsed, dict) and isinstance(parsed.get("results"), list):
             items = parsed["results"]
         for position, item in enumerate(items):
@@ -246,7 +229,6 @@ def _collect_hook_records(value: Any, found: list[dict[str, Any]]) -> None:
 
 
 def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
-    """通知の保存案内を実体へ展開し、取得できない案内は未展開と明示する。"""
     bodies = []
     for body in _raw_hook_notice_bodies(hook_record):
         path = persisted_output_reference.reference_path(body)
@@ -266,11 +248,6 @@ def _hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
 
 
 def _raw_hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
-    """hook実行の記録から通知本文を、記録の種別に応じた格納先から取り出す。
-
-    実行成功記録は標準出力の追加コンテキストと標準エラー出力の双方を通知の格納先とする。
-    追加コンテキストを伴わずに標準エラー出力だけで警告を返すhookがあるため、両方を対象とする。
-    """
     record_type = hook_record.get("type")
     content = hook_record.get("content")
     if record_type == "hook_additional_context":
@@ -294,12 +271,10 @@ def _raw_hook_notice_bodies(hook_record: dict[str, Any]) -> list[str]:
 
 
 def _hook_notice_keys(body: str, hook_name: str | None) -> list[_HookNoticeKey]:
-    """外側の通知境界ごとに集計用の分類を返す。"""
     return [key for key, _, _ in _hook_notice_parts(body, hook_name)]
 
 
 def _hook_notice_parts(body: str, hook_name: str | None) -> list[tuple[_HookNoticeKey, str, str]]:
-    """同じ境界から、集計用の分類・全文・一覧の表示を返す。"""
     if not body.strip():
         return []
     openings = list(_HOOK_NOTICE_MARKER.finditer(body))
@@ -352,17 +327,11 @@ def _hook_notice_kind_text(text: str) -> str:
     正規化の変更が比較の両側へ同時に反映される。片側だけ別の正規化で比べると、同じ通知を別の事象として数える。
     """
     if text.startswith("通知詳細未展開: "):
-        # 取得不能の診断は原文へ戻れないため、原因と再取得操作を種類本文にも残す。
         return text.strip()
     return _normalize_candidate_kind_text(_HOOK_REPEAT_ANNOTATION.sub("", text))
 
 
 def _normalize_candidate_kind_text(text: str) -> str:
-    """本文を、可変部を置換した先頭一定長の種別テキストへ正規化する。
-
-    可変部を残すと同じ原因の事象が複数の候補へ分かれ、長さが不足すると別原因の事象が
-    同一候補へ統合されるため、長さは実際の記録を確かめて決める。
-    """
     without_hook_prefix = _HOOK_FAILURE_PREFIX.sub("", text, count=1)
     without_common_prefix = _EXIT_CODE_PREFIX.sub("", without_hook_prefix, count=1)
     normalized = _CANDIDATE_VARIABLE.sub(_CANDIDATE_VARIABLE_PLACEHOLDER, " ".join(without_common_prefix.split()))
@@ -370,7 +339,6 @@ def _normalize_candidate_kind_text(text: str) -> str:
 
 
 def _normalize_hook_candidate_text(text: str) -> str:
-    """hook通知の定型標識を除いた是正本文を候補種別へ正規化する。"""
     match = _HOOK_NOTICE_MARKER.search(text)
     if match is None:
         return text[:_CANDIDATE_KIND_LENGTH]

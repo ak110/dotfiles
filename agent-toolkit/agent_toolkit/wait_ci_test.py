@@ -274,8 +274,6 @@ class TestRegistrationGrace:
 
 
 class TestPushIdentityDifferential:
-    """push前baselineに存在しない実行IDだけを判定対象とする。"""
-
     def test_old_success_is_ignored_while_new_run_progresses_to_success(self):
         old = _run(name="old", db_id=1)
         calls = {"n": 0}
@@ -407,7 +405,6 @@ class TestPollingCompletion:
         assert 2 in fetched_job_run_ids
 
     def test_run_registered_after_grace_is_waited_until_completion(self):
-        """猶予後に登録されたrunが未完了の間は成功と判定せず、完了まで待つ。"""
         calls = {"n": 0}
 
         def run_list_fn(_s):
@@ -513,7 +510,6 @@ class TestSupersededCancelledRuns:
     """
 
     def _superseded_pair_dispatch(self, final_conclusion: str):
-        """登録猶予中は2runとも実行中、以降は先行runがcancelled・後続runが指定の結論となる一覧を返す。"""
         calls = {"n": 0}
 
         def _fn(_sha):
@@ -537,7 +533,6 @@ class TestSupersededCancelledRuns:
         assert _run_wait(self._superseded_pair_dispatch("failure"), registration_grace=1.0) == wait_ci.EXIT_CI_FAILED
 
     def test_single_cancelled_run_still_follows_later_commits(self) -> None:
-        """同一commitのrunが1件だけcancelledである場合は、後続SHA追跡の振る舞いを変えない。"""
         cancelled = [_run(conclusion="cancelled", db_id=1, head_sha="sha1")]
         follow = [_run(db_id=2, head_sha="sha2")]
 

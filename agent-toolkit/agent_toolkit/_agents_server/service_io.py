@@ -1,5 +1,3 @@
-"""backendの生I/Oを所有元に残し、解釈と保存を制御所有世代へ結び付ける。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +38,6 @@ class Runtime:
 
     @property
     def owner(self) -> str:
-        """同じコード版の再起動でも、前の制御プロセスの要求を受理しない。"""
         return self.target.get("server_instance", self.generation)
 
 
@@ -49,13 +46,11 @@ _REHOMING: contextvars.ContextVar[str | None] = contextvars.ContextVar("agents_s
 
 
 def rehoming(identifier: str) -> bool:
-    """次の本来入力のために旧接続を解放した呼出しだけを識別する。"""
     return _REHOMING.get() == identifier
 
 
 @contextlib.asynccontextmanager
 async def next_input(session: Any) -> AsyncGenerator[None]:
-    """生存中の背景資源を保ち、次入力の境界で旧接続を回収する。"""
     runtime = current()
     if runtime is None or runtime.input_scope is None:
         yield
@@ -69,13 +64,11 @@ async def next_input(session: Any) -> AsyncGenerator[None]:
 
 
 def current() -> Runtime | None:
-    """共有管理のI/O境界を返し、単体backendや従来CLIではNoneを返す。"""
     return _RUNTIME.get()
 
 
 @contextlib.contextmanager
 def bind(runtime: Runtime) -> Generator[None]:
-    """新しいtaskも捕捉する範囲へ、資源所有と保存主体を束縛する。"""
     token = _RUNTIME.set(runtime)
     try:
         yield
@@ -85,15 +78,12 @@ def bind(runtime: Runtime) -> Generator[None]:
 
 @contextlib.contextmanager
 def save_with(save: Callable[[], Awaitable[None]]) -> Generator[None]:
-    """同じbrokerを使う会話の保存先だけを切り替える。"""
     runtime = current()
     with bind(dataclasses.replace(runtime, save=save)) if runtime else contextlib.nullcontext():
         yield
 
 
 class Resource:
-    """元世代のendpointを固定し、各操作で制御所有者の一致を確認する。"""
-
     def __init__(self, runtime: Runtime, identifier: str, origin: dict[str, Any]) -> None:
         self.runtime, self.identifier, self.origin = runtime, identifier, dict(origin)
 
@@ -107,24 +97,19 @@ class Resource:
 
     @property
     def local(self) -> bool:
-        """元I/Oが同じプロセスのbrokerにあるかを返す。"""
         return self.origin["generation"] == self.runtime.generation and self.origin.get("process") == self.runtime.target.get(
             "process"
         )
 
     def descriptor(self) -> dict[str, Any]:
-        """環境や実行可能オブジェクトを含めず、元資源への参照だけを渡す。"""
         return {"identifier": self.identifier, "origin": dict(self.origin)}
 
     @classmethod
     def attach(cls, runtime: Runtime, descriptor: dict[str, Any]) -> Resource:
-        """移譲済みの資源へ接続し、受付先の変更で所有元をたどり直さない。"""
         return cls(runtime, descriptor["identifier"], descriptor["origin"])
 
 
 class CodexResource:
-    """App Server通信をproxy化し、通知の解釈は現在のbackendだけで行う。"""
-
     def __init__(
         self,
         resource: Resource,
@@ -154,7 +139,6 @@ class CodexResource:
         server_request: Callable[[dict], Awaitable[None]],
         failure: Callable[[BaseException], Awaitable[None]],
     ) -> CodexResource:
-        """状態処理をraw callbackから外し、保存確認付きの1受信列へ渡す。"""
         identifier = ""
         broker = runtime.broker
         controller: CodexResource | None = None
@@ -182,9 +166,7 @@ class CodexResource:
                 if ticket is None:
                     return
                 if controller is not None and not controller.transferred:
-                    # 同じ所有者への送出確認は、保存待ちの通知列を経由しない。
                     controller.record_sent(ticket)
-                # 別世代では応答の到達時に送出も確認できるため、通知列へは積まない。
 
             try:
                 value = await raw.request(method, params, on_sent_async=publish_sent)
@@ -225,25 +207,17 @@ class CodexResource:
 
     @property
     def closed(self) -> bool:
-        """この制御側で解放を確定したかを返す。"""
         return self._closed
 
     @property
     def transferred(self) -> bool:
-        """旧制御側のdecodeを停止したかを返す。元I/Oの解放とは区別する。"""
         return self._detached
 
     @property
     def reader_failure(self) -> BaseException | None:
-        """元I/O側から通知された接続障害を返す。"""
         return self._reader_failure
 
     def diagnostic(self) -> dict[str, Any]:
-        """要求が進まない時に、受信処理の生存と元I/O側の未確認イベント数を返す。
-
-        未確認イベントが上限に達すると、元I/Oは後続の受信を止める。送出確認はこの列に積まない。
-        元I/Oが別プロセスにある場合、未確認数はこのプロセスから読めない。
-        """
         if not self.resource.local:
             backlog = "別プロセス"
         elif (counts := self.resource.runtime.broker.backlog(self.resource.identifier)) is None:
@@ -259,14 +233,12 @@ class CodexResource:
         }
 
     async def start(self) -> None:
-        """通知consumerを先に有効化してから元I/Oを開始する。"""
         self._task = asyncio.create_task(self._consume())
         metadata = await self.resource.operation("call", operation="start", arguments={})
         self.process = types.SimpleNamespace(pid=metadata["pid"])
         self.parent_environment = metadata["environment"]
 
     async def request(self, method: str, params: dict | None = None, *, on_sent: Callable[[], None] | None = None) -> dict:
-        """wire送信の観測と応答を分けて受信し、配送不確定の要求を保持する。"""
         ticket = str(uuid.uuid4()) if on_sent is not None else None
         self._requests += 1
         if ticket is not None and on_sent is not None:
@@ -281,7 +253,7 @@ class CodexResource:
                     "ticket": ticket,
                 },
             )
-            # 応答はwire送信後にしか届かない。終了境界でconsumerが止まってもsent通知待ちにしない。
+
             if ticket is not None:
                 self.record_sent(ticket)
             if error := response.get("response_error"):
@@ -293,21 +265,18 @@ class CodexResource:
             self._requests -= 1
 
     def record_sent(self, ticket: str) -> None:
-        """同じ送出を一度だけ確認する。"""
         callback = self._sent.pop(ticket, None)
         if callback is not None:
             callback()
 
     async def notify(self, method: str, params: dict | None = None) -> None:
-        """元I/OへJSON-RPC notificationを渡す。"""
         await self.resource.operation("call", operation="notify", arguments={"method": method, "params": params})
 
     async def send(self, message: dict) -> None:
-        """元I/Oへserver requestの応答を渡す。"""
         await self.resource.operation("call", operation="send", arguments={"message": message})
 
     async def _consume(self) -> None:
-        # 停止を記録し、接続障害として所有sessionへ反映して、終了しない「実行中」を残さない。
+
         try:
             await self._consume_events()
         except Exception as error:
@@ -358,17 +327,15 @@ class CodexResource:
                     else:
                         raise ValueError("未対応のApp Server生イベント")
                     sequence = event["sequence"]
-                # 1回の受信batchの解釈を保存してから、一括して既読へ進める。
+
                 await self.resource.runtime.save()
                 self._sequence = sequence
                 await self.resource.operation("acknowledge", sequence=self._sequence)
 
     def pause(self) -> None:
-        """適用中のイベントの保存だけを完走し、次のdecodeを止める。"""
         self._detached = True
 
     async def resume(self) -> None:
-        """所有を保つ旧clientで保存済みの位置からdecodeを続け、配送中の要求のcallbackを保持する。"""
         async with self._dispatch:
             # 保存済みの位置の再確認は所有が違えば失敗し、transferと異なり配送中の要求の完了を待たない。
             await self.resource.operation("acknowledge", sequence=self._sequence)
@@ -377,7 +344,6 @@ class CodexResource:
                 self._task = asyncio.create_task(self._consume())
 
     async def detach(self) -> dict[str, Any]:
-        """解釈と保存を完走してからconsumerだけを解除し、App Serverをcloseしない。"""
         async with self._dispatch:
             if self._requests:
                 raise RuntimeError("App Serverへ配送中の要求があるため移譲を待ちます")
@@ -401,7 +367,6 @@ class CodexResource:
         server_request: Callable[[dict], Awaitable[None]],
         failure: Callable[[BaseException], Awaitable[None]],
     ) -> CodexResource:
-        """元接続へresumeを送らず、新しいコードの通知処理だけを開始する。"""
         client = cls(Resource.attach(runtime, descriptor), notification, server_request, failure)
         client._sequence = descriptor["sequence"]
         client.parent_environment = descriptor["environment"]
@@ -410,7 +375,6 @@ class CodexResource:
         return client
 
     async def close(self) -> list[str]:
-        """制御所有者の一致を確認して元I/Oを回収し、所属が残れば所有を保つ。"""
         released = False
         try:
             residual = await self.resource.operation("call", operation="shutdown", arguments={})
@@ -433,6 +397,5 @@ class CodexResource:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
         if released:
-            # 受信処理を止めた後の未確認イベントを読む主体は無い。残すとbrokerが資源を保持し続け、元世代が退出できない。
             await self.resource.operation("discard")
         return []

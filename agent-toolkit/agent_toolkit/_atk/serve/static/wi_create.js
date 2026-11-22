@@ -1,4 +1,3 @@
-// WIの単件・一括登録フォーム。
 import {
   byId, wiState
 } from "./wi_state.js";

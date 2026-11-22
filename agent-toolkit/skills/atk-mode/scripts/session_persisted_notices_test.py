@@ -1,5 +1,3 @@
-"""退避案内の生成から証拠照会まで、通知の種類と取得不能を検証する。"""
-
 import pytest
 import session_review_evidence as evidence
 from agent_toolkit._common import message_format, persisted_output_reference

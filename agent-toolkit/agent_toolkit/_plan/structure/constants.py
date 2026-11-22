@@ -10,12 +10,10 @@ import re
 
 
 def canonical_h2_name(text: str) -> str:
-    """固定H2の旧別名を新書式の正規名へ写す。未知の見出しはそのまま返す。"""
     return _PLAN_H2_CANONICAL_BY_ALIAS.get(text, text)
 
 
 def h2_aliases(text: str) -> tuple[str, ...]:
-    """固定H2の正規名に対応する受理名を返す。"""
     canonical = canonical_h2_name(text)
     return PLAN_H2_ALIASES.get(canonical, (canonical,))
 

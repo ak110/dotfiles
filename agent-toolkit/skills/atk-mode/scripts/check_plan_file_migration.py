@@ -1,5 +1,3 @@
-"""計画の旧書式からの移行警告。"""
-
 from __future__ import annotations
 
 from agent_toolkit._plan import locations, structure
@@ -7,14 +5,12 @@ from check_plan_file_common import _ClassifiedWarning
 
 
 def _legacy_action_warnings(text: str) -> list[_ClassifiedWarning]:
-    """旧3列表の実施内容表を新4列表へ移行するwarningを返す。"""
     if not structure.has_legacy_action_table(text):
         return []
     return [("migration", "実施内容表が旧3列表である。新規作成・改訂では4列表へ移行する")]
 
 
 def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
-    """旧形式の本文内バグ調査表を計画本体の原因分析の節へ移行するwarningを返す。"""
     if not structure.has_legacy_bug_table(text):
         return []
     return [
@@ -26,7 +22,6 @@ def _legacy_bug_warnings(text: str) -> list[_ClassifiedWarning]:
 
 
 def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
-    """旧2列4行のリファクタリング表を現行3列表へ移行するwarningを返す。"""
     if not structure.has_legacy_refactoring_table(text):
         return []
     return [
@@ -38,7 +33,6 @@ def _legacy_refactoring_warnings(text: str) -> list[_ClassifiedWarning]:
 
 
 def _legacy_acceptance_warnings(text: str) -> list[_ClassifiedWarning]:
-    """改名前の列名を持つ受入シナリオ表を現行の列名へ移行するwarningを返す。"""
     if not structure.has_legacy_acceptance_table(text):
         return []
     header = "`, `".join(structure.PLAN_ACCEPTANCE_TABLE_HEADER)
@@ -46,7 +40,6 @@ def _legacy_acceptance_warnings(text: str) -> list[_ClassifiedWarning]:
 
 
 def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
-    """新書式で旧見出し別名を使っている場合の移行warningを返す。"""
     if not structure.is_canonical_main_format(text):
         return []
     headings = structure.extract_headings(text)
@@ -72,7 +65,6 @@ def _legacy_h2_warnings(text: str) -> list[_ClassifiedWarning]:
 
 
 def _legacy_wi_origin_warnings(text: str) -> list[_ClassifiedWarning]:
-    """実施内容表の`由来`欄が改名前のWI区分を使っている場合の移行warningを返す。"""
     return [
         ("migration", f"`## 実施内容`の`由来`が旧形式である。新規作成・改訂では`{canonical}`へ移行する")
         for canonical in structure.legacy_wi_origins(text)

@@ -32,12 +32,11 @@ _OBSERVED = ("UV_PROJECT_ENVIRONMENT", inherited_venv.PLUGIN_RUNTIME_ENVIRONMENT
 
 
 async def _ignore_message(_value: dict[str, Any]) -> None:
-    """起動境界で止める試験の受信先。"""
+    pass
 
 
 @contextlib.contextmanager
 def _launched(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, bound: bool, user: str | None) -> Generator[str]:
-    """起動層が共有依存環境を設定した環境を、呼出元contextかプロセス環境として与え、共有環境のパスを返す。"""
     caller = {key: value for key, value in os.environ.items() if key != "UV_PROJECT_ENVIRONMENT"}
     if user is not None:
         caller["UV_PROJECT_ENVIRONMENT"] = user
@@ -58,7 +57,6 @@ def _launched(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, *, bound:
 def test_preflight_child_receives_caller_project_environment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bound: bool, user: str | None
 ) -> None:
-    """委譲先の作業ディレクトリで実行する子は、共有依存環境ではなく呼び出し元の指定（未設定を含む）を受け取る。"""
     output = tmp_path / "child-env.json"
     command = (
         sys.executable,

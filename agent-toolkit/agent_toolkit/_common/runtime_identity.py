@@ -1,5 +1,3 @@
-"""エージェント実行identityの由来と表示を共有する。"""
-
 import re
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -9,8 +7,6 @@ IdentitySource = Literal["requested", "launch_candidate", "observed"]
 
 @dataclass(frozen=True)
 class RuntimeIdentity:
-    """起動要求・起動候補・ホスト観測値を由来付きで保持する。"""
-
     engine: str
     model: str
     effort: str
@@ -18,11 +14,9 @@ class RuntimeIdentity:
 
     @property
     def machine(self) -> str:
-        """永続化と比較に使う決定論的な表現を返す。"""
         return f"{self.engine}:{self.model}/{self.effort}"
 
     def display(self, *, catalog: list[dict[str, Any]] | None = None) -> str:
-        """モデルカタログの表示名を優先した人間向け表現を返す。"""
         display_model = self.model
         for item in catalog or ():
             model_id = item.get("model") or item.get("id")
@@ -37,7 +31,6 @@ class RuntimeIdentity:
         return f"{display_model} / {self.effort.capitalize()}"
 
     def public(self) -> dict[str, str]:
-        """API応答へ埋め込める構造化値を返す。"""
         return {
             "engine": self.engine,
             "model": self.model,
@@ -51,7 +44,6 @@ _CLAUDE_MODEL_ID = re.compile(r"claude-([a-z]+)-(\d+)-(\d+)(?:-\d{8})?")
 
 
 def _fallback_model_display(model: str) -> str:
-    """完全モデルIDを、カタログ無しでも安定した表示名へ変換する。形の合わないIDはそのまま返す。"""
     parts = model.split("-")
     if len(parts) >= 3 and parts[0].lower() == "gpt":
         return f"GPT-{parts[1]} {' '.join(part.capitalize() for part in parts[2:])}"
@@ -80,7 +72,6 @@ def observed_identity(entry: dict[str, Any], runtime: str) -> RuntimeIdentity | 
 
 
 def observed_model(entry: dict[str, Any], runtime: str) -> str | None:
-    """推論量の記録を要求せず、ホストが観測したモデルだけを返す。合成応答は除く。"""
     fields = _observed_model_effort(entry, runtime)
     return fields[0] if fields is not None else None
 
@@ -122,7 +113,6 @@ def _observed_model_effort(entry: dict[str, Any], runtime: str) -> tuple[str, An
 
 
 def identity_observations(records: Any, runtime: str) -> list[tuple[int, RuntimeIdentity]]:
-    """行番号とentryを持つ記録列から、順序を保った観測値を返す。"""
     result: list[tuple[int, RuntimeIdentity]] = []
     for fallback_line, record in enumerate(records, start=1):
         entry = getattr(record, "entry", record)
@@ -135,7 +125,6 @@ def identity_observations(records: Any, runtime: str) -> list[tuple[int, Runtime
 
 
 def distinct_identities(records: Any, runtime: str) -> list[RuntimeIdentity]:
-    """記録中の全観測組を初出順で重複除去して返す。"""
     result: list[RuntimeIdentity] = []
     seen: set[str] = set()
     for _line, identity in identity_observations(records, runtime):
@@ -146,7 +135,6 @@ def distinct_identities(records: Any, runtime: str) -> list[RuntimeIdentity]:
 
 
 def latest_identity(records: Any, runtime: str, *, before_line: int) -> tuple[int, RuntimeIdentity] | None:
-    """指定行以前の直近の観測値を返す。"""
     return next(
         ((line, identity) for line, identity in reversed(identity_observations(records, runtime)) if line <= before_line),
         None,

@@ -1,5 +1,3 @@
-"""serveのstateに関するdetailの試験。"""
-
 # pylint: disable=protected-access
 
 import json
@@ -14,7 +12,6 @@ from agent_toolkit._testing.serve_support import _write_detail_entry
 
 
 def test_detail_returns_existing_uwi_answer(tmp_path: pathlib.Path) -> None:
-    """回答済みUWIの詳細は既存回答を編集用に返す。"""
     _write_detail_entry(
         tmp_path,
         "---\ntype: uwi\ntarget_repo: example/repo\n---\n\n## 質問\n\n質問本文\n\n"
@@ -28,7 +25,6 @@ def test_detail_returns_existing_uwi_answer(tmp_path: pathlib.Path) -> None:
 
 @pytest.mark.asyncio
 async def test_detail_api_round_trips_frontmatter_as_strict_json(tmp_path: pathlib.Path) -> None:
-    """詳細HTTP APIは非有限浮動小数点を含むfrontmatterも標準JSONとして返す。"""
     _write_detail_entry(
         tmp_path,
         "---\ntype: awi\nqueue_schedule:\n  nan: .nan\n  positive: .inf\n---\n\n本文\n",
@@ -61,13 +57,12 @@ def test_detail_falls_back_on_broken_frontmatter(tmp_path: pathlib.Path) -> None
     _write_detail_entry(tmp_path, "---\nkey: [unclosed\n---\n\n本文\n")
     rendered = typing.cast(str, wi_operations.Operations(tmp_path).detail("inbox", "entry.md")["content_html"])
     assert "本文" in rendered
-    # 表へ振り分けず本文全体をMarkdownとして整形するため、開始区切りが水平線として残る。
+
     assert '<table class="frontmatter">' not in rendered
     assert "<hr" in rendered
 
 
 def test_detail_disables_only_bare_address_links(tmp_path: pathlib.Path) -> None:
-    """詳細表示は裸アドレスをリンク化せず、明示リンクとGFM拡張を維持する。"""
     _write_detail_entry(
         tmp_path,
         "https://example.com www.example.com user@example.com\n\n"
@@ -87,7 +82,6 @@ def test_detail_disables_only_bare_address_links(tmp_path: pathlib.Path) -> None
 
 
 def test_operations_active_includes_hold_entries_of_both_types(tmp_path: pathlib.Path) -> None:
-    """一覧APIのactive状態はhold配下のawiとUWIをいずれも含める。"""
     hold = tmp_path / "hold"
     hold.mkdir()
     (hold / "held.md").write_text(
@@ -118,7 +112,6 @@ def test_operations_active_includes_hold_entries_of_both_types(tmp_path: pathlib
     ],
 )
 def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.Path, query: str, expected: list[str]) -> None:
-    """`q`は半角スペース区切りで各語を複数フィールドへAND検索する。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir(parents=True)
     (inbox / "entry.md").write_text(
@@ -137,10 +130,9 @@ def test_operations_query_searches_full_markdown_and_metadata(tmp_path: pathlib.
 
 
 def test_operations_sort_entries_by_filename_across_kinds(tmp_path: pathlib.Path) -> None:
-    """一覧は種別と回答状況にかかわらずファイル名降順で返す。"""
     inbox = tmp_path / "inbox"
     inbox.mkdir()
-    # ファイル名の昇順でファイルを作成
+
     (inbox / "a-awi.md").write_text(
         "---\ntype: awi\ntarget_repo: example/repo\n---\n\n本文\n",
         encoding="utf-8",
@@ -180,5 +172,5 @@ def test_operations_sort_entries_by_filename_across_kinds(tmp_path: pathlib.Path
         "a-unanswered-uwi.md",
         "a-awi.md",
     ]
-    # 種別の確認
+
     assert [item["kind"] for item in result] == ["awi", "uwi", "uwi", "awi", "uwi", "awi"]

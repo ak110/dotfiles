@@ -1,5 +1,3 @@
-"""実IPCで元資源へ接続し、3制御世代のdecode・保存と元I/Oの寿命を分ける。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,8 +20,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 class _RawCodex:
-    """外部App ServerのI/Oだけを代用し、broker・IPC・consumer・保存は実行する。"""
-
     def __init__(
         self,
         notification: Callable[[dict], Awaitable[None]],
@@ -124,7 +120,7 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
                     expected_owner=client.resource.runtime.owner,
                     new_owner=next_generation,
                 )
-                # G2以降の制御先を、接続元のG1へ付け替えない。
+
                 runtime, handler = controller(next_generation, {"generation": next_generation})
                 client = service_io.CodexResource.attach(runtime, descriptor, handler, unexpected, unexpected)
                 clients.append(client)
@@ -148,7 +144,6 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
 @pytest.mark.parametrize("residual", [[], ["pid=7: codex app-server"]])
 @pytest.mark.asyncio
 async def test_consumer_failure_is_reported_as_reader_failure(tmp_path: pathlib.Path, residual: list[str]) -> None:
-    """受信処理の停止は、元I/OのApp Serverを止めてから接続障害として報告し、停止を確認できない対象を伝える。"""
     caller = runtime_environment.CallerContext(dict(os.environ), tmp_path)
     directory = service_transport.namespace(caller)
     broker = ResourceBroker("G1")
@@ -234,10 +229,6 @@ async def test_close_after_owner_generation_exited(monkeypatch, app_server_alive
 
 @pytest.mark.asyncio
 async def test_closing_after_reader_stopped_releases_resource_with_unread_events() -> None:
-    """受信処理が止まった後に閉じた資源は、未確認のイベントを残してbrokerに留まらない。
-
-    留まると、資源の解放を退出の条件とする元世代の管理サービスが退出できない。
-    """
     broker = ResourceBroker("G1")
     runtime = service_io.Runtime("G1", {"generation": "G1", "process": "1:owner"}, broker)
     raw: _RawCodex | None = None
@@ -272,7 +263,6 @@ async def test_closing_after_reader_stopped_releases_resource_with_unread_events
 
 @pytest.mark.asyncio
 async def test_full_notification_queue_does_not_wait_for_sent_callback() -> None:
-    """送出確認の有無にかかわらず、保留した通知はそのまま残る。"""
     broker = ResourceBroker("G1")
     broker._event_limit = 1  # pylint: disable=protected-access
     runtime = service_io.Runtime("G1", {"generation": "G1"}, broker)

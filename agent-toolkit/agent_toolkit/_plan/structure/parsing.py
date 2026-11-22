@@ -1,5 +1,3 @@
-"""計画メタ情報、`### 実装単位`の固定表、実装担当が読む範囲とエージェント向け文書の判定など、計画ファイルの値の解析。"""
-
 from __future__ import annotations
 
 import pathlib
@@ -50,19 +48,15 @@ from agent_toolkit._plan.structure.materials import _STRICT_INTERNAL_PLAN_ID_PAT
 
 
 def canonical_metadata_field(field: str) -> str:
-    """計画メタ情報の項目名の旧名称を正規名へ写す。未知の項目名はそのまま返す。"""
     return _PLAN_METADATA_CANONICAL_BY_FIELD_ALIAS.get(field, field)
 
 
 def canonical_wi_origin(origin: str) -> str:
-    """`由来`欄のWI区分の旧名称を正規名へ写す。未知の区分はそのまま返す。"""
     return _PLAN_WI_ORIGIN_CANONICAL_BY_ALIAS.get(origin, origin)
 
 
 @dataclass(frozen=True)
 class PlanImplementationUnit:
-    """計画ファイル（詳細）の実装単位表1行を表す。"""
-
     unit_id: str
     purpose: str
     dependencies: tuple[str, ...]
@@ -72,8 +66,6 @@ class PlanImplementationUnit:
 
 @dataclass(frozen=True)
 class PlanMetadata:
-    """計画メタ情報の解析結果を表す。"""
-
     parent: str
     """メタ情報を収めていた親H2の見出し文。現行の計画ではH1直下を表す空文字列、8節形式までの計画では`概要`となる。"""
 
@@ -102,7 +94,6 @@ _METADATA_BASE_COMMIT_LINE = re.compile(r"^\s*-\s*(?:ベースコミット|基�
 
 
 def _strip_backticks(value: str) -> str:
-    """前後のバッククォートを1組だけ取り除く。"""
     if len(value) >= 2 and value.startswith("`") and value.endswith("`"):
         return value[1:-1]
     return value
@@ -113,7 +104,6 @@ PLAN_METADATA_TOP_PARENT: str = ""
 
 
 def metadata_parent_label(parent: str) -> str:
-    """計画メタ情報の配置を診断へ書く表記で返す。"""
     return "H1直下" if parent == PLAN_METADATA_TOP_PARENT else f"`## {parent}`直下"
 
 
@@ -204,7 +194,6 @@ def parse_plan_metadata(content: str) -> tuple[PlanMetadata | None, list[str]]:
 AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/references/.+\.md$"),
-    # 役割文書と担当の手順書は入口スキルの`roles/`・`playbooks/`に置く。
     re.compile(r"(^|/)agent-toolkit/skills/[^/]+/(roles|playbooks)/.+\.md$"),
     re.compile(r"(^|/)agent-basics/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)agent-basics/skills/[^/]+/references/.+\.md$"),
@@ -219,11 +208,10 @@ AGENT_DOC_TARGET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(^|/)\.claude/rules/.+\.md$"),
     re.compile(r"(^|/)\.claude/skills/[^/]+/SKILL\.md$"),
     re.compile(r"(^|/)\.claude/skills/[^/]+/references/.+\.md$"),
-    # サブエージェント定義も`agent-toolkit/agents/`と同じ種類としてプロジェクト側の層で判定する。
     re.compile(r"(^|/)\.claude/agents/.+\.md$"),
 )
-# basenameとの一致で判定するエージェント向け文書の判定対象ファイル名。
-# ディレクトリ位置を問わず一致させる（ルート直下限定ではない）。
+
+
 AGENT_DOC_TARGET_BASENAMES: frozenset[str] = frozenset({"AGENTS.md", "CLAUDE.md"})
 
 
@@ -249,8 +237,6 @@ def is_agent_doc_target_file(file_path: str | pathlib.Path) -> bool:
     return pathlib.Path(normalized).name in AGENT_DOC_TARGET_BASENAMES
 
 
-# --- 人間向け固定領域の構造を判定する ---
-
 # `P-256`は外部仕様でも使われるため、自由文では旧素材IDであるとは判定しない。
 _INTERNAL_PLAN_ID_PATTERN = re.compile(
     r"(?<![0-9A-Za-z_-])(?:R-P-[0-9A-Za-z][0-9A-Za-z_-]*-[0-9]{3}|P-(?!256(?![0-9A-Za-z_-]))[0-9A-Za-z][0-9A-Za-z_-]*|U-[0-9]{3}|H-[0-9]{3}|C-[0-9]{3}|R[0-9]+-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![0-9A-Za-z_-])"
@@ -258,7 +244,6 @@ _INTERNAL_PLAN_ID_PATTERN = re.compile(
 
 
 def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
-    """本文が結論語だけで構成されているかを返す。"""
     contents = [line.strip().lstrip("-*+ ").strip("。 ") for _lineno, line in lines if line.strip()]
     contents = [content for content in contents if content and not content.startswith("#")]
     if not contents:
@@ -267,12 +252,10 @@ def _is_placeholder_only(lines: list[tuple[int, str]]) -> bool:
 
 
 def _find_table_with_rows(tables: list[MarkdownTable], rows: tuple[str, ...]) -> MarkdownTable | None:
-    """行名と順序が一致する表を返す。見つからない場合は`None`を返す。"""
     return next((table for table in tables if table.row_labels() == rows), None)
 
 
 def _legacy_expected_h2(work_type: str | None) -> list[str]:
-    """旧形式（単一ファイル9節）の固定H2順序を返す。"""
     expected = [PLAN_H2_OVERVIEW, PLAN_H2_ACTION, PLAN_H2_MATERIALS, PLAN_H2_LEGACY_HISTORY]
     if work_type == "バグ対応":
         expected.append(PLAN_H2_BUG)
@@ -281,7 +264,6 @@ def _legacy_expected_h2(work_type: str | None) -> list[str]:
 
 
 def _detail_expected_h2(work_type: str | None) -> list[str]:
-    """新書式の計画ファイル（詳細）の固定H2順序を返す。"""
     expected = [PLAN_H2_BUG] if work_type == "バグ対応" else []
     expected.extend(PLAN_DETAIL_H2_ORDER)
     return expected

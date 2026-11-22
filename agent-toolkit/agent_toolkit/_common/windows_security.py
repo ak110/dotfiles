@@ -127,8 +127,6 @@ _FILE_MAPPING = _GenericMapping(_FILE_GENERIC_READ, _FILE_GENERIC_WRITE, _FILE_G
 
 @dataclasses.dataclass(frozen=True)
 class InheritanceRepair:
-    """`restore_inheritance`の結果。"""
-
     restored: tuple[pathlib.Path, ...] = ()
     """継承するACLへ戻した項目。"""
     blocked: tuple[tuple[pathlib.Path, str], ...] = ()
@@ -218,7 +216,7 @@ def _ntdll() -> Any:
 
 
 def _error(code: int, path: pathlib.Path | str) -> OSError:
-    # winerrorから組み込みの派生例外（アクセス拒否ならPermissionError）を選ばせる。
+
     return OSError(None, _windows.FormatError(code), str(path), code)
 
 
@@ -256,7 +254,6 @@ def is_elevated() -> bool:
 
 
 def user_sid() -> str:
-    """実行中のプロセスのユーザーSIDを文字列で返す。"""
     advapi, kernel = _api()
     with _process_token() as token:
         size = wintypes.DWORD(0)
@@ -313,10 +310,6 @@ def _descriptor_sddl(descriptor: Any, path: pathlib.Path | str) -> str:
 
 
 def _read_descriptor(read: Callable[[Any, int, Any], Any], path: str) -> bytes:
-    """所有者・グループ・DACLを含む自己相対形式のセキュリティ記述子を読む。
-
-    OSが記録した形をそのまま返す。親が自動継承の印（`AI`）を持たないと、継承したACEにも`ID`が付かない。
-    """
     size = 512
     while True:
         buffer = ctypes.create_string_buffer(size)
@@ -414,11 +407,6 @@ class _Verdict(enum.Enum):
 
 
 class _UserAccess:
-    """同じユーザーの通常のプロセスから見て、項目を継承するACLへ戻す必要があるかを判定する。
-
-    判定はセキュリティ記述子と項目の種類だけで決まるため、同じ記述子は1回だけ判定する。
-    """
-
     def __init__(self, token: Any) -> None:
         self._token = token
         self._verdicts: dict[tuple[bytes, bool], bool] = {}
@@ -462,7 +450,6 @@ class _UserAccess:
         except FileNotFoundError:
             return _Verdict.MISSING
         except OSError:
-            # 実行中のtokenで記述子を読めなければ通常のプロセスも読めない。戻せるかは変更するハンドルで確かめる。
             return _Verdict.REPAIR
         return _Verdict.REPAIR if self.needs_repair(descriptor, is_directory, native) else _Verdict.KEEP
 
@@ -508,12 +495,6 @@ def _open_for_acl(native: str) -> Any:
 
 @contextlib.contextmanager
 def _acl_handle(native: str) -> Generator[Any]:
-    """リンクとjunctionをたどらずに項目自身を開き、ACLの読み書きに使うハンドルを返す。
-
-    判定から変更までを同じハンドルで行い、途中でjunctionへ差し替えられても差し替え先のACLを変えない。
-    非昇格のプロセスがパスの途中へ置いたjunctionやハードリンクの先にある、root外の項目を昇格した実行が変えないよう、
-    ハンドルの最終パスが走査したパスと一致し、ほかのハードリンクを持たない項目だけを返す。
-    """
     _, kernel = _api()
     handle = _open_for_acl(native)
     try:
@@ -556,7 +537,6 @@ def _comparable(path: str) -> str:
 
 
 def _inherit(handle: Any, native: str) -> None:
-    """明示ACEを除いて保護を外し、親から継承するACLへ戻す。配下の継承ACEはOSが計算し直す。"""
     advapi, _ = _api()
     empty = ctypes.create_string_buffer(_EMPTY_ACL_SIZE)
     if not advapi.InitializeAcl(empty, _EMPTY_ACL_SIZE, _ACL_REVISION):
@@ -569,10 +549,6 @@ def _inherit(handle: Any, native: str) -> None:
 
 
 def _repair(entry: _Entry, access: _UserAccess) -> bool:
-    """項目を継承するACLへ戻して真を返す。判定の後に戻す必要が無くなっていれば偽を返す。
-
-    実行中のtokenで変更できない場合と、戻しても通常のプロセスが読めない場合は`OSError`を送出する。
-    """
     with _acl_handle(entry.native) as handle:
         if not access.needs_repair(_handle_descriptor(handle, entry.native), entry.is_directory, entry.native):
             return False
@@ -583,7 +559,6 @@ def _repair(entry: _Entry, access: _UserAccess) -> bool:
 
 
 def _entries(native: str) -> list[tuple[str, bool]]:
-    """リンクとjunctionを除いた直下の項目と、ディレクトリかどうかを返す。OSの継承の再計算もリンク先へは及ばない。"""
     with os.scandir(native) as entries:
         return [
             (entry.path, entry.is_dir(follow_symlinks=False))
@@ -624,7 +599,6 @@ def restore_inheritance(root: pathlib.Path | str) -> InheritanceRepair:
         access = _UserAccess(token)
 
         def settle(entry: _Entry) -> bool:
-            """必要なら継承するACLへ戻し、配下へ進むかを返す。"""
             if entry.verdict is _Verdict.MISSING:
                 return False
             if entry.verdict is _Verdict.REPAIR:
@@ -638,7 +612,6 @@ def restore_inheritance(root: pathlib.Path | str) -> InheritanceRepair:
                     return False
             return entry.is_directory
 
-        # root自体のリンクは解決し、その配下で走査したパスと変更するハンドルの最終パスを比べる。
         start = _native(os.path.realpath(root))
         entries = [_Entry(start, True, access.inspect(start, True))]
         while entries:

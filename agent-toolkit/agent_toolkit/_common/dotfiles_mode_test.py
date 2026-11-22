@@ -1,5 +1,3 @@
-"""モード保存が他のatk設定を保持し、初回導入と同じ値を解決することを確かめる。"""
-
 import json
 
 import pytest

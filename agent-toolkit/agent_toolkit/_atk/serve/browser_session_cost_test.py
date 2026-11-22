@@ -1,5 +1,3 @@
-"""推定費用の親子の表示範囲、料金表の基準日と単価不明を実ブラウザーで検証する。"""
-
 import asyncio
 import contextlib
 import json
@@ -114,9 +112,8 @@ def _priced_records(root: Path) -> None:
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [320, 1280])
 async def test_parent_child_and_delegate_cost_scope(screen_harness: _ScreenHarness, width: int) -> None:
-    """親は子孫込み、本文から開く子と一覧から開く委譲先は自身の額を表示する。"""
     harness = screen_harness
-    # 更新通知を明示的に送る本試験ではwatchを止め、準備時の変更通知との混入を防ぐ。
+
     await serve_sessions.stop_local_watch_async(harness.sessions_context)
     _priced_records(harness.root.parent)
     page = harness.page
@@ -168,7 +165,6 @@ async def test_parent_child_and_delegate_cost_scope(screen_harness: _ScreenHarne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_unknown_price_is_not_shown_as_zero(screen_harness: _ScreenHarness) -> None:
-    """モデル名の無い親応答と、未収録モデルの子応答を無料とせず、名前と件数を示す。"""
     child = next((screen_harness.root.parent / "claude" / "projects").glob("*/*/subagents/*.jsonl"))
     with child.open("a", encoding="utf-8") as stream:
         entry = {"type": "assistant", "message": {"model": "future-sol", "usage": {"input_tokens": 10}}}
@@ -185,7 +181,6 @@ async def test_unknown_price_is_not_shown_as_zero(screen_harness: _ScreenHarness
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _ScreenHarness) -> None:
-    """算出より短い間隔で追記される記録でも、算出の要求を重ねずに金額を表示する。"""
     harness = screen_harness
     await serve_sessions.stop_local_watch_async(harness.sessions_context)
     _priced_records(harness.root.parent)
@@ -196,8 +191,7 @@ async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _
     second_request = asyncio.Event()
 
     async def hold_cost(route: playwright.async_api.Route) -> None:
-        # 子孫の多い記録の算出が長引く状況を、応答の保留で再現する。
-        # 初期表示で自動的に開く別の記録（子や委譲先）の要求は数えず、そのまま通す。
+
         if urllib.parse.parse_qs(urllib.parse.urlsplit(route.request.url).query).get("path") != [str(parent)]:
             await route.continue_()
             return
@@ -229,7 +223,7 @@ async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _
     assert len(cost_requests) == 1
     release.set()
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
-    # 算出中に届いた追記は、最初の結果を表示した後の1回の取り直しで反映する。
+
     await asyncio.wait_for(second_request.wait(), timeout=30)
     await playwright.async_api.expect(page.locator("#detail-usage")).to_contain_text("$3.0007 USD")
     assert len(cost_requests) == 2
@@ -237,7 +231,6 @@ async def test_cost_survives_detail_refreshes_while_estimating(screen_harness: _
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_opening_another_record_aborts_pending_cost(screen_harness: _ScreenHarness) -> None:
-    """推定費用の算出中に別の記録を開くと前の要求を中止し、次の詳細の取得に接続を空ける。"""
     harness = screen_harness
     await serve_sessions.stop_local_watch_async(harness.sessions_context)
     _priced_records(harness.root.parent)

@@ -49,7 +49,7 @@ def _exclude_from_git(target: Path, path: Path) -> None:
     if toplevel is None or common_dir is None:
         return
     root = Path(toplevel).resolve()
-    # リンク自身を除外するため、末尾の項目は辿らない。
+
     pattern = "/" + (path.parent.resolve() / path.name).relative_to(root).as_posix()
     exclude = Path(common_dir) / "info" / "exclude"
     previous = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
@@ -62,7 +62,6 @@ def _exclude_from_git(target: Path, path: Path) -> None:
 
 
 def migrate_project_instructions(target: Path) -> None:
-    """プロジェクト規範の実体をAGENTS.mdへ収束させる。"""
     agents_md = target / _AGENTS_MD
     claude_md = target / _CLAUDE_MD
     agents_kind = _classify_instruction_path(agents_md, expected_target=_CLAUDE_MD)
@@ -161,12 +160,10 @@ def _rules_paths(target: Path) -> tuple[Path, Path]:
 
 
 def build_parser(parser: argparse.ArgumentParser) -> None:
-    """`atk setup-project`の引数を登録する。"""
     parser.add_argument("--clean", action="store_true", help="配置済みの共有リンクと、以前に複製した規範を削除する。")
 
 
 def dispatch(args: argparse.Namespace) -> int:
-    """cwdを対象に移行、追加配布または配置済み資源の削除を行う。"""
     target = Path.cwd()
     try:
         if args.clean:

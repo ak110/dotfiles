@@ -1,5 +1,3 @@
-"""check_update_dotfiles_upgrade.pyの単体テスト。"""
-
 from __future__ import annotations
 
 import json
@@ -128,7 +126,6 @@ def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path
 
 
 def test_update_warning_includes_following_command_output(tmp_path: pathlib.Path) -> None:
-    """警告に続くコマンド出力の行も診断へ含め、次のログ行は含めない。"""
     (tmp_path / "update-dotfiles.log").write_text(
         "2026-10-28 12:00:00,000 run=check WARNING     mise: `install` に失敗\n"
         "mise ERROR failed to download tool\n"
@@ -143,7 +140,6 @@ def test_update_warning_includes_following_command_output(tmp_path: pathlib.Path
 
 
 def test_update_info_log_succeeds(tmp_path: pathlib.Path) -> None:
-    """通常の進捗とメッセージ中のWARNINGという単語は警告扱いにしない。"""
     (tmp_path / "update-dotfiles.log").write_text("2026-10-28 12:00:00 run=check INFO WARNING設定を確認\n", encoding="utf-8")
     upgrade.verify_update_logs(tmp_path)
 
@@ -167,7 +163,6 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
 
 # test-copy-contract: 更新案内の別の生成側とログ検収側の許容定義を一致させ、正常更新の誤失敗を防ぐ。
 def test_allowed_notice_matches_post_apply_source() -> None:
-    """許容する更新案内は、post-applyが実際に出す文言と一致する。"""
     assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
     assert upgrade._CODEX_HOOK_TRUST_NOTICE == _CODEX_TRUST_MESSAGE  # pylint: disable=protected-access
 
@@ -196,7 +191,6 @@ def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) 
     [antigravity_plugin.UPDATED_NOTICE, _CODEX_TRUST_MESSAGE],
 )
 def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, level: str) -> None:
-    """許容はWARNINGに限り、同じ文言でもERROR以上は検出する。"""
     (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check {level} {message}\n", encoding="utf-8")
     with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
         upgrade.verify_update_logs(tmp_path)
@@ -215,14 +209,12 @@ def test_hook_trust_notice_keeps_other_warning_failures(tmp_path: pathlib.Path, 
 
 
 def test_other_uv_warning_still_fails(tmp_path: pathlib.Path) -> None:
-    """uvの複製切替以外のuv警告は検出する。"""
     (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
     with pytest.raises(upgrade.UpgradeCheckError, match="Failed to build"):
         upgrade.verify_update_logs(tmp_path, stderr="warning: Failed to build package\n")
 
 
 def test_missing_update_log_fails(tmp_path: pathlib.Path) -> None:
-    """更新の警告観測が成立しない場合を成功にしない。"""
     with pytest.raises(upgrade.UpgradeCheckError, match="永続ログが作成されず"):
         upgrade.verify_update_logs(tmp_path)
 
@@ -249,14 +241,11 @@ def test_public_upgrade_rejects_child_stderr_warning(
 
 
 def test_normal_child_progress_is_not_warning(tmp_path: pathlib.Path) -> None:
-    """標準エラーの通常進捗と警告機能の説明はseverity診断として扱わない。"""
     (tmp_path / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
     upgrade.verify_update_logs(tmp_path, stdout="warning settings enabled", stderr="Downloading package (1/2)\n")
 
 
 class _FakeRegistry:
-    """`HKCU\\Environment`の代わりに値を保持し、操作を記録する偽の実装。"""
-
     def __init__(self, values: dict[str, tuple[object, int]] | None = None) -> None:
         self.values = dict(values or {})
         self.operations: list[str] = []
@@ -275,7 +264,6 @@ class _FakeRegistry:
 
 
 def _profile_env(tmp_path: pathlib.Path) -> dict[str, str]:
-    """通常profileの代わりに`tmp_path`配下を指す環境変数を返す。"""
     profile = tmp_path / "normal-profile"
     (profile / ".local" / "bin").mkdir(parents=True, exist_ok=True)
     (profile / ".local" / "share").mkdir(parents=True, exist_ok=True)
@@ -290,7 +278,6 @@ def _profile_env(tmp_path: pathlib.Path) -> dict[str, str]:
 
 
 def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
-    """検証が問い合わせるGitの値を返す。"""
     _write_update_log(arguments)
     values = {"rev-parse": "current-oid", "show": "1000000", "rev-list": "old-oid"}
     output = next((value for option, value in values.items() if option in arguments), "")
@@ -298,7 +285,6 @@ def _git_answers(arguments: list[str]) -> subprocess.CompletedProcess[str]:
 
 
 def _write_update_log(arguments: list[str]) -> None:
-    """偽の公開更新も実更新と同じ永続ログを残す。"""
     if arguments[0] in {"bash", "cmd.exe"}:
         home = pathlib.Path(arguments[-1]).parents[2]
         (home / "update-dotfiles.log").write_text("run=test INFO 更新完了\n", encoding="utf-8")
@@ -321,7 +307,6 @@ def test_cli_outputs_japanese_when_default_stream_encoding_is_not_utf8() -> None
 
 
 def test_resolve_old_commit_uses_head_timestamp_minus_72_hours(tmp_path: pathlib.Path) -> None:
-    """旧commit探索の基準を現行commit時刻の72時間前に固定する。"""
     calls: list[list[str]] = []
 
     def runner(arguments, **_kwargs):
@@ -363,7 +348,6 @@ def test_resolve_old_commit_reports_command_when_process_cannot_start(tmp_path: 
     (("linux", "update-dotfiles"), ("windows", "update-dotfiles.cmd")),
 )
 def test_platform_entrypoint_selects_real_launcher(tmp_path: pathlib.Path, platform_name: str, expected: str) -> None:
-    """各OSで公開される実ランチャーを旧checkoutから選択する。"""
     assert pathlib.Path(upgrade.platform_entrypoint(tmp_path, platform_name)[-1]).name == expected
 
 
@@ -378,7 +362,7 @@ def test_upgrade_check_isolates_uv_tools_and_child_output(
     runner_temp = tmp_path / "runner-temp"
     runner_temp.mkdir()
     monkeypatch.setenv("TMPDIR", str(runner_temp))
-    # 既に他テストが解決した一時配置先を戻し、このテストのTMPDIRから再解決する。
+
     monkeypatch.setattr(upgrade.tempfile, "tempdir", None)
     monkeypatch.setenv("UV_TOOL_BIN_DIR", str(tmp_path / "ci-tool-bin"))
     monkeypatch.setenv("UV_TOOL_DIR", str(tmp_path / "ci-tools"))
@@ -581,7 +565,6 @@ def test_other_upgrade_failures_keep_general_diagnostic(
 def test_initial_apply_pins_old_python_version(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, old_pin: str | None, expected: str | None
 ) -> None:
-    """初期適用だけ旧commitの`.python-version`へ固定し、更新は固定せずに実行する。"""
     uv = tmp_path / "uv"
     uv.write_bytes(b"test-uv")
     monkeypatch.setenv("UV", str(uv))
@@ -613,7 +596,6 @@ def test_verify_updated_oid_rejects_mismatch() -> None:
 
 
 def test_create_local_remote_can_advance_checkout(tmp_path: pathlib.Path) -> None:
-    """bare remoteが旧・現行commitのobjectを持ち、旧checkoutを更新できる。"""
 
     def git(*arguments: str | pathlib.Path) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["git", *map(str, arguments)], check=True, capture_output=True, text=True, encoding="utf-8")
@@ -743,7 +725,6 @@ def test_profile_leak_fails_check(
 
 
 def test_profile_unchanged_passes(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """既存ファイルの内容が変わっても、項目名が変わらなければ成功する。"""
     monkeypatch.setenv("UV", str(tmp_path / "uv"))
     (tmp_path / "uv").write_bytes(b"uv")
     env = _profile_env(tmp_path)
@@ -780,7 +761,6 @@ def test_profile_leak_reported_with_original_failure(
 
 
 def _fake_mise_shim(mise_dir: pathlib.Path) -> pathlib.Path:
-    """uv本体ではない起動スクリプトを`uv`として置いたmiseの`shims`を返す。"""
     shims = mise_dir / "shims"
     shims.mkdir(parents=True)
     shim = shims / "uv"
@@ -794,10 +774,6 @@ def _fake_mise_shim(mise_dir: pathlib.Path) -> pathlib.Path:
 def test_upgrade_check_ignores_parent_mise_shims(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, location: str, chezmoi_bin: pathlib.Path
 ) -> None:
-    """親のmiseのshimが`PATH`の先頭にあっても、検証homeへ`UV`のuv本体を置き、子の`PATH`から親のmise配下を除く。
-
-    `uv`の名前解決で選んだshimを複製するか、親の`PATH`を全て継承すると、検証homeでshimとの間のexecが往復して停止する。
-    """
     profile_env = _profile_env(tmp_path)
     parent = tmp_path / "parent"
     for name in ("MISE_DATA_DIR", "XDG_DATA_HOME"):
@@ -844,7 +820,6 @@ def test_upgrade_check_ignores_parent_mise_shims(
 
 
 def test_cli_without_uv_variable_asks_to_restart_with_uv_run(tmp_path: pathlib.Path) -> None:
-    """`UV`の無い起動は、`uv run --script`で起動し直すよう案内して終了コード1で終わる。"""
     env = {name: value for name, value in os.environ.items() if name != "UV"}
 
     result = subprocess.run(
@@ -889,7 +864,7 @@ def test_upgrade_check_cuts_routes_to_real_home(
     monkeypatch.setenv("HOME", str(real_home))
     monkeypatch.setenv("USERPROFILE", str(real_home))
     monkeypatch.setenv("NVM_DIR", str(real_home / ".nvm"))
-    # 親の値を引き継いだだけで探索上限が検証rootの外を指す状態を作り、検証rootへの設定を区別する。
+
     monkeypatch.setenv("MISE_CEILING_PATHS", str(real_home))
     windows_apps = real_home / "AppData" / "Local" / "Microsoft" / "WindowsApps"
     monkeypatch.setenv("LOCALAPPDATA", str(real_home / "AppData" / "Local"))
@@ -964,7 +939,6 @@ def test_upgrade_check_reports_missing_chezmoi(tmp_path: pathlib.Path, monkeypat
 def test_verification_root_is_kept_only_when_requested(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, keep: bool
 ) -> None:
-    """使い捨てrunner向けの指定時だけ検証rootを残し、既定では検証の終了時に回収する。"""
     monkeypatch.setenv("UV", str(tmp_path / "uv"))
     (tmp_path / "uv").write_bytes(b"uv")
     temp_root = tmp_path / "temp"
@@ -987,7 +961,7 @@ def test_verification_root_is_kept_only_when_requested(
 
     assert len(applied) == 1
     checkout = applied[0]
-    # 偽のrunnerはcloneしないため、検証が作成する検証rootそのものの残存で判定する。
+
     verification_root = checkout.parents[1]
     assert verification_root.parent == temp_root
     assert verification_root.is_dir() == keep

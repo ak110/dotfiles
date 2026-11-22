@@ -1,5 +1,3 @@
-"""serveのappに関するsynchronizationの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -17,7 +15,6 @@ from agent_toolkit._testing.serve_support import _BlockingSync, _sync_app
 
 @pytest.mark.asyncio
 async def test_sse_heartbeat(tmp_path: pathlib.Path) -> None:
-    """変更が無い期間はheartbeatを送信する。"""
     events = state.ServeState(tmp_path).events(heartbeat=0.001)
     assert await anext(events) == "event: subscribed\ndata: {}\n\n"
     assert await anext(events) == "event: heartbeat\ndata: {}\n\n"

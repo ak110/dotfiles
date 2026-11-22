@@ -57,7 +57,6 @@ def _run_install_sh(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
             remaining = [process_tree.describe(child) for child in process_tree.collect_descendants(process.pid)]
             failure = process_tree.stop_owned_process(process, context="install_sh_test")
             try:
-                # 回収できない子孫がパイプを保持していると読み終わらないため、待ちを有限にする。
                 stdout, stderr = process.communicate(timeout=5 if failure is not None else None)
             except subprocess.TimeoutExpired:
                 stdout, stderr = "", ""
@@ -104,7 +103,7 @@ def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
     assert pathlib.Path(uv_cache_dir).is_absolute()
     shutil.copy2(chezmoi_bin, local_bin / "chezmoi")
     shutil.copy2(uv_bin, local_bin / "uv")
-    # MCPウォームアップはuvxを使うため、同じ導入元の実行ファイルも隔離PATHへ置く。
+
     shutil.copy2(uv_bin.with_name("uvx"), local_bin / "uvx")
     _write_fake_cli(local_bin / "claude")
     _write_fake_codex(local_bin / "codex", fake_home, fake_dotfiles)
@@ -119,7 +118,6 @@ def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
     catppuccin_sha = _make_git_mirror(mirror_base, "catppuccin/tmux.git", tag="v2.3.0")
     tmux_cpu_sha = _make_git_mirror(mirror_base, "tmux-plugins/tmux-cpu.git", tag=None)
 
-    # 4. statuslineバイナリのダウンロード元をローカルHTTPサーバーへ差し替える（実HTTPへの接続を置き換える）。
     class _Server(socketserver.TCPServer):
         allow_reuse_address = True
 
@@ -162,7 +160,6 @@ def test_install_sh_deploys_distribution(tmp_path: pathlib.Path):
     )
     assert not (rules_dir / "agent-toolkit").exists(), "廃止した常時規範の配布先が作られた"
 
-    # tmuxプラグイン3件（tpm・catppuccin/tmux・tmux-cpu）が正しくcloneされていることを検証する。
     plugins_dir = fake_home / ".tmux" / "plugins"
     assert (plugins_dir / "tpm").is_dir(), "tpmが導入されていない"
     assert _rev_parse_head(plugins_dir / "tpm") == tpm_sha, "tpmのclone内容がミラーと一致しない"
@@ -189,7 +186,7 @@ def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
     ).stdout
     for name in sorted(set(os.fsdecode(listed).split("\0")) - {""}):
         source = src / name
-        # 作業ツリーで削除済みの追跡ファイルは複製しない。
+
         if not source.is_symlink() and not source.exists():
             continue
         target = dst / name
@@ -198,7 +195,6 @@ def _copy_repo(src: pathlib.Path, dst: pathlib.Path) -> None:
 
 
 def _usable_uv_binary(home: pathlib.Path, isolated_path: str) -> pathlib.Path:
-    """隔離HOMEでも動くuv本体をPATHの候補から選ぶ。"""
     env = {"HOME": str(home), "PATH": isolated_path, "LANG": "C.UTF-8"}
     for directory in os.get_exec_path():
         candidate = (pathlib.Path(directory) / "uv").absolute()
@@ -229,7 +225,6 @@ def _disable_codex_cli_setup(repo: pathlib.Path) -> None:
 
 
 def _write_fake_cli(path: pathlib.Path) -> None:
-    """外部取得を避けるため、常に成功するCLI代替実行ファイルを配置する。"""
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     path.chmod(0o755)
 
@@ -266,7 +261,6 @@ def _write_fake_npm(path: pathlib.Path) -> None:
 
 
 def _write_fake_mise(path: pathlib.Path) -> None:
-    """規範配置と無関係なツールチェーン取得を隔離HOME内で代替する。"""
     path.write_text(
         '#!/bin/sh\nif [ "$1" = "ls" ]; then\n    printf \'%s\\n\' \'{"node":[{"version":"lts"}]}\'\nfi\nexit 0\n',
         encoding="utf-8",
@@ -275,7 +269,6 @@ def _write_fake_mise(path: pathlib.Path) -> None:
 
 
 def _write_fake_systemctl(path: pathlib.Path) -> None:
-    """隔離HOMEにuser busがなくてもサービス・タイマー配置を検証できるようにする。"""
     path.write_text(
         '#!/bin/sh\nif [ "$2" = "show" ]; then\n    printf "ActiveState=active\\nNRestarts=0\\n"\nfi\nexit 0\n',
         encoding="utf-8",
@@ -318,15 +311,12 @@ def _external_reachability_env() -> dict[str, str]:
 
 
 def _rev_parse_head(repo: pathlib.Path) -> str:
-    """`repo`のHEADコミットSHAを返す（clone先が期待コミットと一致するかの確認に使う）。"""
     return subprocess.run(
         ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
     ).stdout.strip()
 
 
 class _QuietHandler(http.server.BaseHTTPRequestHandler):
-    """statuslineバイナリ代替を返す最小HTTPハンドラ。ログは抑止する。"""
-
     def do_GET(self) -> None:  # noqa: N802 -- http.serverが呼ぶメソッド名の命名規約
         payload = b"FAKE_STATUSLINE_BINARY"
         self.send_response(200)

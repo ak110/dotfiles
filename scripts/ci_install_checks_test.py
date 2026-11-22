@@ -1,5 +1,3 @@
-"""CI用の配置と配布確認を、隔離したHOMEで実行する。"""
-
 import shutil
 import subprocess
 from collections.abc import Callable
@@ -9,7 +7,6 @@ import pytest
 
 
 def test_linux_placement(tmp_path: Path, host_environ: Callable[[], dict[str, str]]) -> None:
-    """HOMEへ配置し、post工程が元のローカルactionを引き続き読み取れる。"""
     workspace = tmp_path / "workspace"
     source = workspace / "dotfiles"
     source.mkdir(parents=True)
@@ -39,7 +36,6 @@ def test_linux_placement(tmp_path: Path, host_environ: Callable[[], dict[str, st
 
 @pytest.mark.parametrize("missing", ["", ".vimrc", "path"])
 def test_linux_distribution_check(tmp_path: Path, host_environ: Callable[[], dict[str, str]], missing: str) -> None:
-    """配布ファイルとPATH設定がそろった場合だけ配布確認が成功する。"""
     for name in (".bashrc", ".vimrc", ".claude/rules/myprojects-common.md", ".ssh/config"):
         if name == missing:
             continue
@@ -65,7 +61,6 @@ def test_linux_distribution_check(tmp_path: Path, host_environ: Callable[[], dic
 def test_windows_placement_copy_boundary(
     tmp_path: Path, host_environ: Callable[[], dict[str, str]], copy_code: int, action_name: str
 ) -> None:
-    """robocopyの成功コードを正規化し、成功後もpost用のaction定義を保持する。"""
     source = tmp_path / "dotfiles"
     source.mkdir()
     definition = source / f".github/actions/{action_name}/action.yml"

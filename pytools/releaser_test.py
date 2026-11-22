@@ -1,5 +1,3 @@
-"""releaserモジュールのテスト。"""
-
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +26,6 @@ from pytools.releaser import (
 
 @pytest.mark.parametrize("collision", ["none", "tag", "branch"])
 def test_default_branch_ignores_other_ref_namespaces(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, collision: str) -> None:
-    """既定branchの識別がorigin/developと同名のtag・ローカルbranchに左右されない。"""
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="develop", commit_message="base")
     git_repository.run_git(repo, "remote", "add", "origin", str(repo))
     git_repository.run_git(repo, "fetch", "origin")
@@ -47,8 +44,6 @@ def test_default_branch_ignores_other_ref_namespaces(tmp_path: Path, monkeypatch
 
 
 class TestValidateReleaseWorkflow:
-    """release.yaml構造検証のテスト。"""
-
     @staticmethod
     def _build_valid_data() -> dict:
         return {
@@ -108,8 +103,6 @@ class TestValidateReleaseWorkflow:
 
 
 class TestParser:
-    """argparseパーサーのテスト。"""
-
     def test_bump_lowercase_accepted(self) -> None:
         args = _build_parser().parse_args(["patch"])
         assert args.bump == "patch"
@@ -124,8 +117,6 @@ class TestParser:
 
 
 class TestMainSmoke:
-    """main()のsmokeテスト。"""
-
     def test_no_args_with_tag(
         self,
         tmp_path: Path,
@@ -471,7 +462,7 @@ def test_sync_local_repo_fetches_upstream_remote(tmp_path: Path, monkeypatch: py
     subprocess.run(["git", "-C", str(local), "remote", "add", "upstream", str(upstream)], check=True)
     subprocess.run(["git", "-C", str(local), "fetch", "-q", "upstream"], check=True)
     subprocess.run(["git", "-C", str(local), "branch", "-q", "--set-upstream-to=upstream/master", "master"], check=True)
-    # 新しいcommitはupstream側だけに置き、originを取得しても追跡参照が進まない構成にする。
+
     _make_commit(work, "second")
     subprocess.run(["git", "-C", str(work), "push", "-q", str(upstream), "master"], check=True)
     monkeypatch.chdir(local)

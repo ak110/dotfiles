@@ -1,5 +1,3 @@
-"""共通pytestのCPU上限を確認する。"""
-
 import collections
 import concurrent.futures
 import gc
@@ -83,7 +81,6 @@ def test_cpu_retry_keeps_functional_failures_and_attempt_evidence(
 
 
 def test_cpu_limit_scale_adjusts_net_and_gross_without_disabling_detection(tmp_path: pathlib.Path) -> None:
-    """測定値を保ったまま閾値を変え、netとgrossの超過を引き続き拒否する。"""
     (tmp_path / "conftest.py").write_text(
         "import pytest\n"
         "from agent_toolkit._testing import pytest_cpu_budget as p\n"
@@ -146,7 +143,6 @@ def test_cpu_record_only_reports_overrun_without_failure(tmp_path: pathlib.Path,
 @pytest.mark.parametrize("elapsed", [0.499, 0.5, 0.501])
 @pytest.mark.parametrize("phase", ["setup", "call", "teardown"])
 def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, phase: str) -> None:
-    """制御時計で段階計測を確認し、実時間に依存させない。"""
 
     class Item:
         stash = pytest.Stash()
@@ -174,7 +170,6 @@ def test_cpu_clock_boundary(monkeypatch: pytest.MonkeyPatch, elapsed: float, pha
     ["foreign", "thread", "pool", "exception", "nested", "spanning", "initializer", "initializer-child", "initializer-error"],
 )
 def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> None:
-    """無関係な仕事の誤課金、既存poolの計上漏れ、二重計上、段階をまたぐ計上漏れを検出する。"""
     item = cast(pytest.Item, types.SimpleNamespace(stash=pytest.Stash(), nodeid="cpu_test.py::test_cpu"))
     clocks: collections.defaultdict[int, float] = collections.defaultdict(float)
     main = threading.get_ident()
@@ -213,7 +208,7 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
         ]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        executor.submit(lambda: None).result(timeout=10)  # 既存workerへの投入も所有する。
+        executor.submit(lambda: None).result(timeout=10)
         foreign = threading.Thread(target=foreign_work) if mode == "foreign" else None
         if foreign is not None:
             token = cpu_accounting._budget.set(None)
@@ -263,7 +258,7 @@ def test_cpu_budget_keeps_worker_ownership_across_phases(monkeypatch, mode) -> N
                 if mode == "spanning":
                     assert future is not None
                     assert cpu_accounting.snapshot(item.stash[pytest_cpu_budget._CPU_BUDGET])["worker"] == pytest.approx(0.3)
-                    # report生成前のphase間の仕事も、試験自身の累計から失わない。
+
                     proceed.set()
                     future.result(timeout=10)
                     hook = pytest_plugin.pytest_runtest_call(item)
@@ -336,7 +331,6 @@ def test_cpu_report_preserves_outcomes_and_records_total(
 def test_cpu_limit_rejects_invalid_declaration_at_collection(
     request: pytest.FixtureRequest, marker: pytest.MarkDecorator
 ) -> None:
-    """不正特例は本体を実行する前に拒否する。"""
     assert request.node.parent is not None
     item = pytest.Function.from_parent(request.node.parent, name="cpu_probe", callobj=lambda: None)
     item.add_marker(marker)
@@ -348,7 +342,6 @@ def test_cpu_limit_rejects_invalid_declaration_at_collection(
 def test_cpu_limit_rejects_invalid_default(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, value: str | bool
 ) -> None:
-    """通常設定の不正は特例の有無や試験集合によらず収集時に拒否する。"""
     with monkeypatch.context() as patch:
         patch.setattr(request.config, "getini", lambda _name: value)
         with pytest.raises(pytest.UsageError, match="cpu_limit設定"):
@@ -370,7 +363,6 @@ def test_cpu_limit_rejects_invalid_default(
 def test_exclusions_do_not_hide_budget_or_gross_overrun(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch, gross, gc_cpu, import_cpu, net_limit, failed
 ) -> None:
-    """収集で選んだnetと共有費用込みgrossの上限を守り、原計測を失わない。"""
     assert request.node.parent is not None
     item = pytest.Function.from_parent(request.node.parent, name="cpu_probe", callobj=lambda: None)
     if net_limit != 0.5:
@@ -412,7 +404,6 @@ def test_exclusions_do_not_hide_budget_or_gross_overrun(
     ],
 )
 def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode, expected) -> None:
-    """公開import/collectとGC通知へ制御区間を与え、重複控除とDUTのGC費用消失を検出する。"""
     before = cpu_accounting.snapshot()
     clock: collections.defaultdict[int, float] = collections.defaultdict(float)
     worker = mode.startswith("worker-")
@@ -453,7 +444,7 @@ def test_accounting_joins_import_gc_and_keeps_owned_collection(monkeypatch, mode
             collection()
 
     automatic = gc.isenabled()
-    # 制御時計の値を実際のGCの観測値にしないよう、自動GCを止める。
+
     gc.disable()
     try:
         with monkeypatch.context() as patch:

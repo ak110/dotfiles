@@ -12,7 +12,6 @@ from agent_toolkit._testing.session_evidence_support import read_jsonl
 
 
 def _self_invocation_entries(command: str) -> list[dict]:
-    """本スクリプト自身を呼び出したBashコマンドと、その照会結果からなるエントリ列を構成する。"""
     return [
         {
             "type": "assistant",
@@ -103,7 +102,6 @@ def test_query_modes_keep_warnings_outside_own_invocation(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """自己呼び出しの除外はその呼び出し記録だけに留め、無関係なエントリの警告は照会し続ける。"""
     command = "python3 agent-toolkit/skills/atk-mode/scripts/session_review_evidence.py --warn /tmp/foo.jsonl"
     entries = [
         *_self_invocation_entries(command),

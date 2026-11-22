@@ -96,7 +96,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
 
 
 def _warmup_arguments(definition: Path) -> tuple[str, ...]:
-    """MCP定義の`pyfltr`の起動形から、末尾の`mcp`を`--version`へ置き換えた`uvx`の引数列を返す。"""
     short = log_format.home_short(definition)
     try:
         data = json.loads(definition.read_text(encoding="utf-8"))

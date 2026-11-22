@@ -1,5 +1,3 @@
-"""同じユーザーの通常のプロセスが読めない状態ファイルを継承するACLへ戻し、戻せない項目は変更しないことを検証する。"""
-
 from __future__ import annotations
 
 import os
@@ -32,7 +30,6 @@ def test_restore_inheritance_leaves_posix_directories_unchanged(tmp_path: pathli
 
 @pytest.fixture(name="profile")
 def _profile(tmp_path: pathlib.Path) -> pathlib.Path:
-    """`%LOCALAPPDATA%`と同じ継承ACLを持つ、昇格したtokenで作成した試験用の状態領域。"""
     if sys.platform != "win32":
         pytest.skip("Windowsのtokenと継承ACLを実APIで確かめる")
     if not windows_security.is_elevated():
@@ -45,7 +42,6 @@ def _profile(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def test_restore_inheritance_reopens_legacy_directories(profile: pathlib.Path) -> None:
-    """旧版の保護付きDACLと入れ子の一時ディレクトリを継承へ戻し、昇格したプロセスが書いたファイルを非昇格で読めるようにする。"""
     from agent_toolkit._testing import windows_tokens  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     legacy = profile / "services"
@@ -151,11 +147,6 @@ def test_restore_inheritance_leaves_items_owned_by_administrators_for_elevated_r
 
 
 def test_restore_inheritance_does_not_follow_junctions(profile: pathlib.Path) -> None:
-    """旧版のディレクトリ内のjunctionをたどらず、OSの継承の再計算もjunctionの先のACLを変えない。
-
-    `inheriting`は保護の無いDACLで`shared`のACEを継承する。再計算がjunctionをたどると、継承元がjunctionの親に替わり、
-    `shared`だけが持つACEを失う。
-    """
     from agent_toolkit._testing import windows_tokens  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
     marked = profile / "marked"

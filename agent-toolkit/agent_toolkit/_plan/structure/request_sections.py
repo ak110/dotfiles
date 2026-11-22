@@ -23,15 +23,10 @@ _READ_ORDER: tuple[str, ...] = (
 
 
 def request_sections(text: str) -> list[tuple[str, bool]]:
-    """本文のトップレベルH2を、見出し名と本文が非空かの対で出現順に返す。"""
     return markdown_headings.h2_sections(text)
 
 
 def request_section_problems(sections: list[tuple[str, bool]]) -> list[str]:
-    """要求を書く節の必須節の欠落、置いた節の空の本文、順序の不一致を、問題ごとの文で返す。
-
-    `sections`は検査する範囲のH2だけを渡す。計画では、要求を書く節以外の固定H2を除いて渡す。
-    """
     filled = {name for name, has_body in sections if has_body}
     appeared = [name for name, _has_body in sections if name in _READ_ORDER]
     problems: list[str] = []

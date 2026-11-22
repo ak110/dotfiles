@@ -1,5 +1,3 @@
-"""証拠抽出の問題候補（session_evidence_candidates_failures）。"""
-
 from __future__ import annotations
 
 import json
@@ -81,7 +79,6 @@ def _is_permission_denial(event: dict[str, Any]) -> bool:
 
 
 def classify_failure_candidate(candidate_kind: str, event: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
-    """抽出と台帳で共通の入力から、除外区分または置換先のhook通知を返す。"""
     if candidate_kind == "tool-failure":
         # Bashの終了コード行より後はコマンドの出力であり、引用内のhook標識を発生源にしない。
         if event.get("tool_name") == "Bash" and re.match(r"Exit code \d+(?:\n|$)", str(event.get("text", ""))):
@@ -91,7 +88,7 @@ def classify_failure_candidate(candidate_kind: str, event: dict[str, Any]) -> tu
             isinstance(notice, dict) and _same_hook_event(candidate_kind, event, notice) for notice in notices
         ):
             return "hook-notice-represented", None
-        # 実行済みコマンドの出力は、別の実行のhook診断を引用していても通知の生成元ではない。
+
         hook_event = None if event.get("tool") == "CommandExecution" else _hook_originated_event(candidate_kind, event, [])
         if hook_event is not None:
             exclusion = _failure_result_exclusion(candidate_kind, _event_without_cd_prefix(event))
@@ -105,7 +102,7 @@ def failure_candidate_exclusion(candidate_kind: str, event: dict[str, Any]) -> s
     候補の抽出と失敗署名の台帳の読込が同じ判定を使い、除外規則の改訂を記録済みの台帳にも次の準備から適用する。
     hook通知との対応と置き換えを含む共通の分類は`classify_failure_candidate`が行う。
     """
-    # 除外の判定は終了コードを帰属させるコマンドで行い、候補の署名と表示は記録どおりのイベントで行う。
+
     attributed = _event_without_cd_prefix(event)
     exclusion = _failure_result_exclusion(candidate_kind, attributed)
     if exclusion is not None:
@@ -143,7 +140,6 @@ def _failure_result_exclusion(candidate_kind: str, attributed: dict[str, Any]) -
 
 
 def _is_help_command_failure(event: dict[str, Any]) -> bool:
-    """変更処理へ到達せずusageを返した明示的なCLIヘルプ取得であるかを返す。"""
     command_value = event.get("command")
     diagnostic = event.get("diagnostic")
     if not isinstance(command_value, str) or not isinstance(diagnostic, str):
@@ -179,7 +175,6 @@ def _is_normal_nonterminal_result(event: dict[str, Any]) -> bool:
 
 
 def _is_normal_negative_result(event: dict[str, Any]) -> bool:
-    """読取専用の述語が診断なしで偽を返した事象を区分する。"""
     exit_code = event.get("exit_code")
     if not isinstance(exit_code, int) or str(event.get("diagnostic", "")).strip():
         return False
@@ -215,7 +210,7 @@ def _is_normal_atk_no_match(event: dict[str, Any]) -> bool:
     executable, _subcommand, command, _args = _failure_command_parts(event)
     if executable != "atk":
         return False
-    # 包装の外側の連結も、解除したshellの内部の連結も、終了コードをatkへ帰属できない。
+
     operation = _json_object(str(event.get("operation", "")))
     original_command = operation.get("command") if operation is not None else None
     commands = [command]
@@ -281,7 +276,6 @@ def failure_signature(candidate_kind: str, event: dict[str, Any]) -> tuple[str, 
 
 
 def normalize_failure_diagnostic(diagnostic: str) -> str:
-    """診断の理由を残し、対象と識別できるパス・記録ID・UUIDだけを一般化する。"""
     normalized = " ".join(diagnostic.split()).casefold()
     normalized = _FAILURE_RECORD_ID.sub("<record>", normalized)
     normalized = _FAILURE_UUID.sub("<uuid>", normalized)
@@ -289,7 +283,6 @@ def normalize_failure_diagnostic(diagnostic: str) -> str:
 
 
 def recalculate_failure_signature(signature: str, summary: str) -> str:
-    """既存台帳の署名軸と保存済み代表診断から、現在の理由の正規化で署名を再計算する。"""
     parts = json.loads(signature)
     if not isinstance(parts, list) or len(parts) != 5:
         raise ValueError("失敗署名の軸が不正")

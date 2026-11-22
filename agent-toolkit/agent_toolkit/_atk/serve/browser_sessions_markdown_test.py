@@ -1,5 +1,3 @@
-"""serveのbrowser_sessionsに関するmarkdownの試験。"""
-
 from pathlib import Path
 
 import playwright.async_api
@@ -30,11 +28,6 @@ pytestmark = [
 async def test_session_assistant_markdown_rendered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
-    """ローカルとリモートの記録で、アシスタントの発言の見出し・箇条書き・表・コードを要素として表示する。
-
-    `<pre>`のまま表示すると、Markdownの記号が並んだ本文を読み手が頭の中で組み立てる必要がある。
-    リモートの記録はヘルパーが生データだけを返し、整形はサーバー側で行う。
-    """
     path = _write_local_session(tmp_path, "markdown", _assistant_record(_SESSION_MARKDOWN))
     async with _markdown_sessions_page(tmp_path, monkeypatch, browser) as (page, base_url):
         for host, record_path in (("browser-test", path), (_MARKDOWN_REMOTE_HOST, _MARKDOWN_REMOTE_PATH)):
@@ -56,11 +49,6 @@ async def test_session_assistant_markdown_rendered(
 async def test_session_detail_title_shows_engine_and_session_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
-    """右ペインの見出しはエンジン名と取得できたセッション名を表示し、ホスト名と作業ディレクトリを表示しない。
-
-    ホスト名と作業ディレクトリは左ペインの一覧項目が示す。名前の記録が無い記録はエンジン名だけを表示する。
-    セッション名は見出しだけが示すため、長い名前も狭い幅で省略せず全文を表示する。
-    """
     named = _write_local_session(
         tmp_path,
         "named",
@@ -78,12 +66,12 @@ async def test_session_detail_title_shows_engine_and_session_name(
         await _open_session(page, base_url, "browser-test", named)
         await playwright.async_api.expect(title).to_have_text("Claude Code / 名前付きセッション")
         item = page.locator(f'#sessions .session-item[data-path="{named}"]')
-        # 左ペインの一覧項目は従来どおり作業ディレクトリとホスト名を表示する。
+
         assert "/home/aki/md" in await item.inner_text()
         assert "browser-test" in await item.inner_text()
         await _open_session(page, base_url, "browser-test", unnamed)
         await playwright.async_api.expect(title).to_have_text("Claude Code")
-        # 長いセッション名は狭い幅（320px。1280pxの400%拡大と同じCSS幅）でも省略せず、折り返して全文を表示する。
+
         await _open_session(page, base_url, "browser-test", long_named)
         await playwright.async_api.expect(title).to_have_text(f"Claude Code / {long_name}")
         await page.set_viewport_size({"width": 320, "height": 720})
@@ -100,7 +88,6 @@ async def test_session_detail_title_shows_engine_and_session_name(
 async def test_session_non_assistant_events_stay_preformatted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
-    """アシスタント以外の発言・挿入本文・思考・ツール・圧縮のイベントは、記号をそのまま`<pre>`で表示する。"""
     path = _write_local_session(
         tmp_path,
         "preformatted",
@@ -138,7 +125,6 @@ async def test_session_non_assistant_events_stay_preformatted(
 async def test_session_assistant_markdown_escapes_raw_html(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, browser: playwright.async_api.Browser
 ) -> None:
-    """アシスタントの発言の生HTMLは文字として表示し、スクリプトを実行せず、`javascript:`をリンクにしない。"""
     hostile = (
         '<script>window.__sessionXss = 1</script>\n\n<img src=x onerror="window.__sessionXss = 2">\n\n'
         "[リンク](javascript:window.__sessionXss=3)\n"

@@ -1,5 +1,3 @@
-"""pytestの試験単位のCPU予算と超過の再確認を扱う。"""
-
 import math
 import os
 import sys
@@ -70,14 +68,13 @@ def measure(item: pytest.Item, phase: str) -> Generator[None, object, object]:
 
 
 def apply_report(item: pytest.Item, report: pytest.TestReport) -> None:
-    """完了時の計測値とCPU上限の判定を報告へ加える。"""
     if report.when == "teardown":
         item.stash[_CPU_ONLY_FAILURE] = False
         recorded = item.stash.get(_CPU_TIMES, {})
         times = {phase: recorded.get(phase, 0.0) for phase in ("setup", "call", "teardown")}
         limit, reason = item.stash.get(_CPU_LIMIT, (0.5, "通常上限"))
         owner = item.stash.get(_CPU_BUDGET, None)
-        # phase間も所有workerは動き得るため、完了reportで試験の累計を1回だけ加える。
+
         workers = cpu_accounting.snapshot(owner) if owner is not None else {"worker": 0.0, "gc": 0.0, "import": 0.0}
         total = sum(times.values()) + workers["worker"]
         process_start = item.stash.get(_CPU_PROCESS_STARTED, None)
@@ -118,13 +115,11 @@ def apply_report(item: pytest.Item, report: pytest.TestReport) -> None:
 
 
 def configure(config: pytest.Config) -> None:
-    """CPUの再確認設定とマーカーを登録する。"""
     config.stash[_CPU_RETRY_CI] = bool(os.environ.get("CI"))
     config.addinivalue_line("markers", "cpu_limit(seconds, reason): 理由付き所有CPU上限")
 
 
 def add_options(parser: pytest.Parser) -> None:
-    """所有CPUの判定を指定するオプションを登録する。"""
     parser.addini("cpu_limit", "試験が所有するCPUの上限（秒）", default="0.5")
     parser.addoption(
         "--cpu-limit-scale",
@@ -140,7 +135,6 @@ def add_options(parser: pytest.Parser) -> None:
 
 
 def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
-    """収集した各試験に計測の上限を割り当てる。"""
     try:
         configured_limit = config.getini("cpu_limit")
         if isinstance(configured_limit, bool):
@@ -173,7 +167,7 @@ def set_limits(config: pytest.Config, items: list[pytest.Item]) -> None:
             or not reason.strip()
         ):
             raise pytest.UsageError(f"{item.nodeid}: cpu_limitには正有限値と非空のreasonを指定してください")
-        # netから控除する共有初期化費用には、通常0.5/gross2と同じ余裕を重い試験にも残す。
+
         gross = float(seconds) + 1.5 if marker is not None else max(2.0, default_limit)
         if not math.isfinite(gross * scale):
             raise pytest.UsageError(

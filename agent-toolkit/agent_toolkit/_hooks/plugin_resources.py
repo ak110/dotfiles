@@ -19,7 +19,6 @@ _PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 
 def plugin_root() -> pathlib.Path:
-    """委譲元が指定した資料rootを検証し、無指定ならhook自身の配布物を使う。"""
     value = os.environ.get(delegated_session.PLUGIN_ROOT_ENV)
     if value is None:
         return _PLUGIN_ROOT
@@ -38,7 +37,6 @@ def plugin_root() -> pathlib.Path:
 
 
 def skill_document_path(skill_name: str, relative_path: str) -> pathlib.Path:
-    """スキル配下の資料の、稼働版のplugin rootから解決した絶対パスを返す。実在は確かめない。"""
     return plugin_root() / "skills" / skill_name / relative_path
 
 

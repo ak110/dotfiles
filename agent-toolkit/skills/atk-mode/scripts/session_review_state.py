@@ -13,7 +13,6 @@ from agent_toolkit._common import session_review
 
 
 def main(argv: list[str] | None = None) -> int:
-    """show/completeの公開入力を受理し、結果を1行JSONで返す。"""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True, help="待ちの照会、範囲の成功確定、batch分析完了の記録。")
     commands.add_parser("show")
@@ -30,7 +29,6 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 session_review.sweep_reviewed(now=time.time())
             except (OSError, ValueError, KeyError, TypeError) as error:
-                # 範囲の確定は完了済みなので、回収の診断を成功JSONに混ぜない。
                 print(
                     f"警告: 処理済み範囲の回収を保留: {error}。保存物の内容とアクセス権を確かめ、"
                     "原因を直して atk run-script session-review-state -- complete "

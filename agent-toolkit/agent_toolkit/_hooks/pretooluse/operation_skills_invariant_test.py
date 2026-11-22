@@ -54,7 +54,6 @@ def _permission_decision(result: subprocess.CompletedProcess[str]) -> object:
 
 
 def test_positive_operations_cover_every_entry() -> None:
-    """表の全項目が正例を持ち、各正例は自身の項目だけに当たる（原因分析の記述は本文の作成・更新にも当たる）。"""
     assert set(_POSITIVE_OPERATIONS) == {entry.short_name for entry in operation_skills.OPERATION_SKILLS}
     for entry in operation_skills.OPERATION_SKILLS:
         tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
@@ -68,7 +67,6 @@ def test_positive_operations_cover_every_entry() -> None:
 def test_every_entry_notifies_delegated_subjects(
     tmp_path: pathlib.Path, entry: operation_skills.OperationSkill, subject: str
 ) -> None:
-    """スキルを使う委譲先とサブエージェントにも、表の全項目の操作で遮断せずにそのスキルの起動を案内する。"""
     environ, extra = _SUBJECTS[subject]
     tool, tool_input = _POSITIVE_OPERATIONS[entry.short_name]
     payload = {"tool_name": tool, "tool_input": tool_input, "session_id": f"{entry.short_name}-{subject}", **extra}

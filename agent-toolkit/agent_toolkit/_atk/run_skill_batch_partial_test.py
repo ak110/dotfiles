@@ -1,5 +1,3 @@
-"""欠測のあるbatchの準備から報告・世代確定までの境界を検証する。"""
-
 from __future__ import annotations
 
 import argparse
@@ -38,8 +36,7 @@ def _register(path: pathlib.Path) -> dict:
     reason=("実Gitの状態・履歴を使う結合境界。修正前Linux4並列全件計測の所有CPU最大0.505秒。"),
 )
 def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path, monkeypatch):
-    """実ログで観測したNUL335/2157バイトと不成立な末尾を最小化し、健全対象も同じ回で処理する。"""
-    # 活動は合成した記録から判定し、実機のプロセスは入力に含めない。
+
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
     notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
@@ -63,7 +60,7 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         original = b"".join(json.dumps(row).encode() + b"\n" for row in valid) + b"\0" * padding + b"1suffix\n"
         if index == 1:
             original += json.dumps(valid[-1]).encode() + b"\n"
-            # NUL境界の後ろの完全JSONだけを採用し、途切れた前側は失われた断片として残す。
+
             original += b'{"type":"event_msg","payload":{"message":"cut\0\0' + json.dumps(valid[-1]).encode() + b"\n"
         path.write_bytes(original)
         originals[path] = original
@@ -136,7 +133,6 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
 
 @pytest.mark.parametrize("change", ["none", "append", "generation", "prefix", "older"])
 def test_partial_completion_preserves_new_input(tmp_path, change):
-    """モデル/実Gitなしで、末尾欠測の消費と新入力・接頭辞変更の保護を区別する。"""
     path = tmp_path / "partial.jsonl"
     row = json.dumps({"type": "user", "message": {"role": "user", "content": "要求"}}, ensure_ascii=False)
     path.write_text(row + "\n\0\0broken\n", encoding="utf-8")

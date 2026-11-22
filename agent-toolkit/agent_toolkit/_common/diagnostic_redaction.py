@@ -14,8 +14,8 @@ from typing import Any, BinaryIO, Literal, NamedTuple
 REDACTED = "[REDACTED]"
 
 _VALUE = r"""(?:\\"(?:\\.|[^"\\])*\\"|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,;}\]&]+)"""
-# 区切りの後の改行は、コロンの次の行に引用符で始まる値がある場合（整形済みのJSONなど）だけ値の前置きとして読む。
-# 値の無い代入（`TOKEN=`）の次の行は別のログ行であり、伏せると原因の行を失う。
+
+
 _SEPARATOR = r"""(?:[ \t]*:\s*(?=\\?["'])|[ \t]*[:=][ \t]*)"""
 _AUTHORIZATION = re.compile(
     r"""(\b(?:proxy[-_])?authorization(?:\\?["'])?""" + _SEPARATOR + r""")"""
@@ -31,7 +31,7 @@ _SECRET_NAME = re.compile(
     r"(?:(?:proxy[-_])?authorization|[\w.-]*(?:api[ _-]?key|token|secret|password|passwd)[\w.-]*)", re.IGNORECASE
 )
 _SCHEME_CREDENTIAL = re.compile(r"(\b(?:Bearer|Basic)[ \t]+)[A-Za-z0-9._~+/=-]+", re.IGNORECASE)
-# URLのuserinfoはパスワードの有無にかかわらず伏せる（トークンをユーザー名欄へ置く形式があるため）。
+
 _URL_USERINFO = re.compile(r"(\b[a-z][a-z0-9+.-]*://)[^\s/@:]*(?::[^\s/@]*)?@", re.IGNORECASE)
 _QUERY_CREDENTIAL = re.compile(
     r"([?&](?:[\w.-]*(?:token|key|secret|password|passwd|signature|sig|auth|credential)[\w.-]*)=)[^&#\s\"']+",
@@ -44,10 +44,6 @@ _PRIVATE_KEY = re.compile(
 
 
 def redact_secrets(text: str) -> str:
-    """保存前の診断本文から資格情報を伏せる。改行と非秘匿の内容は保つ。
-
-    名前の付かない長い文字列は伏せない。session識別子やcommit OIDを失うと原因を追跡できなくなるため。
-    """
     text = _PRIVATE_KEY.sub(REDACTED, text)
     text = _AUTHORIZATION.sub(rf'\1"{REDACTED}"', text)
     text = _NAMED_SECRET.sub(rf'\1"{REDACTED}"', text)
@@ -57,7 +53,6 @@ def redact_secrets(text: str) -> str:
 
 
 def redact_diagnostic_values(value: Any) -> Any:
-    """診断の構造を保ち、資格情報名の文字列値は名前の文脈を失う前に伏せる。"""
     if isinstance(value, str):
         return redact_secrets(value)
     if isinstance(value, dict):
@@ -101,10 +96,6 @@ def diagnostic_excerpt(
 
 
 def diagnostic_line_excerpt(text: str, *, line_chars: int, select: Callable[[list[str]], Sequence[int | str]]) -> list[str]:
-    """診断全体を伏せ、行を制限してから、指定された行と区切りの文字列を返す。
-
-    行を選ぶ関数には、上限より後ろにある診断語も判定できるよう、伏せ字済みの行の全文を渡す。
-    """
     lines = redact_secrets(text).splitlines()
     clipped = [line[:line_chars] for line in lines]
     return [clipped[item] if isinstance(item, int) else item[:line_chars] for item in select(lines)]
@@ -130,7 +121,6 @@ class ByteDiagnosticLine:
 
 
 def newest_diagnostic_lines(lines: Sequence[ByteDiagnosticLine], *, total_bytes: int) -> list[str]:
-    """改行を含むバイト予算に入る連続した末尾の診断行を返す。"""
     kept: list[str] = []
     for line in reversed(lines):
         if line.size > total_bytes:
@@ -150,8 +140,6 @@ RETAINED_BYTES = 8 * 1024 * 1024
 
 
 class DiagnosticExcerpt(NamedTuple):
-    """有界な末尾の抜粋。`source_bytes`は元の本文の量で、抜粋が空になった理由の判別に使う。"""
-
     text: str
     omitted: bool
     source_bytes: int
@@ -160,7 +148,6 @@ class DiagnosticExcerpt(NamedTuple):
 def _excerpt(
     safe: str, *, limit: int, unit: Literal["bytes", "chars"], source_bytes: int, overflowed: bool
 ) -> DiagnosticExcerpt:
-    """伏せた本文（上限超過では案内）の末尾を、単位ごとの上限で取る。"""
     if overflowed:
         safe = (
             f"（出力が{source_bytes}バイトで保持の上限{RETAINED_BYTES}バイトを超えたため、秘匿を確定できず本文を転載しない。"

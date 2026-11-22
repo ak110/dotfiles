@@ -1,5 +1,3 @@
-"""serveのstateに関するui_detailの試験。"""
-
 # pylint: disable=protected-access
 
 import typing
@@ -10,7 +8,6 @@ from agent_toolkit._testing.serve_support import _run_node_ui
 def test_assets_global_error_uses_shared_lifecycle_for_all_generators(
     host_environ: typing.Callable[[], dict[str, str]],
 ) -> None:
-    """共通エラーの消去・再表示と、各生成元が同じ処理で表示することを検証する。"""
     result = _run_node_ui(
         """
 bindEvents();
@@ -98,7 +95,6 @@ process.stdout.write(JSON.stringify({shown, cleared, redisplayed, failures}));
 
 
 def test_assets_restore_focus_on_escape_and_focus_delete_close_first() -> None:
-    """Escapeでフォーカスを操作の起点へ戻し、破壊的な操作の確認では取り消しの「閉じる」へ初期フォーカスを置く。"""
     result = _run_node_ui(
         """
 const origin = new Element('create-origin', 'BUTTON');
@@ -131,7 +127,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_assets_reload_open_detail_from_sse_and_preserve_editing_input() -> None:
-    """SSE更新時に閲覧本文を再取得し、編集中は入力を保持して消失時に閉じる。"""
     result = _run_node_ui(
         """
 const listed = {
@@ -261,7 +256,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_operation_result_uses_active_dialog_or_page_notification() -> None:
-    """操作結果は最上位ダイアログへ送り、ダイアログが無い場合だけページ通知へ送る。"""
     result = _run_node_ui(
         """
 const dialogResults = {};
@@ -301,7 +295,6 @@ process.stdout.write(JSON.stringify({
 
 
 def test_field_errors_mark_and_focus_first_invalid_control() -> None:
-    """入力エラーを関連付け、最初の不正入力のフォーカスと対応エラーの表示を選ぶ。"""
     result = _run_node_ui(
         """
 const scrolled = [];

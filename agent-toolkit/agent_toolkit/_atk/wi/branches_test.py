@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""保守ブランチと次期開発ブランチ（系統）を、WIとprocess-loopで別々に扱う動作を2ブランチのoriginで確かめる。"""
 
 import dataclasses
 import datetime
@@ -49,8 +48,6 @@ _LEGACY_JSON_KEYS = {
 
 @dataclasses.dataclass(frozen=True)
 class BranchRepository:
-    """系統releaseとmainを持つoriginと、その登録パスのclone。"""
-
     origin: pathlib.Path
     seed: pathlib.Path
     repo: pathlib.Path
@@ -131,7 +128,6 @@ def _list(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], *arguments
 def test_unregistered_repository_keeps_current_behavior(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """系統を登録しないrepositoryは、投入・一覧・処理対象・作業ツリーの準備が系統を持たない従来の形のまま動く。"""
     assert _add(tmp_path, "--target-repo", str(branch_repo.plain)) == 0
     (saved,) = _saved(branch_repo.notes)
     assert "target_branch" not in saved
@@ -151,7 +147,6 @@ def test_unregistered_repository_keeps_current_behavior(
 def test_add_defaults_to_default_branch_and_rejects_unknown(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """系統の省略はdefault_branchの系統で保存し、target_commitは宛先の系統の先端を記録する。登録外の系統は保存しない。"""
     assert _add(tmp_path, "--target-repo", str(branch_repo.repo)) == 0
     assert _add(tmp_path, "--target-repo", str(branch_repo.repo), "--target-branch", "release") == 0
     default, release = _saved(branch_repo.notes)
@@ -168,7 +163,6 @@ def test_add_defaults_to_default_branch_and_rejects_unknown(
 def test_list_filters_and_shows_branches(
     branch_repo: BranchRepository, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """一覧は系統で限定でき、target_branchを持たない保存済みWIはdefault_branchの系統、登録外の系統は着手不能として示す。"""
     _write(branch_repo.notes, "rel.md", REPO_ID, "target_branch: release\n")
     _write(branch_repo.notes, "legacy.md", REPO_ID)
     _write(branch_repo.notes, "gone.md", REPO_ID, "target_branch: removed\n")
@@ -200,7 +194,6 @@ def test_list_filters_and_shows_branches(
 
 @pytest.mark.usefixtures("branch_repo")
 def test_edit_validates_branch_and_drops_target_commit() -> None:
-    """編集で変えた系統が登録にあるかを確かめ、旧系統の先端を指すtarget_commitを外す。"""
     original = f"---\ntarget_repo: {REPO_ID}\ntarget_branch: main\ntarget_commit: abc\ntype: awi\n---\n\n本文\n"
     moved = targets.invalidate_repo_bound_metadata(original, original.replace("target_branch: main", "target_branch: release"))
     assert "target_branch: release" in moved
@@ -215,7 +208,6 @@ def test_lane_hook_names_differ_per_branch(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """WorktreeCreate hookを使うrepositoryでも、系統ごとの処理が同じレーン名で別の作業ツリーを作る。"""
     created = tmp_path / "hook-created"
     script = tmp_path / "hook.py"
     script.write_text(

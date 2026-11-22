@@ -24,7 +24,6 @@ def test_agents_wait_reports_absent_targets_as_failure(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """root対応を確認できない空状態はMCP一覧による復旧を案内する。"""
     assert not wait_environment.exists()
 
     with pytest.raises(SystemExit, match="4"):
@@ -76,7 +75,6 @@ def test_agents_wait_keeps_waiting_for_starting_session(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """startingのsessionが保持中なら対象不在として即時終了しない。"""
     _write_own_status(wait_environment, [{"session_id": "session-1", "status": "starting"}])
     monkeypatch.setattr(agents_wait, "get_cli_wait_timeout", lambda _bucket: 0.0)
 
@@ -112,7 +110,6 @@ def test_agents_wait_keeps_waiting_for_retained_session(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """状態ファイルが保持するsessionを消失として返さない。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
 
     with pytest.raises(SystemExit, match="3"):
@@ -186,7 +183,6 @@ def test_agents_wait_rejects_invalid_session_in_status_file(
     capsys: pytest.CaptureFixture[str],
     session_id: str,
 ) -> None:
-    """形式外のsession識別子を結果ファイルの解決前に拒否する。"""
     _write_own_status(wait_environment, [{"session_id": session_id}])
 
     with pytest.raises(SystemExit, match="5"):
@@ -200,7 +196,6 @@ def test_agents_wait_rejects_invalid_session_in_status_file(
 
 
 def test_agents_wait_rejects_turn(capsys: pytest.CaptureFixture[str]) -> None:
-    """撤去したturn指定はargparseの終了コード2で拒否する。"""
     with pytest.raises(SystemExit, match="2"):
         atk.main(["agents", "wait", "--" + "turn=1"])
     assert not capsys.readouterr().out
@@ -223,7 +218,6 @@ def test_missing_state_dir_reports_alternative(
     capsys: pytest.CaptureFixture[str],
     environment: dict[str, str],
 ) -> None:
-    """状態ファイルの書込主体を解決できない場合は終了コード4を返す。"""
     assert agents_wait.wait_for_result(environment=environment, state_root=tmp_path) == 4
 
     captured = capsys.readouterr()
@@ -237,7 +231,6 @@ def test_agents_wait_returns_notices_while_running(
     wait_environment: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """終了前の通知を回収し、running状態とともに1行で返す。"""
     _write_own_status(wait_environment, [{"session_id": "session-1"}])
     notices = wait_environment.parent / "notices"
     notices.mkdir(parents=True)

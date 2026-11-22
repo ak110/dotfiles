@@ -1,5 +1,3 @@
-"""WIの共通オプションと採用引数を、実行処理への依存なしで登録する。"""
-
 import argparse
 import pathlib
 from typing import Any
@@ -12,10 +10,6 @@ lazy from agent_toolkit._atk.wi import repo as _wi_repo
 
 
 def _source_filter_type(value: str) -> str:
-    """`--source`の値を検証するargparse `type=`コールバック。
-
-    先頭`!`を除いた残りが空文字列の場合（`--source=`・`--source=!`）は`ArgumentTypeError`を送出する。
-    """
     remainder = value[1:] if value.startswith("!") else value
     if not remainder:
         raise _cli_support.argument_type_error(
@@ -25,7 +19,6 @@ def _source_filter_type(value: str) -> str:
 
 
 def add_source_arg(parser: argparse.ArgumentParser, *, multiple: bool = False) -> None:
-    """`--source`オプションを共通形式で登録する。"""
     parser.add_argument(
         "--source",
         metavar="NAME",
@@ -50,12 +43,6 @@ def add_target_repo_arg(
     allow_all: bool = False,
     resolved_by_consumer: bool = False,
 ) -> None:
-    """`--target-repo`オプションを共通形式で登録する。
-
-    受理条件をヘルプ文面と同じ位置で確定する。`allow_all`は対象を限定しない`all`を受理するか、
-    `resolved_by_consumer`はサブコマンド自身が未指定時の解決を行うかを表す。
-    登録した値は`_resolve_wi_target_repo`が読み取る。
-    """
     default_note = (
         "" if required else "省略時はカレントディレクトリが属するリポジトリを対象とし、Gitの作業ツリー外では対象を限定しない。"
     )
@@ -77,7 +64,6 @@ def add_target_repo_arg(
 
 
 def _absolute_note_path(raw_path: str) -> pathlib.Path:
-    """メモファイルの絶対パスだけを受理する。"""
     path = pathlib.Path(raw_path)
     if not path.is_absolute():
         raise _cli_support.argument_type_error(
@@ -103,12 +89,6 @@ def add_note_args(parser: argparse.ArgumentParser, *, help_text: str) -> None:
 
 
 def add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
-    """状態遷移コマンドの一括操作引数を`rm`と同じ選択肢と省略時の値で追加する。
-
-    一括フィルターの綴りは`--status`だけとする。`rm`と`return-to-inbox`は
-    個別指定の探索先と差し戻し元を`--state`で受け取るため、同じ綴りが2つの概念を指す状態を避ける。
-    フィルター専用の`list`・`show`・`grep`だけが`--state`を正式名として受理する。
-    """
     parser.add_argument(
         "--all",
         action="store_true",
@@ -153,7 +133,6 @@ def add_bulk_transition_args(parser: Any, *, action_label: str) -> None:
 
 
 def add_adopt_parser(sub: Any) -> None:
-    """公開CLIとレーンの採用前検査へ同じ採用引数を登録する。"""
     adopt = _atk_help.add_command(sub, "adopt", **_atk_help.HELP["atk wi adopt"])
     adopt.add_argument(
         "filenames",

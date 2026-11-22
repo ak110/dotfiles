@@ -1,5 +1,3 @@
-"""保存済み記録の同じ家族を使い、ローカルとSSH先の画面用推定費用を求める。"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -23,7 +21,6 @@ def estimate_detail_cost(
     state_root: Path | None = None,
     broken_lines: int = 0,
 ) -> dict[str, Any]:
-    """起点の本文を再取得せず、必要な子孫だけを解決して費用計算へ渡す。"""
     return estimate_detail_family(
         engine,
         path,
@@ -38,8 +35,6 @@ def estimate_detail_cost(
 
 @dataclasses.dataclass(frozen=True)
 class DetailCost:
-    """推定費用と、算出に使った家族の記録。"""
-
     cost: dict[str, Any]
     members: tuple[Path, ...]
     complete: bool
@@ -58,11 +53,7 @@ def estimate_detail_family(
     broken_lines: int = 0,
     record_loader: Callable[[str], _RecordLoad] = _load_records_checked,
 ) -> DetailCost:
-    """`estimate_detail_cost`と同じ推定費用を、家族の記録と解決の完全性とともに返す。
 
-    `record_loader`は子孫の記録の読込を差し替える（`session_family._collect_records`）。
-    """
-    # 子孫の多い記録は数十件の委譲先を解決するため、保存先の一覧を1回だけ読む。
     locator = record_paths.RecordLocator(claude_home=claude_home, codex_home=codex_home, state_root=state_root)
 
     def resolve(session_id: str) -> tuple[Path, _Runtime] | None:

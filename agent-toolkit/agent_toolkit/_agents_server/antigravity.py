@@ -77,7 +77,7 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
     ]
     if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
         parts.append(python_runtime_instructions())
-    # ユーザーが置いた規範を補う。`rules/agent-toolkit/`は旧い配布物の置き場で、更新時に回収するため読まない。
+
     config = host_homes.claude_config_dir()
     candidates = [config / "CLAUDE.md", *sorted((config / "rules").rglob("*.md"))]
     for path in candidates:
@@ -98,7 +98,6 @@ def _system_prompt(launch_kind: LaunchKind) -> str:
 
 
 def _event_text(payload: dict[str, Any]) -> str:
-    """イベントが持つ表示用の本文を返す。"""
     for key in ("response", "text", "text_delta", "message", "summary"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
@@ -107,7 +106,6 @@ def _event_text(payload: dict[str, Any]) -> str:
 
 
 def result_values(session: SessionState, payload: dict[str, Any]) -> dict[str, Any]:
-    """`result`イベントを終了時の結果へ変換する。"""
     raw_status = payload.get("status")
     status = raw_status.lower() if isinstance(raw_status, str) else raw_status
     agent_message = _event_text(payload) or session.agent_message
@@ -152,11 +150,9 @@ class AntigravityManager(CliTurnManager):
 
     @staticmethod
     def event_session_id(payload: dict[str, Any]) -> str | None:
-        """initイベントが確定した会話識別子を返す。"""
         return antigravity_cli.event_session_id(payload)
 
     async def process_event(self, session: SessionState, payload: dict[str, Any]) -> bool:
-        """進捗・使用量・resultを共有状態へ反映する。"""
         kind = payload.get("type") or payload.get("event")
         body = payload.get(kind) if isinstance(kind, str) else None
         body = body if isinstance(body, dict) else payload

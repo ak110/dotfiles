@@ -1,5 +1,3 @@
-"""振り返りの入力準備（session_review_prepare_text）。"""
-
 from __future__ import annotations
 
 import json
@@ -37,14 +35,12 @@ def _parse_jsonl(text: str, source: str) -> list[dict[str, Any]]:
 
 
 def _fence(body: str, info: str = "text") -> list[str]:
-    """本文中のバッククォート連続より長いフェンスで囲み、本文中の見出しを見出しとして扱わせない。"""
     longest = max((len(run) for run in re.findall(r"`+", body)), default=0)
     fence = "`" * max(3, longest + 1)
     return [f"{fence}{info}", body, fence]
 
 
 def _one_line(text: str, limit: int = _SUMMARY_LENGTH) -> str:
-    """空白を正規化した先頭の文字列を返す。"""
     normalized = " ".join(text.split())
     return normalized if len(normalized) <= limit else normalized[:limit] + "…"
 
@@ -60,7 +56,6 @@ def _clip_utf8(text: str, limit: int) -> str:
 
 
 def _full_body_lines(text: str, *, title: str) -> list[str]:
-    """長い単一行も上限内で読み、連続する文字位置から全文を復元できる形で返す。"""
     lines = []
     for start in range(0, max(1, len(text)), 4000):
         body = text[start : start + 4000]
@@ -69,7 +64,6 @@ def _full_body_lines(text: str, *, title: str) -> list[str]:
 
 
 def _comparison_document_full(events: list[dict[str, Any]], detail_command: str) -> str:
-    """正常な操作を比較する事実と全文位置を示し、量の多寡と欠陥の判定を分ける。"""
     lines = [
         "",
         "## 委譲入力・規範読込の比較材料",
@@ -154,7 +148,6 @@ def _comparison_document(events: list[dict[str, Any]], detail_command: str) -> s
             "bundle/comparison-materials.jsonlに保持する。表示外も同JSONLのrecord・line・result_lineで詳細照会できる。\n"
         )
 
-    # 位置は完全な値を保持し、容量に入らない項目は全量JSONLから照会する。
     while any(indices for owners in queues.values() for indices in owners.values()):
         for category, owners in queues.items():
             names = list(owners)

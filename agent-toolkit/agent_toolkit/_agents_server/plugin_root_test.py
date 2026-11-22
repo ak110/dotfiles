@@ -1,5 +1,3 @@
-"""独立実行のstrict保持と既存serverの保持方針が両立することを確認する。"""
-
 import json
 import os
 import pathlib
@@ -54,7 +52,6 @@ def test_independent_copy_failure_never_falls_back_to_source(tmp_path, monkeypat
 
 
 def test_checkout_resolution_does_not_write_capability_record(tmp_path):
-    """保持実体を使わない起動のたびに状態ファイルを増やさない。"""
     source = _source(tmp_path)
     for _ in range(3):
         assert plugin_root.resolve_stable_plugin_root(source) == source
@@ -99,7 +96,6 @@ def test_independent_bootstrap_passes_held_cli_and_python_to_worker(tmp_path, mo
 
 
 def test_independent_versioned_source_reuses_the_held_copy(tmp_path):
-    """独立投入のstrict保持でも、同じ配布元と版の完成済み複製を共有する。"""
     checkout = _source(tmp_path)
     source = checkout.rename(checkout.parent / "1.0.0")
     first = plugin_root.resolve_stable_plugin_root(source, independent=True)

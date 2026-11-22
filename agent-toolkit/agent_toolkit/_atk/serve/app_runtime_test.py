@@ -1,5 +1,3 @@
-"""serveのappに関するruntimeの試験。"""
-
 # pylint: disable=protected-access
 
 import asyncio
@@ -24,7 +22,6 @@ from agent_toolkit._testing.serve_app_support import _REBASE_AWI, _rebasing_note
 
 @pytest.mark.asyncio
 async def test_worker_exit_is_request_failure(tmp_path: pathlib.Path) -> None:
-    """管理情報と無関係な操作のSystemExitも共通ワーカーで変換する。"""
 
     class ExitingOperations(wi_operations.Operations):
         def target_repos(self, status: str = "active", *, now: datetime.datetime | None = None) -> list[str]:
@@ -57,7 +54,7 @@ async def test_shutdown_request_stops_remote_connections_without_reconnecting(
 
     async def fake_exec(*cmd: typing.Any, **kwargs: typing.Any) -> asyncio.subprocess.Process:
         started.append(" ".join(str(part) for part in cmd))
-        # 標準出力を閉じて接続断を起こし、標準入力の終端を受けて終了する子プロセスで常駐SSHを代替する。
+
         script = "import os, sys; os.close(1); sys.stdin.read()"
         return await real_exec(sys.executable, "-c", script, **kwargs)
 
@@ -189,7 +186,6 @@ async def test_reads_respond_while_updates_wait_for_lock(
 
 @pytest.mark.asyncio
 async def test_timing_api_records_only_allowed_browser_fields(tmp_path: pathlib.Path) -> None:
-    """画面の所要記録は許可した項目と型だけを残し、本文などの項目を捨てる。"""
     timing_log = tmp_path / "timings.jsonl"
     app = serve_app.create_app(
         tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path), timing_log_path=timing_log
@@ -239,7 +235,6 @@ async def test_timing_api_records_only_allowed_browser_fields(tmp_path: pathlib.
 
 
 def test_timing_log_rotates_to_one_generation(tmp_path: pathlib.Path) -> None:
-    """上限を超える追記は1世代へ回し、記録の合計量を2世代に保つ。"""
     path = tmp_path / "serve" / "timings.jsonl"
     log = timings.TimingLog(path, max_bytes=200)
     for index in range(20):

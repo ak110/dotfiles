@@ -16,7 +16,6 @@ from rewrite_plan_commits_test import _rebased_fixture as _rebased_fixture  # py
 def test_retry_with_new_in_range_and_out_of_range_commits(
     rebased: _Rebased, capsys: pytest.CaptureFixture[str], mapped: bool
 ) -> None:
-    """別AWIの範囲外OIDが後から加わっても、同じ記録の新たな対象は対応表に従って処理する。"""
     table = rebased.range_map("a", "b", "u") if mapped else rebased.range_map("a", "b")
     args = rebased.argv(table)
     assert rewrite_plan_commits.main(args) == 0
@@ -48,7 +47,6 @@ def test_retry_with_new_in_range_and_out_of_range_commits(
 
 @pytest.mark.parametrize("edit", ["missing", "past", "reintroduced"])
 def test_retry_rejects_new_omissions(rebased: _Rebased, capsys: pytest.CaptureFixture[str], edit: str) -> None:
-    """後から記録された不足・未追記を、元の操作が保持した範囲外OIDと区別する。"""
     record = rebased.plan
     commit_mapping.append_event(record, {"commit": rebased.orphan, "awi": [WI_A]})
     args = rebased.argv(rebased.range_map("a", "b"))
@@ -76,7 +74,6 @@ def test_retry_rejects_new_omissions(rebased: _Rebased, capsys: pytest.CaptureFi
 
 @pytest.mark.parametrize("replace", [False, True])
 def test_retry_requires_the_original_event(rebased: _Rebased, capsys: pytest.CaptureFixture[str], replace: bool) -> None:
-    """適用イベントを消すか別の宛先に置換すると、以前の証拠では再開できない。"""
     args = rebased.argv(rebased.range_map("a", "b"))
     assert rewrite_plan_commits.main([arg for arg in args if not arg.startswith("--handoff=")]) == 0
     mapping = commit_mapping.mapping_path(rebased.plan)
@@ -90,7 +87,6 @@ def test_retry_requires_the_original_event(rebased: _Rebased, capsys: pytest.Cap
 
 
 def test_retry_after_mapping_publication_processes_new_target(rebased: _Rebased, monkeypatch: pytest.MonkeyPatch) -> None:
-    """証拠だけが未公開の時点で対象の対応が増えても、既に公開した対応・後続の追記の両方を残す。"""
     args = rebased.argv(rebased.range_map("a", "b", "u"))
     record = rebased.plan
     replace = os.replace
@@ -115,7 +111,6 @@ def test_retry_after_mapping_publication_processes_new_target(rebased: _Rebased,
 
 
 def test_retry_preserves_a_later_rewrite(rebased: _Rebased) -> None:
-    """別の書換えで対象外OIDを更新した後も、元の操作はその更新を戻さず残りの記録だけを処理する。"""
     record = rebased.plan
     retained = _commit(rebased.repo, "cherry-pick source")
     git_repository.git_output(rebased.repo, "switch", "--detach", rebased.new["b"])

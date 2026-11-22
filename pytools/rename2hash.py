@@ -19,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """ファイルをMD5ハッシュ名へリネームするエントリポイント。"""
     parser = argparse.ArgumentParser(description="ファイルを MD5 ハッシュ名へリネームする")
     parser.add_argument("-r", "--recursive", action="store_true")
     parser.add_argument("-f", "--log-file", type=pathlib.Path, help="リネームログの追記先")
@@ -73,7 +72,6 @@ def rename_to_hash(
         if file.name.lower() == new_name.lower():
             continue
         if new_path.exists():
-            # 既存のものと同内容ならこちらが重複しているだけ。上書き的に置き換え。
             logger.info("%s -> %s (既存を置換)", file.name, new_name)
             if not dry_run:
                 new_path.unlink()

@@ -27,7 +27,6 @@ def _root(
 
 
 def test_render_embeds_only_personal_rules(tmp_path: Path) -> None:
-    """個人用の規範だけを埋め込み、配布元に残るagent-toolkitの常時規範は埋め込まない。"""
     root = _root(tmp_path)
     for relative in (
         "agent-toolkit/share/rules/rules-common.codex.md",
@@ -56,7 +55,6 @@ def test_sync_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_main_help_does_not_sync(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`--help`は終了コード0で生成処理へ到達しない。"""
     monkeypatch.setattr(subject, "sync", lambda: pytest.fail("syncを呼び出した"))
 
     with pytest.raises(SystemExit) as exc_info:
@@ -108,7 +106,6 @@ def test_sync_rejects_out_of_range_warn_ratio(tmp_path: Path, warn_ratio: float)
 def test_embedded_section_detects_boundary_by_exact_element_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, body: str, wrapped: bool
 ) -> None:
-    """要素名が完全一致する本文だけを境界付きとみなし、別要素の本文は境界で囲む。"""
     root = _root(tmp_path, personal=body + "\n")
     marker = f'path="{subject.PERSONAL_SOURCE.as_posix()}">'
 

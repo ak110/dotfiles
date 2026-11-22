@@ -1,5 +1,3 @@
-"""serveのbrowser_sessionsに関するdetailの試験。"""
-
 import asyncio
 import functools
 import json
@@ -24,7 +22,6 @@ pytestmark = [
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("pending", ["list", "detail"])
 async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harness: _ScreenHarness, pending: str) -> None:
-    """一覧取得中とURLの詳細復元中の開閉操作を、初期化の完了後にも保つ。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 320, "height": 720})
     await page.goto(screen_harness.base_url + "/sessions")
@@ -42,7 +39,7 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
         menu = page.locator("#sessions-menu-btn")
         await menu.click()
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
-        # 購読は一覧より先に始まるため、初期化の完了は復元した詳細で観測する。
+
         release.set()
         await page.locator("#detail .event").first.wait_for(state="visible")
         await playwright.async_api.expect(menu).to_have_attribute("aria-expanded", "true")
@@ -54,7 +51,6 @@ async def test_session_drawer_keeps_user_open_during_initial_fetch(screen_harnes
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness) -> None:
-    """セッション一覧には発話内容のプレビューを表示しない。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     first_item = page.locator("#sessions .session-item").first
@@ -70,7 +66,6 @@ async def test_session_list_omits_message_preview(screen_harness: _ScreenHarness
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _ScreenHarness) -> None:
-    """セッション詳細の前後ボタンで一覧の隣接項目へ移動する。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     items = page.locator("#sessions .session-item")
@@ -92,7 +87,6 @@ async def test_session_previous_and_next_buttons_navigate_list(screen_harness: _
     ),
 )
 async def test_session_screen_lists_and_renders_both_engines(screen_harness: _ScreenHarness) -> None:
-    """左ペインを内容と非表示の識別子で限定し、右ペインへ発話とツール入力を表示する。"""
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/sessions")
 
@@ -104,11 +98,10 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert "/home/aki/proj" in listing
     assert "Claudeの発話" not in listing
     assert "11111111-2222-3333-4444-555555555555" not in listing
-    # 実行系による限定の操作、実行系のバッジ、ホストの接続状態および件数の表示は画面へ現れない。
+
     for selector in ("#sessions .engine-badge", ".engine-filter", "#host-status", "#list-status"):
         assert await harness.page.locator(selector).count() == 0, selector
 
-    # 文字列による限定。
     await harness.page.locator("#sessions-filter").fill("aaaaaaaa")
     await harness.page.wait_for_function("document.querySelectorAll('#sessions .session-item').length === 1")
     assert await harness.page.locator('#sessions .session-item[data-engine="codex"]').count() == 1
@@ -178,7 +171,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
         "inputTextOverflow": "ellipsis",
         "inputWhiteSpace": "nowrap",
     }
-    # 本文のある思考は発言と同じく初期状態で開き、ツール呼び出しは畳む。
+
     assert await harness.page.locator("#detail .kind-thinking").evaluate("element => element.open")
     detail_text = await harness.page.locator("#detail").inner_text()
     assert "Claudeの発話" in detail_text
@@ -189,7 +182,7 @@ async def test_session_screen_lists_and_renders_both_engines(screen_harness: _Sc
     assert any("Read" in summary and "/tmp/input.md" in summary for summary in tool_summaries)
     assert any("Search" in summary and "needle" in summary for summary in tool_summaries)
     assert "入力: 12" in await harness.page.locator("#detail > .secondary-text").first.inner_text()
-    # 破損した行は該当セッションの警告として示し、他の発話を失わせない。
+
     assert "解析できない行が1件あります" in detail_text
 
 
@@ -217,7 +210,6 @@ async def test_session_details_use_exclusive_default_closed_sections(screen_harn
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> None:
-    """挿入本文だけを閉じ、一覧の検索値と通常発話を保つ。"""
     records_root = screen_harness.root.parent
     claude_path = records_root / "claude" / "projects" / "-home-aki-proj" / "11111111-2222-3333-4444-555555555555.jsonl"
     original_claude = claude_path.read_text(encoding="utf-8")
@@ -270,7 +262,6 @@ async def test_runtime_inserted_accordion(screen_harness: _ScreenHarness) -> Non
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_details_open_developer_by_default(screen_harness: _ScreenHarness) -> None:
-    """ユーザー、アシスタントおよび開発者の本文を初期状態で開く。"""
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/sessions")
     await page.locator('#sessions .session-item[data-engine="codex"]').click()
@@ -283,7 +274,6 @@ async def test_session_details_open_developer_by_default(screen_harness: _Screen
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_session_detail_toolbar_scrolls_with_content(screen_harness: _ScreenHarness) -> None:
-    """狭い画面では右ペイン全体がスクロールし、タイトルとトークン表示も本文とともに移動する。"""
     page = screen_harness.page
     await page.set_viewport_size({"width": 900, "height": 360})
     await page.goto(screen_harness.base_url + "/sessions")

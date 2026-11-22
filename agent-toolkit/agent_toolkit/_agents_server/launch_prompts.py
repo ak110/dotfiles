@@ -85,11 +85,6 @@ NORMATIVE_SOURCE = "agent-toolkit"
 
 
 def _normative(body: str, *, kind: str) -> str:
-    """System promptへ渡す本文へ、生成主体と種別を示す境界を付ける。
-
-    委譲先のsystem promptは、ホストが用意する指示と同じ仕組みで実行主体へ届く。
-    本リポジトリが生成した範囲を委譲先が判別できるよう、他の自動注入と同じ形式で囲む。
-    """
     return message_format.auto_message(body, source=NORMATIVE_SOURCE, kind=kind)
 
 
@@ -103,7 +98,6 @@ def _missing(what: str) -> session_errors.ActionableRuntimeError:
 
 @functools.cache
 def _playbook_lines() -> tuple[str, ...]:
-    """原本を行の列で読む。配布物はprocessの起動中に変わらないため、最初の起動で読んだ本文を使い続ける。"""
     try:
         return tuple(SUBAGENT_PLAYBOOK.read_text(encoding="utf-8").splitlines())
     except (OSError, UnicodeError) as error:
@@ -111,7 +105,6 @@ def _playbook_lines() -> tuple[str, ...]:
 
 
 def _headings(lines: tuple[str, ...]) -> list[tuple[int, int, str]]:
-    """コードフェンスの外の見出しを、行番号・階層・見出し名の組で返す。"""
     found: list[tuple[int, int, str]] = []
     fence = ""
     for index, line in enumerate(lines):
@@ -127,7 +120,6 @@ def _headings(lines: tuple[str, ...]) -> list[tuple[int, int, str]]:
 
 
 def _section(level: int, title: str, *, within: tuple[int, int] | None = None) -> tuple[int, int]:
-    """見出しの行と、次の同じか上の階層の見出しの直前までの範囲を返す。"""
     lines = _playbook_lines()
     headings = _headings(lines)
     lower, upper = within or (0, len(lines))
@@ -144,7 +136,6 @@ def _section(level: int, title: str, *, within: tuple[int, int] | None = None) -
 
 
 def _body(level: int, title: str, *, within: tuple[int, int] | None = None) -> str:
-    """見出しより下の本文を返す。空なら起動を止める。"""
     begin, end = _section(level, title, within=within)
     body = "\n".join(_playbook_lines()[begin + 1 : end]).strip()
     if not body:
@@ -153,12 +144,10 @@ def _body(level: int, title: str, *, within: tuple[int, int] | None = None) -> s
 
 
 def _role_body(title: str) -> str:
-    """H2「起動の種類ごとの役割」の中のH3の本文を返す。"""
     return _body(3, title, within=_section(2, ROLES_HEADING))
 
 
 def result_contract() -> str:
-    """軽量の委譲にも渡す、返却の決まりの区間を返す。"""
     text = "\n".join(_playbook_lines())
     if text.count(RESULT_CONTRACT_START) != 1 or text.count(RESULT_CONTRACT_END) != 1:
         raise _missing(f"標識`{RESULT_CONTRACT_START}`と`{RESULT_CONTRACT_END}`が1組だけ無い")
@@ -169,7 +158,6 @@ def result_contract() -> str:
 
 
 def base_instructions() -> str:
-    """ホストの組み込みのメイン向け指示に代えて渡す、委譲先であることの通知。"""
     return _body(2, NOTICE_HEADING)
 
 
@@ -221,12 +209,10 @@ PUBLIC_WAIT_NOTICE = _normative(
 )
 
 
-# プロジェクト規範と設定の読込を省く軽量な起動条件を共有する種別。
 LIGHTWEIGHT_LAUNCH_KINDS = frozenset({"explore", "shell", "write"})
 
 
 def python_runtime_instructions() -> str:
-    """serverが使うPythonの実在パスと用途を軽量委譲へ渡す。"""
     executable = str(pathlib.Path(sys.executable).absolute())
     if not pathlib.Path(executable).is_file():
         raise RuntimeError(f"Pythonの実行ファイルが存在しません: {executable}")
@@ -242,7 +228,6 @@ def python_runtime_instructions() -> str:
 
 
 def cli_runtime_instructions(plugin_root: pathlib.Path) -> str:
-    """保持済み配布物のCLIへ、通常・軽量・再開の委譲から同じ呼び方で到達させる。"""
     return _normative(
         plugin_environment.cli_instructions(plugin_root),
         kind="cli-runtime",
@@ -250,7 +235,6 @@ def cli_runtime_instructions(plugin_root: pathlib.Path) -> str:
 
 
 def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project: str) -> str:
-    """候補の実行系とcwdで品質資料を解決し、既存のtoolkit案内へ所有者の対応を補う。"""
     if not toolkit_root.is_dir() or not (toolkit_root / "skills").is_dir():
         raise plugin_roots.PluginRootError(f"agent-toolkitの実在するskillsを確認できません: {toolkit_root}")
     basics_root = plugin_roots.resolve_plugin_root("agent-basics", toolkit_root, host, project)

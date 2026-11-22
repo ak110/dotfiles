@@ -1,9 +1,3 @@
-"""libarchiveのDLL解決条件を、導入（`install_libarchive`）と消費（`repack_archive`）で共有する。
-
-本体DLLの存在は、動的依存のDLLまで揃っていることを示さない。
-導入済みの判定は、消費側と同じ探索条件で実際にロードできるかで行う。
-"""
-
 import ctypes
 import ctypes.util
 import os
@@ -31,12 +25,10 @@ def prepare_dll_search(install_dir: pathlib.Path | None = None) -> None:
 
 
 def library_path() -> str | None:
-    """libarchive-cと同じ優先順で、ロードするDLLのパスか名前を返す。"""
     return os.environ.get("LIBARCHIVE") or ctypes.util.find_library("archive")
 
 
 def _load_library(path: str) -> None:
-    """libarchive-cと同じく`ctypes`でDLLを読み込む。依存DLLが欠けると`OSError`を送出する。"""
     ctypes.CDLL(path)
 
 

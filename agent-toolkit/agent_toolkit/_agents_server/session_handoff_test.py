@@ -28,7 +28,6 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 @pytest.fixture(name="record_extractor")
 def _record_extractor(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path:
-    """外部ホストの記録と会話抽出CLIを、専用の入力・出力で代用する。"""
     record = tmp_path / "record.jsonl"
     record.write_text("記録本文", encoding="utf-8")
 
@@ -101,7 +100,6 @@ async def test_start_handoff_restores_route_and_excludes_predecessor_after_recor
 @pytest.mark.parametrize("extra", [{"cwd": "/repo"}, {"mode": "task"}, {"prompt": "変更"}, {"label": "別名"}])
 @pytest.mark.asyncio
 async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) -> None:
-    """前任の入力を暗黙に上書きする混在は、MCP境界で修正可能な診断を返す。"""
     with pytest.raises(ToolError, match="handoff_from"):
         await mcp_tools.mcp.call_tool("start", {"handoff_from": "codex-session", **extra})
 
@@ -111,7 +109,6 @@ async def test_public_start_rejects_mixed_handoff_inputs(extra: dict[str, str]) 
 async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, engine: str
 ) -> None:
-    """前任engineによらず、公開startが指定候補と未要約の起動・追送本文を後任へ渡す。"""
     del record_extractor
     before = f"{engine}:provider/before@medium" if engine == "opencode" else f"{engine}:before/medium"
     after = f"{engine}:provider/after@medium" if engine == "opencode" else f"{engine}:after/medium"
@@ -141,7 +138,6 @@ async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
 async def test_handoff_direct_candidate_warning_and_return_to_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path, override: str | None
 ) -> None:
-    """省略時の直接候補継承と、工程名明示による現在設定への復帰を区別する。"""
     del record_extractor
     before = "codex:before/medium"
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:configured/low")
@@ -165,7 +161,6 @@ async def test_handoff_direct_candidate_warning_and_return_to_settings(
 async def test_legacy_codex_disconnect_result_starts_handoff(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, record_extractor: pathlib.Path
 ) -> None:
-    """旧版の汎用切断結果を回収した呼び出し元も、案内から同じ用途の後任を開始できる。"""
     del record_extractor
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
     async with _manager_with_fake("codex") as (manager, _backend):
@@ -208,7 +203,6 @@ async def test_task_handoff_keeps_delivered_role_prompt_and_continues_handoff_re
     tmp_path: pathlib.Path,
     record_extractor: pathlib.Path,
 ) -> None:
-    """taskで配送した役割本文・名前付き入力・用途と引き継ぎ記録の継続を後任へ渡す。"""
     del record_extractor
     monkeypatch.setattr(config, "parse_unresolved_model_candidates", lambda *_args, **_kwargs: [("codex", "first", "medium")])
     async with _manager_with_fake("codex") as (manager, _):
@@ -247,7 +241,6 @@ def test_prompt_delivers_full_history_and_record_paths(
     engine: str,
     launch_kind: state.LaunchKind,
 ) -> None:
-    """全engine・modeに、長い追送・全turnの最終応答・経過と詳細照会を全文で届ける。"""
     handoff = tmp_path / "handoff.md"
     predecessor = state.SessionState(
         "predecessor",
@@ -303,7 +296,6 @@ def test_prompt_delivers_full_history_and_record_paths(
 def test_prompt_instruction_follows_observed_handoff_record(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, observed: str, expected: str
 ) -> None:
-    """読めた記録だけを最初に読ませ、不在は資料からの復元、それ以外で読めない記録は値の欠落の可能性として区別する。"""
     handoff = tmp_path / "handoff.md"
     if observed in {"file", "unreadable"}:
         handoff.write_text("稼働中のプロセス: なし\n", encoding="utf-8")
@@ -338,7 +330,6 @@ def test_prompt_instruction_follows_observed_handoff_record(
 
 @pytest.mark.asyncio
 async def test_turn_history_survives_collection_release_and_registry_restart(tmp_path: pathlib.Path) -> None:
-    """回収・解放後も登録簿の同じ7日保持内で追送と応答と終了理由を引き継げる。"""
     predecessor = state.SessionState(
         "predecessor",
         str(tmp_path),
@@ -392,7 +383,6 @@ async def test_turn_history_survives_collection_release_and_registry_restart(tmp
 
 
 def test_legacy_registry_optional_history_keeps_default_values() -> None:
-    """追加項目の無い旧登録簿と不正な任意値は、従来の起動情報を保つ。"""
     restored = session_registry.LaunchInfo.from_record(
         {"label": "old", "prompt": "元の依頼", "usage": "review", "followup_prompts": 3}
     )
@@ -409,7 +399,6 @@ def test_handoff_prepares_conversation_through_registered_script(
     tmp_path: pathlib.Path,
     engine: str,
 ) -> None:
-    """実際の記録解決と登録済み抽出CLIから、後任がReadできる会話ファイルを生成する。"""
     identifier = "019900aa-bbbb-7ccc-8ddd-eeeeeeeeeeee"
     # session_review_prepare_test.pyの既存Claude transcriptとCodex rolloutの記録形を使う。
     if engine == "claude":
@@ -446,7 +435,7 @@ def test_handoff_prepares_conversation_through_registered_script(
     conversation = pathlib.Path(conversation_line.removeprefix("会話の流れ: "))
     assert "確定事項と残工程" in conversation.read_text(encoding="utf-8")
     assert str(record) in prompt
-    # 成功時の両出力は会話の流れの生成に使い終えるため、診断ファイルとして残さない。
+
     assert sorted(path.name for path in conversation.parent.iterdir() if path.name.startswith("prepare.")) == []
 
 

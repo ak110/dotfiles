@@ -13,19 +13,15 @@ HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
 
 @dataclasses.dataclass(frozen=True)
 class EffortResumePending:
-    """effortの自己変更後に再開するturn。"""
-
     turn_seq: int
 
 
 @dataclasses.dataclass(frozen=True)
 class EffortResumeRunning:
-    """予約を消費して次のturnを開始している間の状態。"""
+    pass
 
 
 class TurnStart(enum.Enum):
-    """開始要求の受理段階。結果の終了と中断要求は別の状態軸である。"""
-
     UNSENT = enum.auto()
     SENT = enum.auto()
     STARTED = enum.auto()
@@ -59,8 +55,6 @@ class OverloadWait:
 
 @dataclasses.dataclass(frozen=True)
 class UsageLimitWait:
-    """利用上限の解除時刻を待つ結果。"""
-
     result: dict[str, Any]
     resume_at: float
 
@@ -81,16 +75,12 @@ class CodexProviderWait:
 
 @dataclasses.dataclass(frozen=True)
 class ResultContractWait:
-    """返却形式の回復入力を送るまで保留する結果。"""
-
     result: dict[str, Any]
     reason: str
 
 
 @dataclasses.dataclass(frozen=True)
 class InterruptedWait:
-    """中断要求の所有者がCLIの終了を確認するまで保留する結果。"""
-
     result: dict[str, Any]
 
 

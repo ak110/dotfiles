@@ -19,7 +19,6 @@ _FILE_NAME_PATTERN = re.compile(r"[A-Za-z0-9_.*/\\-]*?([A-Za-z0-9_*-]+\.py)(?![A
 
 
 def _tracked_names() -> set[str]:
-    """リポジトリ全体の追跡中のファイルの名前の集合を返す。"""
     result = subprocess.run(
         ["git", "-C", str(_PLUGIN_ROOT), "ls-files", "-z", "--", ":/"],
         check=True,
@@ -32,7 +31,6 @@ def _tracked_names() -> set[str]:
 
 
 def _plugin_python_files() -> list[pathlib.Path]:
-    """`agent-toolkit/`配下の追跡中のPythonファイルを返す。"""
     result = subprocess.run(
         ["git", "-C", str(_PLUGIN_ROOT), "ls-files", "-z", "--", "*.py"],
         check=True,
@@ -45,7 +43,6 @@ def _plugin_python_files() -> list[pathlib.Path]:
 
 
 def _docstring_and_comment_lines(source: str) -> list[tuple[int, str]]:
-    """コメントとdocstringの本文を、ファイル内の行番号と組にして返す。"""
     lines: list[tuple[int, str]] = []
     for token in tokenize.generate_tokens(io.StringIO(source).readline):
         if token.type == tokenize.COMMENT:
@@ -61,7 +58,6 @@ def _docstring_and_comment_lines(source: str) -> list[tuple[int, str]]:
 
 
 def _missing_references() -> list[str]:
-    """追跡中のファイルに無いファイル名を挙げるコメント・docstringの行を返す。"""
     tracked = _tracked_names()
     problems: list[str] = []
     for path in _plugin_python_files():
@@ -84,7 +80,6 @@ def _missing_references() -> list[str]:
     ),
 )
 def test_comment_and_docstring_file_names_exist() -> None:
-    """コメントとdocstringのファイル名が追跡中のファイルとして実在する。"""
     problems = _missing_references()
     assert not problems, (
         "コメント・docstringが追跡中のファイルに無いファイル名を挙げている:\n"

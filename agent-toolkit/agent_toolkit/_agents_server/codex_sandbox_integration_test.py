@@ -1,5 +1,3 @@
-"""導入済みApp Serverで探索の開始が通常コマンドへ到達することを検証する。"""
-
 import datetime
 import importlib.metadata
 import json
@@ -17,10 +15,9 @@ from agent_toolkit._testing.isolation import restore_host_environment
 
 @pytest.fixture(autouse=True)
 def _runtime_diagnostics(request: pytest.FixtureRequest, caplog: pytest.LogCaptureFixture):
-    """実境界の開始・終了と、App Server終了ログを同じpytest PIDへ対応付ける。"""
     caplog.set_level(logging.INFO, logger="agent-toolkit.agents-server.codex")
     logger = logging.getLogger("agent-toolkit.agents-server.codex")
-    # agents_server側がrootへの伝播を止めた構成でも、CIへ終了境界を残す。
+
     logger.addHandler(caplog.handler)
     print(
         "Codex境界試験開始: "

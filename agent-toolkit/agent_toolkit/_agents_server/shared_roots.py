@@ -40,8 +40,6 @@ from agent_toolkit._common.next_action import ActionableError
 
 @dataclasses.dataclass(frozen=True)
 class StatusFileIdentity:
-    """状態ファイルのルートと書込主体を表す。"""
-
     root_session_id: str
     file_name: str
     host_session_id: str | None
@@ -49,8 +47,6 @@ class StatusFileIdentity:
 
 @dataclasses.dataclass(frozen=True)
 class ConversationRootResolution:
-    """現行会話から解決したルートと、その対応を確認できた根拠を表す。"""
-
     current_session_id: str
     root_session_id: str
     alias_present: bool
@@ -59,13 +55,11 @@ class ConversationRootResolution:
 
 
 def resolve_root_session_id(environment: Mapping[str, str]) -> str | None:
-    """環境変数から読取対象のルートsessionを解決する。"""
     owner = _delegated_session.owner_session_id(environment) or environment.get("CLAUDE_CODE_SESSION_ID")
     return owner if owner is not None and valid_session_id(owner) else None
 
 
 def resolve_status_file_identity(environment: Mapping[str, str]) -> StatusFileIdentity | None:
-    """環境変数から状態ファイルの書込主体を解決し、識別できない場合は`None`を返す。"""
     owner = resolve_root_session_id(environment)
     if owner is None:
         return None
@@ -91,12 +85,10 @@ PROCESS_ROOT_PREFIX = "mcp-"
 
 
 def create_process_root_identity() -> StatusFileIdentity:
-    """環境から所有会話を解決できないMCPプロセス専用のルート識別子を生成する。"""
     return StatusFileIdentity(f"{PROCESS_ROOT_PREFIX}{uuid.uuid4().hex}", "root.json", None)
 
 
 def find_root_session_id_for_session(session_id: str, state_root: pathlib.Path | None = None) -> str | None:
-    """共有状態から指定sessionを保持する一意なルートsession識別子を返す。"""
     if not valid_session_id(session_id):
         return None
     matches: list[str] = []
@@ -175,13 +167,11 @@ def resolve_conversation_root(
 
 
 def resolve_conversation_root_session_id(environment: Mapping[str, str], state_root: pathlib.Path | None = None) -> str | None:
-    """現行会話のsession識別子を索引経由でルートsession識別子へ解決する。"""
     resolution = resolve_conversation_root(environment, state_root)
     return None if resolution is None else resolution.root_session_id
 
 
 def unconfirmed_root_recovery(resolution: ConversationRootResolution, command: str) -> tuple[str, str]:
-    """未確認のルートsessionを診断する理由と、MCPの一覧応答から復旧する次の操作を返す。"""
     if not resolution.alias_present:
         reason = "aliasが存在しません"
     elif not resolution.alias_valid:
@@ -226,7 +216,6 @@ def resolve_status_owner_identity(
 
 
 def resolve_host_writer(identity: StatusFileIdentity, state_root: pathlib.Path | None) -> StatusFileIdentity:
-    """委譲元の会話から、状態を実際に書く主体を解決する。"""
     if identity.host_session_id is None:
         return identity
     try:
@@ -269,8 +258,7 @@ def resolve_host_writer(identity: StatusFileIdentity, state_root: pathlib.Path |
             continue
         if status_reader.heartbeat_is_current(payload, cutoff):
             current_writers.append(path.stem)
-    # hostsは過去の対応も保持する。現行の公開状態がある場合は、その所有者で解決する。
-    # 状態未公開の起動と保持結果を壊さないよう、失効した索引自体はここでは削除しない。
+
     if current_writers:
         writers = current_writers
     if not writers:
@@ -346,7 +334,6 @@ def write_host_alias(
     host_session_id: str,
     state_root: pathlib.Path | None = None,
 ) -> None:
-    """書込主体を委譲元threadへ対応付ける索引を書く。"""
     forwarded, _ = registry_forwarding.forward(
         "write_host_alias",
         {

@@ -1,5 +1,3 @@
-"""解放要求の配送と所有・終了の再検収を確かめる。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -347,7 +345,6 @@ async def test_response_during_registry_write_does_not_delay_release_of_other_se
 async def test_process_requests_rejects_nested_worktree_cwd(
     tmp_path: pathlib.Path, registered_paths: bool, nested: bool
 ) -> None:
-    """新要求は最内側の所属で判定し、登録集合を持たない旧要求も受理できる。"""
     owner = session_registry.owner_process()
     assert owner is not None
     cwd = tmp_path / "nested" if nested else tmp_path

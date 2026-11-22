@@ -1,5 +1,3 @@
-"""ランチャーは巡回の引数と終了値を単一のCLIへ渡す。"""
-
 import os
 import pathlib
 import subprocess

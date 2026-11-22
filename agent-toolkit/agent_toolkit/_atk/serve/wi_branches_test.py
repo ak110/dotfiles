@@ -1,5 +1,3 @@
-"""`atk serve`のWI画面が、系統（`target_branch`）を登録したrepositoryのWIだけで系統を扱うことの試験。"""
-
 import json
 import pathlib
 
@@ -19,7 +17,6 @@ _PLAIN = "github.com/example/plain"
 
 @pytest.fixture(name="registered_repository")
 def _registered_repository_fixture(tmp_path: pathlib.Path) -> str:
-    """`_REGISTERED`へ系統（maintとdevelop、`default_branch`はdevelop）を登録する。"""
     _write_config(
         tmp_path,
         {
@@ -48,7 +45,6 @@ async def _entries(client, query: str = "") -> dict[str, dict[str, object]]:  # 
 async def test_list_shows_effective_branch_only_for_registered_repository(
     tmp_path: pathlib.Path, registered_repository: str
 ) -> None:
-    """保存値、`default_branch`、系統未登録の宛先の順に、実効の系統を一覧項目へ加え、未登録の項目の形は変えない。"""
     notes = tmp_path / "notes"
     _write_entry(notes, "stored.md", registered_repository, branch="maint")
     _write_entry(notes, "legacy.md", registered_repository)
@@ -68,7 +64,6 @@ async def test_list_shows_effective_branch_only_for_registered_repository(
 
 @pytest.mark.asyncio
 async def test_list_without_any_registration_keeps_item_shape(tmp_path: pathlib.Path) -> None:
-    """系統を一つも登録しない環境では、一覧項目へ`target_branch`を加えず、`target_branch`の指定は一致なしになる。"""
     notes = tmp_path / "notes"
     _write_entry(notes, "plain.md", _PLAIN)
     client = _serve_app(notes).test_client()
@@ -80,7 +75,6 @@ async def test_list_without_any_registration_keeps_item_shape(tmp_path: pathlib.
 
 @pytest.mark.asyncio
 async def test_list_filters_by_effective_branch(tmp_path: pathlib.Path, registered_repository: str) -> None:
-    """`target_branch`の指定は実効の系統で一致させ、保存値が無い項目も`default_branch`の系統に含める。"""
     notes = tmp_path / "notes"
     _write_entry(notes, "stored.md", registered_repository, branch="maint")
     _write_entry(notes, "legacy.md", registered_repository)
@@ -95,7 +89,6 @@ async def test_list_filters_by_effective_branch(tmp_path: pathlib.Path, register
 
 @pytest.mark.asyncio
 async def test_branches_api_returns_registered_branches(tmp_path: pathlib.Path, registered_repository: str) -> None:
-    """読取APIは系統を登録したrepositoryの系統と`default_branch`だけを返す。"""
     client = _serve_app(tmp_path / "notes").test_client()
 
     response = await client.get("/api/branches")
@@ -110,7 +103,6 @@ async def test_branches_api_returns_registered_branches(tmp_path: pathlib.Path, 
 async def test_create_saves_selected_branch_and_defaults_when_omitted(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registered_repository: str
 ) -> None:
-    """系統を登録したrepository宛ての作成は、選んだ系統を保存し、省略すれば`default_branch`で保存する。"""
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(awi_repo, "resolve_repo_id", lambda value, **_kwargs: value)
     _patch_single_add_operations(monkeypatch)
@@ -137,7 +129,6 @@ async def test_create_saves_selected_branch_and_defaults_when_omitted(
 async def test_create_rejects_unregistered_branch_and_branch_for_plain_repository(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, registered_repository: str
 ) -> None:
-    """登録に無い系統と、系統を登録しないrepositoryへの系統の指定は保存せず400を返す。系統を省いた作成は従来どおり保存する。"""
     monkeypatch.setenv("AI_AGENT", "1")
     monkeypatch.setattr(awi_repo, "resolve_repo_id", lambda value, **_kwargs: value)
     _patch_single_add_operations(monkeypatch)
@@ -164,7 +155,6 @@ async def test_create_rejects_unregistered_branch_and_branch_for_plain_repositor
 
 
 def test_create_dialog_offers_branch_only_for_registered_repository() -> None:
-    """新規作成の系統欄は、登録した対象repositoryを入力した時だけ出し、初期選択を`default_branch`にして選択を送る。"""
     result = _run_node_ui(
         """
 wiState.branchRegistry = {'github.com/example/branched': {branches: ['maint', 'develop'], default_branch: 'develop'}};
@@ -216,7 +206,6 @@ process.stdout.write(JSON.stringify({states, body: JSON.parse(call.options.body)
 
 
 def test_create_payload_omits_branch_for_plain_repository() -> None:
-    """系統を登録しないrepositoryの作成は、`target_branch`を送らず従来のpayloadのままにする。"""
     result = _run_node_ui(
         """
 wiState.branchRegistry = {'github.com/example/branched': {branches: ['maint', 'develop'], default_branch: 'develop'}};
@@ -248,7 +237,6 @@ process.stdout.write(JSON.stringify({body: JSON.parse(call.options.body)}));
 
 
 def test_list_renders_branch_badge_and_filter_only_when_registered() -> None:
-    """一覧は実効の系統を持つ項目だけに系統の表示を出し、系統で限定する欄は系統を登録した時だけ出す。"""
     result = _run_node_ui(
         """
 const rows = entries => { wiState.entries = entries; renderEntries(); return byId('entry-list').children.map(

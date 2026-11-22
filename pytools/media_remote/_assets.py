@@ -1,7 +1,3 @@
-"""PWAの静的資産（HTML・manifest・SVGアイコン）。"""
-
-# Tabler iconsのdevice-speakerを白縁取り付きでPWAアイコン用に流用する。
-# 単一SVGで192/512どちらのサイズ要件にも応えるためベクターのままmanifestに登録する。
 ICON_SVG = """\
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 24 24" fill="none"
   stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -40,7 +36,6 @@ SOFTWARE.
 
 
 def build_manifest(base_path: str = "") -> dict[str, object]:
-    """PWA manifestの辞書を返す。"""
     return {
         "name": "Media Remote",
         "short_name": "Remote",

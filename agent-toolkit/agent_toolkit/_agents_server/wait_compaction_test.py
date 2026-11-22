@@ -1,5 +1,3 @@
-"""実SDKの代表シナリオと分け、予約の境界値・取消しをモデル呼出しなしで確認する。"""
-
 from __future__ import annotations
 
 import asyncio
@@ -32,7 +30,6 @@ def _waiting(request: pytest.FixtureRequest) -> state.SessionState:
 @pytest.mark.parametrize(
     "tokens,window,expected",
     [
-        # 閾値は400,000トークンと上限の40%の大きい方。上限が小さいモデルでも400,000未満では圧縮しない。
         (399_999, 1_000_000, False),
         (400_000, 1_000_000, True),
         (799_999, 2_000_000, False),
@@ -153,7 +150,6 @@ async def test_same_wait_rechecks_usage_after_crossing_threshold(waiting: state.
 @pytest.mark.parametrize("replaced", [False, True])
 @pytest.mark.asyncio
 async def test_close_collects_the_pending_reservation(waiting: state.SessionState, replaced: bool) -> None:
-    """所有タスクの終了後にSDKへ遅れた入力を送らない。"""
     entered = asyncio.Event()
     cancelled: set[int] = set()
     reservations: list[int] = []
@@ -259,7 +255,6 @@ async def test_optional_compaction_failure_keeps_waiting_without_warning(
 async def test_checkpoint_preserves_reservation_deadline(
     waiting: state.SessionState, monkeypatch: pytest.MonkeyPatch, elapsed: int, remaining: int
 ) -> None:
-    """移譲中の時間も経過に含め、復元だけでは照会も配送もしない。"""
     entered = asyncio.Event()
     release = asyncio.Event()
     delays: list[float] = []

@@ -1,10 +1,3 @@
-"""`atk agents notify`が置いた上り通知（`notices/`）の回収。
-
-上り通知は共有状態ディレクトリ（`shared_layout.notices_directory`）を媒体とし、
-別のMCPサーバーが管理する多段委譲でも同じ通知を回収できるようにする。
-共有ルートの一致と、通知を受け取る起動主体の一致は分けて確認する。
-"""
-
 from __future__ import annotations
 
 import dataclasses
@@ -25,7 +18,6 @@ def recipient_matches(
     owner_status_file: str | None,
     state_root: pathlib.Path | None = None,
 ) -> bool | None:
-    """起動主体または状態の所有者を比較し、どちらも不明なら未確定を返す。"""
     owner = status_reader.load_root(root_session_id, state_root).sessions.get(session_id, {}).get("owner_status_file")
     if owner is not None:
         return owner == owner_status_file
@@ -87,7 +79,6 @@ def read_notices(
     owner_status_file: str | None,
     stash_directory: pathlib.Path | None = None,
 ) -> list[PendingNotice]:
-    """宛先を確認し、通知を送信時刻順に読む。原本とCLIの退避物は変更しない。"""
     directory = notices_directory(root_session_id, state_root)
     paths = {path.name: path for path in directory.glob("*.json") if path.is_file()}
     if stash_directory is not None:
@@ -106,7 +97,6 @@ def read_notices(
 
 
 def consume_notices(pending: list[PendingNotice]) -> list[dict[str, str]]:
-    """応答を返す時点で原本を取得できた通知だけを載せる。"""
     taken = []
     for notice in pending:
         try:
@@ -114,7 +104,6 @@ def consume_notices(pending: list[PendingNotice]) -> list[dict[str, str]]:
         except FileNotFoundError:
             continue
         except OSError as exc:
-            # 他の通知や確定済みの終了結果は返し、この原本は次回に残す。
             _LOG.warning(
                 "上り通知を削除できないため原本を保持した: %s: %s。権限を確認し、必要なら送信元に再送を依頼する",
                 notice.path,

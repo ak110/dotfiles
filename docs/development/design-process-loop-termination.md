@@ -1,6 +1,6 @@
 # Codexセッションの終了の設計記録
 
-[設計記録の索引](design.md)から参照する主題別の記録である。
+[設計記録の索引](design.md)
 
 ## Codexのprocess-loopセッションの終了
 

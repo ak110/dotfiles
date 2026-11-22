@@ -19,31 +19,30 @@ from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt
 
 _LOG = logging.getLogger(__name__)
 
-# 警告本文へ引き継ぐリモートヘルパーの標準エラー出力の最大文字数。
-# 原因の判別に足りる長さを残しつつ、画面の警告欄と記録を占有させない。
+
 STDERR_EXCERPT_MAX_CHARS = 500
-# 単発SSHをキャンセルまたは時間上限で打ち切った後、子プロセスの終了を待つ上限秒数。
-# SIGTERMで終わらない子は上限の後にSIGKILLする。
+
+
 _SSH_TERMINATE_TIMEOUT_SEC = 1.0
-# 常駐接続の子プロセスを段階的に終了させるとき、各段階で`proc.wait()`を待つ上限秒数。
+
 TERMINATE_GRACE_TIMEOUT_SEC = 2.0
-# リモートヘルパーを動かすPythonのマイナー版。
+
 _PYTHON_MINOR = "3.15"
-# 常駐の起動前に、版の照会を含めて同じ依存のPythonを起動できるかを確かめる段階全体の上限秒数。
+
 _PREPARE_TIMEOUT_SEC = 60.0
 # 版の照会の上限秒数。`uv python list`はPATHの全てのPythonを調べ、応答しない1つで止まるが、
 # `uv run`は最初に見つけたPythonで起動できる。照会だけで要求の期限を費やさず、単発の`read`の30秒でも起動を試す時間を残す。
 _RESOLVE_TIMEOUT_SEC = 10.0
-# リモートヘルパーのuvが使う専用キャッシュ。SSHの起動ディレクトリであるリモートのホームからの相対パス。
+
 _HELPER_UV_CACHE = ".cache/agent-toolkit/remote-helper-uv"
-# sshが接続先へ接続できなかったときの終了コード。
+
 _SSH_CONNECTION_FAILED = 255
 # 単発のヘルパーのコードが動き始めたときに標準エラー出力へ書く1行。uvの起動の失敗とヘルパーの操作のエラーを区別する。
 _HELPER_STARTED = "atk-remote-helper-started"
 # 標準エラー出力のうち`_HELPER_STARTED`だけから成る行。WindowsのPythonは改行をCRLFで書く。
 # 接続先のシェルのコマンドのトレース（`sh -x`）はコマンドの文字列の中の印も書くため、印を部分文字列として探さない。
 _HELPER_STARTED_LINE = re.compile(rb"^" + re.escape(_HELPER_STARTED.encode()) + rb"\r?$\n?", re.MULTILINE)
-# 接続先ごとに、リモートヘルパーを起動できたPythonの版。`atk serve`のプロセスの間だけ覚える。
+
 _remote_pythons: dict[str, str] = {}
 
 
@@ -75,26 +74,15 @@ def stderr_excerpt(stderr: bytes) -> str:
 
 
 class ServeStopping(Exception):  # noqa: N818  # 停止要求による打ち切りを表すため`Error`を付けない
-    """サーバーの停止要求を受けて読み取り専用の走査を打ち切ったことを示す。"""
+    pass
 
 
 def raise_if_stopping(stop: threading.Event | None) -> None:
-    """停止要求が設定されていれば`ServeStopping`を送出する。
-
-    スレッドで動く走査は要求のキャンセルでは止まらず、`asyncio.run`の終了処理がイベントループのexecutorの
-    スレッドの終了を待つため、走査対象の件数に比例して停止を待たせる。反復の途中で本関数を呼んで打ち切る。
-    """
     if stop is not None and stop.is_set():
         raise ServeStopping
 
 
 async def run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
-    """単発のSSHを子プロセスとして実行し、終了コード、標準出力と標準エラー出力を返す。
-
-    呼び出し元のキャンセルと時間上限の到達では子プロセスを終了させてから送出する。
-    スレッドで`subprocess.run`を呼ぶ形は外から打ち切れず、停止処理が子プロセスとスレッドの終了を待つ。
-    時間上限の到達は`subprocess.TimeoutExpired`で示す。
-    """
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdin=asyncio.subprocess.DEVNULL,
@@ -114,7 +102,6 @@ async def run_ssh(cmd: list[str], timeout: float) -> tuple[int, bytes, bytes]:
 
 
 async def _terminate(proc: asyncio.subprocess.Process) -> None:
-    """子プロセスをSIGTERMで終了させ、上限までに終わらなければSIGKILLして回収する。"""
     if proc.returncode is not None:
         return
     with contextlib.suppress(ProcessLookupError):
@@ -254,20 +241,11 @@ def remote_command_argv(bootstrap: str, op: str, args: list[str], *, python: str
 
 @dataclasses.dataclass(frozen=True)
 class _Attempt:
-    """リモートヘルパーの起動の1回の試行で、`uv run`へ渡すPythonの版と、索引へ出ずに起動するか。"""
-
     python: str
     offline: bool
 
 
 async def _attempts(host: str, ssh_options: tuple[str, ...], deadline: float) -> typing.AsyncGenerator[_Attempt]:
-    """リモートヘルパーの起動を試す順に試行を返す。前の試行でuvがヘルパーを起動できなかった場合だけ次を取り出す。
-
-    1. 接続先ごとに覚えた版で、索引へ出ずに起動する。版の照会のSSHを要求ごとに増やさない。
-    2. 版を選び直し（`_resolved_pythons`）、選んだ版ごとに、まだ試していなければその版で索引へ出ずに起動する。
-       版が消えても（`uv python uninstall`など）依存は専用キャッシュに残るため、索引へ到達できなくても起動できる。
-    3. 同じ版で、索引から依存を取得できる形で起動する。初めての接続先で専用キャッシュが空の場合も、ここで依存を取得する。
-    """
     tried: set[_Attempt] = set()
     remembered = _remote_pythons.get(host)
     if remembered is not None:
@@ -337,12 +315,6 @@ async def send_rpc_request[T](
     op: str,
     timeout: float,
 ) -> T:
-    """常駐接続へRPC要求の1行を送り、応答を上限まで待つ。
-
-    並行する要求の書込が別の要求の行の途中へ割り込まないよう、書込と`drain`は`send_lock`の内側で行う。
-    上限を超えた場合は、操作名と上限秒数を含む`TimeoutError`を送出する。
-    `asyncio.wait_for`が送出する`TimeoutError`は文字列を持たず、それを書く警告が理由を欠くためである。
-    """
     assert proc.stdin is not None
     async with send_lock:
         proc.stdin.write(line.encode("utf-8"))
@@ -385,7 +357,7 @@ async def start_resident_helper(
     Pythonの版を`_launch`で確かめる。
     """
     python, _ = await _launch(host, ssh_options, ["-c", "pass"], timeout=_PREPARE_TIMEOUT_SEC)
-    # 時間上限なし: 常駐の接続であり、要求ごとの応答待ちの上限は呼び出し側が持つ。
+
     proc = await asyncio.create_subprocess_exec(
         "ssh",
         *ssh_options,
@@ -401,7 +373,6 @@ async def start_resident_helper(
 
 
 async def _drain_stderr(stream: asyncio.StreamReader, *, logger: logging.Logger, label: str, host: str) -> None:
-    """標準エラー出力を行単位で読み続けて警告へ転写する。"""
     try:
         while True:
             line = await stream.readline()
@@ -411,7 +382,6 @@ async def _drain_stderr(stream: asyncio.StreamReader, *, logger: logging.Logger,
             if text:
                 logger.warning("%s stderr host=%s: %s", label, host, text)
     except Exception as error:  # noqa: BLE001
-        # CancelledErrorはBaseException派生のため`Exception`で捕捉せず、通常どおり再送出される。
         logger.warning("%sのstderr読取に失敗 host=%s: %s", label, host, error)
 
 
@@ -479,7 +449,6 @@ async def stop_resident_helper_until_confirmed(
 
 
 async def _wait_with_timeout(proc: asyncio.subprocess.Process, timeout: float) -> bool:
-    """`proc.wait()`を時間制限付きで実行し、終了済みならTrueを返す。キャンセルは吸収する。"""
     if proc.returncode is not None:
         return True
     with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):

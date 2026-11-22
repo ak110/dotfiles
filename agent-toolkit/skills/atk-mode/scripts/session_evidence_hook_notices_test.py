@@ -25,7 +25,6 @@ def test_observation_boundary_excludes_later_main_records_in_all_modes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """観測境界より後のメイン記録を全照会モードから除外する。"""
     before_notice = "[auto-generated: test/before][warn] warning: before needle"
     after_notice = "[auto-generated: test/after][warn] warning: after needle"
     transcript = _write_transcript(
@@ -94,7 +93,6 @@ def test_hook_notices_mode_parses_xml_boundary_without_closing_tag(
     element: str,
     attributes: str,
 ) -> None:
-    """XML境界の属性と本文を分類し、閉じタグを種別本文から除く。"""
     notice = f"<{element} {attributes}>\n入力を補正した\n</{element}>"
     transcript = _write_transcript(
         tmp_path,
@@ -165,7 +163,6 @@ def test_hook_notices_mode_is_exclusive_with_other_query_modes(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """構造化集計モードも他の照会モードとの併用を引数誤用として拒否する。"""
     transcript = _write_transcript(tmp_path, [{"type": "user", "message": {"role": "user", "content": "依頼"}}])
 
     assert evidence.main([str(transcript), "--hook-notices", "--user-events"]) == 2
@@ -282,12 +279,6 @@ def test_hook_notices_mode_counts_notices_by_hook_origin_tag_and_kind(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """hook実行の記録4種の通知だけを、hook識別子・発動元・タグ・種別ごとに数える。
-
-    同一ツール呼び出しの標準出力と追加コンテキストへ重複して格納された通知は1件へ集約し、
-    追加コンテキストを伴わない標準エラー出力の通知と、標識を持たないシステムメッセージも計上する。
-    hookの記録でない本文（会話中の引用）は同じ文字列でも母集団へ含めない。
-    """
     truncation = "[auto-generated: agent-toolkit/pretooluse][warn] warn: 出力を切り詰めている"
     fixed_wait = "[auto-generated: agent-toolkit/pretooluse][block] block: 固定待機を検出した"
     stop_notice = "[auto-generated: dotfiles/claude_hook_stop] 応答の完了可否を明示すること"
@@ -397,9 +388,8 @@ def test_hook_notices_mode_separates_kinds_by_leading_body_and_skips_empty_bodie
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """先頭一定長が異なる通知を別種別として数え、本文が空の記録は数えない。"""
     prefix = "[auto-generated: agent-toolkit/pretooluse][warn] "
-    head = "a" * 79  # 種別キーの長さ80文字の直前まで同一とし、80文字目だけを違えて別種別とする
+    head = "a" * 79
     transcript = _write_transcript(
         tmp_path,
         [
@@ -439,7 +429,6 @@ def test_hook_notices_mode_counts_each_marker_of_a_multi_marker_body(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """1つの本文が複数の標識を持つ場合、標識ごとに別の発生源として数える。"""
     body = (
         "[auto-generated: agent-toolkit/pretooluse][warn] 入力を補正した "
         "[auto-generated: agent-toolkit/pretooluse][block] 固定待機を検出した"
@@ -504,7 +493,6 @@ def test_hook_notices_mode_merges_kinds_differing_only_by_variable_parts(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """パスや識別子だけが異なる同種の通知を1つの種別へ集約する。"""
     prefix = "[auto-generated: agent-toolkit/posttooluse][notice] "
     bodies = [
         f"{prefix}plan file /home/aki/.claude/plans/alpha-1.md was written.",
@@ -540,7 +528,6 @@ def test_all_modes_recursively_scan_cross_engine_delegations(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """全照会が3段の実行系横断委譲と委譲先サブエージェントを1回で走査する。"""
     codex_a = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     claude_b = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     codex_c = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -793,11 +780,6 @@ def test_hook_record_scan_tolerates_non_string_type_values(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`type`の値がdictの記録を含むtranscriptでも警告走査とhook通知集計が完遂する。
-
-    ツール定義を含む記録では`schema.input_schema.properties`配下に`type`という名前の
-    プロパティ定義が現れ、その値がJSON Schemaのdictになる。
-    """
     notice = "[auto-generated: agent-toolkit/pretooluse][warn] warn: 出力を切り詰めている"
     tool_schema_entry = {
         "type": "attachment",
@@ -844,7 +826,6 @@ def test_hook_record_scan_tolerates_non_string_type_values(
 
 @pytest.mark.parametrize("runtime", ["claude", "claude-prefix", "codex", "codex-tool"])
 def test_result_only_block_notice(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], runtime: str) -> None:
-    """2026年10月のホスト遮断形式は結果のみでも抽出し、標準出力の引用は除く。"""
     body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
     if runtime.startswith("claude"):
         wrapped = (
@@ -928,7 +909,6 @@ def test_parallel_rejected_notices_keep_occurrences(tmp_path: pathlib.Path, caps
 
 
 def test_result_and_hook_record_are_one_notice(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """同一呼出の結果とhook記録の二重保存を除く。"""
     body = '<atk-auto source="response-language" kind="block">英語主体と判定</atk-auto>'
     transcript = _write_transcript(
         tmp_path,

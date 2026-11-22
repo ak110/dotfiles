@@ -57,7 +57,6 @@ def runtime_data(environment: Mapping[str, str]) -> Path:
 
 
 def _writable_directory(path: Path) -> bool:
-    """ディレクトリを作成でき、書き込み可能なら真を返す。"""
     try:
         path.mkdir(parents=True, exist_ok=True)
     except OSError:
@@ -100,7 +99,6 @@ def base_python(python_executable: Path | None = None) -> Path:
 
 
 def dependency_lock(root: Path) -> Path:
-    """配布rootの実行依存の固定内容（uvがスクリプトの隣に置くlockfile）を返す。"""
     script = root / DEPENDENCY_SCRIPT
     return script.with_name(script.name + ".lock")
 
@@ -132,7 +130,6 @@ def _environment_from_payload(payload: object, environment: Mapping[str, str]) -
 
 
 def legacy_project_environment(root: Path, environment: Mapping[str, str], *, python_executable: Path) -> Path:
-    """旧キーと現行キーが外見上同じため、旧配布元の固定内容から候補を確定する。"""
     data = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project = data.get("project", {})
     build = data.get("build-system", {})
@@ -158,12 +155,10 @@ def legacy_project_environment(root: Path, environment: Mapping[str, str], *, py
 
 
 def dependency_digest(root: Path) -> str:
-    """依存の固定内容を、環境キーと更新器の登録で同じ値として扱う。"""
     return hashlib.sha256(dependency_lock(root).read_bytes()).hexdigest()
 
 
 def registered_roots(target: Path) -> dict[Path, str]:
-    """更新器が登録した配布元を返す。空は未登録であり、旧形式の証明にはならない。"""
     try:
         value = json.loads((target / ".agent-toolkit-registered-roots.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -202,7 +197,6 @@ def register_source(root: Path, target: Path, environment: Mapping[str, str], *,
 
 
 def launch_environment(root: Path, environment: Mapping[str, str], *, selected: Path | None = None) -> dict[str, str]:
-    """準備・直接起動の子プロセス環境を組み立てる。"""
     result = dict(environment)
     inherited_venv.strip_inherited_venv(result)
     caller = dict(result)
@@ -217,17 +211,14 @@ def launch_environment(root: Path, environment: Mapping[str, str], *, selected: 
 
 
 def python_path(environment: Path) -> Path:
-    """共有依存環境のPython実行ファイルを返す。"""
     return environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
 def prepared_python(root: Path, environment: Mapping[str, str]) -> Path | None:
-    """完了を公開済みの共有環境のPythonだけを返す。"""
     return prepared_environment_python(project_environment(root, environment))
 
 
 def prepared_environment_python(selected: Path) -> Path | None:
-    """選択済み環境の公開状態だけを確認し、依存キーを読み直さない。"""
     executable = python_path(selected)
     if (selected / _READY_FILE).is_file() and executable.is_file():
         return executable
@@ -235,7 +226,6 @@ def prepared_environment_python(selected: Path) -> Path | None:
 
 
 def direct_environment(root: Path, environment: Mapping[str, str], *, selected: Path | None = None) -> dict[str, str]:
-    """rootのコードを共有依存環境のPythonで解決する環境を返す。"""
     result = launch_environment(root, environment, selected=selected)
     caller = dict(result)
     inherited_venv.strip_inherited_venv(caller)
@@ -332,7 +322,6 @@ def record_source(root: Path, target: Path) -> None:
 
 
 def _record_source(root: Path, target: Path) -> None:
-    """破損した対応情報は上書きせず、準備完了とも切り離して扱う。"""
     path = target / ".agent-toolkit-sources.json"
     try:
         sources = json.loads(path.read_text(encoding="utf-8"))
@@ -362,7 +351,6 @@ def launch_command(root: Path, target: Path) -> list[str]:
 
 
 def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str]:
-    """委譲先が保持したrootのCLIを名前で呼べるよう、PATHとデータ領域の環境変数を加えた環境を返す。"""
     result = dict(environment)
     scripts = str(root.resolve() / "scripts")
     path = result.get("PATH", "")
@@ -373,7 +361,6 @@ def cli_environment(root: Path, environment: Mapping[str, str]) -> dict[str, str
 
 
 def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> None:
-    """提供されたBash環境ファイルへ追記し、別hookの設定と後続のPATHを保持する。"""
     if not (value := environment.get("CLAUDE_ENV_FILE")):
         return
     scripts = shlex.quote(str(root.resolve() / "scripts"))
@@ -386,7 +373,6 @@ def persist_claude_environment(root: Path, environment: Mapping[str, str]) -> No
 
 
 def cli_instructions(root: Path, *, windows: bool | None = None) -> str:
-    """直接起動と委譲の文脈へ、同じrootのCLIとホストに合う呼び方を示す。"""
     is_windows = os.name == "nt" if windows is None else windows
     scripts = root / "scripts"
     argument_note = ""

@@ -1,5 +1,3 @@
-"""serveのbrowser_wiに関するworkflowの試験。"""
-
 import asyncio
 import functools
 import urllib.parse
@@ -28,7 +26,6 @@ pytestmark = [
 async def test_legacy_confirmation_has_no_button_or_api(
     browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """旧確認キーを持つAWIの本文を保ち、確認ボタン・バッジ・専用APIを公開しない。"""
     _disable_wi_git(monkeypatch)
     path = _entry_path(browser_harness.root, "legacy.md")
     content = "---\ntype: awi\nstate: inbox\nconfirmation: required\n---\n\n本文\n"
@@ -43,14 +40,13 @@ async def test_legacy_confirmation_has_no_button_or_api(
         browser_harness.base_url + "/api/entries/confirmation",
         data={"filename": path.name, "confirmed": True, "expected_content": content},
     )
-    # 同じURL形式のGET詳細ルートがあるため、専用POSTの撤去後は405になる。
+
     assert response.status == 405
     assert path.read_text(encoding="utf-8") == content
 
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_effect_check_uses_generic_metadata_display(browser_harness: _BrowserHarness) -> None:
-    """採用済みAWIの効果判定を既存の汎用frontmatter表示で確認できる。"""
     path = _entry_path(browser_harness.root, "effect.md")
     path.write_text(
         "---\ntype: awi\nstate: adopted\neffect_check: confirmed\nconfirmation: required\n---\n\n本文\n",
@@ -77,7 +73,6 @@ async def test_effect_check_uses_generic_metadata_display(browser_harness: _Brow
 async def test_post_approval_fixed_choices_show_saved_state(
     browser_harness: _BrowserHarness, choice: str, addition: str, saved_state: str
 ) -> None:
-    """事後承認の二択への回答の保存通知は実際に採用済みへ移したことを伝え、是正や追記を含む回答は回答済みのinboxに残る。"""
     harness = browser_harness
     filename = "post-approval.md"
     (_entry_path(harness.root, filename)).write_text(
@@ -118,7 +113,6 @@ async def test_post_approval_fixed_choices_show_saved_state(
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _BrowserHarness) -> None:
-    """回答後は詳細を閉じ、再び開いて採用できる。"""
     harness = browser_harness
     filename = "one-choice.md"
     (_entry_path(harness.root, filename)).write_text(
@@ -153,7 +147,6 @@ async def test_one_choice_uwi_can_be_answered_then_adopted(browser_harness: _Bro
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harness: _BrowserHarness) -> None:
-    """既存回答の変更、終了状態の本文編集、削除および識別子表示を検証する。"""
     harness = browser_harness
     page = harness.page
     question_path = _entry_path(harness.root, "question.md")
@@ -164,7 +157,7 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
     question_row = page.locator('.entry-select[data-key="question.md"]')
     await question_row.click()
     detail = page.get_by_role("dialog", name="詳細")
-    # 回答済みのinboxのuwiは、保存状態をinboxのまま表示ラベルだけをansweredにする。
+
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("uwi / answered")
     await playwright.async_api.expect(detail.locator("#answer-input")).to_have_value("既存回答")
     await page.keyboard.press("Escape")
@@ -190,7 +183,6 @@ async def test_answer_change_terminal_edit_and_identifier_surfaces(browser_harne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_hold_and_rejected_details_offer_recovery_operations(browser_harness: _BrowserHarness) -> None:
-    """保留中の全操作と、不採用項目のinbox復帰操作を実ブラウザーで表示する。"""
     harness = browser_harness
     page = harness.page
     _entry_path(harness.root, "held-awi.md").write_text(
@@ -228,7 +220,6 @@ async def test_hold_and_rejected_details_offer_recovery_operations(browser_harne
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harness: _BrowserHarness) -> None:
-    """両終了状態のWIを画面から再開・保留・削除し、結果まで確認する。"""
     harness = browser_harness
     page = harness.page
     delete_paths = {}
@@ -278,7 +269,6 @@ async def test_terminal_work_items_reopen_and_hold_through_browser(browser_harne
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_browser_notification_uses_filename_registration_identity(browser_harness: _BrowserHarness) -> None:
-    """初回と既知項目の属性変化を通知せず、新規の未回答UWIを通知する。"""
     harness = browser_harness
     page = harness.page
     await page.add_init_script(
@@ -310,7 +300,7 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     async def observe_no_extra_notification() -> None:
         nonlocal control_number
         control_number += 1
-        # 同じ通知パイプラインで新規UWIの肯定側を通し、対象変更を含むsnapshotの処理を待つ。
+
         control = _entry_path(harness.root, f"notification-control-{control_number}.md")
         control.write_text(new_unanswered, encoding="utf-8")
         await publish_and_wait()
@@ -349,7 +339,6 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
     await publish_and_wait()
     await observe_no_extra_notification()
 
-    # 保存済みの旧確認キーはAWIの通知を発生させない。
     awi_path = _entry_path(harness.root, "new-awi.md")
     required_awi = "---\ntype: awi\nstate: inbox\ntarget_repo: new/repo\nconfirmation: required\n---\n\n# 要確認\n"
     awi_path.write_text(required_awi, encoding="utf-8")
@@ -362,7 +351,6 @@ Object.defineProperty(window, 'Notification', {configurable: true, value: TestNo
 
 @pytest.mark.asyncio(loop_scope="session")
 async def test_changed_detail_inputs_confirm_discard_and_unchanged_input_closes(browser_harness: _BrowserHarness) -> None:
-    """変更済みの編集・回答・コメント入力を閉じる際は破棄確認を表示し、取消時に入力を保持する。"""
     page = browser_harness.page
     await page.goto(browser_harness.base_url + "/")
     detail = page.get_by_role("dialog", name="詳細")
@@ -401,7 +389,6 @@ async def test_changed_detail_inputs_confirm_discard_and_unchanged_input_closes(
 async def test_work_item_important_conflict_preserves_latest_content(
     browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """詳細取得後の外部更新を重要設定で上書きせず、再取得の操作を案内する。"""
     _disable_wi_git(monkeypatch)
     harness = browser_harness
     page = harness.page
@@ -435,7 +422,6 @@ async def test_work_item_important_conflict_preserves_latest_content(
 async def test_work_item_url_and_selection_survive_state_change(
     browser_harness: _BrowserHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """状態が変わっても同じファイル名のURLと詳細選択を保持し、再訪で同じ項目を開く。"""
     _disable_wi_git(monkeypatch)
     harness = browser_harness
     monkeypatch.setattr(

@@ -31,7 +31,7 @@ def _slot_process(pid: int) -> dict[str, Any]:
 
 
 def _slot_ancestry() -> list[dict[str, Any]]:
-    # parents()は生成時刻の前後関係で列を打ち切るため、その判定自体の不成立も調べられるようppidをたどる。
+
     ancestry = []
     seen: set[int] = set()
     pid = os.getpid()
@@ -79,7 +79,7 @@ def _save_slot_wait() -> pathlib.Path:
         ],
         "ancestry": _slot_ancestry(),
     }
-    # 親のpyfltrが結果をアーカイブする前に中断されても残る、既存の7日保持領域へ直接保存する。
+
     path = managed_temp.create_managed_temp("pytest-slot-wait") / "diagnostic.json"
     path.write_text(json.dumps(record, ensure_ascii=True) + "\n", encoding="utf-8")
     return path
@@ -126,10 +126,6 @@ class _ProcessIdsUsingFile(ctypes.Structure):
 
 
 def file_holders(path: pathlib.Path) -> dict[str, Any]:
-    """単一パスの保持者を照会し、自診断用handleのPIDを分離して返す。
-
-    自プロセスは診断handleを開くため列挙され得る。同じPIDの他のhandleの有無は判別できない。
-    """
     if sys.platform != "win32":
         return {"state": "unsupported", "platform": sys.platform}
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -159,7 +155,6 @@ def file_holders(path: pathlib.Path) -> dict[str, Any]:
     if handle == ctypes.c_void_p(-1).value:
         return {"state": "unavailable", "api": "CreateFileW", "winerror": ctypes.get_last_error()}
     try:
-        # 診断のメモリー使用量を限定する。容量不足のNTSTATUSは取得不能として残す。
         buffer = ctypes.create_string_buffer(1024 * 1024)
         status_block = _IoStatusBlock()
         # FILE_INFORMATION_CLASSのFileProcessIdsUsingFileInformationは47。

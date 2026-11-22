@@ -86,7 +86,6 @@ def _report_lengths(records: list[_Record]) -> list[int]:
 
 
 def _is_request(entry: dict[str, Any]) -> bool:
-    """モデルへ次の応答を求める記録（人の依頼かツールの結果）かを返す。応答本文・通知・usageの記録は除く。"""
     message = entry.get("message")
     if entry.get("type") == "user" or (isinstance(message, dict) and message.get("role") == "user"):
         return True

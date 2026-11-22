@@ -42,7 +42,6 @@ def _identity(process: subprocess.Popen[bytes]) -> session_registry.ProcessIdent
 def _stop_root_only(
     monkeypatch: pytest.MonkeyPatch, root: subprocess.Popen[bytes], child: subprocess.Popen[bytes], unresolved: list[str]
 ) -> None:
-    """起点だけを止め、子が残る（または生成停止を確認できない）停止結果を返す共通処理へ差し替える。"""
     child_process = psutil.Process(child.pid)
 
     def stop_tree(*_args: object, **_kwargs: object) -> process_tree.TreeStopResult:
@@ -70,7 +69,6 @@ def test_root_exit_with_unreclaimed_descendant_is_failure_and_retry_reclaims(
         assert reclaim_records.pending(identity.pid, identity.create_time)
         monkeypatch.setattr(process_tree, "stop_tree", real_stop_tree)
 
-        # 起点は消滅したが、残した所有対象を同じ識別の再呼び出しで回収する。
         assert recorded_process.stop_recorded_executor(identity) is None
         assert child.wait(timeout=10) is not None
         assert not reclaim_records.path(identity.pid, identity.create_time).exists()
@@ -100,7 +98,6 @@ def test_unconfirmed_generation_stop_is_kept_until_record_is_removed(
         third = recorded_process.stop_recorded_executor(identity)
         assert third is not None and str(record_path) in third
 
-        # 運用者が残存を確かめて記録を削除すると、停止済みとして扱う。
         record_path.unlink()
         assert not reclaim_records.pending(identity.pid, identity.create_time)
         assert recorded_process.stop_recorded_executor(identity) is None
@@ -148,11 +145,6 @@ def test_recorded_target_with_reused_pid_is_not_signalled(tmp_path: pathlib.Path
 
 @pytest.mark.skipif(sys.platform == "win32", reason="親が回収しないzombieはPOSIXの状態")
 def test_unreaped_direct_child_blocks_stop_until_reaped(tmp_path: pathlib.Path) -> None:
-    """回収を確認できなかった直接の子は、zombie表示でも同じPID世代が消えるまで停止済みにしない。
-
-    run-skillの停止結果の保存から再開前の停止までを通す。別の親が回収しないzombieは、
-    親でない側からは強制終了でも消せず、親が回収するまで残る。
-    """
     # 親の終了による孤児の回収はPID 1に依存し、--init無しのコンテナー（PID 1がtail）では回収されない。
     # 回収の時機を実行環境から切り離すため、親自身が標準入力の合図で子を待機して回収する。
     script = (
@@ -180,7 +172,6 @@ def test_unreaped_direct_child_blocks_stop_until_reaped(tmp_path: pathlib.Path) 
             assert reason is not None and f"{zombie.pid}: 回収を確認できない直接の子" in reason
             assert reclaim_records.pending(identity.pid, identity.create_time)
 
-            # 親がzombieを回収すると、同じ識別の停止は記録を消して成功する。
             assert parent.stdin is not None
             parent.stdin.write(b"reap\n")
             parent.stdin.flush()

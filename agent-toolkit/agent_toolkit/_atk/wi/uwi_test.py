@@ -1,5 +1,4 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
-"""WIのuwi: baseのテスト。"""
 
 import contextlib
 import pathlib
@@ -20,7 +19,6 @@ from agent_toolkit.atk_test import _FIXED_DT, _FIXED_TIMESTAMP, _setup_notes, _w
 
 
 def test_flat_uwi_operations_are_public(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """平引数追加が生成名を返し、回答欄付きUWIを書き込む。"""
     notes = tmp_path / "private-notes"
     monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
@@ -65,7 +63,6 @@ def test_public_uwi_add_self_containment_warning(
     body: str,
     warned: bool,
 ) -> None:
-    """文脈の無い一時識別子だけを警告し、短さやOIDによらず質問本文を保存する。"""
     notes = _setup_notes(tmp_path)
     myrepo = tmp_path / "myrepo"
     myrepo.mkdir()
@@ -80,8 +77,6 @@ def test_public_uwi_add_self_containment_warning(
 
 
 class TestUwiAdd:
-    """UWI投入の基本動作検証。"""
-
     @pytest.mark.parametrize("prefix", ["", "\n\n## 質問\n\n"], ids=["plain", "question-heading"])
     @pytest.mark.parametrize(
         "suffix",
@@ -96,7 +91,6 @@ class TestUwiAdd:
         prefix: str,
         suffix: str,
     ) -> None:
-        """保存形式の未回答外枠を投入・編集しても、見出しとマーカーを各1つに保つ。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -151,7 +145,6 @@ class TestUwiAdd:
         capsys: pytest.CaptureFixture[str],
         body: str,
     ) -> None:
-        """外枠以外の予約要素を含む投入・編集は既存ファイルを変更しない。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -172,7 +165,6 @@ class TestUwiAdd:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """単一メッセージで1ファイルが生成され、frontmatter・本文構造が正しい。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -197,7 +189,6 @@ class TestUwiAdd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """question-type=choice時に--choices未指定でusage表示付きのexit 2になる。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -222,7 +213,6 @@ class TestUwiAdd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """問いを含まない本文投入時に警告が標準エラーへ出力され、投入自体は成功する。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -239,7 +229,6 @@ class TestUwiAdd:
         tmp_path: pathlib.Path,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        """疑問文を含む本文投入時は警告が出力されない。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -288,7 +277,6 @@ class TestUwiAdd:
     @pytest.mark.parametrize(
         ("question_type", "choices", "body", "warned"),
         [
-            # 観測されたUWIと同じ構成: 冒頭の問い、選択肢の節、平叙文で終わる判断材料。
             *(
                 (
                     kind,
@@ -300,14 +288,12 @@ class TestUwiAdd:
                 )
                 for kind, extra in (("yes-no", ()), ("post-approval", ()), ("choice", ("--choices", "変える,変えない")))
             ),
-            # 冒頭は平叙文で、判断材料の中だけに「か」で終わる文がある本文は、冒頭に問いが無いため警告する。
             (
                 "yes-no",
                 (),
                 "既定の実行レビュー担当を`sol/medium`へ変える提案。\n\n## 判断材料\n\n- 所要時間が縮むかは不明か。",
                 True,
             ),
-            # 問いの「か」の直後に括弧書きの補足が続く本文も問いとみなす。
             (
                 "choice",
                 ("--choices", "A,B"),
@@ -327,7 +313,6 @@ class TestUwiAdd:
         body: str,
         warned: bool,
     ) -> None:
-        """問いの有無は最初のH2見出しより前で判定し、本文末尾の文や質問の種類に左右されない。"""
         _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -336,7 +321,7 @@ class TestUwiAdd:
         result = _invoke_uwi_add(tmp_path, str(myrepo), "--question-type", question_type, *choices, body=body)
         assert result.code == 0
         stderr = capsys.readouterr().err
-        # 警告の有無は文言の改訂に左右されない共通部分で判定する。
+
         assert ("問い（疑問文）が" in stderr) is warned, stderr
 
 
@@ -479,14 +464,11 @@ class TestUwiAddRepoPathOverrideCli:
 
 
 class TestUwiAddSourceOption:
-    """UWI投入: `--source`指定時にfrontmatterへsource行を記録する。"""
-
     def test_source_recorded_when_given(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--source=session-hold指定時、frontmatterにsource: session-holdが含まれる。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
@@ -512,7 +494,6 @@ class TestUwiAddSourceOption:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: pathlib.Path,
     ) -> None:
-        """--source未指定時、frontmatterにsource行が含まれない。"""
         notes = _setup_notes(tmp_path)
         myrepo = tmp_path / "myrepo"
         myrepo.mkdir()
