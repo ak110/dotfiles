@@ -42,7 +42,7 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     `list`には常駐接続と同じ接続確立の打ち切りと生存確認を付け、上限が長くても
     到達できないホストの失敗を接続確立の段階で数秒のうちに返す。
     """
-    ssh_options = (*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS) if op == "list" else SSH_BASE_OPTIONS
+    ssh_options = (*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS) if op in {"list", "search"} else SSH_BASE_OPTIONS
     return await _atk_serve_remote.run_remote_helper(
         REMOTE_BOOTSTRAP, host, op, args, ssh_options=ssh_options, timeout=OPERATION_TIMEOUT_SEC[op]
     )
@@ -212,7 +212,8 @@ async def _remote_call(context: SessionsContext, host: str, op: str, args: dict[
                 op,
                 response.get("error"),
             )
-    argv = [str(args["path"])] if op == "read" else []
+    argument = {"read": "path", "search": "query"}.get(op)
+    argv = [str(args[argument])] if argument is not None else []
     raw = await context.runner(host, op, argv)
     payload = json.loads(raw)
     if not isinstance(payload, dict):
@@ -226,7 +227,8 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
         payload = await _remote_call(context, host, "list", {})
     except Exception as error:  # noqa: BLE001
         logger.warning("リモートのセッション一覧を取得できません host=%s: %s", host, error)
-        return [], {"host": host, "reason": f"記録を取得できません: {error}"}
+        next_action = f"`ssh {host}`で接続できるかと、接続先で`uv --version`を実行できるかを確かめてから一覧を再読み込みする"
+        return [], {"host": host, "reason": f"記録を取得できません: {error}。次の操作: {next_action}"}
     entries: list[SessionSummary] = []
     for item in payload.get("entries", []):
         if not isinstance(item, dict) or not isinstance(item.get("path"), str):
@@ -246,6 +248,7 @@ async def _remote_sessions(context: SessionsContext, host: str) -> tuple[list[Se
                 size=item.get("size") if isinstance(item.get("size"), int) else None,
                 warning=item.get("warning") if isinstance(item.get("warning"), str) else None,
                 parent_path=item.get("parent_path") if isinstance(item.get("parent_path"), str) else None,
+                label=item.get("label") if isinstance(item.get("label"), str) else None,
             )
         )
     return entries, None

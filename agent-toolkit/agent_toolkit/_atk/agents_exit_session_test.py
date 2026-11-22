@@ -85,7 +85,8 @@ def test_unsupported_host_reports_invocation_without_stopping(
     assert agents_exit_session.main() == 0
     captured = capsys.readouterr()
     assert json.loads(captured.out)["status"] == "unsupported"
-    assert "次の操作: /exit" in captured.err
+    assert "対話CLIで実行している場合は" in captured.err
+    assert "/exit" in captured.err
 
 
 def test_changed_target_names_rerun_and_exit_command(

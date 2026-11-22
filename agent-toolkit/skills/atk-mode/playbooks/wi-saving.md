@@ -25,6 +25,8 @@
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。
    - UWIの新規では`--type=uwi`と、その問いに要る回答形式の指定を加える。
+   - 作業用の抽出先を固定する場合は`--opening-output <抽出先の絶対パス>`を付け、複数原稿では`--body-file`と同じ順に反復する。
+     比較入力との区別は`agent-toolkit:atk-mode/references/draft-semantic-review.md`に従う。
    - 受領済みの冒頭の抽出がある時は`--compare-opening-file <抽出の絶対パス>`を付け、複数の原稿では`--body-file`と同じ順に反復する。
 
    並行して準備した原稿も1件ずつ検証する。

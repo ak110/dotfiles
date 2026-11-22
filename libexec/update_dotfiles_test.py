@@ -371,7 +371,7 @@ def test_stage_heading_precedes_child_output_when_stdout_is_not_a_terminal() -> 
 
 @pytest.mark.parametrize(
     "operation",
-    ["init", "status", "diff", "apply", "prepare", "plugins", "log", "daemon", "report", "git", "validation", "lock"],
+    ["init", "status", "diff", "apply", "prepare", "plugins", "log", "report", "git", "validation", "lock"],
 )
 @pytest.mark.parametrize("timed_out", [False, True])
 def test_main_injected_production_boundary(
@@ -419,8 +419,6 @@ def test_main_injected_production_boundary(
         monkeypatch.setattr(pathlib.Path, "iterdir", iterdir)
     elif operation == "log":
         monkeypatch.setattr(update_dotfiles_runtime, "configure_persistent_log", fail)
-    elif operation == "daemon":
-        monkeypatch.setattr(update_dotfiles, "_pause_codex_daemon", fail)
     elif operation == "report":
         monkeypatch.setattr(update_dotfiles_runtime.update_dotfiles_report, "report", fail)
     assert update_dotfiles.main([]) == (2 if operation == "validation" else 1)
@@ -451,6 +449,5 @@ def test_production_injection_covers_non_bootstrap_declarations() -> None:
         "chezmoi status (apply予定のファイル)",
         "chezmoi diff (上書き前の差分)",
         "chezmoi apply (post-apply実行)",
-        update_dotfiles_runtime.CODEX_DAEMON_STAGE_TITLE,
         "更新失敗の起票",
     }

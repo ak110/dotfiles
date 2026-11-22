@@ -38,8 +38,8 @@ def _isolate_session_inputs(monkeypatch):
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
 
 
-def _target(tmp_path, name, target_repo: str | None = "https://example.com/team/repo"):
-    transcript = tmp_path / f"{name}.jsonl"
+def _target(tmp_path, name, target_repo: str | None = "https://example.com/team/repo", *, filename: str | None = None):
+    transcript = tmp_path / (filename or f"{name}.jsonl")
     transcript.write_text(
         json.dumps({"type": "user", "timestamp": "2026-10-28T00:00:00Z", "message": {"role": "user", "content": "初期要求"}})
         + "\n",
@@ -302,10 +302,25 @@ def test_hook_launch_normal_outcomes_do_not_report_failure(tmp_path, monkeypatch
     assert bool(session_review.pending()) == (condition == "active")
 
 
+def test_early_launch_exit_records_code_and_notifies_once(monkeypatch):
+    launch_id = "b" * 32
+    monkeypatch.setenv(session_review.LAUNCH_ENV, launch_id)
+    path = session_review.directory() / "launches" / f"{launch_id}.json"
+    session_review.write(path, {"status": "starting", "host": "claude", "event": "SessionStart", "log_path": "empty.log"})
+
+    session_review.launch_exited(17)
+
+    assert session_review.read(path)["exit_code"] == 17
+    notice = session_review.launch_notice("claude")
+    assert notice is not None and "終了コード17" in notice
+    assert session_review.launch_notice("claude") is None
+
+
 @_REAL_REPORT_CPU
-def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("followup", [False, True])
+def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeypatch, followup) -> None:
     notes = _notes()
-    _target(tmp_path, "one")
+    _target(tmp_path, "one", filename="different.jsonl")
     _target(tmp_path, "two")
     calls = []
 
@@ -314,6 +329,15 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
         calls.append(manifest)
         assert len(manifest["prepared"]) == 2
         assert len(session_review.pending()) == 2
+        if followup:
+            transcript = tmp_path / "different.jsonl"
+            with transcript.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps({"type": "user", "message": {"role": "user", "content": "追記"}}) + "\n")
+            session_review.record(
+                {"hook_event_name": "SessionStart", "session_id": "one", "transcript_path": str(transcript)},
+                host="claude",
+                target_repo="https://example.com/team/repo",
+            )
         monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
         monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
         add.add_entries(
@@ -330,8 +354,75 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
         return 0
 
     assert run_skill_batch.dispatch(_args(), execute) == 0
-    assert len(calls) == 1 and not session_review.pending()
+    assert len(calls) == 1
+    if followup:
+        [pending] = session_review.pending()
+        assert pending["session_id"] == "one"
+        assert pending["generation"] != calls[0]["prepared"][0]["generation"]
+    else:
+        assert not session_review.pending()
+    reviewed = session_review.directory() / "reviewed"
+    assert session_review.read(reviewed / "claude-one.json")["session_id"] == "one"
+    assert not (reviewed / "claude-different.json").exists()
     assert len(list(layout.iter_entry_paths(notes))) == 1
+
+
+def test_usage_limited_batch_is_preserved_until_due(tmp_path, monkeypatch, capsys) -> None:
+    _target(tmp_path, "awaiting-reset")
+    args = _args("manual")
+
+    def pause(run_args):
+        run_args.batch_usage_resume_at = 200.0
+        return 86
+
+    assert run_skill_batch.dispatch(args, pause) == 86
+    [path] = list((session_review.directory() / "runs").glob("*.json"))
+    state = session_review.read(path)
+    assert state["status"] == "usage-limit-paused"
+    assert state["usage_resume_at"] == 200.0
+    assert state["targets"][0]["session_id"] == "awaiting-reset"
+    assert session_review.pending()[0]["session_id"] == "awaiting-reset"
+    assert not state.get("failure_key")
+
+    def unexpected(_args):
+        pytest.fail("解除予定時刻前に新しいbatchを起動した")
+
+    monkeypatch.setattr(run_skill_batch, "time", types.SimpleNamespace(time=lambda: 199.0))
+    assert run_skill_batch.dispatch(_args("manual"), unexpected) == 0
+    assert "1970-01-01T00:03:20+00:00" in capsys.readouterr().err
+    assert session_review.read(path) == state
+
+    record = types.SimpleNamespace(
+        input=types.SimpleNamespace(
+            skill="agent-toolkit:review-session", arguments="batch", target_repo=None, run_id=state["run_id"]
+        ),
+        remaining=30,
+        work_dir=tmp_path,
+    )
+    monkeypatch.setattr(run_skill_batch.run_skill_state, "load", lambda _run_id: record)
+    monkeypatch.setattr(run_skill_batch, "time", types.SimpleNamespace(time=lambda: 201.0))
+
+    def pause_again(run_args):
+        assert run_args.batch_manifest == str(path) and run_args.run_id == state["run_id"]
+        run_args.batch_usage_resume_at = 300.0
+        return 86
+
+    assert run_skill_batch.dispatch(_args("auto"), pause_again) == 86
+    assert list(path.parent.glob("*.json")) == [path]
+    assert session_review.read(path)["usage_resume_at"] == 300.0
+    assert not session_review.read(path).get("failure_key")
+
+    def succeed(run_args):
+        assert run_args.batch_manifest == str(path) and run_args.run_id == state["run_id"]
+        session_review.BatchWriter(path).analyze()
+        return 0
+
+    monkeypatch.setattr(run_skill_batch, "time", types.SimpleNamespace(time=lambda: 301.0))
+    monkeypatch.setattr(add, "has_synced_run_report", lambda *_args, **kw: kw["run_id"] == state["run_id"])
+    assert run_skill_batch.dispatch(_args("auto"), succeed) == 0
+    assert list(path.parent.glob("*.json")) == [path]
+    assert session_review.read(path)["status"] == "completed"
+    assert not session_review.pending()
 
 
 @_REAL_REPORT_CPU

@@ -230,6 +230,7 @@ def _registration_parameters(self: SessionState) -> dict[str, Any] | None:
         "claude_role": self.claude_role,
         "model_type": self.model_type,
         "launch_kind": self.launch_kind,
+        "startup_profile": self.startup_profile,
         "turn_seq": self.turn_seq,
         "launch_info": launch_info,
         "result_contract_recovery_consumed": self.result_contract_recovery_consumed,

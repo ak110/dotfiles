@@ -27,7 +27,7 @@ runs:
         name: diagnostic-logs-${{ github.job }}-${{ github.run_attempt }}
         path: |
           ~/AppData/Local/agent-toolkit/*.log*
-          ~/AppData/Local/agent-toolkit/services/agents-server/*
+          ~/AppData/Local/agent-toolkit/services/agents-server*/*
         include-hidden-files: true
         if-no-files-found: ignore
         retention-days: 7
@@ -37,7 +37,7 @@ runs:
         name: diagnostic-logs-upgrade-home-${{ github.job }}-${{ github.run_attempt }}
         path: |
           ${{ runner.temp }}/update-dotfiles-upgrade-*/**/agent-toolkit/*.log*
-          ${{ runner.temp }}/update-dotfiles-upgrade-*/**/agent-toolkit/services/agents-server/*
+          ${{ runner.temp }}/update-dotfiles-upgrade-*/**/agent-toolkit/services/agents-server*/*
         include-hidden-files: true
         if-no-files-found: ignore
         retention-days: 7

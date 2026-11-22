@@ -157,7 +157,11 @@ async def test_claude_usage_limit_waits_and_resumes_same_session(
     monkeypatch.setattr(claude_usage_limit, "RECHECK_SECONDS", 0.05)
     streams = [
         _rejected_stream(limit_type, None, before_init=before_init, session_id="claude-limited"),
-        [_rate_limit_event("allowed", limit_type), AssistantMessage("再開後"), ResultMessage("継続後の結果")],
+        [
+            _rate_limit_event("allowed", limit_type),
+            AssistantMessage("再開後"),
+            ResultMessage("状態: completed\n結果: 継続後の結果"),
+        ],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
         started = await manager.start("execute", "作業する", str(tmp_path))
@@ -168,7 +172,7 @@ async def test_claude_usage_limit_waits_and_resumes_same_session(
         assert "excluded_candidates" not in started
         assert response["session_id"] == "claude-limited"
         assert response["status"] == "completed"
-        assert response["agent_message"] == "継続後の結果"
+        assert response["agent_message"] == "状態: completed\n結果: 継続後の結果"
         assert codex.start_calls == []
         assert len(client.queries) == 2
         assert limit_type in client.queries[1] and "所定の返却形式" in client.queries[1]
@@ -188,14 +192,14 @@ async def test_claude_usage_limit_keeps_waiting_while_rejection_continues(
     streams = [
         _rejected_stream("seven_day", None, before_init=False, session_id="claude-repeated"),
         *[list(rejected) for _ in range(4)],
-        [AssistantMessage("再開後"), ResultMessage("解除後の結果")],
+        [AssistantMessage("再開後"), ResultMessage("状態: completed\n結果: 解除後の結果")],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, codex):
         await manager.start("execute", "作業する", str(tmp_path))
         response = await _wait_until_terminal(manager, attempts=100)
 
         assert response["status"] == "completed"
-        assert response["agent_message"] == "解除後の結果"
+        assert response["agent_message"] == "状態: completed\n結果: 解除後の結果"
         assert len(client.queries) == 6
         assert codex.start_calls == []
 
@@ -246,7 +250,7 @@ async def test_claude_usage_limit_wait_accepts_send_message_as_reply(
     resets_at = int(datetime.datetime.now(datetime.UTC).timestamp()) + 3600
     streams = [
         _rejected_stream("five_hour", resets_at, before_init=False, session_id="claude-reply"),
-        [AssistantMessage("返信"), ResultMessage("返信の結果")],
+        [AssistantMessage("返信"), ResultMessage("状態: completed\n結果: 返信の結果")],
     ]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, client, _codex):
         started = await manager.start("execute", "作業する", str(tmp_path))
@@ -254,7 +258,7 @@ async def test_claude_usage_limit_wait_accepts_send_message_as_reply(
         response = await _wait_until_terminal(manager)
 
         assert response["status"] == "completed"
-        assert response["agent_message"] == "返信の結果"
+        assert response["agent_message"] == "状態: completed\n結果: 返信の結果"
         assert "続けて" in client.queries[1]
 
 
@@ -284,7 +288,7 @@ async def test_legacy_claude_rate_limit_record_does_not_skip_candidate(
     unavailable_candidates.record_unavailable_candidate(
         "execute", "delegate", ("claude", "opus", "high"), "429", now=datetime.datetime.now(datetime.UTC)
     )
-    streams = [[SystemMessage("claude-legacy"), AssistantMessage("進行"), ResultMessage("完了")]]
+    streams = [[SystemMessage("claude-legacy"), AssistantMessage("進行"), ResultMessage("状態: completed\n結果: 完了")]]
     async with _usage_limited_manager(monkeypatch, streams) as (manager, _client, codex):
         response = await manager.start("execute", "作業する", str(tmp_path))
 

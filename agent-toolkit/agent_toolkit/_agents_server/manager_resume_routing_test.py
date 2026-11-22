@@ -53,8 +53,12 @@ async def test_delegate_candidate_order_follows_mode(
             raise ConnectionError("起動前認証を利用できない")
         return FakeClaudeClient(
             [
-                [SystemMessage(options.resume or "candidate-order"), AssistantMessage("応答"), ResultMessage("完了")],
-                [AssistantMessage("追送"), ResultMessage("継続完了")],
+                [
+                    SystemMessage(options.resume or "candidate-order"),
+                    AssistantMessage("応答"),
+                    ResultMessage("状態: completed\n結果: 完了"),
+                ],
+                [AssistantMessage("追送"), ResultMessage("状態: completed\n結果: 継続完了")],
             ]
         )
 
@@ -99,7 +103,9 @@ async def test_invalid_env_file_warning_reaches_start_response(
 
     def factory(options: Any) -> FakeClaudeClient:
         options_seen.append(options)
-        return FakeClaudeClient([[SystemMessage("invalid-env"), AssistantMessage("応答"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage("invalid-env"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,
@@ -171,7 +177,9 @@ async def test_api_credit_exhaustion_moves_to_subscription(
         identifier = options.resume or f"credits-{len(options_seen)}"
         if len(options_seen) == 1:
             return FakeClaudeClient([[SystemMessage(identifier), ResultMessage("Credit balance is too low", is_error=True)]])
-        return FakeClaudeClient([[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("完了")]])
+        return FakeClaudeClient(
+            [[SystemMessage(identifier), AssistantMessage("再開"), ResultMessage("状態: completed\n結果: 完了")]]
+        )
 
     async with (
         server_manager.AgentsServerManager() as manager,

@@ -527,7 +527,9 @@ def test_native_worker_output_contract(
             assert json.loads((job / "result.json").read_text(encoding="utf-8"))["exit_code"] == code
             if scenario == "late":
                 assert (job / "stdout.log").read_text(encoding="utf-8") == "後続出力" * 20000
-                assert (job / "stderr.log").read_text(encoding="utf-8").split("\n", 1)[1] == "後続診断" * 20000
+                notice, diagnostics = (job / "stderr.log").read_text(encoding="utf-8").split("\n", 1)
+                assert notice == "更新本体の起動: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。"
+                assert diagnostics == "後続診断" * 20000
             if scenario == "detached":
                 assert child is not None and child.is_running()
             if scenario in ("deadline", "stop"):

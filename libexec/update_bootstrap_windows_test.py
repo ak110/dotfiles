@@ -129,7 +129,9 @@ def _owned_native_pids(directory: pathlib.Path, executable: pathlib.Path) -> Gen
                     process.wait(timeout=10)
 
 
-def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> subprocess.CompletedProcess[str]:
+def _run_stage(
+    tmp_path: pathlib.Path, body: str, *, timeout: float = 30, encoding: str | None = None
+) -> subprocess.CompletedProcess[str]:
     if _PS is None:
         pytest.skip("PowerShellが必要")
     script = tmp_path / "stage.ps1"
@@ -146,7 +148,7 @@ def _run_stage(tmp_path: pathlib.Path, body: str, *, timeout: float = 30) -> sub
             capture_output=True,
             # Windows PowerShell 5.1は標準エラーをコンソールのコードページ（日本語環境ではcp932）で書く。
             # 厳密なUTF-8復号ではreader threadが例外で止まり、stderrがNoneになって失敗の診断を失う。
-            encoding="oem" if os.name == "nt" else "utf-8",
+            encoding=encoding or ("oem" if os.name == "nt" else "utf-8"),
             errors="replace",
             check=False,
             timeout=timeout,
@@ -217,6 +219,39 @@ def test_stage_timeout_and_unknown_ownership(tmp_path: pathlib.Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_install_stage_retries_once_only_after_recoverable_failure(tmp_path: pathlib.Path) -> None:
+    """両方の導入段で使う再試行が、回収不能を再起動に変えないことを確かめる。"""
+    result = _run_stage(
+        tmp_path,
+        "$script:calls=0; "
+        "$code=Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; if ($script:calls -eq 1) { throw 'exit 17' }; return 0 }; "
+        "if ($code -ne 0 -or $script:calls -ne 2) { throw 'retry' }; "
+        "$script:calls=0; $caught=$false; "
+        "try { Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; throw [System.TimeoutException]::new('Job') } } "
+        "catch [System.TimeoutException] { $caught=$true }; "
+        "if (-not $caught -or $script:calls -ne 1) { throw 'ownership' }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_install_stage_does_not_retry_if_stop_and_dispose_fail(tmp_path: pathlib.Path) -> None:
+    """回収と終了処理の両方が例外でも、再試行せず両方の理由を返す。"""
+    result = _run_stage(
+        tmp_path,
+        "$script:calls=0; $p=New-Object PSObject; "
+        "$p | Add-Member ScriptMethod Dispose { throw 'dispose-failure' }; "
+        "try { Invoke-UpdateInstallStage test 1 unused @() -RunStage { "
+        "$script:calls++; Invoke-UpdateStage test abort 1 unused @() "
+        "-Start { $p } -Wait { $true } -ExitCode {0} -Stop {throw 'stop-failure'} }; "
+        "throw 'not propagated' } catch [System.TimeoutException] { "
+        "if ($_.Exception.Message -notmatch 'stop-failure' -or "
+        "$_.Exception.Message -notmatch 'dispose-failure' -or $script:calls -ne 1) { throw } }",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 @pytest.mark.parametrize("mode", ["timeout", "orphan", "unlinked"])
 def test_stage_native_job_reaps_tree(
     tmp_path: pathlib.Path, native_program: pathlib.Path, mode: str, monkeypatch: pytest.MonkeyPatch
@@ -255,20 +290,27 @@ def test_stage_native_job_reaps_tree(
         assert all(not psutil.pid_exists(int(marker.name)) for marker in pids.iterdir())
 
 
-def test_bootstrap_entry_uses_stage_without_running_native_updates(
-    tmp_path: pathlib.Path, native_program: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("missing_python", [False, True])
+def test_bootstrap_entry_prepares_python(
+    tmp_path: pathlib.Path, native_program: pathlib.Path, monkeypatch: pytest.MonkeyPatch, missing_python: bool
 ) -> None:
-    """入口の最小実境界でProbeのパスをPrintPythonへ渡す。"""
+    """Probeのパスを返し、既存版がなければ導入前に待機の可能性を表示する。"""
     bootstrap = str(_ROOT / "libexec/update_bootstrap.ps1").replace("'", "''")
     monkeypatch.setenv("CALLS", str(tmp_path / "calls"))
     monkeypatch.setenv("PYTHON_PATH", "managed-python")
-    monkeypatch.setenv("INJECT_STAGE", "none")
+    monkeypatch.setenv("INJECT_STAGE", "python-install" if missing_python else "none")
+    monkeypatch.setenv("INJECT_MODE", "exit")
     result = _run_stage(
         tmp_path,
         f"& '{bootstrap}' '{str(native_program).replace(chr(39), chr(39) * 2)}' -PrepareOnly -PrintPython; exit $LASTEXITCODE",
+        encoding="utf-8",
     )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert result.stdout.strip() == "managed-python"
+    if missing_python:
+        assert result.returncode == 1, result.stdout + result.stderr
+        assert "管理Pythonの導入: uvキャッシュの整理中は待つ場合があります。Ctrl+Cで中断できます。" in result.stderr
+    else:
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.stdout.strip() == "managed-python"
 
 
 def test_stage_continued_failure_reaches_update_result(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -88,6 +88,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 1. 起動側が書込所有者（レーン担当、single-laneのメイン）なら、同書に従って自分で直す。
 2. 書込所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、前提・必要性・修正の規模への疑問を指摘ごとに`レビュー参考意見`にする。
    追加の探索や再現はせず、疑いだけで指摘を消すことも対応済みにすることもしない。
+   通常運用での実害の裏付けが無い指摘（合成した構成だけで再現した指摘など）は、その旨を根拠に不採用の参考意見にする（`agent-basics:review-standards/references/reviewee.md`の採用条件）。
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
 3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。

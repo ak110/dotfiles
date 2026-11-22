@@ -91,7 +91,7 @@ Claude Codeにおける作業ディレクトリのスラッグは、絶対パス
 ## 調査で誤りやすい前提
 
 - 共有serviceの更新では、新版readyと受付先の切替、状態writerの切替、実turn終了後の制御移譲、raw資源の回収を別々に確認する。
-  `state_dir/services/agents-server/generations.json`と世代ごとのready JSON・stderr、既存登録簿と終了診断を対応付ける。
+  管理サービスの名前空間にある`generations.json`と世代ごとのready JSON・stderr、既存登録簿と終了診断を対応付ける。
   接続EOFだけで会話終了と判断せず、健康な旧raw資源の提供者を`owner_lost`障害へ分類しない。
   移譲の成否不明ではqueryを再送せず、既存登録簿とbackendの物理記録で復旧する。
   初回の非協力型旧stdioは自然終了まで旧接続を保持し、新しい通常MCP起動から共有serviceを使う。

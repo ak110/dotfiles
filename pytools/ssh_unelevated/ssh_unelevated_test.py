@@ -42,6 +42,7 @@ def test_posix_reclaims_helpers_after_ssh_exits(exit_code: int, inherit: bool) -
         start_new_session=True,
     ) as process:
         started = time.monotonic()
+        # pylint: disable-next=protected-access
         stdout, _ = _cli._communicate_posix(process, b"", 15)
         assert time.monotonic() - started < 15
         assert process.returncode == exit_code
@@ -74,6 +75,7 @@ def test_posix_drains_large_output_while_sending_input() -> None:
         stderr=subprocess.PIPE,
         start_new_session=True,
     ) as process:
+        # pylint: disable-next=protected-access
         stdout, stderr = _cli._communicate_posix(process, b"i" * size, 15)
         assert process.returncode == 0
     assert stdout == b"o" * size + b"i" * size

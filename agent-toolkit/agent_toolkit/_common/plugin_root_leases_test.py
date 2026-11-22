@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -61,6 +62,9 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monk
     class Consumer:
         pid = 123
 
+        def name(self):
+            return "python"
+
         def create_time(self):
             return 1.0
 
@@ -89,6 +93,55 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monk
     monkeypatch.setattr(subject.psutil, "process_iter", lambda: [consumer])
     monkeypatch.setattr(subject.psutil, "Process", lambda pid=None: consumer if pid == consumer.pid else own)
     assert subject.plugin_root_in_use(area) is (observation in {"direct", "denied"})
+
+
+@pytest.mark.parametrize(
+    ("process_name", "parent_pid", "system_name", "protected"),
+    [
+        ("Secure System", 4, "System", False),
+        ("Secure System", 9, "System", True),
+        ("client.exe", 4, "System", True),
+        ("Secure System", 4, "other", True),
+    ],
+)
+def test_windows_only_ignores_access_denied_for_verified_secure_system(
+    tmp_path, monkeypatch, process_name, parent_pid, system_name, protected
+):
+    """実引数が取れない一般プロセスと同名だけの候補は、既存の保護を維持する。"""
+    area = tmp_path / "agents-server-plugin-root-held"
+    area.mkdir()
+    own = subject.psutil.Process()
+
+    class Process:
+        pid = 123
+
+        def name(self):
+            return process_name
+
+        def ppid(self):
+            return parent_pid
+
+        def cmdline(self):
+            raise subject.psutil.AccessDenied(self.pid)
+
+        def username(self):
+            raise subject.psutil.AccessDenied(self.pid)
+
+    class KernelSystem:
+        def name(self):
+            return system_name
+
+        def ppid(self):
+            return 0
+
+    process = Process()
+    kernel = KernelSystem()
+    monkeypatch.setattr(subject, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(subject.psutil, "process_iter", lambda: [process])
+    monkeypatch.setattr(
+        subject.psutil, "Process", lambda pid=None: own if pid is None else {4: kernel, process.pid: process}.get(pid, own)
+    )
+    assert subject.plugin_root_in_use(area) is protected
 
 
 def test_nonblocking_lock_reports_conflict(tmp_path: pathlib.Path) -> None:

@@ -277,11 +277,33 @@ def _launch_mode(item: _CollectedRecord, collected: list[_CollectedRecord]) -> s
     return None
 
 
+def _is_codex_call(row: _Record) -> bool:
+    payload = row.entry.get("payload")
+    return isinstance(payload, dict) and payload.get("type") in {"function_call", "custom_tool_call"}
+
+
 def _collection_events(
     collected: list[_CollectedRecord], unresolved: list[_UnresolvedRecord], *, recoveries: bool = True
 ) -> list[dict[str, Any]]:
     """全収集照会が同じ記録由来と未解決の対象、回復した記録行を出力する。"""
+    fork_events = [
+        {
+            "kind": "record-gap",
+            "record": item.record_id,
+            "line": item.fork_context[0].line,
+            "reason": (
+                f"帰属不明: 親 codex:{item.fork_parent} の記録と比較できないため、"
+                f"{item.fork_context[0].line}〜{item.fork_context[-1].line} 行の "
+                f"{sum(_is_codex_call(row) for row in item.fork_context)} 操作は子の実行に数えない"
+            ),
+            "partial": True,
+            "next_action": "親会話の記録を取得して再照会する。取得できなければ、子会話の記録の該当行を詳細照会する。",
+        }
+        for item in collected
+        if item.fork_context and not item.fork_attribution_known
+    ]
     return [
+        *fork_events,
         *(
             {"kind": "record-gap", "record": item.record_id, "line": gap.line, "reason": gap.reason, "partial": True}
             for item in collected
@@ -296,6 +318,15 @@ def _collection_events(
                 "source_line": item.source_line,
                 "mode": _launch_mode(item, collected),
                 "role_document": _role_document(item),
+                **(
+                    {
+                        "fork_parent": f"codex:{item.fork_parent}",
+                        "fork_attribution_known": item.fork_attribution_known,
+                        "fork_lines": [item.fork_context[0].line, item.fork_context[-1].line],
+                    }
+                    if item.fork_context
+                    else {}
+                ),
             }
             for item in collected
         ),

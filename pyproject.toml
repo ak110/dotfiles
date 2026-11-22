@@ -125,7 +125,7 @@ require-paths = true
 # 反映先にエージェント向け文書を含む項目には、計画の採否確定前に方針と障害の記録を読む要求を書く。
 name = "方針と障害記録を読む要求"
 agent-doc = true
-require-text = ["docs/development/concepts.md", "docs/development/incidents.md", "分割ファイル"]
+require-text = ["docs/development/concepts.md", "git log", "--grep"]
 
 [tool.pyfltr]
 preset = "latest"
@@ -169,7 +169,7 @@ markdownlint-subproject-aware = false
 textlint-subproject-aware = false
 lychee-subproject-aware = false
 sync-generated-files-subproject-aware = false
-test-copies-subproject-aware = false
+dotfiles-test-copies-subproject-aware = false
 check-cmd-encoding-subproject-aware = false
 check-templates-subproject-aware = false
 require-ps1-bom-subproject-aware = false
@@ -295,7 +295,7 @@ targets = ["*"]
 fast = true
 pass-filenames = false
 
-[tool.pyfltr.custom-commands.test-copies]
+[tool.pyfltr.custom-commands.dotfiles-test-copies]
 type = "linter"
 path = "uv"
 args = ["run", "--frozen", "python", "scripts/check_test_copies.py"]

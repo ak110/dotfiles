@@ -313,6 +313,7 @@ class StatusFileWriter:
             fast_mode=previous.fast_mode,
             model_type=previous.model_type,
             launch_kind=previous.launch_kind,
+            startup_profile=previous.startup_profile,
             turn_seq=previous.turn_seq,
             announced=True,
             status=previous.status,

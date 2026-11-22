@@ -53,6 +53,7 @@ def _cmd_add_args(
         choices=None,
         dry_run=dry_run,
         compare_opening_file=None,
+        opening_output=None,
         subparser=None,
     )
 

@@ -33,8 +33,10 @@ async def _item(backend, session, item):
 
 
 async def _complete(backend, session, items=()):
-    if session.launch_kind == "explore" and not session.agent_message.endswith("状態: completed"):
-        session.agent_message += "\n状態: completed"
+    if session.codex_live_subagent_thread_ids and not session.agent_message:
+        session.agent_message = "待機中: " + min(session.codex_live_subagent_thread_ids)
+    elif not session.agent_message.startswith(("待機中:", "状態: completed")):
+        session.agent_message = "状態: completed\n結果: " + session.agent_message
     await backend._handle_notification(
         {
             "method": "turn/completed",
@@ -94,9 +96,10 @@ async def test_native_children_hold_and_resume_once(tmp_path: pathlib.Path, monk
             }
         )
         assert not session.codex_live_subagent_thread_ids
-        await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": "回収後の全文"})
+        final_message = "状態: completed\n結果: 回収後の全文"
+        await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": final_message})
         await _complete(backend, session)
-        assert (await owner.wait())["agent_message"] == "回収後の全文"
+        assert (await owner.wait())["agent_message"] == final_message
         # 再開したturnが新しい子を起動すると、新たな保留を一度行える。
         state.initialize_turn(session)
         await _item(backend, session, _activity("child-3", "started", "start-3"))
@@ -169,7 +172,7 @@ async def test_self_message_repairs_final_response_once(tmp_path: pathlib.Path, 
         assert session.codex_self_message_repair_consumed
         assert "全文を最終応答" in str(client.requests)
         await _item(backend, session, _activity(session.session_id, "interacted", "self-again"))
-        completed = "修復後の全文" + ("\n状態: completed" if launch_kind == "explore" else "")
+        completed = "状態: completed\n結果: 修復後の全文"
         await _item(backend, session, {"id": "answer", "type": "agentMessage", "text": completed})
         await _complete(backend, session)
         assert (await owner.wait())["agent_message"] == completed

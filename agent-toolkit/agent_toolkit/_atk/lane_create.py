@@ -197,7 +197,9 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
             existing = json.loads(path.read_text(encoding="utf-8"))
             if existing["common_dir"] != common or existing["base_branch"] != args.base_branch:
                 raise ValueError("既存レーンのrepoまたは統合先が入力と異なる。登録の入力で再実行する")
-            existing["selection_file"] = str(args.selection_file.resolve())
+            selection_file = str(args.selection_file.resolve())
+            new_run = args.reuse_record is None and selection_file != existing.get("selection_file")
+            existing["selection_file"] = selection_file
             _lane_records.require_selection(existing)
             if args.commands_file is not None:
                 existing["commands"] = commands
@@ -206,6 +208,14 @@ def create(args: argparse.Namespace, session_id: str) -> dict[str, typing.Any]:
                 return dict(existing, record_path=str(path), reused=True)
             if _lane_records.worktrees(repo).get(existing["worktree"]) == existing["branch"]:
                 refresh_finalized_lane(existing)
+                if (
+                    new_run
+                    and existing.get("integration", {}).get("phase") == "finalized"
+                    and not existing["selection"]["integrated"]
+                ):
+                    existing["previous_integration"] = existing.pop("integration")
+                    existing.pop("lane_started_at", None)
+                    existing["initial_head"] = _lane_records.git(pathlib.Path(existing["worktree"]), "rev-parse", "HEAD")
                 _lane_records.save(path, existing)
                 return dict(existing, record_path=str(path), reused=True)
             raise ValueError(f"レーンの作成が未完了: {path}。記録と残った資源を確認して回復する")

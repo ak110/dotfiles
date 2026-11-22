@@ -1,4 +1,4 @@
-"""agents_serverとbackendが送出する、委譲先sessionの起動と所有に関する例外。"""
+"""agents_serverとbackendが送出する、管理サービスの通信と委譲先sessionの起動・所有に関する例外。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,10 @@ KILL_NOT_DELIVERED_NEXT_ACTION = (
     "`active_tool_uses`が同じ開始時刻のまま続く間と`api_error`が続く間は待機し、"
     "どちらも無く活動が止まっている時だけ停滞として巻き取る"
 )
+
+
+class ProcessIdentityMismatch(PermissionError):
+    """同じアカウントの相手が発見記録の起動単位と異なる。"""
 
 
 class SessionInitializationTimeoutError(RuntimeError):

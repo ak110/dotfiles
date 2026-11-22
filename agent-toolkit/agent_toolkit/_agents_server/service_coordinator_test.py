@@ -634,6 +634,27 @@ async def test_show_keeps_owner_and_queried_generation_distinct(
 
 
 @pytest.mark.asyncio
+async def test_busy_session_control_reports_before_delivery(tmp_path, monkeypatch):
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch)
+    manager = coordinator.managers.conversations["parent"].manager
+
+    @contextlib.asynccontextmanager
+    async def scope(_params: CallToolRequestParams, **_kwargs: Any):
+        yield manager
+
+    monkeypatch.setattr(coordinator.managers, "scope", scope)
+    lock = coordinator._locks.setdefault(session.session_id, asyncio.Lock())
+    async with lock:
+        with runtime_environment.bind(CallerContext({}, tmp_path)):
+            async with asyncio.timeout(2):
+                result = await coordinator.call_tool(
+                    None, CallToolRequestParams(name="kill", arguments={"session_id": session.session_id, "timeout": 0.25})
+                )
+    assert result.is_error
+    assert "停止要求は未配送" in result.content[0].text
+
+
+@pytest.mark.asyncio
 async def test_failed_move_on_owner_reports_undelivered_input_and_next_action(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

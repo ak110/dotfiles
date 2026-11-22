@@ -102,6 +102,10 @@ def enqueue(
     return identifier, expires
 
 
+class HookRequestRejected(ValueError):
+    """会話内modが要求の実行を拒否した。"""
+
+
 async def request(session_id: str, operation: str, inputs: dict[str, Any], *, timeout: float = 10) -> dict[str, Any]:
     """modの確認応答を待つ。未応答や不一致を成功へ変換しない。"""
     identifier, expires = enqueue(session_id, operation, inputs, timeout=timeout, detached=False)
@@ -115,7 +119,7 @@ async def request(session_id: str, operation: str, inputs: dict[str, Any], *, ti
                 result = None
             if isinstance(result, dict) and result.get("id") == identifier:
                 if result.get("ok") is not True:
-                    raise ValueError(str(result.get("reason", "modがリクエストを拒否した")))
+                    raise HookRequestRejected(str(result.get("reason", "modがリクエストを拒否した")))
                 return result
             await asyncio.sleep(0.1)
         raise TimeoutError("会話内modの確認応答が期限内にない。表示・予約は成功として扱わない。")

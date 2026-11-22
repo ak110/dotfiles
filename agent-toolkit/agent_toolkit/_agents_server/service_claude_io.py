@@ -212,3 +212,4 @@ class SdkResource:
 
     async def disconnect(self) -> None:
         await self.resource.operation("release")
+        await self.resource.operation("discard")

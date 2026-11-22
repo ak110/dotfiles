@@ -454,7 +454,8 @@ async def test_public_wait_holds_unknown_child_then_collects_resumed_result_once
         session_registry.publish("child", state=session_registry.PublicationState.RESULT_COMPLETED, turn_seq=2)
         await manager._advance_child_session_wait(parent)
         assert sum(method == "turn/start" for method, _params in client.requests) == 2
-        await complete("残作業を完了した結果")
+        final_message = "状態: completed\n結果: 残作業を完了した結果"
+        await complete(final_message)
         await parent.drain_registration()
         writer.flush()
         with pytest.raises(SystemExit) as collected:
@@ -462,7 +463,7 @@ async def test_public_wait_holds_unknown_child_then_collects_resumed_result_once
         assert collected.value.code == 0
         rows = [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
         result = next(row for row in rows if row.get("session_id") == parent.session_id)
-        assert pathlib.Path(result["agent_message_path"]).read_text(encoding="utf-8") == "残作業を完了した結果"
+        assert pathlib.Path(result["agent_message_path"]).read_text(encoding="utf-8") == final_message
         with pytest.raises(SystemExit) as consumed:
             atk.main(["agents", "wait", "--root-session-id", "root-session"])
         assert consumed.value.code == 3

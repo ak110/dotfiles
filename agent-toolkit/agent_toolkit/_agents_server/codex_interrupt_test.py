@@ -103,11 +103,12 @@ async def test_consumer_stop_stops_own_app_server_before_failure_is_published(
         response = await owner.kill(session.session_id, timeout=5)
         assert (response["status"], response["kill_requested"]) == ("failed", False)
 
-        answer = {"type": "agentMessage", "id": "answer", "text": "別の作業の成果"}
+        final_message = "状態: completed\n結果: 別の作業の成果"
+        answer = {"type": "agentMessage", "id": "answer", "text": final_message}
         turn = {"id": other.turn_id, "status": "completed", "error": None, "items": [answer]}
         clients[1].emit("turn/completed", {"threadId": other.session_id, "turn": turn})
         await harness._until(backend, lambda: other.result_available)
-        assert (other.status, other.agent_message) == ("completed", "別の作業の成果")
+        assert (other.status, other.agent_message) == ("completed", final_message)
         assert not clients[1].stopped
 
 
@@ -165,6 +166,18 @@ async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, mon
         response = await kill
     assert response["status"] == "failed"
     assert "turn/interrupt" not in [method for method, _ in clients[0].requests]
+
+
+@pytest.mark.asyncio
+async def test_kill_reports_next_action_without_an_owned_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """中断要求を配送できなければ、導入の案内ではなく次の操作を返す。"""
+    async with harness._service_environment(tmp_path, monkeypatch, harness._no_save) as (owner, backend, _clients):
+        session = await backend.start("作業", str(tmp_path))
+        with monkeypatch.context() as patch:
+            patch.setattr(backend, "_owned_client", lambda _session: None)
+            with pytest.raises(ActionableError) as error:
+                await owner.kill(session.session_id, timeout=5)
+        assert error.value.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
 
 
 @pytest.mark.parametrize("service", [False, True])
@@ -236,7 +249,7 @@ async def test_kill_during_final_answer_is_determined_even_after_consumer_stops(
 
 @pytest.mark.parametrize(
     ("cause", "stage", "backlog"),
-    [("stalled_consumer", "送出確認待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
+    [("stalled_consumer", "応答待ち", "256/256"), ("silent_app_server", "応答待ち", "0/256")],
 )
 @pytest.mark.asyncio
 async def test_undetermined_kill_records_stage_and_connection(

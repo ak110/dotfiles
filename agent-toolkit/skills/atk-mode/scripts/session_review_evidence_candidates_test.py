@@ -318,4 +318,5 @@ def test_public_search_continues_after_nonstring_record_type(tmp_path, capsys, b
     assert evidence.main([str(transcript), "--context-at", "2", "--phrase=異常行"]) == 0
     capsys.readouterr()
     assert evidence.main([str(transcript), "--detail", "1"]) == 0
-    assert "異常行" in capsys.readouterr().out
+    [detail] = read_jsonl(capsys)
+    assert detail["event_type"] == "response_item" and "text" not in detail

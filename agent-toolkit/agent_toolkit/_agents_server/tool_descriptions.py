@@ -71,9 +71,10 @@ MODE_DESCRIPTION = parameter_description(
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約。"
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
     "task: 手順、権限、検証方法、返却形式は`<役割名>.subagent.md`が定め、サーバーが起動設定・必須入力・宣言外入力を検査する。"
-    "終了返却の続行不能には、理由の直前に有効な区分を同じインデントで置く必要がある。"
-    "区分の欠落・集合外は同じsessionへ1回だけ自動継続し、再違反や継続の配送失敗では元の返却本文と"
-    "error.resultContract・error.nextActionを公開する。この構造検査はtaskだけに適用する。\n"
+    "task・delegate・explore・writeでは、正常な返却の標識、待機表明、または有効な続行不能の2行を検査する。"
+    "形式違反は同じsessionへ1回だけ自動継続し、再違反や継続の配送失敗では元の返却本文と"
+    "error.resultContract・error.nextActionを公開する。taskとexploreは有効な続行不能も同じ枠で一度再確認する。"
+    "shellは終了コードと出力を返すため、この構造検査の対象外。\n"
     "delegate: 委譲先向けの共通の手順を配送する通常起動。\n"
     "explore・write・shell: 軽量起動。委譲先へ届くのは依頼本文（shellではコマンドと要約方針）と、"
     "委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
@@ -165,6 +166,7 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "（例: `agy:gemini-3.8-flash/medium,claude:opus[1m]/medium`）を指定する。"
     "工程名は対応する`<工程>_model`の候補列を使う。"
     "候補は先頭から試し、起動できない候補を除いて次の候補へ切り替える。"
+    "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応版が必要で、個人ログインへ切り替えない。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
     "handoff_fromでの省略は前任の候補を継承し、現在設定へ戻すには元の工程名を明示する。"
@@ -182,6 +184,11 @@ START_MODE_INPUTS: dict[str, tuple[tuple[str, ...], frozenset[str]]] = {
     "write": (("prompt",), frozenset({"prompt"})),
     "shell": (("command", "summary_policy"), frozenset({"command", "summary_policy"})),
 }
+
+
+# 登録した自由本文のmodeには、対象外の理由を宣言しない限り返却形式を適用する。
+START_RESULT_CONTRACT_EXEMPTIONS = {"shell": "コマンドの終了コードと保存出力で検収する"}
+FREEFORM_RESULT_CONTRACT_KINDS = START_MODE_INPUTS.keys() - START_RESULT_CONTRACT_EXEMPTIONS.keys() - {"task"}
 
 
 START_NORMAL_TASK_EXAMPLE = (

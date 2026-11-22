@@ -33,6 +33,7 @@ from agent_toolkit._common import (
     runtime_environment,
     stream_lines,
 )
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, diagnostic_head
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
@@ -64,6 +65,18 @@ class CliTurnManager:
     def build_command(prompt: str, model: str | None, effort: str | None, conversation_id: str | None) -> list[str]:
         """CLI固有の起動引数を組み立てる。"""
         raise NotImplementedError
+
+    async def prepare_command(
+        self,
+        prompt: str,
+        model: str | None,
+        effort: str | None,
+        conversation_id: str | None,
+        environment: dict[str, str],
+    ) -> list[str]:
+        """子へ実際に渡す環境で、起動条件を確かめてから引数を組み立てる。"""
+        del environment
+        return self.build_command(prompt, model, effort, conversation_id)
 
     @staticmethod
     def system_prompt(launch_kind: LaunchKind) -> str:
@@ -331,12 +344,16 @@ class CliTurnManager:
             return initialized_session
         except TimeoutError as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise SessionInitializationTimeoutError(
                 f"{self.NAME} did not reach init within {shared_state.SESSION_INITIALIZATION_TIMEOUT:.0f}s: "
                 f"cwd={cwd}, launch_kind={launch_kind}, model={model}"
             ) from exc
-        except BaseException:
+        except BaseException as exc:
             await self._release_unstarted_task(task)
+            if shared_state.finish_unowned_start(initialized, turn_seq, exc):
+                await self._notify_waiters()
             raise
 
     async def _release_unstarted_task(self, task: asyncio.Task[Any]) -> None:
@@ -369,12 +386,13 @@ class CliTurnManager:
         input_recorded = False
         try:
             async with contextlib.AsyncExitStack() as resources, asyncio.timeout(self.RUN_TIMEOUT):
-                command = self.build_command(prompt, model, effort, conversation_id)
+                environment = _child_env(self._root_session_id)
+                command = await self.prepare_command(prompt, model, effort, conversation_id, environment)
                 try:
                     process = await asyncio.create_subprocess_exec(
                         *command,
                         cwd=cwd,
-                        env=_child_env(self._root_session_id),
+                        env=environment,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )
@@ -454,6 +472,10 @@ class CliTurnManager:
                     await session.drain_registration()
                 finally:
                     self._processes.pop(session.session_id, None)
+                if initialized.cancelled() and shared_state.finish_unowned_start(
+                    initialized, turn_seq, asyncio.CancelledError(), session=session
+                ):
+                    await self._notify_waiters()
 
     def _append_event(self, session_id: str, payload: dict[str, Any]) -> None:
         """公開stream-jsonのイベントを、状態ファイルと同じ領域へ追記する。"""
@@ -542,7 +564,7 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        _LOG.debug("CLIの非JSON出力を無視: %s", text[:200])
+        _LOG.debug("CLIの非JSON出力を無視: %s", diagnostic_excerpt(text, prefix_chars=200))
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -565,19 +587,24 @@ def _record_failure(session: SessionState, error: BaseException, stderr_text: st
         "message": str(error) or error.__class__.__name__,
         "engine": session.engine,
         "model": session.model,
-        "stderr": stderr_text.strip()[:_STDERR_LIMIT_CHARS],
+        "stderr": diagnostic_excerpt(stderr_text.strip(), prefix_chars=_STDERR_LIMIT_CHARS),
     }
     _LOG.error("cli_session_failure session_id=%s model=%s stderr=%s", session.session_id, session.model, stderr_text)
     finalize_turn(session, {"status": "failed", "agent_message": session.agent_message, "error": failure})
 
 
 async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-    """標準エラーを先頭から`_STDERR_LIMIT_CHARS`バイトまで読み取る。"""
+    """標準エラーの先頭を有界に読み、伏せてから従来の読取上限と同じ`_STDERR_LIMIT_CHARS`バイトに抜粋する。
+
+    伏せると短くなるため上限の倍まで読む。EOFに届かずに倍の上限に達した時だけ、途中までになった末尾の行を共通の抜粋が除く。
+    """
     if process.stderr is None:
         return ""
     with contextlib.suppress(Exception):
-        data = await process.stderr.read(_STDERR_LIMIT_CHARS)
-        return data.decode("utf-8", errors="replace")
+        read_limit = _STDERR_LIMIT_CHARS * 2
+        data = await process.stderr.read(read_limit)
+        reached = len(data) >= read_limit and not process.stderr.at_eof()
+        return diagnostic_head(data, limit_bytes=_STDERR_LIMIT_CHARS, reached_read_limit=reached)
     return ""
 
 

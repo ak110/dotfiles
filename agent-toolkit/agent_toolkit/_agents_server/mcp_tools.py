@@ -62,6 +62,7 @@ from agent_toolkit._common import (
     runtime_environment,
     runtime_inserted,
     session_registry,
+    startup_features,
 )
 from agent_toolkit._common import inherited_venv as _inherited_venv
 from agent_toolkit._common.next_action import ActionableError
@@ -120,6 +121,14 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("呼出元会話を解決できない。Claude CodeでMCPへ再接続する。")
     try:
         return await function_hook_requests.request(identifier, operation, inputs)
+    except function_hook_requests.HookRequestRejected as error:
+        if operation == "send_to_user":
+            next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
+        elif operation == "apply_runtime_changes":
+            next_action = "再予約も手動反映もせずに現在のターンを終え、先行の予約の結果の通知を待つ"
+        else:
+            raise
+        raise ActionableError(str(error), next_action=next_action) from error
     except TimeoutError as error:
         host = "codex" if manager.launcher_is_codex else "claude"
         raise ActionableError(str(error), next_action=_UI_UNAVAILABLE_NEXT_ACTIONS[operation][host]) from error
@@ -296,9 +305,16 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     model_type: Annotated[str | None, Field(description=MODEL_TYPE_DESCRIPTION)] = None,
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
+    *,
+    startup_profile: Annotated[
+        startup_features.StartupProfile | None,
+        Field(description="起動時の追加機能を選ぶ。fullは元の設定を保つ。省略時は役割に応じてlightweightかdefault。"),
+    ] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
     if handoff_from is not None:
+        if startup_profile is not None:
+            raise ValueError("引き継ぎでは元のstartup_profileを使うため指定できない")
         launch_requests.validate_handoff_inputs(
             handoff_from,
             cwd=cwd,
@@ -332,59 +348,60 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         model_type=model_type,
         whole_contract_path=whole_contract_path,
     )
-    if mode == "task":
-        assert subagent_md_path is not None
-        params = extra_params or {}
-        launcher = await run_file_operation(_manager().launcher_session_id)
-        task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
-            task_document_request,
-            subagent_md_path,
-            params,
-            whole_contract_path=whole_contract_path,
-            launcher_session_id=launcher,
-        )
-        context = await run_file_operation(_manager().launcher_record_context)
-        task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-        warnings = model_override_warnings(model_type, default_type=task_model_type)
-        response = await _manager().start(
-            model_type or task_model_type,
-            task_prompt,
-            cwd,
-            launch_kind=launch_kind,
-            label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
-            startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
-            startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
-        )
-        if warnings:
-            response.setdefault("warnings", []).extend(warnings)
-        if handoff_path is not None:
+    with startup_features.selection(startup_profile):
+        if mode == "task":
+            assert subagent_md_path is not None
+            params = extra_params or {}
+            launcher = await run_file_operation(_manager().launcher_session_id)
+            task_model_type, task_prompt, launch_kind, handoff_path = await run_file_operation(
+                task_document_request,
+                subagent_md_path,
+                params,
+                whole_contract_path=whole_contract_path,
+                launcher_session_id=launcher,
+            )
+            context = await run_file_operation(_manager().launcher_record_context)
+            task_prompt = launch_requests.with_launcher_record(task_prompt, context)
+            warnings = model_override_warnings(model_type, default_type=task_model_type)
+            response = await _manager().start(
+                model_type or task_model_type,
+                task_prompt,
+                cwd,
+                launch_kind=launch_kind,
+                label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
+                startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+                startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
+            )
+            if warnings:
+                response.setdefault("warnings", []).extend(warnings)
+            if handoff_path is not None:
+                public = public_start_response(response)
+                public["handoff_record_path"] = str(handoff_path)
+                return public
+        elif mode == "delegate":
+            assert prompt is not None and model_type is not None
+            launcher = await run_file_operation(_manager().launcher_session_id)
+            delegate_prompt, handoff_path = await run_file_operation(
+                launch_requests.delegate_request,
+                prompt,
+                whole_contract_path=whole_contract_path,
+                launcher_session_id=launcher,
+            )
+            response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
+            if warnings:
+                response.setdefault("warnings", []).extend(warnings)
             public = public_start_response(response)
             public["handoff_record_path"] = str(handoff_path)
             return public
-    elif mode == "delegate":
-        assert prompt is not None and model_type is not None
-        launcher = await run_file_operation(_manager().launcher_session_id)
-        delegate_prompt, handoff_path = await run_file_operation(
-            launch_requests.delegate_request,
-            prompt,
-            whole_contract_path=whole_contract_path,
-            launcher_session_id=launcher,
-        )
-        response = await _manager().start(model_type, delegate_prompt, cwd, label=label)
-        if warnings:
-            response.setdefault("warnings", []).extend(warnings)
-        public = public_start_response(response)
-        public["handoff_record_path"] = str(handoff_path)
-        return public
-    elif mode == "explore":
-        assert prompt is not None
-        response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
-    elif mode == "write":
-        assert prompt is not None
-        response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
-    else:
-        assert command is not None and summary_policy is not None
-        response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
+        elif mode == "explore":
+            assert prompt is not None
+            response = await _manager().start_explore(prompt, cwd, label=label, model_type=model_type)
+        elif mode == "write":
+            assert prompt is not None
+            response = await _manager().start_write(prompt, cwd, label=label, model_type=model_type)
+        else:
+            assert command is not None and summary_policy is not None
+            response = await _manager().start_shell(command, cwd, summary_policy, label=label, model_type=model_type)
     if mode != "task" and warnings:
         response.setdefault("warnings", []).extend(warnings)
     return public_start_response(response)

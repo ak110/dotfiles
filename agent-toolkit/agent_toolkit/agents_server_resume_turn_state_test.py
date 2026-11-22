@@ -66,11 +66,11 @@ async def test_wait_returns_resumed_result_regardless_of_notification_order(
             assert wait_task.done() is False
             client.emit(TaskNotificationMessage("bg-1", "completed"))
             client.emit(_session_state("running"))
-        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        client.finish_turn(ResultMessage("状態: completed\n結果: RESUMED", origin={"kind": "task-notification"}))
         result = await wait_task
 
         assert result["status"] == "completed"
-        assert result["agent_message"] == "RESUMED"
+        assert result["agent_message"] == "状態: completed\n結果: RESUMED"
         assert not [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
 
 
@@ -83,10 +83,10 @@ async def test_result_without_background_task_is_published_on_idle(
     client = ControlledClaudeClient("claude-idle", report_state=True)
     async with _manager(client, monkeypatch) as (manager, _backend):
         session = await _start(manager, tmp_path, monkeypatch)
-        client.finish_turn(ResultMessage("通常結果"))
+        client.finish_turn(ResultMessage("状態: completed\n結果: 通常結果"))
         result = await _wait_with_timeout(manager, 1)
 
-        assert result["agent_message"] == "通常結果"
+        assert result["agent_message"] == "状態: completed\n結果: 通常結果"
         assert session.cli_turn_state == "idle"
 
 
@@ -110,10 +110,10 @@ async def test_idle_with_live_shell_task_keeps_result_pending(
 
         client.emit(TaskNotificationMessage("shell-1", "completed"))
         client.emit(_session_state("running"))
-        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        client.finish_turn(ResultMessage("状態: completed\n結果: RESUMED", origin={"kind": "task-notification"}))
         result = await wait_task
 
-        assert result["agent_message"] == "RESUMED"
+        assert result["agent_message"] == "状態: completed\n結果: RESUMED"
 
 
 @pytest.mark.asyncio
@@ -128,13 +128,13 @@ async def test_unreported_turn_state_falls_back_with_single_warning(
         caplog.set_level("WARNING", logger="agent-toolkit.agents-server.claude")
         session = await _start(manager, tmp_path, monkeypatch)
         client.emit(TaskStartedMessage("task-1"))
-        client.emit(ResultMessage("初回結果"))
+        client.emit(ResultMessage("状態: completed\n結果: 初回結果"))
         await _await_state(lambda: session.awaiting_auto_resume)
         client.emit(TaskNotificationMessage("task-1", "completed"))
-        client.emit(ResultMessage("再開結果", origin={"kind": "task-notification"}))
+        client.emit(ResultMessage("状態: completed\n結果: 再開結果", origin={"kind": "task-notification"}))
         result = await _wait_with_timeout(manager, _RESUME_WAIT_TIMEOUT)
 
-        assert result["agent_message"] == "再開結果"
+        assert result["agent_message"] == "状態: completed\n結果: 再開結果"
         assert session.cli_turn_state is None
         warnings = [record for record in caplog.records if "claude_turn_state_unreported" in record.getMessage()]
         assert len(warnings) == 1
@@ -173,10 +173,10 @@ async def test_resumed_turn_is_not_finalized_by_previous_held_deadline(
         assert wait_task.done() is False
         assert session.pending_result is None
         assert (await manager.show_session(session.session_id))["status"] == "running"
-        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        client.finish_turn(ResultMessage("状態: completed\n結果: RESUMED", origin={"kind": "task-notification"}))
         result = await wait_task
 
-        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert (result["status"], result["agent_message"]) == ("completed", "状態: completed\n結果: RESUMED")
         assert "error" not in result
 
 
@@ -219,10 +219,10 @@ async def test_previous_held_result_is_released_on_resumed_turn_start(
             await asyncio.sleep(0)
         assert wait_task.done() is False
 
-        client.finish_turn(ResultMessage("RESUMED", origin={"kind": "task-notification"}))
+        client.finish_turn(ResultMessage("状態: completed\n結果: RESUMED", origin={"kind": "task-notification"}))
         result = await wait_task
 
-        assert (result["status"], result["agent_message"]) == ("completed", "RESUMED")
+        assert (result["status"], result["agent_message"]) == ("completed", "状態: completed\n結果: RESUMED")
 
 
 @pytest.mark.asyncio
@@ -260,7 +260,7 @@ async def test_child_then_stream_end_then_child_done(
         _emit_child_start(client, child)
         if extra == "local_agent_task":
             client.emit(TaskStartedMessage("bg-1", task_type="local_agent"))
-        client.finish_turn(ResultMessage("待機中"))
+        client.finish_turn(ResultMessage(f"待機中: {child}"))
         await _await_state(lambda: session.awaiting_auto_resume and session.cli_turn_state == "idle")
         assert session.live_child_session_ids == {child}
         if extra == "cli_running":

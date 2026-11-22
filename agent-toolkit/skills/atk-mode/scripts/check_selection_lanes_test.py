@@ -9,6 +9,7 @@ import typing
 import check_selection
 import pytest
 import yaml
+from agent_toolkit._plan import selection as contract
 from agent_toolkit._testing.selection_check_support import (
     _DOTFILES_PYPROJECT,
     _awi,
@@ -457,3 +458,21 @@ def test_public_command_prints_no_summary_on_failure(
 
 
 __all__ = ["fixture_env"]
+
+
+def test_write_order_does_not_imply_start_dependency(tmp_path: pathlib.Path) -> None:
+    costs: list[dict[str, typing.Any]] = [
+        {"レーン": "lane-01"},
+        {"レーン": "lane-02", "段階": 2, "先行レーン": ["lane-01"]},
+        {"レーン": "lane-03", "段階": 2, "先行レーン": ["lane-01"], "着手前に必要なレーン": ["lane-01"]},
+    ]
+    items = [
+        {"WI": "a.md", "レーン": "lane-01", "書込対象": ["a.py"]},
+        {"WI": "b.md", "レーン": "lane-02", "書込対象": ["a.py"]},
+        {"WI": "c.md", "レーン": "lane-03", "書込対象": ["c.py"]},
+    ]
+    data = yaml.safe_load(_write_selection(tmp_path / "selection.yaml", items, costs).read_text(encoding="utf-8"))
+    pending = {row["レーン"]: row for row in contract.pending_lanes(data)}
+    assert pending["lane-02"]["先行レーン"] == pending["lane-03"]["先行レーン"] == ["lane-01"]
+    assert pending["lane-02"]["着手前に必要なレーン"] == []
+    assert pending["lane-03"]["着手前に必要なレーン"] == ["lane-01"]

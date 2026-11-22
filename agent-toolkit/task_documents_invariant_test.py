@@ -36,13 +36,16 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
         prompt=task_documents.task_prompt_header(path),
         launch_kind=declaration.launch_kind,
     )
-    example = body.replace("<共通契約の区分>", "owner_input")
-    example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+    examples = re.findall(r"(?ms)^```text\n(.*?)^```[ \t]*$", body)
     if path.name == "reader-fit-review.subagent.md":
         session.prompt += f"\n入力:\n成果物: {path}"
-        example = body.split("```text\n", 1)[1].split("```", 1)[0]
-        example = example.replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")
-    assert result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}) is None
+        examples = [examples[0].replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")]
+    reasons = []
+    for example in examples:
+        example = example.replace("<共通契約の区分>", "owner_input")
+        example = re.sub(r"(?m)^状態: <[a-z]+(?:\|[a-z]+)+>$", "状態: completed", example)
+        reasons.append(result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": example}))
+    assert None in reasons, reasons
 
 
 def test_shared_classification_table_matches_runtime() -> None:

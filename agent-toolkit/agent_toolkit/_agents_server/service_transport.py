@@ -16,6 +16,7 @@ from collections.abc import Callable, Generator
 from multiprocessing import connection
 from typing import TYPE_CHECKING, Any
 
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment, state_paths
 
 if TYPE_CHECKING:
@@ -93,10 +94,31 @@ class _SocketListener:
         self._stream.close()
 
 
+def _state_directory(caller: runtime_environment.CallerContext) -> pathlib.Path:
+    with runtime_environment.bind(caller):
+        return state_paths.state_dir()
+
+
 def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
     """CLIと同じ状態領域を選び、明示的に分離した管理領域を混ぜない。"""
-    with runtime_environment.bind(caller):
-        return state_paths.state_dir() / "services" / "agents-server"
+    base = _state_directory(caller) / "services" / "agents-server"
+    if os.name == "nt":
+        from agent_toolkit._agents_server.windows_service_transport import current_process_elevated
+
+        # 従来の共通索引にはどちらの権限の世代も残り得るため、両方を分ける。
+        suffix = "elevated" if current_process_elevated() else "standard"
+        return base.with_name(f"{base.name}-{suffix}")
+    return base
+
+
+def isolated_state(caller: runtime_environment.CallerContext) -> bool:
+    """呼出元の状態保存先を、指定がない場合の保存先と比べる。"""
+    key = "LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"
+    default = runtime_environment.CallerContext(
+        {name: value for name, value in caller.environment.items() if name != key},
+        caller.cwd,
+    )
+    return _state_directory(caller) != _state_directory(default)
 
 
 def endpoint(directory: pathlib.Path, generation: str) -> str:
@@ -148,7 +170,7 @@ def authenticate(peer: connection.Connection, *, server: bool, expected_process:
     if uid != os.geteuid():
         raise PermissionError("管理サービスの接続先が同じOSアカウントではありません")
     if expected_process is not None and process_identity(pid) != expected_process:
-        raise PermissionError("管理サービスの接続先プロセスが発見記録と一致しません")
+        raise ProcessIdentityMismatch("管理サービスの接続先プロセスが発見記録と一致しません")
     return pid
 
 
@@ -172,8 +194,15 @@ def listen(address: str) -> Generator[Any]:
 def connect(address: str, expected_process: str) -> Generator[connection.Connection]:
     """同一アカウント・元世代と確かめた接続だけを操作へ渡す。"""
     family = "AF_PIPE" if os.name == "nt" else "AF_UNIX"
-    with connection.Client(address, family=family, authkey=None) as peer:
-        authenticate(peer, server=False, expected_process=expected_process)
+    with contextlib.ExitStack() as stack:
+        try:
+            peer = stack.enter_context(connection.Client(address, family=family, authkey=None))
+            authenticate(peer, server=False, expected_process=expected_process)
+        except ProcessIdentityMismatch as error:
+            # アカウント確認後の起動単位違いだけを扱い、アクセスや本人性の拒否は隠さない。
+            if process_alive(expected_process):
+                raise
+            raise FileNotFoundError("発見記録の管理サービス世代が終了しました") from error
         yield peer
 
 

@@ -15,7 +15,7 @@ from typing import Any
 
 import psutil
 import pytest
-from agent_toolkit._common import process_tree
+from agent_toolkit._common import process_tree, startup_features
 
 pytestmark = pytest.mark.windows
 
@@ -119,7 +119,7 @@ def test_public_wrapper_uses_installed_runtime_without_environment_setup(
         )
         command.chmod(0o755)
     root = pathlib.Path(__file__).resolve().parent.parent
-    wrapper = root / "bin" / ("codex.cmd" if sys.platform == "win32" else "codex")
+    wrapper = root / "bin" / ("codex-medium.cmd" if sys.platform == "win32" else "codex-medium")
     environment = host_environ()
     environment.update(
         PATH=str(tmp_path) + os.pathsep + environment.get("PATH", ""),
@@ -132,7 +132,10 @@ def test_public_wrapper_uses_installed_runtime_without_environment_setup(
         [str(wrapper), *arguments], input="input\n", capture_output=True, encoding="utf-8", env=environment, timeout=20
     )
     assert result.returncode == 7, result.stderr
-    assert json.loads(result.stdout) == {"args": arguments, "stdin": "input\n"}
+    assert json.loads(result.stdout) == {
+        "args": ["--config", "model_reasoning_effort=medium", *arguments],
+        "stdin": "input\n",
+    }
     assert not (tmp_path / "unused-environment").exists()
     assert not (tmp_path / "unused-cache").exists()
 
@@ -421,6 +424,8 @@ async def test_parallel_public_launchers_keep_distinct_threads(peer: _Peer) -> N
         ["plugin", "marketplace", "list", "--json"],
         ["--version"],
         ["completion", "bash"],
+        ["-a", "on-request", "login"],
+        ["--config", "model_reasoning_effort=medium", "--full", "exec", "--json"],
         ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"],
     ],
 )
@@ -442,7 +447,10 @@ def test_noninteractive_commands_skip_recovery_dependencies(
     )
     assert result.returncode == 0, result.stderr
     observed = json.loads(result.stdout)
-    assert observed["arguments"] == arguments
+    expected = [*startup_features.codex_arguments(), *arguments] if arguments[:1] == ["exec"] else arguments
+    if "--full" in expected:
+        expected = [argument for argument in expected if argument != "--full"]
+    assert observed["arguments"] == expected
     assert observed["loaded"] == []
 
 
@@ -504,7 +512,7 @@ async def test_noninteractive_arguments_and_exit_status_pass_through(peer: _Peer
     arguments = ["exec", "--json", "literal spaces ; $(not-executed) & %NAME%"]
     code, stdout, stderr = await peer.run(arguments, mode="active", windows=sys.platform == "win32")
     assert code == 7, stderr
-    assert json.loads(stdout)["passthrough"] == arguments
+    assert json.loads(stdout)["passthrough"] == [*startup_features.codex_arguments(), *arguments]
     assert not (peer.root / "app-server-daemon" / "daemon.pid").exists()
 
 

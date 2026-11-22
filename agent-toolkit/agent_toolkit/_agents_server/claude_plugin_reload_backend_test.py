@@ -72,7 +72,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
                 claude_agent_sdk.SystemMessage("session_state_changed", {"state": "running"}),
                 AssistantMessage("作業中"),
             ],
-            [AssistantMessage("継続"), ResultMessage("完了")],
+            [AssistantMessage("継続"), ResultMessage("状態: completed\n結果: 完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -85,7 +85,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
         changed.set()
         await asyncio.wait_for(observed.wait(), timeout=2)
         assert order == ["query"]
-        client.messages.put_nowait(ResultMessage("初回完了"))
+        client.messages.put_nowait(ResultMessage("状態: completed\n結果: 初回完了"))
         client.messages.put_nowait(claude_agent_sdk.SystemMessage("session_state_changed", {"state": "idle"}))
         await asyncio.wait_for(reloaded.wait(), timeout=2)
         response = await backend.send_message(session, "後続")
@@ -148,8 +148,11 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
 
     client = Client(
         [
-            [claude_agent_sdk.SystemMessage("init", {"session_id": "reload-failure"}), ResultMessage("初回完了")],
-            [AssistantMessage("同じ接続の成果"), ResultMessage("完了")],
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "reload-failure"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ],
+            [AssistantMessage("同じ接続の成果"), ResultMessage("状態: completed\n結果: 完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -173,7 +176,7 @@ async def test_reload_failure_keeps_connection_and_completes_followup(
         assert (await backend.send_message(session, "後続"))["delivery"] == "reply_started"
         async with backend._condition:
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
-        assert session.status == "completed" and session.agent_message == "完了"
+        assert session.status == "completed" and session.agent_message == "状態: completed\n結果: 完了"
         assert session.session_id == "reload-failure" and len(client.queries) == 2
     assert client.disconnected and client.readers == 0
 
@@ -242,8 +245,11 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
 
     client = Client(
         [
-            [claude_agent_sdk.SystemMessage("init", {"session_id": "inventory-boundary"}), ResultMessage("初回完了")],
-            [AssistantMessage("同じ接続の成果"), ResultMessage("後続完了")],
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "inventory-boundary"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ],
+            [AssistantMessage("同じ接続の成果"), ResultMessage("状態: completed\n結果: 後続完了")],
         ]
     )
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
@@ -266,7 +272,7 @@ async def test_real_prepare_inventory_and_optional_monitor_preserve_backend_work
         assert (await backend.send_message(session, "後続"))["delivery"] == "reply_started"
         async with backend._condition:
             await asyncio.wait_for(backend._condition.wait_for(lambda: session.result_available), timeout=5)
-        assert session.session_id == "inventory-boundary" and session.agent_message == "後続完了"
+        assert session.session_id == "inventory-boundary" and session.agent_message == "状態: completed\n結果: 後続完了"
         assert len(client.queries) == 2
     assert len(inventory_calls) == (1 if monitor_failure else 2)
     assert len(control_calls) == (0 if monitor_failure else 1)
@@ -417,7 +423,14 @@ async def test_unconfirmed_cleanup_blocks_followup_and_reaches_owner_cleanup(
                     disconnect_cancelled.set()
                     raise
 
-    client = Client([[claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}), ResultMessage("初回完了")]])
+    client = Client(
+        [
+            [
+                claude_agent_sdk.SystemMessage("init", {"session_id": "monitor-cleanup"}),
+                ResultMessage("状態: completed\n結果: 初回完了"),
+            ]
+        ]
+    )
     monkeypatch.setattr(claude_plugins.watchdog.observers, "Observer", Observer)
     monkeypatch.setattr(claude_stream, "ClaudePluginReloader", Reloader)
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:

@@ -1,6 +1,7 @@
 """一時root直下の期限切れの対象の自動掃引と、旧版が残した状態の個別回収。
 
-掃引は`atk`の共通起動から毎回呼ばれる。日次掃引の終了時刻は状態rootの`.sweep/last-sweep`に記録する。
+掃引は照会・原稿表示を除き、`atk`の共通起動から呼ばれる。
+日次掃引の終了時刻は状態rootの`.sweep/last-sweep`に記録する。
 前回から1日未満でディスクの空きに余裕がある起動は、一覧も取らずに戻る。
 """
 
@@ -9,6 +10,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import enum
+import errno
 import functools
 import hashlib
 import json
@@ -24,7 +26,7 @@ import psutil
 
 from agent_toolkit._atk.managed_temp import creation, paths, permissions, resources
 from agent_toolkit._atk.managed_temp.cleanup_times import CleanupTimes, update_time
-from agent_toolkit._atk.managed_temp.errors import ManagedTempError
+from agent_toolkit._atk.managed_temp.errors import ManagedTempError, ManagedTempPermissionError
 from agent_toolkit._atk.managed_temp.removal import plugin_root_in_use, remove_tree
 from agent_toolkit._atk.managed_temp.sweep_lock import sweep_access
 from agent_toolkit._common import file_lock, plugin_root_leases, private_directory, process_identity, registry_index
@@ -73,6 +75,8 @@ class SweepResult(typing.NamedTuple):
     """再生成物や期限切れの対象の回収で対処を要する失敗とその理由。次の掃引で再試行する。"""
     pressure: SpacePressure | None = None
     """空きが下限を割った起動の回収結果。空きが下限以上の通常時はNone。"""
+    permission_candidates: tuple[pathlib.Path, ...] = ()
+    """期限前の圧力回収やパス不明の失敗と分けた、通常権限での権限不足候補。"""
 
 
 class SpacePressure(typing.NamedTuple):
@@ -404,6 +408,7 @@ def _examine(
     deleted_children: list[pathlib.Path],
     *,
     inspected: tuple[int, bool, int] | None = None,
+    permission_candidates: list[pathlib.Path] | None = None,
 ) -> bool:
     """1件を調べ、削除した場合は真を返す。日次掃引ではworktreeの外の兄弟も期限で回収する。"""
     latest, has_git, _size = inspected if inspected is not None else _inspect_entry(child, metadata, now_ns, times)
@@ -426,7 +431,12 @@ def _examine(
                 if removed:
                     deleted_children.append(nested)
         return False
-    return _remove(state_root, child, metadata)
+    try:
+        return _remove(state_root, child, metadata)
+    except (OSError, ManagedTempError) as error:
+        if permission_candidates is not None and _permission_denied(error):
+            permission_candidates.append(child)
+        raise
 
 
 def _remove(state_root: pathlib.Path, child: pathlib.Path, metadata: os.stat_result) -> bool:
@@ -672,6 +682,13 @@ def _failure_reason(error: OSError | ManagedTempError) -> str:
     return str(error)
 
 
+def _permission_denied(error: OSError | ManagedTempError) -> bool:
+    return isinstance(error, ManagedTempPermissionError) or (
+        isinstance(error, OSError)
+        and (error.errno in {errno.EACCES, errno.EPERM} or getattr(error, "winerror", None) in {5, 1314})
+    )
+
+
 @plugin_root_leases.reuse_process_observation()
 def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_AGE_DAYS, force: bool = False) -> SweepResult:
     """一時root直下で配下を含む最終更新から`max_age_days`を超えた対象を削除し、削除結果と失敗を返す。
@@ -717,8 +734,11 @@ def _sweep_locked(
     }
     deleted: list[pathlib.Path] = []
     failed: list[tuple[pathlib.Path, str]] = []
+    permission_candidates: list[pathlib.Path] = []
     if daily:
-        _daily_sweep(temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed)
+        _daily_sweep(
+            temp_root, state_root, now_ns, cutoff_ns, protected_sessions, times, deleted, failed, permission_candidates
+        )
     pressure = None
     if pressure_due:
         pressure = _reclaim_space(
@@ -740,7 +760,9 @@ def _sweep_locked(
         with contextlib.suppress(OSError):
             _sweep_legacy_state(state_root)
         _save_sweep_time(state_root, now_ns)
-    return SweepResult(deleted, tuple(failed), pressure)
+    still_failed = {path for path, _reason in failed}
+    candidates = tuple(path for path in permission_candidates if path in still_failed)
+    return SweepResult(deleted, tuple(failed), pressure, candidates)
 
 
 def _daily_sweep(
@@ -752,6 +774,7 @@ def _daily_sweep(
     times: CleanupTimes,
     deleted: list[pathlib.Path],
     failed: list[tuple[pathlib.Path, str]],
+    permission_candidates: list[pathlib.Path],
 ) -> None:
     references = functools.cache(resources.process_references)
     for child in _sweep_entries(temp_root, state_root):
@@ -775,6 +798,7 @@ def _daily_sweep(
                 times,
                 deleted,
                 inspected=inspected,
+                permission_candidates=permission_candidates,
             ):
                 deleted.append(child)
                 continue

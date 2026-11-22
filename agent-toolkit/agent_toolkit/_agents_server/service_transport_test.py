@@ -33,7 +33,23 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._agents_server.service_coordinator_test import _coordinator
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._agents_server.service_projection import ProjectionHub
+from agent_toolkit._agents_server.session_errors import ProcessIdentityMismatch
 from agent_toolkit._common import runtime_environment
+
+
+def test_windows_owner_token_selects_distinct_registry_and_pipe(monkeypatch, tmp_path):
+    caller = runtime_environment.CallerContext(
+        {"USERPROFILE": str(tmp_path), "LOCALAPPDATA": str(tmp_path), "HOME": str(tmp_path)}, tmp_path
+    )
+    monkeypatch.setattr(service_transport, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(windows_service_transport, "current_process_elevated", lambda: False)
+    standard = service_transport.namespace(caller)
+    monkeypatch.setattr(windows_service_transport, "current_process_elevated", lambda: True)
+    elevated = service_transport.namespace(caller)
+    assert standard.name == "agents-server-standard" and elevated.name == "agents-server-elevated"
+    assert standard.parent == elevated.parent
+    assert standard.parent.parent == elevated.parent.parent == service_transport.namespace(caller).parent.parent
+    assert service_transport.endpoint(standard, "G1") != service_transport.endpoint(elevated, "G1")
 
 
 @pytest.mark.parametrize("pid,code,missing", [(123, 87, True), (123, 5, False), (0, 87, False)])
@@ -357,8 +373,8 @@ _DENIED_GENERATION_SCENES: dict[str, Callable[[pathlib.Path, pytest.MonkeyPatch]
     "service_coordinator.ServiceCoordinator._commit": _commit,
     "service_coordinator.ServiceCoordinator.tick": _tick,
     "service_coordinator.ServiceCoordinator._reclaim_unadopted": _reclaim_unadopted,
-    "service_coordinator.ServiceCoordinator._foreign_sessions": _foreign_sessions,
-    "service_coordinator.ServiceCoordinator._owns": _owns,
+    "service_session_control.ServiceSessionControl._foreign_sessions": _foreign_sessions,
+    "service_session_control.ServiceSessionControl._owns": _owns,
     "service_coordinator.ServiceCoordinator._supervise": _supervise,
     "service_context.ServiceManagers.generations": _generations,
     "service_io.CodexResource.close": _close,
@@ -422,3 +438,22 @@ def test_denied_generation_scenes_cover_every_liveness_caller() -> None:
             visitor.visit(ast.parse(path.read_text(encoding="utf-8")))
             found |= visitor.found
     assert found == set(_DENIED_GENERATION_SCENES)
+
+
+@pytest.mark.parametrize(
+    ("rejected", "alive", "expected"),
+    [
+        (ProcessIdentityMismatch, False, FileNotFoundError),
+        (ProcessIdentityMismatch, True, ProcessIdentityMismatch),
+        (PermissionError, False, PermissionError),
+    ],
+)
+def test_connect_distinguishes_expired_generation_from_account_denial(
+    monkeypatch: pytest.MonkeyPatch, rejected: type[PermissionError], alive: bool, expected: type[OSError]
+) -> None:
+    """終了した世代の不一致だけ変換し、アカウントの拒否は終了状態にかかわらず保持する。"""
+    monkeypatch.setattr(service_transport.connection, "Client", lambda *args, **kw: contextlib.nullcontext(Mock()))
+    monkeypatch.setattr(service_transport, "authenticate", Mock(side_effect=rejected("接続拒否")))
+    monkeypatch.setattr(service_transport, "process_alive", lambda _identity: alive)
+    with pytest.raises(expected), service_transport.connect("endpoint", "42:1"):
+        pytest.fail("操作を実行してはならない")

@@ -96,7 +96,7 @@ def _observed_input_lines(task_name: str, root: pathlib.Path, *, rereview: bool 
             handoff,
         ]
     if task_name == "add-wi.subagent.md":
-        return ["投入する要求: request-1=/repo=awi=検出条件の追加", handoff]
+        return ["投入する要求: request-1=github.com/example/repository=awi=検出条件の追加", handoff]
     if task_name == "external-write-review.subagent.md":
         for name in ("pr-body.md", "diff.patch"):
             (root / name).write_text("投稿の比較資料\n", encoding="utf-8")

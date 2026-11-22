@@ -58,6 +58,7 @@ class LaunchAttempt(pydantic.BaseModel):
     status: LaunchStatus
     manifest_path: str | None = None
     exited: pydantic.StrictBool = False
+    exit_code: pydantic.StrictInt | None = None
     owner: session_registry.ProcessIdentity | None = None
     process: session_registry.ProcessIdentity | None = None
 
@@ -107,6 +108,7 @@ class BatchStatus(enum.StrEnum):
     """分析・報告の独立した結果をまとめて確定するbatchの段階。"""
 
     RUNNING = "running"
+    USAGE_LIMIT_PAUSED = "usage-limit-paused"
     FAILED = "failed"
     COMPLETED = "completed"
     RESOLVED = "resolved"
@@ -124,12 +126,15 @@ class ReviewBatch(pydantic.BaseModel):
     report_synced: bool = False
     failure_key: str | None = None
     error: str | None = None
+    usage_resume_at: float | None = None
 
     @pydantic.model_validator(mode="after")
     def check_failure(self) -> Self:
         """失敗状態は診断と報告識別子を必須とする。"""
         if self.status == BatchStatus.FAILED and (not self.failure_key or not self.error):
             raise ValueError("失敗batchにfailure_keyまたはerrorが無い")
+        if self.status == BatchStatus.USAGE_LIMIT_PAUSED and self.usage_resume_at is None:
+            raise ValueError("利用上限で中断したbatchに再開予定時刻が無い")
         return self
 
 
@@ -290,6 +295,26 @@ class BatchWriter:
                     target["generation"], value["failure_key"], reported=synced, version=value.get("failure_version")
                 )
             return value
+
+    def pause_for_usage_limit(self, resume_at: float, exit_code: int) -> None:
+        """選定・準備済みの対象を同じ実行に保つ。"""
+        with locked():
+            self._save(
+                {
+                    **self._active(),
+                    "status": BatchStatus.USAGE_LIMIT_PAUSED,
+                    "usage_resume_at": resume_at,
+                    "exit_code": exit_code,
+                }
+            )
+
+    def resume_usage_limited(self) -> None:
+        """再開の開始を記録する。手動再開に予定時刻の制限は掛けない。"""
+        with locked():
+            value = self._active()
+            if value["status"] == BatchStatus.USAGE_LIMIT_PAUSED:
+                value.pop("usage_resume_at", None)
+                self._save({**value, "status": BatchStatus.RUNNING})
 
     def analyze(self) -> dict[str, Any]:
         """finishは分析成功だけを記録し、範囲の確定は起動側へ残す。"""
@@ -491,17 +516,33 @@ def is_review_run() -> bool:
     return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) == META_SCOPE
 
 
-def launch_result(*, manifest: pathlib.Path | None = None) -> None:
-    """受付前の試行を正常見送り、または既存の実行記録の責任へ移す。"""
+def _launch_path() -> pathlib.Path | None:
     launch_id = os.environ.get(LAUNCH_ENV)
     if launch_id is None:
-        return
+        return None
     # 環境から任意パスを指定できないよう、生成したUUIDの形式だけを受け付ける。
     if len(launch_id) != 32 or any(character not in "0123456789abcdef" for character in launch_id):
         raise ValueError("振り返りの起動試行IDが不正")
+    return directory() / "launches" / f"{launch_id}.json"
+
+
+def launch_result(*, manifest: pathlib.Path | None = None) -> None:
+    """受付前の試行を正常見送り、または既存の実行記録の責任へ移す。"""
+    if (path := _launch_path()) is None:
+        return
     with locked():
-        path = directory() / "launches" / f"{launch_id}.json"
         LaunchAttempt.model_validate(read(path)).receipt(manifest).save(path)
+
+
+def launch_exited(code: int) -> None:
+    """短命なhookとは別に回収した受付前の終了状態を残す。"""
+    if (path := _launch_path()) is None:
+        return
+    with locked():
+        value = read(path)
+        attempt = LaunchAttempt.model_validate(value)
+        if attempt.status == LaunchStatus.STARTING:
+            LaunchAttempt.model_validate({**value, "exited": True, "exit_code": code}).save(path)
 
 
 def launch_notice(host: str) -> str | None:
@@ -524,11 +565,12 @@ def launch_notice(host: str) -> str | None:
                 if os.name == "nt"
                 else "cat -- " + shlex.quote(log_path)
             )
+            code = f" 終了コード{attempt.exit_code}" if attempt.exit_code is not None else ""
             if value.get("mode") == "meta":
                 retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
             else:
                 retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
-            failures.append(f"{value['host']} {value['event']}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
+            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
             attempt.notify().save(path)
     if not failures:
         return None

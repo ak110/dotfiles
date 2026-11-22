@@ -63,10 +63,8 @@ _FIXED_AUDIT_PATH_DIGESTS = {
 
 
 def _is_historical_record(source: pathlib.Path) -> bool:
-    """当時の配置を残す記録（対象版を固定した監査記録、障害の記録、撤去台帳）かを返す。"""
-    return source in _FIXED_AUDIT_PATH_DIGESTS or (
-        source.parent == pathlib.Path("docs/development") and source.name.startswith(("incidents-", "removed-mechanisms"))
-    )
+    """当時の配置を残す記録（対象版を固定した監査記録）かを返す。"""
+    return source in _FIXED_AUDIT_PATH_DIGESTS
 
 
 def _names_entry_work(root: pathlib.Path, reference: str, source: pathlib.Path) -> bool:
@@ -89,18 +87,6 @@ def _names_retired_skill(reference: str, skills: tuple[str, ...]) -> bool:
         or reference.startswith(f"{_PLUGIN_PREFIX}/skills/{skill}/")
         for skill in skills
     )
-
-
-_INCIDENTS_RUNTIME = pathlib.Path("docs/development/incidents-hooks-202606-20260914.md")
-
-
-_INCIDENTS_VALIDATION = pathlib.Path("docs/development/incidents-judgment-202608-20260901.md")
-
-
-_INCIDENTS_WORKFLOWS = pathlib.Path("docs/development/incidents-stagnation-202607-20260906.md")
-
-
-_INCIDENTS_REVIEW_SCOPE = pathlib.Path("docs/development/incidents-review-scope-202607-202608.md")
 
 
 _CONCEPTS_CONFIRMATION_DECISIONS = pathlib.Path("docs/development/concepts-confirmation-decisions.md")
@@ -142,12 +128,6 @@ _ALLOWED_UNRESOLVED_REFERENCE_COUNTS = {
         f"{_PLUGIN_PREFIX}:session-review-batch",
         pathlib.Path("agent-toolkit/skills/atk-mode/references/answer-transitions.md"),
     ): 1,
-    (f"{_PLUGIN_PREFIX}:agent-standards", _INCIDENTS_VALIDATION): 1,
-    (f"{_PLUGIN_PREFIX}:feedback-standards", _INCIDENTS_WORKFLOWS): 1,
-    (f"{_PLUGIN_PREFIX}:process-feedbacks", _INCIDENTS_WORKFLOWS): 1,
-    (f"{_PLUGIN_PREFIX}:reviewee-standards", _INCIDENTS_REVIEW_SCOPE): 1,
-    (f"{_PLUGIN_PREFIX}/scripts/hook.py", _INCIDENTS_RUNTIME): 1,
-    (f"{_PLUGIN_PREFIX}:exit-session", _INCIDENTS_RUNTIME): 5,
     (f"{_PLUGIN_PREFIX}:exit-session", pathlib.Path("docs/development/audit-records-session-records.md")): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS): 1,
     (f"{_PLUGIN_PREFIX}:exit-session", _SESSION_RECORDS_TEST): 2,
@@ -337,22 +317,16 @@ def test_python_reference_templates_and_globs_are_ignored(tmp_path: pathlib.Path
 
 
 def _known_legacy_references() -> dict[pathlib.Path, list[str]]:
-    """分割後の事故記録へ保持する既知の失効参照を返す。"""
-    return {
-        _INCIDENTS_RUNTIME: [
-            f"{_PLUGIN_PREFIX}/scripts/hook.py",
-            *[f"{_PLUGIN_PREFIX}:exit-session"] * 5,
-        ],
-        _INCIDENTS_VALIDATION: [f"{_PLUGIN_PREFIX}:agent-standards"],
-        _INCIDENTS_WORKFLOWS: [
-            f"{_PLUGIN_PREFIX}:feedback-standards",
-            f"{_PLUGIN_PREFIX}:process-feedbacks",
-        ],
-        _INCIDENTS_REVIEW_SCOPE: [f"{_PLUGIN_PREFIX}:reviewee-standards"],
-    }
+    """保存済みの起動標識を読むために保持する既知の失効参照を、許可の件数どおりに返す。"""
+    sources = (_SESSION_RECORDS, _SESSION_RECORDS_TEST)
+    by_source: dict[pathlib.Path, list[str]] = {source: [] for source in sources}
+    for (reference, source), count in _ALLOWED_UNRESOLVED_REFERENCE_COUNTS.items():
+        if source in by_source:
+            by_source[source].extend([reference] * count)
+    return by_source
 
 
-def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathlib.Path) -> None:
+def test_known_legacy_references_require_exact_counts(tmp_path: pathlib.Path) -> None:
     """既知の失効参照を過不足なく保持し、各参照の不足と超過を報告する。"""
     by_source = _known_legacy_references()
     for source, references in by_source.items():
@@ -374,32 +348,6 @@ def test_incident_history_requires_exact_known_legacy_references(tmp_path: pathl
             target.write_text("\n".join(excessive), encoding="utf-8")
             assert _unresolved_references(tmp_path, sources) == [(legacy, source)]
         target.write_text("\n".join(references), encoding="utf-8")
-
-
-def test_incident_history_rejects_different_unresolved_references(tmp_path: pathlib.Path) -> None:
-    """既知参照を別の失効起動名へ置換し、失効パスも加えた違反を報告する。"""
-    by_source = _known_legacy_references()
-    for current_source, current_references in by_source.items():
-        target = tmp_path / current_source
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(current_references), encoding="utf-8")
-    source = _INCIDENTS_VALIDATION
-    references = by_source[source].copy()
-    replaced = references.pop(0)
-    missing_invocation = f"{_PLUGIN_PREFIX}:missing"
-    missing_path = f"{_PLUGIN_PREFIX}/skills/missing/SKILL.md"
-    (tmp_path / source).write_text(
-        "\n".join([missing_invocation, missing_path, *references]),
-        encoding="utf-8",
-    )
-
-    unresolved = _unresolved_references(tmp_path, list(by_source))
-    assert unresolved == [(missing_invocation, source), (missing_path, source), (replaced, source)]
-    formatted = _format_unresolved(unresolved)
-    assert missing_invocation in formatted
-    assert missing_path in formatted
-    assert replaced in formatted
-    assert str(source) in formatted
 
 
 def _collect_references(root: pathlib.Path, sources: list[pathlib.Path]) -> list[tuple[str, pathlib.Path]]:

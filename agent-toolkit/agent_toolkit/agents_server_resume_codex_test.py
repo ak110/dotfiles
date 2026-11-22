@@ -348,7 +348,14 @@ async def test_send_message_preserves_child_wait_until_completion(
             await backend._handle_notification(
                 {
                     "method": "turn/completed",
-                    "params": {"threadId": session.session_id, "turn": {"id": session.turn_id, "status": "completed"}},
+                    "params": {
+                        "threadId": session.session_id,
+                        "turn": {
+                            "id": session.turn_id,
+                            "status": "completed",
+                            "items": [{"type": "agentMessage", "id": "wait", "text": f"待機中: {child}"}],
+                        },
+                    },
                 }
             )
             assert session.awaiting_auto_resume
@@ -364,14 +371,14 @@ async def test_send_message_preserves_child_wait_until_completion(
                     "turn": {
                         "id": session.turn_id,
                         "status": "completed",
-                        "items": [{"type": "agentMessage", "id": "final", "text": "子の結果を確認した"}],
+                        "items": [{"type": "agentMessage", "id": "final", "text": "状態: completed\n結果: 子の結果を確認した"}],
                     },
                 },
             }
         )
         result = await wait_task
-        assert result["agent_message"] == "子の結果を確認した"
-        assert "error" not in result
+        assert result["agent_message"] == "状態: completed\n結果: 子の結果を確認した"
+        assert "error" not in result, result
         assert client.turns == 3
         assert "agent_message" not in await _wait_with_timeout(manager, 0)
         assert session.result_delivered

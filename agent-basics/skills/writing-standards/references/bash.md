@@ -7,6 +7,10 @@ shellcheckが導入されている環境では、その診断に従う。
 
 ## 基本
 
+- ASCIIの設定キー・拡張子など機械向けの大小文字変換・比較にだけ`LC_ALL=C`を使う。
+  `${var^^}`・`${var,,}`、`declare -u`・`declare -l`、`nocasematch`を使う`[[ ]]`・`case`のほか、`tr`の文字クラス、`awk`の`toupper`・`tolower`、`sed`の大小文字変換、`grep -i`もロケールの影響を受ける。
+  外部コマンドは`LC_ALL=C tr ...`、組み込みは関数の`local LC_ALL=C`かサブシェルで範囲を限る。
+  スクリプト全体には適用せず、自然言語の表示にはユーザーの設定を使う。
 - シバンは`#!/usr/bin/env bash`にし、先頭で`set -euo pipefail`を宣言し、自身の場所は`BASH_SOURCE`から解決する。
 - `pipefail`が有効なパイプでは後段の`grep -q`・`grep -m`・`head`が残りを読まずに終了すると、前段が`SIGPIPE`で止まり、正常な一致でもパイプ全体が非0になることがある。
   後段が全入力を消費する形にするか、生成と検索を分けて生成の終了状態を先に確認する。

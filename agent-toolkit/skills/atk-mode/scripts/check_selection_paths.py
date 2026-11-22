@@ -52,18 +52,18 @@ _GLOB_CHARS = frozenset("*?[{")
 _COMPLETE_FILE_NAME_RE = re.compile(r"[^/]*[^/.]\.[A-Za-z0-9]+")
 
 
-def reflected_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+def reflected_paths(text: str, work_dir: pathlib.Path, *, declared_paths: frozenset[str] = frozenset()) -> set[str]:
     """WIファイルの全文から反映先パスの集合を返す。
 
     UWIはfrontmatterを除く本文全体、それ以外は`## 反映内容と反映先`の節を抽出の対象にする。
     """
     parsed = _wi_frontmatter.parse_frontmatter(_markdown_headings.normalize_newlines(text))
     if parsed is not None and parsed[0].get("type") == _UWI_TYPE:
-        return _explicit_paths(parsed[1], work_dir)
+        return _explicit_paths(parsed[1], work_dir, declared_paths)
     section = _section_text(text, _TARGET_SECTION)
     if section is None:
         return set()
-    return _explicit_paths(section, work_dir)
+    return _explicit_paths(section, work_dir, declared_paths)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -74,7 +74,7 @@ class _Segment:
     code: bool
 
 
-def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
+def _explicit_paths(text: str, work_dir: pathlib.Path, declared_paths: frozenset[str]) -> set[str]:
     """文章とインラインコードに明示されたリポジトリ相対パスの集合を返す。
 
     インラインコードは、内容全体が解決可能なパスの場合に空白を含めて1つの候補とし、非ASCIIの文字を含む
@@ -82,7 +82,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     直後に文字か数字の非ASCII文字が続く場合は、その位置から伸ばした文字列のうち作業ツリーに実在する最長のパスを候補とする。
     実在するパスが無く、ASCIIの部分が`/`で終わらず最後の要素に`.`も持たない場合（`docs/design/LLM`）は、
     パスの途中で終わった部分として採らない。
-    抽出結果は、作業ツリーに実在するパスか、親ディレクトリが実在する完全なファイル名の新設先に限る。
+    抽出結果は、作業ツリーに実在するパスか、実在する祖先を持つ完全なファイル名の新設先に限る。
     `/`を含む候補のうち、末尾が`/`のディレクトリ範囲は実在するディレクトリだけを採用する。
     実在しないファイルの候補は、追跡ファイルのパス末尾と1件だけ一致すればその追跡ファイルへ読み替え、
     それ以外は`_new_file_path`の新設先の条件で採る。
@@ -98,7 +98,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
         explicit_directory = False
         directory_particle = False
         last_end = 0
-        for start, end in _path_tokens(segments, work_dir):
+        for start, end in _path_tokens(segments, work_dir, declared_paths):
             candidate = _normalize_candidate(run[start:end])
             gap = run[last_end:start]
             if directory is not None and not (_LIST_GAP_RE.fullmatch(gap) or directory_particle and gap.strip() == "の"):
@@ -108,7 +108,7 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
                 directory = None
                 continue
             if "/" in candidate:
-                resolved = _repository_path(candidate, work_dir)
+                resolved = _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths)
                 if resolved is None:
                     directory = None
                     continue
@@ -133,19 +133,23 @@ def _explicit_paths(text: str, work_dir: pathlib.Path) -> set[str]:
     return paths
 
 
-def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path) -> list[tuple[int, int]]:
+def _path_tokens(segments: list[_Segment], work_dir: pathlib.Path, declared_paths: frozenset[str]) -> list[tuple[int, int]]:
     """段落を連結した文字列の中で、パス候補の開始と終了の位置を出現順に返す。"""
     tokens: list[tuple[int, int]] = []
     offset = 0
     for segment in segments:
         content = segment.text
+        candidate = content.strip()
         # グロブや波括弧展開を含むインラインコードは個別のパスを指さないため、文章と同じ規則で断片を除く。
         if (
             segment.code
-            and content.strip()
+            and candidate
             and not any(char in _GLOB_CHARS for char in content)
             and ("/" in content or "." in content)
-            and (_repository_path(content.strip(), work_dir) is not None or (work_dir / content.strip()).is_file())
+            and (
+                _repository_path(candidate, work_dir, allow_root_ancestor=candidate in declared_paths) is not None
+                or (work_dir / candidate).is_file()
+            )
         ):
             tokens.append((offset, offset + len(content)))
             offset += len(content)
@@ -188,7 +192,9 @@ def _is_complete_ascii_part(value: str) -> bool:
     return value.endswith("/") or "." in value.rsplit("/", 1)[-1]
 
 
-def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None) -> str | None:
+def _repository_path(
+    candidate: str, work_dir: pathlib.Path, *, abbreviated_name: str | None = None, allow_root_ancestor: bool = False
+) -> str | None:
     """`/`を含む候補を、実在するパス・読み替えた追跡ファイル・新設先のいずれかへ解決する。
 
     推測した親に実体が無い略記は元の名前を追跡ファイルの末尾と比べ、複数候補には明示を求める。
@@ -211,15 +217,27 @@ def _repository_path(candidate: str, work_dir: pathlib.Path, *, abbreviated_name
             "意図するファイルをリポジトリ相対パスで明示する",
             next_action="本文の略記を意図するファイルのリポジトリ相対パスへ直し、選定を再検証する",
         )
-    return _new_file_path(candidate, work_dir)
+    return _new_file_path(candidate, work_dir, allow_root_ancestor=allow_root_ancestor)
 
 
-def _new_file_path(candidate: str, work_dir: pathlib.Path) -> str | None:
-    """拡張子までそろった完全なファイル名で親ディレクトリが実在する候補を、新設先として返す。"""
-    name = candidate.rsplit("/", 1)[-1]
-    if _COMPLETE_FILE_NAME_RE.fullmatch(name) and (work_dir / candidate).parent.is_dir():
-        return candidate
-    return None
+def _new_file_path(candidate: str, work_dir: pathlib.Path, *, allow_root_ancestor: bool = False) -> str | None:
+    """実在するリポジトリ内の祖先から始まる完全な新設名を返す。"""
+    if _normalize_candidate(candidate) != candidate or not _COMPLETE_FILE_NAME_RE.fullmatch(candidate.rsplit("/", 1)[-1]):
+        return None
+    target = work_dir / candidate
+    try:
+        root = work_dir.resolve()
+        if not target.resolve().is_relative_to(root):
+            return None
+        for parent in target.parents:
+            if parent == work_dir:
+                break
+            if parent.exists() or parent.is_symlink():
+                return candidate if parent.is_dir() else None
+    except OSError, RuntimeError:
+        return None
+    # 上位ディレクトリが無い文字列はコマンドと区別できない。本文と選定に同じ個別パスを示す場合だけ認める。
+    return candidate if target.parent == work_dir or allow_root_ancestor else None
 
 
 def clear_caches() -> None:

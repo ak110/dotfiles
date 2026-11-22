@@ -173,7 +173,7 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
             "event": "result",
             "result": {
                 "status": "SUCCESS",
-                "response": "完了",
+                "response": "状態: completed\n結果: 完了",
                 "usage": {"total_tokens": 999999, "cache_read_tokens": 0},
             },
         },
@@ -185,9 +185,12 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
         + "for event in events:\n    print(json.dumps(event), flush=True)\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(
-        antigravity.AntigravityManager, "build_command", staticmethod(lambda *_args: [sys.executable, str(script)])
-    )
+
+    async def fake_command(*_args, **_kwargs):
+        return [sys.executable, str(script)]
+
+    monkeypatch.setattr(antigravity.AntigravityManager, "prepare_command", fake_command)
+    # APIキー方式の受理は専用試験で確認し、ここでは同じPythonから合成の出力を返す。
     monkeypatch.setattr(cli_turn, "_child_env", lambda _root: host_environ())
     async with antigravity.AntigravityManager() as backend:
         terminal = asyncio.Event()
@@ -202,7 +205,7 @@ async def test_antigravity_uses_latest_response_step_and_retains_terminal_usage(
             await terminal.wait()
             assert session.context_tokens == 3500
             assert session.context_window is None
-            assert session.agent_message == "完了"
+            assert session.agent_message == "状態: completed\n結果: 完了"
         finally:
             await backend.close()
             state.remove_terminal_listener(on_terminal)
@@ -403,8 +406,8 @@ async def test_claude_context_usage_updates_init_response_compaction_and_termina
             activity = session.updated_at
             assert session.output_updated_at is not None
             client.usage = {"totalTokens": 0, "rawMaxTokens": 1000000}
-            client.messages.put_nowait(ResultMessage("完了"))
-            await await_value(session, 0, "完了")
+            client.messages.put_nowait(ResultMessage("状態: completed\n結果: 完了"))
+            await await_value(session, 0, "状態: completed\n結果: 完了")
             assert session.result_available
             assert state.SessionResumeState.from_session(session).context_tokens == 0
             await backend.send_message(session, "続行")
@@ -438,7 +441,7 @@ async def test_claude_slow_context_request_keeps_receiver_and_closes_owned_task(
             finally:
                 self.finished.set()
 
-    client = Client([[SystemMessage("slow-context"), AssistantMessage("応答"), ResultMessage("完了")]])
+    client = Client([[SystemMessage("slow-context"), AssistantMessage("応答"), ResultMessage("状態: completed\n結果: 完了")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as backend:
         changed = asyncio.Event()
         state.add_touch_listener(changed.set)
@@ -449,7 +452,7 @@ async def test_claude_slow_context_request_keeps_receiver_and_closes_owned_task(
                 while not session.result_available:
                     changed.clear()
                     await changed.wait()
-            assert session.agent_message == "完了"
+            assert session.agent_message == "状態: completed\n結果: 完了"
             assert session.context_tokens is None
         finally:
             await backend.close()

@@ -1,43 +1,47 @@
 # 即時実装とマージ用AWIの投入
 
-`/atk-mode implement [入力]`で始める、対話セッション内で隔離worktreeを作って実装・検証・独立文脈レビューまで完了し、リモートブランチへpushしてマージ用AWIを登録する作業の手順書である。
+`/atk-mode implement [入力]`で始める作業の手順書である。
 この作業はユーザーの入力が名指しした時だけ選び、協調モードで動く。
-主作業ツリーへのマージ、ベースブランチへのpush、CIの監視、リリースは後続の`process-wi`（`process-loop`を含む）へ任せることで、別セッションや別マシンで`process-loop`が稼働していても競合せず、対話の文脈を保ったまま最短で取り込めるようにする。
+AWIの保存までは`add-awi-by-user`と同じ手順で行う。
+保存したAWIを保留したまま、対話セッション内の隔離worktreeで実装、検証、独立文脈レビューまで終える。
+最後にブランチをpushし、AWIをマージ用へ更新して保留を解く。
+主作業ツリーへのマージ、ベースブランチへのpush、CIの監視、リリースは、稼働中の`process-loop`と競合しないよう後続の`process-wi`へ任せる。
 
 ## 手順
 
-1. 要求を確定する。
-   - 原文の要求、対象リポジトリ、ベースブランチを確かめ、技術で決まる事項は現物を調べて自分で決める。
-   - ユーザー固有の判断（目的、要件、選好、認可）が残る事項だけを`agent-toolkit:atk-mode/playbooks/confirmation.md`に従って確認する。
-2. 隔離worktreeと作業ブランチを作る。
+1. `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`の「手順」と「起草と保存」を、AWIの保存まで行う。
+   同書「セッション境界」の成果物の制限は実装に適用せず、投入中の中止は同節の`--abort`に従う。
+   新規のAWIは`atk wi add --hold`で保留のまま保存し、既存のAWIを更新する場合は同書の保留を解かずに残す。
+2. 同書「起草と保存」の手順4で投入を1回だけ終える（登録0件なら本書はここで終わる）。
+   以降の手順は、保留したAWIごとに行う。
+3. 隔離worktreeと作業ブランチを作る。
    - 先に`git fetch origin <ベースブランチ>`を実行し、`origin/<ベースブランチ>`（系統を登録したリポジトリでは宛先の系統。リモート未設定時はローカルの`<ベースブランチ>`）の最新状態から一時ディレクトリへ隔離worktreeと作業ブランチを作る。
    - ブランチ名は対象プロジェクトの命名規則に従い、規則が無ければ`feat/<短い識別名>`や`fix/<短い識別名>`などの一般的なfeatureブランチ名を使う。
    - 例: `git worktree add -b feat/<短い識別名> "$(mktemp -d)" origin/<ベースブランチ>`。
    - 主作業ツリーは変更せず、対象リポジトリのプロジェクト規範に従って隔離worktree内の環境を準備する（`mise trust`、依存同期など）。
-3. 実装し、変更範囲を検証してcommitする。
-   - 対話の文脈と現物から変更内容と完成条件が定まるため、計画ファイルは原則として作らない。
+4. 実装し、変更範囲を検証してcommitする。
+   - 合意済みの方針を変える時は、`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7の確認条件を変更後の方針に当てはめ、本人の判断が必要なら変更に着手する前に合意を得直す。
+   - AWIの本文と現物から変更内容と完成条件が定まるため、計画ファイルは原則として作らない。
      設計の整理や中断再開の記録が要る大規模な変更に限り、`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
-   - 配布物の版数更新が必要なリポジトリでは、版数の種別と根拠をマージ用AWIへ書くか、規範に従って更新する。
-4. 独立文脈の実行レビューを受けて収束させる。
-   - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を起動する。
+   - 配布物の版数更新が必要なリポジトリでは、版数の種別と根拠をAWIへ書くか、規範に従って更新する。
+5. 独立文脈の実行レビューを受けて収束させる。
+   - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`WI`で保留中のAWIを渡して起動する。
    - 指摘を同じ隔離worktreeで修正・再検証してcommitし、未解決の指摘が0件になるまで収束させる。
-5. 一時ブランチをリモートへpushし、ローカルの一時資源を回収する。
+6. 一時ブランチをリモートへpushし、ローカルの一時資源を回収する。
    - 隔離worktreeがcleanであることを確かめ、`git push origin HEAD:refs/heads/<一時ブランチ名>`でリモートへpushする。
    - pushの成功と完全OIDを確かめた後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
-6. マージ用AWIを登録する。
-   - 実装と実行レビューを完了済みのため、`add-awi-by-user`の投入前レビューは行わない。
-   - 原稿の先頭に`source: implement`、`merge_branch: <push済みブランチ名>`、`merge_commit: <push済みHEADの完全OID>`のfrontmatterを書き、`atk wi add --body-file <原稿の絶対パス>`で保存する。
-   - 系統を登録したリポジトリでは`--target-branch <系統>`を付ける。
-   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式に従う。
-     H1直下に目的と変更の要点、`## 反映内容と反映先`に変更ファイル・変更内容・版数更新の要否を書く。
-     `## 調査結果と判断根拠`に検証コマンドと結果および実行レビューの収束結果、`## ユーザー指摘の逐語引用`に原文を書く。
-7. 完了を報告する。
-   - `agent-toolkit:atk-mode/playbooks/report-completion.md`に従い、登録したマージ用AWIのファイル名、pushしたブランチ名とcommit OID、検証と実行レビューの結果、回収した一時資源を報告する。
+7. AWIをマージ用へ更新して保留を解く。
+   - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
+   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
+   - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
+8. 完了を報告する。
+   - `agent-toolkit:atk-mode/playbooks/report-completion.md`に従い、マージ用AWIのファイル名、pushしたブランチ名とcommit OID、検証と実行レビューの結果、回収した一時資源を報告する。
 
 ## 中止と後始末
 
-登録前にユーザーが中止した時は、作成した隔離worktree、一時ディレクトリ、ローカルの一時ブランチを削除し、リモートへpush済みなら`git push origin --delete <一時ブランチ名>`も実行する。
+ユーザーが中止した時は、作成した隔離worktree、一時ディレクトリ、ローカルの一時ブランチを削除し、リモートへpush済みなら`git push origin --delete <一時ブランチ名>`も実行する。
+本書で新規に保存して保留中のAWIは`atk wi rm <ファイル名>`で削除し、更新した既存のAWIは、本書のためにinboxから保留した項目だけ`atk wi unhold`で戻し、元から保留だった項目は保留のまま残す。
 
 ## マージ用AWIの処理
 

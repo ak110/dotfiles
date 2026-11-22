@@ -4,6 +4,12 @@
 
 `agents_server`はengineとしてAntigravity CLI（`agy`）を持つ。
 
+委譲起動は`modelProvider: gemini`の明示選択、子プロセスに渡る`GEMINI_API_KEY`、対応版の3条件を満たす場合だけ行う。
+各turnでAPIキー方式を起動引数に固定する。
+版数確認にはキーを渡さず、個人ログインで再試行しない。
+[公式FAQ](https://antigravity.google/docs/faq)と[CLI認証の説明](https://antigravity.google/docs/install?tab=cli)（2026年11月22日確認）は、個人プランの第三者ラッパーとGemini APIへの直接認証を区別する。
+個別のラッパーに対する承認とは扱わない。
+
 工程別モデル設定とpresetへは加えない。
 Antigravity CLIは日本語の技術文書の推敲だけを担い、Claude CodeとCodexと同格の常用engineとして扱わないためである。
 委譲先が失敗で終了した場合は、共通の`cli_turn.py`から継承する`unavailable_reason`が標準エラー出力か失敗の本文を除外理由として返し、記録した除外理由は全てそのengineを除外する根拠になる。

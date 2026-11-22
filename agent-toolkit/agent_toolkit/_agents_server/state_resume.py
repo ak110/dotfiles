@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from agent_toolkit._agents_server import turn_state
 from agent_toolkit._agents_server.input_validation import validate_prompt
 from agent_toolkit._agents_server.logging_config import redact_diagnostic_values
-from agent_toolkit._agents_server.result_projection import nonempty_error
-from agent_toolkit._common import session_registry
+from agent_toolkit._agents_server.result_projection import nonempty_error, with_result_next_action
+from agent_toolkit._common import session_registry, startup_features
 
 if TYPE_CHECKING:
     from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, SessionState
@@ -159,6 +159,7 @@ class SessionResumeState:
     claude_role: str | None = None
     model_type: str | None = None
     launch_kind: LaunchKind = "delegate"
+    startup_profile: startup_features.StartupProfile | None = None
     # `label`・`prompt`・`created_at`は`session_registry.LaunchInfo`の項目であり、再開時はその定義から写す。
     label: str = ""
     prompt: str = ""
@@ -193,6 +194,7 @@ class SessionResumeState:
             cwd=session.cwd,
             model_type=session.model_type,
             launch_kind=session.launch_kind,
+            startup_profile=session.startup_profile,
             **session_registry.LaunchInfo.of(session).as_kwargs(),
             started_at=session.started_at,
             updated_at=session.updated_at,
@@ -254,6 +256,16 @@ def has_uncollected_result(session: SessionState | SessionResumeState, result_co
     if session.finalized_at is None or session.result_delivered:
         return False
     return result_consumed is None or not result_consumed
+
+
+def previous_result_payload(session: SessionState) -> dict[str, Any]:
+    """未回収の旧turnだけを継続要求の応答へ渡す。"""
+    if session.result_delivered:
+        return {}
+    result: dict[str, Any] = {"status": session.status, "agent_message": session.agent_message}
+    if nonempty_error(session.error):
+        result["error"] = session.error
+    return PreviousResult(with_result_next_action(result, session.label), SessionResumeState.from_session(session))
 
 
 def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[str, Any]:

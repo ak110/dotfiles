@@ -52,12 +52,13 @@ class CodexRepliesMixin:
                 return {"delivery": delivery, "previous_result": {}, **status}
             if session.terminal:
                 previous_result = self._capture_result(session)
+                previous_turn = session.turn_seq
                 delivery, status, error = await self._start_reply_locked(session, prompt)
                 if error is not None and delivery not in {"reply_failed", "reply_ambiguous"}:
                     raise error from None
                 result = {
                     "delivery": delivery,
-                    "previous_result": previous_result,
+                    "previous_result": previous_result if session.turn_seq != previous_turn else {},
                     **status,
                 }
                 return result
@@ -86,12 +87,13 @@ class CodexRepliesMixin:
                 outcome = await self._wait_after_steer_rejection(session, expected_turn_id, client)
                 if outcome == "completed":
                     previous_result = self._capture_result(session)
+                    previous_turn = session.turn_seq
                     delivery, status, error = await self._start_reply_locked(session, prompt)
                     if error is not None and delivery not in {"reply_failed", "reply_ambiguous"}:
                         raise error from None
                     return {
                         "delivery": delivery,
-                        "previous_result": previous_result,
+                        "previous_result": previous_result if session.turn_seq != previous_turn else {},
                         **status,
                     }
                 raise exc from None
@@ -156,7 +158,10 @@ class CodexRepliesMixin:
         if client is None:
             failed = self._clients.get(session.session_id)
             if failed is None or getattr(failed, "reader_failure", None) is None:
-                raise AppServerError("Codex App Server client is unavailable for interrupt")
+                raise ActionableError(
+                    "Codex App Server client is unavailable for interrupt",
+                    next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
+                )
             await self._wait_failure_published(session)
             return
         turn_id = session.turn_id
@@ -182,7 +187,7 @@ class CodexRepliesMixin:
             # killの配送期限による取消。止まった段階と接続の状態が無いと、配送未確定の原因を切り分けられない。
             _LOG.warning(
                 "Codexのturn/interruptを完了前に取り消しました: session_id=%s turn_id=%s stage=%s connection=%s。"
-                "stageが応答待ちならApp Serverの無応答、送出確認待ちでbacklogが上限なら受信処理の停滞で止まっている",
+                "backlogが上限なら受信処理が停滞している。送出確認待ちだけでは配送の有無は分からない",
                 session.session_id,
                 turn_id,
                 stage,
@@ -204,8 +209,13 @@ class CodexRepliesMixin:
         prompt: str,
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         gate = service_turns.current()
-        async with gate.admit(new_turn=True, session_id=session.session_id) if gate else contextlib.nullcontext():
-            return await self._start_reply_accepted(session, prompt)
+        session.reply_start_pending = True
+        try:
+            async with gate.admit(new_turn=True, session_id=session.session_id) if gate else contextlib.nullcontext():
+                return await self._start_reply_accepted(session, prompt)
+        finally:
+            session.reply_start_pending = False
+            await self._notify_waiters()
 
     async def _start_reply_accepted(
         self: CodexManager,
@@ -273,9 +283,11 @@ class CodexRepliesMixin:
         except Exception as exc:
             if held is not None:
                 held.restore(session)
-                await self._notify_waiters()
-                return "reply_failed", session.public_status(), exc
-            await self._mark_failed(session, exc)
+            elif session.status != previous_status:
+                session.status = previous_status
+                session.touch()
+            # まだ新しいturnを所有していない。失敗はこの送信だけに返し、旧結果はwaitへ残す。
+            await self._notify_waiters()
             return "reply_failed", session.public_status(), exc
         try:
             await self._start_turn(session, prompt, client)

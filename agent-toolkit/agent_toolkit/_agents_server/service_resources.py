@@ -229,7 +229,15 @@ class DataclassCodec:
         if kind == "dataclass":
             cls = self._types[value["type"]]
             fields = value["fields"]
-            if set(fields) != set(self._field_names(cls)):
+            allowed = set(self._field_names(cls))
+            declared = (field for field in dataclasses.fields(cast(Any, cls)) if field.name in allowed)
+            # SDKの更新で省略できるフィールドが増えても、旧版が保存したイベントを読めるようにする。
+            required = {
+                field.name
+                for field in declared
+                if field.default is dataclasses.MISSING and field.default_factory is dataclasses.MISSING
+            }
+            if not required <= set(fields) <= allowed:
                 raise ValueError("SDKイベントのフィールドが一致しません")
             return cls(**{key: self.decode(item) for key, item in fields.items()})
         raise ValueError("未対応のcodec種別です")

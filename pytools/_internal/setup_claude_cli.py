@@ -20,9 +20,9 @@ _COMMAND_TIMEOUT = 300.0
 
 
 def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutcome:
-    """公式ネイティブ版を導入または更新し、確認後に旧npm版を移行する。
+    """公式ネイティブ版を導入または更新し、確認後に旧npm版を案内する。
 
-    取得・導入・更新と確認の失敗は警告を出力してスキップと数え、旧npm版の撤去の失敗は失敗と数える。
+    取得・導入・更新と確認の失敗は警告を出力してスキップと数える。
     """
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
@@ -31,7 +31,7 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         logger.info(
             log_format.format_status(
                 "claude",
-                f"導入と移行を次回へ延期: {setup_cli_common.describe_processes(running, 'Claude Code')}。"
+                f"導入を次回へ延期: {setup_cli_common.describe_processes(running, 'Claude Code')}。"
                 "Claude Codeを終了して`update-dotfiles`を再実行する",
             ),
             extra=log_format.SHOW,
@@ -54,19 +54,12 @@ def run(client: httpx.Client | None = None) -> post_apply_outcome.PostApplyOutco
         logger.warning(
             log_format.format_status(
                 "claude",
-                f"正規版を確認できないため旧版を保持: {common.format_cli_error(verification)}。`update-dotfiles`を再実行する",
+                f"正規版を確認できない: {common.format_cli_error(verification)}。`update-dotfiles`を再実行する",
             ),
         )
         return post_apply_outcome.PostApplyOutcome()
     setup_cli_common.prepend_path(launcher.parent)
-    try:
-        setup_cli_common.migrate_npm_launchers("claude", _PACKAGE, launcher, launcher.parent.parent)
-    except RuntimeError as error:
-        return post_apply_outcome.PostApplyOutcome(
-            changed=True,
-            failure=str(error),
-            next_action="問題を解消した後に`update-dotfiles`を再実行する。",
-        )
+    setup_cli_common.warn_about_npm_launchers("claude", _PACKAGE, launcher, launcher.parent.parent)
     return post_apply_outcome.PostApplyOutcome(changed=True)
 
 

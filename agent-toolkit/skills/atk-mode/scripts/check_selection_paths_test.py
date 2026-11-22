@@ -450,3 +450,26 @@ def test_non_ascii_write_paths_do_not_require_lane_overlap_rationale(
 
 
 __all__ = ["fixture_env"]
+
+
+@pytest.mark.parametrize("directory", ["src", "new-top", "new top", "new src", "new -- dir"])
+def test_public_selection_accepts_new_directories(tmp_path, env, capsys, directory):
+    repo, notes = env
+    candidate = f"{directory}/new/inner/tool.py"
+    _awi(notes, "a.md", f"`{candidate}`を追加する。")
+    path = _write_selection(tmp_path / "selection.yaml", [{"WI": "a.md", "レーン": "lane-01", "書込対象": [candidate]}])
+    assert _dispatch(str(path), "--work-dir", str(repo)) == 0
+    assert not (repo / directory / "new").exists()
+    capsys.readouterr()
+    _write_files(repo, f"{directory}/new")
+    assert _dispatch(str(path), "--work-dir", str(repo)) != 0
+
+
+@pytest.mark.parametrize("command", ["git diff -- src/known.py", "python3 src/known.py"])
+def test_new_path_recognition_preserves_command_argument(env, command):
+    repo, notes = env
+    _write_files(repo, "src/known.py")
+    _awi(notes, "a.md", f"`{command}`で確認する。")
+    body = (notes / "processing/a.md").read_text(encoding="utf-8")
+
+    assert check_selection.reflected_paths(body, repo) == {"src/known.py"}

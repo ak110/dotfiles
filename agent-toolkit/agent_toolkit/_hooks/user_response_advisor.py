@@ -159,11 +159,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         notice.resolve_notice(session_id, "user_response_advisor", "evaluate", subject="main")
         return "approve", ""
     _stop_session.append_stop_log(session_id, "notify_missing_user_response", {})
-    delivery = (
-        "応答本文"
-        if is_codex_payload(payload)
-        else "現在の入力に端末modが添えた案内か、この会話のツール説明で指定された`send_to_user`（指定の無い環境では応答本文）"
-    )
+    delivery = "応答本文" if is_codex_payload(payload) else "`send_to_user`（使えない時は応答本文）"
     body = _notice(
         "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
         fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けよ。",

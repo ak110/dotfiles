@@ -10,6 +10,7 @@ import pytest
 
 from agent_toolkit._agents_server import manager, record_paths, session_handoff, state
 from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import install_backend
 from agent_toolkit._testing.codex_provider_support import (
     ProviderClient,
@@ -78,8 +79,11 @@ async def test_cancel_before_api_resume_keeps_provider(monkeypatch, tmp_path):
         restored = await root._restore_registry_session("provider-thread")
         assert restored is not None
         pending, _ = root._start_resume(restored, "未完了の続き", None)
-        session, accepted = await root._cancel_pending_resume(pending, 1)
-        assert not accepted and session.status == "interrupted"
+        with pytest.raises(ActionableError, match="中断要求は未配送"):
+            await root._cancel_pending_resume(pending, 1)
+        assert "provider-thread" not in root.sessions
+        session = root.stopped_sessions["provider-thread"]
+        assert session.turn_seq == restored.turn_seq
         assert session.codex_model_provider == "paid-b"
         assert session.codex_subscription_provider == "openai"
 

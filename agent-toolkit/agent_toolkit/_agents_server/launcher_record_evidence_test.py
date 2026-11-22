@@ -126,7 +126,7 @@ async def test_task_record_reaches_public_evidence(
             return record_paths.SessionRecord(engine, (records[session_id],))
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
-        request = "request=/repo=awi=対象発話の取得"
+        request = "request=github.com/example/repository=awi=対象発話の取得"
         selected = "direct-parent" if source == "delivered" else "ancestor" if source == "ancestor" else "other"
         saved_input: pathlib.Path | None = None
         if source == "saved-position":
@@ -236,7 +236,8 @@ async def test_task_record_reaches_public_observation_evidence(
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
         started = await _start_task(
             tmp_path,
-            "request=/repo=awi=観測の裏付け取得\n確定済みの観測: rg --filesの結果はa.pyとb.py。入力特徴は/isolated/repo。",
+            "request=github.com/example/repository=awi=観測の裏付け取得\n"
+            "確定済みの観測: rg --filesの結果はa.pyとb.py。入力特徴は/isolated/repo。",
         )
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
@@ -319,7 +320,7 @@ async def test_task_starts_with_record_shortage_without_substitute(
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
         monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-        started = await _start_task(tmp_path, "request=/repo=awi=記録を取得しない観測")
+        started = await _start_task(tmp_path, "request=github.com/example/repository=awi=記録を取得しない観測")
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
         assert context["status"] == availability

@@ -10,7 +10,7 @@ description: >
 # atk-mode
 
 「作業と手順書」で条件に当たる規範資料を全文読む。
-資料は本書からの相対パスで解決する。
+資料は本書のディレクトリから解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で名指す。
 Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
@@ -20,14 +20,15 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 判断の原則
 
-判断に使う原則の本文は、その判断の前に`agent-basics:writing-standards`の`references/`から読む。
+判断に使う原則の本文を、判断の前に`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
    ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
 2. 品質が先、費用と時間はその内側（`quality-principles-qcd.md`）: 目的に不要な工程は省き、根拠を報告する。
 3. 観測したことだけを事実として言う（`quality-principles-facts.md`）: 他者の報告・推論・仮説を分け、出所を示す。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
-5. 逸脱は情報である（`quality-principles-deviation.md`）: 逸脱は先送りせず、対処前に`agent-basics:bugfix`を起動する。
+5. 逸脱は情報である（`quality-principles-deviation.md`）: 逸脱に気付いたら対処前に`agent-basics:bugfix`を起動する。
+   同じ前提の修正が2回落ちたら前提を書き出して確かめる。
 6. 作る者と確かめる者を分ける（`quality-principles-verification.md`）。
 7. 始めた仕事は自分で完了まで担う（`quality-principles-ownership.md`）。
 8. 読み手の文脈で書く（`quality-principles-readers.md`）。
@@ -46,7 +47,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
   ユーザーが確定した目的、要件、観測される結果を変えるには、新しいユーザーの判断が要る。
 - 秘匿値は、出力、記録、WI、報告から除く。
 - 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
-- 公開契約（`atk`コマンド・出力、MCPツール名、WI形式・frontmatter、役割文書の入出力）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
+- 公開契約（`atk`コマンド・出力、MCPツール名、WI形式・frontmatter、役割文書の入出力）の既存の形・意味は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる（要件に要る互換の追加は自ら決める）。
 - 認可を伴う作業（`add-awi-by-user`、`implement`、`process-wi`、`process-loop`）は、ユーザーか`atk run-skill`・`atk wi process-loop`の起動入力が名指しした時だけ選ぶ。
   自己起動の引数は手順書選びに限る。
 - `process-wi`・`process-loop`の実行中か、起動元が`atk run-skill`なら自律モードとし、それ以外は協調モードとする。
@@ -57,7 +58,6 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 - 不良は同じセッションで是正する。
 - 優先順はユーザーの目的・要件、硬い制約、QCD、規範。
   明らかにQCDを損なう規範からは外れ、報告する。
-- 再発防止は規範追加より先に削除・簡素化・検査や構造を比べる。
 - ユーザー向け本文・成果物は日本語の常体で書く（識別子・コマンド・逐語引用は原表記）。
 - 成果物・行動・説明への指摘・訂正・是正要求・異議（疑問形も）に限り、調査・修正・再評価前の応答冒頭に「指摘の理解」（問題と要求を論点別に自分の言葉で箇条書きにし、原文からの理解と補った前提を分ける）を置く。
 
@@ -76,7 +76,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | `export-session` | 会話ログ・セッション履歴の出力を求められた時 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
 
-一般の作業でも操作・判断の前に該当する規範資料を全文読み、スキルを起動する。
+一般作業も操作・判断前に該当資料を通読し、スキルを起動する。
 
 | 操作・判断 | 読む資料 |
 | --- | --- |
@@ -89,7 +89,8 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | WIの状態・依存・保留、由来と承認、回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
 | 委譲の要否、起動、待機、受領、継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
-| ホスト固有の操作（送達、質問、ターンの終え方） | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
+| 委譲・実行のモデル選定 | `references/model-settings.md` |
+| ホスト別のコード実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
 | 背景実行、待機、プロセスの終了、長い出力、一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
 | 検証の起動と記録 | `playbooks/verification.md` |
@@ -102,15 +103,12 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 | 返答・質問・文章、設計、実装、テスト | `agent-basics:writing-standards`（無ければ`references/quality-standards.md`） |
 | レビュー、実行での確認、検索 | `agent-basics:review-standards`、`agent-basics:check-execution`、`agent-basics:search` |
 
-## 委譲
-
-委譲・実行時は`references/model-settings.md`を全文読み、「モデル選定と判断の偏り」に従う。
-
 ## 報告に含める項目
 
 回答・成果物は`playbooks/main-reporting.md`「ユーザー向け発話ルール」に従う。
 
-成果と到達状態、確認範囲（原則6で区分）、依頼外の変更・未達・見送りの理由、ユーザー判断事項、適用手順書・原則名を報告する。
+成果と到達状態、確認範囲（原則6で区分）、依頼外の変更・未達・見送りの理由、ユーザー判断事項、適用手順書を報告する。
+判断を変えた原則は名前と変えた選択を対で書く（読んだ原則だけ）。
 
 ## 会話の圧縮の後
 

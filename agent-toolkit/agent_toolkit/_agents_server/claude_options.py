@@ -24,7 +24,7 @@ from agent_toolkit._agents_server.launch_prompts import (
 from agent_toolkit._agents_server.state import LaunchKind
 from agent_toolkit._common import claude_connection as connection_settings
 from agent_toolkit._common import delegated_session as _delegated_session
-from agent_toolkit._common import plugin_environment, runtime_environment
+from agent_toolkit._common import plugin_environment, runtime_environment, startup_features
 
 _ENV_EMIT_SESSION_STATE_EVENTS = "CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"
 
@@ -34,7 +34,7 @@ _EffortLevel = Literal["low", "medium", "high", "xhigh", "max"]
 
 # 軽量起動の組込ツール。探索の読み取り専用性はプロンプトで指示する。
 _LAUNCH_TOOLS: dict[str, list[str]] = {
-    "explore": ["Read", "Glob", "Grep", "Bash"],
+    "explore": ["Read", "Glob", "Grep", "Bash", "WebSearch", "WebFetch"],
     "shell": ["Bash", "Read"],
     "write": ["Read", "Write", "Edit", "Glob", "Grep"],
 }
@@ -93,6 +93,7 @@ def _build_options(
     connection_kind: str = "inherit",
     isolation_env_files: tuple[str, ...] = (),
     handoff_prompt: str = "",
+    startup_profile: startup_features.StartupProfile | None = None,
 ) -> Any:
     """起動区分ごとの自前システム指示と委譲先の印を持つSDKオプションを組む。
 
@@ -111,6 +112,7 @@ def _build_options(
     """
     from claude_agent_sdk import ClaudeAgentOptions
 
+    profile = startup_features.effective(launch_kind, startup_profile)
     plugin_root = plugin_roots.SERVER_PLUGIN_ROOT
     cli_env = plugin_environment.cli_environment(plugin_root, runtime_environment.environment())
     env = {
@@ -133,7 +135,7 @@ def _build_options(
     # 通常起動は配下のサブエージェントへユーザー設定ファイルの指定が届かないため、1時間を明示する。
     # 前提が成立しなくなった場合は、軽量起動で連続する要求の間隔が5分を超える事象、または通常起動の配下サブエージェントが
     # 1時間で書き込む事象を、セッション記録の`message.usage.cache_creation`から観測できる。
-    lightweight = launch_kind in LIGHTWEIGHT_LAUNCH_KINDS
+    lightweight = profile == "lightweight"
     if lightweight:
         env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
         env["CLAUDE_CODE_PROMPT_CACHE_TTL"] = "5m"
@@ -181,8 +183,9 @@ def _build_options(
             skills=[],
             disallowed_tools=["Skill"],
             tools={"type": "preset", "preset": "claude_code"},
-            allowed_tools=_LAUNCH_ALLOWED_TOOLS[launch_kind],
         )
+    if launch_kind in LIGHTWEIGHT_LAUNCH_KINDS:
+        options["allowed_tools"] = _LAUNCH_ALLOWED_TOOLS[launch_kind]
     if launch_kind == "explore":
         # 起動定義はpluginのSSOTを使い、検索を担うpyfltrを軽量起動へ渡す。
         # pyfltrの読取用途はプロンプトが定め、個別ツールの許可リストは設けない。
@@ -192,6 +195,8 @@ def _build_options(
         options["mcp_servers"] = {"pyfltr": pyfltr}
         options.setdefault("extra_args", {}).update({"permission-prompts": "none"})
     with contextlib.ExitStack() as settings_owner:
+        if profile != "full":
+            options.setdefault("extra_args", {})["no-chrome"] = None
         options["settings"] = claude_settings.merge_settings(
             _parent_settings(),
             env,
@@ -202,6 +207,7 @@ def _build_options(
             cwd=cwd,
             project_settings=not lightweight,
             drop_parent_env=frozenset({_delegated_session.HANDOFF_PATH_ENV}),
+            startup_overrides=startup_features.CLAUDE_SETTINGS if profile != "full" else None,
         )
         if isinstance(options["settings"], claude_settings.SettingsFile):
             settings_owner.enter_context(options["settings"])

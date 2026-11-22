@@ -1,6 +1,6 @@
 """導入済みのCodex公式実行体を選ぶ。
 
-非対話の公開コマンドは`bin/codex`経由でhookから繰り返し起動されるため、
+補助入口からの非対話実行は、復旧用の中継を起動せずに公式の実行体に渡すため、
 起動管理（`pytools/codex_launcher.py`）が実行体を選ぶ処理は復旧用の依存（psutil・pydanticなど）を読み込まない。
 導入処理（`setup_codex_cli.py`）も同じ選択を使い、導入先と起動先の判定を1か所に保つ。
 """
@@ -37,7 +37,7 @@ def visible_bin_dir() -> Path:
 
 
 def wrapper_launchers() -> set[Path]:
-    """dotfilesが配置したCodexの起動管理（`bin/codex`と`bin/codex.cmd`）を返す。"""
+    """移行前のdotfilesラッパーを実体の選択対象から外すためのパスを返す。"""
     root = common.find_dotfiles_root()
     return {root / "bin" / name for name in ("codex", "codex.cmd")} if root is not None else set()
 

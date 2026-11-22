@@ -295,7 +295,10 @@ async def _start_allocation_task(cwd: pathlib.Path) -> dict[str, Any]:
     return await mcp_tools.start(
         cwd=str(cwd),
         subagent_md_path="add-wi",
-        extra_params={"投入する要求": "request=/repo=awi=配分の試験", "引き継ぎ記録先": str(cwd / "handoff.md")},
+        extra_params={
+            "投入する要求": "request=github.com/example/repository=awi=配分の試験",
+            "引き継ぎ記録先": str(cwd / "handoff.md"),
+        },
     )
 
 
@@ -350,7 +353,7 @@ def recovered_weekly_subscription(
 @pytest.mark.usefixtures("recovered_weekly_subscription")
 async def test_recovered_weekly_subscription_starts_claude(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = agents_server_support.FakeClaudeClient(
-        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("完了")]]
+        [[agents_server_support.SystemMessage("recovered"), agents_server_support.ResultMessage("状態: completed\n結果: 完了")]]
     )
     async with agents_server_support.claude_manager(monkeypatch, client) as (current, _backend):
         agents_server_support.install_backend(current, "codex", UnavailableProbeBackend(current.sessions, "codex"))
@@ -741,7 +744,10 @@ async def test_task_start_delivers_launcher_record_without_manual_input(
             cwd=str(tmp_path),
             subagent_md_path=str(role),
             model_type="claude:test/medium",
-            extra_params={"投入する要求": "request=/repo=awi=記録の取得", "引き継ぎ記録先": str(tmp_path / "handoff.md")},
+            extra_params={
+                "投入する要求": "request=github.com/example/repository=awi=記録の取得",
+                "引き継ぎ記録先": str(tmp_path / "handoff.md"),
+            },
         )
         match = re.search(
             r'<atk-auto source="agents-server" kind="launcher-record">\n(.*?)\n</atk-auto>',

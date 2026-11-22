@@ -82,7 +82,7 @@ def test_stop_notifies_unanswered_human_input(
     assert 'source="user_response_advisor"' in output["hookSpecificOutput"]["additionalContext"]
     assert "`send_to_user`" in output["hookSpecificOutput"]["additionalContext"]
     assert "回答・判断・確認結果" in output["hookSpecificOutput"]["additionalContext"]
-    assert "無い環境では応答本文" in output["hookSpecificOutput"]["additionalContext"]
+    assert "使えない時は応答本文" in output["hookSpecificOutput"]["additionalContext"]
 
 
 @pytest.mark.parametrize("human", [_HUMAN, _QUEUED])

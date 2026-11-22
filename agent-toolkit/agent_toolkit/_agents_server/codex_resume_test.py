@@ -15,7 +15,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server import notice_inbox, state
 from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import inherited_venv, state_paths
+from agent_toolkit._common import inherited_venv, startup_features, state_paths
 from agent_toolkit._testing.agents_server_support import (
     BlockingResumeCodexClient,
     CompletingInterruptClient,
@@ -156,6 +156,7 @@ async def test_codex_turn_start_response_loss_remains_running_until_completion(
         session = await manager.start("調査", str(tmp_path))
         assert session.status == "running"
         assert session.turn_start_ambiguous is True
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",
@@ -186,6 +187,7 @@ async def test_codex_steer_rejection_waits_for_terminal_race_then_replies(
         send_task = asyncio.create_task(manager.send_message(session, "続行"))
         await client.steer_called.wait()
         assert send_task.done() is False
+        session.agent_message = "状態: completed"
         await manager._handle_notification(
             {
                 "method": "turn/completed",
@@ -300,6 +302,60 @@ async def test_codex_backend_send_supports_terminal_reply_without_result_flag(tm
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
+@pytest.mark.parametrize("delivered", [False, True])
+async def test_reply_resume_error_does_not_replace_old_turn(tmp_path, monkeypatch, delivered):
+    async with subject.AppServerManager() as manager:
+        client = FakeCodexClient()
+        session = state.SessionState("thread-codex", str(tmp_path), engine="codex")
+        session.turn_id = "turn-old"
+        _complete(session, message="Codex結果")
+        session.result_delivered = delivered
+        previous_seq = session.turn_seq
+        manager.sessions[session.session_id] = session
+        manager._clients[session.session_id] = cast(Any, client)
+        monkeypatch.setattr(manager, "_resume_thread", AsyncMock(side_effect=OSError("接続失敗")))
+
+        response = await manager.send_message(session, "続行")
+        assert response["delivery"] == "reply_failed"
+        assert response["previous_result"] == {}
+        assert session.status == "completed" and session.turn_seq == previous_seq
+        assert session.agent_message == "Codex結果" and session.result_delivered is delivered
+        assert not any(method == "turn/start" for method, _ in client.requests)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_wait_sees_reply_initialization_after_old_result_delivered(tmp_path, monkeypatch):
+    async with (
+        server_manager.AgentsServerManager(status_writer=None) as manager,
+        subject.AppServerManager(manager.sessions, manager._condition) as backend,
+    ):
+        install_backend(manager, "codex", backend)
+        session = state.SessionState("thread-codex", str(tmp_path), engine="codex")
+        session.turn_id = "turn-old"
+        _complete(session)
+        session.result_delivered = True
+        manager.sessions[session.session_id] = session
+        backend._clients[session.session_id] = cast(Any, FakeCodexClient())
+        entered, resume = asyncio.Event(), asyncio.Event()
+
+        async def resume_thread(*_args: Any) -> None:
+            entered.set()
+            await resume.wait()
+
+        monkeypatch.setattr(backend, "_resume_thread", resume_thread)
+        monkeypatch.setattr(manager, "_resolve_wait_timeout", AsyncMock(return_value=0))
+        reply = asyncio.create_task(backend.send_message(session, "続行"))
+        try:
+            await asyncio.wait_for(entered.wait(), 2)
+            assert (await manager.wait())["status"] == "running"
+        finally:
+            resume.set()
+            await asyncio.wait_for(reply, 2)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
 async def test_shared_manager_integrates_codex_start_and_send_message(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
@@ -382,7 +438,13 @@ async def test_shared_manager_send_message_resumes_expired_codex_thread(
                 "serviceTier": "default",
                 "model": "gpt-test",
                 "modelProvider": "openai",
-                "config": {"bypass_hook_trust": True, "features": {"context_management": {"experimental_mode": False}}},
+                "config": {
+                    "bypass_hook_trust": True,
+                    "features": {
+                        "context_management": {"experimental_mode": False},
+                        **dict.fromkeys(startup_features.CODEX_DISABLED, False),
+                    },
+                },
                 "developerInstructions": subject._developer_instructions("delegate"),  # noqa: SLF001
             },
         )

@@ -417,20 +417,8 @@ def main(
         _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
-    try:
-        sweep_result = _managed_temp.sweep_managed_temp(now=now)
-    except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        sweep_result = _managed_temp.SweepResult([], ((_managed_temp.temp_root_path(), str(error)),))
-    # 回収を判断できない委譲先には、所有しない領域の警告を出力しない。
-    if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
-        for path, reason in sweep_result.failed:
-            _outcome.report_persistent_warning(
-                f"managed-tempの対象を自動削除できなかった: {path}: {reason}",
-                next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
-            )
-    # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。
-    if sweep_result.pressure is not None:
-        _report_space_pressure(sweep_result.pressure)
+    if not _is_query_without_sweep(args):
+        _sweep_before_command(now)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
         _wi_cli.validate_args(args)
@@ -451,6 +439,45 @@ def main(
             _outcome.report_failure(_git_sync.git_timeout_reason(error), next_action=_git_sync.GIT_TIMEOUT_NEXT_ACTION)
         exit_code = 1
     sys.exit(exit_code)
+
+
+def _is_query_without_sweep(args: argparse.Namespace) -> bool:
+    """照会は全領域の掃引を待たず、未分類の操作と更新側は従来どおり回収を先に行う。"""
+    match args.command:
+        case "wi":
+            return args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args)
+        case "plans":
+            return args.plans_subcommand == "list"
+        case "review-table":
+            return args.review_table_subcommand in {"show", "validate"}
+        case "review-audit":
+            return args.review_audit_subcommand in {"list", "pending"}
+        case "config":
+            return args.config_subcommand in {None, "show", "list", "get"} or (
+                args.config_subcommand == "repos" and args.repos_subcommand == "list"
+            )
+        case "agents":
+            return args.agents_subcommand in {"list", "show", "logs"}
+        case _:
+            return False
+
+
+def _sweep_before_command(now: datetime.datetime) -> None:
+    """回収結果をコマンド本体の前に報告する。"""
+    try:
+        sweep_result = _managed_temp.sweep_managed_temp(now=now)
+    except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
+        sweep_result = _managed_temp.SweepResult([], ((_managed_temp.temp_root_path(), str(error)),))
+    # 回収を判断できない委譲先には、所有しない領域の警告を出力しない。
+    if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
+        for path, reason in sweep_result.failed:
+            _outcome.report_persistent_warning(
+                f"managed-tempの対象を自動削除できなかった: {path}: {reason}",
+                next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
+            )
+    # 空きの不足は全セッションの書込を止める共有の状態であり、回収した対象の記録も回収した起動が残すため、委譲先にも出力する。
+    if sweep_result.pressure is not None:
+        _report_space_pressure(sweep_result.pressure)
 
 
 def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:

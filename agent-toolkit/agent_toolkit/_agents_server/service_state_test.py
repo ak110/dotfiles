@@ -48,6 +48,26 @@ async def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_s
         service_state.restore({})
 
 
+@pytest.mark.asyncio
+async def test_restore_accepts_payload_from_generation_without_new_optional_fields() -> None:
+    """旧世代の写しには、新しい版で増えた省略できるフィールドが無い。"""
+    payload = json.loads(json.dumps(await service_state.snapshot(state.SessionState("parent", "/project"))))
+    optional = next(
+        field.name
+        for field in dataclasses.fields(state.SessionState)
+        if field.name in payload
+        and (field.default is not dataclasses.MISSING or field.default_factory is not dataclasses.MISSING)
+    )
+    del payload[optional]
+    assert service_state.restore(payload).session_id == "parent"
+    with pytest.raises(ValueError):
+        service_state.restore({**payload, "unknown_field": {"kind": "value", "value": None}})
+    without_required = dict(payload)
+    del without_required["cwd"]
+    with pytest.raises(ValueError):
+        service_state.restore(without_required)
+
+
 def test_codec_round_trips_registry_resume_state() -> None:
     """世代移行の`move_context`は登録簿由来の停止済みsessionも符号化できる。
 
@@ -130,3 +150,114 @@ async def test_effort_and_retry_states_transfer_with_legacy_fields() -> None:
     assert not running.result_available
     running.finish_effort_resume()
     assert running.result_available
+
+
+def test_restore_reads_previous_public_release_snapshot() -> None:
+    """旧公開版の状態を読み戻し、新規の任意フィールドの値を補う。"""
+    # 再生成: 2.287.0 の
+    # asyncio.run(service_state.snapshot(state.SessionState("old-session", "/project")))
+    raw = """{
+  "session_id": {"kind":"value","value":"old-session"},
+  "cwd": {"kind":"value","value":"/project"},
+  "model": {"kind":"value","value":null},
+  "effort": {"kind":"value","value":null},
+  "engine": {"kind":"value","value":"codex"},
+  "fast_mode": {"kind":"value","value":null},
+  "codex_model_provider": {"kind":"value","value":null},
+  "codex_subscription_provider": {"kind":"value","value":null},
+  "codex_state_provider": {"kind":"value","value":null},
+  "codex_attempted_provider_ids": {"kind":"set","items":[]},
+  "codex_auto_reset_pending": {"kind":"value","value":false},
+  "claude_api_env_file": {"kind":"value","value":null},
+  "claude_connection": {"kind":"value","value":null},
+  "claude_role": {"kind":"value","value":null},
+  "claude_connection_diagnostics": {"kind":"tuple","items":[]},
+  "claude_mcp_diagnostics": {"kind":"tuple","items":[]},
+  "claude_connection_failures": {"kind":"dict","items":{}},
+  "claude_subscription_retry_at": {"kind":"value","value":null},
+  "model_type": {"kind":"value","value":null},
+  "launch_kind": {"kind":"value","value":"delegate"},
+  "label": {"kind":"value","value":""},
+  "prompt": {"kind":"value","value":""},
+  "followup_prompts": {"kind":"tuple","items":[]},
+  "final_responses": {"kind":"tuple","items":[]},
+  "terminal_error": {"kind":"value","value":null},
+  "effort_history": {"kind":"tuple","items":[]},
+  "effort_levels": {"kind":"tuple","items":[]},
+  "effort_resume_turn": {"kind":"value","value":null},
+  "effort_resuming": {"kind":"value","value":false},
+  "effort_request_results": {"kind":"dict","items":{}},
+  "claude_applied_effort": {"kind":"value","value":null},
+  "announced": {"kind":"value","value":false},
+  "created_at": {"kind":"value","value":"2026-11-22T08:43:15.939816+00:00"},
+  "started_at": {"kind":"value","value":"2026-11-22T08:43:15.939827+00:00"},
+  "excluded_candidates": {"kind":"frozenset","items":[]},
+  "turn_seq": {"kind":"value","value":0},
+  "turn_id": {"kind":"value","value":""},
+  "status": {"kind":"value","value":"running"},
+  "plan": {"kind":"list","items":[]},
+  "current_item": {"kind":"value","value":null},
+  "current_item_started_at": {"kind":"value","value":null},
+  "commentary": {"kind":"value","value":""},
+  "diff_changed": {"kind":"value","value":false},
+  "error": {"kind":"value","value":null},
+  "agent_message": {"kind":"value","value":""},
+  "result_delivered": {"kind":"value","value":false},
+  "protocol_warnings": {"kind":"list","items":[]},
+  "turn_start": {"kind":"enum","type":"turn_start","name":"UNSENT"},
+  "interrupt_requested": {"kind":"value","value":false},
+  "turn_end": {"kind":"enum","type":"turn_end","name":"IN_PROGRESS"},
+  "model_output_observed": {"kind":"value","value":false},
+  "live_tasks": {"kind":"dict","items":{}},
+  "live_child_session_ids": {"kind":"set","items":[]},
+  "terminal_child_session_ids": {"kind":"set","items":[]},
+  "agents_wait_background_outputs": {"kind":"set","items":[]},
+  "child_tool_uses": {"kind":"dict","items":{}},
+  "pending_tool_uses": {"kind":"dict","items":{}},
+  "last_action": {"kind":"value","value":""},
+  "hold": {"kind":"value","value":null},
+  "cli_turn_state": {"kind":"value","value":null},
+  "cli_turn_state_fallback_logged": {"kind":"value","value":false},
+  "result_contract_recovery_consumed": {"kind":"value","value":false},
+  "availability_checked": {"kind":"value","value":false},
+  "overload_resume_count": {"kind":"value","value":0},
+  "overload_first_at": {"kind":"value","value":null},
+  "usage_limit": {"kind":"value","value":null},
+  "usage_limit_wait_count": {"kind":"value","value":0},
+  "usage_limit_first_at": {"kind":"value","value":null},
+  "finalized_at": {"kind":"value","value":null},
+  "updated_at": {"kind":"value","value":"2026-11-22T08:43:15.939835+00:00"},
+  "output_updated_at": {"kind":"value","value":null},
+  "api_error": {"kind":"value","value":null},
+  "context_tokens": {"kind":"value","value":null},
+  "context_window": {"kind":"value","value":null},
+  "retention_deadline": {"kind":"value","value":null},
+  "_progress_text": {"kind":"value","value":""},
+  "progress_items": {"kind":"dict","items":{}},
+  "compaction_started_at_ms": {"kind":"dict","items":{}},
+  "codex_subagent_thread_ids": {"kind":"set","items":[]},
+  "codex_live_subagent_thread_ids": {"kind":"set","items":[]},
+  "codex_terminal_subagent_thread_ids": {"kind":"set","items":[]},
+  "codex_subagent_activity_ids": {"kind":"set","items":[]},
+  "codex_self_message_observed": {"kind":"value","value":false},
+  "codex_self_message_repair_consumed": {"kind":"value","value":false},
+  "publish_registry": {"kind":"value","value":false},
+  "launcher_session_id": {"kind":"value","value":null},
+  "executor_process": {"kind":"value","value":null},
+  "owner_root_session_id": {"kind":"value","value":null},
+  "_published_registry_launcher": {"kind":"value","value":null},
+  "_published_registry_state": {"kind":"value","value":null},
+  "_published_registry_turn_seq": {"kind":"value","value":null},
+  "_published_registry_fast_mode": {"kind":"value","value":null},
+  "_published_registry_effort": {"kind":"value","value":null},
+  "_published_registry_result_contract_recovery_consumed": {"kind":"value","value":false},
+  "_published_registry_launch_info": {"kind":"value","value":null},
+  "_published_registry_executor": {"kind":"value","value":null},
+  "_published_registry_owner_root": {"kind":"value","value":null},
+  "_terminal_notified": {"kind":"value","value":false},
+  "_lifecycle_running": {"kind":"value","value":false}
+}"""
+    restored = service_state.restore(json.loads(raw))
+    assert (restored.session_id, restored.cwd) == ("old-session", "/project")
+    assert restored.startup_profile is None
+    assert restored.reply_start_pending is False

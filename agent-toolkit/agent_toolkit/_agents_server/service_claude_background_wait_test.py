@@ -103,7 +103,9 @@ async def test_generation_move_keeps_background_wait(
                 )
                 await messages.put(_state("running"))
                 await messages.put(claude_agent_sdk.AssistantMessage([claude_agent_sdk.TextBlock("最終結果")], "claude-test"))
-                await messages.put(claude_agent_sdk.ResultMessage("success", 1, 1, False, 1, SID, result="最終結果"))
+                await messages.put(
+                    claude_agent_sdk.ResultMessage("success", 1, 1, False, 1, SID, result="状態: completed\n結果: 最終結果")
+                )
                 await messages.put(_state("idle"))
                 while not (copied.terminal and not copied.awaiting_auto_resume and copied.cli_turn_state == "idle"):
                     await asyncio.sleep(0.01)
@@ -111,4 +113,4 @@ async def test_generation_move_keeps_background_wait(
                 final = (copied.status, copied.agent_message, copied.error)
                 await target.release_session(copied)
     assert held_after_pause, "旧世代の受信列終了で保留を確定した"
-    assert final == ("completed", "最終結果", None)
+    assert final == ("completed", "状態: completed\n結果: 最終結果", None)

@@ -417,3 +417,26 @@ def test_prepare_summarizes_codex_tool_activity(
     for name in ("sed", "checked", "found", "linted"):
         assert f"{name}-line-" not in conversation
     assert "Chunk ID: abc" not in conversation
+
+
+def test_prepare_keeps_reference_to_fork_context(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """公開prepareの会話に帰属不明の文脈を示し、子自身の操作とは数えない。"""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "empty-codex"))
+    child = tmp_path / "rollout-child.jsonl"
+    rows = [
+        {"type": "session_meta", "payload": {"id": "child", "forked_from_id": "parent"}},
+        {
+            "type": "response_item",
+            "payload": {"type": "function_call", "name": "exec", "call_id": "inherited", "arguments": "{}"},
+        },
+    ]
+    child.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+    work = _work_dir(tmp_path)
+    assert prepare.main(["--transcript", str(child), "--work-dir", str(work)], now=_FIXED_NOW) == 0
+    result = json.loads(capsys.readouterr().out)
+    conversation = pathlib.Path(result["conversation_path"]).read_text(encoding="utf-8")
+    assert "`codex:child:2〜2`" in conversation
+    assert "帰属不明のため操作数から除外" in conversation
+    assert "`codex:parent`" in conversation

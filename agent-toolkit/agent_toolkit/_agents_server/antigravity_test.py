@@ -20,11 +20,16 @@ import json
 import sys
 
 args = sys.argv[1:]
+if args == ["--version"]:
+    print("1.5.13")
+    sys.exit(0)
+assert json.loads(args[args.index("--settings") + 1]) == {{"modelProvider": "gemini"}}
 conversation = args[args.index("--conversation") + 1] if "--conversation" in args else "conv-1"
 prompt = args[args.index("-p") + 1]
 print(json.dumps({{"event": "init", "conversation_id": conversation, "init": {{"model": "gemini-3.8-flash"}}}}), flush=True)
 print(json.dumps({{"event": "step_update", "step_update": {{"text_delta": "調査中"}}}}), flush=True)
-print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": prompt[-20:]}}}}), flush=True)
+response = "状態: completed\\n結果: " + prompt[-20:]
+print(json.dumps({{"event": "result", "result": {{"status": "SUCCESS", "response": response}}}}), flush=True)
 """
 
 
@@ -35,6 +40,7 @@ async def test_cli_inherits_prepared_conversation_environment(monkeypatch: pytes
         monkeypatch.setenv(name.upper(), "source-context")
     mcp_tools._prepare_child_environment()  # pylint: disable=protected-access
     captured: dict[str, str] = {}
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _environment: "agy")
 
     async def spawn(*_args: Any, **kwargs: Any) -> Any:
         captured.update(kwargs["env"])
@@ -61,6 +67,13 @@ def _install_fake_agy(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -
     fake.write_text(_FAKE_AGY.format(python=sys.executable), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(antigravity.host_homes.claude_config_dir()))
+    home = tmp_path / "agy-home"
+    monkeypatch.setenv("USERPROFILE" if os.name == "nt" else "HOME", str(home))
+    settings = home / ".gemini" / "antigravity-cli" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"modelProvider":"gemini"}', encoding="utf-8")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-used")
     return fake
 
 
@@ -88,6 +101,25 @@ def test_build_command_omits_absent_options() -> None:
     assert "--model" not in command
     assert "--effort" not in command
     assert "--conversation" not in command
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("explicit", [False, True])
+async def test_missing_gemini_opt_in_or_key_prevents_agent_spawn(tmp_path, monkeypatch, explicit):
+    _install_fake_agy(tmp_path, monkeypatch)
+    home = tmp_path / "agy-home"
+    if explicit:
+        monkeypatch.delenv("GEMINI_API_KEY")
+    else:
+        (home / ".gemini" / "antigravity-cli" / "settings.json").write_text("{}", encoding="utf-8")
+
+    async def unexpected(*_args, **_kwargs):
+        pytest.fail("APIキー方式の要件を満たさない委譲を起動した")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", unexpected)
+    async with antigravity.AntigravityManager() as backend:
+        with pytest.raises(session_errors.DelegateBackendError, match="Gemini|GEMINI"):
+            await backend.start("試験", str(tmp_path))
 
 
 @pytest.mark.asyncio
@@ -161,13 +193,14 @@ def test_start_consumes_stream_and_finalizes_turn(tmp_path: pathlib.Path, monkey
 
 def test_start_wraps_missing_cli_as_backend_error(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """CLIが未導入の起動失敗を委譲先CLIの失敗として送出し、導入と認証の確認へ分類されるようにする。"""
+    _install_fake_agy(tmp_path, monkeypatch)
     monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
 
     async def scenario() -> None:
         async with antigravity.AntigravityManager() as manager:
             await manager.start("原稿を推敲して", str(tmp_path), "gemini-3.8-flash", "medium")
 
-    with pytest.raises(session_errors.DelegateBackendError, match="failed to start Antigravity CLI"):
+    with pytest.raises(session_errors.DelegateBackendError, match="agyが見つかりません"):
         asyncio.run(scenario())
 
 
@@ -432,7 +465,7 @@ for step_type in ("user_input", "system_message", "error_message"):
 wait_for("output")
 emit({{"event": "step_update", "step_update": {{"conversation_id": "conv-1", "state": "DONE", "step_type": "agent_response"}}}})
 wait_for("finish")
-emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "完了"}}}})
+emit({{"event": "result", "result": {{"status": "SUCCESS", "response": "状態: completed\\n結果: 完了"}}}})
 """
 
 
@@ -445,6 +478,7 @@ def test_model_output_step_is_observed_and_notified(tmp_path: pathlib.Path, monk
     fake = bin_dir / "agy"
     fake.write_text(_GATED_AGY.format(python=sys.executable, gate_dir=str(gate_dir)), encoding="utf-8")
     fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _env: str(fake))
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     log_directory = tmp_path / "logs"
 
@@ -480,8 +514,9 @@ def test_start_and_reply_use_manager_root(tmp_path: pathlib.Path, monkeypatch: p
     fake.write_text(
         _FAKE_AGY.format(python=sys.executable).replace(
             "import sys\n",
-            f'import sys\nimport os\nwith open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
-            '    stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
+            f'import sys\nimport os\nif sys.argv[1:] != ["--version"]:\n'
+            f'    with open({str(captured)!r}, "a", encoding="utf-8") as stream:\n'
+            '        stream.write(json.dumps(os.environ.get("AGENT_TOOLKIT_OWNER_SESSION")) + "\\n")\n',
         ),
         encoding="utf-8",
     )
@@ -569,7 +604,9 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
             while not session.terminal:
                 await asyncio.sleep(0.01)
         session.live_child_session_ids.add("child-session")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "待機中: child-session"}}
+        )
         assert session.awaiting_auto_resume
         assert not session.terminal
         assert session.pending_result is not None
@@ -583,8 +620,10 @@ async def test_pending_child_result_is_held_and_continues_same_conversation(
         assert session.agent_message.endswith("子が完了したため継続")
         assert not session.awaiting_auto_resume
         session.live_child_session_ids.add("second-child")
-        await backend.process_event(session, {"event": "result", "result": {"status": "SUCCESS", "response": "完了"}})
+        await backend.process_event(
+            session, {"event": "result", "result": {"status": "SUCCESS", "response": "状態: completed\n結果: 完了"}}
+        )
         assert not session.terminal
         assert session.awaiting_auto_resume
         assert session.live_child_session_ids == {"second-child"}
-        assert session.pending_result == {"status": "completed", "agent_message": "完了", "error": None}
+        assert session.pending_result == {"status": "completed", "agent_message": "状態: completed\n結果: 完了", "error": None}

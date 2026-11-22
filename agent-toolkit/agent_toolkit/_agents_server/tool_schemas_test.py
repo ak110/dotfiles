@@ -94,6 +94,7 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "start": {
         "annotations": {"destructive_hint": False},
         "input_schema": {
+            "$defs": {"StartupProfile": {"enum": ["lightweight", "default", "full"], "type": "string"}},
             "properties": {
                 "command": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "cwd": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
@@ -110,6 +111,7 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "model_type": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "prompt": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "subagent_md_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "startup_profile": {"anyOf": [{"$ref": "#/$defs/StartupProfile"}, {"type": "null"}], "default": None},
                 "summary_policy": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "whole_contract_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
             },

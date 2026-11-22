@@ -64,7 +64,8 @@ description: >
 | 独立したレビューを経ずに成果物を完成させる時（再レビューを省く修正、独立したレビューを起動しない手順を含む）、初回レビューで作成側の基準を詳しく点検する時、レビュー限定基準の指摘の採否を決める時 | `references/review-only-criteria.md` |
 | 既存ファイルを編集・上書きする時、スクリプトで複数ファイルを機械変換する時 | `references/file-editing.md` |
 | Claude CodeでEditを使う時と、Writeで既存ファイルを上書きする前 | `references/file-editing.md` |
-| 文字コード・改行・BOMを扱う時（入出力、ZIPのファイル名、Unicodeの正規化と比較、CRLF・BOM付き・UTF-8以外のファイルを書込ツールで作成・編集する時） | `references/encoding.md` |
+| 文字コード・改行・BOMを扱う時（入出力、ZIPのファイル名、Unicodeの正規化と比較など）、識別子やアカウントを大文字小文字を区別せず比較する処理を実装・レビューする時 | `references/encoding.md` |
+| CIから公開までの実行順、必須検証、結果の再利用を設計する時 | `references/github-actions.md` |
 
 ### 文章
 

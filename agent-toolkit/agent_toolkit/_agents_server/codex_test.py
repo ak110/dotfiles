@@ -107,6 +107,7 @@ async def test_resume_retains_request_delivery(
 
         async def complete() -> None:
             session = backend.sessions["resume-delivery"]
+            session.agent_message = "状態: completed"
             event = _completed_turn(session)
             event["params"]["turn"]["id"] = "resume-turn"
             if outcome == "execution-failed":

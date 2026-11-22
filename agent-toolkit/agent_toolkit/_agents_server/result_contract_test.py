@@ -213,10 +213,15 @@ async def test_freeform_explore_publishes_common_contract(tmp_path: pathlib.Path
     ],
 )
 def test_valid_result_is_not_held(tmp_path: pathlib.Path, message: str) -> None:
-    """正常結果、有効区分、待機表明は公開する。"""
+    """正常結果と待機はそのまま、不足申告は一度再確認して公開する。"""
     session = _task_session(tmp_path)
+    result = {"status": "completed", "agent_message": message, "error": None}
 
-    assert not result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+    if "続行できない理由:" in message:
+        assert result_contract.hold_invalid_result(session, result)
+        session.result_contract_recovery_consumed = True
+    assert not result_contract.hold_invalid_result(session, result)
+    assert result["error"] is None
 
 
 @pytest.mark.parametrize(
@@ -273,12 +278,30 @@ def test_multiple_reasons_report_the_first_contract_violation(tmp_path: pathlib.
 
 
 @pytest.mark.parametrize("launch_kind", ["delegate", "shell", "write"])
-@pytest.mark.parametrize("message", ["正常な自由本文", "続行できない理由: 入力が必要"])
-def test_non_task_result_is_not_held(tmp_path: pathlib.Path, launch_kind: state.LaunchKind, message: str) -> None:
-    """調査以外の自由本文には成功行や続行不能2行の検査を新設しない。"""
+@pytest.mark.parametrize(
+    ("message", "valid"),
+    [
+        ("正常な自由本文", False),
+        ("続行できない理由: 入力が必要", False),
+        ("状態: completed", True),
+        ("続行できない区分: owner_input\n続行できない理由: 入力が必要", True),
+        ("待機中: child", True),
+        ("```\n状態: completed\n```", False),
+    ],
+)
+def test_freeform_result_contract(tmp_path: pathlib.Path, launch_kind: state.LaunchKind, message: str, valid: bool) -> None:
+    """shellを除く自由本文は所定の形式が必要で、正しい不足申告は再確認しない。"""
     session = state.SessionState("delegate", str(tmp_path), prompt="自由本文", launch_kind=launch_kind)
+    held = result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+    assert held is (not valid and launch_kind != "shell")
 
-    assert not result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+
+@pytest.mark.parametrize("message", [None, "> 状態: completed", "~~~md\n状態: completed\n~~~"])
+def test_task_result_does_not_accept_missing_body_or_examples(tmp_path: pathlib.Path, message: str | None) -> None:
+    """空の本文と引用内の見本を成功として受け取らない。"""
+    assert result_contract.hold_invalid_result(
+        _task_session(tmp_path), {"status": "completed", "agent_message": message, "error": None}
+    )
 
 
 @pytest.mark.parametrize("status", ["failed", "interrupted"])
@@ -315,8 +338,8 @@ async def test_backend_terminal_boundary_checks_task_result(
     session.launch_kind = launch_kind
     session.result_contract_recovery_consumed = recovered
     session.agent_message = message
-    fails = recovered and held and launch_kind == "explore"
-    recheck = launch_kind == "explore" and not held and "続行できない理由:" in message
+    fails = recovered and held
+    recheck = not held and "続行できない理由:" in message
     held = (held or recheck) and not recovered
     if engine == "codex":
         async with codex.AppServerManager() as backend:
@@ -549,3 +572,41 @@ def test_role_state_values_match_declaration(role, value, valid):
     session = _role_session(role)
     reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": value})
     assert (reason is None) is valid
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("external", [False, True])
+async def test_task_rechecks_block_once_and_accepts_second_result(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, external: bool
+) -> None:
+    """構文が正しい不足だけでも一度再確認し、同じsessionの確定結果を受理する。"""
+    session = _task_session(tmp_path)
+    message = "続行できない区分: owner_input\n続行できない理由: 委譲元の入力が必要"
+    assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message})
+
+    async def reply(current: state.SessionState, prompt: str) -> dict[str, str]:
+        assert current is session and "担当内で補える" in prompt
+        state.begin_reply(current, preserve_waits=True)
+        return {"delivery": "reply_started"}
+
+    backend = Mock(send_message=AsyncMock(side_effect=reply))
+    async with manager.AgentsServerManager() as owner:
+        monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
+        await owner._advance_child_session_wait(session)  # noqa: SLF001
+    backend.send_message.assert_awaited_once()
+    result: dict[str, Any] = {"status": "completed", "agent_message": message if external else "状態: completed"}
+    assert not result_contract.hold_invalid_result(session, result)
+    assert result["status"] == "completed" and "error" not in result
+
+
+@pytest.mark.parametrize("kind", ["delegate", "write"])
+def test_invalid_freeform_fails_after_one_recovery(kind: state.LaunchKind, tmp_path: pathlib.Path) -> None:
+    """自由本文の再違反は、元の本文を保ち診断付きの失敗にする。"""
+    session = state.SessionState("free", str(tmp_path), prompt="自由本文", launch_kind=kind)
+    message = "まだ実施していない"
+    result: dict[str, Any] = {"status": "completed", "agent_message": message}
+    assert result_contract.hold_invalid_result(session, result)
+    session.result_contract_recovery_consumed = True
+    assert not result_contract.hold_invalid_result(session, result)
+    assert result["status"] == "failed" and result["agent_message"] == message
+    assert result["error"]["resultContract"]

@@ -67,7 +67,7 @@ _NEXT_RESUME_PLAN = "同じ再開計画を指す項目を同じレーンへま�
 _NEXT_STAGE_SEQUENCE = "`レーンの所要時間`の`段階`を1から欠番なく連続する値へ直す"
 
 
-_NEXT_PRIOR_MISSING = "段階2以上のレーンの`先行レーン`へ、開始前に統合する前段のレーンを挙げる"
+_NEXT_PRIOR_MISSING = "段階2以上のレーンの`先行レーン`へ、先に統合する前段のレーンを挙げる"
 
 
 _NEXT_PRIOR_INVALID = "`先行レーン`を、選定に存在し自レーンより前の段階にあるレーンへ直す"
@@ -306,7 +306,7 @@ def _check_resume_plan_lanes(items: list[dict[str, object]]) -> list[Violation]:
 
 
 def _check_lane_stages(items: collections.abc.Sequence[object], costs: collections.abc.Sequence[object]) -> list[Violation]:
-    """後段の開始条件が先行レーンの統合順序を守るか確かめる。"""
+    """先行レーンが統合順序を守るか確かめる。"""
     lanes = {
         item[_selection.LANE_KEY]
         for item in items
@@ -427,13 +427,20 @@ def _check_lane_overlaps(
         errors.append(Violation(f"{label}: 同じ段階で定義が交わる", next_action=_NEXT_OVERLAP_SAME_STAGE))
     for left, right, path in sorted(expected - seen):
         errors.append(Violation(missing_overlap_reason(left, right, path), next_action=_NEXT_OVERLAP_MISSING))
+    starts = {
+        str(row[_selection.LANE_KEY]): start
+        for row in costs
+        if isinstance(row, dict)
+        and _selection.LANE_KEY in row
+        and isinstance(start := row.get(_selection.START_DEPENDENCIES_KEY, []), list)
+    }
     for lane, (_, prior) in stages.items():
         if lane in integrated:
             continue
         for predecessor in prior:
             if predecessor in integrated:
                 continue
-            if not _reachable(lane, predecessor, historical):
+            if predecessor not in starts.get(lane, []) and not _reachable(lane, predecessor, historical):
                 errors.append(Violation(f"{lane}: 根拠の無い直列化: {predecessor}", next_action=_NEXT_PRIOR_UNFOUNDED))
     actual = {lane: set(prior) for lane, (_, prior) in stages.items()}
     for lane, predecessors in dependencies.items():

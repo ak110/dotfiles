@@ -189,7 +189,7 @@ def test_codex_detail_exposes_inputs_outputs_and_execution_status(
                 "result": {"content": [{"type": "text", "text": "MCP本文"}]},
             },
         },
-        {"type": "future_item", "value": "未知形式の保持"},
+        {"type": "future_item", "value": "展開しない未知の値"},
     ]
     support.write_jsonl(
         transcript,
@@ -217,7 +217,7 @@ def test_codex_detail_exposes_inputs_outputs_and_execution_status(
     assert events[5]["omitted"] is True and len(events[5]["input"]["body"]) <= 8000
     assert events[6]["input"] == {"path": "/repo/file"} and events[6]["text"] == "MCP本文"
     assert events[6]["call_id"] == "mcp" and events[6]["name"] == "mcp__files__read"
-    assert json.loads(events[7]["text"])["payload"]["value"] == "未知形式の保持"
+    assert events[7]["event_type"] == "future_item" and "text" not in events[7]
     assert [(event["record"], event["line"], event["timestamp"]) for event in events] == [
         ("codex:codex", line, "2026-11-01T00:00:00Z") for line in range(1, 9)
     ]

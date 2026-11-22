@@ -229,6 +229,7 @@ def _completed_turn(session: state.SessionState) -> dict[str, Any]:
                 "id": session.turn_id,
                 "status": "completed",
                 "error": None,
+                "items": [] if session.agent_message else [{"type": "agentMessage", "id": "answer", "text": "状態: completed"}],
             },
         },
     }
