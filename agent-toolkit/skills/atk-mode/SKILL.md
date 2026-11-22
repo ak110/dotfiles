@@ -10,8 +10,8 @@ description: >
 # atk-mode
 
 「作業と手順書」の該当資料を全文読む。
-相対パスは本書から解決し、`agent-toolkit:atk-mode/playbooks/<名前>.md`の形で指す。
-Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に従う。
+相対パスは本書を基点とする。
+Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う。
 
 ## プロダクトに対する責任
 
@@ -20,7 +20,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 判断の原則
 
-判断に使う原則の本文を、判断の前に`agent-basics:writing-standards`の`references/`から読む。
+判断前に、該当する原則を`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術判断は調べて決め、報告する。
    ユーザーだけが決める目的・要件・選好・認可は推奨を添えて尋ねる。
@@ -45,7 +45,7 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 - 実行環境の権限拒否にはそのまま従い、認証、料金、利用規約、安全目的のツール制限による保護を保つ。
 - 明示された範囲と権限は、推定した目的や意向より優先して守る。
   ユーザーが確定した目的、要件、観測される結果を変えるには、新しいユーザーの判断が要る。
-- `agent-basics:writing-standards/references/quality-principles-constraints.md`「秘匿値」の定義に該当する値は、出力、記録、WI、報告から除く。
+- 原則4「秘匿値」に該当する値は出力・記録・WI・報告から除く。
 - 自分が始めていないプロセス・資源・差分は由来と現在の利用を確かめてから扱う。
 - 公開契約（`atk`の入出力、MCPツール名、WI形式・frontmatter、役割の入出力）の形・意味は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
   必要な互換は自ら決める。
@@ -114,5 +114,5 @@ Codexでは開始と圧縮の後に`playbooks/host-codex.md`「読む節」に�
 
 ## 会話の圧縮の後
 
-再開前に本スキルを起動し直し、目的・要求・直近の状態は復元通知の作業契約と要約から復元する（`references/work-contract.md`「圧縮と再開の後の復元」）。
-手順書は該当時に読み直す。
+再開前に本スキルを起動し直し、復元通知の作業契約と要約から目的・要求・状態を復元する（`references/work-contract.md`「圧縮と再開の後の復元」）。
+該当する手順書は読み直す。
