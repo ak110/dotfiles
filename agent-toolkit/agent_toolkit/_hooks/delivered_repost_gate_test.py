@@ -236,6 +236,11 @@ def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pa
     assert 'source="response-language"' in reason and "delivered_repost_gate" not in reason
     result = _stop([*failed, _text(report)], tmp_path, last_assistant_message=report)
     assert "decision" not in result
+    repeated = "進捗は順調です。" + report
+    result = _stop([*failed, _text(repeated)], tmp_path, last_assistant_message=repeated)
+    assert "delivered_repost_gate" in str(result.get("reason", ""))
+    result = _stop([*failed, _HUMAN, _text(repeated)], tmp_path, last_assistant_message=repeated)
+    assert "decision" not in result
 
 
 @pytest.mark.parametrize("name", ["mcp__other__send_to_user", "mcp__agent-toolkit__send_to_user"])
