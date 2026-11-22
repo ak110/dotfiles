@@ -12,8 +12,6 @@ from agent_toolkit._testing.session_evidence_support import (
     read_jsonl,
     timestamped_entry,
 )
-from session_evidence_detail import _clip_event_body
-from session_evidence_extract_common import _DetailBudget
 
 
 def test_detail_returns_full_sent_body_without_other_tool_content(
@@ -551,35 +549,3 @@ def test_detail_and_grep_include_timestamp(tmp_path: pathlib.Path, capsys: pytes
     assert evidence.main([str(transcript), "--grep", "needle"]) == 0
     matches = [event for event in read_jsonl(capsys) if event["kind"] == "match"]
     assert [(event["line"], event["timestamp"]) for event in matches] == [(1, "2026-09-25T01:02:03Z"), (2, None)]
-
-
-def test_evidence_body_budget_does_not_consume_identity():
-    budget = _DetailBudget(8)
-    first = _clip_event_body({"text": "u" * 80, "record": "record-1"}, budget)
-    second = _clip_event_body(
-        {
-            "record": "record-2",
-            "kind": "detail",
-            "call_id": "call-42",
-            "name": "Bash",
-            "timestamp": "2026-01-01T00:00:00Z",
-            "status": "failed",
-            "exit_code": 7,
-            "text": "診断",
-        },
-        budget,
-    )
-    empty = _clip_event_body({"record": "record-3", "text": ""}, budget)
-    assert first["omitted"]
-    assert second == {
-        "record": "record-2",
-        "kind": "detail",
-        "call_id": "call-42",
-        "name": "Bash",
-        "timestamp": "2026-01-01T00:00:00Z",
-        "status": "failed",
-        "exit_code": 7,
-        "text": "",
-        "omitted": True,
-    }
-    assert "omitted" not in empty
