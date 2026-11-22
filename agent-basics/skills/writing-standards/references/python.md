@@ -9,10 +9,10 @@ ruff、pylint、型検査が導入されている環境では、その診断に�
 
 ### import・型・docstring
 
+- docstringは原則として省く。
+  `__doc__`、`inspect.getdoc()`、引数を省いた `@mcp.tool()` などが参照する場合は、明示の引数へ移すか必要な部分だけを残す。
 - `import`は可能な限り`import xxx`の形で最上部に書き、`as`の別名は定着した略称（`np`など）、名前の衝突の回避、互換APIへの差し替えに限る。
 - `@typing.final`のメソッドはサブクラスの都合で外さず、差は抽象メソッドへの委譲などで吸収する。
-- docstringはGoogleスタイルで書き、自明なArgs、Returns、Raisesは省く。
-  ruffのD規則（pydocstyle）が有効なら、公開する関数・クラス・モジュールに1行の要約を書くか、名前を`_`で始める。
 
 ### 標準ライブラリとログ
 

@@ -82,6 +82,21 @@ def test_score_counts_detected_false_and_unclassified(tmp_path, monkeypatch, cap
     assert json.loads(table.with_suffix(".score.json").read_text(encoding="utf-8")) == result
 
 
+def test_score_retains_worktree_prepared_with_legacy_directory_name(tmp_path, monkeypatch, capsys) -> None:
+    """旧名だけでは同じ準備物だと決めず、採点を保って確認方法を示す。"""
+    monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))
+    legacy = tmp_path / "missed"
+    worktree = legacy / "worktree"
+    worktree.mkdir(parents=True)
+    table = _prepared_table(legacy / "case.exec-review.tsv", [], capsys)
+
+    assert review_eval.main(["score", "--result", f"missed={table}"]) == 0
+    captured = capsys.readouterr()
+    assert str(worktree) in captured.err
+    assert "git worktree list" in captured.err
+    assert worktree.is_dir()
+
+
 def test_score_reports_missed_when_patterns_match_different_rows(tmp_path, monkeypatch, capsys) -> None:
     """照合語句が別々の行にだけ一致する場合は検出とせず見逃しとして返す。"""
     monkeypatch.setattr(review_eval, "CASES_PATH", _write_cases(tmp_path / "cases.json"))

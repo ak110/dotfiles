@@ -15,14 +15,18 @@ import tempfile
 from pytools._internal.common import run_subprocess
 
 
-def _bundled_types() -> tuple[list[pathlib.Path], str]:
-    """PATH上の検証対象と生成元が一致する同梱型を一度だけ選ぶ。"""
+def _claude_version() -> str | None:
     claude = shutil.which("claude")
     result = run_subprocess([claude, "--version"], timeout=15) if claude else None
     match = re.match(r"(\d+\.\d+\.\d+)\b", result.stdout.strip()) if result and result.returncode == 0 else None
-    if match is None:
+    return match[1] if match else None
+
+
+def _bundled_types() -> tuple[list[pathlib.Path], str]:
+    """PATH上の検証対象と生成元が一致する同梱型を一度だけ選ぶ。"""
+    version = _claude_version()
+    if version is None:
         return [], "取得不能（PATH上のclaude --versionを確認）"
-    version = match[1]
     temporary = pathlib.Path(tempfile.gettempdir())
     # UnixではClaude専用のユーザー別ディレクトリを一時領域の下に置く。
     bases = [temporary, *sorted(temporary.glob("claude-*"))]
@@ -34,6 +38,24 @@ def _bundled_types() -> tuple[list[pathlib.Path], str]:
             if header == f"// Written by Claude Code {version}.":
                 return [path.resolve()], version
     return [], version
+
+
+def _report_explicit_types(path: pathlib.Path) -> None:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            header = stream.readline().strip()
+    except OSError, UnicodeError:
+        header = ""
+    match = re.fullmatch(r"// Written by Claude Code (\d+\.\d+\.\d+)\.", header)
+    types_version = match[1] if match else None
+    current = _claude_version()
+    print(f"明示した型: {types_version or '版不明'}、PATH上のClaude Code: {current or '版不明'}")
+    if types_version and current and types_version != current:
+        print(
+            f"警告: 明示した型 {types_version} と PATH上のClaude Code {current} の版が異なる。"
+            "指定された型で検査を続ける。版を揃える場合は実行版の型を生成し、--typesまたはFUNCTION_HOOKS_TYPESで指定する。",
+            file=sys.stderr,
+        )
 
 
 def main() -> int:
@@ -68,10 +90,13 @@ def main() -> int:
         print(
             f"Claude Code生成型が見つからない（対象版: {version}）。plugin-authoringで生成し、"
             "FUNCTION_HOOKS_TYPESへclaude-code.d.tsの絶対パスを指定して再実行する。"
+            "明示した型とPATH上のClaude Codeの版が異なる場合は警告する。"
             "生成または指定ができない場合は、この出力を添えて開発担当へ報告する。",
             file=sys.stderr,
         )
         return 2
+    if args.types is not None:
+        _report_explicit_types(definitions[0])
     sources = sorted(path.resolve() for path in (plugin / "hooks").rglob("*") if path.suffix in {".ts", ".tsx"})
     config = {
         "compilerOptions": {

@@ -30,6 +30,8 @@ _REG_EXPAND_SZ = 2
 # 最長一致優先で評価する環境変数名。長いパス (LOCALAPPDATA / APPDATA) を
 # USERPROFILE より先に評価し、前方一致が成立した時点で確定する順序とする。
 _PLACEHOLDER_VAR_ORDER: tuple[str, ...] = ("LOCALAPPDATA", "APPDATA", "USERPROFILE")
+_RETIRED_WINGET_IDS = frozenset({"burntsushi.ripgrep.msvc", "twpayne.chezmoi"})
+_WINGET_SOURCE_MARKER = "_microsoft.winget.source_"
 
 
 def run() -> post_apply_outcome.PostApplyOutcome:
@@ -66,6 +68,8 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     new_value, removed = _filter_user_path(
         _PATH_SEPARATOR.join(placeholder_entries), system_value or "", obsolete_key=_obsolete_toolkit_bin_key()
     )
+    new_value, removed_winget = _filter_retired_winget_paths(new_value)
+    removed.extend(removed_winget)
 
     # (3) 存在チェック警告
     missing, unresolved = _find_missing_paths(_split(new_value))
@@ -108,6 +112,66 @@ def run() -> post_apply_outcome.PostApplyOutcome:
         logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
     winutils.broadcast_environment_change()
     return post_apply_outcome.PostApplyOutcome(changed=True)
+
+
+def remove_winget_package_paths(package_directories: Iterable[Path]) -> bool:
+    """削除に成功した固有ディレクトリを指す欠落項目だけをユーザーPATHから除く。"""
+    directory_keys = frozenset(winutils.path_key(str(path)) for path in package_directories)
+    if not directory_keys:
+        return False
+    value, reg_type = winutils.read_user_env_var("Path")
+    if not value:
+        return False
+    updated, removed = _filter_retired_winget_paths(value, directory_keys=directory_keys, include_known=False)
+    if not removed:
+        return False
+    winutils.write_user_env_var("Path", updated, reg_type)
+    for entry in removed:
+        logger.info(log_format.format_status(_LOG_LABEL, f"ユーザー PATH から除外: {entry}"))
+    winutils.broadcast_environment_change()
+    return True
+
+
+def _filter_retired_winget_paths(
+    value: str, *, directory_keys: frozenset[str] = frozenset(), include_known: bool = True
+) -> tuple[str, list[str]]:
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return value, []
+    packages = PureWindowsPath(local) / "Microsoft" / "WinGet" / "Packages"
+    kept: list[str] = []
+    removed: list[str] = []
+    for entry in _split(value):
+        expanded = ntpath.expandvars(entry)
+        path = PureWindowsPath(expanded)
+        try:
+            relative = path.relative_to(packages)
+        except ValueError:
+            kept.append(entry)
+            continue
+        if not relative.parts or ".." in relative.parts or "%" in expanded:
+            kept.append(entry)
+            continue
+        folder = relative.parts[0]
+        package_id, marker, source = folder.casefold().partition(_WINGET_SOURCE_MARKER)
+        matched = (
+            marker
+            and source
+            and (
+                (include_known and package_id in _RETIRED_WINGET_IDS)
+                or winutils.path_key(str(packages / folder)) in directory_keys
+            )
+        )
+        if matched:
+            try:
+                Path(str(packages / folder)).lstat()
+            except FileNotFoundError:
+                removed.append(entry)
+                continue
+            except OSError:
+                pass
+        kept.append(entry)
+    return _PATH_SEPARATOR.join(kept) if removed else value, removed
 
 
 def _collect_userprofile_env(environ: Mapping[str, str]) -> dict[str, str]:

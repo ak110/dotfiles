@@ -62,7 +62,7 @@ hook、検査、CLIの判定では、解消手段を伴わない遮断、既存�
 `Stop`・`SubagentStop`では`agent-basics:writing-standards/references/claude-hooks.md`「遮断の条件と再帰呼び出し対策」も適用する。
 `PreToolUse`の正常な拒否は、終了コード0と`hookSpecificOutput.permissionDecision: "deny"`で返し、空でない`permissionDecisionReason`に理由を入れる。
 付随の通知は`additionalContext`へ分け、起動障害を吸収する登録コマンドの処理を保つ。
-判定ごとの結論と根拠は判定モジュールのdocstringに書く（努力目標）。
+判定ごとの条件と結果はコードとテストで確かめられる形にする。
 
 原因・対象・対処が同じ警告は、その状況が続く間は初回の1回だけ通知し、状況が変わった時と解消後に再発した時は改めて通知する。
 発生の回数だけを理由にした機械的な反復通知と、反復を理由にした遮断への自動の格上げは行わず、実害を防ぐ遮断は操作ごとに実際の条件で判断する。
