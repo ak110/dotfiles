@@ -21,7 +21,7 @@ from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import file_lock, host_homes, plugin_environment, runtime_environment, windows_job
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.diagnostic_redaction import read_diagnostic_tail
 from agent_toolkit._common.next_action import report, with_next_action
 
 
@@ -33,11 +33,15 @@ def _add_service_diagnostic(error: Exception, directory: pathlib.Path, generatio
         return
     try:
         with path.open("rb") as stream:
-            size = stream.seek(0, os.SEEK_END)
-            stream.seek(max(0, size - 65536))
-            detail = stream.read(65536).decode("utf-8", errors="replace")
-        limit = "（末尾65536バイト。先頭を省略）" if size > 65536 else ""
-        error.add_note(f"{label}{limit}\n{redact_secrets(detail) if detail else '診断本文は空です。'}")
+            excerpt = read_diagnostic_tail(stream, limit=65536)
+        limit = "（末尾65536バイト以内。先頭を省略）" if excerpt.omitted else ""
+        if excerpt.text:
+            detail = excerpt.text
+        elif excerpt.source_bytes:
+            detail = "転載できる本文がありません。ログ全体は上記のパスで確認してください。"
+        else:
+            detail = "診断本文は空です。"
+        error.add_note(f"{label}{limit}\n{detail}")
     except OSError as failure:
         error.add_note(f"{label}（取得失敗: {failure}）")
 

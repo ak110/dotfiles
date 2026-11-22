@@ -222,13 +222,12 @@ def test_run_installs_verifies_then_migrates_on_posix(monkeypatch, tmp_path: Pat
     def fake_prepend(path: Path) -> None:
         events.append(f"path:{path}")
 
-    def fake_migrate(*args: object, **kwargs: object) -> bool:
+    def fake_migrate(*args: object, **kwargs: object) -> None:
         del args, kwargs
         events.append("migrate")
-        return True
 
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", fake_prepend)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", fake_migrate)
     monkeypatch.setattr(
         setup_codex_cli.common,
         "run_subprocess",
@@ -281,12 +280,11 @@ def test_run_keeps_profile_unchanged_when_legacy_codex_is_on_path(monkeypatch, t
                 profile.write_text("# >>> Codex installer >>>\n", encoding="utf-8")
         return base_fake_run(command, **kwargs)
 
-    def fake_migrate(*args: object, **kwargs: object) -> bool:
+    def fake_migrate(*args: object, **kwargs: object) -> None:
         migrated.append((*args, kwargs))
-        return True
 
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", fake_migrate)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", fake_migrate)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", fake_run)
 
     with _make_client() as client:
@@ -316,7 +314,7 @@ def test_run_installs_with_preferred_powershell_on_windows(monkeypatch, tmp_path
     calls: list[_Call] = []
     prepended: list[Path] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client() as client:
@@ -370,7 +368,7 @@ def test_run_selects_available_powershell(
 
     monkeypatch.setattr(setup_codex_cli.shutil, "which", fake_which)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with expectation, _make_client(requests) as client:
@@ -419,7 +417,7 @@ def test_run_obeys_official_installer_contract(
     requests: list[httpx.Request] = []
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client(requests) as client:
@@ -442,7 +440,7 @@ def test_run_reruns_installer_when_launcher_already_exists(monkeypatch, tmp_path
     launcher.write_text("", encoding="utf-8")
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
 
     with _make_client() as client:
@@ -458,7 +456,7 @@ def test_run_accepts_legacy_launcher_layout(monkeypatch, tmp_path: Path, platfor
     launcher = tmp_path / ".codex" / "packages" / "standalone" / "current" / name
     calls: list[_Call] = []
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda path: None)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
 
     with _make_client() as client:
@@ -480,7 +478,7 @@ def test_run_uses_explicit_codex_home_and_install_dir(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", prepended.append)
     monkeypatch.setattr(
         setup_codex_cli.setup_cli_common,
-        "migrate_npm_launchers",
+        "warn_about_npm_launchers",
         lambda *args, **kwargs: migrated.append((*args, kwargs)),
     )
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls, launcher=launcher))
@@ -522,7 +520,7 @@ def test_install_success_prunes_completed_old_packages(monkeypatch, tmp_path: Pa
         old.append(_release(home, package, "0.150.0"))
         (current.parent.parent / "current").symlink_to(current, target_is_directory=True)
     calls: list[_Call] = []
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run(calls))
     monkeypatch.setattr(prune_codex_packages.codex_processes, "codex_processes", lambda: ())
     with _make_client() as client:
@@ -573,7 +571,7 @@ def test_public_install_keeps_native_package_and_official_launcher(
         return result
 
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", installer)
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     monkeypatch.setattr(setup_codex_cli.setup_cli_common, "prepend_path", lambda *_args, **_kwargs: None)
     with _make_client() as client:
         outcome = setup_codex_cli.run(client)
@@ -610,7 +608,7 @@ def test_public_install_preserves_unmanaged_files(monkeypatch: pytest.MonkeyPatc
     selected = _release(tmp_path / ".codex", "standalone", "0.166.0")
     (package / "current").symlink_to(selected, target_is_directory=True)
     monkeypatch.setattr(setup_codex_cli.common, "run_subprocess", _make_fake_run([], launcher=native))
-    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "migrate_npm_launchers", lambda *args, **kwargs: False)
+    monkeypatch.setattr(setup_codex_cli.setup_cli_common, "warn_about_npm_launchers", lambda *args, **kwargs: None)
     with _make_client() as client:
         outcome = setup_codex_cli.run(client)
     if name == "codex":

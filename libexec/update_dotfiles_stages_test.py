@@ -85,3 +85,17 @@ def test_injected_failure_preserves_progress(failed: stages.Stage, error: Except
         assert visited == declared
         assert len(update_dotfiles_runtime.continued_failures) == 1
         assert update_dotfiles_runtime.finish(result) == 1
+
+
+def test_stage_exception_detail_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
+    """段の未知例外の本文は、続行の記録と同期報告へ渡す前に共通の抜粋で伏せる。"""
+    monkeypatch.setattr(update_dotfiles_runtime, "continued_failures", [])
+    item = stages.Stage("future optional stage")
+
+    def run(_item: stages.Stage) -> int:
+        raise RuntimeError("password=synthetic-secret-0123456789")
+
+    # pylint: disable-next=protected-access
+    assert stages._run_stage(item, run, fatal=(), sleep=lambda _seconds: None) == 1
+    assert "synthetic-secret" not in (update_dotfiles_runtime.last_stderr_tail or "")
+    assert "synthetic-secret" not in (update_dotfiles_runtime.continued_failures[-1].detail or "")

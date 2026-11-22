@@ -128,7 +128,11 @@ def _scan_local_sessions(context: SessionsContext, tracker: session_watch.Record
         delegated_ids=lambda path, engine: index.delegated_ids(pathlib.Path(path), engine),
         launcher_of=session_launchers.launcher_reader(context.state_dir),
     )
-    entries = [dataclasses.replace(entry, parent_path=links.get(entry.path)) for entry, _ in kept]
+    entries = []
+    for entry, _ in kept:
+        parent = links.get(entry.path)
+        label = index.delegation_labels(pathlib.Path(parent)).get(entry.session_id) if parent else None
+        entries.append(dataclasses.replace(entry, parent_path=parent, label=label))
     entries.sort(key=lambda entry: entry.started_at or "", reverse=True)
     limited = session_parents.limit_with_ancestors(
         entries, MAX_LIST_ENTRIES, path_of=lambda entry: entry.path, parent_of=lambda entry: entry.parent_path

@@ -7,6 +7,7 @@ import json
 import logging
 import pathlib
 import socket
+import time
 import typing
 
 from agent_toolkit._atk import session_record_format
@@ -43,6 +44,7 @@ from agent_toolkit._atk.serve.sessions_models import (
     _isoformat,
     _started_at,
     build_detail,
+    record_matches,
 )
 from agent_toolkit._atk.serve.sessions_remote import (
     RemoteSessionClient,
@@ -152,6 +154,49 @@ async def _collect_sessions(context: SessionsContext) -> tuple[list[SessionSumma
         parent_of=lambda entry: json.dumps([entry.host, entry.parent_path]) if entry.parent_path else None,
     )
     return limited, warnings
+
+
+def _search_local(context: SessionsContext, entries: list[SessionSummary], query: str) -> tuple[set[str], bool]:
+    found: set[str] = set()
+    incomplete = False
+    deadline = time.monotonic() + OPERATION_TIMEOUT_SEC["search"]
+    for entry in entries:
+        if not is_local_record_path(context, entry.path):
+            incomplete = True
+            continue
+        try:
+            if record_matches(pathlib.Path(entry.path), entry.engine, query, deadline=deadline):
+                found.add(entry.path)
+        except OSError, ValueError:
+            incomplete = True
+    return found, incomplete
+
+
+async def search_sessions(context: SessionsContext, query: str) -> tuple[list[SessionSummary], bool]:
+    """一覧に現れる記録だけを検索し、一部の記録を確認できなければ明示する。"""
+    entries, warnings = await list_sessions(context)
+    by_host: dict[str, list[SessionSummary]] = {}
+    for entry in entries:
+        by_host.setdefault(entry.host, []).append(entry)
+    encoded_query = base64.b64encode(query.encode("utf-8")).decode("ascii")
+
+    async def search_host(host: str, candidates: list[SessionSummary]) -> tuple[list[SessionSummary], bool]:
+        if host == context.hostname:
+            paths, incomplete = await asyncio.to_thread(_search_local, context, candidates, query)
+        else:
+            try:
+                response = await _remote_call(context, host, "search", {"query": encoded_query})
+            except OSError, ValueError, RuntimeError:
+                return [], True
+            supplied = response.get("paths")
+            if not isinstance(supplied, list) or not all(isinstance(path, str) for path in supplied):
+                return [], True
+            paths = set(supplied)
+            incomplete = response.get("incomplete") is not False
+        return [entry for entry in candidates if entry.path in paths], incomplete
+
+    results = await asyncio.gather(*(search_host(host, candidates) for host, candidates in by_host.items()))
+    return [entry for matches, _ in results for entry in matches], bool(warnings) or any(flag for _, flag in results)
 
 
 async def session_detail(context: SessionsContext, engine: str, host: str, path: str) -> dict[str, typing.Any]:

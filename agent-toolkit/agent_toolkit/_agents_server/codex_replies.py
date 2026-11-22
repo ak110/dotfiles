@@ -158,7 +158,10 @@ class CodexRepliesMixin:
         if client is None:
             failed = self._clients.get(session.session_id)
             if failed is None or getattr(failed, "reader_failure", None) is None:
-                raise AppServerError("Codex App Server client is unavailable for interrupt")
+                raise ActionableError(
+                    "Codex App Server client is unavailable for interrupt",
+                    next_action=KILL_NOT_DELIVERED_NEXT_ACTION,
+                )
             await self._wait_failure_published(session)
             return
         turn_id = session.turn_id

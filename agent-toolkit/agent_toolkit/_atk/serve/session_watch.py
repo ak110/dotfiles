@@ -152,6 +152,7 @@ class RecordScan:
     """記録1件の1回の走査で求めた、一覧が使う値。"""
 
     fields: SummaryFields
+    labels: dict[str, str]
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`scan_record`へ`delegations=False`を渡した場合は求めずに空集合とする。"""
 
@@ -193,7 +194,8 @@ def scan_record(path: pathlib.Path, engine: str, *, delegations: bool = True) ->
     except OSError:
         readable = False
     delegated = collector.children if collector is not None and readable else frozenset()
-    return RecordScan(fields=summary.fields(readable=readable), delegated_ids=delegated)
+    labels = collector.labels if collector is not None and readable else {}
+    return RecordScan(fields=summary.fields(readable=readable), delegated_ids=delegated, labels=labels)
 
 
 def summary_fields(path: pathlib.Path, engine: str) -> SummaryFields:
@@ -262,6 +264,7 @@ class _IndexedRecord:
     trusted: bool
     """更新から2秒以上後に解析しており、無効化キーの一致だけで再利用できるか。"""
     fields: SummaryFields
+    labels: dict[str, str]
     delegated_ids: frozenset[str]
     """子セッションIDの集合。`fields`と同じ走査で求める。"""
 
@@ -337,6 +340,7 @@ class RecordSummaryIndex:
                     "size": record.size,
                     "fields": list(record.fields),
                     "delegated_ids": sorted(record.delegated_ids),
+                    "labels": record.labels,
                     **(
                         {"message": self._messages[key][1]}
                         if key in self._messages and self._messages[key][0] is record
@@ -406,6 +410,7 @@ class RecordSummaryIndex:
             trusted=analysis_started_ns - st.st_mtime_ns >= _TRUSTED_AGE_NS,
             fields=scan.fields,
             delegated_ids=scan.delegated_ids,
+            labels=scan.labels,
         )
         with self._lock:
             self._records[key] = record
@@ -434,6 +439,12 @@ class RecordSummaryIndex:
             self._messages = retained
         return messages
 
+    def delegation_labels(self, path: pathlib.Path) -> dict[str, str]:
+        """要約と同じ走査で見つかった委譲先ラベルを返す。"""
+        with self._lock:
+            cached = self._records.get(str(path))
+        return cached.labels if cached is not None else {}
+
     def delegated_ids(self, path: pathlib.Path, engine: str) -> frozenset[str]:
         """記録が起動した子セッションIDの集合を返す。
 
@@ -454,6 +465,9 @@ def _cached_record(item: typing.Any) -> _IndexedRecord | None:
     mtime_ns, size, fields, delegated = item.get("mtime_ns"), item.get("size"), item.get("fields"), item.get("delegated_ids")
     if not (isinstance(mtime_ns, int) and isinstance(size, int) and isinstance(fields, list) and len(fields) == 4):
         return None
+    labels = item.get("labels")
+    if not isinstance(labels, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in labels.items()):
+        return None
     cwd, started_at, has_user, parent_thread_id = fields
     if not (
         (cwd is None or isinstance(cwd, str))
@@ -470,6 +484,7 @@ def _cached_record(item: typing.Any) -> _IndexedRecord | None:
         trusted=True,
         fields=(cwd, started_at, has_user, parent_thread_id),
         delegated_ids=frozenset(delegated),
+        labels=labels,
     )
 
 

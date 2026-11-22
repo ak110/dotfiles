@@ -11,7 +11,7 @@ from pytools._internal import update_claude_settings
 def test_former_compaction_env_removals_require_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """過去に残留した2キーは、登録がない場合だけ検出する。"""
     before = {"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "45", "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000"}}
-    after = {"env": {}}
+    after: dict[str, object] = {"env": {}}
     assert check.removals_left_after_update(before, after) == []
     monkeypatch.setattr(update_claude_settings, "_REMOVED_ENV_KEYS", ())
     assert check.removals_left_after_update(before, after) == [
@@ -68,6 +68,7 @@ def test_hook_moved_to_new_matcher_is_replaced() -> None:
 def test_cli_diagnoses_invalid_worktree_json(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     """Gitの比較元がある場合、現行JSONの構文エラーを取得失敗と区別する。"""
     monkeypatch.setattr("sys.argv", ["check", "--base", "HEAD"])
+    # pylint: disable-next=protected-access
     monkeypatch.setattr(check, "_from_worktree", lambda path, **_: check._read_object("{", str(path)))
     assert check.main() == 2
     error = capsys.readouterr().err

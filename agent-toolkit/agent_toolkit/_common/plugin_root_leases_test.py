@@ -62,6 +62,9 @@ def test_legacy_plugin_root_cleanup_checks_unregistered_consumers(tmp_path, monk
     class Consumer:
         pid = 123
 
+        def name(self):
+            return "python"
+
         def create_time(self):
             return 1.0
 

@@ -491,3 +491,43 @@ def test_code_identity_recomputes_while_a_module_was_just_written(
     for _ in range(2):
         assert _identity(root, tmp_path) == _distributed_identity(root)
     assert digested == [root, root, root]
+
+
+def test_service_diagnostic_redacts_before_taking_tail(tmp_path: pathlib.Path) -> None:
+    """末尾の開始位置がURLの認証部分に入っても、その断片を診断に残さない。"""
+    token = "A" * 32 + "dummy-synthetic"
+    tail = "z" * 65500
+    log = tmp_path / "G1.stderr.log"
+    log.write_text(f"https://{token}@example.org\n{tail}", encoding="utf-8")
+
+    error = RuntimeError("起動失敗")
+    service_forward._add_service_diagnostic(error, tmp_path, "G1")
+
+    detail = getattr(error, "__notes__", [""])[0].split("\n", 1)[1]
+    assert "先頭を省略" not in getattr(error, "__notes__", [""])[0]
+    assert detail == f"https://[REDACTED]@example.org\n{tail}"
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ("", "診断本文は空です。"),
+        ("z" * 2000, "全文は元の出力先で確認してください"),
+    ],
+)
+def test_service_diagnostic_distinguishes_empty_log_from_empty_excerpt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, content: str, expected: str
+) -> None:
+    """元のログが空の場合と、保持の上限を超えて本文を転載しない場合を区別して案内する。"""
+    from agent_toolkit._common import diagnostic_redaction  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(diagnostic_redaction, "RETAINED_BYTES", 1000)
+    (tmp_path / "G1.stderr.log").write_text(content, encoding="utf-8")
+    error = RuntimeError("起動失敗")
+    service_forward._add_service_diagnostic(error, tmp_path, "G1")  # pylint: disable=protected-access
+
+    note = getattr(error, "__notes__", [""])[0]
+    assert expected in note
+    assert note.startswith(f"管理サービスの診断: {tmp_path / 'G1.stderr.log'}")
+    if content:
+        assert "診断本文は空です。" not in note

@@ -52,7 +52,8 @@ agent-toolkitの共有依存環境は、dotfiles自身のGit更新の直後に�
 実行の開始時と終了時に、同期結果を`pytools/_internal/sync_report.py`が定める構造化ファイルへ記録する。
 次に起動するコーディングエージェントが、失敗した段と標準エラーの末尾からAWIの処理を
 完遂できるかを判定するための記録であり、失敗の内容を人間の目視に頼らず残す。
-`chezmoi init`と`chezmoi apply`の段は、子が標準出力と標準エラーを継承する。
+`chezmoi init`は標準出力を継承し、標準エラーを終了後に表示して診断に残す。
+`chezmoi apply`は両ストリームを継承する。
 この2段の同期結果には終了コードを残し、post-applyの詳細はpost-apply自身の記録と永続ログで確認する。
 
 共有Codex daemonは稼働したままにし、更新に再起動が要る場合は後処理で案内する。
@@ -68,6 +69,7 @@ import re
 import subprocess
 import sys
 import time
+from typing import Any
 
 import filelock
 
@@ -99,6 +101,7 @@ def _run_step(
     argv: list[str],
     *,
     capture: bool = False,
+    capture_stderr: bool = False,
     show_heading: bool = True,
     log_step_no: int | None = None,
     timeout: float | None = None,
@@ -107,7 +110,8 @@ def _run_step(
 
     `timeout`秒を超えた場合は、実行中に控えた子孫プロセスも含めて終了し、失敗（終了コード1）として返す。
 
-    `capture=False`の段は、子へ両ストリームを継承し、書き込み順と出力先を保つ。
+    取得を指定しないストリームは子へ継承する。
+    `capture_stderr=True`では標準エラーだけを取得し、段の終了後に親の標準エラーへ転送する。
     `capture=True`時は標準出力を文字列で返し、標準エラーは段の終了後に親の標準エラーへ転送する。
     """
     update_dotfiles_runtime.current_stage_title = title
@@ -120,30 +124,24 @@ def _run_step(
     update_dotfiles_runtime.logger.info("stage開始: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     try:
+        redirect: dict[str, Any] = {}
+        if capture or capture_stderr:
+            redirect.update(stderr=subprocess.PIPE, encoding="utf-8", errors="replace")
         if capture:
-            result = process_tree.run_with_timeout(
-                argv,
-                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                check=False,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                env=update_dotfiles_runtime.child_env(),
-                timeout=timeout,
-            )
-            returncode, stdout, output_tail = result.returncode, result.stdout, result.stderr
-            if result.stderr:
-                sys.stderr.write(result.stderr)
-        else:
-            result = process_tree.run_with_timeout(
-                argv,
-                cwd=update_dotfiles_runtime.DOTFILES_ROOT,
-                check=False,
-                env=update_dotfiles_runtime.child_env(),
-                timeout=timeout,
-            )
-            returncode, output_tail = result.returncode, ""
-            stdout = ""
+            redirect["stdout"] = subprocess.PIPE
+        result = process_tree.run_with_timeout(
+            argv,
+            cwd=update_dotfiles_runtime.DOTFILES_ROOT,
+            check=False,
+            env=update_dotfiles_runtime.child_env(),
+            timeout=timeout,
+            **redirect,
+        )
+        returncode = result.returncode
+        stdout = (result.stdout or "") if capture else ""
+        output_tail = (result.stderr or "") if capture or capture_stderr else ""
+        if output_tail:
+            sys.stderr.write(output_tail)
     except subprocess.TimeoutExpired:
         message = (
             f"{title}が{timeout}秒以内に完了しなかったため、子孫プロセスを終了しました。"
@@ -307,6 +305,7 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
             context.total,
             stage.name,
             ["chezmoi", "init", f"--source={update_dotfiles_runtime.DOTFILES_ROOT}"],
+            capture_stderr=True,
             timeout=stage.timeout_sec,
         )[0]
 
@@ -440,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
             except process_tree.ReclaimError:
                 raise
             except Exception as error:  # noqa: BLE001 -- ロックの未知の失敗でも未確定の配備へ進まず結果を残す。
-                update_dotfiles_runtime.last_stderr_tail = str(error)
+                update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(str(error))
                 print(f"更新ロックを取得・解放できませんでした: {error}", file=sys.stderr)
                 return update_dotfiles_runtime.finish(1)
             return update_dotfiles_runtime.finish(0)

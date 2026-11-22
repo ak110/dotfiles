@@ -33,6 +33,7 @@ from agent_toolkit._common import (
     runtime_environment,
     stream_lines,
 )
+from agent_toolkit._common.diagnostic_redaction import diagnostic_excerpt, diagnostic_head
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.cli-turn")
@@ -563,7 +564,7 @@ def decode_event(line: bytes) -> dict[str, Any] | None:
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
-        _LOG.debug("CLIの非JSON出力を無視: %s", text[:200])
+        _LOG.debug("CLIの非JSON出力を無視: %s", diagnostic_excerpt(text, prefix_chars=200))
         return None
     return payload if isinstance(payload, dict) else None
 
@@ -586,19 +587,24 @@ def _record_failure(session: SessionState, error: BaseException, stderr_text: st
         "message": str(error) or error.__class__.__name__,
         "engine": session.engine,
         "model": session.model,
-        "stderr": stderr_text.strip()[:_STDERR_LIMIT_CHARS],
+        "stderr": diagnostic_excerpt(stderr_text.strip(), prefix_chars=_STDERR_LIMIT_CHARS),
     }
     _LOG.error("cli_session_failure session_id=%s model=%s stderr=%s", session.session_id, session.model, stderr_text)
     finalize_turn(session, {"status": "failed", "agent_message": session.agent_message, "error": failure})
 
 
 async def _read_stderr(process: asyncio.subprocess.Process) -> str:
-    """標準エラーを先頭から`_STDERR_LIMIT_CHARS`バイトまで読み取る。"""
+    """標準エラーの先頭を有界に読み、伏せてから従来の読取上限と同じ`_STDERR_LIMIT_CHARS`バイトに抜粋する。
+
+    伏せると短くなるため上限の倍まで読む。EOFに届かずに倍の上限に達した時だけ、途中までになった末尾の行を共通の抜粋が除く。
+    """
     if process.stderr is None:
         return ""
     with contextlib.suppress(Exception):
-        data = await process.stderr.read(_STDERR_LIMIT_CHARS)
-        return data.decode("utf-8", errors="replace")
+        read_limit = _STDERR_LIMIT_CHARS * 2
+        data = await process.stderr.read(read_limit)
+        reached = len(data) >= read_limit and not process.stderr.at_eof()
+        return diagnostic_head(data, limit_bytes=_STDERR_LIMIT_CHARS, reached_read_limit=reached)
     return ""
 
 

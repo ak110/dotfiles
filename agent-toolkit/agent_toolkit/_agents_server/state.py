@@ -20,8 +20,18 @@ from agent_toolkit._agents_server.result_projection import (
 )
 from agent_toolkit._common import session_registry, startup_features, task_documents
 
-# 型の再公開は遅延し、session_stateから既存の状態契約を参照できるようにする。
-lazy from agent_toolkit._agents_server.session_state import SessionState as SessionState  # pylint: disable=useless-import-alias,cyclic-import
+if typing.TYPE_CHECKING:
+    from agent_toolkit._agents_server.session_state import SessionState as SessionState  # pylint: disable=useless-import-alias
+
+
+def __getattr__(name: str) -> Any:
+    """遅延importを無効にしても、状態契約の初期化前に型の再公開へ入らない。"""
+    if name == "SessionState":
+        from agent_toolkit._agents_server.session_state import SessionState  # pylint: disable=import-outside-toplevel
+
+        return SessionState
+    raise AttributeError(name)
+
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.state")
 

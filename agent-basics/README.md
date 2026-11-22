@@ -5,6 +5,7 @@
 原因分析は`agent-basics:bugfix`、検証の品質基準は`agent-basics:check-execution`、外部資料の取得手順は`agent-basics:fetch-sources`が扱う。
 変更を複数のモデルに壊させる敵対的レビューは`agent-basics:adversarial-review`、仕組みと経緯の説明は`agent-basics:explain`が扱う。
 アプリを操作して確かめる手順のスキルの生成は`agent-basics:verify-skill`、形式検証のスキルの生成は`agent-basics:formal-verification`が扱う。
+履歴から繰り返す誤りを洗い出して構造や検査で無くす作業は`agent-basics:harden-from-history`が扱う。
 
 ## Claude Codeへの導入
 

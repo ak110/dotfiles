@@ -56,7 +56,8 @@ AGENTS_SERVER_HOOK_TOOL_NAMES = _AGENTS_SERVER_TOOL_NAMES
 # `agent-toolkit:atk-mode/playbooks/delegation.md`「実行手段」は専用定義の例外に含めない。
 # `subagent_type`を省いた起動は`general-purpose`で動く。
 # `fork`と、これ以外の名前（プロジェクト固有の専用定義など）は対象外とする。
-_GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "web-fetch", "claude"})
+# `web-fetch`は、直接の`WebFetch`を持たない会話でClaude CodeがWebページを読む標準の手段のため対象外とする。
+_GENERIC_AGENT_TYPES: frozenset[str] = frozenset({"general-purpose", "Explore", "Plan", "claude"})
 # 複数の並行依頼を再発行できる余裕を持たせつつ、入力本文を保存せず状態の増加を抑える。
 _GENERIC_AGENT_RETRY_LIMIT = 32
 
@@ -66,8 +67,7 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
 
     戻り値は（遮断の通知, 非遮断の警告）で、どちらも無ければ対象外か再発行の通過である。
 
-    通常の遮断基準の4条件には該当しないが、web-fetchへのユーザーの切替要求と、
-    web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
+    通常の遮断基準の4条件には該当しないが、web-fetch・Exploreの2回の実測で警告が当該起動を変えなかったことから遮断する。
     同じ依頼を対応するmodeへ渡せるため、損失は起動の再発行に限られる。
     例外の成否は入力から判定できず受信側へ委ねる。別操作による例外の確認と複数依頼を支えるため、
     主体別に直近32件の指紋を保持し、通過時に消費する。寿命はセッション状態の回収に従う。
@@ -85,7 +85,7 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
     repeated = _generic_agent_retry(payload, tool_name, tool_input)
     if repeated:
         return None, None
-    mode = "`explore`" if agent_type in {"Explore", "web-fetch"} else "`delegate`または役割文書のある`task`"
+    mode = "`explore`" if agent_type == "Explore" else "`delegate`または役割文書のある`task`"
     if repeated is None:
         return None, _llm_notice(
             f"`{tool_name}`の汎用定義`{agent_type}`の起動は通した。再発行の記録を保存できなかった。",

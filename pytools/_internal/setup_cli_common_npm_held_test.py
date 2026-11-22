@@ -1,4 +1,4 @@
-"""pytools._internal.setup_cli_commonのnpm版の移行（`migrate_npm_launchers`）で、自動では削除せず保持した起動先とパッケージの警告のテスト。"""
+"""pytools._internal.setup_cli_commonのnpm版の移行（`warn_about_npm_launchers`）で、自動では削除せず保持した起動先とパッケージの警告のテスト。"""
 
 import codecs
 import logging
@@ -24,7 +24,7 @@ def _assert_left_without_package_warning(message: str, launchers: list[Path], ca
     """本体の無い起動スクリプトの警告が、残したファイルの一覧と、保持か退避かの案内と、正規の起動先を示す。"""
     assert all(str(_shown(launcher)) in message for launcher in launchers), message
     assert "意図したラッパーなら保持する" in message
-    assert "起動に失敗するなら別の場所へ退避するか削除し" in message
+    assert "不要と確認できた場合だけ別の場所へ退避し" in message
     assert f"`{canonical}`" in message
     assert "package.json" not in message
 
@@ -35,7 +35,7 @@ def _assert_held_launcher_guidance(message: str, canonical: Path) -> None:
     assert f"不要と確認できた場合だけ別の場所へ退避し、正規の起動先`{canonical}`で起動する" in message, message
 
 
-def test_migrate_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Path) -> None:
+def test_warn_about_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Path) -> None:
     canonical_prefix = tmp_path / "canonical"
     canonical = canonical_prefix / "bin" / "codex"
     canonical.parent.mkdir(parents=True)
@@ -58,7 +58,7 @@ def test_migrate_npm_launchers_keeps_unknown_launcher(monkeypatch, tmp_path: Pat
 
     monkeypatch.setattr(setup_cli_common.common, "run_subprocess", fake_run)
 
-    assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical_prefix)
+    setup_cli_common.warn_about_npm_launchers("codex", "@openai/codex", canonical, canonical_prefix)
     assert not any("uninstall" in call for call in calls)
 
 
@@ -85,7 +85,7 @@ def test_migrate_skips_mise_shim_directory(
     monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(other)]))
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not setup_cli_common.migrate_npm_launchers(
+        setup_cli_common.warn_about_npm_launchers(
             "codex", "@openai/codex", tmp_path / "canonical" / "bin" / "codex", tmp_path / "canonical"
         )
 
@@ -121,7 +121,7 @@ def test_migrate_reports_why_package_ownership_is_unconfirmed(
     canonical = tmp_path / "canonical" / "bin" / "codex"
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "canonical")
+        setup_cli_common.warn_about_npm_launchers("codex", "@openai/codex", canonical, tmp_path / "canonical")
 
     assert launcher.is_file()
     messages = [message for message in caplog.messages if str(launcher) in message]
@@ -141,7 +141,7 @@ def test_migrate_keeps_launcher_without_adjacent_npm(monkeypatch, tmp_path: Path
     launcher.write_text("", encoding="utf-8")
     monkeypatch.setenv("PATH", str(launcher.parent))
 
-    assert not setup_cli_common.migrate_npm_launchers(
+    setup_cli_common.warn_about_npm_launchers(
         "codex", "@openai/codex", tmp_path / "canonical/bin/codex", tmp_path / "canonical"
     )
 
@@ -164,7 +164,7 @@ def test_windows_warns_once_with_ps1_about_launchers_without_adjacent_npm(
     for _ in range(2):
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-            assert not _migrate(tmp_path, windows=True)
+            _migrate(tmp_path, windows=True)
         assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
         assert len(caplog.messages) == 1, caplog.messages
         assert all(str(_shown(launcher)) in caplog.messages[0] for launcher in launchers), caplog.messages[0]
@@ -189,7 +189,7 @@ def test_migrate_excludes_callers_own_wrappers_from_retention_warning(
     monkeypatch.setenv("PATH", os.pathsep.join([str(wrappers), str(legacy.parent)]))
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not setup_cli_common.migrate_npm_launchers(
+        setup_cli_common.warn_about_npm_launchers(
             "codex",
             "@openai/codex",
             tmp_path / "canonical/bin/codex",
@@ -211,7 +211,7 @@ def test_windows_warns_about_unedited_shims_left_without_package(
     launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers if launcher.exists()}
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
 
     assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
     assert not npm.uninstalls
@@ -247,7 +247,7 @@ def test_windows_keeps_edited_shims_left_without_package(
     edited.write_bytes(edit(edited.read_bytes().decode()))
     (npm.package / "bin" / "work.js").write_text("#!/usr/bin/env node\n", encoding="utf-8")
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
     assert not npm.uninstalls
     assert len(caplog.messages) == 1, caplog.messages
     assert f"{_shown(edited)}（" in caplog.messages[0]
@@ -257,7 +257,7 @@ def test_windows_keeps_edited_shims_left_without_package(
     for _ in range(2):
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-            assert not _migrate(tmp_path, windows=True)
+            _migrate(tmp_path, windows=True)
         assert {launcher: launcher.read_bytes() for launcher in launchers} == launchers
         assert len(caplog.messages) == 1, caplog.messages
         _assert_left_without_package_warning(caplog.messages[0], npm.launchers, _canonical(tmp_path, windows=True))
@@ -277,7 +277,7 @@ def test_migrate_keeps_users_link_to_launcher_of_other_npm(
     launchers = {launcher: launcher.read_bytes() for launcher in npm.launchers}
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
 
     assert link.is_symlink()
     assert link.readlink() == npm.bin_dir / "codex.cmd"
@@ -304,10 +304,10 @@ def test_migrate_reports_unreadable_package_json_once_per_package(
     for _ in range(2):
         caplog.clear()
         with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-            assert not _migrate(tmp_path, windows=windows)
+            _migrate(tmp_path, windows=windows)
         assert len(caplog.messages) == 1, caplog.messages
         assert str(package_json.resolve()) in caplog.messages[0]
-        assert "同じ版のpackage.jsonを復元するか、読取権限を直してから`update-dotfiles`を再実行する" in caplog.messages[0]
+        assert "同じ版のpackage.jsonを復元するか読取権限を直す" in caplog.messages[0]
     assert not npm.uninstalls
     assert npm.package.is_dir()
     assert all(launcher.exists() or launcher.is_symlink() for launcher in npm.launchers)
@@ -332,7 +332,7 @@ def test_migrate_keeps_shims_of_unknown_npm_and_shows_removal_steps(
         shutil.rmtree(npm.package)
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not _migrate(tmp_path, windows=True)
+        _migrate(tmp_path, windows=True)
 
     assert {launcher: launcher.read_bytes() for launcher in unknown} == unknown
     assert not npm.uninstalls
@@ -386,7 +386,7 @@ def test_migrate_warns_once_per_directory_about_launchers_left_without_package(
     canonical = tmp_path / "canonical" / "codex.cmd"
 
     with caplog.at_level(logging.WARNING, logger="pytools._internal.setup_cli_common"):
-        assert not setup_cli_common.migrate_npm_launchers("codex", "@openai/codex", canonical, canonical.parent)
+        setup_cli_common.warn_about_npm_launchers("codex", "@openai/codex", canonical, canonical.parent)
 
     assert {
         directory: {name: (tmp_path / directory / name).read_bytes() for name in contents}

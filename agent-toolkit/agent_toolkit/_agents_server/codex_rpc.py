@@ -26,9 +26,10 @@ from agent_toolkit._agents_server import state as shared_state
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError, ResourceReleaseError, _as_text
 from agent_toolkit._agents_server.file_operations import finish_task, run_file_operation
 from agent_toolkit._agents_server.session_errors import SessionInitializationTimeoutError
-from agent_toolkit._agents_server.state import LaunchKind, append_bounded, utc_now
+from agent_toolkit._agents_server.state import LaunchKind, utc_now
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import plugin_environment, process_tree, runtime_environment, windows_job
+from agent_toolkit._common.diagnostic_redaction import DiagnosticTail
 
 if typing.TYPE_CHECKING:
     import psutil
@@ -91,7 +92,7 @@ class JsonRpcProcess:
         self._write_lock = asyncio.Lock()
         self._closed = False
         self._reader_failure: BaseException | None = None
-        self._stderr_text = ""
+        self._stderr = DiagnosticTail(APP_SERVER_STDERR_LIMIT_CHARS, unit="chars")
         self._initialization_stage = "created"
         self._received_message_types: dict[str, int] = {}
         self._residual: list[psutil.Process] = []
@@ -107,7 +108,7 @@ class JsonRpcProcess:
             "stage": self._initialization_stage,
             "received_message_types": dict(sorted(self._received_message_types.items())),
             "child_pid": None if process is None else process.pid,
-            "stderr": self._stderr_text.strip(),
+            "stderr": self._stderr.excerpt().text.strip(),
         }
 
     def diagnostic(self) -> dict[str, Any]:
@@ -354,11 +355,7 @@ class JsonRpcProcess:
                 if not line:
                     return
                 text = line.decode("utf-8", errors="replace")
-                self._stderr_text = append_bounded(
-                    self._stderr_text,
-                    text,
-                    APP_SERVER_STDERR_LIMIT_CHARS,
-                )
+                self._stderr.feed(text)
                 print(
                     text,
                     end="",
@@ -386,7 +383,7 @@ class JsonRpcProcess:
 
         command = " ".join(APP_SERVER_COMMAND)
         message = f"Codex App Server stdout closed: command={command}; returncode={self.process.returncode}"
-        stderr = self._stderr_text.strip()
+        stderr = self._stderr.excerpt().text.strip()
         if stderr:
             message = f"{message}; stderr={stderr}"
         return AppServerError(message)

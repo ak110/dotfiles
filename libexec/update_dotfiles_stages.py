@@ -178,7 +178,9 @@ def _run_stage(item: Stage, runner: Runner, *, fatal: tuple[type[BaseException],
             raise
         except Exception as error:  # noqa: BLE001 -- 宣言に無い失敗は止めず、記録して続行する境界。
             update_dotfiles_runtime.logger.exception("stage例外: %s", item.name)
-            update_dotfiles_runtime.last_stderr_tail = f"{type(error).__name__}: {error}"
+            update_dotfiles_runtime.last_stderr_tail = update_dotfiles_runtime.sync_report.truncate_tail(
+                f"{type(error).__name__}: {error}"
+            )
             code = 1
         if code == 0:
             return 0

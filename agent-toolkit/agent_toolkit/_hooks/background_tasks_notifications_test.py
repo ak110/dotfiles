@@ -135,3 +135,19 @@ class TestIsPendingAsyncWork:
         entries.append(_assistant_entry([{"type": "text", "text": _TEXT}, _bash_no_bg()]))
         t = _write_transcript(tmp_path, entries)
         assert is_pending_async_work(str(t), "", session_state=None) is expected
+
+
+def test_unresolved_completion_log_redacts_before_truncating(monkeypatch: pytest.MonkeyPatch) -> None:
+    """対応付けられなかった通知本文は、常時ログへ書く前に伏せてから上限の文字数に抜粋する。"""
+    from agent_toolkit._hooks import background_tasks_notifications  # pylint: disable=import-outside-toplevel
+
+    recorded: list[dict] = []
+    monkeypatch.setattr(
+        background_tasks_notifications, "append_stop_log", lambda _session, _decision, context: recorded.append(context)
+    )
+    detail = "z" * 480 + " https://" + "A" * 45 + "@example.org token=synthetic-secret-0123"
+    background_tasks_notifications._log_unresolved_completion("S1", detail)  # pylint: disable=protected-access
+
+    saved = recorded[0]["notification"]
+    assert "A" * 10 not in saved
+    assert len(saved) <= 500

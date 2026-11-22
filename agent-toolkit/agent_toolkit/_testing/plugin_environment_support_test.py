@@ -4,6 +4,8 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,5 +45,8 @@ def test_prepare_skips_mise_uv_after_path_isolation(tmp_path, monkeypatch, maske
         return subprocess.CompletedProcess(arguments, 0, "", "")
 
     monkeypatch.setattr(plugin_environment_support.process_tree, "run_with_timeout", run)
+    monkeypatch.setattr(
+        plugin_environment_support, "sys", SimpleNamespace(base_prefix=str(tmp_path / "python"), executable=sys.executable)
+    )
     monkeypatch.setattr(plugin_environment, "prepared_python", lambda *_args: tmp_path / "ready-python")
     assert plugin_environment_support.prepare_plugin_environment(tmp_path, environment) == tmp_path / "ready-python"

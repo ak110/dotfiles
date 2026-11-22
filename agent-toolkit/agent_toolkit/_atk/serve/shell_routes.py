@@ -407,6 +407,21 @@ def register_session_routes(
         roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
         return json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
+    @app.post("/api/sessions/search")
+    async def sessions_search() -> quart.Response:
+        payload = await quart.request.get_json(silent=True)
+        raw = payload.get("query") if isinstance(payload, dict) and set(payload) == {"query"} else None
+        query = raw.strip().casefold() if isinstance(raw, str) else ""
+        if not 0 < len(query) <= 1024:
+            raise _wi_operations.WebApiInputError("検索語はqueryに1〜1024文字で指定してください")
+        matches, incomplete = await serve_sessions.search_sessions(context, query)
+        return json_no_store(
+            {
+                "matches": [[entry.host, entry.engine, entry.path] for entry in matches],
+                "incomplete": incomplete,
+            }
+        )
+
     def session_target() -> tuple[str, str, str]:
         """詳細と推定費用の要求から、対象の記録を示すhost・engine・pathを取り出す。"""
         unknown = set(quart.request.args) - {"host", "engine", "path"}

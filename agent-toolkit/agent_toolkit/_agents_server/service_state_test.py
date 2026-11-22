@@ -48,6 +48,26 @@ async def test_transfer_retains_control_state_and_creates_new_locks(hold: turn_s
         service_state.restore({})
 
 
+@pytest.mark.asyncio
+async def test_restore_accepts_payload_from_generation_without_new_optional_fields() -> None:
+    """旧世代の写しには、新しい版で増えた省略できるフィールドが無い。"""
+    payload = json.loads(json.dumps(await service_state.snapshot(state.SessionState("parent", "/project"))))
+    optional = next(
+        field.name
+        for field in dataclasses.fields(state.SessionState)
+        if field.name in payload
+        and (field.default is not dataclasses.MISSING or field.default_factory is not dataclasses.MISSING)
+    )
+    del payload[optional]
+    assert service_state.restore(payload).session_id == "parent"
+    with pytest.raises(ValueError):
+        service_state.restore({**payload, "unknown_field": {"kind": "value", "value": None}})
+    without_required = dict(payload)
+    del without_required["cwd"]
+    with pytest.raises(ValueError):
+        service_state.restore(without_required)
+
+
 def test_codec_round_trips_registry_resume_state() -> None:
     """世代移行の`move_context`は登録簿由来の停止済みsessionも符号化できる。
 

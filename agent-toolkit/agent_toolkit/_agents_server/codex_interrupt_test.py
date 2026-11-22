@@ -167,6 +167,18 @@ async def test_kill_while_app_server_stops_waits_for_failure(tmp_path: Path, mon
     assert "turn/interrupt" not in [method for method, _ in clients[0].requests]
 
 
+@pytest.mark.asyncio
+async def test_kill_reports_next_action_without_an_owned_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """中断要求を配送できなければ、導入の案内ではなく次の操作を返す。"""
+    async with harness._service_environment(tmp_path, monkeypatch, harness._no_save) as (owner, backend, _clients):
+        session = await backend.start("作業", str(tmp_path))
+        with monkeypatch.context() as patch:
+            patch.setattr(backend, "_owned_client", lambda _session: None)
+            with pytest.raises(ActionableError) as error:
+                await owner.kill(session.session_id, timeout=5)
+        assert error.value.next_action == KILL_NOT_DELIVERED_NEXT_ACTION
+
+
 @pytest.mark.parametrize("service", [False, True])
 @pytest.mark.asyncio
 async def test_kill_awaiting_interrupt_response_survives_reader_failure(

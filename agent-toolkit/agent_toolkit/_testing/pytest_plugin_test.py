@@ -16,7 +16,7 @@ import claude_agent_sdk
 import psutil
 import pytest
 
-from agent_toolkit._agents_server import backends
+from agent_toolkit._agents_server import antigravity, backends
 from agent_toolkit._testing import late_descendant, pytest_plugin
 from agent_toolkit._testing.pytest_plugin_support import _config
 
@@ -40,6 +40,8 @@ async def test_forbid_backend_process_rejects_every_supported_backend(
     # 期待するAssertionErrorと異なる例外にして、guardの欠落を成功と数えない。
     monkeypatch.setattr(claude_agent_sdk, "ClaudeSDKClient", unexpected_client)
     monkeypatch.setattr(asyncio.get_running_loop(), "subprocess_exec", unexpected_process)
+    if engine == "agy":
+        monkeypatch.setattr(antigravity, "_gemini_delegation_binary", lambda _environment: "agy")
     backend = backends.create_backend(
         engine,
         {},

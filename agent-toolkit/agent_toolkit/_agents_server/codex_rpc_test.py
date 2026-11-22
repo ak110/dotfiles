@@ -32,7 +32,7 @@ async def test_json_rpc_write_failure_preserves_bounded_diagnostics() -> None:
         # 実プロセスの代わりにテスト用の代替オブジェクトを割り当てるため、静的な型判定の対象から外す。
         client.process = process  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
         client._initialization_stage = "initialized_sent"
-        client._stderr_text = "network unavailable"
+        client._stderr.feed("network unavailable")
 
         with pytest.raises(subject.AppServerError) as exc_info:
             await client.send({"method": "test"})

@@ -362,10 +362,11 @@
       <aside id="sessions-sidebar" class="pane-sidebar">
         <div class="toolbar">
           <label class="visually-hidden" for="sessions-filter">セッションを検索</label>
-          <input id="sessions-filter" type="search" placeholder="ホスト・作業ディレクトリ・識別子・パスを検索">
+          <input id="sessions-filter" type="search" placeholder="ホスト・作業ディレクトリ・識別子・パス・ラベルを検索">
         </div>
         <div id="warnings" role="alert" hidden></div>
         <div id="sessions-list-error" role="alert" hidden></div>
+        <p id="sessions-search-status" role="status" hidden></p>
         <div id="sessions-empty" class="empty-state" hidden><p>該当するセッションがありません。</p><button id="sessions-clear-filter" type="button">検索をクリア</button></div>
         <div id="sessions"></div>
         <div id="sessions-sentinel" hidden></div>
