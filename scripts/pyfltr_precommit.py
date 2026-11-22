@@ -53,6 +53,8 @@ import subprocess
 import sys
 import typing
 
+from agent_toolkit._common.shell_segments import extract_execution_pipelines
+from agent_toolkit._common.shell_tokens import strip_redirections
 from agent_toolkit._git import command as git_command
 from verification_targets import consumer_tests, required_tests, uncovered_tests
 
@@ -112,6 +114,71 @@ class Reuse(typing.NamedTuple):
 
     run_id: str | None
     reason: str
+
+
+def _early_reader(tokens: tuple[str, ...]) -> str | None:
+    if not tokens:
+        return None
+    name = pathlib.PurePosixPath(tokens[0]).name
+    if name == "head":
+        return name
+    if name != "grep":
+        return None
+    args = iter(tokens[1:])
+    for token in args:
+        if token == "--":
+            break
+        if token in {"--quiet", "--silent", "--max-count"} or token.startswith("--max-count="):
+            return name
+        if token in {"--regexp", "--file", "--after-context", "--before-context", "--context", "--devices", "--directories"}:
+            next(args, None)
+        elif token.startswith("-") and not token.startswith("--"):
+            letters = token[1:]
+            for index, letter in enumerate(letters):
+                if letter in "qm":
+                    return name
+                if letter in "efABCDd":
+                    if index == len(letters) - 1:
+                        next(args, None)
+                    break
+    return None
+
+
+def _pipefail_candidate(source: str) -> str | None:
+    if "pipefail" not in source:
+        return None
+    enabled = False
+    for pipeline in extract_execution_pipelines(source, expand_shell=False):
+        segments = [strip_redirections(part.tokens) for part in pipeline]
+        if len(segments) == 1:
+            tokens = segments[0]
+            if len(tokens) == 3 and tokens[0] == "set" and tokens[1].endswith("o") and tokens[2] == "pipefail":
+                enabled = tokens[1].startswith("-")
+        elif enabled:
+            for tokens in segments[1:]:
+                if reader := _early_reader(tokens):
+                    return reader
+    return None
+
+
+def _observe_pipefail(files: list[str]) -> None:
+    root = pathlib.Path.cwd().resolve()
+    for name in files:
+        if not name.endswith((".sh", ".bash", ".sh.tmpl")):
+            continue
+        try:
+            path = (root / name).resolve()
+            if not path.is_relative_to(root):
+                continue
+            reader = _pipefail_candidate(path.read_text(encoding="utf-8"))
+        except OSError, UnicodeError:
+            continue
+        if reader is not None:
+            print(
+                f"{name}: pipefailと後段{reader}の早期終了が重なる候補。"
+                "前段の結果を確認し、必要なら全入力を読むか生成と検索を分ける。",
+                file=sys.stderr,
+            )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -182,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"pyfltr-precommit: run {args.verify_run}は現在のHEADの内容でpytestに成功している。")
         return 0
+    _observe_pipefail(args.files)
     branch = current_branch(pathlib.Path.cwd())
     if branch is not None and branch not in _INTEGRATION_BRANCHES:
         print(
