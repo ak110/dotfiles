@@ -161,7 +161,7 @@
    - 解消で生じた変更と影響するAWIを、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従ってmerge commitへ対応付ける。
    - 競合箇所、解消の方針、変更内容、影響範囲を`atk review-table add`でレビュー指摘管理表へ1行加え、同じ行に`atk review-table respond`で解消内容を書く。
      行の書き方は`agent-toolkit:atk-mode/references/review-record-table.md`「レビュー指摘管理表の共通操作」に従う。
-   - 影響する利用側を検証し、解消差分を実行レビューにかけ、既存の実行レビュー担当から現在のHEADの判定を受理する（`agent-toolkit:atk-mode/playbooks/exec-review-loop.md`）。
+   - 影響する利用側を検証し、解消差分の再レビューは`agent-toolkit:atk-mode/references/exec-review-head-update.md`で要否を確かめる。
 3. クリーンな現在のHEADを`--reviewed-head`へ渡し、受理済みのレビューとcommitの対応を反映したmanifestで、`atk lane integrate`へ`--restart-review`を付けて再開する。
    統合先がさらに進んだ場合も同じ節に従って追加でmergeし、その影響だけを検収する。
 
@@ -170,7 +170,8 @@
 1. 同じレーン担当のthreadへ競合の解消を指示する（別の修正担当を起こさずに同じ担当で解く）。
    同じthreadを続けられない場合は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従い、新しいレーン担当へ`再開位置`として`~/.claude/plans`配下の計画ファイルの絶対パスを渡す。
 2. レーン担当は本節の手順1〜3を同じthreadで終える。
-3. 新しいHEADの受理済みレビューとmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる（既存の実装OIDの書換えや旧新の対応表は求めない）。
+3. 新しいHEADで受理した証拠とmanifestを保ち、`agent-toolkit:atk-mode/playbooks/lane-receipt.md`の統合前の検収に従って再開させる。
+   既存の実装OIDの書換えや旧新の対応表は求めない。
 
 ## 統合後の変更範囲の検証の失敗
 

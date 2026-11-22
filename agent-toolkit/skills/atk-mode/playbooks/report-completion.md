@@ -110,7 +110,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    回答や委譲結果の待機、中止・置換、技術的不成立は通常の完了と分け、残工程と再開の条件を報告し、`agent-toolkit:atk-mode/references/termination-evidence.md`に従って記録する。
    送達の失敗、実害を防ぐStop hookの遮断、新しいユーザーの指示は、それぞれの回復・続行の手順へ進む。
    確認の記録は`docs/development/audit-records-completion.md`の「agent-toolkit/skills/atk-mode/playbooks/report-completion.md：最終報告送達後のターン終了：2026年10月9日」にある。
-   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置し、送達した報告の原本を更新する（再検証はその問題に要る範囲に限る）。
+   送達後に実際の新しい問題が分かった場合は、その問題を調べて処置する（再検証はその問題に要る範囲に限る）。
+   自律モードでは報告用UWIを更新し、協調モードではユーザーの判断や次の操作を変える訂正だけを届ける。
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
 区切りやセッション終了時の単発の振り返りは、`agent-toolkit:atk-mode/playbooks/review-session.md`に従い、本書の工程と送達の条件とは分ける。
@@ -129,4 +130,5 @@ batchによる未処理セッションの回収は別に行う。
 委譲先が反映した場合は、上の結果を委譲元へ返す。
 本節を読むことは、報告や終了をその担当へ加える認可にはならない。
 
-返す報告に含める項目: 作業完了報告の本文（`agent-toolkit:atk-mode/references/report-formats.md`の書式）と、送達・保存・終了操作の結果。
+返す報告: 協調モードでは作業完了報告（`agent-toolkit:atk-mode/references/report-formats.md`の書式）、自律モードでは保存した報告用UWIのファイル名。
+各モードの送達と終了の順は本書「工程」に従う。
