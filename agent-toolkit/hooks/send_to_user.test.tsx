@@ -1,5 +1,5 @@
 import { expect, mock, test } from "claude-code/testing";
-import { reportWarnings } from "./send_to_user.tsx";
+import { missingPreventionLine, reportWarnings } from "./send_to_user.tsx";
 
 for (const [surface, delegated, tool, shouldDeliver] of [
   ["terminal", false, "mcp__plugin_agent-toolkit_agents_server__send_to_user", true],
@@ -138,5 +138,28 @@ for (const [line, warns] of [
   test(`再発防止の行が変える成果物か区分名を示す: ${line.slice(0, 20)}`, () => {
     const message = "ユーザーの指摘を受けた不具合を直した。\n処置: 直した。\n" + line;
     expect(reportWarnings(message).some((warning) => warning.includes("変える成果物"))).toBe(warns);
+  });
+}
+
+const RECORD_WITHOUT_PREVENTION_2026_11_23 = [
+  "【bugfixの記録】判断誤り: 問いかけを指示として受け取り、評価しないまま手順を書き換えた",
+  "- 期待: 責任者として、変更の価値と既存手順との依存関係を確かめてから採否を決めること。",
+  "- 原因: 問いかけを変更の指示として扱い、手順5が何を入力にするかを確かめないまま書いた。",
+  "- 処置: 「直す」を採った。条件を「手順5の実行レビューより前」に改めた。",
+  "- 広がり: このセッションで割り込みを受けて入れた変更は、implement.mdの2か所と原稿の段落だけ。",
+  "- 確認: 再レビューの合格をもって確認とする。",
+].join("\n");
+
+for (const [message, rejects] of [
+  [RECORD_WITHOUT_PREVENTION_2026_11_23, true],
+  [RECORD_WITHOUT_PREVENTION_2026_11_23 + "\n- 再発防止: agent-basics/skills/bugfix/SKILL.md の記録に再発防止の行を常設する。", false],
+  [RECORD_WITHOUT_PREVENTION_2026_11_23.replaceAll(": ", "："), true],
+  ["期待: 一覧が表示される。\n原因: 設定の読み違い。\n処置: 直した。\n再発防止：処置済み。同じ作業で原因を除いた。", false],
+  ["進捗: 実装を終えた。\n処置: 試験を足した。", false],
+  ["```text\n期待: a\n原因: b\n処置: c\n```", false],
+  ["> 期待: a\n> 原因: b\n> 処置: c", false],
+] as const) {
+  test(`bugfixの記録に再発防止の行が無い報告だけを送信前に差し戻す: ${message.slice(0, 24)}`, () => {
+    expect(missingPreventionLine(message)).toBe(rejects);
   });
 }

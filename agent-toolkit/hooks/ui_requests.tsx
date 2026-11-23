@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
-import { deliverySucceeded, newReportRoute, reportWarnings } from "./send_to_user.tsx";
+import { deliverySucceeded, missingPreventionLine, missingPreventionRejection, newReportRoute, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountPeriodicRecheck } from "./periodic_recheck.ts";
@@ -72,7 +72,9 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         let autoMode: { hard_deny?: unknown; soft_deny?: unknown } | undefined;
         let flagAutoModePresent: boolean | undefined;
         let reason = "未対応の会話操作";
-        if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
+        if (request.operation === "send_to_user" && typeof request.input?.message === "string" && missingPreventionLine(request.input.message)) {
+          reason = missingPreventionRejection;
+        } else if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
           const placed = await $.ui.place({ id: request.id });

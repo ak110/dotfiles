@@ -150,6 +150,19 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
     "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
 );
 
+const BUGFIX_RECORD_HEADS = ["期待", "原因", "処置"] as const;
+export const missingPreventionRejection = automatedMessage(
+  "send-to-user",
+  "block",
+  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`処置:`）に`再発防止:`の行が無い。" +
+    "採用する策と変える成果物、または採らない区分名と理由（`agent-basics:bugfix/references/prevention.md`「再発防止を採用しない場合」）を`再発防止:`の行に書き、同じ報告を送り直せ。",
+);
+
+export function missingPreventionLine(message: string): boolean {
+  const heads = new Set(reportBodyLines(message).map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]!.trim()));
+  return BUGFIX_RECORD_HEADS.every((head) => heads.has(head)) && !heads.has("再発防止");
+}
+
 export function reportWarnings(message: string): string[] {
   const warnings = new Set<string>();
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));
