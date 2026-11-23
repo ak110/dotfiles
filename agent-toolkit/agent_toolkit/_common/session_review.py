@@ -587,18 +587,20 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     previous = read(after).get("records", {}) if after is not None else {}
     records: dict[str, Any] = {}
     for item in collected:
-        rows = item.records
+        physical_rows = (
+            sorted((*item.records, *item.fork_context), key=lambda row: row.line) if item.fork_context else item.records
+        )
         prior = previous.get(item.record_id)
         if prior is not None:
-            old_rows = [row for row in rows if row.line <= prior.get("observed_through_line", prior["through_line"])]
+            old_rows = [row for row in physical_rows if row.line <= prior.get("observed_through_line", prior["through_line"])]
             digest = hashlib.sha256("\n".join(row.text for row in old_rows).encode()).hexdigest()
             if digest != prior["digest"]:
                 raise ValueError(f"前回処理済み範囲を再現できない: {item.record_id}")
         records[item.record_id] = {
             "path": str(item.path),
-            "through_line": max((row.line for row in rows), default=0),
+            "through_line": max((row.line for row in physical_rows), default=0),
             "after_line": prior["through_line"] if prior else 0,
-            "digest": hashlib.sha256("\n".join(row.text for row in rows).encode()).hexdigest(),
+            "digest": hashlib.sha256("\n".join(row.text for row in physical_rows).encode()).hexdigest(),
         }
     missing = set(previous) - set(records)
     if missing:

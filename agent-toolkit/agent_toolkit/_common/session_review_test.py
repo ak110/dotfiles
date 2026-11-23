@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from agent_toolkit._common import session_activity, session_review, session_state
+from agent_toolkit._common import session_activity, session_family, session_review, session_state
 
 
 def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
@@ -444,3 +444,24 @@ def test_corrupt_manifest_preserves_new_and_legacy_review_logs():
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{破損", encoding="utf-8")
     assert session_review.protected_logs() == {old, new, renamed}
+
+
+def test_complete_checks_full_record_even_when_analysis_excludes_fork_context(tmp_path):
+    transcript = tmp_path / "fork.jsonl"
+    lines = ['{"type":"session_meta"}', '{"type":"event_msg","payload":{"type":"user_message","message":"継承"}}']
+    lines.append('{"type":"event_msg","payload":{"type":"user_message","message":"分岐後"}}')
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    loaded = session_family._load_records_checked(str(transcript))  # pylint: disable=protected-access
+    assert loaded.records is not None
+    meta, inherited, branch = loaded.records
+    collected = types.SimpleNamespace(
+        records=[meta, branch], fork_context=(inherited,), record_id="codex:fork", path=transcript
+    )
+    scope_path = tmp_path / "scope.json"
+    session_review.write(scope_path, session_review.scope_records([collected]))
+    assert session_review.record({"hook_event_name": "SessionStart", "session_id": "fork"}, host="codex")
+    prepared = {**session_review.prepare_identity("codex", "fork"), "scope_path": str(scope_path)}
+    assert session_review.complete(prepared)["pending_count"] == 0
+    transcript.write_text(("\n".join(lines) + "\n").replace("継承", "置換"), encoding="utf-8")
+    with pytest.raises(ValueError, match="接頭辞"):
+        session_review.complete(prepared)
