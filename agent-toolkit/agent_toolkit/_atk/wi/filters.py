@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 
+from agent_toolkit._atk.wi import user_comment as _wi_user_comment
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
 from agent_toolkit._atk.wi.constants import WI_ACTIVE_STATES, WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
@@ -33,6 +34,12 @@ def answered_matches(entry_type: str | None, text: str, answered_filters: str | 
         return False
     answered = _wi_uwi_scan.is_uwi_answered(text)
     return (answered and "yes" in filters) or (not answered and "no" in filters)
+
+
+def user_comment_matches(text: str, user_comment_filter: str) -> bool:
+    if user_comment_filter == "all":
+        return True
+    return _wi_user_comment.has_user_comment(text) == (user_comment_filter == "yes")
 
 
 def normalized_source(value: object) -> str | None:

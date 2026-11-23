@@ -372,6 +372,15 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         ),
     )
     edit.add_argument(
+        "--move-user-comment",
+        action="store_true",
+        help=(
+            "保存済みの`## ユーザーコメント`の全行が--body-fileの本文の`## ユーザー指摘の逐語引用`に含まれる時だけ、"
+            "コメント節を削除して保存する。エージェント環境でも使える。含まれない時は保存しない。"
+            "行頭の引用記号（`>`と空白1つ）、空行、行末の空白は比較で無視する。--body-fileとの併用が必須で、--appendとは併用できない。"
+        ),
+    )
+    edit.add_argument(
         "--dry-run",
         action="store_true",
         help=(

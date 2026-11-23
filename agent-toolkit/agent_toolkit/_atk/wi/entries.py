@@ -208,6 +208,7 @@ def select_entries(
     snapshot: Iterable[EntryRecord] | None = None,
     target_branch: str | None = None,
     branch_settings: _wi_branches.Registry | None = None,
+    user_comment: str = "all",
 ) -> list[EntryRecord]:
     selected: list[EntryRecord] = []
     states = _wi_filters.resolve_states(status)
@@ -225,6 +226,8 @@ def select_entries(
         if not _wi_filters.source_matches_any(parse_source(text), source):
             continue
         if not _wi_filters.important_matches(text, important):
+            continue
+        if not _wi_filters.user_comment_matches(text, user_comment):
             continue
         if target_branch is not None and not _wi_branches.matches(text, entry[1], target_branch, branch_settings or {}):
             continue

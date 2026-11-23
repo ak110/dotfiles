@@ -151,6 +151,36 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
+def _move_user_comment(original: str, edited: str, name: str) -> None:
+    show_section = f"`atk wi show {name} --section ユーザーコメント`"
+    try:
+        comment = _user_comment.extract_user_comment(original)
+    except _user_comment.UserCommentError:
+        _outcome.report_failure(
+            f"保存済みのユーザーコメント節の構造が壊れているため移せない: {name}",
+            next_action=_USER_COMMENT_BROKEN_NEXT_ACTION.format(name=name),
+        )
+        sys.exit(1)
+    if not comment:
+        _outcome.report_failure(
+            f"移すユーザーコメントが無い: {name}",
+            next_action="--move-user-commentを外して再実行する",
+        )
+        sys.exit(1)
+    if _user_comment.has_reserved_heading(edited):
+        _outcome.report_failure(
+            f"--move-user-commentでは本文へユーザーコメント節を含められない: {name}",
+            next_action="本文から`## ユーザーコメント`節を除き、その内容を`## ユーザー指摘の逐語引用`へ移して再実行する",
+        )
+        sys.exit(1)
+    if not _user_comment.quotes_user_comment(edited, comment):
+        _outcome.report_failure(
+            f"保存済みのユーザーコメントの全行が本文の`## ユーザー指摘の逐語引用`に無いため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在のコメントを読み直し、全行を`## ユーザー指摘の逐語引用`へ移して再実行する",
+        )
+        sys.exit(1)
+
+
 def _require_agent_edit_source(original: str, content: str) -> None:
     if not is_agent_environment():
         return
@@ -415,6 +445,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
         if args.append:
             args.subparser.error("--cooldown-untilは--appendと併用できません。")
+    if args.move_user_comment:
+        if args.append:
+            args.subparser.error("--move-user-commentは--appendと併用できません。")
+        if args.filename is None or message is None:
+            args.subparser.error("--move-user-commentではFILENAMEと--body-fileを指定してください。")
     if args.append:
         if args.filename is None or message is None:
             args.subparser.error("--appendではFILENAMEと--body-fileを指定してください。")
@@ -485,7 +520,10 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
-        edited = _preserve_agent_user_comment(original, edited)
+        if args.move_user_comment:
+            _move_user_comment(original, edited, path.name)
+        else:
+            edited = _preserve_agent_user_comment(original, edited)
     else:
         edited = original
     if args.cooldown_until is not None:

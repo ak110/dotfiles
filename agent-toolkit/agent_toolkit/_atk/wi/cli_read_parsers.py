@@ -66,6 +66,15 @@ def _add_mq_read_parsers(sub: Any) -> None:
     _add_important_filter_arg(list_)
     _add_target_branch_filter_arg(list_)
     list_.add_argument(
+        "--user-comment",
+        choices=("all", "yes", "no"),
+        default="all",
+        help=(
+            "AWIの`## ユーザーコメント`節の有無で限定する。`yes`は空でない節を持つ項目、`no`はそれ以外を対象にする。"
+            "コードフェンス内の見出しは節として数えず、節の構造が壊れた項目は`yes`に含める。省略時は`all`。"
+        ),
+    )
+    list_.add_argument(
         "--effect-check",
         choices=("pending", "confirmed", "insufficient", "not_required"),
         help="効果確認の全体判定で限定する。採用済みは--state=adoptedと併用する。",

@@ -27,7 +27,7 @@ COMPLETION_PLAYBOOK = f"playbooks/{COMPLETION_REPORT}.md"
 """完了報告の手順書の、入口`atk-mode`のディレクトリからの相対パス。"""
 
 
-TARGET_ENTRY_WORKS = ("add-awi-by-user", "implement", "process-wi")
+TARGET_ENTRY_WORKS = ("add-awi-by-user", "implement", "process-user-comments", "process-wi")
 
 
 """入口`atk-mode`の作業のうち、開始した時点で成果作業となる名前。適用条件は完了報告の手順書「適用の判定」に従う。
