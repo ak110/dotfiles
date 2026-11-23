@@ -37,7 +37,7 @@ def test_sync_waits_for_target_dependencies(tmp_path: Path, monkeypatch: pytest.
 
     def run_with_prepare(command: list[str], **kwargs: Any):
         if command[0] != "uv":
-            return run(command, **kwargs)
+            return run(command, check=kwargs.pop("check", False), **kwargs)
         calls.append(command)
         assert git("rev-parse", "HEAD") == old
         assert launcher.read_text(encoding="utf-8") == "old\n"
