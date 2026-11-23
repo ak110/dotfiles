@@ -33,6 +33,7 @@ def test_public_tools_expose_single_start_with_modes() -> None:
     assert set(mcp_tools.mcp._tool_manager._tools) == {
         "start",
         "send_message",
+        "collect_handoff",
         "kill",
         "list",
         "show",

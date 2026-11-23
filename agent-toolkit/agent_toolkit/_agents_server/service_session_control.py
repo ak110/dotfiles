@@ -231,10 +231,31 @@ class ServiceSessionControl:
         if current["generation"] != self.generation:
             value = await _forward_call(current, "public_call", params, {"caller": _caller_payload(caller)})
             return _RESULT.validate_python(value)
-        async with self.managers.scope(params) as manager:
+        async with self.managers.scope(params) as manager, contextlib.AsyncExitStack() as scopes:
             parent = next(key for key, item in self.managers.conversations.items() if item.manager is manager)
-            identifier = (params.arguments or {}).get("session_id")
-            if isinstance(identifier, str) and identifier not in manager.sessions:
+            arguments = params.arguments or {}
+            identifier = arguments.get("session_id")
+            predecessor = arguments.get("handoff_from") if params.name == "start" else None
+            inherited_owner = (
+                self.managers.handoff_child_owner(parent, identifier)
+                if params.name in {"show", "send_message"} and isinstance(identifier, str)
+                else None
+            )
+            if inherited_owner is not None and isinstance(identifier, str):
+                await scopes.enter_async_context(self.managers.handoff_scope(inherited_owner))
+                manager = inherited_owner.manager
+                if params.name == "send_message":
+                    child = (
+                        manager.sessions.get(identifier)
+                        or manager.expired_sessions.get(identifier)
+                        or manager.stopped_sessions.get(identifier)
+                    )
+                    if child is None or not pathlib.Path(child.cwd).is_absolute():
+                        raise ActionableError(
+                            "所有managerの子sessionに絶対cwdの記録がなく、追送は未配送です",
+                            next_action="所有managerの起動記録でcwdを確認し、確認できるまで追送しない",
+                        )
+            if inherited_owner is None and isinstance(identifier, str) and identifier not in manager.sessions:
                 owner = await self._owner(identifier)
                 if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
                     value = await _forward_call(
@@ -265,7 +286,8 @@ class ServiceSessionControl:
             if isinstance(identifier, str) and identifier in self._pending_restores and (task := self._moving.get(identifier)):
                 # 巡回が予約した所有確認に合流する。照会自身は再試行を増やさない。
                 await asyncio.wait((task,))
-            lock = self._locks.setdefault(identifier, asyncio.Lock()) if isinstance(identifier, str) else None
+            lock_id = predecessor if isinstance(predecessor, str) else identifier
+            lock = self._locks.setdefault(lock_id, asyncio.Lock()) if isinstance(lock_id, str) else None
             show_local = (
                 params.name == "show"
                 and isinstance(identifier, str)
@@ -308,9 +330,17 @@ class ServiceSessionControl:
                 async with self.gate.admit(new_turn=next_turn, session_id=identifier):
                     selected = mcp_tools._SELECTED_MANAGER.set(manager)
                     try:
-                        return await mcp_tools.mcp._call_registered_tool(context, params)
+                        result = await mcp_tools.mcp._call_registered_tool(context, params)
                     finally:
                         mcp_tools._SELECTED_MANAGER.reset(selected)
+                    if params.name == "start" and isinstance(result, CallToolResult) and not result.is_error:
+                        details = result.structured_content or {}
+                        successor = details.get("session_id")
+                        if isinstance(successor, str) and successor in manager.sessions:
+                            self.managers.conversations[parent].started_children.add(successor)
+                            if isinstance(predecessor, str) and details.get("status") in {"running", "completed"}:
+                                self.managers.handoff_children(manager, predecessor, successor)
+                    return result
 
     async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:
         """所有世代へ所有を照会する。応答しない世代を待ち続けず、終了済みの世代は登録簿による判定へ委ねる。

@@ -42,6 +42,7 @@ class Conversation:
     hosts: dict[int, process_identity.ProcessIdentity] = dataclasses.field(default_factory=dict)
     connections: set[str] = dataclasses.field(default_factory=set)
     active: int = 0
+    started_children: set[str] = dataclasses.field(default_factory=set)
 
 
 class ServiceManagers:
@@ -49,6 +50,7 @@ class ServiceManagers:
         self.conversations: dict[str, Conversation] = {}
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._state_root = state_root
+        self._handoff_children: dict[str, tuple[str, Conversation, frozenset[str]]] = {}
         self._monitor_task: asyncio.Task[None] | None = None
         self._projections = projections
         self.before_controls: Callable[[], Awaitable[bool]] | None = None
@@ -114,14 +116,86 @@ class ServiceManagers:
             with self._bound(item):
                 await item.stack.aclose()
             self.conversations.pop(key, None)
+            self._handoff_children = {
+                successor: grant for successor, grant in self._handoff_children.items() if grant[1] is not item
+            }
 
     async def _collect_disconnected_conversations(self) -> None:
         for key, conversation in tuple(self.conversations.items()):
             if self._retirable(conversation):
                 await self.close_conversation(key, disconnected_only=True)
 
+    def handoff_children(self, caller: AgentsServerManager, predecessor: str, successor: str) -> frozenset[str]:
+        origin = next((item for item in self.conversations.values() if item.manager is caller), None)
+        if origin is None or predecessor not in origin.started_children or not self._owns_handoff_child(caller, predecessor):
+            return frozenset()
+        if any(source == predecessor for source, _, _ in self._handoff_children.values()):
+            return frozenset()
+        owner = self.conversations.get(predecessor)
+        if (
+            owner is None
+            or caller.status_owner()[0] is None
+            or owner.manager.launcher_session_id() != predecessor
+            or owner.manager.status_owner()[0] != caller.status_owner()[0]
+        ):
+            return frozenset()
+        manager = owner.manager
+        direct = frozenset(
+            identifier
+            for identifier in owner.started_children.intersection(manager._wait_target_ids())
+            if self._owns_handoff_child(manager, identifier)
+        )
+        if direct:
+            self._handoff_children[successor] = predecessor, owner, direct
+        return direct
+
     @staticmethod
-    def _retirable(conversation: Conversation) -> bool:
+    def _owns_handoff_child(manager: AgentsServerManager, identifier: str) -> bool:
+        if identifier in manager.sessions:
+            return True
+        pending = manager._pending_resumes.get(identifier)
+        previous = (
+            pending.state
+            if pending is not None
+            else (manager.expired_sessions.get(identifier) or manager.stopped_sessions.get(identifier))
+        )
+        return previous is not None and not manager._is_registry_resume_state(previous)
+
+    def handoff_child_owner(self, successor: str, identifier: str) -> Conversation | None:
+        grant = self._handoff_children.get(successor)
+        if grant is None:
+            return None
+        predecessor, owner, children = grant
+        if (
+            identifier in children
+            and self.conversations.get(predecessor) is owner
+            and self._owns_handoff_child(owner.manager, identifier)
+        ):
+            return owner
+        return None
+
+    async def poll_handoff_children(self, successor: AgentsServerManager) -> dict:
+        identifier = next((key for key, item in self.conversations.items() if item.manager is successor), None)
+        grant = None if identifier is None else self._handoff_children.get(identifier)
+        if grant is None or identifier is None:
+            return {"status": "expired"}
+        _, owner, children = grant
+        targets = [child for child in children if self.handoff_child_owner(identifier, child) is owner]
+        if not targets:
+            return {"status": "expired"}
+        async with self.handoff_scope(owner):
+            return await owner.manager.wait(inherited_targets=targets)
+
+    @contextlib.asynccontextmanager
+    async def handoff_scope(self, owner: Conversation) -> AsyncGenerator[None]:
+        owner.active += 1
+        try:
+            with self._bound(owner):
+                yield
+        finally:
+            owner.active -= 1
+
+    def _retirable(self, conversation: Conversation) -> bool:
         if conversation.active or conversation.connections:
             return False
         manager = conversation.manager
@@ -131,6 +205,24 @@ class ServiceManagers:
             or any(not session.terminal or session.awaiting_auto_resume for session in manager.sessions.values())
         ):
             # 祖先として観測したCLIの終了だけでは、再接続先や進行中の子の終了を確認できない。
+            return False
+        launcher = manager.launcher_session_id() if conversation.started_children else None
+        if (
+            launcher is not None
+            and self.conversations.get(launcher) is conversation
+            and (
+                any(owner is conversation for _, owner, _ in self._handoff_children.values())
+                or any(
+                    launcher in parent.started_children and self._owns_handoff_child(parent.manager, launcher)
+                    for parent in self.conversations.values()
+                )
+            )
+            and any(
+                (session := manager.sessions.get(identifier)) is None or not session.result_delivered
+                for identifier in conversation.started_children.intersection(manager._wait_target_ids())
+                if self._owns_handoff_child(manager, identifier)
+            )
+        ):
             return False
         dead = bool(conversation.hosts) and not any(host.exists() for host in conversation.hosts.values())
         return dead or not (manager.sessions or manager.expired_sessions)

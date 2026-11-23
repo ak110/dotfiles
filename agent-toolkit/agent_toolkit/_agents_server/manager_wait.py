@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Collection
 from typing import Any
 
 from agent_toolkit._agents_server import (
@@ -106,7 +107,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
         return response
 
-    async def wait(self) -> dict[str, Any]:
+    async def wait(self, *, inherited_targets: Collection[str] | None = None) -> dict[str, Any]:
         """委譲先の終了を待ち、終了時だけ結果本文を返す。
 
         引数を受け取らない。対象は本MCPサーバープロセスが保持する起動中のsession全体とし、最初に終了した1件の結果を返す。
@@ -130,17 +131,19 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         応答へ載せた通知は回収済みとして再び返さない。
         """
         await self._drain_diagnostics()
-        timeout = await self._resolve_wait_timeout("main")
+        timeout = await self._resolve_wait_timeout("main") if inherited_targets is None else 0.0
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout)
         ordered_ids = self._wait_target_ids()
+        if inherited_targets is not None:
+            ordered_ids = [identifier for identifier in ordered_ids if identifier in inherited_targets]
         # 保留中の結果を進める判定は待機の刻みごとに1回だけ行う。
         # backendはバックグラウンドタスクの完了通知で受け取った再開turnの結果へ保留中の結果を差し替えるため、
         # 通知のたびに判定するとその差し替えの前に保留中の結果を確定してしまう。
         advance_pending = True
 
         while True:
-            if self._recovery_errors:
+            if self._recovery_errors and inherited_targets is None:
                 identifier, error = self._recovery_errors.popitem()
                 raise RuntimeError(
                     f"子の自動復旧に失敗しました: {identifier}: {error}。次の操作: {self._recovery_next_action(identifier)}"

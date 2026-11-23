@@ -508,6 +508,22 @@ async def send_message(
 
 
 @mcp.tool(
+    name="collect_handoff",
+    title="引き継いだ子sessionの通知・結果の回収",
+    description=(
+        "同じ管理サービスで正式に引き継いだ直属の子だけを対象に、通知または終了結果を1件回収する。"
+        "待機せずに返す。実行中の子だけが残る時はrunning、対象が無い時はexpiredを返す。"
+        "自分で起動した子の回収には従来どおり`atk agents wait`を使う。"
+    ),
+    structured_output=True,
+)
+async def collect_handoff() -> dict[str, Any]:
+    if _SERVICE_MANAGERS is None:
+        return {"status": "expired"}
+    return await _SERVICE_MANAGERS.poll_handoff_children(_manager())
+
+
+@mcp.tool(
     name="kill",
     title="実行中turnの中断",
     annotations=ToolAnnotations(destructive_hint=True),
