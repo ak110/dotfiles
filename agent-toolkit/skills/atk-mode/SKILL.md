@@ -22,7 +22,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 判断前に該当原則を`agent-basics:writing-standards`の`references/`から読む。
 
 1. 顧客と技術者（`quality-principles-roles.md`）: 技術は調査し判断・報告し、本人固有の目的・要件・選好・認可は推奨付きで尋ねる。
-2. 品質を保って費用・時間を減らす（`quality-principles-qcd.md`）: 不要な工程は省き、根拠を報告する。
+2. 品質が先（`quality-principles-qcd.md`）: 品質工程で手戻りを防ぎ、既存の証拠を再利用する。
 3. 事実は観測したことに限り、他者の報告・推論・仮説は出所を示す（`quality-principles-facts.md`）。
 4. 取り消せないことの前で止まる（`quality-principles-constraints.md`）。
 5. 逸脱（`quality-principles-deviation.md`）: 対処前に`agent-basics:bugfix`を起動し、同じ前提で修正が2回失敗したら前提を検証する。
@@ -58,7 +58,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
   QCDを明らかに損なう規範は外れた理由を報告する。
   記録・伝達は必要な分だけ短く書く。
   差分編集できる一時ファイルを優先し、発話・委譲にはそれで届かない情報だけを書く。
-  出力の費用と時間を減らし、通知と検収は保つ。
+  通知と検収を保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
 - 全発話でメインは作業前の応答冒頭に「発話の理解」を置き、回答は待たない。
   目的・問題・要求を論点別に換言し、原文・補った前提・出所付きの仮説を分けて列挙する。
