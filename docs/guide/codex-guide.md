@@ -87,15 +87,35 @@ update-dotfiles job
 リモート接続も含めて無接続を確定できなければ延期する。
 実行直前に、対象daemonが稼働中であることを`codex app-server daemon version`の応答で確認する。
 停止中または稼働が不明なら実行しない。
-両方の条件を満たした場合だけ、次のコマンドを実行する。
+両方の条件を満たした場合だけ、実行環境に合う手順で再起動する。
+
+Bashでは次のコマンドを実行する。
 
 ```bash
 codex app-server daemon restart
 ```
 
+Windows PowerShell 5.1（`ssh-unelevated`で実行する場合を含む）では、正常な進行通知も標準エラーに出る。
+`$ErrorActionPreference = 'Stop'`のまま直接呼ぶと、停止通知を例外として扱い、起動まで待たずに終了することがある。
+次のようにネイティブコマンドを呼ぶ範囲だけ設定を変更し、終了コードを取得してから元に戻す。
+
+```powershell
+$previousErrorAction = $ErrorActionPreference
+try {
+    $ErrorActionPreference = 'Continue'
+    codex app-server daemon restart 2>&1 | ForEach-Object { "$_" }
+    $restartExit = $LASTEXITCODE
+} finally {
+    $ErrorActionPreference = $previousErrorAction
+}
+```
+
+この手順では`$restartExit`が再起動コマンドの終了コードである。
 終了コードが0で、JSON応答の`status`が`restarted`なら再起動は成功した。
 失敗した場合は診断と対象daemonの状態を確認する。
 停止したままで、同じ保守条件が続いている場合に限り、`codex app-server daemon start`で起動する。
+Windows PowerShell 5.1で起動し直す場合も、上のブロックの`restart`を`start`に置き換えて使う。
+終了コード0とJSONの`status`が`started`であることを確認し、`codex app-server daemon version`で疎通を確かめる。
 
 ## フックの信頼確認
 
