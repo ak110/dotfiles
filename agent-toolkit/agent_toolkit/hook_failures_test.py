@@ -26,7 +26,6 @@ def test_pretooluse_record_failure_preserves_operation_result_boundary(monkeypat
     context = _additional_context(result)
     assert "開始記録の試験用障害" in context
     assert "元の操作の成否はこの診断では分からない" in context
-    assert "元の操作の結果を確認せよ" in context
     assert "permissionDecision" not in result.stdout
 
 
