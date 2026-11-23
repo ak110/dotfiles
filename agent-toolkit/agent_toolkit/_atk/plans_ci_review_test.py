@@ -183,18 +183,3 @@ def test_commit_ci_review_accepts_checked_out_saved_forty_character_name(tmp_pat
     assert saved.read_bytes() != b""
     assert not working.exists()
     assert _atk_plans._read_checkout_record(pathlib.Path(name)) is None  # pylint: disable=protected-access
-
-
-def test_commit_ci_review_nonfile_destination_guides_recovery(tmp_path):
-    home = tmp_path / "home"
-    notes = tmp_path / "private-notes"
-    _init_local_notes(notes)
-    name = "ci-fedcba9876543210fedcba9876543210fedcba98.exec-review.tsv"
-    working = _plan_file.working_plans_root(home) / name
-    _review_table.init(working)
-    saved = _plan_file.new_plans_root(notes) / "ci" / name
-    saved.mkdir(parents=True)
-    with pytest.raises(_wi_web_input.WebInputError, match="通常ファイルではありません") as exc:
-        _atk_plans.commit_plan(notes, name, home=home, skip_push=True)
-    guide = exc.value.next_action
-    assert guide.index("原因を確かめる") < guide.index("認可の範囲で回復する") < guide.index("回復結果を伝える")

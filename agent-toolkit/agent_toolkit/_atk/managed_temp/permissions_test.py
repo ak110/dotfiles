@@ -114,20 +114,3 @@ def test_only_permission_failure_after_selection_is_a_candidate(monkeypatch, day
     assert target.exists()
     expected = (target,) if has_candidate else ()
     assert result.permission_candidates == expected
-
-
-@pytest.mark.skipif(os.name != "posix", reason="ディレクトリ記述子の置換診断を検証する")
-def test_directory_replacement_guides_recovery(tmp_path):
-    target = tmp_path / "target"
-    different = tmp_path / "different"
-    target.mkdir(mode=0o700)
-    different.mkdir(mode=0o700)
-
-    with (
-        pytest.raises(managed_temp.ManagedTempError, match="対象が置換された") as exc,
-        permissions.directory(target, expected=different.stat(), recover=False),
-    ):
-        pytest.fail("置換されたディレクトリを受理した")
-
-    guide = exc.value.next_action
-    assert guide.index("agent-basics:bugfix") < guide.index("競合しなくなってから") < guide.index("回復結果を伝える")

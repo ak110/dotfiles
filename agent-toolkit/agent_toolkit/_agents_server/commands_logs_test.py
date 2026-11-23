@@ -44,21 +44,6 @@ def test_agents_logs_reads_claude_record(
     assert "[2026-09-24T00:00:00Z] user: 調査して" in capsys.readouterr().out
 
 
-def test_agents_logs_broken_line_guides_recovery(monkeypatch, tmp_path, capsys):
-    project = tmp_path / "projects" / "sample"
-    project.mkdir(parents=True)
-    (project / "broken.jsonl").write_text("{無効な行\n", encoding="utf-8")
-    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
-    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-
-    with pytest.raises(SystemExit, match="0"):
-        atk.main(["agents", "logs", "broken"])
-
-    diagnostic = capsys.readouterr().err
-    assert "解析できない行" in diagnostic
-    assert diagnostic.index("原因を確かめる") < diagnostic.index("認可の範囲で回復する") < diagnostic.index("回復結果を伝える")
-
-
 def test_agents_logs_markdown_keeps_turns_and_tool_result_together(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

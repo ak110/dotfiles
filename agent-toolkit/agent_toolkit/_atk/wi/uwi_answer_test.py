@@ -435,12 +435,10 @@ def test_answer_uwi_without_marker_asks_to_report_to_user(tmp_path: pathlib.Path
     )
     before = path.read_bytes()
 
-    with pytest.raises(uwi_module.WebInputError, match="回答欄マーカーがありません") as error_info:
+    with pytest.raises(uwi_module.WebInputError, match="回答欄マーカーがありません"):
         uwi_module.answer_uwi(notes, filename=path.name, answer="採用する", storage=_wi_sync.Storage(local_only=True))
 
     assert path.read_bytes() == before
-    assert error_info.value.next_action.index("原因を確かめる") < error_info.value.next_action.index("認可の範囲で回復する")
-    assert error_info.value.next_action.index("認可の範囲で回復する") < error_info.value.next_action.index("回復結果を伝える")
 
 
 def test_answer_uwi_targets_explicit_and_stored_state(

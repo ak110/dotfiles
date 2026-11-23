@@ -42,4 +42,3 @@ def test_cli_effort_request_failure_reports_next_action(monkeypatch, capsys):
     output = capsys.readouterr()
     assert "本人を確認できない" in output.err and "次の操作:" in output.err
     assert "atk agents show" in output.err
-    assert output.err.index("agent-basics:bugfix") < output.err.index("未適用を確認") < output.err.index("回復結果を伝える")

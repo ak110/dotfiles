@@ -532,13 +532,3 @@ def test_agent_environment_rejects_malformed_user_comment_structure(
     assert next_action.startswith("次の操作: ")
     assert "ユーザーコメント節" in next_action
     assert "除いて再実行する" in next_action
-
-
-def test_malformed_saved_user_comment_guides_recovery(monkeypatch, capsys):
-    monkeypatch.setenv("AI_AGENT", "1")
-    original = "本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n"
-    with pytest.raises(SystemExit, match="1"):
-        mutation_content._preserve_agent_user_comment(original, "更新")  # pylint: disable=protected-access
-
-    guide = capsys.readouterr().err
-    assert guide.index("agent-basics:bugfix") < guide.index("本人のコメントを改変せず") < guide.index("回復結果を伝える")

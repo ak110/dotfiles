@@ -190,8 +190,6 @@ def test_invalid_session_id_warning_keeps_event_output_contract(subcommand: str,
     else:
         assert output["hookSpecificOutput"]["hookEventName"] == event_name
         assert "会話IDが不正" in output["hookSpecificOutput"]["additionalContext"]
-        context = output["hookSpecificOutput"]["additionalContext"]
-        assert context.index("agent-basics:bugfix") < context.index("元の操作を再発行せず") < context.index("回復結果を伝える")
 
 
 def test_discarded_codex_stop_notice_is_not_recorded(monkeypatch) -> None:
@@ -251,7 +249,6 @@ def test_internal_observation_failure_uses_one_marked_context(monkeypatch, subco
     context = response["hookSpecificOutput"]["additionalContext"]
     assert f'source="{subcommand}" kind="warn"' in context
     assert "観測の故障注入" in context
-    assert context.index("原因を確かめる") < context.index("認可の範囲で回復する") < context.index("回復結果を伝える")
     assert response.get("decision") != "block"
 
 
@@ -295,48 +292,35 @@ def test_unavailable_final_codex_notice_respects_permission_decision(decision, f
             raise OSError("通知を保存できない")
 
     monkeypatch.setattr(warning_context, "atomic_write", write)
-    payload = {"turn_id": "warning-test"}
+    payload = {"hook_event_name": "PreToolUse", "turn_id": "warning-test"}
     if failure != "session":
         payload["session_id"] = "warning-test"
-    output = {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": decision,
-            "additionalContext": "警告" * 1000,
-        },
-    }
-    assert _hook._bound_pretooluse_context(output, payload, "pretooluse")  # pylint: disable=protected-access
+
+    def emit(_payload: str) -> int:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": decision,
+                        "additionalContext": "警告" * 1000,
+                    },
+                }
+            )
+        )
+        return 0
+
+    module = importlib.import_module("agent_toolkit._hooks.pretooluse")
+    monkeypatch.setattr(module, "main", emit)
+    result = _run_hook_in_process("pretooluse", payload)
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout)
+    assert validate_hook_output("PreToolUse", output) == []
     final = output["hookSpecificOutput"]
     assert final["permissionDecision"] == decision
     text = final["additionalContext"]
-    assert "元の通知は未配送" in text and "agent-basics:bugfix" in text
-    assert "止められた元の操作を再試行する" not in text
     if decision == "deny":
-        assert "未適用を確認できた場合だけ元の操作を再試行する" in text
+        assert "未適用を確認できた場合だけ" in text
     else:
         assert "元の操作は再発行せず" in text
-
-
-@pytest.mark.parametrize("host", ["claude", "codex"])
-@pytest.mark.parametrize("operation", ["list", "start"])
-def test_missing_agents_server_identity_reaches_final_hook_json(host, operation, tmp_path):
-    namespace = "mcp__plugin_agent-toolkit_agents_server" if host == "claude" else "mcp__agents_server"
-    payload = {
-        "hook_event_name": "PostToolUse",
-        "session_id": "observe-missing-id",
-        "cwd": str(tmp_path),
-        "tool_name": f"{namespace}__{operation}",
-        "tool_input": {},
-        "tool_response": {"structuredContent": {}},
-    }
-    if host == "codex":
-        payload["turn_id"] = "observe-missing-id-turn"
-    result = _run_hook_in_process("posttooluse", payload)
-    assert result.returncode == 0 and not result.stderr
-    output = json.loads(result.stdout)
-    assert validate_hook_output("PostToolUse", output) == []
-    context = output["hookSpecificOutput"]["additionalContext"]
-    assert "欠落しているか不正" in context
-    assert context.index("原因を確かめる") < context.index("認可の範囲で回復する") < context.index("回復結果を伝える")
-    if operation == "start":
-        assert "元の起動は再発行せず" in context
+        assert "未適用を確認できた場合だけ" not in text

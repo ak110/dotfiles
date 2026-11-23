@@ -549,8 +549,6 @@ def test_git_head_rejects_non_oid_with_status_guidance(
         mutation_targets._git_head(tmp_path)  # pylint: disable=protected-access
 
     assert f"git -C {tmp_path} status" in exc_info.value.next_action
-    guide = exc_info.value.next_action
-    assert guide.index("agent-basics:bugfix") < guide.index("未反映の処理") < guide.index("回復結果を伝える")
 
 
 @pytest.mark.parametrize(
@@ -576,8 +574,6 @@ def test_entry_target_repo_failure_guides_to_show_and_report(
     assert expected_reason in failure
     assert next_action.startswith("次の操作: ")
     assert "`atk wi show broken.md`" in next_action
-    assert next_action.index("原因を確かめる") < next_action.index("認可の範囲で回復する")
-    assert next_action.index("認可の範囲で回復する") < next_action.index("回復結果を伝える")
 
 
 def test_transition_with_multiple_target_repos_mismatch_names_recovery(

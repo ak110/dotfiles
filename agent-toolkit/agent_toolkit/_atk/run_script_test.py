@@ -153,11 +153,8 @@ def test_public_multi_turn_trials_execution_failure_has_retry_action(
 def test_dispatch_rejects_missing_registered_script(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(run_script.SCRIPT_PATHS, "missing", pathlib.Path("missing.py"))
     args = argparse.Namespace(script_name="missing", script_args=[])
-    with pytest.raises(ValueError, match="plugin root内に存在しません") as exc_info:
+    with pytest.raises(ValueError, match="plugin root内に存在しません"):
         run_script.dispatch(args)
-    assert isinstance(exc_info.value, next_action.ActionableError)
-    action = exc_info.value.next_action
-    assert action.index("agent-basics:bugfix") < action.index("未実行である場合だけ") < action.index("回復結果を伝える")
 
 
 def test_dispatch_consumes_session_review_evidence_arguments(

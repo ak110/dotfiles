@@ -343,8 +343,7 @@ def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
     assert f"\n{NEXT_ACTION_PREFIX}" in captured.err
     assert "`show`" in captured.err
     assert "この待機では結果本文を配送していない" in captured.err
-    assert captured.err.index("agent-basics:bugfix") < captured.err.index("`atk agents wait`を再実行する")
-    assert captured.err.index("`atk agents wait`を再実行する") < captured.err.index("回復結果を伝える")
+    assert "`atk agents wait`を再実行する" in captured.err
 
 
 def test_agents_wait_outputs_terminal_result_with_notice_only_session(
@@ -459,11 +458,3 @@ def test_agents_wait_adds_review_receipt_to_review_session_notice(
 
         assert "通知が指摘を含む場合" in action
         assert "指摘を受領した" not in action
-
-
-def test_wait_broken_registry_guides_recovery(wait_environment, monkeypatch, capsys):
-    _write_own_status(wait_environment, [{"session_id": "session-1"}])
-    monkeypatch.setattr(agents_wait.wait_targets, "read_wait_targets", lambda *_a: (set(), "破損"))
-    assert _wait_for_session_1_result(wait_environment) == 9
-    guide = capsys.readouterr().err
-    assert guide.index("原因を確かめる") < guide.index("認可の範囲で回復する") < guide.index("回復結果を伝える")

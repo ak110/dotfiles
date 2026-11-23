@@ -91,7 +91,9 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
         if event == "SessionStart" and count:
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                f"まとめて振り返る場合は`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
+                "まとめて振り返る場合は、起動の失敗があれば先に原因を是正する。"
+                "未処理の対象を確認できた場合だけ、"
+                f"`{skill_modes.entry_command(host, 'review-session batch')}`を実行する。"
             )
             return waiting
         return notice
