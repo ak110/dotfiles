@@ -12,10 +12,13 @@
 
 import json
 import re
+lazy import hashlib
+lazy import os
 
 from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 from agent_toolkit._hooks import notice
-lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common import session_state, transcript
+lazy from agent_toolkit._common.json_lines import split_joined_line
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
@@ -27,6 +30,7 @@ _SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
 _block_notice = notice.block_formatter("delivered_repost_gate")
+_delivery_notice = notice.formatter("delivered_repost_gate")
 
 
 def _send_required(entries: list[dict]) -> bool:
@@ -44,10 +48,10 @@ def _send_required(entries: list[dict]) -> bool:
     return False
 
 
-def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
+def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool | None]:
     messages: dict[str, str] = {}
     delivered: set[str] = set()
-    completed = False
+    latest_error: bool | None = None
     last = ""
     for entry in entries:
         message = entry.get("message")
@@ -71,32 +75,103 @@ def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
                     message_text = inputs.get("message") if isinstance(inputs, dict) else None
                     messages[identifier] = message_text if isinstance(message_text, str) else ""
             elif block.get("type") == "tool_result" and (result_id := str(block.get("tool_use_id", ""))) in messages:
-                completed, last = True, ""
-                if block.get("is_error") is not True:
+                latest_error, last = block.get("is_error") is True, ""
+                if not latest_error:
                     delivered.update(_sentences(messages[result_id]))
         if delivered and texts:
             last = "".join(texts)
-    return last, delivered, completed
+    return last, delivered, latest_error
 
 
 def _sentences(text: str) -> set[str]:
     return {line for part in _SENTENCE_BREAK.split(text) if (line := " ".join(part.split()).strip(">*_`#… "))}
 
 
+def _turn_boundary(entry: dict) -> bool:
+    if entry.get("isCompactSummary") is True or (entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"):
+        return True
+    return (text := _input_text(entry)) is not None and (
+        _human_prompt(entry, text) is not None
+        or starts_with_auto_element(text)
+        or text.lstrip().startswith("<task-notification")
+    )
+
+
 def _current_turn(entries: list[dict]) -> list[dict]:
     for index in range(len(entries) - 1, -1, -1):
-        entry = entries[index]
-        if entry.get("isCompactSummary") is True or (
-            entry.get("type") == "system" and entry.get("subtype") == "compact_boundary"
-        ):
-            return entries[index + 1 :]
-        if (text := _input_text(entry)) is not None and (
-            _human_prompt(entry, text) is not None
-            or starts_with_auto_element(text)
-            or text.lstrip().startswith("<task-notification")
-        ):
+        if _turn_boundary(entries[index]):
             return entries[index + 1 :]
     return entries
+
+
+def _progress_turn(path: str, session_id: str, *, reuse_cursor: bool = True) -> list[dict]:
+    try:
+        stat = os.stat(path)
+    except OSError, ValueError:
+        return []
+    identity = [path, stat.st_dev, stat.st_ino]
+    cursor = session_state.read_state(session_id).get("delivery_progress_cursor") if reuse_cursor else None
+    if not isinstance(cursor, dict):
+        cursor = {}
+    offset, boundary = cursor.get("offset"), cursor.get("boundary")
+    if (
+        cursor.get("identity") != identity
+        or not isinstance(offset, int)
+        or not isinstance(boundary, int)
+        or not 0 <= boundary <= offset <= stat.st_size
+    ):
+        cursor, offset, boundary = {}, 0, 0
+    required = cursor.get("required") is True
+    anchor = max(0, offset - 128)
+    start = min(boundary, anchor) if required else anchor
+    data = transcript.read_transcript_bytes(path, offset=start)
+    if data is None:
+        return []
+    if offset and hashlib.sha256(data[anchor - start : offset - start]).hexdigest() != cursor.get("anchor"):
+        data = transcript.read_transcript_bytes(path)
+        if data is None:
+            return []
+        start, offset, boundary, required, cursor = 0, 0, 0, False, {}
+
+    turn: list[dict] = []
+    position = max(boundary, start) if required else offset
+    complete = offset
+    for raw in data[position - start :].split(b"\n"):
+        if not raw and position == start + len(data):
+            break
+        position += len(raw) + 1
+        finished = position <= start + len(data)
+        if finished:
+            complete = max(complete, position)
+        try:
+            entry = json.loads(raw.decode("utf-8"))
+        except ValueError, RecursionError:
+            joined = split_joined_line(raw)
+            entry = joined[1] if joined is not None else None
+        if not isinstance(entry, dict) or entry.get("isSidechain"):
+            continue
+        if not required and _send_required([entry]):
+            if not finished:
+                return _current_turn(_conversation_entries(transcript.read_transcript_lines(path) or []))
+            required = True
+            if offset > boundary:
+                return _progress_turn(path, session_id, reuse_cursor=False)
+        if _turn_boundary(entry):
+            if finished:
+                boundary = position
+            turn.clear()
+        else:
+            turn.append(entry)
+    state = {
+        "identity": identity,
+        "offset": complete,
+        "boundary": boundary,
+        "required": required,
+        "anchor": hashlib.sha256(data[max(0, complete - start - 128) : complete - start]).hexdigest(),
+    }
+    if state != cursor:
+        session_state.update_state(session_id, lambda old: {**old, "delivery_progress_cursor": state})
+    return turn if required else []
 
 
 def _conversation_entries(lines: list[str]) -> list[dict]:
@@ -109,6 +184,76 @@ def _conversation_entries(lines: list[str]) -> list[dict]:
         if isinstance(entry, dict) and not entry.get("isSidechain"):
             entries.append(entry)
     return entries
+
+
+def _visible_response_id(entries: list[dict], tool_use_id: str) -> str | None:
+    visible: set[str] = set()
+    response_id = None
+    for entry in reversed(entries):
+        if entry.get("isApiErrorMessage"):
+            break
+        message = entry.get("message")
+        if entry.get("type") != "assistant" or not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        identifier = message.get("id")
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("id") == tool_use_id:
+                if not isinstance(identifier, str) or not identifier:
+                    return None
+                response_id = identifier
+            if (
+                isinstance(identifier, str)
+                and block.get("type") == "text"
+                and isinstance(body := block.get("text"), str)
+                and body.strip()
+            ):
+                visible.add(identifier)
+    return response_id if response_id in visible else None
+
+
+def pretooluse_notice(payload: dict, session_id: str) -> str | None:
+    path = payload.get("transcript_path")
+    tool_use_id = payload.get("tool_use_id")
+    if (
+        not session_id
+        or not isinstance(path, str)
+        or not path
+        or not isinstance(tool_use_id, str)
+        or not tool_use_id
+        or tool_use_id.startswith("repl_")
+        or is_codex_payload(payload)
+        or is_antigravity_payload(payload)
+        or not agent_id.is_main_agent_context(payload)
+    ):
+        return None
+    turn = _progress_turn(path, session_id)
+    response_id = _visible_response_id(turn, tool_use_id)
+    if response_id is None:
+        return None
+    _, _, latest_error = _delivery_report(turn)
+    if latest_error is True:
+        return None
+
+    def claim(state: dict) -> dict | None:
+        ids = state.get("delivery_notice_response_ids")
+        if not isinstance(ids, list):
+            ids = []
+        if response_id in ids:
+            return None
+        return {**state, "delivery_notice_response_ids": [*ids, response_id]}
+
+    if session_state.update_state(session_id, claim):
+        return _delivery_notice(
+            "送達指定のある会話で、ツール呼び出しと同じ応答に通常本文があります。",
+            fix="次の進捗報告や確認から、通常本文ではなく `send_to_user` を使ってください。",
+            subject=response_id,
+        )
+    return None
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -127,9 +272,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
     entries = _conversation_entries(lines) if lines is not None else []
-    body, delivered, completed = _delivery_report(_current_turn(entries))
+    body, delivered, latest_error = _delivery_report(_current_turn(entries))
     if (
-        not completed
+        latest_error is None
         and isinstance(last := payload.get("last_assistant_message"), str)
         and last.replace("…", "").strip()
         and _send_required(entries)

@@ -1,11 +1,3 @@
-"""エージェントへ届ける規範のMarkdownの合計サイズが、上限を超えないことを確かめる。
-
-対象は`agent-toolkit/skills/`と`agent-basics/skills/`の追跡済みMarkdown（試験用の`fixtures/`を除く）で、
-両プラグインにまたがるためリポジトリ直下に置く。
-規範を足す前に引く原則（`agent-basics:writing-standards/references/quality-principles-subtraction.md`）を文章だけで
-守れず合計が増え続けたため、上限を超えたら次のセッションで整理できるよう、発見した担当に削減AWIの登録を案内する。
-"""
-
 import pathlib
 import re
 import subprocess
@@ -31,7 +23,8 @@ def test_norm_markdown_within_budget() -> None:
     total = _norm_markdown_bytes(_REPO_ROOT)
     assert total <= _BUDGET_BYTES, (
         f"規範のMarkdownの合計が{total}バイトで、上限{_BUDGET_BYTES}バイトを{total - _BUDGET_BYTES}バイト超えた。"
-        "次のセッションで削減するため、発見した担当が削減AWIを登録する。"
+        "基点からの超過なら統合先の所有者へ返す。"
+        "統合先の所有者は基点の引渡し・公開の前に削減し、検査を通す。\n"
         ".claude/skills/edit-dotfiles-norms/SKILL.mdの「規範を削除・縮小するときの消失確認」に従い、"
         "削減量と整理後の上限は、必要な規範を保ちながらdotfilesの価値を最大化するように決める。"
     )

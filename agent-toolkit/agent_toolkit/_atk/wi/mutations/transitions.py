@@ -11,6 +11,7 @@ import typing
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import bulk as _bulk
+from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
@@ -270,6 +271,8 @@ def _apply_transition(
     note: str | None,
     commit_values: dict[pathlib.Path, CommitMetadata | list[CommitMetadata] | None],
     cooldown_days: int | None,
+    effect_check: str | None,
+    effect_check_reason: str | None,
 ) -> None:
     del private_notes
     destination_name = {
@@ -284,18 +287,35 @@ def _apply_transition(
         for path in paths:
             path.unlink()
         return
+    implemented_awis = {
+        path
+        for path in paths
+        if action == "adopt"
+        and commit_values[path]
+        and _wi_entries.entry_type_of(path, path.read_text(encoding="utf-8")) == WI_TYPE_AWI
+    }
+    if implemented_awis:
+        _effect_check.validate_adoption_effect(effect_check, effect_check_reason)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
         if action in {"return-to-inbox", "hold"} and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}:
             _strip_result_section(path)
         if action in {"adopt", "reject"}:
-            _wi_entries.stamp_result(path, outcome=destination_name, now=now, commit=commit_values[path], note=note)
+            _wi_entries.stamp_result(
+                path,
+                outcome=destination_name,
+                now=now,
+                commit=commit_values[path],
+                note=note,
+                effect_check=effect_check if path in implemented_awis else None,
+                effect_check_reason=effect_check_reason.strip() if path in implemented_awis and effect_check_reason else None,
+            )
         parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         data, body = parsed
         data["state"] = destination_name
-        if action == "adopt" and data.get("type") == "awi" and commit_values[path]:
-            data["effect_check"] = "pending"
+        if path in implemented_awis:
+            data["effect_check"] = effect_check
         atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
 
 
@@ -346,6 +366,8 @@ def transition_entries(
     skip_push: bool = False,
     actor_is_agent: bool = False,
     inbox_with_commit: list[str] | None = None,
+    effect_check: str | None = None,
+    effect_check_reason: str | None = None,
 ) -> list[str]:
     _validate_transition_options(
         action,
@@ -391,6 +413,8 @@ def transition_entries(
             note=note,
             commit_values=commit_values,
             cooldown_days=cooldown_days,
+            effect_check=effect_check,
+            effect_check_reason=effect_check_reason,
         )
         mutation.commit(
             _transition_commit_message(action, len(paths), note),
@@ -442,6 +466,8 @@ def _bulk_transition(
             note=note,
             commit_values=commit_values,
             cooldown_days=cooldown_days,
+            effect_check=getattr(args, "effect_check", None),
+            effect_check_reason=getattr(args, "effect_check_reason", None),
         )
         _wi_sync.commit_and_push(
             notes,
@@ -508,6 +534,8 @@ def cmd_adopt(args: argparse.Namespace, private_notes: pathlib.Path, now: dateti
         local_worktree=local_worktree,
         skip_push=args.skip_push,
         inbox_with_commit=inbox_with_commit,
+        effect_check=getattr(args, "effect_check", None),
+        effect_check_reason=getattr(args, "effect_check_reason", None),
     )
     _warn_skipped_processing(inbox_with_commit)
     _outcome.report_success(f"{len(filenames)}件をadoptedへ移した")

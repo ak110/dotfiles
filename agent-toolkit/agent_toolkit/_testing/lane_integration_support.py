@@ -121,6 +121,7 @@ def _adopt_argv(repo: pathlib.Path, wi: str, commits: list[str], *, note_file: s
         str(repo),
         "--skip-push",
         *note,
+        *(["--effect-check=pending"] if commits else []),
         *(argument for commit in commits for argument in ("--commit", commit)),
     )
 

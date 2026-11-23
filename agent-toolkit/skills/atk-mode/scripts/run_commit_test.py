@@ -2,7 +2,6 @@ import argparse
 import os
 import pathlib
 import shlex
-import shutil
 import signal
 import sys
 import time
@@ -165,9 +164,8 @@ def test_public_commit_reclaims_detached_verifier_and_restores_unstaged_changes(
 ) -> None:
     environment = dict(os.environ)
     environment["PATH"] = host_environ().get("PATH", "")
-    prek = shutil.which("prek", path=environment["PATH"])
-    if prek is None:
-        pytest.skip("実prekが必要")
+    prek = pathlib.Path(sys.executable).absolute().with_name("prek")
+    assert prek.is_file() and os.access(prek, os.X_OK), f"{prek} を実行できません。make sync を実行してください。"
     environment.update(PYTHONPATH=str(run_script.PLUGIN_ROOT), PREK_HOME=str(tmp_path / "prek"))
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main")
     tracked = repo / "tracked.txt"
@@ -209,7 +207,7 @@ def test_public_commit_reclaims_detached_verifier_and_restores_unstaged_changes(
     hooks = tmp_path / "hooks"
     hooks.mkdir()
     pre_commit = hooks / "pre-commit"
-    pre_commit.write_text("#!/bin/sh\nexec " + shlex.join([prek, "run", "--config", str(config)]) + "\n", encoding="utf-8")
+    pre_commit.write_text("#!/bin/sh\nexec " + shlex.join([str(prek), "run", "--config", str(config)]) + "\n", encoding="utf-8")
     pre_commit.chmod(0o755)
     git_repository.run_git(repo, "config", "core.hooksPath", str(hooks))
     git_repository.run_git(repo, "add", ".pre-commit-config.yaml")

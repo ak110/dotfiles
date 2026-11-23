@@ -158,6 +158,8 @@ def test_integrate_adopts_same_commit_with_literal_or_placeholder(
         "no-implementation",
         "unexpected",
         "no-source",
+        "missing-effect",
+        "missing-effect-reason",
     ],
 )
 @pytest.mark.cpu_limit(
@@ -214,8 +216,12 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     elif case == "omitted-correction":
         supplied = [original["old_head"]]
     marker = tmp_path / "finalized"
+    effect = {
+        "missing-effect": [],
+        "missing-effect-reason": ["--effect-check=not_required"],
+    }.get(case, ["--effect-check=pending"] if supplied else [])
     argv = lane._atk_script(  # pylint: disable=protected-access
-        "wi", "adopt", name.removesuffix(".md"), *("--commit=" + oid[:10] for oid in supplied)
+        "wi", "adopt", name.removesuffix(".md"), *effect, *("--commit=" + oid[:10] for oid in supplied)
     )
     row: dict[str, Any] = {"name": name, "commands": [argv], "no_merge": not expected}
     if case != "no-source":
@@ -244,5 +250,7 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     assert moved.is_file() is (case == "planned-correct")
     if accepted:
         assert final["phase"] == "finalized"
+    elif case in {"missing-effect", "missing-effect-reason"}:
+        assert name in stderr and "--effect-check-reason" in stderr
     else:
         assert name in stderr and "plan-commits" in stderr

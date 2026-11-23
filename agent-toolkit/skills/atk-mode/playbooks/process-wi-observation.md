@@ -41,6 +41,7 @@
    - エージェントから届く環境では、新しいプロセスで残りの完成条件を直接観測する。
    - ユーザーしか届かない場合は、手順4のUWIで得た観測結果と証拠をエージェントが完成条件と比べて判定する。
    - 条件を満たした項目は、検収済みの実装commitを関連付けた`atk wi adopt`（`--target-repo`に主作業ツリーの絶対パス。実装差分が無ければ`--commit`を省き、観測の根拠をnoteに書く）で採用を確定する。
+     実装付きAWIは[効果確認](../references/effect-records.md)も指定する。
    - 満たさなかった項目と観測できなかった項目は、`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」に従い、次の手順へ進む。
 4. 統合結果の`保存した計画ファイル`にある各計画の`関連WI`を、`atk wi show <ファイル名>... --summary-only --target-repo=<対象リポジトリの絶対パス> --skip-pull`で確かめる（公開担当の起動を省いた場合も行う）。
    - 見出し行`### <ファイル名> [<状態>]`が`processing`の項目の計画を、`atk plans checkout`で`~/.claude/plans`へ戻す（同名のファイルが既にあれば除く）。

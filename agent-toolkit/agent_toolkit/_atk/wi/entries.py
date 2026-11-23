@@ -1,5 +1,6 @@
 import dataclasses
 import datetime
+import json
 import pathlib
 import sys
 from collections.abc import Iterable, Iterator, Mapping
@@ -53,6 +54,8 @@ def stamp_result(
     now: datetime.datetime,
     commit: CommitMetadata | list[CommitMetadata] | None = None,
     note: str | None = None,
+    effect_check: str | None = None,
+    effect_check_reason: str | None = None,
 ) -> None:
     body = path.read_text(encoding="utf-8")
     if not body.endswith("\n"):
@@ -72,8 +75,17 @@ def stamp_result(
                 f"- 対応commit件名: {item.subject}",
             )
         )
+    if effect_check_reason is not None:
+        record = json.dumps({"verdict": effect_check, "reason": effect_check_reason}, ensure_ascii=False)
+        lines.append(f"- 効果確認全体: {record}")
     if note:
-        lines.append(f"- メモ: {note}")
+        if effect_check is not None and len(note.splitlines()) > 1:
+            fence = "~~~"
+            while fence in note:
+                fence += "~"
+            lines.extend(("- メモ:", "", f" {fence}", *(f" {line}" for line in note.splitlines()), f" {fence}"))
+        else:
+            lines.append(f"- メモ: {note}")
     body += "\n".join(lines) + "\n"
     write_entry_text(path, body)
 

@@ -304,7 +304,7 @@ def test_public_effect_retry_after_commit_failure_is_idempotent(
 @pytest.mark.cpu_limit(
     2.5, reason="実Gitの隔離した資源・履歴・保存状態の遷移を検収する最小の状態列。所有thread合計CPUのLinux観測最大1.123秒。"
 )
-def test_public_transition_only_implemented_awi_adoption_starts_pending(
+def test_public_transition_without_implemented_awi_leaves_effect_unset(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
 ) -> None:
     notes, worktree, _path = effect_repository
@@ -344,10 +344,10 @@ def test_adopt_warns_when_inbox_entry_has_commit(
     oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
     capsys.readouterr()
 
-    assert _adopt(notes, worktree, "skipped.md", "--commit", oid) == 0
+    assert _adopt(notes, worktree, "skipped.md", "--commit", oid, "--effect-check=pending") == 0
 
     captured = capsys.readouterr()
-    assert "state: adopted" in entry_path(notes, "skipped.md").read_text(encoding="utf-8")
+    assert "effect_check: pending" in entry_path(notes, "skipped.md").read_text(encoding="utf-8")
     assert "成功: 1件をadoptedへ移した" in captured.out
     assert captured.err.count("skipped.mdは作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した") == 1
     assert "atk wi start-processing" in captured.err
@@ -514,3 +514,62 @@ def test_public_effect_whole_item_confirmed_without_file(
     assert _invoke(notes, worktree, path.name, None, "confirmed") == 0
     parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None and parsed[0]["effect_check"] == "confirmed"
+
+
+@pytest.mark.parametrize(
+    "selection", [[], ["--effect-check=not_required"], ["--effect-check=not_required", "--effect-check-reason=  "]]
+)
+def test_implemented_awi_rejects_missing_effect_decision(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], selection: list[str]
+) -> None:
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "implemented.md", state="processing")
+    path = entry_path(notes, "implemented.md")
+    original = path.read_bytes()
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    before = git_repository.git_output(notes, "rev-parse", "HEAD")
+    assert _adopt(notes, worktree, path.name, "--commit", oid, *selection) == 1
+    assert path.read_bytes() == original
+    assert git_repository.git_output(notes, "rev-parse", "HEAD") == before
+
+
+def test_implemented_awi_records_exemption_with_multiline_note(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+) -> None:
+    notes, worktree, _path = effect_repository
+    write_awi(notes, "implemented.md", state="processing")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    assert (
+        _adopt(
+            notes,
+            worktree,
+            "implemented.md",
+            "--commit",
+            oid,
+            "--effect-check=not_required",
+            "--effect-check-reason=採用前の検収で目的を達成",
+            "--note=検収結果\n## 処理結果\n```",
+        )
+        == 0
+    )
+    saved = entry_path(notes, "implemented.md").read_text(encoding="utf-8")
+    assert "effect_check: not_required" in saved
+    assert effect_check.pending_reason(saved) == "採用前の検収で目的を達成"
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_implemented_awi_validates_all_targets_before_adopting(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+    bulk: bool,
+) -> None:
+    notes, worktree, _path = effect_repository
+    write_uwi(notes, "answer.md", state="inbox", answer="回答済み")
+    write_awi(notes, "implemented.md", state="inbox")
+    selection = ["--all", "--yes", "--skip-pull"] if bulk else ["answer.md", "implemented.md"]
+    paths = [entry_path(notes, filename) for filename in ("answer.md", "implemented.md")]
+    before = [path.read_bytes() for path in paths]
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    with pytest.raises(SystemExit) as finished:
+        atk.main(["wi", "adopt", *selection, "--target-repo", str(worktree), "--commit", oid], home=notes.parent)
+    assert finished.value.code == 1
+    assert [path.read_bytes() for path in paths] == before

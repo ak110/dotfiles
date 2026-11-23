@@ -92,6 +92,10 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
 
 ## 公開前の検証
 
+公開する担当は統合後、実際にpushするHEADで、[作業ツリーの準備](worktree.md#作業ツリーの準備)にある規範Markdownの上限検査の成功を確かめる。
+成功の根拠に使うのは、同じHEADで対象の試験が実行され、成功した記録だけとする。
+上限超過ならpushせず、統合先の所有者が先に削減し、公開するHEADで成功を確かめ直す。
+
 1. 公開する担当は、pushの前に実行する検証を`agent-toolkit:atk-mode/playbooks/publish.md`「検証とCI」で選ぶ。
 2. 統合差分の配布対象ごとに採番の要否を確定し、レーンからの引渡しと比べる。
    `rust/claude-statusline/`に変更があれば、`.claude/skills/release-dotfiles/SKILL.md`「developとmasterのリリース運用」の手順1の採番をpushの前に適用し、最終の検証のpyfltrへ`--enable=statusline-version`を指定する。

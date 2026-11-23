@@ -133,10 +133,22 @@ def _role_head_reason(document: pathlib.Path, message: str) -> str | None:
         _STATE_HEAD,
         *(declaration.result_heads if isinstance(declaration, task_documents.TaskDocumentDeclaration) else ()),
     )
-    for line in _visible_result_lines(message):
-        stripped = line.strip().removeprefix("- ")
-        if any(_head_matches(stripped, head) for head in heads):
+    lines = [line.strip().removeprefix("- ") for line in _visible_result_lines(message)]
+    notify_only = (
+        document.name == "exec.subagent.md"
+        and "統合区分: マージあり" in lines
+        and any(_head_matches(line, "計画検査完了") for line in lines)
+    )
+    for line in lines:
+        if notify_only and (line == _STATE_HEAD or _head_matches(line, "計画検査完了")):
+            continue
+        if any(_head_matches(line, head) for head in heads):
             return None
+    if notify_only:
+        return (
+            "マージありの計画検査完了は最終応答にできません。未通知なら atk agents notify で送り、"
+            "応答を待たずに実装へ進んでください"
+        )
     accepted = "、".join(f"`{head}`" for head in heads)
     return (
         "役割文書の返却形式の固定行も、続行できない区分と理由の2行もありません。"

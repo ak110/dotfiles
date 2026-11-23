@@ -44,8 +44,9 @@ def test_commit_transition_from_outside_worktree(
     target_argument = "github.com/example/target" if case == "missing-worktree" else str(target)
     revision = "no-such-revision" if case == "missing-revision" else oid
 
+    effect = ["--effect-check=pending"] if action == "adopt" else []
     with pytest.raises(SystemExit) as captured:
-        atk.main(["wi", action, "entry.md", "--target-repo", target_argument, "--commit", revision], home=tmp_path)
+        atk.main(["wi", action, "entry.md", "--target-repo", target_argument, "--commit", revision, *effect], home=tmp_path)
 
     output = capsys.readouterr()
     if case == "resolved":

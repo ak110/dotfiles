@@ -102,8 +102,9 @@ def _eager_imports(node: ast.AST, bindings: dict[str, str]) -> Iterator[ast.Impo
             yield from _eager_imports(statement, bindings)
         return
     # 型検査ガードの名前を別の値へ束縛し直しうる文は、その名前をガードとみなさない（安全側に倒す）。
-    for name in _rebound_names(node) & bindings.keys():
-        del bindings[name]
+    if bindings:
+        for name in _rebound_names(node) & bindings.keys():
+            del bindings[name]
 
     invalidated: set[str] = set()
     previous_bindings = bindings.copy()

@@ -65,8 +65,8 @@ def test_adopt_multiple_then_rewrite_split_and_retry(
     git_repository.git_output(notes, "push", "-u", "origin", "main")
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     commits = ["--commit", old, "--commit", extra] if multiple else ["--commit", old]
-    _cli(tmp_path, ["wi", "adopt", WI_A, "--target-repo", str(repo), *commits, "--note", "説明"])
-    _cli(tmp_path, ["wi", "adopt", WI_B, "--target-repo", str(repo), "--commit", root])
+    _cli(tmp_path, ["wi", "adopt", "--effect-check=pending", WI_A, "--target-repo", str(repo), *commits, "--note", "説明"])
+    _cli(tmp_path, ["wi", "adopt", "--effect-check=pending", WI_B, "--target-repo", str(repo), "--commit", root])
     _cli(tmp_path, ["wi", "show", WI_A, "--skip-pull"])
     shown = capsys.readouterr().out
     assert "- 対応commit件名: 旧実装" in shown
