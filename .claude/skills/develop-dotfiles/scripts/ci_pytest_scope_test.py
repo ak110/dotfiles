@@ -84,6 +84,7 @@ def test_toolkit_rejects_incomplete_or_invalid_matrix(shards) -> None:
         '--pytest-args="-v --junitxml=$junit --test-shard=$TEST_SHARD" agent-toolkit'
     )
     with pytest.raises(ValueError, match="shard"):
+        # pylint: disable=protected-access
         subject._toolkit_scope(command, {"strategy": {"matrix": {"shard": shards}}})
 
 
@@ -94,23 +95,26 @@ def test_toolkit_never_evaluates_unknown_shell(tmp_path) -> None:
         f'--pytest-args="-v --junitxml=$junit --test-shard=$TEST_SHARD" "$(touch {marker})"'
     )
     with pytest.raises(ValueError, match="形式|対象"):
+        # pylint: disable=protected-access
         subject._toolkit_scope(command, {"strategy": {"matrix": {"shard": ["1/1"]}}})
     assert not marker.exists()
 
 
-def test_toolkit_collect_prints_ids_from_the_exact_run(monkeypatch, tmp_path, capsys) -> None:
+def test_toolkit_collect_preserves_ids_with_embedded_newlines(monkeypatch, tmp_path, capsys) -> None:
+    node_id = "module_test.py::test_case[before\nafter]"
+
     def run(argv, **kwargs):
         assert "--output-format=jsonl" in argv
-        if argv[2] == "pyfltr" and argv[3] == "ci":
-            assert "--collect-only" in argv[6] and "-v " not in argv[6]
-            return SimpleNamespace(returncode=0, stdout='{"kind":"header","run_id":"test-run"}\n', stderr="")
-        assert argv[3:5] == ["show-run", "test-run"]
-        return SimpleNamespace(stdout='{"content":"module_test.py::test_case\\n1 test collected"}\n')
+        assert "--collect-only" in argv[6] and "-v " not in argv[6]
+        env = kwargs["env"]
+        assert env["PYTEST_ADDOPTS"] == "-p ci_pytest_scope_record"
+        Path(env["CI_PYTEST_SCOPE_NODE_IDS"]).write_text(subject.json.dumps([node_id]), encoding="utf-8")
+        return 0
 
-    monkeypatch.setattr(subject.subprocess, "run", run)
+    monkeypatch.setattr(subject.subprocess, "call", run)
     selected = {"pytest_args": ["-v"], "shards": ["1/1"], "path": "agent-toolkit"}
     assert subject.run_scope("toolkit", selected, tmp_path, collect_only=True) == 0
-    assert "1/1\tmodule_test.py::test_case" in capsys.readouterr().out
+    assert subject.json.loads(capsys.readouterr().out) == {"shard": "1/1", "node_id": node_id}
 
 
 def test_root_only_selects_a_difference_when_the_history_and_ancestor_exist(monkeypatch, tmp_path) -> None:

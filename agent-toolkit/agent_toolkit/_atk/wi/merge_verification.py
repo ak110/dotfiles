@@ -59,8 +59,9 @@ def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
             not isinstance(record, dict)
             or record.get("target_repo") != repository
             or record.get("commit") != sha
-            or type(record.get("exit_code")) is not int
-            or record["exit_code"] != 0
+            or not isinstance(exit_code := record.get("exit_code"), int)
+            or isinstance(exit_code, bool)
+            or exit_code != 0
             or not isinstance(argv := record.get("argv"), list)
             or not argv
             or not all(isinstance(value, str) and value for value in argv)

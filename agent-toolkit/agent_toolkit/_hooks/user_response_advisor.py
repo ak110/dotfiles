@@ -35,8 +35,8 @@ from agent_toolkit._hooks import stop_session as _stop_session
 from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
-lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
 

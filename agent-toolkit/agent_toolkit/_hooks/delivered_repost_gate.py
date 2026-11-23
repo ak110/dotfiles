@@ -13,27 +13,20 @@
 import json
 import re
 
-from agent_toolkit._common.agents_server_tools import MCP_NAMESPACES
+from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
-_SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
-    "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user",
-    "mcp__agent-toolkit__send_to_user",
-}
 _SENTENCE_BREAK = re.compile(r"[。！？!?\n]|\.(?=\s|$)")
 _SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
 _block_notice = notice.block_formatter("delivered_repost_gate")
-
-
-def is_send_to_user_tool(name: object) -> bool:
-    return isinstance(name, str) and name in _SEND_TO_USER_TOOLS
 
 
 def _send_required(entries: list[dict]) -> bool:
@@ -91,8 +84,6 @@ def _sentences(text: str) -> set[str]:
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
-    from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
-
     for index in range(len(entries) - 1, -1, -1):
         entry = entries[index]
         if entry.get("isCompactSummary") is True or (

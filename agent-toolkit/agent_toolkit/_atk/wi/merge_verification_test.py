@@ -36,7 +36,14 @@ def test_ci_success_requires_exact_oid_and_execution(monkeypatch, runs, jobs, al
         assert (forge, repository, ref) == ("github", _REPO, "fix/demo")
         return lambda sha: (
             [
-                dict(databaseId=ident, headSha=oid, status=status, conclusion=conclusion, event="push", workflowName="CI")
+                {
+                    "databaseId": ident,
+                    "headSha": oid,
+                    "status": status,
+                    "conclusion": conclusion,
+                    "event": "push",
+                    "workflowName": "CI",
+                }
                 for ident, oid, status, conclusion in runs
             ]
             if sha == _COMMIT
@@ -87,7 +94,7 @@ def test_equivalent_evidence_is_only_for_proven_non_ci_target(tmp_path, monkeypa
             merge_verification.check(_body(evidence))
     else:
         assert merge_verification.check(_body(evidence)).startswith("CI非対象")
-        for changes in ({"commit": "b" * 40}, {"argv": ["true"]}, {"output_sha256": "f" * 64}):
+        for changes in ({"commit": "b" * 40}, {"argv": ["true"]}, {"exit_code": False}, {"output_sha256": "f" * 64}):
             _write_evidence(evidence, review, {**values, **changes})
             with pytest.raises(ActionableError, match="同等の検証記録"):
                 merge_verification.check(_body(evidence))
@@ -116,7 +123,14 @@ def _write_evidence(evidence, review, values):
     ],
 )
 def test_does_not_count_unrelated_or_skipped_ci(monkeypatch, workflow, jobs, allowed):
-    run = dict(databaseId=1, headSha=_COMMIT, status="completed", conclusion="success", event="push", workflowName=workflow)
+    run = {
+        "databaseId": 1,
+        "headSha": _COMMIT,
+        "status": "completed",
+        "conclusion": "success",
+        "event": "push",
+        "workflowName": workflow,
+    }
     monkeypatch.setattr(wait_ci_forge, "_default_run_list_fn", lambda *_args: lambda _sha: [run])
     monkeypatch.setattr(wait_ci_forge, "_gh_job_list", lambda *_args: jobs)
     monkeypatch.setattr(wait_ci_forge, "_github_ci_configured", lambda *_args: True)

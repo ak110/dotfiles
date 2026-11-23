@@ -1,6 +1,5 @@
 import argparse
 import ast
-import io
 import json
 import os
 import re
@@ -126,7 +125,8 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
                 if collect_only:
                     code, node_ids = _collect_pyfltr(command, root, env)
                     if code or node_ids:
-                        print("\n".join(node_ids))
+                        for node_id in node_ids:
+                            print(json.dumps({"node_id": node_id}, ensure_ascii=False), flush=True)
                         return code
                 else:
                     code = subprocess.call(command, cwd=root, env=env)
@@ -162,41 +162,25 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
         if not node_ids:
             raise ValueError(f"分割 {shard} の試験IDが出力されなかった")
         for node_id in node_ids:
-            print(f"{shard}\t{node_id}")
+            print(json.dumps({"shard": shard, "node_id": node_id}, ensure_ascii=False), flush=True)
     return result
 
 
 def _collect_pyfltr(command, root, env):
-    completed = subprocess.run(
-        [*command, "--no-quiet", "--output-format=jsonl"],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    print(completed.stdout, end="")
-    print(completed.stderr, end="", file=sys.stderr)
-    if completed.returncode:
-        return completed.returncode, []
-    run_id = next(row["run_id"] for line in io.StringIO(completed.stdout) if (row := json.loads(line))["kind"] == "header")
-    recorded = subprocess.run(
-        [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output", "--output-format=jsonl"],
-        cwd=root,
-        env=env,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    )
-    node_ids = [
-        entry
-        for line in io.StringIO(recorded.stdout)
-        for entry in json.loads(line).get("content", "").splitlines()
-        if "::" in entry and entry.split("::", 1)[0].endswith(".py")
-    ]
-    return 0, node_ids
+    with tempfile.TemporaryDirectory(prefix=".ci-pytest-nodeids-", dir=root) as temporary:
+        node_ids = Path(temporary) / "ids.json"
+        plugin_directory = str(Path(__file__).resolve().parent)
+        python_path = env.get("PYTHONPATH")
+        pytest_env = {
+            **env,
+            "PYTHONPATH": os.pathsep.join((plugin_directory, python_path)) if python_path else plugin_directory,
+            "PYTEST_ADDOPTS": "-p ci_pytest_scope_record",
+            "CI_PYTEST_SCOPE_NODE_IDS": str(node_ids),
+        }
+        code = subprocess.call([*command, "--no-quiet", "--output-format=jsonl"], cwd=root, env=pytest_env)
+        if code or not node_ids.is_file():
+            return code, []
+        return 0, json.loads(node_ids.read_text(encoding="utf-8"))
 
 
 def matching_old_assertions(diff: str, tests: dict[str, str]) -> list[str]:
@@ -260,7 +244,8 @@ def main():
         print(json.dumps(selected, ensure_ascii=False))
         return 0
     except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError, subprocess.SubprocessError) as error:
-        parser.exit(2, f"CIのpytestの対象を確定できない: {error}\n")
+        print(f"CIのpytestの対象を確定できない: {error}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

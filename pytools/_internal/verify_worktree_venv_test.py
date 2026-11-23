@@ -11,8 +11,8 @@ from agent_toolkit._testing import git_repository
 from pytools._internal import verify_worktree_venv
 
 
-@pytest.fixture
-def nested_worktree(tmp_path: Path) -> tuple[Path, Path]:
+@pytest.fixture(name="nested_worktree")
+def _nested_worktree(tmp_path: Path) -> tuple[Path, Path]:
     primary = git_repository.init_repository(tmp_path / "親 checkout", commit_message="基点")
     linked = primary / "検証 worktree"
     git_repository.run_git(primary, "worktree", "add", "--detach", str(linked))
@@ -112,3 +112,21 @@ def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path
     if target == "test":
         assert "run:true" in lines
     assert marker.read_text(encoding="utf-8") == str(primary)
+
+
+def test_old_git_worktree_list_preserves_quoted_paths(monkeypatch, tmp_path):
+    (tmp_path / ".git").mkdir()
+    quoted = '"変\\t更"' if os.name != "nt" else '"変更"'
+    commands = []
+
+    def git(argv, **_kwargs):
+        commands.append(argv)
+        if argv[-1] == "-z":
+            return subprocess.CompletedProcess(argv, 129, b"", b"unknown switch")
+        return subprocess.CompletedProcess(argv, 0, ("worktree " + quoted + "\n").encode("utf-8"), b"")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(verify_worktree_venv.subprocess, "run", git)
+    name = "変\t更" if os.name != "nt" else "変更"
+    assert verify_worktree_venv._registered_worktrees(tmp_path) == [tmp_path / name]  # pylint: disable=protected-access
+    assert commands[0][:-1] == commands[1]

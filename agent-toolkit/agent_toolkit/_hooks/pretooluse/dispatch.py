@@ -79,6 +79,7 @@ lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -98,7 +99,6 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
-lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills

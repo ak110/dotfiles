@@ -1,4 +1,5 @@
 import argparse
+import ast
 import io
 import os
 import subprocess
@@ -9,20 +10,23 @@ from pathlib import Path
 def _registered_worktrees(worktree: Path) -> list[Path]:
     if not any((directory / ".git").exists() for directory in (worktree, *worktree.parents)):
         return []
-    result = subprocess.run(
-        ["git", "worktree", "list", "--porcelain", "-z"],
-        cwd=worktree,
-        capture_output=True,
-        check=False,
-    )
+    args = ["git", "-c", "core.quotePath=false", "worktree", "list", "--porcelain"]
+    result = subprocess.run([*args, "-z"], cwd=worktree, capture_output=True, check=False)
+    nul_delimited = result.returncode != 129
+    if not nul_delimited:
+        result = subprocess.run(args, cwd=worktree, capture_output=True, check=False)
     if result.returncode != 0:
         diagnostic = os.fsdecode(result.stderr or result.stdout).strip()
         raise ValueError(f"Gitの作業ツリー一覧を確認できない（終了コード {result.returncode}）: {diagnostic}")
-    return [
-        Path(os.fsdecode(field.removeprefix(b"worktree "))).resolve()
-        for field in result.stdout.split(b"\0")
-        if field.startswith(b"worktree ")
-    ]
+    roots = []
+    for field in result.stdout.split(b"\0" if nul_delimited else b"\n"):
+        if not field.startswith(b"worktree "):
+            continue
+        path = os.fsdecode(field.removeprefix(b"worktree "))
+        if not nul_delimited and path.startswith('"'):
+            path = ast.literal_eval(path)
+        roots.append(Path(path).resolve())
+    return roots
 
 
 def _owner(path: Path, roots: list[Path]) -> Path | None:
