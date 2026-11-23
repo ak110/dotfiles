@@ -24,9 +24,11 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 
+from agent_toolkit._common import process_loop_session
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as _notice
@@ -235,6 +237,20 @@ def _saturation_text(session_id: str) -> str:
     return working + hooks
 
 
+def _new_wi_text(session_id: str) -> str:
+    from agent_toolkit._atk.wi.listing import progress_new_wis  # pylint: disable=import-outside-toplevel
+
+    try:
+        rows = progress_new_wis(session_id)
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        return f"新着WIは未確認（{type(error).__name__}）。"
+    if rows is None:
+        return "新着WIは未確認（開始時集合なし）。"
+    if not rows:
+        return "ローカルキューの新着WIは0件（遠隔とは未同期）。"
+    return f"ローカルキューで処理可能な新着WI（遠隔とは未同期）: {'、'.join(rows)}。"
+
+
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
     """点検の期日に達していれば通知本文を返し、配送時に通知時刻を確定する予約をする。達していなければ`None`を返す。
 
@@ -293,7 +309,12 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
     main_agent = is_main_agent_context(payload)
     instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
     previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
-    body = elapsed_text + previous + _saturation_text(session_id) + instruction
+    new_wis = (
+        _new_wi_text(session_id)
+        if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
+        else ""
+    )
+    body = elapsed_text + previous + _saturation_text(session_id) + new_wis + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None

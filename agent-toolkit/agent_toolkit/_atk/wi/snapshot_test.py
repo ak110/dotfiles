@@ -6,6 +6,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config
+from agent_toolkit._atk.wi import listing
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
 
@@ -162,3 +163,37 @@ def test_list_snapshot_normalizes_repo_and_preserves_broken_entries(
         atk.main([*command, "--new-since", str(baseline)], home=tmp_path)
     assert result.value.code == 0
     assert capsys.readouterr().out == "0\n"
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, capsys, configured):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repository = config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "snapshot-loop")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "snapshot-loop")
+    before = "20261123-140000-001.md"
+    new = "20261123-145959-001.md"
+    outside = "20261123-145959-002.md"
+    _write_awi_file(notes, before, source="implement")
+    target = "--configured-repos" if configured else "--target-repo=github.com/example/foo"
+    baseline = tmp_path / "snapshot.json"
+    with pytest.raises(SystemExit) as invocation:
+        atk.main(
+            ["wi", "list", "--skip-pull", "--count", target, "--snapshot-output", str(baseline)],
+            home=tmp_path,
+        )
+    assert invocation.value.code == 0
+    capsys.readouterr()
+    original = baseline.read_bytes()
+    path = _write_awi_file(notes, new, source="implement")
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("state: inbox", "state: inbox\nmerge_branch: worktree-done"),
+        encoding="utf-8",
+    )
+    _write_awi_file(notes, outside, target_repo="github.com/example/other", source="implement")
+
+    assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
+    assert baseline.read_bytes() == original

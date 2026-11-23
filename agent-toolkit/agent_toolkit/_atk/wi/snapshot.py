@@ -1,8 +1,10 @@
 import json
+import os
 import pathlib
 from collections.abc import Iterable
 
 from agent_toolkit._atk.wi.entries import EntryRecord, canonical_repo
+from agent_toolkit._common import delegated_session, process_loop_session, session_state
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git.remote import normalize_remote_url
@@ -56,3 +58,42 @@ def read(path: pathlib.Path) -> frozenset[Identifier]:
 def new_entries(entries: Iterable[EntryRecord], baseline: frozenset[Identifier]) -> list[EntryRecord]:
     cache: dict[str, str | None] = {}
     return [entry for entry in entries if (canonical_repo(entry[1], cache) or "", entry[0].name) not in baseline]
+
+
+_PROGRESS_SNAPSHOTS = "process_loop_progress_snapshots"
+
+
+def remember_progress_start(
+    path: pathlib.Path,
+    private_notes: pathlib.Path,
+    targets: Iterable[tuple[str, str | None]],
+) -> None:
+    if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1" or delegated_session.is_delegated(os.environ):
+        return
+    conversation = delegated_session.current_conversation_session_id(os.environ)
+    expected = process_loop_session._expected_session_id(os.environ)  # noqa: SLF001  # pylint: disable=protected-access
+    if not expected or (conversation is not None and conversation != expected):
+        return
+    updates = {
+        json.dumps([repo, branch]): {
+            "repo": repo,
+            "branch": branch,
+            "path": str(path.resolve()),
+            "notes": str(private_notes.resolve()),
+        }
+        for repo, branch in targets
+    }
+    if not updates:
+        return
+
+    def remember(state: dict) -> dict:
+        previous = state.get(_PROGRESS_SNAPSHOTS)
+        rows = previous if isinstance(previous, dict) else {}
+        return {**state, _PROGRESS_SNAPSHOTS: {**rows, **updates}}
+
+    session_state.update_state(expected, remember)
+
+
+def progress_sources(session_id: str) -> dict:
+    sources = session_state.read_state(session_id).get(_PROGRESS_SNAPSHOTS)
+    return sources if isinstance(sources, dict) else {}

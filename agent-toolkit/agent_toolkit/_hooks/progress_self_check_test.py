@@ -494,3 +494,39 @@ def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, m
     report = tmp_path / "agents-concurrency-failures.txt"
     assert str(report) in notice
     assert all(failure in report.read_text(encoding="utf-8") for failure in failures)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_process_loop_new_wis_reports_unconfirmed(monkeypatch, failed):
+    from agent_toolkit._atk.wi import listing  # pylint: disable=import-outside-toplevel
+
+    sid = _session_id()
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
+    if failed:
+
+        def unable(_sid):
+            raise OSError("取得不能")
+
+        monkeypatch.setattr(listing, "progress_new_wis", unable)
+    notice = _due_notice(sid)
+    assert "新着WIは未確認" in notice
+    assert "0件" not in notice
+    progress_self_check.release_reservations()
+
+
+def test_process_loop_point_lists_merge_candidate(monkeypatch):
+    from agent_toolkit._atk.wi import listing  # pylint: disable=import-outside-toplevel
+
+    sid = _session_id()
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", sid)
+    name = "20261123-145959-001.md"
+    monkeypatch.setattr(listing, "progress_new_wis", lambda _sid: (f"{name} (source: implement、merge_branch: あり)",))
+
+    payload = {"session_id": sid}
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    assert progress_self_check.claim_notice(payload, now=1800.0) is None
+    notice = progress_self_check.claim_notice(payload, now=1801.0)
+    assert notice and f"{name} (source: implement、merge_branch: あり)" in notice
+    progress_self_check.release_reservations()

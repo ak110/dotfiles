@@ -3,6 +3,7 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
 import shutil
 import sys
 from collections.abc import Mapping
@@ -418,6 +419,11 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
             _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            _wi_snapshot.remember_progress_start(
+                args.snapshot_output,
+                private_notes,
+                ((item.repository.repo_id, item.repository.branch) for item in snapshots),
+            )
         total = 0
         for snapshot in snapshots:
             states = _wi_filters.resolve_states(args.status)
@@ -464,6 +470,9 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     if getattr(args, "snapshot_output", None) is not None:
         _wi_snapshot.save(args.snapshot_output, all_entries)
+        _wi_snapshot.remember_progress_start(
+            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos)
+        )
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
         readiness_target,
@@ -511,3 +520,32 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         return
 
     print_entries(selected, readiness, branch_settings)
+
+
+def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
+    if not (saved := _wi_snapshot.progress_sources(session_id)):
+        return None
+    by_key = {(repo.repo_id, repo.branch): repo for repo in _config.resolve_configured_repositories()}
+    scopes = {(row["repo"], row["branch"]): row for row in saved.values()}
+    notes = {row["notes"] for row in scopes.values()}
+    if len(notes) != 1 or any(scope not in by_key for scope in scopes):
+        raise ValueError("開始時の対象と現在の登録が一致しない")
+    private_notes = pathlib.Path(notes.pop())
+    if not private_notes.is_dir():
+        raise ValueError("private-notesを読めない")
+    baselines = {scope: _wi_snapshot.read(pathlib.Path(row["path"])) for scope, row in scopes.items()}
+    labels = []
+    with _wi_sync.repo_lock(private_notes, timeout=0):
+        _wi_sync.ensure_mutation_allowed(private_notes)
+        snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
+        for snapshot in snapshots:
+            repo = snapshot.repository
+            baseline = baselines[repo.repo_id, repo.branch]
+            for path, _repo, body, _state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+                source = parse_source(body) or "未指定"
+                if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
+                    source = "その他"
+                branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
+                if DATED_NAME.fullmatch(path.name):
+                    labels.append(f"{path.name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
+    return tuple(sorted(set(labels)))
