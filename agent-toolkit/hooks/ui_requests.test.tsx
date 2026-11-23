@@ -197,6 +197,26 @@ function call(message: string) {
   return { tool_use_id: `use-${message}`, tool: SEND_TO_USER, input: { message }, isRunning: false, isErrored: false, isInterrupted: false, output: "ok" };
 }
 
+test("拒否した送信の本文を既定の描画へ渡さず、拒否理由と許可後の本文は保つ", async ($, on) => {
+  const body = "送り直す本文";
+  const denied = { ...call(body), isErrored: true, output: "Permission denied" };
+  const retry = { ...call(body), tool_use_id: "retry" };
+  const inputs: unknown[] = [];
+  on("ui.render", { component: "ToolUse" }, (_$, e, next) => {
+    inputs.push([e.props.input, e.props.output]);
+    return next(e);
+  });
+  on("ui.render", { component: "ToolGroup" }, (_$, e, next) => {
+    inputs.push(e.props.calls.map(({ input }) => input));
+    return next(e);
+  });
+  await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "denied", props: denied });
+  await $.ui.render({ surface: "terminal", component: "ToolGroup", requestId: "mixed", props: { calls: [denied, retry], isActive: false, isExpanded: false } });
+  expect(inputs).toEqual([[{}, "Permission denied"], [{}, { message: body }]]);
+  const allowed = await $.ui.render({ surface: "terminal", component: "ToolUse", requestId: "retry", props: retry });
+  expect(JSON.stringify(allowed)).toContain('"Markdown","props":{"text":"送り直す本文"}');
+});
+
 test("会話の再開後は置いた行が無い送達本文をツール入力から描き、稼働中に置いた本文は二重に描かない", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);

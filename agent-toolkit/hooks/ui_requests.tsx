@@ -199,14 +199,16 @@ export function register(on: On): void {
   // send_to_userのツール入力から元の位置へ本文を描く。稼働中に置いた行がある呼出しは二重に描かない。
   on("ui.render", { component: "ToolGroup" }, async ($, e, next) => {
     const calls = e.props.calls.filter((call) => isSendToUser(call.tool) && deliveredMessage(call) !== undefined);
-    if (calls.length === 0 || e.props.isExpanded) return next(e);
-    if ((await Promise.all(calls.map((call) => placedLive($, call)))).every(Boolean)) return next(e);
-    return next({ ...e, props: { ...e.props, isExpanded: true } });
+    const props = { ...e.props, calls: e.props.calls.map(withoutUndeliveredInput) };
+    if (!props.isExpanded && calls.length > 0) {
+      props.isExpanded = !(await Promise.all(calls.map((call) => placedLive($, call)))).every(Boolean);
+    }
+    return next({ ...e, props });
   });
   on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
     if (!isSendToUser(e.props.tool)) return next(e);
     const message = deliveredMessage(e.props);
-    if (message === undefined) return next(e);
+    if (message === undefined) return next({ ...e, props: withoutUndeliveredInput(e.props) });
     if (await placedLive($, e.props)) return next(e);
     const { Markdown, Box } = $.ui.resolve(e);
     return (
@@ -227,6 +229,12 @@ export function placedMessage(stored: string | { message: string; placedAt: numb
 }
 
 type SendCall = { tool_use_id?: string; input: unknown; isRunning: boolean; isErrored: boolean; isInterrupted: boolean };
+
+function withoutUndeliveredInput<T extends SendCall & { tool: string }>(call: T): T {
+  return isSendToUser(call.tool) && (call.isRunning || call.isErrored || call.isInterrupted)
+    ? { ...call, input: {} }
+    : call;
+}
 
 // この会話の稼働中に行を置いた呼出しかを返す。会話状態は再開で初期化されるため、再開前の呼出しは偽になる。
 // 要求がtool_use_idを持つ場合は呼出しで照合し、再開後に同じ本文を送っても再開前の呼出しの表示を消さない。

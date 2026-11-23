@@ -20,6 +20,8 @@ Code Modeで実行されない`tool.call`・`tool.check`イベントには登録
 描画本文と処理済みIDはmodの会話状態へ置き、稼働中の再読込で本文を失ったり二重配置したりしない。
 会話状態と置いた行は会話の終了・`/clear`・`/resume`・`/branch`で初期化されるため、再開後の画面ではtranscriptに残る`send_to_user`のツール入力から、`ui.render`の`ToolUse`で元の位置へ本文を描く。
 再開後にまとめられた`ToolGroup`は展開し、呼び出しごとに描く。
+実行中・失敗・中断の呼出しの本文は、独自描画にも`ToolUse`・`ToolGroup`の既定描画にも渡さない。
+拒否理由は残す。
 稼働中に置いた行がある呼出しのツール行は描き替えず、二重に表示しない。
 置いた行がある呼出しの判定は、本文ではなく呼出しの`tool_use_id`で行う。
 Claude CodeがMCP要求の`_meta`へ渡す`claudecode/toolUseId`を`send_to_user`が表示要求へ添え、modがその呼出しを会話状態へ記録する。
