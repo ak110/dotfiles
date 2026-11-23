@@ -703,14 +703,42 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
 
 
 @pytest.mark.parametrize(
-    "boundary", ["complete", "wait", "interrupt", "abort", "resume", "compact", "exit", "dry-run", "other-uwi"]
+    "boundary",
+    [
+        "complete",
+        "feedback",
+        "plain",
+        "failed-delivery",
+        "saved-only",
+        "ordinary-save",
+        "wait",
+        "interrupt",
+        "abort",
+        "resume",
+        "compact",
+        "exit",
+        "dry-run",
+        "other-uwi",
+        "active-agent",
+        "delegate",
+        "codex",
+    ],
 )
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
     # 実例の行12、9866～9867、9950～9959を匿名化して縮約した。  # pyfltr: allow-comment
     command = "cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type=post-approval --body-file /report.md"
+    if boundary in {"saved-only", "ordinary-save"}:
+        opening = tmp_path / "opening.md"
+        opening.write_text(
+            "2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？\n"
+            if boundary == "saved-only"
+            else "設定を変更しました。この対応で問題ありませんか？\n",
+            encoding="utf-8",
+        )
+        command += f' --compare-opening-file "{opening}"'
     if boundary == "dry-run":
         command += " --dry-run"
-    records = [
+    records: list[dict[str, object]] = [
         {"type": "user", "message": {"content": '<atk-auto source="process-loop" kind="goal">巡回</atk-auto>'}},
         {
             "type": "assistant",
@@ -726,6 +754,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
         },
     ]
     report_name = "20000101-010101-002.md" if boundary == "other-uwi" else "20000101-010101-001.md"
+    failed_delivery = boundary == "failed-delivery"
     records.extend(
         [
             {
@@ -743,11 +772,26 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
             },
             {
                 "type": "user",
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "deliver", "is_error": False}]},
-                "toolUseResult": '{"ok":true}',
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "deliver", "is_error": failed_delivery}]},
+                "toolUseResult": json.dumps({"ok": not failed_delivery}),
             },
         ]
     )
+    if boundary in {"plain", "saved-only", "ordinary-save"}:
+        del records[-2:]
+    if boundary == "plain":
+        records.append(
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": f"報告用UWI: {report_name}\n以上で、このセッションの作業は全て終わった。"}
+                    ]
+                },
+            }
+        )
+    if boundary == "feedback":
+        records.append({"type": "user", "isMeta": True, "message": {"content": "Stop hook feedback: 終了操作を実行せよ。"}})
     if boundary == "interrupt":
         records.append({"type": "user", "message": {"content": "[Request interrupted by user]"}})
     if boundary == "compact":
@@ -813,8 +857,15 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     monkeypatch.setattr(loop_log, "abort_path", lambda: abort)
     request = process_loop_control.ResumeRequest("request", "id", "coordinator") if boundary == "resume" else None
     monkeypatch.setattr(process_loop_control, "read_resume_request", lambda: request)
-    result = stop.evaluate(json.dumps({"session_id": "coordinator", "transcript_path": str(path)}))
-    if boundary == "complete":
+    payload: dict[str, object] = {"session_id": "coordinator", "transcript_path": str(path)}
+    if boundary == "active-agent":
+        payload["background_tasks"] = [{"id": "child", "type": "local_agent", "status": "running"}]
+    if boundary == "delegate":
+        payload["agent_id"] = "child"
+    if boundary == "codex":
+        payload["turn_id"] = "turn"
+    result = stop.evaluate(json.dumps(payload))
+    if boundary in {"complete", "feedback", "plain", "failed-delivery", "saved-only"}:
         assert result.get("decision") == "block"
         assert "atk agents-exit-session" in str(result.get("reason"))
     else:
