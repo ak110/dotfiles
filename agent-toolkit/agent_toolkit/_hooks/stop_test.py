@@ -702,9 +702,11 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
     assert result["decision"] == "block"
 
 
-@pytest.mark.parametrize("boundary", ["complete", "wait", "interrupt", "abort", "resume", "compact", "exit", "dry-run"])
+@pytest.mark.parametrize(
+    "boundary", ["complete", "wait", "interrupt", "abort", "resume", "compact", "exit", "dry-run", "other-uwi"]
+)
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
-    # 実例の行12、9866～9867、9955～9959を匿名化して縮約した。  # pyfltr: allow-comment
+    # 実例の行12、9866～9867、9950～9959を匿名化して縮約した。  # pyfltr: allow-comment
     command = "cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type=post-approval --body-file /report.md"
     if boundary == "dry-run":
         command += " --dry-run"
@@ -717,9 +719,35 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
         {
             "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": "save", "is_error": False, "content": ""}]},
-            "toolUseResult": {"stdout": "成功: 1件をinboxへ投入した\n  ~/notes/inbox/report.md", "interrupted": False},
+            "toolUseResult": {
+                "stdout": "成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md",
+                "interrupted": False,
+            },
         },
     ]
+    report_name = "20000101-010101-002.md" if boundary == "other-uwi" else "20000101-010101-001.md"
+    records.extend(
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                            "id": "deliver",
+                            "input": {"message": f"報告用UWI: {report_name}\n以上で、このセッションの作業は全て終わった。"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {"content": [{"type": "tool_result", "tool_use_id": "deliver", "is_error": False}]},
+                "toolUseResult": '{"ok":true}',
+            },
+        ]
+    )
     if boundary == "interrupt":
         records.append({"type": "user", "message": {"content": "[Request interrupted by user]"}})
     if boundary == "compact":

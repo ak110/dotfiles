@@ -6,6 +6,7 @@ pyfltr: allow-comment
 
 import json
 import os
+import re
 
 from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._atk.session_records import exit_session_in_entries
@@ -38,15 +39,15 @@ def _is_report_save(command: object) -> bool:
     )
 
 
-def _saved_response(entry: dict, item: dict) -> bool:
+def _saved_report_name(entry: dict) -> str | None:
     response = entry.get("toolUseResult")
-    return (
-        not item.get("is_error")
-        and isinstance(response, dict)
-        and response.get("interrupted") is False
-        and isinstance(stdout := response.get("stdout"), str)
-        and stdout.startswith("成功: 1件をinboxへ投入した\n")
-    )
+    if not isinstance(response, dict) or response.get("interrupted") is not False:
+        return None
+    stdout = response.get("stdout")
+    if not isinstance(stdout, str):
+        return None
+    match = re.match(r"成功: 1件をinboxへ投入した\n +[^\r\n]*[/\\]([0-9]{8}-[0-9]{6}-[0-9]{3}\.md)(?:\r?\n|$)", stdout)
+    return match[1] if match else None
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
@@ -64,8 +65,9 @@ def _current_turn(entries: list[dict]) -> list[dict]:
 
 
 def _report_requires_exit(entries: list[dict]) -> bool:
-    pending: dict[str, str] = {}
-    saved = False
+    pending: dict[str, tuple[str, str]] = {}
+    saved: set[str] = set()
+    delivered = False
     for entry in entries:
         message = entry.get("message")
         if not isinstance(message, dict) or not isinstance(content := message.get("content"), list):
@@ -78,21 +80,31 @@ def _report_requires_exit(entries: list[dict]) -> bool:
                     continue
                 name = item.get("name")
                 if name in ATK_SHELL_TOOLS and _is_report_save(tool_input.get("command")):
-                    pending[identifier] = "save"
+                    pending[identifier] = ("save", "")
                 elif isinstance(name, str) and name.endswith("__compact_conversation"):
-                    pending[identifier] = "compact"
+                    pending[identifier] = ("compact", "")
+                elif (
+                    isinstance(name, str)
+                    and name.endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
+                    and isinstance(report := tool_input.get("message"), str)
+                    and report.rstrip().endswith("以上で、このセッションの作業は全て終わった。")
+                ):
+                    pending[identifier] = ("deliver", report)
             elif entry.get("type") == "user" and item.get("type") == "tool_result":
                 if not isinstance(identifier := item.get("tool_use_id"), str) or item.get("is_error"):
                     continue
-                operation = pending.pop(identifier, None)
-                if operation == "save" and _saved_response(entry, item):
-                    saved = True
-                elif operation == "compact" and _accepted_compaction(entry.get("toolUseResult")):
-                    saved = False
-    return saved
+                operation, argument = pending.pop(identifier, ("", ""))
+                if operation == "save" and (filename := _saved_report_name(entry)) is not None:
+                    saved.add(filename)
+                elif operation == "deliver" and _accepted_request(entry.get("toolUseResult")):
+                    delivered |= any(filename in argument for filename in saved)
+                elif operation == "compact" and _accepted_request(entry.get("toolUseResult")):
+                    saved.clear()
+                    delivered = False
+    return delivered
 
 
-def _accepted_compaction(response: object) -> bool:
+def _accepted_request(response: object) -> bool:
     if isinstance(response, str):
         try:
             response = json.loads(response)
