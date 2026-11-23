@@ -46,6 +46,7 @@ _ALL_REPOS_DOCS = (
 )
 _EXECUTION_DOC = "playbooks/process-wi-execution.md"
 _RESULT_FILE_TOKENS = ("result_file", "結果JSON", "writer_sessions")
+_OBSOLETE_RESULT_SUBJECT = re.compile(r"(?:対象(?:別|ごと)の(?:処理)?結果|再開先を結果ファイル)")
 _DUAL_RECORD = re.compile(r"(引き継ぎ記録|進捗ログ)(と|および|及び|、)(既存の|計画の)?(引き継ぎ記録|進捗ログ)")
 _SUBSECOND_TERMS = ("秒以下", "開始・終了", "開始と終了")
 _TIMING_EXCEPTIONS = ("旧形式", "計画が無い", "計画なし", "境界と離れ", "境界から離れ", "計画前")
@@ -79,7 +80,8 @@ def _result_file_violations(text: str) -> list[str]:
         for sentence in _sentences(text)
         if any(token in sentence for token in _RESULT_FILE_TOKENS)
         or (
-            ("結果ファイル" in sentence or ("対象別の結果" in sentence and "ファイル" in sentence))
+            _OBSOLETE_RESULT_SUBJECT.search(sentence)
+            and "ファイル" in sentence
             and any(verb in sentence for verb in write_actions)
         )
     ]
@@ -140,6 +142,7 @@ def test_invariants_reject_reintroduced_records() -> None:
     assert _result_file_violations(results + "\n結果を`result_file`へUTF-8のJSONで保存する。\n")
     assert _result_file_violations("対象別の結果を管理下の一時領域の結果ファイルへUTF-8のJSONで保存する。")
     assert not _result_file_violations("初回取得の結果は、候補と開始時集合に分け、それぞれのファイルへ保存する。")
+    assert not _result_file_violations("候補取得の結果ファイル（candidate_file）と開始時集合（snapshot_file）を保存する。")
 
     execution = _read(_EXECUTION_DOC)
     old_step = "の1か所へ記録し"
