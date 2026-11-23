@@ -71,6 +71,31 @@ for (const placed of [true, false]) {
   });
 }
 
+test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに差し戻す", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "c".repeat(32);
+  queue(on, "ui-session", id);
+  let placements = 0;
+  const responses: string[] = [];
+  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n処置: 直した。\n確認: 再実行した。";
+  on("session.id", () => ({ value: "ui-session" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { responses.push(e.text); return { value: undefined }; });
+  on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
+  await $.turn.start({ text: "操作", turnId: "ui-turn" });
+  await clock.advance(100);
+  await clock.advance(100);
+  expect(placements).toBe(0);
+  const response = JSON.parse(responses.at(-1) ?? "{}");
+  expect(response.ok).toBe(false);
+  expect(response.reason).toContain("未送信");
+  expect(response.reason).toContain("`再発防止:`");
+  expect(response.resend).toBe(true);
+  expect(response.reason).not.toContain("送信済み");
+});
+
 test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);

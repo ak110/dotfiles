@@ -150,6 +150,34 @@ const PREVENTION_WITHOUT_CHANGE_WARNING = automatedMessage(
     "採らない場合は区分名と理由を、未解決なら観測・次に確かめる問い・引継先を同じ行に書け。",
 );
 
+const BUGFIX_RECORD_HEADS = ["期待", "原因", "処置"] as const;
+export const missingPreventionRejection = automatedMessage(
+  "send-to-user",
+  "block",
+  "報告は未送信である。bugfixの記録（`期待:`・`原因:`・`処置:`）に`再発防止:`の行が無い。" +
+    "採用する策と変える成果物、採らない区分名と理由、または未解決で調査へ引き継ぐ場合の観測した事象・次に確かめる問い・引継先（`agent-basics:bugfix/references/prevention.md`「`再発防止:`の行」）を`再発防止:`の行に書き、同じ報告をsend_to_userで送り直せ。",
+);
+
+export function missingPreventionLine(message: string): boolean {
+  const records: Map<string, boolean>[] = [];
+  for (const raw of reportBodyLines(message)) {
+    const line = raw.replaceAll("：", ":").replace(/^\s*(?:[-*+]\s+)?/, "").replaceAll("**", "");
+    if (/^(?:#|【)/.test(line)) {
+      records.push(new Map());
+      continue;
+    }
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    const head = line.slice(0, separator).trim();
+    const filled = Boolean(line.slice(separator + 1).trim());
+    if (head === "期待") records.push(new Map());
+    const record = records.at(-1);
+    if (!record) continue;
+    record.set(head, (record.get(head) ?? false) || filled);
+  }
+  return records.some((record) => BUGFIX_RECORD_HEADS.every((head) => record.get(head)) && !record.get("再発防止"));
+}
+
 export function reportWarnings(message: string): string[] {
   const warnings = new Set<string>();
   const clockClaims = reportBodyLines(message).map((line) => line.replace(/`[^`\n]+`/g, ""));

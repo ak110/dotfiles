@@ -72,6 +72,17 @@ def test_cause_record_accepts_optional_lines_with_text() -> None:
     assert [line.label for line in plan_sections.cause_record_lines(record)][-1] == "再発防止"
 
 
+def test_prevention_line_is_required_only_for_new_records() -> None:
+    record = _RECORD.replace(f"{_plan_fixture.cause_record_line('再発防止')}\n", "")
+    assert "再発防止" not in record
+    assert plan_sections.cause_record_errors(record) == [
+        f"`再発防止:`の行が無い（書く内容: {_plan_format.CAUSE_RECORD_REQUIRED_LABELS['再発防止']}）"
+    ]
+    assert not plan_sections.cause_record_errors(record, accept_legacy=True)
+    assert not plan_sections.cause_record_errors(record, saved_record=True)
+    assert plan_sections.cause_record_errors(f"{record}\n- 再発防止:", saved_record=True)
+
+
 def test_cause_record_checks_each_h3_unit() -> None:
     content = f"原因分析の対象を2件に分けた。\n\n### 事象A\n\n{_RECORD}\n\n### 事象B\n\n{_RECORD_WITHOUT_EXPANSION}\n"
     assert plan_sections.cause_record_errors(content) == [f"`### 事象B`: {_MISSING_EXPANSION}"]

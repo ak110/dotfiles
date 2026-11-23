@@ -418,6 +418,10 @@ CAUSE_RECORD_REQUIRED_LABELS: dict[str, str] = {
     "原因": "起こしたものと、確かめた観測の所在。推測の部分は推測と書く",
     "処置": "無くす・単純にする・直す・足すのどれか。より前の案を採用しない理由",
     "広がり": "同じ仕組みの他の箇所を探した検索と結果。同じ害への既存の対策を探した検索と結果",
+    "再発防止": (
+        "採用する策と変える成果物。採らない場合は区分名と理由、未解決で調査へ引き継ぐ場合は観測した事象・次に確かめる問い・引継先"
+        "（`references/prevention.md`「`再発防止:`の行」）"
+    ),
     "確認": "直ったことを確かめた方法と結果",
 }
 """原因分析の記録がバグ単位ごとに必ず持つ行の行頭語と、その行に書く内容。
@@ -427,11 +431,10 @@ CAUSE_RECORD_REQUIRED_LABELS: dict[str, str] = {
 
 CAUSE_RECORD_OPTIONAL_LABELS: dict[str, str] = {
     "再発": "前回の対策の所在と種類、防げなかった理由、今回変えた種類",
-    "再発防止": "採用する策、防ぐ害、過去の実例で働くことの確かめ方、足す文章と消す文章",
 }
 """条件が成立した時だけ加える行の行頭語と、その行に書く内容。
 
-書く内容の定義元は`agent-basics:bugfix`の`references/recurrence.md`と`references/prevention.md`である。
+書く内容の定義元は`agent-basics:bugfix`の`references/recurrence.md`である。
 """
 
 PLAN_PERMANENCE_TABLE_HEADER: tuple[str, ...] = ("知見", "出所", "反映先", "根拠")
