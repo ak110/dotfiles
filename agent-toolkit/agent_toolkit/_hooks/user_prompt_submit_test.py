@@ -397,6 +397,32 @@ class TestSlashCommandDetection:
         assert bool(_read_state(tmp_path, sid).get("process_wi_skill_invoked")) is autonomous
 
 
+@pytest.mark.parametrize(
+    ("prompt", "host_fields", "work", "mode"),
+    [
+        ("/atk-mode implement 前にclaude <=> codexのバランスを作ってもらったけど", {}, "implement", None),
+        ("$atk-mode implement 前に作った案を見直したい", {"model": "gpt-5"}, "implement", None),
+        ("/agent-toolkit:atk-mode process-wi all-repos", {}, "process-wi", "all-repos"),
+        ("/atk-mode", {}, None, None),
+        ("/atk-mode 前に作った案を見直したい", {}, None, None),
+    ],
+)
+def test_entry_work_notice(tmp_path, prompt, host_fields, work, mode):
+    result = _run({"session_id": "entry-work", "prompt": prompt, **host_fields}, state_dir=tmp_path)
+    assert result.returncode == 0
+    context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+    notices = [body for body in _notice_bodies(context) if "起動入力の先頭の語" in body]
+    if work is None:
+        assert not notices
+        return
+    (notice,) = notices
+    assert f"`{work}`" in notice
+    assert f"playbooks/{work}.md" in notice
+    if mode is not None:
+        assert f"`{mode}`" in notice
+    assert "前に" not in notice
+
+
 class TestNonMatchingPrompts:
     @staticmethod
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:
