@@ -850,7 +850,7 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                     log_format.format_status(
                         "codex plugins",
                         f"marketplace登録先が異なるため、現在の登録を保持した: {registered_root}。"
-                        "更新担当は、利用者がこの作業ツリーへの変更を選んだ場合に限り、"
+                        "更新担当は、ユーザーがこの作業ツリーへの変更を選んだ場合に限り、"
                         f'codex plugin marketplace remove "{marketplace_name}"を実行し、'
                         f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行する。',
                     )
