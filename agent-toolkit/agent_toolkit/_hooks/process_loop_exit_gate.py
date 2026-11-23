@@ -118,17 +118,25 @@ def _claude_report_saved(entries: list[dict]) -> bool:
     return reported
 
 
-def _codex_current_turn(entries: list[dict]) -> tuple[list[dict], object]:
+def _codex_current_turn(entries: list[dict], turn_id: str) -> tuple[list[dict], object]:
     start = 0
+    saw_task_start = False
+    latest_turn = None
     for index, entry in enumerate(entries):
         payload = entry.get("payload")
-        if entry.get("type") == "compacted" or (
-            entry.get("type") == "event_msg"
-            and isinstance(payload, dict)
-            and payload.get("type") in {"user_message", "turn_aborted"}
-        ):
+        if entry.get("type") == "compacted":
             start = index + 1
-    return entries[start:], entries[start - 1].get("timestamp") if start else None
+        elif entry.get("type") == "event_msg" and isinstance(payload, dict):
+            kind = payload.get("type")
+            if kind == "task_started":
+                saw_task_start = True
+                latest_turn = payload.get("turn_id")
+                start = index + 1
+            elif kind == "turn_aborted" or (kind == "user_message" and not saw_task_start):
+                start = index + 1
+    if not start or (saw_task_start and latest_turn != turn_id):
+        return [], None
+    return entries[start:], entries[start - 1].get("timestamp")
 
 
 def _codex_report_saved(entries: list[dict]) -> bool:
@@ -185,7 +193,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     records = transcript.read_transcript_entries(path)
     state = session_state.read_state(session_id)
     if codex:
-        entries, boundary = _codex_current_turn(records)
+        turn_id = payload.get("turn_id")
+        if not isinstance(turn_id, str) or not turn_id:
+            return "approve", ""
+        entries, boundary = _codex_current_turn(records, turn_id)
         if not (_saved_in_codex_turn(state.get(REPORT_SAVED_AT_KEY), boundary) or _codex_report_saved(entries)):
             return "approve", ""
     else:
