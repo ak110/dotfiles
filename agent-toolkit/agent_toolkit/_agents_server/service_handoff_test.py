@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 # pylint: disable=protected-access
+import asyncio
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from mcp.types import CallToolRequestParams, CallToolResult
@@ -101,6 +103,15 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         _complete(predecessor)
         if completed_before_handoff:
             _complete(child, message="子の結果")
+        writer = source.manager._status_writer
+        assert writer is not None
+        for error in (OSError, asyncio.CancelledError):
+            with monkeypatch.context() as failure:
+                failure.setattr(writer, "result_state_async", AsyncMock(side_effect=error))
+                with pytest.raises(error):
+                    await call(parent, "start", handoff_from="predecessor")
+            assert "successor" not in parent.manager.sessions
+            assert (await call(successor, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         assert not (await call(parent, "start", handoff_from="predecessor")).is_error
         duplicate = await call(parent, "start", handoff_from="predecessor")
         assert duplicate.is_error and "successor" in str(duplicate.content)
@@ -114,8 +125,6 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         assert refused_collected.is_error
         assert (await call(unrelated, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         if not completed_before_handoff:
-            writer = source.manager._status_writer
-            assert writer is not None
             await writer.activate_async()
             await writer.flush_async()
             notices = shared_layout.notices_directory("shared-root", tmp_path)

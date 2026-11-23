@@ -334,6 +334,11 @@ class ServiceSessionControl:
                     )
                 )
                 async with self.gate.admit(new_turn=next_turn, session_id=identifier):
+                    prepared = (
+                        await self.managers.prepare_handoff_children(origin, predecessor)
+                        if isinstance(predecessor, str)
+                        else None
+                    )
                     selected = mcp_tools._SELECTED_MANAGER.set(manager)
                     try:
                         result = await mcp_tools.mcp._call_registered_tool(context, params)
@@ -344,8 +349,12 @@ class ServiceSessionControl:
                         successor = details.get("session_id")
                         if isinstance(successor, str) and successor in manager.sessions:
                             origin.started_children.add(successor)
-                            if isinstance(predecessor, str) and details.get("status") in {"running", "completed"}:
-                                await self.managers.handoff_children(origin, predecessor, successor)
+                            if (
+                                prepared is not None
+                                and isinstance(predecessor, str)
+                                and details.get("status") in {"running", "completed"}
+                            ):
+                                self.managers.publish_handoff_children(origin, predecessor, successor, prepared)
                     return result
 
     async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:

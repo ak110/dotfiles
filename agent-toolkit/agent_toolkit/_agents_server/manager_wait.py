@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Collection
 from typing import Any
@@ -130,8 +131,10 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         `status`が`completed`、`failed`、`interrupted`のいずれかである応答は終了であり、`notices`を含む場合も結果本文とともに受領して本ツールを再発行しない。
         応答へ載せた通知は回収済みとして再び返さない。
         """
-        await self._drain_diagnostics()
-        timeout = await self._resolve_wait_timeout("main") if inherited_targets is None else inherited_timeout
+        inherited = inherited_targets is not None
+        if not inherited:
+            await self._drain_diagnostics()
+        timeout = inherited_timeout if inherited else await self._resolve_wait_timeout("main")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + float(timeout)
         ordered_ids = self._wait_target_ids()
@@ -143,32 +146,38 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         advance_pending = True
 
         while True:
-            if self._recovery_errors and inherited_targets is None:
+            if self._recovery_errors and not inherited:
                 identifier, error = self._recovery_errors.popitem()
                 raise RuntimeError(
                     f"子の自動復旧に失敗しました: {identifier}: {error}。次の操作: {self._recovery_next_action(identifier)}"
                 ) from error
-            await self._drain_candidate_records()
+            if not inherited:
+                await self._drain_candidate_records()
             for session_id in ordered_ids:
                 (await self._resolve_expired_session(session_id))
                 await self._wait_for_resource_release(session_id)
-            if self._status_writer is not None:
+            if not inherited and self._status_writer is not None:
                 await self._status_writer.drain()
             for session_id in ordered_ids:
                 retained_response = await self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
+                    if inherited and retained_response["status"] == "expired":
+                        retained_response["status"] = "running"
                     return {"session_id": session_id, **retained_response}
                 session = self.sessions.get(session_id)
-                if session is not None and advance_pending:
+                if not inherited and session is not None and advance_pending:
                     await self._advance_child_session_wait(session)
             advance_pending = False
-            for session in tuple(self.sessions.values()):
-                await session.drain_registration()
-            await self._drain_candidate_records()
-            if self._status_writer is not None:
-                await self._status_writer.drain()
-            async with self._condition:
-                if self._candidate_tasks or any(session.registration_pending for session in self.sessions.values()):
+            if not inherited:
+                for session in tuple(self.sessions.values()):
+                    await session.drain_registration()
+                await self._drain_candidate_records()
+                if self._status_writer is not None:
+                    await self._status_writer.drain()
+            async with contextlib.nullcontext() if inherited else self._condition:
+                if not inherited and (
+                    self._candidate_tasks or any(session.registration_pending for session in self.sessions.values())
+                ):
                     continue
                 terminal: list[SessionState] = []
                 for session_id in ordered_ids:
@@ -252,6 +261,9 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                     return {"session_id": session.session_id, **timeout_response}
                 interval = 0.1 if any(candidate.awaiting_auto_resume for candidate in retained) else 1.0
                 try:
-                    await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
+                    if inherited:
+                        await asyncio.sleep(min(interval, remaining))
+                    else:
+                        await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
                 except TimeoutError:
                     advance_pending = True

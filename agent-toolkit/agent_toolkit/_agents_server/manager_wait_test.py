@@ -714,3 +714,55 @@ async def test_wait_keeps_the_session_after_returning_the_terminal_result(
         assert await manager.stop(session.session_id) == {}
         assert session.session_id in manager.stopped_sessions
         assert backend.release_calls == [session.session_id]
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_keeps_other_targets_after_an_expired_notice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        for identifier in ("expired-notice", "running-child", "unrelated"):
+            manager.sessions[identifier] = state.SessionState(identifier, str(tmp_path))
+
+        async def retained(identifier: str, *, collector: str) -> dict[str, Any] | None:
+            assert collector == "mcp-wait"
+            if identifier == "expired-notice":
+                manager.sessions.pop(identifier)
+                return {"status": "expired", "notices": [{"body": "残っていた通知"}]}
+            return None
+
+        monkeypatch.setattr(manager, "_retained_result_response", retained)
+        targets = {"expired-notice", "running-child"}
+        first = await manager.wait(inherited_targets=targets)
+        assert first["status"] == "running"
+        assert first["notices"] == [{"body": "残っていた通知"}]
+        second = await manager.wait(inherited_targets=targets)
+        assert second["session_id"] == "running-child"
+        assert second["status"] == "running"
+        manager.sessions.pop("running-child")
+        assert (await manager.wait(inherited_targets=targets))["status"] == "expired"
+        manager.sessions.clear()
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_does_not_drain_unrelated_registration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        for identifier in ("running-child", "unrelated"):
+            manager.sessions[identifier] = state.SessionState(identifier, str(tmp_path))
+
+        drain = state.SessionState.drain_registration
+
+        async def blocked_registration(session: state.SessionState) -> None:
+            if session.session_id == "unrelated":
+                raise RuntimeError("別の子の登録は未完了")
+            await drain(session)
+
+        with monkeypatch.context() as delayed:
+            delayed.setattr(state.SessionState, "drain_registration", blocked_registration)
+            response = await manager.wait(inherited_targets={"running-child"})
+            assert response["session_id"] == "running-child" and response["status"] == "running"
+            with pytest.raises(RuntimeError, match="別の子の登録は未完了"):
+                await manager.wait()
+        manager.sessions.clear()

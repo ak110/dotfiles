@@ -126,10 +126,12 @@ class ServiceManagers:
             if self._retirable(conversation):
                 await self.close_conversation(key, disconnected_only=True)
 
-    async def handoff_children(self, origin: Conversation, predecessor: str, successor: str) -> None:
+    async def prepare_handoff_children(
+        self, origin: Conversation, predecessor: str
+    ) -> tuple[Conversation, frozenset[str]] | None:
         caller = origin.manager
         if predecessor not in origin.started_children or not self._owns_handoff_child(caller, predecessor):
-            return
+            return None
         owner = self.conversations.get(predecessor)
         if (
             owner is None
@@ -137,8 +139,7 @@ class ServiceManagers:
             or owner.manager.launcher_session_id() != predecessor
             or owner.manager.status_owner()[0] != caller.status_owner()[0]
         ):
-            return
-        origin.handoff_successors[predecessor] = successor
+            return None
         manager = owner.manager
         direct: set[str] = set()
         async with self.handoff_scope(owner):
@@ -156,8 +157,22 @@ class ServiceManagers:
                     if child.result_delivered or consumed:
                         continue
                 direct.add(identifier)
-        if direct:
-            self._handoff_children[successor] = predecessor, owner, frozenset(direct)
+        return owner, frozenset(direct)
+
+    def publish_handoff_children(
+        self, origin: Conversation, predecessor: str, successor: str, prepared: tuple[Conversation, frozenset[str]]
+    ) -> None:
+        owner, direct = prepared
+        if self.conversations.get(predecessor) is owner:
+            direct = frozenset(
+                identifier
+                for identifier in direct
+                if self._owns_handoff_child(owner.manager, identifier)
+                and ((session := owner.manager.sessions.get(identifier)) is None or not session.result_delivered)
+            )
+            if direct:
+                self._handoff_children[successor] = predecessor, owner, direct
+        origin.handoff_successors[predecessor] = successor
 
     @staticmethod
     def _owns_handoff_child(manager: AgentsServerManager, identifier: str) -> bool:

@@ -512,13 +512,20 @@ async def send_message(
     title="引き継いだ子sessionの通知・結果の回収",
     description=(
         "同じ管理サービスで正式に引き継いだ直属の子だけを対象に、通知または終了結果を1件回収する。"
-        "上限まで待って未回収の通知・結果がなければrunningを返す。runningなら回収を再発行し、対象なしのexpiredで終える。"
+        "未回収の通知・結果がなければ待機し、上限に達するとrunningを返す。runningなら回収を再発行し、対象なしのexpiredで終える。"
         "自分で起動した子の回収には従来どおり`atk agents wait`を使う。"
     ),
     structured_output=True,
 )
 async def collect_handoff(
-    timeout: Annotated[float, Field(ge=0, le=30, description="待機上限秒数。0は即時照会。")] = 30,
+    timeout: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=30,
+            description="通知・結果を調べた後に待機する時間の上限（秒）。0は待機せず1回照会する。対象の読取・回収処理の時間は含まない。",
+        ),
+    ] = 30,
 ) -> dict[str, Any]:
     if _SERVICE_MANAGERS is None:
         return {"status": "expired"}
