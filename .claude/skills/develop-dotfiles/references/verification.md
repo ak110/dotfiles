@@ -138,6 +138,8 @@ Pythonのpytest・lint、完全導入と更新の検証には領域の選択を�
 一時複製の修正版で `update-dotfiles` を最後まで試す場合は、認可済みの候補branchの既存CI `update-dotfiles-upgrade (windows)` を使う。
 使い捨てのGitHub-hosted Windows runnerで対象checkoutのHEADへ更新し、ジョブが省略されず成功したことを確認する。
 特定の起動条件が必要なら、同種の使い捨てrunnerで更新を起動する前にその条件の成立を確認する。
+使い捨てrunnerか必要な起動条件を確認できない場合は、起動を見送る。
+成否を問わずrunnerの破棄で終え、普段の環境への再適用は後始末に使わない。
 
 普段のWindowsで、一時複製や別HOMEだけを用意して全工程を起動しない。
 chezmoiの設定・適用先だけでなく、WinGetなどのユーザー単位の状態も共有し得る。
