@@ -647,6 +647,41 @@ HELP["atk wi add"]["description"] += (
     "cwdのorigin以外の登録remoteのURLは警告付きで受理する。"
 )
 
+HELP["atk wi verify-merge"]["description"] += (
+    "\n\nCI非対象時の同等検証:\n"
+    "CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。\n"
+    "記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、出力の絶対パス`output`とSHA-256の`output_sha256`、独立文脈レビュー返却の絶対パス`review`を含める。\n"
+    "独立文脈レビューは実行した検査が必要なCIと同等かを確かめ、未解決0件の対象OIDの返却に`同等検証記録SHA-256: <記録ファイルのSHA-256>`を加える。\n"
+    "push後に初めてCIの対象外と分かった場合も、この検査と独立文脈レビューを終えてから保留を解く。\n"
+)
+HELP["atk wi show"]["description"] += (
+    "\n\n外部更新後の取得:\n"
+    "1. ユーザーからキュー項目の外部更新（UWIへの回答、AWIの投入、ユーザーコメント、本文の編集、状態遷移など）を知らされたら、`atk wi show <ファイル名> --pull`で本文を強制同期して取得する。\n"
+    "   項目を特定するための一覧も`atk wi list --pull`で取得する。\n"
+    "   同期しても項目が無いか更新前のままなら、送信側の保存が終わっていない可能性がある。\n"
+    "   次の確認時点を`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「外部サービスの状態変化を待つ場合」で決める。\n"
+    "   その時点で、特定済みなら`atk wi show <ファイル名> --pull`を、未特定なら同じ抽出条件の`atk wi list --pull`をやり直す。\n"
+    "   同期の成功と更新内容の到達は分けて扱う。\n"
+    "   通常の軽い参照、投入前の回答済みUWIとの整合確認、同期済みの候補の定期的な参照は、強制同期の対象から外す。\n"
+    "   private-notesへの直接のGit操作は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」に従う。\n"
+    "2. 投入済みのWIへ着手する前にも、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」の手順2で回答済みUWIとの整合を確かめる。\n"
+    "3. 投入済みの項目は、目的、変更内容、原因分析、固有の補足条件から完成状態を導き、旧形式の節も読んで対象を確定する。\n"
+    "   任意の節や引用位置の記録を省いた本文も、書かれた内容から着手できる。\n"
+    "4. キューの原文の変化への追加の対策（原文のスナップショット、ハッシュや差分の比較、変化時の処理の遮断やUWI化）は設けず、既存の取得機能を使う。\n"
+    "   検収のための一時的な原本の保存は、この対策と別に扱い、使ってよい。\n"
+)
+HELP["atk wi add"]["description"] += (
+    "\n\nAWIの根拠を測定するとき:\n"
+    "測定の後に、対象リポジトリの作業ツリーを測定前の状態へ必ず戻す。\n"
+    "\n"
+    "1. 環境変数、コマンドライン引数、別名の一時設定ファイルなど、Gitの追跡対象を変えない手段を優先する。\n"
+    "2. 追跡対象を一時的に変える時は、測定の前に`git status --porcelain=v1`の出力と変更するファイルの内容を退避する。\n"
+    "   変更するファイルか、測定で書き換わりうるパスに既存の差分がある時は、`git worktree add --detach`で作った検証用worktreeの中で測定する。\n"
+    "3. 元の作業ツリーで測定した時は、変えたファイルを退避した内容で戻す。\n"
+    "   `git -c submodule.recurse=false checkout`と`git clean`は、測定前に差分が無かったパスだけに実行し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保つ。\n"
+    "4. 測定後の`git status`が退避した測定前の状態と合わない時は、後続へ進まず、差分の内容と退避先のパスをユーザーへ報告する。\n"
+)
+
 for _command in ("atk wi list", "atk wi show", "atk wi grep"):
     HELP[_command]["description"] += (
         "\n重要フラグ: --important yesで重要項目、--important noで非重要項目へ限定する。"

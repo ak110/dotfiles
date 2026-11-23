@@ -521,3 +521,31 @@ def test_check_alerts_help_exposes_finite_operation_without_saving(
     assert "--forge {auto,github,gitlab}" in output.out
     assert output.err == ""
     assert set(tmp_path.rglob("*")) == before
+
+
+@pytest.mark.parametrize(
+    ("command", "section", "clauses"),
+    [
+        (
+            "verify-merge",
+            "CI非対象時の同等検証:",
+            ("merge_local_verification", "output_sha256", "同等検証記録SHA-256", "push後"),
+        ),
+        (
+            "show",
+            "外部更新後の取得:",
+            ("--pull", "省いた本文", "追加の対策", "private-notesへの直接のGit操作"),
+        ),
+        (
+            "add",
+            "AWIの根拠を測定するとき:",
+            ("git status --porcelain=v1", "git worktree add --detach", "サブモジュール", "後続へ進まず"),
+        ),
+    ],
+)
+def test_moved_operational_constraints_are_public(command, section, clauses, capsys) -> None:
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["wi", command, "--help"])
+    output = " ".join(capsys.readouterr().out.split())
+    assert section in output
+    assert all(clause in output for clause in clauses)

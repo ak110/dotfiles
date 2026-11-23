@@ -45,10 +45,8 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
 7. AWIをマージ用へ更新して保留を解く。
    - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
    - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
-   - CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。
-     記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、出力の絶対パス`output`とSHA-256の`output_sha256`、独立文脈レビュー返却の絶対パス`review`を含める。
-     独立文脈レビューは実行した検査が必要なCIと同等かを確かめ、未解決0件の対象OIDの返却に`同等検証記録SHA-256: <記録ファイルのSHA-256>`を加える。
-     push後に初めてCIの対象外と分かった場合も、この検査と独立文脈レビューを終えてから保留を解く。
+   - CI非対象とCLIが確定した場合は、同じ完全OIDの同等検証と独立文脈レビューを終えてから保存する。
+     証拠の書式は `atk wi verify-merge --help` に従う。
    - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
