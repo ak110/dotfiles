@@ -25,7 +25,7 @@ from agent_toolkit._agents_server import service_forward, service_transport
 from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import plugin_environment, plugin_environment_cleanup, process_tree, session_review, windows_job
 from agent_toolkit._common.runtime_environment import CallerContext
-from agent_toolkit._testing import isolation, late_descendant
+from agent_toolkit._testing import git_repository, isolation, late_descendant
 from agent_toolkit._testing.codex_plugin_support import _REAL_MCP_PREPARE_TIMEOUT
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
@@ -869,11 +869,11 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
 
     monkeypatch.setattr(_warmup.config_settings, "load_config_strict", config)
 
-    def locate(path: pathlib.Path):
+    def is_primary(path: pathlib.Path):
         assert unregistered and path == repository
-        return _warmup.config_repositories.RepositoryLocation("github.com/ak110/dotfiles", path, primary / ".git")
+        return path == primary
 
-    monkeypatch.setattr(_warmup.config_repositories, "locate", locate)
+    monkeypatch.setattr(_warmup, "_is_primary_checkout", is_primary)
     project = repository / "agent-toolkit"
     _write_script(project / _warmup._SCRIPT_RELATIVE)  # pylint: disable=protected-access
     _write_script(candidate / "agent_toolkit" / "agents_server_mcp.py")
@@ -967,3 +967,10 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
         )
         assert _warmup.run().failure is None
         assert published == [project, installed, project]
+
+
+def test_primary_detection_does_not_require_upstream_service_url(tmp_path):
+    primary = tmp_path / "primary"
+    git_repository.init_repository(primary)
+    git_repository.run_git(primary, "remote", "add", "origin", str(tmp_path / "local.git"))
+    assert _warmup._is_primary_checkout(primary)  # pylint: disable=protected-access

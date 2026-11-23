@@ -22,6 +22,7 @@ from pathlib import Path
 from agent_toolkit._agents_server import service_forward
 from agent_toolkit._atk import config_repositories, config_settings
 from agent_toolkit._common import dotfiles_mode, process_tree, runtime_environment, windows_security
+from agent_toolkit._git import command as git
 
 from pytools._internal import (
     claude_common,
@@ -309,16 +310,29 @@ def _registered_checkout() -> Path | None:
     return Path(path).resolve(strict=True) if isinstance(path, str) and path else None
 
 
+def _is_primary_checkout(checkout: Path) -> bool:
+    result = git.run(
+        ["-C", str(checkout), "rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        return False
+    worktree, common_dir = (Path(value).resolve() for value in result.stdout.splitlines())
+    return checkout == worktree == common_dir.parent
+
+
 def _checkout_skip(checkout: Path | None, registered: Path | None) -> str | None:
     if checkout is None:
         return "起動元のcheckoutを確認できません"
     if registered is not None:
         return None if checkout == registered else "更新元が登録先と一致しません"
     try:
-        location = config_repositories.locate(checkout)
+        primary = _is_primary_checkout(checkout)
     except (OSError, ValueError) as error:
         return f"起動元 {checkout} のGit作業ツリーを確認できません: {error}"
-    if location is not None and checkout == location.worktree == location.common_dir.parent:
+    if primary:
         return None
     return "未登録の更新元をGitの主checkoutとも確認できません"
 
