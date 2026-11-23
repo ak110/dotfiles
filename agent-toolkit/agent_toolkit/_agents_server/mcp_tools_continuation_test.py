@@ -119,7 +119,8 @@ async def test_continuation_input_errors_return_reason_and_next_action(
     cases = [
         ("send_message", {"session_id": session_id, "prompt": "続行する", "instruction": "再レビューせよ"}, "排他的"),
         ("send_message", {"session_id": session_id}, "排他的"),
-        ("send_message", {"session_id": session_id, "message": "続行する"}, "排他的"),
+        ("send_message", {"session_id": session_id, "message": "続行する", "instruction": "再レビューせよ"}, "排他的"),
+        ("send_message", {"session_id": session_id, "message": "続行する", "prompt": "続行する"}, "別名"),
         ("send_message", {"session_id": session_id, "prompt": "続行する", "extra_params": {}}, "排他的"),
         ("send_message", {"session_id": session_id, "instruction": "宣言されていない指示"}, "宣言された継続指示ではありません"),
         ("send_message", {"session_id": session_id, "prompt": "   "}, "prompt must be a non-empty string"),
@@ -147,6 +148,8 @@ async def test_continuation_input_errors_return_reason_and_next_action(
         retry["extra_params"]["round"] = "2"
         await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, **retry})
         assert "再レビューせよ\nround: 2" in backend.prompts[-1]
+        await mcp_tools.mcp.call_tool("send_message", {"session_id": session_id, "message": "別名で続行する"})
+        assert "別名で続行する" in backend.prompts[-1]
     finally:
         await manager.close()
 
