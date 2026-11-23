@@ -46,8 +46,8 @@ CONNECTION_GUIDE_NOTICE = (
 
 HELP: dict[str, dict[str, str]] = {
     "atk config usage": {
-        "summary": "利用枠・回復時刻と配分理由を確認する",
-        "description": "利用枠・回復時刻と配分理由を確認する。\n\n目的: 残量、観測時刻、配分理由、通常設定・一時指定・継続中の会話を表示する。\n利用場面: 次に使うengineや利用上限の回復を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
+        "summary": "利用枠・回復時刻とreset在庫を確認する",
+        "description": "利用枠・回復時刻とreset在庫を確認する。\n\n目的: 残量、回復時刻、最終観測、reset在庫と消費の案内を表示する。\n利用場面: 利用上限の回復やreset在庫を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
         "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh\n  atk config usage --json",
     },
     "atk config temporary": {

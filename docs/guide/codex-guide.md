@@ -148,19 +148,19 @@ ChatGPTのtokenをAPIキーとして使わない。
 `atk run-skill`、`atk wi process-loop`、`agents_server`の委譲先は、Codexの利用上限の解除後に自動で作業を続ける。
 待つ範囲は`codex_usage_limit_wait`で選ぶ（[工程別モデル設定](claude-code-models.md#工程別モデル設定)を参照）。
 
-`agents_server`のCodex委譲先では、`usage_auto_allocation`を有効にし、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
-初期状態では自動配分は無効で、消費許可は空である。
-条件と設定例は[利用枠の自動配分](claude-code-models.md#利用枠に応じた自動配分)を参照する。
+`agents_server`のCodex委譲先では、`usage_reset_permissions`に対象アカウント・期間・回数を明示した場合だけ、自動resetでcreditを消費できる。
+消費許可の初期値は空である。
+条件と設定例は[利用枠とreset許可](claude-code-models.md#利用枠とreset許可)を参照する。
 
 ```bash
-atk config get usage_auto_allocation usage_reset_permissions
+atk config get usage_reset_permissions
 ```
 
 旧`codex_auto_reset`と環境変数`AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET`は廃止した。
 旧環境変数を解除する。
 以前の真偽値から消費許可は作成しないので、許可を設定しない場合は手動でresetする。
 
-有効な間はモデルを呼ばずに利用枠を確認し、reset後に利用枠を再取得して同じsessionの再開を判定する。
+有効な許可がある間はモデルを呼ばずに利用枠を確認し、reset後に利用枠を再取得して同じsessionの再開を判定する。
 APIキー接続は対象外で、アカウントのemailを取得できない場合もcreditを消費せず診断を記録する。
 在庫が無い場合やresetが成立しない場合は、既存の利用上限待機設定に従う。
 

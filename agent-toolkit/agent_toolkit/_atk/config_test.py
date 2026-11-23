@@ -96,14 +96,27 @@ class TestCodexFastMode:
 )
 def test_codex_auto_reset_retires_key_without_creating_permissions(tmp_path, capsys, config):
     _write_config(tmp_path, config)
-    assert _main(tmp_path, "config", "get", "usage_auto_allocation", "usage_reset_permissions") == 0
+    assert _main(tmp_path, "config", "get", "usage_reset_permissions") == 0
     output = capsys.readouterr()
-    assert output.out.splitlines() == [config.get("usage_auto_allocation", "false"), "[]"]
+    assert output.out.splitlines() == ["[]"]
     assert "消費許可は作成していない" in output.err
-    assert "codex_auto_reset" not in _saved(tmp_path)
+    assert not _saved(tmp_path)
     for action in (["get", "codex_auto_reset"], ["set", "codex_auto_reset", "true"]):
         assert _main(tmp_path, "config", *action) == 2
         assert "usage_reset_permissions" in capsys.readouterr().err
+
+
+def test_removed_allocation_setting_is_deleted_and_rejected(tmp_path, monkeypatch, capsys):
+    _write_config(tmp_path, {"usage_auto_allocation": "true", "execute_model": "claude:opus"})
+    assert _main(tmp_path, "config", "get", "execute_model") == 0
+    assert capsys.readouterr().out == "claude:opus\n"
+    assert _saved(tmp_path) == {"execute_model": "claude:opus"}
+    for action in (["get", "usage_auto_allocation"], ["set", "usage_auto_allocation", "true"]):
+        assert _main(tmp_path, "config", *action) == 2
+        assert "usage_auto_allocationは廃止" in capsys.readouterr().err
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true")
+    assert _main(tmp_path, "config", "show") == 2
+    assert "廃止した設定の環境変数が設定されています: AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION" in capsys.readouterr().err
 
 
 class TestConfigGet:

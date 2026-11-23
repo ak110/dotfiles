@@ -103,6 +103,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
     migrated.pop("codex_auto_reset", None)
+    migrated.pop("usage_auto_allocation", None)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
         return migrated
@@ -156,6 +157,7 @@ def migrate_legacy_settings() -> None:
         *_config_settings.RETIRED_CONNECTION_KEYS,
         "process_loop_repositories",
         "codex_auto_reset",
+        "usage_auto_allocation",
     )
     if not any(key in config for key in legacy_keys):
         return
@@ -165,7 +167,7 @@ def migrate_legacy_settings() -> None:
         if "codex_auto_reset" in config:
             _outcome.report_warning(
                 "廃止したcodex_auto_resetを設定から削除した。利用枠の消費許可は作成していない",
-                next_action="自動配分と明示許可はusage_auto_allocationとusage_reset_permissionsで確認してください。",
+                next_action="明示許可はusage_reset_permissionsで確認してください。",
             )
 
 
@@ -312,4 +314,11 @@ def check_legacy_environment() -> None:
             "廃止した旧接続設定の環境変数が設定されています: "
             + ", ".join(_config_settings.config_env_name(key) for key in connection_found),
             next_action="旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する: " + "; ".join(replacements),
+        )
+
+    retired = _config_settings.config_env_name("usage_auto_allocation")
+    if retired in runtime_environment.environment():
+        raise _next_action.ActionableError(
+            f"廃止した設定の環境変数が設定されています: {retired}",
+            next_action="旧環境変数を解除して再実行する。候補順は工程別の`*_model`キーで指定する",
         )

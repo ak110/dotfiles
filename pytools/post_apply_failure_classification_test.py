@@ -13,7 +13,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from agent_toolkit._atk import config_settings
 from agent_toolkit._common import windows_security
 
 from pytools import post_apply
@@ -409,11 +408,6 @@ def _foreign_tools_mise_listing_fails(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setattr(prune_foreign_tools.common, "run_subprocess", lambda *_args, **_kwargs: None)
 
 
-def _usage_config_write_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(config_settings, "config_file_path", lambda: tmp_path / "usage-config.json")
-    monkeypatch.setattr(config_settings, "save_config", _raise(PermissionError("denied")))
-
-
 def _atk_acl_restore_blocked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     blocked = windows_security.InheritanceRepair(blocked=((tmp_path / "services", "アクセスが拒否されました。"),))
     monkeypatch.setattr(restore_agent_toolkit_acl.windows_security, "restore_inheritance", lambda _root: blocked)
@@ -429,7 +423,6 @@ _SIMULATIONS: dict[str, list[tuple[_Simulation, int]]] = {
     "VSCode 設定": [(_vscode_write_fails, 1)],
     "SSH config": [(_ssh_config_write_fails, 1)],
     "旧配布物の削除": [(_cleanup_removal_fails, 1)],
-    "利用枠自動配分の初期設定": [(_usage_config_write_fails, 1)],
     "npm/pnpm サプライチェーン対策": [(_npm_config_write_fails, 1)],
     "mise セットアップ": [(_mise_install_fails, 0)],
     "mise 管理ツールと重複する導入物の削除": [(_foreign_tools_mise_listing_fails, 0)],

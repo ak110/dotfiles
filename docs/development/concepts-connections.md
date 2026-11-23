@@ -36,7 +36,9 @@
   エンドユーザー向けの説明と条件ごとの設定例は`docs/guide/claude-code-connections.md`「接続の使い分け」にあり、`atk config --help`からその節のURLを案内する（2026年10月29日、ユーザー指示）
 - 利用上限後の再開は、起動形態ごとに扱う。
   解除待ちのagents_serverの委譲先と背景wait・定期再確認は保持する。
-  Codexの候補判定は次候補を優先し、全候補失敗かつ上限失敗がある場合だけ解除を待つ
+  初期の候補は委譲でCodexが先、統括でClaude Codeが先（2026年11月23日、ユーザー指示）。
+  初期の待機設定ではCodexの5時間枠の解除を待ち、週次枠などは使えるreset許可で消費しなければ次の候補へ進む。
+  利用枠の観測値は候補順に影響させない
 - 端末で`codex`を直接起動した対話画面は、利用上限の解除後に自動再開しない。
   外部からの`codex queue`は画面を閉じた会話も無人で再開させ、送信側が画面の終了を判別できないためである（2026年10月24日の実機観測、[design-agents-runtime-handoff-resume.md](design-agents-runtime-handoff-resume.md)）。
   解除後は発話で続ける

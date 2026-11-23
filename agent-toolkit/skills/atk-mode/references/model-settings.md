@@ -23,12 +23,12 @@
 
 | `model_type` | 対応する工程・役割 |
 | --- | --- |
-| `execute` | WI選定、レーン分け、計画、設計判断を伴う実装と修正、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`session-termination` |
+| `execute` | WI選定、レーン分け、計画、設計判断を伴う実装と修正、原因分析、観点選定、候補判定、結論の統合。`exec`・`add-wi`・`copilot-review-audit`・`defect-investigation`・`lane-integration`・`repository-process`・`session-termination` |
 | `chores` | 内容と完成判定が確定した単発のコーディング・修正・追随、中規模の走査。`refine-prompt`、`atk commit`の省略時 |
 | `chores_fast` | 定型走査、軽微な作業、コマンド実行。自由本文の`explore`・`shell`の省略時 |
 | `review` | 実行レビュー、ユーザビリティレビュー、投入前レビュー。`exec-review`・`usability-review`・`wi-draft-review` |
 | `review_fast` | 小規模レビュー。`bulk-replace-review`・`external-write-review`・`reader-fit-review` |
-| `orchestrate` | 最上位の統括、process-loopの新規セッション、run-skill。`repository-process`（`atk`か`agents_server`が起動する） |
+| `orchestrate` | 最上位の統括、process-loopの新規セッション、run-skill |
 | `write` | 文章の起草。`write`の省略時 |
 
 設定は`execute_model`、`review_model`、`review_fast_model`、`chores_model`、`chores_fast_model`、`orchestrate_model`、`write_model`の7つのキーで、個別に変えられる。
@@ -58,7 +58,7 @@
 
 - 候補列は`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`をASCIIのカンマで区切って書き、先頭から試す。
   effortを省くと`medium`になる。
-- 現在の値は`atk config show`か`atk config get <キー>...`、5つのプリセットの値は`atk config apply-preset show`で表示する（`codex-balanced`が初期値）。
+- 現在の値は`atk config show`か`atk config get <キー>...`、プリセットは`atk config apply-preset show`で表示する（初期値は`codex-near-primary`と同じ）。
   `atk config apply-preset <名前>`は`write_model`を残して他の6つのキーを更新する。
 - 設定はユーザー単位の1つの値を全セッションが共有するため、`atk config set`と`apply-preset`はユーザーが変更を指示した時だけ実行する。
 - 環境変数`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`が空でない間は、保存値よりその値を使う。

@@ -1,6 +1,6 @@
 ---
 mode: delegate
-model_type: orchestrate
+model_type: execute
 result_heads:
 - "状態: incomplete"
 - "状態: pending"

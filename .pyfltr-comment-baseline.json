@@ -1554,8 +1554,6 @@
   "agent-toolkit/agent_toolkit/_agents_server/opencode_test.py": {
     "CLI不在とモデル未指定を起動時の可用性の失敗として返す。": 1,
     "backendの終了通知を、有限の待機で受け取る。": 1,
-    "このテストは候補の順序と切替だけを確かめるため、照会を止める。": 1,
-    "ユーザーの設定でusage_auto_allocationが有効だと、起動境界の利用枠照会が実際のcodex app-serverを起動する。": 1,
     "他のbackendと同じ起動の本文を渡し、共通返却契約は各プロンプトに1回だけ含める。": 1,
     "公開CLIを模した子プロセスでOpenCodeの開始・継続・終了・失敗と規範配送を検証する。": 1,
     "公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。": 1,
@@ -4204,12 +4202,6 @@
   "agent-toolkit/agent_toolkit/_atk/submodule_state_test.py": {
     "private-notes同期のrebase・keep resetが環境の再帰設定を抑止する。": 1,
     "分岐検出と通信は境界で固定し、実際の同期rebaseを同じfixtureへ実行する。": 1
-  },
-  "agent-toolkit/agent_toolkit/_atk/usage_allocation.py": {
-    "現プロフィールで選別済みの観測から、Claudeの同じ枠・scopeの最新値を選んで期限を見る。": 1
-  },
-  "agent-toolkit/agent_toolkit/_atk/usage_allocation_test.py": {
-    "候補の保持とひっ迫回避の試験。": 1
   },
   "agent-toolkit/agent_toolkit/_atk/usage_limit_policy.py": {
     "利用上限の種類と設定から解除待機の方針を返す。": 1
@@ -8192,11 +8184,9 @@
     "試験が使う`watchdog.observers.Observer`を、inotifyなどOSの通知資源を使わないポーリング監視へ差し替える。 watchdogが標準で選ぶObserver（Linuxでは`InotifyObserver`）は監視先ごとにinotifyのインスタンスを確保し、 その上限はOSアカウント全体で並行レーンの検証や常駐の`atk serve`と共有される。上限に達すると、 変更と無関係な試験の合否が実行環境で変わる。OSの通知そのものや監視資源の解放を確かめる試験だけが `@pytest.mark.real_observer`を付けて実Observerを使い、その宣言が資源依存の一覧になる。 ポーリング監視は更新時刻とサイズの差で変更を検知する。更新時刻が1秒単位のファイルシステム（ext3など）では、 同じ秒の中で同じサイズのまま書き換えると検知しないため、変更を確かめる試験はサイズの異なる内容を書く。": 1,
     "試験が起動する子プロセスの`atk`が、実ディスクの空き不足で他の試験の領域を回収しないよう、環境変数で継承させて止める。": 1,
     "試験が起動する検証を、実行枠1つの構成で動かす。 pyfltr 3.30.0以降は、環境変数の指定が無ければ枠が2つあり、保持者1件の間にもう1件が待たずに実行枠を取る。 実行枠の待ちと区間の直列を確かめる試験は、一時の保存先で保持者1件の後ろに後続が並ぶ構成を前提にする。 外側のpytest自身の枠の取得は、試験より前の`pytest_configure`で済んでいるため、この指定の影響を受けない。": 1,
-    "試験の結果をそのマシンの利用枠の状態に左右させないよう、自動配分を無効にする。": 1,
     "起動PIDは公開APIを持たないため、標準ライブラリの内部属性から読む。": 1,
     "起動と再開の事前確認を通常は省き、実コマンドの所要時間とスレッド切替を各テストの時間制約へ持ち込まない。 事前確認そのものを確かめるテストは`_use_real_plugin_preflight`で実装へ戻す。": 1,
-    "起動時に登録する共通fixture。自動の差し替えは元のディレクトリ境界だけへ適用する。 package collectorが収集順で再生成されても、fixtureの登録を失わないようにする。 上流pytestの修正採用後の撤去条件はdocs/development/design-packages-test-isolation.mdに記す。": 1,
-    "起動時の利用枠の再取得は、実行するマシンの設定とキャッシュの鮮度によって実のcodex app-serverを起動する。": 1
+    "起動時に登録する共通fixture。自動の差し替えは元のディレクトリ境界だけへ適用する。 package collectorが収集順で再生成されても、fixtureの登録を失わないようにする。 上流pytestの修正採用後の撤去条件はdocs/development/design-packages-test-isolation.mdに記す。": 1
   },
   "agent-toolkit/agent_toolkit/_testing/pytest_plugin_cpu_test.py": {
     "公開protocolでCPUだけの再試行・機能失敗維持・回数上限を検出する。": 1,

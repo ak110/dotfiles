@@ -12,11 +12,11 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from agent_toolkit._agents_server import api_credits, engine_availability
+from agent_toolkit._agents_server import api_credits, codex_auto_reset, engine_availability
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._atk import codex_connection, usage_refresh
 from agent_toolkit._atk import config as atk_config
-from agent_toolkit._common import codex_usage_limit, runtime_environment
+from agent_toolkit._common import codex_usage_limit, runtime_environment, state_paths
 
 CONTINUE_PROMPT = "以前の会話と実行結果を確認し、完了済みの操作を繰り返さず、未完了の作業を続けて所定の返却形式を返せ。"
 _LOG = logging.getLogger("agent-toolkit.agents-server.codex")
@@ -37,6 +37,7 @@ class ProviderSelection:
     usage_limit_type: str | None = None
     diagnostics: tuple[str, ...] = ()
     usage_limit_resets_at: int | None = None
+    auto_reset_permitted: bool = False
 
 
 def has_provider_configuration() -> bool:
@@ -133,6 +134,7 @@ async def select(
     allowed = None
     usage_limit_type = None
     usage_limit_resets_at = None
+    auto_reset_permitted = False
     if subscription:
         try:
             usage = await request("account/rateLimits/read", {})
@@ -154,8 +156,25 @@ async def select(
             allowed = value if isinstance(value, bool) else None
             limit = codex_usage_limit.from_rate_limits(usage.get("rateLimits"))
             usage_limit_type, usage_limit_resets_at = limit.limit_type, limit.resets_at
+            if allowed is False and primary is None:
+                try:
+                    permissions = await run_file_operation(codex_auto_reset.active_permissions)
+                    if permissions:
+                        root = await run_file_operation(state_paths.state_dir)
+                        auto_reset_permitted = await run_file_operation(
+                            codex_auto_reset.has_permission, permissions, account, snapshot_id, state_dir=root
+                        )
+                except OSError, ValueError:
+                    _LOG.exception("Codex自動resetの許可を確認できません。設定と台帳を確認してください")
     return ProviderSelection(
-        selected, subscription, tuple(remainder), allowed, usage_limit_type, tuple(diagnostics), usage_limit_resets_at
+        selected,
+        subscription,
+        tuple(remainder),
+        allowed,
+        usage_limit_type,
+        tuple(diagnostics),
+        usage_limit_resets_at,
+        auto_reset_permitted,
     )
 
 

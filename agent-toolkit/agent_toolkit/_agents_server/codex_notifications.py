@@ -190,6 +190,16 @@ class CodexNotificationsMixin:
             if changed is not None:
                 error = changed
             limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
+            auto_reset = False
+            if limit is not None:
+                turn_seq = session.turn_seq
+                auto_reset = await self._auto_reset_configured(session)
+                if (
+                    self.sessions.get(session.session_id) is not session
+                    or session.turn_seq != turn_seq
+                    or session.turn_completed
+                ):
+                    return
             session.status = status
             session.error = error
             session.record_turn_completed()
@@ -226,7 +236,7 @@ class CodexNotificationsMixin:
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
                 )
                 session.status = "running"
-            elif self._hold_usage_limit_failure(session, limit) or self._hold_provider_failure(session):
+            elif self._hold_usage_limit_failure(session, limit, auto_reset=auto_reset) or self._hold_provider_failure(session):
                 pass
             elif not resume_waits.is_overload_failure(session):
                 resume_waits.clear_overload_resume(session)

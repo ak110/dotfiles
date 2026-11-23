@@ -59,7 +59,6 @@ Codexの会話は移った接続を使い続け、新しい会話だけを使用
 ### 緊急時だけ従量課金を許可する
 
 通常は`credits,subscription`を使い、追加支出が必要なときだけ接続使用順と上限待機方針を一時指定する。
-自動配分から従量課金を追加することはない。
 
 ```sh
 atk config temporary set claude_worker_connections credits,subscription,payg

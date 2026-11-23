@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import json
 import logging
 import time
 import typing
@@ -18,7 +17,7 @@ from agent_toolkit._agents_server.state import SessionState, utc_now
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import usage_refresh
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import codex_usage_limit, state_paths, usage_observation
+from agent_toolkit._common import codex_usage_limit, state_paths, usage_observation, usage_settings
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -36,8 +35,21 @@ class _Progress:
     stage: typing.Literal["", "設定確認", "送出確認待ち", "応答待ち"] = ""
 
 
-def _reset_enabled() -> bool:
-    return _atk_config.resolve_mutable_setting("usage_auto_allocation") == "true"
+def _confirm_usage_limit_wait(session: SessionState) -> None:
+    pending = session.pending_result
+    if pending is None or session.usage_limit_resume_at is None or session.usage_limit_wait_count:
+        return
+    error = pending.get("error")
+    window = error.get("usageLimit") if isinstance(error, dict) else None
+    resets = window.get("resetsAt") if isinstance(window, dict) else None
+    limit = codex_usage_limit.UsageLimitState(int(usage_settings.deadline(resets)) if isinstance(resets, str) else None)
+    session.hold_result(
+        turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time() + limit.delay_seconds(time.time()))
+    )
+    session.advance_usage_limit_retry()
+    if session.api_error is not None:
+        session.api_error.update(first_at=session.usage_limit_first_at, count=session.usage_limit_wait_count)
+    session.touch()
 
 
 class CodexResetMixin:
@@ -47,7 +59,7 @@ class CodexResetMixin:
     """
 
     def _hold_usage_limit_failure(
-        self: CodexManager, session: SessionState, limit: codex_usage_limit.UsageLimitState | None
+        self: CodexManager, session: SessionState, limit: codex_usage_limit.UsageLimitState | None, *, auto_reset: bool
     ) -> bool:
         if session.status != "failed" or limit is None:
             return False
@@ -57,16 +69,21 @@ class CodexResetMixin:
             "usageLimit": {"type": limit.limit_type, "resetsAt": limit.resets_at_iso()},
         }
         session.error = error
-        auto_reset = self._auto_reset_eligible(session, before_hold=True) and _reset_enabled()
-        if session.interrupt_requested or (not auto_reset and not should_wait("codex", limit.limit_type)):
+        wait = should_wait("codex", limit.limit_type)
+        if session.interrupt_requested or not (auto_reset or wait):
             return False
+        delay = limit.delay_seconds(time.time()) if wait else AUTO_RESET_RPC_TIMEOUT
         session.hold_result(
             turn_state.UsageLimitWait(
                 {"status": session.status, "agent_message": session.agent_message, "error": error},
-                asyncio.get_running_loop().time() + limit.delay_seconds(time.time()),
+                asyncio.get_running_loop().time() + delay,
             )
         )
-        session.advance_usage_limit_retry()
+        # pyfltr: allow-comment -- アカウントと回数の確認中は、解除待機に数えない。
+        if wait:
+            session.advance_usage_limit_retry()
+        else:
+            session.reset_usage_limit_retry()
         session.api_error = {
             "type": "usage_limit",
             "limit_type": limit.limit_type,
@@ -80,11 +97,23 @@ class CodexResetMixin:
             self._start_auto_reset_check(session)
         return True
 
-    def _auto_reset_eligible(self: CodexManager, session: SessionState, *, before_hold: bool = False) -> bool:
+    async def _auto_reset_configured(self: CodexManager, session: SessionState) -> bool:
+        if not self._auto_reset_eligible(session):
+            return False
+        try:
+            return bool(await run_file_operation(codex_auto_reset.active_permissions))
+        except OSError, ValueError:
+            _LOG.exception(
+                "Codex自動reset設定を解決できません: session_id=%s。atk config get usage_reset_permissionsを確認してください",
+                session.session_id,
+            )
+            return False
+
+    def _auto_reset_eligible(self: CodexManager, session: SessionState) -> bool:
         return (
             self.sessions.get(session.session_id) is session
             and not session.interrupt_requested
-            and (before_hold or not session.result_available)
+            and not session.result_available
             and self._owned_client(session) is not None
             and (session.codex_model_provider or session.codex_state_provider)
             in {None, session.codex_subscription_provider or "openai"}
@@ -103,15 +132,15 @@ class CodexResetMixin:
             if session.result_available or session.interrupt_requested:
                 return
             try:
-                enabled = await run_file_operation(_reset_enabled)
+                permissions = await run_file_operation(codex_auto_reset.active_permissions)
             except ValueError:
                 _LOG.exception(
                     "Codex自動reset設定を解決できません: session_id=%s。"
-                    "atk config get usage_auto_allocation usage_reset_permissionsを確認してください",
+                    "atk config get usage_reset_permissionsを確認してください",
                     session.session_id,
                 )
                 continue
-            if enabled and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
+            if permissions and not session.turn_control_lock.locked() and self._auto_reset_eligible(session):
                 self._start_auto_reset_check(session)
 
     def _start_auto_reset_check(self: CodexManager, session: SessionState) -> None:
@@ -130,49 +159,75 @@ class CodexResetMixin:
     async def _check_auto_reset(self: CodexManager, session: SessionState, client: JsonRpcProcess, turn_seq: int) -> None:
         result = None
         progress = _Progress()
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + AUTO_RESET_RPC_TIMEOUT
+        if session.usage_limit_resume_at is not None and session.usage_limit_wait_count == 0:
+            deadline = min(deadline, session.usage_limit_resume_at)
+        permission_check = asyncio.timeout_at(deadline)
 
-        def sent() -> None:
-            progress.stage = "応答待ち"
-
-        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
-            progress.method, progress.stage = method, "設定確認"
-            enabled = await run_file_operation(_reset_enabled)
-            if not enabled:
-                raise AppServerError("確認中にusage_auto_allocationが無効になった")
+        def ensure_current_turn() -> None:
             if (
                 session.turn_seq != turn_seq
                 or self._owned_client(session) is not client
                 or not self._auto_reset_eligible(session)
             ):
                 raise asyncio.CancelledError
+
+        def permission_confirmed() -> None:
+            if loop.time() >= deadline:
+                raise TimeoutError("reset許可を確かめる期限に達した")
+            ensure_current_turn()
+            permission_check.reschedule(None)
+            _confirm_usage_limit_wait(session)
+
+        def sent() -> None:
+            progress.stage = "応答待ち"
+
+        async def permissions_unchanged() -> bool:
+            current = await run_file_operation(codex_auto_reset.active_permissions)
+            return all(permission in current for permission in permissions)
+
+        async def request(method: str, params: dict[str, Any]) -> dict[str, Any]:
+            progress.method, progress.stage = method, "設定確認"
+            if method == "account/rateLimitResetCredit/consume" and not await permissions_unchanged():
+                raise AppServerError("確認中にreset許可が変わった")
+            ensure_current_turn()
             progress.stage = "送出確認待ち"
             return await client.request(method, params, on_sent=sent)
 
         try:
             try:
-                root = await run_file_operation(state_paths.state_dir)
-                permissions = json.loads(_atk_config.resolve_mutable_setting("usage_reset_permissions"))
-                observed = usage_observation.snapshot()
-                window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
-                weekly_rates = [
-                    window_rates.get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
-                    for window in observed.get("windows", [])
-                    if window["engine"] == "codex" and window.get("duration_seconds") == 604800
-                ]
-                pace = max((rate for rate in weekly_rates if rate is not None), default=None)
-                result = await codex_auto_reset.check_auto_reset(
-                    request,
-                    state_dir=root,
-                    rpc_timeout=AUTO_RESET_RPC_TIMEOUT,
-                    permissions=permissions,
-                    active=not session.interrupt_requested,
-                    pace=pace,
-                )
-                if result.diagnostic:
-                    _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)
+                async with permission_check:
+                    root = await run_file_operation(state_paths.state_dir)
+                    permissions = await run_file_operation(codex_auto_reset.active_permissions)
+                    observed = await run_file_operation(usage_observation.snapshot)
+                    window_rates = observed.get("setting_rates", {}).get(usage_refresh.session_signature(session), {})
+                    weekly_rates = [
+                        window_rates.get(usage_observation.rate_key(usage_observation.QuotaWindow(**window)))
+                        for window in observed.get("windows", [])
+                        if window["engine"] == "codex" and window.get("duration_seconds") == 604800
+                    ]
+                    pace = max((rate for rate in weekly_rates if rate is not None), default=None)
+                    if pace is not None and _atk_config.resolve_mutable_setting("usage_activity_mode") == "intermittent":
+                        ratio = observed.get("activity_ratio")
+                        if ratio is not None:
+                            pace *= ratio
+                    if permissions:
+                        result = await codex_auto_reset.check_auto_reset(
+                            request,
+                            state_dir=root,
+                            rpc_timeout=AUTO_RESET_RPC_TIMEOUT,
+                            permissions=permissions,
+                            active=not session.interrupt_requested,
+                            pace=pace,
+                            on_permission_confirmed=permission_confirmed,
+                        )
+                        if result.diagnostic:
+                            _LOG.info("Codex自動reset: session_id=%s diagnostic=%s", session.session_id, result.diagnostic)
             except TimeoutError:
+                overall = permission_check.expired() or (permission_check.when() is not None and loop.time() >= deadline)
                 _LOG.exception(
-                    "Codex自動resetの照会が時間内に終わりません: session_id=%s method=%s stage=%s connection=%s。"
+                    "Codex自動resetの照会が時間内に終わりません: session_id=%s method=%s stage=%s connection=%s deadline=%s。"
                     "backlogが上限なら受信処理が停滞している。送出確認待ちでは送出の有無が分からず、"
                     "別世代では元の通知列を確認できない。"
                     "停止した会話は利用枠回復後にsend_messageで継続してください",
@@ -180,6 +235,7 @@ class CodexResetMixin:
                     progress.method,
                     progress.stage,
                     client.diagnostic(),
+                    "許可確認全体" if overall else "RPC",
                 )
             except AppServerError, OSError, ValueError:
                 _LOG.exception(
@@ -229,7 +285,7 @@ class CodexResetMixin:
         if not task.cancelled() and (error := task.exception()) is not None:
             _LOG.error(
                 "Codex自動resetの監視・確認taskが失敗しました。"
-                "この例外ログとatk config get usage_auto_allocation usage_reset_permissionsを確認し、"
+                "この例外ログとatk config get usage_reset_permissionsを確認し、"
                 "停止した会話は利用枠回復後にsend_messageで継続してください",
                 exc_info=error,
             )
@@ -247,30 +303,32 @@ class CodexResetMixin:
         # 自動resetは消費判断に使う週次windowだけを検証するため、他のwindowの使用率は未検証の生値である。
         # 使用率を確認できないwindowが1つでもあれば、空きを確認できたとせず既存の上限待機へ進む。
         used = [codex_usage_limit.used_percent(window) for window in windows]
-        if used and all(value is not None and value < 100 for value in used):
+        reset_confirmed = result is not None and result.reset_confirmed
+        if reset_confirmed:
+            _confirm_usage_limit_wait(session)
+        if reset_confirmed and used and all(value is not None and value < 100 for value in used):
             session.hold_result(turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time()))
             session.touch()
             return
-        if result is not None and result.reset_confirmed and raw is None:
+        if reset_confirmed and raw is None:
             session.touch()
             return
-        reset_credits = raw.get("rateLimitResetCredits") if raw is not None else None
         limit = codex_usage_limit.from_rate_limits(bucket)
-        if (
-            result is not None
-            and result.outcome == "nothingToReset"
-            and isinstance(reset_credits, dict)
-            and isinstance(count := reset_credits.get("availableCount"), int)
-            and not isinstance(count, bool)
-            and count > 0
-            and limit.limit_type == "seven_day"
-        ):
-            return
         error = pending.get("error")
         previous_limit = error.get("usageLimit") if isinstance(error, dict) else None
-        kind = limit.limit_type or (previous_limit.get("type") if isinstance(previous_limit, dict) else None)
+        kind = previous_limit.get("type") if isinstance(previous_limit, dict) else None
+        observed_after_reset = reset_confirmed and limit.limit_type is not None
+        if observed_after_reset:
+            kind = limit.limit_type
         if should_wait("codex", kind):
-            if limit.resets_at is not None:
+            _confirm_usage_limit_wait(session)
+            if observed_after_reset and isinstance(error, dict):
+                resets_at = limit.resets_at_iso()
+                session.error = {**error, "usageLimit": {"type": kind, "resetsAt": resets_at}}
+                pending = {**pending, "error": session.error}
+                if session.api_error is not None:
+                    session.api_error.update(limit_type=kind, resets_at=resets_at)
+            if observed_after_reset or (limit.limit_type == kind and limit.resets_at is not None):
                 session.hold_result(
                     turn_state.UsageLimitWait(pending, asyncio.get_running_loop().time() + limit.delay_seconds(time.time()))
                 )
