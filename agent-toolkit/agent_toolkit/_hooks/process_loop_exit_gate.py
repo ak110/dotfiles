@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 
 from agent_toolkit._hooks.notice import block_formatter
-lazy from agent_toolkit._atk.session_records import exit_session_in_entries
+lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output, exit_session_in_entries
 lazy from agent_toolkit._atk.wi import process_loop_control, process_loop_log
 lazy from agent_toolkit._common import session_state, transcript
 lazy from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
@@ -18,12 +18,13 @@ lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
 lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _block = block_formatter("process_loop_exit_gate")
 
 
-_REPORT_END = "以上で、このセッションの作業は全て終わった。"
+_SAVE_SUCCESS = re.compile(r"^成功: 1件をinboxへ投入した\r?\n +[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md\r?$", re.M)
 _REPORT_QUESTION = re.compile(r"[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日の.+の作業結果について、この対応で問題ありませんか？")
 
 
@@ -58,23 +59,16 @@ def _has_compared_report_opening(args: tuple[str, ...]) -> bool:
         try:
             if path.is_absolute() and path.is_file():
                 with path.open(encoding="utf-8") as source:
-                    line = source.readline(4096)
-                    if len(line) < 4096 and _REPORT_QUESTION.fullmatch(line.rstrip()):
+                    lines = source.read(4096).lstrip().splitlines()
+                    if lines and _REPORT_QUESTION.fullmatch(lines[0]):
                         return True
         except OSError, UnicodeError:
             continue
     return False
 
 
-def _saved_report_name(entry: dict) -> str | None:
-    response = entry.get("toolUseResult")
-    if not isinstance(response, dict) or response.get("interrupted") is not False:
-        return None
-    stdout = response.get("stdout")
-    if not isinstance(stdout, str):
-        return None
-    match = re.match(r"成功: 1件をinboxへ投入した\n +[^\r\n]*[/\\]([0-9]{8}-[0-9]{6}-[0-9]{3}\.md)(?:\r?\n|$)", stdout)
-    return match[1] if match else None
+def _save_succeeded(stdout: object) -> bool:
+    return isinstance(stdout, str) and _SAVE_SUCCESS.search(stdout) is not None
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
@@ -91,17 +85,12 @@ def _current_turn(entries: list[dict]) -> list[dict]:
     return [entry for entry in entries[start:] if not entry.get("isSidechain")]
 
 
-def _report_requires_exit(entries: list[dict]) -> bool:
+def _claude_report_saved(entries: list[dict]) -> bool:
     pending: dict[str, tuple[str, ...]] = {}
-    saved: set[str] = set()
     reported = False
     for entry in entries:
         message = entry.get("message")
-        if not isinstance(message, dict):
-            continue
-        if entry.get("type") == "assistant":
-            reported |= _matches_report(transcript.visible_assistant_text(message), saved)
-        if not isinstance(content := message.get("content"), list):
+        if not isinstance(message, dict) or not isinstance(content := message.get("content"), list):
             continue
         for item in content:
             if not isinstance(item, dict):
@@ -114,27 +103,50 @@ def _report_requires_exit(entries: list[dict]) -> bool:
                     pending[identifier] = args
                 elif isinstance(name, str) and name.endswith("__compact_conversation"):
                     pending[identifier] = ()
-                elif (
-                    isinstance(name, str)
-                    and name.endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
-                    and isinstance(report := tool_input.get("message"), str)
-                ):
-                    reported |= _matches_report(report, saved)
             elif entry.get("type") == "user" and item.get("type") == "tool_result":
                 if not isinstance(identifier := item.get("tool_use_id"), str) or item.get("is_error"):
                     continue
                 args = pending.pop(identifier, None)
-                if args and (filename := _saved_report_name(entry)) is not None:
-                    saved.add(filename)
-                    reported |= _has_compared_report_opening(args)
-                elif args == () and _accepted_request(entry.get("toolUseResult")):
-                    saved.clear()
+                response = entry.get("toolUseResult")
+                if args and isinstance(response, dict) and response.get("interrupted") is False:
+                    reported |= _save_succeeded(response.get("stdout")) and _has_compared_report_opening(args)
+                elif args == () and _accepted_request(response):
                     reported = False
     return reported
 
 
-def _matches_report(text: str, saved: set[str]) -> bool:
-    return text.rstrip().endswith(_REPORT_END) and any(filename in text for filename in saved)
+def _codex_current_turn(entries: list[dict]) -> list[dict]:
+    start = 0
+    for index, entry in enumerate(entries):
+        payload = entry.get("payload")
+        if entry.get("type") == "compacted" or (
+            entry.get("type") == "event_msg"
+            and isinstance(payload, dict)
+            and payload.get("type") in {"user_message", "turn_aborted"}
+        ):
+            start = index + 1
+    return entries[start:]
+
+
+def _codex_report_saved(entries: list[dict]) -> bool:
+    pending: dict[str, tuple[str, ...]] = {}
+    for entry in entries:
+        payload = entry.get("payload")
+        if entry.get("type") != "response_item" or not isinstance(payload, dict):
+            continue
+        call_id = payload.get("call_id")
+        if not isinstance(call_id, str):
+            continue
+        if args := _save_args(codex_shell_command(payload)):
+            pending[call_id] = args
+        elif (
+            payload.get("type") in {"function_call_output", "custom_tool_call_output"}
+            and (args := pending.pop(call_id, ()))
+            and _save_succeeded(codex_shell_output(payload))
+            and _has_compared_report_opening(args)
+        ):
+            return True
+    return False
 
 
 def _accepted_request(response: object) -> bool:
@@ -156,12 +168,18 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     path = payload.get("transcript_path")
     if not isinstance(path, str):
         return "approve", ""
-    entries = _current_turn(transcript.read_transcript_entries(path))
-    if not _report_requires_exit(entries):
+    codex = is_codex_payload(payload)
+    records = transcript.read_transcript_entries(path)
+    entries = _codex_current_turn(records) if codex else _current_turn(records)
+    if not (_codex_report_saved(entries) if codex else _claude_report_saved(entries)):
         return "approve", ""
-    for message in transcript.iter_latest_assistant_text_messages(path):
-        if any(line.startswith("待機中:") for line in transcript.visible_assistant_text(message).splitlines()):
+    if not codex:
+        latest = payload.get("last_assistant_message")
+        if isinstance(latest, str) and any(line.startswith("待機中:") for line in latest.splitlines()):
             return "approve", ""
+        for message in transcript.iter_latest_assistant_text_messages(path):
+            if any(line.startswith("待機中:") for line in transcript.visible_assistant_text(message).splitlines()):
+                return "approve", ""
     if is_pending_async_work_from_payload(payload, session_id, session_state=session_state.read_state(session_id)):
         return "approve", ""
     if process_loop_log.abort_path().exists():
@@ -169,7 +187,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     request = process_loop_control.read_resume_request()
     if request is not None and request.session_id == session_id:
         return "approve", ""
-    if exit_session_in_entries(entries, "claude") is not False:
+    if exit_session_in_entries(entries, "codex" if codex else "claude") is not False:
         return "approve", ""
     return "block", _block(
         "報告用の`UWI`は保存済みだが、巡回統括の終了操作を確認できない。",

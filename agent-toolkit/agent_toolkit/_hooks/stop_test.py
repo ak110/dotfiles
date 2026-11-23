@@ -722,20 +722,24 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
         "active-agent",
         "delegate",
         "codex",
+        "codex-exit",
+        "codex-ordinary",
+        "codex-interrupt",
+        "codex-exec",
+        "codex-exec-exit",
     ],
 )
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
     # 実例の行12、9866～9867、9950～9959を匿名化して縮約した。  # pyfltr: allow-comment
     command = "cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type=post-approval --body-file /report.md"
-    if boundary in {"saved-only", "ordinary-save"}:
-        opening = tmp_path / "opening.md"
-        opening.write_text(
-            "2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？\n"
-            if boundary == "saved-only"
-            else "設定を変更しました。この対応で問題ありませんか？\n",
-            encoding="utf-8",
-        )
-        command += f' --compare-opening-file "{opening}"'
+    opening = tmp_path / "opening.md"
+    opening.write_text(
+        "設定を変更しました。この対応で問題ありませんか？\n"
+        if boundary in {"ordinary-save", "other-uwi", "codex-ordinary"}
+        else "\n2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？\n",
+        encoding="utf-8",
+    )
+    command += f' --compare-opening-file "{opening}"'
     if boundary == "dry-run":
         command += " --dry-run"
     records: list[dict[str, object]] = [
@@ -748,7 +752,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
             "type": "user",
             "message": {"content": [{"type": "tool_result", "tool_use_id": "save", "is_error": False, "content": ""}]},
             "toolUseResult": {
-                "stdout": "成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md",
+                "stdout": "警告: 表記を確認する\n成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md",
                 "interrupted": False,
             },
         },
@@ -779,7 +783,7 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     )
     if boundary in {"plain", "saved-only", "ordinary-save"}:
         del records[-2:]
-    if boundary == "plain":
+    if boundary in {"plain", "ordinary-save"}:
         records.append(
             {
                 "type": "assistant",
@@ -842,6 +846,31 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
             "message": {"content": [{"type": "text", "text": "待機中: child" if boundary == "wait" else "…"}]},
         }
     )
+    if boundary.startswith("codex"):
+        records = [{"type": "event_msg", "payload": {"type": "user_message", "message": "巡回"}}]
+        commands = [("save", command, "成功: 1件をinboxへ投入した\n  ~/notes/inbox/20000101-010101-001.md")]
+        if boundary.endswith("-exit"):
+            commands.append(("exit", "atk agents-exit-session", '{"exit_session_invoked":true}'))
+        for call_id, cmd, stdout in commands:
+            if boundary.startswith("codex-exec"):
+                call = {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "input": f"text(await tools.exec_command({{cmd: {json.dumps(cmd)}, yield_time_ms: 1000}}));",
+                }
+                response = {
+                    "type": "custom_tool_call_output",
+                    "output": [
+                        {"type": "input_text", "text": "Script completed\nWall time 0.1 seconds\nOutput:\n"},
+                        {"type": "input_text", "text": json.dumps({"exit_code": 0, "output": stdout})},
+                    ],
+                }
+            else:
+                call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": cmd})}
+                response = {"type": "function_call_output", "output": f"Process exited with code 0\nOutput:\n{stdout}"}
+            records.extend({"type": "response_item", "payload": {**item, "call_id": call_id}} for item in (call, response))
+    if boundary == "codex-interrupt":
+        records.append({"type": "event_msg", "payload": {"type": "turn_aborted", "reason": "interrupted"}})
     path = tmp_path / "coordinator.jsonl"
     path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
@@ -862,10 +891,10 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
         payload["background_tasks"] = [{"id": "child", "type": "local_agent", "status": "running"}]
     if boundary == "delegate":
         payload["agent_id"] = "child"
-    if boundary == "codex":
+    if boundary.startswith("codex"):
         payload["turn_id"] = "turn"
     result = stop.evaluate(json.dumps(payload))
-    if boundary in {"complete", "feedback", "plain", "failed-delivery", "saved-only"}:
+    if boundary in {"complete", "feedback", "plain", "failed-delivery", "saved-only", "codex", "codex-exec"}:
         assert result.get("decision") == "block"
         assert "atk agents-exit-session" in str(result.get("reason"))
     else:
