@@ -286,51 +286,83 @@ async def test_plan_operations_record_open_and_notified_reload(screen_harness: _
     harness = screen_harness
     page = harness.page
     harness.plan_path.write_text(_valid_diagram_markdown("初回"), encoding="utf-8")
-    await page.add_init_script("Object.defineProperty(navigator, 'sendBeacon', {value: undefined})")
-
     sent: list[dict] = []
-    reload_sent = asyncio.Event()
+    timings_changed = asyncio.Event()
+    body_responses: list[playwright.async_api.Response] = []
 
     def record_timings(request: playwright.async_api.Request) -> None:
-        if request.url.endswith("/api/timings"):
-            records = json.loads(request.post_data or "{}").get("records", [])
-            sent.extend(records)
-            if any(record.get("operation") == "external-reload" for record in records):
-                reload_sent.set()
+        if request.method == "POST" and request.url.endswith("/api/timings"):
+            sent.extend(json.loads(request.post_data or "{}").get("records", []))
+            timings_changed.set()
+
+    def record_body_response(response: playwright.async_api.Response) -> None:
+        url = urllib.parse.urlsplit(response.url)
+        query = urllib.parse.parse_qs(url.query)
+        if (
+            response.ok
+            and url.path == "/api/plans/file"
+            and query.get("host") == ["browser-test"]
+            and query.get("path") == [harness.plan_path.name]
+        ):
+            body_responses.append(response)
+
+    async def wait_for_operation(operation: str, trigger: str, routes: set[str], request_ids: set[str]) -> None:
+        async with asyncio.timeout(30):
+            while True:
+                timings_changed.clear()
+                for record in sent:
+                    if (
+                        record.get("screen") != "plans"
+                        or record.get("kind") != "operation"
+                        or record.get("operation") != operation
+                        or record.get("trigger") != trigger
+                        or record.get("outcome") != "ok"
+                    ):
+                        continue
+                    linked = [
+                        item
+                        for item in sent
+                        if item.get("screen") == "plans"
+                        and item.get("operation_id") == record["operation_id"]
+                        and "route" in item
+                    ]
+                    if {item["route"] for item in linked} == routes and (
+                        not request_ids or any(item.get("request_id") in request_ids for item in linked)
+                    ):
+                        assert record["total_ms"] >= 0
+                        return
+                await timings_changed.wait()
+
+    async def body_request_ids(heading: str) -> set[str]:
+        request_ids = set()
+        for response in list(body_responses):
+            if f">{heading}</h1>" in await response.text():
+                request_id = await response.request.header_value("X-Atk-Request-Id")
+                assert request_id
+                request_ids.add(request_id)
+        assert request_ids, heading
+        return request_ids
 
     page.on("request", record_timings)
+    page.on("response", record_body_response)
+    await page.set_viewport_size({"width": 320, "height": 900})
     await page.goto(harness.base_url + "/plans")
-    await page.locator("#preview .diagram-mermaid svg").wait_for(state="visible")
-    # 初期表示の選択は接続確立時の再同期に置き換わることがあるため、表示の確定後に別の計画を選び直して測る。
-    second = harness.plan_path.with_name("second-plan.md")
-    second.write_text(_valid_diagram_markdown("二件目"), encoding="utf-8")
-    await serve_plans.schedule_broadcast(harness.plans_state)
-    await page.locator("#files .file", has_text="second-plan.md").click()
-    await page.locator("#preview .diagram-mermaid svg", has_text="二件目").wait_for(state="visible")
-    second.write_text(_valid_diagram_markdown("通知後"), encoding="utf-8")
-    await serve_plans.schedule_broadcast(harness.plans_state)
+
+    # 未選択時の一覧更新を先に記録し、同名の操作があっても本文更新を取り違えないことを確かめる。 pyfltr: allow-comment
+    await harness.notify_file_update(_valid_diagram_markdown("選択前"))
+    await wait_for_operation("external-reload", "sse", {"/api/plans/files"}, set())
+    await page.locator("#plans-menu-btn").click()
+    await page.locator("#files .file", has_text=harness.plan_path.name).click()
+    await page.locator("#preview .diagram-mermaid svg", has_text="選択前").wait_for(state="visible")
+    opened_request_ids = await body_request_ids("選択前")
+
+    await harness.notify_file_update(_valid_diagram_markdown("通知後"))
     await page.locator("#preview h1", has_text="通知後").wait_for()
     await page.locator("#preview .diagram-mermaid svg", has_text="通知後").wait_for(state="visible")
-    await page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
-    await asyncio.wait_for(reload_sent.wait(), timeout=30)
-    records = list(sent)
-
-    def linked_routes(operation: dict) -> set[str]:
-        return {
-            record.get("route", "")
-            for record in records
-            if record.get("operation_id") == operation["operation_id"] and record is not operation
-        }
-
-    plan_records = [record for record in records if record.get("screen") == "plans"]
-    opened = next(record for record in plan_records if record.get("operation") == "open-file" and record.get("outcome") == "ok")
-    assert opened["kind"] == "operation"
-    assert "/api/plans/file" in linked_routes(opened)
-    reloaded = next(
-        record for record in plan_records if record.get("operation") == "external-reload" and record.get("trigger") == "sse"
+    await wait_for_operation(
+        "external-reload", "sse", {"/api/plans/files", "/api/plans/file"}, await body_request_ids("通知後")
     )
-    assert {"/api/plans/files", "/api/plans/file"} <= linked_routes(reloaded)
-    assert reloaded["total_ms"] >= 0
+    await wait_for_operation("open-file", "click", {"/api/plans/file"}, opened_request_ids)
 
 
 @pytest.mark.asyncio(loop_scope="session")
