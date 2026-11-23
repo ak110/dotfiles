@@ -467,14 +467,16 @@ def test_complete_checks_full_record_even_when_analysis_excludes_fork_context(tm
         session_review.complete(prepared)
 
 
-@pytest.mark.parametrize("change", ["unchanged", "inherited", "analyzed", "no-parent"])
+@pytest.mark.parametrize(
+    "change", ["unchanged", "parent-appended", "inherited", "analyzed", "no-parent", "no-provenance", "different-lines"]
+)
 def test_only_saved_legacy_fork_scope_can_use_legacy_digest(tmp_path, monkeypatch, change):
     parent = tmp_path / "parent.jsonl"
     child = tmp_path / "fork.jsonl"
     meta = '{"type":"session_meta","payload":{"forked_from_id":"parent"}}'
     inherited = '{"type":"event_msg","payload":{"type":"user_message","message":"継承"}}'
     analyzed = '{"type":"event_msg","payload":{"type":"user_message","message":"分岐後"}}'
-    parent.write_text(inherited + "\n", encoding="utf-8")
+    parent.write_text(inherited + "\n" + (analyzed + "\n" if change == "parent-appended" else ""), encoding="utf-8")
     rows = [
         meta,
         inherited.replace("継承", "変更") if change == "inherited" else inherited,
@@ -485,11 +487,25 @@ def test_only_saved_legacy_fork_scope_can_use_legacy_digest(tmp_path, monkeypatc
     scope_path = tmp_path / "scope.json"
     entry = {"path": str(child), "through_line": 3, "digest": hashlib.sha256((meta + "\n" + analyzed).encode()).hexdigest()}
     session_review.write(scope_path, {"version": 1, "records": {"codex:fork": entry}})
+    stats_path = tmp_path / "stats.jsonl"
+    if change != "no-provenance":
+        provenance = {
+            "kind": "record-provenance",
+            "record": "codex:fork",
+            "fork_parent": "codex:parent",
+            "fork_attribution_known": True,
+            "fork_lines": [1, 2] if change == "different-lines" else [2, 2],
+        }
+        stats_path.write_text(json.dumps(provenance) + "\n", encoding="utf-8")
     assert session_review.record({"hook_event_name": "SessionStart", "session_id": "fork"}, host="codex")
-    prepared = {**session_review.prepare_identity("codex", "fork"), "scope_path": str(scope_path)}
+    prepared = {
+        **session_review.prepare_identity("codex", "fork"),
+        "scope_path": str(scope_path),
+        "bundle_scope_path": str(scope_path),
+    }
     with pytest.raises(ValueError, match="接頭辞"):
         session_review.complete(prepared)
-    if change != "unchanged":
+    if change not in {"unchanged", "parent-appended"}:
         with pytest.raises(ValueError, match="接頭辞"):
             session_review.complete(prepared, allow_legacy_fork_scope=True)
         return
