@@ -31,7 +31,17 @@ def test_appends_local_clock_row_for_current_and_legacy_heading(tmp_path: pathli
 
     append_progress_log.append_progress_log(path, "工程", "成功", clock=lambda: now)
 
-    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20 12:34 | 工程 | 成功 |\n")
+    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20T12:34:00+09:00 | 工程 | 成功 |\n")
+
+
+def test_keeps_minute_format_when_plan_already_has_minute_rows(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "plan.md"
+    path.write_text(_plan() + "| 2026-09-20 12:00 | 開始: 実装 | |\n", encoding="utf-8")
+    now = datetime.datetime(2026, 9, 20, 12, 34, 56, tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
+
+    append_progress_log.append_progress_log(path, "終了: 実装", "成功", clock=lambda: now)
+
+    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20 12:34 | 終了: 実装 | 成功 |\n")
 
 
 def test_preserves_crlf_and_missing_final_newline(tmp_path: pathlib.Path) -> None:
@@ -45,7 +55,7 @@ def test_preserves_crlf_and_missing_final_newline(tmp_path: pathlib.Path) -> Non
     updated = path.read_bytes()
     assert b"\r\n" in updated
     assert not updated.endswith(b"\n")
-    assert updated.endswith("| 2026-09-20 03:34 | 工程 | 成功 |".encode())
+    assert updated.endswith("| 2026-09-20T03:34:00+00:00 | 工程 | 成功 |".encode())
 
 
 def test_escapes_table_cells(tmp_path: pathlib.Path) -> None:
@@ -65,7 +75,7 @@ def test_ignores_progress_heading_inside_code_fence(tmp_path: pathlib.Path) -> N
 
     append_progress_log.append_progress_log(path, "工程", "成功", clock=lambda: now)
 
-    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20 03:34 | 工程 | 成功 |\n")
+    assert path.read_text(encoding="utf-8").endswith("| 2026-09-20T03:34:00+00:00 | 工程 | 成功 |\n")
 
 
 @pytest.mark.parametrize(
