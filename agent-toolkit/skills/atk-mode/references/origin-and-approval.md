@@ -103,7 +103,8 @@ scopeに入れるのはモード語までとし、それ以外の自由記述は
 
 UWIの`## 回答`とAWIの`## ユーザーコメント`は、ユーザーだけが書く節である。
 エージェント環境の`atk`は、これらの節を含む本文の投入と編集を拒否し、`atk wi edit --body-file`では`## ユーザーコメント`を編集対象から外して保存済みの内容を保つ。
-例外として`atk wi edit --move-user-comment`は、保存済みのコメントの全行が新しい本文の`## ユーザー指摘の逐語引用`にある時だけコメント節を削除する（`agent-toolkit:atk-mode/playbooks/process-user-comments.md`）。
+例外として`atk wi edit --move-user-comment`は、保存済みのコメントが整理に使った内容と一致し、その全行が新しい本文の`## ユーザー指摘の逐語引用`にある時だけコメント節を削除する。
+使う場面は`agent-toolkit:atk-mode/playbooks/process-user-comments.md`にある。
 
 エージェント由来の項目への記入や回答が、その項目の前提、対象、方針、採否を否定していれば、ユーザーからの是正要求として扱い、次の順に進める。
 

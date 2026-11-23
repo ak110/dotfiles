@@ -110,7 +110,18 @@ def has_user_comment(text: str) -> bool:
 
 
 def _comparable_lines(lines: list[str]) -> list[str]:
-    return [line.rstrip() for line in lines if line.strip()]
+    stripped = [line.rstrip() for line in lines]
+    while stripped and not stripped[0]:
+        stripped.pop(0)
+    while stripped and not stripped[-1]:
+        stripped.pop()
+    return stripped
+
+
+def same_user_comment(left: str, right: str) -> bool:
+    return _comparable_lines(frontmatter.normalize_newlines(left).split("\n")) == _comparable_lines(
+        frontmatter.normalize_newlines(right).split("\n")
+    )
 
 
 def quotes_user_comment(text: str, comment: str) -> bool:
@@ -119,7 +130,7 @@ def quotes_user_comment(text: str, comment: str) -> bool:
     target = _comparable_lines(frontmatter.normalize_newlines(comment).split("\n"))
     if section is None or not target:
         return False
-    quoted = _comparable_lines([_QUOTE_MARKER.sub("", line, count=1) for line in section])
+    quoted = [_QUOTE_MARKER.sub("", line, count=1).rstrip() for line in section]
     width = len(target)
     return any(quoted[index : index + width] == target for index in range(len(quoted) - width + 1))
 
@@ -196,6 +207,7 @@ __all__ = [
     "has_reserved_heading",
     "has_user_comment",
     "quotes_user_comment",
+    "same_user_comment",
     "split_before_user_comment",
     "update_user_comment",
 ]

@@ -151,7 +151,18 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
-def _move_user_comment(original: str, edited: str, name: str) -> None:
+def _read_expected_user_comment(path: str) -> str:
+    try:
+        return pathlib.Path(path).expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        _outcome.report_failure(
+            f"--move-user-commentのファイルをUTF-8として読めない: {path}: {error}",
+            next_action="整理に使ったユーザーコメントの本文をUTF-8のファイルへ保存し、その絶対パスを指定する",
+        )
+        sys.exit(1)
+
+
+def _move_user_comment(original: str, edited: str, name: str, expected: str) -> None:
     show_section = f"`atk wi show {name} --section ユーザーコメント`"
     try:
         comment = _user_comment.extract_user_comment(original)
@@ -165,6 +176,12 @@ def _move_user_comment(original: str, edited: str, name: str) -> None:
         _outcome.report_failure(
             f"移すユーザーコメントが無い: {name}",
             next_action="--move-user-commentを外して再実行する",
+        )
+        sys.exit(1)
+    if not _user_comment.same_user_comment(comment, expected):
+        _outcome.report_failure(
+            f"保存済みのユーザーコメントが、整理に使ったコメントと一致しないため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在のコメントを読み直し、変わった記入を本文へ反映して再実行する",
         )
         sys.exit(1)
     if _user_comment.has_reserved_heading(edited):
@@ -445,7 +462,7 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
         if args.append:
             args.subparser.error("--cooldown-untilは--appendと併用できません。")
-    if args.move_user_comment:
+    if args.move_user_comment is not None:
         if args.append:
             args.subparser.error("--move-user-commentは--appendと併用できません。")
         if args.filename is None or message is None:
@@ -520,8 +537,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
-        if args.move_user_comment:
-            _move_user_comment(original, edited, path.name)
+        if args.move_user_comment is not None:
+            _move_user_comment(original, edited, path.name, _read_expected_user_comment(args.move_user_comment))
         else:
             edited = _preserve_agent_user_comment(original, edited)
     else:
