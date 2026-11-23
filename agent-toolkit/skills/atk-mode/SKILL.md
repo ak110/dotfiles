@@ -42,7 +42,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 - 権限拒否に従い、認証・料金・利用規約・安全目的のツール制限を守る。
 - 推定した意向より明示の範囲・権限を優先する。
   確定済みの目的・要件・観測結果の変更はユーザー判断を要する。
-- 原則4「秘匿値」に該当する値は出力・記録・WI・報告から除く。
+- 原則4「秘匿値」の値は出力・記録・WI・報告から除く。
 - 他者のプロセス・資源・差分は由来と利用を確かめて扱う。
 - 公開契約（`atk`と役割の入出力、MCPツール名、WI形式・frontmatter）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
   互換の要否は自ら決める。
@@ -100,7 +100,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | 背景実行・待機・終了・長い出力・一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
 | commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
 | 検証の起動と記録 | `playbooks/verification.md` |
-| 外部投稿前、本人が提出する申告文を渡す前 | `playbooks/review-external-writes.md` |
+| 外部投稿・本人提出文の前 | `playbooks/review-external-writes.md` |
 | 指示文改訂の評価 | `playbooks/refine-prompt.md` |
 | 完了報告・省略・中止・待機の記録 | `playbooks/report-completion.md`、`references/termination-evidence.md` |
 | 方針衝突、言語検査通知、延期、資格情報発見 | `references/conduct.md` |
