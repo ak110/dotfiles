@@ -14,7 +14,6 @@ from agent_toolkit._agents_server import (
     launch_requests,
     result_contract,
     result_projection,
-    resume_waits,
     session_errors,
     session_identity,
     shared_layout,
@@ -214,7 +213,6 @@ class CliTurnManager:
             if repair_result_contract:
                 if not session.result_contract_recovery_pending or not session.result_contract_recovery_consumed:
                     raise RuntimeError("返却形式の回復を予約した保留結果がありません")
-                resume_waits.finalize_pending_result(session, touch=False)
             elif not session.terminal:
                 raise ActionableError(
                     f"the active {self.NAME} turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION

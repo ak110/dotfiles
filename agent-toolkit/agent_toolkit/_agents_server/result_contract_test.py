@@ -434,7 +434,13 @@ async def test_cli_role_model_change_rejects_public_reply_but_keeps_result_recov
     session.engine = backend_type.ENGINE
     session.model_type = "orchestrate" if stale else "execute"
     session.explicit_role_model = False
-    started = AsyncMock(return_value=session)
+
+    async def start(*_args: Any, **kwargs: Any) -> state.SessionState:
+        session.turn_seq = kwargs["turn_seq"]
+        cli_turn.finalize_turn(session, {"status": "completed", "agent_message": "状態: completed", "error": None})
+        return session
+
+    started = AsyncMock(side_effect=start)
     async with manager.AgentsServerManager() as owner:
         backend = backend_type()
         owner.sessions[session.session_id] = session
@@ -464,9 +470,9 @@ async def test_cli_role_model_change_rejects_public_reply_but_keeps_result_recov
 @pytest.mark.parametrize("backend_type", [antigravity.AntigravityManager, opencode.OpenCodeManager])
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("agents_server_isolation")
-@pytest.mark.parametrize("late_error", [False, True])
+@pytest.mark.parametrize("outcome", ["completed", "late_error", "kill", "start_error"])
 async def test_cli_result_recovery_is_reserved_before_waiting_for_delivery(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, backend_type: type[cli_turn.CliTurnManager], late_error: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, backend_type: type[cli_turn.CliTurnManager], outcome: str
 ) -> None:
     session = _task_session(tmp_path)
     session.engine = backend_type.ENGINE
@@ -478,6 +484,8 @@ async def test_cli_result_recovery_is_reserved_before_waiting_for_delivery(
     final = "状態: completed\n結果: 修復済み"
 
     async def start(*_args: Any, **kwargs: Any) -> state.SessionState:
+        if outcome == "start_error":
+            raise RuntimeError("回復ターンの起動に失敗")
         session.turn_seq = kwargs["turn_seq"]
         cli_turn.finalize_turn(session, {"status": "completed", "agent_message": final, "error": None})
         return session
@@ -496,7 +504,7 @@ async def test_cli_result_recovery_is_reserved_before_waiting_for_delivery(
             preparing.set()
             await release.wait()
             response = await send(*args, **kwargs)
-            if late_error:
+            if outcome == "late_error":
                 raise RuntimeError("後処理の応答を失った")
             return response
 
@@ -514,11 +522,22 @@ async def test_cli_result_recovery_is_reserved_before_waiting_for_delivery(
             await preparing.wait()
             group.create_task(observe_again())
             await second_entered.wait()
+            if outcome == "kill":
+                killed = await owner.kill(session.session_id)
+                assert killed["status"] == "interrupted"
             release.set()
 
-        started.assert_awaited_once()
-        assert session.status == "completed"
-        assert session.agent_message == final and session.error is None
+        if outcome == "kill":
+            started.assert_not_awaited()
+            assert session.status == "interrupted" and session.error is None
+        elif outcome == "start_error":
+            started.assert_awaited_once()
+            assert session.status == "failed"
+            assert session.error is not None and "回復ターンの起動に失敗" in session.error["message"]
+        else:
+            started.assert_awaited_once()
+            assert session.status == "completed"
+            assert session.agent_message == final and session.error is None
         assert preparations == [0]
 
 

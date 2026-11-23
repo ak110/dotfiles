@@ -135,6 +135,10 @@ class ManagerResume(manager_registry.ManagerRegistry):
             pending = session.pending_result
             assert pending is not None
             turn_seq = session.turn_seq
+
+            def owns_recovery() -> bool:
+                return session.turn_seq == turn_seq and session.pending_result is pending
+
             reason = session.result_contract_recovery_reason or "返却形式を検査できません"
             session.result_contract_recovery_consumed = True
             try:
@@ -166,11 +170,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 if delivery.get("delivery") == "reply_failed":
                     raise RuntimeError("返却形式の回復入力を配送できませんでした")
             except asyncio.CancelledError:
-                if session.turn_seq == turn_seq and session.pending_result is pending:
+                if owns_recovery():
                     session.result_contract_recovery_consumed = False
                 raise
             except Exception as exc:
-                if session.turn_seq != turn_seq:
+                if not owns_recovery():
                     return
                 session.clear_hold()
                 session.status = "failed"
