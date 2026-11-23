@@ -43,6 +43,12 @@ def test_main_only_mcp_tools_enforce_actor(tmp_path: pathlib.Path, tool: str, ac
         ("**発話の理解：**\n- **指摘（原文）：** 終了手順が未実行ではないか。", "deny"),
         ("**発話の理解：** **原文：** 終了手順を確認する。", "deny"),
         ("## 発話の理解\n終了手順の確認。\n\n**記録：**\n- 原文: ん？ atk agent-exit-sessionは？？", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n## 原文\nん？ atk agent-exit-sessionは？？", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n### 原文\n終了手順が未実行ではないか。", "deny"),
+        ("## 発話の理解\n終了手順の確認。\n\n## 記録\n### 原文\nん？ atk agent-exit-sessionは？？", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n> ## 原文\n> 引用の例", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n~~~markdown\n## 原文\n引用の例\n~~~", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n> ## 記録\n\n- 原文: 終了手順が未実行ではないか。", "deny"),
     ],
 )
 def test_send_to_user_utterance_understanding(tmp_path: pathlib.Path, message: str, decision: str) -> None:

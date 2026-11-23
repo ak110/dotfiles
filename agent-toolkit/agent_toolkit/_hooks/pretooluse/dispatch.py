@@ -183,7 +183,7 @@ _UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
 _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
 
 
-def _has_original_text_label_in_understanding(message: str) -> bool:
+def _understanding_section_lines(message: str) -> Iterable[str]:
     section_level = 0
     for line in without_literal_blocks(message).splitlines():
         heading = _MARKDOWN_HEADING.match(line)
@@ -201,17 +201,22 @@ def _has_original_text_label_in_understanding(message: str) -> bool:
             title = line.strip()
         if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
             section_level = level or 6
-            if _ORIGINAL_TEXT_LABEL.match(target[1] or ""):
-                return True
+            if target[1]:
+                yield target[1]
             continue
-        if level:
-            if section_level and _ORIGINAL_TEXT_LABEL.match(line if strong else title):
-                return True
-            if strong or level <= section_level:
-                section_level = 0
-        elif section_level and _ORIGINAL_TEXT_LABEL.match(line):
-            return True
-    return False
+        if heading and level <= section_level:
+            section_level = 0
+            continue
+        if not section_level:
+            continue
+        if strong and not _ORIGINAL_TEXT_LABEL.match(line):
+            section_level = 0
+            continue
+        yield title if heading else line
+
+
+def _has_original_text_label_in_understanding(message: str) -> bool:
+    return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
 
 
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
