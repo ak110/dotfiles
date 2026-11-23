@@ -212,9 +212,9 @@ async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, in
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
-@pytest.mark.parametrize("at", [1, 2])
+@pytest.mark.parametrize("at", [1, 2, "allocate"])
 async def test_copy_failure_preserves_previous_input(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, at: int
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, at: int | str
 ) -> None:
     """コピー途中の失敗では固定pathに以前の完全な内容を残し、SDK要求を送らない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
@@ -226,6 +226,7 @@ async def test_copy_failure_preserves_previous_input(
         reloader.mark_changed()
         generations = tuple(mirror.parent.glob("generation-*"))
         copytree = claude_plugins.shutil.copytree
+        allocate = claude_plugins.private_directory.make_temporary
         count = 0
 
         def copy_failure(from_path: Path, target: Path, *args: Any, **kwargs: Any) -> Any:
@@ -237,7 +238,13 @@ async def test_copy_failure_preserves_previous_input(
                     raise OSError("コピー失敗")
             return copytree(from_path, target, *args, **kwargs)
 
+        def allocation_failure(area: Path, prefix: str) -> Path:
+            if prefix == "mirror-" and at == "allocate":
+                raise OSError("コピー失敗")
+            return allocate(area, prefix)
+
         monkeypatch.setattr(claude_plugins.shutil, "copytree", copy_failure)
+        monkeypatch.setattr(claude_plugins.private_directory, "make_temporary", allocation_failure)
         with pytest.raises(OSError, match="コピー失敗"):
             await reloader.reload(client)
         assert (mirror / "skills/content.md").read_text(encoding="utf-8") == "初期内容"

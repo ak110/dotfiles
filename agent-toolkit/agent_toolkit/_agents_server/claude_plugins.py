@@ -464,14 +464,11 @@ class ClaudePluginReloader:
 
     def _switch(self, generation: Path) -> None:
         assert self._area is not None and self._mirror is not None
-        candidate = private_directory.make_temporary(self._area, "mirror-")
+        candidate = None
         previous = self._area / "previous"
         try:
-            try:
-                shutil.copytree(generation, candidate, dirs_exist_ok=True, symlinks=True)
-            except BaseException:
-                shutil.rmtree(generation)
-                raise
+            candidate = private_directory.make_temporary(self._area, "mirror-")
+            shutil.copytree(generation, candidate, dirs_exist_ok=True, symlinks=True)
             if self._mirror.exists():
                 os.replace(self._mirror, previous)
             try:
@@ -480,8 +477,11 @@ class ClaudePluginReloader:
                 if previous.exists():
                     os.replace(previous, self._mirror)
                 raise
+        except BaseException:
+            shutil.rmtree(generation)
+            raise
         finally:
-            if candidate.exists():
+            if candidate is not None and candidate.exists():
                 shutil.rmtree(candidate)
 
     def _restore(self) -> None:
