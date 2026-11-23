@@ -16,6 +16,7 @@ from agent_toolkit._common import atomic_file
 from agent_toolkit._plan import commit_mapping
 lazy from agent_toolkit._atk.wi import arguments as wi_arguments
 lazy from agent_toolkit._atk.wi import filenames as wi_filenames
+lazy from agent_toolkit._atk.wi.effect_check import validate_adoption_effect
 
 
 def integration_input(args: argparse.Namespace, record: dict[str, typing.Any]) -> dict[str, typing.Any]:
@@ -389,6 +390,11 @@ def validate_adopt_commits(manifest: dict[str, typing.Any], worktree: pathlib.Pa
             names = {wi_filenames.normalize_md_filename(name) for name in adopted.filenames}
             if names != {row["name"]} or commits != expected or (row.get("no_merge") and commits):
                 raise ValueError(f"{row['name']}: 指定値={specified}、期待集合={sorted(expected)}。{action}")
+            if commits:
+                try:
+                    validate_adoption_effect(adopted.effect_check, adopted.effect_check_reason)
+                except ValueError as error:
+                    raise ValueError(f"{row['name']}: {error}") from error
 
 
 def check_legacy_mapping(state: dict[str, typing.Any], manifest: dict[str, typing.Any], worktree: pathlib.Path) -> None:

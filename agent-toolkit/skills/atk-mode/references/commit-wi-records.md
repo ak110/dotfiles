@@ -35,6 +35,7 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
    - 保存で計画のパスが移っても、同名の保存済み計画が一意ならそのまま指定できる。
      同名が複数あれば、保存先の実在するパスを指定する。
    - 取得した短縮OIDを`atk wi adopt --commit`へ渡し、複数のcommitは`--commit <OID>`を反復する。
+     実装付きAWIは[効果確認](effect-records.md)も指定する。
      commitの説明などのメモは`--note-file`に書く。
    - 実装commitを持つはずの項目の記録が欠けている場合、対象外のAWIが含まれる場合、OIDを解決できない場合は、記録の生成側を直してから取得し直す。
    - `atk lane integrate`へ渡すadoptの`--commit`も今の取得結果から作り直し、manifestのWI行の`commit_record`へ元の計画か引き継ぎ記録のMarkdownの絶対パスを指定する。

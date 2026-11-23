@@ -84,6 +84,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
      途中で失敗した場合は、CLIの診断と残った状態を同じ対応表に記録し、未完了の工程から再開する。
    - ユーザーの明示の追加と、本書「見つけた既存不良の扱い」で今回追加とした正式改善AWIは対応表へ反映して比較の基準を更新し、集合の固定後の追加は`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」の基準で扱う。
 2. `atk wi`の`adopt`や`reject`に`--commit`を渡す場合は`--target-repo`に対象worktreeの絶対パスを、それ以外の操作では保存された`target_repo`を使う。
+   実装付きAWIは[効果確認](../references/effect-records.md)も指定する。
    Gitの起点の比較、実装、検証、commit、レビューには対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. frontmatterに`merge_branch`を持つマージ用AWIは計画・実装・実行レビューを省き、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従って直接取り込んで終了する。
    残る計画対象があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で計画を起草する。

@@ -18,6 +18,18 @@ OVERALL_RECORD_PREFIX = "- 効果確認全体: "
 VERDICTS = ("pending", "confirmed", "insufficient", "not_required")
 
 
+def validate_adoption_effect(verdict: str | None, reason: str | None) -> None:
+    if (
+        verdict not in ("pending", "not_required")
+        or (verdict == "not_required" and reason is None)
+        or (reason is not None and (not reason.strip() or reason.splitlines() != [reason] or "\0" in reason))
+    ):
+        raise ValueError(
+            "実装commit付きAWIには --effect-check=pending または "
+            "--effect-check=not_required --effect-check-reason=<空でない1行の理由> を指定してください"
+        )
+
+
 def result_values(text: str, label: str) -> list[str]:
     prefix = f"- {label}: "
     lines = headings.last_h2_section_lines(text, "処理結果") or []
