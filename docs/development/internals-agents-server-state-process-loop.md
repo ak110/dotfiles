@@ -4,7 +4,7 @@
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| ホストsessionの活動記録（`session-activity/`配下の会話別・WI投入作業の2種） | `session-activity/`配下 | `_common/session_activity.py` | 保存先、作成・更新・削除の主体と契機は`docs/development/internals-session-state-activity.md`が定める |
+| ホストsessionの活動記録（`session-activity/`配下の会話別記録） | `session-activity/`配下 | `_common/session_activity.py` | 保存先、作成・更新・削除の主体と契機は`docs/development/internals-session-state-activity.md`が定める |
 | 独立したWI投入の受付・移管票・実行結果 | `wi-submit/requests/<request_id>.json`と`wi-submit/runs/<run_id>/` | `atk wi submit --show`、既存SessionStart/SessionEndの再観測、process-loopの対象別結果の受付票検証 | `_atk/wi/submit.py`。自己完結した要求を原子的に保存し、独立監督のPID世代と所有移管、finishの要求別処置、run-skillの報告同期を対応付ける。未完了・未報告を保持し、完了・同期済みだけを30日後に回収する。製品worktree・process-loopの所有を引き継がない |
 | Git統合と計画保存・WI終了の進行 | `lanes/<所有session>/<lane>.json`の`integration`セクション | `atk lane integrate`、および回収可否の判定処理 | `_atk/lane.py`。Git統合の進行状況と成功した最終化処理の記録を保存し、失敗時には残りの工程のみを再開できるようにする。最終化処理の最初のステップを開始する前に確定値（統合後HEADの短縮OID、完了時刻、レーン稼働秒数）を生成して統合状態へ保存し、最初に受け付けた`lane_started_at`を登録の最上位へ保存する（再開時に再生成しない）。すべての最終化処理と、対象ファイル群および統合状態の整合性確認が成功した段階で統合完了を記録する。rebase対応表はmanaged-temp内に保存され、レーン回収後も同一の保持期限内であれば参照できる |
 

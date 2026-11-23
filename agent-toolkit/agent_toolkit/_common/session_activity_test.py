@@ -13,12 +13,8 @@ from typing import Any
 import psutil
 import pytest
 
-from agent_toolkit import atk
-from agent_toolkit._common import process_tree, session_activity, session_registry, state_paths
+from agent_toolkit._common import process_tree, session_activity, session_registry
 from agent_toolkit._testing import late_descendant
-from agent_toolkit._testing.git_repository import init_repository, run_git
-
-_TARGET = "github.com/example/target"
 
 
 def _host(engine: str) -> session_activity.HostProcess:
@@ -435,128 +431,6 @@ def test_daemons_reclaims_every_acquired_process_on_failure(
     assert all(process.poll() is not None for process in acquired)
 
 
-def _begin(*arguments: str) -> None:
-    with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "submission", "begin", *arguments])
-    assert exc.value.code == 0
-
-
-def _end(session_id: str) -> None:
-    with pytest.raises(SystemExit) as exc:
-        atk.main(["wi", "submission", "end", "--session-id", session_id, "--abort"])
-    assert exc.value.code == 0
-
-
-def _emit(session_id: str, event: str, *, host: session_activity.HostProcess | None = None, **extra: Any) -> None:
-    session_activity.record_activity(
-        {"session_id": session_id, "hook_event_name": event, **extra},
-        process=host or _host("claude"),
-    )
-
-
-def _submitting(*targets: str) -> frozenset[str]:
-    return session_activity.submission_activity(set(targets), processes=()).active_session_ids
-
-
-def test_unrelated_work_does_not_create_start_activity(
-    monkeypatch: pytest.MonkeyPatch,
-    daemons: list[session_activity.HostProcess],
-) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    for session_id in ("other-repo", "process-wi", "session-review", "collaboration", "broken-attribute"):
-        _emit(session_id, "UserPromptSubmit")
-    _begin("--session-id", "other-repo", "--target-repo", "https://github.com/example/other.git")
-    directory = session_activity.submission_directory()
-    (directory / "broken-attribute.json").write_text(
-        json.dumps({"version": 1, "session_id": "broken-attribute", "kind": "add-awi-by-user"}),
-        encoding="utf-8",
-    )
-    (directory / "process-wi.json").write_text(
-        json.dumps({"version": 1, "session_id": "process-wi", "kind": "process-wi", "targets": [_TARGET]}),
-        encoding="utf-8",
-    )
-    (session_activity.activity_directory() / "unreadable.json").write_text("{", encoding="utf-8")
-
-    snapshot = session_activity.submission_activity({_TARGET}, processes=daemons)
-    assert not snapshot.has_activity
-    assert not snapshot.reasons
-
-    overall = session_activity.scan_activity(processes=daemons)
-    assert overall.active_session_ids >= {"other-repo", "process-wi", "session-review", "collaboration"}
-    assert not any("PID" in reason for reason in overall.reasons)
-    assert session_activity.submission_activity({"github.com/example/other"}, processes=daemons).active_session_ids == {
-        "other-repo"
-    }
-
-
-def test_submission_target_follows_actual_destination(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    target = init_repository(tmp_path / "target", origin="git@github.com:Example/Target.git", commit_message="init")
-    worktree = tmp_path / "target-worktree"
-    run_git(target, "worktree", "add", "--quiet", "-b", "other-worktree", str(worktree))
-    elsewhere = init_repository(tmp_path / "elsewhere", origin="https://github.com/example/elsewhere.git")
-    monkeypatch.chdir(elsewhere)
-
-    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "manual")
-    _emit("manual", "UserPromptSubmit")
-    _begin("--target-repo", str(worktree))
-    assert _submitting(_TARGET) == {"manual"}
-    assert not _submitting("github.com/example/elsewhere")
-
-    transcript = _transcript(tmp_path, "claude", "delegating")
-    _emit("delegating", "UserPromptSubmit", transcript_path=str(transcript))
-    _begin("--session-id", "delegating", "--target-repo", "https://github.com/example/target")
-    _emit("delegating", "Stop", transcript_path=str(transcript))
-    session_registry.publish(
-        "add-wi-worker", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="delegating"
-    )
-    session_registry.publish(
-        "unrelated-worker", state=session_registry.PublicationState.PENDING_RUNNING, launcher_session_id="someone-else"
-    )
-    _end("manual")
-    assert _submitting(_TARGET) == {"add-wi-worker"}
-    assert not _submitting("github.com/example/elsewhere")
-    session_registry.publish("add-wi-worker", state=session_registry.PublicationState.RESULT_COMPLETED)
-    assert not _submitting(_TARGET)
-
-
-def test_submission_lifecycle_does_not_carry_over(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> None:
-    """終了・中止・対象変更・再開に追随し、後続の別作業と属性のない旧記録で待機を生じない。"""
-    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
-    _emit("legacy", "UserPromptSubmit")
-    assert not _submitting(_TARGET)
-
-    _emit("submitter", "UserPromptSubmit")
-    _begin("--session-id", "submitter", "--target-repo", _TARGET)
-    assert _submitting(_TARGET) == {"submitter"}
-
-    _begin("--session-id", "submitter", "--target-repo", "github.com/example/changed")
-    assert not _submitting(_TARGET)
-    assert _submitting("github.com/example/changed") == {"submitter"}
-
-    _emit("submitter", "Interrupt")
-    _end("submitter")
-    _emit("submitter", "UserPromptSubmit")
-    assert not _submitting(_TARGET, "github.com/example/changed")
-
-    _begin("--session-id", "submitter", "--target-repo", _TARGET)
-    _emit("submitter", "SessionEnd")
-    assert not _submitting(_TARGET)
-    with late_descendant.held_process(tmp_path) as resumed:
-        try:
-            identity = session_registry.ProcessIdentity.of(resumed.pid)
-            assert identity is not None
-            _emit("submitter", "SessionStart", host=session_activity.HostProcess("claude", identity))
-            assert _submitting(_TARGET) == {"submitter"}
-
-            _end("submitter")
-            _emit("submitter", "UserPromptSubmit", host=session_activity.HostProcess("claude", identity))
-            assert not _submitting(_TARGET)
-        finally:
-            resumed.kill()
-    assert not list(session_activity.submission_directory(state_paths.state_dir()).glob("*.json"))
-
-
 def test_review_activity_limits_to_target_and_descendants(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(session_activity, "host_processes", lambda: ())
@@ -598,19 +472,3 @@ def test_host_processes_reads_current_generation_despite_cached_previous_generat
     hosts = session_activity.host_processes()
     assert hosts == (session_activity.HostProcess("claude", current),)
     assert hosts[0].identity.exists()
-
-
-@pytest.mark.parametrize("active", [False, True])
-def test_public_submission_activity_uses_the_existing_observation(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], active: bool
-) -> None:
-    def observe(targets, *, excluded_pids):
-        assert targets == {_TARGET}
-        assert os.getpid() in excluded_pids
-        return session_activity.ActivitySnapshot(active_session_ids=frozenset({"input"}) if active else frozenset())
-
-    monkeypatch.setattr(session_activity, "submission_activity", observe)
-    with pytest.raises(SystemExit) as status:
-        atk.main(["wi", "submission", "activity", "--target-repo", _TARGET], home=tmp_path)
-    assert status.value.code == 0
-    assert json.loads(capsys.readouterr().out) == {"active": active, "uncertain": False}

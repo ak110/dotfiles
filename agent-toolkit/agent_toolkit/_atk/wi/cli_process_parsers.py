@@ -34,28 +34,7 @@ def _add_mq_process_loop_parser(sub: Any) -> None:
     _atk_help.add_command(loop_sub, "instruct-cancel", **_atk_help.HELP["atk wi process-loop instruct-cancel"])
 
 
-def _add_mq_submission_parser(sub: Any) -> None:
-    submission = _atk_help.add_command(sub, "submission", **_atk_help.HELP["atk wi submission"])
-    submission_sub = _atk_help.add_subcommands(submission, dest="submission_subcommand")
-    begin = _atk_help.add_command(submission_sub, "begin", **_atk_help.HELP["atk wi submission begin"])
-    activity = _atk_help.add_command(submission_sub, "activity", **_atk_help.HELP["atk wi submission activity"])
-    for target_input in (begin, activity):
-        target_input.add_argument(
-            "--target-repo",
-            metavar="REPO",
-            action="append",
-            required=True,
-            help="投入先の作業ツリーのパスか正規化リモートURL。複数は繰り返し指定する。",
-        )
-    end = _atk_help.add_command(submission_sub, "end", **_atk_help.HELP["atk wi submission end"])
-    end.add_argument("--abort", action="store_true", help="ユーザーが投入作業を中止した場合に記録を削除する。")
-    for parser in (begin, end):
-        parser.add_argument(
-            "--session-id",
-            metavar="SESSION_ID",
-            default=None,
-            help="記録する会話のID。省略時は`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順に使う。",
-        )
+def _add_mq_submit_parser(sub: Any) -> None:
     submit = _atk_help.add_command(sub, "submit", **_atk_help.HELP["atk wi submit"])
     operation = submit.add_mutually_exclusive_group(required=True)
     operation.add_argument("--request-file", type=pathlib.Path, help="自己完結した受付JSONのUTF-8ファイル")

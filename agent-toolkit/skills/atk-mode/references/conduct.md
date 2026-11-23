@@ -5,9 +5,9 @@
 
 ## QCDと3段判定
 
-比べ方は原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）が定める。
-設計の判定順は`agent-basics:writing-standards/references/design-heuristics.md`「設計の判定順」が定める。
-本節は、規範やユーザーが確定した手段の方針から外れる時の追加の条件を置く。
+QCDは原則2（`agent-basics:writing-standards/references/quality-principles-qcd.md`）に従う。
+設計は`agent-basics:writing-standards/references/design-heuristics.md`「設計の判定順」に従う。
+規範や確定した方針から外れる場合は次の条件も適用する。
 
 - 外れるには、推測を超える観測の根拠が要る。
   設定や方針を変える直前に、問題の観測、変える判断の所有者、既存の方針と許容済みの例外、変更が作用する単位を比べる。
@@ -35,7 +35,7 @@
 - 自動圧縮は全ホストで有効とみなし、コンテキストの使用量は引き継ぎや早めのcommitの理由から除く。
 - 委譲先、バックグラウンドタスク、必要な回答の待機は正常な工程の区切りである。
   それ以外の理由で止まる時は、実行できない工程と続けられない理由を報告する。
-- 進行を妨げる欠陥は、その場で直す。
+- 現在か次回の進行を妨げる欠陥は、その場で直す。
 
 ### 先送りの条件と記録
 
@@ -46,6 +46,8 @@
 - 時間の経過や外部への公開を待つ残工程
 - 別のリポジトリの新しい計画が要る事象
 - 是正先のリポジトリが、このホストで編集可でない場合
+- process-wiで現在も次回も妨げない独立した既存不良を、処理量の比較で次回へ渡す場合（`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」）。
+  選定済みや自分の変更の未達は元の要求に従って処理する
 
 process-wiでは、認可された操作と検証で続けられる処理対象WIを同じ巡回で完了する。
 調査・設計の難しさ、残り時間、先行分の完了、別リポジトリの計画が要ることだけを理由に、そのWIの処理を中断または延期しない。
