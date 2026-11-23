@@ -12,8 +12,16 @@ from typing import Any, cast
 
 import pytest
 
-import agent_toolkit._agents_server.commands as atk_agents
-from agent_toolkit._agents_server import agents_wait, manager_base, responses, shared_layout, shared_roots, state, status_file
+from agent_toolkit._agents_server import (
+    agents_wait,
+    manager_base,
+    responses,
+    session_listing,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+)
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
@@ -438,7 +446,7 @@ async def test_four_observation_paths_share_the_same_activity_projection(
             encoding="utf-8",
         )
         listed_by_cli = dict(serialized)
-        atk_agents._add_output_activity(listed_by_cli)  # pylint: disable=protected-access  # noqa: SLF001
+        session_listing.add_output_activity(listed_by_cli)
 
         threshold = state.STALL_NOTICE_SECONDS
 
