@@ -159,8 +159,15 @@ export const missingPreventionRejection = automatedMessage(
 );
 
 export function missingPreventionLine(message: string): boolean {
-  const heads = new Set(reportBodyLines(message).map((line) => line.replaceAll("：", ":")).filter((line) => line.includes(":")).map((line) => line.split(":", 1)[0]!.trim()));
-  return BUGFIX_RECORD_HEADS.every((head) => heads.has(head)) && !heads.has("再発防止");
+  const counts = new Map<string, number>();
+  for (const line of reportBodyLines(message).map((item) => item.replaceAll("：", ":"))) {
+    const separator = line.indexOf(":");
+    if (separator < 0 || !line.slice(separator + 1).trim()) continue;
+    const head = line.slice(0, separator).trim();
+    counts.set(head, (counts.get(head) ?? 0) + 1);
+  }
+  const records = Math.min(...BUGFIX_RECORD_HEADS.map((head) => counts.get(head) ?? 0));
+  return records > 0 && (counts.get("再発防止") ?? 0) < records;
 }
 
 export function reportWarnings(message: string): string[] {

@@ -158,6 +158,9 @@ for (const [message, rejects] of [
   ["進捗: 実装を終えた。\n処置: 試験を足した。", false],
   ["```text\n期待: a\n原因: b\n処置: c\n```", false],
   ["> 期待: a\n> 原因: b\n> 処置: c", false],
+  ["期待: a\n原因: b\n処置: c\n再発防止:\n確認: d", true],
+  ["期待: a\n原因: b\n処置: c\n再発防止: 処置済み。\n\n期待: e\n原因: f\n処置: g", true],
+  ["期待: a\n原因: b\n処置: c\n再発防止: 処置済み。\n\n期待: e\n原因: f\n処置: g\n再発防止: 被覆。既存の検査が防ぐ。", false],
 ] as const) {
   test(`bugfixの記録に再発防止の行が無い報告だけを送信前に差し戻す: ${message.slice(0, 24)}`, () => {
     expect(missingPreventionLine(message)).toBe(rejects);
