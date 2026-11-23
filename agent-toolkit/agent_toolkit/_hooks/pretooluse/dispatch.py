@@ -70,6 +70,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 lazy import dataclasses
 lazy import hashlib
 lazy from collections.abc import Iterable
@@ -175,6 +176,31 @@ def _claude_commit_attribution_disabled(cwd: str) -> bool:
 
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
+_MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
+_ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
+
+
+def _has_original_text_label_in_understanding(message: str) -> bool:
+    section_level = 0
+    for line in message.splitlines():
+        if line.strip().rstrip(":：").strip("*_ ") == "発話の理解":
+            section_level = 6
+            continue
+        heading = _MARKDOWN_HEADING.match(line)
+        if heading:
+            level = len(heading[1])
+            title = heading[2].strip(" #*_")
+            if title == "発話の理解":
+                section_level = level
+                continue
+            if level <= section_level:
+                section_level = 0
+            line = title
+        if section_level and _ORIGINAL_TEXT_LABEL.match(line):
+            return True
+    return False
+
+
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
@@ -322,6 +348,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
+        if isinstance(message, str) and _has_original_text_label_in_understanding(message):
+            return Decision(
+                block=_block_notice(
+                    "「発話の理解」に「原文」の見出しがある。",
+                    fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送する。",
+                )
+            )
         if (
             session_id
             and isinstance(message, str)
