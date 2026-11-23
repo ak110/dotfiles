@@ -663,3 +663,26 @@ def test_missing_worktree_query_error_keeps_owned_resources(
     assert "を実行できない" not in stderr
     assert record_path.read_bytes() == original_record
     assert git_repository.git_output(repo, "rev-parse", record["branch"]) == branch_head
+
+
+@pytest.mark.parametrize("kind", ["plain", "generated", "mixed"])
+@pytest.mark.cpu_limit(2.0, reason="登録済みレーンを実Gitの無視設定と公開CLIで削除か保持する。")
+def test_selected_lane_retains_unknown_ignored_directory(tmp_path, monkeypatch, capsys, kind):
+    repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    root = pathlib.Path(record["worktree"])
+    with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
+        exclude.write("\n/.venv/\n")
+    environment = root / ".venv"
+    environment.mkdir()
+    if kind != "plain":
+        (environment / "pyvenv.cfg").write_text("home = environment\n", encoding="ascii")
+    item = environment / ("CACHEDIR.TAG" if kind == "generated" else "data")
+    item.write_text("data", encoding="utf-8")
+
+    status, result, stderr = _invoke(capsys, "delete")
+    if kind == "generated":
+        assert status == 0 and result["removed"] == ["lane-01"], stderr
+        assert not root.exists()
+    else:
+        assert status == 1 and "無視対象" in result["retained"][0]["reason"], stderr
+        assert item.is_file()

@@ -16,17 +16,98 @@ from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
 
+_CACHE_SIGNATURE = b"Signature: 8a477f597d28d172789f06886806bc55"
 
-def _unowned_data_reason(worktree: pathlib.Path, protected_paths: Iterable[str]) -> str | None:
+
+def _starts_with_regular_file(path: pathlib.Path, prefix: bytes) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    with path.open("rb") as handle:
+        return handle.read(len(prefix)) == prefix
+
+
+def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
+    relative = pathlib.Path(raw)
+    if not raw.endswith("/") or relative.is_absolute() or ".." in relative.parts:
+        return False
+    path = worktree / relative
+    if path.is_symlink() or path.is_junction() or not path.is_dir():
+        return False
+    if path.name == "__pycache__":
+        return all(child.is_file() and not child.is_symlink() and child.suffix == ".pyc" for child in path.iterdir())
+    if path.name in {".pytest_cache", ".ruff_cache"}:
+        recognized = _starts_with_regular_file(path / "CACHEDIR.TAG", _CACHE_SIGNATURE)
+    elif relative == pathlib.Path(".venv"):
+        environment_entries = {
+            ".gitignore",
+            ".lock",
+            "CACHEDIR.TAG",
+            "pyvenv.cfg",
+            "bin",
+            "include",
+            "lib",
+            "lib64",
+            "share",
+            "Scripts",
+            "Include",
+            "Lib",
+        }
+        recognized = _starts_with_regular_file(path / "pyvenv.cfg", b"home = ") and all(
+            child.name in environment_entries for child in path.iterdir()
+        )
+    elif relative == pathlib.Path("agent-toolkit-codex"):
+        recognized = _starts_with_regular_file(path / "GENERATED.md", "# 自動生成ファイル".encode())
+    elif relative.as_posix() in {"agent-toolkit-agy", "agent-basics-agy"}:
+        manifest = path / "plugin.json"
+        if manifest.is_symlink() or not manifest.is_file() or not (worktree / ".claude-plugin" / "marketplace.json").is_file():
+            return False
+        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        recognized = isinstance(metadata, dict) and metadata.get("name") == path.name.removesuffix("-agy")
+    else:
+        return False
+    if not recognized:
+        return False
+
+    def on_error(error: OSError) -> typing.Never:
+        raise error
+
+    for directory, folders, files in path.walk(on_error=on_error):
+        if ".git" in {name.casefold() for name in (*folders, *files)}:
+            return False
+        if any((directory / name).is_junction() for name in folders):
+            return False
+    return True
+
+
+def _unowned_data_reason(
+    worktree: pathlib.Path, protected_paths: Iterable[str], *, allow_generated: bool = False
+) -> str | None:
     path = worktree.resolve()
     if any(pathlib.Path(other) != path and pathlib.Path(other).is_relative_to(path) for other in protected_paths):
         return "別のworktreeを内包するため回収しない"
-    if _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored", "--untracked-files=all"):
+    status = _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored=matching", "--untracked-files=normal", "-z")
+    if any(
+        not (allow_generated and entry.startswith("!! ") and _registered_generated_directory(worktree, entry[3:]))
+        for entry in status.split("\0")
+        if entry
+    ):
         return "Gitの無視対象または新たな変更がある"
     gitdir = pathlib.Path(_lane_records.git(worktree, "rev-parse", "--absolute-git-dir"))
     if any((gitdir / name).exists() for name in ("rebase-apply", "rebase-merge", "BISECT_START", "sequencer")):
         return "worktreeでGit操作が中断中"
     return None
+
+
+def _registered_unowned_data_reason(record: dict[str, typing.Any], worktree: pathlib.Path, trees: dict[str, str]) -> str | None:
+    listed = _lane_records.list_resources()
+    if listed["errors"]:
+        return "所有登録を確認できないため回収しない"
+    protected_paths = (
+        {str(pathlib.Path(item["record"]["worktree"]).resolve()) for item in listed["records"]}
+        | set(trees)
+        | lane_retirement.integration_worktrees(record["common_dir"])
+    )
+    return _unowned_data_reason(worktree, protected_paths, allow_generated=True)
 
 
 def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire_integrated: bool = False) -> str | None:
@@ -65,15 +146,7 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
     if not selected and state.worktree_path:
-        listed = _lane_records.list_resources()
-        if listed["errors"]:
-            return "所有登録を確認できないため回収しない"
-        protected_paths = (
-            {str(pathlib.Path(item["record"]["worktree"]).resolve()) for item in listed["records"]}
-            | set(trees)
-            | lane_retirement.integration_worktrees(record["common_dir"])
-        )
-        reason = _unowned_data_reason(worktree, protected_paths)
+        reason = _registered_unowned_data_reason(record, worktree, trees)
         if reason:
             return reason
     if state.branch:
@@ -200,6 +273,10 @@ def cleanup_session(
                 elif state.worktree_registered:
                     remove_args = ("--force",) if not state.worktree_path else ()
                     if state.worktree_path:
+                        worktree = pathlib.Path(record["worktree"])
+                        reason = _registered_unowned_data_reason(record, worktree, _lane_records.worktrees(repo))
+                        if reason:
+                            raise ValueError(reason)
                         # Gitの保護判定は既に完了しているため、ここでだけ全木を準備する。
                         # 固有手順が別所有者の生成物を撤去できなければ、所有記録を残して失敗する。
                         temp_permissions.prepare_tree(pathlib.Path(record["worktree"]))
