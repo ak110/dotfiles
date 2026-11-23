@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import argparse
-import datetime
 import importlib
 import io
 import json
@@ -411,6 +410,7 @@ def run_upgrade_check(
     registry: UserEnvironmentRegistry | None = None,
     profile_env: Mapping[str, str] | None = None,
     keep_verification_root: bool = False,
+    old_ref: str | None = None,
 ) -> None:
     r"""ローカルremoteを用いて旧版から現行版への更新を終了まで検証する。
 
@@ -437,12 +437,13 @@ def run_upgrade_check(
             "環境変数UVが無い。uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py で起動し直す。"
         )
     current_oid = _git_value(source_repo, "rev-parse", "HEAD", runner=runner)
-    old_oid = resolve_old_commit(source_repo, current_oid, runner=runner)
+    old_oid = (
+        resolve_old_commit(source_repo, current_oid, runner=runner)
+        if old_ref is None
+        else _git_value(source_repo, "rev-parse", "--verify", "--end-of-options", f"{old_ref}^{{commit}}", runner=runner)
+    )
     if old_oid == current_oid:
-        raise UpgradeCheckError(
-            "72時間前以前の別commitを取得できなかった。浅いcloneならgit fetch --unshallowで履歴を取得し、"
-            "git log --onelineで対象より72時間以上前の祖先があることを確認して検証を再実行する。"
-        )
+        raise UpgradeCheckError("更新元と更新先が同じcommitのため更新を検証できない。更新先より前の版を指定してください。")
     print(f"更新検証を開始する: old={old_oid} current={current_oid}")
 
     if platform_name == "windows" and registry is None:
@@ -712,15 +713,12 @@ def _perform_isolated_upgrade(
             run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
         except UpgradeCheckError as error:
             old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
-            current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
-            cutoff = datetime.datetime.fromtimestamp(current_time, datetime.UTC) - datetime.timedelta(hours=_AGE_HOURS)
             raise UpgradeCheckError(
                 "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である。"
                 f"旧版commit={old_oid}、旧版commit時刻={old_time}、現行commit={current_oid}、"
-                f"旧版の選定基準時刻（現行commit時刻の{_AGE_HOURS}時間前）={cutoff.isoformat()}。"
                 "旧版自身に後で修正された不具合がある場合、同じ現行commitで再実行しても同じ旧版が選ばれるため解消しない。"
                 "旧版から現行commitまでのgit logで失敗した工程の修正commitを探し、"
-                f"修正commit時刻から{_AGE_HOURS}時間を過ぎたcommit時刻のcommitで検証すると旧版が修正後へ進む。"
+                "更新元として修正を含む公開版を指定して検証すると、旧版の初期適用を再確認できる。"
                 "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
                 f"元の診断: {error}"
             ) from error
@@ -870,6 +868,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux", "windows"), required=True)
     parser.add_argument("--repo", type=pathlib.Path, default=pathlib.Path.cwd())
+    parser.add_argument("--old-ref", help="更新元のcommit。省略時は約3日前のcommit")
     parser.add_argument(
         "--keep-verification-root",
         action="store_true",
@@ -877,15 +876,18 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        run_upgrade_check(args.repo.resolve(), args.platform, keep_verification_root=args.keep_verification_root)
+        run_upgrade_check(
+            args.repo.resolve(), args.platform, keep_verification_root=args.keep_verification_root, old_ref=args.old_ref
+        )
     except UnsafeWindowsUpgradeEnvironment as error:
         print(error, file=sys.stderr)
         return 1
     except (OSError, ValueError, UpgradeCheckError) as error:
+        old_argument = f' --old-ref "{args.old_ref}"' if args.old_ref is not None else ""
         print(
             f"update-dotfiles旧版更新検証に失敗した: {error}。上記の対処を行い、"
             "uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py "
-            f'--platform {args.platform} --repo "{args.repo}"'
+            f'--platform {args.platform} --repo "{args.repo}"{old_argument}'
             "を再実行してください。解消しない場合はこの失敗ログをdotfilesの作者へ報告してください。",
             file=sys.stderr,
         )

@@ -61,9 +61,9 @@ def test_initial_apply_retried_once_and_update_verified_only_after_old_version_a
         message = str(caught.value)
         assert "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である" in message
         assert "old-oid" in message and "1970-01-09T02:26:40+00:00" in message
-        assert "current-oid" in message and "1970-01-09T13:46:40+00:00" in message
+        assert "current-oid" in message and "修正を含む公開版" in message
         assert "同じ旧版が選ばれる" in message
-        assert "修正commit" in message and "72時間" in message
+        assert "修正commit" in message
     stdout, stderr = capsys.readouterr()
     initial_applies = [arguments for arguments in calls if arguments[0] == "chezmoi"]
     assert len(initial_applies) == 2

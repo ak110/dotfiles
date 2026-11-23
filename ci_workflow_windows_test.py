@@ -35,7 +35,7 @@ _MOZILLA_STEP = "Mozilla予約タスクの停止"
 def test_windows_mozilla_tasks_are_stopped_before_upgrade_check(workflow_data: dict[str, object]) -> None:
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
     stop_index, stop_step = _windows_step(steps, _MOZILLA_STEP)
-    check_index, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
+    check_index, check_step = _windows_step(steps, "直前の公開版からの update-dotfiles 更新検証")
     assert stop_index < check_index
     assert stop_step.get("if") == check_step.get("if")
     assert stop_step.get("shell") == "pwsh"
@@ -48,9 +48,11 @@ def test_windows_upgrade_check_places_verification_root_on_runner_disk(workflow_
     診断ログの保存はrunner.temp配下の検証homeを探すため、置き場所がずれると失敗時のログも失われる。
     """
     steps = expanded_workflow_steps(workflow_mapping(workflow_jobs(workflow_data)["update-dotfiles-upgrade-windows"]))
-    _, check_step = _windows_step(steps, "約3日前からの update-dotfiles 更新検証")
+    _, check_step = _windows_step(steps, "直前の公開版からの update-dotfiles 更新検証")
     lines = [line.strip() for line in str(check_step["run"]).splitlines()]
     check = next(index for index, line in enumerate(lines) if "scripts/check_update_dotfiles_upgrade.py" in line)
+    assert '$old = git rev-list --first-parent -1 "--before=@$currentTime" origin/master' in lines[:check]
+    assert "--old-ref $old" in lines[check]
     for variable in ("TEMP", "TMP"):
         assert f"$env:{variable} = $env:RUNNER_TEMP" in lines[:check], variable
 
@@ -263,7 +265,7 @@ def test_windows_checks_run_as_independent_jobs(workflow_data: dict[str, object]
         if workflow_mapping(job)["runs-on"] == "windows-latest"
     }
     for step, owner in (
-        ("約3日前からの update-dotfiles 更新検証", "update-dotfiles-upgrade-windows"),
+        ("直前の公開版からの update-dotfiles 更新検証", "update-dotfiles-upgrade-windows"),
         ("Windows境界テスト", "test-windows-tests"),
         ("公開入口ランチャーの動作確認", "test-windows-tests"),
         ("install.ps1から初回導入とバックアップを検証", "test-windows-install"),

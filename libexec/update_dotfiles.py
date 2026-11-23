@@ -63,6 +63,7 @@ import argparse
 import contextlib
 import dataclasses
 import io
+import logging
 import os
 import pathlib
 import re
@@ -399,6 +400,38 @@ def _runners(context: _Context) -> dict[str, update_dotfiles_stages.Runner]:
     return runners
 
 
+def _run_post_update(no_sudo: bool) -> int:
+    if not sys.stdin.isatty() or os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") == "1":
+        return 0
+    script = update_dotfiles_runtime.DOTFILES_ROOT / "libexec" / "update_dotfiles.py"
+    argv = [os.environ.get("UV") or "uv", "run", "--no-project", "--script", str(script), "_post-update"]
+    if no_sudo:
+        argv.append("--no-sudo")
+    returncode, _ = _run_step(
+        update_dotfiles_runtime.LOG_STAGE_TOTAL,
+        update_dotfiles_runtime.LOG_STAGE_TOTAL,
+        "管理一時資源の回収",
+        argv,
+        capture_stderr=True,
+        show_heading=False,
+    )
+    return returncode
+
+
+def _post_update(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-sudo", action="store_true")
+    args = parser.parse_args(argv)
+    from agent_toolkit._atk.managed_temp.elevation import sweep_for_update  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    run_id = os.environ["UPDATE_DOTFILES_RUN_ID"]
+    with update_dotfiles_runtime.configure_persistent_log(run_id) as handler:
+        if handler is None:
+            logging.basicConfig(level=logging.INFO, format="%(message)s")
+        sweep_for_update(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """更新処理を排他ロック下で直列実行し、最終exit codeを返す。"""
     args = _parse_args(argv)
@@ -450,11 +483,9 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     if returncode != 0:
                         return update_dotfiles_runtime.finish(returncode)
-                    from agent_toolkit._atk.managed_temp.elevation import (  # pylint: disable=import-outside-toplevel
-                        sweep_for_update,
-                    )
-
-                    sweep_for_update(no_sudo=args.no_sudo, logger=update_dotfiles_runtime.logger)
+                    returncode = _run_post_update(args.no_sudo)
+                    if returncode != 0:
+                        return update_dotfiles_runtime.finish(returncode)
             except update_dotfiles_process.GitReclaimError as error:
                 update_dotfiles_runtime.logger.exception("Git子プロセスの回収失敗")
                 print(str(error), file=sys.stderr)
@@ -487,6 +518,8 @@ if __name__ == "__main__":
     for output_stream in (sys.stdout, sys.stderr):
         if isinstance(output_stream, io.TextIOWrapper):
             output_stream.reconfigure(encoding="utf-8", errors="replace")
+    if sys.argv[1:2] == ["_post-update"]:
+        raise SystemExit(_post_update(sys.argv[2:]))
     raise SystemExit(main(sys.argv[1:]))
 
 
