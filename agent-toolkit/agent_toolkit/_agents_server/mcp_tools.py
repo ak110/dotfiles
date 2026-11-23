@@ -509,6 +509,32 @@ async def send_message(
 
 
 @mcp.tool(
+    name="collect_handoff",
+    title="引き継いだ子sessionの通知・結果の回収",
+    description=(
+        "同じ管理サービスで正式に引き継いだ直属の子だけを対象に、通知または終了結果を1件回収する。"
+        "未回収の通知・結果がなければ待機し、上限に達するとrunningを返す。runningなら回収を再発行し、対象なしのexpiredで終える。"
+        "自分で起動した子の回収には従来どおり`atk agents wait`を使う。"
+    ),
+    structured_output=True,
+)
+async def collect_handoff(
+    timeout: Annotated[
+        float,
+        Field(
+            ge=0,
+            le=30,
+            description="呼出し開始から次の照会を待つ期限（秒）。0は1回照会する。排他を伴う読取・回収処理は期限で中断しない。",
+        ),
+    ] = 30,
+) -> dict[str, Any]:
+    if _SERVICE_MANAGERS is None:
+        return {"status": "expired"}
+    deadline = asyncio.get_running_loop().time() + timeout
+    return await _SERVICE_MANAGERS.poll_handoff_children(_manager(), deadline)
+
+
+@mcp.tool(
     name="kill",
     title="実行中turnの中断",
     annotations=ToolAnnotations(destructive_hint=True),
