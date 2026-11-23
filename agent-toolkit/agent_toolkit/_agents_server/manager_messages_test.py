@@ -42,7 +42,7 @@ async def test_repository_process_reply_after_role_model_change(
         session.prompt = (
             task_documents.task_prompt_header(role)
             + task_documents.TASK_PROMPT_REFERENCES
-            + "---\nmode: delegate\nmodel_type: orchestrate\n---\n"
+            + "---\nmode: delegate\nmodel_type: orchestrate\nwrites_worktree: true\n---\n"
         )
         if phase != "active":
             _complete(session, message="直前の結果")
