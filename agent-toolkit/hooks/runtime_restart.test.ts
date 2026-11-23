@@ -54,7 +54,7 @@ for (const scenario of ["restart", "update", "process", "none", "other", "repl",
 }
 
 for (const status of ["completed", "failed", "killed"] as const) {
-  test(`背景タスクの終了通知は該当IDだけを除き、再起動では残った所有waitだけを止める: ${status}`, async ($, on) => {
+  test(`バックグラウンドタスクの終了通知は該当IDだけを除き、再起動では残った所有waitだけを止める: ${status}`, async ($, on) => {
     mock.env(on, { HOME: "/home/tester" });
     mock.session(on);
     const clock = mock.clock(on);

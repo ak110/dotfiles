@@ -8776,9 +8776,11 @@
   "agent-toolkit/hooks/compact_conversation.ts": {
     "headlessでは直接APIが拒否されるため、ホストが実行する/compactを使う。": 1,
     "modはセッションごとに読み込まれる。予約中だけ状態を保持する。": 1,
+    "「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日」にある。": 1,
     "「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月9日」に記録する。": 1,
     "「agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年11月4日」にある。": 1,
     "「agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日」にある。": 1,
+    "公開modの結合試験による予約・見送り・失敗の観測と再検証は同資料の": 1,
     "受け取る側は圧縮が起きたことを知らない。出来事、要約が無いこと、最初の操作の順で伝える。": 1,
     "圧縮の要約を原本の所在へ置き換える方式の観測と再検証は同資料の": 1,
     "実ホストの制約と両経路の観測は監査記録の": 1,
