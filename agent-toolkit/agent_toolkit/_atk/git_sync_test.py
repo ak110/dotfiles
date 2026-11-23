@@ -901,6 +901,10 @@ def test_sync_failure_classifies_git_output(
     assert expected_cause in failure
     assert next_action.startswith("次の操作: ")
     assert expected_operation in next_action
+    if expected_cause == "接続":
+        assert (
+            next_action.index("agent-basics:bugfix") < next_action.index("未適用を確認") < next_action.index("回復結果を伝える")
+        )
 
 
 def test_require_upstream_names_set_upstream_command(tmp_path: pathlib.Path) -> None:

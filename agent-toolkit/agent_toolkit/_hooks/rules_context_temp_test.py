@@ -210,7 +210,7 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "実行受付前に終了" in context
     assert f"{host} {event}" in context
-    assert "ユーザーへ伝えよ" in context
+    assert context.index("agent-basics:bugfix") < context.index("原因を是正し") < context.index("回復結果を伝える")
     assert "Get-Content -LiteralPath" in context or "cat --" in context
     retry = (
         "atk run-skill --args meta review-session"

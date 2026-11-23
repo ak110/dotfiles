@@ -26,13 +26,24 @@ from agent_toolkit._atk.wi.repo import (
     verify_target_repo_content,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import recover_from_failure
 
 _USER_COMMENT_EDIT_NEXT_ACTION = (
     "本文からユーザーコメント節（`## ユーザーコメント`見出し以降）を除いて再実行する。"
     "保存済みのユーザーコメント節は変更されずに残る"
 )
-_USER_COMMENT_BROKEN_NEXT_ACTION = "`atk wi show {name}`で保存済みのユーザーコメント節の構造を確認し、ユーザーへ報告する"
-_BROKEN_STORED_NEXT_ACTION = "`atk wi show {name}`で保存済み本文の構造を確認し、ユーザーへ報告する"
+_USER_COMMENT_BROKEN_NEXT_ACTION = recover_from_failure(
+    component="WIのユーザーコメント",
+    evidence="保存原本",
+    first_step="`atk wi show {name}`でユーザーコメント節の構造を確認する",
+    retry="本人のコメントを改変せず、構造の不良を解消してから再試行する",
+)
+_BROKEN_STORED_NEXT_ACTION = recover_from_failure(
+    component="WIの本文",
+    evidence="保存原本",
+    first_step="`atk wi show {name}`で本文の構造を確認する",
+    retry="元の内容を保持し、構造を修復してから再試行する",
+)
 _EDITABLE_STATE_NEXT_ACTION = (
     "inbox・processing・holdの項目を指定する。終了した項目は"
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"

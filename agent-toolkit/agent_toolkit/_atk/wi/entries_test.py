@@ -71,7 +71,8 @@ def test_typeless_entry_guides_to_report_instead_of_edit(tmp_path: pathlib.Path,
     capsys.readouterr()
 
     assert f"`atk wi show {path.name}`" in common_next_action
-    assert "ユーザーへ報告する" in common_next_action
+    assert common_next_action.index("原因を確かめる") < common_next_action.index("認可の範囲で回復する")
+    assert common_next_action.index("認可の範囲で回復する") < common_next_action.index("回復結果を伝える")
     assert "でtypeを追記" not in common_next_action
 
 

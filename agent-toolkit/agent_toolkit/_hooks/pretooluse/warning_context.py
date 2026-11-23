@@ -7,6 +7,7 @@ from collections.abc import Sequence
 lazy import hashlib
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common.atomic_file import atomic_write
@@ -45,8 +46,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の保存先条件を確認せよ。"
-                    "`session_id`不足と未配送を委譲元（無ければユーザー）へ報告し、入力の修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の保存",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、入力のsession_idを確認する",
+                        retry="入力を修復してから、止められた元の操作を再試行する",
+                    )
                 ),
             )
         try:
@@ -59,8 +64,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の保存先・権限を確認せよ。"
-                    "未配送と診断を委譲元（無ければユーザー）へ報告し、保存先の修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の保存",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、保存先の権限と状態を確認する",
+                        retry="保存先を修復してから、止められた元の操作を再試行する",
+                    )
                 ),
             )
         reference = format_notice(
@@ -75,8 +84,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の配置を確認せよ。"
-                    "絶対パスが通知枠に収まる配置を委譲元（無ければユーザー）へ報告し、修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の配送",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、絶対パスが通知枠に収まる配置を確認する",
+                        retry="配置を修復してから、止められた元の操作を再試行する",
+                    )
                 ),
             )
         for receipt in receipts:

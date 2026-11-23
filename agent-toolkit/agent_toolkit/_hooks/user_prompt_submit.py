@@ -46,6 +46,7 @@ import json
 import os
 import re
 
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks.notice import begin_delivery, emit_response, informational, resolve_notice, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -169,7 +170,12 @@ def main(payload_text: str) -> int:
                 f"今回のユーザー発話を、作業終了時の確認に使う記録へ残せなかった: {error}",
                 tag="warn",
                 removable_cause=False,
-                fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="発話の記録",
+                    evidence="会話の原文と記録の診断",
+                    first_step="原文から現在の要求を確認して保持する",
+                    retry="発話を再送せず、欠けた記録だけを回復する",
+                ),
             )
         )
 
@@ -220,7 +226,12 @@ def main(payload_text: str) -> int:
                     f"今回のユーザー発話と現行の作業契約との対応を記録できない: {error}",
                     tag="warn",
                     removable_cause=False,
-                    fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
+                    fix=recover_from_failure(
+                        component="作業契約の記録",
+                        evidence="会話の原文と記録の診断",
+                        first_step="原文から現在の要求を確認して保持する",
+                        retry="発話を再送せず、欠けた記録だけを回復する",
+                    ),
                 )
             )
         else:

@@ -33,6 +33,7 @@ from agent_toolkit._atk import managed_temp, run_script
 from agent_toolkit._common import host_homes as _host_homes
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import session_record_paths, session_registry, session_review
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from session_review_prepare_candidates import (
     _SIMILAR_RECORD_KINDS,
@@ -139,8 +140,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
 _MISSING_NEXT_ACTIONS = {
     "evidence_script": (
-        "`atk run-script session-review-prepare -- <引数>`で起動する。"
-        "解消しない場合はagent-toolkitの導入が壊れているため、ユーザーへ報告する"
+        recover_from_failure(
+            component="振り返り準備スクリプトの導入",
+            evidence="診断に示されたスクリプトと導入先",
+            first_step="導入済みの配布物にスクリプトがあるか確かめる",
+            retry="導入を修復し、`atk run-script session-review-prepare -- <引数>` で準備を再試行する",
+        )
     ),
     "work_dir": (
         "通知されたセッションのmanaged-temp内に`mktemp -d '<親>/session-review-XXXXXXXX'`で作成した"

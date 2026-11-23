@@ -45,6 +45,6 @@ def test_unavailable_saved_notice_names_read_operation_and_missing_input(tmp_pat
     assert "`agent-toolkit:atk-mode/playbooks/managed-temp.md`" in result
     assert "SKILL.md" not in result
     assert "cat --" not in result and "Get-Content -LiteralPath" not in result
-    assert "委譲元（無ければユーザー）" in result
-    assert "再試行せよ" in result
+    assert result.index("agent-basics:bugfix") < result.index("再試行する") < result.index("回復結果を伝える")
+    assert "委譲元またはユーザー" in result
     assert "未配送の通知本文" not in result

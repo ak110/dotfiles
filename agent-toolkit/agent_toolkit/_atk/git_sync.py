@@ -38,6 +38,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
@@ -686,8 +687,12 @@ def _sync_failure_next_action(resolved: pathlib.Path, error: subprocess.CalledPr
     if any(marker in text for marker in _NETWORK_FAILURE_MARKERS):
         return (
             "remoteへ接続できなかった",
-            f"ネットワーク接続を確認し、時間をおいて失敗した`atk`操作を再実行する。"
-            f"繰り返す場合は`git -C {resolved} remote -v`の接続先を確認してユーザーへ報告する",
+            recover_from_failure(
+                component="Gitの接続",
+                evidence="remoteの診断と設定",
+                first_step=f"ネットワーク接続と `git -C {resolved} remote -v` の接続先を確認し、誤設定なら認可内で直す",
+                retry="接続を回復し、先行操作の未適用を確認した場合だけ再実行する",
+            ),
         )
     if any(marker in text for marker in _NON_FAST_FORWARD_MARKERS):
         return (

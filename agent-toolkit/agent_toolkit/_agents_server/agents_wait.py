@@ -34,7 +34,7 @@ from agent_toolkit._common import delegated_session, private_directory, session_
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.json_lines import split_lines
-from agent_toolkit._common.next_action import ActionableError, report, with_next_action
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure, report, with_next_action
 from agent_toolkit._common.wait_schedule import get_cli_wait_timeout
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
@@ -64,13 +64,17 @@ _PRECEDING_WAIT_NEXT_ACTION = (
     "保存出力を受け取れず`run_path`が示されている場合は、"
     "`jq -r .output -- <run_path>`でrun記録の`output`を読み、その`agent_message_path`から本文を読む"
 )
-_BROKEN_STATE_NEXT_ACTION = (
-    "agents_serverの状態が壊れているため、MCPの`list`で保持状態を確かめ、agents_serverの不具合としてユーザーへ報告する"
+_BROKEN_STATE_NEXT_ACTION = recover_from_failure(
+    component="待機状態",
+    evidence="待機の診断と保存状態",
+    first_step="MCPの`list`で保持状態を確かめる",
+    retry="状態を回復し、対象を確認できてから待機を再実行する",
 )
-_READ_FAILURE_NEXT_ACTION = (
-    "この待機では結果本文を配送していない。"
-    "MCPの`show`で対象sessionの状態を確かめ、結果ファイルの読み取り権限と内容を確認して`atk agents wait`を再実行する。"
-    "読めない状態が続く場合はagents_serverの不具合としてユーザーへ報告する"
+_READ_FAILURE_NEXT_ACTION = recover_from_failure(
+    component="待機結果の読取",
+    evidence="診断と結果ファイル",
+    first_step="この待機では結果本文を配送していないため、MCPの`show`で対象とファイルの権限・内容を確認する",
+    retry="結果を読み取れる状態に戻してから`atk agents wait`を再実行する",
 )
 _ABSENT_TARGETS_NEXT_ACTION = "委譲先を起動してから`atk agents wait`を実行する"
 _SAVED_RESULT_NEXT_ACTION = (

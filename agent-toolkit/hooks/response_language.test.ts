@@ -1,4 +1,5 @@
 import { expect, mock, test } from "claude-code/testing";
+import { languageCheckNotice } from "./response_language.ts";
 
 const ENGLISH = "The investigation is complete and the results have been verified.";
 
@@ -33,3 +34,14 @@ for (const delegated of [false, true]) {
     });
   }
 }
+
+
+test("言語検査の失敗は元の操作を再発行せず、是正の結果を伝える", () => {
+  const message = languageCheckNotice("検査スクリプト、終了コード 2");
+  const noReplay = message.indexOf("元の操作は再発行するな");
+  const cause = message.indexOf("原因を確かめる");
+  const repair = message.indexOf("認可内の配布物・設定を修復");
+  const report = message.indexOf("回復結果か");
+  expect(message.includes("終了コード 2")).toBe(true);
+  expect(noReplay >= 0 && noReplay < cause && cause < repair && repair < report).toBe(true);
+});

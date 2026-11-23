@@ -493,7 +493,10 @@ def test_prepare_reports_missing_items(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.splitlines()[0] == "不足: evidence_script"
-    assert captured.err.splitlines()[1].startswith("次の操作: `atk run-script session-review-prepare --")
+    action = captured.err.splitlines()[1]
+    assert action.startswith("次の操作: ")
+    retry = "`atk run-script session-review-prepare -- <引数>`"
+    assert action.index("agent-basics:bugfix") < action.index(retry) < action.index("回復結果を伝える")
 
 
 def test_default_review_uses_completed_scope_and_full_ignores_it(tmp_path, capsys):

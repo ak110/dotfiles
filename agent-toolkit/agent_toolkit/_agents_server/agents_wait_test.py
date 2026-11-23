@@ -343,7 +343,8 @@ def test_agents_wait_delivers_collected_results_before_reporting_read_failure(
     assert f"\n{NEXT_ACTION_PREFIX}" in captured.err
     assert "`show`" in captured.err
     assert "この待機では結果本文を配送していない" in captured.err
-    assert "`atk agents wait`を再実行する" in captured.err
+    assert captured.err.index("agent-basics:bugfix") < captured.err.index("`atk agents wait`を再実行する")
+    assert captured.err.index("`atk agents wait`を再実行する") < captured.err.index("回復結果を伝える")
 
 
 def test_agents_wait_outputs_terminal_result_with_notice_only_session(
