@@ -11,7 +11,7 @@ CLIはセッションの起動・終了後の再起動と制御を担当し、WI
    必要なら `atk wi check-alerts` でCIの失敗を別に確認する。
    `atk wi submission activity --target-repo <対象リポジトリ>` のactiveを確かめる。
    投入待ちは該当する対象だけを保留し、進められる他の対象を止めない。
-   進められる対象が1つも無ければ、常駐では60秒待って手順2に戻り、単回実行では結果を記録してから `atk agents-exit-session` で終了する。
+   進められる対象が1つも無ければ、常駐では60秒待って手順2に戻り、単回実行では `atk agents-exit-session` で終了する。
 3. `agent-toolkit:atk-mode/playbooks/process-wi.md` で対象ごとの設定・認可と候補を確認し、選定、専用worktree、実行レビュー、統合、公開を進める。
    複数対象の配分と担当への受け渡しは `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md` を使う。
    登録元checkoutは直接編集せず、対象と系統ごとの専用作業ツリーから各レーンを作る。

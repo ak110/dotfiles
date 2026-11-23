@@ -31,5 +31,5 @@ MCPサーバーの`SessionState`やセッション登録簿自体の更新は、
 
 統括はセッション終了前のレーン検収で、integration.phaseが`finalized`のものだけを完了として受理する。
 `git-integrated`は後処理が残る中間状態として保持する。
-対象ごとの結果と残工程は統括が保存して検収する（[登録全体のAWI処理の結果と終了](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos-results.md)）。
+対象ごとの結果と残工程は統括が検収して完了報告に書き、ファイルへは保存しない（[登録全体のAWI処理の結果と終了](../../agent-toolkit/skills/atk-mode/playbooks/process-wi-all-repos-results.md)）。
 レーン管理が登録簿へ書く権限は追加せず、process-loopが起動・観測する本体CLIの公開と、agents_serverの委譲turnの公開を区別する。
