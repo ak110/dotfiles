@@ -7,6 +7,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import listing
+from agent_toolkit._testing import git_repository
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
 
@@ -197,3 +198,37 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
 
     assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
     assert baseline.read_bytes() == original
+
+
+def test_process_loop_progress_reads_new_merge_work_item_from_upstream(tmp_path, monkeypatch, capsys):
+    notes = _setup_notes(tmp_path)
+    server = git_repository.init_bare_repository(tmp_path / "origin.git")
+    git_repository.init_repository(notes, initial_branch="main")
+    before = "20261123-140000-001.md"
+    _write_awi_file(notes, before, source="implement")
+    git_repository.commit_all(notes, "begin")
+    git_repository.run_git(notes, "remote", "add", "origin", str(server))
+    git_repository.run_git(notes, "push", "-u", "origin", "main")
+    repository = config.ConfiguredRepository("github.com/example/foo", tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "snapshot-remote")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "snapshot-remote")
+    baseline = tmp_path / "snapshot.json"
+    with pytest.raises(SystemExit) as invocation:
+        atk.main(
+            ["wi", "list", "--skip-pull", "--count", "--configured-repos", "--snapshot-output", str(baseline)],
+            home=tmp_path,
+        )
+    assert invocation.value.code == 0
+    capsys.readouterr()
+    other = tmp_path / "publisher"
+    git_repository.run_git(tmp_path, "clone", "-b", "main", str(server), str(other))
+    new = "20261123-145959-001.md"
+    path = _write_awi_file(other, new, source="implement")
+    text = path.read_text(encoding="utf-8").replace("state: inbox", "state: inbox\nmerge_branch: worktree-done")
+    path.write_text(text, encoding="utf-8")
+    git_repository.commit_all(other, "publish")
+    git_repository.run_git(other, "push")
+    assert not tuple(notes.rglob(new))
+    assert listing.progress_new_wis("snapshot-remote") == (f"{new} (source: implement、merge_branch: あり)",)

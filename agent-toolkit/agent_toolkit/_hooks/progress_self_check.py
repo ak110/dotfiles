@@ -170,8 +170,8 @@ def _new_wi_text(session_id: str) -> str:
     if rows is None:
         return "新着WIは未確認（開始時集合なし）。"
     if not rows:
-        return "ローカルキューの新着WIは0件（遠隔とは未同期）。"
-    return f"ローカルキューで処理可能な新着WI（遠隔とは未同期）: {'、'.join(rows)}。"
+        return "新着WIは0件。"
+    return f"処理可能な新着WI: {'、'.join(rows)}。"
 
 
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:

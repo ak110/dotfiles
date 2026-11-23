@@ -10,6 +10,7 @@ from collections.abc import Mapping
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.git_sync import has_remote
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -540,6 +541,13 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
     labels = []
     with _wi_sync.repo_lock(private_notes, timeout=0):
         _wi_sync.ensure_mutation_allowed(private_notes)
+        # 点検は操作を止めないよう待機を制限し、分岐時のrebaseと旧形式移行は通常の一覧へ任せる。  # pyfltr: allow-comment
+        with _git_command.timeout_scope(8.0):
+            if has_remote(private_notes):
+                _wi_sync.run_git(["fetch"], private_notes, forward_error_output=False)
+                _wi_sync.run_git(["merge", "--ff-only", "@{u}"], private_notes, forward_error_output=False)
+            elif _git_command.run(["remote"], cwd=private_notes, capture_output=True, check=True).stdout.strip():
+                raise ValueError("private-notesの同期先が設定されていない")
         snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
         for snapshot in snapshots:
             repo = snapshot.repository
