@@ -489,7 +489,7 @@ def _pytools_install_notices() -> list[post_apply_outcome.PostApplyNotice]:
     if not state:
         return []
     messages = {
-        "deferred": "pytoolsの再インストールを延期しました。使用中のプロセスを終了してupdate-dotfilesを再実行してください。",
+        "deferred": "pytoolsの再インストールを延期した。更新担当は使用中のプロセスの終了を待ってupdate-dotfilesを再実行する。",
         "failed": "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
     }
     try:

@@ -798,7 +798,7 @@ def _ensure_plugin_cache_complete(name: str) -> Literal["unchanged", "repaired",
                     name,
                     f"plugin cache に {', '.join(missing)} がありませんが、稼働中の参照があるため修復を延期しました"
                     f"（{'、'.join(reasons)}）。導入先 {log_format.home_short(cache_dir)} を削除せず保持しています。"
-                    + "Claude Codeのセッションを全て終了してから`update-dotfiles`を再実行してください。",
+                    + "更新担当はセッションの終了を待ち、稼働中の参照がなくなってから`update-dotfiles`を再実行する。",
                 ),
             )
             return "deferred"
@@ -861,7 +861,7 @@ def _remove_development_artifacts(name: str) -> tuple[bool, int, bool]:
                 log_format.format_status(
                     name,
                     f"plugin cache の開発用生成物 {short} を参照中のため削除を延期しました（{'、'.join(reasons)}）。"
-                    + "参照の終了後に`update-dotfiles`を再実行してください。",
+                    + "更新担当は参照の終了を待って`update-dotfiles`を再実行する。",
                 ),
             )
             continue
@@ -897,7 +897,7 @@ def _remove_stale_source_environment(dotfiles_root: Path) -> bool:
             log_format.format_status(
                 "plugins",
                 f"旧版が作った配布元の仮想環境 {short} を参照中のため削除を延期しました（{'、'.join(references)}）。"
-                "参照の終了後に`update-dotfiles`を再実行してください。",
+                "更新担当は参照の終了を待って`update-dotfiles`を再実行する。",
             ),
         )
         return False

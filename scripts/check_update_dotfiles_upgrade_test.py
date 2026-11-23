@@ -15,7 +15,6 @@ from agent_toolkit._agents_server import service_forward
 
 from pytools import post_apply
 from pytools._internal import (
-    antigravity_plugin,
     codex_runtime,
     install_codex_plugins,
     log_format,
@@ -24,6 +23,7 @@ from pytools._internal import (
 )
 
 _SCRIPT = pathlib.Path(__file__).with_name("check_update_dotfiles_upgrade.py")
+_LEGACY_AGY_NOTICE = upgrade._LEGACY_ANTIGRAVITY_UPDATE_WARNING  # pylint: disable=protected-access
 _CODEX_TRUST_MESSAGE = install_codex_plugins._CODEX_HOOK_TRUST_NOTICE.message  # pylint: disable=protected-access
 
 
@@ -309,7 +309,7 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
     """正常な更新の案内、隔離homeへ展開されたPATH項目、uvの複製切替は検証失敗にしない。"""
     missing = tmp_path / ".dotnet" / "tools"
     (tmp_path / "update-dotfiles.log").write_text(
-        f"2026-10-28 12:00:00,000 run=check WARNING {antigravity_plugin.UPDATED_NOTICE}\n"
+        f"2026-10-28 12:00:00,000 run=check WARNING {_LEGACY_AGY_NOTICE}\n"
         f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n"
         "2026-10-28 12:00:00,000 run=check WARNING     PATH 整理: ユーザー PATH に存在しないエントリーを検出: "
         f"%USERPROFILE%\\.dotnet\\tools (展開: {missing})。"
@@ -324,7 +324,6 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
 
 # test-copy-contract: 更新案内の別の生成側とログ検収側の許容定義を一致させ、正常更新の誤失敗を防ぐ。
 def test_allowed_notice_matches_post_apply_source() -> None:
-    assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
     assert upgrade._CODEX_HOOK_TRUST_NOTICE == _CODEX_TRUST_MESSAGE  # pylint: disable=protected-access
 
 
@@ -347,7 +346,7 @@ def test_upgrade_accepts_planned_codex_restart_notice(
     [
         "pytoolsの再インストールに失敗しました。失敗理由を確認してupdate-dotfilesを再実行してください。",
         "PATH 整理: ユーザー PATH に存在しないエントリーを検出: C:\\outside\\bin (展開: C:\\outside\\bin)。削除する",
-        f"{antigravity_plugin.UPDATED_NOTICE} 追加の文言",
+        f"{_LEGACY_AGY_NOTICE} 追加の文言",
         f"{_CODEX_TRUST_MESSAGE} 追加の文言",
         "    codex plugins: app-server daemonの自動再起動に失敗 (exit 9: daemon restart detail)。"
         "実行中のCodexセッションを終了し、codex app-server daemon restartを実行してください。",
@@ -363,7 +362,7 @@ def test_other_update_warnings_still_fail(tmp_path: pathlib.Path, message: str) 
 @pytest.mark.parametrize("level", ["ERROR", "CRITICAL"])
 @pytest.mark.parametrize(
     "message",
-    [antigravity_plugin.UPDATED_NOTICE, _CODEX_TRUST_MESSAGE],
+    [_LEGACY_AGY_NOTICE, _CODEX_TRUST_MESSAGE],
 )
 def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, level: str) -> None:
     (tmp_path / "update-dotfiles.log").write_text(f"2026-10-28 12:00:00,000 run=check {level} {message}\n", encoding="utf-8")

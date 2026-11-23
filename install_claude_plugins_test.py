@@ -57,6 +57,9 @@ def test_restart_notice_requires_codex_plugin_state_change(
     assert ("更新を担当するエージェント:" in result.stderr) is expect_notice
     assert ("接続中のセッションがないことを確認" in result.stderr) is expect_notice
     assert ("ユーザーに再起動を依頼しない" in result.stderr) is expect_notice
+    assert ("すべての進行中の作業が終わるまで待つ" in result.stderr) is expect_notice
+    assert ("安全に切断できない場合" in result.stderr) is expect_notice
+    assert ("終了コードが0で、JSON応答のstatusがrestarted" in result.stderr) is expect_notice
 
 
 @pytest.mark.parametrize("kind", installer_runners())

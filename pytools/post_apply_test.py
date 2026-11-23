@@ -232,7 +232,7 @@ class TestPytoolsInstallNotices:
     @pytest.mark.parametrize(
         ("state", "expected"),
         [
-            ("deferred", "pytoolsの再インストールを延期しました。"),
+            ("deferred", "更新担当は使用中のプロセスの終了を待って"),
             ("failed", "pytoolsの再インストールに失敗しました。"),
         ],
     )

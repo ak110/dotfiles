@@ -48,8 +48,9 @@ _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
         "Codex pluginを変更した。app-server daemonは自動再起動しない。"
         "更新を担当するエージェント: "
-        "対象daemonの全クライアントを管理できる保守時間に、新規接続を止め、接続中のセッションがないことを確認して次のコマンドを実行する。"
-        "JSON応答のstatusがrestartedであることを確認する。無接続を確定できなければ延期する。ユーザーに再起動を依頼しない。"
+        "対象daemonの全クライアントを管理できる保守時間に、新規接続を止め、すべての進行中の作業が終わるまで待つ。"
+        "安全に切断できない場合や無接続を確定できない場合は延期する。接続中のセッションがないことを確認して次のコマンドを実行する。"
+        "終了コードが0で、JSON応答のstatusがrestartedであることを確認する。ユーザーに再起動を依頼しない。"
     ),
     command="codex app-server daemon restart",
     warning=False,
