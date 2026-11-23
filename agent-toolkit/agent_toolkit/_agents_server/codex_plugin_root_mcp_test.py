@@ -17,9 +17,9 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from agent_toolkit._agents_server.mcp_transport_test import _EXPECTED_TOOLS
 from agent_toolkit._common import plugin_environment, process_identity
 from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_NAMES
 from agent_toolkit._testing.codex_plugin_support import (
     _REAL_MCP_PREPARE_TIMEOUT,
     _cleanup_entry,
@@ -102,7 +102,6 @@ async def test_stable_plugin_root_shared_across_processes(
     logs: list[pathlib.Path] = []
     observed: list[dict[str, Any]] = []
     area: pathlib.Path | None = None
-    expected_tools = _EXPECTED_TOOLS
     try:
         # 配布元と保持先の2環境のcold導入に、実MCP操作の予算を加える。
         with contextlib.ExitStack() as files, anyio.fail_after(135):
@@ -121,7 +120,7 @@ async def test_stable_plugin_root_shared_across_processes(
                     initialized = await client.initialize()
                     assert initialized.server_info.name == "agents_server"
                     tools = {tool.name for tool in (await client.list_tools()).tools}
-                    assert tools == expected_tools
+                    assert tools == EXPECTED_TOOL_NAMES
                     clients.append(client)
                     records = [json.loads(path.read_text(encoding="utf-8")) for path in lease_directory.glob("*.json")]
                     leases = [record for record in records if "path" in record]
@@ -161,7 +160,7 @@ async def test_stable_plugin_root_shared_across_processes(
                         (source / version_file).write_text("更新された配布元", encoding="utf-8")
                         assert (held / version_file).read_bytes() == original
                         for client in clients:
-                            assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
+                            assert {tool.name for tool in (await client.list_tools()).tools} == EXPECTED_TOOL_NAMES
                         shutil.rmtree(source)
                         assert not source.exists()
                         for target in (area, held):
@@ -176,7 +175,7 @@ async def test_stable_plugin_root_shared_across_processes(
                             )
                             assert protected.returncode == 2, protected.stderr
                 for client in clients:
-                    assert {tool.name for tool in (await client.list_tools()).tools} == expected_tools
+                    assert {tool.name for tool in (await client.list_tools()).tools} == EXPECTED_TOOL_NAMES
                     listed = await client.call_tool("list", {})
                     assert not listed.is_error
                     assert listed.structured_content is not None and listed.structured_content["sessions"] == []

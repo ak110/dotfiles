@@ -24,25 +24,14 @@ from agent_toolkit._testing.agents_server_support import (
     _observed_input_lines,
     _start_tool,
 )
+from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_NAMES
 from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 def test_public_tools_expose_single_start_with_modes() -> None:
-    assert set(mcp_tools.mcp._tool_manager._tools) == {
-        "start",
-        "send_message",
-        "collect_handoff",
-        "kill",
-        "list",
-        "show",
-        "stop",
-        "send_to_user",
-        "compact_conversation",
-        "apply_runtime_changes",
-        "permissions",
-    }
+    assert set(mcp_tools.mcp._tool_manager._tools) == EXPECTED_TOOL_NAMES
     start_tool = _start_tool()
     properties = start_tool.parameters["properties"]
     assert properties.keys() == {
