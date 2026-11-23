@@ -103,6 +103,8 @@ def test_living_roots_include_waiting_but_preserve_activity(
     before = {path: path.read_bytes() for path in session_activity.activity_directory(tmp_path).iterdir()}
     activity = session_activity.scan_activity(state_root=tmp_path, processes=())
     assert session_activity.living_root_session_ids(state_root=tmp_path) == {"root"}
+    assert session_activity.root_activity("root", state_root=tmp_path)["status"] == "稼働中"
+    assert session_activity.root_activity("missing", state_root=tmp_path)["status"] == "不明"
     assert session_activity.scan_activity(state_root=tmp_path, processes=()) == activity
     assert "root" not in activity.active_session_ids
     assert {path: path.read_bytes() for path in before} == before
@@ -128,6 +130,8 @@ def test_living_roots_require_valid_process_evidence(tmp_path: pathlib.Path, inv
     path.write_text("{" if invalid == "broken" else json.dumps(record), encoding="utf-8")
     before = path.read_bytes()
     assert not session_activity.living_root_session_ids(state_root=tmp_path)
+    expected = "終了" if invalid == "dead" else "不明"
+    assert session_activity.root_activity("root", state_root=tmp_path)["status"] == expected
     assert path.read_bytes() == before
 
 

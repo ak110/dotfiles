@@ -38,6 +38,7 @@ from agent_toolkit._atk.wi import web_input as wi_web_input
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
 from agent_toolkit._common.markdown_headings import normalize_newlines, top_level_atx_headings
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.wi_layout import DATED_NAME
 from agent_toolkit._git import remote as _git_remote
 
 type JsonObject = dict[str, typing.Any]
@@ -543,8 +544,21 @@ class Operations:
                     and kind == wi_constants.WI_TYPE_AWI
                     and _source_kind(metadata.get("source")) == "agent"
                 )
+            other_names_possible = ".md" in DATED_NAME.sub("", display_text)
+            names = (
+                {
+                    candidate.name
+                    for candidate in iter_entry_paths(self.private_notes)
+                    if candidate.name != normalized
+                    and candidate.name in display_text
+                    and not DATED_NAME.fullmatch(candidate.name)
+                }
+                if other_names_possible
+                else set()
+            )
             return {
                 **detail_entry,
+                "referenced_wi_names": sorted(names),
                 "content": text,
                 "content_html": _render_content(display_text),
                 "body_html": _render_body(display_text),

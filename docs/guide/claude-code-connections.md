@@ -1,5 +1,7 @@
 # agent-toolkitの接続設定
 
+認証の所在と使用順は、`atk serve`の「設定」の「接続」で変更する。
+
 接続の準備と切替条件を扱う。
 保存するコマンドは[接続の設定例](claude-code-connection-examples.md)を参照。
 
@@ -15,7 +17,8 @@
 | `credits` | 有限のAPIクレジット | ClaudeはAPI接続のenvファイル、Codexは`config.toml`のprovider定義 |
 | `payg` | 従量課金API | `credits`と同じ形式で、接続先とキーを別に用意する |
 
-設定キーは認証の所在と使用順の2系統で、どちらも`atk config set <キー> <値>`で保存する。
+設定は認証の所在と使用順の2系統に分かれる。
+画面を開けない場合は`atk config set <キー> <値>`で保存する。
 
 | キー | 内容 | 初期値 |
 | --- | --- | --- |

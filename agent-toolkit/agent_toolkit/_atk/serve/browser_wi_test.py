@@ -480,3 +480,94 @@ async def test_uwi_detail_offers_answer_and_other_operations_at_once(browser_har
     await footer.locator("#save-answer-button").click()
     await detail.wait_for(state="hidden")
     assert choice in path.read_text(encoding="utf-8")
+
+
+@pytest.mark.asyncio(loop_scope="session")
+@pytest.mark.parametrize("width", [1280, 480])
+async def test_wi_references_open_nested_readonly_dialogs(browser_harness: _BrowserHarness, width: int) -> None:
+    harness = browser_harness
+    for filename, body in (
+        (
+            "parent.md",
+            "depends_on: [child.md, 20261011-203736-1001.md]\n---\n\n"
+            "`child.md`、旧式 WI.mdを確認、AGENTS.md、parent.md\n\n" + "親の本文\n\n" * 24,
+        ),
+        ("child.md", "---\n\n```text\n20261011-203736-1000.md\n```\n"),
+        ("20261011-203736-1000.md", "---\n\n孫の本文\n"),
+        ("旧式 WI.md", "---\n\n参照先\n"),
+    ):
+        _entry_path(harness.root, filename).write_text("---\ntype: awi\nstate: inbox\n" + body, encoding="utf-8")
+    page = harness.page
+    await page.set_viewport_size({"width": width, "height": 900})
+    await page.goto(harness.base_url + "/?filename=parent.md")
+    detail = page.locator("#detail-dialog")
+    await playwright.async_api.expect(detail.locator("#detail-content a")).to_have_count(2)
+    links = detail.locator("#detail-metadata").get_by_role("link")
+    await playwright.async_api.expect(links).to_have_count(2)
+    await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text('["child.md"')
+    await links.last.click()
+    missing = page.get_by_role("dialog", name="20261011-203736-1001.md（1段目）")
+    await playwright.async_api.expect(missing).to_contain_text("WIが見つかりません。")
+    await page.keyboard.press("Escape")
+    await links.first.click()
+    child = page.get_by_role("dialog", name="child.md（1段目）")
+    await playwright.async_api.expect(child.get_by_role("button")).to_have_count(2)
+    parent_rect = await detail.bounding_box()
+    child_rect = await child.bounding_box()
+    assert parent_rect is not None and child_rect is not None
+    assert child_rect["x"] + child_rect["width"] == pytest.approx(parent_rect["x"] + parent_rect["width"], abs=1)
+    assert child_rect["y"] + child_rect["height"] == pytest.approx(parent_rect["y"] + parent_rect["height"], abs=1)
+    if width == 480:
+        assert (child_rect["x"], child_rect["y"]) == pytest.approx((parent_rect["x"], parent_rect["y"]), abs=1)
+    else:
+        assert child_rect["x"] > parent_rect["x"]
+        assert child_rect["y"] > parent_rect["y"]
+    await child.get_by_role("link", name="20261011-203736-1000.md").click()
+    grandchild = page.get_by_role("dialog", name="20261011-203736-1000.md（2段目）")
+    await playwright.async_api.expect(grandchild).to_contain_text("孫の本文")
+    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(grandchild).to_have_count(0)
+    await child.get_by_role("button", name="このWIを開く").click()
+    await playwright.async_api.expect(detail.locator("#detail-filename")).to_have_text("child.md")
+
+
+@pytest.mark.parametrize(("dimension", "boundary"), [("width", "33rem"), ("height", "21rem")])
+@pytest.mark.asyncio(loop_scope="session")
+async def test_wi_reference_stops_offset_at_readable_boundary(
+    browser_harness: _BrowserHarness, dimension: str, boundary: str
+) -> None:
+    harness = browser_harness
+    for name, text in (
+        ("parent.md", "`legacy child.md`\n"),
+        ("legacy child.md", "`grandchild.md`\n"),
+        ("grandchild.md", "境界の確認\n"),
+    ):
+        _entry_path(harness.root, name).write_text("---\ntype: awi\nstate: inbox\n---\n\n" + text, encoding="utf-8")
+    page = harness.page
+    await page.set_viewport_size({"width": 1280, "height": 900})
+    await page.goto(harness.base_url + "/?filename=parent.md")
+    parent = page.locator("#detail-dialog")
+    await playwright.async_api.expect(parent).to_be_visible()
+    await parent.evaluate(
+        """(element, {dimension, boundary}) => {
+           element.style.width = "50rem";
+           element.style.height = "30rem";
+           element.style[dimension] = boundary;
+        }""",
+        {"dimension": dimension, "boundary": boundary},
+    )
+    opened_from = parent.get_by_role("link", name="legacy child.md")
+    await opened_from.click()
+    child = page.get_by_role("dialog", name="legacy child.md（1段目）")
+    parent_bounds, child_bounds = await parent.bounding_box(), await child.bounding_box()
+    assert parent_bounds is not None and child_bounds is not None
+    assert child_bounds["x"] > parent_bounds["x"]
+    assert child_bounds["y"] > parent_bounds["y"]
+    next_link = child.get_by_role("link", name="grandchild.md")
+    await next_link.click()
+    last = page.get_by_role("dialog", name="grandchild.md（2段目）")
+    assert await last.bounding_box() == child_bounds
+    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(next_link).to_be_focused()
+    await page.keyboard.press("Escape")
+    await playwright.async_api.expect(opened_from).to_be_focused()

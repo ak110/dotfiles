@@ -19,8 +19,8 @@ from agent_toolkit._agents_server import (
     owner_lost,
     record_paths,
     result_projection,
-    resume_waits,
     retained_results,
+    session_listing,
     shared_layout,
     shared_roots,
     state,
@@ -30,7 +30,7 @@ from agent_toolkit._agents_server.notify import send_notification
 from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
-from agent_toolkit._common import effort_requests, session_activity, session_registry
+from agent_toolkit._common import effort_requests, session_registry
 from agent_toolkit._common.next_action import recover_from_failure, report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
@@ -39,7 +39,6 @@ _COLUMN_GAP = 2
 """一覧の列の間に置く最小の空白数。statusLineの行と同じ値にする。"""
 _MIN_DESCRIPTION_WIDTH = 20
 """狭い端末でも行動・進捗の欄へ残す表示幅。名前の欄はこの幅を残すよう先に短くする。"""
-_RIGHT_SEPARATOR = " · "
 _ELLIPSIS = "…"
 _CLEAR_SCREEN = "\x1b[H\x1b[2J"
 
@@ -154,7 +153,9 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
                     )
                 )
             return _watch_list(include_terminated=args.include_terminated)
-        groups = _list_groups(human=human, root_session_id=root_session_id, include_terminated=args.include_terminated)
+        groups = session_listing.list_groups(
+            human=human, root_session_id=root_session_id, include_terminated=args.include_terminated
+        )
         if (
             not human
             and not any(sessions for _, sessions in groups)
@@ -211,13 +212,17 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         )
     if root_session_id is None:
         root_session_id = shared_roots.find_root_session_id_for_session(args.session_id)
-    sessions = [] if root_session_id is None else _load_sessions(root_session_id)
+    sessions = [] if root_session_id is None else session_listing.load_sessions(root_session_id)
     selected = next((session for session in sessions if session.get("session_id") == args.session_id), None)
     if selected is None:
         resolved = shared_roots.find_root_session_id_for_session(args.session_id)
         if resolved is not None and resolved != root_session_id:
             selected = next(
-                (session for session in _load_sessions(resolved) if session.get("session_id") == args.session_id),
+                (
+                    session
+                    for session in session_listing.load_sessions(resolved)
+                    if session.get("session_id") == args.session_id
+                ),
                 None,
             )
             root_session_id = resolved
@@ -285,31 +290,12 @@ def _registry_interrupted_turns(session_id: str) -> list[dict[str, Any]]:
     return result_projection.interrupted_turns_projection(session_registry.resolve(session_id).interrupted_turns)
 
 
-def _list_groups(
-    *, human: bool, root_session_id: str | None, include_terminated: bool
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    """一覧の対象sessionをrootごとに返す。人の端末では全root、エージェント環境では現在の会話のrootを読む。"""
-    living_roots = session_activity.living_root_session_ids() if human else frozenset()
-    root_ids = (
-        sorted(set(shared_layout.list_root_session_ids()) | living_roots)
-        if human
-        else ([root_session_id] if root_session_id else [])
-    )
-    groups = [(root_id, _load_sessions(root_id)) for root_id in root_ids]
-    if not include_terminated:
-        groups = [
-            (root_id, [s for s in sessions if s.get("status") == "running" or s.get("result_available") is True])
-            for root_id, sessions in groups
-        ]
-    return [(root_id, sessions) for root_id, sessions in groups if sessions or root_id in living_roots]
-
-
 def _watch_list(*, include_terminated: bool) -> int:
     command = "atk agents list --include-terminated" if include_terminated else "atk agents list"
     try:
         while True:
             now = datetime.datetime.now(datetime.UTC)
-            groups = _list_groups(human=True, root_session_id=None, include_terminated=include_terminated)
+            groups = session_listing.list_groups(human=True, root_session_id=None, include_terminated=include_terminated)
             columns = shutil.get_terminal_size().columns
             header = f"{_WATCH_INTERVAL_SECONDS:g}秒ごとに更新: {command}  {now.astimezone():%H:%M:%S}  Ctrl-Cで終了"
             sys.stdout.write(f"{_CLEAR_SCREEN}{header}\n\n{_human_tree(groups, columns=columns, now=now)}\n")
@@ -325,33 +311,17 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
 
     session IDは端末幅によらず省略しない。右側の状況は端末幅に収まるよう、行動・進捗の欄へ
     `_MIN_DESCRIPTION_WIDTH`を残すまで名前の欄を先に短くし、残りを説明の切り詰めで合わせる。
-    表示対象の選別は`_list_groups`で行い、生存rootは委譲先がなくても見出しを残す。
+    表示対象の選別は`session_listing.list_groups`で行い、生存rootは委譲先がなくても見出しを残す。 pyfltr: allow-comment
     """
-    rows: list[str | tuple[str, dict[str, Any]]] = []
-    for root_id, sessions in groups:
-        rows.append(f"root {root_id}")
-        children: dict[str | None, list[dict[str, Any]]] = {}
-        attached: set[str] = set()
-        for session in sessions:
-            owner = session.get("host_session_id")
-            children.setdefault(owner, []).append(session)
-
-        _append_children(children, None, "", set(), attached, rows)
-        identifiers = {session["session_id"] for session in sessions}
-        for owner in children:
-            if owner is not None and owner not in identifiers:
-                _append_children(children, owner, "", set(), attached, rows)
-        for session in sessions:
-            if session["session_id"] not in attached:
-                _append_children({**children, None: [session]}, None, "", set(), attached, rows)
+    rows = session_listing.tree_rows(groups)
     if not rows:
         return "sessionはありません"
     session_rows = [row for row in rows if isinstance(row, tuple)]
     if not session_rows:
         return "\n".join(str(row) for row in rows)
     left_width = max(_display_width(left) for left, _ in session_rows)
-    names = {id(session): _session_name(session) for _, session in session_rows}
-    parts = {id(session): _status_parts(session, now) for _, session in session_rows}
+    names = {id(session): session_listing.session_name(session) for _, session in session_rows}
+    parts = {id(session): session_listing.status_parts(session, now) for _, session in session_rows}
     available = columns - left_width - _COLUMN_GAP
     right_width = max(_display_width(right_text) for _, right_text in parts.values())
 
@@ -376,80 +346,6 @@ def _human_tree(groups: list[tuple[str, list[dict[str, Any]]]], *, columns: int,
     return "\n".join(lines)
 
 
-def _append_children(
-    children: dict[str | None, list[dict[str, Any]]],
-    owner: str | None,
-    prefix: str,
-    visited: set[str],
-    attached: set[str],
-    rows: list[str | tuple[str, dict[str, Any]]],
-) -> None:
-    entries = children.get(owner, [])
-    for index, session in enumerate(entries):
-        session_id = str(session["session_id"])
-        if session_id in attached:
-            continue
-        attached.add(session_id)
-        marker = "└─ " if index == len(entries) - 1 else "├─ "
-        rows.append((f"{prefix}{marker}{session_id}", session))
-        if session_id not in visited:
-            next_prefix = prefix + ("   " if index == len(entries) - 1 else "│  ")
-            _append_children(children, session_id, next_prefix, visited | {session_id}, attached, rows)
-
-
-def _session_name(session: Mapping[str, Any]) -> str:
-    label = session.get("label") or session.get("launch_kind") or "session"
-    engine = session.get("engine") or ""
-    model = session.get("model") or ""
-    effort = session.get("effort") or ""
-    speed = "@fast" if engine == "codex" and session.get("fast_mode") is True else ""
-    if model:
-        detail = f"{engine}:{model}" if engine else str(model)
-        if effort:
-            detail += f"/{effort}"
-        detail += speed
-    elif engine:
-        detail = f"{engine}{speed}"
-    else:
-        detail = str(session.get("model_type") or "")
-    return f"{label} ({detail})" if detail else str(label)
-
-
-def _status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[str, str]:
-    """statusLineの1行のうち、直近の行動または進捗の説明と、右端に置く経過時間と状態を返す。
-
-    実行中のsessionに利用上限の解除待ちまたはAPI再試行の記録があれば、通常の進捗より優先して示す。
-    """
-    status = str(session.get("status") or "")
-    raw_error = session.get("api_error") if status == "running" else None
-    api_error = raw_error if isinstance(raw_error, dict) and raw_error.get("type") else None
-    tokens = context_usage.format_tokens(session.get("context_tokens"), session.get("context_window"))
-    right: list[str] = []
-    if api_error is not None and api_error.get("type") == resume_waits.USAGE_LIMIT_ERROR_TYPE:
-        description = f"利用上限の解除待ち {api_error.get('limit_type') or '?'}"
-        remaining = _elapsed(now, api_error.get("resets_at"))
-        right.append(f"解除まで{remaining}" if remaining is not None else "解除時刻確認中")
-        right.append(_elapsed(api_error.get("first_at"), now) or "?")
-    elif api_error is not None:
-        description = f"API再試行 {api_error['type']}"
-        right.append(f"HTTP {api_error.get('http_status') or '?'}")
-        right.append(_elapsed(api_error.get("first_at"), now) or "?")
-        if api_error.get("count"):
-            right.append(f"{api_error['count']}回")
-    else:
-        description = str(session.get("last_action") or session.get("progress") or "")
-        elapsed = _elapsed(session.get("started_at"), now)
-        if elapsed is not None:
-            right.append(elapsed)
-        if tokens is not None:
-            right.append(tokens)
-        if status:
-            right.append(status)
-    if api_error is not None and tokens is not None:
-        right.append(tokens)
-    return " ".join(description.split()), _RIGHT_SEPARATOR.join(right)
-
-
 def _status_line(name: str, description: str, right_text: str, width: int, name_width: int) -> str:
     if width <= 0:
         return ""
@@ -466,29 +362,6 @@ def _status_line(name: str, description: str, right_text: str, width: int, name_
     else:
         line = left
     return _truncate(line.rstrip(), width)
-
-
-def _elapsed(start: object, end: object) -> str | None:
-    moments: list[datetime.datetime] = []
-    for value in (start, end):
-        if isinstance(value, datetime.datetime):
-            moment = value
-        elif isinstance(value, str):
-            try:
-                moment = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                return None
-        else:
-            return None
-        moments.append(moment if moment.tzinfo is not None else moment.replace(tzinfo=datetime.UTC))
-    seconds = int((moments[1] - moments[0]).total_seconds())
-    if seconds < 0:
-        return None
-    if seconds >= 3600:
-        return f"{seconds // 3600}h{seconds % 3600 // 60}m"
-    if seconds >= 60:
-        return f"{seconds // 60}m{seconds % 60}s"
-    return f"{seconds}s"
 
 
 def _display_width(text: str) -> int:
@@ -559,7 +432,7 @@ def _retained_session(root_session_id: str, session_id: str) -> dict[str, Any] |
     )
     if "agent_message" in result:
         session["agent_message"] = result["agent_message"]
-    _add_output_activity(session)
+    session_listing.add_output_activity(session)
     return session
 
 
@@ -596,35 +469,6 @@ def _registry_session(session_id: str, root_session_id: str | None) -> dict[str,
     return session
 
 
-def _load_sessions(root_session_id: str) -> list[dict[str, Any]]:
-    by_id = status_reader.load_root(root_session_id).sessions
-    for session in by_id.values():
-        session["result_available"] = (
-            retained_results.read_retained_result(
-                root_session_id,
-                session["session_id"],
-                expected_turn_seq=session.get("turn_seq"),
-                expected_finalized_at=session.get("finalized_at"),
-            )
-            is not None
-        )
-        _add_output_activity(session)
-    return sorted(by_id.values(), key=lambda session: str(session.get("started_at", "")))
-
-
 def _status_payload_is_current(payload: Any) -> bool:
     """heartbeatを持つ状態が有効期限内であるかを返す。"""
     return not isinstance(payload, dict) or status_reader.heartbeat_is_current(payload, status_reader.heartbeat_cutoff())
-
-
-def _add_output_activity(session: dict[str, Any]) -> None:
-    updated_at = session.get("updated_at")
-    output_updated_at = session.get("output_updated_at")
-    started_at = session.get("started_at")
-    activity = result_projection.activity_projection(
-        updated_at=updated_at if isinstance(updated_at, str) else None,
-        output_updated_at=output_updated_at if isinstance(output_updated_at, str) else None,
-        started_at=started_at if isinstance(started_at, str) else None,
-        api_error=session.get("api_error") if isinstance(session.get("api_error"), dict) else None,
-    )
-    session.update(activity)

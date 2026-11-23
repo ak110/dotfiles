@@ -52,7 +52,13 @@ STDERR_EXCERPT_MAX_CHARS = _atk_serve_remote.STDERR_EXCERPT_MAX_CHARS
 # `list`は全記録を走査し、常駐ヘルパーの最初の要求と単発SSHでは所要時間が記録量に比例する。
 # 値の根拠（初回走査の観測値）は`docs/development/design-serve-session-list.md`の「一覧と識別」にある。
 # `read`は記録1件の読み取りで、記録量に比例しない。
-OPERATION_TIMEOUT_SEC = {"list": 300.0, "read": 30.0, "search": 30.0}
+OPERATION_TIMEOUT_SEC = {
+    "list": 300.0,
+    "read": 30.0,
+    "search": 30.0,
+    "agents-list": 15.0,
+    "agents-list-all": 15.0,
+}
 
 
 _NO_FALLBACK_ON_RPC_TIMEOUT = frozenset({"list", "search"})

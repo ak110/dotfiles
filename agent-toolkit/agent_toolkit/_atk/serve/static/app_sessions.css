@@ -282,3 +282,40 @@
     display: inline-block;
   }
 }
+
+#agents-app {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+#agents-app li[data-running="true"] > a,
+#agents-app li[data-running="true"] > span {
+  font-weight: bold;
+}
+#agents-app li {
+  overflow-wrap: anywhere;
+}
+#agents-app li li > a {
+  white-space: pre-wrap;
+}
+
+#settings-app {
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-4);
+}
+#settings-app label {
+  display: grid;
+  max-width: 40rem;
+  margin-block: var(--space-2);
+}
+#settings-app :is(p, pre) {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+#agents-app .agent-status {
+  display: inline-block;
+  white-space: nowrap;
+  font-weight: 600;
+}

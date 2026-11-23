@@ -219,6 +219,8 @@ def _uv_run_python(python: str, *, offline: bool) -> list[str]:
         '"watchdog>=6.0.0,!=7.0.0"',
         "--with",
         '"platformdirs>=4.0"',
+        "--with",
+        '"psutil>=7.2"',
         "python",
         "-B",
     ]

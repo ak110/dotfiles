@@ -7,7 +7,7 @@ import typing
 from collections.abc import Callable
 from typing import Any
 
-from agent_toolkit._agents_server import state_publication, state_resume
+from agent_toolkit._agents_server import state_publication, state_resume, turn_state
 from agent_toolkit._agents_server.result_projection import append_result_next_action
 from agent_toolkit._common import task_documents
 
@@ -75,7 +75,7 @@ SESSION_INITIALIZATION_ATTEMPTS = 2
 # 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
 # Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
 START_AVAILABILITY_TIMEOUT = 15.0
-TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+TERMINAL_STATUSES = turn_state.TERMINAL_STATUSES
 
 
 ModelCandidate = tuple[str, str, str]

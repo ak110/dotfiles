@@ -335,14 +335,17 @@ async def test_answer_api_waits_for_lock_held_longer_than_background_sync_timeou
     loop = asyncio.get_running_loop()
     monkeypatch.setattr(wi_operations, "_BACKGROUND_SYNC_LOCK_TIMEOUT", 0.02)
 
-    class ObservedLock(filelock.FileLock):
-        def _acquire(self) -> None:
-            super()._acquire()
-            if not self.is_locked:
+    def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
+        instance = filelock.FileLock(str(lock_path), timeout=timeout)
+        acquire = instance._acquire
+
+        def observed_acquire() -> None:
+            acquire()
+            if not instance.is_locked:
                 loop.call_soon_threadsafe(attempting.put_nowait, loop.time())
 
-    def lock(_path: pathlib.Path, *, timeout: float = -1) -> filelock.FileLock:
-        return ObservedLock(str(lock_path), timeout=timeout)
+        monkeypatch.setattr(instance, "_acquire", observed_acquire)
+        return instance
 
     monkeypatch.setattr(_wi_sync, "repo_lock", lock)
     monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)

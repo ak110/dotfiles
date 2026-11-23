@@ -496,12 +496,13 @@ async def _serve(
                 await server_task
 
 
-def _browser_app(tmp_path: Path, plans_root: Path, **sessions_options: Any) -> Any:
+def _browser_app(tmp_path: Path, plans_root: Path, *, agent_listing: Any = None, **sessions_options: Any) -> Any:
     return serve_app.create_app(
         tmp_path,
         config.ServeConfig("127.0.0.1", 28766),
         serve_state.ServeState(tmp_path),
         operations=_BrowserOperations(tmp_path),
+        agent_listing=agent_listing,
         plans_context=serve_plans.create_context(root=plans_root, hostname="browser-test"),
         sessions_context=serve_sessions.create_context(
             hostname="browser-test",

@@ -38,7 +38,7 @@ def build_parser(sub: argparse._SubParsersAction) -> None:
         )
 
 
-def dispatch(args: argparse.Namespace) -> None:
+def update_repositories(args: argparse.Namespace) -> str:
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
     stored = config_settings.load_config_strict()
@@ -48,8 +48,7 @@ def dispatch(args: argparse.Namespace) -> None:
 
     repositories = config_repositories.parse(raw, check_paths=False)
     if args.repos_subcommand == "list":
-        print(json.dumps(repositories, ensure_ascii=False, indent=2))
-        return
+        return json.dumps(repositories, ensure_ascii=False, indent=2)
     repo_id, local = config_repositories.identifier(args.repo)
     exists = repo_id in repositories
     if args.repos_subcommand == "add" and exists:
@@ -76,7 +75,15 @@ def dispatch(args: argparse.Namespace) -> None:
     if args.repos_subcommand != "remove" and args.branches is not None:
         _require_remote_branches(repo_id, json.loads(value)[repo_id])
     config_settings.save_config({**stored, "repositories": value})
-    outcome.report_success(f"repository登録を更新した: {repo_id}")
+    return repo_id
+
+
+def dispatch(args: argparse.Namespace) -> None:
+    result = update_repositories(args)
+    if args.repos_subcommand == "list":
+        print(result)
+    else:
+        outcome.report_success(f"repository登録を更新した: {result}")
 
 
 def _apply_branch_arguments(args: argparse.Namespace, item: dict[str, Any]) -> None:

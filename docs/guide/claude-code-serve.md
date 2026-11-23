@@ -4,14 +4,20 @@
 
 `atk serve`を実行し、起動ログに表示されたURL（初期値は`http://127.0.0.1:28766/`、Windowsではポート28876）をブラウザーで開く。
 終了するにはそのターミナルで`Ctrl+C`を押す。
-画面は次の3つである。
+画面は次の5つである。
 
 - WI: AWI・UWIの登録、編集、回答、状態の変更
 - 計画ファイル: ローカルと設定済みリモートホストの計画ファイルの一覧・全文検索・表示
+- エージェント: ホストごとの稼働中の会話、委譲の親子関係と進捗の表示。
+  記録があればセッションへ移動できる
 - セッション: Claude CodeとCodexの保存済みセッションの一覧と会話の表示。
   右ペインの見出しにAPI料金換算の推定費用を表示する。
   単価が分からない応答は金額に含めず、モデル名と件数を示す。
   記録にモデル名がない場合は「モデル名なし」と表示する
+- 設定: `atk config` の実効値と出所の確認、保存値やリポジトリ登録の変更
+
+WIの詳細では、本文やメタデータのWIファイル名から参照先を子ダイアログで開ける。
+編集するときは子ダイアログの「このWIを開く」を選び、通常の詳細に切り替える。
 
 WI画面の状態表示のうち、`answered`は回答済みで次の処理を待つUWI、`cooldown`は期限まで処理を始めないAWI、`needs-verify`は反映後の観測待ちで再処理を待つAWIを示す。
 振り返りのbatchが登録したAWIも、エージェントが採否を検討して自動処理する。
@@ -50,27 +56,13 @@ inbox・processing・holdの未回答UWIを全期間から集め、重要な項�
 コメントに操作・対象・範囲を具体的に書くと、その範囲の外部操作への承認として扱われる。
 「進めて」だけでは範囲が確定しないため承認にならない。
 
-待受と参照元は`atk config`で変更し、次回の起動から反映する。
-
-| キー | 内容 | 未指定時 |
-| --- | --- | --- |
-| `serve_host` | 待受ホスト | `127.0.0.1` |
-| `serve_port` | 待受ポート | 28766（Windowsでは28876） |
-| `serve_plans_root` | 計画ファイル画面の参照元 | private-notesの`plans`と`~/.claude/plans`の両方 |
-| `serve_plans_remote_hosts` | 計画ファイル画面のリモートホスト（SSH接続先名のJSON配列） | `[]` |
-| `serve_sessions_claude_home` | セッション画面のClaude Codeの参照元 | `~/.claude` |
-| `serve_sessions_codex_home` | セッション画面のCodexの参照元 | `CODEX_HOME`、空なら`~/.codex` |
-| `serve_sessions_remote_hosts` | セッション画面のリモートホスト（SSH接続先名のJSON配列） | `[]` |
-
-```bash
-atk config set serve_port 28767
-atk config set serve_sessions_remote_hosts '["remote-host"]'
-```
+待受と参照元は「設定」の「atk serve」で確認・変更できる。
+変更は次回の起動から反映する。
 
 各操作の所要は`atk config get state_dir`が示すディレクトリの`serve/timings.jsonl`へ常に記録される（1MiBごとに1世代を残して回す）。
 画面の操作が遅い場合は、`"kind": "operation"`で`total_ms`の大きい行を探し、同じ`operation_id`の取得の行と、その`request_id`のサーバーの行を比べると、画面の描画、実行枠やロックの待機、処理のどこで時間を使ったかが分かる。
 
-リモートホストの自動更新と費用表示には、リモートホスト側のdotfilesの更新が必要である。
+リモートのエージェント一覧、自動更新、費用表示には、リモートホスト側のdotfilesの更新が必要である。
 画面の詳細な振る舞いは[design-serve-session-list.md](../development/design-serve-session-list.md)を参照。
 
 ## 選定結果の確認設定

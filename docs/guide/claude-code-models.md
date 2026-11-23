@@ -1,5 +1,7 @@
 # 設定確認と工程別モデル設定
 
+各キーの既定値と書式は、`atk serve`の「設定」から確認できる。
+
 ## 設定確認
 
 初回の確認コマンドと期待結果は[READMEの導入確認](../../agent-toolkit/README.md#導入確認)を参照。
@@ -37,7 +39,6 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 追加課金の使用額、サブスクリプションの使用率、トークンから推定したAPI料金は別の値である。
 
 resetの自動消費は`usage_reset_permissions`の許可だけを使う。
-許可は`id`、`engine`、`account`、`scope`、`from`、`until`、`count`を持つJSON配列で、初期値は空である。
 `account`は確認したアカウント、日時はタイムゾーン付き、`count`は期間内の上限回数とする。
 Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを消費許可には読み替えない。
 自然回復が近い場合や作業がない場合は消費しない。
@@ -55,18 +56,7 @@ Fable限定などの対象を、他モデルや別の枠の回復へ読み替え
 各キーには候補をカンマ区切りで並べ、保存した順に試す。
 起動できない場合は次の候補へ進む。
 
-| キー | 用途 | 初期値 |
-| --- | --- | --- |
-| `execute_model` | 計画・設計判断・原因分析・統合 | `codex:sol/low,claude:opus[1m]/low` |
-| `review_model` | 実行レビュー | `codex:sol/medium,claude:sonnet[1m]/medium` |
-| `review_fast_model` | 小規模レビュー | `codex:luna/medium,claude:haiku/medium` |
-| `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/low,claude:sonnet[1m]/low` |
-| `chores_fast_model` | 定型の走査・軽微な作業・コマンド実行 | `codex:luna/low,claude:haiku/low` |
-| `orchestrate_model` | process-loop・run-skillの最上位 | `claude:opus[1m]/medium,codex:sol/medium` |
-| `write_model` | 文章起草 | `agy:gemini-3.8-flash/low,claude:claude-opus-5-5/low` |
-
-各候補は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`で書き、effortを省略するとmediumになる。
-`orchestrate_model`はOpenCodeを受け付けない。
+キーの用途・初期値・形式は「設定」の「工程別モデル」で確認する。
 OpenCodeの導入とprovider定義は[README](dotfiles-settings.md#opencodeの委譲先)を参照。
 
 `agy`を委譲先に使うには、対応版を導入し、`~/.gemini/antigravity-cli/settings.json`で`"modelProvider": "gemini"`を選び、起動元に`GEMINI_API_KEY`を設定する。

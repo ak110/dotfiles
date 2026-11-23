@@ -52,7 +52,7 @@ OVERLOAD_ERROR_INFO = "serverOverloaded"
 
 # Claude CodeのWeekly limitと5時間の利用上限の解除待ちを`api_error`の`type`で示す値。
 # 解除待ちは回数と総時間の上限を持たない（解除まで待ち、別の候補へ切り替えない。ユーザー指示）。
-USAGE_LIMIT_ERROR_TYPE = "usage_limit"
+USAGE_LIMIT_ERROR_TYPE = turn_state.USAGE_LIMIT_ERROR_TYPE
 
 
 @dataclasses.dataclass(frozen=True)

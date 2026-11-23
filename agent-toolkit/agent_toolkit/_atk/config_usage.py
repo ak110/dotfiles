@@ -16,6 +16,8 @@ from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, read_metadata, read_settings, settings_path, temporary_settings
 
+MODEL_ORDER_POLICY = "候補は工程別モデル設定の順に試す。利用枠の観測は残量表示とreset判断に使い、候補の順序は変更しない。"
+
 
 def allowed_temporary_key(key: str) -> bool:
     return key in {
@@ -53,7 +55,7 @@ def update_temporary(key: str | None, value: str | None, until: str | None) -> N
             release_lock(lock)
 
 
-def _profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
+def profile_windows(observed: dict[str, Any]) -> list[dict[str, Any]]:
     profiles = {engine: read_metadata(engine) for engine in ("claude", "codex")}
     result = []
     for window in observed.get("windows", []):
@@ -143,11 +145,12 @@ def dispatch(
             raise ValueError("利用枠の更新機能が接続されていない")
         refresh(force=True)
     observed = usage_observation.snapshot()
-    visible_windows = _profile_windows(observed)
+    visible_windows = profile_windows(observed)
     settings = read_settings()
     metadata = {engine: read_metadata(engine) for engine in ("claude", "codex")}
     claude_rights = json.loads(resolve("claude_reset_inventory"))
     if not args.json:
+        print(MODEL_ORDER_POLICY)
         for engine in ("claude", "codex"):
             if not any(window["engine"] == engine for window in visible_windows):
                 print(f"{engine}: 利用枠は取得不明。config usage --refreshで取得する")
@@ -239,6 +242,7 @@ def dispatch(
         json.dumps(
             {
                 "usage": {**observed, "windows": visible_windows},
+                "model_order_policy": MODEL_ORDER_POLICY,
                 "settings": model_settings,
                 "temporary": {key: settings.get(key) for key in ("values", "until")},
                 "metadata": metadata,
