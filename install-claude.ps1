@@ -401,7 +401,7 @@ function Initialize-AgentsServer {
 }
 
 function Write-CodexRestartNotice {
-    [Console]::Error.WriteLine('Codex pluginを更新しました。app-server daemonは自動再起動しない。更新を担当するエージェント: 対象のdaemonに接続中のセッションがないことを確認できた場合に限り、次のコマンドを実行する。確認できなければ見送る。ユーザーに再起動を依頼しない。')
+    [Console]::Error.WriteLine('Codex pluginを更新しました。app-server daemonは自動再起動しない。更新を担当するエージェント: 対象daemonの全クライアントを管理できる保守時間に、新規接続を止め、接続中のセッションがないことを確認して次のコマンドを実行する。JSON応答のstatusがrestartedであることを確認する。無接続を確定できなければ延期する。ユーザーに再起動を依頼しない。')
     [Console]::Error.WriteLine('codex app-server daemon restart')
 }
 

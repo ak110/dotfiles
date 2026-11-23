@@ -79,14 +79,18 @@ update-dotfiles job
 
 更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示された操作（Codexの終了と`update-dotfiles`の再実行など）を行う。
 
-更新後にdaemonの再起動を案内された場合は、対象のdaemonに接続中のセッションがないことを確認してから次のコマンドを実行する。
-確認できない場合は再起動を見送る。
+更新後の再起動は、対象daemonの全クライアントを管理できる保守時間に実施する。
+新規接続を止め、既存クライアントを切断して、実行元も含め接続中のセッションがないことを確認してから次のコマンドを実行する。
+`daemon version`は疎通を、`thread/loaded/list`はロード済みスレッドを示すだけであり、無接続の証拠にはならない。
+リモート接続も含めて無接続を確定できなければ延期する。
 
 ```bash
 codex app-server daemon restart
 ```
 
-再起動が失敗した場合だけ、`codex app-server daemon start`でdaemonを起動する。
+終了コードが0で、JSON応答の`status`が`restarted`なら再起動は成功した。
+失敗した場合は診断と対象daemonの状態を確認する。
+停止したままで、同じ保守条件が続いている場合に限り、`codex app-server daemon start`で起動する。
 
 ## フックの信頼確認
 

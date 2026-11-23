@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import subprocess
@@ -12,6 +13,7 @@ import check_update_dotfiles_upgrade as upgrade
 import pytest
 from agent_toolkit._agents_server import service_forward
 
+from pytools import post_apply
 from pytools._internal import (
     antigravity_plugin,
     codex_runtime,
@@ -324,6 +326,20 @@ def test_expected_update_warnings_succeed(tmp_path: pathlib.Path) -> None:
 def test_allowed_notice_matches_post_apply_source() -> None:
     assert upgrade._ANTIGRAVITY_UPDATED_NOTICE == antigravity_plugin.UPDATED_NOTICE  # pylint: disable=protected-access
     assert upgrade._CODEX_HOOK_TRUST_NOTICE == _CODEX_TRUST_MESSAGE  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize("platform_name", ["linux", "windows"])
+def test_upgrade_accepts_planned_codex_restart_notice(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture, platform_name: str
+) -> None:
+    with caplog.at_level(logging.INFO, logger=post_apply.__name__):
+        post_apply._print_post_apply_notices([install_codex_plugins._CODEX_PLUGIN_RESTART_NOTICE])  # pylint: disable=protected-access
+    (record,) = caplog.records
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check {record.levelname} {record.getMessage()}\n", encoding="utf-8"
+    )
+
+    upgrade.verify_update_logs(tmp_path, platform_name=platform_name)
 
 
 @pytest.mark.parametrize(
