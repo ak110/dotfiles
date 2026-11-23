@@ -39,6 +39,7 @@ from agent_toolkit._agents_server import (
 from agent_toolkit._common import process_identity, process_tree, runtime_environment, state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing import late_descendant
+from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_NAMES
 from agent_toolkit._testing.codex_plugin_support import _stop_mcp_services
 from agent_toolkit._testing.plugin_environment_support import prepare_plugin_environment
 
@@ -101,21 +102,6 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
             _stop_mcp_services(tmp_path)
 
 
-_EXPECTED_TOOLS = {
-    "start",
-    "collect_handoff",
-    "send_message",
-    "kill",
-    "stop",
-    "list",
-    "show",
-    "permissions",
-    "send_to_user",
-    "compact_conversation",
-    "apply_runtime_changes",
-}
-
-
 @pytest.mark.asyncio
 @pytest.mark.cpu_limit(
     2.5, reason="準備済みruntimeで実MCPのschemaを取得し、サービス・共有リスナーの回収まで確認する（Linux CI CPU合計1.084秒）。"
@@ -123,7 +109,7 @@ _EXPECTED_TOOLS = {
 async def test_stdio_initializes_and_lists_tools(tmp_path: pathlib.Path, launcher_environment: dict[str, str]) -> None:
     async with _stdio_client(tmp_path, launcher_environment) as client:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
-        assert set(tools) == _EXPECTED_TOOLS
+        assert set(tools) == EXPECTED_TOOL_NAMES
         for tool in tools.values():
             assert tool.description
             assert tool.input_schema["type"] == "object"
@@ -494,7 +480,7 @@ def test_launcher_records_stdin_close_exit(tmp_path: pathlib.Path, launcher_envi
     with _LaunchedServer(tmp_path, launcher_environment) as server:
         server.initialize()
         tools = server.request(2, "tools/list", {})["result"]["tools"]
-        assert {tool["name"] for tool in tools} == _EXPECTED_TOOLS
+        assert {tool["name"] for tool in tools} == EXPECTED_TOOL_NAMES
         assert server.process.stdin is not None
         server.process.stdin.close()
         assert server.process.wait(timeout=_LAUNCH_TIMEOUT) == 0
