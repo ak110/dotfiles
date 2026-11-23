@@ -149,6 +149,7 @@ class CodexStartMixin:
                     if (
                         selection.subscription
                         and selection.ordinary_usage_allowed is False
+                        and not selection.auto_reset_permitted
                         and not should_wait("codex", selection.usage_limit_type)
                     ):
                         order = selection.candidates

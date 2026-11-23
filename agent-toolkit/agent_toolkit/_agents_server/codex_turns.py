@@ -59,6 +59,7 @@ class CodexTurnsMixin:
             if changed is not None or isinstance(error, StartCandidateUnavailable) or writer_conflict
             else await self._read_usage_limit_failure(session, failure)
         )
+        auto_reset = limit is not None and await self._auto_reset_configured(session)
         session.turn_id = ""
         session.status = "failed"
         session.plan = []
@@ -97,7 +98,7 @@ class CodexTurnsMixin:
             not isinstance(error, StartCandidateUnavailable)
             and not writer_conflict
             and changed is None
-            and not self._hold_usage_limit_failure(session, limit)
+            and not self._hold_usage_limit_failure(session, limit, auto_reset=auto_reset)
         ):
             self._hold_provider_failure(session, failure)
         session.touch()

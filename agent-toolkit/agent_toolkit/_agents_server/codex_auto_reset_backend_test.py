@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from asyncio.subprocess import Process
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
@@ -25,12 +26,16 @@ from agent_toolkit._agents_server import (
     codex_reset,
     manager,
     service_io,
+    service_move_source,
     service_projection,
+    service_state,
+    service_turns,
+    session_handoff,
     shared_roots,
     state,
 )
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._testing.agents_server_support import install_backend
+from agent_toolkit._testing.agents_server_support import FakeBackend, install_backend
 
 # reader・所有taskの境界を駆動し、公開start/reply/waitへ結果を渡す。
 # pylint: disable=protected-access
@@ -93,7 +98,7 @@ class _MemoryAppServer(codex.JsonRpcProcess):
                 raise codex.AppServerError("reset後の利用枠取得失敗")
             bucket = {
                 "limitId": "codex",
-                "primary": {"usedPercent": self.primary_usage, "windowDurationMins": 300, "resetsAt": 1900000000},
+                "primary": {"usedPercent": self.primary_usage, "windowDurationMins": 300, "resetsAt": 1899990000},
                 "secondary": {"usedPercent": self.weekly_usage, "windowDurationMins": 10080, "resetsAt": 1900000000},
             }
             result = {
@@ -146,11 +151,13 @@ class _MemoryAppServer(codex.JsonRpcProcess):
 
 @contextlib.asynccontextmanager
 async def _environment(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, enabled: bool = True, policy: str = "five-hour"
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, permitted: bool = True, policy: str | None = None
 ) -> AsyncGenerator[tuple[manager.AgentsServerManager, codex.AppServerManager, list[_MemoryAppServer]]]:
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "true" if enabled else "false")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", policy)
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([_PERMISSION] if permitted else []))
+    if policy is None:
+        monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", raising=False)
+    else:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_USAGE_LIMIT_WAIT", policy)
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     clients: list[_MemoryAppServer] = []
 
@@ -170,14 +177,16 @@ async def _until(backend: codex.AppServerManager, predicate: Callable[[], bool])
         await asyncio.wait_for(backend._condition.wait_for(predicate), timeout=5)
 
 
-def _fail(client: _MemoryAppServer, session: state.SessionState, tmp_path: Path, *, minutes: int = 10080) -> None:
+def _fail(
+    client: _MemoryAppServer, session: state.SessionState, tmp_path: Path, *, minutes: int = 10080, both_windows: bool = False
+) -> None:
     directory = tmp_path / "codex" / "sessions" / "2026" / "11" / "05"
     directory.mkdir(parents=True, exist_ok=True)
+    limits = {"secondary": {"used_percent": 100, "window_minutes": minutes, "resets_at": 1900000000}}
+    if both_windows:
+        limits["primary"] = {"used_percent": 100, "window_minutes": 300, "resets_at": 1899990000}
     records = [
-        {
-            "type": "token_count",
-            "rate_limits": {"secondary": {"used_percent": 100, "window_minutes": minutes, "resets_at": 1900000000}},
-        },
+        {"type": "token_count", "rate_limits": limits},
         {"type": "task_complete", "error": {"codex_error_info": "usage_limit_exceeded"}},
     ]
     (directory / f"rollout-test-{session.session_id}.jsonl").write_text(
@@ -231,6 +240,26 @@ async def test_weekly_reset_uses_reader_and_resumes_same_session(
         assert client.closed
 
 
+@pytest.mark.asyncio
+async def test_weekly_reset_waits_for_remaining_five_hour_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with _environment(tmp_path, monkeypatch) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        client = clients[0]
+        client.primary_usage = 100
+        _fail(client, session, tmp_path, both_windows=True)
+        await _until(backend, lambda: session.turn_completed and not session.codex_auto_reset_pending)
+        assert session.awaiting_auto_resume and not session.result_available
+        assert client.weekly_usage == 0 and client.primary_usage == 100
+        assert session.api_error is not None and session.api_error["limit_type"] == "five_hour"
+        assert session.pending_result is not None
+        assert session.pending_result["error"]["usageLimit"]["type"] == "five_hour"
+        assert session.usage_limit_resume_at is not None
+        remaining = session.usage_limit_resume_at - asyncio.get_running_loop().time()
+        assert remaining == pytest.approx(1899990000 - time.time(), abs=1)
+        await owner._advance_child_session_wait(session)
+        assert session.session_id == "reset-thread" and client.turn_count == 1
+
+
 @pytest.mark.parametrize("primary_usage", [10, "unknown"])
 @pytest.mark.asyncio
 async def test_unused_bucket_format_does_not_block_reset_and_unverified_window_blocks_resume(
@@ -259,50 +288,51 @@ async def test_unused_bucket_format_does_not_block_reset_and_unverified_window_b
 
 
 @pytest.mark.parametrize(
-    ("enabled", "count", "outcome", "policy", "waits", "consumed"),
+    ("permitted", "count", "outcome", "policy", "minutes", "waits", "consumed"),
     [
-        (False, 1, "reset", "five-hour", False, False),
-        (True, 0, "reset", "five-hour", False, False),
-        (True, 1, "noCredit", "five-hour", False, True),
-        (True, 0, "reset", "always", True, False),
-        (True, 1, "nothingToReset", "five-hour", True, True),
+        (False, 1, "reset", None, 10080, False, False),
+        (False, 1, "reset", None, 300, True, False),
+        (True, 0, "reset", None, 10080, False, False),
+        (True, 0, "reset", None, 300, True, False),
+        (True, 1, "noCredit", None, 10080, False, True),
+        (True, 0, "reset", "always", 10080, True, False),
+        (True, 1, "nothingToReset", None, 10080, False, True),
     ],
 )
 @pytest.mark.asyncio
 async def test_reset_outcomes_preserve_normal_wait_policy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    enabled: bool,
+    permitted: bool,
     count: int,
     outcome: str,
-    policy: str,
+    policy: str | None,
+    minutes: int,
     waits: bool,
     consumed: bool,
 ) -> None:
-    async with _environment(tmp_path, monkeypatch, enabled=enabled, policy=policy) as (_, backend, clients):
+    async with _environment(tmp_path, monkeypatch, permitted=permitted, policy=policy) as (_, backend, clients):
         session = await backend.start("作業", str(tmp_path))
         client = clients[0]
         client.available, client.outcome = count, outcome
-        _fail(client, session, tmp_path)
+        _fail(client, session, tmp_path, minutes=minutes)
         await _until(
             backend, lambda: not session.codex_auto_reset_pending and (session.result_available or session.awaiting_auto_resume)
         )
         assert session.awaiting_auto_resume is waits
         assert session.result_available is not waits
         assert any(method == "account/rateLimitResetCredit/consume" for method, _ in client.requests) is consumed
-        if not enabled:
+        if not permitted:
+            assert session.usage_limit_wait_count == int(waits)
             assert not any(method.startswith("account/") for method, _ in client.requests)
         if not waits:
             assert session.status == "failed" and session.error["codexErrorInfo"] == "usageLimitExceeded"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("automatic", ["false", "true"])
-async def test_legacy_reset_flag_does_not_authorize_consumption(tmp_path, monkeypatch, automatic):
-    async with _environment(tmp_path, monkeypatch, policy="never") as (_, backend, clients):
+async def test_legacy_reset_flag_does_not_authorize_consumption(tmp_path, monkeypatch):
+    async with _environment(tmp_path, monkeypatch, permitted=False, policy="never") as (_, backend, clients):
         monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CODEX_AUTO_RESET", "true")
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", automatic)
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", "[]")
         session = await backend.start("作業", str(tmp_path))
         _fail(clients[0], session, tmp_path)
         await _until(backend, lambda: session.result_available and not session.codex_auto_reset_pending)
@@ -339,6 +369,9 @@ async def test_pending_check_is_cancelled_before_turn_control_or_release(
         _fail(client, session, tmp_path)
         await asyncio.wait_for(client.consume_started.wait(), timeout=5)
         assert session.codex_auto_reset_pending and not session.result_available
+        assert session.usage_limit_resume_at is not None
+        remaining = session.usage_limit_resume_at - asyncio.get_running_loop().time()
+        assert remaining == pytest.approx(1900000000 - time.time(), abs=1)
         if operation == "send":
             assert (await backend.send_message(session, "新しい作業"))["delivery"] == "reply_started"
             assert session.turn_seq == 2 and not session.awaiting_auto_resume
@@ -383,6 +416,27 @@ async def test_ineligible_account_keeps_weekly_failure(
         await _until(backend, lambda: session.result_available)
         assert session.status == "failed"
         assert not clients[0].consume_started.is_set()
+        assert session.usage_limit_wait_count == 0
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"account": "other@example.invalid"},
+        {"scope": "other"},
+        {"until": "2001-01-01T00:00:00+00:00"},
+        {"count": 0},
+    ],
+)
+@pytest.mark.asyncio
+async def test_inapplicable_permission_does_not_hold_weekly_failure(tmp_path, monkeypatch, override):
+    async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([{**_PERMISSION, **override}]))
+        session = await backend.start("作業", str(tmp_path))
+        _fail(clients[0], session, tmp_path)
+        await _until(backend, lambda: session.result_available)
+        assert session.usage_limit_wait_count == 0
+        assert not clients[0].consume_started.is_set()
 
 
 @pytest.mark.asyncio
@@ -420,28 +474,6 @@ async def test_completed_turn_cannot_start_a_later_consumption(tmp_path: Path, m
         client.account_release.set()
         await _until(backend, lambda: not session.codex_auto_reset_pending)
         assert not client.consume_started.is_set()
-
-
-@pytest.mark.asyncio
-async def test_nothing_to_reset_is_rechecked_by_owned_monitor(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(codex_reset, "AUTO_RESET_CHECK_INTERVAL", 0.01)
-    async with _environment(tmp_path, monkeypatch) as (_, backend, clients):
-        session = await backend.start("作業", str(tmp_path))
-        client = clients[0]
-        client.outcome = "nothingToReset"
-        _fail(client, session, tmp_path)
-        await _until(backend, lambda: session.awaiting_auto_resume and not session.codex_auto_reset_pending)
-        assert not session.result_available
-        client.outcome = "reset"
-        await _until(
-            backend,
-            lambda: (
-                session.usage_limit_resume_at is not None and session.usage_limit_resume_at <= asyncio.get_running_loop().time()
-            ),
-        )
-        params = [params for method, params in client.requests if method == "account/rateLimitResetCredit/consume"]
-        assert len(params) >= 2
-        assert params[-1]["idempotencyKey"] != params[0]["idempotencyKey"]
 
 
 @pytest.mark.asyncio
@@ -536,6 +568,140 @@ async def _service_environment(
             yield environment
 
 
+@pytest.mark.parametrize("permitted", [False, True])
+@pytest.mark.asyncio
+async def test_overall_permission_deadline_does_not_cancel_confirmed_consume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, permitted: bool
+) -> None:
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 0.5)
+    async with _service_environment(tmp_path, monkeypatch, _no_save) as (_, backend, clients):
+        if not permitted:
+            permission = {**_PERMISSION, "account": "other@example.invalid"}
+            monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_RESET_PERMISSIONS", json.dumps([permission]))
+        session = await backend.start("作業", str(tmp_path))
+        client = clients[0]
+        account_release = asyncio.Event()
+        consume_release = asyncio.Event()
+        client.account_release = account_release
+        client.consume_release = consume_release
+        if not permitted:
+            client.silent.add("account/rateLimits/read")
+        try:
+            _fail(client, session, tmp_path)
+            await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            deadline = session.usage_limit_resume_at
+            assert deadline is not None
+            loop = asyncio.get_running_loop()
+            await asyncio.sleep(max(0, deadline - loop.time() - 0.25))
+            account_release.set()
+            if permitted:
+                await asyncio.wait_for(client.consume_started.wait(), timeout=5)
+                await asyncio.sleep(max(0, deadline - loop.time() + 0.05))
+                assert not client.consume_cancelled.is_set() and session.codex_auto_reset_pending
+            else:
+                async with asyncio.timeout_at(deadline + 0.15):
+                    await _until(backend, lambda: session.result_available)
+        finally:
+            account_release.set()
+            consume_release.set()
+        await _until(backend, lambda: not session.codex_auto_reset_pending)
+        if permitted:
+            assert client.weekly_usage == 0 and session.awaiting_auto_resume
+        else:
+            assert session.result_available and not session.awaiting_auto_resume
+            assert session.error["usageLimit"]["type"] == "seven_day"
+            assert not client.consume_started.is_set()
+
+
+@pytest.mark.asyncio
+async def test_service_transfer_during_permission_check_expires_to_weekly_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "codex:gpt-6-sol/low,claude:opus/low")
+    monkeypatch.setattr(session_handoff, "prepare_prompt", lambda _session: "前任の試験結果")
+    async with _service_environment(tmp_path, monkeypatch, _no_save) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path), model="gpt-6-sol", effort="low", model_type="execute")
+        client = clients[0]
+        client.account_release = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        before_failure = loop.time()
+        try:
+            _fail(client, session, tmp_path)
+            await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            assert session.usage_limit_resume_at is not None
+            assert before_failure <= session.usage_limit_resume_at <= loop.time() + codex_reset.AUTO_RESET_RPC_TIMEOUT
+            runtime = service_io.current()
+            assert runtime is not None
+            gate = service_turns.TurnGate(runtime.generation, runtime.target)
+            source = service_move_source.MoveSource(backend._owned_client(session), backend, session)
+            await source.detach(gate, source_is_current=False)
+            transferred = service_state.restore(await service_state.snapshot(session))
+        finally:
+            client.account_release.set()
+        assert source.descriptor is not None
+        await backend.adopt_session(transferred, source.descriptor, source.auxiliary)
+        assert not transferred.codex_auto_reset_pending and transferred.usage_limit_wait_count == 0
+        expiry = transferred.usage_limit_resume_at
+        assert expiry is not None
+        with monkeypatch.context() as clock:
+            clock.setattr(loop, "time", lambda: expiry - 0.1)
+            await owner._advance_child_session_wait(transferred)
+            assert transferred.awaiting_auto_resume and not transferred.result_available
+            clock.setattr(loop, "time", lambda: expiry + 0.1)
+            await owner._advance_child_session_wait(transferred)
+        assert transferred.result_available and not transferred.awaiting_auto_resume
+        assert owner._unavailable_reason(transferred) == "usageLimitExceeded"
+        assert client.turn_count == 1 and not client.consume_started.is_set()
+
+        fallback = FakeBackend(owner.sessions, "claude")
+        install_backend(owner, "claude", fallback)
+        started = await owner.start_handoff(transferred.session_id)
+        assert started["engine"] == "claude"
+        assert fallback.start_calls == [("opus", "low", "delegate")]
+
+
+@pytest.mark.asyncio
+async def test_service_usage_limit_completion_and_reset_survive_full_broker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(codex_reset, "AUTO_RESET_RPC_TIMEOUT", 1.0)
+    saving_completion, allow_save = asyncio.Event(), asyncio.Event()
+    session: state.SessionState | None = None
+
+    async def save() -> None:
+        if session is not None and session.turn_completed:
+            saving_completion.set()
+            await allow_save.wait()
+
+    async with _service_environment(tmp_path, monkeypatch, save) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        client = clients[0]
+        account_release = asyncio.Event()
+        client.account_release = account_release
+        resource = cast(service_io.CodexResource, backend._clients[session.session_id])
+        try:
+            _fail(client, session, tmp_path)
+            await asyncio.wait_for(client.account_read.wait(), timeout=5)
+            _flood(client)
+            async with asyncio.timeout(5):
+                while resource.diagnostic()["backlog"] != "256/256":
+                    await asyncio.sleep(0.001)
+            assert saving_completion.is_set()
+            assert session.turn_completed and session.awaiting_auto_resume and session.codex_auto_reset_pending
+            events = await resource.resource.operation("events", after_sequence=resource._sequence)
+            assert any(
+                event["payload"]["kind"] == "notification" and event["payload"]["value"].get("method") == "turn/completed"
+                for event in events
+            )
+        finally:
+            allow_save.set()
+            account_release.set()
+        await _until(backend, lambda: session.turn_completed and not session.codex_auto_reset_pending)
+        assert client.weekly_usage == 0 and session.awaiting_auto_resume
+        await owner._advance_child_session_wait(session)
+        assert session.session_id == "reset-thread" and client.turn_count == 2
+
+
 def _timeout_record(caplog: pytest.LogCaptureFixture) -> logging.LogRecord:
     [record] = [record for record in caplog.records if "照会が時間内に終わりません" in record.getMessage()]
     return record
@@ -610,7 +776,8 @@ async def test_unanswered_account_read_ends_with_response_stage_diagnostic(
     assert "method=account/read stage=応答待ち" in record.getMessage()
     assert "'reader_failure': None" in record.getMessage()
     assert isinstance(record.exc_info, tuple)
-    assert str(record.exc_info[1]) == "account/readが0.5秒以内に完了しない"
+    assert isinstance(record.exc_info[1], TimeoutError)
+    assert "deadline=許可確認全体" in record.getMessage()
 
 
 @pytest.mark.asyncio
