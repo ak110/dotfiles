@@ -113,6 +113,47 @@ def test_stop_accepts_send_to_user_message_after_human_input(
     assert 'source="user_response_advisor"' not in output.get("hookSpecificOutput", {}).get("additionalContext", "")
 
 
+# test-copy-contract: Stopの実行結果で拒否した呼出しと成功した再送を区別する。
+@pytest.mark.parametrize("resend", [False, True])
+def test_stop_does_not_treat_denied_send_as_delivered(
+    resend: bool, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def attempt(identifier: str, error: bool) -> list[dict]:
+        return [
+            {
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": identifier,
+                            "name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+                            "input": {"message": "調査結果を報告する。"},
+                        }
+                    ]
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": identifier,
+                            "is_error": error,
+                            "content": "",
+                        }
+                    ]
+                },
+            },
+        ]
+
+    entries = [_HUMAN, *attempt("denied", True)]
+    if resend:
+        entries.extend(attempt("success", False))
+    assert _has_advisor_notice(_stop(entries, tmp_path, capsys)) is not resend
+
+
 # test-copy-contract: hook処置の発話と本人への回答をStopで区別し、両送達経路での誤分類を検出する。
 @pytest.mark.parametrize("via_send", [False, True])
 @pytest.mark.parametrize("answer", ["", "\n結果はAです。"])
