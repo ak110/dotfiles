@@ -267,6 +267,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
             )
         if decision.block is None:
             command_timing.start(payload)
+            if not is_codex and tool_name == "Skill":
+                bugfix_gate.observe_repl_skill_start(payload, session_id)
             if not is_codex and tool_name == "Bash" and str(payload.get("tool_use_id", "")).startswith("repl_"):
                 observe_repl_bash(payload)
         return _emit(decision, pending_notices, is_codex=is_codex)

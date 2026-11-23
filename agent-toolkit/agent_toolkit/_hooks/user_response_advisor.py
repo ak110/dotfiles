@@ -228,8 +228,14 @@ def _awaits_background(entries: list[dict], session_id: str, transcript_path: st
 
 
 def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
+    context = latest_human_turn_context(lines)
+    return None if context is None else (context[0], context[1])
+
+
+def latest_human_turn_context(lines: list[str]) -> tuple[str, list[dict], str | None] | None:
     prompt: str | None = None
     entries: list[dict] = []
+    human_id: str | None = None
     for line in lines:
         try:
             entry = json.loads(line)
@@ -241,9 +247,11 @@ def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
         text = _human_prompt(entry, raw_text) if raw_text is not None else None
         if text is not None:
             prompt, entries = text, []
+            value = entry.get("uuid")
+            human_id = value if isinstance(value, str) and value else None
         elif prompt is not None:
             entries.append(entry)
-    return None if prompt is None else (prompt, entries)
+    return None if prompt is None else (prompt, entries, human_id)
 
 
 def _input_text(entry: dict) -> str | None:
