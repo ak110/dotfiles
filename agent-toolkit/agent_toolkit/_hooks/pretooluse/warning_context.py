@@ -7,6 +7,7 @@ from collections.abc import Sequence
 lazy import hashlib
 
 from agent_toolkit._common import message_format as _message_format
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._common.persisted_output_reference import CODEX_NOTICE_REFERENCE_PREFIX
 lazy from agent_toolkit._atk import managed_temp
 lazy from agent_toolkit._common.atomic_file import atomic_write
@@ -30,13 +31,20 @@ def format_warning_context(warnings: Sequence[str]) -> str:
     return f"警告: {count}件\n\n{body}"
 
 
-def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int = 0, agent_id: str = "main") -> str:
+def bounded_codex_context(
+    context: str, *, session_id: str, reserved_bytes: int = 0, agent_id: str = "main", operation_denied: bool = False
+) -> str:
     encoded = context.encode("utf-8")
     limit = CODEX_CONTEXT_BYTES - reserved_bytes
     if len(encoded) <= limit:
         return context
     receipts = notice.delivery_receipts(context)
     read_manual = "agent-toolkit:atk-mode/playbooks/managed-temp.md"
+    retry = (
+        "通知を回復し、元の操作が停止されて未適用を確認できた場合だけ元の操作を再試行する"
+        if operation_denied
+        else "元の操作は再発行せず、通知だけを回復する"
+    )
     with notice.notice_cycle(session_id, "codex-pretooluse-context", agent_id):
         format_notice = notice.formatter("pretooluse")
         if not session_id:
@@ -45,8 +53,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の保存先条件を確認せよ。"
-                    "`session_id`不足と未配送を委譲元（無ければユーザー）へ報告し、入力の修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の保存",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、入力のsession_idを確認する",
+                        retry=retry,
+                    )
                 ),
             )
         try:
@@ -59,8 +71,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の保存先・権限を確認せよ。"
-                    "未配送と診断を委譲元（無ければユーザー）へ報告し、保存先の修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の保存",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、保存先の権限と状態を確認する",
+                        retry=retry,
+                    )
                 ),
             )
         reference = format_notice(
@@ -75,8 +91,12 @@ def bounded_codex_context(context: str, *, session_id: str, reserved_bytes: int 
                 tag="warn",
                 removable_cause=False,
                 fix=(
-                    f"`{read_manual}`の配置を確認せよ。"
-                    "絶対パスが通知枠に収まる配置を委譲元（無ければユーザー）へ報告し、修復後に元の操作を再試行せよ。"
+                    recover_from_failure(
+                        component="通知の配送",
+                        evidence="診断と未配送の通知",
+                        first_step=f"`{read_manual}` を読み、絶対パスが通知枠に収まる配置を確認する",
+                        retry=retry,
+                    )
                 ),
             )
         for receipt in receipts:

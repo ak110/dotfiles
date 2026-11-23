@@ -29,11 +29,12 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - AWIの本文と現物から変更内容と完成条件が定まるため、計画ファイルは原則として作らない。
      設計の整理や中断再開の記録が要る大規模な変更に限り、`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
-   - 配布物の版数更新が必要なリポジトリでは、版数の種別と根拠をAWIへ書くか、規範に従って更新する。
+   - 配布物の版数はマージ用ブランチで上げない。
+     更新が必要な場合は、更新種別と根拠をAWIへ書く。
 5. 独立文脈の実行レビューを受けて収束させる。
    - `agent-toolkit:atk-mode/roles/exec-review.parent.md`に従い、実装を担当していない実行レビュー担当を、レビュー基準`WI`で保留中のAWIを渡して起動する。
    - 指摘を同じ隔離worktreeで修正・再検証してcommitし、未解決の指摘が0件になるまで収束させる。
-6. 一時ブランチをリモートへpushし、ローカルの一時資源を回収する。
+6. 一時ブランチをリモートへpushし、対象の完全OIDを確定する。
    - 隔離worktreeがcleanであることを確かめ、`git push origin HEAD:refs/heads/<一時ブランチ名>`でリモートへpushする。
    - pushの成功と完全OIDを確かめる。
    - 同等のローカル検証が必要な場合は、証拠を作業ツリーの外に保存してから回収する。
@@ -42,7 +43,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
    - CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。
      記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、保存した出力の絶対パス`output`を含め、何を同等としたかを独立レビューで確かめる。
-   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
+   - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
 8. 完了を報告する。
@@ -75,6 +76,7 @@ AWIは保存・保留した項目だけを戻す。
    - 競合または全体検証の失敗が起きた場合は、メイン自身が解消・再検証・実行レビューを進める（解消の規模が大きい場合は通常レーンへ切り替えてよい）。
 5. 終了と公開後の後始末をする。
    - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（版数更新、push、CIの検収、リリース）へ合流させる。
+   - AWIに書いた更新種別と根拠は、公開工程で未公開の統合差分に適用する最上位の `bump種別` を決める担当へ渡す（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`）。
    - リモート作業ブランチの削除は、公開工程でベースブランチへの`git push`成功を確認した後に公開担当が実行する。
      削除前に`merge_branch`が共有ブランチでないことと、リモート先端が`merge_commit`のまま変わっていないことを再確認し、`git push origin --delete <merge_branch>`を実行する（同名のローカルブランチがあれば`git branch -D`で削除する）。
 

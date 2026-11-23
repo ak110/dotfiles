@@ -16,6 +16,9 @@ def test_compaction_guidance_requires_record(monkeypatch, tmp_path, capsys, reso
     assert precompact.main(json.dumps({"session_id": "conversation"})) == 0
     text = capsys.readouterr().out
     assert bool(text) is resolved
+    if resolved:
+        for item in ("取り下げた手段と理由", "検証の結果", "次の一手と完了の条件"):
+            assert item in text
 
 
 def test_compaction_guidance_does_not_list_other_engine_records(monkeypatch, tmp_path, capsys):

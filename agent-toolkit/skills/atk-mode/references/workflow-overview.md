@@ -70,7 +70,8 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 保存の条件、自律モードでの確認の手段、UWIへの切り替えは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`か`atk serve`から回答する。
 回答済みのUWIのうち、`run_skill_report: true`の報告用は同じ対象リポジトリ・同じ起動単位の次回の`atk run-skill`で、報告用を除く承認用は次回のprocess-wiでメインが取り込む。
-`source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を使い、解決できなければ続行できない理由を返す。
+`source`が`run-skill`の場合は`scope`のスキルを解決して承認後の手順を使い、解決できなければ入力と診断を保持し、登録・配置を確かめる。
+不具合は `agent-basics:bugfix` で認可内の是正後に再照会し、未解決の影響・試行・再開条件を返す。
 処理中のprocess-wiセッションへユーザーから回答が伝えられた場合は、同じセッションの処理対象へ加える（`agent-toolkit:atk-mode/playbooks/process-wi-additions.md`「処理対象WIの追加」）。
 
 ## 完了後の振り返り

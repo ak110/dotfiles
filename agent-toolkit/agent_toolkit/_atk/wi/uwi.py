@@ -29,6 +29,7 @@ from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import operation_approvals
+from agent_toolkit._common.next_action import recover_from_failure
 
 ANSWER_MARKER = "<!-- ユーザーはこの行以降に回答を追記する -->"
 """UWIエントリの回答欄開始位置を示すHTMLコメント。
@@ -250,7 +251,12 @@ def answer_uwi(
         if ANSWER_MARKER not in text:
             raise WebInputError(
                 f"回答欄マーカーがありません: {path.name}",
-                next_action="保存済みUWIの構造が壊れているため回答を反映できない。ユーザーへ報告する",
+                next_action=recover_from_failure(
+                    component="UWIの回答反映",
+                    evidence="保存原本",
+                    first_step="回答を反映できなかったUWIの構造を確認する",
+                    retry="元の内容を保持し、保存内容を修復してから未反映の回答を反映する",
+                ),
             )
 
         content = text.rsplit(ANSWER_MARKER, maxsplit=1)[0] + ANSWER_MARKER + "\n" + answer.strip() + "\n"

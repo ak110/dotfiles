@@ -4,6 +4,7 @@ import pathlib
 import re
 
 from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
@@ -22,10 +23,18 @@ PLAN_PATH_NEXT_ACTION = _plan_file.PLAN_INPUT_NEXT_ACTION
 
 UNPUSHED_NEXT_ACTION = "commitはローカルに残っている。`atk wi commit`でpushしてから、同じコマンドを再実行して到達を確認する"
 
-REPORT_BUG_NEXT_ACTION = "agent-toolkitの不具合としてユーザーへ報告する"
+REPORT_BUG_NEXT_ACTION = recover_from_failure(
+    component="計画バンドル",
+    evidence="診断と保存原本",
+    first_step="`private-notes/plans/` の配置と、保存元と保存先の状態を確認する",
+    retry="先行操作の反映範囲を確認してから未処理分だけ再試行する",
+)
 
-READBACK_NEXT_ACTION = (
-    "保存先のファイルシステムの空き容量と権限を確認してから同じコマンドを再実行する。繰り返す場合はユーザーへ報告する"
+READBACK_NEXT_ACTION = recover_from_failure(
+    component="計画バンドルの読戻し",
+    evidence="診断と保存先",
+    first_step="保存先の空き容量と権限を確認する",
+    retry="原因を除去し、保存状態を確認してから未処理分だけ再実行する",
 )
 
 CHANGED_DURING_SAVE_NEXT_ACTION = (
@@ -73,12 +82,12 @@ def as_relative_notes_path(path: pathlib.Path, private_notes: pathlib.Path) -> s
     except (OSError, ValueError) as error:
         raise _wi_web_input.WebInputError(
             f"private-notes外のパスをcommit対象にできません: {path}",
-            next_action=f"`private-notes/plans/`の配置を確認し、解消しない場合は{REPORT_BUG_NEXT_ACTION}",
+            next_action=REPORT_BUG_NEXT_ACTION,
         ) from error
     if any(part in ("", ".", "..") for part in relative.parts):
         raise _wi_web_input.WebInputError(
             f"commit対象の相対パスが不正です: {path}",
-            next_action=f"`private-notes/plans/`の配置を確認し、解消しない場合は{REPORT_BUG_NEXT_ACTION}",
+            next_action=REPORT_BUG_NEXT_ACTION,
         )
     return relative.as_posix()
 

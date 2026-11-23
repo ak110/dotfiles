@@ -8,6 +8,7 @@ from collections.abc import Callable
 from agent_toolkit._atk import git_sync as _atk_git_sync
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.next_action import recover_from_failure
 
 
 def argument_type_error(reason: str, next_action: str) -> argparse.ArgumentTypeError:
@@ -37,14 +38,17 @@ def report_rejected(args: argparse.Namespace, error: ValueError | _atk_git_sync.
     """入力・状態のエラーを失敗行と次の操作の行で出力する。
 
     共通の例外型と`RebaseInProgressError`は発生源が決めた次の操作を使う。
-    それ以外の`ValueError`は発生源が次の操作を持たないため、受理形式の確認と不具合の報告を案内する。
+    それ以外の`ValueError`は受理形式の確認と認可内の是正を案内する。
+    pyfltr: allow-comment
     """
     if isinstance(error, (_next_action.ActionableError, _atk_git_sync.RebaseInProgressError)):
         next_action = error.next_action
     else:
-        next_action = (
-            f"`{command_label(args)} --help`で受理形式を確かめて再実行する。"
-            "解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
+        next_action = recover_from_failure(
+            component="CLIの入力処理",
+            evidence="エラー本文とヘルプ",
+            first_step=f"{command_label(args)} --help で受理形式を確かめる",
+            retry="入力の誤りを直し、先行操作が未適用の場合だけ再実行する",
         )
     _outcome.report_failure(f"操作を拒否した: {error}", next_action=next_action)
 

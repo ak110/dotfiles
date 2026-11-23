@@ -15,6 +15,7 @@ from agent_toolkit._atk.wi.constants import WI_STATE_INBOX, WI_STATE_PROCESSING,
 from agent_toolkit._atk.wi.mutations.targets import atomic_write_text, resolve_active_targets
 from agent_toolkit._atk.wi.repo import resolve_repo_id
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import recover_from_failure
 
 
 def set_entry_priority(
@@ -42,7 +43,12 @@ def set_entry_priority(
         if parsed is None:
             raise WebInputError(
                 f"frontmatterが破損しているため優先区分を更新できません: {path.name}",
-                next_action=f"`atk wi show {path.name}`で保存内容を確認し、ユーザーへ報告する",
+                next_action=recover_from_failure(
+                    component="WIのfrontmatter",
+                    evidence="保存原本",
+                    first_step=f"`atk wi show {path.name}`で保存内容を確認する",
+                    retry="元の内容を保持し、構造を修復してから再試行する",
+                ),
             )
         data, body = parsed
         if _wi_entries.entry_type_of(path, text) != WI_TYPE_AWI:

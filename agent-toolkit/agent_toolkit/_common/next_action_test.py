@@ -29,3 +29,24 @@ def test_report_writes_reason_then_next_action_line() -> None:
     next_action.report("取得に失敗した", next_action="同じ引数で再実行する", stream=stream)
 
     assert stream.getvalue().splitlines() == ["取得に失敗した", "次の操作: 同じ引数で再実行する"]
+
+
+def test_recover_from_failure_orders_recovery_before_retry_and_reporting() -> None:
+    guide = next_action.recover_from_failure(
+        component="試験対象",
+        evidence="記録A",
+        first_step="記録Aを読む",
+        retry="未適用と分かる場合に限り操作Bを再試行する",
+    )
+    positions = [
+        guide.index(step)
+        for step in (
+            "記録Aを読む",
+            "原因を確かめる",
+            "agent-basics:bugfix",
+            "認可の範囲で回復する",
+            "未適用と分かる場合に限り操作Bを再試行する",
+            "回復結果を伝える",
+        )
+    ]
+    assert positions == sorted(positions)

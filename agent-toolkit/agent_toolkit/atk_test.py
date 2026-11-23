@@ -344,8 +344,7 @@ class TestMainFailureNextAction:
     ) -> None:
         lines = self._run_wi_commit(tmp_path, monkeypatch, capsys, ValueError("想定外の値"))
         next_action = self._next_action_after_failure(lines)
-        assert "`atk wi commit --help`" in next_action
-        assert "ユーザーへ報告" in next_action
+        assert "atk wi commit --help" in next_action
 
     def test_rebase_in_progress_error_is_reported_without_traceback(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

@@ -234,4 +234,3 @@ def test_record_failure_preserves_tool_result_recovery(monkeypatch, capsys):
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "結果の記録に失敗" in context
     assert "ツール結果" in context and "委譲元またはユーザー" in context
-    assert context.count("元のツール結果で成否と必要な出力を確認せよ") == 1

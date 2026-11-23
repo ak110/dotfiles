@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 from collections.abc import Generator
@@ -17,10 +18,11 @@ from typing import Any, cast
 
 import pytest
 
-from agent_toolkit._agents_server import codex, codex_clients, state
+from agent_toolkit._agents_server import codex, codex_clients, mcp_tools, state
 from agent_toolkit._agents_server import codex_auto_reset_backend_test as harness
 from agent_toolkit._agents_server.session_errors import KILL_NOT_DELIVERED_NEXT_ACTION, ActionableTimeoutError
 from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._testing.codex_backend_support import _completed_turn, _InspectableAppServerManager, _overloaded_turn
 
 # 模擬環境の組み立てと接続の診断を、試験から内部境界のまま使う。
 # pylint: disable=protected-access
@@ -282,3 +284,59 @@ async def test_undetermined_kill_records_stage_and_connection(
     assert f"stage={stage}" in message
     assert "'consumer': '稼働中'" in message
     assert f"'backlog': '{backlog}'" in message
+
+
+@pytest.mark.asyncio
+async def test_kill_publishes_result_before_live_child_finishes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async with harness._service_environment(tmp_path, monkeypatch, harness._no_save) as (owner, backend, clients):
+        session = await backend.start("作業", str(tmp_path))
+        await _until_idle(backend, session)
+        child = "child-1"
+        session.live_child_session_ids.add(child)
+        session.agent_message = "中断前の結果"
+
+        monkeypatch.setattr(mcp_tools, "_MANAGER", owner)
+        result = await mcp_tools.kill(session.session_id, timeout=2)
+        assert child in (result.get("error") or {}).get("unobservedSessions", [])
+        assert result.get("next_action")
+        assert (result["status"], result["kill_requested"]) == ("interrupted", True)
+        assert child in session.live_child_session_ids
+        published = session.final_responses
+        assert dict(published)[session.turn_seq] == session.agent_message
+
+        for item in (
+            {
+                "type": "commandExecution",
+                "id": "child-wait",
+                "command": "atk agents wait",
+                "aggregatedOutput": json.dumps({"session_id": child, "status": "completed"}),
+                "exitCode": 0,
+            },
+            {"type": "agentMessage", "id": "late-message", "text": "遅れて届いた回答"},
+        ):
+            await backend._handle_notification(
+                {
+                    "method": "item/completed",
+                    "params": {"threadId": session.session_id, "turnId": session.turn_id, "item": item},
+                }
+            )
+        assert child not in session.live_child_session_ids
+        assert session.final_responses == published
+        assert session.status == "interrupted" and not session.awaiting_auto_resume
+        assert [method for method, _ in clients[0].requests].count("turn/start") == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["completed", "failed"])
+async def test_interrupted_request_bypasses_result_recovery(tmp_path: Path, status: str) -> None:
+    session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1", turn_seq=2)
+    session.interrupt_requested = True
+    session.launch_kind = "explore"
+    session.agent_message = "不正な返却本文"
+    async with _InspectableAppServerManager({session.session_id: session}) as manager:
+        await manager.handle_notification(_completed_turn(session) if status == "completed" else _overloaded_turn(session))
+
+        assert session.result_available and session.status == status
+        assert not session.awaiting_auto_resume
+        if status == "completed":
+            assert session.error["resultContract"]

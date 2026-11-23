@@ -255,7 +255,6 @@ def test_uwi_edit_with_broken_stored_structure_points_to_show(
     next_actions = _next_action_lines(capsys.readouterr().err)
     assert len(next_actions) == 1
     assert "atk wi show uwi-001.md" in next_actions[0]
-    assert "ユーザーへ報告する" in next_actions[0]
     assert path.read_text(encoding="utf-8") == original
 
 

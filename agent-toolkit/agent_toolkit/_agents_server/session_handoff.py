@@ -13,7 +13,7 @@ from agent_toolkit._agents_server.state import SessionResumeState, SessionState
 from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import delegated_session, plugin_environment, process_tree, runtime_environment
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
-from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure
 
 result_next_action = handoff_next_action.result_next_action
 
@@ -107,7 +107,12 @@ def prepare_prompt(session: SessionState | SessionResumeState) -> str:
         (directory / "prepare.stderr").write_text(redact_secrets(completed.stderr), encoding="utf-8")
         raise ActionableError(
             f"前任の会話抽出がconversation.mdを生成しませんでした: {directory}",
-            next_action="保存したprepare.stdoutとprepare.stderrを読み、抽出の不具合を報告する",
+            next_action=recover_from_failure(
+                component="会話抽出",
+                evidence="保存したprepare.stdoutとprepare.stderr",
+                first_step="保存出力に必要な範囲の会話が含まれているか確認する",
+                retry="原本を保持し、抽出だけを再実行する",
+            ),
         )
     return compose_prompt(session, conversation, record.paths)
 

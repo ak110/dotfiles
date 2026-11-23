@@ -15,6 +15,7 @@ import pathlib
 import secrets
 
 from agent_toolkit._agents_server import tool_names as _agents_server_tool_names
+from agent_toolkit._common.next_action import recover_from_failure
 
 # 委譲の観測でだけ使う依存（設定・利用枠・pydanticまで読み込む）は、通常のBashのPostToolUseで毎回読み込まない。
 lazy from agent_toolkit._agents_server import launch_prompts, shared_layout, shared_roots, wait_targets
@@ -543,8 +544,12 @@ def observe_tool(
             ObservationWarning(
                 f"`list`の応答で{', '.join(missing)}が欠落しているか不正であり、"
                 "待機対象を識別するための記録を更新できなかった。",
-                "`list`の結果にある対象の`session_id`を指定して`show`で照会せよ。"
-                "`session_id`が無い場合と欠落が続く場合は、この診断を`agents_server`の不具合として委譲元かユーザーへ報告せよ。",
+                recover_from_failure(
+                    component="待機対象の識別",
+                    evidence="元のlist応答",
+                    first_step="対象のsession_idが分かるならshowで照会する",
+                    retry="識別できるまで対象の状態を推定せず、修復後に読取だけを再試行する",
+                ),
             )
         ]
 
@@ -557,8 +562,12 @@ def observe_tool(
             warnings.append(
                 ObservationWarning(
                     f"{operation}の応答で{', '.join(missing)}が欠落しているか不正であり、終了観測の必要な対象を記録できない。",
-                    "起動したセッションは`atk agents wait`で終了を観測するか、結果が不要なら`kill`で破棄せよ。"
-                    "欠落が続く場合は`agents_server`の不具合としてユーザーへ報告せよ。",
+                    recover_from_failure(
+                        component="起動済みセッションの追跡",
+                        evidence="元の応答と表示された識別子",
+                        first_step="`atk agents wait` で識別済みの対象の終了を観測する。結果が不要なら認可の範囲で `kill` する",
+                        retry="元の起動は再発行せず、追跡だけを回復する",
+                    ),
                 )
             )
     remote_session_id = _agents_server_remote_session_id(tool_input, structured, tool_name)

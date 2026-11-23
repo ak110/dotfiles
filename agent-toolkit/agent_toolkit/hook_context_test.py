@@ -40,8 +40,6 @@ def test_codex_final_notice_reports_unreceived_details(monkeypatch, failure):
     assert result.returncode == 0 and not result.stderr
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
     assert "未配送" in context
-    assert "委譲元（無ければユーザー）" in context
-    assert "再試行せよ" in context
     assert "配送対象の固有本文" not in context
 
 

@@ -23,6 +23,7 @@ from agent_toolkit._common import json_command as _json_command
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.next_action import recover_from_failure
 
 _REPOSITORY_RE = re.compile(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$")
 _IDENTIFIER_RE = re.compile(r"^(?:dependabot:)?[1-9][0-9]*$")
@@ -51,7 +52,12 @@ _THREADS_QUERY = (
 )
 
 
-_GRAPHQL_NEXT_ACTION = "`gh auth status`で認証を確認し、時間をおいて再実行する。繰り返す場合はユーザーへ報告する"
+_GRAPHQL_NEXT_ACTION = recover_from_failure(
+    component="GraphQLの照会",
+    evidence="エラー本文",
+    first_step="`gh auth status`で認証を確かめる",
+    retry="認証や接続を回復してから照会を再実行する",
+)
 """GitHub GraphQLの取得失敗と応答不正に添える次の操作。"""
 
 

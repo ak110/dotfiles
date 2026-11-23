@@ -46,6 +46,7 @@ import json
 import os
 import re
 
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks.notice import begin_delivery, emit_response, informational, resolve_notice, set_warning_session_id
 
 # pylint: disable-next=wrong-import-position,import-error
@@ -141,6 +142,20 @@ def _utterance_notice(session_id: str) -> str:
     return informational(_llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY))
 
 
+def _entry_work_notice(session_id: str, full_name: str, arguments: str | None) -> str:
+    resolve_notice(session_id, "user_prompt_submit", "_entry_work_notice")
+    work = full_name.removeprefix("agent-toolkit:")
+    mode, _ = skill_modes.split_mode(full_name, arguments)
+    mode_notice = f"続く `{mode}` はモードの指定である。" if mode else ""
+    return informational(
+        _llm_notice(
+            f"起動入力の先頭の語 `{work}` は作業の指定である。"
+            f"`agent-toolkit:atk-mode/playbooks/{work}.md` に従う。"
+            f"{mode_notice}指定の後ろにある本文だけを入力として扱う。"
+        )
+    )
+
+
 def main(payload_text: str) -> int:
     begin_delivery()
     try:
@@ -169,7 +184,12 @@ def main(payload_text: str) -> int:
                 f"今回のユーザー発話を、作業終了時の確認に使う記録へ残せなかった: {error}",
                 tag="warn",
                 removable_cause=False,
-                fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="発話の記録",
+                    evidence="会話の原文と記録の診断",
+                    first_step="原文から現在の要求を確認して保持する",
+                    retry="発話を再送せず、欠けた記録だけを回復する",
+                ),
             )
         )
 
@@ -205,7 +225,8 @@ def main(payload_text: str) -> int:
 
     machine_injected = _is_machine_injected(payload, prompt)
     is_codex = is_codex_payload(payload)
-    first_line = prompt.split("\n", 1)[0].strip()
+    command_text = prompt.lstrip(" \t")
+    first_line = command_text.split("\n", 1)[0].strip()
     command_prefix = "$" if is_codex else "/"
 
     is_normal_prompt = not machine_injected
@@ -220,7 +241,12 @@ def main(payload_text: str) -> int:
                     f"今回のユーザー発話と現行の作業契約との対応を記録できない: {error}",
                     tag="warn",
                     removable_cause=False,
-                    fix="会話の原文から現在の要求を確認して保持せよ。記録の診断は委譲元またはユーザーへ報告せよ。",
+                    fix=recover_from_failure(
+                        component="作業契約の記録",
+                        evidence="会話の原文と記録の診断",
+                        first_step="原文から現在の要求を確認して保持する",
+                        retry="発話を再送せず、欠けた記録だけを回復する",
+                    ),
                 )
             )
         else:
@@ -230,13 +256,12 @@ def main(payload_text: str) -> int:
         notices.append(_utterance_notice(session_id))
     if self_check_notice is not None:
         notices.append(self_check_notice)
-    additional_context = "\n".join(notice for notice in notices if notice) or None
 
     if first_line.startswith(command_prefix):
         match = _SKILL_COMMAND_PATTERN.match(first_line[len(command_prefix) :])
         if match is not None:
             full_name = f"agent-toolkit:{match.group(1)}"
-            arguments = prompt[len(command_prefix) + match.end() :]
+            arguments = command_text[len(command_prefix) + match.end() :]
 
             typed_name = full_name
             if not is_delegated(os.environ):
@@ -245,12 +270,15 @@ def main(payload_text: str) -> int:
             named_by_entry = full_name != typed_name
             if named_by_entry:
                 session_title.observe_add_awi(session_id, full_name)
+                if is_normal_prompt:
+                    notices.append(_entry_work_notice(session_id, full_name, arguments))
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
             if named_by_entry and full_name == skill_modes.PROCESS_WI:
                 update_state(session_id, set_process_wi_invoked)
 
+    additional_context = "\n".join(notice for notice in notices if notice) or None
     title = None if is_codex else session_title.proposed_title(session_id, payload.get("session_title"))
     if additional_context is not None or title is not None:
         _emit_hook_output(additional_context=additional_context, title=title)

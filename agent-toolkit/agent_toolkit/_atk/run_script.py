@@ -7,6 +7,7 @@ import sys
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import next_action as _next_action
+from agent_toolkit._common.next_action import recover_from_failure
 
 PLUGIN_ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCRIPT_PATHS = {
@@ -63,7 +64,12 @@ def registered_script_path(script_name: str) -> pathlib.Path:
     if not target.is_relative_to(PLUGIN_ROOT) or not target.is_file():
         raise _next_action.ActionableError(
             f"登録済みscriptがplugin root内に存在しません: {script_name}",
-            next_action="agent-toolkitの配布物が欠けている。プラグインを更新するか、ユーザーへ報告する",
+            next_action=recover_from_failure(
+                component="配布物の欠落",
+                evidence="診断に示されたパス",
+                first_step="要求されたスクリプトが導入済みの配布物にあるか確かめる",
+                retry="配布物を修復し、スクリプトが未実行である場合だけ再試行する",
+            ),
         )
     return target
 

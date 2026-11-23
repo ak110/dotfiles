@@ -35,7 +35,7 @@ from agent_toolkit._agents_server.shared_layout import (
 from agent_toolkit._common import delegated_session as _delegated_session
 from agent_toolkit._common import registry_forwarding
 from agent_toolkit._common.atomic_file import atomic_write
-from agent_toolkit._common.next_action import ActionableError
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure
 
 
 @dataclasses.dataclass(frozen=True)
@@ -225,7 +225,12 @@ def resolve_host_writer(identity: StatusFileIdentity, state_root: pathlib.Path |
     except OSError as error:
         raise ActionableError(
             f"書込主体索引を読めません: {error}",
-            next_action="索引ディレクトリの権限を確かめて再実行し、解消しない場合はagents_serverの不具合としてユーザーへ報告する",
+            next_action=recover_from_failure(
+                component="共有ルート索引",
+                evidence="診断と索引ディレクトリ",
+                first_step="索引ディレクトリの権限を確かめる",
+                retry="許可された設定の修復後に再実行する",
+            ),
         ) from error
 
     writers: list[str] = []
@@ -268,8 +273,12 @@ def resolve_host_writer(identity: StatusFileIdentity, state_root: pathlib.Path |
             "委譲元sessionに対応する書込主体を一意に解決できません: "
             f"host_session_id={identity.host_session_id}, writers={','.join(sorted(writers))}",
             next_action=(
-                "同じsessionで`atk agents list`を実行して書込主体を確かめ、"
-                "解消しない場合はagents_serverの不具合としてユーザーへ報告する"
+                recover_from_failure(
+                    component="索引の書込主体",
+                    evidence="診断に示されたsession IDと候補",
+                    first_step="同じsessionで`atk agents list`を実行して書込主体を確かめる",
+                    retry="書込主体を一意に解決できるまで書き込まない",
+                )
             ),
         )
     writer_session_id = writers[0]

@@ -31,7 +31,7 @@ from mcp.types import (
 from agent_toolkit._agents_server import logging_config
 from agent_toolkit._agents_server.session_errors import DelegateBackendError, SessionInitializationTimeoutError
 from agent_toolkit._agents_server.tool_descriptions import KIND_MCP_TOOL, schema_text
-from agent_toolkit._common.next_action import ActionableError, with_next_action
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure, with_next_action
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
@@ -150,13 +150,17 @@ def _unexpected_error_next_action(error: Exception) -> str:
             return specific
         return "委譲先CLIの導入と認証を確かめ、`model_type`へ別のengineの候補を指定して起動し直す"
     if isinstance(error, ValueError):
-        return (
-            "ツールの説明で引数の受理形式を確かめて再発行する。"
-            "解消しない場合はエラー本文を添えてagents_serverの不具合としてユーザーへ報告する"
+        return recover_from_failure(
+            component="MCPの引数処理",
+            evidence="エラー本文とツールの説明",
+            first_step="引数の受理形式を確認する",
+            retry="書込の成否が不明な場合は再発行せず、未適用を確認してから再発行する",
         )
-    return (
-        "`list`か`show`で対象sessionの状態を確かめてから再発行する。"
-        "再発する場合はエラー本文を添えてagents_serverの不具合としてユーザーへ報告する"
+    return recover_from_failure(
+        component="MCPの操作",
+        evidence="エラー本文とMCPの状態",
+        first_step="`list`か`show`で対象sessionの状態を確かめる",
+        retry="書込の成否が不明な場合は再発行せず、未適用を確認してから再発行する",
     )
 
 
