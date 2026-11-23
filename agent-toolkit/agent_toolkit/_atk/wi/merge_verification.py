@@ -72,7 +72,7 @@ def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
             or not pathlib.Path(review).is_absolute()
             or not isinstance(record.get("output_sha256"), str)
         ):
-            raise ValueError("リポジトリ、OID、終了値、コマンド、出力、独立レビューのいずれかが一致しない")
+            raise ValueError("リポジトリ、OID、終了値、コマンド、出力、独立文脈レビューのいずれかが一致しない")
         captured = pathlib.Path(output).read_bytes()
         if not captured.strip() or hashlib.sha256(captured).hexdigest() != record["output_sha256"]:
             raise ValueError("出力が空か、検証記録のSHA-256と一致しない")
@@ -86,7 +86,7 @@ def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
                 f"同等検証記録SHA-256: {hashlib.sha256(raw).hexdigest()}",
             )
         ):
-            raise ValueError("独立レビューで対象OIDの同等検証記録を確認していない")
+            raise ValueError("独立文脈レビューで対象OIDの同等検証記録を確認していない")
     except (OSError, ValueError, TypeError) as error:
         raise ActionableError(f"同等の検証記録を受理できない: {error}", next_action=_RETRY) from error
     return f"CI非対象。対象OID {sha} の同等検証記録: {reference}"

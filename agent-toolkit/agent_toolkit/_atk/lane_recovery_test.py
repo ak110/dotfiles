@@ -554,7 +554,7 @@ def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, sta
         }
         (generated / PROJECTION_MANIFEST).write_bytes(projection_manifest(generated.name, files)[0])
     if state == "unrecorded":
-        (generated / "note.md").write_text("利用者の記録", encoding="utf-8")
+        (generated / "note.md").write_text("作業者の記録", encoding="utf-8")
 
     status, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
 

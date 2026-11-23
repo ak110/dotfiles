@@ -93,7 +93,7 @@ def test_equivalent_evidence_is_only_for_proven_non_ci_target(tmp_path, monkeypa
                 merge_verification.check(_body(evidence))
         _write_evidence(evidence, review, values)
         evidence.write_text(evidence.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-        with pytest.raises(ActionableError, match="独立レビューで"):
+        with pytest.raises(ActionableError, match="独立文脈レビューで"):
             merge_verification.check(_body(evidence))
 
 

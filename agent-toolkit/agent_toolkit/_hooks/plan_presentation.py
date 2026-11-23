@@ -4,6 +4,7 @@ import re
 import subprocess
 import sys
 
+from agent_toolkit._common.process_tree import run_with_timeout
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._plan.path_kinds import is_plan_main_file
 
@@ -42,7 +43,7 @@ def check_before_presentation(session_id: str, cwd: str, presented: object = Non
         work_dir = target[1] if target is not None and pathlib.Path(target[1]).is_absolute() else cwd
         if work_dir:
             argv.extend(["--work-dir", work_dir])
-        result = subprocess.run(
+        result = run_with_timeout(
             argv, check=False, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10
         )
         if result.returncode:

@@ -1,5 +1,6 @@
 import argparse
 import ast
+import io
 import json
 import os
 import re
@@ -173,7 +174,7 @@ def _collect_pyfltr(command, root, env):
     print(completed.stderr, end="", file=sys.stderr)
     if completed.returncode:
         return completed.returncode, []
-    run_id = next(row["run_id"] for line in completed.stdout.splitlines() if (row := json.loads(line))["kind"] == "header")
+    run_id = next(row["run_id"] for line in io.StringIO(completed.stdout) if (row := json.loads(line))["kind"] == "header")
     recorded = subprocess.run(
         [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output"],
         cwd=root,
@@ -185,7 +186,7 @@ def _collect_pyfltr(command, root, env):
     )
     node_ids = [
         entry
-        for line in recorded.stdout.splitlines()
+        for line in io.StringIO(recorded.stdout)
         for entry in json.loads(line).get("content", "").splitlines()
         if "::" in entry and entry.split("::", 1)[0].endswith(".py")
     ]

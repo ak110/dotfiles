@@ -14,7 +14,6 @@ def _registered_worktrees(worktree: Path) -> list[Path]:
         cwd=worktree,
         capture_output=True,
         check=False,
-        timeout=10,
     )
     if result.returncode != 0:
         diagnostic = os.fsdecode(result.stderr or result.stdout).strip()

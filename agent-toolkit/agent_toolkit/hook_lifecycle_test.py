@@ -55,6 +55,21 @@ def test_repeated_calls_in_one_process_follow_input_and_session_state(
     assert 'kind="block"' not in message
     assert "agent-basics:search" in message
     assert not pretooluse("repeat-session", "ls")
+    blocked = json.loads(pretooluse("repeat-session", "grep -rn needle ."))["hookSpecificOutput"]
+    assert blocked["permissionDecision"] == "deny"
+    assert "起動を確認できない" in blocked["permissionDecisionReason"]
+    _call_hook_in_process(
+        monkeypatch,
+        "posttooluse",
+        {
+            "hook_event_name": "PostToolUse",
+            "session_id": "repeat-session",
+            "cwd": str(tmp_path),
+            "tool_name": "Skill",
+            "tool_input": {"skill": "agent-basics:search"},
+            **({"turn_id": "repeat-turn"} if codex else {}),
+        },
+    )
     assert not pretooluse("repeat-session", "grep -rn needle .")
 
     def response_context(output: str, identifier: str) -> dict:

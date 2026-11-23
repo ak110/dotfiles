@@ -13,15 +13,13 @@ def test_exit_plan_mode_checks_current_known_plan_once_per_version(tmp_path, mon
     update_state(sid, lambda state: {**state, "current_plan_file_path": str(path), "plan_mode_skill_invoked": True})
     monkeypatch.setattr(plan_presentation, "is_plan_main_file", lambda name: name == str(path))
     calls = []
-    original = subprocess.run
 
     def run(argv, **_kwargs):
-        if "plan-check" not in argv:
-            return original(argv, **_kwargs)
+        assert "plan-check" in argv
         calls.append(argv)
         return subprocess.CompletedProcess(argv, 1 if len(calls) == 1 else 0, "", "検査の診断")
 
-    monkeypatch.setattr(plan_presentation.subprocess, "run", run)
+    monkeypatch.setattr(plan_presentation, "run_with_timeout", run)
 
     def invoke(name, tool_input=None):
         payload = {"session_id": sid, "cwd": str(tmp_path), "tool_name": name, "tool_input": tool_input or {}}
