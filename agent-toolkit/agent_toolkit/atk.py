@@ -341,7 +341,6 @@ def main(
         ("worktree-stash",): "--help",
         ("review-table",): "--help",
         ("review-audit",): "--help",
-        ("wi", "submission"): "--help",
     }
     if default_operation := default_operations.get(tuple(raw_argv)):
         raw_argv = [*raw_argv, default_operation]

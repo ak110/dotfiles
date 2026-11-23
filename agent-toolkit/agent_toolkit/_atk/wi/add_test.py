@@ -240,6 +240,7 @@ def test_process_wi_timing_at_add_boundary(
         ("defect", "external-wait", True),
         ("defect", "cross-repository", True),
         ("defect", "host-unavailable", True),
+        ("defect", "throughput", True),
     ],
 )
 def test_process_wi_deferral_distinguishes_defects(
@@ -257,7 +258,8 @@ def test_process_wi_deferral_distinguishes_defects(
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     body_path = tmp_path / "body.md"
     body_path.write_text(
-        "# 保存判定を確かめる\n\n## 反映内容と反映先\n\n隔離したキューに試験用の項目を保存する。\n",
+        "# 保存判定を確かめる\n\n## 反映内容と反映先\n\n隔離したキューに試験用の項目を保存する。\n"
+        + ("\n## 次回へ渡す根拠\n\n巡回の進行を妨げず、次回の処置の方が効率的。\n" if category == "throughput" else ""),
         encoding="utf-8",
     )
 

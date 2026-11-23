@@ -113,13 +113,14 @@ def _report_hook(subcommand: str, payload: dict) -> dict:
 
 
 @pytest.mark.parametrize("tool", [_SEND_TOOL, "mcp__agent-toolkit__send_to_user"])
-def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str) -> None:
+@pytest.mark.parametrize("report", [_VALID_REPORT, "## 作業完了報告\n\n検証を完了した。"])
+def test_send_gate_waits_for_delivered_notice_and_confirmed_report(tool: str, report: str) -> None:
     sid = _session_id()
     generated = _due_notice(sid)
     common = {"session_id": sid, "tool_name": tool}
     wrong_message = "点検した。"
     wrong = {**common, "tool_input": {"message": wrong_message}}
-    correct = {**common, "tool_input": {"message": _VALID_REPORT}}
+    correct = {**common, "tool_input": {"message": report}}
 
     assert progress_self_check.send_block(wrong, wrong_message) is None
     notice_module.record_delivery(generated)

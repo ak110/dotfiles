@@ -13,6 +13,7 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -375,7 +376,7 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
-def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
+def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object], body: str) -> bool:
     timing = getattr(args, "process_wi_timing", None)
     kind = getattr(args, "process_wi_kind", None)
     category = getattr(args, "defer_category", None)
@@ -401,6 +402,11 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         raise WebInputError("--process-wi-kindと--process-wi-timingは一緒に指定してください", next_action=next_action)
     if (timing == "next-run" and not category) or (category is not None and timing != "next-run"):
         raise WebInputError("--defer-categoryはnext-runの場合に限って必要", next_action=next_action)
+    if category == "throughput" and not dict(_headings.h2_sections(body)).get("次回へ渡す根拠", False):
+        raise WebInputError(
+            "throughputの判定根拠が本文にありません",
+            next_action="## 次回へ渡す根拠 に現在・次回の進行への影響と処理量を比較した結果を書いて再投入する",
+        )
     if timing == "next-run" and kind == "defect" and category == "investigation":
         raise WebInputError(
             "確定した欠陥を調査（investigation）だけを理由に次回へ送れません",
@@ -468,7 +474,7 @@ def cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             if not args.dry_run:
-                join_current = _require_process_wi_timing(args, frontmatter) or join_current
+                join_current = _require_process_wi_timing(args, frontmatter, body) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(

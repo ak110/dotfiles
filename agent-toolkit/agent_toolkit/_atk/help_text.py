@@ -225,32 +225,6 @@ HELP: dict[str, dict[str, str]] = {
         "description": "WI要求を独立した投入実行へ渡す。\n\n目的: 親の終了後もWIの意味確認・保存・報告を完遂する。\n利用場面: 確定済みの要件と由来・逐語原文・証拠を投入専用セッションへ引き渡すとき。\n対象と出力: --request-fileのJSONを状態ディレクトリのwi-submitへ保存し、監督のPID世代と所有移管を確認してJSON受付票を返す。同じrequest_idの同じ入力は同じ受付へ対応し、異なる入力は拒否する。--showは受付と結果・未報告の所在を返す。--finishは対応するrun-skill実行から要求ごとの結果を保存する。\n前提: JSONの項目は`agent-toolkit:atk-mode/playbooks/wi-submission.md`「入力と受付票」、投入セッションの契約は`agent-toolkit:atk-mode/playbooks/wi-submission.md`「投入セッション契約」を参照する。受付票は投入完了と区別する。\n復元・後始末: 未完了・未報告は保持し、SessionStart/SessionEndと--showで再観測する。成否不明の要求を新しいモデルへ再送しない。完了して報告同期済みの受付とログは最終更新から30日後の再観測で回収する。",
         "epilog": "受付入力: 単一の要求object、または同じtarget_repoと一意のrequest_idを持つ要求objectの非空配列。\n単一入力には単一応答、配列には入力順の応答配列を返す。同時に確定した要求は1つの配列で渡す。\n\n実行例:\n\n  atk wi submit --request-file /absolute/path/request.json\n  atk wi submit --show request-1\n  atk wi submit --finish /absolute/path/result.json\n  atk wi submit --resume request-1",
     },
-    "atk wi submission": {
-        "summary": "add-awi-by-userの投入先と作業期間を記録する",
-        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のAWI投入（`/atk-mode add-awi-by-user`）の会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end\n  atk wi submission end --abort",
-    },
-    "atk wi submission begin": {
-        "summary": "add-awi-by-userの投入先を記録する",
-        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。最初の作成時に作業開始時刻を記録し、置き換えでは保つ。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了時は`atk wi submission end`、中止時は`atk wi submission end --abort`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo --target-repo github.com/example/other",
-    },
-    "atk wi submission end": {
-        "summary": "add-awi-by-userの投入作業を終えて記録を削除する",
-        "description": "add-awi-by-userの投入作業を終えて記録を削除する。\n\n目的: 完了または中止した投入作業を、巡回開始の判断から除く。\n利用場面: AWIの投入を完了した時と、ユーザーが投入作業を中止した時。\n対象と出力: 会話別の投入属性だけを削除する。通常終了は引数なし、中止は--abortを指定する。どちらも記録が無くても成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再開する場合は`atk wi submission begin`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission end\n  atk wi submission end --abort",
-    },
-    "atk wi submission activity": {
-        "summary": "対象リポジトリへのWI投入作業の活動を照会する",
-        "description": "WIの投入先に対応する会話と子孫の活動を読み取る。\n\n"
-        "目的: 巡回の開始前に、同じ対象へのユーザーの投入を待つ必要があるか確かめる。\n"
-        "利用場面: 巡回が候補を選定する前。\n"
-        "対象と出力: --target-repoと一致する投入作業の活動があればactiveをtrueとする1行JSONを返す。"
-        "判定に不確かさがあればuncertainをtrueとする。保存状態は変更しない。\n"
-        "前提: 投入先をoriginの正規化URLに対応付けられること。\n"
-        "復元・後始末: 活動がある時は終了を待ってから候補と活動を確かめ直す。",
-        "epilog": "実行例:\n\n  atk wi submission activity --target-repo /home/user/repo",
-    },
     "atk wi process-loop": {
         "summary": "巡回を担う対話セッションを起動・再起動する",
         "description": "巡回を担う対話セッションを起動・再起動する。\n\n目的: 現在の作業ディレクトリで巡回スキルを起動し、終了後に次のセッションを開く。\n利用場面: 巡回を続けたいとき。1セッションで終える場合は--onceを使う。\n対象と出力: 対話CLIを前景で起動する。正常終了後は再開予約または新規会話で起動し、異常終了が3回続けば診断ログを案内して非0で終了する。\n前提: 利用可能な統括向けのCLIとモデル設定があること。WIの選定、公開、更新は起動したセッションが担う。\n復元・後始末: --once、シグナル、中断要求では再起動しない。新しいセッションへ渡す指示と再開予約は実起動時だけ消費する。",

@@ -137,8 +137,8 @@ def _add_wi_add_parser(sub: Any) -> None:
     )
     add.add_argument(
         "--defer-category",
-        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable"),
-        help="--process-wi-timing=next-runで必要な先送り条件の区分。",
+        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable", "throughput"),
+        help="--process-wi-timing=next-runで必要な先送り条件の区分。throughputは現在・次回の進行を妨げない独立項目を処理量の比較で次回へ渡す。",
     )
     _arguments.add_target_repo_arg(
         add,

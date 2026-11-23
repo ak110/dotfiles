@@ -142,7 +142,7 @@ def test_extra_positionals_report_the_accepted_positionals(
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["review-table"], ["review-audit"], ["lane"], ["worktree-stash"], ["wi", "submission"]],
+    [[], ["review-table"], ["review-audit"], ["lane"], ["worktree-stash"]],
 )
 def test_command_without_subcommand_prints_help(
     argv: list[str],

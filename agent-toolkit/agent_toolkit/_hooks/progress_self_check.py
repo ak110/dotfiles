@@ -61,13 +61,15 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = f"進捗点検。次のユーザー向け報告の1行目を埋めよ: `{_REPORT_FORMAT}`。"
+_SELF_CHECK_NOTICE_BODY = f"進捗点検。点検報告の1行目は `{_REPORT_FORMAT}`。作業完了報告を送る場合は不要。"
 _DELEGATED_NOTICE_BODY = "進捗点検。作業記録と残工程を確かめ、委譲元への返却・通知は役割文書に従え。"
 
 
 def _report_matches(text: object) -> bool:
     if not isinstance(text, str) or not (lines := text.splitlines()):
         return False
+    if lines[0] == "## 作業完了報告":
+        return True
     match = _REPORT_LINE.fullmatch(lines[0])
     return match is not None and bool(match[1].strip().strip("….").strip())
 
@@ -81,7 +83,7 @@ def _report_session(payload: dict) -> str | None:
 
 def _report_block() -> str:
     return _block_notice(
-        "点検通知の後、最初の報告の1行目が指定の書式に合わないため確定していない。",
+        "点検報告の先頭行が指定の書式に合わない。作業完了報告は進捗率の行なしで送れる。",
         fix=f"報告の1行目を `{_REPORT_FORMAT}` の形に直して再試行する。見込みはローカル時刻で書く。",
     )
 
