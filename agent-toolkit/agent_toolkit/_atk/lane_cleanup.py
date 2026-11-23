@@ -134,10 +134,14 @@ raise SystemExit(bool(issues))
 
 
 def _dotfiles_projection_matches(worktree: pathlib.Path, directory: pathlib.Path) -> bool:
-    source = pathlib.Path(__file__).resolve().parents[3]
-    if not (source / "scripts" / "sync_codex_plugin_manifests.py").is_file():
-        return False
-    if _lane_records.common(worktree) != _lane_records.common(source):
+    own_checkout = pathlib.Path(__file__).resolve().parents[3]
+    verifier = pathlib.Path("scripts/sync_codex_plugin_manifests.py")
+    source = own_checkout if (own_checkout / verifier).is_file() else _lane_records.main_worktree(worktree)
+    if (
+        source == worktree
+        or not (source / verifier).is_file()
+        or _lane_records.common(worktree) != _lane_records.common(source)
+    ):
         return False
     interpreter = source / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
     if not interpreter.is_file():
