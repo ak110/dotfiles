@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-import dataclasses
 import json
 import re
 import typing
@@ -80,13 +78,6 @@ class JsonRpcResponseError(AppServerError):
 
 class TurnStartResponseError(AppServerError):
     pass
-
-
-@dataclasses.dataclass
-class _WaitCompactionTurn:
-    original_turn_id: str
-    done: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
-    error: str | None = None
 
 
 def _as_text(value: Any) -> str:

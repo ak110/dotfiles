@@ -19,7 +19,7 @@ function expireReplWait($: EngineInterface, wait: BackgroundWait): void {
   });
 }
 
-export function register(on: On, session: { backgroundChanged?: boolean }): void {
+export function register(on: On): void {
   let busy = false;
   let initialized = false;
   let cleanupFailed = false;
@@ -115,19 +115,17 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
                    typeof request.input.expires === "number" && Number.isFinite(request.input.expires)) {
           const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
           if (!Object.hasOwn(waits, request.input.id) && request.input.expires * 1000 > Date.now()) {
-            const wait: BackgroundWait = { id: request.input.id, command: request.input.command, startedAt: await $.clock.now(), used: false, replExpiresAt: request.input.expires * 1000 };
+            const wait: BackgroundWait = { id: request.input.id, command: request.input.command, replExpiresAt: request.input.expires * 1000 };
             await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [wait.id]: wait });
             expireReplWait($, wait);
-            session.backgroundChanged = true;
           }
           ok = true;
         } else if (request.operation === "background_task" && typeof request.input.id === "string" && typeof request.input.command === "string") {
           const seen = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundSeen" })).value ?? {};
           if (!Object.hasOwn(seen, request.input.id)) {
             const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
-            await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [request.input.id]: { id: request.input.id, command: request.input.command, startedAt: await $.clock.now(), used: false } });
+            await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [request.input.id]: { id: request.input.id, command: request.input.command } });
             await $.state.set({ plugin: "agent-toolkit", key: "backgroundSeen" }, { ...seen, [request.input.id]: true });
-            session.backgroundChanged = true;
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {

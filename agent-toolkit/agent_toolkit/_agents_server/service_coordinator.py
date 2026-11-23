@@ -233,9 +233,6 @@ class ServiceCoordinator(ServiceSessionControl):
         found = self._conversation(session.session_id)
         if found is None:
             return
-        backend: Any = found[1].manager._backends.get(session.engine)
-        if session.session_id in getattr(backend, "_wait_compaction_turns", {}):
-            return
         if client is not None:
             client.pause()
         if current["generation"] != self.generation:

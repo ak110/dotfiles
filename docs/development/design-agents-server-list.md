@@ -12,7 +12,7 @@
 経過時間と状態の間には、statusLineのAgent行と同じ書式で委譲sessionの文脈使用量（`53.5k/5%`）を置く。
 エージェント環境の一覧と詳細表示は文脈使用量を返さない。
 自動圧縮を前提とするエージェントは文脈量で判断を変えず、値を渡すと使用量を理由にした引き継ぎや停止の判断を誘うためである（2026年11月6日、ユーザー指示）。
-状態ファイルの値は人向けのstatuslineと待機中の自動圧縮が読むため保持する。
+状態ファイルの値は人向けのstatuslineが読むため保持する。
 PythonとRustは描画処理を共有できないため、PythonとRustのテストが`rust/claude-statusline/testdata/agents_server_state.json`の同じ親IDと数値例を読み、同じ意味と書式を保つ。
 statusLineの描画は`rust/claude-statusline`にあるが、IDと描画行を対応付けて返すCLIを持たず、agent-toolkitの配布物にRustのバイナリが含まれないためである。
 `--watch`は人が一覧の変化を追跡するため、約2秒ごとに同じ一覧処理を実行して画面を描き替え、Ctrl-Cで終了する。

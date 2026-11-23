@@ -193,7 +193,10 @@
 
 ## [Codexの文脈長設定](concepts-codex-context.md#codexの文脈長設定)
 
-- `model_context_window=1000000`と`model_auto_compact_token_limit=900000`は、別の改善で圧縮の頻度が下がることを実作業で観測するまで、減らさず標準へ戻さない。
+- 自動圧縮の境界はClaude Code（`autoCompactWindow`）とCodex（`model_auto_compact_token_limit`）で400kにそろえ、Codexの`model_context_window=1000000`は保つ。
+  250kは小さすぎる（2026年11月23日のユーザー指示。それまでのCodexの900kを置き換えた）。
+  Claude Codeは環境変数を配らず、`/autocompact`のモデル別の上書きを残す。
+  待機中の自前圧縮は持たない（同日のユーザー指示「シンプルにしちゃおう」）。
 
 ## [確認・合意の運用](concepts-confirmation-decisions.md)
 

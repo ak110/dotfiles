@@ -21,7 +21,6 @@ from agent_toolkit._agents_server import (
     engine_availability,
     lifetime,
     session_identity,
-    wait_compaction,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
 from agent_toolkit._agents_server import state as shared_state
@@ -32,7 +31,6 @@ from agent_toolkit._agents_server.codex_protocol import (
     AppServerError,
     JsonRpcResponseError,
     StartCandidateUnavailable,
-    _WaitCompactionTurn,
 )
 from agent_toolkit._agents_server.codex_rpc import APP_SERVER_STREAM_LIMIT_BYTES, APP_SERVER_WORKING_DIRECTORY, JsonRpcProcess
 from agent_toolkit._agents_server.launch_prompts import base_instructions, python_runtime_instructions
@@ -145,7 +143,5 @@ class AppServerManager(
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._writer_session_ids: dict[str, str] = {}
         self._resume_close_events: dict[str, asyncio.Event] = {}
-        self._wait_compactors: dict[str, wait_compaction.WaitCompaction] = {}
-        self._wait_compaction_turns: dict[str, _WaitCompactionTurn] = {}
         self._auto_reset_monitors: dict[str, asyncio.Task[None]] = {}
         self._auto_reset_checks: dict[str, asyncio.Task[None]] = {}

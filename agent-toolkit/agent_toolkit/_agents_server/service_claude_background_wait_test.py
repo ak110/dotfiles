@@ -84,7 +84,7 @@ async def test_generation_move_keeps_background_wait(
                     await asyncio.sleep(0)
                 assert set(session.live_tasks) == {"bg-1"}
 
-                auxiliary = await source.export_service_state(session.session_id)
+                auxiliary = {"wait_compaction": {"legacy": True}}
                 client = clients[0]
                 client.pause()
                 descriptor = await client.detach()

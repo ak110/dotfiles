@@ -286,7 +286,6 @@ class ClaudeServerManager(ClaudeStream):
         isolation_env_files: tuple[str, ...] = (),
         handoff_prompt: str = "",
         adopted_client: SdkResource | None = None,
-        auxiliary: dict | None = None,
     ) -> SessionState:
         diagnostic = _InitializationDiagnostic()
         if connection_kind == "subscription" and not isolation_env_files:
@@ -343,7 +342,6 @@ class ClaudeServerManager(ClaudeStream):
                 else handoff_prompt,
                 result_contract_recovery_consumed=result_contract_recovery_consumed,
                 adopted_client=adopted_client,
-                auxiliary=auxiliary,
             )
         )
         self._tasks.add(task)
@@ -390,17 +388,7 @@ class ClaudeServerManager(ClaudeStream):
         session.claude_applied_effort = effort
         return session
 
-    async def export_service_state(self, session_id: str) -> dict:
-        if checkpoint := self._service_compaction_checkpoints.pop(session_id, None):
-            return {"wait_compaction": checkpoint}
-        compactor = self._wait_compactors.get(session_id)
-        if compactor is None:
-            return {}
-        checkpoint = compactor.checkpoint()
-        await compactor.close()
-        return {"wait_compaction": checkpoint}
-
-    async def adopt_session(self, session: SessionState, descriptor: dict, auxiliary: dict) -> None:
+    async def adopt_session(self, session: SessionState, descriptor: dict, _auxiliary: dict) -> None:
         runtime = service_io.current()
         if runtime is None:
             raise RuntimeError("サービス実行contextがありません")
@@ -421,7 +409,6 @@ class ClaudeServerManager(ClaudeStream):
             request_prompt=session.prompt,
             adopted_client=client,
             result_contract_recovery_consumed=session.result_contract_recovery_consumed,
-            auxiliary=auxiliary,
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
