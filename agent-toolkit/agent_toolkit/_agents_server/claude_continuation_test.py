@@ -227,7 +227,7 @@ async def test_backend_adoption_changes_decoder_without_reconnecting_or_querying
                 original = await source.start("first", str(tmp_path))
                 await ended.wait()
                 await asyncio.gather(*tuple(source._tasks))
-                auxiliary = await source.export_service_state(original.session_id)
+                auxiliary = {"wait_compaction": {"legacy": True}}
             descriptor = await clients[0].detach()
             assert await broker.transfer(descriptor["identifier"], "G1", "G3")
             copied = service_state.restore(await service_state.snapshot(original))

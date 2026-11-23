@@ -85,10 +85,11 @@ def test_config_template_applies_shared_limits_and_preserves_existing_values() -
     "context_config",
     [
         "",
+        "model_context_window = 1000000\nmodel_auto_compact_token_limit = 400000\n",
         "model_context_window = 1000000\nmodel_auto_compact_token_limit = 900000\n",
         "model_context_window = 200000\nmodel_auto_compact_token_limit = 180000\n",
     ],
-    ids=["absent", "same", "different"],
+    ids=["absent", "same", "previous", "different"],
 )
 def test_config_template_applies_context_overrides(context_config: str) -> None:
     """コンテキスト設定の有無と値によらず指定値を反映し、無関係な設定を保つ。
@@ -112,7 +113,7 @@ def test_config_template_applies_context_overrides(context_config: str) -> None:
     assert isinstance(rendered["model_context_window"], int)
     assert rendered["model_context_window"] == 1000000
     assert isinstance(rendered["model_auto_compact_token_limit"], int)
-    assert rendered["model_auto_compact_token_limit"] == 900000
+    assert rendered["model_auto_compact_token_limit"] == 400000
     assert rendered["model"] == "gpt-test"
     assert rendered["features"]["user_feature"] is True
 

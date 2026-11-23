@@ -94,6 +94,5 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
   公式App Serverの公開`thread/compact/start`は空オブジェクトを返してから、別turnのcontextCompaction項目とturn/completedを通知した。
   圧縮中の通常turn/startは`ActiveTurnNotSteerable { turn_kind: Compact }`を返した。
 - 再検証: 公開generate-json-schemaでthreadIdの入力契約を確認し、読取専用の新規threadで初回応答、圧縮受付、独立turn完了、保持情報を答える通常turnの順に観測する。
-  所有AppServerManagerの試行では、使用量50%と未完了の子を隔離入力として与え、圧縮中の保留・元turn ID・通常追送の待機と、圧縮終了後の結果回収を確認する。
-  `wait_compaction_backend_test.py`で完了・失敗・明示拒否・取消後の後着通知を確認する。
-  使用量の差し替えによる観測を、実際に文脈50%まで蓄積した試行と区別する。
+  2026年11月23日に所有backendによる待機中の圧縮予約を撤去した。
+  この節はホストAPIの当時の観測を残す。

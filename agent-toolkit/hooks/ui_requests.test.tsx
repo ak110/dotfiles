@@ -133,6 +133,12 @@ test(`Stop一覧から独立してREPL待機の期限を守る: ${expired}`, asy
   on("session.id", () => ({ value: "expiry-main" }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("command.register", (_$, e) => ({ value: { command: e.name } }));
+  let observed: string[] = [];
+  on("state.set", { plugin: "agent-toolkit", key: "backgroundWaits" }, async (_$, e, next) => {
+    const result = await next(e);
+    observed = Object.keys(e.value ?? {});
+    return result;
+  });
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 500_000, window: 1_000_000 }, rateLimits: [] } }));
@@ -153,8 +159,10 @@ test(`Stop一覧から独立してREPL待機の期限を守る: ${expired}`, asy
   await clock.advance(200);
   await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "expiry-turn", reason: "answer" });
   polling = false;
+  expect(observed).toEqual(["same-repl-id"]);
   await clock.advance(60_000);
-  expect(compactions).toBe(expired ? 0 : 1);
+  expect(observed).toEqual(expired ? [] : ["same-repl-id"]);
+  expect(compactions).toBe(0);
 });
 }
 

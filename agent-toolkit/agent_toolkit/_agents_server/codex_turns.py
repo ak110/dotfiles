@@ -1,22 +1,18 @@
-"""Codexターンの開始と待機圧縮。"""
+"""Codexターンの開始。"""
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import typing
 from typing import Any
 
-from agent_toolkit._agents_server import codex_resume_state, configured_model, wait_compaction
+from agent_toolkit._agents_server import codex_resume_state, configured_model
 from agent_toolkit._agents_server.codex_instructions import _current_service_tier
 from agent_toolkit._agents_server.codex_protocol import (
-    DEFAULT_WAIT_TIMEOUT,
-    AppServerError,
     JsonRpcResponseError,
     StartCandidateUnavailable,
     TurnStartResponseError,
     _client_pid,
-    _WaitCompactionTurn,
     redact_diagnostic,
 )
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
@@ -33,7 +29,7 @@ CONNECTION_REJECTED_MESSAGE = "Codex connection rejected the request"
 
 
 class CodexTurnsMixin:
-    """Codexターンの開始と待機圧縮。
+    """Codexターンの開始。
 
     AppServerManagerへ合成して使うため、各メソッドでは合成後の共有状態と他の責務を参照する。
     """
@@ -150,56 +146,8 @@ class CodexTurnsMixin:
         await self._notify_waiters()
 
     async def _notify_waiters(self: CodexManager) -> None:
-        for session in self._codex_sessions():
-            if wait_compaction.wait_key(session) is not None:
-                compactor = self._wait_compactors.get(session.session_id)
-                if compactor is None and self._owned_client(session) is not None:
-
-                    async def usage(current: SessionState = session) -> dict[str, object]:
-                        return {"totalTokens": current.context_tokens, "rawMaxTokens": current.context_window}
-
-                    async def enqueue(key: str, current: SessionState = session) -> None:
-                        await self._compact_wait(current, key)
-
-                    compactor = wait_compaction.WaitCompaction(usage, enqueue)
-                    self._wait_compactors[session.session_id] = compactor
-                if compactor is not None:
-                    compactor.observe(session)
         async with self._condition:
             self._condition.notify_all()
-
-    async def _compact_wait(self: CodexManager, session: SessionState, key: str) -> None:
-        """保存条件を変えず、所有接続の公開圧縮APIと通常追送を直列化する。
-
-        観測と再検証はdocs/development/audit-records.mdの
-        「agent-toolkit/agent_toolkit/_agents_server/codex.py：待機中の独立圧縮turn：2026年11月2日」にある。
-        """
-        async with session.turn_control_lock:
-            if wait_compaction.wait_key(session) != key:
-                return
-            client = self._owned_client(session)
-            if client is None:
-                return
-            compacting = _WaitCompactionTurn(session.turn_id)
-            self._wait_compaction_turns[session.session_id] = compacting
-        try:
-            async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
-                async with session.turn_control_lock:
-                    if wait_compaction.wait_key(session) != key:
-                        compacting.done.set()
-                        return
-                    await client.request("thread/compact/start", {"threadId": session.session_id})
-                await compacting.done.wait()
-            if compacting.error is not None:
-                raise AppServerError(compacting.error)
-        except JsonRpcResponseError:
-            # RPCによる明示拒否では圧縮turnが無い。待機と通常の追送へ戻れる。
-            self._wait_compaction_turns.pop(session.session_id, None)
-            compacting.done.set()
-            raise
-        finally:
-            if compacting.done.is_set():
-                self._wait_compaction_turns.pop(session.session_id, None)
 
     @staticmethod
     def _turn_start_response_is_ambiguous(client: Any, error: BaseException) -> bool:

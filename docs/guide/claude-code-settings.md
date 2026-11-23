@@ -19,8 +19,12 @@ agent-toolkitの実効設定は`atk config list`で一覧表示し、`atk config
 - `permissions`: 許可・拒否するツールやパターンを記述
  （[例](https://github.com/ak110/dotfiles/blob/master/share/claude_settings_json_managed.json)）
 
-自動圧縮の時期は、Claude Codeの標準の動作とagent-toolkitの待機中の圧縮に任せる。
-以前に配布していた`env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`と`env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`は設定更新時に除去する。
+- `autoCompactWindow`: `400000`（自動圧縮が始まる文脈の大きさ。全モデル共通の既定値）
+
+自動圧縮の境界は、モデルごとに`/autocompact <値>`で変えられる（`modelSettings`へ保存され、トップレベルの値より優先される）。
+`/autocompact auto`はモデル向けに調整された標準の値へ戻すもので、配布した`autoCompactWindow`へは戻らない。
+配布した値へ戻すには、`~/.claude/settings.json`の`modelSettings.<モデル>.autoCompactWindow`を削除する。
+以前に配布していた`env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`と`env.CLAUDE_CODE_AUTO_COMPACT_WINDOW`は、`/autocompact`より優先されて会話の途中で変えられないため、設定更新時に除去する。
 
 ### Code Mode
 

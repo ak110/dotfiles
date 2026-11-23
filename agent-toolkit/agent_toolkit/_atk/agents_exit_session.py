@@ -304,7 +304,7 @@ def _request_hook_exit(target: Target, session_id: str | None) -> bool:
 
 
 def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool = False) -> None:
-    """期限切れの読込目印・終了要求・定期再確認・利用上限・待機圧縮の判定記録を回収する。clearでは現行IDも削除する。"""
+    """期限切れの読込目印・終了要求・定期再確認・利用上限・旧版が残した圧縮の判定記録を回収する。clearでは現行IDも削除する。"""
     directory = _function_hook_dir()
     if directory is None or not directory.is_dir():
         return
