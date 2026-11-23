@@ -21,6 +21,7 @@ from agent_toolkit._agents_server import (
     shared_layout,
     wait_run,
 )
+from agent_toolkit._agents_server.cli_turn import CliTurnManager
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
@@ -80,19 +81,24 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if session.engine == "claude":
             await cast(Any, self._backend("claude")).set_effort(session, value)
 
-    async def _send_with_resources(self, session: SessionState, prompt: str) -> dict[str, Any]:
+    async def _send_with_resources(
+        self, session: SessionState, prompt: str, *, result_recovery: bool = False
+    ) -> dict[str, Any]:
+        backend = self._backend(session.engine)
+        cli_recovery = result_recovery and isinstance(backend, CliTurnManager)
+        send = backend.recover_result_contract if cli_recovery else backend.send_message
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
 
         ticket = (
             await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
-            if session.status != "running"
+            if cli_recovery or session.status != "running"
             else None
         )
         try:
             async with service_io.next_input(session):
-                result = await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+                result = await send(session, resources + "\n\n" + prompt)
         finally:
             if ticket is not None:
                 ticket.release()
@@ -128,8 +134,6 @@ class ManagerResume(manager_registry.ManagerRegistry):
             assert pending is not None
             reason = session.result_contract_recovery_reason or "返却形式を検査できません"
             session.result_contract_recovery_consumed = True
-            if session.engine not in {"claude", "codex"}:
-                finalize_pending_result(session, touch=False)
             try:
                 delivery = await self._send_with_resources(
                     session,
@@ -154,6 +158,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
                         )
                         + f"\n{FINAL_RESPONSE_NOTICE}"
                     ),
+                    result_recovery=True,
                 )
                 if delivery.get("delivery") == "reply_failed":
                     raise RuntimeError("返却形式の回復入力を配送できませんでした")

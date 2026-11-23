@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     result_contract,
     result_projection,
+    resume_waits,
     session_errors,
     session_identity,
     shared_layout,
@@ -202,13 +203,24 @@ class CliTurnManager:
         )
 
     async def send_message(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        return await self._reply(session, prompt, repair_result_contract=False)
+
+    async def recover_result_contract(self, session: SessionState, prompt: str) -> dict[str, Any]:
+        return await self._reply(session, prompt, repair_result_contract=True)
+
+    async def _reply(self, session: SessionState, prompt: str, *, repair_result_contract: bool) -> dict[str, Any]:
         validate_prompt(prompt)
         async with session.turn_control_lock:
-            if not session.terminal:
+            if repair_result_contract:
+                if not session.result_contract_recovery_pending or not session.result_contract_recovery_consumed:
+                    raise RuntimeError("返却形式の回復を予約した保留結果がありません")
+                resume_waits.finalize_pending_result(session, touch=False)
+            elif not session.terminal:
                 raise ActionableError(
                     f"the active {self.NAME} turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
-            await launch_requests.reject_stale_role_reply(session)
+            if not repair_result_contract:
+                await launch_requests.reject_stale_role_reply(session)
             previous_result = session.previous_result()
             await self._stop_owned_task(session.session_id)
             await self._start_turn(
