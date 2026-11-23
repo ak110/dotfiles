@@ -97,7 +97,6 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
         )
         assert first.returncode == 0 and not first.stderr
         assert "additionalContext" in json.loads(first.stdout)["hookSpecificOutput"]
-        expected = "未取得"
     result = subprocess.run(
         [shell, "-c", command],
         input=json.dumps(payload),
@@ -112,8 +111,8 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     assert not result.stderr
     if case == "unread-rewrite":
         specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
-        assert specific.get("permissionDecision") != "deny"
-        assert "未取得" not in specific.get("additionalContext", "")
+        assert specific.get("permissionDecision") == "deny"
+        assert "writing-standards" in specific.get("permissionDecisionReason", "")
         return
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
