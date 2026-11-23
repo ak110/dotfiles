@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import pathlib
@@ -17,21 +18,26 @@ def identifiers(entries: Iterable[EntryRecord]) -> frozenset[Identifier]:
     return frozenset((canonical_repo(repo, cache) or "", path.name) for path, repo, *_ in entries)
 
 
-def save(path: pathlib.Path, entries: Iterable[EntryRecord]) -> None:
+def save(path: pathlib.Path, entries: Iterable[EntryRecord]) -> str:
     payload = [{"target_repo": repo, "filename": name} for repo, name in sorted(identifiers(entries))]
+    encoded = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
     try:
-        atomic_write(path, json.dumps(payload, ensure_ascii=False) + "\n")
+        atomic_write(path, encoded)
     except OSError as error:
         raise ActionableError(
             f"開始時集合を保存できない: {path}: {error}",
             next_action="--snapshot-outputの保存先と書込権限を確認し、初回取得を再実行する",
         ) from error
+    return hashlib.sha256(encoded).hexdigest()
 
 
-def read(path: pathlib.Path) -> frozenset[Identifier]:
+def read(path: pathlib.Path, *, expected_digest: str | None = None) -> frozenset[Identifier]:
     """保存した集合を検証して読み、不正・読取不能は基準を変更せず失敗させる。"""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+        encoded = path.read_bytes()
+        if expected_digest is not None and hashlib.sha256(encoded).hexdigest() != expected_digest:
+            raise ValueError("開始時の保存後に内容が変化した")
+        payload = json.loads(encoded.decode("utf-8-sig"))
         if not isinstance(payload, list):
             raise ValueError("JSON配列が必要")
         result: set[Identifier] = set()
@@ -67,6 +73,7 @@ def remember_progress_start(
     path: pathlib.Path,
     private_notes: pathlib.Path,
     targets: Iterable[tuple[str, str | None]],
+    digest: str,
 ) -> None:
     if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1" or delegated_session.is_delegated(os.environ):
         return
@@ -79,6 +86,7 @@ def remember_progress_start(
             "repo": repo,
             "branch": branch,
             "path": str(path.resolve()),
+            "digest": digest,
             "notes": str(private_notes.resolve()),
         }
         for repo, branch in targets

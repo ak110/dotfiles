@@ -7,6 +7,7 @@ import pytest
 from agent_toolkit import atk
 from agent_toolkit._atk import config
 from agent_toolkit._atk.wi import listing
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing import git_repository
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
 
@@ -203,6 +204,9 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
     capsys.readouterr()
     assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
     assert baseline.read_bytes() == original
+    baseline.write_bytes(later_baseline.read_bytes())
+    with pytest.raises(ActionableError, match="開始時の保存後に内容が変化"):
+        listing.progress_new_wis("snapshot-loop")
 
 
 def test_process_loop_progress_reads_new_merge_work_item_from_upstream(tmp_path, monkeypatch, capsys):

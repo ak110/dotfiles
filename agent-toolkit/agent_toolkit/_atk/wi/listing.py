@@ -420,11 +420,12 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshots = configured_repo_snapshot(private_notes)
         configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
-            _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            digest = _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
             _wi_snapshot.remember_progress_start(
                 args.snapshot_output,
                 private_notes,
                 ((item.repository.repo_id, item.repository.branch) for item in snapshots),
+                digest,
             )
         total = 0
         for snapshot in snapshots:
@@ -472,9 +473,9 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     texts = EntryTexts()
     all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     if getattr(args, "snapshot_output", None) is not None:
-        _wi_snapshot.save(args.snapshot_output, all_entries)
+        digest = _wi_snapshot.save(args.snapshot_output, all_entries)
         _wi_snapshot.remember_progress_start(
-            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos)
+            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest
         )
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
@@ -537,7 +538,9 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
     private_notes = pathlib.Path(notes.pop())
     if not private_notes.is_dir():
         raise ValueError("private-notesを読めない")
-    baselines = {scope: _wi_snapshot.read(pathlib.Path(row["path"])) for scope, row in scopes.items()}
+    baselines = {
+        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"]) for scope, row in scopes.items()
+    }
     labels = []
     with _wi_sync.repo_lock(private_notes, timeout=0):
         _wi_sync.ensure_mutation_allowed(private_notes)
