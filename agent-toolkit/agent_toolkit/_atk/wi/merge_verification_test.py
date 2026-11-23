@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 
@@ -35,7 +36,7 @@ def test_ci_success_requires_exact_oid_and_execution(monkeypatch, runs, jobs, al
         assert (forge, repository, ref) == ("github", _REPO, "fix/demo")
         return lambda sha: (
             [
-                dict(databaseId=ident, headSha=oid, status=status, conclusion=conclusion, event="push")
+                dict(databaseId=ident, headSha=oid, status=status, conclusion=conclusion, event="push", workflowName="CI")
                 for ident, oid, status, conclusion in runs
             ]
             if sha == _COMMIT
@@ -70,16 +71,73 @@ def test_equivalent_evidence_is_only_for_proven_non_ci_target(tmp_path, monkeypa
     report = tmp_path / "verify.out"
     report.write_text("検証の出力", encoding="utf-8")
     evidence = tmp_path / "verified.json"
-    values = {"target_repo": _REPO, "commit": _COMMIT, "argv": ["make", "test"], "exit_code": 0, "output": str(report)}
-    evidence.write_text(json.dumps(values), encoding="utf-8")
+    review = tmp_path / "review.md"
+    values = {
+        "target_repo": _REPO,
+        "commit": _COMMIT,
+        "argv": ["make", "test"],
+        "exit_code": 0,
+        "output": str(report),
+        "output_sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+        "review": str(review),
+    }
+    _write_evidence(evidence, review, values)
     if configured:
         with pytest.raises(ActionableError, match="CIが未確認"):
             merge_verification.check(_body(evidence))
     else:
         assert merge_verification.check(_body(evidence)).startswith("CI非対象")
-        evidence.write_text(json.dumps({**values, "commit": "b" * 40}), encoding="utf-8")
-        with pytest.raises(ActionableError, match="同等の検証記録"):
+        for changes in ({"commit": "b" * 40}, {"argv": ["true"]}, {"output_sha256": "f" * 64}):
+            _write_evidence(evidence, review, {**values, **changes})
+            with pytest.raises(ActionableError, match="同等の検証記録"):
+                merge_verification.check(_body(evidence))
+        _write_evidence(evidence, review, values)
+        evidence.write_text(evidence.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        with pytest.raises(ActionableError, match="独立レビューで"):
             merge_verification.check(_body(evidence))
+
+
+def _write_evidence(evidence, review, values):
+    raw = json.dumps(values).encode("utf-8")
+    evidence.write_bytes(raw)
+    review.write_text(
+        f"状態: completed\nレビューHEAD: {_COMMIT}\n未解決の指摘数: 0\n"
+        f"同等検証記録SHA-256: {hashlib.sha256(raw).hexdigest()}\n",
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    ("workflow", "jobs", "allowed"),
+    [
+        ("Documentation", [{"name": "docs", "conclusion": "success"}], False),
+        ("CI", [{"name": "owner", "conclusion": "success"}, {"name": "test", "conclusion": "skipped"}], False),
+        ("CI", [{"name": "test", "conclusion": "success"}], True),
+    ],
+)
+def test_does_not_count_unrelated_or_skipped_ci(monkeypatch, workflow, jobs, allowed):
+    run = dict(databaseId=1, headSha=_COMMIT, status="completed", conclusion="success", event="push", workflowName=workflow)
+    monkeypatch.setattr(wait_ci_forge, "_default_run_list_fn", lambda *_args: lambda _sha: [run])
+    monkeypatch.setattr(wait_ci_forge, "_gh_job_list", lambda *_args: jobs)
+    monkeypatch.setattr(wait_ci_forge, "_github_ci_configured", lambda *_args: True)
+    monkeypatch.setattr(merge_verification, "_declared_github_exclusion", lambda *_args: False)
+    if allowed:
+        assert merge_verification.check(_body()).startswith(f"対象OID {_COMMIT} のpush CI成功")
+    else:
+        with pytest.raises(ActionableError):
+            merge_verification.check(_body())
+
+
+def test_dotfiles_requires_all_pytest_jobs_and_allows_other_skips():
+    jobs = [
+        {"name": name, "conclusion": "success"}
+        for name in ("pytest (3.15)", "pytest-toolkit (3.15)", *(f"pytest-toolkit (3.15, {i}/3)" for i in range(1, 4)))
+    ]
+    jobs.append({"name": "plugin-version", "conclusion": "skipped"})
+    assert merge_verification._configured_checks_executed(jobs, dotfiles=True)  # pylint: disable=protected-access
+    jobs[2]["conclusion"] = "skipped"
+    assert not merge_verification._configured_checks_executed(jobs, dotfiles=True)  # pylint: disable=protected-access
+    assert not merge_verification._configured_checks_executed(jobs[3:], dotfiles=True)  # pylint: disable=protected-access
 
 
 @pytest.mark.parametrize(
@@ -110,7 +168,7 @@ def test_cmd_edit_checks_merge_metadata_before_persisting_it(tmp_path, monkeypat
     monkeypatch.setattr(wait_ci_forge, "_github_ci_configured", lambda *_args: True)
     monkeypatch.setattr(merge_verification, "_declared_github_exclusion", lambda *_args: False)
     with pytest.raises(SystemExit) as exit_info:
-        atk.main(["wi", "edit", name, "--body-file", str(proposal)], home=tmp_path)
+        atk.main(["wi", "edit", name, "--target-repo", _REPO, "--body-file", str(proposal)], home=tmp_path)
     assert exit_info.value.code != 0
     assert "CIが未確認" in capsys.readouterr().err
     assert path.read_bytes() == original

@@ -93,6 +93,7 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
         paths = [os.fsdecode(path) for path in listed.stdout.split(b"\0") if path]
         if not paths:
             raise ValueError("直下の検査対象が空")
+        options = [arg for arg in selected["pytest_args"] if not (collect_only and re.fullmatch(r"-v+", arg))]
         if impact_base is not None:
             history = root / ".testscope"
             if (
@@ -109,7 +110,9 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
                     "[tool.pyfltr]\npytest-impact-selection = true\npytest-targets = " + json.dumps(paths), encoding="utf-8"
                 )
                 env["PYFLTR_GLOBAL_CONFIG"] = str(config)
-                return subprocess.call(
+                junit = Path(temporary) / "pytest.xml"
+                args = [*options, *extra] if collect_only else [*options, f"--junitxml={junit}"]
+                code = subprocess.call(
                     [
                         sys.executable,
                         "-m",
@@ -118,14 +121,16 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
                         "--commands=pytest",
                         "--no-always-targets",
                         f"--changed-since={impact_base}",
-                        f"--pytest-args={shlex.join([*selected['pytest_args'], *extra])}",
+                        f"--pytest-args={shlex.join(args)}",
                     ],
                     cwd=root,
                     env=env,
                 )
-        return subprocess.call(
-            [sys.executable, "-m", "pytest", *selected["pytest_args"], *extra, "--", *paths], cwd=root, env=env
-        )
+                if code or collect_only or (junit.is_file() and junit.stat().st_size):
+                    return code
+                env.pop("PYFLTR_GLOBAL_CONFIG", None)
+                env["TESTSCOPE"] = "off"
+        return subprocess.call([sys.executable, "-m", "pytest", *options, *extra, "--", *paths], cwd=root, env=env)
 
     result = 0
     for shard in selected["shards"]:

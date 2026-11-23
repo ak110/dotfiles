@@ -38,12 +38,15 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
 6. 一時ブランチをリモートへpushし、対象の完全OIDを確定する。
    - 隔離worktreeがcleanであることを確かめ、`git push origin HEAD:refs/heads/<一時ブランチ名>`でリモートへpushする。
    - pushの成功と完全OIDを確かめる。
+   - GitHubで検証に使うworkflow名が`CI`と異なるリポジトリでは、検証を実行するworkflowを確かめて`merge_ci_workflow`へその名前を指定する。
    - 同等のローカル検証が必要な場合は、証拠を作業ツリーの外に保存してから回収する。
 7. AWIをマージ用へ更新して保留を解く。
    - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
    - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
    - CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。
-     記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、保存した出力の絶対パス`output`を含め、何を同等としたかを独立レビューで確かめる。
+     記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、出力の絶対パス`output`とSHA-256の`output_sha256`、独立レビュー返却の絶対パス`review`を含める。
+     独立レビューは実行した検査が必要なCIと同等かを確かめ、未解決0件の対象OIDの返却に`同等検証記録SHA-256: <記録ファイルのSHA-256>`を加える。
+     push後に初めてCIの対象外と分かった場合も、この検査と独立レビューを終えてから保留を解く。
    - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否と、必要なら更新種別と根拠を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
    - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。

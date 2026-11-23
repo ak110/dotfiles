@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import re
@@ -18,17 +19,31 @@ from agent_toolkit._git import command as git_command
 
 _SHA = re.compile(r"[a-f0-9]{40}")
 _TIMEOUT = 15.0
+_DOTFILES = "github.com/ak110/dotfiles"
+_DOTFILES_PYTEST = frozenset(
+    {
+        "pytest (3.15)",
+        "pytest-toolkit (3.15)",
+        *(f"pytest-toolkit (3.15, {shard}/3)" for shard in range(1, 4)),
+    }
+)
 _RETRY = "対象ブランチと完全OIDのCIを確認し、必要なジョブが成功した後で同じ操作を再実行する"
 
 
-def merge_input(text: str) -> tuple[object, object, object, object] | None:
+def merge_input(text: str) -> tuple[object, object, object, object, object] | None:
     parsed = frontmatter.parse_frontmatter(text)
     if parsed is None:
         return None
     data = parsed[0]
     if "merge_branch" not in data and "merge_commit" not in data:
         return None
-    return data.get("target_repo"), data.get("merge_branch"), data.get("merge_commit"), data.get("merge_local_verification")
+    return (
+        data.get("target_repo"),
+        data.get("merge_branch"),
+        data.get("merge_commit"),
+        data.get("merge_local_verification"),
+        data.get("merge_ci_workflow", "CI"),
+    )
 
 
 def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
@@ -38,7 +53,8 @@ def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
             next_action="同じOIDで同等の検証を実行し、merge_local_verificationへ検証記録の絶対パスを指定する",
         )
     try:
-        record = json.loads(pathlib.Path(reference).read_text(encoding="utf-8"))
+        raw = pathlib.Path(reference).read_bytes()
+        record = json.loads(raw)
         if (
             not isinstance(record, dict)
             or record.get("target_repo") != repository
@@ -48,21 +64,48 @@ def _check_local_evidence(reference: object, repository: str, sha: str) -> str:
             or not isinstance(argv := record.get("argv"), list)
             or not argv
             or not all(isinstance(value, str) and value for value in argv)
+            or pathlib.Path(argv[0]).name in {"true", "true.exe", ":", "echo", "echo.exe"}
             or not isinstance(output := record.get("output"), str)
             or not pathlib.Path(output).is_absolute()
             or not pathlib.Path(output).is_file()
+            or not isinstance(review := record.get("review"), str)
+            or not pathlib.Path(review).is_absolute()
+            or not isinstance(record.get("output_sha256"), str)
         ):
-            raise ValueError("リポジトリ、OID、終了値、コマンド、出力のいずれかが一致しない")
+            raise ValueError("リポジトリ、OID、終了値、コマンド、出力、独立レビューのいずれかが一致しない")
+        captured = pathlib.Path(output).read_bytes()
+        if not captured.strip() or hashlib.sha256(captured).hexdigest() != record["output_sha256"]:
+            raise ValueError("出力が空か、検証記録のSHA-256と一致しない")
+        reviewed = pathlib.Path(review).read_text(encoding="utf-8").splitlines()
+        if not all(
+            line in reviewed
+            for line in (
+                "状態: completed",
+                f"レビューHEAD: {sha}",
+                "未解決の指摘数: 0",
+                f"同等検証記録SHA-256: {hashlib.sha256(raw).hexdigest()}",
+            )
+        ):
+            raise ValueError("独立レビューで対象OIDの同等検証記録を確認していない")
     except (OSError, ValueError, TypeError) as error:
         raise ActionableError(f"同等の検証記録を受理できない: {error}", next_action=_RETRY) from error
     return f"CI非対象。対象OID {sha} の同等検証記録: {reference}"
 
 
-def _configured_checks_executed(jobs: Sequence[Mapping[str, Any]]) -> bool:
-    verification_jobs = [job for job in jobs if job.get("conclusion") == "success" and isinstance(job.get("name"), str)]
-    if not verification_jobs:
+def _configured_checks_executed(jobs: Sequence[Mapping[str, Any]], *, dotfiles: bool) -> bool:
+    if not jobs or any(not isinstance(name := job.get("name"), str) or "(non-owner)" in name for job in jobs):
         return False
-    return not any("(non-owner)" in job["name"] for job in verification_jobs)
+    if dotfiles:
+        succeeded = {job["name"] for job in jobs if job.get("conclusion") == "success"}
+        if not _DOTFILES_PYTEST.issubset(succeeded):
+            return False
+        return all(
+            job.get("conclusion") == "success" or (job.get("conclusion") == "skipped" and job["name"] not in _DOTFILES_PYTEST)
+            for job in jobs
+        )
+    return all(job.get("conclusion") == "success" or job.get("allowFailure") is True for job in jobs) and any(
+        job.get("conclusion") == "success" for job in jobs
+    )
 
 
 def _might_push(on: object, branch: str) -> bool:
@@ -130,12 +173,14 @@ def check(text: str, *, expected_head: str | None = None) -> str:
     inputs = merge_input(text)
     if inputs is None:
         raise ActionableError("マージ用WIの情報が無い", next_action="対象ブランチと完全OIDを保存する")
-    repository, branch, sha, local = inputs
+    repository, branch, sha, local, workflow = inputs
     if (
         not isinstance(repository, str)
         or not isinstance(branch, str)
         or not branch
         or branch.startswith("-")
+        or not isinstance(workflow, str)
+        or not workflow.strip()
         or not isinstance(sha, str)
         or _SHA.fullmatch(sha) is None
     ):
@@ -145,10 +190,20 @@ def check(text: str, *, expected_head: str | None = None) -> str:
     try:
         forge, location = wait_ci_forge._resolve_forge("auto", repository)  # pylint: disable=protected-access
         fetch = wait_ci_forge._default_run_list_fn(forge, location, branch, _TIMEOUT)  # pylint: disable=protected-access
+        target = wait_ci_forge._parse_repository(location)  # pylint: disable=protected-access
+        dotfiles = f"{target.hostname}/{target.project_path}".lower() == _DOTFILES
+        if forge == "github" and dotfiles and workflow != "CI":
+            raise ActionableError("dotfilesの検証workflowはCIを指定する", next_action=_RETRY)
         fetched = fetch(sha)
         if len(fetched) >= 1000:
             raise ActionableError("CI一覧が取得上限1000件に達し、必要な実行を確定できない", next_action=_RETRY)
-        runs = [run for run in fetched if run.get("headSha") == sha and run.get("event", "push") == "push"]
+        runs = [
+            run
+            for run in fetched
+            if run.get("headSha") == sha
+            and run.get("event") == "push"
+            and (forge != "github" or run.get("workflowName") == workflow)
+        ]
         wait_ci_polling._run_ids(runs)  # pylint: disable=protected-access
         superseded = wait_ci_polling._superseded_cancelled_ids(runs)  # pylint: disable=protected-access
         runs = [run for run in runs if run["databaseId"] not in superseded]
@@ -165,7 +220,7 @@ def check(text: str, *, expected_head: str | None = None) -> str:
             states = ", ".join(f"{run['databaseId']}:{run.get('status')}/{run.get('conclusion')}" for run in runs)
             raise ActionableError(f"対象OID {sha} のCIが成功していない: {states}", next_action=_RETRY)
         jobs = wait_ci_forge._gh_job_list if forge == "github" else wait_ci_forge._glab_job_list  # pylint: disable=protected-access
-        if not all(_configured_checks_executed(jobs(location, run, _TIMEOUT)) for run in runs):
+        if not all(_configured_checks_executed(jobs(location, run, _TIMEOUT), dotfiles=dotfiles) for run in runs):
             raise ActionableError(f"対象OID {sha} の実ジョブの成功を確認できない", next_action=_RETRY)
     except wait_ci_forge.RunListError as error:
         raise ActionableError(f"対象OIDのCIを取得できない: {error}", next_action=_RETRY) from error

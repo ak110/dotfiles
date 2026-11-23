@@ -48,7 +48,7 @@ def test_root_runs_workflow_pathspecs_and_preserves_file_names(monkeypatch, tmp_
     assert commands[1][0][1:] == [
         "-m",
         "pytest",
-        *root["pytest_args"],
+        *(arg for arg in root["pytest_args"] if arg != "-v"),
         "--collect-only",
         "-q",
         "--",
@@ -110,3 +110,28 @@ def test_toolkit_collect_prints_ids_from_the_exact_run(monkeypatch, tmp_path, ca
     selected = {"pytest_args": ["-v"], "shards": ["1/1"], "path": "agent-toolkit"}
     assert subject.run_scope("toolkit", selected, tmp_path, collect_only=True) == 0
     assert "1/1\tmodule_test.py::test_case" in capsys.readouterr().out
+
+
+def test_root_only_selects_a_difference_when_the_history_and_ancestor_exist(monkeypatch, tmp_path) -> None:
+    base = "a" * 40
+    history = tmp_path / ".testscope"
+    history.mkdir()
+    (history / "map.json").write_text("{}", encoding="utf-8")
+    selected = {"pathspecs": ["*_test.py"], "pytest_args": ["-v", "--maxfail=0"]}
+    monkeypatch.setattr(subject.subprocess, "run", lambda *_args, **_kwargs: SimpleNamespace(stdout=b"case_test.py\0"))
+    with pytest.raises(ValueError, match="履歴"):
+        subject.run_scope("root", selected, tmp_path, collect_only=True, impact_base=base)
+    (history / "pyfltr.json").write_text("{}", encoding="utf-8")
+    calls = []
+
+    def call(argv, **kwargs):
+        calls.append(argv)
+        if argv[0] != "git":
+            config = Path(kwargs["env"]["PYFLTR_GLOBAL_CONFIG"])
+            assert 'pytest-targets = ["case_test.py"]' in config.read_text(encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(subject.subprocess, "call", call)
+    assert subject.run_scope("root", selected, tmp_path, collect_only=True, impact_base=base) == 0
+    assert calls[0] == ["git", "merge-base", "--is-ancestor", base, "HEAD"]
+    assert f"--changed-since={base}" in calls[1]
