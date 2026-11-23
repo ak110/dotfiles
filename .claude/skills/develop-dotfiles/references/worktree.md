@@ -13,6 +13,8 @@ UV_NO_SYNC=true uv run --frozen pytest -n 0 -p no:cacheprovider norm_size_budget
 検査に成功したHEADを渡す。
 
 1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。
+   - `make sync` の同期対象はPythonの仮想環境に限る。
+     mise管理のツールやshimは別に準備する。
    - 検証に使う作業ツリーの専用環境を用意する。
      `make sync`は同期前に環境の実体を確かめ、リンクされた既定の環境や別の作業ツリーに属する環境を拒否する。
    - `make format`・`make test`・`make test-browser`・`make test-agents-live`は同期後の検証とその子の`uv run`に`UV_NO_SYNC=true`を渡す。

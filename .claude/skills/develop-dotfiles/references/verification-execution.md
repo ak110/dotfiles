@@ -56,7 +56,10 @@
      `--check-argv`の終了0は実際の実行の成功、版、cwd、HEADとindex、実行後の不変を確かめないため、verify-runは省かない。
    - 統合後・公開前に足した是正（統合時の検証失敗、CI失敗、案内文や構成の追随など）では、変えた文言・ジョブ名・設定キーの旧値を固定文字列で探し、それを期待する試験（`ci_workflow*_test.py`、`<hook名>_test.py`など）を是正後のHEADで実行してから公開する。
    - 最終の検証が失敗したらfast-forwardせず、是正、必要な再レビュー、統合の再開へ戻る。
-   - manifestへ渡す場合は、実行の成功、run_idの取得、同じ入力のverify-runの成功を、失敗が伝わる1操作にまとめる。
+   - 検証がmise管理のツールを使う場合は、追随後のレーンworktreeで `mise which <tool>` を実行して設定が選ぶ実行ファイルを確認し、検証と同じPATHから対象コマンドを `--version` など副作用のない引数で起動する。
+     どちらかが失敗したら検証へ進まず、実行ディレクトリ、ツール名、miseと起動の診断を記録する。
+     ツールが未導入なら `MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install` を案内し、実体が見つかっても起動できない場合はPATHの順序とshimの参照先を確認する。
+   - manifestへ渡す場合は、追随後のレーンworktreeでの `make sync`、実行の成功、run_idの取得、同じ入力のverify-runの成功を、失敗が伝わる1操作にまとめる。
      次のスクリプトを自分のmanaged-tempへ保存し、manifestのverificationに次の配列を1項目として渡す。
 
      ```json
@@ -72,6 +75,7 @@
      log_prefix=$1
      consumer_review=$2
      shift 2
+     make sync
      uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
      run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
      uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review"
