@@ -8,6 +8,8 @@
 
 - 対象: PR・MR・イシューの作成と本文の編集、コメント、レビューへの返信、Releaseの本文、チャットやメールへのMCP経由の送信など、第三者が読む外部サービスへ、エージェントが起草または加筆した人間向けの文面。
   タイトル（PR・MR・イシュー・Releaseの表題）も文面に含める。
+- 対象: エージェントが起草し本人が外部サービスへ提出する申請・申告の文面（APIの利用申請など）は、本人へ渡す前にレビューする。
+  申告の主体、処理の場所、送り先、保持の条件は、運用の実物（設定、実装、設計の記録）を`根拠の所在`に渡して確かめさせる。
 - 対象外: ユーザーから逐語で渡された文面、git push、コミットメッセージ、private-notesのWI本文。
   コミットメッセージは`agent-toolkit:atk-mode/references/commit-message.md`、WI本文は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従う。
 - 原文や資料から起草・推敲した文面の意味の保持は`agent-basics:writing-standards/references/writing-genres.md`「ユーザー入力素材の取扱い」に従う。
