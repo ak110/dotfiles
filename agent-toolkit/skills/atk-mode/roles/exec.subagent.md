@@ -98,7 +98,7 @@ startup_documents:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前（返す区切りは`計画作成完了`、`計画検査完了`、`計画なし準備完了`、`統合準備完了`） | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
+| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
 | 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
 | `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` |
 | `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
@@ -204,7 +204,8 @@ private-notesへの計画の保存とWIの状態の変更は、`atk`の通常の
 現在の区切りがこれに当たる場合は、追加WIへ進む前にその固定形式を送る。
 `実装完了`は、レーン担当自身が実行レビューを起動する入力であり（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」手順3）、メインへ送らずに実行レビューへ進む。
 メインの指示を待つ`計画作成完了`、`計画なし準備完了`、`統合準備完了`は、返却値として返して応答を待つ。
-待機しない`計画検査完了`は`atk agents notify`で送り、ターンを終えずに実装へ進む（`マージなし`では統合の指示を待つ）。
+`計画検査完了`に`マージあり`の組があれば、`atk agents notify`で送り、最終応答にせず同じターンで実装へ進む。
+全組`マージなし`なら返却して統合の指示を待てる。
 `agents_server`の委譲先では返却がターンの終了になるため、待機の要らない区切りを返却値で返すと処理が止まる。
 確定した計画は凍結したまま保ち、追加の指示は受領した順に処理する。
 計画を作った区切りごとに、計画の絶対パス、対応するAWI、保存の状態を引き継ぎ記録へ蓄え、統合入力には全ての計画を作った順に渡す。

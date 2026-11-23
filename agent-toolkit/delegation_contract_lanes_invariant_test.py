@@ -220,7 +220,15 @@ def test_process_wi_plan_handoff_follows_conditional_lane_transition() -> None:
     assert "委譲元の応答を待って" not in lane_row
     assert "--selection-file" in lane_steps and "--lane" in lane_steps
     assert "計画作成完了" in lane_steps
-    assert "計画検査完了" in lane_steps
+    assert "全組`マージなし`の場合を除き、最終応答にしない" in lane_steps
+    roles = plugin_root / "skills" / "atk-mode" / "roles"
+    executor = (roles / "exec.subagent.md").read_text(encoding="utf-8")
+    receiver = (roles / "exec.parent.md").read_text(encoding="utf-8")
+    receipt = (roles.parent / "playbooks" / "lane-receipt.md").read_text(encoding="utf-8")
+    assert "最終応答にせず同じターンで実装へ進む" in executor
+    assert "`計画検査完了` | 「計画準備の受領」 | 通知には返信しない" in receiver
+    assert "通知には返信しない。" in receipt
+    assert "全組`マージなし`の返却では" in receipt
     assert "応答を待たずに実装作業へ進む" in lane_steps
 
 

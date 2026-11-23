@@ -590,6 +590,22 @@ def _role_session(name: str, **fields: Any) -> state.SessionState:
         ("add-wi.subagent.md", "状態: completed\n結果: 投入済み", True),
         ("add-wi.subagent.md", "待機中: 01a1d000", True),
         ("add-wi.subagent.md", "結果: 調査済み\n続行できない区分: owner_input\n続行できない理由: 対象の確定が必要", True),
+        ("exec.subagent.md", "計画検査完了\n計画ファイル: なし\n統合区分: マージあり\nAWI: a.md", False),
+        (
+            "exec.subagent.md",
+            "計画検査完了\n計画ファイル: /plan.md\n統合区分: マージなし\nAWI: a.md\n"
+            "計画ファイル: なし\n統合区分: マージあり\nAWI: b.md",
+            False,
+        ),
+        (
+            "exec.subagent.md",
+            "計画検査完了\n計画ファイル: /plan.md\n統合区分: マージなし\nAWI: a.md\n"
+            "計画ファイル: なし\n統合区分: マージなし\nAWI: b.md",
+            True,
+        ),
+        ("exec.subagent.md", "計画作成完了\n計画ファイル: /plan.md", True),
+        ("exec.subagent.md", "計画なし準備完了\n統合区分: マージあり\nAWI: a.md", True),
+        ("exec.subagent.md", "統合準備完了\n統合区分: マージあり", True),
         ("exec.subagent.md", "実装完了\n検証結果: 全件成功", True),
         ("exec.subagent.md", "対応完了（再レビュー不要）", True),
         ("exec.subagent.md", "実装は途中で、統合完了までは進めていない", False),
