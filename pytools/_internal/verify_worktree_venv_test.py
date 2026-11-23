@@ -114,19 +114,12 @@ def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path
     assert marker.read_text(encoding="utf-8") == str(primary)
 
 
-def test_old_git_worktree_list_preserves_quoted_paths(monkeypatch, tmp_path):
-    (tmp_path / ".git").mkdir()
-    quoted = '"変\\t更"' if os.name != "nt" else '"変更"'
-    commands = []
-
-    def git(argv, **_kwargs):
-        commands.append(argv)
-        if argv[-1] == "-z":
-            return subprocess.CompletedProcess(argv, 129, b"", b"unknown switch")
-        return subprocess.CompletedProcess(argv, 0, ("worktree " + quoted + "\n").encode("utf-8"), b"")
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(verify_worktree_venv.subprocess, "run", git)
-    name = "変\t更" if os.name != "nt" else "変更"
-    assert verify_worktree_venv._registered_worktrees(tmp_path) == [tmp_path / name]  # pylint: disable=protected-access
-    assert commands[0][:-1] == commands[1]
+@pytest.mark.skipif(os.name == "nt", reason="Windowsでは改行をファイル名にできない")
+def test_rejects_environment_from_a_worktree_with_a_newline_in_its_name(nested_worktree):
+    primary, linked = nested_worktree
+    other = primary / "別\nworktree"
+    git_repository.run_git(primary, "worktree", "add", "--detach", str(other))
+    environment = other / ".venv"
+    environment.mkdir()
+    with pytest.raises(ValueError, match="別の作業ツリー"):
+        verify_worktree_venv.verify(linked, environment)
