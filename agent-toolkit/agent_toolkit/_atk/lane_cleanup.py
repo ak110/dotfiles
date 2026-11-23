@@ -13,11 +13,11 @@ import re
 import shutil
 import subprocess
 import typing
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
-from agent_toolkit._atk import lane_retirement, managed_temp, run_command
+from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
 
@@ -106,48 +106,37 @@ def _cache_file(root: pathlib.Path, relative: pathlib.Path) -> bool:
     return relative.as_posix() in {"v/cache/nodeids", "v/cache/lastfailed", "v/cache/stepwise"}
 
 
-def _same_plugin_file(worktree: pathlib.Path, directory: pathlib.Path, relative: pathlib.Path) -> bool:
-    source = worktree / directory.name.rpartition("-")[0] / relative
-    if _is_bytecode(relative):
-        return True
-    if source.is_symlink() or not source.is_file():
+PROJECTION_MANIFEST = pathlib.Path(".agent-toolkit-generated-files.json")
+
+
+def projection_manifest(root_name: str, outputs: Mapping[pathlib.Path, tuple[bytes, int]]) -> tuple[bytes, int]:
+    files = {path.as_posix(): hashlib.sha256(content).hexdigest() for path, (content, _mode) in sorted(outputs.items())}
+    return (json.dumps({"root": root_name, "files": files}, ensure_ascii=False) + "\n").encode(), 0o644
+
+
+def _projection_fingerprints(path: pathlib.Path) -> dict[str, str] | None:
+    marker = path / PROJECTION_MANIFEST
+    if marker.is_symlink() or not marker.is_file():
+        return None
+    try:
+        decoded = json.loads(marker.read_text(encoding="utf-8"))
+    except OSError, UnicodeError, ValueError:
+        return None
+    if not isinstance(decoded, dict) or decoded.get("root") != path.name:
+        return None
+    files = decoded.get("files")
+    if not isinstance(files, dict) or not files or PROJECTION_MANIFEST.as_posix() in files:
+        return None
+    if any(not isinstance(value, str) or re.fullmatch(r"[a-f0-9]{64}", value) is None for value in files.values()):
+        return None
+    return files
+
+
+def _matches_projection_file(path: pathlib.Path, expected: str | None) -> bool:
+    if expected is None or path.is_symlink() or not path.is_file():
         return False
-    with source.open("rb") as original, (directory / relative).open("rb") as generated:
-        return all(
-            chunk == generated.read(len(chunk)) for chunk in iter(lambda: original.read(65536), b"")
-        ) and not generated.read(1)
-
-
-_PROJECTION_CHECK = """
-import sys
-from pathlib import Path
-sys.path.insert(0, sys.argv[1])
-from pytools._internal import antigravity_plugin, codex_plugin_manifests
-root = Path(sys.argv[2])
-name = sys.argv[3]
-if name == "agent-toolkit-codex":
-    issues = codex_plugin_manifests.check_diagnostics(root)
-else:
-    issues = antigravity_plugin.check_diagnostics(root, name.removesuffix("-agy"))
-raise SystemExit(bool(issues))
-"""
-
-
-def _dotfiles_projection_matches(worktree: pathlib.Path, directory: pathlib.Path) -> bool:
-    source = pathlib.Path(__file__).resolve().parents[3]
-    verifier = pathlib.Path("scripts/sync_codex_plugin_manifests.py")
-    if (
-        source == worktree
-        or not (source / verifier).is_file()
-        or _lane_records.common(worktree) != _lane_records.common(source)
-    ):
-        return False
-    interpreter = source / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
-    if not interpreter.is_file():
-        return False
-    argv = [str(interpreter), "-I", "-B", "-c", _PROJECTION_CHECK, str(source), str(worktree), directory.name]
-    _, code, _ = run_command.execute(argv, source, 30)
-    return code == 0
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest() == expected
 
 
 def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
@@ -184,11 +173,21 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
         installed = _recorded_venv_files(path) if is_venv else {}
     except csv.Error:
         return False
-    compare_projection = False
+    is_cache = path.name in {".pytest_cache", ".ruff_cache"}
+    fingerprints = None if is_venv or is_cache else _projection_fingerprints(path)
+    if not is_venv and not is_cache and fingerprints is None:
+        return False
+    projected_dirs = {
+        parent.as_posix() for relative in fingerprints or () for parent in pathlib.PurePosixPath(relative).parents
+    }
     for directory, folders, files in path.walk(on_error=on_error):
         if ".git" in {name.casefold() for name in (*folders, *files)}:
             return False
         if any((directory / name).is_junction() for name in folders):
+            return False
+        if fingerprints is not None and any(
+            name != "__pycache__" and (directory / name).relative_to(path).as_posix() not in projected_dirs for name in folders
+        ):
             return False
         for name in files:
             file = directory / name
@@ -198,12 +197,17 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
                     return False
                 if child == pathlib.Path("lib64") and (not file.is_symlink() or file.resolve() != path / "lib"):
                     return False
-            elif path.name in {".pytest_cache", ".ruff_cache"}:
+            elif is_cache:
                 if not _cache_file(path, child):
                     return False
-            elif not _same_plugin_file(worktree, path, child):
-                compare_projection = True
-    return not compare_projection or _dotfiles_projection_matches(worktree, path)
+            elif (
+                fingerprints is not None
+                and child != PROJECTION_MANIFEST
+                and not _is_bytecode(child)
+                and not _matches_projection_file(file, fingerprints.get(child.as_posix()))
+            ):
+                return False
+    return True
 
 
 def _unowned_data_reason(

@@ -527,9 +527,11 @@ def test_reuse_switches_held_selection_to_current_selection(
     assert code == 1 and held["retained"][0]["reason"] == "選定の統合状態が未統合"
 
 
-@pytest.mark.parametrize("edited", [False, True])
+@pytest.mark.parametrize("state", ["unchanged", "edited", "unrecorded", "legacy"])
 @pytest.mark.cpu_limit(3.0, reason="統合済みの原本と生成物を実Gitと公開の回収操作で比較する。")
-def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, edited):
+def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, state):
+    from agent_toolkit._atk.lane_cleanup import PROJECTION_MANIFEST, projection_manifest  # pylint: disable=import-outside-toplevel
+
     repo, selection, record = _create(tmp_path, monkeypatch, capsys)
     _selection(selection, integrated=False)
     worktree = pathlib.Path(record["worktree"])
@@ -544,13 +546,21 @@ def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, edi
     generated.mkdir()
     (generated / "GENERATED.md").write_bytes((source / "GENERATED.md").read_bytes())
     output = generated / "README.md"
-    output.write_text("modified" if edited else "original", encoding="ascii")
+    output.write_text("modified" if state == "edited" else "projection", encoding="ascii")
+    if state != "legacy":
+        files = {
+            pathlib.Path("GENERATED.md"): ((generated / "GENERATED.md").read_bytes(), 0o644),
+            pathlib.Path("README.md"): (b"projection", 0o644),
+        }
+        (generated / PROJECTION_MANIFEST).write_bytes(projection_manifest(generated.name, files)[0])
+    if state == "unrecorded":
+        (generated / "note.md").write_text("利用者の記録", encoding="utf-8")
 
     status, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
 
-    if edited:
+    if state != "unchanged":
         assert status == 1 and result["retained"], stderr
-        assert output.read_text(encoding="ascii") == "modified"
+        assert output.is_file()
     else:
         assert status == 0 and result["removed"] == ["lane-01"], stderr
         assert not worktree.exists()

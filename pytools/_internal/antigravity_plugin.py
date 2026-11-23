@@ -7,6 +7,8 @@ import stat
 import subprocess
 from pathlib import Path
 
+from agent_toolkit._atk.lane_cleanup import PROJECTION_MANIFEST, projection_manifest
+
 from pytools._internal import common, post_apply_outcome
 
 PLUGIN_DIRECTORY = "agent-toolkit-agy"
@@ -87,6 +89,7 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
     result[Path("plugin.json")] = (_json({key: manifest[key] for key in ("name", "version", "description")}), 0o644)
     result[Path(".claude-plugin/plugin.json")] = ((source / ".claude-plugin/plugin.json").read_bytes(), 0o644)
     if plugin_name == "agent-basics":
+        result[PROJECTION_MANIFEST] = projection_manifest(target.name, result)
         return result
     for role in sorted((source / ROLE_DOCUMENT_DIRECTORY).glob("*.subagent.md"), key=lambda path: path.name):
         name = role.name.removesuffix(".subagent.md")
@@ -116,6 +119,7 @@ def outputs(root: Path, plugin_name: str = "agent-toolkit") -> dict[Path, tuple[
 
     servers = _project_paths(servers, target)
     result[Path("mcp_config.json")] = (_json({"mcpServers": servers}), 0o644)
+    result[PROJECTION_MANIFEST] = projection_manifest(target.name, result)
     return result
 
 

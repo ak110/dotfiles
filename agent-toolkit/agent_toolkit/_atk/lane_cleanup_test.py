@@ -698,16 +698,10 @@ def test_selected_lane_retains_unknown_ignored_directory(tmp_path, monkeypatch, 
         assert item.is_file()
 
 
-def test_packaged_cleanup_does_not_launch_repository_checker(tmp_path, monkeypatch):
+def test_packaged_cleanup_preserves_projection_without_manifest(tmp_path):
     from agent_toolkit._atk import lane_cleanup  # pylint: disable=import-outside-toplevel
 
-    installed = tmp_path / "versions" / "plugin" / "package" / "lane_cleanup.py"
-    monkeypatch.setattr(lane_cleanup, "__file__", str(installed))
-
-    def unexpected(*_args, **_kwargs):
-        pytest.fail("配布物に検査器が無い場合は対象リポジトリのPythonを起動しない")
-
-    monkeypatch.setattr(lane_cleanup.run_command, "execute", unexpected)
-    assert not lane_cleanup._dotfiles_projection_matches(  # pylint: disable=protected-access
-        tmp_path, tmp_path / "agent-toolkit-codex"
-    )
+    root = tmp_path / "agent-toolkit-codex"
+    root.mkdir()
+    (root / "GENERATED.md").write_text("# 自動生成ファイル\n", encoding="utf-8")
+    assert not lane_cleanup._registered_generated_directory(tmp_path, root.name + "/")  # pylint: disable=protected-access
