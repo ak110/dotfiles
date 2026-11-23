@@ -22,10 +22,11 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, cast
 
 import pytest
+from pytilpack import modelcheck
 
 from agent_toolkit._atk import git_sync
 from agent_toolkit._atk.wi import sync as wi_sync
@@ -137,173 +138,45 @@ def _git_op(args: list[str], cwd: object) -> _Op | None:
     return _Op(("clone", str(pathlib.Path(str(cwd)).resolve())), True, label)
 
 
-class _Aborted(BaseException):
-    pass
-
-
-@dataclasses.dataclass
-class _Node:
-    parked: dict[str, _Op]
-    enabled: list[str]
-    sleep: frozenset[str]
-    chosen: str
-    done: list[str] = dataclasses.field(default_factory=list)
-
-
 class _Run:
-    def __init__(
-        self, shared: frozenset[tuple[str, str]], forced: list[str], initial_sleep: frozenset[str], remote: pathlib.Path
-    ) -> None:
+    def __init__(self, shared: frozenset[tuple[str, str]], remote: pathlib.Path) -> None:
         self._shared = shared
         self.remote = remote
-        self.remote_changed: dict[str, bool] = {}
-        self._forced = forced
-        self._initial_sleep = initial_sleep
-        self._cv = threading.Condition()
-        self._turn: str | None = None
-        self._parked: dict[str, _Op] = {}
-        self._names: dict[int, str] = {}
-        self._holders: dict[str, str] = {}
         self._held: dict[str, set[tuple[str, str]]] = {}
-        self._aborted = False
-        self._sleep: frozenset[str] | None = initial_sleep if not forced else None
-        self._choice_index = 0
-        self._sleep_blocked = False
-        self.new_nodes: list[_Node] = []
         self.trace: list[str] = []
         self.remote_writes: list[bool] = []
-        """`trace`の各手順がremoteの参照を変えたか。"""
         self.unlocked: list[str] = []
         self.commits: dict[str, str] = {}
-        """主体ごとの、更新をcommitした直後のmainのcommit。"""
         self.outcomes: dict[str, object] = {}
 
     def actor_name(self) -> str | None:
-        return self._names.get(threading.get_ident())
+        return getattr(_ACTOR, "name", None)
 
     def before(self, op: _Op) -> None:
         name = self.actor_name()
         if name is None or op.resource not in self._shared:
             return
-        if op.lock_file is None and op.resource != _REMOTE:
-            # 同じcloneの他の主体は、操作の前に同じロックを待つ。保持者の操作の間に他の主体は割り込めないため止めない。
+        if op.lock_file is not None:
+            modelcheck.acquire((op.resource, op.lock_file), label=op.label)
+            return
+        if op.resource != _REMOTE:
             if op.resource in self._held.get(name, set()):
                 return
             self.unlocked.append(f"{name}: {op.label}")
-        with self._cv:
-            self._parked[name] = op
-            self._turn = None
-            self._cv.notify_all()
-            while self._turn != name and not self._aborted:
-                self._cv.wait()
-            if self._aborted:
-                raise _Aborted
-            self.trace.append(f"{name}: {op.label}")
-            self.remote_writes.append(False)
+        modelcheck.step(op.resource, write=op.writes, label=op.label)
 
     def note_lock(self, lock_file: str, resource: tuple[str, str], *, held: bool) -> None:
         name = self.actor_name()
-        if name is None:
+        if name is None or resource not in self._shared:
             return
-        with self._cv:
-            if held:
-                self._holders[lock_file] = name
-                self._held.setdefault(name, set()).add(resource)
-            else:
-                self._holders.pop(lock_file, None)
-                self._held.get(name, set()).discard(resource)
-
-    def _enabled(self, name: str, op: _Op) -> bool:
-        return op.lock_file is None or self._holders.get(op.lock_file, name) == name
-
-    def _grant(self, name: str) -> None:
-        with self._cv:
-            self._parked.pop(name, None)
-            self._turn = name
-            self._cv.notify_all()
-            deadline = time.monotonic() + _STEP_TIMEOUT_SECONDS
-            while self._turn is not None:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    raise AssertionError(
-                        f"主体{name}が{_STEP_TIMEOUT_SECONDS:.0f}秒以内に次の手順へ止まらなかった: {self.trace}"
-                    )
-                self._cv.wait(remaining)
-
-    def _actor_main(self, name: str, body: Callable[[], object]) -> None:
-        self._names[threading.get_ident()] = name
-        with self._cv:
-            while self._turn != name and not self._aborted:
-                self._cv.wait()
-        try:
-            if not self._aborted:
-                self.outcomes[name] = body()
-        except _Aborted:
-            pass
-        except Exception as error:  # noqa: BLE001  # 失敗の種類を性質の判定へ渡す
-            self.outcomes[name] = error
-        finally:
-            with self._cv:
-                self._turn = None
-                self._cv.notify_all()
-
-    def _choose(self, enabled: list[str], parked: dict[str, _Op]) -> str:
-        if len(enabled) == 1:
-            return enabled[0]
-        index = self._choice_index
-        self._choice_index += 1
-        if index < len(self._forced):
-            chosen = self._forced[index]
-            assert chosen in enabled, f"再実行で選択点の状態が変わった（非決定的）: {chosen} not in {enabled}"
-            return chosen
-        assert self._sleep is not None
-        candidates = [name for name in enabled if name not in self._sleep]
-        if not candidates or self._sleep_blocked:
-            self._sleep_blocked = True
-            return enabled[0]
-        self.new_nodes.append(_Node(dict(parked), list(enabled), self._sleep, candidates[0]))
-        return candidates[0]
-
-    def drive(self, bodies: Mapping[str, Callable[[], object]]) -> None:
-        threads = [
-            threading.Thread(target=self._actor_main, args=(name, body), name=f"actor-{name}", daemon=True)
-            for name, body in bodies.items()
-        ]
-        for thread in threads:
-            thread.start()
-        try:
-            for name in bodies:
-                self._grant(name)
-            while True:
-                with self._cv:
-                    parked = dict(self._parked)
-                if not parked:
-                    break
-                enabled = [name for name, op in sorted(parked.items()) if self._enabled(name, op)]
-                assert enabled, f"全ての主体がロック待ちで止まった: {parked}"
-                chosen = self._choose(enabled, parked)
-                self._grant(chosen)
-
-                executed = parked[chosen]
-                if chosen in self.remote_changed:
-                    executed = dataclasses.replace(executed, writes=self.remote_changed.pop(chosen))
-                if self._sleep is None:
-                    if self._choice_index >= len(self._forced):
-                        self._sleep = self._initial_sleep
-                else:
-                    self._sleep = frozenset(
-                        name
-                        for name in self._sleep
-                        if name != chosen and name in parked and _independent(parked[name], executed)
-                    )
-        finally:
-            with self._cv:
-                self._aborted = True
-                self._cv.notify_all()
-            for thread in threads:
-                thread.join(_STEP_TIMEOUT_SECONDS)
+        if held:
+            self._held.setdefault(name, set()).add(resource)
+        else:
+            self._held.get(name, set()).discard(resource)
+            modelcheck.release((resource, lock_file))
 
 
+_ACTOR = threading.local()
 _CURRENT: list[_Run | None] = [None]
 _LAUNCHES: list[float] = [0, 0.0]
 
@@ -333,8 +206,7 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
             before = _ref(run.remote, "refs/heads/main")
             result = timed(command, kwargs)
             changed = _ref(run.remote, "refs/heads/main") != before
-            run.remote_changed[name] = changed
-            run.remote_writes[-1] = changed
+            modelcheck.report_write(changed)
         if result.returncode == 0 and _subcommand(command[1:]) == "commit":
             run.commits[name] = _ref(pathlib.Path(str(kwargs["cwd"])), "refs/heads/main") or ""
         return result
@@ -401,7 +273,6 @@ def _remote_commit(repositories: _Repositories, run: _Run, update: _Update) -> s
     (clone / update.path).write_text(update.content, encoding="utf-8")
     git_repository.run_git(clone, "commit", "--quiet", "-am", f"update by {update.actor}")
     git_repository.run_git(clone, "push", "--quiet", "origin", "main")
-    run.remote_writes[-1] = True
     return "ok"
 
 
@@ -623,7 +494,6 @@ def _follow_up(repositories: _Repositories, scenario: _Scenario, unsynced: set[s
 class _Exploration:
     scenario: _Scenario
     schedules: int = 0
-    choice_points: int = 0
     seconds: float = 0.0
     truncated: bool = False
     verdicts: list[_Verdict] = dataclasses.field(default_factory=list)
@@ -637,42 +507,50 @@ class _Exploration:
 
 def _schedules(repositories: _Repositories, scenario: _Scenario) -> Iterator[_Run]:
     shared = _shared_resources(repositories, scenario)
-    stack: list[_Node] = []
-    forced: list[str] = []
-    initial_sleep: frozenset[str] = frozenset()
-    while True:
+    run = _Run(shared, repositories.remote)
+
+    def setup() -> None:
+        nonlocal run
         repositories.reset()
-        run = _Run(shared, forced, initial_sleep, repositories.remote)
-        bodies = {
-            update.actor: functools.partial(_atk_update if update.via_atk else _remote_commit, repositories, run, update)
-            for update in scenario.updates
-        }
+        run = _Run(shared, repositories.remote)
         _CURRENT[0] = run
+
+    def actor(update: _Update) -> str:
+        _ACTOR.name = update.actor
+        return (_atk_update if update.via_atk else _remote_commit)(repositories, run, update)
+
+    def as_op(step: modelcheck.Step) -> _Op:
+        if step.kind == "acquire":
+            resource, _ = cast("tuple[tuple[str, str], str]", step.resource)
+        else:
+            resource = cast("tuple[str, str]", step.resource)
+        return _Op(resource, step.effective_write, step.label or "")
+
+    explorer = modelcheck.ThreadExplorer(
+        {update.actor: functools.partial(actor, update) for update in scenario.updates},
+        setup,
+        step_timeout=_STEP_TIMEOUT_SECONDS,
+        count_equivalent=True,
+        backtrack_by="planned",
+        independent=lambda a, b: _independent(as_op(a), as_op(b)),
+    )
+    results = iter(explorer)
+    while True:
         try:
-            run.drive(bodies)
+            result = next(results)
+        except StopIteration:
+            return
+        except modelcheck.StepTimeoutError as error:
+            if error.unfinished_actors:
+                pytest.exit(str(error), returncode=1)
+            raise
         finally:
             _CURRENT[0] = None
-        for node in run.new_nodes:
-            node.done.append(node.chosen)
-            stack.append(node)
+        assert not result.deadlock, f"全ての主体がロック待ちで止まった: {result.blocked}"
+        run.trace = [f"{step.actor}: {step.label}" for step in result.steps]
+        run.remote_writes = [step.resource == _REMOTE and step.effective_write for step in result.steps]
+        run.outcomes = {**result.returns, **result.exceptions}
         yield run
-        node, chosen = None, None
-        while stack:
-            node = stack[-1]
-            chosen = next((name for name in node.enabled if name not in node.sleep and name not in node.done), None)
-            if chosen is not None:
-                break
-            stack.pop()
-        if node is None or chosen is None:
-            return
-        initial_sleep = frozenset(
-            name
-            for name in (*node.sleep, *node.done)
-            if name in node.parked and _independent(node.parked[name], node.parked[chosen])
-        )
-        node.done.append(chosen)
-        node.chosen = chosen
-        forced = [entry.chosen for entry in stack]
 
 
 def _explore(root: pathlib.Path, scenario: _Scenario, *, stop_on_violation: bool = False) -> _Exploration:
@@ -682,7 +560,6 @@ def _explore(root: pathlib.Path, scenario: _Scenario, *, stop_on_violation: bool
     exploration = _Exploration(scenario)
     for run in _schedules(repositories, scenario):
         exploration.schedules += 1
-        exploration.choice_points += len(run.new_nodes)
         verdict = _judge(repositories, scenario, run)
         exploration.verdicts.append(verdict)
         if exploration.schedules % 20 == 0:

@@ -10,7 +10,7 @@ description: >
 # private-notesのGit同期の網羅検査
 
 `agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py`は、実際の`wi/sync.py`・`git_sync.py`と実Gitで、並行する実行主体の操作の順序を全て列挙して性質を確かめる有界の網羅検査である。
-各主体を1つのスレッドで動かし、共有する資源への1手順の直前で止めて1つずつ進め、選び方の全ての組み合わせを再実行する。
+スレッドの停止・再開と順序の列挙は `pytilpack.modelcheck.ThreadExplorer` が担い、この検査はGit操作の分類と性質の判定を渡す。
 検証の作り方と追従の一般の手順は`agent-basics:formal-verification`にある。
 
 ## 実行
@@ -19,7 +19,8 @@ description: >
 cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --frozen pytest -v -s -o addopts='' -p no:cacheprovider agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py
 ```
 
-- 値を`first`にすると、シナリオごとに最初の違反で止まる（編集中の確認に使う）。
+- 値を`first`にすると、シナリオごとに、既知として登録していない性質の違反を初めて見つけた時点で止まる。
+  既知かどうかは手順の列ではなく性質名で判定し、`separate-clones`の「性質1（操作の終了時）」の違反は数えて続ける。
   変数が無ければ全て`skip`になり、通常の試験（`make test`、CI）はこの検査を省いて進む。
 - 所要は4シナリオの合計で約13分（2026年11月19日、Linux、1つのプロセス）で、実Gitの境界を使う試験の改善判断値（2秒）を大きく超えるため通常の試験から外した。
   シナリオを2つのプロセスへ分けて同時に起動すると、実時間は約8分になる。
@@ -33,7 +34,10 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 - 止める手順は、remoteへの操作（`fetch`、`push`）、複数の主体が使うcloneのロックの取得、そのcloneへのロックの外の操作である。
   共有しないcloneへの操作、ロックの保持者のそのcloneへの操作、配置の照会（`rev-parse --git-common-dir`・`--git-path`）は止めずに続けて実行する。
   ロックの外の操作は性質「共有cloneの操作はロックの内側」の違反として記録する。
-- 順序を入れ替えても結果が同じ組（別の資源への操作、remoteの読取同士）はsleep setで1通りだけ実行し、参照を変えなかった`push`は読取として扱う。
+- sleep setは別の資源への操作やremoteの読取同士の重複探索を省く。
+  参照を変えなかった`push`は実行後に読取として報告し、分岐点に戻るときの判定には実行前の操作種別を使う。
+  等価と記された実行も最後まで進め、性質を判定して順序数に含める。
+- 停止の上限を超えた主体の終了が確認できない場合は、主体名と手順の列を出力し、そのpytestプロセスで後続のシナリオを実行しない。
 - 主体の更新は`wi/mutations/transitions.py`の状態遷移と同じ`Storage.mutation(push_pending=True)`と`Mutation.commit`で行う。
   主体Cは`atk`を使わない別ホストで、取得・commit・pushを1手順で行う。
 - 対象の関数は次のとおりである。
@@ -94,8 +98,8 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 
 ## 追従
 
-- 最後に同期したcommit: `3e4f3c097`。
-  対象の`git_sync.py`、`wi/sync.py`、`_git/command.py`を最後に変えたcommitは`f97a36b33`である。
+- 最後に同期した対象の基準commit: `3ce7817ea`。
+  対象の`git_sync.py`、`wi/sync.py`、`_git/command.py`を最後に変えたcommitは`df545bbf8`である。
   対象のファイルの差分をこのcommitから読み、検証が新しいコードを記述すると確かめた後にだけ進める。
 - Gitの起動、ロックの区間、remoteへの操作の追加と順序の変更は、`_launch`と`_RepoLock`を差し替える枠組みが自動で拾う。
   WIの状態遷移の流れ（`push_pending`の有無、commitの単位）を変えた時は`_atk_update`を合わせる。
