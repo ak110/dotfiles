@@ -296,7 +296,9 @@ def exit_session_in_entries(entries: Iterable[dict[str, Any]], engine: str) -> b
             elif item.get("type") == "tool_result":
                 if item.get("content") == _CLAUDE_EXIT_SESSION_MARKER:
                     return True
-                if item.get("tool_use_id") in pending and _has_invocation_record(item.get("content")):
+                if item.get("tool_use_id") in pending and (
+                    _has_invocation_record(item.get("content")) or _has_invocation_record(record.get("toolUseResult"))
+                ):
                     return True
     return False if observed_shape else None
 
