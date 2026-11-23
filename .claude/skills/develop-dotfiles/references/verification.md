@@ -149,6 +149,15 @@ LinuxでDockerを使った結果は、Windowsの非昇格更新の証拠にし�
 
 [テストとCIの所要基準](verification-execution.md#テストとciの所要基準)で判定する。
 
+### CIと同じpytestの対象を選ぶ
+
+`uv run --no-sync python .claude/skills/develop-dotfiles/scripts/ci_pytest_scope.py toolkit`はCI定義のtoolkitの対象と分割を表示する。
+直下は`root`を指定する。
+`--collect-only`で試験IDを取得し、`--run`で同じ対象を実行する。
+CI定義から選定できない時は、パス指定を別に作って同じ範囲と扱わない。
+変更前の文面を使う未変更の試験の候補は、`--old-text-tests <比較元の完全OID>`で取得する。
+候補の有無は構成した文面まで見た証拠にならないため、必要なCIの対象を引き続き検証する。
+
 ### toolkitの所要記録更新
 
 [toolkitの所要記録更新](verification-execution.md#toolkitの所要記録更新)に従う。

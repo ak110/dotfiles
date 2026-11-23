@@ -26,6 +26,7 @@ from agent_toolkit._atk.wi.repo import (
     verify_target_repo_content,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import ActionableError
 
 _USER_COMMENT_EDIT_NEXT_ACTION = (
     "本文からユーザーコメント節（`## ユーザーコメント`見出し以降）を除いて再実行する。"
@@ -559,6 +560,18 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
     is_uwi = _wi_entries.entry_type_of(path, original) == WI_TYPE_UWI
+    from agent_toolkit._atk.wi import merge_verification  # pylint: disable=import-outside-toplevel
+
+    if (
+        not args.dry_run
+        and (merge := merge_verification.merge_input(edited)) is not None
+        and merge != merge_verification.merge_input(original)
+    ):
+        try:
+            merge_verification.check(edited)
+        except ActionableError as error:
+            _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
+            sys.exit(1)
     if args.compare_opening_file is not None and not args.dry_run:
         # 保存より前に冒頭を比較し、不一致なら対象WIを書き換えない。
         # 本文が保存済みと同じでも比較の失敗を成功扱いしないよう、差分なしの判定より先に比較する。

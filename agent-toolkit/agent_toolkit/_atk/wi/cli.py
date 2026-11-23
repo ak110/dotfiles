@@ -18,6 +18,7 @@ lazy from agent_toolkit._atk.wi import constants as _wi_constants
 lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
+lazy from agent_toolkit._atk.wi import merge_verification as _merge_verification
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
@@ -50,6 +51,14 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_submit_parser,
     ):
         register(sub)
+    merge = _atk_help.add_command(
+        sub,
+        "verify-merge",
+        summary="マージ用WIの完全OIDとCIを確認する",
+        description="取得済みの先端をマージ用WIの完全OIDと比べ、そのOIDのCIの成功を確認する。WIやGitは変更しない。",
+    )
+    merge.add_argument("filename", metavar="FILENAME")
+    merge.add_argument("--head", required=True, metavar="OID", help="取込み候補の取得済み完全OID")
 
 
 _BULK_TRANSITION_SUBCOMMANDS = (
@@ -304,6 +313,7 @@ def dispatch(
         "reject": lambda: _mutation_transitions.cmd_reject(args, private_notes, now),
         "rm": lambda: _mutation_transitions.cmd_rm(args, private_notes),
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
+        "verify-merge": lambda: _merge_verification.cmd_verify_merge(args, private_notes),
         "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
         "set-priority": lambda: _mutation_priority.cmd_set_priority(args, private_notes),

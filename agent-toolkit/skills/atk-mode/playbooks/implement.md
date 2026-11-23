@@ -35,11 +35,16 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    - 指摘を同じ隔離worktreeで修正・再検証してcommitし、未解決の指摘が0件になるまで収束させる。
 6. 一時ブランチをリモートへpushし、ローカルの一時資源を回収する。
    - 隔離worktreeがcleanであることを確かめ、`git push origin HEAD:refs/heads/<一時ブランチ名>`でリモートへpushする。
-   - pushの成功と完全OIDを確かめた後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
+   - pushの成功と完全OIDを確かめる。
+   - 同等のローカル検証が必要な場合は、証拠を作業ツリーの外に保存してから回収する。
 7. AWIをマージ用へ更新して保留を解く。
    - `atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で、frontmatterへ`merge_branch: <push済みブランチ名>`と`merge_commit: <push済みHEADの完全OID>`を加える。
+   - `edit`が対象OIDのCI未完了・取消・失敗を返した場合は、保留を解かず、同じOIDの必要なCIの成功後に再実行する。
+   - CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。
+     記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、保存した出力の絶対パス`output`を含め、何を同等としたかを独立レビューで確かめる。
    - 本文は`agent-toolkit:atk-mode/references/awi-body.md`の形式を保ち、`## 反映内容と反映先`へ変更ファイル・変更内容・版数更新の要否を、`## 調査結果と判断根拠`へ検証コマンドと結果および実行レビューの収束結果を書く。
    - 保存した本文の一致を確かめてから、`atk wi unhold <ファイル名>`を実行する。
+   - 必要な証拠を確保した後、`git worktree remove <隔離worktree>`、一時ディレクトリの削除、`git branch -D <一時ブランチ名>`でローカルの一時資源を回収する。
 8. 完了を報告する。
    - `agent-toolkit:atk-mode/playbooks/report-completion.md`に従い、マージ用AWIのファイル名、pushしたブランチ名とcommit OID、検証と実行レビューの結果、回収した一時資源を報告する。
 
@@ -58,10 +63,12 @@ AWIは保存・保留した項目だけを戻す。
 2. fetch前にfrontmatterの`merge_branch`がベースブランチ・デフォルトブランチ・登録済みの系統ブランチ（`main`・`master`・`develop`など）でないことと、`merge_commit`が40桁の完全OIDであることを確認する。
    条件を満たさない場合はfetch・merge・削除のいずれも実行せず、原因を調べて報告し、`atk wi hold`で保留する。
    条件を満たしたら`git fetch origin <merge_branch>`で取得し、`FETCH_HEAD`の完全OIDが`merge_commit`と一致することを確かめる。
+   取り込み前に`atk wi verify-merge <ファイル名> --head <FETCH_HEADの完全OID>`を実行する。
    ブランチ不在やOID不一致がある場合もマージせず、原因を調べて報告または保留する。
 3. 主作業ツリーのベースブランチへ取り込む。
    - ベースブランチが`merge_commit`の祖先なら`git merge --ff-only FETCH_HEAD`で取り込む。
-   - 分岐していれば`git merge --no-edit FETCH_HEAD`で既存の実装OIDを保って統合する。
+   - 分岐していれば、ベースと取得済みOIDから隔離worktreeで`git merge --no-edit`し、できた統合候補を検証してから取り込む。
+     ブランチの成功を統合候補の成功に数えない。
 4. 統合後の検証をする。
    - fast-forwardで取り込み、AWIに記録された検証と実行レビューの結果が現行条件を満たしていれば、重複するローカル検証を省いてよい。
    - 分岐からのmergeとなった場合は、変更箇所と関連する利用側を検証する。
