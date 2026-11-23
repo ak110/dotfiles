@@ -1,7 +1,10 @@
 """導入処理の横断契約を検証する。"""
 
+import os
 import pathlib
+import shutil
 import stat
+import subprocess
 import typing
 
 import pytest
@@ -63,3 +66,43 @@ def test_configures_both_agents_without_deploying_rules(kind: str, tmp_path: pat
     assert not any("claude mcp add" in line or "claude mcp remove" in line for line in read_log_lines(stub_log))
     assert result.stderr.splitlines()[-1] == "codex app-server daemon restart"
     assert result.stderr.count("Codex pluginを更新しました。") == 1
+    assert "Windows PowerShell 5.1ではコマンドを直接呼ばず" in result.stderr
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows PowerShell 5.1の標準エラー処理を検証する")
+@pytest.mark.parametrize("exit_code", [0, 23])
+def test_daemon_restart_guide_preserves_native_exit(tmp_path: pathlib.Path, exit_code: int) -> None:
+    powershell = shutil.which("powershell.exe")
+    assert powershell is not None
+    (tmp_path / "codex.cmd").write_text(
+        f'@echo off\n>&2 echo {{"status":"shutdown_requested"}}\necho {{"status":"restarted"}}\nexit /b {exit_code}\n',
+        encoding="ascii",
+    )
+    guide = (REPO_ROOT / "docs/guide/codex-guide.md").read_text(encoding="utf-8")
+    recipe = guide.split("```powershell\n", 1)[1].split("```", 1)[0]
+    strict = "Set-StrictMode -Version Latest\n$ErrorActionPreference = 'Stop'\n$env:PATH = \"$PSScriptRoot;$env:PATH\"\n"
+    shell = [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File"]
+    old_runner = tmp_path / "old-restart.ps1"
+    old_runner.write_text(
+        strict + "codex app-server daemon restart 2>&1 | ForEach-Object { \"$_\" }\n'REACHED'\n",
+        encoding="utf-8-sig",
+    )
+    old = subprocess.run([*shell, str(old_runner)], capture_output=True, text=True, check=False, timeout=30)
+    assert old.returncode != 0
+    assert "NativeCommandError" in old.stderr
+    assert "REACHED" not in old.stdout
+    runner = tmp_path / "restart.ps1"
+    runner.write_text(
+        strict + recipe + "if ($ErrorActionPreference -ne 'Stop') { exit 99 }\nexit $restartExit\n",
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [*shell, str(runner)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == exit_code, (result.stdout, result.stderr)
+    assert '{"status":"shutdown_requested"}' in result.stdout
+    assert '{"status":"restarted"}' in result.stdout
