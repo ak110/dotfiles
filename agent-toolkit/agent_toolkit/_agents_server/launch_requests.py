@@ -16,6 +16,7 @@ from agent_toolkit._agents_server import (
     plugin_root,
     shared_roots,
 )
+from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests_continuation import continuation_prompt
 from agent_toolkit._agents_server.launch_requests_inputs import (
     _PLUGIN_ROOT_VARIABLE,
@@ -33,6 +34,8 @@ from agent_toolkit._agents_server.launch_requests_preflight import (
 )
 from agent_toolkit._agents_server.state import (
     LaunchKind,
+    SessionResumeState,
+    SessionState,
 )
 from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
@@ -306,6 +309,49 @@ def _task_document_declaration(
                     next_action="役割文書のfrontmatterを直して同じstartを再発行する。委譲先は起動していない",
                 )
     return declaration
+
+
+def role_model_was_explicit(session: SessionState | SessionResumeState) -> bool:
+    if session.explicit_role_model is not None:
+        return session.explicit_role_model
+    if not session.model_type:
+        return False
+    if ":" in session.model_type:
+        return True
+    original = task_documents.launched_task_document(session.prompt)
+    if original is None:
+        return False
+    _, _, document = session.prompt.partition(task_documents.TASK_PROMPT_REFERENCES)
+    declared = task_documents.read_declaration_unchecked(original, document)
+    return (
+        isinstance(declared, task_documents.TaskDocumentDeclaration)
+        and declared.model_type is not None
+        and declared.model_type != session.model_type
+    )
+
+
+def current_role_model(session: SessionState | SessionResumeState) -> str | None:
+    if not session.model_type or role_model_was_explicit(session):
+        return None
+    original = task_documents.launched_task_document(session.prompt)
+    if original is None:
+        return None
+    current = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, original.name) or original
+    declaration = task_documents.read_declaration(current)
+    return declaration.model_type if isinstance(declaration, task_documents.TaskDocumentDeclaration) else None
+
+
+async def reject_stale_role_reply(session: SessionState | SessionResumeState) -> None:
+    if session.status != "completed":
+        return
+    current = await run_file_operation(current_role_model, session)
+    if current is not None and session.status == "completed" and current != session.model_type:
+        raise ActionableError(
+            f"役割のmodel_typeが{session.model_type}から{current}へ変更されたため、追送は配送していない: {session.session_id}",
+            next_action=(
+                f"`start`の`handoff_from`へ`{session.session_id}`を渡して現行の役割設定で引き継ぎ、後任へ未配送の指示を渡す"
+            ),
+        )
 
 
 def builtin_task_prompt(subagent_md_path: str, extra_params: Mapping[str, str]) -> str:

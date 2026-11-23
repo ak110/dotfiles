@@ -226,6 +226,7 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                 # 配送の打ち切りで追送の応答が無くても、直前の結果はCLIに残す。
                 await self._status_writer.retain_result_async(session)
             try:
+                await launch_requests.reject_stale_role_reply(session)
                 result = await self._send_with_resources(session, prompt)
             except SessionOwnerGoneError:
                 async with self._resume_lock:

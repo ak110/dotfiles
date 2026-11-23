@@ -385,6 +385,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
                 launch_kind=launch_kind,
                 label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
                 startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+                explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )
             if warnings:

@@ -11,8 +11,10 @@ import pathlib
 import pytest
 
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import result_projection, state
+from agent_toolkit._agents_server import plugin_root, result_projection, state
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._common import session_registry, state_paths, task_documents
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import (
     BlockingContinuationClaudeClient,
     FailedResumeBackend,
@@ -26,6 +28,54 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["active", "completed", "expired", "registry", "explicit", "unchanged"])
+async def test_repository_process_reply_after_role_model_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, phase: str
+) -> None:
+    role = task_documents.find_role_document(plugin_root.SERVER_PLUGIN_ROOT, "repository-process.subagent.md")
+    assert role is not None
+    async with _manager_with_fake("claude") as (manager, backend):
+        session = state.SessionState("thread-1", str(tmp_path), engine="claude", model_type="orchestrate")
+        session.prompt = (
+            task_documents.task_prompt_header(role)
+            + task_documents.TASK_PROMPT_REFERENCES
+            + "---\nmode: delegate\nmodel_type: orchestrate\n---\n"
+        )
+        if phase != "active":
+            _complete(session, message="直前の結果")
+        if phase == "explicit":
+            session.explicit_role_model = True
+        if phase == "unchanged":
+            session.model_type = "execute"
+            session.explicit_role_model = False
+        if phase == "registry":
+            monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
+            session_registry.publish(
+                session.session_id,
+                state=session_registry.PublicationState.RESULT_COMPLETED,
+                cwd=session.cwd,
+                engine=session.engine,
+                model_type=session.model_type,
+                launch_info=session_registry.LaunchInfo.of(session),
+            )
+        elif phase == "expired":
+            manager.expired_sessions[session.session_id] = state.SessionResumeState.from_session(session)
+        else:
+            manager.sessions[session.session_id] = session
+
+        if phase in {"active", "explicit", "unchanged"}:
+            result = await manager.send_message(session.session_id, "続行")
+            assert result["delivery"] == ("steered" if phase == "active" else "reply_started")
+            assert backend.send_calls == 1
+        else:
+            with pytest.raises(ActionableError, match="orchestrate.*execute") as exc:
+                await manager.send_message(session.session_id, "続行")
+
+            assert "handoff_from" in exc.value.next_action
+            assert backend.send_calls == 0
 
 
 @pytest.mark.asyncio

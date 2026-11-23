@@ -84,6 +84,7 @@ def interruption_error(reason: InterruptionReason) -> dict[str, str]:
 class LaunchInfo:
     label: str = ""
     prompt: str = ""
+    explicit_role_model: bool | None = None
 
     created_at: str | None = None
     followup_prompts: tuple[str, ...] = ()
@@ -101,7 +102,7 @@ class LaunchInfo:
         values = {
             field.name: payload[field.name] for field in dataclasses.fields(cls) if isinstance(payload.get(field.name), str)
         }
-        for name in ("followup_prompts", "final_responses", "effort_history", "effort_levels"):
+        for name in ("followup_prompts", "final_responses", "effort_history", "effort_levels", "explicit_role_model"):
             values.pop(name, None)
         followups = payload.get("followup_prompts", [])
         responses = payload.get("final_responses", [])
@@ -109,6 +110,9 @@ class LaunchInfo:
         levels = payload.get("effort_levels", [])
         return cls(
             **values,
+            explicit_role_model=payload["explicit_role_model"]
+            if isinstance(payload.get("explicit_role_model"), bool)
+            else None,
             effort_history=tuple(
                 (item[0], item[1], item[2], item[3])
                 for item in history

@@ -661,6 +661,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         結果本文を保持したまま所有主体だけが終了した場合は、直前結果を応答へ含める。
         """
         await self._wait_for_resource_release(resume_state.session_id)
+        await launch_requests.reject_stale_role_reply(resume_state)
         if previous_result and self._status_writer is not None and not self._is_registry_resume_state(resume_state):
             await self._status_writer.retain_result_async(resume_state)
         pending, ticket = self._start_resume(
