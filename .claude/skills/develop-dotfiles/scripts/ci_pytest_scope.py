@@ -168,7 +168,13 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
 
 def _collect_pyfltr(command, root, env):
     completed = subprocess.run(
-        [*command, "--no-quiet"], cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", check=False
+        [*command, "--no-quiet", "--output-format=jsonl"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     print(completed.stdout, end="")
     print(completed.stderr, end="", file=sys.stderr)
@@ -176,7 +182,7 @@ def _collect_pyfltr(command, root, env):
         return completed.returncode, []
     run_id = next(row["run_id"] for line in io.StringIO(completed.stdout) if (row := json.loads(line))["kind"] == "header")
     recorded = subprocess.run(
-        [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output"],
+        [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output", "--output-format=jsonl"],
         cwd=root,
         env=env,
         capture_output=True,

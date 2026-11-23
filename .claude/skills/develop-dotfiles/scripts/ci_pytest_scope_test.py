@@ -100,6 +100,7 @@ def test_toolkit_never_evaluates_unknown_shell(tmp_path) -> None:
 
 def test_toolkit_collect_prints_ids_from_the_exact_run(monkeypatch, tmp_path, capsys) -> None:
     def run(argv, **kwargs):
+        assert "--output-format=jsonl" in argv
         if argv[2] == "pyfltr" and argv[3] == "ci":
             assert "--collect-only" in argv[6] and "-v " not in argv[6]
             return SimpleNamespace(returncode=0, stdout='{"kind":"header","run_id":"test-run"}\n', stderr="")

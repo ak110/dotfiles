@@ -45,7 +45,7 @@ from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import owner_records as _owner_records
 
-_DRAFT_NEXT = "同じ宛先の上流を取得して差に関係する前提を読み直し、原稿を検収してから再実行する"
+_DRAFT_NEXT = "上流があれば取得し、無ければ宛先ブランチを使って基点を選び直す。影響する前提を調べ、原稿を検収し直す"
 
 
 @dataclasses.dataclass(frozen=True)

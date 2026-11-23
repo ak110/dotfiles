@@ -26,7 +26,7 @@
    既存AWIの更新・懸念は質問や調査の前に扱い、`inbox`・`hold`は保留し、`processing`への変更は別AWIに切り出す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
 2. `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で要求を受け付け、方針を確定する。
    宛先を決めたら、採否や方針を決めるための最初の現物調査より前に、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「対象の調査基点」で完全OIDを固定し、保存まで保持する。
-   目的の衝突、指定範囲との不一致、認可不足、変更を左右する読みの違いは、同書の手順7で扱う。
+   目的の衝突、指定範囲との不一致、認可不足、読みの違いは`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7で扱う。
    方針を決めた時点で、中心と理由、継続費用を加える対象、除外と理由、調査済みと未調査の成果物の種類を一度報告する。
    確認が要らない依頼では、回答を待たずに続ける。
 
@@ -93,7 +93,7 @@
    再発防止の判断は必要な場合に原稿の `## 原因分析` へ反映し、別の指摘対応記録は作らない。
 7. 戻る。
    質問の途中なら`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順6、原稿の確定・検収の途中なら本書「起草と保存」の3の再点検、完了報告の後なら本書「手順」の1から再開する。
-   独立した要求は`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順1から受け付け、同書「依頼の種類と確認」に従ってから本書「起草と保存」の3で起草する。
+   独立した要求は本書「手順」の1と2で受け付けて基点を選び、「起草と保存」の3で起草する。
 
 ## セッション境界
 
