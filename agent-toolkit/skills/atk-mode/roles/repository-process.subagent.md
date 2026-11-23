@@ -88,7 +88,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 ```
 
 続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
-統括担当はこの返却を`result_file`の`blocked`として記録する。
+統括担当はこの返却を、その対象の`blocked`として完了報告に載せる。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 
 処置は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」手順3に従う。

@@ -125,7 +125,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 ```
 
 続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
-統括担当はこの返却を`result_file`の`blocked`として記録する。
+統括担当はこの返却を、その対象の`blocked`として完了報告に載せる。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 
 処置は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」手順3に従う。
@@ -148,7 +148,7 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 4. 配下の担当の確認事項・担当外の発見・改善点は統括へ届き、報告用UWIは統括が実行全体で1回作る。
    配下の担当は祖先の対話CLIを終える`atk agents-exit-session`を呼ばず、返却と終了観測を統括へ渡す。
    リポジトリ担当は着手時に`agent-toolkit:atk-mode/playbooks/main-reporting.md`を読み、同書の報告と点検を統括へ向けて行う。
-   統括は対象別の結果を保存し、巡回を続ける場合は巡回手順の区切りに進む。
+   統括は対象別の結果を確定し、巡回を続ける場合は巡回手順の区切りに進む。
 5. 統括は、自分が観測した不良・是正要求・改善点と、配下の担当からの報告へ、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」の対処時機の判定を適用する。
    - 受け取った時に処置の根拠と残る前提を検収し、独立した別要求はその時点から起草を進める（投入準備の前倒しは`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開担当の起動と並行工程」）。
    - 委譲先が不要・担当外とした事象も、統括が根拠と保つべき成果を確かめて処置を決める。
