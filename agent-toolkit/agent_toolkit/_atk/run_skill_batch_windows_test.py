@@ -17,7 +17,7 @@ from agent_toolkit._atk import run_skill_batch
 from agent_toolkit._common import session_activity, session_review
 
 session_activity.host_process = object
-run_skill_batch.meta_auto_start_due = lambda **kwargs: False
+run_skill_batch.weekly_auto_start_due = lambda *args, **kwargs: False
 root = Path(os.environ["REVIEW_TEST_ROOT"])
 if os.environ["REVIEW_TEST_OUTCOME"] == "accepted":
     transcript = root / "target.jsonl"

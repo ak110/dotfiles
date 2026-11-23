@@ -193,6 +193,8 @@
 ## [`review-session`](concepts-session-review.md#review-session)
 
 - 不適切な確認、ユーザーの手を煩わせた事象、品質への悪影響、所要時間目標の超過は、前例の有無によらず再発防止策を必須とする。
+- 週次のメタ分析と外部情報の調査は日曜14時ごろの共通の起動で動かし、メタ分析はキューごとに1回、調査は私用環境の1台だけで実行する。
+  調査の提案は確認UWI 1件で届け、選ばれた提案だけをAWIにする（[本文](concepts-session-review.md#週次の外部情報の調査)、2026年11月23日のユーザー要求）。
 
 ## [Codexの文脈長設定](concepts-codex-context.md#codexの文脈長設定)
 

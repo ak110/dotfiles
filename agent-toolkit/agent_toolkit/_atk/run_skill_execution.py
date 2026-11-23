@@ -118,6 +118,9 @@ def run_locked(
         env[session_review.TARGET_ENV] = args.target_repo
     if manifest := getattr(args, "batch_manifest", None):
         env[session_review.BATCH_ENV] = manifest
+    env.pop(session_review.WEEKLY_SLOT_ENV, None)
+    if slot := getattr(args, "weekly_slot", None):
+        env[session_review.WEEKLY_SLOT_ENV] = slot
     log_line(log, f"実行識別子: {run_id}")
 
     def record_wait(candidate: str, usage_limit: _orchestrator.UsageLimitState, delay: float) -> None:

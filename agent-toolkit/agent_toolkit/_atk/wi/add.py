@@ -17,6 +17,7 @@ from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -43,6 +44,7 @@ from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, 
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import process_loop_session as _process_loop_session
+from agent_toolkit._common import session_review, skill_modes
 from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import owner_records as _owner_records
@@ -107,9 +109,28 @@ def _ensure_draft_destinations(
             raise WebInputError("起草の基点を使う原稿の宛先が別repoまたは別系統", next_action=_DRAFT_NEXT)
 
 
-def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
-    if data.get("run_skill_report") == "true" and (run_id := os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")):
-        return {**data, "run_skill_run_id": run_id}
+_WEEKLY_SLOT = re.compile(r"(?P<work>meta|research)@\d{4}-\d{2}-\d{2}")
+
+
+def run_report_metadata(
+    data: dict[str, object], *, question_type: str | None = None, scope: str | None = None
+) -> dict[str, object]:
+    run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
+    if not run_id:
+        return data
+    if data.get("run_skill_report") == "true":
+        data = {**data, "run_skill_run_id": run_id}
+    slot = os.environ.get(session_review.WEEKLY_SLOT_ENV, "")
+    raw_scope = scope if scope is not None else data.get("scope")
+    kind = question_type if question_type is not None else data.get("question_type")
+    if (
+        (match := _WEEKLY_SLOT.fullmatch(slot)) is not None
+        and data.get("source") == "run-skill"
+        and isinstance(raw_scope, str)
+        and skill_modes.canonical_scope(raw_scope) == f"{session_review.REVIEW_SESSION_SCOPE} {match['work']}"
+        and (data.get("run_skill_report") == "true" or kind == "choice")
+    ):
+        data = {**data, "run_skill_run_id": run_id, "weekly_slot": slot}
     return data
 
 
@@ -275,7 +296,7 @@ def _add_entries_locked(
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
         if entry_type == WI_TYPE_UWI:
-            frontmatter_data = run_report_metadata(frontmatter_data)
+            frontmatter_data = run_report_metadata(frontmatter_data, question_type=question_type, scope=scope)
         if entry_type != WI_TYPE_AWI:
             if scope:
                 frontmatter_data["scope"] = scope
@@ -358,6 +379,9 @@ def add_entries(
     with storage.mutation(private_notes) as mutation:
         if draft_basis is not None:
             draft_basis.verify(target_commit_branch)
+        parsed_messages, item_branches = _skip_registered_proposals(private_notes, parsed_messages, item_branches)
+        if not parsed_messages:
+            return []
         written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
@@ -409,6 +433,36 @@ def add_entries(
             next_action="回答の有無は`atk wi show <ファイル名>`で確かめる",
         )
     return generated
+
+
+PROPOSAL_ID_KEY = "proposal_id"
+
+
+def _skip_registered_proposals(
+    private_notes: pathlib.Path,
+    parsed_messages: list[tuple[dict[str, object], str]],
+    item_branches: list[str | None],
+) -> tuple[list[tuple[dict[str, object], str]], list[str | None]]:
+    if not any(isinstance(metadata.get(PROPOSAL_ID_KEY), str) for metadata, _body in parsed_messages):
+        return parsed_messages, item_branches
+    registered: dict[str, str] = {}
+    for path in _wi_layout.iter_entry_paths(private_notes):
+        parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
+        if parsed is not None and isinstance(value := parsed[0].get(PROPOSAL_ID_KEY), str):
+            registered.setdefault(value, path.name)
+    kept: list[tuple[dict[str, object], str]] = []
+    branches: list[str | None] = []
+    for message, branch in zip(parsed_messages, item_branches, strict=True):
+        proposal = message[0].get(PROPOSAL_ID_KEY)
+        if isinstance(proposal, str) and proposal in registered:
+            _outcome.report_warning(
+                f"提案ID {proposal} のAWIは登録済みのため登録しなかった: {registered[proposal]}",
+                next_action=f"`atk wi show {registered[proposal]}`で登録済みの内容を確かめる",
+            )
+            continue
+        kept.append(message)
+        branches.append(branch)
+    return kept, branches
 
 
 def _resolve_item_branches(

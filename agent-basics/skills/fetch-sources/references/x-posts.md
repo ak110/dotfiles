@@ -27,6 +27,15 @@ X（旧Twitter）の投稿を調査資料として参照する時に、投稿を
 上の属性名はFxTwitterのv1形式であり、`/2/`を含むv2形式と区別する。
 仕様は[FxEmbedのAPIドキュメント](https://github.com/FxEmbed/FxEmbed/blob/main/docs/src/content/docs/api/introduction.mdx)と[レスポンスの実装](https://github.com/FxEmbed/FxEmbed/blob/main/src/embed/status.ts)にある。
 
+## アカウントの投稿一覧と検索結果の取得
+
+FxTwitterはこれらを返さないため、X API v2（従量課金）で読み、ユーザーが支出上限を設定して利用を認めた環境に限る（少額の疎通確認も同じ）。
+読み取り専用のBearer Tokenだけを使い、値を出力・記録へ出さない。
+
+- 投稿一覧は`/2/users/by/username/<名前>`で得たID（照会は別に課金されるため保存して再利用する）から`/2/users/<ID>/tweets`、検索は`/2/tweets/search/recent?query=<語>`で読む。
+- `max_results`と`since_id`か`start_time`で読む範囲と件数を限る。
+- HTTP 401・402・403・429は読めなかった理由として記録し、他の情報源で続ける。
+
 ## 添付写真の保存と確認
 
 保存・確認済みの応答JSONから写真URLをデータとして取り出し、一時ディレクトリへ写真ごとにダウンロードする。

@@ -126,12 +126,30 @@ CONNECTION_DEFAULTS = {
 
 ENV_FILE_KEYS = frozenset({"claude_credits_env_file", "claude_payg_env_file"})
 
-PATH_KEYS = SERVE_PATH_KEYS | ENV_FILE_KEYS
+PATH_KEYS = SERVE_PATH_KEYS | ENV_FILE_KEYS | frozenset({"weekly_research_x_env_file"})
 ARRAY_KEYS = SERVE_HOSTS_KEYS
 
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
 
 CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.endswith("_connections"))
+
+WEEKLY_KEY_DEFAULTS = {
+    "weekly_meta_auto_start": "true",
+    "weekly_research_auto_start": "false",
+    "weekly_research_repos": "[]",
+    "weekly_research_x_api": "false",
+    "weekly_research_x_env_file": "",
+    "weekly_research_x_accounts": "[]",
+    "weekly_research_x_queries": "[]",
+    "weekly_research_x_max_posts": "100",
+    "weekly_research_x_max_users": "20",
+}
+
+WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
+
+WEEKLY_LIST_KEYS = frozenset({"weekly_research_repos", "weekly_research_x_accounts", "weekly_research_x_queries"})
+
+WEEKLY_LIMIT_KEYS = frozenset({"weekly_research_x_max_posts", "weekly_research_x_max_users"})
 
 
 MUTABLE_KEY_DEFAULTS = {
@@ -145,6 +163,7 @@ MUTABLE_KEY_DEFAULTS = {
     "codex_usage_limit_wait": "five-hour",
     "repositories": "{}",
     "session_review_auto_start": "true",
+    **WEEKLY_KEY_DEFAULTS,
     # agents_serverが同時に作業させる委譲先の上限。論理CPU数への係数（例: 2.5x）、絶対値、offを受け付ける。
     "agents_concurrency": "2.5x",
     "dotfiles_mode": "full",
@@ -385,9 +404,17 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: continuous, intermittent")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in {"codex_fast_mode", "session_review_auto_start"}:
+    elif key in {"codex_fast_mode", "session_review_auto_start"} | WEEKLY_FLAG_KEYS:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
+    elif key in WEEKLY_LIST_KEYS:
+        parse_string_list(value)
+    elif key in WEEKLY_LIMIT_KEYS:
+        if not value.isdecimal() or int(value) < 1:
+            raise ValueError("1以上の整数で指定する")
+    elif key == "weekly_research_x_env_file":
+        if "\n" in value or "\r" in value or "\0" in value:
+            raise ValueError("envファイルのパス1つ、または設定ディレクトリのx-api.envを使う空文字列で指定する")
     elif key in MODEL_DEFAULTS:
         validate_stage_model_candidates(value)
         if key == "orchestrate_model" and any(candidate.startswith("opencode:") for candidate in value.split(",")):
@@ -482,6 +509,16 @@ def parse_remote_hosts(value: str) -> tuple[str, ...]:
     if not isinstance(hosts, list) or any(not isinstance(host, str) or not host.strip() for host in hosts):
         raise ValueError("空でないSSH接続先名のJSON文字列配列で指定する（空配列も可）")
     return tuple(hosts)
+
+
+def parse_string_list(value: str) -> tuple[str, ...]:
+    try:
+        items = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError('空でない文字列のJSON配列で指定する（例: ["value"]、空配列も可）') from error
+    if not isinstance(items, list) or any(not isinstance(item, str) or not item.strip() for item in items):
+        raise ValueError("空でない文字列のJSON配列で指定する（空配列も可）")
+    return tuple(dict.fromkeys(item.strip() for item in items))
 
 
 def parse_codex_provider_candidates(value: str) -> tuple[str, ...]:

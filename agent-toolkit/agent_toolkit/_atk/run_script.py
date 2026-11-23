@@ -32,6 +32,7 @@ SCRIPT_PATHS = {
     "session-review-evidence": pathlib.Path("skills/atk-mode/scripts/session_review_evidence.py"),
     "session-review-prepare": pathlib.Path("skills/atk-mode/scripts/session_review_prepare.py"),
     "session-review-state": pathlib.Path("skills/atk-mode/scripts/session_review_state.py"),
+    "research-sources": pathlib.Path("skills/atk-mode/scripts/research_sources.py"),
     "writing-check-dash": pathlib.Path("agent_toolkit/_atk/check_dash.py"),
     "wi-quote-check": pathlib.Path("skills/atk-mode/scripts/wi_quote_check.py"),
 }

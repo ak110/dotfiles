@@ -58,9 +58,32 @@ SessionStartでの登録をやめて最初の発話で登録する案は通常�
 - `batch.lock`: 自動と手動の全リポジトリで、対象の選定から報告同期の検収と成功の確定まで共有する。
   親が中断した時も、プロセスの識別と、子の起動引数に含めた固有のmanifestパスで生存を確かめ、二重起動を防ぐ。
 - `failures/`: 起票済みの失敗キーを保持する（扱いは本書「review-sessionの構成と候補抽出」）。
+- `weekly/<作業>.json`: 週枠の作業（`meta`、`research`）ごとに、実行中の回、完了を確かめた回、失敗（metaは失敗キーと是正AWIの同期、researchは同じ回の失敗回数と報告の有無）を保持する。
+  旧判定（前回の開始から7日）の`meta-start.json`は初回の参照時にこの記録へ移して削除し、開始時刻では起動を判定しない。
+- `weekly/research-positions.json`と`weekly/research-positions-pending.json`: 外部情報の調査の情報源ごとの読んだ位置とXのアカウントIDだけを保持する。
+  取得時は回の保留へ書き、回の結果のUWIを保存した後に確定する。
 
   手動の再試行も、未完了の既存の失敗報告AWIを再利用する。
 
 `session_review_auto_start`がfalseでも待ちを登録し、SessionStartで件数と手動の操作を通知する。
 単発のprepareは指定が無ければ厳格に読み込み（部分の読込は`--allow-partial-records`）、単発の`complete`は未確認範囲を含む準備結果を拒否する。
 欠測を明示した部分分析を確定するのはbatchだけである。
+
+## 週枠による週次の起動
+
+メタ分析と外部情報の調査は、日曜14時（ホストの現地時刻）を開始とする週枠ごとに1回実行する（`agent-toolkit/agent_toolkit/_atk/weekly_schedule.py`）。
+判定は最新の到来済みの週枠だけを対象とし、日曜14時より前は前週の枠が最新になるため、前週が未完了の時だけ追いつく。
+2回以上逃した場合も過去の枠は実行しない。
+回の完了の根拠は、`weekly_slot: <作業>@<日曜の日付>`を持つ結果のUWIが全状態のどこかにあることとする。
+`atk run-skill`が子へ`AGENT_TOOLKIT_WEEKLY_SLOT`を渡し、`atk wi add`がその作業の起動単位の報告用UWIと選択型UWIへ記録する。
+ローカルの記録より前に止まっても保存済みのUWIで完了と判定できるため、同じ回の再調査・再課金・二重の通知が起きない。
+保存の前に止まった回は未完了のまま次の判定で再実行する。
+
+起動の経路は`atk weekly run`と、取り逃した回を追う最上位セッションの開始・終了のhookである。
+`atk weekly run`は`atk serve`が15分ごとに独立プロセスで起動し、`atk weekly install`で登録したsystemdのユーザータイマーかタスクスケジューラも呼ぶ。
+どの経路も`run_skill_batch.weekly_auto_start_due`で判定し、`batch.lock`で排他する。
+OSのスケジューラはsystemdの`Persistent=true`とタスクスケジューラの`StartWhenAvailable`で停止中の回を起動後に追う。
+メタ分析の失敗は従来の失敗キーと是正AWIで抑止する。
+外部情報の調査はAWIの起票をユーザーの回答に限るため是正AWIを起票せず、失敗から6時間後の判定で同じ回を再実行し、同じ回の失敗が2回に達した時に報告用UWIを1回保存する。
+6時間の間隔は、`atk serve`の15分ごとの判定が失敗のたびにモデルと外部APIを使い続けるのを避けるためである。
+調査の実行では、`atk run-skill`のログへ子セッションの出力を事象の種類と文字数だけで写し、取得した投稿や記事の本文を残さない。

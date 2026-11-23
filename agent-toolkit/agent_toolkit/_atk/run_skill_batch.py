@@ -30,8 +30,10 @@ from agent_toolkit._atk import (
     managed_temp,
     orchestrator,
     outcome,
+    research_sources,
     run_script,
     run_skill_batch_evidence,
+    weekly_schedule,
 )
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
 from agent_toolkit._atk.managed_temp.sweep_lock import sweep_access
@@ -100,8 +102,9 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     if session_activity.host_process() is None:
         return notice
     now = time.time()
-    if meta_auto_start_due(now=now):
-        mode = "meta"
+    weekly = next((work for work in weekly_schedule.WORKS if weekly_auto_start_due(work, now=now)), None)
+    if weekly is not None:
+        mode = weekly
     elif (
         count
         and session_review.auto_start_due(now=now)
@@ -206,18 +209,23 @@ def _failure_blocks(key: str, *, same_version: bool) -> bool:
     return same_version
 
 
-def meta_auto_start_due(*, now: float) -> bool:
-    if not session_review.meta_start_due(now=now):
+def weekly_auto_start_due(work: str, *, now: float) -> bool:
+    if not weekly_schedule.enabled(work) or session_review.consultation_open():
         return False
-    try:
-        last = session_review.read(session_review.directory() / "meta-start.json")
-    except FileNotFoundError:
-        return True
-    key = last.get("failure_key")
-    if not isinstance(key, str) or last.get("report_synced") is False:
+    slot = weekly_schedule.latest_slot(datetime.datetime.fromtimestamp(now, datetime.UTC))
+    identifier = weekly_schedule.slot_id(work, slot)
+    if weekly_schedule.completed(work, slot):
+        if work == "research":
+            research_sources.commit_positions(identifier)
+        return False
+    record = weekly_schedule.read_record(work)
+    if work == "research":
+        return not weekly_schedule.research_retry_wait(record, identifier, now=now)
+    key = record.get("failure_key")
+    if not isinstance(key, str) or record.get("report_synced") is False:
         return True
     version = run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
-    return not _failure_blocks(key, same_version=last.get("failure_version") == version)
+    return not _failure_blocks(key, same_version=record.get("failure_version") == version)
 
 
 def _lacks_record(target: dict[str, Any]) -> bool:
@@ -464,24 +472,25 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
     return saved
 
 
-def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
-    if not manual and not meta_auto_start_due(now=time.time()):
+def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse.Namespace], int], *, manual: bool) -> int:
+    if not manual and not weekly_auto_start_due(work, now=time.time()):
         session_review.launch_result()
         return 0
-    start = session_review.directory() / "meta-start.json"
-    if start.is_file():
-        previous = session_review.read(start)
-        if previous.get("report_synced") is False:
-            session_review.launch_result()
-            if not _save_meta_failure(start, previous):
-                outcome.report_failure(
-                    "前回のメタ分析の失敗報告を同期できないため、今回は起動していない",
-                    next_action="起票元のWI保存先とGit同期の診断を直し、同じメタ分析を再実行する",
-                )
-                return 1
-            if not manual:
-                return 0
+    previous = weekly_schedule.read_record(work)
+    start = weekly_schedule.record_path(work)
+    if work == "meta" and previous.get("report_synced") is False:
+        session_review.launch_result()
+        if not _save_meta_failure(start, previous):
+            outcome.report_failure(
+                "前回のメタ分析の失敗報告を同期できないため、今回は起動していない",
+                next_action="起票元のWI保存先とGit同期の診断を直し、同じメタ分析を再実行する",
+            )
+            return 1
+        if not manual:
+            return 0
     if getattr(args, "resume_record", None) is not None:
+        if isinstance(slot := previous.get("slot"), str):
+            args.weekly_slot = slot
         return execute(args)
     work_dir = getattr(args, "work_dir", None)
     if manual:
@@ -492,32 +501,56 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         )
         if not work_dir.is_absolute() or not work_dir.is_dir():
             outcome.report_failure(
-                "メタ分析の実行cwdには実在する絶対ディレクトリが必要",
+                f"{_WEEKLY_TITLES[work]}の実行cwdには実在する絶対ディレクトリが必要",
                 next_action="--work-dirに実在する絶対ディレクトリを指定するか、Git作業ツリー内から起動する",
             )
             return 2
-    now = datetime.datetime.now(datetime.UTC)
-    record: dict[str, Any] = {"started_at": now.isoformat()}
-    session_review.write(start, record)
+    now = datetime.datetime.fromtimestamp(time.time(), datetime.UTC)
+    identifier = weekly_schedule.slot_id(work, weekly_schedule.latest_slot(now))
+    record: dict[str, Any] = {"slot": identifier, "started_at": now.isoformat()}
+    if work == "research" and previous.get("slot") == identifier:
+        record.update(
+            {key: previous[key] for key in ("failures", "failure_reported", "failed_at", "failure_stage") if key in previous}
+        )
+    if previous.get("completed_slot"):
+        record["completed_slot"] = previous["completed_slot"]
+    args.weekly_slot = identifier
+    weekly_schedule.write_record(work, record)
     session_review.launch_result()
     stage = "worktree"
     try:
+        research_repo = None
+        if work == "research":
+            targets = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_repos"))
+            if not targets:
+                raise ValueError("外部情報の調査の対象リポジトリが空。`atk config set weekly_research_repos` で一覧を設定する")
+            research_repo = targets[0]
         if work_dir is None:
-            source = repo.resolve_repo_id_or_raise(_plugin_repository())
+            source = repo.resolve_repo_id_or_raise(research_repo or _plugin_repository())
             registered = config_settings.repository_settings(check_paths=False).get(source)
             if registered is None or not (work_dir := pathlib.Path(registered["path"])).is_dir():
-                raise ValueError(f"メタ分析のGit作業ツリーを `atk config repos` で登録する: {source}")
+                raise ValueError(f"{_WEEKLY_TITLES[work]}のGit作業ツリーを `atk config repos` で登録する: {source}")
         stage = "queue"
-        args.target_repo = _meta_report_target(now=now)
+        args.target_repo = (
+            _meta_report_target(now=now) if research_repo is None else repo.resolve_repo_id_or_raise(research_repo)
+        )
         args.work_dir = str(work_dir)
         stage = "execution"
         code = execute(args)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        _LOG.error("メタ分析を完了できなかった: %s", redact_secrets(str(error)))
+        _LOG.error("%sを完了できなかった: %s", _WEEKLY_TITLES[work], redact_secrets(str(error)))
         code = 1
-    if not code:
-        return code
     stage = (getattr(args, "batch_failure", None) or "").partition(":")[0] or f"{stage}-{code}"
+    if not code:
+        if work == "research":
+            research_sources.commit_positions(identifier)
+        weekly_schedule.write_record(
+            work, {"slot": identifier, "started_at": record["started_at"], "completed_slot": identifier}
+        )
+        return code
+    if work == "research":
+        _research_failed(record, stage, code)
+        return code
     failure_key = hashlib.sha256(f"meta:{stage}".encode()).hexdigest()
     log_path = getattr(args, "log_path", None)
     record.update(
@@ -528,9 +561,42 @@ def _run_meta(args: argparse.Namespace, execute: Callable[[argparse.Namespace], 
         log_name=log_path.name if isinstance(log_path, pathlib.Path) and log_path.is_file() else None,
         report_synced=False,
     )
-    session_review.write(start, record)
+    weekly_schedule.write_record(work, record)
     _save_meta_failure(start, record)
     return code
+
+
+_WEEKLY_TITLES = {"meta": "メタ分析", "research": "外部情報の調査"}
+
+
+def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
+    failures = int(record.get("failures", 0)) + 1
+    record.update(
+        failures=failures, failed_at=datetime.datetime.fromtimestamp(time.time(), datetime.UTC).isoformat(), failure_stage=stage
+    )
+    if failures >= weekly_schedule.RESEARCH_FAILURE_REPORT_THRESHOLD and not record.get("failure_reported"):
+        try:
+            add.add_entries(
+                private_notes.default_private_notes(),
+                messages=[
+                    "---\nrun_skill_report: true\n---\n\n"
+                    f"# 外部情報の調査（{record['slot']}）が{failures}回続けて失敗した\n\n"
+                    f"最後の失敗は段階 `{stage}`、終了{code}である。"
+                    "提案はまだ届いておらず、次の判定で同じ回を再実行する。"
+                    "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
+                    "手動での確認には `atk run-skill --args research review-session` を使う。\n"
+                ],
+                target_repo=_plugin_repository(),
+                source="run-skill",
+                scope=session_review.RESEARCH_SCOPE,
+                entry_type=WI_TYPE_UWI,
+                question_type="post-approval",
+                now=datetime.datetime.now(datetime.UTC),
+            )
+            record["failure_reported"] = True
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            _LOG.error("外部情報の調査の失敗を報告できない。次の失敗で再試行する: %s", redact_secrets(str(error)))
+    weekly_schedule.write_record("research", record)
 
 
 def _save_meta_failure(start: pathlib.Path, record: dict[str, Any]) -> bool:
@@ -632,16 +698,17 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
         outcome.report_failure("--timeoutは正の秒数で指定する", next_action="--timeoutを省略するか正の秒数で再実行する")
         return 2
 
-    manual = not bool(os.environ.get(session_review.LAUNCH_ENV))
-    if not manual and config.resolve_mutable_setting("session_review_auto_start") == "false":
+    manual = not os.environ.get(session_review.LAUNCH_ENV) and not getattr(args, "scheduled", False)
+    research = skill_modes.invocation_scope(args.skill, args.args) == session_review.RESEARCH_SCOPE
+    if not manual and not research and config.resolve_mutable_setting("session_review_auto_start") == "false":
         session_review.launch_result()
         return 0
     root = session_review.directory()
     root.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(root / "batch.lock"), timeout=0):
-            if skill_modes.invocation_scope(args.skill, args.args) == session_review.META_SCOPE:
-                return _run_meta(args, execute, manual=manual)
+            if (work := weekly_schedule.work_of_scope(skill_modes.invocation_scope(args.skill, args.args))) is not None:
+                return _run_weekly(work, args, execute, manual=manual)
             session_review.sweep(now=time.time())
             if getattr(args, "resume_record", None) is not None:
                 return _resume_batch(args, execute)

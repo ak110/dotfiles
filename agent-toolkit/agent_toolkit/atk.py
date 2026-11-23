@@ -54,6 +54,7 @@ lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E40
 lazy from agent_toolkit._atk import usage_refresh as _usage_refresh
 lazy from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
 lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
+lazy from agent_toolkit._atk import weekly_command as _weekly_cmd
 lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 lazy from agent_toolkit._atk.serve import command as _serve_command
 lazy from agent_toolkit._atk.wi import cli as _wi_cli
@@ -122,6 +123,7 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("serve", lambda parser: _serve_command.build_parser(parser)),
     ("config", lambda parser: _config_cmd.build_parser(parser)),
     ("wait-schedule", lambda parser: _wait_schedule_cmd.build_parser(parser)),
+    ("weekly", lambda parser: _weekly_cmd.build_parser(parser)),
     ("agents", lambda parser: _agents.build_parser(parser)),
     ("agents-exit-session", lambda parser: _agents_exit_session.build_parser(parser)),
     ("lane", lambda parser: _lane.build_parser(parser)),
@@ -295,6 +297,7 @@ _EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
 
 _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
+    "weekly": lambda invocation: _weekly_cmd.dispatch(invocation.args),
     "agents": lambda invocation: _agents.dispatch(invocation.args),
     "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
     "lane": lambda invocation: _lane.dispatch(invocation.args),

@@ -93,6 +93,11 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
   後ろに着眼点を追加できる
 - `agent-toolkit:atk-mode review-session batch`: 振り返り待ちのセッションをまとめて分析する。
   既定で自動起動し、`atk config set session_review_auto_start false`で停止できる
+- `agent-toolkit:atk-mode review-session meta`・`research`: 週次のメタ分析と外部情報の調査。
+  日曜14時（ホストの現地時刻）の週枠ごとに1回、`atk serve`の常駐か`atk weekly install`で登録したOSのスケジューラから起動し、取り逃した回はセッションの開始・終了で追う。
+  ホストごとに`weekly_meta_auto_start`（初期値true）と`weekly_research_auto_start`（初期値false）で切り替え、同じキューを使うホストが複数あれば1台を残して止める。
+  外部情報の調査は`weekly_research_repos`の対象と購読（`weekly_research_x_accounts`・`weekly_research_x_queries`）を使い、X APIは`weekly_research_x_api`を`true`にするまで呼ばない。
+  キーは`weekly_research_x_env_file`（空なら設定ディレクトリの`x-api.env`）の`X_BEARER_TOKEN`、1回に読む件数の上限は`weekly_research_x_max_posts`と`weekly_research_x_max_users`で指定する
 - `agent-toolkit:atk-mode export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 
 ## 更新と削除

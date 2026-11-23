@@ -35,7 +35,11 @@ from agent_toolkit._common import (
     state_paths,
 )
 
-META_SCOPE = "agent-toolkit:review-session meta"
+REVIEW_SESSION_SCOPE = "agent-toolkit:review-session"
+META_SCOPE = f"{REVIEW_SESSION_SCOPE} meta"
+RESEARCH_SCOPE = f"{REVIEW_SESSION_SCOPE} research"
+WEEKLY_SCOPES = frozenset({META_SCOPE, RESEARCH_SCOPE})
+WEEKLY_SLOT_ENV = "AGENT_TOOLKIT_WEEKLY_SLOT"
 BATCH_SCOPE = "agent-toolkit:review-session batch"
 LEGACY_BATCH_SCOPE = "agent-toolkit:session-review-batch"
 BATCH_ENV = "AGENT_TOOLKIT_SESSION_REVIEW_BATCH"
@@ -443,19 +447,10 @@ def auto_start_due(*, now: float) -> bool:
         started = datetime.datetime.fromisoformat(started_at).timestamp() if started_at else path.stat().st_mtime
         if now - started < interval:
             return False
-    return not _consultation_open()
+    return not consultation_open()
 
 
-def meta_start_due(*, now: float) -> bool:
-    path = directory() / "meta-start.json"
-    try:
-        started = datetime.datetime.fromisoformat(read(path)["started_at"]).timestamp()
-    except FileNotFoundError:
-        return not _consultation_open()
-    return now - started >= 7 * 24 * 60 * 60 and not _consultation_open()
-
-
-def _consultation_open() -> bool:
+def consultation_open() -> bool:
     return any(
         session_state.read_state(session_id).get("add_awi_skill_invoked") is True
         for session_id in session_activity.living_root_session_ids()
@@ -473,7 +468,7 @@ def is_review_run() -> bool:
     if not isinstance(data, dict) or not isinstance(skill := data.get("skill"), str):
         return False
     arguments = data.get("arguments")
-    return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) == META_SCOPE
+    return skill_modes.invocation_scope(skill, arguments if isinstance(arguments, str) else None) in WEEKLY_SCOPES
 
 
 def _launch_path() -> pathlib.Path | None:
@@ -523,8 +518,8 @@ def launch_notice(host: str) -> str | None:
                 else "cat -- " + shlex.quote(log_path)
             )
             code = f" 終了コード{attempt.exit_code}" if attempt.exit_code is not None else ""
-            if value.get("mode") == "meta":
-                retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
+            if value.get("mode") in {"meta", "research"}:
+                retry = f"配布元の作業ツリーで`atk run-skill --args {value['mode']} review-session`"
             else:
                 retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
             failures.append(

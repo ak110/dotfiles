@@ -75,7 +75,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     and data.get("source") == "run-skill"
                     and isinstance(saved_scope := data.get("scope"), str)
                     and skill_modes.canonical_scope(saved_scope) == expected
-                    and data.get("run_skill_report") == "true"
+                    and (data.get("run_skill_report") == "true" or bool(data.get("weekly_slot")))
                     and data.get("run_skill_run_id") == run_id
                 ):
                     continue

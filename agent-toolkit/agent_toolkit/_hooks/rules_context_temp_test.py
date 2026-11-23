@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import pathlib
 import subprocess
@@ -12,7 +13,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent_toolkit._atk import managed_temp, run_skill_batch
+from agent_toolkit._atk import managed_temp, run_skill_batch, weekly_schedule
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
 from agent_toolkit._hooks import posttooluse, pretooluse, rules_context
@@ -182,7 +183,14 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     """実native子の受付前失敗を、次の規範配送で一度報告しpendingを保持する。"""
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START", "true")
     if mode == "batch":
-        session_review.write(session_review.directory() / "meta-start.json", {"started_at": session_review.timestamp()})
+        weekly_schedule.write_record(
+            "meta",
+            {
+                "completed_slot": weekly_schedule.slot_id(
+                    "meta", weekly_schedule.latest_slot(datetime.datetime.now(datetime.UTC))
+                )
+            },
+        )
     session_review.record(
         {
             "hook_event_name": "SessionStart",

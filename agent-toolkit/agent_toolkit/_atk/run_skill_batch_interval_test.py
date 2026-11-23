@@ -12,7 +12,7 @@ import filelock
 import pytest
 
 from agent_toolkit import atk, hook
-from agent_toolkit._atk import run_script, run_skill, run_skill_batch
+from agent_toolkit._atk import run_script, run_skill, run_skill_batch, weekly_schedule
 from agent_toolkit._common import (
     diagnostic_process,
     mcp_environment,
@@ -48,7 +48,7 @@ def _capture_batch_launches(monkeypatch, *, mode="batch"):
 
     monkeypatch.setattr(subprocess, "Popen", spawn)
     if mode == "batch":
-        session_review.write(session_review.directory() / "meta-start.json", {"started_at": session_review.timestamp()})
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_META_AUTO_START", "false")
     return requests
 
 
@@ -149,7 +149,7 @@ def test_manual_meta_with_invalid_work_dir_leaves_auto_due(monkeypatch, tmp_path
         atk.main(argv)
     assert result.value.code == 2
     assert "次の操作" in capsys.readouterr().err
-    assert not (session_review.directory() / "meta-start.json").exists()
+    assert not (weekly_schedule.record_path("meta")).exists()
 
 
 def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path):
@@ -177,7 +177,7 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
     assert "review-session meta" in report
     assert "meta-run.log" in report
     assert str(tmp_path) not in report
-    record = session_review.read(session_review.directory() / "meta-start.json")
+    record = session_review.read(weekly_schedule.record_path("meta"))
     assert record["failure_key"] == key
     assert "completed" not in record
     now = datetime.datetime.fromisoformat(record["started_at"]).timestamp() + 7 * 86400
@@ -187,7 +187,7 @@ def test_meta_failure_keeps_auto_suppressed_after_interval(monkeypatch, tmp_path
         return (tmp_path / "failure.md", {}) if "inbox" in states else None
 
     monkeypatch.setattr(run_skill_batch, "_failure_entry", failure_entry)
-    assert not run_skill_batch.meta_auto_start_due(now=now)
+    assert not run_skill_batch.weekly_auto_start_due("meta", now=now)
     assert session_review.auto_start_due(now=now)
 
 
@@ -245,13 +245,13 @@ def test_meta_failed_report_save_explains_next_action(monkeypatch, tmp_path, cap
         atk.main(["run-skill", "--target-repo", str(tmp_path), "--args", "meta", "agent-toolkit:review-session"])
     assert result.value.code == 3
     assert "WI保存先を直してから次回の起動で再試行する" in caplog.text
-    assert session_review.read(session_review.directory() / "meta-start.json")["report_synced"] is False
+    assert session_review.read(weekly_schedule.record_path("meta"))["report_synced"] is False
 
 
 @pytest.mark.parametrize("manual", [False, True])
 def test_meta_retries_unsynced_failure_report_without_rerunning(monkeypatch, manual):
     """是正報告を保存できなかった回は、次の実行機会に保存だけを再試行する。"""
-    start = session_review.directory() / "meta-start.json"
+    start = weekly_schedule.record_path("meta")
     elapsed = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=8)
     session_review.write(
         start,

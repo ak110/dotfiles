@@ -365,6 +365,11 @@ HELP: dict[str, dict[str, str]] = {
         "description": "工程別モデル候補列をプリセットで確認・一括設定する。\n\n目的: execute・review・review_fast・chores・chores_fast・orchestrateの6キーを一括保存し、write_modelと非モデル設定を保持する。`show`の指定時と引数の省略時は、保存せずに5プリセットの設定値を表示する。\n利用場面: 工程ごとのモデル候補列を一括で切り替えるとき。切り替える前に各プリセットが保存する値を見比べるとき。\n対象と出力: プリセット名を指定した実行だけが設定ディレクトリの`config.json`へ工程別候補列を保存し、保存した各キーと値を標準出力へ表示する。`show`の指定時と引数の省略時は設定ファイルを読み書きしない。プリセットごとに`<プリセット名>:`の行と、保存対象の各キーの`<キー>: <値>`を半角空白2文字で字下げした行を標準出力へ書く。未知の名前は終了コード2で終わり、受理する値を標準エラーへ表示する。\n前提: 引数は`show`、または`codex-balanced`、`codex-near-primary`、`codex-primary`、`claude-balanced`、`claude-primary`のいずれかのプリセット名を指定するか、省略する。\n復元・後始末: 個別に元の値へ戻す場合は`atk config set`を使う。並行して稼働するセッションへも新しい値が波及する。`show`と省略時の表示は状態を残さない。",
         "epilog": "実行例:\n\n  atk config apply-preset show\n  atk config apply-preset codex-balanced",
     },
+    "atk weekly": {
+        "summary": "日曜14時の週枠の作業を実行し、OSのスケジューラへ定時起動を登録する",
+        "description": "日曜14時の週枠の作業を実行し、OSのスケジューラへ定時起動を登録する。\n\n目的: 週次のメタ分析と外部情報の調査を、ホストの現地時刻で日曜14時を単位とする週枠ごとに1回だけ実行する。\n利用場面: `run`は`atk serve`の定期の判定とOSのスケジューラが呼ぶ。`atk serve`を常駐させないホストでは`install`で定時起動を登録し、不要になれば`uninstall`で解除する。\n対象と出力: `run`は最新の週枠で結果のUWIが未保存の作業のうち、このホストで有効なもの（`weekly_meta_auto_start`、`weekly_research_auto_start`）を前景で1件ずつ`atk run-skill`の経路で実行する。日曜14時より前は前週の未完了の枠だけを追い、2回以上逃した枠は最新の1回だけを実行する。`install`はLinuxでは`atk-weekly.service`と`atk-weekly.timer`をsystemdのユーザー設定へ書いて有効にし、Windowsではタスクスケジューラへ`agent-toolkit-weekly`を登録する。\n前提: `install`はPATHのうちプラグインの一時配置以外の`atk`か、`--atk-command`の絶対パスを登録する。Linuxの登録はinstall時のPATHを固定する。\n復元・後始末: `uninstall`で登録を解除する。`run`の実行記録は状態ディレクトリの`session-review/weekly/`に残る。",
+        "epilog": "実行例:\n\n  atk weekly run\n  atk weekly install\n  atk weekly uninstall",
+    },
     "atk wait-schedule": {
         "summary": "委譲待機のcron式と定期再確認のpromptを生成する",
         "description": "委譲待機のcron式と定期再確認のpromptを生成する。\n\n目的: メインのプロンプトキャッシュTTLを公開情報から判定し、対応する壁時計のcron式と定期再確認のpromptをJSONで出力する。\n利用場面: 委譲先や背景処理の完了を定期的に再確認するタスクを登録するとき。\n対象と出力: 環境変数と`claude auth status`の出力を読み取って、`*/3 * * * *`か`*/30 * * * *`のcron式を`cron`、定期再確認の`CronCreate`へ渡すpromptの共通本文を`prompt`に持つJSONを標準出力へ1行で書く。`prompt`の1行目は定期再確認の標識である。ファイルは変更しない。\n前提: 引数は取らない。定期再確認を装着するメインが使う。\n復元・後始末: 読み取りだけを行うため不要。出力したcron式と`prompt`は変更せずそのまま登録する。promptは開始タグと終了タグで全体を囲む。経過時間起動の義務を加える場合は、測定コマンドと判定閾値の行を`prompt`の終了タグの前へ加える。",
