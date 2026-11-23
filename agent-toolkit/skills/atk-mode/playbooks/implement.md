@@ -20,9 +20,10 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
    差し戻しや保存の失敗を直している間は、隔離worktreeの実装と既存AWIの保留を保ち、実行レビューとpushへ進まない。
    中止した時と、登録0件で終わった時は、実装をpushせず「中止と後始末」に従う。
 3. 隔離worktreeと作業ブランチを作る。
-   - 先に`git fetch origin <ベースブランチ>`を実行し、`origin/<ベースブランチ>`（系統を登録したリポジトリでは宛先の系統。リモート未設定時はローカルの`<ベースブランチ>`）の最新状態から一時ディレクトリへ隔離worktreeと作業ブランチを作る。
+   - 調査基点がある新規AWIでは、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`で固定した完全OIDを使う。
+     その他は宛先のベースブランチを取得して使う。
    - ブランチ名は対象プロジェクトの命名規則に従い、規則が無ければ`feat/<短い識別名>`や`fix/<短い識別名>`などの一般的なfeatureブランチ名を使う。
-   - 例: `git worktree add -b feat/<短い識別名> "$(mktemp -d)" origin/<ベースブランチ>`。
+   - 例: `git worktree add -b feat/<短い識別名> <一時ディレクトリ> <完全OID>`。
    - 主作業ツリーは変更せず、対象リポジトリのプロジェクト規範に従って隔離worktree内の環境を準備する（`mise trust`、依存同期など）。
 4. 実装し、変更範囲を検証してcommitする。
    - 合意済みの方針を変える時は、`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7の確認条件を変更後の方針に当てはめ、本人の判断が必要なら変更に着手する前に合意を得直す。

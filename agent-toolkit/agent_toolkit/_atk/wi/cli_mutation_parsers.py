@@ -28,7 +28,8 @@ def _add_wi_add_parser(sub: Any) -> None:
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
-    add.add_argument(
+    placement = add.add_mutually_exclusive_group()
+    placement.add_argument(
         "--batch",
         action="store_true",
         help=(
@@ -45,6 +46,12 @@ def _add_wi_add_parser(sub: Any) -> None:
             "復元できない点は限界として許容する。"
             "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
         ),
+    )
+    placement.add_argument(
+        "--draft-base",
+        nargs=2,
+        metavar=("REF", "OID"),
+        help="調査で固定した宛先のrefs/heads/...と完全OID。宛先worktreeの取得済みの上流と比べる。",
     )
     add.add_argument(
         "--dry-run",

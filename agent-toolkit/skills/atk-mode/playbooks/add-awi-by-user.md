@@ -35,6 +35,7 @@
 
 3. メインが調査、対策、起草、検収、保存を担う。
    - `agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」に従い、独立した要求へ分けて起草し、逐語引用と由来・確定要件・技術判断を分ける。
+     現物を読む新規AWIでは、同書「対象の調査基点」を保存まで保持する。
      不具合は原因、類似箇所、別件、再発防止を起草前に確定する。
      コードと規範の不一致は`agent-basics:bugfix`で判定し、同じ条文を足さない。
      使い方が変わる要求は、ガイドと公開後の案内も反映内容へ書く（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」）。

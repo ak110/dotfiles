@@ -22,6 +22,7 @@
    ユーザーだけが決められる値が残る場合に限り、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認する。
 3. 保存せずに検証する。
    - 新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <source>`を使う。
+     調査基点がある新規AWIは`--target-repo <宛先worktree> --draft-base <ベースref> <完全OID>`も指定する。
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。
    - UWIの新規では`--type=uwi`と、その問いに要る回答形式の指定を加える。
@@ -118,6 +119,8 @@
    ユーザー固有の判断の回答を待っている要求は、保存を指示されても回答まで保存を保留する。
 2. 保存する。
    - 新規は`atk wi add --body-file <原稿の絶対パス>`で保存する。
+     dry-runに調査基点を指定した新規AWIは、同じ宛先と`--draft-base`を使う。
+     不一致なら差に関係する前提を読み、原稿の修正と検収へ戻る。
    - `ファイル名`を受け取った要求は新規に保存せず、`atk wi show`で取得した現行本文を改訂して`atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で保存する。
    - 投入は要求ごとに1回だけ行う。
    - 同じリポジトリで同時に確定した複数のAWIは、`--body-file`を反復して1回の`atk wi add`にまとめる（努力目標。commitとpushを1回にするため）。
