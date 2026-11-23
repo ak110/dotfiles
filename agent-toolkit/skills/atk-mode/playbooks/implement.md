@@ -11,6 +11,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
 ## 手順
 
 1. `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`の「手順」と「起草と保存」を、AWIの保存まで行う。
+   `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順4〜7を、方針を提示する前に読む（外部資料がある時は手順5を適用する）。
    同書「セッション境界」の成果物の制限は実装に適用せず、投入中の中止は同節の「中止と再開」に従う。
    新規のAWIは`atk wi add --hold`で保留のまま保存し、既存のAWIを更新する場合は同書の保留を解かずに残す。
 2. 同書「起草と保存」の手順4で投入を1回だけ終える（登録0件なら本書はここで終わる）。
