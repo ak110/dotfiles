@@ -21,6 +21,14 @@ _EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "output_schema": {"additionalProperties": True, "title": "apply_runtime_changesDictOutput", "type": "object"},
     },
+    "collect_handoff": {
+        "annotations": None,
+        "input_schema": {
+            "properties": {"timeout": {"default": 30, "minimum": 0, "maximum": 30, "type": "number"}},
+            "type": "object",
+        },
+        "output_schema": {"additionalProperties": True, "title": "collect_handoffDictOutput", "type": "object"},
+    },
     "compact_conversation": {
         "annotations": {"destructive_hint": False},
         "input_schema": {"properties": {"resume": {"default": False, "type": "boolean"}}, "type": "object"},

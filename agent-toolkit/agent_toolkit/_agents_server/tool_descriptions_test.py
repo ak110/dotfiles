@@ -103,6 +103,7 @@ async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
     読み取り専用でないツールで`destructiveHint`を省略すると仕様上は真として扱うため、追加だけを行うツールには偽を明示する。
     """
     expected = {
+        "collect_handoff": None,
         "start": (None, False),
         "send_message": (None, False),
         "kill": (None, True),
@@ -117,9 +118,13 @@ async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
     assert set(tools) == set(expected)
-    for name, (read_only, destructive) in expected.items():
+    for name, expected_annotations in expected.items():
         tool = tools[name]
         assert tool.title, name
+        if expected_annotations is None:
+            assert tool.annotations is None, name
+            continue
+        read_only, destructive = expected_annotations
         assert tool.annotations is not None, name
         assert tool.annotations.read_only_hint is read_only, name
         assert tool.annotations.destructive_hint is destructive, name

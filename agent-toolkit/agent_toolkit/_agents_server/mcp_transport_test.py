@@ -103,6 +103,7 @@ async def _stdio_client(tmp_path: pathlib.Path, host_environment: dict[str, str]
 
 _EXPECTED_TOOLS = {
     "start",
+    "collect_handoff",
     "send_message",
     "kill",
     "stop",
