@@ -3,6 +3,8 @@
 
 import asyncio
 import json
+import os
+import shlex
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -15,7 +17,6 @@ import pytest
 from pydantic import ValidationError
 
 from agent_toolkit._agents_server import claude_plugins, plugin_root
-from agent_toolkit._common import environment_usage
 from agent_toolkit._testing.agents_server_support import ManualObserver
 
 
@@ -119,41 +120,64 @@ async def test_versioned_input_is_separate_from_server_copy(tmp_path: Path, inve
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
-async def test_hook_bootstrap_waits_for_switch_from_outside_mirror(tmp_path: Path, inventory: SimpleNamespace) -> None:
-    root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
-    hooks = root / "hooks"
-    hooks.mkdir()
-    (hooks / "hooks.json").write_text(
-        json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"command": claude_plugins._CLAUDE_HOOK_LAUNCHER}]}]}}),
-        encoding="utf-8",
-    )
-    scripts = root / "scripts"
-    scripts.mkdir()
-    (scripts / "launch.py").write_text("print('hook output')\n", encoding="utf-8")
-    inventory.items = [_installed(root)]
-    options = _options(tmp_path, root)
-    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
+async def test_hooks_keep_their_generation_during_switch_and_restore(
+    tmp_path: Path, inventory: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def source(version: str) -> Path:
+        root = _plugin(tmp_path / "cache/mine/agent-toolkit" / version, version)
+        hooks = root / "hooks"
+        hooks.mkdir()
+        hook = {"command": claude_plugins._CLAUDE_HOOK_LAUNCHER + " " + version}
+        (hooks / "hooks.json").write_text(json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [hook]}]}}), encoding="utf-8")
+        (hooks / "plugin_launch.ts").write_text(claude_plugins._HOOK_GENERATION_ROOT, encoding="utf-8")
+        scripts = root / "scripts"
+        scripts.mkdir()
+        module = root / "agent_toolkit" / "_common"
+        module.mkdir(parents=True)
+        (module / "periodic_recheck.py").write_text(f"VERSION={version!r}\n", encoding="utf-8")
+        (scripts / "launch.py").write_text(
+            "import sys\nfrom pathlib import Path\nsys.path.insert(0, str(Path(__file__).resolve().parents[1]))\n"
+            "from agent_toolkit._common.periodic_recheck import VERSION\nassert VERSION == sys.argv[1]\nprint(VERSION)\n",
+            encoding="utf-8",
+        )
+        return root
+
+    def launch(root: Path) -> tuple[Path, list[str]]:
+        config = json.loads((root / "hooks" / "hooks.json").read_bytes())
+        args = shlex.split(config["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"])
+        helper = (root / "hooks" / "plugin_launch.ts").read_text(encoding="utf-8")
+        function_root = Path(json.loads(helper.removeprefix("const generationRoot: string = ").removesuffix(";")))
+        return function_root, args
+
+    old, new = source("1.0.0"), source("2.0.0")
+    inventory.items = [_installed(old)]
+    options = _options(tmp_path, old)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         mirror = Path(options["plugins"][0]["path"])
-        wrapper = mirror.parent / "hook_bootstrap.py"
-        assert wrapper.name in (mirror / "hooks" / "hooks.json").read_text(encoding="utf-8")
-        backup = mirror.with_name("observed-window")
-        with environment_usage.lock(mirror, exclusive=True):
-            mirror.rename(backup)
-            probe = await asyncio.create_subprocess_exec(
-                sys.executable, str(wrapper), stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            try:
-                with pytest.raises(TimeoutError):
-                    await asyncio.wait_for(probe.wait(), timeout=0.3)
-            finally:
-                backup.rename(mirror)
-        try:
-            stdout, stderr = await asyncio.wait_for(probe.communicate(), timeout=10)
-            assert (probe.returncode, stdout.strip(), stderr) == (0, b"hook output", b"")
-        finally:
-            if probe.returncode is None:
-                probe.kill()
-                await probe.wait()
+        prepared = reloader._stage(new)
+        references = (launch(mirror), launch(prepared))
+        replace = os.replace
+        holes = []
+
+        def at_rename(src, dst):
+            replace(src, dst)
+            if mirror.exists():
+                return
+            holes.append(Path(dst).name)
+            for function_root, args in references:
+                for argv in (args, [str(function_root / "scripts" / "launch.py"), args[1]]):
+                    result = subprocess.run(
+                        [sys.executable, "-I", "-S", *argv], capture_output=True, text=True, check=True, timeout=10
+                    )
+                    assert result.stdout.strip() == args[1]
+
+        monkeypatch.setattr(os, "replace", at_rename)
+        reloader._switch(prepared)
+        reloader._restore()
+        assert holes == ["previous", "rejected"]
+        assert launch(mirror) == references[0]
+        assert all(root.is_dir() for root, _argv in references)
+    assert not mirror.parent.exists()
 
 
 @pytest.mark.parametrize("failure", ["disabled", "other-project", "ambiguous"])
@@ -198,6 +222,7 @@ async def test_copy_failure_preserves_previous_input(
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         mirror = Path(options["plugins"][0]["path"])
         reloader.mark_changed()
+        generations = tuple(mirror.parent.glob("generation-*"))
 
         def copy_failure(_source: Path, target: Path, **_kwargs: Any) -> None:
             (target / "partial").touch()
@@ -208,7 +233,7 @@ async def test_copy_failure_preserves_previous_input(
             await reloader.reload(client)
         assert (mirror / "skills/content.md").read_text(encoding="utf-8") == "初期内容"
         assert not (mirror / "partial").exists()
-        assert not list(mirror.parent.glob("generation-*"))
+        assert generations and tuple(mirror.parent.glob("generation-*")) == generations
         assert reloader.dirty
         client._query._send_control_request.assert_not_awaited()
 
