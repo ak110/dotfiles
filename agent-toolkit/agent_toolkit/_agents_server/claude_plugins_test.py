@@ -165,6 +165,7 @@ async def test_hooks_keep_their_generation_during_switch_and_restore(
                 return
             holes.append(Path(dst).name)
             for function_root, args in references:
+                assert (function_root / "skills" / "content.md").is_file()
                 for argv in (args, [str(function_root / "scripts" / "launch.py"), args[1]]):
                     result = subprocess.run(
                         [sys.executable, "-I", "-S", *argv], capture_output=True, text=True, check=True, timeout=10
@@ -211,8 +212,9 @@ async def test_unloaded_scope_without_install_path_is_ignored(tmp_path: Path, in
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("manual_observer")
+@pytest.mark.parametrize("at", [1, 2])
 async def test_copy_failure_preserves_previous_input(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, inventory: SimpleNamespace, at: int
 ) -> None:
     """コピー途中の失敗では固定pathに以前の完全な内容を残し、SDK要求を送らない。"""
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
@@ -223,10 +225,17 @@ async def test_copy_failure_preserves_previous_input(
         mirror = Path(options["plugins"][0]["path"])
         reloader.mark_changed()
         generations = tuple(mirror.parent.glob("generation-*"))
+        copytree = claude_plugins.shutil.copytree
+        count = 0
 
-        def copy_failure(_source: Path, target: Path, **_kwargs: Any) -> None:
-            (target / "partial").touch()
-            raise OSError("コピー失敗")
+        def copy_failure(from_path: Path, target: Path, *args: Any, **kwargs: Any) -> Any:
+            nonlocal count
+            if from_path in {root, *mirror.parent.glob("generation-*")}:
+                count += 1
+                if count == at:
+                    (target / "partial").touch()
+                    raise OSError("コピー失敗")
+            return copytree(from_path, target, *args, **kwargs)
 
         monkeypatch.setattr(claude_plugins.shutil, "copytree", copy_failure)
         with pytest.raises(OSError, match="コピー失敗"):
@@ -376,6 +385,8 @@ async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventor
     options = _options(tmp_path, root)
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         mirror = Path(options["plugins"][0]["path"])
+        initial_resource = reloader.resource_root
+        assert initial_resource is not None and initial_resource != mirror
         current = root if new_version == "1.0.0" else _plugin(root.parent / new_version, new_version)
         (current / "skills/content.md").write_text("反映済み内容", encoding="utf-8")
         inventory.items = [_installed(current)]
@@ -385,11 +396,14 @@ async def test_successful_reload_confirms_updated_input(tmp_path: Path, inventor
         async def request(payload: dict[str, str], **_kwargs: Any) -> dict[str, Any]:
             assert payload == {"subtype": "reload_plugins"}
             assert (mirror / "skills/content.md").read_text(encoding="utf-8") == "反映済み内容"
+            assert reloader.resource_root == initial_resource
             return _response(mirror, new_version)
 
         client = SimpleNamespace(_query=SimpleNamespace(_send_control_request=AsyncMock(side_effect=request)))
         result = await reloader.reload(client)
         assert result["plugins"][0]["version"] == new_version
+        assert reloader.resource_root is not None and reloader.resource_root != initial_resource
+        assert (initial_resource / "skills/content.md").read_text(encoding="utf-8") == "初期内容"
         assert options["plugins"][0]["path"] == str(mirror)
         assert not mirror.is_symlink()
         assert (mirror / "skills/content.md").read_text(encoding="utf-8") == "反映済み内容"
@@ -459,13 +473,17 @@ async def test_updated_input_keeps_mcp_on_server_runtime(
     (runtime / ".mcp.json").write_text(json.dumps({"mcpServers": {"agents_server": original_server}}), encoding="utf-8")
     monkeypatch.setattr(plugin_root, "SERVER_PLUGIN_ROOT", runtime)
     root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
-    changed_configuration = {"mcpServers": {"agents_server": {"command": "changed"}, "other": {"command": "new-tool"}}}
+    changed_configuration = {
+        "mcpServers": {"agents_server": {"command": "changed"}, "other": {"command": "${CLAUDE_PLUGIN_ROOT}/scripts/new-tool"}}
+    }
     (root / ".mcp.json").write_text(json.dumps(changed_configuration), encoding="utf-8")
     inventory.items = [_installed(root)]
     options = _options(tmp_path, root)
     async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()) as reloader:
         mirror = Path(options["plugins"][0]["path"])
         initial = json.loads((mirror / ".mcp.json").read_text(encoding="utf-8"))
+        initial_resource = reloader.resource_root
+        assert initial_resource is not None
         current = _plugin(root.parent / "2.0.0", "2.0.0")
         (current / ".mcp.json").write_text(json.dumps(changed_configuration), encoding="utf-8")
         inventory.items = [_installed(current)]
@@ -475,9 +493,10 @@ async def test_updated_input_keeps_mcp_on_server_runtime(
         )
         await reloader.reload(client)
         updated = json.loads((mirror / ".mcp.json").read_text(encoding="utf-8"))
-        assert updated == initial
+        assert updated["mcpServers"]["agents_server"] == initial["mcpServers"]["agents_server"]
         assert updated["mcpServers"]["agents_server"]["args"][1] == str(runtime / "scripts/launch.py")
-        assert updated["mcpServers"]["other"] == {"command": "new-tool"}
+        assert initial["mcpServers"]["other"] == {"command": f"{initial_resource}/scripts/new-tool"}
+        assert updated["mcpServers"]["other"] == {"command": f"{reloader.resource_root}/scripts/new-tool"}
 
 
 @pytest.mark.asyncio

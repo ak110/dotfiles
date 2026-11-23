@@ -186,6 +186,7 @@ _FIXED_TERMINAL_WIDTH = 200
 
 class _StubPluginReloader:
     updated = False
+    resource_root = None
 
     def __init__(self, options: dict[str, Any], _loop: asyncio.AbstractEventLoop) -> None:
         options.setdefault("plugins", [{"type": "local", "path": str(claude.plugin_roots.SERVER_PLUGIN_ROOT)}])

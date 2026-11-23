@@ -30,8 +30,12 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
     closed = asyncio.Event()
     order: list[str] = []
     mirror = tmp_path / "input/agent-toolkit"
-    for name in ("agent-toolkit", "agent-basics"):
-        root = mirror.parent / name
+    generation = mirror.with_name("generation-initial")
+    for root, name in (
+        (mirror, "agent-toolkit"),
+        (generation, "agent-toolkit"),
+        (mirror.with_name("agent-basics"), "agent-basics"),
+    ):
         (root / ".claude-plugin").mkdir(parents=True)
         (root / ".claude-plugin/plugin.json").write_text(json.dumps({"name": name}), encoding="utf-8")
         (root / "skills").mkdir()
@@ -40,6 +44,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
         async def prepare(self) -> None:
             if versioned_input:
                 self.options["plugins"][0]["path"] = str(mirror)
+                self.resource_root = generation
 
         async def wait_for_change(self) -> None:
             await changed.wait()
@@ -78,7 +83,7 @@ async def test_plugin_reload_waits_for_idle_and_precedes_reply(
         session = await backend.start(launch_requests.wrap_delivery_body(original + "\n\n初回"), str(tmp_path))
         assert client.queries[0].count("agent-toolkit plugin root:") == 1
         if versioned_input:
-            assert f"agent-toolkit plugin root: {mirror}\n" in client.queries[0]
+            assert f"agent-toolkit plugin root: {generation}\n" in client.queries[0]
         changed.set()
         await asyncio.wait_for(observed.wait(), timeout=2)
         assert order == ["query"]

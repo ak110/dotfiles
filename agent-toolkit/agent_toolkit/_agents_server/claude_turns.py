@@ -45,7 +45,7 @@ class ClaudeTurns(ClaudeRuntime):
     @staticmethod
     async def _query_with_resources(client: Any, options: Any, reloader: ClaudePluginReloader, cwd: str, body: str) -> None:
         # serverの保持版とreloadする子の入力版は寿命が異なるため、最新の参照先を次の入力へ添える。
-        root = pathlib.Path(options.plugins[0]["path"])
+        root = reloader.resource_root or pathlib.Path(options.plugins[0]["path"])
         if root != plugin_roots.SERVER_PLUGIN_ROOT or reloader.updated:
             resources = await run_file_operation(plugin_resource_instructions, root, "claude", cwd)
             body, replaced = re.subn(
