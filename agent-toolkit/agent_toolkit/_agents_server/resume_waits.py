@@ -437,9 +437,10 @@ def release_auto_resume_hold(session: SessionState) -> bool:
     return True
 
 
-def record_unobserved_sessions(session: SessionState, session_ids: set[str]) -> None:
+def record_unobserved_sessions(session: SessionState, session_ids: set[str], *, touch: bool = True) -> None:
     _merge_error_identifiers(session, UNOBSERVED_SESSIONS_KEY, session_ids)
-    session.touch()
+    if touch:
+        session.touch()
 
 
 def _merge_error_identifiers(session: SessionState, key: str, identifiers: set[str]) -> None:

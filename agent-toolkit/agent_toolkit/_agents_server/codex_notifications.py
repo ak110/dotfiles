@@ -199,12 +199,18 @@ class CodexNotificationsMixin:
             held_by_result_contract = (
                 changed is None
                 and session.effort_resume_turn != session.turn_seq
-                and result_contract.hold_invalid_result(session, result)
+                and result_contract.hold_invalid_result(session, result, allow_hold=not session.interrupt_requested)
             )
             if not held_by_result_contract:
                 session.status = result["status"]
                 session.error = result["error"]
-            if changed is not None:
+            if session.interrupt_requested:
+                session.clear_hold()
+                unobserved = (
+                    session.live_child_session_ids | session.terminal_child_session_ids | session.codex_live_subagent_thread_ids
+                )
+                resume_waits.record_unobserved_sessions(session, unobserved, touch=False)
+            elif changed is not None:
                 session.clear_hold()
             elif held_by_result_contract:
                 pass
@@ -253,7 +259,8 @@ class CodexNotificationsMixin:
             item = params.get("item")
             if isinstance(item, dict):
                 session.record_current_item_start(None)
-                (await self._consume_item(session, item))
+                if not (session.interrupt_requested and session.result_available and item.get("type") == "agentMessage"):
+                    await self._consume_item(session, item)
                 await compaction_metrics.observe_compaction_item(session, method, params)
         elif method == "item/agentMessage/delta":
             delta = params.get("delta")

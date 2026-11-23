@@ -110,7 +110,7 @@ def is_finalized_wait_statement(result: Mapping[str, Any]) -> bool:
 def has_unobserved_children(result: Mapping[str, Any]) -> bool:
     error = result.get("error")
     return (
-        result.get("status") == "completed"
+        result.get("status") in ("completed", "failed", "interrupted")
         and not is_finalized_wait_statement(result)
         and isinstance(error, dict)
         and isinstance(children := error.get("unobservedSessions"), list)
