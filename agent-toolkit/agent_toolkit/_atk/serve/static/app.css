@@ -227,3 +227,7 @@ main > .toolbar {
     padding: 1px 4px;
   }
 }
+
+[data-editor] [role="alert"] {
+  scroll-margin-block: 1px;
+}
