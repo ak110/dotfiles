@@ -173,8 +173,8 @@ def _run(client: httpx.Client | None, env_overrides: dict[str, str] | None) -> p
 def _deferred_notice(*, inside_session: bool) -> post_apply_outcome.PostApplyNotice:
     if inside_session:
         reason = "Herdrセッション内では自己更新できないため、更新を保留しました。"
-        manual = "セッションから離脱した後、Herdr外の端末で次のコマンドを実行する。"
+        manual = "更新担当はHerdr外の端末から次のコマンドを実行する。安全に離脱できない場合は延期する。"
     else:
         reason = "稼働中のHerdrサーバーの再起動を要する更新のため、稼働中のセッションを保って更新を保留しました。"
-        manual = "Herdrのセッションを全て終了してから、次のコマンドを実行する。"
+        manual = "更新担当は進行中の作業が終わるまで待ち、安全に全セッションを終了できた場合だけ次のコマンドを実行する。"
     return post_apply_outcome.PostApplyNotice(message=reason + manual, command="herdr update")

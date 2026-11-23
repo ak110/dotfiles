@@ -737,11 +737,7 @@ def _perform_isolated_upgrade(
     print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
 
 
-_ANTIGRAVITY_UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
-"""`pytools/_internal/antigravity_plugin.py`の`UPDATED_NOTICE`と同じ文言。
-
-PEP 723スクリプトからpytoolsをimportできないため、文言の一致は試験で確かめる。
-"""
+_LEGACY_ANTIGRAVITY_UPDATE_WARNING = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
 
 _CODEX_HOOK_TRUST_NOTICE = (
     "Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
@@ -798,7 +794,7 @@ def _is_expected_log_warning(message: str, home: pathlib.Path, platform_name: st
     許容しない警告は全て検証失敗とし、警告一般の検出は保つ。
     """
     # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
-    if message == _ANTIGRAVITY_UPDATED_NOTICE:
+    if message == _LEGACY_ANTIGRAVITY_UPDATE_WARNING:
         return True
     if message == _CODEX_HOOK_TRUST_NOTICE:
         return platform_name != "linux"

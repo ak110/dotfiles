@@ -131,8 +131,10 @@ def restore_worktree(ref: str) -> bool:
     else:
         record_git_recovery(
             f"未コミット内容の復元に失敗しました。未コミット内容は{ref}から復旧できます。"
-            "git statusで競合を確認し、競合を解消した作業ツリーで"
-            f"git stash apply --index {ref}を実行してください。"
+            "更新担当はgit statusで適用済みの内容と競合を確認する。"
+            "変更の採否が利用者にしか決められない競合は、退避を保持したまま判断を求める。"
+            "未適用で、作業ツリーを安全に復元できる場合は"
+            f"git stash apply --index {ref}を実行する。"
         )
     return restored
 

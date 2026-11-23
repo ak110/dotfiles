@@ -569,7 +569,8 @@ class TestEnsurePluginCacheComplete:
             assert (cache_dir / "agent_toolkit" / "hook.py").read_text(encoding="utf-8") == "in use"
             assert "scripts/launch.py.lock" in caplog.text
             assert str(cache_dir.relative_to(tmp_path)) in caplog.text
-            assert "`update-dotfiles`を再実行してください" in caplog.text
+            assert "更新担当はセッションの終了を待ち" in caplog.text
+        assert "`update-dotfiles`を再実行する" in caplog.text
 
         assert _install_claude_plugins._ensure_plugin_cache_complete(self._NAME) == "repaired"
         assert calls == [self._NAME]
