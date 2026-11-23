@@ -43,25 +43,42 @@ class _Recorded:
 
 
 def _timeline(count, *, newest=200):
+    """新しい側から返し、範囲内に残りがあれば`next_token`を付ける記録応答。  pyfltr: allow-comment"""
+
     def respond(url):
         query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
         since = int(query.get("since_id", ["0"])[0])
-        posts = [
+        until = int(query.get("until_id", [str(newest + 1)])[0])
+        matched = [
             {"id": str(newest - index), "created_at": "2026-11-21T00:00:00.000Z", "text": f"{_FULL_TEXT}{index}"}
             for index in range(count)
-            if newest - index > since
-        ][: int(query["max_results"][0])]
+            if since < newest - index < until
+        ]
+        posts = matched[: int(query["max_results"][0])]
         meta: dict[str, object] = {"result_count": len(posts)}
         if posts:
             meta["newest_id"] = posts[0]["id"]
+            meta["oldest_id"] = posts[-1]["id"]
+        if len(matched) > len(posts):
+            meta["next_token"] = "next"
         return 200, json.dumps({"data": posts, "meta": meta}).encode()
 
     return respond
 
 
+_BASELINE_SHA = "a" * 40
+
+_COMMITS = f"https://api.github.com/repos/{research_sources.CLAUDE_CODE_REPOSITORY}/commits"
+
+
 def _base_responses():
     return {
         research_sources.CLAUDE_CODE_CHANGELOG: (200, _CHANGELOG),
+        _COMMITS: (200, json.dumps([{"sha": _BASELINE_SHA}]).encode()),
+        f"https://raw.githubusercontent.com/{research_sources.CLAUDE_CODE_REPOSITORY}/{_BASELINE_SHA}/CHANGELOG.md": (
+            200,
+            b"## 2.2.0\n\n- Faster startup\n\n## 2.1.0\n\n- Old entry\n",
+        ),
         "https://api.github.com/repos/openai/codex/releases": (
             200,
             _releases(("rust-v0.9", "2026-11-20T00:00:00Z"), ("rust-v0.8", "2026-11-01T00:00:00Z")),
@@ -139,10 +156,21 @@ def test_reads_only_after_previous_position_and_commits_after_save(x_settings, m
     assert any("since_id=105" in url for url in fetch.x_calls())
 
 
-def test_read_limit_stops_by_kind(x_settings, monkeypatch):
+def _max_results(fetch, path):
+    return [
+        int(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["max_results"][0]) for url in fetch.x_calls() if path in url
+    ]
+
+
+@pytest.mark.parametrize(
+    ("max_posts", "timeline_requests", "posts_read"),
+    [(4, [], 0), (5, [5], 5), (12, [12], 10)],
+)
+def test_read_limit_stops_by_kind_without_overrequest(x_settings, monkeypatch, max_posts, timeline_requests, posts_read):
+    """投稿一覧は5件、検索は10件が要求の最小であり、残りがそれに満たなければ送信しない。  pyfltr: allow-comment"""
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "4")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", str(max_posts))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_USERS", "1")
     responses = {
         **_base_responses(),
@@ -153,14 +181,74 @@ def test_read_limit_stops_by_kind(x_settings, monkeypatch):
     fetch = _Recorded(responses)
     result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
     sources = _by_source(result)
-    assert result["x_api"]["posts_read"] == 4
+    assert _max_results(fetch, "/users/11/tweets") == timeline_requests
+    assert _max_results(fetch, "/tweets/search/recent") == []
+    assert result["x_api"]["posts_read"] == posts_read
     assert result["x_api"]["users_looked_up"] == 1
-    assert sources["x:account:poteto"]["count"] == 4
-    assert "件数上限" in sources["x:account:poteto"]["reason"]
+    assert sources["x:account:poteto"]["count"] == posts_read
+    assert "件数上限" in sources["x:account:poteto"]["reason"] or posts_read == 10
     assert sources["x:account:mattpocockuk"]["status"] == "failed"
     assert "照会の件数上限" in sources["x:account:mattpocockuk"]["reason"]
-    assert sources["x:search:claude code hooks"]["count"] == 0
+    assert sources["x:search:claude code hooks"]["status"] == "skipped"
+    assert "件数上限" in sources["x:search:claude code hooks"]["reason"]
     assert not any("mattpocockuk" in url for url in fetch.x_calls())
+
+
+def test_search_requests_at_least_ten_within_budget(x_settings, monkeypatch):
+    del x_settings
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "10")
+    responses = {**_base_responses(), f"{research_sources.X_API_BASE}/tweets/search/recent": _timeline(3, newest=310)}
+    fetch = _Recorded(responses)
+    sources = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
+    assert _max_results(fetch, "/tweets/search/recent") == [10]
+    assert sources["x:search:claude code hooks"]["count"] == 3
+
+
+def test_partial_read_keeps_unread_range_for_next_run(x_settings, monkeypatch):
+    """上限で古い側を読み残した区間は次回に先に読み、どの投稿も欠かさず二重にも読まない。  pyfltr: allow-comment"""
+    del x_settings
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "5")
+    session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
+    session_review.write(
+        research_sources.positions_path(), {"positions": {"x:account:poteto": "100"}, "user_ids": {"poteto": "11"}}
+    )
+    timeline = f"{research_sources.X_API_BASE}/users/11/tweets"
+    responses = {**_base_responses(), timeline: _timeline(12, newest=110)}
+    read: list[str] = []
+    for run, newest in enumerate((110, 112, 112)):
+        responses[timeline] = _timeline(newest - 100, newest=newest)
+        fetch = _Recorded(responses)
+        slot = f"research@2026-11-{22 + run * 7:02d}" if run < 2 else "research@2026-12-06"
+        sources = _by_source(research_sources.collect(slot, fetch=fetch, now=_NOW))
+        read += [post["id"] for post in sources["x:account:poteto"]["items"]]
+        assert all(size <= 5 for size in _max_results(fetch, "/tweets"))
+        assert research_sources.commit_positions(slot)
+    assert sorted(read, key=int) == [str(post_id) for post_id in range(101, 113)]
+    state = research_sources.load_state()
+    assert state["positions"]["x:account:poteto"] == "112"
+    assert not state["gaps"]
+
+
+def test_search_lower_bound_is_kept_within_seven_days(x_settings, monkeypatch):
+    del x_settings
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
+    old = _NOW - datetime.timedelta(days=7, minutes=1)
+    old_id = str((int(old.timestamp() * 1000) - research_sources._X_EPOCH_MS) << 22)  # noqa: SLF001  # pylint: disable=protected-access
+    session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
+    session_review.write(research_sources.positions_path(), {"positions": {"x:search:claude code hooks": old_id}})
+    fetch = _Recorded({**_base_responses(), f"{research_sources.X_API_BASE}/tweets/search/recent": _timeline(0)})
+    sources = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
+    (url,) = fetch.x_calls()
+    query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    assert "since_id" not in query
+    assert datetime.datetime.fromisoformat(query["start_time"][0].replace("Z", "+00:00")) > _NOW - datetime.timedelta(days=7)
+    assert "直近7日" in sources["x:search:claude code hooks"]["reason"]
 
 
 def test_unreadable_sources_keep_position_and_hide_key(x_settings, monkeypatch, caplog):
@@ -233,3 +321,100 @@ def test_script_prints_result_for_launched_slot(monkeypatch, capsys):
     assert run_script.dispatch(argparse.Namespace(script_name="research-sources", script_args=[])) == 0
     assert json.loads(capsys.readouterr().out)["slot"] == _SLOT
     assert seen == [_SLOT]
+
+
+def test_claude_code_first_run_reads_versions_since_seven_days_ago():
+    fetch = _Recorded(_base_responses())
+    sources = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
+    assert [item["version"] for item in sources["changelog:claude-code"]["items"]] == ["2.3.0"]
+    (commits,) = [url for url, _headers in fetch.calls if url.startswith(_COMMITS)]
+    assert "until=2026-11-15T06%3A00%3A00Z" in commits
+
+
+@pytest.mark.parametrize(
+    ("position", "baseline", "status", "versions"),
+    [
+        ("2.2.0", None, "read", ["2.3.0"]),
+        ("1.0.0", b"## 2.1.0\n", "read", ["2.3.0", "2.2.0"]),
+        ("1.0.0", b"## 0.9.0\n", "failed", []),
+    ],
+)
+def test_claude_code_position_is_not_skipped(position, baseline, status, versions):
+    """前回の版が変更履歴に無い時は7日前の版まで読み、どちらも無ければ位置を進めない。  pyfltr: allow-comment"""
+    session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
+    session_review.write(research_sources.positions_path(), {"positions": {"changelog:claude-code": position}})
+    responses = _base_responses()
+    if baseline is not None:
+        responses[
+            f"https://raw.githubusercontent.com/{research_sources.CLAUDE_CODE_REPOSITORY}/{_BASELINE_SHA}/CHANGELOG.md"
+        ] = (
+            200,
+            baseline,
+        )
+    sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
+    assert sources["changelog:claude-code"]["status"] == status
+    assert [item["version"] for item in sources["changelog:claude-code"]["items"]] == versions
+    research_sources.commit_positions(_SLOT)
+    expected = "2.3.0" if status == "read" else position
+    assert research_sources.load_state()["positions"]["changelog:claude-code"] == expected
+
+
+def _release_pages(pages):
+    def respond(url):
+        page = int(urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["page"][0])
+        return 200, _releases(*pages[page - 1]) if page <= len(pages) else b"[]"
+
+    return respond
+
+
+@pytest.mark.parametrize("reach_previous", [True, False])
+def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach_previous):
+    monkeypatch.setattr(research_sources, "GITHUB_PAGES", 2)
+    newer = [(f"v{index}", f"2026-11-21T{index // 60:02d}:{index % 60:02d}:00Z") for index in range(100)]
+    older = (
+        [("v-old", "2026-11-01T00:00:00Z")]
+        if reach_previous
+        else [(f"w{index}", "2026-11-20T00:00:00Z") for index in range(100)]
+    )
+    responses = {**_base_responses(), "https://api.github.com/repos/openai/codex/releases": _release_pages([newer, older])}
+    sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
+    codex = sources["changelog:codex"]
+    research_sources.commit_positions(_SLOT)
+    position = research_sources.load_state()["positions"].get("changelog:codex")
+    if reach_previous:
+        assert codex["count"] == 100
+        assert position == "2026-11-21T01:39:00+00:00"
+    else:
+        assert codex["status"] == "failed"
+        assert position is None
+
+
+def test_model_sources_advance_only_when_marked_read(monkeypatch):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps(["github.com/test/package"]))
+    first = research_sources.collect(_SLOT, fetch=_Recorded(_base_responses()), now=_NOW)
+    since = {source["source"]: source["since"] for source in first["model_sources"]}
+    assert set(since) == {*research_sources.MODEL_SOURCES, "web:tools:github.com/test/package"}
+    assert set(since.values()) == {(_NOW - datetime.timedelta(days=7)).isoformat()}
+    with pytest.raises(ValueError, match="model_sources"):
+        research_sources.mark_read(_SLOT, ("x:account:poteto",))
+    assert research_sources.mark_read(_SLOT, ("web:antigravity",)) == ["web:antigravity"]
+    assert research_sources.commit_positions(_SLOT)
+    later = _NOW + datetime.timedelta(days=8)
+    second = research_sources.collect("research@2026-11-29", fetch=_Recorded(_base_responses()), now=later)
+    since = {source["source"]: source["since"] for source in second["model_sources"]}
+    assert since["web:antigravity"] == _NOW.isoformat()
+    assert since["web:hacker-news"] == (later - datetime.timedelta(days=7)).isoformat()
+
+
+def test_script_marks_model_sources_read(monkeypatch, capsys):
+    monkeypatch.setenv(session_review.WEEKLY_SLOT_ENV, _SLOT)
+    research_sources.collect(_SLOT, fetch=_Recorded(_base_responses()), now=_NOW)
+    args = argparse.Namespace(script_name="research-sources", script_args=["--mark-read", "web:hacker-news"])
+    assert run_script.dispatch(args) == 0
+    assert json.loads(capsys.readouterr().out) == {"slot": _SLOT, "marked": ["web:hacker-news"]}
+    research_sources.commit_positions(_SLOT)
+    assert research_sources.load_state()["positions"] == {
+        "changelog:claude-code": "2.3.0",
+        "changelog:codex": "2026-11-20T00:00:00+00:00",
+        "web:hacker-news": _NOW.isoformat(),
+    }

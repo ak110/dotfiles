@@ -100,3 +100,16 @@ def test_selected_proposals_are_registered_once(notes, monkeypatch):
     ids = sorted(data["proposal_id"] for data, _body in _saved(notes).values())
     assert ids == ["research@2026-11-22/P2", "research@2026-11-22/P3"]
     assert len(warnings) == 3
+
+
+def test_same_proposal_in_one_add_is_registered_once(notes, monkeypatch):
+    warnings = []
+    monkeypatch.setattr(add._outcome, "report_warning", lambda message, **_kwargs: warnings.append(message))  # noqa: SLF001  # pylint: disable=protected-access
+    draft = "---\nproposal_id: research@2026-11-22/P1\n---\n# 提案{}\n\n## 反映内容と反映先\n\n提案の内容を反映する。\n"
+    names = _add(notes, [draft.format("A"), draft.format("B"), draft.format("C")], source="add-awi-by-user")
+    assert len(names) == 1
+    saved = _saved(notes)
+    assert [data["proposal_id"] for data, _body in saved.values()] == ["research@2026-11-22/P1"]
+    assert "# 提案A" in next(iter(saved.values()))[1]
+    assert len(warnings) == 2
+    assert _add(notes, [draft.format("D")], source="add-awi-by-user") == []

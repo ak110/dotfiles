@@ -89,7 +89,12 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     count = len(pending)
     if notice is not None:
         return f"{notice}\n振り返り待ち{count}件（活動中・失敗抑止中を含む）。" if count else notice
-    if config.resolve_mutable_setting("session_review_auto_start") == "false":
+    batch_enabled = config.resolve_mutable_setting("session_review_auto_start") != "false"
+    hosted = session_activity.host_process() is not None
+    now = time.time()
+    # 週次の作業は作業ごとの設定を共通の判定で読み、batchの自動起動の設定では止めない。  # pyfltr: allow-comment
+    weekly = next((work for work in weekly_schedule.WORKS if weekly_auto_start_due(work, now=now)), None) if hosted else None
+    if weekly is None and not batch_enabled:
         if event == "SessionStart" and count:
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
@@ -99,10 +104,8 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
             )
             return waiting
         return notice
-    if session_activity.host_process() is None:
+    if not hosted:
         return notice
-    now = time.time()
-    weekly = next((work for work in weekly_schedule.WORKS if weekly_auto_start_due(work, now=now)), None)
     if weekly is not None:
         mode = weekly
     elif (
@@ -220,7 +223,12 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
         return False
     record = weekly_schedule.read_record(work)
     if work == "research":
-        return not weekly_schedule.research_retry_wait(record, identifier, now=now)
+        # 失敗した回は次の判定で再実行し、続けて失敗して報告した後は同じ版で自動の再実行をしない。  # pyfltr: allow-comment
+        return not (
+            record.get("slot") == identifier
+            and record.get("failure_reported")
+            and record.get("failure_version") == run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
+        )
     key = record.get("failure_key")
     if not isinstance(key, str) or record.get("report_synced") is False:
         return True
@@ -494,6 +502,16 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
         return execute(args)
     work_dir = getattr(args, "work_dir", None)
     if manual:
+        latest = weekly_schedule.latest_slot(datetime.datetime.fromtimestamp(time.time(), datetime.UTC))
+        if weekly_schedule.completed(work, latest):
+            if work == "research":
+                research_sources.commit_positions(weekly_schedule.slot_id(work, latest))
+            session_review.launch_result()
+            outcome.report_success(
+                f"{_WEEKLY_TITLES[work]}の最新の週枠（{weekly_schedule.slot_id(work, latest)}）は"
+                "結果のUWIが保存済みのため実行しなかった。次の週枠は日曜14時以降に実行できる"
+            )
+            return 0
         work_dir = (
             pathlib.Path(os.path.expanduser(work_dir))
             if work_dir is not None
@@ -510,7 +528,11 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
     record: dict[str, Any] = {"slot": identifier, "started_at": now.isoformat()}
     if work == "research" and previous.get("slot") == identifier:
         record.update(
-            {key: previous[key] for key in ("failures", "failure_reported", "failed_at", "failure_stage") if key in previous}
+            {
+                key: previous[key]
+                for key in ("failures", "failure_reported", "failure_version", "failed_at", "failure_stage")
+                if key in previous
+            }
         )
     if previous.get("completed_slot"):
         record["completed_slot"] = previous["completed_slot"]
@@ -572,7 +594,10 @@ _WEEKLY_TITLES = {"meta": "メタ分析", "research": "外部情報の調査"}
 def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
     failures = int(record.get("failures", 0)) + 1
     record.update(
-        failures=failures, failed_at=datetime.datetime.fromtimestamp(time.time(), datetime.UTC).isoformat(), failure_stage=stage
+        failures=failures,
+        failed_at=datetime.datetime.fromtimestamp(time.time(), datetime.UTC).isoformat(),
+        failure_stage=stage,
+        failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
     )
     if failures >= weekly_schedule.RESEARCH_FAILURE_REPORT_THRESHOLD and not record.get("failure_reported"):
         try:
@@ -582,7 +607,7 @@ def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
                     "---\nrun_skill_report: true\n---\n\n"
                     f"# 外部情報の調査（{record['slot']}）が{failures}回続けて失敗した\n\n"
                     f"最後の失敗は段階 `{stage}`、終了{code}である。"
-                    "提案はまだ届いておらず、次の判定で同じ回を再実行する。"
+                    "提案はまだ届いておらず、同じ版のagent-toolkitでは自動で再実行しない（版の更新後の判定で再実行する）。"
                     "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
                     "手動での確認には `atk run-skill --args research review-session` を使う。\n"
                 ],
@@ -699,16 +724,17 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
         return 2
 
     manual = not os.environ.get(session_review.LAUNCH_ENV) and not getattr(args, "scheduled", False)
-    research = skill_modes.invocation_scope(args.skill, args.args) == session_review.RESEARCH_SCOPE
-    if not manual and not research and config.resolve_mutable_setting("session_review_auto_start") == "false":
+    weekly = weekly_schedule.work_of_scope(skill_modes.invocation_scope(args.skill, args.args))
+    # 週次の作業の可否は_run_weeklyが作業ごとの共通の判定で決める。  # pyfltr: allow-comment
+    if not manual and weekly is None and config.resolve_mutable_setting("session_review_auto_start") == "false":
         session_review.launch_result()
         return 0
     root = session_review.directory()
     root.mkdir(parents=True, exist_ok=True)
     try:
         with filelock.FileLock(str(root / "batch.lock"), timeout=0):
-            if (work := weekly_schedule.work_of_scope(skill_modes.invocation_scope(args.skill, args.args))) is not None:
-                return _run_weekly(work, args, execute, manual=manual)
+            if weekly is not None:
+                return _run_weekly(weekly, args, execute, manual=manual)
             session_review.sweep(now=time.time())
             if getattr(args, "resume_record", None) is not None:
                 return _resume_batch(args, execute)

@@ -452,6 +452,7 @@ def _skip_registered_proposals(
             registered.setdefault(value, path.name)
     kept: list[tuple[dict[str, object], str]] = []
     branches: list[str | None] = []
+    seen: set[str] = set()
     for message, branch in zip(parsed_messages, item_branches, strict=True):
         proposal = message[0].get(PROPOSAL_ID_KEY)
         if isinstance(proposal, str) and proposal in registered:
@@ -460,6 +461,14 @@ def _skip_registered_proposals(
                 next_action=f"`atk wi show {registered[proposal]}`で登録済みの内容を確かめる",
             )
             continue
+        if isinstance(proposal, str) and proposal in seen:
+            _outcome.report_warning(
+                f"提案ID {proposal} の原稿が同じ追加操作に複数あるため、最初の原稿だけを登録した",
+                next_action="原稿の提案IDを見直し、別の提案なら別のIDを付けて追加する",
+            )
+            continue
+        if isinstance(proposal, str):
+            seen.add(proposal)
         kept.append(message)
         branches.append(branch)
     return kept, branches

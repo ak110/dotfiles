@@ -33,8 +33,6 @@ SLOT_WEEKDAY = 6
 
 SLOT_TIME = datetime.time(14)
 
-RESEARCH_RETRY_SECONDS = 6 * 60 * 60
-
 RESEARCH_FAILURE_REPORT_THRESHOLD = 2
 
 _SLOT_PATTERN = re.compile(r"(?P<work>meta|research)@(?P<date>\d{4}-\d{2}-\d{2})")
@@ -143,9 +141,3 @@ def completed(work: str, slot: datetime.date) -> bool:
         return False
     write_record(work, {**record, "completed_slot": identifier})
     return True
-
-
-def research_retry_wait(record: dict[str, Any], slot: str, *, now: float) -> bool:
-    if record.get("slot") != slot or not isinstance(failed_at := record.get("failed_at"), str):
-        return False
-    return now - datetime.datetime.fromisoformat(failed_at).timestamp() < RESEARCH_RETRY_SECONDS

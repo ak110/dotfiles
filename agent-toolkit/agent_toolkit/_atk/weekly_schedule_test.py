@@ -1,7 +1,9 @@
+import argparse
 import datetime
 import json
 import pathlib
 import time
+import types
 import zoneinfo
 from typing import Any
 
@@ -122,7 +124,7 @@ def test_failed_save_is_retried_by_next_judgment(weekly, monkeypatch):
     record = weekly_schedule.read_record("meta")
     record.pop("failure_key")
     weekly_schedule.write_record("meta", record)
-    later = now + weekly_schedule.RESEARCH_RETRY_SECONDS
+    later = now + 60
     _clock(monkeypatch, later)
     assert _due(later) == ["meta", "research"]
     weekly_command.run_due()
@@ -190,6 +192,7 @@ def test_research_is_disabled_by_default(tokyo, monkeypatch):
 
 
 def test_research_failure_is_reported_once_after_consecutive_failures(weekly, monkeypatch):
+    """失敗した回は次の判定で再実行し、続けて失敗して報告した後は同じ版で再実行しない。  pyfltr: allow-comment"""
     reports = []
 
     def save(*_args, **kwargs):
@@ -198,17 +201,82 @@ def test_research_failure_is_reported_once_after_consecutive_failures(weekly, mo
 
     monkeypatch.setattr(run_skill_batch.add, "add_entries", save)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_META_AUTO_START", "false")
+    version = {"value": "1.0.0"}
+    monkeypatch.setattr(run_skill_batch.run_skill_batch_evidence, "plugin_version", lambda _root: version["value"])
     weekly["save"] = False
     weekly["code"] = 1
     now = _at(2026, 11, 22, 15)
     for attempt in range(3):
-        _clock(monkeypatch, now + attempt * weekly_schedule.RESEARCH_RETRY_SECONDS)
+        _clock(monkeypatch, now + attempt * 60)
         weekly_command.run_due()
-    assert weekly["calls"] == ["research@2026-11-22"] * 3
+    assert weekly["calls"] == ["research@2026-11-22"] * 2
     assert len(reports) == 1
     assert reports[0]["scope"] == session_review.RESEARCH_SCOPE
     assert "run_skill_report: true" in reports[0]["messages"][0]
-    assert weekly_schedule.read_record("research")["failures"] == 3
+    assert weekly_schedule.read_record("research")["failures"] == 2
+    version["value"] = "1.0.1"
+    weekly["save"] = True
+    weekly["code"] = 0
+    assert _due(now + 180) == ["research"]
+    weekly_command.run_due()
+    assert weekly["calls"] == ["research@2026-11-22"] * 3
+    assert not _due(now + 240)
+
+
+def test_research_failed_in_last_hours_is_retried_by_next_judgment(weekly, monkeypatch):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_META_AUTO_START", "false")
+    weekly["save"] = False
+    weekly["code"] = 1
+    now = _at(2026, 11, 29, 13, 50)
+    _clock(monkeypatch, now)
+    weekly_command.run_due()
+    weekly["save"] = True
+    weekly["code"] = 0
+    _clock(monkeypatch, now + 60)
+    assert _due(now + 60) == ["research"]
+    weekly_command.run_due()
+    assert weekly["calls"] == ["research@2026-11-22", "research@2026-11-22"]
+
+
+def _hook_launch(monkeypatch, tmp_path):
+    """セッション開始のhookが起動する子の`atk run-skill`を、hookが渡す環境で実行する。  pyfltr: allow-comment"""
+    launched = []
+
+    def spawn(argv, **kwargs):
+        launched.append((argv, kwargs["env"]))
+        return types.SimpleNamespace(pid=None, wait=lambda: 0)
+
+    monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda *args, **kwargs: _REPO)
+    monkeypatch.setattr(session_activity, "host_process", object)
+    monkeypatch.setattr(run_skill_batch.subprocess, "Popen", spawn)
+    run_skill_batch.hook_request({"hook_event_name": "SessionStart", "session_id": "main", "cwd": str(tmp_path)}, host="claude")
+    for argv, env in launched:
+        monkeypatch.setenv(session_review.LAUNCH_ENV, env[session_review.LAUNCH_ENV])
+        parser = argparse.ArgumentParser()
+        run_skill.build_parser(parser)
+        run_skill.dispatch(parser.parse_args(argv[argv.index("run-skill") + 1 :]))
+    return [argv[argv.index("--args") + 1] for argv, _env in launched]
+
+
+@pytest.mark.parametrize(
+    ("settings", "expected_launch", "expected_calls"),
+    [
+        ({"SESSION_REVIEW_AUTO_START": "false"}, ["research"], ["research@2026-11-22"]),
+        ({"SESSION_REVIEW_AUTO_START": "false", "WEEKLY_RESEARCH_AUTO_START": "false"}, [], []),
+        ({"WEEKLY_META_AUTO_START": "false"}, ["research"], ["research@2026-11-22"]),
+        ({}, ["meta"], ["meta@2026-11-22"]),
+    ],
+)
+def test_session_hook_uses_same_judgment_as_serve(weekly, monkeypatch, tmp_path, settings, expected_launch, expected_calls):
+    """セッション開始のhookも作業ごとの設定で判定し、run_dueと同じ作業を起動する。  pyfltr: allow-comment"""
+    for key, value in settings.items():
+        monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key}", value)
+    now = _at(2026, 11, 22, 15)
+    _clock(monkeypatch, now)
+    due = _due(now)
+    assert _hook_launch(monkeypatch, tmp_path) == expected_launch
+    assert weekly["calls"] == expected_calls
+    assert expected_launch == due[:1]
 
 
 def test_legacy_meta_record_is_migrated_without_interval_judgment(weekly, monkeypatch):

@@ -159,7 +159,8 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 書込は結果のUWIの保存だけとし、AWIの起票の根拠はユーザーの実際の回答だけとする。
 
 1. `atk run-script research-sources` で、前回より後の変更履歴と購読中のX投稿を取得する。
-2. `weekly_research_repos` の各リポジトリが使うツールと言語処理系の変更履歴、Antigravityの変更、Hacker NewsとWebSearchの話題、例示以外の著名なエンジニアの発信を無料の手段で調べる（`agent-basics:fetch-sources`）。
+2. 手順1の出力の`model_sources`の各情報源（`what`）を、`since`より後の分だけ無料の手段で調べる（`agent-basics:fetch-sources`）。
+   読めた情報源は、結果の保存より前に`atk run-script research-sources --mark-read <source>...`で記録する（記録しない情報源の位置は進まない）。
 3. 情報ごとに対象の現状と全状態の既存WIを照らし、実現済み・既存WIが扱う・便益が無いものを除き、`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順2〜5で評価する。
    依存の版上げだけの更新は除き、規範の点検が要るホストの変更は`refine-prompt`の点検を提案する。
 4. 手順1の出力の`result_uwi`に従い、起動入力の報告先へ1件保存する。
