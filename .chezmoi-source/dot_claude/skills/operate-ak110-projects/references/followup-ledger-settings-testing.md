@@ -19,7 +19,7 @@
 - 適用方法: dotfiles、pyfltr、pytilpack、glatasksの通常Linux検査はコンテナー実行を維持し、smprもこの方式へそろえる。
   smprは `8b77d91` で適用し、CI run `45117053953` でLinuxとWindowsが成功した。
   gvにLinux検査は新設せず、lcのLinuxセットアップ、glatasksのDocker Compose、pyfltrの環境互換性の検査は維持する
-- 参照先: 決定 `20261123-125046-001.md` と[CI / リリース関連](ci-and-tooling.md#ci--リリース関連)
+- 参照先: [dotfilesの比較run](https://github.com/ak110/dotfiles/actions/runs/45116121628) と[CI / リリース関連](ci-and-tooling.md#ci--リリース関連)
 - 適用済みの見分け方: 対象ジョブがコンテナーを使い、各プロジェクトの既存CIが成功している
 
 ## CIキャッシュを依存入力に対応させる
