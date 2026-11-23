@@ -4901,9 +4901,6 @@
   "agent-toolkit/agent_toolkit/_atk/wi/style_diagnostics.py": {
     "件数だけの要約行。現行版は書かないが、過去の記録を読むreview-sessionが同じ診断として識別する。": 1
   },
-  "agent-toolkit/agent_toolkit/_atk/wi/submission.py": {
-    "会話IDを保持するホストの環境変数。Claude Code、Codexの順に読む。": 1
-  },
   "agent-toolkit/agent_toolkit/_atk/wi/submit.py": {
     "保存済み報告を先に照会し、同期不能時は同じ報告の同期だけを再開する。": 1,
     "報告同期の間に同じ会話がfinishを保存しても、その要求ごとの結果を保持する。": 1,
