@@ -57,6 +57,7 @@ def test_delete_uses_held_selection_after_selection_file_expires(
         "initial",
         "ignored",
         "nested",
+        "cache-note",
         "cache",
         "cached-repo",
     ],
@@ -71,7 +72,7 @@ def test_retired_lane_only_removes_covered_changes(
     if kind != "initial":
         (worktree / "lane-content.txt").write_text("  成果\n", encoding="utf-8")
         head = git_repository.commit_all(worktree, "レーン成果")
-        if kind in {"merged", "dirty", "running", "ignored", "nested", "cache", "cached-repo"}:
+        if kind in {"merged", "dirty", "running", "ignored", "nested", "cache", "cached-repo", "cache-note"}:
             git_repository.run_git(repo, "merge", "--ff-only", head)
         elif kind == "same-tree":
             git_repository.run_git(repo, "commit", "--allow-empty", "-m", "別の履歴")
@@ -102,7 +103,7 @@ def test_retired_lane_only_removes_covered_changes(
                 lane_id="lane-02",
             )
             assert code == 0, stderr
-    if kind in {"cache", "cached-repo"}:
+    if kind in {"cache", "cached-repo", "cache-note"}:
         with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
             exclude.write("\n/.ruff_cache/\n")
         cache = worktree / ".ruff_cache"
@@ -110,6 +111,8 @@ def test_retired_lane_only_removes_covered_changes(
         (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55", encoding="ascii")
         if kind == "cached-repo":
             (cache / ".git").write_text("gitdir: elsewhere", encoding="ascii")
+        if kind == "cache-note":
+            (cache / "notes.txt").write_text("保持するデータ", encoding="utf-8")
     if kind == "running":
         monkeypatch.setattr(lane_activity, "worktree_activity", lambda *_a, **_k: "使用中")
     git_repository.run_git(repo, "branch", "user-owned")
@@ -135,6 +138,8 @@ def test_retired_lane_only_removes_covered_changes(
             assert (worktree / "keep.txt").is_file()
         if kind == "cached-repo":
             assert (worktree / ".ruff_cache" / ".git").is_file()
+        if kind == "cache-note":
+            assert (worktree / ".ruff_cache" / "notes.txt").is_file()
         if kind == "nested":
             assert "内包" in result["retained"][0]["reason"]
             assert (worktree / "nested" / ".git").is_file()

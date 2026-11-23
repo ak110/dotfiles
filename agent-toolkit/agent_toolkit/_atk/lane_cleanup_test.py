@@ -665,7 +665,7 @@ def test_missing_worktree_query_error_keeps_owned_resources(
     assert git_repository.git_output(repo, "rev-parse", record["branch"]) == branch_head
 
 
-@pytest.mark.parametrize("kind", ["plain", "generated", "mixed"])
+@pytest.mark.parametrize("kind", ["plain", "generated", "mixed", "nested-note", "recorded-share"])
 @pytest.mark.cpu_limit(2.0, reason="登録済みレーンを実Gitの無視設定と公開CLIで削除か保持する。")
 def test_selected_lane_retains_unknown_ignored_directory(tmp_path, monkeypatch, capsys, kind):
     repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
@@ -677,10 +677,17 @@ def test_selected_lane_retains_unknown_ignored_directory(tmp_path, monkeypatch, 
     if kind != "plain":
         (environment / "pyvenv.cfg").write_text("home = environment\n", encoding="ascii")
     item = environment / ("CACHEDIR.TAG" if kind == "generated" else "data")
+    if kind in {"nested-note", "recorded-share"}:
+        item = environment / "share" / "payload"
+        item.parent.mkdir()
+    if kind == "recorded-share":
+        installed = environment / "Lib" / "site-packages" / "demo.dist-info" / "RECORD"
+        installed.parent.mkdir(parents=True)
+        installed.write_text("demo.dist-info/RECORD,,\n../../share/payload,,\n", encoding="ascii")
     item.write_text("data", encoding="utf-8")
 
     status, result, stderr = _invoke(capsys, "delete")
-    if kind == "generated":
+    if kind in {"generated", "recorded-share"}:
         assert status == 0 and result["removed"] == ["lane-01"], stderr
         assert not root.exists()
     else:

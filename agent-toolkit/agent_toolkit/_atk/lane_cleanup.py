@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import contextlib
+import csv
 import json
+import os
 import pathlib
+import re
 import shutil
 import subprocess
 import typing
@@ -26,6 +29,81 @@ def _starts_with_regular_file(path: pathlib.Path, prefix: bytes) -> bool:
         return handle.read(len(prefix)) == prefix
 
 
+def _recorded_venv_files(root: pathlib.Path) -> set[pathlib.Path]:
+    installed: set[pathlib.Path] = set()
+    for site in (root / "Lib" / "site-packages", *root.glob("lib/python*/site-packages")):
+        for record in site.glob("*.dist-info/RECORD"):
+            if record.is_symlink() or not record.is_file() or not record.resolve().is_relative_to(root):
+                continue
+            with record.open(encoding="utf-8", newline="") as source:
+                for row in csv.reader(source, strict=True):
+                    if row:
+                        target = pathlib.Path(os.path.normpath(site / row[0]))
+                        if target.is_relative_to(root):
+                            installed.add(target.relative_to(root))
+    return installed
+
+
+def _is_bytecode(relative: pathlib.Path) -> bool:
+    return relative.parent.name == "__pycache__" and relative.suffix == ".pyc"
+
+
+def _venv_file(relative: pathlib.Path, installed: set[pathlib.Path]) -> bool:
+    if relative in installed or _is_bytecode(relative):
+        return True
+    if len(relative.parts) == 1:
+        return relative.name in {".gitignore", ".lock", "CACHEDIR.TAG", "pyvenv.cfg", "lib64"}
+    if len(relative.parts) != 2 or relative.parts[0] not in {"bin", "Scripts"}:
+        return False
+    return bool(
+        re.fullmatch(r"python(?:w|3(?:\.\d+)?)?(?:\.exe)?", relative.name)
+        or relative.name
+        in {
+            "activate",
+            "activate.bat",
+            "activate.csh",
+            "activate.fish",
+            "activate.nu",
+            "activate.ps1",
+            "activate_this.py",
+            "deactivate.bat",
+            "activate.xsh",
+            "pydoc.bat",
+        }
+    )
+
+
+def _cache_file(root: pathlib.Path, relative: pathlib.Path) -> bool:
+    if len(relative.parts) == 1:
+        return relative.name in {"CACHEDIR.TAG", ".gitignore"} or (
+            root.name == ".pytest_cache" and relative.name == "README.md"
+        )
+    if root.name == ".ruff_cache":
+        return (
+            len(relative.parts) == 2
+            and bool(re.fullmatch(r"\d+\.\d+\.\d+.*", relative.parts[0]))
+            and relative.name.isascii()
+            and relative.name.isdecimal()
+        )
+    return relative.as_posix() in {"v/cache/nodeids", "v/cache/lastfailed", "v/cache/stepwise"}
+
+
+def _plugin_generated_file(worktree: pathlib.Path, directory: pathlib.Path, relative: pathlib.Path) -> bool:
+    base, _, host = directory.name.rpartition("-")
+    source = worktree / base
+    if (source / relative).is_file() or _is_bytecode(relative):
+        return True
+    if host == "codex":
+        return relative == pathlib.Path("GENERATED.md")
+    if relative.as_posix() in {"hooks.json", "mcp_config.json"}:
+        return True
+    return (
+        relative.parent == pathlib.Path("agents")
+        and relative.suffix == ".md"
+        and (source / "skills" / "atk-mode" / "roles" / f"{relative.stem}.subagent.md").is_file()
+    )
+
+
 def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
     relative = pathlib.Path(raw)
     if not raw.endswith("/") or relative.is_absolute() or ".." in relative.parts:
@@ -38,23 +116,7 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
     if path.name in {".pytest_cache", ".ruff_cache"}:
         recognized = _starts_with_regular_file(path / "CACHEDIR.TAG", _CACHE_SIGNATURE)
     elif relative == pathlib.Path(".venv"):
-        environment_entries = {
-            ".gitignore",
-            ".lock",
-            "CACHEDIR.TAG",
-            "pyvenv.cfg",
-            "bin",
-            "include",
-            "lib",
-            "lib64",
-            "share",
-            "Scripts",
-            "Include",
-            "Lib",
-        }
-        recognized = _starts_with_regular_file(path / "pyvenv.cfg", b"home = ") and all(
-            child.name in environment_entries for child in path.iterdir()
-        )
+        recognized = _starts_with_regular_file(path / "pyvenv.cfg", b"home = ")
     elif relative == pathlib.Path("agent-toolkit-codex"):
         recognized = _starts_with_regular_file(path / "GENERATED.md", "# 自動生成ファイル".encode())
     elif relative.as_posix() in {"agent-toolkit-agy", "agent-basics-agy"}:
@@ -71,11 +133,29 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
     def on_error(error: OSError) -> typing.Never:
         raise error
 
+    is_venv = relative == pathlib.Path(".venv")
+    try:
+        installed = _recorded_venv_files(path) if is_venv else set()
+    except csv.Error:
+        return False
     for directory, folders, files in path.walk(on_error=on_error):
         if ".git" in {name.casefold() for name in (*folders, *files)}:
             return False
         if any((directory / name).is_junction() for name in folders):
             return False
+        for name in files:
+            file = directory / name
+            child = file.relative_to(path)
+            if is_venv:
+                if not _venv_file(child, installed):
+                    return False
+                if child == pathlib.Path("lib64") and (not file.is_symlink() or file.resolve() != path / "lib"):
+                    return False
+            elif path.name in {".pytest_cache", ".ruff_cache"}:
+                if not _cache_file(path, child):
+                    return False
+            elif not _plugin_generated_file(worktree, path, child):
+                return False
     return True
 
 
