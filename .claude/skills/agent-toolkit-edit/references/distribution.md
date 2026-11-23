@@ -14,7 +14,9 @@
 dotfilesの配布プラグインは、リリースworkflowの有無にかかわらず、版数を提案する時も確認する時も `operate-ak110-projects` の個人プロジェクト共通方針に従う。
 同スキルの `references/release-operations.md`「実施」2を読み、互換性を壊すという理由だけならPATCHかMINORを選ぶ。
 
-プラグインのディレクトリ配下に差分がある変更では、`*_test.py`だけの差分を除き、必ず版数を上げる。
+プラグインのディレクトリ配下に差分がある変更では、`*_test.py`だけの差分を除き、公開前に版数を上げる。
+`implement` のマージ用ブランチでは版数を上げず、更新種別と根拠をAWIに書く。
+公開担当が統合後の未公開差分を基準に `bump種別` を決め、版数を上げる。
 コメント、docstring、文書、誤字、入出力を変えない内部整理の差分も対象とする。
 `.chezmoi-source/`のchezmoi配布物、`bin/`のCLIラッパー、`scripts/`の補助スクリプトだけの変更は対象外とし、版数を据え置く。
 この条件は`scripts/check_plugin_version.py`がCIの`plugin-version` jobとpyfltrの`plugin-version`で検査し、据え置いた差分を失敗にする。

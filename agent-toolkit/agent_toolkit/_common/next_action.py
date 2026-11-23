@@ -15,6 +15,17 @@ NEXT_ACTION_PREFIX = "次の操作: "
 """次の操作を表す行の標識。受信側はこの標識で始まる行を次の行動として読む。"""
 
 
+def recover_from_failure(*, component: str, evidence: str, first_step: str, retry: str) -> str:
+    return (
+        f"{component}の証拠（{evidence}）を保全し、{first_step}。原因を確かめる。"
+        "不具合なら `agent-basics:bugfix` を起動する。認可の範囲で回復する。"
+        "配布元の作業ツリーなら配布物の不具合も同じ作業で直し、元の方法で確かめる。"
+        "配布先でも認可済みの更新・設定修復・再接続で回復できるなら行う。"
+        f"{retry}。"
+        "回復結果を伝える。回復できない分だけ、影響・試した手段・再開の条件を委譲元またはユーザーへ返す。"
+    )
+
+
 def next_action_line(next_action: str) -> str:
     if not next_action.strip():
         raise ValueError("次の操作は空文字列以外で指定する必要がある")

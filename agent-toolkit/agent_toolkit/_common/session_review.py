@@ -25,6 +25,7 @@ from agent_toolkit._common import (
     atomic_file,
     delegated_session,
     mcp_environment,
+    next_action,
     session_activity,
     session_family,
     session_launchers,
@@ -526,16 +527,18 @@ def launch_notice(host: str) -> str | None:
                 retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
             else:
                 retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
-            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
+            failures.append(
+                next_action.recover_from_failure(
+                    component=f"{value['host']} {value['event']} の振り返り起動{code}",
+                    evidence=log_path,
+                    first_step=f"`{read_command}` で診断ログを読む",
+                    retry=f"原因を是正し、未処理の対象を確認してから {retry}を実行する",
+                )
+            )
             attempt.notify().save(path)
     if not failures:
         return None
-    return (
-        "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
-        + "、".join(failures)
-        + "。"
-        "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
-    )
+    return "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。\n" + "\n".join(failures)
 
 
 def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = None) -> bool:

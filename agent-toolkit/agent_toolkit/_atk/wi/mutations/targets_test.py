@@ -574,8 +574,6 @@ def test_entry_target_repo_failure_guides_to_show_and_report(
     assert expected_reason in failure
     assert next_action.startswith("次の操作: ")
     assert "`atk wi show broken.md`" in next_action
-    assert "ユーザーへ報告する" in next_action
-    assert "ユーザーへ報告する" in next_action
 
 
 def test_transition_with_multiple_target_repos_mismatch_names_recovery(

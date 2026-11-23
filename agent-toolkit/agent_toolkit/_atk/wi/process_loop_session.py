@@ -30,6 +30,7 @@ from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import process_loop_session as _coordinator_identity
 from agent_toolkit._common import session_record_paths as _record_paths
 from agent_toolkit._common import session_registry as _registry
+from agent_toolkit._common.next_action import recover_from_failure
 
 _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
     "応答できる場合はOKだけを返してください。",
@@ -620,7 +621,12 @@ def _run_cli_session(
             if identity is None:
                 raise _next_action.ActionableError(
                     "統括CLIのPIDと起動時刻を取得できない",
-                    next_action="同じコマンドを再実行し、続く場合はこの診断を添えて不具合として報告する",
+                    next_action=recover_from_failure(
+                        component="統括CLIの識別",
+                        evidence="診断と実行元",
+                        first_step="起動するCLIの実体を確認する",
+                        retry="CLIを修復し、統括が未起動の場合だけ再試行する",
+                    ),
                 )
             if on_process_started is not None:
                 on_process_started(identity)

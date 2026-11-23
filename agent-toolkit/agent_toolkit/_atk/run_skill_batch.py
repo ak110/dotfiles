@@ -85,13 +85,17 @@ def hook_request(payload: dict[str, Any], *, host: str) -> str | None:
     notice = session_review.launch_notice(host) if event == "SessionStart" else None
     pending = session_review.pending()
     count = len(pending)
+    if notice is not None:
+        return f"{notice}\n振り返り待ち{count}件（活動中・失敗抑止中を含む）。" if count else notice
     if config.resolve_mutable_setting("session_review_auto_start") == "false":
         if event == "SessionStart" and count:
             waiting = (
                 f"振り返り待ち{count}件（活動中・失敗抑止中を含む）。"
-                f"まとめて振り返る場合は`{skill_modes.entry_command(host, 'review-session batch')}`を実行せよ。"
+                "まとめて振り返る場合は、起動の失敗があれば先に原因を是正する。"
+                "未処理の対象を確認できた場合だけ、"
+                f"`{skill_modes.entry_command(host, 'review-session batch')}`を実行する。"
             )
-            return "\n".join(part for part in (notice, waiting) if part)
+            return waiting
         return notice
     if session_activity.host_process() is None:
         return notice

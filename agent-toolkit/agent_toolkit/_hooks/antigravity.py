@@ -26,6 +26,7 @@ from agent_toolkit._common import (
     session_activity,
     session_state,
 )
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._hooks import full_reads
 
@@ -203,7 +204,12 @@ def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
         shown_path = str(record.absolute())
         next_action.report(
             f"Antigravityの原本を読めない: {error}。復旧後のPreInvocationまたはStopでhookが再読する。",
-            next_action=f"`{shown_path}`の所在と読取権限を確認せよ。取得できなければ、この診断を委譲元またはユーザーへ報告せよ。",
+            next_action=recover_from_failure(
+                component="transcriptの取得",
+                evidence="診断と元のtranscript",
+                first_step=f"`{shown_path}` の所在と読取権限を確認せよ。権限拒否でなければ許可済みの代替手段を試せ",
+                retry="読取できる場合だけ処理を再開する。権限拒否は迂回しない",
+            ),
         )
     return latest_user, last_response
 

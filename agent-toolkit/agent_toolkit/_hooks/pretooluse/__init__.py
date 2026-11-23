@@ -1,6 +1,7 @@
 """PreToolUse統合フックの責務別実装。"""
 
-lazy from agent_toolkit._hooks import termination_evidence
+from agent_toolkit._hooks import termination_evidence
+lazy from agent_toolkit._common.next_action import recover_from_failure
 lazy from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._hooks.pretooluse import dispatch as _dispatch
 
@@ -14,7 +15,12 @@ def main(payload_text: str) -> int:
             formatter("pretooluse")(
                 f"ツール呼び出しの開始記録を保存できなかった。元の操作の成否はこの診断では分からない: {error}",
                 tag="warn",
-                fix="元の操作の結果を確認せよ。記録失敗が再発する場合は、この診断をagent-toolkitの不具合として委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="ツール開始の記録",
+                    evidence="元の操作結果と記録の診断",
+                    first_step="元の操作の成否を確認する",
+                    retry="元の操作は再発行せず、記録だけを回復する",
+                ),
                 removable_cause=False,
             ),
         )

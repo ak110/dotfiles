@@ -42,6 +42,7 @@ import re
 lazy import asyncio
 lazy import shlex
 
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks.bugfix_gate import BUGFIX_SKILL, QUOTED_MATERIAL_RE, mark_started, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -575,7 +576,12 @@ def main(payload_text: str) -> int:
                 "元の操作の成否とは別の記録失敗である。",
                 tag="warn",
                 removable_cause=False,
-                fix="元のツール結果で成否と必要な出力を確認せよ。記録の診断を委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="ツール結果の記録",
+                    evidence="元のツール結果と記録の診断",
+                    first_step="元の結果で成否と必要な出力を確認する",
+                    retry="元の操作は再発行せず、記録だけを回復する",
+                ),
             )
         )
     try:

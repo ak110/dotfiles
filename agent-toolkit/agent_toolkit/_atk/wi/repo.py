@@ -7,6 +7,7 @@ import typing
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.wi.constants import WI_STATES, unrepairable_entry_next_action
 from agent_toolkit._atk.wi.layout import entry_state_of, iter_entry_paths, unique_dated_entry_path
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 lazy from agent_toolkit._atk.wi import entries as _wi_entries
@@ -214,7 +215,12 @@ def resolve_head_commit(local_worktree: pathlib.Path, *, revision: str = "HEAD")
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
         _outcome.report_failure(
             f"HEADコミットが40桁または64桁OIDではない: {commit!r}",
-            next_action=f"`git -C {local_worktree} rev-parse HEAD`の出力を確認し、解消しない場合はユーザーへ報告する",
+            next_action=recover_from_failure(
+                component="GitのHEAD",
+                evidence="Gitの診断と元の出力",
+                first_step=f"`git -C {local_worktree} rev-parse HEAD`の出力が有効なOIDか確認する",
+                retry="有効なOIDを確認してから未反映の処理を再試行する",
+            ),
         )
         sys.exit(2)
     return commit

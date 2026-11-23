@@ -2,8 +2,11 @@
 
 WIの共通処理のモジュール（`sync.py`・`entries.py`など）と`uwi_scan.py`の双方が本モジュールをimportする。
 両者は依存関係を持つため、状態集合をどちらかへ置くと循環importになる。
-本モジュールは他の配布物モジュールへ依存せず、状態集合の唯一の定義箇所とする。
+本モジュールはWIの処理モジュールへ依存せず、状態集合の唯一の定義箇所とする。
+pyfltr: allow-comment
 """
+
+from agent_toolkit._common.next_action import recover_from_failure
 
 PROCESS_WI_GOAL_BODY = "`agent-toolkit:process-wi`を完遂してください。"
 """単一対象を処理していた頃の`atk wi process-loop`が子セッションへ渡した目的文の本体。
@@ -170,9 +173,11 @@ def normalized_wi_type(value: object) -> str | None:
 
 
 def unrepairable_entry_next_action(name: str) -> str:
-    return (
-        f"`atk wi show {name}`で保存内容を確かめ、ユーザーへ報告する"
-        "（この状態の項目は`atk wi edit`の`--body-file`で本文を渡しても同じ理由で拒否される）"
+    return recover_from_failure(
+        component="WIの保存内容",
+        evidence="保存原本",
+        first_step=f"`atk wi show {name}`で保存内容を確かめる。この状態では `atk wi edit --body-file` も拒否される",
+        retry="原本を保持し、保存内容を回復してから未反映の操作だけを再実行する",
     )
 
 

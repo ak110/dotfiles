@@ -209,8 +209,8 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert rules_context.main(payload, host=host) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "実行受付前に終了" in context
+    assert "まとめて振り返る場合は" not in context
     assert f"{host} {event}" in context
-    assert "ユーザーへ伝えよ" in context
     assert "Get-Content -LiteralPath" in context or "cat --" in context
     retry = (
         "atk run-skill --args meta review-session"
@@ -222,7 +222,10 @@ def test_hook_reports_unaccepted_child_failure_at_next_start(tmp_path, monkeypat
     assert str(log_path) in context
     assert error.split("(", 1)[0] in log_path.read_text(encoding="utf-8")
     assert rules_context.main(payload, host=host) == 0
-    assert "実行受付前に終了" not in capsys.readouterr().out
+    next_context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
+    assert "実行受付前に終了" not in next_context
+    batch = f"`{'$' if host == 'codex' else '/'}atk-mode review-session batch`"
+    assert next_context.index("先に原因を是正") < next_context.index(f"確認できた場合だけ、{batch}")
     assert session_review.pending()
 
 

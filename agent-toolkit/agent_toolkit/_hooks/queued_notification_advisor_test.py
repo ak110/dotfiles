@@ -58,7 +58,6 @@ def test_enqueued_notification_reports_task_id_and_output_file(tmp_path: pathlib
     assert "b6n4gipz5" in body
     assert _OUTPUT_FILE in body
     assert "全量を読み" in body
-    assert "工程を進めよ" in body
     assert "出力先が未通知" in body and "委譲元" in body
 
 

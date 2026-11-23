@@ -19,8 +19,14 @@ from agent_toolkit._atk.wi.repo import (
     resolve_repo_id,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import recover_from_failure
 
-_BROKEN_ENTRY_NEXT_ACTION = "`atk wi show {name}`で保存内容を確認し、ユーザーへ報告する"
+_BROKEN_ENTRY_NEXT_ACTION = recover_from_failure(
+    component="WIの依存関係",
+    evidence="保存原本",
+    first_step="`atk wi show {name}`で保存内容を確認する",
+    retry="元の内容を保持し、破損を修復してから再試行する",
+)
 
 
 def _entry_dependencies(path: pathlib.Path, data: dict[str, object]) -> tuple[str, ...]:
