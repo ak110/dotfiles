@@ -372,6 +372,18 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         ),
     )
     edit.add_argument(
+        "--move-user-comment",
+        metavar="PATH",
+        default=None,
+        help=(
+            "整理に使ったユーザーコメントの本文を保存したUTF-8ファイルを受け取る。"
+            "保存済みの`## ユーザーコメント`がこの内容と一致し、その全行が--body-fileの本文の"
+            "`## ユーザー指摘の逐語引用`に連続して含まれる時だけ、コメント節を削除して保存する。エージェント環境でも使える。"
+            "満たさない時は保存しない。比較では改行の種類、コメントの前後の空行、本文側の行頭の引用記号（`>`と空白1つ）だけを無視する。"
+            "--body-fileとの併用が必須で、--appendとは併用できない。"
+        ),
+    )
+    edit.add_argument(
         "--dry-run",
         action="store_true",
         help=(

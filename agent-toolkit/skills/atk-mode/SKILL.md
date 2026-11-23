@@ -1,6 +1,6 @@
 ---
 name: atk-mode
-argument-hint: "[add-awi-by-user|implement|process-wi|process-loop|review-session|export-session] [入力]"
+argument-hint: "[add-awi-by-user|implement|process-user-comments|process-wi|process-loop|review-session|export-session] [入力]"
 description: >
   agent-toolkitを導入した環境で、作業（調査、実装、レビュー、WIの操作）を始める前に起動する入口。
   会話の圧縮の後に作業を再開する前にも起動する。判断の原則、硬い制約、作業ごとの手順書の所在を示す。
@@ -46,7 +46,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 - 他者のプロセス・資源・差分は由来と利用を確かめて扱う。
 - 公開契約（`atk`と役割の入出力、MCPツール名、WI形式・frontmatter）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
   互換の要否は自ら決める。
-- 認可が要る`add-awi-by-user`・`implement`・`process-wi`・`process-loop`はユーザーか`atk run-skill`・`atk wi process-loop`の名指し時のみ選ぶ。
+- 作業表で名指しのみの作業は認可が要り、ユーザーか`atk run-skill`・`atk wi process-loop`の名指し時のみ選ぶ。
   自己起動の引数は手順選びに限る。
 - `process-wi`・`process-loop`の実行中か`atk run-skill`起動なら自律モード、他は協調モード。
 
@@ -72,10 +72,11 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの名指し時のみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
-| `implement [入力]` | ユーザーの名指し時のみ | `playbooks/implement.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザー・起動入力の名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
-| `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
+| `add-awi-by-user [入力]` | 名指しのみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
+| `implement [入力]` | 名指しのみ | `playbooks/implement.md` |
+| `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
+| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |

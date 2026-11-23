@@ -11,6 +11,7 @@ WI処理の工程や運用に関わる問題の原因分析と対策、運用工
 | --- | --- | --- |
 | 対話型 | ユーザーがエージェントへ直接依頼する | エージェントが依頼を処理する。計画の要否は`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」、確認の要否は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決める |
 | 即時実装型 | ユーザーが`/atk-mode implement`を起動する | 対話セッションで隔離worktreeを作って実装・検証・実行レビューを完了し、一時リモートブランチをpushしてマージ用AWIを登録する。統合と公開は`process-wi`がレーンを作らず直接処理する |
+| コメント整理型 | ユーザーが`/atk-mode process-user-comments`を起動する | ユーザーコメント付きの未処理AWIを保留し、対話で質問を済ませて本文へ整理し直し、コメントを本文の逐語引用へ移して保留を解く。込み入ったコメントを自律型へそのまま渡すとUWIの往復が増える時に使う |
 | 自律型 | ユーザーが`atk wi process-loop`を起動する | process-loopが開始前の更新・待機と統括会話の起動を管理する。統括が`agent-toolkit:atk-mode`の作業`process-wi all-repos`で登録全体の対象を処理し、報告まで担当する |
 | まとめ処理型 | ユーザーが`agent-toolkit:atk-mode`の作業`process-wi single-lane`を手動で起動する | 蓄積されたWIを1回の実行でまとめて処理する |
 | 定期実行型 | ユーザーがcronなどに`atk run-skill`を登録する | WIキューを経由せずにスキル1件を自律モードで実行し、結果は報告用UWIで、判断を要する対応は事前承認型UWIで届ける |
