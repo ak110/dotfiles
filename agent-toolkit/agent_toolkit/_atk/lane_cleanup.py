@@ -134,9 +134,8 @@ raise SystemExit(bool(issues))
 
 
 def _dotfiles_projection_matches(worktree: pathlib.Path, directory: pathlib.Path) -> bool:
-    own_checkout = pathlib.Path(__file__).resolve().parents[3]
+    source = pathlib.Path(__file__).resolve().parents[3]
     verifier = pathlib.Path("scripts/sync_codex_plugin_manifests.py")
-    source = own_checkout if (own_checkout / verifier).is_file() else _lane_records.main_worktree(worktree)
     if (
         source == worktree
         or not (source / verifier).is_file()
