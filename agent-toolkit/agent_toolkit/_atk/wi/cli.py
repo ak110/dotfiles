@@ -51,13 +51,8 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_submit_parser,
     ):
         register(sub)
-    merge = _atk_help.add_command(
-        sub,
-        "verify-merge",
-        summary="マージ用WIの完全OIDとCIを確認する",
-        description="取得済みの先端をマージ用WIの完全OIDと比べ、そのOIDのCIの成功を確認する。WIやGitは変更しない。",
-    )
-    merge.add_argument("filename", metavar="FILENAME")
+    merge = _atk_help.add_command(sub, "verify-merge", **_atk_help.HELP["atk wi verify-merge"])
+    merge.add_argument("filename", metavar="FILENAME", help="確認するマージ用WIのファイル名")
     merge.add_argument("--head", required=True, metavar="OID", help="取込み候補の取得済み完全OID")
 
 
