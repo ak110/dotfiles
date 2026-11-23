@@ -197,10 +197,21 @@ def _run_git_pull_once(
         original, https = url_override
         transport_options = ["-c", f"url.{https}.insteadOf={original}", "-c", "credential.helper="]
         environment["GIT_TERMINAL_PROMPT"] = "0"
+    executable = "git"
+    try:
+        if plugin is None:
+            executable = update_dotfiles_runtime.chezmoi_executable()
+    except update_dotfiles_runtime.ChezmoiResolveError as error:
+        update_dotfiles_runtime.logger.error(
+            "stage起動失敗: %d/%d %s chezmoi解決失敗: %s", step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title, error
+        )
+        print(f"{title}を開始できませんでした: chezmoiの実体を解決できませんでした: {error}", file=sys.stderr)
+        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(f"{title}: chezmoiの実体を解決できません: {error}")
+        return 1
     try:
         process = subprocess.Popen(  # noqa: S603  # pylint: disable=consider-using-with
             [
-                "chezmoi",
+                executable,
                 "git",
                 f"--source={update_dotfiles_runtime.DOTFILES_ROOT}",
                 "--",
@@ -212,7 +223,7 @@ def _run_git_pull_once(
                 "--quiet",
             ]
             if plugin is None
-            else ["git", "-C", str(plugin), "-c", "submodule.recurse=false", "pull", "--rebase"],
+            else [executable, "-C", str(plugin), "-c", "submodule.recurse=false", "pull", "--rebase"],
             cwd=update_dotfiles_runtime.DOTFILES_ROOT,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -224,12 +235,8 @@ def _run_git_pull_once(
         update_dotfiles_runtime.logger.exception(
             "stage起動失敗: %d/%d %s", step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title
         )
-        print(
-            f"{title}を開始できませんでした: {error}。"
-            "chezmoi --versionとgit --versionの実行に成功する状態にしてupdate-dotfilesを再実行してください。",
-            file=sys.stderr,
-        )
-        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(f"{title}: {error}")
+        print(f"{title}を開始できませんでした（起動した実行ファイル: {executable}）: {error}", file=sys.stderr)
+        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(f"{title}: {executable}: {error}")
         return 1
     pins = process_tree.ProcessIdentityPins()
     known = process_tree.collect_descendants(process.pid, pins=pins, include_root=True)
