@@ -377,14 +377,16 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             )
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-            warnings = model_override_warnings(model_type, default_type=task_model_type)
+            model_override = model_type or None
+            warnings = model_override_warnings(model_override, default_type=task_model_type)
             response = await _manager().start(
-                model_type or task_model_type,
+                model_override or task_model_type,
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,
                 label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
                 startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
+                explicit_role_model=model_override is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )
             if warnings:

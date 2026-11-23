@@ -26,6 +26,7 @@ from agent_toolkit._agents_server import (
     launch_requests,
     launch_requests_preflight,
     mcp_tools,
+    plugin_root,
     responses,
     service_io,
     service_rpc,
@@ -38,7 +39,7 @@ from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._agents_server.plugin_root import SERVER_PLUGIN_ROOT
 from agent_toolkit._agents_server.service_resources import ResourceBroker
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common import session_registry, state_paths
+from agent_toolkit._common import session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_claude_support import _finished_failed_claude_session
 from agent_toolkit._testing.agents_server_support import (
@@ -309,7 +310,10 @@ async def test_claude_command_channel_resolves_pending_requests_when_closed() ->
 
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
-async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize(("completed", "stale"), [(True, False), (True, True), (False, True)])
+async def test_claude_command_classification_uses_state_when_dequeued(
+    tmp_path: pathlib.Path, completed: bool, stale: bool
+) -> None:
     client = FakeClaudeClient([[AssistantMessage("reply中"), ResultMessage("状態: completed\n結果: reply結果")]])
     async with claude.ClaudeServerManager(client_factory=lambda _options: client) as manager:
         session = state.SessionState("claude-race", str(tmp_path), engine="claude")
@@ -317,11 +321,26 @@ async def test_claude_command_classification_uses_state_when_dequeued(tmp_path: 
         manager.sessions[session.session_id] = session
         manager._channels[session.session_id] = channel
 
+        if stale:
+            role = plugin_root.SERVER_PLUGIN_ROOT / "skills/atk-mode/roles/repository-process.subagent.md"
+            session.prompt = task_documents.task_prompt_header(role)
+            session.model_type = "orchestrate"
         send_task = asyncio.create_task(manager.send_message(session, "続行"))
         command = await channel.get()
-        _complete(session, message="直前結果")
+        if completed:
+            _complete(session, message="直前結果")
         iterator = await manager._handle_command(client, session, command, None)
+        if completed and stale:
+            with pytest.raises(ActionableError, match="orchestrate.*execute"):
+                await send_task
+            assert session.status == "completed"
+            assert not client.queries
+            return
         response = await send_task
+        if not completed:
+            assert response["delivery"] == "steered"
+            assert client.queries == ["続行"]
+            return
 
         assert response == {
             "delivery": "reply_started",

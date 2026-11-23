@@ -9,7 +9,7 @@ import typing
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from agent_toolkit._agents_server import codex_resume_state, result_projection, resume_waits, service_turns
+from agent_toolkit._agents_server import codex_resume_state, launch_requests, result_projection, resume_waits, service_turns
 from agent_toolkit._agents_server.codex_protocol import (
     DEFAULT_WAIT_TIMEOUT,
     AppServerError,
@@ -192,6 +192,7 @@ class CodexRepliesMixin:
         session: SessionState,
         prompt: str,
     ) -> tuple[str, dict[str, Any], BaseException | None]:
+        await launch_requests.reject_stale_role_reply(session)
         gate = service_turns.current()
         session.reply_start_pending = True
         try:

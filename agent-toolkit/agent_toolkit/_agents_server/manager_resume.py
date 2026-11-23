@@ -21,6 +21,7 @@ from agent_toolkit._agents_server import (
     shared_layout,
     wait_run,
 )
+from agent_toolkit._agents_server.cli_turn import CliTurnManager
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_requests import (
     wrap_delivery_body,
@@ -80,19 +81,24 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if session.engine == "claude":
             await cast(Any, self._backend("claude")).set_effort(session, value)
 
-    async def _send_with_resources(self, session: SessionState, prompt: str) -> dict[str, Any]:
+    async def _send_with_resources(
+        self, session: SessionState, prompt: str, *, result_recovery: bool = False
+    ) -> dict[str, Any]:
+        backend = self._backend(session.engine)
+        cli_recovery = result_recovery and isinstance(backend, CliTurnManager)
+        send = backend.recover_result_contract if cli_recovery else backend.send_message
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
 
         ticket = (
             await admission.acquire(await run_file_operation(self.launcher_session_id), state_root=self._state_root())
-            if session.status != "running"
+            if cli_recovery or session.status != "running"
             else None
         )
         try:
             async with service_io.next_input(session):
-                result = await self._backend(session.engine).send_message(session, resources + "\n\n" + prompt)
+                result = await send(session, resources + "\n\n" + prompt)
         finally:
             if ticket is not None:
                 ticket.release()
@@ -124,12 +130,17 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if session.codex_auto_reset_pending:
             return
         if session.result_contract_recovery_pending:
+            if session.result_contract_recovery_consumed:
+                return
             pending = session.pending_result
             assert pending is not None
+            turn_seq = session.turn_seq
+
+            def owns_recovery() -> bool:
+                return session.turn_seq == turn_seq and session.pending_result is pending
+
             reason = session.result_contract_recovery_reason or "返却形式を検査できません"
             session.result_contract_recovery_consumed = True
-            if session.engine not in {"claude", "codex"}:
-                finalize_pending_result(session, touch=False)
             try:
                 delivery = await self._send_with_resources(
                     session,
@@ -154,10 +165,17 @@ class ManagerResume(manager_registry.ManagerRegistry):
                         )
                         + f"\n{FINAL_RESPONSE_NOTICE}"
                     ),
+                    result_recovery=True,
                 )
                 if delivery.get("delivery") == "reply_failed":
                     raise RuntimeError("返却形式の回復入力を配送できませんでした")
+            except asyncio.CancelledError:
+                if owns_recovery():
+                    session.result_contract_recovery_consumed = False
+                raise
             except Exception as exc:
+                if not owns_recovery():
+                    return
                 session.clear_hold()
                 session.status = "failed"
                 session.agent_message = pending["agent_message"]
@@ -661,6 +679,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
         結果本文を保持したまま所有主体だけが終了した場合は、直前結果を応答へ含める。
         """
         await self._wait_for_resource_release(resume_state.session_id)
+        await launch_requests.reject_stale_role_reply(resume_state)
         if previous_result and self._status_writer is not None and not self._is_registry_resume_state(resume_state):
             await self._status_writer.retain_result_async(resume_state)
         pending, ticket = self._start_resume(
