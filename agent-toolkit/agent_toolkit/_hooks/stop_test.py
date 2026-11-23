@@ -7,6 +7,7 @@ import types
 
 import pytest
 
+from agent_toolkit._atk.wi import process_loop_control
 from agent_toolkit._atk.wi import process_loop_log as loop_log
 from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
@@ -699,3 +700,94 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
 
     assert not requests
     assert result["decision"] == "block"
+
+
+@pytest.mark.parametrize("boundary", ["complete", "wait", "interrupt", "abort", "resume", "compact", "exit", "dry-run"])
+def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
+    # 実例の行12、9866～9867、9955～9959を匿名化して縮約した。  # pyfltr: allow-comment
+    command = "cd /workspace && /toolkit/scripts/atk wi add --type=uwi --question-type=post-approval --body-file /report.md"
+    if boundary == "dry-run":
+        command += " --dry-run"
+    records = [
+        {"type": "user", "message": {"content": '<atk-auto source="process-loop" kind="goal">巡回</atk-auto>'}},
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "tool_use", "name": "Bash", "id": "save", "input": {"command": command}}]},
+        },
+        {
+            "type": "user",
+            "message": {"content": [{"type": "tool_result", "tool_use_id": "save", "is_error": False, "content": ""}]},
+            "toolUseResult": {"stdout": "成功: 1件をinboxへ投入した\n  ~/notes/inbox/report.md", "interrupted": False},
+        },
+    ]
+    if boundary == "interrupt":
+        records.append({"type": "user", "message": {"content": "[Request interrupted by user]"}})
+    if boundary == "compact":
+        records.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "mcp__plugin_agent-toolkit_agents_server__compact_conversation",
+                                "id": "compact",
+                                "input": {"resume": True},
+                            }
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {"content": [{"type": "tool_result", "tool_use_id": "compact", "is_error": False}]},
+                    "toolUseResult": '{"ok":true}',
+                },
+            ]
+        )
+    if boundary == "exit":
+        records.extend(
+            [
+                {
+                    "type": "assistant",
+                    "message": {
+                        "content": [
+                            {"type": "tool_use", "name": "Bash", "id": "exit", "input": {"command": "atk agents-exit-session"}}
+                        ]
+                    },
+                },
+                {
+                    "type": "user",
+                    "message": {
+                        "content": [{"type": "tool_result", "tool_use_id": "exit", "content": '{"exit_session_invoked":true}'}]
+                    },
+                },
+            ]
+        )
+    records.append(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "待機中: child" if boundary == "wait" else "…"}]},
+        }
+    )
+    path = tmp_path / "coordinator.jsonl"
+    path.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "coordinator")
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    _replace_checks(
+        monkeypatch, {name: ("approve", "") for name in stop.CHECK_MODULE_NAMES if name != "process_loop_exit_gate"}
+    )
+
+    abort = tmp_path / "abort"
+    if boundary == "abort":
+        abort.touch()
+    monkeypatch.setattr(loop_log, "abort_path", lambda: abort)
+    request = process_loop_control.ResumeRequest("request", "id", "coordinator") if boundary == "resume" else None
+    monkeypatch.setattr(process_loop_control, "read_resume_request", lambda: request)
+    result = stop.evaluate(json.dumps({"session_id": "coordinator", "transcript_path": str(path)}))
+    if boundary == "complete":
+        assert result.get("decision") == "block"
+        assert "atk agents-exit-session" in str(result.get("reason"))
+    else:
+        assert result.get("decision") != "block"

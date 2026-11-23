@@ -57,7 +57,7 @@ Stop hookが起動不足を示した時、作業を完了して終えるなら�
 - 記録は指定した作業にだけ作用し、ユーザーの割り込みと関係しない他の作業の起動不足は残る。
 - Stop hookの継続入力や注記はユーザーの元の入力として受理されず、完了を自己申告する記録の操作は無い。
 - 証拠を取得できない場合、Stop hookは遮断せず判定不能を記録する。
-- 自律モードの報告用UWIの保存検収と`atk agents-exit-session`の実行は、Stop hookの判定とは別に、`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」の手順6と手順7が定める。
+- 報告用UWIの保存検収は、`agent-toolkit:atk-mode/playbooks/report-completion.md`「工程」の手順6に従う。
 
 ホストの猶予通知で続行が許されている間は、残りの工程を進める。
 ホストが再開を禁じた場合は、現在の状況と再開に要る操作を`agent-toolkit:atk-mode/playbooks/confirmation.md`に沿ってユーザーへ伝える。

@@ -1,0 +1,126 @@
+import json
+import os
+
+from agent_toolkit._hooks.notice import block_formatter
+lazy from agent_toolkit._atk.session_records import exit_session_in_entries
+lazy from agent_toolkit._atk.wi import process_loop_control, process_loop_log
+lazy from agent_toolkit._common import session_state, transcript
+lazy from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
+lazy from agent_toolkit._common.shell_segments import extract_execution_segments
+lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
+lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
+lazy from agent_toolkit._hooks.background_tasks import is_pending_async_work_from_payload
+lazy from agent_toolkit._hooks.stop_session import parse_stop_session
+
+_block = block_formatter("process_loop_exit_gate")
+
+
+def _is_report_save(command: object) -> bool:
+    if not isinstance(command, str):
+        return False
+    segments = extract_execution_segments(command)
+    if len(segments) == 2 and segments[0].resolved and segments[0].tokens[:1] == ("cd",):
+        segments = segments[1:]
+    if len(segments) != 1 or not segments[0].resolved:
+        return False
+    args = segments[0].tokens
+    if not is_atk_command(args) or args[1:3] != ("wi", "add"):
+        return False
+    return "--dry-run" not in args and all(
+        f"{key}={value}" in args or (key, value) in zip(args[3:], args[4:], strict=False)
+        for key, value in (("--type", "uwi"), ("--question-type", "post-approval"))
+    )
+
+
+def _saved_response(entry: dict, item: dict) -> bool:
+    response = entry.get("toolUseResult")
+    return (
+        not item.get("is_error")
+        and isinstance(response, dict)
+        and response.get("interrupted") is False
+        and isinstance(stdout := response.get("stdout"), str)
+        and stdout.startswith("成功: 1件をinboxへ投入した\n")
+    )
+
+
+def _current_turn(entries: list[dict]) -> list[dict]:
+    start = 0
+    for offset, entry in enumerate(entries):
+        if entry.get("isSidechain") or entry.get("type") != "user":
+            continue
+        message = entry.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, str) or (
+            isinstance(content, list) and any(isinstance(item, dict) and item.get("type") == "text" for item in content)
+        ):
+            start = offset + 1
+    return [entry for entry in entries[start:] if not entry.get("isSidechain")]
+
+
+def _report_requires_exit(entries: list[dict]) -> bool:
+    pending: dict[str, str] = {}
+    saved = False
+    for entry in entries:
+        message = entry.get("message")
+        if not isinstance(message, dict) or not isinstance(content := message.get("content"), list):
+            continue
+        for item in content:
+            if not isinstance(item, dict):
+                continue
+            if entry.get("type") == "assistant" and item.get("type") == "tool_use":
+                if not isinstance(identifier := item.get("id"), str) or not isinstance(tool_input := item.get("input"), dict):
+                    continue
+                name = item.get("name")
+                if name in ATK_SHELL_TOOLS and _is_report_save(tool_input.get("command")):
+                    pending[identifier] = "save"
+                elif isinstance(name, str) and name.endswith("__compact_conversation"):
+                    pending[identifier] = "compact"
+            elif entry.get("type") == "user" and item.get("type") == "tool_result":
+                if not isinstance(identifier := item.get("tool_use_id"), str) or item.get("is_error"):
+                    continue
+                operation = pending.pop(identifier, None)
+                if operation == "save" and _saved_response(entry, item):
+                    saved = True
+                elif operation == "compact" and _accepted_compaction(entry.get("toolUseResult")):
+                    saved = False
+    return saved
+
+
+def _accepted_compaction(response: object) -> bool:
+    if isinstance(response, str):
+        try:
+            response = json.loads(response)
+        except ValueError:
+            return False
+    return isinstance(response, dict) and response.get("ok") is True
+
+
+def evaluate(payload_text: str) -> tuple[str, str]:
+    resolved = parse_stop_session(payload_text, lambda: None)
+    if resolved is None:
+        return "approve", ""
+    session_id, payload = resolved
+    if not is_identified_process_loop_session(session_id, os.environ) or not is_main_agent_context(payload):
+        return "approve", ""
+    path = payload.get("transcript_path")
+    if not isinstance(path, str):
+        return "approve", ""
+    entries = _current_turn(transcript.read_transcript_entries(path))
+    if not _report_requires_exit(entries):
+        return "approve", ""
+    for message in transcript.iter_latest_assistant_text_messages(path):
+        if any(line.startswith("待機中:") for line in transcript.visible_assistant_text(message).splitlines()):
+            return "approve", ""
+    if is_pending_async_work_from_payload(payload, session_id, session_state=session_state.read_state(session_id)):
+        return "approve", ""
+    if process_loop_log.abort_path().exists():
+        return "approve", ""
+    request = process_loop_control.read_resume_request()
+    if request is not None and request.session_id == session_id:
+        return "approve", ""
+    if exit_session_in_entries(entries, "claude") is not False:
+        return "approve", ""
+    return "block", _block(
+        "報告用UWIは保存済みだが、このprocess-loop統括の終了操作を確認できない。",
+        fix="報告を再送せず、`atk agents-exit-session`を実行してセッションを終了せよ。",
+    )

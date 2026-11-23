@@ -54,6 +54,7 @@ CHECK_MODULE_NAMES = (
     "bugfix_gate",
     "norm_excuse_gate",
     "termination_order_advisor",
+    "process_loop_exit_gate",
     "queued_notification_advisor",
     "improvement_status_advisor",
 )
