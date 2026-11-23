@@ -13,7 +13,7 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
 
 
-_BUDGET_BYTES = 2_800_000
+_BUDGET_BYTES = 2_760_000
 
 
 def _norm_markdown_bytes(root: pathlib.Path) -> int:
