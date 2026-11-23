@@ -47,10 +47,10 @@ def verify(worktree: Path, environment: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="同期先が別の作業ツリーの仮想環境でないことを確認する")
     parser.add_argument("worktree", type=Path, metavar="WORKTREE")
-    parser.add_argument("environment", type=Path, metavar="ENVIRONMENT")
+    parser.add_argument("environment", metavar="ENVIRONMENT")
     args = parser.parse_args()
     try:
-        verify(args.worktree, args.environment)
+        verify(args.worktree, Path(args.environment or ".venv"))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         if isinstance(sys.stderr, io.TextIOWrapper):
             sys.stderr.reconfigure(encoding="utf-8", errors="replace")

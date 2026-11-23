@@ -33,7 +33,7 @@ update: check-worktree-venv
 # rustとdotnetは版を明示指定しており、明示指定した版は`mise lock --bump`が自分自身へ解決して
 # 変更しないため、設定ファイルの版を書き換える`mise upgrade --bump`を併せて実行する。
 # 配布用設定はGitLabバックエンドの`glab`を含み、トークンのfallbackを設定ファイルで無効化する。
-update-mise-locks:
+update-mise-locks: check-worktree-venv
 	mise upgrade --bump rust
 	mise lock --bump --platform linux-x64,windows-x64
 	uv run --frozen python scripts/update_global_mise.py
@@ -50,7 +50,7 @@ setup: check-worktree-venv
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり。mise install chezmoiで導入してください。"
 
 # ChromiumとLinuxのシステム依存を初期環境へ導入
-setup-browser:
+setup-browser: check-worktree-venv
 	uv run playwright install --with-deps chromium
 
 # Ubuntu/Debian へ pwsh + PSScriptAnalyzer を一括インストールする。

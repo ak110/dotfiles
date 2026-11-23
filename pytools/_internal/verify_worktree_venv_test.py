@@ -72,8 +72,9 @@ def test_accepts_standalone_directory_without_git(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(os.name == "nt" or shutil.which("make") is None, reason="Makeのシェル起動をPOSIXで検証する")
-@pytest.mark.parametrize("target", ["sync", "test"])
-def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path, target):
+@pytest.mark.parametrize("target", ["sync", "test", "setup-browser"])
+@pytest.mark.parametrize("empty_environment", [False, True])
+def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path, target, empty_environment):
     primary, linked = nested_worktree
     (primary / ".venv").mkdir()
     marker = primary / ".venv" / "editable.pth"
@@ -90,12 +91,14 @@ def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path
         "#!/bin/sh\n"
         'if [ "$2" = "--no-project" ]; then shift 4; exec ' + shlex.quote(sys.executable) + ' "$@"; fi\n'
         'printf "%s:%s\\n" "$1" "${UV_NO_SYNC:-}" >> "$LOG"\n'
-        'if [ "$1" = "sync" ]; then printf "%s" "$PWD" > "$UV_PROJECT_ENVIRONMENT/editable.pth"; fi\n',
+        'if [ "$1" = "sync" ]; then printf "%s" "$PWD" > "${UV_PROJECT_ENVIRONMENT:-.venv}/editable.pth"; fi\n',
         encoding="utf-8",
     )
     executable.chmod(0o700)
     make = Path(verify_worktree_venv.__file__).parents[2] / "Makefile"
     args = ["make", "-f", str(make), target]
+    if empty_environment:
+        args.append("UV_PROJECT_ENVIRONMENT=")
     env = {**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", "LOG": str(log)}
     rejected = subprocess.run(args, cwd=linked, env=env, capture_output=True, text=True, check=False, timeout=30)
     assert rejected.returncode != 0 and "別の場所" in rejected.stderr
@@ -105,7 +108,7 @@ def test_make_stops_shared_environment_before_mutation(nested_worktree, tmp_path
     accepted = subprocess.run(args, cwd=linked, env=env, capture_output=True, text=True, check=False, timeout=30)
     assert accepted.returncode == 0, accepted.stderr
     lines = log.read_text(encoding="utf-8").splitlines()
-    assert lines and lines[0].startswith("sync:")
+    assert lines and lines[0].startswith("run:" if target == "setup-browser" else "sync:")
     if target == "test":
         assert "run:true" in lines
     assert marker.read_text(encoding="utf-8") == str(primary)
