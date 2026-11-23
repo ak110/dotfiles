@@ -174,8 +174,8 @@ def _move_user_comment(original: str, edited: str, name: str, expected: str) -> 
         sys.exit(1)
     if not comment:
         _outcome.report_failure(
-            f"移すユーザーコメントが無い: {name}",
-            next_action="--move-user-commentを外して再実行する",
+            f"保存済みのユーザーコメントが無いため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在の記入を読み直し、取り下げられたコメントを本文へ反映し直してから再実行する",
         )
         sys.exit(1)
     if not _user_comment.same_user_comment(comment, expected):
@@ -296,6 +296,13 @@ def append_entry_content(
     )
 
 
+def _strip_trailing_blank_lines(body: str) -> str:
+    lines = body.split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
     parsed = _frontmatter.parse_frontmatter(original)
     if parsed is None:
@@ -347,7 +354,9 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         updated_data.pop("target_commit", None)
 
     if entry_type != WI_TYPE_UWI:
-        return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
+        return _frontmatter.serialize_frontmatter(
+            updated_data, "\n" + _strip_trailing_blank_lines(normalized_message_body) + "\n"
+        )
 
     question_type = updated_data.get("question_type")
     # 保存済みのfree-formは読取互換として本文編集を受理し、他の形式からfree-formへ変える編集だけを拒否する。

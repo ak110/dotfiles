@@ -68,7 +68,8 @@ def test_crlf_frontmatter_value_is_not_misidentified_as_reserved_heading() -> No
 @pytest.mark.parametrize(
     ("body", "expected"),
     [
-        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n>\n> 指摘B  \n", True, id="blockquote"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n>\n> 指摘B\n", True, id="blockquote"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A  \n>\n> 指摘B\n", False, id="trailing-spaces-added"),
         pytest.param("## ユーザー指摘の逐語引用\n\n指摘A\n\n指摘B\n\n## 次の節\n", True, id="plain"),
         pytest.param("## ユーザー指摘の逐語引用\n\n> 前置き\n>\n> 指摘A\n>\n> 指摘B\n> 後書き\n", True, id="surrounded"),
         pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n> 指摘B\n", False, id="paragraph-merged"),
@@ -87,9 +88,15 @@ def test_quotes_user_comment_requires_contiguous_lines_in_quote_section(body: st
 
 @pytest.mark.parametrize(
     ("right", "expected"),
-    [("指摘A  \r\n\r\n指摘B\r\n\r\n", True), ("指摘A\n指摘B", False), ("指摘A", False), ("指摘A\n\n指摘B\n\n追記", False)],
+    [
+        ("指摘A\r\n\r\n指摘B\r\n\r\n", True),
+        ("指摘A  \n\n指摘B", False),
+        ("指摘A\n指摘B", False),
+        ("指摘A", False),
+        ("指摘A\n\n指摘B\n\n追記", False),
+    ],
 )
-def test_same_user_comment_ignores_only_trailing_spaces_and_outer_blank_lines(right: str, expected: bool) -> None:
+def test_same_user_comment_ignores_only_newline_style_and_outer_blank_lines(right: str, expected: bool) -> None:
     assert user_comment.same_user_comment("\n指摘A\n\n指摘B", right) is expected
 
 

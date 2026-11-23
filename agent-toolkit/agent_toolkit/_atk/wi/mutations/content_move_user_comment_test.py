@@ -85,7 +85,9 @@ def test_move_rejects_comment_changed_after_reading(
     assert "整理に使ったコメントと一致しない" in capsys.readouterr().err
 
 
-def test_move_rejects_entry_without_comment(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_move_rejects_entry_without_comment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     notes = _setup_notes(tmp_path)
     path = _write_awi_file(notes, "fb.md", body="本文")
     monkeypatch.setenv("AI_AGENT", "1")
@@ -93,6 +95,45 @@ def test_move_rejects_entry_without_comment(tmp_path: pathlib.Path, monkeypatch:
     original = path.read_bytes()
 
     assert _run(_move_args(tmp_path, _MOVED_BODY), tmp_path) == 1
+
+    assert path.read_bytes() == original
+    err = capsys.readouterr().err
+    assert "atk wi show fb.md --section ユーザーコメント" in err
+    assert "--move-user-commentを外して" not in err
+
+
+_TRAILING_COMMENT = "強制改行の行  \n次の行"
+
+
+def test_move_keeps_trailing_spaces_of_last_quoted_line(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = _prepare(tmp_path, monkeypatch, comment="指摘の末行  ")
+    body = _QUOTE_HEAD + "> 指摘の末行  \n"
+
+    assert _run(_move_args(tmp_path, body, read_comment="指摘の末行  "), tmp_path) == 0
+
+    assert path.read_text(encoding="utf-8").endswith("> 指摘の末行  \n")
+
+
+def test_move_rejects_trailing_spaces_added_to_last_quoted_line(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _prepare(tmp_path, monkeypatch, comment="指摘の末行")
+    original = path.read_bytes()
+    body = _QUOTE_HEAD + "> 指摘の末行  \n"
+
+    assert _run(_move_args(tmp_path, body, read_comment="指摘の末行"), tmp_path) == 1
+
+    assert path.read_bytes() == original
+
+
+def test_move_rejects_trailing_spaces_dropped_from_last_quoted_line(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = _prepare(tmp_path, monkeypatch, comment=_TRAILING_COMMENT)
+    original = path.read_bytes()
+    body = _QUOTE_HEAD + "> 強制改行の行\n> 次の行\n"
+
+    assert _run(_move_args(tmp_path, body, read_comment=_TRAILING_COMMENT), tmp_path) == 1
 
     assert path.read_bytes() == original
 

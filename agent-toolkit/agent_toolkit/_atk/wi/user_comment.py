@@ -110,10 +110,10 @@ def has_user_comment(text: str) -> bool:
 
 
 def _comparable_lines(lines: list[str]) -> list[str]:
-    stripped = [line.rstrip() for line in lines]
-    while stripped and not stripped[0]:
+    stripped = list(lines)
+    while stripped and not stripped[0].strip():
         stripped.pop(0)
-    while stripped and not stripped[-1]:
+    while stripped and not stripped[-1].strip():
         stripped.pop()
     return stripped
 
@@ -130,7 +130,7 @@ def quotes_user_comment(text: str, comment: str) -> bool:
     target = _comparable_lines(frontmatter.normalize_newlines(comment).split("\n"))
     if section is None or not target:
         return False
-    quoted = [_QUOTE_MARKER.sub("", line, count=1).rstrip() for line in section]
+    quoted = [_QUOTE_MARKER.sub("", line, count=1) for line in section]
     width = len(target)
     return any(quoted[index : index + width] == target for index in range(len(quoted) - width + 1))
 
