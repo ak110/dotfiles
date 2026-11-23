@@ -851,7 +851,7 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
     linked = tmp_path / "linked"
     primary.mkdir()
     linked.mkdir()
-    repository = linked if origin in {"linked", "registered-linked", "unregistered-linked", "empty-path"} else primary
+    repository = linked if origin in {"linked", "registered-linked", "unregistered-linked"} else primary
     installed = tmp_path / "claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "1.0.0"
     candidate = linked / "agent-toolkit" if origin == "unapproved-install" else installed
     calls = _setup(
@@ -931,16 +931,18 @@ def test_warmup_starts_shared_service_only_from_registered_locations(
     monkeypatch.setattr(service_forward, "publish_service", publish)
 
     assert _warmup.run().failure is None
-    blocked = origin in {"linked", "unregistered-linked", "empty-path", "unknown", "registered-linked-from-primary"}
+    blocked = origin in {"linked", "unregistered-linked", "unknown", "registered-linked-from-primary"}
     if blocked:
-        assert _prepared(calls)
+        assert not _prepared(calls)
         roots = []
     elif origin == "unapproved-install":
         roots = [project]
         assert str(candidate) in caplog.text
         assert "通常のプラグイン配布先と一致しません" in caplog.text
-    elif origin == "unregistered-primary":
+    elif origin in {"unregistered-primary", "empty-path"}:
         roots = [installed]
+        assert _prepared(calls) == [str(installed / "agent_toolkit" / "agents_server_mcp.py")]
+        assert "共有管理サービスの起動と公開を省略" not in caplog.text
     else:
         roots = [installed, project]
     assert startups == [root / "agent_toolkit" / "agents_server_mcp.py" for root in roots]

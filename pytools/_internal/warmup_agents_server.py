@@ -55,15 +55,6 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if dotfiles_mode.is_minimal():
         return post_apply_outcome.PostApplyOutcome()
     checkout = common.find_dotfiles_root()
-    candidates: list[Path] = []
-
-    def targets() -> list[Path]:
-        candidates.extend(_targets())
-        return candidates
-
-    prepared = plugin_warmup.prepare_targets(targets, tag=_TAG)
-    if not prepared.commands:
-        return post_apply_outcome.PostApplyOutcome()
     try:
         registered = _registered_checkout()
     except (OSError, ValueError) as error:
@@ -73,7 +64,26 @@ def run() -> post_apply_outcome.PostApplyOutcome:
     if checkout_skip is not None:
         _warn_skip(checkout_skip, registered, checkout)
         return post_apply_outcome.PostApplyOutcome()
-    approved = _approved_scripts(registered, candidates)
+    approved: set[Path] = set()
+
+    def targets() -> list[Path]:
+        candidates = _targets()
+        approved.update(_approved_scripts(registered, candidates))
+        paths = []
+        for candidate in candidates:
+            try:
+                physical = candidate.resolve(strict=True)
+            except OSError:
+                continue
+            if physical in approved:
+                paths.append(physical)
+            elif registered is not None:
+                _warn_skip(f"{candidate}: 通常のプラグイン配布先と一致しません", registered, checkout)
+        return paths
+
+    prepared = plugin_warmup.prepare_targets(targets, tag=_TAG)
+    if not prepared.commands:
+        return post_apply_outcome.PostApplyOutcome()
     commands = []
     for command in prepared.commands:
         try:
