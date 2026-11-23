@@ -46,8 +46,9 @@ _SAVED_CACHE_RETRY = (
 _MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
-        "Codex pluginを変更しました。実行中のCodexセッションを終了してから、"
-        "次のコマンドでapp-server daemonを再起動してください。"
+        "Codex pluginを変更した。app-server daemonは自動再起動しない。"
+        "更新を担当するエージェント: 対象のdaemonに接続中のセッションがないことを確認できた場合に限り、"
+        "次のコマンドを実行する。確認できなければ見送る。ユーザーに再起動を依頼しない。"
     ),
     command="codex app-server daemon restart",
 )

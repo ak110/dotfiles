@@ -36,7 +36,7 @@ CODEX_PLUGIN_UPDATED=0
 CODEX_SAVED_CACHE_RETRY="次回の実行が退避先から戻します。解消しない場合は退避先を変更せず、表示された内容とパスをdotfilesの作者へ報告してください。"
 
 _print_codex_restart_notice() {
-    echo "Codex pluginを更新しました。実行中のCodexセッションを終了してから、次のコマンドでapp-server daemonを再起動してください。" >&2
+    echo "Codex pluginを更新しました。app-server daemonは自動再起動しない。更新を担当するエージェント: 対象のdaemonに接続中のセッションがないことを確認できた場合に限り、次のコマンドを実行する。確認できなければ見送る。ユーザーに再起動を依頼しない。" >&2
     echo "codex app-server daemon restart" >&2
 }
 

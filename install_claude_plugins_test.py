@@ -54,6 +54,9 @@ def test_restart_notice_requires_codex_plugin_state_change(
     assert sum("codex plugin list --json" in line for line in lines) == 4
     assert ("codex app-server daemon version" in lines) is (before_state != after_state)
     assert ("codex app-server daemon restart" in result.stderr) is expect_notice
+    assert ("更新を担当するエージェント:" in result.stderr) is expect_notice
+    assert ("接続中のセッションがないことを確認" in result.stderr) is expect_notice
+    assert ("ユーザーに再起動を依頼しない" in result.stderr) is expect_notice
 
 
 @pytest.mark.parametrize("kind", installer_runners())

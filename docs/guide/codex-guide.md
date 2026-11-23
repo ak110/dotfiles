@@ -62,7 +62,8 @@ Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新�
 更新前の版は、次の版の導入から7日を過ぎると以降の更新で削除する。
 7日より前に置き換わった版で始めた会話を再開すると、会話の履歴が指す旧版のスキルなどのファイルを読めないため、新しいセッションで続ける。
 agent-toolkitの追加・更新後も、実行中の共有daemonは停止・再起動しない。
-反映待ちの案内が出たら、利用中の会話を終えた後に`codex app-server daemon restart`を実行する。
+エージェントが更新を担当した場合は、再起動もそのエージェントが担当する。
+利用者に再起動を依頼しない。
 
 Codexのコマンド実行から`update-dotfiles`を起動すると、`CODEX_THREAD_ID`を使って更新を独立したjobへ分離する。
 起動元がdaemon再起動で終了しても、jobは更新処理を継続して出力と終了コードを保存する。
@@ -78,7 +79,8 @@ update-dotfiles job
 
 更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示された操作（Codexの終了と`update-dotfiles`の再実行など）を行う。
 
-更新後にdaemonの再起動を案内された場合は、Codex pluginまたはremote controlを使うセッションを終了してから次のコマンドを実行する。
+更新後にdaemonの再起動を案内された場合は、対象のdaemonに接続中のセッションがないことを確認してから次のコマンドを実行する。
+確認できない場合は再起動を見送る。
 
 ```bash
 codex app-server daemon restart
