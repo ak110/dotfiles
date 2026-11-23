@@ -95,10 +95,10 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    batchの振り返り結果は、その実行の1件の報告へ集約し、対象セッションの作業完了報告とは別に保存する。
    保存に失敗した時は、同じUWIの保存を回復する。
 7. 協調モードは確定した本文を、自律モードは保存を検収した報告用UWIのファイル名を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って1回送達する。
-   - Claude Codeで`send_to_user`を使う時は表示の成功を確かめ、起動元が求める報告後の終了操作を同じ応答で行う。
+   - Claude Codeで`send_to_user`を使う時は表示の成功を確かめる。
      送達後のターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
-   - `atk agents-exit-session`などでホスト本体を停止する場合は、報告用UWIの保存の検収と必要な可視の報告（Codexでは`commentary`）を先に終え、停止操作を最後のツール呼び出しにする。
+   - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。
 
    最終報告の末尾にだけ、次の固定文を置く。
 

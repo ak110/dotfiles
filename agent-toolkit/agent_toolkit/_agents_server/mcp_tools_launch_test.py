@@ -86,6 +86,17 @@ async def test_start_tools_use_task_settings_without_override(monkeypatch: pytes
 
         assert requested == ["chores_fast", "review", "chores_fast", "write"]
 
+        for selected in (None, ""):
+            task = await mcp_tools.start(
+                str(tmp_path),
+                subagent_md_path="exec",
+                extra_params=_observed_input_params("exec.subagent.md", tmp_path),
+                model_type=selected,
+            )
+            assert not task.get("warnings")
+            assert manager.sessions[task["session_id"]].explicit_role_model is False
+        assert requested[-2:] == ["execute", "execute"]
+
 
 @pytest.mark.parametrize("role", ["add-wi", "exec"])
 @pytest.mark.parametrize("override", [None, "execute", "chores", "codex:model/high"])

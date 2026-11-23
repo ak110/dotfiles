@@ -43,13 +43,18 @@ _SAVED_CACHE_RETRY = (
     "表示された内容とパスをdotfilesの作者へ報告してください。"
 )
 
-_MANUAL_RETRY = "Codexのセッションを全て終了してから`update-dotfiles`を再実行してください。"
+_DEFERRED_RETRY = "更新担当は利用中のセッションを終了させず、対象を利用するCodexが終了した後に`update-dotfiles`を再実行する。"
 _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
-        "Codex pluginを変更しました。実行中のCodexセッションを終了してから、"
-        "次のコマンドでapp-server daemonを再起動してください。"
+        "Codex pluginを変更した。app-server daemonは自動再起動しない。"
+        "更新を担当するエージェント: "
+        "対象daemonの全クライアントを管理できる保守時間に、新規接続を止め、すべての進行中の作業が終わるまで待つ。"
+        "安全に切断できない場合や無接続を確定できない場合は延期する。接続中のセッションがないことを確認する。"
+        "実行直前に対象daemonが稼働中であることを確認して次のコマンドを実行する。停止中または稼働が不明なら実行しない。"
+        "終了コードが0で、JSON応答のstatusがrestartedであることを確認する。ユーザーに再起動を依頼しない。"
     ),
     command="codex app-server daemon restart",
+    warning=False,
 )
 _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
@@ -725,14 +730,14 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
                 log_format.format_status(
                     plugin_id,
                     f"Codexが稼働中のため使用しないpluginの除去を延期: {running_text}。導入済みの実体を保持しました。"
-                    + _MANUAL_RETRY,
+                    + _DEFERRED_RETRY,
                 )
             )
             notices.append(
                 post_apply_outcome.PostApplyNotice(
                     message=(
                         f"Codexが稼働中のため、使用しない{plugin_id}の除去を延期しました（稼働中: {running_text}）。"
-                        "利用中のセッションを守るため導入済みの実体を保持しています。" + _MANUAL_RETRY
+                        "利用中のセッションを守るため導入済みの実体を保持しています。" + _DEFERRED_RETRY
                     ),
                 )
             )
@@ -742,7 +747,8 @@ def _remove_unused_plugins() -> post_apply_outcome.PostApplyOutcome:
             logger.warning(
                 log_format.format_status(
                     plugin_id,
-                    f"plugin除去に失敗したため続行。使用しない場合はcodex plugin remove {plugin_id}を実行してください。",
+                    "plugin除去に失敗したため続行。導入済みの実体は保持した。更新担当はログで失敗理由を確認し、"
+                    "原因の解消後にupdate-dotfilesを再実行する。",
                 )
             )
             continue
@@ -843,9 +849,10 @@ def run() -> post_apply_outcome.PostApplyOutcome:
                 logger.error(
                     log_format.format_status(
                         "codex plugins",
-                        f"marketplace登録先が異なる: {registered_root}。登録先をこの作業ツリーへ変更する場合は"
+                        f"marketplace登録先が異なるため、現在の登録を保持した: {registered_root}。"
+                        "更新担当は、ユーザーがこの作業ツリーへの変更を選んだ場合に限り、"
                         f'codex plugin marketplace remove "{marketplace_name}"を実行し、'
-                        f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行してください。',
+                        f'codex plugin marketplace add "{root}"で登録してupdate-dotfilesを再実行する。',
                     )
                 )
                 return _outcome(changed, notices, deferred=unused_deferred)

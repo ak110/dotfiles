@@ -22,7 +22,8 @@
    稼働中なら追送し、終了後は以下の条件で継続か新規起動を選ぶ。
    委譲元は認可、全体の調整、検収を担い、返った根拠を確かめる。
 2. 同じ担当へ同じタスクの未完了の作業、指摘への対応、再レビューを頼む時だけ、既存のsessionを継続する。
-   継続の直前に、起動時と今回の工程の`model_type`が一致することを確かめ、同じ`session_id`へ`send_message(session_id, prompt, timeout)`を送る。
+   稼働中は同じ`session_id`へ`send_message(session_id, prompt, timeout)`を送る。
+   完了済みなら起動時と今回の工程の`model_type`が一致することも確かめる。
    サーバーは選んだengine、model、現在のeffortを保持するため、可用性による候補の切替や候補列の設定変更の後も同じ担当を続けられる。
    effortだけを変える時は`agent-toolkit:atk-mode/references/model-settings.md`「同じ会話のeffortの上げ下げ」に従い、同じ識別子を続ける。
    サーバーは実行中のターンへのsteer、終了後のreply、保持期限を過ぎた後の再開を選ぶため、管理元のプロセスが終わっていても継続できる。
@@ -43,7 +44,9 @@
    `wait`の`status=completed`や`agent_message`の文字列の一致だけでは、配送の判定に足りない。
    確かめられない場合は、再送も継続不能の判断もせず、続行できない理由として委譲元へ報告する。
 6. 継続不能は、継続の手段を実際に呼んだ結果で判定する。
-   `agents_server`で継続不能とするのは、`send_message`が`unknown session: <session_id>`を返した場合だけである。
+   `send_message`が役割の`model_type`の変更を理由に未配送を返したら、同じ識別子へ再送せず、`start`の`handoff_from`へ前任の識別子を渡す。
+   前任の起動入力とセッション記録を一意に復元できた場合は後任の起動を確かめてから未配送の指示を渡す。
+   復元できない場合や`unknown session: <session_id>`の場合は確認できた記録と残る工程を通常の`start`へ渡す。
    識別子の体系の違いを示すエラーと、`wait`の`session retention expired: <session_id>`は、継続できる状態として扱う。
    保持した識別子を見失ったら、終了や失敗と推測する前に、公開の一覧と個別の照会で探す。
 7. 担当が自分で処理できる作業を残した返却を繰り返す場合は、再送を重ねる前に、交代、作業単位の組み直し、モデルや実行手段の変更を総費用で比べる。
@@ -53,7 +56,8 @@
    停止や失敗の反復の原因が既存の不良なら、欠陥の処置は回復と別に決める（process-wiの実行中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」）。
 8. ユーザーが介入した時は、`agent-toolkit:atk-mode/playbooks/review-fix.md`「担当種別ごとの修正」で採否を確定した差分だけを追送する。
    担当を止めるのは、対象か前提が無効になり、続けると誤った成果物ができ、稼働中の作業の完了まで待てない場合に限る。
-9. `start`の`handoff_from`で`model_type`を省くと、前任の指定値を継承する。
+9. `start`の`handoff_from`で`model_type`を省くと、前任の起動時に`model_type`を明示していなければ現行の役割設定を使う。
+   前任が明示指定で起動した場合は指定値を引き継ぐ。
    候補列を直接指定した前任の継承は現在の工程設定と異なり、`warnings`に継承値が示される。
    現在の設定へ戻すには、前任の役割に定めた元の工程名を`model_type`へ明示する。
 10. 交代の時は、`agent-toolkit:atk-mode/references/work-contract.md`「会話の少量取得」で全体の要求と最新の変更を読み、同書「引き継ぎ記録」の記録と比べる。

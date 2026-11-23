@@ -54,16 +54,16 @@ CHECK_MODULE_NAMES = (
     "bugfix_gate",
     "norm_excuse_gate",
     "termination_order_advisor",
+    "process_loop_exit_gate",
     "queued_notification_advisor",
     "improvement_status_advisor",
 )
 
-# Codexでは説明言語、run-skillの報告保存を判定する。
-# 非遮断通知を配送できないため、それ以外の終了工程の支援は文書で扱う。
 CODEX_CHECK_MODULE_NAMES = (
     "response_language_advisor",
     "run_skill_report_gate",
     "norm_excuse_gate",
+    "process_loop_exit_gate",
 )
 
 

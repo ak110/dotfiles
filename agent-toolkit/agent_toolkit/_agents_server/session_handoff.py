@@ -161,6 +161,9 @@ def compose_prompt(
         lines += [_record_instruction(pathlib.Path(path))]
     lines += [
         f"前任session: {session.session_id}",
+        "同じ管理サービスで引き継いだ直属の子の通知と終了結果はMCPの`collect_handoff`で回収する。"
+        "引き継ぎ起動が委譲元へ返った後に使う。回収結果のsession_idに限り`show`と`send_message`を使える。"
+        "後任自身が起動した子には通常どおり`atk agents wait`を使う。",
         f"前任engine: {session.engine}",
         f"終了状態: {session.status}",
         f"終了理由: {json.dumps(predecessor_error(session), ensure_ascii=False)}",

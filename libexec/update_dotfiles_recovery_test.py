@@ -452,6 +452,7 @@ def test_update_restore_overwrite_refusal_records_recovery(
     assert f"git stash apply --index {ref}: exit=1" in log
     assert "would be overwritten" in log
     assert "復元に失敗" in log
+    assert "変更の採否がユーザーにしか決められない競合は、退避を保持したまま判断を求める" in log
     assert f"git stash apply --index {ref}" in log
     if pull_code:
         report = json.loads(sync_report_path.read_text(encoding="utf-8"))

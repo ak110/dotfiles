@@ -717,6 +717,8 @@ def test_continues_when_unused_plugin_remove_fails(
     assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert ["plugin", "remove", "compact-plus@compact-plus"] in calls
     assert "plugin除去に失敗したため続行" in caplog.text
+    assert "原因の解消後にupdate-dotfilesを再実行" in caplog.text
+    assert "codex plugin remove" not in caplog.text
 
 
 def test_windows_junction_detection_and_removal_use_rmdir() -> None:

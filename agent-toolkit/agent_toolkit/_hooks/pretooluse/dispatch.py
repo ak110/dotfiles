@@ -70,6 +70,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 lazy import dataclasses
 lazy import hashlib
 lazy from collections.abc import Iterable
@@ -80,6 +81,7 @@ lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
+lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -175,6 +177,48 @@ def _claude_commit_attribution_disabled(cwd: str) -> bool:
 
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
+_MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
+_STRONG_HEADING = re.compile(r"^\s*(\*\*|__)([^:：]+?)([:：]?)\1\s*([:：]?)(.*)$")
+_UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
+_ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
+
+
+def _understanding_section_lines(message: str) -> Iterable[str]:
+    section_level = 0
+    for line in without_literal_blocks(message).splitlines():
+        heading = _MARKDOWN_HEADING.match(line)
+        strong = _STRONG_HEADING.match(line)
+        if strong and strong[5] and not (strong[3] or strong[4]):
+            strong = None
+        if heading:
+            level = len(heading[1])
+            title = heading[2].strip(" #*_")
+        elif strong:
+            level = 6
+            title = strong[2].strip() + (strong[3] or strong[4]) + strong[5]
+        else:
+            level = 0
+            title = line.strip()
+        if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
+            section_level = level or 6
+            if target[1]:
+                yield target[1]
+            continue
+        if heading and level <= section_level:
+            section_level = 0
+            continue
+        if not section_level:
+            continue
+        if strong and not _ORIGINAL_TEXT_LABEL.match(line):
+            section_level = 0
+            continue
+        yield title if heading else line
+
+
+def _has_original_text_label_in_understanding(message: str) -> bool:
+    return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
+
+
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 _MAIN_ONLY_MCP_TOOLS = frozenset(
     f"{prefix}{name}"
@@ -322,6 +366,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
+        if isinstance(message, str) and _has_original_text_label_in_understanding(message):
+            return Decision(
+                block=_block_notice(
+                    "「発話の理解」に「原文」の見出しがある。",
+                    fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送する。",
+                )
+            )
         if (
             session_id
             and isinstance(message, str)

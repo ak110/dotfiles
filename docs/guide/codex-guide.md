@@ -62,7 +62,8 @@ Codex向けプラグインは`update-dotfiles`または`chezmoi apply`で更新�
 更新前の版は、次の版の導入から7日を過ぎると以降の更新で削除する。
 7日より前に置き換わった版で始めた会話を再開すると、会話の履歴が指す旧版のスキルなどのファイルを読めないため、新しいセッションで続ける。
 agent-toolkitの追加・更新後も、実行中の共有daemonは停止・再起動しない。
-反映待ちの案内が出たら、利用中の会話を終えた後に`codex app-server daemon restart`を実行する。
+エージェントが更新を担当した場合は、再起動もそのエージェントが担当する。
+ユーザーに再起動を依頼しない。
 
 Codexのコマンド実行から`update-dotfiles`を起動すると、`CODEX_THREAD_ID`を使って更新を独立したjobへ分離する。
 起動元がdaemon再起動で終了しても、jobは更新処理を継続して出力と終了コードを保存する。
@@ -78,13 +79,23 @@ update-dotfiles job
 
 更新が延期または失敗した場合は、`update-dotfiles logs`で原因と次の操作を確認し、表示された操作（Codexの終了と`update-dotfiles`の再実行など）を行う。
 
-更新後にdaemonの再起動を案内された場合は、Codex pluginまたはremote controlを使うセッションを終了してから次のコマンドを実行する。
+更新後の再起動は、対象daemonの全クライアントを管理できる保守時間に実施する。
+新規接続を止め、すべての進行中の作業が終わるまで待つ。
+既存クライアントを安全に切断できない場合は延期する。
+安全に切断し、実行元も含め接続中のセッションがないことを確認する。
+`daemon version`は疎通を、`thread/loaded/list`はロード済みスレッドを示すだけであり、無接続の証拠にはならない。
+リモート接続も含めて無接続を確定できなければ延期する。
+実行直前に、対象daemonが稼働中であることを`codex app-server daemon version`の応答で確認する。
+停止中または稼働が不明なら実行しない。
+両方の条件を満たした場合だけ、次のコマンドを実行する。
 
 ```bash
 codex app-server daemon restart
 ```
 
-再起動が失敗した場合だけ、`codex app-server daemon start`でdaemonを起動する。
+終了コードが0で、JSON応答の`status`が`restarted`なら再起動は成功した。
+失敗した場合は診断と対象daemonの状態を確認する。
+停止したままで、同じ保守条件が続いている場合に限り、`codex app-server daemon start`で起動する。
 
 ## フックの信頼確認
 

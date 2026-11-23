@@ -165,6 +165,7 @@ def test_post_apply_preserves_other_registrations_and_updates(source: Path, tmp_
     (source / "agent-toolkit" / _GUIDE).write_text("更新後のメイン指針")
     updated = subject.run()
     assert updated.changed and [notice.message for notice in updated.notices] == [subject.UPDATED_NOTICE]
+    assert not updated.notices[0].warning
     assert (source / "agent-toolkit-agy" / _GUIDE).read_text() == "更新後のメイン指針"
     assert len(json.loads(registry.read_text())["entries"]) == 2
 

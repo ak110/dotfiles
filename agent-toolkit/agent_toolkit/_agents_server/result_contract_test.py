@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import pathlib
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from mcp.server.mcpserver.exceptions import ToolError
 
 from agent_toolkit._agents_server import (
     antigravity,
@@ -17,6 +19,7 @@ from agent_toolkit._agents_server import (
     launch_prompts,
     launch_requests,
     manager,
+    mcp_tools,
     opencode,
     result_contract,
     state,
@@ -418,6 +421,124 @@ async def test_manager_recovers_once_and_preserves_delivery_failure(
         await owner._advance_child_session_wait(session)  # noqa: SLF001
         assert sender.await_count == 1
         assert {name: getattr(session, name) for name in children} == children
+
+
+@pytest.mark.parametrize("backend_type", [antigravity.AntigravityManager, opencode.OpenCodeManager])
+@pytest.mark.parametrize("stale", [False, True])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+async def test_cli_role_model_change_rejects_public_reply_but_keeps_result_recovery(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, backend_type: type[cli_turn.CliTurnManager], stale: bool
+) -> None:
+    session = _task_session(tmp_path)
+    session.engine = backend_type.ENGINE
+    session.model_type = "orchestrate" if stale else "execute"
+    session.explicit_role_model = False
+
+    async def start(*_args: Any, **kwargs: Any) -> state.SessionState:
+        session.turn_seq = kwargs["turn_seq"]
+        cli_turn.finalize_turn(session, {"status": "completed", "agent_message": "状態: completed", "error": None})
+        return session
+
+    started = AsyncMock(side_effect=start)
+    async with manager.AgentsServerManager() as owner:
+        backend = backend_type()
+        owner.sessions[session.session_id] = session
+        monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
+        monkeypatch.setattr(mcp_tools, "_MANAGER", owner)
+        monkeypatch.setattr(backend, "_start_turn", started)
+        message = "続行できない理由: 入力が必要"
+        assert result_contract.hold_invalid_result(session, {"status": "completed", "agent_message": message, "error": None})
+
+        await owner._advance_child_session_wait(session)
+
+        assert started.await_count == 1
+        assert session.result_contract_recovery_consumed
+        recovery_prompt = started.await_args_list[0].args[0]
+        started.reset_mock()
+        if stale:
+            with pytest.raises(ToolError, match="handoff_from"):
+                await mcp_tools.mcp.call_tool(
+                    "send_message", {"session_id": session.session_id, "prompt": recovery_prompt, "result_recovery": True}
+                )
+            started.assert_not_awaited()
+        else:
+            await mcp_tools.mcp.call_tool("send_message", {"session_id": session.session_id, "prompt": "別の依頼"})
+            started.assert_awaited_once()
+
+
+@pytest.mark.parametrize("backend_type", [antigravity.AntigravityManager, opencode.OpenCodeManager])
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("outcome", ["completed", "late_error", "kill", "start_error"])
+async def test_cli_result_recovery_is_reserved_before_waiting_for_delivery(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, backend_type: type[cli_turn.CliTurnManager], outcome: str
+) -> None:
+    session = _task_session(tmp_path)
+    session.engine = backend_type.ENGINE
+    session.model_type = "orchestrate"
+    session.explicit_role_model = False
+    preparing = asyncio.Event()
+    second_entered = asyncio.Event()
+    release = asyncio.Event()
+    final = "状態: completed\n結果: 修復済み"
+
+    async def start(*_args: Any, **kwargs: Any) -> state.SessionState:
+        if outcome == "start_error":
+            raise RuntimeError("回復ターンの起動に失敗")
+        session.turn_seq = kwargs["turn_seq"]
+        cli_turn.finalize_turn(session, {"status": "completed", "agent_message": final, "error": None})
+        return session
+
+    started = AsyncMock(side_effect=start)
+    async with manager.AgentsServerManager() as owner:
+        backend = backend_type()
+        owner.sessions[session.session_id] = session
+        monkeypatch.setattr(owner, "_backend", Mock(return_value=backend))
+        monkeypatch.setattr(backend, "_start_turn", started)
+        send = owner._send_with_resources
+        preparations = []
+
+        async def blocked_send(*args: Any, **kwargs: Any) -> dict[str, Any]:
+            preparations.append(session.turn_seq)
+            preparing.set()
+            await release.wait()
+            response = await send(*args, **kwargs)
+            if outcome == "late_error":
+                raise RuntimeError("後処理の応答を失った")
+            return response
+
+        monkeypatch.setattr(owner, "_send_with_resources", blocked_send)
+        assert result_contract.hold_invalid_result(
+            session, {"status": "completed", "agent_message": "続行できない理由: 入力が必要", "error": None}
+        )
+
+        async def observe_again() -> None:
+            second_entered.set()
+            await owner._advance_child_session_wait(session)
+
+        async with asyncio.TaskGroup() as group:
+            group.create_task(owner._advance_child_session_wait(session))
+            await preparing.wait()
+            group.create_task(observe_again())
+            await second_entered.wait()
+            if outcome == "kill":
+                killed = await owner.kill(session.session_id)
+                assert killed["status"] == "interrupted"
+            release.set()
+
+        if outcome == "kill":
+            started.assert_not_awaited()
+            assert session.status == "interrupted" and session.error is None
+        elif outcome == "start_error":
+            started.assert_awaited_once()
+            assert session.status == "failed"
+            assert session.error is not None and "回復ターンの起動に失敗" in session.error["message"]
+        else:
+            started.assert_awaited_once()
+            assert session.status == "completed"
+            assert session.agent_message == final and session.error is None
+        assert preparations == [0]
 
 
 @pytest.mark.asyncio

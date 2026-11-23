@@ -23,6 +23,7 @@ from agent_toolkit._testing.agents_server_support import (
     _recording_candidates,
     _start_tool,
 )
+from agent_toolkit._testing.agents_server_tool_contract import EXPECTED_TOOL_SCHEMAS
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
@@ -102,27 +103,14 @@ async def test_tool_list_publishes_title_and_side_effect_annotations() -> None:
     Claude Code 2.1.312は`readOnlyHint`が真のツールを、実行済みの可能性がある接続断の後にも再試行する。
     読み取り専用でないツールで`destructiveHint`を省略すると仕様上は真として扱うため、追加だけを行うツールには偽を明示する。
     """
-    expected = {
-        "start": (None, False),
-        "send_message": (None, False),
-        "kill": (None, True),
-        "stop": (None, True),
-        "list": (True, None),
-        "show": (True, None),
-        "permissions": (None, True),
-        "send_to_user": (None, False),
-        "compact_conversation": (None, False),
-        "apply_runtime_changes": (None, False),
-    }
     tools = {tool.name: tool for tool in await mcp_tools.mcp.list_tools()}
 
-    assert set(tools) == set(expected)
-    for name, (read_only, destructive) in expected.items():
+    assert tools.keys() == EXPECTED_TOOL_SCHEMAS.keys()
+    for name, expected in EXPECTED_TOOL_SCHEMAS.items():
         tool = tools[name]
         assert tool.title, name
-        assert tool.annotations is not None, name
-        assert tool.annotations.read_only_hint is read_only, name
-        assert tool.annotations.destructive_hint is destructive, name
+        actual = tool.annotations.model_dump(exclude_none=True) if tool.annotations is not None else None
+        assert actual == expected["annotations"], name
 
 
 @pytest.mark.parametrize("operation", ["send_message", "kill"])

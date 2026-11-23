@@ -14,6 +14,7 @@ import pytest
 
 from agent_toolkit._agents_server import (
     agents_wait,
+    notice_inbox,
     retained_results,
     shared_layout,
     shared_roots,
@@ -714,3 +715,105 @@ async def test_wait_keeps_the_session_after_returning_the_terminal_result(
         assert await manager.stop(session.session_id) == {}
         assert session.session_id in manager.stopped_sessions
         assert backend.release_calls == [session.session_id]
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_keeps_other_targets_after_an_expired_notice(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        for identifier in ("expired-notice", "running-child", "unrelated"):
+            manager.sessions[identifier] = state.SessionState(identifier, str(tmp_path))
+
+        async def retained(identifier: str, *, collector: str) -> dict[str, Any] | None:
+            assert collector == "mcp-wait"
+            if identifier == "expired-notice":
+                manager.sessions.pop(identifier)
+                return {"status": "expired", "notices": [{"body": "残っていた通知"}]}
+            return None
+
+        monkeypatch.setattr(manager, "_retained_result_response", retained)
+        targets = {"expired-notice", "running-child"}
+        first = await manager.wait(inherited_targets=targets)
+        assert first["status"] == "running"
+        assert first["notices"] == [{"body": "残っていた通知"}]
+        second = await manager.wait(inherited_targets=targets)
+        assert second["session_id"] == "running-child"
+        assert second["status"] == "running"
+        manager.sessions.pop("running-child")
+        assert (await manager.wait(inherited_targets=targets))["status"] == "expired"
+        manager.sessions.clear()
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_does_not_drain_unrelated_registration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        for identifier in ("running-child", "unrelated"):
+            manager.sessions[identifier] = state.SessionState(identifier, str(tmp_path))
+
+        drain = state.SessionState.drain_registration
+
+        async def blocked_registration(session: state.SessionState) -> None:
+            if session.session_id == "unrelated":
+                raise RuntimeError("別の子の登録は未完了")
+            await drain(session)
+
+        with monkeypatch.context() as delayed:
+            delayed.setattr(state.SessionState, "drain_registration", blocked_registration)
+            response = await manager.wait(inherited_targets={"running-child"})
+            assert response["session_id"] == "running-child" and response["status"] == "running"
+            with pytest.raises(RuntimeError, match="別の子の登録は未完了"):
+                await manager.wait()
+        manager.sessions.clear()
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_keeps_other_targets_after_notice_from_collected_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        collected = state.SessionState("collected", str(tmp_path), announced=True)
+        running = state.SessionState("running", str(tmp_path), announced=True)
+        manager.sessions.update({child.session_id: child for child in (collected, running)})
+        _complete(collected)
+        collected.result_delivered = True
+        path = tmp_path / "notice.json"
+        path.touch()
+        pending = notice_inbox.PendingNotice(path, "2026-11-24T00:00:00+00:00", "遅れて届いた通知")
+
+        async def read_notices(identifier: str) -> list[notice_inbox.PendingNotice]:
+            return [pending] if identifier == collected.session_id and path.exists() else []
+
+        monkeypatch.setattr(manager, "_read_notices", read_notices)
+
+        targets = {collected.session_id, running.session_id}
+        notice = await manager.wait(inherited_targets=targets)
+        assert notice["status"] == "running"
+        assert notice["notices"] == [{"body": "遅れて届いた通知"}]
+        assert (await manager.wait(inherited_targets=targets))["session_id"] == running.session_id
+
+
+@pytest.mark.asyncio
+async def test_inherited_wait_zero_does_not_repeat_scan_after_losing_result_claim(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    async with _manager_with_fake("codex") as (manager, _):
+        child = state.SessionState("child", str(tmp_path), announced=True)
+        _complete(child)
+        manager.sessions[child.session_id] = child
+        scans = 0
+
+        async def retained(identifier: str, *, collector: str) -> None:
+            nonlocal scans
+            assert identifier == child.session_id and collector == "mcp-wait"
+            scans += 1
+
+        async def collected_elsewhere(session: state.SessionState) -> None:
+            session.result_delivered = True
+
+        monkeypatch.setattr(manager, "_retained_result_response", retained)
+        monkeypatch.setattr(manager, "_collect_wait_result", collected_elsewhere)
+        assert (await manager.wait(inherited_targets={child.session_id}))["status"] == "expired"
+        assert scans == 1

@@ -48,6 +48,15 @@ def test_plugin_update_leaves_running_daemon_and_reports_restart(plugin_env: Pat
 
     assert outcome.changed and outcome.failure is None
     assert [notice.command for notice in outcome.notices] == ["/hooks", "codex app-server daemon restart"]
+    restart_notice = outcome.notices[-1].render()
+    assert "更新を担当するエージェント:" in restart_notice
+    assert "接続中のセッションがないことを確認" in restart_notice
+    assert "ユーザーに再起動を依頼しない" in restart_notice
+    assert "すべての進行中の作業が終わるまで待つ" in restart_notice
+    assert "安全に切断できない場合" in restart_notice
+    assert "実行直前に対象daemonが稼働中であることを確認" in restart_notice
+    assert "停止中または稼働が不明なら実行しない" in restart_notice
+    assert "終了コードが0で、JSON応答のstatusがrestarted" in restart_notice
     assert calls[-1] == ["app-server", "daemon", "version"]
 
 

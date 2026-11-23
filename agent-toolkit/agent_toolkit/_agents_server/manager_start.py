@@ -128,6 +128,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
         startup_document: pathlib.Path | None = None,
         startup_inputs: Mapping[str, str] | None = None,
+        explicit_role_model: bool = False,
     ) -> dict[str, Any]:
         """マシン全体の同時稼働数の上限に空きが出るまで待ってから起動する。
 
@@ -146,6 +147,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 excluded_candidates=excluded_candidates,
                 startup_document=startup_document,
                 startup_inputs=startup_inputs,
+                explicit_role_model=explicit_role_model,
             )
         finally:
             ticket.release()
@@ -187,6 +189,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         excluded_candidates: Mapping[ModelCandidate, str] | None = None,
         startup_document: pathlib.Path | None = None,
         startup_inputs: Mapping[str, str] | None = None,
+        explicit_role_model: bool = False,
     ) -> dict[str, Any]:
         """モデル設定の候補を先頭から試し、起動できたturnを返す。
 
@@ -301,6 +304,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 _LOG.warning("cli_start_failed engine=%s model_type=%s model=%s reason=%s", engine, model_type, model, reason)
                 continue
             session.engine = engine
+            session.explicit_role_model = explicit_role_model
 
             if self._status_writer is not None:
                 await self._status_writer.launcher_session_id_async()
@@ -415,17 +419,17 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         excluded = {candidate: reason} if candidate is not None and reason is not None else {}
         prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
         assert predecessor.model_type is not None
-        warnings = model_override_warnings(
-            predecessor.model_type if model_type is None else model_type, inherited=model_type is None
-        )
+        inherited_type = await run_file_operation(launch_requests.current_role_model, predecessor) or predecessor.model_type
+        warnings = model_override_warnings(inherited_type if model_type is None else model_type, inherited=model_type is None)
         with startup_features.selection(predecessor.startup_profile):
             response = await self.start(
-                predecessor.model_type if model_type is None else model_type,
+                inherited_type if model_type is None else model_type,
                 prompt,
                 predecessor.cwd,
                 launch_kind=predecessor.launch_kind,
                 label=predecessor.label,
                 excluded_candidates=excluded,
+                explicit_role_model=model_type is not None or launch_requests.role_model_was_explicit(predecessor),
             )
         response["cwd"] = predecessor.cwd
         if warnings:

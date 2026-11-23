@@ -273,6 +273,7 @@ async def test_resumed_session_keeps_every_launch_info_item(
     expected_launch = {**_LAUNCH_VALUES, "label": label}
     launch_values: dict[str, Any] = {
         **expected_launch,
+        "explicit_role_model": True,
         "followup_prompts": ("先行追送",),
         "final_responses": ((1, "先行応答"),),
         "terminal_error": None,

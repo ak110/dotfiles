@@ -217,6 +217,8 @@ def test_run_defers_update_inside_herdr_when_existing_launcher_is_healthy(
     )
     assert notice.message.startswith(reason)
     assert "次のコマンドを実行する" in notice.message
+    assert "更新担当は" in notice.message
+    assert ("進行中の作業が終わるまで待ち" in notice.message) is not inside_session
     assert notice.command == "herdr update"
     assert commands == [[str(launcher), "update"], [str(launcher), "--version"]]
     assert prepended == [launcher.parent]
