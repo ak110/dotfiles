@@ -11,7 +11,7 @@ import { register as registerAgentPanel } from "./agent_panel.ts";
 import { register as registerRuntimeChanges } from "./runtime_changes.ts";
 
 const SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user";
-const GOAL_PROMPT = /^\s*<atk-auto\b[^>]*\bkind="goal"/;
+const GOAL_PROMPT = /^\s*<atk-auto\s(?:[^>]*\s)?kind="goal"/;
 
 // hooks.jsonの`modules`は1つのプラグインにつき1つのhooks moduleだけを受け付け、照合条件の無い同じイベントのhookは
 // 1回しか登録できないため、各機能の`session.start`の処理をここへまとめる。
@@ -44,8 +44,8 @@ export const register: Register = (on) => {
   });
   // Code Modeのツール探索はtool.describeの指定を返さないため、現在の入力にも添える。
   on("prompt.submit", async ($, e, next) => {
-    const automatedNonGoal = e.text.trimStart().startsWith("<atk-auto") && !GOAL_PROMPT.test(e.text);
-    if (e.origin.kind !== "composer" || automatedNonGoal || !(await isTerminalMain($))) return next(e);
+    const typed = e.origin.kind === "composer" && !e.text.trimStart().startsWith("<atk-auto");
+    if (!(typed || GOAL_PROMPT.test(e.text)) || !(await isTerminalMain($))) return next(e);
     const listed = (await $.tool.list().catch(() => [])).some((tool) => tool.name === SEND_TO_USER);
     const notice = automatedMessage(listed ? "send-to-user-contract" : "send-to-user-search", "notice",
       "着手・進捗・完了報告は、使える時は常に `send_to_user` で送る。" +
