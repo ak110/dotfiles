@@ -245,6 +245,8 @@ async def test_exec_review_saved_wi_originals_preflight(tmp_path, monkeypatch, d
         ("unknown-basis", "`AWI`"),
         ("duplicate-basis", "重複"),
         ("ci-missing", "`原因commitOID`"),
+        ("ci-contract-missing", "`review_contract`"),
+        ("plan-ci-contract-missing", "`review_contract`"),
         ("wi-without-plan-missing-head", "`開始時のHEAD`"),
         ("plan-unreadable", "通常ファイルを参照できない"),
     ],
@@ -267,6 +269,10 @@ async def test_exec_review_basis_preflight_rejects_before_launch(
         params |= {"レビュー基準": "計画, 計画", "計画": str(plan)}
     elif case == "ci-missing":
         params |= {"レビュー基準": "CI記録", "CI記録": "記録", "修正系列の開始時のHEAD": "abc1234"}
+    elif case in {"ci-contract-missing", "plan-ci-contract-missing"}:
+        params |= {"レビュー基準": "CI記録", "CI記録": "記録", "修正系列の開始時のHEAD": "abc1234", "原因commitOID": "def5678"}
+        if case == "plan-ci-contract-missing":
+            params |= {"レビュー基準": "計画、CI記録", "計画": str(plan)}
     elif case == "wi-without-plan-missing-head":
         params |= {"レビュー基準": "WI", "WI記録": "20261028-130047-001.md"}
     else:
@@ -300,6 +306,8 @@ async def test_exec_review_basis_preflight_accepts_contract_inputs(
     extra = {"引き継ぎ記録先": f"{tmp_path / 'handoff.md'}（新規）", **params}
     if "計画" in params["レビュー基準"]:
         extra["計画"] = str(plan)
+    if "CI記録" in params["レビュー基準"]:
+        extra["review_contract"] = "条項: CI修正\n内容: 変更の認可範囲を保つ\n出典: CI記録"
     document = launch_requests.resolve_task_document_path("exec-review")
     sender = AsyncMock(return_value={"session_id": "review", "status": "running", "label": "担当"})
     monkeypatch.setattr(mcp_tools, "_MANAGER", TaskManager(start=sender))
