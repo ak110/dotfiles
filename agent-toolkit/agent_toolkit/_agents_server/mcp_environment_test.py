@@ -49,6 +49,14 @@ def test_mcp_setting_names_follow_public_config_keys(
             with pytest.raises(ValueError, match=name):
                 config.resolve_configured_repositories()
             monkeypatch.delenv(name)
+        elif key == "usage_auto_allocation":
+            assert name in names
+            monkeypatch.setenv(name, "true")
+            with pytest.raises(SystemExit) as exited:
+                atk.main(["config", "show"])
+            assert exited.value.code == 2
+            assert name in capsys.readouterr().err
+            monkeypatch.delenv(name)
         else:
             assert key in keys
     assert not {"AGENT_TOOLKIT_CONFIG_STATE_DIR", "AGENT_TOOLKIT_CONFIG_PRIVATE_NOTES"} & set(names)

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from agent_toolkit._atk import config as toolkit_config
+from agent_toolkit._atk.lane_cleanup import PROJECTION_MANIFEST, projection_manifest
 from agent_toolkit._common import mcp_environment, next_action
 
 from pytools._internal import codex_runtime, common
@@ -523,6 +524,7 @@ def _codex_root_outputs(root: Path, generated: dict[Path, str]) -> dict[Path, tu
         content = generated_content.encode() if generated_content is not None else source.read_bytes()
         outputs[relative] = (content, stat.S_IMODE(source.stat().st_mode))
     outputs[Path("GENERATED.md")] = (CODEX_ROOT_NOTICE.encode(), 0o644)
+    outputs[PROJECTION_MANIFEST] = projection_manifest(CODEX_PLUGIN_ROOT_TARGET.name, outputs)
     return outputs
 
 

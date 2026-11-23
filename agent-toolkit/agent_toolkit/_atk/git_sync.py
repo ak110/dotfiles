@@ -28,6 +28,7 @@ import subprocess
 import sys
 import threading
 import time
+import weakref
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
@@ -38,6 +39,7 @@ from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_human_terminal
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 
 PUSH_DEFERRED_MESSAGE = "commitは完了したが、別の未コミット差分があるため分岐の自動解消とpushを保留した"
@@ -151,7 +153,7 @@ def _run_git_result(args: list[str], cwd: pathlib.Path) -> subprocess.CompletedP
 
 class _ThreadLocalHeldPaths(threading.local):
     def __init__(self) -> None:
-        self.paths: dict[pathlib.Path, int] = {}
+        self.paths: weakref.WeakValueDictionary[pathlib.Path, _RepoLock] = weakref.WeakValueDictionary()
         self.push_deferred: set[pathlib.Path] = set()
         self.sync_attempted = False
 
@@ -289,7 +291,7 @@ class _RepoLock(filelock.FileLock):
                 if observer is not None and self._acquired_at is None:
                     observer.add_lock_wait(waited)
                 raise RepoLockTimeoutError(self.lock_file, waited=waited, holder=_describe_holder(self.lock_file)) from None
-        _LOCK_HELD_PATHS.paths[self._target] = _LOCK_HELD_PATHS.paths.get(self._target, 0) + 1
+        _LOCK_HELD_PATHS.paths[self._target] = self
         if self.lock_counter == 1:
             _write_holder(self.lock_file)
 
@@ -313,8 +315,8 @@ class _RepoLock(filelock.FileLock):
                     self._hold_scope.close()
                 self._hold_scope = None
         super().release(force)
-        if not self.is_locked:
-            _LOCK_HELD_PATHS.paths.pop(self._target, None)
+        if not self.is_locked and _LOCK_HELD_PATHS.paths.get(self._target) is self:
+            del _LOCK_HELD_PATHS.paths[self._target]
             if self._observer is not None and self._acquired_at is not None:
                 self._observer.add_lock_hold(time.perf_counter() - self._acquired_at)
             self._observer = None
@@ -334,7 +336,8 @@ def repo_lock(repo_path: pathlib.Path, *, timeout: float | None = None) -> filel
 
 def assert_repo_lock_held(repo_path: pathlib.Path) -> None:
     """現在のスレッドが対象common directoryのロックを保持していることを検証する。"""
-    if _LOCK_HELD_PATHS.paths.get(_lock_key(repo_path), 0) <= 0:
+    lock = _LOCK_HELD_PATHS.paths.get(_lock_key(repo_path))
+    if lock is None or not lock.is_locked:
         raise RuntimeError(
             "不変条件違反: private_notesへのgit操作・ファイル変更は_repo_lock保持下でのみ実行できる。"
             "呼び出し元でwith _repo_lock(private_notes):を用いること。"
@@ -686,8 +689,12 @@ def _sync_failure_next_action(resolved: pathlib.Path, error: subprocess.CalledPr
     if any(marker in text for marker in _NETWORK_FAILURE_MARKERS):
         return (
             "remoteへ接続できなかった",
-            f"ネットワーク接続を確認し、時間をおいて失敗した`atk`操作を再実行する。"
-            f"繰り返す場合は`git -C {resolved} remote -v`の接続先を確認してユーザーへ報告する",
+            recover_from_failure(
+                component="Gitの接続",
+                evidence="remoteの診断と設定",
+                first_step=f"ネットワーク接続と `git -C {resolved} remote -v` の接続先を確認し、誤設定なら認可内で直す",
+                retry="接続を回復し、先行操作の未適用を確認した場合だけ再実行する",
+            ),
         )
     if any(marker in text for marker in _NON_FAST_FORWARD_MARKERS):
         return (

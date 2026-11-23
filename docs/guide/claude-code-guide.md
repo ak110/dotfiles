@@ -87,7 +87,7 @@ Modは実行中のOSアカウントの権限で動くため、信頼できるも
 Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 
 - `agent-toolkit:atk-mode <作業> [入力]`: 作業の入口。
-  `add-awi-by-user`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
+  `add-awi-by-user`、`implement`、`process-user-comments`、`process-wi`、`review-session`、`export-session`を作業の名前として渡せる。
   AWIの登録は`/agent-toolkit:atk-mode add-awi-by-user <要求>`、AWIの処理は`/agent-toolkit:atk-mode process-wi [single-lane|all-repos]`で起動する
 - `agent-toolkit:atk-mode review-session`: 現在のセッションを振り返り、原因と恒久対策をAWIとして登録する。
   後ろに着眼点を追加できる

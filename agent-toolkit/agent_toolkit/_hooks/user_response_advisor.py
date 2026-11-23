@@ -28,12 +28,14 @@ agent_idと委譲先の環境印でサブエージェントと委譲先を除く
 import json
 import re
 import unicodedata
+from collections.abc import Iterable, Iterator
 
 from agent_toolkit._hooks import agent_id, notice
 from agent_toolkit._hooks import stop_session as _stop_session
 from agent_toolkit._hooks.notice import _WARN_TAG
 lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
@@ -86,6 +88,14 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     lines = transcript.read_transcript_lines(path)
     if lines is None:
         return "approve", ""
+    entries = list(_conversation_entries(lines))
+    failed_tool_ids = {
+        block["tool_use_id"]
+        for _, _, entry in entries
+        if entry.get("type") == "user"
+        for block in _content_blocks(entry.get("message"))
+        if block.get("type") == "tool_result" and block.get("is_error") is True and isinstance(block.get("tool_use_id"), str)
+    }
 
     needs_response = False
     input_subject = ""
@@ -97,13 +107,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     human_start = 0
     question_id: str | None = None
     last_ellipsis = False
-    for index, line in enumerate(lines):
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(entry, dict) or entry.get("isSidechain"):
-            continue
+    for index, line, entry in entries:
         scanned.append(entry)
         prompt = _input_text(entry)
         human_prompt = _human_prompt(entry, prompt) if prompt is not None else None
@@ -125,14 +129,25 @@ def evaluate(payload_text: str) -> tuple[str, str]:
             message = entry.get("message")
             if entry.get("isApiErrorMessage"):
                 continue
-            if isinstance(message, dict) and message.get("model") == "<synthetic>":
-                # Code Modeは実ツール呼出しもsyntheticとして記録する。APIエラーの代替本文だけを除く。
+            if isinstance(message, dict):
+                synthetic = message.get("model") == "<synthetic>"
                 content = message.get("content")
-                message = (
-                    {"content": [block for block in content if isinstance(block, dict) and block.get("type") == "tool_use"]}
-                    if isinstance(content, list)
-                    else {}
-                )
+                if isinstance(content, list):
+                    message = {
+                        "content": [
+                            block
+                            for block in _content_blocks(message)
+                            if (not synthetic or block.get("type") == "tool_use")
+                            and not (
+                                block.get("type") == "tool_use"
+                                and is_send_to_user_tool(block.get("name"))
+                                and isinstance(block.get("id"), str)
+                                and block["id"] in failed_tool_ids
+                            )
+                        ]
+                    }
+                elif synthetic:
+                    message = {}
             text = "\n".join(
                 body_line
                 for body_line in transcript.visible_assistant_text(message).splitlines()
@@ -161,6 +176,21 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         subject=input_subject,
     )
     return ("notify", body) if body else ("approve", "")
+
+
+def _conversation_entries(lines: Iterable[str]) -> Iterator[tuple[int, str, dict]]:
+    for index, line in enumerate(lines):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and not entry.get("isSidechain"):
+            yield index, line, entry
+
+
+def _content_blocks(message: object) -> list[dict]:
+    content = message.get("content") if isinstance(message, dict) else None
+    return [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
 
 
 def _question_update(entry: dict, question_id: str | None) -> tuple[str | None, bool]:

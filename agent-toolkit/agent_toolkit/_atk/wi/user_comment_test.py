@@ -63,3 +63,51 @@ def test_crlf_frontmatter_value_is_not_misidentified_as_reserved_heading() -> No
 
     assert not user_comment.has_reserved_heading(text)
     assert user_comment.split_before_user_comment(text) == (text, "")
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n>\n> 指摘B\n", True, id="blockquote"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A  \n>\n> 指摘B\n", False, id="trailing-spaces-added"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n指摘A\n\n指摘B\n\n## 次の節\n", True, id="plain"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 前置き\n>\n> 指摘A\n>\n> 指摘B\n> 後書き\n", True, id="surrounded"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n> 指摘B\n", False, id="paragraph-merged"),
+        pytest.param("## ユーザー指摘の逐語引用\n\n> 指摘A\n> 別の行\n> 指摘B\n", False, id="interrupted"),
+        pytest.param("## 反映内容と反映先\n\n指摘A\n\n指摘B\n", False, id="other-section"),
+        pytest.param(
+            "## ユーザー指摘の逐語引用\n\n```text\n## 反映内容と反映先\n```\n\n指摘A\n\n指摘B\n", True, id="fenced-heading"
+        ),
+    ],
+)
+def test_quotes_user_comment_requires_contiguous_lines_in_quote_section(body: str, expected: bool) -> None:
+    text = f"---\ntype: awi\n---\n\n本文\n\n{body}"
+
+    assert user_comment.quotes_user_comment(text, "\n指摘A\n\n指摘B\n") is expected
+
+
+@pytest.mark.parametrize(
+    ("right", "expected"),
+    [
+        ("指摘A\r\n\r\n指摘B\r\n\r\n", True),
+        ("指摘A  \n\n指摘B", False),
+        ("指摘A\n指摘B", False),
+        ("指摘A", False),
+        ("指摘A\n\n指摘B\n\n追記", False),
+    ],
+)
+def test_same_user_comment_ignores_only_newline_style_and_outer_blank_lines(right: str, expected: bool) -> None:
+    assert user_comment.same_user_comment("\n指摘A\n\n指摘B", right) is expected
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("本文\n\n## ユーザーコメント\n\n指摘\n", True),
+        ("本文\n\n## ユーザーコメント\n\n", False),
+        ("本文\n\n```text\n## ユーザーコメント\n指摘\n```\n", False),
+        ("本文\n\n## ユーザーコメント\n\n1\n\n## ユーザーコメント\n\n2\n", True),
+    ],
+)
+def test_has_user_comment(body: str, expected: bool) -> None:
+    assert user_comment.has_user_comment(f"---\ntype: awi\n---\n\n{body}") is expected

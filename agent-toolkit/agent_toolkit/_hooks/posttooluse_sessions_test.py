@@ -56,7 +56,7 @@ class TestAgentsServerSessionState(_TestAgentsServerSessionStateSupport):
     @pytest.mark.parametrize(
         ("tool_name", "tool_input", "response", "next_action_names"),
         (
-            ("list", {}, {"sessions": [], "omitted": 0}, ["`show`"]),
+            ("list", {}, {"sessions": [], "omitted": 0}, []),
             ("start", {"cwd": "/repo"}, {"session_id": "remote", "status": "running"}, ["`atk agents wait`", "`kill`"]),
         ),
     )

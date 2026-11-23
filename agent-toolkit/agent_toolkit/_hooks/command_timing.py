@@ -15,7 +15,7 @@ from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_agents_wait_command, is_atk_command, split_words
 from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 from agent_toolkit._hooks.host import is_codex_payload
-from agent_toolkit._hooks.notice import formatter, informational
+from agent_toolkit._hooks.notice import formatter
 
 STATE_KEY = "command_timing"
 _notice = formatter("command-timing")
@@ -161,15 +161,13 @@ def observe_notifications(payload: dict) -> list[str]:
     return notices
 
 
-NOTICE_SECONDS = 1.0
-"""測定値を通知する下限。1秒以上かかる処理は重いとするユーザーの基準（2026年11月16日）による。"""
 REVIEW_SECONDS = 10
 """同じ計測種別で3件続いた時に見直しを促す、各完了の下限（2026年11月16日のユーザー回答）。"""
 
 
 def _complete(session: str, actor: str, identifier: str, duration: float | None) -> list[str]:
     now = time.time()
-    result: list[tuple[str, float | None, list[float]]] = []
+    result: list[tuple[str, list[float]]] = []
 
     def finish(state: dict) -> dict | None:
         current = state.setdefault(STATE_KEY, {}).setdefault(actor, {"calls": {}, "recent": [], "kind": "", "notified": False})
@@ -196,30 +194,23 @@ def _complete(session: str, actor: str, identifier: str, duration: float | None)
             if len(current["recent"]) == 3 and not current["notified"]:
                 current["notified"] = True
                 review = list(current["recent"])
-        result.append((kind, seconds, review))
+        if review:
+            result.append((kind, review))
         return state
 
     update_state(session, finish)
-    notices: list[str] = []
-    for kind, seconds, review in result:
-        if seconds is None or seconds >= NOTICE_SECONDS:
-            unmeasured = "コマンド時間: 未計測（開始時刻を対応付けられない）"
-            measured = f"{kind}: {seconds:.1f}秒" if seconds is not None else unmeasured
-
-            notices.append(informational(_notice(measured, tag="notice", subject=f"{actor}:{identifier}")))
-        if review:
-            notices.append(
-                _notice(
-                    f"同じ計測種別で{REVIEW_SECONDS}秒以上の完了が3件続いた。{kind}: "
-                    + "、".join(f"{value:.1f}秒" for value in review)
-                    + "。",
-                    tag="warn",
-                    removable_cause=False,
-                    subject=f"{actor}:{identifier}:review",
-                    fix=(
-                        "現行の目的、直接影響範囲、直近の結果から、範囲の限定・結果の再利用・重複実行の省略・短い確認手段を比べよ。"
-                        "必要な全体検証、修正後の再検証、CI待機は省かない。"
-                    ),
-                )
-            )
-    return notices
+    return [
+        _notice(
+            f"同じ計測種別で{REVIEW_SECONDS}秒以上の完了が3件続いた。{kind}: "
+            + "、".join(f"{value:.1f}秒" for value in review)
+            + "。",
+            tag="warn",
+            removable_cause=False,
+            subject=f"{actor}:{identifier}:review",
+            fix=(
+                "現行の目的、直接影響範囲、直近の結果から、範囲の限定・結果の再利用・重複実行の省略・短い確認手段を比べよ。"
+                "必要な全体検証、修正後の再検証、CI待機は省かない。"
+            ),
+        )
+        for kind, review in result
+    ]

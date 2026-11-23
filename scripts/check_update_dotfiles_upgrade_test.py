@@ -355,6 +355,15 @@ def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, 
         upgrade.verify_update_logs(tmp_path)
 
 
+def test_linux_upgrade_requires_shipped_hook_trust(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path, platform_name="linux")
+
+
 @pytest.mark.parametrize("message", ["plugin contents changed; hook approval required", "hook failed", "gcloud update failed"])
 def test_hook_trust_notice_keeps_other_warning_failures(tmp_path: pathlib.Path, message: str) -> None:
     """承認案内と同居しても、実hook失敗や別ツールの警告は検出する。"""
@@ -643,3 +652,64 @@ def _resolve_consumer_paths(
         context.setattr(setup_herdr_cli, "sys", platform)
         context.setattr(codex_runtime, "sys", platform)
         return setup_herdr_cli._launcher_path(), codex_runtime.visible_bin_dir()  # pylint: disable=protected-access
+
+
+@pytest.mark.parametrize(
+    ("failed_upgrade", "failed_cleanup", "keep"),
+    [(False, False, False), (True, False, False), (False, False, True), (True, True, False)],
+)
+def test_upgrade_reclaims_before_removing_root(tmp_path, monkeypatch, failed_upgrade, failed_cleanup, keep):
+    roots = []
+
+    def perform(*_args, temp_name, **_kwargs):
+        root = pathlib.Path(temp_name)
+        roots.append(root)
+        (root / "evidence").touch()
+        if failed_upgrade:
+            raise upgrade.UpgradeCheckError("更新の診断")
+
+    def stop(root):
+        assert (root / "evidence").exists()
+        if failed_cleanup:
+            raise upgrade.UpgradeCheckError("回収の診断")
+
+    monkeypatch.setattr(upgrade.tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(upgrade, "_perform_isolated_upgrade", perform)
+    monkeypatch.setattr(upgrade, "_stop_upgrade_services", stop)
+
+    def run_upgrade():
+        return upgrade._run_isolated_upgrade(  # pylint: disable=protected-access
+            tmp_path, "linux", "old", "new", tmp_path, runner=subprocess.run, keep_verification_root=keep
+        )
+
+    if failed_upgrade:
+        with pytest.raises(upgrade.UpgradeCheckError, match="更新の診断") as raised:
+            run_upgrade()
+        if failed_cleanup:
+            assert "回収の診断" in str(raised.value)
+    else:
+        run_upgrade()
+    assert roots[0].exists() is (keep or failed_cleanup)
+
+
+def test_reclaims_only_services_from_the_upgrade_root(tmp_path):
+    script = tmp_path / "agent_toolkit" / "_agents_server" / "service.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+    first = tmp_path / "first"
+    sibling = tmp_path / "sibling"
+
+    def start(root):
+        namespace = root / "agent-toolkit" / "services" / "agents-server"
+        return subprocess.Popen([sys.executable, str(script), str(namespace), "test-generation"])
+
+    owned, other = start(first), start(sibling)
+    try:
+        upgrade._stop_upgrade_services(first)  # pylint: disable=protected-access
+        assert owned.poll() is not None
+        assert other.poll() is None
+    finally:
+        for process in (owned, other):
+            if process.poll() is None:
+                process.terminate()
+            process.wait(timeout=5)

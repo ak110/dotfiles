@@ -11,11 +11,16 @@ import typing
 from agent_toolkit._agents_server import logs_markdown, record_paths
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._common import host_homes
-from agent_toolkit._common.next_action import report
+from agent_toolkit._common.next_action import recover_from_failure, report
 
 MISSING_RECORD_NEXT_ACTION = "`atk agents list --include-terminated`でsession_idを確かめてから再実行せよ"
 UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてから再実行せよ"
-BROKEN_LINES_NEXT_ACTION = "解析できなかった行が必要な場合は、元ログの該当行を確認し、形式の不整合をユーザーへ報告せよ"
+BROKEN_LINES_NEXT_ACTION = recover_from_failure(
+    component="ログの解析",
+    evidence="元ログ",
+    first_step="解析できなかった行が記録形式に従っているか確認せよ",
+    retry="形式の不整合を是正してから読取を再実行せよ",
+)
 _OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイルが無いディレクトリへ変えて再実行せよ"
 
 

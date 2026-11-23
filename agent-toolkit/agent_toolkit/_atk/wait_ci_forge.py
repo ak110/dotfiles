@@ -212,6 +212,7 @@ def _normalize_gitlab_pipeline(pipeline: dict[str, Any]) -> RunRecord:
         "url": pipeline.get("web_url", ""),
         "databaseId": pipeline_id,
         "headSha": pipeline.get("sha", ""),
+        "event": pipeline.get("source"),
         "createdAt": pipeline.get("created_at", ""),
     }
 

@@ -316,7 +316,7 @@ _REVIEW_BASES = ("計画", "CI記録", "WI")
 
 _REVIEW_BASIS_INPUTS: dict[str, tuple[str, ...]] = {
     "計画": ("計画",),
-    "CI記録": ("CI記録", "修正系列の開始時のHEAD", "原因commitOID"),
+    "CI記録": ("CI記録", "修正系列の開始時のHEAD", "原因commitOID", "review_contract"),
     "WI": ("WI記録", "開始時のHEAD"),
 }
 
@@ -327,7 +327,7 @@ def _review_basis_error(reason: str) -> ActionableError:
         next_action=(
             "`レビュー基準`には`計画`・`CI記録`・`WI`の基準名だけを読点（`、`または`,`）で区切って書き、"
             "資料は基準ごとの別入力へ渡して`start`を再発行する。"
-            "`計画`は`計画`に計画ファイルの絶対パス、`CI記録`は`CI記録`・`修正系列の開始時のHEAD`・`原因commitOID`、"
+            "`計画`は`計画`に計画ファイルの絶対パス、`CI記録`は`CI記録`・`修正系列の開始時のHEAD`・`原因commitOID`・`review_contract`、"
             "`計画`を含まない`WI`は`WI記録`・`開始時のHEAD`を渡す"
             "（例: `レビュー基準: 計画`と`計画: /abs/plan.md`）。"
             "入力の定義は`skills/atk-mode/roles/exec-review.subagent.md`「入力」にある"

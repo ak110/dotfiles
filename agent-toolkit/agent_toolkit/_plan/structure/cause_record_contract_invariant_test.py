@@ -15,7 +15,7 @@ def _documented_required_lines() -> list[tuple[str, str]]:
 
 def _documented_optional_lines() -> list[tuple[str, str]]:
     found: list[tuple[str, str]] = []
-    for name in ("recurrence.md", "prevention.md"):
+    for name in ("recurrence.md",):
         text = (_BUGFIX / "references" / name).read_text(encoding="utf-8")
         found.extend(re.findall(r"^`(\S+?):`の行には、(.+)を書く。$", text, re.MULTILINE))
     return found

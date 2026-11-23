@@ -28,16 +28,6 @@ class QuotaWindow:
     duration_seconds: float | None = None
     rejected: bool = False
 
-    @property
-    def claude_limit_reason(self) -> str | None:
-        if self.engine != "claude":
-            return None
-        if self.rejected:
-            return f"Claudeの利用上限: {self.window_id}の上限到達の報告（rejected）"
-        if self.used_percent == 100:
-            return f"Claudeの利用上限: {self.window_id}の使用率100%"
-        return None
-
 
 def rate_key(window: QuotaWindow) -> str:
     duration = float(window.duration_seconds) if window.duration_seconds is not None else None

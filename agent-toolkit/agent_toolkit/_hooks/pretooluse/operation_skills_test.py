@@ -170,11 +170,17 @@ def test_mixed_temporary_and_artifact_writes_are_artifact_body_writing(tmp_path:
     assert not operation_skills._is_artifact_body_writing("Bash", {"command": f"tee {draft} <<<'本文'"}, str(tmp_path))
 
 
-def test_notified_skill_is_not_judged_again(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """案内済みのスキルについては操作を判定せず、判定が失敗する状態でもhookは案内なしで通る。"""
+def test_observed_skill_is_not_judged_again(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     env = _plan_file_state_env(tmp_path)
     payload = _bash("rg -n needle .", "judged-once")
     assert _notified(_run(payload, env)) == {_SEARCH_SKILL}
+    launch = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Skill",
+        "tool_input": {"skill": _SEARCH_SKILL},
+        "session_id": "judged-once",
+    }
+    assert _run_posttooluse(launch, env).returncode == 0
     calls: list[tuple[object, ...]] = []
 
     def failing(*args: object) -> bool:
@@ -774,3 +780,24 @@ def test_partial_suffix_identifies_document_kind_without_a_real_path(tmp_path: p
     data = {"command": 'cat > "$ROOT/.claude/skills/x/SKILL.md" <<<x'}
     assert not operation_skills.written_paths("Bash", data, str(tmp_path))
     assert operation_skills._is_agent_document_writing("Bash", data, str(tmp_path))
+
+
+def test_next_matching_operation_requires_observed_skill(tmp_path: pathlib.Path) -> None:
+    env = _plan_file_state_env(tmp_path)
+    payload = _bash("rg -n needle .", "observed-next")
+    assert _notified(_run(payload, env)) == {_SEARCH_SKILL}
+    refused = _run(payload, env)
+    assert "起動を確認できない" in denial_reason(refused)
+    independent = _run(_bash("cat README.md", "observed-next"), env)
+    assert independent.returncode == 0 and (not independent.stdout or not denial_reason(independent))
+    launch = {
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Skill",
+        "tool_input": {"skill": "agent-basics:search"},
+        "session_id": "observed-next",
+    }
+    assert _run_posttooluse({**launch, "hook_event_name": "PostToolUseFailure"}, env).returncode == 0
+    assert "起動を確認できない" in denial_reason(_run(payload, env))
+    assert _run_posttooluse(launch, env).returncode == 0
+    accepted = _run(payload, env)
+    assert accepted.returncode == 0 and (not accepted.stdout or not denial_reason(accepted))

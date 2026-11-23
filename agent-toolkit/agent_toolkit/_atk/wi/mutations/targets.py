@@ -21,6 +21,7 @@ from agent_toolkit._atk.wi.repo import (
     resolve_repo_id,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import remote as _git_remote
 
@@ -286,7 +287,12 @@ def _git_head(private_notes: pathlib.Path) -> str:
     if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", commit) is None:
         raise WebInputError(
             f"管理repoのHEADが40桁または64桁OIDではありません: {commit!r}",
-            next_action=f"`git -C {private_notes} status`で管理repoの状態を確認する。解消しない場合はユーザーへ報告する",
+            next_action=recover_from_failure(
+                component="GitのHEAD",
+                evidence="Gitの診断と元の出力",
+                first_step=f"`git -C {private_notes} status`で管理repoの状態を確認する",
+                retry="有効なOIDを確認してから未反映の処理を再試行する",
+            ),
         )
     return commit
 

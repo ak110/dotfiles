@@ -342,7 +342,6 @@ def test_pending_does_not_report_zero_after_gh_failure(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "gh api failed" in captured.err
-    assert "次の操作: `gh auth status`" in captured.err
 
 
 _EMPTY_PULL_REQUESTS = {"data": {"repository": {"pullRequests": {"nodes": [], "pageInfo": {"hasNextPage": False}}}}}

@@ -3,7 +3,7 @@
 各状態の共通の設計、生存期間、排他、継承は`docs/development/internals-session-state-common.md`にある。
 定期再確認の通常回収の判定は`docs/development/internals-session-state-function-hooks-recheck.md`にある。
 利用上限による中断の再開予約は`docs/development/internals-session-state-function-hooks-limits.md`にある。
-待機時圧縮の判定記録は`docs/development/internals-session-state-function-hooks-compaction.md`にある。
+背景待機の共有状態と再起動は`docs/development/internals-session-state-function-hooks-compaction.md`にある。
 
 ## Function hooksの終了要求
 

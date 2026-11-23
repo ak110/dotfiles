@@ -17,7 +17,7 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 _DeliveryResult = tuple[str, dict[str, Any] | None]
 
 
-_Command = tuple[Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], str, asyncio.Future[_DeliveryResult]]
+_Command = tuple[Literal["prompt", "interrupt", "plugin_reload", "effort"], str, asyncio.Future[_DeliveryResult]]
 
 
 class _CommandChannel:
@@ -33,7 +33,7 @@ class _CommandChannel:
         self.tickets: dict[asyncio.Future[_DeliveryResult], service_turns.Ticket | None] = {}
 
     def send(
-        self, kind: Literal["prompt", "interrupt", "compact", "plugin_reload", "effort"], prompt: str
+        self, kind: Literal["prompt", "interrupt", "plugin_reload", "effort"], prompt: str
     ) -> asyncio.Future[_DeliveryResult]:
         if self._closed:
             raise SessionOwnerGoneError("the Claude session owner task has ended")

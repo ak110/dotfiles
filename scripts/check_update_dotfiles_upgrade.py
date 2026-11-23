@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --no-cache --script
 # /// script
 # requires-python = ">=3.15"
-# dependencies = []
+# dependencies = ["psutil==7.2.2"]
 # ///
 """約3日前のdotfilesから現行HEADへの実更新経路を隔離環境で検証する。"""
 
@@ -23,6 +23,8 @@ import time
 import tomllib
 import typing
 from collections.abc import Callable, Mapping, Sequence
+
+import psutil
 
 _BRANCH = "upgrade-check"
 _AGE_HOURS = 72
@@ -590,6 +592,56 @@ def verify_upgrade_inputs(
     env["UV_PYTHON"] = str(_require_inside(install_dir, "Python", python))
 
 
+def _upgrade_service_processes(root: pathlib.Path) -> tuple[list[psutil.Process], list[psutil.Process]]:
+    launchers, services = [], []
+    for process in psutil.process_iter():
+        try:
+            args = process.cmdline()
+            if len(args) < 4:
+                continue
+            target = pathlib.Path(args[-3])
+            if target.parts[-3:] != ("agent_toolkit", "_agents_server", "service.py"):
+                continue
+            directory = pathlib.Path(args[-2])
+            if (
+                not directory.is_absolute()
+                or directory.parent.name != "services"
+                or directory.parent.parent.name != "agent-toolkit"
+                or directory.name not in {"agents-server", "agents-server-standard", "agents-server-elevated"}
+                or not directory.resolve().is_relative_to(root)
+            ):
+                continue
+            if "--agents-service" in args[:-3]:
+                launchers.append(process)
+            elif len(args) == 4:
+                services.append(process)
+        except psutil.NoSuchProcess, psutil.AccessDenied:
+            continue
+    return launchers, services
+
+
+def _stop_upgrade_services(root: pathlib.Path) -> None:
+    root = root.resolve()
+
+    def stop_selected_services(processes: Sequence[psutil.Process]) -> None:
+        for process in processes:
+            try:
+                process.terminate()
+            except psutil.NoSuchProcess:
+                continue
+        _, remaining = psutil.wait_procs(processes, timeout=36)
+        if remaining:
+            raise UpgradeCheckError(f"管理サービスが終了しません: PID {[p.pid for p in remaining]}")
+
+    launchers, _ = _upgrade_service_processes(root)
+    stop_selected_services(launchers)
+    _, services = _upgrade_service_processes(root)
+    stop_selected_services(services)
+    remaining_launchers, remaining_services = _upgrade_service_processes(root)
+    if remaining_launchers or remaining_services:
+        raise UpgradeCheckError("停止確認時に検証用の管理サービスが残っています")
+
+
 def _run_isolated_upgrade(
     source_repo: pathlib.Path,
     platform_name: str,
@@ -600,64 +652,91 @@ def _run_isolated_upgrade(
     runner: Runner,
     keep_verification_root: bool,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="update-dotfiles-upgrade-", delete=not keep_verification_root) as temp_name:
+    with tempfile.TemporaryDirectory(prefix="update-dotfiles-upgrade-", delete=False) as temp_name:
         if keep_verification_root:
             print(f"検証rootを削除せずに残す: {temp_name}")
-        temp_root = pathlib.Path(temp_name)
-        bare_repo = temp_root / "remote.git"
-        home = temp_root / "home"
-        checkout = home / "dotfiles"
-        home.mkdir(parents=True)
-        create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
-        run_command(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
-        env = isolated_environment(home, pathlib.Path(uv_path), platform_name, temp_root)
-        _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
-        # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
-        # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
-        # 旧版を構築してしまう。旧版を使っていた時点の状態を再現するため、初期適用だけ旧版の基準版へ固定する。
-        initial_env = dict(env)
-        if (pin := old_python_pin(source_repo, old_oid, runner=runner)) is not None:
-            initial_env["UV_PYTHON"] = pin
-        initial_apply = ("chezmoi", "init", f"--source={checkout}", "--apply")
+        try:
+            _perform_isolated_upgrade(
+                source_repo, platform_name, old_oid, current_oid, uv_path, runner=runner, temp_name=temp_name
+            )
+        finally:
+            original_error = sys.exception()
+            try:
+                _stop_upgrade_services(pathlib.Path(temp_name))
+            except (UpgradeCheckError, OSError, psutil.Error) as error:
+                original = f"。元の診断: {original_error}" if original_error is not None else ""
+                raise UpgradeCheckError(
+                    f"管理サービスの回収に失敗したため検証rootを保持: {temp_name}: {error}{original}"
+                ) from error
+            if not keep_verification_root:
+                shutil.rmtree(temp_name)
+
+
+def _perform_isolated_upgrade(
+    source_repo: pathlib.Path,
+    platform_name: str,
+    old_oid: str,
+    current_oid: str,
+    uv_path: pathlib.Path,
+    *,
+    runner: Runner,
+    temp_name: str,
+) -> None:
+    temp_root = pathlib.Path(temp_name)
+    bare_repo = temp_root / "remote.git"
+    home = temp_root / "home"
+    checkout = home / "dotfiles"
+    home.mkdir(parents=True)
+    create_local_remote(source_repo, bare_repo, old_oid, runner=runner)
+    run_command(("git", "clone", "--branch", _BRANCH, bare_repo, checkout), runner=runner)
+    env = isolated_environment(home, pathlib.Path(uv_path), platform_name, temp_root)
+    _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
+    # 検証を起動したuvが導入したPython（現行の`.python-version`の版）は検証homeからも選択できる。
+    # 版を固定しない旧版のuv環境構築はその中で最新の版を選ぶため、旧版のlockがwheelを持たない新しい版で
+    # 旧版を構築してしまう。旧版を使っていた時点の状態を再現するため、初期適用だけ旧版の基準版へ固定する。
+    initial_env = dict(env)
+    if (pin := old_python_pin(source_repo, old_oid, runner=runner)) is not None:
+        initial_env["UV_PYTHON"] = pin
+    initial_apply = ("chezmoi", "init", f"--source={checkout}", "--apply")
+    try:
+        run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
+    except UpgradeCheckError as first_error:
+        # 旧版の後処理には、並行起動の競合で不定期に失敗し、同じ検証homeでの再実行で回復する版がある。
+        # 旧版のcommitは固定で現行版の変更では直らないため、同じ旧版で1回だけ再試行する。
+        # 再試行でも失敗した場合は旧版の状態があることを確かめられないため、更新を検証せずに失敗とする。
+        print(
+            f"旧版{old_oid}の初期適用に失敗したため、同じ旧版で1回だけ再試行する。元の診断: {first_error}",
+            file=sys.stderr,
+        )
         try:
             run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
-        except UpgradeCheckError as first_error:
-            # 旧版の後処理には、並行起動の競合で不定期に失敗し、同じ検証homeでの再実行で回復する版がある。
-            # 旧版のcommitは固定で現行版の変更では直らないため、同じ旧版で1回だけ再試行する。
-            # 再試行でも失敗した場合は旧版の状態があることを確かめられないため、更新を検証せずに失敗とする。
-            print(
-                f"旧版{old_oid}の初期適用に失敗したため、同じ旧版で1回だけ再試行する。元の診断: {first_error}",
-                file=sys.stderr,
-            )
-            try:
-                run_command(initial_apply, cwd=checkout, env=initial_env, runner=runner)
-            except UpgradeCheckError as error:
-                old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
-                current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
-                cutoff = datetime.datetime.fromtimestamp(current_time, datetime.UTC) - datetime.timedelta(hours=_AGE_HOURS)
-                raise UpgradeCheckError(
-                    "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である。"
-                    f"旧版commit={old_oid}、旧版commit時刻={old_time}、現行commit={current_oid}、"
-                    f"旧版の選定基準時刻（現行commit時刻の{_AGE_HOURS}時間前）={cutoff.isoformat()}。"
-                    "旧版自身に後で修正された不具合がある場合、同じ現行commitで再実行しても同じ旧版が選ばれるため解消しない。"
-                    "旧版から現行commitまでのgit logで失敗した工程の修正commitを探し、"
-                    f"修正commit時刻から{_AGE_HOURS}時間を過ぎたcommit時刻のcommitで検証すると旧版が修正後へ進む。"
-                    "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
-                    f"元の診断: {error}"
-                ) from error
-        run_command(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
-        _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
-        register_upgrade_checkout(checkout, env, platform_name)
-        verify_upgrade_inputs(temp_root.resolve(), checkout, bare_repo, env, platform_name, runner=runner)
-        # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
-        for log in home.rglob("update-dotfiles.log*"):
-            if log.is_file():
-                log.unlink()
-        updated = run_command(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
-        verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr, platform_name=platform_name)
-        actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
-        verify_updated_oid(actual_oid, current_oid)
-        print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
+        except UpgradeCheckError as error:
+            old_time = _git_value(source_repo, "show", "-s", "--format=%cI", old_oid, runner=runner)
+            current_time = int(_git_value(source_repo, "show", "-s", "--format=%ct", current_oid, runner=runner))
+            cutoff = datetime.datetime.fromtimestamp(current_time, datetime.UTC) - datetime.timedelta(hours=_AGE_HOURS)
+            raise UpgradeCheckError(
+                "旧版の初期適用が1回の再試行でも失敗し、現行版への更新は未実行である。"
+                f"旧版commit={old_oid}、旧版commit時刻={old_time}、現行commit={current_oid}、"
+                f"旧版の選定基準時刻（現行commit時刻の{_AGE_HOURS}時間前）={cutoff.isoformat()}。"
+                "旧版自身に後で修正された不具合がある場合、同じ現行commitで再実行しても同じ旧版が選ばれるため解消しない。"
+                "旧版から現行commitまでのgit logで失敗した工程の修正commitを探し、"
+                f"修正commit時刻から{_AGE_HOURS}時間を過ぎたcommit時刻のcommitで検証すると旧版が修正後へ進む。"
+                "修正が見つからず旧版自身の問題でない場合は、子の出力にある問題を解消して再実行する。"
+                f"元の診断: {error}"
+            ) from error
+    run_command(("git", "--git-dir", bare_repo, "update-ref", f"refs/heads/{_BRANCH}", current_oid), runner=runner)
+    _verify_upgrade_environment(temp_root.resolve(), env, platform_name)
+    register_upgrade_checkout(checkout, env, platform_name)
+    verify_upgrade_inputs(temp_root.resolve(), checkout, bare_repo, env, platform_name, runner=runner)
+    # 初期適用した旧版の警告は、現行版の更新の判定から分離する。
+    for log in home.rglob("update-dotfiles.log*"):
+        if log.is_file():
+            log.unlink()
+    updated = run_command(platform_entrypoint(checkout, platform_name), cwd=checkout, env=env, runner=runner)
+    verify_update_logs(home, stdout=updated.stdout, stderr=updated.stderr, platform_name=platform_name)
+    actual_oid = _git_value(checkout, "rev-parse", "HEAD", runner=runner)
+    verify_updated_oid(actual_oid, current_oid)
+    print(f"旧版更新経路を確認した: {old_oid} -> {actual_oid}")
 
 
 _ANTIGRAVITY_UPDATED_NOTICE = "Antigravityのプラグインを更新しました。新しいagyセッションで反映を確認してください。"
@@ -671,7 +750,6 @@ _CODEX_HOOK_TRUST_NOTICE = (
     "その後、そのセッションを終了して新しいセッションを開始してください。"
     "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
     "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
-    "フックの永続的な信頼登録は手動です。"
 )
 """`install_codex_plugins.py`の同名案内の本文。上記と同じ制約により一致を試験する。"""
 
@@ -716,7 +794,7 @@ _SHADOWING_INSTALL = re.compile(r"重複ツールの削除: (?P<found>.+?)がmis
 _MISSING_PATH_ENTRY = re.compile(r"PATH 整理: ユーザー PATH に存在しないエントリーを検出: \S.* \(展開: (?P<expanded>.+?)\)。")
 
 
-def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
+def _is_expected_log_warning(message: str, home: pathlib.Path, platform_name: str) -> bool:
     """正常な更新でも出る警告と、検証の隔離環境が作り出す警告だけを個別に許容する。
 
     許容しない警告は全て検証失敗とし、警告一般の検出は保つ。
@@ -724,9 +802,8 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
     if message == _ANTIGRAVITY_UPDATED_NOTICE:
         return True
-    # 内容変更後の正規承認はユーザー操作であり、更新失敗や実hookの実行失敗を表す診断とは分ける。
     if message == _CODEX_HOOK_TRUST_NOTICE:
-        return True
+        return platform_name != "linux"
     # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
     # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。
     # 検証はmiseを有効化しないPATHで動くため、ランナーに導入済みの同名コマンドがmise管理版より先に見つかる。
@@ -762,7 +839,7 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
         for index, line in enumerate(lines):
             if (match := re.search(r" run=(?P<run>\S+) (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
                 continue
-            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
+            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home, platform_name):
                 continue
             # 失敗したコマンドの出力は次のログ行の前まで続く行へ記録されるため、原因の特定に要る本文として添える。
             continuation: list[str] = []

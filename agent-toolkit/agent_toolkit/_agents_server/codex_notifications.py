@@ -67,27 +67,6 @@ class CodexNotificationsMixin:
                 await run_file_operation(usage_refresh.record_codex, params)
             return
         thread_id = _thread_id_from(params)
-        compacting = self._wait_compaction_turns.get(thread_id or "")
-        notification_turn_id = self._notification_turn_id(params)
-        if compacting is not None and notification_turn_id is not None and notification_turn_id != compacting.original_turn_id:
-            # 圧縮は独立したturnを発生する。担当のturn ID・結果・待機対象を変更しない。
-            session = self.sessions.get(thread_id or "")
-            if session is not None:
-                await compaction_metrics.observe_compaction_item(session, method, params)
-            if method == "turn/completed":
-                turn = params.get("turn")
-                if not isinstance(turn, dict) or turn.get("status") != "completed":
-                    compacting.error = "待機中の会話圧縮が正常に完了しなかった"
-                self._wait_compaction_turns.pop(thread_id or "", None)
-                compacting.done.set()
-                await self._notify_waiters()
-            elif method == "thread/tokenUsage/updated":
-                session = self.sessions.get(thread_id or "")
-                usage = params.get("tokenUsage")
-                last = usage.get("last") if isinstance(usage, dict) else None
-                if session is not None and isinstance(usage, dict) and isinstance(last, dict):
-                    context_usage.record_context_usage(session, last.get("totalTokens"), usage.get("modelContextWindow"))
-            return
         if method == "thread/tokenUsage/updated":
             thread_id = params.get("threadId")
             session = self.sessions.get(thread_id) if isinstance(thread_id, str) else None
@@ -211,6 +190,16 @@ class CodexNotificationsMixin:
             if changed is not None:
                 error = changed
             limit = await self._read_usage_limit_failure(session, error) if status == "failed" else None
+            auto_reset = False
+            if limit is not None:
+                turn_seq = session.turn_seq
+                auto_reset = await self._auto_reset_configured(session)
+                if (
+                    self.sessions.get(session.session_id) is not session
+                    or session.turn_seq != turn_seq
+                    or session.turn_completed
+                ):
+                    return
             session.status = status
             session.error = error
             session.record_turn_completed()
@@ -220,12 +209,18 @@ class CodexNotificationsMixin:
             held_by_result_contract = (
                 changed is None
                 and session.effort_resume_turn != session.turn_seq
-                and result_contract.hold_invalid_result(session, result)
+                and result_contract.hold_invalid_result(session, result, allow_hold=not session.interrupt_requested)
             )
             if not held_by_result_contract:
                 session.status = result["status"]
                 session.error = result["error"]
-            if changed is not None:
+            if session.interrupt_requested:
+                session.clear_hold()
+                unobserved = (
+                    session.live_child_session_ids | session.terminal_child_session_ids | session.codex_live_subagent_thread_ids
+                )
+                resume_waits.record_unobserved_sessions(session, unobserved, touch=False)
+            elif changed is not None:
                 session.clear_hold()
             elif held_by_result_contract:
                 pass
@@ -241,7 +236,7 @@ class CodexNotificationsMixin:
                     session, {"status": session.status, "agent_message": session.agent_message, "error": session.error}
                 )
                 session.status = "running"
-            elif self._hold_usage_limit_failure(session, limit) or self._hold_provider_failure(session):
+            elif self._hold_usage_limit_failure(session, limit, auto_reset=auto_reset) or self._hold_provider_failure(session):
                 pass
             elif not resume_waits.is_overload_failure(session):
                 resume_waits.clear_overload_resume(session)
@@ -274,7 +269,8 @@ class CodexNotificationsMixin:
             item = params.get("item")
             if isinstance(item, dict):
                 session.record_current_item_start(None)
-                (await self._consume_item(session, item))
+                if not (session.interrupt_requested and session.result_available and item.get("type") == "agentMessage"):
+                    await self._consume_item(session, item)
                 await compaction_metrics.observe_compaction_item(session, method, params)
         elif method == "item/agentMessage/delta":
             delta = params.get("delta")
@@ -374,10 +370,6 @@ class CodexNotificationsMixin:
         detail = str(error) or error.__class__.__name__
         changed = False
         for session in self._client_sessions(client):
-            compacting = self._wait_compaction_turns.pop(session.session_id, None)
-            if compacting is not None:
-                compacting.error = detail
-                compacting.done.set()
             if not session.terminal or session.failure_pending_completion:
                 if session.awaiting_auto_resume and session.pending_result is not None:
                     resume_waits.finalize_pending_result(session, touch=False)

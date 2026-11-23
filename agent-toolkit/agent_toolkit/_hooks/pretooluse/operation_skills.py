@@ -26,7 +26,7 @@ lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.message_format import llm_notice
-lazy from agent_toolkit._hooks.notice import stage_delivery
+lazy from agent_toolkit._hooks.notice import block_formatter, stage_delivery
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
@@ -588,7 +588,7 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
 """操作の直前に起動を求めるスキルの表。案内の文面と対象はこの表だけから作る。"""
 
 NOTIFIED_KEY = "operation_skills_notified"
-"""主体ごとに、案内したスキルと`Skill`で起動したスキルの完全名を持つセッション状態の項目。"""
+_OBSERVED_KEY = "operation_skills_observed"
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
@@ -598,16 +598,41 @@ def canonical_skill_name(skill_name: object) -> str | None:
     )
 
 
+def pending_operation_block(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
+    if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
+        return None
+    subject = _agent_id.resolve_hook_agent_id(payload)
+    state = read_state(session_id)
+    delivered = state.get(NOTIFIED_KEY)
+    observed = state.get(_OBSERVED_KEY)
+    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
+    done = observed.get(subject, []) if isinstance(observed, dict) else []
+    cwd = str(payload.get("cwd", ""))
+    lacking = [
+        entry.skill_name
+        for entry in OPERATION_SKILLS
+        if entry.skill_name in advised and entry.skill_name not in done and entry.matches(tool_name, tool_input, cwd)
+    ]
+    if not lacking:
+        return None
+    return block_formatter("operation-skills")(
+        f"前に案内したスキルの起動を確認できない: {', '.join(lacking)}。",
+        fix="該当スキルを起動するか、スキルのSKILL.mdを全文読んでから同じ操作を再実行する。",
+    )
+
+
 def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
     if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
         return []
     subject = _agent_id.resolve_hook_agent_id(payload)
-    records = read_state(session_id).get(NOTIFIED_KEY)
-    done = records.get(subject, []) if isinstance(records, dict) else []
+    state = read_state(session_id)
+    delivered, observed = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY)
+    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
+    done = observed.get(subject, []) if isinstance(observed, dict) else []
     cwd = str(payload.get("cwd", ""))
     texts = []
     for entry in OPERATION_SKILLS:
-        if entry.skill_name in done or not entry.matches(tool_name, tool_input, cwd):
+        if entry.skill_name in done or entry.skill_name in advised or not entry.matches(tool_name, tool_input, cwd):
             continue
         text = llm_notice(
             f"{entry.operation}の操作を検出した。スキル`{entry.skill_name}`をまだ起動していなければ、起動して手順に従え。",
@@ -625,14 +650,14 @@ def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
         return
 
     def record(state: dict) -> dict | None:
-        records = state.get(NOTIFIED_KEY)
+        records = state.get(_OBSERVED_KEY)
         records = dict(records) if isinstance(records, dict) else {}
         values = records.get(subject)
         values = list(values) if isinstance(values, list) else []
         if name in values:
             return None
         records[subject] = [*values, name]
-        state[NOTIFIED_KEY] = records
+        state[_OBSERVED_KEY] = records
         return state
 
     update_state(session_id, record)
@@ -641,10 +666,11 @@ def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
 def forget_subject(session_id: str, subject: str) -> None:
 
     def forget(state: dict) -> dict | None:
-        records = state.get(NOTIFIED_KEY)
-        if not isinstance(records, dict) or subject not in records:
-            return None
-        state[NOTIFIED_KEY] = {key: value for key, value in records.items() if key != subject}
-        return state
+        updates = {}
+        for key in (NOTIFIED_KEY, _OBSERVED_KEY):
+            records = state.get(key)
+            if isinstance(records, dict) and subject in records:
+                updates[key] = {name: value for name, value in records.items() if name != subject}
+        return {**state, **updates} if updates else None
 
     update_state(session_id, forget)

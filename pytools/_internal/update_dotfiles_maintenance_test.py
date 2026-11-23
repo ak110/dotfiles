@@ -193,7 +193,13 @@ def test_warmup_rechecks_code_and_dependencies(tmp_path: Path, monkeypatch) -> N
     script.parent.mkdir(parents=True)
     script.write_text("# MCP", encoding="utf-8")
     commands = [["python", str(script), "--project", str(project), str(script)]]
-    monkeypatch.setattr(plugin_warmup, "prepare_targets", lambda *args, **kwargs: plugin_warmup.PreparedTargets(commands))
+    monkeypatch.setattr(warmup_agents_server, "_targets", lambda: [script])
+
+    def prepare(targets, **_kwargs):
+        assert targets() == [script]
+        return plugin_warmup.PreparedTargets(commands)
+
+    monkeypatch.setattr(plugin_warmup, "prepare_targets", prepare)
     startup: list[list[str]] = []
     dependency_ok = True
 

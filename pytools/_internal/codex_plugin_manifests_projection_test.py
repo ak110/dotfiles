@@ -3,6 +3,7 @@
 
 # pylint: disable=protected-access
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -33,6 +34,17 @@ def test_codex_interface_descriptions_and_prompts(manifest_root: Path) -> None:
     assert isinstance(interface["defaultPrompt"], list)
     assert interface["defaultPrompt"]
     assert all(isinstance(prompt, str) and prompt and len(prompt) <= 128 for prompt in interface["defaultPrompt"])
+
+
+def test_codex_projection_records_final_content(manifest_root: Path) -> None:
+    subject.sync(manifest_root)
+    root = manifest_root / subject.CODEX_PLUGIN_ROOT_TARGET
+    fingerprints = json.loads((root / subject.PROJECTION_MANIFEST).read_text(encoding="utf-8"))
+    projected = root / "hooks" / "hooks.codex.json"
+    assert fingerprints["root"] == root.name
+    assert fingerprints["files"]["hooks/hooks.codex.json"] == hashlib.sha256(projected.read_bytes()).hexdigest()
+    assert subject.PROJECTION_MANIFEST.as_posix() not in fingerprints["files"]
+    assert not subject.check_diagnostics(manifest_root)
 
 
 @pytest.mark.skipif(

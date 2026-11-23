@@ -40,9 +40,9 @@ def enabled(*, force: bool = False) -> bool:
     now = time.monotonic()
     if force or now - _CLOCK.checked_at >= 60:
         try:
-            value = config.resolve_mutable_setting("usage_auto_allocation") == "true"
+            value = bool(json.loads(config.resolve_mutable_setting("usage_reset_permissions")))
         except (OSError, ValueError, KeyError) as error:
-            _LOG.warning("利用枠の観測設定を読めません。config get usage_auto_allocationで確認してください: %s", error)
+            _LOG.warning("利用枠の観測設定を読めません。config get usage_reset_permissionsで確認してください: %s", error)
             value = False
         _CLOCK.checked_at = now
         _CLOCK.enabled = value
@@ -387,7 +387,6 @@ def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None
 
 
 def ensure_fresh(*, force: bool = False, environment: Mapping[str, str] | None = None) -> None:
-    """起動境界で5分の共有キャッシュを使い、同時照会は1主体へ集約する。"""
     automatic = enabled(force=True)
     if not force and not automatic:
         return

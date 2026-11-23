@@ -244,7 +244,7 @@ def _reader_fit_reason(session: SessionState, document: pathlib.Path, message: s
     return None
 
 
-def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
+def hold_invalid_result(session: SessionState, result: dict[str, Any], *, allow_hold: bool = True) -> bool:
     reason = invalid_result_reason(session, result)
     if reason is None:
         message = result.get("agent_message")
@@ -259,13 +259,14 @@ def hold_invalid_result(session: SessionState, result: dict[str, Any]) -> bool:
         ):
             return False
         reason = "不足の前提を再確認し、担当内で補える残工程を完遂してください"
-    if session.result_contract_recovery_consumed:
+    if not allow_hold or session.result_contract_recovery_consumed:
         error = result.get("error")
         details = dict(error) if isinstance(error, dict) else {}
         details["resultContract"] = reason
-        details["nextAction"] = RECOVERY_NEXT_ACTION
+        if allow_hold:
+            details["nextAction"] = RECOVERY_NEXT_ACTION
+            result["status"] = "failed"
         result["error"] = details
-        result["status"] = "failed"
         return False
     session.hold_result(ResultContractWait(result, reason))
     session.status = "running"

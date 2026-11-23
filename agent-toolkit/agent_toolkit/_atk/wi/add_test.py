@@ -7,9 +7,79 @@ import pathlib
 import pytest
 
 from agent_toolkit import atk
+from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_add_support import _patch_add_editor, _patch_add_git
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
+
+
+@pytest.mark.parametrize("case", ["upstream", "advanced", "missing-upstream", "local", "other-repo", "other-branch"])
+def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
+    notes = git_repository.init_repository(_setup_notes(tmp_path), commit_message="notes")
+    repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="base")
+    older = git_repository.git_output(repo, "rev-parse", "HEAD")
+    git_repository.run_git(repo, "remote", "add", "origin", "https://github.com/example/draft-base.git")
+    isolated = tmp_path / "advanced"
+    git_repository.run_git(repo, "worktree", "add", "--detach", str(isolated))
+    (isolated / "upstream.txt").write_text("取得した上流\n", encoding="utf-8")
+    latest = git_repository.commit_all(isolated, "upstream")
+    if case != "local":
+        git_repository.run_git(repo, "config", "branch.main.remote", "origin")
+        git_repository.run_git(repo, "config", "branch.main.merge", "refs/heads/main")
+        if case != "missing-upstream":
+            git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", latest)
+    base = older if case in {"local", "other-branch"} else latest
+    branch = "feature" if case == "other-branch" else "main"
+    if case == "other-branch":
+        git_repository.run_git(repo, "branch", branch, older)
+    body = tmp_path / "body.md"
+    text = "# 調査した要求\n\n## 反映内容と反映先\n\n上流の記述を読んで本文を更新する。\n"
+    if case == "other-repo":
+        text = "---\ntarget_repo: github.com/example/another\n---\n\n" + text
+    body.write_text(text, encoding="utf-8")
+    args = [
+        "wi",
+        "add",
+        "--target-repo",
+        str(repo),
+        "--body-file",
+        str(body),
+        "--source",
+        "human",
+        "--draft-base",
+        f"refs/heads/{branch}",
+        base,
+    ]
+
+    def add(options):
+        with pytest.raises(SystemExit) as status:
+            atk.main([*args, *options], home=tmp_path, now=_FIXED_DT)
+        return status.value.code
+
+    if case in {"missing-upstream", "other-repo", "other-branch"}:
+        assert add(["--dry-run"]) != 0
+        assert add([]) != 0
+        expected = {
+            "missing-upstream": "宛先refを解決できない",
+            "other-repo": "別repoまたは別系統",
+            "other-branch": "宛先worktreeの現在のブランチと一致しない",
+        }[case]
+        assert expected in capsys.readouterr().err
+        assert not tuple(notes.rglob("*.md"))
+        return
+
+    assert add(["--dry-run"]) == 0
+    assert not tuple(notes.rglob("*.md"))
+    assert git_repository.git_output(repo, "rev-parse", "HEAD") == older
+    if case == "advanced":
+        git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", older)
+        assert add([]) == 1
+        assert "起草の基点が取得済みの宛先refと一致しない" in capsys.readouterr().err
+        assert not tuple(notes.rglob("*.md"))
+    else:
+        assert add([]) == 0
+        (saved,) = notes.rglob("*.md")
+        assert f"target_commit: {base}" in saved.read_text(encoding="utf-8")
 
 
 class TestAddEmptyBodyRejection:
@@ -240,6 +310,7 @@ def test_process_wi_timing_at_add_boundary(
         ("defect", "external-wait", True),
         ("defect", "cross-repository", True),
         ("defect", "host-unavailable", True),
+        ("defect", "throughput", True),
     ],
 )
 def test_process_wi_deferral_distinguishes_defects(
@@ -257,7 +328,8 @@ def test_process_wi_deferral_distinguishes_defects(
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
     body_path = tmp_path / "body.md"
     body_path.write_text(
-        "# 保存判定を確かめる\n\n## 反映内容と反映先\n\n隔離したキューに試験用の項目を保存する。\n",
+        "# 保存判定を確かめる\n\n## 反映内容と反映先\n\n隔離したキューに試験用の項目を保存する。\n"
+        + ("\n## 次回へ渡す根拠\n\n巡回の進行を妨げず、次回の処置の方が効率的。\n" if category == "throughput" else ""),
         encoding="utf-8",
     )
 

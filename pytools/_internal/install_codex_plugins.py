@@ -18,6 +18,7 @@ from typing import Any
 from agent_toolkit._common import dotfiles_mode
 
 from pytools._internal import (
+    codex_hook_trust,
     codex_processes,
     common,
     external_web_guidance,
@@ -56,7 +57,6 @@ _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
         "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
-        "フックの永続的な信頼登録は手動です。"
     ),
     command="/hooks",
 )
@@ -97,7 +97,7 @@ def _command(args: list[str]) -> bool:
     return result is not None and result.returncode == 0
 
 
-def _hooks_list() -> dict[str, Any] | None:
+def _hooks_list(*, registration: tuple[str, Path, str] | None = None) -> dict[str, Any] | None:
     try:
         with common.process_scope(
             [str(_CODEX_EXECUTABLE.get()), "app-server", "--stdio"],
@@ -109,12 +109,12 @@ def _hooks_list() -> dict[str, Any] | None:
             errors="replace",
             close_streams=False,
         ) as process:
-            return _query_hooks(process)
+            return _query_hooks(process, registration=registration)
     except OSError:
         return None
 
 
-def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
+def _query_hooks(process: subprocess.Popen[str], *, registration: tuple[str, Path, str] | None = None) -> dict[str, Any] | None:
     """読取準備から応答待機までのパイプとスレッドを所有する。"""
     reader: threading.Thread | None = None
     try:
@@ -168,7 +168,23 @@ def _query_hooks(process: subprocess.Popen[str]) -> dict[str, Any] | None:
             return None
         send({"method": "initialized", "params": {}})
         send({"id": 2, "method": "hooks/list", "params": {}})
-        return response(2)
+        listing = response(2)
+        if registration is None:
+            return listing
+        updates = codex_hook_trust.approval_updates(listing, *registration)
+        if not updates:
+            return listing
+        send(
+            {
+                "id": 3,
+                "method": "config/batchWrite",
+                "params": {"edits": [{"keyPath": "hooks.state", "value": updates, "mergeStrategy": "upsert"}]},
+            }
+        )
+        written = response(3)
+        if written is None or written.get("status") != "ok":
+            return listing
+        return {"data": []}
 
     finally:
         # 途中のclose失敗でも、残るパイプと読取スレッドを回収する。
@@ -631,6 +647,8 @@ def _sync_local_plugin(
     toolkit_plugin = plugin_name == "agent-toolkit"
     wrapper_changed = _install_hook_wrapper(root) if toolkit_plugin else False
     if needs_plugin_add:
+        source = _plugin_source(root, marketplace_name, plugin_name) if toolkit_plugin else None
+        expected_bundle = codex_hook_trust.bundle_hash(source) if source is not None else None
         try:
             _snapshot_plugin_caches(cache_root, saved_root, version)
         except OSError:
@@ -651,8 +669,14 @@ def _sync_local_plugin(
                 raise RuntimeError("Codex plugin更新後のskills実体を確認できない")
             if toolkit_plugin and not (new_cache / "agent_toolkit" / "hook.py").is_file():
                 raise RuntimeError("Codex plugin更新後のhook実体を確認できない")
-            if toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
-                notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
+            if toolkit_plugin:
+                listing = (
+                    _hooks_list(registration=(plugin_id, new_cache, expected_bundle))
+                    if expected_bundle is not None
+                    else _hooks_list()
+                )
+                if _hook_trust_notice_required(listing, plugin_id):
+                    notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
         finally:
             try:
                 _restore_plugin_caches(cache_root, saved_root, installed_version=version, rollback=False)

@@ -63,6 +63,7 @@ from agent_toolkit._common import file_lock as _file_lock
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import state_paths as _state_paths
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.next_action import recover_from_failure
 
 _INPUT_GUIDANCE = (
     "記録済みのレビュー指摘管理表の絶対パス（`.exec-review.tsv`）を確認する。旧名の表も改名せず、そのパスを指定する。"
@@ -78,8 +79,11 @@ _SAVED_RESPONSE_MISMATCH_NEXT_ACTION = (
     "保存は済んでいる。`atk review-table show <PATH>`で保存結果を確認し、"
     "`atk review-table respond <PATH> --row-id <ROW_ID>`で直す"
 )
-_SAVED_UNRESOLVED_NEXT_ACTION = (
-    "`atk review-table show <PATH>`で保存結果を確認する。解消しない場合はagent-toolkitの不具合としてユーザーへ報告する"
+_SAVED_UNRESOLVED_NEXT_ACTION = recover_from_failure(
+    component="レビュー表の保存",
+    evidence="診断と表の保存原本",
+    first_step="`atk review-table show <PATH>`で保存結果を確認する",
+    retry="既存の保存結果を確認してから未反映の処理だけを再実行する",
 )
 _ActionableError = _next_action.ActionableError
 

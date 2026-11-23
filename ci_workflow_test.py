@@ -261,7 +261,7 @@ def test_ci_deps_check_matches_ci_container(workflow_data: dict[str, object]) ->
 
 def test_update_checks_container_dependencies_after_lock_updates() -> None:
     text = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
-    match = re.search(r"^update:\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
+    match = re.search(r"^update:[^\n]*\n((?:\t.*\n)+)", text, flags=re.MULTILINE)
     assert match is not None
     commands = match.group(1).splitlines()
     check = commands.index("\t$(MAKE) ci-deps-check")

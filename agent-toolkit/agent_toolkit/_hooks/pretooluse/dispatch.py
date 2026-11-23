@@ -79,6 +79,7 @@ lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -90,7 +91,6 @@ lazy from agent_toolkit._hooks import (
     clock_claims,
     command_timing,
     norm_excuse_gate,
-    progress_self_check,
     repository_protection,
     work_contract,
 )
@@ -99,7 +99,6 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
-lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
@@ -235,8 +234,26 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
+        if (
+            decision.block is None
+            and (unread_contract := work_contract.delegated_unread_path(session_id, _agent_id.resolve_hook_agent_id(payload)))
+            and _operation_skills._is_artifact_body_writing(  # pylint: disable=protected-access
+                tool_name, tool_input, str(payload.get("cwd", ""))
+            )
+        ):
+            decision = dataclasses.replace(
+                decision,
+                block=_block_notice(
+                    "更新後の全体作業契約の全文取得を確認できない。",
+                    fix=f"`{unread_contract}`を全文読む。",
+                ),
+            )
         if decision.block is None:
-            pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
+            missing_skill = _operation_skills.pending_operation_block(payload, tool_name, tool_input, session_id)
+            if missing_skill:
+                decision = dataclasses.replace(decision, block=missing_skill)
+            else:
+                pending_notices.extend(_operation_skills.notices(payload, tool_name, tool_input, session_id))
         contract_update = work_contract.delegated_notice(session_id, agent=_agent_id.resolve_hook_agent_id(payload))
         if contract_update:
             pending_notices.append(
@@ -280,10 +297,55 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 fix="今回の対象と除外を確かめ、必要なら本文を直して再送せよ。",
             )
         )
+    if tool_name == "ExitPlanMode":
+        from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
+
+        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", "")), tool_input.get("plan")):
+            return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示する。"))
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
-    if is_send_to_user_tool(tool_name) and (block := progress_self_check.send_block(payload, tool_input.get("message"))):
-        return Decision(block=block)
+    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+        from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
+
+        if missing := missing_before_response(payload, session_id, tool_input):
+            return Decision(
+                block=_block_notice(
+                    "レビュー返却が指定した資料の取得を確認できない。",
+                    fix=f"{'、'.join(missing)}を取得してから採否を記録する。",
+                )
+            )
+    if is_send_to_user_tool(tool_name):
+        from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
+
+        message = tool_input.get("message")
+        if (
+            session_id
+            and isinstance(message, str)
+            and message.lstrip().partition("\n")[0].strip() == "## 作業完了報告"
+            and (pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)))
+        ):
+            return Decision(
+                block=_block_notice(
+                    f"完了報告の前に委譲先の結果と続行を確認する。{pending}",
+                    fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返す。",
+                )
+            )
+        if unread := unread_evidence(payload, session_id, message):
+            return Decision(
+                block=_block_notice(
+                    "画面へ送る根拠に未取得の退避出力がある。",
+                    fix=f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。",
+                )
+            )
+        if playbook := missing_completion_before_report(payload, session_id, message):
+            return Decision(
+                block=_block_notice(
+                    "作業完了報告の手順書の取得を確認できない。",
+                    fix=f"`{playbook}`を全文読む。",
+                )
+            )
     if (
         tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None

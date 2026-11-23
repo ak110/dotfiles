@@ -31,7 +31,7 @@ from agent_toolkit._atk import help_text as _help
 from agent_toolkit._atk import session_record_format
 from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._common import effort_requests, session_activity, session_registry
-from agent_toolkit._common.next_action import report, with_next_action
+from agent_toolkit._common.next_action import recover_from_failure, report, with_next_action
 
 _WATCH_INTERVAL_SECONDS = 2.0
 """`atk agents list --watch`が一覧を描き替える間隔（秒）。"""
@@ -122,7 +122,15 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
         try:
             response = effort_requests.request(args.direction, args.session_id, env)
         except (OSError, ValueError, TimeoutError) as error:
-            report(str(error), next_action="atk agents showで対象と現在値を確認し、操作できない場合は親へ報告せよ")
+            report(
+                str(error),
+                next_action=recover_from_failure(
+                    component="effortの変更",
+                    evidence="診断と対象sessionの状態",
+                    first_step="`atk agents show`で対象と設定済みのeffortを確認せよ",
+                    retry="応答を失っただけなら再発行するな。未適用を確認できた場合だけ再試行せよ",
+                ),
+            )
             return 1
         print(_dump(response, env))
         return 1 if response.get("error") else 0

@@ -1,8 +1,10 @@
 import argparse
+import dataclasses
 import datetime
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -13,6 +15,7 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -39,7 +42,67 @@ from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, 
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
 from agent_toolkit._common import uwi_watch as _uwi_watch
+from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import owner_records as _owner_records
+
+_DRAFT_NEXT = "上流があれば取得し、無ければ宛先ブランチを使って基点を選び直す。影響する前提を調べ、原稿を検収し直す"
+
+
+@dataclasses.dataclass(frozen=True)
+class DraftBasis:
+    repo: str
+    worktree: pathlib.Path
+    branch_ref: str
+    oid: str
+
+    def verify(self, registered_branch: str | None) -> None:
+        def git(*args: str) -> subprocess.CompletedProcess[str]:
+            return _git_command.run(["-C", str(self.worktree), *args], capture_output=True, text=True, check=False, timeout=10)
+
+        if not self.branch_ref.startswith("refs/heads/") or git("check-ref-format", self.branch_ref).returncode != 0:
+            raise WebInputError("起草のベースにはrefs/heads/から始まる完全なrefが必要", next_action=_DRAFT_NEXT)
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", self.oid) is None:
+            raise WebInputError("起草の基点には完全なOIDが必要", next_action=_DRAFT_NEXT)
+        branch = self.branch_ref.removeprefix("refs/heads/")
+        if registered_branch is not None:
+            if registered_branch != branch:
+                raise WebInputError("起草のベースが登録済みの宛先系統と一致しない", next_action=_DRAFT_NEXT)
+            ref = f"refs/remotes/origin/{branch}"
+        else:
+            current_branch = git("symbolic-ref", "--quiet", "HEAD")
+            if current_branch.returncode != 0 or current_branch.stdout.strip() != self.branch_ref:
+                raise WebInputError("起草のベースが宛先worktreeの現在のブランチと一致しない", next_action=_DRAFT_NEXT)
+            result = git("for-each-ref", "--format=%(refname)%09%(upstream)", self.branch_ref)
+            if result.returncode != 0:
+                raise WebInputError("起草のベースrefを照会できない", next_action=_DRAFT_NEXT)
+            selected = next(
+                (line.partition("\t")[2] for line in result.stdout.splitlines() if line.partition("\t")[0] == self.branch_ref),
+                None,
+            )
+            if selected is None:
+                raise WebInputError("起草のベースrefが宛先のリポジトリに無い", next_action=_DRAFT_NEXT)
+            if not selected:
+                configured = (git("config", "--get", f"branch.{branch}.{key}") for key in ("remote", "merge"))
+                if any(setting.returncode != 1 for setting in configured):
+                    raise WebInputError("設定済みの宛先上流を解決できない", next_action=_DRAFT_NEXT)
+            ref = selected or self.branch_ref
+        current = git("rev-parse", "--verify", f"{ref}^{{commit}}")
+        if current.returncode != 0:
+            raise WebInputError(f"取得済みの宛先refを解決できない: {ref}", next_action=_DRAFT_NEXT)
+        if current.stdout.strip() != self.oid:
+            raise WebInputError(f"起草の基点が取得済みの宛先refと一致しない: {ref}", next_action=_DRAFT_NEXT)
+
+
+def _ensure_draft_destinations(
+    basis: DraftBasis,
+    messages: list[tuple[dict[str, object], str]],
+    branches: list[str | None],
+    commit_branch: str | None,
+) -> None:
+    for (metadata, _), branch in zip(messages, branches, strict=True):
+        raw = metadata.get("target_repo", basis.repo)
+        if not isinstance(raw, str) or resolve_repo_id_or_raise(raw) != basis.repo or branch != commit_branch:
+            raise WebInputError("起草の基点を使う原稿の宛先が別repoまたは別系統", next_action=_DRAFT_NEXT)
 
 
 def run_report_metadata(data: dict[str, object]) -> dict[str, object]:
@@ -259,6 +322,7 @@ def add_entries(
     submitter_session: str | None = None,
     target_branch: str | None = None,
     initial_state: str = WI_STATE_INBOX,
+    draft_basis: DraftBasis | None = None,
 ) -> list[str]:
     """個別の引数を受け取ってキューへエントリを追加し、生成ファイル名を返す。
 
@@ -284,7 +348,13 @@ def add_entries(
         cooldown_until=cooldown_until,
     )
     item_branches, target_commit_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+    if draft_basis is not None:
+        if target_commit != draft_basis.oid or normalized_target_repo != draft_basis.repo:
+            raise WebInputError("起草の基点が保存対象と一致しない", next_action=_DRAFT_NEXT)
+        _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, target_commit_branch)
     with storage.mutation(private_notes) as mutation:
+        if draft_basis is not None:
+            draft_basis.verify(target_commit_branch)
         written = _add_entries_locked(
             private_notes,
             parsed_messages=parsed_messages,
@@ -375,7 +445,7 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
-def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
+def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object], body: str) -> bool:
     timing = getattr(args, "process_wi_timing", None)
     kind = getattr(args, "process_wi_kind", None)
     category = getattr(args, "defer_category", None)
@@ -401,6 +471,11 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         raise WebInputError("--process-wi-kindと--process-wi-timingは一緒に指定してください", next_action=next_action)
     if (timing == "next-run" and not category) or (category is not None and timing != "next-run"):
         raise WebInputError("--defer-categoryはnext-runの場合に限って必要", next_action=next_action)
+    if category == "throughput" and not dict(_headings.h2_sections(body)).get("次回へ渡す根拠", False):
+        raise WebInputError(
+            "throughputの判定根拠が本文にありません",
+            next_action="## 次回へ渡す根拠 に現在・次回の進行への影響と処理量を比較した結果を書いて再投入する",
+        )
     if timing == "next-run" and kind == "defect" and category == "investigation":
         raise WebInputError(
             "確定した欠陥を調査（investigation）だけを理由に次回へ送れません",
@@ -468,7 +543,7 @@ def cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             if not args.dry_run:
-                join_current = _require_process_wi_timing(args, frontmatter) or join_current
+                join_current = _require_process_wi_timing(args, frontmatter, body) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(
@@ -518,14 +593,29 @@ def cmd_add(
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
         sys.exit(1)
+    draft_basis = None
     try:
-        target_commit = (
-            None
-            if local_worktree is None
-            else resolve_head_commit(local_worktree)
-            if commit_branch is None
-            else resolve_head_commit(local_worktree, revision=f"refs/remotes/origin/{commit_branch}")
-        )
+        draft = getattr(args, "draft_base", None)
+        if draft is not None:
+            if args.type != WI_TYPE_AWI or local_worktree is None or not isinstance(target_repo, str):
+                raise WebInputError(
+                    "起草の基点は宛先worktreeを指定したAWIで使う",
+                    next_action="--target-repoに宛先のworktreeを指定して、同じ原稿と基点で再実行する",
+                )
+            draft_basis = DraftBasis(target_repo, local_worktree, draft[0], draft[1])
+            draft_basis.verify(commit_branch)
+            target_commit = draft_basis.oid
+        else:
+            target_commit = (
+                None
+                if local_worktree is None
+                else resolve_head_commit(local_worktree)
+                if commit_branch is None
+                else resolve_head_commit(local_worktree, revision=f"refs/remotes/origin/{commit_branch}")
+            )
+    except WebInputError as error:
+        _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)
+        sys.exit(1)
     except SystemExit:
         if collected_via_editor:
             _outcome.report_failure(
@@ -553,7 +643,10 @@ def cmd_add(
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),
             )
-            _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+            item_branches, resolved_branch = _resolve_item_branches(parsed_messages, normalized_target_repo, target_branch)
+            if draft_basis is not None:
+                _ensure_draft_destinations(draft_basis, parsed_messages, item_branches, resolved_branch)
+                draft_basis.verify(resolved_branch)
             print_draft_openings(
                 messages,
                 sources,
@@ -585,6 +678,7 @@ def cmd_add(
             submitter_session=_resolve_submitter_session() if args.type == WI_TYPE_UWI else None,
             target_branch=target_branch,
             initial_state=WI_STATE_HOLD if hold else WI_STATE_INBOX,
+            draft_basis=draft_basis,
         )
     except WebInputError as error:
         _outcome.report_failure(f"投入を拒否した: {error.reason}", next_action=error.next_action)

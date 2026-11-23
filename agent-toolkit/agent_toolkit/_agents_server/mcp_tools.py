@@ -112,6 +112,9 @@ _UI_UNAVAILABLE_NEXT_ACTIONS: dict[str, dict[str, str]] = {
 }
 
 
+_SEND_TO_USER_RESEND_NEXT_ACTION = "本文は表示されていない。拒否理由が示す行を本文へ補い、同じ報告をsend_to_userで送り直す"
+
+
 async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
     caller = runtime_environment.current()
     if _UI_DELEGATED if caller is None else delegated_session.is_delegated(caller.environment):
@@ -123,7 +126,9 @@ async def _ui_request(operation: str, inputs: dict[str, Any]) -> dict[str, Any]:
     try:
         return await function_hook_requests.request(identifier, operation, inputs)
     except function_hook_requests.HookRequestRejected as error:
-        if operation == "send_to_user":
+        if operation == "send_to_user" and error.resend:
+            next_action = _SEND_TO_USER_RESEND_NEXT_ACTION
+        elif operation == "send_to_user":
             next_action = _UI_UNAVAILABLE_NEXT_ACTIONS[operation]["claude"]
         elif operation == "apply_runtime_changes":
             next_action = "再予約も手動反映もせずに現在のターンを終え、先行の予約の結果の通知を待つ"

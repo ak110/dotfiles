@@ -139,6 +139,19 @@ def _waiting_work_ids(payload: dict, session_id: str, transcript_path: str, work
     return waiting
 
 
+def missing_completion_before_report(payload: dict, session_id: str, message: object) -> str | None:
+    if not session_id or not isinstance(message, str) or message.lstrip().partition("\n")[0].strip() != "## 作業完了報告":
+        return None
+    if not termination_evidence.evidence_available(payload) or completion_in_context(session_id):
+        return None
+    if any(
+        termination_evidence.missing_completion(work, context_loaded=False)
+        for _, work in termination_evidence.pending_work(payload)
+    ):
+        return str(termination_evidence.completion_playbook_path())
+    return None
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     resolved = _parse_stop_session(payload_text, lambda: None)
     if resolved is None:

@@ -26,13 +26,24 @@ from agent_toolkit._atk.wi.repo import (
     verify_target_repo_content,
 )
 from agent_toolkit._atk.wi.web_input import WebInputError
+from agent_toolkit._common.next_action import ActionableError, recover_from_failure
 
 _USER_COMMENT_EDIT_NEXT_ACTION = (
     "本文からユーザーコメント節（`## ユーザーコメント`見出し以降）を除いて再実行する。"
     "保存済みのユーザーコメント節は変更されずに残る"
 )
-_USER_COMMENT_BROKEN_NEXT_ACTION = "`atk wi show {name}`で保存済みのユーザーコメント節の構造を確認し、ユーザーへ報告する"
-_BROKEN_STORED_NEXT_ACTION = "`atk wi show {name}`で保存済み本文の構造を確認し、ユーザーへ報告する"
+_USER_COMMENT_BROKEN_NEXT_ACTION = recover_from_failure(
+    component="WIのユーザーコメント",
+    evidence="保存原本",
+    first_step="`atk wi show {name}`でユーザーコメント節の構造を確認する",
+    retry="本人のコメントを改変せず、構造の不良を解消してから再試行する",
+)
+_BROKEN_STORED_NEXT_ACTION = recover_from_failure(
+    component="WIの本文",
+    evidence="保存原本",
+    first_step="`atk wi show {name}`で本文の構造を確認する",
+    retry="元の内容を保持し、構造を修復してから再試行する",
+)
 _EDITABLE_STATE_NEXT_ACTION = (
     "inbox・processing・holdの項目を指定する。終了した項目は"
     "`atk wi hold <ファイル名> --state <adopted|rejected>`（現在の状態を指定）でholdへ戻してから編集する"
@@ -151,6 +162,53 @@ def _preserve_agent_user_comment(original: str, updated: str) -> str:
     return updated.rstrip("\r\n") + "\n\n" + saved_user_comment
 
 
+def _read_expected_user_comment(path: str) -> str:
+    try:
+        return pathlib.Path(path).expanduser().read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        _outcome.report_failure(
+            f"--move-user-commentのファイルをUTF-8として読めない: {path}: {error}",
+            next_action="整理に使ったユーザーコメントの本文をUTF-8のファイルへ保存し、その絶対パスを指定する",
+        )
+        sys.exit(1)
+
+
+def _move_user_comment(original: str, edited: str, name: str, expected: str) -> None:
+    show_section = f"`atk wi show {name} --section ユーザーコメント`"
+    try:
+        comment = _user_comment.extract_user_comment(original)
+    except _user_comment.UserCommentError:
+        _outcome.report_failure(
+            f"保存済みのユーザーコメント節の構造が壊れているため移せない: {name}",
+            next_action=_USER_COMMENT_BROKEN_NEXT_ACTION.format(name=name),
+        )
+        sys.exit(1)
+    if not comment:
+        _outcome.report_failure(
+            f"保存済みのユーザーコメントが無いため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在の記入を読み直し、取り下げられたコメントを本文へ反映し直してから再実行する",
+        )
+        sys.exit(1)
+    if not _user_comment.same_user_comment(comment, expected):
+        _outcome.report_failure(
+            f"保存済みのユーザーコメントが、整理に使ったコメントと一致しないため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在のコメントを読み直し、変わった記入を本文へ反映して再実行する",
+        )
+        sys.exit(1)
+    if _user_comment.has_reserved_heading(edited):
+        _outcome.report_failure(
+            f"--move-user-commentでは本文へユーザーコメント節を含められない: {name}",
+            next_action="本文から`## ユーザーコメント`節を除き、その内容を`## ユーザー指摘の逐語引用`へ移して再実行する",
+        )
+        sys.exit(1)
+    if not _user_comment.quotes_user_comment(edited, comment):
+        _outcome.report_failure(
+            f"保存済みのユーザーコメントの全行が本文の`## ユーザー指摘の逐語引用`に無いため、編集を反映しない: {name}",
+            next_action=f"{show_section}で現在のコメントを読み直し、全行を`## ユーザー指摘の逐語引用`へ移して再実行する",
+        )
+        sys.exit(1)
+
+
 def _require_agent_edit_source(original: str, content: str) -> None:
     if not is_agent_environment():
         return
@@ -249,6 +307,13 @@ def append_entry_content(
     )
 
 
+def _strip_trailing_blank_lines(body: str) -> str:
+    lines = body.split("\n")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def _build_noninteractive_edit_content(path: pathlib.Path, original: str, message: str) -> str:
     parsed = _frontmatter.parse_frontmatter(original)
     if parsed is None:
@@ -300,7 +365,9 @@ def _build_noninteractive_edit_content(path: pathlib.Path, original: str, messag
         updated_data.pop("target_commit", None)
 
     if entry_type != WI_TYPE_UWI:
-        return _frontmatter.serialize_frontmatter(updated_data, "\n" + normalized_message_body.rstrip() + "\n")
+        return _frontmatter.serialize_frontmatter(
+            updated_data, "\n" + _strip_trailing_blank_lines(normalized_message_body) + "\n"
+        )
 
     question_type = updated_data.get("question_type")
     # 保存済みのfree-formは読取互換として本文編集を受理し、他の形式からfree-formへ変える編集だけを拒否する。
@@ -415,6 +482,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             args.subparser.error("--cooldown-untilではFILENAMEを指定してください。")
         if args.append:
             args.subparser.error("--cooldown-untilは--appendと併用できません。")
+    if args.move_user_comment is not None:
+        if args.append:
+            args.subparser.error("--move-user-commentは--appendと併用できません。")
+        if args.filename is None or message is None:
+            args.subparser.error("--move-user-commentではFILENAMEと--body-fileを指定してください。")
     if args.append:
         if args.filename is None or message is None:
             args.subparser.error("--appendではFILENAMEと--body-fileを指定してください。")
@@ -485,7 +557,10 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         except WebInputError as error:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
-        edited = _preserve_agent_user_comment(original, edited)
+        if args.move_user_comment is not None:
+            _move_user_comment(original, edited, path.name, _read_expected_user_comment(args.move_user_comment))
+        else:
+            edited = _preserve_agent_user_comment(original, edited)
     else:
         edited = original
     if args.cooldown_until is not None:
@@ -495,6 +570,18 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
             sys.exit(1)
     is_uwi = _wi_entries.entry_type_of(path, original) == WI_TYPE_UWI
+    from agent_toolkit._atk.wi import merge_verification  # pylint: disable=import-outside-toplevel
+
+    if (
+        not args.dry_run
+        and (merge := merge_verification.merge_input(edited)) is not None
+        and merge != merge_verification.merge_input(original)
+    ):
+        try:
+            merge_verification.check(edited)
+        except ActionableError as error:
+            _outcome.report_failure(f"編集を拒否した: {error}", next_action=error.next_action)
+            sys.exit(1)
     if args.compare_opening_file is not None and not args.dry_run:
         # 保存より前に冒頭を比較し、不一致なら対象WIを書き換えない。
         # 本文が保存済みと同じでも比較の失敗を成功扱いしないよう、差分なしの判定より先に比較する。

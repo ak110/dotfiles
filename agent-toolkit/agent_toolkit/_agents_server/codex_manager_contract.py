@@ -13,9 +13,8 @@ from agent_toolkit._agents_server import (
     codex_providers,
     codex_resume_state,
     session_identity,
-    wait_compaction,
 )
-from agent_toolkit._agents_server.codex_protocol import JsonRpcResponseError, _WaitCompactionTurn
+from agent_toolkit._agents_server.codex_protocol import JsonRpcResponseError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, ResumePrompt, SessionState
 from agent_toolkit._common import codex_usage_limit
@@ -29,8 +28,6 @@ class CodexManager(typing.Protocol):
     _background_tasks: set[asyncio.Task[None]]
     _writer_session_ids: dict[str, str]
     _resume_close_events: dict[str, asyncio.Event]
-    _wait_compactors: dict[str, wait_compaction.WaitCompaction]
-    _wait_compaction_turns: dict[str, _WaitCompactionTurn]
     _auto_reset_monitors: dict[str, asyncio.Task[None]]
     _auto_reset_checks: dict[str, asyncio.Task[None]]
     sessions: dict[str, SessionState]
@@ -126,9 +123,12 @@ class CodexManager(typing.Protocol):
 
     async def _wait_after_steer_rejection(self, session: SessionState, expected_turn_id: str, client: Any) -> str: ...
 
-    def _hold_usage_limit_failure(self, session: SessionState, limit: codex_usage_limit.UsageLimitState | None) -> bool: ...
+    async def _auto_reset_configured(self, session: SessionState) -> bool: ...
+    def _hold_usage_limit_failure(
+        self, session: SessionState, limit: codex_usage_limit.UsageLimitState | None, *, auto_reset: bool
+    ) -> bool: ...
 
-    def _auto_reset_eligible(self, session: SessionState, *, before_hold: bool = False) -> bool: ...
+    def _auto_reset_eligible(self, session: SessionState) -> bool: ...
 
     def _start_auto_reset_monitor(self, session: SessionState, client: JsonRpcProcess) -> None: ...
 
@@ -190,8 +190,6 @@ class CodexManager(typing.Protocol):
     async def _start_turn(self, session: SessionState, prompt: str, client: JsonRpcProcess | None = None) -> None: ...
 
     async def _notify_waiters(self) -> None: ...
-
-    async def _compact_wait(self, session: SessionState, key: str) -> None: ...
 
     @staticmethod
     def _agents_server_config(owner_session_id: str, writer_session_id: str, client: Any = None) -> dict[str, Any]: ...

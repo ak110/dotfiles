@@ -20,6 +20,7 @@ import argparse
 import datetime
 import json
 import pathlib
+import re
 from collections.abc import Callable
 
 from agent_toolkit._common import next_action as _next_action
@@ -44,6 +45,11 @@ class ProgressLogError(_next_action.ActionableError):
 
 def _local_now() -> datetime.datetime:
     return datetime.datetime.now().astimezone()
+
+
+def _has_minute_rows(content: str) -> bool:
+    rows = _plan_format.progress_log_rows(content)
+    return any(re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d", stamp.strip()) for stamp, _, _ in rows)
 
 
 def _escape_cell(value: str) -> str:
@@ -117,7 +123,8 @@ def append_progress_log(
             "進捗ログの時計にはタイムゾーンが必要です",
             next_action="`clock`へタイムゾーン付きの時刻を返す関数を渡す（CLIからの呼び出しでは発生しない）",
         )
-    row = f"| {now:%Y-%m-%d %H:%M} | {_escape_cell(completed_step)} | {_escape_cell(result)} |"
+    stamp = now.strftime("%Y-%m-%d %H:%M") if _has_minute_rows(content) else now.isoformat(timespec="seconds")
+    row = f"| {stamp} | {_escape_cell(completed_step)} | {_escape_cell(result)} |"
     newline = "\r\n" if "\r\n" in content else "\n"
     if insertion == len(lines):
         if lines and not lines[-1].endswith(("\n", "\r")):

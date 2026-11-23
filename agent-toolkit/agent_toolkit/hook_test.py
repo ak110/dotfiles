@@ -15,6 +15,7 @@ import pytest
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import inherited_venv, plugin_environment, session_state
 from agent_toolkit._hooks import notice
+from agent_toolkit._hooks.pretooluse import warning_context
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.hook_support import _definition_commands
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -97,7 +98,6 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
         )
         assert first.returncode == 0 and not first.stderr
         assert "additionalContext" in json.loads(first.stdout)["hookSpecificOutput"]
-        expected = "未取得"
     result = subprocess.run(
         [shell, "-c", command],
         input=json.dumps(payload),
@@ -112,8 +112,8 @@ def test_registered_pretooluse_command_preserves_denial_and_read_guidance(defini
     assert not result.stderr
     if case == "unread-rewrite":
         specific = json.loads(result.stdout).get("hookSpecificOutput", {}) if result.stdout else {}
-        assert specific.get("permissionDecision") != "deny"
-        assert "未取得" not in specific.get("additionalContext", "")
+        assert specific.get("permissionDecision") == "deny"
+        assert "writing-standards" in specific.get("permissionDecisionReason", "")
         return
     specific = json.loads(result.stdout)["hookSpecificOutput"]
     assert specific["permissionDecision"] == "deny"
@@ -277,3 +277,48 @@ def test_hook_launch_failure_exits_with_non_blocking_code(tmp_path: pathlib.Path
     assert without_suffix.returncode == 2, without_suffix.stderr
     assert completed.returncode == 1, completed.stderr
     assert "launch.py" in completed.stderr
+
+
+@pytest.mark.parametrize("decision", ["allow", "deny"])
+@pytest.mark.parametrize("failure", ["session", "write", "length"])
+def test_unavailable_final_codex_notice_respects_permission_decision(decision, failure, monkeypatch, tmp_path):
+    location = tmp_path / ("x" * 1800) if failure == "length" else tmp_path
+    monkeypatch.setattr(warning_context.managed_temp, "resolve_session_temp", lambda _session: location)
+
+    def write(*_args, **_kwargs):
+        if failure == "write":
+            raise OSError("通知を保存できない")
+
+    monkeypatch.setattr(warning_context, "atomic_write", write)
+    payload = {"hook_event_name": "PreToolUse", "turn_id": "warning-test"}
+    if failure != "session":
+        payload["session_id"] = "warning-test"
+
+    def emit(_payload: str) -> int:
+        print(
+            json.dumps(
+                {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
+                        "permissionDecision": decision,
+                        "additionalContext": "警告" * 1000,
+                    },
+                }
+            )
+        )
+        return 0
+
+    module = importlib.import_module("agent_toolkit._hooks.pretooluse")
+    monkeypatch.setattr(module, "main", emit)
+    result = _run_hook_in_process("pretooluse", payload)
+    assert result.returncode == 0 and not result.stderr
+    output = json.loads(result.stdout)
+    assert validate_hook_output("PreToolUse", output) == []
+    final = output["hookSpecificOutput"]
+    assert final["permissionDecision"] == decision
+    text = final["additionalContext"]
+    if decision == "deny":
+        assert "未適用を確認できた場合だけ" in text
+    else:
+        assert "元の操作は再発行せず" in text
+        assert "未適用を確認できた場合だけ" not in text

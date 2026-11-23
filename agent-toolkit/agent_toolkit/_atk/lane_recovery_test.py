@@ -45,7 +45,22 @@ def test_delete_uses_held_selection_after_selection_file_expires(
 
 @pytest.mark.cpu_limit(3.0, reason="実Gitの旧レーン、統合先の履歴と公開回収操作を比較する。")
 @pytest.mark.parametrize(
-    "kind", ["merged", "same-tree", "equivalent", "whitespace", "dirty", "running", "unique", "initial", "ignored", "nested"]
+    "kind",
+    [
+        "merged",
+        "same-tree",
+        "equivalent",
+        "whitespace",
+        "dirty",
+        "running",
+        "unique",
+        "initial",
+        "ignored",
+        "nested",
+        "cache-note",
+        "cache",
+        "cached-repo",
+    ],
 )
 def test_retired_lane_only_removes_covered_changes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], kind: str
@@ -57,7 +72,7 @@ def test_retired_lane_only_removes_covered_changes(
     if kind != "initial":
         (worktree / "lane-content.txt").write_text("  成果\n", encoding="utf-8")
         head = git_repository.commit_all(worktree, "レーン成果")
-        if kind in {"merged", "dirty", "running", "ignored", "nested"}:
+        if kind in {"merged", "dirty", "running", "ignored", "nested", "cache", "cached-repo", "cache-note"}:
             git_repository.run_git(repo, "merge", "--ff-only", head)
         elif kind == "same-tree":
             git_repository.run_git(repo, "commit", "--allow-empty", "-m", "別の履歴")
@@ -88,6 +103,16 @@ def test_retired_lane_only_removes_covered_changes(
                 lane_id="lane-02",
             )
             assert code == 0, stderr
+    if kind in {"cache", "cached-repo", "cache-note"}:
+        with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as exclude:
+            exclude.write("\n/.ruff_cache/\n")
+        cache = worktree / ".ruff_cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55", encoding="ascii")
+        if kind == "cached-repo":
+            (cache / ".git").write_text("gitdir: elsewhere", encoding="ascii")
+        if kind == "cache-note":
+            (cache / "notes.txt").write_text("保持するデータ", encoding="utf-8")
     if kind == "running":
         monkeypatch.setattr(lane_activity, "worktree_activity", lambda *_a, **_k: "使用中")
     git_repository.run_git(repo, "branch", "user-owned")
@@ -98,11 +123,11 @@ def test_retired_lane_only_removes_covered_changes(
     saved = json.loads(pathlib.Path(result["result_path"]).read_text(encoding="utf-8"))
     assert saved["retire_integrated"] is True
 
-    if kind in {"merged", "same-tree"}:
+    if kind in {"merged", "same-tree", "cache"}:
         assert code == 0 and result["removed"] == ["lane-01"], stderr
         assert not record_path.exists() and not worktree.exists()
         proof = result["retirement_inputs"][0]
-        assert proof["basis"] == ("ancestor" if kind == "merged" else "identical-tree")
+        assert proof["basis"] == ("identical-tree" if kind == "same-tree" else "ancestor")
         assert proof["selection"]["integrated"] is False
         assert selected.exists()
     else:
@@ -111,6 +136,10 @@ def test_retired_lane_only_removes_covered_changes(
         if kind == "ignored":
             assert "無視対象" in result["retained"][0]["reason"]
             assert (worktree / "keep.txt").is_file()
+        if kind == "cached-repo":
+            assert (worktree / ".ruff_cache" / ".git").is_file()
+        if kind == "cache-note":
+            assert (worktree / ".ruff_cache" / "notes.txt").is_file()
         if kind == "nested":
             assert "内包" in result["retained"][0]["reason"]
             assert (worktree / "nested" / ".git").is_file()
@@ -496,3 +525,42 @@ def test_reuse_switches_held_selection_to_current_selection(
     current.unlink()
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1 and held["retained"][0]["reason"] == "選定の統合状態が未統合"
+
+
+@pytest.mark.parametrize("state", ["unchanged", "edited", "unrecorded", "legacy"])
+@pytest.mark.cpu_limit(3.0, reason="統合済みの原本と生成物を実Gitと公開の回収操作で比較する。")
+def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, state):
+    from agent_toolkit._atk.lane_cleanup import PROJECTION_MANIFEST, projection_manifest  # pylint: disable=import-outside-toplevel
+
+    repo, selection, record = _create(tmp_path, monkeypatch, capsys)
+    _selection(selection, integrated=False)
+    worktree = pathlib.Path(record["worktree"])
+    source = worktree / "agent-toolkit"
+    generated = worktree / "agent-toolkit-codex"
+    source.mkdir()
+    (worktree / ".gitignore").write_text("/agent-toolkit-codex/\n", encoding="ascii")
+    (source / "GENERATED.md").write_text("# 自動生成ファイル\n", encoding="utf-8")
+    (source / "README.md").write_text("original", encoding="ascii")
+    committed = git_repository.commit_all(worktree, "配布物の原本")
+    git_repository.run_git(repo, "merge", "--ff-only", committed)
+    generated.mkdir()
+    (generated / "GENERATED.md").write_bytes((source / "GENERATED.md").read_bytes())
+    output = generated / "README.md"
+    output.write_text("modified" if state == "edited" else "projection", encoding="ascii")
+    if state != "legacy":
+        files = {
+            pathlib.Path("GENERATED.md"): ((generated / "GENERATED.md").read_bytes(), 0o644),
+            pathlib.Path("README.md"): (b"projection", 0o644),
+        }
+        (generated / PROJECTION_MANIFEST).write_bytes(projection_manifest(generated.name, files)[0])
+    if state == "unrecorded":
+        (generated / "note.md").write_text("作業者の記録", encoding="utf-8")
+
+    status, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
+
+    if state != "unchanged":
+        assert status == 1 and result["retained"], stderr
+        assert output.is_file()
+    else:
+        assert status == 0 and result["removed"] == ["lane-01"], stderr
+        assert not worktree.exists()

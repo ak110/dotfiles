@@ -3,7 +3,8 @@
 実装後の変更差分を独立した文脈で確かめる実行レビューで、要求単位と完成条件の達成・提出された証拠・直接影響範囲・設計と認可を判定する基準を置く。
 原則6（`agent-basics:writing-standards/references/quality-principles-verification.md`）を独立した確認へ適用する。
 原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）を判定の根拠へ適用する。
-本書の節を上から順に判定し、指摘の書き方・レベル・根拠は`agent-basics:review-standards/references/reviewer.md`「指摘内容」「判定根拠の品質」に従う。
+本書の節を上から順に判定する。
+指摘・推奨を出すかの判断、書き方、レベル、根拠は`agent-basics:review-standards/references/reviewer.md`「指摘内容」「判定根拠の品質」に従う。
 
 ## 実行レビューの判定
 

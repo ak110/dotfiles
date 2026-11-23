@@ -29,6 +29,7 @@ import types
 lazy import datetime
 
 from agent_toolkit._common import inherited_venv
+from agent_toolkit._common.next_action import recover_from_failure
 lazy from agent_toolkit._common import delegated_session as _delegated_session
 lazy from agent_toolkit._common import message_format as _common_message_format
 lazy from agent_toolkit._common import session_launchers as _session_launchers
@@ -221,6 +222,7 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
         session_id=session_id if isinstance(session_id, str) else "",
         reserved_bytes=len(short_reason.encode("utf-8")),
         agent_id=_agent_id.resolve_hook_agent_id(payload),
+        operation_denied=specific.get("permissionDecision") == "deny",
     )
     if reason:
         specific["permissionDecisionReason"] = short_reason
@@ -299,7 +301,12 @@ def _invoke_module(
                 input_warning,
                 tag="warn",
                 removable_cause=False,
-                fix="この入力のhookは会話IDが無いものとして処理した。再発する場合は、ホストが渡す会話IDの不具合として委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="ホストが渡す会話ID",
+                    evidence="hook入力の診断",
+                    first_step="この入力は会話IDなしとして処理済みなので、ホストが渡す識別情報を確認する",
+                    retry="元の操作を再発行せず、修復は次のhook入力で確かめる",
+                ),
             )
         generated.extend(input_notices)
         response = response if response is not None else {}

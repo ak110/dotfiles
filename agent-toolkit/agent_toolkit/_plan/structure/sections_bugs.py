@@ -1,7 +1,7 @@
 """原因分析の記録（AWIの`## 原因分析`と計画のバグ調査の記録）の行頭語の解析と検査。
 
 記録の形は`agent-basics:bugfix`の`SKILL.md`「記録」が定める。
-バグ単位ごとに`期待:`・`原因:`・`処置:`・`広がり:`・`確認:`の行を置き、条件が成立した時だけ`再発:`・`再発防止:`の行を加える。
+バグ単位ごとに`期待:`・`原因:`・`処置:`・`広がり:`・`再発防止:`・`確認:`の行を置き、条件が成立した時だけ`再発:`の行を加える。
 """
 
 from __future__ import annotations
@@ -45,6 +45,8 @@ _EMPTY_TEXT_CHARS = " \t\u3000*_`~"
 
 
 _PREVIOUS_SHORT_RECORD_LABELS = frozenset({"期待", "処置"})
+
+_SAVED_RECORD_OPTIONAL_LABELS = frozenset({"再発防止"})
 
 
 class CauseRecordLine(NamedTuple):
@@ -99,13 +101,13 @@ def _is_legacy_unit(unit: _CauseRecordUnit, *, accept_short_record: bool) -> boo
     )
 
 
-def _label_line_errors(unit: _CauseRecordUnit) -> list[str]:
+def _label_line_errors(unit: _CauseRecordUnit, *, saved_record: bool) -> list[str]:
     lines = _match_record_lines(unit.lines)
     present = {line.label for line in lines}
     errors = [
         f"`{label}:`の行が無い（書く内容: {content}）"
         for label, content in CAUSE_RECORD_REQUIRED_LABELS.items()
-        if label not in present
+        if label not in present and not (saved_record and label in _SAVED_RECORD_OPTIONAL_LABELS)
     ]
     errors.extend(
         f"`{line.label}:`の行に本文が無い（同じ行に書く内容: {_CAUSE_RECORD_LABELS[line.label]}）"
@@ -115,7 +117,7 @@ def _label_line_errors(unit: _CauseRecordUnit) -> list[str]:
     return errors
 
 
-def cause_record_errors(content: str, *, accept_legacy: bool = False) -> list[str]:
+def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_record: bool | None = None) -> list[str]:
     """原因分析の記録がバグ単位ごとに必須の行頭語の行をそろえ、各行に本文を持つかを検査し、違反の一覧を返す。
 
     `content`はAWIの`## 原因分析`節の本文か、計画のバグ調査の記録（H1やH2の見出しを含んでよい）とする。
@@ -126,15 +128,18 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False) -> list[st
     `accept_legacy`が偽（新規作成と、原因分析を変える編集）では、廃止した表で書いた単位を拒否する。
     真（保存済みの計画の読み取り）では、廃止した表を持つ単位と、表も現行だけの行頭語の行も持たない旧来の短い記録を、
     表の構成や記入内容を問わず受理する。前の版の初動の短い記録は`期待:`と`処置:`の行を持つため、この2語だけでは現行の形と扱わない。
+    `saved_record`が真（新旧を区別できない計画の検査）では、保存済みの記録が持たない行頭語（`再発防止:`）の行の有無を問わない。
+    行がある場合の本文の有無は検査する。省略時は`accept_legacy`と同じ値とする。
     記入内容の妥当性は検収が判断し、ここでは行の有無と本文の有無だけを確かめる。
     """
+    saved = accept_legacy if saved_record is None else saved_record
     errors: list[str] = []
     for unit in _cause_record_units(content):
         if _is_legacy_unit(unit, accept_short_record=accept_legacy):
             if accept_legacy:
                 continue
             errors.append(f"{unit.prefix}原因分析を廃止した表で書いている。表を除き、行頭語で始まる行で書く")
-        errors.extend(unit.prefix + error for error in _label_line_errors(unit))
+        errors.extend(unit.prefix + error for error in _label_line_errors(unit, saved_record=saved))
     return errors
 
 

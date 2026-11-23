@@ -36,8 +36,12 @@ Windows用プロジェクト（gv・lc）をLinuxから扱う注意と、prek・
 ## CI / リリース関連
 
 CI workflowを編集する時は、次を確かめる。
+共通方式と異なる案は、個別に採用する前に[同期の手順](project-synchronization.md#同期の手順)で扱う。
 
-- Linuxジョブはpyfltrの公式イメージによる`container:`実行とし、container化の対象とキャッシュの方式は各リポジトリの`.github/workflows/**`にそろえる。
+- 通常のLinux CIでコードや配布物を検証する対象ジョブはpyfltrの公式イメージを使う `container:` 実行にそろえる。
+  dotfilesのホスト上のセットアップやRustの別ジョブは保持する。
+  環境そのものを試すジョブ、Windows、定期監査、成果物を公開する配布・リリースは現行の構成を保つ。
+  採否の根拠と対象は[追従台帳のLinux CIの共通方式](followup-ledger-settings-testing.md#linux-ciの共通方式をコンテナーにそろえる)にある。
 - container化したジョブでは、uv・pnpm・Node.js・miseのセットアップのstepを省く。
 - `defaults.run.shell: bash`を指定する。
   GitHub Actionsは、`container:`のジョブで`shell`の指定が無い`run`を`sh`で実行するためである。

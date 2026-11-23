@@ -23,6 +23,16 @@ MCP_NAMESPACES: tuple[str, ...] = (
 )
 """ホストがagents_serverのMCPツール名へ付ける修飾接頭辞。"""
 
+_SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
+    "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user",
+    "mcp__agent-toolkit__send_to_user",
+}
+
+
+def is_send_to_user_tool(name: object) -> bool:
+    return isinstance(name, str) and name in _SEND_TO_USER_TOOLS
+
+
 START_OPERATIONS: frozenset[str] = frozenset(("start",))
 """子sessionを生成するagents_serverの公開起動ツールの操作名（修飾接頭辞を除いた名前）。"""
 

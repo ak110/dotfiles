@@ -29,7 +29,7 @@ def _recovery_old_values(*, multiple=False):
 _LEGACY_KEYS = ("high_tier_model", "medium_tier_model", "low_tier_model")
 
 _DEFAULTS = {
-    "execute_model": "claude:opus[1m]/low,codex:sol/low",
+    "execute_model": "codex:sol/low,claude:opus[1m]/low",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
     "chores_model": "codex:sol/low,claude:sonnet[1m]/low",

@@ -46,8 +46,8 @@ CONNECTION_GUIDE_NOTICE = (
 
 HELP: dict[str, dict[str, str]] = {
     "atk config usage": {
-        "summary": "利用枠・回復時刻と配分理由を確認する",
-        "description": "利用枠・回復時刻と配分理由を確認する。\n\n目的: 残量、観測時刻、配分理由、通常設定・一時指定・継続中の会話を表示する。\n利用場面: 次に使うengineや利用上限の回復を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
+        "summary": "利用枠・回復時刻とreset在庫を確認する",
+        "description": "利用枠・回復時刻とreset在庫を確認する。\n\n目的: 残量、回復時刻、最終観測、reset在庫と消費の案内を表示する。\n利用場面: 利用上限の回復やreset在庫を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
         "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh\n  atk config usage --json",
     },
     "atk config temporary": {
@@ -112,9 +112,21 @@ HELP: dict[str, dict[str, str]] = {
         "description": "エントリをinboxへ投入する。\n\n目的: AWIまたはUWIをinboxへ1件以上投入する。\n利用場面: 改善要求、不具合、確認事項を後続のセッションへ引き継ぐとき。投入と同じ入力を副作用なしで検証するとき。\n対象と出力: private-notesリポジトリのinboxへファイルを追加してcommitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。`--dry-run`では検証だけを行い、private-notes、remoteおよび対象リポジトリのいずれも変更せず、検証済み原稿のH1から最初のフェンス外H2直前までを原文の改行・空白・末尾空行のまま標準出力とmanaged-tempへ出力し、入力パス・冒頭保存先・文字数を返す。frontmatterと管理用見出しは含めない。複数原稿は全件検証後に入力ごとに返し、検証・抽出保存の失敗は非0で終了する。\n前提: 本文を`--body-file`または$EDITORで与える。対象リポジトリは省略時にカレントworktreeから解決する。\n復元・後始末: 投入した項目は`atk wi rm`で削除でき、削除後もprivate-notesのGit履歴から復元できる。`--dry-run`の抽出ファイルは作成主体が検収・受渡しを終えてから回収し、残したファイルはmanaged-tempの7日保持後の自動削除に従う。",
         "epilog": "実行例:\n\n  atk wi add --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
+    "atk wi verify-merge": {
+        "summary": "マージ用WIの完全OIDとCIを確認する",
+        "description": (
+            "取得済みの先端で必要な検証が通ったか確認する。\n\n"
+            "目的: 検証したコミットと取り込むコミットを一致させる。\n"
+            "利用場面: マージ用WIの取り込み直前。\n"
+            "対象と出力: WIの完全OIDと指定した先端を比べ、必要なCIかCI非対象時の同等検証を確認する。\n"
+            "前提: 対象ブランチの先端を取得し、WIに同じ完全OIDを記録していること。\n"
+            "復元・後始末: WIとGitは変更しない。失敗したら次の操作に従う。"
+        ),
+        "epilog": "実行例:\n\n  atk wi verify-merge 20261123-175351-001.md --head 0123456789abcdef0123456789abcdef01234567",
+    },
     "atk wi list": {
         "summary": "エントリを1件1行で一覧表示する",
-        "description": "エントリを1件1行で一覧表示する。\n\n目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
+        "description": "エントリを1件1行で一覧表示する。\n\n目的: 対象リポジトリと状態で限定したキュー項目を、ファイル名、target_repo、状態ラベル、本文冒頭の要約とともに列挙する。\n利用場面: 未処理の項目を把握するとき。処理対象の件数を確認するとき。ユーザーコメント付きのAWIを集めるとき（`--user-comment yes`）。\n対象と出力: private-notesを読み取り、標準出力へ1件1行で書く。エージェント環境では1行1レコードのJSON Lines、それ以外では形式の省略時にテキストで表示する。エージェント環境の長い出力は生成側が全量を保存して保存先と行数を返す。ファイルは変更しない。\n前提: 指定が無ければremoteと同期する。同期を避ける場合は`--skip-pull`、必ず同期する場合は`--pull`を指定する。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "現在の重複確認にはactiveを、過去の存在確認にはallを指定し、本文を比べて一致を確かめる。\n\n実行例:\n\n  atk wi list --state=active\n  atk wi list --state=all",
     },
     "atk wi show": {
@@ -164,7 +176,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi edit": {
         "summary": "エントリの本文とメタデータを編集する",
-        "description": "エントリの本文とメタデータを編集する。\n\n目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したらキューへ保存せず、検証済み入力原稿のH1から最初のフェンス外H2直前までを原文のまま標準出力とmanaged-tempへ出力する。入力パス・冒頭保存先・文字数を返し、差分なしでも抽出する。検証・抽出保存の失敗は非0で終了する。抽出の回収は作成主体が検収・受渡しを終えた後に行い、残したファイルは7日保持後の自動削除に従う。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
+        "description": "エントリの本文とメタデータを編集する。\n\n目的: 既存項目の本文とメタデータを、非対話または$EDITORで編集する。\n利用場面: 投入済みの要求へ情報を補うとき。記述の誤りを直すとき。再処理抑制期限を設定または解除するとき。更新原稿を保存前に確かめるとき（`--dry-run`）。\n対象と出力: private-notesの対象ファイルを書き換え、commitとpushを行う。書き込み前に確定した本文と保存結果から読み直した本文が一致するかを確かめ、不一致では非0で終了して差異の特定に必要な内容を標準エラーへ書く。エージェントの実行環境から起動した場合は、`## ユーザーコメント`節を編集の対象から外し、保存済みの内容をそのまま残す。例外として`--move-user-comment <整理に使ったコメントのファイル>`を指定した場合は、保存済みのコメントがそのファイルの内容と一致し、全行が本文の`## ユーザー指摘の逐語引用`に含まれる時だけコメント節を削除して保存し、満たさない時は保存しない（コメントを本文へ移した後の整理に使う）。\n前提: 対象はinbox・processing・holdのいずれかにあり、編集で保存状態は変わらない。FILENAMEを省略した場合は、inbox配下でファイル名順が最大の項目を$EDITORで開く。非対話の本文編集には`--body-file`を使う。`--cooldown-until`はinbox・holdのAWIへタイムゾーン付きISO 8601日時を渡して期限を設定し、空文字列で期限を解除する。UWIへの日時の指定は拒否し、保存済みの期限は空文字列で解除できる。本文frontmatterからの同キーの変更は受理しない。`--append`は`--body-file`の本文を追記し、UWIを対象にしない。エージェントの実行環境から起動した場合、本文へ`## ユーザーコメント`節を含めると編集を拒否する。エージェントの実行環境から起動した場合、processingの項目の本文置換を拒否する。--appendによる追記は拒否しない。`--dry-run`はFILENAMEと`--body-file`による本文置換を保存と同じ取り込みと検証にかけ、成立したらキューへ保存せず、検証済み入力原稿のH1から最初のフェンス外H2直前までを原文のまま標準出力とmanaged-tempへ出力する。入力パス・冒頭保存先・文字数を返し、差分なしでも抽出する。検証・抽出保存の失敗は非0で終了する。抽出の回収は作成主体が検収・受渡しを終えた後に行い、残したファイルは7日保持後の自動削除に従う。拒否では保存と同じ終了コード、理由および次の操作を返す。未pushのcommitの送信、対象ファイルの書き換え、commitとpushを行わず、private-notesとremoteを変えない。\n復元・後始末: 編集前の内容はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi edit 20260901-072734-001.md --body-file=/home/aki/.cache/agent-toolkit/tmp/awi-body.md",
     },
     "atk wi effect-check": {
@@ -224,32 +236,6 @@ HELP: dict[str, dict[str, str]] = {
         "summary": "自己完結したWI要求を独立監督へ永続受付する",
         "description": "WI要求を独立した投入実行へ渡す。\n\n目的: 親の終了後もWIの意味確認・保存・報告を完遂する。\n利用場面: 確定済みの要件と由来・逐語原文・証拠を投入専用セッションへ引き渡すとき。\n対象と出力: --request-fileのJSONを状態ディレクトリのwi-submitへ保存し、監督のPID世代と所有移管を確認してJSON受付票を返す。同じrequest_idの同じ入力は同じ受付へ対応し、異なる入力は拒否する。--showは受付と結果・未報告の所在を返す。--finishは対応するrun-skill実行から要求ごとの結果を保存する。\n前提: JSONの項目は`agent-toolkit:atk-mode/playbooks/wi-submission.md`「入力と受付票」、投入セッションの契約は`agent-toolkit:atk-mode/playbooks/wi-submission.md`「投入セッション契約」を参照する。受付票は投入完了と区別する。\n復元・後始末: 未完了・未報告は保持し、SessionStart/SessionEndと--showで再観測する。成否不明の要求を新しいモデルへ再送しない。完了して報告同期済みの受付とログは最終更新から30日後の再観測で回収する。",
         "epilog": "受付入力: 単一の要求object、または同じtarget_repoと一意のrequest_idを持つ要求objectの非空配列。\n単一入力には単一応答、配列には入力順の応答配列を返す。同時に確定した要求は1つの配列で渡す。\n\n実行例:\n\n  atk wi submit --request-file /absolute/path/request.json\n  atk wi submit --show request-1\n  atk wi submit --finish /absolute/path/result.json\n  atk wi submit --resume request-1",
-    },
-    "atk wi submission": {
-        "summary": "add-awi-by-userの投入先と作業期間を記録する",
-        "description": "add-awi-by-userの投入先と作業期間を記録する。\n\n目的: 実行中のAWI投入（`/atk-mode add-awi-by-user`）の会話と、確定した投入先の対応を記録し、process-loopの開始前の活動猶予へ渡す。\n利用場面: add-awi-by-userが投入先を確定・変更した時点と、投入作業を完了・中止した時点。\n対象と出力: OSアカウントの状態ディレクトリにある会話別の投入作業の属性を作成・置換・削除する。private-notesと対象リポジトリは変更しない。\n前提: 会話IDを`--session-id`か、Claude Codeの`CLAUDE_CODE_SESSION_ID`・Codexの`CODEX_THREAD_ID`から決められること。\n復元・後始末: 記録は`atk wi submission end`で削除する。会話を再開した場合は残る記録が再び有効になる。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo\n  atk wi submission end\n  atk wi submission end --abort",
-    },
-    "atk wi submission begin": {
-        "summary": "add-awi-by-userの投入先を記録する",
-        "description": "add-awi-by-userの投入先を記録する。\n\n目的: 現在の会話を、指定した投入先へWIを投入するadd-awi-by-userの作業として記録する。\n利用場面: add-awi-by-userが要求ごとの投入先を確定した時点と、投入先を変更した時点。\n対象と出力: --target-repoの値をoriginの正規化URLへ解決し、会話別の投入作業の属性を作成するか投入先を置き換える。最初の作成時に作業開始時刻を記録し、置き換えでは保つ。成功行へ会話IDと投入先を書く。解決できない投入先や会話IDがあれば何も変更せず終了コード1で終わる。\n前提: --target-repoはローカル作業ツリーのパスか正規化リモートURLとする。同じoriginの別worktreeと別表記のURLは同じ投入先になる。\n復元・後始末: 投入作業の完了時は`atk wi submission end`、中止時は`atk wi submission end --abort`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission begin --target-repo /home/user/repo --target-repo github.com/example/other",
-    },
-    "atk wi submission end": {
-        "summary": "add-awi-by-userの投入作業を終えて記録を削除する",
-        "description": "add-awi-by-userの投入作業を終えて記録を削除する。\n\n目的: 完了または中止した投入作業を、巡回開始の判断から除く。\n利用場面: AWIの投入を完了した時と、ユーザーが投入作業を中止した時。\n対象と出力: 会話別の投入属性だけを削除する。通常終了は引数なし、中止は--abortを指定する。どちらも記録が無くても成功する。\n前提: `atk wi submission begin`と同じ会話IDを使う。\n復元・後始末: 投入作業を再開する場合は`atk wi submission begin`を実行する。",
-        "epilog": "実行例:\n\n  atk wi submission end\n  atk wi submission end --abort",
-    },
-    "atk wi submission activity": {
-        "summary": "対象リポジトリへのWI投入作業の活動を照会する",
-        "description": "WIの投入先に対応する会話と子孫の活動を読み取る。\n\n"
-        "目的: 巡回の開始前に、同じ対象へのユーザーの投入を待つ必要があるか確かめる。\n"
-        "利用場面: 巡回が候補を選定する前。\n"
-        "対象と出力: --target-repoと一致する投入作業の活動があればactiveをtrueとする1行JSONを返す。"
-        "判定に不確かさがあればuncertainをtrueとする。保存状態は変更しない。\n"
-        "前提: 投入先をoriginの正規化URLに対応付けられること。\n"
-        "復元・後始末: 活動がある時は終了を待ってから候補と活動を確かめ直す。",
-        "epilog": "実行例:\n\n  atk wi submission activity --target-repo /home/user/repo",
     },
     "atk wi process-loop": {
         "summary": "巡回を担う対話セッションを起動・再起動する",
@@ -455,7 +441,7 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk lane delete": {
         "summary": "所有sessionの安全なレーン資源をまとめて回収する",
-        "description": "所有sessionの安全なレーン資源をまとめて回収する。\n\n目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、実体が無いため登録だけを回収したmissing、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: 主repoから照会したGit登録と所有記録が一致し、担当と外部プロセスが終了し、存在するworktreeがcleanで、branchが統合先へ到達するか、finalizedの統合入力HEADを保ち、選定の統合状態が統合済みであること。worktreeのパス、Git登録、branchが全て無いと確定した登録は、これらの判定を省いて回収する。worktreeのパスが無くGit登録だけが残る場合はその登録を強制解除し、branchが残る場合は統合済み判定を続ける。終了済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: worktreeのパスが無い登録では固有delete手順を実行せず、警告と最後に記録したHEADを残す。存在する資源は固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
+        "description": "所有sessionの安全なレーン資源をまとめて回収する。\n\n目的: 記録された所有sessionのレーン資源を安全条件で回収する。\n利用場面: sessionの最後と、終了処理が保持した対象の再回収。\n対象と出力: 全登録を先に判定し、removedとretainedの理由・残る操作、実体が無いため登録だけを回収したmissing、result_pathをJSONで返す。--listでは全sessionの登録と前回結果を読み、--session-idで1所有sessionへ限定できる。読取は作成と削除を行わない。未回収がある場合は終了1、入力不正は2。\n前提: 主repoから照会したGit登録と所有記録が一致し、担当と外部プロセスが終了し、存在するworktreeがcleanで、branchが統合先へ到達するか、finalizedの統合入力HEADを保ち、選定の統合状態が統合済みであること。worktreeのパス、Git登録、branchが全て無いと確定した登録は、これらの判定を省いて回収する。worktreeのパスが無くGit登録だけが残る場合はその登録を強制解除し、branchが残る場合は統合済み判定を続ける。終了済み・未解放でcwdが対象worktree配下の委譲sessionは、所有agents_serverへ解放を要求してから使用中を再判定する。実行中・所有側無応答・解放後の残存資源は保持し、session_idと公開stop後の同じlane deleteの再実行を案内する。確認不能は保持する。\n復元・後始末: worktreeのパスが無い登録では固有delete手順を実行せず、警告と最後に記録したHEADを残す。存在する資源は固有delete手順、worktree、branch、旧配置の登録が持つ個別managed-tempの順で回収する。組込み回収では、既知のキャッシュ・仮想環境・生成出力だけが残る登録済みレーンも回収する。判別できない無視対象は保持する。WorktreeRemoveが設定された作業ツリーの撤去はhookが担う。部分失敗は登録を保持し、同じ操作で残る処理から続ける。主作業ツリー、他sessionの登録、証拠とsessionのmanaged-tempは削除しない。",
         "epilog": "実行例:\n\n  atk lane delete --session-id <作成した所有session>",
     },
     "atk lane recover": {
@@ -659,6 +645,43 @@ HELP["atk wi show"]["description"] += (
 HELP["atk wi add"]["description"] += (
     "\ntarget_repo: cwdのoriginと同値のURL、未登録のURLおよびローカルパスを受理する。"
     "cwdのorigin以外の登録remoteのURLは警告付きで受理する。"
+)
+
+HELP["atk wi verify-merge"]["description"] += (
+    "\n\nCI非対象時の同等検証:\n"
+    "CIが構成されていないか対象ブランチに適用されないと確定できる場合は、対象OIDで行った同等の検証の記録を`merge_local_verification`へ絶対パスで指定する。\n"
+    "記録には`target_repo`、`commit`、実際の`argv`、`exit_code`、出力の絶対パス`output`とSHA-256の`output_sha256`、独立文脈レビュー返却の絶対パス`review`を含める。\n"
+    "独立文脈レビューは実行した検査の同等性を確かめ、未解決0件の対象OIDの返却へ、行頭の空白を除いた次の行を入れる。\n"
+    "  同等検証記録SHA-256: <記録ファイルのSHA-256>\n"
+    "push後に初めてCIの対象外と分かった場合も、この検査と独立文脈レビューを終えてから保留を解く。\n"
+)
+HELP["atk wi show"]["description"] += (
+    "\n\n外部更新後の取得:\n"
+    "1. ユーザーからキュー項目の外部更新（回答、投入、コメント、編集、状態遷移など）を知らされたら強制同期して取得する。\n"
+    "  atk wi show <ファイル名> --pull\n"
+    "   項目を特定するための一覧も`atk wi list --pull`で取得する。\n"
+    "   同期しても項目が無いか更新前のままなら、送信側の保存が終わっていない可能性がある。\n"
+    "   次の確認時点を`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「外部サービスの状態変化を待つ場合」で決める。\n"
+    "   その時点で、特定済みなら`atk wi show <ファイル名> --pull`を、未特定なら同じ抽出条件の`atk wi list --pull`をやり直す。\n"
+    "   同期の成功と更新内容の到達は分けて扱う。\n"
+    "   通常の軽い参照、投入前の回答済みUWIとの整合確認、同期済みの候補の定期的な参照は、強制同期の対象から外す。\n"
+    "   private-notesへの直接のGit操作は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」に従う。\n"
+    "2. 投入済みのWIへ着手する前にも、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「保存前の確認」の手順2で回答済みUWIとの整合を確かめる。\n"
+    "3. 投入済みの項目は、目的、変更内容、原因分析、固有の補足条件から完成状態を導き、旧形式の節も読んで対象を確定する。\n"
+    "   任意の節や引用位置の記録を省いた本文も、書かれた内容から着手できる。\n"
+    "4. キューの原文の変化への追加の対策（原文のスナップショット、ハッシュや差分の比較、変化時の処理の遮断やUWI化）は設けず、既存の取得機能を使う。\n"
+    "   検収のための一時的な原本の保存は、この対策と別に扱い、使ってよい。\n"
+)
+HELP["atk wi add"]["description"] += (
+    "\n\nAWIの根拠を測定するとき:\n"
+    "測定の後に、対象リポジトリの作業ツリーを測定前の状態へ必ず戻す。\n"
+    "\n"
+    "1. 環境変数、コマンドライン引数、別名の一時設定ファイルなど、Gitの追跡対象を変えない手段を優先する。\n"
+    "2. 追跡対象を一時的に変える時は、測定の前に`git status --porcelain=v1`の出力と変更するファイルの内容を退避する。\n"
+    "   変更するファイルか、測定で書き換わりうるパスに既存の差分がある時は、`git worktree add --detach`で作った検証用worktreeの中で測定する。\n"
+    "3. 元の作業ツリーで測定した時は、変えたファイルを退避した内容で戻す。\n"
+    "   `git -c submodule.recurse=false checkout`と`git clean`は、測定前に差分が無かったパスだけに実行し、初期化済みのサブモジュールのHEAD、ブランチ、作業内容を保つ。\n"
+    "4. 測定後の`git status`が退避した測定前の状態と合わない時は、後続へ進まず、差分の内容と退避先のパスをユーザーへ報告する。\n"
 )
 
 for _command in ("atk wi list", "atk wi show", "atk wi grep"):

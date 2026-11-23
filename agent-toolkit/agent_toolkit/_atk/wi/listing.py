@@ -3,12 +3,14 @@ import dataclasses
 import datetime
 import json
 import pathlib
+import re
 import shutil
 import sys
 from collections.abc import Mapping
 
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk.environment import is_agent_environment
+from agent_toolkit._atk.git_sync import has_remote
 from agent_toolkit._atk.wi import branches as _wi_branches
 from agent_toolkit._atk.wi import effect_check as _effect_check
 from agent_toolkit._atk.wi import entries as _wi_entries
@@ -366,6 +368,7 @@ def _validate_named_staleness_options(args: argparse.Namespace) -> None:
         or args.type != ["all"]
         or args.answered != ["all"]
         or args.important != "all"
+        or getattr(args, "user_comment", "all") != "all"
     ):
         args.subparser.error("--staleness-forでは--state・--target-repo・同期以外の一覧条件と出力は省略値にしてください。")
 
@@ -417,7 +420,13 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshots = configured_repo_snapshot(private_notes)
         configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
-            _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            digest = _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            _wi_snapshot.remember_progress_start(
+                args.snapshot_output,
+                private_notes,
+                ((item.repository.repo_id, item.repository.branch) for item in snapshots),
+                digest,
+            )
         total = 0
         for snapshot in snapshots:
             states = _wi_filters.resolve_states(args.status)
@@ -432,6 +441,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
                 and _wi_filters.source_matches_any(parse_source(entry[2]), args.source)
                 and _wi_filters.important_matches(entry[2], getattr(args, "important", "all"))
+                and _wi_filters.user_comment_matches(entry[2], getattr(args, "user_comment", "all"))
                 and (
                     getattr(args, "effect_check", None) is None
                     or (parse_frontmatter(entry[2]) or ({}, ""))[0].get("effect_check") == args.effect_check
@@ -463,7 +473,10 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     texts = EntryTexts()
     all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
     if getattr(args, "snapshot_output", None) is not None:
-        _wi_snapshot.save(args.snapshot_output, all_entries)
+        digest = _wi_snapshot.save(args.snapshot_output, all_entries)
+        _wi_snapshot.remember_progress_start(
+            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest
+        )
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
         readiness_target,
@@ -485,6 +498,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshot=_wi_snapshot.new_entries(all_entries, baseline) if baseline is not None else all_entries,
         target_branch=target_branch,
         branch_settings=branch_settings,
+        user_comment=getattr(args, "user_comment", "all"),
     )
     if getattr(args, "effect_check", None) is not None:
         selected = [
@@ -511,3 +525,41 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         return
 
     print_entries(selected, readiness, branch_settings)
+
+
+def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
+    if not (saved := _wi_snapshot.progress_sources(session_id)):
+        return None
+    by_key = {(repo.repo_id, repo.branch): repo for repo in _config.resolve_configured_repositories()}
+    scopes = {(row["repo"], row["branch"]): row for row in saved.values()}
+    notes = {row["notes"] for row in scopes.values()}
+    if len(notes) != 1 or any(scope not in by_key for scope in scopes):
+        raise ValueError("開始時の対象と現在の登録が一致しない")
+    private_notes = pathlib.Path(notes.pop())
+    if not private_notes.is_dir():
+        raise ValueError("private-notesを読めない")
+    baselines = {
+        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"]) for scope, row in scopes.items()
+    }
+    labels = []
+    with _wi_sync.repo_lock(private_notes, timeout=0):
+        _wi_sync.ensure_mutation_allowed(private_notes)
+        # 点検は操作を止めないよう待機を制限し、分岐時のrebaseと旧形式移行は通常の一覧へ任せる。  # pyfltr: allow-comment
+        with _git_command.timeout_scope(8.0):
+            if has_remote(private_notes):
+                _wi_sync.run_git(["fetch"], private_notes, forward_error_output=False)
+                _wi_sync.run_git(["merge", "--ff-only", "@{u}"], private_notes, forward_error_output=False)
+            elif _git_command.run(["remote"], cwd=private_notes, capture_output=True, check=True).stdout.strip():
+                raise ValueError("private-notesの同期先が設定されていない")
+        snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
+        for snapshot in snapshots:
+            repo = snapshot.repository
+            baseline = baselines[repo.repo_id, repo.branch]
+            for path, _repo, body, _state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+                source = parse_source(body) or "未指定"
+                if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
+                    source = "その他"
+                branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
+                name = path.name if re.fullmatch(r"[A-Za-z0-9._-]+", path.name) else json.dumps(path.name)
+                labels.append(f"{name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
+    return tuple(sorted(set(labels)))

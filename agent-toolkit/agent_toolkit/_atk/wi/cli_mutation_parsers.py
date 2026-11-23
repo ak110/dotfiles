@@ -28,7 +28,8 @@ def _add_wi_add_parser(sub: Any) -> None:
             "引用符・改行を含む長文をシェルのエスケープを介さずに渡す場合に使う。"
         ),
     )
-    add.add_argument(
+    placement = add.add_mutually_exclusive_group()
+    placement.add_argument(
         "--batch",
         action="store_true",
         help=(
@@ -45,6 +46,12 @@ def _add_wi_add_parser(sub: Any) -> None:
             "復元できない点は限界として許容する。"
             "改行はCRLF・単独CRを含む入力もLFへ正規化して保存する。"
         ),
+    )
+    placement.add_argument(
+        "--draft-base",
+        nargs=2,
+        metavar=("REF", "OID"),
+        help="調査で固定した宛先のrefs/heads/...と完全OID。宛先worktreeの取得済みの上流と比べる。",
     )
     add.add_argument(
         "--dry-run",
@@ -137,8 +144,8 @@ def _add_wi_add_parser(sub: Any) -> None:
     )
     add.add_argument(
         "--defer-category",
-        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable"),
-        help="--process-wi-timing=next-runで必要な先送り条件の区分。",
+        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable", "throughput"),
+        help="--process-wi-timing=next-runで必要な先送り条件の区分。throughputは現在・次回の進行を妨げない独立項目を処理量の比較で次回へ渡す。",
     )
     _arguments.add_target_repo_arg(
         add,
@@ -369,6 +376,18 @@ def _add_mq_edit_parsers(sub: Any) -> None:
         help=(
             "inbox・holdのAWIの再処理抑制期限をタイムゾーン付きISO 8601日時で設定する。"
             "空文字列で解除する。UWIでは空文字列による解除だけを受け付ける。"
+        ),
+    )
+    edit.add_argument(
+        "--move-user-comment",
+        metavar="PATH",
+        default=None,
+        help=(
+            "整理に使ったユーザーコメントの本文を保存したUTF-8ファイルを受け取る。"
+            "保存済みの`## ユーザーコメント`がこの内容と一致し、その全行が--body-fileの本文の"
+            "`## ユーザー指摘の逐語引用`に連続して含まれる時だけ、コメント節を削除して保存する。エージェント環境でも使える。"
+            "満たさない時は保存しない。比較では改行の種類、コメントの前後の空行、本文側の行頭の引用記号（`>`と空白1つ）だけを無視する。"
+            "--body-fileとの併用が必須で、--appendとは併用できない。"
         ),
     )
     edit.add_argument(

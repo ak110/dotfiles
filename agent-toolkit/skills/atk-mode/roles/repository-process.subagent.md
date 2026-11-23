@@ -1,6 +1,6 @@
 ---
 mode: delegate
-model_type: orchestrate
+model_type: execute
 result_heads:
 - "状態: incomplete"
 - "状態: pending"
@@ -15,7 +15,6 @@ optional_inputs:
 - readiness
 - lane_limit
 - lane_session_id
-- previous
 - common_dir
 - registered_worktree
 - target
@@ -55,8 +54,6 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
   行がなければ、新着の判定前に既存の開始時集合を統括から取得する。
 - `lane_session_id`: 対象ごとのレーン操作の識別子。
   レーン操作の`--session-id`へ`lane_session_id`を明示する。
-- `previous`: 前回の未完了の成果と再開位置。
-  指定があれば完了済みの工程を繰り返さず、残る工程から再開する。
 - `追加指示`: 統括が受けた`instruct`のうち、この対象に関係する部分。
 - `引き継ぎ記録先`: 担当範囲の進捗と再開位置を残す記録（扱いは`agent-toolkit:atk-mode/references/work-contract.md`）。
 
@@ -64,11 +61,11 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 
 1. 受け取った対象ごとに、スキル`agent-toolkit:atk-mode`を作業`process-wi`で起動し、`lane_limit`が2以上なら複数レーン、1以下ならsingle-laneで処理する。
    受け取った候補の扱いは`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「取得済み候補の受領」、担当の分担は同書「担当の役割」に従う。
-2. 共通の規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・`lane_session_id`・`writer_sessions`は対象ごとに分ける。
+2. 共通の規範の読込は再利用し、プロジェクト固有の規範、計画・検証・レビュー・公開、候補・所有・`lane_session_id`は対象ごとに分ける。
    1つの対象がユーザー判断待ちか続行不能になっても、理由と再開先を記録して独立した他の対象の処理を続ける。
 3. 改善点は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って統括へ送り、確認事項、担当外の発見、報告用UWIの材料は統括へ返す。
 4. 祖先の対話CLIの終了（`atk agents-exit-session`）は統括に任せる。
-5. 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返す。
+5. 起動したレーン担当とwriterの終了を観測してから返す（session IDは`agents_server`の登録を原本とする）。
    Claude Codeで背景の `atk agents wait` の完了通知により同じセッションへ自動再開できる場合に限り、ターンを閉じる返却本文は `待機中: <実行識別子>` の1行だけにする。
    自動再開が成り立つかの確かめ方と、確かめられない場合の同じターンでの回収は、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「完了通知を待ってターンを終える場合」に従う。
    再開後は配下の結果を回収して残作業を進め、最終結果は本書「出力」に従って返す。
@@ -76,7 +73,7 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 ## 出力
 
 各対象について次の形式のみを返す。
-5行の組を入力順に繰り返し、結果とwriterは対象別に保持する。
+4行の組を入力順に繰り返し、結果は対象別に保持する。
 今回進められる作業と処理済み部分の公開・CI検収が完了した場合は`状態`を`completed`とする。
 残りが、必要なユーザー判断を終えた有効な未来の冷却期限、未回答UWIへの依存、外部の先行項目への依存で正当に先送りされている場合も含む。
 WI自体の完成とは区別し、先送りした項目・残る条件・解除条件・再開先を`残工程`へ記す。
@@ -87,12 +84,11 @@ WI自体の完成とは区別し、先送りした項目・残る条件・解除
 状態: <completed|incomplete|pending>
 対象: <target>
 残工程: <残る工程と再開先。無ければ「なし」>
-writer_sessions: <起動したレーン担当とwriterのsession IDのJSON配列>
 結果: <公開結果、CI、処理したAWIと採否の要約>
 ```
 
 続行不能の場合は`状態:`行の代わりに`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」の`続行できない区分:`と`続行できない理由:`を置き、他の行は保持する。
-統括担当はこの返却を`result_file`の`blocked`として記録する。
+統括担当はこの返却を、その対象の`blocked`として完了報告に載せる。
 `user_decision`・`authorization`・`inaccessible_input`の不足をユーザーだけが提供できる場合は、統括担当が同じprocess-wiの実行内で処置する。
 
 処置は`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「採否の確定と終了区分」手順3に従う。

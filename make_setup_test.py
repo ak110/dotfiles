@@ -221,6 +221,9 @@ def test_make_sync_preserves_external_project_environment(
         encoding="utf-8",
     )
     (project / "agent-toolkit" / "scripts").mkdir(parents=True)
+    guard = pathlib.Path("pytools/_internal/verify_worktree_venv.py")
+    (project / guard).parent.mkdir(parents=True)
+    shutil.copyfile(_REPOSITORY_ROOT / guard, project / guard)
     lock_environment = host_environ()
     lock_environment.pop("UV_FROZEN", None)
     locked = subprocess.run(

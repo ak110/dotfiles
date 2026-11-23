@@ -22,6 +22,8 @@
    ユーザーだけが決められる値が残る場合に限り、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従って確認する。
 3. 保存せずに検証する。
    - 新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <source>`を使う。
+     調査基点がある新規AWIは`--target-repo <宛先worktree> --draft-base <ベースref> <完全OID>`も指定する。
+     系統を登録した宛先では、初回・再検収のどちらも本保存と同じ`--target-branch <系統>`を渡す。
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。
    - UWIの新規では`--type=uwi`と、その問いに要る回答形式の指定を加える。
@@ -118,9 +120,11 @@
    ユーザー固有の判断の回答を待っている要求は、保存を指示されても回答まで保存を保留する。
 2. 保存する。
    - 新規は`atk wi add --body-file <原稿の絶対パス>`で保存する。
+     dry-runに調査基点を指定した新規AWIは、同じ宛先と`--draft-base`を使う。
+     不一致なら同じ宛先で基点を選び直し、影響する前提の調査・原稿の修正・検収をやり直す。
    - `ファイル名`を受け取った要求は新規に保存せず、`atk wi show`で取得した現行本文を改訂して`atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で保存する。
    - 投入は要求ごとに1回だけ行う。
-   - 同じリポジトリで同時に確定した複数のAWIは、`--body-file`を反復して1回の`atk wi add`にまとめる（努力目標。commitとpushを1回にするため）。
+   - 同じリポジトリ・宛先系統・調査基点で同時に確定した複数のAWIは、`--body-file`を反復して1回の`atk wi add`にまとめる（努力目標。commitとpushを1回にするため）。
    - 依存があれば先行項目から保存し、確定した正式なファイル名を後続の`depends_on`と本文へ書く。
      書く依存は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」の先行成果の必要性の基準で確定したものに限る。
    - 検収済みの原稿との一致を保存の時にも確かめる場合は、dry-runと同じ`--compare-opening-file`を本保存へ付ける（不一致なら保存は止まる）。
@@ -148,19 +152,7 @@
 
 ### 取得
 
-1. ユーザーからキュー項目の外部更新（UWIへの回答、AWIの投入、ユーザーコメント、本文の編集、状態遷移など）を知らされたら、`atk wi show <ファイル名> --pull`で本文を強制同期して取得する。
-   項目を特定するための一覧も`atk wi list --pull`で取得する。
-   同期しても項目が無いか更新前のままなら、送信側の保存が終わっていない可能性がある。
-   次の確認時点を`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「外部サービスの状態変化を待つ場合」で決める。
-   その時点で、特定済みなら`atk wi show <ファイル名> --pull`を、未特定なら同じ抽出条件の`atk wi list --pull`をやり直す。
-   同期の成功と更新内容の到達は分けて扱う。
-   通常の軽い参照、投入前の回答済みUWIとの整合確認、同期済みの候補の定期的な参照は、強制同期の対象から外す。
-   private-notesへの直接のGit操作は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「対象リポジトリとprivate-notesの区別」に従う。
-2. 投入済みのWIへ着手する前にも、本書「保存前の確認」の手順2で回答済みUWIとの整合を確かめる。
-3. 投入済みの項目は、目的、変更内容、原因分析、固有の補足条件から完成状態を導き、旧形式の節も読んで対象を確定する。
-   任意の節や引用位置の記録を省いた本文も、書かれた内容から着手できる。
-4. キューの原文の変化への追加の対策（原文のスナップショット、ハッシュや差分の比較、変化時の処理の遮断やUWI化）は設けず、既存の取得機能を使う。
-   検収のための一時的な原本の保存は、この対策と別に扱い、使ってよい。
+外部更新後の取得と着手前の確認は、`atk wi show --help` の「外部更新後の取得」に従う。
 
 ## 返す報告に含める項目
 

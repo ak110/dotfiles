@@ -1,11 +1,3 @@
-"""会話ごとの活動をhook、実プロセス、セッション記録と登録簿から取得する。
-
-開始猶予の期限は呼び出し元が持つ。ここでは読取不能な活動記録を活動候補として返し、
-無活動へ読み替えない。hookの記録は会話ごとの最新状態だけを保持する。
-process-loopの開始猶予へ渡す活動は、WI投入作業の属性（作業種別と正規化した投入先）を
-持つ会話とその子孫に限る。属性は`record_submission`・`clear_submission`が会話別に保存する。
-"""
-
 from __future__ import annotations
 
 import contextlib
@@ -55,16 +47,8 @@ class ActivitySnapshot:
         return bool(self.active_session_ids or self.reasons or self.uncertain)
 
 
-SUBMISSION_KIND = "add-awi-by-user"
-"""開始猶予の理由になる作業種別。"""
-
-
 def activity_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     return (state_paths.state_dir() if state_root is None else state_root) / "session-activity"
-
-
-def submission_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
-    return activity_directory(state_root) / "submissions"
 
 
 def _valid_session(session_id: str) -> str:
@@ -72,67 +56,6 @@ def _valid_session(session_id: str) -> str:
     if valid is None:
         raise ValueError(f"会話IDとして使えない値です: {session_id!r}")
     return valid
-
-
-def submission_started_at(session_id: str, *, state_root: pathlib.Path | None = None) -> str | None:
-    path = submission_directory(state_root) / f"{_valid_session(session_id)}.json"
-    try:
-        started = _read(path).get("started_at")
-    except OSError, UnicodeError, ValueError:
-        return None
-    return started if isinstance(started, str) and started else None
-
-
-def record_submission(session_id: str, targets: Collection[str], *, state_root: pathlib.Path | None = None) -> str:
-    valid = _valid_session(session_id)
-    if not targets or not all(isinstance(target, str) and target for target in targets):
-        raise ValueError("投入先を1件以上指定してください")
-    directory = submission_directory(state_root)
-    directory.mkdir(parents=True, exist_ok=True)
-    started_at = submission_started_at(valid, state_root=state_root) or datetime.datetime.now(datetime.UTC).isoformat()
-    record = {
-        "version": 1,
-        "session_id": valid,
-        "kind": SUBMISSION_KIND,
-        "targets": sorted(set(targets)),
-        "started_at": started_at,
-        "updated_at": time.time(),
-    }
-    atomic_write(directory / f"{valid}.json", json.dumps(record, ensure_ascii=False) + "\n")
-    return started_at
-
-
-def clear_submission(session_id: str, *, state_root: pathlib.Path | None = None) -> bool:
-    path = submission_directory(state_root) / f"{_valid_session(session_id)}.json"
-    existed = path.exists()
-    path.unlink(missing_ok=True)
-    return existed
-
-
-def _submissions(root: pathlib.Path) -> dict[str, frozenset[str]]:
-    found: dict[str, frozenset[str]] = {}
-    try:
-        paths = [entry for entry in submission_directory(root).iterdir() if entry.suffix == ".json"]
-    except OSError:
-        return found
-    for path in paths:
-        try:
-            record = _read(path)
-        except OSError, UnicodeError, ValueError:
-            continue
-        targets = record.get("targets")
-        if (
-            isinstance(record.get("version"), int)
-            and not isinstance(record.get("version"), bool)
-            and record.get("version") == 1
-            and record.get("kind") == SUBMISSION_KIND
-            and record.get("session_id") == path.stem
-            and isinstance(targets, list)
-            and targets
-            and all(isinstance(target, str) and target for target in targets)
-        ):
-            found[path.stem] = frozenset(targets)
-    return found
 
 
 def _engine(process: psutil.Process) -> str | None:
@@ -668,34 +591,6 @@ def _exited(path: pathlib.Path) -> bool:
     except OSError, UnicodeError, ValueError:
         return False
     return identity is not None and not identity.exists()
-
-
-def submission_activity(
-    target_repo_ids: Collection[str],
-    *,
-    excluded_session_ids: set[str] | None = None,
-    excluded_pids: set[int] | None = None,
-    state_root: pathlib.Path | None = None,
-    processes: Sequence[HostProcess] | None = None,
-) -> ActivitySnapshot:
-    root = state_paths.state_dir() if state_root is None else state_root
-    targets = frozenset(target_repo_ids)
-    submissions = {session_id: owned & targets for session_id, owned in _submissions(root).items() if owned & targets}
-    if not submissions:
-        return ActivitySnapshot()
-    scan = _scan(
-        excluded_session_ids=excluded_session_ids,
-        excluded_pids=excluded_pids,
-        root=root,
-        processes=processes,
-    )
-    members = session_parents.descendants(set(submissions), scan.links)
-    active = {session_id: reason for session_id, reason in scan.active.items() if session_id in members}
-    return ActivitySnapshot(
-        frozenset(active),
-        tuple(dict.fromkeys(active.values())),
-        bool(scan.uncertain_ids & active.keys()),
-    )
 
 
 def review_activity(session_ids: Collection[str], *, state_root: pathlib.Path | None = None) -> ActivitySnapshot:

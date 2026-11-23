@@ -9,6 +9,7 @@ from agent_toolkit._atk import plans_bundle as _plans_bundle
 from agent_toolkit._atk import plans_checkout as _plans_checkout
 from agent_toolkit._atk import plans_storage as _plans_storage
 from agent_toolkit._atk.wi import web_input as _wi_web_input
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan import locations as _plan_file
@@ -242,7 +243,12 @@ def commit_ci_review(
         if saved.exists() and (saved.is_symlink() or not saved.is_file()):
             raise _wi_web_input.WebInputError(
                 f"保存先のCI対応レビュー指摘管理表が通常ファイルではありません: {saved}",
-                next_action=f"`git -C {private_notes} status`で保存先の状態を確認し、原因が分からない場合はユーザーへ報告する",
+                next_action=recover_from_failure(
+                    component="計画の保存先",
+                    evidence="診断と管理repoの状態",
+                    first_step=f"`git -C {private_notes} status`で保存先の状態を確認する",
+                    retry="保存済みの内容を確認し、未反映の処理だけを再実行する",
+                ),
             )
         saved_contents = {saved.name: saved.read_bytes()} if saved.is_file() else {}
         if checkout_record is not None:

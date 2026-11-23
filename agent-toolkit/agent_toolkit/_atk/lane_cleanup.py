@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
+import csv
+import hashlib
 import json
+import os
 import pathlib
+import re
 import shutil
 import subprocess
 import typing
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
@@ -16,17 +21,224 @@ from agent_toolkit._atk import lane_retirement, managed_temp
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
 
+_CACHE_SIGNATURE = b"Signature: 8a477f597d28d172789f06886806bc55"
 
-def _unowned_data_reason(worktree: pathlib.Path, protected_paths: Iterable[str]) -> str | None:
+
+def _starts_with_regular_file(path: pathlib.Path, prefix: bytes) -> bool:
+    if path.is_symlink() or not path.is_file():
+        return False
+    with path.open("rb") as handle:
+        return handle.read(len(prefix)) == prefix
+
+
+def _recorded_venv_files(root: pathlib.Path) -> dict[pathlib.Path, tuple[str, str]]:
+    installed: dict[pathlib.Path, tuple[str, str]] = {}
+    for site in (root / "Lib" / "site-packages", *root.glob("lib/python*/site-packages")):
+        for record in site.glob("*.dist-info/RECORD"):
+            if record.is_symlink() or not record.is_file() or not record.resolve().is_relative_to(root):
+                continue
+            with record.open(encoding="utf-8", newline="") as source:
+                for row in csv.reader(source, strict=True):
+                    if len(row) == 3:
+                        target = pathlib.Path(os.path.normpath(site / row[0]))
+                        if target.is_relative_to(root):
+                            installed[target.relative_to(root)] = (row[1], row[2])
+    return installed
+
+
+def _is_bytecode(relative: pathlib.Path) -> bool:
+    return relative.parent.name == "__pycache__" and relative.suffix == ".pyc"
+
+
+def _record_matches(path: pathlib.Path, recorded: tuple[str, str]) -> bool:
+    digest, length = recorded
+    if not digest and not length:
+        return path.name == "RECORD" and path.parent.name.endswith(".dist-info")
+    if not length.isdecimal() or path.stat().st_size != int(length):
+        return False
+    algorithm, _, encoded = digest.partition("=")
+    if algorithm != "sha256":
+        return False
+    with path.open("rb") as source:
+        computed = hashlib.file_digest(source, "sha256").digest()
+    return base64.urlsafe_b64encode(computed).decode("ascii").rstrip("=") == encoded
+
+
+def _venv_file(root: pathlib.Path, relative: pathlib.Path, installed: dict[pathlib.Path, tuple[str, str]]) -> bool:
+    if relative in installed:
+        return _record_matches(root / relative, installed[relative])
+    if _is_bytecode(relative):
+        return True
+    if len(relative.parts) == 1:
+        return relative.name in {".gitignore", ".lock", "CACHEDIR.TAG", "pyvenv.cfg", "lib64"}
+    if len(relative.parts) != 2 or relative.parts[0] not in {"bin", "Scripts"}:
+        return False
+    return bool(
+        re.fullmatch(r"python(?:w|3(?:\.\d+)?)?(?:\.exe)?", relative.name)
+        or relative.name
+        in {
+            "activate",
+            "activate.bat",
+            "activate.csh",
+            "activate.fish",
+            "activate.nu",
+            "activate.ps1",
+            "activate_this.py",
+            "deactivate.bat",
+            "activate.xsh",
+            "pydoc.bat",
+        }
+    )
+
+
+def _cache_file(root: pathlib.Path, relative: pathlib.Path) -> bool:
+    if len(relative.parts) == 1:
+        return relative.name in {"CACHEDIR.TAG", ".gitignore"} or (
+            root.name == ".pytest_cache" and relative.name == "README.md"
+        )
+    if root.name == ".ruff_cache":
+        return (
+            len(relative.parts) == 2
+            and bool(re.fullmatch(r"\d+\.\d+\.\d+.*", relative.parts[0]))
+            and relative.name.isascii()
+            and relative.name.isdecimal()
+        )
+    return relative.as_posix() in {"v/cache/nodeids", "v/cache/lastfailed", "v/cache/stepwise"}
+
+
+PROJECTION_MANIFEST = pathlib.Path(".agent-toolkit-generated-files.json")
+
+
+def projection_manifest(root_name: str, outputs: Mapping[pathlib.Path, tuple[bytes, int]]) -> tuple[bytes, int]:
+    files = {path.as_posix(): hashlib.sha256(content).hexdigest() for path, (content, _mode) in sorted(outputs.items())}
+    return (json.dumps({"root": root_name, "files": files}, ensure_ascii=False) + "\n").encode(), 0o644
+
+
+def _projection_fingerprints(path: pathlib.Path) -> dict[str, str] | None:
+    marker = path / PROJECTION_MANIFEST
+    if marker.is_symlink() or not marker.is_file():
+        return None
+    try:
+        decoded = json.loads(marker.read_text(encoding="utf-8"))
+    except OSError, UnicodeError, ValueError:
+        return None
+    if not isinstance(decoded, dict) or decoded.get("root") != path.name:
+        return None
+    files = decoded.get("files")
+    if not isinstance(files, dict) or not files or PROJECTION_MANIFEST.as_posix() in files:
+        return None
+    if any(not isinstance(value, str) or re.fullmatch(r"[a-f0-9]{64}", value) is None for value in files.values()):
+        return None
+    return files
+
+
+def _matches_projection_file(path: pathlib.Path, expected: str | None) -> bool:
+    if expected is None or path.is_symlink() or not path.is_file():
+        return False
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest() == expected
+
+
+def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
+    relative = pathlib.Path(raw)
+    if not raw.endswith("/") or relative.is_absolute() or ".." in relative.parts:
+        return False
+    path = worktree / relative
+    if path.is_symlink() or path.is_junction() or not path.is_dir():
+        return False
+    if path.name == "__pycache__":
+        return all(child.is_file() and not child.is_symlink() and child.suffix == ".pyc" for child in path.iterdir())
+    if path.name in {".pytest_cache", ".ruff_cache"}:
+        recognized = _starts_with_regular_file(path / "CACHEDIR.TAG", _CACHE_SIGNATURE)
+    elif relative == pathlib.Path(".venv"):
+        recognized = _starts_with_regular_file(path / "pyvenv.cfg", b"home = ")
+    elif relative == pathlib.Path("agent-toolkit-codex"):
+        recognized = _starts_with_regular_file(path / "GENERATED.md", "# 自動生成ファイル".encode())
+    elif relative.as_posix() in {"agent-toolkit-agy", "agent-basics-agy"}:
+        manifest = path / "plugin.json"
+        if manifest.is_symlink() or not manifest.is_file() or not (worktree / ".claude-plugin" / "marketplace.json").is_file():
+            return False
+        metadata = json.loads(manifest.read_text(encoding="utf-8"))
+        recognized = isinstance(metadata, dict) and metadata.get("name") == path.name.removesuffix("-agy")
+    else:
+        return False
+    if not recognized:
+        return False
+
+    def on_error(error: OSError) -> typing.Never:
+        raise error
+
+    is_venv = relative == pathlib.Path(".venv")
+    try:
+        installed = _recorded_venv_files(path) if is_venv else {}
+    except csv.Error:
+        return False
+    is_cache = path.name in {".pytest_cache", ".ruff_cache"}
+    fingerprints = None if is_venv or is_cache else _projection_fingerprints(path)
+    if not is_venv and not is_cache and fingerprints is None:
+        return False
+    projected_dirs = {
+        parent.as_posix() for relative in fingerprints or () for parent in pathlib.PurePosixPath(relative).parents
+    }
+    for directory, folders, files in path.walk(on_error=on_error):
+        if ".git" in {name.casefold() for name in (*folders, *files)}:
+            return False
+        if any((directory / name).is_junction() for name in folders):
+            return False
+        if fingerprints is not None and any(
+            name != "__pycache__" and (directory / name).relative_to(path).as_posix() not in projected_dirs for name in folders
+        ):
+            return False
+        for name in files:
+            file = directory / name
+            child = file.relative_to(path)
+            if is_venv:
+                if not _venv_file(path, child, installed):
+                    return False
+                if child == pathlib.Path("lib64") and (not file.is_symlink() or file.resolve() != path / "lib"):
+                    return False
+            elif is_cache:
+                if not _cache_file(path, child):
+                    return False
+            elif (
+                fingerprints is not None
+                and child != PROJECTION_MANIFEST
+                and not _is_bytecode(child)
+                and not _matches_projection_file(file, fingerprints.get(child.as_posix()))
+            ):
+                return False
+    return True
+
+
+def _unowned_data_reason(
+    worktree: pathlib.Path, protected_paths: Iterable[str], *, allow_generated: bool = False
+) -> str | None:
     path = worktree.resolve()
     if any(pathlib.Path(other) != path and pathlib.Path(other).is_relative_to(path) for other in protected_paths):
         return "別のworktreeを内包するため回収しない"
-    if _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored", "--untracked-files=all"):
+    status = _lane_records.git(worktree, "status", "--porcelain=v1", "--ignored=matching", "--untracked-files=normal", "-z")
+    if any(
+        not (allow_generated and entry.startswith("!! ") and _registered_generated_directory(worktree, entry[3:]))
+        for entry in status.split("\0")
+        if entry
+    ):
         return "Gitの無視対象または新たな変更がある"
     gitdir = pathlib.Path(_lane_records.git(worktree, "rev-parse", "--absolute-git-dir"))
     if any((gitdir / name).exists() for name in ("rebase-apply", "rebase-merge", "BISECT_START", "sequencer")):
         return "worktreeでGit操作が中断中"
     return None
+
+
+def _registered_unowned_data_reason(record: dict[str, typing.Any], worktree: pathlib.Path, trees: dict[str, str]) -> str | None:
+    listed = _lane_records.list_resources()
+    if listed["errors"]:
+        return "所有登録を確認できないため回収しない"
+    protected_paths = (
+        {str(pathlib.Path(item["record"]["worktree"]).resolve()) for item in listed["records"]}
+        | set(trees)
+        | lane_retirement.integration_worktrees(record["common_dir"])
+    )
+    return _unowned_data_reason(worktree, protected_paths, allow_generated=True)
 
 
 def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire_integrated: bool = False) -> str | None:
@@ -64,23 +276,15 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire
             return "未commitまたは未追跡の変更がある"
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
-    if not selected and state.worktree_path:
-        listed = _lane_records.list_resources()
-        if listed["errors"]:
-            return "所有登録を確認できないため回収しない"
-        protected_paths = (
-            {str(pathlib.Path(item["record"]["worktree"]).resolve()) for item in listed["records"]}
-            | set(trees)
-            | lane_retirement.integration_worktrees(record["common_dir"])
-        )
-        reason = _unowned_data_reason(worktree, protected_paths)
-        if reason:
-            return reason
     if state.branch:
         if selected:
             _lane_records.branch_is_integrated(record, repo)
         else:
             lane_retirement.prove(record, repo)
+    if not selected and state.worktree_path:
+        reason = _registered_unowned_data_reason(record, worktree, trees)
+        if reason:
+            return reason
     return None
 
 
@@ -200,6 +404,10 @@ def cleanup_session(
                 elif state.worktree_registered:
                     remove_args = ("--force",) if not state.worktree_path else ()
                     if state.worktree_path:
+                        worktree = pathlib.Path(record["worktree"])
+                        reason = _registered_unowned_data_reason(record, worktree, _lane_records.worktrees(repo))
+                        if reason:
+                            raise ValueError(reason)
                         # Gitの保護判定は既に完了しているため、ここでだけ全木を準備する。
                         # 固有手順が別所有者の生成物を撤去できなければ、所有記録を残して失敗する。
                         temp_permissions.prepare_tree(pathlib.Path(record["worktree"]))

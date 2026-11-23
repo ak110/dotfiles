@@ -38,7 +38,9 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    | `Git管理外の変更` | 引き継ぎ記録にある変更前後の複製の全ての対。無ければ省く |
 
    リポジトリ、対象HEADからの変更ファイル、検証結果、指摘管理表はレビュー担当が解決する。
-5. 基準、開始時点、指摘管理表、`review_contract`が全て同じリポジトリに属し、渡すパスが実在することを確かめ、不足があれば起動せずに不足を委譲元へ返す。
+5. 基準、開始時点、指摘管理表、`review_contract`が同じリポジトリに属し、渡すパスが実在することを確かめる。
+   不足時は起動せず引き継ぎ記録と原本で補い、不具合なら診断を保持して `agent-basics:bugfix` で認可内の是正後に再検証する。
+   補えない入力・影響・試行だけを委譲元へ返す。
 6. `agents_server`の`start`を、`cwd`に対象worktreeの絶対パス、`subagent_md_path`に`exec-review`、`extra_params`に手順4の入力、`model_type`に手順2の値（無ければ省く）を渡して呼ぶ。
    通知を変えた差分では、検証記録の最終の配送本文の保存先と入力・版・ホスト・生成元を渡し、レビュー担当が全文を開けることを確かめる（ソースのリテラルや合格の総数で代用しない）。
 7. 画面表示の変更があれば、`agent-toolkit:atk-mode/roles/usability-review.parent.md`でユーザビリティレビュー担当も並行して起動する。
@@ -86,9 +88,9 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 修正と、その採否、方針、検収は対象worktreeの書込所有者が持つ（手順は`agent-toolkit:atk-mode/playbooks/review-fix.md`）。
 
 1. 起動側が書込所有者（レーン担当、single-laneのメイン）なら、同書に従って自分で直す。
-2. 書込所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、前提・必要性・修正の規模への疑問を指摘ごとに`レビュー参考意見`にする。
-   追加の探索や再現はせず、疑いだけで指摘を消すことも対応済みにすることもしない。
-   通常運用での実害の裏付けが無い指摘（合成した構成だけで再現した指摘など）は、その旨を根拠に不採用の参考意見にする（`agent-basics:review-standards/references/reviewee.md`の採用条件）。
+2. 書込所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、`agent-basics:review-standards/references/reviewee.md`に従い、根拠と価値・QCDの比較を指摘ごとに`レビュー参考意見`へ書く。
+   この工程では探索と再現を追加せず、応答の確定は書込所有者に任せる。
+   合成した構成だけの結果は通常運用の結果と区別する。
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
 3. 同じthreadを続けられなければ、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`「継続と新規起動」に従って`レビュー修正担当`を起動し、`再開位置`に`~/.claude/plans`の計画の絶対パスを、管理表と参考意見を手順2の形で渡す。

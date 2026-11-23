@@ -24,11 +24,12 @@ in-processのサブエージェントはpayloadの`agent_id`）ごとに次の�
 from __future__ import annotations
 
 import json
-import re
+import os
 import time
 
+from agent_toolkit._common import process_loop_session
 from agent_toolkit._common.json_lines import split_lines
-from agent_toolkit._common.session_state import read_state, update_state
+from agent_toolkit._common.session_state import update_state
 from agent_toolkit._hooks import notice as _notice
 from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -43,14 +44,9 @@ SOURCE = "progress-self-check"
 """通知の生成元として`atk-auto`要素の`source`属性へ入れる名前。"""
 
 _llm_notice = _notice_formatter(SOURCE)
-_block_notice = _notice.block_formatter(SOURCE)
 
 DELIVERED_KEY = "progress_self_check_delivered"
 """最終出力へ採用された通知の生成時刻を、呼出主体ごとに受け取るセッション状態のキー。"""
-
-_REPORT_DUE_KEY = "progress_self_check_report_due"
-_REPORT_FORMAT = "進捗 N%・完了見込み HH:MM（根拠: …）"
-_REPORT_LINE = re.compile(r"進捗 (?:100|[0-9]{1,2})%・完了見込み (?:[01][0-9]|2[0-3]):[0-5][0-9]（根拠: (.+)）")
 
 RESERVATION_SECONDS = 60
 """期日到達後の予約が並列claimを抑止する秒数。同じ時点に並列で動くフックの処理時間より十分長い値にする。"""
@@ -61,77 +57,8 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = f"進捗点検。次のユーザー向け報告の1行目を埋めよ: `{_REPORT_FORMAT}`。"
-_DELEGATED_NOTICE_BODY = "進捗点検。作業記録と残工程を確かめ、委譲元への返却・通知は役割文書に従え。"
-
-
-def _report_matches(text: object) -> bool:
-    if not isinstance(text, str) or not (lines := text.splitlines()):
-        return False
-    match = _REPORT_LINE.fullmatch(lines[0])
-    return match is not None and bool(match[1].strip().strip("….").strip())
-
-
-def _report_session(payload: dict) -> str | None:
-    session_id = payload.get("session_id")
-    if not isinstance(session_id, str) or not session_id or not is_main_agent_context(payload):
-        return None
-    return session_id if read_state(session_id).get(_REPORT_DUE_KEY) else None
-
-
-def _report_block() -> str:
-    return _block_notice(
-        "点検通知の後、最初の報告の1行目が指定の書式に合わないため確定していない。",
-        fix=f"報告の1行目を `{_REPORT_FORMAT}` の形に直して再試行する。見込みはローカル時刻で書く。",
-    )
-
-
-def send_block(payload: dict, message: object) -> str | None:
-    if _report_session(payload) is not None and not _report_matches(message):
-        return _report_block()
-    return None
-
-
-def _observe_report(payload: dict, message: object) -> None:
-    if not _report_matches(message) or (session_id := _report_session(payload)) is None:
-        return
-
-    def clear(state: dict) -> dict | None:
-        if _REPORT_DUE_KEY not in state:
-            return None
-        state.pop(_REPORT_DUE_KEY)
-        return state
-
-    update_state(session_id, clear)
-
-
-def _delivery_succeeded(response: object) -> bool:
-    if isinstance(response, str):
-        try:
-            response = json.loads(response)
-        except ValueError:
-            return False
-    if isinstance(response, dict):
-        if response.get("isError") is True or response.get("is_error") is True:
-            return False
-        structured = response.get("structuredContent", response)
-        if isinstance(structured, dict) and "ok" in structured:
-            return structured["ok"] is True
-        response = response.get("content")
-    if isinstance(response, list) and len(response) == 1:
-        block = response[0]
-        if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
-            try:
-                result = json.loads(block["text"])
-            except ValueError:
-                return False
-            return isinstance(result, dict) and result.get("ok") is True
-    return False
-
-
-def observe_send(payload: dict, message: object) -> None:
-    if _delivery_succeeded(payload.get("tool_response")):
-        _observe_report(payload, message)
+_SELF_CHECK_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、未確認の点を報告せよ。"
+_DELEGATED_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、役割の契約に従って返却せよ。"
 
 
 def _format_elapsed(seconds: float) -> str:
@@ -233,6 +160,20 @@ def _saturation_text(session_id: str) -> str:
     return working + hooks
 
 
+def _new_wi_text(session_id: str) -> str:
+    from agent_toolkit._atk.wi.listing import progress_new_wis  # pylint: disable=import-outside-toplevel
+
+    try:
+        rows = progress_new_wis(session_id)
+    except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
+        return f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で診断と処理可能な新着を確かめる。"
+    if rows is None:
+        return "新着WIは未確認（開始時集合なし）。"
+    if not rows:
+        return "新着WIは0件。"
+    return f"処理可能な新着WI: {'、'.join(rows)}。"
+
+
 def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: bool = False) -> str | None:
     """点検の期日に達していれば通知本文を返し、配送時に通知時刻を確定する予約をする。達していなければ`None`を返す。
 
@@ -291,13 +232,16 @@ def claim_notice(payload: dict, *, now: float | None = None, periodic_recheck: b
     main_agent = is_main_agent_context(payload)
     instruction = _SELF_CHECK_NOTICE_BODY if main_agent else _DELEGATED_NOTICE_BODY
     previous = f"前回の通知から{_format_elapsed(since_notice)}たった。" if since_notice is not None else ""
-    body = elapsed_text + previous + _saturation_text(session_id) + instruction
+    new_wis = (
+        _new_wi_text(session_id)
+        if main_agent and process_loop_session.is_identified_process_loop_session(session_id, os.environ)
+        else ""
+    )
+    body = elapsed_text + previous + _saturation_text(session_id) + new_wis + instruction
     text = _llm_notice(body, tag="notice")
     if not text:
         return None
     _notice.stage_delivery(text, session_id, DELIVERED_KEY, agent_id, repr(current_time))
-    if main_agent:
-        _notice.stage_delivery(text, session_id, _REPORT_DUE_KEY, agent_id, "pending")
     return text
 
 

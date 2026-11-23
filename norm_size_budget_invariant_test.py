@@ -7,13 +7,14 @@
 """
 
 import pathlib
+import re
 import subprocess
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent
 _ROOTS = ("agent-toolkit/skills", "agent-basics/skills")
 
 
-_BUDGET_BYTES = 2_800_000
+_BUDGET_BYTES = 2_760_000
 
 
 def _norm_markdown_bytes(root: pathlib.Path) -> int:
@@ -34,3 +35,144 @@ def test_norm_markdown_within_budget() -> None:
         ".claude/skills/edit-dotfiles-norms/SKILL.mdの「規範を削除・縮小するときの消失確認」に従い、"
         "削減量と整理後の上限は、必要な規範を保ちながらdotfilesの価値を最大化するように決める。"
     )
+
+
+_ATK_MODE = _REPO_ROOT / "agent-toolkit/skills/atk-mode"
+_ALL_REPOS_DOCS = (
+    "playbooks/process-wi-all-repos.md",
+    "playbooks/process-wi-all-repos-results.md",
+    "references/usage-limit.md",
+    "roles/repository-process.subagent.md",
+)
+_EXECUTION_DOC = "playbooks/process-wi-execution.md"
+_RESULT_FILE_TOKENS = ("result_file", "結果JSON", "writer_sessions")
+_OBSOLETE_RESULT_SUBJECT = re.compile(r"(?:(?:各対象|対象別|対象ごと)の(?:処理)?結果|再開先を結果ファイル)")
+_DUAL_RECORD = re.compile(r"(引き継ぎ記録|進捗ログ)(と|および|及び|、)(既存の|計画の)?(引き継ぎ記録|進捗ログ)")
+_SUBSECOND_TERMS = ("秒以下", "開始・終了", "開始と終了")
+_TIMING_EXCEPTIONS = ("旧形式", "計画が無い", "計画なし", "境界と離れ", "境界から離れ", "計画前")
+
+
+def _section(text: str, heading: str) -> str:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"(#+) (.+)$", line)
+        if match and match.group(2).strip() == heading:
+            level = len(match.group(1))
+            body: list[str] = []
+            for rest in lines[index + 1 :]:
+                next_match = re.match(r"(#+) ", rest)
+                if next_match and len(next_match.group(1)) <= level:
+                    break
+                body.append(rest)
+            return "\n".join(body)
+    return ""
+
+
+def _numbered_step(section: str, number: int) -> str:
+    match = re.search(rf"^{number}\. .*?(?=^{number + 1}\. |\Z)", section, re.MULTILINE | re.DOTALL)
+    return match.group(0) if match else ""
+
+
+def _result_file_violations(text: str) -> list[str]:
+    write_actions = ("保存する", "書き出す", "へ書く")
+    return [
+        sentence
+        for sentence in _sentences(text)
+        if any(token in sentence for token in _RESULT_FILE_TOKENS)
+        or (
+            _OBSOLETE_RESULT_SUBJECT.search(sentence)
+            and "ファイル" in sentence
+            and any(verb in sentence for verb in write_actions)
+        )
+    ]
+
+
+def _sentences(text: str) -> list[str]:
+    blocks = re.split(r"\n\s*\n|\n(?=\s*(?:[-*] |\d+\. |#+ ))", text)
+    return [sentence for block in blocks for sentence in "".join(line.strip() for line in block.splitlines()).split("。")]
+
+
+def _dual_verification_record_violations(text: str) -> list[str]:
+    step = _numbered_step(_section(text, "継続する工程"), 2)
+    return [sentence for sentence in _sentences(step) if "検証結果" in sentence and _DUAL_RECORD.search(sentence)]
+
+
+def _handwritten_timing_violations(text: str) -> list[str]:
+    section = _section(text, "工程の計測と統合準備")
+    violations = []
+    for sentence in _sentences(section):
+        if "結果・特記事項" not in sentence or not any(term in sentence for term in _SUBSECOND_TERMS):
+            continue
+        limited = ("だけ" in sentence or "のみ" in sentence) and any(scope in sentence for scope in _TIMING_EXCEPTIONS)
+        if not limited:
+            violations.append(sentence)
+    return violations
+
+
+def _read(relative: str) -> str:
+    return (_ATK_MODE / relative).read_text(encoding="utf-8")
+
+
+# test-copy-contract: testerは文書に書かれた永続化の契約を直接確認する。
+def test_all_repos_has_no_unread_result_file() -> None:
+    for relative in _ALL_REPOS_DOCS:
+        assert not _result_file_violations(_read(relative)), (
+            f"{relative}に読み手のいない結果ファイルの書込要求が戻った。対象別の結果は完了報告へ書く。"
+        )
+
+
+def test_execution_records_verification_once() -> None:
+    text = _read(_EXECUTION_DOC)
+    assert _numbered_step(_section(text, "継続する工程"), 2), "process-wi-executionの手順2が見つからない。"
+    assert not _dual_verification_record_violations(text), (
+        "手順2で検証結果を引き継ぎ記録と進捗ログへ重ねて記録する要求が戻った。記録先は1か所にする。"
+    )
+
+
+def test_execution_timing_has_no_handwritten_subsecond_times() -> None:
+    text = _read(_EXECUTION_DOC)
+    assert _section(text, "工程の計測と統合準備"), "process-wi-executionの工程計測の節が見つからない。"
+    assert not _handwritten_timing_violations(text), (
+        "新形式の計画の結果・特記事項欄へ秒以下の開始・終了を手書きする要求が戻った。日時セルの時刻を使う。"
+    )
+
+
+def test_invariants_reject_reintroduced_records() -> None:
+    results = _read("playbooks/process-wi-all-repos-results.md")
+    assert _result_file_violations(results + "\n結果を`result_file`へUTF-8のJSONで保存する。\n")
+    assert _result_file_violations("対象別の結果を管理下の一時領域の結果ファイルへUTF-8のJSONで保存する。")
+    assert not _result_file_violations("初回取得の結果は、候補と開始時集合に分け、それぞれのファイルへ保存する。")
+    assert not _result_file_violations("候補取得の結果ファイル（candidate_file）と開始時集合（snapshot_file）を保存する。")
+    assert _result_file_violations("各対象の処理結果を完了報告へ書き、管理下の一時領域の結果ファイルへUTF-8のJSONで保存する。")
+
+    execution = _read(_EXECUTION_DOC)
+    old_step = "の1か所へ記録し"
+    assert old_step in execution
+    dual = execution.replace(
+        "計画の進捗ログ（計画が無ければ引き継ぎ記録）の1か所へ記録し", "既存の引き継ぎ記録と進捗ログへ記録し", 1
+    )
+    assert _dual_verification_record_violations(dual)
+    assert _dual_verification_record_violations(dual.replace("引き継ぎ記録と進捗ログ", "引き継ぎ記録と\n   進捗ログ"))
+
+    bullet = "- 統合準備完了、統合許可の受領"
+    assert bullet in execution
+    handwritten = execution.replace(
+        bullet, "- 秒以下を持つ時差付きの開始・終了と観測元を`結果・特記事項`欄へ保存する。\n" + bullet, 1
+    )
+    assert _handwritten_timing_violations(handwritten)
+    assert _handwritten_timing_violations(handwritten.replace("と観測元を`結果", "と観測元を\n  `結果"))
+
+
+def test_invariants_accept_legitimate_time_records() -> None:
+    legacy = (
+        "## 工程の計測と統合準備\n\n"
+        "- 日時セルが分の精度の旧形式の計画と計画が無い引き継ぎ記録だけ、"
+        "秒以下の時差付きの開始・終了と観測元を`結果・特記事項`欄へ書く。\n"
+        "- 計画の進捗ログへ検証の開始と終了を記録する。\n"
+    )
+    assert not _handwritten_timing_violations(legacy)
+    separate = "## 工程の計測と統合準備\n\n- 追記の時刻が工程の境界と離れる場合だけ、秒以下の時刻を`結果・特記事項`欄へ書く。"
+    assert not _handwritten_timing_violations(separate)
+    single = "## 継続する工程\n\n2. 実装: `検証結果`は計画の進捗ログ（計画が無ければ引き継ぎ記録）の1か所へ記録する。\n3. 次\n"
+    assert not _dual_verification_record_violations(single)
+    assert not _dual_verification_record_violations(single.replace("検証結果", "結合と単体の両方の検証結果"))

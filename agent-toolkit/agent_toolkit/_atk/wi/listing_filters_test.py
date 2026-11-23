@@ -40,6 +40,33 @@ def test_list_filters_important_entries(
     assert {json.loads(line)["filename"] for line in capsys.readouterr().out.splitlines()} == expected
 
 
+@pytest.mark.parametrize(
+    ("user_comment", "expected"),
+    [
+        ("all", {"commented.md", "plain.md", "fenced.md", "empty.md"}),
+        ("yes", {"commented.md"}),
+        ("no", {"plain.md", "fenced.md", "empty.md"}),
+    ],
+)
+def test_list_filters_entries_with_user_comment(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    user_comment: str,
+    expected: set[str],
+) -> None:
+    notes = _setup_notes(tmp_path)
+    _write_awi_file(notes, "commented.md", body="本文\n\n## ユーザーコメント\n\n指摘")
+    _write_awi_file(notes, "plain.md", body="本文")
+    _write_awi_file(notes, "fenced.md", body="本文\n\n```text\n## ユーザーコメント\n指摘\n```")
+    _write_awi_file(notes, "empty.md", body="本文\n\n## ユーザーコメント\n")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "list", "--jsonl", "--skip-pull", f"--user-comment={user_comment}"], home=tmp_path)
+    assert result.value.code == 0
+    assert {json.loads(line)["filename"] for line in capsys.readouterr().out.splitlines()} == expected
+
+
 def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     notes = _setup_notes(tmp_path)
     repo = git_repository.init_repository(tmp_path / "repo", origin="https://github.com/example/foo.git")

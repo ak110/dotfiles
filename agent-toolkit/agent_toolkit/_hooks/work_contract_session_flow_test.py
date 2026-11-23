@@ -160,6 +160,35 @@ def test_delegated_contract_update_and_compact_guide_current_input(tmp_path, mon
     assert "全体作業契約が起動後に更新された" not in run_hook("pretooluse", operation).stdout
 
 
+@pytest.mark.parametrize("read_ok", [False, True])
+def test_delegated_contract_requires_current_full_read_before_next_artifact_edit(tmp_path, monkeypatch, read_ok):
+    monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
+    sid = f"whole-file-read-{read_ok}"
+    path = tmp_path / "whole.md"
+    path.write_text("旧契約\n", encoding="utf-8")
+    _publish_launch(sid, path, tmp_path / "handoff.md")
+    content = "現行契約\n新しい条件\n"
+    path.write_text(content, encoding="utf-8")
+    payload = {"session_id": sid, "cwd": str(tmp_path)}
+    first = run_hook("pretooluse", {**payload, "tool_name": "Judge", "tool_input": {}})
+    assert "全体作業契約が起動後に更新された" in first.stdout
+    operation = {**payload, "tool_name": "Write", "tool_input": {"file_path": str(tmp_path / "artifact.md"), "content": "本文"}}
+    assert "更新後の全体作業契約の全文取得を確認できない" in run_hook("pretooluse", operation).stdout
+    read = {**payload, "tool_name": "Read", "tool_input": {"file_path": str(path)}}
+    assert "更新後の全体作業契約の全文取得を確認できない" not in run_hook("pretooluse", read).stdout
+    observed = run_hook(
+        "posttooluse",
+        {
+            **read,
+            "hook_event_name": "PostToolUse",
+            "tool_response": {"file": {"content": content if read_ok else content.splitlines()[0]}},
+        },
+    )
+    assert observed.returncode == 0
+    current = run_hook("pretooluse", operation).stdout
+    assert ("更新後の全体作業契約の全文取得を確認できない" in current) is not read_ok
+
+
 def test_delegate_outside_registry_gets_no_contract_notice(monkeypatch):
     """登録簿に無い委譲先（組み込みの委譲機能の子など）へは、全体作業契約の案内と圧縮後の所在を出さない。"""
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")

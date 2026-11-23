@@ -295,7 +295,7 @@ def test_early_launch_exit_records_code_and_notifies_once(monkeypatch):
 @pytest.mark.parametrize("followup", [False, True])
 def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeypatch, followup) -> None:
     notes = _notes()
-    _target(tmp_path, "one", filename="different.jsonl")
+    _target(tmp_path, "one")
     _target(tmp_path, "two")
     calls = []
 
@@ -305,7 +305,7 @@ def test_batch_prepares_all_and_commits_scope_after_one_report(tmp_path, monkeyp
         assert len(manifest["prepared"]) == 2
         assert len(session_review.pending()) == 2
         if followup:
-            transcript = tmp_path / "different.jsonl"
+            transcript = tmp_path / "one.jsonl"
             with transcript.open("a", encoding="utf-8") as stream:
                 stream.write(json.dumps({"type": "user", "message": {"role": "user", "content": "追記"}}) + "\n")
             session_review.record(

@@ -48,10 +48,11 @@ def test_shell_success_and_failure_use_host_duration(tool, event, _clock, capsys
     payload = _payload("host-time", tool)
     _invoke(dispatch.main, {**payload, "hook_event_name": "PreToolUse"}, capsys)
     _clock[0] += 80
-    output = _invoke(posttooluse.main, {**payload, "hook_event_name": event, "duration_ms": 1250}, capsys)
-    assert "実行時間: 1.2秒" in output
+    output = _invoke(posttooluse.main, {**payload, "hook_event_name": event, "duration_ms": 12500}, capsys)
+    assert "実行時間:" not in output
+    assert read_state("timing-tests")[command_timing.STATE_KEY]["main"]["recent"] == [12.5]
     assert "観測経過時間" not in output
-    repeated = _invoke(posttooluse.main, {**payload, "hook_event_name": event, "duration_ms": 1250}, capsys)
+    repeated = _invoke(posttooluse.main, {**payload, "hook_event_name": event, "duration_ms": 12500}, capsys)
     assert "実行時間:" not in repeated
 
 
@@ -65,20 +66,19 @@ def test_codex_original_completion_uses_full_elapsed_interval(_clock, capsys):
     assert "観測経過時間" not in _invoke(posttooluse.main, {**first, "tool_response": running}, capsys)
     _clock[0] += 65
     output = _invoke(posttooluse.main, {**first, "tool_response": {"exit_code": 0, "wall_time_seconds": 0}}, capsys)
-    assert "観測経過時間（権限待ち等を含み得る）: 65.0秒" in output
+    assert "65.0秒" not in output
     _clock[0] += 5
     output = _invoke(posttooluse.main, {**second, "tool_response": {"exit_code": 1}}, capsys)
-    assert "70.0秒" in output
-    assert "command_timing" in read_state("timing-tests")
+    assert "70.0秒" not in output
+    assert read_state("timing-tests")[command_timing.STATE_KEY]["main"]["recent"] == [65.0, 70.0]
 
 
-@pytest.mark.parametrize(("milliseconds", "notified"), [(999, False), (1000, True)])
-def test_measured_notice_omits_runs_under_one_second(milliseconds, notified, _clock, capsys):
+@pytest.mark.parametrize("milliseconds", [999, 1000, 12000])
+def test_measured_time_is_not_a_standalone_notice(milliseconds, _clock, capsys):
     payload = _payload(f"short-{milliseconds}")
     _invoke(dispatch.main, payload, capsys)
     output = _invoke(posttooluse.main, {**payload, "duration_ms": milliseconds}, capsys)
-    assert ("実行時間: 1.0秒" in output) is notified
-    assert ("実行時間:" in output) is notified
+    assert "実行時間:" not in output
 
 
 def test_elapsed_notice_also_omits_runs_under_one_second(_clock, capsys):
@@ -118,13 +118,12 @@ def test_slow_runs_reset_and_notify_once_per_interval(_clock, capsys):
     ],
 )
 @pytest.mark.parametrize("tool", ["Bash", "PowerShell"])
-def test_wait_completions_keep_individual_times_but_do_not_trigger_review(command, tool, _clock):
-    """外部の結果を待つ3件は、個別の測定を返しても作業の見直しを促さない。"""
+def test_wait_completions_do_not_trigger_review(command, tool, _clock):
     for index in range(3):
         payload = _payload(f"wait-{index}", tool, tool_input={"command": command}, duration_ms=120000)
         command_timing.start(payload)
         notice = "\n".join(command_timing.observe(payload))
-        assert "実行時間: 120.0秒" in notice
+        assert "実行時間: 120.0秒" not in notice
         assert "3件続いた" not in notice
 
 
@@ -154,7 +153,7 @@ def test_background_wait_does_not_reset_the_measured_work_sequence(_clock):
             "prompt": "<task-notification><task-id>task-wait</task-id><status>completed</status></task-notification>",
         }
     )
-    assert any("480.0秒" in line for line in result)
+    assert not any("480.0秒" in line for line in result)
     assert not any("3件続いた" in line for line in result)
 
     last = _payload("work-last", duration_ms=10000)
@@ -220,7 +219,7 @@ def test_wait_inside_shell_syntax_still_counts_as_work(command, tool, _clock):
         payload = _payload(f"shell-argv-{index}", tool, tool_input={"command": command}, duration_ms=10000)
         command_timing.start(payload)
         notice = "\n".join(command_timing.observe(payload))
-        assert "実行時間: 10.0秒" in notice
+        assert "実行時間:" not in notice or index == 2
         assert ("3件続いた" in notice) is (index == 2)
 
 
@@ -238,7 +237,7 @@ def test_powershell_wait_outside_literal_subset_remains_in_review(command, _cloc
         payload = _payload(f"ps-path-{index}", "PowerShell", tool_input={"command": command}, duration_ms=10000)
         command_timing.start(payload)
         notice = "\n".join(command_timing.observe(payload))
-        assert "実行時間: 10.0秒" in notice
+        assert "実行時間:" not in notice or index == 2
         assert ("3件続いた" in notice) is (index == 2)
 
 
@@ -248,7 +247,7 @@ def test_unknown_time_kind_change_and_actor_do_not_mix_runs(_clock, capsys):
         _invoke(dispatch.main, payload, capsys)
         _invoke(posttooluse.main, {**payload, "duration_ms": 60000}, capsys)
     unknown = _invoke(posttooluse.main, _payload("no-start", duration_ms=120000), capsys)
-    assert "未計測" in unknown and "0.0秒" not in unknown
+    assert "未計測" not in unknown and "0.0秒" not in unknown
     child = _payload("child", agent_id="worker", duration_ms=60000)
     assert "3件続いた" not in _invoke(posttooluse.main, child, capsys)
     payload = _payload("elapsed", turn_id="turn")
@@ -287,7 +286,9 @@ def test_background_notification_completes_original_once(_clock, capsys):
         "prompt": "<task-notification><task-id>task-one</task-id><status>completed</status></task-notification>",
     }
     output = _invoke(user_prompt_submit.main, notification, capsys)
-    assert "90.0秒" in output
+    assert "90.0秒" not in output
     assert "通知が示す保存出力と終了状態を回収" in output
+    assert read_state("timing-tests")[command_timing.STATE_KEY]["main"]["recent"] == [90.0]
     repeated = _invoke(user_prompt_submit.main, notification, capsys)
     assert "90.0秒" not in repeated
+    assert read_state("timing-tests")[command_timing.STATE_KEY]["main"]["recent"] == [90.0]

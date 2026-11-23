@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 import threading
@@ -25,6 +26,47 @@ from agent_toolkit._atk import managed_temp
 from agent_toolkit._common import host_homes, private_directory, process_tree
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+
+_CLAUDE_HOOK_LAUNCHER = '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py"'
+_HOOK_GENERATION_ROOT = 'const generationRoot: string = "";'
+
+
+def _expand_generation_root(value: Any, root: Path) -> Any:
+    if isinstance(value, str):
+        return value.replace("${CLAUDE_PLUGIN_ROOT}", str(root))
+    if isinstance(value, dict):
+        return {key: _expand_generation_root(item, root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_expand_generation_root(item, root) for item in value]
+    return value
+
+
+def _bind_hook_generation(generation: Path) -> None:
+    configuration_path = generation / "hooks" / "hooks.json"
+    if configuration_path.is_file():
+        configuration = json.loads(configuration_path.read_text(encoding="utf-8"))
+        launcher = shlex.quote((generation / "scripts" / "launch.py").as_posix())
+        for matchers in configuration.get("hooks", {}).values():
+            for matcher in matchers:
+                for hook in matcher.get("hooks", ()):
+                    command = hook.get("command")
+                    if isinstance(command, str):
+                        hook["command"] = command.replace(_CLAUDE_HOOK_LAUNCHER, launcher)
+        configuration_path.write_text(json.dumps(configuration, ensure_ascii=False), encoding="utf-8")
+    helper_path = generation / "hooks" / "plugin_launch.ts"
+    if helper_path.is_file():
+        helper = helper_path.read_text(encoding="utf-8")
+        root = json.dumps(generation.as_posix())
+        if _HOOK_GENERATION_ROOT in helper:
+            helper = helper.replace(_HOOK_GENERATION_ROOT, f"const generationRoot: string = {root};", 1)
+        else:
+            helper = helper.replace("`${root}/", f"`${{{root}}}/")
+            resume_path = generation / "hooks" / "usage_limit_resume.ts"
+            if resume_path.is_file():
+                resume = resume_path.read_text(encoding="utf-8")
+                resume = resume.replace("usageLimitResumePrompt($.plugin.root)", f"usageLimitResumePrompt({root})")
+                resume_path.write_text(resume, encoding="utf-8")
+        helper_path.write_text(helper, encoding="utf-8")
 
 
 _LOADABLE_SCOPES = frozenset({"user", "project", "local"})
@@ -198,6 +240,7 @@ class ClaudePluginReloader:
         self._files: set[Path] = set()
         self._area: Path | None = None
         self._mirror: Path | None = None
+        self.resource_root: Path | None = None
         self._toolkit_index: int | None = None
         self._source: Path | None = None
         self._versioned = False
@@ -253,7 +296,9 @@ class ClaudePluginReloader:
         if self._versioned:
             self._area = managed_temp.create_output_temp("claude-plugin-input")
             self._mirror = self._area / "agent-toolkit"
-            self._switch(self._stage(source))
+            staged = self._stage(source)
+            self._switch(staged)
+            self.resource_root = staged
             assert self._toolkit_index is not None
             plugins = [dict(item) for item in self.options["plugins"]]
             plugins[self._toolkit_index]["path"] = str(self._mirror)
@@ -405,13 +450,13 @@ class ClaudePluginReloader:
             )
             mcp_path = generation / ".mcp.json"
             if mcp_path.is_file():
-                configuration = json.loads(mcp_path.read_text(encoding="utf-8"))
+                configuration = _expand_generation_root(json.loads(mcp_path.read_text(encoding="utf-8")), generation)
                 runtime = plugin_root.SERVER_PLUGIN_ROOT
                 server = json.loads((runtime / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["agents_server"]
                 # CLIのskill/modsだけを更新し、接続中のMCPが使う実行基盤は起動版へ固定する。
-                server["args"] = [argument.replace("${CLAUDE_PLUGIN_ROOT}", str(runtime)) for argument in server["args"]]
-                configuration["mcpServers"]["agents_server"] = server
+                configuration["mcpServers"]["agents_server"] = _expand_generation_root(server, runtime)
                 mcp_path.write_text(json.dumps(configuration, ensure_ascii=False), encoding="utf-8")
+            _bind_hook_generation(generation)
         except BaseException:
             shutil.rmtree(generation)
             raise
@@ -419,24 +464,36 @@ class ClaudePluginReloader:
 
     def _switch(self, generation: Path) -> None:
         assert self._area is not None and self._mirror is not None
+        candidate = None
         previous = self._area / "previous"
-        if self._mirror.exists():
-            os.replace(self._mirror, previous)
         try:
-            # 呼出元がidleとSDK要求を直列化する。完成版だけを固定pathへ移し、失敗時に戻す。
-            os.replace(generation, self._mirror)
+            candidate = private_directory.make_temporary(self._area, "mirror-")
+            shutil.copytree(generation, candidate, dirs_exist_ok=True, symlinks=True)
+            if self._mirror.exists():
+                os.replace(self._mirror, previous)
+            try:
+                os.replace(candidate, self._mirror)
+            except BaseException:
+                if previous.exists():
+                    os.replace(previous, self._mirror)
+                raise
         except BaseException:
-            if previous.exists():
-                os.replace(previous, self._mirror)
+            shutil.rmtree(generation)
             raise
+        finally:
+            if candidate is not None and candidate.exists():
+                shutil.rmtree(candidate)
 
     def _restore(self) -> None:
         assert self._area is not None and self._mirror is not None
         previous = self._area / "previous"
         if previous.exists():
+            rejected = self._area / "rejected"
             if self._mirror.exists():
-                shutil.rmtree(self._mirror)
+                os.replace(self._mirror, rejected)
             os.replace(previous, self._mirror)
+            if rejected.exists():
+                shutil.rmtree(rejected)
 
     def _set_watch_paths(self, installed: list[_InstalledPlugin], source: Path | None) -> None:
         self._roots = {Path(item.install_path).resolve() for item in installed}
@@ -485,9 +542,9 @@ class ClaudePluginReloader:
         except BaseException:
             if self._mirror is not None:
                 await run_file_operation(self._restore)
-            if staged is not None and staged.exists():
-                await run_file_operation(shutil.rmtree, staged)
             raise
+        if staged is not None:
+            self.resource_root = staged
         if self._area is not None:
             await run_file_operation(shutil.rmtree, self._area / "previous")
         self._set_watch_paths(installed, source)

@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import run_script
-from agent_toolkit._common import automated_prompt
+from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import (
     stop,
@@ -25,6 +25,7 @@ from agent_toolkit._hooks import (
 )
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
 from agent_toolkit._hooks.notice import emit_response, notice_cycle
+from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing import stop_check_runner as _stop_check_runner
 from agent_toolkit._testing.helpers import _write_transcript
@@ -85,6 +86,32 @@ def test_approves_session_without_deliverable(tmp_path: pathlib.Path) -> None:
     _start_skill("sess-unrelated", trace, "agent-toolkit:atk-mode", "toolu_entry", arguments="この不具合を直して")
     _start_skill("sess-unrelated", trace, "agent-toolkit:atk-mode", "toolu_plain")
     assert termination_order_advisor.evaluate(_payload("sess-unrelated", str(trace))) == ("approve", "")
+
+
+def test_formal_completion_report_requires_current_playbook_but_progress_does_not(tmp_path, capsys):
+    trace = _write_transcript(tmp_path, [])
+    sid = "sess-formal-report"
+    _start_skill(sid, trace, "agent-toolkit:atk-mode", arguments="process-wi")
+
+    def check(message: str) -> str:
+        payload = json.loads(_payload(sid, str(trace)))
+        payload.update(tool_name="mcp__plugin_agent-toolkit_agents_server__send_to_user", tool_input={"message": message})
+        assert dispatch.main(json.dumps(payload)) == 0
+        return capsys.readouterr().out
+
+    assert "作業完了報告の手順書の取得" not in check("途中経過を報告する。")
+    report = "## 作業完了報告\n作業の結果を報告する。"
+    assert "作業完了報告の手順書の取得" in check(report)
+    _start_skill(sid, trace, "agent-toolkit:atk-mode", "toolu_report", arguments="report-completion")
+    assert "作業完了報告の手順書の取得" not in check(report)
+    session_state.update_state(
+        sid,
+        lambda state: {**state, "agents_server_sessions": {"child": {"owner_agent_id": "main", "pending_observation": True}}},
+    )
+    assert "委譲先の結果と続行を確認" in check(report)
+    assert "委譲先の結果と続行を確認" not in check("担当の結果は未回収です。")
+    session_state.update_state(sid, lambda state: {**state, "agents_server_sessions": {}})
+    assert "委譲先の結果と続行を確認" not in check(report)
 
 
 def _evaluate_delivered(payload: str) -> tuple[str, str]:

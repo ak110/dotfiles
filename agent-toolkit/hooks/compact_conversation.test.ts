@@ -84,67 +84,6 @@ test("他機能への保護door・無条件・広域イベント登録の持込�
 });
 
 
-for (const scenario of ["low", "elapsed", "running", "completed"] as const) {
-  test(`背景待機60秒の境界を守る: ${scenario}`, async ($, on) => {
-    const tokens = scenario === "low" ? 100_000 : 500_000;
-    mock.env(on, { HOME: "/home/tester" });
-    let polling = true;
-    // 要求を取り込んだ後の無関係な100msポーリングは止め、単発の60秒タイマーを検証する。
-    on("clock.every", { ms: 100 }, async (_$, e) => {
-      if (!polling) return { deny: "焦点試験では反復ポーリングをここで終了する" };
-      await clock.sleep(e.ms);
-      return { value: undefined };
-    });
-    const clock = mock.clock(on);
-    let completed = false;
-    const requestId = () => (completed ? "e" : "d").repeat(32);
-    on("session.id", () => ({ value: "background-main" }));
-    on("session.start", (_$, e) => ({ cwd: e.cwd }));
-    on("command.register", (_$, e) => ({ value: { command: e.name } }));
-    on("session.messages", () => ({ value: [] }));
-    on("turn.start", (_$, e) => ({ turnId: e.turnId }));
-    on("turn.complete", () => ({ text: "" }));
-    on("fs.read", (_$, e) => ({ value: e.path.includes("ui-request-") ? JSON.stringify({ id: requestId(), operation: completed ? "background_complete" : "background_task", input: { id: "task", command: "atk agents wait" }, expires: 99999999999 }) : "consumed" }));
-    on("fs.write", () => ({ value: undefined }));
-    on("fs.list", () => ({ value: [{ name: `ui-request-background-main-${requestId()}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false }] }));
-    on("fs.exists", () => ({ value: true }));
-    on("session.usage", () => ({ value: { startedAt: 0, context: { tokens, window: 1_000_000, percent: tokens / 10_000 }, rateLimits: [] } }));
-    on("process.run", () => ({ value: { exitCode: 0, stdout: '{"eligible":true}', stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
-    on("session.surfaces", () => ({ value: ["terminal"] }));
-    const notices: string[] = [];
-    on("ui.log", () => ({ value: undefined }));
-    on("ui.toast", (_$, e) => { notices.push(e.text); return { value: undefined }; });
-    let compacted = 0;
-    on("session.compact", () => { compacted++; return { messages: [{ role: "user", text: "保存した作業状態", toolUses: [] }] }; });
-    await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
-    await $.turn.start({ text: "待機", turnId: "background-turn" });
-    await clock.advance(200);
-    const finish = { answer: "", durationMs: 0, isAborted: false, turnId: "background-turn", reason: "answer" as const };
-    if (scenario !== "running") {
-      await $.turn.complete(finish);
-      await $.turn.complete(finish);
-    }
-    await clock.advance(0);
-    expect(compacted).toBe(0);
-    if (scenario === "completed") completed = true;
-    polling = false;
-    await clock.advance(59_899);
-    expect(compacted).toBe(0);
-    await clock.advance(1);
-    await clock.advance(0);
-    if (scenario === "running") {
-      expect(compacted).toBe(0);
-      await $.turn.complete(finish);
-      await clock.advance(0);
-    }
-    expect(notices).toEqual([]);
-    expect(compacted).toBe(scenario === "elapsed" || scenario === "running" ? 1 : 0);
-    await $.turn.complete(finish);
-    await clock.advance(0);
-    expect(compacted).toBe(scenario === "elapsed" || scenario === "running" ? 1 : 0);
-  });
-}
-
 for (const scenario of ["unrequested", "default", "resume", "skip", "failure", "headless", "lost-surface"] as const) {
   test(`圧縮への明示指定と実行結果で自動再開を決める: ${scenario}`, async ($, on) => {
     mock.env(on, { HOME: "/home/tester" });

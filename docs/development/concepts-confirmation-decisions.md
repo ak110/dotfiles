@@ -202,4 +202,12 @@ WIの完成条件の範囲外で見つけたユーザー向けの不足は、是
 手戻り多すぎない？ いっそatk-mode inmplementは実装着手前に方針を説明してAskUserQuestionで合意を得てから進む手順にした方がいいのでは？
 ```
 
-現行の確認条件は`agent-toolkit/skills/atk-mode/playbooks/request-intake.md`「依頼の種類と確認」にあり、実装中の方針変更は`agent-toolkit/skills/atk-mode/playbooks/implement.md`「手順」で扱う。
+2026年11月23日、資料を参考にした改善の`implement`で、ユーザーが追加の発話で改善の検討を求めた後に、エージェントが技術で決まる3案の採否を質問した。
+ユーザーは「エージェントが判断できないことだけユーザーに聞いて」と是正した。
+同日、ユーザーが自動圧縮の境界を400kへ固定するよう指示した後も、エージェントは前提を失った待機時の自前圧縮を調整だけで残そうとし、撤去はユーザーの発話で採った（「そもそもこっちが言わなくても単純化くらい提案してほしいんだけど…」）。
+これにより、方針全体の質問は初回の依頼だけに課し、追加の発話では本人の選好・未開示の制約・認可に当たる論点だけを確認する。
+指定された変更が既存の仕組みの前提を変える時は、撤去・縮小・統合を引く案としてエージェントが方針に含める。
+
+現行の確認条件は`agent-toolkit/skills/atk-mode/playbooks/request-intake.md`「依頼の種類と確認」と手順4・7にある。
+追加の発話の処置は`agent-toolkit/skills/atk-mode/playbooks/add-awi-by-user.md`「指摘の分類と処置」の手順5で扱う。
+実装中の方針変更は`agent-toolkit/skills/atk-mode/playbooks/implement.md`「手順」で扱う。

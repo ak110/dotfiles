@@ -5,7 +5,7 @@ import subprocess
 import sys
 
 from agent_toolkit._atk.wi.cli_mutation_parsers import _add_mq_edit_parsers, _add_mq_transition_parsers, _add_wi_add_parser
-from agent_toolkit._atk.wi.cli_process_parsers import _add_mq_process_loop_parser, _add_mq_submission_parser
+from agent_toolkit._atk.wi.cli_process_parsers import _add_mq_process_loop_parser, _add_mq_submit_parser
 from agent_toolkit._atk.wi.cli_read_parsers import _add_mq_read_parsers, _add_mq_search_and_answer_parsers
 lazy from agent_toolkit._atk import cli_support as _cli_support
 lazy from agent_toolkit._atk import git_sync as _atk_git_sync
@@ -18,11 +18,11 @@ lazy from agent_toolkit._atk.wi import constants as _wi_constants
 lazy from agent_toolkit._atk.wi import effect_check as _effect_check
 lazy from agent_toolkit._atk.wi import grep as _grep
 lazy from agent_toolkit._atk.wi import listing as _listing
+lazy from agent_toolkit._atk.wi import merge_verification as _merge_verification
 lazy from agent_toolkit._atk.wi import process_loop as _process_loop
 lazy from agent_toolkit._atk.wi import process_loop_control as _process_loop_control
 lazy from agent_toolkit._atk.wi import repo as _wi_repo
 lazy from agent_toolkit._atk.wi import show as _show
-lazy from agent_toolkit._atk.wi import submission as _submission
 lazy from agent_toolkit._atk.wi import submit as _submit
 lazy from agent_toolkit._atk.wi import sync as _wi_sync
 lazy from agent_toolkit._atk.wi import uwi as _uwi
@@ -48,9 +48,12 @@ def build_parser(mq: argparse.ArgumentParser) -> None:
         _add_mq_edit_parsers,
         _add_mq_search_and_answer_parsers,
         _add_mq_process_loop_parser,
-        _add_mq_submission_parser,
+        _add_mq_submit_parser,
     ):
         register(sub)
+    merge = _atk_help.add_command(sub, "verify-merge", **_atk_help.HELP["atk wi verify-merge"])
+    merge.add_argument("filename", metavar="FILENAME", help="確認するマージ用WIのファイル名")
+    merge.add_argument("--head", required=True, metavar="OID", help="取込み候補の取得済み完全OID")
 
 
 _BULK_TRANSITION_SUBCOMMANDS = (
@@ -284,8 +287,6 @@ def dispatch(
         except (OSError, ValueError) as error:
             _outcome.report_failure(str(error), next_action="process-loop statusで状態を確認し、原因を解消して再実行する")
             return 1
-    if sub == "submission":
-        return _submission.cmd_submission(args)
     if sub == "submit":
         return _submit.dispatch(args)
     private_notes = (
@@ -307,6 +308,7 @@ def dispatch(
         "reject": lambda: _mutation_transitions.cmd_reject(args, private_notes, now),
         "rm": lambda: _mutation_transitions.cmd_rm(args, private_notes),
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
+        "verify-merge": lambda: _merge_verification.cmd_verify_merge(args, private_notes),
         "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
         "set-priority": lambda: _mutation_priority.cmd_set_priority(args, private_notes),

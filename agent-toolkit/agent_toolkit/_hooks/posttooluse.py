@@ -42,6 +42,7 @@ import re
 lazy import asyncio
 lazy import shlex
 
+from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks.bugfix_gate import BUGFIX_SKILL, QUOTED_MATERIAL_RE, mark_started, observe_verification
 from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, set_warning_session_id
 from agent_toolkit._hooks.notice import formatter as _notice_formatter
@@ -60,8 +61,10 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    review_receipt,
     session_title,
     termination_evidence,
+    work_contract,
 )
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check
@@ -69,7 +72,6 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
-lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
@@ -440,9 +442,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
                 )
         return notices
-    if event_name == "PostToolUse" and is_send_to_user_tool(tool_name):
-        _progress_self_check.observe_send(payload, tool_input.get("message"))
-
     if is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
@@ -466,7 +465,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                 for content_notice in content_notices(answer, _HOOK_ID, subject=subject):
                     if content_notice not in notices:
                         notices.append(content_notice)
-    elif tool_name == "Skill":
+    elif tool_name == "Skill" and event_name == "PostToolUse":
         skill = tool_input.get("skill")
         operation_skills.observe_skill(session_id, resolve_hook_agent_id(payload), skill)
         if not payload.get("agent_id") and isinstance(skill, str):
@@ -562,8 +561,15 @@ def main(payload_text: str) -> int:
         ):
             notices.append(_llm_notice(truncated))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
+        if event_name == "PostToolUse" and (tool_name in ATK_SHELL_TOOLS or tool_name in {"Read", "Skill"}):
+            review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         if event_name == "PostToolUse" and tool_name != "Skill":
             _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
+            if tool_name == "Read" or tool_name in ATK_SHELL_TOOLS:
+                work_contract.observe_delegated_read(
+                    session_id, resolve_hook_agent_id(payload), tool_name, tool_input, payload.get("tool_response"), cwd
+                )
+                _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:
@@ -575,7 +581,12 @@ def main(payload_text: str) -> int:
                 "元の操作の成否とは別の記録失敗である。",
                 tag="warn",
                 removable_cause=False,
-                fix="元のツール結果で成否と必要な出力を確認せよ。記録の診断を委譲元またはユーザーへ報告せよ。",
+                fix=recover_from_failure(
+                    component="ツール結果の記録",
+                    evidence="元のツール結果と記録の診断",
+                    first_step="元の結果で成否と必要な出力を確認する",
+                    retry="元の操作は再発行せず、記録だけを回復する",
+                ),
             )
         )
     try:

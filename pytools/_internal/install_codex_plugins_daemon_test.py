@@ -199,4 +199,28 @@ def test_hook_trust_notice_handles_response_entries(
     assert outcome.changed is False
 
 
+def test_plugin_add_registers_shipped_hooks_without_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    hook = plugin_env / "agent-toolkit-codex/hooks/hooks.codex.json"
+    hook.parent.mkdir()
+    hook.write_text("{}", encoding="utf-8")
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([], daemon_running=False))
+    seen = []
+
+    def list_hooks(*, registration=None):
+        seen.append(registration)
+        return {"data": []}
+
+    monkeypatch.setattr(install_codex_plugins, "_hooks_list", list_hooks)
+
+    outcome = install_codex_plugins.run()
+
+    assert outcome.changed and not outcome.notices
+    assert len(seen) == 1
+    plugin, cache, fingerprint = seen[0]
+    assert plugin == "agent-toolkit@ak110-dotfiles"
+    assert cache == install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
+    assert fingerprint.startswith("sha256:")
+
+
 __all__ = ["plugin_env_fixture"]

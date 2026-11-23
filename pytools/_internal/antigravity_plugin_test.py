@@ -1,5 +1,6 @@
 """Antigravity 1.4.4の組込customizationsガイドに基づく配布・登録の結合試験。"""
 
+import hashlib
 import json
 import os
 import shlex
@@ -123,6 +124,10 @@ def test_sync_delivers_native_plugin_and_repairs_drift(source: Path) -> None:
     assert not (target / "pyproject.toml").exists()
     assert not (target / "uv.lock").exists()
     assert not (target / "agent_toolkit/hook_test.py").exists()
+    fingerprints = json.loads((target / subject.PROJECTION_MANIFEST).read_text(encoding="utf-8"))
+    assert fingerprints["root"] == target.name
+    assert fingerprints["files"][_CHECK_SKILL.as_posix()] == hashlib.sha256((target / _CHECK_SKILL).read_bytes()).hexdigest()
+    assert subject.PROJECTION_MANIFEST.as_posix() not in fingerprints["files"]
     assert not subject.check_diagnostics(source)
     assert not subject.sync(source)
     stale = target / "skills/obsolete/SKILL.md"

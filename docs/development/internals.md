@@ -37,7 +37,7 @@ hook間で共有する状態ファイルの設計、生存期間、排他制御�
 | 状態ファイルの設計、状態の継承 | `docs/development/internals-session-state-common.md` |
 | 活動・WI投入作業の記録 | `docs/development/internals-session-state-activity.md` |
 | managed-tempの状態、完了報告からの状態解析 | `docs/development/internals-session-state-temporary-and-results.md` |
-| Function hooksの終了要求、定期再確認や利用上限の再開予約、待機時圧縮の判定記録 | `docs/development/internals-session-state-function-hooks.md` |
+| Function hooksの終了要求、定期再確認や利用上限の再開予約、背景待機の共有状態 | `docs/development/internals-session-state-function-hooks.md` |
 | 作業契約の状態、plan・セッション名の状態 | `docs/development/internals-session-state-planning.md` |
 | 振り返り・モード・無進捗停止の状態、進捗点検の状態 | `docs/development/internals-session-state-progress.md` |
 | 検証失敗後のbugfixの起動、操作の直前のスキルの案内、終了工程の証拠 | `docs/development/internals-session-state-operation-skills.md` |

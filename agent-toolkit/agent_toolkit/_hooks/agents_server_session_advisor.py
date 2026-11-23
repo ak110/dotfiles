@@ -102,6 +102,16 @@ def _awaiting_summary(awaiting: dict[str, int]) -> str:
     return ", ".join(f"{identifier}（返却から {seconds} 秒）" for identifier, seconds in awaiting.items())
 
 
+def outstanding_before_completion(session_id: str, owner_agent_id: str) -> str | None:
+    pending, _, awaiting = _observation_status(read_state(session_id), owner_agent_id)
+    if not pending and not awaiting:
+        return None
+    lines = [f"未回収: {', '.join(pending)}"] if pending else []
+    if awaiting:
+        lines.append(f"応答待ち: {_awaiting_summary(awaiting)}")
+    return "、".join(lines)
+
+
 def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
     """圧縮後に、自分の待機と他の主体の待機を取り違えないようにする。"""
     pending, _, awaiting = _observation_status(read_state(session_id), owner_agent_id)

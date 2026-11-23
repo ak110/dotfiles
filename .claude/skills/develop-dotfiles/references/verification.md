@@ -59,6 +59,8 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
   serveのAPIの辞書へ項目を足す変更では、辞書全体を完全一致で比べる試験（`agent-toolkit/agent_toolkit/_atk/serve/assets_test.py`、`assets_detail_test.py`、`cli_detail_test.py`など）を含める。
   hooks設定を新たに読む処理では、その処理を実行する試験のfixture（`agent-toolkit/agent_toolkit/_agents_server/mcp_projection_test.py`の設定fixtureなど）を含める。
   目的文や説明文の変更では、旧文言を期待値に持つ試験（`agent-toolkit/agent_toolkit/_atk/agy_launch_test.py`など）を含める。
+  通知・説明の文面を変えたら、下記の `--old-text-tests BASE` が列挙する未変更の試験も対象へ加える。
+  候補で網羅を説明できない場合は、対応するCIジョブが検査する全件を実行する。
   参照コメントの撤去では、そのコメントだけが監査見出しを現行の契約へ結び付けていないかを調べ、監査の限定試験を加える。
 - 別の構文で定義を読む試験は`pyfltr fast`の対象外のため個別に指定する。
   `.github/workflows/`のジョブ名・ステップ名やpytestの対象指定の変更では`ci_workflow_test.py`、`ci_workflow_ownership_test.py`、`ci_workflow_windows_test.py`を含める。
@@ -133,9 +135,31 @@ Rustとfixtureの変更は`rust-lint`、Pythonとserveの変更は`browser-e2e`�
 選ばずに成功とした結果と判定の失敗・出力の欠落を分け、必須check名と失敗の伝播を保つ。
 Pythonのpytest・lint、完全導入と更新の検証には領域の選択を当てない。
 
+## Windowsの更新を最後まで試す
+
+一時複製の修正版で `update-dotfiles` を最後まで試す場合は、修正のcommitを認可済みの候補branchへ反映し、そのcommitのCI `update-dotfiles-upgrade (windows)` を使う。
+使い捨てのGitHub-hosted Windows runnerで対象checkoutのHEADへ更新し、ジョブが省略されず成功したことを確認する。
+特定の起動条件が必要なら、同種の使い捨てrunnerで更新を起動する前にその条件の成立を確認する。
+使い捨てrunnerか必要な起動条件を確認できない場合は、起動を見送る。
+成否を問わずrunnerの破棄で終え、普段の環境への再適用は後始末に使わない。
+
+普段のWindowsで、一時複製や別HOMEだけを用意して全工程を起動しない。
+chezmoiの設定・適用先だけでなく、WinGetなどのユーザー単位の状態も共有し得る。
+LinuxでDockerを使った結果は、Windowsの非昇格更新の証拠にしない。
+
 ## テストとCIの所要基準
 
 [テストとCIの所要基準](verification-execution.md#テストとciの所要基準)で判定する。
+
+### CIと同じpytestの対象を選ぶ
+
+`uv run --no-sync python .claude/skills/develop-dotfiles/scripts/ci_pytest_scope.py toolkit`はCI定義のtoolkitの対象と分割を表示する。
+直下の全件は`root`を指定する。
+CIが履歴を復元して絞る場合は、その履歴を用意した上で`root --impact-base BASE_OID`を`--collect-only`か`--run`と併用する。
+`--collect-only`で試験IDを取得し、`--run`で同じ対象を実行する。
+CI定義から選定できない時は、パス指定を別に作って同じ範囲と扱わない。
+変更前の文面を使う未変更の試験の候補は、`--old-text-tests <比較元の完全OID>`で取得する。
+候補の有無は構成した文面まで見た証拠にならないため、必要なCIの対象を引き続き検証する。
 
 ### toolkitの所要記録更新
 

@@ -34,6 +34,10 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "agent-toolkit/agent_toolkit/_common/process_tree.py",
         "reclaim_unreaped",
     ): "回収待ちの直接の子をzombie表示でも強制終了し、PID世代の消滅を待つ共通実装",
+    (
+        "scripts/check_update_dotfiles_upgrade.py",
+        "stop_selected_services",
+    ): "独立起動した検証用管理サービスを検証rootとプロセスの世代で特定してから有限時間で停止する",
     ("pytools/_internal/common.py", "stop_owned_process"): "pytoolsの子孫回収の共通実装",
     ("pytools/_internal/common.py", "_reclaim_targets"): "pytoolsの子孫回収の共通実装",
     ("pytools/_internal/common.py", "_reap_owned_child"): "zombie表示の所有Popenも強制終了して回収するpytoolsの共通実装",

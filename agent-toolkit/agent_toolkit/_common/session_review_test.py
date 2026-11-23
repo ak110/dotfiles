@@ -12,7 +12,7 @@ import types
 
 import pytest
 
-from agent_toolkit._common import session_activity, session_review, session_state
+from agent_toolkit._common import session_activity, session_family, session_review, session_state
 
 
 def test_auto_start_waits_until_last_consultation_closes(monkeypatch):
@@ -185,7 +185,6 @@ def test_launch_owner_interruption_is_reported_once(monkeypatch: pytest.MonkeyPa
     assert "受付前に終了" in notice
     assert "診断.log" in notice
     assert ("Get-Content -LiteralPath" if windows else "cat --") in notice
-    assert "`$atk-mode review-session batch`を実行せよ" in notice
     assert session_review.launch_notice("codex") is None
 
 
@@ -227,7 +226,7 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     payload = {
         "hook_event_name": "SessionStart",
         "session_id": "current-id",
-        "transcript_path": str(tmp_path / "old-id.jsonl"),
+        "transcript_path": str(tmp_path / ("current-id.jsonl" if host == "claude" else "old-id.jsonl")),
         "cwd": str(tmp_path),
     }
     assert session_review.record(payload, host=host)
@@ -236,14 +235,15 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     assert not session_review.record({**payload, "session_id": "delegate"}, host=host)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
     monkeypatch.setenv(session_review.BATCH_ENV, "manifest")
-    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    batch_payload = {**payload, "session_id": "batch", "transcript_path": str(tmp_path / "batch.jsonl")}
+    assert session_review.record(batch_payload, host=host)
     monkeypatch.delenv(session_review.BATCH_ENV)
-    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    assert session_review.record(batch_payload, host=host)
     assert next(item for item in session_review.pending() if item["session_id"] == "batch")["review_batch"]
     assert len(session_review.pending()) == 2
 
 
-@pytest.mark.parametrize("transcript", [None, "", 123])
+@pytest.mark.parametrize("transcript", [None, "", 123, "digest-benchmark.jsonl"])
 def test_claude_record_requires_preparable_transcript(transcript: object) -> None:
     """記録先の無いClaude入力を待ちへ追加せず、準備不能な再試行を防ぐ。"""
     assert not session_review.record(
@@ -443,3 +443,24 @@ def test_corrupt_manifest_preserves_new_and_legacy_review_logs():
     manifest.parent.mkdir(parents=True)
     manifest.write_text("{破損", encoding="utf-8")
     assert session_review.protected_logs() == {old, new, renamed}
+
+
+def test_complete_checks_full_record_even_when_analysis_excludes_fork_context(tmp_path):
+    transcript = tmp_path / "fork.jsonl"
+    lines = ['{"type":"session_meta"}', '{"type":"event_msg","payload":{"type":"user_message","message":"継承"}}']
+    lines.append('{"type":"event_msg","payload":{"type":"user_message","message":"分岐後"}}')
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    loaded = session_family._load_records_checked(str(transcript))  # pylint: disable=protected-access
+    assert loaded.records is not None
+    meta, inherited, branch = loaded.records
+    collected = types.SimpleNamespace(
+        records=[meta, branch], fork_context=(inherited,), record_id="codex:fork", path=transcript
+    )
+    scope_path = tmp_path / "scope.json"
+    session_review.write(scope_path, session_review.scope_records([collected]))
+    assert session_review.record({"hook_event_name": "SessionStart", "session_id": "fork"}, host="codex")
+    prepared = {**session_review.prepare_identity("codex", "fork"), "scope_path": str(scope_path)}
+    assert session_review.complete(prepared)["pending_count"] == 0
+    transcript.write_text(("\n".join(lines) + "\n").replace("継承", "置換"), encoding="utf-8")
+    with pytest.raises(ValueError, match="接頭辞"):
+        session_review.complete(prepared)

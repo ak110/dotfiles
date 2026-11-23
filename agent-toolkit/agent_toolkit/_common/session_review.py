@@ -25,6 +25,7 @@ from agent_toolkit._common import (
     atomic_file,
     delegated_session,
     mcp_environment,
+    next_action,
     session_activity,
     session_family,
     session_launchers,
@@ -526,16 +527,18 @@ def launch_notice(host: str) -> str | None:
                 retry = "配布元の作業ツリーで`atk run-skill --args meta review-session`"
             else:
                 retry = f"`{skill_modes.entry_command(host, 'review-session batch')}`"
-            failures.append(f"{value['host']} {value['event']}{code}: `{read_command}`（原因を是正してから{retry}を実行せよ）")
+            failures.append(
+                next_action.recover_from_failure(
+                    component=f"{value['host']} {value['event']} の振り返り起動{code}",
+                    evidence=log_path,
+                    first_step=f"`{read_command}` で診断ログを読む",
+                    retry=f"原因を是正し、未処理の対象を確認してから {retry}を実行する",
+                )
+            )
             attempt.notify().save(path)
     if not failures:
         return None
-    return (
-        "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。次のコマンドで診断ログを取得せよ: "
-        + "、".join(failures)
-        + "。"
-        "この失敗と確認先を、この会話の通常の報告手段でユーザーへ伝えよ。"
-    )
+    return "振り返りの自動起動が実行受付前に終了した。未処理の振り返り対象は保持している。\n" + "\n".join(failures)
 
 
 def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = None) -> bool:
@@ -559,7 +562,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
         previous = state.reviewed.model_dump(exclude_unset=True) if state.reviewed is not None else {}
         transcript = payload.get("transcript_path") or prior.get("transcript_path")
         # Claudeの準備はtranscript指定で始める。記録先の無いhook再生入力を実対象へ登録しない。
-        if host == "claude" and (not isinstance(transcript, str) or not transcript.strip()):
+        if host == "claude" and (not isinstance(transcript, str) or pathlib.Path(transcript).name != f"{session_id}.jsonl"):
             return False
         value = {
             **prior,
@@ -587,18 +590,20 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     previous = read(after).get("records", {}) if after is not None else {}
     records: dict[str, Any] = {}
     for item in collected:
-        rows = item.records
+        physical_rows = (
+            sorted((*item.records, *item.fork_context), key=lambda row: row.line) if item.fork_context else item.records
+        )
         prior = previous.get(item.record_id)
         if prior is not None:
-            old_rows = [row for row in rows if row.line <= prior.get("observed_through_line", prior["through_line"])]
+            old_rows = [row for row in physical_rows if row.line <= prior.get("observed_through_line", prior["through_line"])]
             digest = hashlib.sha256("\n".join(row.text for row in old_rows).encode()).hexdigest()
             if digest != prior["digest"]:
                 raise ValueError(f"前回処理済み範囲を再現できない: {item.record_id}")
         records[item.record_id] = {
             "path": str(item.path),
-            "through_line": max((row.line for row in rows), default=0),
+            "through_line": max((row.line for row in physical_rows), default=0),
             "after_line": prior["through_line"] if prior else 0,
-            "digest": hashlib.sha256("\n".join(row.text for row in rows).encode()).hexdigest(),
+            "digest": hashlib.sha256("\n".join(row.text for row in physical_rows).encode()).hexdigest(),
         }
     missing = set(previous) - set(records)
     if missing:
