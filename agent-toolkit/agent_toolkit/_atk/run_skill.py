@@ -339,7 +339,11 @@ def _session_readers(
                 args=(process.stdout, "stdout", log, lock, None if summarize else progress, orchestrator, output, summarize),
                 daemon=True,
             ),
-            threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
+            threading.Thread(
+                target=_copy_stream,
+                args=(process.stderr, "stderr", log, lock, None, orchestrator, None, summarize),
+                daemon=True,
+            ),
         ]
         for reader in readers:
             reader.start()
@@ -527,10 +531,13 @@ def _copy_stream(
             with lock:
                 if log.closed:
                     return
-                diagnostic = label == "stderr" or diagnostic_process.is_error_event(line)
-                saved = summarize_event_line(line) if summarize and label == "stdout" else line
-                if diagnostic:
+                if summarize:
+                    # 外部の本文を読む作業は、診断の行もstderrも種類と文字数だけを記録する。  # pyfltr: allow-comment
+                    saved = summarize_event_line(line, error=diagnostic_process.is_error_event(line))
+                elif label == "stderr" or diagnostic_process.is_error_event(line):
                     saved, private_key = diagnostic_process.redact_stream_line(line, private_key)
+                else:
+                    saved = line
                 log.write(f"[{label}] {saved}\n")
                 log.flush()
                 if output is not None:
@@ -539,7 +546,7 @@ def _copy_stream(
                     progress.receive(orchestrator, line)
 
 
-def summarize_event_line(line: str) -> str:
+def summarize_event_line(line: str, *, error: bool = False) -> str:
     try:
         event = json.loads(line)
     except ValueError:
@@ -551,6 +558,8 @@ def summarize_event_line(line: str) -> str:
                 summary[key] = value
         if isinstance(item := event.get("item"), dict) and isinstance(item_type := item.get("type"), str):
             summary["item_type"] = item_type
+    if error:
+        summary["is_error"] = True
     return json.dumps(summary, ensure_ascii=False)
 
 

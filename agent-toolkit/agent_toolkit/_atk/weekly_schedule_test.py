@@ -192,7 +192,7 @@ def test_research_is_disabled_by_default(tokyo, monkeypatch):
 
 
 def test_research_failure_is_reported_once_after_consecutive_failures(weekly, monkeypatch):
-    """失敗した回は次の判定で再実行し、続けて失敗して報告した後は同じ版で再実行しない。  pyfltr: allow-comment"""
+    """失敗した回は報告の後も次の判定で再実行し、連続失敗の報告は同じ回で1回だけ保存する。  pyfltr: allow-comment"""
     reports = []
 
     def save(*_args, **kwargs):
@@ -201,26 +201,25 @@ def test_research_failure_is_reported_once_after_consecutive_failures(weekly, mo
 
     monkeypatch.setattr(run_skill_batch.add, "add_entries", save)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_META_AUTO_START", "false")
-    version = {"value": "1.0.0"}
-    monkeypatch.setattr(run_skill_batch.run_skill_batch_evidence, "plugin_version", lambda _root: version["value"])
     weekly["save"] = False
     weekly["code"] = 1
     now = _at(2026, 11, 22, 15)
     for attempt in range(3):
         _clock(monkeypatch, now + attempt * 60)
+        assert _due(now + attempt * 60) == ["research"]
         weekly_command.run_due()
-    assert weekly["calls"] == ["research@2026-11-22"] * 2
+    assert weekly["calls"] == ["research@2026-11-22"] * 3
     assert len(reports) == 1
     assert reports[0]["scope"] == session_review.RESEARCH_SCOPE
     assert "run_skill_report: true" in reports[0]["messages"][0]
-    assert weekly_schedule.read_record("research")["failures"] == 2
-    version["value"] = "1.0.1"
+    assert weekly_schedule.read_record("research")["failures"] == 3
     weekly["save"] = True
     weekly["code"] = 0
-    assert _due(now + 180) == ["research"]
+    _clock(monkeypatch, now + 180)
     weekly_command.run_due()
-    assert weekly["calls"] == ["research@2026-11-22"] * 3
+    assert weekly["calls"] == ["research@2026-11-22"] * 4
     assert not _due(now + 240)
+    assert len(reports) == 1
 
 
 def test_research_failed_in_last_hours_is_retried_by_next_judgment(weekly, monkeypatch):

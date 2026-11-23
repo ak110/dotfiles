@@ -418,3 +418,47 @@ def test_script_marks_model_sources_read(monkeypatch, capsys):
         "changelog:codex": "2026-11-20T00:00:00+00:00",
         "web:hacker-news": _NOW.isoformat(),
     }
+
+
+@pytest.mark.parametrize(
+    ("gap_status", "newer_status", "status", "ids", "position", "gap"),
+    [
+        (200, 200, "read", ["105", "104", "112", "111"], "112", None),
+        (503, 200, "failed", [], "110", {"since_id": "103", "until_id": "106"}),
+        (200, 503, "read", ["105", "104"], "110", None),
+    ],
+)
+def test_unread_range_result_is_kept_when_newer_range_fails(
+    x_settings, monkeypatch, gap_status, newer_status, status, ids, position, gap
+):
+    """未読区間の読取と新しい分の読取を分けて確定し、後半の失敗で前半の結果を失わない。  pyfltr: allow-comment"""
+    del x_settings
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
+    session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
+    session_review.write(
+        research_sources.positions_path(),
+        {
+            "positions": {"x:account:poteto": "110"},
+            "user_ids": {"poteto": "11"},
+            "gaps": {"x:account:poteto": {"since_id": "103", "until_id": "106"}},
+        },
+    )
+    timeline = _timeline(12, newest=112)
+
+    def respond(url):
+        gap_request = "until_id=" in url
+        code = gap_status if gap_request else newer_status
+        return timeline(url) if code == 200 else (code, json.dumps({"title": f"Unavailable {_TOKEN}"}).encode())
+
+    fetch = _Recorded({**_base_responses(), f"{research_sources.X_API_BASE}/users/11/tweets": respond})
+    result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
+    source = _by_source(result)["x:account:poteto"]
+    assert source["status"] == status
+    assert [item["id"] for item in source["items"]] == ids
+    assert _TOKEN not in json.dumps(result, ensure_ascii=False)
+    research_sources.commit_positions(_SLOT)
+    state = research_sources.load_state()
+    assert state["positions"]["x:account:poteto"] == position
+    assert state["gaps"].get("x:account:poteto") == gap

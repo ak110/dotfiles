@@ -410,7 +410,14 @@ def _read_x_source(
     )
     lower, note = _x_lower(lower_value, search=search, now=now)
     reasons += [note] if note else []
-    page = _x_page(fetch, token, budget, url, {**params, **lower}, minimum=minimum, link=link)
+    try:
+        page = _x_page(fetch, token, budget, url, {**params, **lower}, minimum=minimum, link=link)
+    except SourceError as error:
+        if source not in state["gaps"]:
+            raise
+        # 読み終えた未読区間と読めた投稿は確定させ、新しい分は前回位置のまま次回へ残す。  # pyfltr: allow-comment
+        failure = f"新しい分を読めなかった: {_scrub(str(error), token)}"
+        return SourceResult(source, "read", "。".join([*reasons, failure]), items, position, gap)
     if page is None:
         # 全て読んだ未読区間は確定させ、新しい分は前回位置のまま次回へ残す。  # pyfltr: allow-comment
         status = "read" if source in state["gaps"] else "skipped"

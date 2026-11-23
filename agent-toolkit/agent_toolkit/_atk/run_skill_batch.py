@@ -223,12 +223,8 @@ def weekly_auto_start_due(work: str, *, now: float) -> bool:
         return False
     record = weekly_schedule.read_record(work)
     if work == "research":
-        # 失敗した回は次の判定で再実行し、続けて失敗して報告した後は同じ版で自動の再実行をしない。  # pyfltr: allow-comment
-        return not (
-            record.get("slot") == identifier
-            and record.get("failure_reported")
-            and record.get("failure_version") == run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
-        )
+        # 失敗した回は次の判定で再実行する。連続失敗の報告の有無は再実行の判定に使わない。  # pyfltr: allow-comment
+        return True
     key = record.get("failure_key")
     if not isinstance(key, str) or record.get("report_synced") is False:
         return True
@@ -528,11 +524,7 @@ def _run_weekly(work: str, args: argparse.Namespace, execute: Callable[[argparse
     record: dict[str, Any] = {"slot": identifier, "started_at": now.isoformat()}
     if work == "research" and previous.get("slot") == identifier:
         record.update(
-            {
-                key: previous[key]
-                for key in ("failures", "failure_reported", "failure_version", "failed_at", "failure_stage")
-                if key in previous
-            }
+            {key: previous[key] for key in ("failures", "failure_reported", "failed_at", "failure_stage") if key in previous}
         )
     if previous.get("completed_slot"):
         record["completed_slot"] = previous["completed_slot"]
@@ -597,7 +589,6 @@ def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
         failures=failures,
         failed_at=datetime.datetime.fromtimestamp(time.time(), datetime.UTC).isoformat(),
         failure_stage=stage,
-        failure_version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
     )
     if failures >= weekly_schedule.RESEARCH_FAILURE_REPORT_THRESHOLD and not record.get("failure_reported"):
         try:
@@ -607,7 +598,7 @@ def _research_failed(record: dict[str, Any], stage: str, code: int) -> None:
                     "---\nrun_skill_report: true\n---\n\n"
                     f"# 外部情報の調査（{record['slot']}）が{failures}回続けて失敗した\n\n"
                     f"最後の失敗は段階 `{stage}`、終了{code}である。"
-                    "提案はまだ届いておらず、同じ版のagent-toolkitでは自動で再実行しない（版の更新後の判定で再実行する）。"
+                    "提案はまだ届いておらず、次の判定で同じ回を再実行する。この報告は同じ回で1回だけ届く。"
                     "起票元のagent-toolkitの状態ディレクトリにあるrun-skillのログで原因を確かめる。"
                     "手動での確認には `atk run-skill --args research review-session` を使う。\n"
                 ],
