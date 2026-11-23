@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.types import CallToolRequestParams, CallToolResult
 
-from agent_toolkit._agents_server import mcp_tools, shared_layout, shared_roots, state, status_file
+from agent_toolkit._agents_server import mcp_tools, retained_results, shared_layout, shared_roots, state, status_file
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.service_context import Conversation
 from agent_toolkit._agents_server.service_publication_test import _coordinator
@@ -20,8 +20,9 @@ from agent_toolkit._testing.agents_server_support import _complete, _write_notic
 @pytest.mark.usefixtures("agents_server_isolation")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("completed_before_handoff", [False, True])
+@pytest.mark.parametrize("cli_collects", [False, True])
 async def test_formal_handoff_keeps_the_child_at_its_owner(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completed_before_handoff: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completed_before_handoff: bool, cli_collects: bool
 ) -> None:
     target = {"generation": "current", "server_instance": "same-instance"}
     service = _coordinator(tmp_path / "services" / "agents-server", target)
@@ -80,11 +81,29 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         identifier = collected_during_launch.session_id
         _complete(collected_during_launch, message="後任起動中に回収した結果")
         with runtime_environment.bind(source.caller):
-            result = await source.manager.wait(inherited_targets={identifier})
-        assert result["agent_message"] == "後任起動中に回収した結果"
+            if cli_collects:
+                writer = source.manager._status_writer
+                assert writer is not None
+                await writer.retain_result_async(collected_during_launch)
+                claimed, error = retained_results.take_result(
+                    "shared-root",
+                    identifier,
+                    "predecessor.json",
+                    collector="atk-agents-wait",
+                    state_root=tmp_path,
+                    stash_path=tmp_path / "cli-run" / "results" / f"{identifier}.json",
+                )
+                assert error is None and claimed is not None
+                assert claimed["agent_message"] == "後任起動中に回収した結果"
+                assert not collected_during_launch.result_delivered
+                assert await writer.result_state_async(identifier, session=collected_during_launch) == "consumed"
+            else:
+                result = await source.manager.wait(inherited_targets={identifier})
+                assert result["agent_message"] == "後任起動中に回収した結果"
         source.manager.sessions.pop(identifier)
         cache = source.manager.expired_sessions if completed_before_handoff else source.manager.stopped_sessions
         cache[identifier] = state.SessionResumeState.from_session(collected_during_launch)
+        assert cache[identifier].result_delivered is not cli_collects
         self.sessions["successor"] = state.SessionState("successor", str(tmp_path))
         return {"session_id": "successor", "status": "running", "label": "", "cwd": str(tmp_path), "model_type": model_type}
 
@@ -139,7 +158,14 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         assert (await call(successor, "show", session_id="untracked")).is_error
         refused_collected = await call(successor, "show", session_id=already_collected.session_id)
         assert refused_collected.is_error
-        assert (await call(successor, "show", session_id=collected_during_launch.session_id)).is_error
+        collected_id = collected_during_launch.session_id
+        denied_show = await call(successor, "show", session_id=collected_id)
+        assert denied_show.is_error
+        denied_send = await call(successor, "send_message", session_id=collected_id, prompt="続行")
+        assert denied_send.is_error
+        if cli_collects:
+            assert "未回収状態" in str(denied_show.content)
+            assert "未回収状態" in str(denied_send.content)
         assert (await call(unrelated, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         if not completed_before_handoff:
             await writer.activate_async()

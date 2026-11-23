@@ -147,12 +147,7 @@ class ServiceManagers:
                 child = self._uncollected_handoff_child(manager, identifier)
                 if child is None:
                     continue
-                writer = manager._status_writer
-                if (
-                    child.finalized_at is not None
-                    and writer is not None
-                    and await writer.result_state_async(identifier, session=child) == "consumed"
-                ):
+                if await self._handoff_result_unavailable(manager, child):
                     continue
                 direct.add(identifier)
         return owner, frozenset(direct)
@@ -189,6 +184,37 @@ class ServiceManagers:
     ) -> state.SessionState | state.SessionResumeState | None:
         child = cls._handoff_child_state(manager, identifier)
         return child if child is not None and not child.result_delivered else None
+
+    @staticmethod
+    async def _handoff_result_unavailable(
+        manager: AgentsServerManager, child: state.SessionState | state.SessionResumeState
+    ) -> bool:
+        writer = manager._status_writer
+        return (
+            child.finalized_at is not None
+            and writer is not None
+            and await writer.result_state_async(child.session_id, session=child) in {"consumed", "unreadable"}
+        )
+
+    async def authorize_handoff_child(
+        self, successor: str, identifier: str, owner: Conversation
+    ) -> state.SessionState | state.SessionResumeState:
+        manager = owner.manager
+        child = self._uncollected_handoff_child(manager, identifier)
+        if child is not None:
+            turn = child.turn_seq, child.finalized_at
+            unavailable = await self._handoff_result_unavailable(manager, child)
+            if (
+                not unavailable
+                and self.handoff_child_owner(successor, identifier) is owner
+                and self._uncollected_handoff_child(manager, identifier) is child
+                and (child.turn_seq, child.finalized_at) == turn
+            ):
+                return child
+        raise ActionableError(
+            f"引き継いだ子 {identifier} の未回収状態を確認できず、操作は未実行です",
+            next_action="未回収の子の通知・結果は `collect_handoff` で確認する",
+        )
 
     def handoff_child_owner(self, successor: str, identifier: str) -> Conversation | None:
         grant = self._handoff_children.get(successor)

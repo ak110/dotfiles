@@ -244,17 +244,6 @@ class ServiceSessionControl:
             if inherited_owner is not None and isinstance(identifier, str):
                 await scopes.enter_async_context(self.managers.handoff_scope(inherited_owner))
                 manager = inherited_owner.manager
-                if params.name == "send_message":
-                    child = (
-                        manager.sessions.get(identifier)
-                        or manager.expired_sessions.get(identifier)
-                        or manager.stopped_sessions.get(identifier)
-                    )
-                    if child is None or not pathlib.Path(child.cwd).is_absolute():
-                        raise ActionableError(
-                            "所有managerの子sessionに絶対cwdの記録がなく、追送は未配送です",
-                            next_action="所有managerの起動記録でcwdを確認し、確認できるまで追送しない",
-                        )
             if inherited_owner is None and isinstance(identifier, str) and identifier not in manager.sessions:
                 owner = await self._owner(identifier)
                 if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
@@ -290,6 +279,7 @@ class ServiceSessionControl:
             lock = self._locks.setdefault(lock_id, asyncio.Lock()) if isinstance(lock_id, str) else None
             show_local = (
                 params.name == "show"
+                and inherited_owner is None
                 and isinstance(identifier, str)
                 and identifier in manager.sessions
                 and identifier not in self._pending_restores
@@ -339,6 +329,13 @@ class ServiceSessionControl:
                         if isinstance(predecessor, str)
                         else None
                     )
+                    if inherited_owner is not None and isinstance(identifier, str):
+                        child = await self.managers.authorize_handoff_child(parent, identifier, inherited_owner)
+                        if params.name == "send_message" and not pathlib.Path(child.cwd).is_absolute():
+                            raise ActionableError(
+                                "所有managerの子sessionに絶対cwdの記録がなく、追送は未配送です",
+                                next_action="所有managerの起動記録でcwdを確認し、確認できるまで追送しない",
+                            )
                     selected = mcp_tools._SELECTED_MANAGER.set(manager)
                     try:
                         result = await mcp_tools.mcp._call_registered_tool(context, params)
