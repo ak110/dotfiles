@@ -9287,8 +9287,9 @@
     "雛形はコードブロックの中にH2を持つため、次のH2までを節とみなさず、見出しの後の最初のコードブロックを取り出す。": 1
   },
   "agent-toolkit/skills/atk-mode/scripts/append_progress_log.py": {
+    "引き継ぎ記録の末尾へ、記録時刻（UTC）付きの1行を追記する。 記録先は値を書く時点で初めて作るため、未作成のファイルは新規に作る。": 1,
     "現行形式と読み取り互換形式の進捗ログ見出しを返す。": 1,
-    "計画ファイルの進捗ログへ実行時刻を含む1行を追記する。 保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。 保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。 `--commit`と`--rewrite-map`の対応は、計画（`--handoff`では引き継ぎ記録）と同じディレクトリで同じstemの `<stem>.wi-commits.jsonl`へ短縮OIDで記録し、本文には進捗の行だけを追記する。 進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。 commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。 `--handoff`はcommit対応の記録・履歴更新に使い、対象集合を`--allowed-awi`で渡す。対応の取得は`plan-commits`が行う。 記録済みcommitへAWIを追加するには、旧OIDを同じOIDへ写す分割指定 （`{\"<旧OID>\": [{\"commit\": \"<同じOID>\", \"awi\": [<記録後の全AWI>]}]}`）を`--rewrite-map`へ渡す。 計画の関連WI（`--handoff`では`--allowed-awi`）に無いAWIは記録を変えずに拒否する。 引き継ぎ記録へ進捗だけを残す場合は、通常のファイル編集で更新する。": 1,
+    "計画ファイルの進捗ログへ実行時刻を含む1行を追記する。 保存済み計画の領域（private-notesの`plans`配下）の計画は変更せずに失敗する。 保存済み計画へ追記する場合は、`atk plans checkout`で`~/.claude/plans`へ取得してから追記し、`atk plans commit`で保存する。 `--commit`と`--rewrite-map`の対応は、計画（`--handoff`では引き継ぎ記録）と同じディレクトリで同じstemの `<stem>.wi-commits.jsonl`へ短縮OIDで記録し、本文には進捗の行だけを追記する。 進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。 commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。 `--handoff`は引き継ぎ記録への追記に使う。commit対応の記録・履歴更新では対象集合を`--allowed-awi`で渡す。 対応の取得は`plan-commits`が行う。 記録済みcommitへAWIを追加するには、旧OIDを同じOIDへ写す分割指定 （`{\"<旧OID>\": [{\"commit\": \"<同じOID>\", \"awi\": [<記録後の全AWI>]}]}`）を`--rewrite-map`へ渡す。 計画の関連WI（`--handoff`では`--allowed-awi`）に無いAWIは記録を変えずに拒否する。 引き継ぎ記録へ記録時刻付きの進捗を残す場合は、引き継ぎ記録と`--handoff`、`--completed-step`、`--result`だけを渡す。 記録時刻は書込時点のシステム時計から生成し、時刻を受け取る引数は持たない。 計画の進捗ログは時差付きの現地時刻、引き継ぎ記録は`Z`付きのUTCで書く。 証拠から引用する過去の事象の時刻は、出所とともに`--result`へ書き、記録時刻と区別する。": 1,
     "進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。": 1,
     "進捗ログを安全に更新できない場合のエラー。理由と次の操作を持つ。": 1
   },
