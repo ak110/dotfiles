@@ -37,6 +37,12 @@ def test_main_only_mcp_tools_enforce_actor(tmp_path: pathlib.Path, tool: str, ac
         ("**発話の理解**\n- **要求（原文）:** 上の2件について再発防止まで実施する。", "deny"),
         ("## 発話の理解\n- 指摘: セッション終了手順が未実行ではないか。", "allow"),
         ("## 発話の理解\n- 指摘: 終了手順が未実行ではないか。\n## 記録\n- 原文: ん？ atk agent-exit-sessionは？？", "allow"),
+        ("## 発話の理解\n終了手順の確認。\n\n```markdown\n- 原文: 引用の例\n```", "allow"),
+        ("**発話の理解**\n終了手順の確認。\n\n**記録**\n- 原文: ん？ atk agent-exit-sessionは？？", "allow"),
+        ("発話の理解：指摘（原文）：終了手順が未実行ではないか。", "deny"),
+        ("**発話の理解：**\n- **指摘（原文）：** 終了手順が未実行ではないか。", "deny"),
+        ("**発話の理解：** **原文：** 終了手順を確認する。", "deny"),
+        ("## 発話の理解\n終了手順の確認。\n\n**記録：**\n- 原文: ん？ atk agent-exit-sessionは？？", "allow"),
     ],
 )
 def test_send_to_user_utterance_understanding(tmp_path: pathlib.Path, message: str, decision: str) -> None:
@@ -45,9 +51,13 @@ def test_send_to_user_utterance_understanding(tmp_path: pathlib.Path, message: s
             "tool_name": "mcp__agents_server__send_to_user",
             "tool_input": {"message": message},
             "session_id": "utterance-understanding",
+            "turn_id": "turn-1",
             "cwd": str(tmp_path),
         },
         env_overrides=_plan_file_state_env(tmp_path),
     )
     assert result.returncode == 0, result.stderr
-    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == decision
+    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+    assert output.get("permissionDecision", "allow") == decision
+    if decision == "deny":
+        assert "「発話の理解」に「原文」" in output["permissionDecisionReason"]

@@ -81,6 +81,7 @@ lazy from agent_toolkit._common import host_homes as _host_homes
 lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
+lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
 lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
@@ -177,26 +178,38 @@ def _claude_commit_attribution_disabled(cwd: str) -> bool:
 
 _USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
 _MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
+_STRONG_HEADING = re.compile(r"^\s*(\*\*|__)([^:：]+?)([:：]?)\1\s*([:：]?)(.*)$")
+_UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
 _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
 
 
 def _has_original_text_label_in_understanding(message: str) -> bool:
     section_level = 0
-    for line in message.splitlines():
-        if line.strip().rstrip(":：").strip("*_ ") == "発話の理解":
-            section_level = 6
-            continue
+    for line in without_literal_blocks(message).splitlines():
         heading = _MARKDOWN_HEADING.match(line)
+        strong = _STRONG_HEADING.match(line)
+        if strong and strong[5] and not (strong[3] or strong[4]):
+            strong = None
         if heading:
             level = len(heading[1])
             title = heading[2].strip(" #*_")
-            if title == "発話の理解":
-                section_level = level
-                continue
-            if level <= section_level:
+        elif strong:
+            level = 6
+            title = strong[2].strip() + (strong[3] or strong[4]) + strong[5]
+        else:
+            level = 0
+            title = line.strip()
+        if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
+            section_level = level or 6
+            if _ORIGINAL_TEXT_LABEL.match(target[1] or ""):
+                return True
+            continue
+        if level:
+            if section_level and _ORIGINAL_TEXT_LABEL.match(line if strong else title):
+                return True
+            if strong or level <= section_level:
                 section_level = 0
-            line = title
-        if section_level and _ORIGINAL_TEXT_LABEL.match(line):
+        elif section_level and _ORIGINAL_TEXT_LABEL.match(line):
             return True
     return False
 
