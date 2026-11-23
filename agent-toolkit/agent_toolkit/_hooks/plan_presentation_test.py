@@ -23,8 +23,8 @@ def test_exit_plan_mode_checks_current_known_plan_once_per_version(tmp_path, mon
 
     monkeypatch.setattr(plan_presentation.subprocess, "run", run)
 
-    def invoke(name):
-        payload = {"session_id": sid, "cwd": str(tmp_path), "tool_name": name, "tool_input": {}}
+    def invoke(name, tool_input=None):
+        payload = {"session_id": sid, "cwd": str(tmp_path), "tool_name": name, "tool_input": tool_input or {}}
         assert dispatch.main(json.dumps(payload)) == 0
         return capsys.readouterr().out
 
@@ -35,6 +35,9 @@ def test_exit_plan_mode_checks_current_known_plan_once_per_version(tmp_path, mon
     path.write_text("是正した本文\n", encoding="utf-8")
     assert "計画の構造検査" not in invoke("ExitPlanMode")
     assert "計画の構造検査" not in invoke("ExitPlanMode")
+    assert len(calls) == 2
+    assert "一致しない" in invoke("ExitPlanMode", {"plan": "提示された別の本文"})
+    assert "一致しない" not in invoke("ExitPlanMode", {"plan": "是正した本文"})
     assert len(calls) == 2
     path.write_text("見直した本文\n", encoding="utf-8")
     assert "計画の構造検査" not in invoke("ExitPlanMode")

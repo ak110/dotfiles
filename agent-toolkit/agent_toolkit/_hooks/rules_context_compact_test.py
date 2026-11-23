@@ -64,6 +64,15 @@ def test_context_boundary_restores_skill_notice(
         **({"turn_id": "turn"} if codex else {}),
     }
     assert "agent-basics:search" in _run_hook_in_process("pretooluse", search).stdout
+    blocked = _run_hook_in_process("pretooluse", search)
+    assert "起動を確認できない" in blocked.stdout
+    launched = {
+        "hook_event_name": "PostToolUse",
+        "session_id": session_id,
+        "tool_name": "Skill",
+        "tool_input": {"skill": "agent-basics:search"},
+    }
+    assert _run_hook_in_process("posttooluse", launched).returncode == 0
     assert "agent-basics:search" not in _run_hook_in_process("pretooluse", search).stdout
     start = {"hook_event_name": "SessionStart", "source": boundary, "session_id": session_id}
     assert _run_hook_in_process("rules_context", start).returncode == 0

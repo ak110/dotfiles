@@ -300,7 +300,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if tool_name == "ExitPlanMode":
         from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
 
-        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", ""))):
+        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", "")), tool_input.get("plan")):
             return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示する。"))
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
@@ -329,7 +329,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return Decision(
                 block=_block_notice(
                     f"完了報告の前に委譲先の結果と続行を確認する。{pending}",
-                    fix="未回収の結果をatk agents waitで受け取り、応答待ちの担当へ指示を返す。",
+                    fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返す。",
                 )
             )
         if unread := unread_evidence(payload, session_id, message):

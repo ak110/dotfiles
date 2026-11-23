@@ -11,7 +11,7 @@ _CHECKED = "presented_plan_structure"
 _TARGET = re.compile(r"^- 対象リポジトリ:\s*`([^`\n]+)`", re.MULTILINE)
 
 
-def check_before_presentation(session_id: str, cwd: str) -> str | None:
+def check_before_presentation(session_id: str, cwd: str, presented: object = None) -> str | None:
     if not session_id:
         return None
     state = read_state(session_id)
@@ -21,6 +21,10 @@ def check_before_presentation(session_id: str, cwd: str) -> str | None:
     path = pathlib.Path(filename)
     try:
         content = path.read_bytes()
+        if isinstance(presented, str):
+            saved_text = content.decode("utf-8-sig").replace("\r\n", "\n")
+            if presented.replace("\r\n", "\n").removesuffix("\n") != saved_text.removesuffix("\n"):
+                return "提示する本文が現在の計画ファイルと一致しない。提示する全文を保存してから提示し直す。"
         digest = hashlib.sha256(content).hexdigest()
         if state.get(_CHECKED) == [filename, digest]:
             return None

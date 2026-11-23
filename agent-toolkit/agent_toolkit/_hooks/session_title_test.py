@@ -25,7 +25,16 @@ def test_consultation_history_survives_other_skill(codex, capsys):
     user_prompt_submit.main(json.dumps(payload))
     capsys.readouterr()
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
-    posttooluse.main(json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": skill_modes.PROCESS_WI}}))
+    posttooluse.main(
+        json.dumps(
+            {
+                "hook_event_name": "PostToolUse",
+                "session_id": session,
+                "tool_name": "Skill",
+                "tool_input": {"skill": skill_modes.PROCESS_WI},
+            }
+        )
+    )
     capsys.readouterr()
     assert session_state.read_state(session)["session_title_kind"] == "process-wi"
     assert session_state.read_state(session)["add_awi_skill_invoked"] is True
@@ -156,6 +165,7 @@ def test_all_repos_title_stays_across_plan_switches(
         json.dumps(
             {
                 "session_id": session,
+                "hook_event_name": "PostToolUse",
                 "tool_name": "Skill",
                 "tool_input": {"skill": skill_modes.PROCESS_WI, "args": arguments},
             }
@@ -174,6 +184,7 @@ def test_all_repos_title_stays_across_plan_switches(
             json.dumps(
                 {
                     "session_id": session,
+                    "hook_event_name": "PostToolUse",
                     "tool_name": "Skill",
                     "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
                 }
@@ -195,6 +206,7 @@ def test_process_loop_child_keeps_plan_title(
         json.dumps(
             {
                 "session_id": session,
+                "hook_event_name": "PostToolUse",
                 "tool_name": "Skill",
                 "tool_input": {"skill": skill_modes.PROCESS_WI, "args": "single-lane"},
             }
@@ -241,7 +253,14 @@ def test_user_typed_entry_starts_autonomous_work(capsys):
 def test_agent_invoked_entry_grants_no_state(skill, arguments, capsys):
     session = f"entry-agent-{skill}-{arguments.split()[0]}"
     posttooluse.main(
-        json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": skill, "args": arguments}})
+        json.dumps(
+            {
+                "hook_event_name": "PostToolUse",
+                "session_id": session,
+                "tool_name": "Skill",
+                "tool_input": {"skill": skill, "args": arguments},
+            }
+        )
     )
     capsys.readouterr()
     state = session_state.read_state(session)
@@ -259,7 +278,11 @@ def test_retired_skill_name_starts_nothing(prefix, codex, capsys):
     if codex:
         payload["turn_id"] = "turn"
     user_prompt_submit.main(json.dumps(payload))
-    posttooluse.main(json.dumps({"session_id": session, "tool_name": "Skill", "tool_input": {"skill": name}}))
+    posttooluse.main(
+        json.dumps(
+            {"hook_event_name": "PostToolUse", "session_id": session, "tool_name": "Skill", "tool_input": {"skill": name}}
+        )
+    )
     capsys.readouterr()
     state = session_state.read_state(session)
     assert not state.get("add_awi_skill_invoked")
