@@ -4,6 +4,7 @@
 pyfltr: allow-comment
 """
 
+import datetime
 import json
 import os
 import re
@@ -13,7 +14,11 @@ from agent_toolkit._hooks.notice import block_formatter
 lazy from agent_toolkit._atk.session_records import codex_shell_command, codex_shell_output, exit_session_in_entries
 lazy from agent_toolkit._atk.wi import process_loop_control, process_loop_log
 lazy from agent_toolkit._common import session_state, transcript
-lazy from agent_toolkit._common.process_loop_session import is_identified_process_loop_session
+lazy from agent_toolkit._common.process_loop_session import (
+    REPORT_SAVED_AT_KEY,
+    is_identified_process_loop_session,
+    is_report_opening,
+)
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import ATK_SHELL_TOOLS, is_atk_command
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context
@@ -25,7 +30,6 @@ _block = block_formatter("process_loop_exit_gate")
 
 
 _SAVE_SUCCESS = re.compile(r"^成功: 1件をinboxへ投入した\r?\n +[^\r\n]*[/\\][0-9]{8}-[0-9]{6}-[0-9]{3}\.md\r?$", re.M)
-_REPORT_QUESTION = re.compile(r"[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日の.+の作業結果について、この対応で問題ありませんか？")
 
 
 def _save_args(command: object) -> tuple[str, ...]:
@@ -59,8 +63,7 @@ def _has_compared_report_opening(args: tuple[str, ...]) -> bool:
         try:
             if path.is_absolute() and path.is_file():
                 with path.open(encoding="utf-8") as source:
-                    lines = source.read(4096).lstrip().splitlines()
-                    if lines and _REPORT_QUESTION.fullmatch(lines[0]):
+                    if is_report_opening(source.read(4096)):
                         return True
         except OSError, UnicodeError:
             continue
@@ -115,7 +118,7 @@ def _claude_report_saved(entries: list[dict]) -> bool:
     return reported
 
 
-def _codex_current_turn(entries: list[dict]) -> list[dict]:
+def _codex_current_turn(entries: list[dict]) -> tuple[list[dict], object]:
     start = 0
     for index, entry in enumerate(entries):
         payload = entry.get("payload")
@@ -125,7 +128,7 @@ def _codex_current_turn(entries: list[dict]) -> list[dict]:
             and payload.get("type") in {"user_message", "turn_aborted"}
         ):
             start = index + 1
-    return entries[start:]
+    return entries[start:], entries[start - 1].get("timestamp") if start else None
 
 
 def _codex_report_saved(entries: list[dict]) -> bool:
@@ -149,6 +152,16 @@ def _codex_report_saved(entries: list[dict]) -> bool:
     return False
 
 
+def _saved_in_codex_turn(saved_at: object, boundary: object) -> bool:
+    if not isinstance(saved_at, (float, int)) or not isinstance(boundary, str):
+        return False
+    try:
+        start = datetime.datetime.fromisoformat(boundary)
+    except ValueError:
+        return False
+    return start.tzinfo is not None and saved_at >= start.timestamp()
+
+
 def _accepted_request(response: object) -> bool:
     if isinstance(response, str):
         try:
@@ -170,9 +183,15 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     codex = is_codex_payload(payload)
     records = transcript.read_transcript_entries(path)
-    entries = _codex_current_turn(records) if codex else _current_turn(records)
-    if not (_codex_report_saved(entries) if codex else _claude_report_saved(entries)):
-        return "approve", ""
+    state = session_state.read_state(session_id)
+    if codex:
+        entries, boundary = _codex_current_turn(records)
+        if not (_saved_in_codex_turn(state.get(REPORT_SAVED_AT_KEY), boundary) or _codex_report_saved(entries)):
+            return "approve", ""
+    else:
+        entries = _current_turn(records)
+        if not _claude_report_saved(entries):
+            return "approve", ""
     if not codex:
         latest = payload.get("last_assistant_message")
         if isinstance(latest, str) and any(line.startswith("待機中:") for line in latest.splitlines()):
@@ -180,14 +199,14 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         for message in transcript.iter_latest_assistant_text_messages(path):
             if any(line.startswith("待機中:") for line in transcript.visible_assistant_text(message).splitlines()):
                 return "approve", ""
-    if is_pending_async_work_from_payload(payload, session_id, session_state=session_state.read_state(session_id)):
+    if is_pending_async_work_from_payload(payload, session_id, session_state=state):
         return "approve", ""
     if process_loop_log.abort_path().exists():
         return "approve", ""
     request = process_loop_control.read_resume_request()
     if request is not None and request.session_id == session_id:
         return "approve", ""
-    if exit_session_in_entries(entries, "codex" if codex else "claude") is not False:
+    if exit_session_in_entries(entries, "codex" if codex else "claude") is True:
         return "approve", ""
     return "block", _block(
         "報告用の`UWI`は保存済みだが、巡回統括の終了操作を確認できない。",

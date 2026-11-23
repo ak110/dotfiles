@@ -7,6 +7,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk.environment import is_agent_environment
@@ -41,6 +42,7 @@ from agent_toolkit._atk.wi.formatters import shorten_home
 from agent_toolkit._atk.wi.repo import resolve_add_target, resolve_head_commit, resolve_repo_id_or_raise
 from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import body_match as _body_match
+from agent_toolkit._common import process_loop_session as _process_loop_session
 from agent_toolkit._common import uwi_watch as _uwi_watch
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._plan import owner_records as _owner_records
@@ -337,6 +339,7 @@ def add_entries(
     `initial_state`は保存する状態で、`WI_STATE_HOLD`なら保存した時点から自動処理の対象に入れない。
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     """
+    started_at = time.time()
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
         target_repo=target_repo,
@@ -387,6 +390,19 @@ def add_entries(
                 )
                 for filename, content in written
             )
+    if (
+        submitter_session is not None
+        and submitter_session == os.environ.get("CODEX_THREAD_ID")
+        and entry_type == WI_TYPE_UWI
+        and question_type == "post-approval"
+        and initial_state == WI_STATE_INBOX
+        and any(_process_loop_session.is_report_opening(body) for _, body in parsed_messages)
+        and not _process_loop_session.record_codex_report_save(submitter_session, started_at, os.environ)
+    ):
+        _outcome.report_warning(
+            "巡回の終了判定に使う報告用UWIの保存記録を残せなかった",
+            next_action="保存を検収してから、送達と終了操作を行う",
+        )
     if submitter_session is not None and entry_type != WI_TYPE_AWI and not _uwi_watch.add(submitter_session, generated):
         _outcome.report_warning(
             f"回答の通知先を記録できなかった: {'、'.join(generated)}",

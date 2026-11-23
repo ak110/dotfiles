@@ -12,6 +12,7 @@ from agent_toolkit._atk.wi import process_loop_log as loop_log
 from agent_toolkit._common import session_state
 from agent_toolkit._common import transcript as _transcript
 from agent_toolkit._common.periodic_recheck import PERIODIC_RECHECK_PROMPT
+from agent_toolkit._common.process_loop_session import REPORT_SAVED_AT_KEY
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import stop
 from agent_toolkit._hooks import transcript_scan as _transcript_scan
@@ -727,6 +728,9 @@ def test_block_limit_below_does_not_terminate(monkeypatch: pytest.MonkeyPatch, t
         "codex-interrupt",
         "codex-exec",
         "codex-exec-exit",
+        "codex-async-save",
+        "codex-multi-save",
+        "codex-stale-save",
     ],
 )
 def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, boundary: str) -> None:
@@ -869,6 +873,76 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
                 call = {"type": "function_call", "name": "exec_command", "arguments": json.dumps({"cmd": cmd})}
                 response = {"type": "function_call_output", "output": f"Process exited with code 0\nOutput:\n{stdout}"}
             records.extend({"type": "response_item", "payload": {**item, "call_id": call_id}} for item in (call, response))
+    if boundary in {"codex-async-save", "codex-multi-save", "codex-stale-save"}:
+        records = [
+            {"type": "event_msg", "timestamp": "2026-11-23T00:00:00Z", "payload": {"type": "user_message"}},
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "launch",
+                    "input": f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}));",
+                },
+            },
+        ]
+        success = json.dumps({"exit_code": 0, "output": "成功: 1件をinboxへ投入した\n  ~/notes/20000101-010101-001.md"})
+        if boundary == "codex-multi-save":
+            records[1] = {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "exec",
+                    "call_id": "launch",
+                    "input": (
+                        'text(await tools.exec_command({cmd: "true"}));'
+                        f"text(await tools.exec_command({{cmd: {json.dumps(command)}}}));"
+                        'text(await tools.exec_command({cmd: "true"}));'
+                    ),
+                },
+            }
+            output = [
+                {"type": "input_text", "text": line}
+                for line in ("Script completed\n", "先行結果", success, "別の結果", "最終行")
+            ]
+        else:
+            records.extend(
+                [
+                    {
+                        "type": "response_item",
+                        "payload": {
+                            "type": "custom_tool_call_output",
+                            "call_id": "launch",
+                            "output": [
+                                {"type": "input_text", "text": "Script completed\n"},
+                                {"type": "input_text", "text": '{"session_id":123}'},
+                            ],
+                        },
+                    },
+                    {
+                        "type": "response_item",
+                        "payload": {
+                            "type": "custom_tool_call",
+                            "name": "exec",
+                            "call_id": "poll",
+                            "input": 'text(await tools.write_stdin({session_id:123, chars:""}));',
+                        },
+                    },
+                ]
+            )
+            output = [{"type": "input_text", "text": "Script completed\n"}, {"type": "input_text", "text": success}]
+        records.append(
+            {
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "launch" if boundary == "codex-multi-save" else "poll",
+                    "output": output,
+                },
+            }
+        )
+        saved_at = 1795391999 if boundary == "codex-stale-save" else 1795392001
+        assert session_state.update_state("coordinator", lambda state: {**state, REPORT_SAVED_AT_KEY: saved_at})
     if boundary == "codex-interrupt":
         records.append({"type": "event_msg", "payload": {"type": "turn_aborted", "reason": "interrupted"}})
     path = tmp_path / "coordinator.jsonl"
@@ -894,7 +968,17 @@ def test_process_loop_report_stop(monkeypatch: pytest.MonkeyPatch, tmp_path: pat
     if boundary.startswith("codex"):
         payload["turn_id"] = "turn"
     result = stop.evaluate(json.dumps(payload))
-    if boundary in {"complete", "feedback", "plain", "failed-delivery", "saved-only", "codex", "codex-exec"}:
+    if boundary in {
+        "complete",
+        "feedback",
+        "plain",
+        "failed-delivery",
+        "saved-only",
+        "codex",
+        "codex-exec",
+        "codex-async-save",
+        "codex-multi-save",
+    }:
         assert result.get("decision") == "block"
         assert "atk agents-exit-session" in str(result.get("reason"))
     else:

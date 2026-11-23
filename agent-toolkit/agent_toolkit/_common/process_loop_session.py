@@ -9,7 +9,31 @@ _SESSION_ID_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID"
 CLAIM_ENV = "AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM"
 _CLAIM_STATE_PREFIX = "process-loop-claim-"
 _CLAIMED_KEY = "claimed_session_id"
+REPORT_SAVED_AT_KEY = "process_loop_report_saved_at"
+_REPORT_QUESTION = re.compile(r"[0-9]{4}年[0-9]{1,2}月[0-9]{1,2}日の.+の作業結果について、この対応で問題ありませんか？")
 _TOKEN = re.compile(r"[A-Za-z0-9_-]+\Z")
+
+
+def is_report_opening(opening: str) -> bool:
+    lines = opening.lstrip().splitlines()
+    return bool(lines and _REPORT_QUESTION.fullmatch(lines[0]))
+
+
+def record_codex_report_save(session_id: str, started_at: float, environ: Mapping[str, str]) -> bool:
+    if (
+        session_id != environ.get("CODEX_THREAD_ID")
+        or not _TOKEN.fullmatch(session_id)
+        or is_delegated(environ)
+        or not is_identified_process_loop_session(session_id, environ)
+    ):
+        return True
+
+    def update(state: dict) -> dict:
+        previous = state.get(REPORT_SAVED_AT_KEY)
+        when = max(previous, started_at) if isinstance(previous, (int, float)) else started_at
+        return {**state, REPORT_SAVED_AT_KEY: when}
+
+    return update_state(session_id, update)
 
 
 def _claim_key(environ: Mapping[str, str]) -> str | None:
