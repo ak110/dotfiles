@@ -1,3 +1,9 @@
+"""報告用UWIを保存した巡回統括の終了操作を確かめる。
+
+委譲先での実行可否: 委譲先は統括を終了しないため、メイン以外では遮断しない。
+pyfltr: allow-comment
+"""
+
 import json
 import os
 
@@ -121,6 +127,6 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if exit_session_in_entries(entries, "claude") is not False:
         return "approve", ""
     return "block", _block(
-        "報告用UWIは保存済みだが、このprocess-loop統括の終了操作を確認できない。",
+        "報告用の`UWI`は保存済みだが、巡回統括の終了操作を確認できない。",
         fix="報告を再送せず、`atk agents-exit-session`を実行してセッションを終了せよ。",
     )
