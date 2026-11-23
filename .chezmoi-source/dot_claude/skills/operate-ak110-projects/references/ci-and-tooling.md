@@ -36,6 +36,7 @@ Windows用プロジェクト（gv・lc）をLinuxから扱う注意と、prek・
 ## CI / リリース関連
 
 CI workflowを編集する時は、次を確かめる。
+共通方式と異なる案は、個別に採用する前に[同期の手順](project-synchronization.md#同期の手順)で扱う。
 
 - Linuxジョブはpyfltrの公式イメージによる`container:`実行とし、container化の対象とキャッシュの方式は各リポジトリの`.github/workflows/**`にそろえる。
 - container化したジョブでは、uv・pnpm・Node.js・miseのセットアップのstepを省く。
