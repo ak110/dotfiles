@@ -69,6 +69,9 @@ all-reposの統括から明示的な委譲で単一の対象か軽い対象群�
 3. 改善点は`agent-toolkit:atk-mode/playbooks/subagent.md`「返却形式の受け渡し」に従って統括へ送り、確認事項、担当外の発見、報告用UWIの材料は統括へ返す。
 4. 祖先の対話CLIの終了（`atk agents-exit-session`）は統括に任せる。
 5. 起動したレーン担当とwriterのsession IDを記録し、終了を観測してから返す。
+   Claude Codeで背景の `atk agents wait` の完了通知により同じセッションへ自動再開できる場合に限り、ターンを閉じる返却本文は `待機中: <実行識別子>` の1行だけにする。
+   自動再開の成立確認と、成立を確認できない場合の同じターンでの回収は、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「完了通知を待ってターンを終える場合」に従う。
+   再開後は配下の結果を回収して残作業を進め、最終結果は本書「出力」に従って返す。
 
 ## 出力
 

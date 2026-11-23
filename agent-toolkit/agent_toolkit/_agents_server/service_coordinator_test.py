@@ -847,3 +847,34 @@ async def test_update_left_by_exited_generation_is_released_while_monitor_waits_
         async with asyncio.timeout(5):
             while waiting_save not in saved:
                 await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize("connected", [False, True])
+@pytest.mark.asyncio
+async def test_forwarded_send_message_distinguishes_unsent_from_unknown(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, connected: bool
+) -> None:
+    coordinator, session, _backend = _coordinator(tmp_path, monkeypatch, current=False)
+    monkeypatch.setattr(coordinator, "_current", lambda: {"generation": "G3", "endpoint": "test", "process": "1:test"})
+    peer = Mock()
+    peer.poll.return_value = False
+    connect = Mock(return_value=contextlib.nullcontext(peer))
+    if not connected:
+        connect.side_effect = ConnectionRefusedError("test: connection refused")
+    send = Mock()
+    monkeypatch.setattr(service_transport, "connect", connect)
+    monkeypatch.setattr(service_transport, "send", send)
+    monkeypatch.setattr(service_transport, "disconnect", Mock())
+    params = CallToolRequestParams(name="send_message", arguments={"session_id": session.session_id, "prompt": "続ける"})
+    with runtime_environment.bind(CallerContext({}, tmp_path)):
+        result = await coordinator.call_tool(None, params)
+
+    assert result.is_error
+    if connected:
+        send.assert_called_once()
+        assert "配送成否は未確定" in result.content[0].text
+        assert "再送せず" in result.content[0].text
+    else:
+        send.assert_not_called()
+        assert "追送は未配送" in result.content[0].text
+        assert "復旧してから" in result.content[0].text

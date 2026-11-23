@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import pathlib
 from typing import Any
 
 from agent_toolkit._agents_server import service_transport
 from agent_toolkit._agents_server.session_errors import DelegateBackendError
+
+
+class RequestNotSentError(OSError):
+    pass
 
 
 def _result(response: dict[str, Any]) -> Any:
@@ -27,8 +32,16 @@ def request_sync(target: dict[str, Any], operation: str, arguments: dict[str, An
     return _result(response)
 
 
-async def request(target: dict[str, Any], operation: str, arguments: dict[str, Any], *, timeout: float = 270) -> Any:
-    with service_transport.connect(target["endpoint"], target["process"]) as peer:
+async def request(
+    target: dict[str, Any], operation: str, arguments: dict[str, Any], *, timeout: float = 270, mark_unsent: bool = False
+) -> Any:
+    with contextlib.ExitStack() as stack:
+        try:
+            peer = stack.enter_context(service_transport.connect(target["endpoint"], target["process"]))
+        except (OSError, EOFError, RuntimeError) as error:
+            if not mark_unsent:
+                raise
+            raise RequestNotSentError(f"{type(error).__name__}: {error}") from error
         async with service_transport.AsyncPeer(peer) as owned:
             await owned.call(service_transport.send, {"kind": "rpc", "operation": operation, "arguments": arguments})
 

@@ -8,6 +8,7 @@ import dataclasses
 import os
 import pathlib
 import weakref
+from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent
@@ -38,6 +39,30 @@ def _caller_payload(caller: runtime_environment.CallerContext) -> dict:
         "credit_shortages": dict(caller.credit_shortages),
         "host_process": caller.host_process,
     }
+
+
+async def _forward_call(target: dict, operation: str, params: CallToolRequestParams, arguments: dict) -> Any:
+    try:
+        return await service_rpc.request(
+            target,
+            operation,
+            {**arguments, "params": params.model_dump(by_alias=True, exclude_none=True)},
+            mark_unsent=params.name == "send_message",
+        )
+    except service_rpc.RequestNotSentError as error:
+        if params.name != "send_message":
+            raise
+        raise ActionableError(
+            f"管理サービスに接続できず、追送は未配送です: {error}",
+            next_action="接続先の状態を確認し、通信が復旧してから同じ指示を送り直す",
+        ) from error
+    except (OSError, EOFError, RuntimeError) as error:
+        if params.name != "send_message":
+            raise
+        raise ActionableError(
+            f"追送の配送成否は未確定です: {type(error).__name__}: {error}",
+            next_action="同じ指示を直ちに再送せず、showや受信側の記録で配送を確かめる",
+        ) from error
 
 
 def _restore_caller(value: dict) -> runtime_environment.CallerContext:
@@ -73,14 +98,17 @@ class ServiceSessionControl:
         _contexts: set[str]
         _pending_adoptions: dict[str, dict]
 
+        @abstractmethod
         def _current(self) -> dict: ...
-        def _conversation(self, identifier: str) -> tuple[str, Conversation] | None: ...  # pylint: disable=unused-argument
+
+        @abstractmethod
+        def _conversation(self, identifier: str) -> tuple[str, Conversation] | None: ...
         def _ended_turn(self, session: Any) -> bool: ...  # pylint: disable=unused-argument
         def _schedule_move(self, identifier: str) -> None: ...  # pylint: disable=unused-argument
         async def _finish_adoption(self, identifier: str) -> None: ...  # pylint: disable=unused-argument
 
     async def accept_context(self, packet: dict) -> None:
-        current = self._current()  # pylint: disable=assignment-from-no-return
+        current = self._current()
         if current["generation"] != self.generation:
             await service_rpc.request(current, "move_context", packet)
             return
@@ -100,7 +128,7 @@ class ServiceSessionControl:
 
     async def disconnect(self, identifier: str) -> None:
         self.managers.disconnect(identifier)
-        current = self._current()  # pylint: disable=assignment-from-no-return
+        current = self._current()
         if current["generation"] != self.generation:
             await service_rpc.request(current, "disconnect", {"connection_id": identifier})
 
@@ -185,36 +213,23 @@ class ServiceSessionControl:
 
     async def call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
         try:
-            return await self._call_tool(context, params)
+            try:
+                return await self._call_tool(context, params)
+            except service_turns.MoveRequired as moved:
+                caller = runtime_environment.current()
+                assert caller is not None
+                value = await _forward_call(moved.target, "public_call", params, {"caller": _caller_payload(caller)})
+                return _RESULT.validate_python(value)
         except ActionableError as error:
             return CallToolResult(content=[TextContent(type="text", text=error.message)], is_error=True)
-        except service_turns.MoveRequired as moved:
-            caller = runtime_environment.current()
-            assert caller is not None
-            value = await service_rpc.request(
-                moved.target,
-                "public_call",
-                {
-                    "caller": _caller_payload(caller),
-                    "params": params.model_dump(by_alias=True, exclude_none=True),
-                },
-            )
-            return _RESULT.validate_python(value)
 
     async def _call_tool(self, context: Any, params: CallToolRequestParams) -> Any:
         caller = runtime_environment.current()
         if caller is None:
             raise RuntimeError("呼出元contextがありません")
-        current = self._current()  # pylint: disable=assignment-from-no-return
+        current = self._current()
         if current["generation"] != self.generation:
-            value = await service_rpc.request(
-                current,
-                "public_call",
-                {
-                    "caller": _caller_payload(caller),
-                    "params": params.model_dump(by_alias=True, exclude_none=True),
-                },
-            )
+            value = await _forward_call(current, "public_call", params, {"caller": _caller_payload(caller)})
             return _RESULT.validate_python(value)
         async with self.managers.scope(params) as manager:
             parent = next(key for key, item in self.managers.conversations.items() if item.manager is manager)
@@ -222,14 +237,11 @@ class ServiceSessionControl:
             if isinstance(identifier, str) and identifier not in manager.sessions:
                 owner = await self._owner(identifier)
                 if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
-                    value = await service_rpc.request(
+                    value = await _forward_call(
                         owner,
                         "owned_call",
-                        {
-                            "parent": parent,
-                            "caller": _caller_payload(caller),
-                            "params": params.model_dump(by_alias=True, exclude_none=True),
-                        },
+                        params,
+                        {"parent": parent, "caller": _caller_payload(caller)},
                     )
                     if not value.get("move_required"):
                         return mcp_tools.relay_result(params.name, _RESULT.validate_python(value["result"]), owner, self.target)
@@ -316,11 +328,11 @@ class ServiceSessionControl:
                 # 所有世代が終了している。登録簿の所有者喪失の判定（中断の公開・委譲先CLIの停止）を使う。
                 return False
             raise ActionableError(
-                f"session {identifier}を所有する世代へ配送できない: owner_generation={owner['generation']}; "
+                f"session {identifier}の所有照会に失敗し、要求は未配送です: owner_generation={owner['generation']}; "
                 f"owner_server_instance={owner.get('server_instance')}; owner_process={owner['process']}; "
                 f"queried_generation={self.generation}; error={type(error).__name__}: {error}",
                 next_action=(
-                    "配送は未確定であり、同じ前提で待機や再発行を繰り返さない。"
+                    "同じ前提で待機や再発行を繰り返さない。"
                     "所有世代のプロセスが応答を再開するかをagents_serverの`list`が返す`server_generations`と`show`で確かめ、"
                     "応答しないままなら所有世代のプロセスを処置する。処置の前に、そのプロセスが自身のMCP接続先"
                     "（`queried_server_instance`）ではないことを確かめる"
@@ -359,14 +371,14 @@ class ServiceSessionControl:
                     "移譲先の所有を確定できないため、旧decoderとqueryを再開しません",
                     next_action="showと既存登録簿・物理記録で現在の所有を確認して再開する",
                 )
-            found = self._conversation(identifier)  # pylint: disable=assignment-from-no-return
+            found = self._conversation(identifier)
             if found is None:
                 return {"moved": True}
             parent, conversation = found
             manager = conversation.manager
             session = manager.sessions[identifier]
             backend: Any = manager._backends.get(session.engine)
-            current = self._current()  # pylint: disable=assignment-from-no-return
+            current = self._current()
             source_is_current = current["generation"] == self.generation
             if source_is_current and self._updates:
                 return {"moved": False}
