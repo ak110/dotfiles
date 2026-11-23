@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import csv
+import hashlib
 import json
 import os
 import pathlib
@@ -15,7 +17,7 @@ from collections.abc import Iterable
 
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk import lane_records as _lane_records
-from agent_toolkit._atk import lane_retirement, managed_temp
+from agent_toolkit._atk import lane_retirement, managed_temp, run_command
 from agent_toolkit._atk.managed_temp import permissions as temp_permissions
 from agent_toolkit._common import worktree_hooks
 
@@ -29,18 +31,18 @@ def _starts_with_regular_file(path: pathlib.Path, prefix: bytes) -> bool:
         return handle.read(len(prefix)) == prefix
 
 
-def _recorded_venv_files(root: pathlib.Path) -> set[pathlib.Path]:
-    installed: set[pathlib.Path] = set()
+def _recorded_venv_files(root: pathlib.Path) -> dict[pathlib.Path, tuple[str, str]]:
+    installed: dict[pathlib.Path, tuple[str, str]] = {}
     for site in (root / "Lib" / "site-packages", *root.glob("lib/python*/site-packages")):
         for record in site.glob("*.dist-info/RECORD"):
             if record.is_symlink() or not record.is_file() or not record.resolve().is_relative_to(root):
                 continue
             with record.open(encoding="utf-8", newline="") as source:
                 for row in csv.reader(source, strict=True):
-                    if row:
+                    if len(row) == 3:
                         target = pathlib.Path(os.path.normpath(site / row[0]))
                         if target.is_relative_to(root):
-                            installed.add(target.relative_to(root))
+                            installed[target.relative_to(root)] = (row[1], row[2])
     return installed
 
 
@@ -48,8 +50,24 @@ def _is_bytecode(relative: pathlib.Path) -> bool:
     return relative.parent.name == "__pycache__" and relative.suffix == ".pyc"
 
 
-def _venv_file(relative: pathlib.Path, installed: set[pathlib.Path]) -> bool:
-    if relative in installed or _is_bytecode(relative):
+def _record_matches(path: pathlib.Path, recorded: tuple[str, str]) -> bool:
+    digest, length = recorded
+    if not digest and not length:
+        return path.name == "RECORD" and path.parent.name.endswith(".dist-info")
+    if not length.isdecimal() or path.stat().st_size != int(length):
+        return False
+    algorithm, _, encoded = digest.partition("=")
+    if algorithm != "sha256":
+        return False
+    with path.open("rb") as source:
+        computed = hashlib.file_digest(source, "sha256").digest()
+    return base64.urlsafe_b64encode(computed).decode("ascii").rstrip("=") == encoded
+
+
+def _venv_file(root: pathlib.Path, relative: pathlib.Path, installed: dict[pathlib.Path, tuple[str, str]]) -> bool:
+    if relative in installed:
+        return _record_matches(root / relative, installed[relative])
+    if _is_bytecode(relative):
         return True
     if len(relative.parts) == 1:
         return relative.name in {".gitignore", ".lock", "CACHEDIR.TAG", "pyvenv.cfg", "lib64"}
@@ -88,20 +106,45 @@ def _cache_file(root: pathlib.Path, relative: pathlib.Path) -> bool:
     return relative.as_posix() in {"v/cache/nodeids", "v/cache/lastfailed", "v/cache/stepwise"}
 
 
-def _plugin_generated_file(worktree: pathlib.Path, directory: pathlib.Path, relative: pathlib.Path) -> bool:
-    base, _, host = directory.name.rpartition("-")
-    source = worktree / base
-    if (source / relative).is_file() or _is_bytecode(relative):
+def _same_plugin_file(worktree: pathlib.Path, directory: pathlib.Path, relative: pathlib.Path) -> bool:
+    source = worktree / directory.name.rpartition("-")[0] / relative
+    if _is_bytecode(relative):
         return True
-    if host == "codex":
-        return relative == pathlib.Path("GENERATED.md")
-    if relative.as_posix() in {"hooks.json", "mcp_config.json"}:
-        return True
-    return (
-        relative.parent == pathlib.Path("agents")
-        and relative.suffix == ".md"
-        and (source / "skills" / "atk-mode" / "roles" / f"{relative.stem}.subagent.md").is_file()
-    )
+    if source.is_symlink() or not source.is_file():
+        return False
+    with source.open("rb") as original, (directory / relative).open("rb") as generated:
+        return all(
+            chunk == generated.read(len(chunk)) for chunk in iter(lambda: original.read(65536), b"")
+        ) and not generated.read(1)
+
+
+_PROJECTION_CHECK = """
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from pytools._internal import antigravity_plugin, codex_plugin_manifests
+root = Path(sys.argv[2])
+name = sys.argv[3]
+if name == "agent-toolkit-codex":
+    issues = codex_plugin_manifests.check_diagnostics(root)
+else:
+    issues = antigravity_plugin.check_diagnostics(root, name.removesuffix("-agy"))
+raise SystemExit(bool(issues))
+"""
+
+
+def _dotfiles_projection_matches(worktree: pathlib.Path, directory: pathlib.Path) -> bool:
+    source = pathlib.Path(__file__).resolve().parents[3]
+    if not (source / "scripts" / "sync_codex_plugin_manifests.py").is_file():
+        return False
+    if _lane_records.common(worktree) != _lane_records.common(source):
+        return False
+    interpreter = source / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+    if not interpreter.is_file():
+        return False
+    argv = [str(interpreter), "-I", "-B", "-c", _PROJECTION_CHECK, str(source), str(worktree), directory.name]
+    _, code, _ = run_command.execute(argv, source, 30)
+    return code == 0
 
 
 def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
@@ -135,9 +178,10 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
 
     is_venv = relative == pathlib.Path(".venv")
     try:
-        installed = _recorded_venv_files(path) if is_venv else set()
+        installed = _recorded_venv_files(path) if is_venv else {}
     except csv.Error:
         return False
+    compare_projection = False
     for directory, folders, files in path.walk(on_error=on_error):
         if ".git" in {name.casefold() for name in (*folders, *files)}:
             return False
@@ -147,16 +191,16 @@ def _registered_generated_directory(worktree: pathlib.Path, raw: str) -> bool:
             file = directory / name
             child = file.relative_to(path)
             if is_venv:
-                if not _venv_file(child, installed):
+                if not _venv_file(path, child, installed):
                     return False
                 if child == pathlib.Path("lib64") and (not file.is_symlink() or file.resolve() != path / "lib"):
                     return False
             elif path.name in {".pytest_cache", ".ruff_cache"}:
                 if not _cache_file(path, child):
                     return False
-            elif not _plugin_generated_file(worktree, path, child):
-                return False
-    return True
+            elif not _same_plugin_file(worktree, path, child):
+                compare_projection = True
+    return not compare_projection or _dotfiles_projection_matches(worktree, path)
 
 
 def _unowned_data_reason(
@@ -225,15 +269,15 @@ def eligible(record: dict[str, typing.Any], *, wait_release: bool = True, retire
             return "未commitまたは未追跡の変更がある"
     elif state.worktree_path:
         return "登録の無いworktreeが残っている"
-    if not selected and state.worktree_path:
-        reason = _registered_unowned_data_reason(record, worktree, trees)
-        if reason:
-            return reason
     if state.branch:
         if selected:
             _lane_records.branch_is_integrated(record, repo)
         else:
             lane_retirement.prove(record, repo)
+    if not selected and state.worktree_path:
+        reason = _registered_unowned_data_reason(record, worktree, trees)
+        if reason:
+            return reason
     return None
 
 

@@ -525,3 +525,32 @@ def test_reuse_switches_held_selection_to_current_selection(
     current.unlink()
     code, held, _stderr = _invoke(capsys, "delete")
     assert code == 1 and held["retained"][0]["reason"] == "選定の統合状態が未統合"
+
+
+@pytest.mark.parametrize("edited", [False, True])
+@pytest.mark.cpu_limit(3.0, reason="統合済みの原本と生成物を実Gitと公開の回収操作で比較する。")
+def test_retired_lane_compares_plugin_content(tmp_path, monkeypatch, capsys, edited):
+    repo, selection, record = _create(tmp_path, monkeypatch, capsys)
+    _selection(selection, integrated=False)
+    worktree = pathlib.Path(record["worktree"])
+    source = worktree / "agent-toolkit"
+    generated = worktree / "agent-toolkit-codex"
+    source.mkdir()
+    (worktree / ".gitignore").write_text("/agent-toolkit-codex/\n", encoding="ascii")
+    (source / "GENERATED.md").write_text("# 自動生成ファイル\n", encoding="utf-8")
+    (source / "README.md").write_text("original", encoding="ascii")
+    committed = git_repository.commit_all(worktree, "配布物の原本")
+    git_repository.run_git(repo, "merge", "--ff-only", committed)
+    generated.mkdir()
+    (generated / "GENERATED.md").write_bytes((source / "GENERATED.md").read_bytes())
+    output = generated / "README.md"
+    output.write_text("modified" if edited else "original", encoding="ascii")
+
+    status, result, stderr = _invoke(capsys, "delete", "--session-id", record["session_id"], "--retire-integrated")
+
+    if edited:
+        assert status == 1 and result["retained"], stderr
+        assert output.read_text(encoding="ascii") == "modified"
+    else:
+        assert status == 0 and result["removed"] == ["lane-01"], stderr
+        assert not worktree.exists()
