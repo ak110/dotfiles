@@ -234,6 +234,20 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
+        if (
+            decision.block is None
+            and (unread_contract := work_contract.delegated_unread_path(session_id, _agent_id.resolve_hook_agent_id(payload)))
+            and _operation_skills._is_artifact_body_writing(  # pylint: disable=protected-access
+                tool_name, tool_input, str(payload.get("cwd", ""))
+            )
+        ):
+            decision = dataclasses.replace(
+                decision,
+                block=_block_notice(
+                    "更新後の全体作業契約の全文取得を確認できない。",
+                    fix=f"`{unread_contract}`を全文読む。",
+                ),
+            )
         if decision.block is None:
             missing_skill = _operation_skills.pending_operation_block(payload, tool_name, tool_input, session_id)
             if missing_skill:

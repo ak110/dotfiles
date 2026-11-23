@@ -22,6 +22,7 @@ RECORD_NAME = "work-contract.md"
 DELEGATED_NOTICE_KEY = "whole_contract_notified"
 """委譲先の主体ごとに、更新を案内した全体作業契約の版（SHA-256）を持つセッション状態の項目。"""
 DELEGATED_LAUNCH_KEY = "whole_contract_launch"
+_DELEGATED_READ_KEY = "whole_contract_read"
 """委譲先が起動時に受け取った全体作業契約の所在と版。登録簿の起動本文から1回だけ求めて保持する。"""
 
 NOTICE_BODY_LIMIT = 4_000
@@ -321,6 +322,53 @@ def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str]
     text = f"全体作業契約が起動後に更新された。原本: `{path}`。"
     notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, current)
     return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用せよ。"
+
+
+def delegated_unread_path(session_id: str, agent: str) -> pathlib.Path | None:
+    if not session_id or not delegated_session.is_delegated(os.environ):
+        return None
+    state = read_state(session_id)
+    notified = state.get(DELEGATED_NOTICE_KEY)
+    seen = notified.get(agent, []) if isinstance(notified, dict) else []
+    if not seen:
+        return None
+    launched = _launched_contract(session_id)
+    if launched is None:
+        return None
+    path, initial = launched
+    try:
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    observed = state.get(_DELEGATED_READ_KEY)
+    prior = observed.get(agent) if isinstance(observed, dict) else None
+    if digest != initial and digest in seen and prior != digest:
+        return path
+    return None
+
+
+def observe_delegated_read(session_id: str, agent: str, tool_name: str, tool_input: dict, response: object, cwd: str) -> None:
+    from agent_toolkit._hooks.full_reads import full_reads  # pylint: disable=import-outside-toplevel
+
+    path = delegated_unread_path(session_id, agent)
+    if path is None:
+        return
+    try:
+        before = path.read_bytes()
+        if not full_reads(tool_name, tool_input, response, cwd, lambda candidate: candidate == path):
+            return
+        if path.read_bytes() != before:
+            return
+    except OSError:
+        return
+    digest = hashlib.sha256(before).hexdigest()
+
+    def mark(state: dict) -> dict:
+        saved = state.get(_DELEGATED_READ_KEY)
+        known = saved if isinstance(saved, dict) else {}
+        return {**state, _DELEGATED_READ_KEY: {**known, agent: digest}}
+
+    update_state(session_id, mark)
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
