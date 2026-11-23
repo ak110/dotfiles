@@ -423,6 +423,18 @@ def test_entry_work_notice(tmp_path, prompt, host_fields, work, mode):
     assert "前に" not in notice
 
 
+@pytest.mark.parametrize(("command", "host_fields"), [("/atk-mode", {}), ("$atk-mode", {"model": "gpt-5"})])
+def test_entry_work_notice_repeats_in_same_session(tmp_path, command, host_fields):
+    for arguments in ("前に作った案を見直したい", "次は試験も確認したい"):
+        result = _run(
+            {"session_id": "repeat-work", "prompt": f"{command} implement {arguments}", **host_fields},
+            state_dir=tmp_path,
+        )
+        assert result.returncode == 0
+        context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+        assert any("`implement`" in body and "playbooks/implement.md" in body for body in _notice_bodies(context))
+
+
 class TestNonMatchingPrompts:
     @staticmethod
     def _assert_no_notice(result: subprocess.CompletedProcess[str]) -> None:

@@ -142,6 +142,20 @@ def _utterance_notice(session_id: str) -> str:
     return informational(_llm_notice(UTTERANCE_UNDERSTANDING_NOTICE_BODY))
 
 
+def _entry_work_notice(session_id: str, full_name: str, arguments: str | None) -> str:
+    resolve_notice(session_id, "user_prompt_submit", "_entry_work_notice")
+    work = full_name.removeprefix("agent-toolkit:")
+    mode, _ = skill_modes.split_mode(full_name, arguments)
+    mode_notice = f"続く `{mode}` はモードの指定である。" if mode else ""
+    return informational(
+        _llm_notice(
+            f"起動入力の先頭の語 `{work}` は作業の指定である。"
+            f"`agent-toolkit:atk-mode/playbooks/{work}.md` に従う。"
+            f"{mode_notice}指定の後ろにある本文だけを入力として扱う。"
+        )
+    )
+
+
 def main(payload_text: str) -> int:
     begin_delivery()
     try:
@@ -257,18 +271,7 @@ def main(payload_text: str) -> int:
             if named_by_entry:
                 session_title.observe_add_awi(session_id, full_name)
                 if is_normal_prompt:
-                    work = full_name.removeprefix("agent-toolkit:")
-                    mode, _ = skill_modes.split_mode(full_name, arguments)
-                    mode_notice = f"続く `{mode}` はモードの指定である。" if mode else ""
-                    notices.append(
-                        informational(
-                            _llm_notice(
-                                f"起動入力の先頭の語 `{work}` は作業の指定である。"
-                                f"`agent-toolkit:atk-mode/playbooks/{work}.md` に従う。"
-                                f"{mode_notice}指定の後ろにある本文だけを入力として扱う。"
-                            )
-                        )
-                    )
+                    notices.append(_entry_work_notice(session_id, full_name, arguments))
             if not is_codex:
                 session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
 
