@@ -8,6 +8,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse
+from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.posttooluse_support import (
@@ -49,6 +50,81 @@ def test_persisted_shell_output_excerpt_is_replaced_by_unread_notice(tmp_path: p
     assert {key: value for key, value in updated.items() if key != "stdout"} == {
         key: value for key, value in payload["tool_response"].items() if key != "stdout"
     }
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_report_cannot_use_unread_persisted_output_as_evidence(tmp_path, capsys, complete):
+    session = f"output-evidence-{complete}"
+    source = tmp_path / "saved.txt"
+    body = "先頭\n残り\n"
+    source.write_text(body, encoding="utf-8")
+    payload = {
+        "session_id": session,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf trial"},
+        "tool_response": {"persistedOutputPath": str(source)},
+    }
+    assert posttooluse.main(json.dumps(payload)) == 0
+    capsys.readouterr()
+    send = {"session_id": session, "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user"}
+
+    def report(message: str) -> str:
+        assert dispatch.main(json.dumps({**send, "tool_input": {"message": message}})) == 0
+        return capsys.readouterr().out
+
+    assert "未取得の退避出力" not in report(f"根拠: `{source}`は未確認。")
+    assert "未取得の退避出力" in report(f"完了: `{source}`で対象がなかった。")
+    read = {
+        **payload,
+        "tool_name": "Read",
+        "tool_input": {"file_path": str(source)},
+        "tool_response": {"file": {"content": body if complete else "先頭"}},
+    }
+    assert posttooluse.main(json.dumps(read)) == 0
+    capsys.readouterr()
+    assert ("未取得の退避出力" not in report(f"完了: `{source}`で対象がなかった。")) is complete
+
+
+@pytest.mark.parametrize("envelope", ["ending-row", "child-body"])
+def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, envelope):
+    root = tmp_path / "agent-basics"
+    skill = root / "skills" / "review-standards"
+    (skill / "references").mkdir(parents=True)
+    (root / "plugin.json").write_text('{"name":"agent-basics"}', encoding="utf-8")
+    subject = skill / "references" / "reviewee.md"
+    subject.write_text("レビューの本文\n", encoding="utf-8")
+    required = ["agent-basics:review-standards/SKILL.md", "agent-basics:review-standards/references/reviewee.md"]
+    end = f"終了行: session_id=proof label=test-review status=completed read_requirements={json.dumps(required)}"
+    if envelope == "child-body":
+        end = f"本文開始: session_id=proof\n{end}\n本文終了: session_id=proof"
+    base = {"session_id": f"wait-review-{envelope}", "cwd": str(tmp_path)}
+
+    def observe(name, inputs, result):
+        payload = {**base, "hook_event_name": "PostToolUse", "tool_name": name, "tool_input": inputs, "tool_response": result}
+        assert posttooluse.main(json.dumps(payload)) == 0
+        capsys.readouterr()
+
+    def update():
+        assert (
+            dispatch.main(
+                json.dumps(
+                    {
+                        **base,
+                        "tool_name": "Bash",
+                        "tool_input": {"command": "atk review-table respond table.tsv --row-id 1"},
+                    }
+                )
+            )
+            == 0
+        )
+        return capsys.readouterr().out
+
+    observe("Bash", {"command": "atk agents wait"}, {"stdout": end})
+    assert ("レビュー返却が指定した資料の取得を確認できない" in update()) is (envelope == "ending-row")
+    observe("Skill", {"skill": "agent-basics:review-standards"}, "起動")
+    observe("Read", {"file_path": str(subject)}, {"file": {"content": "レビューの本文\n"}})
+    assert "レビュー返却が指定した資料の取得を確認できない" not in update()
 
 
 @pytest.mark.parametrize(

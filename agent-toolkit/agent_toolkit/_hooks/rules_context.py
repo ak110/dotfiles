@@ -36,6 +36,7 @@ lazy from agent_toolkit._hooks import agents_server_session_advisor, repository_
 lazy from agent_toolkit._hooks.agent_id import MAIN_AGENT_ID, is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.message_format import xml_message
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
+lazy from agent_toolkit._hooks.review_receipt import forget_reads as forget_review_receipt_reads
 lazy from agent_toolkit._hooks.termination_evidence_state import completion_playbook_path, forget_completion_context
 
 _HOOK_ID = "rules_context"
@@ -186,9 +187,10 @@ def compose_session_start(
                 "`send_to_user`を使える時は、発話を常に`send_to_user`で送れ。"
             )
         )
+    cli = plugin_environment.cli_instructions(plugin_resources.plugin_root())
     if host == "claude" and wait_schedule.background_tasks_disabled():
-        parts.append(_llm_notice(BACKGROUND_TASKS_DISABLED_NOTICE))
-    parts.append(_llm_notice(plugin_environment.cli_instructions(plugin_resources.plugin_root())))
+        cli = f"{cli}\n\n{BACKGROUND_TASKS_DISABLED_NOTICE}"
+    parts.append(_llm_notice(cli))
     return "\n\n".join(parts) or None
 
 
@@ -389,6 +391,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         if isinstance(session_id, str) and session_id:
             if source in {"clear", "compact"}:
                 operation_skills.forget_subject(session_id, subject)
+                forget_review_receipt_reads(session_id, subject, retain_requirements=source == "compact")
                 if subject == MAIN_AGENT_ID:
                     forget_completion_context(session_id)
             if source == "compact" and subject == MAIN_AGENT_ID:

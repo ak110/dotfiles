@@ -13,6 +13,13 @@ run-skillが保持する元の実行入力・会話・時間予算は、[共有�
   案内は最終出力へ採用した時に記録し、本文は配送しない。
   compactのSessionStartがこの記録を削除する。
   セッション状態と同じ寿命で保持する。
+- `whole_contract_read`: 委譲先の主体ごとに、PostToolUseが現在の全文を返したと確かめた版を保持する。
+  案内した更新版と一致しない場合は次の成果物編集を止める。
+  原本の取得と一時領域の作業は止めない。
+  compactのSessionStartで案内済みの状態とともに削除する。
+- `exec_review_receipt_sources`: 実行レビューの終了行が指定した取得資料と、主体が取得した版を保持する。
+  `atk review-table respond`の直前に資料の取得を確認する。
+  compactのSessionStartでは取得結果を捨て、clearでは対象の資料指定も捨てる。
 - `whole_contract_launch`: 委譲先が起動時に受け取った全体作業契約の所在と版（起動の本文の`kind="startup-document"`の要素が示す本文識別子）。
   最初の判定で`agents_server`の登録簿の起動本文から求めて保持し、登録簿にまだ無いsessionは記録せず次の操作で求め直す。
   起動の本文に契約の全文が無い起動では空の値を記録し、更新を案内しない。

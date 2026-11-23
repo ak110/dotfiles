@@ -60,6 +60,7 @@ lazy from agent_toolkit._hooks import (
     codex_truncation,
     command_timing,
     full_reads,
+    review_receipt,
     session_title,
     termination_evidence,
     work_contract,
@@ -559,12 +560,15 @@ def main(payload_text: str) -> int:
         ):
             notices.append(_llm_notice(truncated))
         notices.extend(_observe_tool(payload, session_id, tool_name, tool_input, cwd, event_name))
+        if event_name == "PostToolUse" and (tool_name in ATK_SHELL_TOOLS or tool_name in {"Read", "Skill"}):
+            review_receipt.observe(payload, session_id, tool_name, tool_input, cwd)
         if event_name == "PostToolUse" and tool_name != "Skill":
             _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
             if tool_name == "Read" or tool_name in ATK_SHELL_TOOLS:
                 work_contract.observe_delegated_read(
                     session_id, resolve_hook_agent_id(payload), tool_name, tool_input, payload.get("tool_response"), cwd
                 )
+                _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

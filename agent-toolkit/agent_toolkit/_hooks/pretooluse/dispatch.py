@@ -299,6 +299,35 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         )
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
+    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+        from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
+
+        if missing := missing_before_response(payload, session_id, tool_input):
+            return Decision(
+                block=_block_notice(
+                    "レビュー返却が指定した資料の取得を確認できない。",
+                    fix=f"{'、'.join(missing)}を取得してから採否を記録する。",
+                )
+            )
+    if is_send_to_user_tool(tool_name):
+        from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
+
+        message = tool_input.get("message")
+        if unread := unread_evidence(payload, session_id, message):
+            return Decision(
+                block=_block_notice(
+                    "画面へ送る根拠に未取得の退避出力がある。",
+                    fix=f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。",
+                )
+            )
+        if playbook := missing_completion_before_report(payload, session_id, message):
+            return Decision(
+                block=_block_notice(
+                    "作業完了報告の手順書の取得を確認できない。",
+                    fix=f"`{playbook}`を全文読む。",
+                )
+            )
     if (
         tool_name.endswith(_transcript.SEND_TO_USER_TOOL_SUFFIX)
         and (bugfix_block := bugfix_gate.send_block(payload)) is not None

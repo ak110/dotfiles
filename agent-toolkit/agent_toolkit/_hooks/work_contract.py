@@ -238,7 +238,9 @@ def reset_notice(session_id: str) -> None:
     update_state(
         session_id,
         lambda state: {
-            key: value for key, value in state.items() if key not in {"work_contract_notified_sequence", DELEGATED_NOTICE_KEY}
+            key: value
+            for key, value in state.items()
+            if key not in {"work_contract_notified_sequence", DELEGATED_NOTICE_KEY, _DELEGATED_READ_KEY}
         },
     )
     resolve_notice(session_id, "pretooluse", "main", subject="main")
@@ -298,10 +300,6 @@ def _launched_contract(session_id: str) -> tuple[pathlib.Path, str] | None:
 
 
 def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str] | None:
-    """委譲先が起動時に受け取った全体作業契約が更新された場合に、更新後の版ごとに1回だけ案内する。
-
-    比べるのは、登録簿の起動本文に入れた版と現在の原本の版である。本文の配送と遮断はしない。
-    """
     if not session_id or not delegated_session.is_delegated(os.environ):
         return None
     launched = _launched_contract(session_id)
