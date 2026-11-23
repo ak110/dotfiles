@@ -130,8 +130,11 @@ class ManagerResume(manager_registry.ManagerRegistry):
         if session.codex_auto_reset_pending:
             return
         if session.result_contract_recovery_pending:
+            if session.result_contract_recovery_consumed:
+                return
             pending = session.pending_result
             assert pending is not None
+            turn_seq = session.turn_seq
             reason = session.result_contract_recovery_reason or "返却形式を検査できません"
             session.result_contract_recovery_consumed = True
             try:
@@ -162,7 +165,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 )
                 if delivery.get("delivery") == "reply_failed":
                     raise RuntimeError("返却形式の回復入力を配送できませんでした")
+            except asyncio.CancelledError:
+                if session.turn_seq == turn_seq and session.pending_result is pending:
+                    session.result_contract_recovery_consumed = False
+                raise
             except Exception as exc:
+                if session.turn_seq != turn_seq:
+                    return
                 session.clear_hold()
                 session.status = "failed"
                 session.agent_message = pending["agent_message"]
