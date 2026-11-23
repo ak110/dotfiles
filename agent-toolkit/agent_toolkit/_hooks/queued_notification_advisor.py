@@ -51,7 +51,7 @@ _NOTICE_FIX = "出力ファイルがある対象は全量を読み、工程を�
     component="完了タスクの出力取得",
     evidence="タスクの識別子と出力先が未通知という診断",
     first_step="タスクの状態と保存runを照会して出力先を探す",
-    retry="タスクは再起動せず、取得だけを再試行する",
+    retry="タスクは再起動するな。取得だけを再試行せよ",
 )
 _AGENT_NOTICE_BODY = "完了済みの`Agent`または`Task`の返却通知が未配送である。"
 _AGENT_NOTICE_FIX = (

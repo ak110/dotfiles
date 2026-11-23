@@ -18,8 +18,8 @@ UNREADABLE_RECORD_NEXT_ACTION = "記録ファイルの権限を確かめてか�
 BROKEN_LINES_NEXT_ACTION = recover_from_failure(
     component="ログの解析",
     evidence="元ログ",
-    first_step="解析できなかった行が記録形式に従っているか確認する",
-    retry="形式の不整合を是正してから読取を再実行する",
+    first_step="解析できなかった行が記録形式に従っているか確認せよ",
+    retry="形式の不整合を是正してから読取を再実行せよ",
 )
 _OUTPUT_DIR_NEXT_ACTION = "`--output-dir`を書込可能で同名のファイルが無いディレクトリへ変えて再実行せよ"
 

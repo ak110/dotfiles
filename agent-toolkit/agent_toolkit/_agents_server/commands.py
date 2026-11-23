@@ -127,8 +127,8 @@ def dispatch(args: argparse.Namespace, *, environment: Mapping[str, str] | None 
                 next_action=recover_from_failure(
                     component="effortの変更",
                     evidence="診断と対象sessionの状態",
-                    first_step="`atk agents show`で対象と設定済みのeffortを確認する",
-                    retry="応答を失っただけなら再発行しない。未適用を確認できた場合だけ再試行する",
+                    first_step="`atk agents show`で対象と設定済みのeffortを確認せよ",
+                    retry="応答を失っただけなら再発行するな。未適用を確認できた場合だけ再試行せよ",
                 ),
             )
             return 1

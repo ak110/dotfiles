@@ -141,7 +141,7 @@ def _build_parser() -> argparse.ArgumentParser:
 _MISSING_NEXT_ACTIONS = {
     "evidence_script": (
         recover_from_failure(
-            component="振り返り準備スクリプトの導入",
+            component="`atk run-script session-review-prepare` の導入",
             evidence="診断に示されたスクリプトと導入先",
             first_step="導入済みの配布物にスクリプトがあるか確かめる",
             retry="導入を修復し、`atk run-script session-review-prepare -- <引数>` で準備を再試行する",

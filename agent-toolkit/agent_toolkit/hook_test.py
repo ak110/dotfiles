@@ -15,6 +15,7 @@ import pytest
 from agent_toolkit import hook as _hook
 from agent_toolkit._common import inherited_venv, plugin_environment, session_state
 from agent_toolkit._hooks import notice
+from agent_toolkit._hooks.pretooluse import warning_context
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
 from agent_toolkit._testing.hook_support import _definition_commands
 from agent_toolkit._testing.pretooluse_support import _run_hook_in_process
@@ -282,8 +283,6 @@ def test_hook_launch_failure_exits_with_non_blocking_code(tmp_path: pathlib.Path
 @pytest.mark.parametrize("decision", ["allow", "deny"])
 @pytest.mark.parametrize("failure", ["session", "write", "length"])
 def test_unavailable_final_codex_notice_respects_permission_decision(decision, failure, monkeypatch, tmp_path):
-    from agent_toolkit._hooks.pretooluse import warning_context
-
     location = tmp_path / ("x" * 1800) if failure == "length" else tmp_path
     monkeypatch.setattr(warning_context.managed_temp, "resolve_session_temp", lambda _session: location)
 
