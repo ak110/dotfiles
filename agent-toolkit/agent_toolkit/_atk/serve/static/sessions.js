@@ -804,6 +804,13 @@ async function applySessionFilter() {
   renderSessions();
 }
 
+function selectedRecordFromUrl() {
+  if (!location.pathname.endsWith("/sessions")) return null;
+  const params = new URLSearchParams(location.search);
+  const [host, engine, path] = ["host", "engine", "path"].map(key => params.get(key));
+  return host && ["claude", "codex"].includes(engine) && path ? {host, engine, path} : null;
+}
+
 async function init() {
   setDrawerOpen("sessions", false);
   listEl = document.getElementById("sessions");
@@ -840,9 +847,7 @@ async function init() {
   }, {root: document.querySelector("#sessions-app > aside"), rootMargin: "400px"})
     .observe(document.getElementById("sessions-sentinel"));
   window.addEventListener("popstate", () => {
-    if (!location.pathname.endsWith("/sessions")) return;
-    const params = new URLSearchParams(location.search);
-    const entry = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
+    const entry = selectedRecordFromUrl();
     if (entry) void openSession(entry.host, entry.engine, entry.path, [], false);
   });
   detailScroller().addEventListener("scroll", renderEventsNearEnd, {passive: true});
@@ -852,8 +857,7 @@ async function init() {
   await Promise.race([firstSubscription, new Promise(resolve => setTimeout(resolve, INITIAL_SUBSCRIBE_WAIT_MS))]);
   initialLoadStarted = true;
   await loadList();
-  const params = new URLSearchParams(location.search);
-  const fromUrl = sessions.find(item => item.host === params.get("host") && item.engine === params.get("engine") && item.path === params.get("path"));
+  const fromUrl = selectedRecordFromUrl();
   const mobile = window.matchMedia("(max-width: 768px)").matches;
   if (fromUrl && !selected) {
     await openSession(fromUrl.host, fromUrl.engine, fromUrl.path, [], false, false);

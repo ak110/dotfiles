@@ -11,15 +11,19 @@ import pathlib
 from collections.abc import Generator, Iterator
 from typing import Any
 
-from agent_toolkit._agents_server import handoff_next_action
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.result_projection import (
     append_result_next_action,
     public_result,
     with_result_next_action,
 )
-from agent_toolkit._agents_server.shared_layout import result_session_id, results_directory, valid_session_id
-from agent_toolkit._agents_server.state import TERMINAL_STATUSES
+from agent_toolkit._agents_server.shared_layout import (
+    published_markers_directory,
+    result_session_id,
+    results_directory,
+    valid_session_id,
+)
+from agent_toolkit._agents_server.turn_state import TERMINAL_STATUSES
 from agent_toolkit._agents_server.wait_targets import release_wait_target
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.atomic_file import atomic_write
@@ -39,7 +43,7 @@ def _suffix(end: ResultEnd) -> str:
 
 
 def _published(path: pathlib.Path, end: ResultEnd) -> pathlib.Path:
-    return path.parent / ".published" / path.stem / _suffix(end)
+    return published_markers_directory(path.parent, path.stem) / _suffix(end)
 
 
 @contextlib.contextmanager
@@ -418,6 +422,8 @@ def stashed_result_turn(path: pathlib.Path) -> int | None:
 
 
 def _public_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    from agent_toolkit._agents_server import handoff_next_action  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
     session = payload.get("session")
     label = session.get("label") if isinstance(session, dict) else None
     if isinstance(label, str) and label:

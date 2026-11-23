@@ -7,7 +7,7 @@ import typing
 from collections.abc import Callable
 from typing import Any
 
-from agent_toolkit._agents_server import state_publication, state_resume
+from agent_toolkit._agents_server import state_publication, state_resume, turn_state
 from agent_toolkit._agents_server.result_projection import append_result_next_action
 from agent_toolkit._common import task_documents
 
@@ -52,6 +52,9 @@ RESULT_RETENTION_SECONDS = 1800.0
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
+# pyfltr: allow-comment -- CodexのAPI再試行が本値を超えて続くと、`atk agents wait`が委譲元へ1度返す。
+# pyfltr: allow-comment -- Codexの応答ストリームの無応答上限300秒の2回分を超えた再試行を、一時的な切断と区別する。
+API_RETRY_NOTICE_SECONDS = 600.0
 # ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
 HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
@@ -75,7 +78,7 @@ SESSION_INITIALIZATION_ATTEMPTS = 2
 # 可用性失敗は最初のモデル出力より前に生じるため、正常起動ではモデル出力の観測で上限を待たずに打ち切る。
 # Claudeでは、失敗した要求では始まらないAPIの応答開始（`message_start`）をモデル出力の観測として扱う。
 START_AVAILABILITY_TIMEOUT = 15.0
-TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+TERMINAL_STATUSES = turn_state.TERMINAL_STATUSES
 
 
 ModelCandidate = tuple[str, str, str]

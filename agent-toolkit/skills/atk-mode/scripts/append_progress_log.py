@@ -7,11 +7,16 @@
 
 進捗だけの追記は計画Markdownと`--completed-step`・`--result`を渡す。
 commit対応の記録は、これらに`--commit`・`--previous-head`・`--awi`・絶対パスの`--worktree`を加える。
-`--handoff`はcommit対応の記録・履歴更新に使い、対象集合を`--allowed-awi`で渡す。対応の取得は`plan-commits`が行う。
+`--handoff`は引き継ぎ記録への追記に使う。commit対応の記録・履歴更新では対象集合を`--allowed-awi`で渡す。
+対応の取得は`plan-commits`が行う。
 記録済みcommitへAWIを追加するには、旧OIDを同じOIDへ写す分割指定
 （`{"<旧OID>": [{"commit": "<同じOID>", "awi": [<記録後の全AWI>]}]}`）を`--rewrite-map`へ渡す。
 計画の関連WI（`--handoff`では`--allowed-awi`）に無いAWIは記録を変えずに拒否する。
-引き継ぎ記録へ進捗だけを残す場合は、通常のファイル編集で更新する。
+引き継ぎ記録へ記録時刻付きの進捗を残す場合は、引き継ぎ記録と`--handoff`、`--completed-step`、`--result`だけを渡す。
+
+記録時刻は書込時点のシステム時計から生成し、時刻を受け取る引数は持たない。
+計画の進捗ログは時差付きの現地時刻、引き継ぎ記録は`Z`付きのUTCで書く。
+証拠から引用する過去の事象の時刻は、出所とともに`--result`へ書き、記録時刻と区別する。
 """
 
 from __future__ import annotations
@@ -43,8 +48,12 @@ class ProgressLogError(_next_action.ActionableError):
     """進捗ログを安全に更新できない場合のエラー。理由と次の操作を持つ。"""
 
 
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
 def _local_now() -> datetime.datetime:
-    return datetime.datetime.now().astimezone()
+    return _utc_now().astimezone()
 
 
 def _has_minute_rows(content: str) -> bool:
@@ -143,24 +152,29 @@ def append_handoff_log(
     completed_step: str,
     result: str,
     *,
+    clock: Clock = _utc_now,
     writer: Callable[[pathlib.Path, str], None] = atomic_write,
 ) -> None:
+    """引き継ぎ記録の末尾へ、記録時刻（UTC）付きの1行を追記する。
+
+    記録先は値を書く時点で初めて作るため、未作成のファイルは新規に作る。
+    """
     _plan_locations.reject_saved_plans_root_write(handoff)
-    content = handoff.read_text(encoding="utf-8")
-    separator = "\n" if content.endswith("\n") else "\n\n"
-    writer(handoff, content + separator + completed_step + ": " + result + "\n")
+    now = clock()
+    if now.tzinfo is None:
+        raise ProgressLogError(
+            "引き継ぎ記録の時計にはタイムゾーンが必要です",
+            next_action="`clock`へタイムゾーン付きの時刻を返す関数を渡す（CLIからの呼び出しでは発生しない）",
+        )
+    stamp = now.astimezone(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    content = handoff.read_text(encoding="utf-8") if handoff.exists() else ""
+    separator = "" if not content else "\n" if content.endswith("\n") else "\n\n"
+    line = " ".join(f"{stamp} {completed_step}: {result}".splitlines())
+    writer(handoff, content + separator + line + "\n")
 
 
 def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -> bool:
-    if not (
-        args.commit
-        or args.previous_head
-        or args.rewrite_map
-        or args.get_commits
-        or args.handoff
-        or args.awi
-        or args.allowed_awi
-    ):
+    if not (args.commit or args.previous_head or args.rewrite_map or args.get_commits or args.awi or args.allowed_awi):
         return False
     if args.commit and args.previous_head is None:
         parser.error("--commitには作成前のHEADを--previous-headで渡す必要があります")
@@ -222,7 +236,10 @@ def _record_mapping(args: argparse.Namespace, parser: argparse.ArgumentParser) -
         mapping = commit_mapping.read_mapping(args.worktree, events, allowed)
         event = commit_mapping.rewrite_event(args.worktree, args.rewrite_map, mapping, allowed)
     else:
-        parser.error("--handoffには--commitか--rewrite-mapが必要です。対応の取得は`atk run-script plan-commits`で行う")
+        parser.error(
+            "--awi、--allowed-awi、--previous-headには--commitか--rewrite-mapが必要です。"
+            "対応の取得は`atk run-script plan-commits`で行う"
+        )
         return False
     # 進捗の行を先に追記し、構造の不正で失敗した場合は対応記録ファイルも変えない。
     if args.handoff:
@@ -237,11 +254,12 @@ def _validate_required_inputs(args: argparse.Namespace, parser: argparse.Argumen
     required: list[str] = []
     if not args.get_commits:
         required.extend(("completed_step", "result"))
-    if args.get_commits or args.commit or args.rewrite_map or args.handoff:
+    mapping = bool(args.get_commits or args.commit or args.rewrite_map)
+    if mapping:
         required.append("worktree")
     if args.commit:
         required.extend(("previous_head", "awi"))
-    if args.handoff:
+    if args.handoff and mapping:
         required.append("allowed_awi")
     missing = ["--" + name.replace("_", "-") for name in required if not getattr(args, name)]
     if args.worktree is not None and not args.worktree.is_absolute():
@@ -255,8 +273,12 @@ def _validate_required_inputs(args: argparse.Namespace, parser: argparse.Argumen
             example += " --commit <新HEAD> --previous-head <作成前HEAD> --awi <対応AWI>"
         elif args.rewrite_map:
             example += " --rewrite-map <対応表の絶対パス>"
-        if args.handoff:
+        if args.handoff and mapping:
             example += " --handoff --allowed-awi <記録の対象AWI>（全件を反復）"
+        elif args.handoff:
+            example = (
+                "atk run-script plan-progress -- <引き継ぎ記録の絶対パス> --handoff --completed-step <工程> --result <結果>"
+            )
         parser.error("不足または不正な必須入力: " + ", ".join(missing) + "\n次の操作: " + example + " で再実行する")
 
 
@@ -294,17 +316,22 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
     parser.add_argument(
         "--handoff",
         action="store_true",
-        help="計画なしの引き継ぎ記録についてcommit対応を記録・履歴更新・取得する。"
-        "--commit、--rewrite-mapまたは取得の操作と組で使う。進捗だけの追記は通常のファイル編集で行う",
+        help="計画なしの引き継ぎ記録へ記録時刻（UTC）付きの進捗を追記する。"
+        "--commit、--rewrite-mapまたは取得の操作と組で使う時は、commit対応を記録・履歴更新・取得する",
     )
-    parser.add_argument("--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffでは反復指定が必須")
+    parser.add_argument(
+        "--allowed-awi", action="append", help="引き継ぎ記録の対象AWI全件。--handoffのcommit対応では反復指定が必須"
+    )
     args = parser.parse_args(argv)
     _validate_required_inputs(args, parser)
     failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"
     try:
         if _record_mapping(args, parser):
             return 0
-        append_progress_log(args.plan_file, args.completed_step, args.result)
+        if args.handoff:
+            append_handoff_log(args.plan_file, args.completed_step, args.result)
+        else:
+            append_progress_log(args.plan_file, args.completed_step, args.result)
     except _next_action.ActionableError as error:
         action = error.next_action
         if isinstance(error, commit_mapping.CommitGitError):

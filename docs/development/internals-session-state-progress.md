@@ -17,6 +17,8 @@
   生存する相談会話だけが自動起動の抑止対象で、手動batchは従来の条件を使う。
   生存する相談会話の履歴は期限切れ回収でも保持し、会話が閉じれば通常の回収条件へ戻す。
   状態ファイルの回収・clear・継承は共通設計に従う
+- `AGENT_TOOLKIT_WEEKLY_SLOT`: run-skill→子セッションの週枠の回の識別子（`<作業>@<日曜の日付>`）。
+  `atk wi add`が結果のUWIの`weekly_slot`へ記録する（`design-session-review-startup.md`「週枠による週次の起動」）
 - `AGENT_TOOLKIT_SESSION_REVIEW_LAUNCH`: hook→run-skill試行ID。
   `session-review/launches/`のID別JSON/logは起動元・プロセス同一性・診断・状態を持つ。
   `starting`=未受付、`accepted`=manifest移管、`settled`=正常終了/見送り、`notified`=次SessionStart通知済み。

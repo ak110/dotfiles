@@ -28,12 +28,14 @@ import pathlib
 import subprocess
 import sys
 from collections.abc import Callable
+from typing import Any
 
 from agent_toolkit._atk.environment import is_agent_environment  # noqa: E402
 
 # pylint: disable=wrong-import-position,protected-access
 # 使うサブコマンドだけを読み込む。
-lazy from agent_toolkit._agents_server import commands as _agents  # noqa: E402
+lazy from agent_toolkit._agents_server import commands as _agents
+lazy from agent_toolkit._agents_server.session_listing import serve_agent_listing as _agent_listing  # noqa: E402
 lazy from agent_toolkit._atk import agents_exit_session as _agents_exit_session  # noqa: E402
 lazy from agent_toolkit._atk import cli_support as _cli_support
 lazy from agent_toolkit._atk import commit as _commit_cmd  # noqa: E402
@@ -54,6 +56,7 @@ lazy from agent_toolkit._atk import setup_project as _setup_project  # noqa: E40
 lazy from agent_toolkit._atk import usage_refresh as _usage_refresh
 lazy from agent_toolkit._atk import user_events_summary as _user_events_summary  # noqa: E402
 lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
+lazy from agent_toolkit._atk import weekly_command as _weekly_cmd
 lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
 lazy from agent_toolkit._atk.serve import command as _serve_command
 lazy from agent_toolkit._atk.wi import cli as _wi_cli
@@ -122,6 +125,7 @@ _PARSER_REGISTRATIONS: tuple[tuple[str, Callable[[argparse.ArgumentParser], None
     ("serve", lambda parser: _serve_command.build_parser(parser)),
     ("config", lambda parser: _config_cmd.build_parser(parser)),
     ("wait-schedule", lambda parser: _wait_schedule_cmd.build_parser(parser)),
+    ("weekly", lambda parser: _weekly_cmd.build_parser(parser)),
     ("agents", lambda parser: _agents.build_parser(parser)),
     ("agents-exit-session", lambda parser: _agents_exit_session.build_parser(parser)),
     ("lane", lambda parser: _lane.build_parser(parser)),
@@ -293,14 +297,23 @@ _EARLY_COMMANDS: dict[str, Callable[[argparse.Namespace], int | None]] = {
 # pylint: enable=unnecessary-lambda
 
 
+def serve_agent_listing(include_terminated: bool) -> list[dict[str, Any]]:
+    return _agent_listing(include_terminated=include_terminated)
+
+
 _COMMANDS: dict[str, Callable[[_Invocation], int]] = {
     "wait-schedule": lambda invocation: _wait_schedule_cmd.dispatch(invocation.args),
+    "weekly": lambda invocation: _weekly_cmd.dispatch(invocation.args),
     "agents": lambda invocation: _agents.dispatch(invocation.args),
     "agents-exit-session": lambda invocation: _agents_exit_session.dispatch(invocation.args),
     "lane": lambda invocation: _lane.dispatch(invocation.args),
     "run-script": lambda invocation: _cli_support.run_rejecting_value_error(invocation.args, _run_script.dispatch),
     "run-skill": lambda invocation: _run_skill.dispatch(invocation.args),
-    "serve": lambda invocation: _serve_command.dispatch(invocation.args, home=invocation.home),
+    "serve": lambda invocation: _serve_command.dispatch(
+        invocation.args,
+        home=invocation.home,
+        agent_listing=serve_agent_listing,
+    ),
     "worktree-stash": lambda invocation: _worktree_stash.dispatch(
         invocation.args,
         command_dest="worktree_stash_subcommand",

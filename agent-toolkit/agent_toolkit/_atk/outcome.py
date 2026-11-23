@@ -36,6 +36,7 @@ STATE_CHANGE_COMMANDS = frozenset(
         "atk agents notify",
         "atk setup-project",
         "atk run-skill",
+        "atk weekly",
         "atk wi add",
         "atk wi check-alerts",
         "atk wi start-processing",

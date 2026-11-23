@@ -38,8 +38,12 @@ def test_config_precedence_and_platform_ports(monkeypatch: pytest.MonkeyPatch, c
     assert config.resolve_config() == config.ServeConfig("saved-host", 3000)
     monkeypatch.setenv("AGENT_TOOLKIT_SERVE_HOST", "0.0.0.0")
     monkeypatch.setenv("AGENT_TOOLKIT_SERVE_PORT", "4000")
-    assert config.resolve_config() == config.ServeConfig("0.0.0.0", 4000)
-    assert config.resolve_config(host="cli-host", port=5000) == config.ServeConfig("cli-host", 5000)
+    assert config.resolve_config() == config.ServeConfig(
+        "0.0.0.0", 4000, host_source="AGENT_TOOLKIT_SERVE_HOST", port_source="AGENT_TOOLKIT_SERVE_PORT"
+    )
+    assert config.resolve_config(host="cli-host", port=5000) == config.ServeConfig(
+        "cli-host", 5000, host_source="--host", port_source="--port"
+    )
 
 
 @pytest.mark.asyncio

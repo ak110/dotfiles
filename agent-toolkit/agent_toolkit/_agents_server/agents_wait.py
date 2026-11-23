@@ -18,6 +18,7 @@ from agent_toolkit._agents_server import (
     notice_inbox,
     owner_lost,
     result_projection,
+    resume_waits,
     retained_results,
     session_handoff,
     shared_layout,
@@ -42,6 +43,14 @@ _LOG = logging.getLogger("agent-toolkit.agents-server.wait")
 # 次の操作の文面。待機の結果を受け取った主体が、再待機・調査・巻き取りのどれへ進むかを応答だけで決められるようにする。
 _RERUN_WAIT_NEXT_ACTION = "`atk agents wait`を再実行して待機を続ける"
 _NOTICE_NEXT_ACTION = "`notices`の通知を読んで対処し、終了を待つ場合は`atk agents wait`を再実行する"
+
+
+def _api_retry_next_action(seconds: int) -> str:
+    return (
+        f"委譲先のAPI再試行が{seconds}秒続き、出力が止まっている。"
+        "`show`で`api_error`と活動を確かめ、回復しなければ`kill`で止めてから`start`の`handoff_from`で後任を起動する。"
+        "待つ場合は`atk agents wait`を再実行する（同じ再試行は再通知しない）"
+    )
 
 
 def _notice_next_action(label: object) -> str:
@@ -733,6 +742,11 @@ def _wait_for_result(
                         response["notices"] = notices
                         response["next_action"] = _notice_next_action(response.get("label"))
                         collected.append(response)
+                    elif (retry_seconds := _unnotified_api_retry(status_paths, run_directory, session_id)) is not None:
+                        response = _running_response(session_id, _session_output_activity(status_paths, session_id))
+                        _add_session_label(response, status_paths, session_id)
+                        response["next_action"] = _api_retry_next_action(retry_seconds)
+                        collected.append(response)
                 if collected:
                     continuable = all(item.get("status") == "running" for item in collected)
                     collected.extend(continuation_wait.continuation_notices(recipient_session_id, set(ordered_ids), state_root))
@@ -839,6 +853,31 @@ def _session_output_activity(paths: list[pathlib.Path], session_id: str) -> dict
                 api_error=session.get("api_error") if isinstance(session.get("api_error"), dict) else None,
             )
     return {}
+
+
+def _unnotified_api_retry(paths: list[pathlib.Path], run_directory: pathlib.Path, session_id: str) -> int | None:
+    for path in paths:
+        for session in _read_sessions(path) or ():
+            if session["session_id"] != session_id:
+                continue
+            api_error = session.get("api_error")
+            if session.get("engine") != "codex" or not isinstance(api_error, dict):
+                return None
+            first_at = api_error.get("first_at")
+            if api_error.get("type") == resume_waits.USAGE_LIMIT_ERROR_TYPE or not isinstance(first_at, str):
+                return None
+            seconds = result_projection.elapsed_seconds(first_at)
+            if seconds is None or seconds < state.API_RETRY_NOTICE_SECONDS:
+                return None
+            marker = run_directory / "api-retry-notices" / f"{session_id}.json"
+            try:
+                if json.loads(marker.read_text(encoding="utf-8")).get("first_at") == first_at:
+                    return None
+            except FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError, AttributeError:
+                pass
+            _write_json(marker, {"first_at": first_at})
+            return seconds
+    return None
 
 
 def _add_session_label(response: dict[str, Any], paths: list[pathlib.Path], session_id: str) -> None:

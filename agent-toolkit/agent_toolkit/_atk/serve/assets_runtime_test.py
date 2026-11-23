@@ -17,9 +17,15 @@ from agent_toolkit._testing.serve_support import _three_screen_app
 
 
 @pytest.mark.asyncio
-async def test_navigation_serves_three_screens(tmp_path: pathlib.Path) -> None:
+async def test_navigation_serves_all_screens(tmp_path: pathlib.Path) -> None:
     client = _three_screen_app(tmp_path).test_client()
-    for path, screen in (("/", "wi"), ("/plans", "plans"), ("/sessions", "sessions")):
+    for path, screen in (
+        ("/", "wi"),
+        ("/plans", "plans"),
+        ("/agents", "agents"),
+        ("/sessions", "sessions"),
+        ("/settings", "settings"),
+    ):
         response = await client.get(path)
         assert response.status_code == 200
         assert response.mimetype == "text/html"

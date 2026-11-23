@@ -128,7 +128,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .app-header .app-nav { grid-column: 2; }
 
 /* WI画面の読み込み表示のような画面固有の要素がナビゲーションの幅を変えると、中央寄せしたリンク群の位置が
-   画面ごとにずれる。画面固有の要素はリンクの配置の外へ置き、寸法の算出方法も3画面でそろえる。 */
+   画面ごとにずれる。画面固有の要素はリンクの配置の外へ置く。pyfltr: allow-comment */
 .app-header,
 .app-header * {
   box-sizing: border-box;
@@ -154,7 +154,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   letter-spacing: normal;
 }
 
-/* ヘッダーの操作群と各ペインのツールバーでは、ボタン寸法と文字サイズを3画面でそろえる。 */
 .app-header .header-actions button,
 main > .toolbar button {
   padding: var(--space-1) var(--space-2);
@@ -192,7 +191,7 @@ main > .toolbar {
   border-color: rgb(0 0 0 / 0.32);
 }
 
-@media (max-width: 700px) {
+@media (max-width: 940px) {
   /* 横方向の余地が無いため、タイトル・ナビゲーション・操作群を1列で縦に並べる。 */
   .app-header {
     grid-template-columns: minmax(0, 1fr);
@@ -216,4 +215,19 @@ main > .toolbar {
     padding: 4px 8px;
     font-size: 0.86rem;
   }
+}
+
+@media (max-width: 420px) {
+  .app-nav {
+    flex-wrap: wrap;
+    row-gap: 0;
+  }
+  .app-nav a {
+    flex: 0 0 auto;
+    padding: 1px 4px;
+  }
+}
+
+[data-editor] [role="alert"] {
+  scroll-margin-block: 1px;
 }

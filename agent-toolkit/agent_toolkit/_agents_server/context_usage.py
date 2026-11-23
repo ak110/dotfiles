@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
-from agent_toolkit._agents_server import state
+if TYPE_CHECKING:
+    from agent_toolkit._agents_server import state
 
 
 def valid_number(value: object) -> int | float | None:
@@ -20,6 +22,8 @@ def fields(tokens: object, context_window: object) -> dict[str, int | float]:
 
 
 def record_context_usage(session: state.SessionState, tokens: object, context_window: object) -> None:
+    from agent_toolkit._agents_server import state  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
     session.context_tokens = valid_number(tokens)
     session.context_window = valid_number(context_window)
     state.notify_touch_listeners(session)

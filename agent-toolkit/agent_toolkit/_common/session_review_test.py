@@ -38,17 +38,6 @@ def test_auto_start_reads_only_runs_updated_within_the_interval(monkeypatch):
     assert session_review.auto_start_due(now=now) is False
 
 
-def test_meta_interval_does_not_read_batch_start(monkeypatch):
-    monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
-    now = 1793400000.0
-    assert session_review.meta_start_due(now=now)
-    start = session_review.directory() / "meta-start.json"
-    session_review.write(start, {"started_at": datetime.datetime.fromtimestamp(now, datetime.UTC).isoformat()})
-    assert not session_review.meta_start_due(now=now + 604799)
-    assert session_review.meta_start_due(now=now + 604800)
-    assert session_review.auto_start_due(now=now)
-
-
 @pytest.mark.parametrize("changed,unconfirmed", [(False, False), (True, False), (False, True)])
 def test_cleanup_prepared_preserves_scope_and_referenced_evidence(tmp_path, changed, unconfirmed) -> None:
     bundle = tmp_path / "bundle"

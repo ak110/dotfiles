@@ -15,7 +15,7 @@ description: >
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| Xの投稿本文・日時・添付写真を取得する前 | `agent-basics:fetch-sources/references/x-posts.md` |
+| Xの投稿本文・日時・添付写真、アカウントの投稿一覧・検索結果を取得する前 | `agent-basics:fetch-sources/references/x-posts.md` |
 
 ## Webページの本文の取得
 

@@ -193,7 +193,7 @@ def test_failed_refresh_preserves_verified_identity_unless_account_changed(
     assert windows[0]["observed_at"] == 100
     changed = auth is not None and auth.startswith('{"email"')
     # 認証境界の回帰を、表示対象の選別まで通す。
-    assert bool(config_usage._profile_windows({"windows": windows})) is not changed  # pylint: disable=protected-access
+    assert bool(config_usage.profile_windows({"windows": windows})) is not changed
     if not changed:
         assert usage_settings.read_metadata("claude")["account"] == "known"
 

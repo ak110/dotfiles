@@ -15,7 +15,7 @@ import types
 import filelock
 import pytest
 
-from agent_toolkit._atk import config, run_script, run_skill_batch
+from agent_toolkit._atk import config, run_script, run_skill_batch, weekly_schedule
 from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, late_descendant
@@ -146,7 +146,10 @@ def test_hook_disabled_records_and_announces_pending(tmp_path, monkeypatch) -> N
 
 def test_hook_requests_existing_cli_without_wait(tmp_path, monkeypatch) -> None:
     calls = []
-    session_review.write(session_review.directory() / "meta-start.json", {"started_at": session_review.timestamp()})
+    weekly_schedule.write_record(
+        "meta",
+        {"completed_slot": weekly_schedule.slot_id("meta", weekly_schedule.latest_slot(datetime.datetime.now(datetime.UTC)))},
+    )
 
     def spawn(argv, **kwargs):
         calls.append((argv, kwargs))
@@ -890,7 +893,7 @@ def test_codex_target_without_rollout_waits_until_record_exists(tmp_path, monkey
     )
     with monkeypatch.context() as hook:
         hook.setattr(session_activity, "host_process", object)
-        hook.setattr(run_skill_batch, "meta_auto_start_due", lambda **_: False)
+        hook.setattr(run_skill_batch, "weekly_auto_start_due", lambda *_args, **_kwargs: False)
         hook.setattr(run_skill_batch.subprocess, "Popen", lambda *_args, **_kw: pytest.fail("batchを起動した"))
         run_skill_batch.hook_request({"hook_event_name": "SessionEnd", "session_id": thread_id}, host="codex")
     _target(tmp_path, "one")

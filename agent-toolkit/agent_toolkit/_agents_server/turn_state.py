@@ -7,6 +7,9 @@ import dataclasses
 import enum
 from typing import Any
 
+USAGE_LIMIT_ERROR_TYPE = "usage_limit"
+TERMINAL_STATUSES = frozenset({"completed", "failed", "interrupted"})
+
 HELD_RESULT_FINALIZED_KEY = "heldResultFinalized"
 """再開turnの結果ではなく、元の待機表明を確定したときに`error`へ付ける項目名。"""
 

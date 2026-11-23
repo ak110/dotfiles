@@ -748,3 +748,29 @@ def test_record_range_checks_legacy_and_rewritten_mapping(
     assert "記録済みのcommit" in capsys.readouterr().err
     assert (path.read_bytes(), attachment.read_bytes()) == saved
     assert append_progress_log.main([*common, "--commit", commits[2], "--previous-head", commits[1]]) == 0
+
+
+def test_public_cli_handoff_progress_uses_current_utc_clock(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / "handoff.md"
+    quoted = "CI success（事象時刻: 2026-11-23T09:28:20Z、出所: gh run view）"
+    for step, result in [("検証", "成功"), ("CI", quoted)]:
+        before = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
+        assert append_progress_log.main([str(path), "--handoff", "--completed-step", step, "--result", result]) == 0
+        after = datetime.datetime.now(datetime.UTC)
+        stamp, _, rest = path.read_text(encoding="utf-8").splitlines()[-1].partition(" ")
+        recorded = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.UTC)
+        assert before <= recorded <= after
+        assert rest == f"{step}: {result}"
+    assert path.read_text(encoding="utf-8").splitlines()[0].endswith(" 検証: 成功")
+
+
+@pytest.mark.parametrize("option", ["--datetime", "--time", "--recorded-at", "--now"])
+def test_public_cli_rejects_time_arguments(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str) -> None:
+    path = tmp_path / "handoff.md"
+    path.write_text("# 引き継ぎ\n", encoding="utf-8")
+    argv = [str(path), "--handoff", "--completed-step", "検証", "--result", "成功", option, "2026-11-24T00:00:00Z"]
+    with pytest.raises(SystemExit) as raised:
+        append_progress_log.main(argv)
+    assert raised.value.code == 2
+    assert option in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == "# 引き継ぎ\n"

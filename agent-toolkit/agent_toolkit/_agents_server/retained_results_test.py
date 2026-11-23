@@ -14,6 +14,7 @@ from agent_toolkit._agents_server import (
     shared_roots,
 )
 from agent_toolkit._agents_server import status_file as subject
+from agent_toolkit._common import registry_index
 
 
 def test_unreadable_legacy_slot_does_not_hide_a_later_end(tmp_path: pathlib.Path) -> None:
@@ -100,6 +101,23 @@ def test_take_result_checks_owner_and_consumes_once(tmp_path: pathlib.Path) -> N
         collector="test",
         state_root=tmp_path,
     ) == (None, None)
+
+
+def test_result_collected_requires_published_end_to_be_taken(tmp_path: pathlib.Path) -> None:
+    """レーン回収が使う回収済みの判定は、公開した終了turnの原本を回収した後だけ成立する。"""
+    path = shared_layout.results_directory("root", tmp_path) / "child.json"
+    path.parent.mkdir(parents=True)
+    body = {"status": "completed", "agent_message": "完了", "turn_seq": 3, "finalized_at": "2026-11-24T00:00:00Z"}
+
+    assert not registry_index.result_collected("child", 3, state_root=tmp_path)
+    retained_results.publish_result(path, body)
+    assert not registry_index.result_collected("child", 3, state_root=tmp_path)
+    taken, _ = retained_results.take_result(
+        "root", "child", "root.json", collector="test", state_root=tmp_path, expected_turn_seq=3
+    )
+    assert taken == {"status": "completed", "agent_message": "完了"}
+    assert registry_index.result_collected("child", 3, state_root=tmp_path)
+    assert not registry_index.result_collected("child", 4, state_root=tmp_path)
 
 
 def test_take_result_keeps_other_owner_result(tmp_path: pathlib.Path) -> None:

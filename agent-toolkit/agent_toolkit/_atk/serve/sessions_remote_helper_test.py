@@ -302,11 +302,11 @@ async def test_entries_from_an_old_remote_helper_are_not_excluded(tmp_path: path
     assert [(entry.host, entry.path) for entry in entries] == [("remote-host", "/r/rollout-x.jsonl")]
 
 
-def test_remote_helper_is_started_with_watchdog_and_platformdirs() -> None:
+def test_remote_helper_is_started_with_observation_dependencies() -> None:
     argv = _atk_serve_remote.remote_command_argv(sessions.REMOTE_BOOTSTRAP, "serve", [], python="3.15.2", offline=True)
 
     with_values = [argv[index + 1] for index, value in enumerate(argv) if value == "--with"]
-    assert with_values == ['"watchdog>=6.0.0,!=7.0.0"', '"platformdirs>=4.0"']
+    assert with_values == ['"watchdog>=6.0.0,!=7.0.0"', '"platformdirs>=4.0"', '"psutil>=7.2"']
 
 
 def test_remote_helper_serve_mode_reuses_unchanged_records(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

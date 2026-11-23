@@ -65,6 +65,8 @@ SCRIPTS = {
         "wi.js",
         "plans.js",
         "sessions.js",
+        "agents.js",
+        "settings.js",
     )
 }
 """`/static/<name>.js`で配信するESモジュール。ファイル名を指定して本文を取得する。"""

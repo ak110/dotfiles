@@ -83,6 +83,14 @@ def results_directory(root_session_id: str, state_root: pathlib.Path | None = No
     return status_directory(root_session_id, state_root) / "results"
 
 
+def published_markers_directory(results: pathlib.Path, session_id: str) -> pathlib.Path:
+    """結果を公開した終了ごとの印（`<turn番号>-<終了時刻のSHA-256>`）を置く、sessionごとのディレクトリを返す。
+
+    原本を回収した後も印は残るため、印があり原本が無い終了は回収済みを表す。
+    """
+    return results / ".published" / session_id
+
+
 def wait_targets_directory(
     root_session_id: str,
     owner_status_file: str,

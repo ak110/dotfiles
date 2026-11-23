@@ -28,6 +28,7 @@ import typing
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agent_toolkit._atk import session_record_format  # noqa: E402  # pylint: disable=wrong-import-position
 from agent_toolkit._atk.serve import (  # noqa: E402  # pylint: disable=wrong-import-position
+    agent_records,
     session_parents,
     session_watch,
     sessions_models,
@@ -238,6 +239,20 @@ def _emit(payload: dict[str, typing.Any]) -> None:
         sys.stdout.flush()
 
 
+def _agents_payload(op: str) -> dict[str, typing.Any]:
+    # セッション記録だけを読む起動では、エージェントの状態管理を読み込まない。pyfltr: allow-comment
+    from agent_toolkit._agents_server.session_listing import serve_agent_listing  # pylint: disable=import-outside-toplevel
+
+    roots = serve_agent_listing(include_terminated=op == "agents-list-all")
+    try:
+        records = agent_records.locate_agent_records(
+            host_homes.claude_config_dir(), host_homes.codex_home(), agent_records.agent_ids(roots)
+        )
+    except OSError:
+        records = None
+    return {"roots": roots, "records": records}
+
+
 def _handle_request(
     req: dict[str, typing.Any],
     tracker: session_watch.RecordChangeTracker | None = None,
@@ -250,6 +265,8 @@ def _handle_request(
     try:
         if op == "list":
             return {"type": "response", "id": req_id, "ok": True, **_list_payload(tracker, index)}
+        if op in {"agents-list", "agents-list-all"}:
+            return {"type": "response", "id": req_id, "ok": True, **_agents_payload(op)}
         if op == "search":
             return {"type": "response", "id": req_id, "ok": True, **_search_payload(str(req.get("query", "")), tracker, index)}
         if op == "read":
@@ -336,6 +353,9 @@ def main() -> int:
             sys.stderr.write("missing path\n")
             return 2
         json.dump(_read_payload(sys.argv[2]), sys.stdout, ensure_ascii=False)
+        return 0
+    if op in {"agents-list", "agents-list-all"}:
+        json.dump(_agents_payload(op), sys.stdout, ensure_ascii=False)
         return 0
     if op == "serve":
         return _serve()

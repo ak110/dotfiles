@@ -1,6 +1,6 @@
 import re
 
-_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", "meta"}}
+_MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", "meta", "research"}}
 
 ENTRY_SKILL = "atk-mode"
 ENTRY_WORKS = (

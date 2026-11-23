@@ -1,6 +1,7 @@
 # pylint: disable=useless-import-alias  # pytestのfixtureを試験モジュールの名前空間へ登録するため。
 """待機CLIの活動時刻・通知・動的対象を検証する。"""
 
+import datetime
 import json
 import pathlib
 
@@ -216,3 +217,51 @@ def test_agents_wait_collects_dynamic_target_under_owner_lock(
     assert json.loads(capsys.readouterr().out) == {"status": "completed", "session_id": "session-2"}
     log_text = (wait_environment.parents[2] / "agents-server.log").read_text(encoding="utf-8")
     assert "wait_target_added session_id=session-2" in log_text
+
+
+def _codex_retrying(first_at: str) -> dict[str, object]:
+    return {
+        "session_id": "session-1",
+        "engine": "codex",
+        "updated_at": "2000-01-01T00:00:00+00:00",
+        "api_error": {"type": "responseStreamDisconnected", "http_status": None, "first_at": first_at},
+    }
+
+
+def _seconds_ago(seconds: float) -> str:
+    return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=seconds)).isoformat()
+
+
+def test_agents_wait_notifies_long_codex_api_retry_once_per_retry(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    first_at = _seconds_ago(state.API_RETRY_NOTICE_SECONDS + 60)
+    _write_own_status(wait_environment, [_codex_retrying(first_at)])
+
+    assert _wait_for_session_1_result(wait_environment) == 0
+    response = json.loads(capsys.readouterr().out)
+    assert response["status"] == "running"
+    assert response["api_error"]["elapsed_seconds"] >= state.API_RETRY_NOTICE_SECONDS
+    assert "kill" in response["next_action"] and "handoff_from" in response["next_action"]
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+    assert "handoff_from" not in json.loads(capsys.readouterr().out)["next_action"]
+
+    _write_own_status(wait_environment, [_codex_retrying(_seconds_ago(state.API_RETRY_NOTICE_SECONDS + 5))])
+    assert _wait_for_session_1_result(wait_environment) == 0
+    assert "handoff_from" in json.loads(capsys.readouterr().out)["next_action"]
+
+
+def test_agents_wait_does_not_notify_short_codex_api_retry(
+    wait_environment: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_own_status(wait_environment, [_codex_retrying(_seconds_ago(state.API_RETRY_NOTICE_SECONDS - 60))])
+
+    with pytest.raises(SystemExit, match="3"):
+        atk.main(["agents", "wait"])
+    response = json.loads(capsys.readouterr().out)
+    assert "api_error" in response
+    assert "handoff_from" not in response["next_action"]

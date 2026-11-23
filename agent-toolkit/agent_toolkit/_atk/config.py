@@ -84,7 +84,7 @@ def save_mutable_settings(updates: dict[str, str]) -> bool:
     return True
 
 
-def _resolved_settings(home: pathlib.Path) -> dict[str, str]:
+def resolved_settings(home: pathlib.Path) -> dict[str, str]:
     _config_migration.check_legacy_environment()
     _config_migration.migrate_legacy_settings()
     _config_migration.migrate_serve_settings()
@@ -124,7 +124,7 @@ def _stage_model_candidate_warnings(key: str, value: str) -> list[str]:
 
 
 def _cmd_config_show(home: pathlib.Path) -> None:
-    settings = _resolved_settings(home)
+    settings = resolved_settings(home)
     for key, value in settings.items():
         print(f"{key} {value}")
 
@@ -153,7 +153,7 @@ def _legacy_key_guidance(keys: list[str]) -> str:
 
 def _cmd_config_get(args: argparse.Namespace, home: pathlib.Path) -> None:
     requested_keys = cast(list[str], args.key)
-    settings = _resolved_settings(home)
+    settings = resolved_settings(home)
     unknown_keys = [key for key in requested_keys if key not in settings]
     if unknown_keys:
         _outcome.report_failure(
@@ -317,24 +317,30 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
     return 0
 
 
-def _cmd_config_array(args: argparse.Namespace, *, remove: bool) -> None:
-    if args.key not in _config_settings.ARRAY_KEYS:
-        raise ValueError(f"{args.key}は配列型の設定ではない。単一値の設定には`atk config set`を使う")
+def array_setting_update(key: str, item: str, *, remove: bool) -> str | None:
+    if key not in _config_settings.ARRAY_KEYS:
+        raise ValueError(f"{key}は配列型の設定ではない。単一値の設定には`atk config set`を使う")
     _config_migration.migrate_legacy_settings()
     stored = _config_settings.load_config_strict()
-    value = stored.get(args.key, _config_settings.mutable_setting_default(args.key))
+    value = stored.get(key, _config_settings.mutable_setting_default(key))
     if not isinstance(value, str):
-        raise ValueError(f"{args.key}の保存値はJSON文字列配列を表す文字列で指定する")
+        raise ValueError(f"{key}の保存値はJSON文字列配列を表す文字列で指定する")
     items = list(_config_settings.parse_remote_hosts(value))
-    item = args.value
-    _config_settings.validate_mutable_setting(args.key, json.dumps([item]))
+    _config_settings.validate_mutable_setting(key, json.dumps([item]))
     if remove:
         if item not in items:
             raise ValueError(f"要素が存在しない: {item}。現在の一覧: {json.dumps(items, ensure_ascii=False)}")
         items = [current for current in items if current != item]
     elif item in items:
-        _outcome.report_success(f"既に登録されているため変更しない: {item}")
-        return
+        return None
     else:
         items.append(item)
-    _cmd_config_set(argparse.Namespace(key=args.key, value=json.dumps(items, ensure_ascii=False)))
+    return json.dumps(items, ensure_ascii=False)
+
+
+def _cmd_config_array(args: argparse.Namespace, *, remove: bool) -> None:
+    value = array_setting_update(args.key, args.value, remove=remove)
+    if value is None:
+        _outcome.report_success(f"既に登録されているため変更しない: {args.value}")
+    else:
+        _cmd_config_set(argparse.Namespace(key=args.key, value=value))

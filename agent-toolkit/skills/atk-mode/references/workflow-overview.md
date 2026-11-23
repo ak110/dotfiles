@@ -82,7 +82,7 @@ batchが投入したAWIは、ユーザーの内容確認を待たずに採否の
 全量を指定せずに手動で起動した`/atk-mode review-session`は、確定済みの範囲より後を対象とする。
 全量指定と引数は[単発の振り返り](../playbooks/review-session.md)を参照する。
 `review-session meta`は`agent-toolkit:atk-mode/playbooks/review-session.md`「週次のメタ分析」で、キューと既存報告から反復と対策の効果を比較する。
-metaは初回か前回の開始から7日以上経過後に最上位セッションの開始・終了で起動し、`add-awi-by-user`の相談中は見送る。
+metaと外部情報の調査（`review-session research`）は、日曜14時の週枠の結果のUWIが未保存なら`atk weekly run`かセッションの開始・終了で1回起動し、`add-awi-by-user`の相談中は見送る（`atk weekly --help`）。
 自動起動は`session_review_auto_start`で切り替え、無効でも待ち記録を保持して手動のbatchで処理できる。
 
 ## 運用変更を検討する観点

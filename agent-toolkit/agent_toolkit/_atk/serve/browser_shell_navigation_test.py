@@ -24,13 +24,19 @@ pytestmark = [
 
 
 @pytest.mark.asyncio(loop_scope="session")
-async def test_navigation_switches_three_screens_in_declared_order(screen_harness: _ScreenHarness) -> None:
+async def test_navigation_switches_screens_in_declared_order(screen_harness: _ScreenHarness) -> None:
     harness = screen_harness
     await harness.page.goto(harness.base_url + "/")
 
     navigation = harness.page.locator(".screen:not([hidden]) nav.app-nav")
     await navigation.wait_for(state="visible")
-    assert await navigation.locator("a").all_inner_texts() == ["ワークアイテム", "計画ファイル", "セッション"]
+    assert await navigation.locator("a").all_inner_texts() == [
+        "ワークアイテム",
+        "計画ファイル",
+        "エージェント",
+        "セッション",
+        "設定",
+    ]
     assert await navigation.locator('a[aria-current="page"]').inner_text() == "ワークアイテム"
 
     await navigation.get_by_role("link", name="計画ファイル").click()
@@ -140,7 +146,7 @@ async def test_back_navigation_restores_previous_screen(screen_harness: _ScreenH
 
 @pytest.mark.cpu_limit(
     1.5,
-    reason=("3画面のURLへ直接アクセスしても各画面が描画される。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.591秒）。"),
+    reason=("各画面のURLへ直接アクセスしても各画面が描画される。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.591秒）。"),
 )
 @pytest.mark.asyncio(loop_scope="session")
 async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> None:
@@ -149,6 +155,8 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
         ("/", "#entry-list .entry-select"),
         ("/plans", "#preview h1"),
         ("/sessions", "#sessions .session-item"),
+        ("/agents", "#screen-agents h1"),
+        ("/settings", "#screen-settings h1"),
     ):
         await harness.page.goto(harness.base_url + path)
         await harness.page.locator(selector).first.wait_for(state="visible")
@@ -158,6 +166,8 @@ async def test_direct_load_of_each_screen(screen_harness: _ScreenHarness) -> Non
                 "/": "ワークアイテム - atk serve",
                 "/plans": "計画ファイル - atk serve",
                 "/sessions": "セッション - atk serve",
+                "/agents": "エージェント - atk serve",
+                "/settings": "設定 - atk serve",
             }[path]
         )
 
@@ -279,28 +289,34 @@ async def test_plan_and_session_sidebars_match_and_session_opens_first_detail(
 @pytest.mark.cpu_limit(
     2.0,
     reason=(
-        "3画面で「ワークアイテム・計画ファイル・セッション」の各リンクの位置、大きさおよび算出スタイルが"
+        "全画面でナビゲーションの各リンクの位置、大きさおよび算出スタイルが"
         "一致する。実ブラウザーの観測とtrace回収が必要（CPU最大実測0.801秒）。"
     ),
 )
 @pytest.mark.asyncio(loop_scope="session")
 @pytest.mark.parametrize("width", [1920, 1440, 1280, 900, 600])
-async def test_navigation_links_match_on_three_screens(screen_harness: _ScreenHarness, width: int) -> None:
+async def test_navigation_links_match_on_all_screens(screen_harness: _ScreenHarness, width: int) -> None:
     page = screen_harness.page
     await page.set_viewport_size({"width": width, "height": 800})
     links = page.locator(".screen:not([hidden]) nav.app-nav a")
 
     direct: dict[str, object] = {}
-    for path in ("/", "/plans", "/sessions"):
+    for path in ("/", "/plans", "/agents", "/sessions", "/settings"):
         await page.goto(screen_harness.base_url + path)
         await links.first.wait_for(state="visible")
         direct[path] = await links.evaluate_all(_NAV_LINK_METRICS)
-    assert direct["/plans"] == direct["/"]
-    assert direct["/sessions"] == direct["/"]
+    for path, metrics in direct.items():
+        assert metrics == direct["/"], path
 
     clicked: dict[str, object] = {}
     await page.goto(screen_harness.base_url + "/")
-    for name, path in (("計画ファイル", "/plans"), ("セッション", "/sessions"), ("ワークアイテム", "/")):
+    for name, path in (
+        ("計画ファイル", "/plans"),
+        ("エージェント", "/agents"),
+        ("セッション", "/sessions"),
+        ("設定", "/settings"),
+        ("ワークアイテム", "/"),
+    ):
         await page.locator(".screen:not([hidden]) nav.app-nav").get_by_role("link", name=name).click()
         await playwright.async_api.expect(
             page.locator('.screen:not([hidden]) nav.app-nav a[aria-current="page"]')

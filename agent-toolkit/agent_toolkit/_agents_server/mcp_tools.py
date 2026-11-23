@@ -466,6 +466,14 @@ async def send_message(
             )
         ),
     ] = None,
+    message: Annotated[
+        str | None,
+        Field(
+            description=parameter_description(
+                "promptの別名。send_to_userのmessageと同じ名前で本文を渡す取り違えを受け付けるためにあり、promptと同時には指定しない。"
+            )
+        ),
+    ] = None,
 ) -> dict[str, Any]:
     """実行中turnへ追加指示を送り、終了済みなら同じsessionでreplyを開始する。
 
@@ -499,6 +507,13 @@ async def send_message(
     採用済みのengineが実際に利用不能で継続できない場合は、backendが返す理由に従って回復手段を選ぶ。
     保持済みsessionを失って継続できない場合は`unknown session: <session_id>`を返す。
     """
+    if message is not None:
+        if prompt is not None:
+            raise ActionableError(
+                "promptとmessageは同じ本文の別名であり、同時には指定できません。配送していません。",
+                next_action="本文をpromptだけに入れて同じsession_idのsend_messageを再実行する",
+            )
+        prompt = message
     if instruction is None and extra_params is None:
         response = await _manager().send_message(session_id, prompt, timeout)
     else:

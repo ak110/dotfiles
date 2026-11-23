@@ -105,7 +105,7 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
         metavar="TEXT",
         default=None,
         help=(
-            "スキルへ渡す任意の文字列。先頭語がprocess-wiのsingle-lane/all-reposかreview-sessionのbatch/metaに"
+            "スキルへ渡す任意の文字列。先頭語がprocess-wiのsingle-lane/all-reposかreview-sessionのbatch/meta/researchに"
             "完全一致する時はモードに使い、残りを自由記述として保持する。"
         ),
     )
@@ -157,7 +157,10 @@ def dispatch(args: argparse.Namespace) -> int:
         args.work_dir = str(record.work_dir) if record.input.target_repo is not None else None
         args.timeout, args.run_id = record.remaining, record.input.run_id
         args.batch_manifest, args.resume_record = record.input.batch_manifest, record
-        if args.batch_manifest is not None or skill_modes.invocation_scope(args.skill, args.args) == session_review.META_SCOPE:
+        if (
+            args.batch_manifest is not None
+            or skill_modes.invocation_scope(args.skill, args.args) in session_review.WEEKLY_SCOPES
+        ):
             from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
             return run_skill_batch.dispatch(args, _dispatch_once)
@@ -167,7 +170,7 @@ def dispatch(args: argparse.Namespace) -> int:
         return 2
     if getattr(args, "timeout", None) is None:
         args.timeout = DEFAULT_TIMEOUT_SECONDS
-    if skill_modes.invocation_scope(args.skill, args.args) in {session_review.BATCH_SCOPE, session_review.META_SCOPE}:
+    if skill_modes.invocation_scope(args.skill, args.args) in {session_review.BATCH_SCOPE, *session_review.WEEKLY_SCOPES}:
         from agent_toolkit._atk import run_skill_batch  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
 
         return run_skill_batch.dispatch(args, _dispatch_once)
@@ -322,6 +325,7 @@ def _session_readers(
     progress: Progress,
     output: _SessionOutput,
     executor: _registry.ProcessIdentity | None,
+    summarize: bool = False,
 ) -> typing.Generator[tuple[threading.Lock, list[threading.Thread]]]:
     """読取スレッドを起動し、準備失敗と中断でも子とパイプを回収する。"""
     lock = threading.Lock()
@@ -331,9 +335,15 @@ def _session_readers(
         assert process.stdout is not None and process.stderr is not None
         readers = [
             threading.Thread(
-                target=_copy_stream, args=(process.stdout, "stdout", log, lock, progress, orchestrator, output), daemon=True
+                target=_copy_stream,
+                args=(process.stdout, "stdout", log, lock, None if summarize else progress, orchestrator, output, summarize),
+                daemon=True,
             ),
-            threading.Thread(target=_copy_stream, args=(process.stderr, "stderr", log, lock), daemon=True),
+            threading.Thread(
+                target=_copy_stream,
+                args=(process.stderr, "stderr", log, lock, None, orchestrator, None, summarize),
+                daemon=True,
+            ),
         ]
         for reader in readers:
             reader.start()
@@ -381,10 +391,15 @@ def _wait_session(
     executor: _registry.ProcessIdentity | None,
     allow_connection_switch: bool = False,
 ) -> int:
-    with _session_readers(process, orchestrator=orchestrator, log=log, progress=progress, output=output, executor=executor) as (
-        lock,
-        readers,
-    ):
+    with _session_readers(
+        process,
+        orchestrator=orchestrator,
+        log=log,
+        progress=progress,
+        output=output,
+        executor=executor,
+        summarize=scope == session_review.RESEARCH_SCOPE,
+    ) as (lock, readers):
         deadline = time.monotonic() + timeout
         try:
             while True:
@@ -503,6 +518,7 @@ def _copy_stream(
     progress: Progress | None = None,
     orchestrator: str = "",
     output: _SessionOutput | None = None,
+    summarize: bool = False,
 ) -> None:
     """子の出力を行ごとにログへ写し、読み取りを終えた側がstreamを閉じる。
 
@@ -515,16 +531,36 @@ def _copy_stream(
             with lock:
                 if log.closed:
                     return
-                diagnostic = label == "stderr" or diagnostic_process.is_error_event(line)
-                saved = line
-                if diagnostic:
+                if summarize:
+                    # 外部の本文を読む作業は、診断の行もstderrも種類と文字数だけを記録する。  # pyfltr: allow-comment
+                    saved = summarize_event_line(line, error=diagnostic_process.is_error_event(line))
+                elif label == "stderr" or diagnostic_process.is_error_event(line):
                     saved, private_key = diagnostic_process.redact_stream_line(line, private_key)
+                else:
+                    saved = line
                 log.write(f"[{label}] {saved}\n")
                 log.flush()
                 if output is not None:
                     output.receive(line)
                 if progress is not None:
                     progress.receive(orchestrator, line)
+
+
+def summarize_event_line(line: str, *, error: bool = False) -> str:
+    try:
+        event = json.loads(line)
+    except ValueError:
+        event = None
+    summary: dict[str, typing.Any] = {"omitted_chars": len(line)}
+    if isinstance(event, dict):
+        for key in ("type", "subtype"):
+            if isinstance(value := event.get(key), str):
+                summary[key] = value
+        if isinstance(item := event.get("item"), dict) and isinstance(item_type := item.get("type"), str):
+            summary["item_type"] = item_type
+    if error:
+        summary["is_error"] = True
+    return json.dumps(summary, ensure_ascii=False)
 
 
 def _resolve_repo_root(path: pathlib.Path) -> pathlib.Path:

@@ -65,6 +65,7 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "default": None,
                 },
                 "instruction": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "message": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "prompt": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "session_id": {"type": "string"},
                 "timeout": {"default": 270.0, "type": "number"},

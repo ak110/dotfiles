@@ -210,6 +210,8 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
                 f"{instruction}"
             )
         if resolution.state is session_registry.Resolution.TERMINAL:
+            if _exited_and_collected(path.stem, state_root):
+                continue
             if deadline is None:
                 deadline = time.monotonic() + (min(get_wait_timeout("main"), _RELEASE_WAIT_SECONDS) if wait_release else 0)
             reason = session_release.request_release(
@@ -224,6 +226,28 @@ def worktree_activity(worktree: pathlib.Path, *, wait_release: bool = True) -> s
         identifiers = ",".join(released)
         return f"{activity}。session_id={identifiers}。agents_serverのstopへ各session_idを渡し、同じlane deleteを再実行する"
     return activity
+
+
+def _exited_and_collected(session_id: str, state_root: pathlib.Path) -> bool:
+    """終了済みの担当のうち、実行プロセスの終了と結果の回収を両方観測できるものを、解放要求なしで保持の理由から外す。
+
+    所有側は担当を記憶から外した後（委譲元の会話を閉じた後など）、生存したまま解放要求へ応答しない場合がある。
+    この場合に残る資源は登録簿の記録だけであり、回収側は記録を書き換えない。
+    実行プロセスの生存、再開予約、未回収の結果・待機対象、回収を確かめられない結果のいずれかがあれば、所有側の解放を待つ。
+    """
+    resolution = session_registry.resolve(session_id, state_root=state_root)
+    info = resolution.resume_info
+    if (
+        resolution.state is not session_registry.Resolution.TERMINAL
+        or resolution.resume_pending
+        or info is None
+        or any(process.exists() for process in resolution.executor_processes)
+    ):
+        return False
+    try:
+        return registry_index.result_collected(session_id, info.turn_seq, state_root=state_root)
+    except OSError:
+        return False
 
 
 def has_unignored_changes(worktree: pathlib.Path) -> bool:
