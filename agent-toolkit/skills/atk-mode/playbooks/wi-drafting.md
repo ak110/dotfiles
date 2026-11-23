@@ -212,8 +212,7 @@ AWIの冒頭は`agent-toolkit:atk-mode/references/awi-body.md`「節の構成と
 
 ### エージェント向け文書の構成
 
-エージェント向け文書を追加・変更するAWIは、`agent-basics:writing-standards/references/agent-documents-additions.md`に従う。
-記述量は`agent-basics:writing-standards/references/agent-documents-additions.md`に従う。
+エージェント向け文書を追加・変更するAWIは、記述量を含めて`agent-basics:writing-standards/references/agent-documents-additions.md`に従う。
 `## 反映内容と反映先`には目的と対象の文書を書き、ユーザーの要件か公開契約が配置を指定する場合を除き、節の位置や追記の形は計画で統合・分割を選べるよう開いておく。
 多数のファイルを作り替える要求は、対象をファイル単位で棚卸しし、変更前の読込量、構成の目安、削ると誤りの再発が見込まれる保護を本文に書く。
 細則の多い対象を整理する要求は、置き場所の対応付けより前に、細則が守ろうとしている結果を上位の原則へまとめる案を比べる。

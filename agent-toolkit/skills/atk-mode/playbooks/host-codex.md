@@ -155,7 +155,6 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
    自律モードは期限の無い環境として`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の表に従い、権限拒否への確認は`agent-toolkit:atk-mode/playbooks/permission-denial.md`に従う。
 4. 作業中の質問・状況照会への回答と途中報告は`commentary`で届け、認可済みで実行できる元の作業へ同じターンで戻る。
    `commentary`で送る途中報告は、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」の送る対象に限る。
-   操作の実況（これから行うこと、待っているもの、読み終えた資料）、次の工程の予告、判断を変えない細かい訂正は送る対象の外にある。
    異型例として、メインが`commentary`で「次にCIを待つ」のような実況を続けて送ると、判断の要る報告が実況に埋もれる。
 5. 成果作業を終える通常の`final`は、`agent-toolkit:atk-mode/playbooks/report-completion.md`で確定した作業完了報告の本文で届ける。
    `final`の前に原要求の全体と実行できる残工程を突き合わせ、局所の結果（登録、レビュー、公開、一部の調査、計画）だけで完了と扱う誤りを避ける。

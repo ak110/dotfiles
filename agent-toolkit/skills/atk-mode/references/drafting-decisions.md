@@ -44,11 +44,7 @@ WIの起草で、原因と変更する定義の所有者を決め、採否と実
 
 完成条件を固定する前に、起点の資料の目的と、エージェントが選んだ中間の手段（安全策、検収用のログ、例外処理、フォールバックなど）を分ける。
 新しい機構を作らずに既存の操作で消費側に要る結果が得られるかを、`agent-basics:writing-standards/references/design-heuristics.md`「自作機構の兆候と自問」で比べて結論を本文に書く。
-新しい処理の追加は、消費側に要る結果から、既存機構の流用、統合、追加しない案、新設を、次の資料で比べる。
-
-- `agent-basics:writing-standards/references/design-heuristics.md`
-- `agent-basics:writing-standards/references/design-heuristics.md`
-- `agent-basics:writing-standards/references/design-heuristics.md`
+新しい処理の追加は、消費側に要る結果から、既存機構の流用、統合、追加しない案、新設を同じ資料で比べる。
 
 類似の見直しや再発防止として新設する要素と、完成条件で必須にする観測手段・比較・検収・工程は、明示の要件、規範上の制約、観測済みの欠陥のどれに応じて要るかを要素ごとに示す。
 処理しない・延期するといった保護の条件と、期待結果・完成条件・反映内容に書いた省略・拒否・保存しない分岐も同じ根拠に対応付け、処置自身の失敗の最悪の結果を元の問題の最大の影響と比べる。
