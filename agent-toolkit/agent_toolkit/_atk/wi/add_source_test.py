@@ -11,6 +11,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._common import session_state, uwi_watch
+from agent_toolkit._common.process_loop_session import REPORT_SAVED_AT_KEY
 from agent_toolkit._testing.wi_add_support import _cmd_add_args, _patch_cmd_add_operations, _run_public_add
 from agent_toolkit._testing.wi_add_support import _isolate_managed_temp as _isolate_managed_temp
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY as _AGENT_AWI_BODY
@@ -323,3 +324,26 @@ def test_cmd_add_accepts_uwi_without_required_sections(
     )
 
     assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
+
+
+@pytest.mark.parametrize("case", ["report", "ordinary", "dry-run", "other-thread", "delegated"])
+def test_cmd_add_records_codex_report_save(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, case: str) -> None:
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.setenv("CODEX_THREAD_ID", "report-thread")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "other" if case == "other-thread" else "report-thread")
+    if case == "delegated":
+        monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "report-thread")
+    body = (
+        "設定変更を承認しますか？"
+        if case == "ordinary"
+        else "\n2026年11月23日のdotfilesの作業結果について、この対応で問題ありませんか？"
+    )
+    args = _cmd_add_args(tmp_path, body, source="process-wi", entry_type=WI_TYPE_UWI, dry_run=case == "dry-run")
+    args.question_type = "post-approval"
+    _run_public_add(args, notes, _FIXED_DT, tmp_path)
+
+    assert (REPORT_SAVED_AT_KEY in session_state.read_state("report-thread")) == (case == "report")
