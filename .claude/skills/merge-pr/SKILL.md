@@ -46,7 +46,10 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
    1. `git fetch origin master`の後、PRの`mergeCommit.oid`と`origin/master`が一致することを確かめ、以降のGit操作は`origin/master`を基準にする。
    2. `origin/develop`は、ローカルブランチを操作元にせず`git push origin origin/master:refs/heads/develop`で直接更新し、fetchの後に`origin/develop`と`origin/master`の短縮OID（7文字以上）が一致することを確かめる。
    3. 手順2でローカルの同期ができると見込んでいた場合は、実行の直前に基準のrefを`origin/master`として同期条件を判定し直し、`develop` worktreeのパスがマージ前と同じことも確かめる。
-      満たせば`git -C <develop worktreeの絶対パス> merge --ff-only origin/master`を実行して`origin/master`との一致を確かめる。
+      満たせばリリース作業を行うworktreeの `libexec/sync_release_checkout.py` をPython 3.13以降で起動する。
+      引数は順に `<develop worktreeの絶対パス> <確認済みのorigin/masterの完全OID> <managed-tempの絶対パス>` とする。
+      このコマンドは主checkoutを進める前に対象コミットの共有依存環境を準備し、成功した場合だけ同じOIDへfast-forwardする。
+      準備に失敗したら通常の `git merge` で代替せず、診断を完了報告に残してCIの確認へ進む。
       満たさなければローカルの同期だけを省き、理由、対象worktreeの絶対パス、ローカルの`develop`と`origin/master`の短縮OIDを完了報告へ書く。
    4. マージコミットの完全OIDと一致する`master` pushのCIを特定して結果を確認する。
       同じツリーの`develop` pushで全ジョブの成功を所有判定が確認した場合は、その再利用を含むCI成功を受理する。
@@ -89,7 +92,7 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
 
 ## 失敗時の対応
 
-- CIとリリース以外の工程が失敗したら、完了した外部の状態を保ったまま、失敗した工程、現在の外部の状態、runのURL、再開に必要な情報を報告して停止する。
+- ローカル同期を見送る場合を除き、CIとリリース以外の工程が失敗したら、完了した外部の状態を保ったまま、失敗した工程、現在の外部の状態、runのURL、再開に必要な情報を報告して停止する。
   PRの作成やマージの再試行、auto-mergeの有効化、自動修復、自動ロールバックはしない。
 - CIかリリースのrunが失敗したら、run全体の終了状態と失敗のログを確かめる。
   原因は`agent-basics:bugfix/references/ci-failures.md`「分類」と`agent-toolkit:atk-mode/references/ci.md`で分類する。
