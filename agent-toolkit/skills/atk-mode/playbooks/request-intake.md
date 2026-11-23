@@ -61,6 +61,7 @@
      方針の全体（採る案、採らない案、引く案、置き換える案と推奨）を1回以上質問し、回答を受け取るまで着手しない。
      `agent-toolkit:atk-mode/references/choice-construction.md`「質問ラウンド」の終了条件で残る問いが無くても、この質問は省かない。
      「完成形が依頼から決まる」依頼では、本人の選好、未開示の制約、認可が残る時だけ行う。
+     どちらの依頼でも、本人にしかできない準備が残れば`agent-toolkit:atk-mode/playbooks/confirmation.md`「本人にしかできない準備の先行依頼」で着手前に依頼する。
    - 手段は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で選ぶ（Claude Codeでは`AskUserQuestion`）。
    - 適用範囲を問う時は、点検類型(i)で成立した派生先を`agent-toolkit:atk-mode/references/choice-construction.md`「候補の構成」へ渡す。
    - 判断の材料を先に送り、質問には問いと最小限の前提を残す。
