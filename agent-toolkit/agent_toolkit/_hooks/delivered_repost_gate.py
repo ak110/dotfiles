@@ -20,7 +20,6 @@ lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
-lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
 _SEND_TO_USER_TOOLS = {prefix + "send_to_user" for prefix in MCP_NAMESPACES} | {
     "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user",
@@ -92,6 +91,8 @@ def _sentences(text: str) -> set[str]:
 
 
 def _current_turn(entries: list[dict]) -> list[dict]:
+    from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
+
     for index in range(len(entries) - 1, -1, -1):
         entry = entries[index]
         if entry.get("isCompactSummary") is True or (
