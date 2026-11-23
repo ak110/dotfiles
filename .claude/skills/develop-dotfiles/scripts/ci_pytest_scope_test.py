@@ -67,13 +67,13 @@ def test_toolkit_runs_every_shard_and_preserves_first_failure(monkeypatch, tmp_p
 
     monkeypatch.setattr(subject.subprocess, "call", run)
     selected = subject.load_scope(_ROOT / ".github/workflows/ci.yaml", "toolkit")
-    assert subject.run_scope("toolkit", selected, tmp_path, collect_only=True) == 5
+    assert subject.run_scope("toolkit", selected, tmp_path, collect_only=False) == 5
     assert len(commands) == len(selected["shards"])
     for (argv, kwargs), shard in zip(commands, selected["shards"], strict=True):
         assert argv[1:6] == ["-m", "pyfltr", "ci", "--no-always-targets", "--commands=pytest"]
         assert f"--test-shard={shard}" in argv[6]
-        assert "--collect-only" in argv[6]
-        assert argv[-1] == selected["path"]
+        assert "--collect-only" not in argv[6]
+        assert argv[7:] == [selected["path"]]
         assert kwargs["env"]["UV_NO_SYNC"] == "true"
 
 
@@ -96,3 +96,17 @@ def test_toolkit_never_evaluates_unknown_shell(tmp_path) -> None:
     with pytest.raises(ValueError, match="形式|対象"):
         subject._toolkit_scope(command, {"strategy": {"matrix": {"shard": ["1/1"]}}})
     assert not marker.exists()
+
+
+def test_toolkit_collect_prints_ids_from_the_exact_run(monkeypatch, tmp_path, capsys) -> None:
+    def run(argv, **kwargs):
+        if argv[2] == "pyfltr" and argv[3] == "ci":
+            assert "--collect-only" in argv[6] and "-v " not in argv[6]
+            return SimpleNamespace(returncode=0, stdout='{"kind":"header","run_id":"test-run"}\n', stderr="")
+        assert argv[3:5] == ["show-run", "test-run"]
+        return SimpleNamespace(stdout='{"content":"module_test.py::test_case\\n1 test collected"}\n')
+
+    monkeypatch.setattr(subject.subprocess, "run", run)
+    selected = {"pytest_args": ["-v"], "shards": ["1/1"], "path": "agent-toolkit"}
+    assert subject.run_scope("toolkit", selected, tmp_path, collect_only=True) == 0
+    assert "1/1\tmodule_test.py::test_case" in capsys.readouterr().out

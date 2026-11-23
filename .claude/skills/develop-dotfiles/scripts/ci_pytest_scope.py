@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import sys
+import tempfile
 from pathlib import Path, PurePosixPath
 
 import yaml
@@ -80,7 +81,7 @@ def load_scope(workflow, scope):
     return _root_scope(body) if scope == "root" else _toolkit_scope(body, job)
 
 
-def run_scope(scope, selected, root, *, collect_only):
+def run_scope(scope, selected, root, *, collect_only, impact_base=None):
     env = {**os.environ, "PYTHONDEVMODE": "1", "UV_NO_SYNC": "true"}
     for key in ("PYFLTR_GLOBAL_CONFIG", "PYTEST_ADDOPTS", "TESTSCOPE"):
         env.pop(key, None)
@@ -92,6 +93,36 @@ def run_scope(scope, selected, root, *, collect_only):
         paths = [os.fsdecode(path) for path in listed.stdout.split(b"\0") if path]
         if not paths:
             raise ValueError("直下の検査対象が空")
+        if impact_base is not None:
+            history = root / ".testscope"
+            if (
+                re.fullmatch(r"[a-f0-9]{40}", impact_base) is None
+                or not all(
+                    (history / name).is_file() and (history / name).stat().st_size for name in ("map.json", "pyfltr.json")
+                )
+                or subprocess.call(["git", "merge-base", "--is-ancestor", impact_base, "HEAD"], cwd=root) != 0
+            ):
+                raise ValueError("差分選定には復元した履歴とHEADの祖先の完全OIDが必要")
+            with tempfile.TemporaryDirectory(dir=history) as temporary:
+                config = Path(temporary) / "pyfltr.toml"
+                config.write_text(
+                    "[tool.pyfltr]\npytest-impact-selection = true\npytest-targets = " + json.dumps(paths), encoding="utf-8"
+                )
+                env["PYFLTR_GLOBAL_CONFIG"] = str(config)
+                return subprocess.call(
+                    [
+                        sys.executable,
+                        "-m",
+                        "pyfltr",
+                        "ci",
+                        "--commands=pytest",
+                        "--no-always-targets",
+                        f"--changed-since={impact_base}",
+                        f"--pytest-args={shlex.join([*selected['pytest_args'], *extra])}",
+                    ],
+                    cwd=root,
+                    env=env,
+                )
         return subprocess.call(
             [sys.executable, "-m", "pytest", *selected["pytest_args"], *extra, "--", *paths], cwd=root, env=env
         )
@@ -99,22 +130,47 @@ def run_scope(scope, selected, root, *, collect_only):
     result = 0
     for shard in selected["shards"]:
         print(f"toolkit shard {shard}", file=sys.stderr, flush=True)
-        args = [*selected["pytest_args"], f"--test-shard={shard}", *extra]
-        code = subprocess.call(
-            [
-                sys.executable,
-                "-m",
-                "pyfltr",
-                "ci",
-                "--no-always-targets",
-                "--commands=pytest",
-                f"--pytest-args={shlex.join(args)}",
-                selected["path"],
-            ],
+        options = [arg for arg in selected["pytest_args"] if not (collect_only and re.fullmatch(r"-v+", arg))]
+        args = [*options, f"--test-shard={shard}", *extra]
+        command = [
+            sys.executable,
+            "-m",
+            "pyfltr",
+            "ci",
+            "--no-always-targets",
+            "--commands=pytest",
+            f"--pytest-args={shlex.join(args)}",
+            selected["path"],
+            *(["--no-quiet"] if collect_only else []),
+        ]
+        if not collect_only:
+            code = subprocess.call(command, cwd=root, env=env)
+            result = result or code
+            continue
+        completed = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", check=False)
+        print(completed.stdout, end="")
+        print(completed.stderr, end="", file=sys.stderr)
+        if completed.returncode:
+            result = result or completed.returncode
+            continue
+        run_id = next(row["run_id"] for line in completed.stdout.splitlines() if (row := json.loads(line))["kind"] == "header")
+        recorded = subprocess.run(
+            [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output"],
             cwd=root,
             env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
         )
-        result = result or code
+        count = 0
+        for line in recorded.stdout.splitlines():
+            for entry in json.loads(line).get("content", "").splitlines():
+                if "::" in entry and entry.split("::", 1)[0].endswith(".py"):
+                    print(f"{shard}\t{entry}")
+                    count += 1
+        if not count:
+            raise ValueError(f"分割 {shard} の試験IDが出力されなかった: {run_id}")
     return result
 
 
@@ -164,7 +220,10 @@ def main():
     group.add_argument("--run", action="store_true")
     group.add_argument("--collect-only", action="store_true")
     group.add_argument("--old-text-tests", metavar="BASE_OID")
+    parser.add_argument("--impact-base", metavar="BASE_OID")
     args = parser.parse_args()
+    if args.impact_base and (args.scope != "root" or not (args.run or args.collect_only)):
+        parser.error("--impact-base は root の --run または --collect-only と併用する")
     root = Path(__file__).resolve().parents[4]
     try:
         selected = load_scope(root / ".github/workflows/ci.yaml", args.scope)
@@ -172,7 +231,7 @@ def main():
             print(json.dumps(_old_text_candidates(root, args.old_text_tests), ensure_ascii=False))
             return 0
         if args.run or args.collect_only:
-            return run_scope(args.scope, selected, root, collect_only=args.collect_only)
+            return run_scope(args.scope, selected, root, collect_only=args.collect_only, impact_base=args.impact_base)
         print(json.dumps(selected, ensure_ascii=False))
         return 0
     except (OSError, KeyError, TypeError, ValueError, yaml.YAMLError, subprocess.SubprocessError) as error:

@@ -59,6 +59,8 @@ dotfilesの変更を、試験の配置から公開前の検証まで確かめる
   serveのAPIの辞書へ項目を足す変更では、辞書全体を完全一致で比べる試験（`agent-toolkit/agent_toolkit/_atk/serve/assets_test.py`、`assets_detail_test.py`、`cli_detail_test.py`など）を含める。
   hooks設定を新たに読む処理では、その処理を実行する試験のfixture（`agent-toolkit/agent_toolkit/_agents_server/mcp_projection_test.py`の設定fixtureなど）を含める。
   目的文や説明文の変更では、旧文言を期待値に持つ試験（`agent-toolkit/agent_toolkit/_atk/agy_launch_test.py`など）を含める。
+  通知・説明の文面を変えたら、下記の `--old-text-tests BASE` が列挙する未変更の試験も対象へ加える。
+  候補で網羅を説明できない場合は、対応するCIジョブが検査する全件を実行する。
   参照コメントの撤去では、そのコメントだけが監査見出しを現行の契約へ結び付けていないかを調べ、監査の限定試験を加える。
 - 別の構文で定義を読む試験は`pyfltr fast`の対象外のため個別に指定する。
   `.github/workflows/`のジョブ名・ステップ名やpytestの対象指定の変更では`ci_workflow_test.py`、`ci_workflow_ownership_test.py`、`ci_workflow_windows_test.py`を含める。
@@ -152,7 +154,8 @@ LinuxでDockerを使った結果は、Windowsの非昇格更新の証拠にし�
 ### CIと同じpytestの対象を選ぶ
 
 `uv run --no-sync python .claude/skills/develop-dotfiles/scripts/ci_pytest_scope.py toolkit`はCI定義のtoolkitの対象と分割を表示する。
-直下は`root`を指定する。
+直下の全件は`root`を指定する。
+CIが履歴を復元して絞る場合は、その履歴を用意した上で`root --impact-base BASE_OID`を`--collect-only`か`--run`と併用する。
 `--collect-only`で試験IDを取得し、`--run`で同じ対象を実行する。
 CI定義から選定できない時は、パス指定を別に作って同じ範囲と扱わない。
 変更前の文面を使う未変更の試験の候補は、`--old-text-tests <比較元の完全OID>`で取得する。
