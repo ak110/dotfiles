@@ -226,9 +226,10 @@ def scheduled_git(monkeypatch: pytest.MonkeyPatch) -> None:
         return result
 
     def release(self: git_sync._RepoLock, force: bool = False) -> None:  # pylint: disable=protected-access
+        was_locked = self.is_locked
         real_release(self, force)
         run = _CURRENT[0]
-        if run is not None and not self.is_locked:
+        if run is not None and was_locked and not self.is_locked:
             resource = ("clone", str(pathlib.Path(self._repo_path).resolve()))  # pylint: disable=protected-access
             run.note_lock(self.lock_file, resource, held=False)
 
