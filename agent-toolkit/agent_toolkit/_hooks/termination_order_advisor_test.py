@@ -13,7 +13,7 @@ import pathlib
 import pytest
 
 from agent_toolkit._atk import run_script
-from agent_toolkit._common import automated_prompt
+from agent_toolkit._common import automated_prompt, session_state
 from agent_toolkit._hooks import background_tasks as _background_tasks
 from agent_toolkit._hooks import (
     stop,
@@ -104,6 +104,14 @@ def test_formal_completion_report_requires_current_playbook_but_progress_does_no
     assert "作業完了報告の手順書の取得" in check(report)
     _start_skill(sid, trace, "agent-toolkit:atk-mode", "toolu_report", arguments="report-completion")
     assert "作業完了報告の手順書の取得" not in check(report)
+    session_state.update_state(
+        sid,
+        lambda state: {**state, "agents_server_sessions": {"child": {"owner_agent_id": "main", "pending_observation": True}}},
+    )
+    assert "委譲先の結果と続行を確認" in check(report)
+    assert "委譲先の結果と続行を確認" not in check("担当の結果は未回収です。")
+    session_state.update_state(sid, lambda state: {**state, "agents_server_sessions": {}})
+    assert "委譲先の結果と続行を確認" not in check(report)
 
 
 def _evaluate_delivered(payload: str) -> tuple[str, str]:

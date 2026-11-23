@@ -297,6 +297,11 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 fix="今回の対象と除外を確かめ、必要なら本文を直して再送せよ。",
             )
         )
+    if tool_name == "ExitPlanMode":
+        from agent_toolkit._hooks.plan_presentation import check_before_presentation  # pylint: disable=import-outside-toplevel
+
+        if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", ""))):
+            return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示する。"))
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
     if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
@@ -310,10 +315,23 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 )
             )
     if is_send_to_user_tool(tool_name):
+        from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
         from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
         from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
+        if (
+            session_id
+            and isinstance(message, str)
+            and message.lstrip().partition("\n")[0].strip() == "## 作業完了報告"
+            and (pending := outstanding_before_completion(session_id, _agent_id.resolve_hook_agent_id(payload)))
+        ):
+            return Decision(
+                block=_block_notice(
+                    f"完了報告の前に委譲先の結果と続行を確認する。{pending}",
+                    fix="未回収の結果をatk agents waitで受け取り、応答待ちの担当へ指示を返す。",
+                )
+            )
         if unread := unread_evidence(payload, session_id, message):
             return Decision(
                 block=_block_notice(
