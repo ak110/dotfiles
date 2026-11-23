@@ -6,7 +6,7 @@
 
 `_common/session_activity.py`は、OSアカウントの状態ディレクトリ配下にある`session-activity/{session_id}.json`へ、会話ごとの最新状態を保存する。
 状態ディレクトリの取得元は`agent-toolkit/agent_toolkit/_common/state_paths.py`の`state_dir()`である。
-`hook.py`は既存イベントの処理で活動記録を更新し。
+`hook.py`は既存イベントの処理で活動記録を更新する。
 
 - 保存する項目は、バージョン番号、会話ID、実行系、PIDと起動時刻、会話内の各エージェントの活動状態、親会話ID、セッション記録のパス、バックグラウンドタスクの有無、および更新時刻である
 - SessionStart、UserPromptSubmit、各種ツールイベント、SubagentStartの発生時に活動を記録し、StopやSubagentStopでは実際のhookレスポンスが続行を求めるかを反映する

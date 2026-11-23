@@ -16,7 +16,8 @@ CLIは起動・再起動と制御、セッションはWIの処理と更新を担
 4. 主な公開・リリースが終わったら `update-dotfiles` を実行し、出力と終了状態を確認する。
    単発の `review-session` は終了条件にしない。
    既存のbatch待ちがあれば追加の振り返りは非同期の `review-session batch` に任せ、無ければ既知の対応事項だけを必要に応じてAWIに残す。
-   失敗や新しい不良はその場で `agent-basics:bugfix` を起動して対処し、処置の結果を確かめてから反映や次回の選定へ進む。
+   更新に失敗したら、`agent-basics:bugfix` を起動してその場で対処し、結果を確かめてから反映へ進む。
+   他の不良の処置時機は `agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で決める。
 5. 更新に成功したら、Claude Codeでは必要なpluginやMCPを `apply_runtime_changes` で反映する。
    同じセッションでの圧縮が必要なら、途中の作業を保存し、`compact_conversation` の `resume` を指定して現ターンを終える。
    本体側の更新を読むか区切りで新しい会話を使う時は、残工程を記録し `atk agents-exit-session` で正常終了する。

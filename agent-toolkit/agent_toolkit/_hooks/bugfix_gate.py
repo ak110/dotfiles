@@ -1,7 +1,7 @@
-"""ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。  pyfltr: allow-comment
+"""ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。
 
 `send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-この遮断はtranscriptと、書き出し前のREPL内の成功を受けたPostToolUseの記録で判定する。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
+この遮断の判定はtranscriptの観測だけで決まる。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
 `agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
 遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
 
@@ -31,7 +31,7 @@ lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
+lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
 # 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
@@ -50,8 +50,6 @@ _DEFECT_RE = re.compile(
 _block_notice = notice.block_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
-_REPL_SKILL_TURN_KEY = "bugfix_repl_human_turn"
-_REPL_SKILL_CALL_KEY = "bugfix_repl_skill_call"
 
 
 def _ci_exit_code(payload: dict) -> int | None:
@@ -133,7 +131,6 @@ def observe_verification(payload: dict) -> None:
     if tool_name == "Skill" and tool_input.get("skill") in _BUGFIX_SKILLS:
         if response and not failed and code in (None, 0):
             mark_started(session_id, actor)
-            _observe_repl_skill_success(payload, session_id)
         return
     if _wait_ci_operation(tool_name, tool_input):
         # wait-ciの1はCI失敗、6は途中の新規失敗。待機timeoutやrun未登録は別の状態である。
@@ -224,68 +221,12 @@ def _started_bugfix(entries: list[dict]) -> bool:
     return any(calls.values())
 
 
-def bugfix_pending(lines: list[str], repl_human_id: object = None) -> bool:
-    turn = latest_human_turn_context(lines)
+def bugfix_pending(lines: list[str]) -> bool:
+    turn = latest_human_turn(lines)
     if turn is None:
         return False
-    prompt, entries, human_id = turn
-    return (
-        is_defect_report(prompt) and not (human_id is not None and human_id == repl_human_id) and not _started_bugfix(entries)
-    )
-
-
-def _read_human_lines(payload: dict) -> list[str] | None:
-    if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
-        return None
-    path = payload.get("transcript_path")
-    return transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
-
-
-def observe_repl_skill_start(payload: dict, session_id: str) -> None:
-    tool_id, tool_input = payload.get("tool_use_id"), payload.get("tool_input")
-    if (
-        not isinstance(tool_id, str)
-        or not tool_id.startswith("repl_")
-        or not isinstance(tool_input, dict)
-        or not isinstance(skill := tool_input.get("skill"), str)
-        or skill not in _BUGFIX_SKILLS
-    ):
-        return
-    if (lines := _read_human_lines(payload)) is None or (turn := latest_human_turn_context(lines)) is None:
-        return
-    prompt, _, human_id = turn
-    if human_id is None or not is_defect_report(prompt):
-        return
-
-    def remember(state: dict) -> dict:
-        state[_REPL_SKILL_CALL_KEY] = {"id": tool_id, "human": human_id}
-        return state
-
-    update_state(session_id, remember)
-
-
-def _observe_repl_skill_success(payload: dict, session_id: str) -> None:
-    tool_id, response = payload.get("tool_use_id"), payload.get("tool_response")
-    if (
-        payload.get("hook_event_name") != "PostToolUse"
-        or not isinstance(tool_id, str)
-        or not tool_id.startswith("repl_")
-        or not isinstance(response, dict)
-        or response.get("success") is not True
-        or not isinstance(command := response.get("commandName"), str)
-        or command not in _BUGFIX_SKILLS
-    ):
-        return
-
-    def remember(state: dict) -> dict | None:
-        call = state.get(_REPL_SKILL_CALL_KEY)
-        if not isinstance(call, dict) or call.get("id") != tool_id:
-            return None
-        state.pop(_REPL_SKILL_CALL_KEY)
-        state[_REPL_SKILL_TURN_KEY] = call["human"]
-        return state
-
-    update_state(session_id, remember)
+    prompt, entries = turn
+    return is_defect_report(prompt) and not _started_bugfix(entries)
 
 
 def _block_body(delivery: str) -> str:
@@ -297,12 +238,13 @@ def _block_body(delivery: str) -> str:
 
 
 def _pending_for_main(payload: dict) -> bool:
-    lines = _read_human_lines(payload)
-    if lines is None:
+    if is_codex_payload(payload) or not agent_id.is_main_agent_context(payload):
         return False
-    session_id = payload.get("session_id")
-    repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
-    return bugfix_pending(lines, repl_human_id)
+    path = payload.get("transcript_path")
+    if not isinstance(path, str) or not path:
+        return False
+    lines = transcript.read_transcript_lines(path)
+    return lines is not None and bugfix_pending(lines)
 
 
 def send_block(payload: dict) -> str | None:
