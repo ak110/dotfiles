@@ -367,6 +367,7 @@ def _validate_named_staleness_options(args: argparse.Namespace) -> None:
         or args.type != ["all"]
         or args.answered != ["all"]
         or args.important != "all"
+        or getattr(args, "user_comment", "all") != "all"
     ):
         args.subparser.error("--staleness-forでは--state・--target-repo・同期以外の一覧条件と出力は省略値にしてください。")
 
@@ -438,6 +439,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
                 and _wi_filters.answered_matches(entry[4], entry[2], args.answered)
                 and _wi_filters.source_matches_any(parse_source(entry[2]), args.source)
                 and _wi_filters.important_matches(entry[2], getattr(args, "important", "all"))
+                and _wi_filters.user_comment_matches(entry[2], getattr(args, "user_comment", "all"))
                 and (
                     getattr(args, "effect_check", None) is None
                     or (parse_frontmatter(entry[2]) or ({}, ""))[0].get("effect_check") == args.effect_check
@@ -494,6 +496,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshot=_wi_snapshot.new_entries(all_entries, baseline) if baseline is not None else all_entries,
         target_branch=target_branch,
         branch_settings=branch_settings,
+        user_comment=getattr(args, "user_comment", "all"),
     )
     if getattr(args, "effect_check", None) is not None:
         selected = [

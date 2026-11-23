@@ -1,4 +1,4 @@
-"""利用上限の再開要求と待機圧縮の判定記録がFunction hooksの既存保持期限に従うことを確認する。"""
+"""利用上限の再開要求と旧版が残した圧縮の判定記録がFunction hooksの既存保持期限に従うことを確認する。"""
 
 import os
 import pathlib

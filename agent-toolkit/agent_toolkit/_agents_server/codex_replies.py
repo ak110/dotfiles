@@ -110,21 +110,9 @@ class CodexRepliesMixin:
 
     @contextlib.asynccontextmanager
     async def _input_turn_control(self: CodexManager, session: SessionState) -> AsyncGenerator[None]:
-        # 圧縮の完了待ちでは停止用のロックを保持しない。取得後も予約との競合を再確認する。
-        async with asyncio.timeout(DEFAULT_WAIT_TIMEOUT):
-            while True:
-                compacting = self._wait_compaction_turns.get(session.session_id)
-                if compacting is not None:
-                    await compacting.done.wait()
-                await session.turn_control_lock.acquire()
-                if session.session_id not in self._wait_compaction_turns:
-                    break
-                session.turn_control_lock.release()
-        try:
+        async with session.turn_control_lock:
             await self._cancel_auto_reset_check(session.session_id)
             yield
-        finally:
-            session.turn_control_lock.release()
 
     async def release_session(self: CodexManager, session: SessionState) -> None:
         """sessionが所有するApp Serverと子孫（threadごとのMCPサーバーと子孫threadの資源）を終了させる。

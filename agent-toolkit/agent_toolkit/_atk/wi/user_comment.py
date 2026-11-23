@@ -6,6 +6,8 @@ from agent_toolkit._atk.wi import frontmatter
 from agent_toolkit._atk.wi import headings as _headings
 
 _COMMENT_HEADING = "ユーザーコメント"
+_QUOTE_HEADING = "ユーザー指摘の逐語引用"
+_QUOTE_MARKER = re.compile(r"^ {0,3}> ?")
 _AGENT_USER_COMMENT_PREFIX = "ユーザーコメントはユーザーだけが書き込みます。"
 AGENT_USER_COMMENT_ADD_ERROR = (
     _AGENT_USER_COMMENT_PREFIX + "エージェント環境から起動したatkでは、ユーザーコメント節を含む本文を投入できません。"
@@ -100,6 +102,39 @@ def extract_user_comment(text: str) -> str | None:
     return _normalize_comment(frontmatter.normalize_newlines("".join(lines[heading.map[1] :])))
 
 
+def has_user_comment(text: str) -> bool:
+    try:
+        return bool(extract_user_comment(text))
+    except UserCommentError:
+        return True
+
+
+def _comparable_lines(lines: list[str]) -> list[str]:
+    stripped = list(lines)
+    while stripped and not stripped[0].strip():
+        stripped.pop(0)
+    while stripped and not stripped[-1].strip():
+        stripped.pop()
+    return stripped
+
+
+def same_user_comment(left: str, right: str) -> bool:
+    return _comparable_lines(frontmatter.normalize_newlines(left).split("\n")) == _comparable_lines(
+        frontmatter.normalize_newlines(right).split("\n")
+    )
+
+
+def quotes_user_comment(text: str, comment: str) -> bool:
+    _prefix, body = _body_parts(text)
+    section = _headings.last_h2_section_lines(body, _QUOTE_HEADING)
+    target = _comparable_lines(frontmatter.normalize_newlines(comment).split("\n"))
+    if section is None or not target:
+        return False
+    quoted = [_QUOTE_MARKER.sub("", line, count=1) for line in section]
+    width = len(target)
+    return any(quoted[index : index + width] == target for index in range(len(quoted) - width + 1))
+
+
 def split_before_user_comment(text: str) -> tuple[str, str]:
     """本文を予約見出しの直前までと予約見出し以降へ分けて返す。
 
@@ -170,6 +205,9 @@ __all__ = [
     "UserCommentError",
     "extract_user_comment",
     "has_reserved_heading",
+    "has_user_comment",
+    "quotes_user_comment",
+    "same_user_comment",
     "split_before_user_comment",
     "update_user_comment",
 ]

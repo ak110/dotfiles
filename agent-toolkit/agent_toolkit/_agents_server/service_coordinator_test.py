@@ -53,7 +53,6 @@ def _coordinator(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, cur
         _clients={session.session_id: client},
         _sdk_clients={},
         release_session=AsyncMock(),
-        export_service_state=AsyncMock(return_value={}),
         _stop_auto_reset=AsyncMock(),
         adopt_session=AsyncMock(),
     )
@@ -259,12 +258,9 @@ async def test_inflight_codex_request_survives_failed_move(
     session.live_child_session_ids.add("child")
     monkeypatch.setattr(backend, "_handle_notification", received.put)
     with service_io.bind(runtime):
-        await backend.adopt_session(session, descriptor, {})
+        await backend.adopt_session(session, descriptor, {"wait_compaction": {"legacy": True}})
     client = coordinator._client(backend, identifier)
     assert isinstance(client, service_io.CodexResource)
-    compactor = backend._wait_compactors[identifier]
-    checkpoint = compactor.checkpoint()
-    assert checkpoint["deadline"] is not None
     conversation.manager.take_over_orphaned_session = AsyncMock()
     conversation.manager.show_session = AsyncMock(return_value={"session_id": identifier})
     current = coordinator.registry.current()
@@ -285,7 +281,6 @@ async def test_inflight_codex_request_survives_failed_move(
             conversation.manager.show_session.assert_awaited_once_with(identifier, verbose=False)
             assert await received.get() == {"n": 1}
             assert coordinator._client(backend, identifier) is client
-            assert compactor.checkpoint() == checkpoint
             assert not sent
             finish.set()
             assert await inflight == {"done": True}
@@ -297,7 +292,6 @@ async def test_inflight_codex_request_survives_failed_move(
         finish.set()
         await inflight
         await client.detach()
-        await compactor.close()
 
 
 @pytest.mark.asyncio
@@ -436,7 +430,6 @@ def _stoppable_client(coordinator: ServiceCoordinator, session: state.SessionSta
     client.detach.return_value = descriptor
     client.transferred = False
     client.pause.side_effect = lambda: setattr(client, "transferred", True)
-    backend._wait_compaction_turns = {}
     return descriptor
 
 

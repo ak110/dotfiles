@@ -1,6 +1,6 @@
 import type { EngineInterface, On } from "claude-code";
 import { collectCommonTasks, exitStatePath } from "./session_exit.ts";
-import { deliverySucceeded, newReportRoute, reportWarnings } from "./send_to_user.tsx";
+import { deliverySucceeded, missingPreventionLine, missingPreventionRejection, newReportRoute, reportWarnings } from "./send_to_user.tsx";
 import { pluginLaunchCommand } from "./plugin_launch.ts";
 import { startNextTurn } from "./automated_message.ts";
 import { mountPeriodicRecheck } from "./periodic_recheck.ts";
@@ -19,7 +19,7 @@ function expireReplWait($: EngineInterface, wait: BackgroundWait): void {
   });
 }
 
-export function register(on: On, session: { backgroundChanged?: boolean }): void {
+export function register(on: On): void {
   let busy = false;
   let initialized = false;
   let cleanupFailed = false;
@@ -72,7 +72,11 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         let autoMode: { hard_deny?: unknown; soft_deny?: unknown } | undefined;
         let flagAutoModePresent: boolean | undefined;
         let reason = "未対応の会話操作";
-        if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
+        let resend: boolean | undefined;
+        if (request.operation === "send_to_user" && typeof request.input?.message === "string" && missingPreventionLine(request.input.message)) {
+          reason = missingPreventionRejection;
+          resend = true;
+        } else if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
           const placed = await $.ui.place({ id: request.id });
@@ -115,19 +119,17 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
                    typeof request.input.expires === "number" && Number.isFinite(request.input.expires)) {
           const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
           if (!Object.hasOwn(waits, request.input.id) && request.input.expires * 1000 > Date.now()) {
-            const wait: BackgroundWait = { id: request.input.id, command: request.input.command, startedAt: await $.clock.now(), used: false, replExpiresAt: request.input.expires * 1000 };
+            const wait: BackgroundWait = { id: request.input.id, command: request.input.command, replExpiresAt: request.input.expires * 1000 };
             await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [wait.id]: wait });
             expireReplWait($, wait);
-            session.backgroundChanged = true;
           }
           ok = true;
         } else if (request.operation === "background_task" && typeof request.input.id === "string" && typeof request.input.command === "string") {
           const seen = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundSeen" })).value ?? {};
           if (!Object.hasOwn(seen, request.input.id)) {
             const waits = (await $.state.get({ plugin: "agent-toolkit", key: "backgroundWaits" })).value ?? {};
-            await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [request.input.id]: { id: request.input.id, command: request.input.command, startedAt: await $.clock.now(), used: false } });
+            await $.state.set({ plugin: "agent-toolkit", key: "backgroundWaits" }, { ...waits, [request.input.id]: { id: request.input.id, command: request.input.command } });
             await $.state.set({ plugin: "agent-toolkit", key: "backgroundSeen" }, { ...seen, [request.input.id]: true });
-            session.backgroundChanged = true;
           }
           ok = true;
         } else if (request.operation === "periodic_recheck") {
@@ -161,7 +163,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         }
         if (request.expires * 1000 > Date.now() && await $.fs.exists(source)) {
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
-          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
+          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, resend, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
           if (request.detached) cleanupNeeded = true;
         } else if (request.operation === "periodic_recheck" && reason) {
           // hookが応答の待機を諦めた後の装着失敗は、失わないよう次のターンの入力として届ける。

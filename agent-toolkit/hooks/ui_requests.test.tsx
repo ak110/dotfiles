@@ -71,6 +71,31 @@ for (const placed of [true, false]) {
   });
 }
 
+test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに差し戻す", async ($, on) => {
+  mock.env(on, { HOME: "/home/tester" });
+  const clock = mock.clock(on);
+  const id = "c".repeat(32);
+  queue(on, "ui-session", id);
+  let placements = 0;
+  const responses: string[] = [];
+  const message = "期待: 一覧が表示される。\n原因: 設定の読み違い。\n処置: 直した。\n確認: 再実行した。";
+  on("session.id", () => ({ value: "ui-session" }));
+  on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+  on("fs.read", () => ({ value: JSON.stringify({ id, operation: "send_to_user", input: { message }, expires: 99999999999 }) }));
+  on("fs.write", (_$, e) => { responses.push(e.text); return { value: undefined }; });
+  on("ui.place", () => { placements++; return { value: { isPlaced: true, requestId: "placed-row" } }; });
+  await $.turn.start({ text: "操作", turnId: "ui-turn" });
+  await clock.advance(100);
+  await clock.advance(100);
+  expect(placements).toBe(0);
+  const response = JSON.parse(responses.at(-1) ?? "{}");
+  expect(response.ok).toBe(false);
+  expect(response.reason).toContain("未送信");
+  expect(response.reason).toContain("`再発防止:`");
+  expect(response.resend).toBe(true);
+  expect(response.reason).not.toContain("送信済み");
+});
+
 test("MCP圧縮要求を表示要求と分けて予約受付する", async ($, on) => {
   mock.env(on, { HOME: "/home/tester" });
   const clock = mock.clock(on);
@@ -133,6 +158,12 @@ test(`Stop一覧から独立してREPL待機の期限を守る: ${expired}`, asy
   on("session.id", () => ({ value: "expiry-main" }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("command.register", (_$, e) => ({ value: { command: e.name } }));
+  let observed: string[] = [];
+  on("state.set", { plugin: "agent-toolkit", key: "backgroundWaits" }, async (_$, e, next) => {
+    const result = await next(e);
+    observed = Object.keys(e.value ?? {});
+    return result;
+  });
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("turn.complete", () => ({ text: "" }));
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 500_000, window: 1_000_000 }, rateLimits: [] } }));
@@ -153,8 +184,10 @@ test(`Stop一覧から独立してREPL待機の期限を守る: ${expired}`, asy
   await clock.advance(200);
   await $.turn.complete({ answer: "", durationMs: 0, isAborted: false, turnId: "expiry-turn", reason: "answer" });
   polling = false;
+  expect(observed).toEqual(["same-repl-id"]);
   await clock.advance(60_000);
-  expect(compactions).toBe(expired ? 0 : 1);
+  expect(observed).toEqual(expired ? [] : ["same-repl-id"]);
+  expect(compactions).toBe(0);
 });
 }
 

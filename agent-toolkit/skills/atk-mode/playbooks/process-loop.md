@@ -9,7 +9,7 @@ CLIは起動・再起動と制御、セッションはWIの処理と更新を担
    全体作業契約には目的、現行要求と保つ対象だけを書き、再開した場合は既存の検証・公開の結果を読み戻す。
 2. キューを同期し、開始時に処理可能なWIを原則すべて処理候補にする。
    必要なら `atk wi check-alerts` でCIの失敗を別に確認する。
-   進められる対象が1つも無ければ、常駐では60秒待って手順2に戻り、単回実行では結果を記録してから `atk agents-exit-session` で終了する。
+   進められる対象が1つも無ければ、常駐では60秒待って手順2に戻り、単回実行では `atk agents-exit-session` で終了する。
 3. `agent-toolkit:atk-mode/playbooks/process-wi.md` で対象ごとの設定・認可と候補を確認し、選定、専用worktree、実行レビュー、統合、公開を進める。
    複数対象の配分と担当への受け渡しは `agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md` を使う。
    登録元checkoutは直接編集せず、対象と系統ごとの専用作業ツリーから各レーンを作る。

@@ -1,4 +1,4 @@
-"""所有を移す前に止めた生I/Oと待機圧縮の復旧位置。"""
+"""所有を移す前に止めた生I/Oの復旧位置。"""
 
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ class MoveSource:
     async def detach(self, gate: service_turns.TurnGate, *, source_is_current: bool) -> None:
         identifier = self.session.session_id
         if self.client is not None:
-            self.auxiliary = await self.backend.export_service_state(identifier)
             if not source_is_current:
                 self.client.pause()
                 await gate.drain_session(identifier)
@@ -62,8 +61,6 @@ class MoveSource:
     async def restore(self) -> None:
         if self.descriptor is not None:
             await self.backend.adopt_session(self.session, self.descriptor, self.auxiliary)
-        elif checkpoint := self.auxiliary.get("wait_compaction"):
-            self.backend._wait_compactors[self.session.session_id].resume(self.session, checkpoint)
 
     def forget(self, manager: Any) -> None:
         identifier = self.session.session_id
@@ -73,8 +70,6 @@ class MoveSource:
             for name in (
                 "_clients",
                 "_sdk_clients",
-                "_wait_compactors",
-                "_service_compaction_checkpoints",
                 "_writer_session_ids",
             ):
                 getattr(self.backend, name, {}).pop(identifier, None)

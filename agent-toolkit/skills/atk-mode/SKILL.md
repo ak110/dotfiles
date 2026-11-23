@@ -1,6 +1,6 @@
 ---
 name: atk-mode
-argument-hint: "[add-awi-by-user|implement|process-wi|process-loop|review-session|export-session] [入力]"
+argument-hint: "[add-awi-by-user|implement|process-user-comments|process-wi|process-loop|review-session|export-session] [入力]"
 description: >
   agent-toolkitを導入した環境で、作業（調査、実装、レビュー、WIの操作）を始める前に起動する入口。
   会話の圧縮の後に作業を再開する前にも起動する。判断の原則、硬い制約、作業ごとの手順書の所在を示す。
@@ -46,7 +46,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 - 他者のプロセス・資源・差分は由来と利用を確かめて扱う。
 - 公開契約（`atk`と役割の入出力、MCPツール名、WI形式・frontmatter）は、人向けは依頼時のみ変え、エージェント専用は利用側もそろえる。
   互換の要否は自ら決める。
-- 認可が要る`add-awi-by-user`・`implement`・`process-wi`・`process-loop`はユーザーか`atk run-skill`・`atk wi process-loop`の名指し時のみ選ぶ。
+- 作業表で名指しのみの作業は認可が要り、ユーザーか`atk run-skill`・`atk wi process-loop`の名指し時のみ選ぶ。
   自己起動の引数は手順選びに限る。
 - `process-wi`・`process-loop`の実行中か`atk run-skill`起動なら自律モード、他は協調モード。
 
@@ -60,10 +60,9 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
   差分編集できる一時ファイルを優先し、発話・委譲にはそれで届かない情報だけを書く。
   出力の費用と時間を減らし、通知と検収は保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
-- 初回・追送・質問・回答・継続の全発話で、メインは作業前の応答冒頭に「発話の理解」を置く。
-  目的・問題・要求を論点別に言い換え、原文と補った前提を分けて箇条書きにする。
-  回答は待たない。
-  対象は`playbooks/user-utterance.md`「ユーザー発話の解釈」（転送原文を含む。自動通知は対象外）。
+- 全発話でメインは作業前の応答冒頭に「発話の理解」を置き、回答は待たない。
+  目的・問題・要求を論点別に換言し、原文・補った前提・出所付きの仮説を分けて列挙する。
+  問い・提案・指示の手段は要求と分け、確認まで「採否: 保留」とし、操作前に採否とより良い案を示す。
   短い発話は1行でよい。
 
 ## 作業と手順書
@@ -72,10 +71,11 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 
 | 作業 | 選ぶ条件 | 読む資料 |
 | --- | --- | --- |
-| `add-awi-by-user [入力]` | ユーザーの名指し時のみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
-| `implement [入力]` | ユーザーの名指し時のみ | `playbooks/implement.md` |
-| `process-wi [single-lane\|all-repos]` | ユーザー・起動入力の名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
-| `process-loop` | ユーザーかCLIの名指し時のみ | `playbooks/process-loop.md` |
+| `add-awi-by-user [入力]` | 名指しのみ | `playbooks/add-awi-by-user.md`（「読む節」に従う） |
+| `implement [入力]` | 名指しのみ | `playbooks/implement.md` |
+| `process-user-comments [入力]` | 名指しのみ | `playbooks/process-user-comments.md` |
+| `process-wi [single-lane\|all-repos]` | 名指しのみ | `playbooks/process-wi.md`（「モードの選択」から進む） |
+| `process-loop` | 名指しのみ | `playbooks/process-loop.md` |
 | `review-session [batch\|meta]` | 振り返りの依頼 | `playbooks/review-session.md` |
 | `export-session` | セッション記録の出力依頼 | `playbooks/export-session.md` |
 | `subagent <役割名>` | 委譲先として役割を担う時 | `playbooks/subagent.md`と`roles/<役割名>.subagent.md` |
@@ -86,7 +86,7 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | 操作・判断 | 読む資料 |
 | --- | --- |
 | 確認要否・承認範囲・確認文 | `playbooks/confirmation.md` |
-| 指摘・訂正・割り込み・中止、発話・WI記入欄の解釈 | `playbooks/user-utterance.md` |
+| 「発話の理解」の対象、指摘・訂正・割り込み・中止、発話・WI記入欄の解釈 | `playbooks/user-utterance.md`（「ユーザー発話の解釈」） |
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
 | 報告・確認・認識合わせの要否と送達 | `references/delivery.md` |
 | 進捗・逸脱・改善点・稼働の報告、点検、停止回避、再提案、指摘・割り込み・是正・WI回答、一時エラー後の継続、委譲結果の確認中継 | `playbooks/main-reporting.md` |

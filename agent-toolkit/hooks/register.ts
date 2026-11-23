@@ -30,7 +30,7 @@ async function isTerminalMain($: EngineInterface): Promise<boolean> {
 }
 
 export const register: Register = (on) => {
-  const usageLimitSession = { delegated: true, backgroundChanged: false, processLoop: false };
+  const usageLimitSession = { delegated: true, processLoop: false };
   // MCPはmodの無い会話にも同じツールを公開する。画面を持つmodが、その会話の説明だけを初期公開する。
   on("tool.describe", { tool: SEND_TO_USER }, async ($, e, next) => {
     const result = await next(e);
@@ -107,8 +107,8 @@ export const register: Register = (on) => {
     return next(e);
   });
   registerSessionExit(on);
-  registerCompactConversation(on, usageLimitSession);
-  registerUIRequests(on, usageLimitSession);
+  registerCompactConversation(on);
+  registerUIRequests(on);
   registerUsageLimitResume(on, usageLimitSession);
   registerRuntimeRestart(on, usageLimitSession);
   registerAgentPanel(on);

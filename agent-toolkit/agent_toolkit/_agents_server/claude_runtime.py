@@ -12,7 +12,7 @@ from typing import Any
 
 lazy import psutil
 
-from agent_toolkit._agents_server import lifetime, session_errors, session_identity, wait_compaction
+from agent_toolkit._agents_server import lifetime, session_errors, session_identity
 from agent_toolkit._agents_server.claude_channels import _CommandChannel
 from agent_toolkit._agents_server.claude_plugins import ClaudePluginReloader
 from agent_toolkit._agents_server.file_operations import run_file_operation
@@ -46,8 +46,6 @@ class ClaudeRuntime:
         self._channels: dict[str, _CommandChannel] = {}
         self._reply_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._sdk_clients: dict[str, Any] = {}
-        self._service_compaction_checkpoints: dict[str, dict] = {}
-        self._wait_compactors: dict[str, wait_compaction.WaitCompaction] = {}
 
         self._disconnects: set[asyncio.Task[None]] = set()
         self._residual_processes: dict[str, list[psutil.Process]] = {}

@@ -100,7 +100,9 @@ def enqueue(
 
 
 class HookRequestRejected(ValueError):
-    pass
+    def __init__(self, reason: str, *, resend: bool = False) -> None:
+        super().__init__(reason)
+        self.resend = resend
 
 
 async def request(session_id: str, operation: str, inputs: dict[str, Any], *, timeout: float = 10) -> dict[str, Any]:
@@ -115,7 +117,9 @@ async def request(session_id: str, operation: str, inputs: dict[str, Any], *, ti
                 result = None
             if isinstance(result, dict) and result.get("id") == identifier:
                 if result.get("ok") is not True:
-                    raise HookRequestRejected(str(result.get("reason", "modがリクエストを拒否した")))
+                    raise HookRequestRejected(
+                        str(result.get("reason", "modがリクエストを拒否した")), resend=result.get("resend") is True
+                    )
                 return result
             await asyncio.sleep(0.1)
         raise TimeoutError("会話内modの確認応答が期限内にない。表示・予約は成功として扱わない。")

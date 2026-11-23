@@ -67,27 +67,6 @@ class CodexNotificationsMixin:
                 await run_file_operation(usage_refresh.record_codex, params)
             return
         thread_id = _thread_id_from(params)
-        compacting = self._wait_compaction_turns.get(thread_id or "")
-        notification_turn_id = self._notification_turn_id(params)
-        if compacting is not None and notification_turn_id is not None and notification_turn_id != compacting.original_turn_id:
-            # 圧縮は独立したturnを発生する。担当のturn ID・結果・待機対象を変更しない。
-            session = self.sessions.get(thread_id or "")
-            if session is not None:
-                await compaction_metrics.observe_compaction_item(session, method, params)
-            if method == "turn/completed":
-                turn = params.get("turn")
-                if not isinstance(turn, dict) or turn.get("status") != "completed":
-                    compacting.error = "待機中の会話圧縮が正常に完了しなかった"
-                self._wait_compaction_turns.pop(thread_id or "", None)
-                compacting.done.set()
-                await self._notify_waiters()
-            elif method == "thread/tokenUsage/updated":
-                session = self.sessions.get(thread_id or "")
-                usage = params.get("tokenUsage")
-                last = usage.get("last") if isinstance(usage, dict) else None
-                if session is not None and isinstance(usage, dict) and isinstance(last, dict):
-                    context_usage.record_context_usage(session, last.get("totalTokens"), usage.get("modelContextWindow"))
-            return
         if method == "thread/tokenUsage/updated":
             thread_id = params.get("threadId")
             session = self.sessions.get(thread_id) if isinstance(thread_id, str) else None
@@ -374,10 +353,6 @@ class CodexNotificationsMixin:
         detail = str(error) or error.__class__.__name__
         changed = False
         for session in self._client_sessions(client):
-            compacting = self._wait_compaction_turns.pop(session.session_id, None)
-            if compacting is not None:
-                compacting.error = detail
-                compacting.done.set()
             if not session.terminal or session.failure_pending_completion:
                 if session.awaiting_auto_resume and session.pending_result is not None:
                     resume_waits.finalize_pending_result(session, touch=False)

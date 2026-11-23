@@ -21,7 +21,6 @@ from agent_toolkit._agents_server import (
     service_turns,
     session_errors,
     session_identity,
-    wait_compaction,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import state as shared_state
@@ -138,12 +137,10 @@ class ClaudeStream(ClaudeTurns):
         result_contract_recovery_consumed: bool = False,
         existing_session: SessionState | None = None,
         adopted_client: SdkResource | None = None,
-        auxiliary: dict | None = None,
     ) -> None:
         client: Any = None
         proxy_created = False
         usage_observer: _ContextUsageObserver | None = None
-        wait_compactor: wait_compaction.WaitCompaction | None = None
         session: SessionState | None = None
         channel = _CommandChannel()
         iterator: Any = None
@@ -202,8 +199,6 @@ class ClaudeStream(ClaudeTurns):
             session.touch()
             self._channels[session_id] = channel
             self._sdk_clients[session_id] = client
-            if wait_compactor is not None:
-                self._wait_compactors[session_id] = wait_compactor
             current_task = asyncio.current_task()
             if current_task is not None:
                 self._task_sessions[current_task] = session_id
@@ -230,13 +225,6 @@ class ClaudeStream(ClaudeTurns):
             else:
                 client = self._client_factory(options)
             usage_observer = _ContextUsageObserver(client)
-            # 使用量APIの解決を待機時まで遅らせ、未対応SDKでも通常の起動・結果回収を保つ。
-            wait_compactor = wait_compaction.WaitCompaction(
-                lambda: client.get_context_usage(),  # pylint: disable=unnecessary-lambda
-                lambda key: channel.send("compact", key),
-            )
-            if auxiliary and (checkpoint := auxiliary.get("wait_compaction")):
-                wait_compactor.restore(checkpoint)
             diagnostic.stage = "connecting"
             if adopted_client is None:
                 await client.connect()
@@ -249,7 +237,6 @@ class ClaudeStream(ClaudeTurns):
                 self.sessions[session.session_id] = session
                 self._channels[session.session_id] = channel
                 self._sdk_clients[session.session_id] = client
-                self._wait_compactors[session.session_id] = wait_compactor
                 current_task = asyncio.current_task()
                 assert current_task is not None
                 self._task_sessions[current_task] = session.session_id
@@ -265,9 +252,6 @@ class ClaudeStream(ClaudeTurns):
                 if isinstance(client, SdkResource) and client.transferred:
                     break
                 await reloader.reload_if_idle(client, session)
-                if session is not None:
-                    self._wait_compactors[session.session_id] = wait_compactor
-                    wait_compactor.observe(session)
                 loop = asyncio.get_running_loop()
                 now = loop.time()
                 deadline = resume_waits.auto_resume_wait_deadline(session) if session is not None else None
@@ -456,10 +440,6 @@ class ClaudeStream(ClaudeTurns):
 
             async def cleanup_runtime(pins: process_tree.ProcessIdentityPins) -> None:
                 nonlocal retrieved
-                if wait_compactor is not None:
-                    if session is not None and isinstance(client, SdkResource) and client.transferred:
-                        self._service_compaction_checkpoints[session.session_id] = wait_compactor.checkpoint()
-                    await wait_compactor.close()
                 if diagnostic.mcp_recovery_task is not None:
                     if not diagnostic.mcp_recovery_task.done():
                         diagnostic.mcp_recovery_task.cancel()
@@ -556,7 +536,6 @@ class ClaudeStream(ClaudeTurns):
                     if session is not None:
                         resources.callback(self._channels.pop, session.session_id, None)
                         resources.callback(self._sdk_clients.pop, session.session_id, None)
-                        resources.callback(self._wait_compactors.pop, session.session_id, None)
                         resources.push_async_callback(session.drain_registration)
                     await cleanup_runtime(resources.enter_context(process_tree.ProcessIdentityPins()))
 

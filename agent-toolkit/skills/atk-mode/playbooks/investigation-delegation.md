@@ -42,7 +42,7 @@ AWIとして登録して処理する場合（`process-wi`の即時対応、次�
 
 | 引数 | 値 |
 | --- | --- |
-| `cwd` | 調査対象のリポジトリの作業ツリーの絶対パス。見つけたエージェントがその作業ツリーで動いていれば自分の作業ディレクトリ、対象の外で動く場合（常駐起動の統括など）は対象の主作業ツリー（`agent-toolkit:atk-mode/playbooks/process-wi.md`「用語」。常駐起動では集合JSONの`worktree`） |
+| `cwd` | 調査対象のリポジトリの作業ツリーの絶対パス。見つけたエージェントがその作業ツリーで動いていれば自分の作業ディレクトリ、対象の外で動く場合（常駐起動の統括など）は対象の主作業ツリー（`agent-toolkit:atk-mode/playbooks/process-wi.md`「用語」。all-reposでは対象要素の`worktree`） |
 | `subagent_md_path` | `defect-investigation` |
 | `extra_params` | 本書「渡す入力」の各項目 |
 

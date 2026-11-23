@@ -341,3 +341,16 @@ def test_assignment_union_is_not_plan_completion(tmp_path: Path, capsys: pytest.
     (changed,) = read_jsonl(capsys)
     assert changed["gaps"]["rollouts_with_ambiguous_assignment"] == 1
     assert changed["assigned_record_rates"] is None
+
+
+def test_second_precision_progress_rows_give_intervals(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    plan = _plan(
+        tmp_path,
+        "15-0000_seconds.md",
+        "/work/lane-01",
+        ["20261115-000000-001"],
+        "| 2026-11-15T00:00:00+09:00 | 開始: 実装 | |\n| 2026-11-15T00:30:45+09:00 | 終了: 実装 | |",
+    )
+    assert evidence.main(["--stats", "--saved-plan", str(plan)]) == 0
+    (event,) = read_jsonl(capsys)
+    assert event["plans"]["recorded_work"]["phase_minutes_per_wi"] == {"実装": 30.75}

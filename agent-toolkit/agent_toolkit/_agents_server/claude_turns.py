@@ -19,7 +19,6 @@ from agent_toolkit._agents_server import (
     resume_waits,
     service_turns,
     turn_state,
-    wait_compaction,
     wait_output_tracking,
 )
 from agent_toolkit._agents_server import plugin_root as plugin_roots
@@ -183,13 +182,6 @@ class ClaudeTurns(ClaudeRuntime):
             return iterator
         if reloader is not None:
             await reloader.reload_if_idle(client, session)
-        if command_kind == "compact":
-            # SDKではターン間の$.session.compact()を使えない。公開/compact入力を所有キューで直列化する。
-            # 予約後の完了通知や追送を先に消費し、待機が変わった場合は新しいturnを起こさない。
-            if wait_compaction.wait_key(session) != prompt:
-                future.set_result(("compact_skipped", None))
-                return iterator
-            prompt = "/compact"
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or session.awaiting_auto_resume or held is not None else "steer"
         previous_result = session.previous_result() if kind == "reply" and held is None else None

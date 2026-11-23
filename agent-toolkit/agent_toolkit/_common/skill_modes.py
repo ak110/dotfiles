@@ -3,7 +3,15 @@ import re
 _MODES = {"process-wi": {"single-lane", "all-repos"}, "review-session": {"batch", "meta"}}
 
 ENTRY_SKILL = "atk-mode"
-ENTRY_WORKS = ("add-awi-by-user", "implement", "process-wi", "process-loop", "review-session", "export-session")
+ENTRY_WORKS = (
+    "add-awi-by-user",
+    "implement",
+    "process-user-comments",
+    "process-wi",
+    "process-loop",
+    "review-session",
+    "export-session",
+)
 """入口が受け付ける、ユーザーが名指しする作業の名前。"""
 
 PROCESS_WI = "agent-toolkit:process-wi"

@@ -43,7 +43,8 @@ Claude Code 2.1.309の`claude plugin test agent-toolkit`で、公開modの登録
 Python側の公開`wait-compaction-context`も、所有・mode・待機登録・保存時刻の12ケースで確認した。
 modの全136件は成功した。
 外部モデルによる実際の要約生成はこの試験へ含まない。
-再検証は同じ公開testコマンドと`wait_compaction_context_test.py`を使い、実際の要約生成を調べる場合は同月9日の隔離セッション手順で、予約・ホストの結果・待機の再開を分けて観測する。
+2026年11月23日に背景待機からの自動予約を撤去した。
+現行版では公開testコマンドで手動予約を、`wait_compaction_context_test.py`で再起動に使う所有確認を再検証する。
 
 ## agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日
 
@@ -68,9 +69,8 @@ modの全136件は成功した。
   headlessの直接`session.compact`は未対応のHooksErrorを返した。
   slash commandsが有効な同じ隔離会話で`command.run({command:"compact"})`を使うと、compact_boundaryと背景タスクの結果回収を観測した。
   試行では使用量の閾値を縮小し、所有照会と原本所在だけをfixtureへ差し替えたため、製品の400,000トークン・40%閾値と所有判定の実データでの成立はこの観測の対象外である。
-- 再検証: 読取・Bashだけを使う新規headless会話に、製品の圧縮modを登録する。
-  独立した検証用背景タスクを開始し、同一turnで結果を待つ。
-  使用量・所有条件が成立した入力で、予約診断、turn完了、compact_boundary、同一会話の背景結果回収の順を確認する。
-  surfaceを持つ会話は直接APIとskip判定を比較する。
-  `claude plugin test agent-toolkit`で通知先着、閾値両境界、委譲先の除外、予約重複、skip・例外後の再予約を確認する。
+- 現行版の再検証: 2026年11月23日に背景待機からの自動予約を撤去した。
+  隔離したheadless会話で手動予約し、turn完了後の`command.run`、compact_boundary、同一会話の背景結果回収を確認する。
+  対話画面を持つ会話では直接APIとskip判定を比較する。
+  `claude plugin test agent-toolkit`で手動予約の成功、自動再開の明示指定、skipと例外を確認する。
   通常の作業会話へ検証用の圧縮を送らない。

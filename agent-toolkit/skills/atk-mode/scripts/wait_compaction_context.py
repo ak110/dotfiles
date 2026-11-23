@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""背景Bashの待機時圧縮と、agents waitの所有を確認する。"""
+"""再起動時に背景Bashのagents waitの所有を確認する。"""
 
 from __future__ import annotations
 

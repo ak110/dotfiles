@@ -2,8 +2,8 @@
 
 ## 待機と終了結果・通知
 
-世代移譲では待機対象、保留、配送済み結果と`WaitCompaction`の補助状態も引き継ぐ。
-実行中の独立圧縮turnは終了を待ってから移譲する。
+世代移譲では待機対象、保留、配送済み結果を引き継ぐ。
+旧版が渡す背景待機の圧縮補助状態は読み飛ばす。
 実turn終了までは旧backendが解釈し、保存を現行writerへ転送する。
 移譲後は新backendが旧資源のrawイベントを解釈し、既存の結果・通知保存が成功してから受領を確定する。
 保存ACK前のイベントを残す旧世代を期限だけで停止せず、移譲のための圧縮・query・中断・promptを追加しない。
@@ -13,8 +13,6 @@
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| 背景待機の圧縮予約と再圧縮抑止 | 所有タスクの`WaitCompaction`。Codexは`AppServerManager._wait_compactors`、ClaudeはSDK実行タスクのローカル変数に保持する | 該当の所有バックエンドのみ | `wait_compaction.py`が待機の同一性、60秒、使用量（400,000トークンと文脈上限の40%の大きい方以上）と単発実行を判定する。圧縮後は閾値未満の観測まで反復を抑止する。所有接続の切断前に予約を取消し回収する。永続化・CLIからの更新は行わない |
-| Codexの独立した待機中圧縮turn | `AppServerManager._wait_compaction_turns`内の完了イベント・元の担当turn ID・失敗 | Codexバックエンドの通知処理、通常追送、接続解放処理 | 所有バックエンドが既存の`turn_control_lock`で予約と通常追送を直列化する。別turnの通知で担当の結果を上書きせず、完了・明示拒否・接続終了を観測して解除する。取消しやタイムアウト後も未完了の操作を保持する |
 | 終了時の結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`、同名の未回収結果があれば`<session_id>.<turn番号>-<終了時刻のSHA-256>.json`。各結果の公開記録は`results/.published/<session_id>/<turn番号>-<終了時刻のSHA-256>`に残る | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成および削除）、待機CLI（自身と同じ書込主体が公開した結果のみを削除） |
 | CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | `atk agents wait`。1つの書込主体に対して同時に1つの実行プロセスのみが全対象を待機する。ロックファイル自体はロック解放後も削除せず保持する |
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`および`current.json` | 先行する待機処理へ合流する後続の`atk agents wait`、待機対象0件（終了コード10）および`consumed`（終了コード8）の診断情報を生成する後続の`atk agents wait` | 先行する待機処理が`running`、`published`、および再待機が必要かを示す`continuable`を書き込み、結果を返却した後続の待機処理が`consumed`を書き込む |

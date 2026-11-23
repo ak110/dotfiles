@@ -8,7 +8,7 @@ import typing
 from collections.abc import Coroutine
 from typing import Any
 
-from agent_toolkit._agents_server import lifetime, service_io, session_errors, wait_compaction
+from agent_toolkit._agents_server import lifetime, service_io, session_errors
 from agent_toolkit._agents_server.codex_protocol import AppServerError, ResourceReleaseError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import finish_task
@@ -27,31 +27,10 @@ class CodexClientsMixin:
 
     _close_task: asyncio.Task[None] | None = None
 
-    async def export_service_state(self: CodexManager, session_id: str) -> dict:
-        if session_id in self._wait_compaction_turns:
-            raise RuntimeError("実行中の待機圧縮turnの完了後に移譲を再試行してください")
-        compactor = self._wait_compactors.get(session_id)
-        if compactor is None:
-            return {}
-        checkpoint = compactor.checkpoint()
-        await compactor.close()
-        return {"wait_compaction": checkpoint}
-
-    async def adopt_session(self: CodexManager, session: SessionState, descriptor: dict, auxiliary: dict) -> None:
+    async def adopt_session(self: CodexManager, session: SessionState, descriptor: dict, _auxiliary: dict) -> None:
         runtime = service_io.current()
         if runtime is None:
             raise RuntimeError("サービス実行contextがありません")
-        if checkpoint := auxiliary.get("wait_compaction"):
-
-            async def usage() -> dict[str, object]:
-                return {"totalTokens": session.context_tokens, "rawMaxTokens": session.context_window}
-
-            async def enqueue(key: str) -> None:
-                await self._compact_wait(session, key)
-
-            compactor = wait_compaction.WaitCompaction(usage, enqueue)
-            compactor.restore(checkpoint)
-            self._wait_compactors[session.session_id] = compactor
 
         async def notification(message: dict) -> None:
             await self._handle_notification(message)
@@ -196,9 +175,6 @@ class CodexClientsMixin:
 
     async def _release_owned_client(self: CodexManager, session_id: str) -> None:
         await self._stop_auto_reset(session_id)
-        compactor = self._wait_compactors.pop(session_id, None)
-        if compactor is not None:
-            await compactor.close()
         client = self._clients.get(session_id)
         if client is None:
             return
@@ -207,10 +183,6 @@ class CodexClientsMixin:
             raise ResourceReleaseError(session_id, list(residual))
         if self._clients.get(session_id) is client:
             del self._clients[session_id]
-        compacting = self._wait_compaction_turns.pop(session_id, None)
-        if compacting is not None:
-            compacting.error = "圧縮中の接続を終了した"
-            compacting.done.set()
 
     async def read_thread_turns(self: CodexManager, session_id: str) -> list[tuple[str, str]]:
         async with contextlib.AsyncExitStack() as resources:
