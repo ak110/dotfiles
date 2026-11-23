@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -72,6 +73,21 @@ def test_wait_mcp_processes_fails_for_living_process(
     assert "stdio_client" in message
 
 
+def _copy_plugin_distribution(plugin: pathlib.Path, destination: pathlib.Path) -> None:
+    listed = subprocess.run(
+        ["git", "-C", str(plugin), "ls-files", "-z", "--cached"],
+        capture_output=True,
+        check=True,
+    ).stdout
+    for name in set(os.fsdecode(listed).split("\0")) - {""}:
+        source = plugin / name
+        if source.name.endswith("_test.py") or not (source.is_file() or source.is_symlink()):
+            continue
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target, follow_symlinks=False)
+
+
 @pytest.mark.timeout(180)
 @pytest.mark.asyncio
 @pytest.mark.usefixtures("share_package_caches")
@@ -87,7 +103,7 @@ async def test_stable_plugin_root_shared_across_processes(
     manifest = json.loads((plugin / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
     version = manifest["version"]
     source = tmp_path / "distribution" / version
-    shutil.copytree(plugin, source, ignore=shutil.ignore_patterns(".venv", "__pycache__", ".git", "node_modules", "*_test.py"))
+    _copy_plugin_distribution(plugin, source)
     version_file = pathlib.Path("skills/atk-mode/SKILL.md")
     original = (source / version_file).read_bytes()
     environment = _real_mcp_environment(tmp_path, tmp_path_factory, host_environ)
