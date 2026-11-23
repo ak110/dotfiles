@@ -52,3 +52,53 @@ for (const scenario of ["restart", "update", "process", "none", "other", "repl",
     }
   });
 }
+
+for (const status of ["completed", "failed", "killed"] as const) {
+  test(`背景タスクの終了通知は該当IDだけを除き、再起動では残った所有waitだけを止める: ${status}`, async ($, on) => {
+    mock.env(on, { HOME: "/home/tester" });
+    mock.session(on);
+    const clock = mock.clock(on);
+    const requests = { ["a".repeat(32)]: "finished-wait", ["b".repeat(32)]: "remaining-wait" };
+    const registered: string[][] = [];
+    const stopped: string[] = [];
+    on("session.id", () => ({ value: "controller" }));
+    on("session.start", (_$, e) => ({ cwd: e.cwd }));
+    on("command.register", (_$, e) => ({ value: { command: e.name } }));
+    on("command.run", () => ({ text: "再起動を受理した" }));
+    on("fs.list", () => ({ value: Object.keys(requests).map((id) => ({ name: `ui-request-controller-${id}.txt`, kind: "file", size: 1, mtimeMs: 0, isLink: false })) }));
+    on("fs.exists", () => ({ value: true }));
+    on("fs.read", (_$, e) => {
+      const request = Object.entries(requests).find(([id]) => e.path.endsWith(`ui-request-controller-${id}.txt`));
+      if (!request) return { value: "consumed" };
+      const [id, taskId] = request;
+      return { value: JSON.stringify({ id, operation: "background_task", input: { id: taskId, command: "atk agents wait" }, expires: 99999999999 }) };
+    });
+    on("fs.write", () => ({ value: undefined }));
+    on("state.set", { plugin: "agent-toolkit", key: "backgroundWaits" }, async (_$, e, next) => {
+      const result = await next(e);
+      registered.push(Object.keys(e.value ?? {}).sort());
+      return result;
+    });
+    on("process.run", () => ({ value: { exitCode: 0, stdout: '{"eligible":true,"sessions":[{"session_id":"child"}]}', stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+    on("tool.check", () => ({ decision: "allow" }));
+    on("tool.call", { tool: "TaskStop" }, (_$, e) => {
+      stopped.push(String(e.task_id));
+      return { result: { task_id: String(e.task_id), task_type: "local_bash", message: "Successfully stopped task" } };
+    });
+    on("turn.start", (_$, e) => ({ turnId: e.turnId }));
+    await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
+    await $.turn.start({ text: "作業", turnId: "controller-turn" });
+    await clock.advance(100);
+    expect(registered.at(-1)).toEqual(["finished-wait", "remaining-wait"]);
+
+    await $.session.append({
+      door: "delivery", origin: { kind: "composer" }, uuid: "5a19a2af-394f-4123-8c40-72e5e53e2d34",
+      message: { type: "user", content: [{ type: "text", text: `<task-notification><task-id>finished-wait</task-id><status>${status}</status></task-notification>` }] },
+    });
+    expect(registered.at(-1)).toEqual(["remaining-wait"]);
+
+    const result = await $.command.run({ command: "restart", args: "", origin: { kind: "composer" }, presentation: { isFullscreen: false, columns: 80 } });
+    expect(result.text).toBe("再起動を受理した");
+    expect(stopped).toEqual(["remaining-wait"]);
+  });
+}
