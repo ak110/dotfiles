@@ -259,3 +259,55 @@ def test_session_start_notifies_delegates(
     assert rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(repository)})) == 0
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "example.test/team/repo" in context and "agent-toolkit:atk-mode/playbooks/wi-drafting.md" in context
+
+
+@pytest.mark.parametrize(
+    "options",
+    ["-C {target}", "--no-pager -C {target}", "--git-dir={git_dir} --work-tree {target}"],
+)
+@pytest.mark.parametrize(
+    "target_kind, expected",
+    [
+        ("allowed", None),
+        ("denied", "example.test/team/denied"),
+        ("relative", "コミット先のリポジトリを解決できない"),
+        ("missing", "コミット先のリポジトリを解決できない"),
+        ("outside", "コミット先のリポジトリを解決できない"),
+    ],
+)
+def test_codex_commit_after_unknown_cwd(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, options: str, target_kind: str, expected: str | None
+) -> None:
+    allowed = git.init_repository(tmp_path / "allowed", origin="https://example.test/team/allowed.git")
+    denied = git.init_repository(tmp_path / "denied", origin="https://example.test/team/denied.git")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    targets = {
+        "allowed": allowed,
+        "denied": denied,
+        "relative": pathlib.Path("../allowed"),
+        "missing": allowed / "missing",
+        "outside": outside,
+    }
+    monkeypatch.setenv(
+        "AGENT_TOOLKIT_CONFIG_REPOSITORIES",
+        json.dumps({"example.test/team/allowed": {"edit": "allow"}, "example.test/team/denied": {"edit": "deny"}}),
+    )
+    target = targets[target_kind]
+    git_options = options.format(target=shlex.quote(str(target)), git_dir=shlex.quote(str(target / ".git")))
+    payload = {
+        "hook_event_name": "PreToolUse",
+        "session_id": "repository-protection",
+        "turn_id": "turn",
+        "tool_name": "Bash",
+        "cwd": str(denied),
+        "tool_input": {
+            "command": f'uvx "$CHECK" && git {git_options} commit --amend --no-edit',
+        },
+    }
+    result = _run_hook_in_process("pretooluse", payload)
+    assert result.returncode == 0 and not result.stderr
+    if expected:
+        assert expected in denial_reason(result)
+    else:
+        assert json.loads(result.stdout or "{}").get("hookSpecificOutput", {}).get("permissionDecision") != "deny"

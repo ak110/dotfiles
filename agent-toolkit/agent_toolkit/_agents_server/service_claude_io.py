@@ -38,7 +38,22 @@ class SdkResource:
         async def owner() -> None:
             raw = factory(options)
             reader = None
+            observations: set[asyncio.Task[None]] = set()
             closed = False
+
+            async def observe(result: asyncio.Future, arguments: dict) -> None:
+                try:
+                    result.set_result(await raw.get_context_usage(**arguments))
+                except asyncio.CancelledError:
+                    result.cancel()
+                    raise
+                except Exception as error:
+                    result.set_exception(error)
+
+            async def stop_observations() -> None:
+                for observation in observations:
+                    observation.cancel()
+                await asyncio.gather(*observations, return_exceptions=True)
 
             async def read() -> None:
                 try:
@@ -59,6 +74,7 @@ class SdkResource:
                     name, arguments, result = await commands.get()
                     try:
                         if name == "shutdown":
+                            await stop_observations()
                             if reader is not None:
                                 reader.cancel()
                                 await asyncio.gather(reader, return_exceptions=True)
@@ -69,6 +85,11 @@ class SdkResource:
                                 await close_io()
                             result.set_result(None)
                             return
+                        if name == "get_context_usage":
+                            observation = asyncio.create_task(observe(result, arguments))
+                            observations.add(observation)
+                            observation.add_done_callback(observations.discard)
+                            continue
                         # SDKの既存control request接続を、同じ所有taskで使う。
                         target = raw._query if name == "_send_control_request" else raw  # pylint: disable=protected-access
                         value = await getattr(target, name)(**arguments)
@@ -81,6 +102,7 @@ class SdkResource:
                         result.set_exception(error)
             finally:
                 if not closed:
+                    await stop_observations()
                     if reader is not None:
                         reader.cancel()
                         await asyncio.gather(reader, return_exceptions=True)

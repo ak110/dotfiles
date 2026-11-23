@@ -11,10 +11,18 @@ from agent_toolkit._common.bash_invocations import is_unknown_word
 from agent_toolkit._common.shell_tokens import is_atk_command
 from agent_toolkit._hooks import tool_input
 from agent_toolkit._hooks.notice import block_formatter
-from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
+from agent_toolkit._hooks.pretooluse.shell_checks_git import _GLOBAL_OPTIONS_WITH_VALUE, git_subcommand_tokens
 lazy from agent_toolkit._atk import config_repositories, config_settings, managed_temp
 
 _block = block_formatter("repository-protection")
+_UNRESOLVED_COMMIT = "コミット先のリポジトリを解決できない。"
+
+
+def _unresolved_commit() -> str:
+    return _block(
+        _UNRESOLVED_COMMIT,
+        fix="作業ディレクトリと`git -C`の値を実在する絶対パスで指定して再実行せよ。",
+    )
 
 
 def _guidance(repo_id: str, edit: str | None) -> str:
@@ -32,13 +40,20 @@ def _guidance(repo_id: str, edit: str | None) -> str:
     )
 
 
-def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit: bool = False) -> tuple[str, str] | None:
+def path_restriction(
+    path: str,
+    *,
+    git_options: tuple[str, ...] = (),
+    git_commit: bool = False,
+    require_repository: bool = False,
+) -> tuple[str, str] | None:
     original = pathlib.Path(path).expanduser().absolute()
 
     candidates = [original, original.resolve()]
     candidates.extend(parent.parent for parent in original.parents if parent.is_symlink())
     exempt_roots = (private_notes.default_private_notes().resolve(), managed_temp.temp_root_path().resolve())
     repositories = None
+    found = False
     for candidate in dict.fromkeys(candidates):
         if not git_options and not git_commit and any(candidate.is_relative_to(root) for root in exempt_roots):
             continue
@@ -47,12 +62,11 @@ def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit
             parent = parent.parent
         location = config_repositories.locate(parent, git_options=git_options)
 
-        if (
-            location is None
-            or (git_options or git_commit)
-            and any(
-                location.worktree.is_relative_to(root) and location.common_dir.is_relative_to(root) for root in exempt_roots
-            )
+        if location is None:
+            continue
+        found = True
+        if (git_options or git_commit) and any(
+            location.worktree.is_relative_to(root) and location.common_dir.is_relative_to(root) for root in exempt_roots
         ):
             continue
         if repositories is None:
@@ -65,15 +79,46 @@ def path_restriction(path: str, *, git_options: tuple[str, ...] = (), git_commit
             f"repository {location.repo_id}は{edit or '未登録（既定deny）'}のため直接編集できない。",
             _guidance(location.repo_id, edit),
         )
+    if require_repository and not found:
+        return (
+            _UNRESOLVED_COMMIT,
+            "対象が実在するGit作業ツリーであることを確認して再実行せよ。",
+        )
     return None
 
 
+def _fixed_git_base(options: tuple[str, ...]) -> pathlib.Path | None:
+    base = None
+    git_dir = work_tree = pathlib.Path()
+    arguments = iter(options)
+    for token in arguments:
+        if token == "--bare" and base is None:
+            return None
+        option, separator, value = token.partition("=")
+        if token in _GLOBAL_OPTIONS_WITH_VALUE:
+            value = next(arguments)
+        elif not separator:
+            continue
+        path = pathlib.Path(value)
+        if option == "-C" and value and base is None:
+            if not path.is_absolute():
+                return None
+            base = pathlib.Path(path.anchor)
+        elif option == "--git-dir":
+            git_dir = path
+        elif option == "--work-tree":
+            work_tree = path
+    if base is None and git_dir.is_absolute() and work_tree.is_absolute():
+        base = pathlib.Path(work_tree.anchor)
+    return base
+
+
 def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
-    paths: list[tuple[str, tuple[str, ...]]] = []
+    paths: list[tuple[str, tuple[str, ...], bool]] = []
     if tool_name == "NotebookEdit":
         path = tool_input_value.get("notebook_path")
         if isinstance(path, str) and path:
-            paths.append((str(pathlib.Path(cwd) / path), ()))
+            paths.append((str(pathlib.Path(cwd) / path), (), False))
     elif tool_name == "Bash":
         command = tool_input_value.get("command")
         if not isinstance(command, str):
@@ -102,22 +147,26 @@ def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
                 )
             base = pathlib.Path(current.path)
             prefix = tokens[: len(tokens) - len(parsed[1]) - 1]
-            if not current.resolved or any(is_unknown_word(token) or "$" in token or "`" in token for token in prefix):
-                return _block(
-                    "コミット先のリポジトリを解決できない。",
-                    fix="作業ディレクトリと`git -C`の値を実在する絶対パスで指定して再実行せよ。",
-                )
+            if any(is_unknown_word(token) or "$" in token or "`" in token for token in prefix):
+                return _unresolved_commit()
             options = () if is_atk_command(tokens) else tuple(prefix[1:])
-            paths.append((str(base), options))
+            if not current.resolved:
+                fixed_base = _fixed_git_base(options)
+                if fixed_base is None:
+                    return _unresolved_commit()
+                base = fixed_base
+            paths.append((str(base), options, not current.resolved))
     else:
         operations = tool_input.parse_operations(tool_name, tool_input_value, cwd)
         if operations is None:
             return None
         for operation in operations:
-            paths.extend((path, ()) for path in (operation.path, operation.source_path) if path)
+            paths.extend((path, (), False) for path in (operation.path, operation.source_path) if path)
     try:
-        for path, options in dict.fromkeys(paths):
-            restriction = path_restriction(path, git_options=options, git_commit=tool_name == "Bash")
+        for path, options, require_repository in dict.fromkeys(paths):
+            restriction = path_restriction(
+                path, git_options=options, git_commit=tool_name == "Bash", require_repository=require_repository
+            )
             if restriction:
                 return _block(restriction[0], fix=restriction[1])
     except (OSError, ValueError, subprocess.SubprocessError) as error:

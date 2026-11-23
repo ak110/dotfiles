@@ -17,6 +17,7 @@ from typing import Any
 import claude_agent_sdk
 import pytest
 from claude_agent_sdk import ToolResultBlock, UserMessage
+from mcp.types import CallToolRequestParams, CallToolResult
 
 from agent_toolkit import atk
 from agent_toolkit._agents_server import (
@@ -24,6 +25,7 @@ from agent_toolkit._agents_server import (
     claude,
     launch_requests,
     launch_requests_preflight,
+    mcp_tools,
     responses,
     service_io,
     service_rpc,
@@ -52,6 +54,70 @@ from agent_toolkit._testing.agents_server_support import (
     _without_root,
     install_backend,
 )
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_mcp_steers_running_claude_before_usage_and_turn_complete(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sdk_messages: asyncio.Queue[Any] = asyncio.Queue()
+    observing, release_observation = asyncio.Event(), asyncio.Event()
+    received: list[str] = []
+    usage_replied = asyncio.Event()
+
+    class Raw:
+        def __init__(self, _options: Any) -> None:
+            pass
+
+        async def connect(self, prompt: Any = None) -> None:
+            del prompt
+
+        async def receive_messages(self):
+            while True:
+                yield await sdk_messages.get()
+
+        async def get_context_usage(self) -> dict:
+            observing.set()
+            await release_observation.wait()
+            usage_replied.set()
+            return {}
+
+        async def query(self, prompt: str, session_id: str = "default") -> None:
+            del session_id
+            received.append(prompt)
+            if len(received) == 1:
+                await sdk_messages.put(claude_agent_sdk.SystemMessage("init", {"session_id": "active-steer"}))
+
+        async def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr(
+        claude, "_build_options", lambda *_args, **_kwargs: SimpleNamespace(plugins=[{"path": str(SERVER_PLUGIN_ROOT)}])
+    )
+    runtime = service_io.Runtime("G1", {"generation": "G1"}, ResourceBroker("G1"))
+    with service_io.bind(runtime):
+        async with (
+            server_manager.AgentsServerManager() as manager,
+            claude.ClaudeServerManager(manager.sessions, manager._condition, client_factory=Raw) as backend,
+        ):
+            install_backend(manager, "claude", backend)
+            session = await backend.start("最初の指示", str(tmp_path))
+            params = CallToolRequestParams(
+                name="send_message", arguments={"session_id": session.session_id, "prompt": "追加する指示"}
+            )
+            token = mcp_tools._SELECTED_MANAGER.set(manager)
+            try:
+                async with asyncio.timeout(3):
+                    await observing.wait()
+                    reply = await mcp_tools.mcp._call_registered_tool(None, params)
+                assert isinstance(reply, CallToolResult) and not reply.is_error
+                assert reply.structured_content is not None and reply.structured_content["delivery"] == "steered"
+                assert not usage_replied.is_set() and not session.turn_completed
+                assert len(received) == 2 and received[0] == "最初の指示" and "\n追加する指示\n" in received[1]
+            finally:
+                release_observation.set()
+                mcp_tools._SELECTED_MANAGER.reset(token)
 
 
 @pytest.mark.usefixtures("agents_server_isolation")
