@@ -32,6 +32,22 @@ def _register(path: pathlib.Path) -> dict:
     return target
 
 
+def _save_report_and_finish(notes, monkeypatch, args, body):
+    monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
+    monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
+    add.add_entries(
+        notes,
+        messages=[f"---\nrun_skill_report: true\n---\n# 振り返り結果\n\n{body}"],
+        target_repo=args.target_repo,
+        source="run-skill",
+        now=datetime.datetime.now(datetime.UTC),
+        entry_type="uwi",
+        scope=session_review.BATCH_SCOPE,
+        question_type="post-approval",
+    )
+    assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
+
+
 def _assert_sweeps_keep(monkeypatch, work_dirs: set[pathlib.Path], now: datetime.datetime) -> None:
     with monkeypatch.context() as pressure:
         pressure.setenv(sweep.MIN_FREE_RATIO_ENV, "0.1")
@@ -110,22 +126,13 @@ def test_partial_batch_finishes_with_gaps_and_reclaims_relocated_bundle(tmp_path
         writer = session_review.BatchWriter(pathlib.Path(args.batch_manifest))
         with pytest.raises(ValueError, match="report-unsynced"):
             writer.complete(report_synced=False)
-        monkeypatch.setenv("AGENT_TOOLKIT_RUN_SKILL_ID", args.run_id)
-        monkeypatch.setenv(session_review.BATCH_ENV, args.batch_manifest)
-        add.add_entries(
+        _save_report_and_finish(
             notes,
-            messages=[
-                "---\nrun_skill_report: true\n---\n# 振り返り結果\n\n部分分析。欠測2行、失われた断片1件、網羅性は保証外。\n"
-                + json.dumps([*gaps, *partial["recovered_record_lines"]], ensure_ascii=False)
-            ],
-            target_repo=args.target_repo,
-            source="run-skill",
-            now=datetime.datetime.now(datetime.UTC),
-            entry_type="uwi",
-            scope=session_review.BATCH_SCOPE,
-            question_type="post-approval",
+            monkeypatch,
+            args,
+            "部分分析。欠測2行、失われた断片1件、網羅性は保証外。\n"
+            + json.dumps([*gaps, *partial["recovered_record_lines"]], ensure_ascii=False),
         )
-        assert run_script.dispatch(argparse.Namespace(script_name="session-review-state", script_args=["finish"])) == 0
         return 0
 
     args = argparse.Namespace(skill="agent-toolkit:review-session", args="batch", timeout=60, target_repo=None, work_dir=None)
@@ -272,3 +279,49 @@ def test_partial_completion_preserves_new_input(tmp_path, change):
         reviewed = session_review.read(reviewed_path)
         assert reviewed["records"]["claude:partial"]["observed_through_line"] == 3
         assert [event["line"] for event in reviewed["unconfirmed_scope"]] == [2, 3]
+
+
+@pytest.mark.usefixtures("leaf_git_commands")
+@pytest.mark.cpu_limit(1.0, reason="実Gitで報告の同期とbatchの終了を通すため。初回Linux実測は0.572秒。")
+def test_batch_finishes_and_saves_report_for_codex_fork(tmp_path, monkeypatch):
+    notes = git_repository.init_repository(pathlib.Path(os.environ["AGENT_TOOLKIT_PRIVATE_NOTES"]))
+    codex_home = tmp_path / "codex"
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    sessions = codex_home / "sessions/2026/11/19"
+    sessions.mkdir(parents=True)
+    parent = "11111111-1111-4111-8111-111111111111"
+    fork = "22222222-2222-4222-8222-222222222222"
+
+    def write(thread, rows):
+        path = sessions / f"rollout-2026-11-19T03-33-37-{thread}.jsonl"
+        path.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        return path
+
+    def user(message):
+        return {"type": "event_msg", "payload": {"type": "user_message", "message": message}}
+
+    inherited = user("分岐元の依頼")
+    write(parent, [{"type": "session_meta", "payload": {"id": parent}}, inherited])
+    transcript = write(
+        fork,
+        [{"type": "session_meta", "payload": {"id": fork, "forked_from_id": parent}}, inherited, user("分岐後の依頼")],
+    )
+    assert session_review.record(
+        {"hook_event_name": "SessionStart", "session_id": fork, "transcript_path": str(transcript), "cwd": str(tmp_path)},
+        host="codex",
+        target_repo="https://example.com/team/repo",
+    )
+    calls = []
+
+    def execute(args):
+        calls.append(session_review.read(pathlib.Path(args.batch_manifest)))
+        _save_report_and_finish(notes, monkeypatch, args, "分岐後の依頼を確認した。")
+        return 0
+
+    args = argparse.Namespace(skill="agent-toolkit:review-session", args="batch", timeout=60, target_repo=None, work_dir=None)
+    assert run_skill_batch.dispatch(args, execute) == 0
+    assert [[row["session_id"] for row in call["prepared"]] for call in calls] == [[fork]]
+    assert not session_review.pending()
+    saved = session_review.read(session_review.directory() / "reviewed" / f"codex-{fork}.json")
+    assert saved["records"][f"codex:{fork}"]["through_line"] == 3
+    assert len(list(layout.iter_entry_paths(notes))) == 1
