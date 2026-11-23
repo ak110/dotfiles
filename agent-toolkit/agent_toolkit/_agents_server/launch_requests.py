@@ -41,7 +41,7 @@ from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, 
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
-from agent_toolkit._common.message_format import auto_message
+from agent_toolkit._common.message_format import AUTO_INSERTED_ELEMENT, auto_message, opening_tag
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git import remote
 
@@ -322,6 +322,9 @@ def role_model_was_explicit(session: SessionState | SessionResumeState) -> bool:
     if original is None:
         return False
     _, _, document = session.prompt.partition(task_documents.TASK_PROMPT_REFERENCES)
+    launcher_tag = opening_tag(AUTO_INSERTED_ELEMENT, {"source": "agents-server", "kind": "launcher-record"})
+    if document.startswith(launcher_tag + "\n"):
+        _, _, document = document.partition(f"\n</{AUTO_INSERTED_ELEMENT}>\n\n")
     declared = task_documents.read_declaration_unchecked(original, document)
     return (
         isinstance(declared, task_documents.TaskDocumentDeclaration)

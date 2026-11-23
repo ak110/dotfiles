@@ -10,8 +10,8 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._agents_server import launch_requests, plugin_root, result_projection, state
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._agents_server import plugin_root, result_projection, state
 from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._common import session_registry, state_paths, task_documents
 from agent_toolkit._common.next_action import ActionableError
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.usefixtures("agents_server_isolation")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("phase", ["active", "completed", "expired", "registry", "explicit", "unchanged"])
+@pytest.mark.parametrize("phase", ["active", "completed", "expired", "registry", "registry-explicit", "explicit", "unchanged"])
 async def test_repository_process_reply_after_role_model_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, phase: str
 ) -> None:
@@ -39,11 +39,23 @@ async def test_repository_process_reply_after_role_model_change(
     assert role is not None
     async with _manager_with_fake("claude") as (manager, backend):
         session = state.SessionState("thread-1", str(tmp_path), engine="claude", model_type="orchestrate")
-        session.prompt = (
-            task_documents.task_prompt_header(role)
-            + task_documents.TASK_PROMPT_REFERENCES
-            + "---\nmode: delegate\nmodel_type: orchestrate\nwrites_worktree: true\n---\n"
+        original = role.read_text(encoding="utf-8").replace("model_type: execute", "model_type: orchestrate", 1)
+        declaration = task_documents.read_declaration(role, original)
+        assert isinstance(declaration, task_documents.TaskDocumentDeclaration)
+        assert declaration.model_type == "orchestrate"
+        whole = tmp_path / "whole.md"
+        whole.write_text("# 全体作業契約\n", encoding="utf-8")
+        _, generated, _, _ = launch_requests.task_document_request(
+            str(role),
+            {"引き継ぎ記録先": str(tmp_path / "handoff.md")},
+            whole_contract_path=str(whole),
         )
+        session.prompt = launch_requests.with_launcher_record(
+            generated.replace("model_type: execute", "model_type: orchestrate", 1),
+            {"session_id": "launcher"},
+        )
+        if phase == "registry-explicit":
+            session.model_type = "chores"
         if phase != "active":
             _complete(session, message="直前の結果")
         if phase == "explicit":
@@ -51,7 +63,7 @@ async def test_repository_process_reply_after_role_model_change(
         if phase == "unchanged":
             session.model_type = "execute"
             session.explicit_role_model = False
-        if phase == "registry":
+        if phase in {"registry", "registry-explicit"}:
             monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
             session_registry.publish(
                 session.session_id,
@@ -66,10 +78,13 @@ async def test_repository_process_reply_after_role_model_change(
         else:
             manager.sessions[session.session_id] = session
 
-        if phase in {"active", "explicit", "unchanged"}:
+        if phase in {"active", "explicit", "unchanged", "registry-explicit"}:
             result = await manager.send_message(session.session_id, "続行")
             assert result["delivery"] == ("steered" if phase == "active" else "reply_started")
-            assert backend.send_calls == 1
+            if phase == "registry-explicit":
+                assert backend.resume_calls == [session.session_id]
+            else:
+                assert backend.send_calls == 1
         else:
             with pytest.raises(ActionableError, match="orchestrate.*execute") as exc:
                 await manager.send_message(session.session_id, "続行")

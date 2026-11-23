@@ -15,6 +15,7 @@ from typing import Any
 from agent_toolkit._agents_server import (
     claude_mcp,
     configured_model,
+    launch_requests,
     result_contract,
     resume_waits,
     service_turns,
@@ -30,6 +31,7 @@ from agent_toolkit._agents_server.claude_runtime import ClaudeRuntime
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import plugin_resource_instructions
 from agent_toolkit._agents_server.state import SessionState, begin_reply
+from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
 
@@ -184,6 +186,13 @@ class ClaudeTurns(ClaudeRuntime):
             await reloader.reload_if_idle(client, session)
         held = resume_waits.HeldTurn.capture(session)
         kind = "reply" if session.terminal or session.awaiting_auto_resume or held is not None else "steer"
+        if kind == "reply":
+            try:
+                await launch_requests.reject_stale_role_reply(session)
+            except ActionableError as error:
+                if not future.done():
+                    future.set_exception(error)
+                return iterator
         previous_result = session.previous_result() if kind == "reply" and held is None else None
         try:
             gate = service_turns.current()

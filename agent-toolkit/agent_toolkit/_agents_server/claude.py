@@ -20,6 +20,7 @@ from agent_toolkit._agents_server import (
     child_environment,
     claude_settings,
     engine_availability,
+    launch_requests,
     launch_requests_preflight,
     result_projection,
     resume_waits,
@@ -210,6 +211,8 @@ class ClaudeServerManager(ClaudeStream):
         `fast_mode`はCodexの速度の指定であり、本backendは受け取って使わない。
         """
         del fast_mode
+        if existing_session is not None:
+            await launch_requests.reject_stale_role_reply(existing_session)
         selected_connection = claude_connection.apply_current_settings(
             connection_settings.Connection(
                 existing_session.claude_connection or "inherit" if existing_session else connection_kind,

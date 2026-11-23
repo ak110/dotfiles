@@ -11,6 +11,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import (
     engine_availability,
+    launch_requests,
     result_contract,
     result_projection,
     session_errors,
@@ -207,6 +208,7 @@ class CliTurnManager:
                 raise ActionableError(
                     f"the active {self.NAME} turn has not finished", next_action=result_projection.RESEND_AFTER_WAIT_NEXT_ACTION
                 )
+            await launch_requests.reject_stale_role_reply(session)
             previous_result = session.previous_result()
             await self._stop_owned_task(session.session_id)
             await self._start_turn(
