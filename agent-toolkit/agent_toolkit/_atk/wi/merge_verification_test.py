@@ -172,3 +172,27 @@ def test_cmd_edit_checks_merge_metadata_before_persisting_it(tmp_path, monkeypat
     assert exit_info.value.code != 0
     assert "CIが未確認" in capsys.readouterr().err
     assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize(("source", "allowed"), [("push", True), ("web", False), ("merge_request_event", False), (None, False)])
+def test_gitlab_merge_gate_preserves_observed_pipeline_source(monkeypatch, source, allowed):
+    repository = "gitlab.example.com/group/project"
+    body = _body().replace(_REPO, repository)
+    pipeline = {"id": 7, "status": "success", "sha": _COMMIT}
+    if source is not None:
+        pipeline["source"] = source
+
+    def forge_json(command, *_args, **_kwargs):
+        if command[:3] == ["glab", "ci", "list"]:
+            return [pipeline]
+        assert command[0:2] == ["glab", "api"]
+        assert "pipelines/7/jobs?" in command[2]
+        return [{"id": 8, "name": "test", "status": "success", "allow_failure": False}]
+
+    monkeypatch.setattr(wait_ci_forge, "_run_forge_json_command", forge_json)
+    monkeypatch.setattr(wait_ci_forge, "_gitlab_ci_exclusion", lambda *_args: None)
+    if allowed:
+        assert merge_verification.check(body).endswith("push CI成功: 7")
+    else:
+        with pytest.raises(ActionableError, match="CIが未確認"):
+            merge_verification.check(body)

@@ -132,6 +132,24 @@ def test_root_only_selects_a_difference_when_the_history_and_ancestor_exist(monk
         return 0
 
     monkeypatch.setattr(subject.subprocess, "call", call)
+
+    def collect(command, _root, env):
+        call(command, env=env)
+        return 0, ["case_test.py::test_case"]
+
+    monkeypatch.setattr(subject, "_collect_pyfltr", collect)
     assert subject.run_scope("root", selected, tmp_path, collect_only=True, impact_base=base) == 0
     assert calls[0] == ["git", "merge-base", "--is-ancestor", base, "HEAD"]
     assert f"--changed-since={base}" in calls[1]
+
+    monkeypatch.setattr(subject, "_collect_pyfltr", lambda *_args: (0, []))
+    fallback = []
+
+    def record_fallback(argv, **kwargs):
+        fallback.append((argv, kwargs))
+        return 0
+
+    monkeypatch.setattr(subject.subprocess, "call", record_fallback)
+    assert subject.run_scope("root", selected, tmp_path, collect_only=True, impact_base=base) == 0
+    assert fallback[-1][0][-2:] == ["--", "case_test.py"]
+    assert fallback[-1][1]["env"]["TESTSCOPE"] == "off"

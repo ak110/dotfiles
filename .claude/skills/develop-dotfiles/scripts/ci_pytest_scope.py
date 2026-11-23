@@ -112,22 +112,25 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
                 env["PYFLTR_GLOBAL_CONFIG"] = str(config)
                 junit = Path(temporary) / "pytest.xml"
                 args = [*options, *extra] if collect_only else [*options, f"--junitxml={junit}"]
-                code = subprocess.call(
-                    [
-                        sys.executable,
-                        "-m",
-                        "pyfltr",
-                        "ci",
-                        "--commands=pytest",
-                        "--no-always-targets",
-                        f"--changed-since={impact_base}",
-                        f"--pytest-args={shlex.join(args)}",
-                    ],
-                    cwd=root,
-                    env=env,
-                )
-                if code or collect_only or (junit.is_file() and junit.stat().st_size):
-                    return code
+                command = [
+                    sys.executable,
+                    "-m",
+                    "pyfltr",
+                    "ci",
+                    "--commands=pytest",
+                    "--no-always-targets",
+                    f"--changed-since={impact_base}",
+                    f"--pytest-args={shlex.join(args)}",
+                ]
+                if collect_only:
+                    code, node_ids = _collect_pyfltr(command, root, env)
+                    if code or node_ids:
+                        print("\n".join(node_ids))
+                        return code
+                else:
+                    code = subprocess.call(command, cwd=root, env=env)
+                    if code or (junit.is_file() and junit.stat().st_size):
+                        return code
                 env.pop("PYFLTR_GLOBAL_CONFIG", None)
                 env["TESTSCOPE"] = "off"
         return subprocess.call([sys.executable, "-m", "pytest", *options, *extra, "--", *paths], cwd=root, env=env)
@@ -146,37 +149,47 @@ def run_scope(scope, selected, root, *, collect_only, impact_base=None):
             "--commands=pytest",
             f"--pytest-args={shlex.join(args)}",
             selected["path"],
-            *(["--no-quiet"] if collect_only else []),
         ]
         if not collect_only:
             code = subprocess.call(command, cwd=root, env=env)
             result = result or code
             continue
-        completed = subprocess.run(command, cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", check=False)
-        print(completed.stdout, end="")
-        print(completed.stderr, end="", file=sys.stderr)
-        if completed.returncode:
-            result = result or completed.returncode
+        code, node_ids = _collect_pyfltr(command, root, env)
+        if code:
+            result = result or code
             continue
-        run_id = next(row["run_id"] for line in completed.stdout.splitlines() if (row := json.loads(line))["kind"] == "header")
-        recorded = subprocess.run(
-            [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output"],
-            cwd=root,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        )
-        count = 0
-        for line in recorded.stdout.splitlines():
-            for entry in json.loads(line).get("content", "").splitlines():
-                if "::" in entry and entry.split("::", 1)[0].endswith(".py"):
-                    print(f"{shard}\t{entry}")
-                    count += 1
-        if not count:
-            raise ValueError(f"分割 {shard} の試験IDが出力されなかった: {run_id}")
+        if not node_ids:
+            raise ValueError(f"分割 {shard} の試験IDが出力されなかった")
+        for node_id in node_ids:
+            print(f"{shard}\t{node_id}")
     return result
+
+
+def _collect_pyfltr(command, root, env):
+    completed = subprocess.run(
+        [*command, "--no-quiet"], cwd=root, env=env, capture_output=True, text=True, encoding="utf-8", check=False
+    )
+    print(completed.stdout, end="")
+    print(completed.stderr, end="", file=sys.stderr)
+    if completed.returncode:
+        return completed.returncode, []
+    run_id = next(row["run_id"] for line in completed.stdout.splitlines() if (row := json.loads(line))["kind"] == "header")
+    recorded = subprocess.run(
+        [sys.executable, "-m", "pyfltr", "show-run", run_id, "--commands=pytest", "--output"],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    node_ids = [
+        entry
+        for line in recorded.stdout.splitlines()
+        for entry in json.loads(line).get("content", "").splitlines()
+        if "::" in entry and entry.split("::", 1)[0].endswith(".py")
+    ]
+    return 0, node_ids
 
 
 def matching_old_assertions(diff: str, tests: dict[str, str]) -> list[str]:
