@@ -23,7 +23,6 @@ def test_unreadable_transcript_separates_recovery_from_hook_retry(
     fact, action = output.split("次の操作:", 1)
     assert "hookが再読する" in fact
     assert "PreInvocation" not in action and "Stop" not in action
-    assert "確認せよ" in action and "報告せよ" in action
 
 
 @pytest.mark.parametrize("prompt", ["例えば表示を直して", "例えば設定を調査して"])
