@@ -61,7 +61,7 @@ if [ "$needs_reinstall" = 1 ]; then
     # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
     install_code=0
     with_uv_output pytools capture_uv_command bash "{{ .chezmoi.workingTree }}/libexec/update_stage.sh" \
-        uv tool install --exclude-newer-package pyfltr=false --editable "{{ .chezmoi.workingTree }}" || install_code=$?
+        uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable "{{ .chezmoi.workingTree }}" || install_code=$?
     ((install_code != 130)) || exit 130
     if [ "$install_code" = 0 ] && test_expected_shims; then
         mkdir -p "$cache_dir"
@@ -89,5 +89,5 @@ else
     if [ -n "$DOTFILES_PYTOOLS_INSTALL_DETAIL" ]; then
         printf '  [pytools] %s\n' "$DOTFILES_PYTOOLS_INSTALL_DETAIL" >&2
     fi
-    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable \"{{ .chezmoi.workingTree }}\"を実行し、update-dotfilesを再実行してください。"
+    echo "  [pytools] $post_apply_bin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable \"{{ .chezmoi.workingTree }}\"を実行し、update-dotfilesを再実行してください。"
 fi

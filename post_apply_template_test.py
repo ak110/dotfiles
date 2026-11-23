@@ -337,7 +337,7 @@ def test_expected_shims_cover_project_scripts(template: Path, suffix: str, patte
 def test_linux_install_failure_preserves_hash_and_continues() -> None:
     """Linux側は更新対象を保持するプロセスを停止せず、成功時だけハッシュを更新する。"""
     text = _read(LINUX_TEMPLATE)
-    install = text.index("uv tool install --exclude-newer-package pyfltr=false --editable")
+    install = text.index("uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false")
     hash_write = text.index('printf \'%s\' "$current_hash" >"$hash_file"')
     failure = text.index('DOTFILES_PYTOOLS_INSTALL_DETAIL="uv tool install: exit=$install_code"', hash_write)
 

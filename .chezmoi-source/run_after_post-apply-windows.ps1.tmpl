@@ -132,12 +132,12 @@ if ($needsReinstall -and -not $reinstallDeferred) {
         # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
         . "{{ joinPath .chezmoi.workingTree "libexec/update_stage.ps1" }}"
         $uvProgram = (Get-Command uv -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-        $uvArguments = @('tool', 'install', '--exclude-newer-package', 'pyfltr=false', '--editable', '{{ .chezmoi.workingTree }}')
+        $uvArguments = @('tool', 'install', '--exclude-newer-package', 'pyfltr=false', '--exclude-newer-package', 'pytilpack=false', '--editable', '{{ .chezmoi.workingTree }}')
         if ([IO.Path]::GetExtension($uvProgram) -in '.cmd', '.bat') {
             # Win32のCreateProcessではバッチを直接起動できない。従来どおりPowerShellに実行させる。
             $env:CHEZMOI_WORKING_TREE = '{{ .chezmoi.workingTree }}'
             $uvProgram = 'powershell.exe'
-            $uvArguments = @('-NoProfile', '-Command', '& uv tool install --exclude-newer-package pyfltr=false --editable $env:CHEZMOI_WORKING_TREE; exit $LASTEXITCODE')
+            $uvArguments = @('-NoProfile', '-Command', '& uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable $env:CHEZMOI_WORKING_TREE; exit $LASTEXITCODE')
         }
         $installCode = Invoke-UpdateStage pytools return 0 $uvProgram $uvArguments
         if ($installCode -ne 0) { throw "uv tool install が失敗しました (exit=$installCode)" }
@@ -173,7 +173,7 @@ if (Test-Path $postApplyBin) {
     exit $LASTEXITCODE
 } else {
     if ($env:DOTFILES_PYTOOLS_INSTALL_STATE -eq 'failed') { Write-UpdateError $env:DOTFILES_PYTOOLS_INSTALL_DETAIL }
-    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --editable `"{{ .chezmoi.workingTree }}`"を実行し、update-dotfilesを再実行してください。"
+    Write-Host "  [pytools] $postApplyBin が見つからないため後処理スキップ。次の操作: uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable `"{{ .chezmoi.workingTree }}`"を実行し、update-dotfilesを再実行してください。"
 }
 } finally {
     [Console]::OutputEncoding = $originalOutputEncoding

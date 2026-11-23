@@ -23,7 +23,7 @@ requirements = [
     { name = "pydantic", specifier = ">=2" },
     { name = "pyfltr", specifier = ">=3.33.1" },
     { name = "pygments" },
-    { name = "pytilpack", extras = ["quart"], specifier = ">=1.47.0" },
+    { name = "pytilpack", extras = ["quart"], specifier = ">=1.54.1" },
     { name = "pyyaml" },
     { name = "watchdog", specifier = ">=6.0.0,!=7.0.0" },
 ]
@@ -1251,7 +1251,7 @@ wheels = [
 
 [[package]]
 name = "pytilpack"
-version = "1.52.1"
+version = "1.54.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1260,9 +1260,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "werkzeug" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bf/e2/b6e9e0ed3159737bfc83546a2bb60f649bcd423045f5b365b4f7f6ccae1f/pytilpack-1.52.1.tar.gz", hash = "sha256:93fc023b96d49d72689b549d99f896094f4bd14fb3901f18c49840c075d3d0b6", size = 495845, upload-time = "2026-11-15T20:18:19.687Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/f4/3bb1b32ca2d80c8633e6f5ffc65cc333a001c205f7c9b7a98a282b3bf609/pytilpack-1.54.1.tar.gz", hash = "sha256:a776391b644da8feba5efa00272ece1b31b9ef49354658d1744615a53ffac80b", size = 439326, upload-time = "2026-11-23T00:36:36.158Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c2/de/49f89a8d85bbf1a261696100ba63b40bf73e22a2cc27ee0eec3c4448e9b9/pytilpack-1.52.1-py3-none-any.whl", hash = "sha256:3e1661ec337539a4ba2ed7eb547762a83e525cec3ba5c034f8c7d1afec3677ec", size = 159758, upload-time = "2026-11-15T20:18:18.012Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/d3/7e10d5a6d623ea628cf01d1ddbf5fc314f80a219b7ec841881f02b6398c8/pytilpack-1.54.1-py3-none-any.whl", hash = "sha256:6756719b425437658d1176249d5f53f7f8ad632263d6548535902b2a329d15ad", size = 110782, upload-time = "2026-11-23T00:36:34.935Z" },
 ]
 
 [package.optional-dependencies]

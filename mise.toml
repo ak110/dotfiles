@@ -46,5 +46,5 @@ run = [
     "prek install -c .pre-commit-config.yaml",
     "git config --local commit.template .gitmessage",
     # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
-    "uv tool install --exclude-newer-package pyfltr=false --editable .",
+    "uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable .",
 ]

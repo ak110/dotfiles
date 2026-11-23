@@ -12,7 +12,7 @@
 #     "pydantic>=2",
 #     "pyfltr>=3.33.1",
 #     "pygments",
-#     "pytilpack[quart]>=1.47.0",
+#     "pytilpack[quart]>=1.54.1",
 #     "pyyaml",
 #     # 再帰inotify監視がKeyErrorで停止する版を除外する（PYTHONDEVMODE=1のbrowser-e2eで再現）。
 #     "watchdog>=6.0.0,!=7.0.0",

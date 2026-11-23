@@ -7,8 +7,11 @@ import io
 import subprocess
 import sys
 import tarfile
-import tempfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "agent-toolkit"))
+
+from agent_toolkit._common import private_directory  # noqa: E402  # pylint: disable=wrong-import-position,import-error
 
 _PLUGIN = "agent-toolkit"
 
@@ -35,7 +38,7 @@ def sync(checkout: Path, release: str, scratch: Path) -> None:
 
     archive = git("archive", "--format=tar", target, _PLUGIN)
     with (
-        tempfile.TemporaryDirectory(prefix="release-prepare-", dir=scratch) as prepared,
+        private_directory.temporary(scratch, "release-prepare-") as prepared,
         tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as contents,
     ):
         contents.extractall(prepared, filter="data")
