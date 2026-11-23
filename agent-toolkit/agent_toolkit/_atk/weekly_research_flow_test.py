@@ -13,7 +13,6 @@ import io
 import json
 import os
 import pathlib
-import subprocess
 import time
 import typing
 import urllib.parse
@@ -24,6 +23,9 @@ import pytest
 
 from agent_toolkit._atk import research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
 from agent_toolkit._atk.run_skill_execution import _SessionOutput
+
+if typing.TYPE_CHECKING:
+    import subprocess
 from agent_toolkit._atk.wi import add, frontmatter, layout, sync
 from agent_toolkit._common import private_notes, session_review, skill_modes
 from agent_toolkit._testing import git_repository

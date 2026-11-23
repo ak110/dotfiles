@@ -247,7 +247,7 @@ def _describe_holder(lock_file: str) -> str:
     return description
 
 
-class _RepoLock(filelock.FileLock):
+class _RepoLock(filelock.FileLock):  # pylint: disable=too-many-ancestors  # filelockの継承階層によるため。
     def __init__(self, repo_path: pathlib.Path, *, timeout: float) -> None:
         self._repo_path = repo_path
         self._target = _lock_key(repo_path)
