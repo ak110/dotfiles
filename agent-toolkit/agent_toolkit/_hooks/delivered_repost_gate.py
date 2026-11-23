@@ -15,7 +15,7 @@ import re
 
 from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 from agent_toolkit._hooks import notice
-lazy from agent_toolkit._common import transcript
+lazy from agent_toolkit._common import session_state, transcript
 lazy from agent_toolkit._common.message_format import starts_with_auto_element
 lazy from agent_toolkit._hooks import agent_id
 lazy from agent_toolkit._hooks import stop_session as _stop_session
@@ -27,6 +27,7 @@ _SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
 _block_notice = notice.block_formatter("delivered_repost_gate")
+_delivery_notice = notice.formatter("delivered_repost_gate")
 
 
 def _send_required(entries: list[dict]) -> bool:
@@ -44,10 +45,10 @@ def _send_required(entries: list[dict]) -> bool:
     return False
 
 
-def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
+def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool | None]:
     messages: dict[str, str] = {}
     delivered: set[str] = set()
-    completed = False
+    latest_error: bool | None = None
     last = ""
     for entry in entries:
         message = entry.get("message")
@@ -71,12 +72,12 @@ def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool]:
                     message_text = inputs.get("message") if isinstance(inputs, dict) else None
                     messages[identifier] = message_text if isinstance(message_text, str) else ""
             elif block.get("type") == "tool_result" and (result_id := str(block.get("tool_use_id", ""))) in messages:
-                completed, last = True, ""
-                if block.get("is_error") is not True:
+                latest_error, last = block.get("is_error") is True, ""
+                if not latest_error:
                     delivered.update(_sentences(messages[result_id]))
         if delivered and texts:
             last = "".join(texts)
-    return last, delivered, completed
+    return last, delivered, latest_error
 
 
 def _sentences(text: str) -> set[str]:
@@ -111,6 +112,79 @@ def _conversation_entries(lines: list[str]) -> list[dict]:
     return entries
 
 
+def _visible_response_id(entries: list[dict], tool_use_id: str) -> str | None:
+    visible: set[str] = set()
+    response_id = None
+    for entry in reversed(entries):
+        if entry.get("isApiErrorMessage"):
+            break
+        message = entry.get("message")
+        if entry.get("type") != "assistant" or not isinstance(message, dict):
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        identifier = message.get("id")
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and block.get("id") == tool_use_id:
+                if not isinstance(identifier, str) or not identifier:
+                    return None
+                response_id = identifier
+            if (
+                isinstance(identifier, str)
+                and block.get("type") == "text"
+                and isinstance(body := block.get("text"), str)
+                and body.strip()
+            ):
+                visible.add(identifier)
+    return response_id if response_id in visible else None
+
+
+def pretooluse_notice(payload: dict, session_id: str) -> str | None:
+    path = payload.get("transcript_path")
+    tool_use_id = payload.get("tool_use_id")
+    if (
+        not session_id
+        or not isinstance(path, str)
+        or not path
+        or not isinstance(tool_use_id, str)
+        or not tool_use_id
+        or tool_use_id.startswith("repl_")
+        or is_codex_payload(payload)
+        or is_antigravity_payload(payload)
+        or not agent_id.is_main_agent_context(payload)
+    ):
+        return None
+    entries = _conversation_entries(transcript.read_transcript_lines(path) or [])
+    if not _send_required(entries):
+        return None
+    turn = _current_turn(entries)
+    response_id = _visible_response_id(turn, tool_use_id)
+    if response_id is None:
+        return None
+    _, _, latest_error = _delivery_report(turn)
+    if latest_error is True:
+        return None
+
+    def claim(state: dict) -> dict | None:
+        ids = state.get("delivery_notice_response_ids")
+        if not isinstance(ids, list):
+            ids = []
+        if response_id in ids:
+            return None
+        return {**state, "delivery_notice_response_ids": [*ids, response_id]}
+
+    if session_state.update_state(session_id, claim):
+        return _delivery_notice(
+            "送達指定のある会話で、ツール呼び出しと同じ応答に通常本文があります。",
+            fix="次の進捗報告や確認から、通常本文ではなく `send_to_user` を使ってください。",
+            subject=response_id,
+        )
+    return None
+
+
 def evaluate(payload_text: str) -> tuple[str, str]:
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
@@ -127,9 +201,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
     entries = _conversation_entries(lines) if lines is not None else []
-    body, delivered, completed = _delivery_report(_current_turn(entries))
+    body, delivered, latest_error = _delivery_report(_current_turn(entries))
     if (
-        not completed
+        latest_error is None
         and isinstance(last := payload.get("last_assistant_message"), str)
         and last.replace("…", "").strip()
         and _send_required(entries)

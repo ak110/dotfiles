@@ -5,7 +5,9 @@ import pathlib
 
 import pytest
 
-from agent_toolkit._hooks import stop
+from agent_toolkit._common import session_state
+from agent_toolkit._hooks import delivered_repost_gate, stop
+from agent_toolkit._hooks.pretooluse import dispatch
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agents_server__send_to_user"
 _HUMAN = {"type": "user", "origin": {"kind": "human"}, "message": {"content": "進捗を教えて"}}
@@ -335,3 +337,79 @@ def test_repost_after_delivery_in_a_later_turn_is_blocked(tmp_path: pathlib.Path
     result = _stop(entries, tmp_path, last_assistant_message=body)
     assert result["decision"] == "block"
     assert "送信済みの文が通常の応答本文にある" in str(result["reason"])
+
+
+def _response(identifier: str, *entries: dict) -> list[dict]:
+    return [{**entry, "message": {**entry["message"], "id": identifier}} for entry in entries]
+
+
+@pytest.mark.parametrize("body", ["発話の理解", "Now …"])
+def test_pretooluse_notifies_once_per_response(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], body: str
+) -> None:
+    monkeypatch.setattr(session_state, "state_path", lambda _: tmp_path / "state.json")
+    path = tmp_path / "transcript.jsonl"
+    path.write_text(
+        "\n".join(
+            json.dumps(entry)
+            for entry in [
+                _SEND_NOTICE,
+                _HUMAN,
+                *_response("m1", _text(body), *(_call("Read", f"t{i}", {}) for i in range(5))),
+                *_response("m2", _call("Read", "t5", {}), _text(body)),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    for tool_use_id, expected in [("t4", True), ("t0", False), ("t5", True)]:
+        payload = {
+            "session_id": "delivery-progress",
+            "tool_name": "Read",
+            "tool_use_id": tool_use_id,
+            "transcript_path": str(path),
+            "cwd": str(tmp_path),
+        }
+        assert dispatch.main(json.dumps(payload)) == 0
+        stdout = capsys.readouterr().out
+        output = json.loads(stdout)["hookSpecificOutput"] if stdout else {}
+        assert "permissionDecision" not in output
+        context = output.get("additionalContext", "")
+        assert ("`send_to_user` を使ってください" in context) is expected
+        assert body not in context
+
+
+@pytest.mark.parametrize(
+    ("prefix", "response", "extra", "expected"),
+    [
+        ([], _text("Now …"), {}, True),
+        ([], _text("  "), {}, False),
+        ([], _call(_SEND_TO_USER, "delivery", {"message": "Now …"}), {}, False),
+        ([], {"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "Now …"}]}}, {}, False),
+        ([], _text("Now …"), {"agent_id": "delegate"}, False),
+        ([], _text("Now …"), {"turn_id": "codex"}, False),
+        ([], _text("Now …"), {"runtime": "agy"}, False),
+        ([_SEND, _result(error=True)], _text("Now …"), {}, False),
+        ([_SEND, _result(error=True), _result("unrelated"), _SEND], _text("Now …"), {}, False),
+        ([_SEND, _result(error=True), _SEND, _result()], _text("Now …"), {}, True),
+        ([_SEND, _result(error=True), _HUMAN], _text("Now …"), {}, True),
+        ([_SEND, _result(error=True), _TASK_NOTIFICATION], _text("Now …"), {}, True),
+        ([_SEND, _result(error=True), *_COMPACT], _text("Now …"), {}, True),
+        ([], _text("Now …"), {"tool_use_id": "missing"}, False),
+        ([], _text("Now …"), {"tool_use_id": "repl_tool"}, False),
+    ],
+)
+def test_pretooluse_delivery_state(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, prefix: list[dict], response: dict, extra: dict, expected: bool
+) -> None:
+    monkeypatch.setattr(session_state, "state_path", lambda _: tmp_path / "state.json")
+    path = tmp_path / "transcript.jsonl"
+    mixed = _call("Read", "tool", {"file_path": "not visible"})
+    mixed["message"]["content"][:0] = response["message"]["content"]
+    entries = [_SEND_NOTICE, _HUMAN, *prefix, *_response("m1", mixed)]
+    for include_contract in (False, True):
+        path.write_text(
+            "\n".join(json.dumps(entry) for entry in (entries if include_contract else entries[1:])),
+            encoding="utf-8",
+        )
+        payload = {"transcript_path": str(path), "tool_use_id": "tool", **extra}
+        assert bool(delivered_repost_gate.pretooluse_notice(payload, "delivery-progress")) is (expected and include_contract)

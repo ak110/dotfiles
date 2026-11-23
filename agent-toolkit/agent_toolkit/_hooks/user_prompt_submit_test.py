@@ -585,7 +585,10 @@ def test_feedback_rule_is_delivered_before_each_human_prompt(tmp_path: pathlib.P
         assert result.returncode == 0, result.stderr
         context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
         assert "場合だけ" not in context
-        assert "調査より先に、応答の冒頭へ" in context
+        assert "調査より先に" in context
+        assert "最初の`send_to_user`の`message`" in context
+        assert "送達指定がない場合は応答の冒頭" in context
+        assert "送達に失敗した場合は通常本文" in context
         assert "`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」" in context
         assert prompt not in context
 

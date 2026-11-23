@@ -92,6 +92,7 @@ lazy from agent_toolkit._hooks import (
     bugfix_gate,
     clock_claims,
     command_timing,
+    delivered_repost_gate,
     norm_excuse_gate,
     repository_protection,
     work_contract,
@@ -276,6 +277,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                     allow=authorization.allow,
                     notices=decision.notices + ((authorization.context,) if authorization.context else ()),
                 )
+        if warning := delivered_repost_gate.pretooluse_notice(payload, session_id):
+            pending_notices.append(warning)
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
         if (
