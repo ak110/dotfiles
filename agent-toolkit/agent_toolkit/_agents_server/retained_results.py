@@ -18,7 +18,12 @@ from agent_toolkit._agents_server.result_projection import (
     public_result,
     with_result_next_action,
 )
-from agent_toolkit._agents_server.shared_layout import result_session_id, results_directory, valid_session_id
+from agent_toolkit._agents_server.shared_layout import (
+    published_markers_directory,
+    result_session_id,
+    results_directory,
+    valid_session_id,
+)
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES
 from agent_toolkit._agents_server.wait_targets import release_wait_target
 from agent_toolkit._common import session_registry
@@ -39,7 +44,7 @@ def _suffix(end: ResultEnd) -> str:
 
 
 def _published(path: pathlib.Path, end: ResultEnd) -> pathlib.Path:
-    return path.parent / ".published" / path.stem / _suffix(end)
+    return published_markers_directory(path.parent, path.stem) / _suffix(end)
 
 
 @contextlib.contextmanager

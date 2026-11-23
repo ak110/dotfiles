@@ -101,6 +101,24 @@ def pending_session_ids(state_root: pathlib.Path | None = None) -> set[str]:
     return pending
 
 
+def result_collected(session_id: str, turn_seq: int, *, state_root: pathlib.Path | None = None) -> bool:
+    """turn番号`turn_seq`の結果を公開した後に回収し、保留の対象にも残らないと観測できる時だけ真を返す。
+
+    公開の印を持たない結果（所有側の記憶にだけある結果、所有側が直接受け渡した結果）は回収を確かめられないため偽とする。
+    状態ディレクトリを走査できない場合は`OSError`を送出する。
+    """
+    state_root = _state_paths.state_dir() if state_root is None else state_root
+    if session_id in pending_session_ids(state_root):
+        return False
+    prefix = f"{turn_seq}-"
+    for root in session_layout.list_root_session_ids(state_root, strict=True):
+        markers = session_layout.published_markers_directory(session_layout.results_directory(root, state_root), session_id)
+        with contextlib.suppress(FileNotFoundError), os.scandir(markers) as listed:
+            if any(item.name.startswith(prefix) for item in listed):
+                return True
+    return False
+
+
 def recorded_server_instances(state_root: pathlib.Path | None = None) -> set[str]:
     return {instance for entry in entries(state_root).values() for instance in entry.server_instances}
 

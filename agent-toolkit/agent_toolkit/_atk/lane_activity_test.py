@@ -18,7 +18,7 @@ from agent_toolkit import atk
 from agent_toolkit._atk import agents_exit_session, lane
 from agent_toolkit._atk import lane_activity as _lane_activity
 from agent_toolkit._atk.wi import process_loop_session
-from agent_toolkit._common import session_registry, session_release
+from agent_toolkit._common import session_layout, session_registry, session_release, state_paths
 from agent_toolkit._git import worktrees as git_worktrees
 from agent_toolkit._testing import git_repository, isolation
 from agent_toolkit._testing.lane_integration_support import _integration_args, _integration_selection, _legacy
@@ -182,6 +182,55 @@ def test_lane_preserves_session_when_running_or_owner_unresponsive(
         assert not session_release.pending()
     else:
         assert not requests
+
+
+@pytest.mark.parametrize("condition", ["collected", "uncollected", "executor"])
+@pytest.mark.cpu_limit(
+    1.5, reason="実Git worktreeと生存所有者を保持し、終了・回収の証拠ごとに解放か保持かを判定する代表3条件。"
+)
+def test_lane_skips_owner_release_only_for_exited_and_collected_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], condition: str
+) -> None:
+    """所有側が無応答でも、実行プロセスの終了と結果の回収を両方観測できる終了済みの担当だけは保持の理由にしない。"""
+    _repo, _selected, record = _create(tmp_path, monkeypatch, capsys)
+    worktree = pathlib.Path(record["worktree"]).resolve()
+    owner = session_registry.owner_process()
+    assert owner is not None
+    # 実行プロセスはworktreeの外で動かし、外部プロセスの使用判定と区別する。
+    with subprocess.Popen(
+        [sys.executable, "-c", "import sys;sys.stdin.read()"], cwd=tmp_path, stdin=subprocess.PIPE
+    ) as executor:
+        try:
+            processes = (owner,)
+            if condition == "executor":
+                identity = session_registry.ProcessIdentity.of(executor.pid)
+                assert identity is not None
+                processes = (owner, identity)
+            session_registry.publish(
+                "reviewer",
+                state=session_registry.PublicationState.RESULT_COMPLETED,
+                cwd=str(worktree),
+                turn_seq=2,
+                processes=processes,
+            )
+            results = session_layout.results_directory("lane-root", state_paths.state_dir())
+            results.mkdir(parents=True)
+            session_layout.published_markers_directory(results, "reviewer").mkdir(parents=True)
+            (session_layout.published_markers_directory(results, "reviewer") / f"2-{'0' * 64}").touch()
+            if condition == "uncollected":
+                (results / "reviewer.json").write_text('{"status":"completed","turn_seq":2}', encoding="utf-8")
+            monkeypatch.setattr(_lane_activity, "get_wait_timeout", lambda _bucket: 0.02)
+
+            activity = lane._worktree_activity(worktree)  # pylint: disable=protected-access
+        finally:
+            executor.communicate(input=b"", timeout=10)
+    requests = list(session_registry.registry_directory().glob("*.release-*"))
+    if condition == "collected":
+        assert activity is None and not requests
+        assert session_registry.resolve("reviewer").state is session_registry.Resolution.TERMINAL
+    else:
+        assert activity is not None and "reviewer" in activity and "解放応答" in activity
+        assert len(requests) == 1
 
 
 @pytest.mark.cpu_limit(
