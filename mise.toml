@@ -45,6 +45,6 @@ run = [
     "env --unset=UV_FROZEN uv sync --locked --all-groups --all-extras",
     "prek install -c .pre-commit-config.yaml",
     "git config --local commit.template .gitmessage",
-    # 自作pyfltrの先行APIを公開直後から使うため、このパッケージだけ公開待機から除く。
+    # 自作のpyfltr・pytilpackは公開直後の版を使うため公開待機から除く。uv tool installはpyproject.tomlの[tool.uv]を読まないため引数で渡す。
     "uv tool install --exclude-newer-package pyfltr=false --exclude-newer-package pytilpack=false --editable .",
 ]

@@ -5,8 +5,9 @@
 - サプライチェーン対策としてmiseの`minimum_release_age`を設定し、依存の即日更新を避ける
 - 自作パッケージをuvの公開待機設定から外す指定は、各プロジェクトの`pyproject.toml`かコマンドライン引数へ置く。
   グローバルなuv設定（`~/.config/uv/uv.toml`）へは置かない（2026年10月6日、ユーザー回答。グローバル設定の除外は各プロジェクトの`uv.lock`へ入り込むため）。
-  agent-toolkitのMCP定義が起動するpyfltrは、`uvx`の引数`--exclude-newer-package pyfltr=false`で公開待機から外す。
-  MCP定義のpyfltrの下限を公開直後の版へ上げた際、ユーザーは、待機の経過を待つ案と、この引数でCIとMCPサーバーの起動を先に回復する案のうち、後者を選んだ（同日のユーザー回答）
+  コマンドライン引数で外す箇所は次の2つである。
+  - agent-toolkitのMCP定義が起動するpyfltrは、`uvx`の引数`--exclude-newer-package pyfltr=false`で公開待機から外す。
+    MCP定義のpyfltrの下限を公開直後の版へ上げた際、ユーザーは、待機の経過を待つ案と、この引数でCIとMCPサーバーの起動を先に回復する案のうち、後者を選んだ（同日のユーザー回答）
   - `chezmoi apply`後処理がpytoolsを導入する`uv tool install --editable`は`pyproject.toml`の`[tool.uv]`を読まないため、pyfltrとpytilpackを引数`--exclude-newer-package`で外す。
     2026年11月23日、pytilpackの下限を公開当日の版へ上げた公開で、引数がpyfltrだけだったためにpytoolsの再導入が解決に失敗した（CIの`test-linux`の旧版からの更新検証で検出）
 - 配布物へ波及しない依存上書きは、エンドユーザー環境の脆弱性を未解消のまま残すため
