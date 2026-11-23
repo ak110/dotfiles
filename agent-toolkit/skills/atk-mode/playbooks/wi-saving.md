@@ -23,6 +23,7 @@
 3. 保存せずに検証する。
    - 新規は`atk wi add --dry-run --body-file <原稿の絶対パス> --source <source>`を使う。
      調査基点がある新規AWIは`--target-repo <宛先worktree> --draft-base <ベースref> <完全OID>`も指定する。
+     系統を登録した宛先では、初回・再検収のどちらも本保存と同じ`--target-branch <系統>`を渡す。
    - 更新は`atk wi edit <ファイル名> --dry-run --body-file <原稿の絶対パス>`を使う。
    - `source`は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」で決め、原稿のfrontmatterに指定済みなら`--source`を省く。
    - UWIの新規では`--type=uwi`と、その問いに要る回答形式の指定を加える。
@@ -123,7 +124,7 @@
      不一致なら差に関係する前提を読み、原稿の修正と検収へ戻る。
    - `ファイル名`を受け取った要求は新規に保存せず、`atk wi show`で取得した現行本文を改訂して`atk wi edit <ファイル名> --body-file <原稿の絶対パス>`で保存する。
    - 投入は要求ごとに1回だけ行う。
-   - 同じリポジトリで同時に確定した複数のAWIは、`--body-file`を反復して1回の`atk wi add`にまとめる（努力目標。commitとpushを1回にするため）。
+   - 同じリポジトリ・宛先系統・調査基点で同時に確定した複数のAWIは、`--body-file`を反復して1回の`atk wi add`にまとめる（努力目標。commitとpushを1回にするため）。
    - 依存があれば先行項目から保存し、確定した正式なファイル名を後続の`depends_on`と本文へ書く。
      書く依存は、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」の先行成果の必要性の基準で確定したものに限る。
    - 検収済みの原稿との一致を保存の時にも確かめる場合は、dry-runと同じ`--compare-opening-file`を本保存へ付ける（不一致なら保存は止まる）。

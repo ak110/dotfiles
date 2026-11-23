@@ -25,6 +25,7 @@
    不具合・指摘・エラーは先に`agent-basics:bugfix`を起動する。
    既存AWIの更新・懸念は質問や調査の前に扱い、`inbox`・`hold`は保留し、`processing`への変更は別AWIに切り出す（`agent-toolkit:atk-mode/references/states-and-dependencies.md`「保留と本文修正」）。
 2. `agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で要求を受け付け、方針を確定する。
+   宛先を決めたら、採否や方針を決めるための最初の現物調査より前に、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「対象の調査基点」で完全OIDを固定し、保存まで保持する。
    目的の衝突、指定範囲との不一致、認可不足、変更を左右する読みの違いは、同書の手順7で扱う。
    方針を決めた時点で、中心と理由、継続費用を加える対象、除外と理由、調査済みと未調査の成果物の種類を一度報告する。
    確認が要らない依頼では、回答を待たずに続ける。
@@ -35,7 +36,6 @@
 
 3. メインが調査、対策、起草、検収、保存を担う。
    - `agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」に従い、独立した要求へ分けて起草し、逐語引用と由来・確定要件・技術判断を分ける。
-     現物を読む新規AWIでは、同書「対象の調査基点」を保存まで保持する。
      不具合は原因、類似箇所、別件、再発防止を起草前に確定する。
      コードと規範の不一致は`agent-basics:bugfix`で判定し、同じ条文を足さない。
      使い方が変わる要求は、ガイドと公開後の案内も反映内容へ書く（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「使い方が変わる変更」）。

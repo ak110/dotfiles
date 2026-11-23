@@ -13,7 +13,7 @@ from agent_toolkit._testing.wi_add_support import _patch_add_editor, _patch_add_
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
 
 
-@pytest.mark.parametrize("case", ["upstream", "advanced", "missing-upstream", "local", "other-repo"])
+@pytest.mark.parametrize("case", ["upstream", "advanced", "missing-upstream", "local", "other-repo", "other-branch"])
 def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
     notes = git_repository.init_repository(_setup_notes(tmp_path), commit_message="notes")
     repo = git_repository.init_repository(tmp_path / "repo", initial_branch="main", commit_message="base")
@@ -28,7 +28,10 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
         git_repository.run_git(repo, "config", "branch.main.merge", "refs/heads/main")
         if case != "missing-upstream":
             git_repository.run_git(repo, "update-ref", "refs/remotes/origin/main", latest)
-    base = older if case == "local" else latest
+    base = older if case in {"local", "other-branch"} else latest
+    branch = "feature" if case == "other-branch" else "main"
+    if case == "other-branch":
+        git_repository.run_git(repo, "branch", branch, older)
     body = tmp_path / "body.md"
     text = "# 調査した要求\n\n## 反映内容と反映先\n\n上流の記述を読んで本文を更新する。\n"
     if case == "other-repo":
@@ -44,7 +47,7 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
         "--source",
         "human",
         "--draft-base",
-        "refs/heads/main",
+        f"refs/heads/{branch}",
         base,
     ]
 
@@ -53,9 +56,14 @@ def test_draft_base_is_checked_on_dry_run_and_add(tmp_path, capsys, case):
             atk.main([*args, *options], home=tmp_path, now=_FIXED_DT)
         return status.value.code
 
-    if case in {"missing-upstream", "other-repo"}:
+    if case in {"missing-upstream", "other-repo", "other-branch"}:
         assert add(["--dry-run"]) != 0
-        expected = "宛先refを解決できない" if case == "missing-upstream" else "別repoまたは別系統"
+        assert add([]) != 0
+        expected = {
+            "missing-upstream": "宛先refを解決できない",
+            "other-repo": "別repoまたは別系統",
+            "other-branch": "宛先worktreeの現在のブランチと一致しない",
+        }[case]
         assert expected in capsys.readouterr().err
         assert not tuple(notes.rglob("*.md"))
         return

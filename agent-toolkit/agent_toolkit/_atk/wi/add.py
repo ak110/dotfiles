@@ -69,6 +69,9 @@ class DraftBasis:
                 raise WebInputError("起草のベースが登録済みの宛先系統と一致しない", next_action=_DRAFT_NEXT)
             ref = f"refs/remotes/origin/{branch}"
         else:
+            current_branch = git("symbolic-ref", "--quiet", "HEAD")
+            if current_branch.returncode != 0 or current_branch.stdout.strip() != self.branch_ref:
+                raise WebInputError("起草のベースが宛先worktreeの現在のブランチと一致しない", next_action=_DRAFT_NEXT)
             result = git("for-each-ref", "--format=%(refname)%09%(upstream)", self.branch_ref)
             if result.returncode != 0:
                 raise WebInputError("起草のベースrefを照会できない", next_action=_DRAFT_NEXT)
