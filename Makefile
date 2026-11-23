@@ -5,7 +5,7 @@ export UV_PROJECT_ENVIRONMENT := $(CURDIR)/.venv
 
 # pytestを個別に起動するtargetの共通の起動形。`-v`でテストごとの成否を出力し、保存した出力を
 # 個別テストの合否の根拠に使えるようにする。`-o addopts=''`はpyproject.tomlの並列実行などの設定を外す。
-PYTEST_RUN = uv run pytest -v -o addopts='' -p no:cacheprovider
+PYTEST_RUN = env --unset=UV_PYTHON UV_NO_SYNC=true uv run pytest -v -o addopts='' -p no:cacheprovider
 
 # CIのpython-lint jobが使うcontainer image、`ネイティブ依存インストール`stepの導入パッケージとmatrixのPython版。
 # `ci-deps-check`がこの値でCIの依存導入を再現し、ci_workflow_test.pyがci.yamlとの一致を確かめる。
@@ -17,7 +17,7 @@ help:
 	@cat Makefile
 
 # 依存パッケージをアップグレードし導入とRustを検証
-update:
+update: check-worktree-venv
 	env --unset=UV_FROZEN uv sync --upgrade --all-groups --no-group pytest-impact --all-extras
 	env --unset=UV_FROZEN uv lock --upgrade --script agent-toolkit/scripts/launch.py
 	$(MAKE) ci-deps-check
@@ -44,7 +44,7 @@ update-actions:
 	GITHUB_TOKEN=$$(gh auth token) mise exec -- pinact run --update --min-age=1
 
 # 開発環境のセットアップ
-setup:
+setup: check-worktree-venv
 	mise run bootstrap
 	@command -v pwsh >/dev/null 2>&1 || echo "警告: pwsh が未導入。PowerShell スクリプトの検証がスキップされる。Ubuntu/Debian なら 'make setup-pwsh' で一括導入可能"
 	@command -v chezmoi >/dev/null 2>&1 || echo "警告: chezmoi が未導入。template 検証がスキップされる可能性あり。mise install chezmoiで導入してください。"
@@ -72,7 +72,10 @@ setup-pwsh:
 # `uv sync`は余分なパッケージを除き、`--python`は版の異なる既存の仮想環境を削除して指定の版で構築する。
 # `uv run`の自動同期は余分なパッケージを残すため、この同期に代えない。
 # `UV_PYTHON`などで別の版を指定した環境でも、既存の仮想環境のPython版を保つ（uv 0.13.1で確認）。
-sync:
+check-worktree-venv:
+	@env --unset=UV_FROZEN --unset=UV_PYTHON uv run --no-project --no-config python pytools/_internal/verify_worktree_venv.py "$$PWD" "$$UV_PROJECT_ENVIRONMENT"
+
+sync: check-worktree-venv
 	uv sync --all-groups --no-group pytest-impact --all-extras --python "$$(cat .python-version)"
 
 # CIのcontainer jobと同じimageの中で、CIと同じ依存導入と各Python版の`uv sync`を実行する。
@@ -95,24 +98,24 @@ ci-deps-check:
 
 # フォーマット + 軽量lint（開発時の手動実行用。自動修正あり）
 format: sync
-	env --unset=UV_PYTHON uv run --frozen pyfltr fast
+	env --unset=UV_PYTHON UV_NO_SYNC=true uv run --frozen pyfltr fast
 
 # 全チェック実行（これを通過すればコミット可能）
 # `--no-fix`はlinterの自動修正段を抑止する。コミット可否を判定するゲートが判定対象の作業ツリーを
 # 書き換えないようにし、担当範囲外のファイルへ差分が出ないようにする。
 # 自動修正が必要な場合は`make format`を使う。
 test: sync
-	env --unset=UV_PYTHON uv run --frozen pyfltr run --no-fix
+	env --unset=UV_PYTHON UV_NO_SYNC=true uv run --frozen pyfltr run --no-fix
 
 # 実ブラウザーテストを日常実行
-test-browser:
-	uv run playwright install chromium
+test-browser: sync
+	env --unset=UV_PYTHON UV_NO_SYNC=true uv run playwright install chromium
 	# CIと同じ開発モードで、監視スレッドの異常などを公開前にも検出する。
 	# addoptsの解除後も、共有ブラウザーと失敗証拠の寿命を管理するpluginは登録する。
 	PYTHONDEVMODE=1 $(PYTEST_RUN) -p agent_toolkit._testing.pytest_plugin -m browser agent-toolkit/agent_toolkit/_atk/serve
 
 # agents_serverの実backendを使うライブ一体テスト
-test-agents-live:
+test-agents-live: sync
 	$(PYTEST_RUN) -m live_agents agent-toolkit/agent_toolkit/agents_server_live_test.py
 
-.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh sync ci-deps-check format test test-browser test-agents-live
+.PHONY: help update update-mise-locks update-actions setup setup-browser setup-pwsh check-worktree-venv sync ci-deps-check format test test-browser test-agents-live

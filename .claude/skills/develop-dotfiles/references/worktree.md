@@ -3,6 +3,10 @@
 ## 作業ツリーの準備
 
 1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。
+   - 検証に使う作業ツリーの専用環境を用意する。
+     `make sync`は同期前に環境の実体を確かめ、リンクされた既定の環境や別の作業ツリーに属する環境を拒否する。
+   - `make format`・`make test`・`make test-browser`・`make test-agents-live`は同期後の検証とその子の`uv run`に`UV_NO_SYNC=true`を渡す。
+     Makeを経由しないuvや明示の`uv sync`を起動する時も、作業ツリーの専用環境を確認する。
    - 回収予定の検証用複製は、managed-tempの一時ルート直下に`mktemp -d '<一時ルート>/<用途>-XXXXXXXX'`で作った領域へ`git worktree add --detach`で作る。
      通常のファイルコピーで複製すると、内部の`.claude/worktrees/`や`.venv`まで実容量で複製してしまう。
    - 一時複製でWindowsの更新を最後まで試す場合は、[Windowsの更新を最後まで試す](verification.md#windowsの更新を最後まで試す)を使う。
