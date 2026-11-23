@@ -4,6 +4,7 @@
 import asyncio
 import json
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ import pytest
 from pydantic import ValidationError
 
 from agent_toolkit._agents_server import claude_plugins, plugin_root
+from agent_toolkit._common import environment_usage
 from agent_toolkit._testing.agents_server_support import ManualObserver
 
 
@@ -113,6 +115,45 @@ async def test_versioned_input_is_separate_from_server_copy(tmp_path: Path, inve
         assert not mirror.is_symlink()
         assert not reloader.matches(mirror / "skills/content.md")
     assert not area.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("manual_observer")
+async def test_hook_bootstrap_waits_for_switch_from_outside_mirror(tmp_path: Path, inventory: SimpleNamespace) -> None:
+    root = _plugin(tmp_path / "cache/mine/agent-toolkit/1.0.0")
+    hooks = root / "hooks"
+    hooks.mkdir()
+    (hooks / "hooks.json").write_text(
+        json.dumps({"hooks": {"UserPromptSubmit": [{"hooks": [{"command": claude_plugins._CLAUDE_HOOK_LAUNCHER}]}]}}),
+        encoding="utf-8",
+    )
+    scripts = root / "scripts"
+    scripts.mkdir()
+    (scripts / "launch.py").write_text("print('hook output')\n", encoding="utf-8")
+    inventory.items = [_installed(root)]
+    options = _options(tmp_path, root)
+    async with claude_plugins.ClaudePluginReloader(options, asyncio.get_running_loop()):
+        mirror = Path(options["plugins"][0]["path"])
+        wrapper = mirror.parent / "hook_bootstrap.py"
+        assert wrapper.name in (mirror / "hooks" / "hooks.json").read_text(encoding="utf-8")
+        backup = mirror.with_name("observed-window")
+        with environment_usage.lock(mirror, exclusive=True):
+            mirror.rename(backup)
+            probe = await asyncio.create_subprocess_exec(
+                sys.executable, str(wrapper), stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            try:
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(probe.wait(), timeout=0.3)
+            finally:
+                backup.rename(mirror)
+        try:
+            stdout, stderr = await asyncio.wait_for(probe.communicate(), timeout=10)
+            assert (probe.returncode, stdout.strip(), stderr) == (0, b"hook output", b"")
+        finally:
+            if probe.returncode is None:
+                probe.kill()
+                await probe.wait()
 
 
 @pytest.mark.parametrize("failure", ["disabled", "other-project", "ambiguous"])

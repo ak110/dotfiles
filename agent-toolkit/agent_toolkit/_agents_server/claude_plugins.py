@@ -7,9 +7,12 @@ import contextlib
 import json
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 import threading
+import time
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +25,49 @@ from agent_toolkit._agents_server import plugin_root
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._common import host_homes, private_directory, process_tree
+from agent_toolkit._common import environment_usage, host_homes, private_directory, process_tree
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.claude")
+
+_HOOK_BOOTSTRAP = """\
+import contextlib
+import runpy
+import time
+from pathlib import Path
+
+from environment_usage import lock
+
+mirror = Path(__file__).parent / "agent-toolkit"
+with contextlib.ExitStack() as held:
+    deadline = time.monotonic() + 10
+    while True:
+        try:
+            held.enter_context(lock(mirror))
+        except OSError as error:
+            busy = isinstance(error, BlockingIOError) or getattr(error, "winerror", None) == 33
+            if not busy or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+        else:
+            break
+    runpy.run_path(str(mirror / "scripts" / "launch.py"), run_name="__main__")
+"""
+
+_CLAUDE_HOOK_LAUNCHER = '"${CLAUDE_PLUGIN_ROOT}/scripts/launch.py"'
+
+
+def _configure_hook_bootstrap(generation: Path, bootstrap: Path) -> None:
+    configuration_path = generation / "hooks" / "hooks.json"
+    if not configuration_path.is_file():
+        return
+    configuration = json.loads(configuration_path.read_text(encoding="utf-8"))
+    for matchers in configuration.get("hooks", {}).values():
+        for matcher in matchers:
+            for hook in matcher.get("hooks", ()):
+                command = hook.get("command")
+                if isinstance(command, str):
+                    hook["command"] = command.replace(_CLAUDE_HOOK_LAUNCHER, shlex.quote(bootstrap.as_posix()))
+    configuration_path.write_text(json.dumps(configuration, ensure_ascii=False), encoding="utf-8")
 
 
 _LOADABLE_SCOPES = frozenset({"user", "project", "local"})
@@ -253,6 +296,8 @@ class ClaudePluginReloader:
         if self._versioned:
             self._area = managed_temp.create_output_temp("claude-plugin-input")
             self._mirror = self._area / "agent-toolkit"
+            (self._area / "hook_bootstrap.py").write_text(_HOOK_BOOTSTRAP, encoding="utf-8")
+            shutil.copyfile(environment_usage.__file__, self._area / "environment_usage.py")
             self._switch(self._stage(source))
             assert self._toolkit_index is not None
             plugins = [dict(item) for item in self.options["plugins"]]
@@ -412,6 +457,7 @@ class ClaudePluginReloader:
                 server["args"] = [argument.replace("${CLAUDE_PLUGIN_ROOT}", str(runtime)) for argument in server["args"]]
                 configuration["mcpServers"]["agents_server"] = server
                 mcp_path.write_text(json.dumps(configuration, ensure_ascii=False), encoding="utf-8")
+            _configure_hook_bootstrap(generation, self._area / "hook_bootstrap.py")
         except BaseException:
             shutil.rmtree(generation)
             raise
@@ -420,23 +466,43 @@ class ClaudePluginReloader:
     def _switch(self, generation: Path) -> None:
         assert self._area is not None and self._mirror is not None
         previous = self._area / "previous"
-        if self._mirror.exists():
-            os.replace(self._mirror, previous)
-        try:
-            # 呼出元がidleとSDK要求を直列化する。完成版だけを固定pathへ移し、失敗時に戻す。
-            os.replace(generation, self._mirror)
-        except BaseException:
-            if previous.exists():
-                os.replace(previous, self._mirror)
-            raise
+        with self._hook_switch_lock():
+            if self._mirror.exists():
+                os.replace(self._mirror, previous)
+            try:
+                os.replace(generation, self._mirror)
+            except BaseException:
+                if previous.exists():
+                    os.replace(previous, self._mirror)
+                raise
 
     def _restore(self) -> None:
         assert self._area is not None and self._mirror is not None
         previous = self._area / "previous"
         if previous.exists():
-            if self._mirror.exists():
-                shutil.rmtree(self._mirror)
-            os.replace(previous, self._mirror)
+            with self._hook_switch_lock():
+                if self._mirror.exists():
+                    shutil.rmtree(self._mirror)
+                os.replace(previous, self._mirror)
+
+    @contextlib.contextmanager
+    def _hook_switch_lock(self) -> Generator[None]:
+        assert self._mirror is not None
+        with contextlib.ExitStack() as held:
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    held.enter_context(environment_usage.lock(self._mirror, exclusive=True))
+                except OSError as error:
+                    if (
+                        not (isinstance(error, BlockingIOError) or getattr(error, "winerror", None) == 33)
+                        or time.monotonic() >= deadline
+                    ):
+                        raise
+                    time.sleep(0.05)
+                else:
+                    break
+            yield
 
     def _set_watch_paths(self, installed: list[_InstalledPlugin], source: Path | None) -> None:
         self._roots = {Path(item.install_path).resolve() for item in installed}
