@@ -56,11 +56,12 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
     monkeypatch.setattr(session_registry, "resolve", registry_record)
     monkeypatch.setattr(session_registry, "owner_server_instance", lambda: target["server_instance"])
     predecessor = state.SessionState("predecessor", str(tmp_path))
+    already_collected = state.SessionState("8ae24391-700c-4fa9-967d-7b1d938d28de", str(tmp_path))
     untracked = state.SessionState("untracked", str(tmp_path))
     source.manager.sessions[untracked.session_id] = untracked
 
     async def start_explore(self, prompt, cwd, *, label=None, model_type=None):
-        session = {"前任": predecessor, "子": child}[prompt]
+        session = {"前任": predecessor, "子": child, "回収済み": already_collected}[prompt]
         assert self is (parent.manager if session is predecessor else source.manager)
         assert cwd == str(tmp_path) and label is None and model_type is None
         self.sessions[session.session_id] = session
@@ -92,18 +93,26 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
     try:
         assert not (await call(parent, "start", mode="explore", prompt="前任", cwd=str(tmp_path))).is_error
         assert not (await call(source, "start", mode="explore", prompt="子", cwd=str(tmp_path))).is_error
+        assert not (await call(source, "start", mode="explore", prompt="回収済み", cwd=str(tmp_path))).is_error
+        _complete(already_collected, message="前任が回収した結果")
+        with runtime_environment.bind(source.caller):
+            assert (await source.manager.wait())["session_id"] == already_collected.session_id
         assert session_registry.resolve(child.session_id, state_root=tmp_path).resume_info is None
         _complete(predecessor)
         if completed_before_handoff:
             _complete(child, message="子の結果")
         assert not (await call(parent, "start", handoff_from="predecessor")).is_error
+        duplicate = await call(parent, "start", handoff_from="predecessor")
+        assert duplicate.is_error and "successor" in str(duplicate.content)
         refused = await call(unrelated, "show", session_id=child_id)
         assert refused.is_error and "belongs to another writer" in str(refused.content)
         shown = await call(successor, "show", session_id=child_id)
         assert not shown.is_error, shown.content
         assert shown.structured_content is not None and shown.structured_content["cwd"] == str(tmp_path)
         assert (await call(successor, "show", session_id="untracked")).is_error
-        assert (await call(unrelated, "collect_handoff")).structured_content == {"status": "expired"}
+        refused_collected = await call(successor, "show", session_id=already_collected.session_id)
+        assert refused_collected.is_error
+        assert (await call(unrelated, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         if not completed_before_handoff:
             writer = source.manager._status_writer
             assert writer is not None
@@ -111,18 +120,18 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
             await writer.flush_async()
             notices = shared_layout.notices_directory("shared-root", tmp_path)
             _write_notice(notices, child_id, 1, "2026-11-24T00:00:00+00:00", "子からの通知")
-            notice = (await call(successor, "collect_handoff")).structured_content
+            notice = (await call(successor, "collect_handoff", timeout=0)).structured_content
             assert notice is not None and notice["status"] == "running"
             assert notice["notices"] == [{"body": "子からの通知"}]
-            running = (await call(successor, "collect_handoff")).structured_content
+            running = (await call(successor, "collect_handoff", timeout=0)).structured_content
             assert running is not None and running["status"] == "running" and "notices" not in running
             assert not (await call(successor, "send_message", session_id=child_id, prompt="続行")).is_error
             assert delivered == [(source.manager, "続行")]
             _complete(child, message="子の結果")
-        collected = await call(successor, "collect_handoff")
+        collected = await call(successor, "collect_handoff", timeout=0)
         assert not collected.is_error, collected.content
         assert collected.structured_content is not None and collected.structured_content["agent_message"] == "子の結果"
-        expired = (await call(successor, "collect_handoff")).structured_content
+        expired = (await call(successor, "collect_handoff", timeout=0)).structured_content
         assert expired is not None and expired["status"] == "expired"
         assert child.result_delivered
         _complete(untracked, message="前任だけの結果")

@@ -311,6 +311,12 @@ class ServiceSessionControl:
                     mcp_tools._SELECTED_MANAGER.reset(selected)
             lock_scope = lock if lock is not None else contextlib.nullcontext()
             async with lock_scope:
+                origin = self.managers.conversations[parent]
+                if isinstance(predecessor, str) and (existing := origin.handoff_successors.get(predecessor)) is not None:
+                    raise ActionableError(
+                        f"前任 {predecessor} は後任 {existing} へ引き継ぎ済みです",
+                        next_action=f"`show` に後任 {existing} を指定し、同じ後任の作業を確認する",
+                    )
                 if isinstance(identifier, str):
                     if identifier in self._pending_restores or identifier in self._uncertain:
                         raise ActionableError(
@@ -337,9 +343,9 @@ class ServiceSessionControl:
                         details = result.structured_content or {}
                         successor = details.get("session_id")
                         if isinstance(successor, str) and successor in manager.sessions:
-                            self.managers.conversations[parent].started_children.add(successor)
+                            origin.started_children.add(successor)
                             if isinstance(predecessor, str) and details.get("status") in {"running", "completed"}:
-                                self.managers.handoff_children(manager, predecessor, successor)
+                                await self.managers.handoff_children(origin, predecessor, successor)
                     return result
 
     async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:

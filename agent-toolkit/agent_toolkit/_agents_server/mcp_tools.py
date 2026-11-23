@@ -512,15 +512,17 @@ async def send_message(
     title="引き継いだ子sessionの通知・結果の回収",
     description=(
         "同じ管理サービスで正式に引き継いだ直属の子だけを対象に、通知または終了結果を1件回収する。"
-        "待機せずに返す。実行中の子だけが残る時はrunning、対象が無い時はexpiredを返す。"
+        "上限まで待って未回収の通知・結果がなければrunningを返す。runningなら回収を再発行し、対象なしのexpiredで終える。"
         "自分で起動した子の回収には従来どおり`atk agents wait`を使う。"
     ),
     structured_output=True,
 )
-async def collect_handoff() -> dict[str, Any]:
+async def collect_handoff(
+    timeout: Annotated[float, Field(ge=0, le=30, description="待機上限秒数。0は即時照会。")] = 30,
+) -> dict[str, Any]:
     if _SERVICE_MANAGERS is None:
         return {"status": "expired"}
-    return await _SERVICE_MANAGERS.poll_handoff_children(_manager())
+    return await _SERVICE_MANAGERS.poll_handoff_children(_manager(), timeout)
 
 
 @mcp.tool(

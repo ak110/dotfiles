@@ -43,6 +43,7 @@ class Conversation:
     connections: set[str] = dataclasses.field(default_factory=set)
     active: int = 0
     started_children: set[str] = dataclasses.field(default_factory=set)
+    handoff_successors: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 class ServiceManagers:
@@ -125,12 +126,10 @@ class ServiceManagers:
             if self._retirable(conversation):
                 await self.close_conversation(key, disconnected_only=True)
 
-    def handoff_children(self, caller: AgentsServerManager, predecessor: str, successor: str) -> frozenset[str]:
-        origin = next((item for item in self.conversations.values() if item.manager is caller), None)
-        if origin is None or predecessor not in origin.started_children or not self._owns_handoff_child(caller, predecessor):
-            return frozenset()
-        if any(source == predecessor for source, _, _ in self._handoff_children.values()):
-            return frozenset()
+    async def handoff_children(self, origin: Conversation, predecessor: str, successor: str) -> None:
+        caller = origin.manager
+        if predecessor not in origin.started_children or not self._owns_handoff_child(caller, predecessor):
+            return
         owner = self.conversations.get(predecessor)
         if (
             owner is None
@@ -138,16 +137,27 @@ class ServiceManagers:
             or owner.manager.launcher_session_id() != predecessor
             or owner.manager.status_owner()[0] != caller.status_owner()[0]
         ):
-            return frozenset()
+            return
+        origin.handoff_successors[predecessor] = successor
         manager = owner.manager
-        direct = frozenset(
-            identifier
-            for identifier in owner.started_children.intersection(manager._wait_target_ids())
-            if self._owns_handoff_child(manager, identifier)
-        )
+        direct: set[str] = set()
+        async with self.handoff_scope(owner):
+            for identifier in owner.started_children.intersection(manager._wait_target_ids()):
+                if not self._owns_handoff_child(manager, identifier):
+                    continue
+                child = (
+                    manager.sessions.get(identifier)
+                    or manager.expired_sessions.get(identifier)
+                    or manager.stopped_sessions.get(identifier)
+                )
+                if child is not None and child.finalized_at is not None:
+                    writer = manager._status_writer
+                    consumed = writer is not None and await writer.result_state_async(identifier, session=child) == "consumed"
+                    if child.result_delivered or consumed:
+                        continue
+                direct.add(identifier)
         if direct:
-            self._handoff_children[successor] = predecessor, owner, direct
-        return direct
+            self._handoff_children[successor] = predecessor, owner, frozenset(direct)
 
     @staticmethod
     def _owns_handoff_child(manager: AgentsServerManager, identifier: str) -> bool:
@@ -174,7 +184,7 @@ class ServiceManagers:
             return owner
         return None
 
-    async def poll_handoff_children(self, successor: AgentsServerManager) -> dict:
+    async def poll_handoff_children(self, successor: AgentsServerManager, timeout: float) -> dict:
         identifier = next((key for key, item in self.conversations.items() if item.manager is successor), None)
         grant = None if identifier is None else self._handoff_children.get(identifier)
         if grant is None or identifier is None:
@@ -184,7 +194,7 @@ class ServiceManagers:
         if not targets:
             return {"status": "expired"}
         async with self.handoff_scope(owner):
-            return await owner.manager.wait(inherited_targets=targets)
+            return await owner.manager.wait(inherited_targets=targets, inherited_timeout=timeout)
 
     @contextlib.asynccontextmanager
     async def handoff_scope(self, owner: Conversation) -> AsyncGenerator[None]:
