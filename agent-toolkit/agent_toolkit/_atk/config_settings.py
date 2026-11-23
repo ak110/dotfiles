@@ -24,7 +24,7 @@ MODEL_TYPES = ("execute", "review", "review_fast", "chores", "chores_fast", "orc
 """工程ごとに直接解決するモデル候補列の種別。"""
 
 MODEL_DEFAULTS = {
-    "execute_model": "claude:opus[1m]/low,codex:sol/low",
+    "execute_model": "codex:sol/low,claude:opus[1m]/low",
     "review_model": "codex:sol/medium,claude:sonnet[1m]/medium",
     "review_fast_model": "codex:luna/medium,claude:haiku/medium",
     "chores_model": "codex:sol/low,claude:sonnet[1m]/low",
@@ -37,6 +37,7 @@ MODEL_DEFAULTS = {
 PRESET_MODELS = {
     "codex-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
+        "execute_model": "claude:opus[1m]/low,codex:sol/low",
     },
     "codex-near-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
@@ -49,11 +50,13 @@ PRESET_MODELS = {
     },
     "claude-balanced": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
+        "execute_model": "claude:opus[1m]/low,codex:sol/low",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
         "chores_fast_model": "claude:haiku/low,codex:luna/low",
     },
     "claude-primary": {
         **{key: value for key, value in MODEL_DEFAULTS.items() if key != "write_model"},
+        "execute_model": "claude:opus[1m]/low,codex:sol/low",
         "review_model": "claude:sonnet[1m]/medium,codex:sol/medium",
         "review_fast_model": "claude:haiku/medium,codex:luna/medium",
         "chores_model": "claude:sonnet[1m]/low,codex:sol/low",
@@ -134,7 +137,6 @@ CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.ends
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
-    "usage_auto_allocation": "false",
     "usage_activity_mode": "continuous",
     "usage_reset_permissions": "[]",
     "claude_reset_inventory": "[]",
@@ -309,6 +311,7 @@ def config_environment_variable_names() -> tuple[str, ...]:
         *RETIRED_CONNECTION_KEYS,
         *sorted(RETIRED_MODEL_KEYS),
         "process_loop_repositories",
+        "usage_auto_allocation",
     )
     return tuple(config_env_name(key) for key in keys)
 
@@ -382,7 +385,7 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("受理可能値: continuous, intermittent")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in {"codex_fast_mode", "session_review_auto_start", "usage_auto_allocation"}:
+    elif key in {"codex_fast_mode", "session_review_auto_start"}:
         if value not in {"true", "false"}:
             raise ValueError("受理可能値: true, false")
     elif key in MODEL_DEFAULTS:

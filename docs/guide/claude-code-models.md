@@ -29,78 +29,35 @@ atk run-script cost-metrics -- --since 2026-10-05 --until 2026-10-19
 
 ## 工程別モデル設定
 
-### 利用枠に応じた自動配分
+### 利用枠とreset許可
 
-ClaudeとCodexの残量・回復時刻・観測した消費ペースから、保存済みモデル候補のエンジン順を調整できる。
-モデル名とeffort、既存のプリセットは維持する。
-dotfilesの通常構成（`full`）では、`update-dotfiles`の後処理が`usage_auto_allocation`未設定の場合に自動配分を有効にする。
-`usage_activity_mode`未設定の場合は実際の稼働・停止の比率を使う`intermittent`を補う。
-Linux・Windows共通で適用し、既存の設定値は保持する。
-`atk config set usage_auto_allocation false`で無効化した値も、更新時に上書きしない。
-agent-toolkitだけを導入した環境では初期状態で無効になっており、次の操作で有効化する。
+`atk config usage`はClaudeとCodexの残量・回復時刻・最終観測、resetの在庫と案内を表示する。
+`--refresh`で利用枠を取り直し、`--json`で詳細を表示する。
+取得できない枠は不明とし、取得済みの観測は時刻とともに表示する。
+追加課金の使用額、サブスクリプションの使用率、トークンから推定したAPI料金は別の値である。
 
-```sh
-atk config usage --refresh
-atk config set usage_auto_allocation true
-atk config usage
-```
-
-確認結果には、優先するエンジンと理由、利用枠の残量・回復時刻・最終観測、自動配分の有効状態を表示する。
-設定や稼働中の会話を含む詳細は `atk config usage --json` で確認する。
-取得できない枠は不明として扱い、過去の観測時刻を残す。
-追加課金の使用額とサブスクリプションの使用率、トークンから推定したAPI料金は別の値である。
-消費ペースは活動時間当たりの使用率の変化で、別端末や並行会話の利用を含み得るため、モデル単独の因果効果とは断定しない。
-観測は既存の起動・継続境界とSDK通知を使い、独立した常駐エージェントは起動しない。
-
-仕事など断続的に稼働する環境では`atk config set usage_activity_mode intermittent`を使う。
-常時稼働へ戻す場合は`continuous`とする。
-私用と仕事の認証・設定・観測値を別環境で管理し、このPCの消費率を仕事環境へコピーしない。
-学習前や欠損時は不確かさを示す。
-統括以外では、Claudeの利用率が90%以上か、回復までの推定需要が残量を超えた場合に、他の候補を先に試す。
-残量があれば、他の候補が使えない場合やClaudeだけを設定している場合にもClaudeを試す。
-現在のアカウントの観測を使い、契約が分かる場合はその契約の観測に限る。
-契約が不明でも、同じ利用枠・対象モデルではSDK通知と`/usage`のうち新しい観測を使う。
-対象の枠が使用率100%か、週次・5時間枠の拒否が報告されている場合は、サブスクリプションでしか起動できないClaude候補を送信前に除く。
-`atk config usage`には順位を下げた根拠と、利用上限で除いた理由を区別して表示する。
-`start`が次の候補で起動した場合は、使えなかった候補とその理由を`excluded_candidates`に返す。
-起動前に全候補が使えないと分かった場合は、エラー本文の`excluded`に理由を示す。
-設定していないモデルは補わない。
-
-新モデルの一時指定は、通常設定に1つの上書きを重ねる。
-次は書式例であり、モデルIDは使用するホストが受理するものを指定する。
-
-```sh
-atk config temporary set execute_model 'codex:MODEL_ID/high,claude:MODEL_ID/low' --until 2027-01-01T00:00:00+09:00
-atk config temporary show
-atk config temporary clear
-```
-
-期限を省略すると明示解除まで有効になる。
-期限は上書き全体へ適用し、指定のないキーは通常設定を使う。
-期限後はその時点の最新の通常設定へ戻り、一時指定前の値を書き戻さない。
-環境変数による明示指定は一時指定より優先する。
-エンジン順の自動調整は一時指定した候補にも適用する。
-特定モデルだけを使う場合は候補を1つにする。
-実行中turnは強制終了せず、新規起動・継続の境界で適用する。
-自動配分を無効に戻す操作は`atk config set usage_auto_allocation false`である。
-
-resetの自動消費は別途`usage_reset_permissions`に、`id`、`engine`、`account`、`scope`、`from`、`until`、`count`を持つJSON配列で許可する。
-`account`は確認したアカウント、日時はタイムゾーン付き、`count`は期間内の上限回数である。
-Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを新方式の消費許可には読み替えない。
+resetの自動消費は`usage_reset_permissions`の許可だけを使う。
+許可は`id`、`engine`、`account`、`scope`、`from`、`until`、`count`を持つJSON配列で、初期値は空である。
+`account`は確認したアカウント、日時はタイムゾーン付き、`count`は期間内の上限回数とする。
+Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを消費許可には読み替えない。
 自然回復が近い場合や作業がない場合は消費しない。
 検収や導入だけを目的に実際の権利を消費しない。
-Claudeの在庫・期限・対象は`claude_reset_inventory`に同じ形式で手入力し、`atk config usage --json`のリセット案内にある公式Usage画面で消費する。
+消費ペースから週次枠の枯渇を見込む時、`usage_activity_mode`の初期値`continuous`は連続稼働を仮定し、`intermittent`は観測した稼働の割合があれば反映する。
+許可が空なら、自動resetのための定期照会は行わない。
+
+Claudeの在庫・期限・対象は`claude_reset_inventory`に入力し、`atk config usage --json`の案内にある公式Usage画面で手動消費する。
 消費後は在庫を更新し、`atk config usage --refresh`で残量を取り直す。
 Fable限定などの対象を、他モデルや別の枠の回復へ読み替えない。
 
 ### モデル候補の保存
 
 エージェントが作業の工程ごとに使うモデルを`atk config`で設定する。
-各キーには候補をカンマ区切りで並べ、先頭の候補が使えない場合に次の候補へ進む。
+各キーには候補をカンマ区切りで並べ、保存した順に試す。
+起動できない場合は次の候補へ進む。
 
 | キー | 用途 | 初期値 |
 | --- | --- | --- |
-| `execute_model` | 計画・設計判断・原因分析・統合 | `claude:opus[1m]/low,codex:sol/low` |
+| `execute_model` | 計画・設計判断・原因分析・統合 | `codex:sol/low,claude:opus[1m]/low` |
 | `review_model` | 実行レビュー | `codex:sol/medium,claude:sonnet[1m]/medium` |
 | `review_fast_model` | 小規模レビュー | `codex:luna/medium,claude:haiku/medium` |
 | `chores_model` | 確定済みの作業・中規模の読取 | `codex:sol/low,claude:sonnet[1m]/low` |
@@ -126,7 +83,25 @@ atk config set chores_model opencode:local/Qwen/Qwen3.8-27B@thinking,claude:sonn
 
 `atk config show`は現在値を一覧し、`atk config get <キー>`は指定キーの値を返す。
 `AGENT_TOOLKIT_CONFIG_<キー名の大文字>`の環境変数を設定すると保存値より優先する。
-保存済みのeffortは初期値の変更では書き換えない。
+保存済みのモデル候補は初期値を変えても書き換えない。
+以前の設定キー`usage_auto_allocation`は`atk config`で読み込むと削除する。
+環境変数で指定している場合は解除する。
+
+一時指定は通常設定に1つの上書きを重ねる。
+次は書式例であり、モデルIDは使用するホストが受理するものを指定する。
+
+```sh
+atk config temporary set execute_model 'codex:MODEL_ID/high,claude:MODEL_ID/low' --until 2027-01-01T00:00:00+09:00
+atk config temporary show
+atk config temporary clear
+```
+
+期限を省略すると明示解除まで有効になる。
+期限は上書き全体へ適用し、指定のないキーは通常設定を使う。
+期限後はその時点の最新の通常設定へ戻り、一時指定前の値を書き戻さない。
+環境変数による明示指定は一時指定より優先する。
+特定モデルだけを使う場合は候補を1つにする。
+実行中turnは強制終了せず、新規起動・継続の境界で適用する。
 
 通常の委譲先は、同じ会話の次turnからeffortを1段ずつ調整できる。
 
@@ -170,11 +145,11 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 
 | プリセット | 初期値から変更する工程 |
 | --- | --- |
-| `codex-balanced` | 初期値と同一 |
-| `codex-near-primary` | executeを`codex:sol/low,claude:opus[1m]/low`へ変更 |
-| `codex-primary` | executeを`codex:sol/low,claude:opus[1m]/low`、orchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
-| `claude-balanced` | choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
-| `claude-primary` | reviewを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fastを`claude:haiku/medium,codex:luna/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
+| `codex-balanced` | executeを`claude:opus[1m]/low,codex:sol/low`へ変更 |
+| `codex-near-primary` | 初期値と同一 |
+| `codex-primary` | orchestrateを`codex:sol/medium,claude:opus[1m]/medium`へ変更 |
+| `claude-balanced` | executeを`claude:opus[1m]/low,codex:sol/low`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
+| `claude-primary` | executeを`claude:opus[1m]/low,codex:sol/low`、reviewを`claude:sonnet[1m]/medium,codex:sol/medium`、review_fastを`claude:haiku/medium,codex:luna/medium`、choresを`claude:sonnet[1m]/low,codex:sol/low`、chores_fastを`claude:haiku/low,codex:luna/low`へ変更 |
 
 その他の主な設定は次のとおりである。
 
@@ -184,6 +159,8 @@ agent-toolkitには、advisorとは別に、委譲先が自分を起動した委
 | `claude_usage_limit_wait`・`codex_usage_limit_wait` | 利用上限に達した時に解除を待つ範囲。`five-hour`（初期値）は5時間枠だけ、`always`は週次枠なども待ち、`never`は待たずに次の候補へ進む |
 | `claude_*_connections`・`codex_*_connections`ほか | Claude・Codexのサブスクリプション・APIクレジット・従量課金APIの使い分け。設定は[接続の使い分け](claude-code-connections.md#接続の使い分け)を参照 |
 
+初期設定ではCodexの5時間枠の解除を待つ。
+それ以外の枠は適用できるreset許可があれば先に確認し、resetしなければ使用順の残りの接続先や次のモデル候補を使う。
 利用上限で待つ間は、`agents_server`の委譲先、`atk wi process-loop`、`atk run-skill`が解除後に同じ会話で作業を続け、待機理由と予定時刻を表示する。
 ユーザーが起動したClaude Codeの会話も、agent-toolkitのFunction hooksを有効にしていれば解除後に自動で再開する。
 解除予定が不明な場合は300秒ごとに再確認するため、待機中もClaude Codeを起動したままにする。

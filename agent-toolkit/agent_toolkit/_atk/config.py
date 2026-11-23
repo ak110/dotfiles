@@ -140,7 +140,9 @@ def _legacy_key_guidance(keys: list[str]) -> str:
     if "process_loop_repositories" in keys:
         guidance += "。process_loop_repositoriesは廃止した。`atk config repos`でrepositoriesを変更する"
     if "codex_auto_reset" in keys:
-        guidance += "。codex_auto_resetは廃止した。自動配分と明示許可はusage_auto_allocationとusage_reset_permissionsで確認する"
+        guidance += "。codex_auto_resetは廃止した。明示許可はusage_reset_permissionsで確認する"
+    if "usage_auto_allocation" in keys:
+        guidance += "。usage_auto_allocationは廃止した。候補順は工程別の`*_model`キーで指定する"
     if any(key in _config_settings.RETIRED_MODEL_KEYS for key in keys):
         guidance += "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
     for key in keys:
@@ -229,9 +231,7 @@ def parse_stage_model_candidates(value: str) -> list[tuple[str, str, str]]:
     ]
 
 
-def parse_unresolved_model_candidates(
-    model_type: str, *, excluded: dict[tuple[str, str, str], str] | None = None, exec_lane: bool = False
-) -> list[tuple[str, str, str]]:
+def parse_unresolved_model_candidates(model_type: str, *, exec_lane: bool = False) -> list[tuple[str, str, str]]:
     if model_type in _config_settings.MODEL_TYPES:
         key = f"{model_type}_model"
         if exec_lane and model_type == "execute":
@@ -239,17 +239,7 @@ def parse_unresolved_model_candidates(
             value = resolve_mutable_setting(key, fallback=fallback)
         else:
             value = resolve_mutable_setting(key)
-        selected = parse_stage_model_candidates(value)
-        candidates, reason = config_usage.select_candidates(
-            selected,
-            model_type,
-            automatic=resolve_mutable_setting("usage_auto_allocation") == "true",
-            activity_mode=resolve_mutable_setting("usage_activity_mode"),
-            excluded=excluded,
-        )
-        if not candidates and excluded is None:
-            raise ValueError(reason)
-        return candidates
+        return parse_stage_model_candidates(value)
     try:
         return parse_stage_model_candidates(model_type)
     except ValueError as error:
@@ -303,7 +293,7 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub in {"usage", "temporary"}:
-            config_usage.dispatch(args, resolve=resolve_mutable_setting, parse=parse_stage_model_candidates, refresh=refresh)
+            config_usage.dispatch(args, resolve=resolve_mutable_setting, refresh=refresh)
         elif sub in {"show", "list"}:
             _cmd_config_show(home)
         elif sub == "get":

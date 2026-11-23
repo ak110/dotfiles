@@ -52,8 +52,8 @@ def test_public_model_round_trip_and_environment_precedence(tmp_path, monkeypatc
 )
 def test_presets_save_exact_six_stage_values_and_preserve_write(tmp_path, capsys, preset):
     expected = {key: value for key, value in _DEFAULTS.items() if key != "write_model"}
-    if preset.startswith("codex-") and preset != "codex-balanced":
-        expected["execute_model"] = "codex:sol/low,claude:opus[1m]/low"
+    if preset in {"codex-balanced", "claude-balanced", "claude-primary"}:
+        expected["execute_model"] = "claude:opus[1m]/low,codex:sol/low"
     if preset == "codex-primary":
         expected["orchestrate_model"] = "codex:sol/medium,claude:opus[1m]/medium"
     if preset.startswith("claude-"):
@@ -157,7 +157,6 @@ def test_direct_candidates_preserve_order_and_bypass_saved_settings(tmp_path):
 
 def test_exec_lane_uses_medium_only_without_explicit_model(tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", raising=False)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_USAGE_AUTO_ALLOCATION", "false")
     parse = config_module.parse_unresolved_model_candidates
     assert ("codex", "sol", "medium") in parse("execute", exec_lane=True)
     assert ("codex", "sol", "low") in parse("execute")

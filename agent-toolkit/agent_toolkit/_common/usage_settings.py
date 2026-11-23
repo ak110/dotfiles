@@ -35,6 +35,7 @@ def read_settings() -> dict[str, Any]:
         return {}
     if not isinstance(value, dict):
         raise ValueError("利用枠の一時設定はJSONオブジェクトで保存する")
+    value.pop("decisions", None)
     return value
 
 

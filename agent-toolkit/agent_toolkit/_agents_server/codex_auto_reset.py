@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import datetime
 import errno
 import hashlib
 import json
@@ -19,9 +18,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent_toolkit._agents_server import session_errors
 from agent_toolkit._agents_server.file_operations import run_file_operation
+from agent_toolkit._atk import config
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
-from agent_toolkit._common.usage_settings import validate_permissions
+from agent_toolkit._common.usage_settings import deadline, validate_permissions
 
 type Request = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 type Outcome = Literal["reset", "alreadyRedeemed", "nothingToReset", "noCredit"]
@@ -136,6 +136,54 @@ class _Attempt(_Boundary):
     used_permissions: dict[str, int] = Field(default_factory=dict)
 
 
+def configured_permissions() -> list[dict[str, Any]]:
+    return json.loads(config.resolve_mutable_setting("usage_reset_permissions"))
+
+
+def _open_permissions(permissions: list[dict[str, Any]], now: float) -> list[dict[str, Any]]:
+    return [
+        permission
+        for permission in permissions
+        if permission["engine"] == "codex"
+        and permission["scope"] == "codex"
+        and permission["count"] > 0
+        and deadline(permission["from"]) <= now < deadline(permission["until"])
+    ]
+
+
+def active_permissions() -> list[dict[str, Any]]:
+    return _open_permissions(configured_permissions(), time.time())
+
+
+def _permitted(
+    permissions: list[dict[str, Any]], email: str, identity: str, account_id: Any, previous: _Attempt | None, now: float
+) -> list[tuple[float, str]]:
+    used = previous.used_permissions if previous is not None else {}
+    permitted = []
+    for permission in _open_permissions(permissions, now):
+        if permission["account"] not in (email, identity, account_id):
+            continue
+        identifier = permission["id"]
+        if previous is not None and previous.status == "pending":
+            if previous.permission_id != identifier:
+                continue
+        elif used.get(identifier, 0) >= permission["count"]:
+            continue
+        permitted.append((deadline(permission["until"]), identifier))
+    return permitted
+
+
+def has_permission(permissions: list[dict[str, Any]], account: Any, account_id: Any, *, state_dir: Path) -> bool:
+    if not permissions or not isinstance(account, dict) or account.get("type") != "chatgpt":
+        return False
+    email = account.get("email")
+    if not isinstance(email, str) or not email.strip():
+        return False
+    identity = hashlib.sha256(email.encode("utf-8")).hexdigest()
+    path = state_dir / "agents-server" / "codex-auto-reset" / f"{identity}.json"
+    return bool(_permitted(permissions, email, identity, account_id, _read_attempt(path), time.time()))
+
+
 async def check_auto_reset(
     request: Request,
     *,
@@ -144,6 +192,7 @@ async def check_auto_reset(
     permissions: list[dict[str, Any]],
     active: bool = True,
     pace: float | None = None,
+    on_permission_confirmed: Callable[[], None] | None = None,
 ) -> AutoResetResult:
     """1回の確認を行う。消費確定後の再取得失敗は成功と利用枠未確認を分けて返す。
 
@@ -181,28 +230,11 @@ async def check_auto_reset(
             return AutoResetResult(reset_confirmed=True, rate_limits=raw, diagnostic="同じweekly窓のresetは成功確認済み")
         used_permissions = dict(previous.used_permissions) if previous is not None else {}
         now = time.time()
-        permitted = []
-        for permission in permissions:
-            if permission.get("engine") != "codex" or permission.get("account") not in {
-                email,
-                identity,
-                raw.get("accountId"),
-            }:
-                continue
-            if permission.get("scope") != "codex":
-                continue
-            beginning = datetime.datetime.fromisoformat(permission["from"])
-            ending = datetime.datetime.fromisoformat(permission["until"])
-            if beginning.tzinfo is None or ending.tzinfo is None or not beginning.timestamp() <= now < ending.timestamp():
-                continue
-            identifier = permission["id"]
-            if previous is not None and previous.status == "pending" and previous.permission_id != identifier:
-                continue
-            retry = previous is not None and previous.status == "pending" and previous.permission_id == identifier
-            if retry or used_permissions.get(identifier, 0) < permission["count"]:
-                permitted.append((ending.timestamp(), identifier))
+        permitted = _permitted(permissions, email, identity, raw.get("accountId"), previous, now)
         if not permitted:
             return AutoResetResult(rate_limits=raw, diagnostic="現在のアカウント・対象・期間・回数に対応するreset許可がない")
+        if on_permission_confirmed is not None:
+            on_permission_confirmed()
         permission_end, permission_id = min(permitted)
         retrying = previous is not None and previous.status == "pending"
         if not retrying:

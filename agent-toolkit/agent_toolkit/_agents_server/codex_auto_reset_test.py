@@ -96,7 +96,7 @@ def _permission(**updates: Any) -> dict[str, Any]:
     ],
 )
 @pytest.mark.asyncio
-async def test_automatic_allocation_never_consumes_outside_permission(tmp_path, monkeypatch, updates):
+async def test_auto_reset_never_consumes_outside_permission(tmp_path, monkeypatch, updates):
     monkeypatch.setattr(codex_auto_reset.time, "time", lambda: 100.0)
     rpc = _RPC(used=100)
     result = await check_auto_reset(rpc, state_dir=tmp_path, permissions=[_permission(**updates)])

@@ -58,7 +58,7 @@
 
 - 候補列は`<claude|codex|agy>:<model>[/<effort>]`か`opencode:<provider>/<model>[@<effort>]`をASCIIのカンマで区切って書き、先頭から試す。
   effortを省くと`medium`になる。
-- 現在の値は`atk config show`か`atk config get <キー>...`、5つのプリセットの値は`atk config apply-preset show`で表示する（`codex-balanced`が初期値）。
+- 現在の値は`atk config show`か`atk config get <キー>...`、プリセットは`atk config apply-preset show`で表示する（初期値は`codex-near-primary`と同じ）。
   `atk config apply-preset <名前>`は`write_model`を残して他の6つのキーを更新する。
 - 設定はユーザー単位の1つの値を全セッションが共有するため、`atk config set`と`apply-preset`はユーザーが変更を指示した時だけ実行する。
 - 環境変数`AGENT_TOOLKIT_CONFIG_<キー名の大文字>`が空でない間は、保存値よりその値を使う。

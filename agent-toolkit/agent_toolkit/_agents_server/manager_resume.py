@@ -112,6 +112,15 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
         if session.interrupt_requested:
             return
+        expiry = session.usage_limit_resume_at
+        if (
+            session.engine == "codex"
+            and session.usage_limit_wait_count == 0
+            and expiry is not None
+            and asyncio.get_running_loop().time() >= expiry
+        ):
+            finalize_pending_result(session)
+            return
         if session.codex_auto_reset_pending:
             return
         if session.result_contract_recovery_pending:

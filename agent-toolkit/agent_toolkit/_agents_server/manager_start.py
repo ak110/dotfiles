@@ -13,7 +13,6 @@ from agent_toolkit._agents_server import (
     admission,
     advice_request,
     backends,
-    child_environment,
     launch_prompts,
     launch_requests,
     manager_wait,
@@ -44,7 +43,6 @@ from agent_toolkit._agents_server.session_errors import ActionableRuntimeError, 
 from agent_toolkit._agents_server.state import LaunchKind, ModelCandidate, SessionResumeState, SessionState
 from agent_toolkit._agents_server.tool_descriptions import shell_prompt
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._atk import usage_refresh
 from agent_toolkit._common import codex_models, session_launchers, startup_documents, startup_features, task_documents
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.plugin_roots import PluginRootError
@@ -86,13 +84,10 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         exec_lane: bool = False,
     ) -> tuple[list[ModelCandidate], dict[ModelCandidate, str]]:
         await self._drain_candidate_records()
-        await run_file_operation(usage_refresh.ensure_fresh, environment=child_environment.inherited())
-        quota_excluded: dict[ModelCandidate, str] = {}
         try:
             candidates = await run_file_operation(
                 _atk_config.parse_unresolved_model_candidates,
                 model_type,
-                excluded=quota_excluded,
                 exec_lane=exec_lane,
             )
         except ValueError as error:
@@ -100,15 +95,9 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         if codex_models.needs_catalog(candidates):
             catalog = await backends.model_catalog(self._backend(backends.CODEX_ENGINE)).list_models()
             candidates = codex_models.resolve_candidates(candidates, catalog)
-        if not candidates and not quota_excluded:
-            raise ActionableError(
-                f"no model candidates remain for model_type: {model_type}", next_action=MODEL_TYPE_NEXT_ACTION
-            )
-        unsupported = quota_excluded | dict(excluded_candidates or {})
+        unsupported = dict(excluded_candidates or {})
         candidates = [candidate for candidate in candidates if candidate not in unsupported]
         if not candidates:
-            if quota_excluded:
-                return [], unsupported
             raise ActionableError(
                 "no model candidates remain: " + "; ".join(unsupported.values()), next_action=MODEL_TYPE_NEXT_ACTION
             )

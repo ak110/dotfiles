@@ -745,9 +745,7 @@ def agents_server_isolation(
 ) -> None:
     """agents_serverのmanagerとMCPツールのテストを、事前確認・子プロセス・共有リスナー・待機時間から切り離す。"""
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
-    # 起動時の利用枠の再取得は、実行するマシンの設定とキャッシュの鮮度によって実のcodex app-serverを起動する。
-    # 試験の結果をそのマシンの利用枠の状態に左右させないよう、自動配分を無効にする。
-    monkeypatch.setenv(config_settings.config_env_name("usage_auto_allocation"), "false")
+    monkeypatch.setenv(config_settings.config_env_name("usage_reset_permissions"), "[]")
 
 
 @pytest.fixture(name="index_path")
