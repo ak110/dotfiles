@@ -85,8 +85,12 @@ class ManagerResume(manager_registry.ManagerRegistry):
         self, session: SessionState, prompt: str, *, result_recovery: bool = False
     ) -> dict[str, Any]:
         backend = self._backend(session.engine)
-        cli_recovery = result_recovery and isinstance(backend, CliTurnManager)
-        send = backend.recover_result_contract if cli_recovery else backend.send_message
+        if result_recovery and isinstance(backend, CliTurnManager):
+            cli_recovery = True
+            send = backend.recover_result_contract
+        else:
+            cli_recovery = False
+            send = backend.send_message
         resources = await run_file_operation(
             launch_prompts.plugin_resource_instructions, SERVER_PLUGIN_ROOT, session.engine, session.cwd
         )
