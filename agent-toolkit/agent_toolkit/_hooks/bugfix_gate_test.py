@@ -128,6 +128,35 @@ def test_repl_needs_the_host_skill_result_for_current_prompt(tmp_path, monkeypat
     assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is denied
 
 
+@pytest.mark.parametrize(("success", "new_prompt", "denied"), [(True, False, False), (False, False, True), (True, True, True)])
+def test_repl_skill_posttooluse_precedes_transcript_write(tmp_path, success, new_prompt, denied):
+    human = {**_human("ここがバグっている"), "uuid": "first-human"}
+    payload = _payload([human], tmp_path)
+    skill = {
+        **payload,
+        "tool_name": "Skill",
+        "tool_use_id": "repl_bugfix",
+        "tool_input": {"skill": "agent-basics:bugfix"},
+    }
+
+    before = _run_hook_in_process("pretooluse", {**skill, "hook_event_name": "PreToolUse"})
+    assert before.returncode == 0
+    assert _pretooluse_denied(payload)
+
+    if new_prompt:
+        _payload([human, {**human, "uuid": "second-human"}], tmp_path)
+    after = _run_hook_in_process(
+        "posttooluse",
+        {
+            **skill,
+            "hook_event_name": "PostToolUse",
+            "tool_response": {"success": success, "commandName": "agent-basics:bugfix"},
+        },
+    )
+    assert after.returncode == 0
+    assert _pretooluse_denied(payload) is denied
+
+
 def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
