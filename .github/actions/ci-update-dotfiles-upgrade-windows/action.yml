@@ -7,7 +7,7 @@ runs:
     - name: Mozilla予約タスクの停止
       shell: pwsh
       run: '& "$env:DOTFILES_DIR\scripts\ci_stop_mozilla_tasks.ps1"'
-    - name: 約3日前からの update-dotfiles 更新検証
+    - name: 直前の公開版からの update-dotfiles 更新検証
       shell: pwsh
       working-directory: ${{ env.DOTFILES_DIR }}
       run: |
@@ -18,7 +18,13 @@ runs:
         $env:TEMP = $env:RUNNER_TEMP
         $env:TMP = $env:RUNNER_TEMP
         # hosted runnerはjob終了時に破棄されるため、約1分を要する検証rootの削除を省く。
-        uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --keep-verification-root
+        # 再実行日ではなく検証対象のcommit時刻で、直前のmaster公開版を選ぶ。
+        $current = git rev-parse HEAD
+        $currentTime = git show -s --format=%ct HEAD
+        $old = git rev-list --first-parent -1 "--before=@$currentTime" origin/master
+        if ($old -eq $current) { $old = git rev-parse "$old^1" }
+        if (-not $old) { throw "直前の公開版を解決できない" }
+        uv run --no-cache --script scripts/check_update_dotfiles_upgrade.py --platform windows --repo "$env:DOTFILES_DIR" --old-ref $old --keep-verification-root
     - name: 失敗時の診断ログを保存
       # 時間上限で止まったjobはcancelledで終わるため、その場合も原因調査用のログを残す。
       if: ${{ failure() || cancelled() }}
