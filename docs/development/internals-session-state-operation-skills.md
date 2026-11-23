@@ -9,9 +9,10 @@
   PreToolUseは修正・commit・検証の再実行で未起動を警告し、遮断しない。
   同じ失敗の再配送では印を戻さず、新しい失敗では改めて起動を求める。
   圧縮で未対処の印を消さず、clearと期限切れ回収はセッション状態の共通寿命に従う。
-- `operation_skills_notified`: `pretooluse/operation_skills.py`が、主体ごとに、操作の直前に起動を案内したスキルと、Claude Codeの`Skill`で起動を観測したスキルの完全名を保持する。
+- `operation_skills_notified`: `pretooluse/operation_skills.py`が、主体ごとに、操作の直前に起動を案内したスキルの完全名を保持する。
   対象は表`OPERATION_SKILLS`の4件（search、bugfix、writing-standards、check-execution）である。
-  案内は最終出力へ採用した時に記録し、記録済みのスキルはその主体へ再び案内しない。
+  案内は最終出力へ採用した時に記録する。
+  `operation_skills_observed` にSkillの起動成功または入口の全文読取を記録するまで、同じ主体の次の該当操作を止める。
   会話圧縮・clearのSessionStartで`forget_subject`がその主体の記録を消し、次の該当する操作で再び案内する。
   軽量の委譲先には案内せず、一時領域（managed-tempとClaude Codeの一時領域）だけへの書込はwriting-standardsの案内の対象から外す。
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。

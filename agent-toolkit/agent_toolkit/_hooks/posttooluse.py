@@ -69,7 +69,6 @@ lazy from agent_toolkit._hooks import tool_input as _hook_tool_input
 lazy from agent_toolkit._hooks import uwi_completion as _uwi_completion
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.background_tasks_constants import _TASK_STOP_SUCCESS_PREFIX
-lazy from agent_toolkit._hooks.delivered_repost_gate import is_send_to_user_tool
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.large_reads import session_record_reference_warning
@@ -440,9 +439,6 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                     session_id, "background_task", {"id": failed_task_id, "command": tool_input["command"]}
                 )
         return notices
-    if event_name == "PostToolUse" and is_send_to_user_tool(tool_name):
-        _progress_self_check.observe_send(payload, tool_input.get("message"))
-
     if is_main_agent_context(payload):
         uwi_notice = _uwi_completion.build_notice(session_id)
         if uwi_notice is not None:
@@ -466,7 +462,7 @@ def _observe_tool(payload: dict, session_id: str, tool_name: str, tool_input: di
                 for content_notice in content_notices(answer, _HOOK_ID, subject=subject):
                     if content_notice not in notices:
                         notices.append(content_notice)
-    elif tool_name == "Skill":
+    elif tool_name == "Skill" and event_name == "PostToolUse":
         skill = tool_input.get("skill")
         operation_skills.observe_skill(session_id, resolve_hook_agent_id(payload), skill)
         if not payload.get("agent_id") and isinstance(skill, str):
