@@ -277,6 +277,23 @@ class TestExitSessionReached:
 
         assert session_records.exit_session_reached(path, "claude") is expected
 
+    @pytest.mark.parametrize(
+        ("stdout", "expected"),
+        [
+            ('{"exit_session_invoked":true,"status":"exit_requested"}', True),
+            ("失敗: 対話CLIを識別できない", False),
+        ],
+    )
+    def test_claude_code_mode_empty_tool_result_reads_tool_use_result_stdout(
+        self, tmp_path: pathlib.Path, stdout: str, expected: bool
+    ) -> None:
+        path = tmp_path / "records.jsonl"
+        result = _claude_tool_result_record("")
+        result["toolUseResult"] = {"stdout": stdout, "stderr": ""}
+        _write_record(path, [_claude_bash_record("atk agents-exit-session"), result])
+
+        assert session_records.exit_session_reached(path, "claude") is expected
+
     @pytest.mark.parametrize("command", ["atk agents-exit-session", "atk agents-exit-session 2>&1"])
     def test_codex_cli_response_is_detected(self, tmp_path: pathlib.Path, command: str) -> None:
         path = tmp_path / "records.jsonl"
