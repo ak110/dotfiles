@@ -6,11 +6,14 @@ import logging
 import logging.handlers
 import os
 import pathlib
+import shutil
+import subprocess
 import sys
 from collections.abc import Generator
 
 import platformdirs
 import update_dotfiles_report
+from agent_toolkit._common import process_tree
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 from pytools._internal import sync_report, update_log
@@ -256,6 +259,56 @@ def git_env() -> dict[str, str]:
     if update_index is not None:
         env["GIT_INDEX_FILE"] = str(update_index)
     return env
+
+
+class ChezmoiResolveError(RuntimeError):
+    pass
+
+
+_MISE_WHICH_TIMEOUT_SEC = 60
+
+_WINDOWS = sys.platform == "win32"
+
+
+def chezmoi_executable() -> str:
+    """更新の各段がchezmoiを起動する実行ファイルを返す。
+
+    WindowsのCreateProcessは拡張子の無い名前に`.exe`だけを補うため、PATHにmiseのshim（`chezmoi.cmd`）しか無いと
+    名前での直接起動がWinError 2になる。cmdを介すと引数の解釈がcmdの規則に変わるため、実体のexeを絶対パスで起動する。
+    PATH上のchezmoi.exeを優先し、無ければ`mise which chezmoi`を各段と同じ作業ディレクトリと環境で実行して、
+    導入済みの実体を取得する（`child_env`の`MISE_AUTO_INSTALL=0`により追加の導入はしない）。
+    POSIXの起動経路は変えず、名前のまま起動する。pyfltr: allow-comment
+    """
+    if not _WINDOWS:
+        return "chezmoi"
+    env = child_env()
+    search_path = env.get("PATH")
+    found = shutil.which("chezmoi.exe", path=search_path)
+    if found is not None:
+        return found
+    mise = shutil.which("mise.exe", path=search_path)
+    if mise is None:
+        raise ChezmoiResolveError("PATHにchezmoi.exeが無く、miseのshimから実体を取得するmise.exeも見つかりません")
+    try:
+        result = process_tree.run_with_timeout(
+            [mise, "which", "chezmoi"],
+            cwd=DOTFILES_ROOT,
+            env=env,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=_MISE_WHICH_TIMEOUT_SEC,
+        )
+    except (OSError, subprocess.TimeoutExpired, process_tree.ReclaimError) as error:
+        raise ChezmoiResolveError(f"`{mise} which chezmoi`を実行できません: {error}") from error
+    candidate = result.stdout.strip()
+    if result.returncode != 0 or not candidate:
+        detail = result.stderr.strip() or "出力なし"
+        raise ChezmoiResolveError(f"`{mise} which chezmoi`が実体を返しません（exit={result.returncode}）: {detail}")
+    path = pathlib.Path(candidate)
+    if not (path.is_absolute() and path.suffix.lower() == ".exe" and path.is_file()):
+        raise ChezmoiResolveError(f"`{mise} which chezmoi`の結果が実在するexeの絶対パスではありません: {candidate}")
+    return str(path)
 
 
 MISE_LOCK = "mise.lock"

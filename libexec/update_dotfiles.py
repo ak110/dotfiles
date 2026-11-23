@@ -152,6 +152,8 @@ def _run_step(
     update_dotfiles_runtime.logger.info("stage開始: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title)
     started_at = time.monotonic()
     try:
+        if argv[0] == "chezmoi":
+            argv = [update_dotfiles_runtime.chezmoi_executable(), *argv[1:]]
         redirect: dict[str, Any] = {}
         if capture or capture_stderr:
             redirect.update(stderr=subprocess.PIPE, encoding="utf-8", errors="replace")
@@ -184,13 +186,19 @@ def _run_step(
         return 1, ""
     except process_tree.ReclaimError as error:
         raise update_dotfiles_process.GitReclaimError(str(error)) from error
+    except update_dotfiles_runtime.ChezmoiResolveError as error:
+        update_dotfiles_runtime.logger.error(
+            "stage起動失敗: %d/%d %s chezmoi解決失敗: %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title, error
+        )
+        print(f"{title}を開始できませんでした: chezmoiの実体を解決できませんでした: {error}", file=sys.stderr)
+        update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(f"chezmoiの実体を解決できません: {error}")
+        return 1, ""
     except OSError as error:
         update_dotfiles_runtime.logger.exception(
             "stage起動失敗: %d/%d %s", log_step_no, update_dotfiles_runtime.LOG_STAGE_TOTAL, title
         )
         print(
-            f"{title}を開始できませんでした: {error}。"
-            "chezmoiとGitがPATH上で起動できることを確認してupdate-dotfilesを再実行してください。",
+            f"{title}を開始できませんでした（起動した実行ファイル: {argv[0]}）: {error}",
             file=sys.stderr,
         )
         update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(str(error))
