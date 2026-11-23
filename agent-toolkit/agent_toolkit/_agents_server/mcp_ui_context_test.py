@@ -220,3 +220,24 @@ async def test_conversation_mod_rejection_returns_operation_recovery(
     message = str(raised.value)
     assert "modの拒否理由" in message and expected in message
     assert "引数の受理形式" not in message
+
+
+@pytest.mark.asyncio
+async def test_send_to_user_format_rejection_asks_to_resend_instead_of_final_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    from agent_toolkit._agents_server.manager import AgentsServerManager  # pylint: disable=import-outside-toplevel
+
+    manager = AgentsServerManager(None, launcher_environment={})
+    monkeypatch.setattr(manager, "launcher_session_id", lambda: "launcher-main")
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", None)
+    monkeypatch.setattr(mcp_tools, "_UI_DELEGATED", False)
+    monkeypatch.setattr(
+        function_hook_requests,
+        "request",
+        AsyncMock(side_effect=function_hook_requests.HookRequestRejected("再発防止の行が無い", resend=True)),
+    )
+    with pytest.raises(ToolError) as raised:
+        await mcp_tools.mcp.call_tool("send_to_user", {"message": "期待: a"})
+    message = str(raised.value)
+    assert "再発防止の行が無い" in message and "send_to_userで送り直す" in message
+    assert "最終応答に書く" not in message

@@ -72,8 +72,10 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         let autoMode: { hard_deny?: unknown; soft_deny?: unknown } | undefined;
         let flagAutoModePresent: boolean | undefined;
         let reason = "未対応の会話操作";
+        let resend: boolean | undefined;
         if (request.operation === "send_to_user" && typeof request.input?.message === "string" && missingPreventionLine(request.input.message)) {
           reason = missingPreventionRejection;
+          resend = true;
         } else if (request.operation === "send_to_user" && typeof request.input?.message === "string") {
           const messages = (await $.state.get({ plugin: "agent-toolkit", key: "uiMessages" })).value ?? {};
           await $.state.set({ plugin: "agent-toolkit", key: "uiMessages" }, { ...messages, [request.id]: request.input.message });
@@ -163,7 +165,7 @@ export function register(on: On, session: { backgroundChanged?: boolean }): void
         }
         if (request.expires * 1000 > Date.now() && await $.fs.exists(source)) {
           const response = responseBase.replace(/\.txt$/, `-${request.id}.txt`);
-          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
+          await $.fs.write(response, JSON.stringify({ id: request.id, ok, reason, resend, interactive, version, auto_mode: autoMode, flag_auto_mode_present: flagAutoModePresent, expires: request.expires }));
           if (request.detached) cleanupNeeded = true;
         } else if (request.operation === "periodic_recheck" && reason) {
           // hookが応答の待機を諦めた後の装着失敗は、失わないよう次のターンの入力として届ける。

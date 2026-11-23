@@ -46,7 +46,7 @@
 
 bugfixの`SKILL.md`と確認観点を変える時は、`.claude/skills/agent-toolkit-edit/references/agent-documents.md`「agent-basicsとの責務境界」の確認（確認観点の末尾の失敗例を変更後の本文へ当てる）を行う。
 
-- `SKILL.md`は5つの問い（期待、原因、処置、広がり、確認）だけで実施できる短い手順とする。
+- `SKILL.md`は5つの問い（期待、原因、処置、広がりと再発防止、確認）だけで実施できる短い手順とする。
   確認観点は、条件が成立した時だけ読む6本の資料（`premises.md`、`causes.md`、`spread.md`、`recurrence.md`、`prevention.md`、`ci-failures.md`）へ外に出す
 
 ### 保つ過去の決定

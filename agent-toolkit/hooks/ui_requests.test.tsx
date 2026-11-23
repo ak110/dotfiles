@@ -92,6 +92,7 @@ test("bugfixの記録に再発防止の行が無いMCP報告は配置せずに�
   expect(response.ok).toBe(false);
   expect(response.reason).toContain("未送信");
   expect(response.reason).toContain("`再発防止:`");
+  expect(response.resend).toBe(true);
   expect(response.reason).not.toContain("送信済み");
 });
 
