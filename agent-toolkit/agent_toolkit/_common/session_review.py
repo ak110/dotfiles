@@ -559,7 +559,7 @@ def record(payload: Mapping[str, Any], *, host: str, target_repo: str | None = N
         previous = state.reviewed.model_dump(exclude_unset=True) if state.reviewed is not None else {}
         transcript = payload.get("transcript_path") or prior.get("transcript_path")
         # Claudeの準備はtranscript指定で始める。記録先の無いhook再生入力を実対象へ登録しない。
-        if host == "claude" and (not isinstance(transcript, str) or not transcript.strip()):
+        if host == "claude" and (not isinstance(transcript, str) or pathlib.Path(transcript).name != f"{session_id}.jsonl"):
             return False
         value = {
             **prior,

@@ -26,7 +26,7 @@ _PROBE = textwrap.dedent(
         "hook_event_name": "SessionStart",
         "source": "compact",
         "session_id": "probe-budget",
-        "transcript_path": str(pathlib.Path(cwd) / "budget.jsonl"),
+        "transcript_path": str(pathlib.Path(cwd) / "probe-budget.jsonl"),
         "cwd": cwd,
     }
     sys.stdin = io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8")))
@@ -42,7 +42,7 @@ def _session_start_input(cwd: pathlib.Path) -> str:
         "hook_event_name": "SessionStart",
         "source": "compact",
         "session_id": "probe-budget",
-        "transcript_path": str(cwd / "budget.jsonl"),
+        "transcript_path": str(cwd / "probe-budget.jsonl"),
         "cwd": str(cwd),
     }
     return json.dumps(payload)

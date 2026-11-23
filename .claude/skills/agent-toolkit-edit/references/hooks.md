@@ -9,7 +9,7 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
 - `SessionStart`は`agents_server`の委譲先でも発火し、`SubagentStart`は`Agent`ツールのサブエージェントの起動時だけ発火する。
 - `agent-toolkit/agent_toolkit/_hooks/rules_context.py`は、`SessionStart`で委譲先を判別してメイン向けの案内を除く。
   `SubagentStart`では、委譲先の入口`agent-toolkit/skills/atk-mode/playbooks/subagent.md`を読む指示と`atk`の所在を足す。
-  どちらの通知も規範の本文を載せない。
+  両通知の内容は上記の案内と警告に限る。
   委譲先の判別には環境変数`AGENT_TOOLKIT_DELEGATED_SESSION`と`AGENT_TOOLKIT_OWNER_SESSION`を使う。
 - `Stop`と`SubagentStop`の判別は`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「委譲先での発火」に従う。
 
@@ -92,29 +92,9 @@ _llm_notice = formatter("myplugin/myhook")
 
 ### 委譲先で配送本文を検証する
 
-ホストを起動せず、`user_prompt_submit` コマンドへ合成したJSONを標準入力で渡す。
-実際の会話IDや本文は使わず、各条件の標準出力・標準エラー・終了コードを別々に保存する。
-POSIXでは、`uv run --frozen` で依存環境を選んだ後の子プロセスに、絶対パスの `XDG_STATE_HOME`、`XDG_CONFIG_HOME`、`XDG_DATA_HOME` を指定する。
-起動前に `XDG_STATE_HOME` を変更すると、miseの信頼済み設定を参照できなくなる場合がある。
-
-- 通常発話の対照: 子プロセスだけで `AGENT_TOOLKIT_OWNER_SESSION` を除き、`AGENT_TOOLKIT_DELEGATED_SESSION=0` にする。
-- 委譲先の対照: 別の隔離ディレクトリを使い、同じJSONを `AGENT_TOOLKIT_DELEGATED_SESSION=1` で渡す。
-  他の通知条件がない新規の合成セッションでは、`hookSpecificOutput.additionalContext` に入る通常発話向けの注記は通常発話の対照だけに現れる。
-
-次は通常発話の呼び出し例である。
-`scratch` は条件ごとに異なる隔離領域の絶対パスとする。
-委譲判定と状態保存先の変更は子プロセスに限る。
-
-```sh
-printf '%s\n' '{"hook_event_name":"UserPromptSubmit","session_id":"11111111-1111-4111-8111-111111111111","prompt":"隔離テスト","source":"user"}' > "$scratch/input.json"
-rc=0
-uv run --frozen env -u AGENT_TOOLKIT_OWNER_SESSION \
-  AGENT_TOOLKIT_DELEGATED_SESSION=0 XDG_STATE_HOME="$scratch/state" \
-  XDG_CONFIG_HOME="$scratch/config" XDG_DATA_HOME="$scratch/data" \
-  PYTHONPATH="$PWD/agent-toolkit" python -m agent_toolkit.hook user_prompt_submit \
-  < "$scratch/input.json" > "$scratch/output.json" 2> "$scratch/stderr.log" || rc=$?
-printf '%s\n' "$rc" > "$scratch/exit-code"
-```
+ホストを起動せず、[develop-dotfilesのテスト配置](../../develop-dotfiles/references/verification.md#テスト配置)の `isolated_development_state(root)` 内で `user_prompt_submit` に合成JSONを渡す。
+通常発話の対照は子から `AGENT_TOOLKIT_OWNER_SESSION` を除いて `AGENT_TOOLKIT_DELEGATED_SESSION=0`、委譲先の対照は別の隔離先で `AGENT_TOOLKIT_DELEGATED_SESSION=1` とする。
+各回の標準出力・標準エラー・終了コードを分けて保存し、通常発話向けの注記が通常発話の対照だけに現れることを確かめる。
 
 ## atkの実行結果出力
 

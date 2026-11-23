@@ -2,7 +2,6 @@
 
 import ast
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -177,20 +176,17 @@ def test_hook_source_does_not_name_removed_agents_server_tools(hook_notice_texts
     assert stale == []
 
 
-def _run(payload: dict, tmp_path: pathlib.Path) -> subprocess.CompletedProcess[str]:
-    env = os.environ.copy()
-    env["CLAUDE_AGENT_TOOLKIT_STATE_DIR"] = str(tmp_path / "state")
+def _run(payload: dict) -> subprocess.CompletedProcess[str]:
     return _fork_runner.run_script(
         _SCRIPT,
         argv=("pretooluse",),
         input=json.dumps(payload, ensure_ascii=False),
-        env=env,
     )
 
 
-def test_process_termination_block_is_japanese(tmp_path: pathlib.Path) -> None:
+def test_process_termination_block_is_japanese() -> None:
     command = "p" + "kill -f myserver"
-    result = _run({"tool_name": "Bash", "tool_input": {"command": command}}, tmp_path)
+    result = _run({"tool_name": "Bash", "tool_input": {"command": command}})
     assert _is_japanese_notice(_denial_reason(result))
 
 
@@ -226,7 +222,6 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
             "tool_name": "Write",
             "tool_input": {"file_path": str(tmp_path / file_name), "content": '{"dependencies": {}}'},
         },
-        tmp_path,
     )
     assert result.returncode == 0
     context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
@@ -236,14 +231,14 @@ def test_manifest_edit_warning_uses_confirmed_japanese_notice(
 
 
 @pytest.mark.parametrize("repetitions", [1, 2])
-def test_direct_response_language_block_is_japanese(tmp_path: pathlib.Path, repetitions: int) -> None:
+def test_direct_response_language_block_is_japanese(repetitions: int) -> None:
     payload = {
         "tool_name": "AskUserQuestion",
         "tool_input": {"questions": [{"question": "Which option should we choose?", "header": "確認", "options": []}]},
         "session_id": "language-block",
     }
     for _ in range(repetitions):
-        result = _run(payload, tmp_path)
+        result = _run(payload)
         reason = _denial_reason(result)
         assert "日本語で書き直" in reason
         assert _is_japanese_notice(reason)

@@ -227,7 +227,7 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     payload = {
         "hook_event_name": "SessionStart",
         "session_id": "current-id",
-        "transcript_path": str(tmp_path / "old-id.jsonl"),
+        "transcript_path": str(tmp_path / ("current-id.jsonl" if host == "claude" else "old-id.jsonl")),
         "cwd": str(tmp_path),
     }
     assert session_review.record(payload, host=host)
@@ -236,14 +236,15 @@ def test_record_only_top_level_and_keep_identity(host, tmp_path, monkeypatch) ->
     assert not session_review.record({**payload, "session_id": "delegate"}, host=host)
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION")
     monkeypatch.setenv(session_review.BATCH_ENV, "manifest")
-    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    batch_payload = {**payload, "session_id": "batch", "transcript_path": str(tmp_path / "batch.jsonl")}
+    assert session_review.record(batch_payload, host=host)
     monkeypatch.delenv(session_review.BATCH_ENV)
-    assert session_review.record({**payload, "session_id": "batch"}, host=host)
+    assert session_review.record(batch_payload, host=host)
     assert next(item for item in session_review.pending() if item["session_id"] == "batch")["review_batch"]
     assert len(session_review.pending()) == 2
 
 
-@pytest.mark.parametrize("transcript", [None, "", 123])
+@pytest.mark.parametrize("transcript", [None, "", 123, "digest-benchmark.jsonl"])
 def test_claude_record_requires_preparable_transcript(transcript: object) -> None:
     """記録先の無いClaude入力を待ちへ追加せず、準備不能な再試行を防ぐ。"""
     assert not session_review.record(
