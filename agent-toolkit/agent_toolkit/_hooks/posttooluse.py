@@ -135,7 +135,7 @@ def content_notices(prompt: str, source: str, *, subject: str = "") -> list[str]
 
 UTTERANCE_UNDERSTANDING_NOTICE_BODY = (
     "調査より先に、`agent-toolkit:atk-mode`「ユーザーの方針」の「発話の理解」を伝える。"
-    "送達指定のあるClaude Codeのメインでは、作業前の最初の`send_to_user`の`message`に置く。"
+    "送達指定のあるメインでは、作業前の最初の`send_to_user`の`message`に置く。"
     "送達指定がない場合は応答の冒頭に置き、送達に失敗した場合は通常本文で伝えられる。"
 )
 
