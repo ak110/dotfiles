@@ -23,6 +23,13 @@ from agent_toolkit._common import wait_schedule as _wait_schedule
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+def _wait_event(session_id: str, response: dict[str, Any], *, inherited: bool) -> dict[str, Any]:
+    event = {"session_id": session_id, **response}
+    if inherited and event.get("status") == "expired":
+        event["status"] = "running"
+    return event
+
+
 class ManagerWait(manager_recovery.ManagerRecovery):
     """保持するsessionの終了と保持期限内の結果を待ち、到着した結果と通知を返す。"""
 
@@ -108,7 +115,9 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         _LOG.info("result_collected session_id=%s collector=mcp-wait", session.session_id)
         return response
 
-    async def wait(self, *, inherited_targets: Collection[str] | None = None, inherited_timeout: float = 0.0) -> dict[str, Any]:
+    async def wait(
+        self, *, inherited_targets: Collection[str] | None = None, inherited_deadline: float | None = None
+    ) -> dict[str, Any]:
         """委譲先の終了を待ち、終了時だけ結果本文を返す。
 
         引数を受け取らない。対象は本MCPサーバープロセスが保持する起動中のsession全体とし、最初に終了した1件の結果を返す。
@@ -134,9 +143,12 @@ class ManagerWait(manager_recovery.ManagerRecovery):
         inherited = inherited_targets is not None
         if not inherited:
             await self._drain_diagnostics()
-        timeout = inherited_timeout if inherited else await self._resolve_wait_timeout("main")
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + float(timeout)
+        if inherited:
+            deadline = inherited_deadline if inherited_deadline is not None else loop.time()
+        else:
+            timeout = await self._resolve_wait_timeout("main")
+            deadline = loop.time() + timeout
         ordered_ids = self._wait_target_ids()
         if inherited_targets is not None:
             ordered_ids = [identifier for identifier in ordered_ids if identifier in inherited_targets]
@@ -161,9 +173,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
             for session_id in ordered_ids:
                 retained_response = await self._retained_result_response(session_id, collector="mcp-wait")
                 if retained_response is not None:
-                    if inherited and retained_response["status"] == "expired":
-                        retained_response["status"] = "running"
-                    return {"session_id": session_id, **retained_response}
+                    return _wait_event(session_id, retained_response, inherited=inherited)
                 session = self.sessions.get(session_id)
                 if not inherited and session is not None and advance_pending:
                     await self._advance_child_session_wait(session)
@@ -185,20 +195,23 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                     if candidate is not None and candidate.result_available and not candidate.result_delivered:
                         terminal.append(candidate)
                 terminal.sort(key=lambda candidate: (candidate.finalized_at or "", candidate.session_id))
-                if terminal:
-                    session = terminal[0]
+                for session in terminal:
                     notices = await self._read_notices(session.session_id)
                     try:
                         response = await self._collect_wait_result(session)
                     except retained_results.ResultBeingCollected:
                         response = {"status": "running", "progress": ""}
                     if response is not None:
-                        return {"session_id": session.session_id, **self._deliver_notices(response, notices)}
-                    if not notices:
-                        continue
-                    response = self._deliver_notices(await self._result_response_async(session, include_result=False), notices)
-                    if "notices" in response:
-                        return {"session_id": session.session_id, **response}
+                        return _wait_event(session.session_id, self._deliver_notices(response, notices), inherited=inherited)
+                    if notices:
+                        response = self._deliver_notices(
+                            await self._result_response_async(session, include_result=False), notices
+                        )
+                        if "notices" in response:
+                            return _wait_event(session.session_id, response, inherited=inherited)
+                    if not inherited:
+                        break
+                if terminal and not inherited:
                     continue
 
                 for session_id in ordered_ids:
@@ -216,7 +229,7 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                             await self._result_response_async(session, include_result=False), notices
                         )
                     if "notices" in response:
-                        return {"session_id": session_id, **response}
+                        return _wait_event(session_id, response, inherited=inherited)
 
                 retained = [
                     session
@@ -226,6 +239,14 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                 ]
                 pending_ids = [session_id for session_id in ordered_ids if session_id in self._pending_resumes]
                 observed_ids = [identifier for identifier in ordered_ids if identifier in self._recovery_targets]
+                if inherited:
+                    observed_ids.extend(
+                        session_id
+                        for session_id in ordered_ids
+                        if (previous := self.stopped_sessions.get(session_id) or self.expired_sessions.get(session_id))
+                        is not None
+                        and self._stopped_result_response(previous) is not None
+                    )
                 if not retained and not pending_ids and not observed_ids:
                     # 旧rootの結果の復元は上のI/O待機中にも完了する。復元済み本文を回収してから終了を判定する。
                     if any(
@@ -246,13 +267,14 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                             return {"session_id": observed_ids[0], "status": "running", "progress": ""}
                         session_id = pending_ids[0]
                         response = await self._pending_resume_status(self._pending_resumes[session_id])
-                        return {"session_id": session_id, **response}
+                        return _wait_event(session_id, response, inherited=inherited)
                     undelivered = next((candidate for candidate in retained if not candidate.result_delivered), None)
                     if undelivered is not None:
-                        return {
-                            "session_id": undelivered.session_id,
-                            **await self._result_response_async(undelivered, include_result=False),
-                        }
+                        return _wait_event(
+                            undelivered.session_id,
+                            await self._result_response_async(undelivered, include_result=False),
+                            inherited=inherited,
+                        )
                     session = retained[0]
                     timeout_response: dict[str, Any] = {"status": "running", "progress": ""}
                     elapsed_seconds = turn_elapsed_seconds(session.started_at)
@@ -263,6 +285,9 @@ class ManagerWait(manager_recovery.ManagerRecovery):
                 try:
                     if inherited:
                         await asyncio.sleep(min(interval, remaining))
+                        if loop.time() >= deadline:
+                            identifier = retained[0].session_id if retained else (observed_ids or pending_ids)[0]
+                            return {"session_id": identifier, "status": "running", "progress": ""}
                     else:
                         await asyncio.wait_for(self._condition.wait(), timeout=min(interval, remaining))
                 except TimeoutError:

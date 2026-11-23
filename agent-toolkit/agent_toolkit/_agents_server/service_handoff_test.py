@@ -59,11 +59,17 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
     monkeypatch.setattr(session_registry, "owner_server_instance", lambda: target["server_instance"])
     predecessor = state.SessionState("predecessor", str(tmp_path))
     already_collected = state.SessionState("8ae24391-700c-4fa9-967d-7b1d938d28de", str(tmp_path))
+    collected_during_launch = state.SessionState("7839888f-d43e-401a-9fa4-a4d4ac155e37", str(tmp_path))
     untracked = state.SessionState("untracked", str(tmp_path))
     source.manager.sessions[untracked.session_id] = untracked
 
     async def start_explore(self, prompt, cwd, *, label=None, model_type=None):
-        session = {"前任": predecessor, "子": child, "回収済み": already_collected}[prompt]
+        session = {
+            "前任": predecessor,
+            "子": child,
+            "回収済み": already_collected,
+            "起動中に回収": collected_during_launch,
+        }[prompt]
         assert self is (parent.manager if session is predecessor else source.manager)
         assert cwd == str(tmp_path) and label is None and model_type is None
         self.sessions[session.session_id] = session
@@ -71,6 +77,14 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
 
     async def start_handoff(self, session_id, *, model_type=None):
         assert self is parent.manager and session_id == "predecessor"
+        identifier = collected_during_launch.session_id
+        _complete(collected_during_launch, message="後任起動中に回収した結果")
+        with runtime_environment.bind(source.caller):
+            result = await source.manager.wait(inherited_targets={identifier})
+        assert result["agent_message"] == "後任起動中に回収した結果"
+        source.manager.sessions.pop(identifier)
+        cache = source.manager.expired_sessions if completed_before_handoff else source.manager.stopped_sessions
+        cache[identifier] = state.SessionResumeState.from_session(collected_during_launch)
         self.sessions["successor"] = state.SessionState("successor", str(tmp_path))
         return {"session_id": "successor", "status": "running", "label": "", "cwd": str(tmp_path), "model_type": model_type}
 
@@ -96,6 +110,7 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         assert not (await call(parent, "start", mode="explore", prompt="前任", cwd=str(tmp_path))).is_error
         assert not (await call(source, "start", mode="explore", prompt="子", cwd=str(tmp_path))).is_error
         assert not (await call(source, "start", mode="explore", prompt="回収済み", cwd=str(tmp_path))).is_error
+        assert not (await call(source, "start", mode="explore", prompt="起動中に回収", cwd=str(tmp_path))).is_error
         _complete(already_collected, message="前任が回収した結果")
         with runtime_environment.bind(source.caller):
             assert (await source.manager.wait())["session_id"] == already_collected.session_id
@@ -105,13 +120,14 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
             _complete(child, message="子の結果")
         writer = source.manager._status_writer
         assert writer is not None
-        for error in (OSError, asyncio.CancelledError):
-            with monkeypatch.context() as failure:
-                failure.setattr(writer, "result_state_async", AsyncMock(side_effect=error))
-                with pytest.raises(error):
-                    await call(parent, "start", handoff_from="predecessor")
-            assert "successor" not in parent.manager.sessions
-            assert (await call(successor, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
+        if completed_before_handoff:
+            for error in (OSError, asyncio.CancelledError):
+                with monkeypatch.context() as failure:
+                    failure.setattr(writer, "result_state_async", AsyncMock(side_effect=error))
+                    with pytest.raises(error):
+                        await call(parent, "start", handoff_from="predecessor")
+                assert "successor" not in parent.manager.sessions
+                assert (await call(successor, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         assert not (await call(parent, "start", handoff_from="predecessor")).is_error
         duplicate = await call(parent, "start", handoff_from="predecessor")
         assert duplicate.is_error and "successor" in str(duplicate.content)
@@ -123,6 +139,7 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         assert (await call(successor, "show", session_id="untracked")).is_error
         refused_collected = await call(successor, "show", session_id=already_collected.session_id)
         assert refused_collected.is_error
+        assert (await call(successor, "show", session_id=collected_during_launch.session_id)).is_error
         assert (await call(unrelated, "collect_handoff", timeout=0)).structured_content == {"status": "expired"}
         if not completed_before_handoff:
             await writer.activate_async()

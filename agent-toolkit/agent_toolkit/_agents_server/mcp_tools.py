@@ -523,13 +523,14 @@ async def collect_handoff(
         Field(
             ge=0,
             le=30,
-            description="通知・結果を調べた後に待機する時間の上限（秒）。0は待機せず1回照会する。対象の読取・回収処理の時間は含まない。",
+            description="呼出し開始から次の照会を待つ期限（秒）。0は1回照会する。排他を伴う読取・回収処理は期限で中断しない。",
         ),
     ] = 30,
 ) -> dict[str, Any]:
     if _SERVICE_MANAGERS is None:
         return {"status": "expired"}
-    return await _SERVICE_MANAGERS.poll_handoff_children(_manager(), timeout)
+    deadline = asyncio.get_running_loop().time() + timeout
+    return await _SERVICE_MANAGERS.poll_handoff_children(_manager(), deadline)
 
 
 @mcp.tool(

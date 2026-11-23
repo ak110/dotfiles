@@ -130,7 +130,7 @@ class ServiceManagers:
         self, origin: Conversation, predecessor: str
     ) -> tuple[Conversation, frozenset[str]] | None:
         caller = origin.manager
-        if predecessor not in origin.started_children or not self._owns_handoff_child(caller, predecessor):
+        if predecessor not in origin.started_children or self._handoff_child_state(caller, predecessor) is None:
             return None
         owner = self.conversations.get(predecessor)
         if (
@@ -144,18 +144,16 @@ class ServiceManagers:
         direct: set[str] = set()
         async with self.handoff_scope(owner):
             for identifier in owner.started_children.intersection(manager._wait_target_ids()):
-                if not self._owns_handoff_child(manager, identifier):
+                child = self._uncollected_handoff_child(manager, identifier)
+                if child is None:
                     continue
-                child = (
-                    manager.sessions.get(identifier)
-                    or manager.expired_sessions.get(identifier)
-                    or manager.stopped_sessions.get(identifier)
-                )
-                if child is not None and child.finalized_at is not None:
-                    writer = manager._status_writer
-                    consumed = writer is not None and await writer.result_state_async(identifier, session=child) == "consumed"
-                    if child.result_delivered or consumed:
-                        continue
+                writer = manager._status_writer
+                if (
+                    child.finalized_at is not None
+                    and writer is not None
+                    and await writer.result_state_async(identifier, session=child) == "consumed"
+                ):
+                    continue
                 direct.add(identifier)
         return owner, frozenset(direct)
 
@@ -165,26 +163,32 @@ class ServiceManagers:
         owner, direct = prepared
         if self.conversations.get(predecessor) is owner:
             direct = frozenset(
-                identifier
-                for identifier in direct
-                if self._owns_handoff_child(owner.manager, identifier)
-                and ((session := owner.manager.sessions.get(identifier)) is None or not session.result_delivered)
+                identifier for identifier in direct if self._uncollected_handoff_child(owner.manager, identifier) is not None
             )
             if direct:
                 self._handoff_children[successor] = predecessor, owner, direct
         origin.handoff_successors[predecessor] = successor
 
     @staticmethod
-    def _owns_handoff_child(manager: AgentsServerManager, identifier: str) -> bool:
-        if identifier in manager.sessions:
-            return True
+    def _handoff_child_state(
+        manager: AgentsServerManager, identifier: str
+    ) -> state.SessionState | state.SessionResumeState | None:
+        if (session := manager.sessions.get(identifier)) is not None:
+            return session
         pending = manager._pending_resumes.get(identifier)
         previous = (
             pending.state
             if pending is not None
             else (manager.expired_sessions.get(identifier) or manager.stopped_sessions.get(identifier))
         )
-        return previous is not None and not manager._is_registry_resume_state(previous)
+        return None if manager._is_registry_resume_state(previous) else previous
+
+    @classmethod
+    def _uncollected_handoff_child(
+        cls, manager: AgentsServerManager, identifier: str
+    ) -> state.SessionState | state.SessionResumeState | None:
+        child = cls._handoff_child_state(manager, identifier)
+        return child if child is not None and not child.result_delivered else None
 
     def handoff_child_owner(self, successor: str, identifier: str) -> Conversation | None:
         grant = self._handoff_children.get(successor)
@@ -194,12 +198,12 @@ class ServiceManagers:
         if (
             identifier in children
             and self.conversations.get(predecessor) is owner
-            and self._owns_handoff_child(owner.manager, identifier)
+            and self._handoff_child_state(owner.manager, identifier) is not None
         ):
             return owner
         return None
 
-    async def poll_handoff_children(self, successor: AgentsServerManager, timeout: float) -> dict:
+    async def poll_handoff_children(self, successor: AgentsServerManager, deadline: float) -> dict:
         identifier = next((key for key, item in self.conversations.items() if item.manager is successor), None)
         grant = None if identifier is None else self._handoff_children.get(identifier)
         if grant is None or identifier is None:
@@ -209,7 +213,7 @@ class ServiceManagers:
         if not targets:
             return {"status": "expired"}
         async with self.handoff_scope(owner):
-            return await owner.manager.wait(inherited_targets=targets, inherited_timeout=timeout)
+            return await owner.manager.wait(inherited_targets=targets, inherited_deadline=deadline)
 
     @contextlib.asynccontextmanager
     async def handoff_scope(self, owner: Conversation) -> AsyncGenerator[None]:
@@ -238,14 +242,13 @@ class ServiceManagers:
             and (
                 any(owner is conversation for _, owner, _ in self._handoff_children.values())
                 or any(
-                    launcher in parent.started_children and self._owns_handoff_child(parent.manager, launcher)
+                    launcher in parent.started_children and self._handoff_child_state(parent.manager, launcher) is not None
                     for parent in self.conversations.values()
                 )
             )
             and any(
-                (session := manager.sessions.get(identifier)) is None or not session.result_delivered
+                self._uncollected_handoff_child(manager, identifier) is not None
                 for identifier in conversation.started_children.intersection(manager._wait_target_ids())
-                if self._owns_handoff_child(manager, identifier)
             )
         ):
             return False
