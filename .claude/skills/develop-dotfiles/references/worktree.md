@@ -5,6 +5,7 @@
 1. 専用worktreeや回収予定の検証用複製では、`mise trust`の後にルートで`make sync`を実行し、リポジトリ直下の`.venv`を`uv.lock`と`.python-version`へ合わせてから後続へ渡す（`agent-toolkit/`には仮想環境を作らない）。
    - 回収予定の検証用複製は、managed-tempの一時ルート直下に`mktemp -d '<一時ルート>/<用途>-XXXXXXXX'`で作った領域へ`git worktree add --detach`で作る。
      通常のファイルコピーで複製すると、内部の`.claude/worktrees/`や`.venv`まで実容量で複製してしまう。
+   - 一時複製でWindowsの更新を最後まで試す場合は、[Windowsの更新を最後まで試す](verification.md#windowsの更新を最後まで試す)を使う。
    - 回収予定の領域ではローカルの依存の同期だけを行い、Git hookとテンプレートは既存の設定を使う。
      共有CLIの導入元と共通のGit設定は、領域の回収後も残す必要がある。
      そのため`mise run bootstrap`、`mise bootstrap`、`make setup`、`uv tool install --editable`、`prek install`、`git config --local commit.template`は恒久的に使う作業ツリーの初期設定に限る。

@@ -133,6 +133,16 @@ Rustとfixtureの変更は`rust-lint`、Pythonとserveの変更は`browser-e2e`�
 選ばずに成功とした結果と判定の失敗・出力の欠落を分け、必須check名と失敗の伝播を保つ。
 Pythonのpytest・lint、完全導入と更新の検証には領域の選択を当てない。
 
+## Windowsの更新を最後まで試す
+
+一時複製の修正版で `update-dotfiles` を最後まで試す場合は、認可済みの候補branchの既存CI `update-dotfiles-upgrade (windows)` を使う。
+使い捨てのGitHub-hosted Windows runnerで対象checkoutのHEADへ更新し、ジョブが省略されず成功したことを確認する。
+特定の起動条件が必要なら、同種の使い捨てrunnerで更新を起動する前にその条件の成立を確認する。
+
+普段のWindowsで、一時複製や別HOMEだけを用意して全工程を起動しない。
+chezmoiの設定・適用先だけでなく、WinGetなどのユーザー単位の状態も共有し得る。
+LinuxでDockerを使った結果は、Windowsの非昇格更新の証拠にしない。
+
 ## テストとCIの所要基準
 
 [テストとCIの所要基準](verification-execution.md#テストとciの所要基準)で判定する。
