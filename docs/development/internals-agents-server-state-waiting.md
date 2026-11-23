@@ -17,6 +17,7 @@
 | CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | `atk agents wait`。1つの書込主体に対して同時に1つの実行プロセスのみが全対象を待機する。ロックファイル自体はロック解放後も削除せず保持する |
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`および`current.json` | 先行する待機処理へ合流する後続の`atk agents wait`、待機対象0件（終了コード10）および`consumed`（終了コード8）の診断情報を生成する後続の`atk agents wait` | 先行する待機処理が`running`、`published`、および再待機が必要かを示す`continuable`を書き込み、結果を返却した後続の待機処理が`consumed`を書き込む |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`および`notices/<通知ファイル>` | 中断後に同一のrunを再開する`atk agents wait` | 待機CLI。結果ファイルは所有者を確認した排他区間内で退避し、通知ファイルは原本を同じrunの退避先へ移動する |
+| CLI待機が知らせたCodexのAPI再試行 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/api-retry-notices/<session_id>.json`（通知した再試行の`api_error.first_at`） | 同じ書込主体の後続の`atk agents wait`。同じ`first_at`の再試行を再通知しない | `atk agents wait`。再試行が`API_RETRY_NOTICE_SECONDS`を超えて続く対象を返す時に書き込む |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | PostToolUseフック（子セッション開始時およびreply再開時の追加。`atk agents wait`と同様に索引を経由したルートへ登録する）、`atk agents wait`（待機開始時の追加、および回収・破棄時の削除）。助言機能側は読み取りのみを行う |
 | 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | 現在turnの状態ファイルの書込所有者と`atk agents wait`。状態投影の親IDまたは登録簿の`launcher_session_id`を受取会話と照合し、引き継ぎ後は現在の書込所有者を優先する | `notify.py`がCLIの委譲先通知とManagerの復旧失敗通知を作成主体付きで保存する。`notice_inbox.py`は帰属を確認した本文だけを回収する。待機登録とルート一致だけでは原本を削除しない |
 

@@ -52,6 +52,9 @@ RESULT_RETENTION_SECONDS = 1800.0
 # 値はユーザーの提案に基づく300秒とする。長時間のコマンドの実行待ちでも超過し得るため、
 # 超過は委譲元が状況を調べる契機として扱う。
 STALL_NOTICE_SECONDS = 300.0
+# pyfltr: allow-comment -- CodexのAPI再試行が本値を超えて続くと、`atk agents wait`が委譲元へ1度返す。
+# pyfltr: allow-comment -- Codexの応答ストリームの無応答上限300秒の2回分を超えた再試行を、一時的な切断と区別する。
+API_RETRY_NOTICE_SECONDS = 600.0
 # ホストが応答しないMCPツール呼び出しをバックグラウンドタスクへ移すまでの秒数。
 # 以降の上限はこの閾値を制約として導出する。単独の値として決めない。
 HOST_BACKGROUND_THRESHOLD_SECONDS = 120.0
