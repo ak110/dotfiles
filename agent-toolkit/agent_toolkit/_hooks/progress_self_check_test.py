@@ -462,7 +462,7 @@ def test_notice_keeps_all_unreadable_records_reachable(tmp_path: pathlib.Path, m
     assert all(failure in report.read_text(encoding="utf-8") for failure in failures)
 
 
-@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize("failed", [None, OSError, SystemExit])
 def test_process_loop_new_wis_reports_unconfirmed(monkeypatch, failed):
     from agent_toolkit._atk.wi import listing  # pylint: disable=import-outside-toplevel
 
@@ -472,7 +472,7 @@ def test_process_loop_new_wis_reports_unconfirmed(monkeypatch, failed):
     if failed:
 
         def unable(_sid):
-            raise OSError("取得不能")
+            raise failed("取得不能")
 
         monkeypatch.setattr(listing, "progress_new_wis", unable)
     notice = _due_notice(sid)

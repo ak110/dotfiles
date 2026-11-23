@@ -165,8 +165,8 @@ def _new_wi_text(session_id: str) -> str:
 
     try:
         rows = progress_new_wis(session_id)
-    except Exception as error:  # pylint: disable=broad-exception-caught
-        return f"新着WIは未確認（{type(error).__name__}）。"
+    except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
+        return f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で診断と処理可能な新着を確かめる。"
     if rows is None:
         return "新着WIは未確認（開始時集合なし）。"
     if not rows:

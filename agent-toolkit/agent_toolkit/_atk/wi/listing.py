@@ -557,6 +557,6 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"
                 branch = (parse_frontmatter(body) or ({}, ""))[0].get("merge_branch")
-                if DATED_NAME.fullmatch(path.name):
-                    labels.append(f"{path.name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
+                name = path.name if re.fullmatch(r"[A-Za-z0-9._-]+", path.name) else json.dumps(path.name)
+                labels.append(f"{name} (source: {source}、merge_branch: {'あり' if branch else 'なし'})")
     return tuple(sorted(set(labels)))

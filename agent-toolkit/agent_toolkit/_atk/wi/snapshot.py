@@ -89,7 +89,7 @@ def remember_progress_start(
     def remember(state: dict) -> dict:
         previous = state.get(_PROGRESS_SNAPSHOTS)
         rows = previous if isinstance(previous, dict) else {}
-        return {**state, _PROGRESS_SNAPSHOTS: {**rows, **updates}}
+        return {**state, _PROGRESS_SNAPSHOTS: {**updates, **rows}}
 
     session_state.update_state(expected, remember)
 

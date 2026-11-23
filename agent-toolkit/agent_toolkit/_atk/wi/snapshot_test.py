@@ -176,7 +176,7 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
     monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "snapshot-loop")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "snapshot-loop")
     before = "20261123-140000-001.md"
-    new = "20261123-145959-001.md"
+    new = "merge-lane.md"
     outside = "20261123-145959-002.md"
     _write_awi_file(notes, before, source="implement")
     target = "--configured-repos" if configured else "--target-repo=github.com/example/foo"
@@ -196,6 +196,11 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
     )
     _write_awi_file(notes, outside, target_repo="github.com/example/other", source="implement")
 
+    later_baseline = tmp_path / "later-snapshot.json"
+    with pytest.raises(SystemExit) as invocation:
+        atk.main(["wi", "list", "--skip-pull", "--count", target, "--snapshot-output", str(later_baseline)], home=tmp_path)
+    assert invocation.value.code == 0
+    capsys.readouterr()
     assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
     assert baseline.read_bytes() == original
 
