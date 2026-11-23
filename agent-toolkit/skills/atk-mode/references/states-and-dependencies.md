@@ -61,7 +61,8 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 | `adopted`か`rejected`→`inbox` | `atk wi return-to-inbox --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、再処理のためにキューへ戻す時 |
 | `adopted`か`rejected`→`hold` | `atk wi hold --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、確認や修正の間保留する時 |
 
-同じ遷移、メモ、commit、対象リポジトリで終了できる複数の項目は、個別に確かめたファイル名を並べて1回の`atk wi adopt <ファイル名>...`か`atk wi reject <ファイル名>...`で終了し、メモやcommitが異なる項目は個別に呼び出す。
+同じ遷移、メモ、commit、対象リポジトリで終了できる複数の項目は、個別に確かめたファイル名を並べて1回の`atk wi adopt <ファイル名>...`か`atk wi reject <ファイル名>...`で終了する。
+採用をまとめるには[効果確認](effect-records.md)の判定と理由もそろえる。
 実装commitの対応記録の保存、取得、補完は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
 終了後に履歴を書き換える時は`plan-rewrite`で対応commitと件名を付け替え、採否の結果と処理日時は保つ。
 
@@ -170,7 +171,7 @@ commitやレビュー記録などの詳細は、その1文の後ろに置く。
 メモに書く処理結果は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い、終了の直前に確かめる。
 対象のプラットフォーム、ランタイム、呼び出し手段で自ら観測したことだけを事実として書き、参照するcommit、PR、CI run、外部操作は完了を確かめてから、後続の担当が解決できる識別子で書く。
 `--commit`を伴う採否では、そのリビジョンを解決でき、originが対象リポジトリと一致するworktreeの絶対パスを`--target-repo`に渡す。
-実装付きAWIは[効果確認](effect-records.md)も指定する。
+[効果確認](effect-records.md)の引数は実装commit付きAWIの`adopt`に限る。
 
 `rejected`は、エージェントだけが起票した要求の全てを技術的な根拠で不採用とする時か、人間由来の要求の全てについてユーザーが不採用を明示的に承認した時に限る。
 技術的な失敗、情報の不足、外部条件の成立待ち、計画の不備では`active`のまま保ち、本書「着手不能要因の分類」で待ち方を決める。
