@@ -159,15 +159,23 @@ export const missingPreventionRejection = automatedMessage(
 );
 
 export function missingPreventionLine(message: string): boolean {
-  const counts = new Map<string, number>();
-  for (const line of reportBodyLines(message).map((item) => item.replaceAll("：", ":"))) {
+  const records: Map<string, boolean>[] = [];
+  for (const raw of reportBodyLines(message)) {
+    const line = raw.replaceAll("：", ":").replace(/^\s*(?:[-*+]\s+)?/, "").replaceAll("**", "");
+    if (/^(?:#|【)/.test(line)) {
+      records.push(new Map());
+      continue;
+    }
     const separator = line.indexOf(":");
-    if (separator < 0 || !line.slice(separator + 1).trim()) continue;
+    if (separator < 0) continue;
     const head = line.slice(0, separator).trim();
-    counts.set(head, (counts.get(head) ?? 0) + 1);
+    const filled = Boolean(line.slice(separator + 1).trim());
+    if (head === "期待") records.push(new Map());
+    const record = records.at(-1);
+    if (!record) continue;
+    record.set(head, (record.get(head) ?? false) || filled);
   }
-  const records = Math.min(...BUGFIX_RECORD_HEADS.map((head) => counts.get(head) ?? 0));
-  return records > 0 && (counts.get("再発防止") ?? 0) < records;
+  return records.some((record) => BUGFIX_RECORD_HEADS.every((head) => record.get(head)) && !record.get("再発防止"));
 }
 
 export function reportWarnings(message: string): string[] {

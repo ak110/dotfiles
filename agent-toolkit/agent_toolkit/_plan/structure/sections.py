@@ -616,7 +616,7 @@ def check_plan_request_structure(
     if cause is not None and work_type == "通常変更":
         errors.append(f"作業種別が`通常変更`の計画に`## {REQUEST_H2_CAUSE}`は置かない")
     elif cause is not None:
-        errors.extend(f"`## {REQUEST_H2_CAUSE}`: {error}" for error in cause_record_errors("\n".join(cause)))
+        errors.extend(f"`## {REQUEST_H2_CAUSE}`: {error}" for error in cause_record_errors("\n".join(cause), saved_record=True))
     elif work_type == "バグ対応" and not related_wi:
         errors.append(
             f"関連WIが無いバグ対応の計画には`## {REQUEST_H2_CAUSE}`が必要。"
