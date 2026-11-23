@@ -619,6 +619,14 @@ def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: 
     assert (reason is None) is valid
 
 
+@pytest.mark.parametrize(("later_result", "valid"), [("", False), ("\n\n統合準備完了", True)])
+def test_generic_success_does_not_finalize_exec_plan_notification(later_result: str, valid: bool) -> None:
+    session = _role_session("exec.subagent.md")
+    message = "状態: completed\n計画検査完了\n計画ファイル: なし\n統合区分: マージあり\nAWI: a.md"
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message + later_result})
+    assert (reason is None) is valid
+
+
 @pytest.mark.parametrize(
     ("launch_kind", "effort", "expected", "lookup_fails"),
     [
