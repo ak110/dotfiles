@@ -40,7 +40,7 @@ CI workflowを編集する時は、次を確かめる。
 
 - 通常のLinux検査はpyfltrの公式イメージを使う `container:` 実行にそろえる。
   環境そのものを試すジョブとWindows、定期監査、配布・リリースの経路は現行の構成を保つ。
-  採否の根拠と対象は[追従台帳のLinux CIの共通方式](followup-ledger-settings-testing.md#linux-ciの共通方式をコンテナにそろえる)にある。
+  採否の根拠と対象は[追従台帳のLinux CIの共通方式](followup-ledger-settings-testing.md#linux-ciの共通方式をコンテナーにそろえる)にある。
 - container化したジョブでは、uv・pnpm・Node.js・miseのセットアップのstepを省く。
 - `defaults.run.shell: bash`を指定する。
   GitHub Actionsは、`container:`のジョブで`shell`の指定が無い`run`を`sh`で実行するためである。
