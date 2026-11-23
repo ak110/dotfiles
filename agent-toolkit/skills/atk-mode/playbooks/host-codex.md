@@ -45,7 +45,7 @@ Codexで動くメインと委譲先が、agent-toolkitの手順書をCodexの公
 
 1. 開発環境の同じチェックアウトでは、agent-toolkitと同じ親ディレクトリの`agent-basics/.claude-plugin/plugin.json`のnameと`skills/`の実在を確かめて使う。
 2. 配布先では、本書「Codexのplugin root解決」の限定照会の結果から、同じmarketplaceの有効なagent-basicsを一意に特定して同じ対応でルートを解決し、キャッシュは導入情報が示す版だけを使う。
-3. ルートは別々に保持し、実体か `skills/` を取得できなければ診断を保全して配置を確認し、不具合なら `agent-basics:bugfix` で認可内の修復後に再取得し、結果または未回復の影響・試行・再開条件を委譲元へ返す。
+3. ルートは別々に保持し、実体か `skills/` が欠ければ診断を保全し、既知の導入情報で認可内の修復を試し、読めてから `agent-basics:bugfix` で原因を確かめ、未確認の版は使わず、本人の操作が要るか回復できない分の影響・試行・再開条件を委譲元へ返す。
 
 ## Claude Code向けに配置された規範の読込
 

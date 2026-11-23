@@ -456,8 +456,11 @@ def test_handoff_failure_redacts_saved_diagnostics(
 
     monkeypatch.setattr(session_handoff.process_tree, "run_with_timeout", extract)
     session = state.SessionState("codex-session", str(tmp_path), engine="codex", prompt="本文", model_type="execute")
-    with pytest.raises(ActionableError):
+    with pytest.raises(ActionableError) as exc:
         session_handoff.prepare_prompt(session)
+    if failure == "missing":
+        guide = exc.value.next_action
+        assert guide.index("prepare.stdout") < guide.index("agent-basics:bugfix") < guide.index("回復結果を伝える")
     for name in ("prepare.stdout", "prepare.stderr"):
         saved = (directory / name).read_text(encoding="utf-8")
         assert "fake-output" not in saved and "fake-error" not in saved

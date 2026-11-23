@@ -274,6 +274,10 @@ async def test_tool_error_body_carries_next_action(
     reason, next_action = body.split(f"\n{NEXT_ACTION_PREFIX}", 1)
     assert reason.endswith(str(error))
     assert operation in next_action
+    if type(error) in {ValueError, RuntimeError}:
+        assert (
+            next_action.index("agent-basics:bugfix") < next_action.index("未適用を確認") < next_action.index("回復結果を伝える")
+        )
 
 
 def test_candidate_unavailable_next_action_follows_its_cause() -> None:

@@ -549,6 +549,8 @@ def test_git_head_rejects_non_oid_with_status_guidance(
         mutation_targets._git_head(tmp_path)  # pylint: disable=protected-access
 
     assert f"git -C {tmp_path} status" in exc_info.value.next_action
+    guide = exc_info.value.next_action
+    assert guide.index("agent-basics:bugfix") < guide.index("未反映の処理") < guide.index("回復結果を伝える")
 
 
 @pytest.mark.parametrize(

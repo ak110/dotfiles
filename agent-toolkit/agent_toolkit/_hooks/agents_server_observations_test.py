@@ -851,3 +851,14 @@ def test_terminal_session_error_is_not_tool_failure(tmp_path, monkeypatch):
     record = agents_server_observations.session_record(session_state.read_state("local"), "child")
     assert record is not None and record["error"] == {"message": "中断した"}
     assert record["pending_observation"] is False
+
+
+@pytest.mark.parametrize("operation", ["list", "start"])
+def test_missing_response_identity_guides_recovery(operation):
+    tool = f"mcp__plugin_agent-toolkit_agents_server__{operation}"
+    warnings = agents_server_observations.observe_tool(
+        {"tool_response": {}}, "owner-session", tool, {}, moved_to_background=False
+    )
+    assert len(warnings) == 1
+    guide = warnings[0].fix
+    assert guide.index("原因を確かめる") < guide.index("認可の範囲で回復する") < guide.index("回復結果を伝える")

@@ -222,6 +222,7 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
         session_id=session_id if isinstance(session_id, str) else "",
         reserved_bytes=len(short_reason.encode("utf-8")),
         agent_id=_agent_id.resolve_hook_agent_id(payload),
+        operation_denied=specific.get("permissionDecision") == "deny",
     )
     if reason:
         specific["permissionDecisionReason"] = short_reason

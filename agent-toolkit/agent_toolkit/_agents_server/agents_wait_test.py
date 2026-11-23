@@ -459,3 +459,11 @@ def test_agents_wait_adds_review_receipt_to_review_session_notice(
 
         assert "通知が指摘を含む場合" in action
         assert "指摘を受領した" not in action
+
+
+def test_wait_broken_registry_guides_recovery(wait_environment, monkeypatch, capsys):
+    _write_own_status(wait_environment, [{"session_id": "session-1"}])
+    monkeypatch.setattr(agents_wait.wait_targets, "read_wait_targets", lambda *_a: (set(), "破損"))
+    assert _wait_for_session_1_result(wait_environment) == 9
+    guide = capsys.readouterr().err
+    assert guide.index("原因を確かめる") < guide.index("認可の範囲で回復する") < guide.index("回復結果を伝える")

@@ -18,11 +18,13 @@
 選定を始める前に、`atk config show`の`state_dir`直下の`sync-report.json`を確認する。
 同期が失敗したまま着手すると、処理が途中で成立しなくなるためである。
 
-1. ファイルが無いか`status`が`succeeded`なら、次の工程へ進む。
-2. `status`が`failed`か、`post_apply`の`failed_steps`が1件以上なら、失敗内容からこのセッションで完遂できるかを判断する。
-   完遂できるなら根拠を報告して進める。
-   同期の診断を保全し、不具合なら `agent-basics:bugfix` で原因を調べ、認可内の設定を修復するか再接続し、安全なら同期を再試行する。
-   なお完遂が難しいなら着手せず、`atk wi process-loop abort`でprocess-loopへ中断を要請し、失敗したステップと理由を報告して終了する。
+1. ファイルが無いか、`status`が`succeeded`で`post_apply`に失敗が無ければ、次の工程へ進む。
+2. `status`が`failed`か、`post_apply`の`failed_steps`が1件以上なら、同期の診断を保全する。
+   不具合なら `agent-basics:bugfix` で原因を調べ、認可内で設定を修復するか再接続する。
+   先行処理の適用状態を確認し、安全な場合だけ同期を再試行する。
+   繰り返せない同期処置は再発行しない。
+   回復を試した後で選定の前提が揃ったなら根拠を伝えて進む。
+   揃わなければ着手せず、`atk wi process-loop abort`で中断を要請し、失敗した工程・試した手段・再開条件を伝えて終了する。
 3. process-loopが起動した各回では、直前のupdate-dotfilesのログを1担当が検分する。
    `update-dotfiles logs`の当回分と`sync-report.json`の実行ID・開始終了時刻を対応付け、標準出力・標準エラーと`notices`も確認する（更新ログは同じ状態ディレクトリの`update-dotfiles.log`にあり、回転した分は同じ実行IDの範囲を回転先から補う）。
    更新実行を特定できない範囲は未確認として記録する。
