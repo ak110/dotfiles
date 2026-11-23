@@ -4,11 +4,17 @@
 実行するときだけ遅延importする。
 """
 
+from __future__ import annotations
+
 import argparse
 import importlib
 import pathlib
+from typing import TYPE_CHECKING
 
 from agent_toolkit._atk import cli_support as _cli_support
+
+if TYPE_CHECKING:
+    from agent_toolkit._atk.serve.agent_routes import AgentListing
 
 
 def _port_type(value: str) -> int:
@@ -40,14 +46,19 @@ def build_parser(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def dispatch(args: argparse.Namespace, *, home: pathlib.Path) -> int:
+def dispatch(
+    args: argparse.Namespace,
+    *,
+    home: pathlib.Path,
+    agent_listing: AgentListing | None = None,
+) -> int:
     serve_cli = importlib.import_module("agent_toolkit._atk.serve.cli")
     if args.serve_action == "logs":
         return serve_cli.show_logs(follow=args.follow)
     if args.follow:
         args.serve_parser.error("--followは`atk serve logs`で指定してください。")
     try:
-        serve_cli.run(host=args.host, port=args.port, home=home)
+        serve_cli.run(host=args.host, port=args.port, home=home, agent_listing=agent_listing)
     except ValueError as error:
         _cli_support.report_rejected(args, error)
         return 1

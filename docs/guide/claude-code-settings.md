@@ -98,7 +98,7 @@ agent-toolkitのIDは`agent-toolkit@ak110-dotfiles`である。
 この指定は組み込みガード全体を外し、すべてのModのhookが省略されずに動く。
 特定のhookだけを有効にする設定ではないため、ガードを保持したい組織では前述の組織Modの配布を使う。
 server-managed settingsで配信する場合は、サーバーがその会話の設定を確認するまでガードが残ることがある。
-設定を保存した直後は効いていないように見えても、反映まで時間をおいてから新しい会話で確認する。
+設定を保存した直後に反映されない場合は、時間をおいて新しい会話で確認する。
 適用後は`/plugin`で対象Modの制限通知を確認する。
 必要なら新しい会話を`claude --debug`で起動し、対象Modが`tier prepend`で読み込まれたかを確認する。
 管理設定の実配信は組織ごとに異なり、ここでは個別組織での適用成功を確認していない。
@@ -112,3 +112,8 @@ server-managed settingsで配信する場合は、サーバーがその会話の
   "terminal.integrated.rightClickBehavior": "nothing"
 }
 ```
+
+## atk config
+
+`atk serve`の「設定」で値の出所と反映の時機を確認し、保存値を変更する。
+画面を開けない環境では、`atk config show`で実効値を確認し、`atk config --help`で利用できる操作を調べる。

@@ -19,7 +19,9 @@
     <nav class="app-nav" aria-label="画面">
       <a href="__BASE_PATH_HTML__/" aria-current="page">ワークアイテム</a>
       <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
-      <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+      <a href="__BASE_PATH_HTML__/agents">エージェント</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
       <span class="nav-loading-slot"><span id="loading-indicator" class="nav-loading" role="status" hidden><span class="visually-hidden">読み込み中</span></span></span>
     </nav>
     <div class="header-actions">
@@ -315,7 +317,9 @@
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
     <div id="plans-app">
@@ -349,13 +353,33 @@
     </div>
   </section>
 
+  <section id="screen-agents" class="screen" __AGENTS_HIDDEN__>
+    <header class="app-header">
+      <div class="header-title"><h1 tabindex="-1">エージェント</h1></div>
+      <nav class="app-nav" aria-label="画面">
+        <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
+        <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/agents">エージェント</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
+      </nav>
+    </header>
+    <main id="agents-app">
+      <label><input id="agents-terminated" type="checkbox">終了済みの委譲先を含める</label>
+      <p id="agents-error" role="status" hidden></p>
+      <div id="agents-hosts"></div>
+    </main>
+  </section>
+
   <section id="screen-sessions" class="screen" __SESSIONS_HIDDEN__>
     <header class="app-header">
       <div class="header-title"><h1 tabindex="-1">セッション</h1></div>
       <nav class="app-nav" aria-label="画面">
         <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
         <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/agents">エージェント</a>
         <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
     <div id="sessions-app">
@@ -386,11 +410,30 @@
     </div>
   </section>
 
+  <section id="screen-settings" class="screen" __SETTINGS_HIDDEN__>
+    <header class="app-header">
+      <div class="header-title"><h1 tabindex="-1">設定</h1></div>
+      <nav class="app-nav" aria-label="画面">
+        <a href="__BASE_PATH_HTML__/">ワークアイテム</a>
+        <a href="__BASE_PATH_HTML__/plans">計画ファイル</a>
+        <a href="__BASE_PATH_HTML__/agents">エージェント</a>
+        <a href="__BASE_PATH_HTML__/sessions">セッション</a>
+        <a href="__BASE_PATH_HTML__/settings">設定</a>
+      </nav>
+    </header>
+    <main id="settings-app">
+      <p id="settings-status" role="status"></p>
+      <div id="settings-content"></div>
+    </main>
+  </section>
+
   <script id="serve-bootstrap" type="application/json">__SERVE_BOOTSTRAP_JSON__</script>
   <script id="plans-bootstrap" type="application/json">__PLANS_BOOTSTRAP_JSON__</script>
   <script type="module" src="__BASE_PATH_HTML__/static/shell.js"></script>
   <script type="module" src="__BASE_PATH_HTML__/static/wi.js"></script>
   <script type="module" src="__BASE_PATH_HTML__/static/plans.js"></script>
   <script type="module" src="__BASE_PATH_HTML__/static/sessions.js"></script>
+  <script type="module" src="__BASE_PATH_HTML__/static/agents.js"></script>
+  <script type="module" src="__BASE_PATH_HTML__/static/settings.js"></script>
 </body>
 </html>

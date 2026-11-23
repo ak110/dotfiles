@@ -4,6 +4,7 @@ import pytilpack.quart
 import pytilpack.sse
 import quart
 
+from agent_toolkit._atk.serve import agent_routes, settings_routes
 from agent_toolkit._atk.serve import config as serve_config
 from agent_toolkit._atk.serve import entry_index as _entry_index
 from agent_toolkit._atk.serve import plans as serve_plans
@@ -32,7 +33,11 @@ def _sessions_context(config: serve_config.ServeConfig) -> serve_sessions.Sessio
 
 
 async def create_app_async(
-    private_notes: pathlib.Path, config: serve_config.ServeConfig, state: serve_state.ServeState
+    private_notes: pathlib.Path,
+    config: serve_config.ServeConfig,
+    state: serve_state.ServeState,
+    *,
+    agent_listing: agent_routes.AgentListing | None = None,
 ) -> quart.Quart:
     plans = await serve_plans.create_context_async(
         root=pathlib.Path(config.plans.root).expanduser() if config.plans.root else None,
@@ -43,7 +48,7 @@ async def create_app_async(
         codex_home=pathlib.Path(config.sessions.codex_home).expanduser() if config.sessions.codex_home else None,
         remote_hosts=config.sessions.remote_hosts,
     )
-    return create_app(private_notes, config, state, plans_context=plans, sessions_context=sessions)
+    return create_app(private_notes, config, state, plans_context=plans, sessions_context=sessions, agent_listing=agent_listing)
 
 
 def create_app(
@@ -57,6 +62,7 @@ def create_app(
     plans_context: serve_plans.PlansContext | None = None,
     sessions_context: serve_sessions.SessionsContext | None = None,
     timing_log_path: pathlib.Path | None = None,
+    agent_listing: agent_routes.AgentListing | None = None,
 ) -> quart.Quart:
     app = quart.Quart(__name__)
     app.config["SERVE_CONFIG"] = config
@@ -83,6 +89,8 @@ def create_app(
     _wi_routes.register_wi_routes(app, runtime, plans)
     _shell_routes.register_plan_routes(app, plans)
     _shell_routes.register_session_routes(app, sessions, plans)
+    agent_routes.register_agent_routes(app, sessions, agent_listing)
+    settings_routes.register_settings_routes(app, config)
     _runtime.register_lifecycle(app, runtime, plans, sessions)
 
     plans.state.stop_requested = state.stop_requested

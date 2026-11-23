@@ -40,7 +40,7 @@ async def default_ssh_runner(host: str, op: str, args: list[str]) -> str:
     `list`には常駐接続と同じ接続確立の打ち切りと生存確認を付け、上限が長くても
     到達できないホストの失敗を接続確立の段階で数秒のうちに返す。
     """
-    ssh_options = (*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS) if op in {"list", "search"} else SSH_BASE_OPTIONS
+    ssh_options = (*SSH_BASE_OPTIONS, *SSH_WATCH_OPTIONS) if op != "read" else SSH_BASE_OPTIONS
     return await _atk_serve_remote.run_remote_helper(
         REMOTE_BOOTSTRAP, host, op, args, ssh_options=ssh_options, timeout=OPERATION_TIMEOUT_SEC[op]
     )

@@ -542,6 +542,27 @@ def scan_activity(
     )
 
 
+def root_activity(session_id: str, *, state_root: pathlib.Path | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {"status": "不明"}
+    try:
+        name = _valid_session(session_id)
+        record = _read(activity_directory(state_root) / f"{name}.json")
+        if not _valid_activity_record(record, name) or record.get("parent_session_id"):
+            return result
+        result["engine"] = record["engine"]
+        identity = process_identity.ProcessIdentity.parse(record.get("process"))
+        process = psutil.Process(identity.pid)
+        if identity.matches(process) and process.status() not in {psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD}:
+            result["status"] = "稼働中"
+        else:
+            result["status"] = "終了"
+    except psutil.NoSuchProcess, psutil.ZombieProcess:
+        result["status"] = "終了"
+    except OSError, UnicodeError, ValueError, psutil.Error:
+        pass
+    return result
+
+
 def living_root_session_ids(*, state_root: pathlib.Path | None = None) -> frozenset[str]:
     found: set[str] = set()
     for path in _paths(activity_directory(state_root), []):

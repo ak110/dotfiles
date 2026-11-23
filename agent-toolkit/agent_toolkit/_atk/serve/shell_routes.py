@@ -143,6 +143,8 @@ def render_index(
         .replace("__WI_HIDDEN__", hidden["wi"])
         .replace("__PLANS_HIDDEN__", hidden["plans"])
         .replace("__SESSIONS_HIDDEN__", hidden["sessions"])
+        .replace("__AGENTS_HIDDEN__", "" if initial_screen == "agents" else "hidden")
+        .replace("__SETTINGS_HIDDEN__", "" if initial_screen == "settings" else "hidden")
         .replace("__SERVE_BOOTSTRAP_JSON__", json.dumps(serve_bootstrap, ensure_ascii=False).replace("</", "<\\/"))
         .replace("__PLANS_BOOTSTRAP_JSON__", json.dumps(plans_bootstrap, ensure_ascii=False).replace("</", "<\\/"))
     )

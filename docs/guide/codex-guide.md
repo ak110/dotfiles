@@ -1,5 +1,7 @@
 # Codex利用ガイド
 
+モデルと接続の設定は、`atk serve`の「設定」からも変更できる。
+
 Codexはagent-toolkitの標準構成に含まれ、単体インストーラーがCodexプラグインと共有スキルを設定する。
 概要と導入・初回確認は[agent-toolkitのREADME](../../agent-toolkit/README.md)、共通の詳細操作は[agent-toolkit利用ガイド](claude-code-guide.md)を参照。
 本書はCodexに固有の操作と注意をまとめる。

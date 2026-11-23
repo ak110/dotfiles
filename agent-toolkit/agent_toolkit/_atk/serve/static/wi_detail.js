@@ -72,20 +72,145 @@ function metadataEntries(entry) {
   return result;
 }
 
-function appendMetadataItem(metadata, label, value) {
+const childDialogs = [];
+
+function wiLink(filename) {
+  const link = document.createElement('a');
+  link.href = entryPageUrl({filename});
+  link.textContent = filename;
+  link.addEventListener('click', event => {
+    if (event.button || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void openReferencedWi(filename, link);
+  });
+  return link;
+}
+
+function linkWiReferences(container, entry) {
+  const knownNames = (entry.referenced_wi_names ?? []).slice().sort((a, b) => b.length - a.length);
+  const dated = String.raw`\d{8}-\d{6}-\d{3,}\.md`;
+  if (!knownNames.length && !new RegExp(dated).test(container.textContent)) return;
+  const alternatives = [...knownNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), dated];
+  const filenames = new RegExp(
+    String.raw`(?<![A-Za-z0-9_.-])(?:${alternatives.join('|')})(?![A-Za-z0-9_-]|\.[A-Za-z0-9_-])`, 'gu'
+  );
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode: node => node.parentElement.closest('a') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const fragment = document.createDocumentFragment();
+    let end = 0;
+    for (const match of node.data.matchAll(filenames)) {
+      const filename = match[0];
+      if (filename === entry.filename) continue;
+      fragment.append(node.data.slice(end, match.index), wiLink(filename));
+      end = match.index + filename.length;
+    }
+    if (!end) continue;
+    fragment.append(node.data.slice(end));
+    node.replaceWith(fragment);
+  }
+}
+
+function closeReferencedWi() {
+  const dialog = childDialogs.pop();
+  if (dialog) {
+    dialog.close();
+    dialog.remove();
+  }
+}
+
+async function openReferencedWi(filename, origin) {
+  const parent = origin.closest('dialog');
+  const dialog = document.createElement('dialog');
+  dialog.className = 'dialog-shell wi-reference-dialog';
+  const title = document.createElement('h2');
+  title.id = `wi-reference-title-${childDialogs.length + 1}`;
+  title.textContent = `${filename}（${childDialogs.length + 1}段目）`;
+  dialog.setAttribute('aria-labelledby', title.id);
+  const header = document.createElement('header');
+  header.className = 'dialog-header';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.autofocus = true;
+  close.textContent = '閉じる';
+  close.addEventListener('click', closeReferencedWi);
+  header.append(title, close);
+  const body = document.createElement('div');
+  body.className = 'dialog-body';
+  body.textContent = '読み込み中…';
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.textContent = 'このWIを開く';
+  open.hidden = true;
+  const footer = document.createElement('footer');
+  footer.className = 'dialog-footer';
+  footer.append(open);
+  const frame = document.createElement('div');
+  frame.className = 'dialog-frame';
+  frame.append(header, body, footer);
+  dialog.append(frame);
+  dialog.addEventListener('cancel', event => {
+    event.preventDefault();
+    closeReferencedWi();
+  });
+  parent.after(dialog);
+  const bounds = parent.getBoundingClientRect();
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  const narrow = window.matchMedia('(max-width: 768px)').matches;
+  const shift = !narrow && bounds.width - rem >= 32 * rem && bounds.height - rem >= 20 * rem ? rem : 0;
+  Object.assign(dialog.style, {
+    left: `${bounds.left + shift}px`, top: `${bounds.top + shift}px`,
+    width: `${bounds.width - shift}px`, height: `${bounds.height - shift}px`,
+  });
+  childDialogs.push(dialog);
+  dialog.showModal();
+  try {
+    const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
+    if (!dialog.open) return;
+    const metadata = document.createElement('dl');
+    const content = document.createElement('div');
+    content.className = 'markdown-body';
+    content.innerHTML = entry.body_html ?? '';
+    renderMetadata(entry, metadata);
+    linkWiReferences(content, entry);
+    body.replaceChildren(metadata, content);
+    open.hidden = false;
+    open.addEventListener('click', () => {
+      closeDetailDialog();
+      if (!byId('detail-dialog').open) void selectEntry(entry);
+    });
+  } catch (error) {
+    body.textContent = error.status === 404 ? 'WIが見つかりません。' : error.message;
+  }
+}
+
+function appendMetadataItem(metadata, label, value, entry) {
   if (value === undefined) return;
   const item = document.createElement('div');
   item.className = 'metadata-item';
   const term = document.createElement('dt');
   term.textContent = label;
   const definition = document.createElement('dd');
-  definition.textContent = formatMetadataValue(value);
+  if (label === 'depends_on' && Array.isArray(value)) {
+    if (!value.length) definition.textContent = 'なし';
+    for (const filename of value) {
+      const line = document.createElement('div');
+      if (typeof filename === 'string' && filename !== entry.filename) line.append(wiLink(filename));
+      else line.textContent = formatMetadataValue(filename);
+      definition.append(line);
+    }
+  } else {
+    definition.textContent = formatMetadataValue(value);
+    if (entry && label !== 'depends_on') linkWiReferences(definition, entry);
+  }
   item.append(term, definition);
   metadata.append(item);
 }
 
-function renderMetadata(entry) {
-  const metadata = byId('detail-metadata');
+function renderMetadata(entry, metadata = byId('detail-metadata')) {
   metadata.replaceChildren();
   if (entry.answered === true || entry.answered === false) {
     appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
@@ -96,7 +221,7 @@ function renderMetadata(entry) {
     if (key?.type === 'str' && key.value === 'cooldown_until' && entry.cooldown_until) {
       const deadline = formatDateParts(entry.cooldown_until);
       appendMetadataItem(metadata, key.value, `${deadline.date} ${deadline.time} JST`);
-    } else appendMetadataItem(metadata, formatMetadataKey(key), item.value);
+    } else appendMetadataItem(metadata, formatMetadataKey(key), item.value, entry);
   }
   const parts = formatDateParts(entry.updated_at);
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
@@ -202,6 +327,7 @@ export function displayEntry(entry) {
   byId('detail-state').textContent = entryStateText(entry);
   byId('detail-state').dataset.state = entry.state;
   byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
+  linkWiReferences(byId('detail-content'), entry);
   renderMetadata(entry);
   renderAnswerChoices(entry);
   byId('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
@@ -295,6 +421,7 @@ export function closeDetailDialog({updateUrl = true, force = false} = {}) {
       mode.startsWith('decide-') && byId('decision-note').value !== '';
     if (changed && !window.confirm('変更した入力を破棄しますか？')) return;
   }
+  while (childDialogs.length) closeReferencedWi();
   const returnTarget = detailReturnTarget();
   wiState.detailRequestGeneration += 1;
   wiState.detailSessionGeneration += 1;

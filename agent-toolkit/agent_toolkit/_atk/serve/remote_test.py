@@ -758,7 +758,7 @@ def _remote_host_environment(home: pathlib.Path, cache: pathlib.Path, signals: p
 
 def _write_dependency_wheels(directory: pathlib.Path) -> None:
     directory.mkdir()
-    for name, version in (("watchdog", "6.0.0"), ("platformdirs", "4.0.0")):
+    for name, version in (("watchdog", "6.0.0"), ("platformdirs", "4.0.0"), ("psutil", "7.2.2")):
         info = f"{name}-{version}.dist-info"
         files = {
             f"{info}/METADATA": f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n",

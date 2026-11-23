@@ -69,3 +69,9 @@ def _write_mixed_claude_record(tmp_path: pathlib.Path) -> None:
 def _human_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in environment.AGENT_ENVIRONMENT_VARIABLES:
         monkeypatch.delenv(name, raising=False)
+
+
+def _write_completed_child_result(state_root: pathlib.Path, parent: str, child: str) -> None:
+    results = shared_layout.results_directory(parent, state_root)
+    results.mkdir(parents=True, exist_ok=True)
+    (results / f"{child}.json").write_text(json.dumps({"status": "completed"}), encoding="utf-8")

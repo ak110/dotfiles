@@ -369,10 +369,96 @@ def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
     raise ValueError("受理可能書式: 論理CPU数への係数（例: 2.5x）、1以上の整数（絶対値）、off（無効化）")
 
 
+SETTING_CHOICES = {
+    "dotfiles_mode": ("full", "minimal"),
+    "usage_activity_mode": ("continuous", "intermittent"),
+    "claude_usage_limit_wait": ("never", "five-hour", "always"),
+    "codex_usage_limit_wait": ("never", "five-hour", "always"),
+    "codex_fast_mode": ("true", "false"),
+    "session_review_auto_start": ("true", "false"),
+    **dict.fromkeys(sorted(WEEKLY_FLAG_KEYS), ("true", "false")),
+}
+
+_SETTING_DESCRIPTIONS = {
+    "execute_model": "実装を担当するモデル候補",
+    "review_model": "通常のレビューを担当するモデル候補",
+    "review_fast_model": "一括置換後レビューを担当するモデル候補",
+    "chores_model": "補助作業を担当するモデル候補",
+    "chores_fast_model": "軽量な補助作業を担当するモデル候補",
+    "orchestrate_model": "統括を担当するモデル候補",
+    "write_model": "文書執筆を担当するモデル候補",
+    "codex_fast_mode": "Codexの高速モードを使うか",
+    "usage_activity_mode": "利用枠の消費を連続稼働と断続稼働のどちらとして見積もるか",
+    "usage_reset_permissions": "利用枠のresetを許可する対象と期間",
+    "claude_reset_inventory": "Claudeに登録したreset権の在庫",
+    "claude_credits_env_file": "Claudeの有限クレジット用envファイルのパス",
+    "claude_payg_env_file": "Claudeの従量課金用envファイルのパス",
+    "codex_credits_provider": "Codexの有限クレジット用provider ID",
+    "codex_payg_provider": "Codexの従量課金用provider ID",
+    "claude_orchestrator_connections": "Claudeの統括で試す接続順",
+    "claude_worker_connections": "Claudeの委譲先で試す接続順",
+    "codex_orchestrator_connections": "Codexの統括で試す接続順",
+    "codex_worker_connections": "Codexの委譲先で試す接続順",
+    "claude_usage_limit_wait": "Claudeの利用上限に達した場合に回復を待つ範囲",
+    "codex_usage_limit_wait": "Codexの利用上限に達した場合に回復を待つ範囲",
+    "repositories": "処理対象リポジトリと編集可否・検証OS・系統の登録",
+    "session_review_auto_start": "会話の終わりに振り返りの候補を自動で処理するか",
+    "weekly_meta_auto_start": "日曜14時の週枠でメタ分析を自動で起動するか",
+    "weekly_research_auto_start": "日曜14時の週枠で外部情報の調査を自動で起動するか",
+    "weekly_research_repos": "外部情報の調査の対象リポジトリ。先頭の作業ツリーで調査する",
+    "weekly_research_x_api": "外部情報の調査でX APIの有償取得を使うか",
+    "weekly_research_x_env_file": "X APIのキーを置くenvファイルのパス。空なら設定ディレクトリのx-api.env",
+    "weekly_research_x_accounts": "外部情報の調査で読むXのアカウント",
+    "weekly_research_x_queries": "外部情報の調査で読むXの検索語",
+    "weekly_research_x_max_posts": "1回の調査でXから読む投稿数の上限",
+    "weekly_research_x_max_users": "1回の調査でXから読むユーザー情報数の上限",
+    "agents_concurrency": "委譲先の同時実行数の上限",
+    "dotfiles_mode": "dotfilesの配布範囲",
+    "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
+    "serve_port": "ブラウザーから接続するサーバーの待受ポート",
+    "serve_plans_root": "計画ファイルのローカル保存先の上書き。空ならprivate-notesのplansと~/.claude/plansの両方",
+    "serve_plans_remote_hosts": "計画ファイルを取得するSSHホスト",
+    "serve_sessions_claude_home": "Claude Codeの記録を探すホームの上書き。空なら~/.claude",
+    "serve_sessions_codex_home": "Codexの記録を探すホームの上書き。空ならCODEX_HOME、未指定なら~/.codex",
+    "serve_sessions_remote_hosts": "セッションとエージェント一覧を取得するSSHホスト",
+}
+
+
+def setting_format(key: str) -> str:
+    if key in SETTING_CHOICES:
+        return ", ".join(SETTING_CHOICES[key])
+    if key in MODEL_DEFAULTS:
+        standard = "<claude|codex|agy>:<model>[/<effort>]"
+        opencode = "" if key == "orchestrate_model" else " または opencode:<provider>/<model>[@<effort>]"
+        return f"{standard}{opencode}。候補はASCIIカンマ区切り。effortを省略するとmedium"
+    if key in CONNECTION_ORDER_KEYS:
+        return f"{', '.join(CONNECTION_KINDS)}から使用順にカンマで区切る"
+    if key in PATH_KEYS:
+        return "パス1つ、または未指定を表す空文字列"
+    if key in PROVIDER_KEYS:
+        return "config.tomlのprovider ID 1つ、または空文字列"
+    if key in ARRAY_KEYS:
+        return "SSHホスト名のJSON文字列配列"
+    return {
+        "repositories": "リポジトリIDと登録属性のJSONオブジェクト",
+        **dict.fromkeys(sorted(WEEKLY_LIST_KEYS), "文字列のJSON配列"),
+        **dict.fromkeys(sorted(WEEKLY_LIMIT_KEYS), "1以上の整数"),
+        "agents_concurrency": "上限の整数、論理CPU数への倍率（例: 2.5x）、またはoff",
+        "serve_host": "空でないホスト名またはIPアドレス",
+        "serve_port": "1から65535までの整数",
+        "usage_reset_permissions": "id・engine・account・scope・count・from・untilを含むJSON配列。日時はタイムゾーン付き",
+        "claude_reset_inventory": "id・engine・account・scope・count・from・untilを含むJSON配列。日時はタイムゾーン付き",
+    }.get(key, "設定値")
+
+
+def setting_description(key: str) -> str:
+    return _SETTING_DESCRIPTIONS.get(key, key)
+
+
 def validate_mutable_setting(key: str, value: str) -> None:
-    if key == "dotfiles_mode":
-        if value not in {"full", "minimal"}:
-            raise ValueError("受理可能値: full, minimal")
+    if key in SETTING_CHOICES:
+        if value not in SETTING_CHOICES[key]:
+            raise ValueError(f"受理可能値: {setting_format(key)}")
     elif key in ENV_FILE_KEYS:
         if "\n" in value or "\r" in value or "\0" in value:
             raise ValueError("envファイルのパス1つ、または空文字列で指定する")
@@ -392,21 +478,12 @@ def validate_mutable_setting(key: str, value: str) -> None:
             raise ValueError("パス1つ、または未指定を表す空文字列で指定する")
     elif key in SERVE_HOSTS_KEYS:
         parse_remote_hosts(value)
-    elif key in {"claude_usage_limit_wait", "codex_usage_limit_wait"}:
-        if value not in {"never", "five-hour", "always"}:
-            raise ValueError("受理可能値: never, five-hour, always")
     elif key == "repositories":
         config_repositories.parse(value)
     elif key in {"usage_reset_permissions", "claude_reset_inventory"}:
         validate_permissions(value)
-    elif key == "usage_activity_mode":
-        if value not in {"continuous", "intermittent"}:
-            raise ValueError("受理可能値: continuous, intermittent")
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in {"codex_fast_mode", "session_review_auto_start"} | WEEKLY_FLAG_KEYS:
-        if value not in {"true", "false"}:
-            raise ValueError("受理可能値: true, false")
     elif key in WEEKLY_LIST_KEYS:
         parse_string_list(value)
     elif key in WEEKLY_LIMIT_KEYS:

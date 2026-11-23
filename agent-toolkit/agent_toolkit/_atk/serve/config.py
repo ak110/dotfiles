@@ -31,6 +31,8 @@ class ServeConfig:
     port: int
     plans: PlansConfig = dataclasses.field(default_factory=PlansConfig)
     sessions: SessionsConfig = dataclasses.field(default_factory=SessionsConfig)
+    host_source: str = "atk config"
+    port_source: str = "atk config"
 
 
 def _path_or_none(key: str) -> str | None:
@@ -71,5 +73,19 @@ def resolve_config(*, host: str | None = None, port: int | None = None) -> Serve
             claude_home=_path_or_none("serve_sessions_claude_home"),
             codex_home=_path_or_none("serve_sessions_codex_home"),
             remote_hosts=_config.parse_remote_hosts(_config.resolve_mutable_setting("serve_sessions_remote_hosts")),
+        ),
+        host_source=(
+            "--host"
+            if host is not None
+            else "AGENT_TOOLKIT_SERVE_HOST"
+            if os.environ.get("AGENT_TOOLKIT_SERVE_HOST")
+            else "atk config"
+        ),
+        port_source=(
+            "--port"
+            if port is not None
+            else "AGENT_TOOLKIT_SERVE_PORT"
+            if "AGENT_TOOLKIT_SERVE_PORT" in os.environ
+            else "atk config"
         ),
     )

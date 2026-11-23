@@ -336,11 +336,12 @@
     justify-self: end;
   }
 }
-@media (max-width: 700px) {
-  /* 狭い画面では中央寄せの余地が無いため、水平方向の余白も共通値へそろえる。 */
+@media (max-width: 940px) {
   #screen-wi .app-header {
     padding-inline: var(--space-2);
   }
+}
+@media (max-width: 700px) {
   #screen-wi .header-actions {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto auto;
@@ -406,4 +407,25 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+#screen-wi dialog.wi-reference-dialog {
+  position: fixed;
+  inset: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+}
+#screen-wi .wi-reference-dialog .dialog-frame {
+  height: 100%;
+  max-height: none;
+}
+
+#screen-wi .wi-reference-dialog .dialog-header h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#screen-wi .wi-reference-dialog .dialog-header button {
+  flex: none;
+  white-space: nowrap;
 }
