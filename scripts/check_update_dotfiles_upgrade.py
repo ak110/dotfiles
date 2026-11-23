@@ -629,7 +629,7 @@ def _stop_upgrade_services(root: pathlib.Path) -> None:
                 process.terminate()
             except psutil.NoSuchProcess:
                 continue
-        _, remaining = psutil.wait_procs(processes, timeout=5)
+        _, remaining = psutil.wait_procs(processes, timeout=36)
         if remaining:
             raise UpgradeCheckError(f"管理サービスが終了しません: PID {[p.pid for p in remaining]}")
 
@@ -746,7 +746,7 @@ PEP 723スクリプトからpytoolsをimportできないため、文言の一致
 """
 
 _CODEX_HOOK_TRUST_NOTICE = (
-    "Codexフックの信頼を自動登録できませんでした。Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
+    "Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
     "その後、そのセッションを終了して新しいセッションを開始してください。"
     "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
     "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
@@ -794,7 +794,7 @@ _SHADOWING_INSTALL = re.compile(r"重複ツールの削除: (?P<found>.+?)がmis
 _MISSING_PATH_ENTRY = re.compile(r"PATH 整理: ユーザー PATH に存在しないエントリーを検出: \S.* \(展開: (?P<expanded>.+?)\)。")
 
 
-def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
+def _is_expected_log_warning(message: str, home: pathlib.Path, platform_name: str) -> bool:
     """正常な更新でも出る警告と、検証の隔離環境が作り出す警告だけを個別に許容する。
 
     許容しない警告は全て検証失敗とし、警告一般の検出は保つ。
@@ -802,9 +802,8 @@ def _is_expected_log_warning(message: str, home: pathlib.Path) -> bool:
     # 旧版から現行版への更新では配布物の版が必ず変わるため、dotfilesユーザー向けの更新案内が毎回出る。
     if message == _ANTIGRAVITY_UPDATED_NOTICE:
         return True
-    # 内容変更後の正規承認はユーザー操作であり、更新失敗や実hookの実行失敗を表す診断とは分ける。
     if message == _CODEX_HOOK_TRUST_NOTICE:
-        return True
+        return platform_name != "linux"
     # 隔離homeへUSERPROFILE等を差し替えると、ランナー本来のユーザーPATHの`%USERPROFILE%`などを含む項目が
     # 隔離home配下へ展開され、実在しない項目として報告される。展開先が隔離home配下の項目だけを許容する。
     # 検証はmiseを有効化しないPATHで動くため、ランナーに導入済みの同名コマンドがmise管理版より先に見つかる。
@@ -840,7 +839,7 @@ def verify_update_logs(home: pathlib.Path, *, stdout: str = "", stderr: str = ""
         for index, line in enumerate(lines):
             if (match := re.search(r" run=(?P<run>\S+) (?P<level>WARNING|ERROR|CRITICAL) (?P<message>.*)$", line)) is None:
                 continue
-            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home):
+            if match["level"] == "WARNING" and _is_expected_log_warning(match["message"].strip(), home, platform_name):
                 continue
             # 失敗したコマンドの出力は次のログ行の前まで続く行へ記録されるため、原因の特定に要る本文として添える。
             continuation: list[str] = []

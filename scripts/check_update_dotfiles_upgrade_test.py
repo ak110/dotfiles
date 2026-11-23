@@ -355,6 +355,15 @@ def test_allowed_notice_error_level_fails(tmp_path: pathlib.Path, message: str, 
         upgrade.verify_update_logs(tmp_path)
 
 
+def test_linux_upgrade_requires_shipped_hook_trust(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "update-dotfiles.log").write_text(
+        f"2026-10-28 12:00:00,000 run=check WARNING {_CODEX_TRUST_MESSAGE}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(upgrade.UpgradeCheckError, match="警告以上"):
+        upgrade.verify_update_logs(tmp_path, platform_name="linux")
+
+
 @pytest.mark.parametrize("message", ["plugin contents changed; hook approval required", "hook failed", "gcloud update failed"])
 def test_hook_trust_notice_keeps_other_warning_failures(tmp_path: pathlib.Path, message: str) -> None:
     """承認案内と同居しても、実hook失敗や別ツールの警告は検出する。"""

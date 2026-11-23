@@ -53,7 +53,7 @@ _CODEX_PLUGIN_RESTART_NOTICE = post_apply_outcome.PostApplyNotice(
 )
 _CODEX_HOOK_TRUST_NOTICE = post_apply_outcome.PostApplyNotice(
     message=(
-        "Codexフックの信頼を自動登録できませんでした。Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
+        "Codexの入力欄で`/hooks`を実行し、agent-toolkitの未信頼・変更済みフックの定義を確認して信頼してください。"
         "その後、そのセッションを終了して新しいセッションを開始してください。"
         "セッションの開始時（SessionStart）に、入口のスキル`agent-toolkit:atk-mode`を起動する案内が届きます。"
         "新しいセッションでエージェントに「起動時にatk-modeを起動する案内を受け取ったか確認して」と尋ねてください。"
@@ -684,6 +684,8 @@ def _sync_local_plugin(
                 raise RuntimeError(
                     f"Codex plugin更新後の旧cache復旧に失敗。退避先を保持: {saved_root}: {error}。{_SAVED_CACHE_RETRY}"
                 ) from error
+    elif toolkit_plugin and _hook_trust_notice_required(_hooks_list(), plugin_id):
+        notices.insert(0, _CODEX_HOOK_TRUST_NOTICE)
     removed_legacy_links = _remove_legacy_links(root) if toolkit_plugin else False
     return needs_plugin_add or wrapper_changed or removed_legacy_links or pruned, False
 

@@ -156,7 +156,7 @@ def test_hook_trust_notice_for_each_install_state(
 
     outcome = install_codex_plugins.run()
 
-    assert [notice.command for notice in outcome.notices] == (["/hooks"] if version != "1.2.3" else [])
+    assert [notice.command for notice in outcome.notices] == ["/hooks"]
     assert outcome.changed is (version != "1.2.3")
     assert calls == (
         [["plugin", "add", "agent-toolkit@ak110-dotfiles"], ["app-server", "daemon", "version"]] if version != "1.2.3" else []
@@ -190,14 +190,13 @@ def test_hook_trust_notice_for_each_install_state(
 def test_hook_trust_notice_handles_response_entries(
     plugin_env: Path, monkeypatch: pytest.MonkeyPatch, result: dict[str, Any] | None, expected: bool
 ) -> None:
-    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state(version="1.2.2"), _installed_state()])
+    _set_json_responses(monkeypatch, [_local_marketplace(plugin_env), _installed_state()])
     monkeypatch.setattr(install_codex_plugins, "_hooks_list", lambda: result)
-    monkeypatch.setattr(install_codex_plugins, "_command", _recording_success([], daemon_running=False))
 
     outcome = install_codex_plugins.run()
 
     assert [notice.command for notice in outcome.notices] == (["/hooks"] if expected else [])
-    assert outcome.changed is True
+    assert outcome.changed is False
 
 
 def test_plugin_add_registers_shipped_hooks_without_notice(plugin_env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -217,7 +216,8 @@ def test_plugin_add_registers_shipped_hooks_without_notice(plugin_env: Path, mon
     outcome = install_codex_plugins.run()
 
     assert outcome.changed and not outcome.notices
-    [(plugin, cache, fingerprint)] = seen
+    assert len(seen) == 1
+    plugin, cache, fingerprint = seen[0]
     assert plugin == "agent-toolkit@ak110-dotfiles"
     assert cache == install_codex_plugins.CODEX_HOME / "plugins/cache/ak110-dotfiles/agent-toolkit/1.2.3"
     assert fingerprint.startswith("sha256:")
