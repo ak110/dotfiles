@@ -41,13 +41,14 @@ for (const [surface, delegated, owner, registered, shouldDeliver] of [
     on("tool.list", () => ({ value: registered ? [{ name: tool, description: "表示", mcp: true }] : [] }));
     const received: { text: string; context?: readonly string[] }[] = [];
     on("prompt.submit", (_$, e) => { received.push(e); return { text: e.text }; });
-    for (const text of ["最初の依頼", "続き", '<atk-auto source="fixture" kind="notice">機械入力</atk-auto>']) {
+    const goal = '<atk-auto source="process-loop" kind="goal">\n起動目標\n</atk-auto>';
+    for (const text of ["最初の依頼", "続き", '<atk-auto source="fixture" kind="notice">機械入力</atk-auto>', goal]) {
       const previous = text === "続き" ? ["既存の案内"] : undefined;
       await $.prompt.submit({ text, context: previous, wait: false, origin: { kind: "composer" } });
       const submitted = received.shift();
       expect(submitted?.text).toBe(text);
       const context = submitted?.context ?? [];
-      if (shouldDeliver && !text.startsWith("<atk-auto")) {
+      if (shouldDeliver && (!text.startsWith("<atk-auto") || text === goal)) {
         expect(context.slice(0, -1)).toEqual(previous ?? []);
         const notice = context.at(-1) ?? "";
         expect(notice).toMatch(/着手.*進捗.*完了報告.*send_to_user/);
