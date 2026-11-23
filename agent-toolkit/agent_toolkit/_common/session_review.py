@@ -328,7 +328,7 @@ class BatchWriter:
             if not value.get("analysis_succeeded"):
                 raise ValueError("analysis-incomplete: session-review-state finishの実行が必要")
             for prepared in value["prepared"]:
-                complete(prepared, allow_partial_analysis=True, allow_legacy_fork_scope=True)
+                complete(prepared, allow_partial_analysis=True)
             saved = self._save({**value, "status": BatchStatus.COMPLETED})
             for prepared in saved["prepared"]:
                 cleanup_prepared(prepared, allow_partial_analysis=True)
@@ -601,7 +601,6 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
             "through_line": max((row.line for row in physical_rows), default=0),
             "after_line": prior["through_line"] if prior else 0,
             "digest": hashlib.sha256("\n".join(row.text for row in physical_rows).encode()).hexdigest(),
-            "physical_digest": True,
         }
     missing = set(previous) - set(records)
     if missing:
@@ -610,89 +609,14 @@ def scope_records(collected: list[Any], *, after: pathlib.Path | None = None) ->
     return {"version": 1, "records": records}
 
 
-def _saved_fork_range(prepared: Mapping[str, Any], record_id: str, parent: str) -> tuple[int, int] | None:
-    bundle = prepared.get("bundle_scope_path")
-    if not isinstance(bundle, str):
-        return None
-    path = pathlib.Path(bundle).with_name("stats.jsonl")
-    if path.is_symlink():
-        return None
-    found = None
-    try:
-        with path.open(encoding="utf-8") as stream:
-            for line in stream:
-                if record_id not in line:
-                    continue
-                entry = json.loads(line)
-                if not isinstance(entry, dict) or entry.get("kind") != "record-provenance" or entry.get("record") != record_id:
-                    continue
-                if (
-                    found is not None
-                    or entry.get("fork_parent") != f"codex:{parent}"
-                    or entry.get("fork_attribution_known") is not True
-                ):
-                    return None
-                lines = entry.get("fork_lines")
-                if not isinstance(lines, list) or len(lines) != 2:
-                    return None
-                first, last = lines
-                if type(first) is not int or type(last) is not int or not 0 < first <= last:
-                    return None
-                found = (first, last)
-    except OSError, UnicodeError, ValueError:
-        return None
-    return found
-
-
-def _legacy_fork_digest_matches(prepared: Mapping[str, Any], record_id: str, path: str, rows: list[Any], digest: str) -> bool:
-    if not record_id.startswith("codex:"):
-        return False
-    parent = next(
-        (
-            value
-            for row in rows
-            if row.entry.get("type") == "session_meta"
-            and isinstance(payload := row.entry.get("payload"), dict)
-            and isinstance(value := payload.get("forked_from_id"), str)
-            and value
-        ),
-        None,
-    )
-    if parent is None:
-        return False
-    endpoints = _saved_fork_range(prepared, record_id, parent)
-    if endpoints is None:
-        return False
-    located = session_family._session_path(parent)  # pylint: disable=protected-access
-    if located is None or located[1] != "codex" or located[0].resolve() == pathlib.Path(path).resolve():
-        return False
-    source = session_family._load_records_checked(str(located[0])).records  # pylint: disable=protected-access
-    if source is None:
-        return False
-    inherited = set()
-    child_rows = (row for row in rows if row.entry.get("type") != "session_meta")
-    parent_rows = (row for row in source if row.entry.get("type") != "session_meta")
-    for child, original in zip(child_rows, parent_rows, strict=False):
-        if child.line > endpoints[1]:
-            break
-        if (child.entry.get("type"), child.entry.get("payload")) != (original.entry.get("type"), original.entry.get("payload")):
-            return False
-        inherited.add(child.line)
-    if not inherited or (min(inherited), max(inherited)) != endpoints:
-        return False
-    return hashlib.sha256("\n".join(row.text for row in rows if row.line not in inherited).encode()).hexdigest() == digest
-
-
-def complete(
-    prepared: Mapping[str, Any], *, allow_partial_analysis: bool = False, allow_legacy_fork_scope: bool = False
-) -> dict[str, Any]:
+def complete(prepared: Mapping[str, Any], *, allow_partial_analysis: bool = False) -> dict[str, Any]:
     partial = allow_partial_analysis and prepared.get("partial_analysis") is True
     if prepared.get("unconfirmed_scope") and not partial:
         raise ValueError("未確認範囲を含む準備は成功確定できない")
     scope = read(pathlib.Path(str(prepared["scope_path"])))
     if scope.get("version") != 1 or not isinstance(scope.get("records"), dict):
         raise ValueError("準備済みscopeの形式が不正")
-    for record_id, entry in scope["records"].items():
+    for entry in scope["records"].values():
         if (
             not isinstance(entry, dict)
             or not isinstance(entry.get("through_line"), int)
@@ -710,17 +634,8 @@ def complete(
         if loaded.records is None:
             raise ValueError(f"準備した元記録を再確認できない: {entry['path']}")
         prefix = [row for row in loaded.records if row.line <= boundary]
-        physical = hashlib.sha256("\n".join(row.text for row in prefix).encode()).hexdigest()
-        if physical != entry["digest"]:
-            if (
-                not allow_legacy_fork_scope
-                or "physical_digest" in entry
-                or boundary != entry["through_line"]
-                or len(prefix) != boundary
-                or not _legacy_fork_digest_matches(prepared, record_id, entry["path"], prefix, entry["digest"])
-            ):
-                raise ValueError(f"準備後に元記録の接頭辞が変化した: {entry['path']}")
-            entry.update(digest=physical, physical_digest=True)
+        if hashlib.sha256("\n".join(row.text for row in prefix).encode()).hexdigest() != entry["digest"]:
+            raise ValueError(f"準備後に元記録の接頭辞が変化した: {entry['path']}")
     host, session_id = str(prepared["host"]), str(prepared["session_id"])
     with locked():
         state = TargetGeneration(host, session_id)
