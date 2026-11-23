@@ -68,6 +68,8 @@
 
      山括弧は実在の絶対パスと値へ置き換え、複数の対象パスは別々の要素にする。
      判定JSONが要らない場合は、その入力と`--consumer-review`を省いたスクリプトを使う。
+     mise管理ツールが必要な場合に限り、上記の照会と起動確認を、同じ検証argvが呼ぶ下のスクリプト内の `make sync` と `pyfltr run` の間に入れる。
+     manifestを渡す前の照会では、追随後のlockと検証時のPATHを確認できない。
 
      ```bash
      #!/usr/bin/env bash
@@ -76,6 +78,7 @@
      consumer_review=$2
      shift 2
      make sync
+     # mise管理ツールが必要なら、ここで照会・起動確認する。
      uv run --frozen pyfltr run --output-format=jsonl "$@" > "$log_prefix.out" 2> "$log_prefix.err"
      run_id=$(jq -er 'select(.kind == "header") | .run_id' "$log_prefix.out")
      uv run --frozen python scripts/pyfltr_precommit.py --verify-run "$run_id" --consumer-review "$consumer_review"
