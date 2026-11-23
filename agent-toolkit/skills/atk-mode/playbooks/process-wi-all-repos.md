@@ -78,7 +78,7 @@
 ### 起動
 
 1. 定型のリポジトリ担当は、agents_serverの`start`をtaskで呼ぶ。
-   `model_type`は指定せず、役割文書の`orchestrate`を使う。
+   `model_type`は指定せず、役割文書の`execute`を使う。
 
    | 引数 | 値 |
    | --- | --- |

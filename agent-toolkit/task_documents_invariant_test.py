@@ -109,7 +109,7 @@ def test_repository_process_public_request_accepts_single_and_group(tmp_path: Pa
     whole = tmp_path / "work-contract.md"
     whole.write_text("目的: 対象別の公開入力を保持する\n", encoding="utf-8")
     model, prompt, mode, _handoff = launch_requests.task_document_request(str(role), params, whole_contract_path=str(whole))
-    assert (model, mode) == ("orchestrate", "delegate")
+    assert (model, mode) == ("execute", "delegate")
     if grouped:
         assert f"repositories: {source}" in prompt
         assert "target_repo: example.test/team/one" not in prompt

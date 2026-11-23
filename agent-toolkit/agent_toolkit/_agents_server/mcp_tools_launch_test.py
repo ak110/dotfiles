@@ -246,7 +246,7 @@ async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candida
 
 
 @pytest.mark.asyncio
-async def test_start_launches_repository_process_task_with_orchestrate(
+async def test_start_launches_repository_process_task_with_execute(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     manager = SimpleNamespace(
@@ -266,7 +266,7 @@ async def test_start_launches_repository_process_task_with_orchestrate(
     )
 
     assert response["session_id"] == "repo"
-    assert manager.start.await_args.args[0] == "orchestrate"
+    assert manager.start.await_args.args[0] == "execute"
     assert manager.start.await_args.kwargs["launch_kind"] == "delegate"
 
 
