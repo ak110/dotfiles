@@ -151,6 +151,8 @@ def test_cli_exits_quietly_when_stdout_pipe_is_closed_early(
         reader_owner.close()
         env = _isolated_cli_environ(host_environ, tmp_path)
         env["AGENT_TOOLKIT_PRIVATE_NOTES"] = str(notes)
+        env["XDG_CONFIG_HOME"] = str(tmp_path / "config")
+        env["LOCALAPPDATA"] = str(tmp_path / "config")
         env.update(_child_config_env())
         # `codex`が起動されると印のファイルを書く偽の実行ファイルをPATHの先頭へ置き、起動の有無を観測する。
         fake_bin = tmp_path / "fake-bin"

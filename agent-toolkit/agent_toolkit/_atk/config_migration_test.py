@@ -322,3 +322,25 @@ def test_pre_tier_configuration_is_cleaned_without_reintroducing_old_migration(t
     )
     assert config_module.parse_unresolved_model_candidates("execute")[0] == ("codex", "sol", "low")
     assert not _saved(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("key", "destination"),
+    [
+        ("weekly_research_repos", "atk config repos"),
+        ("weekly_research_x_accounts", "--add-account"),
+        ("weekly_research_x_queries", "--add-query"),
+    ],
+)
+def test_retired_research_env_guides_migration_without_saving(tmp_path, capsys, monkeypatch, key, destination):
+    assert _main(tmp_path, "config", "get", key) == 2
+    assert destination in capsys.readouterr().err
+
+    variable = f"AGENT_TOOLKIT_CONFIG_{key.upper()}"
+    assert variable in config_module.config_environment_variable_names()
+    monkeypatch.setenv(variable, '["marker-not-to-be-saved"]')
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 2
+    diagnostic = capsys.readouterr().err
+    assert variable in diagnostic and destination in diagnostic
+    assert "marker-not-to-be-saved" not in diagnostic
+    assert not _config_file(tmp_path).exists()

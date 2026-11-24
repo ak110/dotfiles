@@ -181,6 +181,13 @@ RETIRED_FIXED_KEYS = {
 }
 
 
+RETIRED_RESEARCH_KEYS = {
+    "weekly_research_repos": "`atk config repos`",
+    "weekly_research_x_accounts": "`atk run-script research-sources -- --add-account=<アカウント>`",
+    "weekly_research_x_queries": "`atk run-script research-sources -- --add-query=<検索語>`",
+}
+
+
 CLAUDE_RETIRED_CONNECTION_KEYS = (
     "claude_api_env_file",
     "claude_orchestrator_api_only",
@@ -326,6 +333,7 @@ def config_environment_variable_names() -> tuple[str, ...]:
         *MUTABLE_KEY_DEFAULTS,
         *LEGACY_REMOTE_HOSTS_KEYS,
         *RETIRED_CONNECTION_KEYS,
+        *RETIRED_RESEARCH_KEYS,
         *(key for key in RETIRED_FIXED_KEYS if key != "usage_activity_mode"),
         *sorted(RETIRED_MODEL_KEYS),
         "process_loop_repositories",

@@ -245,7 +245,7 @@ def _migrate_research_settings(config: dict[str, str]) -> None:
             repositories = config_repositories.parse(raw, check_paths=False)
             for value in old_repos:
                 repo_id, path = config_repositories.identifier(value)
-                repositories.setdefault(repo_id, {"edit": "deny", **({"path": path} if path else {})})
+                repositories.setdefault(repo_id, {"edit": "awi", **({"path": path} if path else {})})
             config["repositories"] = json.dumps(repositories, ensure_ascii=False)
         initial = research_subscriptions.parse(
             {field: json.loads(config[key]) for field, key in _RESEARCH_SUBSCRIPTIONS.items() if key in config}
@@ -256,7 +256,7 @@ def _migrate_research_settings(config: dict[str, str]) -> None:
             next_action="設定ファイルの旧調査設定を確認し、有効なリポジトリ・Xアカウント・検索語に直して再実行する",
         ) from error
     research_subscriptions.migrate({field: values for field, values in initial.items() if values})
-    for key in (_RESEARCH_REPOS, *_RESEARCH_SUBSCRIPTIONS.values()):
+    for key in _config_settings.RETIRED_RESEARCH_KEYS:
         config.pop(key, None)
 
 
@@ -319,7 +319,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
 
 def _finish_legacy_migration(config: dict[str, str]) -> dict[str, str]:
     migrated = migrate_fixed_settings(config)
-    if any(key in migrated for key in (_RESEARCH_REPOS, *_RESEARCH_SUBSCRIPTIONS.values())):
+    if _config_settings.RETIRED_RESEARCH_KEYS.keys() & migrated.keys():
         _migrate_research_settings(migrated)
     return migrated
 
@@ -332,8 +332,7 @@ def migrate_legacy_settings() -> None:
         *_config_settings.RETIRED_CONNECTION_KEYS,
         *_config_settings.RETIRED_FIXED_KEYS,
         "process_loop_repositories",
-        _RESEARCH_REPOS,
-        *_RESEARCH_SUBSCRIPTIONS.values(),
+        *_config_settings.RETIRED_RESEARCH_KEYS,
         "codex_auto_reset",
         "usage_auto_allocation",
         *_config_settings.LEGACY_REMOTE_HOSTS_KEYS,
@@ -494,25 +493,14 @@ def check_legacy_environment() -> None:
             next_action="旧環境変数を解除し、工程別の環境変数へ置き換えて再実行する: " + "; ".join(replacements),
         )
 
-    connection_found = [
-        key
-        for key in _config_settings.RETIRED_CONNECTION_KEYS
-        if runtime_environment.environment().get(_config_settings.config_env_name(key), "")
-    ]
-    if connection_found:
-        replacements = [
-            f"{_config_settings.config_env_name(key)} → "
-            + ", ".join(
-                _config_settings.config_env_name(target) if target in _config_settings.MUTABLE_KEY_DEFAULTS else target
-                for target in _config_settings.RETIRED_CONNECTION_KEYS[key]
-            )
-            for key in connection_found
-        ]
-        raise _next_action.ActionableError(
-            "廃止した旧接続設定の環境変数が設定されています: "
-            + ", ".join(_config_settings.config_env_name(key) for key in connection_found),
-            next_action="旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する: " + "; ".join(replacements),
-        )
+    _check_retired_environment(
+        "接続", _config_settings.RETIRED_CONNECTION_KEYS, "旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する"
+    )
+    _check_retired_environment(
+        "調査",
+        {key: (target,) for key, target in _config_settings.RETIRED_RESEARCH_KEYS.items()},
+        "値を控えて旧環境変数を解除し、次の操作で移してから再実行する",
+    )
 
     retired = _config_settings.config_env_name("usage_auto_allocation")
     if retired in runtime_environment.environment():
@@ -520,3 +508,23 @@ def check_legacy_environment() -> None:
             f"廃止した設定の環境変数が設定されています: {retired}",
             next_action="旧環境変数を解除して再実行する。候補順は工程別の`*_model`キーで指定する",
         )
+
+
+def _check_retired_environment(kind: str, destinations: dict[str, tuple[str, ...]], guidance: str) -> None:
+    env = runtime_environment.environment()
+    found = [key for key in destinations if env.get(_config_settings.config_env_name(key), "")]
+    if not found:
+        return
+    replacements = [
+        f"{_config_settings.config_env_name(key)} → "
+        + ", ".join(
+            _config_settings.config_env_name(target) if target in _config_settings.MUTABLE_KEY_DEFAULTS else target
+            for target in destinations[key]
+        )
+        for key in found
+    ]
+    raise _next_action.ActionableError(
+        f"廃止した旧{kind}設定の環境変数が設定されています: "
+        + ", ".join(_config_settings.config_env_name(key) for key in found),
+        next_action=f"{guidance}: " + "; ".join(replacements),
+    )

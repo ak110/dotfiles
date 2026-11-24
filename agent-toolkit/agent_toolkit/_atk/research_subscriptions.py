@@ -84,7 +84,9 @@ def migrate(initial: Subscriptions) -> None:
     with sync.DEFAULT_STORAGE.mutation(notes) as transaction:
         _require_clean(notes)
         existing = read(notes)
-        migrated = initial | existing
+        migrated = existing | {
+            field: _values((*existing.get(field, ()), *values), field=field) for field, values in initial.items()
+        }
         if migrated != existing:
             _save(notes, migrated)
         # 直前にcommitまで成功しpushに失敗した場合も、設定を消す前に同期する。  # pyfltr: allow-comment

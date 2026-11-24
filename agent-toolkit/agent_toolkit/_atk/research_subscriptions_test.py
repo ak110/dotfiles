@@ -43,31 +43,34 @@ def test_answer_updates_latest_subscription_on_another_host(clones, monkeypatch,
     assert capsys.readouterr().out.count('"x_subscriptions"') == 3
 
 
-def test_legacy_migration_keeps_shared_values_and_existing_permissions(clones, monkeypatch):
+def test_legacy_migration_merges_subscriptions_from_both_hosts(clones, monkeypatch):
     remote, first, second = clones
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(first))
-    assert _run("--add-account=shared", "--remove-query=unused") == 0
+    config_settings.save_config({"weekly_research_x_accounts": '["Alice"]', "weekly_research_x_queries": '["shared query"]'})
+    config_migration.migrate_legacy_settings()
+    assert config_settings.load_config_strict() == {}
+
     config_settings.save_config(
         {
-            "weekly_research_x_accounts": '["different"]',
-            "weekly_research_x_queries": '["legacy query"]',
+            "weekly_research_x_accounts": '["Bob","@ALICE"]',
+            "weekly_research_x_queries": '["shared query","legacy query"]',
             "weekly_research_repos": '["github.com/example/known","https://github.com/example/other.git"]',
-            "repositories": '{"github.com/example/known":{"edit":"awi"}}',
+            "repositories": '{"github.com/example/known":{"edit":"allow"}}',
         }
     )
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(second))
-
     config_migration.migrate_legacy_settings()
 
     stored = config_settings.load_config_strict()
     assert set(stored) == {"repositories"}
     registered = config_settings.repository_settings()
     assert {key: item["edit"] for key, item in registered.items()} == {
-        "github.com/example/known": "awi",
-        "github.com/example/other": "deny",
+        "github.com/example/known": "allow",
+        "github.com/example/other": "awi",
     }
     assert not registered["github.com/example/other"]["process_loop"]
-    assert research_subscriptions.read(second) == {"accounts": ("shared",), "queries": ("legacy query",)}
+    exported = git_repository.git_output(remote, "show", f"HEAD:{research_subscriptions.FILENAME}")
+    assert json.loads(exported) == {"accounts": ["Alice", "Bob"], "queries": ["shared query", "legacy query"]}
     config_migration.migrate_legacy_settings()
     assert git_repository.git_output(remote, "rev-list", "--count", "HEAD") == "3"
 
@@ -90,7 +93,7 @@ def test_migration_keeps_old_value_until_sync_can_succeed(clones, monkeypatch):
     assert research_subscriptions.read(second) == {"accounts": ("old",)}
 
 
-def test_legacy_migration_does_not_restore_removed_subscription(clones, monkeypatch):
+def test_legacy_migration_can_restore_subscription_removed_before_other_host_migrated(clones, monkeypatch):
     _, first, second = clones
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(first))
     assert _run("--add-account=old") == 0
@@ -100,5 +103,5 @@ def test_legacy_migration_does_not_restore_removed_subscription(clones, monkeypa
 
     config_migration.migrate_legacy_settings()
 
-    assert research_subscriptions.read(second) == {"accounts": ()}
+    assert research_subscriptions.read(second) == {"accounts": ("old",)}
     assert config_settings.load_config_strict() == {}
