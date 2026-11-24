@@ -175,6 +175,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
     # 認証情報はホストの通常の解決を使い、サーバー状態はテストfixtureの隔離先を保つ。
     isolation.restore_host_environment(monkeypatch)
     models = {"claude": "claude:sonnet[1m]/medium", "codex": "codex:sol/medium", "agy": "agy:gemini-3.8-flash/medium"}
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", models[engine])
     python_code = f"import pathlib; s=pathlib.Path({str(source)!r}).read_text(encoding='utf-8'); print(s[:7]+s[7:], end='')"
     mcp_spec = json.loads((pathlib.Path(__file__).parents[1] / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]["pyfltr"]
     prompt = COMMON_INVESTIGATION_INPUT.texts[0].format(
@@ -209,7 +210,7 @@ async def test_live_explore_common_investigation(engine: str, tmp_path: pathlib.
                 async with asyncio.timeout(360):
                     if turn == 1:
                         response = await mcp_tools.start(
-                            str(repository), mode="explore", prompt=prompt, model_type=models[engine]
+                            str(repository), mode="explore", prompt=prompt, model_type="chores_fast"
                         )
                         session_id = response["session_id"]
                     else:

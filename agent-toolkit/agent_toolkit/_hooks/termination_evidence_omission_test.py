@@ -144,6 +144,7 @@ async def test_started_session_without_projection_is_waited_by_same_work(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """表示保存に失敗した公開startのIDを同じ作業の待機対象とし、wait判断の受理から終了本文の回収まで到達する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     state_root = tmp_path / "state"
     monkeypatch.setattr(state_paths, "state_dir", lambda: state_root)
     supply_commit(tmp_path)
@@ -170,10 +171,10 @@ async def test_started_session_without_projection_is_waited_by_same_work(
             raise error
 
         monkeypatch.setattr(atomic_file.os, "replace", refuse_projection)
-        start_input = {"mode": "delegate", "prompt": "調査する", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
+        start_input = {"mode": "delegate", "prompt": "調査する", "cwd": str(tmp_path), "model_type": "chores"}
         try:
             started = await mcp_tools.start(
-                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
+                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type=start_input["model_type"]
             )
             child = started["session_id"]
             assert started["persistence_warnings"] and not writer.path.exists()

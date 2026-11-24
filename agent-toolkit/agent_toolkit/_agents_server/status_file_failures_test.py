@@ -80,13 +80,14 @@ async def test_terminal_result_write_failure_is_not_reported_as_projection_failu
         aggregate_seconds=0,
     )
     async with server_manager.AgentsServerManager(writer) as manager:
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
         install_backend(manager, "claude", _TerminalBeforeResponseBackend(manager.sessions, "claude"))
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         writer.activate()
         result_path = shared_layout.results_directory("root-session", tmp_path) / "claude-session.json"
         refusal = _ReplaceRefusal(monkeypatch, result_path)
         try:
-            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
             assert started["session_id"] == "claude-session" and started["status"] == "completed"
             scopes = {warning["scope"] for warning in started["persistence_warnings"]}
             assert "shared-state" in scopes and "projection" not in scopes
