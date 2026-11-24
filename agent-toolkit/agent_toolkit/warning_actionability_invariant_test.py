@@ -19,6 +19,17 @@ def _reference(node: ast.AST) -> str:
     return ""
 
 
+def _static_string(node: ast.AST, constants: dict[str, ast.AST], seen: frozenset[str] = frozenset()) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        reference = _reference(node)
+        if reference in constants and reference not in seen:
+            return _static_string(constants[reference], constants, seen | {reference})
+        return None
+    return None
+
+
 def _strings(node: ast.AST, constants: dict[str, ast.AST], seen: frozenset[str] = frozenset()) -> str:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -84,7 +95,13 @@ def _violations(source: str, modules: dict[str, dict[str, str]] | None = None) -
         actions = [keyword.value for keyword in call.keywords if keyword.arg in {"next_action", "fix"}]
         tag_keywords = [keyword.value for keyword in call.keywords if keyword.arg == "tag"]
         if tag_keywords:
-            is_warning = any(_strings(value, constants) == "warn" for value in tag_keywords)
+            resolved_tags = [_static_string(value, constants) for value in tag_keywords]
+            if any(tag == "warn" for tag in resolved_tags):
+                is_warning = True
+            elif all(tag is not None for tag in resolved_tags):
+                is_warning = False
+            else:
+                is_warning = name in warning_names
         else:
             is_warning = name in warning_names
         if is_warning and any(_DECLARATIVE_ACTION.search(_strings(action, constants)) for action in actions):
@@ -171,7 +188,13 @@ def test_fact_sentences_and_polite_instructions_are_allowed(text: str) -> None:
 )
 def test_default_warning_formatters_respect_explicit_tag(definition: str) -> None:
     assert _violations(definition + '\nnotice("理由", fix="資料を取得する。")') == [3]
+    assert _violations(definition + '\nnotice("理由", tag=dynamic_tag, fix="資料を取得する。")') == [3]
+
+
+def test_formatter_explicit_non_warn_tag_skips_warning_checks() -> None:
+    definition = 'from agent_toolkit._hooks.notice import formatter as factory\nnotice = factory("hook", default_tag="warn")'
     assert not _violations(definition + '\nnotice("理由", tag="", fix="対応不要")')
+    assert not _violations(definition + '\nnotice("理由", tag="notice", fix="資料を取得する。")')
 
 
 def test_report_without_warning_prefix_rejects_declarative() -> None:

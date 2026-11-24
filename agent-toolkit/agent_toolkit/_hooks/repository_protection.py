@@ -30,7 +30,7 @@ def _guidance(repo_id: str, edit: str | None) -> str:
     if edit == "awi":
         return (
             "直接編集せず、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`を全文読んでください。"
-            f"同書の手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入せよ（cloneは不要）。"
+            f"同書の手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入してください（cloneは不要）。"
         )
     if edit == "deny":
         return "編集せず、必要な変更をユーザーへ報告してください。"

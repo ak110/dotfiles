@@ -206,7 +206,9 @@ def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
             next_action=recover_from_failure(
                 component="transcriptの取得",
                 evidence="診断と元のtranscript",
-                first_step=f"`{shown_path}` の所在と読取権限を確認してください。権限拒否でなければ許可済みの代替手段を試せ",
+                first_step=(
+                    f"`{shown_path}` の所在と読取権限を確認してください。権限拒否でなければ許可済みの代替手段を試してください"
+                ),
                 retry="読取できる場合だけ処理を再開する。権限拒否は迂回しない",
             ),
         )

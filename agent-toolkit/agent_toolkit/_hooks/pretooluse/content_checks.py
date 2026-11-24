@@ -126,16 +126,16 @@ def _check_ps1_eol(tool_name: str, fields: list[tuple[str, str]], file_path: str
 
 
 _LOCKFILE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
-    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使え。"),
+    ("uv.lock", re.compile(r"(^|/)uv\.lock$"), "依存の追加には`uv add`、削除には`uv remove`を使ってください。"),
     (
         "pnpm-lock.yaml",
         re.compile(r"(^|/)pnpm-lock\.yaml$"),
         "依存の追加には`pnpm add`、削除には`pnpm remove`を使ってください。",
     ),
-    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存の追加には`npm install <pkg>`を使え。"),
-    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存の追加には`yarn add`を使え。"),
-    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存の追加には`cargo add`を使え。"),
-    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理には`mise use`・`mise install`を使え。"),
+    ("package-lock.json", re.compile(r"(^|/)package-lock\.json$"), "依存の追加には`npm install <pkg>`を使ってください。"),
+    ("yarn.lock", re.compile(r"(^|/)yarn\.lock$"), "依存の追加には`yarn add`を使ってください。"),
+    ("Cargo.lock", re.compile(r"(^|/)Cargo\.lock$"), "依存の追加には`cargo add`を使ってください。"),
+    ("mise.lock", re.compile(r"(^|/)mise\.lock$"), "ツール管理には`mise use`・`mise install`を使ってください。"),
     (
         ".venv/",
         re.compile(r"(^|/)\.venv/"),

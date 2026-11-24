@@ -281,7 +281,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     ):
         return "block", _block_notice(
             "`send_to_user` を使える会話で、このターンに `send_to_user` の結果が無い。通常本文での終了を止めた。",
-            fix=f"`REPL` では `await {_SEND_CALL}` を呼べ。ツールを直接呼べる場合は "
+            fix=f"`REPL` では `await {_SEND_CALL}` を呼んでください。ツールを直接呼べる場合は "
             "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡してください。",
         )
     if not delivered.intersection(_sentences(body)):
