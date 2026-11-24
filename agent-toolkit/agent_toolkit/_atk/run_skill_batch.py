@@ -412,7 +412,11 @@ def _failure(
         diagnostics=diagnostics,
     )
     sync_diagnostic = (manifest.get("failure_diagnostics") or {}).get("report_sync", {})
-    defer_push = sync_diagnostic.get("reason") in {"報告の回復を保留", "報告の回復に失敗"}
+    defer_push = sync_diagnostic.get("reason") in {
+        "報告の回復を保留",
+        "報告の回復に失敗",
+        "報告用UWIのcommitがリモートへ未到達",
+    }
     saved = _save_failure_report(
         failure_key, lambda: _failure_message(failure_key, reason, path, manifest), defer_push=defer_push
     )
