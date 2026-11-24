@@ -37,7 +37,7 @@ from agent_toolkit._agents_server.state import (
     SessionResumeState,
     SessionState,
 )
-from agent_toolkit._agents_server.tool_descriptions import START_MODE_EXAMPLES, START_MODE_INPUTS
+from agent_toolkit._agents_server.tool_descriptions import HANDOFF_MODEL_INPUTS, START_MODE_EXAMPLES, START_MODE_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._common import delegated_session, runtime_environment, session_registry, startup_documents, task_documents
 from agent_toolkit._common.markdown_headings import parse_headings, without_literal_blocks
@@ -137,7 +137,7 @@ def resolve_task_document_path(subagent_md_path: str) -> pathlib.Path:
 def require_start_cwd() -> None:
     raise ActionableError(
         "通常起動にはcwdが必要です。委譲先は起動していない。",
-        next_action="`cwd`へ既存ディレクトリの絶対パスを渡す。引き継ぎ起動では`handoff_from`だけを指定する",
+        next_action="`cwd`へ既存ディレクトリの絶対パスを渡す。引き継ぎには`handoff_from`を使う。" + HANDOFF_MODEL_INPUTS,
     )
 
 
@@ -145,9 +145,9 @@ def validate_handoff_inputs(handoff_from: str, **inputs: Any) -> None:
     mixed = sorted(name for name, value in inputs.items() if value is not None and name != "model_type")
     if not handoff_from.strip() or mixed:
         raise ActionableError(
-            f"handoff_fromには前任IDと任意のmodel_typeだけを指定します。混在した入力: {', '.join(mixed) or 'なし'}。",
+            f"handoff_fromの引き継ぎに前任IDとモデル指定以外の入力を混ぜません。混在した入力: {', '.join(mixed) or 'なし'}。",
             next_action=(
-                '`start`へ`{"handoff_from": "<前任session_id>"}`を渡す。モデルを変える場合だけmodel_typeへ候補列を加える'
+                "`start`の`handoff_from`へ前任session_idを渡し、cwdやmodeなど通常起動の引数を省く。" + HANDOFF_MODEL_INPUTS
             ),
         )
 
@@ -352,7 +352,7 @@ async def reject_stale_role_reply(session: SessionState | SessionResumeState) ->
         raise ActionableError(
             f"役割のmodel_typeが{session.model_type}から{current}へ変更されたため、追送は配送していない: {session.session_id}",
             next_action=(
-                f"`start`の`handoff_from`へ`{session.session_id}`を渡して現行の役割設定で引き継ぎ、後任へ未配送の指示を渡す"
+                f"`start`の`handoff_from`へ`{session.session_id}`を、`model_type`へ現行の工程名`{current}`を渡して引き継ぎ、後任へ未配送の指示を渡す"
             ),
         )
 

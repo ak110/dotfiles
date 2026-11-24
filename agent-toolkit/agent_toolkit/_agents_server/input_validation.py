@@ -31,7 +31,10 @@ def validate_shell_request(command: str, summary_policy: str) -> None:
         )
 
 
-_MODEL_EFFORT_NEXT_ACTION = "`model_type`の候補を`<engine>:<model>/<effort>`の形で書き、modelとeffortの両方を指定する"
+_MODEL_EFFORT_NEXT_ACTION = (
+    "工程設定の候補が対応するmodelとeffortを確かめる。直接指定が認められた場合は候補を"
+    "`<engine>:<model>/<effort>`で書き、`model_override`と`model_override_evidence`を添える"
+)
 
 
 def validate_model_effort(model: str | None, effort: str | None) -> None:

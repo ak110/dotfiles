@@ -66,5 +66,6 @@ SDK切断前からCLIを停止する案は正常終了を妨げ、切断後だ�
 前者は候補を消費しても同じ待機を反復し、後者は一時的な遅延で成立する起動を委譲元の再発行へ委ねるため採用しない。
 
 `delegate`は5工程名（review・review_fast・chores・chores_fast・write）か候補列の必須の`model_type`と`prompt`を受け取り、専用の`<役割名>.subagent.md`を用意できない単発の作業に使う。
+どの起動区分でも、候補列の直接指定や役割の工程変更には、例外の`model_override`と根拠の`model_override_evidence`が必要である。
 自由本文の全modeはexecuteとorchestrateの工程名を起動前に拒否し、役割taskの既定値は保つ。
 候補列の受理と自律選択の認可は区別し、WIのユーザー明示指定を継承する。

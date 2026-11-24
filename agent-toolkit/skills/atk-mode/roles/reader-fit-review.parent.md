@@ -71,7 +71,9 @@
 | `cwd` | 検証対象の作業ツリーの絶対パス（保存された本文でも、参照先を判定する対象の版） |
 | `subagent_md_path` | `reader-fit-review` |
 | `extra_params` | 本書「入力」の名前付きパラメーターだけ |
-| `model_type` | 実行レビュー担当が対象WIから`担当モデル.実行レビュー担当`を受け取っていればその値（比べ方と記録は`agent-toolkit:atk-mode/references/model-settings.md`）。受け取っていなければ省く。 |
+| `model_type` | 対象WIのユーザー由来のモデル指定が読者別探索担当にも適用される場合はその値（比べ方と記録は`agent-toolkit:atk-mode/references/model-settings.md`）。それ以外は省く。 |
+| `model_override` | 上記の指定がある場合は `user_instruction` |
+| `model_override_evidence` | 上記の指定がある場合はWIのファイル名とユーザー由来である根拠 |
 
 起動側が決める値は次のとおりである。
 入力・比較元の不足は起動前に補い、再レビューでは`レビュー種別`と`未解決事項`も渡す。

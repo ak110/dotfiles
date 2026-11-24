@@ -10,7 +10,15 @@ from typing import Any
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, record_paths, resume_waits, session_handoff, state
+from agent_toolkit._agents_server import (
+    handoff_next_action,
+    launch_requests,
+    mcp_tools,
+    record_paths,
+    resume_waits,
+    session_handoff,
+    state,
+)
 from agent_toolkit._atk import config
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
@@ -467,3 +475,34 @@ def test_handoff_failure_redacts_saved_diagnostics(
     for name in ("prepare.stdout", "prepare.stderr"):
         saved = (directory / name).read_text(encoding="utf-8")
         assert "fake-output" not in saved and "fake-error" not in saved
+
+
+@pytest.mark.asyncio
+async def test_handoff_guidance_after_direct_model_availability_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, record_extractor: pathlib.Path
+) -> None:
+    del record_extractor
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:after/medium")
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(
+            mode="explore",
+            cwd=str(tmp_path),
+            prompt="調査",
+            model_type="codex:luna/medium",
+            model_override="observation",
+            model_override_evidence="公開起動の診断を観測する",
+        )
+        predecessor = manager.sessions[started["session_id"]]
+        error = {"codexErrorInfo": "usageLimitExceeded"}
+        _complete(predecessor, message="残作業", error=error)
+        action = handoff_next_action.result_next_action(
+            {"session_id": predecessor.session_id, "engine": "codex", "status": "failed", "error": error}
+        )
+        assert action is not None
+        assert json.dumps({"handoff_from": predecessor.session_id}, ensure_ascii=False) in action
+        assert all(key in action for key in ("工程名", "model_type", "model_override", "model_override_evidence"))
+        with pytest.raises(ActionableError, match="model_override"):
+            await mcp_tools.start(handoff_from=predecessor.session_id)
+        response = await mcp_tools.start(handoff_from=predecessor.session_id, model_type="chores")
+        assert manager.sessions[response["session_id"]].model == "after"

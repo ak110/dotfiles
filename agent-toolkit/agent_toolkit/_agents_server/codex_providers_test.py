@@ -193,7 +193,7 @@ async def test_usage_limit_without_other_connection_is_candidate_unavailable(mon
         assert expected in error.reason
     assert "rejected" not in error.reason
     assert error.next_action is not None
-    assert "解除予定" in error.next_action and "別のengine" in error.next_action and "認証" not in error.next_action
+    assert "解除予定" in error.next_action and "工程別設定" in error.next_action and "認証" not in error.next_action
     assert not any(method == "thread/start" for method, _ in client.requests)
     # 記録済みの理由は保持期間の間、Codexの確認を省いて次の候補から始める根拠になる。
     assert codex.AppServerManager.excludes_with_recorded_reason(error.reason)

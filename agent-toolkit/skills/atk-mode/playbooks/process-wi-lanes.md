@@ -26,7 +26,9 @@
    - 境界や先行条件を更新した場合は、関係する担当へ既存の追送の経路で更新した選定結果の所在と差分を渡す（既存の追送で足り、専用の同期状態や常時のポーリングは不要である）。
    - `所有登録`、`統合先worktree`、`統合先branch`、`レーン開始時刻`は初回の起動の入力で渡し、起動の直後に追送しない（`レーン開始時刻`の記録は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`手順6）。
    - 初回の起動時の各AWIの再開位置は選定結果から読ませ、担当全体の`再開位置`は中断した同じ担当を再開する場合だけ渡す。
-   - 各WIの`担当モデル.実装担当`は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従って`model_type`へ指定し、比べた結果を引き継ぎ記録へ残す。
+   - 各WIの`担当モデル.実装担当`がユーザー由来なら、同じレーンの`start`へ`model_type`として渡す。
+     指定のある場合は`model_override=user_instruction`と、WIのファイル名・ユーザー由来である根拠を入れた`model_override_evidence`も`start`へ渡す。
+     指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
      異なる指定が混ざる場合はWI名と設定値を明示し、どの指定も独断で捨てずに起動する。
    - 初回の`書込担当一覧`は合意済みのセッションIDと担当範囲から確定する。
      担当が自分のIDを加えるので、起動の結果の`session_id`は自分の記録の一覧へ加えるだけで追送しない。

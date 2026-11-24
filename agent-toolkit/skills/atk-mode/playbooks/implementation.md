@@ -125,7 +125,8 @@
   OIDが変わっただけで検証の記録を捨てず、結果が変わりうる項目と統合後に初めて成り立つ項目だけを観測し直す。
   群ごとのレビューの開始と群をまたぐ検収は、`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「統合とAWI終了」の手順1にある。
   内部の群は別のレーンや別の要求にせず、計画、検収、commitの対応、統合、メインへの返却はレーンが持つ。
-- 担当のモデル: WIに`担当モデル.実装担当`があればその値を下位の書き込み担当の`model_type`へ渡す。
+- 担当のモデル: ユーザーのモデル指定が下位の書き込み担当にも適用される場合だけ、その値を下位担当の`model_type`へ渡す。
+  指定のある場合は`model_override=user_instruction`と、WIのファイル名・ユーザー由来である根拠を入れた`model_override_evidence`も`start`へ渡す。
   指定が無ければ`execute`を避け、確定済みの書き込みと、確定した比較の観点による一次確認は`chores`で起動する。
   定型の走査、事実の収集、確定したコマンドの実行、判断が一意な表記の変更は`chores_fast`で起動する（工程の区分は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
   スクリプトで済む処理はモデルを起動せずに実行する。

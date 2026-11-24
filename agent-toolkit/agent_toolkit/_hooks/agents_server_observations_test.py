@@ -145,6 +145,7 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """表示保存に失敗した公開start応答から、PostToolUseが所有・cwd・待機登録を記録し、同じsessionへの追送が受理される。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "observed-root")
@@ -163,10 +164,10 @@ async def test_public_start_after_projection_failure_reaches_hook_records_and_se
         writer.path.unlink(missing_ok=True)
         original_replace = _refuse_replace_into(monkeypatch, writer.path)
         tool_name = "mcp__plugin_agent-toolkit_agents_server__start"
-        start_input = {"mode": "delegate", "prompt": "処理", "cwd": str(tmp_path), "model_type": "claude:test/medium"}
+        start_input = {"mode": "delegate", "prompt": "処理", "cwd": str(tmp_path), "model_type": "chores"}
         try:
             started = await mcp_tools.start(
-                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="claude:test/medium"
+                mode="delegate", prompt=start_input["prompt"], cwd=str(tmp_path), model_type="chores"
             )
             assert started["persistence_warnings"] and not writer.path.exists()
             child = started["session_id"]
@@ -460,6 +461,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """前任IDだけの公開start応答から後任のcwdと待機対象を登録し、後任への追送を通す。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "handoff-root")
@@ -479,7 +481,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
         started = await mcp_tools.start(
             str(tmp_path),
             mode="delegate",
-            model_type="claude:test/medium",
+            model_type="chores",
             prompt="引き継ぐ作業",
         )
         predecessor = current.sessions[started["session_id"]]
@@ -508,7 +510,7 @@ async def test_public_handoff_start_registers_successor_for_wait_and_followup(
         assert agents_server_observations.session_cwd(saved, successor) == str(tmp_path)
         assert agents_server_observations.pending_session_ids(saved, "main") == [successor]
         saved_session = agents_server_observations.session_record(saved, successor)
-        assert saved_session is not None and saved_session["model_type"] == "claude:test/medium"
+        assert saved_session is not None and saved_session["model_type"] == "chores"
         marker = shared_layout.wait_targets_directory("handoff-root", "root.json", tmp_path) / f"{successor}.json"
         assert marker.is_file()
         send = {
@@ -629,6 +631,7 @@ def test_owned_show_recovers_missing_cwd(tmp_path, monkeypatch, namespace, opera
 @pytest.mark.asyncio
 async def test_start_timeout_recovers_only_the_registered_launch_actor(tmp_path, monkeypatch):
     """公開startの起動後に応答を止め、同じ呼出主体だけがshowで回復することを確かめる。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     for key in ("AGENT_TOOLKIT_DELEGATED_SESSION", "AGENT_TOOLKIT_OWNER_SESSION", "CODEX_THREAD_ID"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "local")
@@ -638,7 +641,7 @@ async def test_start_timeout_recovers_only_the_registered_launch_actor(tmp_path,
     start = {
         **payload,
         "tool_name": "mcp__agents_server__start",
-        "tool_input": {"cwd": cwd, "mode": "delegate", "prompt": "処理", "model_type": "claude:test/medium"},
+        "tool_input": {"cwd": cwd, "mode": "delegate", "prompt": "処理", "model_type": "chores"},
     }
     _acquire_delegation(start)
     with contextlib.redirect_stdout(io.StringIO()) as output:

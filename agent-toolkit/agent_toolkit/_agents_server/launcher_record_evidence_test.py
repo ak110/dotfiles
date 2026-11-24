@@ -88,12 +88,12 @@ def _context(prompt: str, directory: pathlib.Path) -> dict[str, Any]:
     return context
 
 
-async def _start_task(directory: pathlib.Path, request: str) -> dict[str, Any]:
+async def _start_task(monkeypatch: pytest.MonkeyPatch, directory: pathlib.Path, request: str) -> dict[str, Any]:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:test/medium")
     role = launch_requests.resolve_task_document_path("add-wi")
     return await mcp_tools.start(
         cwd=str(directory),
         subagent_md_path=str(role),
-        model_type="claude:test/medium",
         extra_params={"投入する要求": request, "引き継ぎ記録先": str(directory / "handoff.md")},
     )
 
@@ -131,7 +131,7 @@ async def test_task_record_reaches_public_evidence(
             request += f"\n発話: {saved_input} record={engine}:other line=2"
         elif source != "delivered":
             request += f"\n発話: {records[selected]}"
-        started = await _start_task(tmp_path, request)
+        started = await _start_task(monkeypatch, tmp_path, request)
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
         assert context["launcher_session_id"] == "direct-parent"
@@ -230,6 +230,7 @@ async def test_task_record_reaches_public_observation_evidence(
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
         started = await _start_task(
+            monkeypatch,
             tmp_path,
             "request=github.com/example/repository=awi=観測の裏付け取得\n"
             "確定済みの観測: rg --filesの結果はa.pyとb.py。入力特徴は/isolated/repo。",
@@ -314,7 +315,7 @@ async def test_task_starts_with_record_shortage_without_substitute(
 
         monkeypatch.setattr(record_paths, "find_session_record", find_record)
         monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
-        started = await _start_task(tmp_path, "request=github.com/example/repository=awi=記録を取得しない観測")
+        started = await _start_task(monkeypatch, tmp_path, "request=github.com/example/repository=awi=記録を取得しない観測")
         assert started["session_id"] == "claude-session"
         context = _context(backend.prompts[0], tmp_path)
         assert context["status"] == availability

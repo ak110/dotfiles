@@ -183,11 +183,10 @@ async def test_start_rejects_unusable_model_type_with_accepted_format(
 
 
 @pytest.mark.asyncio
-async def test_start_reports_retry_or_other_model_type_when_every_candidate_fails(
+async def test_start_reports_retry_in_same_phase_when_every_candidate_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """全候補が起動例外で除外された場合は、再試行か別の`model_type`の指定を次の操作で示す。"""
     candidates = [("agy", "first", "high"), ("agy", "second", "high")]
     monkeypatch.setattr(_atk_config, "parse_unresolved_model_candidates", lambda _model_type, **_kwargs: candidates)
     async with _manager_with_fake("agy") as (manager, backend):
@@ -201,8 +200,8 @@ async def test_start_reports_retry_or_other_model_type_when_every_candidate_fail
             await manager.start("plan", "調査", str(tmp_path))
 
         next_action = _actionable_message(raised.value).split(NEXT_ACTION_PREFIX, 1)[1]
-        assert "時間をおいて再試行" in next_action
-        assert "`model_type`" in next_action
+        assert "同じ工程名で再試行" in next_action
+        assert "`excluded`" in next_action
 
 
 @pytest.mark.asyncio

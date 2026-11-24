@@ -193,7 +193,7 @@ forkしない時も、委譲先が読む`agent-toolkit:atk-mode/playbooks/subage
 ## agents_serverの起動
 
 1. `agents_server`の`start`はネイティブの委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する（`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
-2. `engine=claude`の指定は`spawn_agent`へ置き換えず、Claude向けの`model_type`で`agents_server`から起動する。
+2. `engine=claude`の指定は`spawn_agent`へ置き換えず、`agents_server`から起動し、候補列を渡す場合は手順1の資料に従って上書きの区分と根拠を付ける。
    指定のengineを実行する手段が無い時は、未完了として返すか、続行できない理由を報告する。
 3. 起動の入力（通常の起動の`whole_contract_path`を含む）と依頼文は、`agent-toolkit:atk-mode/playbooks/delegation.md`に従う。
    起動後のturnが可用性のエラーで終わった時は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`の引き継ぎ起動に従う。

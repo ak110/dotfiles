@@ -424,7 +424,7 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             "no available model candidates: "
             f"{model_type}; excluded={excluded_candidate_payload(excluded, excluded_session_ids)}",
             next_action=(
-                "時間をおいて再試行するか、`model_type`へ別の候補を明示して起動する。"
+                "時間をおき、同じ工程名で再試行する。"
                 "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
             ),
         )

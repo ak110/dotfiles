@@ -185,7 +185,14 @@ async def test_public_start_keeps_connection_and_mcp_diagnostics(
     async with manager.AgentsServerManager(None) as current:
         agents_server_support.install_backend(current, "claude", DiagnosticBackend(current.sessions, "claude"))
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        response = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+        response = await mcp_tools.start(
+            mode="delegate",
+            cwd=str(tmp_path),
+            prompt="処理",
+            model_type="claude:test/medium",
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが診断対象のモデルを指定した想定",
+        )
         assert response["warnings"][:2] == ["接続設定の診断", mcp_diagnostic]
         assert len(response["warnings"]) == 3 and response["warnings"][2]["scope"] == "model-override"
 
@@ -246,14 +253,15 @@ async def test_start_advances_only_for_confirmed_prelaunch_candidate_failure(
         agents_server_support.install_backend(first, "claude", selected)
         monkeypatch.setattr(mcp_tools, "_MANAGER", first)
         candidates = "codex:gpt-6-sol/medium,claude:test/medium"
-        response = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", candidates)
+        response = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type="chores_fast")
         assert response["session_id"] == "claude-session"
         assert response["excluded_candidates"][0]["reason"] == "candidateDependencyUnavailable"
         assert probe.probe_calls == 1
         assert not probe.start_calls
         assert len(selected.start_calls) == 1
         assert unavailable_candidates.load_unavailable_candidates(
-            candidates, "explore", now=datetime.datetime.now(datetime.UTC)
+            "chores_fast", "explore", now=datetime.datetime.now(datetime.UTC)
         )
 
         async with manager.AgentsServerManager(None) as second:
@@ -262,7 +270,7 @@ async def test_start_advances_only_for_confirmed_prelaunch_candidate_failure(
             agents_server_support.install_backend(second, "codex", second_probe)
             agents_server_support.install_backend(second, "claude", second_selected)
             monkeypatch.setattr(mcp_tools, "_MANAGER", second)
-            repeated = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="再調査", model_type=candidates)
+            repeated = await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="再調査", model_type="chores_fast")
             assert repeated["session_id"] == "claude-session"
             assert not second_probe.start_calls
             assert second_probe.probe_calls == 0
@@ -285,8 +293,9 @@ async def test_engine_dependency_exhaustion_is_request_local(tmp_path: pathlib.P
         agents_server_support.install_backend(current, "codex", probe)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         candidates = "codex:gpt-6-sol/medium,codex:gpt-6-astra/high"
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_FAST_MODEL", candidates)
         with pytest.raises(session_errors.ActionableRuntimeError) as raised:
-            await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type=candidates)
+            await mcp_tools.start(mode="explore", cwd=str(tmp_path), prompt="調査", model_type="chores_fast")
         message = str(raised.value)
         assert "no available model candidates" in message
         assert message.count("dependencyUnavailable") == 2
@@ -294,7 +303,7 @@ async def test_engine_dependency_exhaustion_is_request_local(tmp_path: pathlib.P
         assert probe.calls == 1
         assert not current.sessions
         assert not unavailable_candidates.load_unavailable_candidates(
-            candidates, "explore", now=datetime.datetime.now(datetime.UTC)
+            "chores_fast", "explore", now=datetime.datetime.now(datetime.UTC)
         )
 
 
@@ -388,6 +397,7 @@ async def test_codex_usage_limit_without_connection_advances_to_next_engine(
 @pytest.mark.asyncio
 async def test_started_session_survives_projection_failure(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """表示保存の継続失敗後も、公開応答のIDを同じsend_messageへ使える。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},
@@ -410,7 +420,7 @@ async def test_started_session_survives_projection_failure(tmp_path: pathlib.Pat
 
         monkeypatch.setattr(status_file, "atomic_write", reject_projection)
         try:
-            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
             assert started["session_id"] == "claude-session"
             assert started["persistence_warnings"]
             registered = session_registry.resolve(started["session_id"])
@@ -436,6 +446,7 @@ async def test_registration_failure_keeps_started_session_and_recovers_on_flush(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str
 ) -> None:
     """開始後の登録保存だけが失敗してもIDを返し、既存flushで同じ登録を復旧する。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", f"{engine}:test/medium")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},
@@ -455,9 +466,7 @@ async def test_registration_failure_keeps_started_session_and_recovers_on_flush(
 
         monkeypatch.setattr(session_registry, "publish", refuse)
         try:
-            started = await mcp_tools.start(
-                mode="delegate", cwd=str(tmp_path), prompt="処理", model_type=f"{engine}:test/medium"
-            )
+            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
             assert started["session_id"] == f"{engine}-session"
             assert any(warning["scope"] == "registration" for warning in started["persistence_warnings"])
             monkeypatch.setattr(session_registry, "publish", original_publish)
@@ -483,9 +492,10 @@ async def test_prelaunch_save_failure_does_not_register_an_unstarted_backend(
 
         backend = RejectedBeforeStart(current.sessions, "claude")
         agents_server_support.install_backend(current, "claude", backend)
+        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         with pytest.raises(PermissionError):
-            await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+            await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
         assert not current.sessions
         assert not backend.start_calls
 
@@ -537,6 +547,7 @@ async def test_nested_and_early_terminal_start_preserves_registration(
     root以外の書込主体（入れ子の委譲）と、応答前に終了したsessionの双方で、
     公開応答のID・cwd・委譲元と、CLI待機の登録と終了時の結果を表示ファイルから独立して扱えることを確かめる。
     """
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     writer = status_file.StatusFileWriter(
@@ -554,7 +565,7 @@ async def test_nested_and_early_terminal_start_preserves_registration(
         writer.path.unlink(missing_ok=True)
         refusal = ReplaceRefusal(monkeypatch, writer.path)
         try:
-            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+            started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
             session_id = started["session_id"]
             assert started["status"] == ("completed" if terminal_before_response else "running")
             assert started["root_session_id"] == "root-session"
@@ -595,6 +606,7 @@ async def test_close_during_projection_failure_still_releases_writer(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """終了時の表示保存が失敗しても、終了時の結果を残したうえで書込主体の後始末まで進む。"""
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "claude:test/medium")
     monkeypatch.setattr(state_paths, "state_dir", lambda: tmp_path)
     writer = status_file.StatusFileWriter(
         {},
@@ -607,7 +619,7 @@ async def test_close_during_projection_failure_still_releases_writer(
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         writer.activate()
         refusal = ReplaceRefusal(monkeypatch, writer.path)
-        started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="claude:test/medium")
+        started = await mcp_tools.start(mode="delegate", cwd=str(tmp_path), prompt="処理", model_type="chores")
         close_error: OSError | None = None
         try:
             await current.close()
@@ -630,6 +642,7 @@ async def test_close_during_projection_failure_still_releases_writer(
 async def test_task_start_delivers_launcher_record_without_manual_input(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, engine: str, record_count: int
 ) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_EXECUTE_MODEL", "claude:test/medium")
     monkeypatch.setenv("CODEX_THREAD_ID", "direct-parent")
     async with manager.AgentsServerManager(None) as current:
         backend = ObservedBackend(current.sessions, "claude")
@@ -645,7 +658,6 @@ async def test_task_start_delivers_launcher_record_without_manual_input(
         await mcp_tools.start(
             cwd=str(tmp_path),
             subagent_md_path=str(role),
-            model_type="claude:test/medium",
             extra_params={
                 "投入する要求": "request=github.com/example/repository=awi=記録の取得",
                 "引き継ぎ記録先": str(tmp_path / "handoff.md"),
