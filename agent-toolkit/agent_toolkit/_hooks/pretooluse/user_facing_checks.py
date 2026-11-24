@@ -286,14 +286,14 @@ def language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember:
 
     def update(state: dict) -> dict:
         nonlocal repeated
-        prior = state.get("responselanguage_retry_by_actor", {})
+        prior = state.get("response_language_retry_by_actor", {})
         prior = dict(prior) if isinstance(prior, dict) else {}
         repeated = prior.get(actor) == fingerprint
         if remember:
             prior[actor] = fingerprint
         else:
             prior.pop(actor, None)
-        state["responselanguage_retry_by_actor"] = prior
+        state["response_language_retry_by_actor"] = prior
         return state
 
     return update_state(session_id, update) and repeated
