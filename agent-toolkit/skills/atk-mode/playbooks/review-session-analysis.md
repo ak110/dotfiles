@@ -90,7 +90,8 @@ batchでは全対象に同じ基準を使い、対象IDと候補IDの組で出�
 4. 予告は`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って届ける。
 5. 要求は次の形にする。
    - `source`は`session-review`とする。
-   - batchが登録するAWIは、ユーザーの内容確認を待たず、エージェント由来の要求として採否を検討する対象にする。
+   - batchが登録するAWIは、ユーザーの内容確認を待たず、採否の検討を始める。
+     要求と完成条件の採否は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、項目ごとの出所に基づいて判断する。
    - 要求の間に依存がある時は、先行する成果が必要な理由を趣旨に書く（`agent-toolkit:atk-mode/roles/add-wi.parent.md`「渡す入力」）。
    - ユーザーの発話を逐語で引用する要求には、原文がある記録（`conversation.md`や`session-review-evidence`の出力ファイル）の絶対パスを出所として書く。
    - 恒久の処置は、原因と対策を確定した通常AWIとして起草する。

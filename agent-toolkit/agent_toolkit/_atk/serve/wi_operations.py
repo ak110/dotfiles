@@ -673,10 +673,15 @@ class Operations:
         if parsed is None:
             raise WebApiInputError("frontmatterを解析できません")
         metadata, _body = parsed
-        if wi_constants.normalized_wi_type(metadata.get("type")) != wi_constants.WI_TYPE_AWI:
-            raise WebApiInputError(f"ユーザーコメントの対象は{wi_constants.WI_TYPE_AWI}だけです")
+        kind = wi_constants.normalized_wi_type(metadata.get("type"))
+        if kind == wi_constants.WI_TYPE_UWI:
+            raise WebApiInputError("UWIにはユーザーコメントを保存できません。質問に答えるには回答欄を使ってください")
+        if kind != wi_constants.WI_TYPE_AWI:
+            raise WebApiInputError("ユーザーコメントはAWIにだけ保存できます。一覧から対象のAWIを開いてください")
         if metadata.get("source") is None:
-            raise WebApiInputError("ユーザーコメントの対象はsourceが設定されたAWIだけです")
+            raise WebApiInputError(
+                "sourceが未設定のAWIにはユーザーコメントを保存できません。追記するには詳細画面で本文を編集してください"
+            )
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:
