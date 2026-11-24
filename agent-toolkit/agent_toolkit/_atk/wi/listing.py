@@ -85,7 +85,7 @@ class RepositorySnapshot:
                 "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
                 "source": parse_source(text),
                 "priority": _priority.priority_of((parse_frontmatter(text) or ({}, ""))[0]),
-                "priority_reason": _priority.reason_of((parse_frontmatter(text) or ({}, ""))[0]),
+                "priority_reason": _priority.reason_of(*(parse_frontmatter(text) or ({}, ""))),
                 "summary": uwi_body_summary(text, sys.maxsize) if kind == WI_TYPE_UWI else body_summary(text, sys.maxsize),
                 "body": text,
                 "staleness": _staleness(text, self.repository.worktree, now, base=base),
@@ -275,7 +275,7 @@ def _print_json_entries(
             else None
         )
         summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
-        metadata = (parse_frontmatter(text) or ({}, ""))[0]
+        metadata, body = parse_frontmatter(text) or ({}, "")
         branch = _wi_branches.effective(text, target_repo, branch_settings or {})
         record: dict[str, object] = {
             "filename": path.name,
@@ -288,7 +288,7 @@ def _print_json_entries(
             "source": parse_source(text),
             "important": _wi_filters.is_important(text),
             "priority": _priority.priority_of(metadata),
-            "priority_reason": _priority.reason_of(metadata),
+            "priority_reason": _priority.reason_of(metadata, body),
             "effect_check": (parse_frontmatter(text) or ({}, ""))[0].get("effect_check"),
             "effect_check_reason": _effect_check.pending_reason(text),
             "summary": summary,

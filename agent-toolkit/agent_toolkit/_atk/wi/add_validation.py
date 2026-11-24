@@ -7,6 +7,7 @@ from agent_toolkit._atk.environment import is_agent_environment
 from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
 from agent_toolkit._atk.wi import headings as _headings
+from agent_toolkit._atk.wi import priority as _priority
 from agent_toolkit._atk.wi import uwi as _uwi
 from agent_toolkit._atk.wi.constants import WI_TYPE_AWI, WI_TYPE_UWI
 from agent_toolkit._atk.wi.repo import resolve_repo_id_or_raise
@@ -237,8 +238,6 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
     "target_commit": "atkによる対象HEADの自動取得に任せる",
     "submitter_session": "atkによる投入元セッションの自動取得に任せる",
     "run_skill_run_id": "atkによるrun-skill実行識別子の自動取得に任せる",
-    "origin_session": "通常新規投入では除き、移行・復元では--batchを使う",
-    "origin_locator": "通常新規投入では除き、移行・復元では--batchを使う",
     "plan_file": "通常新規投入では除き、移行・復元では--batchを使う",
     "queue_schedule": "通常新規投入では除き、移行・復元では--batchを使う",
     "reservation": "通常新規投入では除き、移行・復元では--batchを使う",
@@ -249,6 +248,44 @@ _RESERVED_ADD_KEY_NEXT_ACTIONS = {
 }
 
 """通常新規投入が採用しない管理キーと、指定方法の対応。保存前に存在自体を拒否する。"""
+
+_RETIRED_ADD_KEYS = frozenset(
+    {
+        "scope_alignment",
+        "confirmation",
+        "observation_wait",
+        "created",
+        "origin_session",
+        "origin_locator",
+        *_priority.LEGACY_REASON_KEYS,
+    }
+)
+
+
+def normalize_choices(value: object) -> str | None:
+    if isinstance(value, str):
+        parts = value.split(",")
+    elif isinstance(value, list) and all(isinstance(part, str) and "," not in part for part in value):
+        parts = value
+    else:
+        return None
+    return ",".join(part.strip() for part in parts if part.strip())
+
+
+def _remove_matching_uwi_fields(
+    frontmatter: dict[str, object], *, question_type: str | None, scope: str | None, choices: str | None
+) -> None:
+    for key, expected in (("type", WI_TYPE_UWI), ("question_type", question_type), ("scope", scope), ("choices", choices)):
+        if key not in frontmatter:
+            continue
+        raw = frontmatter.pop(key)
+        value = normalize_choices(raw) if key == "choices" else raw.strip() if isinstance(raw, str) else None
+        if value is None or value != expected:
+            raise WebInputError(
+                f"UWIの{key}が本文frontmatterとCLIで一致しません",
+                next_action=f"本文frontmatterの{key}を除くか、--{key.replace('_', '-')}と同じ値を指定する",
+            )
+
 
 _RESERVED_FRONTMATTER_KEYS = ("target_repo", "target_branch", "source", *_RESERVED_ADD_KEY_NEXT_ACTIONS)
 
@@ -276,6 +313,7 @@ def _validate_add_entries(
     question_type: str | None,
     choices: str | None,
     target_commit: str | None,
+    scope: str | None = None,
     source: str | None = None,
     cooldown_until: str | None = None,
 ) -> tuple[list[tuple[dict[str, object], str]], str | None, str | None]:
@@ -309,6 +347,10 @@ def _validate_add_entries(
         )
     parsed_messages = [parse_entry_message(message, entry_type=entry_type) for message in messages]
     for frontmatter, body in parsed_messages:
+        for key in _RETIRED_ADD_KEYS:
+            frontmatter.pop(key, None)
+        if entry_type == WI_TYPE_UWI:
+            _remove_matching_uwi_fields(frontmatter, question_type=question_type, scope=scope, choices=choices)
         rejected_keys = [key for key in _RESERVED_ADD_KEY_NEXT_ACTIONS if key in frontmatter]
         if rejected_keys:
             raise WebInputError(

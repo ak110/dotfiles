@@ -243,14 +243,14 @@ def test_integrate_validates_adopt_commits_before_git_and_finalization(
     monkeypatch.setattr(lane.run_command, "execute", finalization)
     args = _integration_args(record, repo, manifest, head)
     code, final, stderr = _invoke(capsys, *args, "--restart-review")
-    accepted = case in {"correct", "planned-correct", "foreign-repository", "no-implementation"}
+    accepted = case in {"correct", "planned-correct", "foreign-repository", "no-implementation", "missing-effect"}
     assert code == (0 if accepted else 2), stderr
     assert marker.exists() is accepted
     assert git_repository.git_output(repo, "rev-parse", "HEAD") == (head if accepted else original["new_base"])
     assert moved.is_file() is (case == "planned-correct")
     if accepted:
         assert final["phase"] == "finalized"
-    elif case in {"missing-effect", "missing-effect-reason"}:
+    elif case == "missing-effect-reason":
         assert name in stderr and "--effect-check-reason" in stderr
     else:
         assert name in stderr and "plan-commits" in stderr

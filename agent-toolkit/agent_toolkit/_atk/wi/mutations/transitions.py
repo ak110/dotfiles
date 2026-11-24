@@ -287,15 +287,15 @@ def _apply_transition(
         for path in paths:
             path.unlink()
         return
-    implemented_awis = {
+    tracked_awis = {
         path
         for path in paths
-        if action == "adopt"
+        if effect_check is not None
+        and action == "adopt"
         and commit_values[path]
         and _wi_entries.entry_type_of(path, path.read_text(encoding="utf-8")) == WI_TYPE_AWI
     }
-    if implemented_awis:
-        _effect_check.validate_adoption_effect(effect_check, effect_check_reason)
+    _effect_check.validate_adoption_effect(effect_check, effect_check_reason)
     _update_transition_metadata(paths, action=action, now=now, cooldown_days=cooldown_days)
     for path in paths:
         if action in {"return-to-inbox", "hold"} and _wi_entries.entry_state_of(path) in {WI_STATE_ADOPTED, WI_STATE_REJECTED}:
@@ -307,14 +307,14 @@ def _apply_transition(
                 now=now,
                 commit=commit_values[path],
                 note=note,
-                effect_check=effect_check if path in implemented_awis else None,
-                effect_check_reason=effect_check_reason.strip() if path in implemented_awis and effect_check_reason else None,
+                effect_check=effect_check if path in tracked_awis else None,
+                effect_check_reason=effect_check_reason.strip() if path in tracked_awis and effect_check_reason else None,
             )
         parsed = _frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
         assert parsed is not None
         data, body = parsed
         data["state"] = destination_name
-        if path in implemented_awis:
+        if path in tracked_awis:
             data["effect_check"] = effect_check
         atomic_write_text(path, _frontmatter.serialize_frontmatter(data, body))
 

@@ -20,12 +20,13 @@ VERDICTS = ("pending", "confirmed", "insufficient", "not_required")
 
 def validate_adoption_effect(verdict: str | None, reason: str | None) -> None:
     if (
-        verdict not in ("pending", "not_required")
+        verdict not in (None, "pending", "not_required")
+        or (verdict is None and reason is not None)
         or (verdict == "not_required" and reason is None)
         or (reason is not None and (not reason.strip() or reason.splitlines() != [reason] or "\0" in reason))
     ):
         raise ValueError(
-            "実装commit付きAWIには --effect-check=pending または "
+            "効果確認を明示する場合は --effect-check=pending または "
             "--effect-check=not_required --effect-check-reason=<空でない1行の理由> を指定してください"
         )
 

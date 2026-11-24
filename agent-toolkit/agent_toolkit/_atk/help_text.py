@@ -161,8 +161,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終了し対応結果を記録する",
-        "description": "採用として終了し対応結果を記録する。\n\n目的: 対応済みの項目をadoptedへ移して終了し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終了した各項目の保存先を絶対パスで標準出力へ書く。エージェント環境では、成功した各項目に正式なユーザーコメント欄または回答欄があれば、欄の種類・保存本文上の1始まりの開始行・`atk wi show <ファイル名> --section ユーザーコメント`または`--section 回答`の読取方法を示す。欄が無い項目には追加しない。既読・未読は判定しない。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。実装commit付きAWIには `--effect-check=pending` または `--effect-check=not_required --effect-check-reason=<理由>` を指定する。\n復元・後始末: 終了した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
-        "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"\n  atk wi adopt 20260901-072734-002.md --commit=abc1234 --effect-check=pending\n  atk wi adopt 20260901-072734-003.md --commit=def5678 --effect-check=not_required --effect-check-reason="採用前の検収で要求を充足"',
+        "description": "採用として終了し対応結果を記録する。\n\n目的: 対応済みの項目をadoptedへ移して終了し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終了した各項目の保存先を絶対パスで標準出力へ書く。エージェント環境では、成功した各項目に正式なユーザーコメント欄または回答欄があれば、欄の種類・保存本文上の1始まりの開始行・`atk wi show <ファイル名> --section ユーザーコメント`または`--section 回答`の読取方法を示す。欄が無い項目には追加しない。既読・未読は判定しない。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。後日の利用で効果を確かめる実装commit付きAWIだけ `--effect-check=pending` を付ける。\n復元・後始末: 終了した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"\n  atk wi adopt 20260901-072734-002.md --commit=abc1234\n  atk wi adopt 20260901-072734-003.md --commit=def5678 --effect-check=pending',
     },
     "atk wi reject": {
         "summary": "不採用として終了し理由を記録する",
@@ -207,10 +207,22 @@ HELP: dict[str, dict[str, str]] = {
         "description": "AWIの明示依存だけを更新する。\n\n目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終了すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox、processingまたはholdにあること。依存の更新は保存状態を変えない。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
+    "atk wi record-observation": {
+        "summary": "未終了AWIに反映後の観測の再開記録を追記する",
+        "description": (
+            "AWIの再開記録を追記する。\n\n"
+            "目的: 次に行う観測か再実装を引き継ぐ。\n"
+            "利用場面: 公開後の観測だけが残るか、観測して再実装が必要と判定したとき。\n"
+            "対象と出力: 見出しと再開区分を付けて対象の本文へ追記し、commitとpushを行う。状態と冷却期限は変えない。\n"
+            "前提: 対象は未終了のAWIとし、詳細はUTF-8のファイルで渡す。\n"
+            "復元・後始末: 区分を変える場合は同じコマンドで新しい記録を追記する。"
+        ),
+        "epilog": "実行例:\n\n  atk wi record-observation 20260901-072734-001.md needs-verify --body-file observation.md",
+    },
     "atk wi set-priority": {
         "summary": "AWIの優先区分と根拠を設定・解除する",
-        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 修正を遅らせると具体的な損失が続く項目を、process-wiの選定で古い項目と交互に先へ選ばれるようにする。\n利用場面: 起票時や処理中に、遅らせる損失（処理の停止・遮断、誤った判断・成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`と影響・根拠・解除条件を記録するか取り除き、commitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには`--impact`・`--evidence`・`--release`がすべて必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
-        "epilog": "実行例:\n\n  atk wi set-priority 20260901-072734-001.md urgent --impact '委譲先が起動できない' --evidence 'agents_serverのログ 2026-09-01' --release '修正の配布'",
+        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 具体的な損失が続く項目を、process-wiで古い項目と交互に優先する。\n利用場面: 起票時や処理中に、処置を延期した場合の損失（処理の停止・遮断、誤った判断・成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`を設定し、本文の「優先の根拠」節へ根拠を書く。解除時は区分だけを取り除く。変更時はcommitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには影響・証拠・解除条件をまとめた`--reason`が必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
+        "epilog": "実行例:\n\n  atk wi set-priority 20260901-072734-001.md urgent --reason '委譲先が起動できない。証拠はagents_serverの起動ログ。修正の配布後に解除する。'",
     },
     "atk wi answer": {
         "summary": "UWIへ回答する",
@@ -611,9 +623,9 @@ HELP["atk wi add"]["description"] += (
     "\n冷却期限: 通常AWIは--cooldown-untilへタイムゾーン付きISO 8601日時を指定し、"
     "初回保存から期限を持たせる。複数の--body-fileへ同じ期限を保存する。"
     "空・不正日時・タイムゾーンなし、UWI・--batchとの併用は拒否する。"
-    "通常本文のfrontmatterで受理する管理キーはtarget_repo・source・confirmationである。confirmationはAWIのrequiredだけを受理し、それ以外の値とUWIへの指定は拒否する。"
-    "cooldown_untilなど他の予約キーはキー名と次の操作を示して全件の保存前に拒否する。"
-    "一般キーは保持し、--batchは既存の原文保持を使う。"
+    "\nfrontmatter: UWIのtype・scope・question_type・choicesは引数と同値なら受理し、不一致は保存前に拒否する。"
+    "cooldown_untilなどの予約キーは本文で指定できない。廃止済みのキー（confirmationなど）は通常投入時に保存しない。"
+    "--batchによる移行・復元では原文を保持する。"
     "\n保留での保存: --holdはAWIをholdへ保存し、inboxを経ずに自動処理の対象から外す。"
     "`atk wi unhold`でinboxへ戻す。UWI・--batch・--process-wi-timingとの併用は拒否する。"
 )

@@ -173,8 +173,6 @@ def _validate_add_args(args: argparse.Namespace) -> None:
                 ("--target-branch", args.target_branch),
                 ("--source", args.source),
                 ("--process-wi-timing", args.process_wi_timing),
-                ("--process-wi-kind", args.process_wi_kind),
-                ("--defer-category", args.defer_category),
                 ("REPO_PATH", args.repo_path_override),
             )
             if value is not None
@@ -309,6 +307,7 @@ def dispatch(
         "rm": lambda: _mutation_transitions.cmd_rm(args, private_notes),
         "edit": lambda: _mutation_content.cmd_edit(args, private_notes),
         "verify-merge": lambda: _merge_verification.cmd_verify_merge(args, private_notes),
+        "record-observation": lambda: _mutation_content.cmd_record_observation(args, private_notes),
         "effect-check": lambda: _effect_check.cmd_effect_check(args, private_notes),
         "set-dependencies": lambda: _mutation_dependencies.cmd_set_dependencies(args, private_notes),
         "set-priority": lambda: _mutation_priority.cmd_set_priority(args, private_notes),

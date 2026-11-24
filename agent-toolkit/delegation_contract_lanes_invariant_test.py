@@ -104,25 +104,12 @@ def test_observation_resume_record_reaches_selection_lane_and_receipt() -> None:
     parent = _selection_procedure(plugin_root)
     lanes = (playbooks / "process-wi-lanes.md").read_text(encoding="utf-8")
 
-    templates = [block.split("```", maxsplit=1)[0] for block in finish.split("```markdown\n")[1:]]
-    heading = templates[0].splitlines()[0]
-    assert heading.startswith("## ")
-    assert all(template.splitlines()[0] == heading for template in templates)
-    kinds = [re.search(r"^- 再開区分: (.+)$", template, flags=re.MULTILINE) for template in templates]
-    assert all(kinds)
-    kind_values = [kind.group(1) for kind in kinds if kind]
-    assert len(kind_values) >= 2 and len(set(kind_values)) == len(kind_values)
-    prefix = "反映後の観測だけが残る"
-    record = templates[kind_values.index(prefix)]
-    fields = re.findall(r"^- ([^:]+): ", record, flags=re.MULTILINE)
+    heading = f"## {wi_constants.OBSERVATION_RESUME_HEADING}"
+    prefix = wi_constants.OBSERVATION_ONLY_RESUME_LINE.removeprefix("- 再開区分: ")
     assert f"`再開区分`が`{prefix}`である場合に限り" in _h2_section(selection_text, "処理対象の決定")
     termination = _h2_section(lanes, "採否の確定と終了区分")
-    assert all(f"`再開区分: {value}`" in termination for value in kind_values if value != prefix)
-    # `atk serve`の一覧は同じ見出しと区分の行でneeds-verifyを表示する。書式の変更に判定が追随しないと失敗する。
-    assert heading == f"## {wi_constants.OBSERVATION_RESUME_HEADING}"
-    assert wi_constants.OBSERVATION_ONLY_RESUME_LINE in record.splitlines()
-    assert {"実装commit", "残る完成条件", "観測手段", "観測できる最も早い時刻", "計画"} <= set(fields)
-    assert "--append" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
+    assert "`再開区分: 再実装へ戻す`" in termination
+    assert "atk wi record-observation" in finish and "return-to-inbox" in finish and "--cooldown-until" in finish
 
     template = _selection_format(plugin_root).split("```yaml\n", maxsplit=1)[1].split("```", maxsplit=1)[0]
     resume_line = next(line for line in template.splitlines() if line.startswith("  再開位置:"))

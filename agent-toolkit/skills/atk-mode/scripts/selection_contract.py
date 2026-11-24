@@ -135,9 +135,9 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
     for name, fact in facts.items():
         if fact.get("priority") == _wi_priority.URGENT:
             reason = fact.get("priority_reason")
-            if not isinstance(reason, dict) or any(not str(reason.get(key, "")).strip() for key in _wi_priority.REASON_KEYS):
+            if not isinstance(reason, str) or not reason.strip():
                 raise ValueError(
-                    f"{name}: urgentに影響・根拠・解除条件のいずれかが無い。"
+                    f"{name}: urgentに優先の根拠が無い。"
                     "`atk wi set-priority`で根拠を補うか、損失を示せなければnormalへ戻してから候補を取り直す"
                 )
     missing = sorted(

@@ -161,7 +161,7 @@ def add_adopt_parser(sub: Any) -> None:
         action="store_true",
         help="管理リポジトリへのpushを省略してcommitだけ行う（連続操作の中間で用い、最後の操作では指定しない）。",
     )
-    adopt.add_argument("--effect-check", choices=("pending", "not_required"), help="実装commit付きAWIの確認要否。")
+    adopt.add_argument("--effect-check", choices=("pending", "not_required"), help="後日の効果確認を明示するときだけ指定する。")
     adopt.add_argument("--effect-check-reason", help="確認要否の理由（not_requiredでは必須、1行）。")
     add_bulk_transition_args(adopt, action_label="採用")
     add_target_repo_arg(

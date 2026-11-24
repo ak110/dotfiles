@@ -35,7 +35,14 @@ def test_without_urgent_falls_back_to_name_order() -> None:
     assert priority.priority_of({"priority": "high"}) == "normal"
 
 
-def test_reason_requires_all_fields() -> None:
-    metadata = {"priority": "urgent", "priority_impact": "停止", "priority_evidence": "", "priority_release": "配布"}
-    assert priority.missing_reason_keys(metadata) == ["priority_evidence"]
-    assert priority.reason_of({"priority_impact": "x"}) is None
+def test_reason_reads_last_nonempty_body_section_instead_of_legacy_metadata() -> None:
+    metadata = {"priority": "urgent", "priority_impact": "停止"}
+    assert priority.reason_of(metadata, "## 優先の根拠\n\n") is None
+    assert priority.reason_of(metadata, "## 優先の根拠\n\n以前の理由\n\n## 優先の根拠\n\n現在の理由") == "現在の理由"
+    assert priority.reason_of({}, "## 優先の根拠\n\n現在の理由") is None
+
+
+def test_legacy_urgent_remains_selectable_without_a_body_section() -> None:
+    metadata = {"priority": "urgent", "priority_impact": "停止", "priority_evidence": "ログ", "priority_release": "配布"}
+    assert priority.reason_of(metadata, "# 旧項目") == "停止\nログ\n配布"
+    assert priority.reason_of(metadata, "## 優先の根拠\n\n") is None
