@@ -1,9 +1,12 @@
+import pathlib
 import subprocess
 
 import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config
+from agent_toolkit._atk.wi import listing, snapshot
+from agent_toolkit._common import session_state
 from agent_toolkit._hooks import progress_self_check, work_contract
 from agent_toolkit._hooks.pretooluse import publication_gate
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
@@ -131,3 +134,162 @@ def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path,
         assert all(name not in notice for name in names[:2])
     finally:
         progress_self_check.release_reservations()
+
+
+@pytest.mark.parametrize("first_configured", [False, True])
+@pytest.mark.parametrize("handoff", [None, "target", "configured"])
+@pytest.mark.parametrize("failure", [None, "snapshot", "source", "session_state", "directory"])
+def test_single_lane_list_preserves_start_of_circuit(tmp_path, monkeypatch, capsys, first_configured, handoff, failure):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda **_kwargs: (repository,))
+    session = "single-lane-start"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    held = _write_awi_file(notes, "20261124-085010-001.md")
+    original = held.read_text(encoding="utf-8")
+    held.write_text(original.replace("state: inbox", "state: hold"), encoding="utf-8")
+
+    outside = _write_awi_file(notes, "20261124-085010-003.md", target_repo="github.com/example/outside")
+
+    def list_candidates(configured, output=None, *, success=True):
+        target = "--configured-repos" if configured else f"--target-repo={repo}"
+        options = ["--snapshot-output", str(output)] if output is not None else []
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "list", "--skip-pull", "--count", "--status=processable", target, *options], home=tmp_path)
+        assert (result.value.code == 0) is success
+
+    with monkeypatch.context() as first_list:
+
+        def fail_write(*_args):
+            raise OSError("テスト用の保存失敗")
+
+        if failure == "directory":
+            first_list.setattr(snapshot, "_claim_start", fail_write)
+        elif failure == "snapshot":
+            first_list.setattr(snapshot, "atomic_write", fail_write)
+        elif failure == "source":
+            write = snapshot.atomic_write
+
+            def fail_source(path, data):
+                if path.name == "source.json":
+                    fail_write()
+                write(path, data)
+
+            first_list.setattr(snapshot, "atomic_write", fail_source)
+        elif failure == "session_state":
+            first_list.setattr(session_state, "_atomic_write", fail_write)
+        list_candidates(first_configured)
+
+    sources = snapshot.progress_sources(session)
+    if failure not in {"directory", "snapshot", "source"}:
+        (row,) = sources.values()
+        assert snapshot.read(pathlib.Path(row["path"])) == {(repo, held.name), ("github.com/example/outside", outside.name)}
+    else:
+        assert "保存できない" in capsys.readouterr().err
+    held.write_text(original, encoding="utf-8")
+    new_name = "20261124-085010-002.md"
+    new = _write_awi_file(notes, new_name)
+    new.write_text(
+        new.read_text(encoding="utf-8").replace("state: inbox", "state: inbox\nmerge_branch: test"),
+        encoding="utf-8",
+    )
+    listing_copy = tmp_path / "for-delegate.json"
+    list_candidates(not first_configured)
+    if handoff is not None:
+        broken = failure in {"directory", "snapshot", "source"}
+        if broken:
+            listing_copy.write_text("以前の出力", encoding="utf-8")
+        list_candidates(handoff == "configured", listing_copy, success=not broken)
+        if broken:
+            assert listing_copy.read_text(encoding="utf-8") == "以前の出力"
+        else:
+            expected = {(repo, held.name)}
+            if handoff == "target":
+                expected.add(("github.com/example/outside", outside.name))
+            assert snapshot.read(listing_copy) == expected
+    assert snapshot.progress_sources(session) == sources
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    if failure in {"directory", "snapshot", "source"}:
+        assert listing.progress_new_wis(session) is None
+        denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
+        assert denied is not None and "開始時集合がない" in denied[0]
+        return
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    try:
+        notice = progress_self_check.claim_notice(payload, now=1801.0)
+        assert notice is not None and new_name in notice and held.name not in notice
+    finally:
+        progress_self_check.release_reservations()
+
+    denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
+    assert denied is not None and new_name in denied[0] and held.name not in denied[0]
+    contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(work_contract, "record_path", lambda _sid: contract)
+    contract.write_text(f"- 新着WIの判定: {new_name} | 次回: 別ホストで観測する\n", encoding="utf-8")
+    assert publication_gate.check(payload, session, "Bash", {"command": "git push"}) is None
+
+
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("legacy_file", ["valid", "missing", "changed"])
+def test_circuit_resume_uses_legacy_start(tmp_path, monkeypatch, configured, explicit, legacy_file):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda: (repository,))
+    session = "legacy-start"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    old = _write_awi_file(notes, "20261124-085011-001.md")
+    path = tmp_path / "legacy.json"
+    digest = snapshot.save(path, ((old, repo, old.read_text(encoding="utf-8"), "inbox", "awi"),))
+    row: dict[str, object] = {
+        "repo": repo,
+        "branch": None,
+        "path": str(path),
+        "notes": str(notes),
+        "digest": digest,
+        "unanswered": [],
+    }
+    legacy = {'["github.com/example/foo", null]': row}
+    assert session_state.update_state(session, lambda state: {**state, "process_loop_progress_snapshots": legacy})
+    if legacy_file == "changed":
+        path.write_text("[]", encoding="utf-8")
+    elif legacy_file == "missing":
+        path.unlink()
+
+    late = _write_awi_file(notes, "20261124-085011-002.md")
+    target = "--configured-repos" if configured else f"--target-repo={repo}"
+    output = tmp_path / "delegate.json"
+    output.write_text("以前の出力", encoding="utf-8")
+    args = ["--snapshot-output", str(output)] if explicit else []
+    with pytest.raises(SystemExit) as result:
+        atk.main(["wi", "list", "--skip-pull", "--count", "--status=processable", target, *args], home=tmp_path)
+    valid = legacy_file == "valid"
+    assert (result.value.code == 0) == (valid or not explicit)
+    if valid and explicit:
+        assert snapshot.read(output) == {(repo, old.name)}
+    else:
+        assert output.read_text(encoding="utf-8") == "以前の出力"
+
+    assert snapshot.progress_sources(session) == legacy
+    payload = {"session_id": session, "cwd": str(tmp_path)}
+    assert progress_self_check.claim_notice(payload, now=1.0) is None
+    try:
+        notice = progress_self_check.claim_notice(payload, now=1801.0)
+        assert notice is not None
+        assert (late.name in notice) == valid
+        assert ("新着WIは未確認" in notice) != valid
+    finally:
+        progress_self_check.release_reservations()
+    denied = publication_gate.check(payload, session, "Bash", {"command": "git push"})
+    assert denied is not None
+    assert (late.name in denied[0]) == valid

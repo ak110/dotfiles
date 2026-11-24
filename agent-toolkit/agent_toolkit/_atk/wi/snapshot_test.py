@@ -6,7 +6,7 @@ import pytest
 
 from agent_toolkit import atk
 from agent_toolkit._atk import config
-from agent_toolkit._atk.wi import listing
+from agent_toolkit._atk.wi import listing, snapshot
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing import git_repository
 from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_awi_file, _write_uwi_file
@@ -204,9 +204,18 @@ def test_process_loop_baseline_finds_new_merge_work_item(tmp_path, monkeypatch, 
     capsys.readouterr()
     assert listing.progress_new_wis("snapshot-loop") == (f"{new} (source: implement、merge_branch: あり)",)
     assert baseline.read_bytes() == original
-    baseline.write_bytes(later_baseline.read_bytes())
+    assert later_baseline.read_bytes() == original
+    (row,) = snapshot.progress_sources("snapshot-loop").values()
+    pathlib.Path(row["path"]).write_text("[]", encoding="utf-8")
     with pytest.raises(ActionableError, match="開始時の保存後に内容が変化"):
         listing.progress_new_wis("snapshot-loop")
+    with pytest.raises(SystemExit) as rejected:
+        atk.main(
+            ["wi", "list", "--skip-pull", "--count", target, "--snapshot-output", str(later_baseline)],
+            home=tmp_path,
+        )
+    assert rejected.value.code != 0
+    assert later_baseline.read_bytes() == original
 
 
 def test_process_loop_progress_reads_new_merge_work_item_from_upstream(tmp_path, monkeypatch, capsys):
@@ -241,3 +250,45 @@ def test_process_loop_progress_reads_new_merge_work_item_from_upstream(tmp_path,
     git_repository.run_git(other, "push")
     assert not tuple(notes.rglob(new))
     assert listing.progress_new_wis("snapshot-remote") == (f"{new} (source: implement、merge_branch: あり)",)
+
+
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("save_failed", [False, True])
+def test_first_circuit_list_contract(tmp_path, monkeypatch, configured, explicit, save_failed):
+    notes = _setup_notes(tmp_path)
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    repo = "github.com/example/foo"
+    repository = config.ConfiguredRepository(repo, tmp_path, tmp_path / ".git", "main")
+    monkeypatch.setattr(config, "resolve_configured_repositories", lambda: (repository,))
+    session = "first-list-contract"
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", session)
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    expected = set()
+    for branch, number in (("main", "001"), ("other", "002")):
+        item = _write_awi_file(notes, f"20261124-085015-{number}.md")
+        text = item.read_text(encoding="utf-8").replace("state: inbox", f"state: inbox\ntarget_branch: {branch}")
+        item.write_text(text, encoding="utf-8")
+        if not configured or branch == "main":
+            expected.add((repo, item.name))
+    output = tmp_path / "first.json"
+    output.write_text("以前の出力", encoding="utf-8")
+    args = ["--snapshot-output", str(output)] if explicit else []
+    scope = "--configured-repos" if configured else f"--target-repo={repo}"
+
+    def reject_write(*_args):
+        raise OSError("テスト用の保存失敗")
+
+    with monkeypatch.context() as first:
+        if save_failed:
+            first.setattr(snapshot, "atomic_write", reject_write)
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", "list", "--skip-pull", "--count", "--status=processable", scope, *args], home=tmp_path)
+    assert (result.value.code == 0) == (not explicit or not save_failed)
+    if explicit and not save_failed:
+        assert snapshot.read(output) == expected
+    else:
+        assert output.read_text(encoding="utf-8") == "以前の出力"
+    assert bool(snapshot.progress_sources(session)) != save_failed
