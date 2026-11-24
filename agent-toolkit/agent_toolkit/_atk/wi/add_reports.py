@@ -1,9 +1,11 @@
-"""run-skill報告の同期確認と原稿冒頭の比較・表示。"""
+"""run-skill報告の同期確認と、原稿冒頭の比較・表示、先送りの候補の表示。"""
 
 import pathlib
 import re
 import sys
+from collections import Counter
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.managed_temp.creation import create_output_temp
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
@@ -216,3 +218,60 @@ def print_draft_openings(
         print(f"原稿: {source}\n冒頭保存先: {path}\n冒頭文字数: {len(opening)}\n冒頭本文:")
         sys.stdout.write(opening)
         print("\n冒頭本文終了")
+
+
+DEFERRAL_PATTERN = re.compile(
+    r"確かめて|確認して|比べて|比較して|照合して|計画で|計画工程|実装で|着手時|処理時|処理の時点|扱いを決め"
+)
+"""AWIの本文で、投入前に決められる判断を処理工程へ回す言い回しの候補。
+
+正当な記述（登録時に観測できない事項を待つものなど）にも一致するため、拒否と警告には使わず、
+投入前レビューが行ごとに判定する入力として示すだけにする。
+"""
+
+DEFERRAL_SECTIONS = frozenset({"反映内容と反映先", "完成条件"})
+"""先送りの候補を探す節。処理担当が行う作業と完了の判定を書く節に限り、ユーザーの原文と観測の記録の節は除く。"""
+
+
+def deferral_candidates(message: str) -> list[tuple[int, str]]:
+    """AWIの原稿から先送りの候補の行を、原稿ファイル上の1始まりの行番号と行の本文の組で返す。"""
+    normalized = _frontmatter.normalize_newlines(message.removeprefix("\ufeff"))
+    parsed = _frontmatter.parse_frontmatter(normalized)
+    offset = 0 if parsed is None else normalized[: len(normalized) - len(parsed[1])].count("\n")
+    lines = normalized.split("\n")[offset:]
+    headings = _markdown_headings.top_level_atx_headings("\n".join(lines), 2)
+    candidates: list[tuple[int, str]] = []
+    for index, (token, name) in enumerate(headings):
+        if name.strip() not in DEFERRAL_SECTIONS or token.map is None:
+            continue
+        following = headings[index + 1][0].map if index + 1 < len(headings) else None
+        end = following[0] if following is not None else len(lines)
+        candidates.extend(
+            (offset + number + 1, lines[number].strip())
+            for number in range(token.map[1], end)
+            if DEFERRAL_PATTERN.search(lines[number])
+        )
+    return candidates
+
+
+def print_deferral_candidates(messages: list[str], sources: list[str], *, previous: str | None = None) -> None:
+    """AWIの原稿ごとに先送りの候補を`情報:`の行で示す。候補が無い原稿は何も出さない。"""
+    for message, source in zip(messages, sources, strict=True):
+        candidates = deferral_candidates(message)
+        if previous is not None:
+            remaining = Counter(line for _, line in deferral_candidates(previous))
+            new_candidates = []
+            for number, line in candidates:
+                if remaining[line]:
+                    remaining[line] -= 1
+                else:
+                    new_candidates.append((number, line))
+            candidates = new_candidates
+        if not candidates:
+            continue
+        _outcome.report_info(
+            f"先送りの候補が{len(candidates)}行ある（{source}）。保存の成否は変えない。"
+            "投入前レビューが行ごとに、処理へ残してよい事項かを判定する"
+        )
+        for number, line in candidates:
+            _outcome.report_info(f"先送りの候補 {number}行目: {line}")
