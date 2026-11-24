@@ -154,18 +154,20 @@
       <div id="detail-dialog-body" class="dialog-body" tabindex="0">
         <div id="detail-alert" class="dialog-message error-message" role="alert" hidden></div>
         <div id="detail-status" class="dialog-message success-message" role="status" hidden></div>
-        <section id="detail-view" hidden>
-          <div class="detail-title-row">
-            <h3 id="detail-filename"></h3>
-            <span id="detail-state" class="state-badge"></span>
-          </div>
-          <dl id="detail-metadata" class="metadata"></dl>
-          <p id="readonly-notice" class="readonly-notice" hidden>この項目は編集と回答の対象外です。</p>
-          <section class="detail-body">
-            <h3>本文</h3>
-            <div id="detail-content" class="entry-content markdown-body"></div>
+        <template id="detail-view-template">
+          <section id="detail-view" hidden>
+            <div class="detail-title-row">
+              <h3 id="detail-filename"></h3>
+              <span id="detail-state" class="state-badge"></span>
+            </div>
+            <dl id="detail-metadata" class="metadata detail-metadata"></dl>
+            <p id="readonly-notice" class="readonly-notice" hidden>この項目は編集と回答の対象外です。</p>
+            <section class="detail-body">
+              <h3>本文</h3>
+              <div id="detail-content" class="entry-content markdown-body"></div>
+            </section>
           </section>
-        </section>
+        </template>
         <section id="edit-panel" class="edit-panel" hidden>
           <h3>ファイル全体を編集</h3>
           <label for="edit-content">ファイル全体（メタデータを含む、必須）</label>

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import datetime
 from collections.abc import Mapping
 from typing import Any
@@ -41,20 +42,27 @@ def tree_rows(
     rows: list[str | tuple[str, dict[str, Any]]] = []
     for root_id, sessions in groups:
         rows.append(f"root {root_id}")
-        children: dict[str | None, list[dict[str, Any]]] = {}
-        attached: set[str] = set()
-        for session in sessions:
-            owner = session.get("host_session_id")
-            children.setdefault(owner, []).append(session)
+        for branches, session in _tree_sessions(sessions):
+            prefix = "".join("   " if last else "│  " for last in branches[:-1])
+            marker = "└─ " if branches[-1] else "├─ "
+            rows.append((f"{prefix}{marker}{session['session_id']}", session))
+    return rows
 
-        _append_children(children, None, "", set(), attached, rows)
-        identifiers = {session["session_id"] for session in sessions}
-        for owner in children:
-            if owner is not None and owner not in identifiers:
-                _append_children(children, owner, "", set(), attached, rows)
-        for session in sessions:
-            if session["session_id"] not in attached:
-                _append_children({**children, None: [session]}, None, "", set(), attached, rows)
+
+def _tree_sessions(sessions: list[dict[str, Any]]) -> list[tuple[tuple[bool, ...], dict[str, Any]]]:
+    children: dict[str | None, list[dict[str, Any]]] = {}
+    attached: set[str] = set()
+    rows: list[tuple[tuple[bool, ...], dict[str, Any]]] = []
+    for session in sessions:
+        children.setdefault(session.get("host_session_id"), []).append(session)
+    _append_children(children, None, (), attached, rows)
+    identifiers = {session["session_id"] for session in sessions}
+    for owner in children:
+        if owner is not None and owner not in identifiers:
+            _append_children(children, owner, (), attached, rows)
+    for session in sessions:
+        if session["session_id"] not in attached:
+            _append_children({**children, None: [session]}, None, (), attached, rows)
     return rows
 
 
@@ -64,20 +72,15 @@ def serve_agent_listing(*, include_terminated: bool) -> list[dict[str, Any]]:
     roots: list[dict[str, Any]] = []
     for root_id, sessions in groups:
         children = []
-        for row in tree_rows([(root_id, sessions)]):
-            if isinstance(row, str):
-                continue
-            tree_label, session = row
-            action, status = status_parts(session, now)
+        for branches, session in _tree_sessions(sessions):
             children.append(
                 {
                     "id": session["session_id"],
                     "engine": session.get("engine"),
-                    "tree_label": tree_label,
+                    "depth": len(branches),
                     "name": session_name(session),
-                    "action": action,
-                    "status": status,
                     "running": session.get("status") == "running",
+                    **dataclasses.asdict(session_status(session, now)),
                 }
             )
         root = session_activity.root_activity(root_id)
@@ -101,10 +104,9 @@ def serve_agent_listing(*, include_terminated: bool) -> list[dict[str, Any]]:
 def _append_children(
     children: dict[str | None, list[dict[str, Any]]],
     owner: str | None,
-    prefix: str,
-    visited: set[str],
+    branches: tuple[bool, ...],
     attached: set[str],
-    rows: list[str | tuple[str, dict[str, Any]]],
+    rows: list[tuple[tuple[bool, ...], dict[str, Any]]],
 ) -> None:
     entries = children.get(owner, [])
     for index, session in enumerate(entries):
@@ -112,11 +114,9 @@ def _append_children(
         if session_id in attached:
             continue
         attached.add(session_id)
-        marker = "└─ " if index == len(entries) - 1 else "├─ "
-        rows.append((f"{prefix}{marker}{session_id}", session))
-        if session_id not in visited:
-            next_prefix = prefix + ("   " if index == len(entries) - 1 else "│  ")
-            _append_children(children, session_id, next_prefix, visited | {session_id}, attached, rows)
+        path = (*branches, index == len(entries) - 1)
+        rows.append((path, session))
+        _append_children(children, session_id, path, attached, rows)
 
 
 def session_name(session: Mapping[str, Any]) -> str:
@@ -137,36 +137,49 @@ def session_name(session: Mapping[str, Any]) -> str:
     return f"{label} ({detail})" if detail else str(label)
 
 
-def status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[str, str]:
+@dataclasses.dataclass(frozen=True)
+class SessionStatus:
+    action: str
+    status: str
+    elapsed: str | None
+    usage: str | None
+    retry_detail: str | None = None
+    retry_count: str | None = None
+
+
+def session_status(session: Mapping[str, Any], now: datetime.datetime) -> SessionStatus:
     """利用上限の解除待ちまたはAPI再試行を通常の進捗より優先する。 pyfltr: allow-comment"""
     status = str(session.get("status") or "")
     raw_error = session.get("api_error") if status == "running" else None
     api_error = raw_error if isinstance(raw_error, dict) and raw_error.get("type") else None
     tokens = context_usage.format_tokens(session.get("context_tokens"), session.get("context_window"))
-    right: list[str] = []
+    retry_detail = None
+    retry_count = None
+    elapsed = _elapsed(session.get("started_at"), now)
     if api_error is not None and api_error.get("type") == turn_state.USAGE_LIMIT_ERROR_TYPE:
         description = f"利用上限の解除待ち {api_error.get('limit_type') or '?'}"
         remaining = _elapsed(now, api_error.get("resets_at"))
-        right.append(f"解除まで{remaining}" if remaining is not None else "解除時刻確認中")
-        right.append(_elapsed(api_error.get("first_at"), now) or "?")
+        retry_detail = f"解除まで{remaining}" if remaining is not None else "解除時刻確認中"
+        elapsed = _elapsed(api_error.get("first_at"), now)
     elif api_error is not None:
         description = f"API再試行 {api_error['type']}"
-        right.append(f"HTTP {api_error.get('http_status') or '?'}")
-        right.append(_elapsed(api_error.get("first_at"), now) or "?")
+        http_status = api_error.get("http_status")
+        retry_detail = f"HTTP {http_status}" if http_status else ""
+        elapsed = _elapsed(api_error.get("first_at"), now)
         if api_error.get("count"):
-            right.append(f"{api_error['count']}回")
+            retry_count = f"{api_error['count']}回"
     else:
         description = str(session.get("last_action") or session.get("progress") or "")
-        elapsed = _elapsed(session.get("started_at"), now)
-        if elapsed is not None:
-            right.append(elapsed)
-        if tokens is not None:
-            right.append(tokens)
-        if status:
-            right.append(status)
-    if api_error is not None and tokens is not None:
-        right.append(tokens)
-    return " ".join(description.split()), _RIGHT_SEPARATOR.join(right)
+    return SessionStatus(" ".join(description.split()), status, elapsed, tokens, retry_detail, retry_count)
+
+
+def status_parts(session: Mapping[str, Any], now: datetime.datetime) -> tuple[str, str]:
+    fields = session_status(session, now)
+    if fields.retry_detail is not None:
+        right = (fields.retry_detail or "HTTP ?", fields.elapsed or "?", fields.retry_count, fields.usage)
+    else:
+        right = (fields.elapsed, fields.usage, fields.status)
+    return fields.action, _RIGHT_SEPARATOR.join(part for part in right if part)
 
 
 def _elapsed(start: object, end: object) -> str | None:

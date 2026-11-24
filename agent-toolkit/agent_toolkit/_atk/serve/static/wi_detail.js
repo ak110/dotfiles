@@ -125,22 +125,25 @@ function closeReferencedWi() {
 async function openReferencedWi(filename, origin) {
   const parent = origin.closest('dialog');
   const dialog = document.createElement('dialog');
-  dialog.className = 'dialog-shell wi-reference-dialog';
+  dialog.className = 'dialog-shell detail-dialog wi-reference-dialog';
   const title = document.createElement('h2');
   title.id = `wi-reference-title-${childDialogs.length + 1}`;
-  title.textContent = `${filename}（${childDialogs.length + 1}段目）`;
+  title.textContent = `詳細（${childDialogs.length + 1}段目）`;
   dialog.setAttribute('aria-labelledby', title.id);
   const header = document.createElement('header');
   header.className = 'dialog-header';
   const close = document.createElement('button');
   close.type = 'button';
+  close.className = 'dialog-close';
   close.autofocus = true;
-  close.textContent = '閉じる';
+  close.setAttribute('aria-label', '閉じる');
+  close.textContent = '×';
   close.addEventListener('click', closeReferencedWi);
   header.append(title, close);
   const body = document.createElement('div');
   body.className = 'dialog-body';
-  body.textContent = '読み込み中…';
+  body.tabIndex = 0;
+  body.textContent = `${filename}を読み込み中…`;
   const open = document.createElement('button');
   open.type = 'button';
   open.textContent = 'このWIを開く';
@@ -148,13 +151,14 @@ async function openReferencedWi(filename, origin) {
   const footer = document.createElement('footer');
   footer.className = 'dialog-footer';
   footer.append(open);
-  const frame = document.createElement('div');
+  const frame = document.createElement('article');
   frame.className = 'dialog-frame';
   frame.append(header, body, footer);
   dialog.append(frame);
-  dialog.addEventListener('cancel', event => {
-    event.preventDefault();
-    closeReferencedWi();
+  dialog.addEventListener('close', () => {
+    const index = childDialogs.indexOf(dialog);
+    if (index !== -1) childDialogs.splice(index, 1);
+    dialog.remove();
   });
   parent.after(dialog);
   const bounds = parent.getBoundingClientRect();
@@ -170,13 +174,14 @@ async function openReferencedWi(filename, origin) {
   try {
     const {entry} = await api(`/api/entries/${encodeURIComponent(filename)}`);
     if (!dialog.open) return;
-    const metadata = document.createElement('dl');
-    const content = document.createElement('div');
-    content.className = 'markdown-body';
-    content.innerHTML = entry.body_html ?? '';
-    renderMetadata(entry, metadata);
-    linkWiReferences(content, entry);
-    body.replaceChildren(metadata, content);
+    const view = byId('detail-view-template').content.cloneNode(true);
+    const parts = new Map();
+    for (const part of view.querySelectorAll('[id]')) {
+      parts.set(part.id, part);
+      part.removeAttribute('id');
+    }
+    renderDetailView(entry, id => parts.get(id));
+    body.replaceChildren(view);
     open.hidden = false;
     open.addEventListener('click', () => {
       closeDetailDialog();
@@ -210,7 +215,7 @@ function appendMetadataItem(metadata, label, value, entry) {
   metadata.append(item);
 }
 
-function renderMetadata(entry, metadata = byId('detail-metadata')) {
+function renderMetadata(entry, metadata) {
   metadata.replaceChildren();
   if (entry.answered === true || entry.answered === false) {
     appendMetadataItem(metadata, 'answered', entry.answered ? 'yes' : 'no');
@@ -225,6 +230,19 @@ function renderMetadata(entry, metadata = byId('detail-metadata')) {
   }
   const parts = formatDateParts(entry.updated_at);
   appendMetadataItem(metadata, 'updated_at', parts.time ? `${parts.date} ${parts.time}` : parts.date);
+}
+
+function renderDetailView(entry, part) {
+  part('detail-view').hidden = false;
+  part('detail-filename').textContent = entry.filename;
+  const state = part('detail-state');
+  state.textContent = entryStateText(entry);
+  state.dataset.state = entry.state;
+  const content = part('detail-content');
+  content.innerHTML = entry.body_html ?? entry.content_html ?? '';
+  linkWiReferences(content, entry);
+  renderMetadata(entry, part('detail-metadata'));
+  part('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
 }
 
 export function setDetailMode(mode) {
@@ -316,21 +334,18 @@ export function displayEntry(entry) {
   // 同じ項目の再表示（外部変更の反映など）では、入力途中の回答を保持する。
   const keepTypedAnswer = entryKey(wiState.currentEntry) === entryKey(entry) && answerInputChanged();
   wiState.currentEntry = entry;
+  if (!byId('detail-view')) {
+    const template = byId('detail-view-template');
+    template.after(template.content.cloneNode(true));
+  }
   if (wiState.waitingSavedFilename !== entry.filename) wiState.waitingSavedFilename = '';
   if (!keepTypedAnswer) byId('answer-input').value = entry.answer || '';
   refreshCooldownDisplays();
   wiState.detailRefreshRequired = false;
   byId('decision-note').value = '';
   setTextMessage('detail-alert', '');
-  byId('detail-view').hidden = false;
-  byId('detail-filename').textContent = entry.filename;
-  byId('detail-state').textContent = entryStateText(entry);
-  byId('detail-state').dataset.state = entry.state;
-  byId('detail-content').innerHTML = entry.body_html ?? entry.content_html ?? '';
-  linkWiReferences(byId('detail-content'), entry);
-  renderMetadata(entry);
+  renderDetailView(entry, byId);
   renderAnswerChoices(entry);
-  byId('readonly-notice').hidden = EDITABLE_STATES.has(entry.state);
   setDetailMode('view');
   updateCurrentRowSelection();
   if (entrySelectionFromUrl()) history.replaceState({atkEntry: true}, '', entryPageUrl(entry));

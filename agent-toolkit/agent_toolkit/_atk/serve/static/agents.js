@@ -12,23 +12,67 @@ async function fetchJson(url) {
   return response.json();
 }
 
-function agentRow(agent, label) {
-  const row = document.createElement("li");
-  row.dataset.agentId = agent.id;
+function agentText(className, value) {
+  const span = document.createElement("span");
+  span.className = className;
+  span.textContent = value;
+  return span;
+}
+
+function agentRow(agent, depth) {
+  const item = document.createElement("li");
+  item.dataset.agentId = agent.id;
+  const row = document.createElement("div");
+  row.className = "agent-row";
+  row.style.setProperty("--agent-depth", depth);
+  const identity = document.createElement("div");
+  identity.className = "agent-identity";
   const target = agent.record ? document.createElement("a") : document.createElement("span");
   if (agent.record) target.href = BASE_PATH + "/sessions?" + new URLSearchParams(agent.record);
-  target.textContent = label;
-  const state = document.createElement("span");
-  state.className = "agent-status";
-  state.textContent = agent.status;
-  const rootDetails = agent.root ? [
-    agent.name || (agent.engine ? `${agent.engine}（モデル・推論の深さは不明）` : "エンジン・モデルは不明"),
-    agent.elapsed || "経過時間は不明",
-    "行動・文脈使用量は不明",
-  ] : [agent.name, agent.action];
-  row.append(state, " ", target, " ", [...rootDetails, agent.record_error].filter(Boolean).join(" · "));
+  target.textContent = agent.id;
+  identity.append(target);
+  const name = agent.name || agent.engine;
+  if (name) identity.append(agentText("agent-name", name));
+  row.append(identity);
+  for (const [field, label] of [["status", "状態"], ["elapsed", "経過時間"], ["usage", "文脈使用量"]]) {
+    if (!agent[field]) continue;
+    const cell = document.createElement("span");
+    cell.className = `agent-${field}`;
+    cell.append(agentText("visually-hidden", `${label}: `), agentText("agent-value", agent[field]));
+    row.append(cell);
+  }
+  const action = [agent.action, agent.retry_detail, agent.retry_count].filter(Boolean).join(" · ");
+  if (action) identity.append(agentText("agent-action", action));
+  if (agent.record_error) identity.append(agentText("agent-record-note", agent.record_error));
   if (agent.running || agent.status === "稼働中") row.dataset.running = "true";
-  return row;
+  item.append(row);
+  return item;
+}
+
+function agentList() {
+  const list = document.createElement("ul");
+  list.className = "agent-list";
+  list.setAttribute("role", "list");
+  return list;
+}
+
+function appendRoot(list, root) {
+  const item = agentRow(root, 0);
+  list.append(item);
+  const ancestors = [item];
+  for (const child of root.children) {
+    const depth = Number.isInteger(child.depth) && child.depth > 0 ? Math.min(child.depth, ancestors.length) : 1;
+    const parent = ancestors[depth - 1];
+    let children = parent.querySelector(":scope > ul");
+    if (!children) {
+      children = agentList();
+      parent.append(children);
+    }
+    const childItem = agentRow(child, depth);
+    children.append(childItem);
+    ancestors.length = depth;
+    ancestors.push(childItem);
+  }
 }
 
 function renderRoots(content, roots) {
@@ -38,21 +82,13 @@ function renderRoots(content, roots) {
     if (focused) checkbox.focus({preventScroll: true});
     return;
   }
-  const list = document.createElement("ul");
-  for (const root of roots) {
-    const item = agentRow(root, root.id);
-    if (root.children.length) {
-      const children = document.createElement("ul");
-      for (const child of root.children) children.append(agentRow(child, child.tree_label));
-      item.append(children);
-    }
-    list.append(item);
-  }
+  const list = agentList();
+  for (const root of roots) appendRoot(list, root);
   content.replaceChildren(list);
   if (focused) {
     const sameTarget = Array.from(list.querySelectorAll("[data-agent-id]"))
       .find(row => row.dataset.agentId === focused.dataset.agentId);
-    (sameTarget?.querySelector(":scope > a") ?? checkbox).focus({preventScroll: true});
+    (sameTarget?.querySelector(":scope > .agent-row > .agent-identity > a") ?? checkbox).focus({preventScroll: true});
   }
 }
 
@@ -90,6 +126,7 @@ async function init() {
     for (const hostname of [null, ...data.remote]) {
       const section = document.createElement("section");
       const heading = document.createElement("h2");
+      heading.className = "agent-host-heading";
       heading.textContent = hostname ?? `${data.local}（ローカル）`;
       const content = document.createElement("div");
       content.textContent = "読み込み中…";

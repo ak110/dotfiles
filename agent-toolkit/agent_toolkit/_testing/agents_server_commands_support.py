@@ -16,10 +16,15 @@ def _write_jsonl(path: pathlib.Path, records: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n", encoding="utf-8")
 
 
-def _write_root_sessions(state_root: pathlib.Path, root_session_id: str, sessions: list[dict]) -> None:
+def _write_root_sessions(
+    state_root: pathlib.Path, root_session_id: str, sessions: list[dict], *, host_session_id: str | None = None
+) -> None:
     directory = shared_layout.status_directory(root_session_id, state_root)
-    directory.mkdir(parents=True)
-    (directory / "root.json").write_text(json.dumps({"version": 1, "sessions": sessions}), encoding="utf-8")
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{host_session_id or 'root'}.json").write_text(
+        json.dumps({"version": 1, "host_session_id": host_session_id, "sessions": sessions}),
+        encoding="utf-8",
+    )
 
 
 _LONG_REPLY = "長" * 2100

@@ -82,6 +82,10 @@
 #screen-wi .detail-title-row h3 {
   overflow-wrap: anywhere;
 }
+#screen-wi .detail-dialog .dialog-header h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 #screen-wi .metadata {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -94,19 +98,19 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-#screen-wi #detail-metadata {
+#screen-wi .detail-metadata {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: var(--space-3);
 }
-#screen-wi #detail-metadata .metadata-item {
+#screen-wi .detail-metadata .metadata-item {
   min-width: 0;
   display: grid;
   gap: var(--space-1);
 }
-#screen-wi #detail-metadata dt {
+#screen-wi .detail-metadata dt {
   overflow-wrap: anywhere;
 }
-#screen-wi #detail-metadata dd {
+#screen-wi .detail-metadata dd {
   white-space: pre-wrap;
 }
 #screen-wi .detail-body {
@@ -421,11 +425,11 @@
   max-height: none;
 }
 
-#screen-wi .wi-reference-dialog .dialog-header h2 {
-  min-width: 0;
-  overflow-wrap: anywhere;
+#screen-wi .detail-dialog:modal,
+#screen-wi .detail-dialog .dialog-body,
+#screen-wi .detail-dialog::backdrop {
+  overscroll-behavior: contain;
 }
-#screen-wi .wi-reference-dialog .dialog-header button {
-  flex: none;
-  white-space: nowrap;
+#screen-wi .detail-dialog::backdrop {
+  overflow: hidden;
 }

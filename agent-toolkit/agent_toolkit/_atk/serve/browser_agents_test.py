@@ -1,6 +1,8 @@
+import datetime
 import json
 import os
 import pathlib
+import re
 import threading
 
 import playwright.async_api
@@ -95,6 +97,7 @@ async def test_agent_activity_records_drive_root_states(
     identity = session_registry.ProcessIdentity.of(os.getpid())
     assert identity is not None
     dead = session_registry.ProcessIdentity(2147483647, 1)
+    started = (datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)).isoformat()
     for identifier, process in (("live", identity), ("alone", identity), ("finished", dead), ("broken", identity)):
         session_activity.record_activity(
             {"session_id": identifier, "hook_event_name": "SessionStart"},
@@ -116,17 +119,39 @@ async def test_agent_activity_records_drive_root_states(
                     "model": "sol",
                     "effort": "low",
                     "last_action": "作業を検査",
+                    "started_at": started,
                     "context_tokens": 2000,
                     "context_window": 8000,
                 }
             ],
         )
+    _write_root_sessions(
+        tmp_path,
+        "live",
+        [
+            {
+                "session_id": "live-grandchild",
+                "status": "running",
+                "label": "再試行中の委譲先",
+                "engine": "claude",
+                "context_tokens": 92500,
+                "context_window": 840000,
+                "api_error": {"type": "overloaded", "first_at": started, "http_status": 529, "count": 3},
+            }
+        ],
+        host_session_id="live-child",
+    )
     _write_completed_child_result(tmp_path, "finished", "finished-child")
     plans = tmp_path / "plans"
     plans.mkdir()
     app = _browser_app(tmp_path, plans, agent_listing=atk.serve_agent_listing)
     async with _serve(app, browser) as (_context, page, port):
         await page.goto(f"http://127.0.0.1:{port}/agents")
+        panel = page.locator("#agents-hosts")
+        await playwright.async_api.expect(panel).to_contain_text("子の表示名")
+        await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
+        await playwright.async_api.expect(panel).not_to_contain_text("経過時間は不明")
+        await playwright.async_api.expect(panel).not_to_contain_text("行動・文脈使用量は不明")
         for identifier, expected in (
             ("live", "稼働中"),
             ("alone", "稼働中"),
@@ -135,8 +160,31 @@ async def test_agent_activity_records_drive_root_states(
             ("broken", "不明"),
         ):
             root = page.locator(f'li[data-agent-id="{identifier}"]')
-            await playwright.async_api.expect(root.locator(":scope > .agent-status")).to_have_text(expected)
+            await playwright.async_api.expect(root.locator(":scope > .agent-row > .agent-status .agent-value")).to_have_text(
+                expected
+            )
         child = page.locator('[data-agent-id="live"] [data-agent-id="live-child"]')
         await playwright.async_api.expect(child).to_contain_text("codex:sol/low")
         await playwright.async_api.expect(child).to_contain_text("作業を検査")
         await playwright.async_api.expect(child).to_contain_text("子の表示名")
+        grandchild = child.locator(':scope > ul > li[data-agent-id="live-grandchild"]')
+        await playwright.async_api.expect(grandchild.locator(".agent-action")).to_have_text(
+            "API再試行 overloaded · HTTP 529 · 3回"
+        )
+        await playwright.async_api.expect(child.locator(":scope > .agent-row .agent-usage .agent-value")).to_have_text(
+            "2.0k/25%"
+        )
+        await playwright.async_api.expect(grandchild.locator(".agent-usage .agent-value")).to_have_text("92.5k/11%")
+        for width in (1280, 360):
+            await page.set_viewport_size({"width": width, "height": 900})
+            for column in ("status", "elapsed", "usage"):
+                selector = f":scope > .agent-row .agent-{column}"
+                parent_cell = child.locator(selector)
+                child_cell = grandchild.locator(selector)
+                parent_box = await parent_cell.bounding_box()
+                child_box = await child_cell.bounding_box()
+                assert parent_box is not None and child_box is not None
+                assert (parent_box["x"], parent_box["width"]) == pytest.approx((child_box["x"], child_box["width"]))
+            await playwright.async_api.expect(grandchild.locator(".agent-elapsed")).to_have_css(
+                "font-variant-numeric", "tabular-nums"
+            )
