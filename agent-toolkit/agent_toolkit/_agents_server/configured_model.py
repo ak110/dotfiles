@@ -49,7 +49,7 @@ async def changed_model_error(session: SessionState) -> dict[str, Any] | None:
         # 不正な設定や照会失敗をモデル変更の指示と推測せず、元の上限対応を維持する。
         _LOG.warning(
             "利用上限時のモデル設定を解決できない: %s。"
-            "`atk config get %s_model`で設定を確認し、診断が示す設定値またはモデル一覧の照会先を修正せよ。",
+            "`atk config get %s_model`で設定を確認し、診断が示す設定値またはモデル一覧の照会先を修正してください。",
             error,
             model_type,
         )

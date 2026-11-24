@@ -177,9 +177,9 @@ class ServiceSessionControl:
                         "server_instance": target.get("server_instance"),
                         "error": f"{type(error).__name__}: {error}",
                         "next_action": (
-                            "この世代が所有するsessionは一覧に含まれていない。agents_serverの`list`が返す`server_generations`で"
-                            "当該世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行する。"
-                            "応答しないままなら当該プロセスを処置する（処置前に自身のMCP接続先でないことを確かめる）"
+                            "この世代が所有するsessionは一覧に含まれていません。agents_serverの`list`が返す`server_generations`で"
+                            "その世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行してください。"
+                            "応答しないままならそのプロセスを処置してください（処置前に自身のMCP接続先でないことを確かめてください）"
                         ),
                     }
                 )

@@ -27,5 +27,5 @@ async def test_config_resolution_failure_keeps_limit_path_and_reports_next_actio
         handler.close()
     message = output.getvalue()
     assert "候補の書式が不正" in message
-    assert "atk config get chores_model" in message and "修正せよ" in message
+    assert "atk config get chores_model" in message and "修正してください" in message
     assert session.model == "before" and session.error is None

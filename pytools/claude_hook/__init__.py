@@ -61,7 +61,7 @@ def main(argv: list[str] | None = None) -> int:
             (
                 f"[claude_hook] stdinのUTF-8デコードに失敗し、フック処理を通過させた: "
                 f"{exc}。"
-                f"再発する場合はフックへの入力をUTF-8へそろえよ。"
+                f"再発する場合はフックへの入力をUTF-8へそろえてください。"
             ),
             file=sys.stderr,
         )
@@ -71,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:  # noqa: BLE001 -- 読込失敗でフック全体を停止させないため広範に捕捉
         print(
             "[claude_hook] モジュールを読み込めず、フック処理を通過させた。"
-            "`update-dotfiles`を再実行せよ。開発環境ではdotfilesルートで`make sync`を実行せよ。"
-            "再発する場合は以下のtracebackを委譲元（委譲元が無ければユーザー）へ報告せよ。",
+            "`update-dotfiles`を再実行してください。開発環境ではdotfilesルートで`make sync`を実行してください。"
+            "再発する場合は以下のtracebackを委譲元（委譲元が無ければユーザー）へ報告してください。",
             file=sys.stderr,
         )
         traceback.print_exc()
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"[{label}] 想定外エラー: {type(exc).__name__}: {exc}{location}。"
             "フック処理を通過させた。"
-            "再発する場合は以下のtracebackを委譲元（委譲元が無ければユーザー）へ報告せよ。",
+            "再発する場合は以下のtracebackを委譲元（委譲元が無ければユーザー）へ報告してください。",
             file=sys.stderr,
         )
         traceback.print_exc()

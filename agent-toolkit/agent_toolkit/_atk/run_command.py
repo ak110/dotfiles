@@ -221,7 +221,7 @@ def execute(
     except KeyboardInterrupt:
         outcome.report_warning(
             f"コマンドが中断された。待機・到達状態の記録: {journal}",
-            next_action="記録と保存出力から未実行・未完了の範囲を確認せよ",
+            next_action="記録と保存出力から未実行・未完了の範囲を確認してください",
         )
         raise
     except OSError as error:
@@ -317,7 +317,7 @@ def reusable_success(path: pathlib.Path, argv: list[str], cwd: pathlib.Path) -> 
         if different:
             outcome.report_warning(
                 f"保存済み検証を再利用しない: {path}: 条件が異なる {', '.join(different)}",
-                next_action="異なる条件に対応する検証を実行せよ",
+                next_action="異なる条件に対応する検証を実行してください",
             )
             return None
         if observed["timed_out"] is not False or any(

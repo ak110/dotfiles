@@ -127,12 +127,13 @@ def _saturation_text(session_id: str) -> str:
                 shown = "、".join(lines)
             working += (
                 f"ただし状態ファイル{len(lines)}件を読めず、この数は部分観測である。"
-                f"読めない記録: {shown}。{saved}各ファイルの内容と書込主体の稼働を確認する。"
+                f"読めない記録: {shown}。{saved}各ファイルの内容と書き込み主体の稼働を確認してください。"
             )
     except Exception as error:  # pylint: disable=broad-exception-caught
         working = (
             f"作業中の委譲先の数を取得できない（{type(error).__name__}: {error}）。"
-            "`atk config get state_dir`が示すディレクトリの`agents-server`配下の状態ファイルの読取権限と内容を確認する。"
+            "`atk config get state_dir`が示すディレクトリの`agents-server`配下の"
+            "状態ファイルの読み取り権限と内容を確認してください。"
         )
     seconds: list[float] = []
     hooks_problem = ""
@@ -149,7 +150,9 @@ def _saturation_text(session_id: str) -> str:
         seconds = []
     except (OSError, UnicodeError, ValueError) as error:
         seconds = []
-        hooks_problem = f"hook所要の記録を読めない（{type(error).__name__}）。`{directory}/hook-timings.jsonl`を確認する。"
+        hooks_problem = (
+            f"hook所要時間の記録を読めない（{type(error).__name__}）。`{directory}/hook-timings.jsonl`を確認してください。"
+        )
     seconds = seconds[-_RECENT_HOOK_ROWS:]
     if hooks_problem:
         hooks = hooks_problem
@@ -166,7 +169,7 @@ def _new_wi_text(session_id: str) -> str:
     try:
         rows = progress_new_wis(session_id)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
-        return f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で診断と処理可能な新着を確かめる。"
+        return f"新着WIは未確認（{type(error).__name__}）。`atk wi list`で診断と処理可能な新着を確かめてください。"
     if rows is None:
         return "新着WIは未確認（開始時集合なし）。"
     if not rows:
@@ -266,7 +269,7 @@ def _skipped_notices(session_id: str, agent_id: str) -> tuple[str, list[tuple[st
     return (
         "前回の点検以後に、対応を確認できていない通知がある: "
         + "、".join(items)
-        + "。それぞれ必要な対応（スキルの起動、資料の取得、報告の訂正）を済ませたか確かめ、未対応なら今行え。"
+        + "。それぞれ必要な対応（スキルの起動、資料の取得、報告の訂正）を済ませたか確かめ、未対応なら今行ってください。"
     ), receipts
 
 

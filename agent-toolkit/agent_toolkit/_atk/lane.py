@@ -176,20 +176,20 @@ def dispatch(args: argparse.Namespace) -> int:
         if result.get("retained"):
             if args.lane_subcommand == "recover":
                 outcome.report_warning(
-                    "回復できない登録を保持した", next_action="retainedの理由を解消し同じlane recoverを再実行せよ"
+                    "回復できない登録を保持した", next_action="retainedの理由を解消し同じlane recoverを再実行してください"
                 )
             else:
                 outcome.report_warning(
-                    "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行せよ"
+                    "未回収のレーン資源を保持した", next_action="result_pathの理由を解消し同じlane deleteを再実行してください"
                 )
             return 1
         for missing in result.get("missing", []):
             outcome.report_warning(
                 f"実体の無いレーン登録を回収した: lane={missing['lane']}, last_head={missing['last_head']}",
-                next_action="消失の原因を確認し、統合されていない成果があれば記録したHEADから復元する",
+                next_action="消失の原因を確認し、統合されていない成果があれば記録したHEADから復元してください",
             )
         outcome.report_success("レーン資源の操作が完了した", outcome.ResultKind.VALUE_OUTPUT)
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, managed_temp.ManagedTempError) as error:
-        outcome.report_failure(str(error), next_action="入力と所有記録、残った資源を確認して同じ操作を再実行する")
+        outcome.report_failure(str(error), next_action="入力と所有記録、残った資源を確認して同じ操作を再実行してください")
         return 2

@@ -43,7 +43,7 @@ _HOOK_ID = "run_skill_report_gate"
 RUN_ID_ENV = "AGENT_TOOLKIT_RUN_SKILL_ID"
 
 _REASON_BODY = """\
-`atk run-skill`が起動したこのセッションで、当該実行の報告用UWIの保存（コミットと必要なプッシュ）を確認できず、終了を止めた。
+`atk run-skill`が起動したこのセッションで、この実行の報告用UWIの保存（コミットと必要なプッシュ）を確認できず、終了を止めた。
 作業の完了・未完了は判定していない。"""
 
 _block_notice = _block_notice_formatter(_HOOK_ID)

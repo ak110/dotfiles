@@ -52,10 +52,11 @@ ENTRY_COMPACT_NOTICE = (
 文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が入口を届けるため、案内しない。
 """
 BACKGROUND_TASKS_DISABLED_NOTICE = (
-    "この`Claude Code`では`Bash`のバックグラウンド実行が無効で、`run_in_background`は使えない。バックグラウンド指定を試さない。"
+    "この`Claude Code`では`Bash`のバックグラウンド実行が無効で、`run_in_background`は使えない。"
+    "バックグラウンド指定を試さないでください。"
     "`agents_server`の待機は単独の`atk agents wait`へ`Bash`の`timeout=600000`を指定してフォアグラウンドで実行し、"
     "結果と終了コードを回収してください。未終了で返った場合は同じコマンドを再発行してください。"
-    "`sleep`や独自の待機ループで代替しない。"
+    "`sleep`や独自の待機ループで代替しないでください。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
 
@@ -67,7 +68,7 @@ SUBAGENT_PLAYBOOK_PATH = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "su
 """委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
 SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読んでください。"
 """起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
-DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作業を再開する前に、次を読み直せ: "
+DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作業を再開する前に、次を読み直してください: "
 """委譲先の圧縮後に、起動の本文の原本と役割文書、起動の入力が渡した記録の読み直しを求める1行の書き出し。"""
 
 
@@ -351,9 +352,9 @@ def main(payload_text: str, *, host: str = "claude") -> int:
                 startup_identity.capture(payload, host, os.environ)
             except (OSError, ValueError) as error:
                 reason = (
-                    f"{error}。起動側workerのログを確認し、atk wi process-loop statusで予約を確認する。"
-                    "原因の解消後にatk wi process-loop resume IDで再予約する。"
-                    "予約を取り消す場合はatk wi process-loop resume-cancelを使う。"
+                    f"{error}。起動側workerのログを確認し、atk wi process-loop statusで予約を確認してください。"
+                    "原因の解消後にatk wi process-loop resume IDで再予約してください。"
+                    "予約を取り消す場合はatk wi process-loop resume-cancelを使ってください。"
                 )
                 print(json.dumps({"continue": False, "stopReason": reason}, ensure_ascii=False))
                 return 1

@@ -335,12 +335,12 @@ def _staleness_paths(private_notes: pathlib.Path, filenames: list[str]) -> list[
         if path is None:
             raise ActionableError(
                 f"指定されたWIが見つからない: {name}",
-                next_action="ファイル名と同期状態を確かめ、対象のWI名を指定して再実行する",
+                next_action="ファイル名と同期状態を確かめ、対象のWI名を指定して再実行してください",
             )
         if not path.resolve().is_relative_to(private_notes.resolve()):
             raise ActionableError(
                 f"指定されたWIが管理領域の外を指す: {name}",
-                next_action="当該WIを正規の保存先へ戻して再実行する",
+                next_action="対象のWIを正規の保存先へ戻して再実行してください",
             )
         paths.append(path)
     return paths
