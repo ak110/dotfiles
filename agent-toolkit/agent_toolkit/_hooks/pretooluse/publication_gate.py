@@ -10,6 +10,7 @@ from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_toke
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
 lazy from agent_toolkit._hooks.user_response_advisor import resend_scope
 
+_RESEND_KEY = "publication_gate_resend_by_actor"
 _SHELL_TOOLS = {"Bash", "PowerShell", "exec_command", "functions.exec_command"}
 
 
@@ -41,13 +42,17 @@ def _is_publication(tool_name: str, tool_input: dict) -> bool:
 
 def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
     """公開前の新着WIの判定漏れを止める。同じ発話の中で同じ操作を再発行すれば解除する。  pyfltr: allow-comment"""
-    found = _check(payload, session_id, tool_name, tool_input)
+    if not _applies(payload, session_id, tool_name, tool_input):
+        return None
+    actor = agent_id.resolve_hook_agent_id(payload)
+    found = _check(payload, session_id)
     if found is None:
+        notice.forget_resends(session_id, actor, _RESEND_KEY)
         return None
     if notice.consume_resend(
         session_id,
-        agent_id.resolve_hook_agent_id(payload),
-        notice.QUALITY_RESEND_KEY,
+        actor,
+        _RESEND_KEY,
         json.dumps(tool_input, ensure_ascii=False, sort_keys=True) + "\n" + found[0],
         label=f"公開前の新着WIの判定を確認できない公開の操作（{found[0]}）",
         scope=resend_scope(payload),
@@ -56,15 +61,20 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
     return found[0], f"{found[1]}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
 
 
-def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
+def _owner(payload: dict, session_id: str) -> str:
     if agent_id.is_main_agent_context(payload):
-        owner = session_id
-    else:
-        owner = delegated_session.owner_session_id(os.environ) or session_id
-    if not process_loop_session.is_identified_process_loop_session(owner, os.environ) or not _is_publication(
+        return session_id
+    return delegated_session.owner_session_id(os.environ) or session_id
+
+
+def _applies(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> bool:
+    return process_loop_session.is_identified_process_loop_session(_owner(payload, session_id), os.environ) and _is_publication(
         tool_name, tool_input
-    ):
-        return None
+    )
+
+
+def _check(payload: dict, session_id: str) -> tuple[str, str] | None:
+    owner = _owner(payload, session_id)
     try:
         rows = progress_new_wis(owner)
     except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught

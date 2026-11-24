@@ -62,6 +62,9 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     assert gate("git push") is None
     _write_uwi_file(notes, names[0], answer="")
     assert gate("git push") is None
+    _write_uwi_file(notes, names[1], answer="回答済み")
+    recurred = gate("git push")
+    assert recurred is not None and names[1] in recurred
 
 
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
