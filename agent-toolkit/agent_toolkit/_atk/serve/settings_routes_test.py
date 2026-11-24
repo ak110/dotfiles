@@ -21,6 +21,7 @@ def test_windows_ssh_launch_failure_keeps_the_write_on_the_unelevated_route(monk
             return subprocess.CompletedProcess(command, 2, b"", b"uv: trusted mount rejected (os error 448)")
         assert command[0] == "ssh-unelevated"
         assert command[-3:] == ["--", "windows-host", "-"]
+        assert b"exit $global:LASTEXITCODE" in data
         if b"'snapshot'" in data:
             return subprocess.CompletedProcess(command, 0, b'{"settings":{"serve_host":{}}}', b"")
         assert b"'update'" in data

@@ -35,13 +35,13 @@ def _ssh_unelevated(
 ) -> subprocess.CompletedProcess[bytes]:
     # pyfltr: allow-comment 配列の引数とbase64の本文は、PowerShellのコードとして展開しない。
     arguments = ", ".join("'" + arg.replace("'", "''") + "'" for arg in operation.removeprefix("atk ").split())
-    script = "$env:PYTHONIOENCODING = 'utf-8'\n$LASTEXITCODE = 1\n"
+    script = "$env:PYTHONIOENCODING = 'utf-8'\n$global:LASTEXITCODE = 1\n"
     script += f"$atkArgs = @({arguments})\n"
     if payload is not None:
         encoded = base64.b64encode(json.dumps(payload).encode("ascii")).decode("ascii")
         script += f"$packet = [Text.Encoding]::ASCII.GetString([Convert]::FromBase64String('{encoded}'))\n"
         script += "$packet | "
-    script += "& atk @atkArgs 2>$null\nexit $LASTEXITCODE\n"
+    script += "& atk @atkArgs 2>$null\nexit $global:LASTEXITCODE\n"
     try:
         return subprocess.run(
             ["ssh-unelevated", "--timeout", "20", "--", host, "-"],
