@@ -102,12 +102,14 @@ def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(
     records.append(delivered)
     assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message="")
     assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message="以上。", stop_hook_active=True)
-    assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message="…")
+    for closing in ("…", "登録リポジトリの巡回を終えました。"):
+        assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message=closing)
     untyped = "再発防止: 今後は注意する。"
     for active in (False, True):
         result = _stop(records, tmp_path, monkeypatch, last_assistant_message=untyped, stop_hook_active=active)
         assert result["decision"] == "block" and "種類付き" in result["reason"]
-    assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message="追加の対策を見送る。")
+    for report in ("## 作業完了報告\n確認した。", "気付いた改善点: 別件（AWI化ステータス: 予定）"):
+        assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message=report)
     additional = "再発防止: 確認項目: 対象に漏れがないか確認する。"
     assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message=additional)
     queued = {
