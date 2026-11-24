@@ -59,8 +59,8 @@ XMLタグの境界と属性の書き方は`agent-basics:writing-standards/refere
 
 - 反復の抑止は`agent_toolkit._hooks.notice`の`formatter`と`warning_formatter`が行い、単位は同じ会話、呼び出し主体、操作範囲である。
 - 既存の呼び出し元が渡す`removable_cause`、`escalate_on_repeat`、`summary`は、入力の受理形式を保つために受け付けるが、回数の通知と遮断への格上げの判定には使わない。
-- 案内の配送と案内された操作の成功は別に記録する。
-  [操作スキルの取得](../../../../docs/development/internals-session-state-operation-skills.md)と[作業契約・レビューの取得](../../../../docs/development/internals-session-state-planning.md)の実装は、後続の該当操作だけを止める。
+- 資料の取得・スキルの起動の案内は遮断しない（[操作スキルの取得](../../../../docs/development/internals-session-state-operation-skills.md)、[作業契約の取得](../../../../docs/development/internals-session-state-planning.md)）。
+  読取の観測はホストごとにhook入力の形が違い、観測できないホストでは遮断から回復できなくなるためである。
 
 ## 通知本文の整形
 

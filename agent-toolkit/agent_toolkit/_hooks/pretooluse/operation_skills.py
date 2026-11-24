@@ -26,7 +26,7 @@ lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.message_format import llm_notice
-lazy from agent_toolkit._hooks.notice import block_formatter, stage_delivery
+lazy from agent_toolkit._hooks.notice import stage_delivery
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
@@ -595,29 +595,6 @@ def canonical_skill_name(skill_name: object) -> str | None:
     return next(
         (entry.skill_name for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}),
         None,
-    )
-
-
-def pending_operation_block(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
-    if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
-        return None
-    subject = _agent_id.resolve_hook_agent_id(payload)
-    state = read_state(session_id)
-    delivered = state.get(NOTIFIED_KEY)
-    observed = state.get(_OBSERVED_KEY)
-    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
-    done = observed.get(subject, []) if isinstance(observed, dict) else []
-    cwd = str(payload.get("cwd", ""))
-    lacking = [
-        entry.skill_name
-        for entry in OPERATION_SKILLS
-        if entry.skill_name in advised and entry.skill_name not in done and entry.matches(tool_name, tool_input, cwd)
-    ]
-    if not lacking:
-        return None
-    return block_formatter("operation-skills")(
-        f"前に案内したスキルの起動を確認できない: {', '.join(lacking)}。",
-        fix="該当スキルを起動するか、スキルのSKILL.mdを全文読んでから同じ操作を再実行する。",
     )
 
 

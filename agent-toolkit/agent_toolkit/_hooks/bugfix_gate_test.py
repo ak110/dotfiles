@@ -37,8 +37,8 @@ def _payload(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> di
     return {"session_id": "bugfix-gate", "transcript_path": str(path), "cwd": str(tmp_path), **extra}
 
 
-def _pretooluse_denied(payload: dict) -> bool:
-    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": "原因は…"}})
+def _pretooluse_denied(payload: dict, message: str = "原因は…") -> bool:
+    result = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
     assert result.returncode == 0 and not result.stderr
     output = json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
     if output.get("permissionDecision") == "deny":
@@ -67,6 +67,13 @@ def test_defect_report_judgement(prompt: str, expected: bool) -> None:
 def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) -> None:
     assert _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path))
     assert not _pretooluse_denied(_payload([_human("ここがバグっている"), _BUGFIX], tmp_path))
+
+
+def test_same_message_resent_passes_once_without_skill(tmp_path: pathlib.Path) -> None:
+    payload = _payload([_human("ここがバグっている")], tmp_path)
+    assert _pretooluse_denied(payload)
+    assert not _pretooluse_denied(payload)
+    assert _pretooluse_denied(payload)
 
 
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:
@@ -154,7 +161,7 @@ def test_repl_skill_posttooluse_precedes_transcript_write(tmp_path, success, new
         },
     )
     assert after.returncode == 0
-    assert _pretooluse_denied(payload) is denied
+    assert _pretooluse_denied(payload, "診断の結果は…") is denied
 
 
 def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(

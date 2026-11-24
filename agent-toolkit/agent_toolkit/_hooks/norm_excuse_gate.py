@@ -56,25 +56,7 @@ def _consume_retry(payload: dict, text: str) -> bool:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return False
-    actor = resolve_hook_agent_id(payload)
-    fingerprint = hashlib.sha256(text.encode()).hexdigest()
-    repeated = False
-
-    def update(state: dict) -> dict:
-        nonlocal repeated
-        prior = state.get(_RETRY_STATE_KEY, {})
-        prior = dict(prior) if isinstance(prior, dict) else {}
-        values = [value for value in prior.get(actor, []) if isinstance(value, str)]
-        repeated = fingerprint in values
-        if repeated:
-            values.remove(fingerprint)
-        else:
-            values.append(fingerprint)
-        prior[actor] = values[-_RETRY_LIMIT:]
-        state[_RETRY_STATE_KEY] = prior
-        return state
-
-    return repeated if update_state(session_id, update) else True
+    return notice.consume_resend(session_id, resolve_hook_agent_id(payload), _RETRY_STATE_KEY, text, limit=_RETRY_LIMIT)
 
 
 def _block_body(phrase: str, delivery: str) -> str:

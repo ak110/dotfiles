@@ -28,7 +28,6 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common.next_action import recover_from_failure
 from agent_toolkit._hooks import notice
-lazy from agent_toolkit._hooks import full_reads
 
 EVENTS = frozenset({"SessionStart", "PreInvocation", "PreToolUse", "PostToolUse", "PostInvocation", "Stop"})
 PENDING_CONTEXTS = "antigravity_pending_contexts"
@@ -299,25 +298,6 @@ def _native_children(payload: dict[str, Any], normalized: dict[str, Any]) -> Non
     session_state.update_state(session_id, update)
 
 
-def _record_read(payload: dict[str, Any]) -> list[str]:
-    path = payload["tool_input"].get("file_path")
-    text = full_reads.response_text(payload.get("tool_response"))
-    entry = full_reads.skill_entry(pathlib.Path(path)) if isinstance(path, str) else None
-    if entry is None or not text:
-        return []
-
-    try:
-        expected = pathlib.Path(path).read_text(encoding="utf-8").strip()
-    except OSError:
-        return []
-    returned = re.sub(r"(?m)^\s*\d+\s*[:│→]\s?", "", text)
-    if not expected or expected not in returned:
-        return []
-    plugin, skill = entry
-    observed = {**payload, "tool_name": "Skill", "tool_input": {"skill": f"{plugin}:{skill}"}}
-    return _invoke("posttooluse", observed).contexts()
-
-
 def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
     normalized = normalize_payload(payload, event)
     session_id = normalized["session_id"]
@@ -384,10 +364,7 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
             normalized["hook_event_name"] = "PostToolUseFailure"
         response = _invoke("posttooluse", normalized)
         _native_children(payload, normalized)
-        contexts = response.contexts()
-        if not payload.get("error") and normalized["tool_name"] == "Read":
-            contexts.extend(_record_read(normalized))
-        _enqueue(session_id, contexts)
+        _enqueue(session_id, response.contexts())
         session_activity.record_activity(normalized)
         return {}
     if payload.get("terminationReason") in {"USER_CANCELED", "ERROR", "MAX_TOKEN_BUDGET_EXCEEDED"}:

@@ -253,6 +253,33 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
     return format_notice
 
 
+def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, limit: int = 16) -> bool:
+    """同じ主体が同じ本文を再発行した時に真を返し、記録を消費する。初回は記録して偽を返す。  pyfltr: allow-comment
+
+    遮断の解消を特定の手段（スキルの起動、資料の取得）だけに頼らず、誤検出や手段が使えない時にも進められるようにする。
+    """
+    if not session_id:
+        return False
+    fingerprint = hashlib.sha256(text.encode()).hexdigest()
+    repeated = False
+
+    def update(state: dict) -> dict:
+        nonlocal repeated
+        prior = state.get(state_key, {})
+        prior = dict(prior) if isinstance(prior, dict) else {}
+        values = [value for value in prior.get(actor, []) if isinstance(value, str)]
+        repeated = fingerprint in values
+        if repeated:
+            values.remove(fingerprint)
+        else:
+            values.append(fingerprint)
+        prior[actor] = values[-limit:]
+        state[state_key] = prior
+        return state
+
+    return repeated if update_state(session_id, update) else True
+
+
 def block_formatter(hook_id: str) -> Callable[..., str]:
 
     def format_block(body: str, *, fix: str) -> str:
