@@ -391,6 +391,10 @@ class TestCapturedStderr:
 
 def test_interrupted_apply_reports_stage_and_exits_130(monkeypatch, tmp_path, capsys, sync_report_path):
     monkeypatch.setattr(update_dotfiles_runtime, "chezmoi_executable", lambda: "chezmoi")
+    reported = []
+    monkeypatch.setattr(
+        update_dotfiles_runtime.update_dotfiles_report, "report", lambda failures, *_: reported.append(failures)
+    )
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
     run = _fake_run({}, calls)
@@ -405,5 +409,7 @@ def test_interrupted_apply_reports_stage_and_exits_130(monkeypatch, tmp_path, ca
     assert update_dotfiles.main() == 130
     diagnostic = capsys.readouterr().err
     assert "chezmoi apply" in diagnostic and "中断しました" in diagnostic and "未完了" in diagnostic
+    assert diagnostic.count("update-dotfilesを再実行してください") == 1
+    assert reported == [[]]
     report = json.loads(sync_report_path.read_text(encoding="utf-8"))
     assert "中断しました" in report["stderr_tail"]

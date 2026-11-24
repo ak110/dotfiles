@@ -187,6 +187,7 @@ def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, cap
 
 @pytest.mark.parametrize("human", [False, True])
 def test_run_records_unfinished_steps_periodically(monkeypatch, tmp_path, capsys, human):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: human)
     monkeypatch.setattr(post_apply, "_RUNNING_NOTICE_SECONDS", 0.05)
     release = threading.Event()
@@ -200,11 +201,13 @@ def test_run_records_unfinished_steps_periodically(monkeypatch, tmp_path, capsys
 
     real_wait = post_apply.wait
     waits = []
+    displayed = []
 
     def wait_until_noticed(*args, **kwargs):
         waits.append(kwargs.get("timeout"))
         # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、停止中の工程の処理を再開する。
-        if capsys.readouterr().out.count("未完了の工程: 止まる工程") or len(waits) > 3:
+        displayed.append(capsys.readouterr().out)
+        if "未完了の工程: 止まる工程" in displayed[-1] or len(waits) > 3:
             release.set()
         return real_wait(*args, **kwargs)
 
@@ -216,6 +219,7 @@ def test_run_records_unfinished_steps_periodically(monkeypatch, tmp_path, capsys
     finally:
         release.set()
     assert ended.value.code == 0
+    assert ("未完了の工程: 止まる工程（" in "".join(displayed)) is human
     log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
     assert "未完了の工程: 止まる工程（" in log
     assert all(timeout is not None for timeout in waits)

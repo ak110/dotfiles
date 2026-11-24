@@ -141,7 +141,7 @@ def finish(returncode: int) -> int:
                         action += f"詳細: {log}"
                 continue_after_failure(failure.title, action, failure.detail)
             failures = [(failure.title, failure.detail or "失敗") for failure in continued_failures]
-            if returncode != 0:
+            if returncode not in {0, 130}:
                 failures.append((current_stage_title or "更新の開始", last_stderr_tail or f"exit={returncode}"))
             update_dotfiles_report.report(failures, LOG_PATH.with_name("update-failures.json"), DOTFILES_ROOT)
         except update_dotfiles_report.process_tree.ReclaimError:
@@ -186,7 +186,8 @@ def _record_parent_diagnostics(returncode: int) -> bool:
         details.append(last_stderr_tail)
     if not details:
         return False
-    message = "更新本体の失敗: " + "\n".join(details)
+    prefix = "更新本体の中断" if returncode == 130 else "更新本体の失敗"
+    message = f"{prefix}: " + "\n".join(details)
     if persistent_log is None:
         print(redact_secrets(message), file=sys.stderr)
         return False
