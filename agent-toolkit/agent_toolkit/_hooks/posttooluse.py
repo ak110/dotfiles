@@ -568,6 +568,12 @@ def main(payload_text: str) -> int:
             _observe_skill_reads(payload, session_id, tool_name, tool_input, cwd)
             if tool_name == "Read" or tool_name in ATK_SHELL_TOOLS:
                 _persisted_output.observe(payload, session_id, tool_name, tool_input, cwd)
+        if (
+            event_name == "PostToolUse"
+            and is_main_agent_context(payload)
+            and (quote_warning := work_contract.quote_update_warning(session_id, payload.get("transcript_path")))
+        ):
+            notices.append(_llm_notice(quote_warning))
         if (self_check_notice := _progress_self_check.claim_notice(payload)) is not None:
             notices.append(self_check_notice)
     try:

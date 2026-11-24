@@ -4,6 +4,8 @@ import os
 import pathlib
 from collections.abc import Iterable
 
+from agent_toolkit._atk.wi import uwi_scan
+from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.entries import EntryRecord, canonical_repo
 from agent_toolkit._common import delegated_session, process_loop_session, session_state
 from agent_toolkit._common.atomic_file import atomic_write
@@ -74,6 +76,7 @@ def remember_progress_start(
     private_notes: pathlib.Path,
     targets: Iterable[tuple[str, str | None]],
     digest: str,
+    entries: Iterable[EntryRecord],
 ) -> None:
     if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1" or delegated_session.is_delegated(os.environ):
         return
@@ -81,6 +84,7 @@ def remember_progress_start(
     expected = process_loop_session._expected_session_id(os.environ)  # noqa: SLF001  # pylint: disable=protected-access
     if not expected or (conversation is not None and conversation != expected):
         return
+    unanswered = identifiers(entry for entry in entries if entry[4] == WI_TYPE_UWI and not uwi_scan.is_uwi_answered(entry[2]))
     updates = {
         json.dumps([repo, branch]): {
             "repo": repo,
@@ -88,6 +92,7 @@ def remember_progress_start(
             "path": str(path.resolve()),
             "digest": digest,
             "notes": str(private_notes.resolve()),
+            "unanswered": sorted(unanswered),
         }
         for repo, branch in targets
     }

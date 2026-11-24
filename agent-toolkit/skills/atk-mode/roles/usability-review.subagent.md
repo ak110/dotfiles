@@ -19,10 +19,8 @@ startup_documents:
 
 # ユーザビリティレビュータスク
 
-変更画面を独立した担当として描画・操作し、エンドユーザーが理解して迷わず作業を終えられるかを評価する。
-判定の手順と基準は`agent-basics:review-standards/references/reviewer-usability.md`「ユーザビリティレビューの判定」にあり、起動時に届く。
-指摘の範囲と内容は`agent-basics:review-standards/references/reviewer.md`「基本方針」「指摘内容」に従う。
-着手時に`agent-basics:review-standards`を起動する。
+着手時に`agent-basics:review-standards`を起動し、届いた`reviewer-usability.md`で変更画面を独立評価する。
+指摘の範囲と内容は同スキルの`reviewer.md`に従う。
 
 ## 入力
 
@@ -45,13 +43,11 @@ startup_documents:
 ## 操作
 
 1. 対象worktreeは読み取り専用として扱い、接続先はローカルの検証環境、待ち受けのアドレスは`127.0.0.1`に限る。
-2. 自分が起動するコマンドとプロセス（検証環境、ブラウザー、描画スクリプトなど）には実行時間の上限を付ける。
-3. 環境の起動の前に、対象worktreeの`git status --porcelain=v1`を取得する。
-   空でなければ、レビュー対象HEADの本文を配信して描画する。
-   その作業ツリーの作成、依存とGit管理外のファイルの参照、配信するコードの解決先の確認、記録と回収は`agent-toolkit:atk-mode/roles/exec-review.subagent.md`「レビュー対象HEADと異なる作業ツリーでの検証」に従い、配信したHEADを記録する。
-   参照だけで起動できなければ、許可された手段で同じ版を配信できるか確かめ、続けられるシナリオを検証する。
-4. プロジェクトの手順で環境を起動し、起動したプロセスが対象のコードを配信していることを確かめてから描画する。
-   別の作業ツリーのコードを配信している画面は評価しない。
+2. 起動するコマンドとプロセスには実行時間の上限を付ける。
+3. 起動前の`git status --porcelain=v1`が空でなければ、`agent-toolkit:atk-mode/roles/exec-review.subagent.md`「レビュー対象HEADと異なる作業ツリーでの検証」に従い、対象HEADを配信する。
+   参照だけで起動できなければ許可された配信手段を試し、検証できる範囲を進める。
+4. プロジェクトの手順で起動し、配信コードが対象HEADと一致することを確かめて描画する。
+   配信したHEADを記録する。
 5. 本番データへの書込、commitやpush、外部サービスへの通信など、検証環境の外へ影響が残る操作は、実データから切り離した`検証環境`でだけ行う（`agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」の手順1）。
    `主要シナリオ`がそれ以外の環境でその操作を要する時と、`検証環境`で許されない操作を要する時は、その操作を見合わせ、該当する手順を`続行できない理由`に書いて返す。
 6. キャプチャと取得した記録は、`agent-toolkit:atk-mode/playbooks/verification.md`「完了前の実描画確認」の手段でmanaged-temp配下へ保存する。
@@ -88,7 +84,19 @@ startup_documents:
 再レビュー: <要（範囲・失われる前提・理由）|不要（評価前提の所在）>
 ```
 
-再レビューは`agent-basics:review-standards/references/reviewer.md`「再レビューの要否」で判定する。
+合格では、各画面の比較と実画面の観測を次の6行へ示す。
+再判定で変わらない観点は前回の証拠を参照する。
+
+```text
+類例の比較: <比較対象と採否の理由>
+情報設計: <領域ごとの判断と導線>
+行の揃い: <比較する情報の位置>
+冗長表示: <省いた情報と保った情報>
+入力負担: <入力と画面往復の観測>
+modern-web-guidanceのガイドと適用結果: <ガイド名と適用結果。非Webはその根拠>
+```
+
+再レビューの要否は`agent-basics:review-standards/references/reviewer.md`で判定する。
 判定が`未確定`の場合は、上記の固定行に続けて`E2E環境`、`Playwrightのライブラリ`、`ブラウザー操作ツール`の試行を1行ずつ書く。
 
 ```text

@@ -1,0 +1,71 @@
+import dataclasses
+import os
+import pathlib
+
+from agent_toolkit._common import delegated_session, process_loop_session
+from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
+from agent_toolkit._hooks import agent_id, work_contract
+from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
+lazy from agent_toolkit._atk.wi.listing import progress_new_wis
+
+_SHELL_TOOLS = {"Bash", "PowerShell", "exec_command", "functions.exec_command"}
+
+
+def _publishes(segment: ExecutionSegment) -> bool:
+    tokens = segment.tokens
+    if not segment.resolved or not tokens or "--help" in tokens or "-h" in tokens:
+        return False
+    executable = pathlib.PureWindowsPath(tokens[0]).name.lower()
+    git = (
+        git_subcommand_tokens(dataclasses.replace(segment, tokens=("git", *tokens[1:])))
+        if executable in {"git", "git.exe"}
+        else None
+    )
+    if git and git[0] == "push":
+        return not {"--dry-run", "-n"}.intersection(git[1])
+    return executable in {"gh", "gh.exe"} and tokens[1:3] == ("pr", "create")
+
+
+def _is_publication(tool_name: str, tool_input: dict) -> bool:
+    if tool_name.startswith("mcp__") and tool_name.endswith("__create_pull_request"):
+        return True
+    command = tool_input.get("command")
+    return (
+        tool_name in _SHELL_TOOLS
+        and isinstance(command, str)
+        and any(_publishes(segment) for segment in extract_execution_segments(command))
+    )
+
+
+def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
+    if agent_id.is_main_agent_context(payload):
+        owner = session_id
+    else:
+        owner = delegated_session.owner_session_id(os.environ) or session_id
+    if not process_loop_session.is_identified_process_loop_session(owner, os.environ) or not _is_publication(
+        tool_name, tool_input
+    ):
+        return None
+    try:
+        rows = progress_new_wis(owner)
+    except (Exception, SystemExit) as error:  # pylint: disable=broad-exception-caught
+        return (
+            f"公開前に処理可能な新着WIを取得できない（{type(error).__name__}）。",
+            "開始時集合の所在とatk wi listの同期診断を確認し、原因を解消してから再試行する。",
+        )
+    if rows is None:
+        return (
+            "公開前の新着WI確認に必要な開始時集合がない。",
+            "同じ巡回の開始時に保存した集合と、対象ごとの保存結果を確認する。現在の集合で置き換えない。",
+        )
+    if not rows:
+        return None
+    decided = work_contract.recorded_new_wi_decisions(owner)
+    pending = [row for row in rows if row.rsplit(" (source:", 1)[0] not in decided]
+    if not pending:
+        return None
+    return (
+        "公開前に判定を要する新着WI: " + "、".join(pending),
+        "巡回の統括がatk wi showで本文を読み、今回扱うものは公開前に処理する。処理可能な状態で残る項目は"
+        "統括の作業契約に「- 新着WIの判定: <ファイル名> | <判定と根拠>」を各1行記録して再試行する。",
+    )

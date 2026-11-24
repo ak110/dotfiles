@@ -420,12 +420,14 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshots = configured_repo_snapshot(private_notes)
         configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
-            digest = _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            entries = tuple(entry for item in snapshots for entry in item.entries)
+            digest = _wi_snapshot.save(args.snapshot_output, entries)
             _wi_snapshot.remember_progress_start(
                 args.snapshot_output,
                 private_notes,
                 ((item.repository.repo_id, item.repository.branch) for item in snapshots),
                 digest,
+                entries,
             )
         total = 0
         for snapshot in snapshots:
@@ -475,7 +477,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if getattr(args, "snapshot_output", None) is not None:
         digest = _wi_snapshot.save(args.snapshot_output, all_entries)
         _wi_snapshot.remember_progress_start(
-            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest
+            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest, all_entries
         )
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
@@ -539,7 +541,9 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
     if not private_notes.is_dir():
         raise ValueError("private-notesを読めない")
     baselines = {
-        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"]) for scope, row in scopes.items()
+        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"])
+        - {tuple(identifier) for identifier in row.get("unanswered", ())}
+        for scope, row in scopes.items()
     }
     labels = []
     with _wi_sync.repo_lock(private_notes, timeout=0):

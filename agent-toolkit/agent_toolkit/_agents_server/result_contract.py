@@ -29,6 +29,16 @@ RECOVERY_NEXT_ACTION = (
     "連続する2行を用い、成果と追加報告を保持して再提出するよう指示する。"
     "送信できない場合は、session_id・返却本文・診断を委譲元へ報告する。"
 )
+_USABILITY_EVIDENCE = (
+    "類例の比較",
+    "情報設計",
+    "行の揃い",
+    "冗長表示",
+    "入力負担",
+    "modern-web-guidanceのガイドと適用結果",
+)
+_USABILITY_VERDICTS = {"合格", "不合格", "未確定"}
+_UNCONFIRMED_USABILITY = ("未確認", "未検証", "未実施", "未調査", "比較なし", "該当なし")
 _VALID_CLASSIFICATIONS = frozenset(
     {
         "user_decision",
@@ -122,8 +132,36 @@ def invalid_result_reason(session: SessionState, result: dict[str, Any]) -> str 
             return f"{session.launch_kind}の返却が完了を示しません。先頭または最終行に状態: completedが必要です"
     if document is not None and document.name == "reader-fit-review.subagent.md":
         return _reader_fit_reason(session, document, message)
+    if (
+        document is not None
+        and document.name == "usability-review.subagent.md"
+        and (not has_reason or any(line.startswith("判定:") for line in lines))
+    ):
+        return _usability_result_reason(lines)
     if document is not None and not has_reason:
         return _role_head_reason(document, message)
+    return None
+
+
+def _usability_result_reason(lines: list[str]) -> str | None:
+    verdicts = [line.removeprefix("判定:").strip() for line in lines if line.startswith("判定:")]
+    if len(verdicts) != 1 or verdicts[0] not in _USABILITY_VERDICTS:
+        return "ユーザビリティレビューの返却には、有効な判定の行が1行必要です"
+    if verdicts[0] != "合格":
+        return None
+    missing: list[str] = []
+    for label in _USABILITY_EVIDENCE:
+        prefix = f"{label}:"
+        values = [line.removeprefix(prefix).strip() for line in lines if line.startswith(prefix)]
+        if (
+            len(values) != 1
+            or not values[0].strip("・—ー-")
+            or values[0] in {"なし", "対象外", "N/A"}
+            or any(word in values[0] for word in _UNCONFIRMED_USABILITY)
+        ):
+            missing.append(label)
+    if missing:
+        return "ユーザビリティレビューの合格に必要な確認結果がありません: " + "、".join(missing)
     return None
 
 

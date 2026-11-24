@@ -52,6 +52,7 @@ async def test_agent_record_link_and_independent_remote_failure(
         panel = page.locator("#agents-hosts")
         await playwright.async_api.expect(panel).to_contain_text("接続先のdotfilesを更新してください")
         await playwright.async_api.expect(panel).to_contain_text("セッション画面で扱いません")
+        await playwright.async_api.expect(panel).not_to_contain_text(re.compile(r"[\u2500-\u257f]"))
         record = panel.get_by_role("link", name=session_id, exact=True)
         await record.focus()
         exited.set()
