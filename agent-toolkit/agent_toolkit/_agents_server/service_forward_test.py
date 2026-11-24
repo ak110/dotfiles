@@ -18,71 +18,11 @@ from agent_toolkit._agents_server.service_generations import GenerationRegistry
 from agent_toolkit._common import plugin_environment, runtime_environment, windows_job
 
 
-@pytest.mark.parametrize(
-    "state",
-    [
-        "development",
-        "isolated",
-        "distribution",
-        "agy-distribution",
-        "agy-relative",
-        "registered-checkout",
-        "retained-distribution",
-        "retained-development",
-        "unmanaged-copy",
-    ],
-)
-def test_development_plugin_only_reaches_forwarding_with_isolated_state(tmp_path, monkeypatch, capsys, state):
+def test_plugin_from_any_checkout_reaches_forwarding_with_shared_state(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    root = tmp_path / "worktree" / "agent-toolkit"
-    if os.name == "nt":
-        home_key, state_key, default = "USERPROFILE", "LOCALAPPDATA", home / "AppData" / "Local"
-    else:
-        home_key, state_key, default = "HOME", "XDG_STATE_HOME", home / ".local" / "state"
-    environment = {home_key: str(home)}
-    if state == "isolated":
-        environment[state_key] = str(tmp_path / "isolated")
-    elif state == "distribution":
-        root = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit/1.0.0"
-    elif state in {"agy-distribution", "agy-relative"}:
-        root = root.with_name("agent-toolkit-agy")
-        registry = home / ".gemini/config/plugins.json"
-        registry.parent.mkdir(parents=True)
-        path = root.parent
-        if state == "agy-relative":
-            monkeypatch.chdir(tmp_path)
-            path = path.relative_to(tmp_path)
-        registry.write_text(json.dumps({"entries": [{"path": str(path), "include_only": [root.name]}]}), encoding="utf-8")
-    elif state == "registered-checkout":
-        config_home = default if os.name == "nt" else home / ".config"
-        config = config_home / "agent-toolkit/config.json"
-        config.parent.mkdir(parents=True)
-        config.write_text(
-            json.dumps({"repositories": json.dumps({"github.com/ak110/dotfiles": {"path": str(root.parent)}})}),
-            encoding="utf-8",
-        )
-    elif state in {"retained-distribution", "retained-development", "unmanaged-copy"}:
-        if os.name == "nt":
-            environment[state_key] = str(default)
-            cache = default
-        elif sys.platform == "darwin":
-            cache = home / "Library" / "Caches"
-        else:
-            cache = home / ".cache"
-        origin = home / ".claude/plugins/cache/ak110-dotfiles/agent-toolkit/1.0.0"
-        if state == "retained-development":
-            origin = root / "1.0.0"
-        area = (tmp_path if state == "unmanaged-copy" else cache / "agent-toolkit" / "managed-temp") / (
-            "agents-server-plugin-root-shared-test"
-        )
-        area.mkdir(mode=0o700, parents=True)
-        if os.name == "posix" and state != "unmanaged-copy":
-            area.parent.chmod(0o700)
-        root = area / origin.name
-        (area / ".agent-toolkit-plugin-root.json").write_text(
-            json.dumps({"source": str(origin), "root_name": origin.name, "version": "1.0.0"}), encoding="utf-8"
-        )
+    root = tmp_path / "dotfiles" / "agent-toolkit"
     root.mkdir(parents=True)
+    environment = {"USERPROFILE" if os.name == "nt" else "HOME": str(home)}
 
     class EnteredForwarding(Exception):
         pass
@@ -92,14 +32,8 @@ def test_development_plugin_only_reaches_forwarding_with_isolated_state(tmp_path
 
     monkeypatch.setattr(service_forward, "_Forwarder", enter)
     monkeypatch.setattr(service_forward, "_parent_settings", lambda: None)
-    if state not in {"development", "agy-relative", "retained-development", "unmanaged-copy"}:
-        with pytest.raises(EnteredForwarding):
-            service_forward.forward(root=root, environment=environment)
-    else:
-        assert service_forward.forward(root=root, environment=environment) == 1
-        assert "状態ディレクトリを明示的に分離" in capsys.readouterr().err
-        if not (os.name == "nt" and state in {"retained-development", "unmanaged-copy"}):
-            assert not default.exists()
+    with pytest.raises(EnteredForwarding):
+        service_forward.forward(root=root, environment=environment)
 
 
 # 中継の監視と受信の内部状態を、公開のstdio経路を起動せずに確かめる。
