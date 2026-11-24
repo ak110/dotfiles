@@ -4,13 +4,13 @@
 
 ## 索引と状態表示
 
-共有サービスの`service_projection.py`はrootと書込主体ごとの物理writerを現行世代へ集約する。
+共有サービスの`service_projection.py`はrootと書き込み主体ごとの物理writerを現行世代へ集約する。
 受付更新時は旧側の保存・タイマーを回収して静止し、公開台帳と観測用コピーを新側へ渡してから同じファイルの保存を切り替える。
 実行中turnの制御状態は旧Managerに残し、その後の射影操作だけを現行writerへ転送する。
 同じhostの表示ファイルを更新するwriterは現行世代に1つだけ置く。
 終了結果は全世代と待機CLIが同じファイルを参照する。
-新版の転送元は、hubが書込主体を受け付けてから、turn番号と終了時刻で区別した原本を保存する。
-旧hubへ渡す観測には表示用の終了statusを残し、原本の書込や削除を起こす完了・受領通知は渡さない。
+新版の転送元は、hubが書き込み主体を受け付けてから、turn番号と終了時刻で区別した原本を保存する。
+旧hubへ渡す観測には表示用の終了statusを残し、原本の書き込みや削除を起こす完了・受領通知は渡さない。
 新版hubは同じ観測の`source_results`から終了状態を復元する。
 CLIはhubの応答を待たずに原本を回収でき、転送元は応答後も原本とその公開記録で同じturnの受領を確かめる。
 旧版からの交代では、静止前と引き継ぎ時に読めた旧名の原本を優先する。
@@ -26,14 +26,14 @@ CLIはhubの応答を待たずに原本を回収でき、転送元は応答後�
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
 | statusline・CLI向けの状態ファイルと、書いたプロセスの識別`writer_process` | `<状態ディレクトリ>/<ルートsession識別子>/<書込主体>.json`（起動時に同名ファイルを別の生存プロセスが使用していれば`<書込主体>-p<pid>.json`） | statusline、`atk agents wait`、`atk agents list`、`atk agents show`、同一ルートに属する他のMCPサーバー（稼働中の子孫を持つ終了セッションの表示判定時）、および全ルートを参照するリソース監視処理 | そのルートに属する各MCPサーバー。各MCPサーバーは自身が担当するファイルのみを更新する |
-| 書込主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイル内の`host_session_id`を委譲元のセッション識別子へ解決する処理、PostToolUseフック、`atk agents wait` | そのセッションを起動したMCPサーバー |
-| 状態ファイルの`host_session_id`（そのファイルが載せるsessionの委譲元） | 状態ファイル | statuslineおよび`atk agents list`のツリー表示（親子の関連付けにおける親IDとして利用。`status_reader.load_root`が各セッションに付与する）、同一ルートに属する他のMCPサーバー（稼働中の子孫プロセスの判定） | その状態ファイルを書き込むMCPサーバー。なお、状態ファイルのファイル名（`owner_status_file`）は書込主体の識別子であり、結果の所有権判定にのみ用い、親IDとして転用することはない |
+| 書き込み主体からホストsessionへの索引 | `<状態ディレクトリ>/<ルートsession識別子>/hosts/<書込主体>.json` | 状態ファイル内の`host_session_id`を委譲元のセッション識別子へ解決する処理、PostToolUseフック、`atk agents wait` | そのセッションを起動したMCPサーバー |
+| 状態ファイルの`host_session_id`（そのファイルが載せるsessionの委譲元） | 状態ファイル | statuslineおよび`atk agents list`のツリー表示（親子の関連付けにおける親IDとして利用。`status_reader.load_root`が各セッションに付与する）、同一ルートに属する他のMCPサーバー（稼働中の子孫プロセスの判定） | その状態ファイルを書き込むMCPサーバー。なお、状態ファイルのファイル名（`owner_status_file`）は書き込み主体の識別子であり、結果の所有権判定にのみ用い、親IDとして転用することはない |
 | 状態ファイルの生存の印`heartbeat_at` | 状態ファイル内 | statusline、同一ルートに属する他のMCPサーバー | その状態ファイルを書き込むMCPサーバー |
 | ルートsession識別子の索引 | `<状態ディレクトリ>/aliases/<現行のsession識別子>.json` | statusline、`atk agents wait`、`atk agents list`、`atk agents show` | PostToolUseフック（レスポンスの`root_session_id`を保存）、MCPの要求単位の初期化（`_meta.threadId`に対応するrootを公開後に保存） |
 
 | 対象 | モジュール |
 | --- | --- |
-| ルートおよび書込主体の識別、索引管理（`aliases`・`hosts`） | `shared_roots.py` |
+| ルートおよび書き込み主体の識別、索引管理（`aliases`・`hosts`） | `shared_roots.py` |
 | statuslineおよびCLI向け状態ファイルの出力 | `status_file.py` |
 | 一覧・リソース記録の共有読み取り、生存確認、セッションの重複排除 | `status_reader.py` |
 
@@ -43,11 +43,11 @@ CLIはhubの応答を待たずに原本を回収でき、転送元は応答後�
 Antigravity環境ではルート識別子の伝達のみを保証しており、固有の通知元識別子の解決や通知の成功可否は個別の課題として扱う。
 計画の所有記録やUWIの投入元を解決するルールは本伝達の契約とは異なり、Managerが生成したプロセス専用のルート（`mcp-`で始まる識別子）は特定の会話を表すものではないため、所有会話や投入元の記録対象から除外される。
 この判定ロジックは`agent-toolkit/agent_toolkit/_plan/owner_records.py`の`resolve_conversation_session_id`が管理している。
-CodexのPostToolUseフックは、所有セッション識別子が存在する一方で環境変数から書込主体を解決できない場合、入力JSONに含まれる検証済みの現在セッション識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当の値として補完する。
-PostToolUseフックと`atk agents wait`は、`hosts`索引が存在していれば委譲元のthreadから書込主体を逆引きし、状態ファイルと待機対象登録を同一の名前空間で管理する。
-索引が存在しない場合は、補完した識別子をそのまま書込主体として扱う。
+CodexのPostToolUseフックは、所有セッション識別子が存在する一方で環境変数から書き込み主体を解決できない場合、入力JSONに含まれる検証済みの現在セッション識別子を`AGENT_TOOLKIT_STATUS_HOST_SESSION`相当の値として補完する。
+PostToolUseフックと`atk agents wait`は、`hosts`索引が存在していれば委譲元のthreadから書き込み主体を逆引きし、状態ファイルと待機対象登録を同一の名前空間で管理する。
+索引が存在しない場合は、補完した識別子をそのまま書き込み主体として扱う。
 
-委譲セッションのコンテキストトークン使用量（`context_tokens`および`context_window`）についても、MCPサーバーの`SessionState`を基準とし、同一の書込主体が状態ファイルへ任意の数値として反映する。
+委譲セッションのコンテキストトークン使用量（`context_tokens`および`context_window`）についても、MCPサーバーの`SessionState`を基準とし、同一の書き込み主体が状態ファイルへ任意の数値として反映する。
 この値は累計の消費量ではなく、直近のモデルコンテキストの観測値であり、対象セッションのエンジンを所有するバックエンドが`_agents_server/context_usage.py`の`record_context_usage`を用いて更新する。
 情報源はエンジンごとに以下の通りである。
 

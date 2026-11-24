@@ -26,7 +26,7 @@ uv run --frozen prek run pyfltr --files docs/development/design.md
 この集合が`git ls-files`の一覧と一致し、通常の動作テストのファイルを含まないことを確認する。
 件数だけを比べると、対象のファイルが別のファイルへ置き換わった場合を見逃すため、集合を比べる。
 Markdownだけを渡したprekのhookからpytestが起動し、不変条件の失敗が同じhookの失敗へ届くことも確かめる。
-rebaseで組合せが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
+rebaseで組み合わせが変わった場合は、commit時の成功だけで判定せず、同じfastのpytestを統合前に再実行する。
 
 ## .claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年10月18日
 
@@ -40,7 +40,7 @@ marker保持側は終了0、除去側はzstandard 0.25.0のビルドに到達し
 再検証では同じ基準版のarchiveから上記2入力を作成し、同じimage・ネイティブパッケージ・Python版・uvの同期引数を使う。
 実行結果は基準版の正常導入とlock変更によるビルド失敗を区別して読む。
 `ci_workflow_test.py::test_update_checks_container_dependencies_after_lock_updates`で依存更新の手順を確かめる。
-`update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じ試験が失敗することを確かめる。
+`update`から`$(MAKE) ci-deps-check`を除いたMakefileでは、同じテストが失敗することを確かめる。
 `make -n update`では両lockの更新後に`ci-deps-check`の`docker run`が出力された。
 
 ## .claude/skills/develop-dotfiles/references/verification.md：変更範囲の検証の値：2026年11月9日

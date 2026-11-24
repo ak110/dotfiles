@@ -51,6 +51,6 @@ user役レコードの`text`の先頭が前置きであることも確認する�
 既存調査はClaude Code 2.1.301のリポジトリ外のセッション記録に、同じtool_use IDを持つ`assistant`と`api-request-blob`があると報告した。
 写しは`message`に会話と同じ形のcontentを持ち、timestampとuuidを持たない。
 公開仕様での形式の保証は未確認である。
-今回の検証は、報告された構造を最小化した検体へツール呼出・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。
+今回の検証は、報告された構造を最小化した検体へツール呼び出し・失敗結果・完了通知の写しを追加し、通常抽出・呼出照会・警告・統計・ユーザー発話の結果が追加前と一致することを確かめる。
 生の行のdetail・grepは写しも表示する。
 再検証は`session_evidence_record_boundary_test.py`の`test_request_copies_do_not_create_conversation_events`を実行する。

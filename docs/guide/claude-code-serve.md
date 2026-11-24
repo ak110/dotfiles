@@ -68,7 +68,7 @@ Windowsの設定は、初回の取得から保存まで非昇格で操作する�
 旧版の計画用とセッション用のSSH接続先は、重複を除いて `remote_hosts` に移行する。
 セッションの保存先は `CLAUDE_CONFIG_DIR`・`CODEX_HOME` で指定でき、未設定時は `~/.claude`・`~/.codex` を使う。
 
-各操作の所要は`atk config get state_dir`が示すディレクトリの`serve/timings.jsonl`へ常に記録される（1MiBごとに1世代を残して回す）。
+各操作の所要時間は`atk config get state_dir`が示すディレクトリの`serve/timings.jsonl`へ常に記録される（1MiBごとに1世代を残して回す）。
 画面の操作が遅い場合は、`"kind": "operation"`で`total_ms`の大きい行を探し、同じ`operation_id`の取得の行と、その`request_id`のサーバーの行を比べると、画面の描画、実行枠やロックの待機、処理のどこで時間を使ったかが分かる。
 
 リモートのエージェント一覧、自動更新、費用表示には、リモートホスト側のdotfilesの更新が必要である。

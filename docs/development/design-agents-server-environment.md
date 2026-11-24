@@ -34,21 +34,21 @@ Codex backendの開始・通常再開・保存済みthread再開では、App Ser
 公開設定の具体名は`_atk/config.py`の`config_environment_variable_names`から引数で受け取る。
 生成する箇所ごとに名前を書くと、片方だけの追加で通信の前提が利用側まで届かなくなるためである。
 値は親環境にある場合だけCodexの継承機能へ任せ、配布設定へ保存しない。
-同じ境界でXDGなどの保存先と公開設定overrideを失うと、子の登録先と親CLIの読取先が分かれ、起動済みのsessionを見付けられない。
-通常起動・再開・多段でも呼出元が選んだ設定、キューと状態の名前空間を保つ。
+同じ境界でXDGなどの保存先と公開設定overrideを失うと、子の登録先と親CLIの読み取り先が分かれ、起動済みのsessionを見付けられない。
+通常起動・再開・多段でも呼び出し元が選んだ設定、キューと状態の名前空間を保つ。
 除外は大文字小文字を区別せず、親会話・端末・プロセスの識別子と通知先、親shellの内部状態、上流の継承禁止名へ適用する。
 認証名のTOKEN・KEYという字面は除外理由にしない。
-ownerと状態の書込主体は各起動が明示した値を優先する。
+ownerと状態の書き込み主体は各起動が明示した値を優先する。
 静的境界ですでに失われた未知名は、内側の動的列挙でも回復できない。
 子での別名前空間の全探索、親プロセスや認証ファイルの読直し、保存先のHOMEへの固定は採らない。
-miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼出元が選んだmiseの所在と信頼設定を保つ。
+miseの設定・信頼状態・導入先・キャッシュの所在は`MISE_CONFIG_DIR`・`MISE_STATE_DIR`・`MISE_DATA_DIR`・`MISE_CACHE_DIR`の公開名で引き継ぎ、XDGを変更しても呼び出し元が選んだmiseの所在と信頼設定を保つ。
 Claude向けとAgent Plugins向けのMCP定義へはCodex専用の`env_vars`を混ぜない。
 agents_serverが起動するCodex App Server・Claude CLI・Antigravity CLIは会話contextを除いた環境を継承し、各backendは明示した起動別の値を加える。
 Claude Codeのstdio環境の配送とremote変数による識別子の重複の観測と再検証は、[internals-agents-server-state-backends.md](internals-agents-server-state-backends.md)「バックエンド固有の接続とAPI状態」にある。
 却下した代替案は、chezmoiのCodexプラグイン方針へ置く案と、子プロセスがshell設定などから値を回復する案である。
 前者の設定型は通信設定を受理せず、後者はCodexの公開機能で同じ結果を得られる。
 
-atk自身のuv同期先は呼出元の`UV_PROJECT_ENVIRONMENT`から分離し、子へ渡す元の値と未設定の別を起動処理で保持する。
+atk自身のuv同期先は呼び出し元の`UV_PROJECT_ENVIRONMENT`から分離し、子へ渡す元の値と未設定の別を起動処理で保持する。
 CLI・hook・MCP・warmup・process-loop再起動・生成定義はこの起動境界を共有する。
 `UV_PYTHON`や`UV_CONFIG_FILE`など、同期先指定と別の公開設定は保持する。
 変数の一律削除は子の環境選択を失わせるため採らない。

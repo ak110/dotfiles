@@ -2,10 +2,10 @@
 
 ## 診断の読み方
 
-委譲先が動作しない事象ではなく、WindowsのCodex境界試験とpytestの回収失敗で採取した資源診断（`resource-diagnostics:`）を読む手順である。
+委譲先が動作しない事象ではなく、WindowsのCodex境界テストとpytestの回収失敗で採取した資源診断（`resource-diagnostics:`）を読む手順である。
 資源記録（`resource_snapshot`など）の一般的な読み方は`docs/development/internals-agents-server-investigation.md`「資源記録の読み方」に従う。
 
-- WindowsのCodex境界試験では、試験開始・終了のpytest PIDとUTC時刻、App Serverの終了要求前・終了確認後の所有PID集合を対応付ける。
+- WindowsのCodex境界テストでは、試験開始・終了のpytest PIDとUTC時刻、App Serverの終了要求前・終了確認後の所有PID集合を対応付ける。
   各PIDの`created_at`と`ppid`で起動時刻と親子関係を確認し、終了後の`unavailable: NoSuchProcess`を保持PID不在の照会結果と区別する。
 - pytestの回収失敗時は、標準エラーの`resource-diagnostics:`にある失敗パス・Windowsエラー番号・`before`・`after`を読む。
   `ownership.state`の`success`だけが保持PID照会の成功を示し、`unavailable`は採取不能、`unsupported`は対象外OSを表す。

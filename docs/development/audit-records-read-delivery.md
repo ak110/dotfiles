@@ -5,7 +5,7 @@
 ## agent-toolkit/skills/atk-mode/playbooks/host-codex.md：Codex固有の入出力：2026年10月30日
 
 取得予算と省略時の回復の現行契約を指す。
-以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読取可否の基準にはしない。
+以下の9月29日の測定は、撤去済みの容量警告の判断根拠として残すものであり、48KiBを現行の読み取り可否の基準にはしない。
 
 2026年9月29日、tiktoken 0.14.0のo200k_baseで`agent-toolkit/skills/`・`share/`・`rules/`配下のMarkdownを数えた。
 分割前の最大の文書`agent-toolkit/skills/atk-mode/playbooks/wi-drafting.md`（60,005バイト）は16,945トークンだった。
@@ -23,8 +23,8 @@
 nativeの`original token count`が設定予算を超えた場合は、その値以上で1回再取得し、文脈容量を超える本文は分割する。
 この値は取得予算の最低値であり、前述の測定を新たな全資料・全モデルへ一般化した実測値ではない。
 
-2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読取権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
-この補完読取と、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
+2026年10月30日から31日まで、PostToolUseが省略された読取を元turnのsandbox読み取り権限の範囲で再取得し、本文を追加コンテキストへ配送していた（`codex_read_delivery.py`）。
+この補完読み取りと、それに合わせてPreの容量案内を省く判定は、2026年10月31日に本文配送とともに撤去した。
 当時は`codex_read_observation.py`が省略の無い成功読取だけを読了としていた。
 読了の記録は2026年11月20日に撤去した。
 現在のPostToolUseは、`agent-toolkit/agent_toolkit/_hooks/codex_truncation.py`で省略の包絡（`Warning: truncated output (original token count: <数>)`）を識別する。

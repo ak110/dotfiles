@@ -48,4 +48,4 @@ Codexの変更前は`gpt-6.1-sol`・`medium`で`turn.completed`の`input_tokens`
 Codexは信頼されていないGit外のディレクトリでは`--skip-git-repo-check`なしの起動を拒否するため、Codexの計測は空のGitリポジトリをcwdにした。
 
 再検証では空のmanaged-temp（Codexは空のGitリポジトリ）をcwdにして、変更前と変更後の可用性確認の起動形を1回ずつ実行する。
-Claudeは`result`イベントの`usage`の入力・キャッシュ作成・キャッシュ読取と`~/.claude/projects`の記録ファイルの有無を、Codexは`turn.completed`の`usage`と`CODEX_HOME`のrolloutの有無を比べる。
+Claudeは`result`イベントの`usage`の入力・キャッシュ作成・キャッシュ読み取りと`~/.claude/projects`の記録ファイルの有無を、Codexは`turn.completed`の`usage`と`CODEX_HOME`のrolloutの有無を比べる。

@@ -10,7 +10,7 @@ run `37327087407`は同じPR headの`push`起点CIであり、run `37329129743`�
 同じheadとcheck名だけでは起点を識別できず、PR起点checkの登録前に必須checkの集合を完全と判定できない。
 
 再検証では`gh version`を取得し、PR番号とその`headRefOid`を保持する。
-`gh pr checks <PR番号> --json event,workflow,name`でcheckを取得し、`event=pull_request`、`workflow=CI`、`name=statusline-version`の組合せを探す。
+`gh pr checks <PR番号> --json event,workflow,name`でcheckを取得し、`event=pull_request`、`workflow=CI`、`name=statusline-version`の組み合わせを探す。
 run `37327087407`と`37329129743`を個別に取得し、event、head SHA、workflowとjob名を比較する。
 次に同じPRの必須check終了後の`headRefOid`と`mergeStateStatus`を取得し、headが不変でGitHubの評価が`CLEAN`になることを確認する。
 対象runが保持期限で取得できない場合は、新しいrelease PRで同じJSON項目を使って登録順を観測する。

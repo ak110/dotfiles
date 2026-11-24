@@ -29,9 +29,9 @@ Codexへの配送手段を追加・変更する主体は、この対応で届か
 | --- | --- |
 | `~/.claude/rules/myprojects-common.md` | `~/.codex/AGENTS.md`への埋め込み（`scripts/sync_codex_agents.py`の`PERSONAL_SOURCE`） |
 | `~/.claude/rules/myprojects.md` | Codexのメインと組み込み委譲先には届けない。ホスト別のプロジェクト一覧と同期方針であり、`myprojects-common.md`冒頭がClaude Codeへの配布と定めるためである |
-| `~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md` | `host-codex.md`の読込指示 |
-| プロジェクト直下の`.claude/rules/` | `host-codex.md`の読込指示 |
-| 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md` | `host-codex.md`の読込指示 |
+| `~/.claude/rules/`直下の`*.local.md`と`~/.claude/CLAUDE.md` | `host-codex.md`の読み込み指示 |
+| プロジェクト直下の`.claude/rules/` | `host-codex.md`の読み込み指示 |
+| 作業ディレクトリからルートまでの各ディレクトリの`CLAUDE.local.md`と、同階層に`AGENTS.md`が無い場合の`CLAUDE.md` | `host-codex.md`の読み込み指示 |
 
 ユーザー単位の`*.local.md`と`~/.claude/CLAUDE.md`の2種類は実行ホストごとにユーザーが置くファイルであり、リポジトリから生成する`~/.codex/AGENTS.md`へ埋め込めない。
 dotfilesがホストを限って配る`*.local.md`もある。
@@ -39,7 +39,7 @@ dotfilesがホストを限って配る`*.local.md`もある。
 ホストごとに中身が違うため、これも同様に埋め込めない。
 読込指示は実行時のファイルの有無によらず共通であるため、プロジェクト直下の`.claude/rules/`と同じ手段を選ぶ。
 2026年10月6日に、`agents_server`で起動したCodexの委譲先が、`~/.claude/rules/`直下の`*.local.md`が使えないと定めたコマンドを実行して失敗した。
-当時の読込指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
+当時の読み込み指示はプロジェクト直下の3種だけを挙げ、ユーザー単位の規範を含めていなかった。
 却下した代替案は次の2つである。
 `SessionStart`・`SubagentStart` hookで`*.local.md`の本文を注入する案は、出力量がホストごとに変わる。
 hookの通知へ規範の本文を差し込まない方針（`agent-toolkit/skills/atk-mode/references/agent-documents.md`「置き場所と配送」）にも反する。
@@ -55,7 +55,7 @@ SessionStartの整理後の水準は、長いパス・最大の追加指示・�
 超過時は固定の案内と可変の契約・パス・起動入力を分けて確認し、大入力の退避と予算内配送を維持する。
 この水準はエージェントが選んだ整理時の目安であり、10,000文字の合否上限は変えない。
 上限との差の2,000文字は段落の追記を吸収する余裕の見積もりであり、固定部分の必須条件を削る根拠にしない。
-再検証は`agent-toolkit/agent_toolkit/_hooks/rules_context_startup_test.py`が使うパス長・OS・契約の組合せで最終`additionalContext`の文字数を比べ、8,000文字との比較は超過を是正する時だけ行う。
+再検証は`agent-toolkit/agent_toolkit/_hooks/rules_context_startup_test.py`が使うパス長・OS・契約の組み合わせで最終`additionalContext`の文字数を比べ、8,000文字との比較は超過を是正する時だけ行う。
 `agents_server`の各ツール説明とserver instructionsは4,096文字を合否上限とし、超過を是正する時だけ各3,200文字以下を整理後の目安にする（エージェントの選定値）。
 上限以下の説明をこの目安だけで削らず、`tool_descriptions_test.py`の合否上限と全引数説明の検査を保つ。
 超過時の再検証は、`list_tools`の登録済み説明とinstructionsを取得し、必須引数と最小例を残して目安へ到達したかを確かめる。

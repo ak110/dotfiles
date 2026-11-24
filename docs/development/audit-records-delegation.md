@@ -41,7 +41,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 起動した委譲先は対象worktreeの`AGENTS.md`と`SubagentStart` hookの追加本文を別入力として受け取る。
 `send_message`は稼働中の主体への追加配送、`followup_task`は同じ主体の継続、`wait_agent`は終了待機、`interrupt_agent`は中断を担う。
 agent-toolkitのCodex hookを実起動したテストでは共通の`rules-subagent.md`が追加され、Claude Code固有の`rules-subagent.claude-code.md`は追加されない。
-agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書込・shell promptは持たない。
+agents_serverの通常委譲も共通規範を持つ一方、軽量な探索・書き込み・shell promptは持たない。
 再検証では`codex --version`で対象版を記録する。
 `rules_context_codex.main`へ`SubagentStart`を入力するテストと、`_agents_server/launch_prompts.py`の通常・軽量promptのテストを実行する。
 生成したCodex hook manifestの`SubagentStart`起動コマンドも実行し、共通規範、ホスト固有規範および軽量委譲の境界を確認する。
@@ -60,7 +60,7 @@ Codex CLI 0.157.1の`spawn_agent`公開スキーマでは`fork_turns="all"`が�
 ## agent-toolkit/skills/atk-mode/references/model-settings.md：modelとreasoning effort：2026年8月
 
 本項は軽量モデルへreasoning effort `max`を割り当てた大きな作業で自動コンパクションが10回発生し、所要時間が大幅に伸びた観測に基づく（2026年8月、ユーザーからの報告）。
-再検証は同じ組合せで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
+再検証は同じ組み合わせで同規模の作業を1件実行し、自動コンパクションの発生回数を観測することによる。
 
 ## agent-toolkit/skills/atk-mode/playbooks/delegation.md：実行手段：2026年9月27日
 

@@ -19,16 +19,16 @@ reuse・reedit・amendのno-edit・fixup・squashと、ファイルや実行位�
 以前は`commit`より前の語の未知語で一律に検査を外し、`git -C $R commit`の帰属行の欠落と作業項目のファイル名を遮断できなかった。
 通常のBash呼び出しごとにcommit用の記録を走査する案は、対象外の入力にも同じ取得費用を課すため採らない。
 
-全ホストで`atk-mode/references/commit-message.md`を実際に読む操作（Bashの読取と、Claude Codeの`Read`）へ、既存の観測identityと`co_author_trailer`で求めた帰属行を先に届ける。
+全ホストで`atk-mode/references/commit-message.md`を実際に読む操作（Bashの読み取りと、Claude Codeの`Read`）へ、既存の観測identityと`co_author_trailer`で求めた帰属行を先に届ける。
 `dispatch.py`が確定したファイル引数の末尾と実在を確認するため、plugin rootや配布先の違いを許容し、引用・検索・別資料には配送しない。
 読取は許可し、モデルと推論量を観測できない場合は設定や起動候補から補わない。
 先行配送は読取時点の観測であり、通常commit直前の帰属確認はそのturnの現在値を使う。
 turn変化、不正と重複を現在の行で回復させ、明示指定・無効化・Claude Codeと対象外入力の取得順を保つ。
-最初のcommitを拒否して行を教える案は、同turnの既知の情報を読取時に渡せるのに手戻りを残すため採らない。
+最初のcommitを拒否して行を教える案は、同turnの既知の情報を読み取り時に渡せるのに手戻りを残すため採らない。
 2026年11月までは、Claude Codeでスキル`commit`の`Skill`の起動が完了した時点にもPostToolUseが帰属行を示していた。
-スキルを`atk-mode`の手順書へ移したため、この経路を外し、`commit-message.md`の読取へ一本化した。
+スキルを`atk-mode`の手順書へ移したため、この経路を外し、`commit-message.md`の読み取りへ一本化した。
 観測できない場合と帰属行を無効にした設定では示さない。
-常時読み込む規範へ要件を置く案は全セッションの読込量を増やし、`updatedInput`で行を加える案は`-F`やheredocの本文を書き換える範囲が広いため採らない。
+常時読み込む規範へ要件を置く案は全セッションの読み込み量を増やし、`updatedInput`で行を加える案は`-F`やheredocの本文を書き換える範囲が広いため採らない。
 
 通常の`git commit`では、実行位置、最終メッセージ、実行turnの観測identityを確定できる場合だけ帰属trailerを確認する。
 Claude Codeは`attribution.commit`の`{model}`と`{effort}`を置き換えないため、確認しないと誤った帰属行がpushまで残る（2026年10月6日に4件のcommitで推論量の欠落と誤りを観測した）。
@@ -107,5 +107,5 @@ claude.aiのアカウントでログインしたClaude Code 2.1.287以降では�
 
 通知を見直すときは、エージェントが何を得るために取得したか、すでに得ていた情報、出力先、通知に従った後の結果を元の記録と対応付けて確かめる。
 初回のヘルプ表示が長いことを観測前に原因とみなす案と、判断済みの警告以外を読む目的を出力全体の要約で置き換える案は、エージェントが取得したかった情報を得られないため採らない。
-警告が実行結果と一緒に届くことによる反復には、操作を組み立てる`agent-toolkit:atk-mode/references/operations.md`「`atk`の呼び出し」へ複数対象の呼出例を置く。
+警告が実行結果と一緒に届くことによる反復には、操作を組み立てる`agent-toolkit:atk-mode/references/operations.md`「`atk`の呼び出し」へ複数対象の呼び出し例を置く。
 復旧できる手順支援を遮断へ変える案は、結果を保存先から回復できる一方で正当な操作の誤検出時の往復を増やすため採らない。

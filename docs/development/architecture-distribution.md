@@ -46,6 +46,6 @@ dotfilesが生成する`agent-toolkit-codex/`のMCP定義は、`${PLUGIN_ROOT}`�
 `skills/agent-toolkit-<名前>/`と`skills/agent-basics-<名前>/`へスキル本体と付属資源をコピーする。
 独自スキルは保持し、専用の所有markerがある配布先だけで更新・廃止した資源を同期する。
 `agent-toolkit.md`には`atk-auto`境界の内側に、作業の前と会話の圧縮の後に`agent-toolkit-atk-mode`のスキルを読む案内と、plugin rootとスキル名の対応だけを置き、規範の本文は載せない。
-グローバル`AGENTS.md`とClaude互換規範の読込順位、既存のprovider・permission・mcpなどの値を保持する。
+グローバル`AGENTS.md`とClaude互換規範の読み込み順位、既存のprovider・permission・mcpなどの値を保持する。
 この導入はMCP登録、TS hook移植と単体インストーラーの対象追加を含まない。
 ホストが定める検出と読込の契約は[skills](https://opencode.ai/docs/skills/)と[rules](https://opencode.ai/docs/rules/)にある。
