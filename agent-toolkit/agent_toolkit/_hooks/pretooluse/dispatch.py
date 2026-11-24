@@ -237,7 +237,9 @@ def _has_original_text_label_in_understanding(message: str) -> bool:
 
 
 def _missing_alternative(message: str) -> bool:
-    lines = [line for line in _understanding_section_lines(message) if line.strip()]
+    lines = [
+        line for line in _understanding_section_lines(message) if line.strip() and not bugfix_gate.is_classification_line(line)
+    ]
     return len(lines) > 1 and not any(_ALTERNATIVE_LABEL.match(line) for line in lines)
 
 

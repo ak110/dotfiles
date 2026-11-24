@@ -67,7 +67,7 @@ def test_cause_record_reports_missing_and_empty_lines(record: str, expected: str
 
 
 def test_cause_record_accepts_optional_lines_with_text() -> None:
-    record = f"{_RECORD}\n- 再発防止: 検査を足し、同じ文章を消す。"
+    record = f"{_RECORD}\n- 再発防止: 自動検出: 検査を足し、同じ文章を消す。"
     assert not plan_sections.cause_record_errors(record)
     assert [line.label for line in plan_sections.cause_record_lines(record)][-1] == "再発防止"
 
@@ -81,6 +81,24 @@ def test_prevention_line_is_required_only_for_new_records() -> None:
     assert not plan_sections.cause_record_errors(record, accept_legacy=True)
     assert not plan_sections.cause_record_errors(record, saved_record=True)
     assert plan_sections.cause_record_errors(f"{record}\n- 再発防止:", saved_record=True)
+
+
+@pytest.mark.parametrize(
+    ("text", "accepted"),
+    [
+        ("自動検出: 保存時に検査する。文書: 実例を載せる。", True),
+        ("被覆 既存の検査が防ぐ。", True),
+        ("**引き継ぎ**: 観測は…", True),
+        ("規範に注意を書き足す。", False),
+        ("設計書を直す。", False),
+    ],
+)
+def test_prevention_kind_is_required_only_for_new_records(text: str, *, accepted: bool) -> None:
+    record = _RECORD.replace(_plan_fixture.cause_record_line("再発防止"), f"- 再発防止: {text}")
+    errors = plan_sections.cause_record_errors(record)
+    assert not errors if accepted else any("対策の種類の語で始まらない" in error for error in errors)
+    assert not plan_sections.cause_record_errors(record, saved_record=True)
+    assert not plan_sections.cause_record_errors(record, accept_legacy=True)
 
 
 def test_cause_record_checks_each_h3_unit() -> None:

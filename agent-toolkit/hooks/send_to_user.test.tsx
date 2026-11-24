@@ -174,6 +174,7 @@ for (const [message, rejects] of [
   ["期待: a\n原因: b\n処置: c\n再発防止: 処置済み。\n\n期待: e\n原因: f\n処置: g\n再発防止: 被覆。既存の検査が防ぐ。", false],
   ["期待: a\n原因: b\n処置: c\n再発防止: x\n再発防止: y\n\n期待: e\n原因: f\n処置: g", true],
   ["- **期待:** a\n- **原因:** b\n- **処置:** c\n- **再発防止:** d", false],
+  ["期待: a\n原因: b\n処置: c\n再発防止: 自動検出: hookを足す。文書: 実例を載せる。", false],
   ["- 期待: a\n- 原因: b\n- 処置: c", true],
   ["## 事象A\n期待: a\n## 事象B\n原因: b\n処置: c", false],
   ["原因: b\n処置: c\n期待: a", false],

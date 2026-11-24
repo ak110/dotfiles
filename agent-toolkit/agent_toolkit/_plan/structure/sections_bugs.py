@@ -10,6 +10,7 @@ import re
 from collections.abc import Iterable
 from typing import NamedTuple
 
+from agent_toolkit._common.prevention_kinds import KINDS_GUIDANCE, starts_with_kind
 from agent_toolkit._plan.structure.constants import (
     CAUSE_RECORD_OPTIONAL_LABELS,
     CAUSE_RECORD_REQUIRED_LABELS,
@@ -114,11 +115,17 @@ def _label_line_errors(unit: _CauseRecordUnit, *, saved_record: bool) -> list[st
         for line in lines
         if not line.text
     )
+    if not saved_record:
+        errors.extend(
+            f"`再発防止:`の行が対策の種類の語で始まらない（{KINDS_GUIDANCE}）"
+            for line in lines
+            if line.label == "再発防止" and line.text and not starts_with_kind(line.text)
+        )
     return errors
 
 
 def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_record: bool | None = None) -> list[str]:
-    """原因分析の記録がバグ単位ごとに必須の行頭語の行をそろえ、各行に本文を持つかを検査し、違反の一覧を返す。
+    """原因分析をバグ単位で調べ、必須の行頭語や本文などの違反を返す。  pyfltr: allow-comment
 
     `content`はAWIの`## 原因分析`節の本文か、計画のバグ調査の記録（H1やH2の見出しを含んでよい）とする。
     H3が無ければ全体を1単位とし、H3があれば各H3の配下を1単位とする。
@@ -130,6 +137,8 @@ def cause_record_errors(content: str, *, accept_legacy: bool = False, saved_reco
     表の構成や記入内容を問わず受理する。前の版の初動の短い記録は`期待:`と`処置:`の行を持つため、この2語だけでは現行の形と扱わない。
     `saved_record`が真（新旧を区別できない計画の検査）では、保存済みの記録が持たない行頭語（`再発防止:`）の行の有無を問わない。
     行がある場合の本文の有無は検査する。省略時は`accept_legacy`と同じ値とする。
+    `saved_record`が偽（AWIの新規保存と原因分析を変える編集）の時だけ、`再発防止:`の行が対策の種類の語で始まることを求める。
+    保存済みの記録は種類の語を持たず、計画の検査は新旧を区別できないため、真の時は求めない。
     記入内容の妥当性は検収が判断し、ここでは行の有無と本文の有無だけを確かめる。
     """
     saved = accept_legacy if saved_record is None else saved_record
