@@ -300,6 +300,18 @@ class TestWatchRun:
         assert sleeps == [1.0]
         assert run.call_args_list[1].kwargs["timeout"] == 6
 
+    def test_view_not_found_right_after_dispatch_recovers(self) -> None:
+        sleeps: list[float] = []
+        results = [
+            _completed_process(returncode=1),
+            _completed_process(returncode=1, stderr="failed to get run: HTTP 404: Not Found"),
+            _completed_process(stdout='{"status": "completed", "conclusion": "success"}'),
+        ]
+        with patch("pytools.releaser.subprocess.run", side_effect=results) as run:
+            _watch_run(42, attempts=2, sleep=sleeps.append, random_uniform=_upper_bound)
+        assert run.call_count == 3
+        assert sleeps == [1.0]
+
     def test_completed_failure_guides_job_logs_with_escape_sequences(self) -> None:
         expected_command = "gh api repos/<owner>/<repo>/actions/jobs/<job ID>/logs --allow-escape-sequences"
         results = [
