@@ -21,7 +21,7 @@ PTYに予約の受付と、その後の`Conversation compacted`・`Compacted`表
 実ホスト自身のコマンド拒否を観測した試行とは区別する。
 セッションへ失敗原因と再予約可能の通知が届いた。
 モデルは再予約し、同じ会話でmanual compact境界と圧縮成功を観測して正常終了した。
-未完了予約の重複排除と成功後の再予約は、ツール登録から時計のコールバックまでを動かす結合試験でも確認した。
+未完了予約の重複排除と成功後の再予約は、ツール登録から時計のコールバックまでを動かす結合テストでも確認した。
 
 以上はinstructionsが存在した当時の観測であり、任意指示と指定応答も当時の事実として保持する。
 現行契約は引数なしの予約と注入された要約と既存記録からの再開である。
@@ -36,14 +36,14 @@ PTYに予約の受付と、その後の`Conversation compacted`・`Compacted`表
 
 ## agent-toolkit/hooks/compact_conversation.ts：会話圧縮の予約：2026年10月23日
 
-Claude Code 2.1.309の`claude plugin test agent-toolkit`で、公開modの登録・時計・turn・背景タスク・圧縮APIを使う結合試験を実行した。
+Claude Code 2.1.309の`claude plugin test agent-toolkit`で、公開modの登録・時計・turn・背景タスク・圧縮APIを使う結合テストを実行した。
 `session.compact()`はturn間に呼び、成功のmessages、見送りのskip、例外を別の結果として扱う。
 5秒未満、利用率49%、状態未保存、委譲先とサブエージェントは自動圧縮しない。
 50%の境界、5秒後、turn完了への持越し、完了通知による取消し、失敗後の解放と自動再試行の抑止、閾値未満を経た再開を確認した。
 Python側の公開`wait-compaction-context`も、所有・mode・待機登録・保存時刻の12ケースで確認した。
 modの全136件は成功した。
 外部モデルによる実際の要約生成はこの試験へ含まない。
-2026年11月23日に背景待機からの自動予約を撤去した。
+2026年11月23日にバックグラウンド待機からの自動予約を撤去した。
 現行版では公開testコマンドで手動予約を、`wait_compaction_context_test.py`で再起動に使う所有確認を再検証する。
 
 ## agent-toolkit/hooks/compact_conversation.ts：原本参照圧縮：2026年11月2日
@@ -53,7 +53,7 @@ modの全136件は成功した。
   直接の`/compact`入力は`session.compact`の返却messagesで原本所在へ置換し、復元turnがReadで元の目的・訂正・認可・未完了を確認した。
   同pluginの`$.session.compact()`予約では、debugの`session.compact skipped: re-entry (the plugin's own code raised it; origin ...)`と`source=compact`のAPI要求を観測した。
   公開`SessionCompactArgs`はinstructionsのみを受け付ける。
-- 再検証: 読取と予約ツールだけを持つ新規対話セッションへ、目的・色の訂正・認可・未完了を含む検証入力を与える。
+- 再検証: 読み取りと予約ツールだけを持つ新規対話セッションへ、目的・色の訂正・認可・未完了を含む検証入力を与える。
   最初は直接`/compact`、別の新規セッションでは予約ツールを1回使いターンを終える。
   原本の圧縮境界、要約要求の有無、復元時のReadと回答を比較する。
   実際の作業セッションは再開しない。
@@ -65,11 +65,11 @@ modの全136件は成功した。
 - 観測日: 2026年11月4日。
 - 確認版: Claude Code 2.1.318。
   背景Bashの結果は`result.backgroundTaskId`で識別できた。
-  同一turnの背景待機中は`turn_running`の予約抑止が成立し、完了通知の後にturnが終了しても予約されなかった。
+  同一turnのバックグラウンド待機中は`turn_running`の予約抑止が成立し、完了通知の後にturnが終了しても予約されなかった。
   headlessの直接`session.compact`は未対応のHooksErrorを返した。
   slash commandsが有効な同じ隔離会話で`command.run({command:"compact"})`を使うと、compact_boundaryと背景タスクの結果回収を観測した。
   試行では使用量の閾値を縮小し、所有照会と原本所在だけをfixtureへ差し替えたため、製品の400,000トークン・40%閾値と所有判定の実データでの成立はこの観測の対象外である。
-- 現行版の再検証: 2026年11月23日に背景待機からの自動予約を撤去した。
+- 現行版の再検証: 2026年11月23日にバックグラウンド待機からの自動予約を撤去した。
   隔離したheadless会話で手動予約し、turn完了後の`command.run`、compact_boundary、同一会話の背景結果回収を確認する。
   対話画面を持つ会話では直接APIとskip判定を比較する。
   `claude plugin test agent-toolkit`で手動予約の成功、自動再開の明示指定、skipと例外を確認する。

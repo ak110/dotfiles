@@ -3,7 +3,7 @@
 ## 待機と終了結果・通知
 
 世代移譲では待機対象、保留、配送済み結果を引き継ぐ。
-旧版が渡す背景待機の圧縮補助状態は読み飛ばす。
+旧版が渡すバックグラウンド待機の圧縮補助状態は読み飛ばす。
 実turn終了までは旧backendが解釈し、保存を現行writerへ転送する。
 移譲後は新backendが旧資源のrawイベントを解釈し、既存の結果・通知保存が成功してから受領を確定する。
 保存ACK前のイベントを残す旧世代を期限だけで停止せず、移譲のための圧縮・query・中断・promptを追加しない。
@@ -13,13 +13,13 @@
 
 | 共有状態 | 基準となる保持先 | 読む主体 | 更新できる主体 |
 | --- | --- | --- | --- |
-| 終了時の結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`、同名の未回収結果があれば`<session_id>.<turn番号>-<終了時刻のSHA-256>.json`。各結果の公開記録は`results/.published/<session_id>/<turn番号>-<終了時刻のSHA-256>`に残る | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成および削除）、待機CLI（自身と同じ書込主体が公開した結果のみを削除） |
-| CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | `atk agents wait`。1つの書込主体に対して同時に1つの実行プロセスのみが全対象を待機する。ロックファイル自体はロック解放後も削除せず保持する |
+| 終了時の結果と回収済み判定 | `<状態ディレクトリ>/<ルートsession識別子>/results/<session_id>.json`、同名の未回収結果があれば`<session_id>.<turn番号>-<終了時刻のSHA-256>.json`。各結果の公開記録は`results/.published/<session_id>/<turn番号>-<終了時刻のSHA-256>`に残る | MCPサーバー、`atk agents wait`、statusline | MCPサーバー（作成および削除）、待機CLI（自身と同じ書き込み主体が公開した結果のみを削除） |
+| CLI待機の所有権 | `<状態ディレクトリ>/<ルートsession識別子>/wait-locks/<書込主体>.lock`のファイルロック | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | `atk agents wait`。1つの書き込み主体に対して同時に1つの実行プロセスのみが全対象を待機する。ロックファイル自体はロック解放後も削除せず保持する |
 | CLI待機の実行結果 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>.json`および`current.json` | 先行する待機処理へ合流する後続の`atk agents wait`、待機対象0件（終了コード10）および`consumed`（終了コード8）の診断情報を生成する後続の`atk agents wait` | 先行する待機処理が`running`、`published`、および再待機が必要かを示す`continuable`を書き込み、結果を返却した後続の待機処理が`consumed`を書き込む |
 | CLI待機が回収途中の結果と通知 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/<run_id>/results/<session_id>.json`および`notices/<通知ファイル>` | 中断後に同一のrunを再開する`atk agents wait` | 待機CLI。結果ファイルは所有者を確認した排他区間内で退避し、通知ファイルは原本を同じrunの退避先へ移動する |
-| CLI待機が知らせたCodexのAPI再試行 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/api-retry-notices/<session_id>.json`（通知した再試行の`api_error.first_at`） | 同じ書込主体の後続の`atk agents wait`。同じ`first_at`の再試行を再通知しない | `atk agents wait`。再試行が`API_RETRY_NOTICE_SECONDS`を超えて続く対象を返す時に書き込む |
+| CLI待機が知らせたCodexのAPI再試行 | `<状態ディレクトリ>/<ルートsession識別子>/wait-results/<書込主体>/api-retry-notices/<session_id>.json`（通知した再試行の`api_error.first_at`） | 同じ書き込み主体の後続の`atk agents wait`。同じ`first_at`の再試行を再通知しない | `atk agents wait`。再試行が`API_RETRY_NOTICE_SECONDS`を超えて続く対象を返す時に書き込む |
 | CLI待機の対象登録 | `<状態ディレクトリ>/<ルートsession識別子>/wait-targets/<書込主体>/<session_id>.json` | `atk agents wait`、Stop処理時の未確認作業に関する助言機能 | PostToolUseフック（子セッション開始時およびreply再開時の追加。`atk agents wait`と同様に索引を経由したルートへ登録する）、`atk agents wait`（待機開始時の追加、および回収・破棄時の削除）。助言機能側は読み取りのみを行う |
-| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | 現在turnの状態ファイルの書込所有者と`atk agents wait`。状態投影の親IDまたは登録簿の`launcher_session_id`を受取会話と照合し、引き継ぎ後は現在の書込所有者を優先する | `notify.py`がCLIの委譲先通知とManagerの復旧失敗通知を作成主体付きで保存する。`notice_inbox.py`は帰属を確認した本文だけを回収する。待機登録とルート一致だけでは原本を削除しない |
+| 上り通知 | `<状態ディレクトリ>/<ルートsession識別子>/notices/<通知ファイル>` | 現在turnの状態ファイルの書き込み所有者と`atk agents wait`。状態投影の親IDまたは登録簿の`launcher_session_id`を受取会話と照合し、引き継ぎ後は現在の書き込み所有者を優先する | `notify.py`がCLIの委譲先通知とManagerの復旧失敗通知を作成主体付きで保存する。`notice_inbox.py`は帰属を確認した本文だけを回収する。待機登録とルート一致だけでは原本を削除しない |
 
 MCPツールの呼び出し記録（セッション状態`agents_server_sessions`）は`docs/development/internals-session-state-agents-server.md`が保持先と更新主体を定める。
 
@@ -30,7 +30,7 @@ MCPツールの呼び出し記録（セッション状態`agents_server_sessions
 | CLI待機対象の登録管理 | `wait_targets.py` |
 | 上り通知の回収 | `notice_inbox.py` |
 
-子の追跡は、登録簿の不在・解放済み・読取不能でも維持する。
+子の追跡は、登録簿の不在・解放済み・読み取り不能でも維持する。
 共有された終了時の結果も得られなければ、同じ識別子を保持して終了の観測まで再解決する。
 回収済みの終了は既存のwait出力追跡で集合から除き、未回収の子の終了を継続の判定に用いる。
 過去の継続を消費した後やCLIのidle時も、未回収の子の観測を保持する。
@@ -63,9 +63,9 @@ kill、期限切れ、ストリーム終了による明示的な完了確定と�
   workerが原本を読んでも、応答を返すtaskが取り消されれば原本は残る。
   同じ応答の通知も、宛先の確認と読み取りでは原本を変えない。
   応答確定時に原本を削除できた通知だけを返す。
-- 待機処理の所有権と待機対象セッションの登録は、いずれも書込主体を単位とする名前空間で管理する。
-  読み取り側も同じ書込主体単位で探索し、対象のロックファイルや登録情報を特定する。
-- `atk agents wait`の実行（フォアグラウンド実行およびバックグラウンド実行）は、書込主体ごとに同時に最大1つとする。
+- 待機処理の所有権と待機対象セッションの登録は、いずれも書き込み主体を単位とする名前空間で管理する。
+  読み取り側も同じ書き込み主体単位で探索し、対象のロックファイルや登録情報を特定する。
+- `atk agents wait`の実行（フォアグラウンド実行およびバックグラウンド実行）は、書き込み主体ごとに同時に最大1つとする。
   ロック競合を検知した後発プロセスは、`current.json`に記録されたrun IDを固定し、ロック取得後にその固定したrunの状態を再読み込みする。
   その状態が`published`であれば保存済みの本文と終了コードを返し、返却完了後に`consumed`へ遷移させる。
   `foreground-delivered`または`consumed`なら本文を再出力せず、終了コード8と保存runの回復情報を返す。
@@ -77,12 +77,12 @@ kill、期限切れ、ストリーム終了による明示的な完了確定と�
   `consumed`に遷移済みのrunは再利用せず、常に新規runを開始する。
   待機時間の上限に達した場合や通知のみを返却したrunは`continuable`をtrueとし、次回実行時には新規runを開始する。
   なお、run情報の記録がない旧形式のロックファイルのみが存在する場合は、旧形式との競合を示すエラー診断を出力して終了する。
-  ロックの取得単位は書込主体ごととし、対象セッション個別のロックは使用対象から除く。
+  ロックの取得単位は書き込み主体ごととし、対象セッション個別のロックは使用対象から除く。
 
 `wait_run.py`は、`status`で判別する`running`、`published`、`foreground-delivered`、`consumed`の型でrun本体を読み、`current.json`はrun参照として別に検証する。
 run本体の`run_id`と`targets`を検証し、`published`以後では文字列の`output`と整数の`exit_code`を必須とする。
-対象追加と公開・配送の遷移は同モジュールの操作へ集約し、`agents_wait.py`が書込主体のロック内で保存する。
-不在は`None`、不正記録は既存の読取異常として扱い、上書きしない。
+対象追加と公開・配送の遷移は同モジュールの操作へ集約し、`agents_wait.py`が書き込み主体のロック内で保存する。
+不在は`None`、不正記録は既存の読み取り異常として扱い、上書きしない。
 `shared_sweep.py`も同じ型で未回収runを判定し、読取不能・不正なrun本体や参照があればルートを保持する。
 
 CLI待機における結果配信は、結果や通知の取りこぼしを防ぐことを最優先とする。
@@ -94,7 +94,7 @@ CLI待機における結果配信は、結果や通知の取りこぼしを防�
 
 `foreground-delivered`や`consumed`の状態は、標準出力への配信が行われたこと、および後続のwaitによる再演が完了したことのみを示しており、受け取った側（エージェント）が実際に内容を読み取ったかどうかまでは保証しない。
 待機対象が0件で終了した場合（終了コード10）や、すでに消費済み（`consumed`）で終了した場合（終了コード8）の対応を定める。
-`atk agents wait`は同一ルートと書込主体の`current.json`に記録された配信済みrunを読み取り、`run_path`、対象の`session_ids`、ならびに実在する`agent_message_paths`を診断情報に追加する。
+`atk agents wait`は同一ルートと書き込み主体の`current.json`に記録された配信済みrunを読み取り、`run_path`、対象の`session_ids`、ならびに実在する`agent_message_paths`を診断情報に追加する。
 結果を受け取ったコンポーネントは`run_path`を参照することで、`output`内に保存されている終了結果本文を再取得できる。
 これにより、個別のメッセージ本文ファイルがすでに削除されていても`output`から内容を復元できる。
 runファイルが存在しない、読み取れない、または結果データを含んでいない場合は、`status`をそれぞれ`missing`、`unreadable`、`no-results`として区別して報告する。

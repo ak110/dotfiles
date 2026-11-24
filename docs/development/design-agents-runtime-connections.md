@@ -29,9 +29,9 @@ API残高は月1回の付与などで外部から回復し、永続化した判�
 
 Claude SDKの初期化応答がMCP接続失敗を示す場合、新規起動・再開ごとに公開再接続APIを1回試す。
 再接続の反復を独自に増やす案は、SDKの回復境界へ別の待機を重ねるため採用しない。
-再検証の試験は`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`にある。
+再検証のテストは`agent-toolkit/agent_toolkit/_agents_server/claude_connections_test.py`にある。
 `test_mcp_reconnect_is_once_per_new_and_resumed_process`と`test_slow_mcp_recovery_keeps_start_budget_and_updates_show`を実行する。
-この試験はテストダブルによる契約の検証であり、実Claude CLIと外部MCPサーバーの接続障害は再現していない。
+このテストはテストダブルによる契約の検証であり、実Claude CLIと外部MCPサーバーの接続障害は再現していない。
 
 Codexの接続先は、役割別の使用順（`codex_orchestrator_connections`・`codex_worker_connections`）と種別ごとのprovider IDから決める。
 委譲先は待機対象外のサブスク利用上限とAPIの不受理で、状態互換性を確認して使用順の次の候補へ同じ会話を移す。

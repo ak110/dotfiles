@@ -30,7 +30,7 @@
 
 ## 保持期限と掃引の対象
 
-`notices`および`hosts`配下の共有ファイルは、保持期限が経過した後に各書込主体が削除できる。
+`notices`および`hosts`配下の共有ファイルは、保持期限が経過した後に各書き込み主体が削除できる。
 
 MCP起動時とSessionEndの掃引は、最終更新から7日を超える通常のルート、登録簿、計測記録を対象にする。
 どちらの掃引もホストで1日1回に限り、`_common/interval_gate.py`が`sweeps/agents-server-activation`（MCP起動時）と`sweeps/session-end`（SessionEnd）へ記録した前回から1日が過ぎていない起動・終了では掃引を省く。

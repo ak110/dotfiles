@@ -47,13 +47,13 @@ pull requestの`GITHUB_SHA`はrunnerがcheckoutするtest merge commitを示す�
 Windowsの旧版更新検証は`update-dotfiles-upgrade (windows)`が所有する。
 Windows固有pytest、Codex統合、公開ランチャーは`test-windows (tests)`、通常profileへの初回導入（chezmoi適用とpost-apply）の確認は`test-windows (install)`が所有する。
 3つのjobの間に依存関係を置かず、各jobが自身のrunnerで準備し、更新検証の通常profile監視に必要なMozilla予約タスク停止は更新検証jobが実行する。
-境界テストと初回導入は互いの実行順序や同じユーザープロファイルへの書込みを必要としないため、別jobにして待ち時間を加算しない。
+境界テストと初回導入は互いの実行順序や同じユーザープロファイルへの書き込みみを必要としないため、別jobにして待ち時間を加算しない。
 必須checkの`test-windows`は`test-windows (tests)`と`test-windows (install)`を待ち、両方の成功だけを成功として集約する。
 
 GitHub Actionsのpost工程もworkspace上のローカルaction定義を読み直すため、元のcheckoutはjob終了まで保持する。
 
 matrixはtoolkitの3分割だけに使い、`fail-fast: false`で全分割の結果を取得する。
-toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`が所要降順・同値node ID昇順で、合計所要が最小の分割へ各試験をちょうど1回割り当てる。
+toolkitの各分割jobは同じ集合を収集し、`agent_toolkit._testing.pytest_plugin`の`--test-shard`が所要降順・同値node ID昇順で、合計所要が最小の分割へ各テストをちょうど1回割り当てる。
 新しい外部plugin、CI中の前run取得、分割数増加は採らない。
 1runnerのtoolkit pytestが約16分を要したため3分割し、通常pytestは最低Git 2.34.1、4worker、workstealと環境隔離を維持する。
 

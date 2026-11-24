@@ -35,7 +35,7 @@ Windowsでは使用中のファイルとそれを含むディレクトリを削�
 これにより個別コマンドのcache副作用を前提とせず、更新関数の終了時に退避した全旧パスの存在を保証する。
 Codex 0.163.0では、App Serverの`plugin/list` RPCもlocal marketplaceの新versionを自動導入し、更新関数の外で全旧cacheを削除する。
 隔離対照では、新versionに対するCLIの`plugin add`も旧cacheを削除し、同versionのRPC、CLIの`plugin list --json`、daemon照会と`codex exec`は旧cacheを保持した。
-この上流のcache寿命不整合は[openai/codex#31383](https://github.com/openai/codex/issues/31383)で0.142.5から0.162.0までの複数版・複数OSから報告され、live hookの再読込も[openai/codex#36605](https://github.com/openai/codex/issues/36605)などで未解決である。
+この上流のcache寿命不整合は[openai/codex#31383](https://github.com/openai/codex/issues/31383)で0.142.5から0.162.0までの複数版・複数OSから報告され、live hookの再読み込みも[openai/codex#36605](https://github.com/openai/codex/issues/36605)などで未解決である。
 dotfiles向けの生成済みhook定義は、版付きcacheの外へ先に配置する`atk-hook`を使う。
 `PLUGIN_ROOT`が指す版付きCodex cacheが欠落した場合、同版のClaude Code plugin cacheを検証して元のCodex pathへ原子的に復旧する。
 同版が無い場合はClaude Codeの現行導入版からhookだけを起動し、編集途中の作業ツリーは使わない。
@@ -76,7 +76,7 @@ Codex 0.154.0はroot直下のAgent Plugins用`plugin.json`を`.codex-plugin/plug
 また、相対シンボリックリンクを含むCodex専用wrapperを公式CLIで導入すると、snapshotには`.codex-plugin`だけが残り、リンク先のhook・skill・実行資源が含まれない。
 そのため、`agent-toolkit-codex/`は全資源を通常ファイルとして生成し、公式CLIへsnapshotと版数別cacheの管理を委ねる。
 再検証はCodex CLI 0.154.0で`pytools/_internal/codex_plugin_manifests_proxy_test.py`の`test_codex_0154_registers_all_hooks_independent_of_project_trust`を実行する。
-この試験は、隔離した2つの`CODEX_HOME`での登録集合を確かめる。
+このテストは、隔離した2つの`CODEX_HOME`での登録集合を確かめる。
 
 ## plugin実体の回収と稼働中の参照
 

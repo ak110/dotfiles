@@ -2,10 +2,10 @@
 
 ## バックエンド固有の接続とAPI状態
 
-共有サービスでは`_common/runtime_environment.py`の`CallerContext`が呼出元の環境・cwd・親settingsを非永続で保持する。
+共有サービスでは`_common/runtime_environment.py`の`CallerContext`が呼び出し元の環境・cwd・親settingsを非永続で保持する。
 会話の隔離にはbackend生成、設定解決、非同期タスクとfile operationへの明示的な束縛を使い、`os.environ`は保持する。
 同じ会話はcontextを引き継ぎ、別会話の認証・設定・クレジット不足の観測とは分離する。
-不足値は同じ呼出元から再提供を受け、認証値は世代登録・ログ・再開情報への保存対象から除外する。
+不足値は同じ呼び出し元から再提供を受け、認証値は世代登録・ログ・再開情報への保存対象から除外する。
 制御所有の移譲後もraw SDK・App Serverは元世代の資源とし、新世代が生イベントを解釈する。
 子・バックグラウンドタスクが終了した次の本来入力で通常releaseし、新しい接続のresumeへ移る。
 資源の定義と移譲は[管理サービス設計の「受付・状態writer・実行資源の移譲」](design-agents-server-service.md#受付状態writer実行資源の移譲)を参照する。
@@ -23,7 +23,7 @@
 | Claude起動別の合成settings | `<状態ディレクトリ>/<ルートsession識別子>/claude-settings/settings-<一意な値>.json`（ルート識別子を受け取らない直接構築時は`settings-<一意な値>`をルート名として使用） | 該当の起動におけるClaude CLI | Claudeバックエンドの`claude_settings.py`。親設定がファイルで与えられている場合や、API環境変数を合成する場合に、実行ユーザーのみ読み取り可能な起動別設定ファイルを生成する。各起動プロセスは、接続終了時・起動失敗時・依存確認の終了時に自身のファイルを削除・回収する |
 | APIクレジットの残高不足の観測時刻（エンジン別） | MCPサーバーのメモリー（`_agents_server/api_credits.py`。`time.monotonic()`の値） | 新しい委譲先の使用順を決めるClaude・Codexバックエンド | 同じMCPサーバーのClaudeバックエンドが`credits`接続のturnの残高不足で、Codexバックエンドが`credits`候補の不受理で記録する。観測から1時間（`CREDIT_SHORTAGE_TTL_SECONDS`）以内に起動する同じエンジンの委譲先では、`credits`候補を使用順の後ろへ回す（候補からは外さない）。オーケストレーターの接続順は変えない。ファイルへ永続化せず、他の会話とは共有しない。期限切れか会話contextの終了で通常の接続順に戻る。API残高は月1回の付与などで外部から回復するため、永続化せずに定期的に再確認するというユーザー要件による |
 | engineの可用性を理由に除外した候補（解除待ちの対象のClaude利用上限は記録せず、旧版の理由`429`のClaude候補は読み込み時に除外の根拠から外す） | `<状態ディレクトリ>/unavailable-candidates.json` | 起動候補リストを解決するMCPサーバー | 当該の状態ディレクトリを共有する各MCPサーバー（ファイルロックを取得した上で読み書きを行う） |
-| Claude・Codexの利用枠と活動時間当たりの消費ペース | `<状態ディレクトリ>/usage-observations.json`と`usage-observations.lock` | `config_usage.py`の表示、Codex自動reset | `usage_refresh.py`が公式読取・SDK通知を正規化し、`_common/usage_observation.py`が排他して保存する。履歴は30日・最新10000件、最終状態は10000窓まで。超過時は保存を拒否し取得不明の診断を残す。アカウント・契約・枠・設定・観測主体の異なる速度を混ぜない |
+| Claude・Codexの利用枠と活動時間当たりの消費ペース | `<状態ディレクトリ>/usage-observations.json`と`usage-observations.lock` | `config_usage.py`の表示、Codex自動reset | `usage_refresh.py`が公式読み取り・SDK通知を正規化し、`_common/usage_observation.py`が排他して保存する。履歴は30日・最新10000件、最終状態は10000窓まで。超過時は保存を拒否し取得不明の診断を残す。アカウント・契約・枠・設定・観測主体の異なる速度を混ぜない |
 | 単一の期限付き一時設定、利用枠の取得結果 | `<状態ディレクトリ>/usage-settings.json`と同stemの`.lock`・`.refresh.lock` | 設定解決・`config usage`・`usage_refresh.py` | 設定CLIが一時上書きを、観測処理が認証環境ごとのメタ情報・5分の取得キャッシュを保存する。メタ情報は最新256環境まで。期限後は現行の通常設定へ戻る。認証の値は保存せず、元の資格情報を参照する |
 
 | 対象 | モジュール |
@@ -33,7 +33,7 @@
 
 Codex CLIは、stdio経由のMCPサーバーへ親環境の変数を限定して渡す。
 渡されるのは、Codexの既定の許可リストにある変数、`env_vars`に列挙された変数のうち親環境に値が存在するもの、および`env`で明示された値に限られる。
-外側の`agents_server`は、`thread/start`や`thread/resume`の`config.mcp_servers.agents_server`に対して、`env`経由でルートセッション識別子と書込主体識別子を渡し、`env_vars`経由で保存先・公開設定・プロキシ設定の環境変数名を渡す。
+外側の`agents_server`は、`thread/start`や`thread/resume`の`config.mcp_servers.agents_server`に対して、`env`経由でルートセッション識別子と書き込み主体識別子を渡し、`env_vars`経由で保存先・公開設定・プロキシ設定の環境変数名を渡す。
 対象の変数名と除外条件は`agent_toolkit/_common/mcp_environment.py`で管理されている。
 静的な配布設定には`environment_variable_names`を使い、内部MCPの開始・再開時には`runtime_environment_variable_names`を使う。
 静的な変数集合には、認証・接続先・モデル設定、保存先、通信、ロケール、keyring接続などの公開名が含まれ、実行元の環境に関わらず共通して適用される。
@@ -47,14 +47,14 @@ Codex向けプラグイン設定の生成処理（`pytools/_internal/codex_plugi
 配布設定は変数名の一覧のみを保持するため、子プロセスに実際に渡るのは親環境で値が設定されている変数だけである。
 なお、`env_vars`を持つのはCodex向けの設定のみであり、Claude向けの`.mcp.json`やAgent Plugins向けの`mcp.json`は従来の形式を維持する。
 通常起動、再開、多段委譲のいずれの場合でも、呼び出し元が選択した設定、キュー、および状態の名前空間を引き継ぐ。
-ただし、ownerや状態書込主体については、各起動時に明示された値を優先する。
+ただし、ownerや状態書き込み主体については、各起動時に明示された値を優先する。
 外側の静的なMCP境界ですでに欠落した未知の変数は、内側から復元することはせず、親プロセスや認証ファイルを再読み込みして補うことも行わない。
 `atk`自身のuv同期先はランチャー側で固定されているため、子プロセスには呼び出し元の`UV_PROJECT_ENVIRONMENT`の値（未設定の場合は未設定である状態）をそのまま戻す。
 委譲先CLIや、process-loop・run-skillが起動する最上位の会話に対しては、起動元の会話・端末・プロセスのコンテキストを継承させない。
 このコンテキスト除去処理は`_common/mcp_environment.py`の`strip_conversation_context`に集約されている。
 MCPサーバーの環境整備や、`atk wi`のall-reposでのManager生成、`_atk/orchestrator.py`の`child_env`で使用される。
 除去対象の名前は、内部MCPの`env_vars`と同じ`_NON_INHERITABLE_NAMES`で定義されており、すべてのバックエンドがこの整備済み環境を継承する。
-ルート、書込主体、委譲元の記録情報、および引き継ぎ記録先のパスは、除去前の環境変数から確定し、各バックエンドが明示するownerや委譲フラグは除去後の環境に設定する。
+ルート、書き込み主体、委譲元の記録情報、および引き継ぎ記録先のパスは、除去前の環境変数から確定し、各バックエンドが明示するownerや委譲フラグは除去後の環境に設定する。
 起動区分を示すフラグ（`AGENT_TOOLKIT_DELEGATED_LAUNCH_KIND`）も同様に除去後に設定する。
 Claudeバックエンドでは全起動区分でSDKのenvに設定する。
 CodexバックエンドではセッションごとのApp Serverの子環境に対して、開始時の起動区分と再開時の`SessionState.launch_kind`を設定する（モデル一覧や`thread/read`の問い合わせ用App Serverからは除外する）。
@@ -72,11 +72,11 @@ Claudeの`inherit`接続の場合でも同様に会話コンテキストの除�
 同じ入力と並行起動は`_agents_server/manager_identity_test.py`の`test_parallel_claude_delegates_get_distinct_session_ids`が偽のClaude clientで再現する。
 環境除去の単体の再検証は`_common/mcp_environment_test.py`と`_atk/orchestrator_test.py`で行う。
 Claude経由で共通の登録前の重複判定は同じ`manager_identity_test.py`の`test_start_rejects_duplicate_session_id`が確かめる。
-この試験が起動するのは偽のClaude clientだけである。
+このテストが起動するのは偽のClaude clientだけである。
 Codexの既存threadの拒否は`codex_test.py`の`test_start_rejects_existing_thread_before_alias_and_client_registration`で確かめる。
 Antigravityの既存会話の拒否は`antigravity_test.py`の`test_duplicate_conversation_keeps_event_log_and_allows_explicit_resume`で確かめる。
 
-API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書込主体が状態ファイルへ反映（射影）する。
+API失敗状態は、すべてMCPサーバーの`SessionState`を基準（正）として管理し、同一の書き込み主体が状態ファイルへ反映（射影）する。
 対象となるのは、Claudeの合成assistantメッセージや`SystemMessage(api_retry)`、Codexの`willRetry: true`による再試行中状態、ならびに過負荷（`serverOverloaded`）に伴う自動継続待ちの`api_error`である。
 過負荷待機中の記録は、待機を予定したCodexバックエンドの終了処理が作成し、MCPサーバーが継続ターンを送信した時点で削除する。
 待機の予定時刻や連鎖回数はMCPサーバーのメモリー内でのみ管理し、状態ファイルへは`api_error`の形式でのみ反映する。

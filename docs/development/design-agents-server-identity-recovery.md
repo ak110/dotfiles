@@ -21,11 +21,11 @@
 外部所有の復元状態は`ManagerRegistry`の`_RegistryResumeState`として、自プロセスが更新する状態と区別する。
 別プロセスの再開では照会側のメモリーを更新できないため、復元済みの終了状態を現在状態として再利用する案は採らない。
 
-CLIの`atk agents list`・`wait`が使う会話の識別は、現在会話・所有ルート・状態ファイルの書込主体を別の値として扱う。
+CLIの`atk agents list`・`wait`が使う会話の識別は、現在会話・所有ルート・状態ファイルの書き込み主体を別の値として扱う。
 現在会話の識別子は`_common/delegated_session.py`の`current_conversation_session_id`（`CLAUDE_CODE_SESSION_ID`、`CODEX_THREAD_ID`の順）が定め、計画の所有記録とUWIの投入元も同じ関数を使う。
 CodexのMCP要求に`_meta.threadId`があれば、環境へ会話IDを推測注入せず、その会話を親とするManagerとrootの`root.json`を選ぶ。
 同じ会話の複数接続は合流し、接続の終了だけではManagerを閉じない。
-所有ルートを環境だけから解決する`resolve_root_session_id`へCodexの識別子を加える案は、最上位の読取先を`<thread>.json`へ変え、MCPが書いた`root.json`へ届かなくなるため採らない。
+所有ルートを環境だけから解決する`resolve_root_session_id`へCodexの識別子を加える案は、最上位の読み取り先を`<thread>.json`へ変え、MCPが書いた`root.json`へ届かなくなるため採らない。
 
 ## 親復帰時の子孫復旧
 

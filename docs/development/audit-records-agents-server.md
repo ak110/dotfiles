@@ -13,7 +13,7 @@ haikuの委譲先に`sleep 2`をバックグラウンド実行させて直ちに
 `ResultMessage`、`idle`、`task_notification`、`running`、再開turnの`ResultMessage`（`origin.kind`が`task-notification`）、`idle`である。
 待機5秒では`task_notification`（Stop hookの実行中）、`ResultMessage`、再開turnの`ResultMessage`、`idle`の順に届き、最初の結果の後に`idle`は届かなかった。
 どちらも再開turnが実行された。
-CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エージェントの待機の後に発行するturnの終了の信号と説明する。
+CLIのスキーマ記述は`idle`を、保留した結果の送出とバックグラウンドエージェントの待機の後に発行するturnの終了の信号と説明する。
 同じ版の組で上記の環境変数を与えた委譲先へバックグラウンド実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
@@ -93,6 +93,6 @@ Codexが<https://learn.chatgpt.com/docs/extend/mcp?surface=cli>の`tool_timeout_
 - 確認版: Codex CLI 0.166.0。
   公式App Serverの公開`thread/compact/start`は空オブジェクトを返してから、別turnのcontextCompaction項目とturn/completedを通知した。
   圧縮中の通常turn/startは`ActiveTurnNotSteerable { turn_kind: Compact }`を返した。
-- 再検証: 公開generate-json-schemaでthreadIdの入力契約を確認し、読取専用の新規threadで初回応答、圧縮受付、独立turn完了、保持情報を答える通常turnの順に観測する。
+- 再検証: 公開generate-json-schemaでthreadIdの入力契約を確認し、読み取り専用の新規threadで初回応答、圧縮受付、独立turn完了、保持情報を答える通常turnの順に観測する。
   2026年11月23日に所有backendによる待機中の圧縮予約を撤去した。
   この節はホストAPIの当時の観測を残す。

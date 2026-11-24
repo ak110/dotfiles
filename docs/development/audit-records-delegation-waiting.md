@@ -53,7 +53,7 @@ Claude Code公式資料「Keep Claude working toward a goal」の「Background w
 
 2026年10月9日、Claude Code 2.1.295のセッションで次の順序を観測した。
 一次記録はリポジトリ外のセッション記録にある。
-Goal check-inの後、未完了の`atk agents wait`出力を`cat`で読み、同じ出力の2回目の読取がblockされて終了コード2となった。
+Goal check-inの後、未完了の`atk agents wait`出力を`cat`で読み、同じ出力の2回目の読み取りがblockされて終了コード2となった。
 同じ応答で発行した`agents_server`の`list`は遮断の後に活動情報を返した。
 遮断後に新しく照会した因果にはしない。
 
@@ -70,7 +70,7 @@ Goalの自然発生を待たず、進捗の照会を終了時の結果へ代用�
   App Serverの圧縮・使用量通知とCLIのproxyは公開されているが、この最上位待機形はturnを閉じるClaude背景waitと異なる。
   agents_serverの所有backendだけが、turn完了後に担当結果を保留し未完了子を待つ状態を持つ。
 - 再検証: 公開execで待機コマンドを起動し、返る実行識別子と同一turnでの終了回収を確認する。
-  `codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間背景待機を提供する場合はその所有者と状態遷移を再判定する。
+  `codex --version`、`codex app-server --help`、`codex queue --help`と対象版生成schemaで圧縮入力・使用量通知を確認し、最上位クライアントがターン間バックグラウンド待機を提供する場合はその所有者と状態遷移を再判定する。
   既存のユーザー会話へ検証用の圧縮を送らない。
 
 ## agent-toolkit/skills/atk-mode/playbooks/delegation-waiting.md：待機区間の構成：2026年11月2日
@@ -79,9 +79,9 @@ Goalの自然発生を待たず、進捗の照会を終了時の結果へ代用�
 - 確認版: Python 3.15.0、pytest 9.2.0。
   非対話Claude Codeの背景無効化時に、Bashフォアグラウンド上限600000ミリ秒と背景引数の不在を観測した起票元の記録を再利用した。
   その外側観測のClaude Code版番号は記録から特定しておらず、担当自身による外側の再測定は未実施である。
-  公開CLIと警告hookの試験では、背景無効・TTL 1hの540秒、終了コード3、再待機後の終了結果回収を模擬時計で確認した。
+  公開CLIと警告hookのテストでは、背景無効・TTL 1hの540秒、終了コード3、再待機後の終了結果回収を模擬時計で確認した。
 - 再検証: 同条件のClaude Codeで公開Bashの引数定義を取得し、背景無効時のフォアグラウンド上限と背景引数の有無を確認する。
-  下記の試験でCLI期限、MCP期限の維持、警告と受理できる回収操作の対応を検証する。
+  下記のテストでCLI期限、MCP期限の維持、警告と受理できる回収操作の対応を検証する。
   実時間で540秒を待つ試験とは区別する。
 
 ```sh

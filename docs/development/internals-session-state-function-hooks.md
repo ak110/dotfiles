@@ -3,7 +3,7 @@
 各状態の共通の設計、生存期間、排他、継承は`docs/development/internals-session-state-common.md`にある。
 定期再確認の通常回収の判定は`docs/development/internals-session-state-function-hooks-recheck.md`にある。
 利用上限による中断の再開予約は`docs/development/internals-session-state-function-hooks-limits.md`にある。
-背景待機の共有状態と再起動は`docs/development/internals-session-state-function-hooks-compaction.md`にある。
+バックグラウンド待機の共有状態と再起動は`docs/development/internals-session-state-function-hooks-compaction.md`にある。
 
 ## Function hooksの終了要求
 
@@ -43,14 +43,14 @@ MCP・設定hookとmodは、`ui-request-{session_id}-{要求ID}.txt`と`ui-respo
 これらは`ui-requests/{セッションIDのASCII和を64で割った余りの2桁hex}/`へ置き、終了目印など過去会話の状態をポーリングの列挙対象から分離する。
 分割先は固定64ディレクトリに限り、要求・応答ファイルには既存の保持期限による回収も適用する。
 Python側が要求をatomicに保存し、modが同じ要求IDの描画・予約・観測結果を書く。
-同期要求は呼出元がfinallyで両ファイルを回収し、非同期観測は応答後、未処理要求は期限後に`_common/function_hook_requests.py`が回収する。
+同期要求は呼び出し元がfinallyで両ファイルを回収し、非同期観測は応答後、未処理要求は期限後に`_common/function_hook_requests.py`が回収する。
 許可判定用の対話APIは`$.session.surfaces()`が返す対話画面の種別・実行中の版・実効autoModeを取得し、承認要求と実入力の一致を確認する側へ結果を渡す。
 
 `restart-{session_id}.txt`はmodが所有する1回限りの再開印である。
 背景waitの停止後、またはprocess-loopの再起動時に、`phase: pending`と停止したwaitのID・commandをJSONで保存する。
 SessionStartが自動続行の送信前に`phase: resumed`へ変更する。
 通常終了では保持し、clearと期限切れ回収は既存の`sweep_function_hook_files`へ統合する。
-modの会話状態には描画本文・処理済みID・背景待機・反映予約を置き、稼働中の会話の再読込を越える寿命をホストへ委ねる。
+modの会話状態には描画本文・処理済みID・バックグラウンド待機・反映予約を置き、稼働中の会話の再読み込みを越える寿命をホストへ委ねる。
 会話状態と`$.ui.place`で置いた行は、会話の終了・`/clear`・`/resume`・`/branch`で初期化される。
 切替後にも読み返す本文は、transcriptに残るツール入力から描く。
 
@@ -59,4 +59,4 @@ Code Modeの通常awaitでは、内側Bashの`tool_use_id`を圧縮の待機識�
 この待機は`replExpiresAt`を持ち、TaskStopとStopの`background_tasks`一覧による回収から除く。
 外側REPLのtask IDとの対応は作らない。
 期限はBashの`timeout`（省略時は`BASH_DEFAULT_TIMEOUT_MS`、未設定時120000ms）に5秒を加える。
-modは期限の単発タイマーを置き、再読込後も再設定するため、Postが届かなくても期限後は圧縮候補から外れる。
+modは期限の単発タイマーを置き、再読み込み後も再設定するため、Postが届かなくても期限後は圧縮候補から外れる。

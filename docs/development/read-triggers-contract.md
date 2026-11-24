@@ -13,13 +13,13 @@
 hookと`agents_server`は読込表を解析せず、条件の判定と資料の選択は読み手が担う。
 
 - 起動のたびに成立する条件（起動時、着手時など）の行は、役割文書の読込表へ置かず、本書「起動時の配送」の宣言へ置く。
-  無条件に読ませる資料を読込表へ置くと、起動の本文の大きさに表れず、個別の読込として隠れるためである。
+  無条件に読ませる資料を読込表へ置くと、起動の本文の大きさに表れず、個別の読み込みとして隠れるためである。
   `agent-toolkit/startup_documents_invariant_test.py`が、役割文書の読込表にこの条件の行が無いことを確かめる。
 - 読込表は各文書の本文に置き、別ファイルへ分けない。
   別ファイル化の再発は`agent_basics_standalone_invariant_test.py`が検出する。
 - 全ての行を機械で確かめる仕組みは置かない。
-  試験は特定の規範の読込表の行が条件別に分けた資料を指すことなど、守る必要のある対応だけを確かめる。
-  その試験は`agent-toolkit/agent_toolkit/_testing/normative_contract.py`の`read_table_rows`、`read_contract`、`named_document`を使う。
+  テストは特定の規範の読込表の行が条件別に分けた資料を指すことなど、守る必要のある対応だけを確かめる。
+  そのテストは`agent-toolkit/agent_toolkit/_testing/normative_contract.py`の`read_table_rows`、`read_contract`、`named_document`を使う。
 
 ## 起動時の配送
 

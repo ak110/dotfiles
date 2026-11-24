@@ -14,7 +14,7 @@ goalありでは実際の`Goal set`、待機時の未充足評価、結果受領
 追加のgoal観測では`--debug-file`を指定した。
 同じ条件の評価は待機時に`ok: false`、通知からの再開後に`ok: true`となり、その後にsessionのStop評価hookが除去された。
 この追加観測の実行記録は`atk-command-t1dania1/record.json`、詳細索引は`session-4bef2h87/goal-evaluation-observation.json`にある。
-背景コマンドの再発行と追加のユーザー入力は無かった。
+バックグラウンドコマンドの再発行と追加のユーザー入力は無かった。
 
 証拠索引は管理対象一時領域の`session-4bef2h87/delivery-observations.json`で、各条件のargv・session・両出力・StopログとCLI終了を保持する。
 外側の実行記録は`atk-command-pez6xwtn/record.json`へ保存した。
@@ -45,7 +45,7 @@ CodexのStopは`hookSpecificOutput`を受理せず、CodexのPostToolUseのBash�
 加えて`output_contract_test.py`がCodex Stopの出力を、`sync_codex_plugin_manifests_test.py`が生成を確かめた。
 ホスト本体のStopの発火と継続、Codexの未信頼設定や無効化されたhookでの挙動は実機で試験していない。
 再検証は両ホストの公式Hooks仕様のStop・PostToolUseの入力と出力を取得し、`last_assistant_message`、Codexの`tool_response`の形とStopの出力契約を比べる。
-変わった場合は`termination_evidence.py`の可視本文と応答の読取、`output_contract.py`のCodex Stopの契約を改める。
+変わった場合は`termination_evidence.py`の可視本文と応答の読み取り、`output_contract.py`のCodex Stopの契約を改める。
 
 ## agent-toolkit/agent_toolkit/_hooks/user_prompt_submit.py：UserPromptSubmitの出所欄：2026年9月17日
 
