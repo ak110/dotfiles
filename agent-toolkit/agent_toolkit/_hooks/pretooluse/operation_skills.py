@@ -613,7 +613,7 @@ def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         if entry.skill_name in done or entry.skill_name in advised or not entry.matches(tool_name, tool_input, cwd):
             continue
         text = llm_notice(
-            f"{entry.operation}の操作を検出した。スキル`{entry.skill_name}`をまだ起動していなければ、起動して手順に従え。",
+            f"{entry.operation}の操作を検出した。スキル`{entry.skill_name}`をまだ起動していなければ、起動して手順に従ってください。",
             "pretooluse",
         )
         stage_delivery(text, session_id, NOTIFIED_KEY, subject, entry.skill_name)

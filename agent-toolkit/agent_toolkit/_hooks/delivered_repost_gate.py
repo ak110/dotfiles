@@ -281,13 +281,13 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     ):
         return "block", _block_notice(
             "`send_to_user` を使える会話で、このターンに `send_to_user` の結果が無い。通常本文での終了を止めた。",
-            fix=f"`REPL` では `await {_SEND_CALL}` を呼べ。ツールを直接呼べる場合は "
-            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡せ。",
+            fix=f"`REPL` では `await {_SEND_CALL}` を呼んでください。ツールを直接呼べる場合は "
+            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡してください。",
         )
     if not delivered.intersection(_sentences(body)):
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_delivered_repost", {})
     return "block", _block_notice(
         "`send_to_user`で送信済みの文が通常の応答本文にある。",
-        fix="再掲した文を除き、新しく伝えることがなく、`Claude Code`が表示する本文を求める場合は「…」で終えよ。",
+        fix="再掲した文を除き、新しく伝えることがなく、`Claude Code`が表示する本文を求める場合は「…」で終えてください。",
     )

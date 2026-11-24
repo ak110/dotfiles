@@ -206,7 +206,9 @@ def _latest_steps(path: object) -> tuple[dict[str, Any] | None, str]:
             next_action=recover_from_failure(
                 component="transcriptの取得",
                 evidence="診断と元のtranscript",
-                first_step=f"`{shown_path}` の所在と読取権限を確認せよ。権限拒否でなければ許可済みの代替手段を試せ",
+                first_step=(
+                    f"`{shown_path}` の所在と読取権限を確認してください。権限拒否でなければ許可済みの代替手段を試してください"
+                ),
                 retry="読取できる場合だけ処理を再開する。権限拒否は迂回しない",
             ),
         )
@@ -318,7 +320,7 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
         response = _invoke("rules_context", normalized)
         identity = message_format.auto_message(
             "この会話の原文が必要な場合は`atk run-script session-review-evidence -- --transcript "
-            f"{shlex.quote(str(normalized['transcript_path']))} --user-events`で取得せよ。",
+            f"{shlex.quote(str(normalized['transcript_path']))} --user-events`で取得してください。",
             source="antigravity",
             kind="notice",
         )
@@ -353,7 +355,7 @@ def _dispatch(payload: dict[str, Any], event: str) -> dict[str, Any]:
                 or (reason if isinstance(reason, str) and reason.strip() else "")
                 or (
                     "内部のpretooluse hookが理由を返さずに操作を拒否した。"
-                    "拒否された操作とこの事実を、委譲先は委譲元へ、それ以外はユーザーへ報告せよ。"
+                    "拒否された操作とこの事実を、委譲先は委譲元へ、それ以外はユーザーへ報告してください。"
                 ),
             }
         overwrite = _native_subagent_context(payload)

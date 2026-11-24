@@ -42,19 +42,19 @@ lazy from agent_toolkit._hooks.termination_evidence_state import completion_play
 _HOOK_ID = "rules_context"
 _llm_notice = _notice_formatter(_HOOK_ID)
 
-ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動せよ。"
+ENTRY_START_NOTICE = "作業を始める前に、スキル`agent-toolkit:atk-mode`を起動してください。"
 ENTRY_COMPACT_NOTICE = (
-    "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直せ。"
-    "進めていた作業の手順書は、入口の表から選び、次に行う操作・判断の条件に該当した時に読み直せ。"
+    "圧縮後に読む資料の限定とは別に、作業を再開する前にスキル`agent-toolkit:atk-mode`を起動し直してください。"
+    "進めていた作業の手順書は、入口の表から選び、次に行う操作・判断の条件に該当した時に読み直してください。"
 )
 """入口のスキルの起動を求める案内。起動と読み直しを求める1行だけを持ち、規範の本文を載せない。
 
 文脈を引き継がずに始まる会話のメインへ届ける。委譲先へは起動の本文が入口を届けるため、案内しない。
 """
 BACKGROUND_TASKS_DISABLED_NOTICE = (
-    "この`Claude Code`では`Bash`の背景実行が無効で、`run_in_background`は使えない。背景の指定を試さない。"
-    "`agents_server`の待機は単独の`atk agents wait`へ`Bash`の`timeout=600000`を指定して前景で実行し、"
-    "結果と終了コードを回収せよ。未終了で返った場合は同じコマンドを再発行せよ。"
+    "この`Claude Code`では`Bash`のバックグラウンド実行が無効で、`run_in_background`は使えない。バックグラウンド指定を試さない。"
+    "`agents_server`の待機は単独の`atk agents wait`へ`Bash`の`timeout=600000`を指定してフォアグラウンドで実行し、"
+    "結果と終了コードを回収してください。未終了で返った場合は同じコマンドを再発行してください。"
     "`sleep`や独自の待機ループで代替しない。"
 )
 """背景実行を無効にした起動で、使える待機方法をメインと委譲先へ伝える本文。
@@ -65,7 +65,7 @@ BACKGROUND_TASKS_DISABLED_NOTICE = (
 PLUGIN_ROOT = plugin_resources.plugin_root()
 SUBAGENT_PLAYBOOK_PATH = PLUGIN_ROOT / "skills" / "atk-mode" / "playbooks" / "subagent.md"
 """委譲先の入口。`agents_server`が起動の本文を切り出す原本と同じファイルである。"""
-SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読め。"
+SUBAGENT_ENTRY_NOTICE = f"委譲を受けた担当である。作業の前に、委譲先の入口`{SUBAGENT_PLAYBOOK_PATH}`を全文読んでください。"
 """起動の本文を受け取らない委譲先（ホストの組み込みの委譲機能で起動した担当）へ、入口の所在を示す1行。"""
 DELEGATED_COMPACT_NOTICE = "圧縮後に読む資料の限定とは別に、作業を再開する前に、次を読み直せ: "
 """委譲先の圧縮後に、起動の本文の原本と役割文書、起動の入力が渡した記録の読み直しを求める1行の書き出し。"""
@@ -123,7 +123,7 @@ def compose_session_start(
                 parts.append(
                     message_format.auto_message(
                         "再開予約から同じ会話を再開した。保存済みの要求・認可・成果と元の目的を確認し、"
-                        "最初の未完了工程から続行せよ。未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
+                        "最初の未完了工程から続行してください。未達の目的を達成扱いに変えず、成功済みの操作を繰り返さないでください。",
                         source="process-loop",
                         kind="resume",
                     )
@@ -139,24 +139,27 @@ def compose_session_start(
             # 作業の始め方は目的文が示す。ここでは起動を差し込まず、終了契約の所在だけを示す。
             if data["source"] == "process-loop":
                 guidance = (
-                    "次の終了契約を読め: `agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」"
+                    "次の終了契約を読んでください: "
+                    "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」"
                 )
             else:
                 guidance = (
                     "作業を始める前に、`agent-toolkit:atk-mode/references/answer-transitions.md`を全文読み、"
-                    "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会せよ。"
+                    "「`atk run-skill`の過去の実行のUWI」に従って過去の実行のUWIを照会してください。"
                 )
                 if data.get("batch_manifest"):
                     # batchの手順書は起動から保存までの手順全体であり、終了契約に含めない。
                     guidance += (
                         "\nbatchの起動から保存までは、"
-                        "`agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従え。"
+                        "`agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従ってください。"
                     )
                 playbook = f"完了報告の手順書`{completion_playbook_path()}`"
                 if host == "claude":
-                    guidance += f"\n次の終了契約: `Read`で{playbook}を全文読むか、`/atk-mode report-completion`を起動せよ。"
+                    guidance += (
+                        f"\n次の終了契約: `Read`で{playbook}を全文読むか、`/atk-mode report-completion`を起動してください。"
+                    )
                 else:
-                    guidance += f"\n次の終了契約を読め: {playbook}"
+                    guidance += f"\n次の終了契約を読んでください: {playbook}"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(
@@ -187,8 +190,8 @@ def compose_session_start(
     if host == "claude" and not delegated:
         parts.append(
             _llm_notice(
-                "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使え。"
-                "`send_to_user`を使える時は、発話を常に`send_to_user`で送れ。"
+                "その場で回答を求める質問・選択には、ツール一覧にあれば`AskUserQuestion`を使ってください。"
+                "`send_to_user`を使える時は、発話を常に`send_to_user`で送ってください。"
             )
         )
     cli = plugin_environment.cli_instructions(plugin_resources.plugin_root())
@@ -205,7 +208,7 @@ _CONTEXT_LOSING_SOURCES = frozenset({"startup", "clear", "compact"})
 def _compact_recovery_context() -> str:
     return _llm_notice(
         "会話が圧縮された。圧縮後に読むのは作業契約と会話の要約だけである。"
-        "ほかの資料は、次に行う操作・判断の条件に該当した時に読め。"
+        "ほかの資料は、次に行う操作・判断の条件に該当した時に読んでください。"
     )
 
 
@@ -225,10 +228,10 @@ def session_temp_notice(session_temp: pathlib.Path | str, *, contract: pathlib.P
     if contract is not None:
         location += work_contract.short_notice(contract) + "\n"
     return location + (
-        "一時ファイルは直下へ置け。`/tmp`は使うな。"
-        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行せよ。"
-        "委譲先のmanaged-temp・専用一時領域の通知を優先せよ。"
-        "未通知ならこの領域を指定せよ。指定の入出力ファイルは読み書きしてよい。"
+        "一時ファイルは直下へ置いてください。`/tmp`は使わないでください。"
+        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行してください。"
+        "委譲先のmanaged-temp・専用一時領域の通知を優先してください。"
+        "未通知ならこの領域を指定してください。指定の入出力ファイルは読み書きしてよい。"
     )
 
 
@@ -265,9 +268,9 @@ def _conversation_identity_notice(session_id: object, transcript_path: object) -
     else:
         return (
             "会話の原文の所在を入力から取得できない。CLAUDE_CODE_SESSION_IDを確認し、"
-            "`atk run-script session-review-evidence -- --claude-session-id <確認したID> --user-events`で取得せよ。"
+            "`atk run-script session-review-evidence -- --claude-session-id <確認したID> --user-events`で取得してください。"
         )
-    return f"この会話の原文が必要な場合は`{shlex.join([*arguments, '--user-events'])}`で取得せよ。"
+    return f"この会話の原文が必要な場合は`{shlex.join([*arguments, '--user-events'])}`で取得してください。"
 
 
 def _existing_session_temp(session_id: object) -> str | None:
@@ -281,21 +284,21 @@ def _existing_session_temp(session_id: object) -> str | None:
 
 
 def _compaction_notice(session_id: str, transcript_path: object) -> str:
-    scope = "その他の資料は次の操作・判断に該当するときに読め。"
+    scope = "その他の資料は次の操作・判断に該当するときに読んでください。"
     resolved = _resolve_transcript(session_id, transcript_path)
     if resolved is None:
         arguments = ["run-script", "session-review-evidence", "--", "--claude-session-id", session_id, "--user-events"]
         return (
             f"会話が圧縮された。起動部分へ`{shlex.join(arguments)}`を続けて実行し、"
-            f"作業契約と取得したユーザー発話の原文を読め。{scope}"
+            f"作業契約と取得したユーザー発話の原文を読んでください。{scope}"
         )
     command = shlex.join(
         ["run-script", "session-review-prepare", "--", "--transcript", resolved, "--conversation-only", "--conversation-digest"]
     )
     return (
         f"会話が圧縮された。起動部分へ`{command}`を続けて実行し、"
-        "作業契約と、出力のconversation_pathが示す要約ファイルを読め。"
-        f"上限超過時はコマンドが示す上限で再実行せよ。{scope}"
+        "作業契約と、出力のconversation_pathが示す要約ファイルを読んでください。"
+        f"上限超過時はコマンドが示す上限で再実行してください。{scope}"
     )
 
 
@@ -307,8 +310,8 @@ def _subagent_temp_notice(session_temp: pathlib.Path | str, agent_id: object) ->
     child.mkdir(exist_ok=True)
     return (
         f"このサブエージェント専用の一時領域: {child}\n"
-        "一時ファイルはこの領域の直下へ置け。`/tmp`は使うな。"
-        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行せよ。"
+        "一時ファイルはこの領域の直下へ置いてください。`/tmp`は使わないでください。"
+        "テスト・ツールは`TMPDIR`などの一時領域の環境変数を変えずに実行してください。"
         f"親のセッションのmanaged-temp: {session_temp}\n"
         "親の領域は、委譲元が個別に指定した入力や出力のファイルの読み書きに使ってよい。"
     )
@@ -442,8 +445,8 @@ def main(payload_text: str, *, host: str = "claude") -> int:
         repository_notice = repository_protection.start_notice(str(payload.get("cwd", "")))
     except (OSError, ValueError) as error:
         repository_notice = (
-            f"repository設定を確認できない: {error}。`atk config repos list`で診断を確認せよ。"
-            "編集可否が確定するまで直接編集するな。"
+            f"repository設定を確認できない: {error}。`atk config repos list`で診断を確認してください。"
+            "編集可否が確定するまで直接編集しないでください。"
         )
     if repository_notice:
         content = f"{content}\n\n{_llm_notice(repository_notice)}" if content else _llm_notice(repository_notice)
@@ -464,7 +467,7 @@ def main(payload_text: str, *, host: str = "claude") -> int:
             encoded = html.escape(json.dumps(json.loads(raw), ensure_ascii=False))
             content = content.replace(
                 "起動入力: " + encoded,
-                "起動入力ファイル: " + html.escape(str(path)) + "。全文を読め。",
+                "起動入力ファイル: " + html.escape(str(path)) + "。全文を読んでください。",
                 1,
             )
 

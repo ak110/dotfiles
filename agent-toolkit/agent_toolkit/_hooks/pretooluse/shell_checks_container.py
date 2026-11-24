@@ -180,9 +180,9 @@ def _warn_container_root_bind_mount(command: str) -> str | None:
             removable_cause=True,
             fix=(
                 '元の起動のマウントを`--mount "type=bind,src=$PWD,dst=/source,readonly" '
-                "--mount type=volume,dst=/work`にし、コンテナー内で`cp -a /source/. /work/`として専用領域で作業せよ。"
-                'ホストへ書く必要があれば`--user "$(id -u):$(id -g)"`で起動せよ。'
-                "非`root`実行の原則は`agent-basics:writing-standards`の`references/dockerfiles.md`「基本」を確認せよ。"
+                "--mount type=volume,dst=/work`にし、コンテナー内で`cp -a /source/. /work/`として専用領域で作業してください。"
+                'ホストへ書く必要があれば`--user "$(id -u):$(id -g)"`で起動してください。'
+                "非`root`実行の原則は`agent-basics:writing-standards`の`references/dockerfiles.md`「基本」を確認してください。"
                 "正当な`root`実行は、所有者と回収方法を確認した上で継続してよい。"
             ),
         )

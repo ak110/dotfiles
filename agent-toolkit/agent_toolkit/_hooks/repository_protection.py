@@ -21,7 +21,7 @@ _UNRESOLVED_COMMIT = "コミット先のリポジトリを解決できない。"
 def _unresolved_commit() -> str:
     return _block(
         _UNRESOLVED_COMMIT,
-        fix="作業ディレクトリと`git -C`の値を実在する絶対パスで指定して再実行せよ。",
+        fix="作業ディレクトリと`git -C`の値を実在する絶対パスで指定して再実行してください。",
     )
 
 
@@ -29,14 +29,15 @@ def _guidance(repo_id: str, edit: str | None) -> str:
     quoted = shlex.quote(repo_id)
     if edit == "awi":
         return (
-            "直接編集せず、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`を全文読め。"
-            f"同書の手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入せよ（cloneは不要）。"
+            "直接編集せず、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`を全文読んでください。"
+            f"同書の手順に従い、対象リポジトリに`{repo_id}`を指定してAWIを投入してください（cloneは不要）。"
         )
     if edit == "deny":
-        return "編集せず、必要な変更をユーザーへ報告せよ。"
+        return "編集せず、必要な変更をユーザーへ報告してください。"
     return (
         "未登録のため、`agent-toolkit:atk-mode/playbooks/confirmation.md`"
-        f"「未登録リポジトリの編集」に従って登録を確認せよ。承認後に`atk config repos add {quoted} --edit allow`を実行せよ。"
+        f"「未登録リポジトリの編集」に従って登録を確認してください。"
+        f"承認後に`atk config repos add {quoted} --edit allow`を実行してください。"
     )
 
 
@@ -82,7 +83,7 @@ def path_restriction(
     if require_repository and not found:
         return (
             _UNRESOLVED_COMMIT,
-            "対象が実在するGit作業ツリーであることを確認して再実行せよ。",
+            "対象が実在するGit作業ツリーであることを確認して再実行してください。",
         )
     return None
 
@@ -143,7 +144,7 @@ def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
             ):
                 return _block(
                     "環境変数で変更されたコミット先のリポジトリを解決できない。",
-                    fix="対象の指定には`git -C`か`--git-dir`を使い、対象を選ぶ環境変数の代入を外して再実行せよ。",
+                    fix="対象の指定には`git -C`か`--git-dir`を使い、対象を選ぶ環境変数の代入を外して再実行してください。",
                 )
             base = pathlib.Path(current.path)
             prefix = tokens[: len(tokens) - len(parsed[1]) - 1]
@@ -172,7 +173,7 @@ def check(tool_name: str, tool_input_value: dict, cwd: str) -> str | None:
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         return _block(
             f"リポジトリの編集可否を確認できない: {error}",
-            fix="`atk config repos list`で設定の診断を確認し、登録を直して再実行せよ。",
+            fix="`atk config repos list`で設定の診断を確認し、登録を直して再実行してください。",
         )
     return None
 
@@ -192,5 +193,5 @@ def start_notice(cwd: str) -> str | None:
         return None
     return (
         f"repository {location.repo_id}の検証OS: {', '.join(item['platforms'])}。"
-        "対象外のOSでは可能なコンパイル等だけを行い、テスト合否は対象OSのCIで判断せよ。"
+        "対象外のOSでは可能なコンパイル等だけを行い、テスト合否は対象OSのCIで判断してください。"
     )

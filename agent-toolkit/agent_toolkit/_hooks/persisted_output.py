@@ -28,8 +28,8 @@ def _notice(path: str, size: object) -> str:
     measured = f"（{size}バイト）" if isinstance(size, int) and not isinstance(size, bool) else ""
     body = f"出力{measured}はホスト上限を超えて退避された。この本文には出力を含めていない。"
     fix = (
-        f"後続の判断に使う場合は`{path}`を全量取得せよ。部分取得かエラーなら残りを取得してから進め。"
-        "全体を使わない場合は、件数や対象を限定したコマンドで取得し直せ。"
+        f"後続の判断に使う場合は`{path}`を全量取得してください。部分取得かエラーなら残りを取得してから進んでください。"
+        "全体を使わない場合は、件数や対象を限定したコマンドで取得し直してください。"
     )
     return _message_format.llm_notice(_next_action.with_next_action(body, fix), _HOOK_ID, tag="notice")
 

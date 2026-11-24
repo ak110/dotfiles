@@ -97,8 +97,9 @@ def terminate(session_id: str, cause: str, log_decision: str, log_context: Mappi
         lines.append("現在の対話CLI本体を一意に識別できないため、セッションの終了要求は送っていない。")
     if status in {"changed", "unsupported"}:
         lines.append(
-            "次の操作: このセッションを操作できる端末でCtrl+Cを押して反復を中断せよ。"
-            f"端末を操作できない場合は、実行環境の管理者へ会話ID `{session_id}` を伝え、当該セッションの終了を依頼せよ。"
+            "次の操作: このセッションを操作できる端末でCtrl+Cを押して反復を中断してください。"
+            f"端末を操作できない場合は、実行環境の管理者へ会話ID `{session_id}` を伝え、"
+            "当該セッションの終了を依頼してください。"
         )
     return status, "\n".join(lines)
 

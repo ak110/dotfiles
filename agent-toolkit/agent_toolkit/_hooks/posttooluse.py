@@ -93,7 +93,7 @@ def _executable_name(token: str) -> str:
 
 VERIFICATION_NOTICE_BODY = (
     "応答の前に、`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
-    "「割り込み・訂正・中止」に従い、現物との比較の要否を判定せよ。"
+    "「割り込み・訂正・中止」に従い、現物との比較の要否を判定してください。"
 )
 """ユーザーが書いた文の内容を現物で確かめる手順の所在を示す注記の本文。
 
@@ -117,13 +117,13 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     body = (
         "発話に例示の語がある。応答・具体化の前に、"
         "`agent-toolkit:atk-mode/playbooks/user-utterance.md`"
-        "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断せよ。"
-        "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定せよ。"
+        "「原文の保持と取り込み」に従い、原文の対象と例示の関係を判断してください。"
+        "例示が上位の対象の一部なら、上位の対象を言葉で定め、例示以外の候補を探してから範囲を確定してください。"
     )
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
             "調査へ着手する前に、読み取り専用の`explore`へ分担する案と自分で分割取得しながら続ける案を、"
-            "起動・初回読込・検収・統合を含む総費用で比べよ。"
+            "起動・初回読込・検収・統合を含む総費用で比べてください。"
         )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 
@@ -140,7 +140,7 @@ UTTERANCE_UNDERSTANDING_NOTICE_BODY = (
 )
 
 _ASK_USER_QUESTION_TOOL = "AskUserQuestion"
-_FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従え。"
+_FREE_TEXT_ANSWER_PROCEDURE = "自由記述の回答も同節に従ってください。"
 """`AskUserQuestion`の自由記述の回答への注記で、共通の本文に続ける手順。"""
 # Claude Codeが選択肢を選ばずに注記だけを残した質問へ入れる`answers`の値（2.1.283の記録で観測）。
 _NOTES_ONLY_ANSWER = "(notes only)"
@@ -376,10 +376,10 @@ def _plan_main_path_for(display_path: str) -> str:
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
-        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめよ:"
-        f" 起動部分へ`run-script plan-check -- {shlex.quote(file_path)}{work_dir_option}`を続けよ。"
+        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめてください:"
+        f" 起動部分へ`run-script plan-check -- {shlex.quote(file_path)}{work_dir_option}`を続けてください。"
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
-        "`--work-dir`を対象リポジトリへ置き換えよ。",
+        "`--work-dir`の値に対象リポジトリの絶対パスを指定してください。",
         tag="notice",
     )
 
@@ -415,7 +415,7 @@ def _completion_report_notice(payload: dict, tool_input: dict) -> str | None:
     command = tool_input.get("command")
     if not isinstance(command, str) or not termination_evidence.published_git_operations(command):
         return None
-    operation = f"完了報告の手順書`{termination_evidence.completion_playbook_path()}`を全文読め"
+    operation = f"完了報告の手順書`{termination_evidence.completion_playbook_path()}`を全文読んでください"
     return _llm_notice(
         f"作業完了報告を書く前に{operation}。途中報告・確認・待機には適用しない。",
         tag="notice",

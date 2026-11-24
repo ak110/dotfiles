@@ -106,7 +106,7 @@ def test_format_correction_uses_delivered_template_without_extra_reads(status: s
     output = json.loads(result.stdout)
     assert "decision" not in output
     body = output["hookSpecificOutput"]["additionalContext"]
-    assert "の形に直せ。区分は" in body
+    assert "の形に直してください。区分は" in body
     assert "cat -- " not in body
     assert "Get-Content" not in body
 

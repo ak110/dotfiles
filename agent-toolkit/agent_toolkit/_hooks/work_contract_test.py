@@ -31,7 +31,7 @@ def test_oversized_contract_falls_back_to_location(tmp_path: pathlib.Path, monke
     assert notice is not None and str(path) in notice
     assert "長" * 50 not in notice
     assert "上限10文字を超える" in notice
-    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直せ" in notice
+    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直してください" in notice
     assert "成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映" in notice
     assert "質問、状況照会、継続だけなら更新しない" in notice
     assert "「更新する時点」" in notice

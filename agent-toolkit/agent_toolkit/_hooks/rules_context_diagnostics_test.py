@@ -50,7 +50,7 @@ def test_compaction_preserves_repository_failure(monkeypatch, capsys):
         == 0
     )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert "repository設定を読めない" in context and "直接編集するな" in context
+    assert "repository設定を読めない" in context and "直接編集しないでください" in context
 
 
 def test_public_start_explains_disabled_background_tasks(monkeypatch, capsys):

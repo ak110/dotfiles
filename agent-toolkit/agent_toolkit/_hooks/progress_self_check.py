@@ -57,8 +57,8 @@ _RESERVED_AT_KEY = "reserved_at"
 
 _reservations: list[tuple[str, str, float]] = []
 
-_SELF_CHECK_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、未確認の点を報告せよ。"
-_DELEGATED_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、役割の契約に従って返却せよ。"
+_SELF_CHECK_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、未確認の点を報告してください。"
+_DELEGATED_NOTICE_BODY = "進捗点検。完成条件の根拠と残工程を確かめ、役割の契約に従って返却してください。"
 
 
 def _format_elapsed(seconds: float) -> str:

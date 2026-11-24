@@ -156,7 +156,7 @@ hookが終了を止めると新しい応答で同じhookが再び発火し、条
 `SubagentStop`は`agent_id`、`agent_type`、`agent_transcript_path`も受け取り、その`background_tasks`と`session_crons`は親セッション全体の範囲を表す。
 `background_tasks`の各要素は`id`、`type`、`status`、`description`を持ち、`type`はタスクを作った機能（`shell`、`subagent`、`monitor`、`workflow`、`teammate`、`cloud session`、`MCP task`）を表す。
 これでセッション全体の完了と、背景処理の完了待ちによる一時停止を区別する。
-`PostToolUse`は背景実行へ移った時点で発火し、ジョブの完了時の再発火は公式資料に記載が無い。
+`PostToolUse`はバックグラウンド実行へ移った時点で発火し、ジョブの完了時の再発火は公式資料に記載が無い。
 現行の版の入力に`background_tasks`が無ければ本項を失効とし、その版の観測で改訂する。
 
 可視テキストの判定は、`last_assistant_message`と現行形式の記録からアシスタントの可視テキストだけを取り出して行う。

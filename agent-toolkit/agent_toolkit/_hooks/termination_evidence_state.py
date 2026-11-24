@@ -47,8 +47,8 @@ def termination_evidence_reference() -> str:
 
 def unresolved_repository_fix() -> str:
     return (
-        f"この作業では省略を記録できない。完了報告の手順書`{completion_playbook_path()}`を全文読んで終了工程を進めよ。"
-        f"規範がその読取を禁じる場合は、{termination_evidence_reference()}「終了方法の分岐」に従い、その旨をユーザーへ報告せよ。"
+        f"この作業では省略を記録できない。完了報告の手順書`{completion_playbook_path()}`を全文読んで終了工程を進めてください。"
+        f"規範がその読取を禁じる場合は、{termination_evidence_reference()}「終了方法の分岐」に従い、その旨をユーザーへ報告してください。"
     )
 
 
@@ -65,7 +65,7 @@ class _InactiveWaitError(ValueError):
 
 
 def host_stop_fix() -> str:
-    return f"技術的不成立の判定と確認手段は{termination_evidence_reference()}「技術的不成立の判定」に従え。"
+    return f"技術的不成立の判定と確認手段は{termination_evidence_reference()}「技術的不成立の判定」に従ってください。"
 
 
 _GIT_PUSH_VALUE_OPTIONS = frozenset(

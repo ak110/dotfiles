@@ -320,7 +320,7 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
             found.append(
                 (
                     "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。",
-                    f"{'、'.join(missing)}を取得し、採否が変わるなら記録を直せ。",
+                    f"{'、'.join(missing)}を取得し、採否が変わるなら記録を直してください。",
                     "レビュー返却が指定した資料の取得を確認できない採否の記録",
                 )
             )
@@ -332,7 +332,7 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
             found.append(
                 (
                     "画面へ送る根拠に未取得の退避出力がある。",
-                    f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正せよ。",
+                    f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正してください。",
                     "未取得の退避出力を根拠にした報告",
                 )
             )
@@ -340,7 +340,7 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
             found.append(
                 (
                     "作業完了報告の手順書の取得を確認できないまま、完了報告を送る操作である。",
-                    f"`{playbook}`を全文読み、欠けた項目があれば報告を補え。",
+                    f"`{playbook}`を全文読み、欠けた項目があれば報告を補ってください。",
                     "完了報告の手順書の取得を確認できない完了報告",
                 )
             )
@@ -360,7 +360,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(
             block=_block_notice(
                 "メイン専用ツールのため実行していない。表示・圧縮・反映の成功として扱わない。",
-                fix="結果本文を委譲元へ最終応答で返せ。",
+                fix="結果本文を委譲元へ最終応答で返してください。",
             )
         )
     if (tool_name == "AskUserQuestion" or tool_name in _SCOPE_REVIEW_MCP_TOOLS) and (
@@ -374,7 +374,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         return Decision(
             block=_block_notice(
                 f"決定の原文と適用範囲を見直すため、まだ送信していない。\n\n{reminder}",
-                fix="今回の対象と除外を確かめ、必要なら本文を直して再送せよ。",
+                fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
             )
         )
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
@@ -564,8 +564,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     "未完了のバックグラウンドタスクが書き込む出力ファイルを読み取ろうとしている。",
                     tag=_WARN_TAG,
                     fix=(
-                        "読み取った途中経過は進捗の材料に限れ。"
-                        "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使え。"
+                        "読み取った途中経過は進捗の材料に限ってください。"
+                        "完了通知を受けた後に同じ出力ファイルを全量読み直してから結果として使ってください。"
                     ),
                     removable_cause=True,
                     subject=command,
@@ -592,9 +592,9 @@ def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | 
     if trailer is None:
         return None
     return _llm_notice(
-        f"読取時点に観測したモデルと推論量の帰属行: {trailer}。通常のコミットのメッセージへこの1行を入れよ。"
+        f"読取時点に観測したモデルと推論量の帰属行: {trailer}。通常のコミットのメッセージへこの1行を入れてください。"
         "明示指定と無効化の方針は`agent-toolkit:atk-mode/references/commit-message.md`「`Co-Authored-By:`」で確かめ、"
-        "通常のコミットの直前にも現在の観測を確かめよ。",
+        "通常のコミットの直前にも現在の観測を確かめてください。",
         tag="notice",
     )
 
@@ -753,7 +753,7 @@ def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: di
                     f"対象の入力欄: `{name}`。この入力本文を日本語の説明として判定できないため、呼び出しを止めた。",
                     fix=(
                         _response_language_check.WARNING_FIX
-                        + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行せよ。"
+                        + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行してください。"
                     ),
                 )
             )

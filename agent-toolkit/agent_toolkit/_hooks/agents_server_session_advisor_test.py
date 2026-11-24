@@ -114,10 +114,12 @@ def test_unobserved_stop_advice_matches_host(monkeypatch, host_fields):
     assert "`kill(session_id)`" in warning
     if host_fields:
         assert "実行ホストの`atk agents wait`" in warning
-        assert "背景起動" not in warning
+        assert "バックグラウンド起動" not in warning
     else:
-        assert "引数なしの `atk agents wait` を単独で背景起動し、起動を確認してからターンを終えよ" in warning
-        assert "背景実行が使えないなら同じターンで前景回収せよ" in warning
+        assert (
+            "引数なしの `atk agents wait` を単独でバックグラウンド起動し、起動を確認してからターンを終えてください" in warning
+        )
+        assert "バックグラウンド実行が使えないなら同じターンでフォアグラウンド回収してください" in warning
 
 
 def _record_start(state_directory: pathlib.Path, local_session_id: str, remote_session_id: str) -> None:

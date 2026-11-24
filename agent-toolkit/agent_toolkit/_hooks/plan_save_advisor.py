@@ -87,7 +87,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         "現在のセッションが所有する計画バンドルが残っている。\n" + commands,
         fix=(
             "`agent-toolkit:atk-mode/references/plan-storage.md`で保存の契機を確認し、"
-            "該当するバンドルだけを上記コマンドで`private-notes`へ保存せよ。残りは保持してターンを終了せよ。"
+            "該当するバンドルだけを上記コマンドで`private-notes`へ保存してください。残りは保持してターンを終了してください。"
         ),
         removable_cause=True,
     )

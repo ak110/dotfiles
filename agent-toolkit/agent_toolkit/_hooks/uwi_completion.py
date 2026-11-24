@@ -168,4 +168,4 @@ def build_notice(session_id: str) -> str | None:
         f"リポジトリ{target_repo}に新たに回答されたUWIがある: {', '.join(filenames)}。"
         for target_repo, filenames in sorted(answered.items())
     )
-    return f"{found}`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」に従って反映せよ。"
+    return f"{found}`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」に従って反映してください。"

@@ -154,7 +154,7 @@ class TestBashAtkOutputLoss:
         assert "結果と終了状態を直接受領できない入力" in _additional_context(result)
         background = "CLAUDECODE" in os.environ and os.environ.get("CLAUDE_CODE_DISABLE_BACKGROUND_TASKS") != "1"
         assert ("run_in_background" in _additional_context(result)) is (background and "&" in command and "wait" in command)
-        assert "発行せよ" in _additional_context(result)
+        assert "発行してください" in _additional_context(result)
         assert "--output-file" not in _additional_context(result)
         assert "複数対象" not in _additional_context(result)
 
@@ -206,7 +206,7 @@ class TestBashAtkOutputLoss:
         blocked = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait >/dev/null &"}})
         assert blocked.returncode == 0
         assert "単独で発行" in _additional_context(blocked)
-        assert _additional_context(blocked).count("単独で発行せよ") == 1
+        assert _additional_context(blocked).count("単独で発行してください") == 1
         assert "シェルの`&`" in _additional_context(blocked)
         assert "リダイレクト" in _additional_context(blocked)
         allowed = _run({"tool_name": "Bash", "tool_input": {"command": "atk agents wait", "run_in_background": True}})

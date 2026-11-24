@@ -201,7 +201,7 @@ def _diagnostic_lines(output: str, path: pathlib.Path) -> list[tuple[int, str]]:
     for row in output.splitlines():
         line, _, rest = row.removeprefix(f"{path}:").partition(": ")
         severity, _, message = rest.partition(": ")
-        assert severity == "error", row
+        assert severity in {"error", "warning"}, row
         diagnostics.append((int(line), message))
     return diagnostics
 
@@ -215,23 +215,24 @@ def test_density_lists_every_counted_element_with_physical_line(
 
     diagnostics = _diagnostic_lines(capsys.readouterr().err, path)
     negative = [(line, message) for line, message in diagnostics if "否定形で終わる文: " in message]
-    assert [line for line, _ in negative] == [7, 9, 10]
+    assert [line for line, _ in negative] == [7, 7, 7, 9, 10, 10]
     assert "「対象は変更しない。」" in negative[0][1]
-    assert "「ない。」" in negative[1][1]
-    assert "「値は書かない。」" in negative[2][1]
+    assert "「ない。」" in negative[3][1]
+    assert "「値は書かない。」" in negative[4][1]
     subject = [line for line, message in diagnostics if "数えた「当該」: " in message]
     assert subject == [11, 11]
     summaries = [message for line, message in diagnostics if line == 1]
     assert any(
-        "否定形終端率 13.6%（上限 8%、3/22文）" in message and "少なくとも2件を書き換える" in message for message in summaries
+        "警告: 否定形終端率 26.1%（目安 25%、6/23文）" in message and "明確な禁止や制約は書き換えずに残してよい" in message
+        for message in summaries
     )
-    assert any("「当該」の出現率 9.1%（上限 3%、2回/22文）" in message and "少なくとも2件" in message for message in summaries)
+    assert any("「当該」の出現率 8.7%（上限 3%、2回/23文）" in message and "少なくとも2件" in message for message in summaries)
 
 
 def test_density_rewriting_required_sentences_clears_the_metric(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    body = _DENSITY_BODY.replace("対象は変更しない。", "対象を保つ。").replace("値は書かない。", "値を保つ。")
+    body = _DENSITY_BODY.replace("対象は変更しない。", "対象を保つ。")
     path = _write(tmp_path, body)
 
     check_agent_doc_tone.main([str(path)])
@@ -243,7 +244,7 @@ def test_density_rewriting_required_sentences_clears_the_metric(
 
 @pytest.mark.parametrize(
     "body",
-    [_DENSITY_BODY.replace("観測した値を記録する。\n" * 15, ""), "観測した値を記録する。" * 30],
+    [_DENSITY_BODY.replace("観測した値を記録する。\n" * 13, ""), "観測した値を記録する。" * 30],
     ids=["below-min-sentences", "within-limit"],
 )
 def test_density_elements_are_not_listed_within_threshold(
@@ -280,8 +281,8 @@ def test_norm_example_paths_are_checked(tmp_path: pathlib.Path, capsys: pytest.C
     example.parent.mkdir(parents=True)
     example.write_text("その値を根拠にしない。\n" * 20, encoding="utf-8")
 
-    assert check_agent_doc_tone.main([str(example)]) == 1
-    assert "否定形終端率" in capsys.readouterr().err
+    assert check_agent_doc_tone.main([str(example)]) == 0
+    assert "警告: 否定形終端率" in capsys.readouterr().err
 
 
 def test_term_scope_preserves_existing_density_check(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:

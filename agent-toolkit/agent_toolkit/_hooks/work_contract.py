@@ -33,14 +33,14 @@ Claude Codeは`additionalContext`を10,000文字で保存先とプレビュー�
 """
 
 RETURN_CRITERION = (
-    "要求・制約・訂正を含む発話を受けたら、成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映せよ。"
+    "要求・制約・訂正を含む発話を受けたら、成果物を編集する前に作業契約の「現在有効な要求・制約」へ反映してください。"
     "質問、状況照会、継続だけなら更新しない。"
     "要求の統合・回答後の再開・完了判断は、`agent-toolkit/skills/atk-mode/references/work-contract.md`"
-    "「追加入力の統合」「更新する時点」「工程境界での要求と成果の確認」に従え。"
+    "「追加入力の統合」「更新する時点」「工程境界での要求と成果の確認」に従ってください。"
 )
 
 
-SHORT_NOTICE = "現行の作業契約を取得せよ: "
+SHORT_NOTICE = "現行の作業契約を取得してください: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
 
 _RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")
@@ -142,7 +142,7 @@ def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
     original = (
         f"原文の抜粋: {json.dumps(redact_secrets(excerpt), ensure_ascii=False)}"
         if excerpt and len(excerpt) <= 800
-        else "契約の参照位置で、原文の該当部分を確認せよ。"
+        else "契約の参照位置で、原文の該当部分を確認してください。"
     )
     return f"契約: {redact_secrets(decision)}\n{original}"
 
@@ -388,7 +388,7 @@ def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str]
     except OSError:
         return (
             f"全体作業契約を読めない。原本: `{path}`。",
-            "委譲元へ原本の所在と読取可能性を確認せよ。",
+            "委譲元へ原本の所在と読取可能性を確認してください。",
         )
     notified = read_state(session_id).get(DELEGATED_NOTICE_KEY, {})
     seen = notified.get(agent, []) if isinstance(notified, dict) else []
@@ -396,7 +396,7 @@ def delegated_notice(session_id: str, *, agent: str = "main") -> tuple[str, str]
         return None
     text = f"全体作業契約が起動後に更新された。原本: `{path}`。"
     notice_module.stage_delivery(text, session_id, DELEGATED_NOTICE_KEY, agent, current)
-    return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用せよ。"
+    return text, "原本を全文読み、現行要求と「即時対応で確定した暫定規則」を確かめて続行へ適用してください。"
 
 
 def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
@@ -413,15 +413,15 @@ def notice(session_id: str, *, budget: int = NOTICE_BODY_LIMIT) -> str | None:
     except (OSError, UnicodeDecodeError) as error:
         return (
             f"現行の作業契約を読めない（{type(error).__name__}: {error}）。\n"
-            f"権限や文字コードの原因を解消した後、`{path}`を読み、現在の目的・要件を確かめよ。"
+            f"権限や文字コードの原因を解消した後、`{path}`を読み、現在の目的・要件を確かめてください。"
             "解消できなければ、会話の原文と計画・WIから現在の目的・要件を確かめて作業を続け、"
-            "所在と診断を委譲元（委譲元が無ければユーザー）へ報告せよ。"
+            "所在と診断を委譲元（委譲元が無ければユーザー）へ報告してください。"
             f"{RETURN_CRITERION}"
         )
     if len(body) > budget:
         return (
-            f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめよ。"
-            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直せ。"
+            f"現行の作業契約は通知の上限{budget}文字を超える。`{path}`を読み、現在の目的・要件を確かめてください。"
+            "発話の転記、時刻、経緯、完了した要求が残っていれば、現在の目的・要件だけに書き直してください。"
             f"{RETURN_CRITERION}"
         )
     return f"現行の作業契約（機械生成の参照資料。原本: `{path}`）:\n{body}\n\n{RETURN_CRITERION}"

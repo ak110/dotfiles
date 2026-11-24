@@ -67,9 +67,9 @@ def _format_notice(lines: list[str]) -> str:
                     subject=line,
                     fix=f"報告行を`AWI化ステータス: {matched.group(1)} <区分> "
                     + ("<理由>" if matched.group(1) == "不要" else "<再開条件>")
-                    + "`の形に直せ。区分は"
+                    + "`の形に直してください。区分は"
                     + "・".join(f"`{name}`" for name in categories[matched.group(1)])
-                    + "から選べ。",
+                    + "から選んでください。",
                 )
             if line[matched.end() :].startswith("見送り") and matched.group(1) == "不要":
                 report = line[matched.end() :].split("AWI化ステータス:", 1)[0]
@@ -81,7 +81,7 @@ def _format_notice(lines: list[str]) -> str:
                         removable_cause=True,
                         subject=line,
                         fix="同じ報告行に`作り込み側の候補:`・`見逃し側の候補:`・`比較結論:`を、"
-                        "セミコロンで区切って記録せよ。候補と結論の妥当性は担当が判断せよ。",
+                        "セミコロンで区切って記録してください。候補と結論の妥当性は担当が判断してください。",
                     )
     return ""
 
@@ -122,7 +122,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         "該当行: " + " / ".join(lines),
         removable_cause=True,
         subject="\n".join(lines),
-        fix="担当と処置を決めるのに足りる最小調査をし、処置・担当を決めてから、その結果に基づいて報告を更新せよ。",
+        fix="担当と処置を決めるのに足りる最小調査をし、処置・担当を決めてから、その結果に基づいて報告を更新してください。",
     )
     return "notify", "\n\n".join(filter(None, (guidance, reason_notice)))
 
