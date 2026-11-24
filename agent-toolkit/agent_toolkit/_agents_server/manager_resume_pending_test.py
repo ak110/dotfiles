@@ -310,3 +310,51 @@ async def test_claude_resume_replaces_retained_terminal_state_while_new_turn_run
         assert manager.sessions[session_id] is resumed
         assert resumed.status == "running"
         assert resumed.agent_message == ""
+
+
+@pytest.mark.asyncio
+async def test_force_releases_unregistered_resume_before_waiting_for_cancellation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async with server_manager.AgentsServerManager(None) as manager:
+        backend = BlockingResumeBackend(manager.sessions, "claude")
+        install_backend(manager, "claude", backend)
+        session = state.SessionState("force-unregistered", str(tmp_path), engine="claude")
+        _complete(session)
+        previous = state.SessionResumeState.from_session(session)
+        started = asyncio.Event()
+        released = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def resume(*_args, **_kwargs):
+            started.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                await released.wait()
+                cancelled.set()
+                raise
+
+        async def release(owned: state.SessionState) -> None:
+            assert owned.session_id == session.session_id
+            released.set()
+
+        monkeypatch.setattr(backend, "resume", resume)
+        monkeypatch.setattr(backend, "release_session", release)
+        manager.expired_sessions[session.session_id] = previous
+        send = asyncio.create_task(manager.send_message(session.session_id, "再開"))
+        try:
+            async with asyncio.timeout(3):
+                await started.wait()
+                assert session.session_id not in manager.sessions
+                stopped = await manager.kill(session.session_id, force=True)
+            assert stopped["status"] == "interrupted"
+            assert stopped["kill_requested"]
+            assert cancelled.is_set()
+            assert session.session_id not in manager._pending_resumes
+            with pytest.raises(ActionableError, match="強制停止"):
+                await send
+        finally:
+            released.set()
+            send.cancel()
+            await asyncio.gather(send, return_exceptions=True)

@@ -3,17 +3,28 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import asyncio
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Literal
 from unittest.mock import AsyncMock
 
 import pytest
 from mcp.types import CallToolRequestParams, CallToolResult
 
-from agent_toolkit._agents_server import mcp_tools, retained_results, shared_layout, shared_roots, state, status_file
+from agent_toolkit._agents_server import (
+    mcp_tools,
+    retained_results,
+    service_rpc,
+    shared_layout,
+    shared_roots,
+    state,
+    status_file,
+)
 from agent_toolkit._agents_server.manager import AgentsServerManager
 from agent_toolkit._agents_server.service_context import Conversation
+from agent_toolkit._agents_server.service_force import _pending_launch
 from agent_toolkit._agents_server.service_publication_test import _coordinator
 from agent_toolkit._common import runtime_environment, session_registry
+from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._testing.agents_server_support import _complete, _write_notice
 
 
@@ -192,3 +203,299 @@ async def test_formal_handoff_keeps_the_child_at_its_owner(
         for item in service.managers.conversations.values():
             item.manager.sessions.clear()
             await item.manager.close()
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("foreign_owner", "release_failure"), [(False, False), (True, False), (False, True)])
+async def test_public_force_kill_stops_delegation_tree_during_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreign_owner: bool, release_failure: bool
+) -> None:
+    target = {"generation": "current", "server_instance": "same-instance"}
+    service = _coordinator(tmp_path / "services" / "agents-server", target)
+    monkeypatch.setattr(service, "_current", lambda: target)
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", service.managers)
+    previous = _coordinator(service.directory, {"generation": "previous", "server_instance": "previous-instance"})
+    foreign = {"generation": "previous"}
+    rpc_calls: list[str] = []
+
+    async def owner(identifier):
+        return foreign if foreign_owner and identifier == "third" else None
+
+    async def request(target, operation, arguments):
+        assert target == foreign and operation == "force_owned"
+        rpc_calls.append(arguments["session_id"])
+        await previous.force_owned(arguments["launcher"], arguments["session_id"], arguments["timeout"])
+
+    monkeypatch.setattr(service, "_owner", owner)
+    monkeypatch.setattr(service_rpc, "request", request)
+    starting = asyncio.Event()
+    stopping = asyncio.Event()
+    known_stopping = asyncio.Event()
+    allow_root_stop = asyncio.Event()
+    allow_registration = asyncio.Event()
+    original_call = mcp_tools.mcp._call_registered_tool
+
+    async def tool_call(context, params):
+        if params.name != "start":
+            return await original_call(context, params)
+        starting.set()
+        await allow_registration.wait()
+        manager = service.managers.conversations["second"].manager
+        manager.sessions["late"] = state.SessionState("late", str(tmp_path), status="running", engine="codex")
+        return CallToolResult(content=[], structured_content={"session_id": "late", "status": "running"})
+
+    monkeypatch.setattr(mcp_tools.mcp, "_call_registered_tool", tool_call)
+    stopped: list[str] = []
+    sending = asyncio.Event()
+
+    async def release(session):
+        stopped.append(session.session_id)
+        if session.session_id == "first":
+            stopping.set()
+            await allow_root_stop.wait()
+        if {"second", "third"}.issubset(stopped):
+            known_stopping.set()
+        if session.session_id == "late" and release_failure:
+            raise ActionableError("停止できない", next_action="停止を再試行する")
+
+    async def send(self, session_id, *_args):
+        session = self.sessions[session_id]
+        if session.status == "interrupted":
+            session.status = "running"
+            return {"delivery": "reply_started", "label": ""}
+        async with session.turn_control_lock:
+            sending.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                session.status = "failed"
+                raise
+
+    monkeypatch.setattr(AgentsServerManager, "_send_message_response", send)
+    for parent, child in (("caller", "first"), ("first", "second"), ("second", "third"), ("other", "unrelated")):
+        manager = AgentsServerManager(None)
+        manager.sessions[child] = state.SessionState(child, str(tmp_path), status="running", engine="codex")
+        monkeypatch.setattr(manager, "_backend", lambda _engine: SimpleNamespace(release_session=release))
+        caller = runtime_environment.CallerContext(
+            {"CODEX_THREAD_ID": parent, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path
+        )
+        coordinator = previous if foreign_owner and child == "third" else service
+        coordinator.managers.conversations[parent] = Conversation(manager, caller)
+        session_registry.publish(
+            child,
+            state=session_registry.PublicationState.from_status("running", result_available=False),
+            launcher_session_id=parent,
+            owner_root_session_id=parent,
+            engine="codex",
+            cwd=str(tmp_path),
+            turn_seq=1,
+            state_root=tmp_path,
+        )
+
+    async def call(name: str, **arguments: Any) -> CallToolResult:
+        with runtime_environment.bind(service.managers.conversations["caller"].caller):
+            result = await service.call_tool(None, CallToolRequestParams(name=name, arguments=arguments))
+        assert isinstance(result, CallToolResult)
+        return result
+
+    async def start_descendant() -> CallToolResult:
+        with runtime_environment.bind(service.managers.conversations["second"].caller):
+            result = await service.call_tool(None, CallToolRequestParams(name="start", arguments={}))
+        assert isinstance(result, CallToolResult)
+        return result
+
+    if foreign_owner:
+        service.managers.conversations["second"] = previous.managers.conversations["second"]
+    late = asyncio.create_task(start_descendant())
+    pending = asyncio.create_task(call("send_message", session_id="first", prompt="送信"))
+    force = None
+    try:
+        async with asyncio.timeout(3):
+            await sending.wait()
+            await starting.wait()
+            force = asyncio.create_task(call("kill", session_id="first", force=True))
+            await stopping.wait()
+            await known_stopping.wait()
+            rejected = await start_descendant()
+            assert rejected.is_error
+            assert "強制停止中" in str(rejected.content)
+            allow_root_stop.set()
+            completed, _ = await asyncio.wait({force}, timeout=0.1)
+            assert not completed, "下位の起動が未確定のままforceが返った"
+            allow_registration.set()
+            assert (await late).is_error
+            result = await force
+        if release_failure:
+            assert result.is_error
+            assert "回収の完了を確認できません" in str(result.content)
+            stopped_late = service.managers.conversations["second"].manager.sessions["late"]
+            stopped_late.status = "interrupted"
+            stopped_late.record_turn_completed()
+            session_registry.publish(
+                "late",
+                state=session_registry.PublicationState.from_status("interrupted", result_available=True),
+                launcher_session_id="second",
+                owner_root_session_id="second",
+                engine="codex",
+                cwd=str(tmp_path),
+                turn_seq=1,
+                state_root=tmp_path,
+            )
+            retried = await call("kill", session_id="first", force=True)
+            assert not retried.is_error, retried.content
+            pending_dir = session_registry.registry_directory(tmp_path) / ".force" / "pending-starts"
+            assert not any(pending_dir.glob("*.failed"))
+            return
+        assert not result.is_error, result.content
+        assert set(stopped) == {"first", "second", "third", "late"}
+        assert rpc_calls == (["third"] if foreign_owner else [])
+        assert pending.done() and (await pending).is_error
+        assert service.managers.conversations["caller"].manager.sessions["first"].status == "interrupted"
+        assert service.managers.conversations["other"].manager.sessions["unrelated"].status == "running"
+        assert service.managers.conversations["second"].manager.sessions["late"].status == "interrupted"
+    finally:
+        tasks = [pending, late] if force is None else [pending, late, force]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+    resumed = await call("send_message", session_id="first", prompt="再開")
+    assert not resumed.is_error and resumed.structured_content == {"delivery": "reply_started", "label": ""}
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+async def test_force_children_finds_grandchild_registered_during_child_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = {"generation": "current", "server_instance": "same-instance"}
+    service = _coordinator(tmp_path / "services" / "agents-server", target)
+    monkeypatch.setattr(service, "_owner", AsyncMock(return_value=None))
+    stopped: list[str] = []
+
+    def publish(child: str, launcher: str, status: Literal["running", "interrupted"] = "running") -> None:
+        session_registry.publish(
+            child,
+            engine="claude",
+            cwd=str(tmp_path),
+            state=session_registry.PublicationState.from_status(status, result_available=status != "running"),
+            launcher_session_id=launcher,
+            turn_seq=1,
+            state_root=tmp_path,
+        )
+
+    async def stop(launcher: str, identifier: str, _timeout: float) -> None:
+        stopped.append(identifier)
+        if identifier == "child":
+            publish("late-grandchild", "child")
+        publish(identifier, launcher, "interrupted")
+
+    monkeypatch.setattr(service, "force_owned", stop)
+    publish("child", "parent")
+    publish("unrelated", "other")
+    await service._force_children("parent", 0)
+    assert stopped == ["child", "late-grandchild"]
+    assert session_registry.resolve("late-grandchild", state_root=tmp_path).state is session_registry.Resolution.TERMINAL
+    assert session_registry.resolve("unrelated", state_root=tmp_path).state is session_registry.Resolution.RUNNING
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.parametrize("change_turn", [False, True])
+async def test_force_rechecks_descendant_after_queued_send_and_turn_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change_turn: bool
+) -> None:
+    target = {"generation": "review", "server_instance": "review-instance"}
+    service = _coordinator(tmp_path / "services" / "agents-server", target)
+    monkeypatch.setattr(service, "_current", lambda: target)
+    monkeypatch.setattr(mcp_tools, "_SERVICE_MANAGERS", service.managers)
+    admitted = asyncio.Event()
+    released: list[str] = []
+
+    async def release(session: state.SessionState) -> None:
+        released.append(session.session_id)
+        if session.session_id == "second":
+            publish("second", "first", "interrupted", released.count("second"))
+
+    def publish(child: str, launcher: str, status: Literal["running", "interrupted"], turn: int) -> None:
+        session_registry.publish(
+            child,
+            state=session_registry.PublicationState.from_status(status, result_available=status == "interrupted"),
+            engine="codex",
+            cwd=str(tmp_path),
+            launcher_session_id=launcher,
+            owner_root_session_id=launcher,
+            turn_seq=turn,
+            state_root=tmp_path,
+        )
+
+    async def deliver(self: AgentsServerManager, identifier: str, *_args: Any) -> dict[str, str]:
+        item = self.sessions[identifier]
+        item.status = "running"
+        item.record_turn_running()
+        publish(identifier, "first", "running", 2)
+        return {"delivery": "reply_started", "label": ""}
+
+    monkeypatch.setattr(AgentsServerManager, "_send_message_response", deliver)
+    for parent, child in (("caller", "first"), ("first", "second")):
+        mgr = AgentsServerManager(None)
+        mgr.sessions[child] = state.SessionState(child, str(tmp_path), status="running", engine="codex")
+        monkeypatch.setattr(mgr, "_backend", lambda _: SimpleNamespace(release_session=release))
+        service.managers.conversations[parent] = Conversation(
+            mgr,
+            runtime_environment.CallerContext(
+                {"CODEX_THREAD_ID": parent, "HOME": str(tmp_path), "USERPROFILE": str(tmp_path)}, tmp_path
+            ),
+        )
+        publish(child, parent, "running", 1)
+    child_mgr = service.managers.conversations["first"].manager
+    real_require = service._require_unfenced
+
+    async def require(identifier: str) -> dict[str, str]:
+        result = await real_require(identifier)
+        if identifier == "second":
+            admitted.set()
+        return result
+
+    monkeypatch.setattr(service, "_require_unfenced", require)
+    lock = service._locks.setdefault("second", asyncio.Lock())
+
+    async def call(parent: str, name: str, **args: Any) -> CallToolResult:
+        caller = service.managers.conversations[parent].caller
+        with runtime_environment.bind(caller):
+            result = await service.call_tool(None, CallToolRequestParams(name=name, arguments=args))
+        assert isinstance(result, CallToolResult)
+        return result
+
+    queued: asyncio.Task[CallToolResult] | None = None
+    force: asyncio.Task[CallToolResult] | None = None
+    try:
+        async with asyncio.timeout(4):
+            async with _pending_launch(tmp_path, "second"):
+                async with lock:
+                    if not change_turn:
+                        queued = asyncio.create_task(call("first", "send_message", session_id="second", prompt="次の指示"))
+                        await admitted.wait()
+                    force = asyncio.create_task(call("caller", "kill", session_id="first", force=True))
+                    while child_mgr.sessions["second"].status != "interrupted" or "second" in child_mgr._force_stopping:
+                        if force.done():
+                            raise AssertionError(force.result())
+                        await asyncio.sleep(0.01)
+                    if change_turn:
+                        await deliver(child_mgr, "second")
+                assert not force.done()
+                if queued is not None:
+                    assert (await queued).is_error
+            result = await force
+            assert not result.is_error, result.content
+            assert child_mgr.sessions["second"].status == "interrupted"
+            assert released.count("second") == (2 if change_turn else 1)
+            resolved = session_registry.resolve("second", state_root=tmp_path)
+            assert resolved.state is session_registry.Resolution.TERMINAL
+            assert resolved.recorded_turn_seq == (2 if change_turn else 1)
+    finally:
+        tasks = [t for t in (queued, force) if t is not None]
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)

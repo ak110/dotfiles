@@ -144,6 +144,7 @@ class SessionResumeState:
     claude_connection: str | None = None
     claude_role: str | None = None
     model_type: str | None = None
+    model_override_record: str | None = None
     launch_kind: LaunchKind = "delegate"
     startup_profile: startup_features.StartupProfile | None = None
 
@@ -179,6 +180,7 @@ class SessionResumeState:
             session_id=session.session_id,
             cwd=session.cwd,
             model_type=session.model_type,
+            model_override_record=session.model_override_record,
             launch_kind=session.launch_kind,
             startup_profile=session.startup_profile,
             **session_registry.LaunchInfo.of(session).as_kwargs(),
@@ -258,6 +260,7 @@ def terminal_result_payload(session: SessionState | SessionResumeState) -> dict[
         "model": session.model,
         "effort": session.effort,
         "model_type": session.model_type,
+        "model_override_record": session.model_override_record,
     }
     if nonempty_error(session.error):
         result["error"] = redact_diagnostic_values(session.error)

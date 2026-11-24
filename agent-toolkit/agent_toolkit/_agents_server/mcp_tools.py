@@ -318,6 +318,16 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     handoff_from: Annotated[str | None, Field(description=HANDOFF_FROM_DESCRIPTION)] = None,
     whole_contract_path: Annotated[str | None, Field(description=WHOLE_CONTRACT_PATH_DESCRIPTION)] = None,
     *,
+    model_override: Annotated[
+        Literal["user_instruction", "observation", "fallback_failure"] | None,
+        Field(description=parameter_description("上書き区分。ユーザー指示・軽量モデルの観測・自動切替の不具合に限る。")),
+    ] = None,
+    model_override_evidence: Annotated[
+        str | None,
+        Field(
+            description=parameter_description("上書きの根拠。ユーザーの指示の要旨、観測の目的、自動切替の失敗の内容を記す。")
+        ),
+    ] = None,
     start_observation: Annotated[str | None, Field(description="起動応答を失った場合の回復用。PreToolUseが設定する。")] = None,
     startup_profile: Annotated[
         startup_features.StartupProfile | None,
@@ -325,6 +335,7 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     ] = None,
 ) -> dict[str, Any]:
     """`mode`ごとの入力を確かめ、同じ起動処理へ渡して委譲先turnを開始する。公開説明は`START_DESCRIPTION`が持つ。"""
+    model_type = model_type or None
     if handoff_from is not None:
         if startup_profile is not None:
             raise ValueError("引き継ぎでは元のstartup_profileを使うため指定できない")
@@ -341,7 +352,10 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             model_type=model_type,
             whole_contract_path=whole_contract_path,
         )
-        response = await _manager().start_handoff(handoff_from, model_type=model_type)
+        override_args = {"model_override": model_override, "model_override_evidence": model_override_evidence}
+        response = await _manager().start_handoff(
+            handoff_from, model_type=model_type, **{key: value for key, value in override_args.items() if value is not None}
+        )
         public = public_start_response(response)
         public["cwd"] = response["cwd"]
         public["model_type"] = response["model_type"]
@@ -352,7 +366,6 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
     if cwd is None:
         launch_requests.require_start_cwd()
     assert cwd is not None
-    warnings = model_override_warnings(model_type)
     validate_start_inputs(
         mode,
         subagent_md_path=subagent_md_path,
@@ -363,8 +376,12 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
         model_type=model_type,
         whole_contract_path=whole_contract_path,
     )
+    warnings = (
+        [] if mode == "task" else model_override_warnings(model_type, reason=model_override, evidence=model_override_evidence)
+    )
     with (
         startup_features.selection(startup_profile),
+        state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
         session_launchers.START_OBSERVATION.set(session_launchers.valid_start_observation(start_observation)),
     ):
         if mode == "task":
@@ -380,16 +397,18 @@ async def start(  # noqa: PLR0913 -- 公開入力をmodeごとの平坦な引数
             )
             context = await run_file_operation(_manager().launcher_record_context)
             task_prompt = launch_requests.with_launcher_record(task_prompt, context)
-            model_override = model_type or None
-            warnings = model_override_warnings(model_override, default_type=task_model_type)
+            warnings = model_override_warnings(
+                model_type, default_type=task_model_type, reason=model_override, evidence=model_override_evidence
+            )
+            state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None)
             response = await _manager().start(
-                model_override or task_model_type,
+                model_type or task_model_type,
                 task_prompt,
                 cwd,
                 launch_kind=launch_kind,
                 label=resolve_display_label(label, task_document_label(subagent_md_path, params)),
                 startup_document=launch_requests.resolve_task_document_path(subagent_md_path).resolve(),
-                explicit_role_model=model_override is not None,
+                explicit_role_model=model_type is not None,
                 startup_inputs={**params, **({"引き継ぎ記録先": f"{handoff_path}（新規）"} if handoff_path else {})},
             )
             if warnings:
@@ -572,6 +591,7 @@ async def kill(
         bool,
         Field(description=parameter_description("中断を確認してsessionを破棄する。保持した本文はatk agents waitで回収する。")),
     ] = False,
+    force: Annotated[bool, Field(description=parameter_description("委譲先CLIと子孫を即時停止し、終了を確認する。"))] = False,
 ) -> dict[str, Any]:
     """実行中turnへ中断を要求し、指定時間まで終了を待つ。
 
@@ -584,7 +604,11 @@ async def kill(
     `show`の`ownership`が`owner_lost`のsessionでは、登録簿のpidと起動時刻が一致する委譲先CLIだけを停止し、
     停止を確かめてから`interrupted`を返す。所有していたagents_serverのプロセスは止めない。以後の`send_message`は同じ会話を再開する。
     """
-    result = await _manager().kill(session_id, timeout, stop)
+    result = (
+        await _manager().kill(session_id, timeout, stop, force=True)
+        if force
+        else await _manager().kill(session_id, timeout, stop)
+    )
     if result_projection.is_finalized_wait_statement(result) or (
         not stop and result_projection.has_unobserved_children(result)
     ):

@@ -176,7 +176,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 | Claude Code | Codex |
 | --- | --- |
 | `Agent` | `agents_server`の`start`。forkを選ぶ時（`agent-toolkit:atk-mode/playbooks/delegation.md`「会話を引き継ぐ委譲」）だけ`spawn_agent` |
-| `SendMessage`・`TaskStop` | 起動手段が返した識別子と継続・中断の操作（`agents_server`は`send_message`・`kill`）。停止は同じ識別子で確かめる |
+| `SendMessage`・`TaskStop` | 起動手段が返した識別子と継続・中断の操作（`agents_server`は`send_message`・`kill`）。ユーザーが即時停止を求めたら`kill`に`force=true`を渡す。停止は同じ識別子で確かめる |
 | `ToolSearch` | 本書「MCPツールの呼び出し」の`ALL_TOOLS`の照会。必須の機能が無ければ差し戻す |
 | `Monitor` | 起動手段の状態確認と待機の結果（`agents_server`は`atk agents wait`） |
 | `AskUserQuestion` | 本書「ユーザー確認と終了」の構造化質問 |

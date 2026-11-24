@@ -4,7 +4,7 @@ import json
 import pytest
 
 from agent_toolkit._agents_server import service_state, state, turn_state
-from agent_toolkit._common import claude_usage_limit
+from agent_toolkit._common import claude_usage_limit, session_registry
 
 
 @pytest.mark.parametrize(
@@ -250,3 +250,13 @@ def test_restore_reads_previous_public_release_snapshot() -> None:
     assert (restored.session_id, restored.cwd) == ("old-session", "/project")
     assert restored.startup_profile is None
     assert restored.reply_start_pending is False
+
+
+def test_registry_resolution_guard_round_trip() -> None:
+    expected = session_registry.SessionResolution(
+        session_registry.Resolution.RUNNING,
+        session_registry.ResumeInfo("codex", "/project", None, None, None, "delegate", 2, "running"),
+        recorded_turn_seq=2,
+    )
+    codec = service_state._StateCodec()  # pylint: disable=protected-access
+    assert codec.decode(json.loads(json.dumps(codec.encode(expected)))) == expected
