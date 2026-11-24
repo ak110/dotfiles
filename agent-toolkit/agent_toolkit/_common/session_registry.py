@@ -155,6 +155,7 @@ class ResumeInfo:
     turn_seq: int
     status: Literal["starting", "running", "completed", "failed", "interrupted"]
     launch_info: LaunchInfo = LaunchInfo()
+    model_override_record: str | None = None
 
     started_at: str | None = None
     session_updated_at: str | None = None
@@ -224,6 +225,14 @@ def registry_directory(state_root: pathlib.Path | None = None) -> pathlib.Path:
     return _session_launchers.registry_directory(_state_paths.state_dir() if state_root is None else state_root)
 
 
+def delegation_children(*, state_root: pathlib.Path) -> dict[str, list[str]]:
+    children: dict[str, list[str]] = {}
+    for path in registry_directory(state_root).glob("*.json"):
+        if _session_launchers.valid_launcher(path.stem) and (launcher := _session_launchers.read_launcher(path)):
+            children.setdefault(launcher, []).append(path.stem)
+    return children
+
+
 @contextlib.contextmanager
 def registry_lock(session_id: str, *, state_root: pathlib.Path | None = None) -> Generator[None]:
     """公開・比較更新・掃引をsession単位で直列化する。ロック実体は削除せず同じinodeを共有する。"""
@@ -267,6 +276,7 @@ def publish(
     claude_connection: str | None = None,
     claude_role: str | None = None,
     model_type: str | None = None,
+    model_override_record: str | None = None,
     launch_kind: Literal["delegate", "explore", "shell", "write"] = "delegate",
     startup_profile: StartupProfile | None = None,
     turn_seq: int = 0,
@@ -282,6 +292,7 @@ def publish(
     owner_root_session_id: str | None = None,
     result_contract_recovery_consumed: bool = False,
     state_root: pathlib.Path | None = None,
+    expected: SessionResolution | None = None,
 ) -> None:
     forwarded, _result = registry_forwarding.forward("publish", locals())
     if forwarded:
@@ -299,6 +310,7 @@ def publish(
         "model": model,
         "effort": effort,
         "model_type": model_type,
+        "model_override_record": model_override_record,
         "launch_kind": launch_kind,
         "startup_profile": startup_profile,
         "turn_seq": turn_seq,
@@ -340,6 +352,8 @@ def publish(
     path = registry_directory(state_root) / f"{session_id}.json"
     with registry_lock(session_id, state_root=state_root):
         prior = _read_payload(path)
+        if expected is not None and resolve_payload(session_id, prior) != expected:
+            return
         if not _proxy_owner_matches(prior, allow_claim=True):
             return
         claim = prior.get("resume_claim")
@@ -359,6 +373,8 @@ def publish(
                 merged = _preserve_launch_info(launch_info, LaunchInfo.from_record(source))
                 payload.update((name, value) for name, value in merged.as_kwargs().items() if value is not None)
 
+        if model_override_record is None and (record := _optional_model_override_record(prior)) is not None:
+            payload["model_override_record"] = record
         if result_contract_recovery_consumed or prior.get("result_contract_recovery_consumed") is True:
             payload["result_contract_recovery_consumed"] = True
         owner_root = owner_root_session_id if owner_root_session_id is not None else _recorded_owner_root(prior)
@@ -802,6 +818,11 @@ def _validate_session_id(session_id: str) -> None:
         raise ValueError(f"invalid session_id: {session_id}")
 
 
+def _optional_model_override_record(payload: dict[str, Any]) -> str | None:
+    value = payload.get("model_override_record")
+    return value if isinstance(value, str) else None
+
+
 def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
     status = payload.get("status")
     launch_kind = payload.get("launch_kind")
@@ -828,6 +849,7 @@ def _resume_info(payload: dict[str, Any]) -> ResumeInfo | None:
         model=payload["model"],
         effort=payload["effort"],
         model_type=payload["model_type"],
+        model_override_record=_optional_model_override_record(payload),
         launch_kind=launch_kind,
         startup_profile=startup_profile,
         turn_seq=payload["turn_seq"],

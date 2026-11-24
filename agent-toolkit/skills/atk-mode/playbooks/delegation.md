@@ -215,7 +215,9 @@ Claude Codeでは`Agent`ツールの`subagent_type: "fork"`で起動し、Codex�
 検証の対象がモデル、effort、設定、ツールに左右されない限り、軽量の工程のモデル別名とeffort `low`を使い、版付きの古いIDに固定しない。
 共有状態の隔離は`agent-basics:writing-standards/references/investigation.md`「エージェントCLIを検証で起動する時の隔離」に従う。
 
-- `agents_server`: `model_type`へ`claude:haiku/low`か`codex:luna/low`を渡し、検証の対象が`delegate`か`task`の起動そのものでない限り、`mode`は`explore`か`shell`にする。
+- `agents_server`: `model_type`へ`claude:haiku/low`か`codex:luna/low`を渡す。
+  `model_override=observation`と`model_override_evidence`（観測する事象）を併記する。
+  検証の対象が`delegate`か`task`の起動そのものでない限り、`mode`は`explore`か`shell`にする。
 - Claude CodeのCLI: `--model haiku --effort low --no-session-persistence --setting-sources ""`を指定する。
   加えて`--tools "" --strict-mcp-config --disable-slash-commands --system-prompt <文>`を指定する。
   プロンプトは`--`の後ろに置く（`--tools ""`が後続の位置引数を値として取るため）。

@@ -1,14 +1,13 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。  pyfltr: allow-comment
 
-`send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-この遮断はtranscriptと、書き出し前のREPL内の成功を受けたPostToolUseの記録で判定する。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
-`agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
-遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
+送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
+未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動と種類付きの再発防止を求める。
+同じ発話に対する種類付きの報告を送達済みなら、報告の構造を含まない最終応答に再掲を求めない。
+起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
 （2026年11月12日の統括セッション）。起動の有無は機械的に確定でき、起動で回復できるため、
 `agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`の遮断の条件に当たる。
-Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
 委譲先での実行可否: ユーザー発話に対する遮断は、`send_to_user`を持つClaude Codeのメインだけを対象とする。
 検証失敗後の起動案内は、失敗を観測したメインと委譲先へ、修正・commit・再検証の前に警告する。
@@ -17,11 +16,13 @@ Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける�
 
 import json
 import re
+from collections.abc import Iterator
 lazy import os
 
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.json_lines import split_lines
+lazy from agent_toolkit._common.prevention_kinds import starts_with_kind
 lazy from agent_toolkit._common.session_state import read_state, update_state
 lazy from agent_toolkit._common.shell_segments import extract_execution_segments
 lazy from agent_toolkit._common.shell_tokens import is_atk_command
@@ -31,21 +32,69 @@ lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context, resend_scope
+lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
-# 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
 # posttooluseがbugfix_gateを取り込む向きに保つため、共有する定義はこちらへ置く。
 QUOTED_MATERIAL_RE = re.compile(r"^[ \t]*(```|~~~)[\s\S]*?^[ \t]*\1[^\n]*$|`[^`\n]+`|^[ \t]*>[^\n]*$", re.MULTILINE)
+# 見出しが`再発防止`（`再発防止策`）で終わる行。`**ご指摘への再発防止**:`のような飾りと前置きを含む。  pyfltr: allow-comment
+_PREVENTION_LINE_RE = re.compile(
+    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<head>[^:：\n。、]{0,20}?再発防止策?)[ \t]*[:：](?P<text>[^\n]*)$",
+    re.MULTILINE,
+)
+
+_REPORT_STRUCTURE_RE = re.compile(r"^[ \t]*#{1,6}[ \t]+[^\n]*報告[ \t:：#]*$|AWI化ステータス[ \t]*[:：]", re.MULTILINE)
+
 BUGFIX_SKILL = "agent-basics:bugfix"
 _BUGFIX_SKILLS = frozenset({BUGFIX_SKILL, "bugfix"})
-# 欠陥の指摘を表す語。貼り付けた素材（コードブロック、インラインコード、引用行）は除いた本文へ適用する。
-_DEFECT_RE = re.compile(
-    r"バグ|不具合|不良|欠陥|おかしい|おかしく|間違|誤り|誤っ|誤動作|壊[れ]|動かな|動いて(?:い)?ない|機能しな|"
-    r"できて(?:い)?ない|なって(?:い)?ない|ミス|\b(?:bug|broken|regression)\b|"
-    r"調査不足|鵜呑みにせず|手戻り(?:が)?多すぎ|直すべき|になってなかったっけ|ユーザーの手を煩わせないで|また再発|反映されて(?:い)?ない",
-    re.IGNORECASE,
-)
+_UNDERSTANDING = re.compile(r"^(?:#{1,6}\s+)?[*_]*発話の理解(?:[*_]*[:：]|[*_]*$)")
+_CLASSIFICATION = re.compile(r"\s*(?:[-*+]\s+)?分類[:：]\s*(是正|非是正)\s*")
+
+
+def is_classification_line(text: str) -> bool:
+    return _CLASSIFICATION.fullmatch(text) is not None
+
+
+def _understanding_kind(text: object) -> str | None:
+    if not isinstance(text, str):
+        return None
+    lines = QUOTED_MATERIAL_RE.sub("", text).strip().splitlines()
+    if not lines or not _UNDERSTANDING.match(lines[0]):
+        return None
+    match = _CLASSIFICATION.fullmatch(lines[1]) if len(lines) > 1 else None
+    return match[1] if match else ""
+
+
+def _delivered_messages(entries: list[dict]) -> Iterator[str]:
+    calls: dict[str, str] = {}
+    for entry in entries:
+        message = entry.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        for block in blocks if isinstance(blocks, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if (
+                entry.get("type") == "assistant"
+                and block.get("type") == "tool_use"
+                and str(block.get("name", "")).endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
+                and isinstance(identifier := block.get("id"), str)
+                and isinstance(args := block.get("input"), dict)
+                and isinstance(text := args.get("message"), str)
+            ):
+                calls[identifier] = text
+            elif (
+                entry.get("type") == "user"
+                and block.get("type") == "tool_result"
+                and block.get("is_error") is not True
+                and isinstance(identifier := block.get("tool_use_id"), str)
+                and identifier in calls
+            ):
+                yield calls.pop(identifier)
+
+
+def _turn_classification(entries: list[dict]) -> str | None:
+    return next((kind for text in _delivered_messages(entries) if (kind := _understanding_kind(text))), None)
+
 
 _block_notice = notice.block_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
@@ -187,11 +236,8 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
     )
 
 
-def is_defect_report(prompt: str) -> bool:
-    return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
-
-
-def _started_bugfix(entries: list[dict]) -> bool:
+def _bugfix_calls(entries: list[dict]) -> tuple[bool, bool]:
+    failed = False
     calls: dict[str, bool] = {}
     for entry in entries:
         message = entry.get("message")
@@ -213,6 +259,7 @@ def _started_bugfix(entries: list[dict]) -> bool:
                 name = receipt.get("commandName") if isinstance(receipt, dict) else None
                 if block.get("is_error") is True or success is False:
                     calls[identifier] = False
+                    failed = True
                 elif (
                     entry.get("isVirtual") is True
                     and block.get("is_error") is False
@@ -221,17 +268,7 @@ def _started_bugfix(entries: list[dict]) -> bool:
                     and name in _BUGFIX_SKILLS
                 ):
                     calls[identifier] = True
-    return any(calls.values())
-
-
-def bugfix_pending(lines: list[str], repl_human_id: object = None) -> bool:
-    turn = latest_human_turn_context(lines)
-    if turn is None:
-        return False
-    prompt, entries, human_id = turn
-    return (
-        is_defect_report(prompt) and not (human_id is not None and human_id == repl_human_id) and not _started_bugfix(entries)
-    )
+    return any(calls.values()), failed
 
 
 def _read_human_lines(payload: dict) -> list[str] | None:
@@ -253,8 +290,8 @@ def observe_repl_skill_start(payload: dict, session_id: str) -> None:
         return
     if (lines := _read_human_lines(payload)) is None or (turn := latest_human_turn_context(lines)) is None:
         return
-    prompt, _, human_id = turn
-    if human_id is None or not is_defect_report(prompt):
+    _, _, human_id = turn
+    if human_id is None:
         return
 
     def remember(state: dict) -> dict:
@@ -288,42 +325,70 @@ def _observe_repl_skill_success(payload: dict, session_id: str) -> None:
     update_state(session_id, remember)
 
 
-def _block_body(delivery: str) -> str:
+def prevention_lines(text: str) -> list[tuple[str, str]]:
+    unquoted = QUOTED_MATERIAL_RE.sub(
+        lambda match: match[0] if match[0].startswith("`") and starts_with_kind(match[0]) else "", text
+    )
+    return [(match[0].strip(), match["text"].strip()) for match in _PREVENTION_LINE_RE.finditer(unquoted.replace("**", ""))]
+
+
+def _has_typed_prevention(text: object) -> bool:
+    if not isinstance(text, str):
+        return False
+    bodies = [body for _, body in prevention_lines(text) if body]
+    return bool(bodies) and all(starts_with_kind(body) for body in bodies)
+
+
+def _has_report_structure(message: object) -> bool:
+    if not isinstance(message, str):
+        return False
+    unquoted = QUOTED_MATERIAL_RE.sub("", message).replace("**", "").replace("__", "")
+    return bool(prevention_lines(message)) or _REPORT_STRUCTURE_RE.search(unquoted) is not None
+
+
+def _turn_block(
+    payload: dict, turn: tuple[str, list[dict], str | None], message: object, delivery: str, *, can_classify: bool
+) -> str | None:
+    _, entries, human_id = turn
+    kind = _turn_classification(entries)
+    if kind is None:
+        if can_classify and _understanding_kind(message):
+            return None
+        return _block_notice(
+            f"最新の発話の理解に分類がないため、{delivery}を止めた。",
+            fix="`send_to_user`で発話の理解を送り、見出しの直後に `分類: 是正` または `分類: 非是正` を書いてください。"
+            "是正なら `agent-basics:bugfix` を起動してください。",
+        )
+    if kind != "是正":
+        return None
+
+    session_id = payload.get("session_id")
+    repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
+    started, failed = _bugfix_calls(entries)
+    if not started and not (human_id is not None and human_id == repl_human_id):
+        if failed:
+            return None
+        return _block_notice(
+            f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
+            fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。",
+        )
+    if _has_typed_prevention(message) or (
+        not can_classify
+        and not _has_report_structure(message)
+        and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
+    ):
+        return None
     return _block_notice(
-        f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
-        fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。"
-        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認してください。"
-        "欠陥の指摘でない場合とスキルを起動できない場合は、同じ本文を再発行すれば1回通る。",
+        f"種類付きの再発防止の行がないため、{delivery}を止めた。",
+        fix="`agent-basics:bugfix`の記録に従い、種類付きの `再発防止:` の行を書いてください。",
     )
 
 
-def _pending_for_main(payload: dict) -> bool:
-    lines = _read_human_lines(payload)
-    if lines is None:
-        return False
-    session_id = payload.get("session_id")
-    repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
-    return bugfix_pending(lines, repl_human_id)
-
-
 def send_block(payload: dict, message: object = None) -> str | None:
-    if not _pending_for_main(payload):
+    lines = _read_human_lines(payload)
+    if lines is None or (turn := latest_human_turn_context(lines)) is None:
         return None
-    session_id = payload.get("session_id")
-    if (
-        isinstance(message, str)
-        and isinstance(session_id, str)
-        and notice.consume_resend(
-            session_id,
-            resolve_hook_agent_id(payload),
-            notice.QUALITY_RESEND_KEY,
-            message,
-            label="欠陥の指摘の後にagent-basics:bugfixを起動せずに報告した",
-            scope=resend_scope(payload),
-        )
-    ):
-        return None
-    return _block_body("ユーザーへの送達")
+    return _turn_block(payload, turn, message, "ユーザーへの送達", can_classify=True)
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:
@@ -331,10 +396,14 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
-    if payload.get("stop_hook_active") is True or not _pending_for_main(payload):
+    lines = _read_human_lines(payload)
+    if lines is None or (turn := latest_human_turn_context(lines)) is None:
+        return "approve", ""
+    body = _turn_block(payload, turn, payload.get("last_assistant_message"), "ターンの終了", can_classify=False)
+    if body is None:
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_bugfix_not_invoked", {})
-    return "block", _block_body("ターンの終了")
+    return "block", body
 
 
 def main(payload_text: str) -> int:

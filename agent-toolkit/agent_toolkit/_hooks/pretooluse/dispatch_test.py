@@ -9,7 +9,7 @@ import shlex
 import pytest
 
 from agent_toolkit._hooks import user_prompt_submit
-from agent_toolkit._hooks.pretooluse import agent_checks
+from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
@@ -255,6 +255,116 @@ def test_recommendation_is_reviewed_once(tmp_path: pathlib.Path, codex: bool) ->
     assert not _question_decision(tmp_path, question, agent_id="child", **host)
 
 
+_APPROVAL_OPTIONS = [
+    {"label": "この方針で進める", "description": "送った方針のとおりに着手する"},
+    {"label": "修正して進める", "description": "修正点を自由記述で伝える"},
+]
+_APPROVAL = {"header": "方針の承認", "question": "送った2件目の方針で進めてよいですか？", "options": _APPROVAL_OPTIONS}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        {
+            **_APPROVAL,
+            "question": "送った方針で進めてよいですか？",
+            "options": [
+                {"label": "この方針で進める（推奨）", "description": "送った方針のとおりに着手する"},
+                {"label": "Aだけにする", "description": "Bを外す"},
+                _APPROVAL_OPTIONS[1],
+            ],
+        },
+        {
+            **_APPROVAL,
+            "question": "A: bugfixへ実例を載せて既存の失敗例を置き換える、B: 記録の種類を必須にする、"
+            "Cとして1件のAWIで登録する方針で進めてよいですか？",
+        },
+        {**_APPROVAL, "question": "送ったA・Bの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったBを外す方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったA、Bの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った1.の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った［Aだけ］の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った旧版を除くの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った外すの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止しないの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止せずの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止せぬの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止したの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った動けるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止されるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったできるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った［修正版］の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った修正版、追記の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った今回分最終版の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った前回分改訂版の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "\n送った方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った方針で進めてよいですか？\n"},
+        {**_APPROVAL, "question": "送った\n方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った方針で進めてよいですか？\nA: 実例を載せる"},
+        {
+            **_APPROVAL,
+            "options": [_APPROVAL_OPTIONS[0], {"label": "修正して進める", "description": "Bを外し、Aだけを登録する"}],
+        },
+        {**_APPROVAL, "options": [{**_APPROVAL_OPTIONS[0], "label": "この方針で進める (Recommended)"}, _APPROVAL_OPTIONS[1]]},
+        {**_APPROVAL, "multiSelect": True},
+        {**_APPROVAL, "header": "確認", "question": "上の方針（A・B）で進めてよいか？"},
+    ],
+)
+@pytest.mark.parametrize("codex", [False, True])
+def test_policy_approval_requires_fixed_form(tmp_path: pathlib.Path, question: dict, codex: bool) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    for _ in range(2):
+        decision = _question_decision(tmp_path, question, **host)
+        assert "送った方針で進めてよいですか？" in decision
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_policy_approval_notice_explains_modifier_characters(tmp_path: pathlib.Path, codex: bool) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    question = {**_APPROVAL, "question": "送った最終 版の方針で進めてよいですか？"}
+    for _ in range(2):
+        assert "修飾は文字と数字だけで書き" in _question_decision(tmp_path, question, **host)
+
+
+def test_policy_approval_rejects_additional_question(tmp_path: pathlib.Path) -> None:
+    result = _run(
+        {
+            "tool_name": "AskUserQuestion",
+            "session_id": "question-check",
+            "tool_input": {"questions": [_APPROVAL, {"question": "どの系統へ登録しますか？", "options": _APPROVAL_OPTIONS}]},
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert "送った方針で進めてよいですか？" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "modifier",
+    [
+        "",
+        "2件目の",
+        "２回目の",
+        "二十一件目の",
+        "修正版の",
+        "改訂版の",
+        "再送版の",
+        "最新版の",
+        "まとめ版の",
+        "最終版の",
+        "機能廃止の",
+        "初回送付版の",
+        "再送改訂版の",
+        "統合版の",
+        "差し替え版の",
+    ],
+)
+@pytest.mark.parametrize("codex", [False, True])
+def test_fixed_policy_approval_passes_first_time(tmp_path: pathlib.Path, codex: bool, modifier: str) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    question = {**_APPROVAL, "question": f"送った{modifier}方針で進めてよいですか？"}
+    assert not _question_decision(tmp_path, question, **host)
+
+
 @pytest.mark.parametrize(
     "body, missing",
     [
@@ -281,7 +391,11 @@ def test_policy_question_requires_all_external_sources(
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
     prompt = f"/atk-mode {work} https://example.com/a"
     assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
-    question = {"header": "方針の承認", "question": "上の方針で進めますか？"}
+    question = _APPROVAL
+    malformed = {**question, "question": "上の方針で進めますか？"}
+    form_error = _question_decision(tmp_path, malformed)
+    assert "質問が決まった形でない" in form_error
+    assert "external-source-review.md" not in form_error
     assert "external-source-review.md" in _question_decision(tmp_path, question)
     table = tmp_path / "external-source-review.md"
     comparison = "削る・まとめる・置き換える案"
@@ -337,7 +451,7 @@ def test_external_source_markup_boundaries(
         f"| <{url}> | 設計手順 | {comparison} | 不採用 |\n",
         encoding="utf-8",
     )
-    reason = _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+    reason = _question_decision(tmp_path, _APPROVAL)
     if blocked:
         assert "3行目" in reason and "削る・まとめる・置き換える案" in reason
     else:
@@ -379,7 +493,7 @@ def test_external_source_url_boundaries(
         "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in urls),
         encoding="utf-8",
     )
-    assert not _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+    assert not _question_decision(tmp_path, _APPROVAL)
 
 
 @pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
@@ -411,7 +525,7 @@ def test_external_source_url_identity(
         "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in entries),
         encoding="utf-8",
     )
-    reason = _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+    reason = _question_decision(tmp_path, _APPROVAL)
     if rows == "complete":
         assert not reason
     else:
@@ -419,7 +533,7 @@ def test_external_source_url_identity(
 
 
 def test_external_source_url_preserves_ipv6_address() -> None:
-    urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
+    urls = user_facing_checks._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
     assert urls == {"https://[2001:db8::1]/source"}
 
 

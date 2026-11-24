@@ -53,13 +53,7 @@ class RepositorySnapshot:
             for entry in self.entries
             if entry[3] in WI_PROCESSABLE_STATES
             and (entry[3] == "processing" or entry[0].name in names)
-            and not (
-                entry[4] == WI_TYPE_UWI
-                and (
-                    (parse_frontmatter(entry[2]) or ({}, ""))[0].get("run_skill_report") == "true"
-                    or not _wi_uwi_scan.is_uwi_answered(entry[2])
-                )
-            )
+            and not (entry[4] == WI_TYPE_UWI and not _wi_uwi_scan.is_uwi_answered(entry[2]))
         )
 
     @property
@@ -97,28 +91,19 @@ class RepositorySnapshot:
 def configured_repo_snapshot(
     private_notes: pathlib.Path,
     repositories: tuple[_config.ConfiguredRepository, ...] | None = None,
+    *,
+    entries: tuple[_wi_entries.EntryRecord, ...] | None = None,
 ) -> tuple[RepositorySnapshot, ...]:
     targets = _config.resolve_configured_repositories() if repositories is None else repositories
     if not targets:
         return ()
-    snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None))
+    snapshot = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None)) if entries is None else entries
 
     branch_settings = _wi_branches.registry() if any(repository.branch is not None for repository in targets) else {}
     return tuple(
         RepositorySnapshot(
             repository,
-            tuple(
-                entry
-                for entry in snapshot
-                if (entry[4] is None and index == 0)
-                or (
-                    _wi_filters.TargetRepoMatcher(repository.repo_id).matches(entry[1])
-                    and (
-                        repository.branch is None
-                        or _wi_branches.matches(entry[2], repository.repo_id, repository.branch, branch_settings)
-                    )
-                )
-            ),
+            _configured_entries(snapshot, repository, branch_settings, include_broken=index == 0),
             _wi_readiness.calculate_readiness(
                 private_notes,
                 repository.repo_id,
@@ -129,6 +114,28 @@ def configured_repo_snapshot(
             private_notes,
         )
         for index, repository in enumerate(targets)
+    )
+
+
+def _configured_entries(
+    entries: tuple[_wi_entries.EntryRecord, ...],
+    repository: _config.ConfiguredRepository,
+    branch_settings: _wi_branches.Registry,
+    *,
+    include_broken: bool,
+) -> tuple[_wi_entries.EntryRecord, ...]:
+    matcher = _wi_filters.TargetRepoMatcher(repository.repo_id)
+    return tuple(
+        entry
+        for entry in entries
+        if (entry[4] is None and include_broken)
+        or (
+            matcher.matches(entry[1])
+            and (
+                repository.branch is None
+                or _wi_branches.matches(entry[2], repository.repo_id, repository.branch, branch_settings)
+            )
+        )
     )
 
 
@@ -416,19 +423,37 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if filenames:
         _print_named_staleness(args, private_notes, filenames)
         return
-    if getattr(args, "configured_repos", False):
-        snapshots = configured_repo_snapshot(private_notes)
+    texts = EntryTexts()
+    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
+    configured = getattr(args, "configured_repos", False)
+    repositories = _config.resolve_configured_repositories() if configured else None
+
+    def configured_start() -> tuple[list[tuple[str, str | None]], frozenset[_wi_snapshot.Identifier]]:
+        selected = _config.resolve_configured_repositories() if repositories is None else repositories
+        branches = _wi_branches.registry() if any(repo.branch is not None for repo in selected) else {}
+        return (
+            [(repo.repo_id, repo.branch) for repo in selected],
+            _wi_snapshot.identifiers(
+                entry
+                for index, repo in enumerate(selected)
+                for entry in _configured_entries(all_entries, repo, branches, include_broken=index == 0)
+            ),
+        )
+
+    output = getattr(args, "snapshot_output", None)
+    recorded = _wi_snapshot.record_list_start(
+        private_notes,
+        all_entries,
+        configured_start=configured_start,
+        candidate_list=baseline is None and "processable" in args.status,
+        output=output,
+        configured_output=configured,
+    )
+    if configured:
+        snapshots = configured_repo_snapshot(private_notes, repositories, entries=all_entries)
         configured_branches = _wi_branches.registry()
-        if getattr(args, "snapshot_output", None) is not None:
-            entries = tuple(entry for item in snapshots for entry in item.entries)
-            digest = _wi_snapshot.save(args.snapshot_output, entries)
-            _wi_snapshot.remember_progress_start(
-                args.snapshot_output,
-                private_notes,
-                ((item.repository.repo_id, item.repository.branch) for item in snapshots),
-                digest,
-                entries,
-            )
+        if output is not None and not recorded:
+            _wi_snapshot.save(output, (entry for item in snapshots for entry in item.entries))
         total = 0
         for snapshot in snapshots:
             states = _wi_filters.resolve_states(args.status)
@@ -472,13 +497,8 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     readiness_target = resolved_repos[0] if len(resolved_repos) == 1 else None
     branch_settings = _wi_branches.registry()
     target_branch = _wi_branches.requested_filter(args, resolved_repos, branch_settings)
-    texts = EntryTexts()
-    all_entries = tuple(_wi_entries.iter_entries(private_notes, WI_STATES, None, texts=texts))
-    if getattr(args, "snapshot_output", None) is not None:
-        digest = _wi_snapshot.save(args.snapshot_output, all_entries)
-        _wi_snapshot.remember_progress_start(
-            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest, all_entries
-        )
+    if output is not None and not recorded:
+        _wi_snapshot.save(output, all_entries)
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
         readiness_target,

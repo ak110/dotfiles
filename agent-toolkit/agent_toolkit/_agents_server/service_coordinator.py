@@ -68,6 +68,7 @@ class ServiceCoordinator(ServiceSessionControl):
         self._ended_sdk_clients: dict[str, Any] = {}
         self._moving: dict[str, asyncio.Task[dict]] = {}
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+        self._force_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         self._updates: dict[str, _Update] = {}
         self._runtime: service_io.Runtime | None = None
         self._publish_lock = asyncio.Lock()

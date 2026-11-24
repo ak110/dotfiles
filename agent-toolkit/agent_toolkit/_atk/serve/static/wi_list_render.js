@@ -360,7 +360,7 @@ function renderEffectiveConditions() {
   }
   const labels = [`state=${query.get('status')}`, PERIOD_LABELS[query.get('period')] || '全期間'];
   for (const [key, label] of [['q', '検索'], ['type', 'type'], ['answered', 'answered'],
-    ['important', '重要'], ['target_repo', 'target-repo'], ['target_branch', '系統'], ['source_kind', 'source kind']]) {
+    ['important', '重要'], ['target_repo', 'target-repo'], ['target_branch', '系統'], ['source_kind', 'source の設定']]) {
     const value = query.get(key);
     if (value && !(value === 'all' && ['type', 'answered'].includes(key))) labels.push(`${label}=${value}`);
   }

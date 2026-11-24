@@ -98,6 +98,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             info.effort,
             info.engine,
             model_type=info.model_type,
+            model_override_record=info.model_override_record,
             launch_kind=info.launch_kind,
             startup_profile=info.startup_profile,
             status=info.status,
@@ -255,6 +256,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
         status: Literal["completed", "failed", "interrupted"],
         *,
         interruption: session_registry.InterruptionReason | None,
+        expected: session_registry.SessionResolution | None = None,
     ) -> None:
         await run_file_operation(
             session_registry.publish,
@@ -272,6 +274,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             model=info.model,
             effort=info.effort,
             model_type=info.model_type,
+            model_override_record=info.model_override_record,
             launch_kind=info.launch_kind,
             startup_profile=info.startup_profile,
             turn_seq=info.turn_seq,
@@ -281,6 +284,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             turn_id=info.turn_id,
             interruption=interruption,
             preserve_server_instance=True,
+            expected=expected,
             result_contract_recovery_consumed=info.result_contract_recovery_consumed,
         )
 
@@ -486,6 +490,7 @@ class ManagerRegistryRestore(responses.ManagerResponses):
             claude_connection=info.claude_connection,
             claude_role=info.claude_role,
             model_type=info.model_type,
+            model_override_record=info.model_override_record,
             launch_kind=info.launch_kind,
             startup_profile=info.startup_profile,
             **info.launch_info.as_kwargs(),

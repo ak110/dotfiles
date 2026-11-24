@@ -77,15 +77,16 @@ def test_candidate_records_match_filtered_candidates(tmp_path: pathlib.Path, mon
         blocked.read_text(encoding="utf-8").replace("type: awi\n", "type: awi\ndepends_on: [missing.md]\n"), encoding="utf-8"
     )
     _write_uwi_file(notes, "unanswered.md", question="候補外の未回答", answer="")
-    report = _write_uwi_file(notes, "run-skill.md", question="候補外の報告", answer="回答", source="run-skill")
+    report = _write_uwi_file(notes, "run-skill.md", question="回答済みの報告", answer="回答", source="run-skill")
     report.write_text(
         report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"), encoding="utf-8"
     )
     snapshot = listing.configured_repo_snapshot(notes, config.resolve_configured_repositories())[0]
     records = snapshot.candidate_records()
-    assert {record["filename"] for record in records} == {"ready.md"}
+    assert {record["filename"] for record in records} == {"ready.md", "run-skill.md"}
     assert len(records) == len(snapshot.candidates) and snapshot.lane_limit == 1
-    assert records[0]["body"] == entry_path(notes, "ready.md").read_text(encoding="utf-8")
+    ready = next(record for record in records if record["filename"] == "ready.md")
+    assert ready["body"] == entry_path(notes, "ready.md").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("output", ["--jsonl", "--no-jsonl", "--summary-only", "--count"])

@@ -2,12 +2,13 @@ import hashlib
 import json
 import os
 import pathlib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
+from agent_toolkit._atk import managed_temp
 from agent_toolkit._atk.wi import uwi_scan
 from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.entries import EntryRecord, canonical_repo
-from agent_toolkit._common import delegated_session, process_loop_session, session_state
+from agent_toolkit._common import delegated_session, next_action, private_directory, process_loop_session, session_state
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._git.remote import normalize_remote_url
@@ -21,8 +22,17 @@ def identifiers(entries: Iterable[EntryRecord]) -> frozenset[Identifier]:
 
 
 def save(path: pathlib.Path, entries: Iterable[EntryRecord]) -> str:
-    payload = [{"target_repo": repo, "filename": name} for repo, name in sorted(identifiers(entries))]
-    encoded = (json.dumps(payload, ensure_ascii=False) + "\n").encode()
+    encoded = _encode(identifiers(entries))
+    _write_snapshot(path, encoded)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _encode(values: Iterable[Identifier]) -> bytes:
+    payload = [{"target_repo": repo, "filename": name} for repo, name in sorted(values)]
+    return (json.dumps(payload, ensure_ascii=False) + "\n").encode()
+
+
+def _write_snapshot(path: pathlib.Path, encoded: bytes) -> None:
     try:
         atomic_write(path, encoded)
     except OSError as error:
@@ -30,7 +40,6 @@ def save(path: pathlib.Path, entries: Iterable[EntryRecord]) -> str:
             f"開始時集合を保存できない: {path}: {error}",
             next_action="--snapshot-outputの保存先と書込権限を確認し、初回取得を再実行する",
         ) from error
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def read(path: pathlib.Path, *, expected_digest: str | None = None) -> frozenset[Identifier]:
@@ -68,7 +77,6 @@ def new_entries(entries: Iterable[EntryRecord], baseline: frozenset[Identifier])
     return [entry for entry in entries if (canonical_repo(entry[1], cache) or "", entry[0].name) not in baseline]
 
 
-_PROGRESS_SNAPSHOTS = "process_loop_progress_snapshots"
 _PROCESSING_STARTED = "process_loop_processing_started"
 
 
@@ -106,38 +114,156 @@ def remember_processing_started(private_notes: pathlib.Path, filenames: Iterable
     session_state.update_state(session_id, remember)
 
 
-def remember_progress_start(
-    path: pathlib.Path,
+_LEGACY_START = "process_loop_progress_snapshots"
+_START_DIRECTORY = "wi-circuit-start"
+_START_UNAVAILABLE = "process_loop_start_directory_unavailable"
+
+
+def _read_start(directory: pathlib.Path) -> dict | None:
+    try:
+        return json.loads((directory / "source.json").read_bytes())
+    except FileNotFoundError:
+        return None
+
+
+def record_list_start(
     private_notes: pathlib.Path,
-    targets: Iterable[tuple[str, str | None]],
-    digest: str,
-    entries: Iterable[EntryRecord],
-) -> None:
-    if not (session_id := _progress_session_id()):
-        return
-    unanswered = identifiers(entry for entry in entries if entry[4] == WI_TYPE_UWI and not uwi_scan.is_uwi_answered(entry[2]))
-    updates = {
-        json.dumps([repo, branch]): {
-            "repo": repo,
-            "branch": branch,
-            "path": str(path.resolve()),
-            "digest": digest,
-            "notes": str(private_notes.resolve()),
-            "unanswered": sorted(unanswered),
-        }
-        for repo, branch in targets
-    }
-    if not updates:
-        return
+    entries: tuple[EntryRecord, ...],
+    *,
+    configured_start: Callable[[], tuple[list[tuple[str, str | None]], frozenset[Identifier]]],
+    candidate_list: bool,
+    output: pathlib.Path | None,
+    configured_output: bool,
+) -> bool:
+    if not (session_id := _progress_session_id()) or (not candidate_list and output is None):
+        return False
+    state = session_state.read_state(session_id)
+    if state.get(_START_UNAVAILABLE):
+        _unavailable("巡回の開始時集合は初回取得で保存できなかった", output)
+        return True
+    if _LEGACY_START in state:
+        if output is not None:
+            scope = configured_start()[0] if configured_output else None
+            _export_legacy(state[_LEGACY_START], private_notes, scope, output)
+        return True
+    try:
+        directory = managed_temp.resolve_session_temp(session_id) / _START_DIRECTORY
+        created = _claim_start(directory)
+    except (OSError, managed_temp.ManagedTempError) as error:
+        saved = session_state.update_state(session_id, lambda state: {**state, _START_UNAVAILABLE: True})
+        if not saved:
+            raise ActionableError(
+                "巡回の開始時集合と失敗の記録を保存できない",
+                next_action="この巡回では候補を選定せず、保存先の障害を解消して新しい巡回を開始する",
+            ) from error
+        _unavailable(f"巡回の開始時集合を保存できない: {error}", output)
+        return True
+    path = directory / "baseline.json"
+    if created:
+        # 集合の確定前に試行を記録し、途中で失敗しても次の一覧を初回にしない。  # pyfltr: allow-comment
+        try:
+            digest = save(path, entries)
+            unanswered = identifiers(
+                entry for entry in entries if entry[4] == WI_TYPE_UWI and not uwi_scan.is_uwi_answered(entry[2])
+            )
+            targets, configured_ids = configured_start()
+            new_source = {
+                "targets": targets,
+                "configured": sorted(configured_ids),
+                "notes": str(private_notes.resolve()),
+                "digest": digest,
+                "unanswered": sorted(unanswered),
+            }
+            atomic_write(directory / "source.json", json.dumps(new_source, ensure_ascii=False).encode())
+        except (OSError, ActionableError) as error:
+            _unavailable(f"巡回の開始時集合を保存できない: {error}", output)
+            return True
 
-    def remember(state: dict) -> dict:
-        previous = state.get(_PROGRESS_SNAPSHOTS)
-        rows = previous if isinstance(previous, dict) else {}
-        return {**state, _PROGRESS_SNAPSHOTS: {**updates, **rows}}
+    if output is not None:
+        source = _read_start(directory)
+        if source is None or source["notes"] != str(private_notes.resolve()):
+            _unavailable("巡回の開始時集合を参照できない", output)
+        else:
+            values = read(path, expected_digest=source["digest"])
+            if configured_output:
+                values &= frozenset(tuple(value) for value in source["configured"])
+            _export(output, values, (path, directory / "source.json"))
+    return True
 
-    session_state.update_state(session_id, remember)
+
+def _claim_start(directory: pathlib.Path) -> bool:
+    try:
+        directory.mkdir(mode=private_directory.MODE)
+    except FileExistsError:
+        return False
+    return True
+
+
+def _unavailable(reason: str, output: pathlib.Path | None) -> None:
+    action = "初回取得の診断を確認し、この巡回では現在の一覧を基準にしないでください"
+    if output is not None:
+        raise ActionableError(reason, next_action=action)
+    next_action.report(reason, next_action=action)
+
+
+def _export_legacy(rows: object, notes: pathlib.Path, scope: list[tuple[str, str | None]] | None, output: pathlib.Path) -> None:
+    if not isinstance(rows, dict) or not rows:
+        _unavailable("旧版の開始時集合を参照できない", output)
+        return
+    values_by_source = set()
+    paths = []
+    if scope is not None and any(branch is not None for _, branch in scope):
+        _unavailable("旧版の開始時集合から登録系統別の識別子を区別できない", output)
+        return
+    for row in rows.values():
+        if not isinstance(row, dict) or row.get("notes") != str(notes.resolve()):
+            _unavailable("旧版の開始時集合の保存先が一致しない", output)
+            return
+        if not isinstance(row.get("digest"), str) or not isinstance(row.get("path"), str):
+            _unavailable("旧版の開始時集合の参照が不正", output)
+            return
+        path = pathlib.Path(row["path"])
+        values_by_source.add(read(path, expected_digest=row["digest"]))
+        paths.append(path)
+    if len(values_by_source) != 1:
+        _unavailable("旧版の開始時集合が複数あり、共通の受け渡し元を確定できない", output)
+        return
+    values = next(iter(values_by_source))
+    if scope is not None:
+        repos = {repo for repo, _ in scope}
+        values = frozenset(value for value in values if value[0] in repos or (repos and not value[0]))
+    _export(output, values, paths)
+
+
+def _export(output: pathlib.Path, values: Iterable[Identifier], protected: Iterable[pathlib.Path]) -> None:
+    encoded = _encode(values)
+    if output.resolve() in {path.resolve() for path in protected}:
+        if output.read_bytes() != encoded:
+            _unavailable("明示出力の指定先が巡回の開始時記録と同じ", output)
+        return
+    _write_snapshot(output, encoded)
 
 
 def progress_sources(session_id: str) -> dict:
-    sources = session_state.read_state(session_id).get(_PROGRESS_SNAPSHOTS)
-    return sources if isinstance(sources, dict) else {}
+    state = session_state.read_state(session_id)
+    if _LEGACY_START in state:
+        legacy = state[_LEGACY_START]
+        return legacy if isinstance(legacy, dict) else {}
+    root = managed_temp.find_session_temp(session_id)
+    if root is None:
+        return {}
+    directory = root / _START_DIRECTORY
+    source = _read_start(directory)
+    if source is None:
+        return {}
+    return {
+        json.dumps([repo, branch]): {
+            "repo": repo,
+            "branch": branch,
+            "path": str(directory / "baseline.json"),
+            "notes": source["notes"],
+            "digest": source["digest"],
+            "unanswered": source["unanswered"],
+        }
+        for repo, branch in source["targets"]
+    }

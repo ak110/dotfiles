@@ -29,7 +29,7 @@ _PLAN_FILTERS = {"all", "normal", "plan"}
 """`plan`は、廃止した計画ファイル付きの型で保存された項目を見分ける読取互換の表示区分である。"""
 
 
-_SOURCE_KIND_FILTERS = {"human", "agent"}
+_SOURCE_KIND_FILTERS = {"set", "unset", "human", "agent"}
 
 
 _PERIOD_FILTERS = {"all", *_wi_operations.PERIOD_WEEKS}
@@ -198,6 +198,8 @@ def _register_query_routes(app: quart.Quart, runtime: _runtime.ServeRuntime) -> 
             raise _wi_operations.WebApiInputError(f"未知のqueryです: {', '.join(sorted(unknown))}")
         filters = dict(quart.request.args.items())
         _validate_entry_filters(filters)
+        if filters.get("source_kind") in {"human", "agent"}:
+            filters["source_kind"] = "unset" if filters["source_kind"] == "human" else "set"
         result, warnings = await workers.run(ops.entries_with_warnings, filters)
         requested_page = _entry_page(filters)
         if requested_page is not None:

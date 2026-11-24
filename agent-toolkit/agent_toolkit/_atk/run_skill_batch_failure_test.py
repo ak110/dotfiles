@@ -157,18 +157,12 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     assert details["hostname"] == platform.node() and details["os"] == sys.platform
     assert details["plugin_version"]
     snapshot = details["targets"][0]
-    for field in (
-        "host",
-        "session_id",
-        "transcript_path",
-        "cwd",
-        "target_repo",
-        "started_at",
-        "updated_at",
-        "generation",
-        "review_batch",
-    ):
+    for field in ("host", "session_id", "transcript_path", "cwd", "target_repo", "review_batch"):
         assert snapshot[field] == target[field]
+    # 選定と準備だけに使う項目は、準備に失敗した対象にだけ残す。  # pyfltr: allow-comment
+    for field in ("started_at", "updated_at", "generation"):
+        assert snapshot.get(field) == (target[field] if phase == "prepare" else None)
+    assert ("previous_scope" in snapshot) is (phase == "prepare")
     assert snapshot["record_state"]["kind"] == ("ディレクトリ" if phase == "prepare" else "ファイル")
     assert details["prepared_count"] == (0 if phase == "prepare" else 1)
     assert details["prepared_session_ids"] == ([] if phase == "prepare" else ["one"])
@@ -244,7 +238,7 @@ def test_model_failure_keeps_diagnostics_beyond_log_tail(tmp_path):
         "exit_code": 7,
         "log_path": str(log),
     }
-    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    body = run_skill_batch_evidence.failure_details(manifest)
     details = json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))["log"]
     assert details["header"] == [
         "開始時刻: 2026-11-18T00:00:00+09:00",
@@ -267,17 +261,34 @@ def test_failure_details_keep_previous_scope_and_redact_error(tmp_path):
         session_review.directory() / "reviewed" / f"{session_review.key(target['host'], target['session_id'])}.json", scope
     )
     manifest = {"targets": [target], "error": "prepare-or-state: prepareが終了2: password=hunter2 不足: 範囲"}
-    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    body = run_skill_batch_evidence.failure_details(manifest)
     details = json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))
     assert details["targets"][0]["previous_scope"] == scope
     assert "不足: 範囲" in details["error"] and "hunter2" not in body
+
+
+def test_reissuing_failure_uses_original_plugin_source(tmp_path):
+    path = tmp_path / "batch.json"
+    writer = session_review.BatchWriter(path)
+    writer.create({"run_id": "original", "targets": []})
+    original = {"version": "2.297.0", "commit": "a" * 40, "source": "Git"}
+    writer.fail("failure", "finish: report-unsynced", version="2.297.0", source=original)
+    retry = writer.fail(
+        "failure", "finish: report-unsynced", version="2.300.0", source={"version": "2.300.0", "commit": "b" * 40}
+    )
+    assert retry["failure_source"] == original
+    assert retry["failure_version"] == "2.297.0"
+    body = run_skill_batch_evidence.failure_details(retry)
+    assert "a" * 40 in body and "b" * 40 not in body
+    legacy = run_skill_batch_evidence.failure_details({"targets": [], "failure_version": "2.297.0"})
+    assert '"source": "不明"' in legacy
 
 
 def _log_details(tmp_path, text):
     log = tmp_path / "model.log"
     log.write_text(text, encoding="utf-8")
     manifest = {"targets": [], "error": "run-skill-exit-7", "exit_code": 7, "log_path": str(log)}
-    body = run_skill_batch_evidence.failure_details(manifest, run_skill_batch.PLUGIN_ROOT)
+    body = run_skill_batch_evidence.failure_details(manifest)
     return body, json.loads("\n".join(line[4:] for line in body.splitlines()[2:]))["log"]
 
 

@@ -45,7 +45,7 @@ CWD_DESCRIPTION = parameter_description(
 
 
 HANDOFF_FROM_DESCRIPTION = parameter_description(
-    "終了した前任のsession_id。model_typeに後任のモデル候補列を任意指定できる。他の引数は併用しない。"
+    "終了した前任のsession_id。model_typeに後任の工程名を指定できる。直接指定にはmodel_overrideとmodel_override_evidenceも渡す。"
     "指定なしでは前任の工程の現在設定を使い、用途・cwd・label・起動本文と進捗を復元して新しい会話の後任を起動する。"
     "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終了を待つかkillしてから指定する。"
     "応答のsession_idは後任であり、atk agents waitの待機対象になる。"
@@ -161,7 +161,7 @@ MODEL_TYPE_DESCRIPTION = parameter_description(
     "agyの委譲にはGemini APIキー方式の明示選択・APIキー・対応版が必要で、個人ログインへ切り替えない。"
     "delegateでは必須。他のmodeでは省略してよく、省略時はtaskが`<役割名>.subagent.md`に対応する工程別設定、"
     "exploreとshellが`chores_fast`、writeが`write`の設定を使う。"
-    "handoff_fromでの省略は前任の候補を継承し、現在設定へ戻すには元の工程名を明示する。"
+    "候補列の直接指定と役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必須。handoff_fromでは前任の候補列を継承しない。"
     "自由本文のdelegate・explore・write・shellで`execute`か`orchestrate`を指定すると、委譲先を起動せずに拒否する。"
     "taskで役割文書の工程と異なる値を指定した場合と、候補列を直接指定した場合は、応答の`warnings`へ示す。"
     "指定した値はそのsessionだけに使い、恒常的な変更は`atk config set`で行う。"

@@ -45,20 +45,41 @@ def test_run_report_sync_ignores_later_answer_and_state(tmp_path: pathlib.Path, 
         f"{uwi_module.ANSWER_HEADING}\n\n{uwi_module.ANSWER_MARKER}\n"
     )
     report.write_text(content, encoding="utf-8")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+    unmatched = "報告用UWIがHEADのcommitと一致しない"
+    unreached = "報告用UWIのcommitがリモートへ未到達"
+    assert _gap_reason(notes) == unmatched
     git_repository.commit_all(notes, "report")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+    assert _gap_reason(notes) == unreached
     git_repository.run_git(notes, "push", "origin", "HEAD")
     updated = content.replace("state: inbox", f"state: {outcome}") + "了解した。\n\n## 処理結果\n採否を記録した。\n"
     report.write_text(updated, encoding="utf-8")
     git_repository.commit_all(notes, "answer")
     assert add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+    missing = add_module.check_run_report_sync(notes, run_id="run-2", scope="my-skill")
+    assert missing is not None and missing.reason == "報告用UWIが無い"
+    assert missing.detail["candidates"] == [
+        {
+            "file": report.name,
+            "state": outcome,
+            "scope": "my-skill",
+            "run_skill_report": "true",
+            "run_skill_run_id": "run-1",
+            "weekly_slot": None,
+        }
+    ]
     report.write_text(updated.replace("分析した。", "追加の分析をした。"), encoding="utf-8")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+    assert _gap_reason(notes) == unmatched
     git_repository.commit_all(notes, "edit report")
-    assert not add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+    assert _gap_reason(notes) == unreached
     git_repository.run_git(notes, "push", "origin", "HEAD")
     assert add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill")
+
+
+def _gap_reason(notes: pathlib.Path) -> str | None:
+    """同期を確認できなかった段階の区分を返す。真偽値の判定と同じ結果になることも確かめる。  pyfltr: allow-comment"""
+    gap = add_module.check_run_report_sync(notes, run_id="run-1", scope="my-skill")
+    assert add_module.has_synced_run_report(notes, run_id="run-1", scope="my-skill") is (gap is None)
+    return None if gap is None else gap.reason
 
 
 @pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])

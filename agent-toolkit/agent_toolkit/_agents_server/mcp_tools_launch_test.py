@@ -6,7 +6,7 @@ from __future__ import annotations
 # pylint: disable=protected-access
 import pathlib
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal, TypedDict
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,7 +14,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from agent_toolkit._agents_server import launch_requests, mcp_tools, tool_descriptions
 from agent_toolkit._atk import config as _atk_config
-from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX, ActionableError
 from agent_toolkit._testing.agents_server_support import (
     _MODE_INPUT_CASES,
     _manager_with_fake,
@@ -23,6 +23,14 @@ from agent_toolkit._testing.agents_server_support import (
 )
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
+
+
+class _OverrideInputs(TypedDict):
+    model_override: Literal["user_instruction"]
+    model_override_evidence: str
+
+
+_OVERRIDE: _OverrideInputs = {"model_override": "user_instruction", "model_override_evidence": "ユーザーが検証用のモデルを指定"}
 
 
 @pytest.mark.asyncio
@@ -35,7 +43,7 @@ async def test_start_observation_is_bound_before_returning_to_mcp(
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         token = "0123456789abcdef" * 2
         response = await mcp_tools.start(
-            str(tmp_path), mode="explore", prompt="調査", model_type="codex:model/high", start_observation=token
+            str(tmp_path), mode="explore", prompt="調査", model_type="codex:model/high", start_observation=token, **_OVERRIDE
         )
         assert manager.sessions[response["session_id"]].start_observation == token
         assert "start_observation" not in response
@@ -55,12 +63,13 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
                 subagent_md_path=str(task_document),
                 extra_params=_observed_input_params(task_document.name, tmp_path),
                 model_type=override,
+                **_OVERRIDE,
             ),
-            "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type=override),
+            "explore": await mcp_tools.start(str(tmp_path), mode="explore", prompt="調査", model_type=override, **_OVERRIDE),
             "shell": await mcp_tools.start(
-                str(tmp_path), mode="shell", command="make test", summary_policy="終了状態", model_type=override
+                str(tmp_path), mode="shell", command="make test", summary_policy="終了状態", model_type=override, **_OVERRIDE
             ),
-            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草", model_type=override),
+            "write": await mcp_tools.start(str(tmp_path), mode="write", prompt="起草", model_type=override, **_OVERRIDE),
         }
 
         assert requested == [override] * 4
@@ -68,6 +77,7 @@ async def test_start_tools_accept_model_type_override(monkeypatch: pytest.Monkey
             assert any(item["scope"] == "model-override" for item in response["warnings"])
             shown = await manager.show_session(response["session_id"])
             assert shown["model_type"] == override
+            assert "user_instruction" in shown["model_override_record"]
             assert shown["launch_kind"] == launch_kind
 
 
@@ -113,6 +123,7 @@ async def test_role_override_warning_keeps_requested_candidate(
             subagent_md_path=str(document),
             extra_params=_observed_input_params(document.name, tmp_path),
             model_type=override,
+            **_OVERRIDE,
         )
         assert requested == [override or "execute"]
         warnings = [item for item in response.get("warnings", []) if item["scope"] == "model-override"]
@@ -131,7 +142,9 @@ async def test_free_prompt_direct_candidates_warn_without_rejection(
     requested = _recording_candidates(monkeypatch)
     async with _manager_with_fake("codex") as (manager, _):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
-        response = await mcp_tools.start(str(tmp_path), mode="delegate", prompt="確定済み作業", model_type="codex:model/high")
+        response = await mcp_tools.start(
+            str(tmp_path), mode="delegate", prompt="確定済み作業", model_type="codex:model/high", **_OVERRIDE
+        )
         assert requested == ["codex:model/high"]
         assert any(item["scope"] == "model-override" for item in response["warnings"])
 
@@ -248,10 +261,15 @@ async def test_start_freeform_modes_keep_lightweight_stages_and_explicit_candida
         for model_type in models:
             if mode == "shell":
                 response = await mcp_tools.start(
-                    str(tmp_path), mode=mode, model_type=model_type, command="git status", summary_policy="終了状態"
+                    str(tmp_path),
+                    mode=mode,
+                    model_type=model_type,
+                    **_OVERRIDE,
+                    command="git status",
+                    summary_policy="終了状態",
                 )
             else:
-                response = await mcp_tools.start(str(tmp_path), mode=mode, model_type=model_type, prompt="調査")
+                response = await mcp_tools.start(str(tmp_path), mode=mode, model_type=model_type, **_OVERRIDE, prompt="調査")
             assert (await manager.show_session(response["session_id"]))["model_type"] == model_type
         assert requested == models
 
@@ -328,3 +346,33 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
             "write": "write",
             "shell": "shell-make",
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model", "reason", "evidence"),
+    [
+        ("codex:luna/low", None, None),
+        ("codex:luna/low", "observation", " "),
+        ("claude:haiku,codex:sol", "observation", "対照実験"),
+    ],
+)
+async def test_direct_override_refused_before_backend_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    model: str,
+    reason: Literal["observation"] | None,
+    evidence: str | None,
+) -> None:
+    manager = SimpleNamespace(start_explore=AsyncMock())
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    with pytest.raises(ActionableError, match="model_override|haiku"):
+        await mcp_tools.start(
+            str(tmp_path),
+            mode="explore",
+            prompt="観測",
+            model_type=model,
+            model_override=reason,
+            model_override_evidence=evidence,
+        )
+    manager.start_explore.assert_not_awaited()

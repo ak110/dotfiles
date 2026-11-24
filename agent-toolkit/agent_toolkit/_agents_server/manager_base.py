@@ -90,6 +90,8 @@ class ManagerBase:
         self._auto_resume_task: asyncio.Task[None] | None = None
         self._retention_timers: dict[str, asyncio.TimerHandle] = {}
         self._resource_release_tasks: dict[str, asyncio.Task[None]] = {}
+        self._active_sends: dict[str, set[asyncio.Task[Any]]] = {}
+        self._force_stopping: set[str] = set()
         self._candidate_tasks: set[asyncio.Task[None]] = set()
         self._diagnostic_tasks: set[asyncio.Task[None]] = set()
         self._diagnostic_lock = asyncio.Lock()

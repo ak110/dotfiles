@@ -109,7 +109,7 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
     one = repositories[0]
     two = repositories[1]
     _write(notes, "external.md", two.repo_id)
-    for number in range(11):
+    for number in range(10):
         _write(notes, f"processing-{number:02}.md", one.repo_id, state="processing", extra="depends_on: [external.md]\n")
     _write(notes, "blocked-inbox.md", one.repo_id, extra="depends_on: [external.md]\n")
     run_skill = notes / "processing" / "run-skill.md"
@@ -123,6 +123,7 @@ def test_processing_candidates_and_lane_limit(tmp_path: pathlib.Path, monkeypatc
     assert snapshot.lane_limit == 2
     records = snapshot.candidate_records()
     assert len(records) == 11
+    assert "run-skill.md" in {record["filename"] for record in records}
     assert all(
         {"filename", "target_repo", "ready", "blocked_reason", "source", "summary", "body", "staleness"} <= record.keys()
         for record in records

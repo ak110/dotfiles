@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import dataclasses
 import logging
 import typing
@@ -10,6 +11,8 @@ from typing import Any
 from agent_toolkit._agents_server import state_publication, state_resume, turn_state
 from agent_toolkit._agents_server.result_projection import append_result_next_action
 from agent_toolkit._common import task_documents
+
+MODEL_OVERRIDE_RECORD: contextvars.ContextVar[str | None] = contextvars.ContextVar("MODEL_OVERRIDE_RECORD", default=None)
 
 PreviousResult = state_resume.PreviousResult
 RegistryResumeState = state_resume.RegistryResumeState

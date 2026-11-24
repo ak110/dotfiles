@@ -31,6 +31,7 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "properties": {
                 "session_id": {"type": "string"},
                 "stop": {"default": False, "type": "boolean"},
+                "force": {"default": False, "type": "boolean"},
                 "timeout": {"default": 270.0, "type": "number"},
             },
             "required": ["session_id"],
@@ -109,6 +110,14 @@ EXPECTED_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "model_type": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "prompt": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "subagent_md_path": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
+                "model_override": {
+                    "anyOf": [
+                        {"enum": ["user_instruction", "observation", "fallback_failure"], "type": "string"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+                "model_override_evidence": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "start_observation": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},
                 "startup_profile": {"anyOf": [{"$ref": "#/$defs/StartupProfile"}, {"type": "null"}], "default": None},
                 "summary_policy": {"anyOf": [{"type": "string"}, {"type": "null"}], "default": None},

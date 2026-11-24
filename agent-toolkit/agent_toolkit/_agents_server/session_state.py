@@ -34,6 +34,7 @@ class SessionState:
 
     claude_subscription_retry_at: float | None = None
     model_type: str | None = None
+    model_override_record: str | None = dataclasses.field(default_factory=contracts.MODEL_OVERRIDE_RECORD.get)
     launch_kind: contracts.LaunchKind = "delegate"
     startup_profile: startup_features.StartupProfile | None = dataclasses.field(default_factory=startup_features.requested)
     reply_start_pending: bool = False

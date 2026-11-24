@@ -54,7 +54,8 @@ atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session
    同書「直接起草と独立した検収の選択」に従い、`agent-toolkit:atk-mode/roles/wi-draft-review.parent.md`の投入前レビューを経て保存する。
    原因分析を含む原稿の独立した検収は省かない。
    全対象の分析と横断の整理の後に全要求を予告し、合格した原稿を保存する（`agent-toolkit:atk-mode/playbooks/review-session-analysis.md`「工程5」）。
-   `source`は`session-review`とし、エージェント由来の提案として処理担当が根拠と採否を懐疑的に評価する。
+   `source`は起票経路として`session-review`を指定する。
+   処理担当は同書「工程5」に従い、要求・完成条件の各項目の出所と採否の根拠を確かめる。
    所要時間の目標、計測の起点と終点、超過の分析は`agent-toolkit:atk-mode/references/review-session-cost.md`「所要時間の分析と改善」のbatchの定義に従う。
 4. 終了の前にAWIの保存を検収し、対象一覧、登録したAWI、見送り、費用確認を対象IDと対応付けて報告の本文を確定する。
    部分分析の対象は、その限界と、欠測の記録ID・物理行・件数も同じ本文に書く。

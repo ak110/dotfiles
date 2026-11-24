@@ -579,7 +579,7 @@ def prepare(case: _Case, *, out: pathlib.Path, repos: dict[str, pathlib.Path], p
             rows = _contract_rows(texts)
             deliver = bool(rows)
             header = [
-                "## 新形式のエージェント由来AWIの条件表",
+                "## 新形式AWIの条件表",
                 "",
                 "| WI | 条件番号 | 区分 | 内容 | 出典 |",
                 "| --- | --- | --- | --- | --- |",
