@@ -8,6 +8,7 @@ import shlex
 
 import pytest
 
+from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._hooks.pretooluse import agent_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
@@ -272,27 +273,32 @@ def test_send_review_identifies_missing_alternative(body: str, missing: bool) ->
     assert (output.get("permissionDecision") == "deny") is missing
 
 
-def test_policy_question_requires_all_external_sources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+def test_policy_question_requires_all_external_sources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, work: str
+) -> None:
     contract = tmp_path / "work-contract.md"
-    contract.write_text(
-        "# 作業契約\n- 作業: add-awi-by-user\n## 原本\n- https://example.com/a\n- https://example.com/b)\n",
-        encoding="utf-8",
-    )
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
-    question = {"questions": [{"question": "上の方針（A・Bの2件を登録、他は不採用）で起草してよいか？"}]}
-    assert "external-source-review.md" in _question_decision(tmp_path, question["questions"][0])
-    assert not pretooluse._external_source_review_needed("s", {"questions": [{"question": "どの系統を選びますか？"}]})
+    prompt = f"/atk-mode {work} https://example.com/a"
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    question = {"header": "方針の承認", "question": "上の方針で進めますか？"}
+    assert "external-source-review.md" in _question_decision(tmp_path, question)
     table = tmp_path / "external-source-review.md"
-    a = "| https://example.com/a | agent-basicsの設計手順 |\n"
+    comparison = "削る・まとめる・置き換える案"
+    header = f"| 採否と理由 | {comparison} | 資料URL | 配布規範での定義元または非該当の理由 |\n| --- | --- | --- | --- |\n"
+    good = "なし。既存の設計手順を調べ、重複が無かった"
+    for value in ("", " **なし。** ", "——"):
+        table.write_text(header + f"| 不採用 | {value} | https://example.com/a | 設計手順 |\n", encoding="utf-8")
+        reason = _question_decision(tmp_path, question)
+        assert "3行目" in reason and comparison in reason
+    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 |\n"
     table.write_text(a, encoding="utf-8")
-    assert pretooluse._external_source_review_needed("s", question)
-    table.write_text(a + "| https://example.com/b) | |\n", encoding="utf-8")
-    assert pretooluse._external_source_review_needed("s", question)
-    table.write_text(a + "| https://example.com/b) | 非該当: 個別の保存形式 |\n", encoding="utf-8")
-    assert not pretooluse._external_source_review_needed("s", question)
-    for body in ("- 作業: implement\n- 外部資料: https://example.com/a\n", "- 作業: add-awi-by-user\n"):
-        contract.write_text(body, encoding="utf-8")
-        assert not pretooluse._external_source_review_needed("s", question)
+    assert not _question_decision(tmp_path, question)
+    contract.write_text("# 作業契約\n## 原本\n- https://example.com/b\n", encoding="utf-8")
+    assert "https://example.com/b" in _question_decision(tmp_path, question)
+    table.write_text(a + f"| 不採用 | {good} | https://example.com/b | 設計手順 |\n", encoding="utf-8")
+    assert not _question_decision(tmp_path, question)
+    assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
 
 
 def test_external_source_url_preserves_ipv6_address() -> None:

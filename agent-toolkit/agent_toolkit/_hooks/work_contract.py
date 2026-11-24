@@ -53,6 +53,25 @@ _DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(
 _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 
+EXTERNAL_SOURCE_WORKS = frozenset({"add-awi-by-user", "process-user-comments", "implement"})
+EXTERNAL_SOURCE_ENTRY_KEY = "external_source_entry"
+_SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
+
+
+def source_urls(line: str) -> Iterator[str]:
+    for match in _SOURCE_URL.finditer(line):
+        url = match[0]
+        if line[: match.start()].endswith("](") and url.endswith(")"):
+            url = url[:-1]
+        yield url
+
+
+def observe_external_source_entry(session_id: str, work: str, arguments: str) -> None:
+    urls = sorted(set(source_urls(arguments))) if work in EXTERNAL_SOURCE_WORKS else []
+    entry = {"work": work, "urls": urls}
+    update_state(session_id, lambda state: {**state, EXTERNAL_SOURCE_ENTRY_KEY: entry})
+
+
 def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
     path = record_path(session_id)
     if path is None or not message.strip() or not isinstance(raw_transcript, str) or not raw_transcript:

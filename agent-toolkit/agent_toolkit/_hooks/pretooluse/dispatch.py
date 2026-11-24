@@ -188,9 +188,13 @@ _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[
 
 _ALTERNATIVE_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*別案(?:[*_]*\s*[:：]|[:：][*_]+)")
 _POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
-_SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
 _SOURCE_REVIEW_FILE = "external-source-review.md"
-_SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?(?:add-awi-by-user|process-user-comments)`?\s*$")
+_SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?([^\s`]+)`?\s*$")
+_SOURCE_URL_COLUMN = "資料URL"
+_SOURCE_DEFINITION_COLUMN = "配布規範での定義元または非該当の理由"
+_SOURCE_COMPARISON_COLUMN = "削る・まとめる・置き換える案"
+_SOURCE_DECISION_COLUMN = "採否と理由"
+_SOURCE_REVIEW_COLUMNS = (_SOURCE_URL_COLUMN, _SOURCE_DEFINITION_COLUMN, _SOURCE_COMPARISON_COLUMN, _SOURCE_DECISION_COLUMN)
 
 
 def _understanding_section_lines(message: str) -> Iterable[str]:
@@ -242,7 +246,7 @@ def _missing_alternative(message: str) -> bool:
 
 
 def _external_source_urls(lines: Iterable[str]) -> set[str]:
-    urls = set()
+    urls: set[str] = set()
     within_sources = False
     for line in lines:
         if heading := _MARKDOWN_HEADING.match(line):
@@ -251,46 +255,79 @@ def _external_source_urls(lines: Iterable[str]) -> set[str]:
             continue
         if not within_sources and not re.match(r"\s*-?\s*(?:外部資料|入力)[:：]", line):
             continue
-        for match in _SOURCE_URL.finditer(line):
-            url = match[0]
-            if line[: match.start()].endswith("](") and url.endswith(")"):
-                url = url[:-1]
-            urls.add(url)
+        urls.update(work_contract.source_urls(line))
     return urls
 
 
-def _external_source_review_needed(session_id: str, tool_input: dict) -> bool:
+def _external_source_review_needed(session_id: str, tool_input: dict) -> str | None:
     fields = _user_facing_text_fields("AskUserQuestion", tool_input)
     if not any(
         field.endswith((".header", ".question")) and (value == "方針の承認" or _POLICY_APPROVAL.search(value))
         for field, value in fields
     ):
-        return False
+        return None
     contract = work_contract.record_path(session_id)
-    if contract is None:
-        return False
     try:
-        body = contract.read_text(encoding="utf-8")
+        body = contract.read_text(encoding="utf-8") if contract is not None else ""
     except OSError, UnicodeError:
-        return False
+        body = ""
     lines = without_literal_blocks(body).splitlines()
-    if not any(_SOURCE_REVIEW_WORK.fullmatch(line) for line in lines):
-        return False
-    urls = _external_source_urls(lines)
+    entry = read_state(session_id).get(work_contract.EXTERNAL_SOURCE_ENTRY_KEY)
+    if isinstance(entry, dict):
+        if entry.get("work") not in work_contract.EXTERNAL_SOURCE_WORKS:
+            return None
+        recorded_urls = entry.get("urls")
+        urls = {url for url in recorded_urls if isinstance(url, str)} if isinstance(recorded_urls, list) else set()
+    elif any(
+        (match := _SOURCE_REVIEW_WORK.fullmatch(line)) and match[1] in work_contract.EXTERNAL_SOURCE_WORKS for line in lines
+    ):
+        urls = set()
+    else:
+        return None
+    urls.update(_external_source_urls(lines))
     if not urls:
-        return False
-    try:
-        table = without_literal_blocks(contract.with_name(_SOURCE_REVIEW_FILE).read_text(encoding="utf-8"))
-    except OSError, UnicodeError:
-        return True
-    covered = set()
-    for line in table.splitlines():
-        if not line.startswith("|") or not line.rstrip().endswith("|"):
+        return None
+    if contract is not None:
+        try:
+            table = contract.with_name(_SOURCE_REVIEW_FILE).read_text(encoding="utf-8")
+        except OSError, UnicodeError:
+            pass
+        else:
+            return _external_source_table_error(table, urls)
+    return f"`{_SOURCE_REVIEW_FILE}`を読み取れません。"
+
+
+def _external_source_table_error(table: str, urls: set[str]) -> str | None:
+    columns: dict[str, int] = {}
+    covered: set[str] = set()
+    for line_number, line in enumerate(without_literal_blocks(table).splitlines(), 1):
+        line = line.strip()
+        if not line.startswith("|") or not line.endswith("|"):
+            columns = {}
             continue
-        cells = [cell.strip() for cell in line.strip()[1:-1].split("|")]
-        if len(cells) >= 2 and cells[0].strip("`<>") in urls and cells[1].strip("`*_ -—"):
-            covered.add(cells[0].strip("`<>"))
-    return not urls <= covered
+        cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:-1])]
+        if _SOURCE_URL_COLUMN in cells:
+            for column in _SOURCE_REVIEW_COLUMNS:
+                if cells.count(column) != 1:
+                    return f"{line_number}行目の見出しに`{column}`を1列書いてください。"
+            columns = {column: cells.index(column) for column in _SOURCE_REVIEW_COLUMNS}
+            continue
+        if not columns or columns[_SOURCE_URL_COLUMN] >= len(cells):
+            continue
+        url_cell = cells[columns[_SOURCE_URL_COLUMN]]
+        url = next(work_contract.source_urls(url_cell), "")
+        if url not in urls:
+            continue
+        for column in _SOURCE_REVIEW_COLUMNS[1:]:
+            index = columns[column]
+            cell = cells[index] if index < len(cells) else ""
+            meaningful = re.sub(r"[^\w]|_", "", cell)
+            if not meaningful or (column == _SOURCE_COMPARISON_COLUMN and meaningful in {"なし", "無し"}):
+                return f"{line_number}行目の`{column}`に記入がありません。"
+        covered.add(url)
+    if missing := urls - covered:
+        return f"`{_SOURCE_URL_COLUMN}`に対応する行がありません: " + "、".join(sorted(missing))
+    return None
 
 
 def _recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:
@@ -464,12 +501,12 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         )
     question_tool = "request_user_input" if is_codex else "AskUserQuestion"
     if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
-        if not is_codex and _external_source_review_needed(session_id, tool_input):
+        if not is_codex and (error := _external_source_review_needed(session_id, tool_input)):
             return Decision(
                 block=_block_notice(
-                    "外部資料の対応表が不足しているため、方針の承認はまだ求めていない。",
+                    f"外部資料の対応表が不足しているため、方針の承認はまだ求めていない。\n{error}",
                     fix=(
-                        f"セッション一時領域の`{_SOURCE_REVIEW_FILE}`に、各資料のURLと配布規範での定義元か非該当の理由を書いてください。"
+                        f"セッション一時領域の`{_SOURCE_REVIEW_FILE}`に、各資料の必須列を書いてください。引く案が無ければ、調べた既存の箇所と理由を書いてください。"
                         "`agent-basics:writing-standards/references/design-heuristics.md`"
                         "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
                     ),
