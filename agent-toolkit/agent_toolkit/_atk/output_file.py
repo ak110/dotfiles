@@ -51,7 +51,7 @@ def _emit(text: str, create_directory: Callable[[], pathlib.Path], *, stderr: bo
     except Exception as error:  # noqa: BLE001  # 保存の失敗でも本来の全量と終了を保持する
         outcome.report_warning(
             f"出力を自動保存できなかったため全量を表示する: {error}",
-            next_action="表示した全量と終了コードを使い、保存先の権限・空き容量を確認せよ",
+            next_action="表示した全量と終了コードを使い、保存先の権限・空き容量を確認してください",
         )
         stream.write(text)
     else:

@@ -52,8 +52,8 @@ RESULT_CONTRACT_START = "<!-- subagent-result-contract:start -->"
 RESULT_CONTRACT_END = "<!-- subagent-result-contract:end -->"
 
 CODEX_COMPLETION_GUIDANCE = (
-    "許可された次の操作があるなら提案で止めず、要求を満たす検証まで行え。"
-    "戻せる選択は前提を短く示して進め、本人の判断・認可か、担当内で補えない外部の前提を委譲元へ渡せ。"
+    "許可された次の操作があるなら提案で止めず、要求を満たす検証まで行ってください。"
+    "戻せる選択は前提を短く示して進め、本人の判断・認可か、担当内で補えない外部の前提を委譲元へ渡してください。"
 )
 
 

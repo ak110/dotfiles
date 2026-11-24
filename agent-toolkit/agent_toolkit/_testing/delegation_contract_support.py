@@ -220,7 +220,7 @@ def _generated_input_errors(plugin_root: pathlib.Path) -> list[str]:
             errors.append(
                 f"入力生成境界が不正: {path}: {role}"
                 "\n次の操作: 表示された契約のinput-contract開始・終了標識を1組へ直し、"
-                "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行せよ。"
+                "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行してください。"
             )
             continue
         source = task_documents.require_role_document(plugin_root, role)
@@ -415,18 +415,20 @@ def _parent_body(*, marker: str = "起動対象: task.subagent.md", after_marker
 
 def _format_contract_error(error: str) -> str:
     if "\n次の操作:" in error:
-        return error if "\n修正できない場合" in error else error + "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+        return (
+            error if "\n修正できない場合" in error else error + "\n修正できない場合は対象文書と診断を委譲元へ報告してください。"
+        )
     if error.startswith(("任意入力名の一覧が不正:", "宣言外の任意入力名:", "任意入力名が欠けている:")):
         return (
             f"{error}\n次の操作: 表示された役割宣言のoptional_inputsと一覧を比べ、"
-            "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行して正式生成せよ。"
-            "\n修正できない場合は対象文書と診断を委譲元へ報告せよ。"
+            "リポジトリ直下で`uv run --frozen python scripts/sync_generated_files.py`を実行して正式生成してください。"
+            "\n修正できない場合は対象文書と診断を委譲元へ報告してください。"
         )
     if error.startswith("必須入力名が欠けている:"):
         return (
             f"{error}\n次の操作: 入力専用節があれば必須入力名の一覧も確認し、"
-            "欠けた一覧または入力説明へ宣言どおりの名前を追加する。"
-            "\n修正できない場合は対象文書と診断を委譲元へ報告する。"
+            "欠けた一覧または入力説明へ宣言どおりの名前を追加してください。"
+            "\n修正できない場合は対象文書と診断を委譲元へ報告してください。"
         )
     return error
 

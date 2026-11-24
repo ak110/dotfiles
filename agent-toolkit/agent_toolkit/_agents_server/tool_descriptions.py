@@ -32,7 +32,7 @@ def parameter_description(body: str) -> str:
 
 
 def shell_prompt(command: str, summary_policy: str) -> str:
-    return f"次のコマンドを実行し、結果を報告せよ。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
+    return f"次のコマンドを実行し、結果を報告してください。\n\n実行するコマンド:\n{command}\n\n要約方針:\n{summary_policy}"
 
 
 StartMode = Literal["task", "delegate", "explore", "write", "shell"]

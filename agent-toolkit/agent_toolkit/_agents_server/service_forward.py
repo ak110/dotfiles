@@ -354,12 +354,12 @@ def _stalled_response(identifier: str | int, method: str, target: dict, error: s
         f"process={target.get('process')}）が生存確認に応答しません（{error}）。配送と実行は未確定です。"
     )
     next_action = (
-        "同じ要求を再送しない。上記processの接続先世代が停止・無応答かをOSのプロセス一覧"
+        "同じ要求は再送しないでください。上記processの接続先世代が停止・無応答かをOSのプロセス一覧"
         "（Linuxは`ps -o pid,stat,etime -p <pid>`）で確かめ、応答が再開すれば`atk agents show <session_id>`で"
-        "対象sessionの状態を確認する。応答しないままなら当該プロセスを処置する。"
-        "このプロセスは自身のMCP接続の中継先である。"
-        "旧世代（`list`の`server_generations`で`current: false`）なら、処置後は現行世代へ自動で接続し直す。"
-        "現行世代なら処置するとこのMCP接続も終了し、ホストでの再接続（Claude Codeでは`/mcp`）が必要になる"
+        "対象sessionの状態を確認してください。応答しないままならそのプロセスを処置してください。"
+        "このプロセスは自身のMCP接続の中継先です。"
+        "旧世代（`list`の`server_generations`で`current: false`）なら、処置後は現行世代へ自動で接続し直します。"
+        "現行世代なら処置するとこのMCP接続も終了し、ホストでの再接続（Claude Codeでは`/mcp`）が必要になります"
     )
     return {
         "jsonrpc": "2.0",

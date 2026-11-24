@@ -490,7 +490,7 @@ def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
         _outcome.report_warning(
             f"一時rootを含むディスクの空きが下限（容量の10%）を割っており、自動掃引後も空きが不足している: "
             f"空き {pressure.free_after / gib:.1f}GiB / 容量 {pressure.total / gib:.1f}GiB",
-            next_action="一時領域の保持理由・猶予・削除失敗と実際の利用を確認し、未使用の再生成可能な資源を個別に回収せよ。登録worktreeや親セッションの保護は作成者の終了だけでは解除されない。一時root内外の使用量も確認せよ",
+            next_action="一時領域の保持理由・猶予・削除失敗と実際の利用を確認し、未使用の再生成可能な資源を個別に回収してください。登録worktreeや親セッションの保護は作成者の終了だけでは解除されない。一時root内外の使用量も確認してください",
         )
 
 

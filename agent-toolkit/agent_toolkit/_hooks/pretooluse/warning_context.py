@@ -41,9 +41,9 @@ def bounded_codex_context(
     receipts = notice.delivery_receipts(context)
     read_manual = "agent-toolkit:atk-mode/playbooks/managed-temp.md"
     retry = (
-        "通知を回復し、元の操作が停止されて未適用を確認できた場合だけ元の操作を再試行する"
+        "通知を回復し、元の操作が停止されて未適用を確認できた場合だけ元の操作を再試行してください"
         if operation_denied
-        else "元の操作は再発行せず、通知だけを回復する"
+        else "元の操作は再発行せず、通知だけを回復してください"
     )
     with notice.notice_cycle(session_id, "codex-pretooluse-context", agent_id):
         format_notice = notice.formatter("pretooluse")
@@ -56,7 +56,7 @@ def bounded_codex_context(
                     recover_from_failure(
                         component="通知の保存",
                         evidence="診断と未配送の通知",
-                        first_step=f"`{read_manual}` を読み、入力のsession_idを確認する",
+                        first_step=f"`{read_manual}` を読み、入力のsession_idを確認してください",
                         retry=retry,
                     )
                 ),
@@ -74,7 +74,7 @@ def bounded_codex_context(
                     recover_from_failure(
                         component="通知の保存",
                         evidence="診断と未配送の通知",
-                        first_step=f"`{read_manual}` を読み、保存先の権限と状態を確認する",
+                        first_step=f"`{read_manual}` を読み、保存先の権限と状態を確認してください",
                         retry=retry,
                     )
                 ),
@@ -83,7 +83,7 @@ def bounded_codex_context(
             f"{CODEX_NOTICE_REFERENCE_PREFIX}{path}",
             tag="warn",
             removable_cause=False,
-            fix="保存した通知を取得し、必要な対処を行え。",
+            fix="保存した通知を取得し、必要な対処を行ってください。",
         )
         if len(reference.encode("utf-8")) > limit:
             return format_notice(
@@ -94,7 +94,7 @@ def bounded_codex_context(
                     recover_from_failure(
                         component="通知の配送",
                         evidence="診断と未配送の通知",
-                        first_step=f"`{read_manual}` を読み、絶対パスが通知枠に収まる配置を確認する",
+                        first_step=f"`{read_manual}` を読み、絶対パスが通知枠に収まる配置を確認してください",
                         retry=retry,
                     )
                 ),

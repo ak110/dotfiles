@@ -114,7 +114,7 @@ def launch_contract_documents(plugin_root: pathlib.Path) -> list[tuple[pathlib.P
                 if not re.fullmatch(r"[a-z][a-z0-9-]*\.subagent\.md", name):
                     raise ValueError(
                         f"{path}: 起動対象の名前が不正: {name}。"
-                        "次の操作: 表示された契約の起動対象を、実在する<役割名>.subagent.mdの名前へ修正せよ。"
+                        "次の操作: 表示された契約の起動対象を、実在する<役割名>.subagent.mdの名前へ修正してください。"
                     )
                 contracts.append((path, name.removesuffix(TASK_DOCUMENT_SUFFIX)))
     return contracts
