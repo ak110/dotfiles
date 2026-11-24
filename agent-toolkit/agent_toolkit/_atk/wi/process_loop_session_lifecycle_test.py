@@ -322,16 +322,17 @@ def test_unreclaimed_descendants_reach_owner_from_every_stop_site(
 
 
 @pytest.mark.parametrize(
-    ("window_id", "policy", "stop"),
+    ("window_id", "policy", "reactivated", "stop"),
     [
-        ("weekly_all", "five-hour", True),
-        ("weekly_scoped", "five-hour", False),
-        ("five_hour", "five-hour", False),
-        ("weekly_all", "always", False),
+        ("weekly_all", "five-hour", False, True),
+        ("weekly_scoped", "five-hour", False, False),
+        ("five_hour", "five-hour", False, False),
+        ("weekly_all", "always", False, False),
+        ("weekly_all", "five-hour", True, False),
     ],
 )
 def test_idle_claude_cli_stops_only_for_unwaited_weekly_limit(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, window_id: str, policy: str, stop: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, window_id: str, policy: str, reactivated: bool, stop: bool
 ) -> None:
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", policy)
     env = {**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path), _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "weekly-limit"}
@@ -341,7 +342,15 @@ def test_idle_claude_cli_stops_only_for_unwaited_weekly_limit(
     resets_at = int(time.time()) + 3600
     calls: list[_pl_session._connection.Connection] = []
 
+    if reactivated:
+        path = tmp_path / "active.jsonl"
+        path.write_text("started", encoding="utf-8")
+        os.utime(path, (1, 1))
+        monkeypatch.setattr(_pl_session, "_last_record_update", lambda *_: path.stat().st_mtime)
+
     def refresh(selected, _env):
+        if reactivated:
+            path.write_text("updated", encoding="utf-8")
         calls.append(selected)
         return [usage_observation.QuotaWindow("claude", "test", window_id, 100, resets_at, time.time())]
 

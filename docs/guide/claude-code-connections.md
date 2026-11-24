@@ -76,7 +76,7 @@ atk config temporary show
 仕事の社内プロキシの実値や認証情報はリポジトリへ保存しない。
 設定変更だけで実行中CLIの接続は変わらず、次の継続境界で適用する。
 Claude統括が上限で停止した場合は、旧CLIの終了確認後に同じ会話IDで次の接続へ再開する既存経路を使う。
-上限待機中の巡回を手動で再開する場合は、所有する巡回を停止して終了を確認し、`atk wi process-loop --resume SESSION_ID`で同じ会話を再開する。
+上限待機中の巡回を手動で再開する場合は、所有する巡回を停止して終了を確認し、`atk wi process-loop resume SESSION_ID`で同じ会話の再開を予約する。
 緊急指定を解除する操作は`atk config temporary clear`であり、その時点の通常設定へ戻る。
 モデルの一時指定だけでは、従量課金やresetの消費を許可しない。
 
