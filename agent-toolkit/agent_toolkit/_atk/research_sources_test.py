@@ -463,6 +463,7 @@ def test_unread_range_result_is_kept_when_newer_range_fails(
     source = _by_source(result)["x:account:poteto"]
     assert source["status"] == status
     assert [item["id"] for item in source["items"]] == ids
+    assert result["x_api"]["posts_read"] == len(ids)
     assert _TOKEN not in json.dumps(result, ensure_ascii=False)
     research_sources.commit_positions(_SLOT)
     state = research_sources.load_state()
@@ -508,3 +509,32 @@ def test_weekly_releases_require_review_of_truncated_versions_before_advancing()
     assert research_sources.mark_read(next_slot, ("changelog:opencode",)) == ["changelog:opencode"]
     assert research_sources.commit_positions(next_slot)
     assert research_sources.load_state()["positions"]["changelog:opencode"] == "2026-11-20T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("first_posts", [0, 100])
+def test_shared_x_budget_reads_all_subscriptions(first_posts):
+    accounts = tuple(f"account{index}" for index in range(8))
+    queries = tuple(f"query {index}" for index in range(5))
+    ids = {account: str(index) for index, account in enumerate(accounts, 1)}
+    responses = {
+        f"{research_sources.X_API_BASE}/users/{user_id}/tweets": _timeline(first_posts if user_id == "1" else 100)
+        for user_id in ids.values()
+    }
+    responses[f"{research_sources.X_API_BASE}/tweets/search/recent"] = _timeline(100)
+    fetch = _Recorded(responses)
+    budget = research_sources.XBudget(max_posts=100, max_users=20)
+
+    results, _ = research_sources.read_x(
+        fetch, {"user_ids": ids}, accounts=accounts, queries=queries, budget=budget, now=_NOW, enabled=True, token=_TOKEN
+    )
+
+    timelines = _max_results(fetch, "/users/")
+    searches = _max_results(fetch, "/tweets/search/recent")
+    assert results[0].status == "read" and bool(results[0].items) == bool(first_posts)
+    assert len(timelines) == 8 and all(size >= 5 for size in timelines)
+    assert len(searches) == 5 and all(size >= 10 for size in searches)
+    assert all(result.status == "read" and result.items for result in results[1:])
+    assert budget.posts == 100
+    assert sum(timelines[1:] + searches) == (100 if first_posts == 0 else 100 - timelines[0])
+    if first_posts == 0:
+        assert sum(timelines[1:]) > 7 * 5

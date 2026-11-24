@@ -342,33 +342,32 @@ class _XPage:
 def _x_page(
     fetch: Fetch,
     token: str,
-    budget: XBudget,
     url: str,
     params: dict[str, str],
     *,
+    available: int,
     minimum: int,
     link: Callable[[dict[str, Any]], str],
 ) -> _XPage | None:
     """残りの件数で読める範囲だけを要求する。要求の最小件数に満たない残りでは送信せずNoneを返す。  pyfltr: allow-comment"""
-    remaining = budget.max_posts - budget.posts
-    if remaining < minimum:
+    maximum = min(100, available)
+    if maximum < minimum:
         return None
-    query = {**params, "max_results": str(min(100, remaining)), "tweet.fields": "created_at,author_id"}
+    query = {**params, "max_results": str(maximum), "tweet.fields": "created_at,author_id"}
     value = _get_json(fetch, f"{url}?{urllib.parse.urlencode(query)}", {"Authorization": f"Bearer {token}"})
     data = value.get("data", []) if isinstance(value, dict) else []
     meta = value.get("meta", {}) if isinstance(value, dict) else {}
     posts = [
         {"id": post.get("id"), "created_at": post.get("created_at"), "url": link(post), "text": post.get("text", "")}
-        for post in data[:remaining]
+        for post in data[:maximum]
         if isinstance(post, dict) and isinstance(post.get("id"), str) and post["id"].isdigit()
     ]
-    budget.posts += len(posts)
     ids = sorted((post["id"] for post in posts), key=int)
     return _XPage(
         posts,
         ids[-1] if ids else None,
         ids[0] if ids else None,
-        len(data) <= remaining and not meta.get("next_token"),
+        len(data) <= maximum and not meta.get("next_token"),
     )
 
 
@@ -394,12 +393,12 @@ def _x_lower(lower: dict[str, str], *, search: bool, now: datetime.datetime) -> 
 def _read_x_source(
     fetch: Fetch,
     token: str,
-    budget: XBudget,
     source: str,
     url: str,
     state: dict[str, Any],
     *,
     params: dict[str, str],
+    post_limit: int,
     search: bool,
     link: Callable[[dict[str, Any]], str],
     now: datetime.datetime,
@@ -417,7 +416,15 @@ def _read_x_source(
     if gap:
         lower, note = _x_lower({key: gap[key] for key in ("since_id", "start_time") if key in gap}, search=search, now=now)
         reasons += [note] if note else []
-        page = _x_page(fetch, token, budget, url, {**params, **lower, "until_id": gap["until_id"]}, minimum=minimum, link=link)
+        page = _x_page(
+            fetch,
+            token,
+            url,
+            {**params, **lower, "until_id": gap["until_id"]},
+            available=post_limit,
+            minimum=minimum,
+            link=link,
+        )
         if page is None:
             return SourceResult(source, "skipped", _X_LIMIT_REASON, position=position, gap=gap)
         items += page.posts
@@ -431,7 +438,7 @@ def _read_x_source(
     lower, note = _x_lower(lower_value, search=search, now=now)
     reasons += [note] if note else []
     try:
-        page = _x_page(fetch, token, budget, url, {**params, **lower}, minimum=minimum, link=link)
+        page = _x_page(fetch, token, url, {**params, **lower}, available=post_limit - len(items), minimum=minimum, link=link)
     except SourceError as error:
         if source not in state["gaps"]:
             raise
@@ -457,6 +464,19 @@ def _search_link(post: dict[str, Any]) -> str:
     return f"https://x.com/i/web/status/{post.get('id')}"
 
 
+def _x_source_limit(available: int, minimum: int, *, later_accounts: int, later_queries: int) -> int:
+    """後続の最小枠を取得順に確保し、余りを枠を持つ情報源に配分する。  pyfltr: allow-comment"""
+    if available < minimum:
+        return 0
+    surplus = available - minimum
+    timeline_minimum, search_minimum = X_MIN_RESULTS["timeline"], X_MIN_RESULTS["search"]
+    funded_accounts = min(later_accounts, surplus // timeline_minimum)
+    surplus -= funded_accounts * timeline_minimum
+    funded_queries = min(later_queries, surplus // search_minimum)
+    surplus -= funded_queries * search_minimum
+    return minimum + surplus // (1 + funded_accounts + funded_queries)
+
+
 def read_x(
     fetch: Fetch,
     state: dict[str, Any],
@@ -478,10 +498,12 @@ def read_x(
     state = {"positions": state.get("positions", {}), "user_ids": state.get("user_ids", {}), "gaps": state.get("gaps", {})}
     user_ids: dict[str, str] = {}
     results = []
-    for account in accounts:
+    cached_accounts = sum(state["user_ids"].get(account) is not None for account in accounts)
+    for index, account in enumerate(accounts):
         source = f"x:account:{account}"
+        user_id = state["user_ids"].get(account)
+        cached_accounts -= user_id is not None
         try:
-            user_id = state["user_ids"].get(account)
             if user_id is None:
                 if budget.users >= budget.max_users:
                     results.append(SourceResult(source, "failed", "アカウントの照会の件数上限に達したため読まなかった"))
@@ -496,41 +518,52 @@ def read_x(
                 if not isinstance(user_id, str):
                     raise SourceError("アカウントが見つからない")
                 user_ids[account] = user_id
-            results.append(
-                _read_x_source(
-                    fetch,
-                    token,
-                    budget,
-                    source,
-                    f"{X_API_BASE}/users/{user_id}/tweets",
-                    state,
-                    params={},
-                    search=False,
-                    link=functools.partial(_account_link, account),
-                    now=now,
-                )
+            unresolved = len(accounts) - index - 1 - cached_accounts
+            later_accounts = cached_accounts + min(unresolved, budget.max_users - budget.users)
+            post_limit = _x_source_limit(
+                budget.max_posts - budget.posts,
+                X_MIN_RESULTS["timeline"],
+                later_accounts=later_accounts,
+                later_queries=len(queries),
+            )
+            result = _read_x_source(
+                fetch,
+                token,
+                source,
+                f"{X_API_BASE}/users/{user_id}/tweets",
+                state,
+                params={},
+                post_limit=post_limit,
+                search=False,
+                link=functools.partial(_account_link, account),
+                now=now,
             )
         except SourceError as error:
-            results.append(SourceResult(source, "failed", _scrub(str(error), token)))
-    for query in queries:
+            result = SourceResult(source, "failed", _scrub(str(error), token))
+        budget.posts += len(result.items)
+        results.append(result)
+    for index, query in enumerate(queries):
         source = f"x:search:{query}"
+        post_limit = _x_source_limit(
+            budget.max_posts - budget.posts, X_MIN_RESULTS["search"], later_accounts=0, later_queries=len(queries) - index - 1
+        )
         try:
-            results.append(
-                _read_x_source(
-                    fetch,
-                    token,
-                    budget,
-                    source,
-                    f"{X_API_BASE}/tweets/search/recent",
-                    state,
-                    params={"query": query},
-                    search=True,
-                    link=_search_link,
-                    now=now,
-                )
+            result = _read_x_source(
+                fetch,
+                token,
+                source,
+                f"{X_API_BASE}/tweets/search/recent",
+                state,
+                params={"query": query},
+                post_limit=post_limit,
+                search=True,
+                link=_search_link,
+                now=now,
             )
         except SourceError as error:
-            results.append(SourceResult(source, "failed", _scrub(str(error), token)))
+            result = SourceResult(source, "failed", _scrub(str(error), token))
+        budget.posts += len(result.items)
+        results.append(result)
     return results, user_ids
 
 
