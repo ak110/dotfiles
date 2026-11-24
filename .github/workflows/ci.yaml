@@ -25,6 +25,7 @@ jobs:
       rust: ${{ steps.scope.outputs.rust }}
       browser: ${{ steps.scope.outputs.browser }}
       scope_reason: ${{ steps.scope.outputs.scope_reason }}
+      statusline_release: ${{ steps.statusline-release.outputs.changed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -48,6 +49,20 @@ jobs:
           CURRENT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: python3 scripts/ci_scope.py
+      - name: statusline配布物の要否を判定
+        id: statusline-release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 公開時の --release-prepare と同じく、このcommitを第一親と比較する。
+          rc=0
+          git diff --quiet HEAD^1 HEAD -- rust/claude-statusline || rc=$?
+          case "$rc" in
+            0) echo "changed=false" >> "$GITHUB_OUTPUT" ;;
+            1) echo "changed=true" >> "$GITHUB_OUTPUT" ;;
+            *) exit "$rc" ;;
+          esac
   test-linux:
     needs: common-ci-owner
     name: ${{ needs.common-ci-owner.outputs.owns == 'false' && 'test-linux (non-owner)' || 'test-linux' }}
@@ -200,6 +215,54 @@ jobs:
       - name: Rust検証の実行
         uses: ./.github/actions/ci-rust-lint
         if: steps.selection.outputs.selected == 'true'
+  statusline-build:
+    name: statusline-build (${{ matrix.os }})
+    needs: common-ci-owner
+    if: needs.common-ci-owner.outputs.statusline_release == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: claude-statusline-x86_64-unknown-linux-gnu
+          - os: windows-latest
+            asset: claude-statusline-x86_64-pc-windows-msvc.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: rust/claude-statusline
+      - name: ビルド
+        run: mise exec -- cargo build --release --locked --manifest-path rust/claude-statusline/Cargo.toml
+      - name: バイナリを配置 (POSIX)
+        if: runner.os != 'Windows'
+        run: cp rust/claude-statusline/target/release/claude-statusline "${{ matrix.asset }}"
+      - name: バイナリを配置 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item rust/claude-statusline/target/release/claude-statusline.exe "${{ matrix.asset }}"
+      # push CIでcheckoutしたcommitが、署名時のOIDCクレームにも入る。
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ matrix.asset }}
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: statusline-release-${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+          overwrite: true
+
   statusline-version:
     name: statusline-version
     if: (github.event_name == 'pull_request' && github.base_ref == 'master') || (github.event_name == 'push' && github.ref == 'refs/heads/develop')
