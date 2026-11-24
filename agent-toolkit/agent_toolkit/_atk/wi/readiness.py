@@ -35,7 +35,6 @@ class QueueEntry:
     legacy_dependency: dict[str, object] | None
     repair_target_filename: str | None
     repair_kind: RepairKind | None
-    run_skill_report: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -126,7 +125,6 @@ def _queue_entry(
         legacy_dependency=legacy_dependency if isinstance(legacy_dependency, dict) else None,
         repair_target_filename=repair_target if isinstance(repair_target, str) else None,
         repair_kind=repair_kind,
-        run_skill_report=data.get("run_skill_report") == "true",
     )
 
 
@@ -217,7 +215,7 @@ def applicable_cooldown_until(kind: str | None, value: object) -> datetime.datet
 def _can_become_candidate(entry: QueueEntry) -> bool:
     if entry.kind != WI_TYPE_UWI:
         return True
-    return entry.uwi_answered is True and not entry.run_skill_report
+    return entry.uwi_answered is True
 
 
 def _internal_dependency_waits(
@@ -500,8 +498,6 @@ def calculate_readiness(
     blocked: list[str] = []
     internal_wait_targets: dict[tuple[str, str | None], tuple[QueueEntry, ...]] = {}
     for entry in active:
-        if entry.kind == WI_TYPE_UWI and entry.run_skill_report:
-            continue
         if entry.filename in deferred:
             blocked.append(entry.filename)
             continue

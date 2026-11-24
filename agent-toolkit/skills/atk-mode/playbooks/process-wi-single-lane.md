@@ -67,8 +67,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
      初回の一覧に`--snapshot-output <開始時集合JSONの絶対パス>`を付け、all-reposから受け取った場合は既存の`snapshot_file`を使う。
      30分ごとの点検と公開前の新着の確認は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「開始後に追加されたWIの確認」に従い、同じ開始時の集合と判定済みの記録を保つ。
    - `atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto`で回答済みのUWIの本文も取得する。
-     frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く（次回の同じ起動単位の`atk run-skill`が扱う）。
-     `source: run-skill`の承認用UWIも対象にし、扱いは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従う。
+     `source: run-skill`のUWIも対象にし、扱いは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従う。
      回答済みのUWIは実装前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従って終えるか処理対象へ加える。
    - 依存が未解決の項目は、依存元のWIがprocessableで同じ`target_repo`を対象とする場合だけ今回の実行に含めて報告する。
      依存元の状態変更や集合からの除外が必要な場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認の要否を決める。

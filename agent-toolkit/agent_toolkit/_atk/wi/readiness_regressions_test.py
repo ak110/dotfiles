@@ -167,7 +167,7 @@ def test_report_before_ready_entry_does_not_stop_scan(tmp_path: pathlib.Path) ->
     )
     result = _wi_readiness.calculate_readiness(tmp_path, repo, snapshot=snapshot)
     assert result.ready == ("ready.md",)
-    assert result.blocked == ("waiting.md",)
+    assert result.blocked == ("report.md", "waiting.md")
     assert not result.internal_dependency_waits
 
 
@@ -240,7 +240,7 @@ def test_future_upstream_wait_is_not_internal_dependency(tmp_path: pathlib.Path)
     assert not result.internal_dependency_waits
 
 
-@pytest.mark.parametrize("report,answer,explicit", [(False, "", False), (True, "承認", True)])
+@pytest.mark.parametrize("report,answer,explicit", [(False, "", False), (True, "", True)])
 def test_processing_uwi_outside_candidates_stays_external_wait(
     tmp_path: pathlib.Path, report: bool, answer: str, explicit: bool
 ) -> None:
