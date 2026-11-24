@@ -260,6 +260,9 @@ def test_recommendation_is_reviewed_once(tmp_path: pathlib.Path, codex: bool) ->
         ("## 発話の理解\n**目的:** 保存\n**手段:** 既存機能", True),
         ("発話の理解: 保存する。別案: なし。\n結果: 保存した。", False),
         ("発話の理解: 保存する。 別案：なし（既存の指定がある）。\n\n結果: 保存した。", False),
+        (r"発話の理解: バッククォート（\`）を扱う。別案: なし。", False),
+        ("発話の理解: 「単独の `」を扱う。別案: なし。", False),
+        ("## 発話の理解\n単独の ` を使う。別案: なし。\n\n別段落の ` は閉じない。", False),
         ("発話の理解: 保存する。\n別案: 既存機能を使う。", False),
         ("発話の理解: 保存する。\n\n別案: 後続段落の別案。", True),
         ("発話の理解: 「書式。別案: なし。」を引用した。\n結果: 保存した。", True),
@@ -281,12 +284,17 @@ def test_send_review_identifies_missing_alternative(body: str, missing: bool) ->
 @pytest.mark.parametrize(
     "body, has_original",
     [
-        ("発話の理解: 保存する。\n\n原文: 別の話題", False),
-        ("発話の理解: 保存する。\n原文: 引用", True),
+        ("発話の理解: 保存する。別案: なし。\n\n原文: 別の話題", False),
+        ("発話の理解: 保存する。別案: なし。\n原文: 引用", True),
     ],
 )
 def test_original_text_label_stays_in_understanding_section(body: str, has_original: bool) -> None:
-    assert pretooluse._has_original_text_label_in_understanding(body) is has_original
+    result = _run({"tool_name": "mcp__agents_server__send_to_user", "tool_input": {"message": body}})
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+    assert (output.get("permissionDecision") == "deny") is has_original
+    if has_original:
+        assert "「原文」の見出しがある" in output["permissionDecisionReason"]
 
 
 def test_policy_question_requires_all_external_sources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -75,6 +75,8 @@ lazy import dataclasses
 lazy import hashlib
 lazy from collections.abc import Iterable
 
+lazy from markdown_it import MarkdownIt
+
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
 lazy from agent_toolkit._common import host_homes as _host_homes
@@ -188,7 +190,7 @@ _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[
 
 _ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*(?:[-*+][^\S\n]+)?[*_]*別案(?:[*_]*[^\S\n]*[:：]|[:：][*_]+)")
 _INLINE_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*[*_]*別案[*_]*[^\S\n]*[:：]")
-_ALTERNATIVE_BOUNDARY = re.compile(r"`+|[「」『』。\n]")
+_ALTERNATIVE_BOUNDARY = re.compile(r"[「」『』。\n]")
 _QUOTE_END = {"「": "」", "『": "』"}
 _POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
 _SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
@@ -242,21 +244,20 @@ def _has_original_text_label_in_understanding(message: str) -> bool:
 
 
 def _has_alternative(lines: list[str]) -> bool:
-    if lines and _ALTERNATIVE_LABEL.match(lines[0]):
-        return True
     text = "\n".join(lines)
+    if "`" in text:
+        code_span_parser = MarkdownIt("zero").enable(["backticks", "escape"])
+        paragraphs = re.split(r"(\n[^\S\n]*\n)", text)
+        for index in range(0, len(paragraphs), 2):
+            tokens = code_span_parser.parseInline(paragraphs[index])[0].children or []
+            paragraphs[index] = "".join("\0" if token.type == "code_inline" else token.content for token in tokens)
+        text = "".join(paragraphs)
+    if _ALTERNATIVE_LABEL.match(text):
+        return True
     quote_ends: list[str] = []
-    code_delimiter = ""
     for boundary in _ALTERNATIVE_BOUNDARY.finditer(text):
         mark = boundary[0]
-        if mark.startswith("`"):
-            if not code_delimiter:
-                code_delimiter = mark
-            elif code_delimiter == mark:
-                code_delimiter = ""
-        elif code_delimiter:
-            continue
-        elif mark in _QUOTE_END:
+        if mark in _QUOTE_END:
             quote_ends.append(_QUOTE_END[mark])
         elif quote_ends:
             if mark == quote_ends[-1]:
@@ -273,8 +274,8 @@ def _has_alternative(lines: list[str]) -> bool:
 
 def _missing_alternative(message: str) -> bool:
     section = list(_understanding_section_lines(message))
-    lines = [line for line, _ in section if line.strip()]
-    required = len(lines) > 1 or any(plain for _, plain in section)
+    lines = [line for line, _ in section]
+    required = sum(bool(line.strip()) for line in lines) > 1 or any(plain for _, plain in section)
     return required and not _has_alternative(lines)
 
 
