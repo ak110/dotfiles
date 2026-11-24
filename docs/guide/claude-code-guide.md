@@ -98,7 +98,9 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
   ホストごとに`weekly_meta_auto_start`（初期値true。`session_review_auto_start`がfalseでも止まる）と`weekly_research_auto_start`（初期値false）で切り替え、同じキューを使うホストが複数あれば1台を残して止める。
   外部情報の調査は、有効にする前に`weekly_research_repos`（初期値は空）へ対象を`atk config set weekly_research_repos '["github.com/<所有者>/<名前>"]'`の形で設定する。
   購読（`weekly_research_x_accounts`・`weekly_research_x_queries`。初期値は空）は同じJSON配列で指定し、X APIは`weekly_research_x_api`を`true`にするまで呼ばない。
-  キーは`weekly_research_x_env_file`（空なら設定ディレクトリの`x-api.env`）の`X_BEARER_TOKEN`、1回に読む件数の上限は`weekly_research_x_max_posts`と`weekly_research_x_max_users`で指定する
+  `X_BEARER_TOKEN`は`atk config get config_dir`が返すディレクトリの`x-api.env`に置く。
+  旧設定で指定したファイルは自動で移る。
+  1回の上限は100投稿・20ユーザー
 - `agent-toolkit:atk-mode export-session`: Claude CodeとCodexのセッション記録をMarkdownへ出力する
 
 ## 更新と削除

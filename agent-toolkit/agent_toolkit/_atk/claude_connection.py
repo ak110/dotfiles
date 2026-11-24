@@ -1,8 +1,8 @@
-"""Claude会話の役割と利用可能な認証から、接続候補と隔離した環境を決める。
+"""Claude会話の役割と利用可能な認証から、接続候補と隔離した環境を決める。  pyfltr: allow-comment
 
 接続はサブスクリプション（`subscription`）、有限のAPIクレジット（`credits`）、従量課金API（`payg`）の3種別で、
-認証の所在を種別ごとの設定キー、役割ごとの使用順を`claude_orchestrator_connections`・`claude_worker_connections`が持つ。
-認証キーと使用順のどれも設定していない環境は、親環境と通常の認証解決を引き継ぐ`inherit`接続だけを使う。
+認証を設定ディレクトリの種別別envファイル、役割ごとの使用順を`claude_orchestrator_connections`・`claude_worker_connections`が持つ。
+認証ファイルがなく、使用順も設定していない環境は、親環境と通常の認証解決を引き継ぐ`inherit`接続だけを使う。
 """
 
 from __future__ import annotations
@@ -12,7 +12,8 @@ import os
 import pathlib
 from collections.abc import Mapping
 
-from agent_toolkit._atk.config_resolution import connection_order, connections_configured, resolve_mutable_setting
+from agent_toolkit._atk import config_migration, config_settings
+from agent_toolkit._atk.config_resolution import connection_order, connections_configured
 from agent_toolkit._atk.config_settings import CONNECTION_KINDS, connection_order_key
 from agent_toolkit._common import claude_connection as settings
 from agent_toolkit._common import next_action
@@ -26,7 +27,6 @@ connection_overrides = settings.connection_overrides
 subscription_available = settings.subscription_available
 isolation_keys = settings.isolation_keys
 
-_ENV_FILE_KEYS = {"credits": "claude_credits_env_file", "payg": "claude_payg_env_file"}
 _API_AUTH_KEYS = (
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_AUTH_TOKEN",
@@ -62,34 +62,36 @@ class Candidates:
 
 
 def managed() -> bool:
-    """Claudeの接続を設定で管理するか（認証キー2つと使用順2つのいずれかを設定したか）を返す。"""
     return connections_configured("claude")
 
 
 def _api_env_file(kind: str) -> tuple[str | None, str | None]:
-    key = _ENV_FILE_KEYS[kind]
-    raw = resolve_mutable_setting(key)
-    if not raw:
-        return None, None
-    path = str(pathlib.Path(raw).absolute())
+    fixed = config_settings.config_dir() / config_settings.CLAUDE_ENV_FILENAMES[kind]
+    path = str(fixed.absolute())
     reason = "空、またはAPI認証・接続方式の変数に値が無い"
     try:
         values = settings.read_api_env_file(path)
-    except (OSError, ValueError, UnicodeError) as error:
+    except FileNotFoundError:
+        return None, None
+    except OSError, ValueError:
         values = {}
-        reason = f"{type(error).__name__}: {error}"
+        reason = "アクセスできない、またはKEY=VALUE形式が不正"
     # 認証も接続方式も持たないファイル（空、コメントだけ、キーが空の値）では、API接続がサブスクリプションの認証を
     # 隔離した上で認証に失敗するため、読めない場合と同じく候補から除く。
     if any(values.get(name) for name in _API_AUTH_KEYS):
         return path, None
     return None, next_action.with_next_action(
         f"API環境ファイルを使えません（{kind}）: {path}: {reason}",
-        f"atk config set {key} <パス>で修正するか、atk config set {key} ''で解除する",
+        f"{fixed.name}の権限・記述を確認する。接続に使わない場合は設定ディレクトリから移す",
     )
 
 
-def _isolation_env_files() -> tuple[str, ...]:
-    return tuple(str(pathlib.Path(raw).absolute()) for key in _ENV_FILE_KEYS.values() if (raw := resolve_mutable_setting(key)))
+def isolation_env_files() -> tuple[str, ...]:
+    config_migration.migrate_legacy_settings()
+    root = config_settings.config_dir()
+    return tuple(
+        str(path.absolute()) for name in config_settings.CLAUDE_ENV_FILENAMES.values() if (path := root / name).is_file()
+    )
 
 
 def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = False) -> Candidates:
@@ -111,7 +113,7 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
         if warning and kind in order:
             warnings.append(warning)
     # サブスクリプションの起動環境からは、設定したAPI環境ファイルが与える変数も除く。
-    isolation = _isolation_env_files()
+    isolation = isolation_env_files()
     connections: list[Connection] = []
     for kind in order:
         if kind == "subscription":
@@ -131,18 +133,6 @@ def candidates(role: str, *, env: Mapping[str, str] | None = None, cli: bool = F
         elif kind in api_files:
             connections.append(Connection(kind, api_files[kind], isolation))
     return Candidates(tuple(connections), (*warnings, *diagnostics), tuple(warnings), role)
-
-
-def _normalize_legacy(connection: Connection) -> Connection:
-    if connection.kind != settings.LEGACY_API_KIND:
-        return connection
-    credits_path = resolve_mutable_setting("claude_credits_env_file")
-    same_credits = bool(
-        connection.api_env_file
-        and credits_path
-        and pathlib.Path(connection.api_env_file).absolute() == pathlib.Path(credits_path).absolute()
-    )
-    return dataclasses.replace(connection, kind="credits" if same_credits else "payg")
 
 
 def outside_order(kind: str | None, role: str) -> bool:
@@ -168,10 +158,25 @@ def apply_current_settings(
     保持した種別が現在の使用順に含まれない場合は、使用順の先頭の利用可能な候補へ移す。
     含まれる場合は保持した接続を使い続け、subscriptionには現在のAPI環境ファイルの隔離キーを補う。
     """
-    connection = _normalize_legacy(connection)
-    if outside_order(connection.kind, role):
+    if connection.kind == settings.LEGACY_API_KIND:
+        # 旧記録のパスから固定名への種別を一意に復元できない時は、現在の明示順で接続候補を選び直す。  # pyfltr: allow-comment
+        for kind, name in config_settings.CLAUDE_ENV_FILENAMES.items():
+            if (
+                connection.api_env_file
+                and pathlib.Path(connection.api_env_file).absolute() == config_settings.config_dir() / name
+            ):
+                connection = dataclasses.replace(connection, kind=kind)
+                break
+        else:
+            return candidates(role, env=env, cli=cli).require_first()
+    if (cli and connection.kind == "credits") or outside_order(connection.kind, role):
         return candidates(role, env=env, cli=cli).require_first()
     if connection.kind not in {"subscription", *API_KINDS}:
         return connection
-    paths = tuple(dict.fromkeys((*connection.isolation_env_files, *_isolation_env_files())))
+    paths = tuple(dict.fromkeys((*connection.isolation_env_files, *isolation_env_files())))
+    if connection.kind in API_KINDS:
+        path, _ = _api_env_file(connection.kind)
+        if path is None:
+            return candidates(role, env=env, cli=cli).require_first()
+        return dataclasses.replace(connection, api_env_file=path, isolation_env_files=paths)
     return dataclasses.replace(connection, isolation_env_files=paths)

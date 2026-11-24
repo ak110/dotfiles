@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pathlib
-
 import pytest
 
 from agent_toolkit._atk import claude_connection
@@ -26,8 +24,6 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
     assert _main(tmp_path, "config", "show") == 0
     shown = dict(line.split(" ", 1) for line in capsys.readouterr().out.splitlines())
     assert {key: shown[key] for key in _CONNECTION_KEYS} == {
-        "claude_credits_env_file": "",
-        "claude_payg_env_file": "",
         "claude_orchestrator_connections": "subscription,credits",
         "claude_worker_connections": "credits,subscription",
         "codex_credits_provider": "",
@@ -38,8 +34,6 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
     assert not config_module.connections_configured("claude")
     assert not config_module.connections_configured("codex")
     for key, value, expected in (
-        ("claude_credits_env_file", "~/credits.env", str(pathlib.Path.home() / "credits.env")),
-        ("claude_payg_env_file", "/missing/payg.env", "/missing/payg.env"),
         ("claude_orchestrator_connections", " subscription , payg ", "subscription,payg"),
         ("claude_worker_connections", "payg", "payg"),
         ("codex_credits_provider", "openai", "openai"),
@@ -152,6 +146,13 @@ def test_connection_keys_show_get_set_and_validate(tmp_path, capsys):
     ],
 )
 def test_retired_connection_settings_migrate_once_and_are_removed(tmp_path, capsys, old, expected):
+    old = dict(old)
+    expected = dict(expected)
+    for kind in ("credits", "payg"):
+        if expected.pop(f"claude_{kind}_env_file", None):
+            path = tmp_path / "old-api.env"
+            path.write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
+            old["claude_api_env_file"] = str(path)
     _write_config(tmp_path, {**old, "codex_fast_mode": "true"})
     assert _main(tmp_path, "config", "show") == 0
     assert not capsys.readouterr().err
@@ -183,7 +184,9 @@ def test_retired_connection_keys_are_rejected_with_targets(tmp_path, capsys, mon
     monkeypatch.setenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", "value")
     assert _main(tmp_path, "config", "show") == 2
     err = capsys.readouterr().err
-    assert all(f"AGENT_TOOLKIT_CONFIG_{target.upper()}" in err for target in targets)
+    assert all(
+        (target if " " in target or "設定" in target else f"AGENT_TOOLKIT_CONFIG_{target.upper()}") in err for target in targets
+    )
     with pytest.raises(_next_action.ActionableError, match=f"AGENT_TOOLKIT_CONFIG_{key.upper()}"):
         config_module.resolve_mutable_setting("claude_worker_connections")
 
@@ -212,3 +215,37 @@ def test_explicit_subscription_requires_oauth_without_api_file(tmp_path, capsys,
         claude_connection.candidates(
             "orchestrator", env={"ANTHROPIC_API_KEY": "parent-api", "CLAUDE_CONFIG_DIR": str(tmp_path / "empty-auth")}
         ).require_first()
+
+
+def test_fixed_credentials_migrate_without_enabling_payg(tmp_path, capsys):
+    credits_file = tmp_path / "original-credits.env"
+    payg = tmp_path / "original-payg.env"
+    credits_file.write_text("ANTHROPIC_API_KEY=credits-for-test\n", encoding="utf-8")
+    payg.write_text("ANTHROPIC_API_KEY=payg-for-test\n", encoding="utf-8")
+    _write_config(tmp_path, {"claude_credits_env_file": str(credits_file), "claude_payg_env_file": str(payg)})
+    assert _main(tmp_path, "config", "show") == 0
+    shown = capsys.readouterr()
+    assert "claude_credits_env_file" not in shown.out
+    assert "claude_payg_env_file" not in shown.out
+    assert "for-test" not in shown.out + shown.err
+    assert _saved(tmp_path) == {}
+    assert not credits_file.exists() and not payg.exists()
+    choices = claude_connection.candidates("delegate", env={})
+    assert [choice.kind for choice in choices.connections] == ["credits"]
+    assert choices.connections[0].api_env_file == str(tmp_path / "config" / "claude-credits.env")
+
+
+def test_credential_migration_does_not_replace_existing_fixed_env(tmp_path, capsys):
+    source = tmp_path / "old.env"
+    source.write_text("ANTHROPIC_API_KEY=old-test-value\n", encoding="utf-8")
+    config = _write_config(tmp_path, {"claude_credits_env_file": str(source)})
+    before = config.read_bytes()
+    fixed = config.parent / "claude-credits.env"
+    fixed.write_text("ANTHROPIC_API_KEY=new-test-value\n", encoding="utf-8")
+    assert _main(tmp_path, "config", "show") == 2
+    output = capsys.readouterr()
+    assert "claude-credits.env" in output.err
+    assert "test-value" not in output.out + output.err
+    assert config.read_bytes() == before
+    assert fixed.read_text(encoding="utf-8") == "ANTHROPIC_API_KEY=new-test-value\n"
+    assert source.read_text(encoding="utf-8") == "ANTHROPIC_API_KEY=old-test-value\n"

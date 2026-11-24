@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import pathlib
+import stat
 import tomllib
 from typing import Any
 
 from agent_toolkit._atk import config_repositories
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import outcome as _outcome
+from agent_toolkit._common import file_lock, runtime_environment, usage_settings
 from agent_toolkit._common import next_action as _next_action
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common.atomic_file import atomic_write
 
 
 def claude_connection_migration(config: dict[str, str]) -> dict[str, str]:
@@ -99,6 +101,107 @@ def plan_connection_migration(config: dict[str, Any], updates: dict[str, str]) -
     return migrated
 
 
+def migrate_fixed_settings(config: dict[str, str]) -> dict[str, str]:
+    destinations = _config_settings.RETIRED_FIXED_KEYS
+    env = runtime_environment.environment()
+    overrides = {
+        key: env[name]
+        for key in destinations
+        if key != "usage_activity_mode" and (name := _config_settings.config_env_name(key)) in env and env[name]
+    }
+    if not (destinations.keys() & config.keys() or overrides):
+        return config
+    root = _config_settings.config_dir()
+    path_keys = {
+        **{f"claude_{kind}_env_file": name for kind, name in _config_settings.CLAUDE_ENV_FILENAMES.items()},
+        "weekly_research_x_env_file": _config_settings.X_ENV_FILENAME,
+    }
+    sources: dict[pathlib.Path, pathlib.Path] = {}
+    for key, filename in path_keys.items():
+        if raw := overrides.get(key, config.get(key)):
+            try:
+                caller = runtime_environment.current()
+                cwd = caller.cwd if caller is not None else pathlib.Path.cwd()
+                path = pathlib.Path(raw)
+                if caller is not None and path.parts and path.parts[0] == "~":
+                    path = runtime_environment.home().joinpath(*path.parts[1:])
+                source = cwd / path.expanduser()
+                source.resolve()
+            except OSError, RuntimeError, ValueError, TypeError:
+                raise _next_action.ActionableError(
+                    f"旧設定{key}のファイルを解決できない",
+                    next_action=f"envファイルを設定ディレクトリの{filename}へ移して旧指定を解除する",
+                ) from None
+            sources[root / filename] = source
+    resolved_sources = {target: source.resolve() for target, source in sources.items()}
+    if len(set(resolved_sources.values())) != len(sources) or any(
+        source == (root / filename).resolve()
+        for target, source in resolved_sources.items()
+        for filename in path_keys.values()
+        if target.name != filename
+    ):
+        raise _next_action.ActionableError(
+            "旧設定が複数の認証種別で同じenvファイルを参照している",
+            next_action="設定ディレクトリで認証の種別ごとにenvファイルを分け、対応する旧指定を解除する",
+        )
+    if sources:
+        root.mkdir(parents=True, exist_ok=True)
+        with (root / ".auth-env-migration.lock").open("a+b") as lock:
+            file_lock.acquire_lock(lock)
+            try:
+                for target, source in sources.items():
+                    _move_auth_file(source, target)
+            finally:
+                file_lock.release_lock(lock)
+
+    inventory_key = "claude_reset_inventory"
+    if inventory := overrides.get(inventory_key, config.get(inventory_key)):
+        usage_settings.save_claude_reset_inventory(inventory, migrate=True)
+
+    for key, limit in (
+        ("weekly_research_x_max_posts", _config_settings.X_MAX_POSTS),
+        ("weekly_research_x_max_users", _config_settings.X_MAX_USERS),
+    ):
+        value = config.get(key)
+        if isinstance(value, str) and value.isdecimal() and int(value) < limit:
+            _outcome.report_warning(
+                f"廃止した{key}より固定上限（{limit}）が高い",
+                next_action="X側の支出上限を確認する。取得を止める場合はweekly_research_x_apiをfalseへ変える。",
+            )
+    return {key: value for key, value in config.items() if key not in destinations}
+
+
+def _move_auth_file(source: pathlib.Path, target: pathlib.Path) -> None:
+    try:
+        if target.is_symlink() or source.is_symlink():
+            raise ValueError("移行に使う認証ファイルをシンボリックリンクにしない")
+        if source.resolve() == target.resolve():
+            return
+        try:
+            source_mode = source.stat().st_mode
+        except FileNotFoundError:
+            if target.is_file():
+                return
+            raise
+        if not stat.S_ISREG(source_mode):
+            raise ValueError("移行元は通常ファイルにし、移行先にシンボリックリンクを置かない")
+        # 内容を比較するのは、別ファイルシステムや保存直後の中断から再開するため。  # pyfltr: allow-comment
+        content = source.read_bytes()
+        try:
+            target_mode = target.stat().st_mode
+        except FileNotFoundError:
+            atomic_write(target, content, fsync=True)
+        else:
+            if not stat.S_ISREG(target_mode) or target.read_bytes() != content:
+                raise ValueError("固定名に別内容のファイルがあるため上書きしない")
+        source.unlink()
+    except OSError, ValueError:
+        raise _next_action.ActionableError(
+            f"認証envを設定ディレクトリの{target.name}へ移行できない",
+            next_action="旧ファイルを確認し、固定名に別のファイルがある場合は残す認証を選んでから旧指定を解除する",
+        ) from None
+
+
 def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
@@ -106,7 +209,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
     migrated.pop("usage_auto_allocation", None)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
-        return migrated
+        return migrate_fixed_settings(migrated)
     stages = {
         "execute": ("execute", "high"),
         "review": ("review", "medium"),
@@ -146,20 +249,31 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
                     ),
                 )
             _config_settings.validate_mutable_setting(target, migrated[target])
-    return {key: value for key, value in migrated.items() if key not in _config_settings.RETIRED_MODEL_KEYS}
+    return migrate_fixed_settings(
+        {key: value for key, value in migrated.items() if key not in _config_settings.RETIRED_MODEL_KEYS}
+    )
 
 
 def migrate_legacy_settings() -> None:
-    """旧モデル設定と旧接続設定の保存値を移行先へ一括移行する。環境変数は保存しない。"""
+    """旧モデル・接続設定と廃止した設定キーを移行する。環境変数の値は設定JSONへ保存しない。  pyfltr: allow-comment"""
     config = _config_settings.load_config_strict()
     legacy_keys = (
         *_config_settings.RETIRED_MODEL_KEYS,
         *_config_settings.RETIRED_CONNECTION_KEYS,
+        *_config_settings.RETIRED_FIXED_KEYS,
         "process_loop_repositories",
         "codex_auto_reset",
         "usage_auto_allocation",
     )
-    if not any(key in config for key in legacy_keys):
+    env = runtime_environment.environment()
+    if not (
+        any(key in config for key in legacy_keys)
+        or any(
+            env.get(_config_settings.config_env_name(key))
+            for key in _config_settings.RETIRED_FIXED_KEYS
+            if key != "usage_activity_mode"
+        )
+    ):
         return
     migrated = plan_legacy_migration(config)
     if migrated != config:
@@ -306,9 +420,11 @@ def check_legacy_environment() -> None:
     if connection_found:
         replacements = [
             f"{_config_settings.config_env_name(key)} → "
-            f"{', '.join(_config_settings.config_env_name(target) for target in targets)}"
+            + ", ".join(
+                _config_settings.config_env_name(target) if target in _config_settings.MUTABLE_KEY_DEFAULTS else target
+                for target in _config_settings.RETIRED_CONNECTION_KEYS[key]
+            )
             for key in connection_found
-            for targets in [_config_settings.RETIRED_CONNECTION_KEYS[key]]
         ]
         raise _next_action.ActionableError(
             "廃止した旧接続設定の環境変数が設定されています: "

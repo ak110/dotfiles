@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from agent_toolkit._atk import lane
+from agent_toolkit._atk import config_settings, lane
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import session_registry
@@ -69,14 +69,13 @@ def test_unconfigured_process_session_preserves_parent_auth(
     assert "ANTHROPIC_API_KEY" not in observed["settings"]["env"]
 
 
-@pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
+@pytest.mark.parametrize("content", ["", "# 未記入\n"])
 def test_invalid_env_file_warning_reaches_process_loop_stderr(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str | None
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], content: str
 ) -> None:
-    path = tmp_path / "invalid.env"
-    if content is not None:
-        path.write_text(content, encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(path))
+    path = config_settings.config_dir() / "claude-payg.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
     observed: dict[str, Any] = {}
 
@@ -87,7 +86,7 @@ def test_invalid_env_file_warning_reaches_process_loop_stderr(
     _run_claude_session(tmp_path, monkeypatch, launch)
     stderr = capsys.readouterr().err
     assert str(path) in stderr
-    assert "atk config set claude_payg_env_file" in stderr
+    assert "権限・記述を確認" in stderr
     assert observed["env"]["CLAUDE_CODE_OAUTH_TOKEN"]
 
 
@@ -96,7 +95,7 @@ def test_payg_orchestrator_uses_api_only(tmp_path: pathlib.Path, monkeypatch: py
     assert "ANTHROPIC_API_KEY" not in observed["env"]
     assert not observed["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
     assert observed["env"]["ANTHROPIC_BASE_URL"] == "https://api.example.test"
-    assert str(tmp_path / "api.env") in settings["apiKeyHelper"]
+    assert str(config_settings.config_dir() / "claude-payg.env") in settings["apiKeyHelper"]
     assert "selected-test-key" not in str(observed["argv"])
 
 
@@ -121,7 +120,8 @@ def test_orchestrator_resume_probe_keeps_selected_connection(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    path = tmp_path / "selected.env"
+    path = config_settings.config_dir() / "claude-payg.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("ANTHROPIC_API_KEY=selected-key\n", encoding="utf-8")
     session_registry.publish(
         "resume-api",
@@ -273,7 +273,7 @@ def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
         assert not kwargs["env"].get("CLAUDE_CODE_OAUTH_TOKEN")
         raw = argv[argv.index("--settings") + 1]
         settings = json.loads(pathlib.Path(raw).read_text(encoding="utf-8"))
-        assert str(api) in settings["apiKeyHelper"]
+        assert str(config_settings.config_dir() / "claude-payg.env") in settings["apiKeyHelper"]
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", run)

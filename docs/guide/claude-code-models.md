@@ -43,10 +43,11 @@ resetの自動消費は`usage_reset_permissions`の許可だけを使う。
 Codexの対象は`scope`を`codex`とし、旧`codex_auto_reset=true`だけを消費許可には読み替えない。
 自然回復が近い場合や作業がない場合は消費しない。
 検収や導入だけを目的に実際の権利を消費しない。
-消費ペースから週次枠の枯渇を見込む時、`usage_activity_mode`の初期値`continuous`は連続稼働を仮定し、`intermittent`は観測した稼働の割合があれば反映する。
+消費ペースから週次枠の枯渇を見込む時は、同じ観測元・契約・アカウントで2区間かつ30分以上の稼働を観測し、直近の観測が10分以内なら、その稼働割合を反映する。
+観測が足りなければ連続稼働を仮定する。
 許可が空なら、自動resetのための定期照会は行わない。
 
-Claudeの在庫・期限・対象は`claude_reset_inventory`に入力し、`atk config usage --json`の案内にある公式Usage画面で手動消費する。
+Claudeの在庫・期限・対象は`atk config usage --set-claude-reset-inventory <JSON配列>`に入力し、`atk config usage --json`の案内にある公式Usage画面で手動消費する。
 消費後は在庫を更新し、`atk config usage --refresh`で残量を取り直す。
 Fable限定などの対象を、他モデルや別の枠の回復へ読み替えない。
 

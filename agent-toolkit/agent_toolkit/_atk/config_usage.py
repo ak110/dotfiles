@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config_settings, help_text
-from agent_toolkit._common import registry_index, session_registry, usage_observation
+from agent_toolkit._common import registry_index, session_registry, usage_observation, usage_settings
 from agent_toolkit._common.atomic_file import atomic_write
 from agent_toolkit._common.file_lock import acquire_lock, release_lock
 from agent_toolkit._common.usage_settings import deadline, read_metadata, read_settings, settings_path, temporary_settings
@@ -74,6 +74,9 @@ def build_parser(sub: Any) -> None:
         sub,
         "usage",
         **help_text.HELP["atk config usage"],
+    )
+    usage.add_argument(
+        "--set-claude-reset-inventory", metavar="JSON", help="Claudeのreset登録在庫を置き換える（許可は変更しない）"
     )
     usage.add_argument("--json", action="store_true", help="詳細をJSONで表示する")
     usage.add_argument("--refresh", action="store_true", help="両エンジンの利用枠を更新してから表示する")
@@ -140,6 +143,8 @@ def dispatch(
             )
         )
         return
+    if args.set_claude_reset_inventory is not None:
+        usage_settings.save_claude_reset_inventory(args.set_claude_reset_inventory)
     if args.refresh:
         if refresh is None:
             raise ValueError("利用枠の更新機能が接続されていない")
@@ -148,7 +153,7 @@ def dispatch(
     visible_windows = profile_windows(observed)
     settings = read_settings()
     metadata = {engine: read_metadata(engine) for engine in ("claude", "codex")}
-    claude_rights = json.loads(resolve("claude_reset_inventory"))
+    claude_rights = settings.get("claude_reset_inventory", [])
     if not args.json:
         print(MODEL_ORDER_POLICY)
         for engine in ("claude", "codex"):
@@ -249,6 +254,7 @@ def dispatch(
                 "refresh_failures": settings.get("refresh_failures", []),
                 "running_sessions": running,
                 "application_boundary": "稼働中のturnは終了させず、次の新規起動・継続境界で実効候補を適用",
+                "claude_reset_inventory": claude_rights,
                 "claude_reset_advice": reset_advice,
             },
             ensure_ascii=False,

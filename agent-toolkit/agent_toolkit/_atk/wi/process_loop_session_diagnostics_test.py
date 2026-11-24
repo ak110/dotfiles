@@ -5,22 +5,22 @@ from unittest import mock
 
 import pytest
 
+from agent_toolkit._atk import config_settings
 from agent_toolkit._atk.wi import cli, process_loop, process_loop_session
 from agent_toolkit._common import session_registry
 from agent_toolkit._testing.process_loop_support import isolate_process_loop_commands
 
 
-@pytest.mark.parametrize("failure", ["identity", "missing", "format", "unicode", "empty"])
+@pytest.mark.parametrize("failure", ["identity", "format", "unicode", "empty"])
 def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, failure):
     """起動境界の失敗理由と設定の修正操作をCLI出力で確かめる。"""
     isolate_process_loop_commands(monkeypatch, tmp_path)
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-subscription")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", "subscription,payg")
-    path = tmp_path / "api.env"
+    path = config_settings.config_dir() / "claude-payg.env"
     if failure != "identity":
-        monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(path))
-        if failure != "missing":
-            path.write_bytes({"format": b"invalid line\n", "unicode": b"\xff", "empty": b""}[failure])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes({"format": b"invalid line\n", "unicode": b"\xff", "empty": b""}[failure])
     process = mock.MagicMock()
     process.pid = 1234567890
     process.poll.return_value = 0
@@ -56,13 +56,12 @@ def test_session_failure_diagnostics_reach_cli(tmp_path, monkeypatch, capsys, fa
         assert "process-loop statusで状態を確認し、原因を解消して再実行する" in stderr
     else:
         expected = {
-            "missing": "FileNotFoundError",
-            "format": "ValueError: API envファイルは1行1つのKEY=VALUEで指定する",
-            "unicode": "UnicodeDecodeError",
+            "format": "KEY=VALUE形式が不正",
+            "unicode": "KEY=VALUE形式が不正",
             "empty": "空、またはAPI認証・接続方式の変数に値が無い",
         }
         assert expected[failure] in stderr
         assert str(path) in stderr
-        assert "atk config set claude_payg_env_file" in stderr
+        assert "権限・記述を確認" in stderr
     assert "次の操作:" in stderr
     assert "Traceback" not in stderr

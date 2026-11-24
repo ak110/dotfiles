@@ -21,7 +21,7 @@ from contextlib import redirect_stdout
 
 import pytest
 
-from agent_toolkit._atk import research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
+from agent_toolkit._atk import config_settings, research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
 from agent_toolkit._atk.run_skill_execution import _SessionOutput
 
 if typing.TYPE_CHECKING:
@@ -102,7 +102,6 @@ def _flow(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps([_REPO]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV_FILE", str(tmp_path / "x-api.env"))
     monkeypatch.setattr("time.time", lambda: _NOW)
     monkeypatch.setattr(run_skill._wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)  # noqa: SLF001  # pylint: disable=protected-access
     monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda value, **_kwargs: value or _REPO)
@@ -193,7 +192,9 @@ def _entries() -> list[tuple[dict[str, object], str]]:
 @pytest.mark.parametrize(("proposals", "question_type"), [(True, "choice"), (False, "post-approval")])
 def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key, proposals, question_type):
     if x_key:
-        flow.work_dir.joinpath("x-api.env").write_text(f"{research_sources.X_TOKEN_VARIABLE}={_TOKEN}\n", encoding="utf-8")
+        path = config_settings.config_dir() / "x-api.env"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{research_sources.X_TOKEN_VARIABLE}={_TOKEN}\n", encoding="utf-8")
     flow.proposals = proposals
     assert _manual(flow.work_dir) == 0
     assert flow.runs == ["research@2026-11-22"]

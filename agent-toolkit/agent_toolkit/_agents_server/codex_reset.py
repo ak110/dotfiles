@@ -14,7 +14,6 @@ from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.codex_rpc import JsonRpcProcess
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import SessionState, utc_now
-from agent_toolkit._atk import config as _atk_config
 from agent_toolkit._atk import usage_refresh
 from agent_toolkit._atk.usage_limit_policy import should_wait
 from agent_toolkit._common import codex_usage_limit, state_paths, usage_observation, usage_settings
@@ -208,10 +207,9 @@ class CodexResetMixin:
                         if window["engine"] == "codex" and window.get("duration_seconds") == 604800
                     ]
                     pace = max((rate for rate in weekly_rates if rate is not None), default=None)
-                    if pace is not None and _atk_config.resolve_mutable_setting("usage_activity_mode") == "intermittent":
-                        ratio = observed.get("activity_ratio")
-                        if ratio is not None:
-                            pace *= ratio
+                    ratio = observed.get("activity_ratio")
+                    if pace is not None and ratio is not None:
+                        pace *= ratio
                     if permissions:
                         result = await codex_auto_reset.check_auto_reset(
                             request,

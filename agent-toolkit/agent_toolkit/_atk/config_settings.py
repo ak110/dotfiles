@@ -114,8 +114,6 @@ CONNECTION_KINDS = ("subscription", "credits", "payg")
 
 # 接続の認証の所在（種別ごとに1キー）と、役割別の使用順。`payg`は追加料金が発生するため、使用順の初期値へ含めない。
 CONNECTION_DEFAULTS = {
-    "claude_credits_env_file": "",
-    "claude_payg_env_file": "",
     "claude_orchestrator_connections": "subscription,credits",
     "claude_worker_connections": "credits,subscription",
     "codex_credits_provider": "",
@@ -124,9 +122,7 @@ CONNECTION_DEFAULTS = {
     "codex_worker_connections": "credits,subscription",
 }
 
-ENV_FILE_KEYS = frozenset({"claude_credits_env_file", "claude_payg_env_file"})
-
-PATH_KEYS = SERVE_PATH_KEYS | ENV_FILE_KEYS | frozenset({"weekly_research_x_env_file"})
+PATH_KEYS = SERVE_PATH_KEYS
 ARRAY_KEYS = SERVE_HOSTS_KEYS
 
 PROVIDER_KEYS = frozenset({"codex_credits_provider", "codex_payg_provider"})
@@ -138,26 +134,18 @@ WEEKLY_KEY_DEFAULTS = {
     "weekly_research_auto_start": "false",
     "weekly_research_repos": "[]",
     "weekly_research_x_api": "false",
-    "weekly_research_x_env_file": "",
     "weekly_research_x_accounts": "[]",
     "weekly_research_x_queries": "[]",
-    "weekly_research_x_max_posts": "100",
-    "weekly_research_x_max_users": "20",
 }
 
 WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
 
 WEEKLY_LIST_KEYS = frozenset({"weekly_research_repos", "weekly_research_x_accounts", "weekly_research_x_queries"})
 
-WEEKLY_LIMIT_KEYS = frozenset({"weekly_research_x_max_posts", "weekly_research_x_max_users"})
-
-
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
     "codex_fast_mode": "false",
-    "usage_activity_mode": "continuous",
     "usage_reset_permissions": "[]",
-    "claude_reset_inventory": "[]",
     **CONNECTION_DEFAULTS,
     "claude_usage_limit_wait": "five-hour",
     "codex_usage_limit_wait": "five-hour",
@@ -172,7 +160,7 @@ MUTABLE_KEY_DEFAULTS = {
 
 # 旧接続設定キーと移行先。保存値は読込時に移行先へ移し、環境変数とget・setでは移行先を示して拒否する。
 RETIRED_CONNECTION_KEYS = {
-    "claude_api_env_file": ("claude_credits_env_file", "claude_payg_env_file"),
+    "claude_api_env_file": ("設定ディレクトリのclaude-credits.envまたはclaude-payg.env",),
     "claude_orchestrator_api_only": ("claude_orchestrator_connections",),
     "claude_worker_api_first": ("claude_worker_connections",),
     "claude_api_mode": ("claude_orchestrator_connections", "claude_worker_connections"),
@@ -183,6 +171,22 @@ RETIRED_CONNECTION_KEYS = {
         "codex_worker_connections",
     ),
 }
+
+CLAUDE_ENV_FILENAMES = {"credits": "claude-credits.env", "payg": "claude-payg.env"}
+X_ENV_FILENAME = "x-api.env"
+X_MAX_POSTS = 100
+X_MAX_USERS = 20
+
+RETIRED_FIXED_KEYS = {
+    "claude_credits_env_file": CLAUDE_ENV_FILENAMES["credits"],
+    "claude_payg_env_file": CLAUDE_ENV_FILENAMES["payg"],
+    "weekly_research_x_env_file": X_ENV_FILENAME,
+    "weekly_research_x_max_posts": f"1回あたり{X_MAX_POSTS}投稿",
+    "weekly_research_x_max_users": f"1回あたり{X_MAX_USERS}ユーザー",
+    "usage_activity_mode": "観測に基づく自動補正",
+    "claude_reset_inventory": "`atk config usage --set-claude-reset-inventory`",
+}
+
 
 CLAUDE_RETIRED_CONNECTION_KEYS = (
     "claude_api_env_file",
@@ -328,6 +332,7 @@ def config_environment_variable_names() -> tuple[str, ...]:
     keys = (
         *MUTABLE_KEY_DEFAULTS,
         *RETIRED_CONNECTION_KEYS,
+        *(key for key in RETIRED_FIXED_KEYS if key != "usage_activity_mode"),
         *sorted(RETIRED_MODEL_KEYS),
         "process_loop_repositories",
         "usage_auto_allocation",
@@ -371,7 +376,6 @@ def parse_agents_concurrency(value: str) -> tuple[str, float] | None:
 
 SETTING_CHOICES = {
     "dotfiles_mode": ("full", "minimal"),
-    "usage_activity_mode": ("continuous", "intermittent"),
     "claude_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_usage_limit_wait": ("never", "five-hour", "always"),
     "codex_fast_mode": ("true", "false"),
@@ -388,11 +392,7 @@ _SETTING_DESCRIPTIONS = {
     "orchestrate_model": "統括を担当するモデル候補",
     "write_model": "文書執筆を担当するモデル候補",
     "codex_fast_mode": "Codexの高速モードを使うか",
-    "usage_activity_mode": "利用枠の消費を連続稼働と断続稼働のどちらとして見積もるか",
     "usage_reset_permissions": "利用枠のresetを許可する対象と期間",
-    "claude_reset_inventory": "Claudeに登録したreset権の在庫",
-    "claude_credits_env_file": "Claudeの有限クレジット用envファイルのパス",
-    "claude_payg_env_file": "Claudeの従量課金用envファイルのパス",
     "codex_credits_provider": "Codexの有限クレジット用provider ID",
     "codex_payg_provider": "Codexの従量課金用provider ID",
     "claude_orchestrator_connections": "Claudeの統括で試す接続順",
@@ -407,11 +407,8 @@ _SETTING_DESCRIPTIONS = {
     "weekly_research_auto_start": "日曜14時の週枠で外部情報の調査を自動で起動するか",
     "weekly_research_repos": "外部情報の調査の対象リポジトリ。先頭の作業ツリーで調査する",
     "weekly_research_x_api": "外部情報の調査でX APIの有償取得を使うか",
-    "weekly_research_x_env_file": "X APIのキーを置くenvファイルのパス。空なら設定ディレクトリのx-api.env",
     "weekly_research_x_accounts": "外部情報の調査で読むXのアカウント",
     "weekly_research_x_queries": "外部情報の調査で読むXの検索語",
-    "weekly_research_x_max_posts": "1回の調査でXから読む投稿数の上限",
-    "weekly_research_x_max_users": "1回の調査でXから読むユーザー情報数の上限",
     "agents_concurrency": "委譲先の同時実行数の上限",
     "dotfiles_mode": "dotfilesの配布範囲",
     "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
@@ -442,12 +439,10 @@ def setting_format(key: str) -> str:
     return {
         "repositories": "リポジトリIDと登録属性のJSONオブジェクト",
         **dict.fromkeys(sorted(WEEKLY_LIST_KEYS), "文字列のJSON配列"),
-        **dict.fromkeys(sorted(WEEKLY_LIMIT_KEYS), "1以上の整数"),
         "agents_concurrency": "上限の整数、論理CPU数への倍率（例: 2.5x）、またはoff",
         "serve_host": "空でないホスト名またはIPアドレス",
         "serve_port": "1から65535までの整数",
         "usage_reset_permissions": "id・engine・account・scope・count・from・untilを含むJSON配列。日時はタイムゾーン付き",
-        "claude_reset_inventory": "id・engine・account・scope・count・from・untilを含むJSON配列。日時はタイムゾーン付き",
     }.get(key, "設定値")
 
 
@@ -459,9 +454,6 @@ def validate_mutable_setting(key: str, value: str) -> None:
     if key in SETTING_CHOICES:
         if value not in SETTING_CHOICES[key]:
             raise ValueError(f"受理可能値: {setting_format(key)}")
-    elif key in ENV_FILE_KEYS:
-        if "\n" in value or "\r" in value or "\0" in value:
-            raise ValueError("envファイルのパス1つ、または空文字列で指定する")
     elif key in PROVIDER_KEYS:
         if any(char.isspace() or char == "," for char in value):
             raise ValueError("config.tomlのprovider ID 1つ（空白とカンマを含まない）、または空文字列で指定する")
@@ -480,18 +472,12 @@ def validate_mutable_setting(key: str, value: str) -> None:
         parse_remote_hosts(value)
     elif key == "repositories":
         config_repositories.parse(value)
-    elif key in {"usage_reset_permissions", "claude_reset_inventory"}:
+    elif key == "usage_reset_permissions":
         validate_permissions(value)
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
     elif key in WEEKLY_LIST_KEYS:
         parse_string_list(value)
-    elif key in WEEKLY_LIMIT_KEYS:
-        if not value.isdecimal() or int(value) < 1:
-            raise ValueError("1以上の整数で指定する")
-    elif key == "weekly_research_x_env_file":
-        if "\n" in value or "\r" in value or "\0" in value:
-            raise ValueError("envファイルのパス1つ、または設定ディレクトリのx-api.envを使う空文字列で指定する")
     elif key in MODEL_DEFAULTS:
         validate_stage_model_candidates(value)
         if key == "orchestrate_model" and any(candidate.startswith("opencode:") for candidate in value.split(",")):

@@ -146,6 +146,8 @@ def _legacy_key_guidance(keys: list[str]) -> str:
     if any(key in _config_settings.RETIRED_MODEL_KEYS for key in keys):
         guidance += "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
     for key in keys:
+        if key in _config_settings.RETIRED_FIXED_KEYS:
+            guidance += f"。旧設定キー{key}は廃止した: {_config_settings.RETIRED_FIXED_KEYS[key]}"
         if key in _config_settings.RETIRED_CONNECTION_KEYS:
             guidance += f"。旧接続設定キー{key}は廃止した。移行先: {', '.join(_config_settings.RETIRED_CONNECTION_KEYS[key])}"
     return guidance
@@ -293,6 +295,8 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
     sub = getattr(args, "config_subcommand", None) or "show"
     try:
         if sub in {"usage", "temporary"}:
+            _config_migration.check_legacy_environment()
+            _config_migration.migrate_legacy_settings()
             config_usage.dispatch(args, resolve=resolve_mutable_setting, refresh=refresh)
         elif sub in {"show", "list"}:
             _cmd_config_show(home)

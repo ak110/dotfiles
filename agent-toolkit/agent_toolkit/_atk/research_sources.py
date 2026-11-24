@@ -30,7 +30,6 @@ from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 X_API_BASE = "https://api.x.com/2"
 X_TOKEN_VARIABLE = "X_BEARER_TOKEN"
-X_ENV_FILENAME = "x-api.env"
 INITIAL_DAYS = 7
 
 X_MIN_RESULTS = {"timeline": 5, "search": 10}
@@ -291,8 +290,7 @@ def read_github_releases(
 
 
 def x_token() -> str | None:
-    configured = config.resolve_mutable_setting("weekly_research_x_env_file")
-    path = pathlib.Path(configured) if configured else config_settings.config_dir() / X_ENV_FILENAME
+    path = config_settings.config_dir() / config_settings.X_ENV_FILENAME
     try:
         values = claude_connection.read_api_env_file(str(path))
     except FileNotFoundError:
@@ -536,8 +534,8 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
             results.append(SourceResult(f"changelog:{name}", "failed", redact_secrets(str(error))))
     enabled = config.resolve_mutable_setting("weekly_research_x_api") == "true"
     budget = XBudget(
-        max_posts=int(config.resolve_mutable_setting("weekly_research_x_max_posts")),
-        max_users=int(config.resolve_mutable_setting("weekly_research_x_max_users")),
+        max_posts=config_settings.X_MAX_POSTS,
+        max_users=config_settings.X_MAX_USERS,
     )
     accounts = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_accounts"))
     queries = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_queries"))

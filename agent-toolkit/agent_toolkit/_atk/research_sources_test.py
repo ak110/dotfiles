@@ -114,9 +114,8 @@ def test_without_usage_start_x_api_is_not_called(x_settings):
     assert sources["changelog:codex"]["count"] == 1
 
 
-def test_missing_key_does_not_call_x_api(monkeypatch, tmp_path):
+def test_missing_key_does_not_call_x_api(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
     fetch = _Recorded(_base_responses())
     result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
@@ -170,8 +169,8 @@ def test_read_limit_stops_by_kind_without_overrequest(x_settings, monkeypatch, m
     """投稿一覧は5件、検索は10件が要求の最小であり、残りがそれに満たなければ送信しない。  pyfltr: allow-comment"""
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", str(max_posts))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_USERS", "1")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", max_posts)
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_USERS", 1)
     responses = {
         **_base_responses(),
         f"{research_sources.X_API_BASE}/users/by/username/poteto": (200, b'{"data": {"id": "11"}}'),
@@ -198,7 +197,7 @@ def test_search_requests_at_least_ten_within_budget(x_settings, monkeypatch):
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "10")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 10)
     responses = {**_base_responses(), f"{research_sources.X_API_BASE}/tweets/search/recent": _timeline(3, newest=310)}
     fetch = _Recorded(responses)
     sources = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
@@ -212,7 +211,7 @@ def test_partial_read_keeps_unread_range_for_next_run(x_settings, monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "5")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 5)
     session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
     session_review.write(
         research_sources.positions_path(), {"positions": {"x:account:poteto": "100"}, "user_ids": {"poteto": "11"}}

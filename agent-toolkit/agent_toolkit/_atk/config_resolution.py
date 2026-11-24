@@ -11,7 +11,7 @@ def connection_order(engine: str, role: str) -> tuple[str, ...]:
 
 
 def connections_configured(engine: str) -> bool:
-    """エンジンの認証キー2つと使用順2つのいずれかを、環境変数か保存値で設定しているかを返す。
+    """使用順・Codexのproviderの明示、またはClaudeの認証ファイルの有無を返す。  pyfltr: allow-comment
 
     どれも設定していない環境は、接続を管理せず親環境と通常の認証解決を引き継ぐ。
     使用順には初期値があるため、実効値ではなく明示の有無で判定する。
@@ -21,6 +21,10 @@ def connections_configured(engine: str) -> bool:
         raise KeyError(engine)
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
+    if engine == "claude" and any(
+        (config_settings.config_dir() / name).exists() for name in config_settings.CLAUDE_ENV_FILENAMES.values()
+    ):
+        return True
     stored = config_settings.load_config()
     return any(runtime_environment.environment().get(config_settings.config_env_name(key), "") or key in stored for key in keys)
 

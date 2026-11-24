@@ -207,14 +207,6 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
             and window["used_percent"] <= current_window["used_percent"]
         ):
             setting_rates.setdefault(row["setting"], {})[key] = row["rate"]
-    activity_ratios = []
-    for engine in {row["window"]["engine"] for row in rows}:
-        samples = {row["window"]["observed_at"]: row for row in data["observations"] if row["window"]["engine"] == engine}
-        times = sorted(samples)
-        if len(times) >= 2 and times[-1] > times[0]:
-            seconds = [samples[at].get("active_seconds") for at in times[1:]]
-            if all(_valid(value) for value in seconds):
-                activity_ratios.append(min(1.0, sum(seconds) / (times[-1] - times[0])))
     return {
         "windows": [row["window"] for row in rows],
         "current_windows": [
@@ -226,6 +218,41 @@ def snapshot(*, now: float | None = None) -> dict[str, Any]:
         "rates": rates,
         "setting_rates": {setting: values for setting, values in setting_rates.items() if values},
         "mixed": data["mixed"],
-        "activity_ratio": max(activity_ratios) if activity_ratios else None,
+        "activity_ratio": _codex_activity_ratio(data["observations"], now),
         "last_observed_at": max((row["window"]["observed_at"] for row in rows), default=None),
     }
+
+
+def _codex_activity_ratio(observations: list[dict[str, Any]], now: float) -> float | None:
+    samples = {
+        row["window"]["observed_at"]: row
+        for row in observations
+        if row["window"]["engine"] == "codex" and now - 7 * 86400 <= row["window"]["observed_at"] <= now
+    }
+    times = sorted(samples, reverse=True)
+    if not times or now - times[0] > 600:
+        return None
+    latest = samples[times[0]]
+    active = 0.0
+    intervals = 0
+    span = 0.0
+    for newer, older in zip(times, times[1:], strict=False):
+        current, prior = samples[newer], samples[older]
+        delta = current.get("active_seconds")
+        if (
+            delta is None
+            or not _valid(delta)
+            or not 0 <= delta <= newer - older
+            or not (
+                latest.get("producer")
+                and prior.get("producer") == latest["producer"]
+                and prior["window"]["account"] == latest["window"]["account"]
+                and prior["window"]["contract"] == latest["window"]["contract"]
+            )
+        ):
+            break
+        active += delta
+        intervals += 1
+        span = times[0] - older
+    # 単発のバーストや瞬間的な休止で予測が変わらないよう、2区間で累計30分以上を求める。  # pyfltr: allow-comment
+    return active / span if intervals >= 2 and span >= 1800 and active > 0 else None

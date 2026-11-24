@@ -84,6 +84,7 @@ def test_repair_missing_process_loop_path(tmp_path: pathlib.Path, capsys: pytest
 
 def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.Path) -> None:
     repository = git.init_repository(tmp_path / "repo", origin="https://example.test/team/repo.git")
+    (tmp_path / "old.env").write_text("ANTHROPIC_API_KEY=fixture\n", encoding="utf-8")
     _write_config(
         tmp_path,
         {
@@ -99,7 +100,8 @@ def test_repository_read_preserves_unrelated_legacy_migration(tmp_path: pathlib.
     assert _main(tmp_path, "config", "get", "repositories") == 0
     stored = _saved(tmp_path)
     assert "claude_api_env_file" not in stored
-    assert stored["claude_payg_env_file"] == str(tmp_path / "old.env")
+    assert (tmp_path / "config" / "claude-payg.env").is_file()
+    assert "claude_payg_env_file" not in stored
     assert stored["other_setting"] == "keep"
 
 
