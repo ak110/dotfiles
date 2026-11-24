@@ -41,7 +41,8 @@
 1. 待機が未起動なら、`agent-toolkit:atk-mode/playbooks/permission-denial.md`「共通判断」で通知本文の再試行の指示を確かめる。
    - `gave no verdict (error)`で「transient failure」「You may try the action again once」と示す通知は、許された1回の再試行と指定の遅延に従う。
    - `gave no verdict (it skipped this action)`で「hard failure」「Don't retry it」と示す通知では、同じ待機の起動を再試行せず、別のツールでの再判定と権限設定の変更も行わずに済ませる。
-     読み取りと独立した作業、許容された別の観測手段での終了の観測を続ける。
+     許可された読み取りと、待機の起動に依存しない作業を続ける。
+     許容された別の観測手段で終了の観測も続ける。
      その操作が必須なら、対象、操作、通知本文を、委譲先は委譲元への即時通知で、メインは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」でユーザーへ伝える。
 
    実際の拒否は、同書の拒否の主体別の節に従う。
