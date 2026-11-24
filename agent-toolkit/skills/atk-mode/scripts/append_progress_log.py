@@ -34,6 +34,7 @@ from agent_toolkit._common.markdown_headings import top_level_atx_headings
 from agent_toolkit._plan import commit_mapping
 from agent_toolkit._plan import locations as _plan_locations
 from agent_toolkit._plan import structure as _plan_format
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 
 Clock = Callable[[], datetime.datetime]
 
@@ -77,6 +78,11 @@ def _heading_names() -> frozenset[str]:
     )
 
 
+def _reject_awi_plan(content: str) -> None:
+    if is_awi_plan(content):
+        raise ProgressLogError("新書式の計画は進捗ログを持ちません。", next_action="進捗は引き継ぎ記録へ書く")
+
+
 def append_progress_log(
     plan_file: pathlib.Path | str,
     completed_step: str,
@@ -95,6 +101,7 @@ def append_progress_log(
             "計画ファイルをUTF-8として読めません", next_action="計画ファイルをUTF-8で保存し直してから再実行する"
         ) from error
 
+    _reject_awi_plan(content)
     lines = content.splitlines(keepends=True)
     headings = top_level_atx_headings(content, 2)
     matches = [index for index, (_, title) in enumerate(headings) if title in _heading_names()]
@@ -316,7 +323,7 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
     parser.add_argument(
         "--handoff",
         action="store_true",
-        help="計画なしの引き継ぎ記録へ記録時刻（UTC）付きの進捗を追記する。"
+        help="引き継ぎ記録へ記録時刻（UTC）付きの進捗を追記する。"
         "--commit、--rewrite-mapまたは取得の操作と組で使う時は、commit対応を記録・履歴更新・取得する",
     )
     parser.add_argument(
@@ -326,6 +333,8 @@ def main(argv: list[str] | None = None, *, description: str | None = None, retri
     _validate_required_inputs(args, parser)
     failure_title = "commit対応を取得できません" if args.get_commits else "進捗ログを更新できません"
     try:
+        if not args.handoff and not retrieval and (args.commit or args.rewrite_map):
+            _reject_awi_plan(args.plan_file.read_text(encoding="utf-8"))
         if _record_mapping(args, parser):
             return 0
         if args.handoff:

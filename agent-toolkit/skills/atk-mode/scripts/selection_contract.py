@@ -31,6 +31,7 @@ _DECISION_KEYS = frozenset(
         _selection.PUBLIC_WRITE_FILES_KEY,
         _selection.PUBLIC_WRITE_RATIONALES_KEY,
         _selection.MODEL_TYPES_KEY,
+        _selection.PLAN_REQUIREMENT_KEY,
         _selection.EXCLUDED_PATHS_KEY,
         _selection.DERIVED_NEW_PATHS_KEY,
         _selection.INTEGRATION_STATE_KEY,
@@ -155,6 +156,12 @@ def _check_ready_selection(facts: Mapping[str, Mapping[str, typing.Any]], select
         raise ValueError(f"処理可能な候補が選定にない: {', '.join(missing)}。処理可否の判定を確かめて全件を扱う")
 
 
+def _plan_requirement(candidate: dict[str, typing.Any]) -> str:
+    if candidate.get("type") == "awi" and candidate.get("source") in ("add-awi-by-user", "process-user-comments", "implement"):
+        return "計画なし"
+    return "計画あり"
+
+
 def generate_selection(
     judgments: object,
     candidates: list[dict[str, typing.Any]],
@@ -195,7 +202,16 @@ def generate_selection(
         if name not in facts or name in seen or _STALENESS_KEY in item:
             raise ValueError(f"{name}: 候補にないWI、重複判断、または手で転記した鮮度がある")
         seen.add(name)
-        decisions.append(dict(copy.deepcopy(item), **{_STALENESS_KEY: copy.deepcopy(facts[name]["staleness"])}))
+        candidate = facts[name]
+        decisions.append(
+            dict(
+                copy.deepcopy(item),
+                **{
+                    _STALENESS_KEY: copy.deepcopy(candidate["staleness"]),
+                    _selection.PLAN_REQUIREMENT_KEY: _plan_requirement(candidate),
+                },
+            )
+        )
     generated[_selection.DECISIONS_KEY] = decisions
     generated[_selection.LANE_COSTS_KEY] = copy.deepcopy(costs)
     excluded = judgments.get("除外候補", [])
@@ -339,6 +355,8 @@ def structure_errors(selection: object) -> tuple[list[str], list[str]]:
             for key in (_selection.WI_KEY, _selection.LANE_KEY, *_DECISION_STRING_KEYS)
             if key in item and not isinstance(item[key], str)
         )
+        if _selection.PLAN_REQUIREMENT_KEY in item and item[_selection.PLAN_REQUIREMENT_KEY] not in ("計画なし", "計画あり"):
+            errors.append(f"{label}: 計画要否は計画なしまたは計画ありを指定する")
         state = item.get(_selection.INTEGRATION_STATE_KEY, _selection.NOT_INTEGRATED)
         if state not in (_selection.NOT_INTEGRATED, _selection.INTEGRATED):
             errors.append(f"{label}: 統合状態は未統合か統合済みを指定する: {state!r}")

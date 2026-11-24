@@ -44,8 +44,11 @@ from agent_toolkit._atk.serve.plans.roots import (
 )
 from agent_toolkit._common import watch_observer as _watch_observer
 from agent_toolkit._common.async_operations import run_sync_operation
+from agent_toolkit._common.frontmatter import normalize_newlines, parse_frontmatter
 from agent_toolkit._plan import bundle_kinds as _bundle_kinds
 from agent_toolkit._plan.creation_times import cleanup_creation_time_temporaries
+from agent_toolkit._plan.structure import parse_plan_metadata
+from agent_toolkit._plan.structure.parsing import is_awi_plan
 from agent_toolkit._plan.viewer_files import (
     LEGACY_SOURCE_ID,
     NEW_SOURCE_ID,
@@ -392,6 +395,16 @@ def _read_text(path: pathlib.Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def _awi_plan_html(text: str, body_html: str) -> str:
+    metadata, _errors = parse_plan_metadata(text)
+    if metadata is None:
+        return body_html
+    related = "、".join(name for name, _summary in metadata.related_wi) or "なし"
+    values = metadata.values | {"関連WI": related}
+    fields = "".join(f"<dt>{html_lib.escape(name)}</dt><dd>{html_lib.escape(value)}</dd>" for name, value in values.items())
+    return f"<dl>{fields}</dl>{body_html}"
+
+
 async def render_file_html(context: PlansContext, host: str, source_id: str, rel: str) -> str:
     text = await resolve_text(context, host, source_id, rel)
 
@@ -399,7 +412,14 @@ async def render_file_html(context: PlansContext, host: str, source_id: str, rel
     cache_key: MarkdownCacheKey = (host, source_id, rel, digest)
     rendered = context.markdown_cache.get(cache_key)
     if rendered is None:
-        rendered = review_table_html(text) if is_review_table_path(rel) else markdown_to_html(text, context.renderer)
+        if is_review_table_path(rel):
+            rendered = review_table_html(text)
+        elif is_awi_plan(text):
+            parsed = parse_frontmatter(normalize_newlines(text.lstrip("\ufeff")))
+            assert parsed is not None
+            rendered = _awi_plan_html(text, markdown_to_html(parsed[1], context.renderer))
+        else:
+            rendered = markdown_to_html(text, context.renderer)
         context.markdown_cache.put(cache_key, rendered)
 
     return await plan_links_html(context, host, source_id, rel) + rendered

@@ -87,7 +87,7 @@ startup_documents:
 
 # レーン実行タスク
 
-`agent-toolkit:atk-mode`の作業`process-wi`の1つのレーンを、計画の要否の判定から統合まで同じthreadで担当する。
+`agent-toolkit:atk-mode`の作業`process-wi`の1つのレーンを、選定結果の`計画要否`の確認から統合まで同じthreadで担当する。
 担当種別は`レーン担当`、`レビュー修正担当`、`CI修正担当`のどれかである。
 本書は入力、操作の権限、返却の形式と工程ごとに読む手順書を定め、工程ごとの責務と完了条件は`agent-toolkit:atk-mode/references/workflow-phases.md`にある。
 
@@ -98,7 +98,7 @@ startup_documents:
 
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
-| `レーン担当`が計画の要否の判定、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
+| `レーン担当`が計画要否の確認、計画の起草、再開、実行レビューの起動と収束、統合の準備を始める前 | `agent-toolkit:atk-mode/playbooks/process-wi-execution.md` |
 | 実装を始める前（`実装開始`の受領後、待機しない`計画検査完了`の通知後、修正の入力の受領後。返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/implementation.md` |
 | `レビュー修正担当`か同じthreadの`レーン担当`がレビュー指摘を直してGit履歴へ統合する前（返す区切りは`対応完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md` |
 | `CI修正担当`が`CI記録`の失敗を直す前（前者は節「担当種別ごとの修正」を使い、返す区切りは`実装完了`） | `agent-toolkit:atk-mode/playbooks/review-fix.md`、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md` |
@@ -131,7 +131,7 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
 判定は、計画ありでは計画の`由来`欄（書式は`agent-toolkit:atk-mode/references/plan-format.md`）へ、計画なしでは引き継ぎ記録へ書く。
 以後は、確定した時の前提（目的、現在の方針、利用条件）が変わらない範囲で、確定した出所・採否・終了区分を再利用し、前提が変わった単位だけを判定し直す。
 原文との具体的な不一致を見つけたら、要求単位の根拠を示して既存のレビュー指摘管理表（計画なしでは引き継ぎ記録）へ訂正を残し、ユーザーが決める結果か認可を変える部分だけを確認の手順へ渡す。
-ユーザーが報告した不具合が既存の実装で満たされていると判断する場合は、`agent-toolkit:atk-mode/references/plan-format.md`「実施内容」の調査（呼び出し手段、操作手順、結果、報告時点との相違点）を行う。
+ユーザーが報告した不具合が既存の実装で満たされていると判断する場合は、調査（呼び出し手段、操作手順、結果、報告時点との相違点）を行う。
 操作、観測結果、相違点、未特定の範囲は引き継ぎ記録へ残す。
 
 他の入力は次のとおり扱う。
@@ -163,8 +163,7 @@ AWI本文を読んだら、本文が明示する担当とモデルの組を選�
 
 - 既存のファイル全体の上書きか文字列の置換の直前: 対象ファイルの最新の本文を取得する（自分が作ったファイルも含む）。
 - ファイルの編集の直前: プロジェクト規範が編集対象のパスに対応付けた必須スキルを起動する。
-- 変更範囲の検証の直前: 計画ありでは訂正済みの検証表の検証行（無ければ計画の`## 検証`の`変更範囲の検証`行）から、計画なしでは引き継ぎ記録からコマンドを取得する。
-  訂正済みの検証表の保持と引き継ぎは`agent-toolkit:atk-mode/references/plan-format.md`「検証」に従う。
+- 変更範囲の検証の直前: 引き継ぎ記録からコマンドを取得する。
   使う前に`agent-basics:check-execution/references/verification-scope.md`「範囲の決め方」で、実際の差分から足りない利用側のテストを加え、保存済みの結果を再利用できるかを判定する。
 - 受入シナリオか完成条件を手動で観測する直前: `agent-toolkit:atk-mode/playbooks/verification.md`「手動観測の保存」に従う。
 
@@ -196,7 +195,7 @@ private-notesへの計画の保存とWIの状態の変更は、`atk`の通常の
 
 ## 処理中の処理対象WIの追加の指示
 
-処理中にWIが追加されたら、進行中の工程を終えてから、同じターンで追加WIの計画の要否の判定（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「作成要否と計画なしの準備」）へ進む。
+処理中にWIが追加されたら、進行中の工程を終えてから、同じターンで追加WIの`計画要否`の確認（`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「作成要否と計画なしの準備」）へ進む。
 現在の工程の区切りを示す固定形式の行は、追加WIの最初の区切りの本文の先頭に置く。
 `atk agents notify`で送るのは、メインの判断か処置を実際に要する区切り（メインが中継するユーザー判断の確認事項、メインが計画の集合を受領する`計画検査完了`など）に限る。
 確認事項は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」を事項ごとに適用し、`足りないユーザー固有の値:`と`対案を選ぶ理由:`を示す。

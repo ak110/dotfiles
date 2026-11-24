@@ -243,3 +243,29 @@ def test_lane_selection_rejects_missing_human_reason(repo: tuple[pathlib.Path, s
 
 
 __all__ = ["fixture_repo"]
+
+
+@pytest.mark.parametrize("include_optional", [False, True])
+def test_awi_plan_matches_required_wis_and_accepts_optional_wi(repo: tuple[pathlib.Path, str], include_optional: bool) -> None:
+    work_dir, _base = repo
+    required, optional = _plan_fixture.WI_FILES[:2]
+    plan_path = work_dir / "plan.md"
+    related = (required, optional) if include_optional else (required,)
+    plan_path.write_text(_plan_fixture.awi_plan(repo=work_dir, related_wi=related), encoding="utf-8")
+    selection = work_dir / "selection.yaml"
+    selection.write_text(
+        yaml.safe_dump(
+            {
+                "選定": [
+                    {"WI": required[0], "レーン": "lane-01", "計画要否": "計画あり"},
+                    {"WI": optional[0], "レーン": "lane-01", "計画要否": "計画なし"},
+                ],
+            },
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+
+    errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection, lane="lane-01")
+
+    assert not errors, errors

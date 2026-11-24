@@ -6,6 +6,7 @@ import yaml
 
 from agent_toolkit import atk
 from agent_toolkit._atk.wi import entries, frontmatter
+from agent_toolkit._common import frontmatter as common_frontmatter
 from agent_toolkit._testing import git_repository
 from agent_toolkit._testing.wi_bodies import AGENT_AWI_BODY
 from agent_toolkit.atk_test import _FIXED_DT, _setup_notes
@@ -173,8 +174,8 @@ queue_schedule:
                 "tag:yaml.org,2002:timestamp",
             ):
                 literal_scalar_loader.add_constructor(tag, construct_literal_scalar)
-            monkeypatch.setattr(frontmatter, "_SafeLoaderBase", loader_base)
-            monkeypatch.setattr(frontmatter, "_LiteralScalarLoader", literal_scalar_loader)
+            monkeypatch.setattr(common_frontmatter, "_SafeLoaderBase", loader_base)
+            monkeypatch.setattr(common_frontmatter, "_LiteralScalarLoader", literal_scalar_loader)
             results.append(frontmatter.parse_frontmatter(text))
 
         assert results and all(result == results[0] for result in results)
@@ -315,7 +316,7 @@ def test_parse_frontmatter_runs_typed_loader_only_for_typed_keys(monkeypatch: py
         loaders.append(Loader.__name__)
         return original(stream, Loader=Loader)
 
-    monkeypatch.setattr(frontmatter.yaml, "load", counting_load)
+    monkeypatch.setattr(common_frontmatter.yaml, "load", counting_load)
 
     plain = frontmatter.parse_frontmatter("---\ntype: awi\nflag: true\n---\n\n本文\n")
     plain_loads = len(loaders)
@@ -349,8 +350,8 @@ def test_parse_frontmatter_runs_typed_loader_only_for_typed_keys(monkeypatch: py
 def test_simple_frontmatter_lines_match_yaml_result(source: str) -> None:
     text = f"---\n{source}---\n本文"
     try:
-        literal = yaml.load(source, Loader=frontmatter._LiteralScalarLoader)  # pylint: disable=protected-access
-        typed = yaml.load(source, Loader=frontmatter._SafeLoaderBase)  # pylint: disable=protected-access
+        literal = yaml.load(source, Loader=common_frontmatter._LiteralScalarLoader)  # pylint: disable=protected-access
+        typed = yaml.load(source, Loader=common_frontmatter._SafeLoaderBase)  # pylint: disable=protected-access
     except yaml.YAMLError:
         literal = typed = None
     expected = None

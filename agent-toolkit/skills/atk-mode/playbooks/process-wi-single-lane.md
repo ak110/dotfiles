@@ -26,11 +26,8 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 処理の振り分け
 
-計画が必要な項目を「計画対象」、不要な項目を「直接実装対象」として、本書「実行順」手順1の対応表へ区分を書く。
-区分を書く前に`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」を読み、WIごとに同節の4事項を本文と現物に照らして判定する。
-計画を省略する項目は、区分の欄に省略の条件を満たす変更内容を短く併記する。
-例えば「直接実装、4事項は本文で確定: `X`の初期値を`a`から`b`へ変える」と書く。
-定義を取得しないまま付けた「直接実装」の区分は、手順3の計画の省略と手順4の直接実装の根拠に使わない（過去に、定義を読まずに付けた区分のまま計画を省いた誤りがあったため）。
+`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」の表で計画を作る項目を「計画対象」、作らない項目を「直接実装対象」として、本書「実行順」手順1の対応表へ区分を書く（区分はWIの`source`で決まる）。
+同じファイル・節・主題を共有する項目は、`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」の手順2のとおり、まとめて実装・検証する。
 保存済みの対応表をもとに、対象worktreeの全ての計画対象を1つの計画ファイルへまとめ、計画段階のレビューは省いて実装後の実行レビューで確かめる。
 対応表のworktreeで実装し、専用worktreeは作らない。
 
@@ -75,7 +72,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    - 対象worktreeごとに公開対象とベースブランチを明示し、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の開始時のCI点検をする。
      実装に着手する前に実際のCIの状況を照会し、失敗ログを取得して残工程への影響を判定し、既存の失敗は本書「見つけた既存不良の扱い」で扱う。
    - 本書「処理の振り分け」に従って計画の要否を判定してから、各WIの次の値を対応表にまとめる。
-     ファイル名、保存された`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OID、開始前の状態、区分（直接実装では省略の条件を満たす変更内容を併記）、完了済みの工程と残工程である。
+     ファイル名、保存された`target_repo`、Git操作に使うworktreeの絶対パス、そのworktreeの処理開始時のHEADの短縮OID、開始前の状態、区分、完了済みの工程と残工程である。
      処理を始める前に全件を既存の引き継ぎ記録へ保存し、後続の工程の比較の基準にする。
    - 同書「集合確定直後の処理開始」に従い、`atk wi show`で保存された`target_repo`と対応worktreeのoriginの一致を確かめる。
      不一致は同書「処理対象の決定」の移転の判定と編集の規則に従い、移転の根拠が得られなければ両方の識別子と足りない根拠を報告し、移転が確定したら処理開始前に保存値と本文中の操作先をそろえる。
@@ -87,12 +84,12 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    Gitの起点の比較、実装、検証、commit、レビューには対応表のworktreeと開始時のHEADを使い、別のworktreeや複製元のHEADで代用しない。
 3. frontmatterに`merge_branch`を持つマージ用AWIは計画・実装・実行レビューを省き、`agent-toolkit:atk-mode/playbooks/implement.md`「マージ用AWIの処理」に従って直接取り込んで終了する。
    残る計画対象があれば、対象worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「計画の起草」で計画を起草する。
-   計画メタ情報の対象リポジトリと計画構造の自動チェックの`--work-dir`にはそのworktreeを指定し、対応表の全ての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足なく一致することを確かめる。
+   計画のfrontmatterの`target_repo`と計画構造の自動チェックの`--work-dir`にはそのworktreeを指定し、対応表の全ての計画対象を`--expected-wi <WIファイル名>`で繰り返し指定して、実装前に過不足なく一致することを確かめる。
    全件が直接実装対象なら計画ファイルを作らず、対応表とレビュー対象の集合の和で網羅を検収する。
 4. 対応表のworktreeで、計画対象は計画の`## 反映内容と反映先`と`## 完成条件`に従い、直接実装対象はWIの要求と完成条件に従って実装する。
-   - 8節形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`「8節形式」の対応表で節を読み替える。
+   - 旧形式の計画では、`agent-toolkit:atk-mode/references/plan-legacy-formats.md`の対応表で節を読み替える。
    - 完成条件の具体化、検証単位の選定、検証結果の保存、独立文脈レビューへの受け渡しは`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」に従う。
-   - Git管理外のファイルを変える場合は、最初の変更の前に変更前の複製を作り、対応を計画の`## 進捗ログ`か直接実装の引き継ぎ記録に残す。
+   - Git管理外のファイルを変える場合は、最初の変更の前に変更前の複製を作り、対応を引き継ぎ記録に残す。
    - commit履歴の整理で取得時の版が変わった記録の再利用は、`agent-toolkit:atk-mode/references/review-record.md`「根拠の書き方」に従う。
    - 互いの成果に依存しないworktreeの間では作業を並行して進めてよい。
    - commitは`agent-toolkit:atk-mode/playbooks/commit.md`で作り、WI実装commitごとに、計画（直接実装では引き継ぎ記録）と同じstemの対応記録ファイルへ記録する。
@@ -104,7 +101,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
    `cwd`、`開始時のHEAD`、レビュー指摘管理表、レビュー基準には同じworktreeの値だけを使う。
 6. worktreeごとに`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`「継続する工程」に従って指摘を収束させる。
    修正はメイン自身が行い、同じ開始時のHEADとレビュー指摘管理表を使い続ける。
-7. 各計画について`atk run-script plan-progress --`で完了の判定を`## 進捗ログ`へ記録し、計画構造の自動チェックの成功を確かめてから計画バンドルを保存する。
+7. 完了の判定を引き継ぎ記録へ記録し、各計画の計画構造の自動チェックの成功を確かめてから計画バンドルを保存する。
 8. 採否と公開:
    - 各WIを`adopt`か`reject`し、`adopt`では`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」のcommitの対応付けを使う。
      採否は公開前に確定し、CIの待機の後へ延ばさない。

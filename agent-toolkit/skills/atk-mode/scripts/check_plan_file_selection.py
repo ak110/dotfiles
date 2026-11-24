@@ -37,6 +37,7 @@ def _check_lane_selection(
         raise ValueError(f"選定結果の`{_selection.DECISIONS_KEY}`がYAMLの配列ではない")
     lane_awis: list[str] = []
     expected: list[str] = []
+    optional: set[str] = set()
     for decision in items:
         if (
             not isinstance(decision, dict)
@@ -47,16 +48,22 @@ def _check_lane_selection(
         if decision[_selection.LANE_KEY] != lane:
             continue
         lane_awis.append(decision[_selection.WI_KEY])
-        if decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE) == _RESUME_POSITION_NONE:
-            expected.append(decision[_selection.WI_KEY])
+        resume = decision.get(_RESUME_POSITION_KEY, _RESUME_POSITION_NONE)
+        if resume == _RESUME_POSITION_NONE or (_selection.PLAN_REQUIREMENT_KEY in decision and resume == "計画なし"):
+            if decision.get(_selection.PLAN_REQUIREMENT_KEY) == "計画なし":
+                optional.add(decision[_selection.WI_KEY])
+            else:
+                expected.append(decision[_selection.WI_KEY])
     if not lane_awis:
         raise ValueError(f"選定結果にレーンがない: {lane}")
     if len(lane_awis) != len(set(lane_awis)):
         raise ValueError(f"選定結果のレーンにWIが重複する: {lane}")
-    if not expected:
+    if not (expected or optional):
         return [f"レーン{lane}の全WIが再開位置を持ち、新しい計画の対象となるWIが無い。再開位置が指す既存計画で続ける"]
 
-    return _check_wi_selection(plans, tuple(expected), f"レーン{lane}の選定結果", prior_plans, work_dir)
+    return _check_wi_selection(
+        plans, tuple(expected), f"レーン{lane}の選定結果", prior_plans, work_dir, optional=frozenset(optional)
+    )
 
 
 def _check_wi_selection(
@@ -65,6 +72,8 @@ def _check_wi_selection(
     selection_label: str,
     prior_plans: tuple[pathlib.Path, ...],
     work_dir: pathlib.Path,
+    *,
+    optional: frozenset[str] = frozenset(),
 ) -> list[str]:
     errors: list[str] = []
     duplicate_expected = sorted({name for name in expected if expected.count(name) > 1})
@@ -105,7 +114,7 @@ def _check_wi_selection(
         errors.append(f"計画間で関連WIが重複する: {duplicates}")
     actual = set(filenames)
     missing = sorted(set(expected) - actual)
-    extra = sorted(actual - set(expected))
+    extra = sorted(actual - set(expected) - optional)
     if missing or extra:
         errors.append(
             f"関連WIと{selection_label}が一致しない: 欠落={missing}, 余剰={extra}。"

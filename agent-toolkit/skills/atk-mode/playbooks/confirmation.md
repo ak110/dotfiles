@@ -228,7 +228,7 @@ CI関連かは、ワークフロー・ジョブの選択と実行、入力値、
   UWIの本文は`agent-toolkit:atk-mode/references/uwi-format.md`、依存の保存は`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従う。
 - 必須の外部資料が得られない場合は、資料の提供を依頼し、その資料を要する成果物だけを保留する。
   資料が無いまま続けることは要求範囲の縮小であり、他の論点と分けて確認する。
-- 回答後の再開の手順は、元の項目の計画の進捗ログへ書く。
+- 回答後の再開の手順は、引き継ぎ記録へ書き、別セッションで必要なら`atk wi edit --append`で元AWI本文へ追記する。
   計画が無ければ`atk wi edit <元AWIのファイル名> --append --body-file <絶対パス> --target-repo=<対象リポジトリ>`で元のAWIへ追記する。
 - UWIの保存に必要な`atk`が使えない環境では、確認の本文と保存用の原稿を返し、キューへ未保存であることを示す。
 
