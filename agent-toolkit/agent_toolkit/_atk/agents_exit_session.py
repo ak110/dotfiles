@@ -309,10 +309,11 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     if directory is None or not directory.is_dir():
         return
     exit_paths = function_hook_paths(keep_session_id) if keep_session_id else None
+    own_kinds = ("recheck", "rate-limit", "server-error", "compaction", "restart")
     own_paths = (
         {
             *exit_paths,
-            *(directory / f"{kind}-{keep_session_id}.txt" for kind in ("recheck", "rate-limit", "compaction", "restart")),
+            *(directory / f"{kind}-{keep_session_id}.txt" for kind in own_kinds),
         }
         if exit_paths
         else set()
@@ -323,6 +324,7 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
         "request-*.txt",
         "recheck-*.txt",
         "rate-limit-*.txt",
+        "server-error-*.txt",
         "compaction-*.txt",
         "restart-*.txt",
         "ui-request-*.txt",

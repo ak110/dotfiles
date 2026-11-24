@@ -10,7 +10,7 @@ from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._common import function_hook_requests
 
 
-@pytest.mark.parametrize("kind", ["rate-limit", "compaction", "restart", "ui-request", "ui-response"])
+@pytest.mark.parametrize("kind", ["rate-limit", "server-error", "compaction", "restart", "ui-request", "ui-response"])
 def test_rate_limit_requests_keep_clear_and_expire(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, kind: str) -> None:
     """通常終了で現行会話を保持し、clearと期限経過で対象だけを回収する。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))

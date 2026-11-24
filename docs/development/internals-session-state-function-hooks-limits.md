@@ -15,3 +15,11 @@ Function hooks用ファイルの配置とSessionEnd・clear・期限切れの回
   run-skillはCLIのstream-jsonから上限を観測する
 - 初期化と生存期間: 初期状態ではファイルを作成せず、`requested`の記録だけを予約実行の根拠とする。
   通常のSessionEndではファイルを保持し、`clear`や期限切れ回収時の扱いは`docs/development/internals-session-state-function-hooks.md`で定めるFunction hooks用ファイルと同様とする
+
+## サーバー側の一時的なAPIエラーによる中断の再開予約
+
+同じディレクトリの`server-error-{session_id}.txt`はメインの`StopFailure`で`error`が`server_error`のときだけ`requested`になる。
+通常のClaude会話では`turn.complete`がこの要求を消費する。
+利用上限の条件も満たす場合は、両要求を消費して利用上限の再開だけを予約する。
+process-loopとrun-skillの起動側はこの要求を使わない。
+ファイルの回収条件は利用上限の記録ファイルと同じである。

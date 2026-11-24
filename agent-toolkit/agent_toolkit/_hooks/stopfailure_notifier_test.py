@@ -17,9 +17,13 @@ _SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "hook.py"
 
 @pytest.mark.parametrize(
     "error,delegated,agent",
-    [("rate_limit", False, None), ("server_error", False, None), ("rate_limit", True, None), ("rate_limit", False, "child")],
+    [
+        (error, delegated, agent)
+        for error in ("rate_limit", "server_error")
+        for delegated, agent in ((False, None), (True, None), (False, "child"))
+    ],
 )
-def test_rate_limit_command_hook_hands_request_to_turn_complete(
+def test_retryable_failure_command_hook_hands_request_to_turn_complete(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: str, delegated: bool, agent: str | None
 ) -> None:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
@@ -34,13 +38,30 @@ def test_rate_limit_command_hook_hands_request_to_turn_complete(
         )
         == 0
     )
-    request = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-limit-test.txt"
-    assert request.exists() is (error == "rate_limit" and not delegated and agent is None)
-    if request.exists():
-        assert request.read_text(encoding="utf-8") == "requested"
+    directory = tmp_path / "claude/agent-toolkit-function-hooks"
+    expected = [f"{error.replace('_', '-')}-limit-test.txt"] if not delegated and agent is None else []
+    assert sorted(path.name for path in directory.glob("*.txt")) == expected
+    for name in expected:
+        assert (directory / name).read_text(encoding="utf-8") == "requested"
 
 
-def test_failure_does_not_create_a_log_or_transcript_summary(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    "error",
+    [
+        "authentication_failed",
+        "oauth_org_not_allowed",
+        "account_on_hold",
+        "billing_error",
+        "invalid_request",
+        "model_not_found",
+        "max_output_tokens",
+        "cloud_credential_error",
+        "unknown",
+    ],
+)
+def test_failure_does_not_create_a_log_or_transcript_summary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, error: str
+) -> None:
     """再開要求の対象外の失敗では、一時領域と設定領域へ何も書かない。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     temp = tmp_path / "temp"
@@ -51,7 +72,7 @@ def test_failure_does_not_create_a_log_or_transcript_summary(tmp_path: pathlib.P
     payload = {
         "hook_event_name": "StopFailure",
         "session_id": "s1",
-        "error": "server_error",
+        "error": error,
         "transcript_path": str(transcript),
     }
     assert stopfailure_notifier.main(json.dumps(payload)) == 0
