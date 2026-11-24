@@ -1,5 +1,6 @@
 import re
 from collections.abc import Mapping
+lazy import os
 
 lazy from agent_toolkit._common.delegated_session import is_delegated
 lazy from agent_toolkit._common.session_state import read_state, update_state
@@ -69,10 +70,12 @@ def is_identified_process_loop_session(session_id: str | None, environ: Mapping[
     終了要求は祖先の対話CLIへ届くため、環境印だけで判定すると、
     統括が入れ子で起動した非対話CLIのhookから外側の統括を止めうる。
     """
-    if environ.get(_SESSION_ENV) != "1":
-        return False
-    expected_id = _expected_session_id(environ)
-    return bool(expected_id) and session_id == expected_id
+    expected_id = identified_process_loop_session_id(environ)
+    return expected_id is not None and session_id == expected_id
+
+
+def identified_process_loop_session_id(environ: Mapping[str, str]) -> str | None:
+    return (_expected_session_id(environ) or None) if environ.get(_SESSION_ENV) == "1" else None
 
 
 def claim_process_loop_session(session_id: str, environ: Mapping[str, str]) -> None:
@@ -87,3 +90,7 @@ def claim_process_loop_session(session_id: str, environ: Mapping[str, str]) -> N
         return
     if (key := _claim_key(environ)) is not None:
         update_state(key, lambda state: None if state.get(_CLAIMED_KEY) else {**state, _CLAIMED_KEY: session_id})
+
+
+if __name__ == "__main__":
+    print(identified_process_loop_session_id(os.environ) or "")
