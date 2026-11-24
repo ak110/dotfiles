@@ -346,8 +346,15 @@ def test_external_source_markup_boundaries(
 
 @pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
 @pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
-@pytest.mark.parametrize("separator", [None, " と ", "と", ""], ids=["single", "spaced", "adjacent-prose", "adjacent"])
-@pytest.mark.parametrize("markup", ["**{}**", "`{}`", "[資料]({})", "({})", "{}。", "__{}__"])
+@pytest.mark.parametrize(
+    ("markup", "separator"),
+    [
+        (markup, separator)
+        for markup in ("**{}**", "`{}`", "[資料]({})", "({})", "{}。", "__{}__")
+        for separator in (None, " と ", "と", "")
+        if separator != "" or markup not in {"**{}**", "__{}__"}
+    ],
+)
 def test_external_source_url_boundaries(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -375,6 +382,42 @@ def test_external_source_url_boundaries(
     assert not _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
 
 
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
+@pytest.mark.parametrize("infix", ["_", "__", "*"])
+@pytest.mark.parametrize("markup", ["<{}>", "**{}**", "__{}__"])
+@pytest.mark.parametrize("rows", ["complete", "prefix-only", "one-missing"])
+def test_external_source_url_identity(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    from_contract: bool,
+    infix: str,
+    markup: str,
+    rows: str,
+) -> None:
+    contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
+    prefix = "https://example.com/a"
+    urls = [f"{prefix}{infix}1", f"{prefix}{infix}2"]
+    body = "資料" + "と".join(markup.format(url) for url in urls)
+    if from_contract:
+        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
+    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    entries = {"complete": urls, "prefix-only": [prefix], "one-missing": urls[:1]}[rows]
+    (tmp_path / "external-source-review.md").write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in entries),
+        encoding="utf-8",
+    )
+    reason = _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+    if rows == "complete":
+        assert not reason
+    else:
+        assert urls[1] in reason
+
+
 def test_external_source_url_preserves_ipv6_address() -> None:
     urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
     assert urls == {"https://[2001:db8::1]/source"}
@@ -385,6 +428,9 @@ def test_external_source_url_preserves_ipv6_address() -> None:
     [
         ("https://example.com/a, 次", "https://example.com/a"),
         ("https://example.com/a. 次", "https://example.com/a"),
+        ("<https://example.com/a.>", "https://example.com/a."),
+        ("**https://example.com/a****https://example.com/b**", "https://example.com/a****https://example.com/b"),
+        ("https://example.com/a__b*", "https://example.com/a__b*"),
         ("https://example.com/a%ZZは別の文字列", "https://example.com/a"),
         ("https://example.com/aを参照", "https://example.com/a"),
         ("https://example.com/a$&'+,;=~b?x=1&y=2#z", "https://example.com/a$&'+,;=~b?x=1&y=2#z"),

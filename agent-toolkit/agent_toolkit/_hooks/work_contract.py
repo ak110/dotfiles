@@ -55,7 +55,8 @@ _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 EXTERNAL_SOURCE_WORKS = frozenset({"add-awi-by-user", "process-user-comments", "implement"})
 EXTERNAL_SOURCE_ENTRY_KEY = "external_source_entry"
-_SOURCE_URL = re.compile(r"https?://(?:[A-Za-z0-9./:?#\[\]@!$&'()+,;=\-]|_(?!_)|~(?!~)|%[0-9A-Fa-f]{2})+")
+_SOURCE_URL = re.compile(r"https?://(?:[A-Za-z0-9._~*/:?#\[\]@!$&'()+,;=\-]|%[0-9A-Fa-f]{2})+")
+_SOURCE_URL_EMPHASIS = re.compile(r"(?<!\*)\*{1,3}$|(?<!_)_{1,3}$|(?<!~)~~$")
 _SOURCE_URL_TRAILING_PUNCTUATION = ".,;:!?"
 _SOURCE_URL_BRACKETS = {")": "(", "]": "["}
 
@@ -79,7 +80,14 @@ def source_urls(line: str) -> Iterator[str]:
         offset = start + len(url)
         if line[start - 1 : start] == "[" and line.startswith("](", offset):
             continue
-        yield url.rstrip(_SOURCE_URL_TRAILING_PUNCTUATION)
+        before = line[start - 1 : start]
+        after = line[offset : offset + 1]
+        if (before, after) in {("<", ">"), ("`", "`")} or (line[:start].endswith("](") and after == ")"):
+            yield url
+        elif marker := _SOURCE_URL_EMPHASIS.search(line, 0, start):
+            yield url.removesuffix(marker[0])
+        else:
+            yield url.rstrip(_SOURCE_URL_TRAILING_PUNCTUATION)
 
 
 def observe_external_source_entry(session_id: str, work: str, arguments: str) -> None:
