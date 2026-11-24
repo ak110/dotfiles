@@ -3,7 +3,7 @@
 公開先のCI定義の有無の判定、`wait_ci.py`（`atk run-script wait-ci`）による待機、CIの失敗の証拠の取得と修正の公開を定める。
 `agent-toolkit:atk-mode/playbooks/publish.md`の「push前」「pushと監視」の段から使う。
 CIの失敗を認識したら`agent-basics:bugfix`を起動し、失敗の分類と対処は同スキルの`references/ci-failures.md`に従う。
-修正commitを要するCI失敗の担当と修正系列は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`に従う。
+修正commitが必要なCI失敗の担当と修正系列は、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md`に従う。
 
 ## 公開先に対応するCI定義の判定
 
@@ -80,17 +80,17 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 ```
 
 - 起動と結果の回収は`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`「待機区間の構成」に従う。
-  背景で起動し、他の独立した待機より先に届いた通知から回収する。
+  バックグラウンドで起動し、他の独立した待機より先に届いた通知から回収する。
   同じbaselineの監視が起動済みなら、新しく起動せずにそのプロセスを回収する。
-- ホストが背景の監視を停止した場合は、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「ホストによる背景待機の停止後」に従う。
+- ホストがバックグラウンドの監視を停止した場合は、`agent-toolkit:atk-mode/references/delegation-wait-anomalies.md`「ホストによる背景待機の停止後」に従う。
   CIのジョブは再実行せず、停止した監視と出力を回収して、同じSHAとbaseline（か待機専用の記録）で監視を再開する。
-- `--timeout`は判定するrunと同じジョブ構成（実行するジョブ、パスの条件によるスキップ、マトリックス、軽量実行の有無）を持つ過去の成功runの所要に、登録の猶予と変動の余裕を足した有限の値にする。
-  GitHub Actionsの所要は`updatedAt - startedAt`で、`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と合わせて確かめる。
+- `--timeout`は判定するrunと同じジョブ構成（実行するジョブ、パスの条件によるスキップ、マトリックス、軽量実行の有無）を持つ過去の成功runの所要時間に、登録の猶予と変動の余裕を足した有限の値にする。
+  GitHub Actionsの所要時間は`updatedAt - startedAt`で、`gh run view <run ID> --json startedAt,updatedAt,jobs`などでジョブ構成と合わせて確かめる。
   直近の成功runが軽量実行か一部のジョブだけなら、通常の作業量を含む成功runまで遡る。
-  所要を取得できない時は`--timeout`を省き、省略時の270秒を使う。
-- ホストが背景のコマンドを止める上限は、`--timeout`より長くする（ホストが先に止めると判定の結果が失われる）。
+  所要時間を取得できない時は`--timeout`を省き、省略時の270秒を使う。
+- ホストがバックグラウンドコマンドを止める上限は、`--timeout`より長くする（ホストが先に止めると判定の結果が失われる）。
   見積もった総待機がホストのバックグラウンド実行の最大（Claude Codeの`Bash`では7,200,000ミリ秒）を超える時は、最大より短い`--timeout`で起動し、終了コード2を受けてから同じ対象を待ち直す。
-- Codexでは`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」に従い、未起動の監視を通知で再開できる小さい担当へ渡す案と、元の担当での二層の回収を総費用で選ぶ。
+- Codexでは`agent-toolkit:atk-mode/playbooks/host-codex.md`「agents_serverの二層待機」に従い、未起動の監視を通知で再開できる小さい担当へ渡す案と、元の担当での二層の回収を総コストで選ぶ。
   起動済みの監視は、短い`--timeout`へ分割したり、プラグインのrootの更新を契機に別プロセスへ置き換えたりせず、同じ実行ハンドルで回収する。
 - `--baseline`による判定が終わるまで、同じcommitのワークフローを`gh workflow run`などで手動起動しない。
   `wait_ci.py`はbaselineに無い同じcommitのrunも監視に含めるため、手動起動したrunの失敗がCI全体の失敗になる。
@@ -103,9 +103,9 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 - 全ての監視対象が終了コード0で終わった時だけ「CI通過」とする。
   出力が空の時と、成功の完了を示す表示が無い時は、未判定として状態を直接確かめる。
 - 判定の対象はbaselineに保存したcommit SHAのrunであり、push後に送信元のブランチが進んでも同じSHAで判定する。
-- 成功した時も、対象プロジェクトが定める段階別と全体の所要の基準を読んで実際の所要と比べ、既存のCIの検証記録へ残す。
+- 成功した時も、対象プロジェクトが定める段階別と全体の所要時間の基準を読んで実際の所要時間と比べ、既存のCIの検証記録へ残す。
   比べ方と超過した時の改善の判断は`agent-basics:check-execution/references/diagnostics.md`「読む出力」に従う。
-  所要の基準と監視の`--timeout`は別のものであり、所要の超過は改善の判断に使い、公開の停止と検証の省略の理由から外す。
+  所要時間の基準と監視の`--timeout`は別のものであり、所要時間の超過は改善の判断に使い、公開の停止と検証の省略の理由から外す。
 
 ### wait_ciの終了コード
 
@@ -191,7 +191,7 @@ atk run-script wait-ci -- --wait-sha <40桁のSHA> --failure-record <待機専�
 - 操作の直前の`git fetch --all --prune`の後、`git for-each-ref --contains=<書き換える最古のcommit> refs/heads/ refs/remotes/`の出力が、push先のローカルブランチとその追跡ブランチだけである。
 
 リモートは`git push --force-with-lease=<destination ref>:<書き換え前に観測したremote側のOID>`のように、期待するOIDを明示して更新する。
-期待値を省くと、背景の`git fetch`などでリモート追跡ブランチが進んだ時に、上書きの保護が失われる。
+期待値を省くと、バックグラウンドの`git fetch`などでリモート追跡ブランチが進んだ時に、上書きの保護が失われる。
 この場合も`agent-toolkit:atk-mode/playbooks/publish.md`「push前」のdry-runを同じ明示の形式で実行し、強制更新を示すstatus lineが3条件を満たす承認済みの宛先への更新である時だけ承認済みとして扱う。
 3条件のどれかが成り立たない場合（ベースブランチへ直接pushする運用を含む）と、forgeのブランチ保護がforce pushを拒んだ場合は、force pushを使わずに、同じブランチへ通常のcommitを足して直す。
 CIの記録には、書き換え前後のOID、ツリー・親commit・件名の対応、`git range-diff`の結果、解消した原因との対応を残す。

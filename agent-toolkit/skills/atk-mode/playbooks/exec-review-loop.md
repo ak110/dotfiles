@@ -85,11 +85,11 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 
 ## レビュー修正
 
-修正と、その採否、方針、検収は対象worktreeの書込所有者が持つ（手順は`agent-toolkit:atk-mode/playbooks/review-fix.md`）。
+修正と、その採否、方針、検収は対象worktreeの書き込み所有者が持つ（手順は`agent-toolkit:atk-mode/playbooks/review-fix.md`）。
 
-1. 起動側が書込所有者（レーン担当、single-laneのメイン）なら、同書に従って自分で直す。
-2. 書込所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、`agent-basics:review-standards/references/reviewee.md`に従い、根拠と価値・QCDの比較を指摘ごとに`レビュー参考意見`へ書く。
-   この工程では探索と再現を追加せず、応答の確定は書込所有者に任せる。
+1. 起動側が書き込み所有者（レーン担当、single-laneのメイン）なら、同書に従って自分で直す。
+2. 書き込み所有者が別のthreadなら、毎ラウンド全ての指摘を元の要求、計画、契約、既存の証拠、応答と比べ、`agent-basics:review-standards/references/reviewee.md`に従い、根拠と価値・QCDの比較を指摘ごとに`レビュー参考意見`へ書く。
+   この工程では探索と再現を追加せず、応答の確定は書き込み所有者に任せる。
    合成した構成だけの結果は通常運用の結果と区別する。
    そのthreadへ`send_message`の`instruction: レビュー指摘の対応をせよ`を送り、roundは表から解決させる。
    `extra_params`には全ての計画の`レビュー指摘管理表`と、あれば`レビュー参考意見`を`agent-toolkit:atk-mode/roles/exec.parent.md`「入力」の形で渡す。
@@ -170,7 +170,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 | 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | 選定原本の該当項目の`担当モデル`だけを本文の組へ直し（初回の配分と判断履歴は保つ）、`atk run-script pick-wi-check -- <元の選定原本の絶対パス> --work-dir <対象リポジトリの絶対パス>`の終了コード0を確かめる。未確定のモデルを推測させず、下位の担当で補わない。`実装担当`が変われば返却元の終了を確かめて新しい`model_type`で同じレーンを起動し直し、`実行レビュー担当`だけなら同じthreadへ続行を返す | 不要 |
 | 完成条件の変更か除外の判断要請 | 本書「技術判断で外せる完成条件」に当たればメインが判断と根拠を担当へ返して記録させ、当たらなければユーザーの判断の記録を確かめ、無ければ`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で確認する | 必要 |
 | ユーザーの選好、要件、認可範囲の変更 | ユーザーに確認して回答を同じレビューイーへ返す | 不要 |
-| 外部状態か権限の不足 | 回復の手段を確かめ、ユーザーの操作が要れば確認する。既存不良が原因なら既存不良の行も適用する | 必要 |
+| 外部状態か権限の不足 | 回復の手段を確かめ、ユーザーの操作が必要なら確認する。既存不良が原因なら既存不良の行も適用する | 必要 |
 | 同じ論点の2回目以降の差し替え | `agent-basics:review-standards/references/reviewee.md`「同じ指摘の反復」に従う（反復の回数だけを確認の理由にしない） | 必要 |
 | 対象リポジトリや配布物のhook・CLI・規範などの既存不良による続行不能 | 担当の回復と欠陥の処置を分け、`agent-toolkit:atk-mode/references/conduct.md`「完遂と先送り」の条件の内側で判定する。process-wi中は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で時機を決める | 必要 |
 | 同じthreadを続けられない | 後続の担当へ同じ計画ファイル（`~/.claude/plans`配下）、指摘管理表、確定した判断を引き継ぐ。既存不良が原因なら前の行も判定する | 必要 |
@@ -187,10 +187,10 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 
 - 変えるか除く部分は、ユーザー自身の指定でなくエージェントの具体化である（明示の由来の要求でも、その目的、対象範囲、期待する結果、明示された検証の水準は保つ）。
 - `agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」の「ユーザーが確定した判断の変更」に当たらず、ユーザーにしか決められない値（同書「確認要否の判定」）も要しない。
-- 害の大きさに見合う広がりの探索と再発防止に要る結果と品質を保つ（`agent-basics:bugfix/references/spread.md`「害が大きい時」、`agent-basics:bugfix/references/prevention.md`「案を比べる順」）。
+- 害の大きさに見合う広がりの探索と再発防止に必要な結果と品質を保つ（`agent-basics:bugfix/references/spread.md`「害が大きい時」、`agent-basics:bugfix/references/prevention.md`「案を比べる順」）。
   確認の手段は、同じ水準に届く別の手段へ変えてよい。
 
-`source`を持つAWIで目的の達成に要らないエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。
+`source`を持つAWIで目的の達成に不要なエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。
 それ以外の変更と除外の判断要請はメインが判定し、統合の時にもメインが記録と境界を確かめる。
 記録の項目と記録先は`agent-toolkit:atk-mode/references/review-record-verdicts.md`「失効の根拠」の技術判断の2つに従って判断の時点で選ぶ。
 対話の中の判断を根拠にする時は、同書「失効の根拠」の会話の証拠（発話の逐語と、同じ発話の反復と区別できる時点と文脈）を、その証拠を使う担当へ渡す。

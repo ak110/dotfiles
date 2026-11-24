@@ -37,10 +37,10 @@ WI作成専用セッションの担当は、要求の件数によらず原則と
 実装担当は実行工程を担うエージェント（作業`process-wi`ではレーン担当、レビュー修正担当、CI修正担当、対話型のセッションではメインエージェント）を指す。
 全体検証はリポジトリ全体を対象とする自動チェックやテストの実行を指し、`agent-toolkit:atk-mode/roles/session-termination.subagent.md`の`全体検証`欄に判定結果を記録する。
 
-実行工程の「受入シナリオ検証」は、計画かWIの各要求が求める入口からの操作と期待結果を、公開された呼び出し手段による試験、実装時の手動観測、読解など、契約に合う方法で確かめることを指す。
+実行工程の「受入シナリオ検証」は、計画かWIの各要求が求める入口からの操作と期待結果を、公開された呼び出し手段によるテスト、実装時の手動観測、読解など、契約に合う方法で確かめることを指す。
 8節形式の計画では、`### 受入シナリオ`の各行が入口からの操作と期待結果に当たる。
-品質基準の定義元は`agent-basics:check-execution/references/acceptance-scenarios.md`であり、要求を受け入れるための観測と、毎回実行する自動試験の常設は別に判断する。
-自動試験の追加・変更は`agent-basics:writing-standards/references/testing.md`の検出価値で選ぶ。
+品質基準の定義元は`agent-basics:check-execution/references/acceptance-scenarios.md`であり、要求を受け入れるための観測と、毎回実行する自動テストの常設は別に判断する。
+自動テストの追加・変更は`agent-basics:writing-standards/references/testing.md`の検出価値で選ぶ。
 手動観測や読解を選んだ項目も、実装担当が入力・確認箇所、観測結果、期待結果との比較、合否をmanaged-temp内に保存する。
 
 「画面差分」は、エンドユーザーが操作する画面の追加や変更を指し、HTML、CSS、UIコンポーネント、単独のHTML成果物を含む。

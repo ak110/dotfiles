@@ -31,7 +31,7 @@ AWIの保存までは`add-awi-by-user`と同じ手順で行う。
 4. 実装し、変更範囲を検証してcommitする。
    - 合意済みの方針を変える時は、`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順7の確認条件を変更後の方針に当てはめ、本人の判断が必要なら変更に着手する前に合意を得直す。
    - AWIの本文と現物から変更内容と完成条件が定まるため、計画ファイルは原則として作らない。
-     設計の整理や中断再開の記録が要る大規模な変更に限り、`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る。
+     設計の整理や中断再開の記録が必要な大規模な変更に限り、`agent-toolkit:atk-mode/playbooks/write-plan.md`に従って計画を作る。
    - 実装・テスト・変更範囲の検証（`agent-basics:check-execution`と対象リポジトリの検証規範）を行い、`agent-toolkit:atk-mode/playbooks/commit.md`に従って一時ブランチへcommitする。
    - 配布物の版数はマージ用ブランチで上げない。
      更新が必要な場合は、更新種別と根拠をAWIへ書く。
@@ -65,7 +65,7 @@ AWIは保存・保留した項目だけを戻す。
 `process-wi`（複数レーン、`single-lane`、`process-loop`経由の全て）がfrontmatterに`merge_branch`を持つマージ用AWIを処理する時の手順である。
 
 1. 選定では`レーン: なし`へ置き、レーン用worktreeの作成、レーン担当の起動、再実装、再レビューを省く。
-   通常レーンと並行する処理では、主作業ツリーへの書込競合を避けてメイン（または対象リポジトリ担当）が直接処理する。
+   通常レーンと並行する処理では、主作業ツリーへの書き込み競合を避けてメイン（または対象リポジトリ担当）が直接処理する。
 2. fetch前にfrontmatterの`merge_branch`がベースブランチ・デフォルトブランチ・登録済みの系統ブランチ（`main`・`master`・`develop`など）でないことと、`merge_commit`が40桁の完全OIDであることを確認する。
    条件を満たさない場合はfetch・merge・削除のいずれも実行せず、原因を調べて報告し、`atk wi hold`で保留する。
    条件を満たしたら`git fetch origin <merge_branch>`で取得し、`FETCH_HEAD`の完全OIDが`merge_commit`と一致することを確かめる。
