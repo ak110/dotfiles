@@ -133,3 +133,20 @@ def test_stop_blocks_main_final_message(monkeypatch: pytest.MonkeyPatch) -> None
     assert "既存の規範で十分" in body
     payload["stop_hook_active"] = True
     assert norm_excuse_gate.evaluate(json.dumps(payload, ensure_ascii=False))[0] == "approve"
+
+
+def test_antigravity_resend_is_scoped_to_user_step() -> None:
+    from agent_toolkit._common import session_state  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks.antigravity import LAST_USER_STEP  # pylint: disable=import-outside-toplevel
+
+    payload = {"session_id": "agy-scope", "runtime": "agy"}
+    text = "既存の規範で十分なので追加の対策はしない。"
+
+    def step(index: int):
+        assert session_state.update_state("agy-scope", lambda state: {**state, LAST_USER_STEP: index})
+
+    step(0)
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
+    step(5)
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None

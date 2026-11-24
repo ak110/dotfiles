@@ -37,7 +37,7 @@ lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
@@ -235,6 +235,13 @@ def resend_scope(payload: dict) -> str:
     if is_codex_payload(payload):
         value = payload.get("turn_id")
         return value if isinstance(value, str) else ""
+    if is_antigravity_payload(payload):
+        from agent_toolkit._common.session_state import read_state  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.antigravity import LAST_USER_STEP  # pylint: disable=import-outside-toplevel
+
+        session_id = payload.get("session_id")
+        step = read_state(session_id).get(LAST_USER_STEP) if isinstance(session_id, str) and session_id else None
+        return "" if step is None or isinstance(step, bool) else str(step)
     path = payload.get("transcript_path")
     lines = transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
     context = latest_human_turn_context(lines) if lines else None
