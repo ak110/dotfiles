@@ -1,5 +1,6 @@
 """run-skill報告の同期確認と原稿冒頭の比較・表示。"""
 
+import dataclasses
 import pathlib
 import re
 import sys
@@ -20,20 +21,46 @@ from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 
 
+@dataclasses.dataclass(frozen=True)
+class RunReportGap:
+    """報告の同期を確認できなかった段階。  pyfltr: allow-comment
+
+    `reason`は段階ごとの固定の区分で、失敗の識別に使える。
+    `detail`は段階に固有の観測値（ファイル名、commitなど）で、失敗の調査に使う。
+    """
+
+    reason: str
+    detail: dict[str, object]
+
+
+_CANDIDATE_LIMIT = 5
+"""報告用UWIが見つからない時に示す、近い候補の上限件数。  pyfltr: allow-comment"""
+
+
 def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: str) -> bool:
     """当該実行の起動単位`scope`の報告UWIが、保存本文と同じ内容でcommit・必要なpushへ到達したかを返す。
 
     `scope`と報告の`scope`は、どちらも`skill_modes.canonical_scope`でそろえて比べる。
     """
+    return check_run_report_sync(private_notes, run_id=run_id, scope=scope) is None
+
+
+def check_run_report_sync(
+    private_notes: pathlib.Path, *, run_id: str, scope: str, sync_report: bool = False
+) -> RunReportGap | None:
+    """同期済みなら`None`、未同期なら確認できなかった段階を返す。  pyfltr: allow-comment
+
+    条件に合う報告用UWIが複数あれば、最も同期に近い段階を返す。
+    """
     expected = skill_modes.canonical_scope(scope)
     if not private_notes.is_dir():
-        return False
+        return RunReportGap("private-notesが無い", {"private_notes": str(private_notes)})
     with _wi_sync.repo_lock(private_notes, timeout=30):
         remote_revision: str | None = None
         if _wi_sync.has_remote(private_notes):
             branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
             if branch is None:
-                return False
+                return RunReportGap("追跡ブランチを解決できない", {"private_notes": str(private_notes)})
             remote = _git_command.output(["config", f"branch.{branch.branch}.remote"], private_notes).strip()
             merge_ref = _git_command.output(["config", f"branch.{branch.branch}.merge"], private_notes).strip()
             remote_tip = _git_command.run(
@@ -45,7 +72,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 timeout=30,
             ).stdout.split()
             if not remote_tip:
-                return False
+                return RunReportGap("リモートの追跡先が無い", {"remote": remote, "merge_ref": merge_ref})
             remote_revision = remote_tip[0]
             known = _git_command.run(
                 ["cat-file", "-e", f"{remote_revision}^{{commit}}"],
@@ -63,6 +90,10 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     text=True,
                     timeout=30,
                 )
+        gap: RunReportGap | None = None
+        candidates: list[dict[str, object]] = []
+        matched = 0
+        unsaved: list[str] = []
         for path in iter_entry_paths(private_notes):
             if path.is_file():
                 content = path.read_text(encoding="utf-8")
@@ -70,15 +101,31 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 if parsed is None:
                     continue
                 data, _body = parsed
+                saved_scope = data.get("scope")
+                same_scope = isinstance(saved_scope, str) and skill_modes.canonical_scope(saved_scope) == expected
                 if not (
                     data.get("type") == WI_TYPE_UWI
                     and data.get("source") == "run-skill"
-                    and isinstance(saved_scope := data.get("scope"), str)
-                    and skill_modes.canonical_scope(saved_scope) == expected
+                    and same_scope
                     and (data.get("run_skill_report") == "true" or bool(data.get("weekly_slot")))
                     and data.get("run_skill_run_id") == run_id
                 ):
+                    if (
+                        data.get("type") == WI_TYPE_UWI
+                        and data.get("source") == "run-skill"
+                        and (same_scope or data.get("run_skill_run_id") == run_id)
+                    ):
+                        candidates.append(
+                            {
+                                "file": path.name,
+                                **{
+                                    key: data.get(key)
+                                    for key in ("state", "scope", "run_skill_report", "run_skill_run_id", "weekly_slot")
+                                },
+                            }
+                        )
                     continue
+                matched += 1
                 relative = path.relative_to(private_notes).as_posix()
                 committed = _git_command.run(
                     ["-C", str(private_notes), "show", f"HEAD:{relative}"],
@@ -88,9 +135,16 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 )
                 report_content = _run_report_content(content)
                 if committed.returncode != 0 or _run_report_content(committed.stdout) != report_content:
+                    if sync_report and not path.is_symlink():
+                        unsaved.append(relative)
+                    if gap is None:
+                        gap = RunReportGap(
+                            "報告用UWIがHEADのcommitと一致しない",
+                            {"file": relative, "head": "未commit" if committed.returncode != 0 else "内容が異なる"},
+                        )
                     continue
                 if remote_revision is None:
-                    return True
+                    return None
 
                 commit = ""
                 for revision in _git_command.output(["log", "--format=%H", "--", relative], private_notes).splitlines():
@@ -109,8 +163,23 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     check=False,
                 )
                 if reached.returncode == 0:
-                    return True
-    return False
+                    return None
+                gap = RunReportGap(
+                    "報告用UWIのcommitがリモートへ未到達",
+                    {"file": relative, "commit": commit, "remote_revision": remote_revision},
+                )
+        repaired = matched == 1 and len(unsaved) == 1
+        if repaired:
+            _wi_sync.commit_and_push(private_notes, "chore: 振り返りbatchの報告を同期", unsaved)
+    if repaired:
+        return check_run_report_sync(private_notes, run_id=run_id, scope=scope)
+    if gap is not None:
+        return gap
+    candidates.sort(key=lambda item: str(item["file"]), reverse=True)
+    return RunReportGap(
+        "報告用UWIが無い",
+        {"run_id": run_id, "scope": expected, "candidates": candidates[:_CANDIDATE_LIMIT], "candidate_count": len(candidates)},
+    )
 
 
 def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:

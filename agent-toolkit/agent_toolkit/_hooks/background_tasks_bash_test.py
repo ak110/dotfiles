@@ -97,7 +97,7 @@ class TestIsPendingAsyncWork:
         tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_background_bash_entry("toolu_bash1"),
             _user_task_stop_success_entry("bash-task-other"),

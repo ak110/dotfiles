@@ -20,7 +20,12 @@ from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.add_reports import compare_draft_openings, has_synced_run_report, print_draft_openings
+from agent_toolkit._atk.wi.add_reports import (
+    check_run_report_sync,
+    compare_draft_openings,
+    has_synced_run_report,
+    print_draft_openings,
+)
 from agent_toolkit._atk.wi.add_validation import (
     _EMPTY_AWI_ERROR,
     _EMPTY_AWI_NEXT_ACTION,
@@ -112,16 +117,40 @@ def _ensure_draft_destinations(
 _WEEKLY_SLOT = re.compile(r"(?P<work>meta|research)@\d{4}-\d{2}-\d{2}")
 
 
+def _active_batch_run_id() -> str | None:
+    raw = os.environ.get(session_review.BATCH_ENV)
+    if not raw:
+        return None
+    try:
+        path = pathlib.Path(raw).resolve()
+        if path.parent != (session_review.directory() / "runs").resolve():
+            return None
+        batch = session_review.BatchWriter(path).load()
+    except OSError, ValueError:
+        return None
+    if batch.run_id != path.stem or batch.status != session_review.BatchStatus.RUNNING:
+        return None
+    return batch.run_id
+
+
 def run_report_metadata(
     data: dict[str, object], *, question_type: str | None = None, scope: str | None = None
 ) -> dict[str, object]:
     run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
+    raw_scope = scope if scope is not None else data.get("scope")
+    if (
+        not run_id
+        and data.get("source") == "run-skill"
+        and data.get("run_skill_report") == "true"
+        and isinstance(raw_scope, str)
+        and skill_modes.canonical_scope(raw_scope) == session_review.BATCH_SCOPE
+    ):
+        run_id = _active_batch_run_id()
     if not run_id:
         return data
     if data.get("run_skill_report") == "true":
         data = {**data, "run_skill_run_id": run_id}
     slot = os.environ.get(session_review.WEEKLY_SLOT_ENV, "")
-    raw_scope = scope if scope is not None else data.get("scope")
     kind = question_type if question_type is not None else data.get("question_type")
     if (
         (match := _WEEKLY_SLOT.fullmatch(slot)) is not None
@@ -770,6 +799,7 @@ def cmd_add(
 __all__ = [
     "_parse_leading_frontmatter",
     "body_is_effectively_empty",
+    "check_run_report_sync",
     "has_synced_run_report",
     "normalize_cooldown_until",
 ]

@@ -247,11 +247,26 @@ class BatchWriter:
         return batch.model_dump(exclude_unset=True)
 
     def fail(
-        self, failure_key: str, reason: str, *, version: str | None = None, exit_code: int | None = None
+        self,
+        failure_key: str,
+        reason: str,
+        *,
+        version: str | None = None,
+        exit_code: int | None = None,
+        diagnostics: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """失敗報告を所有する未確定のbatchへ移す。"""
+        """失敗報告を所有する未確定のbatchへ移す。  pyfltr: allow-comment
+
+        `diagnostics`は失敗の識別に使わない観測値（ファイル名、commitなど）で、`failure_diagnostics`へ保存する。
+        省略時は、同じ理由の報告し直しなら保存済みの診断を保ち、理由が変われば消す。
+        """
         with locked():
             value = self._active()
+            if diagnostics is not None:
+                value["failure_diagnostics"] = diagnostics
+            elif value.get("error") != reason:
+                # 未報告の失敗を同じ理由で報告し直す時だけ、前回の診断を保つ。  # pyfltr: allow-comment
+                value.pop("failure_diagnostics", None)
             return self._save(
                 {
                     **value,

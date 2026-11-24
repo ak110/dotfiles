@@ -9,7 +9,7 @@ from agent_toolkit._hooks.stop_session import append_stop_log
 
 class TestAppendStopLog:
     def test_appends_one_line_with_decision_and_context(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         append_stop_log("session-x", "approve_pending_async", {"last_tool": "Agent", "pending": 0})
         path = tmp_path / "claude-agent-toolkit-stop-session-x.log"
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -19,12 +19,12 @@ class TestAppendStopLog:
         assert "pending=0" in lines[0]
 
     def test_skips_when_session_id_empty(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         append_stop_log("", "approve_pending_async", {})
         assert not list(tmp_path.iterdir())
 
     def test_multiple_calls_append(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         append_stop_log("session-y", "approve_no_env", {})
         append_stop_log("session-y", "block_busy_loop", {})
         path = tmp_path / "claude-agent-toolkit-stop-session-y.log"
@@ -34,7 +34,7 @@ class TestAppendStopLog:
         assert "decision=block_busy_loop" in lines[1]
 
     def test_rotates_when_max_bytes_exceeded(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         append_stop_log("session-z", "first", {})
 
         append_stop_log("session-z", "second", {}, max_bytes=10)

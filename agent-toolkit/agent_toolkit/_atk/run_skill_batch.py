@@ -426,7 +426,14 @@ def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest
     return f"---\n{metadata}---\n\n{body}"
 
 
-def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_code: int | None = None) -> None:
+def _failure(
+    manifest: dict[str, Any],
+    path: pathlib.Path,
+    reason: str,
+    *,
+    exit_code: int | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> None:
     signature: list[Any] = [reason.split(":", 1)[0]]
     if signature[0].startswith("run-skill-exit-"):
         signature.append(sorted(item["key"] for item in manifest["targets"]))
@@ -437,7 +444,11 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
     writer = session_review.BatchWriter(path)
     manifest = writer.fail(
-        failure_key, reason, version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT), exit_code=exit_code
+        failure_key,
+        reason,
+        version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT),
+        exit_code=exit_code,
+        diagnostics=diagnostics,
     )
     saved = _save_failure_report(failure_key, lambda: _failure_message(failure_key, reason, path, manifest))
     writer.report_failure(synced=saved)
@@ -748,14 +759,18 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
+    diagnostics: dict[str, Any] | None = None
     try:
-        report_synced = add.has_synced_run_report(
-            private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
-        )
-        session_review.BatchWriter(path).complete(report_synced=report_synced)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        notes = private_notes.default_private_notes()
+        gap = add.check_run_report_sync(notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True)
+        if gap is not None:
+            # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
+            diagnostics = {"report_sync": {"reason": gap.reason, **gap.detail}}
+            raise ValueError(f"report-unsynced: 報告の同期を確認できない（{gap.reason}）")
+        session_review.BatchWriter(path).complete(report_synced=True)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
         reason = f"finish: {error}"
-        _failure(manifest, path, reason)
+        _failure(manifest, path, reason, diagnostics=diagnostics)
         outcome.report_failure(
             f"{reason}（実行記録: {path}）",
             next_action=f"分析完了と報告用UWIの同期を確認し、必要なら atk run-skill --resume {manifest['run_id']} で再開する",

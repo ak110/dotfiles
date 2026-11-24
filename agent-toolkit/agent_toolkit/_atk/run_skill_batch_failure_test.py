@@ -157,18 +157,12 @@ def test_failure_body_survives_manifest_and_log_removal(tmp_path, phase):
     assert details["hostname"] == platform.node() and details["os"] == sys.platform
     assert details["plugin_version"]
     snapshot = details["targets"][0]
-    for field in (
-        "host",
-        "session_id",
-        "transcript_path",
-        "cwd",
-        "target_repo",
-        "started_at",
-        "updated_at",
-        "generation",
-        "review_batch",
-    ):
+    for field in ("host", "session_id", "transcript_path", "cwd", "target_repo", "review_batch"):
         assert snapshot[field] == target[field]
+    # 選定と準備だけに使う項目は、準備に失敗した対象にだけ残す。  # pyfltr: allow-comment
+    for field in ("started_at", "updated_at", "generation"):
+        assert snapshot.get(field) == (target[field] if phase == "prepare" else None)
+    assert ("previous_scope" in snapshot) is (phase == "prepare")
     assert snapshot["record_state"]["kind"] == ("ディレクトリ" if phase == "prepare" else "ファイル")
     assert details["prepared_count"] == (0 if phase == "prepare" else 1)
     assert details["prepared_session_ids"] == ([] if phase == "prepare" else ["one"])

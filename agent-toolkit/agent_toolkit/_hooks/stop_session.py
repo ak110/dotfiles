@@ -1,27 +1,16 @@
-"""Stop系のhookが共有する、Stop入力の解析と判定根拠の常時ログ。
+"""Stop系のhookが共有する、Stop入力の解析と判定根拠の常時ログ。  pyfltr: allow-comment
 
 常時ログ（`append_stop_log`）はINFO相当（呼び出し側が渡す最終判定ラベルと主要フラグ）を
-`{tempdir}/claude-agent-toolkit-stop-{session_id}.log`へ1行ずつ追記し、1MB超過時に`.log.1`へ1世代ローリングする。
+`session_record_paths.stop_log_path`（`{tempdir}/claude-agent-toolkit-stop-{session_id}.log`）へ1行ずつ追記し、1MB超過時に`.log.1`へ1世代ローリングする。
 判定の詳細を調べるDEBUG相当の出力は`background_tasks`が環境変数`AGENT_TOOLKIT_STOP_GATE_DEBUG`の指定時だけ標準エラーへ書く。
 """
 
 import json
-import pathlib
 lazy import collections.abc
-lazy import tempfile
 lazy import time
 
 lazy from agent_toolkit._common.file_lock import locked_rotate_and_append as _locked_rotate_and_append
-
-
-def _stop_log_path(session_id: str) -> pathlib.Path:
-    """常時ログの出力先パスを返す。
-
-    `{tempdir}/claude-agent-toolkit-stop-{session_id}.log`形式とする。
-    セッション状態ファイル（`agent_toolkit/_common/session_state.py`）と同じtempdir配下に置き、
-    hostごとに衝突しないようsession_idで分離する。
-    """
-    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-stop-{session_id}.log"
+lazy from agent_toolkit._common.session_record_paths import stop_log_path
 
 
 def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes: int = 1_000_000) -> None:
@@ -42,7 +31,7 @@ def append_stop_log(session_id: str, decision: str, context: dict, *, max_bytes:
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
     fields = " ".join(f"{key}={value}" for key, value in context.items())
     line = f"{timestamp} decision={decision}" + (f" {fields}" if fields else "") + "\n"
-    _locked_rotate_and_append(_stop_log_path(session_id), line, max_bytes)
+    _locked_rotate_and_append(stop_log_path(session_id), line, max_bytes)
 
 
 def parse_stop_session(raw_stdin: str, approve: collections.abc.Callable[[], None]) -> tuple[str, dict] | None:
