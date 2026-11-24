@@ -246,7 +246,7 @@ __all__ = ["fixture_repo"]
 
 
 @pytest.mark.parametrize("include_optional", [False, True])
-def test_awi_plan_matches_required_wis_and_accepts_optional_wi(repo: tuple[pathlib.Path, str], include_optional: bool) -> None:
+def test_awi_plan_matches_planned_wis_and_rejects_planless_wi(repo: tuple[pathlib.Path, str], include_optional: bool) -> None:
     work_dir, _base = repo
     required, optional = _plan_fixture.WI_FILES[:2]
     plan_path = work_dir / "plan.md"
@@ -268,4 +268,7 @@ def test_awi_plan_matches_required_wis_and_accepts_optional_wi(repo: tuple[pathl
 
     errors, _warnings = check_plan_file.check(plan_path, work_dir, selection_file=selection, lane="lane-01")
 
-    assert not errors, errors
+    if include_optional:
+        assert any("余剰" in error and optional[0] in error for error in errors), errors
+    else:
+        assert not errors, errors

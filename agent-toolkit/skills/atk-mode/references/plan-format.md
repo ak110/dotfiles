@@ -24,7 +24,8 @@
 `## 実施内容`、`## 検証`、`## 進捗ログ`は持たない。
 要求単位の採否、採らなかった案、人間由来の要求を縮めた範囲は、AWIと同じく`## 反映内容と反映先`と`## 調査結果と判断根拠`へ書く。
 人間由来の要求を全部か一部不採用とする場合は、`agent-toolkit:atk-mode/references/origin-and-approval.md`「承認」に従って事前にユーザーの承認を得る。
-変更範囲の検証コマンド、進捗、検証結果、再開の情報、予測補正記録は、計画の有無によらず引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
+変更範囲の検証コマンド、進捗、検証結果、再開の情報は、計画の有無によらず引き継ぎ記録へ書く（`agent-toolkit:atk-mode/references/work-contract.md`「引き継ぎ記録」）。
+予測補正記録は対象AWIの本文へ保存する（`agent-toolkit:atk-mode/references/process-wi-selection-estimates.md`「予測補正記録」）。
 WI実装commitの対応は対応記録ファイル（`agent-toolkit:atk-mode/references/commit-wi-records.md`）へ保存する。
 
 frontmatterの値は次のとおり。
