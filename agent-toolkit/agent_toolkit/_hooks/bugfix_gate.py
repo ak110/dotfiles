@@ -2,6 +2,7 @@
 
 送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
 未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動と種類付きの再発防止を求める。
+同じ発話に対する種類付きの報告を送達済みなら、Stopでは最終応答への再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
@@ -15,6 +16,7 @@
 
 import json
 import re
+from collections.abc import Iterator
 lazy import os
 
 from agent_toolkit._hooks import notice
@@ -61,7 +63,7 @@ def _understanding_kind(text: object) -> str | None:
     return match[1] if match else ""
 
 
-def _turn_classification(entries: list[dict]) -> str | None:
+def _delivered_messages(entries: list[dict]) -> Iterator[str]:
     calls: dict[str, str] = {}
     for entry in entries:
         message = entry.get("message")
@@ -75,9 +77,9 @@ def _turn_classification(entries: list[dict]) -> str | None:
                 and str(block.get("name", "")).endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
                 and isinstance(identifier := block.get("id"), str)
                 and isinstance(args := block.get("input"), dict)
-                and (classification := _understanding_kind(args.get("message")))
+                and isinstance(text := args.get("message"), str)
             ):
-                calls[identifier] = classification
+                calls[identifier] = text
             elif (
                 entry.get("type") == "user"
                 and block.get("type") == "tool_result"
@@ -85,9 +87,11 @@ def _turn_classification(entries: list[dict]) -> str | None:
                 and isinstance(identifier := block.get("tool_use_id"), str)
                 and identifier in calls
             ):
-                # 最初に届いた分類を固定し、後から報告を通すための分類変更を使わない。  pyfltr: allow-comment
-                return calls[identifier]
-    return None
+                yield calls.pop(identifier)
+
+
+def _turn_classification(entries: list[dict]) -> str | None:
+    return next((kind for text in _delivered_messages(entries) if (kind := _understanding_kind(text))), None)
 
 
 _block_notice = notice.block_formatter("bugfix_gate")
@@ -359,7 +363,10 @@ def _turn_block(
             f"是正を受けた後に`agent-basics:bugfix`を起動していないため、{delivery}を止めた。",
             fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。",
         )
-    if _has_typed_prevention(message):
+    if _has_typed_prevention(message) or (
+        not can_classify
+        and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
+    ):
         return None
     return _block_notice(
         f"種類付きの再発防止の行がないため、{delivery}を止めた。",

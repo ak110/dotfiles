@@ -12,7 +12,7 @@
 種類も区分名も示さずに再発防止を見送る報告を止める（2026年11月24日、「規則は既にあり守れなかっただけ」で見送った報告）。
 この検査はターン途中の発話と思考には適用しない。記録の下書きを含み、ユーザーへ届いた報告ではないため。
 誤検出でも作業を止めないよう、同じ主体が同じ発話の中で同じ本文を再発行した場合は通す。
-Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
+自由文の照合は是正の有無を問わない。Stopのやり直しでも本文が変われば、その本文を検査する。
 
 委譲先での実行可否: ユーザーへ届く本文（`send_to_user`、`AskUserQuestion`・`ExitPlanMode`、メインの最終応答）だけを対象とし、
 委譲先の最終応答は委譲元が受領して判断するため対象外とする。
@@ -43,17 +43,24 @@ EXCUSE_RE = re.compile(
     + r"|規範(?:は|を|の追加は)(?:足さない|追加しない|不要)"
 )
 
+_RULE_EXISTS = (
+    r"(?:(?:既存|現行)の)?(?:規則|規範|手順|ルール)(?:には|に|は|が)(?:既に|すでに|もう)?"
+    r"(?:書かれている|ある|存在する|明記されている|定められている)"
+)
+_DISMISSAL = (
+    r"(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない|追加しない)"
+    r"(?!のではな|わけではな)"
+)
 _FREEFORM_EXCUSE_RE = re.compile(
-    r"(?:規則|規範|手順|ルール)(?:には|は|が)(?:既に|すでに|もう)?(?:書かれている|ある|存在する)"
-    r"[^。！？!?\n]*?(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
-    r"|(?:守れ|守られ|従え)ていなかっただけ[^。！？!?\n]*?"
-    r"(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
+    rf"(?:{_RULE_EXISTS}|(?:守れ|守られ|従え)ていなかっただけ)[^。！？!?\n]*?{_DISMISSAL}"
+    rf"|{_DISMISSAL}。[ \t]*{_RULE_EXISTS}(?:ため|から)だ"
 )
 
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
 
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
+_RESEND_KEY = "norm_excuse_resend"
 
 _block_notice = notice.block_formatter("norm_excuse_gate")
 
@@ -75,7 +82,7 @@ def _consume_retry(payload: dict, text: str) -> bool:
     return notice.consume_resend(
         session_id,
         resolve_hook_agent_id(payload),
-        notice.QUALITY_RESEND_KEY,
+        _RESEND_KEY,
         text,
         label="既存の規範を理由に対処を見送る言い回しの本文を再発行した",
         scope=resend_scope(payload),
@@ -89,7 +96,7 @@ def _block_body(phrase: str, delivery: str) -> str:
         "規範があっても起きた誤りは、その規範だけでは再発を防げない。",
         fix=(
             "`agent-basics:bugfix`の`references/prevention.md`「案を比べる順」に従い、誘因の除去・構造・検査のどれかを選んで"
-            "処置し、本文を書き直してください。言い回しが引用や見送り以外の意味なら、同じ主体から同じ本文を再発行してよい。"
+            "処置し、本文を書き直してください。案内を確認し、本文を維持する場合は同じ主体から同じ本文を再発行してよい。"
         ),
     )
 
@@ -201,7 +208,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
-    if payload.get("stop_hook_active") is True or not is_main_agent_context(payload):
+    if not is_main_agent_context(payload):
         return "approve", ""
     body = text_block(payload, payload.get("last_assistant_message"), "ターンの終了") or intermediate_block(session_id, payload)
     if body is None:

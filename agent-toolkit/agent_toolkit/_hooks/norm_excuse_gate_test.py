@@ -43,6 +43,23 @@ def test_ignores_negation_quote_and_other_subjects(text: str) -> None:
     assert norm_excuse_gate.find_excuse(text) is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "今回は再発防止策を見送る。既存の手順に明記されているためだ。",
+        "現行の手順に定められているため、再発防止の対策は追加しない。",
+        "規範があるが防げなかったため送達前の検査を追加し、別件は不具合ではないのでAWIは見送る。",
+    ],
+)
+def test_freeform_blocks_once_on_delivery_and_stop(text):
+    payload = {"session_id": "freeform-delivery"}
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
+    stop_payload = {"session_id": "freeform-stop", "last_assistant_message": text, "stop_hook_active": True}
+    assert norm_excuse_gate.evaluate(json.dumps(stop_payload))[0] == "block"
+    assert norm_excuse_gate.evaluate(json.dumps(stop_payload))[0] == "approve"
+
+
 def test_reissue_of_same_text_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     states: dict[str, dict] = {}
 

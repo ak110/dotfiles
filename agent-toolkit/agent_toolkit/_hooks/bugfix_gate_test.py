@@ -87,6 +87,29 @@ def test_failed_delivery_does_not_classify_and_first_success_stays_fixed(tmp_pat
     assert "起動していない" in (bugfix_gate.send_block(_payload(entries, tmp_path), _TYPED_REPORT) or "")
 
 
+def test_stop_accepts_successfully_delivered_typed_report_only_for_current_turn(tmp_path, monkeypatch):
+    records = [_human("この説明は冗長です。"), *_classified(), _BUGFIX]
+    assert not _pretooluse_denied(_payload(records, tmp_path))
+    assert "decision" not in _stop(records, tmp_path, monkeypatch)
+    assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message="以上。")
+    sent = _tool_use(_SEND_TO_USER, {"message": _TYPED_REPORT})
+    sent["message"]["content"][0]["id"] = "report"
+    records.append(sent)
+    assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message="")
+    failed = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "report", "is_error": True}]}}
+    assert "decision" in _stop([*records, failed], tmp_path, monkeypatch, last_assistant_message="")
+    delivered = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "report", "is_error": False}]}}
+    records.append(delivered)
+    assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message="")
+    assert "decision" not in _stop(records, tmp_path, monkeypatch, last_assistant_message="以上。", stop_hook_active=True)
+    queued = {
+        "type": "attachment",
+        "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": "まだ長い。"},
+    }
+    records.extend([queued, *_classified(call_id="next"), _BUGFIX])
+    assert "decision" in _stop(records, tmp_path, monkeypatch, last_assistant_message="")
+
+
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("この説明は冗長です。")], tmp_path)
     assert _pretooluse_denied(payload, "## 発話の理解\n短くする。")
