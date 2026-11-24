@@ -223,7 +223,7 @@ def test_density_lists_every_counted_element_with_physical_line(
     assert subject == [11, 11]
     summaries = [message for line, message in diagnostics if line == 1]
     assert any(
-        "警告: 否定形終端率 26.1%（上限 25%、6/23文）" in message and "少なくとも1件を書き換える" in message
+        "警告: 否定形終端率 26.1%（目安 25%、6/23文）" in message and "明確な禁止や制約は書き換えずに残してよい" in message
         for message in summaries
     )
     assert any("「当該」の出現率 8.7%（上限 3%、2回/23文）" in message and "少なくとも2件" in message for message in summaries)

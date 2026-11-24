@@ -577,12 +577,16 @@ class DensityMetric:
 
     def summary(self) -> str:
         """比率、上限、件数と次の操作を1行で返す。"""
-        prefix = "警告: " if self.severity is Severity.WARNING else ""
-        suffix = "（終了コードには影響しない）。" if self.severity is Severity.WARNING else ""
+        if self.severity is Severity.WARNING:
+            return (
+                f"警告: {self.name} {self.ratio:.1%}（目安 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
+                f"位置を列挙した{self.element_label}を{self.action}。"
+                "明確な禁止や制約は書き換えずに残してよい（終了コードには影響しない）。"
+            )
         return (
-            f"{prefix}{self.name} {self.ratio:.1%}（上限 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
+            f"{self.name} {self.ratio:.1%}（上限 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
             f"位置を列挙した{self.element_label}を{self.action}。"
-            f"文数を変えずに上限以下へ戻すには、少なくとも{self.required_rewrites()}件を書き換える。{suffix}"
+            f"文数を変えずに上限以下へ戻すには、少なくとも{self.required_rewrites()}件を書き換える。"
         )
 
     def element_messages(self) -> list[tuple[int, str]]:
