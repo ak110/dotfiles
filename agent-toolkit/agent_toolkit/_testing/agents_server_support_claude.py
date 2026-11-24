@@ -17,6 +17,7 @@ import pytest
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import config_settings
 from agent_toolkit._testing.agents_server_support_common import FakeBackend, _install_backend, install_backend
 
 
@@ -396,8 +397,6 @@ async def _usage_limited_manager(
 
 
 _CLAUDE_CONNECTION_ENVIRONMENT = (
-    "AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE",
-    "AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE",
     "AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS",
     "AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS",
 )
@@ -405,16 +404,14 @@ _CLAUDE_CONNECTION_ENVIRONMENT = (
 
 def configure_claude_payg(
     monkeypatch: pytest.MonkeyPatch, env_file: str, *, orchestrator: str = "payg", worker: str = "subscription,payg"
-) -> None:
-    """Claudeの従量課金APIのenvファイルと役割別の使用順を環境変数で与える。
-
-    使用順の省略時は、統括担当をAPIだけ、委譲先をサブスクリプション、APIの順にする。
-    `env_file`が空文字列の場合は接続設定を全て外し、親環境を引き継ぐ`inherit`接続にする。
-    """
+) -> pathlib.Path:
     for name in _CLAUDE_CONNECTION_ENVIRONMENT:
         monkeypatch.delenv(name, raising=False)
+    fixed = config_settings.config_dir() / config_settings.CLAUDE_ENV_FILENAMES["payg"]
     if not env_file:
-        return
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", env_file)
+        return fixed
+    fixed.parent.mkdir(parents=True, exist_ok=True)
+    fixed.write_bytes(pathlib.Path(env_file).read_bytes())
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS", orchestrator)
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_WORKER_CONNECTIONS", worker)
+    return fixed
