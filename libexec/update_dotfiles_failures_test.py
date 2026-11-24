@@ -390,6 +390,7 @@ class TestCapturedStderr:
 
 
 def test_interrupted_apply_reports_stage_and_exits_130(monkeypatch, tmp_path, capsys, sync_report_path):
+    monkeypatch.setattr(update_dotfiles_runtime, "chezmoi_executable", lambda: "chezmoi")
     calls: list[list[str]] = []
     monkeypatch.setattr(subprocess, "Popen", _fake_popen({}, calls))
     run = _fake_run({}, calls)
