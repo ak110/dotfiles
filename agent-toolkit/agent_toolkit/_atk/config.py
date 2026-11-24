@@ -36,7 +36,7 @@ from agent_toolkit._atk.config_settings import MUTABLE_KEY_DEFAULTS as _MUTABLE_
 from agent_toolkit._atk.config_settings import RETIRED_CONNECTION_KEYS as _RETIRED_CONNECTION_KEYS
 from agent_toolkit._atk.config_settings import config_env_name as _config_env_name
 from agent_toolkit._atk.config_settings import config_file_path as _config_file_path
-from agent_toolkit._common import codex_models
+from agent_toolkit._common import codex_models, runtime_environment, usage_observation, usage_settings
 from agent_toolkit._common import next_action as _next_action
 from agent_toolkit._common import private_notes as _private_notes
 from agent_toolkit._common import state_paths as _state_paths
@@ -135,6 +135,99 @@ def _report_candidate_warnings(warnings: list[str]) -> None:
         _outcome.report_warning(message, next_action=_UNKNOWN_CANDIDATE_NEXT_ACTION)
 
 
+def settings_snapshot(home: pathlib.Path) -> dict[str, Any]:
+    effective = resolved_settings(home)
+    saved = _config_settings.load_config()
+    temporary = usage_settings.temporary_settings()
+    settings = {}
+    for key, default in _config_settings.MUTABLE_KEY_DEFAULTS.items():
+        env = _config_settings.config_env_name(key)
+        env_source = (
+            _config_migration.remote_hosts_environment()[1]
+            if key == "remote_hosts"
+            else env
+            if runtime_environment.environment().get(env)
+            else ""
+        )
+        source = env_source if env_source else "一時指定" if key in temporary else "保存値" if key in saved else "省略時の値"
+        settings[key] = {
+            "effective": effective.pop(key),
+            "saved": saved.get(key, default),
+            "default": default,
+            "source": source,
+            "description": _config_settings.setting_description(key),
+            "format": _config_settings.setting_format(key),
+            "choices": _config_settings.SETTING_CHOICES.get(key),
+            "array": key in _config_settings.ARRAY_KEYS,
+            "temporary": config_usage.allowed_temporary_key(key),
+        }
+    usage = usage_observation.snapshot()
+    state = usage_settings.read_settings()
+    return {
+        "settings": settings,
+        "paths": effective,
+        "presets": _config_settings.PRESET_MODELS,
+        "temporary": {"values": temporary, "until": state.get("until")},
+        "repositories": json.loads(config_repositories_cli.update_repositories(argparse.Namespace(repos_subcommand="list"))),
+        "model_candidates": {engine: sorted(names) for engine, names in _config_settings.KNOWN_MODELS.items()},
+        "usage": config_usage.profile_windows(usage),
+        "model_order_policy": config_usage.MODEL_ORDER_POLICY,
+    }
+
+
+def operation_text(payload: dict[str, Any], name: str, *, optional: bool = False) -> str | None:
+    value = payload.get(name)
+    if optional and value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{name}は文字列で指定してください")
+    return value
+
+
+def update_settings(payload: dict[str, Any]) -> None:
+    _config_migration.migrate_serve_settings()
+    _config_migration.migrate_legacy_settings()
+    action = payload.get("action")
+    if action == "temporary-clear":
+        config_usage.update_temporary(None, None, None)
+        return
+    if action == "preset":
+        preset = operation_text(payload, "preset")
+        if preset not in _config_settings.PRESET_MODELS:
+            raise ValueError("登録済みのプリセットを選んでください")
+        save_mutable_settings(_config_settings.PRESET_MODELS[preset])
+        return
+    if action == "repo":
+        operation = operation_text(payload, "operation")
+        repo = operation_text(payload, "repo")
+        if operation not in ("add", "set", "remove") or not repo:
+            raise ValueError("登録操作とリポジトリを指定してください")
+        fields = ("edit", "path", "platforms", "branches", "default_branch", "merge_from")
+        values = {name: operation_text(payload, name, optional=True) for name in fields}
+        process_loop = payload.get("process_loop")
+        if process_loop is not None and not isinstance(process_loop, bool):
+            raise ValueError("process-loopの対象かどうかを指定してください")
+        if operation == "add" and not values["edit"]:
+            raise ValueError("編集可否を指定してください")
+        config_repositories_cli.update_repositories(
+            argparse.Namespace(repos_subcommand=operation, repo=repo, process_loop=process_loop, **values)
+        )
+        return
+    key, value = operation_text(payload, "key"), operation_text(payload, "value")
+    if key is None or value is None or key not in _config_settings.MUTABLE_KEY_DEFAULTS:
+        raise ValueError("変更可能な設定を選んでください")
+    if action == "set":
+        save_mutable_settings({key: value})
+    elif action == "temporary":
+        config_usage.update_temporary(key, value, operation_text(payload, "until", optional=True))
+    elif action in ("array-add", "array-remove") and key in _config_settings.ARRAY_KEYS:
+        updated = array_setting_update(key, value, remove=action == "array-remove")
+        if updated is not None:
+            save_mutable_settings({key: updated})
+    else:
+        raise ValueError("設定の操作が不正です")
+
+
 def _legacy_key_guidance(keys: list[str]) -> str:
     guidance = ""
     if "process_loop_repositories" in keys:
@@ -143,6 +236,10 @@ def _legacy_key_guidance(keys: list[str]) -> str:
         guidance += "。codex_auto_resetは廃止した。明示許可はusage_reset_permissionsで確認する"
     if "usage_auto_allocation" in keys:
         guidance += "。usage_auto_allocationは廃止した。候補順は工程別の`*_model`キーで指定する"
+    if any(key in _config_settings.LEGACY_REMOTE_HOSTS_KEYS for key in keys):
+        guidance += "。計画用とセッション用のSSH接続先はremote_hostsへ統合した"
+    if any(key in _config_settings.RETIRED_SERVE_HOME_KEYS for key in keys):
+        guidance += "。セッションの参照先はCLAUDE_CONFIG_DIRまたはCODEX_HOMEで指定する"
     if any(key in _config_settings.RETIRED_MODEL_KEYS for key in keys):
         guidance += "。旧モデル設定キーは廃止した。対応する工程別の`*_model`キーを指定する"
     for key in keys:
@@ -272,6 +369,8 @@ def build_parser(config: argparse.ArgumentParser) -> None:
     config_usage.build_parser(sub)
     _atk_help.add_command(sub, "show", **_atk_help.HELP["atk config show"])
     _atk_help.add_command(sub, "list", **_atk_help.HELP["atk config list"])
+    for name in ("snapshot", "update"):
+        _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
     for name in ("add", "remove"):
         array = _atk_help.add_command(sub, name, **_atk_help.HELP[f"atk config {name}"])
         array.add_argument("key", metavar="KEY", help="JSON配列型の設定キー。")
@@ -300,6 +399,13 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
             config_usage.dispatch(args, resolve=resolve_mutable_setting, refresh=refresh)
         elif sub in {"show", "list"}:
             _cmd_config_show(home)
+        elif sub == "snapshot":
+            print(json.dumps(settings_snapshot(home)))
+        elif sub == "update":
+            payload = json.load(sys.stdin.buffer)
+            if not isinstance(payload, dict):
+                raise ValueError("標準入力に設定操作のJSONオブジェクトを指定してください")
+            update_settings(payload)
         elif sub == "get":
             _cmd_config_get(args, home)
         elif sub == "apply-preset":
@@ -324,6 +430,7 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
 def array_setting_update(key: str, item: str, *, remove: bool) -> str | None:
     if key not in _config_settings.ARRAY_KEYS:
         raise ValueError(f"{key}は配列型の設定ではない。単一値の設定には`atk config set`を使う")
+    _config_migration.migrate_serve_settings()
     _config_migration.migrate_legacy_settings()
     stored = _config_settings.load_config_strict()
     value = stored.get(key, _config_settings.mutable_setting_default(key))

@@ -202,11 +202,40 @@ def _move_auth_file(source: pathlib.Path, target: pathlib.Path) -> None:
         ) from None
 
 
+def merge_remote_hosts(*values: str) -> str:
+    hosts = dict.fromkeys(host for value in values for host in _config_settings.parse_remote_hosts(value))
+    return json.dumps(list(hosts), ensure_ascii=False)
+
+
+def remote_hosts_environment() -> tuple[str, str]:
+    env = runtime_environment.environment()
+    name = _config_settings.config_env_name("remote_hosts")
+    if value := env.get(name):
+        return value, name
+    names = tuple(_config_settings.config_env_name(key) for key in _config_settings.LEGACY_REMOTE_HOSTS_KEYS)
+    legacy = {name: env[name] for name in names if env.get(name)}
+    if not legacy:
+        return "", ""
+    source = " / ".join(legacy)
+    try:
+        return merge_remote_hosts(*legacy.values()), source
+    except ValueError as error:
+        raise _next_action.ActionableError(
+            f"旧環境変数で指定したSSH接続先の書式が不正です: {source}。{error}",
+            next_action=f"{name}へJSON文字列配列で接続先を指定する",
+        ) from error
+
+
 def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
     migrated.pop("codex_auto_reset", None)
     migrated.pop("usage_auto_allocation", None)
+    old_hosts = [migrated.pop(key) for key in _config_settings.LEGACY_REMOTE_HOSTS_KEYS if key in migrated]
+    for key in _config_settings.RETIRED_SERVE_HOME_KEYS:
+        migrated.pop(key, None)
+    if old_hosts and "remote_hosts" not in migrated and "remote_hosts" not in changes:
+        migrated["remote_hosts"] = merge_remote_hosts(*old_hosts)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
         return migrate_fixed_settings(migrated)
@@ -264,6 +293,8 @@ def migrate_legacy_settings() -> None:
         "process_loop_repositories",
         "codex_auto_reset",
         "usage_auto_allocation",
+        *_config_settings.LEGACY_REMOTE_HOSTS_KEYS,
+        *_config_settings.RETIRED_SERVE_HOME_KEYS,
     )
     env = runtime_environment.environment()
     if not (
@@ -292,7 +323,6 @@ def legacy_serve_config_path() -> pathlib.Path:
 
 
 def legacy_serve_values(loaded: dict[str, Any], path: pathlib.Path) -> dict[str, str]:
-    """旧`serve.toml`の内容を移行先のキーと保存形式の値へ変換する。未知キーと型不正は`ValueError`を送出する。"""
     known_sections = {section for section, _ in _config_settings.LEGACY_SERVE_KEYS if section is not None}
     values: dict[str, str] = {}
     unknown: list[str] = []
@@ -307,7 +337,8 @@ def legacy_serve_values(loaded: dict[str, Any], path: pathlib.Path) -> dict[str,
             target = _config_settings.LEGACY_SERVE_KEYS.get((section, key))
             label = key if section is None else f"{section}.{key}"
             if target is None:
-                unknown.append(label)
+                if (section, key) not in {("sessions", "claude_home"), ("sessions", "codex_home")}:
+                    unknown.append(label)
                 continue
             if target == "serve_port":
                 if not isinstance(value, int) or isinstance(value, bool):
@@ -325,9 +356,14 @@ def legacy_serve_values(loaded: dict[str, Any], path: pathlib.Path) -> dict[str,
                 _config_settings.validate_mutable_setting(target, converted)
             except ValueError as error:
                 raise ValueError(f"{path}の{label}の値が不正である。{error}") from error
+            if target == "remote_hosts" and target in values:
+                converted = merge_remote_hosts(values[target], converted)
             values[target] = converted
     if unknown:
-        raise ValueError(f"{path}に移行先の無いキーがある: {', '.join(sorted(unknown))}")
+        _outcome.report_warning(
+            f"{path}の移行先の無いキーをスキップした: {', '.join(sorted(unknown))}",
+            next_action="必要な値は移行後の設定と元ファイルを見比べる",
+        )
     return values
 
 
@@ -354,7 +390,10 @@ def migrate_serve_settings() -> None:
     except ValueError as error:
         raise _next_action.ActionableError(f"旧設定ファイルを移行できない: {error}", next_action=retry) from error
     config = _config_settings.load_config_strict()
-    additions = {key: value for key, value in values.items() if key not in config}
+    supplied = set(config)
+    if supplied.intersection(_config_settings.LEGACY_REMOTE_HOSTS_KEYS):
+        supplied.add("remote_hosts")
+    additions = {key: value for key, value in values.items() if key not in supplied}
     if additions:
         try:
             _config_settings.save_config({**config, **additions})

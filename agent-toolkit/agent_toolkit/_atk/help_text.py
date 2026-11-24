@@ -331,21 +331,29 @@ HELP: dict[str, dict[str, str]] = {
         "description": "1件以上の設定値を取得する。\n\n目的: 指定した設定キーの値を指定順に1行ずつ出力する。モデル設定は系列名を含む設定値を返す。\n利用場面: シェルから`private_notes`などの解決値またはモデル候補の設定値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーは終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config get private_notes",
     },
+    "atk config snapshot": {
+        "summary": "設定画面の取得に使う設定一覧をJSONで出力する。",
+        "description": "設定の保存値・実効値・編集情報を設定画面用のJSONで出力する。リモート設定画面がSSH経由で呼び出す。",
+    },
+    "atk config update": {
+        "summary": "設定画面から受け取った設定操作を適用する。",
+        "description": "標準入力から設定画面の操作を表すUTF-8のJSONオブジェクトを読み、設定へ反映する。対話操作にはset等を使う。",
+    },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。ClaudeのAPI認証は`atk config get config_dir`が返すディレクトリの`claude-credits.env`・`claude-payg.env`へ種別ごとに置く。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに使用順やAPI認証を指定しなければ、親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止した接続設定キーは移行先を案内する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`・`serve_sessions_claude_home`・`serve_sessions_codex_home`は参照元のパス（空文字列は未指定）、`serve_plans_remote_hosts`・`serve_sessions_remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。Codexのprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。ClaudeのAPI認証は`atk config get config_dir`が返すディレクトリの`claude-credits.env`・`claude-payg.env`へ種別ごとに置く。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに使用順やAPI認証を指定しなければ、親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止した接続設定キーは移行先を案内する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`は計画の参照元のパス（空文字列は未指定）、`remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。Codexのprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
         "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium\n  atk config set review_model claude:sonnet[1m]/medium,codex:sol/medium\n  atk config set claude_worker_connections credits,subscription\n\n"
         + CONNECTION_GUIDE_NOTICE,
     },
     "atk config add": {
         "summary": "配列設定へ要素を1件追加する",
-        "description": "配列設定へ要素を1件追加する。\n\n目的: 配列全体を指定せずVALUEを追加する。\n利用場面: SSH接続先名を1件追加するとき。\n対象と出力: config.jsonへ保存する。既存の要素なら変更せず成功する。\n前提: 現在の配列設定はserve_plans_remote_hostsとserve_sessions_remote_hosts。配列以外はsetを案内して終了2。\n復元・後始末: removeで要素を削除できる。",
-        "epilog": "実行例:\n\n  atk config add serve_plans_remote_hosts remote-host",
+        "description": "配列設定へ要素を1件追加する。\n\n目的: 配列全体を指定せずVALUEを追加する。\n利用場面: SSH接続先名を1件追加するとき。\n対象と出力: config.jsonへ保存する。既存の要素なら変更せず成功する。\n前提: 現在の配列設定はremote_hosts。配列以外はsetを案内して終了2。\n復元・後始末: removeで要素を削除できる。",
+        "epilog": "実行例:\n\n  atk config add remote_hosts remote-host",
     },
     "atk config remove": {
         "summary": "配列設定から要素を1件削除する",
         "description": "配列設定から要素を1件削除する。\n\n目的: 配列全体を指定せずVALUEを削除する。\n利用場面: SSH接続先名を1件外すとき。\n対象と出力: config.jsonへ保存する。不在なら現在の一覧を示して終了2。\n前提: JSON文字列配列の設定を指定する。配列以外はsetを案内して終了2。\n復元・後始末: addで要素を戻せる。",
-        "epilog": "実行例:\n\n  atk config remove serve_plans_remote_hosts remote-host",
+        "epilog": "実行例:\n\n  atk config remove remote_hosts remote-host",
     },
     "atk config repos": {
         "summary": "repositoryの編集可否とprocess-loop対象・検証OS・系統を管理する",

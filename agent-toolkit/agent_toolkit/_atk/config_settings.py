@@ -83,15 +83,14 @@ SERVE_KEY_DEFAULTS = {
     "serve_host": "127.0.0.1",
     "serve_port": str(serve_default_port()),
     "serve_plans_root": "",
-    "serve_plans_remote_hosts": "[]",
-    "serve_sessions_claude_home": "",
-    "serve_sessions_codex_home": "",
-    "serve_sessions_remote_hosts": "[]",
+    "remote_hosts": "[]",
 }
 
-SERVE_PATH_KEYS = frozenset({"serve_plans_root", "serve_sessions_claude_home", "serve_sessions_codex_home"})
+SERVE_PATH_KEYS = frozenset({"serve_plans_root"})
 
-SERVE_HOSTS_KEYS = frozenset({"serve_plans_remote_hosts", "serve_sessions_remote_hosts"})
+SERVE_HOSTS_KEYS = frozenset({"remote_hosts"})
+LEGACY_REMOTE_HOSTS_KEYS = ("serve_plans_remote_hosts", "serve_sessions_remote_hosts")
+RETIRED_SERVE_HOME_KEYS = ("serve_sessions_claude_home", "serve_sessions_codex_home")
 
 SERVE_CONFIG_ENV = "AGENT_TOOLKIT_SERVE_CONFIG"
 
@@ -102,10 +101,8 @@ LEGACY_SERVE_KEYS = {
     (None, "host"): "serve_host",
     (None, "port"): "serve_port",
     ("plans", "root"): "serve_plans_root",
-    ("plans", "remote_hosts"): "serve_plans_remote_hosts",
-    ("sessions", "claude_home"): "serve_sessions_claude_home",
-    ("sessions", "codex_home"): "serve_sessions_codex_home",
-    ("sessions", "remote_hosts"): "serve_sessions_remote_hosts",
+    ("plans", "remote_hosts"): "remote_hosts",
+    ("sessions", "remote_hosts"): "remote_hosts",
 }
 
 CONNECTION_KINDS = ("subscription", "credits", "payg")
@@ -331,6 +328,7 @@ def config_env_name(key: str) -> str:
 def config_environment_variable_names() -> tuple[str, ...]:
     keys = (
         *MUTABLE_KEY_DEFAULTS,
+        *LEGACY_REMOTE_HOSTS_KEYS,
         *RETIRED_CONNECTION_KEYS,
         *(key for key in RETIRED_FIXED_KEYS if key != "usage_activity_mode"),
         *sorted(RETIRED_MODEL_KEYS),
@@ -413,11 +411,8 @@ _SETTING_DESCRIPTIONS = {
     "dotfiles_mode": "dotfilesの配布範囲",
     "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
     "serve_port": "ブラウザーから接続するサーバーの待受ポート",
+    "remote_hosts": "設定・計画・エージェント・セッションのSSH接続先",
     "serve_plans_root": "計画ファイルのローカル保存先の上書き。空ならprivate-notesのplansと~/.claude/plansの両方",
-    "serve_plans_remote_hosts": "計画ファイルを取得するSSHホスト",
-    "serve_sessions_claude_home": "Claude Codeの記録を探すホームの上書き。空なら~/.claude",
-    "serve_sessions_codex_home": "Codexの記録を探すホームの上書き。空ならCODEX_HOME、未指定なら~/.codex",
-    "serve_sessions_remote_hosts": "セッションとエージェント一覧を取得するSSHホスト",
 }
 
 

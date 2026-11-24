@@ -47,7 +47,7 @@ atk wi process-loop
 cloneの無い対象も`atk config repos add github.com/example/project --edit awi`のように登録できる。
 検証OSを限定する場合は`atk config repos set ~/project-a --platforms windows`のように指定する（未指定はLinuxとWindows）。
 保守ブランチと次期開発ブランチのように作業が入るブランチが複数あるリポジトリは、ブランチを系統として登録すると系統ごとに処理される（[ブランチの系統](claude-code-wi.md#ブランチの系統)）。
-ほかの配列設定は`atk config add serve_plans_remote_hosts remote-host`と`atk config remove serve_plans_remote_hosts remote-host`で要素単位に操作できる。
+ほかの配列設定は`atk config add remote_hosts remote-host`と`atk config remove remote_hosts remote-host`で要素単位に操作できる。
 巡回する会話が、登録した対象と系統ごとに専用worktreeを用意する。
 統括担当をCodexにする場合は、起動前に`atk config set orchestrate_model codex:sol/medium,claude:opus[1m]/medium`を実行する。
 

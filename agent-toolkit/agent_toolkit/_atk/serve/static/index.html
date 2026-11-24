@@ -426,9 +426,16 @@
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <main id="settings-app">
+    <div class="settings-toolbar">
+      <label for="settings-host">設定対象ホスト</label>
+      <select id="settings-host" disabled><option value="">ローカル</option></select>
       <p id="settings-status" role="status"></p>
-      <div id="settings-content"></div>
+    </div>
+    <main id="settings-app">
+      <div class="settings-layout">
+        <nav id="settings-nav" aria-label="設定の分類"></nav>
+        <div id="settings-content"></div>
+      </div>
     </main>
   </section>
 

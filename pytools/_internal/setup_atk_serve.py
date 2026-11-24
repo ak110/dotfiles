@@ -39,8 +39,7 @@ exec "{uv}" run --no-cache --no-config --no-project --python 3.15 python \\
 # 配布済みの旧ファイルは`atk serve`の起動時の自動移行が改名する（値はここで保存済みのため上書きしない）。
 _SERVE_SETTINGS = {
     "serve_host": "localhost",
-    "serve_plans_remote_hosts": '["stheno"]',
-    "serve_sessions_remote_hosts": '["stheno"]',
+    "remote_hosts": '["stheno"]',
 }
 
 

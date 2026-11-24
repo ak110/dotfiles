@@ -450,7 +450,7 @@ def _is_query_without_sweep(args: argparse.Namespace) -> bool:
         case "review-audit":
             return args.review_audit_subcommand in {"list", "pending"}
         case "config":
-            return args.config_subcommand in {None, "show", "list", "get"} or (
+            return args.config_subcommand in {None, "show", "list", "get", "snapshot"} or (
                 args.config_subcommand == "repos" and args.repos_subcommand == "list"
             )
         case "agents":

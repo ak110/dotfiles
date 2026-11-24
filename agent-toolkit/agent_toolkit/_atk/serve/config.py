@@ -19,9 +19,6 @@ class PlansConfig:
 
 @dataclasses.dataclass(frozen=True)
 class SessionsConfig:
-    # 未指定時はそれぞれClaude Codeの設定ディレクトリとCodexのホーム（`agent_toolkit._common.host_homes`）を用いる。
-    claude_home: str | None = None
-    codex_home: str | None = None
     remote_hosts: tuple[str, ...] = ()
 
 
@@ -62,18 +59,15 @@ def resolve_config(*, host: str | None = None, port: int | None = None) -> Serve
         raise ValueError("hostは空でない文字列で指定してください")
     if not isinstance(resolved_port, int) or isinstance(resolved_port, bool) or not 1 <= resolved_port <= 65535:
         raise ValueError("portは1から65535までの整数で指定してください")
+    remote_hosts = _config.parse_remote_hosts(_config.resolve_mutable_setting("remote_hosts"))
     return ServeConfig(
         resolved_host,
         resolved_port,
         PlansConfig(
             root=_path_or_none("serve_plans_root"),
-            remote_hosts=_config.parse_remote_hosts(_config.resolve_mutable_setting("serve_plans_remote_hosts")),
+            remote_hosts=remote_hosts,
         ),
-        SessionsConfig(
-            claude_home=_path_or_none("serve_sessions_claude_home"),
-            codex_home=_path_or_none("serve_sessions_codex_home"),
-            remote_hosts=_config.parse_remote_hosts(_config.resolve_mutable_setting("serve_sessions_remote_hosts")),
-        ),
+        SessionsConfig(remote_hosts=remote_hosts),
         host_source=(
             "--host"
             if host is not None

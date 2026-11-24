@@ -363,12 +363,92 @@
   overflow: auto;
   padding: var(--space-4);
 }
-#settings-app label {
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+#settings-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+#settings-status:empty,
+#settings-content [role="alert"]:empty {
+  display: none;
+}
+.settings-layout {
   display: grid;
-  max-width: 40rem;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+#settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: var(--space-1);
+}
+#settings-nav button {
+  min-block-size: 2rem;
+  padding: 0.4rem 0.65rem;
+  text-align: start;
+}
+#settings-nav [aria-current="page"] {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+#settings-content {
+  min-inline-size: 0;
+  max-inline-size: 54rem;
+  overflow-wrap: anywhere;
+}
+#settings-content section > h2 {
+  margin-block: 0 var(--space-2);
+}
+#settings-content [data-editor]:not(section) {
+  border-block-start: 1px solid currentColor;
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+}
+#settings-content [data-setting] h3 {
+  margin: 0;
+}
+#settings-content [data-setting] p {
   margin-block: var(--space-2);
 }
-#settings-app :is(p, pre) {
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+.settings-field {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  margin-block: var(--space-2);
+}
+#settings-host,
+#settings-app :is(input, select) {
+  font: inherit;
+  box-sizing: border-box;
+  min-block-size: 2rem;
+  max-inline-size: 100%;
+}
+#settings-host {
+  field-sizing: content;
+  min-inline-size: min(12ch, 100%);
+}
+.settings-field input:not([type="datetime-local"]) {
+  inline-size: min(100%, 38rem);
+}
+.settings-field input[inputmode="numeric"] {
+  inline-size: min(100%, 12ch);
+}
+@media (min-width: 48rem) {
+  .settings-layout {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+  #settings-nav {
+    position: sticky;
+    inset-block-start: 0;
+    align-self: start;
+    flex-direction: column;
+  }
 }

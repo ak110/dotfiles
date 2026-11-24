@@ -129,7 +129,7 @@ def test_array_update_and_path_normalization(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """重複成功・不在失敗・非配列拒否と、全パス設定の正規化を確認する。"""
-    key = "serve_plans_remote_hosts"
+    key = "remote_hosts"
     assert _main(tmp_path, "config", "add", key, "host") == 0
     before = config_settings.config_file_path().read_bytes()
     assert _main(tmp_path, "config", "add", key, "host") == 0

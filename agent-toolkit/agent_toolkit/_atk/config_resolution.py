@@ -35,8 +35,12 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     config_migration.check_legacy_environment()
     config_migration.migrate_legacy_settings()
     env_name = config_settings.config_env_name(key)
-    env_value = runtime_environment.environment().get(env_name, "")
-    value = (
+    env_value, source_env = (
+        config_migration.remote_hosts_environment()
+        if key == "remote_hosts"
+        else (runtime_environment.environment().get(env_name, ""), env_name)
+    )
+    value = env_value or (
         config_settings.raw_mutable_setting(key)
         if fallback is None
         else config_settings.raw_mutable_setting(key, fallback=fallback)
@@ -46,9 +50,9 @@ def resolve_mutable_setting(key: str, *, fallback: str | None = None) -> str:
     try:
         config_settings.validate_mutable_setting(key, value)
     except ValueError as error:
-        source = f"環境変数{env_name}" if env_value else f"設定キー{key}"
+        source = f"環境変数{source_env}" if env_value else f"設定キー{key}"
         next_action = (
-            f"環境変数{env_name}を受理可能書式の値へ直すか解除して再実行する"
+            f"環境変数{source_env}を受理可能書式の値へ直すか解除して再実行する"
             if env_value
             else f"`atk config set {key} <VALUE>`で受理可能書式の値へ直して再実行する"
         )
