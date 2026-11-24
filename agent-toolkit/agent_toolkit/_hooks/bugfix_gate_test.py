@@ -69,11 +69,21 @@ def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) 
     assert not _pretooluse_denied(_payload([_human("ここがバグっている"), _BUGFIX], tmp_path))
 
 
-def test_same_message_resent_passes_once_without_skill(tmp_path: pathlib.Path) -> None:
+def test_same_message_resent_passes_without_skill(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("ここがバグっている")], tmp_path)
     assert _pretooluse_denied(payload)
     assert not _pretooluse_denied(payload)
-    assert _pretooluse_denied(payload)
+    assert not _pretooluse_denied(payload)
+
+
+def test_stacked_quality_blocks_pass_on_one_resend(tmp_path: pathlib.Path) -> None:
+    payload = _payload([_human("ここがバグっている")], tmp_path)
+    message = "既存の規範で十分なので追加の対策はしない。"
+    first = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
+    assert json.loads(first.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    second = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
+    output = json.loads(second.stdout)["hookSpecificOutput"] if second.stdout.strip() else {}
+    assert output.get("permissionDecision") != "deny"
 
 
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:

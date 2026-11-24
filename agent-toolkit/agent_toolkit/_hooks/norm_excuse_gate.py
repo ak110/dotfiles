@@ -39,7 +39,6 @@ EXCUSE_RE = re.compile(
 )
 
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
-_RETRY_STATE_KEY = "norm_excuse_retry_by_actor"
 
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
@@ -56,7 +55,9 @@ def _consume_retry(payload: dict, text: str) -> bool:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return False
-    return notice.consume_resend(session_id, resolve_hook_agent_id(payload), _RETRY_STATE_KEY, text, limit=_RETRY_LIMIT)
+    return notice.consume_resend(
+        session_id, resolve_hook_agent_id(payload), notice.QUALITY_RESEND_KEY, text, limit=_RETRY_LIMIT
+    )
 
 
 def _block_body(phrase: str, delivery: str) -> str:

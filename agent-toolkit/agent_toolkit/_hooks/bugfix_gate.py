@@ -48,7 +48,6 @@ _DEFECT_RE = re.compile(
 )
 
 _block_notice = notice.block_formatter("bugfix_gate")
-_SEND_RESEND_KEY = "bugfix_gate_send_resend_by_actor"
 _failure_notice = notice.formatter("verification-bugfix")
 FAILURE_STATE_KEY = "verification_bugfix"
 _REPL_SKILL_TURN_KEY = "bugfix_repl_human_turn"
@@ -317,7 +316,7 @@ def send_block(payload: dict, message: object = None) -> str | None:
         and notice.consume_resend(
             session_id,
             resolve_hook_agent_id(payload),
-            _SEND_RESEND_KEY,
+            notice.QUALITY_RESEND_KEY,
             message,
             label="欠陥の指摘の後にagent-basics:bugfixを起動せずに報告した",
         )

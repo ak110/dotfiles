@@ -280,6 +280,7 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
         if warning := delivered_repost_gate.pretooluse_notice(payload, session_id):
             pending_notices.append(warning)
+        pending_notices.extend(_unread_material_notices(payload, tool_name, tool_input, session_id))
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
         if decision.block is None:
@@ -304,25 +305,49 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
         return _emit(decision, pending_notices, is_codex=is_codex)
 
 
-_RESEND_KEY = "pretooluse_read_gate_resend_by_actor"
-_RESEND_FIX = "取得できない場合や取得済みの場合は、同じ操作を再発行すれば1回通る。"
-_RESEND_LABELS = {
-    "review-receipt": "レビュー返却が指定した資料を取得しないまま採否を記録した",
-    "unread-evidence": "未取得の退避出力を根拠に報告した",
-    "completion-playbook": "完了報告の手順書を取得しないまま完了報告を送った",
-}
+def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> list[str]:
+    """資料の未取得は遮断せず警告し、未対応のまま進めた操作は進捗点検で列挙して確認させる。  pyfltr: allow-comment
 
+    読取を観測できないホスト（Antigravityなど）でも作業を止めないためである。
+    """
+    found: list[tuple[str, str, str]] = []
+    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
+        from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
 
-def _resent(payload: dict, session_id: str, kinds: list[str], text: object) -> bool:
-    if not isinstance(text, str) or not session_id:
-        return False
-    return _notice.consume_resend(
-        session_id,
-        _agent_id.resolve_hook_agent_id(payload),
-        _RESEND_KEY,
-        f"{'+'.join(kinds)}\n{text}",
-        label="、".join(_RESEND_LABELS[kind] for kind in kinds),
-    )
+        if missing := missing_before_response(payload, session_id, tool_input):
+            found.append(
+                (
+                    "レビュー返却が指定した資料の取得を確認できないまま採否を記録した。",
+                    f"{'、'.join(missing)}を取得し、採否が変わるなら記録を直せ。",
+                    "レビュー返却が指定した資料を取得しないまま採否を記録した",
+                )
+            )
+    if is_send_to_user_tool(tool_name) and isinstance(message := tool_input.get("message"), str):
+        from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
+
+        if unread := unread_evidence(payload, session_id, message):
+            found.append(
+                (
+                    "画面へ送った根拠に未取得の退避出力がある。",
+                    f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正せよ。",
+                    "未取得の退避出力を根拠に報告した",
+                )
+            )
+        if playbook := missing_completion_before_report(payload, session_id, message):
+            found.append(
+                (
+                    "作業完了報告の手順書の取得を確認できないまま完了報告を送った。",
+                    f"`{playbook}`を全文読み、欠けた項目があれば報告を補え。",
+                    "完了報告の手順書を取得しないまま完了報告を送った",
+                )
+            )
+    actor = _agent_id.resolve_hook_agent_id(payload)
+    notices = []
+    for body, fix, label in found:
+        _notice.record_skipped(session_id, actor, label)
+        notices.append(_llm_notice(body, tag="warn", fix=fix, removable_cause=True, escalate_on_repeat=False))
+    return [text for text in notices if text]
 
 
 def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *, is_codex: bool) -> Decision:
@@ -357,22 +382,8 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
             return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示する。"))
     if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
         return _decide_user_facing_text_tool(payload, tool_name, tool_input)
-    if tool_name in {"Bash", "PowerShell", "exec_command", "functions.exec_command"}:
-        from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
-
-        if (missing := missing_before_response(payload, session_id, tool_input)) and not _resent(
-            payload, session_id, ["review-receipt"], tool_input.get("command")
-        ):
-            return Decision(
-                block=_block_notice(
-                    "レビュー返却が指定した資料の取得を確認できない。",
-                    fix=f"{'、'.join(missing)}を取得してから採否を記録する。{_RESEND_FIX}",
-                )
-            )
     if is_send_to_user_tool(tool_name):
         from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
-        from agent_toolkit._hooks.persisted_output import unread_evidence  # pylint: disable=import-outside-toplevel
-        from agent_toolkit._hooks.termination_order_advisor import missing_completion_before_report  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
         if isinstance(message, str) and _has_original_text_label_in_understanding(message):
@@ -392,24 +403,6 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 block=_block_notice(
                     f"完了報告の前に委譲先の結果と続行を確認する。{pending}",
                     fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返す。",
-                )
-            )
-        reasons: list[tuple[str, str, str]] = []
-        if unread := unread_evidence(payload, session_id, message):
-            reasons.append(
-                (
-                    "unread-evidence",
-                    "画面へ送る根拠に未取得の退避出力がある。",
-                    f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。",
-                )
-            )
-        if playbook := missing_completion_before_report(payload, session_id, message):
-            reasons.append(("completion-playbook", "作業完了報告の手順書の取得を確認できない。", f"`{playbook}`を全文読む。"))
-        if reasons and not _resent(payload, session_id, [kind for kind, _, _ in reasons], message):
-            return Decision(
-                block=_block_notice(
-                    "".join(body for _, body, _ in reasons),
-                    fix="".join(fix for _, _, fix in reasons) + _RESEND_FIX,
                 )
             )
     if (

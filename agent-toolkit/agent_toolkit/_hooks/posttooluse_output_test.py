@@ -8,6 +8,7 @@ import pytest
 
 from agent_toolkit._common import session_state
 from agent_toolkit._hooks import posttooluse
+from agent_toolkit._hooks.persisted_output import unread_evidence
 from agent_toolkit._hooks.pretooluse import dispatch
 from agent_toolkit._testing.helpers import _read_state
 from agent_toolkit._testing.hook_output_contract import validate_hook_output
@@ -83,10 +84,12 @@ def test_report_cannot_use_unread_persisted_output_as_evidence(tmp_path, capsys,
     }
     assert posttooluse.main(json.dumps(read)) == 0
     capsys.readouterr()
-    assert ("未取得の退避出力" not in report(f"完了: `{source}`で対象がなかった（再確認）。")) is complete
+    message = f"完了: `{source}`で対象がなかった（再確認）。"
+    assert (not unread_evidence({**send, "tool_input": {"message": message}}, session, message)) is complete
+    assert '"deny"' not in report(message)
 
 
-def test_unread_evidence_block_passes_once_on_resend(tmp_path, capsys):
+def test_unread_evidence_warns_without_blocking(tmp_path, capsys):
     source = tmp_path / "saved.txt"
     source.write_text("先頭\n残り\n", encoding="utf-8")
     payload = {
@@ -104,13 +107,14 @@ def test_unread_evidence_block_passes_once_on_resend(tmp_path, capsys):
         "tool_input": {"message": f"完了: `{source}`で対象がなかった。"},
     }
     outputs = []
-    for _ in range(3):
+    for _ in range(2):
         assert dispatch.main(json.dumps(send)) == 0
         outputs.append(capsys.readouterr().out)
-    assert ["未取得の退避出力" in output for output in outputs] == [True, False, True]
+    assert "未取得の退避出力" in outputs[0]
+    assert all('"deny"' not in output for output in outputs)
 
 
-def test_stacked_send_blocks_pass_together_on_one_resend(tmp_path, capsys):
+def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, capsys):
     from agent_toolkit._hooks import termination_evidence  # pylint: disable=import-outside-toplevel
 
     trace = tmp_path / "trace.jsonl"
@@ -140,13 +144,16 @@ def test_stacked_send_blocks_pass_together_on_one_resend(tmp_path, capsys):
         "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
         "tool_input": {"message": f"## 作業完了報告\n完了: `{source}`で対象がなかった。"},
     }
-    outputs = []
-    for _ in range(2):
-        assert dispatch.main(json.dumps(send)) == 0
-        outputs.append(capsys.readouterr().out)
-    assert "未取得の退避出力" in outputs[0] and "作業完了報告の手順書" in outputs[0]
-    second = json.loads(outputs[1]) if outputs[1].strip() else {}
-    assert second.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+    assert dispatch.main(json.dumps(send)) == 0
+    output = capsys.readouterr().out
+    assert "未取得の退避出力" in output and "作業完了報告の手順書" in output
+    assert json.loads(output)["hookSpecificOutput"].get("permissionDecision") != "deny"
+    assert [
+        entry.partition("\n")[0] for entry in session_state.read_state("stacked-resend")["resend_passed_by_actor"]["main"]
+    ] == [
+        "未取得の退避出力を根拠に報告した",
+        "完了報告の手順書を取得しないまま完了報告を送った",
+    ]
 
 
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])
@@ -184,7 +191,9 @@ def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, e
         return capsys.readouterr().out
 
     observe("Bash", {"command": "atk agents wait"}, {"stdout": end})
-    assert ("レビュー返却が指定した資料の取得を確認できない" in update()) is (envelope == "ending-row")
+    first = update()
+    assert ("レビュー返却が指定した資料の取得を確認できない" in first) is (envelope == "ending-row")
+    assert '"deny"' not in first
     observe("Skill", {"skill": "agent-basics:review-standards"}, "起動")
     observe("Read", {"file_path": str(subject)}, {"file": {"content": "レビューの本文\n"}})
     assert "レビュー返却が指定した資料の取得を確認できない" not in update()

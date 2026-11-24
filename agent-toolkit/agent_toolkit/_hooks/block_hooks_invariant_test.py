@@ -12,16 +12,13 @@ import re
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 ALLOWED_BLOCK_HOOKS = {
-    "bugfix_gate": "送達は同じ本文の再発行で1回通る。Stopはstop_hook_activeと連続遮断の上限で終わる",
+    "bugfix_gate": "送達は同じ本文の再発行で通る（重なる品質遮断と記録を共有）。Stopはstop_hook_activeと連続遮断の上限で終わる",
     "delivered_repost_gate": "本文から再掲を除けば通る。Stopは連続遮断の上限で終わる",
-    "norm_excuse_gate": "同じ本文の再発行で1回通る",
+    "norm_excuse_gate": "同じ本文の再発行で通る（重なる品質遮断と記録を共有）",
     "process_loop_exit_gate": "Stopだけで、stop_hook_activeと連続遮断の上限で終わる",
     "repository-protection": "認可の境界。登録の編集可否を変えるのはユーザーの判断",
     "response-language": "本文を日本語で書き直せば通る。誤検出は同じ本文の再出力で停止できる",
-    "pretooluse": (
-        "統合フック。安全・認可・公開契約の判定のほか、資料の取得の観測に依存する遮断"
-        "（レビュー返却の資料、退避出力、完了報告の手順書）は同じ操作の再発行で1回通る"
-    ),
+    "pretooluse": "統合フック。安全・認可・公開契約の判定だけを遮断し、資料の取得の観測に依存する判定は警告にする",
     "run_skill_report_gate": "Stopだけで、連続遮断の上限で終わり、起動元が未保存を報告する",
     "subagent-stop": "空の返却だけを止め、stop_hook_activeの再呼出しで終わる",
 }

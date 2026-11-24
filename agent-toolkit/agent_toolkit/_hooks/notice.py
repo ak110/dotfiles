@@ -4,6 +4,7 @@ lazy import contextlib
 lazy import hashlib
 lazy import inspect
 lazy import json
+lazy import time
 lazy from collections.abc import Callable, Generator, Sequence
 
 lazy from agent_toolkit._common import message_format as _common_message_format
@@ -256,44 +257,61 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
 RESEND_PASSED_KEY = "resend_passed_by_actor"
 
 
+QUALITY_RESEND_KEY = "quality_gate_resend_by_actor"
+
+
 def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, label: str = "", limit: int = 16) -> bool:
-    """同じ主体が同じ本文を再発行した時に真を返し、記録を消費する。初回は記録して偽を返す。  pyfltr: allow-comment
+    """同じ主体が同じ本文を再発行した時に真を返す。初回は記録して偽を返す。  pyfltr: allow-comment
 
     遮断の解消を特定の手段（スキルの起動、資料の取得）だけに頼らず、誤検出や手段が使えない時にも進められるようにする。
+    記録は通しても消さない。同じ操作に重なる品質の遮断が`QUALITY_RESEND_KEY`を共有すれば、1回の再発行で全て通る。
     """
     if not session_id:
         return False
     fingerprint = hashlib.sha256(text.encode()).hexdigest()
     repeated = False
 
-    def update(state: dict) -> dict:
+    def update(state: dict) -> dict | None:
         nonlocal repeated
         prior = state.get(state_key, {})
         prior = dict(prior) if isinstance(prior, dict) else {}
         values = [value for value in prior.get(actor, []) if isinstance(value, str)]
         repeated = fingerprint in values
         if repeated:
-            values.remove(fingerprint)
-            if label:
-                passed = state.get(RESEND_PASSED_KEY, {})
-                passed = dict(passed) if isinstance(passed, dict) else {}
-                entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
-                passed[actor] = [*entries, f"{label}\n{fingerprint}"][-limit:]
-                state[RESEND_PASSED_KEY] = passed
-        else:
-            values.append(fingerprint)
-        prior[actor] = values[-limit:]
+            return None
+        prior[actor] = [*values, fingerprint][-limit:]
         state[state_key] = prior
         return state
 
-    return repeated if update_state(session_id, update) else True
+    if not update_state(session_id, update) and not repeated:
+        return True
+    if repeated and label:
+        record_skipped(session_id, actor, label)
+    return repeated
+
+
+def record_skipped(session_id: str, actor: str, label: str, *, limit: int = 16) -> None:
+    """警告を受けたまま、または再発行で遮断を解いて進めた出来事を、次の点検で確認させるため記録する。  pyfltr: allow-comment"""
+    if not session_id:
+        return
+    entry = f"{label}\n{time.time_ns()}"
+
+    def update(state: dict) -> dict:
+        passed = state.get(RESEND_PASSED_KEY, {})
+        passed = dict(passed) if isinstance(passed, dict) else {}
+        entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
+        passed[actor] = [*entries, entry][-limit:]
+        state[RESEND_PASSED_KEY] = passed
+        return state
+
+    update_state(session_id, update)
 
 
 RESEND_ACKED_KEY = "resend_passed_acked_by_actor"
 
 
 def pending_resend_passed(session_id: str, actor: str) -> list[str]:
-    """再発行で通した記録のうち、点検でまだ確認を促していないものを返す。  pyfltr: allow-comment
+    """警告を受けたまま、または再発行で遮断を解いて進めた記録のうち、点検で確認を促していないものを返す。  pyfltr: allow-comment
 
     促し終えた記録は、点検の通知の配送記録（`RESEND_ACKED_KEY`）を見てここで片付ける。
     通知が最終出力へ採用されなかった記録は残し、次の点検でもう一度列挙する。

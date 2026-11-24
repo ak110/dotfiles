@@ -38,7 +38,7 @@ def test_ignores_negation_quote_and_other_subjects(text: str) -> None:
     assert norm_excuse_gate.find_excuse(text) is None
 
 
-def test_reissue_of_same_text_passes_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reissue_of_same_text_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     states: dict[str, dict] = {}
 
     def fake_update(session_id: str, updater) -> bool:
@@ -50,7 +50,7 @@ def test_reissue_of_same_text_passes_once(monkeypatch: pytest.MonkeyPatch) -> No
     text = "既存の規範で十分なので追加の対策はしない。"
     assert norm_excuse_gate.text_block(payload, text, "送達") is not None
     assert norm_excuse_gate.text_block(payload, text, "送達") is None
-    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
     assert norm_excuse_gate.text_block(payload, "問題ない本文。", "送達") is None
 
 
