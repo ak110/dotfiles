@@ -47,7 +47,7 @@ description: >
 
 | 作業・条件 | 読む資料 |
 | --- | --- |
-| `agents_server`の実装と、共有状態の読書き、保存先、更新主体、利用関係を変更・調査する | `docs/development/internals.md`「共有状態」 |
+| `agents_server`の実装と、共有状態の読み書き、保存先、更新主体、利用関係を変更・調査する | `docs/development/internals.md`「共有状態」 |
 | セッション状態ファイルと内部フラグを設計・変更・調査する | `docs/development/internals.md`「セッション状態」 |
 | `agents_server`が起動した委譲先が動かない事象（起動失敗、初期化未到達、無応答、結果の欠落）を調べる | `docs/development/internals.md`「委譲先の調査」 |
 | 環境変数を新設・変更する、既存の環境変数の名前、用途、参照主体を確かめる | `docs/development/internals.md`「環境変数」 |
@@ -68,7 +68,7 @@ description: >
 `pytools/`は同じリポジトリのagent-toolkitをeditableで導入して解決するため、`_`で始まるサブパッケージもimportしてよい。
 プライベートなモジュールを移す・改名する時は、同じ変更で`pytools/`のimportもそろえる。
 特定のツール、データ、命名、CI、運用の形態を前提とする内容はプロジェクトの側に置き、固有の要素を同種の別の要素へ置き換えても判定基準、工程の順、終了条件が成り立つ汎用の内容だけを配布物に入れる。
-記述の置き場所は、読み込まれる時点と成立に要る前提から`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」で決める。
+記述の置き場所は、読み込まれる時点と成立に必要な前提から`agent-basics:writing-standards/references/agent-documents-basics.md`「置き場所の選定」で決める。
 
 ## 配布物としての記述方針
 
@@ -80,7 +80,7 @@ description: >
 - 配布物が参照する単一情報源は、dotfiles固有のファイルや配布しないファイルではなく、配布物の中に置く。
   例外として、観測値を根拠とする条文の監査記録は配布物の外の`docs/development/audit-records*.md`に置き、失効の判定だけに使う。
   記録の所在の示し方は`references/agent-documents.md`「エージェント向け文書の技術的条文」に従う。
-- 配布物のスキルの本文では、hookの挙動をエンドユーザーが観測できる結果として示し、ハッシュ値の比較や状態フラグの更新などの内部実装は書かない（努力目標。内部実装の変更のたびに配布物の改訂が要るのを避けるため）。
+- 配布物のスキルの本文では、hookの挙動をエンドユーザーが観測できる結果として示し、ハッシュ値の比較や状態フラグの更新などの内部実装は書かない（努力目標。内部実装の変更のたびに配布物の改訂が必要になるのを避けるため）。
   状態フラグとhookの間の連携の内部仕様は、本書「内部仕様の索引」の資料に置く。
 
 ## 読込表

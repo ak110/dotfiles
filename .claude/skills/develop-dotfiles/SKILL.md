@@ -5,7 +5,7 @@ description: >
   dotfilesリポジトリで`make update`・`make test`・`make format`・`make setup-browser`・`make setup-pwsh`・`make test-browser`を
   実行するとき、pyfltr・MCPの`run`・`pytest`の直接実行を選ぶとき、変更範囲の検証対象を選ぶとき、統合前・公開前・push前の検証を行うとき、
   専用worktreeや回収予定の検証用複製の環境を準備するとき、mise trustが必要な作業ツリーと状態ディレクトリを扱うとき、専用worktreeの変更を`atk`で動かすとき、
-  画面を実描画で確認するとき、本リポジトリのテスト配置を決めるとき、テストを新規作成・編集・レビューするとき、テストやCIの所要を判定するとき、
+  画面を実描画で確認するとき、本リポジトリのテスト配置を決めるとき、テストを新規作成・編集・レビューするとき、テストやCIの所要時間を判定するとき、
   commit typeを判定するとき、コミットメッセージ方針や`.gitmessage`を編集するとき、
   Claude Code本体やCodex本体のバイナリを検索してホスト機能の挙動を確かめるとき、
   `/atk-mode review-session`の参照文書の位置を確認するとき、

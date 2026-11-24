@@ -10,9 +10,9 @@
 
 1. `uv run --frozen python scripts/review_eval.py prepare --case <事例ID> --out <managed-tempの絶対パス>`で、事例ごとの作業ツリーと計画の複製を作る（選んだ事例ごとに`--case`を繰り返す）。
    - 評価は直列を基本とし、同じ入力・版の作業ツリーは担当の起動ごとに複製せず使い回す。
-     次の事例・版の環境は前の消費と採点・回収が終わってから用意し、独立した書込や同時の比較に別の環境が要る時だけ増やす。
+     次の事例・版の環境は前の消費と採点・回収が終わってから用意し、独立した書き込みや同時の比較に別の環境が必要な時だけ増やす。
    - 事例定義の`revision`には、計画、commitの対応記録、WIを取るprivate-notesの完全なOIDを置く。
-     WIだけ違う整合版が要る時は、`wi_revisions`へWIの名前と完全なOIDを書く。
+     WIだけ違う整合版が必要な時は、`wi_revisions`へWIの名前と完全なOIDを書く。
      変更の時点の要求に対応する保存版を原本とし、変更の前後で同じ定義と抽出の原本を使う。
      指定の版の欠落と不正は事例定義を直し、代わりの本文は指定の版に限る。
    - 新形式のAWIを含む事例では、反映の項目ごとの主要な完成状態と出典、リストと段落の補足条件を条件表（`review_contract`）へ写す。
@@ -66,7 +66,7 @@
 | --- | --- |
 | 検証の範囲と証拠（最終差分と直接利用側を覆う検証、探索した利用側の実行と個別の結果） | `small-verification-table-scope`、`small-known-consumer-tests`、`small-verification-evidence-control` |
 | 変えた前提を読む側の洗い出しと、読んだ結果の場合分け（不在と読めない場合など） | `small-handoff-record-readers`、`small-handoff-record-readers-control` |
-| 入力・既存の状態・操作の順・書込操作の組合せ、公開ヘルプの入力例、横断試験 | `small-recheck-ledger`、`small-recheck-ledger-control` |
+| 入力・既存の状態・操作の順・書き込み操作の組み合わせ、公開ヘルプの入力例、横断テスト | `small-recheck-ledger`、`small-recheck-ledger-control` |
 | 方針・規範の配送との整合 | `missed-hook-body-delivery-posttooluse`、`missed-hook-body-delivery-read-table` |
 | 指摘の前提の確かめ方（撤回した誤指摘） | `false-redirect-backslash` |
 | 投入前レビューの根拠の十分性 | `draft-cache-effect-missing`、`draft-cache-effect-sufficient`、`draft-export-effect-missing`、`draft-export-effect-sufficient` |
@@ -83,18 +83,18 @@
 
 ## 小さい事例
 
-小さい事例は、欠陥の判断に必要な契約・提供側・直接利用側・提出結果だけを持つ合成素材から入力を作り、全履歴版の評価より短い所要で比べる。
+小さい事例は、欠陥の判断に必要な契約・提供側・直接利用側・提出結果だけを持つ合成素材から入力を作り、全履歴版の評価より短い所要時間で比べる。
 全履歴版の事例は削除せず、小さい事例の`origin`に元事例（`cases`）か原本の所在（`source`）を書いて対応を保つ。
 `prepare`は`origin.cases`が指す事例が評価セットに無い定義を拒否する。
 
 - 素材は`scripts/review_eval_materials/<素材名>/`に置く。
   `base.diff`が変更前の版、事例定義の`material.change`の差分が変更、`material.plan`が渡す計画、同じ場所の`<WI名>.md`が評価用WI原本である。
 - 欠陥の事例ごとに、同じ素材で不足を解消した正常対照を用意し、正常対照の`expect.absent`へ欠陥の事例と同じ照合語句を書く。
-- 素材には元のAWI・計画の本文を転記せず、判断に要る関係を一般化して書く。
+- 素材には元のAWI・計画の本文を転記せず、判断に必要な関係を一般化して書く。
   無関係なWIや文章は削ってよいが、欠陥の判断に必要な文脈は残す。
   検出語を含むだけの短文や、期待する指摘を計画・WIへ書かない。
 - 素材を直す時は`prepare`が作る作業ツリーで編集し、`git -C <作業ツリー> diff --src-prefix=a/ --dst-prefix=b/ HEAD^`の出力で差分を置き換える。
-  `scripts/review_eval_test.py`が、各素材の欠陥と正常対照の試験の結果と、照合語句の当たり方を確かめる。
+  `scripts/review_eval_test.py`が、各素材の欠陥と正常対照のテストの結果と、照合語句の当たり方を確かめる。
 
 ## 投入前レビューの評価
 
@@ -107,7 +107,7 @@ exec-reviewは従来どおり`table`のTSVを使う。
 採点、cleanup、未分類の時の保持は、TSVと同じ経路を使う。
 
 キャッシュの不足の例は、初回の保存版の原要求と本文を保つ。
-正常の対照の観測は評価用の仮想の条件であり、実製品の試験結果を主張しない。
+正常の対照の観測は評価用の仮想の条件であり、実製品のテスト結果を主張しない。
 エクスポートの2例も仮想の事例である。
 prepareの履歴の再構成用のplanとrevisionと、レビューへ渡すfixtureは区別し、採否はfixtureにある原要求、条件、観測範囲で決める。
 

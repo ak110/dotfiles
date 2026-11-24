@@ -28,7 +28,7 @@
 - `.chezmoi-source/dot_codex/AGENTS.md`は、個人用の規範`.chezmoi-source/dot_claude/rules/myprojects-common.md`を`scripts/sync_codex_agents.py`で埋め込んで生成する。
   agent-toolkitの規範は埋め込まない（Codexのメインへは入口`agent-toolkit:atk-mode`がSessionStartのhookの案内で届く）。
   `uv run python scripts/sync_generated_files.py`で同期し、計画では生成物として扱う。
-- 入口`agent-toolkit/skills/atk-mode/SKILL.md`と`playbooks/subagent.md`の編集は生成物を変えないが、版数の更新は要る。
+- 入口`agent-toolkit/skills/atk-mode/SKILL.md`と`playbooks/subagent.md`の編集は生成物を変えないが、版数の更新は必要である。
   各起動の区分へ届く文書は`agent-toolkit:atk-mode/references/agent-documents.md`「配送範囲表」で確かめる。
   `playbooks/subagent.md`は、`agents_server`が全modeの委譲先の起動の本文へ組み立てる原本であり、`Agent`ツールの委譲先はSubagentStartの通知の案内で読む。
 - 読込表は各文書の本文の表に置く。
@@ -65,7 +65,7 @@ toolkitのClaudeの依存の配列を、Agent Pluginsのルートのマニフェ
    - `agent-basics`の配布物（`agent-basics/skills/`配下）は条文に記録の所在の文を置かない。
      `agent-basics`だけを導入したエンドユーザーにも届き、`docs/development/`を指しても参照先へ届かないためである。
      プロジェクト規範（`AGENTS.md`など）と同じく、記録の見出しのファイルパスと節名が索引になる。
-     試験は、見出しのファイルと節名が実在することを確かめる。
+     テストは、見出しのファイルと節名が実在することを確かめる。
    - `agent-toolkit`の配布物と、配布しない文書（`.claude/skills/`、コード）は、条文の末尾に記録の所在を示す文を1文置く。
 4. 条文を改める・削る前は、`git grep -n '<ファイルパス>' -- 'docs/development/audit-records*.md'`で根拠の記録を探す。
 5. 条文の節名を変えた時と、条文を移した時は、記録の見出しのファイルパスと節名も同じ変更で直す。

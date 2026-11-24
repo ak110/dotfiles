@@ -3,7 +3,7 @@
 ## 作業ツリーの準備
 
 メインは、レーンへ共通基点を渡す前に、変更のない作業ツリーのそのHEADで規範Markdownの合計サイズを検査する。
-同じ試験入力で成功済みなら結果を再利用し、未検証なら次の1ケースを実行する。
+同じテスト入力で成功済みなら結果を再利用し、未検証なら次の1ケースを実行する。
 
 ```sh
 UV_NO_SYNC=true uv run --frozen pytest -n 0 -p no:cacheprovider norm_size_budget_invariant_test.py::test_norm_markdown_within_budget

@@ -21,7 +21,7 @@ LinuxとWindowsのペアファイルの片方を編集する時に、両者の�
 ## 編集の要点
 
 1. 実質的な処理の変更は両方のファイルへ入れ、差はプラットフォーム固有の記法と作法だけにとどめる。
-   LinuxとWindowsで分岐するコードの試験の書き方は`agent-basics:writing-standards/references/testing.md`に従う。
+   LinuxとWindowsで分岐するコードのテストの書き方は`agent-basics:writing-standards/references/testing.md`に従う。
 2. 新しいペアを作る時は両方のOS向けのファイルを同時に足す。
    ファイルの種類によっては、OSごとの配布を制御するため`.chezmoiignore`へ除外の設定を足す。
 3. PowerShell側でBOMなしUTF-8のテキストを出す時は`System.Text.UTF8Encoding`のインスタンスを使う（`install-claude.ps1`の`$script:utf8NoBom`）。
