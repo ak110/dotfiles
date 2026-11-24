@@ -254,6 +254,116 @@ def test_recommendation_is_reviewed_once(tmp_path: pathlib.Path, codex: bool) ->
     assert not _question_decision(tmp_path, question, agent_id="child", **host)
 
 
+_APPROVAL_OPTIONS = [
+    {"label": "この方針で進める", "description": "送った方針のとおりに着手する"},
+    {"label": "修正して進める", "description": "修正点を自由記述で伝える"},
+]
+_APPROVAL = {"header": "方針の承認", "question": "送った2件目の方針で進めてよいですか？", "options": _APPROVAL_OPTIONS}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        {
+            **_APPROVAL,
+            "question": "送った方針で進めてよいですか？",
+            "options": [
+                {"label": "この方針で進める（推奨）", "description": "送った方針のとおりに着手する"},
+                {"label": "Aだけにする", "description": "Bを外す"},
+                _APPROVAL_OPTIONS[1],
+            ],
+        },
+        {
+            **_APPROVAL,
+            "question": "A: bugfixへ実例を載せて既存の失敗例を置き換える、B: 記録の種類を必須にする、"
+            "Cとして1件のAWIで登録する方針で進めてよいですか？",
+        },
+        {**_APPROVAL, "question": "送ったA・Bの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったBを外す方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったA、Bの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った1.の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った［Aだけ］の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った旧版を除くの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った外すの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止しないの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止せずの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止せぬの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止したの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った動けるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った廃止されるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送ったできるの方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った［修正版］の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った修正版、追記の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った今回分最終版の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った前回分改訂版の方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "\n送った方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った方針で進めてよいですか？\n"},
+        {**_APPROVAL, "question": "送った\n方針で進めてよいですか？"},
+        {**_APPROVAL, "question": "送った方針で進めてよいですか？\nA: 実例を載せる"},
+        {
+            **_APPROVAL,
+            "options": [_APPROVAL_OPTIONS[0], {"label": "修正して進める", "description": "Bを外し、Aだけを登録する"}],
+        },
+        {**_APPROVAL, "options": [{**_APPROVAL_OPTIONS[0], "label": "この方針で進める (Recommended)"}, _APPROVAL_OPTIONS[1]]},
+        {**_APPROVAL, "multiSelect": True},
+        {**_APPROVAL, "header": "確認", "question": "上の方針（A・B）で進めてよいか？"},
+    ],
+)
+@pytest.mark.parametrize("codex", [False, True])
+def test_policy_approval_requires_fixed_form(tmp_path: pathlib.Path, question: dict, codex: bool) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    for _ in range(2):
+        decision = _question_decision(tmp_path, question, **host)
+        assert "送った方針で進めてよいですか？" in decision
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_policy_approval_notice_explains_modifier_characters(tmp_path: pathlib.Path, codex: bool) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    question = {**_APPROVAL, "question": "送った最終 版の方針で進めてよいですか？"}
+    for _ in range(2):
+        assert "修飾は文字と数字だけで書き" in _question_decision(tmp_path, question, **host)
+
+
+def test_policy_approval_rejects_additional_question(tmp_path: pathlib.Path) -> None:
+    result = _run(
+        {
+            "tool_name": "AskUserQuestion",
+            "session_id": "question-check",
+            "tool_input": {"questions": [_APPROVAL, {"question": "どの系統へ登録しますか？", "options": _APPROVAL_OPTIONS}]},
+        },
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert "送った方針で進めてよいですか？" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "modifier",
+    [
+        "",
+        "2件目の",
+        "２回目の",
+        "二十一件目の",
+        "修正版の",
+        "改訂版の",
+        "再送版の",
+        "最新版の",
+        "まとめ版の",
+        "最終版の",
+        "機能廃止の",
+        "初回送付版の",
+        "再送改訂版の",
+        "統合版の",
+        "差し替え版の",
+    ],
+)
+@pytest.mark.parametrize("codex", [False, True])
+def test_fixed_policy_approval_passes_first_time(tmp_path: pathlib.Path, codex: bool, modifier: str) -> None:
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    question = {**_APPROVAL, "question": f"送った{modifier}方針で進めてよいですか？"}
+    assert not _question_decision(tmp_path, question, **host)
+
+
 @pytest.mark.parametrize(
     "body, missing",
     [
@@ -280,7 +390,7 @@ def test_policy_question_requires_all_external_sources(tmp_path: pathlib.Path, m
     )
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
     question = {"questions": [{"question": "上の方針（A・Bの2件を登録、他は不採用）で起草してよいか？"}]}
-    assert "external-source-review.md" in _question_decision(tmp_path, question["questions"][0])
+    assert "external-source-review.md" in _question_decision(tmp_path, _APPROVAL)
     assert not pretooluse._external_source_review_needed("s", {"questions": [{"question": "どの系統を選びますか？"}]})
     table = tmp_path / "external-source-review.md"
     a = "| https://example.com/a | agent-basicsの設計手順 |\n"
