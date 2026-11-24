@@ -15,6 +15,7 @@ from typing import Any
 import psutil
 import pytest
 
+from agent_toolkit._atk import claude_connection
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
 from agent_toolkit._atk.wi import process_loop_session as _pl_session
 from agent_toolkit._common import (
@@ -338,12 +339,12 @@ def test_idle_claude_cli_stops_only_for_unwaited_weekly_limit(
     env = {**os.environ, "CLAUDE_CONFIG_DIR": str(tmp_path), _pl_env.PROCESS_LOOP_SESSION_ID_ENV: "weekly-limit"}
     monkeypatch.setattr(_pl_session, "_attach_orchestrator_child", lambda *_args: None)
     monkeypatch.setattr(claude_usage_limit, "RECHECK_SECONDS", 0)
-    connection = _pl_session._connection.Connection("subscription")
+    connection = claude_connection.Connection("subscription")
     resets_at = int(time.time()) + 3600
-    calls: list[_pl_session._connection.Connection] = []
+    calls: list[claude_connection.Connection] = []
 
+    path = tmp_path / "active.jsonl"
     if reactivated:
-        path = tmp_path / "active.jsonl"
         path.write_text("started", encoding="utf-8")
         os.utime(path, (1, 1))
         monkeypatch.setattr(_pl_session, "_last_record_update", lambda *_: path.stat().st_mtime)
