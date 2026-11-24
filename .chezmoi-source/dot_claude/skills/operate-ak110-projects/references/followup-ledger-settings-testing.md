@@ -143,7 +143,7 @@ pyfltr 3.33.2にそろえた [別runのPylint](https://github.com/ak110/dotfiles
 - 項目ID: release-artifact-build-provenance
 - 実施日: 2026年11月
 - 内容: 公開する配布物に、署名したworkflowとビルド元を検証できる来歴証明を付ける
-- 理由: 利用者が配布物を作ったworkflowとソースコミットを確かめられるようにする
+- 理由: 配布物を入手した人が、その配布物を作ったworkflowとソースコミットを確かめられるようにする
 - 当てはまる条件: 公開リポジトリのGitHub ActionsがReleaseの添付ファイル、PyPIの配布物、またはコンテナーイメージを公開する
 - 適用方法: pyfltrの推奨ガイドに沿って、公開時に配布物へ証明を付ける
 - 参照先: `github.com/ak110/pyfltr` の `docs/guide/recommended.md` のビルド来歴証明の節

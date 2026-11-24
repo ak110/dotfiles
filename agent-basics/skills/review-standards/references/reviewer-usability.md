@@ -10,8 +10,8 @@
 2. `agent-basics:writing-standards/references/ui-ux.md`「完了前の実描画確認」の手順1〜2で、変更後の画面を描画・操作する。
    Web画面では`agent-basics:writing-standards/references/ui-ux-web-rules.md`と該当するModern Web Guidanceを使う。
    文言は文章の基準で判定する。
-3. `agent-basics:writing-standards/references/ui-ux.md`「用途と参考例の調査」「操作と情報」「状態と内容」に照らして判定する。
-   同じ作業・データ・表示幅で旧版や類例を比べ、理由の無い逸脱や必要な類例の不足を指摘する。
+3. `agent-basics:writing-standards/references/ui-ux.md`「判断の順序」「用途と参考例の調査」「操作と情報」「状態と内容」に照らして判定する。
+   同じ作業・データ・表示幅で旧版や類例を比べ、画面の目的と判断の優先順位に照らし、理由の無い逸脱や必要な類例の不足を指摘する。
    他製品の手数を合格基準にしない。
    初期表示から完了まで、判断の順に情報がたどれ、長さの違う行でも比較する列が揃うか、空値や反復が主役を隠さず、不要な入力や画面往復が残っているかを判定する。
    初見・反復の双方で必要な選択肢とヘルプが見つかり、前画面の記憶に頼らず操作できるかを見る。

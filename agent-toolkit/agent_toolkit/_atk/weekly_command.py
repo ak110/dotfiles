@@ -18,6 +18,7 @@ import time
 from agent_toolkit._atk import outcome
 from agent_toolkit._atk.managed_temp import paths as managed_temp_paths
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
+from agent_toolkit._common.process_tree import run_with_timeout
 
 UNIT_NAME = "atk-weekly"
 TASK_NAME = "agent-toolkit-weekly"
@@ -222,7 +223,7 @@ def _submit_user_service(
         *(argument.replace("$", "$$") for argument in command),
     ]
     try:
-        result = subprocess.run(  # noqa: S603  # 自身の配布物を固定の引数で起動する。
+        result = run_with_timeout(
             submission,
             stdin=subprocess.DEVNULL,
             capture_output=True,

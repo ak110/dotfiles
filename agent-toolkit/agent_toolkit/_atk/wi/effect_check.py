@@ -11,7 +11,6 @@ from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import entries, frontmatter, headings, repo, sync
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._git import command
-lazy from agent_toolkit._atk.wi.mutations import targets
 
 RECORD_PREFIX = "- 効果確認: "
 OVERALL_RECORD_PREFIX = "- 効果確認全体: "
@@ -173,6 +172,8 @@ def save_effect_check(
     corrective_awi: str | None = None,
     reason: str | None = None,
 ) -> list[pathlib.Path]:
+    from agent_toolkit._atk.wi.mutations import targets  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
     if file is not None:
         relative = pathlib.PurePosixPath(file)
         if not file or relative.is_absolute() or ".." in relative.parts or "\\" in file or relative.as_posix() != file:

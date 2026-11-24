@@ -117,6 +117,7 @@ def migrate_fixed_settings(config: dict[str, str]) -> dict[str, str]:
         "weekly_research_x_env_file": _config_settings.X_ENV_FILENAME,
     }
     sources: dict[pathlib.Path, pathlib.Path] = {}
+    pending_x = False
     for key, filename in path_keys.items():
         if raw := overrides.get(key, config.get(key)):
             try:
@@ -150,7 +151,8 @@ def migrate_fixed_settings(config: dict[str, str]) -> dict[str, str]:
             file_lock.acquire_lock(lock)
             try:
                 for target, source in sources.items():
-                    _move_auth_file(source, target)
+                    if not _move_auth_file(source, target, defer_missing=target.name == _config_settings.X_ENV_FILENAME):
+                        pending_x = True
             finally:
                 file_lock.release_lock(lock)
 
@@ -166,22 +168,25 @@ def migrate_fixed_settings(config: dict[str, str]) -> dict[str, str]:
         if isinstance(value, str) and value.isdecimal() and int(value) < limit:
             _outcome.report_warning(
                 f"廃止した{key}より固定上限（{limit}）が高い",
-                next_action="X側の支出上限を確認する。取得を止める場合はweekly_research_x_apiをfalseへ変える。",
+                next_action="X側の支出上限を確認してください。取得を止めるにはweekly_research_x_apiをfalseにしてください。",
             )
-    return {key: value for key, value in config.items() if key not in destinations}
+    pending = {"weekly_research_x_env_file"} if pending_x else set()
+    return {key: value for key, value in config.items() if key not in destinations or key in pending}
 
 
-def _move_auth_file(source: pathlib.Path, target: pathlib.Path) -> None:
+def _move_auth_file(source: pathlib.Path, target: pathlib.Path, *, defer_missing: bool) -> bool:
     try:
         if target.is_symlink() or source.is_symlink():
             raise ValueError("移行に使う認証ファイルをシンボリックリンクにしない")
         if source.resolve() == target.resolve():
-            return
+            return True
         try:
             source_mode = source.stat().st_mode
         except FileNotFoundError:
             if target.is_file():
-                return
+                return True
+            if defer_missing:
+                return False
             raise
         if not stat.S_ISREG(source_mode):
             raise ValueError("移行元は通常ファイルにし、移行先にシンボリックリンクを置かない")
@@ -195,6 +200,7 @@ def _move_auth_file(source: pathlib.Path, target: pathlib.Path) -> None:
             if not stat.S_ISREG(target_mode) or target.read_bytes() != content:
                 raise ValueError("固定名に別内容のファイルがあるため上書きしない")
         source.unlink()
+        return True
     except OSError, ValueError:
         raise _next_action.ActionableError(
             f"認証envを設定ディレクトリの{target.name}へ移行できない",

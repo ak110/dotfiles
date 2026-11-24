@@ -333,11 +333,13 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk config snapshot": {
         "summary": "設定画面の取得に使う設定一覧をJSONで出力する。",
-        "description": "設定の保存値・実効値・編集情報を設定画面用のJSONで出力する。リモート設定画面がSSH経由で呼び出す。",
+        "description": "設定の保存値・実効値と編集情報を取得する。\n\n目的: 設定画面の表示データを取得する。\n利用場面: SSH先の設定取得を診断するとき。\n対象と出力: 実行先の設定と編集情報を標準出力へJSONで書く。\n前提: SSH先でatkを起動できること。\n復元・後始末: 通常の読取では不要。",
+        "epilog": "実行例:\n\n  atk config snapshot",
     },
     "atk config update": {
         "summary": "設定画面から受け取った設定操作を適用する。",
-        "description": "標準入力から設定画面の操作を表すUTF-8のJSONオブジェクトを読み、設定へ反映する。対話操作にはset等を使う。",
+        "description": "設定画面の操作を反映する。\n\n目的: 設定画面から受け取った操作を実行する。\n利用場面: SSH先の設定を保存するとき。手で値を変更するときはsetなどを使う。\n対象と出力: 実行先の設定を変更し、結果を標準出力に書く。\n前提: 設定操作を表すUTF-8のJSONオブジェクト1件を標準入力へ渡す。\n復元・後始末: 保存値は以前の値に再設定する。一時設定はconfig temporary clearで解除する。",
+        "epilog": "実行例:\n\n  atk config update",
     },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",

@@ -37,6 +37,8 @@ def test_distributed_outputs_use_shared_result_contract(path: Path) -> None:
     if path.name == "reader-fit-review.subagent.md":
         session.prompt += f"\n入力:\n成果物: {path}"
         examples = [examples[0].replace("<絶対パス>", str(path)).replace("<completed|blocked>", "completed")]
+    if path.name == "usability-review.subagent.md":
+        examples = [examples[0].replace("判定: 合格 | 不合格 | 未確定", "判定: 合格") + examples[1]]
     reasons = []
     for example in examples:
         example = example.replace("<共通契約の区分>", "owner_input")

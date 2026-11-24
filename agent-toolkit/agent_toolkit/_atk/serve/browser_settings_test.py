@@ -42,7 +42,7 @@ async def test_settings_shows_supported_keys_and_saves_with_cli_validation(
     await page.get_by_role("navigation", name="設定の分類").get_by_text("atk serve", exact=True).click()
     await port.get_by_label("保存値").fill("54002")
     await port.get_by_role("button", name="保存").click()
-    await playwright.async_api.expect(page.locator("#settings-status")).to_have_text("設定を保存しました。")
+    await playwright.async_api.expect(page.get_by_text("設定を保存しました。", exact=True)).to_have_count(1)
     assert config_settings.load_config()["serve_port"] == "54002"
     await playwright.async_api.expect(port).to_contain_text("実効値: 54001")
     await playwright.async_api.expect(port.get_by_role("alert")).to_be_focused()
@@ -99,7 +99,7 @@ async def test_settings_temporary_preset_repository_and_array_operations(
     existing = repos.locator("details").filter(has=page.get_by_text("github.com/example/project", exact=True))
     await existing.get_by_label("編集可否").select_option("awi")
     await existing.get_by_role("button", name="属性を保存").click()
-    await playwright.async_api.expect(page.locator("#settings-status")).to_have_text("設定を保存しました。")
+    await playwright.async_api.expect(page.get_by_text("設定を保存しました。", exact=True)).to_have_count(1)
     assert "github.com/example/project" in config_settings.load_config()["repositories"]
     page.once("dialog", lambda dialog: dialog.accept())
     await repos.get_by_role("button", name="登録を削除").click()
@@ -120,7 +120,7 @@ async def test_settings_temporary_preset_repository_and_array_operations(
     preset = page.locator("details").filter(has=page.get_by_text("claude-primary", exact=True))
     await preset.get_by_text("claude-primary", exact=True).click()
     await preset.get_by_role("button", name="適用").click()
-    await playwright.async_api.expect(page.locator("#settings-status")).to_have_text("設定を保存しました。")
+    await playwright.async_api.expect(page.get_by_text("設定を保存しました。", exact=True)).to_have_count(1)
     assert all(
         config_settings.load_config()[name] == value for name, value in config_settings.PRESET_MODELS["claude-primary"].items()
     )
@@ -174,6 +174,8 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
         assert args[-3] == "--"
         host, command = args[-2:]
         operations.append((host, command))
+        if command == "uname -s":
+            return subprocess.CompletedProcess(args, 0, b"Linux\n", b"")
         if host == "old-host":
             if command == "atk config snapshot":
                 return subprocess.CompletedProcess(args, 2, b"", b"")
@@ -189,7 +191,7 @@ async def test_settings_switches_hosts_and_saves_through_remote_cli(
         snapshot["settings"]["serve_host"].update(effective=remote_value, saved=remote_value)
         return subprocess.CompletedProcess(args, 0, json.dumps(snapshot).encode(), b"")
 
-    monkeypatch.setattr(settings_routes.subprocess, "run", ssh)
+    monkeypatch.setattr(settings_routes, "run_with_timeout", ssh)
     page = screen_harness.page
     await page.goto(screen_harness.base_url + "/settings")
     expect = playwright.async_api.expect

@@ -117,7 +117,7 @@ def test_serve_submits_via_an_independent_user_service(monkeypatch, tmp_path):
     def unexpected_spawn(*_args, **_kwargs):
         pytest.fail("週次の実行がserveの子プロセスとして起動された")
 
-    monkeypatch.setattr(weekly_command.subprocess, "run", submit)
+    monkeypatch.setattr(weekly_command, "run_with_timeout", submit)
     monkeypatch.setattr(weekly_command.subprocess, "Popen", unexpected_spawn)
 
     assert weekly_command.ServeLauncher().launch()
@@ -150,7 +150,7 @@ async def test_serve_loop_retries_on_next_check_after_launch_failure(monkeypatch
 
     monkeypatch.setattr(session_review, "directory", lambda: tmp_path)
     monkeypatch.setattr(weekly_command, "SERVE_CHECK_SECONDS", 0)
-    monkeypatch.setattr(weekly_command.subprocess, "run", submit)
+    monkeypatch.setattr(weekly_command, "run_with_timeout", submit)
     await asyncio.wait_for(serve_cli._weekly_loop(stop), timeout=5)  # noqa: SLF001  # pylint: disable=protected-access
     assert len(calls) == 2
     assert calls[0] == calls[1]

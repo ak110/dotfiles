@@ -89,14 +89,16 @@ async function operate(payload, output) {
     await refresh();
     const savedEditor = restoreEditors(drafts, editorKey);
     const message = "設定を保存しました。";
-    status.textContent = message;
     const notice = savedEditor?.querySelector("[role=alert]");
     scroll.scrollTop = scrollTop;
     if (notice && !notice.closest("[hidden]")) {
+      status.textContent = "";
       notice.textContent = message;
       notice.tabIndex = -1;
       notice.focus({preventScroll: true});
       notice.scrollIntoView({block: "nearest"});
+    } else {
+      status.textContent = message;
     }
   } catch (error) {
     (output.isConnected ? output : status).textContent = error.message;

@@ -5,8 +5,8 @@ _CONNECTION_CONSUMER = "config_resolution の役割別接続解決"
 
 _SETTING_USES = {
     "execute_model": (_MODEL_CONSUMER, "実装で使うモデルの品質・料金を変える"),
-    "review_model": (_MODEL_CONSUMER, "独立レビューの観点と品質を変える"),
-    "review_fast_model": (_MODEL_CONSUMER, "軽量レビューの応答時間を短くする"),
+    "review_model": (_MODEL_CONSUMER, "実行レビューの観点と品質を変える"),
+    "review_fast_model": (_MODEL_CONSUMER, "短いレビューの応答時間を短くする"),
     "chores_model": (_MODEL_CONSUMER, "定型処理に使うモデルの費用を変える"),
     "chores_fast_model": (_MODEL_CONSUMER, "短い定型処理で応答時間を短くする"),
     "orchestrate_model": (_MODEL_CONSUMER, "統括の長い作業に合うモデルを選ぶ"),
@@ -44,4 +44,4 @@ def _undocumented(keys: set[str]) -> set[str]:
 
 def test_each_active_setting_has_a_consumer_and_a_reason_to_change_it() -> None:
     undocumented = _undocumented(set(MUTABLE_KEY_DEFAULTS))
-    assert not undocumented, f"消費箇所と利用者が変更する理由を確認できない設定キー: {sorted(undocumented)}"
+    assert not undocumented, f"消費箇所と変更する理由を確認できない設定キー: {sorted(undocumented)}"

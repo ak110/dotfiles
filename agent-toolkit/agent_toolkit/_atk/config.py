@@ -406,6 +406,7 @@ def dispatch(args: argparse.Namespace, home: pathlib.Path, *, refresh: Callable[
             if not isinstance(payload, dict):
                 raise ValueError("標準入力に設定操作のJSONオブジェクトを指定してください")
             update_settings(payload)
+            _outcome.report_success("設定操作を適用した")
         elif sub == "get":
             _cmd_config_get(args, home)
         elif sub == "apply-preset":

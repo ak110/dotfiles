@@ -24,6 +24,29 @@ from agent_toolkit._testing.config_support import (
 __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
 
 
+def test_missing_legacy_x_file_does_not_block_config_use(tmp_path, capsys):
+    key = "weekly_research_x_env_file"
+    missing = str(tmp_path / "missing.env")
+    _write_config(tmp_path, {key: missing, "weekly_research_x_api": "false"})
+
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
+    assert _main(tmp_path, "config", "set", "codex_fast_mode", "true") == 0
+    assert _saved(tmp_path)[key] == missing
+    assert _saved(tmp_path)["codex_fast_mode"] == "true"
+    assert not capsys.readouterr().err
+
+
+@pytest.mark.parametrize("kind", ["credits", "payg"])
+def test_missing_claude_file_already_at_fixed_path_does_not_block_config(tmp_path, capsys, kind):
+    key = f"claude_{kind}_env_file"
+    path = _config_file(tmp_path).parent / f"claude-{kind}.env"
+    _write_config(tmp_path, {key: str(path)})
+
+    assert _main(tmp_path, "config", "get", "codex_fast_mode") == 0
+    assert capsys.readouterr().out.strip() == "false"
+    assert key not in _saved(tmp_path)
+
+
 @pytest.mark.parametrize(
     "preset", ["codex-balanced", "codex-near-primary", "codex-primary", "claude-balanced", "claude-primary"]
 )

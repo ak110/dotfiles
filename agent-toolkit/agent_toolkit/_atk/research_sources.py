@@ -25,7 +25,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config, config_settings
-from agent_toolkit._common import claude_connection, session_review
+from agent_toolkit._common import claude_connection, runtime_environment, session_review
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 X_API_BASE = "https://api.x.com/2"
@@ -316,6 +316,11 @@ def x_token() -> str | None:
     try:
         values = claude_connection.read_api_env_file(str(path))
     except FileNotFoundError:
+        key = "weekly_research_x_env_file"
+        if config_settings.load_config().get(key) or runtime_environment.environment().get(
+            config_settings.config_env_name(key)
+        ):
+            raise SourceError(f"旧設定の認証ファイルが見つからない。Xの認証ファイルを{path}へ置いて再実行する") from None
         return None
     except (OSError, UnicodeError, ValueError) as error:
         raise SourceError(f"キーのファイルを読めない: {path}（{type(error).__name__}）") from error

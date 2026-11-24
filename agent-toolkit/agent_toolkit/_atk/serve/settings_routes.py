@@ -12,6 +12,7 @@ from agent_toolkit._atk import config, config_migration, config_settings
 from agent_toolkit._atk.serve.config import ServeConfig
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
+from agent_toolkit._common.process_tree import run_with_timeout
 
 
 def _remote_hosts() -> tuple[str, ...]:
@@ -21,7 +22,7 @@ def _remote_hosts() -> tuple[str, ...]:
 
 def _ssh(host: str, operation: str, payload: dict[str, typing.Any] | None = None) -> subprocess.CompletedProcess[bytes]:
     # pyfltr: allow-comment Windowsのcmd.exeとPOSIXシェルで同じコマンドを使えるように、自由入力は標準入力で渡す。
-    return subprocess.run(
+    return run_with_timeout(
         ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", host, operation],
         input=json.dumps(payload).encode("ascii") if payload is not None else b"",
         capture_output=True,
@@ -43,14 +44,14 @@ def _ssh_unelevated(
         script += "$packet | "
     script += "& atk @atkArgs 2>$null\nexit $global:LASTEXITCODE\n"
     try:
-        return subprocess.run(
+        return run_with_timeout(
             ["ssh-unelevated", "--timeout", "20", "--", host, "-"],
             input=script.encode("utf-8"),
             capture_output=True,
             check=False,
         )
     except FileNotFoundError as error:
-        raise ValueError("昇格SSHでatkを起動できません。ローカルにssh-unelevatedを導入してください") from error
+        raise ValueError("SSH先の設定を非昇格で操作するため、ローカルにssh-unelevatedを導入してください") from error
 
 
 type _ConfigRunner = typing.Callable[[str, str, dict[str, typing.Any] | None], subprocess.CompletedProcess[bytes]]
@@ -62,11 +63,16 @@ _PATH_KEYS = {"config_dir", "state_dir", "data_dir", "private_notes"}
 
 
 def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
-    runner: _ConfigRunner = _ssh
+    platform = _ssh(host, "uname -s")
+    if platform.returncode == 255:
+        raise WebInputError("SSH先に接続できません", next_action="接続先とSSHの接続を確認する")
+    # pyfltr: allow-comment snapshotと旧版showは旧設定を移行するため、OSを判別してから実行する。
+    runner: _ConfigRunner = (
+        _ssh
+        if platform.returncode == 0 and platform.stdout.strip() in {b"Linux", b"Darwin", b"FreeBSD", b"OpenBSD", b"NetBSD"}
+        else _ssh_unelevated
+    )
     result = runner(host, "atk config snapshot", None)
-    if result.returncode and b"os error 448" in result.stderr:
-        runner = _ssh_unelevated
-        result = runner(host, "atk config snapshot", None)
     if result.returncode == 0:
         snapshot = json.loads(result.stdout)
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("settings"), dict):

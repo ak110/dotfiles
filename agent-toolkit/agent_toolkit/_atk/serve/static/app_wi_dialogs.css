@@ -443,6 +443,24 @@
   height: 100%;
   max-height: none;
 }
+#screen-wi .wi-reference-dialog .dialog-body {
+  padding: var(--space-2) var(--space-3);
+}
+#screen-wi .wi-reference-dialog .detail-metadata {
+  gap: var(--space-1) var(--space-3);
+}
+#screen-wi .wi-reference-dialog .metadata-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+#screen-wi .wi-reference-dialog .metadata-item > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+#screen-wi .wi-reference-dialog .detail-body {
+  margin-top: var(--space-2);
+}
 
 #screen-wi .detail-dialog:modal,
 #screen-wi .detail-dialog .dialog-body,

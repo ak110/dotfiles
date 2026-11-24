@@ -67,6 +67,10 @@ def _has_develop_checks(jobs: typing.Iterable[dict[str, typing.Any]]) -> bool:
     selected_steps = {"browser-e2e": "ブラウザーE2Eの実行", "rust-lint": "Rust検証の実行"}
     for job in jobs:
         name = job["name"]
+        if name in {"statusline-build (ubuntu-latest)", "statusline-build (windows-latest)"}:
+            if job["status"] == "completed" and job["conclusion"] == "skipped":
+                continue
+            return False
         if name in seen or name not in _DEVELOP_CHECKS or job["status"] != "completed" or job["conclusion"] != "success":
             return False
         if (step := selected_steps.get(name)) is not None and not any(

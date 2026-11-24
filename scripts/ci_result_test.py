@@ -56,6 +56,8 @@ def _workflow_job_names() -> set[str]:
             names.add(expanded[1])
         elif formatted := re.search(r"\|\| format\('([^']+)', matrix\.shard\)", name):
             names.update(formatted[1].format(shard) for shard in job["strategy"]["matrix"]["shard"])
+        elif job_id == "statusline-build":
+            names.update(f"statusline-build ({entry['os']})" for entry in job["strategy"]["matrix"]["include"])
         else:
             names.add(name)
     return names
@@ -83,6 +85,8 @@ def test_master_reuses_only_a_complete_owner_attempt(tmp_path: Path, monkeypatch
         "rust-lint": "Rust検証の実行",
     }
     for job in jobs:
+        if job["name"].startswith("statusline-build ("):
+            job["conclusion"] = "skipped"
         if step := selected.get(job["name"]):
             job["steps"] = [{"name": step, "conclusion": "success"}]
     unix_job = next(job for job in jobs if job["name"] == "test-linux")
