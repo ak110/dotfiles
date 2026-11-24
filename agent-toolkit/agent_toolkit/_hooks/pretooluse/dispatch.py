@@ -295,6 +295,53 @@ def _external_source_review_needed(session_id: str, tool_input: dict) -> bool:
     return not urls <= covered
 
 
+_POLICY_APPROVAL_HEADER = "方針の承認"
+_POLICY_APPROVAL_MODIFIER_LIMIT = 6
+_POLICY_APPROVAL_QUESTION = re.compile(
+    rf"送った(?P<modifier>[^\W_]{{0,{_POLICY_APPROVAL_MODIFIER_LIMIT}}})方針で進めてよいですか[？?]"
+)
+_POLICY_APPROVAL_CLAUSE = re.compile(
+    r"を|(?:[一-龯々][ぁ-ゖ]*(?:[うくぐすつぶむるただ]|ない|ず|ぬ)|しない|せ[ずぬ]|(?:ら?れ|でき)[るた])(?:版)?の?$"
+)
+_POLICY_APPROVAL_OPTIONS = (
+    {"label": "この方針で進める", "description": "送った方針のとおりに着手する"},
+    {"label": "修正して進める", "description": "修正点を自由記述で伝える"},
+)
+
+
+def _policy_approval_form_invalid(tool_input: dict) -> bool:
+    questions = tool_input.get("questions")
+    if not isinstance(questions, list) or not any(
+        isinstance(question, dict)
+        and (
+            question.get("header") == _POLICY_APPROVAL_HEADER
+            or (isinstance(text := question.get("question"), str) and _POLICY_APPROVAL.search(text))
+        )
+        for question in questions
+    ):
+        return False
+    if len(questions) != 1:
+        return True
+    question = questions[0]
+    options = question.get("options")
+    return not (
+        question.get("header") == _POLICY_APPROVAL_HEADER
+        and not question.get("multiSelect")
+        and isinstance(text := question.get("question"), str)
+        and (match := _POLICY_APPROVAL_QUESTION.fullmatch(text)) is not None
+        and not _POLICY_APPROVAL_CLAUSE.search(match["modifier"])
+        and isinstance(options, list)
+        and len(options) == len(_POLICY_APPROVAL_OPTIONS)
+        and all(
+            isinstance(option, dict)
+            and option.get("label") == expected["label"]
+            and option.get("description") == expected["description"]
+            and not option.get("preview")
+            for option, expected in zip(options, _POLICY_APPROVAL_OPTIONS, strict=True)
+        )
+    )
+
+
 def _recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:
     if not session_id or not any(
         ".options[" in field and ("推奨" in value or re.search(r"\brecommended\b", value, re.IGNORECASE))
@@ -466,6 +513,21 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         )
     question_tool = "request_user_input" if is_codex else "AskUserQuestion"
     if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
+        if _policy_approval_form_invalid(tool_input):
+            return Decision(
+                block=_block_notice(
+                    "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
+                    fix=(
+                        "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
+                        "選択肢「この方針で進める」（説明「送った方針のとおりに着手する」）と"
+                        "「修正して進める」（説明「修正点を自由記述で伝える」）の2つにしてください（推奨の付記は付けない）。"
+                        f"方針の識別に修飾が必要なら、「2件目の」など{_POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
+                        "修飾は文字と数字だけで書き、改行、読点、列挙記号、括弧、述語を含む文は入れないでください。"
+                        "方針の項目と技術の選択は、質問の前に送る材料（`send_to_user`など）に書いてください。"
+                        "本人固有の論点は、承認より前に別の呼び出しで尋ねてください。"
+                    ),
+                )
+            )
         if not is_codex and _external_source_review_needed(session_id, tool_input):
             return Decision(
                 block=_block_notice(
