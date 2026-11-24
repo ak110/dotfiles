@@ -589,7 +589,7 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
 
 NOTIFIED_KEY = "operation_skills_notified"
 _OBSERVED_KEY = "operation_skills_observed"
-_SELF_CHECKED_KEY = "operation_skills_self_checked"
+SELF_CHECKED_KEY = "operation_skills_self_checked"
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
@@ -621,25 +621,19 @@ def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
     return texts
 
 
-def unconfirmed_skills_text(session_id: str, subject: str) -> list[str]:
-    listed: list[str] = []
+def unconfirmed_skills(session_id: str, subject: str) -> list[str]:
+    """案内したのに起動を確認できず、点検でまだ確認を促していないスキル名を返す。  pyfltr: allow-comment
 
-    def update(state: dict) -> dict | None:
-        delivered, observed, checked = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY), state.get(_SELF_CHECKED_KEY)
-        advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
-        done = observed.get(subject, []) if isinstance(observed, dict) else []
-        checked = dict(checked) if isinstance(checked, dict) else {}
-        seen = [value for value in checked.get(subject, []) if isinstance(value, str)]
-        listed.extend(name for name in advised if isinstance(name, str) and name not in done and name not in seen)
-        if not listed:
-            return None
-        checked[subject] = [*seen, *listed]
-        state[_SELF_CHECKED_KEY] = checked
-        return state
-
-    if session_id:
-        update_state(session_id, update)
-    return [f"スキル`{name}`の起動の案内" for name in listed]
+    促し終えた記録は、点検の通知の配送時に`SELF_CHECKED_KEY`へ入る（通知が採用されなければ次の点検で再び返す）。
+    """
+    if not session_id:
+        return []
+    state = read_state(session_id)
+    delivered, observed, checked = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY), state.get(SELF_CHECKED_KEY)
+    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
+    done = observed.get(subject, []) if isinstance(observed, dict) else []
+    seen = checked.get(subject, []) if isinstance(checked, dict) else []
+    return [name for name in advised if isinstance(name, str) and name not in done and name not in seen]
 
 
 def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
@@ -666,7 +660,7 @@ def forget_subject(session_id: str, subject: str) -> None:
 
     def forget(state: dict) -> dict | None:
         updates = {}
-        for key in (NOTIFIED_KEY, _OBSERVED_KEY, _SELF_CHECKED_KEY):
+        for key in (NOTIFIED_KEY, _OBSERVED_KEY, SELF_CHECKED_KEY):
             records = state.get(key)
             if isinstance(records, dict) and subject in records:
                 updates[key] = {name: value for name, value in records.items() if name != subject}

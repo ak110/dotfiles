@@ -513,6 +513,16 @@ def test_self_check_lists_skipped_notices_once() -> None:
     assert first is not None
     assert "資料を取得せずに報告した" in first and "agent-basics:search" in first
     progress_self_check.release_reservations()
-    second = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 3 * _INTERVAL)
+    second = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + _INTERVAL + 1)
     assert second is not None
-    assert "対応を確認できていない通知" not in second
+    assert "資料を取得せずに報告した" in second and "agent-basics:search" in second
+    notice_module.record_delivery(second)
+    third = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 3 * _INTERVAL)
+    assert third is not None
+    assert "対応を確認できていない通知" not in third
+    assert not notice_module.consume_resend(sid, "main", "test_resend", "別の本文", label="資料を取得せずに報告した")
+    assert notice_module.consume_resend(sid, "main", "test_resend", "別の本文", label="資料を取得せずに報告した")
+    notice_module.record_delivery(third)
+    fourth = progress_self_check.claim_notice({"session_id": sid}, now=1000.0 + 5 * _INTERVAL)
+    assert fourth is not None
+    assert "資料を取得せずに報告した" in fourth and "agent-basics:search" not in fourth

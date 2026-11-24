@@ -313,11 +313,15 @@ _RESEND_LABELS = {
 }
 
 
-def _resent(payload: dict, session_id: str, kind: str, text: object) -> bool:
+def _resent(payload: dict, session_id: str, kinds: list[str], text: object) -> bool:
     if not isinstance(text, str) or not session_id:
         return False
     return _notice.consume_resend(
-        session_id, _agent_id.resolve_hook_agent_id(payload), _RESEND_KEY, f"{kind}\n{text}", label=_RESEND_LABELS[kind]
+        session_id,
+        _agent_id.resolve_hook_agent_id(payload),
+        _RESEND_KEY,
+        f"{'+'.join(kinds)}\n{text}",
+        label="、".join(_RESEND_LABELS[kind] for kind in kinds),
     )
 
 
@@ -357,7 +361,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         from agent_toolkit._hooks.review_receipt import missing_before_response  # pylint: disable=import-outside-toplevel
 
         if (missing := missing_before_response(payload, session_id, tool_input)) and not _resent(
-            payload, session_id, "review-receipt", tool_input.get("command")
+            payload, session_id, ["review-receipt"], tool_input.get("command")
         ):
             return Decision(
                 block=_block_notice(
@@ -390,22 +394,22 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                     fix="未回収の結果を`atk agents wait`で受け取り、応答待ちの担当へ指示を返す。",
                 )
             )
-        if (unread := unread_evidence(payload, session_id, message)) and not _resent(
-            payload, session_id, "unread-evidence", message
-        ):
-            return Decision(
-                block=_block_notice(
+        reasons: list[tuple[str, str, str]] = []
+        if unread := unread_evidence(payload, session_id, message):
+            reasons.append(
+                (
+                    "unread-evidence",
                     "画面へ送る根拠に未取得の退避出力がある。",
-                    fix=f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。{_RESEND_FIX}",
+                    f"`{unread}`の全文を取得するか、取得済みの限定した根拠へ置き換える。",
                 )
             )
-        if (playbook := missing_completion_before_report(payload, session_id, message)) and not _resent(
-            payload, session_id, "completion-playbook", message
-        ):
+        if playbook := missing_completion_before_report(payload, session_id, message):
+            reasons.append(("completion-playbook", "作業完了報告の手順書の取得を確認できない。", f"`{playbook}`を全文読む。"))
+        if reasons and not _resent(payload, session_id, [kind for kind, _, _ in reasons], message):
             return Decision(
                 block=_block_notice(
-                    "作業完了報告の手順書の取得を確認できない。",
-                    fix=f"`{playbook}`を全文読む。{_RESEND_FIX}",
+                    "".join(body for _, body, _ in reasons),
+                    fix="".join(fix for _, _, fix in reasons) + _RESEND_FIX,
                 )
             )
     if (

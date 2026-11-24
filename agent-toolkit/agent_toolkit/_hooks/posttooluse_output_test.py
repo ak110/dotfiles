@@ -110,6 +110,45 @@ def test_unread_evidence_block_passes_once_on_resend(tmp_path, capsys):
     assert ["未取得の退避出力" in output for output in outputs] == [True, False, True]
 
 
+def test_stacked_send_blocks_pass_together_on_one_resend(tmp_path, capsys):
+    from agent_toolkit._hooks import termination_evidence  # pylint: disable=import-outside-toplevel
+
+    trace = tmp_path / "trace.jsonl"
+    trace.write_text("", encoding="utf-8")
+    source = tmp_path / "saved.txt"
+    source.write_text("先頭\n残り\n", encoding="utf-8")
+    base = {"session_id": "stacked-resend", "transcript_path": str(trace), "cwd": str(tmp_path)}
+    start = {
+        **base,
+        "tool_name": "Skill",
+        "tool_use_id": "start",
+        "tool_input": {"skill": "agent-toolkit:atk-mode", "args": "process-wi"},
+    }
+    termination_evidence.observe_tool(json.dumps(start), after=False)
+    termination_evidence.observe_tool(json.dumps({**start, "tool_response": "起動"}), after=True)
+    shell = {
+        **base,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf trial"},
+        "tool_response": {"persistedOutputPath": str(source)},
+    }
+    assert posttooluse.main(json.dumps(shell)) == 0
+    capsys.readouterr()
+    send = {
+        **base,
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+        "tool_input": {"message": f"## 作業完了報告\n完了: `{source}`で対象がなかった。"},
+    }
+    outputs = []
+    for _ in range(2):
+        assert dispatch.main(json.dumps(send)) == 0
+        outputs.append(capsys.readouterr().out)
+    assert "未取得の退避出力" in outputs[0] and "作業完了報告の手順書" in outputs[0]
+    second = json.loads(outputs[1]) if outputs[1].strip() else {}
+    assert second.get("hookSpecificOutput", {}).get("permissionDecision") != "deny"
+
+
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])
 def test_review_update_requires_documents_from_wait_envelope(tmp_path, capsys, envelope):
     root = tmp_path / "agent-basics"

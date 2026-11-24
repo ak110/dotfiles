@@ -277,8 +277,8 @@ def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, la
             if label:
                 passed = state.get(RESEND_PASSED_KEY, {})
                 passed = dict(passed) if isinstance(passed, dict) else {}
-                labels = [value for value in passed.get(actor, []) if isinstance(value, str)]
-                passed[actor] = [*dict.fromkeys([*labels, label])][-limit:]
+                entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
+                passed[actor] = [*entries, f"{label}\n{fingerprint}"][-limit:]
                 state[RESEND_PASSED_KEY] = passed
         else:
             values.append(fingerprint)
@@ -289,20 +289,33 @@ def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, la
     return repeated if update_state(session_id, update) else True
 
 
-def take_resend_passed(session_id: str, actor: str) -> list[str]:
-    taken: list[str] = []
+RESEND_ACKED_KEY = "resend_passed_acked_by_actor"
+
+
+def pending_resend_passed(session_id: str, actor: str) -> list[str]:
+    """再発行で通した記録のうち、点検でまだ確認を促していないものを返す。  pyfltr: allow-comment
+
+    促し終えた記録は、点検の通知の配送記録（`RESEND_ACKED_KEY`）を見てここで片付ける。
+    通知が最終出力へ採用されなかった記録は残し、次の点検でもう一度列挙する。
+    """
+    pending: list[str] = []
 
     def update(state: dict) -> dict | None:
-        passed = state.get(RESEND_PASSED_KEY)
-        if not isinstance(passed, dict) or not passed.get(actor):
+        passed, acked = state.get(RESEND_PASSED_KEY), state.get(RESEND_ACKED_KEY)
+        passed = passed if isinstance(passed, dict) else {}
+        acked = acked if isinstance(acked, dict) else {}
+        entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
+        done = acked.get(actor, [])
+        pending.extend(value for value in entries if value not in done)
+        if not done:
             return None
-        taken.extend(value for value in passed[actor] if isinstance(value, str))
-        state[RESEND_PASSED_KEY] = {key: value for key, value in passed.items() if key != actor}
+        state[RESEND_PASSED_KEY] = {**passed, actor: list(pending)}
+        state[RESEND_ACKED_KEY] = {key: value for key, value in acked.items() if key != actor}
         return state
 
     if session_id:
         update_state(session_id, update)
-    return taken
+    return pending
 
 
 def block_formatter(hook_id: str) -> Callable[..., str]:
