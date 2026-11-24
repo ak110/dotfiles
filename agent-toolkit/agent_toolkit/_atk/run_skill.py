@@ -506,7 +506,7 @@ def _drain_output(readers: list[threading.Thread], log: typing.TextIO, lock: thr
                 log,
                 f"出力の読み取りを打ち切った: 子セッションの終了から{OUTPUT_DRAIN_SECONDS:g}秒以内にEOFが届かなかった"
                 "（出力のパイプを保持したまま残る子孫プロセスがある）。"
-                "次の操作: 当該セッションの記録で子孫の実行識別子を確認し、終了状態を回収してから再実行する",
+                "次の操作: このセッションの記録で子孫の実行識別子を確認し、終了状態を回収してから再実行してください",
             )
 
 

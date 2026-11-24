@@ -198,9 +198,9 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 session,
                 wrap_delivery_body(
                     "直前のturnはClaudeの接続の失敗で止まったため、接続先を切り替えて同じ会話を再開した。"
-                    "この会話に残っている操作と成果物が実際の進み具合である。それを確かめて残る作業を続け、所定の返却形式を返せ。"
-                    "この会話に操作と成果物が残っていなければ、依頼を最初から実行せよ。"
-                    "接続の切替と最初からの実行は想定外事象として報告するな。"
+                    "この会話に残っている操作と成果物が実際の進み具合である。それを確かめて残る作業を続け、所定の返却形式を返してください。"
+                    "この会話に操作と成果物が残っていなければ、依頼を最初から実行してください。"
+                    "接続の切替と最初からの実行は想定外事象として報告しないでください。"
                 ),
             )
             return
@@ -312,13 +312,13 @@ class ManagerResume(manager_registry.ManagerRegistry):
                 (
                     "あなたが起動した子は終了した。\n"
                     f"終了したsession/thread: {', '.join(identifiers)}\n"
-                    "各子の結果を受け取り、残る工程を続けて所定の返却形式を返せ。"
+                    "各子の結果を受け取り、残る工程を続けて所定の返却形式を返してください。"
                     if identifiers
-                    else "直前のturnの返却本文を確認せよ。"
+                    else "直前のturnの返却本文を確認してください。"
                 )
                 + (
                     "\n`send_message`で自分宛てに送った本文は委譲元へ届いていない。"
-                    "送ろうとした内容の全文を最終応答へ書いて返せ。"
+                    "送ろうとした内容の全文を最終応答へ書いて返してください。"
                     if repair_message
                     else ""
                 )
@@ -592,6 +592,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
     ) -> tuple[PendingResume, int]:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
+        if session_id in self._force_stopping:
+            raise ResumeDeferred("強制停止中のため再開は未配送です", next_action="強制停止の結果を確認してから追送する")
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions.pop(session_id, None)
         resume_prompt = ResumePrompt(prompt)

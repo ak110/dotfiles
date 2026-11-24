@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 import pathlib
 import subprocess
@@ -11,12 +10,12 @@ from typing import Any
 import pytest
 
 from agent_toolkit import atk
-from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._agents_server import commands as _agents
 from agent_toolkit._atk import worktree_stash as _worktree_stash
+from agent_toolkit._atk.managed_temp import auto_sweep, sweep
 from agent_toolkit._common import wait_schedule as _wait_schedule
 from agent_toolkit._hooks import user_prompt_submit
 from agent_toolkit._testing.atk_support import _FIXED_DT, _isolate_agent_and_managed_temp_environment
-from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 __all__ = ["_isolate_agent_and_managed_temp_environment"]
 
@@ -151,53 +150,43 @@ class TestWaitScheduleParser:
         assert payload["cron"] == "*/3 * * * *"
         assert payload["prompt"].split("\n", 1)[0] == user_prompt_submit.PERIODIC_RECHECK_MARKER
 
-    def test_sweeps_managed_temp_before_dispatch(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
+    @pytest.mark.parametrize("argv", [["wait-schedule"], ["agents", "wait"]])
+    def test_requests_background_sweep_before_dispatch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, argv: list[str]
     ) -> None:
-        calls: list[datetime.datetime] = []
+        calls: list[object] = []
 
-        def fake_sweep(*, now: datetime.datetime) -> _managed_temp.SweepResult:
-            calls.append(now)
-            return _managed_temp.SweepResult([], ())
+        def dispatch(_argument: object) -> str:
+            calls.append("dispatch")
+            return "*/3 * * * *"
 
-        setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", fake_sweep)
+        def dispatch_agents(argument: object) -> int:
+            dispatch(argument)
+            return 0
+
+        monkeypatch.setattr(auto_sweep, "schedule", calls.append)
+        monkeypatch.setattr(_wait_schedule, "get_schedule", dispatch)
+        monkeypatch.setattr(_agents, "dispatch", dispatch_agents)
         with pytest.raises(SystemExit) as exc_info:
-            atk.main(["wait-schedule"], home=tmp_path, now=_FIXED_DT)
+            atk.main(argv, home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
-        assert calls == [_FIXED_DT]
+        assert calls == [_FIXED_DT, "dispatch"]
 
-    @pytest.mark.parametrize(
-        ("delegated_session", "expects_warning"),
-        [(None, True), ("1", False), ("other", True)],
-    )
-    def test_sweep_failure_warning_depends_on_delegated_session(
-        self,
-        delegated_session: str | None,
-        expects_warning: bool,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: pathlib.Path,
-        capsys: pytest.CaptureFixture[str],
+    def test_sweep_worker_start_failure_warns_without_blocking_dispatch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
-        monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+        def fail() -> None:
+            raise OSError("起動の失敗")
+
+        monkeypatch.setattr(sweep, "automatic_sweep_status", lambda _now: (True, False))
+        monkeypatch.setattr(auto_sweep, "_start_worker", fail)
         monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "*/3 * * * *")
-        setattr_in_managed_temp_modules(
-            monkeypatch,
-            "sweep_managed_temp",
-            lambda *, now: _managed_temp.SweepResult([], ((tmp_path / "orphan", "削除失敗"),)),
-        )
-        if delegated_session is None:
-            monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
-        else:
-            monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", delegated_session)
         with pytest.raises(SystemExit) as exc_info:
             atk.main(["wait-schedule"], home=tmp_path, now=_FIXED_DT)
         assert exc_info.value.code == 0
         captured = capsys.readouterr()
         assert json.loads(captured.out)["cron"] == "*/3 * * * *"
-        assert ("自動削除できなかった" in captured.err) is expects_warning
+        assert "自動掃引を起動できなかった" in captured.err
 
     def test_does_not_expose_environment_values(
         self,

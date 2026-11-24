@@ -4,7 +4,7 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 // 入力はClaude Codeの型宣言SessionRateLimit、TurnCompleteInput、StopFailureHookInputに従う。
 const TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
 
-async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }) {
+async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }, owner = "") {
   mock.env(on, env);
   let release: (() => void) | undefined;
   let cleared: (() => void) | undefined;
@@ -24,14 +24,23 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 0, window: 1, percent: 0 }, rateLimits: windows } }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.id", () => ({ value: "usage-test" }));
-  on("fs.write", (_$, e) => { if (request && e.path.includes("rate-limit-")) request.value = e.text; return { value: undefined }; });
-  on("fs.read", (_$, e) => ({ value: e.path.includes("rate-limit-") ? request?.value ?? "consumed" : "consumed" }));
+  on("process.run", () => ({ value: { exitCode: 0, stdout: owner, stderr: "", isStdoutTruncated: false, isStderrTruncated: false } }));
+  on("session.info", () => ({ value: { transcriptPath: "", promptId: prompt.value } }));
+  const requestAt = (path: string) => path.endsWith(".first-prompt.txt") ?
+    path.includes("rate-limit-") ? request : path.includes("server-error-") ? server : undefined : undefined;
+  on("fs.write", (_$, e) => {
+    const file = requestAt(e.path);
+    if (file) file.value = e.text;
+    return { value: undefined };
+  });
+  on("fs.read", (_$, e) => ({ value: requestAt(e.path)?.value ?? "consumed" }));
   on("tool.register", (_$, e) => ({ value: { tool: e.name } }));
   on("turn.complete", () => ({ text: "" }));
   on("turn.start", (_$, e) => ({ turnId: e.turnId }));
   on("ui.status", (_$, e) => { statuses.push(e.text); if (e.text === undefined) cleared?.(); return { value: undefined }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
+  await $.turn.start({ text: "試験", turnId: TURN.turnId });
   return { clock, prompts, statuses };
 }
 
@@ -141,4 +150,146 @@ test("サブエージェントと通常終了は予約しない", async ($, on) 
   await clock.advance(400_000);
   expect(prompts).toEqual([]);
   expect(statuses).toEqual([]);
+});
+
+test("サーバーエラーは1分、5分、15分後に再開し、4回目で停止する", async ($, on) => {
+  const server = { value: "consumed" };
+  const { clock, prompts, statuses } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  for (const [index, delay] of [60_000, 300_000, 900_000].entries()) {
+    server.value = "requested";
+    await $.turn.complete(TURN);
+    expect(server.value).toBe("consumed");
+    await clock.advance(delay - 1);
+    expect(prompts.length).toBe(index);
+    await clock.advance(1);
+    expect(prompts.length).toBe(index + 1);
+    expect(prompts.at(-1)).toContain("サーバー側の一時的なAPIエラー");
+  }
+  server.value = "requested";
+  await $.turn.complete(TURN);
+  expect(statuses.at(-1)).toContain("上限");
+  expect(statuses.at(-1)).toContain("手動で入力");
+  await clock.advance(900_000);
+  expect(prompts.length).toBe(3);
+  await $.turn.start({ text: "復帰", turnId: "manual" });
+  await $.turn.complete({ ...TURN, turnId: "manual" });
+  expect(statuses.at(-1)).toBe(undefined);
+});
+
+test("サーバーエラーでないターンの終了で再開間隔を初期化する", async ($, on) => {
+  const server = { value: "requested" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete(TURN);
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(1);
+  await $.turn.start({ text: prompts[0]!, turnId: "resumed" });
+  await $.turn.complete({ ...TURN, turnId: "resumed" });
+  server.value = "requested";
+  await $.turn.start({ text: "次の試験", turnId: TURN.turnId });
+  await $.turn.complete(TURN);
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(2);
+});
+
+test("待機中に別のターンが始まればサーバーエラーによる再開を取り消す", async ($, on) => {
+  const server = { value: "requested" };
+  const { clock, prompts, statuses } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete(TURN);
+  await clock.advance(1000);
+  await $.turn.start({ text: "中止", turnId: "t2" });
+  await clock.advance(59_000);
+  expect(statuses.at(-1)).toBe(undefined);
+  expect(prompts).toEqual([]);
+});
+
+for (const explicitLimit of [true, false]) {
+  test(`同時に成立した利用上限を優先する（要求ファイル: ${explicitLimit}）`, async ($, on) => {
+    const server = { value: "requested" };
+    const rate = { value: explicitLimit ? "requested" : "consumed" };
+    const windows = [{ kind: "five_hour", percentUsed: explicitLimit ? 99 : 100, resetsAt: "1970-01-01T00:02:00Z" }];
+    const { clock, prompts } = await engine($, on, windows, { HOME: "/home/tester" }, undefined, rate, server);
+    await $.turn.complete(TURN);
+    expect(server.value).toBe("consumed");
+    await clock.advance(120_000);
+    expect(prompts).toEqual([]);
+    await clock.advance(1);
+    expect(prompts.length).toBe(1);
+    expect(prompts[0]).toContain('source="usage-limit-resume"');
+    await clock.advance(900_000);
+    expect(prompts.length).toBe(1);
+  });
+}
+
+test("中止されたターンからサーバーエラーの再開を予約しない", async ($, on) => {
+  const server = { value: "requested" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete({ ...TURN, isAborted: true });
+  expect(server.value).toBe("consumed");
+  await clock.advance(900_000);
+  expect(prompts).toEqual([]);
+});
+
+test("子のターンが始まってもメインのサーバーエラー再開は残る", async ($, on) => {
+  const server = { value: "requested" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete({ ...TURN, reason: "error" });
+  await $.turn.start({ text: "", turnId: "child-turn", agentId: "child" });
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(1);
+});
+
+test("turn.completeより後に届いたStopFailureの要求でも再開する", async ($, on) => {
+  const server = { value: "consumed" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete({ ...TURN, reason: "error" });
+  server.value = "requested";
+  await clock.advance(250);
+  expect(server.value).toBe("consumed");
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(1);
+});
+
+for (const reason of ["answer", "error"] as const) {
+  test(`旧ターンの遅着要求を新しいメインターンへ引き継がない（${reason}）`, async ($, on) => {
+    const old = { value: "consumed" };
+    const prompt = { value: "first-prompt" };
+    const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, old, prompt);
+    await $.turn.complete({ ...TURN, reason: "error" });
+    prompt.value = "manual-prompt";
+    await $.turn.start({ text: "手動の入力", turnId: "manual" });
+    old.value = "requested";
+    await $.turn.complete({ ...TURN, turnId: "manual", reason });
+    await clock.advance(200_000);
+    expect(prompts).toEqual([]);
+  });
+}
+
+
+for (const [launch, identity] of [
+  ["explicit", { AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID: "coordinator" }],
+  ["picker", { AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM: "launch-token" }],
+] as const) {
+  for (const cause of ["rate_limit", "server_error", "100%"]) {
+    test(`統括の入れ子は自分の要求を読める（${launch}: ${cause}）`, async ($, on) => {
+      const rate = { value: cause === "rate_limit" ? "requested" : "consumed" };
+      const server = { value: cause === "server_error" ? "requested" : "consumed" };
+      const windows = cause === "100%" ? [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }] : [];
+      const env = { ...identity, AGENT_TOOLKIT_PROCESS_LOOP_SESSION: "1", HOME: "/home/tester" };
+      const { clock, prompts } = await engine($, on, windows, env, undefined, rate, server, undefined, "coordinator");
+      await $.turn.complete({ ...TURN, reason: "error" });
+      await clock.advance(300_000);
+      expect(rate.value).toBe("consumed");
+      expect(server.value).toBe("consumed");
+      expect(prompts.length).toBe(1);
+    });
+  }
+}
+
+test("pickerで選んだ統括は使用率100%でも会話内の再開を予約しない", async ($, on) => {
+  const env = { AGENT_TOOLKIT_PROCESS_LOOP_SESSION: "1", AGENT_TOOLKIT_PROCESS_LOOP_SESSION_CLAIM: "launch-token" };
+  const windows = [{ kind: "five_hour", percentUsed: 100, resetsAt: "1970-01-01T00:00:01Z" }];
+  const { clock, prompts } = await engine($, on, windows, env, undefined, undefined, undefined, undefined, "usage-test");
+  await $.turn.complete(TURN);
+  await clock.advance(300_000);
+  expect(prompts).toEqual([]);
 });

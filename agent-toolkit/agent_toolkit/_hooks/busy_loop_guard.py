@@ -99,7 +99,7 @@ def terminate(session_id: str, cause: str, log_decision: str, log_context: Mappi
         lines.append(
             "次の操作: このセッションを操作できる端末でCtrl+Cを押して反復を中断してください。"
             f"端末を操作できない場合は、実行環境の管理者へ会話ID `{session_id}` を伝え、"
-            "当該セッションの終了を依頼してください。"
+            "そのセッションの終了を依頼してください。"
         )
     return status, "\n".join(lines)
 

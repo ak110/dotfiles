@@ -7,6 +7,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._hooks.pretooluse import commit_identity
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _denial_reason, _write_claude_transcript
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
@@ -49,8 +50,8 @@ def test_bash_without_commit_message_does_not_acquire_attribution_inputs(
     def unexpected(*_args: object, **_kwargs: object) -> None:
         pytest.fail("帰属の対象が無いBashで依存情報を取得した")
 
-    monkeypatch.setattr(pretooluse, "_hook_observed_identity", unexpected)
-    monkeypatch.setattr(pretooluse, "_claude_commit_attribution_disabled", unexpected)
+    monkeypatch.setattr(commit_identity, "hook_observed_identity", unexpected)
+    monkeypatch.setattr(commit_identity, "claude_commit_attribution_disabled", unexpected)
     payload = {"tool_name": "Bash", "tool_input": {"command": command}, "isSidechain": True, **extra_payload}
     assert pretooluse.main(json.dumps(payload)) == 0
     captured = capsys.readouterr()

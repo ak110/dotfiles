@@ -104,7 +104,7 @@ class TestEntrypointExceptionStages:
         assert auto_message_opening_attributes(context) == {"source": "hook", "kind": "warn"}
         assert f"agent-toolkitの自動処理{subcommand}で想定外のエラーが起きた: RuntimeError: boom" in context
         assert "この診断は元の操作の成否を示さない" in context
-        assert "元の操作と自動処理の成否を分けて確認せよ" in context
+        assert "元の操作と自動処理の成否を分けて確認してください" in context
         assert "再発を待たずに" in context
         assert "認可の範囲内で自ら是正" in context
         assert not result.stderr

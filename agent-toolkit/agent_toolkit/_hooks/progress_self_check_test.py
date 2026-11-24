@@ -432,7 +432,7 @@ def test_notice_distinguishes_partial_failed_and_absent_observations(
     expected = {
         "partial": "部分観測",
         "observe-error": "取得できない（PermissionError: denied）",
-        "unreadable-hooks": "hook所要の記録を読めない",
+        "unreadable-hooks": "hook所要時間の記録を読めない",
         "no-hooks": "直近のhook所要の記録は無い",
     }[case]
     assert expected in notice

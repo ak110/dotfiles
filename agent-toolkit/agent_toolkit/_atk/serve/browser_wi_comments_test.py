@@ -58,7 +58,7 @@ async def test_user_comment_ui_empty_save_removes_section(browser_harness: _Brow
 async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updates(
     browser_harness: _BrowserHarness,
 ) -> None:
-    """エージェント由来UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
+    """sourceを持つAWIの画面の追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。"""
     harness = browser_harness
     page = harness.page
     path = _entry_path(harness.root, "awi.md")

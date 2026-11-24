@@ -206,3 +206,17 @@ def test_entries_reports_os_error_without_treating_unknown_kind_as_warning(
             ),
         }
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("presence", "expected"), [("set", "with-source.md"), ("unset", "without-source.md")])
+async def test_entries_api_filters_by_source_presence(tmp_path: pathlib.Path, presence: str, expected: str) -> None:
+    frontmatter = "type: awi\nstate: inbox\ntarget_repo: example/repo\n"
+    entry_path(tmp_path, "with-source.md").write_text(
+        f"---\n{frontmatter}source: add-awi-by-user\n---\n\n本文\n", encoding="utf-8"
+    )
+    entry_path(tmp_path, "without-source.md").write_text(f"---\n{frontmatter}---\n\n本文\n", encoding="utf-8")
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    response = await app.test_client().get(f"/api/entries?status=inbox&type=awi&source_kind={presence}")
+    assert response.status_code == 200
+    assert [item["filename"] for item in (await response.get_json())["entries"]] == [expected]

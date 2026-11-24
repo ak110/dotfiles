@@ -156,9 +156,9 @@ _PERSONAL_PROJECTS_OSS: frozenset[str] = frozenset({"pyfltr", "pytilpack"})
 # 追加時は本ファイルのテスト群 (`_PERSONAL_PROJECTS_PRIVATE` との非衝突など) を確認する。
 _EXTERNAL_CLI_ALLOWED: frozenset[str] = frozenset({"atk"})
 
-_DOTFILES_SPECIFIC_NAMES_FIX = "検出した固有名を一般化した表現へ置き換え、同じ編集ツールで配布物を再編集せよ。"
+_DOTFILES_SPECIFIC_NAMES_FIX = "検出した固有名を一般化した表現へ置き換え、同じ編集ツールで配布物を再編集してください。"
 _POSSIBLY_DOTFILES_NAMES_FIX = (
-    "検出した各参照が意図した正確なOSS参照か確かめよ。該当しなければ一般化した表現へ置き換えて再編集せよ。"
+    "検出した各参照が意図した正確なOSS参照か確かめてください。該当しなければ一般化した表現へ置き換えて再編集してください。"
 )
 
 

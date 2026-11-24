@@ -3,12 +3,14 @@
 # 対象tool集合の追加漏れと内部出力の分離を契約として検証する。
 # pylint: disable=protected-access
 
+import hashlib
 import json
 
 import pytest
 
 from agent_toolkit._atk import managed_temp
-from agent_toolkit._hooks.pretooluse import dispatch, operation_skills
+from agent_toolkit._common.session_state import read_state, update_state
+from agent_toolkit._hooks.pretooluse import dispatch, operation_skills, user_facing_checks
 from agent_toolkit._hooks.pretooluse.decision import Decision
 
 
@@ -125,7 +127,7 @@ def test_explicit_application_returns_original_when_decision_paraphrases_it(tmp_
     assert _reason(payload, tool, inputs, capsys) is None
 
 
-@pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
 def test_quoted_material_can_recover_with_identical_input(tool: str, capsys) -> None:
 
     text = '原文: "Now the requested action has failed because the remote process no longer exists."'
@@ -137,7 +139,25 @@ def test_quoted_material_can_recover_with_identical_input(tool: str, capsys) -> 
     assert _reason(payload, tool, inputs, capsys) is None
 
 
-@pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("intervening_read", [False, True])
+def test_recovery_uses_fingerprint_saved_before_move(tool: str, intervening_read: bool, capsys) -> None:
+    session_id = "before-language-check-move"
+    payload = {"session_id": session_id, "agent_id": "one"}
+    inputs = _input(tool, '原文: "Now the remote process no longer exists and the requested action has failed."')
+    saved_key = "response_language_retry_by_actor"
+    encoded = json.dumps([tool, inputs], sort_keys=True, ensure_ascii=False).encode()
+    saved_retry = {"one": hashlib.sha256(encoded).hexdigest(), "other": "preserve"}
+    assert update_state(session_id, lambda state: {**state, saved_key: saved_retry})
+    if intervening_read:
+        assert _reason(payload, "Read", {}, capsys) is None
+        assert read_state(session_id)[saved_key] == {"other": "preserve"}
+        assert _reason(payload, tool, inputs, capsys)
+    else:
+        assert _reason(payload, tool, inputs, capsys) is None
+
+
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
 def test_own_english_explanation_remains_blocked_on_identical_retry(tool: str, capsys) -> None:
 
     inputs = _input(tool, "Now I will explain the implementation and ask you to approve the following plan.")
@@ -146,7 +166,7 @@ def test_own_english_explanation_remains_blocked_on_identical_retry(tool: str, c
         assert _reason(payload, tool, inputs, capsys)
 
 
-@pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
 def test_english_explanation_outside_material_remains_blocked(tool, capsys):
 
     text = '原文: "The material is preserved." Now I will explain the implementation in English.'
@@ -155,7 +175,7 @@ def test_english_explanation_outside_material_remains_blocked(tool, capsys):
         assert _reason(payload, tool, _input(tool, text), capsys)
 
 
-@pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
 def test_non_text_input_change_invalidates_recovery(tool, capsys):
 
     text = '原文: "Now the requested action has failed because the remote process no longer exists."'
@@ -176,7 +196,7 @@ def test_language_recovery_is_scoped_to_actor_tool_and_body(capsys) -> None:
     assert _reason(first, "ExitPlanMode", _input("ExitPlanMode", text + "原文。 "), capsys)
 
 
-@pytest.mark.parametrize("tool", sorted(dispatch._USER_FACING_TEXT_TOOL_NAMES))
+@pytest.mark.parametrize("tool", sorted(user_facing_checks.USER_FACING_TEXT_TOOL_NAMES))
 def test_intervening_operation_invalidates_recovery(tool, capsys) -> None:
 
     text = '原文: "Now the remote process no longer exists and the requested action has failed."'

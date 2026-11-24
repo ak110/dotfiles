@@ -29,6 +29,7 @@ from agent_toolkit._agents_server import (
     wait_summary,
     wait_targets,
 )
+from agent_toolkit._agents_server.tool_descriptions import HANDOFF_MODEL_INPUTS
 from agent_toolkit._atk import managed_temp as _managed_temp
 from agent_toolkit._atk.environment import is_agent_environment, is_human_terminal
 from agent_toolkit._common import delegated_session, private_directory, session_registry
@@ -49,7 +50,8 @@ def _api_retry_next_action(seconds: int) -> str:
     return (
         f"委譲先のAPI再試行が{seconds}秒続き、出力が止まっている。"
         "`show`で`api_error`と活動を確かめ、回復しなければ`kill`で止めてから`start`の`handoff_from`で後任を起動する。"
-        "待つ場合は`atk agents wait`を再実行する（同じ再試行は再通知しない）"
+        + HANDOFF_MODEL_INPUTS
+        + "待つ場合は`atk agents wait`を再実行する（同じ再試行は再通知しない）"
     )
 
 

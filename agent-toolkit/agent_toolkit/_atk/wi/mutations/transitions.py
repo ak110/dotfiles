@@ -331,7 +331,7 @@ def _warn_skipped_processing(filenames: list[str]) -> None:
     for filename in filenames:
         _outcome.report_warning(
             f"{filename}は作業を示すcommitがあるのに処理中（processing）を経ずにinboxから終了した",
-            next_action="次回から項目の作業に着手する時点で`atk wi start-processing <ファイル名>`を実行せよ",
+            next_action="次回から項目の作業に着手する時点で`atk wi start-processing <ファイル名>`を実行してください",
         )
 
 

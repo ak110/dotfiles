@@ -663,6 +663,8 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
             _outcome.report_failure(f"編集を拒否した: {error.reason}", next_action=error.next_action)
             sys.exit(1)
         _outcome.report_success(f"編集前の検証が成立した（--dry-runのため保存していない）: {path.name}")
+        if not is_uwi:
+            _add.print_deferral_candidates([message], [str(pathlib.Path(args.body_file).expanduser().resolve())])
         return
     finalized_content: dict[str, str] = {}
     try:
@@ -696,6 +698,11 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     )
     if editing_body:
         _add.print_entry_details(details)
+        if not is_uwi:
+            _add.print_deferral_candidates(
+                [message if message is not None else finalized_content["content"]],
+                [str(pathlib.Path(args.body_file).expanduser().resolve()) if args.body_file is not None else path.name],
+            )
     if args.cooldown_until is not None:
         _print_cooldown_result(finalized_content["content"])
 
@@ -731,7 +738,8 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
         verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
 
     original = snapshot.decode("utf-8")
-    if observation or is_agent_environment():
+    append_to_results = observation or is_agent_environment()
+    if append_to_results:
         try:
             before_user_comment, saved_user_comment = _user_comment.split_before_user_comment(original)
         except _user_comment.UserCommentError:
@@ -780,3 +788,4 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
         path,
         expected_body=finalized_content["content"],
     )
+    _add.print_deferral_candidates([finalized_content["content"]], [path.name], previous=original)

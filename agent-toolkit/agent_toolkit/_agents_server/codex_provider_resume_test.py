@@ -179,7 +179,12 @@ async def test_opaque_state_switch_collects_result_and_hands_off(monkeypatch, tm
         assert not any(method == "thread/resume" and params["modelProvider"] != primary for method, params in client.requests)
         assert session.codex_model_provider == primary
         assert record.read_bytes() == original
-        successor = await root.start_handoff(session.session_id)
+        successor = await root.start_handoff(
+            session.session_id,
+            model_type="codex:gpt-6-sol/high",
+            model_override="user_instruction",
+            model_override_evidence="テストの依頼者が前任から後任への引継ぎで同じモデルを指定した",
+        )
         prompt = root.sessions[successor["session_id"]].prompt
         assert "検証は最後にまとめる" in prompt and "編集を完了し、検証が残っている" in prompt
         assert "完了済みの操作" in prompt and str(record) in prompt

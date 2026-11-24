@@ -48,7 +48,7 @@ continuations:
 | キー | 値と意味 |
 | --- | --- |
 | `mode` | `delegate`・`explore`・`shell`・`write`のいずれか。後の3種は同名のmodeの軽量な起動条件を使う |
-| `model_type` | `execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`。起動時の明示の指定による上書きを保つ |
+| `model_type` | `execute`・`review`・`review_fast`・`chores`・`chores_fast`・`orchestrate`・`write`。起動時の上書きは `agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」の条件に従う |
 | `required_inputs` | 全ての受領条件で必須の入力名の配列 |
 | `optional_inputs` | 任意か条件付きで必要な入力名の配列。条件は本文の`## 入力`へ書く |
 | `writes_worktree` | 起動cwdの作業ツリーへ書く役割は`true`、書き込み先をその外へ限った役割は`false` |

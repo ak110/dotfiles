@@ -12,8 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 _CONTINUATION = (
     '<atk-auto source="dotfiles" kind="daemon-recovery">'
     "ローカルdaemonの再起動後に同じ会話を自動再開した。"
-    "保存された元の要求・作業記録と未回収の子孫の結果を確認し、未完了の仕事を続行せよ。"
-    "実行済み操作は結果を確認してから扱い、応答喪失だけを理由に再実行しない。"
+    "保存された元の要求・作業記録と未回収の子孫の結果を確認し、未完了の仕事を続行してください。"
+    "実行済み操作は結果を確認してから扱い、応答喪失だけを理由に再実行しないでください。"
     "</atk-auto>"
 )
 _RESUME_FIELDS = frozenset(

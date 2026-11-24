@@ -7,7 +7,7 @@ import shlex
 import pytest
 
 from agent_toolkit._hooks import posttooluse, pretooluse, work_contract
-from agent_toolkit._hooks.pretooluse import dispatch, large_reads, operation_skills
+from agent_toolkit._hooks.pretooluse import commit_identity, large_reads, operation_skills
 from agent_toolkit._hooks.pretooluse.large_reads import bash_read_paths, check_large_bash_read, sed_read_range
 
 _THRESHOLD = 48 * 1024
@@ -178,7 +178,7 @@ def test_conditional_session_record_display_keeps_reference_guidance(tmp_path, m
 
 def _reads_commit_message_rules(command: str, cwd: str) -> bool:
     paths = (path for group in bash_read_paths(command, cwd, include_partial=True) for path in group)
-    return dispatch._reads_commit_message_rules(paths)  # pylint: disable=protected-access
+    return commit_identity.reads_commit_message_rules(paths)
 
 
 @pytest.mark.parametrize("separator", [[], ["--"]])

@@ -186,7 +186,7 @@ class TestAgentToolkitDotfilesNamesCheck:
         assert result.returncode == 0
         message = _get_additional_context(result)
         assert name in message
-        assert "せよ" in message
+        assert "再編集してください" in message
         assert '<atk-auto source="dotfiles/claude_hook_pretooluse"' in message
 
     # test-copy-contract: 規範を持つ入口のスキルへのEditのnew_stringを入力し、個人固有名の警告を観測する。

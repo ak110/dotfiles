@@ -141,9 +141,9 @@
 1. 元の要求と実施結果・根拠を比べ、未達、未確認、持ち越しを成果と分ける。
    事実、他者の報告、推測、自分の判断を分け、未確定のユーザー固有の判断は確認の手順へ渡す。
 2. 原稿をファイルへ保存し、dry-runで検証する。
-   新規は`atk wi add --type=uwi --question-type=post-approval --dry-run --body-file <原稿の絶対パス> --source <起動スキル由来のsource>`を使う。
+   新規は`atk wi add --type=uwi --question-type=post-approval --dry-run --body-file <原稿の絶対パス> --source <起動スキルに対応するsource>`を使う。
    更新は`atk wi edit <UWI名> --dry-run --body-file <原稿の絶対パス>`を使う。
-   sourceは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」に従い、原稿のfrontmatterで指定済みなら`--source`を省ける。
+   sourceは`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と`source`」に従い、原稿のfrontmatterで指定済みなら`--source`を省ける。
    入力の原稿、抽出の保存先、終了状態、両出力を対応付け、検証か抽出の保存に失敗した結果は使わない。
 3. dry-runの抽出を先に読み、問い、成果の要点、確かめてほしい項目が冒頭だけで分かるかを、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「ユーザーが読む部分の合格基準」で判定する。
    次に全文を読み、`agent-toolkit:atk-mode/references/awi-body.md`「通常AWIの本文」の自己完結、節の間の重複、原稿と抽出の一致を確かめる。

@@ -659,6 +659,18 @@ def _permission_denied(error: OSError | ManagedTempError) -> bool:
     )
 
 
+def automatic_sweep_status(now: datetime.datetime) -> tuple[bool, bool]:
+    state_root = paths.state_root_path()
+    now_ns = _now_ns(now)
+    temp_root = paths.temp_root_path()
+    if not temp_root.exists() and not state_root.exists():
+        return False, False
+    low = _below_floor(temp_root)
+    daily = _sweep_due(state_root, now_ns)
+    pressure = low and _sweep_due(state_root, now_ns, record_name=_PRESSURE_RECORD_NAME, interval_ns=_PRESSURE_INTERVAL_NS)
+    return daily or pressure, low
+
+
 @plugin_root_leases.reuse_process_observation()
 def sweep_managed_temp(*, now: datetime.datetime, max_age_days: int = paths.MAX_AGE_DAYS, force: bool = False) -> SweepResult:
     """一時root直下で配下を含む最終更新から`max_age_days`を超えた対象を削除し、削除結果と失敗を返す。

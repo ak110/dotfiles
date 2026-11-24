@@ -10,7 +10,15 @@ from typing import Any
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from agent_toolkit._agents_server import launch_requests, mcp_tools, record_paths, resume_waits, session_handoff, state
+from agent_toolkit._agents_server import (
+    handoff_next_action,
+    launch_requests,
+    mcp_tools,
+    record_paths,
+    resume_waits,
+    session_handoff,
+    state,
+)
 from agent_toolkit._atk import config
 from agent_toolkit._common import session_registry
 from agent_toolkit._common.next_action import ActionableError
@@ -122,7 +130,12 @@ async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
         _complete(previous, message="最初の応答全文")
         await manager.send_message(previous.session_id, "訂正の全要件")
         _complete(previous, message="確定済み成果と残工程")
-        response = await mcp_tools.start(handoff_from=previous.session_id, model_type=after)
+        response = await mcp_tools.start(
+            handoff_from=previous.session_id,
+            model_type=after,
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが後任のモデルを指定",
+        )
         successor = manager.sessions[response["session_id"]]
         assert successor.model == ("provider/after" if engine == "opencode" else "after") and successor.engine == engine
         assert successor.session_id != previous.session_id
@@ -146,15 +159,16 @@ async def test_handoff_direct_candidate_warning_and_return_to_settings(
         started = await manager.start(before, "元の依頼", str(tmp_path))
         previous = manager.sessions[started["session_id"]]
         _complete(previous, message="残工程")
+        if override is None:
+            with pytest.raises(ActionableError, match="model_override"):
+                await mcp_tools.start(handoff_from=previous.session_id, model_type=override)
+            return
         response = await mcp_tools.start(handoff_from=previous.session_id, model_type=override)
         successor = manager.sessions[response["session_id"]]
         warnings = [item for item in response.get("warnings", []) if item["scope"] == "model-override"]
-        assert bool(warnings) == (override is None)
-        assert successor.model_type == (before if override is None else "chores")
-        assert successor.model == ("before" if override is None else "configured")
-        if warnings:
-            assert before in warnings[0]["message"]
-            assert "元の工程名" in warnings[0]["message"]
+        assert not warnings
+        assert successor.model_type == override
+        assert successor.model == "configured"
 
 
 @pytest.mark.asyncio
@@ -461,3 +475,34 @@ def test_handoff_failure_redacts_saved_diagnostics(
     for name in ("prepare.stdout", "prepare.stderr"):
         saved = (directory / name).read_text(encoding="utf-8")
         assert "fake-output" not in saved and "fake-error" not in saved
+
+
+@pytest.mark.asyncio
+async def test_handoff_guidance_after_direct_model_availability_failure(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, record_extractor: pathlib.Path
+) -> None:
+    del record_extractor
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", "codex:after/medium")
+    async with _manager_with_fake("codex") as (manager, _):
+        monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+        started = await mcp_tools.start(
+            mode="explore",
+            cwd=str(tmp_path),
+            prompt="調査",
+            model_type="codex:luna/medium",
+            model_override="observation",
+            model_override_evidence="公開起動の診断を観測する",
+        )
+        predecessor = manager.sessions[started["session_id"]]
+        error = {"codexErrorInfo": "usageLimitExceeded"}
+        _complete(predecessor, message="残作業", error=error)
+        action = handoff_next_action.result_next_action(
+            {"session_id": predecessor.session_id, "engine": "codex", "status": "failed", "error": error}
+        )
+        assert action is not None
+        assert json.dumps({"handoff_from": predecessor.session_id}, ensure_ascii=False) in action
+        assert all(key in action for key in ("工程名", "model_type", "model_override", "model_override_evidence"))
+        with pytest.raises(ActionableError, match="model_override"):
+            await mcp_tools.start(handoff_from=predecessor.session_id)
+        response = await mcp_tools.start(handoff_from=predecessor.session_id, model_type="chores")
+        assert manager.sessions[response["session_id"]].model == "after"

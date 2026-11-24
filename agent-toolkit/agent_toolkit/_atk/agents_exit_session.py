@@ -309,10 +309,11 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
     if directory is None or not directory.is_dir():
         return
     exit_paths = function_hook_paths(keep_session_id) if keep_session_id else None
+    own_kinds = ("recheck", "rate-limit", "server-error", "compaction", "restart")
     own_paths = (
         {
             *exit_paths,
-            *(directory / f"{kind}-{keep_session_id}.txt" for kind in ("recheck", "rate-limit", "compaction", "restart")),
+            *(directory / f"{kind}-{keep_session_id}.txt" for kind in own_kinds),
         }
         if exit_paths
         else set()
@@ -323,6 +324,7 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
         "request-*.txt",
         "recheck-*.txt",
         "rate-limit-*.txt",
+        "server-error-*.txt",
         "compaction-*.txt",
         "restart-*.txt",
         "ui-request-*.txt",
@@ -334,7 +336,10 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
             if pattern.startswith("ui-requests/") and (path.parent.is_symlink() or path.parent.parent.is_symlink()):
                 continue
             ui_name = re.fullmatch(r"ui-(?:request|response)-(.+)-[a-f0-9]{32}\.txt", path.name)
-            if own_paths and (path in own_paths or ui_name is not None and ui_name[1] == keep_session_id):
+            resume_own = pattern in ("rate-limit-*.txt", "server-error-*.txt") and path.name.startswith(
+                f"{pattern.removesuffix('*.txt')}{keep_session_id}."
+            )
+            if own_paths and (path in own_paths or resume_own or ui_name is not None and ui_name[1] == keep_session_id):
                 if clear:
                     path.unlink(missing_ok=True)
                 continue
@@ -384,7 +389,7 @@ def main() -> int:
     if cleanup["retained"]:
         _outcome.report_warning(
             "終了時に回収できないレーン資源を保持した",
-            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行せよ",
+            next_action=f"{cleanup.get('result_path')}の理由を解消し、同じ所有sessionでatk lane deleteを実行してください",
         )
 
     def _before_signal(target: Target) -> None:

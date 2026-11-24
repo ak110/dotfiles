@@ -44,6 +44,8 @@ def test_public_tools_expose_single_start_with_modes() -> None:
         "summary_policy",
         "label",
         "model_type",
+        "model_override",
+        "model_override_evidence",
         "handoff_from",
         "whole_contract_path",
         "start_observation",
@@ -394,7 +396,6 @@ async def test_start_response_adds_next_action_only_for_failed_start(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: pathlib.Path,
 ) -> None:
-    """起動直後に失敗で終了した応答だけが、結果の受領と別候補での再起動を`next_action`で示す。"""
     manager = SimpleNamespace(
         launcher_session_id=lambda: None,
         start=AsyncMock(return_value={"session_id": "session", "status": status, "label": "担当"}),
@@ -405,7 +406,7 @@ async def test_start_response_adds_next_action_only_for_failed_start(
 
     if expects_next_action:
         assert "atk agents wait" in response["next_action"]
-        assert "`model_type`" in response["next_action"]
+        assert "`error`" in response["next_action"]
     else:
         assert "next_action" not in response
 

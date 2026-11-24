@@ -62,6 +62,7 @@ from agent_toolkit._common import (
 )
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.wi_layout import DATED_NAME
+from agent_toolkit._git import command as git_command
 lazy from agent_toolkit._atk import run_skill_state
 lazy from agent_toolkit._common import windows_job
 
@@ -381,52 +382,17 @@ def _plugin_repository() -> str:
 
 
 def _failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any]) -> str:
-    """配布元で是正するための失敗報告AWIを組み立てる。ユーザー判断が要る点は処理担当がUWIで確認する。"""
-    targets = ", ".join(item["session_id"] for item in manifest["targets"])
-    log = f"実行ログ: {manifest['log_path']}\n" if manifest.get("log_path") else ""
-    # 準備失敗はモデルの実行ログを持たず、manifestに入力と診断を保持する。
-    action = (
-        "実行記録のerrorと、実行ログの終了状態・標準出力・標準エラーを比較する。"
-        if log
-        else "実行記録のerror・targets・preparedから失敗した工程と入力を確認し、"
-        "errorにある不足項目と次の操作に従って入力や読取条件を修正する。"
-    )
-    body = (
-        "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
-        "非同期振り返りが下記の対象セッションを処理できなかった。"
-        "同じ原因の未完了AWIがある間は対象の自動振り返りを止めている。"
-        "AWIがadopted・rejectedで終了した場合、または未完了AWIが無くagent-toolkitの版が変わった場合に再試行する。"
-        "削除だけでは再試行せず、起票済みの同じ失敗は終了AWIを観測するまで再起票しない。\n\n"
-        "## 反映内容と反映先\n\n"
-        "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
-        f"反映先は`{_plugin_repository()}`とする。"
-        "是正にユーザーの判断が要る点があれば、UWIで確認する。\n\n"
-        "## 調査結果と判断根拠\n\n"
-        "失敗理由は振り返りの起動元が記録した値である。"
-        "下記に入力のメタ情報と診断を埋め込んだ。セッション記録の本文は転記していない。\n\n"
-        "## 完成条件\n\n"
-        "埋め込まれた入力と記録状態から合成した再現テストを作り、是正前の失敗と是正後の成功を確認する。"
-        "再現テストで準備から失敗した工程までの成功を確認する。"
-        "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
-        "起票ホストでの実際の再試行は是正を含む版の配布後に行い、処理担当は観測しなくてよい。"
-        "手動で再試行する場合は`atk run-skill agent-toolkit:review-session --args batch`を使う。"
-        "このAWIの終了後、`session_review_auto_start=true`で開始条件を満たす場合に限り、"
-        "セッション開始・終了時に自動起動できる。"
-        "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
-        "## 詳細\n\n"
-        f"失敗理由: {redact_secrets(reason)}\n"
-        f"実行記録: {path}\n"
-        f"{log}"
-        f"次の操作: {action}"
-        "本文の埋め込み情報で足りない場合に限り、起票ホストで不足する情報を取得する。\n"
-        f"対象: {targets}\n"
-        f"\n{run_skill_batch_evidence.failure_details(manifest, PLUGIN_ROOT)}"
-    )
-    metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
-    return f"---\n{metadata}---\n\n{body}"
+    return run_skill_batch_evidence.failure_message(failure_key, reason, path, manifest, _plugin_repository())
 
 
-def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_code: int | None = None) -> None:
+def _failure(
+    manifest: dict[str, Any],
+    path: pathlib.Path,
+    reason: str,
+    *,
+    exit_code: int | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> None:
     signature: list[Any] = [reason.split(":", 1)[0]]
     if signature[0].startswith("run-skill-exit-"):
         signature.append(sorted(item["key"] for item in manifest["targets"]))
@@ -436,14 +402,28 @@ def _failure(manifest: dict[str, Any], path: pathlib.Path, reason: str, *, exit_
         signature.append(normalized)
     failure_key = hashlib.sha256(json.dumps(signature, ensure_ascii=False).encode()).hexdigest()
     writer = session_review.BatchWriter(path)
+    version = run_skill_batch_evidence.plugin_version(PLUGIN_ROOT)
     manifest = writer.fail(
-        failure_key, reason, version=run_skill_batch_evidence.plugin_version(PLUGIN_ROOT), exit_code=exit_code
+        failure_key,
+        reason,
+        version=version,
+        source=run_skill_batch_evidence.plugin_source(PLUGIN_ROOT, version),
+        exit_code=exit_code,
+        diagnostics=diagnostics,
     )
-    saved = _save_failure_report(failure_key, lambda: _failure_message(failure_key, reason, path, manifest))
+    sync_diagnostic = (manifest.get("failure_diagnostics") or {}).get("report_sync", {})
+    defer_push = sync_diagnostic.get("reason") in {
+        "報告の回復を保留",
+        "報告の回復に失敗",
+        "報告用UWIのcommitがリモートへ未到達",
+    }
+    saved = _save_failure_report(
+        failure_key, lambda: _failure_message(failure_key, reason, path, manifest), defer_push=defer_push
+    )
     writer.report_failure(synced=saved)
 
 
-def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
+def _save_failure_report(failure_key: str, message: Callable[[], str], *, defer_push: bool = False) -> bool:
     existing = _failure_entry(failure_key, _ACTIVE_FAILURE_STATES)
     saved = False
     if existing is not None:
@@ -452,7 +432,10 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
             # 同じ原因の是正AWIが未完了なら重複投入せず、保存済みの報告の同期だけを確かめる。
             notes = private_notes.default_private_notes()
             with sync.repo_lock(notes, timeout=30):
-                sync.commit_and_push(notes, "chore: 振り返りの失敗報告を同期", [str(report_path.relative_to(notes))])
+                relative = report_path.relative_to(notes).as_posix()
+                if defer_push:
+                    return git_command.optional_stdout(["show", f"@{{u}}:{relative}"], notes) is not None
+                sync.commit_and_push(notes, "chore: 振り返りの失敗報告を同期", [relative])
             saved = True
         except OSError, ValueError, RuntimeError, subprocess.SubprocessError:
             _LOG.exception("既存の失敗報告を同期できない。Git同期の診断を直してから次回の起動で再同期する: %s", report_path)
@@ -466,8 +449,9 @@ def _save_failure_report(failure_key: str, message: Callable[[], str]) -> bool:
                 target_repo=_plugin_repository(),
                 source=_FAILURE_SOURCE,
                 now=datetime.datetime.now(datetime.UTC),
+                storage=sync.Storage(local_only=defer_push),
             )
-            saved = True
+            saved = not defer_push
         except OSError, ValueError, subprocess.SubprocessError:
             _LOG.exception("振り返りの失敗報告を保存できない。WI保存先を直してから次回の起動で再試行する: %s", failure_key)
             saved = False
@@ -748,14 +732,18 @@ def dispatch(args: argparse.Namespace, execute: Callable[[argparse.Namespace], i
 
 def _finish_batch(manifest: dict[str, Any], path: pathlib.Path) -> int:
     """保存済み範囲の分析と報告の同期を確認して、同じbatchだけを確定する。"""
+    diagnostics: dict[str, Any] | None = None
     try:
-        report_synced = add.has_synced_run_report(
-            private_notes.default_private_notes(), run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE
-        )
-        session_review.BatchWriter(path).complete(report_synced=report_synced)
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        notes = private_notes.default_private_notes()
+        gap = add.check_run_report_sync(notes, run_id=manifest["run_id"], scope=session_review.BATCH_SCOPE, sync_report=True)
+        if gap is not None:
+            # ファイル名やOIDを失敗キーに含めると同じ原因のAWIが重複する。  # pyfltr: allow-comment
+            diagnostics = {"report_sync": {"reason": gap.reason, **gap.detail}}
+            raise ValueError(f"report-unsynced: 報告の同期を確認できない（{gap.reason}）")
+        session_review.BatchWriter(path).complete(report_synced=True)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, filelock.Timeout) as error:
         reason = f"finish: {error}"
-        _failure(manifest, path, reason)
+        _failure(manifest, path, reason, diagnostics=diagnostics)
         outcome.report_failure(
             f"{reason}（実行記録: {path}）",
             next_action=f"分析完了と報告用UWIの同期を確認し、必要なら atk run-skill --resume {manifest['run_id']} で再開する",

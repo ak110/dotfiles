@@ -27,6 +27,11 @@ _PREVIOUS_TABLE = plan_fixture.rows_table(
     ("直接的原因", "原因分析の根拠", "対策", "類似見直し観点", "再発防止策"), plan_fixture.BUG_FILLER
 )
 """6区分化より前にAWIの`## 原因分析`へ置いた5行の表。"""
+_UNTYPED_PREVENTION = (
+    "- 再発防止: `prevention.md`「再発防止を採用しない場合」を改め、"
+    "規範があっても起きた問題には規範の追記以外の対策を付けると書く。"
+)
+_RECORD_UNTYPED = _RECORD.replace(plan_fixture.cause_record_line("再発防止"), _UNTYPED_PREVENTION)
 
 _SECTIONS: dict[str, tuple[str, str | None]] = {
     "valid": (_RECORD, None),
@@ -40,6 +45,17 @@ _SECTIONS: dict[str, tuple[str, str | None]] = {
     "legacy_tables": (plan_fixture.legacy_cause_tables(), "原因分析を廃止した表で書いている"),
     "previous_table": (_PREVIOUS_TABLE, "原因分析を廃止した表で書いている"),
     "short_record": ("誤った設定値を訂正し、期待した値で再検証した。", "`期待:`の行が無い"),
+    "untyped_prevention": (_RECORD_UNTYPED, "`再発防止:`の行が対策の種類の語で始まらない（採る策は`原因の除去`"),
+    "typed_prevention_kinds": (
+        _RECORD.replace(
+            plan_fixture.cause_record_line("再発防止"), "- 再発防止: 自動検出: 保存時に検査する。文書: 実例を載せる。"
+        ),
+        None,
+    ),
+    "not_adopted_kind": (
+        _RECORD.replace(plan_fixture.cause_record_line("再発防止"), "- 再発防止: 被覆 既存の検査が防ぐ。"),
+        None,
+    ),
 }
 """`## 原因分析`の本文と、エージェントの投入を拒否する場合に診断へ含まれる文言。"""
 
@@ -243,3 +259,30 @@ def test_add_accepts_undetermined_cause_from_human(
     )
 
     assert len(list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))) == 1
+
+
+@pytest.mark.parametrize("edit", ["append", "replace_other_section"])
+def test_public_edit_keeps_saved_prevention_line_without_kind(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    edit: str,
+) -> None:
+    notes = _setup_notes(tmp_path)
+    _patch_cmd_add_operations(monkeypatch)
+    monkeypatch.setenv("CLAUDECODE", "1")
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+    body = f"# 表題\n\n説明\n\n## 反映内容と反映先\n対象\n\n## 原因分析\n\n{_RECORD_UNTYPED}\n"
+    _write_awi_file(notes, "saved.md", body=body, source="test")
+    edited = tmp_path / "edited.md"
+    if edit == "append":
+        edited.write_text("## 処理結果\n\n追記した。\n", encoding="utf-8")
+        argv = ["wi", "edit", "saved.md", "--append", "--body-file", str(edited)]
+    else:
+        edited.write_text(body.replace("## 反映内容と反映先\n対象", "## 反映内容と反映先\n対象を直した"), encoding="utf-8")
+        argv = ["wi", "edit", "saved.md", "--body-file", str(edited), "--dry-run"]
+
+    with pytest.raises(SystemExit) as finished:
+        atk.main(argv, home=tmp_path)
+
+    assert finished.value.code == 0, capsys.readouterr().err

@@ -206,9 +206,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         + termination_evidence.decision_hint(payload),
         fix=(
             f"完了報告の手順書`{playbook}`を全文読み、終了工程を進めてください。"
-            "既にユーザーへ送信した内容は再掲せず、まだ伝えていない結果と残る終了工程だけを扱え。"
+            "既にユーザーへ送信した内容は再掲せず、まだ伝えていない結果と残る終了工程だけを扱ってください。"
             f"受理する証拠は{termination_evidence.termination_evidence_reference()}「受理する証拠」、"
-            "読取の省略と終了方法の判断は同じ資料の「終了方法の分岐」に従ってください。"
+            "読み取りの省略と終了方法の判断は同じ資料の「終了方法の分岐」に従ってください。"
         ),
         removable_cause=True,
     )

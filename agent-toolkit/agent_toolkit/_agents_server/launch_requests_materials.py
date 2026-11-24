@@ -18,6 +18,14 @@ from agent_toolkit._plan import commit_mapping, review_contract
 
 
 def _material_error(name: str, reason: str) -> ActionableError:
+    if name == "根拠の所在":
+        return ActionableError(
+            f"探索資料の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
+            next_action=(
+                "読取可能なUTF-8の通常ファイルの絶対パスか、取得先を添えた識別子を指定する。"
+                "複数は各要素を絶対パスか取得先を添えた識別子とするJSON配列で渡し、`start`を再発行する"
+            ),
+        )
     return ActionableError(
         f"探索資料の入力が不成立です: {name}: {reason}。委譲先は起動していない。",
         next_action=(
@@ -33,15 +41,19 @@ def _material_error(name: str, reason: str) -> ActionableError:
     )
 
 
-def _material_paths(name: str, value: str) -> list[pathlib.Path]:
+def _material_paths(name: str, value: str, *, allow_identifiers: bool = False) -> list[pathlib.Path]:
     value = value.strip()
     if value.startswith("["):
         try:
             items = json.loads(value)
         except json.JSONDecodeError as error:
             raise _material_error(name, "パス配列のJSONを読めない") from error
-        if not isinstance(items, list) or not items or any(not isinstance(item, str) for item in items):
-            raise _material_error(name, "絶対パスの空でないJSON配列が必要")
+        if not isinstance(items, list) or not items or any(not isinstance(item, str) or not item.strip() for item in items):
+            raise _material_error(name, "空でない文字列を要素とする空でないJSON配列が必要")
+        if allow_identifiers:
+            items = [item for item in items if item.startswith("/") or pathlib.PureWindowsPath(item).is_absolute()]
+            if not items:
+                return []
     else:
         if pathlib.Path(value).is_absolute() and pathlib.Path(value).is_file():
             items = [value]
@@ -274,7 +286,7 @@ def _check_explore_materials(task_document: pathlib.Path, params: Mapping[str, s
     if role == "external-write-review":
         evidence = params["根拠の所在"].strip()
         if evidence.startswith(("/", "`/", "[")) or pathlib.PureWindowsPath(evidence).is_absolute():
-            _material_paths("根拠の所在", evidence)
+            _material_paths("根拠の所在", evidence, allow_identifiers=True)
 
 
 def _lane_input_error(name: str, reason: str) -> ActionableError:

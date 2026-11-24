@@ -216,7 +216,7 @@ fetchHandler = async url => ({ok: true, status: 200, json: async () => url.inclu
 elements['search-input'].value = 'keyword';
 for (const [id, value] of Object.entries({
   'kind-filter': 'uwi', 'state-filter': 'adopted', 'period-filter': '8w', 'answer-filter': 'yes',
-  'important-filter': 'yes', 'target-filter': 'missing/repo', 'source-filter': 'human'
+  'important-filter': 'yes', 'target-filter': 'missing/repo', 'source-filter': 'unset'
 })) elements[id].value = value;
 await loadEntries();
 await copyAllEntries();
@@ -240,7 +240,7 @@ process.stdout.write(JSON.stringify({normalUrls, searchUrls, retainedTarget, can
     normal = "/atk/api/entries?type=all&status=active&answered=all&period=2w"
     search = (
         "/atk/api/entries?type=uwi&status=adopted&answered=yes&period=8w&important=yes"
-        "&target_repo=missing%2Frepo&source_kind=human&q=keyword"
+        "&target_repo=missing%2Frepo&source_kind=unset&q=keyword"
     )
     assert result == {
         "normalUrls": [normal + "&page=1", normal],
@@ -259,7 +259,7 @@ def test_assets_each_filter_enters_search_without_changing_other_manual_values()
         """
 bindEvents();
 const values = {'kind-filter': 'awi', 'state-filter': 'adopted', 'period-filter': '4w',
-  'answer-filter': 'yes', 'important-filter': 'no', 'target-filter': 'chosen/repo', 'source-filter': 'human'};
+  'answer-filter': 'yes', 'important-filter': 'no', 'target-filter': 'chosen/repo', 'source-filter': 'unset'};
 const results = [];
 for (const id of Object.keys(values)) {
   for (const [field, value] of Object.entries(values)) elements[field].value = value;
@@ -284,7 +284,7 @@ process.stdout.write(JSON.stringify({results}));
         "answer-filter": "yes",
         "important-filter": "no",
         "target-filter": "chosen/repo",
-        "source-filter": "human",
+        "source-filter": "unset",
     }
     assert [item["id"] for item in result["results"]] == list(values)
     for item in result["results"]:
@@ -295,7 +295,7 @@ process.stdout.write(JSON.stringify({results}));
         assert "検索=all" in item["conditions"]
         assert item["query"] == (
             "/atk/api/entries?type=awi&status=adopted&answered=yes&period=4w&important=no"
-            "&target_repo=chosen%2Frepo&source_kind=human&q=all&page=1"
+            "&target_repo=chosen%2Frepo&source_kind=unset&q=all&page=1"
         )
 
 

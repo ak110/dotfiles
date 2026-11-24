@@ -7,38 +7,32 @@ import contextlib
 import dataclasses
 import os
 import pathlib
-import weakref
-from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 from mcp.types import CallToolRequestParams, CallToolResult, InputRequiredResult, TextContent
 from pydantic import TypeAdapter
 
-from agent_toolkit._agents_server import mcp_tools, service_rpc, service_state, service_transport, service_turns
+from agent_toolkit._agents_server import manager_start, mcp_tools, service_rpc, service_transport, service_turns
 from agent_toolkit._agents_server.file_operations import run_file_operation
-from agent_toolkit._agents_server.service_move_source import MoveSource
-from agent_toolkit._common import runtime_environment, session_registry
+from agent_toolkit._agents_server.service_force import (
+    ServiceForceControl,
+    _force_launch_fence,
+    _force_target,
+    _launch_fence,
+    _pending_launch,
+    _record_launch_failure,
+)
+from agent_toolkit._agents_server.service_session_move import ServiceSessionMove, _caller_payload, _restore_caller
+from agent_toolkit._common import runtime_environment, session_launchers, session_registry
 from agent_toolkit._common.next_action import ActionableError
 
 if TYPE_CHECKING:
-    from agent_toolkit._agents_server.service_context import Conversation, ServiceManagers
     from agent_toolkit._agents_server.service_generations import GenerationRegistry
-    from agent_toolkit._agents_server.service_io import Runtime
     from agent_toolkit._agents_server.service_projection import ProjectionHub
+    from agent_toolkit._agents_server.session_state import SessionState
 
 _RESULT = TypeAdapter(CallToolResult | InputRequiredResult)
 _OWNER_PROBE_SECONDS = 10.0
-
-
-def _caller_payload(caller: runtime_environment.CallerContext) -> dict:
-    return {
-        "environment": dict(caller.environment),
-        "cwd": str(caller.cwd),
-        "connection_id": caller.connection_id,
-        "parent_settings": caller.parent_settings,
-        "credit_shortages": dict(caller.credit_shortages),
-        "host_process": caller.host_process,
-    }
 
 
 async def _forward_call(target: dict, operation: str, params: CallToolRequestParams, arguments: dict) -> Any:
@@ -65,47 +59,12 @@ async def _forward_call(target: dict, operation: str, params: CallToolRequestPar
         ) from error
 
 
-def _restore_caller(value: dict) -> runtime_environment.CallerContext:
-    return runtime_environment.CallerContext(
-        value["environment"],
-        pathlib.Path(value["cwd"]),
-        dict(value["credit_shortages"]),
-        value["connection_id"],
-        value["parent_settings"],
-        value.get("host_process"),
-    )
-
-
-class ServiceSessionControl:
+class ServiceSessionControl(ServiceForceControl, ServiceSessionMove):  # pylint: disable=abstract-method
     if TYPE_CHECKING:  # pylint: disable=unused-argument
-        target: dict[str, Any]
-        generation: str
         directory: pathlib.Path
-        managers: ServiceManagers
         projections: ProjectionHub
         registry: GenerationRegistry
-        gate: service_turns.TurnGate
-        _ended: dict[str, tuple[int, str | None]]
-        _ended_sdk_clients: dict[str, Any]
-        _moving: dict[str, asyncio.Task[dict]]
-        _locks: weakref.WeakValueDictionary[str, asyncio.Lock]
-        _updates: dict[str, Any]
-        _runtime: Runtime | None
-        _incoming: dict[str, dict]
-        _received: dict[str, tuple[str, dict]]
-        _uncertain: dict[str, str]
-        _pending_restores: dict[str, MoveSource]
         _contexts: set[str]
-        _pending_adoptions: dict[str, dict]
-
-        @abstractmethod
-        def _current(self) -> dict: ...
-
-        @abstractmethod
-        def _conversation(self, identifier: str) -> tuple[str, Conversation] | None: ...
-        def _ended_turn(self, session: Any) -> bool: ...  # pylint: disable=unused-argument
-        def _schedule_move(self, identifier: str) -> None: ...  # pylint: disable=unused-argument
-        async def _finish_adoption(self, identifier: str) -> None: ...  # pylint: disable=unused-argument
 
     async def accept_context(self, packet: dict) -> None:
         current = self._current()
@@ -177,9 +136,9 @@ class ServiceSessionControl:
                         "server_instance": target.get("server_instance"),
                         "error": f"{type(error).__name__}: {error}",
                         "next_action": (
-                            "この世代が所有するsessionは一覧に含まれていない。agents_serverの`list`が返す`server_generations`で"
-                            "当該世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行する。"
-                            "応答しないままなら当該プロセスを処置する（処置前に自身のMCP接続先でないことを確かめる）"
+                            "この世代が所有するsessionは一覧に含まれていません。agents_serverの`list`が返す`server_generations`で"
+                            "その世代のプロセスの生存を確かめ、応答が再開した後にlistを再実行してください。"
+                            "応答しないままならそのプロセスを処置してください（処置前に自身のMCP接続先でないことを確かめてください）"
                         ),
                     }
                 )
@@ -187,18 +146,30 @@ class ServiceSessionControl:
 
     def owns(self, parent: str, identifier: str) -> bool:
         conversation = self.managers.conversations.get(parent)
-        return conversation is not None and identifier in conversation.manager.sessions
+        return conversation is not None and (
+            identifier in conversation.manager.sessions
+            or identifier in conversation.manager._pending_resumes
+            or identifier in conversation.manager._active_sends
+        )
 
     async def owned_call(self, parent: str, caller: runtime_environment.CallerContext, params: CallToolRequestParams) -> dict:
         conversation = self.managers.conversations.get(parent)
         identifier = (params.arguments or {}).get("session_id")
-        if conversation is None or identifier not in conversation.manager.sessions:
+        if conversation is None or not isinstance(identifier, str):
             return {"move_required": True}
-        session = conversation.manager.sessions[identifier]
+        session = conversation.manager.sessions.get(identifier)
+        force = params.name == "kill" and (params.arguments or {}).get("force") is True
+        if session is None and not (
+            force and (identifier in conversation.manager._pending_resumes or identifier in conversation.manager._active_sends)
+        ):
+            return {"move_required": True}
+        send_epoch = await self._require_unfenced(identifier) if params.name == "send_message" else None
+        lock = self._locks.setdefault(identifier, asyncio.Lock()) if send_epoch is not None else contextlib.nullcontext()
         await self._finish_adoption(identifier)
-        next_turn = params.name == "send_message" and (session.terminal or self._ended_turn(session))
+        next_turn = params.name == "send_message" and session is not None and (session.terminal or self._ended_turn(session))
         try:
-            async with self.gate.admit(new_turn=next_turn, session_id=identifier):
+            async with lock, self.gate.admit(new_turn=next_turn, session_id=identifier):
+                await self._recheck_send_epoch(identifier, send_epoch)
                 conversation.caller = dataclasses.replace(caller, credit_shortages=conversation.caller.credit_shortages)
                 conversation.manager._caller_context = conversation.caller
                 with self.managers._bound(conversation):
@@ -236,6 +207,17 @@ class ServiceSessionControl:
             arguments = params.arguments or {}
             identifier = arguments.get("session_id")
             predecessor = arguments.get("handoff_from") if params.name == "start" else None
+            state_root = self.directory.parent.parent
+            launcher = manager.launcher_session_id() or parent
+            launch_ticket: pathlib.Path | None = None
+            epoch: dict[str, str] | None = None
+            if params.name == "start":
+                launch_ticket, epoch = await scopes.enter_async_context(_pending_launch(state_root, launcher))
+                if epoch != await self._require_unfenced(launcher):
+                    raise ActionableError(
+                        "強制停止と競合したため起動は未配送です", next_action="停止結果を確認してから起動する"
+                    )
+            force_id = _force_target(params.name, arguments)
             inherited_owner = (
                 self.managers.handoff_child_owner(parent, identifier)
                 if params.name in {"show", "send_message"} and isinstance(identifier, str)
@@ -247,14 +229,25 @@ class ServiceSessionControl:
             if inherited_owner is None and isinstance(identifier, str) and identifier not in manager.sessions:
                 owner = await self._owner(identifier)
                 if owner is not None and owner["generation"] != self.generation and await self._owns(owner, parent, identifier):
-                    value = await _forward_call(
-                        owner,
-                        "owned_call",
-                        params,
-                        {"parent": parent, "caller": _caller_payload(caller)},
+                    fence = (
+                        _force_launch_fence(self.directory.parent.parent, force_id)
+                        if force_id is not None
+                        else contextlib.nullcontext()
                     )
+                    async with fence:
+                        operation = _forward_call(
+                            owner, "owned_call", params, {"parent": parent, "caller": _caller_payload(caller)}
+                        )
+                        value = (
+                            await self._force_dispatch(force_id, float(arguments.get("timeout", 270)), operation)
+                            if force_id is not None
+                            else await operation
+                        )
                     if not value.get("move_required"):
-                        return mcp_tools.relay_result(params.name, _RESULT.validate_python(value["result"]), owner, self.target)
+                        result = mcp_tools.relay_result(
+                            params.name, _RESULT.validate_python(value["result"]), owner, self.target
+                        )
+                        return result
                     try:
                         moved = await service_rpc.request(owner, "move", {"session_id": identifier})
                     except (RuntimeError, OSError, EOFError, TimeoutError) as error:
@@ -272,7 +265,15 @@ class ServiceSessionControl:
                             next_action="showで状態を確認し、現在の処理の終了後に同じ入力を送る",
                         )
                     return await self.call_tool(context, params)
-            if isinstance(identifier, str) and identifier in self._pending_restores and (task := self._moving.get(identifier)):
+            send_epoch = None
+            if params.name == "send_message" and isinstance(identifier, str) and session_launchers.valid_launcher(identifier):
+                send_epoch = await self._require_unfenced(identifier)
+            if (
+                force_id is None
+                and isinstance(identifier, str)
+                and identifier in self._pending_restores
+                and (task := self._moving.get(identifier))
+            ):
                 # 巡回が予約した所有確認に合流する。照会自身は再試行を増やさない。
                 await asyncio.wait((task,))
             lock_id = predecessor if isinstance(predecessor, str) else identifier
@@ -287,7 +288,7 @@ class ServiceSessionControl:
                 and lock is not None
                 and lock.locked()
             )
-            if lock is not None and lock.locked() and params.name in {"kill", "stop"}:
+            if lock is not None and lock.locked() and params.name in {"kill", "stop"} and force_id is None:
                 # 先行の追送が終わるまで待つと、停止の上限が受付前の待機だけで尽きる。
                 raise ActionableError(
                     "同じsessionへの先行要求が受付中のため停止要求は未配送です",
@@ -299,7 +300,7 @@ class ServiceSessionControl:
                     return await mcp_tools.mcp._call_registered_tool(context, params)
                 finally:
                     mcp_tools._SELECTED_MANAGER.reset(selected)
-            lock_scope = lock if lock is not None else contextlib.nullcontext()
+            lock_scope = lock if lock is not None and force_id is None else contextlib.nullcontext()
             async with lock_scope:
                 origin = self.managers.conversations[parent]
                 if isinstance(predecessor, str) and (existing := origin.handoff_successors.get(predecessor)) is not None:
@@ -336,15 +337,49 @@ class ServiceSessionControl:
                                 "所有managerの子sessionに絶対cwdの記録がなく、追送は未配送です",
                                 next_action="所有managerの起動記録でcwdを確認し、確認できるまで追送しない",
                             )
-                    selected = mcp_tools._SELECTED_MANAGER.set(manager)
-                    try:
-                        result = await mcp_tools.mcp._call_registered_tool(context, params)
-                    finally:
-                        mcp_tools._SELECTED_MANAGER.reset(selected)
+                    unconfirmed_launcher = None
+                    if force_id is not None and force_id not in manager.sessions and force_id not in manager._pending_resumes:
+                        unconfirmed_launcher = manager.launcher_session_id() or parent
+                    if force_id is not None:
+                        if unconfirmed_launcher is not None and session_launchers.valid_launcher(force_id):
+                            record = session_registry.registry_directory(state_root) / f"{force_id}.json"
+                            if await run_file_operation(session_launchers.read_launcher, record) == unconfirmed_launcher:
+                                unconfirmed_launcher = None
+                        if unconfirmed_launcher is None:
+                            await scopes.enter_async_context(_force_launch_fence(state_root, force_id))
+
+                    async def guard(started: SessionState | None) -> None:
+                        if epoch == await run_file_operation(_launch_fence, state_root, launcher):
+                            return
+                        if started is not None:
+                            try:
+                                await self.force_owned(parent, started.session_id, 270)
+                                await self._force_children(started.session_id, 270)
+                            except BaseException:
+                                assert launch_ticket is not None
+                                await run_file_operation(
+                                    _record_launch_failure, state_root, launch_ticket, launcher, started.session_id
+                                )
+                                raise
+                        raise ActionableError(
+                            "強制停止と競合したため起動を取り消しました", next_action="停止結果を確認してから起動する"
+                        )
+
+                    await self._recheck_send_epoch(identifier, send_epoch)
+                    with (
+                        manager_start.START_RESOURCE_GUARD.set(guard if epoch is not None else None),
+                        mcp_tools._SELECTED_MANAGER.set(manager),
+                    ):
+                        operation = mcp_tools.mcp._call_registered_tool(context, params)
+                        if force_id is not None and unconfirmed_launcher is None:
+                            result = await self._force_dispatch(force_id, float(arguments.get("timeout", 270)), operation)
+                        else:
+                            result = await operation
                     if params.name == "start" and isinstance(result, CallToolResult) and not result.is_error:
                         details = result.structured_content or {}
                         successor = details.get("session_id")
                         if isinstance(successor, str) and successor in manager.sessions:
+                            await guard(manager.sessions[successor])
                             origin.started_children.add(successor)
                             if (
                                 prepared is not None
@@ -352,6 +387,15 @@ class ServiceSessionControl:
                                 and details.get("status") in {"running", "completed"}
                             ):
                                 self.managers.publish_handoff_children(origin, predecessor, successor, prepared)
+                    if (
+                        force_id is not None
+                        and unconfirmed_launcher is not None
+                        and isinstance(result, CallToolResult)
+                        and not result.is_error
+                    ):
+                        await self._force_children(
+                            force_id, float(arguments.get("timeout", 270)), unconfirmed_launcher=unconfirmed_launcher
+                        )
                     return result
 
     async def _owns(self, owner: dict, parent: str, identifier: str) -> bool:
@@ -401,212 +445,3 @@ class ServiceSessionControl:
                 ),
             )
         return None
-
-    async def move(self, identifier: str) -> dict:
-        self._schedule_move(identifier)
-        return await asyncio.shield(self._moving[identifier])
-
-    async def _move(self, identifier: str) -> dict:
-        async with self._locks.setdefault(identifier, asyncio.Lock()):
-            if identifier in self._uncertain:
-                raise ActionableError(
-                    "移譲先の所有を確定できないため、旧decoderとqueryを再開しません",
-                    next_action="showと既存登録簿・物理記録で現在の所有を確認して再開する",
-                )
-            found = self._conversation(identifier)
-            if found is None:
-                return {"moved": True}
-            parent, conversation = found
-            manager = conversation.manager
-            session = manager.sessions[identifier]
-            backend: Any = manager._backends.get(session.engine)
-            current = self._current()
-            source_is_current = current["generation"] == self.generation
-            if source_is_current and self._updates:
-                return {"moved": False}
-            with self.managers._bound(conversation):
-                if pending := self._pending_restores.get(identifier):
-                    await self._restore_source(manager, pending)
-                    return {"moved": False}
-                if not source_is_current and not self._ended_turn(session):
-                    return {"moved": False}
-                client = self._client(backend, identifier)
-                if source_is_current and (client is None or not client.transferred):
-                    return {"moved": False}
-                source = MoveSource(client, backend, session)
-                try:
-                    if not source_is_current:
-                        await self.gate.pause_session(identifier)
-                        source.client = self._client(backend, identifier)
-                    elif session.engine == "codex":
-                        await self.gate.pause_session(identifier, drain=False)
-                    await source.detach(self.gate, source_is_current=source_is_current)
-                except Exception, asyncio.CancelledError:
-                    if session.engine == "codex":
-                        await self._restore_source(manager, source)
-                    raise
-                if source_is_current:
-                    await self._restore_source(manager, source)
-                    return {"moved": False}
-                # 切り離した後、移譲先が受入を予約するまでに失敗したら所有を移さず、実行資源と制御の受付を旧側へ戻す。
-                try:
-                    await source.save_control_state(manager)
-                    packet = await source.packet(self.target, parent, _caller_payload(conversation.caller))
-                    prepared = await service_rpc.request(current, "prepare_move", packet)
-                except Exception, asyncio.CancelledError:
-                    await self._restore_source(manager, source)
-                    raise
-                if not prepared.get("prepared"):
-                    await self._restore_source(manager, source)
-                    return {"moved": False}
-                if (client := source.client) is not None and not await client.resource.operation(
-                    "transfer",
-                    expected_owner=client.resource.runtime.owner,
-                    new_owner=current.get("server_instance", current["generation"]),
-                ):
-                    raise ActionableError("生I/Oの所有が既に変更された", next_action="showで現在の所有を確認する")
-                try:
-                    accepted = await service_rpc.request(current, "accept", packet)
-                except Exception as error:
-                    try:
-                        accepted = await service_rpc.request(
-                            current,
-                            "move_status",
-                            {
-                                "session_id": identifier,
-                                "transfer_id": packet["transfer_id"],
-                            },
-                        )
-                    except Exception:
-                        self._uncertain[identifier] = str(error)
-                        raise ActionableError(
-                            f"会話の移譲結果を確定できません: {error}",
-                            next_action="queryは再送せず、showと既存登録簿・物理記録で状態を確認して再開する",
-                        ) from error
-                    if not accepted.get("owned"):
-                        if accepted.get("prepared"):
-                            accepted = await service_rpc.request(
-                                current,
-                                "abort_move",
-                                {
-                                    "session_id": identifier,
-                                    "transfer_id": packet["transfer_id"],
-                                },
-                            )
-                            if not accepted.get("owned"):
-                                if client is not None:
-                                    await client.resource.operation(
-                                        "transfer",
-                                        expected_owner=current.get("server_instance", current["generation"]),
-                                        new_owner=client.resource.runtime.owner,
-                                    )
-                                await self._restore_source(manager, source)
-                        if not accepted.get("owned"):
-                            raise
-                if not accepted.get("owned"):
-                    raise RuntimeError("移譲先が制御所有を確定しませんでした")
-                source.forget(manager)
-                self._ended.pop(identifier, None)
-                self._ended_sdk_clients.pop(identifier, None)
-                await manager.save_control_state()
-            return {"moved": True}
-
-    async def _restore_source(self, manager: Any, source: MoveSource) -> None:
-        identifier = source.session.session_id
-        if source.session.engine == "codex":
-            manager._service_paused.add(identifier)
-        try:
-            await source.confirm_owner(self._runtime)
-        except (PermissionError, RuntimeError, KeyError) as error:
-            self._pending_restores.pop(identifier, None)
-            self._uncertain[identifier] = str(error)
-            raise
-        except OSError, EOFError, asyncio.CancelledError:
-            if source.session.engine == "codex":
-                self._pending_restores[identifier] = source
-            raise
-        self._pending_restores.pop(identifier, None)
-        await source.restore()
-        await self.gate.resume_session(identifier)
-        if source.session.engine == "codex":
-            manager._service_paused.discard(identifier)
-
-    def prepare_move(self, packet: dict) -> dict:
-        _restore_caller(packet["caller"])
-        session = service_state.restore(packet["session"])
-        transfer = packet["transfer_id"]
-        if not isinstance(transfer, str) or len(transfer) != 32:
-            raise ValueError("移譲の識別子が不正です")
-        received = self._received.get(session.session_id)
-        if self._conversation(session.session_id) is not None and (received is None or received[0] != transfer):
-            raise ValueError("移譲先が既に同じsessionを所有しています")
-        incoming = self._incoming.get(session.session_id)
-        lock = self._locks.get(session.session_id)
-        if incoming is not None and incoming["transfer_id"] != transfer and lock is not None and lock.locked():
-            raise ValueError("先行する所有移譲が処理中です")
-        self._incoming[session.session_id] = packet
-        return {"prepared": True, "session_id": session.session_id}
-
-    def move_status(self, identifier: str, transfer: str) -> dict:
-        incoming = self._incoming.get(identifier)
-        received = self._received.get(identifier)
-        return {
-            "owned": received is not None and received[0] == transfer,
-            "prepared": incoming is not None and incoming["transfer_id"] == transfer,
-        }
-
-    async def abort_move(self, identifier: str, transfer: str) -> dict:
-
-        async with self._locks.setdefault(identifier, asyncio.Lock()):
-            received = self._received.get(identifier)
-            if received is not None and received[0] == transfer:
-                return {"owned": True}
-            incoming = self._incoming.get(identifier)
-            if incoming is not None and incoming["transfer_id"] == transfer:
-                self._incoming.pop(identifier, None)
-            return {"owned": False}
-
-    async def accept(self, packet: dict) -> dict:
-        transfer = packet["transfer_id"]
-        identifier = service_state.restore(packet["session"]).session_id
-        received = self._received.get(identifier)
-        if received is not None and received[0] == transfer:
-            return {"owned": True}
-        if self._incoming.get(identifier) != packet:
-            raise ValueError("移譲の受入予約がありません")
-        async with self.gate.admit(new_turn=True, session_id=identifier):
-            return await self._accept(packet)
-
-    async def _accept(self, packet: dict) -> dict:
-        caller = _restore_caller(packet["caller"])
-        params = CallToolRequestParams(name="list", arguments={})
-        with runtime_environment.bind(caller):
-            async with self.managers.scope(params, identifier_override=packet["parent"]) as manager:
-                session = service_state.restore(packet["session"])
-                identifier = session.session_id
-                async with self._locks.setdefault(identifier, asyncio.Lock()):
-                    if self._incoming.get(identifier) != packet:
-                        raise ValueError("移譲の受入予約は解除されています")
-                    if identifier in manager.sessions:
-                        return {"owned": True}
-                    owner = session_registry.owner_process()
-                    if owner is None:
-                        raise RuntimeError("移譲先のプロセス識別を取得できません")
-                    transferred = await run_file_operation(
-                        session_registry.transfer_owner,
-                        identifier,
-                        (packet["source"]["server_instance"], session.turn_seq),
-                        owner,
-                        self.target["server_instance"],
-                    )
-                    if not transferred:
-                        raise RuntimeError("登録簿の所有が移譲元と一致しません。旧結果を保持します")
-                    manager.sessions[identifier] = session
-                    manager._service_paused.add(identifier)
-                    session.publish_registry = True
-                    self._received[identifier] = packet["transfer_id"], packet["source"]
-                    self._pending_adoptions[identifier] = packet
-                    self._incoming.pop(identifier, None)
-                    manager._schedule_session_expiry(session)
-                    await self._finish_adoption(identifier)
-                    return {"owned": True}

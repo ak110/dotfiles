@@ -97,22 +97,22 @@ async def test_accessible_workflows_filters_warnings_and_sse_status(browser_harn
     await page.locator("#state-filter").select_option("active")
     await playwright.async_api.expect(page.locator("#answer-filter")).to_be_enabled()
     assert await page.locator("#answer-filter").input_value() == "all"
-    assert await page.locator("#source-filter option").all_text_contents() == ["all", "human", "agent"]
+    assert await page.locator("#source-filter option").all_text_contents() == ["all", "未設定", "設定あり"]
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=agent&page=1"
+            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=set&page=1"
         )
     ):
-        await page.locator("#source-filter").select_option("agent")
+        await page.locator("#source-filter").select_option("set")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(2)
     await playwright.async_api.expect(awi_row).to_be_visible()
     await playwright.async_api.expect(empty_row).to_be_visible()
     async with page.expect_response(
         lambda response: response.url.endswith(
-            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=human&page=1"
+            "/api/entries?type=awi&status=active&answered=all&period=all&source_kind=unset&page=1"
         )
     ):
-        await page.locator("#source-filter").select_option("human")
+        await page.locator("#source-filter").select_option("unset")
     await playwright.async_api.expect(page.locator("#entry-list .entry-select")).to_have_count(0)
     await page.locator("#clear-filters-button").click()
 

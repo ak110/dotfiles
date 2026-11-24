@@ -25,7 +25,7 @@
 - 関連するUWIのファイル名と`## 回答`の場所。
 - 会話ログのユーザー発話: `session-review-evidence --user-events`が出力した元ファイルの絶対パスと`<record>:<line>`（例: `claude:<セッションID>:625`）。
   `record`と`line`はJSONレコードの値をそのまま書く。
-- 技術判断の記録: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「技術判断で外せる完成条件」の記録先にある、メインの判断か、`source`を持つAWIでレーン担当が除いた条件の記録。
+- 技術判断の記録: `agent-toolkit:atk-mode/playbooks/exec-review-loop.md`「技術判断で外せる完成条件」の記録先にある、メインの判断か、レーン担当が除いたエージェント起草の条件の記録。
   同節の記録事項と境界を満たす時に受理する。
 
 ユーザー判断も技術判断の記録も無い除外の要請は、委譲元へ差し戻して確定を待つ。

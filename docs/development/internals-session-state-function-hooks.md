@@ -2,7 +2,7 @@
 
 各状態の共通の設計、生存期間、排他、継承は`docs/development/internals-session-state-common.md`にある。
 定期再確認の通常回収の判定は`docs/development/internals-session-state-function-hooks-recheck.md`にある。
-利用上限による中断の再開予約は`docs/development/internals-session-state-function-hooks-limits.md`にある。
+利用上限とサーバー側の一時的なAPIエラーによる中断の再開予約は`docs/development/internals-session-state-function-hooks-limits.md`にある。
 バックグラウンド待機の共有状態と再起動は`docs/development/internals-session-state-function-hooks-compaction.md`にある。
 
 ## Function hooksの終了要求
@@ -31,9 +31,9 @@ Stop hookによる無進捗停止ガード（`busy_loop_guard.py`）からの終
 終了要求が`requested`か特定PIDへの終了要求として成立した場合、そのStop hookの応答は停止の通知だけになる。
 Stop内部で発行した終了要求は終了要求ファイルで管理し、`turn.complete`で消費する。
 
-通常のSessionEndでは、現行セッションの読み込み目印、終了要求、定期再確認の判定結果、および利用上限の記録ファイルを保持したまま、保持期限を過ぎた他セッションの古いファイルを回収する。
+通常のSessionEndでは、現行セッションの読み込み目印、終了要求、定期再確認の判定結果、および再開要求の記録ファイルを保持したまま、保持期限を過ぎた他セッションの古いファイルを回収する。
 定期再確認の判定は`docs/development/internals-session-state-function-hooks-recheck.md`に従う。
-終了理由が`clear`の場合は現行セッションの4ファイルも削除する。
+終了理由が`clear`の場合はこれらの現行セッションのファイルも削除する。
 保持期限の管理とファイル回収処理は`agents_exit_session.sweep_function_hook_files`が担当する。
 各ファイルに保存する文字列は、用途ごとに定めた固定値に限る。
 

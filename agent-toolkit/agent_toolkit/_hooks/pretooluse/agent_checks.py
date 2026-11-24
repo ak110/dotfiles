@@ -170,12 +170,12 @@ def _record_iss_sidechain_probe(
     tool_name: str,
     payload: dict,
 ) -> None:
-    """多重ネスト構成でのisSidechain実値採取用のデバッグログ記録。
+    """多重ネスト構成でのisSidechain実値採取用のデバッグログ記録。  pyfltr: allow-comment
 
     暫定機構: fb7 の実サンプル採取が目的。
     十分なサンプルが集まり代替判定機構が実装された時点で本ヘルパーは削除する。
     ログ出力先はtempfile.gettempdir()起点でsession_id単位に分離する
-    （`stop_session.py`の`_stop_log_path`先例に揃える）。
+    （`session_record_paths.stop_log_path`の先例に揃える）。
     ローテーションと追記は`_file_lock.locked_rotate_and_append`へ委譲する。
     """
     try:
@@ -227,7 +227,7 @@ def _check_agents_server_continuation_target(
                     f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会してください。"
                     "起動時の呼出主体が保存され、永続登録の起動元・応答の識別子・絶対`cwd`も確認できた場合だけ、"
                     "元の操作を再発行してください。起動時の識別子から呼出主体を確認できない場合は、`show`を繰り返しても回復しない。"
-                    "自身が起動していない対象は、所有を確認できるまで操作しない。"
+                    "自身が起動していない対象は、所有を確認できるまで操作しないでください。"
                 ),
             )
         )

@@ -234,8 +234,13 @@ def _assert_resources(body: str, resources: ResourceInventory, host: str, projec
 
 
 async def _start(
-    mode: tool_descriptions.StartMode, resources: ResourceInventory, project: pathlib.Path, candidates: str
+    monkeypatch: pytest.MonkeyPatch,
+    mode: tool_descriptions.StartMode,
+    resources: ResourceInventory,
+    project: pathlib.Path,
+    candidates: str,
 ) -> dict[str, Any]:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CHORES_MODEL", candidates)
     whole = resources.root / "work-contract.md"
     whole.write_text("# 作業契約\n目的: 品質資料の配送確認\n", encoding="utf-8")
     if mode == "task":
@@ -243,18 +248,15 @@ async def _start(
             cwd=str(project),
             subagent_md_path=str(resources.toolkit / "skills/atk-mode/roles/resource-probe.subagent.md"),
             extra_params={},
-            model_type=candidates,
             whole_contract_path=str(whole),
         )
     if mode == "shell":
-        return await mcp_tools.start(
-            cwd=str(project), mode=mode, command="pwd", summary_policy="終了状態", model_type=candidates
-        )
+        return await mcp_tools.start(cwd=str(project), mode=mode, command="pwd", summary_policy="終了状態", model_type="chores")
     return await mcp_tools.start(
         cwd=str(project),
         mode=mode,
         prompt="品質資料を参照する",
-        model_type=candidates,
+        model_type="chores",
         whole_contract_path=str(whole) if mode == "delegate" else None,
     )
 
@@ -270,7 +272,7 @@ async def test_public_start_delivers_both_resource_roots(
         backend = ResourceBackend(current.sessions, host)
         install_backend(current, host, backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        response = await _start(mode, resources, project, _CANDIDATES[host])
+        response = await _start(monkeypatch, mode, resources, project, _CANDIDATES[host])
         assert response["launch_identity"]["engine"] == host and response["status"] == "running"
         _assert_resources(backend.delivered[-1], resources, host, project)
         if mode == "task":
@@ -302,7 +304,7 @@ async def test_public_start_resolves_resources_again_after_engine_fallback(
         install_backend(current, "codex", first)
         install_backend(current, "claude", second)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        response = await _start("explore", resources, project, _CANDIDATES["codex"] + "," + _CANDIDATES["claude"])
+        response = await _start(monkeypatch, "explore", resources, project, _CANDIDATES["codex"] + "," + _CANDIDATES["claude"])
         assert response["launch_identity"]["engine"] == "claude" and response["excluded_candidates"]
         assert not first.start_calls
         if failure == "backend":
@@ -323,7 +325,7 @@ async def test_public_send_message_refreshes_resource_roots(
         backend = ResourceBackend(first.sessions, host)
         install_backend(first, host, backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", first)
-        started = await _start("explore", resources, project, _CANDIDATES[host])
+        started = await _start(monkeypatch, "explore", resources, project, _CANDIDATES[host])
         identifier = started["session_id"]
         if saved:
             session = first.sessions[identifier]
@@ -362,7 +364,7 @@ async def test_public_start_does_not_succeed_without_unique_enabled_basics(
         install_backend(current, host, backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         with pytest.raises(ActionableError) as raised:
-            await _start("explore", resources, resources.root / "project-a", _CANDIDATES[host])
+            await _start(monkeypatch, "explore", resources, resources.root / "project-a", _CANDIDATES[host])
         assert "agent-basics" in str(raised.value)
         assert not backend.start_calls and not current.sessions
 
@@ -423,7 +425,7 @@ async def test_role_start_names_incomplete_selected_installation(
         install_backend(current, "claude", backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
         with pytest.raises(ActionableError) as raised:
-            await _start("task", resources, project, _CANDIDATES["claude"])
+            await _start(monkeypatch, "task", resources, project, _CANDIDATES["claude"])
         diagnostic = str(raised.value)
         for expected in (
             "agent-basics@mine",
@@ -439,7 +441,7 @@ async def test_role_start_names_incomplete_selected_installation(
         assert not backend.start_calls and not current.sessions
 
         (stale / missing).write_text("# 修復した資料\n", encoding="utf-8")
-        response = await _start("task", resources, project, _CANDIDATES["claude"])
+        response = await _start(monkeypatch, "task", resources, project, _CANDIDATES["claude"])
     assert response["status"] == "running"
     assert f"agent-basics plugin root: {stale}\n" in backend.delivered[-1]
 
@@ -455,6 +457,6 @@ async def test_role_start_ignores_stale_installation_of_other_project(
         backend = ResourceBackend(current.sessions, "claude")
         install_backend(current, "claude", backend)
         monkeypatch.setattr(mcp_tools, "_MANAGER", current)
-        response = await _start("task", resources, resources.root / "project-b", _CANDIDATES["claude"])
+        response = await _start(monkeypatch, "task", resources, resources.root / "project-b", _CANDIDATES["claude"])
     assert response["status"] == "running"
     assert f"agent-basics plugin root: {user}\n" in backend.delivered[-1]

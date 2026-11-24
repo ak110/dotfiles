@@ -52,8 +52,8 @@ RESULT_CONTRACT_START = "<!-- subagent-result-contract:start -->"
 RESULT_CONTRACT_END = "<!-- subagent-result-contract:end -->"
 
 CODEX_COMPLETION_GUIDANCE = (
-    "許可された次の操作があるなら提案で止めず、要求を満たす検証まで行え。"
-    "戻せる選択は前提を短く示して進め、本人の判断・認可か、担当内で補えない外部の前提を委譲元へ渡せ。"
+    "許可された次の操作があるなら提案で止めず、要求を満たす検証まで行ってください。"
+    "戻せる選択は前提を短く示して進め、本人の判断・認可か、担当内で補えない外部の前提を委譲元へ渡してください。"
 )
 
 
@@ -247,8 +247,8 @@ def plugin_resource_instructions(toolkit_root: pathlib.Path, host: str, project:
     return _normative(
         toolkit_notice + f"agent-basics plugin root: {basics_root}\n"
         "`agent-basics:`で始まる品質資料はagent-basicsのroot、"
-        "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読む。"
-        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てない。" + completion,
+        "`agent-toolkit:`のスキルと実行基盤の内部資源はagent-toolkitのrootから読んでください。"
+        "それぞれの実在する絶対パスを使い、他方の版数からcacheパスを組み立てないでください。" + completion,
         kind="plugin-resources",
     )
 

@@ -60,7 +60,7 @@ HeadFn = Callable[[str, str], str]
 
 
 ALERT_FAILURE_NEXT_ACTION = (
-    "対応不要（待機は継続した）。繰り返す場合は`gh auth status`（GitLabは`glab auth status`）で認証を確認せよ"
+    "対応不要（待機は継続しました）。繰り返す場合は`gh auth status`（GitLabは`glab auth status`）で認証を確認してください"
 )
 """アラート取得の失敗に続ける次の操作。取得失敗は待機ループを止めないため、認証の確認だけを案内する。"""
 
@@ -646,7 +646,7 @@ def cmd_check_alerts(args: argparse.Namespace, private_notes: pathlib.Path, now:
     repo_id = _wi_repo.resolve_repo_id(None, cwd=local_path)
     next_action = (
         "診断に示した対象・ブランチ設定と`gh auth status`（GitLabは`glab auth status`）を確認し、"
-        "`atk wi check-alerts`を再実行せよ"
+        "`atk wi check-alerts`を再実行してください"
     )
     settings = _wi_branches.registry().get(repo_id)
 

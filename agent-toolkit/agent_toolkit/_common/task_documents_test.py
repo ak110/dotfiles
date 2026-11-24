@@ -21,7 +21,7 @@ def test_invalid_launch_target_reports_contract_and_repair(tmp_path: pathlib.Pat
         task_documents.launch_contract_documents(tmp_path)
     message = str(captured.value)
     assert str(contract) in message and "../other.subagent.md" in message
-    assert "次の操作:" in message and "修正せよ" in message
+    assert "次の操作:" in message and "修正してください" in message
 
 
 @pytest.mark.parametrize(("value", "expected"), [("あり", True), ("なし", False)])

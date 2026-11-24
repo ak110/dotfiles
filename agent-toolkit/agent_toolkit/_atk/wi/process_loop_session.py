@@ -61,8 +61,8 @@ def resolve_orchestrator_specs() -> list[tuple[str, str, str]]:
 
 def build_resume_prompt() -> str:
     return _automated_prompt.wrap(
-        "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行せよ。"
-        "未達の目的を達成扱いに変えず、成功済みの操作を繰り返すな。",
+        "保存済みの要求・認可・元の目的と成果を確認し、最初の未完了工程から続行してください。"
+        "未達の目的を達成扱いに変えず、成功済みの操作は繰り返さないでください。",
         source=_automated_prompt.SOURCE_PROCESS_LOOP,
         kind="resume",
     )
@@ -346,7 +346,7 @@ def _run_process_session(
             env.clear()
             env.update(original_env)
             session_prompt = _automated_prompt.wrap(
-                "利用上限で中断した同じ会話の未完了作業を続行せよ。保存済みの要求と成果を確認し、完了済みの操作は繰り返すな。",
+                "利用上限で中断した同じ会話の未完了作業を続行してください。保存済みの要求と成果を確認し、完了済みの操作は繰り返さないでください。",
                 source=_automated_prompt.SOURCE_PROCESS_LOOP,
                 kind="usage-limit-resume",
             )

@@ -147,7 +147,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 
 1. 確認するかは`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で決め、目的と認可の内側で手段だけが残る事項は自分で確定して報告する。
 2. 質問には、公開スキーマ、モードの制限、用途の制限、ホストの命令に合う構造化質問を使う。
-   - Codex CLIの`request_user_input`で推奨案を含む問いは、送信直前に「確認要否の判定」による一度の見直しを求められる。
+   - Codex CLIの`request_user_input`で推奨案を含む問いは送信直前に「確認要否の判定」による一度の見直しを求められ、方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形でないと止められる。
    - Plan modeで同期型の`request_user_input`を使える時は、回答まで待つ。
    - 非同期型の`request_user_input_async`だけを使える時は、後続のユーザーのメッセージとして届く実際の回答を元の質問へ対応付ける。
    - 発行の成功と選択肢の初期選択は、回答と承認から外す。
@@ -176,7 +176,7 @@ SessionStartの通知は`atk-mode`の起動を求める1行だけで、規範の
 | Claude Code | Codex |
 | --- | --- |
 | `Agent` | `agents_server`の`start`。forkを選ぶ時（`agent-toolkit:atk-mode/playbooks/delegation.md`「会話を引き継ぐ委譲」）だけ`spawn_agent` |
-| `SendMessage`・`TaskStop` | 起動手段が返した識別子と継続・中断の操作（`agents_server`は`send_message`・`kill`）。停止は同じ識別子で確かめる |
+| `SendMessage`・`TaskStop` | 起動手段が返した識別子と継続・中断の操作（`agents_server`は`send_message`・`kill`）。ユーザーが即時停止を求めたら`kill`に`force=true`を渡す。停止は同じ識別子で確かめる |
 | `ToolSearch` | 本書「MCPツールの呼び出し」の`ALL_TOOLS`の照会。必須の機能が無ければ差し戻す |
 | `Monitor` | 起動手段の状態確認と待機の結果（`agents_server`は`atk agents wait`） |
 | `AskUserQuestion` | 本書「ユーザー確認と終了」の構造化質問 |
@@ -193,7 +193,7 @@ forkしない時も、委譲先が読む`agent-toolkit:atk-mode/playbooks/subage
 ## agents_serverの起動
 
 1. `agents_server`の`start`はネイティブの委譲とは別の仕組みで、`model_type`からengine、model、effortを解決する（`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」）。
-2. `engine=claude`の指定は`spawn_agent`へ置き換えず、Claude向けの`model_type`で`agents_server`から起動する。
+2. `engine=claude`の指定は`spawn_agent`へ置き換えず、`agents_server`から起動し、候補列を渡す場合は手順1の資料に従って上書きの区分と根拠を付ける。
    指定のengineを実行する手段が無い時は、未完了として返すか、続行できない理由を報告する。
 3. 起動の入力（通常の起動の`whole_contract_path`を含む）と依頼文は、`agent-toolkit:atk-mode/playbooks/delegation.md`に従う。
    起動後のturnが可用性のエラーで終わった時は、`agent-toolkit:atk-mode/playbooks/delegation-recovery.md`の引き継ぎ起動に従う。

@@ -15,6 +15,7 @@ import psutil
 from agent_toolkit._agents_server import service_rpc, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError, JsonRpcResponseError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
+from agent_toolkit._common import process_tree
 
 _LOG = logging.getLogger(__name__)
 
@@ -184,9 +185,10 @@ class CodexResource:
 
         released_io = False
 
-        async def shutdown() -> list[str]:
+        async def shutdown(force: bool = False) -> list[str]:
             nonlocal released_io
-            residual = await raw.close()
+            with process_tree.FORCE_STOP.set(force):
+                residual = await raw.close()
             released_io = not residual
             return residual
 
@@ -386,9 +388,10 @@ class CodexResource:
         return await asyncio.shield(task)
 
     async def _close(self, caller: asyncio.Task | None) -> list[str]:
+        arguments = {"force": True} if process_tree.FORCE_STOP.get() else {}
         released = False
         try:
-            residual = await self.resource.operation("call", operation="shutdown", arguments={})
+            residual = await self.resource.operation("call", operation="shutdown", arguments=arguments)
         except ConnectionRefusedError, FileNotFoundError:
             if service_transport.process_alive(self.resource.origin.get("process")):
                 raise

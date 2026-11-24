@@ -190,8 +190,8 @@ def _failure_response(
             tag="warn",
             removable_cause=False,
             fix=(
-                "元の操作と自動処理の成否を分けて確認せよ。再発を待たずに`agent-basics:bugfix`の初動を適用し、"
-                "原因と影響を調べよ。認可の範囲内で自ら是正し、担当外の是正だけを委譲元へ渡せ。"
+                "元の操作と自動処理の成否を分けて確認してください。再発を待たずに`agent-basics:bugfix`の初動を適用し、"
+                "原因と影響を調べてください。認可の範囲内で自ら是正し、担当外の是正だけを委譲元へ渡してください。"
             ),
         )
         _append_warning(result, warning_event, warning)
@@ -214,7 +214,7 @@ def _bound_pretooluse_context(response: dict, payload: object, subcommand: str) 
     reason = reason if isinstance(reason, str) else ""
     if len((context + reason).encode("utf-8")) <= CODEX_CONTEXT_BYTES:
         return False
-    short_reason = reason if len(reason.encode("utf-8")) <= 256 else "判定理由の全文は追加通知の保存先を確認せよ。"
+    short_reason = reason if len(reason.encode("utf-8")) <= 256 else "判定理由の全文は追加通知の保存先を確認してください。"
     full = context + ("\n\npermissionDecisionReason:\n" + reason if reason else "")
     session_id = payload.get("session_id")
     specific["additionalContext"] = bounded_codex_context(

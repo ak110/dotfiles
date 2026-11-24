@@ -13,7 +13,7 @@ import pytest
 from agent_toolkit._agents_server import service, service_io, service_transport
 from agent_toolkit._agents_server.codex_protocol import AppServerError
 from agent_toolkit._agents_server.service_resources import ResourceBroker
-from agent_toolkit._common import runtime_environment
+from agent_toolkit._common import process_tree, runtime_environment
 from agent_toolkit._common.atomic_file import atomic_write
 
 pytestmark = pytest.mark.usefixtures("agents_server_isolation")
@@ -29,6 +29,7 @@ class _RawCodex:
         self.process = types.SimpleNamespace(pid=os.getpid())
         self.parent_environment: dict[str, str] = {}
         self.closed = 0
+        self.force_closed = False
         self.residual: list[str] = []
         self.calls: list[str] = []
         self.notification = notification
@@ -51,6 +52,7 @@ class _RawCodex:
 
     async def close(self) -> list[str]:
         self.closed += 1
+        self.force_closed = process_tree.FORCE_STOP.get()
         return list(self.residual)
 
 
@@ -132,7 +134,9 @@ async def test_origin_resource_survives_three_owners_without_old_decoder(tmp_pat
             with pytest.raises(RuntimeError, match="PermissionError"):
                 await clients[1].close()
             assert (raw.closed, tuple(raw.calls)) == (0, ("thread/read",))
-            assert not await clients[2].close()
+            with process_tree.FORCE_STOP.set(True):
+                assert not await clients[2].close()
+            assert raw.force_closed
             assert raw.closed == 1
     finally:
         for client in clients:

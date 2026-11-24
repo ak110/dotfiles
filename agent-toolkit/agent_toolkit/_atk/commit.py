@@ -144,7 +144,7 @@ def _git_state(root: Path) -> tuple[tuple[int, str], tuple[int, str]]:
 
 _USAGE_LIMIT_RESUME_PROMPT = (
     "直前の応答はClaude Codeの利用上限で中断し、解除予定時刻まで待った。"
-    "中断前の作業を続けてcommitを完了せよ。既に行ったstageとcommitを繰り返さないこと。"
+    "中断前の作業を続けてcommitを完了してください。既に行ったstageとcommitは繰り返さないでください。"
 )
 
 

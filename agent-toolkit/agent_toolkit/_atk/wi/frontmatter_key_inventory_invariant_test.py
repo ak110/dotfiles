@@ -27,7 +27,7 @@ _FIELD_USES = {
     "queue_schedule": ("readinessの旧スケジュール読取", "旧形式の再開期限を維持する。手入力しない"),
     "repair_kind": ("readinessの修復対象選定", "処理を再開するための是正種別を識別する"),
     "repair_target": ("readinessの修復対象選定", "修復UWIが対応する元項目を識別する"),
-    "run_skill_report": ("readinessとsubmit", "報告用UWIと判断を求めるUWIを区別する"),
+    "run_skill_report": ("submit", "報告用UWIと判断を求めるUWIを区別する"),
     "run_skill_run_id": ("add_reportsとsubmit", "報告を起動した実行に関連付ける。手入力しない"),
     "scope": ("add_reportsとsubmit", "問いと結果を対象作業へ対応付ける"),
     "source": ("filtersとlisting", "項目の由来を区別する"),

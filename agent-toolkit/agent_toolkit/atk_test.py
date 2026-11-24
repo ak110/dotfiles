@@ -20,14 +20,14 @@ from agent_toolkit import atk
 from agent_toolkit._atk import config as _config
 from agent_toolkit._atk import git_sync as _git_sync
 from agent_toolkit._atk import managed_temp as _managed_temp
+from agent_toolkit._atk.managed_temp import auto_sweep as _auto_sweep
 from agent_toolkit._atk.managed_temp import sweep as _sweep
 from agent_toolkit._atk.wi import listing as _wi_listing
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import web_input as _wi_web_input
 from agent_toolkit._atk.wi.mutations import targets as _mutation_targets
 from agent_toolkit._common import codex_models, inherited_venv
-from agent_toolkit._common import wait_schedule as _wait_schedule
-from agent_toolkit._testing import git_repository, wi_entry_files
+from agent_toolkit._testing import git_repository, review_bodies, wi_entry_files
 from agent_toolkit._testing import wi_bodies as _wi_bodies
 from agent_toolkit._testing.atk_support import (
     _ATK_PATH,
@@ -51,7 +51,6 @@ from agent_toolkit._testing.atk_support import (
     _write_awi_file,
     _write_uwi_file,
 )
-from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 __all__ = [
     "_FIXED_DT",
@@ -66,47 +65,19 @@ __all__ = [
 ]
 
 
-def test_persistent_warning_once_per_session(
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    tmp_path: pathlib.Path,
-) -> None:
-    """期限切れの対象を削除できなかった掃引の失敗を、同じ会話で1回だけ公開サブコマンドから警告する。"""
-    for key in ("AGENT_TOOLKIT_OWNER_SESSION", "AGENT_TOOLKIT_DELEGATED_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
-        monkeypatch.delenv(key, raising=False)
-    failed = tmp_path / "failed-area"
-    setattr_in_managed_temp_modules(
-        monkeypatch,
-        "sweep_managed_temp",
-        lambda **_kwargs: _managed_temp.SweepResult([], ((failed, "persistent deletion failure"),)),
-    )
-    monkeypatch.setattr(_wait_schedule, "get_schedule", lambda _request_bucket: "result")
-
-    def expect_warning(expected: bool) -> None:
-        with pytest.raises(SystemExit) as raised:
-            atk.main(["wait-schedule"], home=tmp_path)
-        assert raised.value.code == 0
-        output = capsys.readouterr()
-        assert json.loads(output.out)["cron"] == "result"
-        assert ("managed-tempの対象を自動削除できなかった" in output.err) is expected
-        if expected:
-            assert "persistent deletion failure" in output.err and str(failed) in output.err
-
-    for key in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID"):
-        monkeypatch.setenv(key, key)
-        expect_warning(True)
-        expect_warning(False)
-        monkeypatch.setenv(key, key + "-other")
-        expect_warning(True)
-        expect_warning(False)
-        monkeypatch.delenv(key)
-    expect_warning(True)
-    expect_warning(True)
+@pytest.mark.usefixtures("_isolate_agent_and_managed_temp_environment")
+def test_worker_retains_deletion_diagnostics_after_a_noop(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    failure = ((tmp_path / "failed-area", "persistent deletion failure"),)
+    results = iter((_sweep.SweepResult([], failure), _sweep.SweepResult([], ())))
+    monkeypatch.setattr(_sweep, "sweep_managed_temp", lambda **_kwargs: next(results))
     monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
-    expect_warning(False)
-    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION")
-    monkeypatch.setenv("AGENT_TOOLKIT_OWNER_SESSION", "owner-only")
-    expect_warning(False)
+
+    _auto_sweep._run_worker()  # pylint: disable=protected-access
+    log = _sweep.paths.state_root() / ".sweep/last-auto-sweep.log"
+    report = log.read_text(encoding="utf-8")
+    assert "persistent deletion failure" in report and "次の操作:" in report
+    _auto_sweep._run_worker()  # pylint: disable=protected-access
+    assert log.read_text(encoding="utf-8") == report
 
 
 def test_entry_restores_launch_environment_for_children(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -440,15 +411,13 @@ def test_wi_preview_keeps_pressure_cleanup_for_the_next_write(
         assert observed.value.code == 0 and idle.is_dir(), query
     capsys.readouterr()
 
-    def ensure_after_cleanup(_home: pathlib.Path) -> pathlib.Path:
-        assert not idle.exists()
-        return notes
-
-    monkeypatch.setattr(_wi_sync, "ensure_environment", ensure_after_cleanup)
+    scheduled: list[bool] = []
+    monkeypatch.setattr(_auto_sweep, "_start_worker", lambda: scheduled.append(True))
+    monkeypatch.setattr(_wi_sync, "ensure_environment", lambda _home: notes)
     write = _prepare_sync_mutation("wi start-processing", monkeypatch)
     with pytest.raises(SystemExit) as write_result:
         atk.main(write, home=tmp_path, now=now)
-    assert write_result.value.code == 0 and not idle.exists()
+    assert write_result.value.code == 0 and idle.exists() and scheduled == [True]
     assert (notes / "started.txt").is_file()
     assert "空きが下限" in capsys.readouterr().err
 
@@ -459,7 +428,7 @@ def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.Cap
         100 * gib, 5 * gib, 12 * gib, 7 * gib, (("pytest-old", 4 * gib), ("big-area", 3 * gib))
     )
 
-    atk._report_space_pressure(pressure)  # pylint: disable=protected-access
+    _auto_sweep._report_space_pressure(pressure)  # pylint: disable=protected-access
 
     output = capsys.readouterr()
     assert output.out == ""
@@ -475,7 +444,7 @@ def test_report_space_pressure_warns_with_free_and_total_when_still_low(
     gib = 1024**3
     pressure = _managed_temp.SpacePressure(100 * gib, 3 * gib, 3 * gib, 0, ())
 
-    atk._report_space_pressure(pressure)  # pylint: disable=protected-access
+    _auto_sweep._report_space_pressure(pressure)  # pylint: disable=protected-access
 
     output = capsys.readouterr()
     assert output.out == ""
@@ -483,3 +452,81 @@ def test_report_space_pressure_warns_with_free_and_total_when_still_low(
     assert "回収できる対象が無い" not in output.err
     assert "作成者が終了すると次の起動で回収できる" not in output.err
     assert "空き 3.0GiB / 容量 100.0GiB" in output.err
+
+
+@pytest.mark.usefixtures("_isolate_agent_and_managed_temp_environment")
+@pytest.mark.parametrize("operation", ["respond", "plan-progress"])
+def test_first_write_does_not_wait_for_pressure_sweep(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    managed = _sweep.paths.temp_root()
+    state = _sweep.paths.state_root()
+    now = datetime.datetime.now().astimezone()
+    _sweep._save_sweep_time(state, _sweep._now_ns(now))  # pylint: disable=protected-access
+    idle = managed / "idle-old"
+    active = managed / "active-old"
+    for area in (idle, active):
+        area.mkdir()
+    (active / _sweep.OWNER_FILE).write_text(_sweep.owner_token(), encoding="utf-8")
+    old = (now - datetime.timedelta(days=8)).timestamp()
+    os.utime(idle, (old, old))
+    os.utime(active, (old, old))
+
+    if operation == "respond":
+        target = tmp_path / "review.exec-review.tsv"
+        target.write_text(
+            "\t".join(json.dumps(cell) for cell in ("1", "exec-review", "位置", "指摘", "", "", "")) + "\n",
+            encoding="utf-8",
+        )
+        response = tmp_path / "response.md"
+        response.write_text(
+            review_bodies.response_body("修正した"),
+            encoding="utf-8",
+        )
+        args = ["review-table", "respond", str(target), "--row-id=1", f"--response-file={response}"]
+    else:
+        target = tmp_path / "plan.md"
+        target.write_text("## 進捗ログ\n\n| 日時 | 完了した工程 | 結果・特記事項 |\n| --- | --- | --- |\n", encoding="utf-8")
+        args = ["run-script", "plan-progress", "--", str(target), "--completed-step=試験", "--result=修正した"]
+
+    delay = tmp_path / "sitecustomize.py"
+    delay.write_text(
+        """
+import time
+from pathlib import Path
+from types import SimpleNamespace
+from agent_toolkit._atk.managed_temp import sweep
+sweep._disk_usage = lambda _path: SimpleNamespace(total=1000, free=80)
+reclaim = sweep._reclaim_space
+def slow_reclaim(*args, **kwargs):
+    time.sleep(5)
+    result = reclaim(*args, **kwargs)
+    Path(__file__).with_name("sweep-done").touch()
+    return result
+sweep._reclaim_space = slow_reclaim
+""",
+        encoding="utf-8",
+    )
+    root = pathlib.Path(atk.__file__).resolve().parents[1]
+    monkeypatch.setenv("PYTHONPATH", os.pathsep.join((str(tmp_path), str(root))))
+    monkeypatch.setenv(_sweep.MIN_FREE_RATIO_ENV, "0.10")
+    for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "AGENT_TOOLKIT_OWNER_SESSION"):
+        monkeypatch.delenv(name, raising=False)
+    started = time.monotonic()
+    completed = subprocess.run([sys.executable, "-m", "agent_toolkit.atk", *args], capture_output=True, check=False, timeout=25)
+    elapsed = time.monotonic() - started
+    print(f"{operation}: {elapsed:.3f}秒")
+    done = tmp_path / "sweep-done"
+    log = state / ".sweep/last-auto-sweep.log"
+    try:
+        assert completed.returncode == 0, completed.stderr.decode()
+        assert "修正した" in target.read_text(encoding="utf-8")
+        assert "空きが下限" in completed.stderr.decode()
+        assert not done.exists(), "CLIが掃引完了後に戻った"
+    finally:
+        deadline = time.monotonic() + 20
+        while not log.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+    assert done.exists() and active.is_dir() and not idle.exists()
+    report = log.read_text(encoding="utf-8")
+    assert "idle-old" in report and "自動掃引後も空きが不足" in report

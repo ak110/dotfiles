@@ -362,9 +362,35 @@ async def test_start_checks_all_external_evidence_files(
         await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
     assert str(second) in str(rejected.value)
     assert str(third) in str(rejected.value)
+    assert "取得先を添えた識別子" in _actionable_message(rejected.value)
+    assert "比較資料" not in _actionable_message(rejected.value)
     manager.start.assert_not_awaited()
 
     second.write_text("成功したCIの保存結果\n", encoding="utf-8")
     third.write_text("追加の証拠\n", encoding="utf-8")
     await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
     manager.start.assert_awaited_once()
+
+
+@pytest.mark.parametrize("kind", ["identifiers", "mixed", "single"])
+@pytest.mark.asyncio
+async def test_start_accepts_external_evidence_identifiers(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    params = _observed_input_params("external-write-review.subagent.md", tmp_path)
+    evidence = tmp_path / "記録.txt"
+    evidence.write_text("観測済み\n", encoding="utf-8")
+    identifier = f"記録1（取得先: {evidence}）"
+    items = [identifier, "GitHub Actions run 123 (ak110/dotfiles)"]
+    if kind == "mixed":
+        items.append(str(evidence))
+    params["根拠の所在"] = identifier if kind == "single" else json.dumps(items, ensure_ascii=False)
+    manager = TaskManager(start=AsyncMock(return_value={"session_id": "review", "status": "running", "label": "review"}))
+    monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
+    await mcp_tools.start(str(tmp_path), subagent_md_path="external-write-review", extra_params=params)
+    manager.start.assert_awaited_once()
+    launched = manager.start.call_args.kwargs["startup_inputs"]["根拠の所在"]
+    locator = launched if kind == "single" else json.loads(launched)[0]
+    assert locator == identifier
+    source = pathlib.Path(locator.removeprefix("記録1（取得先: ").removesuffix("）"))
+    assert source.read_text(encoding="utf-8") == "観測済み\n"

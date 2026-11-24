@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import datetime
 import json
 import logging
 import pathlib
-from collections.abc import Mapping
+import re
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from agent_toolkit._agents_server import (
@@ -50,25 +52,46 @@ from agent_toolkit._common.plugin_roots import PluginRootError
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
 
 
+START_RESOURCE_GUARD: contextvars.ContextVar[Callable[[SessionState | None], Awaitable[None]] | None] = contextvars.ContextVar(
+    "START_RESOURCE_GUARD", default=None
+)
+
+
 def model_override_warnings(
-    model_type: str | None, *, default_type: str | None = None, inherited: bool = False
+    model_type: str | None,
+    *,
+    default_type: str | None = None,
+    reason: str | None = None,
+    evidence: str | None = None,
+    inherited: bool = False,
 ) -> list[dict[str, str]]:
     if model_type is None or (model_type in _atk_config.MODEL_TYPES and (default_type is None or model_type == default_type)):
         return []
-    restore = (
-        f"model_typeへ元の工程名（{default_type or '前任の役割に定めた工程'}）を明示する"
+    next_action = (
+        f"開始する工程名（役割の工程: {default_type or '役割文書を参照'}）をmodel_typeへ明示する。"
         if inherited
-        else "taskではmodel_typeを省略し、自由本文では該当する工程名を指定する"
+        else "該当する工程名で起動し直す。taskではmodel_typeを省略できる。"
     )
+    if inherited or reason not in ("user_instruction", "observation", "fallback_failure") or not (evidence or "").strip():
+        raise ActionableError(
+            "候補列の直接指定・役割の工程の変更にはmodel_overrideとmodel_override_evidenceが必要です",
+            next_action=next_action,
+        )
+    assert evidence is not None
+    if reason == "observation":
+        candidates = _atk_config.parse_unresolved_model_candidates(model_type)
+        if not candidates or not all(
+            (engine == "claude" and model == "haiku")
+            or (engine == "codex" and (model == "luna" or re.fullmatch(r"gpt-\d+(?:\.\d+)?-luna", model)))
+            for engine, model, _ in candidates
+        ):
+            raise ActionableError("observationにはhaikuとluna系だけを指定できます", next_action=next_action)
     return [
         {
             "scope": "model-override",
             "message": (
-                f"モデル設定の{'直接候補継承' if inherited else '上書き'}: "
-                f"適用工程={default_type or '候補列直接指定（工程設定を参照しない）'}; 指定値={model_type}。"
-                f"現在の工程設定を使うには{restore}。"
-                "ユーザーが指定した値、試行、同じ要求に限った個別の引き上げは受理し、"
-                "以後の初回起動には工程設定を使う。"
+                f"モデル設定の上書き: 工程={default_type or '候補列直接指定'}; 指定値={model_type}; "
+                f"区分={reason}; 根拠={evidence.strip()}。{next_action}"
             ),
         }
     ]
@@ -313,6 +336,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             if session.status == "starting":
                 session.status = "running"
             await self._save_started_session(session)
+            if guard := START_RESOURCE_GUARD.get():
+                await guard(session)
             await self._await_start_outcome(session)
 
             session.availability_checked = True
@@ -399,17 +424,36 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
             "no available model candidates: "
             f"{model_type}; excluded={excluded_candidate_payload(excluded, excluded_session_ids)}",
             next_action=(
-                "時間をおいて再試行するか、`model_type`へ別の候補を明示して起動する。"
+                "時間をおき、同じ工程名で再試行する。"
                 "除外した候補は`excluded`の理由（CLIの導入・認証・利用上限など）を解消すると再び使える"
             ),
         )
 
-    async def start_handoff(self, session_id: str, *, model_type: str | None = None) -> dict[str, Any]:
+    async def start_handoff(
+        self,
+        session_id: str,
+        *,
+        model_type: str | None = None,
+        model_override: str | None = None,
+        model_override_evidence: str | None = None,
+    ) -> dict[str, Any]:
         current = await self.resolve_handoff_predecessor(session_id)
+        predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
+        assert predecessor.model_type is not None
+        role_type = await run_file_operation(launch_requests.current_role_model, predecessor, include_explicit=True)
+        inherited_type = predecessor.model_type
+        if inherited_type in _atk_config.MODEL_TYPES and role_type and not launch_requests.role_model_was_explicit(predecessor):
+            inherited_type = role_type
+        warnings = model_override_warnings(
+            inherited_type if model_type is None else model_type,
+            default_type=role_type if model_type is not None or inherited_type not in _atk_config.MODEL_TYPES else None,
+            reason=model_override,
+            evidence=model_override_evidence,
+            inherited=model_type is None,
+        )
         if isinstance(current, SessionState):
             # 終了通知がCLIの後始末より先に届いても、後任と前任が同じworktreeへ同時に作用しない。
             await self._backend(current.engine).release_session(current)
-        predecessor = SessionResumeState.from_session(current) if isinstance(current, SessionState) else current
         reason = session_handoff.availability_reason(
             predecessor.engine,
             predecessor.status,
@@ -418,10 +462,10 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
         candidate = state.selected_candidate(predecessor)
         excluded = {candidate: reason} if candidate is not None and reason is not None else {}
         prompt = await run_file_operation(session_handoff.prepare_prompt, predecessor)
-        assert predecessor.model_type is not None
-        inherited_type = await run_file_operation(launch_requests.current_role_model, predecessor) or predecessor.model_type
-        warnings = model_override_warnings(inherited_type if model_type is None else model_type, inherited=model_type is None)
-        with startup_features.selection(predecessor.startup_profile):
+        with (
+            startup_features.selection(predecessor.startup_profile),
+            state.MODEL_OVERRIDE_RECORD.set(warnings[0]["message"] if warnings else None),
+        ):
             response = await self.start(
                 inherited_type if model_type is None else model_type,
                 prompt,
@@ -514,6 +558,8 @@ class ManagerStart(manager_wait.ManagerWait):  # pylint: disable=too-many-ancest
                 model_type,
                 launch_kind,
             )
+            if guard := START_RESOURCE_GUARD.get():
+                await guard(None)
             try:
                 session = await self._backend(engine).start(
                     prompt,

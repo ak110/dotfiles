@@ -24,6 +24,7 @@ WindowsのCodex App Serverでは、この漏れた孫が一時領域を保持し
 """
 
 import contextlib
+import contextvars
 import ctypes
 import ctypes.wintypes
 import dataclasses
@@ -148,6 +149,9 @@ def stop_tree_by_pid(pid: int, **kwargs: Any) -> TreeStopResult | None:
     return stop_tree(root, **kwargs)
 
 
+FORCE_STOP: contextvars.ContextVar[bool] = contextvars.ContextVar("FORCE_STOP", default=False)
+
+
 def stop_tree(
     root: psutil.Process | None,
     *,
@@ -179,7 +183,7 @@ def _stop_owned_tree(tree: _OwnedTree, timeout: float) -> TreeStopResult:
     try:
         tree.freeze()
         descriptions = {process.pid: describe(process) for process in tree.targets()}
-        if sys.platform == "win32":
+        if sys.platform == "win32" or FORCE_STOP.get():
             tree.kill_all()
         else:
             tree.terminate_gracefully(timeout)

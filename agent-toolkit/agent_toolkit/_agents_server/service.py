@@ -273,6 +273,9 @@ async def _rpc(
             result = None
         elif operation == "accept" and isinstance(arguments, dict):
             result = await coordinator.accept(arguments)
+        elif operation == "force_owned" and isinstance(arguments, dict):
+            await coordinator.force_owned(arguments["launcher"], arguments["session_id"], arguments["timeout"])
+            result = None
         elif operation == "parent_sessions" and isinstance(arguments, dict):
             result = await coordinator.parent_sessions(arguments["parent"], bool(arguments["include_terminated"]))
         elif operation == "ping":

@@ -57,7 +57,13 @@ def _coordinator(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, cur
         _stop_auto_reset=AsyncMock(),
         adopt_session=AsyncMock(),
     )
-    manager: Any = Mock(sessions={session.session_id: session}, _backends={"codex": backend}, save_control_state=AsyncMock())
+    manager: Any = Mock(
+        sessions={session.session_id: session},
+        _pending_resumes={},
+        _active_sends={},
+        _backends={"codex": backend},
+        save_control_state=AsyncMock(),
+    )
     conversation = Conversation(manager, CallerContext({}, tmp_path))
     managers.conversations["parent"] = conversation
     coordinator = ServiceCoordinator(target, tmp_path, managers, Mock(), Mock())

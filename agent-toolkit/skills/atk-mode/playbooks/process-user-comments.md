@@ -25,7 +25,8 @@
    各項目の全文を`atk wi show --target-repo <リポジトリ> <ファイル名>`で読み、コメントを`agent-toolkit:atk-mode/playbooks/user-utterance.md`「原文の保持と取り込み」「方針の候補の取り込み」で読む。
    是正要求に当たる記入は`agent-toolkit:atk-mode/references/origin-and-approval.md`「ユーザー専用の記入欄と是正要求」に従う。
    そのうえで項目ごとの要求を`agent-toolkit:atk-mode/playbooks/request-intake.md`の手順で受け付けて方針を確定する。
-   質問は項目をまたいでまとめてよく、項目のファイル名を問いに添える。
+   本人固有の質問は項目をまたいでまとめてよく、項目のファイル名を問いに添える。
+   方針の承認を求めるときは、対象項目のファイル名を先に送る方針本文に書き、承認は決まった形で単独で問う。
    コメント中の処理担当宛ての質問は、この対話で回答を伝える。
 5. 起草する。
    `agent-toolkit:atk-mode/playbooks/add-awi-by-user.md`「起草と保存」の3で、既存AWIの更新として本文を書き直す。

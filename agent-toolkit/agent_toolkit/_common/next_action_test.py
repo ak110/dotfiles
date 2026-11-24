@@ -42,11 +42,11 @@ def test_recover_from_failure_orders_recovery_before_retry_and_reporting() -> No
         guide.index(step)
         for step in (
             "記録Aを読む",
-            "原因を確かめる",
+            "原因を確かめてください",
             "agent-basics:bugfix",
-            "認可の範囲で回復する",
+            "認可の範囲で回復してください",
             "未適用と分かる場合に限り操作Bを再試行する",
-            "回復結果を伝える",
+            "回復結果を伝え",
         )
     ]
     assert positions == sorted(positions)
