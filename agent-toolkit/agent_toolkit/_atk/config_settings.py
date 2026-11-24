@@ -129,15 +129,11 @@ CONNECTION_ORDER_KEYS = frozenset(key for key in CONNECTION_DEFAULTS if key.ends
 WEEKLY_KEY_DEFAULTS = {
     "weekly_meta_auto_start": "true",
     "weekly_research_auto_start": "false",
-    "weekly_research_repos": "[]",
     "weekly_research_x_api": "false",
-    "weekly_research_x_accounts": "[]",
-    "weekly_research_x_queries": "[]",
 }
 
 WEEKLY_FLAG_KEYS = frozenset({"weekly_meta_auto_start", "weekly_research_auto_start", "weekly_research_x_api"})
 
-WEEKLY_LIST_KEYS = frozenset({"weekly_research_repos", "weekly_research_x_accounts", "weekly_research_x_queries"})
 
 MUTABLE_KEY_DEFAULTS = {
     **MODEL_DEFAULTS,
@@ -182,6 +178,13 @@ RETIRED_FIXED_KEYS = {
     "weekly_research_x_max_users": f"1回あたり{X_MAX_USERS}ユーザー",
     "usage_activity_mode": "観測に基づく自動補正",
     "claude_reset_inventory": "`atk config usage --set-claude-reset-inventory`",
+}
+
+
+RETIRED_RESEARCH_KEYS = {
+    "weekly_research_repos": "`atk config repos`",
+    "weekly_research_x_accounts": "`atk run-script research-sources -- --add-account=<アカウント>`",
+    "weekly_research_x_queries": "`atk run-script research-sources -- --add-query=<検索語>`",
 }
 
 
@@ -330,6 +333,7 @@ def config_environment_variable_names() -> tuple[str, ...]:
         *MUTABLE_KEY_DEFAULTS,
         *LEGACY_REMOTE_HOSTS_KEYS,
         *RETIRED_CONNECTION_KEYS,
+        *RETIRED_RESEARCH_KEYS,
         *(key for key in RETIRED_FIXED_KEYS if key != "usage_activity_mode"),
         *sorted(RETIRED_MODEL_KEYS),
         "process_loop_repositories",
@@ -403,10 +407,7 @@ _SETTING_DESCRIPTIONS = {
     "session_review_auto_start": "会話の終わりに振り返りの候補を自動で処理するか",
     "weekly_meta_auto_start": "日曜14時の週枠でメタ分析を自動で起動するか",
     "weekly_research_auto_start": "日曜14時の週枠で外部情報の調査を自動で起動するか",
-    "weekly_research_repos": "外部情報の調査の対象リポジトリ。先頭の作業ツリーで調査する",
     "weekly_research_x_api": "外部情報の調査でX APIの有償取得を使うか",
-    "weekly_research_x_accounts": "外部情報の調査で読むXのアカウント",
-    "weekly_research_x_queries": "外部情報の調査で読むXの検索語",
     "agents_concurrency": "委譲先の同時実行数の上限",
     "dotfiles_mode": "dotfilesの配布範囲",
     "serve_host": "ブラウザーから接続するサーバーの待受アドレス",
@@ -433,7 +434,6 @@ def setting_format(key: str) -> str:
         return "SSHホスト名のJSON文字列配列"
     return {
         "repositories": "リポジトリIDと登録属性のJSONオブジェクト",
-        **dict.fromkeys(sorted(WEEKLY_LIST_KEYS), "文字列のJSON配列"),
         "agents_concurrency": "上限の整数、論理CPU数への倍率（例: 2.5x）、またはoff",
         "serve_host": "空でないホスト名またはIPアドレス",
         "serve_port": "1から65535までの整数",
@@ -471,8 +471,6 @@ def validate_mutable_setting(key: str, value: str) -> None:
         validate_permissions(value)
     elif key == "agents_concurrency":
         parse_agents_concurrency(value)
-    elif key in WEEKLY_LIST_KEYS:
-        parse_string_list(value)
     elif key in MODEL_DEFAULTS:
         validate_stage_model_candidates(value)
         if key == "orchestrate_model" and any(candidate.startswith("opencode:") for candidate in value.split(",")):

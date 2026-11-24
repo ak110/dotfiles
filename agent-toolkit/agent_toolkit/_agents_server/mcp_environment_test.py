@@ -18,16 +18,20 @@ def test_mcp_setting_names_follow_public_config_keys(
     for key in keys:
         assert f"AGENT_TOOLKIT_CONFIG_{key.upper()}" in names
         config.resolve_mutable_setting(key)
+    legacy_labels = {
+        **dict.fromkeys(config_settings.RETIRED_CONNECTION_KEYS, "旧接続設定"),
+        **dict.fromkeys(config_settings.RETIRED_RESEARCH_KEYS, "旧調査設定"),
+    }
     for name in setting_names:
         key = name.removeprefix("AGENT_TOOLKIT_CONFIG_").lower()
-        if key in config._RETIRED_CONNECTION_KEYS:  # pylint: disable=protected-access  # noqa: SLF001
-            # 旧接続設定キーの環境変数は子へ渡し、移行先を示す拒否を子でも保つ。
+        if key in legacy_labels:
             assert name in names
+            assert key not in keys
             monkeypatch.setenv(name, "legacy-value")
             with pytest.raises(SystemExit) as exited:
                 atk.main(["config", "show"])
             assert exited.value.code == 2
-            assert "旧接続設定" in capsys.readouterr().err
+            assert legacy_labels[key] in capsys.readouterr().err
             monkeypatch.delenv(name)
         elif key in config_settings.RETIRED_FIXED_KEYS or key in config_settings.LEGACY_REMOTE_HOSTS_KEYS:
             assert name in names

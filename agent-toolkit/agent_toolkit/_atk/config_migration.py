@@ -6,7 +6,7 @@ import stat
 import tomllib
 from typing import Any
 
-from agent_toolkit._atk import config_repositories
+from agent_toolkit._atk import config_repositories, research_subscriptions
 from agent_toolkit._atk import config_settings as _config_settings
 from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._common import file_lock, runtime_environment, usage_settings
@@ -232,6 +232,34 @@ def remote_hosts_environment() -> tuple[str, str]:
         ) from error
 
 
+_RESEARCH_REPOS = "weekly_research_repos"
+_RESEARCH_SUBSCRIPTIONS = {"accounts": "weekly_research_x_accounts", "queries": "weekly_research_x_queries"}
+
+
+def _migrate_research_settings(config: dict[str, str]) -> None:
+    raw_repos = config.get(_RESEARCH_REPOS, "[]")
+    try:
+        old_repos = _config_settings.parse_string_list(raw_repos)
+        if old_repos:
+            raw = config.get("repositories", "{}")
+            repositories = config_repositories.parse(raw, check_paths=False)
+            for value in old_repos:
+                repo_id, path = config_repositories.identifier(value)
+                repositories.setdefault(repo_id, {"edit": "awi", **({"path": path} if path else {})})
+            config["repositories"] = json.dumps(repositories, ensure_ascii=False)
+        initial = research_subscriptions.parse(
+            {field: json.loads(config[key]) for field, key in _RESEARCH_SUBSCRIPTIONS.items() if key in config}
+        )
+    except (TypeError, ValueError) as error:
+        raise _next_action.ActionableError(
+            f"旧調査設定を移行できない: {error}",
+            next_action="設定ファイルの旧調査設定を確認し、有効なリポジトリ・Xアカウント・検索語に直して再実行する",
+        ) from error
+    research_subscriptions.migrate({field: values for field, values in initial.items() if values})
+    for key in _config_settings.RETIRED_RESEARCH_KEYS:
+        config.pop(key, None)
+
+
 def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | None = None) -> dict[str, str]:
     changes = dict(updates or {})
     migrated = config_repositories.migrate(plan_connection_migration(config, changes))
@@ -244,7 +272,7 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
         migrated["remote_hosts"] = merge_remote_hosts(*old_hosts)
     migrated.update(changes)
     if not any(key in config for key in _config_settings.RETIRED_MODEL_KEYS):
-        return migrate_fixed_settings(migrated)
+        return _finish_legacy_migration(migrated)
     stages = {
         "execute": ("execute", "high"),
         "review": ("review", "medium"),
@@ -284,9 +312,16 @@ def plan_legacy_migration(config: dict[str, str], *, updates: dict[str, str] | N
                     ),
                 )
             _config_settings.validate_mutable_setting(target, migrated[target])
-    return migrate_fixed_settings(
+    return _finish_legacy_migration(
         {key: value for key, value in migrated.items() if key not in _config_settings.RETIRED_MODEL_KEYS}
     )
+
+
+def _finish_legacy_migration(config: dict[str, str]) -> dict[str, str]:
+    migrated = migrate_fixed_settings(config)
+    if _config_settings.RETIRED_RESEARCH_KEYS.keys() & migrated.keys():
+        _migrate_research_settings(migrated)
+    return migrated
 
 
 def migrate_legacy_settings() -> None:
@@ -297,6 +332,7 @@ def migrate_legacy_settings() -> None:
         *_config_settings.RETIRED_CONNECTION_KEYS,
         *_config_settings.RETIRED_FIXED_KEYS,
         "process_loop_repositories",
+        *_config_settings.RETIRED_RESEARCH_KEYS,
         "codex_auto_reset",
         "usage_auto_allocation",
         *_config_settings.LEGACY_REMOTE_HOSTS_KEYS,
@@ -457,25 +493,14 @@ def check_legacy_environment() -> None:
             next_action="旧環境変数を解除し、工程別の環境変数へ置き換えて再実行する: " + "; ".join(replacements),
         )
 
-    connection_found = [
-        key
-        for key in _config_settings.RETIRED_CONNECTION_KEYS
-        if runtime_environment.environment().get(_config_settings.config_env_name(key), "")
-    ]
-    if connection_found:
-        replacements = [
-            f"{_config_settings.config_env_name(key)} → "
-            + ", ".join(
-                _config_settings.config_env_name(target) if target in _config_settings.MUTABLE_KEY_DEFAULTS else target
-                for target in _config_settings.RETIRED_CONNECTION_KEYS[key]
-            )
-            for key in connection_found
-        ]
-        raise _next_action.ActionableError(
-            "廃止した旧接続設定の環境変数が設定されています: "
-            + ", ".join(_config_settings.config_env_name(key) for key in connection_found),
-            next_action="旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する: " + "; ".join(replacements),
-        )
+    _check_retired_environment(
+        "接続", _config_settings.RETIRED_CONNECTION_KEYS, "旧環境変数を解除し、接続設定の新しい環境変数へ置き換えて再実行する"
+    )
+    _check_retired_environment(
+        "調査",
+        {key: (target,) for key, target in _config_settings.RETIRED_RESEARCH_KEYS.items()},
+        "値を控えて旧環境変数を解除し、次の操作で移してから再実行する",
+    )
 
     retired = _config_settings.config_env_name("usage_auto_allocation")
     if retired in runtime_environment.environment():
@@ -483,3 +508,23 @@ def check_legacy_environment() -> None:
             f"廃止した設定の環境変数が設定されています: {retired}",
             next_action="旧環境変数を解除して再実行する。候補順は工程別の`*_model`キーで指定する",
         )
+
+
+def _check_retired_environment(kind: str, destinations: dict[str, tuple[str, ...]], guidance: str) -> None:
+    env = runtime_environment.environment()
+    found = [key for key in destinations if env.get(_config_settings.config_env_name(key), "")]
+    if not found:
+        return
+    replacements = [
+        f"{_config_settings.config_env_name(key)} → "
+        + ", ".join(
+            _config_settings.config_env_name(target) if target in _config_settings.MUTABLE_KEY_DEFAULTS else target
+            for target in destinations[key]
+        )
+        for key in found
+    ]
+    raise _next_action.ActionableError(
+        f"廃止した旧{kind}設定の環境変数が設定されています: "
+        + ", ".join(_config_settings.config_env_name(key) for key in found),
+        next_action=f"{guidance}: " + "; ".join(replacements),
+    )

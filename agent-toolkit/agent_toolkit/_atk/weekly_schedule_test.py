@@ -1,6 +1,5 @@
 import argparse
 import datetime
-import json
 import pathlib
 import time
 import types
@@ -33,7 +32,6 @@ def _at(year, month, day, hour, minute=0):
 def _weekly(monkeypatch, tmp_path, tokyo):
     del tokyo
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_AUTO_START", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps([_REPO]))
     monkeypatch.setattr(session_activity, "living_root_session_ids", frozenset)
     monkeypatch.setattr(run_skill_batch, "_plugin_repository", lambda: _REPO)
     monkeypatch.setattr(

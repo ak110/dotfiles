@@ -177,6 +177,8 @@ async def test_public_start_uses_configured_candidate_and_fallback(
 ) -> None:
     """公開startで候補の有無と順序を保ち、認証失敗なら次engineへ進む。"""
     capture = _install_cli(tmp_path, monkeypatch)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "config"))
     script = capture.parent / "bin" / "opencode"
 
     async def launch_fake(*args: str, **kwargs: Any) -> asyncio.subprocess.Process:

@@ -245,6 +245,8 @@ def _legacy_key_guidance(keys: list[str]) -> str:
     for key in keys:
         if key in _config_settings.RETIRED_FIXED_KEYS:
             guidance += f"。旧設定キー{key}は廃止した: {_config_settings.RETIRED_FIXED_KEYS[key]}"
+        if key in _config_settings.RETIRED_RESEARCH_KEYS:
+            guidance += f"。旧調査設定キー{key}は廃止した。変更先: {_config_settings.RETIRED_RESEARCH_KEYS[key]}"
         if key in _config_settings.RETIRED_CONNECTION_KEYS:
             guidance += f"。旧接続設定キー{key}は廃止した。移行先: {', '.join(_config_settings.RETIRED_CONNECTION_KEYS[key])}"
     return guidance

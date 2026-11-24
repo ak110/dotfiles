@@ -96,8 +96,17 @@ Claude Codeでは`/`、Codexでは`$`を付けて起動する。
 - `agent-toolkit:atk-mode review-session meta`・`research`: 週次のメタ分析と外部情報の調査。
   日曜14時（ホストの現地時刻）の週枠ごとに1回、`atk serve`の常駐か`atk weekly install`で登録したOSのスケジューラから起動し、取り逃した回はセッションの開始・終了で追う。
   ホストごとに`weekly_meta_auto_start`（初期値true。`session_review_auto_start`がfalseでも止まる）と`weekly_research_auto_start`（初期値false）で切り替え、同じキューを使うホストが複数あれば1台を残して止める。
-  外部情報の調査は、有効にする前に`weekly_research_repos`（初期値は空）へ対象を`atk config set weekly_research_repos '["github.com/<所有者>/<名前>"]'`の形で設定する。
-  購読（`weekly_research_x_accounts`・`weekly_research_x_queries`。初期値は空）は同じJSON配列で指定し、X APIは`weekly_research_x_api`を`true`にするまで呼ばない。
+  外部情報の調査は `atk config repos` の登録先を対象とする。
+  起動するホストでは、そのうち1件以上に実在するGit作業ツリーを登録する。
+  Xの購読はWIを保存するprivate-notesの `research-subscriptions.json` にあり、同じキューを使うホスト間で同期する。
+  結果UWIの回答で変更できる。
+  直接追加するには `atk run-script research-sources -- --add-account=<アカウント>` または `--add-query=<検索語>` を使う。
+  削除には `--remove-account` または `--remove-query` を使う。
+  旧設定ファイルの購読は、共有先にまだ無いアカウントと検索語を追加する。
+  旧調査先が未登録なら、AWIでの変更を受け付ける設定で登録するが、自動巡回は有効にしない。
+  X APIは `weekly_research_x_api` を `true` にするまで呼ばない。
+  最低取得枠が上限に収まる場合は全購読を毎週読み、超える場合は週ごとに対象を入れ替える。
+  Xの検索は直近7日が対象のため、輪番で読まなかった週の投稿は取得できないことがある。
   `X_BEARER_TOKEN`は`atk config get config_dir`が返すディレクトリの`x-api.env`に置く。
   旧設定で指定したファイルは自動で移る。
   1回の上限は100投稿・20ユーザー

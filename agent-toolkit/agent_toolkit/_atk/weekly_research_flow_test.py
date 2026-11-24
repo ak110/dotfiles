@@ -21,7 +21,15 @@ from contextlib import redirect_stdout
 
 import pytest
 
-from agent_toolkit._atk import config_settings, research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
+from agent_toolkit._atk import (
+    config_settings,
+    research_sources,
+    research_subscriptions,
+    run_script,
+    run_skill,
+    run_skill_batch,
+    weekly_schedule,
+)
 from agent_toolkit._atk.run_skill_execution import _SessionOutput
 
 if typing.TYPE_CHECKING:
@@ -99,9 +107,9 @@ def _flow(monkeypatch, tmp_path):
     time.tzset()
     notes = private_notes.default_private_notes()
     git_repository.init_repository(notes)
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps([_REPO]))
+    config_settings.save_config({"repositories": json.dumps({_REPO: {"path": str(tmp_path), "edit": "awi"}})})
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
+    (notes / research_subscriptions.FILENAME).write_text('{"accounts":["poteto"]}', encoding="utf-8")
     monkeypatch.setattr("time.time", lambda: _NOW)
     monkeypatch.setattr(run_skill._wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)  # noqa: SLF001  # pylint: disable=protected-access
     monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda value, **_kwargs: value or _REPO)
