@@ -280,7 +280,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
                 )
         if warning := delivered_repost_gate.pretooluse_notice(payload, session_id):
             pending_notices.append(warning)
-        pending_notices.extend(_unread_material_notices(payload, tool_name, tool_input, session_id))
+        if decision.block is None:
+            pending_notices.extend(_unread_material_notices(payload, tool_name, tool_input, session_id))
         if warning := bugfix_gate.verification_notice(payload, tool_name, tool_input, session_id):
             pending_notices.append(warning)
         if decision.block is None:
@@ -317,9 +318,9 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
         if missing := missing_before_response(payload, session_id, tool_input):
             found.append(
                 (
-                    "レビュー返却が指定した資料の取得を確認できないまま採否を記録した。",
+                    "レビュー返却が指定した資料の取得を確認できないまま、採否を記録する操作である。",
                     f"{'、'.join(missing)}を取得し、採否が変わるなら記録を直せ。",
-                    "レビュー返却が指定した資料を取得しないまま採否を記録した",
+                    "レビュー返却が指定した資料の取得を確認できない採否の記録",
                 )
             )
     if is_send_to_user_tool(tool_name) and isinstance(message := tool_input.get("message"), str):
@@ -329,17 +330,17 @@ def _unread_material_notices(payload: dict, tool_name: str, tool_input: dict, se
         if unread := unread_evidence(payload, session_id, message):
             found.append(
                 (
-                    "画面へ送った根拠に未取得の退避出力がある。",
+                    "画面へ送る根拠に未取得の退避出力がある。",
                     f"`{unread}`の全文を取得し、根拠が変わるなら報告を訂正せよ。",
-                    "未取得の退避出力を根拠に報告した",
+                    "未取得の退避出力を根拠にした報告",
                 )
             )
         if playbook := missing_completion_before_report(payload, session_id, message):
             found.append(
                 (
-                    "作業完了報告の手順書の取得を確認できないまま完了報告を送った。",
+                    "作業完了報告の手順書の取得を確認できないまま、完了報告を送る操作である。",
                     f"`{playbook}`を全文読み、欠けた項目があれば報告を補え。",
-                    "完了報告の手順書を取得しないまま完了報告を送った",
+                    "完了報告の手順書の取得を確認できない完了報告",
                 )
             )
     actor = _agent_id.resolve_hook_agent_id(payload)

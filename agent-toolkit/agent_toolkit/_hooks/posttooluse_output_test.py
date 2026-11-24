@@ -151,9 +151,36 @@ def test_unread_material_on_completion_report_warns_without_blocking(tmp_path, c
     assert [
         entry.partition("\n")[0] for entry in session_state.read_state("stacked-resend")["resend_passed_by_actor"]["main"]
     ] == [
-        "未取得の退避出力を根拠に報告した",
-        "完了報告の手順書を取得しないまま完了報告を送った",
+        "未取得の退避出力を根拠にした報告",
+        "完了報告の手順書の取得を確認できない完了報告",
     ]
+
+
+def test_blocked_completion_report_is_not_recorded_as_unread(tmp_path, capsys, monkeypatch):
+    from agent_toolkit._hooks import agents_server_session_advisor  # pylint: disable=import-outside-toplevel
+
+    monkeypatch.setattr(agents_server_session_advisor, "outstanding_before_completion", lambda *_: "未回収の担当がいる。")
+    source = tmp_path / "saved.txt"
+    source.write_text("先頭\n残り\n", encoding="utf-8")
+    shell = {
+        "session_id": "blocked-unread",
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "printf trial"},
+        "tool_response": {"persistedOutputPath": str(source)},
+    }
+    assert posttooluse.main(json.dumps(shell)) == 0
+    capsys.readouterr()
+    send = {
+        "session_id": "blocked-unread",
+        "tool_name": "mcp__plugin_agent-toolkit_agents_server__send_to_user",
+        "tool_input": {"message": f"## 作業完了報告\n完了: `{source}`で対象がなかった。"},
+    }
+    assert dispatch.main(json.dumps(send)) == 0
+    output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "未取得の退避出力" not in output.get("additionalContext", "")
+    assert not session_state.read_state("blocked-unread").get("resend_passed_by_actor")
 
 
 @pytest.mark.parametrize("envelope", ["ending-row", "child-body"])

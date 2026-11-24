@@ -76,6 +76,15 @@ def test_same_message_resent_passes_without_skill(tmp_path: pathlib.Path) -> Non
     assert not _pretooluse_denied(payload)
 
 
+def test_resend_permission_does_not_carry_over_to_next_prompt(tmp_path: pathlib.Path) -> None:
+    first = {**_human("ここがバグっている"), "uuid": "h1"}
+    payload = _payload([first], tmp_path)
+    assert _pretooluse_denied(payload)
+    assert not _pretooluse_denied(payload)
+    later = _payload([first, {**_human("別の箇所も間違ってるよ"), "uuid": "h2"}], tmp_path)
+    assert _pretooluse_denied(later)
+
+
 def test_stacked_quality_blocks_pass_on_one_resend(tmp_path: pathlib.Path) -> None:
     payload = _payload([_human("ここがバグっている")], tmp_path)
     message = "既存の規範で十分なので追加の対策はしない。"

@@ -31,7 +31,7 @@ lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
+lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context, resend_scope
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
 # 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
@@ -319,6 +319,7 @@ def send_block(payload: dict, message: object = None) -> str | None:
             notice.QUALITY_RESEND_KEY,
             message,
             label="欠陥の指摘の後にagent-basics:bugfixを起動せずに報告した",
+            scope=resend_scope(payload),
         )
     ):
         return None

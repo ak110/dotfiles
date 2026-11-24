@@ -260,7 +260,9 @@ RESEND_PASSED_KEY = "resend_passed_by_actor"
 QUALITY_RESEND_KEY = "quality_gate_resend_by_actor"
 
 
-def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, label: str = "", limit: int = 16) -> bool:
+def consume_resend(  # noqa: PLR0913 -- 記録の区別に要る値をキーワードで受け取る
+    session_id: str, actor: str, state_key: str, text: str, *, label: str = "", scope: str = "", limit: int = 16
+) -> bool:
     """同じ主体が同じ本文を再発行した時に真を返す。初回は記録して偽を返す。  pyfltr: allow-comment
 
     遮断の解消を特定の手段（スキルの起動、資料の取得）だけに頼らず、誤検出や手段が使えない時にも進められるようにする。
@@ -268,7 +270,7 @@ def consume_resend(session_id: str, actor: str, state_key: str, text: str, *, la
     """
     if not session_id:
         return False
-    fingerprint = hashlib.sha256(text.encode()).hexdigest()
+    fingerprint = hashlib.sha256(f"{scope}\n{text}".encode()).hexdigest()
     repeated = False
 
     def update(state: dict) -> dict | None:

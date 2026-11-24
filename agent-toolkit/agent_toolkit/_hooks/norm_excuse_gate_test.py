@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agent_toolkit._hooks import norm_excuse_gate
+from agent_toolkit._hooks import norm_excuse_gate, notice
 
 
 @pytest.mark.parametrize(
@@ -52,6 +52,9 @@ def test_reissue_of_same_text_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     assert norm_excuse_gate.text_block(payload, text, "送達") is None
     assert norm_excuse_gate.text_block(payload, text, "送達") is None
     assert norm_excuse_gate.text_block(payload, "問題ない本文。", "送達") is None
+    assert [entry.partition("\n")[0] for entry in notice.pending_resend_passed("s1", "main")] == [
+        "既存の規範を理由に対処を見送る言い回しの本文を再発行した"
+    ] * 2
 
 
 @pytest.mark.parametrize("summarized", [False, True])

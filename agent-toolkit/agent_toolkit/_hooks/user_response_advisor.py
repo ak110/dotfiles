@@ -227,6 +227,20 @@ def _awaits_background(entries: list[dict], session_id: str, transcript_path: st
     return bool(launched - completed - _resident_bash_ids(transcript_path))
 
 
+def resend_scope(payload: dict) -> str:
+    """遮断の再発行の記録を、最新の人間の発話（Codexはturn）ごとに分ける識別子を返す。  pyfltr: allow-comment
+
+    別の発話への初回の送達に、前の発話で許した再発行を持ち越さないためである。
+    """
+    if is_codex_payload(payload):
+        value = payload.get("turn_id")
+        return value if isinstance(value, str) else ""
+    path = payload.get("transcript_path")
+    lines = transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
+    context = latest_human_turn_context(lines) if lines else None
+    return (context[2] or "") if context else ""
+
+
 def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:
     context = latest_human_turn_context(lines)
     return None if context is None else (context[0], context[1])
