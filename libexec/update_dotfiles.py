@@ -486,6 +486,12 @@ def main(argv: list[str] | None = None) -> int:
                     returncode = _run_post_update(args.no_sudo)
                     if returncode != 0:
                         return update_dotfiles_runtime.finish(returncode)
+            except KeyboardInterrupt:
+                title = update_dotfiles_runtime.current_stage_title or "update-dotfiles"
+                message = f"{title}を中断しました。未完了です。原因を確認してupdate-dotfilesを再実行してください。"
+                print(message, file=sys.stderr)
+                update_dotfiles_runtime.last_stderr_tail = sync_report.truncate_tail(message)
+                return update_dotfiles_runtime.finish(130)
             except update_dotfiles_process.GitReclaimError as error:
                 update_dotfiles_runtime.logger.exception("Git子プロセスの回収失敗")
                 print(str(error), file=sys.stderr)
