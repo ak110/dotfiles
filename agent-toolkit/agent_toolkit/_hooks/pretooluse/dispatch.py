@@ -186,15 +186,19 @@ _UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
 _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
 
 
-_ALTERNATIVE_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*別案(?:[*_]*\s*[:：]|[:：][*_]+)")
+_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*(?:[-*+][^\S\n]+)?[*_]*別案(?:[*_]*[^\S\n]*[:：]|[:：][*_]+)")
+_INLINE_ALTERNATIVE_LABEL = re.compile(r"[^\S\n]*[*_]*別案[*_]*[^\S\n]*[:：]")
+_ALTERNATIVE_BOUNDARY = re.compile(r"`+|[「」『』。\n]")
+_QUOTE_END = {"「": "」", "『": "』"}
 _POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
 _SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
 _SOURCE_REVIEW_FILE = "external-source-review.md"
 _SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?(?:add-awi-by-user|process-user-comments)`?\s*$")
 
 
-def _understanding_section_lines(message: str) -> Iterable[str]:
+def _understanding_section_lines(message: str) -> Iterable[tuple[str, bool]]:
     section_level = 0
+    plain_paragraph = False
     paragraph_break = False
     for line in without_literal_blocks(message).splitlines():
         heading = _MARKDOWN_HEADING.match(line)
@@ -213,10 +217,11 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
         if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
             section_level = level or 6
             paragraph_break = False
-            if target[1]:
-                yield target[1]
+            plain_paragraph = not level and target[1] is not None
+            if target[1] or plain_paragraph:
+                yield target[1] or "", plain_paragraph
             continue
-        if heading and level <= section_level:
+        if (heading and level <= section_level) or (plain_paragraph and not line.strip()):
             section_level = 0
             continue
         if not section_level:
@@ -229,16 +234,48 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
             section_level = 0
             continue
         paragraph_break = not line.strip()
-        yield title if heading else line
+        yield (title if heading else line), plain_paragraph
 
 
 def _has_original_text_label_in_understanding(message: str) -> bool:
-    return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
+    return any(_ORIGINAL_TEXT_LABEL.match(line) for line, _ in _understanding_section_lines(message))
+
+
+def _has_alternative(lines: list[str]) -> bool:
+    if lines and _ALTERNATIVE_LABEL.match(lines[0]):
+        return True
+    text = "\n".join(lines)
+    quote_ends: list[str] = []
+    code_delimiter = ""
+    for boundary in _ALTERNATIVE_BOUNDARY.finditer(text):
+        mark = boundary[0]
+        if mark.startswith("`"):
+            if not code_delimiter:
+                code_delimiter = mark
+            elif code_delimiter == mark:
+                code_delimiter = ""
+        elif code_delimiter:
+            continue
+        elif mark in _QUOTE_END:
+            quote_ends.append(_QUOTE_END[mark])
+        elif quote_ends:
+            if mark == quote_ends[-1]:
+                quote_ends.pop()
+        elif (
+            mark == "。"
+            and _INLINE_ALTERNATIVE_LABEL.match(text, boundary.end())
+            or mark == "\n"
+            and _ALTERNATIVE_LABEL.match(text, boundary.end())
+        ):
+            return True
+    return False
 
 
 def _missing_alternative(message: str) -> bool:
-    lines = [line for line in _understanding_section_lines(message) if line.strip()]
-    return len(lines) > 1 and not any(_ALTERNATIVE_LABEL.match(line) for line in lines)
+    section = list(_understanding_section_lines(message))
+    lines = [line for line, _ in section if line.strip()]
+    required = len(lines) > 1 or any(plain for _, plain in section)
+    return required and not _has_alternative(lines)
 
 
 def _external_source_urls(lines: Iterable[str]) -> set[str]:
@@ -509,7 +546,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         if isinstance(message, str) and _missing_alternative(message):
             return Decision(
                 block=_block_notice(
-                    "複数行の「発話の理解」に「別案」の項目がない。",
+                    "「発話の理解」に「別案」の項目がない。",
                     fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
                 )
             )
