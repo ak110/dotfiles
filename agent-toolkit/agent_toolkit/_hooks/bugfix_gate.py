@@ -1,9 +1,13 @@
 """ユーザーの欠陥指摘を受けたターンで、`agent-basics:bugfix`を起動せずに報告する操作を遮断する。  pyfltr: allow-comment
 
 `send_to_user`の呼出し（PreToolUse）と、応答本文だけで終えるStopの両方が同じ判定（`bugfix_pending`）を使う。
-この遮断はtranscriptと、書き出し前のREPL内の成功を受けたPostToolUseの記録で判定する。最後の人間の発話が欠陥指摘の語を含み、その発話の後に`Skill`による
-`agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。語の一致は誤検出があり得るが、
-遮断された主体は`agent-basics:bugfix`を起動すれば同じ操作を通せるため、誤検出でも作業は止まらない。
+この遮断はtranscriptと、書き出し前のREPL内の成功を受けたPostToolUseの記録で判定する。最後の人間の発話が欠陥指摘の語か
+是正の文型（当為・反語の問い・禁止・推奨）を含み、その発話の後に`Skill`による
+`agent-basics:bugfix`の呼出しが無い場合に成立する。発話の意味は判定しない。
+是正の文型は、欠陥の語を含まない是正（「〜すべきでは？」「〜は避けるべき」）を判定するために置く。
+欠陥の内容の言い換えは限りが無いが、成果物を改めさせる述語の形は少数に集まるため、欠陥の語を1つずつ足す代わりに文型で判定する。
+届いた「発話の理解」に分類があれば文型より優先する。是正に対する同文の再発行では解除しない。
+ただし起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
 （2026年11月12日の統括セッション）。起動の有無は機械的に確定でき、起動で回復できるため、
@@ -46,6 +50,60 @@ _DEFECT_RE = re.compile(
     r"調査不足|鵜呑みにせず|手戻り(?:が)?多すぎ|直すべき|になってなかったっけ|ユーザーの手を煩わせないで|また再発|反映されて(?:い)?ない",
     re.IGNORECASE,
 )
+
+# 是正の文型。理由はモジュールの説明にある。`べきか`は選び方を尋ねる問いのため除く。  pyfltr: allow-comment
+_CORRECTIVE_FORM_RE = re.compile(
+    r"べき(?!か)|の?では(?:ない)?(?:か|の)?[？?]|じゃ(?:ない|ね)(?:か|の)?[？?]|避け(?:て|る|ろ|よう)|"
+    r"(?:ほう|方)が(?:いい|良い|よい|よかった|良かった)|ないで(?:ほしい|欲しい|ください|下さい|くれ|[。！!]|\s*$)",
+    re.MULTILINE,
+)
+
+_UNDERSTANDING = re.compile(r"^(?:#{1,6}\s+)?[*_]*発話の理解(?:[*_]*[:：]|[*_]*$)")
+_CLASSIFICATION = re.compile(r"\s*(?:[-*+]\s+)?分類[:：]\s*(是正|非是正)\s*")
+
+
+def is_classification_line(text: str) -> bool:
+    return _CLASSIFICATION.fullmatch(text) is not None
+
+
+def _understanding_kind(text: object) -> str | None:
+    if not isinstance(text, str):
+        return None
+    lines = QUOTED_MATERIAL_RE.sub("", text).strip().splitlines()
+    if not lines or not _UNDERSTANDING.match(lines[0]):
+        return None
+    match = _CLASSIFICATION.fullmatch(lines[1]) if len(lines) > 1 else None
+    return match[1] if match else ""
+
+
+def _turn_classification(entries: list[dict]) -> str | None:
+    calls: dict[str, str] = {}
+    for entry in entries:
+        message = entry.get("message")
+        blocks = message.get("content") if isinstance(message, dict) else None
+        for block in blocks if isinstance(blocks, list) else ():
+            if not isinstance(block, dict):
+                continue
+            if (
+                entry.get("type") == "assistant"
+                and block.get("type") == "tool_use"
+                and str(block.get("name", "")).endswith(transcript.SEND_TO_USER_TOOL_SUFFIX)
+                and isinstance(identifier := block.get("id"), str)
+                and isinstance(args := block.get("input"), dict)
+                and (classification := _understanding_kind(args.get("message")))
+            ):
+                calls[identifier] = classification
+            elif (
+                entry.get("type") == "user"
+                and block.get("type") == "tool_result"
+                and block.get("is_error") is not True
+                and isinstance(identifier := block.get("tool_use_id"), str)
+                and identifier in calls
+            ):
+                # 最初に届いた分類を固定し、後から報告を通すための分類変更を使わない。  pyfltr: allow-comment
+                return calls[identifier]
+    return None
+
 
 _block_notice = notice.block_formatter("bugfix_gate")
 _failure_notice = notice.formatter("verification-bugfix")
@@ -188,10 +246,12 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
 
 
 def is_defect_report(prompt: str) -> bool:
-    return _DEFECT_RE.search(QUOTED_MATERIAL_RE.sub("", prompt)) is not None
+    text = QUOTED_MATERIAL_RE.sub("", prompt)
+    return _DEFECT_RE.search(text) is not None or _CORRECTIVE_FORM_RE.search(text) is not None
 
 
-def _started_bugfix(entries: list[dict]) -> bool:
+def _bugfix_calls(entries: list[dict]) -> tuple[bool, bool]:
+    failed = False
     calls: dict[str, bool] = {}
     for entry in entries:
         message = entry.get("message")
@@ -213,6 +273,7 @@ def _started_bugfix(entries: list[dict]) -> bool:
                 name = receipt.get("commandName") if isinstance(receipt, dict) else None
                 if block.get("is_error") is True or success is False:
                     calls[identifier] = False
+                    failed = True
                 elif (
                     entry.get("isVirtual") is True
                     and block.get("is_error") is False
@@ -221,7 +282,7 @@ def _started_bugfix(entries: list[dict]) -> bool:
                     and name in _BUGFIX_SKILLS
                 ):
                     calls[identifier] = True
-    return any(calls.values())
+    return any(calls.values()), failed
 
 
 def bugfix_pending(lines: list[str], repl_human_id: object = None) -> bool:
@@ -229,8 +290,15 @@ def bugfix_pending(lines: list[str], repl_human_id: object = None) -> bool:
     if turn is None:
         return False
     prompt, entries, human_id = turn
+    return _requires_bugfix(prompt, entries, human_id, repl_human_id)
+
+
+def _requires_bugfix(prompt: str, entries: list[dict], human_id: object, repl_human_id: object) -> bool:
+    kind = _turn_classification(entries)
+    detected = is_defect_report(prompt) if kind is None else kind == "是正"
+    started, failed = _bugfix_calls(entries)
     return (
-        is_defect_report(prompt) and not (human_id is not None and human_id == repl_human_id) and not _started_bugfix(entries)
+        detected and not (human_id is not None and human_id == repl_human_id) and not (started or (failed and kind == "是正"))
     )
 
 
@@ -253,8 +321,8 @@ def observe_repl_skill_start(payload: dict, session_id: str) -> None:
         return
     if (lines := _read_human_lines(payload)) is None or (turn := latest_human_turn_context(lines)) is None:
         return
-    prompt, _, human_id = turn
-    if human_id is None or not is_defect_report(prompt):
+    _, _, human_id = turn
+    if human_id is None:
         return
 
     def remember(state: dict) -> dict:
@@ -293,22 +361,36 @@ def _block_body(delivery: str) -> str:
         f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
         fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。"
         "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認してください。"
-        "欠陥の指摘でない場合とスキルを起動できない場合は、同じ本文を再発行すれば1回通る。",
+        "発話の理解では分類を明示してください。是正と分類した場合は同じ本文の再発行では解除しません。",
     )
 
 
-def _pending_for_main(payload: dict) -> bool:
-    lines = _read_human_lines(payload)
-    if lines is None:
-        return False
+def _pending_for_turn(payload: dict, turn: tuple[str, list[dict], str | None]) -> bool:
     session_id = payload.get("session_id")
     repl_human_id = read_state(session_id).get(_REPL_SKILL_TURN_KEY) if isinstance(session_id, str) and session_id else None
-    return bugfix_pending(lines, repl_human_id)
+    return _requires_bugfix(*turn, repl_human_id)
 
 
 def send_block(payload: dict, message: object = None) -> str | None:
-    if not _pending_for_main(payload):
+    lines = _read_human_lines(payload)
+    if lines is None or (turn := latest_human_turn_context(lines)) is None:
         return None
+    kind = _understanding_kind(message)
+    classification = _turn_classification(turn[1])
+    if kind is not None and classification is None:
+        return (
+            None
+            if kind
+            else _block_notice(
+                "発話の理解に分類がない。",
+                fix="見出しの直後に `分類: 是正` または `分類: 非是正` を1行で書いて再送してください。"
+                "是正なら `agent-basics:bugfix` を起動してください。",
+            )
+        )
+    if not _pending_for_turn(payload, turn):
+        return None
+    if classification == "是正":
+        return _block_body("ユーザーへの送達")
     session_id = payload.get("session_id")
     if (
         isinstance(message, str)
@@ -331,7 +413,10 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if resolved is None:
         return "approve", ""
     session_id, payload = resolved
-    if payload.get("stop_hook_active") is True or not _pending_for_main(payload):
+    if payload.get("stop_hook_active") is True:
+        return "approve", ""
+    lines = _read_human_lines(payload)
+    if lines is None or (turn := latest_human_turn_context(lines)) is None or not _pending_for_turn(payload, turn):
         return "approve", ""
     _stop_session.append_stop_log(session_id, "block_bugfix_not_invoked", {})
     return "block", _block_body("ターンの終了")

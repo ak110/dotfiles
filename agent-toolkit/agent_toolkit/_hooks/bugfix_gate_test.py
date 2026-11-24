@@ -54,9 +54,17 @@ def _pretooluse_denied(payload: dict, message: str = "原因は…") -> bool:
         ("この出力は間違ってるよ", True),
         ("the output is broken", True),
         ("進捗を教えて", False),
+        ("混同を避けた例を挙げて", False),
         ("貼り付けたコード:\n```\n# バグ\n```\n進捗は？", False),
         ("`バグ`という語の意味を教えて", False),
         ("> おかしい\n続けて", False),
+        ("全体的に、差分を追記するんじゃなく全体を整理しなおすべきでは？ 作業する側が混乱しやすい書き方は避けるべき", True),
+        ("それは別のファイルに置いたほうがいい", True),
+        ("勝手にpushしないで", True),
+        ("この設計で問題ないのでは？", True),
+        ("AWIを処理して", False),
+        ("このファイルを読んで要約して", False),
+        ("どちらの方式にすべきか調べて", False),
     ],
 )
 def test_defect_report_judgement(prompt: str, expected: bool) -> None:
@@ -67,6 +75,54 @@ def test_defect_report_judgement(prompt: str, expected: bool) -> None:
 def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) -> None:
     assert _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path))
     assert not _pretooluse_denied(_payload([_human("ここがバグっている"), _BUGFIX], tmp_path))
+
+
+@pytest.mark.parametrize(
+    ("prompt", "kind", "denied"),
+    [
+        ("この説明は冗長です。", "是正", True),
+        ("混同を避けた例を挙げて", "非是正", False),
+        ("この設計で問題ないのでは？", "非是正", False),
+    ],
+)
+def test_classified_turn_controls_delivery_and_stop(tmp_path: pathlib.Path, prompt: str, kind: str, *, denied: bool) -> None:
+    understanding = {
+        "type": "assistant",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "name": _SEND_TO_USER,
+                    "id": "understanding",
+                    "input": {"message": f"## 発話の理解\n分類: {kind}"},
+                }
+            ]
+        },
+    }
+    delivered = {
+        "type": "user",
+        "message": {
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "understanding",
+                    "is_error": False,
+                }
+            ]
+        },
+    }
+    records = [_human(prompt), understanding, delivered]
+    payload = _payload(records, tmp_path)
+    assert _pretooluse_denied(payload) is denied
+    assert _pretooluse_denied(payload) is denied
+    assert (bugfix_gate.evaluate(json.dumps(payload))[0] == "block") is denied
+    assert not _pretooluse_denied(_payload([*records, _BUGFIX], tmp_path))
+
+
+def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
+    payload = _payload([_human("この説明は冗長です。")], tmp_path)
+    assert _pretooluse_denied(payload, "## 発話の理解\n短くする。")
+    assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n短くする。")
 
 
 def test_same_message_resent_passes_without_skill(tmp_path: pathlib.Path) -> None:
@@ -338,3 +394,24 @@ def test_ci_failure_uses_only_the_same_native_execution(tmp_path, field):
     payload[field] = "different"
     posttooluse.main(json.dumps(payload))
     assert not bugfix_gate.read_state(payload["session_id"]).get(bugfix_gate.FAILURE_STATE_KEY)
+
+
+_CORRECTION_2026_11_24 = (
+    "全体的に、差分を追記するんじゃなく全体を整理しなおすべきでは？ 作業する側が混乱しやすい書き方は避けるべき"
+)
+
+
+@pytest.mark.parametrize(
+    "prompt,gated", [(_CORRECTION_2026_11_24, True), ("この方針で進めるべきでは？", True), ("進捗を教えて", False)]
+)
+def test_queued_corrective_form_needs_bugfix(
+    prompt: str, gated: bool, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entries = [
+        _human("WIの原稿を直して"),
+        {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": prompt}},
+    ]
+    assert _pretooluse_denied(_payload(entries, tmp_path)) is gated
+    assert ("decision" in _stop(entries, tmp_path, monkeypatch)) is gated
+    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)

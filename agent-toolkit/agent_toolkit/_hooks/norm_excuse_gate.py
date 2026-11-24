@@ -7,6 +7,10 @@
 採用しない理由から除く。条文の想起だけに頼る対策では再発が止まらなかったため、表現を機械的に検出して遮断する。
 
 判定は語の一致だけで決まり、引用の素材（コードブロック、インラインコード、`>`で始まる引用行、かぎ括弧の中）と否定の形は除く。
+言い回しの判定は言い換えで漏れるため、ユーザーへ届く報告では、見出しが`再発防止`で終わる行の本文が
+対策の種類の語（`_common/prevention_kinds.py`）で始まることも求める。理由の言い回しによらず、
+種類も区分名も示さずに再発防止を見送る報告を止める（2026年11月24日、「規則は既にあり守れなかっただけ」で見送った報告）。
+この検査はターン途中の発話と思考には適用しない。記録の下書きを含み、ユーザーへ届いた報告ではないため。
 誤検出でも作業を止めないよう、同じ主体が同じ発話の中で同じ本文を再発行した場合は通す。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
@@ -20,6 +24,7 @@ import re
 
 from agent_toolkit._hooks import notice
 lazy from agent_toolkit._common import transcript as _transcript
+lazy from agent_toolkit._common.prevention_kinds import KINDS_GUIDANCE, starts_with_kind
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
@@ -38,7 +43,20 @@ EXCUSE_RE = re.compile(
     + r"|規範(?:は|を|の追加は)(?:足さない|追加しない|不要)"
 )
 
+_FREEFORM_EXCUSE_RE = re.compile(
+    r"(?:規則|規範|手順|ルール)(?:には|は|が)(?:既に|すでに|もう)?(?:書かれている|ある|存在する)"
+    r"[\s\S]{0,80}?(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
+    r"|(?:守れ|守られ|従え)ていなかっただけ[\s\S]{0,80}?"
+    r"(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
+)
+
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
+
+# 見出しが`再発防止`（`再発防止策`）で終わる行。`**ご指摘への再発防止**:`のような飾りと前置きを含む。  pyfltr: allow-comment
+_PREVENTION_LINE_RE = re.compile(
+    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<head>[^:：\n。、]{0,20}?再発防止策?)[ \t]*[:：](?P<text>[^\n]*)$",
+    re.MULTILINE,
+)
 
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
@@ -47,8 +65,21 @@ _block_notice = notice.block_formatter("norm_excuse_gate")
 
 
 def find_excuse(text: str) -> str | None:
-    match = EXCUSE_RE.search(_KAGI_QUOTE_RE.sub("", QUOTED_MATERIAL_RE.sub("", text)))
+    unquoted = _KAGI_QUOTE_RE.sub("", QUOTED_MATERIAL_RE.sub("", text))
+    match = EXCUSE_RE.search(unquoted) or _FREEFORM_EXCUSE_RE.search(unquoted)
     return match.group(0) if match else None
+
+
+def find_untyped_prevention(text: str) -> str | None:
+    """本文が対策の種類の語で始まらない最初の`再発防止`の行を返す。本文が空の行は判定しない。  pyfltr: allow-comment"""
+    unquoted = QUOTED_MATERIAL_RE.sub(
+        lambda match: match[0] if match[0].startswith("`") and starts_with_kind(match[0]) else "", text
+    )
+    for match in _PREVENTION_LINE_RE.finditer(unquoted.replace("**", "")):
+        body = match["text"].strip()
+        if body and not starts_with_kind(body):
+            return match.group(0).strip()
+    return None
 
 
 def _consume_retry(payload: dict, text: str) -> bool:
@@ -77,12 +108,27 @@ def _block_body(phrase: str, delivery: str) -> str:
     )
 
 
+def _untyped_prevention_body(line: str, delivery: str) -> str:
+    return _block_notice(
+        f"本文の再発防止の行「{line}」が対策の種類の語で始まらないため、{delivery}を止めた。"
+        "既存の規則があることや守れなかったことは、再発防止を見送る理由にならない。",
+        fix=(
+            f"`agent-basics:bugfix`の`references/prevention.md`に従って策を決め、行の先頭に種類の語を置いてください。{KINDS_GUIDANCE}。"
+            "行が再発防止の記録でないなら、同じ主体から同じ本文を再発行してよい。"
+        ),
+    )
+
+
 def text_block(payload: dict, text: object, delivery: str) -> str | None:
-    if not isinstance(text, str) or (phrase := find_excuse(text)) is None:
+    if not isinstance(text, str):
+        return None
+    phrase = find_excuse(text)
+    untyped = None if phrase is not None else find_untyped_prevention(text)
+    if phrase is None and untyped is None:
         return None
     if _consume_retry(payload, text):
         return None
-    return _block_body(phrase, delivery)
+    return _block_body(phrase, delivery) if phrase is not None else _untyped_prevention_body(untyped or "", delivery)
 
 
 def _codex_turn_texts(lines: list[str]) -> list[str]:
