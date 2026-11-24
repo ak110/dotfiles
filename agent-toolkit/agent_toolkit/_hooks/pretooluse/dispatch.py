@@ -186,8 +186,16 @@ _UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
 _ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
 
 
+_ALTERNATIVE_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*別案(?:[*_]*\s*[:：]|[:：][*_]+)")
+_POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
+_SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
+_SOURCE_REVIEW_FILE = "external-source-review.md"
+_SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?(?:add-awi-by-user|process-user-comments)`?\s*$")
+
+
 def _understanding_section_lines(message: str) -> Iterable[str]:
     section_level = 0
+    paragraph_break = False
     for line in without_literal_blocks(message).splitlines():
         heading = _MARKDOWN_HEADING.match(line)
         strong = _STRONG_HEADING.match(line)
@@ -204,6 +212,7 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
             title = line.strip()
         if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
             section_level = level or 6
+            paragraph_break = False
             if target[1]:
                 yield target[1]
             continue
@@ -212,14 +221,90 @@ def _understanding_section_lines(message: str) -> Iterable[str]:
             continue
         if not section_level:
             continue
-        if strong and not _ORIGINAL_TEXT_LABEL.match(line):
+        if (
+            strong
+            and (paragraph_break or not strong[5].strip())
+            and not (_ORIGINAL_TEXT_LABEL.match(line) or _ALTERNATIVE_LABEL.match(line))
+        ):
             section_level = 0
             continue
+        paragraph_break = not line.strip()
         yield title if heading else line
 
 
 def _has_original_text_label_in_understanding(message: str) -> bool:
     return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
+
+
+def _missing_alternative(message: str) -> bool:
+    lines = [line for line in _understanding_section_lines(message) if line.strip()]
+    return len(lines) > 1 and not any(_ALTERNATIVE_LABEL.match(line) for line in lines)
+
+
+def _external_source_urls(lines: Iterable[str]) -> set[str]:
+    urls = set()
+    within_sources = False
+    for line in lines:
+        if heading := _MARKDOWN_HEADING.match(line):
+            if len(heading[1]) <= 2:
+                within_sources = heading[2].strip() in {"原本", "入力"}
+            continue
+        if not within_sources and not re.match(r"\s*-?\s*(?:外部資料|入力)[:：]", line):
+            continue
+        for match in _SOURCE_URL.finditer(line):
+            url = match[0]
+            if line[: match.start()].endswith("](") and url.endswith(")"):
+                url = url[:-1]
+            urls.add(url)
+    return urls
+
+
+def _external_source_review_needed(session_id: str, tool_input: dict) -> bool:
+    fields = _user_facing_text_fields("AskUserQuestion", tool_input)
+    if not any(
+        field.endswith((".header", ".question")) and (value == "方針の承認" or _POLICY_APPROVAL.search(value))
+        for field, value in fields
+    ):
+        return False
+    contract = work_contract.record_path(session_id)
+    if contract is None:
+        return False
+    try:
+        body = contract.read_text(encoding="utf-8")
+    except OSError, UnicodeError:
+        return False
+    lines = without_literal_blocks(body).splitlines()
+    if not any(_SOURCE_REVIEW_WORK.fullmatch(line) for line in lines):
+        return False
+    urls = _external_source_urls(lines)
+    if not urls:
+        return False
+    try:
+        table = without_literal_blocks(contract.with_name(_SOURCE_REVIEW_FILE).read_text(encoding="utf-8"))
+    except OSError, UnicodeError:
+        return True
+    covered = set()
+    for line in table.splitlines():
+        if not line.startswith("|") or not line.rstrip().endswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip()[1:-1].split("|")]
+        if len(cells) >= 2 and cells[0].strip("`<>") in urls and cells[1].strip("`*_ -—"):
+            covered.add(cells[0].strip("`<>"))
+    return not urls <= covered
+
+
+def _recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:
+    if not session_id or not any(
+        ".options[" in field and ("推奨" in value or re.search(r"\brecommended\b", value, re.IGNORECASE))
+        for field, value in _user_facing_text_fields("AskUserQuestion", tool_input)
+    ):
+        return False
+    return not _notice.consume_resend(
+        session_id,
+        _agent_id.resolve_hook_agent_id(payload),
+        "recommendation_review_by_actor",
+        json.dumps(tool_input, sort_keys=True, ensure_ascii=False),
+    )
 
 
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
@@ -377,6 +462,30 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 fix="今回の対象と除外を確かめ、必要なら本文を直して再送してください。",
             )
         )
+    question_tool = "request_user_input" if is_codex else "AskUserQuestion"
+    if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
+        if not is_codex and _external_source_review_needed(session_id, tool_input):
+            return Decision(
+                block=_block_notice(
+                    "外部資料の対応表が不足しているため、方針の承認はまだ求めていない。",
+                    fix=(
+                        f"セッション一時領域の`{_SOURCE_REVIEW_FILE}`に、各資料のURLと配布規範での定義元か非該当の理由を書いてください。"
+                        "`agent-basics:writing-standards/references/design-heuristics.md`"
+                        "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
+                    ),
+                )
+            )
+        if _recommendation_review_needed(payload, session_id, tool_input):
+            return Decision(
+                block=_block_notice(
+                    "推奨のある質問はまだ送っていない。",
+                    fix=(
+                        "`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」に従ってください。"
+                        "事前承認・方針全体の合意・認可・本人固有の入力は確認し、それ以外の技術判断は質問から外して方針へ書いてください。"
+                        "見直して必要と判断した問いは再発行できます。"
+                    ),
+                )
+            )
     if publication_block := publication_gate.check(payload, session_id, tool_name, tool_input):
         return Decision(block=_block_notice(publication_block[0], fix=publication_block[1]))
     if tool_name == "ExitPlanMode":
@@ -395,6 +504,13 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                 block=_block_notice(
                     "「発話の理解」に「原文」の見出しがある。",
                     fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送する。",
+                )
+            )
+        if isinstance(message, str) and _missing_alternative(message):
+            return Decision(
+                block=_block_notice(
+                    "複数行の「発話の理解」に「別案」の項目がない。",
+                    fix="比較した手段と採否、または別案がないと判断した観点と理由を「別案」に書いてください。",
                 )
             )
         if (
