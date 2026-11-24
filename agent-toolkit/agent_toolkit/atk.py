@@ -58,18 +58,13 @@ lazy from agent_toolkit._atk import user_events_summary as _user_events_summary 
 lazy from agent_toolkit._atk import wait_schedule as _wait_schedule_cmd
 lazy from agent_toolkit._atk import weekly_command as _weekly_cmd
 lazy from agent_toolkit._atk import worktree_stash as _worktree_stash  # noqa: E402
+lazy from agent_toolkit._atk.managed_temp import auto_sweep as _auto_sweep
 lazy from agent_toolkit._atk.serve import command as _serve_command
 lazy from agent_toolkit._atk.wi import cli as _wi_cli
 lazy from agent_toolkit._atk.wi import cli_input as _wi_cli_input
-lazy from agent_toolkit._common import delegated_session as _delegated_session  # noqa: E402
 lazy from agent_toolkit._common import inherited_venv as _inherited_venv
 lazy from agent_toolkit._common import private_notes as _private_notes  # noqa: E402
 lazy from agent_toolkit._git import command as _git_command
-
-_MANAGED_TEMP_CHECK_NEXT_ACTION = (
-    "本来の操作は継続した。表示した原因（所有者・権限など）を除去すると、1日後以降の`atk`の起動で再び回収を試みる"
-)
-"""managed-tempの対象を自動削除できなかった場合に添える次の操作。"""
 
 
 def _extract_legacy_repo_path(argv: list[str]) -> tuple[list[str], str | None]:
@@ -416,7 +411,7 @@ def main(
     if now is None:
         now = datetime.datetime.now()
     if not _skips_managed_temp_sweep(args):
-        _sweep_before_command(now)
+        _auto_sweep.schedule(now)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
         _wi_cli.validate_args(args)
@@ -457,41 +452,6 @@ def _skips_managed_temp_sweep(args: argparse.Namespace) -> bool:
             return args.agents_subcommand in {"list", "show", "logs", "notify"}
         case _:
             return False
-
-
-def _sweep_before_command(now: datetime.datetime) -> None:
-    try:
-        sweep_result = _managed_temp.sweep_managed_temp(now=now)
-    except Exception as error:  # noqa: BLE001  # 自動削除の失敗で本来のサブコマンドを失敗させない
-        sweep_result = _managed_temp.SweepResult([], ((_managed_temp.temp_root_path(), str(error)),))
-
-    if sweep_result.failed and not _delegated_session.is_delegated(os.environ):
-        for path, reason in sweep_result.failed:
-            _outcome.report_persistent_warning(
-                f"managed-tempの対象を自動削除できなかった: {path}: {reason}",
-                next_action=_MANAGED_TEMP_CHECK_NEXT_ACTION,
-            )
-
-    if sweep_result.pressure is not None:
-        _report_space_pressure(sweep_result.pressure)
-
-
-def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
-    gib = 1024**3
-    if pressure.reclaimed_bytes:
-        top = ", ".join(f"{name}={size / gib:.2f}GiB" for name, size in pressure.top_reclaimed)
-        _outcome.report_warning(
-            f"managed-tempの空きが下限（容量の10%）を割ったため、使用中でない対象を古い順に回収した: "
-            f"空き {pressure.free_before / gib:.1f}GiB→{pressure.free_after / gib:.1f}GiB"
-            f"（回収 {pressure.reclaimed_bytes / gib:.2f}GiB）。回収量の上位: {top}",
-            next_action="回収量の上位の対象を作成した作業が参照後に回収していたかを確かめると、再発を防げる",
-        )
-    if pressure.still_low:
-        _outcome.report_warning(
-            f"一時rootを含むディスクの空きが下限（容量の10%）を割っており、自動掃引後も空きが不足している: "
-            f"空き {pressure.free_after / gib:.1f}GiB / 容量 {pressure.total / gib:.1f}GiB",
-            next_action="一時領域の保持理由・猶予・削除失敗と実際の利用を確認し、未使用の再生成可能な資源を個別に回収してください。登録worktreeや親セッションの保護は作成者の終了だけでは解除されない。一時root内外の使用量も確認してください",
-        )
 
 
 def _run_cli() -> None:
