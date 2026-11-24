@@ -56,6 +56,7 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         json.dumps(tool_input, ensure_ascii=False, sort_keys=True) + "\n" + found[0],
         label=f"公開前の新着WIの判定を確認できない公開の操作（{found[0]}）",
         scope=resend_scope(payload),
+        limit=1,
     ):
         return None
     return found[0], f"{found[1]}判定を記録できない場合は、同じ操作を再発行すれば実行する。"

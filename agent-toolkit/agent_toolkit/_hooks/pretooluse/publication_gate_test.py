@@ -47,10 +47,10 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
         denied = gate(command)
         assert denied is not None and all(name in denied for name in names)
     assert gate("git push --dry-run origin develop") is None
-    assert gate("git push origin develop") is None
+    assert gate("gh pr create --base master --head develop") is None
     _write_uwi_file(notes, "20261124-061940-003.md", answer="")
     _write_uwi_file(notes, "20261124-061940-003.md", answer="回答済み")
-    changed = gate("git push origin develop")
+    changed = gate("gh pr create --base master --head develop")
     assert changed is not None and "20261124-061940-003.md" in changed
     _write_uwi_file(notes, "20261124-061940-003.md", answer="")
     contract = tmp_path / "work-contract.md"
@@ -65,6 +65,17 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
     _write_uwi_file(notes, names[1], answer="回答済み")
     recurred = gate("git push")
     assert recurred is not None and names[1] in recurred
+    _write_uwi_file(notes, names[0], answer="回答済み")
+    contract.write_text("", encoding="utf-8")
+    both = gate("git push")
+    assert both is not None and names[0] in both and names[1] in both
+    contract.write_text(f"- 新着WIの判定: {names[0]} | 次回: 別ホストで観測する\n", encoding="utf-8")
+    partial = gate("git push")
+    assert partial is not None and names[0] not in partial
+    contract.write_text("", encoding="utf-8")
+    again = gate("git push")
+    assert again is not None and names[0] in again
+    assert gate("git push") is None
 
 
 def test_own_processing_wis_leave_progress_notice_and_publication_gate(tmp_path, monkeypatch):
