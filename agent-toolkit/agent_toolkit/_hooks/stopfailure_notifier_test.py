@@ -28,21 +28,54 @@ def test_retryable_failure_command_hook_hands_request_to_turn_complete(
 ) -> None:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
     if delegated:
         monkeypatch.setenv("AGENT_TOOLKIT_DELEGATED_SESSION", "1")
     else:
         monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
     assert (
         stopfailure_notifier.main(
-            json.dumps({"hook_event_name": "StopFailure", "session_id": "limit-test", "error": error, "agent_id": agent})
+            json.dumps(
+                {
+                    "hook_event_name": "StopFailure",
+                    "session_id": "limit-test",
+                    "prompt_id": "first-prompt",
+                    "error": error,
+                    "agent_id": agent,
+                }
+            )
         )
         == 0
     )
     directory = tmp_path / "claude/agent-toolkit-function-hooks"
-    expected = [f"{error.replace('_', '-')}-limit-test.txt"] if not delegated and agent is None else []
+    expected = [f"{error.replace('_', '-')}-limit-test.first-prompt.txt"] if not delegated and agent is None else []
     assert sorted(path.name for path in directory.glob("*.txt")) == expected
     for name in expected:
         assert (directory / name).read_text(encoding="utf-8") == "requested"
+
+
+@pytest.mark.parametrize("prompt_id", [None, "", "../escape", []])
+def test_unidentified_interactive_failure_has_no_resume_request(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, prompt_id: object
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", raising=False)
+    payload = {"session_id": "s1", "prompt_id": prompt_id, "error": "server_error"}
+    assert stopfailure_notifier.main(json.dumps(payload)) == 0
+    assert not (tmp_path / "claude").exists()
+
+
+def test_process_loop_keeps_session_scoped_rate_limit(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.delenv("AGENT_TOOLKIT_OWNER_SESSION", raising=False)
+    monkeypatch.delenv("AGENT_TOOLKIT_DELEGATED_SESSION", raising=False)
+    monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", "s1")
+    payload = {"session_id": "s1", "prompt_id": "p1", "error": "rate_limit"}
+    assert stopfailure_notifier.main(json.dumps(payload)) == 0
+    request = tmp_path / "claude/agent-toolkit-function-hooks/rate-limit-s1.txt"
+    assert request.read_text(encoding="utf-8") == "requested"
 
 
 @pytest.mark.parametrize(

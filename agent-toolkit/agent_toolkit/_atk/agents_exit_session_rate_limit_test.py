@@ -10,16 +10,30 @@ from agent_toolkit._atk import agents_exit_session
 from agent_toolkit._common import function_hook_requests
 
 
-@pytest.mark.parametrize("kind", ["rate-limit", "server-error", "compaction", "restart", "ui-request", "ui-response"])
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "rate-limit",
+        "server-error",
+        "rate-limit.scoped",
+        "server-error.scoped",
+        "compaction",
+        "restart",
+        "ui-request",
+        "ui-response",
+    ],
+)
 def test_rate_limit_requests_keep_clear_and_expire(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, kind: str) -> None:
     """通常終了で現行会話を保持し、clearと期限経過で対象だけを回収する。"""
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path))
     directory = tmp_path / "agent-toolkit-function-hooks"
     directory.mkdir()
+    prefix, _, scope = kind.partition(".")
+    suffix = ".prompt.txt" if scope else ".txt"
     current, expired, fresh = (
         tuple(function_hook_requests.request_path(name, kind, "0" * 32) for name in ("current", "expired", "fresh"))
         if kind.startswith("ui-")
-        else tuple(directory / f"{kind}-{name}.txt" for name in ("current", "expired", "fresh"))
+        else tuple(directory / f"{prefix}-{name}{suffix}" for name in ("current", "expired", "fresh"))
     )
     for path in (current, expired, fresh):
         path.parent.mkdir(parents=True, exist_ok=True)

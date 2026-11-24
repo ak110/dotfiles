@@ -4,7 +4,7 @@ import { type Engine, expect, mock, test } from "claude-code/testing";
 // 入力はClaude Codeの型宣言SessionRateLimit、TurnCompleteInput、StopFailureHookInputに従う。
 const TURN = { answer: "", durationMs: 0, isAborted: false, turnId: "t1", reason: "answer" as const };
 
-async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }) {
+async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Record<string, string> = {}, now?: { value: number }, request?: { value: string }, server?: { value: string }, prompt = { value: "first-prompt" }) {
   mock.env(on, env);
   let release: (() => void) | undefined;
   let cleared: (() => void) | undefined;
@@ -24,7 +24,9 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("session.usage", () => ({ value: { startedAt: 0, context: { tokens: 0, window: 1, percent: 0 }, rateLimits: windows } }));
   on("session.start", (_$, e) => ({ cwd: e.cwd }));
   on("session.id", () => ({ value: "usage-test" }));
-  const requestAt = (path: string) => path.includes("rate-limit-") ? request : path.includes("server-error-") ? server : undefined;
+  on("session.info", () => ({ value: { transcriptPath: "", promptId: prompt.value } }));
+  const requestAt = (path: string) => path.endsWith(".first-prompt.txt") ?
+    path.includes("rate-limit-") ? request : path.includes("server-error-") ? server : undefined : undefined;
   on("fs.write", (_$, e) => {
     const file = requestAt(e.path);
     if (file) file.value = e.text;
@@ -37,6 +39,7 @@ async function engine($: Engine, on: On, windows: SessionRateLimit[], env: Recor
   on("ui.status", (_$, e) => { statuses.push(e.text); if (e.text === undefined) cleared?.(); return { value: undefined }; });
   on("prompt.submit", (_$, e) => { prompts.push(e.text); return { text: "" }; });
   await $.session.start({ cwd: "/work", surface: null, isInteractive: true });
+  await $.turn.start({ text: "試験", turnId: TURN.turnId });
   return { clock, prompts, statuses };
 }
 
@@ -164,6 +167,7 @@ test("サーバーエラーは1分、5分、15分後に再開し、4回目で停
   server.value = "requested";
   await $.turn.complete(TURN);
   expect(statuses.at(-1)).toContain("上限");
+  expect(statuses.at(-1)).toContain("手動で入力");
   await clock.advance(900_000);
   expect(prompts.length).toBe(3);
   await $.turn.start({ text: "復帰", turnId: "manual" });
@@ -180,6 +184,7 @@ test("サーバーエラーでないターンの終了で再開間隔を初期�
   await $.turn.start({ text: prompts[0]!, turnId: "resumed" });
   await $.turn.complete({ ...TURN, turnId: "resumed" });
   server.value = "requested";
+  await $.turn.start({ text: "次の試験", turnId: TURN.turnId });
   await $.turn.complete(TURN);
   await clock.advance(60_000);
   expect(prompts.length).toBe(2);
@@ -242,3 +247,18 @@ test("turn.completeより後に届いたStopFailureの要求でも再開する",
   await clock.advance(60_000);
   expect(prompts.length).toBe(1);
 });
+
+for (const reason of ["answer", "error"] as const) {
+  test(`旧ターンの遅着要求を新しいメインターンへ引き継がない（${reason}）`, async ($, on) => {
+    const old = { value: "consumed" };
+    const prompt = { value: "first-prompt" };
+    const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, old, prompt);
+    await $.turn.complete({ ...TURN, reason: "error" });
+    prompt.value = "manual-prompt";
+    await $.turn.start({ text: "手動の入力", turnId: "manual" });
+    old.value = "requested";
+    await $.turn.complete({ ...TURN, turnId: "manual", reason });
+    await clock.advance(200_000);
+    expect(prompts).toEqual([]);
+  });
+}

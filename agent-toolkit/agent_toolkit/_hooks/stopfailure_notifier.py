@@ -29,8 +29,14 @@ def main(payload_text: str) -> int:
         and isinstance(session_id, str)
         and re.fullmatch(r"[A-Za-z0-9_-]+", session_id)
     ):
-        kind = error.replace("_", "-")
-        request = host_homes.claude_config_dir() / "agent-toolkit-function-hooks" / f"{kind}-{session_id}.txt"
+        prompt_id = payload.get("prompt_id")
+        if error == "rate_limit" and os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID") == session_id:
+            name = f"rate-limit-{session_id}.txt"
+        elif isinstance(prompt_id, str) and re.fullmatch(r"[A-Za-z0-9_-]+", prompt_id):
+            name = f"{error.replace('_', '-')}-{session_id}.{prompt_id}.txt"
+        else:
+            return 0
+        request = host_homes.claude_config_dir() / "agent-toolkit-function-hooks" / name
         request.parent.mkdir(parents=True, exist_ok=True)
         request.write_text("requested", encoding="utf-8")
     return 0

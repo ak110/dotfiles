@@ -34,9 +34,12 @@ function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefine
 export function register(on: On, session: { delegated: boolean }): void {
   const state: Reservation = { turnsStarted: 0, generation: 0, serverRetries: 0, stopped: false };
 
+  let mainTurn: { id: string; promptId: Promise<string | undefined> } | undefined;
+
   on("turn.start", async ($, e, next) => {
     if (e.agentId === undefined) {
       state.turnsStarted++;
+      mainTurn = { id: e.turnId, promptId: $.session.info().then((info) => info.promptId).catch(() => undefined) };
       cancel($, state);
     }
     return next(e);
@@ -45,8 +48,9 @@ export function register(on: On, session: { delegated: boolean }): void {
   // session_exit.tsのmatcherなしの登録と区別する。全turnのIDを受け取り、agentIdは本文で除外する。
   on("turn.complete", { turnId: /^/ }, async ($, e, next) => {
     const turn = state.turnsStarted;
+    const identity = mainTurn;
     const result = await next(e);
-    if (session.delegated || e.agentId !== undefined) return result;
+    if (session.delegated || e.agentId !== undefined || (identity !== undefined && identity.id !== e.turnId)) return result;
     // process-loopとrun-skillが旧プロセスの終了後に接続を選ぶため、ホスト内の予約を重ねない。
     const processLoop = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION");
     const processLoopId = await $.env.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID");
@@ -55,8 +59,9 @@ export function register(on: On, session: { delegated: boolean }): void {
     const configured = await $.env.get("CLAUDE_CONFIG_DIR");
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
     const sessionId = await $.session.id();
-    const ratePath = exitStatePath(sessionId, configured, home, "rate-limit");
-    const serverPath = exitStatePath(sessionId, configured, home, "server-error");
+    const promptId = await identity?.promptId;
+    const ratePath = promptId === undefined ? undefined : exitStatePath(sessionId, configured, home, "rate-limit", promptId);
+    const serverPath = promptId === undefined ? undefined : exitStatePath(sessionId, configured, home, "server-error", promptId);
 
     const check = async (attempt: number): Promise<void> => {
       if (turn !== state.turnsStarted) return;
@@ -131,7 +136,7 @@ async function schedule(
   const delay = serverError ? SERVER_RETRY_MS[state.serverRetries] : knownReset ? resetsAt + 1 - now : RECHECK_MS;
   if (delay === undefined) {
     state.stopped = true;
-    $.ui.status("サーバー側の一時的なAPIエラーによる自動再開を停止: 連続再開の上限に到達");
+    $.ui.status("サーバー側の一時的なAPIエラーによる自動再開を停止: 連続再開の上限に到達。続行するには手動で入力してください。");
     return;
   }
 

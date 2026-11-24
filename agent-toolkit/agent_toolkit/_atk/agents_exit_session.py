@@ -336,7 +336,10 @@ def sweep_function_hook_files(*, keep_session_id: str | None = None, clear: bool
             if pattern.startswith("ui-requests/") and (path.parent.is_symlink() or path.parent.parent.is_symlink()):
                 continue
             ui_name = re.fullmatch(r"ui-(?:request|response)-(.+)-[a-f0-9]{32}\.txt", path.name)
-            if own_paths and (path in own_paths or ui_name is not None and ui_name[1] == keep_session_id):
+            resume_own = pattern in ("rate-limit-*.txt", "server-error-*.txt") and path.name.startswith(
+                f"{pattern.removesuffix('*.txt')}{keep_session_id}."
+            )
+            if own_paths and (path in own_paths or resume_own or ui_name is not None and ui_name[1] == keep_session_id):
                 if clear:
                     path.unlink(missing_ok=True)
                 continue
