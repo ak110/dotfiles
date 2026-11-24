@@ -273,7 +273,7 @@ def main(payload_text: str) -> int:
                 if is_normal_prompt:
                     notices.append(_entry_work_notice(session_id, full_name, arguments))
             if not is_codex:
-                session_title.observe_skill(session_id, full_name, arguments, named_by_entry=named_by_entry)
+                session_title.observe_skill(session_id, full_name, arguments)
 
             if named_by_entry and full_name == skill_modes.PROCESS_WI:
                 update_state(session_id, set_process_wi_invoked)

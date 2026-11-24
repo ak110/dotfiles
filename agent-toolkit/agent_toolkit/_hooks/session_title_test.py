@@ -95,7 +95,7 @@ def test_plan_writes_update_automatic_title(
     if loop:
         monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION", "1")
         monkeypatch.setenv("AGENT_TOOLKIT_PROCESS_LOOP_SESSION_ID", session)
-    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode add-awi-by-user"}))
+    user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "/atk-mode process-wi"}))
     capsys.readouterr()
     plans = pathlib.Path.home() / ".claude/plans"
     plans.mkdir(parents=True, exist_ok=True)
@@ -120,7 +120,7 @@ def test_plan_writes_update_automatic_title(
             assert not output or "sessionTitle" not in json.loads(output)["hookSpecificOutput"]
             continue
         current = json.loads(output)["hookSpecificOutput"]["sessionTitle"]
-        assert current == ("process-wi all-repos" if loop else "add-awi " + name.split("_", 1)[1].removesuffix(".md"))
+        assert current == ("process-wi all-repos" if loop else "process-wi " + name.split("_", 1)[1].removesuffix(".md"))
     user_prompt_submit.main(json.dumps({"session_id": session, "prompt": "続ける", "session_title": "手動名"}))
     output = capsys.readouterr().out
     assert not output or "sessionTitle" not in json.loads(output)["hookSpecificOutput"]
@@ -232,10 +232,11 @@ def test_user_typed_entry_starts_submission(prompt, codex, capsys):
     if codex:
         payload["turn_id"] = "turn"
     user_prompt_submit.main(json.dumps(payload))
-    capsys.readouterr()
+    output = capsys.readouterr().out
     state = session_state.read_state(session)
     assert state["add_awi_skill_invoked"] is True
-    assert codex or state["session_title_kind"] == "add-awi"
+    assert "session_title_kind" not in state
+    assert not output or "sessionTitle" not in json.loads(output).get("hookSpecificOutput", {})
 
 
 def test_user_typed_entry_starts_autonomous_work(capsys):

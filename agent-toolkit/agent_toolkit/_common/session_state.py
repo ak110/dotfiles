@@ -338,7 +338,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--session-id", required=True)
     fields = parser.add_mutually_exclusive_group()
-    fields.add_argument("--kind", choices=("process-wi", "single-lane", "add-awi"))
+    fields.add_argument("--kind", choices=("process-wi", "single-lane"))
     fields.add_argument("--title")
     args = parser.parse_args(argv)
     if not args.session_id or any(
