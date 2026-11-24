@@ -188,16 +188,6 @@ def _created_at(filename: str) -> datetime.datetime | None:
         return None
 
 
-def _source_kind(source: typing.Any) -> str:
-    """保存された投入元を一覧フィルターの分類へ変換する。
-
-    `agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」の由来判定に従い、`source`の欠落だけを人間由来とし、
-    値を持つ項目をすべてエージェント由来とする。
-    既知値の列挙を持たないため、新しい`source`値の追加で本関数を更新しない。
-    """
-    return "human" if source is None else "agent"
-
-
 def _entry(
     path: pathlib.Path,
     kind: str,
@@ -467,7 +457,7 @@ class Operations:
                 wi_filters.normalized_source(source), filters["source"]
             ):
                 continue
-            if filters.get("source_kind") and _source_kind(source) != filters["source_kind"]:
+            if filters.get("source_kind") and ("unset" if source is None else "set") != filters["source_kind"]:
                 continue
             if query_terms:
                 search_values = (
@@ -542,7 +532,7 @@ class Operations:
                 comment_editable = (
                     state in {wi_constants.WI_STATE_INBOX, wi_constants.WI_STATE_HOLD}
                     and kind == wi_constants.WI_TYPE_AWI
-                    and _source_kind(metadata.get("source")) == "agent"
+                    and metadata.get("source") is not None
                 )
             other_names_possible = ".md" in DATED_NAME.sub("", display_text)
             names = (
@@ -685,10 +675,8 @@ class Operations:
         metadata, _body = parsed
         if wi_constants.normalized_wi_type(metadata.get("type")) != wi_constants.WI_TYPE_AWI:
             raise WebApiInputError(f"ユーザーコメントの対象は{wi_constants.WI_TYPE_AWI}だけです")
-        if _source_kind(metadata.get("source")) != "agent":
-            raise WebApiInputError(
-                "ユーザーコメントの対象はエージェント由来のawiだけです。sourceが未設定の項目は対象になりません"
-            )
+        if metadata.get("source") is None:
+            raise WebApiInputError("ユーザーコメントの対象はsourceが設定されたAWIだけです")
         try:
             updated = user_comment_mutations.update_user_comment(expected_content, comment)
         except user_comment_mutations.UserCommentError as error:

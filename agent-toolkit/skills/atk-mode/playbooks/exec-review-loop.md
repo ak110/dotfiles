@@ -190,7 +190,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 - 害の大きさに見合う広がりの探索と再発防止に必要な結果と品質を保つ（`agent-basics:bugfix/references/spread.md`「害が大きい時」、`agent-basics:bugfix/references/prevention.md`「案を比べる順」）。
   確認の手段は、同じ水準に届く別の手段へ変えてよい。
 
-`source`を持つAWIで目的の達成に不要なエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。
+目的の達成に不要なエージェント起草の条件は、レーン担当が上の境界を確かめて除き、判断を記録して報告する。
 それ以外の変更と除外の判断要請はメインが判定し、統合の時にもメインが記録と境界を確かめる。
 記録の項目と記録先は`agent-toolkit:atk-mode/references/review-record-verdicts.md`「失効の根拠」の技術判断の2つに従って判断の時点で選ぶ。
 対話の中の判断を根拠にする時は、同書「失効の根拠」の会話の証拠（発話の逐語と、同じ発話の反復と区別できる時点と文脈）を、その証拠を使う担当へ渡す。
