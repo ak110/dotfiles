@@ -66,7 +66,9 @@ def checkout_wi_review(
     saved_root = locations.new_plans_root(notes)
     saved = saved_root / relative
     if not saved.resolve().is_relative_to(saved_root.resolve()):
-        raise WebInputError("レビュー表のパスが保存root外です", next_action="保存済みの年月とファイル名を指定する")
+        raise WebInputError(
+            "レビュー表のパスが`private-notes/plans/`の外です", next_action="保存済みの年月とファイル名を指定する"
+        )
     record = saved.with_name(bundle_kinds.WI_COMMITS.name_for(saved.name.removesuffix(bundle_kinds.EXEC_REVIEW.suffix)))
     root = locations.working_plans_root(home)
     with git_sync.repo_lock(notes):
