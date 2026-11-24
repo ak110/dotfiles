@@ -262,5 +262,5 @@ def test_compact_without_resolved_path_has_executable_id_lookup(tmp_path, monkey
     rules_context.main(json.dumps({"hook_event_name": "SessionStart", "source": "compact", "session_id": "unresolved"}))
     output = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
     assert "run-script session-review-evidence -- --claude-session-id unresolved --user-events`" in output
-    assert "作業契約と取得したユーザー発話の原文を読め" in output
+    assert "作業契約と取得したユーザー発話の原文を読んでください" in output
     assert "conversation_path" not in output

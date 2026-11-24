@@ -81,7 +81,7 @@ def test_pretooluse_denial_without_reason_reports_next_action(
     result = _run(_payload(tmp_path), "PreToolUse", capsys)
     assert result["decision"] == "deny"
     assert "理由を返さず" in result["reason"]
-    assert "委譲元" in result["reason"] and "ユーザー" in result["reason"] and "報告せよ" in result["reason"]
+    assert "委譲元" in result["reason"] and "ユーザー" in result["reason"] and "報告してください" in result["reason"]
 
 
 @pytest.mark.parametrize(

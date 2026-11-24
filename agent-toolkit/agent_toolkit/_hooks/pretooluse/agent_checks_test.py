@@ -188,7 +188,7 @@ class TestTaskStopBlock:
 
     def test_block_message_states_user_intervention_handling(self, state_dir: dict[str, str]) -> None:
         reason = _denial_reason(self._invoke("task-stop-message-route", state_dir))
-        assert "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送せよ" in reason
+        assert "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送してください" in reason
 
     @pytest.mark.parametrize(
         ("label", "tool_input"),
@@ -660,7 +660,7 @@ class TestGenericAgentLaunchBlock:
         assert f"組み込みの汎用定義`{agent_type or 'general-purpose'}`" in reason
         assert "対応する`mode`" in reason
         mode = "`explore`" if agent_type == "Explore" else "`delegate`または役割文書のある`task`"
-        assert f"`mode`が{mode}の`agents_server`の`start`へ発行せよ" in reason
+        assert f"`mode`が{mode}の`agents_server`の`start`へ発行してください" in reason
         assert "例外は、`agents_server`の`MCP`ツールを呼べない場合" in reason
         assert "ツール名と入力全体を変えずに再発行してよい" in reason
         assert "`agent-basics:fetch-sources`" in reason

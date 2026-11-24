@@ -221,5 +221,5 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     return "block", _block(
         "報告用の`UWI`は保存済みだが、巡回統括の終了操作を確認できない。",
-        fix="未送達の報告があれば送達し、送達済みなら再送せず、`atk agents-exit-session`で終了せよ。",
+        fix="未送達の報告があれば送達し、送達済みなら再送せず、`atk agents-exit-session`で終了してください。",
     )

@@ -172,9 +172,9 @@ def test_git_commit_with_work_item_filename_is_blocked_by_public_hook(
     result = _run_git_commit_message_hook(repo, tmp_path, command.replace("git commit", launcher, 1), extra_payload)
 
     reason = _denial_reason(result)
-    assert re.search(r"公開するコミットへ作業項目のファイル名を書(?:かない|くな)", reason)
+    assert re.search(r"公開するコミットへ作業項目のファイル名を書かないでください", reason)
     assert "対応記録" in reason and "plan-progress" in reason
-    assert "ファイル名を含む行を除け" in reason and "全体が実行されていない" in reason
+    assert "ファイル名を含む行を除いてください" in reason and "全体が実行されていない" in reason
 
 
 @pytest.mark.parametrize("extra_payload", [{}, {"turn_id": "codex-turn"}], ids=["claude-code", "codex"])

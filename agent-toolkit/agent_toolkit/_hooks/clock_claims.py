@@ -65,7 +65,7 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
                     "時刻の一部が伏せ字になっている。観測値か推定と分かる時間帯を示す。",
                     tag="warn",
                     removable_cause=False,
-                    fix="根拠とする時計の出力を確かめよ。",
+                    fix="根拠とする時計の出力を確かめてください。",
                 )
             match = _CLAIM.fullmatch(line)
             if not match or payload is None:
@@ -87,7 +87,7 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
                     "同じ呼出主体の対応する日時取得結果を確認できない。観測した出力を確かめる。",
                     tag="warn",
                     removable_cause=False,
-                    fix="根拠とする時計の出力を確かめよ。",
+                    fix="根拠とする時計の出力を確かめてください。",
                 )
             now = datetime.datetime.now(datetime.UTC)
             try:
@@ -108,7 +108,7 @@ def warning(texts: Iterable[str], payload: dict | None = None) -> str | None:
                     "明示された現在時刻が時計の値と離れている。取得し直して時点を確認する。",
                     tag="warn",
                     removable_cause=False,
-                    fix="根拠とする時計の出力を確かめよ。",
+                    fix="根拠とする時計の出力を確かめてください。",
                 )
     return None
 

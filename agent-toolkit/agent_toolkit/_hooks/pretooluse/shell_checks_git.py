@@ -278,7 +278,7 @@ _WORK_ITEM_FILENAME_PATTERN = re.compile(r"(?<![0-9A-Za-z_-])\d{8}-\d{6}-\d{3}\.
 
 _COMMIT_BLOCK_RERUN = (
     "このBashコマンドは全体が実行されていない（`git add`など、連結した他のコマンドも実行されていない）。"
-    "同じコマンド全体へ修正を加えて再実行せよ。"
+    "同じコマンド全体へ修正を加えて再実行してください。"
 )
 
 
@@ -292,14 +292,14 @@ def _git_commit_format_violations(messages: Iterable[str]) -> list[tuple[str, st
             violations.append(
                 (
                     f"公開するコミットメッセージに作業項目のファイル名（`{match.group()}`）が含まれている。",
-                    "公開するコミットへ作業項目のファイル名を書くな。実装コミットとAWIの対応は"
+                    "公開するコミットへ作業項目のファイル名を書かないでください。実装コミットとAWIの対応は"
                     "`atk run-script plan-progress`が記録する対応記録ファイル（`<stem>.wi-commits.jsonl`）へ残し、"
-                    "メッセージから作業項目のファイル名を含む行を除け。",
+                    "メッセージから作業項目のファイル名を含む行を除いてください。",
                 )
             )
         lines = message.splitlines()
         if len(lines) > 1 and lines[1].strip():
-            violations.append(("`commit`の件名と本文の間の空行が欠けている。", "件名の次に空行を1行入れよ。"))
+            violations.append(("`commit`の件名と本文の間の空行が欠けている。", "件名の次に空行を1行入れてください。"))
     return violations
 
 
@@ -319,7 +319,7 @@ def _git_commit_attribution_violations(
                 (
                     "通常`commit`の`Co-Authored-By:`が、実行ターンで観測したモデルに対応する1行だけになっていない。"
                     f"必要な行: {expected}",
-                    "観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れよ。",
+                    "観測したモデルに対応する上記の`Co-Authored-By:`を1行だけ入れてください。",
                 )
             ]
     return []
@@ -449,6 +449,6 @@ def _warn_git_rev_parse_short_multiple(command: str) -> str | None:
                 subject=command,
                 removable_cause=True,
                 fix="元の`--short`・`--short=<長さ>`・`--verify`などのオプションを保ち、リビジョンごとに"
-                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保て。",
+                "`git rev-parse <元のオプション> <revision>`を個別に実行して入力と出力の対応を保ってください。",
             )
     return None

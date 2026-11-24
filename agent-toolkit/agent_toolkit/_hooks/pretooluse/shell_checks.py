@@ -73,8 +73,8 @@ def _check_read_predicate_stderr_discard(command: str) -> str | None:
                 tag=_WARN_TAG,
                 subject=command,
                 removable_cause=True,
-                fix="標準エラーの破棄を外して再実行せよ。出力量は標準出力の対象限定・保存で抑え、"
-                "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読め。",
+                fix="標準エラーの破棄を外して再実行してください。出力量は標準出力の対象限定・保存で抑え、"
+                "標準エラーは呼び出し元へ残すか別ファイルへ保存し、別の呼び出しで読んでください。",
             )
     return None
 
@@ -115,7 +115,7 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
         is_wait = tokens[1:3] == ("agents", "wait")
         causes: list[str] = []
         if is_wait and invocation.background:
-            causes.append("シェルの`&`による背景化")
+            causes.append("シェルの`&`によるバックグラウンド実行")
         if invocation.output_pipe:
             causes.append("atkから後段へ出力を渡すパイプ")
         elif invocation.output_redirected and not _is_atk_resident_display(tokens):
@@ -124,19 +124,20 @@ def _check_bash_atk_output_loss(command: str) -> str | None:
             continue
         label = "atk agents wait" if is_wait else "atk"
         waiting = (
-            "`Claude Code`で背景で待つ場合は`Bash`の`run_in_background`を使い、返されたタスクの識別子で結果を受領せよ。"
+            "`Claude Code`でバックグラウンドで待つ場合は`Bash`の`run_in_background`を使い、"
+            "返されたタスクの識別子で結果を受領してください。"
             if "CLAUDECODE" in os.environ and not wait_schedule.background_tasks_disabled()
-            else "待機は単独の前景実行とし、CLI自身の期限で返る結果と終了コードを同じターン内に回収せよ。"
-            "`Claude Code`の`Bash`では`timeout=600000`を指定し、未終了なら同じコマンドを再発行せよ。"
+            else "待機は単独のフォアグラウンド実行とし、CLI自身の期限で返る結果と終了コードを同じターン内に回収してください。"
+            "`Claude Code`の`Bash`では`timeout=600000`を指定し、未終了なら同じコマンドを再発行してください。"
         )
         removals = []
         if invocation.output_pipe or invocation.output_redirected:
             removals.append("パイプまたはリダイレクト")
         if is_wait and invocation.background:
             removals.append("シェルの`&`")
-        action = "と".join(removals) + f"を外して`{label}`を単独で発行せよ。"
+        action = "と".join(removals) + f"を外して`{label}`を単独で発行してください。"
         if invocation.output_pipe or invocation.output_redirected:
-            action += "長い出力は`atk`が示す保存先から読め。"
+            action += "長い出力は`atk`が示す保存先から読んでください。"
         if is_wait and invocation.background:
             action += waiting
         return _llm_notice(
@@ -178,7 +179,7 @@ def _check_bash_unquoted_heredoc_substitution(command: str) -> str | None:
         "`bash`はこの本文を展開し、置換の中のコマンドを実行する。",
         fix=(
             "本文をそのまま書く場合は区切り語を引用せよ（`<<'EOF'`）。"
-            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照せよ。"
+            "置換の結果を本文へ入れる場合は、事前に変数へ代入して本文では`$VAR`で参照してください。"
             "リテラルのバッククォートと`$(`は直前に`\\`を置いてエスケープせよ（「\\`」・「\\$(」）。"
         ),
     )
@@ -258,9 +259,12 @@ def _warn_windows_drive_letter_path(command: str, *, is_codex: bool) -> str | No
         f"`PATH`へドライブ文字形式の要素（{'、'.join(found)}）を加えている。"
         "`Git Bash`の`PATH`はコロン区切りのため、ドライブ文字形式の要素は`C`と`/...`の2要素に分かれ、"
         "この`PATH`では意図したディレクトリが検索対象にならない。"
-        "`PATH`に依存する結果は、修正した指定で実行して確かめよ。",
+        "`PATH`に依存する結果は、修正した指定で実行して確かめてください。",
         tag=_WARN_TAG,
-        fix="`/c/Users/...`の形で書くか、`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行せよ。",
+        fix=(
+            "`/c/Users/...`の形で書くか、"
+            "`\"$(cygpath -u '<Windows形式のパス>')\"`で変換した値を`PATH`へ加えて再実行してください。"
+        ),
         removable_cause=True,
         subject=command,
     )

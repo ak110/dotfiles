@@ -109,10 +109,10 @@ def _check_free_text_start(mode: str, prompt: str) -> Decision:
                 subject=prompt,
                 removable_cause=True,
                 fix=(
-                    "今回の起動結果を確認し、同じ作業を重複起動するな。"
+                    "今回の起動結果を確認し、同じ作業を重複起動しないでください。"
                     f"次にこの役割を起動する際は、`agents_server`の`start`へ`mode`を指定せず、`subagent_md_path={role_name}`と"
-                    "宣言済みの入力名だけを持つ`extra_params`を渡せ。"
-                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡せ。"
+                    "宣言済みの入力名だけを持つ`extra_params`を渡してください。"
+                    f"サーバー自身のプラグインルートと別の版の文書を使う場合だけ、`subagent_md_path`へ`{document}`を渡してください。"
                 ),
             ),
         )
@@ -152,7 +152,7 @@ def _check_agent_prompt(prompt: str) -> Decision:
                     str(error),
                     fix=(
                         f"欠けた入力を補い、1行目を`{expected_first}`、2行目以降を`<入力名>: <値>`の行と"
-                        "半角空白2字で字下げした続きの行だけにして起動し直せ。"
+                        "半角空白2字で字下げした続きの行だけにして起動し直してください。"
                         f"受理する入力名: {', '.join(sorted(accepted))}。"
                     ),
                 )
@@ -168,9 +168,9 @@ def _check_agent_prompt(prompt: str) -> Decision:
                 removable_cause=True,
                 fix=(
                     f"次回は1行目を`{expected_first}`とし、2行目以降は`<入力名>: <値>`の行と"
-                    "半角空白2字で字下げした続きの行だけにせよ。"
+                    "半角空白2字で字下げした続きの行だけにしてください。"
                     f"受理する入力名: {', '.join(sorted(accepted))}。"
-                    "今回の起動結果を確認し、同じ作業を重複起動するな。次回の入力から宣言外の行を除け。"
+                    "今回の起動結果を確認し、同じ作業を重複起動しないでください。次回の入力から宣言外の行を除いてください。"
                 ),
             ),
         )

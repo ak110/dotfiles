@@ -96,9 +96,9 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     reason = _block_notice(
         _REASON_BODY,
         fix=(
-            f"残る工程を進め、完了報告の手順書`{completion_playbook_path()}`を全文読み、"
-            "その手順で報告用UWIを保存してコミット・プッシュせよ。"
-            "前提不足などで完了できない場合も、未完了の内容を報告用UWIへ保存してから終えよ。"
+            f"残る工程を進んでください、完了報告の手順書`{completion_playbook_path()}`を全文読み、"
+            "その手順で報告用UWIを保存してコミット・プッシュしてください。"
+            "前提不足などで完了できない場合も、未完了の内容を報告用UWIへ保存してから終えてください。"
         ),
     )
     return "block", reason

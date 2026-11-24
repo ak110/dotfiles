@@ -44,7 +44,7 @@ def test_claude_commit_block_lists_all_violations_for_variable_repository_path(
     assert "20261109-105107-001.md" in reason
     assert _LOW_TRAILER in reason
     assert "全体が実行されていない" in reason
-    assert "同じコマンド全体へ修正を加えて再実行せよ" in reason
+    assert "同じコマンド全体へ修正を加えて再実行してください" in reason
 
 
 def test_claude_commit_blocks_missing_trailer_for_quoted_variable_repository_path(

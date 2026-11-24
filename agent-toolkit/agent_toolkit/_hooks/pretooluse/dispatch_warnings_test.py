@@ -42,7 +42,7 @@ def test_pending_background_output_read_distinguishes_progress_from_result(monke
     )
     assert result.returncode == 0 and not result.stderr
     context = _additional_context(result)
-    assert ("途中経過は進捗の材料に限れ" in context) is pending
+    assert ("途中経過は進捗の材料に限ってください" in context) is pending
     assert ("同じ出力ファイルを全量読み直して" in context) is pending
 
 

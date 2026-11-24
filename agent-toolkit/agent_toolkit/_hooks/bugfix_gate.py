@@ -183,7 +183,7 @@ def verification_notice(payload: dict, tool_name: str, tool_input: dict, session
         tag="warn",
         removable_cause=True,
         subject=current["failure"],
-        fix="`agent-basics:bugfix`を起動せよ。反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従え。",
+        fix="`agent-basics:bugfix`を起動してください。反復する失敗は同スキルの「書き出す場面」と`references/recurrence.md`に従ってください。",
     )
 
 
@@ -291,8 +291,8 @@ def _observe_repl_skill_success(payload: dict, session_id: str) -> None:
 def _block_body(delivery: str) -> str:
     return _block_notice(
         f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
-        fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
-        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。"
+        fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告してください。"
+        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認してください。"
         "欠陥の指摘でない場合とスキルを起動できない場合は、同じ本文を再発行すれば1回通る。",
     )
 
