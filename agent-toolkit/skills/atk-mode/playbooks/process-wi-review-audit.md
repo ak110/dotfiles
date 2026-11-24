@@ -15,7 +15,7 @@
    監査の処置と公開工程の開始の関係は`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`の冒頭にあり、新しく届いたレビューは次回の監査で扱う。
 2. `atk wi process-loop`は、キューが空でも未判定のDependabotアラートがあれば、AWIを起票せずに`process-wi`を起動する。
    この場合の候補0件の選定結果は正常として保存し、レーンを起動せずに監査の対応を確定して、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開対象が無い場合の短絡」を経て終える。
-   修正が要る項目を同じセッションで直す場合は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応の手順」に従う。
+   修正が必要な項目を同じセッションで直す場合は`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応の手順」に従う。
 
 ## 自動コードレビュー監査担当の起動と受領
 
@@ -55,7 +55,7 @@
 
 1. 結果は引数なしの`atk agents wait`で受け取り、本書「監査担当の返却契約」の固定形式を満たすことを確かめる。
 2. Dependabotの判定対象があれば、通常取得・代替取得とも`default_branch`と確認SHAを受け取り、取得・比較・markが同じSHAに基づくことを確かめる。
-   - 判定対象が0件なら版の情報は要らず、判定欄の「なし」と取得状態を受領する。
+   - 判定対象が0件なら版の情報は不要であり、判定欄の「なし」と取得状態を受領する。
      機能無効・権限不足の場合は、その状態と理由を受領する。
    - 却下は、APIの終了コード0、応答の`number`の一致、`state=dismissed`を確かめた番号だけを処置済みとする。
    - 反映待ち・要修正の確認版付きのmarkと、却下の失敗・未判定の未markを区別する。
@@ -207,7 +207,7 @@ Dependabotアラートの取得状態: <取得できた場合は「取得済み�
    記録するのはレビュー本文のdatabaseIdだけであり、インラインコメントはthreadの解決状態が同じ役割を果たす。
 3. 判定の記録の読み書きは必ず`atk review-audit`を通す（保存のパスと形式はこのコマンドの仕様に従う）。
    記録先は対象リポジトリの外の状態ディレクトリであり、成果物を変更しない制約の対象の外にある。
-   成果物の変更で再判定が要る指摘は、新しいレビューが別のdatabaseIdで届くため、既存の記録を消さずに再判定の対象になる。
+   成果物の変更で再判定が必要な指摘は、新しいレビューが別のdatabaseIdで届くため、既存の記録を消さずに再判定の対象になる。
 4. Copilotのレビューの監査を終えたら、同じ実行で`agent-toolkit:atk-mode/playbooks/process-wi-dependabot-audit.md`「Dependabotアラート」へ進む。
 
 返す報告に含める項目: 監査担当は本書「監査担当の返却契約」の形式で返す。

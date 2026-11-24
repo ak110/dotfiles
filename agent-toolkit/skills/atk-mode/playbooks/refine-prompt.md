@@ -132,7 +132,7 @@
 6. 重複する指摘と関連する指摘をまとめ、`agent-basics:review-standards`を起動して、レビューイーとして採否を決める。
    定義元の内容の転記を求める指摘は`agent-basics:writing-standards/references/agent-documents-basics.md`「定義の所有者」で評価し、採用する指摘の改善案をdiffで作る。
    評価担当の出力はユーザーへ直接表示されないため、指摘を示す時は原表現をできる限り保つ。
-7. 技術的な指摘の採否は自分で決めて反映し、目的や期待される結果の変更と、ユーザーの選好や認可が要る事項だけをユーザーへ確認する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
+7. 技術的な指摘の採否は自分で決めて反映し、目的や期待される結果の変更と、ユーザーの選好や認可が必要な事項だけをユーザーへ確認する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
 8. 反映した後は、対象の編集手順を定めるスキルと`agent-basics:check-execution`に従い、ユーザーの確認を待たずに元の依頼の残工程へ進む。
    評価の受領だけで全体を終えず、成果と検証結果を元の依頼の作業完了報告（`agent-toolkit:atk-mode/playbooks/report-completion.md`）へまとめる。
    振り返り（`/atk-mode review-session`）はこの手順書の外の独立した依頼として扱う。
