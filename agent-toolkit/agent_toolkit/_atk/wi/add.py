@@ -20,7 +20,12 @@ from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
-from agent_toolkit._atk.wi.add_reports import compare_draft_openings, has_synced_run_report, print_draft_openings
+from agent_toolkit._atk.wi.add_reports import (
+    compare_draft_openings,
+    has_synced_run_report,
+    print_deferral_candidates,
+    print_draft_openings,
+)
 from agent_toolkit._atk.wi.add_validation import (
     _EMPTY_AWI_ERROR,
     _EMPTY_AWI_NEXT_ACTION,
@@ -714,6 +719,8 @@ def cmd_add(
                 is_uwi=args.type == WI_TYPE_UWI,
             )
             _outcome.report_success("投入前の検証が成立した（--dry-runのため保存していない）")
+            if args.type == WI_TYPE_AWI:
+                print_deferral_candidates(messages, sources)
             return
         if args.compare_opening_file is not None:
             if args.type == WI_TYPE_UWI:
@@ -759,6 +766,8 @@ def cmd_add(
     for filename in generated:
         print(f"  {shorten_home(_wi_entries.entry_path(private_notes, filename), home)}")
         print_entry_details(saved_details[filename])
+    if args.type == WI_TYPE_AWI:
+        print_deferral_candidates(messages, sources)
     if join_current:
         print(
             "次の操作: process-wi-additions.mdに従い、pick-wi-check --mergeで選定へ加え、"

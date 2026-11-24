@@ -1,7 +1,7 @@
 """atkの実行結果を表す行の接頭辞と出力先を決める共通処理。
 
 `atk`の出力を受け取る主体が返却値または結果行の先頭の語で成否を確定し、終了コードの再確認と
-状態の再取得を要さない状態にするため、成功・失敗・警告・該当0件の4種の接頭辞を本モジュールへ集約する。
+状態の再取得を要さない状態にするため、成功・失敗・警告・該当0件・情報の5種の接頭辞を本モジュールへ集約する。
 成功結果が値や構造化データに含まれる場合は、その出力を結果通知とする。
 状態変更報告型は標準出力の1行目へ成功行を書く。
 """
@@ -20,6 +20,8 @@ SUCCESS_PREFIX = "成功: "
 FAILURE_PREFIX = "失敗: "
 WARNING_PREFIX = "警告: "
 NO_MATCH_PREFIX = "該当0件: "
+INFO_PREFIX = "情報: "
+"""成否と終了コードを変えず、受け取った主体が次の工程で判定する材料を示す行の接頭辞。警告と違い、除く対象を示さない。"""
 
 
 class ResultKind(enum.Enum):
@@ -167,6 +169,11 @@ def report_warning(message: str, *, next_action: str, to_stderr: bool = True) ->
         _next_action.with_next_action(f"{WARNING_PREFIX}{message}", next_action),
         file=sys.stderr if to_stderr else sys.stdout,
     )
+
+
+def report_info(message: str) -> None:
+    """情報行を標準出力へ書く。成否、終了コード、警告の有無は変えない。"""
+    print(f"{INFO_PREFIX}{message}")
 
 
 def claim_persistent_warning(message: str, *, session_id: str | None = None) -> bool:
