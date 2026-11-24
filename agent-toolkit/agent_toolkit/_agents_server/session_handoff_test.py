@@ -122,7 +122,12 @@ async def test_public_handoff_selects_explicit_model_and_keeps_full_input(
         _complete(previous, message="最初の応答全文")
         await manager.send_message(previous.session_id, "訂正の全要件")
         _complete(previous, message="確定済み成果と残工程")
-        response = await mcp_tools.start(handoff_from=previous.session_id, model_type=after)
+        response = await mcp_tools.start(
+            handoff_from=previous.session_id,
+            model_type=after,
+            model_override="user_instruction",
+            model_override_evidence="ユーザーが後任のモデルを指定",
+        )
         successor = manager.sessions[response["session_id"]]
         assert successor.model == ("provider/after" if engine == "opencode" else "after") and successor.engine == engine
         assert successor.session_id != previous.session_id
@@ -146,15 +151,16 @@ async def test_handoff_direct_candidate_warning_and_return_to_settings(
         started = await manager.start(before, "元の依頼", str(tmp_path))
         previous = manager.sessions[started["session_id"]]
         _complete(previous, message="残工程")
+        if override is None:
+            with pytest.raises(ActionableError, match="model_override"):
+                await mcp_tools.start(handoff_from=previous.session_id, model_type=override)
+            return
         response = await mcp_tools.start(handoff_from=previous.session_id, model_type=override)
         successor = manager.sessions[response["session_id"]]
         warnings = [item for item in response.get("warnings", []) if item["scope"] == "model-override"]
-        assert bool(warnings) == (override is None)
-        assert successor.model_type == (before if override is None else "chores")
-        assert successor.model == ("before" if override is None else "configured")
-        if warnings:
-            assert before in warnings[0]["message"]
-            assert "元の工程名" in warnings[0]["message"]
+        assert not warnings
+        assert successor.model_type == override
+        assert successor.model == "configured"
 
 
 @pytest.mark.asyncio

@@ -48,12 +48,16 @@ class _StateCodec(DataclassCodec):
                 "usage_limit": claude_usage_limit.UsageLimitState,
                 "process": session_registry.ProcessIdentity,
                 "launch": session_registry.LaunchInfo,
+                "registry_resolution": session_registry.SessionResolution,
+                "registry_resume_info": session_registry.ResumeInfo,
+                "registry_interrupted_turn": session_registry.InterruptedTurn,
             }
         )
         self._enums = {
             "turn_start": turn_state.TurnStart,
             "turn_end": turn_state.TurnEnd,
             "publication": session_registry.PublicationState,
+            "resolution": session_registry.Resolution,
         }
 
     def _field_names(self, cls: type) -> tuple[str, ...]:

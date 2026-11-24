@@ -357,3 +357,21 @@ async def test_legacy_interruption_reports_not_collected(
     )
     _publish_dead_owner_record(monkeypatch, tmp_path, "claude")
     assert _cli_show(capsys)["error"]["diagnostics"]["status"] == "incomplete"
+
+
+@pytest.mark.asyncio
+async def test_force_kill_finalizes_dead_executor_record_with_live_shared_server(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+) -> None:
+    owner = session_registry.owner_process()
+    assert owner is not None and owner.exists()
+    _publish_record_with_processes(monkeypatch, tmp_path, "claude", (owner, exited_process_identity()))
+    assert session_registry.resolve(_ORPHANED_SESSION_ID).state is session_registry.Resolution.RUNNING
+    async with _manager_with_fake("claude") as (manager, backend):
+        response = await manager.kill(_ORPHANED_SESSION_ID, force=True)
+        assert response["status"] == "interrupted"
+        assert (await manager.show_session(_ORPHANED_SESSION_ID))["status"] == "interrupted"
+        assert (await manager.send_message(_ORPHANED_SESSION_ID, "続行"))["delivery"] == "reply_started"
+        assert backend.resume_calls == [_ORPHANED_SESSION_ID]
+        assert owner.exists()

@@ -333,8 +333,8 @@ def role_model_was_explicit(session: SessionState | SessionResumeState) -> bool:
     )
 
 
-def current_role_model(session: SessionState | SessionResumeState) -> str | None:
-    if not session.model_type or role_model_was_explicit(session):
+def current_role_model(session: SessionState | SessionResumeState, *, include_explicit: bool = False) -> str | None:
+    if not session.model_type or (not include_explicit and role_model_was_explicit(session)):
         return None
     original = task_documents.launched_task_document(session.prompt)
     if original is None:

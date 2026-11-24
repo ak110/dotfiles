@@ -190,6 +190,7 @@ Codexで実行中の担当の中断を避ける条件と、利用上限の待ち
    - Claudeの`usage_limit`（Weekly limitか5時間の利用上限）は、`claude_usage_limit_wait`の設定に従い、同じ会話で後続のAPIへ切り替えるか`resets_at`の後に同じセッションで再開する。
      設定が省略されていれば5時間の上限の解除を待ち、活動の停止が長いことだけを理由にCodexへ再委譲することは避ける（ユーザーの指示）。
      作業が不要になった場合とユーザーが切替を指示した場合は、`kill`で止めて結果を受け取る。
+     ユーザーが即時停止を求めた場合は`force=true`を渡す。
    - Codexのターン内の再試行（`willRetry: true`）は、通知の種別とHTTPのstatusを確かめ、追加の送信を控えて解消かターンの終了まで待つ。
      `atk agents wait`が再試行の長期化を`next_action`で示したら、それに従う。
    - Codexの`serverOverloaded`の後の自動継続では継続を促す`send_message`を控え、上限回数に達して失敗の結果が届いたら別の候補へ切り替えて再起動する。

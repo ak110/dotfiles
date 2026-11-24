@@ -15,6 +15,7 @@ from agent_toolkit._agents_server import (
     logging_config,
     manager_start,
     result_projection,
+    resume_waits,
     retained_results,
     state,
     status_file,
@@ -34,7 +35,7 @@ from agent_toolkit._agents_server.state import (
     remove_terminal_listener,
     remove_touch_listener,
 )
-from agent_toolkit._common import runtime_environment, session_registry, session_release
+from agent_toolkit._common import process_tree, recorded_process, runtime_environment, session_registry, session_release
 from agent_toolkit._common.next_action import ActionableError
 
 _LOG = logging.getLogger("agent-toolkit.agents-server.mcp")
@@ -123,6 +124,15 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
             raise ActionableError(
                 "timeout must be positive", next_action="`timeout`を省略して270秒で待つか、正の秒数を指定する"
             )
+        if session_id in self._force_stopping:
+            raise ActionableError(
+                "強制停止の処理中です。追送は未配送です",
+                next_action="停止の結果を確認してから追送する",
+            )
+        task = asyncio.current_task()
+        assert task is not None
+        sends = self._active_sends.setdefault(session_id, set())
+        sends.add(task)
         try:
             async with asyncio.timeout(float(timeout)):
                 return await self._send_message_response(session_id, prompt, instruction, extra_params)
@@ -131,6 +141,17 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
                 f"send_message timed out: {session_id}; delivery is undetermined",
                 next_action="`atk agents wait`で状態を確認し、指示が届いていないと判断した場合だけ`send_message`を再送する",
             ) from exc
+        except asyncio.CancelledError:
+            if session_id not in self._force_stopping:
+                raise
+            raise ActionableError(
+                "強制停止により追送の処理を取り消しました",
+                next_action="停止の結果を確認してから必要な指示を追送する",
+            ) from None
+        finally:
+            sends.discard(task)
+            if not sends:
+                self._active_sends.pop(session_id, None)
 
     async def _send_message_response(
         self, session_id: str, prompt: str | None, instruction: str | None, extra_params: Mapping[str, str] | None
@@ -282,18 +303,118 @@ class AgentsServerManager(manager_start.ManagerStart):  # pylint: disable=too-ma
         await self._stop_after_terminal_response(session.session_id, response, stop)
         return self._deliver_notices(response, notices)
 
+    async def _force_kill(self, session_id: str, timeout: float, stop: bool) -> dict[str, Any]:
+        if session_id in self._force_stopping:
+            raise ActionableError("強制停止の処理中です", next_action="先行した停止の結果を確認する")
+        session = self.sessions.get(session_id)
+        pending = self._pending_resumes.get(session_id)
+        recovery = self._recovery_attempts.get(session_id)
+        sends = set(self._active_sends.get(session_id, ()))
+        if session is None and pending is None and recovery is None and not sends:
+            orphaned = await self._force_finalize_orphaned_session(session_id)
+            if orphaned is not None:
+                await self._stop_after_terminal_response(session_id, orphaned, stop)
+                return self._deliver_notices(orphaned, await self._read_registry_notices(session_id))
+            return await self._kill_with_interrupt(session_id, timeout, stop)
+        self._force_stopping.add(session_id)
+        self._finish_recovery(session_id)
+        operations = sends | {task for task in (pending.task if pending else None, recovery) if task is not None}
+        if pending is not None:
+            pending.prompt.close()
+        for task in operations:
+            task.cancel()
+        try:
+            requested = bool(operations) or session is not None and (not session.terminal or not session.turn_completed)
+            if requested or session is not None:
+                owned = session
+                if owned is None and pending is not None:
+                    owned = SessionState(session_id, pending.state.cwd, engine=pending.state.engine)
+                if owned is not None:
+                    owned.interrupt_requested = True
+                    await self._release_force_target(owned)
+                if operations:
+                    await asyncio.gather(*operations, return_exceptions=True)
+                session = self.sessions.get(session_id)
+                if session is not None and session is not owned:
+                    await self._release_force_target(session)
+                if requested and session is not None:
+                    session.clear_hold()
+                    resume_waits.clear_usage_limit_wait(session)
+                    session.status = "interrupted"
+                    session.api_error = None
+                    session.record_turn_completed()
+                    session.touch()
+            if session is None:
+                if pending is not None and self._pending_resumes.get(session_id) is pending:
+                    self._pending_resumes.pop(session_id, None)
+                    self.expired_sessions.setdefault(session_id, pending.state)
+                await self._cancel_owner_loss_recovery(session_id)
+                response = {"status": "interrupted", "kill_requested": requested}
+                await self._stop_after_terminal_response(session_id, response, stop)
+                return self._deliver_notices(response, await self._read_registry_notices(session_id))
+            await session.drain_registration()
+            return await self._kill_result_response_async(session, kill_requested=requested, stop=stop)
+        finally:
+            if current := self.sessions.get(session_id):
+                current.interrupt_requested = False
+            if recovery is not None and recovery.done() and self._recovery_attempts.get(session_id) is recovery:
+                del self._recovery_attempts[session_id]
+            self._force_stopping.discard(session_id)
+            await self._notify_waiters()
+
+    async def _release_force_target(self, session: SessionState) -> None:
+        executor = session.executor_process
+        if session.engine != "codex" and executor is not None:
+            failure = await run_file_operation(recorded_process.stop_recorded_executor, executor)
+            if failure is not None:
+                raise ActionableError(failure, next_action="停止できない理由を解消してforce付きkillを再試行する")
+        await self._backend(session.engine).release_session(session)
+
+    async def _force_finalize_orphaned_session(self, session_id: str) -> dict[str, Any] | None:
+        resolution = await run_file_operation(session_registry.resolve, session_id)
+        info = resolution.resume_info
+        if (
+            resolution.state is not session_registry.Resolution.RUNNING
+            or resolution.resume_pending
+            or not resolution.executor_processes
+            or resolution.live_executors
+            or info is None
+            or await run_file_operation(status_file.live_writer_holds_session, session_id)
+        ):
+            return None
+
+        if session_id in self.sessions or session_id in self._pending_resumes:
+            return None
+        await self._publish_registry_terminal(session_id, info, "interrupted", interruption=None, expected=resolution)
+        current = await run_file_operation(session_registry.resolve, session_id)
+        if (
+            current.state is not session_registry.Resolution.TERMINAL
+            or current.recorded_turn_seq != info.turn_seq
+            or current.resume_info is None
+            or current.resume_info.status != "interrupted"
+        ):
+            return None
+        return {"status": "interrupted", "kill_requested": True}
+
     async def kill(
         self,
         session_id: str,
         timeout: float = DEFAULT_KILL_TIMEOUT,
         stop: bool = False,
+        *,
+        force: bool = False,
     ) -> dict[str, Any]:
-        await self._drain_diagnostics()
-
         if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout < 0:
             raise ActionableError(
                 "timeout must be non-negative", next_action="`timeout`を省略して270秒で待つか、0以上の秒数を指定する"
             )
+        if force:
+            with process_tree.FORCE_STOP.set(True):
+                return await self._force_kill(session_id, timeout, stop)
+        return await self._kill_with_interrupt(session_id, timeout, stop)
+
+    async def _kill_with_interrupt(self, session_id: str, timeout: float, stop: bool) -> dict[str, Any]:
+        await self._drain_diagnostics()
         await self._settle_recovery_before_kill(session_id, timeout if timeout > 0 else DEFAULT_SEND_MESSAGE_TIMEOUT)
         observed_session = self.sessions.get(session_id)
         observed_turn = (
