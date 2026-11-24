@@ -104,15 +104,6 @@ def namespace(caller: runtime_environment.CallerContext) -> pathlib.Path:
     return base
 
 
-def isolated_state(caller: runtime_environment.CallerContext) -> bool:
-    key = "LOCALAPPDATA" if os.name == "nt" else "XDG_STATE_HOME"
-    default = runtime_environment.CallerContext(
-        {name: value for name, value in caller.environment.items() if name != key},
-        caller.cwd,
-    )
-    return _state_directory(caller) != _state_directory(default)
-
-
 def endpoint(directory: pathlib.Path, generation: str) -> str:
     identity = json.dumps([str(directory.resolve()), generation], ensure_ascii=False).encode("utf-8")
     suffix = hashlib.sha256(identity).hexdigest()
