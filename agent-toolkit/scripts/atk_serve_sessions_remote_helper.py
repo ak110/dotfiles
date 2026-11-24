@@ -39,6 +39,7 @@ from agent_toolkit._common import (  # noqa: E402  # pylint: disable=wrong-impor
     session_launchers,
     state_paths,
 )
+from agent_toolkit._common.session_record_paths import codex_record_roots  # pylint: disable=wrong-import-position
 
 MAX_RECORD_BYTES = 64 * 1024 * 1024
 
@@ -163,7 +164,7 @@ def _is_safe_record_path(raw: str) -> bool:
         target = pathlib.Path(raw).resolve()
     except OSError:
         return False
-    for root in (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions"):
+    for root in (host_homes.claude_config_dir() / "projects", *codex_record_roots(host_homes.codex_home())):
         try:
             target.relative_to(root.resolve())
         except ValueError, OSError:
@@ -206,7 +207,11 @@ def _read_payload(path_b64: str) -> dict[str, typing.Any]:
     if len(data) > MAX_RECORD_BYTES:
         raise ValueError(f"record too large: {len(data)} bytes")
     records, broken = session_record_format.parse_records(data.decode("utf-8", errors="replace"))
-    engine = "codex" if path.resolve().is_relative_to((host_homes.codex_home() / "sessions").resolve()) else "claude"
+    engine = (
+        "codex"
+        if any(path.resolve().is_relative_to(root.resolve()) for root in codex_record_roots(host_homes.codex_home()))
+        else "claude"
+    )
     payload: dict[str, typing.Any] = {
         "data": base64.b64encode(data).decode("ascii"),
         "mtime_epoch": path.stat().st_mtime,
@@ -287,7 +292,10 @@ def _start_watch() -> tuple[session_watch.RecordWatch | None, session_watch.Reco
                 _emit({"type": session_watch.RECORD_TYPE, "engine": engine, "path": path})
 
     tracker = session_watch.RecordChangeTracker(
-        [(host_homes.claude_config_dir() / "projects", "claude"), (host_homes.codex_home() / "sessions", "codex")],
+        [
+            (host_homes.claude_config_dir() / "projects", "claude"),
+            *((root, "codex") for root in codex_record_roots(host_homes.codex_home())),
+        ],
         on_flush,
     )
     watch = session_watch.RecordWatch(tracker)

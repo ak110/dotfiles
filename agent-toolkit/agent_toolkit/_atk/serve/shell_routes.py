@@ -20,6 +20,7 @@ from agent_toolkit._atk.serve import sessions as serve_sessions
 from agent_toolkit._atk.serve import state as serve_state
 from agent_toolkit._atk.serve import wi_operations as _wi_operations
 from agent_toolkit._atk.wi import web_input as wi_web_input
+from agent_toolkit._common.session_record_paths import codex_record_roots
 
 # base_pathが安全な形式に一致するかを確認するパターン。先頭スラッシュ必須、英数字と`._~/-`のみ許可し、
 # 連続スラッシュ（スキーム相対URLとして解釈され、外部オリジンへの誘導に使われ得る）は別途禁止する。
@@ -381,7 +382,7 @@ def register_session_routes(
     @app.get("/api/sessions/list")
     async def sessions_list() -> quart.Response:
         entries, warnings = await serve_sessions.list_sessions(context)
-        roots = [str(context.claude_home / "projects"), str(context.codex_home / "sessions")]
+        roots = [str(root) for root in (context.claude_home / "projects", *codex_record_roots(context.codex_home))]
         return json_no_store({"sessions": [entry.to_json() for entry in entries], "warnings": warnings, "roots": roots})
 
     @app.post("/api/sessions/search")

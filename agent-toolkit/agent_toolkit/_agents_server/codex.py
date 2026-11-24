@@ -141,6 +141,7 @@ class AppServerManager(
         self._validate_session_id = validate_session_id or session_identity.identity_validator(self.sessions, root_session_id)
         self._lock = asyncio.Lock()
         self._background_tasks: set[asyncio.Task[None]] = set()
+        self._archive_tasks: dict[str, asyncio.Task[None]] = {}
         self._writer_session_ids: dict[str, str] = {}
         self._resume_close_events: dict[str, asyncio.Event] = {}
         self._auto_reset_monitors: dict[str, asyncio.Task[None]] = {}

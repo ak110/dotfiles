@@ -114,6 +114,9 @@ async def test_resume_retains_request_delivery(
             await backend._handle_notification(event)
 
         async def request(method: str, params: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+            if method == "thread/archive":
+                assert params == {"threadId": "resume-delivery"}
+                return {}
             if method != "turn/start":
                 return await original(method, params, **kwargs)
             if outcome == "start-failed":

@@ -130,3 +130,11 @@ def test_locator_resolves_uuid7_codex_thread_from_thread_day_directories(
     assert session_record_paths.RecordLocator(**homes).find(_CODEX_V7_ID) == expected
     assert sessions / "2026/11/07" in listed
     assert set(listed) <= {sessions / window for window in _CODEX_V7_DAYS}
+
+
+@pytest.mark.parametrize("thread_id", [_CODEX_ID, _CODEX_V7_ID])
+def test_codex_thread_is_found_with_only_an_archived_rollout(tmp_path: pathlib.Path, thread_id: str) -> None:
+    archived = _touch(tmp_path / "archived_sessions" / f"rollout-2026-11-07T12-00-00-{thread_id}.jsonl")
+    locator = session_record_paths.RecordLocator(claude_home=tmp_path / "claude", codex_home=tmp_path)
+    assert session_record_paths.find_codex_records(thread_id, codex_home=tmp_path) == (archived,)
+    assert locator.find(thread_id) == session_record_paths.SessionRecord("codex", (archived,))

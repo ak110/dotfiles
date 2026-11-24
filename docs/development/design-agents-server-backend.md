@@ -8,6 +8,12 @@ SDKのprivateサーバー属性へ依存する案と、ツール定義やスキ�
 `agents_server`はClaude CodeとCodexから同じ公開APIで委譲できる共有MCPサーバーである。
 
 Codex backendは子App Serverの作業ディレクトリへ、実行主体のホームディレクトリを明示指定する。
+
+Codexの委譲先は、結果を公開し、実行中か未観測の子が残っていなければアーカイブへ移す。
+ユーザー自身の会話を`codex resume`の一覧から探しやすくするためである。
+新しい追送は、アーカイブへの移動が終わった後に、アーカイブを解除してから再開する。
+手で開くときも`codex unarchive <thread ID>`を先に実行する。
+記録の参照は通常のセッションとアーカイブの双方を対象にする。
 MCPサーバー自身の作業ディレクトリはホストの起動条件で決まり、Codexホストではpluginの版数付きcacheディレクトリになる。
 plugin更新で作業ディレクトリが消えると、子App Serverは生存したまま`thread/start`へ`failed to load configuration: No such file or directory`のJSON-RPC errorを返し続ける。
 子プロセスを再生成する案は、新しい子も同じ親の作業ディレクトリを継承するため採用しない。

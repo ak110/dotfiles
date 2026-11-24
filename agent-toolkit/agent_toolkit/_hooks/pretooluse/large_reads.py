@@ -11,6 +11,7 @@ from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, BashInvocation, is_unknown_word
 lazy from agent_toolkit._common.codex_execution_inputs import command_inputs
+lazy from agent_toolkit._common.session_record_paths import codex_record_roots
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 
@@ -206,7 +207,7 @@ def invocation_read_paths(
 
 def _is_session_record(path: pathlib.Path, *, directory: bool = False) -> bool:
     resolved = path.resolve()
-    roots = (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions")
+    roots = (host_homes.claude_config_dir() / "projects", *codex_record_roots(host_homes.codex_home()))
     return any(resolved.is_relative_to(root.resolve()) for root in roots) and (
         resolved.suffix == ".jsonl" or directory and (not resolved.suffix or resolved.is_dir())
     )

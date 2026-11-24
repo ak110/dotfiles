@@ -15,6 +15,16 @@ RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
 
 
+def codex_record_roots(codex_home: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    return codex_home / "sessions", codex_home / "archived_sessions"
+
+
+def codex_rollouts(codex_home: pathlib.Path) -> Iterable[pathlib.Path]:
+    sessions, archive = codex_record_roots(codex_home)
+    name = f"{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"
+    return (path for paths in (sessions.glob(f"*/*/*/{name}"), archive.glob(name)) for path in paths if path.is_file())
+
+
 RECORD_ENGINES: frozenset[str] = frozenset({"claude", "codex", "agy", "opencode"})
 """記録を探索できる実行系の名前。"""
 
@@ -174,19 +184,19 @@ class RecordLocator:
         return found
 
     def _codex_paths(self, session_id: str) -> tuple[pathlib.Path, ...]:
-        sessions = (self._codex_home if self._codex_home is not None else host_homes.codex_home()) / "sessions"
+        home = self._codex_home if self._codex_home is not None else host_homes.codex_home()
+        sessions, archive = codex_record_roots(home)
         if (directories := codex_thread_directories(sessions, session_id)) is not None:
-            return _codex_matches(session_id, directories, _codex_rollout_name(session_id))
+            name = _codex_rollout_name(session_id)
+            return _codex_matches(session_id, directories, name) or _codex_matches(session_id, (archive,), name)
         if self._codex is None:
-            self._codex = self._codex_records(sessions)
+            self._codex = self._codex_records(home)
         return tuple(self._codex.get(session_id, ()))
 
     @staticmethod
-    def _codex_records(sessions: pathlib.Path) -> dict[str, list[pathlib.Path]]:
+    def _codex_records(codex_home: pathlib.Path) -> dict[str, list[pathlib.Path]]:
         found: dict[str, list[pathlib.Path]] = {}
-        if not sessions.is_dir():
-            return found
-        for path in sorted(sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}")):
+        for path in sorted(codex_rollouts(codex_home)):
             session_id = codex_session_id(path)
             # `find_codex_records`の検索パターン（`rollout-*-<thread-id>.jsonl`）に一致する記録だけを数える。
             if path.name.endswith(f"-{session_id}{RECORD_SUFFIX}") and path.is_file():
@@ -224,13 +234,18 @@ def find_codex_records(session_id: str, *, codex_home: pathlib.Path | None = Non
     """
     if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
         return ()
-    sessions = (codex_home if codex_home is not None else host_homes.codex_home()) / "sessions"
-    if not sessions.is_dir():
-        return ()
+    sessions, archive = codex_record_roots(codex_home if codex_home is not None else host_homes.codex_home())
     name = _codex_rollout_name(session_id)
     nearby = _codex_matches(session_id, codex_thread_directories(sessions, session_id) or (), name)
 
-    return nearby or _codex_matches(session_id, (sessions,), f"*/*/*/{name}")
+    return nearby or _codex_matches(session_id, (archive,), name) or _codex_matches(session_id, (sessions,), f"*/*/*/{name}")
+
+
+def has_archived_codex_record(session_id: str) -> bool:
+    if _SESSION_ID_PATTERN.fullmatch(session_id) is None:
+        return False
+    _, archive = codex_record_roots(host_homes.codex_home())
+    return bool(_codex_matches(session_id, (archive,), _codex_rollout_name(session_id)))
 
 
 def _codex_rollout_name(session_id: str) -> str:

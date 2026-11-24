@@ -10,6 +10,7 @@ from agent_toolkit._agents_server import (
     admission,
     backends,
     claude,
+    codex,
     codex_providers,
     launch_prompts,
     launch_requests,
@@ -129,7 +130,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             and expiry is not None
             and asyncio.get_running_loop().time() >= expiry
         ):
-            finalize_pending_result(session)
+            self._publish_pending_result(session)
             return
         if session.codex_auto_reset_pending:
             return
@@ -260,7 +261,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             return
 
         if not cli_turn_may_continue(session) and is_final_response_with_unobserved_children(session):
-            finalize_pending_result(session)
+            self._publish_pending_result(session)
             return
         if (
             delivered
@@ -272,7 +273,7 @@ class ManagerResume(manager_registry.ManagerRegistry):
             and not session.codex_self_message_observed
             and not result_contract.is_wait_statement(own_pending.get("agent_message"))
         ):
-            finalize_pending_result(session)
+            self._publish_pending_result(session)
             return
         terminal = {
             session_id
@@ -356,7 +357,14 @@ class ManagerResume(manager_registry.ManagerRegistry):
         # この場合の確定は再開turnの結果か保留期限の経過に委ねる。
         deadline = auto_resume_wait_deadline(session)
         if deadline is not None and asyncio.get_running_loop().time() >= deadline:
-            finalize_pending_result(session, unobserved_sessions=unobserved)
+            self._publish_pending_result(session, unobserved_sessions=unobserved)
+
+    def _publish_pending_result(self, session: SessionState, *, unobserved_sessions: set[str] | None = None) -> None:
+        finalize_pending_result(session, unobserved_sessions=unobserved_sessions or ())
+        if session.engine == "codex":
+            backend = self._backend("codex")
+            if isinstance(backend, codex.AppServerManager):
+                backend.schedule_archive(session)
 
     async def _resume_claude_wait(self, session: SessionState, body: str) -> None:
         """CLI内の再試行を所有単位ごと回収し、killと同じ境界で同じ会話を再開する。"""

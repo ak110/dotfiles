@@ -155,6 +155,7 @@ def test_weekly_metrics(dataset: tuple[Path, Path, Path], capsys: pytest.Capture
     assert second["adopted_awi_count"] == 0
     assert second["tokens_per_awi"] == {"all": None, "process-wi": None}
     assert coverage["unresolved_delegate_count"] == 0
+    assert "codex_archive" not in coverage["scan_roots"]
     automatic = _run(dataset, capsys, "--since", "2026-10-05")[0]
     fixed_until = first["first_pass"][0]["until"]
     for row in automatic["first_pass"]:
@@ -678,3 +679,31 @@ def test_missing_results_flow_to_week_output(dataset: Any, capsys: pytest.Captur
     assert quality
     assert {row["stage"] for row in quality} == {"review", "final-verification", "ci"}
     assert all(row["unknown_count"] > 0 and row["observed_count"] == 0 for row in quality)
+
+
+def test_default_codex_roots_count_archived_delegate(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    claude, codex, notes = dataset
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    archive = codex / "archived_sessions"
+    archive.mkdir()
+    child = next(codex.glob("2026/10/06/rollout-child-*.jsonl"))
+    child.rename(archive / child.name)
+    arguments = [
+        "--",
+        "--since",
+        "2026-10-05",
+        "--until",
+        "2026-10-12",
+        "--claude-projects-dir",
+        str(claude),
+        "--private-notes",
+        str(notes),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="cost-metrics", script_args=arguments)) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert rows[-1]["unresolved_delegate_count"] == 0
+    assert rows[-1]["by_runtime"]["codex"]["oldest_record_at"] is not None
+    assert rows[-1]["scan_roots"]["codex"] == str((codex / "sessions").resolve())
+    assert rows[-1]["scan_roots"]["codex_archive"] == str(archive.resolve())

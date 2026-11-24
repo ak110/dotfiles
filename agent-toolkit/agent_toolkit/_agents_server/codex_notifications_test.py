@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import shlex
@@ -137,6 +138,7 @@ async def test_send_message_child_reactivation_holds_parent_until_child_terminat
                 }
             )
             await backend._handle_notification(completion)
+            assert not backend._archive_tasks
             shown = await manager.show_session(session.session_id)
             assert shown["status"] == "running" and shown["result_held"]
             assert shown["live_child_sessions"] == [{"session_id": "child", "cwd": str(tmp_path)}]
@@ -390,3 +392,71 @@ async def test_context_usage_notification_is_session_scoped(tmp_path: pathlib.Pa
         await notify(session.session_id, session.turn_id, True)
         assert session.context_tokens is None
         await manager.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fail_archive", [False, True])
+async def test_archive_finishes_before_immediate_reply(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fail_archive: bool
+) -> None:
+    client = FakeCodexClient()
+    request = client.request
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def scripted(method: str, params: dict[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+        if method == "thread/archive":
+            entered.set()
+            await release.wait()
+            if fail_archive:
+                raise subject.JsonRpcResponseError(method, -32600, "archive refused")
+        return await request(method, params, **kwargs)
+
+    monkeypatch.setattr(client, "request", scripted)
+    async with subject.AppServerManager() as backend:
+        monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+        session = await backend.start("親の作業", str(tmp_path))
+        await backend._handle_notification(_completed_turn(session))
+        await asyncio.wait_for(entered.wait(), 2)
+        assert session.result_available
+        reply = asyncio.create_task(backend.send_message(session, "続ける"))
+        try:
+            await asyncio.sleep(0)
+            assert not reply.done()
+            assert not any(method == "thread/resume" for method, _ in client.requests)
+            release.set()
+            result = await asyncio.wait_for(reply, 2)
+            assert result["previous_result"]["status"] == "completed"
+            assert result["status"] == "running"
+        finally:
+            release.set()
+            reply.cancel()
+            await asyncio.gather(reply, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("guard", ["result-contract", "interrupted-child"])
+async def test_archive_not_requested_when_result_or_child_is_unobserved(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, guard: str
+) -> None:
+    client = FakeCodexClient()
+    async with subject.AppServerManager() as backend:
+        monkeypatch.setattr(backend, "_ensure_client", AsyncMock(return_value=client))
+        session = await backend.start("親の作業", str(tmp_path), launch_kind="explore")
+        if guard == "interrupted-child":
+            session.interrupt_requested = True
+            session.codex_live_subagent_thread_ids.add("child-1")
+        completion = _completed_turn(session)
+        if guard == "interrupted-child":
+            completion["params"]["turn"]["status"] = "interrupted"
+        else:
+            completion["params"]["turn"]["items"][0]["text"] = "成功値の書式を欠く応答"
+        await backend._handle_notification(completion)
+
+        if guard == "result-contract":
+            assert session.result_contract_recovery_pending
+        else:
+            assert session.result_available
+            assert session.error["unobservedSessions"] == ["child-1"]
+        assert not backend._archive_tasks
+        assert all(method != "thread/archive" for method, _ in client.requests)

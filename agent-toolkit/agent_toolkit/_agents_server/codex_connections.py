@@ -21,13 +21,18 @@ from agent_toolkit._agents_server.codex_instructions import (
     _current_service_tier,
     _developer_instructions,
 )
-from agent_toolkit._agents_server.codex_protocol import DEFAULT_WAIT_TIMEOUT, AppServerError, JsonRpcResponseError
+from agent_toolkit._agents_server.codex_protocol import (
+    DEFAULT_WAIT_TIMEOUT,
+    AppServerError,
+    JsonRpcResponseError,
+    redact_diagnostic,
+)
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.launch_prompts import base_instructions
 from agent_toolkit._agents_server.state import SessionState, begin_reply
 from agent_toolkit._atk import codex_connection
 from agent_toolkit._atk.usage_limit_policy import should_wait
-from agent_toolkit._common import startup_features
+from agent_toolkit._common import session_record_paths, startup_features
 
 if typing.TYPE_CHECKING:
     from agent_toolkit._agents_server.codex_manager_contract import CodexManager
@@ -122,6 +127,8 @@ class CodexConnectionsMixin:
         writer_session_id: str | None = None,
     ) -> str | None:
         """保存済みCodex threadを現在の実行条件で再開する。"""
+        if archive := self._archive_tasks.get(session.session_id):
+            await asyncio.shield(archive)
         await self._apply_connection_order(session, client)
         try:
             target = await self._compatible_resume_provider(session, client)
@@ -218,6 +225,17 @@ class CodexConnectionsMixin:
         self._resume_close_events[thread_id] = closed
         try:
             async with asyncio.timeout(shared_state.SESSION_INITIALIZATION_TIMEOUT):
+                if await run_file_operation(session_record_paths.has_archived_codex_record, thread_id):
+                    try:
+                        await client.request("thread/unarchive", {"threadId": thread_id})
+                    except JsonRpcResponseError as exc:
+                        missing = redact_diagnostic(f"no archived rollout found for thread id {thread_id}")
+                        message = str(exc).removeprefix("thread/unarchive: ").removeprefix("thread/unarchive: ")
+                        if message != missing:
+                            raise AppServerError(
+                                f"Codexのアーカイブを解除できません: {exc}. "
+                                f"`codex unarchive {thread_id}` で解除して再送してください"
+                            ) from exc
                 try:
                     return await client.request("thread/resume", params)
                 except JsonRpcResponseError as exc:

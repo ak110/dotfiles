@@ -26,6 +26,7 @@ class CodexManager(typing.Protocol):
     _clients: dict[str, JsonRpcProcess]
     _unassigned_clients: dict[int, JsonRpcProcess]
     _background_tasks: set[asyncio.Task[None]]
+    _archive_tasks: dict[str, asyncio.Task[None]]
     _writer_session_ids: dict[str, str]
     _resume_close_events: dict[str, asyncio.Event]
     _auto_reset_monitors: dict[str, asyncio.Task[None]]
@@ -43,6 +44,8 @@ class CodexManager(typing.Protocol):
     async def _ensure_client(self, launch_kind: LaunchKind | None = None, handoff_prompt: str = "") -> JsonRpcProcess: ...
 
     async def _discard_client(self, client: Any) -> None: ...
+
+    def schedule_archive(self, session: SessionState) -> None: ...
 
     def _owned_client(self, session: SessionState) -> Any: ...
 
