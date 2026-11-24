@@ -134,12 +134,15 @@ def _active_batch_run_id() -> str | None:
 
 
 def run_report_metadata(
-    data: dict[str, object], *, question_type: str | None = None, scope: str | None = None
+    data: dict[str, object], *, question_type: str | None = None, scope: str | None = None, new_report: bool = False
 ) -> dict[str, object]:
+    if data.get("run_skill_run_id"):
+        return data
     run_id = os.environ.get("AGENT_TOOLKIT_RUN_SKILL_ID")
     raw_scope = scope if scope is not None else data.get("scope")
     if (
-        not run_id
+        new_report
+        and not run_id
         and data.get("source") == "run-skill"
         and data.get("run_skill_report") == "true"
         and isinstance(raw_scope, str)
@@ -325,7 +328,7 @@ def _add_entries_locked(
             frontmatter_data["source"] = item_source
         frontmatter_data.update((key, value) for key, value in frontmatter.items() if key not in _RESERVED_FRONTMATTER_KEYS)
         if entry_type == WI_TYPE_UWI:
-            frontmatter_data = run_report_metadata(frontmatter_data, question_type=question_type, scope=scope)
+            frontmatter_data = run_report_metadata(frontmatter_data, question_type=question_type, scope=scope, new_report=True)
         if entry_type != WI_TYPE_AWI:
             if scope:
                 frontmatter_data["scope"] = scope

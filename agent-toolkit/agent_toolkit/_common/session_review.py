@@ -254,6 +254,7 @@ class BatchWriter:
         version: str | None = None,
         exit_code: int | None = None,
         diagnostics: dict[str, Any] | None = None,
+        source: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """失敗報告を所有する未確定のbatchへ移す。  pyfltr: allow-comment
 
@@ -262,6 +263,11 @@ class BatchWriter:
         """
         with locked():
             value = self._active()
+            same_failure = value.get("error") == reason
+            if not same_failure and source is not None:
+                value["failure_source"] = source
+            elif not same_failure:
+                value.pop("failure_source", None)
             if diagnostics is not None:
                 value["failure_diagnostics"] = diagnostics
             elif value.get("error") != reason:
@@ -273,7 +279,7 @@ class BatchWriter:
                     "status": BatchStatus.FAILED,
                     "failure_key": failure_key,
                     "error": reason,
-                    "failure_version": version,
+                    "failure_version": value.get("failure_version") if same_failure else version,
                     "exit_code": exit_code if exit_code is not None else value.get("exit_code"),
                 }
             )

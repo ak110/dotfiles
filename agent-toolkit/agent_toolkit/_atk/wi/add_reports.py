@@ -3,6 +3,7 @@
 import dataclasses
 import pathlib
 import re
+import subprocess
 import sys
 
 from agent_toolkit._atk import output_file as _output_file
@@ -17,6 +18,7 @@ from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import skill_modes
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
 
@@ -56,6 +58,7 @@ def check_run_report_sync(
     if not private_notes.is_dir():
         return RunReportGap("private-notesが無い", {"private_notes": str(private_notes)})
     with _wi_sync.repo_lock(private_notes, timeout=30):
+        remote = merge_ref = ""
         remote_revision: str | None = None
         if _wi_sync.has_remote(private_notes):
             branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
@@ -170,7 +173,38 @@ def check_run_report_sync(
                 )
         repaired = matched == 1 and len(unsaved) == 1
         if repaired:
-            _wi_sync.commit_and_push(private_notes, "chore: 振り返りbatchの報告を同期", unsaved)
+            if remote_revision is not None and _git_command.output(["rev-parse", "HEAD"], private_notes) != remote_revision:
+                return RunReportGap("報告の回復を保留", {"理由": "HEADがリモート先端と異なるため、通常の同期が必要"})
+            stage = "commit"
+            try:
+                _wi_sync.commit_and_push(private_notes, "chore: 振り返りbatchの報告を同期", unsaved, skip_push=True)
+                if remote_revision is not None:
+                    stage = "push"
+                    head = _git_command.output(["rev-parse", "HEAD"], private_notes)
+                    parents = _git_command.output(["rev-list", "--parents", "-n", "1", head], private_notes).split()
+                    if parents != [head, remote_revision]:
+                        return RunReportGap("報告の回復を保留", {"理由": "報告1件のcommitだけを確認できない"})
+                    _git_command.run(
+                        [
+                            "push",
+                            "--no-follow-tags",
+                            "--recurse-submodules=no",
+                            f"--force-with-lease={merge_ref}:{remote_revision}",
+                            remote,
+                            f"{head}:{merge_ref}",
+                        ],
+                        private_notes,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                stderr = getattr(error, "stderr", None)
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode("utf-8", errors="replace")
+                message = redact_secrets(stderr or str(error))[-2000:]
+                return RunReportGap("報告の回復に失敗", {"段階": stage, "診断": message})
     if repaired:
         return check_run_report_sync(private_notes, run_id=run_id, scope=scope)
     if gap is not None:

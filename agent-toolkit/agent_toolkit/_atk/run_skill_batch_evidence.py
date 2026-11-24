@@ -199,7 +199,7 @@ def _previous_scope(target: dict[str, Any]) -> dict[str, Any] | None:
         return {"読取不能": str(error)}
 
 
-def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
+def failure_details(manifest: dict[str, Any]) -> str:
     """会話ファイルを読まず、失敗時の入力・診断をJSONとして本文に固定する。"""
     prepared = {(item.get("host"), item.get("session_id")) for item in manifest.get("prepared", [])}
     targets = []
@@ -211,13 +211,11 @@ def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
         if previous is not None or not done:
             snapshot["previous_scope"] = previous
         targets.append(snapshot)
-    current = plugin_version(root)
     details = {
         "hostname": platform.node(),
         "os": sys.platform,
-        "plugin_version": manifest.get("failure_version") or current,
-        # 版の無い旧失敗では失敗時の版と異なりうるため、本文を作った時点の配布物の由来を別に示す。  # pyfltr: allow-comment
-        "plugin_source": plugin_source(root, current),
+        "plugin_version": manifest.get("failure_version") or "不明",
+        "plugin_source": manifest.get("failure_source") or {"commit": None, "source": "不明"},
         "targets": targets,
         "error": redact_secrets(manifest["error"]) if manifest.get("error") else manifest.get("error"),
         "failure_diagnostics": manifest.get("failure_diagnostics"),
@@ -233,3 +231,47 @@ def failure_details(manifest: dict[str, Any], root: pathlib.Path) -> str:
         + "\n".join("    " + line for line in json.dumps(details, ensure_ascii=False, indent=2).splitlines())
         + "\n"
     )
+
+
+def failure_message(failure_key: str, reason: str, path: pathlib.Path, manifest: dict[str, Any], target_repo: str) -> str:
+    targets = ", ".join(item["session_id"] for item in manifest["targets"])
+    log = f"実行ログ: {manifest['log_path']}\n" if manifest.get("log_path") else ""
+    action = (
+        "実行記録のerrorと、実行ログの終了状態・標準出力・標準エラーを比較する。"
+        if log
+        else "実行記録のerror・targets・preparedから失敗した工程と入力を確認し、"
+        "errorにある不足項目と次の操作に従って入力や読取条件を修正する。"
+    )
+    body = (
+        "# 非同期振り返り（review-session batch）の失敗の是正\n\n"
+        "非同期振り返りが下記の対象セッションを処理できなかった。"
+        "同じ原因の未完了AWIがある間は対象の自動振り返りを止めている。"
+        "AWIがadopted・rejectedで終了した場合、または未完了AWIが無くagent-toolkitの版が変わった場合に再試行する。"
+        "削除だけでは再試行せず、起票済みの同じ失敗は終了AWIを観測するまで再起票しない。\n\n"
+        "## 反映内容と反映先\n\n"
+        "失敗理由と実行記録から原因を特定し、振り返りの前後処理または準備処理を是正する。"
+        f"反映先は`{target_repo}`とする。"
+        "是正にユーザーの判断が要る点があれば、UWIで確認する。\n\n"
+        "## 調査結果と判断根拠\n\n"
+        "失敗理由は振り返りの起動元が記録した値である。"
+        "下記に入力のメタ情報と診断を埋め込んだ。セッション記録の本文は転記していない。\n\n"
+        "## 完成条件\n\n"
+        "埋め込まれた入力と記録状態から合成した再現テストを作り、是正前の失敗と是正後の成功を確認する。"
+        "再現テストで準備から失敗した工程までの成功を確認する。"
+        "準備以降に失敗した場合は、子の結果回収、振り返り、報告の同期とsession-review-state finishまで完了する。"
+        "起票ホストでの実際の再試行は是正を含む版の配布後に行い、処理担当は観測しなくてよい。"
+        "手動で再試行する場合は`atk run-skill agent-toolkit:review-session --args batch`を使う。"
+        "このAWIの終了後、`session_review_auto_start=true`で開始条件を満たす場合に限り、"
+        "セッション開始・終了時に自動起動できる。"
+        "`session_review_auto_start=false`の場合は自動起動しないため、手動実行する。\n\n"
+        "## 詳細\n\n"
+        f"失敗理由: {redact_secrets(reason)}\n"
+        f"実行記録: {path}\n"
+        f"{log}"
+        f"次の操作: {action}"
+        "本文の埋め込み情報で足りない場合に限り、起票ホストで不足する情報を取得する。\n"
+        f"対象: {targets}\n"
+        f"\n{failure_details(manifest)}"
+    )
+    metadata = f"session_review_failure_key: {json.dumps(failure_key)}\n"
+    return f"---\n{metadata}---\n\n{body}"
