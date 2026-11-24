@@ -73,7 +73,10 @@ import pathlib
 import re
 lazy import dataclasses
 lazy import hashlib
+lazy import unicodedata
 lazy from collections.abc import Iterable
+
+lazy from markdown_it import MarkdownIt
 
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
@@ -297,6 +300,12 @@ def _external_source_review_needed(session_id: str, tool_input: dict) -> str | N
     return f"`{_SOURCE_REVIEW_FILE}`を読み取れません。"
 
 
+def _external_source_cell_content(cell: str) -> str:
+    inline = MarkdownIt("commonmark").parseInline(unicodedata.normalize("NFKC", cell))[0]
+    text = "".join(token.content for token in inline.children or () if token.type in {"text", "code_inline"})
+    return re.sub(r"[^\w]|_", "", text)
+
+
 def _external_source_table_error(table: str, urls: set[str]) -> str | None:
     columns: dict[str, int] = {}
     covered: set[str] = set()
@@ -321,7 +330,7 @@ def _external_source_table_error(table: str, urls: set[str]) -> str | None:
         for column in _SOURCE_REVIEW_COLUMNS[1:]:
             index = columns[column]
             cell = cells[index] if index < len(cells) else ""
-            meaningful = re.sub(r"[^\w]|_", "", cell)
+            meaningful = _external_source_cell_content(cell)
             if not meaningful or (column == _SOURCE_COMPARISON_COLUMN and meaningful in {"なし", "無し"}):
                 return f"{line_number}行目の`{column}`に記入がありません。"
         covered.add(url)

@@ -301,6 +301,49 @@ def test_policy_question_requires_all_external_sources(
     assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
 
 
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize(
+    ("source", "url", "comparison", "blocked"),
+    [
+        ("資料（{url}）を参考に", "https://example.com/a", "重複を統合する", False),
+        ("資料**{url}**を参考に", "https://example.com/a", "重複を統合する", False),
+        ('資料: "{url}"', "https://example.com/a*_%28b%29", "重複を統合する", False),
+        ("資料: __{url}__", "https://example.com/a__b", "重複を統合する", False),
+        ("資料: ({url})", "https://example.com/a(b)?x=1&y=2#f", "重複を統合する", False),
+        ("資料: [{url}]({url})", "https://[2001:db8::1]/a(b)", "重複を統合する", False),
+        ("資料: {url}。次も確認", "https://example.com/資料", "重複を統合する", False),
+        ("資料: {url}", "https://example.com/a", "なし<br>", True),
+        ("資料: {url}", "https://example.com/a", "**なし**<BR />&nbsp;！", True),
+        ("資料: {url}", "https://example.com/a", '<span title=">理由">無し</span>', True),
+        ("資料: {url}", "https://example.com/a", "＜ｂｒ＞　―", True),
+        ("資料: {url}", "https://example.com/a", "なし<br>既存手順を調べ、重複がなかった", False),
+    ],
+)
+def test_external_source_markup_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    source: str,
+    url: str,
+    comparison: str,
+    blocked: bool,
+) -> None:
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: tmp_path / "work-contract.md")
+    prompt = f"/atk-mode {work} {source.format(url=url)}"
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    (tmp_path / "external-source-review.md").write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n"
+        f"| <{url}> | 設計手順 | {comparison} | 不採用 |\n",
+        encoding="utf-8",
+    )
+    reason = _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+    if blocked:
+        assert "3行目" in reason and "削る・まとめる・置き換える案" in reason
+    else:
+        assert not reason
+
+
 def test_external_source_url_preserves_ipv6_address() -> None:
     urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
     assert urls == {"https://[2001:db8::1]/source"}
