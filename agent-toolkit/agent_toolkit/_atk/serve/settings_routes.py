@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import pathlib
 import re
@@ -29,13 +30,43 @@ def _ssh(host: str, operation: str, payload: dict[str, typing.Any] | None = None
     )
 
 
+def _ssh_unelevated(
+    host: str, operation: str, payload: dict[str, typing.Any] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    # pyfltr: allow-comment 配列の引数とbase64の本文は、PowerShellのコードとして展開しない。
+    arguments = ", ".join("'" + arg.replace("'", "''") + "'" for arg in operation.removeprefix("atk ").split())
+    script = "$env:PYTHONIOENCODING = 'utf-8'\n$LASTEXITCODE = 1\n"
+    script += f"$atkArgs = @({arguments})\n"
+    if payload is not None:
+        encoded = base64.b64encode(json.dumps(payload).encode("ascii")).decode("ascii")
+        script += f"$packet = [Text.Encoding]::ASCII.GetString([Convert]::FromBase64String('{encoded}'))\n"
+        script += "$packet | "
+    script += "& atk @atkArgs 2>$null\nexit $LASTEXITCODE\n"
+    try:
+        return subprocess.run(
+            ["ssh-unelevated", "--timeout", "20", "--", host, "-"],
+            input=script.encode("utf-8"),
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise ValueError("昇格SSHでatkを起動できません。ローカルにssh-unelevatedを導入してください") from error
+
+
+type _ConfigRunner = typing.Callable[[str, str, dict[str, typing.Any] | None], subprocess.CompletedProcess[bytes]]
+
+
 _LEGACY_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_,./:@+-]*")
 _SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
 _PATH_KEYS = {"config_dir", "state_dir", "data_dir", "private_notes"}
 
 
-def _remote_snapshot(host: str) -> dict[str, typing.Any]:
-    result = _ssh(host, "atk config snapshot")
+def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
+    runner: _ConfigRunner = _ssh
+    result = runner(host, "atk config snapshot", None)
+    if result.returncode and b"os error 448" in result.stderr:
+        runner = _ssh_unelevated
+        result = runner(host, "atk config snapshot", None)
     if result.returncode == 0:
         snapshot = json.loads(result.stdout)
         if not isinstance(snapshot, dict) or not isinstance(snapshot.get("settings"), dict):
@@ -45,11 +76,13 @@ def _remote_snapshot(host: str) -> dict[str, typing.Any]:
                 raise ValueError("SSH先の設定一覧を解釈できません")
             if key not in config_settings.MUTABLE_KEY_DEFAULTS:
                 item["read_only"] = True
-        return snapshot
+        return snapshot, runner
+    if runner is _ssh_unelevated and result.returncode == 125:
+        raise ValueError("非昇格の設定取得に失敗しました。SSH先でユーザーがログオンしているかを確認してください")
     if result.returncode != 2:
         raise ValueError("SSH先で設定を取得できません。接続とSSH先のatkの起動を確認してください")
 
-    legacy = _ssh(host, "atk config show")
+    legacy = runner(host, "atk config show", None)
     if legacy.returncode != 0:
         raise ValueError("SSH先で設定を取得できません。SSH先でatk config showの実行結果を確認してください")
     settings, paths = {}, {}
@@ -71,25 +104,27 @@ def _remote_snapshot(host: str) -> dict[str, typing.Any]:
         }
     if not settings:
         raise ValueError("SSH先の設定を解釈できません。SSH先のatkの版を確認してください")
-    return {"legacy": True, "settings": settings, "paths": paths}
+    return {"legacy": True, "settings": settings, "paths": paths}, runner
 
 
 def _remote_update(host: str, payload: dict[str, typing.Any]) -> None:
-    snapshot = _remote_snapshot(host)
+    snapshot, runner = _remote_snapshot(host)
     action = payload.get("action")
     if action in ("set", "temporary", "array-add", "array-remove"):
         key = config.operation_text(payload, "key")
         if key is None or snapshot["settings"].get(key, {"read_only": True}).get("read_only"):
             raise ValueError("このホストで変更できる設定を選んでください")
     if not snapshot.get("legacy"):
-        result = _ssh(host, "atk config update", payload)
+        result = runner(host, "atk config update", payload)
     else:
         key, value = config.operation_text(payload, "key"), config.operation_text(payload, "value")
         # pyfltr: allow-comment 旧版は標準入力に非対応のため、cmd.exe・POSIXシェルの両方で引用が不要な1引数に限る。
         if action != "set" or key is None or value is None or not _LEGACY_TOKEN.fullmatch(value):
             raise ValueError("この値を設定画面から保存するにはSSH先のatkを更新してください")
         config_settings.validate_mutable_setting(key, value)
-        result = _ssh(host, f"atk config set {key} {value}")
+        result = runner(host, f"atk config set {key} {value}", None)
+    if runner is _ssh_unelevated and result.returncode == 124:
+        raise ValueError("保存処理の結果を確認できません。SSH先の設定を読み直してから再試行してください")
     if result.returncode != 0:
         raise ValueError("SSH先のatkが設定を保存できませんでした。SSH先で設定と値の書式を確認してください")
 
@@ -116,12 +151,10 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
         async with lock:
             try:
                 host = await asyncio.to_thread(_request_host)
-                snapshot = (
-                    await asyncio.to_thread(_remote_snapshot, host)
-                    if host
-                    else await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
-                )
-                if not host:
+                if host:
+                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host)
+                else:
+                    snapshot = await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
                     snapshot["listen"] = {
                         "serve_host": [serve.host, serve.host_source],
                         "serve_port": [serve.port, serve.port_source],
