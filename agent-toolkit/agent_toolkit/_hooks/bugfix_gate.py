@@ -2,7 +2,7 @@
 
 送達前とStopで、最新の実ユーザー発話に届いた最初の分類を使う。
 未分類時は分類の送達だけを許可し、是正なら同じ発話に対するbugfixの起動と種類付きの再発防止を求める。
-同じ発話に対する種類付きの報告を送達済みなら、Stopでは最終応答への再掲を求めない。
+同じ発話に対する種類付きの報告を送達済みなら、空の最終応答や短い締めに再掲を求めない。
 起動に失敗したことをセッション記録で確認できる時は、その事実を報告できるようにする。
 
 通知を遮断にする根拠: 警告だけでは、欠陥指摘の後にbugfixを起動せず原因の推測をユーザーへ報告した事例があった
@@ -337,6 +337,10 @@ def _has_typed_prevention(text: object) -> bool:
     return bool(bodies) and all(starts_with_kind(body) for body in bodies)
 
 
+def _is_closing_message(message: object) -> bool:
+    return message is None or (isinstance(message, str) and message.strip() in {"", "…", "以上。"})
+
+
 def _turn_block(
     payload: dict, turn: tuple[str, list[dict], str | None], message: object, delivery: str, *, can_classify: bool
 ) -> str | None:
@@ -365,6 +369,7 @@ def _turn_block(
         )
     if _has_typed_prevention(message) or (
         not can_classify
+        and _is_closing_message(message)
         and any(_understanding_kind(text) is None and _has_typed_prevention(text) for text in _delivered_messages(entries))
     ):
         return None
