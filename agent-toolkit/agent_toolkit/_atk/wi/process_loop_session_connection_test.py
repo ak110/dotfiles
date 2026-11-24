@@ -302,3 +302,27 @@ def test_limited_claude_probe_selects_next_connection_for_same_session_launch(
     if resume:
         assert "--resume=saved-claude" in launched[0]
     assert env.get("AGENT_TOOLKIT_CONFIG_CLAUDE_ORCHESTRATOR_CONNECTIONS") == "subscription,payg"
+
+
+@pytest.mark.parametrize("binary", [False, True])
+def test_timed_out_claude_probe_reports_weekly_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], binary: bool
+) -> None:
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_USAGE_LIMIT_WAIT", "five-hour")
+
+    def run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        event = json.dumps(
+            {
+                "type": "rate_limit_event",
+                "rate_limit_info": {"status": "rejected", "rateLimitType": "seven_day", "resetsAt": 2000000000},
+            }
+        )
+        raise subprocess.TimeoutExpired(argv, kwargs["timeout"], output=event.encode() if binary else event)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(SystemExit):
+        _pl_session.select_available_orchestrator([("claude", "sonnet", "high")], dict(os.environ), tmp_path)
+    captured = capsys.readouterr()
+    diagnostic = captured.out + captured.err
+    assert "seven_day" in diagnostic
+    assert "2033-05-18T03:33:20+00:00" in diagnostic

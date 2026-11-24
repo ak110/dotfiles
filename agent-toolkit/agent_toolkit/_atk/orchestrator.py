@@ -355,6 +355,13 @@ def _probe_usage_limit(
     return usage_limit if usage_limit is not None and usage_limit.is_wait_target else None
 
 
+def _claude_limit_diagnostic(limit: _claude_usage_limit.UsageLimitState) -> str:
+    return (
+        f"Claude Codeの利用上限（{limit.limit_type}）。解除予定: {limit.resets_at_iso() or '不明'}。"
+        "設定に従い解除を待たず次の候補を評価する"
+    )
+
+
 def _wait_for_usage_limit(candidate: str, usage_limit: UsageLimitState, context: ProbeContext) -> None:
     """利用上限の解除予定時刻まで待つ。待機の内容を端末と呼び出し側の記録先へ出力する。"""
     delay = usage_limit.delay_seconds(time.time())
@@ -446,8 +453,19 @@ def _probe_candidate_owned(
             errors="replace",
             timeout=_PROBE_TIMEOUT_SECONDS,
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
         _console_title.set_console_title(context.title)
+        if orchestrator == "claude":
+            output = error.stdout or ""
+            if isinstance(output, bytes):
+                output = output.decode("utf-8", errors="replace")
+            limit = _claude_usage_limit.from_stream_lines(split_lines(output))
+            if limit is not None and limit.is_wait_target:
+                if usage_limit_policy.should_wait(orchestrator, limit.limit_type):
+                    return limit, None
+                diagnostic = _claude_limit_diagnostic(limit)
+                _notify(context, f"モデル候補の可用性判定に失敗しました（{diagnostic}）: {candidate}")
+                return None, (orchestrator, 1, diagnostic)
         _notify(
             context,
             f"モデル候補の可用性判定が{_PROBE_TIMEOUT_SECONDS:.0f}秒で終わらなかったため打ち切りました: {candidate}",
@@ -474,7 +492,9 @@ def _probe_candidate_owned(
         return usage_limit, None
     failure_code = result.returncode or 1
     diagnostic = (result.stderr or "").strip()
-    if usage_limit is not None:
+    if isinstance(usage_limit, _claude_usage_limit.UsageLimitState):
+        diagnostic = _claude_limit_diagnostic(usage_limit)
+    elif usage_limit is not None:
         diagnostic = (
             f"{orchestrator}の利用上限（{usage_limit.limit_type or '種類不明'}）。設定に従い解除を待たず次の候補を評価する"
         )
