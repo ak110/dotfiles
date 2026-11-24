@@ -74,6 +74,7 @@ class _Run:
     events: list[tuple[str, str]] = dataclasses.field(default_factory=list)
     begun: set[str] = dataclasses.field(default_factory=set)
     failed: set[str] = dataclasses.field(default_factory=set)
+    committed: set[str] = dataclasses.field(default_factory=set)
     failure_left: bool = False
 
 
@@ -87,6 +88,8 @@ class _FakeMutation:
             self.run.failure_left = False
             self.run.failed.add(_actor())
             raise RuntimeError("注入したcommitの失敗")
+        if _actor() in _REQUESTERS:
+            self.run.committed.add(_actor())
 
 
 class _FakeStorage:
@@ -210,22 +213,49 @@ def _instrument(monkeypatch: pytest.MonkeyPatch, scenario: _Scenario, run_ref: C
     monkeypatch.setattr(sync, "DEFAULT_STORAGE", _FakeStorage(run_ref, scenario.failure))
 
 
-def _consumed(fixture: _Fixture, scenario: _Scenario) -> str:
+def _approval(fixture: _Fixture, scenario: _Scenario) -> dict[str, Any]:
     if scenario.source == "direct":
         saved = session_state.read_state(_SESSION).get("direct_operation_approvals", {})
-        approval = next(iter(saved.values()))["metadata"].get("operation_approval", {}) if saved else {}
-    else:
-        assert fixture.uwi_path is not None
-        parsed = frontmatter.parse_frontmatter(fixture.uwi_path.read_text(encoding="utf-8"))
-        approval = parsed[0].get("operation_approval", {}) if parsed is not None else {}
-    return f"{approval.get('state')}/{approval.get('remaining', '-')}"
+        return next(iter(saved.values()))["metadata"].get("operation_approval", {}) if saved else {}
+    assert fixture.uwi_path is not None
+    parsed = frontmatter.parse_frontmatter(fixture.uwi_path.read_text(encoding="utf-8"))
+    return parsed[0].get("operation_approval", {}) if parsed is not None else {}
 
 
-def _violations(scenario: _Scenario, run: _Run, allowed: dict[str, bool], probe: bool) -> list[str]:
+def _used(approval: dict[str, Any], scenario: _Scenario) -> int | None:
+    if "remaining" in approval:
+        return scenario.limit - int(approval["remaining"])
+    if approval.get("state") == "consumed":
+        return scenario.limit
+    if approval.get("state") == "approved":
+        return 0
+    return None
+
+
+def _recorded(fixture: _Fixture) -> set[str]:
+    results = session_state.read_state(_SESSION).get("operation_permission_results", {})
+    return {
+        name
+        for name in _REQUESTERS
+        if results.get(f"use-{name}", {}).get("status") == "authorized"
+        and results[f"use-{name}"].get("request_id") == fixture.request["request_id"]
+    }
+
+
+def _violations(
+    scenario: _Scenario,
+    run: _Run,
+    allowed: dict[str, bool],
+    probe: bool,
+    used: int | None,
+    recorded: set[str],
+) -> list[str]:
     found = []
     granted = sum(allowed.values())
     if granted > scenario.limit:
         found.append("性質1: 承認の回数を超えて許可した")
+    if used is not None and granted > used:
+        found.append("性質1: 消費した回数を超えて許可した")
     revoked_at = next((index for index, event in enumerate(run.events) if event[0] == "revoked"), None)
     if revoked_at is not None:
         late = [actor for index, (kind, actor) in enumerate(run.events) if kind == "begin" and index > revoked_at]
@@ -235,6 +265,10 @@ def _violations(scenario: _Scenario, run: _Run, allowed: dict[str, bool], probe:
         found.append("性質3: 取消も保存失敗も無いのに、有効な承認の範囲の要求を拒否した")
     if any(allowed.get(actor) for actor in run.failed):
         found.append("性質4: 保存に失敗した要求を許可した")
+    if any(allowed[actor] and actor not in recorded for actor in _REQUESTERS):
+        found.append("性質4: 実行記録をセッション状態へ保存していない要求を許可した")
+    if scenario.source == "uwi" and any(allowed[actor] and actor not in run.committed for actor in _REQUESTERS):
+        found.append("性質4: 消費をUWIへcommitしていない要求を許可した")
     return found
 
 
@@ -281,16 +315,19 @@ def _check_scenario(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, sce
         assert not result.deadlock, f"{scenario.key}: 主体が止まったまま終わった: {result.blocked}"
         run = current["run"]
         allowed = {name: bool(result.returns[name]) for name in _REQUESTERS}
+        approval = _approval(fixture, scenario)
+        used = _used(approval, scenario)
+        recorded = _recorded(fixture)
         probe = False
         if any(event[0] == "revoked" for event in run.events):
             probe_payload = {**fixture.payload, "hook_event_name": "PreToolUse", "tool_use_id": "use-probe"}
             probe_payload.pop("reason")
             decision = operation_permissions.pretooluse(probe_payload)
             probe = decision is not None and decision.allow
-        consumed = _consumed(fixture, scenario)
-        outcome = f"許可{sum(allowed.values())}件・保存後{consumed}"
+        approval = _approval(fixture, scenario)
+        outcome = f"許可{sum(allowed.values())}件・保存後{approval.get('state')}/{approval.get('remaining', '-')}"
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
-        for violation in _violations(scenario, run, allowed, probe):
+        for violation in _violations(scenario, run, allowed, probe, used, recorded):
             violations.setdefault(violation, [" → ".join(f"{step.actor}:{step.label}" for step in result.steps)])
     assert explorer.outcome is modelcheck.Outcome.EXHAUSTIVE
     return {
