@@ -30,7 +30,7 @@ Claude Code 2.1.241で検証した設定は、対象キーを含まない一時J
 
 ## agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md：起動パラメーター：2026年9月27日
 
-2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkの背景実行、完了通知、forkからの再委譲制限とfork modeを設定しない場合の値を確認した。
+2026-09-27、Claude Code 2.1.283の公式資料<https://code.claude.com/docs/en/sub-agents>で、forkのバックグラウンド実行、完了通知、forkからの再委譲制限とfork modeを設定しない場合の値を確認した。
 同版の対話セッションで`Agent`を`subagent_type: "fork"`として起動した観測では、`SubagentStart`が委譲先規範を追加した。
 再検証は対話と`-p`のそれぞれでfork modeを確認し、forkの起動結果、規範の配送および完了通知を比べる。
 

@@ -9,7 +9,7 @@
 対象の実装は、`agent-toolkit/agent_toolkit/agents_server_mcp.py`と`agent-toolkit/agent_toolkit/_agents_server/`配下である。
 statuslineの`rust/claude-statusline/src/agents_server.rs`と`rust/claude-statusline/src/agents_server/`配下も含む。
 これらの共有状態の読書き、保存先、更新主体、利用関係を変える・調べる時に読む。
-読み書きする状態、更新する主体、消費側との利用関係から必要な資料を選ぶ。
+読み書きする状態、更新する主体、利用側との利用関係から必要な資料を選ぶ。
 複数の状態を扱う変更では、共通事項（`docs/development/internals-agents-server-state.md`）と該当する主題別資料の全文を読む。
 ファイル名だけで対象を限定せず、判断に必要な前提・例外が別の資料にある場合も、その資料を加える。
 

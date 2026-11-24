@@ -6,7 +6,7 @@
 
 Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_id`と絶対パスの`transcript_path`を「この会話のセッションID」「この会話のtranscript」として加える。
 同じプロジェクトの記録を更新時刻順に選んでも、現在の会話の記録とは限らない。
-更新時刻順の正しさと会話の同一性は独立であるため、ホストが入力で渡す識別子と記録パスを消費側へ届ける。
+更新時刻順の正しさと会話の同一性は独立であるため、ホストが入力で渡す識別子と記録パスを利用側へ届ける。
 `startup`・`resume`・`clear`・`compact`・`fork`の各入力で現行の値を通知し、managed-tempの作成の成否と独立に結合する。
 入力に無い値は推測で補わず、既存の取得手段として`CLAUDE_CODE_SESSION_ID`と`session-review-evidence --claude-session-id`を案内する。
 委譲先とCodexは対象外とし、委譲先自身の会話と委譲元から受け取る証拠の識別子を混同させない。
@@ -16,7 +16,7 @@ Claude Codeのメインへ返す`SessionStart`の通知へ、入力の`session_i
 入力項目とmatcherの典拠は公式の[Hooks reference](https://code.claude.com/docs/en/hooks)「Common input fields」「SessionStart」で、2026年10月13日にClaude Code 2.1.296の環境で確かめた。
 同資料は、transcriptが非同期に書かれ、現在のturnの最新メッセージを含まない場合があると記す。
 再検証は同じ2節の項目名とmatcherの値を比べ、制御したSessionStart入力をhook handlerへ渡して`additionalContext`の値を確かめる（`agent-toolkit/agent_toolkit/_hooks/rules_context_test.py`）。
-環境変数だけを案内する案はtranscriptの所在を消費側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。
+環境変数だけを案内する案はtranscriptの所在を利用側ごとの探索に残し、`UserPromptSubmit`で毎ターン配送する案は`SessionStart`が会話の切替境界を既に扱うため採らない。
 新しい状態ファイルや取得器は設けない。
 
 フックが誤発火した場合でも、通知を受領した主体が抜けられる状態を保つことが目的である。
