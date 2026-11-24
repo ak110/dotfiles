@@ -5,6 +5,7 @@ import datetime
 import os
 import pathlib
 import re
+import tempfile
 import uuid
 from collections.abc import Iterable
 
@@ -13,6 +14,14 @@ from agent_toolkit._common import session_layout as shared_layout
 
 RECORD_SUFFIX = ".jsonl"
 CODEX_ROLLOUT_PREFIX = "rollout-"
+
+
+def stop_log_path(session_id: str) -> pathlib.Path:
+    """Stop hookの判定根拠の常時ログのパスを返す。  pyfltr: allow-comment
+
+    書き込みはStop hook（`_hooks/stop_session.py`）が行い、振り返りの失敗報告が同じパスから読む。
+    """
+    return pathlib.Path(tempfile.gettempdir()) / f"claude-agent-toolkit-stop-{session_id}.log"
 
 
 def codex_record_roots(codex_home: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:

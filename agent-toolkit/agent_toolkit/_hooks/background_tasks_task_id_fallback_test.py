@@ -132,7 +132,7 @@ class TestAttachmentTaskIdFallbackCompletion:
     def test_both_missing_leaves_pending_and_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_async_launched_entry("toolu_a", agent_id="agent-a"),
             _attachment_task_notification_entry(None, task_id=None),

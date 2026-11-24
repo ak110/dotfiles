@@ -170,12 +170,12 @@ def _record_iss_sidechain_probe(
     tool_name: str,
     payload: dict,
 ) -> None:
-    """多重ネスト構成でのisSidechain実値採取用のデバッグログ記録。
+    """多重ネスト構成でのisSidechain実値採取用のデバッグログ記録。  pyfltr: allow-comment
 
     暫定機構: fb7 の実サンプル採取が目的。
     十分なサンプルが集まり代替判定機構が実装された時点で本ヘルパーは削除する。
     ログ出力先はtempfile.gettempdir()起点でsession_id単位に分離する
-    （`stop_session.py`の`_stop_log_path`先例に揃える）。
+    （`session_record_paths.stop_log_path`の先例に揃える）。
     ローテーションと追記は`_file_lock.locked_rotate_and_append`へ委譲する。
     """
     try:

@@ -16,7 +16,7 @@ import filelock
 import pytest
 
 from agent_toolkit._atk import config, run_script, run_skill_batch, weekly_schedule
-from agent_toolkit._atk.wi import add, frontmatter, layout, sync, uwi
+from agent_toolkit._atk.wi import add, add_reports, frontmatter, layout, sync, uwi
 from agent_toolkit._common import session_activity, session_review
 from agent_toolkit._testing import git_repository, late_descendant
 
@@ -396,7 +396,11 @@ def test_usage_limited_batch_is_preserved_until_due(tmp_path, monkeypatch, capsy
         return 0
 
     monkeypatch.setattr(run_skill_batch, "time", types.SimpleNamespace(time=lambda: 301.0))
-    monkeypatch.setattr(add, "has_synced_run_report", lambda *_args, **kw: kw["run_id"] == state["run_id"])
+    monkeypatch.setattr(
+        add,
+        "check_run_report_sync",
+        lambda *_args, **kw: None if kw["run_id"] == state["run_id"] else add_reports.RunReportGap("報告用UWIが無い", {}),
+    )
     assert run_skill_batch.dispatch(_args("auto"), succeed) == 0
     assert list(path.parent.glob("*.json")) == [path]
     assert session_review.read(path)["status"] == "completed"
