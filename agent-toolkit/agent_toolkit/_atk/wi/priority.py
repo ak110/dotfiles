@@ -2,27 +2,28 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from agent_toolkit._atk.wi import headings
+
 PRIORITY_KEY = "priority"
 URGENT = "urgent"
-REASON_KEYS = ("priority_impact", "priority_evidence", "priority_release")
-"""根拠の各欄。観測した影響、観測条件と根拠の所在、優先を解除する条件の順。"""
+REASON_HEADING = "優先の根拠"
+LEGACY_REASON_KEYS = ("priority_impact", "priority_evidence", "priority_release")
 
 
 def priority_of(metadata: Mapping[str, object]) -> str:
     return URGENT if metadata.get(PRIORITY_KEY) == URGENT else "normal"
 
 
-def reason_of(metadata: Mapping[str, object]) -> dict[str, str] | None:
+def reason_of(metadata: Mapping[str, object], body: str) -> str | None:
     if priority_of(metadata) != URGENT:
         return None
-    return {key: str(metadata.get(key, "")) for key in REASON_KEYS}
-
-
-def missing_reason_keys(metadata: Mapping[str, object]) -> list[str]:
-    reason = reason_of(metadata)
-    if reason is None:
-        return []
-    return [key for key, value in reason.items() if not value.strip()]
+    lines = headings.last_h2_section_lines(body, REASON_HEADING)
+    if lines is not None:
+        return "\n".join(lines).strip() or None
+    legacy = [metadata.get(key) for key in LEGACY_REASON_KEYS]
+    if all(isinstance(value, str) and value.strip() for value in legacy):
+        return "\n".join(str(value).strip() for value in legacy)
+    return None
 
 
 def selection_order(awis: Iterable[tuple[str, str]]) -> list[str]:

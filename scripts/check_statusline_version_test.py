@@ -231,14 +231,19 @@ gh() {
   local action="$2" tag="$3" asset payload
   shift 3
   case "$action" in
-    view) [[ -f "$RELEASES/$tag" ]];;
+    view) [[ -f "$RELEASES/$tag" && "$*" == "--json body --jq .body" ]] && cat "$RELEASES/notes/$tag";;
+    edit)
+      [[ -f "$RELEASES/$tag" && "$1" == --notes ]] || return 64
+      printf '%s\n' "$2" > "$RELEASES/notes/$tag"
+      ;;
     create|upload)
       local -a assets=()
-      local latest= clobber=false
+      local latest= clobber=false notes=
       for asset in "$@"; do
         case "$asset" in
           --latest=*) latest="${asset#--latest=}";;
           --clobber) clobber=true;;
+          --notes=*) notes="${asset#--notes=}";;
           --*) ;;
           *)
             [[ -f "$asset" ]] || return 68
@@ -259,6 +264,9 @@ gh() {
         return 67
       fi
       printf '%s\n' "${assets[@]}" > "$RELEASES/$tag"
+      if [[ "$action" == create ]]; then
+        printf '%s\n' "$notes" > "$RELEASES/notes/$tag"
+      fi
       if [[ "$latest" == true ]]; then
         printf '%s\n' "$tag" > "$RELEASES/latest"
       fi
@@ -272,8 +280,9 @@ gh() {
 @pytest.mark.skipif(sys.platform == "win32", reason="公開jobと同じLinux上のBash・jqを使う")
 @pytest.mark.parametrize("older_arrives_late", [False, True], ids=["merge-order", "older-arrives-late"])
 def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late: bool) -> None:
-    workflow_path = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows/release-statusline.yaml"
-    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    workflow_dir = pathlib.Path(__file__).resolve().parents[1] / ".github/workflows"
+    workflow = yaml.safe_load((workflow_dir / "release-statusline.yaml").read_text(encoding="utf-8"))
+    ci = yaml.safe_load((workflow_dir / "ci.yaml").read_text(encoding="utf-8"))
     release = workflow["jobs"]["release"]
     publish = release["steps"][-1]
     assert release["env"]["HEAD_SHA"] == "${{ needs.gate.outputs.head_sha }}"
@@ -283,26 +292,44 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
     assert download["merge-multiple"] is True
     releases = repo.parent / "releases"
     releases.mkdir()
+    notes_dir = releases / "notes"
+    notes_dir.mkdir()
     (releases / "latest").touch()
     versions = ("0.1.9", "0.1.10")
     assets = [
         "claude-statusline-x86_64-unknown-linux-gnu",
         "claude-statusline-x86_64-pc-windows-msvc.exe",
     ]
-    assert {entry["asset"] for entry in workflow["jobs"]["build"]["strategy"]["matrix"]["include"]} == set(assets)
+    assert {entry["asset"] for entry in ci["jobs"]["statusline-build"]["strategy"]["matrix"]["include"]} == set(assets)
+    owner = ci["jobs"]["common-ci-owner"]
+    selector = next(step for step in owner["steps"] if step.get("id") == "statusline-release")
+    assert selector["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/master'"
+    assert owner["outputs"]["statusline_release"] == "${{ steps.statusline-release.outputs.changed }}"
+
+    def check_selection(expected: bool) -> None:
+        output = repo.parent / "selection"
+        subprocess.run(
+            ["bash", "-c", selector["run"]], cwd=repo, env={**os.environ, "GITHUB_OUTPUT": str(output)}, check=True, timeout=10
+        )
+        assert output.read_text(encoding="utf-8").splitlines()[-1] == f"changed={str(expected).lower()}"
+
     commits = {}
     for version in versions:
         _write(repo, "rust/claude-statusline/Cargo.toml", _MANIFEST_TEMPLATE.format(version=version))
         commits[version] = _commit(repo, version)
+        check_selection(True)
+    _write(repo, "README.md", "次のpushではstatuslineを変更しない。\n")
+    _commit(repo, "unrelated")
+    check_selection(False)
 
-    def run(version: str, *, fail_upload: bool = False) -> None:
+    def run(version: str, *, missing_asset: bool = False, fail_upload: bool = False) -> None:
         sha = commits[version]
         tag = f"statusline-v{version}"
         failure, prepared = check_statusline_version.release_prepare(repo, sha, metadata_command=["true"])
         assert (failure, prepared) == (None, {"changed": "true", "version": version, "tag": tag})
         failure, tag_state = check_statusline_version.release_tag_state(repo, sha)
         assert failure is None
-        for asset in assets:
+        for asset in assets[:1] if missing_asset else assets:
             _write(repo, f"{download['path']}/{asset}", f"{sha}:{asset}\n")
         result = subprocess.run(
             ["bash", "-c", _GH_DOUBLE + publish["run"]],
@@ -321,7 +348,13 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
             capture_output=True,
             text=True,
             check=False,
+            timeout=10,
         )
+        if missing_asset:
+            assert result.returncode == 1 and assets[1] in result.stderr
+            assert not (releases / tag).exists()
+            assert subprocess.check_output(["git", "ls-remote", "--refs", "origin", f"refs/tags/{tag}"], cwd=repo) == b""
+            return
         assert result.returncode == (67 if fail_upload else 0), result.stderr
         if fail_upload:
             assert "asset upload failed" in result.stderr
@@ -329,10 +362,16 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
         else:
             published = (releases / tag).read_text(encoding="utf-8").splitlines()
             assert sorted(published) == sorted(f"{sha}:{asset}" for asset in assets)
+            notes = (notes_dir / tag).read_text(encoding="utf-8")
+            assert notes.count("## ビルド来歴の検証") == 1
+            assert "ak110/dotfiles/.github/workflows/ci.yaml" in notes
+            assert "gh auth login" in notes and "GH_TOKEN" in notes
+            assert "--source-digest" in notes and "https://github.com/ak110/dotfiles/attestations" in notes
         remote_tag = subprocess.check_output(["git", "ls-remote", "--refs", "origin", f"refs/tags/{tag}"], cwd=repo, text=True)
         assert remote_tag.strip() == f"{sha}\trefs/tags/{tag}"
 
     older, newer = versions
+    run(older, missing_asset=True)
     if older_arrives_late:
         run(newer)
         run(older, fail_upload=True)
@@ -345,6 +384,16 @@ def test_consecutive_statusline_releases(repo: pathlib.Path, older_arrives_late:
     assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
     partial_release = releases / f"statusline-v{older}"
     partial_release.write_text(f"{commits[older]}:{assets[0]}\n", encoding="utf-8")
+    existing_notes = notes_dir / partial_release.name
+    existing_notes.write_text("既存の説明\n", encoding="utf-8")
     run(older)
+    supplemented = existing_notes.read_text(encoding="utf-8")
+    assert supplemented.startswith("既存の説明\n\n")
+    run(older)
+    assert existing_notes.read_text(encoding="utf-8") == supplemented
     assert (releases / "latest").read_text(encoding="utf-8").strip() == f"statusline-v{newer}"
-    assert {path.name for path in releases.iterdir()} == {"latest", *(f"statusline-v{version}" for version in versions)}
+    assert {path.name for path in releases.iterdir()} == {
+        "latest",
+        "notes",
+        *(f"statusline-v{version}" for version in versions),
+    }

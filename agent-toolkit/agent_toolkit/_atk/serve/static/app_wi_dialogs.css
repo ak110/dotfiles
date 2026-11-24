@@ -63,23 +63,26 @@
   justify-content: flex-start;
   gap: var(--space-3);
 }
-#screen-wi .detail-footer-delete {
-  padding-right: var(--space-3);
-  border-right: 1px solid var(--color-border);
-}
-#screen-wi .detail-footer-right {
-  margin-left: auto;
-}
-#screen-wi .detail-footer-left,
-#screen-wi .detail-footer-right {
+#screen-wi .detail-more-actions {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
+}
+#screen-wi .detail-more {
+  min-inline-size: 0;
+  margin-inline-start: auto;
+}
+#screen-wi .detail-more > summary {
+  display: none;
 }
 #screen-wi .detail-title-row {
   justify-content: space-between;
 }
 #screen-wi .detail-title-row h3 {
+  overflow-wrap: anywhere;
+}
+#screen-wi .detail-dialog .dialog-header h2 {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 #screen-wi .metadata {
@@ -94,19 +97,19 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
-#screen-wi #detail-metadata {
+#screen-wi .detail-metadata {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
   gap: var(--space-3);
 }
-#screen-wi #detail-metadata .metadata-item {
+#screen-wi .detail-metadata .metadata-item {
   min-width: 0;
   display: grid;
   gap: var(--space-1);
 }
-#screen-wi #detail-metadata dt {
+#screen-wi .detail-metadata dt {
   overflow-wrap: anywhere;
 }
-#screen-wi #detail-metadata dd {
+#screen-wi .detail-metadata dd {
   white-space: pre-wrap;
 }
 #screen-wi .detail-body {
@@ -378,6 +381,26 @@
   #screen-wi .dialog-footer button {
     width: auto;
   }
+  #screen-wi .detail-footer {
+    gap: var(--space-2);
+  }
+  #screen-wi .detail-more > summary {
+    display: list-item;
+    padding: 0.65rem var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-small);
+    background: var(--color-normal);
+    cursor: pointer;
+  }
+  #screen-wi .detail-more > summary:hover {
+    background: var(--color-normal-hover);
+  }
+  #screen-wi .detail-more[open] {
+    flex-basis: 100%;
+  }
+  #screen-wi .detail-more-actions {
+    margin-block-start: var(--space-2);
+  }
 }
 /* 低い画面では折り返す操作欄が本文を押し潰すため、詳細全体を単一のスクロール領域にする。 */
 @media (max-height: 30rem) {
@@ -420,12 +443,30 @@
   height: 100%;
   max-height: none;
 }
-
-#screen-wi .wi-reference-dialog .dialog-header h2 {
-  min-width: 0;
-  overflow-wrap: anywhere;
+#screen-wi .wi-reference-dialog .dialog-body {
+  padding: var(--space-2) var(--space-3);
 }
-#screen-wi .wi-reference-dialog .dialog-header button {
-  flex: none;
-  white-space: nowrap;
+#screen-wi .wi-reference-dialog .detail-metadata {
+  gap: var(--space-1) var(--space-3);
+}
+#screen-wi .wi-reference-dialog .metadata-item {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+}
+#screen-wi .wi-reference-dialog .metadata-item > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+#screen-wi .wi-reference-dialog .detail-body {
+  margin-top: var(--space-2);
+}
+
+#screen-wi .detail-dialog:modal,
+#screen-wi .detail-dialog .dialog-body,
+#screen-wi .detail-dialog::backdrop {
+  overscroll-behavior: contain;
+}
+#screen-wi .detail-dialog::backdrop {
+  overflow: hidden;
 }

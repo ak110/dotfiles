@@ -28,15 +28,12 @@ def test_serve_settings_round_trip_through_public_cli_and_serve_resolution(tmp_p
     shown = capsys.readouterr().out
     assert "serve_host 127.0.0.1\n" in shown
     assert f"serve_port {config_module.serve_default_port()}\n" in shown
-    assert "serve_plans_remote_hosts []\n" in shown
+    assert "remote_hosts []\n" in shown
     values = {
         "serve_host": "0.0.0.0",
         "serve_port": "28767",
         "serve_plans_root": "/srv/plans",
-        "serve_plans_remote_hosts": '["remote-host", "stheno"]',
-        "serve_sessions_claude_home": "/srv/claude",
-        "serve_sessions_codex_home": "/srv/codex",
-        "serve_sessions_remote_hosts": '["remote-host"]',
+        "remote_hosts": '["remote-host", "stheno"]',
     }
     for key, value in values.items():
         assert _main(tmp_path, "config", "set", key, value) == 0
@@ -47,13 +44,13 @@ def test_serve_settings_round_trip_through_public_cli_and_serve_resolution(tmp_p
         "0.0.0.0",
         28767,
         serve_config.PlansConfig(root="/srv/plans", remote_hosts=("remote-host", "stheno")),
-        serve_config.SessionsConfig(claude_home="/srv/claude", codex_home="/srv/codex", remote_hosts=("remote-host",)),
+        serve_config.SessionsConfig(remote_hosts=("remote-host", "stheno")),
     )
 
 
 @pytest.mark.usefixtures("_isolate_serve_environment")
 @pytest.mark.parametrize(
-    ("key", "value"), [("serve_port", "0"), ("serve_port", "x"), ("serve_host", " "), ("serve_plans_remote_hosts", '["a", ""]')]
+    ("key", "value"), [("serve_port", "0"), ("serve_port", "x"), ("serve_host", " "), ("remote_hosts", '["a", ""]')]
 )
 def test_serve_settings_reject_invalid_values_without_saving(tmp_path, capsys, key, value):
     assert _main(tmp_path, "config", "set", key, value) == 2
@@ -65,22 +62,20 @@ def test_serve_settings_reject_invalid_values_without_saving(tmp_path, capsys, k
 def test_legacy_serve_toml_is_migrated_once_and_renamed(tmp_path, capsys):
     legacy = tmp_path / "config" / "serve.toml"
     legacy.parent.mkdir(parents=True)
-    legacy.write_text(_SERVE_TOML, encoding="utf-8")
+    legacy.write_text("unknown = 1\n" + _SERVE_TOML, encoding="utf-8")
 
     assert _main(tmp_path, "config", "show") == 0
     captured = capsys.readouterr()
     assert "serve.toml.migrated" in captured.err
+    assert "移行先の無いキーをスキップした: unknown" in captured.err
     assert "serve_host toml-host\n" in captured.out
     assert not legacy.exists()
-    assert (tmp_path / "config" / "serve.toml.migrated").read_text(encoding="utf-8") == _SERVE_TOML
+    assert (tmp_path / "config" / "serve.toml.migrated").read_text(encoding="utf-8") == "unknown = 1\n" + _SERVE_TOML
     assert _saved(tmp_path) == {
         "serve_host": "toml-host",
         "serve_port": "3000",
         "serve_plans_root": "/srv/plans",
-        "serve_plans_remote_hosts": '["remote-host", "stheno"]',
-        "serve_sessions_claude_home": "/srv/claude",
-        "serve_sessions_codex_home": "/srv/codex",
-        "serve_sessions_remote_hosts": '["remote-host"]',
+        "remote_hosts": '["remote-host", "stheno"]',
     }
     saved = _config_file(tmp_path).read_bytes()
     assert _main(tmp_path, "config", "show") == 0
@@ -116,7 +111,6 @@ def test_legacy_serve_toml_keeps_explicit_and_unrelated_settings(tmp_path, monke
         ('port = "3000"\n', None, "整数ではない"),
         ("port = 70000\n", None, "1から65535"),
         ('[plans]\nremote_hosts = "stheno"\n', None, "文字列の配列ではない"),
-        ("unknown = 1\n", None, "移行先の無いキー"),
         ('host = "toml-host"\n', "{broken", "読めない"),
         ('host = "toml-host"\n', "[]", "objectではない"),
     ],
@@ -164,7 +158,7 @@ def test_legacy_serve_migration_save_failure_keeps_original_bytes(tmp_path, monk
 @pytest.mark.usefixtures("_isolate_serve_environment")
 def test_save_mutable_settings_reports_change_and_keeps_other_settings(tmp_path):
     _write_config(tmp_path, {"other_setting": "keep", "serve_port": "3000"})
-    updates = {"serve_host": "localhost", "serve_sessions_remote_hosts": '["stheno"]'}
+    updates = {"serve_host": "localhost", "remote_hosts": '["stheno"]'}
     assert config_module.save_mutable_settings(updates)
     assert not config_module.save_mutable_settings(updates)
     assert _saved(tmp_path) == {"other_setting": "keep", "serve_port": "3000", **updates}
@@ -174,3 +168,46 @@ def test_save_mutable_settings_reports_change_and_keeps_other_settings(tmp_path)
     with pytest.raises(_next_action.ActionableError):
         config_module.save_mutable_settings(updates)
     assert _config_file(tmp_path).read_text(encoding="utf-8") == "{broken"
+
+
+@pytest.mark.usefixtures("_isolate_serve_environment")
+def test_legacy_serve_json_merges_hosts_and_drops_home_overrides(tmp_path, capsys):
+    _write_config(
+        tmp_path,
+        {
+            "serve_plans_remote_hosts": '["laptop", "shared"]',
+            "serve_sessions_remote_hosts": '["shared", "desktop"]',
+            "serve_sessions_claude_home": "/unused/claude",
+            "serve_sessions_codex_home": "/unused/codex",
+        },
+    )
+
+    assert _main(tmp_path, "config", "get", "remote_hosts") == 0
+    assert capsys.readouterr().out == '["laptop", "shared", "desktop"]\n'
+    assert _saved(tmp_path) == {"remote_hosts": '["laptop", "shared", "desktop"]'}
+
+
+@pytest.mark.usefixtures("_isolate_serve_environment")
+def test_legacy_host_environment_is_merged_without_persisting_overrides(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SERVE_PLANS_REMOTE_HOSTS", '["laptop", "shared"]')
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_SERVE_SESSIONS_REMOTE_HOSTS", '["shared", "desktop"]')
+    _write_config(tmp_path, {"remote_hosts": '["saved"]'})
+
+    assert _main(tmp_path, "config", "get", "remote_hosts") == 0
+    assert capsys.readouterr().out == '["laptop", "shared", "desktop"]\n'
+    assert _saved(tmp_path) == {"remote_hosts": '["saved"]'}
+
+    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_REMOTE_HOSTS", '["explicit"]')
+    assert _main(tmp_path, "config", "get", "remote_hosts") == 0
+    assert capsys.readouterr().out == '["explicit"]\n'
+
+
+@pytest.mark.usefixtures("_isolate_serve_environment")
+def test_config_add_preserves_hosts_from_legacy_toml(tmp_path, capsys):
+    legacy = tmp_path / "config" / "serve.toml"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text('[plans]\nremote_hosts = ["plan"]\n[sessions]\nremote_hosts = ["session"]\n', encoding="utf-8")
+
+    assert _main(tmp_path, "config", "add", "remote_hosts", "new") == 0
+    assert _saved(tmp_path) == {"remote_hosts": '["plan", "session", "new"]'}
+    assert "serve.toml.migrated" in capsys.readouterr().err

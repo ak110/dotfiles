@@ -26,8 +26,6 @@ def _plans_context(config: serve_config.ServeConfig) -> serve_plans.PlansContext
 
 def _sessions_context(config: serve_config.ServeConfig) -> serve_sessions.SessionsContext:
     return serve_sessions.create_context(
-        claude_home=pathlib.Path(config.sessions.claude_home).expanduser() if config.sessions.claude_home else None,
-        codex_home=pathlib.Path(config.sessions.codex_home).expanduser() if config.sessions.codex_home else None,
         remote_hosts=config.sessions.remote_hosts,
     )
 
@@ -44,8 +42,6 @@ async def create_app_async(
         remote_hosts=config.plans.remote_hosts,
     )
     sessions = await serve_sessions.create_context_async(
-        claude_home=pathlib.Path(config.sessions.claude_home).expanduser() if config.sessions.claude_home else None,
-        codex_home=pathlib.Path(config.sessions.codex_home).expanduser() if config.sessions.codex_home else None,
         remote_hosts=config.sessions.remote_hosts,
     )
     return create_app(private_notes, config, state, plans_context=plans, sessions_context=sessions, agent_listing=agent_listing)

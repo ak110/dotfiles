@@ -15,6 +15,7 @@ from agent_toolkit._agents_server import api_credits, child_environment, launch_
 from agent_toolkit._agents_server import claude as claude_backend
 from agent_toolkit._agents_server import manager as server_manager
 from agent_toolkit._atk import config as _atk_config
+from agent_toolkit._atk import config_settings
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
     FakeClaudeClient,
@@ -86,17 +87,15 @@ async def test_delegate_candidate_order_follows_mode(
             await manager.close()
 
 
-@pytest.mark.parametrize("content", [None, "", "# 未記入\n"])
+@pytest.mark.parametrize("content", ["", "# 未記入\n"])
 @pytest.mark.asyncio
 async def test_invalid_env_file_warning_reaches_start_response(
     tmp_path: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    content: str | None,
+    content: str,
 ) -> None:
-    path = tmp_path / "invalid.env"
-    if content is not None:
-        path.write_text(content, encoding="utf-8")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
+    path = config_settings.config_dir() / "claude-credits.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
     options_seen: list[Any] = []
 
     def factory(options: Any) -> FakeClaudeClient:
@@ -112,7 +111,7 @@ async def test_invalid_env_file_warning_reaches_start_response(
         install_backend(manager, "claude", backend)
         try:
             started = await manager.start("claude:sonnet/high", "作業", str(tmp_path))
-            assert any(str(path) in item and "atk config set claude_credits_env_file" in item for item in started["warnings"])
+            assert any(str(path) in item and "権限・記述を確認" in item for item in started["warnings"])
             assert (await _wait_until_terminal(manager))["status"] == "completed"
             assert not options_seen[0].env.get("ANTHROPIC_API_KEY")
         finally:

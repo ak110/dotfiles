@@ -17,7 +17,7 @@ WIの保存先は`private-notes/yyyy/MM/<filename>`に固定し、種別と保�
 一覧、検索、全件表示、Web画面の一覧では、重要度のフィルター`all`、`yes`、`no`を使える。
 重要フラグは通常の`agent-toolkit:atk-mode`の作業`process-wi`の選定、優先度、状態遷移に影響せず、ユーザーが対象集合として明示した時だけ参照する。
 
-選定の優先度は、重要フラグとは別の優先区分（frontmatterの`priority: urgent`と、根拠の3欄`priority_impact`、`priority_evidence`、`priority_release`）で表す。
+選定の優先度は、重要フラグとは別の優先区分（frontmatterの`priority: urgent`と本文の「優先の根拠」節）で表す。
 urgentは、処理を後に回すと具体的な損失が続く項目（処理の停止や遮断、誤った判断や成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）に限り、観測した影響、観測条件と根拠の所在、解除条件を示せる時だけ付ける。
 バグという分類や改善の期待は、損失の根拠から外す。
 起票時はWI投入担当が、処理中に新たな影響や解消を観測した時は処理担当が、`atk wi set-priority`で付与、更新、解除する。
@@ -62,7 +62,7 @@ urgentは、処理を後に回すと具体的な損失が続く項目（処理�
 | `adopted`か`rejected`→`hold` | `atk wi hold --state=<adoptedかrejected>` | 誤って採否を確定した項目から過去の処理結果を除き、確認や修正の間保留する時 |
 
 同じ遷移、メモ、commit、対象リポジトリで終了できる複数の項目は、個別に確かめたファイル名を並べて1回の`atk wi adopt <ファイル名>...`か`atk wi reject <ファイル名>...`で終了する。
-採用をまとめるには[効果確認](effect-records.md)の判定と理由もそろえる。
+効果確認を指定する採用をまとめるには[効果確認](effect-records.md)の判定と理由もそろえる。
 実装commitの対応記録の保存、取得、補完は`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」に従う。
 終了後に履歴を書き換える時は`plan-rewrite`で対応commitと件名を付け替え、採否の結果と処理日時は保つ。
 

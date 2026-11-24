@@ -111,3 +111,23 @@ def validate_permissions(value: str) -> None:
             raise ValueError("reset許可にはfromとuntilの日時を指定する")
         if deadline(entry["from"]) >= deadline(entry["until"]):
             raise ValueError("reset許可の期間はfromよりuntilを後にする")
+
+
+def save_claude_reset_inventory(value: str, *, migrate: bool = False) -> None:
+    path = settings_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.with_suffix(".lock").open("a+", encoding="utf-8") as lock:
+        acquire_lock(lock)
+        try:
+            state = read_settings()
+            key = "claude_reset_inventory"
+            if migrate and key in state:
+                return
+            validate_permissions(value)
+            inventory = json.loads(value)
+            if any(entry["engine"] != "claude" for entry in inventory):
+                raise ValueError("Claudeのreset在庫にはengine: claudeだけを指定する")
+            state[key] = inventory
+            atomic_write(path, json.dumps(state, ensure_ascii=False, allow_nan=False) + "\n")
+        finally:
+            release_lock(lock)

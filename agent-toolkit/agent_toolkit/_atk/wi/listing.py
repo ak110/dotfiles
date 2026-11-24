@@ -20,7 +20,7 @@ from agent_toolkit._atk.wi import readiness as _wi_readiness
 from agent_toolkit._atk.wi import snapshot as _wi_snapshot
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import uwi_scan as _wi_uwi_scan
-from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATES, WI_TYPE_UWI, WI_TYPES
+from agent_toolkit._atk.wi.constants import WI_PROCESSABLE_STATES, WI_STATE_PROCESSING, WI_STATES, WI_TYPE_UWI, WI_TYPES
 from agent_toolkit._atk.wi.entry_text import EntryTexts, parse_frontmatter
 from agent_toolkit._atk.wi.formatters import (
     body_summary,
@@ -85,7 +85,7 @@ class RepositorySnapshot:
                 "blocked_reason": _blocked_reason(self.readiness, path.name) if path.name in self.readiness.blocked else None,
                 "source": parse_source(text),
                 "priority": _priority.priority_of((parse_frontmatter(text) or ({}, ""))[0]),
-                "priority_reason": _priority.reason_of((parse_frontmatter(text) or ({}, ""))[0]),
+                "priority_reason": _priority.reason_of(*(parse_frontmatter(text) or ({}, ""))),
                 "summary": uwi_body_summary(text, sys.maxsize) if kind == WI_TYPE_UWI else body_summary(text, sys.maxsize),
                 "body": text,
                 "staleness": _staleness(text, self.repository.worktree, now, base=base),
@@ -275,7 +275,7 @@ def _print_json_entries(
             else None
         )
         summary = uwi_body_summary(text, sys.maxsize) if entry_type == WI_TYPE_UWI else body_summary(text, sys.maxsize)
-        metadata = (parse_frontmatter(text) or ({}, ""))[0]
+        metadata, body = parse_frontmatter(text) or ({}, "")
         branch = _wi_branches.effective(text, target_repo, branch_settings or {})
         record: dict[str, object] = {
             "filename": path.name,
@@ -288,7 +288,7 @@ def _print_json_entries(
             "source": parse_source(text),
             "important": _wi_filters.is_important(text),
             "priority": _priority.priority_of(metadata),
-            "priority_reason": _priority.reason_of(metadata),
+            "priority_reason": _priority.reason_of(metadata, body),
             "effect_check": (parse_frontmatter(text) or ({}, ""))[0].get("effect_check"),
             "effect_check_reason": _effect_check.pending_reason(text),
             "summary": summary,
@@ -420,12 +420,14 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         snapshots = configured_repo_snapshot(private_notes)
         configured_branches = _wi_branches.registry()
         if getattr(args, "snapshot_output", None) is not None:
-            digest = _wi_snapshot.save(args.snapshot_output, (entry for item in snapshots for entry in item.entries))
+            entries = tuple(entry for item in snapshots for entry in item.entries)
+            digest = _wi_snapshot.save(args.snapshot_output, entries)
             _wi_snapshot.remember_progress_start(
                 args.snapshot_output,
                 private_notes,
                 ((item.repository.repo_id, item.repository.branch) for item in snapshots),
                 digest,
+                entries,
             )
         total = 0
         for snapshot in snapshots:
@@ -475,7 +477,7 @@ def cmd_list(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
     if getattr(args, "snapshot_output", None) is not None:
         digest = _wi_snapshot.save(args.snapshot_output, all_entries)
         _wi_snapshot.remember_progress_start(
-            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest
+            args.snapshot_output, private_notes, ((repo, target_branch) for repo in resolved_repos), digest, all_entries
         )
     readiness = _wi_readiness.calculate_readiness(
         private_notes,
@@ -539,7 +541,9 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
     if not private_notes.is_dir():
         raise ValueError("private-notesを読めない")
     baselines = {
-        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"]) for scope, row in scopes.items()
+        scope: _wi_snapshot.read(pathlib.Path(row["path"]), expected_digest=row["digest"])
+        - {tuple(identifier) for identifier in row.get("unanswered", ())}
+        for scope, row in scopes.items()
     }
     labels = []
     with _wi_sync.repo_lock(private_notes, timeout=0):
@@ -552,10 +556,13 @@ def progress_new_wis(session_id: str) -> tuple[str, ...] | None:
             elif _git_command.run(["remote"], cwd=private_notes, capture_output=True, check=True).stdout.strip():
                 raise ValueError("private-notesの同期先が設定されていない")
         snapshots = configured_repo_snapshot(private_notes, tuple(by_key[scope] for scope in scopes))
+        started = _wi_snapshot.processing_started(session_id, private_notes)
         for snapshot in snapshots:
             repo = snapshot.repository
             baseline = baselines[repo.repo_id, repo.branch]
-            for path, _repo, body, _state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+            for path, _repo, body, state, _kind in _wi_snapshot.new_entries(snapshot.candidates, baseline):
+                if state == WI_STATE_PROCESSING and path.name in started:
+                    continue
                 source = parse_source(body) or "未指定"
                 if source != "未指定" and not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source):
                     source = "その他"

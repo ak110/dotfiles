@@ -99,3 +99,59 @@ async def test_serve_loop_launches_weekly_run_until_stop(monkeypatch):
     monkeypatch.setattr(weekly_command, "ServeLauncher", Launcher)
     await asyncio.wait_for(serve_cli._weekly_loop(stop), timeout=5)  # noqa: SLF001  # pylint: disable=protected-access
     assert calls == [True]
+
+
+@_linux
+def test_serve_submits_via_an_independent_user_service(monkeypatch, tmp_path):
+    from agent_toolkit._common import session_review  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    calls = []
+    monkeypatch.setattr(session_review, "directory", lambda: tmp_path)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("SYNTHETIC_TOKEN", "never-in-systemd-arguments")
+
+    def submit(command, **kwargs):
+        calls.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    def unexpected_spawn(*_args, **_kwargs):
+        pytest.fail("週次の実行がserveの子プロセスとして起動された")
+
+    monkeypatch.setattr(weekly_command, "run_with_timeout", submit)
+    monkeypatch.setattr(weekly_command.subprocess, "Popen", unexpected_spawn)
+
+    assert weekly_command.ServeLauncher().launch()
+    assert len(calls) == 1
+    command, kwargs = calls[0]
+    assert command[:2] == ["systemd-run", "--user"]
+    assert "--unit=atk-serve-weekly" in command
+    assert "--property=Type=exec" in command
+    assert "--collect" in command
+    assert "--wait" not in command
+    assert command[-2:] == ["weekly", "run"]
+    assert not any("never-in-systemd-arguments" in arg for arg in command)
+    assert 0 < kwargs["timeout"] < 10
+
+
+@_linux
+@pytest.mark.asyncio
+async def test_serve_loop_retries_on_next_check_after_launch_failure(monkeypatch, tmp_path):
+    from agent_toolkit._common import session_review  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
+    stop = asyncio.Event()
+    calls = []
+
+    def submit(command, **_kwargs):
+        calls.append(command)
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(command, 1, "", "synthetic submission failure")
+        stop.set()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(session_review, "directory", lambda: tmp_path)
+    monkeypatch.setattr(weekly_command, "SERVE_CHECK_SECONDS", 0)
+    monkeypatch.setattr(weekly_command, "run_with_timeout", submit)
+    await asyncio.wait_for(serve_cli._weekly_loop(stop), timeout=5)  # noqa: SLF001  # pylint: disable=protected-access
+    assert len(calls) == 2
+    assert calls[0] == calls[1]
+    assert not (tmp_path / "weekly" / "serve-run.log").exists()

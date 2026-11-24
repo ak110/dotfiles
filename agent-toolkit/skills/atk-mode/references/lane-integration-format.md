@@ -181,7 +181,6 @@ argvは文字列配列とし、対象ファイル・OID・採否・完成条件�
   `移管`行を持つ計画のAWIを`adopt`する時は、後続へ分けた要求の単位と移管先の登録済みのWIのファイル名をメモへ書き、行った範囲と分けた範囲を区別する。
 - 採用と充足済みの項目は`atk wi adopt`、不採用の項目は`atk wi reject`で終える。
   `adopt`のcommitの紐付けは同書「状態と依存」の遷移表に従い、開始時や統合時のHEADを一律に複製しない。
-  実装付きAWIの採用は[効果確認](effect-records.md)も指定する。
   複数のcommitは`--commit <OID>`を繰り返し、補足のメモは`--note-file`で書く。
 - 対応commitは、`agent-toolkit:atk-mode/references/commit-wi-records.md`「WI実装commitの対応」の取得手順で計画か引き継ぎ記録と同じstemの対応記録ファイルから取得し、`--worktree`に統合後のworktreeを渡す。
 - commitを記録する採否の操作では、統合先worktreeの絶対パスを`--target-repo`に渡す。

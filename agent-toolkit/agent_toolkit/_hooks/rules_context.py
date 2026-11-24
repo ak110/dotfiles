@@ -152,7 +152,11 @@ def compose_session_start(
                         "\nbatchの起動から保存までは、"
                         "`agent-toolkit:atk-mode/playbooks/review-session-batch.md`を全文読んで従え。"
                     )
-                guidance += f"\n次の終了契約を読め: 完了報告の手順書`{completion_playbook_path()}`"
+                playbook = f"完了報告の手順書`{completion_playbook_path()}`"
+                if host == "claude":
+                    guidance += f"\n次の終了契約: `Read`で{playbook}を全文読むか、`/atk-mode report-completion`を起動せよ。"
+                else:
+                    guidance += f"\n次の終了契約を読め: {playbook}"
             if not resume_only:
                 parts.append(
                     message_format.auto_message(

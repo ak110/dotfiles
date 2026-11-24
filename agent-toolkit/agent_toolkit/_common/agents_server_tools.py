@@ -15,7 +15,7 @@ review-sessionの`atk run-script session-review-evidence`に分かれるため�
 """
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 MCP_NAMESPACES: tuple[str, ...] = (
     "mcp__plugin_agent-toolkit_agents_server__",
@@ -37,9 +37,6 @@ START_OPERATIONS: frozenset[str] = frozenset(("start",))
 """子sessionを生成するagents_serverの公開起動ツールの操作名（修飾接頭辞を除いた名前）。"""
 
 START_MODES: tuple[str, ...] = ("task", "delegate", "explore", "write", "shell")
-"""`start`の`mode`が受理する値。先頭の`task`を省略時の値とする。"""
-
-DEFAULT_START_MODE = START_MODES[0]
 
 START_MODE_MODEL_TYPES: Mapping[str, str] = {"explore": "chores_fast", "write": "write", "shell": "chores_fast"}
 """省略時に使う工程。taskは役割文書から、delegateは必須の指定から決める。"""
@@ -62,10 +59,23 @@ RECORDED_START_OPERATIONS: frozenset[str] = START_OPERATIONS | frozenset(LEGACY_
 """セッション記録に現れ得る起動ツールの操作名。統合前の旧名を含む。"""
 
 
+def default_start_mode(
+    *, subagent_md_path: str | None, prompt: str | None, whole_contract_path: str | None
+) -> Literal["task", "delegate"]:
+    if subagent_md_path is None and prompt is not None and whole_contract_path is not None:
+        return "delegate"
+    return "task"
+
+
 def start_mode(operation: str, arguments: Mapping[str, Any] | None) -> str | None:
     if operation in START_OPERATIONS:
         mode = arguments.get("mode") if isinstance(arguments, Mapping) else None
         if mode is None:
-            return DEFAULT_START_MODE
+            data = arguments if isinstance(arguments, Mapping) else {}
+            return default_start_mode(
+                subagent_md_path=data.get("subagent_md_path"),
+                prompt=data.get("prompt"),
+                whole_contract_path=data.get("whole_contract_path"),
+            )
         return mode if mode in START_MODES else None
     return LEGACY_START_MODES.get(operation)

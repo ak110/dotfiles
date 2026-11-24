@@ -415,7 +415,7 @@ def main(
         _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
-    if not _is_query_without_sweep(args):
+    if not _skips_managed_temp_sweep(args):
         _sweep_before_command(now)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
@@ -439,7 +439,7 @@ def main(
     sys.exit(exit_code)
 
 
-def _is_query_without_sweep(args: argparse.Namespace) -> bool:
+def _skips_managed_temp_sweep(args: argparse.Namespace) -> bool:
     match args.command:
         case "wi":
             return args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args)
@@ -450,11 +450,11 @@ def _is_query_without_sweep(args: argparse.Namespace) -> bool:
         case "review-audit":
             return args.review_audit_subcommand in {"list", "pending"}
         case "config":
-            return args.config_subcommand in {None, "show", "list", "get"} or (
+            return args.config_subcommand in {None, "show", "list", "get", "snapshot"} or (
                 args.config_subcommand == "repos" and args.repos_subcommand == "list"
             )
         case "agents":
-            return args.agents_subcommand in {"list", "show", "logs"}
+            return args.agents_subcommand in {"list", "show", "logs", "notify"}
         case _:
             return False
 
@@ -487,11 +487,10 @@ def _report_space_pressure(pressure: _managed_temp.SpacePressure) -> None:
             next_action="回収量の上位の対象を作成した作業が参照後に回収していたかを確かめると、再発を防げる",
         )
     if pressure.still_low:
-        used = "不明" if pressure.temp_root_bytes is None else f"{pressure.temp_root_bytes / gib:.1f}GiB"
         _outcome.report_warning(
             f"一時rootを含むディスクの空きが下限（容量の10%）を割っており、自動掃引後も空きが不足している: "
-            f"空き {pressure.free_after / gib:.1f}GiB / 容量 {pressure.total / gib:.1f}GiB、一時rootの使用量 {used}",
-            next_action="一時領域の保持理由・猶予・削除失敗と実際の利用を確認し、未使用の再生成可能な資源を個別に回収せよ。登録worktreeや親セッションの保護は作成者の終了だけでは解除されない。一時root外の使用量も確認せよ",
+            f"空き {pressure.free_after / gib:.1f}GiB / 容量 {pressure.total / gib:.1f}GiB",
+            next_action="一時領域の保持理由・猶予・削除失敗と実際の利用を確認し、未使用の再生成可能な資源を個別に回収せよ。登録worktreeや親セッションの保護は作成者の終了だけでは解除されない。一時root内外の使用量も確認せよ",
         )
 
 

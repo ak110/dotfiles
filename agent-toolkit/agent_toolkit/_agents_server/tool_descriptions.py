@@ -54,7 +54,8 @@ HANDOFF_FROM_DESCRIPTION = parameter_description(
 
 
 MODE_DESCRIPTION = parameter_description(
-    "通常起動の入力の形と起動条件を選ぶ。省略時は`task`。handoff_from指定時は省略する。"
+    "通常起動の入力と起動条件を選ぶ。modeを省き、役割文書なしでpromptとwhole_contract_pathを渡すと`delegate`、"
+    "それ以外は`task`。handoff_from指定時は省略する。"
     "`task`は`<役割名>.subagent.md`の定型作業、`delegate`は自由本文の委譲、`explore`は読み取り専用の調査とレビュー、"
     "`write`は確定済みの文章起草と小規模な定型書込、`shell`はコマンドの実行と結果の要約。"
     "modeごとの必須・禁止の入力は各引数の説明に従い、欠落と混在は委譲先を起動せずに拒否する。\n"
@@ -68,7 +69,8 @@ MODE_DESCRIPTION = parameter_description(
     "委譲先であることの通知、委譲先の硬い制約、modeの役割、返却の決まりだけで、委譲先向けの共通の手順は届かない。"
     "ClaudeとCodexの委譲先は作業ディレクトリのプロジェクト規範（`AGENTS.md`など）も読み込まず、"
     "スキルを使える保証も無い（Claude Codeの委譲先ではスキルを起動できない）。\n"
-    "explore: 割当てた探索は長い出力を分割して補い、必要な確認まで行う。"
+    "explore: 単一対象の結論と根拠を返す読取調査。複数の独立した対象の網羅や長い記録の分類は`delegate`へ渡す。"
+    "依頼には対象・完了の条件・根拠を示す。長い出力は対象や範囲を分けて取り直し、未確認を完了として返さない。"
     "対象成果物・委譲入力・ユーザーデータを作成・変更・削除せず、成果ファイルも出力しない。"
     "読取ツールが管理するキャッシュ・状態・保存出力はこの対象外。"
     "読取手段（Gitの読取照会、rg・find、ファイル読取、読取MCP）で調べ、環境作成・権限拡大・再委譲はしない。"
@@ -221,12 +223,14 @@ START_DESCRIPTION = "\n".join(
         "",
         "| mode | 用途 | 標準の入力 | 起動条件と`model_type`省略時の設定 |",
         "| --- | --- | --- | --- |",
-        "| `task`（省略時） | `<役割名>.subagent.md`を持つ定型作業 | "
+        "| `task` | `<役割名>.subagent.md`を持つ定型作業 | "
         "`subagent_md_path`・`extra_params`・`whole_contract_path` | `<役割名>.subagent.md`の`mode:`、対応する工程別設定 |",
         "| `delegate` | 自由本文の単発作業 | `prompt`・`model_type`・`whole_contract_path` | 通常起動、省略不可 |",
         "| `explore` | 読み取り専用の調査とレビュー | `prompt` | 軽量起動、`chores_fast` |",
         "| `write` | 確定した文章の起草と小規模な定型書込 | `prompt` | 軽量起動、`write` |",
         "| `shell` | コマンド実行と結果の要約 | `command`・`summary_policy` | 軽量起動、`chores_fast` |",
+        "",
+        "modeを省き、役割文書なしでpromptとwhole_contract_pathを渡すと`delegate`、それ以外は`task`。",
         "",
         "通常起動の委譲先へは委譲先向けの共通の手順が届く。"
         "OpenCodeへは他のbackendと同じ起動の本文と`~/.claude/rules/`のユーザー規範が全modeで届き、"

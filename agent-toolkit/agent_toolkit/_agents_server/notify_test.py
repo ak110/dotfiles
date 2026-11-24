@@ -10,6 +10,7 @@ from agent_toolkit import atk
 from agent_toolkit._agents_server import shared_layout
 from agent_toolkit._common import state_paths
 from agent_toolkit._common.next_action import NEXT_ACTION_PREFIX
+from agent_toolkit._testing.managed_temp_support import setattr_in_managed_temp_modules
 
 _NOTICE_TAG_PATTERN = re.compile(
     r"\A<atk-auto"
@@ -101,6 +102,22 @@ def test_agents_notify_preserves_body_exactly(
     captured = capsys.readouterr()
     assert captured.out.splitlines()[0].startswith("成功: ")
     assert not captured.err
+
+
+def test_agents_notify_does_not_wait_for_managed_temp_sweep(
+    notify_environment: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def slow_sweep(**_kwargs: object) -> None:
+        pytest.fail("通知が長い容量回収の走査を待った")
+
+    setattr_in_managed_temp_modules(monkeypatch, "sweep_managed_temp", slow_sweep)
+
+    body = "委譲元の判断が必要"
+    with pytest.raises(SystemExit, match="0"):
+        atk.main(["agents", "notify", "--body", body])
+
+    (path,) = notify_environment.glob("child-session.*.json")
+    assert _notice_body(json.loads(path.read_text(encoding="utf-8"))["body"]) == body
 
 
 def test_agents_notify_reads_body_file(

@@ -47,7 +47,7 @@ CONNECTION_GUIDE_NOTICE = (
 HELP: dict[str, dict[str, str]] = {
     "atk config usage": {
         "summary": "利用枠・回復時刻とreset在庫を確認する",
-        "description": "利用枠・回復時刻とreset在庫を確認する。\n\n目的: 残量、回復時刻、最終観測、reset在庫と消費の案内を表示する。\n利用場面: 利用上限の回復やreset在庫を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshでは公式の読取で更新し、reset権は消費しない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 読取だけなら不要。観測は状態ディレクトリへ保持する。",
+        "description": "利用枠・回復時刻とreset在庫を確認する。\n\n目的: 残量、回復時刻、最終観測、reset在庫と消費の案内を表示する。\n利用場面: 利用上限の回復やreset在庫を確認するとき。\n対象と出力: ローカルの観測を表示する。--refreshで観測を更新する。--set-claude-reset-inventory JSONでClaudeの手動登録在庫を置き換える。resetの消費や許可の変更は行わない。\n前提: 更新するengineへのログインが必要。\n復元・後始末: 観測と在庫は状態ディレクトリへ保持する。在庫を空にするには--set-claude-reset-inventoryに[]を渡す。",
         "epilog": "実行例:\n\n  atk config usage\n  atk config usage --refresh\n  atk config usage --json",
     },
     "atk config temporary": {
@@ -161,8 +161,8 @@ HELP: dict[str, dict[str, str]] = {
     },
     "atk wi adopt": {
         "summary": "採用として終了し対応結果を記録する",
-        "description": "採用として終了し対応結果を記録する。\n\n目的: 対応済みの項目をadoptedへ移して終了し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終了した各項目の保存先を絶対パスで標準出力へ書く。エージェント環境では、成功した各項目に正式なユーザーコメント欄または回答欄があれば、欄の種類・保存本文上の1始まりの開始行・`atk wi show <ファイル名> --section ユーザーコメント`または`--section 回答`の読取方法を示す。欄が無い項目には追加しない。既読・未読は判定しない。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。実装commit付きAWIには `--effect-check=pending` または `--effect-check=not_required --effect-check-reason=<理由>` を指定する。\n復元・後始末: 終了した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
-        "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"\n  atk wi adopt 20260901-072734-002.md --commit=abc1234 --effect-check=pending\n  atk wi adopt 20260901-072734-003.md --commit=def5678 --effect-check=not_required --effect-check-reason="採用前の検収で要求を充足"',
+        "description": "採用として終了し対応結果を記録する。\n\n目的: 対応済みの項目をadoptedへ移して終了し、採否の結果と対応commitの短縮OID・件名を記録する。\n利用場面: 要求への対応を完了し、対象リポジトリへ反映したとき。引用符・改行・バッククォートを含むメモは`--note-file`でシェルのエスケープを介さず渡す。\n対象と出力: private-notesのinbox・processing・holdのいずれかからadoptedへファイルを移動する。同名の項目が複数の状態にある場合はprocessing、inbox、holdの順に優先する。`--note`または`--note-file`の内容と、`--commit`で指定したcommitの短縮OID・件名を本文末尾の`## 処理結果`節へ追記してcommitとpushを行う。終了した各項目の保存先を絶対パスで標準出力へ書く。エージェント環境では、成功した各項目に正式なユーザーコメント欄または回答欄があれば、欄の種類・保存本文上の1始まりの開始行・`atk wi show <ファイル名> --section ユーザーコメント`または`--section 回答`の読取方法を示す。欄が無い項目には追加しない。既読・未読は判定しない。\n前提: 対象がinbox、processing、holdのいずれかにあること。`--note-file`はUTF-8ファイルの絶対パスで指定する。`--commit`で指定するrevisionと対象リポジトリはローカル作業ツリーで解決できること。後日の利用で効果を確かめる実装commit付きAWIだけ `--effect-check=pending` を付ける。\n復元・後始末: 終了した項目はキューの一覧に現れない。取り消す場合は`atk wi return-to-inbox --state=adopted`で再処理へ戻す。連続操作の中間では`--skip-push`でpushを省略し、最後の操作では指定しない。",
+        "epilog": '実行例:\n\n  atk wi adopt 20260901-072734-001.md --note="計画で対応済み"\n  atk wi adopt 20260901-072734-002.md --commit=abc1234\n  atk wi adopt 20260901-072734-003.md --commit=def5678 --effect-check=pending',
     },
     "atk wi reject": {
         "summary": "不採用として終了し理由を記録する",
@@ -207,10 +207,22 @@ HELP: dict[str, dict[str, str]] = {
         "description": "AWIの明示依存だけを更新する。\n\n目的: 既存AWIの明示依存だけを更新する。\n利用場面: 先に終了すべき項目が判明したとき。依存を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ依存先のファイル名を記録し、commitとpushを行う。\n前提: 対象がinbox、processingまたはholdにあること。依存の更新は保存状態を変えない。`--depends-on`を省略すると依存を全て解除する。\n復元・後始末: 変更前の依存はprivate-notesのGit履歴に残る。",
         "epilog": "実行例:\n\n  atk wi set-dependencies 20260901-072734-001.md --depends-on=20260901-081315-001.md",
     },
+    "atk wi record-observation": {
+        "summary": "未終了AWIに反映後の観測の再開記録を追記する",
+        "description": (
+            "AWIの再開記録を追記する。\n\n"
+            "目的: 次に行う観測か再実装を引き継ぐ。\n"
+            "利用場面: 公開後の観測だけが残るか、観測して再実装が必要と判定したとき。\n"
+            "対象と出力: 見出しと再開区分を付けて対象の本文へ追記し、commitとpushを行う。状態と冷却期限は変えない。\n"
+            "前提: 対象は未終了のAWIとし、詳細はUTF-8のファイルで渡す。\n"
+            "復元・後始末: 区分を変える場合は同じコマンドで新しい記録を追記する。"
+        ),
+        "epilog": "実行例:\n\n  atk wi record-observation 20260901-072734-001.md needs-verify --body-file observation.md",
+    },
     "atk wi set-priority": {
         "summary": "AWIの優先区分と根拠を設定・解除する",
-        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 修正を遅らせると具体的な損失が続く項目を、process-wiの選定で古い項目と交互に先へ選ばれるようにする。\n利用場面: 起票時や処理中に、遅らせる損失（処理の停止・遮断、誤った判断・成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`と影響・根拠・解除条件を記録するか取り除き、commitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには`--impact`・`--evidence`・`--release`がすべて必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
-        "epilog": "実行例:\n\n  atk wi set-priority 20260901-072734-001.md urgent --impact '委譲先が起動できない' --evidence 'agents_serverのログ 2026-09-01' --release '修正の配布'",
+        "description": "AWIの優先区分と根拠を設定・解除する。\n\n目的: 具体的な損失が続く項目を、process-wiで古い項目と交互に優先する。\n利用場面: 起票時や処理中に、処置を延期した場合の損失（処理の停止・遮断、誤った判断・成果物、エンドユーザーの環境での継続的な失敗、データ損失の危険など）を観測したとき。影響の解消を観測して優先を解除するとき。\n対象と出力: private-notesの対象ファイルのfrontmatterへ`priority: urgent`を設定し、本文の「優先の根拠」節へ根拠を書く。解除時は区分だけを取り除く。変更時はcommitとpushを行う。`atk wi list`のJSON出力の`priority`・`priority_reason`へ現れる。\n前提: 対象がinbox、processingまたはholdのAWIであること。urgentには影響・証拠・解除条件をまとめた`--reason`が必要で、単にバグという分類や改善の期待だけでは付けない。区分の無い項目は通常扱いになる。重要フラグ`important`とは別の値である。\n復元・後始末: 変更前の値はprivate-notesのGit履歴に残る。",
+        "epilog": "実行例:\n\n  atk wi set-priority 20260901-072734-001.md urgent --reason '委譲先が起動できない。証拠はagents_serverの起動ログ。修正の配布後に解除する。'",
     },
     "atk wi answer": {
         "summary": "UWIへ回答する",
@@ -319,21 +331,31 @@ HELP: dict[str, dict[str, str]] = {
         "description": "1件以上の設定値を取得する。\n\n目的: 指定した設定キーの値を指定順に1行ずつ出力する。モデル設定は系列名を含む設定値を返す。\n利用場面: シェルから`private_notes`などの解決値またはモデル候補の設定値を取得するとき。\n対象と出力: 設定ファイルと環境変数を読み取り、標準出力へ値だけを書く。未知のキーは終了コード2で理由を示す。\n前提: KEYは`atk config show`が出力するキーと同じ名前で指定する。系列名の解決は委譲の起動時に行う。\n復元・後始末: 読み取りだけを行うため不要。",
         "epilog": "実行例:\n\n  atk config get private_notes",
     },
+    "atk config snapshot": {
+        "summary": "設定画面の取得に使う設定一覧をJSONで出力する。",
+        "description": "設定の保存値・実効値と編集情報を取得する。\n\n目的: 設定画面の表示データを取得する。\n利用場面: SSH先の設定取得を診断するとき。\n対象と出力: 実行先の設定と編集情報を標準出力へJSONで書く。\n前提: SSH先でatkを起動できること。\n復元・後始末: 通常の読取では不要。",
+        "epilog": "実行例:\n\n  atk config snapshot",
+    },
+    "atk config update": {
+        "summary": "設定画面から受け取った設定操作を適用する。",
+        "description": "設定画面の操作を反映する。\n\n目的: 設定画面から受け取った操作を実行する。\n利用場面: SSH先の設定を保存するとき。手で値を変更するときはsetなどを使う。\n対象と出力: 実行先の設定を変更し、結果を標準出力に書く。\n前提: 設定操作を表すUTF-8のJSONオブジェクト1件を標準入力へ渡す。\n復元・後始末: 保存値は以前の値に再設定する。一時設定はconfig temporary clearで解除する。",
+        "epilog": "実行例:\n\n  atk config update",
+    },
     "atk config set": {
         "summary": "変更可能な設定値を更新する",
-        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。`claude_credits_env_file`・`claude_payg_env_file`はClaudeのAPIクレジット・従量課金APIの環境変数を書いたenvファイルのパス1つを受理し、相対パスと~をcwd基準の絶対パスへ正規化する。初期値は空で、set時にはファイルの存在・内容を確かめない。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに4キーのどれも設定しない場合は親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。旧接続設定キーと廃止環境変数は移行先のキー名を示して拒否する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`・`serve_sessions_claude_home`・`serve_sessions_codex_home`は参照元のパス（空文字列は未指定）、`serve_plans_remote_hosts`・`serve_sessions_remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。envファイルとprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
+        "description": "変更可能な設定値を更新する。\n\n目的: 変更できる設定値を更新して設定ファイルへ保存する。\n利用場面: 7工程のモデル候補・推論の深さ、agents_serverのCodexの速度、Claude・Codexの接続（サブスクリプション・APIクレジット・従量課金API）の使い分け、`atk serve`の待受と参照元を切り替えるとき。\n対象と出力: 設定ディレクトリの`config.json`を書き換える。設定はユーザー単位で共有する。\n前提: KEYは変更できるキー。接続設定は次のとおり。ClaudeのAPI認証は`atk config get config_dir`が返すディレクトリの`claude-credits.env`・`claude-payg.env`へ種別ごとに置く。`codex_credits_provider`・`codex_payg_provider`はCodexの`config.toml`に定義したprovider ID 1つ（`openai`も可）を受理し、初期値は空。`claude_orchestrator_connections`・`claude_worker_connections`・`codex_orchestrator_connections`・`codex_worker_connections`は統括担当・委譲先の使用順で、`subscription`・`credits`・`payg`を重複なしでASCIIカンマ区切りに並べる。統括担当の初期値は`subscription,credits`、委譲先の初期値は`credits,subscription`で、`payg`は明記した役割だけで使う。エンジンごとに使用順やAPI認証を指定しなければ、親環境と通常の認証解決を使う。切替の規則と条件ごとの設定例はガイドに示す（URLは末尾を参照）。`claude_usage_limit_wait`と`codex_usage_limit_wait`は各engineの利用上限で解除を待つ方針であり、never（待たない）、five-hour（5時間上限だけ待つ）、always（全ての利用上限で待つ）を受理する。両方の初期値はfive-hour。待機対象外は既存の後続候補を評価し、候補が無ければ失敗理由を返す。`codex_fast_mode`は`true`または`false`を受理し、初期値は`false`。各工程の`*_model`は`<claude|codex|agy>:<model>[/<effort>]`または`opencode:<provider>/<model>[@<effort>]`をASCIIカンマで区切る。effort省略時はmedium。開始時候補のeffortはexecute・chores・chores_fast・writeがlow、review・review_fast・orchestrateがmedium。保存値は初期値変更では書き換えない。model内の/を保持し、OpenCodeのvariantは末尾の@で分ける。orchestrate_modelはopencodeを受理しない。Codexの`astra`・`sol`・`terra`・`luna`は起動時に同系列の最新版へ解決し、バージョン付き完全IDは固定する。廃止した接続設定キーは移行先を案内する。`serve_host`は待受ホスト、`serve_port`は1〜65535の待受ポート（初期値はLinux等28766、Windows28876）、`serve_plans_root`は計画の参照元のパス（空文字列は未指定）、`remote_hosts`はSSH接続先名のJSON文字列配列を受理し、`atk serve`の次回起動から反映する。\n復元・後始末: 元の値へ戻す場合は同じコマンドで以前の値を設定する。Codexのprovider IDは空文字列を設定して解除する。接続設定の変更は新しい会話と、使用順から外した種別を使う会話の次の継続へ反映する。",
         "epilog": "実行例:\n\n  atk config set execute_model codex:sol/medium\n  atk config set review_model claude:sonnet[1m]/medium,codex:sol/medium\n  atk config set claude_worker_connections credits,subscription\n\n"
         + CONNECTION_GUIDE_NOTICE,
     },
     "atk config add": {
         "summary": "配列設定へ要素を1件追加する",
-        "description": "配列設定へ要素を1件追加する。\n\n目的: 配列全体を指定せずVALUEを追加する。\n利用場面: SSH接続先名を1件追加するとき。\n対象と出力: config.jsonへ保存する。既存の要素なら変更せず成功する。\n前提: 現在の配列設定はserve_plans_remote_hostsとserve_sessions_remote_hosts。配列以外はsetを案内して終了2。\n復元・後始末: removeで要素を削除できる。",
-        "epilog": "実行例:\n\n  atk config add serve_plans_remote_hosts remote-host",
+        "description": "配列設定へ要素を1件追加する。\n\n目的: 配列全体を指定せずVALUEを追加する。\n利用場面: SSH接続先名を1件追加するとき。\n対象と出力: config.jsonへ保存する。既存の要素なら変更せず成功する。\n前提: 現在の配列設定はremote_hosts。配列以外はsetを案内して終了2。\n復元・後始末: removeで要素を削除できる。",
+        "epilog": "実行例:\n\n  atk config add remote_hosts remote-host",
     },
     "atk config remove": {
         "summary": "配列設定から要素を1件削除する",
         "description": "配列設定から要素を1件削除する。\n\n目的: 配列全体を指定せずVALUEを削除する。\n利用場面: SSH接続先名を1件外すとき。\n対象と出力: config.jsonへ保存する。不在なら現在の一覧を示して終了2。\n前提: JSON文字列配列の設定を指定する。配列以外はsetを案内して終了2。\n復元・後始末: addで要素を戻せる。",
-        "epilog": "実行例:\n\n  atk config remove serve_plans_remote_hosts remote-host",
+        "epilog": "実行例:\n\n  atk config remove remote_hosts remote-host",
     },
     "atk config repos": {
         "summary": "repositoryの編集可否とprocess-loop対象・検証OS・系統を管理する",
@@ -611,9 +633,9 @@ HELP["atk wi add"]["description"] += (
     "\n冷却期限: 通常AWIは--cooldown-untilへタイムゾーン付きISO 8601日時を指定し、"
     "初回保存から期限を持たせる。複数の--body-fileへ同じ期限を保存する。"
     "空・不正日時・タイムゾーンなし、UWI・--batchとの併用は拒否する。"
-    "通常本文のfrontmatterで受理する管理キーはtarget_repo・source・confirmationである。confirmationはAWIのrequiredだけを受理し、それ以外の値とUWIへの指定は拒否する。"
-    "cooldown_untilなど他の予約キーはキー名と次の操作を示して全件の保存前に拒否する。"
-    "一般キーは保持し、--batchは既存の原文保持を使う。"
+    "\nfrontmatter: UWIのtype・scope・question_type・choicesは引数と同値なら受理し、不一致は保存前に拒否する。"
+    "cooldown_untilなどの予約キーは本文で指定できない。廃止済みのキー（confirmationなど）は通常投入時に保存しない。"
+    "--batchによる移行・復元では原文を保持する。"
     "\n保留での保存: --holdはAWIをholdへ保存し、inboxを経ずに自動処理の対象から外す。"
     "`atk wi unhold`でinboxへ戻す。UWI・--batch・--process-wi-timingとの併用は拒否する。"
 )

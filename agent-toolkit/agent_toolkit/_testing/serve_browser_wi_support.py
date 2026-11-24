@@ -215,6 +215,12 @@ async def _record_self_write_warnings(page: playwright.async_api.Page) -> None:
     )
 
 
+async def _open_detail_more_if_needed(page: playwright.async_api.Page, selector: str) -> None:
+    more = page.locator("#detail-more")
+    if await more.locator(selector).count() and not await more.evaluate("element => element.open"):
+        await more.locator(":scope > summary").click()
+
+
 async def _saved_mutation_commit_failure(
     browser_harness: _BrowserHarness,
     monkeypatch: pytest.MonkeyPatch,
@@ -270,6 +276,7 @@ async def _saved_mutation_commit_failure(
     else:
         assert case is not None
         if case.mode_button:
+            await _open_detail_more_if_needed(page, case.mode_button)
             await page.locator(case.mode_button).click()
         if case.field:
             await page.locator(case.field[0]).fill(case.field[1])
@@ -296,6 +303,7 @@ async def _saved_mutation_commit_failure(
 
         await page.route(route_pattern, hold_response)
     list_reloaded.clear()
+    await _open_detail_more_if_needed(page, submit)
     async with page.expect_response(lambda response: response.request.method != "GET" and response.status == 500) as pending:
         await page.locator(submit).click()
     assert (await (await pending.value).json())["code"] == "sync_incomplete"

@@ -30,7 +30,7 @@ def test_cli_priority_changes_are_visible_in_list_json(
     monkeypatch.setenv("AGENT_TOOLKIT_PRIVATE_NOTES", str(notes))
     urgent = [
         "wi", "set-priority", "20260909-000000-001.md", "urgent", "--target-repo", "github.com/example/foo",
-        "--impact", "担当を起動できない", "--evidence", "起動ログ", "--release", "修正の配布",
+        "--reason", "担当を起動できない。証拠は起動ログ。修正の配布後に解除する。",
     ]  # fmt: skip
     with pytest.raises(SystemExit) as result:
         atk.main(urgent, home=tmp_path)
@@ -39,7 +39,7 @@ def test_cli_priority_changes_are_visible_in_list_json(
     facts = _listed(tmp_path, capsys)
     assert facts["20260909-000000-001.md"]["priority"] == "urgent"
     reason = facts["20260909-000000-001.md"]["priority_reason"]
-    assert isinstance(reason, dict) and reason["priority_release"] == "修正の配布"
+    assert reason == "担当を起動できない。証拠は起動ログ。修正の配布後に解除する。"
     with pytest.raises(SystemExit):
         atk.main(
             ["wi", "set-priority", "20260909-000000-001.md", "normal", "--target-repo", "github.com/example/foo"], home=tmp_path

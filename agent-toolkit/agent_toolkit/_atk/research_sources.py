@@ -4,7 +4,7 @@
 情報源ごとの読んだ位置（投稿ID、版数、日時）とアカウントIDの対応だけを残す。
 読んだ位置は回の結果のUWIを保存した後に確定し（`commit_positions`）、実際に読めた情報源だけを進める。
 件数の上限で読み残した区間は、X APIでは情報源ごとの未読区間として残し、次回は新しい分より先に読む。
-モデルが無料の手段で調べる情報源（`model_sources`）は、モデルが`mark_read`で読めたと記録した分だけ進める。
+変更履歴とモデルが調べる情報源は、モデルが`mark_read`で読めたと記録した分だけ進める。
 
 X APIは従量課金であり、ユーザーが`weekly_research_x_api`を`true`にするまで呼ばない（疎通確認も含む）。
 資格情報は読み取り専用のBearer Token（app-only認証）だけを使い、値は出力・状態・ログへ出さない。
@@ -25,13 +25,13 @@ from collections.abc import Callable
 from typing import Any
 
 from agent_toolkit._atk import config, config_settings
-from agent_toolkit._common import claude_connection, session_review
+from agent_toolkit._common import claude_connection, runtime_environment, session_review
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 
 X_API_BASE = "https://api.x.com/2"
 X_TOKEN_VARIABLE = "X_BEARER_TOKEN"
-X_ENV_FILENAME = "x-api.env"
 INITIAL_DAYS = 7
+RELEASE_EXCERPT_CHARS = 4000
 
 X_MIN_RESULTS = {"timeline": 5, "search": 10}
 
@@ -46,7 +46,14 @@ _USER_AGENT = "agent-toolkit-weekly-research"
 
 CLAUDE_CODE_REPOSITORY = "anthropics/claude-code"
 CLAUDE_CODE_CHANGELOG = f"https://raw.githubusercontent.com/{CLAUDE_CODE_REPOSITORY}/main/CHANGELOG.md"
-GITHUB_RELEASES = {"codex": "openai/codex", "opencode": "sst/opencode"}
+GITHUB_RELEASES = {
+    "claude-agent-sdk": "anthropics/claude-agent-sdk-python",
+    "codex": "openai/codex",
+    "opencode": "anomalyco/opencode",
+    "mcp-spec": "modelcontextprotocol/modelcontextprotocol",
+    "mcp-python-sdk": "modelcontextprotocol/python-sdk",
+}
+ANTIGRAVITY_CHANGELOG = "https://antigravity.google/docs/changelog?tab=cli"
 
 Fetch = Callable[[str, dict[str, str]], tuple[int, bytes]]
 
@@ -65,7 +72,7 @@ RESULT_UWI = {
         "読んだ情報源と件数を書く。"
     ),
     "common": (
-        "どちらにも読めなかった情報源と理由を書く。"
+        "どちらにも固定の変更履歴の版ごとの採否・理由、読めなかった情報源と理由を書く。"
         "X由来の内容はURL・投稿ID・日時・短い抜粋と改善案だけを書き、本文の全文を書かない。"
     ),
     "answer_handling": (
@@ -96,6 +103,7 @@ class SourceResult:
     items: list[dict[str, Any]] = dataclasses.field(default_factory=list)
     position: str | None = None
     gap: dict[str, str] | None = None
+    baseline: str | None = None
 
 
 @dataclasses.dataclass
@@ -138,10 +146,14 @@ def mark_read(slot: str, sources: tuple[str, ...]) -> list[str]:
     pending = _read(pending_path())
     if pending.get("slot") != slot:
         raise ValueError(f"回 {slot} の取得結果が無い。先に `atk run-script research-sources` を実行する")
-    unknown = [source for source in sources if source not in pending.get("model_sources", [])]
+    review_positions = {
+        **dict.fromkeys(pending.get("model_sources", []), pending["collected_at"]),
+        **pending.get("release_positions", {}),
+    }
+    unknown = [source for source in sources if source not in review_positions]
     if unknown:
-        raise ValueError(f"出力のmodel_sourcesに無い情報源: {', '.join(unknown)}")
-    pending["positions"] = {**pending.get("positions", {}), **dict.fromkeys(sources, pending["collected_at"])}
+        raise ValueError(f"読取を記録できない情報源: {', '.join(unknown)}")
+    pending["positions"] = {**pending.get("positions", {}), **{source: review_positions[source] for source in sources}}
     session_review.write(pending_path(), pending)
     return list(sources)
 
@@ -197,8 +209,14 @@ def _error_title(body: bytes) -> str:
     return f"（{str(title)[:120]}）" if isinstance(title, str) and title else ""
 
 
-def _excerpt(text: str, limit: int = 4000) -> str:
-    return text if len(text) <= limit else text[:limit] + "…"
+def _release_item(version: str, text: str, url: str) -> dict[str, Any]:
+    truncated = len(text) > RELEASE_EXCERPT_CHARS
+    return {
+        "version": version,
+        "url": url,
+        "text": text[:RELEASE_EXCERPT_CHARS] + "…" if truncated else text,
+        "truncated": truncated,
+    }
 
 
 def _changelog_sections(body: bytes) -> list[tuple[str, str]]:
@@ -248,8 +266,9 @@ def read_claude_code(fetch: Fetch, position: str | None, *, now: datetime.dateti
     for version, text in sections:
         if version == stop:
             break
-        items.append({"version": version, "text": _excerpt(text)})
-    return SourceResult("changelog:claude-code", "read", reason, items, versions[0] if versions else position)
+        url = f"https://github.com/{CLAUDE_CODE_REPOSITORY}/blob/main/CHANGELOG.md"
+        items.append(_release_item(version, text, url))
+    return SourceResult("changelog:claude-code", "read", reason, items, versions[0] if versions else position, baseline=stop)
 
 
 def read_github_releases(
@@ -272,17 +291,19 @@ def read_github_releases(
             if not isinstance(published, str) or release.get("draft"):
                 continue
             published_at = datetime.datetime.fromisoformat(published.replace("Z", "+00:00"))
+            if published_at.tzinfo is None:
+                raise SourceError("リリースの公開日時にタイムゾーンが無い")
             if published_at <= since:
                 reached = True
                 continue
-            items.append(
-                {
-                    "version": release.get("tag_name"),
-                    "published_at": published,
-                    "url": release.get("html_url"),
-                    "text": _excerpt(release.get("body") or ""),
-                }
-            )
+            tag = release.get("tag_name")
+            if not isinstance(tag, str) or not tag:
+                raise SourceError("リリースのタグを読み取れない")
+            text = release.get("body")
+            if text is not None and not isinstance(text, str):
+                raise SourceError("リリースの本文を読み取れない")
+            url = f"https://github.com/{repository}/releases/tag/{urllib.parse.quote(tag, safe='')}"
+            items.append({**_release_item(tag, text or "", url), "published_at": published})
             latest = max(latest, published_at)
         if reached:
             return SourceResult(f"changelog:{name}", "read", items=items, position=latest.isoformat())
@@ -291,11 +312,15 @@ def read_github_releases(
 
 
 def x_token() -> str | None:
-    configured = config.resolve_mutable_setting("weekly_research_x_env_file")
-    path = pathlib.Path(configured) if configured else config_settings.config_dir() / X_ENV_FILENAME
+    path = config_settings.config_dir() / config_settings.X_ENV_FILENAME
     try:
         values = claude_connection.read_api_env_file(str(path))
     except FileNotFoundError:
+        key = "weekly_research_x_env_file"
+        if config_settings.load_config().get(key) or runtime_environment.environment().get(
+            config_settings.config_env_name(key)
+        ):
+            raise SourceError(f"旧設定の認証ファイルが見つからない。Xの認証ファイルを{path}へ置いて再実行する") from None
         return None
     except (OSError, UnicodeError, ValueError) as error:
         raise SourceError(f"キーのファイルを読めない: {path}（{type(error).__name__}）") from error
@@ -322,33 +347,32 @@ class _XPage:
 def _x_page(
     fetch: Fetch,
     token: str,
-    budget: XBudget,
     url: str,
     params: dict[str, str],
     *,
+    available: int,
     minimum: int,
     link: Callable[[dict[str, Any]], str],
 ) -> _XPage | None:
     """残りの件数で読める範囲だけを要求する。要求の最小件数に満たない残りでは送信せずNoneを返す。  pyfltr: allow-comment"""
-    remaining = budget.max_posts - budget.posts
-    if remaining < minimum:
+    maximum = min(100, available)
+    if maximum < minimum:
         return None
-    query = {**params, "max_results": str(min(100, remaining)), "tweet.fields": "created_at,author_id"}
+    query = {**params, "max_results": str(maximum), "tweet.fields": "created_at,author_id"}
     value = _get_json(fetch, f"{url}?{urllib.parse.urlencode(query)}", {"Authorization": f"Bearer {token}"})
     data = value.get("data", []) if isinstance(value, dict) else []
     meta = value.get("meta", {}) if isinstance(value, dict) else {}
     posts = [
         {"id": post.get("id"), "created_at": post.get("created_at"), "url": link(post), "text": post.get("text", "")}
-        for post in data[:remaining]
+        for post in data[:maximum]
         if isinstance(post, dict) and isinstance(post.get("id"), str) and post["id"].isdigit()
     ]
-    budget.posts += len(posts)
     ids = sorted((post["id"] for post in posts), key=int)
     return _XPage(
         posts,
         ids[-1] if ids else None,
         ids[0] if ids else None,
-        len(data) <= remaining and not meta.get("next_token"),
+        len(data) <= maximum and not meta.get("next_token"),
     )
 
 
@@ -374,12 +398,12 @@ def _x_lower(lower: dict[str, str], *, search: bool, now: datetime.datetime) -> 
 def _read_x_source(
     fetch: Fetch,
     token: str,
-    budget: XBudget,
     source: str,
     url: str,
     state: dict[str, Any],
     *,
     params: dict[str, str],
+    post_limit: int,
     search: bool,
     link: Callable[[dict[str, Any]], str],
     now: datetime.datetime,
@@ -397,7 +421,15 @@ def _read_x_source(
     if gap:
         lower, note = _x_lower({key: gap[key] for key in ("since_id", "start_time") if key in gap}, search=search, now=now)
         reasons += [note] if note else []
-        page = _x_page(fetch, token, budget, url, {**params, **lower, "until_id": gap["until_id"]}, minimum=minimum, link=link)
+        page = _x_page(
+            fetch,
+            token,
+            url,
+            {**params, **lower, "until_id": gap["until_id"]},
+            available=post_limit,
+            minimum=minimum,
+            link=link,
+        )
         if page is None:
             return SourceResult(source, "skipped", _X_LIMIT_REASON, position=position, gap=gap)
         items += page.posts
@@ -411,7 +443,7 @@ def _read_x_source(
     lower, note = _x_lower(lower_value, search=search, now=now)
     reasons += [note] if note else []
     try:
-        page = _x_page(fetch, token, budget, url, {**params, **lower}, minimum=minimum, link=link)
+        page = _x_page(fetch, token, url, {**params, **lower}, available=post_limit - len(items), minimum=minimum, link=link)
     except SourceError as error:
         if source not in state["gaps"]:
             raise
@@ -437,6 +469,19 @@ def _search_link(post: dict[str, Any]) -> str:
     return f"https://x.com/i/web/status/{post.get('id')}"
 
 
+def _x_source_limit(available: int, minimum: int, *, later_accounts: int, later_queries: int) -> int:
+    """後続の最小枠を取得順に確保し、余りを枠を持つ情報源に配分する。  pyfltr: allow-comment"""
+    if available < minimum:
+        return 0
+    surplus = available - minimum
+    timeline_minimum, search_minimum = X_MIN_RESULTS["timeline"], X_MIN_RESULTS["search"]
+    funded_accounts = min(later_accounts, surplus // timeline_minimum)
+    surplus -= funded_accounts * timeline_minimum
+    funded_queries = min(later_queries, surplus // search_minimum)
+    surplus -= funded_queries * search_minimum
+    return minimum + surplus // (1 + funded_accounts + funded_queries)
+
+
 def read_x(
     fetch: Fetch,
     state: dict[str, Any],
@@ -458,10 +503,12 @@ def read_x(
     state = {"positions": state.get("positions", {}), "user_ids": state.get("user_ids", {}), "gaps": state.get("gaps", {})}
     user_ids: dict[str, str] = {}
     results = []
-    for account in accounts:
+    cached_accounts = sum(state["user_ids"].get(account) is not None for account in accounts)
+    for index, account in enumerate(accounts):
         source = f"x:account:{account}"
+        user_id = state["user_ids"].get(account)
+        cached_accounts -= user_id is not None
         try:
-            user_id = state["user_ids"].get(account)
             if user_id is None:
                 if budget.users >= budget.max_users:
                     results.append(SourceResult(source, "failed", "アカウントの照会の件数上限に達したため読まなかった"))
@@ -476,41 +523,52 @@ def read_x(
                 if not isinstance(user_id, str):
                     raise SourceError("アカウントが見つからない")
                 user_ids[account] = user_id
-            results.append(
-                _read_x_source(
-                    fetch,
-                    token,
-                    budget,
-                    source,
-                    f"{X_API_BASE}/users/{user_id}/tweets",
-                    state,
-                    params={},
-                    search=False,
-                    link=functools.partial(_account_link, account),
-                    now=now,
-                )
+            unresolved = len(accounts) - index - 1 - cached_accounts
+            later_accounts = cached_accounts + min(unresolved, budget.max_users - budget.users)
+            post_limit = _x_source_limit(
+                budget.max_posts - budget.posts,
+                X_MIN_RESULTS["timeline"],
+                later_accounts=later_accounts,
+                later_queries=len(queries),
+            )
+            result = _read_x_source(
+                fetch,
+                token,
+                source,
+                f"{X_API_BASE}/users/{user_id}/tweets",
+                state,
+                params={},
+                post_limit=post_limit,
+                search=False,
+                link=functools.partial(_account_link, account),
+                now=now,
             )
         except SourceError as error:
-            results.append(SourceResult(source, "failed", _scrub(str(error), token)))
-    for query in queries:
+            result = SourceResult(source, "failed", _scrub(str(error), token))
+        budget.posts += len(result.items)
+        results.append(result)
+    for index, query in enumerate(queries):
         source = f"x:search:{query}"
+        post_limit = _x_source_limit(
+            budget.max_posts - budget.posts, X_MIN_RESULTS["search"], later_accounts=0, later_queries=len(queries) - index - 1
+        )
         try:
-            results.append(
-                _read_x_source(
-                    fetch,
-                    token,
-                    budget,
-                    source,
-                    f"{X_API_BASE}/tweets/search/recent",
-                    state,
-                    params={"query": query},
-                    search=True,
-                    link=_search_link,
-                    now=now,
-                )
+            result = _read_x_source(
+                fetch,
+                token,
+                source,
+                f"{X_API_BASE}/tweets/search/recent",
+                state,
+                params={"query": query},
+                post_limit=post_limit,
+                search=True,
+                link=_search_link,
+                now=now,
             )
         except SourceError as error:
-            results.append(SourceResult(source, "failed", _scrub(str(error), token)))
+            result = SourceResult(source, "failed", _scrub(str(error), token))
+        budget.posts += len(result.items)
+        results.append(result)
     return results, user_ids
 
 
@@ -536,8 +594,8 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
             results.append(SourceResult(f"changelog:{name}", "failed", redact_secrets(str(error))))
     enabled = config.resolve_mutable_setting("weekly_research_x_api") == "true"
     budget = XBudget(
-        max_posts=int(config.resolve_mutable_setting("weekly_research_x_max_posts")),
-        max_users=int(config.resolve_mutable_setting("weekly_research_x_max_users")),
+        max_posts=config_settings.X_MAX_POSTS,
+        max_users=config_settings.X_MAX_USERS,
     )
     accounts = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_accounts"))
     queries = config_settings.parse_string_list(config.resolve_mutable_setting("weekly_research_x_queries"))
@@ -564,10 +622,21 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         **{f"web:tools:{repository}": f"{repository}が使う主要なツールと言語処理系の変更履歴" for repository in repositories},
     }
     initial = (now - datetime.timedelta(days=INITIAL_DAYS)).isoformat()
+    baselines = {
+        **dict.fromkeys((f"changelog:{name}" for name in GITHUB_RELEASES), initial),
+        "web:antigravity": initial,
+        **{result.source: result.baseline for result in read if result.baseline},
+    }
     pending = {
         "slot": slot,
         "collected_at": now.isoformat(),
-        "positions": {result.source: result.position for result in read if result.position},
+        "positions": {
+            **{source: baseline for source, baseline in baselines.items() if source not in positions},
+            **{result.source: result.position for result in read if result.source.startswith("x:") and result.position},
+        },
+        "release_positions": {
+            result.source: result.position for result in read if result.source.startswith("changelog:") and result.position
+        },
         "gaps": {result.source: result.gap for result in read if result.source.startswith("x:")},
         "user_ids": user_ids,
         "model_sources": list(model_sources),
@@ -579,11 +648,18 @@ def collect(slot: str, *, fetch: Fetch | None = None, now: datetime.datetime | N
         "x_api": {"enabled": enabled, "posts_read": budget.posts, "users_looked_up": budget.users},
         "x_subscriptions": {"accounts": list(accounts), "queries": list(queries)},
         "sources": [
-            {key: value for key, value in dataclasses.asdict(result).items() if key != "gap"} | {"count": len(result.items)}
+            {key: value for key, value in dataclasses.asdict(result).items() if key not in {"gap", "baseline"}}
+            | {"count": len(result.items)}
             for result in results
         ],
         "model_sources": [
-            {"source": source, "what": what, "since": positions.get(source, initial)} for source, what in model_sources.items()
+            {
+                "source": source,
+                "what": what,
+                "since": positions.get(source, initial),
+                **({"url": ANTIGRAVITY_CHANGELOG} if source == "web:antigravity" else {}),
+            }
+            for source, what in model_sources.items()
         ],
         "result_uwi": RESULT_UWI,
     }

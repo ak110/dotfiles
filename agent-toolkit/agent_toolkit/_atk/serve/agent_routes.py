@@ -28,8 +28,6 @@ def _attach_record(
         row["record_error"] = "記録の所在を確認できません。次の一覧取得で再確認します。"
     elif candidates:
         row["record_error"] = "同じIDの記録が複数あり、特定できません。"
-    else:
-        row["record_error"] = "セッション記録が見つかりません。"
 
 
 AgentListing = Callable[[bool], list[dict[str, typing.Any]]]

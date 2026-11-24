@@ -41,6 +41,10 @@ _GH_TRANSIENT_ERROR_PATTERN = re.compile(
     r"HTTP\s+5\d{2}\b|timeout|timed out|connection reset|connection refused|temporary failure|TLS handshake timeout|EOF",
     re.IGNORECASE,
 )
+_GH_RUN_VIEW_TRANSIENT_ERROR_PATTERN = re.compile(
+    rf"{_GH_TRANSIENT_ERROR_PATTERN.pattern}|HTTP\s+404\b",
+    re.IGNORECASE,
+)
 
 _BUMP_CHOICES = ("patch", "minor", "major")
 _RELEASE_WORKFLOW_FILENAME = "release.yaml"
@@ -322,6 +326,7 @@ def _run_gh_json_read(
     timeout: float = _GH_READ_TIMEOUT_SEC,
     sleep: collections.abc.Callable[[float], None] = time.sleep,
     random_uniform: collections.abc.Callable[[float, float], float] = random.uniform,
+    transient_pattern: re.Pattern[str] = _GH_TRANSIENT_ERROR_PATTERN,
 ) -> Any:
     if attempts < 1:
         raise ValueError("attemptsは1以上で指定してください。")
@@ -352,7 +357,7 @@ def _run_gh_json_read(
                         f"gh auth statusと接続状態を確認し、releaserを再実行してください。"
                     ) from None
             detail = stderr or f"終了コード {result.returncode}"
-            if not _GH_TRANSIENT_ERROR_PATTERN.search(stderr):
+            if not transient_pattern.search(stderr):
                 raise _ReleaserError(
                     f"GitHub APIから情報を取得できませんでした: {detail}。"
                     f"gh auth statusと接続状態を確認し、releaserを再実行してください。"
@@ -601,6 +606,7 @@ def _view_run(
         timeout=timeout,
         sleep=sleep,
         random_uniform=random_uniform,
+        transient_pattern=_GH_RUN_VIEW_TRANSIENT_ERROR_PATTERN,
     )
     if not isinstance(data, dict):
         raise _ReleaserError(

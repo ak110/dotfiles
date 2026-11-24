@@ -39,8 +39,6 @@ _DEFAULTS = {
 }
 
 _CONNECTION_KEYS = (
-    "claude_credits_env_file",
-    "claude_payg_env_file",
     "claude_orchestrator_connections",
     "claude_worker_connections",
     "codex_credits_provider",
@@ -55,8 +53,11 @@ def _isolate_platformdirs(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(config_module.platformdirs, "user_config_dir", lambda _name, **_kwargs: str(tmp_path / "config"))
     monkeypatch.setattr(config_module.platformdirs, "user_state_dir", lambda _name, **_kwargs: str(tmp_path / "state"))
     monkeypatch.setattr(config_module.platformdirs, "user_data_dir", lambda _name, **_kwargs: str(tmp_path / "data"))
-    for key in (*config_module._MUTABLE_KEY_DEFAULTS, *config_module._RETIRED_CONNECTION_KEYS, *_LEGACY_KEYS):  # pylint: disable=protected-access  # noqa: SLF001
-        monkeypatch.delenv(f"AGENT_TOOLKIT_CONFIG_{key.upper()}", raising=False)
+    for name in (
+        *config_module.config_environment_variable_names(),
+        *(f"AGENT_TOOLKIT_CONFIG_{key.upper()}" for key in _LEGACY_KEYS),
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
         codex_models,
         "list_models",

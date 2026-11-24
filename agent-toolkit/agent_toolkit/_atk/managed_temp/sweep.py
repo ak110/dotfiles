@@ -85,8 +85,6 @@ class SpacePressure(typing.NamedTuple):
     reclaimed_bytes: int
     top_reclaimed: tuple[tuple[str, int], ...]
     """回収量の多い順の対象名とバイト数。作成者が回収しなかった大きな領域を振り返りで見つけるための記録。"""
-    temp_root_bytes: int | None
-    """回収後の一時root全体の使用量。回収できる対象が残らなかった場合の警告にだけ数える。"""
 
     @property
     def still_low(self) -> bool:
@@ -644,12 +642,7 @@ def _reclaim_space(
         except OSError:
             free = usage.free + sum(size for _name, size in sizes)
     sizes.sort(key=lambda item: item[1], reverse=True)
-    pressure = SpacePressure(
-        usage.total, usage.free, free, sum(size for _name, size in sizes), tuple(sizes[:_TOP_RECLAIMED]), None
-    )
-    if pressure.still_low:
-        pressure = pressure._replace(temp_root_bytes=_tree_bytes(temp_root))
-    return pressure
+    return SpacePressure(usage.total, usage.free, free, sum(size for _name, size in sizes), tuple(sizes[:_TOP_RECLAIMED]))
 
 
 def _failure_reason(error: OSError | ManagedTempError) -> str:

@@ -9,8 +9,9 @@ import json
 import os
 import pathlib
 import re
+from collections.abc import Iterator
 
-from agent_toolkit._common import delegated_session
+from agent_toolkit._common import automated_prompt, delegated_session, runtime_inserted
 from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._common.session_state import read_state, update_state
 from agent_toolkit._hooks import notice as notice_module
@@ -146,7 +147,7 @@ def _scope_review_entry(decision: str, utterance: str, terms: set[str]) -> str:
     return f"契約: {redact_secrets(decision)}\n{original}"
 
 
-def _original_user_text(raw: str) -> str | None:
+def _original_user_text(raw: str, *, include_answers: bool = False) -> str | None:
     try:
         entry = json.loads(raw)
     except ValueError:
@@ -156,11 +157,15 @@ def _original_user_text(raw: str) -> str | None:
     if entry.get("type") == "event_msg" and isinstance(payload := entry.get("payload"), dict):
         text = payload.get("message")
         return text if payload.get("type") == "user_message" and isinstance(text, str) else None
-    if entry.get("type") != "user" or entry.get("isMeta") or not isinstance(message := entry.get("message"), dict):
+    if (
+        entry.get("type") != "user"
+        or runtime_inserted.is_runtime_generated(entry)
+        or not isinstance(message := entry.get("message"), dict)
+    ):
         return None
     if isinstance(result := entry.get("toolUseResult"), dict) and isinstance(result.get("answers"), dict):
         # 質問への回答も原本だが、選択肢以外の私的な自由記述を再配送しない。  # pyfltr: allow-comment
-        return ""
+        return "\n".join(value for value in result["answers"].values() if isinstance(value, str)) if include_answers else ""
     content = message.get("content")
     if isinstance(content, str):
         return content
@@ -171,6 +176,79 @@ def _original_user_text(raw: str) -> str | None:
             if isinstance(item, dict) and item.get("type") == "text" and isinstance(item.get("text"), str)
         )
     return None
+
+
+def recorded_new_wi_decisions(session_id: str) -> frozenset[str]:
+    path = record_path(session_id)
+    if path is None:
+        return frozenset()
+    try:
+        body = path.read_text(encoding="utf-8")
+    except OSError, UnicodeError:
+        return frozenset()
+    return frozenset(
+        match[1]
+        for _, line in _visible_contract_lines(body)
+        if (match := re.fullmatch(r"- 新着WIの判定: ([A-Za-z0-9._-]+[.]md) [|] [^\s].*", line))
+    )
+
+
+def _visible_contract_lines(body: str) -> Iterator[tuple[int, str]]:
+    fence = ""
+    for number, line in enumerate(body.splitlines(), 1):
+        if delimiters := re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", line):
+            if not fence:
+                fence = delimiters[1]
+            elif delimiters[1].startswith(fence) and not delimiters[2].strip():
+                fence = ""
+        elif not fence:
+            yield number, line
+
+
+def _additional_requirement_quotes(body: str) -> dict[int, str]:
+    quotes: dict[int, str] = {}
+    active = False
+    for number, line in _visible_contract_lines(body):
+        if line.startswith(("## ", "# ")):
+            active = re.match(r"^## 追加要求(?:[ （(]|$)", line) is not None
+        if active and (match := re.match(r"^[ \t]*(?:- )?原文[:：][ \t]*(.*)$", line)):
+            value = match[1].strip()
+            quotes[number] = value[1:-1] if value.startswith("「") and value.endswith("」") else value
+    return quotes
+
+
+def quote_update_warning(session_id: str, raw_transcript: object) -> str | None:
+    if not isinstance(raw_transcript, str) or not raw_transcript:
+        return None
+    path = record_path(session_id)
+    if path is None:
+        return None
+    key = "work_contract_quotes_checked"
+    try:
+        stat = path.stat()
+        stamp = f"{stat.st_mtime_ns}:{stat.st_size}"
+        if read_state(session_id).get(key) == stamp:
+            return None
+        quotes = _additional_requirement_quotes(path.read_text(encoding="utf-8"))
+        if quotes:
+            with pathlib.Path(raw_transcript).open(encoding="utf-8") as stream:
+                for row in stream:
+                    source = _original_user_text(row, include_answers=True)
+                    if (
+                        source
+                        and not automated_prompt.contains(source)
+                        and not runtime_inserted.is_runtime_inserted_text(source)
+                    ):
+                        quotes = {number: quote for number, quote in quotes.items() if not quote or quote not in source}
+                    if not quotes:
+                        break
+    except OSError, UnicodeError:
+        return None
+    update_state(session_id, lambda state: {**state, key: stamp})
+    if not quotes:
+        return None
+    lines = "、".join(f"{number}行目" for number in quotes)
+    return f"`{path}`の{lines}の「原文:」が実ユーザー発話と一致しない。会話から逐語で引用し直し、要約は原文欄から移す。"
 
 
 def short_notice(path: pathlib.Path) -> str:

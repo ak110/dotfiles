@@ -516,10 +516,22 @@ def test_public_effect_whole_item_confirmed_without_file(
     assert parsed is not None and parsed[0]["effect_check"] == "confirmed"
 
 
+def test_implemented_awi_can_adopt_without_effect_decision(
+    effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path],
+) -> None:
+    notes, worktree, _path = effect_repository
+    path = write_awi(notes, "implemented.md", state="processing")
+    oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
+    assert _adopt(notes, worktree, path.name, "--commit", oid) == 0
+    saved = path.read_text(encoding="utf-8")
+    assert "state: adopted" in saved
+    assert "effect_check:" not in saved
+
+
 @pytest.mark.parametrize(
-    "selection", [[], ["--effect-check=not_required"], ["--effect-check=not_required", "--effect-check-reason=  "]]
+    "selection", [["--effect-check=not_required"], ["--effect-check=not_required", "--effect-check-reason=  "]]
 )
-def test_implemented_awi_rejects_missing_effect_decision(
+def test_implemented_awi_rejects_invalid_explicit_effect_decision(
     effect_repository: tuple[pathlib.Path, pathlib.Path, pathlib.Path], selection: list[str]
 ) -> None:
     notes, worktree, _path = effect_repository
@@ -570,6 +582,9 @@ def test_implemented_awi_validates_all_targets_before_adopting(
     before = [path.read_bytes() for path in paths]
     oid = git_repository.git_output(worktree, "rev-parse", "HEAD")
     with pytest.raises(SystemExit) as finished:
-        atk.main(["wi", "adopt", *selection, "--target-repo", str(worktree), "--commit", oid], home=notes.parent)
+        atk.main(
+            ["wi", "adopt", *selection, "--target-repo", str(worktree), "--commit", oid, "--effect-check=not_required"],
+            home=notes.parent,
+        )
     assert finished.value.code == 1
     assert [path.read_bytes() for path in paths] == before

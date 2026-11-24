@@ -197,7 +197,7 @@ def test_public_add_legacy_confirmation_is_saved_without_blocking_readiness(
     (path,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
     parsed = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
     assert parsed is not None
-    assert parsed[0]["confirmation"] == "required"
+    assert "confirmation" not in parsed[0]
     result = readiness.calculate_readiness(notes, args.target_repo)
     assert result.ready == (path.name,)
 
@@ -210,7 +210,7 @@ def test_public_add_legacy_confirmation_is_saved_without_blocking_readiness(
         (["--type=uwi", "--question-type=yes-no"], "required"),
     ],
 )
-def test_public_add_preserves_legacy_confirmation_values(
+def test_public_add_ignores_legacy_confirmation_values(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -226,7 +226,7 @@ def test_public_add_preserves_legacy_confirmation_values(
     assert failed.value.code == 0
     capsys.readouterr()
     (saved,) = notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md")
-    assert "confirmation:" in saved.read_text(encoding="utf-8")
+    assert "confirmation:" not in saved.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("deadline", ["", "not-a-date", "2026-01-02", "2026-01-02T03:04:05"])
@@ -331,7 +331,7 @@ def test_public_add_hold_saves_awi_outside_readiness(
     ("extra", "message"),
     [
         (["--type=uwi", "--question-type=yes-no"], "--holdは--type=awiでのみ"),
-        (["--process-wi-timing", "this-run", "--process-wi-kind", "defect"], "--holdは--process-wi-timingと併用できません"),
+        (["--process-wi-timing", "this-run"], "--holdは--process-wi-timingと併用できません"),
         (["--batch"], "通常の投入へ--holdを付けて"),
     ],
 )

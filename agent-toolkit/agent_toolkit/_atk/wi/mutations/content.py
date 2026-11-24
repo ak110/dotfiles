@@ -14,6 +14,7 @@ from agent_toolkit._atk.wi import constants as _constants
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
+from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
 from agent_toolkit._atk.wi import uwi as _uwi
@@ -60,9 +61,6 @@ _RESERVED_EDIT_KEY_NEXT_ACTIONS = {
         "frontmatterからplan_fileを除いて再実行する（plan_fileは廃止した型で保存された項目のメタデータであり、新しく書けない）"
     ),
     "priority": "frontmatterからpriorityを除き、優先区分は`atk wi set-priority`で設定する",
-    "priority_impact": "frontmatterからpriority_impactを除き、根拠は`atk wi set-priority`で設定する",
-    "priority_evidence": "frontmatterからpriority_evidenceを除き、根拠は`atk wi set-priority`で設定する",
-    "priority_release": "frontmatterからpriority_releaseを除き、根拠は`atk wi set-priority`で設定する",
     "submitter_session": "frontmatterからsubmitter_sessionを除いて再実行する（submitter_sessionはatkが記録する）",
     "run_skill_run_id": "frontmatterからrun_skill_run_idを除いて再実行する（実行識別子はatkが記録する）",
 }
@@ -702,7 +700,23 @@ def cmd_edit(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
         _print_cooldown_result(finalized_content["content"])
 
 
-def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str) -> None:
+def cmd_record_observation(args: argparse.Namespace, private_notes: pathlib.Path) -> None:
+    details = _add.read_body_files([args.body_file])[0].strip()
+    if (
+        not details
+        or _headings.contains_h2(details)
+        or any(line.strip().startswith("- 再開区分:") for line in details.splitlines())
+    ):
+        raise WebInputError(
+            "再開記録の詳細は空にできず、H2見出しと再開区分の行は指定できません",
+            next_action="--body-fileには観測の詳細だけを記入する",
+        )
+    resume = _constants.OBSERVATION_ONLY_RESUME_LINE if args.resume == "needs-verify" else "- 再開区分: 再実装へ戻す"
+    message = f"## {_constants.OBSERVATION_RESUME_HEADING}\n\n{resume}\n{details}\n"
+    cmd_append(args, private_notes, message, observation=True)
+
+
+def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: str, *, observation: bool = False) -> None:
     assert args.filename is not None
     if _reject_agent_user_comment_message(message):
         sys.exit(1)
@@ -717,7 +731,7 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
         verify_target_repo_content(path, _frontmatter.decode_entry_text(snapshot), normalized_target_repo)
 
     original = snapshot.decode("utf-8")
-    if is_agent_environment():
+    if observation or is_agent_environment():
         try:
             before_user_comment, saved_user_comment = _user_comment.split_before_user_comment(original)
         except _user_comment.UserCommentError:
@@ -758,7 +772,7 @@ def cmd_append(args: argparse.Namespace, private_notes: pathlib.Path, message: s
     except RuntimeError:
         _outcome.report_failure(
             f"追記中に他プロセスが対象を変更した: {path.name}。指定した本文は反映していない",
-            next_action="同じFILENAMEと--body-fileと--appendで再実行する",
+            next_action="本文を確認し、同じコマンドで再実行する",
         )
         sys.exit(1)
     _outcome.report_success(f"追記を反映した: {path.name}")

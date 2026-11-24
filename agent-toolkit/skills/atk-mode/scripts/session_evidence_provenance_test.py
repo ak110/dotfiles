@@ -194,6 +194,33 @@ def test_public_catalog_tool_calls_group_by_role_document(
     assert root["role_document"] == "exec"
 
 
+def test_catalog_tool_calls_keep_provenance_when_fork_parent_is_missing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    parent = support.tool_call_session(tmp_path, monkeypatch, "echo done")
+    codex = next((tmp_path / "codex").rglob("*.jsonl"))
+    entries = [json.loads(line) for line in codex.read_text(encoding="utf-8").splitlines()]
+    entries[0]["payload"]["forked_from_id"] = "88888888-8888-4888-8888-888888888888"
+    support.write_jsonl(codex, entries)
+    window = ["--since", "2026-10-06T00:00:02Z", "--observation-boundary", "2026-10-06T00:00:08Z"]
+
+    assert evidence.main(["--catalog-claude-project", str(parent.parent), *window, "--tool-calls"]) == 0
+
+    events = support.read_jsonl(capsys, raw=True)
+    calls = [event for event in events if event["kind"] == "tool-call"]
+    assert [(call["record"], call["call_id"]) for call in calls] == [
+        (_MAIN, "bash-embed"),
+        (_SUBAGENT, "read-1"),
+        (_MAIN, "call-codex"),
+    ]
+    provenance = _provenance(events)
+    assert set(provenance) == {_MAIN, _SUBAGENT}
+    assert provenance[_MAIN]["role"] == "main"
+    assert provenance[_SUBAGENT]["source_record"] == _MAIN
+    assert events[-1]["by_session"] == {"parent-session": 3}
+    assert events[-1]["by_role"]["record:main"]["count"] == 2
+
+
 @pytest.mark.parametrize("initial_role", [None, "exec"])
 @pytest.mark.parametrize("separator", ["/", "\\"])
 def test_public_provenance_keeps_initial_delivery_role(

@@ -287,16 +287,75 @@
   min-height: 0;
   overflow: auto;
   padding: var(--space-4);
+  container: agents / inline-size;
 }
-#agents-app li[data-running="true"] > a,
-#agents-app li[data-running="true"] > span {
-  font-weight: bold;
-}
-#agents-app li {
+#agents-app .agent-host-heading {
+  font-size: 1.25rem;
   overflow-wrap: anywhere;
 }
-#agents-app li li > a {
-  white-space: pre-wrap;
+#agents-app .agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#agents-app .agent-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem 5.5rem 6.5rem;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  border-block-start: 1px solid var(--color-border);
+  padding-block: var(--space-2);
+}
+#agents-app .agent-identity {
+  padding-inline-start: min(calc(var(--agent-depth) * 0.875rem), 20%);
+  overflow-wrap: anywhere;
+}
+#agents-app .agent-name,
+#agents-app .agent-action,
+#agents-app .agent-record-note {
+  display: block;
+}
+#agents-app .agent-action,
+#agents-app .agent-record-note {
+  color: var(--color-secondary-text);
+}
+#agents-app .agent-status {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+#agents-app [data-running="true"] .agent-status {
+  font-weight: 700;
+}
+#agents-app .agent-elapsed {
+  grid-column: 3;
+}
+#agents-app .agent-usage {
+  grid-column: 4;
+}
+#agents-app .agent-elapsed,
+#agents-app .agent-usage {
+  text-align: end;
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+@container agents (inline-size < 42rem) {
+  #agents-app .agent-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 5.5rem) minmax(0, 6.5rem);
+  }
+  #agents-app .agent-identity {
+    grid-column: 1 / -1;
+  }
+  #agents-app .agent-status {
+    grid-column: 1;
+  }
+  #agents-app .agent-elapsed {
+    grid-column: 2;
+  }
+  #agents-app .agent-usage {
+    grid-column: 3;
+  }
 }
 
 #settings-app {
@@ -304,18 +363,92 @@
   overflow: auto;
   padding: var(--space-4);
 }
-#settings-app label {
+.settings-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4) 0;
+}
+#settings-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+#settings-status:empty,
+#settings-content [role="alert"]:empty {
+  display: none;
+}
+.settings-layout {
   display: grid;
-  max-width: 40rem;
+  gap: var(--space-4);
+  grid-template-columns: minmax(0, 1fr);
+}
+#settings-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: var(--space-1);
+}
+#settings-nav button {
+  min-block-size: 2rem;
+  padding: 0.4rem 0.65rem;
+  text-align: start;
+}
+#settings-nav [aria-current="page"] {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+#settings-content {
+  min-inline-size: 0;
+  max-inline-size: 54rem;
+  overflow-wrap: anywhere;
+}
+#settings-content section > h2 {
+  margin-block: 0 var(--space-2);
+}
+#settings-content [data-editor]:not(section) {
+  border-block-start: 1px solid currentColor;
+  margin-block-start: var(--space-4);
+  padding-block-start: var(--space-3);
+}
+#settings-content [data-setting] h3 {
+  margin: 0;
+}
+#settings-content [data-setting] p {
   margin-block: var(--space-2);
 }
-#settings-app :is(p, pre) {
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+.settings-field {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+  margin-block: var(--space-2);
 }
-
-#agents-app .agent-status {
-  display: inline-block;
-  white-space: nowrap;
-  font-weight: 600;
+#settings-host,
+#settings-app :is(input, select) {
+  font: inherit;
+  box-sizing: border-box;
+  min-block-size: 2rem;
+  max-inline-size: 100%;
+}
+#settings-host {
+  field-sizing: content;
+  min-inline-size: min(12ch, 100%);
+}
+.settings-field input:not([type="datetime-local"]) {
+  inline-size: min(100%, 38rem);
+}
+.settings-field input[inputmode="numeric"] {
+  inline-size: min(100%, 12ch);
+}
+@media (min-width: 48rem) {
+  .settings-layout {
+    grid-template-columns: 12rem minmax(0, 1fr);
+  }
+  #settings-nav {
+    position: sticky;
+    inset-block-start: 0;
+    align-self: start;
+    flex-direction: column;
+  }
 }

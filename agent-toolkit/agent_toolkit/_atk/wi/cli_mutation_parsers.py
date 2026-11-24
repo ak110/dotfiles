@@ -137,16 +137,6 @@ def _add_wi_add_parser(sub: Any) -> None:
         choices=("this-run", "next-run"),
         help="process-wi実行中のAWIを今回（this-run）か次回（next-run）へ渡す指定。",
     )
-    add.add_argument(
-        "--process-wi-kind",
-        choices=("defect", "improvement"),
-        help="--process-wi-timing指定時に必須。確定した欠陥はdefect、改善・未確定の候補はimprovement。",
-    )
-    add.add_argument(
-        "--defer-category",
-        choices=("investigation", "agreement", "external-wait", "cross-repository", "host-unavailable", "throughput"),
-        help="--process-wi-timing=next-runで必要な先送り条件の区分。throughputは現在・次回の進行を妨げない独立項目を処理量の比較で次回へ渡す。",
-    )
     _arguments.add_target_repo_arg(
         add,
         help_extra=(
@@ -417,6 +407,12 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     )
     _arguments.add_target_repo_arg(set_dependencies, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
 
+    observation = _atk_help.add_command(sub, "record-observation", **_atk_help.HELP["atk wi record-observation"])
+    observation.add_argument("filename", metavar="FILENAME", help="再開記録を追記する未終了AWI。")
+    observation.add_argument("resume", choices=("needs-verify", "reimplement"), help="観測だけを再開するか、再実装へ戻すか。")
+    observation.add_argument("--body-file", required=True, metavar="PATH", help="見出しと再開区分を含まない記録の詳細。")
+    _arguments.add_target_repo_arg(observation, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")
+
     set_priority = _atk_help.add_command(sub, "set-priority", **_atk_help.HELP["atk wi set-priority"])
     set_priority.add_argument(
         "filename",
@@ -426,7 +422,5 @@ def _add_mq_edit_parsers(sub: Any) -> None:
     set_priority.add_argument(
         "priority", choices=("urgent", "normal"), help="`urgent`は先送りの損失を根拠で示せる項目、`normal`は優先の解除。"
     )
-    set_priority.add_argument("--impact", metavar="TEXT", help="urgentで必須。遅らせた場合に続く観測済みの影響。")
-    set_priority.add_argument("--evidence", metavar="TEXT", help="urgentで必須。影響を観測した条件と根拠の所在。")
-    set_priority.add_argument("--release", metavar="TEXT", help="urgentで必須。優先を解除する条件。")
+    set_priority.add_argument("--reason", metavar="TEXT", help="urgentで必須。影響・証拠・解除条件をまとめた本文。")
     _arguments.add_target_repo_arg(set_priority, help_extra="省略時は現在の作業リポジトリと一致するか確かめる。")

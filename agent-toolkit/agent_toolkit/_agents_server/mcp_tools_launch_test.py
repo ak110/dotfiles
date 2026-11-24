@@ -295,12 +295,14 @@ async def test_start_routes_each_mode_to_launch_kind_model_and_label(
     async with _manager_with_fake("codex") as (manager, backend):
         monkeypatch.setattr(mcp_tools, "_MANAGER", manager)
         task_document = launch_requests.resolve_task_document_path("exec")
+        contract = tmp_path / "work-contract.md"
+        contract.write_text("目的: 各リポジトリの履歴を読み取って照合する。", encoding="utf-8")
         calls: dict[str, dict[str, Any]] = {
             "task": {
                 "subagent_md_path": str(task_document),
                 "extra_params": _observed_input_params(task_document.name, tmp_path),
             },
-            "delegate": {"mode": "delegate", "prompt": "監査\n詳細", "model_type": "chores"},
+            "delegate": {"prompt": "監査\n詳細", "model_type": "chores", "whole_contract_path": str(contract)},
             "explore": {"mode": "explore", "prompt": "調査", "label": "explore-対象"},
             "write": {"mode": "write", "prompt": "起草"},
             "shell": {"mode": "shell", "command": "make test", "summary_policy": "終了状態"},

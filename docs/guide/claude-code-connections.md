@@ -1,6 +1,6 @@
 # agent-toolkitの接続設定
 
-認証の所在と使用順は、`atk serve`の「設定」の「接続」で変更する。
+Codexの認証の所在と各エンジンの使用順は、`atk serve`の「設定」の「接続」で変更する。
 
 接続の準備と切替条件を扱う。
 保存するコマンドは[接続の設定例](claude-code-connection-examples.md)を参照。
@@ -17,12 +17,11 @@
 | `credits` | 有限のAPIクレジット | ClaudeはAPI接続のenvファイル、Codexは`config.toml`のprovider定義 |
 | `payg` | 従量課金API | `credits`と同じ形式で、接続先とキーを別に用意する |
 
-設定は認証の所在と使用順の2系統に分かれる。
+Claudeの認証には[種別ごとのenvファイル](#認証の用意)を用意する。
 画面を開けない場合は`atk config set <キー> <値>`で保存する。
 
 | キー | 内容 | 初期値 |
 | --- | --- | --- |
-| `claude_credits_env_file`・`claude_payg_env_file` | ClaudeのAPIクレジット・従量課金APIの環境変数を書いたenvファイル | 空 |
 | `codex_credits_provider`・`codex_payg_provider` | Codexの`config.toml`の`model_providers`に定義したprovider ID（`openai`も指定できる） | 空 |
 | `claude_orchestrator_connections`・`codex_orchestrator_connections` | 統括担当の使用順 | `subscription,credits` |
 | `claude_worker_connections`・`codex_worker_connections` | 委譲先の使用順 | `credits,subscription` |
@@ -31,9 +30,10 @@
 認証を設定していない種別は候補から除くため、使える接続が1〜2種類の環境でも同じ使用順のまま使える。
 従量課金は追加料金が発生するため初期値の使用順に含めず、使用順へ`payg`を書いた役割だけが使う。
 
-- エンジンごとに4キーのどれも設定しない場合は、親の環境変数と通常の認証（ClaudeはAPIキー・Bedrock・Vertexなど、Codexは`config.toml`の通常設定）をそのまま使い、別の接続へ切り替えない。
-- いずれかのキーを設定し、ある役割で使える接続が1つも無い場合は、原因と設定方法を表示して起動を止める。
-- envファイルが空・不在・不正な場合は、その種別を除いて対象パスと修正方法を表示する。
+- エンジンごとに使用順を設定せず、API認証も用意していない場合は、親の環境変数と通常の認証（ClaudeはAPIキー・Bedrock・Vertexなど、Codexは`config.toml`の通常設定）をそのまま使い、別の接続へ切り替えない。
+- 接続を設定していて、ある役割で使える接続が1つも無い場合は、原因と設定方法を表示して起動を止める。
+- 空・不在・不正なenvファイルの種別は候補から除く。
+  使用順にあるファイルが空か不正なら対象パスと修正方法を表示する。
 - [APIクレジット](https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers)はClaude APIとAgent SDKを対象とし、Claude Codeを対象外とする。
   そのため`claude` CLIで起動するClaudeの統括担当（`atk wi process-loop`・`atk run-skill`）は`credits`を候補から除く。
   Agent SDKで起動する`agents_server`のClaudeは`credits`を使う。
@@ -103,9 +103,9 @@ Claude統括が上限で停止した場合は、旧CLIの終了確認後に同�
 
 ### 認証の用意
 
-ClaudeのAPI接続は、接続用の環境変数をenvファイルへ保存してパスを設定する。
+ClaudeのAPI接続は、接続用の環境変数を種別ごとのenvファイルへ保存する。
 Anthropicへ直接接続する場合は、[Claude ConsoleのAPI keys](https://platform.claude.com/settings/keys)で発行したキーを`ANTHROPIC_API_KEY`へ記入し、Consoleで課金設定も用意する。
-APIクレジットは`~/.config/claude-credits.env`、従量課金APIは`~/.config/claude-payg.env`を例とし、それぞれ次の内容で作成する。
+`atk config get config_dir`が返すディレクトリに、APIクレジットなら`claude-credits.env`、従量課金APIなら`claude-payg.env`を作る。
 
 ```dotenv
 ANTHROPIC_API_KEY=YOUR_API_KEY
@@ -130,9 +130,11 @@ CodexのAPI接続は、`config.toml`へ接続先とAPIキーの環境変数名�
 `claude_api_env_file`・`claude_orchestrator_api_only`・`claude_worker_api_first`・`claude_api_mode`・`codex_model_providers`は廃止した。
 保存済みの値は、次に`atk config`を実行するか委譲先を起動した時に新しいキーへ自動で移し、旧キーを削除する。
 
-- Claudeのenvファイルは、委譲先をAPI優先にしていた（旧`api-credits`）場合は`claude_credits_env_file`へ、それ以外は`claude_payg_env_file`へ移り、旧設定の役割別の方針を使用順へ書き換える。
+- 旧`claude_credits_env_file`・`claude_payg_env_file`で指定したファイルは、種別ごとの固定名へ移る。
+  環境変数で旧パスを指定していた場合は、移行後にその変数を解除する。
+  さらに古い`claude_api_env_file`の保存値は旧`api-credits`ならクレジット、それ以外なら従量課金の固定名へ移り、役割ごとの方針を使用順へ移す。
 - Codexの`openai`は`subscription`、それ以外のprovider IDは`codex_payg_provider`へ移り、元の順序を両役割の使用順へ書く。
   `openai`以外のprovider IDが2つ以上ある場合は自動で移さず、新しいキーの設定を求めるエラーを表示する。
 - Codexの移行はアカウント種別を見ないため、APIキーでログインして`openai`を並べていた環境は、移行後の診断に従って`codex_payg_provider`か`codex_credits_provider`へ`openai`を設定し直す。
 
-旧キーの環境変数を設定している場合と、`atk config set`・`get`へ旧キーを渡した場合は、移行先のキー名を示すエラーで終わる。
+`atk config set`・`get`へ旧キーを渡した場合は、移行先を示すエラーで終わる。

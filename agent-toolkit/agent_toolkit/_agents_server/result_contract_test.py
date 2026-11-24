@@ -609,7 +609,7 @@ def _role_session(name: str, **fields: Any) -> state.SessionState:
         ("exec.subagent.md", "実装完了\n検証結果: 全件成功", True),
         ("exec.subagent.md", "対応完了（再レビュー不要）", True),
         ("exec.subagent.md", "実装は途中で、統合完了までは進めていない", False),
-        ("usability-review.subagent.md", "判定: 合格\n根拠: 主要シナリオを操作した", True),
+        ("usability-review.subagent.md", "判定: 合格\n根拠: 主要シナリオを操作した", False),
     ],
 )
 def test_role_task_requires_fixed_line_or_classified_reason(name: str, message: str, valid: bool) -> None:
@@ -736,3 +736,24 @@ def test_invalid_freeform_fails_after_one_recovery(kind: state.LaunchKind, tmp_p
     assert not result_contract.hold_invalid_result(session, result)
     assert result["status"] == "failed" and result["agent_message"] == message
     assert result["error"]["resultContract"]
+
+
+@pytest.mark.parametrize(
+    ("comparison", "valid"),
+    [("CLIの一覧と実画面を並べ、状態の列位置と表示項目を比較した", True), ("", False), ("外部類例との比較は未確認", False)],
+)
+def test_usability_pass_requires_each_whole_screen_observation(comparison: str, valid: bool) -> None:
+    session = _role_session("usability-review.subagent.md")
+    message = (
+        "判定: 合格\n"
+        f"類例の比較: {comparison}\n"
+        "情報設計: 既定のホストを上部に置き、左の分類から設定を切り替える\n"
+        "行の揃い: 広幅・狭幅で状態の位置を比較した\n"
+        "冗長表示: 一覧の値がない行に固定文言が出ない\n"
+        "入力負担: 期限を日時欄から選べる\n"
+        "modern-web-guidanceのガイドと適用結果: フォームのラベルとエラー通知を実画面で確認した"
+    )
+    reason = result_contract.invalid_result_reason(session, {"status": "completed", "agent_message": message})
+    assert (reason is None) is valid
+    if reason:
+        assert "類例の比較" in reason

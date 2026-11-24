@@ -4,6 +4,8 @@ import os
 import pathlib
 from collections.abc import Iterable
 
+from agent_toolkit._atk.wi import uwi_scan
+from agent_toolkit._atk.wi.constants import WI_TYPE_UWI
 from agent_toolkit._atk.wi.entries import EntryRecord, canonical_repo
 from agent_toolkit._common import delegated_session, process_loop_session, session_state
 from agent_toolkit._common.atomic_file import atomic_write
@@ -67,6 +69,41 @@ def new_entries(entries: Iterable[EntryRecord], baseline: frozenset[Identifier])
 
 
 _PROGRESS_SNAPSHOTS = "process_loop_progress_snapshots"
+_PROCESSING_STARTED = "process_loop_processing_started"
+
+
+def _progress_session_id(*, include_delegate: bool = False) -> str | None:
+    if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1":
+        return None
+    conversation = delegated_session.current_conversation_session_id(os.environ)
+    expected = process_loop_session._expected_session_id(os.environ)  # noqa: SLF001  # pylint: disable=protected-access
+    if delegated_session.is_delegated(os.environ):
+        owner = delegated_session.owner_session_id(os.environ)
+        return expected if include_delegate and owner == expected else None
+    return expected if conversation is None or conversation == expected else None
+
+
+def processing_started(session_id: str, private_notes: pathlib.Path) -> frozenset[str]:
+    roots = session_state.read_state(session_id).get(_PROCESSING_STARTED)
+    names = roots.get(str(private_notes.resolve())) if isinstance(roots, dict) else None
+    return frozenset(name for name in names if isinstance(name, str)) if isinstance(names, list) else frozenset()
+
+
+def remember_processing_started(private_notes: pathlib.Path, filenames: Iterable[str]) -> None:
+    session_id = _progress_session_id(include_delegate=True)
+    new_names = set(filenames)
+    if not session_id or not new_names:
+        return
+    location = str(private_notes.resolve())
+
+    def remember(state: dict) -> dict:
+        previous = state.get(_PROCESSING_STARTED)
+        roots = previous if isinstance(previous, dict) else {}
+        names = roots.get(location)
+        known = {name for name in names if isinstance(name, str)} if isinstance(names, list) else set()
+        return {**state, _PROCESSING_STARTED: {**roots, location: sorted(known | new_names)}}
+
+    session_state.update_state(session_id, remember)
 
 
 def remember_progress_start(
@@ -74,13 +111,11 @@ def remember_progress_start(
     private_notes: pathlib.Path,
     targets: Iterable[tuple[str, str | None]],
     digest: str,
+    entries: Iterable[EntryRecord],
 ) -> None:
-    if os.environ.get("AGENT_TOOLKIT_PROCESS_LOOP_SESSION") != "1" or delegated_session.is_delegated(os.environ):
+    if not (session_id := _progress_session_id()):
         return
-    conversation = delegated_session.current_conversation_session_id(os.environ)
-    expected = process_loop_session._expected_session_id(os.environ)  # noqa: SLF001  # pylint: disable=protected-access
-    if not expected or (conversation is not None and conversation != expected):
-        return
+    unanswered = identifiers(entry for entry in entries if entry[4] == WI_TYPE_UWI and not uwi_scan.is_uwi_answered(entry[2]))
     updates = {
         json.dumps([repo, branch]): {
             "repo": repo,
@@ -88,6 +123,7 @@ def remember_progress_start(
             "path": str(path.resolve()),
             "digest": digest,
             "notes": str(private_notes.resolve()),
+            "unanswered": sorted(unanswered),
         }
         for repo, branch in targets
     }
@@ -99,7 +135,7 @@ def remember_progress_start(
         rows = previous if isinstance(previous, dict) else {}
         return {**state, _PROGRESS_SNAPSHOTS: {**updates, **rows}}
 
-    session_state.update_state(expected, remember)
+    session_state.update_state(session_id, remember)
 
 
 def progress_sources(session_id: str) -> dict:

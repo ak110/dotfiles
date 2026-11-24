@@ -67,19 +67,23 @@ def test_cmd_add_accepts_agent_awi_without_alignment_record(
     assert "1件をinboxへ投入した" in capsys.readouterr().out
 
 
-def test_cmd_add_preserves_explicit_alignment_frontmatter(
+def test_cmd_add_ignores_retired_frontmatter(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     notes = _setup_notes(tmp_path)
     _patch_cmd_add_operations(monkeypatch)
-    message = f"---\nscope_alignment: old-value\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
+    message = (
+        "---\nscope_alignment: old-value\nconfirmation: required\nobservation_wait: old-value\n"
+        f"origin_session: old-value\norigin_locator: old-value\nsource: test\n---\n\n{_AGENT_AWI_BODY}"
+    )
     _run_public_add(_cmd_add_args(tmp_path, message), notes, _FIXED_DT, tmp_path)
     saved_path = next(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
     saved = saved_path.read_text(encoding="utf-8")
-    assert "scope_alignment: old-value" in saved
-    assert '"scope_alignment": "old-value"' in capsys.readouterr().out
+    output = capsys.readouterr().out
+    for key in ("scope_alignment", "confirmation", "observation_wait", "origin_session", "origin_locator"):
+        assert key not in saved and key not in output
 
 
 def test_add_parser_rejects_removed_alignment_option(capsys: pytest.CaptureFixture[str]) -> None:

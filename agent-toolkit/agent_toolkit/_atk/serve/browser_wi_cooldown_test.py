@@ -185,6 +185,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     # 保存済みの期限は詳細のメタデータに保存値のまま残り、解除日時としては示さない。
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text(deadline)
     await playwright.async_api.expect(detail.locator("#detail-metadata")).not_to_contain_text("2099/01/02 09:00 JST")
+    await detail.locator("#detail-more > summary").click()
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("uwi / inbox")
@@ -194,6 +195,7 @@ async def test_cooldown_expiry_updates_visible_states(browser_harness: _BrowserH
     detail = page.get_by_role("dialog", name="詳細")
     await playwright.async_api.expect(detail.locator("#detail-state")).to_have_text("awi / cooldown")
     await playwright.async_api.expect(detail.locator("#detail-metadata")).to_contain_text("2099/01/02 09:00 JST")
+    await detail.locator("#detail-more > summary").click()
     await detail.locator("#delete-button").click()
     deletion = page.get_by_role("dialog", name="削除の確認")
     await playwright.async_api.expect(deletion.locator("#delete-state")).to_have_text("awi / cooldown")

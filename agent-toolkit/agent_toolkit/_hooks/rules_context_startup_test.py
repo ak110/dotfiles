@@ -200,6 +200,10 @@ def test_startup_input_is_delivered_only_to_main(source, host, actor, monkeypatc
         before, contract = context.split("終了契約", 1)
         assert "作業を始める前" in before and "references/answer-transitions.md" in before
         assert "playbooks/report-completion.md" in contract and "answer-transitions" not in contract
+        guidance = contract.splitlines()[0]
+        assert ("`Read`" in guidance) == (host == "claude")
+        assert ("全文" in guidance) == (host == "claude")
+        assert ("`/atk-mode report-completion`" in guidance) == (host == "claude")
     else:
         assert 'kind="startup-input"' not in context
 

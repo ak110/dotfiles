@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 
@@ -80,3 +81,24 @@ def test_input_count_since_update_distinguishes_first_observation(
     updated = work_contract.observe_input("counting")
     assert updated is not None and "作業契約の最終更新後の実ユーザー発話: 1件（今回を含む）" in updated
     assert "最終更新: `" not in updated
+
+
+def test_updated_contract_checks_actual_user_utterance(tmp_path, monkeypatch):
+    contract = tmp_path / "work-contract.md"
+    transcript = tmp_path / "conversation.jsonl"
+    original = "オーバーエンジニアリングと言えば、 weekly_research_x_env_file とかも設定項目作る意味無くない？"
+    edited = original.replace("とかも", "も")
+    transcript.write_text(
+        json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": original}})
+        + "\n"
+        + json.dumps({"type": "event_msg", "payload": {"type": "agent_message", "message": edited}})
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(work_contract, "record_path", lambda _sid: contract)
+    contract.write_text(f"## 追加要求（U5）\n\n- 原文: 「{edited}」\n", encoding="utf-8")
+    warning = work_contract.quote_update_warning("session", str(transcript))
+    assert warning is not None and "3行目" in warning
+    assert work_contract.quote_update_warning("session", str(transcript)) is None
+    contract.write_text(f"## 追加要求（U5）\n\n- 原文: 「{original}」\n", encoding="utf-8")
+    assert work_contract.quote_update_warning("session", str(transcript)) is None

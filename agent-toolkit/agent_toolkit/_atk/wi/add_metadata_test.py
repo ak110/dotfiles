@@ -332,8 +332,6 @@ def test_flat_add_operation_rejects_input_queue_schedule(
         ("reservation", "forged"),
         ("reservation_companion", "forged"),
         ("target_commit_history", "forged"),
-        ("origin_session", "forged-session"),
-        ("origin_locator", "forged-rollout:1"),
         ("submitter_session", "forged-session"),
         ("plan_file", "$(atk config get private_notes)/plans/2026/09/forged.md"),
     ],
@@ -364,7 +362,7 @@ def test_flat_add_operation_rejects_reserved_metadata_atomically(
                 source=None,
                 now=_FIXED_DT,
                 entry_type=entry_type,
-                question_type="yes-no" if entry_type == WI_TYPE_UWI else None,
+                question_type="post-approval" if entry_type == WI_TYPE_UWI else None,
             )
         assert error.value.next_action
         assert not list(notes.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/*.md"))
@@ -490,3 +488,44 @@ def test_cli_add_outputs_missing_source_and_extra_frontmatter_as_none(
     output = capsys.readouterr().out
     assert "    source: なし\n" in output
     assert "    extra_frontmatter: なし\n" in output
+
+
+@pytest.mark.parametrize("question_type", ["choice", "yes-no"])
+def test_uwi_accepts_matching_metadata_and_rejects_conflicts(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    question_type: str,
+) -> None:
+    notes = tmp_path / "private-notes"
+    monkeypatch.setattr(_wi_sync, "repo_lock", lambda *_args, **_kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(_wi_sync, "pull", lambda _path: None)
+    monkeypatch.setattr(_wi_sync, "commit_and_push", lambda *_args, **_kwargs: None)
+    message = "---\ntype: uwi\nscope: review\nquestion_type: choice\nchoices: [第一案, 第二案]\n---\n\nどちらを選ぶか。"
+    if question_type != "choice":
+        with pytest.raises(WebInputError, match="question_type"):
+            add_module.add_entries(
+                notes,
+                messages=[message],
+                target_repo="github.com/example/repo",
+                source=None,
+                now=_FIXED_DT,
+                entry_type=WI_TYPE_UWI,
+                scope="review",
+                question_type=question_type,
+                choices="第一案,第二案",
+            )
+        assert not list(notes.rglob("*.md"))
+    else:
+        [filename] = add_module.add_entries(
+            notes,
+            messages=[message],
+            target_repo="github.com/example/repo",
+            source=None,
+            now=_FIXED_DT,
+            entry_type=WI_TYPE_UWI,
+            scope="review",
+            question_type=question_type,
+            choices="第一案, 第二案",
+        )
+        [saved] = notes.rglob(filename)
+        assert "choices: 第一案,第二案" in saved.read_text(encoding="utf-8")

@@ -29,6 +29,9 @@ def test_mcp_setting_names_follow_public_config_keys(
             assert exited.value.code == 2
             assert "旧接続設定" in capsys.readouterr().err
             monkeypatch.delenv(name)
+        elif key in config_settings.RETIRED_FIXED_KEYS or key in config_settings.LEGACY_REMOTE_HOSTS_KEYS:
+            assert name in names
+            assert key not in keys
         elif key in config_settings.RETIRED_MODEL_KEYS:
             with pytest.raises(SystemExit) as exited:
                 atk.main(["config", "get", key])

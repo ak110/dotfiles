@@ -22,7 +22,7 @@ from agent_toolkit._agents_server import (
     state,
 )
 from agent_toolkit._agents_server import manager as server_manager
-from agent_toolkit._atk import claude_connection, config
+from agent_toolkit._atk import claude_connection, config, config_settings
 from agent_toolkit._common.claude_usage_limit import UsageLimitState
 from agent_toolkit._testing.agents_server_support import (
     AssistantMessage,
@@ -433,15 +433,15 @@ async def test_mcp_reconnect_is_once_per_new_and_resumed_process(
 async def test_subscription_sdk_and_settings_isolate_custom_api_keys_on_resume(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, launch_kind: state.LaunchKind, injection: str
 ) -> None:
-    path = tmp_path / "api.env"
+    root = config_settings.config_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "claude-credits.env"
     path.write_text(
         "CUSTOM_CONNECTION=api-only\nAWS_PROFILE=api-profile\nANTHROPIC_DEFAULT_SONNET_MODEL=api-model\n", encoding="utf-8"
     )
-    payg_path = tmp_path / "payg.env"
+    payg_path = root / "claude-payg.env"
     payg_path.write_text("PAYG_ONLY=payg-endpoint\n", encoding="utf-8")
     connection = claude_connection.Connection("subscription", isolation_env_files=(str(path), str(payg_path)))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_CREDITS_ENV_FILE", str(path))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_CLAUDE_PAYG_ENV_FILE", str(payg_path))
     monkeypatch.setattr(claude_connection, "candidates", lambda *_args, **_kwargs: claude_connection.Candidates((connection,)))
     keys = ("CUSTOM_CONNECTION", "AWS_PROFILE", "ANTHROPIC_DEFAULT_SONNET_MODEL", "PAYG_ONLY")
     for key in keys:

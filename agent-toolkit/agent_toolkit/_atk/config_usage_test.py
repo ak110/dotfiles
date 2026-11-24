@@ -11,6 +11,8 @@ from agent_toolkit._testing.config_support import (
     _isolate_platformdirs,
     _isolate_serve_environment_fixture,
     _main,
+    _saved,
+    _write_config,
 )
 
 __all__ = ["_isolate_platformdirs", "_isolate_serve_environment_fixture"]
@@ -117,3 +119,27 @@ def test_usage_refresh_displays_observed_quota_and_reset_inventory(
 def test_invalid_temporary_input_does_not_save(tmp_path: pathlib.Path, key: str, value: str, extra: list[str]) -> None:
     assert _main(tmp_path, "config", "temporary", "set", key, value, *extra) == 2
     assert not config_usage.temporary_settings()
+
+
+def test_legacy_inventory_migrates_without_granting_permission(tmp_path, capsys):
+    inventory = [
+        {
+            "id": "right",
+            "engine": "claude",
+            "account": "account",
+            "scope": "all",
+            "count": 2,
+            "from": "1970-01-01T00:00:00+00:00",
+            "until": "1970-01-01T00:10:00+00:00",
+        },
+    ]
+    _write_config(tmp_path, {"claude_reset_inventory": json.dumps(inventory)})
+    assert _main(tmp_path, "config", "usage", "--json") == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["claude_reset_inventory"] == inventory
+    assert not result["claude_reset_advice"][0]["recommended"]
+    assert _saved(tmp_path) == {}
+    assert _main(tmp_path, "config", "usage", "--set-claude-reset-inventory", "[]") == 0
+    capsys.readouterr()
+    assert _main(tmp_path, "config", "usage", "--json") == 0
+    assert json.loads(capsys.readouterr().out)["claude_reset_inventory"] == []

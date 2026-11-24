@@ -167,6 +167,8 @@ def test_claude_read_of_whole_playbook_is_evidence(
     """
     supply_commit(tmp_path)
     playbook = plugin_resources.skill_document_path("atk-mode", "playbooks/report-completion.md")
+    _tool(tmp_path, "shell", "Bash", {"command": f'cat "{playbook}"'}, playbook.read_text(encoding="utf-8"), codex=False)
+    assert termination_order_advisor.evaluate(stop_payload(tmp_path, WORK_COMPLETE))[0] == "notify"
     response = claude_read_response(playbook, **read_range)
     _tool(tmp_path, "read", "Read", {"file_path": str(playbook), **read_range}, response, codex=False)
     assert _missing_completion(tmp_path) == ([] if accepted else ["commit"])

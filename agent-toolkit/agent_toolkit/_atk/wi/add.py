@@ -16,7 +16,6 @@ from agent_toolkit._atk.wi import cli_input as _wi_cli_input
 from agent_toolkit._atk.wi import entries as _wi_entries
 from agent_toolkit._atk.wi import filenames as _wi_filenames
 from agent_toolkit._atk.wi import frontmatter as _frontmatter
-from agent_toolkit._atk.wi import headings as _headings
 from agent_toolkit._atk.wi import layout as _wi_layout
 from agent_toolkit._atk.wi import sync as _wi_sync
 from agent_toolkit._atk.wi import user_comment as _user_comment
@@ -31,6 +30,7 @@ from agent_toolkit._atk.wi.add_validation import (
     _target_repo_error,
     _validate_add_entries,
     body_is_effectively_empty,
+    normalize_choices,
     normalize_cooldown_until,
     parse_entry_message,
     require_agent_awi_sections,
@@ -361,12 +361,14 @@ def add_entries(
     `target_commit`は`target_repo`と`target_branch`の解決結果が一致する項目にだけ記録する。
     """
     started_at = time.time()
+    choices = normalize_choices(choices)
     parsed_messages, normalized_target_repo, normalized_cooldown = _validate_add_entries(
         messages=messages,
         target_repo=target_repo,
         entry_type=entry_type,
         question_type=question_type,
         choices=choices,
+        scope=scope,
         target_commit=target_commit,
         source=source,
         cooldown_until=cooldown_until,
@@ -524,10 +526,8 @@ def read_body_files(paths: list[str]) -> list[str]:
     return bodies
 
 
-def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object], body: str) -> bool:
+def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]) -> bool:
     timing = getattr(args, "process_wi_timing", None)
-    kind = getattr(args, "process_wi_kind", None)
-    category = getattr(args, "defer_category", None)
     if args.type != WI_TYPE_AWI:
         return False
     in_process_wi = (
@@ -535,10 +535,7 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         or args.source == "process-wi"
         or data.get("source") == "process-wi"
     )
-    next_action = (
-        "process-wi-immediate-fix.md「即時対応」で判断し、--process-wi-kind <defect|improvement> と "
-        "--process-wi-timing this-run または --process-wi-timing next-run --defer-category <区分> を指定して再投入する"
-    )
+    next_action = "--process-wi-timing に this-run（今回）か next-run（次回）を指定して再投入する"
     if in_process_wi and timing is None and getattr(args, "hold", False):
         raise WebInputError(
             "process-wi実行中のAWIは--holdで保存できない",
@@ -546,24 +543,6 @@ def _require_process_wi_timing(args: argparse.Namespace, data: dict[str, object]
         )
     if in_process_wi and timing is None:
         raise WebInputError("process-wi実行中のAWI投入には対処の時機が必要", next_action=next_action)
-    if (timing is None) != (kind is None):
-        raise WebInputError("--process-wi-kindと--process-wi-timingは一緒に指定してください", next_action=next_action)
-    if (timing == "next-run" and not category) or (category is not None and timing != "next-run"):
-        raise WebInputError("--defer-categoryはnext-runの場合に限って必要", next_action=next_action)
-    if category == "throughput" and not dict(_headings.h2_sections(body)).get("次回へ渡す根拠", False):
-        raise WebInputError(
-            "throughputの判定根拠が本文にありません",
-            next_action="## 次回へ渡す根拠 に現在・次回の進行への影響と処理量を比較した結果を書いて再投入する",
-        )
-    if timing == "next-run" and kind == "defect" and category == "investigation":
-        raise WebInputError(
-            "確定した欠陥を調査（investigation）だけを理由に次回へ送れません",
-            next_action=(
-                "process-wi-immediate-fix.md「即時対応」の手順2に戻り、"
-                "--process-wi-kind defect --process-wi-timing this-run で再投入し、"
-                "process-wi-additions.md「処理対象WIの追加」に従って今回へ追加する"
-            ),
-        )
     return timing == "this-run"
 
 
@@ -622,7 +601,7 @@ def cmd_add(
                 )
             frontmatter, body = parse_entry_message(message, entry_type=args.type)
             if not args.dry_run:
-                join_current = _require_process_wi_timing(args, frontmatter, body) or join_current
+                join_current = _require_process_wi_timing(args, frontmatter) or join_current
             _require_agent_source(frontmatter, args.source)
             try:
                 require_agent_awi_sections(
@@ -707,7 +686,7 @@ def cmd_add(
         raise
     dependency_dir = private_notes / WI_STATE_INBOX
     canonical_dependencies = _normalize_dependencies(args.depends_on, dependency_dir)
-    choices = ",".join(args.choices) if args.choices is not None else None
+    choices = normalize_choices(",".join(args.choices)) if args.choices is not None else None
     saved_details: dict[str, dict[str, object | None]] = {}
     sources = [str(pathlib.Path(path).expanduser().resolve()) for path in body_files] if body_files else ["エディター入力"]
     try:
@@ -718,6 +697,7 @@ def cmd_add(
                 entry_type=args.type,
                 question_type=args.question_type,
                 choices=choices,
+                scope=args.scope,
                 target_commit=target_commit,
                 source=args.source,
                 cooldown_until=getattr(args, "cooldown_until", None),

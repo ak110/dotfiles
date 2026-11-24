@@ -292,6 +292,20 @@ def consume_resend(  # noqa: PLR0913 -- 記録の区別に要る値をキーワ�
     return repeated
 
 
+def forget_resends(session_id: str, actor: str, state_key: str) -> None:
+    """遮断の条件が解消した時に、その主体の再発行の記録を消す。再発した時は初回として改めて止める。  pyfltr: allow-comment"""
+
+    def update(state: dict) -> dict | None:
+        prior = state.get(state_key)
+        if not isinstance(prior, dict) or not prior.get(actor):
+            return None
+        state[state_key] = {key: value for key, value in prior.items() if key != actor}
+        return state
+
+    if session_id:
+        update_state(session_id, update)
+
+
 def record_skipped(session_id: str, actor: str, label: str, *, limit: int = 16) -> None:
     """警告を受けたまま、または再発行で遮断を解いて進めた出来事を、次の点検で確認させるため記録する。  pyfltr: allow-comment"""
     if not session_id:

@@ -637,8 +637,12 @@ def _catalog_tool_family(
                 timestamp = None
             if timestamp is not None and since < timestamp <= boundary:
                 events.append({**event, "session_id": parent.item.record_id})
-    provenance = _collection_events(collected, [], recoveries=False)
-    return events, unresolved, [(item._replace(records=[]), source) for item, source in zip(collected, provenance, strict=True)]
+    provenance_by_record = {
+        source["record"]: source
+        for source in _collection_events(collected, [], recoveries=False)
+        if source["kind"] == "record-provenance"
+    }
+    return events, unresolved, [(item._replace(records=[]), provenance_by_record[item.record_id]) for item in collected]
 
 
 def _catalog_user_parent(

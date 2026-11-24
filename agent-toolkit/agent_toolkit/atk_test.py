@@ -454,7 +454,7 @@ def test_wi_preview_keeps_pressure_cleanup_for_the_next_write(
 def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.CaptureFixture[str]) -> None:
     gib = 1024**3
     pressure = _managed_temp.SpacePressure(
-        100 * gib, 5 * gib, 12 * gib, 7 * gib, (("pytest-old", 4 * gib), ("big-area", 3 * gib)), None
+        100 * gib, 5 * gib, 12 * gib, 7 * gib, (("pytest-old", 4 * gib), ("big-area", 3 * gib))
     )
 
     atk._report_space_pressure(pressure)  # pylint: disable=protected-access
@@ -465,13 +465,13 @@ def test_report_space_pressure_writes_top_reclaimed_to_stderr(capsys: pytest.Cap
     assert "空き 5.0GiB→12.0GiB" in output.err
 
 
-def test_report_space_pressure_warns_with_usage_when_still_low(
+def test_report_space_pressure_warns_with_free_and_total_when_still_low(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
     monkeypatch.delenv(_sweep.MIN_FREE_RATIO_ENV, raising=False)
     gib = 1024**3
-    pressure = _managed_temp.SpacePressure(100 * gib, 3 * gib, 3 * gib, 0, (), 20 * gib)
+    pressure = _managed_temp.SpacePressure(100 * gib, 3 * gib, 3 * gib, 0, ())
 
     atk._report_space_pressure(pressure)  # pylint: disable=protected-access
 
@@ -480,4 +480,4 @@ def test_report_space_pressure_warns_with_usage_when_still_low(
     assert "自動掃引後も空きが不足" in output.err
     assert "回収できる対象が無い" not in output.err
     assert "作成者が終了すると次の起動で回収できる" not in output.err
-    assert "空き 3.0GiB / 容量 100.0GiB、一時rootの使用量 20.0GiB" in output.err
+    assert "空き 3.0GiB / 容量 100.0GiB" in output.err

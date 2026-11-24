@@ -21,7 +21,7 @@ from contextlib import redirect_stdout
 
 import pytest
 
-from agent_toolkit._atk import research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
+from agent_toolkit._atk import config_settings, research_sources, run_script, run_skill, run_skill_batch, weekly_schedule
 from agent_toolkit._atk.run_skill_execution import _SessionOutput
 
 if typing.TYPE_CHECKING:
@@ -102,7 +102,6 @@ def _flow(monkeypatch, tmp_path):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_REPOS", json.dumps([_REPO]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV_FILE", str(tmp_path / "x-api.env"))
     monkeypatch.setattr("time.time", lambda: _NOW)
     monkeypatch.setattr(run_skill._wi_add, "has_synced_run_report", lambda *_args, **_kwargs: True)  # noqa: SLF001  # pylint: disable=protected-access
     monkeypatch.setattr(run_skill_batch.repo, "resolve_repo_id_or_raise", lambda value, **_kwargs: value or _REPO)
@@ -126,13 +125,14 @@ def _flow(monkeypatch, tmp_path):
         output = io.StringIO()
         with redirect_stdout(output):
             assert run_script.dispatch(argparse.Namespace(script_name="research-sources", script_args=[])) == 0
-            mark = ["--mark-read", "web:hacker-news"]
+            mark = ["--mark-read", "changelog:claude-code", "web:hacker-news"]
             assert run_script.dispatch(argparse.Namespace(script_name="research-sources", script_args=mark)) == 0
         collected = json.loads(output.getvalue().partition("\n}\n")[0] + "\n}")
         sources = {source["source"]: source for source in collected["sources"]}
         lines = [f"- {name}: {value['status']} {value['count']}件 {value['reason']}" for name, value in sources.items()]
         posts = [item for source in collected["sources"] if source["source"].startswith("x:") for item in source["items"]]
         lines += [f"- {post['url']}（{post['created_at']}）: {post['text'][:20]}" for post in posts]
+        lines += ["- Claude Code 2.3.0: " + ("採用候補（hook）" if state.proposals else "見送り（既存WI）")]
         body = "## 読んだ情報源\n\n" + "\n".join(lines) + "\n- web:hacker-news: read\n"
         if state.proposals:
             message = f"# 外部情報の調査の提案\n\n{body}\n## 提案\n\n- P1: Claude Code 2.3.0のhookを使う\n"
@@ -193,7 +193,9 @@ def _entries() -> list[tuple[dict[str, object], str]]:
 @pytest.mark.parametrize(("proposals", "question_type"), [(True, "choice"), (False, "post-approval")])
 def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key, proposals, question_type):
     if x_key:
-        flow.work_dir.joinpath("x-api.env").write_text(f"{research_sources.X_TOKEN_VARIABLE}={_TOKEN}\n", encoding="utf-8")
+        path = config_settings.config_dir() / "x-api.env"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"{research_sources.X_TOKEN_VARIABLE}={_TOKEN}\n", encoding="utf-8")
     flow.proposals = proposals
     assert _manual(flow.work_dir) == 0
     assert flow.runs == ["research@2026-11-22"]
@@ -204,6 +206,7 @@ def test_manual_research_saves_one_result_without_full_text(flow, capsys, x_key,
     assert data["question_type"] == question_type
     assert data["weekly_slot"] == "research@2026-11-22"
     assert "changelog:claude-code: read 1件" in body
+    assert "Claude Code 2.3.0: " + ("採用候補（hook）" if proposals else "見送り（既存WI）") in body
     if x_key:
         assert "x:account:poteto: read 1件" in body
         assert "https://x.com/poteto/status/1001" in body

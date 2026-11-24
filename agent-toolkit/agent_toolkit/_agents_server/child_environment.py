@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, MutableMapping
 
 from agent_toolkit._agents_server import logging_config
-from agent_toolkit._atk import config
+from agent_toolkit._atk import claude_connection as claude_settings
 from agent_toolkit._common import claude_connection, delegated_session, inherited_venv, mcp_environment, runtime_environment
 
 _INHERITED: dict[str, str] = {}
@@ -11,9 +11,7 @@ _INHERITED: dict[str, str] = {}
 
 def prepare(environment: MutableMapping[str, str]) -> None:
     environment.pop(delegated_session.HANDOFF_PATH_ENV, None)
-    paths = (
-        path for key in ("claude_credits_env_file", "claude_payg_env_file") if (path := config.resolve_mutable_setting(key))
-    )
+    paths = claude_settings.isolation_env_files()
     keys = claude_connection.api_environment_keys(paths) | {"CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"}
     for key in keys:
         if key in environment:

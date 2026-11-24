@@ -81,7 +81,6 @@ AWIは保存・保留した項目だけを戻す。
    - 競合または全体検証の失敗が起きた場合は、メイン自身が解消・再検証・実行レビューを進める（解消の規模が大きい場合は通常レーンへ切り替えてよい）。
 5. 終了と公開後の後始末をする。
    - `atk wi adopt <WIファイル名> --commit <統合後の対象OID> --target-repo=<主作業ツリー>`でAWIを終了し、取り込んだcommitを他の処理対象WIと同じ通常の公開工程（版数更新、push、CIの検収、リリース）へ合流させる。
-     実装付きAWIは[効果確認](../references/effect-records.md)も指定する。
    - AWIに書いた更新種別と根拠は、公開工程で未公開の統合差分に適用する最上位の `bump種別` を決める担当へ渡す（`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`）。
    - リモート作業ブランチの削除は、公開工程でベースブランチへの`git push`成功を確認した後に公開担当が実行する。
      削除前に`merge_branch`が共有ブランチでないことと、リモート先端が`merge_commit`のまま変わっていないことを再確認し、`git push origin --delete <merge_branch>`を実行する（同名のローカルブランチがあれば`git branch -D`で削除する）。

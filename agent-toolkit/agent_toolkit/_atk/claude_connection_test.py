@@ -9,7 +9,7 @@ from typing import Any, cast
 import pytest
 
 from agent_toolkit._atk import claude_connection as connection
-from agent_toolkit._atk import orchestrator
+from agent_toolkit._atk import config_settings, orchestrator
 from agent_toolkit._atk.wi import process_loop_env, process_loop_session
 from agent_toolkit._common import claude_connection as settings
 from agent_toolkit._common import state_paths
@@ -79,8 +79,8 @@ def test_candidates_skip_unconfigured_kinds(
     assert [item.kind for item in choices.connections] == expected
     assert not choices.warnings
     paths = {item.kind: item.api_env_file for item in choices.connections}
-    assert paths.get("credits") in {None, str(tmp_path / "credits.env")}
-    assert paths.get("payg") in {None, str(tmp_path / "payg.env")}
+    for kind in {"credits", "payg"} & available:
+        assert paths[kind] == str(config_settings.config_dir() / f"claude-{kind}.env")
 
 
 @pytest.mark.parametrize("role", ["orchestrator", "delegate"])
@@ -155,11 +155,11 @@ def test_cli_uses_all_api_isolation_files(tmp_path: pathlib.Path, monkeypatch: p
 
 @pytest.mark.parametrize("invalid", ["missing", "directory", "malformed", "unreadable", "empty-file", "comments-only"])
 def test_invalid_env_file_disables_api_candidate(
-    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     invalid: str,
 ) -> None:
-    path = tmp_path / invalid
+    path = config_settings.config_dir() / "claude-credits.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
     if invalid == "directory":
         path.mkdir()
     elif invalid == "malformed":
@@ -174,11 +174,14 @@ def test_invalid_env_file_disables_api_candidate(
             raise PermissionError("権限なし")
 
         monkeypatch.setattr(settings, "read_api_env_file", denied)
-    _configure(monkeypatch, credits_file=str(path))
+    _configure(monkeypatch, worker_order="credits,subscription")
     choices = connection.candidates("delegate")
     assert [item.kind for item in choices.connections] == ["subscription"]
-    assert str(path) in choices.warnings[0]
-    assert "atk config set claude_credits_env_file" in choices.warnings[0]
+    if invalid == "missing":
+        assert not choices.warnings
+    else:
+        assert str(path) in choices.warnings[0]
+        assert "権限・記述を確認" in choices.warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -203,15 +206,14 @@ def test_saved_connection_moves_only_when_outside_order(
     assert connection.outside_order(saved, "delegate") is (saved != expected)
 
 
-@pytest.mark.parametrize(("path_name", "expected"), [("credits.env", "credits"), ("other.env", "payg")])
-def test_legacy_api_connection_resumes_with_saved_env_file(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, path_name: str, expected: str
-) -> None:
-    credits_file = _write_env(tmp_path / "credits.env")
-    saved = _write_env(tmp_path / path_name)
-    _configure(monkeypatch, credits_file=credits_file, worker_order="credits,payg,subscription")
+@pytest.mark.parametrize("kind", ["credits", "payg"])
+def test_legacy_api_connection_resumes_with_fixed_env_file(monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    root = config_settings.config_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    saved = _write_env(root / f"claude-{kind}.env")
+    _configure(monkeypatch, worker_order="subscription,credits,payg")
     resolved = connection.apply_current_settings(connection.Connection("api", saved), role="delegate")
-    assert (resolved.kind, resolved.api_env_file) == (expected, saved)
+    assert (resolved.kind, resolved.api_env_file) == (kind, saved)
 
 
 @pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])

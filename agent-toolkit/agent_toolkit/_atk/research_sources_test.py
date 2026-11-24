@@ -83,7 +83,7 @@ def _base_responses():
             200,
             _releases(("rust-v0.9", "2026-11-20T00:00:00Z"), ("rust-v0.8", "2026-11-01T00:00:00Z")),
         ),
-        "https://api.github.com/repos/sst/opencode/releases": (500, b'{"message": "Server Error"}'),
+        "https://api.github.com/repos/anomalyco/opencode/releases": (500, b'{"message": "Server Error"}'),
     }
 
 
@@ -114,9 +114,8 @@ def test_without_usage_start_x_api_is_not_called(x_settings):
     assert sources["changelog:codex"]["count"] == 1
 
 
-def test_missing_key_does_not_call_x_api(monkeypatch, tmp_path):
+def test_missing_key_does_not_call_x_api(monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ENV_FILE", str(tmp_path / "missing.env"))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
     fetch = _Recorded(_base_responses())
     result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
@@ -140,6 +139,7 @@ def test_reads_only_after_previous_position_and_commits_after_save(x_settings, m
     assert first["x:account:poteto"]["count"] == 3
     assert "start_time" in fetch.x_calls()[1]
     assert not research_sources.load_state()["positions"]
+    research_sources.mark_read(_SLOT, ("changelog:claude-code",))
     assert research_sources.commit_positions(_SLOT)
     state = research_sources.load_state()
     assert state["positions"]["x:account:poteto"] == "105"
@@ -170,8 +170,8 @@ def test_read_limit_stops_by_kind_without_overrequest(x_settings, monkeypatch, m
     """投稿一覧は5件、検索は10件が要求の最小であり、残りがそれに満たなければ送信しない。  pyfltr: allow-comment"""
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", str(max_posts))
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_USERS", "1")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", max_posts)
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_USERS", 1)
     responses = {
         **_base_responses(),
         f"{research_sources.X_API_BASE}/users/by/username/poteto": (200, b'{"data": {"id": "11"}}'),
@@ -198,7 +198,7 @@ def test_search_requests_at_least_ten_within_budget(x_settings, monkeypatch):
     del x_settings
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", "[]")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "10")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 10)
     responses = {**_base_responses(), f"{research_sources.X_API_BASE}/tweets/search/recent": _timeline(3, newest=310)}
     fetch = _Recorded(responses)
     sources = _by_source(research_sources.collect(_SLOT, fetch=fetch, now=_NOW))
@@ -212,7 +212,7 @@ def test_partial_read_keeps_unread_range_for_next_run(x_settings, monkeypatch):
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_API", "true")
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_ACCOUNTS", json.dumps(["poteto"]))
     monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_QUERIES", "[]")
-    monkeypatch.setenv("AGENT_TOOLKIT_CONFIG_WEEKLY_RESEARCH_X_MAX_POSTS", "5")
+    monkeypatch.setattr(research_sources.config_settings, "X_MAX_POSTS", 5)
     session_review.directory().joinpath("weekly").mkdir(parents=True, exist_ok=True)
     session_review.write(
         research_sources.positions_path(), {"positions": {"x:account:poteto": "100"}, "user_ids": {"poteto": "11"}}
@@ -354,6 +354,11 @@ def test_claude_code_position_is_not_skipped(position, baseline, status, version
     sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
     assert sources["changelog:claude-code"]["status"] == status
     assert [item["version"] for item in sources["changelog:claude-code"]["items"]] == versions
+    if status == "read":
+        research_sources.mark_read(_SLOT, ("changelog:claude-code",))
+    else:
+        with pytest.raises(ValueError, match="changelog:claude-code"):
+            research_sources.mark_read(_SLOT, ("changelog:claude-code",))
     research_sources.commit_positions(_SLOT)
     expected = "2.3.0" if status == "read" else position
     assert research_sources.load_state()["positions"]["changelog:claude-code"] == expected
@@ -379,6 +384,8 @@ def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach
     responses = {**_base_responses(), "https://api.github.com/repos/openai/codex/releases": _release_pages([newer, older])}
     sources = _by_source(research_sources.collect(_SLOT, fetch=_Recorded(responses), now=_NOW))
     codex = sources["changelog:codex"]
+    if reach_previous:
+        research_sources.mark_read(_SLOT, ("changelog:codex",))
     research_sources.commit_positions(_SLOT)
     position = research_sources.load_state()["positions"].get("changelog:codex")
     if reach_previous:
@@ -386,7 +393,7 @@ def test_github_releases_follow_pages_until_previous_position(monkeypatch, reach
         assert position == "2026-11-21T01:39:00+00:00"
     else:
         assert codex["status"] == "failed"
-        assert position is None
+        assert position == (_NOW - datetime.timedelta(days=7)).isoformat()
 
 
 def test_model_sources_advance_only_when_marked_read(monkeypatch):
@@ -395,7 +402,7 @@ def test_model_sources_advance_only_when_marked_read(monkeypatch):
     since = {source["source"]: source["since"] for source in first["model_sources"]}
     assert set(since) == {*research_sources.MODEL_SOURCES, "web:tools:github.com/test/package"}
     assert set(since.values()) == {(_NOW - datetime.timedelta(days=7)).isoformat()}
-    with pytest.raises(ValueError, match="model_sources"):
+    with pytest.raises(ValueError, match="x:account:poteto"):
         research_sources.mark_read(_SLOT, ("x:account:poteto",))
     assert research_sources.mark_read(_SLOT, ("web:antigravity",)) == ["web:antigravity"]
     assert research_sources.commit_positions(_SLOT)
@@ -413,11 +420,10 @@ def test_script_marks_model_sources_read(monkeypatch, capsys):
     assert run_script.dispatch(args) == 0
     assert json.loads(capsys.readouterr().out) == {"slot": _SLOT, "marked": ["web:hacker-news"]}
     research_sources.commit_positions(_SLOT)
-    assert research_sources.load_state()["positions"] == {
-        "changelog:claude-code": "2.3.0",
-        "changelog:codex": "2026-11-20T00:00:00+00:00",
-        "web:hacker-news": _NOW.isoformat(),
-    }
+    state = research_sources.load_state()["positions"]
+    assert state["web:hacker-news"] == _NOW.isoformat()
+    assert state["changelog:claude-code"] == "2.2.0"
+    assert state["changelog:codex"] == (_NOW - datetime.timedelta(days=7)).isoformat()
 
 
 @pytest.mark.parametrize(
@@ -457,8 +463,78 @@ def test_unread_range_result_is_kept_when_newer_range_fails(
     source = _by_source(result)["x:account:poteto"]
     assert source["status"] == status
     assert [item["id"] for item in source["items"]] == ids
+    assert result["x_api"]["posts_read"] == len(ids)
     assert _TOKEN not in json.dumps(result, ensure_ascii=False)
     research_sources.commit_positions(_SLOT)
     state = research_sources.load_state()
     assert state["positions"]["x:account:poteto"] == position
     assert state["gaps"].get("x:account:poteto") == gap
+
+
+def test_weekly_releases_require_review_of_truncated_versions_before_advancing():
+    release_url = "https://github.com/anomalyco/opencode/releases/tag/v2.4.0"
+    releases = [
+        {
+            "tag_name": "v2.4.0",
+            "published_at": "2026-11-20T00:00:00Z",
+            "html_url": release_url,
+            "body": "x" * 4001 + "\nMCP Events",
+        },
+        {"tag_name": "v2.3.2", "published_at": "2026-11-01T00:00:00Z"},
+    ]
+    responses = _base_responses()
+    responses.update(
+        {
+            "https://api.github.com/repos/anomalyco/opencode/releases": (200, json.dumps(releases).encode()),
+            "https://api.github.com/repos/modelcontextprotocol/modelcontextprotocol/releases": (200, b"[]"),
+            "https://api.github.com/repos/modelcontextprotocol/python-sdk/releases": (200, b"[]"),
+        }
+    )
+    fetch = _Recorded(responses)
+    result = research_sources.collect(_SLOT, fetch=fetch, now=_NOW)
+    sources = _by_source(result)
+    (item,) = sources["changelog:opencode"]["items"]
+    assert item["version"] == "v2.4.0"
+    assert item["url"] == release_url
+    assert item["truncated"] is True
+    assert sources["changelog:mcp-spec"]["status"] == "read"
+    assert sources["changelog:mcp-python-sdk"]["status"] == "read"
+    assert next(source for source in result["model_sources"] if source["source"] == "web:antigravity")["url"]
+
+    assert research_sources.commit_positions(_SLOT)
+    assert research_sources.load_state()["positions"]["changelog:opencode"] == (_NOW - datetime.timedelta(days=7)).isoformat()
+    next_slot = "research@2026-11-29"
+    later = _by_source(research_sources.collect(next_slot, fetch=fetch, now=_NOW + datetime.timedelta(days=7)))
+    assert [item["version"] for item in later["changelog:opencode"]["items"]] == ["v2.4.0"]
+    assert research_sources.mark_read(next_slot, ("changelog:opencode",)) == ["changelog:opencode"]
+    assert research_sources.commit_positions(next_slot)
+    assert research_sources.load_state()["positions"]["changelog:opencode"] == "2026-11-20T00:00:00+00:00"
+
+
+@pytest.mark.parametrize("first_posts", [0, 100])
+def test_shared_x_budget_reads_all_subscriptions(first_posts):
+    accounts = tuple(f"account{index}" for index in range(8))
+    queries = tuple(f"query {index}" for index in range(5))
+    ids = {account: str(index) for index, account in enumerate(accounts, 1)}
+    responses = {
+        f"{research_sources.X_API_BASE}/users/{user_id}/tweets": _timeline(first_posts if user_id == "1" else 100)
+        for user_id in ids.values()
+    }
+    responses[f"{research_sources.X_API_BASE}/tweets/search/recent"] = _timeline(100)
+    fetch = _Recorded(responses)
+    budget = research_sources.XBudget(max_posts=100, max_users=20)
+
+    results, _ = research_sources.read_x(
+        fetch, {"user_ids": ids}, accounts=accounts, queries=queries, budget=budget, now=_NOW, enabled=True, token=_TOKEN
+    )
+
+    timelines = _max_results(fetch, "/users/")
+    searches = _max_results(fetch, "/tweets/search/recent")
+    assert results[0].status == "read" and bool(results[0].items) == bool(first_posts)
+    assert len(timelines) == 8 and all(size >= 5 for size in timelines)
+    assert len(searches) == 5 and all(size >= 10 for size in searches)
+    assert all(result.status == "read" and result.items for result in results[1:])
+    assert budget.posts == 100
+    assert sum(timelines[1:] + searches) == (100 if first_posts == 0 else 100 - timelines[0])
+    if first_posts == 0:
+        assert sum(timelines[1:]) > 7 * 5

@@ -1,109 +1,145 @@
-import argparse
 import asyncio
+import base64
 import json
 import pathlib
+import re
+import subprocess
 import typing
 
 import quart
 
-from agent_toolkit._atk import config, config_repositories_cli, config_settings, config_usage
+from agent_toolkit._atk import config, config_migration, config_settings
 from agent_toolkit._atk.serve.config import ServeConfig
 from agent_toolkit._atk.serve.shell_routes import json_no_store, no_store, render_index, safe_base_path
 from agent_toolkit._atk.wi.web_input import WebInputError, web_input_error_from
-from agent_toolkit._common import runtime_environment, usage_observation, usage_settings
+from agent_toolkit._common.process_tree import run_with_timeout
 
 
-def settings_snapshot(serve: ServeConfig) -> dict[str, typing.Any]:
-    effective = config.resolved_settings(pathlib.Path.home())
-    saved = config_settings.load_config()
-    temporary = usage_settings.temporary_settings()
-    settings = {}
-    for key, default in config_settings.MUTABLE_KEY_DEFAULTS.items():
-        env = config_settings.config_env_name(key)
-        source = (
-            env
-            if runtime_environment.environment().get(env)
-            else "一時指定"
-            if key in temporary
-            else "保存値"
-            if key in saved
-            else "省略時の値"
+def _remote_hosts() -> tuple[str, ...]:
+    config_migration.migrate_serve_settings()
+    return config.parse_remote_hosts(config.resolve_mutable_setting("remote_hosts"))
+
+
+def _ssh(host: str, operation: str, payload: dict[str, typing.Any] | None = None) -> subprocess.CompletedProcess[bytes]:
+    # pyfltr: allow-comment Windowsのcmd.exeとPOSIXシェルで同じコマンドを使えるように、自由入力は標準入力で渡す。
+    return run_with_timeout(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "--", host, operation],
+        input=json.dumps(payload).encode("ascii") if payload is not None else b"",
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+
+
+def _ssh_unelevated(
+    host: str, operation: str, payload: dict[str, typing.Any] | None = None
+) -> subprocess.CompletedProcess[bytes]:
+    # pyfltr: allow-comment 配列の引数とbase64の本文は、PowerShellのコードとして展開しない。
+    arguments = ", ".join("'" + arg.replace("'", "''") + "'" for arg in operation.removeprefix("atk ").split())
+    script = "$env:PYTHONIOENCODING = 'utf-8'\n$global:LASTEXITCODE = 1\n"
+    script += f"$atkArgs = @({arguments})\n"
+    if payload is not None:
+        encoded = base64.b64encode(json.dumps(payload).encode("ascii")).decode("ascii")
+        script += f"$packet = [Text.Encoding]::ASCII.GetString([Convert]::FromBase64String('{encoded}'))\n"
+        script += "$packet | "
+    script += "& atk @atkArgs 2>$null\nexit $global:LASTEXITCODE\n"
+    try:
+        return run_with_timeout(
+            ["ssh-unelevated", "--timeout", "20", "--", host, "-"],
+            input=script.encode("utf-8"),
+            capture_output=True,
+            check=False,
         )
+    except FileNotFoundError as error:
+        raise ValueError("SSH先の設定を非昇格で操作するため、ローカルにssh-unelevatedを導入してください") from error
+
+
+type _ConfigRunner = typing.Callable[[str, str, dict[str, typing.Any] | None], subprocess.CompletedProcess[bytes]]
+
+
+_LEGACY_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_,./:@+-]*")
+_SETTING_KEY = re.compile(r"[a-z][a-z0-9_]*")
+_PATH_KEYS = {"config_dir", "state_dir", "data_dir", "private_notes"}
+
+
+def _remote_snapshot(host: str) -> tuple[dict[str, typing.Any], _ConfigRunner]:
+    platform = _ssh(host, "uname -s")
+    if platform.returncode == 255:
+        raise WebInputError("SSH先に接続できません", next_action="接続先とSSHの接続を確認する")
+    # pyfltr: allow-comment snapshotと旧版showは旧設定を移行するため、OSを判別してから実行する。
+    runner: _ConfigRunner = (
+        _ssh
+        if platform.returncode == 0 and platform.stdout.strip() in {b"Linux", b"Darwin", b"FreeBSD", b"OpenBSD", b"NetBSD"}
+        else _ssh_unelevated
+    )
+    result = runner(host, "atk config snapshot", None)
+    if result.returncode == 0:
+        snapshot = json.loads(result.stdout)
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("settings"), dict):
+            raise ValueError("SSH先の設定一覧を解釈できません")
+        for key, item in snapshot["settings"].items():
+            if not isinstance(item, dict):
+                raise ValueError("SSH先の設定一覧を解釈できません")
+            if key not in config_settings.MUTABLE_KEY_DEFAULTS:
+                item["read_only"] = True
+        return snapshot, runner
+    if runner is _ssh_unelevated and result.returncode == 125:
+        raise ValueError("非昇格の設定取得に失敗しました。SSH先でユーザーがログオンしているかを確認してください")
+    if result.returncode != 2:
+        raise ValueError("SSH先で設定を取得できません。接続とSSH先のatkの起動を確認してください")
+
+    legacy = runner(host, "atk config show", None)
+    if legacy.returncode != 0:
+        raise ValueError("SSH先で設定を取得できません。SSH先でatk config showの実行結果を確認してください")
+    settings, paths = {}, {}
+    for line in legacy.stdout.decode("utf-8", errors="replace").splitlines():
+        key, sep, value = line.partition(" ")
+        if not sep or not _SETTING_KEY.fullmatch(key):
+            continue
+        if key in _PATH_KEYS:
+            paths[key] = value
+            continue
+        known = key in config_settings.MUTABLE_KEY_DEFAULTS
         settings[key] = {
-            "effective": effective.pop(key),
-            "saved": saved.get(key, default),
-            "default": default,
-            "source": source,
-            "description": config_settings.setting_description(key),
-            "format": config_settings.setting_format(key),
+            "effective": value,
+            "saved": value,
+            "description": config_settings.setting_description(key) if known else "",
+            "format": config_settings.setting_format(key) if known else "",
             "choices": config_settings.SETTING_CHOICES.get(key),
-            "array": key in config_settings.ARRAY_KEYS,
-            "temporary": config_usage.allowed_temporary_key(key),
+            "read_only": not known or key == "repositories" or not _LEGACY_TOKEN.fullmatch(value),
         }
-    usage = usage_observation.snapshot()
-    state = usage_settings.read_settings()
-    return {
-        "settings": settings,
-        "paths": effective,
-        "listen": {"serve_host": [serve.host, serve.host_source], "serve_port": [serve.port, serve.port_source]},
-        "presets": config_settings.PRESET_MODELS,
-        "temporary": {"values": temporary, "until": state.get("until")},
-        "repositories": json.loads(config_repositories_cli.update_repositories(argparse.Namespace(repos_subcommand="list"))),
-        "model_candidates": {engine: sorted(names) for engine, names in config_settings.KNOWN_MODELS.items()},
-        "usage": config_usage.profile_windows(usage),
-        "model_order_policy": config_usage.MODEL_ORDER_POLICY,
-    }
+    if not settings:
+        raise ValueError("SSH先の設定を解釈できません。SSH先のatkの版を確認してください")
+    return {"legacy": True, "settings": settings, "paths": paths}, runner
 
 
-def _text(payload: dict[str, typing.Any], name: str, *, optional: bool = False) -> str | None:
-    value = payload.get(name)
-    if optional and value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{name}は文字列で指定してください")
-    return value
-
-
-def update_settings(payload: dict[str, typing.Any]) -> None:
+def _remote_update(host: str, payload: dict[str, typing.Any]) -> None:
+    snapshot, runner = _remote_snapshot(host)
     action = payload.get("action")
-    if action == "temporary-clear":
-        config_usage.update_temporary(None, None, None)
-        return
-    if action == "preset":
-        preset = _text(payload, "preset")
-        if preset not in config_settings.PRESET_MODELS:
-            raise ValueError("登録済みのプリセットを選んでください")
-        config.save_mutable_settings(config_settings.PRESET_MODELS[preset])
-        return
-    if action == "repo":
-        operation = _text(payload, "operation")
-        repo = _text(payload, "repo")
-        if operation not in ("add", "set", "remove") or not repo:
-            raise ValueError("登録操作とリポジトリを指定してください")
-        fields = ("edit", "path", "platforms", "branches", "default_branch", "merge_from")
-        values = {name: _text(payload, name, optional=True) for name in fields}
-        process_loop = payload.get("process_loop")
-        if process_loop is not None and not isinstance(process_loop, bool):
-            raise ValueError("process-loopの対象かどうかを指定してください")
-        if operation == "add" and not values["edit"]:
-            raise ValueError("編集可否を指定してください")
-        config_repositories_cli.update_repositories(
-            argparse.Namespace(repos_subcommand=operation, repo=repo, process_loop=process_loop, **values)
-        )
-        return
-    key, value = _text(payload, "key"), _text(payload, "value")
-    if key is None or value is None or key not in config_settings.MUTABLE_KEY_DEFAULTS:
-        raise ValueError("変更可能な設定を選んでください")
-    if action == "set":
-        config.save_mutable_settings({key: value})
-    elif action == "temporary":
-        config_usage.update_temporary(key, value, _text(payload, "until", optional=True))
-    elif action in ("array-add", "array-remove") and key in config_settings.ARRAY_KEYS:
-        updated = config.array_setting_update(key, value, remove=action == "array-remove")
-        if updated is not None:
-            config.save_mutable_settings({key: updated})
+    if action in ("set", "temporary", "array-add", "array-remove"):
+        key = config.operation_text(payload, "key")
+        if key is None or snapshot["settings"].get(key, {"read_only": True}).get("read_only"):
+            raise ValueError("このホストで変更できる設定を選んでください")
+    if not snapshot.get("legacy"):
+        result = runner(host, "atk config update", payload)
     else:
-        raise ValueError("設定の操作が不正です")
+        key, value = config.operation_text(payload, "key"), config.operation_text(payload, "value")
+        # pyfltr: allow-comment 旧版は標準入力に非対応のため、cmd.exe・POSIXシェルの両方で引用が不要な1引数に限る。
+        if action != "set" or key is None or value is None or not _LEGACY_TOKEN.fullmatch(value):
+            raise ValueError("この値を設定画面から保存するにはSSH先のatkを更新してください")
+        config_settings.validate_mutable_setting(key, value)
+        result = runner(host, f"atk config set {key} {value}", None)
+    if runner is _ssh_unelevated and result.returncode == 124:
+        raise ValueError("保存処理の結果を確認できません。SSH先の設定を読み直してから再試行してください")
+    if result.returncode != 0:
+        raise ValueError("SSH先のatkが設定を保存できませんでした。SSH先で設定と値の書式を確認してください")
+
+
+def _request_host() -> str:
+    host = quart.request.args.get("host", "")
+    if host and host not in _remote_hosts():
+        raise ValueError("ローカル設定のremote_hostsに登録したホストを選んでください")
+    return host
 
 
 def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
@@ -119,7 +155,21 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
     @app.get("/api/settings")
     async def settings_get() -> quart.Response:
         async with lock:
-            return json_no_store(await asyncio.to_thread(settings_snapshot, serve))
+            try:
+                host = await asyncio.to_thread(_request_host)
+                if host:
+                    snapshot, _ = await asyncio.to_thread(_remote_snapshot, host)
+                else:
+                    snapshot = await asyncio.to_thread(config.settings_snapshot, pathlib.Path.home())
+                    snapshot["listen"] = {
+                        "serve_host": [serve.host, serve.host_source],
+                        "serve_port": [serve.port, serve.port_source],
+                    }
+                snapshot["hosts"] = await asyncio.to_thread(_remote_hosts)
+            except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+                message = error if isinstance(error, ValueError) else ValueError("設定を読み込めませんでした")
+                raise web_input_error_from(message, next_action="ホストの設定とSSHの接続を確認する") from error
+            return json_no_store(snapshot)
 
     @app.post("/api/settings")
     async def settings_post() -> quart.Response:
@@ -128,7 +178,11 @@ def register_settings_routes(app: quart.Quart, serve: ServeConfig) -> None:
             raise WebInputError("JSONオブジェクトを指定してください", next_action="画面から値を入力して保存する")
         async with lock:
             try:
-                await asyncio.to_thread(update_settings, payload)
-            except (ValueError, TypeError) as error:
+                host = await asyncio.to_thread(_request_host)
+                if host:
+                    await asyncio.to_thread(_remote_update, host, payload)
+                else:
+                    await asyncio.to_thread(config.update_settings, payload)
+            except (ValueError, TypeError, OSError, subprocess.TimeoutExpired) as error:
                 raise web_input_error_from(error, next_action="説明で受理される値を確認し、入力を直して保存する") from error
         return json_no_store({"saved": True})

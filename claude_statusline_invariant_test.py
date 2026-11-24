@@ -17,6 +17,7 @@ from pytools._internal import setup_statusline_binary
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 _STATE_CONTRACT = _ROOT / "rust" / "claude-statusline" / "testdata" / "agents_server_state.json"
+_CI_WORKFLOW = _ROOT / ".github" / "workflows" / "ci.yaml"
 _RELEASE_WORKFLOW = _ROOT / ".github" / "workflows" / "release-statusline.yaml"
 
 
@@ -64,14 +65,11 @@ def test_state_directory_layout_matches_state_fixture() -> None:
 
 
 def test_release_asset_names_match_setup_statusline_binary() -> None:
-    """release workflowがビルドして公開する配布物の名前が、post-applyが取得する名前と一致する。
-
-    一方だけを変えると、post-applyはReleaseに無い名前を取得しようとして配置に失敗する。
-    """
     workflow = yaml.safe_load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"))
     expected = {setup_statusline_binary.ASSET_NAME_POSIX, setup_statusline_binary.ASSET_NAME_WINDOWS}
 
-    built = {entry["asset"] for entry in workflow["jobs"]["build"]["strategy"]["matrix"]["include"]}
+    ci = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
+    built = {entry["asset"] for entry in ci["jobs"]["statusline-build"]["strategy"]["matrix"]["include"]}
     published = {
         token.removeprefix("assets/")
         for step in workflow["jobs"]["release"]["steps"]
@@ -82,3 +80,34 @@ def test_release_asset_names_match_setup_statusline_binary() -> None:
 
     assert built == expected
     assert published == expected
+
+
+def test_statusline_release_consumes_attested_artifacts_from_triggering_ci() -> None:
+    ci = yaml.safe_load(_CI_WORKFLOW.read_text(encoding="utf-8"))
+    build = ci["jobs"]["statusline-build"]
+    assert build["needs"] == "common-ci-owner"
+    assert build["if"] == "needs.common-ci-owner.outputs.statusline_release == 'true'"
+    assert build["steps"][0]["with"]["ref"] == "${{ github.sha }}"
+    assert build["permissions"] == {
+        "contents": "read",
+        "id-token": "write",
+        "attestations": "write",
+        "artifact-metadata": "write",
+    }
+    attest, upload = build["steps"][-2:]
+    assert attest["uses"].startswith("actions/attest@")
+    assert "if" not in attest and "continue-on-error" not in attest
+    assert attest["with"]["subject-path"] == upload["with"]["path"] == "${{ matrix.asset }}"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["with"]["name"] == "statusline-release-${{ matrix.asset }}"
+    assert upload["with"]["overwrite"] is True
+
+    workflow = yaml.safe_load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"))
+    release = workflow["jobs"]["release"]
+    assert release["steps"][0]["with"]["ref"] == "${{ needs.gate.outputs.head_sha }}"
+    download = next(step["with"] for step in release["steps"] if step.get("uses", "").startswith("actions/download-artifact@"))
+    assert download["run-id"] == "${{ github.event.workflow_run.id }}"
+    assert download["github-token"] == "${{ github.token }}"
+    assert download["pattern"] == "statusline-release-*"
+    assert download["merge-multiple"] is True
+    assert release["permissions"] == {"actions": "read", "contents": "write"}

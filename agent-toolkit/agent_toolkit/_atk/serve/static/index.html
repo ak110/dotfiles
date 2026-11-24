@@ -154,18 +154,20 @@
       <div id="detail-dialog-body" class="dialog-body" tabindex="0">
         <div id="detail-alert" class="dialog-message error-message" role="alert" hidden></div>
         <div id="detail-status" class="dialog-message success-message" role="status" hidden></div>
-        <section id="detail-view" hidden>
-          <div class="detail-title-row">
-            <h3 id="detail-filename"></h3>
-            <span id="detail-state" class="state-badge"></span>
-          </div>
-          <dl id="detail-metadata" class="metadata"></dl>
-          <p id="readonly-notice" class="readonly-notice" hidden>この項目は編集と回答の対象外です。</p>
-          <section class="detail-body">
-            <h3>本文</h3>
-            <div id="detail-content" class="entry-content markdown-body"></div>
+        <template id="detail-view-template">
+          <section id="detail-view" hidden>
+            <div class="detail-title-row">
+              <h3 id="detail-filename"></h3>
+              <span id="detail-state" class="state-badge"></span>
+            </div>
+            <dl id="detail-metadata" class="metadata detail-metadata"></dl>
+            <p id="readonly-notice" class="readonly-notice" hidden>この項目は編集と回答の対象外です。</p>
+            <section class="detail-body">
+              <h3>本文</h3>
+              <div id="detail-content" class="entry-content markdown-body"></div>
+            </section>
           </section>
-        </section>
+        </template>
         <section id="edit-panel" class="edit-panel" hidden>
           <h3>ファイル全体を編集</h3>
           <label for="edit-content">ファイル全体（メタデータを含む、必須）</label>
@@ -201,25 +203,28 @@
           </div>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
-        <div class="detail-footer-delete">
-          <button id="delete-button" class="button-danger" type="button">削除</button>
-        </div>
         <div class="detail-footer-left">
           <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
-          <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
-          <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
-          <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
-          <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
         </div>
         <div class="detail-footer-right">
-          <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
-          <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
           <button id="confirm-reject-button" class="button-danger" type="button" hidden>却下を確定</button>
         </div>
+        <details id="detail-more" class="detail-more" open>
+          <summary>その他の操作</summary>
+          <div class="detail-more-actions">
+            <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
+            <button id="user-comment-button" class="button-secondary" type="button" hidden>ユーザーコメント</button>
+            <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
+            <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
+            <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
+            <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
+            <button id="delete-button" class="button-danger" type="button">削除</button>
+          </div>
+        </details>
       </footer>
     </article>
   </dialog>
@@ -365,7 +370,7 @@
       </nav>
     </header>
     <main id="agents-app">
-      <label><input id="agents-terminated" type="checkbox">終了済みの委譲先を含める</label>
+      <label><input id="agents-terminated" type="checkbox">結果のない終了済みの委譲先も表示</label>
       <p id="agents-error" role="status" hidden></p>
       <div id="agents-hosts"></div>
     </main>
@@ -421,9 +426,16 @@
         <a href="__BASE_PATH_HTML__/settings">設定</a>
       </nav>
     </header>
-    <main id="settings-app">
+    <div class="settings-toolbar">
+      <label for="settings-host">設定対象ホスト</label>
+      <select id="settings-host" disabled><option value="">ローカル</option></select>
       <p id="settings-status" role="status"></p>
-      <div id="settings-content"></div>
+    </div>
+    <main id="settings-app">
+      <div class="settings-layout">
+        <nav id="settings-nav" aria-label="設定の分類"></nav>
+        <div id="settings-content"></div>
+      </div>
     </main>
   </section>
 

@@ -11,7 +11,6 @@ from agent_toolkit._atk import outcome
 from agent_toolkit._atk.wi import entries, frontmatter, headings, repo, sync
 from agent_toolkit._atk.wi.entry_text import parse_frontmatter
 from agent_toolkit._git import command
-lazy from agent_toolkit._atk.wi.mutations import targets
 
 RECORD_PREFIX = "- 効果確認: "
 OVERALL_RECORD_PREFIX = "- 効果確認全体: "
@@ -20,12 +19,13 @@ VERDICTS = ("pending", "confirmed", "insufficient", "not_required")
 
 def validate_adoption_effect(verdict: str | None, reason: str | None) -> None:
     if (
-        verdict not in ("pending", "not_required")
+        verdict not in (None, "pending", "not_required")
+        or (verdict is None and reason is not None)
         or (verdict == "not_required" and reason is None)
         or (reason is not None and (not reason.strip() or reason.splitlines() != [reason] or "\0" in reason))
     ):
         raise ValueError(
-            "実装commit付きAWIには --effect-check=pending または "
+            "効果確認を明示する場合は --effect-check=pending または "
             "--effect-check=not_required --effect-check-reason=<空でない1行の理由> を指定してください"
         )
 
@@ -172,6 +172,8 @@ def save_effect_check(
     corrective_awi: str | None = None,
     reason: str | None = None,
 ) -> list[pathlib.Path]:
+    from agent_toolkit._atk.wi.mutations import targets  # noqa: PLC0415  # pylint: disable=import-outside-toplevel
+
     if file is not None:
         relative = pathlib.PurePosixPath(file)
         if not file or relative.is_absolute() or ".." in relative.parts or "\\" in file or relative.as_posix() != file:
