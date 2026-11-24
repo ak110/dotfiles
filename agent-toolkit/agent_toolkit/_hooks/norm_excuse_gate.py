@@ -1,4 +1,4 @@
-"""誤りへの対処を「既存の規範で足りる」と述べて見送る報告を、ユーザーへ届く前に遮断する。
+"""誤りへの対処を「既存の規範で足りる」と述べて見送る報告を、ユーザーへ届く前に遮断する。  pyfltr: allow-comment
 
 規範があるのに誤りが起きたことは、その規範だけでは防げないことを示す。
 それでも「既存の基準で足りる」「規範は足さない」と述べて構造・検査・誘因の除去を見送る報告が繰り返され、
@@ -7,7 +7,7 @@
 採用しない理由から除く。条文の想起だけに頼る対策では再発が止まらなかったため、表現を機械的に検出して遮断する。
 
 判定は語の一致だけで決まり、引用の素材（コードブロック、インラインコード、`>`で始まる引用行、かぎ括弧の中）と否定の形は除く。
-誤検出でも作業を止めないよう、同じ主体が同じ本文を再発行した場合は一度だけ通す。
+誤検出でも作業を止めないよう、同じ主体が同じ発話の中で同じ本文を再発行した場合は通す。
 Stopは`stop_hook_active`が真の呼出しで遮断せず、再帰を避ける。
 
 委譲先での実行可否: ユーザーへ届く本文（`send_to_user`、`AskUserQuestion`・`ExitPlanMode`、メインの最終応答）だけを対象とし、
@@ -25,7 +25,7 @@ lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
 lazy from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
 lazy from agent_toolkit._hooks.host import is_codex_payload
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn
+lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn, resend_scope
 
 _SUBJECT = r"(?:既存|現行|既に?ある|今ある)の?(?:規範|基準|規定|条文|対策|手順|仕組み|ルール)"
 
@@ -39,7 +39,6 @@ EXCUSE_RE = re.compile(
 )
 
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
-_RETRY_STATE_KEY = "norm_excuse_retry_by_actor"
 
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
@@ -56,25 +55,15 @@ def _consume_retry(payload: dict, text: str) -> bool:
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
         return False
-    actor = resolve_hook_agent_id(payload)
-    fingerprint = hashlib.sha256(text.encode()).hexdigest()
-    repeated = False
-
-    def update(state: dict) -> dict:
-        nonlocal repeated
-        prior = state.get(_RETRY_STATE_KEY, {})
-        prior = dict(prior) if isinstance(prior, dict) else {}
-        values = [value for value in prior.get(actor, []) if isinstance(value, str)]
-        repeated = fingerprint in values
-        if repeated:
-            values.remove(fingerprint)
-        else:
-            values.append(fingerprint)
-        prior[actor] = values[-_RETRY_LIMIT:]
-        state[_RETRY_STATE_KEY] = prior
-        return state
-
-    return repeated if update_state(session_id, update) else True
+    return notice.consume_resend(
+        session_id,
+        resolve_hook_agent_id(payload),
+        notice.QUALITY_RESEND_KEY,
+        text,
+        label="既存の規範を理由に対処を見送る言い回しの本文を再発行した",
+        scope=resend_scope(payload),
+        limit=_RETRY_LIMIT,
+    )
 
 
 def _block_body(phrase: str, delivery: str) -> str:

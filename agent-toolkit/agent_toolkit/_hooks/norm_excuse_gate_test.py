@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from agent_toolkit._hooks import norm_excuse_gate
+from agent_toolkit._hooks import norm_excuse_gate, notice
 
 
 @pytest.mark.parametrize(
@@ -38,7 +38,7 @@ def test_ignores_negation_quote_and_other_subjects(text: str) -> None:
     assert norm_excuse_gate.find_excuse(text) is None
 
 
-def test_reissue_of_same_text_passes_once(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_reissue_of_same_text_passes(monkeypatch: pytest.MonkeyPatch) -> None:
     states: dict[str, dict] = {}
 
     def fake_update(session_id: str, updater) -> bool:
@@ -50,8 +50,11 @@ def test_reissue_of_same_text_passes_once(monkeypatch: pytest.MonkeyPatch) -> No
     text = "既存の規範で十分なので追加の対策はしない。"
     assert norm_excuse_gate.text_block(payload, text, "送達") is not None
     assert norm_excuse_gate.text_block(payload, text, "送達") is None
-    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
     assert norm_excuse_gate.text_block(payload, "問題ない本文。", "送達") is None
+    assert [entry.partition("\n")[0] for entry in notice.pending_resend_passed("s1", "main")] == [
+        "既存の規範を理由に対処を見送る言い回しの本文を再発行した"
+    ] * 2
 
 
 @pytest.mark.parametrize("summarized", [False, True])
@@ -130,3 +133,20 @@ def test_stop_blocks_main_final_message(monkeypatch: pytest.MonkeyPatch) -> None
     assert "既存の規範で十分" in body
     payload["stop_hook_active"] = True
     assert norm_excuse_gate.evaluate(json.dumps(payload, ensure_ascii=False))[0] == "approve"
+
+
+def test_antigravity_resend_is_scoped_to_user_step() -> None:
+    from agent_toolkit._common import session_state  # pylint: disable=import-outside-toplevel
+    from agent_toolkit._hooks.antigravity import LAST_USER_STEP  # pylint: disable=import-outside-toplevel
+
+    payload = {"session_id": "agy-scope", "runtime": "agy"}
+    text = "既存の規範で十分なので追加の対策はしない。"
+
+    def step(index: int):
+        assert session_state.update_state("agy-scope", lambda state: {**state, LAST_USER_STEP: index})
+
+    step(0)
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
+    step(5)
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None

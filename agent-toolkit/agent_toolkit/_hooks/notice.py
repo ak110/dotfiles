@@ -4,6 +4,7 @@ lazy import contextlib
 lazy import hashlib
 lazy import inspect
 lazy import json
+lazy import time
 lazy from collections.abc import Callable, Generator, Sequence
 
 lazy from agent_toolkit._common import message_format as _common_message_format
@@ -251,6 +252,90 @@ def formatter(hook_id: str, *, default_tag: str = "") -> Callable[..., str]:
         return _message_format.llm_notice(_with_fix(body, fix), hook_id, tag=tag)
 
     return format_notice
+
+
+RESEND_PASSED_KEY = "resend_passed_by_actor"
+
+
+QUALITY_RESEND_KEY = "quality_gate_resend_by_actor"
+
+
+def consume_resend(  # noqa: PLR0913 -- 記録の区別に要る値をキーワードで受け取る
+    session_id: str, actor: str, state_key: str, text: str, *, label: str = "", scope: str = "", limit: int = 16
+) -> bool:
+    """同じ主体が同じ本文を再発行した時に真を返す。初回は記録して偽を返す。  pyfltr: allow-comment
+
+    遮断の解消を特定の手段（スキルの起動、資料の取得）だけに頼らず、誤検出や手段が使えない時にも進められるようにする。
+    記録は通しても消さない。同じ操作に重なる品質の遮断が`QUALITY_RESEND_KEY`を共有すれば、1回の再発行で全て通る。
+    """
+    if not session_id:
+        return False
+    fingerprint = hashlib.sha256(f"{scope}\n{text}".encode()).hexdigest()
+    repeated = False
+
+    def update(state: dict) -> dict | None:
+        nonlocal repeated
+        prior = state.get(state_key, {})
+        prior = dict(prior) if isinstance(prior, dict) else {}
+        values = [value for value in prior.get(actor, []) if isinstance(value, str)]
+        repeated = fingerprint in values
+        if repeated:
+            return None
+        prior[actor] = [*values, fingerprint][-limit:]
+        state[state_key] = prior
+        return state
+
+    if not update_state(session_id, update) and not repeated:
+        return True
+    if repeated and label:
+        record_skipped(session_id, actor, label)
+    return repeated
+
+
+def record_skipped(session_id: str, actor: str, label: str, *, limit: int = 16) -> None:
+    """警告を受けたまま、または再発行で遮断を解いて進めた出来事を、次の点検で確認させるため記録する。  pyfltr: allow-comment"""
+    if not session_id:
+        return
+    entry = f"{label}\n{time.time_ns()}"
+
+    def update(state: dict) -> dict:
+        passed = state.get(RESEND_PASSED_KEY, {})
+        passed = dict(passed) if isinstance(passed, dict) else {}
+        entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
+        passed[actor] = [*entries, entry][-limit:]
+        state[RESEND_PASSED_KEY] = passed
+        return state
+
+    update_state(session_id, update)
+
+
+RESEND_ACKED_KEY = "resend_passed_acked_by_actor"
+
+
+def pending_resend_passed(session_id: str, actor: str) -> list[str]:
+    """警告を受けたまま、または再発行で遮断を解いて進めた記録のうち、点検で確認を促していないものを返す。  pyfltr: allow-comment
+
+    促し終えた記録は、点検の通知の配送記録（`RESEND_ACKED_KEY`）を見てここで片付ける。
+    通知が最終出力へ採用されなかった記録は残し、次の点検でもう一度列挙する。
+    """
+    pending: list[str] = []
+
+    def update(state: dict) -> dict | None:
+        passed, acked = state.get(RESEND_PASSED_KEY), state.get(RESEND_ACKED_KEY)
+        passed = passed if isinstance(passed, dict) else {}
+        acked = acked if isinstance(acked, dict) else {}
+        entries = [value for value in passed.get(actor, []) if isinstance(value, str)]
+        done = acked.get(actor, [])
+        pending.extend(value for value in entries if value not in done)
+        if not done:
+            return None
+        state[RESEND_PASSED_KEY] = {**passed, actor: list(pending)}
+        state[RESEND_ACKED_KEY] = {key: value for key, value in acked.items() if key != actor}
+        return state
+
+    if session_id:
+        update_state(session_id, update)
+    return pending
 
 
 def block_formatter(hook_id: str) -> Callable[..., str]:

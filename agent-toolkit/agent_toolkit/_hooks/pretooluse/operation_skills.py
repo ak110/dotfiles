@@ -26,7 +26,7 @@ lazy from agent_toolkit._common.uv_arguments import is_python_token
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import tool_input as _tool_input
 lazy from agent_toolkit._hooks.message_format import llm_notice
-lazy from agent_toolkit._hooks.notice import block_formatter, stage_delivery
+lazy from agent_toolkit._hooks.notice import stage_delivery
 lazy from agent_toolkit._hooks.pretooluse import shell_checks as _shell_checks
 lazy from agent_toolkit._hooks.pretooluse.large_reads import python_file_paths
 lazy from agent_toolkit._plan.structure import is_agent_doc_target_file
@@ -589,35 +589,13 @@ OPERATION_SKILLS: tuple[OperationSkill, ...] = (
 
 NOTIFIED_KEY = "operation_skills_notified"
 _OBSERVED_KEY = "operation_skills_observed"
+SELF_CHECKED_KEY = "operation_skills_self_checked"
 
 
 def canonical_skill_name(skill_name: object) -> str | None:
     return next(
         (entry.skill_name for entry in OPERATION_SKILLS if skill_name in {entry.skill_name, entry.short_name}),
         None,
-    )
-
-
-def pending_operation_block(payload: dict, tool_name: str, tool_input: dict, session_id: str) -> str | None:
-    if not session_id or _delegated_session.is_lightweight_delegated(os.environ):
-        return None
-    subject = _agent_id.resolve_hook_agent_id(payload)
-    state = read_state(session_id)
-    delivered = state.get(NOTIFIED_KEY)
-    observed = state.get(_OBSERVED_KEY)
-    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
-    done = observed.get(subject, []) if isinstance(observed, dict) else []
-    cwd = str(payload.get("cwd", ""))
-    lacking = [
-        entry.skill_name
-        for entry in OPERATION_SKILLS
-        if entry.skill_name in advised and entry.skill_name not in done and entry.matches(tool_name, tool_input, cwd)
-    ]
-    if not lacking:
-        return None
-    return block_formatter("operation-skills")(
-        f"前に案内したスキルの起動を確認できない: {', '.join(lacking)}。",
-        fix="該当スキルを起動するか、スキルのSKILL.mdを全文読んでから同じ操作を再実行する。",
     )
 
 
@@ -641,6 +619,21 @@ def notices(payload: dict, tool_name: str, tool_input: dict, session_id: str) ->
         stage_delivery(text, session_id, NOTIFIED_KEY, subject, entry.skill_name)
         texts.append(text)
     return texts
+
+
+def unconfirmed_skills(session_id: str, subject: str) -> list[str]:
+    """案内したのに起動を確認できず、点検でまだ確認を促していないスキル名を返す。  pyfltr: allow-comment
+
+    促し終えた記録は、点検の通知の配送時に`SELF_CHECKED_KEY`へ入る（通知が採用されなければ次の点検で再び返す）。
+    """
+    if not session_id:
+        return []
+    state = read_state(session_id)
+    delivered, observed, checked = state.get(NOTIFIED_KEY), state.get(_OBSERVED_KEY), state.get(SELF_CHECKED_KEY)
+    advised = delivered.get(subject, []) if isinstance(delivered, dict) else []
+    done = observed.get(subject, []) if isinstance(observed, dict) else []
+    seen = checked.get(subject, []) if isinstance(checked, dict) else []
+    return [name for name in advised if isinstance(name, str) and name not in done and name not in seen]
 
 
 def observe_skill(session_id: str, subject: str, skill_name: object) -> None:
@@ -667,7 +660,7 @@ def forget_subject(session_id: str, subject: str) -> None:
 
     def forget(state: dict) -> dict | None:
         updates = {}
-        for key in (NOTIFIED_KEY, _OBSERVED_KEY):
+        for key in (NOTIFIED_KEY, _OBSERVED_KEY, SELF_CHECKED_KEY):
             records = state.get(key)
             if isinstance(records, dict) and subject in records:
                 updates[key] = {name: value for name, value in records.items() if name != subject}

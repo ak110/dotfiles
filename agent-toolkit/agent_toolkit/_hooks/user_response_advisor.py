@@ -37,7 +37,7 @@ lazy from agent_toolkit._common import message_format as _message_format
 lazy from agent_toolkit._common import transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
 lazy from agent_toolkit._hooks.background_tasks_entries import describe_pending_background_entries
-lazy from agent_toolkit._hooks.host import is_codex_payload
+lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.termination_order_advisor import _resident_bash_ids
 
 _notice = notice.formatter("user_response_advisor", default_tag=_WARN_TAG)
@@ -225,6 +225,27 @@ def _awaits_background(entries: list[dict], session_id: str, transcript_path: st
     """
     launched, completed, _reported = describe_pending_background_entries(entries, session_id)
     return bool(launched - completed - _resident_bash_ids(transcript_path))
+
+
+def resend_scope(payload: dict) -> str:
+    """遮断の再発行の記録を、最新の人間の発話（Codexはturn）ごとに分ける識別子を返す。  pyfltr: allow-comment
+
+    別の発話への初回の送達に、前の発話で許した再発行を持ち越さないためである。
+    """
+    if is_codex_payload(payload):
+        value = payload.get("turn_id")
+        return value if isinstance(value, str) else ""
+    if is_antigravity_payload(payload):
+        from agent_toolkit._common.session_state import read_state  # pylint: disable=import-outside-toplevel
+        from agent_toolkit._hooks.antigravity import LAST_USER_STEP  # pylint: disable=import-outside-toplevel
+
+        session_id = payload.get("session_id")
+        step = read_state(session_id).get(LAST_USER_STEP) if isinstance(session_id, str) and session_id else None
+        return "" if step is None or isinstance(step, bool) else str(step)
+    path = payload.get("transcript_path")
+    lines = transcript.read_transcript_lines(path) if isinstance(path, str) and path else None
+    context = latest_human_turn_context(lines) if lines else None
+    return (context[2] or "") if context else ""
 
 
 def latest_human_turn(lines: list[str]) -> tuple[str, list[dict]] | None:

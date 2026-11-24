@@ -31,7 +31,7 @@ lazy from agent_toolkit._hooks.agent_id import resolve_hook_agent_id
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.pretooluse import operation_skills
 lazy from agent_toolkit._hooks.pretooluse.shell_checks import git_subcommand_tokens
-lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context
+lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn_context, resend_scope
 
 # フェンス付きコードブロック、インラインコードおよび`>`で始まる引用行は、貼り付けた素材として扱う。
 # 例示の語と調査を求める語、欠陥の指摘を表す語は、引用を除いたユーザー自身の依頼文から探す。
@@ -292,7 +292,8 @@ def _block_body(delivery: str) -> str:
     return _block_notice(
         f"ユーザーの発話が欠陥の指摘を含み、この発話の後に`agent-basics:bugfix`を起動していない。{delivery}を止めた。",
         fix="`agent-basics:bugfix`を起動し、その手順で診断してから報告せよ。"
-        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。",
+        "語の一致による検出のため、発話が欠陥の指摘に当たるかも同スキルの手順で確認せよ。"
+        "欠陥の指摘でない場合とスキルを起動できない場合は、同じ本文を再発行すれば1回通る。",
     )
 
 
@@ -305,8 +306,24 @@ def _pending_for_main(payload: dict) -> bool:
     return bugfix_pending(lines, repl_human_id)
 
 
-def send_block(payload: dict) -> str | None:
-    return _block_body("ユーザーへの送達") if _pending_for_main(payload) else None
+def send_block(payload: dict, message: object = None) -> str | None:
+    if not _pending_for_main(payload):
+        return None
+    session_id = payload.get("session_id")
+    if (
+        isinstance(message, str)
+        and isinstance(session_id, str)
+        and notice.consume_resend(
+            session_id,
+            resolve_hook_agent_id(payload),
+            notice.QUALITY_RESEND_KEY,
+            message,
+            label="欠陥の指摘の後にagent-basics:bugfixを起動せずに報告した",
+            scope=resend_scope(payload),
+        )
+    ):
+        return None
+    return _block_body("ユーザーへの送達")
 
 
 def evaluate(payload_text: str) -> tuple[str, str]:

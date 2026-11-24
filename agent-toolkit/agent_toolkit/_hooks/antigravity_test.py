@@ -35,41 +35,6 @@ def _run(payload: dict[str, Any], event: str, capsys: pytest.CaptureFixture[str]
     return json.loads(capsys.readouterr().out)
 
 
-@pytest.mark.parametrize("plugin", ["agent-toolkit", "agent-basics"])
-@pytest.mark.parametrize(
-    "relative", ["SKILL.md", "references/search.md", "playbooks/search.md", "references/antigravity-full-instructions.md"]
-)
-@pytest.mark.parametrize("partial", [False, True])
-def test_read_keeps_document_owner_for_shared_observation(tmp_path, monkeypatch, plugin, relative, partial):
-    """全文を返した`SKILL.md`の読取だけを、資料の所有者付きでSkill観測へ渡す。部分取得と参照資料は渡さない。"""
-    root = tmp_path / plugin
-    manifest = root / ".claude-plugin/plugin.json"
-    manifest.parent.mkdir(parents=True)
-    manifest.write_text(json.dumps({"name": plugin}), encoding="utf-8")
-    (root / "plugin.json").write_text(json.dumps({"name": plugin}), encoding="utf-8")
-    path = root / "skills/search" / relative
-    path.parent.mkdir(parents=True, exist_ok=True)
-    header = "---\nname: search\n---\n" if relative == "SKILL.md" else "# 検索の本文\n"
-    path.write_text(header + "末尾の本文\n", encoding="utf-8")
-    observed = []
-
-    def invoke(_command, payload):
-        observed.append(payload)
-        return _Response(0, {}, "")
-
-    monkeypatch.setattr(antigravity, "_invoke", invoke)
-    payload = {
-        "session_id": "owner-read",
-        "tool_input": {"file_path": str(path)},
-        "tool_response": header if partial else path.read_text(encoding="utf-8"),
-    }
-    assert not antigravity._record_read(payload)  # noqa: SLF001  # pylint: disable=protected-access
-    if not partial and relative not in {"references/search.md", "playbooks/search.md"}:
-        assert observed[0]["tool_input"] == {"skill": f"{plugin}:search"}
-    else:
-        assert not observed
-
-
 @pytest.mark.parametrize(
     ("tool", "args", "name", "field", "expected"),
     [
@@ -385,3 +350,21 @@ def test_session_start_claims_process_loop_before_state_update_failures(
 
     assert process_loop_session.is_identified_process_loop_session("agy-coordinator", environ)
     assert not process_loop_session.is_identified_process_loop_session("agy-nested", environ)
+
+
+def test_post_tool_use_without_result_does_not_record_skill_read(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    skill = tmp_path / "agent-basics/skills/search/SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: search\n---\n本文\n", encoding="utf-8")
+    raw = _payload(
+        tmp_path,
+        hookEventName="PostToolUse",
+        stepIdx=5,
+        error="",
+        toolCall={"args": {"Path": str(skill)}, "id": "call_1", "name": "read_file"},
+    )
+    assert "result" not in raw["toolCall"]
+    assert _run(raw, "PostToolUse", capsys) == {}
+    assert not session_state.read_state(raw["conversationId"]).get("operation_skills_observed")

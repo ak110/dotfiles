@@ -782,22 +782,10 @@ def test_partial_suffix_identifies_document_kind_without_a_real_path(tmp_path: p
     assert operation_skills._is_agent_document_writing("Bash", data, str(tmp_path))
 
 
-def test_next_matching_operation_requires_observed_skill(tmp_path: pathlib.Path) -> None:
+def test_notified_operation_is_never_denied(tmp_path: pathlib.Path) -> None:
     env = _plan_file_state_env(tmp_path)
     payload = _bash("rg -n needle .", "observed-next")
     assert _notified(_run(payload, env)) == {_SEARCH_SKILL}
-    refused = _run(payload, env)
-    assert "起動を確認できない" in denial_reason(refused)
-    independent = _run(_bash("cat README.md", "observed-next"), env)
-    assert independent.returncode == 0 and (not independent.stdout or not denial_reason(independent))
-    launch = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": "Skill",
-        "tool_input": {"skill": "agent-basics:search"},
-        "session_id": "observed-next",
-    }
-    assert _run_posttooluse({**launch, "hook_event_name": "PostToolUseFailure"}, env).returncode == 0
-    assert "起動を確認できない" in denial_reason(_run(payload, env))
-    assert _run_posttooluse(launch, env).returncode == 0
-    accepted = _run(payload, env)
-    assert accepted.returncode == 0 and (not accepted.stdout or not denial_reason(accepted))
+    again = _run(payload, env)
+    assert again.returncode == 0 and (not again.stdout or not denial_reason(again))
+    assert not _notified(again)
