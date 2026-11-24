@@ -10,7 +10,7 @@
 #     "platformdirs>=4.0",
 #     "psutil>=6",
 #     "pydantic>=2",
-#     "pyfltr>=3.33.1",
+#     "pyfltr>=3.34.0",
 #     "pygments",
 #     "pytilpack[quart]>=1.54.1",
 #     "pyyaml",

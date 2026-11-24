@@ -1231,7 +1231,7 @@ wheels = [
 
 [[package]]
 name = "pyfltr"
-version = "3.33.3"
+version = "3.34.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -1264,9 +1264,9 @@ dependencies = [
     { name = "uv-sort" },
     { name = "yamllint" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/29/79/1e5fef38eb9a5cb0fb54167f65c11afc60cf1fda6abe7959a6736f9e115a/pyfltr-3.33.3.tar.gz", hash = "sha256:a1fc4a19a6cb3463be93c4fc280a439d8bdfc4bb2d81ce7e13c9da18be47cf25", size = 980850, upload-time = "2026-11-23T07:02:09.078Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/4f/be/a77c1c223f17e8b99d43e6d47692ea9a92b26d8c54583a16e935775f9821/pyfltr-3.34.0.tar.gz", hash = "sha256:68fd790b799577496e94e595fab268267f09bf611b4fb2ca199ca21fb8e61253", size = 992232, upload-time = "2026-11-24T08:31:44.378Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/84/ac16e944354e4c9e232915fb702e0a39782ff8cc4e4afe9ea4f0509adc6f/pyfltr-3.33.3-py3-none-any.whl", hash = "sha256:a15fd09a32ed488612bb446ac568a341b509b5b952fb0fc248c29cdd5b22fe43", size = 345409, upload-time = "2026-11-23T07:02:07.5Z" },
+    { url = "https://files.pythonhosted.org/packages/ed/fc/d596af56a66932a76874bb90dc86b83dc74f4e9fab076d894de0d4563585/pyfltr-3.34.0-py3-none-any.whl", hash = "sha256:d5cf102657121b3e359605a5753a58b5088188e0b9c85434a524be71e7bd266a", size = 349136, upload-time = "2026-11-24T08:31:42.613Z" },
 ]
 
 [[package]]
@@ -1545,7 +1545,7 @@ requires-dist = [
     { name = "platformdirs", specifier = ">=4.0" },
     { name = "psutil", specifier = ">=6" },
     { name = "pydantic", specifier = ">=2" },
-    { name = "pyfltr", specifier = ">=3.33.1" },
+    { name = "pyfltr", specifier = ">=3.34.0" },
     { name = "pygments" },
     { name = "pytilpack", extras = ["quart"], specifier = ">=1.54.1" },
     { name = "pyyaml" },
@@ -1563,7 +1563,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "jsonschema", specifier = ">=4.26" },
     { name = "playwright", specifier = ">=1.61.0" },
-    { name = "pyfltr", extras = ["python"], specifier = ">=3.33.1" },
+    { name = "pyfltr", extras = ["python"], specifier = ">=3.34.0" },
     { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-timeout", specifier = ">=2" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },

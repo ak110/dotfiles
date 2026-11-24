@@ -1,10 +1,16 @@
 ---
+verified-digest: d8a630d84b984ae3a2c0c294ae9b9b5958fe768289907e1031100b65d93a0ee4
 name: git-sync-interleavings
 user-invocable: false
 description: >
   private-notesのGit同期（`agent-toolkit/agent_toolkit/_atk/git_sync.py`、`agent-toolkit/agent_toolkit/_atk/wi/sync.py`）の
   ロック、pull、push、commit、分岐とrebaseの扱いを変える時と、それらへ触れた変更を検査せずに統合した後に、
   並行する複数の実行主体の全ての順序で更新が失われないかを確かめる時に起動する。
+verifies:
+  - agent-toolkit/agent_toolkit/_atk/git_sync.py
+  - agent-toolkit/agent_toolkit/_atk/wi/sync.py
+  - agent-toolkit/agent_toolkit/_git/command.py
+  - agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py
 ---
 
 # private-notesのGit同期の網羅検査
@@ -98,9 +104,9 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 
 ## 追従
 
-- 最後に同期した対象の基準commit: `3ce7817ea`。
-  対象の`git_sync.py`、`wi/sync.py`、`_git/command.py`を最後に変えたcommitは`df545bbf8`である。
-  対象のファイルの差分をこのcommitから読み、検証が新しいコードを記述すると確かめた後にだけ進める。
+- 版の記録はfrontmatterの`verifies`と`verified-digest`で持ち、pyfltrの`ci`とcommit時の`fast`が対象と記録の一致を確かめる。
+  対象を変えたら、`verified-digest`を最後に書いたcommitからの対象の差分を読み、検査を再実行して現在のコードを記述すると確かめる。
+  確かめた後にだけ、`uv run --frozen pyfltr verification-sync --update .claude/skills/git-sync-interleavings/SKILL.md`で記録を進める。
 - Gitの起動、ロックの区間、remoteへの操作の追加と順序の変更は、`_launch`と`_RepoLock`を差し替える枠組みが自動で拾う。
   WIの状態遷移の流れ（`push_pending`の有無、commitの単位）を変えた時は`_atk_update`を合わせる。
 - 検査が働くことは、`git_sync.py`の一時的な複製へ次の変異を適用し、`AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=first`で確かめた。

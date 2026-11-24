@@ -33,7 +33,7 @@ description: >
 | 速度や資源使用量を測る前と、測った数値で採否を決める・報告する前 | `references/performance.md` |
 | 要求の結果を観測する手段と環境を選ぶ前 | `agent-basics:writing-standards/references/testing.md` |
 | 変更の挙動を画面・CLI・サービスの実際の操作で確かめる時に、アプリを操作して確かめる手順のスキルがプロジェクトに無い時と、その手順が想定外の結果になった時 | `agent-basics:verify-skill/SKILL.md` |
-| 状態遷移・並行処理・再試行・構文解析の性質を、全ての順序や入力を有界の範囲で確かめる検査として残す時と、その検査の対象のコードを変えた時 | `agent-basics:formal-verification/SKILL.md` |
+| 検証を選ぶ変更が状態遷移・並行処理・再試行・構文解析・認可の境界・停止性・等価であるべき書き換え・固定幅整数の計算に触れる時（形式検証を当てるかの判定）、その性質を有界の範囲で確かめる検査として残す時、その検査の対象のコードを変えた時 | `agent-basics:formal-verification/SKILL.md` |
 
 ## 実行条件と結果
 
