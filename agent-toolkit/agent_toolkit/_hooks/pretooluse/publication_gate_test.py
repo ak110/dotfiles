@@ -47,6 +47,7 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
         denied = gate(command)
         assert denied is not None and all(name in denied for name in names)
     assert gate("git push --dry-run origin develop") is None
+    assert gate("git push origin develop") is None
     contract = tmp_path / "work-contract.md"
     monkeypatch.setattr(work_contract, "record_path", lambda _sid: contract)
     contract.write_text(f"- 新着WIの判定: {names[0]} | 次回: 別ホストで観測する\n", encoding="utf-8")

@@ -64,6 +64,7 @@ lazy from agent_toolkit._hooks import (
     review_receipt,
     session_title,
     termination_evidence,
+    work_contract,
 )
 lazy from agent_toolkit._hooks import persisted_output as _persisted_output
 lazy from agent_toolkit._hooks import progress_self_check as _progress_self_check

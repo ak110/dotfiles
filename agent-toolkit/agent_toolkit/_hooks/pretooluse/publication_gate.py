@@ -1,12 +1,14 @@
 import dataclasses
+import json
 import os
 import pathlib
 
 from agent_toolkit._common import delegated_session, process_loop_session
 from agent_toolkit._common.shell_segments import ExecutionSegment, extract_execution_segments
-from agent_toolkit._hooks import agent_id, work_contract
+from agent_toolkit._hooks import agent_id, notice, work_contract
 from agent_toolkit._hooks.pretooluse.shell_checks_git import git_subcommand_tokens
 lazy from agent_toolkit._atk.wi.listing import progress_new_wis
+lazy from agent_toolkit._hooks.user_response_advisor import resend_scope
 
 _SHELL_TOOLS = {"Bash", "PowerShell", "exec_command", "functions.exec_command"}
 
@@ -38,6 +40,23 @@ def _is_publication(tool_name: str, tool_input: dict) -> bool:
 
 
 def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
+    """公開前の新着WIの判定漏れを止める。同じ発話の中で同じ操作を再発行すれば解除する。  pyfltr: allow-comment"""
+    found = _check(payload, session_id, tool_name, tool_input)
+    if found is None:
+        return None
+    if notice.consume_resend(
+        session_id,
+        agent_id.resolve_hook_agent_id(payload),
+        notice.QUALITY_RESEND_KEY,
+        json.dumps(tool_input, ensure_ascii=False, sort_keys=True),
+        label="公開前の新着WIの判定を確認できないまま公開した",
+        scope=resend_scope(payload),
+    ):
+        return None
+    return found[0], f"{found[1]}判定を記録できない場合は、同じ操作を再発行すれば実行する。"
+
+
+def _check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> tuple[str, str] | None:
     if agent_id.is_main_agent_context(payload):
         owner = session_id
     else:
