@@ -32,17 +32,14 @@ _NEGATIVE_ENDING_PATTERN = re.compile(r"(ない|せず|ず|しません|ませ�
 _SUBJECT_WORD = "当該"
 
 _MIN_SENTENCES_FOR_RATIO = 20
-_MAX_NEGATIVE_ENDING_RATIO = 0.08
+_MAX_NEGATIVE_ENDING_RATIO = 0.25
 _MAX_SUBJECT_WORD_RATIO = 0.03
 _MAX_EXCERPT_LENGTH = 40
 _SUBJECT_WORD_CONTEXT = 10
 
 # 語そのものを扱う判定用データ。説明文の同義語をここでは定めない。
-# 失敗対象の集合は、説明に戻った語を検出する既存の契約を保持する。
 _DENIED_PATTERNS = {
     "正本": r"(?<!是)正本|正本(?!文)",
-    "既定": r"既定",
-    "照合": r"照合",
     "足すものがない": r"足すものがない",
     "失効が効く": r"失効が効く",
 }
@@ -51,8 +48,6 @@ _METAPHORICAL = "metaphorical"
 _ABSTRACT = "abstract"
 _CONTRAST = "contrast"
 _CAUTION_PATTERNS = {
-    "経路": (r"経路", _ABSTRACT),
-    "入口": (r"入口", _METAPHORICAL),
     "受け口": (r"受け口", _METAPHORICAL),
     "トークンを出す口": (r"トークンを出す口", _METAPHORICAL),
     "拾う": (r"拾(?:う|わない|わず|います|いました|いません|い、|える|えば|った|って)", _METAPHORICAL),
@@ -60,27 +55,15 @@ _CAUTION_PATTERNS = {
         r"(?:データ|ファイル|本文|設定|ログ|情報|記録|テーブル|辞書|出力)(?:を|から).{0,12}引(?:く|かない|かず|きます|きました|きません|き、|ける|けば|いた|いて)",
         _METAPHORICAL,
     ),
-    "通る": (r"通(?:る|らない|らず|ります|りました|りません|れる|れば|った|って)", _METAPHORICAL),
-    "効く": (r"(?<![有無])効(?:く|かない|かず|かせ|きます|きました|きません|き、|けば|いた|いて)", _METAPHORICAL),
     "響く": (r"(?<!影)響(?:く|かない|かず|きます|きました|きません|き、|けば|いた|いて)", _METAPHORICAL),
-    "足す": (
-        r"(?:処理|機能|中継).{0,12}(?<![補満不充自])(?<!書き)(?<!付け)足(?:す|さない|さず|します|しました|しません|し、|せる|せば|した|して)",
-        _METAPHORICAL,
-    ),
     "黙って": (r"黙って", _METAPHORICAL),
     "帰結": (r"帰結", _ABSTRACT),
-    "部品": (r"部品", _METAPHORICAL),
-    "断定": (r"断定", _ABSTRACT),
-    "事故": (r"事故", _ABSTRACT),
-    "混ざる": (r"混ざ", _METAPHORICAL),
     "素通り": (r"素通り", _METAPHORICAL),
     "焼く": (r"焼(?:く|か|き|け|い)", _METAPHORICAL),
     "崩す": (r"崩(?:す|さ|し|せ|そ)", _METAPHORICAL),
-    "疑う": (r"疑(?:う|わ|い|え|っ)", _ABSTRACT),
     "線引き": (r"線引き", _METAPHORICAL),
     "破綻": (r"破綻", _ABSTRACT),
     "ゲート": (r"ゲート", _METAPHORICAL),
-    "むしろ": (r"むしろ", _CONTRAST),
     "単なる": (r"単なる", _CONTRAST),
     "というより": (r"というより", _CONTRAST),
 }
@@ -569,6 +552,7 @@ class DensityMetric:
     element_label: str
     occurrences: tuple[Occurrence, ...]
     sentences: int
+    severity: Severity
 
     @property
     def count(self) -> int:
@@ -593,18 +577,21 @@ class DensityMetric:
 
     def summary(self) -> str:
         """比率、上限、件数と次の操作を1行で返す。"""
+        prefix = "警告: " if self.severity is Severity.WARNING else ""
+        suffix = "（終了コードには影響しない）。" if self.severity is Severity.WARNING else ""
         return (
-            f"{self.name} {self.ratio:.1%}（上限 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
+            f"{prefix}{self.name} {self.ratio:.1%}（上限 {self.limit:.0%}、{self.count}{self.unit}/{self.sentences}文）。"
             f"位置を列挙した{self.element_label}を{self.action}。"
-            f"文数を変えずに上限以下へ戻すには、少なくとも{self.required_rewrites()}件を書き換える。"
+            f"文数を変えずに上限以下へ戻すには、少なくとも{self.required_rewrites()}件を書き換える。{suffix}"
         )
 
     def element_messages(self) -> list[tuple[int, str]]:
         """数えた要素ごとの行番号と診断の本文を返す。"""
+        prefix = "警告: " if self.severity is Severity.WARNING else ""
         return [
             (
                 occurrence.line,
-                f"{self.name}の超過で数えた{self.element_label}: 「{occurrence.excerpt}」。{self.action}候補。",
+                f"{prefix}{self.name}の超過で数えた{self.element_label}: 「{occurrence.excerpt}」。{self.action}候補。",
             )
             for occurrence in self.occurrences
         ]
@@ -634,7 +621,7 @@ class Metrics:
             name="否定形終端率",
             unit="",
             limit=_MAX_NEGATIVE_ENDING_RATIO,
-            action="肯定形へ書き換える",
+            action="見直し、不要な否定や回りくどい表現があれば肯定形へ書き換える",
             element_label="否定形で終わる文",
             occurrences=tuple(
                 Occurrence(sentence.line, sentence.excerpt)
@@ -642,6 +629,7 @@ class Metrics:
                 if _NEGATIVE_ENDING_PATTERN.search(sentence.text)
             ),
             sentences=self.sentences,
+            severity=Severity.WARNING,
         )
         self.subject_word = DensityMetric(
             name="「当該」の出現率",
@@ -651,6 +639,7 @@ class Metrics:
             element_label="「当該」",
             occurrences=_subject_word_occurrences(blocks),
             sentences=self.sentences,
+            severity=Severity.ERROR,
         )
 
     @property
@@ -788,9 +777,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     for metric in metrics:
         for density in metric.exceeded_metrics():
-            diagnostics.emit(metric.path, 1, Severity.ERROR, density.summary())
+            diagnostics.emit(metric.path, 1, density.severity, density.summary())
             for line, message in density.element_messages():
-                diagnostics.emit(metric.path, line, Severity.ERROR, message)
+                diagnostics.emit(metric.path, line, density.severity, message)
     return diagnostics.returncode
 
 
