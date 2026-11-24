@@ -415,7 +415,7 @@ def main(
         _wi_cli.prepare_args(args, parser)
     if now is None:
         now = datetime.datetime.now()
-    if not _is_query_without_sweep(args):
+    if not _skips_managed_temp_sweep(args):
         _sweep_before_command(now)
     args.repo_path_override = repo_path_override
     if args.command == "wi":
@@ -439,7 +439,7 @@ def main(
     sys.exit(exit_code)
 
 
-def _is_query_without_sweep(args: argparse.Namespace) -> bool:
+def _skips_managed_temp_sweep(args: argparse.Namespace) -> bool:
     match args.command:
         case "wi":
             return args.wi_subcommand in {"grep", "show", "list"} or _is_wi_draft_preview(args)
@@ -454,7 +454,7 @@ def _is_query_without_sweep(args: argparse.Namespace) -> bool:
                 args.config_subcommand == "repos" and args.repos_subcommand == "list"
             )
         case "agents":
-            return args.agents_subcommand in {"list", "show", "logs"}
+            return args.agents_subcommand in {"list", "show", "logs", "notify"}
         case _:
             return False
 
