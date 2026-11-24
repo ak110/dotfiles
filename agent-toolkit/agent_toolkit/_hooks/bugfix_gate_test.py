@@ -12,6 +12,7 @@ from agent_toolkit._testing.pretooluse_support import _run_hook_in_process, code
 pytestmark = pytest.mark.usefixtures("without_skill_notices")
 
 _SEND_TO_USER = "mcp__plugin_agent-toolkit_agent-toolkit__send_to_user"
+_TYPED_REPORT = "再発防止: 自動検出: 送達前に検査する。"
 
 
 def _human(text: str) -> dict:
@@ -37,44 +38,26 @@ def _payload(entries: list[dict], tmp_path: pathlib.Path, **extra: object) -> di
     return {"session_id": "bugfix-gate", "transcript_path": str(path), "cwd": str(tmp_path), **extra}
 
 
-def _pretooluse_denied(payload: dict, message: str = "原因は…") -> bool:
+def _pretooluse_denied(payload: dict, message: str = _TYPED_REPORT) -> bool:
     result = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
     assert result.returncode == 0 and not result.stderr
     output = json.loads(result.stdout)["hookSpecificOutput"] if result.stdout.strip() else {}
     if output.get("permissionDecision") == "deny":
-        assert "agent-basics:bugfix" in output["permissionDecisionReason"]
+        assert output["permissionDecisionReason"]
         return True
     return False
 
 
-@pytest.mark.parametrize(
-    "prompt,expected",
-    [
-        ("ここの処理がバグっている", True),
-        ("この出力は間違ってるよ", True),
-        ("the output is broken", True),
-        ("進捗を教えて", False),
-        ("混同を避けた例を挙げて", False),
-        ("貼り付けたコード:\n```\n# バグ\n```\n進捗は？", False),
-        ("`バグ`という語の意味を教えて", False),
-        ("> おかしい\n続けて", False),
-        ("全体的に、差分を追記するんじゃなく全体を整理しなおすべきでは？ 作業する側が混乱しやすい書き方は避けるべき", True),
-        ("それは別のファイルに置いたほうがいい", True),
-        ("勝手にpushしないで", True),
-        ("この設計で問題ないのでは？", True),
-        ("AWIを処理して", False),
-        ("このファイルを読んで要約して", False),
-        ("どちらの方式にすべきか調べて", False),
-    ],
-)
-def test_defect_report_judgement(prompt: str, expected: bool) -> None:
-    """欠陥指摘の語を本文から判定し、貼り付けた素材（コードブロック・インラインコード・引用）の中の語は数えない。"""
-    assert bugfix_gate.is_defect_report(prompt) is expected
+def _classified(kind: str = "是正", *, call_id: str = "understanding") -> list[dict]:
+    call = _tool_use(_SEND_TO_USER, {"message": f"## 発話の理解\n分類: {kind}"})
+    call["message"]["content"][0]["id"] = call_id
+    result = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": call_id}]}}
+    return [call, result]
 
 
 def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) -> None:
     assert _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path))
-    assert not _pretooluse_denied(_payload([_human("ここがバグっている"), _BUGFIX], tmp_path))
+    assert not _pretooluse_denied(_payload([_human("ここがバグっている"), *_classified(), _BUGFIX], tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -86,37 +69,22 @@ def test_send_to_user_is_denied_until_bugfix_is_invoked(tmp_path: pathlib.Path) 
     ],
 )
 def test_classified_turn_controls_delivery_and_stop(tmp_path: pathlib.Path, prompt: str, kind: str, *, denied: bool) -> None:
-    understanding = {
-        "type": "assistant",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "name": _SEND_TO_USER,
-                    "id": "understanding",
-                    "input": {"message": f"## 発話の理解\n分類: {kind}"},
-                }
-            ]
-        },
-    }
-    delivered = {
-        "type": "user",
-        "message": {
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": "understanding",
-                    "is_error": False,
-                }
-            ]
-        },
-    }
-    records = [_human(prompt), understanding, delivered]
+    records = [_human(prompt), *_classified(kind)]
     payload = _payload(records, tmp_path)
     assert _pretooluse_denied(payload) is denied
     assert _pretooluse_denied(payload) is denied
     assert (bugfix_gate.evaluate(json.dumps(payload))[0] == "block") is denied
     assert not _pretooluse_denied(_payload([*records, _BUGFIX], tmp_path))
+
+
+def test_failed_delivery_does_not_classify_and_first_success_stays_fixed(tmp_path: pathlib.Path) -> None:
+    failed = _classified("非是正", call_id="failed-understanding")
+    failed[1]["message"]["content"][0]["is_error"] = True
+    entries = [_human("この説明は冗長です。"), *failed]
+    assert "分類がない" in (bugfix_gate.send_block(_payload(entries, tmp_path), _TYPED_REPORT) or "")
+    entries.extend(_classified())
+    entries.extend(_classified("非是正", call_id="reclassified"))
+    assert "起動していない" in (bugfix_gate.send_block(_payload(entries, tmp_path), _TYPED_REPORT) or "")
 
 
 def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
@@ -125,40 +93,34 @@ def test_understanding_requires_classification(tmp_path: pathlib.Path) -> None:
     assert not _pretooluse_denied(payload, "## 発話の理解\n分類: 是正\n短くする。")
 
 
-def test_same_message_resent_passes_without_skill(tmp_path: pathlib.Path) -> None:
-    payload = _payload([_human("ここがバグっている")], tmp_path)
-    assert _pretooluse_denied(payload)
-    assert not _pretooluse_denied(payload)
-    assert not _pretooluse_denied(payload)
-
-
-def test_resend_permission_does_not_carry_over_to_next_prompt(tmp_path: pathlib.Path) -> None:
-    first = {**_human("ここがバグっている"), "uuid": "h1"}
-    payload = _payload([first], tmp_path)
-    assert _pretooluse_denied(payload)
-    assert not _pretooluse_denied(payload)
-    later = _payload([first, {**_human("別の箇所も間違ってるよ"), "uuid": "h2"}], tmp_path)
-    assert _pretooluse_denied(later)
-
-
-def test_stacked_quality_blocks_pass_on_one_resend(tmp_path: pathlib.Path) -> None:
-    payload = _payload([_human("ここがバグっている")], tmp_path)
-    message = "既存の規範で十分なので追加の対策はしない。"
-    first = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
-    assert json.loads(first.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
-    second = _run_hook_in_process("pretooluse", {**payload, "tool_name": _SEND_TO_USER, "tool_input": {"message": message}})
-    output = json.loads(second.stdout)["hookSpecificOutput"] if second.stdout.strip() else {}
-    assert output.get("permissionDecision") != "deny"
+@pytest.mark.parametrize(
+    "report",
+    [
+        "今回は再発防止策を見送る。既存の手順に明記されているためだ。",
+        "現行の手順に定められているため、再発防止の対策は追加しない。",
+    ],
+)
+def test_correction_requires_typed_report(tmp_path, monkeypatch, report):
+    entries = [_human("この説明は冗長です。"), *_classified()]
+    assert _pretooluse_denied(_payload(entries, tmp_path), report)
+    assert "起動していない" in _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)["reason"]
+    entries.append(_BUGFIX)
+    for _ in range(2):
+        assert _pretooluse_denied(_payload(entries, tmp_path), report)
+        assert "種類付き" in _stop(entries, tmp_path, monkeypatch, last_assistant_message=report)["reason"]
+    assert not _pretooluse_denied(_payload(entries, tmp_path))
+    assert "decision" not in _stop(entries, tmp_path, monkeypatch)
 
 
 def test_send_to_user_without_defect_report_or_by_subagent_is_allowed(tmp_path: pathlib.Path) -> None:
-    assert not _pretooluse_denied(_payload([_human("進捗を教えて")], tmp_path))
+    assert not _pretooluse_denied(_payload([_human("進捗を教えて"), *_classified("非是正")], tmp_path))
     assert _pretooluse_denied(_payload([_BUGFIX, _human("まだバグっている")], tmp_path))
     assert not _pretooluse_denied(_payload([_human("ここがバグっている")], tmp_path, agent_id="sub-1"))
 
 
 def _stop(entries: list[dict], tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, **extra: object) -> dict:
     monkeypatch.setattr(stop, "CHECK_MODULE_NAMES", ("bugfix_gate",))
+    extra.setdefault("last_assistant_message", _TYPED_REPORT)
     return stop.evaluate(json.dumps(_payload(entries, tmp_path, **extra)))
 
 
@@ -168,7 +130,7 @@ def _stop(entries: list[dict], tmp_path: pathlib.Path, monkeypatch: pytest.Monke
         ("initial", False),
         ("already-loaded", False),
         ("pending", True),
-        ("failed", True),
+        ("failed", False),
         ("source-only", True),
         ("prior", True),
     ],
@@ -185,13 +147,13 @@ def test_repl_needs_the_host_skill_result_for_current_prompt(tmp_path, monkeypat
         "toolUseResult": {"success": case != "failed", "commandName": "agent-basics:bugfix"},
     }
     if case == "source-only":
-        entries = [human, _tool_use("REPL", {"code": "tools.Skill({skill: 'agent-basics:bugfix'})"})]
+        entries = [human, *_classified(), _tool_use("REPL", {"code": "tools.Skill({skill: 'agent-basics:bugfix'})"})]
     elif case == "prior":
-        entries = [invocation, result, human]
+        entries = [invocation, result, human, *_classified()]
     elif case == "pending":
-        entries = [human, invocation]
+        entries = [human, *_classified(), invocation]
     else:
-        entries = [human, invocation, result]
+        entries = [human, *_classified(), invocation, result]
     if case == "already-loaded":
         entries = [
             _BUGFIX,
@@ -206,14 +168,15 @@ def test_repl_needs_the_host_skill_result_for_current_prompt(tmp_path, monkeypat
             },
         ]
 
-    assert _pretooluse_denied(_payload(entries, tmp_path)) is denied
-    assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is denied
+    report = "bugfixの起動に失敗した。" if case == "failed" else _TYPED_REPORT
+    assert _pretooluse_denied(_payload(entries, tmp_path), report) is denied
+    assert (_stop(entries, tmp_path, monkeypatch, last_assistant_message=report).get("decision") == "block") is denied
 
 
 @pytest.mark.parametrize(("success", "new_prompt", "denied"), [(True, False, False), (False, False, True), (True, True, True)])
 def test_repl_skill_posttooluse_precedes_transcript_write(tmp_path, success, new_prompt, denied):
     human = {**_human("ここがバグっている"), "uuid": "first-human"}
-    payload = _payload([human], tmp_path)
+    payload = _payload([human, *_classified()], tmp_path)
     skill = {
         **payload,
         "tool_name": "Skill",
@@ -226,7 +189,7 @@ def test_repl_skill_posttooluse_precedes_transcript_write(tmp_path, success, new
     assert _pretooluse_denied(payload)
 
     if new_prompt:
-        _payload([human, {**human, "uuid": "second-human"}], tmp_path)
+        _payload([human, *_classified(), {**human, "uuid": "second-human"}], tmp_path)
     after = _run_hook_in_process(
         "posttooluse",
         {
@@ -236,20 +199,20 @@ def test_repl_skill_posttooluse_precedes_transcript_write(tmp_path, success, new
         },
     )
     assert after.returncode == 0
-    assert _pretooluse_denied(payload, "診断の結果は…") is denied
+    assert _pretooluse_denied(payload) is denied
 
 
-def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
+def test_stop_blocks_direct_answer_without_bugfix_including_repeated_stop(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entries = [_human("ここがバグっている")]
+    entries = [_human("ここがバグっている"), *_classified()]
     blocked = _stop(entries, tmp_path, monkeypatch)
     assert blocked["decision"] == "block" and "agent-basics:bugfix" in str(blocked["reason"])
     assert "起動し" in str(blocked["reason"]) and "診断してから報告してください" in str(blocked["reason"])
     assert "起動すれば同じ操作を通せる" not in str(blocked["reason"])
-    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
-    assert "decision" not in _stop(entries, tmp_path, monkeypatch, stop_hook_active=True)
-    assert "decision" not in _stop([_human("進捗を教えて")], tmp_path, monkeypatch)
+    assert "decision" not in _stop([*entries, *_classified(), _BUGFIX], tmp_path, monkeypatch)
+    assert "decision" in _stop(entries, tmp_path, monkeypatch, stop_hook_active=True)
+    assert "decision" not in _stop([_human("進捗を教えて"), *_classified("非是正")], tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize(
@@ -272,8 +235,8 @@ def test_each_queued_correction_needs_its_own_bugfix(
     ]
     assert _pretooluse_denied(_payload(entries, tmp_path))
     assert _stop(entries, tmp_path, monkeypatch)["decision"] == "block"
-    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
-    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
+    assert not _pretooluse_denied(_payload([*entries, *_classified(), _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, *_classified(), _BUGFIX], tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("previous_skill", [False, True])
@@ -294,10 +257,11 @@ def test_command_arguments_and_bugfix_invocation_belong_to_current_turn(
             },
         }
     )
+    entries.extend(_classified("是正" if defect else "非是正"))
     assert _pretooluse_denied(_payload(entries, tmp_path)) is defect
     assert (_stop(entries, tmp_path, monkeypatch).get("decision") == "block") is defect
-    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
-    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
+    assert not _pretooluse_denied(_payload([*entries, *_classified(), _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, *_classified(), _BUGFIX], tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize("actor", ["main", "lane"])
@@ -409,9 +373,13 @@ def test_queued_corrective_form_needs_bugfix(
 ) -> None:
     entries = [
         _human("WIの原稿を直して"),
+        *_classified("非是正", call_id="prior-understanding"),
         {"type": "attachment", "attachment": {"type": "queued_command", "origin": {"kind": "human"}, "prompt": prompt}},
     ]
+    assert _pretooluse_denied(_payload(entries, tmp_path))
+    assert "分類がない" in _stop(entries, tmp_path, monkeypatch)["reason"]
+    entries.extend(_classified("是正" if gated else "非是正"))
     assert _pretooluse_denied(_payload(entries, tmp_path)) is gated
     assert ("decision" in _stop(entries, tmp_path, monkeypatch)) is gated
-    assert not _pretooluse_denied(_payload([*entries, _BUGFIX], tmp_path))
-    assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
+    assert not _pretooluse_denied(_payload([*entries, *_classified(), _BUGFIX], tmp_path))
+    assert "decision" not in _stop([*entries, *_classified(), _BUGFIX], tmp_path, monkeypatch)

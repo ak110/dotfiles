@@ -28,7 +28,7 @@ lazy from agent_toolkit._common.prevention_kinds import KINDS_GUIDANCE, starts_w
 lazy from agent_toolkit._common.session_state import update_state
 lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.agent_id import is_main_agent_context, resolve_hook_agent_id
-lazy from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE
+lazy from agent_toolkit._hooks.bugfix_gate import QUOTED_MATERIAL_RE, prevention_lines
 lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import latest_human_turn, resend_scope
 
@@ -45,18 +45,12 @@ EXCUSE_RE = re.compile(
 
 _FREEFORM_EXCUSE_RE = re.compile(
     r"(?:規則|規範|手順|ルール)(?:には|は|が)(?:既に|すでに|もう)?(?:書かれている|ある|存在する)"
-    r"[\s\S]{0,80}?(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
-    r"|(?:守れ|守られ|従え)ていなかっただけ[\s\S]{0,80}?"
+    r"[^。！？!?\n]*?(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
+    r"|(?:守れ|守られ|従え)ていなかっただけ[^。！？!?\n]*?"
     r"(?:再発防止(?:策)?|対策|AWI)(?:は|を)?(?:見送る|採らない|しない|投入しない)(?!のではな|わけではな)"
 )
 
 _KAGI_QUOTE_RE = re.compile(r"「[^「」\n]*」")
-
-# 見出しが`再発防止`（`再発防止策`）で終わる行。`**ご指摘への再発防止**:`のような飾りと前置きを含む。  pyfltr: allow-comment
-_PREVENTION_LINE_RE = re.compile(
-    r"^[ \t]*(?:(?:[-*+]|\d+[.)])[ \t]+)?(?P<head>[^:：\n。、]{0,20}?再発防止策?)[ \t]*[:：](?P<text>[^\n]*)$",
-    re.MULTILINE,
-)
 
 _FLAGGED_STATE_KEY = "norm_excuse_flagged_intermediate"
 _RETRY_LIMIT = 16
@@ -71,15 +65,7 @@ def find_excuse(text: str) -> str | None:
 
 
 def find_untyped_prevention(text: str) -> str | None:
-    """本文が対策の種類の語で始まらない最初の`再発防止`の行を返す。本文が空の行は判定しない。  pyfltr: allow-comment"""
-    unquoted = QUOTED_MATERIAL_RE.sub(
-        lambda match: match[0] if match[0].startswith("`") and starts_with_kind(match[0]) else "", text
-    )
-    for match in _PREVENTION_LINE_RE.finditer(unquoted.replace("**", "")):
-        body = match["text"].strip()
-        if body and not starts_with_kind(body):
-            return match.group(0).strip()
-    return None
+    return next((line for line, body in prevention_lines(text) if body and not starts_with_kind(body)), None)
 
 
 def _consume_retry(payload: dict, text: str) -> bool:
