@@ -48,8 +48,8 @@ def check(payload: dict, session_id: str, tool_name: str, tool_input: dict) -> t
         session_id,
         agent_id.resolve_hook_agent_id(payload),
         notice.QUALITY_RESEND_KEY,
-        json.dumps(tool_input, ensure_ascii=False, sort_keys=True),
-        label="公開前の新着WIの判定を確認できないまま公開した",
+        json.dumps(tool_input, ensure_ascii=False, sort_keys=True) + "\n" + found[0],
+        label=f"公開前の新着WIの判定を確認できない公開の操作（{found[0]}）",
         scope=resend_scope(payload),
     ):
         return None

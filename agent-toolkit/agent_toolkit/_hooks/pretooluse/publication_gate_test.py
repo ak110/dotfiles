@@ -48,6 +48,11 @@ def test_publication_blocks_on_uwis_answered_after_the_baseline(tmp_path, monkey
         assert denied is not None and all(name in denied for name in names)
     assert gate("git push --dry-run origin develop") is None
     assert gate("git push origin develop") is None
+    _write_uwi_file(notes, "20261124-061940-003.md", answer="")
+    _write_uwi_file(notes, "20261124-061940-003.md", answer="回答済み")
+    changed = gate("git push origin develop")
+    assert changed is not None and "20261124-061940-003.md" in changed
+    _write_uwi_file(notes, "20261124-061940-003.md", answer="")
     contract = tmp_path / "work-contract.md"
     monkeypatch.setattr(work_contract, "record_path", lambda _sid: contract)
     contract.write_text(f"- 新着WIの判定: {names[0]} | 次回: 別ホストで観測する\n", encoding="utf-8")
