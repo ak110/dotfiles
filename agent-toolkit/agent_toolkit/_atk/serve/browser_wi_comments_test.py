@@ -102,6 +102,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 
     await page.locator('.entry-select[data-key="awi.md"]').click()
     await detail.wait_for(state="visible")
+    await detail.locator("#detail-more > summary").click()
     comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
     await comment_button.click()
     await playwright.async_api.expect(comment_input).to_have_value("最初のコメント")
@@ -123,6 +124,7 @@ async def test_user_comment_ui_appends_replaces_and_recovers_from_external_updat
 
     await page.locator('.entry-select[data-key="awi.md"]').click()
     await detail.wait_for(state="visible")
+    await detail.locator("#detail-more > summary").click()
     comment_button = detail.get_by_role("button", name="ユーザーコメント", exact=True)
     await comment_button.click()
     await comment_input.fill("SSE中も保持する入力")

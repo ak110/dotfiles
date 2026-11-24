@@ -265,7 +265,7 @@ export function setDetailMode(mode) {
   byId('save-next-answer-button').hidden = !waiting;
   byId('skip-answer-button').hidden = !waiting;
   // 連続回答では本文の読取領域を確保する。編集・状態操作は詳細を閉じて通常/検索表示から行える。
-  for (const id of ['delete-button', 'adopt-button', 'edit-button']) byId(id).parentElement.hidden = waiting;
+  for (const id of ['adopt-button', 'edit-button']) byId(id).parentElement.hidden = waiting;
   renderWaitingProgress();
   byId('user-comment-panel').hidden = !commenting;
   // 採否のメモは採用・却下の操作モードでだけ表示し、閲覧中の本文とユーザーコメントの欄から分ける。
@@ -287,6 +287,8 @@ export function setDetailMode(mode) {
   byId('save-user-comment-button').hidden = !commenting;
   byId('confirm-adopt-button').hidden = decisionAction !== 'adopt';
   byId('confirm-reject-button').hidden = decisionAction !== 'reject';
+  const more = byId('detail-more');
+  more.hidden = waiting || !Array.from(more.querySelectorAll('button')).some(button => !button.hidden);
   syncDetailMutationAvailability();
   byId('edit-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';
   byId('adopt-button').className = unansweredUwi ? 'button-secondary' : 'button-primary';

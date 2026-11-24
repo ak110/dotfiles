@@ -203,25 +203,28 @@
           </div>
           <p id="answer-input-error" class="inline-error" hidden></p>
         </section>
-        <div class="detail-footer-delete">
-          <button id="delete-button" class="button-danger" type="button">削除</button>
-        </div>
         <div class="detail-footer-left">
           <button id="adopt-button" class="button-primary" type="button" hidden>採用</button>
-          <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
-          <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
-          <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
-          <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
         </div>
         <div class="detail-footer-right">
-          <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
-          <button id="user-comment-button" class="button-primary" type="button" hidden>ユーザーコメント</button>
           <button id="edit-button" class="button-primary" type="button">編集</button>
           <button id="save-entry-button" class="button-primary" type="button" hidden>保存</button>
           <button id="save-user-comment-button" class="button-primary" type="button" hidden>コメントを保存</button>
           <button id="confirm-adopt-button" class="button-primary" type="button" hidden>採用を確定</button>
           <button id="confirm-reject-button" class="button-danger" type="button" hidden>却下を確定</button>
         </div>
+        <details id="detail-more" class="detail-more" open>
+          <summary>その他の操作</summary>
+          <div class="detail-more-actions">
+            <button id="important-button" class="button-secondary" type="button" hidden>重要設定</button>
+            <button id="user-comment-button" class="button-secondary" type="button" hidden>ユーザーコメント</button>
+            <button id="hold-button" class="button-secondary" type="button" hidden>保留</button>
+            <button id="unhold-button" class="button-secondary" type="button" hidden>保留を解除</button>
+            <button id="return-to-inbox-button" class="button-secondary" type="button" hidden>受信へ戻す</button>
+            <button id="reject-button" class="button-danger" type="button" hidden>却下</button>
+            <button id="delete-button" class="button-danger" type="button">削除</button>
+          </div>
+        </details>
       </footer>
     </article>
   </dialog>

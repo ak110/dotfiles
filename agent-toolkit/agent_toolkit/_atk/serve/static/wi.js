@@ -316,7 +316,12 @@ async function init() {
     refreshCooldownDisplays();
     return initialization.then(() => reloadFromExternalChange());
   });
-  if (window.matchMedia('(max-width: 700px)').matches) {
+  const compact = window.matchMedia('(max-width: 700px)');
+  const resetDetailActions = () => { byId('detail-more').open = !compact.matches; };
+  compact.addEventListener('change', resetDetailActions);
+  byId('detail-dialog').addEventListener('close', resetDetailActions);
+  resetDetailActions();
+  if (compact.matches) {
     document.querySelector('#screen-wi .filters details').open = false;
   }
   document.addEventListener('focusin', handleFocusIn);

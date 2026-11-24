@@ -538,6 +538,36 @@ async def test_wi_references_open_nested_readonly_dialogs(browser_harness: _Brow
     assert await detail.locator("#detail-metadata").text_content() == preview_values
 
 
+@pytest.mark.asyncio(loop_scope="session")
+async def test_wi_detail_keeps_reading_space_and_discloses_secondary_actions(browser_harness: _BrowserHarness) -> None:
+    page = browser_harness.page
+    await page.set_viewport_size({"width": 360, "height": 900})
+    await page.goto(browser_harness.base_url + "/?filename=awi.md")
+    detail = page.locator("#detail-dialog")
+    footer = detail.locator("#detail-footer")
+    disclosure = footer.locator("summary", has_text="その他の操作")
+    delete = footer.locator("#delete-button")
+    await playwright.async_api.expect(disclosure).to_be_visible()
+    await playwright.async_api.expect(footer.locator("#adopt-button")).to_be_visible()
+    await playwright.async_api.expect(footer.locator("#edit-button")).to_be_visible()
+    await playwright.async_api.expect(delete).to_be_hidden()
+    bounds = await footer.bounding_box()
+    assert bounds is not None and bounds["height"] <= 100
+    await playwright.async_api.expect(detail.get_by_text("編集対象の本文", exact=True)).to_be_in_viewport()
+
+    await disclosure.focus()
+    await disclosure.press("Enter")
+    await delete.click()
+    await page.get_by_role("dialog", name="削除の確認").get_by_role("button", name="閉じる").click()
+    await playwright.async_api.expect(delete).to_be_focused()
+    await disclosure.press("Enter")
+    await playwright.async_api.expect(delete).to_be_hidden()
+
+    await page.set_viewport_size({"width": 1280, "height": 900})
+    await playwright.async_api.expect(disclosure).to_be_hidden()
+    await playwright.async_api.expect(delete).to_be_visible()
+
+
 @pytest.mark.parametrize(("dimension", "boundary"), [("width", "33rem"), ("height", "21rem")])
 @pytest.mark.asyncio(loop_scope="session")
 async def test_wi_reference_stops_offset_at_readable_boundary(
