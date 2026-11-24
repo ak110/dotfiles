@@ -87,7 +87,7 @@
      verificationを空にする場合は、受理まで終えた同じ入力の両出力と終了状態を既存の記録へ対応付ける。
 8. CIが無いか公開先でCIが実行されず、ローカルの全体pytestが必要な場合は`--maxfail=10`を付け、計画からmanifestまで同じ値を保つ。
    直接pytestでは`--maxfail=10`、pyfltr経由では`--pytest-args='--maxfail=10'`とし、他のpytestの追加引数は同じ値へ併記する。
-   少数の独立した失敗を1回で集めつつ、共通の準備の不具合で全テストが失敗した時の出力を有限に抑えるためである（10件を超える失敗では未実行のテストが残り、xdistの実行中のテストにより最終の失敗数は10を超えうる）。
+   少数の独立した失敗を1回で集めつつ、共通の準備の不具合で全テストが失敗した時の出力を有限に抑えるためである（失敗が10件に達すると打ち切られ、未実行のテストが残ることがある。xdistの実行中のテストにより最終の失敗数は10件を超えうる）。
    CIが全体を担う通常のレーン内・統合時・公開前は関連範囲だけを実行し、`addopts`の値5、限定の検証と失敗箇所の再確認、`make test`の通常の起動、CIの`--maxfail=0`、時間の上限はそのまま使う。
 
 ## テストとCIの所要基準
@@ -108,7 +108,8 @@
 
 pytestのCPU上限は実時間と別の合否の契約で、`agent-toolkit/agent_toolkit/_testing/pytest_plugin.py`が判定する。
 
-- 計上するのは、setup・call・teardownのテスト実行threadと、そのテストが起動したThread・ThreadPoolExecutorへ投入した仕事（既存poolへの投入を含む）のCPUであり、他のテストやセッション基盤のthread、子プロセスのCPU、待機の実時間は数えない。
+- 計上するのは、setup・call・teardownのテスト実行thread、そのテストが起動したThreadの処理、およびThreadPoolExecutorへ投入した処理（既存poolへの投入を含む）のCPUである。
+  他のテストやセッション基盤のthread、子プロセスのCPU、待機の実時間は数えない。
 - 通常のテストは、初回importと共有heapの旧世代の自動GCの区間を控除した値が0.5秒未満で、控除前のgrossが2秒以下であることを求める。
 - 通常の上限内で保証できない実プロセス・実Git・ブラウザーなどの境界テストは、契約と最小構成の理由を示して`pytest.mark.cpu_limit(seconds, reason=...)`で正の有限な個別上限を指定し、grossの上限は個別上限に共有費用の許容量1.5秒を加えた値になる。
 - Windows CIのpytestは`--cpu-limit-record-only`で超過を警告とJUnitへ記録するだけにし、CPUの回帰はLinuxのCIとWindows実機でのローカル実行で検出する。
