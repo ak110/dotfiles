@@ -16,9 +16,9 @@ agent-toolkitの配布物と個人用のhook、`atk`の出力を新設・変更�
 ## 同期hookの所要
 
 [Claude Code公式のhook仕様](https://code.claude.com/docs/en/hooks#run-hooks-in-the-background)では、既定の同期hookは完了まで実行を止める。
-[タイムアウト](https://code.claude.com/docs/en/hooks#timeouts)はhookの種類・イベントで異なり、個々の処理に許容される所要の目安ではない。
+[タイムアウト](https://code.claude.com/docs/en/hooks#timeouts)はhookの種類・イベントで異なり、個々の処理に許容される所要時間の目安ではない。
 圧縮後の要約は、WI `20261123-012545-001.md` に記録された事例では内部の15秒上限に達し、手動では約45秒で成功した。
-入力の量で所要が大きく変わる処理は同期hookから外し、必要な結果を得る手動操作か、結果を回収する主体が明確な背景処理へ移す。
+入力の量で所要時間が大きく変わる処理は同期hookから外し、必要な結果を得る手動操作か、結果を回収する主体が明確なバックグラウンド処理へ移す。
 
 ## フック実装の配置先（個人フックと配布物）
 
@@ -60,7 +60,7 @@ XMLタグの境界と属性の書き方は`agent-basics:writing-standards/refere
 - 反復の抑止は`agent_toolkit._hooks.notice`の`formatter`と`warning_formatter`が行い、単位は同じ会話、呼び出し主体、操作範囲である。
 - 既存の呼び出し元が渡す`removable_cause`、`escalate_on_repeat`、`summary`は、入力の受理形式を保つために受け付けるが、回数の通知と遮断への格上げの判定には使わない。
 - 資料の取得・スキルの起動の案内は遮断しない（[操作スキルの取得](../../../../docs/development/internals-session-state-operation-skills.md)、[作業契約の取得](../../../../docs/development/internals-session-state-planning.md)）。
-  読取の観測はホストごとにhook入力の形が違い、観測できないホストでは遮断から回復できなくなるためである。
+  読み取りの観測はホストごとにhook入力の形が違い、観測できないホストでは遮断から回復できなくなるためである。
 
 ## 通知本文の整形
 

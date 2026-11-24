@@ -156,7 +156,7 @@ def test_staged_lane_contract_reaches_selection_and_execution() -> None:
         "成果不要の読み取り専用準備は`agent-toolkit:atk-mode/playbooks/process-wi-lane-resources.md`「後段レーンの先行調査」で前倒しする"
         in lanes
     )
-    assert "書込競合だけで後段にした工程など先行成果を要さない工程は" in completion
+    assert "書き込み競合だけで後段にした工程など先行成果を要さない工程は" in completion
     assert "今回の巡回で実装・検証まで進める" in completion
     assert "先行を次の巡回へ回し後段を今回進めると判定した時に" not in lanes
     assert "統合先の最新HEADからworktreeを作成し" in lanes

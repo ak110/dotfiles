@@ -259,7 +259,13 @@ def pretooluse(payload: dict[str, Any]) -> Authorization | None:
                 nonlocal consumed
                 direct_now = state_now.get(_DIRECT)
                 current = direct_now.get(key) if isinstance(direct_now, dict) else None
-                if not isinstance(current, dict) or current != saved:
+                if (
+                    not isinstance(current, dict)
+                    or not isinstance(current.get("metadata"), dict)
+                    or current.get("question") != saved["question"]
+                    or current.get("answer") != saved["answer"]
+                    or current["metadata"].get("permission_request") != saved["metadata"].get("permission_request")
+                ):
                     return None
                 consumed = operation_approvals.consume(current["metadata"], current["question"], current["answer"], request)
                 if consumed:
@@ -345,8 +351,14 @@ def _consume_uwi(
                 return Authorization(context="対話画面・対象版・実効autoModeの一致を確認できない。通常の権限確認へ戻す。")
             with sync.DEFAULT_STORAGE.mutation(root) as mutation:
                 latest = frontmatter.parse_frontmatter(path.read_text(encoding="utf-8"))
-                if latest is None or latest != parsed:
+                if (
+                    latest is None
+                    or latest[1] != body
+                    or latest[0].get("permission_request") != metadata.get("permission_request")
+                    or (legacy and latest != parsed)
+                ):
                     return None
+                metadata = latest[0]
                 if legacy:
                     metadata["legacy_operation_approval"] = {
                         "request_hash": operation_approvals.fingerprint(request),

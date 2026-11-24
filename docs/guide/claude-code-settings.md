@@ -65,9 +65,9 @@ CLIは`claude --version`で2.1.287以降か確認する。
 旧`CLAUDE_CODE_ENABLE_FUNCTION_HOOKS`は不要で、設定更新時に除去する。
 `/plugin`のInstalledタブで読み込まれたModを確認し、個別に無効化できる。
 シェルから更新した後は会話で`/reload-plugins`を実行する。
-`/restart`と`/update`は、委譲先の終了を待つ背景コマンド`atk agents wait`を実行している場合、自身の会話の待機だけを停止する。
+`/restart`と`/update`は、委譲先の終了を待つバックグラウンドコマンド`atk agents wait`を実行している場合、自身の会話の待機だけを停止する。
 再起動後は同じ会話で待機と作業を自動で続ける。
-ほかの背景処理やCode ModeのREPL内実行は停止せず、実行中はClaude Code本体が再起動を拒否することがある。
+ほかのバックグラウンド処理やCode ModeのREPL内実行は停止せず、実行中はClaude Code本体が再起動を拒否することがある。
 `disableAllHooks: true`はユーザーのModsに加えて設定hookとstatuslineも止めるため、個別停止を優先する。
 組織の制御や読み込まれない場合は[公式の読み込み条件](https://code.claude.com/docs/en/plugins/mods/overview#turn-mods-on-or-off)を参照。
 

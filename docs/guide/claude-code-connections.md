@@ -117,7 +117,7 @@ ANTHROPIC_API_KEY=YOUR_API_KEY
 変数の意味は[Claude Codeの認証仕様](https://code.claude.com/docs/en/authentication#authentication-precedence)を参照。
 
 ファイルはGit管理外へ置き、Linux・macOSでは`chmod 600 <ファイル>`で自分だけが読み書きできるようにする。
-Windowsではファイルのプロパティのセキュリティ設定で、使用するOSアカウントだけに読取権限を与える。
+Windowsではファイルのプロパティのセキュリティ設定で、使用するOSアカウントだけに読み取り権限を与える。
 envファイルは新しい会話の開始・再開時に読む。
 ユーザー設定（`~/.claude/settings.json`）などのsettingsの`env`へ接続関連の変数（`ANTHROPIC_API_KEY`、`AWS_PROFILE`など）を書いた場合、委譲先とオーケストレーターが実行するコマンドにはその変数が空の値で渡る。
 

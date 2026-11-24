@@ -26,7 +26,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 処理の振り分け
 
-計画が要る項目を「計画対象」、要らない項目を「直接実装対象」として、本書「実行順」手順1の対応表へ区分を書く。
+計画が必要な項目を「計画対象」、不要な項目を「直接実装対象」として、本書「実行順」手順1の対応表へ区分を書く。
 区分を書く前に`agent-toolkit:atk-mode/playbooks/write-plan.md`「計画ファイルの作成要否」を読み、WIごとに同節の4事項を本文と現物に照らして判定する。
 計画を省略する項目は、区分の欄に省略の条件を満たす変更内容を短く併記する。
 例えば「直接実装、4事項は本文で確定: `X`の初期値を`a`から`b`へ変える」と書く。
@@ -36,7 +36,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
 
 ## 不変条件
 
-- メインが作業ツリーの書込を所有し、一部の書込を委譲先へ分担させる場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
+- メインが作業ツリーの書き込みを所有し、一部の書き込みを委譲先へ分担させる場合は`agent-toolkit:atk-mode/playbooks/delegation.md`「作業ツリーの保護」に従う。
 - 実行レビューは、実装を担当していない独立した担当が行う。
 - 人間由来の変更で不採用とする範囲がある場合は、ユーザーの確認を得てから終える。
 - 処理対象のWIは手順1で固定し、途中の追加はユーザーの明示の追加と、`agent-toolkit:atk-mode/playbooks/process-wi-immediate-fix.md`「即時対応」で今回追加と判定した正式改善AWIに限る。
@@ -71,7 +71,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
      `source: run-skill`の承認用UWIも対象にし、扱いは`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」に従う。
      回答済みのUWIは実装前に`agent-toolkit:atk-mode/references/states-and-dependencies.md`「状態と依存」に従って終えるか処理対象へ加える。
    - 依存が未解決の項目は、依存元のWIがprocessableで同じ`target_repo`を対象とする場合だけ今回の実行に含めて報告する。
-     依存元の状態変更や集合からの除外が要る場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認の要否を決める。
+     依存元の状態変更や集合からの除外が必要な場合は、`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」で確認の要否を決める。
    - 対象worktreeごとに公開対象とベースブランチを明示し、`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の開始時のCI点検をする。
      実装に着手する前に実際のCIの状況を照会し、失敗ログを取得して残工程への影響を判定し、既存の失敗は本書「見つけた既存不良の扱い」で扱う。
    - 本書「処理の振り分け」に従って計画の要否を判定してから、各WIの次の値を対応表にまとめる。
@@ -115,7 +115,7 @@ all-reposから受け取った候補を処理する場合は、`agent-toolkit:at
      反映したHEADの一意な短縮OID、反映コマンドの終了ステータス、稼働確認の結果を完了報告へ渡す。
    - Claude Codeでpush後のCIの監視を待つ前に、`agent-toolkit:atk-mode/playbooks/delegation-waiting.md`を読む。
      CIの待機のために会話圧縮を一律に手動で予約せず、`agent-toolkit:atk-mode/playbooks/host-claude-code.md`「長時間待機前の会話圧縮」の条件付きの自動予約とホスト標準の圧縮に任せる。
-     起動済みの`wait_ci.py`のバックグラウンドタスクを保ち、前景を占有せずにターンを終え、完了通知を受けた後に同じ入力と保存出力からCIの結果を回収する。
+     起動済みの`wait_ci.py`のバックグラウンドタスクを保ち、フォアグラウンドを占有せずにターンを終え、完了通知を受けた後に同じ入力と保存出力からCIの結果を回収する。
    - 中断や会話圧縮の後は、注入された要約を起点に計画、WI、資源の登録、CIの監視出力、担当別の引き継ぎ記録から状態を復元し、要約に書かれた作業順などで選定の集合を置き換えない。
    - 公開後に追加の修正を統合して再公開する場合は、`agent-toolkit:atk-mode/playbooks/process-wi-publishing.md`「公開状態の検収と再起動」に従う。
 9. 報告か委譲元への返却の前に、`agent-toolkit:atk-mode/playbooks/process-wi-observation.md`「報告前に確かめる保存状態」を適用する。

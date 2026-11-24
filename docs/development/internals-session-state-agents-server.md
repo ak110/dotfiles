@@ -17,7 +17,7 @@
   - 記録する値: 公開状態として`session_id`、`status`、`kill_requested`、`pending_observation`、`owner_agent_id`、`model_type`、`error`、`agent_message`を保持する。
     内部状態は`turn_id`と`launcher_agent_id`である。
     `pending_observation`は未観測タスクの有無、`owner_agent_id`はそのタスクを発生させた主体、`error`と`agent_message`は終了時のエラーと返却本文を表す。
-    `launcher_agent_id`は成功したstartの呼出主体を保存し、send_messageでは既存値を保つ。
+    `launcher_agent_id`は成功したstartの呼び出し主体を保存し、send_messageでは既存値を保つ。
     旧レコードで欠けていれば所有不明としてcwd回復の対象から除く
   - `model_type`の決定ロジック: 起動入力で指定された`model_type`を優先し、指定が省略された場合は、`start`の`task`では共通パーサーが読み取る役割文書のfrontmatterから取得し、その他の`mode`では各modeごとのデフォルト種別を適用する。
     ファイル名対応表は過去の旧文書を読み取る互換性維持のためだけに使用する。

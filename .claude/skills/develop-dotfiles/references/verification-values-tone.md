@@ -5,7 +5,7 @@
 - `agent-doc-tone`は`make test`とcommit時のpre-commit（stageした対象ファイル）で動き、単独では`uv run --frozen pyfltr run --commands=agent-doc-tone`で実行する。
 - 対象はエージェントが実行時に読むMarkdown（`AGENTS.md`、`agent-toolkit/`配下のrules・skills・share、`.chezmoi-source/dot_claude/`、`.claude/skills/`）である。
   `agent-toolkit/`配下ではコードのコメント、docstring、表示メッセージ、プロンプト注入文も語彙の判定に含む。
-- 指標と閾値は`scripts/check_agent_doc_tone.py`の定数と`scripts/check_agent_doc_tone_test.py`の試験を参照する。
+- 指標と閾値は`scripts/check_agent_doc_tone.py`の定数と`scripts/check_agent_doc_tone_test.py`のテストを参照する。
   同スクリプトの`_DENIED_PATTERNS`に一致した説明文は、ファイル名と行番号を表示して終了コード1以上で止まる（pre-commitではcommitが中断される）。
   `_CAUTION_PATTERNS`は文脈で対象や動作が曖昧になりやすい表現で、警告だけを出して終了コード0で終わる。
   正確な専門用語と合意済みの正式名称はそのまま保ち、引用した原文、検出用の定義データ、保存形式の名称も用途を区別してそのまま保持する。

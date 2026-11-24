@@ -15,7 +15,7 @@
   `operation_skills_observed` はSkillの起動成功または入口の全文読取を記録し、起動済みのスキルを案内の対象から外す。
   案内は遮断しない（全文読取の観測はホストのhook入力に依存し、Antigravityの入力は結果本文を含まないため、遮断すると回復の手段が無くなる）。
   会話圧縮・clearのSessionStartで`forget_subject`がその主体の記録を消し、次の該当する操作で再び案内する。
-  軽量の委譲先には案内せず、一時領域（managed-tempとClaude Codeの一時領域）だけへの書込はwriting-standardsの案内の対象から外す。
+  軽量の委譲先には案内せず、一時領域（managed-tempとClaude Codeの一時領域）だけへの書き込みはwriting-standardsの案内の対象から外す。
 - `termination_evidence`: `agent-toolkit/agent_toolkit/_hooks/termination_evidence.py`が、終了工程に必要な証拠を作業単位で管理・保持する。
   保持する内容には、作業ごとの成果作業の種別、report-completionの起動証拠、ツールの呼び出し履歴、判断の記録、遅れて返ってくる応答を元の作業に対応付けるための未完了の呼び出し、ならびに判断の根拠となった人間の入力が含まれる。
   PreToolUse、PostToolUse、UserPromptSubmitがツール呼び出しと人間の入力を逐次更新し、Stopの`termination_order_advisor`が成果作業と起動証拠の対応関係を読み取る。
@@ -25,7 +25,7 @@
   - 成果作業と起動証拠: 成功した対象スキルの起動、リポジトリに対する自身の編集作業、計画ファイルの保存、WIの保存、commitやpushなどを`deliverables`へ記録する。
     完了報告の手順書`skills/atk-mode/playbooks/report-completion.md`の起動証拠は、`completion_report`へ記録する。
     Claude Codeは`atk-mode`の引数`report-completion`での起動か、応答の`file.content`が現在の全文と一致した`Read`を記録する。
-    Codex・Antigravityは、出力をリダイレクトしない本文表示か1行目から始まる`sed -n`で、結果が現在の全文を含むコマンドの読取を記録する。
+    Codex・Antigravityは、出力をリダイレクトしない本文表示か1行目から始まる`sed -n`で、結果が現在の全文を含むコマンドの読み取りを記録する。
     メインの起動証拠を記録した時は、手順書の現在の版（SHA-256）を`completion_context`へ保つ。
     Stopはこの版が現在の版と一致する時だけ、メインの文脈に手順書があるとみなす。
     会話圧縮・clearのSessionStartが`completion_context`を消す。
@@ -51,7 +51,7 @@
     具体的な手順は`agent-toolkit:atk-mode/references/termination-evidence.md`に従う
   - 元の入力と再突入: `last_human_input`には直近の人間の入力を保持し、自動通知による再開後であっても元の依頼への帰属関係を維持する。
     同じターンIDを持つ通知は別の入力として保存し、人間の入力の本文と由来を上書きしない。
-    ターン途中に届いた入力（Claude Codeのセッション記録の`attachment.type=queued_command`）は`transcript_path`に保持した記録ファイルを`queued_offset`の読取位置から読んで取り込む。
+    ターン途中に届いた入力（Claude Codeのセッション記録の`attachment.type=queued_command`）は`transcript_path`に保持した記録ファイルを`queued_offset`の読み取り位置から読んで取り込む。
     取り込んだ入力のうち`origin.kind=human`のものだけを人間の入力として扱う。
     記録ファイルが変わったら読取位置を先頭へ戻す。
     `--context`は人間の入力の有無にかかわらず現在の会話の`session_id`と作業の`work_id`を返し、その入力を観測できた場合のみ`input_id`と`quote`を添え、観測できていなければ両者を`null`とする。

@@ -81,7 +81,7 @@ hookが新たに操作を止めた時と、修正の後も同じ事象が出る�
    - Antigravityの`agent-toolkit-agy/`・`agent-basics-agy/`は`scripts/sync_antigravity_plugin.py`が生成し、`post_apply`が`~/.gemini/config/plugins.json`へ登録する。
      `--plugin agent-basics`で品質プラグインだけを生成できる。
      元の名前空間と品質本文を保ち、両配布物の長文スキルを同じ短いSKILL.md・全文資料の生成処理へ通す。
-   - 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で行う（`python`の明示が要る。詳細は`docs/development/operations.md`）。
+   - 生成物の一括同期は`uv run python scripts/sync_generated_files.py`で行う（`python`の明示が必要である。詳細は`docs/development/operations.md`）。
 5. 本書「plan modeでの取り扱い」の手順3の完了条件と、生成結果の一致を確かめる。
    続けて`.claude/skills/develop-dotfiles/references/verification.md`「検証コマンドの実行」の特定ファイルに限る形式で、SSOTテストを含む動作検証を行う。
 
@@ -95,7 +95,7 @@ hookが新たに操作を止めた時と、修正の後も同じ事象が出る�
 
 rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
 
-1. 公開担当は、統合した差分ごとに採番の要否を各定義元で確定し、レーンの引渡しと比べる。
+1. 公開担当は、統合した差分ごとに採番の要否を各定義元で確定し、レーンの引き渡しと比べる。
    `rust/claude-statusline/`の差分は`.claude/skills/release-dotfiles/SKILL.md`の採番の規定で判定し、`.claude/skills/develop-dotfiles/references/verification.md`「公開前の検証」の`--enable=statusline-version`で最終検証する。
 2. `version`が競合したら、`(major, minor, patch)`の数の組で大きい方を定義元の2ファイルへ反映する。
    `scripts/sync_codex_plugin_manifests.py`で派生マニフェストを同期し、`--check`の終了コードで整合を判定する。
@@ -105,7 +105,7 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
 
 ## marketplace管理
 
-ローカルの環境への反映は次の順で行う（版数の更新は要らない）。
+ローカルの環境への反映は次の順で行う（版数の更新は不要である）。
 
 1. `chezmoi apply`（または`update-dotfiles`）を実行する。
    事後処理は次を行う。
@@ -113,8 +113,8 @@ rebaseやmergeの後は、競合の有無によらず次の順で確かめる。
    - `setup_codex_links`で、Codex向けのdotfiles固有のスキルと`docs`へのシンボリックリンクを作る。
    - Codexのmarketplaceを登録し、プラグインの導入と更新を終える。
 2. Claude Codeを再起動するか、`/reload-plugins`を実行する。
-   対話のメインは、`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`の`targets`へ`plugins`、`agents_server`、`pyfltr`から要る対象を指定して反映を予約できる。
-   予約した後は今のターンを終え、プラグインの再読込とMCPの再接続の結果を確かめる。
+   対話のメインは、`mcp__plugin_agent-toolkit_agents_server__apply_runtime_changes`の`targets`へ`plugins`、`agents_server`、`pyfltr`から必要な対象を指定して反映を予約できる。
+   予約した後は今のターンを終え、プラグインの再読み込みとMCPの再接続の結果を確かめる。
    再起動と反映の受付を完了と扱わず、確かめていない操作を自動で繰り返さない。
 
 marketplaceは、初回の導入（bootstrap）で`install-claude.sh`・`install-claude.ps1`がGitHub参照型として登録する。

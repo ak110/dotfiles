@@ -1,7 +1,7 @@
 # セッション記録の形式と照会
 
 本書は、Claude Code、Codex、OpenCode、Antigravityが保存する会話の記録（セッション記録）を集計・照会する時の、記録の形式、集計値の典拠、照会の選び方を定める。
-件数、不在、全件、所要を述べる時は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い、照会した範囲と未確認の範囲を分けて書く。
+件数、不在、全件、所要時間を述べる時は、原則3（`agent-basics:writing-standards/references/quality-principles-facts.md`）に従い、照会した範囲と未確認の範囲を分けて書く。
 
 | ホスト | 記録の所在 | 照会での指定 |
 | --- | --- | --- |
@@ -13,7 +13,7 @@
 `agents_server`が起動した委譲先は、どの実行エンジンでも`atk run-script session-review-prepare -- --agents-session-id <session_id>`が登録簿から記録を解決する。
 Claude CodeとCodexの記録はJSON Linesで、各レコードの時刻の欄は共通して`timestamp`である。
 Codexのファイル名に含まれる`<thread-id>`はUUIDであり、末尾の5区画がthread IDに該当する。
-OpenCodeの記録は読取専用で取得され、照会結果の`line`はmessageとpartの順から得た論理位置で、元の表と行IDは`opencode_source`に残る。
+OpenCodeの記録は読み取り専用で取得され、照会結果の`line`はmessageとpartの順から得た論理位置で、元の表と行IDは`opencode_source`に残る。
 
 コンパクション（会話圧縮）の記録形式は、実行環境（runtime）によって異なる。
 Claude Codeでは`type`が`system`、`subtype`が`compact_boundary`のレコードとして記録され、`compactMetadata`の中に`trigger`、`preTokens`、`postTokens`、`durationMs`が格納される。
@@ -33,7 +33,7 @@ Claude Code 2.1.301にある`api-request-blob`はAPIリクエストの控え（�
   worktreeなど別のディレクトリで開始したセッションは、複製元とは別の`<project>`に置かれる。
 - 自身の記録は、更新時刻の順やcwdから推測せず、SessionStartの通知が示すtranscriptの絶対パスをそのまま使う。
   特定済みのセッションIDから別の記録を読む時は、`atk run-script session-review-evidence -- --claude-session-id <ID>`へIDを渡す。
-  ファイルパスそのものが要る時は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で1件に確定し、取得したパスはクォートして渡す（グロブ展開で複数の語に分かれると、後続のコマンドが標準入力を待ち続ける）。
+  ファイルパスそのものが必要な時は`find ~/.claude/projects -maxdepth 2 -name '<session-uuid>.jsonl'`で1件に確定し、取得したパスはクォートして渡す（グロブ展開で複数の語に分かれると、後続のコマンドが標準入力を待ち続ける）。
 - 親と子の記録には同じ事象が重複して現れるため、件数を確定する時は重複を除く。
   深さ2のメイン記録だけに限るとサブエージェント内部のイベント（ツール呼び出しなど）を取りこぼすため、限る時はその条件を明記する。
 - サブエージェントの起動回数の典拠は、`subagents/*.meta.json`の`agentType`、`description`、`toolUseId`、`spawnDepth`、`parentAgentId`である。
@@ -103,7 +103,7 @@ APIリクエストの`display`パラメーターが`"updates"`の応答のうち
 
 段階別の初回品質は、レビュー、最終検証、公開CIを別の母集団とし、初回の正式な合否を観測できた論理作業単位（明示された1つの管理表、無ければ正式な初回と前回HEADの連鎖）のうち初回に合格した割合で比べる。
 期間、対象workflow、版、環境、分母、合格数、不明、未実行、未解決を併記し、欠けた指摘表や空の指摘表は合格へ補わず不明として残す。
-再判定数、修正版数、範囲変更数は元の記録と比べるための観測値で、初回品質の`elapsed_seconds`は最初と最後の正式結果の時刻差（修正作業だけの所要ではない）である。
+再判定数、修正版数、範囲変更数は元の記録と比べるための観測値で、初回品質の`elapsed_seconds`は最初と最後の正式結果の時刻差（修正作業だけの所要時間ではない）である。
 正当な範囲の追加や環境の差と、初回の不足を分ける。
 合格率が低い時は実装の不足と誤った指摘を比べ、指摘0件が続く時は差分、契約の被覆、証拠、独立性を確かめ、代表の評価入力で欠陥を検出できるかを確かめる（指摘数はノルマにしない）。
 
@@ -119,8 +119,8 @@ APIリクエストの`display`パラメーターが`"updates"`の応答のうち
 トークン量とリクエスト数は`--stats`、所要時間は`--elapsed-until <ISO 8601形式の時刻>`で取得する。
 別セッションを含む担当別の費用の要約は`--stats --summary-only`で取得する（トークンの定義と合算は全量の表示と同じ）。
 振り返りの対象候補は`--bundle`が生成する`candidates.jsonl`から取り、`atk run-script session-review-prepare`が`candidates.md`へ整形する。
-準備の文書は初回の確認に要る索引、総量、上位、詳細の照会先だけを載せ、全量は`bundle/`に残る。
-全候補ID、必須性、詳細の対応は`bundle/review-index.jsonl`、担当別・対象別の全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`から、候補の選別、原因の特定、費用の確認に要る範囲だけを取得する。
+準備の文書は初回の確認に必要な索引、総量、上位、詳細の照会先だけを載せ、全量は`bundle/`に残る。
+全候補ID、必須性、詳細の対応は`bundle/review-index.jsonl`、担当別・対象別の全量は`bundle/stats.jsonl`と`bundle/resource-usage.jsonl`から、候補の選別、原因の特定、費用の確認に必要な範囲だけを取得する。
 
 時間とトークンを二重に数えないよう、次の違いを守る。
 
@@ -155,7 +155,7 @@ APIリクエストの`display`パラメーターが`"updates"`の応答のうち
 - カタログの`--grep`の診断の`scope=scan-root`は全走査root、`scope=selected-family`は選んだ親の家族の未確認範囲を示す。
   `unresolved_record_count`は`scan_root_unresolved_record_count`と`query_unresolved_record_count`の合併である。
 - `reason=not-found-in-root`（指定root内に無い）と`reason=record-location-unresolved`（家族収集でも所在を取れない）は削除済みや恒久の欠損の証拠ではなく、参照元が期間外でも未取得の参照先が期間外とは判定できない。
-  読込の失敗は`reason`と`failure_line`（読めなかった行）で、参照元は`source_record`と`source_line`で区別する。
+  読み込みの失敗は`reason`と`failure_line`（読めなかった行）で、参照元は`source_record`と`source_line`で区別する。
 - 補助の広域走査で取れなかった範囲は限界として報告でき、要求、認可、採否、原因の判断に欠かせない原記録の不足とは分ける。
 
 WIの処理件数は、成功の結果まで記録された直接の`atk wi`操作だけを数え、操作ごとにセッションIDと記録位置を残す。
@@ -195,7 +195,7 @@ JSON Linesの記録への無制限の汎用検索と、記録や`candidates.md`�
 - 失敗文言の横断照会は、複数のClaude projectを収めるディレクトリなら`--scan-claude-projects <絶対パス>`、Codexの履歴なら`--scan-codex-history <絶対パス>`のどちらか1つを指定する。
   走査の窓は`--since`と`--observation-boundary`で付ける。
   失敗として数えるのは失敗したツール結果だけで、成功した結果や会話内の引用だけの一致は除く。
-- 件数、判定、保存先だけが要る時は`--summary-only`を足し、詳細が要る時は同じ条件から外して再実行する。
+- 件数、判定、保存先だけが必要な時は`--summary-only`を足し、詳細が必要な時は同じ条件から外して再実行する。
   要約でも、出所、未解決の記録と委譲、エラー、終了コードは残る。
   `--reported-improvements`は`--summary-only`、カタログ、`--bundle`と排他である。
 - 単一のtranscriptへの照会では、出力の`kind`が衝突しない照会をまとめて指定できる。

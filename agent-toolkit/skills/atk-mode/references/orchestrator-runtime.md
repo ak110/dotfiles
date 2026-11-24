@@ -11,14 +11,14 @@ process-loop・run-skillの統括の挙動（起動、turn終了、再開、外�
 
 | 起動形・engine | 起動と最初の入力 | turn終了とプロセスの扱い | 再開・外部制御 |
 | --- | --- | --- | --- |
-| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末の前景で起動する。初回は目的文、再開は元の目的の続行入力 | ターン終了は会話の終了ではない。ランチャーは対話CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う |
-| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末の前景で起動する | ターン終了後も対話CLIは操作を待つ | 上限を検出するとCLIを止め、常駐時だけ次の起動で候補の可用性を確かめる。同じ会話の再開は予約から`codex resume`へ接続 |
-| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末の前景で起動する | ランチャーは対話CLIの終了を待つ | 再開指定は`--conversation`。IDを省略した会話選択は非対応 |
+| process-loop・claude | 対話型の`claude --model … --effort … <入力>`を常駐の端末のフォアグラウンドで起動する。初回は目的文、再開は元の目的の続行入力 | ターン終了は会話の終了ではない。ランチャーは対話CLIの終了を待つ | 利用上限時は同じ会話を`--resume`して続行。通常の再開はprocess-loopの再開指定を使う |
+| process-loop・codex | 対話型の`codex --model … -c model_reasoning_effort=… <目的文>`を常駐の端末のフォアグラウンドで起動する | ターン終了後も対話CLIは操作を待つ | 上限を検出するとCLIを止め、常駐時だけ次の起動で候補の可用性を確かめる。同じ会話の再開は予約から`codex resume`へ接続 |
+| process-loop・agy | 対話型の`agy --model … --effort … --mode auto -i <目的文>`を常駐の端末のフォアグラウンドで起動する | ランチャーは対話CLIの終了を待つ | 再開指定は`--conversation`。IDを省略した会話選択は非対応 |
 | run-skill・claude | 非対話の`claude -p --model … --effort …`。初回入力は目的文 | 報告用UWIの保存を確かめられない終了はStop hookが遮断する。バックグラウンドタスクの完了待ちのturn終了は許し、完了通知で再開する。最終応答でCLIが終わり、起動元が報告の保存を検収する | 利用上限の解除後は`claude -p --resume`で自動再開。明示再開は`atk run-skill --resume <RUN_ID>` |
 | run-skill・codex | 非対話の`codex exec --model … -c model_reasoning_effort=… --json <目的文>` | 同上 | 利用上限の解除後は`codex exec resume`で自動再開。明示再開はRUN_ID |
 | run-skill・agy | 非対話の`agy -p <目的文> --model … --effort … --output-format stream-json` | 同上（変換層経由） | 明示再開は`--conversation`。利用上限の自動再開はCLI出力から上限を検出できた場合だけ |
 | agents_server通常委譲 | claudeはClaude Agent SDK、codexはApp Serverの`turn/start`、agyは`agy -p`へ、prompt・`model`・`effort`を渡す | turnの結果を管理して公開する。対話端末の入力待ちとは別の管理 | `send_message`は実行中turnへ配送し、終了済みなら同じ会話を再開する（agyは実行中turnへの配送を拒否する）。`kill`はturnへの中断要求 |
-| ユーザーが直接操作する対話中のメイン | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後は入力を待つ。統括とrun-skill向けのStop hookの続行判定は働かない | ユーザーの入力とホストの再開操作。Claude Codeの`/restart`・`/update`は同じPID・会話IDで再起動し、modが自身の背景waitを停止した場合だけ自動で続行する |
+| ユーザーが直接操作する対話中のメイン | ユーザーが起動引数と入力を選ぶ。統括用ランチャーは適用されない | turn終了後は入力を待つ。統括とrun-skill向けのStop hookの続行判定は働かない | ユーザーの入力とホストの再開操作。Claude Codeの`/restart`・`/update`は同じPID・会話IDで再起動し、modが自身のバックグラウンドwaitを停止した場合だけ自動で続行する |
 
 process-loopとrun-skillは、最初の入力で作業を名指しする。
 process-loopは巡回の手順に従い、反映後の圧縮や入力待ちのためにターンを終えられる。
@@ -49,7 +49,7 @@ Codexの上限を検出した単回実行の終了0はCLIの停止を示す。
 
 対象のメインは30分点検で、未公開の統合済み変更、前回の公開・リリース、稼働版とセッションの開始時刻を既存の記録から確かめる。
 公開できる変更があれば、プロジェクトの通常の公開・リリースの時機、未公開の統合済みWIが10件に達した時点、最初の未公開の統合commitから2時間30分のうち早い時機に公開を始める（10件は1レーン分の上限、2時間30分は点検の間隔を含め公開開始を3時間以内にする値）。
-公開を始める時に、push、CI検収、リリースPR、マージ、配布の順で、実行するコマンドの時間上限と呼出し回数から通常時の所要上限を合成し、公開開始までの3時間に加えた値を通常時のリリース間隔の上限として既存の検証記録へ残す。
+公開を始める時に、push、CI検収、リリースPR、マージ、配布の順で、実行するコマンドの時間上限と呼び出し回数から通常時の所要時間上限を合成し、公開開始までの3時間に加えた値を通常時のリリース間隔の上限として既存の検証記録へ残す。
 上限の無い段階が残る場合は、有限の実行手段を選ぶか、保証範囲を未確定として報告する。
 未検証の変更を期限のために公開せず、外部待ちで期限を守れない場合は、期限・阻害・次の確認時機を未達事項として保存する。
 新着の受け入れや同じ会話での継続を理由に、既存のリリース頻度を下げない。

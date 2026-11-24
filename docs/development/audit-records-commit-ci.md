@@ -23,7 +23,7 @@ APIは全jobログ、`--log-failed`は失敗ステップを返すため、出力
 
 2026年10月24日、LinuxのGitHub CLI 2.102.0で`ak110/dotfiles`の終了済み失敗run `39987263957`とjob `120529624126`（pytest (3.15)）を対象に確認した。
 job logs APIを`--allow-escape-sequences`付きで取得すると終了コード0で29773行・6090534bytesを保存でき、最長行は600188bytes、外側の時間上限による終了の表示を含んだ。
-同じrunとjobへの`gh run view --log-failed`も終了コード0・標準エラー0bytesだったが、17833行・3430008bytesで、試験の進捗44%の行で終わり、時間上限の表示を含まなかった。
+同じrunとjobへの`gh run view --log-failed`も終了コード0・標準エラー0bytesだったが、17833行・3430008bytesで、テストの進捗44%の行で終わり、時間上限の表示を含まなかった。
 APIの原本では、その次の行が600KB前後の試験名を持つ行だった。
 GitHub CLIの[該当source](https://github.com/cli/cli/blob/v2.102.0/pkg/cmd/run/view/view.go#L549)は既定の`bufio.Scanner`で行を読み、走査後の`Err()`を返していない。
 [`bufio.Scanner`の既定の上限](https://pkg.go.dev/bufio#MaxScanTokenSize)は64KiBである。

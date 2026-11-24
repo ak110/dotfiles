@@ -11,11 +11,11 @@ session scopeを全テストへ適用する案は、先行テストの遅延処�
 laneの統合検証と全てのpytest起動は、pyfltrのホスト共有実行APIへ接続する。
 pytestのbasetempは実行単位で分離し、controllerとworkerの終了後に正常・失敗・中断のどの場合も回収する。
 xdist 3.8の失敗上限では、controllerの停止理由を`_testing/xdist_stop.py`がworkerの`session.shouldstop`へ渡す。
-通常完了のキュー排出と早期停止を区別し、lookahead待機中の停止でも未開始の試験を実行しない。
-上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中の試験の中断は行わない。
+通常完了のキュー排出と早期停止を区別し、lookahead待機中の停止でも未開始のテストを実行しない。
+上流[pytest-xdist #1395](https://github.com/pytest-dev/pytest-xdist/pull/1395)と同じ境界へ限定し、強制終了や実行中のテストの中断は行わない。
 修正を含む安定版へ更新し、`xdist_stop_test.py`の早期停止・正常完了と実行枠の回収を確認した時点で局所適応を撤去する。
-2026年11月に、試験の区切りで譲る処理と参加券・完了印・譲渡予算を撤去した。
-先に終了したworkerやidle fork-serverの扱い、同じプロセスのMCP呼出しで、譲渡の状態と実処理の到達が一致せず停止した記録がある。
+2026年11月に、テストの区切りで譲る処理と参加券・完了印・譲渡予算を撤去した。
+先に終了したworkerやidle fork-serverの扱い、同じプロセスのMCP呼び出しで、譲渡の状態と実処理の到達が一致せず停止した記録がある。
 全寿命の排他へ戻すことで、別の検証との重なりを防ぐ目的を保ち、区切りの停止と再開だけの状態を減らす。
 pytestが最外側で実行枠を取得した場合は、controllerが開始からworker・子孫の回収まで`execution_slot.hold`を保持する。
 入れ子の実行とworkerは祖先の所有を継承する。
@@ -39,7 +39,7 @@ pytestは祖先ディレクトリのconftestだけを読むため、起動範囲
 リポジトリ直下の`conftest.py`（`pytools/`・`scripts/`）と`agent-toolkit/conftest.py`（`agent_toolkit/`・`skills/`）が同じ定義をautouseで適用する。
 リポジトリ直下から`agent-toolkit/`配下を指定して起動すると2つのconftestが読まれるが、fixture名が同じため近い側の定義だけが適用され、二重に適用されない。
 環境変数・警告状態・Codexモデル一覧・終了待機・端末幅・agents_serverの診断ログhandlerの回収の6件は`agent_toolkit/`配下、外部真正性状態の隔離は`_atk/managed_temp/`配下、編集環境の隔離は`_atk/wi/mutations/`配下に限る。
-診断ログhandlerの回収は、`configure_logging`の標準エラー向けhandlerが構築時の`sys.stderr`（試験中の取り込み用stream）を保持し、試験ごとに回収を書く方式では回収を持たない呼出し元の試験が残ったため、全ての試験で行う。
+診断ログhandlerの回収は、`configure_logging`の標準エラー向けhandlerが構築時の`sys.stderr`（試験中の取り込み用stream）を保持し、試験ごとに回収を書く方式では回収を持たない呼び出し元のテストが残ったため、全てのテストで行う。
 conftest.pyを置けるのはリポジトリ直下と`agent-toolkit/`直下だけとし、後者の登録名は前者にもそろえる。
 `pytest_fixture_registration_invariant_test.py`が配置と登録の不変条件を確かめる。
 
@@ -56,18 +56,18 @@ PATHの隔離は、エージェントCLIを含むディレクトリを、CLI以�
 pytestの外の単発スクリプト（hook入力を再生する受入probeなど）は、`isolated_development_state(root)`の区間で同じ隔離を適用する。
 2026年11月18日、managed-tempの状態だけを差し替えた受入probeが`rules_context.main`へSessionStartを渡し、合成会話を実運用の振り返り待ちへ登録した。
 保存先を持つモジュールを個別に差し替える方法では差し替えていないモジュールが実運用の状態へ書き込むため、テストと同じ環境変数の隔離を区間の間だけ適用する。
-製品側へ試験用セッションIDの除外条件を加える案は、試験の都合を製品の分岐へ持ち込むため採用しない。
+製品側へテスト用セッションIDの除外条件を加える案は、テストの都合を製品の分岐へ持ち込むため採用しない。
 
 pnpm 12以降の導入・版管理は`agent-basics/skills/writing-standards/references/dependency-management.md`「pnpm」に従う。
 初回導入はnpmまたはstandaloneで行い、版固定と検証にはlockfile先頭のboot文書のintegrityとレジストリ署名、公開待機には`minimumReleaseAge`を使う。
 更新には`pnpm self-update <版>`を使い、pnpm自身が検証しない`packageManager`のCorepack用ハッシュへ依存しない。
 Node.js TSCの[投票](https://github.com/nodejs/TSC/pull/1697)は25系以降のCorepack同梱終了を決めたもので、非推奨化の決定ではない。
 Corepackを別途導入して残す案は、pnpm 12自身で版固定・検証・公開待機を満たせるため採らない。
-pnpm 10以前のCorepack手順と、Corepackを実行し得る試験の環境変数・キャッシュの隔離は維持する。
+pnpm 10以前のCorepack手順と、Corepackを実行し得るテストの環境変数・キャッシュの隔離は維持する。
 
-実際のuv、pnpm、corepackを使い、取得物の冷えた状態自体はチェックしない試験は、`share_package_caches`を明示して取得物だけを再利用する。
-公開された起動コマンド、起動形式、導入試験が個別にキャッシュを解決すると、隔離後の空の保存先を選ぶ試験が残るため、解決を共通fixtureへ集約する。
-空キャッシュからの導入自体を確かめる試験には共有を強制せず、初回取得と取得済みキャッシュ・新規仮想環境の双方で公開結果を確かめる。
+実際のuv、pnpm、corepackを使い、取得物の冷えた状態自体はチェックしないテストは、`share_package_caches`を明示して取得物だけを再利用する。
+公開された起動コマンド、起動形式、導入テストが個別にキャッシュを解決すると、隔離後の空の保存先を選ぶテストが残るため、解決を共通fixtureへ集約する。
+空キャッシュからの導入自体を確かめるテストには共有を強制せず、初回取得と取得済みキャッシュ・新規仮想環境の双方で公開結果を確かめる。
 uvの保存先は隔離前の環境から`uv cache dir`で解決し、`UV_CACHE_DIR`で子プロセスへ渡す。
 解決は利用時にプロセスで1回だけ行う。
 HOME、設定、一時出力、private-notes、managed-tempの状態と仮想環境は試験ごとに隔離し、複数worktreeの仮想環境を共有しない。

@@ -46,15 +46,16 @@ pyfltrの公開ツールは`build_server`が登録する11件である。
   想定内の誤りは`ToolError`からツール実行エラーとして返り、`show_run`などは有効な値を得るツールを案内する。
   `grep`は件数上限、要約の選択、省略件数と`guidance`を返す。
   MCPのstdoutへは書かず、ログを標準エラーへ向ける
-- 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組合せ条件、省略時の動作はクライアントへ届かないdocstringにある（例: `grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組合せ、`config`の`action`ごとの必須引数）。
+- 任意の改善候補: 公開される説明は`description=`の文字列だけで、引数の意味、組み合わせ条件、省略時の動作はクライアントへ届かないdocstringにある。
+  例として`grep`の`max_count`の0の意味、`replace`の`within`と文脈行数の組み合わせ、`config`の`action`ごとの必須引数がある。
   全ツールの引数に説明が無い。
   `run`の`mode`、`replace_history`と`config`の`action`は文字列型で列挙値がスキーマに無い。
   `show_run_output`は出力ログの全文、`show_run_diagnostics`は指定コマンドの診断の全件を返し、範囲・件数の指定と省略の通知を持たない。
-  annotationsは全ツールで未設定で、書込を伴う`replace_undo`と`config`の説明は書き換えを明示しない。
+  annotationsは全ツールで未設定で、書き込みを伴う`replace_undo`と`config`の説明は書き換えを明示しない。
   説明の言語が日本語と英語で混在する。
   instructionsは未設定である
 - 仕様上の是正: 確定した該当なし。
-  未確定として、workerプロセスからの結果JSONの読取に例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。
+  未確定として、workerプロセスからの結果JSONの読み取りに例外処理が無く、外部ツールがファイル記述子1へ直接書いた場合は汎用のエラー本文になる可能性がある（プロトコル違反ではない）。
   子プロセスの標準出力が常に取り込まれるかは確認していない
 
 ## agent-basics/skills/writing-standards/references/mcp-server-design.md：ホスト固有の条件：2026年10月13日
@@ -76,9 +77,9 @@ v2.1.296: Changed the default limit on MCP tool descriptions sent up front and o
 agents_serverは全説明とinstructionsを初期送信の4,096文字以内に保つ。
 検索後の16,384文字も同時に満たすため、検索の有無で説明を変えない。
 説明長とinstructions長は`_agents_server/tool_descriptions_test.py::test_tool_descriptions_fit_claude_code_truncation_and_describe_every_argument`が確かめる。
-説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは、`tool_descriptions.py`が`start`の説明へこの定数を連結する構成と、同じ説明長の試験で保つ。
-登録済み`start`の説明と`mode`引数への到達、軽量modeの選択基準、起動プロンプトへの能力説明の有無を確かめていた3件の試験は、定数の写しを含む試験の整理として2026年11月12日の`7d138ed8d`で除いた。
-現行の試験が確かめるのは長さだけである。
+説明の先頭4,096文字に`EXPLORE_CAPABILITIES`が届くことは、`tool_descriptions.py`が`start`の説明へこの定数を連結する構成と、同じ説明長のテストで保つ。
+登録済み`start`の説明と`mode`引数への到達、軽量modeの選択基準、起動プロンプトへの能力説明の有無を確かめていた3件のテストは、定数の写しを含むテストの整理として2026年11月12日の`7d138ed8d`で除いた。
+現行のテストが確かめるのは長さだけである。
 配送内容の再検証は、公開schemaの`start`の説明と`mode`引数を取得し、組立箇所（`tool_descriptions.py`と起動プロンプトの組立）と照合して行う。
 
 再検証は同じコマンドで後続版のリリースノートからMCPの説明とinstructionsの上限の変更項目を探し、公式MCPガイドの「For MCP server authors」と比べる。

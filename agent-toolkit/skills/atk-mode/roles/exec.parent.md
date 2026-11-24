@@ -74,7 +74,7 @@
 対象リポジトリへのpushは委譲元が担い、private-notesでの`atk plans commit`と`atk wi`による保存・公開はレーン担当が行う。
 両者を混同して一律にpushを禁じると、WIの`adopted`・`rejected`だけが未公開のまま残る。
 
-継続の指示は、同じthreadへ`send_message`の`instruction`と名前付きの`extra_params`で送り、その指示に要る値だけを渡す（初回の入力は担当が保持する）。
+継続の指示は、同じthreadへ`send_message`の`instruction`と名前付きの`extra_params`で送り、その指示に必要な値だけを渡す（初回の入力は担当が保持する）。
 組み込みの委譲機構では`agent-toolkit:atk-mode/references/delegation-prompt.md`「委譲プロンプトの構成」で本文を作る。
 
 ## 読込表
@@ -82,7 +82,7 @@
 | 時点または条件 | 全文読む資料 |
 | --- | --- |
 | 担当の返却（計画準備、修正担当の実装完了、質問への回答の下書き、続行できない理由、統合準備完了、統合完了）を受領する前 | `agent-toolkit:atk-mode/playbooks/lane-receipt.md` |
-| 統合の返却が、mergeの競合で要る判断か、統合先との組合せだけで起きた変更範囲の検証の失敗への是正commitを示す時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
+| 統合の返却が、mergeの競合で必要な判断か、統合先との組合せだけで起きた変更範囲の検証の失敗への是正commitを示す時 | `agent-toolkit:atk-mode/playbooks/process-wi-lanes.md` |
 | 統合の返却で検証結果の警告の判定を受領する時 | `agent-toolkit:atk-mode/references/lane-integration-format.md` |
 
 <!-- return-contract:exec:start -->
@@ -124,7 +124,7 @@ UWI保存状況: <原稿の絶対パスと保存済みUWI名を対にしたJSON�
 | `計画作成完了`、`計画なし準備完了`の返却 | 「計画準備の受領」 | `実装開始`か`実装なし` |
 | `CI修正担当`の`実装完了`、`レビュー修正担当`の`対応完了`・`対応完了（再レビュー不要）` | 「実装完了の受領」 | なし（再レビューかCIの確認へ戻る） |
 | WIへ直接書かれた質問への回答の下書き | 「レーン担当が確定した質問への回答」 | なし（保存したUWIのファイル名を返す） |
-| `続行できない理由`、確認事項、完成条件の変更の判断要請 | 「エスカレーションの受領」 | 要る回答だけ |
+| `続行できない理由`、確認事項、完成条件の変更の判断要請 | 「エスカレーションの受領」 | 必要な回答だけ |
 | `統合準備完了` | 「統合の許可」 | `統合許可` |
 | 統合を指示する時と`統合完了` | 「統合の指示と受領」（統合の入力`統合区分`、`実行レビュー済みHEAD`、`計画ファイル名一覧`、`AWI終了区分`、`書込担当一覧`の値と、`統合完了`の形式を含む） | `統合開始` |
 

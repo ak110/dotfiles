@@ -50,7 +50,7 @@ em-dash（U+2014）を含む同じ形のサンプルを`scripts/check_dash.py`�
   観測したPythonの正確な版は未確認。
   Python公式`Doc/library/venv.rst`の3.7.2の変更記録はredirectorの仕様の根拠であり、観測版とは区別する
 - 再検証手段: Windows仮想環境の`sys.executable`で子を起動し、`Popen.pid`と子の`os.getpid()`の標準出力を比べる。
-  子の自己申告PIDとの一致を求める試験と、`Popen.pid`をプロセスの木の根として停止・生存確認に使う試験を分けて確認する
+  子の自己申告PIDとの一致を求める試験と、`Popen.pid`をプロセスの木の根として停止・生存確認に使うテストを分けて確認する
 
 ## agent-basics/skills/writing-standards/references/sqlalchemy.md：問い合わせと属性代入の順序：2026年9月14日
 

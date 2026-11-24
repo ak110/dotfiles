@@ -67,7 +67,7 @@ SessionStartでの登録をやめて最初の発話で登録する案は通常�
   手動の再試行も、未完了の既存の失敗報告AWIを再利用する。
 
 `session_review_auto_start`がfalseでも待ちを登録し、SessionStartで件数と手動の操作を通知する。
-単発のprepareは指定が無ければ厳格に読み込み（部分の読込は`--allow-partial-records`）、単発の`complete`は未確認範囲を含む準備結果を拒否する。
+単発のprepareは指定が無ければ厳格に読み込み（部分の読み込みは`--allow-partial-records`）、単発の`complete`は未確認範囲を含む準備結果を拒否する。
 欠測を明示した部分分析を確定するのはbatchだけである。
 
 ## 週枠による週次の起動

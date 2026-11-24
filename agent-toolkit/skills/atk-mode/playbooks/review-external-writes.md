@@ -13,7 +13,7 @@
 - 対象外: ユーザーから逐語で渡された文面、git push、コミットメッセージ、private-notesのWI本文。
   コミットメッセージは`agent-toolkit:atk-mode/references/commit-message.md`、WI本文は`agent-toolkit:atk-mode/playbooks/wi-drafting.md`に従う。
 - 原文や資料から起草・推敲した文面の意味の保持は`agent-basics:writing-standards/references/writing-genres.md`「ユーザー入力素材の取扱い」に従う。
-- 投稿の操作に要る認可は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」で判定する。
+- 投稿の操作に必要な認可は`agent-toolkit:atk-mode/playbooks/confirmation.md`「認可を要する操作」で判定する。
   レビューを通したことは投稿の認可にならない。
 - 独立した担当を起動できない環境では、提示された文面と根拠を読み、検討結果を下書きとして返す。
   レビューと認可を経た投稿は、Claude CodeかCodexで行う。
@@ -62,7 +62,7 @@
    要とされた範囲だけ再レビューし、不要の範囲は修正後の根拠を確かめて投稿する。
 3. 同じ入力で再起動しても結果を返さずに終わる場合や、`start`と同等の読み取り専用の委譲手段が使えない場合は、投稿を中断する。
    原因と同等のレビュー手段を調べ、認可の範囲で復旧できれば自分で再開する。
-   レビューの省略や公開する結果の変更に、追加の認可かユーザーの選好が要る時だけ、文面と理由を示して確認する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
+   レビューの省略や公開する結果の変更に、追加の認可かユーザーの選好が必要な時だけ、文面と理由を示して確認する（`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認要否の判定」）。
 
 <!-- return-contract:external-write-review:start -->
 <!-- 生成元: skills/atk-mode/roles/external-write-review.subagent.md「出力」。手動編集しない。 -->

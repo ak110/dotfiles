@@ -1,3 +1,5 @@
+import pytest
+
 from agent_toolkit._common import operation_approvals as approvals
 
 
@@ -23,6 +25,26 @@ def test_exact_input_and_consumption() -> None:
     assert approvals.consume(metadata, question, "許可する", request)
     approvals.bind_answer(metadata, question, "許可する")
     assert not approvals.matches(metadata, question, "許可する", request)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tool_name", "PowerShell"),
+        ("tool_input", {"command": "echo other"}),
+        ("cwd", "/other"),
+        ("target_repo", "example/other"),
+    ],
+)
+def test_approval_does_not_match_operation_differing_in_one_field(field: str, value: object) -> None:
+    request = _request()
+    metadata = {"permission_request": request, "choices": ["許可する", "拒否する"]}
+    question = approvals.request_display(request)
+    approvals.bind_answer(metadata, question, "許可する")
+    other = {**request, field: value}
+    assert not approvals.matches(metadata, question, "許可する", other)
+    assert not approvals.consume(metadata, question, "許可する", other)
+    assert approvals.matches(metadata, question, "許可する", request)
 
 
 def test_question_and_free_text_cannot_grant() -> None:

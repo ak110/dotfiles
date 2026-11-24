@@ -7,7 +7,7 @@
 結果が変わらないため、止めずに続けて実行する。順序を入れ替えても結果が同じ操作の組（別の資源への操作、
 remoteの読取同士）はsleep setで1通りだけ実行する。
 
-対応表、性質、探索の上限、前提、最後に同期したcommitと実行コマンドは`.claude/skills/git-sync-interleavings/SKILL.md`にある。
+対応表、性質、探索の上限、前提、版の記録と実行コマンドは`.claude/skills/git-sync-interleavings/SKILL.md`にある。
 """
 
 from __future__ import annotations

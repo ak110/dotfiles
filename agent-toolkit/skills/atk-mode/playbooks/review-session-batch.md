@@ -6,7 +6,7 @@
 
 ## 起動
 
-環境変数`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が無い手動の呼出しでは、次の公開操作を実行する。
+環境変数`AGENT_TOOLKIT_SESSION_REVIEW_BATCH`が無い手動の呼び出しでは、次の公開操作を実行する。
 
 ```sh
 atk run-skill --args "batch <追加の着眼点>" agent-toolkit:review-session

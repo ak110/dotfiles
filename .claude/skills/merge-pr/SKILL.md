@@ -98,4 +98,4 @@ PRの状態を尋ねられただけの時は、状態を1回取得して報告�
   原因は`agent-basics:bugfix/references/ci-failures.md`「分類」と`agent-toolkit:atk-mode/references/ci.md`で分類する。
   ネットワーク障害、配布元のタイムアウト、レート制限、ランナー障害などの一時的な外因が疑われる時は、同資料に従って広域の障害を確かめたうえで、同じ原因について失敗したジョブを1回だけ再実行して検収を続ける。
 - 再実行でも失敗した場合、初回のログで一時的な外因が疑われない場合、ログを取得できない場合は、元のrunの失敗を保ったまま上と同じ内容を報告して停止する。
-- 必須CIの結果の所要の判定は`.claude/skills/develop-dotfiles/references/verification.md`「テストとCIの所要基準」に従う。
+- 必須CIの結果の所要時間の判定は`.claude/skills/develop-dotfiles/references/verification.md`「テストとCIの所要基準」に従う。

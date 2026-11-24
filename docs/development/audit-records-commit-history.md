@@ -32,12 +32,12 @@ Git 2.34.1はCIと同じUbuntuの`git_2.34.1-1ubuntu1_amd64.deb`を一時領域�
 `rebase.updateRefs=true`と別branchを置いた。
 文書と同じ`GIT_SEQUENCE_EDITOR=:`、`-c rebase.updateRefs=false rebase -i --autosquash`でfixupを統合した。
 最終treeと別branchのOIDが保持され、制御件名が消失した。
-Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID保持の試験で失敗した。
+Git 2.47.3で局所設定のfalseだけを除いた対照は、別branchのOID保持のテストで失敗した。
 履歴検収は空白・path・mode・type・binary・曖昧な対応を区別し、統合後の対応表を公開記録操作へ渡した。
 
 再検証では上記debを展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`を確認して当時の20件を実行する。
 現行の`compare_history_rewrites_test.py`では、`test_autosquash_cli_validates_invariants_and_many_to_one_mapping`が別branchのOID・最終tree・制御件名を確かめる。
-`test_generated_mapping_is_consumed_by_public_record_commands`は対応表の公開記録への引渡しを確かめる。
+`test_generated_mapping_is_consumed_by_public_record_commands`は対応表の公開記録への引き渡しを確かめる。
 新しいGitでは通常のPATHで同じテストを実行し、参照更新機能が有効な環境でも局所指定が保護することを確認する。
 サブモジュールの作業状態を保持する局所設定は同じautosquashへ併用でき、履歴比較はGit 2.38以降だけの`patch-id --verbatim`を呼び出さない。
 
@@ -50,7 +50,7 @@ GitはCIと同じUbuntuのdebを一時領域へ展開して使用した。
 比較した値はHEAD・symbolic-ref・porcelain・追跡ファイルの内容・未追跡のレビュー内容である。
 autosquashは基点への切替を確実にするため`--force-rebase`を併用した。
 局所falseを指定した後も、永続設定の`submodule.recurse=true`を保持した。
-同じ実Gitの試験で、private-notes同期のrebaseとkeep reset、laneの準備時のdetached worktreeからbranchへの接続も、子の作業状態を保持した。
+同じ実Gitのテストで、private-notes同期のrebaseとkeep reset、laneの準備時のdetached worktreeからbranchへの接続も、子の作業状態を保持した。
 
 再検証ではGit 2.34.1を展開した`usr/bin`をPATHの先頭、`usr/lib/git-core`を`GIT_EXEC_PATH`へ設定し、`git --version`で版数を確認して上記のpytestを実行する。
 再帰設定だけを変えた対照の結果と、子の5種類の観測値を確認する。

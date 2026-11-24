@@ -29,7 +29,7 @@ process-loopはホームディレクトリなどから実行し、`process_loop`
 登録のコマンドは`atk config repos set <リポジトリ> --branches <名前,名前> --default-branch <名前> --merge-from <取り込む側>=<取り込み元>`である。
 系統を登録したリポジトリでは、WIが宛先の系統を`target_branch`に持ち、process-loopはリポジトリと系統の組を1つの処理対象として系統ごとの作業ツリーで処理する。
 系統を省いたWIは`--default-branch`の系統へ入る。
-両方の系統に要る修正は取り込み元の系統へ入れ、取り込む側はリリースの前に取り込み元をマージする。
+両方の系統に必要な修正は取り込み元の系統へ入れ、取り込む側はリリースの前に取り込み元をマージする。
 WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」に従う。
 処理は`agent-toolkit:atk-mode/playbooks/process-wi.md`「系統を登録したリポジトリ」に従う。
 リリース前の確認は`agent-toolkit:atk-mode/playbooks/publish.md`「プロジェクト固有の公開後の操作とリリース」に従う。
@@ -37,7 +37,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 ## 要求から公開までの担当
 
 1. 要求の具体化: メインが元の要求・回答・既存の認可を確かめ、対象を選定して配分する。
-   ユーザー固有の判断が要る箇所は、その回答に依存する処理の前に確認する。
+   ユーザー固有の判断が必要な箇所は、その回答に依存する処理の前に確認する。
 2. 計画と実装: レーン担当が割り当てられた要求から計画・実装・検証を進め、実行レビューの入力を確定する。
    レーン数によらない継続と受け渡しの条件は`agent-toolkit:atk-mode/playbooks/process-wi-execution.md`に従う。
 3. 独立文脈レビュー: 実装を担当していないレビュー担当が成果を検収する。
@@ -65,7 +65,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 本文の形式は`agent-toolkit:atk-mode/references/awi-body.md`と`agent-toolkit:atk-mode/references/uwi-format.md`に従う。
 由来は`agent-toolkit:atk-mode/references/origin-and-approval.md`、状態と依存関係は`agent-toolkit:atk-mode/references/states-and-dependencies.md`に従う。
 
-ユーザーの対応が要る未完了事項は、実行モードを問わず共通の確認基準で個別のUWIを登録するかを判定し、報告では保存先のパスを示す。
+ユーザーの対応が必要な未完了事項は、実行モードを問わず共通の確認基準で個別のUWIを登録するかを判定し、報告では保存先のパスを示す。
 会話中に回答を得た事項はUWIとして重ねて登録せず、回答を得ないまま終わった確認事項はUWIへ引き継ぐ。
 保存の条件、自律モードでの確認の手段、UWIへの切り替えは`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従う。
 ユーザーは`atk wi answer`か`atk serve`から回答する。

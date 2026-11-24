@@ -1,10 +1,16 @@
 ---
+verified-digest: f73460e558c3a299af6e47b4418bcfef2a9aee98e3aff7c0686fe0bcf1077e18
 name: git-sync-interleavings
 user-invocable: false
 description: >
   private-notesのGit同期（`agent-toolkit/agent_toolkit/_atk/git_sync.py`、`agent-toolkit/agent_toolkit/_atk/wi/sync.py`）の
   ロック、pull、push、commit、分岐とrebaseの扱いを変える時と、それらへ触れた変更を検査せずに統合した後に、
   並行する複数の実行主体の全ての順序で更新が失われないかを確かめる時に起動する。
+verifies:
+  - agent-toolkit/agent_toolkit/_atk/git_sync.py
+  - agent-toolkit/agent_toolkit/_atk/wi/sync.py
+  - agent-toolkit/agent_toolkit/_git/command.py
+  - agent-toolkit/agent_toolkit/_atk/git_sync_interleaving_test.py
 ---
 
 # private-notesのGit同期の網羅検査
@@ -21,12 +27,12 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 
 - 値を`first`にすると、シナリオごとに、既知として登録していない性質の違反を初めて見つけた時点で止まる。
   既知かどうかは手順の列ではなく性質名で判定し、`separate-clones`の「性質1（操作の終了時）」の違反は数えて続ける。
-  変数が無ければ全て`skip`になり、通常の試験（`make test`、CI）はこの検査を省いて進む。
-- 所要は4シナリオの合計で約13分（2026年11月19日、Linux、1つのプロセス）で、実Gitの境界を使う試験の改善判断値（2秒）を大きく超えるため通常の試験から外した。
+  変数が無ければ全て`skip`になり、通常のテスト（`make test`、CI）はこの検査を省いて進む。
+- 所要時間は4シナリオの合計で約13分（2026年11月19日、Linux、1つのプロセス）で、実Gitの境界を使うテストの改善判断値（2秒）を大きく超えるため通常のテストから外した。
   シナリオを2つのプロセスへ分けて同時に起動すると、実時間は約8分になる。
-  共有の実行枠を長く占有しないよう`pytest_plugin`を読み込まず、試験の隔離は`agent-toolkit/conftest.py`が与える。
-- 出力はシナリオごとに、順序の数、所要、内容が衝突した順序の数、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
-  競合のシナリオで内容が衝突した順序が1つも無ければ、性質2を確かめていないため試験は失敗する。
+  共有の実行枠を長く占有しないよう`pytest_plugin`を読み込まず、テストの隔離は`agent-toolkit/conftest.py`が与える。
+- 出力はシナリオごとに、順序の数、所要時間、内容が衝突した順序の数、違反した性質、終了状態の分布、性質ごとの最初の反例（主体ごとの手順の列）である。
+  競合のシナリオで内容が衝突した順序が1つも無ければ、性質2を確かめていないためテストは失敗する。
 
 ## 対応と前提
 
@@ -34,8 +40,8 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 - 止める手順は、remoteへの操作（`fetch`、`push`）、複数の主体が使うcloneのロックの取得、そのcloneへのロックの外の操作である。
   共有しないcloneへの操作、ロックの保持者のそのcloneへの操作、配置の照会（`rev-parse --git-common-dir`・`--git-path`）は止めずに続けて実行する。
   ロックの外の操作は性質「共有cloneの操作はロックの内側」の違反として記録する。
-- sleep setは別の資源への操作やremoteの読取同士の重複探索を省く。
-  参照を変えなかった`push`は実行後に読取として報告し、分岐点に戻るときの判定には実行前の操作種別を使う。
+- sleep setは別の資源への操作やremoteの読み取り同士の重複探索を省く。
+  参照を変えなかった`push`は実行後に読み取りとして報告し、分岐点に戻るときの判定には実行前の操作種別を使う。
   等価と記された実行も最後まで進め、性質を判定して順序数に含める。
 - 停止の上限を超えた主体の終了が確認できない場合は、主体名と手順の列を出力し、そのpytestプロセスで後続のシナリオを実行しない。
 - 主体の更新は`wi/mutations/transitions.py`の状態遷移と同じ`Storage.mutation(push_pending=True)`と`Mutation.commit`で行う。
@@ -65,7 +71,7 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 2026年11月19日の結果（同期したcommitで実行）。
 主体A・B・Dは`atk`の更新、Cは別ホストのcommitで、`x`・`y`・`z`はcloneの名前である。
 
-| シナリオ（試験のID） | 主体と項目 | 順序 | 所要 | 結果 |
+| シナリオ（テストのID） | 主体と項目 | 順序 | 所要時間 | 結果 |
 | --- | --- | ---: | ---: | --- |
 | `separate-clones` | A@x項目1、B@y項目2、C@z項目3 | 403 | 337秒 | 性質1（操作の終了時）だけ98通りで違反（既知の反例）。他の性質は全て成立 |
 | `shared-clone` | A@x項目1、B@x項目2、C@z項目3 | 17 | 8秒 | 全て成立 |
@@ -94,13 +100,13 @@ cd <dotfilesのworktree> && AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=all uv run --fr
 反例の各行は、主体と、その主体が実行したGitのコマンドである。
 各行を実際のコードの分岐で起こりうるかを確かめ、起こらない行があれば検査の枠組み（`_git_op`の分類、`_atk_update`の流れ、前提）の誤りとして直す。
 全て起こりうれば欠陥として`agent-basics:bugfix`を起動する。
-性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（試験またはcommitの説明）がある場合だけにする。
+性質の判定は`_judge`と`_follow_up`にあり、性質を変えるのは意図した契約の変更の根拠（テストまたはcommitの説明）がある場合だけにする。
 
 ## 追従
 
-- 最後に同期した対象の基準commit: `3ce7817ea`。
-  対象の`git_sync.py`、`wi/sync.py`、`_git/command.py`を最後に変えたcommitは`df545bbf8`である。
-  対象のファイルの差分をこのcommitから読み、検証が新しいコードを記述すると確かめた後にだけ進める。
+- 版の記録はfrontmatterの`verifies`と`verified-digest`で持ち、pyfltrの`ci`とcommit時の`fast`が対象と記録の一致を確かめる。
+  対象を変えたら、`verified-digest`を最後に書いたcommitからの対象の差分を読み、検査を再実行して現在のコードを記述すると確かめる。
+  確かめた後にだけ、`uv run --frozen pyfltr verification-sync --update .claude/skills/git-sync-interleavings/SKILL.md`で記録を進める。
 - Gitの起動、ロックの区間、remoteへの操作の追加と順序の変更は、`_launch`と`_RepoLock`を差し替える枠組みが自動で拾う。
   WIの状態遷移の流れ（`push_pending`の有無、commitの単位）を変えた時は`_atk_update`を合わせる。
 - 検査が働くことは、`git_sync.py`の一時的な複製へ次の変異を適用し、`AGENT_TOOLKIT_GIT_SYNC_INTERLEAVINGS=first`で確かめた。

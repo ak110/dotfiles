@@ -9,7 +9,7 @@
 所有サーバーを失った実行中のsessionは終了を公開せず実行中として扱う。
 MCPの`show`と`atk agents show`は`status`を`running`とし、`ownership`と記録プロセス（`recorded_processes`）、記録時のルートを返す。
 `send_message`は新しいbackendで再開せず、同じ案内のエラーを返す。
-旧委譲先CLIが会話の書込主体を保持しており、Codexの`thread/resume`は`already has an active writer`で拒否されるためである。
+旧委譲先CLIが会話の書き込み主体を保持しており、Codexの`thread/resume`は`already has an active writer`で拒否されるためである。
 MCPの`kill`は登録簿のpidと起動時刻が一致する委譲先CLIだけを子孫ごと停止し、停止を確かめてから`interrupted`を公開する。
 所有サーバーのプロセスは他のsessionの資源を持ち得るため止めない。
 新しい公開状態は追加せず、既存の`running`へ診断項目を加える。
@@ -20,7 +20,7 @@ MCPの`kill`は登録簿のpidと起動時刻が一致する委譲先CLIだけ�
 登録簿の7日掃引は、終了していない記録で記録プロセスが実在するものを残す。
 委譲先の上り通知と終了時の結果は委譲先の起動時のルートへ届くため、Codexを親とするMCPサーバーのように起動単位ごとにルートが替わると、新しいサーバーは届いた先を読まない。
 登録簿から解決したsession（自プロセスが起動していないsession）の通知と終了時の結果は、`atk agents wait`とMCPの`show`・`send_message`・`kill`が自身のルートに加えて他のルートからも回収する。
-対象は生存の印が有効な書込主体のいないルートである（`_agents_server/owner_lost.py`）。
+対象は生存の印が有効な書き込み主体のいないルートである（`_agents_server/owner_lost.py`）。
 却下した代替案は、引き継ぎそのものを除く案と、通知の宛先を委譲元の現在のルートへ書き換える案である。
 前者は強制終了で全プロセスが消えた記録を回収できなくなり、後者は委譲先の環境を起動後に変更できず、孫の通知にも作用しない。
 知識境界として、委譲先が返す文面と待機表明の可否の規定は`agent-toolkit/skills/atk-mode/playbooks/subagent.md`「返却形式の受け渡し」「自動再開」が持つ。
