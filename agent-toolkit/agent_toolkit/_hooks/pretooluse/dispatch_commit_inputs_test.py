@@ -7,6 +7,7 @@ import pathlib
 
 import pytest
 
+from agent_toolkit._hooks.pretooluse import commit_identity
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _claude_commit_hook_payload, _denial_reason
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
@@ -82,9 +83,9 @@ def test_observed_commit_trailer_matches_the_line_required_by_commit_check(
     # 設定の探索先を試験のディレクトリへ固定する。実行環境の値が残ると、試験が置く設定を読まない。
     monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(tmp_path))
 
-    assert pretooluse.observed_commit_trailer(payload, str(tmp_path), is_codex=False) == _LOW_TRAILER
-    assert pretooluse.observed_commit_trailer({"cwd": str(tmp_path)}, str(tmp_path), is_codex=False) is None
+    assert commit_identity.observed_commit_trailer(payload, str(tmp_path), is_codex=False) == _LOW_TRAILER
+    assert commit_identity.observed_commit_trailer({"cwd": str(tmp_path)}, str(tmp_path), is_codex=False) is None
 
     (tmp_path / ".claude").mkdir()
     (tmp_path / ".claude/settings.json").write_text('{"attribution":{"commit":""}}', encoding="utf-8")
-    assert pretooluse.observed_commit_trailer(payload, str(tmp_path), is_codex=False) is None
+    assert commit_identity.observed_commit_trailer(payload, str(tmp_path), is_codex=False) is None

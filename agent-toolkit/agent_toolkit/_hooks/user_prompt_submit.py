@@ -268,6 +268,15 @@ def main(payload_text: str) -> int:
                 full_name, arguments = skill_modes.resolve_work(full_name, arguments)
 
             named_by_entry = full_name != typed_name
+            work = full_name.removeprefix("agent-toolkit:")
+            if (
+                is_normal_prompt
+                and not is_codex
+                and not is_delegated(os.environ)
+                and not payload.get("agent_id")
+                and (named_by_entry or work in work_contract.EXTERNAL_SOURCE_WORKS)
+            ):
+                work_contract.observe_external_source_entry(session_id, work, arguments or "")
             if named_by_entry:
                 session_title.observe_add_awi(session_id, full_name)
                 if is_normal_prompt:

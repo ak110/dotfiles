@@ -53,6 +53,49 @@ _DECLARED_SUBJECT = re.compile(r"(?:^|[。、： ]|^- )([^。、： ]{4,30})は(
 _SCOPE_FIELD = re.compile(r"(?:適用対象|除外)[:：]\s*([^。\n]{4,48})")
 
 
+EXTERNAL_SOURCE_WORKS = frozenset({"add-awi-by-user", "process-user-comments", "implement"})
+EXTERNAL_SOURCE_ENTRY_KEY = "external_source_entry"
+_SOURCE_URL = re.compile(r"https?://(?:[A-Za-z0-9._~*/:?#\[\]@!$&'()+,;=\-]|%[0-9A-Fa-f]{2})+")
+_SOURCE_URL_EMPHASIS = re.compile(r"(?<!\*)\*{1,3}$|(?<!_)_{1,3}$|(?<!~)~~$")
+_SOURCE_URL_TRAILING_PUNCTUATION = ".,;:!?"
+_SOURCE_URL_BRACKETS = {")": "(", "]": "["}
+
+
+def _source_url_end(candidate: str) -> int:
+    opening: list[str] = []
+    for match in re.finditer(r"[()\[\]]", candidate):
+        char = match[0]
+        if char in _SOURCE_URL_BRACKETS.values():
+            opening.append(char)
+        elif not opening or opening.pop() != _SOURCE_URL_BRACKETS[char]:
+            return match.start()
+    return len(candidate)
+
+
+def source_urls(line: str) -> Iterator[str]:
+    offset = 0
+    while match := _SOURCE_URL.search(line, offset):
+        start = match.start()
+        url = match[0][: _source_url_end(match[0])]
+        offset = start + len(url)
+        if line[start - 1 : start] == "[" and line.startswith("](", offset):
+            continue
+        before = line[start - 1 : start]
+        after = line[offset : offset + 1]
+        if (before, after) in {("<", ">"), ("`", "`")} or (line[:start].endswith("](") and after == ")"):
+            yield url
+        elif marker := _SOURCE_URL_EMPHASIS.search(line, 0, start):
+            yield url.removesuffix(marker[0])
+        else:
+            yield url.rstrip(_SOURCE_URL_TRAILING_PUNCTUATION)
+
+
+def observe_external_source_entry(session_id: str, work: str, arguments: str) -> None:
+    urls = sorted(set(source_urls(arguments))) if work in EXTERNAL_SOURCE_WORKS else []
+    entry = {"work": work, "urls": urls}
+    update_state(session_id, lambda state: {**state, EXTERNAL_SOURCE_ENTRY_KEY: entry})
+
+
 def scope_review_before_send(session_id: str, raw_transcript: object, message: str, *, actor: str) -> str | None:
     path = record_path(session_id)
     if path is None or not message.strip() or not isinstance(raw_transcript, str) or not raw_transcript:

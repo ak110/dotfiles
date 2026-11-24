@@ -70,20 +70,13 @@ from __future__ import annotations
 import json
 import os
 import pathlib
-import re
 lazy import dataclasses
-lazy import hashlib
-lazy from collections.abc import Iterable
 
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
-lazy from agent_toolkit._common import host_homes as _host_homes
-lazy from agent_toolkit._common import response_language_check as _response_language_check
 lazy from agent_toolkit._common import transcript as _transcript
 lazy from agent_toolkit._common.agents_server_tools import is_send_to_user_tool
-lazy from agent_toolkit._common.markdown_headings import without_literal_blocks
-lazy from agent_toolkit._common.runtime_identity import RuntimeIdentity, co_author_trailer, identity_observations
-lazy from agent_toolkit._common.session_state import read_state, update_state
+lazy from agent_toolkit._common.session_state import read_state
 lazy from agent_toolkit._hooks import agent_id as _agent_id
 lazy from agent_toolkit._hooks import (
     background_task_outputs as _background_task_outputs,
@@ -103,10 +96,10 @@ lazy from agent_toolkit._hooks import (
 )
 lazy from agent_toolkit._hooks.agents_server_observations import start_observation_input
 lazy from agent_toolkit._hooks.background_tasks import observe_repl_bash
-lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
+lazy from agent_toolkit._hooks.host import is_codex_payload
 lazy from agent_toolkit._hooks.notice import _WARN_TAG, begin_delivery, emit_response, notice_cycle, set_warning_session_id
+lazy from agent_toolkit._hooks.pretooluse import commit_identity, publication_gate, user_facing_checks
 lazy from agent_toolkit._hooks.pretooluse import operation_skills as _operation_skills
-lazy from agent_toolkit._hooks.pretooluse import publication_gate
 lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
     _AGENTS_SERVER_KILL_TOOLS,
     _AGENTS_SERVER_SEND_TOOLS,
@@ -119,7 +112,6 @@ lazy from agent_toolkit._hooks.pretooluse.agent_checks import (
 lazy from agent_toolkit._hooks.pretooluse.content_checks import (
     _check_lockfiles,
     _collect_edit_operation_warnings,
-    _warn_mojibake,
 )
 lazy from agent_toolkit._hooks.pretooluse.decision import Decision
 lazy from agent_toolkit._hooks.pretooluse.large_reads import (
@@ -147,214 +139,6 @@ lazy from agent_toolkit._hooks.pretooluse.task_document_launch import AGENT_TOOL
 lazy from agent_toolkit._hooks.pretooluse.warning_context import (
     format_warning_context,
 )
-
-
-def _settings_commit_attribution(path: pathlib.Path) -> tuple[bool, str | None]:
-    try:
-        settings = json.loads(path.read_text(encoding="utf-8"))
-    except OSError, UnicodeError, json.JSONDecodeError, ValueError:
-        return False, None
-    if not isinstance(settings, dict):
-        return False, None
-    attribution = settings.get("attribution")
-    if not isinstance(attribution, dict) or not isinstance(attribution.get("commit"), str):
-        return False, None
-    return True, attribution["commit"]
-
-
-def _claude_commit_attribution_disabled(cwd: str) -> bool:
-    config_dir = _host_homes.claude_config_dir()
-    project_raw = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
-    paths = [config_dir / "settings.json"]
-    if project_raw:
-        project_dir = pathlib.Path(project_raw)
-        paths.extend((project_dir / ".claude" / "settings.json", project_dir / ".claude" / "settings.local.json"))
-    effective: str | None = None
-    defined = False
-    for path in paths:
-        current_defined, current = _settings_commit_attribution(path)
-        if current_defined:
-            defined = True
-            effective = current
-    return defined and effective == ""
-
-
-_USER_FACING_TEXT_TOOL_NAMES: frozenset[str] = frozenset({"AskUserQuestion", "ExitPlanMode"})
-_MARKDOWN_HEADING = re.compile(r"^ {0,3}(#{1,6})\s+(.+)$")
-_STRONG_HEADING = re.compile(r"^\s*(\*\*|__)([^:：]+?)([:：]?)\1\s*([:：]?)(.*)$")
-_UNDERSTANDING_HEADING = re.compile(r"^発話の理解\s*(?:[:：]\s*(.*)|$)")
-_ORIGINAL_TEXT_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*(?:原文|[^:：\n]*?[（(]原文[）)])[*_]*\s*(?:[:：]|$)")
-
-
-_ALTERNATIVE_LABEL = re.compile(r"^\s*(?:[-*+]\s+)?[*_]*別案(?:[*_]*\s*[:：]|[:：][*_]+)")
-_POLICY_APPROVAL = re.compile(r"方針[^？?\n]{0,80}で(?:進めて|起草して|実施して)(?:よい|いい)")
-_SOURCE_URL = re.compile(r"https?://[^\s<>｜|\x60]+")
-_SOURCE_REVIEW_FILE = "external-source-review.md"
-_SOURCE_REVIEW_WORK = re.compile(r"^\s*-?\s*作業[:：]\s*`?(?:add-awi-by-user|process-user-comments)`?\s*$")
-
-
-def _understanding_section_lines(message: str) -> Iterable[str]:
-    section_level = 0
-    paragraph_break = False
-    for line in without_literal_blocks(message).splitlines():
-        heading = _MARKDOWN_HEADING.match(line)
-        strong = _STRONG_HEADING.match(line)
-        if strong and strong[5] and not (strong[3] or strong[4]):
-            strong = None
-        if heading:
-            level = len(heading[1])
-            title = heading[2].strip(" #*_")
-        elif strong:
-            level = 6
-            title = strong[2].strip() + (strong[3] or strong[4]) + strong[5]
-        else:
-            level = 0
-            title = line.strip()
-        if (target := _UNDERSTANDING_HEADING.fullmatch(title)) is not None:
-            section_level = level or 6
-            paragraph_break = False
-            if target[1]:
-                yield target[1]
-            continue
-        if heading and level <= section_level:
-            section_level = 0
-            continue
-        if not section_level:
-            continue
-        if (
-            strong
-            and (paragraph_break or not strong[5].strip())
-            and not (_ORIGINAL_TEXT_LABEL.match(line) or _ALTERNATIVE_LABEL.match(line))
-        ):
-            section_level = 0
-            continue
-        paragraph_break = not line.strip()
-        yield title if heading else line
-
-
-def _has_original_text_label_in_understanding(message: str) -> bool:
-    return any(_ORIGINAL_TEXT_LABEL.match(line) for line in _understanding_section_lines(message))
-
-
-def _missing_alternative(message: str) -> bool:
-    lines = [
-        line for line in _understanding_section_lines(message) if line.strip() and not bugfix_gate.is_classification_line(line)
-    ]
-    return len(lines) > 1 and not any(_ALTERNATIVE_LABEL.match(line) for line in lines)
-
-
-def _external_source_urls(lines: Iterable[str]) -> set[str]:
-    urls = set()
-    within_sources = False
-    for line in lines:
-        if heading := _MARKDOWN_HEADING.match(line):
-            if len(heading[1]) <= 2:
-                within_sources = heading[2].strip() in {"原本", "入力"}
-            continue
-        if not within_sources and not re.match(r"\s*-?\s*(?:外部資料|入力)[:：]", line):
-            continue
-        for match in _SOURCE_URL.finditer(line):
-            url = match[0]
-            if line[: match.start()].endswith("](") and url.endswith(")"):
-                url = url[:-1]
-            urls.add(url)
-    return urls
-
-
-def _external_source_review_needed(session_id: str, tool_input: dict) -> bool:
-    fields = _user_facing_text_fields("AskUserQuestion", tool_input)
-    if not any(
-        field.endswith((".header", ".question")) and (value == "方針の承認" or _POLICY_APPROVAL.search(value))
-        for field, value in fields
-    ):
-        return False
-    contract = work_contract.record_path(session_id)
-    if contract is None:
-        return False
-    try:
-        body = contract.read_text(encoding="utf-8")
-    except OSError, UnicodeError:
-        return False
-    lines = without_literal_blocks(body).splitlines()
-    if not any(_SOURCE_REVIEW_WORK.fullmatch(line) for line in lines):
-        return False
-    urls = _external_source_urls(lines)
-    if not urls:
-        return False
-    try:
-        table = without_literal_blocks(contract.with_name(_SOURCE_REVIEW_FILE).read_text(encoding="utf-8"))
-    except OSError, UnicodeError:
-        return True
-    covered = set()
-    for line in table.splitlines():
-        if not line.startswith("|") or not line.rstrip().endswith("|"):
-            continue
-        cells = [cell.strip() for cell in line.strip()[1:-1].split("|")]
-        if len(cells) >= 2 and cells[0].strip("`<>") in urls and cells[1].strip("`*_ -—"):
-            covered.add(cells[0].strip("`<>"))
-    return not urls <= covered
-
-
-_POLICY_APPROVAL_HEADER = "方針の承認"
-_POLICY_APPROVAL_MODIFIER_LIMIT = 6
-_POLICY_APPROVAL_QUESTION = re.compile(
-    rf"送った(?P<modifier>[^\W_]{{0,{_POLICY_APPROVAL_MODIFIER_LIMIT}}})方針で進めてよいですか[？?]"
-)
-_POLICY_APPROVAL_CLAUSE = re.compile(
-    r"を|(?:[一-龯々][ぁ-ゖ]*(?:[うくぐすつぶむるただ]|ない|ず|ぬ)|しない|せ[ずぬ]|(?:ら?れ|でき)[るた])(?:版)?の?$"
-)
-_POLICY_APPROVAL_OPTIONS = (
-    {"label": "この方針で進める", "description": "送った方針のとおりに着手する"},
-    {"label": "修正して進める", "description": "修正点を自由記述で伝える"},
-)
-
-
-def _policy_approval_form_invalid(tool_input: dict) -> bool:
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list) or not any(
-        isinstance(question, dict)
-        and (
-            question.get("header") == _POLICY_APPROVAL_HEADER
-            or (isinstance(text := question.get("question"), str) and _POLICY_APPROVAL.search(text))
-        )
-        for question in questions
-    ):
-        return False
-    if len(questions) != 1:
-        return True
-    question = questions[0]
-    options = question.get("options")
-    return not (
-        question.get("header") == _POLICY_APPROVAL_HEADER
-        and not question.get("multiSelect")
-        and isinstance(text := question.get("question"), str)
-        and (match := _POLICY_APPROVAL_QUESTION.fullmatch(text)) is not None
-        and not _POLICY_APPROVAL_CLAUSE.search(match["modifier"])
-        and isinstance(options, list)
-        and len(options) == len(_POLICY_APPROVAL_OPTIONS)
-        and all(
-            isinstance(option, dict)
-            and option.get("label") == expected["label"]
-            and option.get("description") == expected["description"]
-            and not option.get("preview")
-            for option, expected in zip(options, _POLICY_APPROVAL_OPTIONS, strict=True)
-        )
-    )
-
-
-def _recommendation_review_needed(payload: dict, session_id: str, tool_input: dict) -> bool:
-    if not session_id or not any(
-        ".options[" in field and ("推奨" in value or re.search(r"\brecommended\b", value, re.IGNORECASE))
-        for field, value in _user_facing_text_fields("AskUserQuestion", tool_input)
-    ):
-        return False
-    return not _notice.consume_resend(
-        session_id,
-        _agent_id.resolve_hook_agent_id(payload),
-        "recommendation_review_by_actor",
-        json.dumps(tool_input, sort_keys=True, ensure_ascii=False),
-    )
-
 
 _SEARCH_TOOL_NAMES: frozenset[str] = frozenset({"Grep", "Glob"})
 _MAIN_ONLY_MCP_TOOLS = frozenset(
@@ -399,8 +183,8 @@ def main(payload_text: str, *, initial_notices: tuple[str, ...] = ()) -> int:
 
     with notice_cycle(session_id, "pretooluse:" + str(tool_name), _agent_id.resolve_hook_agent_id(payload)):
         pending_notices: list[str] = list(initial_notices)
-        if tool_name not in _USER_FACING_TEXT_TOOL_NAMES:
-            _language_retry(payload, tool_name, tool_input, remember=False)
+        if tool_name not in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
+            user_facing_checks.language_retry(payload, tool_name, tool_input, remember=False)
         decision = _decide(payload, tool_name, tool_input, session_id, is_codex=is_codex)
         protection = repository_protection.check(tool_name, tool_input, str(payload.get("cwd", "")))
         if protection is not None:
@@ -501,7 +285,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         reminder := work_contract.scope_review_before_send(
             session_id,
             payload.get("transcript_path"),
-            _scope_review_text(tool_name, tool_input),
+            user_facing_checks.scope_review_text(tool_name, tool_input),
             actor=_agent_id.resolve_hook_agent_id(payload),
         )
     ):
@@ -513,7 +297,7 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
         )
     question_tool = "request_user_input" if is_codex else "AskUserQuestion"
     if tool_name == question_tool and _agent_id.is_main_agent_context(payload):
-        if _policy_approval_form_invalid(tool_input):
+        if user_facing_checks.policy_approval_form_invalid(tool_input):
             return Decision(
                 block=_block_notice(
                     "方針の承認の質問が決まった形でないため、まだ送っていない。再発行しても同じ形では送れない。",
@@ -521,25 +305,25 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
                         "質問は1つだけにし、見出し「方針の承認」、問い「送った方針で進めてよいですか？」、"
                         "選択肢「この方針で進める」（説明「送った方針のとおりに着手する」）と"
                         "「修正して進める」（説明「修正点を自由記述で伝える」）の2つにしてください（推奨の付記は付けない）。"
-                        f"方針の識別に修飾が必要なら、「2件目の」など{_POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
+                        f"方針の識別に修飾が必要なら、「2件目の」など{user_facing_checks.POLICY_APPROVAL_MODIFIER_LIMIT}文字以内にしてください。"
                         "修飾は文字と数字だけで書き、改行、読点、列挙記号、括弧、述語を含む文は入れないでください。"
                         "方針の項目と技術の選択は、質問の前に送る材料（`send_to_user`など）に書いてください。"
                         "本人固有の論点は、承認より前に別の呼び出しで尋ねてください。"
                     ),
                 )
             )
-        if not is_codex and _external_source_review_needed(session_id, tool_input):
+        if not is_codex and (error := user_facing_checks.external_source_review_needed(session_id, tool_input)):
             return Decision(
                 block=_block_notice(
-                    "外部資料の対応表が不足しているため、方針の承認はまだ求めていない。",
+                    f"外部資料の対応表が不足しているため、方針の承認はまだ求めていない。\n{error}",
                     fix=(
-                        f"セッション一時領域の`{_SOURCE_REVIEW_FILE}`に、各資料のURLと配布規範での定義元か非該当の理由を書いてください。"
+                        f"セッション一時領域の`{user_facing_checks.SOURCE_REVIEW_FILE}`に、各資料の必須列を書いてください。引く案が無ければ、調べた既存の箇所と理由を書いてください。"
                         "`agent-basics:writing-standards/references/design-heuristics.md`"
                         "「外部資料に基づく改善案の評価」の配布範囲も確かめてください。"
                     ),
                 )
             )
-        if _recommendation_review_needed(payload, session_id, tool_input):
+        if user_facing_checks.recommendation_review_needed(payload, session_id, tool_input):
             return Decision(
                 block=_block_notice(
                     "推奨のある質問はまだ送っていない。",
@@ -557,20 +341,20 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
 
         if invalid_plan := check_before_presentation(session_id, str(payload.get("cwd", "")), tool_input.get("plan")):
             return Decision(block=_block_notice(invalid_plan, fix="指摘を直し、同じ計画を提示してください。"))
-    if tool_name in _USER_FACING_TEXT_TOOL_NAMES:
-        return _decide_user_facing_text_tool(payload, tool_name, tool_input)
+    if tool_name in user_facing_checks.USER_FACING_TEXT_TOOL_NAMES:
+        return user_facing_checks.decide_user_facing_text_tool(payload, tool_name, tool_input)
     if is_send_to_user_tool(tool_name):
         from agent_toolkit._hooks.agents_server_session_advisor import outstanding_before_completion  # pylint: disable=import-outside-toplevel
 
         message = tool_input.get("message")
-        if isinstance(message, str) and _has_original_text_label_in_understanding(message):
+        if isinstance(message, str) and user_facing_checks.has_original_text_label_in_understanding(message):
             return Decision(
                 block=_block_notice(
                     "「発話の理解」に「原文」の見出しがある。",
                     fix="見出しから「原文」を外し、発話を自分の言葉で述べてから再送してください。",
                 )
             )
-        if isinstance(message, str) and _missing_alternative(message):
+        if isinstance(message, str) and user_facing_checks.missing_alternative(message):
             return Decision(
                 block=_block_notice(
                     "複数行の「発話の理解」に「別案」の項目がない。",
@@ -629,8 +413,8 @@ def _decide(payload: dict, tool_name: str, tool_input: dict, session_id: str, *,
     if (
         tool_name == "Read"
         and isinstance(file_path, str)
-        and _reads_commit_message_rules((pathlib.Path(cwd, file_path),))
-        and (trailer_notice := _commit_trailer_notice(payload, cwd, is_codex=is_codex))
+        and commit_identity.reads_commit_message_rules((pathlib.Path(cwd, file_path),))
+        and (trailer_notice := commit_identity.commit_trailer_notice(payload, cwd, is_codex=is_codex))
     ):
         notices += (trailer_notice,)
     if tool_name in _SEARCH_TOOL_NAMES:
@@ -700,8 +484,8 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
         return Decision(block=duplicate_subject)
     messages = tuple(_git_commit_messages(command, cwd=cwd))
     if messages:
-        checks_attribution = is_codex or not _claude_commit_attribution_disabled(cwd)
-        identity = _hook_observed_identity(payload, is_codex=is_codex) if checks_attribution else None
+        checks_attribution = is_codex or not commit_identity.claude_commit_attribution_disabled(cwd)
+        identity = commit_identity.hook_observed_identity(payload, is_codex=is_codex) if checks_attribution else None
         commit_block = _git_commit_block(messages, identity)
         if commit_block is not None:
             return Decision(block=commit_block)
@@ -752,192 +536,10 @@ def _decide_bash_tool(payload: dict, tool_input: dict, session_id: str, *, is_co
                     escalate_on_repeat=False,
                 )
             )
-    if _reads_commit_message_rules(
+    if commit_identity.reads_commit_message_rules(
         path for paths in bash_read_paths(command, cwd, include_partial=True) for path in paths
-    ) and (trailer_notice := _commit_trailer_notice(payload, cwd, is_codex=is_codex)):
+    ) and (trailer_notice := commit_identity.commit_trailer_notice(payload, cwd, is_codex=is_codex)):
         warnings.append(trailer_notice)
-    return Decision(context=format_warning_context(warnings) if warnings else None)
-
-
-_COMMIT_MESSAGE_RULES = "/skills/atk-mode/references/commit-message.md"
-"""帰属行の方針を定める資料の、plugin rootより下のパス。"""
-
-
-def _reads_commit_message_rules(paths: Iterable[pathlib.Path]) -> bool:
-    return any(path.as_posix().endswith(_COMMIT_MESSAGE_RULES) and path.is_file() for path in paths)
-
-
-def _commit_trailer_notice(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    trailer = observed_commit_trailer(payload, cwd, is_codex=is_codex)
-    if trailer is None:
-        return None
-    return _llm_notice(
-        f"読取時点に観測したモデルと推論量の帰属行: {trailer}。通常のコミットのメッセージへこの1行を入れてください。"
-        "明示指定と無効化の方針は`agent-toolkit:atk-mode/references/commit-message.md`「`Co-Authored-By:`」で確かめ、"
-        "通常のコミットの直前にも現在の観測を確かめてください。",
-        tag="notice",
-    )
-
-
-def observed_commit_trailer(payload: dict, cwd: str, *, is_codex: bool) -> str | None:
-    if not is_codex and _claude_commit_attribution_disabled(cwd):
-        return None
-    identity = _hook_observed_identity(payload, is_codex=is_codex)
-    if identity is None or identity.source != "observed":
-        return None
-    return co_author_trailer(identity)
-
-
-def _hook_observed_identity(payload: dict, *, is_codex: bool) -> RuntimeIdentity | None:
-    """Hook payloadとそのturnの実行主体の記録から、このturnの観測identityを返す。
-
-    Claude Codeの推論量はhook入力の`effort.level`（ホストがturnへ適用した値）、モデルは記録の最後の観測値から取る。
-    初出順に重複を除いた一覧の末尾は、turnの途中でモデルを切り替えて戻した記録で古い値を選ぶため使わない。
-    hook入力が`agent_id`を持つ場合は、`transcript_path`がメインの記録を指すため、そのsubagentの記録
-    （`<transcript_pathのディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl`）を読む。
-    記録を一意に解決できない場合は判定しない。Codexはhook入力の`model`と`reasoning_effort`を優先し、
-    両方が無い場合は記録の`turn_context`の最後の観測値を使う。
-    """
-    runtime = "agy" if is_antigravity_payload(payload) else "codex" if is_codex else "claude"
-    model = payload.get("model")
-    effort_input = payload.get("effort")
-    effort = effort_input.get("level") if isinstance(effort_input, dict) else effort_input or payload.get("reasoning_effort")
-    if isinstance(model, str) and model and isinstance(effort, str) and effort:
-        return RuntimeIdentity(runtime, model, effort, "observed")
-    record_path = _hook_record_path(payload)
-    if record_path is None:
-        return None
-    lines = _transcript.read_transcript_lines(record_path)
-    if lines is None:
-        return None
-    entries: list[dict] = []
-    for raw in lines:
-        if not raw.strip():
-            continue
-        try:
-            entry = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(entry, dict):
-            entries.append(entry)
-    observations = identity_observations(entries, runtime)
-    if not observations:
-        return None
-    latest = observations[-1][1]
-    if not is_codex and isinstance(effort, str) and effort:
-        return RuntimeIdentity(runtime, latest.model, effort, "observed")
-    return latest
-
-
-def _hook_record_path(payload: dict) -> str | None:
-    transcript_path = payload.get("transcript_path")
-    if not isinstance(transcript_path, str) or not transcript_path:
-        return None
-    agent_id = payload.get("agent_id")
-    if agent_id is None:
-        return transcript_path
-    session_id = payload.get("session_id")
-    if not isinstance(agent_id, str) or not agent_id or not isinstance(session_id, str) or not session_id:
-        return None
-    subagent_path = pathlib.Path(transcript_path).parent / session_id / "subagents" / f"agent-{agent_id}.jsonl"
-    return str(subagent_path) if subagent_path.is_file() else None
-
-
-def _user_facing_text_fields(tool_name: str, tool_input: dict) -> list[tuple[str, str]]:
-    if tool_name == "ExitPlanMode":
-        plan = tool_input.get("plan")
-        return [("plan", plan)] if isinstance(plan, str) else []
-    questions = tool_input.get("questions")
-    if not isinstance(questions, list):
-        return []
-    fields: list[tuple[str, str]] = []
-    for question_index, question in enumerate(questions):
-        if not isinstance(question, dict):
-            continue
-        for name in ("question", "header"):
-            value = question.get(name)
-            if isinstance(value, str):
-                fields.append((f"questions[{question_index}].{name}", value))
-        options = question.get("options")
-        if not isinstance(options, list):
-            continue
-        for option_index, option in enumerate(options):
-            if not isinstance(option, dict):
-                continue
-            for name in ("label", "description"):
-                value = option.get(name)
-                if isinstance(value, str):
-                    fields.append((f"questions[{question_index}].options[{option_index}].{name}", value))
-    return fields
-
-
-def _scope_review_text(tool_name: str, tool_input: dict) -> str:
-    if tool_name == "AskUserQuestion":
-        return "\n".join(value for _, value in _user_facing_text_fields(tool_name, tool_input))
-    values = [tool_input.get(name) for name in ("message", "prompt", "instruction")]
-    if isinstance(extra := tool_input.get("extra_params"), dict):
-        values.extend(extra.values())
-    return "\n".join(value for value in values if isinstance(value, str))
-
-
-def _language_retry(payload: dict, tool_name: str, tool_input: dict, *, remember: bool) -> bool:
-    """同じ主体の直前入力だけを保持し、別操作による回復権限の持越しを防ぐ。"""
-    session_id = payload.get("session_id", "")
-    if not isinstance(session_id, str) or not session_id:
-        return False
-    actor = _agent_id.resolve_hook_agent_id(payload)
-    fingerprint = hashlib.sha256(json.dumps([tool_name, tool_input], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-    repeated = False
-
-    def update(state: dict) -> dict:
-        nonlocal repeated
-        prior = state.get("response_language_retry_by_actor", {})
-        prior = dict(prior) if isinstance(prior, dict) else {}
-        repeated = prior.get(actor) == fingerprint
-        if remember:
-            prior[actor] = fingerprint
-        else:
-            prior.pop(actor, None)
-        state["response_language_retry_by_actor"] = prior
-        return state
-
-    return update_state(session_id, update) and repeated
-
-
-def _decide_user_facing_text_tool(_payload: dict, tool_name: str, tool_input: dict) -> Decision:
-    """質問・計画本文の記述言語と文字化けを確かめる。
-
-    ユーザーへ直接到達する本文はユーザー自身が読んで誤りを指摘できるため、復元できない結果に当たらない。
-    遮断するとそのターンの入力と作業を失い、同じ確認を再発行する必要があるため、警告で返す。
-    判定の根拠は`agent-basics:writing-standards`の`references/claude-hooks-block-warn.md`
-    「遮断と警告の選択」が定める。記述言語の判定は同節の例外により表示前に遮断し、日本語での書き直しを求める。他の2つの判定は、成立した警告を同じ追加コンテキストへ並べる。
-    """
-    fields = _user_facing_text_fields(tool_name, tool_input)
-    if excuse_block := norm_excuse_gate.text_block(
-        _payload, "\n".join(text for _, text in fields), "ユーザーへの質問・計画の提示"
-    ):
-        return Decision(block=excuse_block)
-    recoverable = all(_response_language_check.explanation_is_japanese(text) for _, text in fields)
-    repeated = _language_retry(_payload, tool_name, tool_input, remember=recoverable)
-    for name, text in fields:
-        # `atk-mode`の`playbooks/host-claude-code.md`「ユーザー確認（AskUserQuestion）」がlabel末尾へ求める固定表記。
-        # 本文・説明の英語判定と文字化け判定には、この除外を適用しない。
-        if tool_name == "AskUserQuestion" and name.endswith(".label"):
-            text = text.removesuffix("(Recommended)").rstrip()
-        outcome, _ = _response_language_check.check_text(text)
-        if outcome is _response_language_check.CheckOutcome.WARN:
-            if recoverable and repeated:
-                continue
-            return Decision(
-                block=_block_notice(
-                    f"対象の入力欄: `{name}`。この入力本文を日本語の説明として判定できないため、呼び出しを止めた。",
-                    fix=(
-                        _response_language_check.WARNING_FIX
-                        + "引用・入力素材だけが英語で、説明が日本語なら、同じ主体から同じツールへ同一入力を再発行してください。"
-                    ),
-                )
-            )
-    warnings = [warning for warning in (_warn_mojibake(tool_name, fields),) if warning is not None]
     return Decision(context=format_warning_context(warnings) if warnings else None)
 
 

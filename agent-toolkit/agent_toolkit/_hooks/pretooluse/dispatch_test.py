@@ -8,7 +8,8 @@ import shlex
 
 import pytest
 
-from agent_toolkit._hooks.pretooluse import agent_checks
+from agent_toolkit._hooks import user_prompt_submit
+from agent_toolkit._hooks.pretooluse import agent_checks, user_facing_checks
 from agent_toolkit._hooks.pretooluse import dispatch as pretooluse
 from agent_toolkit._testing.dispatch_support import _assert_plain_pass, _original_record
 from agent_toolkit._testing.dispatch_support import _existing_work_contract as _existing_work_contract
@@ -382,29 +383,172 @@ def test_send_review_identifies_missing_alternative(body: str, missing: bool) ->
     assert (output.get("permissionDecision") == "deny") is missing
 
 
-def test_policy_question_requires_all_external_sources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+def test_policy_question_requires_all_external_sources(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, work: str
+) -> None:
     contract = tmp_path / "work-contract.md"
-    contract.write_text(
-        "# 作業契約\n- 作業: add-awi-by-user\n## 原本\n- https://example.com/a\n- https://example.com/b)\n",
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
+    prompt = f"/atk-mode {work} https://example.com/a"
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    question = _APPROVAL
+    malformed = {**question, "question": "上の方針で進めますか？"}
+    form_error = _question_decision(tmp_path, malformed)
+    assert "質問が決まった形でない" in form_error
+    assert "external-source-review.md" not in form_error
+    assert "external-source-review.md" in _question_decision(tmp_path, question)
+    table = tmp_path / "external-source-review.md"
+    comparison = "削る・まとめる・置き換える案"
+    header = f"| 採否と理由 | {comparison} | 資料URL | 配布規範での定義元または非該当の理由 |\n| --- | --- | --- | --- |\n"
+    good = "なし。既存の設計手順を調べ、重複が無かった"
+    for value in ("", " **なし。** ", "——"):
+        table.write_text(header + f"| 不採用 | {value} | https://example.com/a | 設計手順 |\n", encoding="utf-8")
+        reason = _question_decision(tmp_path, question)
+        assert "3行目" in reason and comparison in reason
+    a = header + f"| 不採用 | {good} | https://example.com/a | 設計手順 |\n"
+    table.write_text(a, encoding="utf-8")
+    assert not _question_decision(tmp_path, question)
+    contract.write_text("# 作業契約\n## 原本\n- https://example.com/b\n", encoding="utf-8")
+    assert "https://example.com/b" in _question_decision(tmp_path, question)
+    table.write_text(a + f"| 不採用 | {good} | https://example.com/b | 設計手順 |\n", encoding="utf-8")
+    assert not _question_decision(tmp_path, question)
+    assert not _question_decision(tmp_path, {"question": "どの系統を選びますか？"})
+
+
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize(
+    ("source", "url", "comparison", "blocked"),
+    [
+        ("資料（{url}）を参考に", "https://example.com/a", "重複を統合する", False),
+        ("資料**{url}**を参考に", "https://example.com/a", "重複を統合する", False),
+        ('資料: "{url}"', "https://example.com/a%2A_%28b%29", "重複を統合する", False),
+        ("資料: __{url}__", "https://example.com/a_b", "重複を統合する", False),
+        ("資料: ({url})", "https://example.com/a(b)?x=1&y=2#f", "重複を統合する", False),
+        ("資料: [{url}]({url})", "https://[2001:db8::1]/a(b)", "重複を統合する", False),
+        ("資料: {url}。次も確認", "https://example.com/%E8%B3%87%E6%96%99", "重複を統合する", False),
+        ("資料: {url}", "https://example.com/a", "なし<br>", True),
+        ("資料: {url}", "https://example.com/a", "**なし**<BR />&nbsp;！", True),
+        ("資料: {url}", "https://example.com/a", '<span title=">理由">無し</span>', True),
+        ("資料: {url}", "https://example.com/a", "＜ｂｒ＞　―", True),
+        ("資料: {url}", "https://example.com/a", "なし<br>既存手順を調べ、重複がなかった", False),
+    ],
+)
+def test_external_source_markup_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    source: str,
+    url: str,
+    comparison: str,
+    blocked: bool,
+) -> None:
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: tmp_path / "work-contract.md")
+    prompt = f"/atk-mode {work} {source.format(url=url)}"
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    (tmp_path / "external-source-review.md").write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n"
+        f"| <{url}> | 設計手順 | {comparison} | 不採用 |\n",
         encoding="utf-8",
     )
+    reason = _question_decision(tmp_path, _APPROVAL)
+    if blocked:
+        assert "3行目" in reason and "削る・まとめる・置き換える案" in reason
+    else:
+        assert not reason
+
+
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
+@pytest.mark.parametrize(
+    ("markup", "separator"),
+    [
+        (markup, separator)
+        for markup in ("**{}**", "`{}`", "[資料]({})", "({})", "{}。", "__{}__")
+        for separator in (None, " と ", "と", "")
+        if separator != "" or markup not in {"**{}**", "__{}__"}
+    ],
+)
+def test_external_source_url_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    from_contract: bool,
+    separator: str | None,
+    markup: str,
+) -> None:
+    contract = tmp_path / "work-contract.md"
     monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
-    question = {"questions": [{"question": "上の方針（A・Bの2件を登録、他は不採用）で起草してよいか？"}]}
-    assert "external-source-review.md" in _question_decision(tmp_path, _APPROVAL)
-    assert not pretooluse._external_source_review_needed("s", {"questions": [{"question": "どの系統を選びますか？"}]})
+    urls = ["https://example.com/a(b)?x=%2A&y=1#z"]
+    if separator is not None:
+        urls.append("https://[2001:db8::1]/a_b")
+    body = "資料" + (separator or "").join(markup.format(url) for url in urls) + "を確認"
+    if from_contract:
+        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
+    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
     table = tmp_path / "external-source-review.md"
-    a = "| https://example.com/a | agent-basicsの設計手順 |\n"
-    table.write_text(a, encoding="utf-8")
-    assert pretooluse._external_source_review_needed("s", question)
-    table.write_text(a + "| https://example.com/b) | |\n", encoding="utf-8")
-    assert pretooluse._external_source_review_needed("s", question)
-    table.write_text(a + "| https://example.com/b) | 非該当: 個別の保存形式 |\n", encoding="utf-8")
-    assert not pretooluse._external_source_review_needed("s", question)
-    for body in ("- 作業: implement\n- 外部資料: https://example.com/a\n", "- 作業: add-awi-by-user\n"):
-        contract.write_text(body, encoding="utf-8")
-        assert not pretooluse._external_source_review_needed("s", question)
+    table.write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in urls),
+        encoding="utf-8",
+    )
+    assert not _question_decision(tmp_path, _APPROVAL)
+
+
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
+@pytest.mark.parametrize("infix", ["_", "__", "*"])
+@pytest.mark.parametrize("markup", ["<{}>", "**{}**", "__{}__"])
+@pytest.mark.parametrize("rows", ["complete", "prefix-only", "one-missing"])
+def test_external_source_url_identity(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    from_contract: bool,
+    infix: str,
+    markup: str,
+    rows: str,
+) -> None:
+    contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
+    prefix = "https://example.com/a"
+    urls = [f"{prefix}{infix}1", f"{prefix}{infix}2"]
+    body = "資料" + "と".join(markup.format(url) for url in urls)
+    if from_contract:
+        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
+    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    entries = {"complete": urls, "prefix-only": [prefix], "one-missing": urls[:1]}[rows]
+    (tmp_path / "external-source-review.md").write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in entries),
+        encoding="utf-8",
+    )
+    reason = _question_decision(tmp_path, _APPROVAL)
+    if rows == "complete":
+        assert not reason
+    else:
+        assert urls[1] in reason
 
 
 def test_external_source_url_preserves_ipv6_address() -> None:
-    urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
+    urls = user_facing_checks._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
     assert urls == {"https://[2001:db8::1]/source"}
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("https://example.com/a, 次", "https://example.com/a"),
+        ("https://example.com/a. 次", "https://example.com/a"),
+        ("<https://example.com/a.>", "https://example.com/a."),
+        ("**https://example.com/a****https://example.com/b**", "https://example.com/a****https://example.com/b"),
+        ("https://example.com/a__b*", "https://example.com/a__b*"),
+        ("https://example.com/a%ZZは別の文字列", "https://example.com/a"),
+        ("https://example.com/aを参照", "https://example.com/a"),
+        ("https://example.com/a$&'+,;=~b?x=1&y=2#z", "https://example.com/a$&'+,;=~b?x=1&y=2#z"),
+    ],
+)
+def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str) -> None:
+    assert list(pretooluse.work_contract.source_urls(line)) == [expected]
