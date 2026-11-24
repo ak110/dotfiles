@@ -31,7 +31,7 @@
 - 当てはまる条件: Makefileやmiseの更新タスクがpinactを起動する
 - 適用方法: `mise.toml`へpinactを宣言し、追跡するmiseロックがあれば更新し、通常のActions更新経路で解決を確かめる
 - 参照先: `github.com/ak110/pyfltr`と`github.com/ak110/glatasks`の`mise.toml`および`Makefile`
-- 適用済みの見分け方: 更新コマンドの呼出先pinactがプロジェクトのmise宣言から解決され、個人のグローバル宣言なしで動く
+- 適用済みの見分け方: 更新コマンドの呼び出し先pinactがプロジェクトのmise宣言から解決され、個人のグローバル宣言なしで動く
 
 ## Corepack同梱に頼らないpnpm運用へ移る
 
@@ -97,7 +97,7 @@
 - 当てはまる条件: Pythonプロジェクトで、対応版にPython 3.15が含まれない
 - 適用方法: 依存の対応を調べ、対応版の宣言とCI行列へ加え、基準版を変更する場合は`.python-version`・全検査・文書や公開の実行版もそろえる
 - 参照先: `github.com/ak110/pyfltr`の`pyproject.toml`、`.python-version`、`.github/workflows/ci.yaml`と`docs/guide/recommended.md`「CI」
-- 適用済みの見分け方: 対応版の宣言とCIに3.15があり、依存を導入して試験を実行でき、全検査を担う版と開発環境が一致する
+- 適用済みの見分け方: 対応版の宣言とCIに3.15があり、依存を導入してテストを実行でき、全検査を担う版と開発環境が一致する
 
 ## 危険なPython構文をRuffで検出する
 

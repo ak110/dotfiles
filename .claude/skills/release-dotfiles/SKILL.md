@@ -21,7 +21,7 @@ description: >
 メインエージェントが次の手順で日次リリースの要否を判定して実施する。
 この範囲に当たらない作業では、リリースPRを手で作り、マージの後は`merge-pr`の手順でブランチの同期、CI、必要なリリースを検収する。
 
-1. `develop`へpushする前に、`rust/claude-statusline/`配下の差分（試験と試験入力だけ、`Cargo.lock`だけの変更を含む）があれば、`rust/claude-statusline/Cargo.toml`の`version`を上げる。
+1. `develop`へpushする前に、`rust/claude-statusline/`配下の差分（テストとテスト入力だけ、`Cargo.lock`だけの変更を含む）があれば、`rust/claude-statusline/Cargo.toml`の`version`を上げる。
    `release-statusline.yaml`は差分のあるマージごとに`statusline-v<version>`タグを作るため、据え置くと既存のタグと衝突する。
    レーン担当は更新の根拠を計画か引き継ぎ記録へ残し、公開担当はその根拠が統合差分にも当てはまることと、版数と`Cargo.lock`の整合を確かめる。
    最終の検証は`.claude/skills/develop-dotfiles/references/verification.md`「公開前の検証」のとおりpyfltrへ`--enable=statusline-version`を渡し、レーンの途中のcommitでは無効のまま保つ。

@@ -30,7 +30,7 @@ description: >
 - dotfilesの作業ツリーの位置は`pytools._internal.common.find_dotfiles_root()`で取得する（`None`の扱いは呼び出し元が決める）。
   CIとエンドユーザーの環境では作業ツリーが`$HOME`直下とは限らず、階層数による相対解決は構成の変更で壊れるため、`~/dotfiles`の固定パスと`Path(__file__)`からの階層計算は使わない。
   `pytools`をimportできないPEP 723スクリプトだけは`Path(__file__)`を起点にする。
-  `CHEZMOI_WORKING_TREE`の読取は対象外とする。
+  `CHEZMOI_WORKING_TREE`の読み取りは対象外とする。
 - bash、PowerShell、JSON、chezmoiテンプレートの`~/dotfiles`の固定パスは`install.sh`のクローン先を前提にしている。
   該当は`.chezmoi-source/dot_bashrc`、`share/claude_settings_json_managed.win32.json`、`bin/lab-bg`などである。
   クローン先の前提を変える時はこれらもそろえる。
@@ -38,11 +38,11 @@ description: >
   Claude Code固有の定数と`run_claude()`は`pytools/_internal/claude_common.py`に置く。
   関数を新しく作る前に既存の公開APIを確かめる（努力目標）。
 - `bin/`配下の`*.cmd`はCP932（Shift_JIS）である。
-  書込ツールで編集する時は`agent-basics:writing-standards/references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCII文字だけの修正は`sed -i`で行う。
+  書き込みツールで編集する時は`agent-basics:writing-standards/references/encoding.md`「書込ツールの改行・BOM保全」に従い、ASCII文字だけの修正は`sed -i`で行う。
 - 非ASCII文字を標準出力・標準エラーへ書くPythonのCLIは、開始時に両ストリームを`io.TextIOWrapper`でUTF-8かつ`errors="replace"`に再構成する（英語版Windowsなどで既定の文字コードに依存すると、日本語の出力で停止するため）。
   再構成を通さずに出すログと標準出力の文面は、`str.encode("cp932")`が成功する文字に収める（U+20BB7などの一部の漢字、em dash、en dash、`✓`、`•`は使わない）。
 - `pytools/post_apply.py`の各ステップの`run`は`PostApplyOutcome`だけを返す。
-  外部ツールや依存を取得・導入できない場合は警告してスキップし、設定・リンク・配布ファイルの書換えや撤去ができない場合は失敗の理由と次の操作を返す。
+  外部ツールや依存を取得・導入できない場合は警告してスキップし、設定・リンク・配布ファイルの書き換えや撤去ができない場合は失敗の理由と次の操作を返す。
   先行工程で導入できなかったツールが必要な工程もスキップする。
   予期しない例外は`post_apply`が失敗に数える。
   使用中の環境を守るために延期する場合は、利用の終了後に再実行する手段を案内する。

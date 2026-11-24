@@ -11,7 +11,7 @@ description: >
 
 検証対象のworktreeの`atk`を、実ユーザーのホーム、設定、private-notes、依存環境から切り離した作業領域で、実プロセスとして動かす。
 本書の操作と証拠の保存はLinuxのCLIを対象とする。
-`atk serve`の画面は`develop-dotfiles`の`references/browser.md`、試験の選び方は`develop-dotfiles`の`references/verification.md`「変更範囲の検証の値」が扱う。
+`atk serve`の画面は`develop-dotfiles`の`references/browser.md`、テストの選び方は`develop-dotfiles`の`references/verification.md`「変更範囲の検証の値」が扱う。
 このスキルの生成と保守の手順は`agent-basics:verify-skill`にある。
 
 以下の`<sandbox>`は`<検証対象のworktree>/.claude/skills/verify/scripts/atk-sandbox.sh`の絶対パス、`<S>`は作業領域、`<E>`は証拠の置き場所の絶対パスである。
@@ -47,7 +47,7 @@ description: >
 
 `run`と`doctor`はコマンドごとに、引数、標準出力、標準エラー、終了コードを`<E>/<連番>-<ラベル>.{cmd,out,err,rc}`へ保存する。
 
-- 公開のサブコマンドだけで操作し、内部の関数や試験の補助で得た結果は証拠から外す。
+- 公開のサブコマンドだけで操作し、内部の関数やテストの補助で得た結果は証拠から外す。
 - 状態を変えた操作は、`成功:`で始まる行と終了コード0に加えて、送り先の裸のリポジトリの履歴で確かめる。
 - `--dry-run`では送り先の履歴が変わらないことを確かめる。
 
@@ -62,7 +62,7 @@ description: >
 
 CLIは「起動」と「状態確認」の後に対象の操作を実行する。
 CLI以外を確かめる場合は、次の表のうち該当する入口で、使った条件と回収の結果を別に記録する。
-既存の試験が応答を判定する場合は、応答本文を取り直さず、試験名・合否と確かめた範囲を保存する。
+既存のテストが応答を判定する場合は、応答本文を取り直さず、テスト名・合否と確かめた範囲を保存する。
 `<名前>`は前の段の出力から取る値である。
 
 | 機能 | 隔離した代表操作と期待結果 |
@@ -70,7 +70,7 @@ CLI以外を確かめる場合は、次の表のうち該当する入口で、�
 | CLI | 以下のWI・計画・設定を操作し、結果と保存先を比べる |
 | `atk serve` | [画面とブラウザー](../develop-dotfiles/references/browser.md#画面とブラウザー)の一時データでWIを保存し、画面と保存本文が一致することを確かめる |
 | hook | `<sandbox> run <S> hook env AGENT_TOOLKIT_CONFIG_SESSION_REVIEW_AUTO_START=false uv run --no-cache --no-config --no-project --python 3.15 python <plugin root>/scripts/launch.py agent_toolkit/hook.py rules_context_codex < <S>/work/hook-input.json`で隔離したSessionStart入力を渡し、終了0と通知JSONを確かめる |
-| MCP | 下記の隔離したstdioの試験で、公開ランチャーの応答と転送・管理サービスの回収を確かめる |
+| MCP | 下記の隔離したstdioのテストで、公開ランチャーの応答と転送・管理サービスの回収を確かめる |
 
 MCPの代表操作は、リポジトリルートで次を実行する。
 
@@ -78,8 +78,8 @@ MCPの代表操作は、リポジトリルートで次を実行する。
 uv run --frozen pytest agent-toolkit/agent_toolkit/_agents_server/mcp_transport_test.py::test_launcher_records_stdin_close_exit
 ```
 
-公開ランチャーの`initialize`と`tools/list`、標準入力を閉じた後の転送の終了、管理サービスを停止した後の終了記録を確かめる試験である。
-モデルや業務ツールの実行はこの試験の対象外とする。
+公開ランチャーの`initialize`と`tools/list`、標準入力を閉じた後の転送の終了、管理サービスを停止した後の終了記録を確かめるテストである。
+モデルや業務ツールの実行はこのテストの対象外とする。
 
 hook入力には`hook_event_name: SessionStart`、`source: startup`、合成の`session_id`、`cwd`として`<S>/work`を持つJSONオブジェクトを使う。
 
