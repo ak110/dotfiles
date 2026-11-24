@@ -139,7 +139,8 @@ def compose_session_start(
             # 作業の始め方は目的文が示す。ここでは起動を差し込まず、終了契約の所在だけを示す。
             if data["source"] == "process-loop":
                 guidance = (
-                    "次の終了契約を読め: `agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」"
+                    "次の終了契約を読んでください: "
+                    "`agent-toolkit:atk-mode/playbooks/process-wi-all-repos-results.md`「結果と終了」"
                 )
             else:
                 guidance = (

@@ -40,7 +40,7 @@ RETURN_CRITERION = (
 )
 
 
-SHORT_NOTICE = "現行の作業契約を取得せよ: "
+SHORT_NOTICE = "現行の作業契約を取得してください: "
 """通知の上限に本文が収まらない場合に、一時領域の通知へ加える所在の1行。"""
 
 _RECORD_REFERENCE = re.compile(r"`([^\n`]+):([1-9][0-9]{0,7})`")

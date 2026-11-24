@@ -31,7 +31,8 @@ def plugin_root() -> pathlib.Path:
             raise ValueError("pluginの識別が不正")
     except (OSError, UnicodeError, ValueError) as error:
         raise PluginRootError(
-            f"{delegated_session.PLUGIN_ROOT_ENV}の資料rootが不正: {value}: {error}。委譲元へ起動時のroot指定の修正を求めよ"
+            f"{delegated_session.PLUGIN_ROOT_ENV}の資料rootが不正: {value}: {error}。"
+            "委譲元へ起動時のroot指定の修正を求めてください"
         ) from error
     return root.resolve()
 

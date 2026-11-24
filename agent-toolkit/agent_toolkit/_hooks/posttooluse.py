@@ -123,7 +123,7 @@ def _example_scope_notice(prompt: str, source: str, *, subject: str) -> str | No
     if any(word in text for word in _INVESTIGATION_WORDS):
         body += (
             "調査へ着手する前に、読み取り専用の`explore`へ分担する案と自分で分割取得しながら続ける案を、"
-            "起動・初回読込・検収・統合を含む総費用で比べよ。"
+            "起動・初回読込・検収・統合を含む総費用で比べてください。"
         )
     return _notice_formatter(source)(body, tag="notice", subject=subject)
 
@@ -376,10 +376,10 @@ def _plan_main_path_for(display_path: str) -> str:
 def _plan_file_check_notice(file_path: str, cwd: str) -> str:
     work_dir_option = f" --work-dir {shlex.quote(cwd)}" if cwd else ""
     return _llm_notice(
-        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめよ:"
+        f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめてください:"
         f" 起動部分へ`run-script plan-check -- {shlex.quote(file_path)}{work_dir_option}`を続けてください。"
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
-        "`--work-dir`を対象リポジトリへ置き換えよ。",
+        "`--work-dir`を対象リポジトリへ置き換えてください。",
         tag="notice",
     )
 
