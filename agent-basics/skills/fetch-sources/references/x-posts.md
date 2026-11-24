@@ -11,7 +11,7 @@ X（旧Twitter）の投稿を調査資料として参照する時に、投稿を
    転送先を取得できなければURLを推測せず「未取得」と記録する。
 2. `https://api.fxtwitter.com/<ユーザー名>/status/<投稿ID>`へリクエストし、リダイレクトを追跡して応答をファイルへ保存する。
    最終HTTPステータスが200で、JSONの`code`が数値の200であることを確かめてから、必要な属性だけを`jq`などで抽出する。
-   応答が条件外か必要な属性が欠けるなら保全してID・HTTPステータス・診断を確認し、不具合は `agent-basics:bugfix` で認可内に限り直す。
+   応答が条件外だったり必要な属性が欠けていたりする場合は、応答を保全してID・HTTPステータス・診断を確認し、不具合があれば `agent-basics:bugfix` で認可の範囲内に限り直す。
    権限拒否は迂回せず、許可済みの代替取得を試し、未取得の範囲・試行・再開条件を伝える。
 3. 本文と日時を区別する。
    - `tweet.article`が無いか`null`なら通常投稿で、`tweet.text`が本文である。
@@ -21,7 +21,7 @@ X（旧Twitter）の投稿を調査資料として参照する時に、投稿を
      引用投稿は別の投稿として取得する。
 4. 写真は`tweet.media.photos[].url`から取得し、「添付写真の保存と確認」へ進む。
    配列が空か写真メディアが無ければ「写真なし」とし、通信の失敗と区別する。
-   記事の`blocks[].text`の連結だけでは、記事内の画像や埋込を取得したと扱わない。
+   記事の`blocks[].text`の連結だけでは、記事内の画像や埋め込みを取得したと扱わない。
 5. 本文と写真の取得状況を別々に記録し、画像は実際に確認した範囲を残す。
 
 上の属性名はFxTwitterのv1形式であり、`/2/`を含むv2形式と区別する。
@@ -33,7 +33,7 @@ FxTwitterはこれらを返さないため、X API v2（従量課金）で読み
 読み取り専用のBearer Tokenだけを使い、値を出力・記録へ出さない。
 
 - 接続先は`https://api.x.com`で、要求に`Authorization: Bearer <トークン>`を付ける（仕様は[投稿一覧](https://docs.x.com/x-api/users/get-posts)と[検索](https://docs.x.com/x-api/posts/search-recent-posts)）。
-- 投稿一覧は`/2/users/by/username/<名前>`で得たID（照会は別に課金されるため保存して再利用する）から`/2/users/<ID>/tweets`、検索は`/2/tweets/search/recent?query=<語>`で読む。
+- 投稿一覧は`/2/users/by/username/<名前>`で得たID（照会は別途課金されるため保存して再利用する）から`/2/users/<ID>/tweets`、検索は`/2/tweets/search/recent?query=<語>`で読む。
 - `max_results`（投稿一覧は5〜100、検索は10〜100）と`since_id`か`start_time`で読む範囲と件数を限る。
 - HTTP 401・402・403・429は読めなかった理由として記録し、他の情報源で続ける。
 
