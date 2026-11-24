@@ -28,5 +28,5 @@ Claude Codeのauto modeの`autoMode.allow`へカスタムルールを追加・�
 配布元の`autoMode.allow`からラベルごと廃止したルールは、配列のunionマージのためユーザー環境の設定に残る。
 そのため、廃止したラベルの旧文面を除去する処理を配布処理へ組み込む。
 
-認証が要るClaude Codeの動作検証では、`CLAUDE_CONFIG_DIR`の既存の値を保ち、標準の認証の解決手順を保つ。
+認証が必要なClaude Codeの動作検証では、`CLAUDE_CONFIG_DIR`の既存の値を保ち、標準の認証の解決手順を保つ。
 `--settings <file-or-json>`は既存の設定への追加の読み込みとして扱う。

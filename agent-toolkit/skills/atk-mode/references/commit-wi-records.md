@@ -3,7 +3,7 @@
 WIを実装したcommitとAWIの対応を記録し、取得する定義である。
 履歴の書き換えでOIDが変わった後の引き継ぎは`agent-toolkit:atk-mode/playbooks/history-rewrite.md`「WI実装commitの対応の継承」にある。
 対応は、計画（計画が無ければ引き継ぎ記録）と同じディレクトリ、同じファイル幹（stem）の`<stem>.wi-commits.jsonl`だけに記録する。
-書込は`atk run-script plan-progress`と`atk run-script plan-rewrite`、読取は`atk run-script plan-commits`で行う。
+書き込みは`atk run-script plan-progress`と`atk run-script plan-rewrite`、読み取りは`atk run-script plan-commits`で行う。
 引数は各コマンドの`--help`で確かめ、計画、引き継ぎ記録、worktree、対応表は絶対パスで、AWIはファイル名で渡す。
 同じstemのJSONLは保存先であり、位置引数に渡さない。
 commitは一意な短縮OIDで扱い、入力には完全なOIDも使える。
@@ -16,7 +16,7 @@ WIとの対応は記録から取得し、メッセージの件名や説明文か
    `git commit`を単独で実行して正常に終わった時だけ、作成前のHEAD、新しいHEAD、worktree、対応する全てのAWIを`atk run-script plan-progress`へ渡す。
    - 1つのcommitが複数のAWIの変更を含む場合は、全件を同じ記録へ渡す。
    - 引き継ぎ記録へは、`--handoff`と対象AWI全件の`--allowed-awi`を指定する。
-   - 計画が要るAWIと要らないAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の関連WIにあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
+   - 計画が必要なAWIと不要なAWIの変更を1つのcommitが含む場合は、同じ作成前HEADと新しいHEADで、計画の関連WIにあるAWIを計画へ、残りを引き継ぎ記録へ記録する。
      手順2の取得と`commit_record`も、AWIごとに記録した側を使う。
    - レビュー修正とCI修正のcommitも全件記録する。
    - cherry-pickやfast-forwardで複数のcommitを取り込んだ場合は、操作前後のHEADで一括して記録する。

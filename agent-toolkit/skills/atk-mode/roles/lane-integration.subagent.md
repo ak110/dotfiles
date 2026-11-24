@@ -32,7 +32,7 @@ writes_worktree: true
 1. `統合区分`が`マージあり`なら`agent-toolkit:atk-mode/references/lane-integration-format.md`「マージありの統合」、`マージなし`なら同書「マージなしの統合」で統合する。
    `マージあり`の統合を始める時は`agent-toolkit:atk-mode/references/review-record-acceptance.md`で統合時の完成条件を判定する。
    manifestの`verification`へ渡す検証の範囲は`agent-basics:check-execution/references/verification-scope.md`で決め、検証の実行後は`agent-basics:check-execution/references/diagnostics.md`で診断を読む。
-   プロジェクトが統合後のCIへ全量試験を任せる場合は、レーンの変更と競合解消に関わる検証を最終の内容で確かめ、全量のCI結果とは分けて記録する。
+   プロジェクトが統合後のCIへ全量テストを任せる場合は、レーンの変更と競合解消に関わる検証を最終の内容で確かめ、全量のCI結果とは分けて記録する。
 2. mergeが競合で止まった時と、merge後の変更範囲の検証が失敗した時は、`agent-toolkit:atk-mode/playbooks/process-wi-lanes.md`「mergeの競合」「統合後の変更範囲の検証の失敗」へ進む。
 3. `agent-toolkit:atk-mode/references/lane-integration-format.md`「計画最終化」「AWI行の終了」の操作をmanifestへ渡し、`phase: finalized`を確かめてから「出力」の形式で返す。
    `adopt`と`reject`のメモを書く直前に`agent-toolkit:atk-mode/playbooks/wi-drafting.md`と`agent-toolkit:atk-mode/references/states-and-dependencies.md`を読む。

@@ -13,13 +13,13 @@ agent-toolkitの規範は、全エージェントへ常に読み込ませるフ�
 | --- | --- | --- |
 | 全ての作業に当てはまる原則の要旨、硬い制約、ユーザーの方針、作業と手順書の表 | 入口の`SKILL.md`（5,000トークン以内） | 作業の前と会話の圧縮の後に起動する |
 | 1つの作業の流れ（メインの報告、委譲の起動・待機・受領・復旧、commitなど） | `playbooks/` | 入口の表の条件が成立した時 |
-| 1主題の形式の定義 | `references/` | 手順書の段が指した時 |
+| 1主題の形式の定義 | `references/` | 手順書のステップが指した時 |
 | ホストに固有の操作 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md`（差の一覧は`references/hosts.md`） | そのホストで操作する時 |
 | 委譲先に共通の制約と返却の決まり | `playbooks/subagent.md` | 委譲先の起動の本文として届く |
 | 役割ごとの作業と返却形式、委譲元の起動と検収 | `roles/<役割名>.subagent.md`、`roles/<役割名>.parent.md` | 前者は起動の本文として届き、後者は委譲元が起動の前に読む |
 | 実装者だけが使う仕組みの内部の仕様 | リポジトリの`docs/development/` | 配布しない |
 
-- 全エージェントが要る内容を足す時は、入口の上限に収まるかを先に確かめ、収まらなければ入口の表から選ぶ手順書へ置く。
+- 全エージェントに必要な内容を追加する時は、入口の上限に収まるかを先に確かめ、収まらなければ入口の表から選ぶ手順書へ置く。
   全ての作業の読む量が増えるため、常に読み込ませるファイルの新設と、hookの通知への規範の本文の差し込みは避ける。
 - 委譲元と委譲先の双方が守る受け渡し（状態行、続行不能の区分、通知、追加報告の行）は`playbooks/subagent.md`に置き、役割文書には役割に固有の結果欄と差分だけを書く。
 - hookの通知、CLIの次の操作、MCPのツールの説明文に書くのは、検出した事実と求める操作だけとする。
@@ -47,16 +47,16 @@ Claude Codeの`Agent`ツールの委譲先でスキルが使えるかは確か�
 | --- | --- | --- | --- | --- | --- | --- |
 | agent-toolkitのスキル（入口を含む） | 届く | 届く | 届く（Antigravityは有効なプラグインから。OpenCodeは自動登録せず、plugin rootの`skills/`から明示的に読む） | Claudeは届かない（`skills=[]`）。Codexは`write`・`shell`だけ（`explore`はプラグイン無効）。Antigravityは届く | 未確認 | 未確認 |
 | `playbooks/subagent.md`と役割文書 | 届かない | 届かない | 起動の本文 | 起動の本文（`subagent.md`の通知、「硬い制約」、役割の節、「返却形式の受け渡し」） | 依頼文の指示で読む | 依頼文の指示で読む |
-| ユーザーが`~/.claude/rules/`に置いた規範 | 届く（ユーザー規範） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） | Claudeはユーザー設定の読込元、Codexはdeveloper指示、Antigravityは起動・再開の指示、OpenCodeは指示の先頭 | 同左 | 親のメモリー階層（組み込みの`Explore`・`Plan`を除く） | `playbooks/host-codex.md`の読込指示（直下の`*.local.md`だけ） |
+| ユーザーが`~/.claude/rules/`に置いた規範 | 届く（ユーザー規範） | `playbooks/host-codex.md`の読み込み指示（直下の`*.local.md`だけ） | Claudeはユーザー設定の読み込み元、Codexはdeveloper指示、Antigravityは起動・再開の指示、OpenCodeは指示の先頭 | 同左 | 親のメモリー階層（組み込みの`Explore`・`Plan`を除く） | `playbooks/host-codex.md`の読み込み指示（直下の`*.local.md`だけ） |
 | 作業ディレクトリのプロジェクト規範（`AGENTS.md`など） | 届く | 届く | Claude、Codex、Antigravityは届く。OpenCodeは未確認 | Claudeは届かない。Codexは届かない（`project_doc_max_bytes=0`）。Antigravityは届く。OpenCodeは未確認 | 届く（組み込みの`Explore`・`Plan`を除く） | 届く |
 
 - `~/.claude/rules/myprojects.md`のようにClaude Code向けに配布する規範は、Codexでは`agents_server`の委譲先だけに届く。
-- `~/.claude/CLAUDE.md`は、Claudeの各起動区分へはユーザー設定の読込元から、Codexのエージェントへは`playbooks/host-codex.md`「Claude Code向けに配置された規範の読込」から届く。
+- `~/.claude/CLAUDE.md`は、Claudeの各起動区分へはユーザー設定の読み込み元から、Codexのエージェントへは`playbooks/host-codex.md`「Claude Code向けに配置された規範の読込」から届く。
 - Antigravityのメインと委譲先は、`~/.gemini/GEMINI.md`と作業ディレクトリの`AGENTS.md`も読む。
-- OpenCodeの委譲先でプロジェクト規範が要る時は、要る本文を依頼文へ含める。
+- OpenCodeの委譲先でプロジェクト規範が必要な時は、必要な本文を依頼文へ含める。
 - `atk wi process-loop`が対話CLIで起動する統括はメインの列、統括が`agents_server`で起動するリポジトリ担当は`task`・`delegate`の列の配送を受ける。
   リポジトリ担当の対象リポジトリでのメインとしての責務は、`agent-toolkit:atk-mode/playbooks/process-wi-all-repos.md`「担当の役割」が定める。
-- プロジェクト規範の自動読込の行は実機の観測による。
+- プロジェクト規範の自動読み込みの行は実機の観測による。
   記録は`docs/development/audit-records-agent-documents.md`の「agent-basics/skills/writing-standards/references/agent-documents-basics.md：責務と構成：2026年10月6日」にある。
 
 ## スキルの実装
@@ -80,9 +80,9 @@ agent-toolkitのスキルと手順書を書く時の差分である。
 下位の担当を起動する場合も同じである。
 
 - `agents_server`の委譲先が受け取るのは、依頼文と、起動の本文（`playbooks/subagent.md`の内容と役割文書）と、本書「配送範囲表」の各行に限られる。
-  委譲先が要る入力は依頼文に書く。
+  委譲先に必要な入力は依頼文に書く。
 - 会話履歴を継ぐforkは例外であり、選び方と起動は`agent-toolkit:atk-mode/playbooks/delegation.md`、Codexの`fork_turns`の指定は`agent-toolkit:atk-mode/playbooks/host-codex.md`に従う。
-  役割文書を渡す起動は、会話履歴を継がない独立の文脈で行う。
+  役割文書を渡す起動は、会話履歴を継がない独立した文脈で行う。
 - 会話履歴、プロジェクトの`AGENTS.md`、hookの通知に規範が含まれる場合も、委譲先に共通の決まりは起動の本文で届ける。
   委譲先に共通の決まりの原本は`playbooks/subagent.md`の1つであり、`agents_server`の全modeとCodexとOpenCodeの起動へ同じ原本から届ける。
 - Claude Codeに固有の委譲先向けの記述は、Claude Codeの委譲先だけへ届ける。
