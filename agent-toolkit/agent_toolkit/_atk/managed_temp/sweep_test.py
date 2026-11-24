@@ -868,12 +868,14 @@ def test_space_pressure_without_reclaimable_target_reports_low_space(monkeypatch
     monkeypatch.setattr(sweep.registry_index, "pending_session_ids", lambda: ["keep"])
     monkeypatch.setattr(sweep.creation, "find_session_temp", lambda _identifier: in_use)
     monkeypatch.setattr(sweep, "_disk_usage", lambda _path: shutil._ntuple_diskusage(1000, 900, 50))  # pylint: disable=protected-access
+    monkeypatch.setattr(sweep, "_inspect_tree", lambda *_args: pytest.fail("保護中の木を削除候補として走査した"))
+    monkeypatch.setattr(sweep, "_tree_bytes", lambda *_args: pytest.fail("警告のために一時rootを再帰計測した"))
 
     result = managed_temp.sweep_managed_temp(now=_NOW)
 
     assert result.pressure is not None and result.pressure.still_low
     assert result.deleted == [] and in_use.exists()
-    assert (result.pressure.temp_root_bytes or 0) > 0
+    assert (result.pressure.free_after, result.pressure.total) == (50, 1000)
 
 
 def test_space_pressure_keeps_recently_updated_area(monkeypatch: pytest.MonkeyPatch) -> None:
