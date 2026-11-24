@@ -29,7 +29,7 @@ Claude CodeがMCP要求の`_meta`へ渡す`claudecode/toolUseId`を`send_to_user
 `_meta`に識別子が無い要求だけは本文の一致で判定する。
 稼働中の呼び出しの記録には`tool.call`の登録を使わない。
 登録するとCode Modeを妨げるためである。
-描画中の会話状態の書き込みみはホストが拒否するため、描画側でも記録しない。
+描画中の会話状態の書き込みはホストが拒否するため、描画側でも記録しない。
 Code Modeの実ツール呼び出しはtranscriptで`<synthetic>`のモデル名を持つ場合もあるため、API失敗の代替本文と送達ツールの入力を区別する。
 
 表示の成功は`ui.place.isPlaced`で観測し、MCPの受付やツール呼び出しの存在とは区別する。
