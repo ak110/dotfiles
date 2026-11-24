@@ -379,7 +379,7 @@ def _plan_file_check_notice(file_path: str, cwd: str) -> str:
         f"計画ファイル{file_path}へ書き込んだ。書き込み後に計画の構造を確かめてください:"
         f" 起動部分へ`run-script plan-check -- {shlex.quote(file_path)}{work_dir_option}`を続けてください。"
         "計画の対象リポジトリがこのセッションの作業ディレクトリと異なる場合は、"
-        "`--work-dir`を対象リポジトリへ置き換えてください。",
+        "`--work-dir`の値に対象リポジトリの絶対パスを指定してください。",
         tag="notice",
     )
 

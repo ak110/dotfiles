@@ -19,25 +19,20 @@ def _reference(node: ast.AST) -> str:
     return ""
 
 
-def _static_string(node: ast.AST, constants: dict[str, ast.AST], seen: frozenset[str] = frozenset()) -> str | None:
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return node.value
-    if isinstance(node, (ast.Name, ast.Attribute)):
-        reference = _reference(node)
-        if reference in constants and reference not in seen:
-            return _static_string(constants[reference], constants, seen | {reference})
-        return None
-    return None
-
-
 def _may_be_warn(node: ast.AST, constants: dict[str, ast.AST], seen: frozenset[str] = frozenset()) -> bool | None:
     if isinstance(node, ast.IfExp):
         branches = (_may_be_warn(node.body, constants, seen), _may_be_warn(node.orelse, constants, seen))
         if True in branches:
             return True
         return False if all(branch is False for branch in branches) else None
-    resolved = _static_string(node, constants, seen)
-    return None if resolved is None else resolved == "warn"
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        reference = _reference(node)
+        if reference in constants and reference not in seen:
+            return _may_be_warn(constants[reference], constants, seen | {reference})
+        return None
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value == "warn"
+    return None
 
 
 def _strings(node: ast.AST, constants: dict[str, ast.AST], seen: frozenset[str] = frozenset()) -> str:
@@ -207,6 +202,7 @@ def test_formatter_explicit_non_warn_tag_skips_warning_checks() -> None:
     assert not _violations(definition + '\nnotice("理由", tag="notice", fix="資料を取得する。")')
     plain = 'from agent_toolkit._hooks.notice import formatter as factory\nnotice = factory("hook")'
     assert _violations(plain + '\nnotice("理由", tag="warn" if problem else "", fix="対応不要")') == [3]
+    assert _violations(plain + '\ntag = "warn" if problem else ""\nnotice("理由", tag=tag, fix="対応不要")') == [4]
     assert not _violations(plain + '\nnotice("理由", tag="notice" if problem else "", fix="対応不要")')
 
 
