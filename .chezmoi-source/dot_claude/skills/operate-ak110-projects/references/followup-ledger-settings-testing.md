@@ -148,3 +148,17 @@ pyfltr 3.33.2にそろえた [別runのPylint](https://github.com/ak110/dotfiles
 - 適用方法: pyfltrの推奨ガイドに沿って、公開時に配布物へ証明を付ける
 - 参照先: `github.com/ak110/pyfltr` の `docs/guide/recommended.md` のビルド来歴証明の節
 - 適用済みの見分け方: 配布物を、案内にある署名workflowとソースコミットを指定して検証できる
+
+## 形式検証の記録と対象の一致を確かめる
+
+- 項目ID: verification-skill-digest-sync
+- 実施日: 2026年11月
+- 内容: 形式検証スキルのfrontmatterに `verifies` と `verified-digest` を記録し、CIとコミット時に対象ファイルの変更を検出する
+- 理由: 検証スキルが古い実装を記述したまま正常終了する状態を放置しない
+- 当てはまる条件: dotfiles・glatasksなど、追跡対象のコードに対する形式検証スキルを持つプロジェクト。
+  検証スキルを作る場合も対象
+- 適用方法: 検査を含むpyfltrへ更新する。
+  対象ファイルを `verifies` に指定し、スキルに従って検証を実行してから `pyfltr verification-sync --update <SKILL.md>` を実行する。
+  CIは作業ツリー、コミット時はGit indexを対象とする
+- 参照先: `github.com/ak110/pyfltr` の `docs/guide/usage.md`「サブコマンド: verification-sync」と `docs/guide/recommended.md`「形式検証の記録」
+- 適用済みの見分け方: 記録を変えず対象だけ変更すると既存のCI・コミット検査の入口から失敗し、検証を再実行して記録と対象をそろえると成功する

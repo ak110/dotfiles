@@ -8,19 +8,19 @@
 `ClaudeAgentOptions(env={"CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS": "1"})`を与えたsessionでは、`ClaudeSDKClient.receive_messages()`へ`SystemMessage`が届く。
 その`subtype`は`session_state_changed`、`data["state"]`は`running`・`idle`・`requires_action`のいずれかである。
 この変数が無い場合、SDKは`CLAUDE_CODE_SDK_READS_SESSION_STATE=1`を設定して報告を呼び出し側から除く。
-haikuの委譲先に`sleep 2`を背景実行させて直ちにturnを終えさせ、Stop hookの待機時間を変えて到着順を比べた。
+haikuの委譲先に`sleep 2`をバックグラウンド実行させて直ちにturnを終えさせ、Stop hookの待機時間を変えて到着順を比べた。
 待機0秒では次の順に届いた。
 `ResultMessage`、`idle`、`task_notification`、`running`、再開turnの`ResultMessage`（`origin.kind`が`task-notification`）、`idle`である。
 待機5秒では`task_notification`（Stop hookの実行中）、`ResultMessage`、再開turnの`ResultMessage`、`idle`の順に届き、最初の結果の後に`idle`は届かなかった。
 どちらも再開turnが実行された。
 CLIのスキーマ記述は`idle`を、保留した結果の送出と背景エージェントの待機の後に発行するturnの終了の信号と説明する。
-同じ版の組で上記の環境変数を与えた委譲先へ背景実行の`sleep 2`と即時のturn終了を指示して再検証する。
+同じ版の組で上記の環境変数を与えた委譲先へバックグラウンド実行の`sleep 2`と即時のturn終了を指示して再検証する。
 Stop hookに0秒と5秒の待機を入れた2条件で、`receive_messages()`の全メッセージの種別、`subtype`、`state`、`origin`を到着順に保存して比べる。
 
 ## agent-toolkit/agent_toolkit/_agents_server/claude.py：CLIプロセスの終了とバックグラウンドタスクの通知：2026年11月19日
 
 2026年11月19日、Claude Code 2.1.327とClaude Agent SDK 0.2.182で、バックグラウンドタスクの終了が`ClaudeSDKClient.receive_messages()`へ届く形を確かめた。
-haikuの会話に`sleep 901`と`sleep 902`を背景実行させ、前者だけを同じturnで停止させて返答させた後、`disconnect()`でCLIを終了し、同じ会話IDを`resume`に指定した新しいクライアントで1turnを実行した。
+haikuの会話に`sleep 901`と`sleep 902`をバックグラウンド実行させ、前者だけを同じturnで停止させて返答させた後、`disconnect()`でCLIを終了し、同じ会話IDを`resume`に指定した新しいクライアントで1turnを実行した。
 同じturnで止めたタスクには`TaskUpdatedMessage`（`status`は`killed`）と`TaskNotificationMessage`（`status`は`stopped`）が続けて届いた。
 `disconnect()`の時点で稼働していたタスクについては、受信列は何も届けずに終端し、`sleep`のプロセスは残らなかった。
 会話記録には、CLIの終了時刻の`queue-operation`（`enqueue`）として`<status>killed</status>`を持つ`<task-notification>`が残った。

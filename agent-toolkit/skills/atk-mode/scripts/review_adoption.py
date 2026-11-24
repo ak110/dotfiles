@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 from agent_toolkit._atk import review_table_format
-from agent_toolkit._common import private_notes
+from agent_toolkit._common import host_homes, private_notes, session_record_paths
 from agent_toolkit._common.json_lines import split_lines
 from agent_toolkit._common.runtime_identity import distinct_identities
 from cost_metrics import _history, saved_review_tables
@@ -249,7 +249,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--claude-projects-dir", type=Path, metavar="DIR", help="Claude記録の所在。省略時は~/.claude/projects。"
     )
-    parser.add_argument("--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録の所在。省略時は~/.codex/sessions。")
+    parser.add_argument(
+        "--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録の所在。省略時はCodexの通常記録とアーカイブ。"
+    )
     args = parser.parse_args(argv)
     try:
         since = _parse_cli_timestamp(args.since)
@@ -261,10 +263,12 @@ def main(argv: list[str] | None = None) -> int:
         history = _history(notes)
         current = saved_review_tables(notes, history, since, until)
         previous = saved_review_tables(notes, history, previous_since, since - datetime.timedelta(microseconds=1))
-        roots = [
-            (args.claude_projects_dir or Path.home() / ".claude" / "projects").expanduser(),
-            (args.codex_sessions_dir or Path.home() / ".codex" / "sessions").expanduser(),
-        ]
+        codex_roots = (
+            (args.codex_sessions_dir.expanduser(),)
+            if args.codex_sessions_dir is not None
+            else session_record_paths.codex_record_roots(host_homes.codex_home())
+        )
+        roots = [(args.claude_projects_dir or Path.home() / ".claude" / "projects").expanduser(), *codex_roots]
         models = _table_models([table.path.name for table in (*current.tables, *previous.tables)], roots)
     except (ValueError, OSError) as error:
         print(

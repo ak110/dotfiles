@@ -11,6 +11,7 @@ from agent_toolkit._hooks.notice import formatter
 lazy from agent_toolkit._common import host_homes, shell_cwd
 lazy from agent_toolkit._common.bash_invocations import STATIC_UNKNOWN, BashInvocation, is_unknown_word
 lazy from agent_toolkit._common.codex_execution_inputs import command_inputs
+lazy from agent_toolkit._common.session_record_paths import codex_record_roots
 lazy from agent_toolkit._common.shell_tokens import ShellWord
 lazy from agent_toolkit._common.uv_arguments import is_python_token
 
@@ -206,7 +207,7 @@ def invocation_read_paths(
 
 def _is_session_record(path: pathlib.Path, *, directory: bool = False) -> bool:
     resolved = path.resolve()
-    roots = (host_homes.claude_config_dir() / "projects", host_homes.codex_home() / "sessions")
+    roots = (host_homes.claude_config_dir() / "projects", *codex_record_roots(host_homes.codex_home()))
     return any(resolved.is_relative_to(root.resolve()) for root in roots) and (
         resolved.suffix == ".jsonl" or directory and (not resolved.suffix or resolved.is_dir())
     )
@@ -562,10 +563,10 @@ def session_record_reference_warning(tool_name: str, tool_input: dict, cwd: str)
         "セッション原記録の直接参照である。\n対象: " + "、".join(str(path) for path in dict.fromkeys(paths)),
         tag="warn",
         fix=(
-            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会せよ。"
-            "今回必要な照会条件は`agent-toolkit:atk-mode/references/session-records.md`「本文の検索」で選べ。"
-            "失敗文言の横断照会は`--tool-calls --failure-fixed-string <文言>`と同資料の横断走査の指定を使え。"
-            "人の入力を横断で数える時は同資料の`--catalog-*`と`--user-events`を併せて使え。"
+            "`atk run-script session-review-evidence -- --transcript <原記録の絶対パス>`で本文を照会してください。"
+            "今回必要な照会条件は`agent-toolkit:atk-mode/references/session-records.md`「本文の検索」で選んでください。"
+            "失敗文言の横断照会は`--tool-calls --failure-fixed-string <文言>`と同資料の横断走査の指定を使ってください。"
+            "人の入力を横断で数える時は同資料の`--catalog-*`と`--user-events`を併せて使ってください。"
         ),
         removable_cause=False,
         escalate_on_repeat=False,
@@ -624,7 +625,7 @@ def check_large_bash_read(command: str, cwd: str) -> str | None:
         paths = list(dict.fromkeys(extracted))
         return _large_warning(
             "エージェント向け文書を見出しの正規表現で範囲抽出しようとしている: " + "、".join(map(str, paths)),
-            fix="全文を取得せよ。",
+            fix="全文を取得してください。",
         )
     return None
 
@@ -673,5 +674,5 @@ def check_bundled_read(
         return None
     return _large_warning(
         f"複数ファイルの合計の見積り{estimate}{unit}が出力の上限{budget}{unit}を超え、切り詰められる。",
-        fix="上限に収まる単位へファイルを分けて取得し、切り詰められた本文は未取得として補え。",
+        fix="上限に収まる単位へファイルを分けて取得し、切り詰められた本文は未取得として補ってください。",
     )

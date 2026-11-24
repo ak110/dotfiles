@@ -249,6 +249,7 @@ class CodexResetMixin:
                     and self._auto_reset_eligible(session)
                 ):
                     self._apply_auto_reset_result(session, result)
+                    self.schedule_archive(session)
         finally:
             session.codex_auto_reset_pending = False
             await self._notify_waiters()

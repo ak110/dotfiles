@@ -129,6 +129,7 @@ class CodexRepliesMixin:
         await self._cancel_auto_reset_check(session.session_id)
         if session.awaiting_auto_resume and session.pending_result is not None:
             resume_waits.finalize_pending_result(session)
+            self.schedule_archive(session)
             await self._notify_waiters()
             return
         if session.terminal:
@@ -193,6 +194,8 @@ class CodexRepliesMixin:
         prompt: str,
     ) -> tuple[str, dict[str, Any], BaseException | None]:
         await launch_requests.reject_stale_role_reply(session)
+        if archive := self._archive_tasks.get(session.session_id):
+            await asyncio.shield(archive)
         gate = service_turns.current()
         session.reply_start_pending = True
         try:

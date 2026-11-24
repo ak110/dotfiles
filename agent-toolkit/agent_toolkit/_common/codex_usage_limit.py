@@ -130,14 +130,14 @@ def from_rollout(path: pathlib.Path) -> UsageLimitState | None:
 def from_thread(thread_id: str | None, *, codex_home: pathlib.Path | None = None) -> UsageLimitState | None:
     if not thread_id:
         return None
-    sessions = (host_homes.codex_home() if codex_home is None else codex_home) / "sessions"
-
+    sessions, archive = session_record_paths.codex_record_roots(host_homes.codex_home() if codex_home is None else codex_home)
     candidates = itertools.chain(
         (
             path
             for directory in session_record_paths.codex_thread_directories(sessions, thread_id) or ()
             for path in directory.glob("rollout-*.jsonl")
         ),
+        archive.glob("rollout-*.jsonl"),
         sessions.glob("*/*/*/rollout-*.jsonl"),
     )
     found = next((path for path in candidates if path.name.endswith(f"-{thread_id}.jsonl")), None)
@@ -149,7 +149,7 @@ def find_session_rollout(
 ) -> pathlib.Path | None:
     root = host_homes.codex_home() if codex_home is None else codex_home
     candidates: list[pathlib.Path] = []
-    for path in (root / "sessions").glob("*/*/*/rollout-*.jsonl"):
+    for path in session_record_paths.codex_rollouts(root):
         try:
             if path.stat().st_mtime < started_at - _MTIME_SLACK_SECONDS:
                 continue

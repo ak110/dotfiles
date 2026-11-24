@@ -70,7 +70,7 @@ commitの単位の判断は本節を定義元とし、計画と他の手順書�
 1. POSIXのホストでhookを伴う`git commit`は、`atk run-script commit-with-timeout -- --timeout <秒> -- <git commitの引数>`で時間の上限を設けて実行する。
    `--`の後には`commit`を書かず、引数だけを渡す（例: `atk run-script commit-with-timeout -- --timeout 560 -- -m '<本文>'`）。
    `--timeout`は実行枠の順番待ちを含むコマンド全体の上限であり、ホストがコマンドを止める上限より先に達する値にする。
-   Claude Codeでは`Bash`の`run_in_background: true`で起動し、`Bash`の`timeout`を`--timeout`より長く、背景実行の最大値（7,200,000ミリ秒）以下にする。
+   Claude Codeでは`Bash`の`run_in_background: true`で起動し、`Bash`の`timeout`を`--timeout`より長く、バックグラウンド実行の最大値（7,200,000ミリ秒）以下にする。
    前景で実行する場合は、`--timeout`を前景の`timeout`の最大値（600,000ミリ秒）より短くする。
    Claude Code以外のホストは上限の値を確かめていないため、`Bash`の入力に関するこの指定から外す。
    Windowsのホストは同等の手段の挙動を確かめていないため、本節の手順の対象外とする。

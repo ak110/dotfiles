@@ -766,18 +766,21 @@ def _installed_mcp_job_warning(message: str, continuation: list[str], home: path
     if not separator or target not in successful_targets or "\n".join((warning, *continuation)) != _INHERITED_JOB_WARNING:
         return False
     path = pathlib.Path(target)
+    if not (path.is_absolute() and path.is_file()):
+        return False
+    resolved = path.resolve()
+    home_resolved = home.resolve()
+    if not resolved.is_relative_to(home_resolved):
+        return False
+    repo_mcp = (home / "dotfiles" / "agent-toolkit" / "agent_toolkit" / "agents_server_mcp.py").resolve()
+    if resolved == repo_mcp:
+        return True
     cache = home / ".claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit"
     try:
-        parts = path.resolve().relative_to(cache.resolve()).parts
+        parts = resolved.relative_to(cache.resolve()).parts
     except OSError, ValueError:
         return False
-    return (
-        path.is_absolute()
-        and path.is_file()
-        and path.resolve().is_relative_to(home.resolve())
-        and len(parts) == 3
-        and parts[1:] == ("agent_toolkit", "agents_server_mcp.py")
-    )
+    return len(parts) == 3 and parts[1:] == ("agent_toolkit", "agents_server_mcp.py")
 
 
 _UV_HARDLINK_FALLBACK = "warning: Failed to hardlink files; falling back to full copy. This may lead to degraded performance."

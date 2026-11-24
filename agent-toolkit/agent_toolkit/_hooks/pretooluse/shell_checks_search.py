@@ -212,8 +212,8 @@ def _check_bash_option_after_terminator(command: str) -> str | None:
             subject=command,
             removable_cause=True,
             fix=(
-                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行せよ。"
-                "`-`で始まるパスを渡す場合は`./`を前置せよ。"
+                "そのコマンド自身のオプションを`--`より前へ移し、`--`の後ろには検索パターンとパスだけを置いて再実行してください。"
+                "`-`で始まるパスを渡す場合は`./`を前置してください。"
             ),
         )
     return None

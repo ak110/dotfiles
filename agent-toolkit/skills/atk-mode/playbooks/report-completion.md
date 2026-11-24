@@ -1,6 +1,6 @@
 # 作業完了報告とセッションの完了処理
 
-成果物を確定した作業を終える時に、反映、回収、判断の保存、公開、報告の確定、報告用UWI、送達と終了を一続きに行う手順書である。
+成果物の検収を終えたら、最終報告を書く前に本書を読み、反映、回収、判断の保存、公開、報告の確定、報告用UWI、送達と終了を一続きに行う手順書である。
 この手順書を全文読むことが終了工程の開始であり、Stop hookはその読取を完了報告の起動証拠として扱う（`agent-toolkit:atk-mode/references/termination-evidence.md`「受理する証拠」）。
 結果は不都合なものも含めて報告し、観測した事実、推論、未確認を分ける（`agent-basics:writing-standards/references/quality-principles-facts.md`）。
 
@@ -96,7 +96,8 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    保存に失敗した時は、同じUWIの保存を回復する。
 7. 協調モードは確定した本文を、自律モードは保存を検収した報告用UWIのファイル名を、`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」に従って1回送達する。
    - Claude Codeで`send_to_user`を使う時は表示の成功を確かめる。
-     送達後のターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
+     送達済みの本文を通常の応答へ再掲せず、追加の結果がなければそのまま終了する。
+     ターンの終え方は`agent-toolkit/skills/atk-mode/playbooks/host-claude-code.md`「ターンの終え方」に従う。
    - Codexの送達順は`agent-toolkit:atk-mode/playbooks/host-codex.md`「ユーザー確認と終了」に従う。
    - ホスト本体を停止する場合は、報告の保存検収と送達を終え、停止操作を最後のツール呼び出しにする。
 
@@ -114,7 +115,7 @@ run-skill起動元による報告の同期検収は、子セッションの終�
    完了の工程の後に初めて分かった独立した問題は、`agent-toolkit:atk-mode/playbooks/wi-drafting.md`「起票目的別の調査出口」の軽い引き継ぎで登録できる。
 
 `agent-toolkit:atk-mode/playbooks/review-session.md`の単発の振り返りは、必要時か巡回の指定の区切りで行い、本書の工程と送達の条件とは分ける。
-非同期の`review-session batch`は、その場の`bugfix`と単発の振り返りで拾い切れなかった問題を後から扱う。
+非同期の`review-session batch`は、その場の`bugfix`と単発の振り返りで未解決の問題を後から扱う。
 
 ## 常時稼働サーバーへの反映
 

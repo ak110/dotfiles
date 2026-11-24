@@ -235,6 +235,7 @@ def test_update_warning_fails_even_when_command_succeeded(tmp_path: pathlib.Path
     ("platform_name", "level", "source", "record", "tail", "accepted"),
     [
         ("windows", "WARNING", "installed", "same", "", True),
+        ("windows", "WARNING", "repo", "same", "", True),
         ("windows", "WARNING", "installed", "separate-log", "", True),
         ("windows", "WARNING", "installed", "absent", "", False),
         ("windows", "WARNING", "installed", "other-run", "", False),
@@ -260,7 +261,9 @@ def test_windows_job_warning_requires_published_mcp_from_same_run(
     home = tmp_path / "home"
     home.mkdir()
     plugin = home / ".claude" / "plugins" / "cache" / "ak110-dotfiles" / "agent-toolkit" / "2.290.1" / "agent_toolkit"
-    script = (tmp_path if source == "other" else plugin) / "agents_server_mcp.py"
+    repo_toolkit = home / "dotfiles" / "agent-toolkit" / "agent_toolkit"
+    script_dir = tmp_path if source == "other" else repo_toolkit if source == "repo" else plugin
+    script = script_dir / "agents_server_mcp.py"
     script.parent.mkdir(parents=True, exist_ok=True)
     if source != "missing":
         script.touch()

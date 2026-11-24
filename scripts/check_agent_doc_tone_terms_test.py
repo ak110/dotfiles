@@ -15,27 +15,27 @@ from _scripts_test_helpers import _write
     [
         ("doc.md", "正本を参照する。\n", "正本", 1),
         ("doc.md", "正本文書を参照する。\n", "正本", 1),
-        ("doc.md", "# 既定の値\n", "既定", 1),
-        ("doc.md", "| 対象 |\n| --- |\n| 照合する値 |\n", "照合", 3),
+        ("doc.md", "# 足すものがない\n", "足すものがない", 1),
+        ("doc.md", "| 対象 |\n| --- |\n| 失効が効く |\n", "失効が効く", 3),
         ("doc.md", "`正本`を参照する。\n", "正本", 1),
-        ("doc.md", "```text\n既定の値を使う。\n```\n", "既定", 2),
+        ("doc.md", "```text\n失効が効く。\n```\n", "失効が効く", 2),
         ("doc.md", "```text\n悪い例: 正本を読む。\n```\n", "正本", 2),
         ("doc.md", "```text\n冗長な例: 正本を読む。\n```\n", "正本", 2),
         ("doc.md", "```text\n対象語: 正本\n```\n", "正本", 2),
         ("doc.md", "```text\n解説: 「正本」を使う。\n```\n", "正本", 2),
-        ("doc.md", "```python\nprint('照合する値')\n```\n", "照合", 2),
+        ("doc.md", "```python\nprint('正本を参照する')\n```\n", "正本", 2),
         ("doc.md", "<!-- 正本を参照する。 -->\n", "正本", 1),
-        ("app.py", "# 既定の値を使う。\n", "既定", 1),
+        ("app.py", "# 失効が効く。\n", "失効が効く", 1),
         ("app.py", '"""正本を参照する。"""\n', "正本", 1),
-        ("app.py", 'print("照合した値")\n', "照合", 1),
-        ("app.py", 'message = "既" + "定の値"\nprint(message)\n', "既定", 1),
+        ("app.py", 'print("足すものがない")\n', "足すものがない", 1),
+        ("app.py", 'message = "正" + "本を参照する"\nprint(message)\n', "正本", 1),
         ("app.py", 'message = ("正" "本を参照する。")\n', "正本", 1),
-        ("app.py", 'def emit(value):\n    print(f"照合した{value}")\n', "照合", 2),
+        ("app.py", 'def emit(value):\n    print(f"正本{value}")\n', "正本", 2),
         ("style.css", "/* 正本を参照する。 */\n", "正本", 1),
-        ("app.js", 'console.log("既定の値を使う。");\n', "既定", 1),
-        ("config.toml", 'description = "照合した値"\n', "照合", 1),
+        ("app.js", 'console.log("失効が効く。");\n', "失効が効く", 1),
+        ("config.toml", 'description = "正本を参照する"\n', "正本", 1),
         ("config.json", json.dumps({"description": "正本を参照する。"}), "正本", 1),
-        ("hook", '#!/bin/sh\nprintf "%s\\n" "既定の値を使う。"\n', "既定", 2),
+        ("hook", '#!/bin/sh\nprintf "%s\\n" "失効が効く。"\n', "失効が効く", 2),
     ],
 )
 def test_cli_rejects_terms_in_explanations(
@@ -60,12 +60,8 @@ def test_cli_rejects_terms_in_explanations(
 @pytest.mark.parametrize(
     ("body", "term"),
     [
-        ("経路を記録する。\n", "経路"),
-        ("混ざった。\n", "混ざる"),
         ("焼き込んだ。\n", "焼く"),
         ("崩した。\n", "崩す"),
-        ("疑った。\n", "疑う"),
-        ("速度よりむしろ精度を優先する。\n", "むしろ"),
         ("単なる保存先の変更ではない。\n", "単なる"),
         ("整理というより改訂に近い。\n", "というより"),
     ],
@@ -85,12 +81,12 @@ def test_cli_warns_caution_terms_without_failing(
 @pytest.mark.parametrize(
     ("name", "body", "warns"),
     [
-        ("doc.md", "「速度よりむしろ精度を優先する」と説明する。\n", True),
-        ("doc.md", "```text\n例文: 速度よりむしろ精度を優先する。\n説明: 優先順位を示す。\n```\n", True),
-        ("doc.md", "```text\n逐語引用: 速度よりむしろ精度を優先する。\n```\n", False),
-        ("config.py", 'labels = {"むしろ": 1}\n', False),
-        ("sample_test.py", 'import pytest\n\nbody = "速度よりむしろ精度を優先する。"\n', False),
-        ("doc.md", "```text\n例文: 精度を優先する。\n説明: 優先する対象を直接示す。\n```\n", False),
+        ("doc.md", "「単なる保存先の変更ではない」と説明する。\n", True),
+        ("doc.md", "```text\n例文: 単なる保存先の変更ではない。\n説明: 変更の範囲を示す。\n```\n", True),
+        ("doc.md", "```text\n逐語引用: 単なる保存先の変更ではない。\n```\n", False),
+        ("config.py", 'labels = {"単なる": 1}\n', False),
+        ("sample_test.py", 'import pytest\n\nbody = "単なる保存先の変更ではない。"\n', False),
+        ("doc.md", "```text\n例文: 保存先の変更と形式の更新を行う。\n説明: 変更の範囲を直接示す。\n```\n", False),
     ],
     ids=["quoted-prose", "authored-example", "verbatim", "identifier", "detector-input", "positive-example"],
 )
@@ -98,15 +94,15 @@ def test_cli_contrast_distinguishes_prose_from_preserved_data(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], name: str, body: str, warns: bool
 ) -> None:
     assert check_agent_doc_tone.main([str(_write(tmp_path, body, name=name))]) == 0
-    assert ("警告: 「むしろ」" in capsys.readouterr().err) is warns
+    assert ("警告: 「単なる」" in capsys.readouterr().err) is warns
 
 
 @pytest.mark.parametrize(
     ("term", "body", "reason", "direction"),
     [
-        ("入口", "APIの入口を説明する。\n", "比喩や擬人化", "実体、状態または動作を直接書く"),
+        ("受け口", "APIの受け口を説明する。\n", "比喩や擬人化", "実体、状態または動作を直接書く"),
         ("帰結", "帰結を説明する。\n", "実際の操作、判定対象、条件または結果が変わり得る", "結果を書き分ける"),
-        ("むしろ", "速度よりむしろ精度を優先する。\n", "対比", "伝える内容を直接書"),
+        ("単なる", "単なる保存先の変更ではない。\n", "対比", "伝える内容を直接書"),
     ],
 )
 def test_cli_explains_representative_caution_categories(
@@ -127,21 +123,21 @@ def test_cli_explains_representative_caution_categories(
     assert direction in warning
 
 
-def test_cli_ignores_approved_replacement_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """承認済みの置換先「突き合わせる」は失敗にも警告にもしない。"""
-    assert check_agent_doc_tone.main([str(_write(tmp_path, "記録と入力を突き合わせた。\n"))]) == 0
+def test_cli_ignores_common_technical_terms(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    body = "既定の経路を使い、入力を照合する。入口から通る処理が効く。\n"
+    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
     assert capsys.readouterr().err == ""
 
 
 def test_cli_fails_on_denied_term_beside_caution_term(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
     """失敗対象の語と警告対象の語が並ぶ場合は、両方を報告して失敗する。"""
-    path = _write(tmp_path, "既定の経路を使う。\n")
+    path = _write(tmp_path, "正本の受け口を使う。\n")
 
     assert check_agent_doc_tone.main([str(path)]) == 1
 
     output = capsys.readouterr().err
-    assert f"{path}:1: error: 「既定」" in output
-    assert f"{path}:1: warning: 警告: 「経路」" in output
+    assert f"{path}:1: error: 「正本」" in output
+    assert f"{path}:1: warning: 警告: 「受け口」" in output
 
 
 @pytest.mark.parametrize(
@@ -181,15 +177,15 @@ def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
             "{",
             '  "正本"',
             '  : "空白 : colon",',
-            '  "input_paths": ["既定.md", "nested/照合.md"],',
+            '  "input_paths": ["正本.md", "nested/失効が効く.md"],',
             '  "items": [',
             '    {"description": "正本を参照する。"},',
-            r'    {"description": "引用符\"と\n照合する。"},',
-            '    {"description": "入口を示す。"}',
+            r'    {"description": "引用符\"と\n失効が効く。"},',
+            '    {"description": "受け口を示す。"}',
             "  ],",
             '  "description"',
             "  :",
-            '  "既定の動作。"',
+            '  "足すものがない。"',
             "}",
         ]
     )
@@ -198,38 +194,25 @@ def test_json_diagnostics_keep_value_start_lines_and_ignore_keys_and_paths(
     assert check_agent_doc_tone.main([str(path)]) == 1
 
     diagnostics = capsys.readouterr().err.splitlines()
-    expected = [(6, "error", "正本"), (7, "error", "照合"), (12, "error", "既定"), (8, "warning", "入口")]
+    expected = [(6, "error", "正本"), (7, "error", "失効が効く"), (12, "error", "足すものがない"), (8, "warning", "受け口")]
     assert len(diagnostics) == len(expected)
     for diagnostic, (line, severity, term) in zip(diagnostics, expected, strict=True):
         assert diagnostic.startswith(f"{path}:{line}: {severity}:")
         assert f"「{term}」" in diagnostic
 
 
-@pytest.mark.parametrize("body", ["「前提を疑う観点」で実装を疑う。\n", "「前提を疑う観点」を使う。\n前提を疑う。\n"])
-def test_cli_warns_other_uses_of_doubt_beside_defined_viewpoint_name(
-    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], body: str
-) -> None:
-    assert check_agent_doc_tone.main([str(_write(tmp_path, body))]) == 0
-    assert "警告: 「疑う」" in capsys.readouterr().err
-
-
-def test_cli_does_not_warn_defined_viewpoint_name_alone(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert check_agent_doc_tone.main([str(_write(tmp_path, "「前提を疑う観点」を使う。\n"))]) == 0
-    assert capsys.readouterr().err == ""
-
-
 def test_picker_result_label_preserves_checks_on_explanations(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未確認の経路を返す。\n"))]) == 0
-    assert "警告: 「経路」" in capsys.readouterr().err
+    assert check_agent_doc_tone.main([str(_write(tmp_path, "書込対象の検査: 未確認の受け口を返す。\n"))]) == 0
+    assert "警告: 「受け口」" in capsys.readouterr().err
 
 
 def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> None:
     example = tmp_path / "agent-basics/skills/writing-standards/references/tone-examples.md"
     example.parent.mkdir(parents=True)
-    example.write_text("```text\n例文: 正本を読む。\n説明: 「照合」を用いる。\n```\n", encoding="utf-8")
-    test_file = _write(tmp_path, '# 正本を参照する。\nvalue = "照合"\n', name="app_test.py")
+    example.write_text("```text\n例文: 正本を読む。\n説明: 「正本」を用いる。\n```\n", encoding="utf-8")
+    test_file = _write(tmp_path, '# 正本を参照する。\nvalue = "正本"\n', name="app_test.py")
 
     assert check_agent_doc_tone.main([str(example)]) == 1
     assert check_agent_doc_tone.main([str(test_file)]) == 1
@@ -237,17 +220,13 @@ def test_cli_checks_good_examples_and_test_comments(tmp_path: pathlib.Path) -> N
 
 @pytest.mark.parametrize(
     "term",
-    ["拾う", "引く", "通る", "効く", "響く", "足す", "入口", "受け口"],
+    ["拾う", "引く", "響く", "受け口"],
 )
 def test_cli_warns_machine_processing_metaphors(tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], term: str) -> None:
     examples = {
         "拾う": "夜間の処理が失敗を拾う。\n",
         "引く": "本番データを引く。\n",
-        "通る": "書き込みも通る。\n",
-        "効く": "構成を選ぶときに効く。\n",
         "響く": "全クライアントに響く。\n",
-        "足す": "中継しても値を足す。\n",
-        "入口": "APIの入口を説明する。\n",
         "受け口": "要求の受け口を説明する。\n",
     }
     assert check_agent_doc_tone.main([str(_write(tmp_path, examples[term]))]) == 0
@@ -269,10 +248,7 @@ def test_cli_allows_dependency_terms(tmp_path: pathlib.Path, capsys: pytest.Capt
     [
         "本番データを引く。",
         "消えた分は夜間の処理が拾う。",
-        "書き込みも通る。",
-        "構成を選ぶときに効く。",
         "全クライアントに響く。",
-        "入口を確認する。",
         "受け口を用意する。",
         "トークンを出す口を用意する。",
         "`本番データを引く`と記述する。",
@@ -329,13 +305,13 @@ def test_fixture_values_are_data_but_comments_are_explanations(tmp_path: pathlib
 def test_displayed_messages_are_checked_with_fixture_data(tmp_path: pathlib.Path, relative: str) -> None:
     path = tmp_path / relative
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = '# agent-doc-tone: test-data\nsample = "既定の値を照合する。"\n'
+    data = '# agent-doc-tone: test-data\nsample = "正本を読む。"\n'
     path.write_text(data, encoding="utf-8")
     assert check_agent_doc_tone.main([str(path)]) == 0
     for message in (
-        'raise RuntimeError("既定の値を照合できない")',
-        'value = 1\nraise RuntimeError(f"既定の値{value}を照合できない")',
-        'message = "既定の値を照合できない"\nprint(message)',
+        'raise RuntimeError("正本を読めない")',
+        'value = 1\nraise RuntimeError(f"正本{value}を読めない")',
+        'message = "正本を読めない"\nprint(message)',
     ):
         path.write_text(data + message + "\n", encoding="utf-8")
         assert check_agent_doc_tone.main([str(path)]) == 1
@@ -344,11 +320,11 @@ def test_displayed_messages_are_checked_with_fixture_data(tmp_path: pathlib.Path
 @pytest.mark.parametrize(
     ("name", "body", "explanation"),
     [
-        ("app.py", 'from pathlib import Path\npath = Path("照合.md")\n', 'print("照合した値")\n'),
-        ("config.json", '{"input_path": "照合.md"}', '{"input_path": "照合.md", "description": "照合した値"}'),
-        ("config.toml", 'input_path = "照合.md"\n', 'description = "照合した値"\n'),
-        ("config.toml", 'settings = {input_paths = ["照合.md", "既定.md"]}\n', 'description = "照合した値"\n'),
-        ("config.json", '{"settings": {"input_paths": ["照合.md", "既定.md"]}}', '{"description": "照合した値"}'),
+        ("app.py", 'from pathlib import Path\npath = Path("正本.md")\n', 'print("正本を読む")\n'),
+        ("config.json", '{"input_path": "正本.md"}', '{"input_path": "正本.md", "description": "正本を読む"}'),
+        ("config.toml", 'input_path = "正本.md"\n', 'description = "正本を読む"\n'),
+        ("config.toml", 'settings = {input_paths = ["正本.md", "失効が効く.md"]}\n', 'description = "正本を読む"\n'),
+        ("config.json", '{"settings": {"input_paths": ["正本.md", "失効が効く.md"]}}', '{"description": "正本を読む"}'),
     ],
 )
 def test_path_inputs_are_preserved_but_explanations_are_checked(

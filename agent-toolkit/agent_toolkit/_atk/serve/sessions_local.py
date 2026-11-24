@@ -27,6 +27,7 @@ from agent_toolkit._atk.serve.sessions_models import (
 )
 from agent_toolkit._common import session_cost_records, session_cost_slim, session_launchers
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.session_record_paths import codex_record_roots
 
 logger = logging.getLogger("agent_toolkit._atk.serve.sessions")
 
@@ -247,7 +248,7 @@ def is_local_record_path(context: SessionsContext, raw: str) -> bool:
         target = pathlib.Path(raw).resolve()
     except OSError:
         return False
-    for root in (context.claude_home / "projects", context.codex_home / "sessions"):
+    for root in (context.claude_home / "projects", *codex_record_roots(context.codex_home)):
         try:
             target.relative_to(root.resolve())
         except ValueError, OSError:

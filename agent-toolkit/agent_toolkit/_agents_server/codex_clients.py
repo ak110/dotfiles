@@ -175,6 +175,9 @@ class CodexClientsMixin:
 
     async def _release_owned_client(self: CodexManager, session_id: str) -> None:
         await self._stop_auto_reset(session_id)
+        if archive := self._archive_tasks.get(session_id):
+            archive.cancel()
+            await asyncio.gather(archive, return_exceptions=True)
         client = self._clients.get(session_id)
         if client is None:
             return

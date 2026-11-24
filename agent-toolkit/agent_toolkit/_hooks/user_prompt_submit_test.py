@@ -669,8 +669,8 @@ class TestExampleScopeNotice:
         bodies = self._example_bodies(result)
         assert len(bodies) == 1
         assert "「原文の保持と取り込み」" in bodies[0]
-        assert "原文の対象と例示の関係を判断せよ" in bodies[0]
-        assert "例示以外の候補を探してから範囲を確定せよ" in bodies[0]
+        assert "原文の対象と例示の関係を判断してください" in bodies[0]
+        assert "例示以外の候補を探してから範囲を確定してください" in bodies[0]
         assert "`explore`へ分担する案" not in bodies[0]
         assert "自ら調査へ着手する前に" not in bodies[0]
 

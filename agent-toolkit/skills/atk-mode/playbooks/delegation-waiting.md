@@ -18,7 +18,7 @@
 | 完了通知が届かない、委譲先の活動の観測値が変わらない | 本書「停滞の検知と巻き取り」 |
 | `atk agents wait`が0と3以外で終わった、待機の起動が拒否された、ホストが背景待機を止めた、起動前に版の違いが示された | `agent-toolkit:atk-mode/references/delegation-wait-anomalies.md` |
 | MCPサーバーが再起動した、`show`が`ownership: owner_lost`を示した | `agent-toolkit:atk-mode/playbooks/delegation-recovery.md` |
-| Claude Code固有の操作（背景実行の起動形、定期の再確認、完了通知の中継、Code Mode） | `agent-toolkit:atk-mode/playbooks/host-claude-code.md` |
+| Claude Code固有の操作（バックグラウンド実行の起動形、定期の再確認、完了通知の中継、Code Mode） | `agent-toolkit:atk-mode/playbooks/host-claude-code.md` |
 | Codex固有の操作（cell IDとsession IDの回収、二層待機、実行中の担当への後続操作） | `agent-toolkit:atk-mode/playbooks/host-codex.md` |
 
 ## 待機手段の選択
@@ -29,7 +29,7 @@
 | 引き継いだ子 | MCPの`collect_handoff`（`running`なら再発行） | 終了結果。全件回収で`expired` |
 | ホストの`Agent`ツールのサブエージェント | ホストの完了通知と委譲一覧 | 完了通知か戻り値と、依頼文で指定した成果物 |
 | Codexの組み込み委譲のthread | `wait_agent`と`list_agents` | `wait_agent`の終了通知と照会した状態 |
-| ホストのバックグラウンドタスク | ホストの背景実行と完了通知 | 実行識別子の終了状態と、出力ファイルの終了状態行 |
+| ホストのバックグラウンドタスク | ホストのバックグラウンド実行と完了通知 | 実行識別子の終了状態と、出力ファイルの終了状態行 |
 | Codexの`functions.exec`のcell ID、`exec_command`のsession ID | `functions.wait`、`write_stdin` | 同じターンで回収した出力と終了コード |
 | 外部サービスの状態変化 | 本書「外部サービスの状態変化を待つ場合」 | 終了条件が成立したコマンドの結果 |
 | ユーザーの回答 | 定時起動の各回の`atk wi list --type=uwi --answered=yes` | 対象のUWIが一覧に現れた結果 |
@@ -39,12 +39,12 @@
 ## 待機区間の構成
 
 1. 結果を回収できる起動形を選ぶ。
-   - 完了通知で同じセッションを再開でき、ホストが背景実行を公開する待機は、対象の種類と件数によらず背景で起動する。
+   - 完了通知で同じセッションを再開でき、ホストがバックグラウンド実行を公開する待機は、対象の種類と件数によらずバックグラウンドで起動する。
      Claude Codeでは`atk agents wait`、CIとデプロイの監視、終了条件ループを`run_in_background=true`で起動する。
-   - 再開の保証が無い場合と背景実行が無い場合は、非対話起動のメインも公開の待機手段で同じターンに回収する。
-     前景では、ホストの実行時間上限を待機コマンド自身の上限以上にする。
-   - Claude Codeで背景実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）の時は、単独の`atk agents wait`へBashの`timeout=600000`を指定する。
-     無効かどうかはSessionStartの通知とBashの入力に`run_in_background`が無いことで判別し、拒否される背景指定は試さずに済ませる。
+   - 再開の保証が無い場合とバックグラウンド実行が無い場合は、非対話起動のメインも公開の待機手段で同じターンに回収する。
+     フォアグラウンドでは、ホストの実行時間上限を待機コマンド自身の上限以上にする。
+   - Claude Codeでバックグラウンド実行が無効（`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`）の時は、単独の`atk agents wait`へBashの`timeout=600000`を指定する。
+     無効かどうかはSessionStartの通知とBashの入力に`run_in_background`が無いことで判別し、拒否されるバックグラウンド指定は試さずに済ませる。
      CLIは540秒以内に終了コード3で返るため、未終了なら同じコマンドを再発行する。
    - Codexのcell IDとsession IDは同じターンで回収する（回収時間と二層待機は`agent-toolkit:atk-mode/playbooks/host-codex.md`）。
    - 既に起動した実行は、識別子を保持して回収する。

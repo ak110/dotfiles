@@ -129,10 +129,9 @@ def test_subagent_is_not_required_to_send_to_user(tmp_path: pathlib.Path) -> Non
         "進捗は順調です",
     ],
 )
-def test_literal_repost_after_delivery_is_blocked(body: str, tmp_path: pathlib.Path) -> None:
+def test_literal_repost_after_delivery_does_not_block(body: str, tmp_path: pathlib.Path) -> None:
     result = _stop([_HUMAN, _SEND, _result(), _text(body)], tmp_path)
-    assert result["decision"] == "block"
-    assert "再掲した文を除き" in str(result["reason"])
+    assert result.get("decision") != "block"
 
 
 _QUESTION = _call("AskUserQuestion", "q", {"questions": [{"question": "文体は？"}]})
@@ -185,8 +184,8 @@ def test_answer_requires_a_response_after_the_question(preface: bool, answer: di
 @pytest.mark.parametrize(
     "followup,closing",
     [
-        ([], "読書会へぜひご参加ください。"),
-        ([_call(_SEND_TO_USER, "s2", {"message": "読書会へぜひご参加ください。"}), _result("s2")], "…"),
+        ([], "読書会への参加をお願いします。"),
+        ([_call(_SEND_TO_USER, "s2", {"message": "読書会への参加をお願いします。"}), _result("s2")], "…"),
         ([_call("AskUserQuestion", "q2", {"questions": [{"question": "何時に開始しますか？"}]})], ""),
     ],
     ids=["body", "delivery", "next-question"],
@@ -243,7 +242,7 @@ def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pa
     assert "decision" not in result
     repeated = "進捗は順調です。" + report
     result = _stop([*failed, _text(repeated)], tmp_path, last_assistant_message=repeated)
-    assert "delivered_repost_gate" in str(result.get("reason", ""))
+    assert result.get("decision") != "block"
     result = _stop([*failed, _HUMAN, _text(repeated)], tmp_path, last_assistant_message=repeated)
     assert "decision" not in result
 
@@ -251,18 +250,17 @@ def test_failed_final_delivery_after_progress_can_fall_back_to_text(tmp_path: pa
 @pytest.mark.parametrize("name", ["mcp__other__send_to_user", "mcp__agent-toolkit__send_to_user"])
 def test_delivery_is_scoped_to_toolkit_including_resumed_calls(name: str, tmp_path: pathlib.Path) -> None:
     body = "案内です。"
-    entries = [_HUMAN, _call(name, "s1", {"message": "案内です。"}), _result(), _text(body)]
-    assert ("delivered_repost_gate" in _stop(entries, tmp_path, last_assistant_message=body).get("reason", "")) is (
-        name == "mcp__agent-toolkit__send_to_user"
-    )
+    entries = [_HUMAN, _SEND_NOTICE, _call(name, "s1", {"message": body}), _result(), _text(body)]
+    result = _stop(entries, tmp_path, last_assistant_message=body)
+    assert (result.get("decision") == "block") is (name == "mcp__other__send_to_user")
 
 
 def test_pending_async_work_and_subagent(tmp_path: pathlib.Path) -> None:
-    """非同期の待機が残るStopにも適用し、サブエージェントは対象にしない。"""
-    entries = [_HUMAN, _SEND, _result(), _text("進捗は順調です。")]
+    body = "進捗は順調です。"
+    entries = [_HUMAN, _SEND_NOTICE, _text(body)]
     background = [{"id": "b1", "type": "shell", "status": "running", "description": "待機"}]
-    assert _stop(entries, tmp_path, background_tasks=background)["decision"] == "block"
-    assert "decision" not in _stop(entries, tmp_path, agent_id="sub-1")
+    assert _stop(entries, tmp_path, background_tasks=background, last_assistant_message=body)["decision"] == "block"
+    assert _stop(entries, tmp_path, agent_id="child", last_assistant_message=body).get("decision") != "block"
 
 
 @pytest.mark.parametrize("command", ["goal", "restart"])
@@ -270,7 +268,6 @@ def test_pending_async_work_and_subagent(tmp_path: pathlib.Path) -> None:
 def test_originless_command_starts_its_own_delivery_turn(
     command: str, sent_in_current_turn: bool, tmp_path: pathlib.Path
 ) -> None:
-    """Claude Codeのコマンド入力は前ターンの送達を切り離し、今回の送達後の再掲だけを止める。"""
     command_input = {
         "type": "user",
         "promptId": "new-prompt",
@@ -279,11 +276,12 @@ def test_originless_command_starts_its_own_delivery_turn(
             f"<command-message>{command}</command-message>\n<command-args>進捗を教えて</command-args>"
         },
     }
-    entries = [_HUMAN, _SEND, _result(), command_input]
+    entries = [_HUMAN, _SEND_NOTICE, _SEND, _result(), command_input]
     if sent_in_current_turn:
         entries += [_SEND, _result()]
-    result = _stop([*entries, _text("進捗は順調です。")], tmp_path)
-    assert (result.get("decision") == "block") is sent_in_current_turn
+    body = "進捗は順調です。"
+    result = _stop([*entries, _text(body)], tmp_path, last_assistant_message=body)
+    assert (result.get("decision") == "block") is not sent_in_current_turn
 
 
 @pytest.mark.parametrize(
@@ -307,8 +305,9 @@ def test_machine_command_record_does_not_reset_delivery(extra: dict, tmp_path: p
         },
         **extra,
     }
-    result = _stop([_HUMAN, _SEND, _result(), command, _text("進捗は順調です。")], tmp_path)
-    assert result["decision"] == "block"
+    body = "進捗は順調です。"
+    result = _stop([_HUMAN, _SEND_NOTICE, _SEND, _result(), command, _text(body)], tmp_path, last_assistant_message=body)
+    assert result.get("decision") != "block"
 
 
 @pytest.mark.parametrize(
@@ -331,12 +330,11 @@ def test_send_route_spans_turns_and_compaction(entries: list[dict], blocked: boo
         assert "を使える会話で" in str(result["reason"])
 
 
-def test_repost_after_delivery_in_a_later_turn_is_blocked(tmp_path: pathlib.Path) -> None:
+def test_repost_after_delivery_in_a_later_turn_does_not_block(tmp_path: pathlib.Path) -> None:
     body = "進捗は順調です。"
     entries = [_HUMAN, _SEND_NOTICE, _text("…"), _TASK_NOTIFICATION, _SEND, _result(), _text(body)]
     result = _stop(entries, tmp_path, last_assistant_message=body)
-    assert result["decision"] == "block"
-    assert "送信済みの文が通常の応答本文にある" in str(result["reason"])
+    assert result.get("decision") != "block"
 
 
 def _response(identifier: str, *entries: dict) -> list[dict]:

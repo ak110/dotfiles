@@ -230,3 +230,71 @@ def test_non_original_body_access_does_not_receive_record_warning(
     }
     assert pretooluse.main(json.dumps(payload)) == 0
     assert "session-review-evidence" not in capsys.readouterr().out
+
+
+def _question_decision(tmp_path: pathlib.Path, question: dict, **payload: str) -> str:
+    result = _run(
+        {"tool_name": "AskUserQuestion", "session_id": "question-check", "tool_input": {"questions": [question]}, **payload},
+        env_overrides=_plan_file_state_env(tmp_path),
+    )
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout or "{}")
+    if output.get("decision") == "block":
+        return output["reason"]
+    return output.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+
+
+@pytest.mark.parametrize("codex", [False, True])
+def test_recommendation_is_reviewed_once(tmp_path: pathlib.Path, codex: bool) -> None:
+    question = {"question": "進めてよいですか？", "options": [{"label": "進める", "description": "推奨する案"}]}
+    host = {"turn_id": "codex-turn", "tool_name": "request_user_input"} if codex else {}
+    assert "confirmation.md" in _question_decision(tmp_path, question, **host)
+    assert not _question_decision(tmp_path, question, **host)
+    assert not _question_decision(tmp_path, {**question, "options": [{"label": "進める"}]}, **host)
+    assert not _question_decision(tmp_path, question, agent_id="child", **host)
+
+
+@pytest.mark.parametrize(
+    "body, missing",
+    [
+        ("## 発話の理解\n**目的:** 保存\n**手段:** 既存機能", True),
+        ("## 発話の理解\n- 目的: 保存\n- **別案:** 既存機能を使う", False),
+        ("**発話の理解:** 保存だけを行う。", False),
+        ("**発話の理解:** 保存だけを行う。\n\n**進捗:** 保存先を確認した。", False),
+        ("**発話の理解:** 保存する。\n対象は別紙。\n\n**進捗:** 次工程。\n別案: 外の区画", True),
+        ("## 発話の理解\n目的: 保存\n手段: 既存機能\n## 実行\n別案: 別の話題", True),
+    ],
+)
+def test_send_review_identifies_missing_alternative(body: str, missing: bool) -> None:
+    result = _run({"tool_name": "mcp__agents_server__send_to_user", "tool_input": {"message": body}})
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout or "{}").get("hookSpecificOutput", {})
+    assert (output.get("permissionDecision") == "deny") is missing
+
+
+def test_policy_question_requires_all_external_sources(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    contract = tmp_path / "work-contract.md"
+    contract.write_text(
+        "# 作業契約\n- 作業: add-awi-by-user\n## 原本\n- https://example.com/a\n- https://example.com/b)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
+    question = {"questions": [{"question": "上の方針（A・Bの2件を登録、他は不採用）で起草してよいか？"}]}
+    assert "external-source-review.md" in _question_decision(tmp_path, question["questions"][0])
+    assert not pretooluse._external_source_review_needed("s", {"questions": [{"question": "どの系統を選びますか？"}]})
+    table = tmp_path / "external-source-review.md"
+    a = "| https://example.com/a | agent-basicsの設計手順 |\n"
+    table.write_text(a, encoding="utf-8")
+    assert pretooluse._external_source_review_needed("s", question)
+    table.write_text(a + "| https://example.com/b) | |\n", encoding="utf-8")
+    assert pretooluse._external_source_review_needed("s", question)
+    table.write_text(a + "| https://example.com/b) | 非該当: 個別の保存形式 |\n", encoding="utf-8")
+    assert not pretooluse._external_source_review_needed("s", question)
+    for body in ("- 作業: implement\n- 外部資料: https://example.com/a\n", "- 作業: add-awi-by-user\n"):
+        contract.write_text(body, encoding="utf-8")
+        assert not pretooluse._external_source_review_needed("s", question)
+
+
+def test_external_source_url_preserves_ipv6_address() -> None:
+    urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
+    assert urls == {"https://[2001:db8::1]/source"}

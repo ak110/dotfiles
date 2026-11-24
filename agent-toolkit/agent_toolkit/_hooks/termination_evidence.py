@@ -264,18 +264,18 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("判断記録はJSONオブジェクトで渡す")
         work_id = record_decision(document)
     except (OSError, UnicodeError, ValueError) as error:
-        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行せよ"
+        recovery = "原入力と対象を確かめ、判断のJSONファイルを直して同じコマンドで再実行してください"
         if isinstance(error, _UnresolvedRepositoryError):
             recovery = unresolved_repository_fix()
         elif isinstance(error, _FailureEvidenceError):
             recovery = (
-                "失敗応答を返したツール呼び出しの`call_id`で記録せよ。受理する証拠は"
-                f"{termination_evidence_reference()}「受理する証拠」に従え。" + host_stop_fix()
+                "失敗応答を返したツール呼び出しの`call_id`で記録してください。受理する証拠は"
+                f"{termination_evidence_reference()}「受理する証拠」に従ってください。" + host_stop_fix()
             )
         elif isinstance(error, _InactiveWaitError):
             recovery = (
-                "`atk agents wait`で待機を開始するか回収後の残工程へ戻れ。"
-                f"{termination_evidence_reference()}「受理する証拠」に従え。" + host_stop_fix()
+                "`atk agents wait`で待機を開始するか回収後の残工程へ戻ってください。"
+                f"{termination_evidence_reference()}「受理する証拠」に従ってください。" + host_stop_fix()
             )
         next_action.report(
             str(error),

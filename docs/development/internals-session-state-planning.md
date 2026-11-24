@@ -39,7 +39,7 @@ run-skillが保持する元の実行入力・会話・時間予算は、[共有�
   現在のセッション名が空であるか、この値と一致している場合に限り、新しい種別や計画名への更新を許可する。
   同hookが通常状態ファイルへ排他ロック下で保存する。
   通常状態ファイルと同様の保持期限および`clear`のタイミングで消去される
-- `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`all-repos`、`add-awi`）。
+- `session_title_kind`: PostToolUse(Skill)、およびスキルの手動起動を受け取ったUserPromptSubmitが記録する命名用の種別（`process-wi`、`single-lane`、`all-repos`）。
   UserPromptSubmitのコマンドhookがセッション名を選択する際に参照する。
   種別が`all-repos`の場合と、process-loopの環境識別印と会話IDが一致している場合（記録された種別を問わない）は、計画名を連結しない統括名`process-wi all-repos`を使う。
   生存期間は通常状態ファイルと同一とする

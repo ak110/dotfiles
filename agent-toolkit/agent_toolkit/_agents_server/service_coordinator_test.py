@@ -52,6 +52,7 @@ def _coordinator(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, cur
     backend = Mock(
         _clients={session.session_id: client},
         _sdk_clients={},
+        _archive_tasks={},
         release_session=AsyncMock(),
         _stop_auto_reset=AsyncMock(),
         adopt_session=AsyncMock(),

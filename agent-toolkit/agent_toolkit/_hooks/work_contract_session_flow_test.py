@@ -213,7 +213,7 @@ def test_contract_diagnostic_reaches_public_response(tmp_path, monkeypatch, caps
     assert str(path) in context
     assert {"unreadable": "UnicodeDecodeError", "missing-delegate": "委譲元"}[mode] in context
     if mode == "missing-delegate":
-        assert "原本の所在と読取可能性を確認せよ" in context
+        assert "原本の所在と読取可能性を確認してください" in context
         assert "全文読み" not in context
 
 
@@ -229,8 +229,8 @@ def test_compaction_oversized_contract_delivers_location(tmp_path, monkeypatch, 
         == 0
     )
     context = json.loads(capsys.readouterr().out)["hookSpecificOutput"]["additionalContext"]
-    assert str(path) in context and "現在の目的・要件を確かめよ" in context
-    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直せ" in context
+    assert str(path) in context and "現在の目的・要件を確かめてください" in context
+    assert "完了した要求が残っていれば、現在の目的・要件だけに書き直してください" in context
     assert "要件" * 10 not in context
 
 

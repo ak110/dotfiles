@@ -22,7 +22,7 @@ Codex欄の「対応」「部分対応」「非対応」は、Codex 0.154.0の�
 | plugin `Stop/stop` | 言語保護、常駐ループの終了保証、所有計画・未観測委譲先・可視本文・report-completion起動不足の非遮断通知、未配送通知のホスト配送を集約する | 対応 | 部分対応。`response_language_advisor`で説明言語を判定し、`decision`と`reason`だけを返す。非遮断の終了支援は関連操作と文書で扱う |
 | plugin `UserPromptSubmit/user_prompt_submit` | 実入力・手動スキル起動を記録し、例示・調査語の注記の反復を抑える | 対応 | 対応。sessionTitleは付けない |
 | plugin `PermissionRequest/permissionrequest` | 全ツールの確認ダイアログを自動許可し、許可した要求をJSON Lines形式のログへ記録する | 対応 | 非対応。`approvalPolicy: "never"`では危険と判定するコマンドを承認なしに拒否し、PermissionRequest hookを呼ばない。Codex委譲先の標準手順は承認を要しないコマンドで組む |
-| plugin `PostToolUseFailure/posttooluse` | Bashの背景実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
+| plugin `PostToolUseFailure/posttooluse` | Bashのバックグラウンド実行が失敗した応答にもタスク識別子が含まれる場合は、バックグラウンドタスクの所有記録へ保存する。失敗を成功済み検証として記録しない | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `PermissionDenied/posttooluse` | 許可拒否時に状態を変更せず終了する | 対応 | 非対応。対応するイベントが存在しない |
 | plugin `StopFailure/stopfailure_notifier` | メインの利用上限によるターン終了時に、再開要求を既存modへ渡す | 対応 | 非対応。対応するイベントが存在しない |
 | 個人設定 `PreToolUse/pretooluse` | dotfilesの配布元ファイルと個人の命名規約に基づく編集前のチェック | 対応 | 非対応。dotfiles固有の配布構成を前提とするため、プラグインへ移さない |
@@ -39,6 +39,7 @@ Codexはplugin同梱フックの定義が変わると、ユーザーが変更後
 統括は複数の個別計画を順に扱うため、最後の計画名を連結すると会話全体の処理範囲を誤認させる。
 常駐統括の中で単一処理の種別が記録されても統括名を保ち、子セッションは会話IDの照合で区別して通常の命名に従う。
 その他は計画名だけにし、計画が無ければホストの名前を保つ。
+`add-awi-by-user`には種別だけの名前を付けず、依頼の内容を区別できるClaude Codeの自動題名に任せる。
 
 入力の現在名`session_title`が空か前回自動設定した名前と一致する場合だけ更新する。
 手動の名前を保ち、Codexは命名しない。

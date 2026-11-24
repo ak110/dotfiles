@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import typing
 from typing import Any
 
@@ -14,10 +16,12 @@ from agent_toolkit._agents_server import (
     wait_output_tracking,
 )
 from agent_toolkit._agents_server.codex_protocol import (
+    AppServerError,
     JsonRpcResponseError,
     _public_turn_status,
     _thread_id_from,
     _turn_id_from,
+    redact_diagnostic,
 )
 from agent_toolkit._agents_server.file_operations import run_file_operation
 from agent_toolkit._agents_server.state import TERMINAL_STATUSES, SessionState, append_bounded
@@ -42,6 +46,9 @@ _NON_MODEL_OUTPUT_ITEM_TYPES = frozenset({"userMessage", "hookPrompt", "contextC
 # account/chatgptAuthTokens/refresh・attestation/generate・
 # applyPatchApproval・execCommandApproval。
 # 承認用の公開MCP toolは設けず、readerで必ず応答して非対話要求をfailedへ記録する。
+
+
+_LOG = logging.getLogger("agent-toolkit.agents-server.codex")
 
 
 class CodexNotificationsMixin:
@@ -286,6 +293,8 @@ class CodexNotificationsMixin:
         elif method in {"item/fileChange/outputDelta", "item/fileChange/patchUpdated"}:
             session.diff_changed = True
         session.touch()
+        if method == "turn/completed":
+            self.schedule_archive(session)
         await self._notify_waiters()
 
     async def _handle_server_request(self: CodexManager, message: dict[str, Any], client: Any) -> None:
@@ -514,3 +523,34 @@ class CodexNotificationsMixin:
             result = item.get("result")
             if isinstance(arguments, dict) and isinstance(result, dict):
                 consume_agents_server_tool_result(session, str(item.get("tool", "")), arguments, result)
+
+    def schedule_archive(self: CodexManager, session: SessionState) -> None:
+        identifier = session.session_id
+        if (
+            not session.result_available
+            or session.live_child_session_ids
+            or session.terminal_child_session_ids
+            or session.codex_live_subagent_thread_ids
+            or (isinstance(session.error, dict) and session.error.get(resume_waits.UNOBSERVED_SESSIONS_KEY))
+            or identifier in self._archive_tasks
+            or (client := self._owned_client(session)) is None
+        ):
+            return
+
+        async def archive() -> None:
+            # pyfltr: allow-comment 通知処理内で応答を待つとreaderも止まるため、追送側でこの要求の終了を待つ。
+            try:
+                await client.request("thread/archive", {"threadId": identifier})
+            except (AppServerError, OSError, TimeoutError) as error:
+                detail = redact_diagnostic(str(error)) or type(error).__name__
+                _LOG.warning("Codexのthreadをアーカイブできません: session_id=%s %s", identifier, detail)
+
+        task = asyncio.create_task(archive())
+        self._archive_tasks[identifier] = task
+        self._background_tasks.add(task)
+
+        def forget(completed: asyncio.Task[None]) -> None:
+            self._background_tasks.discard(completed)
+            self._archive_tasks.pop(identifier, None)
+
+        task.add_done_callback(forget)

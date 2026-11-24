@@ -127,7 +127,7 @@ def test_commit_block_lists_all_violations_and_states_whole_command_was_not_run(
     assert shell_checks.co_author_trailer(identity) in block
     assert "全体が実行されていない" in block
     assert "`git add`" in block
-    assert "同じコマンド全体へ修正を加えて再実行せよ" in block
+    assert "同じコマンド全体へ修正を加えて再実行してください" in block
 
 
 def test_commit_block_with_single_violation_states_whole_command_was_not_run() -> None:

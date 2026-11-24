@@ -28,7 +28,8 @@ from agent_toolkit._testing.serve_sessions_support import (
 )
 
 
-def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("codex_root", ["sessions/2026/09/05", "archived_sessions"])
+def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: pathlib.Path, codex_root: str) -> None:
     claude = _write(
         tmp_path / ".claude" / "projects" / "encoded-path" / "remote-claude.jsonl",
         [
@@ -42,7 +43,7 @@ def test_remote_helper_listing_returns_cwd_and_first_user_message(tmp_path: path
     )
     codex_home = tmp_path / "codex-home"
     codex = _write(
-        codex_home / "sessions" / "2026" / "09" / "05" / "rollout-remote-codex.jsonl",
+        codex_home / codex_root / "rollout-remote-codex.jsonl",
         [
             {
                 "type": "session_meta",

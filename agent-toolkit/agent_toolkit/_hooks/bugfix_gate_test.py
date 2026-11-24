@@ -189,7 +189,7 @@ def test_stop_blocks_direct_answer_without_bugfix_and_respects_recursion_guard(
     entries = [_human("ここがバグっている")]
     blocked = _stop(entries, tmp_path, monkeypatch)
     assert blocked["decision"] == "block" and "agent-basics:bugfix" in str(blocked["reason"])
-    assert "起動し" in str(blocked["reason"]) and "診断してから報告せよ" in str(blocked["reason"])
+    assert "起動し" in str(blocked["reason"]) and "診断してから報告してください" in str(blocked["reason"])
     assert "起動すれば同じ操作を通せる" not in str(blocked["reason"])
     assert "decision" not in _stop([*entries, _BUGFIX], tmp_path, monkeypatch)
     assert "decision" not in _stop(entries, tmp_path, monkeypatch, stop_hook_active=True)

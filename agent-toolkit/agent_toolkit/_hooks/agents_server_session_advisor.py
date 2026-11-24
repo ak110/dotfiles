@@ -44,12 +44,12 @@ lazy from agent_toolkit._hooks.stop_session import parse_stop_session
 
 _HOOK_ID = "agents_server_session_advisor"
 _WARNING_BODY = "`agents_server`の`session`に、観測を試みていない作業が残っている。"
-_WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+_WARNING_FIX = "実行ホストの`atk agents wait`で観測するか、結果が不要なら`kill(session_id)`で破棄してから終了してください。"
 
 _CLAUDE_WARNING_FIX = (
-    "背景実行が使えるなら、実行ホストで引数なしの `atk agents wait` を単独で背景起動し、"
-    "起動を確認してからターンを終えよ。背景実行が使えないなら同じターンで前景回収せよ。"
-    "結果が不要なら`kill(session_id)`で破棄してから終了せよ。"
+    "バックグラウンド実行が使えるなら、実行ホストで引数なしの `atk agents wait` を単独でバックグラウンド起動し、"
+    "起動を確認してからターンを終えてください。バックグラウンド実行が使えないなら同じターンでフォアグラウンド回収してください。"
+    "結果が不要なら`kill(session_id)`で破棄してから終了してください。"
 )
 
 _notice = _notice_formatter(_HOOK_ID, default_tag=_WARN_TAG)
@@ -128,11 +128,11 @@ def compact_wait_notice(session_id: str, owner_agent_id: str) -> str:
         else:
             lines.append("自セッションに有効な待機なし。別セッションの待機は自分の待機に数えない。")
         if missing:
-            lines.append(f"待機の再開が必要: {', '.join(missing)}。自セッションから atk agents wait で回収せよ。")
+            lines.append(f"待機の再開が必要: {', '.join(missing)}。自セッションから atk agents wait で回収してください。")
     if not missing:
         lines.append("待機の再開は不要。")
     if awaiting:
-        lines.append(f"応答待ち: {_awaiting_summary(awaiting)}。役割が求める指示を send_message で返せ。")
+        lines.append(f"応答待ち: {_awaiting_summary(awaiting)}。役割が求める指示を send_message で返してください。")
     return "\n".join(lines)
 
 
@@ -175,7 +175,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     if awaiting:
         lines.append(f"応答待ち: {_awaiting_summary(awaiting)}")
     body = "\n".join(lines)
-    fix = "役割が求める指示を`send_message`で返せ。" if awaiting else ""
+    fix = "役割が求める指示を`send_message`で返してください。" if awaiting else ""
     if pending_session_ids:
         warning_fix = _WARNING_FIX if is_codex_payload(payload) or is_antigravity_payload(payload) else _CLAUDE_WARNING_FIX
         fix = f"{warning_fix}{fix}"

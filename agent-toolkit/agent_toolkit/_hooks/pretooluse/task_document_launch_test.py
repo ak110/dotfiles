@@ -109,7 +109,7 @@ def test_free_text_start_pointing_task_document_is_warned(tool_name: str, mode: 
     assert "subagent_md_path=exec`" in _additional_context(result)
     assert f"`{_EXEC_DOCUMENT}`" in _additional_context(result)
     assert f"`start`の`{mode}`" in _additional_context(result)
-    assert "重複起動するな" in _additional_context(result)
+    assert "重複起動しないでください" in _additional_context(result)
     assert "次にこの役割を起動する際" in _additional_context(result)
 
 

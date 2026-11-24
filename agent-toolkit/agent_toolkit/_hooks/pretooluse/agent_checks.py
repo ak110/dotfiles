@@ -77,14 +77,14 @@ def _check_generic_agent_launch(payload: dict, tool_name: str, tool_input: dict)
             subject=agent_type,
             removable_cause=False,
             fix=(
-                f"`agents_server`の`MCP`ツールを呼べる場合は、次回から同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
+                f"`agents_server`の`MCP`ツールを呼べる場合は、次回から同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行してください。"
             ),
         )
     block = _block_notice(
         f"組み込みの汎用定義`{agent_type}`による`{tool_name}`の起動を拒否した。`agents_server`に対応する`mode`がある。",
         fix=(
-            f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行せよ。"
-            "外部資料の取得なら、`agent-basics:fetch-sources`の資料種別ごとの手順を依頼へ含めよ。"
+            f"同じ依頼を、`mode`が{mode}の`agents_server`の`start`へ発行してください。"
+            "外部資料の取得なら、`agent-basics:fetch-sources`の資料種別ごとの手順を依頼へ含めてください。"
             "例外は、`agents_server`の`MCP`ツールを呼べない場合、`agents_server`の各`mode`に同等の手段が無い専用の定義を使う場合、"
             "ユーザーが明示した場合、会話を引き継ぐ`fork`の場合に限る。"
             "例外に該当する場合は、同じ会話の同じ主体からツール名と入力全体を変えずに再発行してよい。"
@@ -151,13 +151,13 @@ def _check_task_stop(session_id: str, tool_input: dict) -> str | None:
     return _block_notice(
         f"TaskStopの対象{', '.join(sorted(targets))}には、バックグラウンドタスクの所有記録も停滞検知完了記録も無い。",
         fix=(
-            "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定せよ。"
+            "自セッションが起動した対象はバックグラウンドタスクの所有記録に一致する識別子を指定してください。"
             "その他の対象は、`active_tool_uses`と`api_error`が無く活動が止まっていることを確かめて停滞を確定し、"
-            "対象別の停滞検知完了記録を作成してからTaskStopを実行せよ。"
-            "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送せよ。"
+            "対象別の停滞検知完了記録を作成してからTaskStopを実行してください。"
+            "ユーザーの介入では停止せず、採否を確定した差分を稼働中の担当へ追送してください。"
             "記録は`atk run-script record-stall-detection -- "
             "--session-id <現在のCLAUDE_CODE_SESSION_ID> --task-id <停止対象の完全なタスクID>`で作成し、"
-            "終了コード0を返した対象だけを5分以内に停止せよ。"
+            "終了コード0を返した対象だけを5分以内に停止してください。"
         ),
     )
 
@@ -215,16 +215,18 @@ def _check_agents_server_continuation_target(
     state = read_state(session_id)
     record = _agents_server_observations.session_record(state, remote_session_id)
     if record is not None and record.get("recovered_start") is True and record.get("launcher_agent_id") != actor:
-        return Decision(block=_block_notice("起動を回復した主体と操作の呼出主体が異なる。", fix="起動時の主体から操作せよ。"))
+        return Decision(
+            block=_block_notice("起動を回復した主体と操作の呼出主体が異なる。", fix="起動時の主体から操作してください。")
+        )
     if _agents_server_observations.session_cwd(state, remote_session_id) is None:
         display_name = tool_name.rsplit("__", 1)[-1]
         return Decision(
             block=_block_notice(
                 f"{display_name}の対象`{remote_session_id}`に対応する絶対`cwd`が保存されていない。",
                 fix=(
-                    f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会せよ。"
+                    f"`agents_server`の`show`へ`session_id={remote_session_id}`を指定して照会してください。"
                     "起動時の呼出主体が保存され、永続登録の起動元・応答の識別子・絶対`cwd`も確認できた場合だけ、"
-                    "元の操作を再発行せよ。起動時の識別子から呼出主体を確認できない場合は、`show`を繰り返しても回復しない。"
+                    "元の操作を再発行してください。起動時の識別子から呼出主体を確認できない場合は、`show`を繰り返しても回復しない。"
                     "自身が起動していない対象は、所有を確認できるまで操作しない。"
                 ),
             )

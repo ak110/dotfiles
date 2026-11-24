@@ -171,7 +171,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     delivery = "応答本文" if is_codex_payload(payload) else "`send_to_user`（使えない時は応答本文）"
     body = _notice(
         "人間の発話の後に、ユーザーへ届いた応答本文が無い。",
-        fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けよ。",
+        fix=f"伝える予定だった回答・判断・確認結果を{delivery}で届けてください。",
         removable_cause=True,
         subject=input_subject,
     )

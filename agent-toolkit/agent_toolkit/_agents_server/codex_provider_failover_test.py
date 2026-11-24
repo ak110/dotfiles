@@ -135,6 +135,7 @@ async def test_provider_failover_sequence(monkeypatch, tmp_path, provider_enviro
     async with backend_with_client(monkeypatch, client) as backend:
         session = await fail_subscription(backend, tmp_path)
         assert session.status == "running" and session.pending_result is not None
+        assert not backend._archive_tasks
         response = await backend.send_message(session, codex_providers.CONTINUE_PROMPT)
         assert response["delivery"] == "reply_started"
         resumes = [params["modelProvider"] for method, params in client.requests if method == "thread/resume"]

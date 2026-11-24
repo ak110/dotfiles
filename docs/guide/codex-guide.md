@@ -56,6 +56,8 @@ OSS providerや`-c model_provider=...`でOpenAI以外のproviderを選んだ場�
 自動復旧が失敗した場合は表示された診断を確認し、`codex doctor`で状態を調べてから`codex resume`で元の会話を選ぶ。
 明示した`--remote`や`--no-daemon`の接続管理は、その指定に従う。
 Windowsで公式CLIを導入した後は、新しい端末を開いて更新されたPATHを使用する。
+終わった委譲先はアーカイブに移るため、手で開くときは`codex unarchive <thread ID>`を実行してから`codex resume <thread ID>`で開く。
+自分で始めた会話は変わらず、既存の委譲先をまとめて移すこともない。
 
 ## プラグイン更新の反映
 

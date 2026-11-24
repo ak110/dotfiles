@@ -303,3 +303,28 @@ def test_codex_spawn_attributes_only_the_primary_reviewer(dataset, capsys) -> No
         for identity in models
         for name in ("parent", "support", "other", "other-path", "orphan", "explicit-support")
     )
+
+
+def test_default_codex_roots_keep_archived_review_model(
+    dataset: tuple[Path, Path, Path], capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    notes, claude, codex = dataset
+    monkeypatch.setenv("CODEX_HOME", str(codex))
+    archive = codex / "archived_sessions"
+    _codex_review(archive / "rollout-review.jsonl", "03-0001_unknown.exec-review.tsv", preamble_bytes=0)
+    arguments = [
+        "--",
+        "--since",
+        "2026-11-01",
+        "--until",
+        "2026-11-07",
+        "--claude-projects-dir",
+        str(claude),
+        "--private-notes",
+        str(notes),
+    ]
+    assert run_script.dispatch(argparse.Namespace(script_name="review-adoption", script_args=arguments)) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    current = next(row for row in rows if row["period"] == "current")
+    assert "codex:gpt-6.1-sol/medium" in current["by_model"]
+    assert "モデル不明" not in current["by_model"]

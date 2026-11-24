@@ -86,7 +86,7 @@ _AGENTS_SERVER_SESSION_STATE_KEY = "agents_server_sessions"
 
 
 _UNREGISTERED_WAIT_TARGET_FIX = (
-    "`atk agents wait`はこのセッションを待機対象として扱わないため、終了は`agents_server`の`show`で確認せよ。"
+    "`atk agents wait`はこのセッションを待機対象として扱わないため、終了は`agents_server`の`show`で確認してください。"
 )
 """待機所有者を識別できず待機対象を登録できなかったsessionの次の操作。"""
 

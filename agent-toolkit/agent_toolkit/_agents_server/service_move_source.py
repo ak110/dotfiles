@@ -23,6 +23,8 @@ class MoveSource:
     async def detach(self, gate: service_turns.TurnGate, *, source_is_current: bool) -> None:
         identifier = self.session.session_id
         if self.client is not None:
+            if self.session.engine == "codex" and (archive := self.backend._archive_tasks.get(identifier)) is not None:
+                await asyncio.wait((archive,))
             if not source_is_current:
                 self.client.pause()
                 await gate.drain_session(identifier)

@@ -8,6 +8,7 @@ from agent_toolkit._atk.serve import session_costs as _session_costs
 from agent_toolkit._atk.serve import session_watch
 from agent_toolkit._atk.serve.sessions_models import SUBSCRIBER_QUEUE_SIZE, SessionsContext, SessionsState
 from agent_toolkit._common.async_operations import run_sync_operation
+from agent_toolkit._common.session_record_paths import codex_record_roots
 
 logger = logging.getLogger("agent_toolkit._atk.serve.sessions")
 
@@ -93,7 +94,7 @@ def _start_local_record_watch(context: SessionsContext, loop: asyncio.AbstractEv
         schedule_delivery(context.state, loop, deliver)
 
     tracker = session_watch.RecordChangeTracker(
-        [(context.claude_home / "projects", "claude"), (context.codex_home / "sessions", "codex")],
+        [(context.claude_home / "projects", "claude"), *((root, "codex") for root in codex_record_roots(context.codex_home))],
         on_flush,
     )
     watch = session_watch.RecordWatch(tracker)

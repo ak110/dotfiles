@@ -1,7 +1,5 @@
-"""`send_to_user`の呼出しと送達後の応答を、同じターンの記録で検査する。
+"""`send_to_user`の呼出しと送達後の応答を、同じターンの記録で検査する。  pyfltr: allow-comment
 
-同じターンで成功した送達と通常本文に同じ文がある場合に限り、再掲として差し戻す。
-短い確認や新しく得た情報は、送達した文に含まれなければ差し戻さない。
 送達に失敗した場合は未表示の情報を通常本文で伝えられる。
 `send_to_user`を使えるメインには、現在の入力に限らず常に`send_to_user`を求める（記録全体に端末modの送達の指定の添付があるかで判定する）。
 入力ごとの指定は圧縮の後や完了通知で始まるターンに添わず、通常本文へ戻る事象が続いたためである（2026-11-22、ユーザー指摘）。
@@ -11,7 +9,6 @@
 """
 
 import json
-import re
 lazy import hashlib
 lazy import os
 
@@ -25,7 +22,6 @@ lazy from agent_toolkit._hooks import stop_session as _stop_session
 lazy from agent_toolkit._hooks.host import is_antigravity_payload, is_codex_payload
 lazy from agent_toolkit._hooks.user_response_advisor import _human_prompt, _input_text
 
-_SENTENCE_BREAK = re.compile(r"[。！？!?\n]|\.(?=\s|$)")
 _SEND_CONTRACT = '<atk-auto source="send-to-user-contract" kind="notice">'
 _SEND_CALL = "tools['mcp__plugin_agent-toolkit_agents_server__send_to_user']({message})"
 
@@ -48,43 +44,26 @@ def _send_required(entries: list[dict]) -> bool:
     return False
 
 
-def _delivery_report(entries: list[dict]) -> tuple[str, set[str], bool | None]:
-    messages: dict[str, str] = {}
-    delivered: set[str] = set()
+def _latest_delivery_error(entries: list[dict]) -> bool | None:
+    sends: set[str] = set()
     latest_error: bool | None = None
-    last = ""
     for entry in entries:
         message = entry.get("message")
         content = message.get("content") if isinstance(message, dict) else None
-        if not isinstance(content, list):
-            continue
-        texts: list[str] = []
-        for block in content:
+        for block in content if isinstance(content, list) else []:
             if not isinstance(block, dict):
                 continue
-            if entry.get("type") == "assistant":
-                if block.get("type") == "text" and isinstance(block.get("text"), str):
-                    texts.append(block["text"])
-                elif (
-                    block.get("type") == "tool_use"
-                    and is_send_to_user_tool(block.get("name"))
-                    and isinstance(identifier := block.get("id"), str)
-                    and identifier
-                ):
-                    inputs = block.get("input")
-                    message_text = inputs.get("message") if isinstance(inputs, dict) else None
-                    messages[identifier] = message_text if isinstance(message_text, str) else ""
-            elif block.get("type") == "tool_result" and (result_id := str(block.get("tool_use_id", ""))) in messages:
-                latest_error, last = block.get("is_error") is True, ""
-                if not latest_error:
-                    delivered.update(_sentences(messages[result_id]))
-        if delivered and texts:
-            last = "".join(texts)
-    return last, delivered, latest_error
-
-
-def _sentences(text: str) -> set[str]:
-    return {line for part in _SENTENCE_BREAK.split(text) if (line := " ".join(part.split()).strip(">*_`#… "))}
+            if (
+                entry.get("type") == "assistant"
+                and block.get("type") == "tool_use"
+                and is_send_to_user_tool(block.get("name"))
+                and isinstance(identifier := block.get("id"), str)
+                and identifier
+            ):
+                sends.add(identifier)
+            elif block.get("type") == "tool_result" and str(block.get("tool_use_id", "")) in sends:
+                latest_error = block.get("is_error") is True
+    return latest_error
 
 
 def _turn_boundary(entry: dict) -> bool:
@@ -235,7 +214,7 @@ def pretooluse_notice(payload: dict, session_id: str) -> str | None:
     response_id = _visible_response_id(turn, tool_use_id)
     if response_id is None:
         return None
-    _, _, latest_error = _delivery_report(turn)
+    latest_error = _latest_delivery_error(turn)
     if latest_error is True:
         return None
 
@@ -260,7 +239,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     resolved = _stop_session.parse_stop_session(payload_text, lambda: None)
     if resolved is None:
         return "approve", ""
-    session_id, payload = resolved
+    _, payload = resolved
     path = payload.get("transcript_path")
     if (
         is_codex_payload(payload)
@@ -272,7 +251,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
         return "approve", ""
     lines = transcript.read_transcript_lines(path)
     entries = _conversation_entries(lines) if lines is not None else []
-    body, delivered, latest_error = _delivery_report(_current_turn(entries))
+    latest_error = _latest_delivery_error(_current_turn(entries))
     if (
         latest_error is None
         and isinstance(last := payload.get("last_assistant_message"), str)
@@ -281,13 +260,7 @@ def evaluate(payload_text: str) -> tuple[str, str]:
     ):
         return "block", _block_notice(
             "`send_to_user` を使える会話で、このターンに `send_to_user` の結果が無い。通常本文での終了を止めた。",
-            fix=f"`REPL` では `await {_SEND_CALL}` を呼べ。ツールを直接呼べる場合は "
-            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡せ。",
+            fix=f"`REPL` では `await {_SEND_CALL}` を呼んでください。ツールを直接呼べる場合は "
+            "`mcp__plugin_agent-toolkit_agents_server__send_to_user` へ本文を渡してください。",
         )
-    if not delivered.intersection(_sentences(body)):
-        return "approve", ""
-    _stop_session.append_stop_log(session_id, "block_delivered_repost", {})
-    return "block", _block_notice(
-        "`send_to_user`で送信済みの文が通常の応答本文にある。",
-        fix="再掲した文を除き、新しく伝えることがなく、`Claude Code`が表示する本文を求める場合は「…」で終えよ。",
-    )
+    return "approve", ""

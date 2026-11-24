@@ -52,18 +52,20 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 
 ## ユーザーの方針
 
-- 成果物は完成させ、規模・時間・文脈量で省略・停止・延期・分割しない。
-- 不良は同じセッションで直す。
-- 優先順は目的・要件、硬い制約、QCD、規範。
-  QCDを損なう規範は原則2に従い直す。
-  記録・伝達は必要な分だけ短く書く。
-  差分編集できる一時ファイルを優先し、発話・委譲にはそれで届かない情報だけを書く。
-  通知と検収を保つ。
+- 規模・時間・文脈量で省略・停止・延期・分割せず完遂。
+  不良は同じセッションで直す。
+- 目的・要件、硬い制約、QCD、規範の順。
+  QCDを損なう規範は原則2で直す。
+- 記録・伝達は短くし、一時ファイルの差分編集を優先。
+  発話・委譲は届かない情報に限り、通知・検収を保つ。
 - 本文・成果物は日本語の常体（識別子・コマンド・逐語引用は原表記）。
-- メインは全発話に作業前の「発話の理解」で応じ、回答を待たない。
-  冒頭で目的・問題・要求を論点別に換言し、原文の転記や「原文」表示はせず、補った前提と出所付きの原因・修正箇所・手段の仮説を分ける。
-  問い・提案・指示の手段は要求と分け、確認まで「採否: 保留」、操作前に採否と改善案を示す。
-  短い発話は1行でよい。
+- メインは着手前に「発話の理解」を返し、待たない。
+  全発話の目的・問題・要求を論点別に換言し、原文を転記・表示しない。
+  補う前提と出所付きの原因・修正先・手段の仮説を分ける。
+  問い・提案・指定手段は要求と分ける。
+  「別案:」に目的から比べた案と採否の理由か、案なしの根拠を書く。
+  短い発話は別案を含め1行。
+  採否は確認手順に従い、確定事項の変更案は同意を問う。
 
 ## 作業と手順書
 
@@ -90,15 +92,15 @@ Codexの開始・圧縮後は`playbooks/host-codex.md`「読む節」に従う�
 | 権限拒否、手順どおりに進められない時 | `playbooks/permission-denial.md` |
 | 報告・確認・認識合わせの要否と送達 | `references/delivery.md` |
 | 進捗・逸脱・改善点・稼働の報告、点検、停止回避、再提案、指摘・割り込み・是正・WI回答、一時エラー後の継続、委譲結果の確認中継 | `playbooks/main-reporting.md` |
-| 作業契約の作成、追送・工程境界・圧縮後の目的と要求の原本確認 | `references/work-contract.md`（採用案の維持が目的なら縮小・撤回・代替案も比較） |
+| 作業契約作成、追送・工程境界・圧縮後の目的・要求の原本確認 | `references/work-contract.md`（採用案の維持が目的なら縮小・撤回・代替案も比較） |
 | WIの起草、保存と取得 | `playbooks/wi-drafting.md`、`playbooks/wi-saving.md` |
 | WIの状態・依存・保留・由来・承認・回答済みUWI | `references/states-and-dependencies.md`、`references/origin-and-approval.md`、`references/answer-transitions.md` |
 | リポジトリを変える作業の開始、計画 | `playbooks/write-plan.md` |
 | 委譲要否・起動・待機・受領・継続 | `playbooks/delegation.md`（「条件と行動」に従う） |
 | 委譲・実行モデル選定 | `references/model-settings.md` |
 | ホスト別実行・送達・質問・終了 | `playbooks/host-claude-code.md`、`playbooks/host-codex.md` |
-| 背景実行・待機・終了・長い出力・一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
-| commit、push、公開、CI、履歴の書き換え | `playbooks/commit.md` |
+| バックグラウンド実行・待機・終了・出力・一時ファイル | `references/operations.md`、`playbooks/managed-temp.md` |
+| commit・push・公開・CI・履歴書換え | `playbooks/commit.md` |
 | 検証の起動と記録 | `playbooks/verification.md` |
 | 外部投稿・本人提出文の前 | `playbooks/review-external-writes.md` |
 | 指示文改訂の評価 | `playbooks/refine-prompt.md` |

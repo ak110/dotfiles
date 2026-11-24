@@ -54,13 +54,7 @@ def claude_session_records(claude_home: pathlib.Path) -> Iterator[pathlib.Path]:
 
 
 def codex_session_records(codex_home: pathlib.Path) -> Iterator[pathlib.Path]:
-    """Codexのロールアウト記録（`<codex_home>/sessions/<年>/<月>/<日>/rollout-*<thread-id>.jsonl`）を返す。"""
-    sessions = codex_home / "sessions"
-    if not sessions.is_dir():
-        return
-    for path in sessions.glob(f"*/*/*/{CODEX_ROLLOUT_PREFIX}*{RECORD_SUFFIX}"):
-        if path.is_file():
-            yield path
+    yield from _record_paths.codex_rollouts(codex_home)
 
 
 agy_session_records = _record_paths.agy_session_records

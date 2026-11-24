@@ -552,12 +552,15 @@ async def test_codex_kill_interrupts_turn_with_pending_start_response(
 
         assert response["status"] == "interrupted"
         assert response["kill_requested"] is True
+        if archive := backend._archive_tasks.get(session_id):
+            await archive
         assert [method for method, _params in client.requests] == [
             "config/read",
             "thread/read",
             "thread/resume",
             "turn/start",
             "turn/interrupt",
+            "thread/archive",
         ]
         assert client.active_turn is False
         assert not manager._pending_resumes
@@ -595,12 +598,46 @@ async def test_codex_kill_reports_no_request_when_pending_turn_completes_natural
 
         assert response["status"] == "completed"
         assert response["kill_requested"] is False
+        if archive := backend._archive_tasks.get(session_id):
+            await archive
         assert [method for method, _params in client.requests] == [
             "config/read",
             "thread/read",
             "thread/resume",
             "turn/start",
+            "thread/archive",
         ]
         assert client.active_turn is False
         assert not manager._pending_resumes
         assert not backend._background_tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unarchive_error", [None, "missing", "denied"])
+async def test_archived_thread_is_restored_before_resume(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, unarchive_error: str | None
+) -> None:
+    thread_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    archive = tmp_path / "archived_sessions"
+    archive.mkdir()
+    (archive / f"rollout-2026-11-24T00-00-00-{thread_id}.jsonl").write_text("{}\n", encoding="utf-8")
+    client = FakeCodexClient()
+    request = client.request
+
+    async def scripted(method: str, params: dict[str, Any]) -> dict[str, Any]:
+        response = await request(method, params)
+        if method == "thread/unarchive" and unarchive_error:
+            message = f"no archived rollout found for thread id {thread_id}" if unarchive_error == "missing" else "denied"
+            raise subject.JsonRpcResponseError(method, -32600, message)
+        return response
+
+    monkeypatch.setattr(client, "request", scripted)
+    async with subject.AppServerManager() as backend:
+        if unarchive_error == "denied":
+            with pytest.raises(subject.AppServerError, match=f"codex unarchive {thread_id}"):
+                await backend._request_thread_resume(client, {"threadId": thread_id})
+            assert [method for method, _ in client.requests] == ["thread/unarchive"]
+        else:
+            await backend._request_thread_resume(client, {"threadId": thread_id})
+            assert [method for method, _ in client.requests] == ["thread/unarchive", "thread/resume"]

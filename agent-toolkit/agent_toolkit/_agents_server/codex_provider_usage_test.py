@@ -89,6 +89,7 @@ async def test_codex_usage_wait_policy_selects_same_session_or_api(
         await complete(backend, session, {"codexErrorInfo": "usageLimitExceeded"})
         assert (session.usage_limit_resume_at is not None) is waits
         assert session.codex_provider_resume_pending is not waits
+        assert not backend._archive_tasks
         assert (await backend.send_message(session, "残る工程を続ける"))["delivery"] == "reply_started"
         assert client.connection == ("openai" if waits else "paid-a")
 

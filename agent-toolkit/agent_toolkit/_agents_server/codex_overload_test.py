@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from agent_toolkit._agents_server import resume_waits, state
+from agent_toolkit._testing.agents_server_support import FakeCodexClient
 from agent_toolkit._testing.codex_backend_support import _completed_turn, _InspectableAppServerManager, _overloaded_turn
 
 # backendの内部境界を直接検証する。
@@ -17,13 +18,18 @@ pytestmark = pytest.mark.usefixtures("codex_stable_plugin_roots")
 
 
 @pytest.mark.asyncio
-async def test_overloaded_turn_after_availability_check_holds_result_and_reports_wait(tmp_path: pathlib.Path) -> None:
+async def test_overloaded_turn_after_availability_check_holds_result_and_reports_wait(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """可用性確認を過ぎた後の過負荷は失敗を公開せず保留し、待機中の状態を`api_error`で示す。"""
     session = state.SessionState("thread-1", str(tmp_path), engine="codex", turn_id="turn-1", turn_seq=1)
     session.availability_checked = True
+    client = FakeCodexClient()
     async with _InspectableAppServerManager({session.session_id: session}) as manager:
+        monkeypatch.setitem(manager._clients, session.session_id, client)
         await manager.handle_notification(_overloaded_turn(session))
 
+        assert not manager._archive_tasks
         assert session.result_available is False
         assert session.awaiting_auto_resume is True
         assert session.status == "running"

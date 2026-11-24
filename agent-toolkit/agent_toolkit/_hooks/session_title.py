@@ -7,11 +7,6 @@ import re
 from agent_toolkit._common import process_loop_session, skill_modes
 from agent_toolkit._common.session_state import read_state, update_state
 
-_KINDS = {"process-wi": "process-wi"}
-
-_ENTRY_KINDS = {"add-awi-by-user": "add-awi"}
-
-
 _ALL_REPOS_TITLE = "process-wi all-repos"
 
 
@@ -20,19 +15,11 @@ def observe_add_awi(session_id: str, skill: str) -> None:
         update_state(session_id, lambda state: {**state, "add_awi_skill_invoked": True})
 
 
-def observe_skill(session_id: str, skill: str, arguments: str | None = None, *, named_by_entry: bool = False) -> None:
-    kinds = _KINDS | _ENTRY_KINDS if named_by_entry else _KINDS
-    kind = kinds.get(skill.removeprefix("agent-toolkit:"))
-    if kind == "process-wi":
-        mode, _ = skill_modes.split_mode(skill, arguments)
-        kind = mode or kind
-    if kind is not None:
-
-        def save(state: dict) -> dict:
-            state["session_title_kind"] = kind
-            return state
-
-        update_state(session_id, save)
+def observe_skill(session_id: str, skill: str, arguments: str | None = None) -> None:
+    if skill.removeprefix("agent-toolkit:") != "process-wi":
+        return
+    mode, _ = skill_modes.split_mode(skill, arguments)
+    update_state(session_id, lambda state: {**state, "session_title_kind": mode or "process-wi"})
 
 
 def proposed_title(session_id: str, current: object) -> str | None:

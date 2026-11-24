@@ -18,7 +18,7 @@ from agent_toolkit._agents_server import record_paths
 from agent_toolkit._atk import review_table, review_table_format, session_record_format
 from agent_toolkit._atk.wi import layout as wi_layout
 from agent_toolkit._atk.wi.constants import WI_STATES
-from agent_toolkit._common import model_pricing, private_notes, session_cost
+from agent_toolkit._common import host_homes, model_pricing, private_notes, session_cost, session_record_paths
 from agent_toolkit._common.next_action import ActionableError
 from agent_toolkit._common.session_family import _scan_record_metadata
 from agent_toolkit._git import command as git_command
@@ -234,7 +234,7 @@ def _queue_metrics(
 
 
 def _scan_sessions(
-    roots: dict[str, Path], since: datetime.datetime
+    roots: dict[str, Path], since: datetime.datetime, codex_archive: Path | None = None
 ) -> tuple[list[_Session], dict[str, tuple[Path, _Runtime]], dict[str, Any]]:
     sessions: list[_Session] = []
     paths: dict[str, list[tuple[Path, _Runtime]]] = collections.defaultdict(list)
@@ -248,7 +248,10 @@ def _scan_sessions(
     }
     for runtime, root in roots.items():
         oldest: datetime.datetime | None = None
-        for path in sorted(root.rglob("*.jsonl")):
+        records = list(root.rglob("*.jsonl"))
+        if runtime == "codex" and codex_archive is not None:
+            records.extend(codex_archive.glob("rollout-*.jsonl"))
+        for path in sorted(records):
             if runtime == "agy" and (
                 path.name not in {"transcript.jsonl", "transcript_full.jsonl"}
                 or path.name == "transcript.jsonl"
@@ -298,9 +301,13 @@ def _scan_sessions(
 
 
 def _session_metrics(
-    roots: dict[str, Path], weeks: dict[str, dict[str, Any]], since: datetime.datetime, until: datetime.datetime
+    roots: dict[str, Path],
+    weeks: dict[str, dict[str, Any]],
+    since: datetime.datetime,
+    until: datetime.datetime,
+    codex_archive: Path | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    sessions, candidates, coverage = _scan_sessions(roots, since)
+    sessions, candidates, coverage = _scan_sessions(roots, since, codex_archive)
     cli_resolved: dict[str, _Runtime] = {}
     cli_unreadable: dict[_Runtime, set[str]] = collections.defaultdict(set)
 
@@ -419,7 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         "--claude-projects-dir", type=Path, metavar="DIR", help="Claude記録ディレクトリのパス。省略時は~/.claude/projects。"
     )
     parser.add_argument(
-        "--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録ディレクトリのパス。省略時は~/.codex/sessions。"
+        "--codex-sessions-dir", type=Path, metavar="DIR", help="Codex記録の所在。省略時はCodexの通常記録とアーカイブ。"
     )
     parser.add_argument(
         "--agy-brain-dir",
@@ -444,15 +451,20 @@ def main(argv: list[str] | None = None) -> int:
         while day.isoformat() <= _week(until):
             weeks[day.isoformat()] = _new_week(day.isoformat())
             day += datetime.timedelta(days=7)
+        codex_sessions, codex_archive = session_record_paths.codex_record_roots(host_homes.codex_home())
         roots = {
             "claude": args.claude_projects_dir or Path.home() / ".claude" / "projects",
-            "codex": args.codex_sessions_dir or Path.home() / ".codex" / "sessions",
+            "codex": args.codex_sessions_dir or codex_sessions,
             "agy": args.agy_brain_dir or Path.home() / ".gemini" / "antigravity-cli" / "brain",
         }
         if args.agy_brain_dir is None and not roots["agy"].is_dir():
             roots.pop("agy")
         roots = {key: value.expanduser().resolve() for key, value in roots.items()}
-        coverage, session_rows = _session_metrics(roots, weeks, since, until)
+        archive_root = codex_archive.resolve() if args.codex_sessions_dir is None else None
+        scan_roots = {key: str(value) for key, value in roots.items()}
+        if archive_root is not None:
+            scan_roots["codex_archive"] = str(archive_root)
+        coverage, session_rows = _session_metrics(roots, weeks, since, until, codex_archive=archive_root)
         notes = (args.private_notes or private_notes.default_private_notes()).expanduser().resolve()
         coverage.update(_queue_metrics(notes, weeks, since, until))
     except (ValueError, OSError, yaml.YAMLError, subprocess.CalledProcessError) as error:
@@ -510,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
                 "kind": "cost-metrics-coverage",
                 "since": since.isoformat(),
                 "until": until.isoformat(),
-                "scan_roots": {key: str(value) for key, value in roots.items()},
+                "scan_roots": scan_roots,
                 **coverage,
             },
             ensure_ascii=False,
