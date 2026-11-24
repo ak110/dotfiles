@@ -139,7 +139,7 @@ def _unexpected_error_next_action(error: Exception) -> str:
     """共通の例外型でない例外へ、失敗の種類に応じた次の操作を返す。"""
     if isinstance(error, SessionInitializationTimeoutError):
         return (
-            "ホストのCLI（`claude`・`codex`・`agy`・`opencode`）の認証状態を確かめ、`model_type`へ別の候補を指定して起動し直す。"
+            "ホストのCLI（`claude`・`codex`・`agy`・`opencode`）の認証を確かめ、原因を解消して同じ工程で起動し直す。"
             "原因はエラー本文のdiagnosticと、session_idが分かる場合は`atk agents logs <session_id>`で調べる"
         )
     # Claude Agent SDKの例外（CLIの未導入、接続失敗、プロセス異常）はbackendが包まずに届くため、型の所属で同じ分類にする。
@@ -148,7 +148,7 @@ def _unexpected_error_next_action(error: Exception) -> str:
         specific = getattr(error, "next_action", None)
         if isinstance(specific, str) and specific:
             return specific
-        return "委譲先CLIの導入と認証を確かめ、`model_type`へ別のengineの候補を指定して起動し直す"
+        return "委譲先CLIの導入と認証を確かめ、原因を解消して同じ工程で起動し直す"
     if isinstance(error, ValueError):
         return recover_from_failure(
             component="MCPの引数処理",

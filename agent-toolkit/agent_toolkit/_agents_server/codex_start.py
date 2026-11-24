@@ -169,7 +169,7 @@ class CodexStartMixin:
                                 f"Codexの接続を開始していない（provider={selection.primary}）: {skipped}。"
                                 f"使用順`{key}`に他の利用可能な接続先が無い",
                                 next_action=(
-                                    "理由に示した解除予定まで待つか、`model_type`へ別のengineの候補を指定して起動し直す。"
+                                    "理由に示した解除予定まで待つ。起動時の候補切替は工程別設定に従う。"
                                     f"上限中もCodexを使う場合は`atk config set {key} <種別列>`でAPI課金の接続先を使用順へ加える"
                                 ),
                             )

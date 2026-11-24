@@ -70,7 +70,7 @@ SESSION_ID_NEXT_ACTION = "`start`の応答か`list`が返した`session_id`を�
 RUNNING_STOP_NEXT_ACTION = "中断が必要なら先に`kill`を発行し、終了を観測してから`stop`を再発行する"
 
 
-_START_FAILED_NEXT_ACTION = "`atk agents wait`で終了時の結果の`error`を受領し、`model_type`へ別の候補を指定して起動し直す"
+_START_FAILED_NEXT_ACTION = "`atk agents wait`で終了時の結果の`error`を受領し、その案内に従う"
 
 
 REPLY_NEXT_ACTIONS = {

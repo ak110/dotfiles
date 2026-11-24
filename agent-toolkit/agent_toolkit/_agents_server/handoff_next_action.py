@@ -6,6 +6,7 @@ from typing import Any
 
 from agent_toolkit._agents_server import codex_resume_state, engine_availability
 from agent_toolkit._agents_server.state import SessionState
+from agent_toolkit._agents_server.tool_descriptions import HANDOFF_MODEL_INPUTS
 
 
 def _availability_failure(engine: str, status: str, error: Any) -> bool:
@@ -43,4 +44,4 @@ def result_next_action(result: Mapping[str, Any]) -> str | None:
     if not isinstance(session_id, str) or not session_id:
         return None
     identifier = json.dumps(session_id, ensure_ascii=False)
-    return f'`start`へ`{{"handoff_from": {identifier}}}`だけを渡し、前任の進捗を後任へ引き継ぐ'
+    return f'`start`へ`{{"handoff_from": {identifier}}}`を渡して引き継ぐ。{HANDOFF_MODEL_INPUTS}'

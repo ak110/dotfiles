@@ -13,7 +13,8 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
    委譲プロンプトへは記録を再掲せず、残工程の担当と再開先、検証済み・未実施・条件変更の別だけを渡す。
 2. 実装を認可した資料から、レビュー基準を`計画`、`WI`、`CI記録`（計画の無いCI失敗の対応）から選ぶ（組み合わせてよい）。
    1回の実行レビューは`cwd`から解決する1つのリポジトリだけを対象とし、リポジトリが異なる基準はレビューを分ける。
-   対象WIの`担当モデル.実行レビュー担当`の値は`model_type`と入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
+   対象WIの`担当モデル.実行レビュー担当`がユーザー由来なら、その値を`model_type`と比較用の入力`担当モデル`へ渡し、WIごとに違えばレビューを分ける。
+   指定のある場合は`model_override=user_instruction`と、WIのファイル名・ユーザー由来である根拠を入れた`model_override_evidence`も`start`へ渡す。
    指定値と実行値の比較と記録は`agent-toolkit:atk-mode/references/model-settings.md`「工程別モデル設定」に従う。
 3. 単一計画の初回でない起動は、起動方法ごとの次の資料を読んでから入力を決める。
    - 内部の群は`agent-toolkit:atk-mode/references/exec-review-launch-groups.md`を読む。
@@ -41,7 +42,8 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 5. 基準、開始時点、指摘管理表、`review_contract`が同じリポジトリに属し、渡すパスが実在することを確かめる。
    不足時は起動せず引き継ぎ記録と原本で補い、不具合なら診断を保持して `agent-basics:bugfix` で認可内の是正後に再検証する。
    補えない入力・影響・試行だけを委譲元へ返す。
-6. `agents_server`の`start`を、`cwd`に対象worktreeの絶対パス、`subagent_md_path`に`exec-review`、`extra_params`に手順4の入力、`model_type`に手順2の値（無ければ省く）を渡して呼ぶ。
+6. `agents_server`の`start`を、`cwd`に対象worktreeの絶対パス、`subagent_md_path`に`exec-review`、`extra_params`に手順4の入力を渡して呼ぶ。
+   手順2の指定がある場合は`model_type`、`model_override`、`model_override_evidence`を`extra_params`の外に置く。
    通知を変えた差分では、検証記録の最終の配送本文の保存先と入力・版・ホスト・生成元を渡し、レビュー担当が全文を開けることを確かめる（ソースのリテラルや合格の総数で代用しない）。
 7. 画面表示の変更があれば、`agent-toolkit:atk-mode/roles/usability-review.parent.md`でユーザビリティレビュー担当も並行して起動する。
    文章成果物の読者別探索は`agent-toolkit:atk-mode/roles/reader-fit-review.parent.md`の直接確認の条件、起動単位、入力に従う。
@@ -167,7 +169,7 @@ CI修正の系列では、`agent-toolkit:atk-mode/playbooks/process-wi-ci-fix.md
 | 事由 | 委譲元の処置 | 再開位置の記録 |
 | --- | --- | --- |
 | 計画の条項とWIの明示条件の衝突 | WIの明示条件から契約が一意に定まればWIを優先して確定し、同じレビューイーへ返す。人間由来の要求の解釈が分かれれば、ユーザーに確認して確定してから返す | 不要 |
-| 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | 選定原本の該当項目の`担当モデル`だけを本文の組へ直し（初回の配分と判断履歴は保つ）、`atk run-script pick-wi-check -- <元の選定原本の絶対パス> --work-dir <対象リポジトリの絶対パス>`の終了コード0を確かめる。未確定のモデルを推測させず、下位の担当で補わない。`実装担当`が変われば返却元の終了を確かめて新しい`model_type`で同じレーンを起動し直し、`実行レビュー担当`だけなら同じthreadへ続行を返す | 不要 |
+| 選定結果の`担当モデル`とAWI本文のモデル指定の不一致 | 選定原本の該当項目の`担当モデル`だけを本文の組へ直し（初回の配分と判断履歴は保つ）、`atk run-script pick-wi-check -- <元の選定原本の絶対パス> --work-dir <対象リポジトリの絶対パス>`の終了コード0を確かめる。未確定のモデルを推測させず、下位の担当で補わない。`実装担当`が変われば返却元の終了を確かめて手順2と同じユーザー由来の条件と起動引数を実装担当にも適用して同じレーンを起動し直し、`実行レビュー担当`だけなら同じthreadへ続行を返す | 不要 |
 | 完成条件の変更か除外の判断要請 | 本書「技術判断で外せる完成条件」に当たればメインが判断と根拠を担当へ返して記録させ、当たらなければユーザーの判断の記録を確かめ、無ければ`agent-toolkit:atk-mode/references/delivery.md`「手段の選択」で確認する | 必要 |
 | ユーザーの選好、要件、認可範囲の変更 | ユーザーに確認して回答を同じレビューイーへ返す | 不要 |
 | 外部状態か権限の不足 | 回復の手段を確かめ、ユーザーの操作が必要なら確認する。既存不良が原因なら既存不良の行も適用する | 必要 |

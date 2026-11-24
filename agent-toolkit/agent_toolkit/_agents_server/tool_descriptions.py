@@ -44,9 +44,15 @@ CWD_DESCRIPTION = parameter_description(
 )
 
 
+HANDOFF_MODEL_INPUTS = (
+    "前任が候補列で起動した場合は、役割または作業に対応する工程名を`model_type`へ明示する。"
+    "候補列の直接指定や役割と異なる工程は、認められた例外に限り`model_override`と`model_override_evidence`を添える。"
+)
+
+
 HANDOFF_FROM_DESCRIPTION = parameter_description(
     "終了した前任のsession_id。model_typeに後任の工程名を指定できる。直接指定にはmodel_overrideとmodel_override_evidenceも渡す。"
-    "指定なしでは前任の工程の現在設定を使い、用途・cwd・label・起動本文と進捗を復元して新しい会話の後任を起動する。"
+    "前任が候補列で起動した場合はmodel_typeを省略できない。用途・cwd・label・起動本文と進捗を復元して後任を起動する。"
     "可用性失敗の前任候補は保持期限にかかわらず除外する。実行中の前任は終了を待つかkillしてから指定する。"
     "応答のsession_idは後任であり、atk agents waitの待機対象になる。"
     "復元したcwdとmodel_typeも応答へ返す。"
@@ -217,7 +223,8 @@ START_DESCRIPTION = "\n".join(
     (
         "委譲先sessionを開始し、`mode`で入力と起動条件を選ぶ。"
         '引き継ぎ起動は`{"handoff_from": "<終了した前任session_id>"}`を渡し、'
-        "後任のモデル候補を指定する場合だけmodel_typeを加える。他の通常起動入力との混在は拒否する。",
+        + HANDOFF_MODEL_INPUTS
+        + "通常起動の入力は混ぜない。",
         "返した`session_id`の終了と結果本文は、引数なしの単独コマンド`atk agents wait`で受け取る。"
         "waitは`session_id`を引数に取らず、登録済みの全sessionの終了を待つ。結果が不要なら`kill`で破棄する。",
         "",
