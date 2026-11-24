@@ -307,11 +307,11 @@ def test_policy_question_requires_all_external_sources(
     [
         ("資料（{url}）を参考に", "https://example.com/a", "重複を統合する", False),
         ("資料**{url}**を参考に", "https://example.com/a", "重複を統合する", False),
-        ('資料: "{url}"', "https://example.com/a*_%28b%29", "重複を統合する", False),
-        ("資料: __{url}__", "https://example.com/a__b", "重複を統合する", False),
+        ('資料: "{url}"', "https://example.com/a%2A_%28b%29", "重複を統合する", False),
+        ("資料: __{url}__", "https://example.com/a_b", "重複を統合する", False),
         ("資料: ({url})", "https://example.com/a(b)?x=1&y=2#f", "重複を統合する", False),
         ("資料: [{url}]({url})", "https://[2001:db8::1]/a(b)", "重複を統合する", False),
-        ("資料: {url}。次も確認", "https://example.com/資料", "重複を統合する", False),
+        ("資料: {url}。次も確認", "https://example.com/%E8%B3%87%E6%96%99", "重複を統合する", False),
         ("資料: {url}", "https://example.com/a", "なし<br>", True),
         ("資料: {url}", "https://example.com/a", "**なし**<BR />&nbsp;！", True),
         ("資料: {url}", "https://example.com/a", '<span title=">理由">無し</span>', True),
@@ -344,6 +344,51 @@ def test_external_source_markup_boundaries(
         assert not reason
 
 
+@pytest.mark.parametrize("work", ["add-awi-by-user", "process-user-comments", "implement"])
+@pytest.mark.parametrize("from_contract", [False, True], ids=["startup", "contract"])
+@pytest.mark.parametrize("separator", [None, " と ", "と", ""], ids=["single", "spaced", "adjacent-prose", "adjacent"])
+@pytest.mark.parametrize("markup", ["**{}**", "`{}`", "[資料]({})", "({})", "{}。", "__{}__"])
+def test_external_source_url_boundaries(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    work: str,
+    from_contract: bool,
+    separator: str | None,
+    markup: str,
+) -> None:
+    contract = tmp_path / "work-contract.md"
+    monkeypatch.setattr(pretooluse.work_contract, "record_path", lambda _: contract)
+    urls = ["https://example.com/a(b)?x=%2A&y=1#z"]
+    if separator is not None:
+        urls.append("https://[2001:db8::1]/a_b")
+    body = "資料" + (separator or "").join(markup.format(url) for url in urls) + "を確認"
+    if from_contract:
+        contract.write_text(f"## 原本\n- {body}\n", encoding="utf-8")
+    prompt = f"/atk-mode {work} " + ("資料を確認" if from_contract else body)
+    assert user_prompt_submit.main(json.dumps({"session_id": "question-check", "prompt": prompt})) == 0
+    table = tmp_path / "external-source-review.md"
+    table.write_text(
+        "| 資料URL | 配布規範での定義元または非該当の理由 | 削る・まとめる・置き換える案 | 採否と理由 |\n"
+        "| --- | --- | --- | --- |\n" + "".join(f"| <{url}> | 設計手順 | 重複を統合する | 採用 |\n" for url in urls),
+        encoding="utf-8",
+    )
+    assert not _question_decision(tmp_path, {"header": "方針の承認", "question": "上の方針で進めますか？"})
+
+
 def test_external_source_url_preserves_ipv6_address() -> None:
     urls = pretooluse._external_source_urls(["## 原本", "- https://[2001:db8::1]/source"])
     assert urls == {"https://[2001:db8::1]/source"}
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("https://example.com/a, 次", "https://example.com/a"),
+        ("https://example.com/a. 次", "https://example.com/a"),
+        ("https://example.com/a%ZZは別の文字列", "https://example.com/a"),
+        ("https://example.com/aを参照", "https://example.com/a"),
+        ("https://example.com/a$&'+,;=~b?x=1&y=2#z", "https://example.com/a$&'+,;=~b?x=1&y=2#z"),
+    ],
+)
+def test_external_source_url_uses_ascii_uri_characters(line: str, expected: str) -> None:
+    assert list(pretooluse.work_contract.source_urls(line)) == [expected]
