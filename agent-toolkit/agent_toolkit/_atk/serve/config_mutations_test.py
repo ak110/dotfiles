@@ -204,3 +204,21 @@ async def test_user_comment_api_returns_edit_conflict_without_losing_latest_cont
         "error": "編集中に他プロセスが対象を変更しました",
     }
     assert path.read_text(encoding="utf-8") == latest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("kind", "next_operation"), [("awi", "本文を編集"), ("uwi", "回答欄")])
+async def test_user_comment_api_rejection_suggests_next_operation(
+    tmp_path: pathlib.Path, kind: str, next_operation: str
+) -> None:
+    original = f"---\ntype: {kind}\nstate: inbox\n---\n\n元の本文\n"
+    path = entry_path(tmp_path, "item.md")
+    path.write_text(original, encoding="utf-8")
+    app = serve_app.create_app(tmp_path, config.ServeConfig("127.0.0.1", 28766), state.ServeState(tmp_path))
+    response = await app.test_client().post(
+        "/api/entries/user-comment",
+        json={"state": "inbox", "filename": "item.md", "comment": "追記", "expected_content": original},
+    )
+    assert response.status_code == 400
+    assert next_operation in (await response.get_json())["error"]
+    assert path.read_text(encoding="utf-8") == original

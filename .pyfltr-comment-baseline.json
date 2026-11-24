@@ -3325,7 +3325,7 @@
     "製品の更新処理を通し、画面の待機制御と呼出し記録を付加する。": 1
   },
   "agent-toolkit/agent_toolkit/_atk/serve/browser_wi_comments_test.py": {
-    "エージェント由来UIの追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。": 1
+    "sourceを持つAWIの画面の追記・置換・pending・SSE・競合復旧を実ブラウザーで検証する。": 1
   },
   "agent-toolkit/agent_toolkit/_atk/serve/browser_wi_cooldown_test.py": {
     "AWIは期限だけの経過で一覧・読み上げ・開いた詳細と削除確認の表示を戻し、UWIは期限によらず保存状態を示す。 冷却期限を適用するのはAWIだけである。UWIを冷却中と示すと、ユーザーの判断を待つ項目を時間経過で解消する待機として案内する。": 1,

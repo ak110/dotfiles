@@ -78,7 +78,7 @@ WIでの指定は`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取�
 
 作業の完了後は、報告を所有するメインが`agent-toolkit:atk-mode/playbooks/report-completion.md`で結果を報告して終わる。
 Claude CodeとCodexの最上位セッションは振り返り待ちとして記録され、非活動になった対象を`/atk-mode review-session batch`が非同期でまとめて分析する。
-batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、エージェント由来の要求の採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
+batchが投入したAWIは、ユーザーの内容確認を待たずに採否の検討と処理の対象になり、要求・完成条件の項目ごとの出所と採否は`agent-toolkit:atk-mode/references/origin-and-approval.md`「由来と承認」で判断する。
 全量を指定せずに手動で起動した`/atk-mode review-session`は、確定済みの範囲より後を対象とする。
 全量指定と引数は[単発の振り返り](../playbooks/review-session.md)を参照する。
 `review-session meta`は`agent-toolkit:atk-mode/playbooks/review-session.md`「週次のメタ分析」で、キューと既存報告から反復と対策の効果を比較する。

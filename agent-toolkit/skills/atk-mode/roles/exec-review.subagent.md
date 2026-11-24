@@ -72,7 +72,7 @@ startup_documents:
   行がなければ、直接起動と旧入力との互換のため着手時のHEADを固定する。
 - `WI記録`と`開始時のHEAD`: 計画に無いWIの、ファイル名、要求、完成条件、由来、採否の記録（計画にあるWIは本担当が取得する）。
   計画が無い時の検証結果は、WI記録か引き継ぎ記録が示す場所から読む。
-- `review_contract`: `CI記録`、計画外の`WI`、新形式のエージェント由来AWIで必須とする。
+- `review_contract`: `CI記録`、計画外の`WI`、新形式AWIで必須とする。
   単一条項の直接の契約か、契約を書いたMarkdownの絶対パスで受け取る（形式は`agent-toolkit:atk-mode/references/review-contract.md`「review_contractの書式」）。
 - `評価用WI原本`: 評価時点に固定したWI本文の一覧（WIファイル名から保存本文の絶対パスへのJSON辞書）の絶対パス。
   指定があれば対象WIを全てこの一覧から読み、条項、判定、完成条件証拠で同じ原本を使う。
