@@ -163,7 +163,7 @@ run-skillが起動した担当は再起動せず、個別セッションの範�
 3. 現状と全状態のWIを照らし、実現済み・既出・便益なし・版上げだけを除き、`request-intake.md`の手順2〜5で評価する。
    ホスト変更で規範の点検が要れば`refine-prompt`を提案する。
 4. 固定の変更履歴は版ごとの採否と理由を記録する。
-   全版を評価した変更履歴と読了したその他の`model_sources`だけを`atk run-script research-sources --mark-read <source>...`へ渡す。
+   全版を評価した変更履歴と読了したその他の`model_sources`だけを`atk run-script research-sources -- --mark-read <source>...`へ渡す。
    唯一の書込成果として`result_uwi`に従い、起動入力の報告先へUWIを1件保存する。
 
 巡回がUWI本文に従い、ユーザーの実際の回答で選ばれた提案だけをAWIにする。
