@@ -592,6 +592,8 @@ class ManagerResume(manager_registry.ManagerRegistry):
     ) -> tuple[PendingResume, int]:
         """期限切れ状態を一意な進行中再開操作へ原子的に移す。"""
         session_id = resume_state.session_id
+        if session_id in self._force_stopping:
+            raise ResumeDeferred("強制停止中のため再開は未配送です", next_action="強制停止の結果を確認してから追送する")
         self.expired_sessions.pop(session_id, None)
         self.stopped_sessions.pop(session_id, None)
         resume_prompt = ResumePrompt(prompt)

@@ -39,7 +39,7 @@ def rows_table(rows: tuple[str, ...], filler: str = TABLE_FILLER) -> str:
 
 
 def cause_record_line(label: str, text: str = BUG_FILLER) -> str:
-    return f"- {label}: {text}"
+    return f"- {label}: {'自動検出: ' if label == '再発防止' else ''}{text}"
 
 
 def cause_record(text: str = BUG_FILLER) -> str:

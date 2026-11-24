@@ -19,7 +19,7 @@ from agent_toolkit.atk_test import _make_subprocess_fake, _setup_notes, _write_a
 
 @pytest.mark.parametrize("source", ["run-skill", "session-review", "process-wi", None])
 @pytest.mark.parametrize("state", ["inbox", "processing"])
-def test_candidates_include_answered_approval_regardless_of_source(
+def test_candidates_include_answered_uwi_regardless_of_source(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -29,11 +29,12 @@ def test_candidates_include_answered_approval_regardless_of_source(
     notes = _setup_notes(tmp_path)
     for name, answer in (("approval.md", "はい"), ("report.md", "確認済み"), ("unanswered.md", "")):
         write_uwi(notes, name, answer=answer, source=source, state=state)
-    report = notes / "2026/10/report.md"
-    report.write_text(
-        report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"),
-        encoding="utf-8",
-    )
+    for name in ("report.md", "unanswered.md"):
+        report = notes / "2026/10" / name
+        report.write_text(
+            report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"),
+            encoding="utf-8",
+        )
     write_uwi(notes, "held.md", answer="はい", source=source, state="hold")
     write_awi(notes, "dependent.md", depends_on=("approval.md",))
     repositories = (_config.ConfiguredRepository("github.com/example/repo", tmp_path, tmp_path / ".git"),)
@@ -67,12 +68,11 @@ def test_candidates_include_answered_approval_regardless_of_source(
     assert "はい" in acquired["approval.md"][1]
     assert "確認済み" in acquired["report.md"][1]
     assert acquired["report.md"][0]["run_skill_report"] == "true"
-    assert {name for name, (metadata, _) in acquired.items() if metadata.get("run_skill_report") != "true"} == {"approval.md"}
 
     snapshot = _wi_listing.configured_repo_snapshot(notes, repositories)[0]
 
-    assert {entry[0].name for entry in snapshot.candidates} == {"approval.md", "dependent.md"}
-    assert {record["filename"] for record in snapshot.candidate_records()} == {"approval.md", "dependent.md"}
+    assert {entry[0].name for entry in snapshot.candidates} == {"approval.md", "dependent.md", "report.md"}
+    assert {record["filename"] for record in snapshot.candidate_records()} == {"approval.md", "dependent.md", "report.md"}
 
 
 class TestListEmpty:
@@ -320,3 +320,41 @@ class TestListMultipleRepos:
         assert "[inbox/" in lines[2]
         assert "[processing/answered]" in lines[4]
         assert "[inbox/unanswered]" in lines[5]
+
+
+def test_run_skill_report_followup_respects_processing_and_terminal_states(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    notes = _setup_notes(tmp_path)
+    filename = "report.md"
+    report = _write_uwi_file(notes, filename, target_repo="github.com/example/repo", answer="採用", source="run-skill")
+    report.write_text(
+        report.read_text(encoding="utf-8").replace("type: uwi\n", "type: uwi\nrun_skill_report: true\n"),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(subprocess, "run", _make_subprocess_fake([]))
+
+    def run(*args: str) -> str:
+        with pytest.raises(SystemExit) as result:
+            atk.main(["wi", *args], home=tmp_path)
+        assert result.value.code == 0
+        return capsys.readouterr().out
+
+    show = (
+        "show",
+        "--all",
+        "--type=uwi",
+        "--state=active",
+        "--source=run-skill",
+        "--target-repo=github.com/example/repo",
+        "--skip-pull",
+    )
+    assert f"### {filename} [inbox/answered]" in run(*show)
+    run("start-processing", filename)
+    assert f"### {filename} [processing/answered]" in run(*show)
+    with pytest.raises(SystemExit) as competing_start:
+        atk.main(["wi", "start-processing", filename], home=tmp_path)
+    assert competing_start.value.code != 0
+    capsys.readouterr()
+    run("adopt", filename)
+    assert f"### {filename} " not in run(*show)

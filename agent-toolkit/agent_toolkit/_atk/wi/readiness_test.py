@@ -288,10 +288,10 @@ class TestReadiness:
 
         result = _wi_readiness.calculate_readiness(tmp_path, "github.com/example/repo")
 
-        assert result.ready == ("approval.md",)
-        assert result.internal_dependency_waits == ("approval-dependent.md",)
-        assert result.actionable_count == 1
-        assert _wi_readiness.count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 1
+        assert result.ready == ("approval.md", "report.md")
+        assert result.internal_dependency_waits == ("approval-dependent.md", "report-dependent.md", "transitive-report.md")
+        assert result.actionable_count == 2
+        assert _wi_readiness.count_pending_entries(tmp_path, target_repo="github.com/example/repo") == 2
 
     def test_answered_uwi_does_not_satisfy_explicit_dependency_while_active(self, tmp_path: pathlib.Path) -> None:
         write_uwi(tmp_path, "answer.md", answer="回答済み")

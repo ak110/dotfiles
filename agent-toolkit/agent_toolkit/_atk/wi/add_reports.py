@@ -1,9 +1,13 @@
-"""run-skill報告の同期確認と原稿冒頭の比較・表示。"""
+"""run-skill報告の同期確認と、原稿冒頭の比較・表示、先送りの候補の表示。"""
 
+import dataclasses
 import pathlib
 import re
+import subprocess
 import sys
+from collections import Counter
 
+from agent_toolkit._atk import outcome as _outcome
 from agent_toolkit._atk import output_file as _output_file
 from agent_toolkit._atk.managed_temp.creation import create_output_temp
 from agent_toolkit._atk.managed_temp.errors import ManagedTempError
@@ -16,8 +20,25 @@ from agent_toolkit._atk.wi.web_input import WebInputError
 from agent_toolkit._common import markdown_headings as _markdown_headings
 from agent_toolkit._common import skill_modes
 from agent_toolkit._common.atomic_file import atomic_write
+from agent_toolkit._common.diagnostic_redaction import redact_secrets
 from agent_toolkit._git import command as _git_command
 from agent_toolkit._git import refs as _git_refs
+
+
+@dataclasses.dataclass(frozen=True)
+class RunReportGap:
+    """報告の同期を確認できなかった段階。  pyfltr: allow-comment
+
+    `reason`は段階ごとの固定の区分で、失敗の識別に使える。
+    `detail`は段階に固有の観測値（ファイル名、commitなど）で、失敗の調査に使う。
+    """
+
+    reason: str
+    detail: dict[str, object]
+
+
+_CANDIDATE_LIMIT = 5
+"""報告用UWIが見つからない時に示す、近い候補の上限件数。  pyfltr: allow-comment"""
 
 
 def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: str) -> bool:
@@ -25,15 +46,26 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
 
     `scope`と報告の`scope`は、どちらも`skill_modes.canonical_scope`でそろえて比べる。
     """
+    return check_run_report_sync(private_notes, run_id=run_id, scope=scope) is None
+
+
+def check_run_report_sync(
+    private_notes: pathlib.Path, *, run_id: str, scope: str, sync_report: bool = False
+) -> RunReportGap | None:
+    """同期済みなら`None`、未同期なら確認できなかった段階を返す。  pyfltr: allow-comment
+
+    条件に合う報告用UWIが複数あれば、最も同期に近い段階を返す。
+    """
     expected = skill_modes.canonical_scope(scope)
     if not private_notes.is_dir():
-        return False
+        return RunReportGap("private-notesが無い", {"private_notes": str(private_notes)})
     with _wi_sync.repo_lock(private_notes, timeout=30):
+        remote = merge_ref = ""
         remote_revision: str | None = None
         if _wi_sync.has_remote(private_notes):
             branch = _git_refs.resolve_branch(private_notes, git_fn=lambda path, args: _git_command.output(args, path))
             if branch is None:
-                return False
+                return RunReportGap("追跡ブランチを解決できない", {"private_notes": str(private_notes)})
             remote = _git_command.output(["config", f"branch.{branch.branch}.remote"], private_notes).strip()
             merge_ref = _git_command.output(["config", f"branch.{branch.branch}.merge"], private_notes).strip()
             remote_tip = _git_command.run(
@@ -45,7 +77,7 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 timeout=30,
             ).stdout.split()
             if not remote_tip:
-                return False
+                return RunReportGap("リモートの追跡先が無い", {"remote": remote, "merge_ref": merge_ref})
             remote_revision = remote_tip[0]
             known = _git_command.run(
                 ["cat-file", "-e", f"{remote_revision}^{{commit}}"],
@@ -63,6 +95,10 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     text=True,
                     timeout=30,
                 )
+        gap: RunReportGap | None = None
+        candidates: list[dict[str, object]] = []
+        matched = 0
+        unsaved: list[str] = []
         for path in iter_entry_paths(private_notes):
             if path.is_file():
                 content = path.read_text(encoding="utf-8")
@@ -70,15 +106,31 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 if parsed is None:
                     continue
                 data, _body = parsed
+                saved_scope = data.get("scope")
+                same_scope = isinstance(saved_scope, str) and skill_modes.canonical_scope(saved_scope) == expected
                 if not (
                     data.get("type") == WI_TYPE_UWI
                     and data.get("source") == "run-skill"
-                    and isinstance(saved_scope := data.get("scope"), str)
-                    and skill_modes.canonical_scope(saved_scope) == expected
+                    and same_scope
                     and (data.get("run_skill_report") == "true" or bool(data.get("weekly_slot")))
                     and data.get("run_skill_run_id") == run_id
                 ):
+                    if (
+                        data.get("type") == WI_TYPE_UWI
+                        and data.get("source") == "run-skill"
+                        and (same_scope or data.get("run_skill_run_id") == run_id)
+                    ):
+                        candidates.append(
+                            {
+                                "file": path.name,
+                                **{
+                                    key: data.get(key)
+                                    for key in ("state", "scope", "run_skill_report", "run_skill_run_id", "weekly_slot")
+                                },
+                            }
+                        )
                     continue
+                matched += 1
                 relative = path.relative_to(private_notes).as_posix()
                 committed = _git_command.run(
                     ["-C", str(private_notes), "show", f"HEAD:{relative}"],
@@ -88,9 +140,16 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                 )
                 report_content = _run_report_content(content)
                 if committed.returncode != 0 or _run_report_content(committed.stdout) != report_content:
+                    if sync_report and not path.is_symlink():
+                        unsaved.append(relative)
+                    if gap is None:
+                        gap = RunReportGap(
+                            "報告用UWIがHEADのcommitと一致しない",
+                            {"file": relative, "head": "未commit" if committed.returncode != 0 else "内容が異なる"},
+                        )
                     continue
                 if remote_revision is None:
-                    return True
+                    return None
 
                 commit = ""
                 for revision in _git_command.output(["log", "--format=%H", "--", relative], private_notes).splitlines():
@@ -109,8 +168,54 @@ def has_synced_run_report(private_notes: pathlib.Path, *, run_id: str, scope: st
                     check=False,
                 )
                 if reached.returncode == 0:
-                    return True
-    return False
+                    return None
+                gap = RunReportGap(
+                    "報告用UWIのcommitがリモートへ未到達",
+                    {"file": relative, "commit": commit, "remote_revision": remote_revision},
+                )
+        repaired = matched == 1 and len(unsaved) == 1
+        if repaired:
+            if remote_revision is not None and _git_command.output(["rev-parse", "HEAD"], private_notes) != remote_revision:
+                return RunReportGap("報告の回復を保留", {"理由": "HEADがリモート先端と異なるため、通常の同期が必要"})
+            stage = "commit"
+            try:
+                _wi_sync.commit_and_push(private_notes, "chore: 振り返りbatchの報告を同期", unsaved, skip_push=True)
+                if remote_revision is not None:
+                    stage = "push"
+                    head = _git_command.output(["rev-parse", "HEAD"], private_notes)
+                    parents = _git_command.output(["rev-list", "--parents", "-n", "1", head], private_notes).split()
+                    if parents != [head, remote_revision]:
+                        return RunReportGap("報告の回復を保留", {"理由": "報告1件のcommitだけを確認できない"})
+                    _git_command.run(
+                        [
+                            "push",
+                            "--no-follow-tags",
+                            "--recurse-submodules=no",
+                            f"--force-with-lease={merge_ref}:{remote_revision}",
+                            remote,
+                            f"{head}:{merge_ref}",
+                        ],
+                        private_notes,
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+                stderr = getattr(error, "stderr", None)
+                if isinstance(stderr, bytes):
+                    stderr = stderr.decode("utf-8", errors="replace")
+                message = redact_secrets(stderr or str(error))[-2000:]
+                return RunReportGap("報告の回復に失敗", {"段階": stage, "診断": message})
+    if repaired:
+        return check_run_report_sync(private_notes, run_id=run_id, scope=scope)
+    if gap is not None:
+        return gap
+    candidates.sort(key=lambda item: str(item["file"]), reverse=True)
+    return RunReportGap(
+        "報告用UWIが無い",
+        {"run_id": run_id, "scope": expected, "candidates": candidates[:_CANDIDATE_LIMIT], "candidate_count": len(candidates)},
+    )
 
 
 def _run_report_content(content: str) -> tuple[dict[str, object], str] | None:
@@ -216,3 +321,60 @@ def print_draft_openings(
         print(f"原稿: {source}\n冒頭保存先: {path}\n冒頭文字数: {len(opening)}\n冒頭本文:")
         sys.stdout.write(opening)
         print("\n冒頭本文終了")
+
+
+DEFERRAL_PATTERN = re.compile(
+    r"確かめて|確認して|比べて|比較して|照合して|計画で|計画工程|実装で|着手時|処理時|処理の時点|扱いを決め"
+)
+"""AWIの本文で、投入前に決められる判断を処理工程へ回す言い回しの候補。
+
+正当な記述（登録時に観測できない事項を待つものなど）にも一致するため、拒否と警告には使わず、
+投入前レビューが行ごとに判定する入力として示すだけにする。
+"""
+
+DEFERRAL_SECTIONS = frozenset({"反映内容と反映先", "完成条件"})
+"""先送りの候補を探す節。処理担当が行う作業と完了の判定を書く節に限り、ユーザーの原文と観測の記録の節は除く。"""
+
+
+def deferral_candidates(message: str) -> list[tuple[int, str]]:
+    """AWIの原稿から先送りの候補の行を、原稿ファイル上の1始まりの行番号と行の本文の組で返す。"""
+    normalized = _frontmatter.normalize_newlines(message.removeprefix("\ufeff"))
+    parsed = _frontmatter.parse_frontmatter(normalized)
+    offset = 0 if parsed is None else normalized[: len(normalized) - len(parsed[1])].count("\n")
+    lines = normalized.split("\n")[offset:]
+    headings = _markdown_headings.top_level_atx_headings("\n".join(lines), 2)
+    candidates: list[tuple[int, str]] = []
+    for index, (token, name) in enumerate(headings):
+        if name.strip() not in DEFERRAL_SECTIONS or token.map is None:
+            continue
+        following = headings[index + 1][0].map if index + 1 < len(headings) else None
+        end = following[0] if following is not None else len(lines)
+        candidates.extend(
+            (offset + number + 1, lines[number].strip())
+            for number in range(token.map[1], end)
+            if DEFERRAL_PATTERN.search(lines[number])
+        )
+    return candidates
+
+
+def print_deferral_candidates(messages: list[str], sources: list[str], *, previous: str | None = None) -> None:
+    """AWIの原稿ごとに先送りの候補を`情報:`の行で示す。候補が無い原稿は何も出さない。"""
+    for message, source in zip(messages, sources, strict=True):
+        candidates = deferral_candidates(message)
+        if previous is not None:
+            remaining = Counter(line for _, line in deferral_candidates(previous))
+            new_candidates = []
+            for number, line in candidates:
+                if remaining[line]:
+                    remaining[line] -= 1
+                else:
+                    new_candidates.append((number, line))
+            candidates = new_candidates
+        if not candidates:
+            continue
+        _outcome.report_info(
+            f"先送りの候補が{len(candidates)}行ある（{source}）。保存の成否は変えない。"
+            "投入前レビューが行ごとに、処理へ残してよい事項かを判定する"
+        )
+        for number, line in candidates:
+            _outcome.report_info(f"先送りの候補 {number}行目: {line}")

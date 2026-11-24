@@ -13,6 +13,7 @@ from agent_toolkit._hooks import norm_excuse_gate, notice
         "残りのレビューでも採否を決める（agent-basics:review-standardsの既存の基準で足りるため、規範は足さない）。",
         "既存の規範で十分なので追加の対策はしない。",
         "既存の対策でカバーできる。",
+        "規則にはもう書かれている。守れていなかっただけなので、再発防止は見送る。",
     ],
 )
 def test_detects_excuse(text: str) -> None:
@@ -31,11 +32,32 @@ def test_detects_excuse(text: str) -> None:
         "ユーザーは「既存の基準で足りる」という言い回しを止めるよう求めた。",
         "`既存の基準で足りる`という言い回しを検出する。",
         "> 既存の基準で足りる\n\nこの引用への対処を書く。",
+        "規範があるが防げなかったため、送達前の検査を追加する。",
+        "別件は不具合ではなく、AWIは見送る。",
+        "規範があるが防げなかったため、送達前の検査を追加する。\n別件は不具合ではなく、AWIは見送る。",
+        "規範があるが防げなかったため、送達前の検査を追加する。別件は不具合ではなく、AWIは見送る。",
         "投稿の設定は、既存の素の`WebFetch`全面許可で足りる。",
     ],
 )
 def test_ignores_negation_quote_and_other_subjects(text: str) -> None:
     assert norm_excuse_gate.find_excuse(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "今回は再発防止策を見送る。既存の手順に明記されているためだ。",
+        "現行の手順に定められているため、再発防止の対策は追加しない。",
+        "規範があるが防げなかったため送達前の検査を追加し、別件は不具合ではないのでAWIは見送る。",
+    ],
+)
+def test_freeform_blocks_once_on_delivery_and_stop(text):
+    payload = {"session_id": "freeform-delivery"}
+    assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+    assert norm_excuse_gate.text_block(payload, text, "送達") is None
+    stop_payload = {"session_id": "freeform-stop", "last_assistant_message": text, "stop_hook_active": True}
+    assert norm_excuse_gate.evaluate(json.dumps(stop_payload))[0] == "block"
+    assert norm_excuse_gate.evaluate(json.dumps(stop_payload))[0] == "approve"
 
 
 def test_reissue_of_same_text_passes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -150,3 +172,46 @@ def test_antigravity_resend_is_scoped_to_user_step() -> None:
     assert norm_excuse_gate.text_block(payload, text, "送達") is None
     step(5)
     assert norm_excuse_gate.text_block(payload, text, "送達") is not None
+
+
+_REPORT_2026_11_24 = (
+    "**ご指摘への再発防止**: 新しいAWIは投入しない（AWI化ステータス: 不要）。"
+    "「差分を追記せず全体を整理する」は、`process-user-comments`の手順5（古くなった記述は消す）にもう書かれている。"
+    "規則が無かったのではなく、守れていなかっただけなので、同じ規則を足しても防げないと判断した。"
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "flagged"),
+    [
+        (_REPORT_2026_11_24, True),
+        ("- 再発防止: 担当が注意する。", True),
+        ("再発防止策：なし", True),
+        ("AWIを登録した。進捗は次のとおり。", False),
+        ("- 改善点: x（AWI化ステータス: 不要 被覆 agent-toolkit/hooks/send_to_user.tsx）", False),
+        ("規範の追記では防げないため、送達前の検査を足す。", False),
+        ("- 再発防止: 自動検出: 規範の追記では防げないため、送達前の検査を足す。", False),
+        ("- **再発防止:** 被覆 agent-toolkit/hooks/send_to_user.tsx の検査が防ぐ。", False),
+        ("- 再発防止: `被覆` 既存の検査で防ぐ。", False),
+        ("再発防止: `例示だけ`", False),
+        ("再発防止:\n- 文書: 実例を載せる。", False),
+        ("`再発防止:`の行を書く。", False),
+        ("> 再発防止: 守れていなかっただけ", False),
+    ],
+)
+def test_detects_prevention_line_without_kind(text: str, *, flagged: bool) -> None:
+    assert (norm_excuse_gate.find_untyped_prevention(text) is not None) is flagged
+
+
+def test_untyped_prevention_blocks_until_reissued(monkeypatch: pytest.MonkeyPatch) -> None:
+    states: dict[str, dict] = {}
+
+    def fake_update(session_id: str, updater) -> bool:
+        states[session_id] = updater(states.get(session_id, {}))
+        return True
+
+    monkeypatch.setattr(norm_excuse_gate, "update_state", fake_update)
+    payload = {"session_id": "s2"}
+    body = norm_excuse_gate.text_block(payload, _REPORT_2026_11_24, "送達")
+    assert body is not None and "種類の語" in body
+    assert norm_excuse_gate.text_block(payload, _REPORT_2026_11_24, "送達") is None

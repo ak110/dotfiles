@@ -231,7 +231,7 @@ class TestIsPendingAsyncWork:
     def test_non_notification_enqueue_still_occupies_fifo(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             {"type": "queue-operation", "operation": "enqueue", "content": {"kind": "other"}},
             _queue_operation_task_notification_entry("enqueue", tool_use_id="toolu_done"),

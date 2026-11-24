@@ -15,7 +15,7 @@ import pytest
 
 from agent_toolkit._agents_server import codex as subject
 from agent_toolkit._agents_server import codex_rpc
-from agent_toolkit._common import process_identity
+from agent_toolkit._common import process_identity, session_registry
 from agent_toolkit._testing import codex_app_server_support, late_descendant
 from agent_toolkit._testing.codex_backend_support import _fake_app_server_manager, _wait_terminal
 
@@ -168,3 +168,74 @@ async def test_stop_reclaims_late_descendant_with_short_lived_parent(
         finally:
             # 対照版が失敗した場合も、試験自身のholderを確認後に回収する。
             await asyncio.to_thread(late_descendant.assert_released, work)
+
+
+@pytest.mark.usefixtures("agents_server_isolation")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_pending", [False, True])
+async def test_force_kill_reclaims_grandchild_and_resumes_thread(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure_pending: bool
+) -> None:
+    wrapper = tmp_path / "app_server.py"
+    ready = tmp_path / "grandchild.pid"
+    child = (
+        "import pathlib, subprocess, sys; "
+        "grandchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+        f"pathlib.Path({str(ready)!r}).write_text(str(grandchild.pid)); grandchild.wait()"
+    )
+    wrapper.write_text(
+        "import runpy, subprocess, sys\n"
+        f"subprocess.Popen([sys.executable, '-c', {child!r}])\n"
+        "sys.argv = sys.argv[1:]\n"
+        "runpy.run_path(sys.argv[0], run_name='__main__')\n",
+        encoding="utf-8",
+    )
+    async with _fake_app_server_manager(tmp_path, monkeypatch) as (manager, _backend, fake):
+        monkeypatch.setattr(
+            codex_rpc,
+            "APP_SERVER_COMMAND",
+            (sys.executable, str(wrapper), str(codex_app_server_support.FAKE_APP_SERVER), str(fake.log_path)),
+        )
+        session_id = (await manager.start("plan", "実行中の停止", str(tmp_path)))["session_id"]
+        try:
+            async with asyncio.timeout(10):
+                while not ready.exists() or not ready.stat().st_size:
+                    await asyncio.sleep(0.01)
+            grandchild = psutil.Process(int(ready.read_text(encoding="utf-8")))
+            server_pid, mcp_pids = fake.server_pid(session_id), fake.mcp_pids(session_id)
+            assert server_pid in {parent.pid for parent in grandchild.parents()[1:]}
+            child_id = "force-descendant"
+            session_registry.publish(
+                child_id,
+                state=session_registry.PublicationState.from_status("running", result_available=False),
+                engine="claude",
+                cwd=str(tmp_path),
+                model="haiku",
+                effort="low",
+                turn_seq=1,
+                processes=(
+                    process_identity.ProcessIdentity.capture(psutil.Process(server_pid)),
+                    process_identity.ProcessIdentity.capture(grandchild),
+                ),
+            )
+            assert session_registry.resolve(child_id).state is session_registry.Resolution.RUNNING
+            if failure_pending:
+                session = manager.sessions[session_id]
+                session.status = "failed"
+                session.record_failure_pending_completion()
+                assert session.terminal and not session.turn_completed
+            async with asyncio.timeout(10):
+                result = await manager.kill(session_id, force=True)
+            assert result["status"] == "interrupted"
+            assert (await manager.show_session(child_id))["status"] == "interrupted"
+            assert not fake.alive(server_pid) and not any(fake.alive(pid) for pid in mcp_pids)
+            assert not grandchild.is_running() or grandchild.status() == psutil.STATUS_ZOMBIE
+        finally:
+            monkeypatch.setattr(
+                codex_rpc,
+                "APP_SERVER_COMMAND",
+                (sys.executable, str(codex_app_server_support.FAKE_APP_SERVER), str(fake.log_path)),
+            )
+        reply = await manager.send_message(session_id, "続行")
+        assert reply["delivery"] == "reply_started"
+        await _wait_terminal(manager, session_id, fake)

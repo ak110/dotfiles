@@ -211,6 +211,7 @@ def _registration_parameters(self: SessionState) -> dict[str, Any] | None:
         "claude_connection": self.claude_connection,
         "claude_role": self.claude_role,
         "model_type": self.model_type,
+        "model_override_record": self.model_override_record,
         "launch_kind": self.launch_kind,
         "startup_profile": self.startup_profile,
         "turn_seq": self.turn_seq,

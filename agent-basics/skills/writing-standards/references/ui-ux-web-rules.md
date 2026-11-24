@@ -37,8 +37,7 @@ Modern Web Guidance（[GoogleChrome/modern-web-guidance](https://github.com/Goog
 
 ## アニメーション、画像、パフォーマンス
 
-- 動きは描画負荷を抑えて操作で中断でき、`prefers-reduced-motion`の設定時は装飾の動きを止める
-- 業務画面の状態遷移の動きは150〜250msを目安とし、読み込み時の装飾的な登場演出は省く（努力目標。反復操作を待たせないため）
+- 設計は[画面の動き](ui-ux.md#画面の動き)に従い、Webでは動き軽減を`prefers-reduced-motion`メディア特性で判定し、動かすプロパティは`transform`と`opacity`を優先する
 - 画像には幅と高さを指定してCLSを防ぎ、仮想スクロールの採否は件数ではなく実際の描画負荷で決める
 
 改善候補は、`agent-basics:writing-standards/references/ui-ux.md`「アクセシビリティと性能」の同じ条件での測定から、実測した問題に作用するものだけを採用する。

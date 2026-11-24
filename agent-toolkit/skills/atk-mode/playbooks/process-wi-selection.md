@@ -88,7 +88,7 @@
 
    追跡するブランチが登録外でコマンドが失敗した場合は、処理を始めず、示された系統と起動方法をユーザーへ報告して終了する（`agent-toolkit:atk-mode/playbooks/process-wi.md`「系統を登録したリポジトリ」）。
 3. 通常の候補は、`processing`の全項目と、`ready: true`または`blocked_reason: dependency-unmet-internal`の`inbox`の項目である。
-   未回答のUWIと報告用UWIは候補から除く。
+   未回答のUWIは候補から除く。
    追加選定にも同じ条件を使う。
    `staleness`の値は、選定結果の`鮮度`欄へそのまま保存する。
    選定時間を短く保つため、`notice`が付いただけでは履歴を調べず、内容の不一致、充足済み、巻き戻しの危険を観測した項目だけ履歴を確認する。
@@ -108,17 +108,20 @@
    先行項目がどちらにも含まれない場合か着手できない場合は、後続項目だけ着手せず依存待ちを保つ。
    日付境界の順序要求で、先行項目の終了か公開先へのマージ完了が後続の開始条件になっている場合は、先行条件の成立を確かめてから後続を候補に含める。
    依存の辺、日付の帰属、マージ条件にユーザーだけが決める未確定事項が残る場合の保留とUWIは、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「依存と冷却時間」「着手不能要因の分類」に従う。
-8. 通常起動では、次のコマンドで回答済みUWIの本文を取得し、frontmatterに`run_skill_report: true`を持つ報告用UWIだけを除く（報告用は次回の同じ起動単位の`atk run-skill`が扱う）。
+8. 通常起動では、次のコマンドで回答済みUWIの本文を取得する。
+   `run_skill_report: true`を持つ報告用UWIも対象に含める。
    all-reposの担当は、受け取り済みの候補のうち同じ条件に当たるものを使う。
 
    ```text
    atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --skip-pull
    ```
 
-   - 作業を伴わない回答のUWIは「集合確定直後の処理開始」で終了処理し、作業を伴う回答のUWIは`選定`に含める。
-   - `source: run-skill`の承認用UWIも候補に含める。
-     処理担当はfrontmatterの`scope`が示す作業（スキル）とモードを解決して起動し、`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」の手順1〜3と承認後の操作・記録に従う。
-     解決できない場合は処理せず、不足するscopeと必要なスキルの所在を`続行できない理由`へ記録する。
+   - 回答に処理手順があるUWIは、選択が見送りであっても`選定`に含める。
+     処理手順も作業もない回答のUWIは「集合確定直後の処理開始」で終了処理し、それ以外は`選定`に含める。
+   - `source: run-skill`のUWIも候補に含める。
+     処理担当は通常のスキル・モードを起動せず、必要な回答処理の手順を調べる時だけfrontmatterの`scope`を参照する。
+     UWI本文の「回答の処理」節と実際の回答に従い、`agent-toolkit:atk-mode/references/answer-transitions.md`「回答後の状態遷移」の手順1〜3を適用する。
+     必要な手順を解決できない時は、不足するscopeと必要な資料を`続行できない理由`へ記録する。
    - UWIが元項目を参照している場合は、元項目の状態と`ready`を確かめる。
      元項目が依存する未回答のUWIが残っていれば、`agent-toolkit:atk-mode/references/states-and-dependencies.md`「回答済みUWIの取り込み」に従い元項目を対象外のまま保つ。
      元項目が`inbox`で処理候補にある場合と、旧運用で`hold`に置かれ`ready=true`の場合は、処理対象に1回だけ含め、UWIを元項目と同じレーンへ割り当てる。
@@ -143,10 +146,11 @@
 2. `atk wi show <選定の全ファイル名> --target-repo=<対象worktreeの絶対パス> --skip-pull`を1回実行し、終了コード0と、保存済みの`target_repo`と対象作業ツリーのoriginの一致を確かめる。
    不一致の診断なら「処理対象の決定」の手順4へ戻る。
    後続の`adopt`、`unhold`、`start-processing`でも、状態を変える前に両者の一致を確かめる。
-3. 処理対象に含めた作業を伴わない回答済みUWIを`atk wi adopt <filename>... --target-repo=<対象リポジトリの絶対パス>`で終了する。
+3. 処理対象に含めた、処理手順も作業もない回答済みUWIを`atk wi adopt <filename>... --target-repo=<対象リポジトリの絶対パス>`で終了する。
 4. 回答済みUWIが参照する元項目のうち旧運用で`hold`にあるものを`atk wi unhold <filename>... --target-repo=<対象リポジトリの絶対パス>`で`inbox`へ戻す。
 5. `inbox`の`選定`対象と手順4の元項目を、`atk wi start-processing <filename>... --target-repo=<対象リポジトリの絶対パス>`で1回ずつ`processing`へ移す。
    成功を確かめた遷移は再実行せず、引数にはまだ`processing`でない項目だけを指定する。
+   今回の巡回で移したUWIは開始済みの項目として処理担当へ渡し、他の担当が処理中のUWIと区別する。
 6. 部分的な状態の不一致や原因不明の失敗が起きたら、追加の遷移をせずに`続行できない理由`を記録する。
    一括の開始の後に失敗した場合は、次の全条件を確かめる。
    全対象が`state=processing`であること、対象遷移の未commit差分が無いこと、今回の集合の開始を記録した遷移commitがあること、remoteの設定時はそのcommitがupstreamに含まれることである。

@@ -505,7 +505,7 @@ def test_public_cli_applies_interval_to_targets_arriving_during_batch(tmp_path, 
     monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._prepare", prepare)
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
     monkeypatch.setattr(session_review, "complete", complete)
-    monkeypatch.setattr("agent_toolkit._atk.wi.add.has_synced_run_report", lambda *a, **k: True)
+    monkeypatch.setattr("agent_toolkit._atk.wi.add.check_run_report_sync", lambda *a, **k: None)
     monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
     with pytest.raises(SystemExit) as result:
         atk.main(["run-skill", "--args", "batch", "agent-toolkit:review-session"])
@@ -624,7 +624,7 @@ def test_public_cli_concurrent_launches_create_one_run(tmp_path, monkeypatch):
 
     monkeypatch.setattr("agent_toolkit._atk.run_skill_batch._failure", failure)
     monkeypatch.setattr(run_skill, "_dispatch_once", execute)
-    monkeypatch.setattr("agent_toolkit._atk.wi.add.has_synced_run_report", lambda *a, **k: True)
+    monkeypatch.setattr("agent_toolkit._atk.wi.add.check_run_report_sync", lambda *a, **k: None)
     monkeypatch.setattr(session_activity, "review_activity", lambda *a, **k: types.SimpleNamespace(has_activity=False))
     monkeypatch.setattr(session_activity, "host_process", object)
     monkeypatch.setattr("agent_toolkit._atk.wi.repo.resolve_repo_id_or_raise", lambda *a, **k: None)

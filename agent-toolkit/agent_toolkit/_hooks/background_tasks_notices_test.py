@@ -25,7 +25,7 @@ class TestMonitorTaskNotificationSuppression:
     def test_monitor_notification_does_not_log_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "monitor-a"),
             _user_task_notification_entry(None, task_id="monitor-a"),
@@ -39,7 +39,7 @@ class TestMonitorTaskNotificationSuppression:
     def test_non_monitor_task_id_collision_still_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             _user_non_monitor_task_id_entry("toolu_taskupdate1", "1"),
             _user_task_notification_entry(None, task_id="1"),
@@ -52,7 +52,7 @@ class TestMonitorTaskNotificationSuppression:
     def test_same_value_shared_by_monitor_and_non_monitor_still_logs_unresolved(
         self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [
             *_monitor_launch_entries("toolu_monitor1", "shared-id"),
             _user_non_monitor_task_id_entry("toolu_taskupdate1", "shared-id"),
@@ -64,7 +64,7 @@ class TestMonitorTaskNotificationSuppression:
         assert "task_notification_unresolved" in log_path.read_text(encoding="utf-8")
 
     def test_unknown_notification_still_logs_unresolved(self, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("agent_toolkit._hooks.stop_session.tempfile.gettempdir", lambda: str(tmp_path))
+        monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
         entries = [_user_task_notification_entry(None, task_id="unknown-task")]
         t = _write_transcript(tmp_path, entries)
         _describe_pending_background_tasks(str(t), "sess-unknown")

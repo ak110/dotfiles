@@ -27,7 +27,7 @@
    atk wi show --all --type=uwi --answered=yes --status=processable --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --pull
    ```
 
-   取得した本文は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の回答済みUWIと元項目の扱いで分類し、`run_skill_report: true`の報告用だけを除く。
+   取得した本文は`agent-toolkit:atk-mode/playbooks/process-wi-selection.md`「処理対象の決定」の回答済みUWIと元項目の扱いで分類する。
 3. 同じ実行へ加えるために起草・投入したAWIは、投入を他の担当へ委譲した場合も、保存後の正式なファイル名を受け取った直後に候補差分へ含める。
    ユーザーが伝えた個別のUWIとAWIは`atk wi show <WIファイル名> --target-repo=<対象リポジトリの絶対パス> --target-branch=auto --pull`で取得する。
    強制同期の後も未回答、項目の不在、更新前の内容のいずれかなら、`agent-toolkit:atk-mode/playbooks/wi-saving.md`「投入と取得」の再取得の条件を適用する。

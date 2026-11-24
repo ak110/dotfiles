@@ -42,6 +42,7 @@ Claude Codeで動くエージェントが、ホストに固有のツール、通
 3. `AskUserQuestion`の質問は、ダイアログだけの表示と拒否の後の作り直しに備え、単独で通じる最小限の前提、問い、選択肢、推奨で書く。
    質問と選択肢の数はスキーマに従い、自由記述は各質問への回答、一般の返答は別の`response`で受け取る。
 4. 推奨する案を第1の選択肢にしてlabelの末尾に`(Recommended)`を付け、`共通前提:`、質問、選択肢は`agent-toolkit:atk-mode/playbooks/confirmation.md`「確認の選択肢を組む手順」で組む。
+   方針の承認の質問は`agent-toolkit:atk-mode/playbooks/request-intake.md`手順7の決まった形とし、`(Recommended)`を付けない。
 
 ## ターンの終え方
 

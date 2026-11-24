@@ -287,6 +287,7 @@ class StatusFileWriter:
             effort=previous.effort,
             fast_mode=previous.fast_mode,
             model_type=previous.model_type,
+            model_override_record=previous.model_override_record,
             launch_kind=previous.launch_kind,
             startup_profile=previous.startup_profile,
             turn_seq=previous.turn_seq,
