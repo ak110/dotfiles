@@ -76,6 +76,7 @@ lazy import hashlib
 lazy from collections.abc import Iterable
 
 lazy from markdown_it import MarkdownIt
+lazy from markdown_it.token import Token
 
 lazy from agent_toolkit._atk.wi import operation_permissions
 lazy from agent_toolkit._common import delegated_session
@@ -236,22 +237,37 @@ def _understanding_section_lines(message: str) -> Iterable[tuple[str, bool]]:
             section_level = 0
             continue
         paragraph_break = not line.strip()
-        yield (title if heading else line), plain_paragraph
+        yield line, plain_paragraph
+
+
+def _without_heading_marker(line: str) -> str:
+    return heading[2].strip(" #*_") if (heading := _MARKDOWN_HEADING.match(line)) else line
 
 
 def _has_original_text_label_in_understanding(message: str) -> bool:
-    return any(_ORIGINAL_TEXT_LABEL.match(line) for line, _ in _understanding_section_lines(message))
+    return any(_ORIGINAL_TEXT_LABEL.match(_without_heading_marker(line)) for line, _ in _understanding_section_lines(message))
+
+
+def _alternative_text(token: Token) -> str:
+    if token.type == "text":
+        return token.content
+    if token.type in {"softbreak", "hardbreak"}:
+        return "\n"
+    if token.type in {"em_open", "em_close", "strong_open", "strong_close"}:
+        return token.markup
+    return "\0"
 
 
 def _has_alternative(lines: list[str]) -> bool:
     text = "\n".join(lines)
     if "`" in text:
-        code_span_parser = MarkdownIt("zero").enable(["backticks", "escape"])
-        paragraphs = re.split(r"(\n[^\S\n]*\n)", text)
-        for index in range(0, len(paragraphs), 2):
-            tokens = code_span_parser.parseInline(paragraphs[index])[0].children or []
-            paragraphs[index] = "".join("\0" if token.type == "code_inline" else token.content for token in tokens)
-        text = "".join(paragraphs)
+        text = "\n".join(
+            "".join(_alternative_text(child) for child in block.children or [])
+            for block in MarkdownIt("commonmark").parse(text)
+            if block.type == "inline"
+        )
+    else:
+        text = "\n".join(map(_without_heading_marker, lines))
     if _ALTERNATIVE_LABEL.match(text):
         return True
     quote_ends: list[str] = []
