@@ -10,12 +10,10 @@ import contextlib
 import io
 import logging
 import os
-import shutil
 import sys
 import threading
 import time
 import traceback
-import unicodedata
 from collections.abc import Callable, Generator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass
@@ -668,44 +666,6 @@ def _emit_outcome(label: str, outcome: _StepOutcome) -> None:
         root_logger.handle(record)
 
 
-class _ProgressLine:
-    r"""標準エラーの1行を書き換えて進捗を示す。人が使う端末だけで出力する。
-
-    `\r`と空白による上書きだけを使うため、ANSIエスケープを解釈しないWindowsの端末でも同じ表示になる。
-    端末幅を超えると折り返して書き換えられなくなるため、1行を端末幅未満の長さへ省略する。
-    """
-
-    def __init__(self) -> None:
-        self._width = 0
-
-    def show(self, text: str) -> None:
-        limit = max(shutil.get_terminal_size().columns - 1, 1)
-        text = _truncate_display(text, limit)
-        padding = " " * max(self._width - _display_width(text), 0)
-        print(f"\r{text}{padding}", end="", file=sys.stderr, flush=True)
-        self._width = _display_width(text)
-
-    def clear(self) -> None:
-        if self._width:
-            print(f"\r{' ' * self._width}\r", end="", file=sys.stderr, flush=True)
-            self._width = 0
-
-
-def _display_width(text: str) -> int:
-    return sum(2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in text)
-
-
-def _truncate_display(text: str, limit: int) -> str:
-    if _display_width(text) <= limit:
-        return text
-    result = ""
-    for char in text:
-        if _display_width(result + char + "…") > limit:
-            break
-        result += char
-    return result + "…"
-
-
 def run(
     steps: Sequence[_StepSpec | tuple[str, Callable[[], post_apply_outcome.PostApplyOutcome]]] | None = None,
 ) -> tuple[list[_StepResult], list[str]]:
@@ -736,7 +696,8 @@ def run(
     started: set[int] = set()
     running: dict[Future[_StepOutcome], int] = {}
     started_at: dict[int, float] = {}
-    progress = _ProgressLine()
+    human = is_human_terminal()
+    first_wait = True
     emitted = 0
     last_notice = time.monotonic()
     try:
@@ -764,34 +725,36 @@ def run(
                         outcomes[index] = _StepOutcome(result, [], 0.0, [], skip_reason=reason)
                         progressed = True
                 while emitted < total and emitted in outcomes:
-                    progress.clear()
                     _emit_outcome(labels[emitted], outcomes[emitted])
                     emitted += 1
                 if not running:
                     break
-                human = is_human_terminal()
-                if human:
+                if human and first_wait:
                     longest = min(running.values(), key=lambda index: started_at[index])
-                    progress.show(
-                        f"  post-apply実行中: 完了 {len(outcomes)}/{total}、"
-                        f"実行中 {len(running)}件（最長: {effective_steps[longest].name}）"
-                    )
-                elif time.monotonic() - last_notice >= _RUNNING_NOTICE_SECONDS:
-                    last_notice = time.monotonic()
+                    print(f"  post-apply実行中: {effective_steps[longest].name}", file=sys.stderr, flush=True)
+                first_wait = False
+                now = time.monotonic()
+                if now - last_notice >= _RUNNING_NOTICE_SECONDS:
+                    last_notice = now
                     names = "、".join(
-                        f"{effective_steps[index].name}（{last_notice - started_at[index]:.0f}秒）"
+                        f"{effective_steps[index].name}（{now - started_at[index]:.0f}秒）"
                         for index in sorted(running.values())
                     )
-                    logger.info("  post-apply実行中: 完了 %d/%d、未完了の工程: %s", len(outcomes), total, names)
+                    logger.info(
+                        "post-apply実行中: 完了 %d/%d、未完了の工程: %s",
+                        len(outcomes),
+                        total,
+                        names,
+                        extra=log_format.SHOW if human else None,
+                    )
                 done, _ = wait(
                     running,
-                    timeout=None if human else max(_RUNNING_NOTICE_SECONDS - (time.monotonic() - last_notice), 0),
+                    timeout=max(_RUNNING_NOTICE_SECONDS - (time.monotonic() - last_notice), 0),
                     return_when=FIRST_COMPLETED,
                 )
                 for future in done:
                     outcomes[running.pop(future)] = future.result()
     finally:
-        progress.clear()
         root_logger.removeHandler(capture)
         for handler in original_handlers:
             handler.removeFilter(exclusion)

@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import logging.handlers
-import os
 import subprocess
 import threading
 from pathlib import Path
@@ -21,53 +20,13 @@ from pytools._internal.post_apply_test_helpers import _isolate_update_log as _is
 
 
 @pytest.mark.parametrize("human", [True, False], ids=["terminal", "not-terminal"])
-def test_progress_is_one_rewritten_line(monkeypatch, capsys, human):
+def test_progress_is_not_erased(monkeypatch, capsys, human):
     monkeypatch.setattr(post_apply, "is_human_terminal", lambda: human)
-    monkeypatch.setattr(post_apply.shutil, "get_terminal_size", lambda *_args, **_kwargs: os.terminal_size((40, 24)))
-    steps = _gated_steps(4, monkeypatch)
-    results, _ = post_apply.run(steps)
+    results, _ = post_apply.run(_gated_steps(4, monkeypatch))
     assert [r.name for r in results] == ["工程0", "工程1", "工程2", "工程3"]
     captured = capsys.readouterr()
     assert "post-apply実行中" not in captured.out
-    if not human:
-        assert not captured.err
-        return
-
-    assert "\n" not in captured.err
-    assert captured.err.count("post-apply実行中") >= 2
-    assert captured.err.endswith("\r")
-    for segment in captured.err.split("\r"):
-        assert post_apply._display_width(segment) <= 39  # noqa: SLF001
-
-
-def test_progress_is_cleared_before_outcome_lines(monkeypatch):
-    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: True)
-    monkeypatch.setattr(post_apply.shutil, "get_terminal_size", lambda *_args, **_kwargs: os.terminal_size((200, 24)))
-    events: list[str] = []
-    progress = post_apply._ProgressLine  # noqa: SLF001
-    real_show, real_clear, real_emit = progress.show, progress.clear, post_apply._emit_outcome  # noqa: SLF001
-
-    def show(self, text):
-        events.append("show")
-        real_show(self, text)
-
-    def clear(self):
-        events.append("clear")
-        real_clear(self)
-
-    def emit(label, outcome):
-        events.append("emit")
-        real_emit(label, outcome)
-
-    monkeypatch.setattr(progress, "show", show)
-    monkeypatch.setattr(progress, "clear", clear)
-    monkeypatch.setattr(post_apply, "_emit_outcome", emit)
-    post_apply.run(_gated_steps(3, monkeypatch))
-    assert "emit" in events
-    for index, event in enumerate(events):
-        if event == "emit":
-            assert events[index - 1] == "clear"
-    assert events[-1] == "clear"
+    assert captured.err == ("  post-apply実行中: 工程0\n" if human else "")
 
 
 def test_exception_prints_one_line_and_keeps_traceback_in_log(tmp_path, capsys):
@@ -226,8 +185,10 @@ def test_run_reports_overall_progress_while_steps_run(monkeypatch, tmp_path, cap
     assert "first-detail" in log and "second-detail" in log and "post-apply終了: exit=1" in log
 
 
-def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: False)
+@pytest.mark.parametrize("human", [False, True])
+def test_run_records_unfinished_steps_periodically(monkeypatch, tmp_path, capsys, human):
+    monkeypatch.setenv("UPDATE_DOTFILES_RUN_ID", "update")
+    monkeypatch.setattr(post_apply, "is_human_terminal", lambda: human)
     monkeypatch.setattr(post_apply, "_RUNNING_NOTICE_SECONDS", 0.05)
     release = threading.Event()
 
@@ -240,11 +201,13 @@ def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch,
 
     real_wait = post_apply.wait
     waits = []
+    displayed = []
 
     def wait_until_noticed(*args, **kwargs):
         waits.append(kwargs.get("timeout"))
         # 未完了の工程の記録を観測した後（観測できない場合も待機の4回目以降）に、停止中の工程の処理を再開する。
-        if capsys.readouterr().out.count("未完了の工程: 止まる工程") or len(waits) > 3:
+        displayed.append(capsys.readouterr().out)
+        if "未完了の工程: 止まる工程" in displayed[-1] or len(waits) > 3:
             release.set()
         return real_wait(*args, **kwargs)
 
@@ -256,6 +219,7 @@ def test_run_records_unfinished_steps_periodically_without_terminal(monkeypatch,
     finally:
         release.set()
     assert ended.value.code == 0
+    assert ("未完了の工程: 止まる工程（" in "".join(displayed)) is human
     log = (tmp_path / "update-dotfiles.log").read_text(encoding="utf-8")
     assert "未完了の工程: 止まる工程（" in log
     assert all(timeout is not None for timeout in waits)

@@ -14,7 +14,7 @@ import psutil
 from agent_toolkit._atk import claude_connection as _connection
 from agent_toolkit._atk import codex_connection as _codex_connection
 from agent_toolkit._atk import config as _config
-from agent_toolkit._atk import managed_temp, usage_refresh
+from agent_toolkit._atk import managed_temp, usage_limit_policy, usage_refresh
 from agent_toolkit._atk import orchestrator as _orchestrator
 from agent_toolkit._atk.wi import process_loop_control as _control
 from agent_toolkit._atk.wi import process_loop_env as _pl_env
@@ -23,6 +23,7 @@ from agent_toolkit._atk.wi import process_loop_log as _process_loop_log
 from agent_toolkit._common import antigravity_cli, process_tree, skill_modes
 from agent_toolkit._common import automated_prompt as _automated_prompt
 from agent_toolkit._common import claude_connection as _claude_settings
+from agent_toolkit._common import claude_usage_limit as _claude_usage_limit
 from agent_toolkit._common import codex_usage_limit as _codex_usage_limit
 from agent_toolkit._common import console_title as _console_title
 from agent_toolkit._common import host_homes as _host_homes
@@ -40,9 +41,10 @@ _AVAILABILITY_PROBE_PROMPT = _automated_prompt.wrap(
 
 
 class ClaudeUsageLimit(Exception):
-    def __init__(self, session_id: str) -> None:
+    def __init__(self, session_id: str, limit: _claude_usage_limit.UsageLimitState | None = None) -> None:
         super().__init__(session_id)
         self.session_id = session_id
+        self.limit = limit
 
 
 def build_process_loop_prompt() -> str:
@@ -318,7 +320,19 @@ def _run_process_session(
                 claude_connection=claude_connection,
             )
         except ClaudeUsageLimit as limited:
-            _process_loop_log.append("session_usage_limit", session_id=limited.session_id)
+            if limited.limit is None:
+                _process_loop_log.append("session_usage_limit", session_id=limited.session_id)
+            else:
+                resets_at = limited.limit.resets_at_iso() or ""
+                _process_loop_log.append(
+                    "session_usage_limit", session_id=limited.session_id, limit_type="seven_day", resets_at=resets_at
+                )
+                print(
+                    f"Claude Codeの週間利用上限（seven_day）。解除予定: {resets_at}。"
+                    f"解除後は atk wi process-loop resume {limited.session_id} で再開を予約し、"
+                    "巡回が停止中なら atk wi process-loop で起動してください。",
+                    file=sys.stderr,
+                )
             _, model, effort, _, claude_connection = select_available_orchestrator(
                 [("claude", model, effort)],
                 original_env,
@@ -543,6 +557,46 @@ def _raise_claude_usage_limit(
     raise ClaudeUsageLimit(identifier)
 
 
+def _unwaited_weekly_limit(
+    connection: _connection.Connection, env: dict[str, str]
+) -> _claude_usage_limit.UsageLimitState | None:
+    if connection.kind not in {"subscription", "inherit"} or usage_limit_policy.should_wait("claude", "seven_day"):
+        return None
+    if connection.kind == "inherit" and any(
+        env.get(key) for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL")
+    ):
+        return None
+    try:
+        windows = usage_refresh.refresh_claude(connection, env)
+    except OSError, ValueError, subprocess.TimeoutExpired:
+        return None
+    now = time.time()
+    for window in windows:
+        if (
+            window.window_id in {"weekly_all", "seven_day"}
+            and window.scope == "all"
+            and window.used_percent is not None
+            and window.used_percent >= 100
+            and window.resets_at is not None
+            and window.resets_at > now
+        ):
+            return _claude_usage_limit.UsageLimitState("rejected", "seven_day", int(window.resets_at))
+    return None
+
+
+def _last_record_update(identifier: str | None, env: dict[str, str], started_at: float) -> float:
+    record = (
+        _record_paths.find_session_record(
+            identifier,
+            codex_home=_host_homes.codex_home(env),
+            claude_home=_host_homes.claude_config_dir(env),
+        )
+        if identifier is not None
+        else None
+    )
+    return max((path.stat().st_mtime for path in record.paths), default=started_at) if record else started_at
+
+
 def _run_cli_session(
     argv: list[str],
     env: dict[str, str],
@@ -563,6 +617,7 @@ def _run_cli_session(
     Codexの`codex_provider`は再開時に同じ接続を使うため、セッション記録へ保存する。
     """
     started_at = time.time()
+    last_usage_check = time.monotonic()
     rollout: pathlib.Path | None = None
     published: str | None = None
     # 時間上限なし: 長時間の子セッションの実行そのものであり、無出力の監視と中断は呼び出し側の待機ループが扱う。
@@ -697,16 +752,27 @@ def _run_cli_session(
                 except subprocess.TimeoutExpired:
                     if orchestrator == "claude":
                         _raise_claude_usage_limit(process, env, identifier, on_residual, known=known, pins=pins)
-                    record = (
-                        _record_paths.find_session_record(
-                            identifier,
-                            codex_home=_host_homes.codex_home(env),
-                            claude_home=_host_homes.claude_config_dir(env),
-                        )
-                        if identifier is not None
-                        else None
-                    )
-                    updated = max((path.stat().st_mtime for path in record.paths), default=started_at) if record else started_at
+                    updated = _last_record_update(identifier, env, started_at)
+                    if (
+                        orchestrator == "claude"
+                        and identifier is not None
+                        and claude_connection is not None
+                        and time.time() - updated >= _claude_usage_limit.RECHECK_SECONDS
+                        and time.monotonic() - last_usage_check >= _claude_usage_limit.RECHECK_SECONDS
+                    ):
+                        last_usage_check = time.monotonic()
+                        limit = _unwaited_weekly_limit(claude_connection, env)
+                        latest_update = _last_record_update(identifier, env, started_at)
+                        if limit is not None and latest_update == updated and process.poll() is None:
+                            _stop_orchestrator(
+                                process,
+                                context="process-loop weekly usage limit",
+                                on_residual=on_residual,
+                                known=known,
+                                pins=pins,
+                            )
+                            raise ClaudeUsageLimit(identifier, limit) from None
+                        updated = latest_update
                     if time.time() - updated > 9600:
                         _process_loop_log.append("session_stalled", session_id=identifier or "")
                         _stop_orchestrator(

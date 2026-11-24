@@ -198,11 +198,13 @@ def record_codex(raw: dict[str, Any], *, account: str = "unknown", contract: str
     )
 
 
-def record_claude_report(report: dict[str, Any], *, account: str | None = None, contract: str | None = None) -> None:
+def record_claude_report(
+    report: dict[str, Any], *, account: str | None = None, contract: str | None = None
+) -> list[usage_observation.QuotaWindow]:
     limits = report.get("rate_limits")
     rows = limits.get("limits") if isinstance(limits, dict) else None
     if not isinstance(rows, list):
-        return
+        return []
     now = time.time()
     profile = usage_settings.read_metadata("claude")
     account = str(account or profile.get("account") or "local-claude")
@@ -237,6 +239,8 @@ def record_claude_report(report: dict[str, Any], *, account: str | None = None, 
                 "note": "追加支出の表示。サブスクリプション残量やトークンのAPI換算額とは別の値",
             },
         )
+
+    return windows
 
 
 def record_claude_event(info: Any) -> None:
@@ -296,6 +300,81 @@ async def _codex_usage(request: Callable[..., Awaitable[dict[str, Any]]]) -> dic
     return raw
 
 
+def refresh_claude(
+    selected: claude_connection.Connection,
+    environment: Mapping[str, str] | None,
+) -> list[usage_observation.QuotaWindow]:
+    environment = claude_connection.connection_environment(os.environ if environment is None else environment, selected)
+    settings = claude_settings.merge_settings(
+        None, {}, None, isolate_auth=selected.kind != "inherit", isolation_keys=claude_connection.isolation_keys(selected)
+    )
+    auth = process_tree.run_with_timeout(
+        ["claude", "--settings", settings, "auth", "status"],
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if auth.returncode != 0:
+        raise ValueError(
+            f"auth statusが終了{auth.returncode}で失敗した。"
+            "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
+        )
+    profile = json.loads(auth.stdout)
+    if not isinstance(profile, dict) or not profile.get("email") or profile.get("loggedIn") is False:
+        raise ValueError(
+            "auth statusから認証済みアカウントを確認できない。"
+            "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
+        )
+    identity = hashlib.sha256(
+        json.dumps([profile.get("email"), profile.get("organization"), environment.get("CLAUDE_CONFIG_DIR")]).encode()
+    ).hexdigest()
+    contract = str(profile.get("subscriptionType") or f"unknown:{time.time()}")
+    usage_settings.record_metadata("claude", {"account": identity, "contract": contract})
+    result = process_tree.run_with_timeout(
+        [
+            "claude",
+            "--settings",
+            settings,
+            "-p",
+            "--safe-mode",
+            "--tools",
+            "",
+            "--no-session-persistence",
+            "--strict-mcp-config",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--",
+            "/usage",
+        ],
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise ValueError(f"/usageが終了{result.returncode}で失敗した")
+    windows = None
+    for line in json_lines.split_lines(result.stdout):
+        with contextlib.suppress(json.JSONDecodeError):
+            event = json.loads(line)
+            report = event.get("usage_report") if isinstance(event, dict) else None
+            if report is None and isinstance(event, dict) and isinstance(event.get("message"), dict):
+                report = event["message"].get("usage_report")
+            if isinstance(report, dict):
+                windows = record_claude_report(report, account=identity, contract=contract)
+    if windows is None:
+        raise ValueError("/usageから構造化した利用枠を取得できない")
+    return windows
+
+
 def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None) -> list[str]:
     """turnを起動しない読取だけを行い、片側の失敗でも取得できた側を保持する。"""
     errors = []
@@ -309,75 +388,7 @@ def refresh(*, quiet: bool = False, environment: Mapping[str, str] | None = None
             for item in claude_connection.candidates("delegate", env=environment).connections
             if item.kind in {"subscription", "inherit"}
         )
-        environment = claude_connection.connection_environment(os.environ if environment is None else environment, selected)
-        settings = claude_settings.merge_settings(
-            None, {}, None, isolate_auth=selected.kind != "inherit", isolation_keys=claude_connection.isolation_keys(selected)
-        )
-        auth = process_tree.run_with_timeout(
-            ["claude", "--settings", settings, "auth", "status"],
-            env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            check=False,
-        )
-        if auth.returncode != 0:
-            raise ValueError(
-                f"auth statusが終了{auth.returncode}で失敗した。"
-                "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
-            )
-        profile = json.loads(auth.stdout)
-        if not isinstance(profile, dict) or not profile.get("email") or profile.get("loggedIn") is False:
-            raise ValueError(
-                "auth statusから認証済みアカウントを確認できない。"
-                "claude auth statusで認証状態を確認し、atk config usage --refreshで再取得してください"
-            )
-        identity = hashlib.sha256(
-            json.dumps([profile.get("email"), profile.get("organization"), environment.get("CLAUDE_CONFIG_DIR")]).encode()
-        ).hexdigest()
-        contract = str(profile.get("subscriptionType") or f"unknown:{time.time()}")
-        usage_settings.record_metadata("claude", {"account": identity, "contract": contract})
-        result = process_tree.run_with_timeout(
-            [
-                "claude",
-                "--settings",
-                settings,
-                "-p",
-                "--safe-mode",
-                "--tools",
-                "",
-                "--no-session-persistence",
-                "--strict-mcp-config",
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--",
-                "/usage",
-            ],
-            env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise ValueError(f"/usageが終了{result.returncode}で失敗した")
-        found = False
-        for line in json_lines.split_lines(result.stdout):
-            with contextlib.suppress(json.JSONDecodeError):
-                event = json.loads(line)
-                report = event.get("usage_report") if isinstance(event, dict) else None
-                if report is None and isinstance(event, dict) and isinstance(event.get("message"), dict):
-                    report = event["message"].get("usage_report")
-                if isinstance(report, dict):
-                    record_claude_report(report, account=identity, contract=contract)
-                    found = True
-        if not found:
-            raise ValueError("/usageから構造化した利用枠を取得できない")
+        refresh_claude(selected, environment)
     except (OSError, ValueError, StopIteration, subprocess.TimeoutExpired) as error:
         errors.append(f"Claude: {type(error).__name__}: {error}")
     if not quiet:
