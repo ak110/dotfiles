@@ -166,6 +166,9 @@ test("サーバーエラーは1分、5分、15分後に再開し、4回目で停
   expect(statuses.at(-1)).toContain("上限");
   await clock.advance(900_000);
   expect(prompts.length).toBe(3);
+  await $.turn.start({ text: "復帰", turnId: "manual" });
+  await $.turn.complete({ ...TURN, turnId: "manual" });
+  expect(statuses.at(-1)).toBe(undefined);
 });
 
 test("サーバーエラーでないターンの終了で再開間隔を初期化する", async ($, on) => {
@@ -218,4 +221,24 @@ test("中止されたターンからサーバーエラーの再開を予約し�
   expect(server.value).toBe("consumed");
   await clock.advance(900_000);
   expect(prompts).toEqual([]);
+});
+
+test("子のターンが始まってもメインのサーバーエラー再開は残る", async ($, on) => {
+  const server = { value: "requested" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete({ ...TURN, reason: "error" });
+  await $.turn.start({ text: "", turnId: "child-turn", agentId: "child" });
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(1);
+});
+
+test("turn.completeより後に届いたStopFailureの要求でも再開する", async ($, on) => {
+  const server = { value: "consumed" };
+  const { clock, prompts } = await engine($, on, [], { HOME: "/home/tester" }, undefined, undefined, server);
+  await $.turn.complete({ ...TURN, reason: "error" });
+  server.value = "requested";
+  await clock.advance(250);
+  expect(server.value).toBe("consumed");
+  await clock.advance(60_000);
+  expect(prompts.length).toBe(1);
 });

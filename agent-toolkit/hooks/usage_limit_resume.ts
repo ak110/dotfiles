@@ -6,6 +6,8 @@ import { exitStatePath } from "./session_exit.ts";
 // Python側のclaude_usage_limit.RECHECK_SECONDSと同じ再確認間隔を使う。
 const RECHECK_MS = 300_000;
 const SERVER_RETRY_MS = [60_000, 300_000, 900_000];
+const REQUEST_POLL_MS = 250;
+const REQUEST_POLL_COUNT = 8;
 
 export function usageLimitResumePrompt(root: string): string {
   return resumePrompt(root, "usage-limit-resume", "利用上限");
@@ -30,11 +32,13 @@ function maximumWindow(windows: SessionRateLimit[]): SessionRateLimit | undefine
 
 // 委譲先の判定はregister.tsのsession.startが初期化する。環境変数の所有者を同じ初期化処理で設定する。
 export function register(on: On, session: { delegated: boolean }): void {
-  const state: Reservation = { turnsStarted: 0, generation: 0, serverRetries: 0 };
+  const state: Reservation = { turnsStarted: 0, generation: 0, serverRetries: 0, stopped: false };
 
   on("turn.start", async ($, e, next) => {
-    state.turnsStarted++;
-    cancel($, state);
+    if (e.agentId === undefined) {
+      state.turnsStarted++;
+      cancel($, state);
+    }
     return next(e);
   });
 
@@ -51,18 +55,40 @@ export function register(on: On, session: { delegated: boolean }): void {
     const configured = await $.env.get("CLAUDE_CONFIG_DIR");
     const home = (await $.env.get("HOME")) || (await $.env.get("USERPROFILE"));
     const sessionId = await $.session.id();
-    const rateRequested = await consume($, exitStatePath(sessionId, configured, home, "rate-limit"));
-    const serverRequested = await consume($, exitStatePath(sessionId, configured, home, "server-error"));
-    const window = maximumWindow((await $.session.usage()).rateLimits);
-    if (turn !== state.turnsStarted) return result;
-    if (!serverRequested || e.isAborted) state.serverRetries = 0;
-    if (e.isAborted) {
-      cancel($, state);
-    } else if (rateRequested || (window !== undefined && window.percentUsed >= 100)) {
-      await schedule($, state, { rateLimit: window });
-    } else if (serverRequested) {
-      await schedule($, state, "server-error");
-    }
+    const ratePath = exitStatePath(sessionId, configured, home, "rate-limit");
+    const serverPath = exitStatePath(sessionId, configured, home, "server-error");
+
+    const check = async (attempt: number): Promise<void> => {
+      if (turn !== state.turnsStarted) return;
+      const rateRequested = await consume($, ratePath);
+      const serverRequested = await consume($, serverPath);
+      const window = maximumWindow((await $.session.usage()).rateLimits);
+      if (turn !== state.turnsStarted) return;
+
+      if (e.isAborted) {
+        state.serverRetries = 0;
+        cancel($, state);
+      } else if (rateRequested || (window !== undefined && window.percentUsed >= 100)) {
+        if (!serverRequested) state.serverRetries = 0;
+        await schedule($, state, { rateLimit: window });
+      } else if (serverRequested) {
+        await schedule($, state, "server-error");
+      } else if (e.reason === "error" && serverPath !== undefined && attempt < REQUEST_POLL_COUNT) {
+        // StopFailureのコマンドhookがturn.completeより後に書く場合がある。 pyfltr: allow-comment
+        state.timer = $.clock.after(REQUEST_POLL_MS * 2 ** attempt, async () => {
+          if (turn !== state.turnsStarted) return;
+          state.timer = undefined;
+          await check(attempt + 1);
+        });
+      } else {
+        state.serverRetries = 0;
+        if (state.stopped && e.reason === "answer") {
+          state.stopped = false;
+          $.ui.status(undefined);
+        }
+      }
+    };
+    await check(0);
     return result;
   });
 
@@ -79,7 +105,7 @@ async function consume($: EngineInterface, path: string | undefined): Promise<bo
   }
 }
 
-type Reservation = { timer?: Timer; turnsStarted: number; generation: number; serverRetries: number };
+type Reservation = { timer?: Timer; turnsStarted: number; generation: number; serverRetries: number; stopped: boolean };
 
 function cancel($: EngineInterface, state: Reservation): void {
   state.generation++;
@@ -104,10 +130,12 @@ async function schedule(
   const knownReset = Number.isFinite(resetsAt) && resetsAt > now;
   const delay = serverError ? SERVER_RETRY_MS[state.serverRetries] : knownReset ? resetsAt + 1 - now : RECHECK_MS;
   if (delay === undefined) {
+    state.stopped = true;
     $.ui.status("サーバー側の一時的なAPIエラーによる自動再開を停止: 連続再開の上限に到達");
     return;
   }
 
+  state.stopped = false;
   const label = serverError ? "サーバー側の一時的なAPIエラーの後に再開予定" : "利用上限の解除後に再開予定";
   $.ui.status(`${label}: ${new Date(now + delay).toISOString()}`);
   state.timer = $.clock.after(delay, async () => {
